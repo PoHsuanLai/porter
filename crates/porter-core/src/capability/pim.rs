@@ -21,8 +21,10 @@ pub struct PimCap {
 #[serde(rename_all = "snake_case")]
 pub enum PimTransport {
     /// CalDAV (calendars and VTODO tasks).
+    #[serde(rename = "caldav")]
     CalDav,
     /// CardDAV (contacts).
+    #[serde(rename = "carddav")]
     CardDav,
     /// JMAP.
     Jmap,

@@ -1,0 +1,37 @@
+# Google with this build's non-restricted scopes (design/31 R1-R5): Drive is the app folder,
+# Photos is an upload target and a picker import, never a library mirror.
+id = "google"
+label = "Google"
+mark = "google"
+
+[auth]
+kind = "oauth_pkce"
+issuer = "google"
+
+[discovery]
+kind = "fixed"
+
+[[capability]]
+family = "google_calendar"
+kind = "calendar"
+v = { access = "read_write", delta = "poll", transport = "google_api", collections = "present" }
+
+[[capability]]
+family = "google_people"
+kind = "contacts"
+v = { access = "read_write", delta = "poll", transport = "google_api", collections = "absent" }
+
+[[capability]]
+family = "google_tasks"
+kind = "tasks"
+v = { access = "read_write", delta = "none", transport = "google_api", collections = "present" }
+
+[[capability]]
+family = "google_drive"
+kind = "storage"
+v = { access = "read_write", delta = "poll", quota = "reported", scope = "app_folder", hashes = "md5", ranges = "present", chunked_upload = "present" }
+
+[[capability]]
+family = "google_photos_upload"
+kind = "photos"
+v = { library_read = "picker_only", upload = "present", albums = "app_created", video = "present", delta = "none" }

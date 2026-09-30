@@ -1,0 +1,35 @@
+# Nextcloud: the most complete self-hostable set (design/31 §3.2).
+id = "nextcloud"
+label = "Nextcloud"
+mark = "nextcloud"
+
+[auth]
+kind = "login_flow_v2"
+
+[discovery]
+kind = "nextcloud_ocs"
+
+[[capability]]
+family = "webdav"
+kind = "storage"
+v = { access = "read_write", delta = "poll", quota = "reported", scope = "full", hashes = "sha1", ranges = "present", chunked_upload = "present" }
+
+[[capability]]
+family = "caldav"
+kind = "calendar"
+v = { access = "read_write", delta = "poll", transport = "caldav", collections = "present" }
+
+[[capability]]
+family = "carddav"
+kind = "contacts"
+v = { access = "read_write", delta = "poll", transport = "carddav", collections = "present" }
+
+[[capability]]
+family = "caldav"
+kind = "tasks"
+v = { access = "read_write", delta = "poll", transport = "caldav", collections = "present" }
+
+[[capability]]
+family = "nextcloud_notes"
+kind = "notes"
+v = { access = "read_write", delta = "poll", transport = "nextcloud_notes" }
