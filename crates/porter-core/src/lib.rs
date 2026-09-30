@@ -1,0 +1,45 @@
+//! porter's pure vocabulary: accounts, the capability vocabulary and how a need meets an offer,
+//! consent, credentials' filing, and the wire protocol. No I/O, no runtime, portable.
+
+mod account;
+mod ai_props;
+mod app_id;
+mod auth_kind;
+mod candidate;
+pub mod capability;
+pub mod consent;
+mod data_class;
+mod effective;
+mod error;
+#[cfg(test)]
+mod fixtures;
+mod id;
+mod matching;
+pub mod need;
+mod offer;
+mod restriction;
+mod secret;
+mod token;
+mod units;
+pub mod wire;
+
+pub use account::{Account, AccountLabel, AccountState};
+pub use ai_props::{Billing, Locality, PriceTable, Region, Tier};
+pub use app_id::{AppId, AppName, Isolation};
+pub use auth_kind::AuthKind;
+pub use candidate::Candidate;
+pub use capability::{Capability, CapabilityKind};
+pub use data_class::DataClass;
+pub use effective::{KindToggle, Toggle, effective};
+pub use error::CoreError;
+pub use id::{AccountId, GrantId, ModelId, ProviderId, object_segment};
+pub use matching::{Match, Shortfall, matches};
+pub use need::Need;
+pub use offer::{AbsentReason, Claim, Offer, Provenance, Subject};
+pub use restriction::{
+    Limit, LimitReason, Restriction, TenantConsent, TokenLifetime, Verification,
+};
+pub use secret::{Credential, SecretKey, SecretPurpose, SecretText};
+pub use token::{Audience, IssuedToken, TokenKind};
+pub use units::{Bytes, Count, Dims, MicroUsd, Permille, Px, Tokens, UnixSeconds};
+pub use wire::{AccountsReply, AccountsRequest};

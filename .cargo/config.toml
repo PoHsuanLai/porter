@@ -1,0 +1,16 @@
+# Memory-lean builds (see the "Memory and build enforcement" section of the program plan).
+# Link with mold through clang; never set RUSTFLAGS per agent, or sccache stops hitting.
+[target.x86_64-unknown-linux-gnu]
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+
+[profile.dev]
+opt-level = 0
+debug = "line-tables-only"
+split-debuginfo = "unpacked"
+incremental = true
+
+# The system git client honours the machine's network setup; libgit2 is much slower on the
+# large blitz history.
+[net]
+git-fetch-with-cli = true
