@@ -300,11 +300,13 @@ version = "0.1.0"
 dependencies = [
  "porter-core",
  "porter-dbus",
+ "porter-fake",
  "porter-infer",
  "porter-provider",
  "porter-secrets",
  "porter-service",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]
@@ -322,6 +324,18 @@ version = "0.1.0"
 dependencies = [
  "porter-core",
  "zbus",
+]
+
+[[package]]
+name = "porter-fake"
+version = "0.1.0"
+dependencies = [
+ "porter-core",
+ "porter-infer",
+ "porter-provider",
+ "porter-secrets",
+ "porter-service",
+ "tokio",
 ]
 
 [[package]]

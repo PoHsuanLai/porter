@@ -1,0 +1,20 @@
+# A local runtime: no sign-in, on this computer, free.
+id = "fake-llm"
+label = "Fake Runtime"
+mark = "generic"
+
+[auth]
+kind = "local_runtime"
+
+[discovery]
+kind = "probe_ports"
+v = { ports = [65000] }
+
+[ai]
+locality = { kind = "on_device" }
+billing = { kind = "free" }
+
+[[capability]]
+family = "chat_completions"
+kind = "llm"
+v = { features = ["chat", "tools"], context = 32768, max_output = 4096, wire = "chat_completions" }

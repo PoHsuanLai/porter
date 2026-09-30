@@ -1,0 +1,22 @@
+[package]
+name = "porter-fake"
+description = "Test-only: fake providers, accounts, a scripted consent prompter, a fixed clock and a fake model, so client and daemon tests run without a network."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+porter-core = { workspace = true }
+porter-infer = { workspace = true }
+porter-provider = { workspace = true }
+porter-secrets = { workspace = true, features = ["testing"] }
+porter-service = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+
+[lints]
+workspace = true

@@ -17,6 +17,10 @@ porter-service = { workspace = true }
 porter-dbus = { workspace = true, optional = true }
 thiserror = { workspace = true }
 
+[dev-dependencies]
+porter-fake = { workspace = true }
+tokio = { workspace = true }
+
 [features]
 # The D-Bus transport (Linux, the desktop's accountd).
 dbus = ["dep:porter-dbus"]

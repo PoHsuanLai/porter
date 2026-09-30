@@ -1,0 +1,16 @@
+# A mail host with OAuth: IMAP with IDLE, SMTP sending.
+id = "fake-mail"
+label = "Fake Mail"
+mark = "generic"
+
+[auth]
+kind = "oauth_pkce"
+issuer = "microsoft"
+
+[discovery]
+kind = "autoconfig"
+
+[[capability]]
+family = "imap"
+kind = "mail"
+v = { access = "read_write", send = "present", delta = "push", transport = "imap", labels = "folders" }
