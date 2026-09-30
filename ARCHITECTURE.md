@@ -1,0 +1,254 @@
+# Architecture
+
+porter is the desktop's account and capability service: apps ask for a capability ("an account
+that can store files with a change feed"), never for a brand; the user signs in once; consent is
+per app, account, capability and data class; refresh tokens never leave the daemon; local AI
+runtimes are accounts too and win by default. The design is quire's
+`design/31-ACCOUNTS.md` (the source of truth); this file is the map of the code that freezes its
+interfaces. `CONVENTIONS.md` holds the rules; `FINDINGS.md` the open items.
+
+Reading order: section 1 (find the crate), section 3 (find the home), section 4 (find the
+trait), section 6 (copy the recipe).
+
+## 1. Crates and allowed edges
+
+| Crate | Purpose | I/O |
+| --- | --- | --- |
+| `porter-core` | the vocabulary: ids, `Account`, the capability vocabulary (`Capability`, `CapabilityKind`), `Need` and `matches`, provenance and `effective`, `Restriction`, `Locality`/`Tier`/`Billing`, `DataClass`, consent (`Grant`, `decide`, `availability`, the sheet's ask and answer), `Credential`/`SecretKey`, `IssuedToken`, the wire protocol (`AccountsRequest`, `AccountsReply`, frames) | none |
+| `porter-provider` | provider files (`ProviderSpec`, `parse_provider`), `ProviderSet`, `Family`, `Issuer`, the `Provider` and `ProviderSession` traits | none |
+| `porter-secrets` | the `Secrets` trait, the Secret Service attribute scheme, `MemorySecrets` (feature `testing`), `Oo7Secrets` (feature `oo7`, stubbed) | none today; oo7 behind its feature |
+| `porter-sync` | the sync contract: `Replica`, `Cursor`/`Anchor`, `BaseVersion`, `Change`/`Tombstone`, `Conflict`, `DatasetKind`; `MemoryReplica` (feature `testing`) | none |
+| `porter-infer` | the AI broker's pure half: requests and replies, `Policy` and floors, `route`, spend caps, `AuditEntry`, the `Model` trait, `Broker` (stubbed) | none |
+| `porter-service` | accountd's core over its seams: `AccountService`, `Registry`, the `Prompter` and `Clock` traits | none (seams are passed in) |
+| `porter-client` | the app-facing API: `Accounts`, `Found`, the `Transport` trait; `InProcess`, `SocketTransport`, `DbusTransport` (feature `dbus`) | through its transport |
+| `porter-dbus` | `org.quire.Accounts1`, `org.quire.Sync1`, `org.quire.Inference1` as zbus proxies and skeletons; `introspection`; the argument codec (stubbed) | zbus |
+| `porter-fake` | test-only: fake providers from real provider files, three accounts, `ScriptedPrompter`, `FixedClock`, `FakeModel`, `fake_service` | none |
+| `accountd`, `syncd`, `inferd` | the daemons: build their service over the seams; skeletons that exit with "not implemented" | everything |
+
+Allowed direct edges (checked by `scripts/check-boundary.sh`; dev-dependencies are outside it):
+
+| Crate | May depend on |
+| --- | --- |
+| `porter-core` | nothing of ours |
+| `porter-provider`, `porter-secrets`, `porter-sync`, `porter-infer`, `porter-dbus` | `porter-core` |
+| `porter-service` | `porter-core`, `porter-provider`, `porter-secrets` |
+| `porter-client` | `porter-core`, `porter-infer`, `porter-provider`, `porter-secrets`, `porter-service`; `porter-dbus` with feature `dbus` |
+| `porter-fake` | `porter-core`, `porter-infer`, `porter-provider`, `porter-secrets`, `porter-service` |
+| `accountd` | `porter-core`, `porter-dbus`, `porter-provider`, `porter-secrets`, `porter-service` |
+| `syncd` | `porter-dbus`, `porter-sync` |
+| `inferd` | `porter-core`, `porter-dbus`, `porter-infer` |
+
+External boundaries: every crate but `porter-dbus` and the daemons never reaches `zbus`,
+`zvariant`, `tokio`, `reqwest`, `hyper`, `ureq`, `oo7`, `keyring`, `secret-service`,
+`interprocess` or `latchkey` (default features); `porter-core` also never reaches `toml`.
+`porter-dbus` reaches `tokio` only through zbus's `tokio` feature (the pinned block's zbus line).
+`tokio` is a direct dependency of the daemons only, and a dev-dependency of async tests.
+
+## 2. Modules
+
+| Crate | Modules |
+| --- | --- |
+| `porter-core` | `id`, `app_id`, `units`, `error` < `capability` (`terms`, `mail`, `pim`, `storage`, `photos`, `ai`, `sync_kinds`, `kind`) < `need` (`data`, `ai`) < `offer`, `effective`, `matching`, `restriction`, `ai_props`, `data_class`, `auth_kind`, `account` < `consent` (`grant`, `decide`, `prompt`) < `secret`, `token`, `candidate` < `wire` (`request`, `reply`, `frame`) |
+| `porter-provider` | `family`, `error` < `spec` (`auth`, `discovery`) < `parse`, `set` < `provider` |
+| `porter-secrets` | `error`, `attributes` < `secrets` < `memory`, `oo7` |
+| `porter-sync` | `anchor`, `item`, `transfer` < `change`, `refusal`, `dataset` < `replica` < `memory` |
+| `porter-infer` | `request`, `reply`, `error` < `policy`, `spend`, `audit` < `route`, `model` < `broker` |
+| `porter-service` | `clock`, `prompter` < `registry` < `choose`, `token` < `service` |
+| `porter-client` | `error`, `env`, `found` < `transport` (`in_process`, `socket`, `dbus`) < `accounts` |
+| `porter-dbus` | `names`, `args` < `codec` < `manager`, `account`, `grants`, `tokens`, `request`, `sync`, `inference` < `introspect` |
+
+## 3. One home per concept
+
+| Concept | Home |
+| --- | --- |
+| id grammar, D-Bus path segment | `porter-core::id` |
+| caller identity | `porter-core::app_id` (`AppId`, `Isolation`) |
+| a unit or count | `porter-core::units` |
+| the capability vocabulary | `porter-core::capability` |
+| what an app asks | `porter-core::need` |
+| does an offer meet a need | `porter-core::matching::matches` (the only place) |
+| effective capabilities (provenance, toggles) | `porter-core::effective` |
+| why an account is limited | `porter-core::restriction` |
+| consent decisions | `porter-core::consent::decide`, `availability` |
+| credentials, where they are filed | `porter-core::secret`; attributes in `porter-secrets::attributes` |
+| the wire protocol and its framing | `porter-core::wire` |
+| provider file format | `porter-provider::spec` + `parse` |
+| which secret an auth kind presents | `porter-service::secret_purpose` |
+| the account registry and candidates | `porter-service::registry` |
+| the chooser/consent flow | `porter-service::choose` |
+| the sync contract | `porter-sync::replica` |
+| AI routing | `porter-infer::route` (the only place) |
+| spend arithmetic | `porter-infer::spend` |
+| D-Bus names and paths | `porter-dbus::names` |
+| D-Bus argument shapes | `porter-dbus::args`, conversions in `porter-dbus::codec` |
+| `Found` for apps | `porter-client::found` |
+| the system clock | `accountd`'s `clock.rs` (the only reader of the wall clock) |
+
+## 4. Traits (the seams) and closed enums
+
+```rust
+// porter-provider: one per protocol family, plus the fake.
+pub trait Provider: Send + Sync {
+    type Session: ProviderSession;
+    fn spec(&self) -> &ProviderSpec;
+    fn auth_kind(&self) -> AuthKind { self.spec().auth.kind }
+    fn discover(&self, account: &AccountId, presented: &Presented)
+        -> impl Future<Output = Result<Vec<Claim>, ProviderError>> + Send;
+    fn open(&self, account: &AccountId, presented: Presented)
+        -> impl Future<Output = Result<Self::Session, ProviderError>> + Send;
+}
+pub trait ProviderSession: Send + Sync {
+    fn access_token(&self, audience: &Audience) -> impl Future<Output = Result<IssuedToken, ProviderError>> + Send;
+    fn renewed(&self) -> Option<Credential>;
+}
+
+// porter-secrets: oo7, keyring (macOS, Windows), the in-memory fake.
+pub trait Secrets: Send + Sync {
+    fn put(&self, key: &SecretKey, value: &Credential) -> impl Future<Output = Result<(), SecretsError>> + Send;
+    fn get(&self, key: &SecretKey) -> impl Future<Output = Result<Credential, SecretsError>> + Send;
+    fn delete(&self, key: &SecretKey) -> impl Future<Output = Result<(), SecretsError>> + Send;
+    fn delete_account(&self, account: &AccountId) -> impl Future<Output = Result<(), SecretsError>> + Send;
+}
+
+// porter-sync: one per storage family, plus MemoryReplica.
+pub trait Replica: Send + Sync {
+    fn changes(&self, from: Cursor) -> impl Future<Output = Result<ChangePage, ReplicaError>> + Send;
+    fn fetch(&self, item: &RemoteId, range: ByteRange) -> impl Future<Output = Result<Blob, ReplicaError>> + Send;
+    fn put(&self, item: PutItem, base: BaseVersion)
+        -> impl Future<Output = Result<(RemoteId, RemoteVersion), PutRefused>> + Send;
+    fn remove(&self, item: &RemoteId, base: BaseVersion) -> impl Future<Output = Result<RemoteVersion, PutRefused>> + Send;
+    fn features(&self) -> StorageCap;
+}
+
+// porter-infer: one per wire adapter, plus FakeModel.
+pub trait Model: Send + Sync {
+    fn card(&self) -> &ModelCard;
+    fn chat(&self, request: &ChatRequest) -> impl Future<Output = Result<ChatReply, ModelError>> + Send;
+    fn embed(&self, request: &EmbedRequest) -> impl Future<Output = Result<EmbedReply, ModelError>> + Send;
+}
+
+// porter-service: accounts-ui (accountd) or ScriptedPrompter; the system or a fixed clock.
+pub trait Prompter: Send + Sync {
+    fn ask(&self, ask: ConsentAsk, window: &ParentWindow) -> impl Future<Output = ConsentAnswer> + Send;
+}
+pub trait Clock: Send + Sync { fn now(&self) -> UnixSeconds; }
+
+// porter-client: D-Bus, the latchkey socket, in process.
+pub trait Transport: Send + Sync {
+    fn call(&self, request: AccountsRequest) -> impl Future<Output = Result<AccountsReply, TransportError>> + Send;
+    fn infer(&self, request: InferRequest) -> impl Future<Output = Result<InferReply, TransportError>> + Send;
+}
+```
+
+Closed sets stay enums: `Capability`/`CapabilityKind`/`Need` (versioned by `VocabVersion`),
+`AuthKind`, `Family`, `Issuer`, `Discovery`, `DataClass`, `Provenance`, `AbsentReason`,
+`Locality`, `SecretPurpose`, `AccountsRequest`/`AccountsReply`/`Refusal`,
+`InferRequest`/`InferReply`/`InferRefusal`, `DatasetKind`, `Found`.
+
+## 5. What is frozen, what is built, what is stubbed
+
+Frozen means: the types, trait signatures, wire and file formats and D-Bus signatures below are
+the interface other work builds on; a change is a vocabulary bump (section 6) or a design/31 edit.
+
+| Piece | State |
+| --- | --- |
+| capability vocabulary, needs, `matches`, `effective`, restrictions, AI properties | built, table-tested |
+| consent: `decide`, `availability`, the sheet's ask/answer | built, table-tested |
+| ids, `AppName`, `LanguageTag` parsing; credential redaction | built, tested |
+| wire enums and socket frames | built, round-trip tested |
+| provider file format, parser and checks, `ProviderSet` | built, tested; three shipped files in `providers/` |
+| `Secrets` trait, attributes, `MemorySecrets` | built, tested |
+| `Oo7Secrets` | stub (`todo!()`) |
+| sync contract and `MemoryReplica` | built, contract-tested |
+| routing, floors, spend arithmetic | built, table-tested |
+| `Broker::infer` | stub |
+| `AccountService`: Query, Availability, Choose, ListGrants, Revoke, IssueToken, `remove_account` | built over the seams, tested end to end with the fakes |
+| `AccountService`: AddAccount, Reauthenticate | stub |
+| `Accounts` (client API), `found`, `InProcess` accounts calls | built, tested end to end |
+| `Accounts::connect`, `SocketTransport`, `DbusTransport`, `InProcess::infer` | stub |
+| D-Bus proxies and skeletons, introspection files in `dbus/` | frozen, introspection tested; skeleton methods answer `NotSupported` |
+| D-Bus argument codec (`need_to_dbus` and friends) | stub |
+| daemons | skeletons: build their service, print "not implemented", exit 2 |
+| protocol families, wire adapters, sign-in flows, discovery, persistence | not started (no provider or AI vendor code by decision) |
+
+## 6. Recipes
+
+**Add a capability kind or a field** (a vocabulary bump): a design/31 §2 row first; the struct in
+`porter-core::capability`, its variant in `Capability` and `CapabilityKind`, the need in
+`porter-core::need`, its arm in `matching::fit` with a table row per field, round-trip rows in
+`porter-core/tests/round_trip.rs`; bump `VocabVersion::CURRENT`; the D-Bus codec's field names.
+
+**Add a provider**: a file `providers/<id>.toml`; `tests/shipped_files.rs` in porter-provider
+parses it. No code unless it needs a new family, issuer or discovery kind.
+
+**Add a protocol family**: its `Family` variant; a crate or module implementing `Provider` and
+`ProviderSession` (HTTP stays in that crate, outside the pure set); its variant in
+`accountd`'s `FamilyProvider`; a conformance test against a recorded fake.
+
+**Add an auth kind**: its `AuthKind` variant; its row in `secret_purpose`; the add-sheet flow in
+accounts-ui.
+
+**Add an accountd request**: the variant in `AccountsRequest` and its reply in `AccountsReply`;
+its arm in `AccountService::handle`; the D-Bus member in `porter-dbus` (proxy and skeleton), then
+regenerate and review `dbus/org.quire.Accounts1.xml`; a client method in `Accounts`.
+
+**Add a dataset**: its `DatasetKind` variant and conflict rule; the dataset plug-in in syncd.
+
+**Add a wire adapter**: a `Model` implementation; its variant in `inferd`'s `AdapterModel`.
+
+## 7. Test harness
+
+`porter-fake` is the harness: `fake_service(ScriptedPrompter::answering([...]))` builds an
+`AccountService` over the three fake providers (declared by `crates/porter-fake/providers/*.toml`),
+`MemorySecrets` with their secrets filed, and `FixedClock(NOW)`. An app is
+`Accounts::over(InProcess::new(service, app_id))`. `porter-client/tests/end_to_end.rs` is the
+model. Tests never touch a bus, the network, a keyring or the user's files; the D-Bus test only
+introspects skeletons in memory.
+
+## 8. The mailo mapping
+
+mailo keeps working standalone; the mailo session migrates it onto porter (in-process first,
+D-Bus on the desktop). Where each mailo piece lands:
+
+| mailo (read-only) | porter |
+| --- | --- |
+| `mail-domain` `AccountId` (UUID) | `porter_core::AccountId` (its hyphenated lowercase text is a valid id) |
+| `AccountPlan` (configured) | `Account` + the provider's `ProviderSpec`; `Incoming`/`Outgoing`/`Tls` stay in mailo as the Mail family's endpoint detail |
+| `AccountCaps` (discovered IMAP detail) | stays in mailo; its summary is a `Claim` of `Capability::Mail` at `Provenance::Discovered` |
+| `AuthPlan::OAuth { issuer, scopes }` | `AuthKind::OAuthPkce` + `Issuer`; scopes follow from the granted kinds; client ids stay deployment config per issuer and channel |
+| `AuthPlan::Password { username, sasl }` | `AuthKind::Password` or `AppPassword`; `Username`/`SaslMech` stay in mailo's IMAP family |
+| `OAuthIssuer { Google, Microsoft }` | `porter_provider::Issuer` |
+| `SecretKey { account, purpose }` | `porter_core::SecretKey` |
+| `SecretPurpose::{IncomingPassword, OutgoingPassword, OAuthRefresh}` | the same variants |
+| `SecretPurpose::AddressBook` | `SecretPurpose::ServicePassword(CapabilityKind::Contacts)` |
+| `SecretPurpose::{OpenPgp, Smime}` (keyed by fingerprint) | not porter's: mail signing keys stay in mailo (FINDINGS) |
+| `Credential::{Password, OAuth}` with `chrono` expiry | `porter_core::Credential::{Password, OAuth}` with `UnixSeconds`; the redacting `Debug` carries over |
+| `Credential::{OpenPgp, SmimeKey}` | stay in mailo, as above |
+| `mail-runtime` `Secrets` (sync, `get`/`put`/`forget`) | `porter_secrets::Secrets` (async, `get`/`put`/`delete`/`delete_account`); `MapSecrets` is `MemorySecrets`, `KeyringSecrets` becomes `Oo7Secrets` or a keyring store |
+| `oauth.rs`, `signin.rs` (registry), `renewal.rs`, `loopback.rs` | behind `ProviderSession::access_token`/`renewed` in an OAuth family crate (not started); apps get `IssuedToken` (`Bearer`, `Xoauth2`) instead of credentials |
+| `discover.rs` + `mail-proto` autoconfig | `Discovery::Autoconfig`/`WellKnown`/`JmapSession` in the Mail family's `Provider::discover` |
+| `presets/` (provider table) | provider files in `providers/` |
+| `latchkey` (agent lifecycle, socket/pipe) | `SocketTransport`'s carrier; frames are `porter_core::wire` |
+
+## 9. Repo rules
+
+- **Gate** (check every exit code):
+
+  ```bash
+  cargo fmt --all --check
+  cargo clippy --workspace --all-targets --all-features -- -D warnings
+  cargo test --workspace --all-features
+  ./scripts/check-boundary.sh
+  cargo deny check licenses
+  ```
+
+- **No `unsafe`** anywhere (`unsafe_code = "deny"`).
+- **Dependencies** come from quire's pinned block (`docs/workspace-deps.toml` there), copied
+  verbatim, only the lines porter names; a new one joins that file first.
+- **The wire is serde.** Every stored or wire type has a round-trip test; enums with data are
+  adjacently tagged (`kind`/`v`); the provider file is `ProviderSpec`'s serde form.
+- **D-Bus signatures change with their XML.** `tests/introspection.rs` in porter-dbus fails
+  until `dbus/*.xml` equals the skeletons' introspection; the failure prints the new text.
+- **Refresh tokens, passwords and keys never cross a transport.** No wire type holds a
+  `Credential`; apps receive `IssuedToken`.
+- **Floats** appear only in `EmbedVector` (embeddings are floats end to end).
