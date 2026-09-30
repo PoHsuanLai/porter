@@ -52,6 +52,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "porter-infer"
+version = "0.1.0"
+dependencies = [
+ "porter-core",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "porter-provider"
 version = "0.1.0"
 dependencies = [
