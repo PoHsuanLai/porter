@@ -73,6 +73,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "porter-sync"
+version = "0.1.0"
+dependencies = [
+ "porter-core",
+ "porter-sync",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.107"
 source = "registry+https://github.com/rust-lang/crates.io-index"

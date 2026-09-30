@@ -4,6 +4,7 @@ members = [
   "crates/porter-core",
   "crates/porter-provider",
   "crates/porter-secrets",
+  "crates/porter-sync",
 ]
 
 [workspace.package]
@@ -19,6 +20,7 @@ publish = false
 porter-core     = { path = "crates/porter-core" }
 porter-provider = { path = "crates/porter-provider" }
 porter-secrets  = { path = "crates/porter-secrets" }
+porter-sync     = { path = "crates/porter-sync" }
 
 # From quire's pinned block (`docs/workspace-deps.toml`), copied verbatim: only the lines porter
 # names itself, as mailo does.
