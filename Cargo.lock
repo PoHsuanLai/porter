@@ -83,6 +83,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "porter-service"
+version = "0.1.0"
+dependencies = [
+ "porter-core",
+ "porter-provider",
+ "porter-secrets",
+]
+
+[[package]]
 name = "porter-sync"
 version = "0.1.0"
 dependencies = [
