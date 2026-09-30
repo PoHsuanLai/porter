@@ -29,3 +29,5 @@ pub use names::{
 pub use request::{RequestProxy, RequestSkeleton};
 pub use sync::{SyncProxy, SyncSkeleton};
 pub use tokens::{TokensProxy, TokensSkeleton};
+/// The session-bus connection transports and daemons hold.
+pub use zbus::Connection as BusConnection;

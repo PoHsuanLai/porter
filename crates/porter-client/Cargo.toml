@@ -1,0 +1,25 @@
+[package]
+name = "porter-client"
+description = "The app-facing API: find an account by capability, ask for consent, get tokens and inference, over D-Bus, the latchkey socket, or in process."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+porter-core = { workspace = true }
+porter-infer = { workspace = true }
+porter-provider = { workspace = true }
+porter-secrets = { workspace = true }
+porter-service = { workspace = true }
+porter-dbus = { workspace = true, optional = true }
+thiserror = { workspace = true }
+
+[features]
+# The D-Bus transport (Linux, the desktop's accountd).
+dbus = ["dep:porter-dbus"]
+
+[lints]
+workspace = true
