@@ -10,6 +10,9 @@ members = [
   "crates/porter-dbus",
   "crates/porter-client",
   "crates/porter-fake",
+  "crates/accountd",
+  "crates/syncd",
+  "crates/inferd",
 ]
 
 [workspace.package]

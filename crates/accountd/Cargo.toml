@@ -1,0 +1,21 @@
+[package]
+name = "accountd"
+description = "porter's account and consent daemon: serves org.quire.Accounts1 over porter-service. A skeleton: it builds the service and exits."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+porter-core = { workspace = true }
+porter-dbus = { workspace = true }
+porter-provider = { workspace = true }
+porter-secrets = { workspace = true, features = ["oo7"] }
+porter-service = { workspace = true }
+clap = { workspace = true }
+tokio = { workspace = true }
+
+[lints]
+workspace = true
