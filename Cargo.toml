@@ -7,6 +7,7 @@ members = [
   "crates/porter-sync",
   "crates/porter-infer",
   "crates/porter-service",
+  "crates/porter-dbus",
 ]
 
 [workspace.package]
@@ -25,6 +26,7 @@ porter-secrets  = { path = "crates/porter-secrets" }
 porter-sync     = { path = "crates/porter-sync" }
 porter-infer    = { path = "crates/porter-infer" }
 porter-service  = { path = "crates/porter-service" }
+porter-dbus     = { path = "crates/porter-dbus" }
 
 # From quire's pinned block (`docs/workspace-deps.toml`), copied verbatim: only the lines porter
 # names itself, as mailo does.

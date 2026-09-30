@@ -1,0 +1,87 @@
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+<node>
+ <interface name="org.quire.Accounts1.Manager">
+   <method name="Query">
+     <arg name="need" type="(sa{sv})" direction="in"/>
+     <arg name="class" type="s" direction="in"/>
+     <arg name="usage" type="s" direction="in"/>
+     <arg type="a(osa{sv})" direction="out"/>
+   </method>
+   <method name="Availability">
+     <arg name="need" type="(sa{sv})" direction="in"/>
+     <arg name="class" type="s" direction="in"/>
+     <arg name="usage" type="s" direction="in"/>
+     <arg type="s" direction="out"/>
+   </method>
+   <method name="Choose">
+     <arg name="need" type="(sa{sv})" direction="in"/>
+     <arg name="class" type="s" direction="in"/>
+     <arg name="usage" type="s" direction="in"/>
+     <arg name="parent_window" type="s" direction="in"/>
+     <arg name="options" type="a{sv}" direction="in"/>
+     <arg type="o" direction="out"/>
+   </method>
+   <method name="AddAccount">
+     <arg name="provider_hint" type="s" direction="in"/>
+     <arg name="parent_window" type="s" direction="in"/>
+     <arg name="options" type="a{sv}" direction="in"/>
+     <arg type="o" direction="out"/>
+   </method>
+   <signal name="AccountAdded">
+     <arg name="account" type="o"/>
+   </signal>
+   <signal name="AccountRemoved">
+     <arg name="account" type="o"/>
+   </signal>
+   <signal name="CapabilityChanged">
+     <arg name="account" type="o"/>
+   </signal>
+   <signal name="NeedsReauth">
+     <arg name="account" type="o"/>
+   </signal>
+   <signal name="GrantChanged">
+     <arg name="grant" type="s"/>
+   </signal>
+ </interface>
+ <interface name="org.quire.Accounts1.Account">
+   <method name="Reauthenticate">
+     <arg name="parent_window" type="s" direction="in"/>
+     <arg name="options" type="a{sv}" direction="in"/>
+     <arg type="o" direction="out"/>
+   </method>
+   <property name="Capabilities" type="a(sa{sv})" access="read"/>
+   <property name="Id" type="s" access="read"/>
+   <property name="Label" type="s" access="read"/>
+   <property name="Provider" type="s" access="read"/>
+   <property name="State" type="s" access="read"/>
+ </interface>
+ <interface name="org.quire.Accounts1.Grants">
+   <method name="List">
+     <arg type="a(sa{sv})" direction="out"/>
+   </method>
+   <method name="Revoke">
+     <arg name="grant" type="s" direction="in"/>
+   </method>
+ </interface>
+ <interface name="org.quire.Accounts1.Tokens">
+   <method name="IssueToken">
+     <arg name="grant" type="s" direction="in"/>
+     <arg name="audience" type="s" direction="in"/>
+     <arg type="(ssx)" direction="out"/>
+   </method>
+   <method name="OpenAuthenticated">
+     <arg name="grant" type="s" direction="in"/>
+     <arg name="endpoint" type="s" direction="in"/>
+     <arg type="h" direction="out"/>
+   </method>
+ </interface>
+ <interface name="org.quire.Accounts1.Request">
+   <method name="Close">
+   </method>
+   <signal name="Response">
+     <arg name="response" type="u"/>
+     <arg name="results" type="a{sv}"/>
+   </signal>
+ </interface>
+</node>

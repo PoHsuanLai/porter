@@ -1,0 +1,22 @@
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+<node>
+ <interface name="org.quire.Inference1">
+   <method name="Availability">
+     <arg name="need" type="(sa{sv})" direction="in"/>
+     <arg name="class" type="s" direction="in"/>
+     <arg type="s" direction="out"/>
+   </method>
+   <method name="Open">
+     <arg name="need" type="(sa{sv})" direction="in"/>
+     <arg name="class" type="s" direction="in"/>
+     <arg name="tier" type="s" direction="in"/>
+     <arg type="h" direction="out"/>
+   </method>
+   <method name="Usage">
+     <arg type="a{sv}" direction="out"/>
+   </method>
+   <method name="Rescan">
+   </method>
+ </interface>
+</node>
