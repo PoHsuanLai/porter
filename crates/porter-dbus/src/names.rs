@@ -15,6 +15,10 @@ pub const INFERENCE_BUS: &str = "org.quire.Inference1";
 /// inferd's object.
 pub const INFERENCE_PATH: &str = "/org/quire/Inference1";
 
+/// inferd's settings module (`org.quire.SettingsModule1`, declared in design/22 §9.4, not
+/// here): the picker rows per kind and the `ai.model.<kind>.<tier>` map.
+pub const INFERENCE_SETTINGS_PATH: &str = "/org/quire/Inference1/settings";
+
 /// The object path of one account (`org.quire.Accounts1.Account`).
 pub fn account_path(id: &AccountId) -> String {
     format!("{ACCOUNTS_PATH}/account/{}", object_segment(id))

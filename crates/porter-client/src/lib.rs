@@ -24,6 +24,11 @@ pub use accounts::Accounts;
 pub use env::{ClientEnv, LinkChoice, SocketPath};
 pub use error::{ClientError, TransportError};
 pub use found::{ConsentOffer, Found, NoAccount, found};
+/// The client's side of one `Open` fd, from porter-infer.
+pub use porter_infer::{InferSession, SessionError};
+pub use transport::{
+    AnySession, AnyTransport, InProcess, InProcessSession, SocketSession, SocketTransport,
+    Transport,
+};
 #[cfg(feature = "dbus")]
-pub use transport::DbusTransport;
-pub use transport::{AnyTransport, InProcess, SocketTransport, Transport};
+pub use transport::{DbusSession, DbusTransport};

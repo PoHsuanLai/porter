@@ -1,7 +1,7 @@
 //! porter-client's errors.
 
 use porter_core::wire::Refusal;
-use porter_infer::InferRefusal;
+use porter_infer::{InferRefusal, SessionError};
 
 /// Why a transport could not carry a request.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -32,4 +32,13 @@ pub enum ClientError {
     /// The reply does not answer the request (a daemon of another version).
     #[error("reply does not answer the request")]
     Mismatched,
+}
+
+impl From<SessionError> for TransportError {
+    fn from(error: SessionError) -> Self {
+        match error {
+            SessionError::Closed => TransportError::Closed,
+            SessionError::Malformed(why) => TransportError::Malformed(why),
+        }
+    }
 }

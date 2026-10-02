@@ -57,8 +57,8 @@ pub struct Policy {
 }
 
 impl Policy {
-    /// The design's proposed defaults: local-only on; personal classes on this computer;
-    /// `Public` and `AppOwn` anywhere.
+    /// The design's proposed defaults: local-only on; personal classes (voice included, setting
+    /// `ai.floor.voice`) on this computer; `Public` and `AppOwn` anywhere.
     pub fn proposed() -> Self {
         let on_device = [
             DataClass::Mail,
@@ -69,6 +69,7 @@ impl Policy {
             DataClass::Calendar,
             DataClass::Screen,
             DataClass::Clipboard,
+            DataClass::Voice,
         ];
         Self {
             local_only: LocalOnly::On,

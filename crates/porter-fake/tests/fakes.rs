@@ -3,7 +3,9 @@
 use porter_core::consent::Usage;
 use porter_core::{AccountId, DataClass, ModelId, Provenance, Tier};
 use porter_fake::{FakeModel, cloud_provider, llm_account, storage_account};
-use porter_infer::{ChatMessage, ChatRequest, MessagePart, Model, ReplyShape, Role};
+use porter_infer::{
+    ChatMessage, ChatRequest, ChatSink, Flow, InferEvent, MessagePart, Model, ReplyShape, Role,
+};
 use porter_provider::{Presented, Provider, ProviderError};
 
 #[tokio::test]
@@ -57,11 +59,24 @@ async fn the_fake_model_echoes_the_last_text() {
         tier: Tier::Fast,
         class: DataClass::Public,
         usage: Usage::Interactive,
+        tools: vec![],
     };
-    let reply = model.chat(&request).await.expect("chat");
+    let mut events = Collect::default();
+    let reply = model.chat(&request, &mut events).await.expect("chat");
     assert_eq!(reply.text, "hello");
+    assert_eq!(events.0[0], InferEvent::TextDelta("hello".into()));
     assert_eq!(
         reply.served.account,
         AccountId::parse("fake-llm").expect("id")
     );
+}
+
+#[derive(Default)]
+struct Collect(Vec<InferEvent>);
+
+impl ChatSink for Collect {
+    fn event(&mut self, event: InferEvent) -> Flow {
+        self.0.push(event);
+        Flow::Continue
+    }
 }

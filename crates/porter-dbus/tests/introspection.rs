@@ -46,3 +46,35 @@ fn every_accounts_member_is_declared() {
         assert!(xml.contains(member), "missing {member}");
     }
 }
+
+#[test]
+fn inference1_xml_unchanged_members() {
+    let xml = introspection(Bus::Inference);
+    let members = [
+        "<method name=\"Availability\">",
+        "<method name=\"Open\">",
+        "<method name=\"Prepare\">",
+        "<method name=\"Usage\">",
+        "<method name=\"Rescan\">",
+        "<signal name=\"EnginesChanged\">",
+        "<property name=\"Gpu\" type=\"s\" access=\"read\"/>",
+    ];
+    for member in members {
+        assert!(xml.contains(member), "missing {member}");
+    }
+    let declared = xml.matches("<method ").count()
+        + xml.matches("<signal ").count()
+        + xml.matches("<property ").count();
+    assert_eq!(declared, members.len(), "no member beyond the frozen seven");
+}
+
+#[test]
+fn speech_and_computer_use_are_fd_only() {
+    let xml = introspection(Bus::Inference);
+    for word in ["Transcribe", "Speak", "Audio", "Cua", "Listen"] {
+        assert!(
+            !xml.contains(word),
+            "{word} must travel on the Open fd, not as a member"
+        );
+    }
+}

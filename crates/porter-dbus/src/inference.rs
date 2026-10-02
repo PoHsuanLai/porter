@@ -1,8 +1,11 @@
-//! `org.quire.Inference1` at `/org/quire/Inference1`: inferd. Requests travel on the fd `Open`
-//! returns, as frames of `porter_infer::InferRequest` and `InferReply`.
+//! `org.quire.Inference1` at `/org/quire/Inference1`: inferd. A session is the fd `Open`
+//! returns: the client writes `porter_infer::ClientFrame` frames (requests, `Cancel`, audio),
+//! inferd writes `InferEvent` frames; memfds ride on frames as SCM_RIGHTS. Speech and
+//! computer-use steps use the same fd, so this interface has no member for them.
 
 use crate::args::{Details, NeedArg};
 use zbus::fdo;
+use zbus::object_server::SignalEmitter;
 use zbus::zvariant::OwnedFd;
 
 /// The caller's side.
@@ -14,12 +17,23 @@ use zbus::zvariant::OwnedFd;
 pub trait Inference {
     /// Whether an AI need can be met for this class, revealing no identity.
     fn availability(&self, need: &NeedArg, class: &str) -> zbus::Result<String>;
-    /// A framed request/stream session for `need`, `class` and `tier`.
+    /// A framed request/stream session for `need`, `class` and `tier`, pinned to one model.
     fn open(&self, need: &NeedArg, class: &str, tier: &str) -> zbus::Result<OwnedFd>;
+    /// Warms the engine the route would pick (no mic, no request) and answers its readiness
+    /// slug (`ready`, `loading`, `loadable`, `downloading`, `downloadable`, `unavailable`); a
+    /// refusal answers with its slug.
+    fn prepare(&self, need: &NeedArg, class: &str, tier: &str) -> zbus::Result<String>;
     /// The caller's usage this period, by name (tokens, spend, cap).
     fn usage(&self) -> zbus::Result<Details>;
     /// Probes local runtimes again.
     fn rescan(&self) -> zbus::Result<()>;
+    /// Engine state changed. Broadcast: engine state is not personal. Listeners re-read
+    /// readiness with `Prepare` (callers) or the settings module (detent).
+    #[zbus(signal)]
+    fn engines_changed(&self) -> zbus::Result<()>;
+    /// The GPU's use: `idle`, `busy` or `loading`.
+    #[zbus(property)]
+    fn gpu(&self) -> zbus::Result<String>;
 }
 
 /// The daemon's side.
@@ -38,11 +52,24 @@ impl InferenceSkeleton {
         Err(crate::introspect::frozen())
     }
 
+    fn prepare(&self, need: NeedArg, class: String, tier: String) -> fdo::Result<String> {
+        let _ = (need, class, tier);
+        Err(crate::introspect::frozen())
+    }
+
     fn usage(&self) -> fdo::Result<Details> {
         Err(crate::introspect::frozen())
     }
 
     fn rescan(&self) -> fdo::Result<()> {
+        Err(crate::introspect::frozen())
+    }
+
+    #[zbus(signal)]
+    async fn engines_changed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
+
+    #[zbus(property)]
+    fn gpu(&self) -> fdo::Result<String> {
         Err(crate::introspect::frozen())
     }
 }

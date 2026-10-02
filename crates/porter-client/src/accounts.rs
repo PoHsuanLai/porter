@@ -8,9 +8,9 @@ use porter_core::consent::{Grant, Usage};
 use porter_core::wire::{ParentWindow, ProviderHint};
 use porter_core::{
     AccountId, AccountsReply, AccountsRequest, Audience, Candidate, DataClass, GrantId,
-    IssuedToken, Need,
+    IssuedToken, Need, Tier,
 };
-use porter_infer::{InferReply, InferRequest};
+use porter_infer::{ClientFrame, InferEvent, InferReply, InferRequest, InferSession};
 
 /// The app's connection to the account service.
 #[derive(Debug)]
@@ -143,11 +143,43 @@ impl<T: Transport> Accounts<T> {
         }
     }
 
-    /// Runs an AI request through inferd; a refusal is an error the app shows.
-    pub async fn infer(&self, request: InferRequest) -> Result<InferReply, ClientError> {
-        match self.transport.infer(request).await? {
-            InferReply::Refused(refusal) => Err(ClientError::InferRefused(refusal)),
-            reply => Ok(reply),
+    /// Opens a streaming session with inferd: write `ClientFrame`s, read `InferEvent`s. The
+    /// route is chosen once, so the session is pinned to one model.
+    pub async fn session(
+        &self,
+        need: &Need,
+        class: DataClass,
+        tier: Tier,
+    ) -> Result<T::Session, ClientError> {
+        Ok(self.transport.open(need, class, tier).await?)
+    }
+
+    /// Runs one AI request to its end on a fresh session and returns the reply, dropping the
+    /// deltas; a refusal is an error the app shows.
+    pub async fn infer(
+        &self,
+        need: &Need,
+        class: DataClass,
+        tier: Tier,
+        request: InferRequest,
+    ) -> Result<InferReply, ClientError> {
+        let mut session = self.session(need, class, tier).await?;
+        session
+            .send(ClientFrame::Request(request))
+            .await
+            .map_err(crate::error::TransportError::from)?;
+        loop {
+            match session
+                .next()
+                .await
+                .map_err(crate::error::TransportError::from)?
+            {
+                InferEvent::Finished(InferReply::Refused(refusal)) => {
+                    return Err(ClientError::InferRefused(refusal));
+                }
+                InferEvent::Finished(reply) => return Ok(reply),
+                _ => {}
+            }
         }
     }
 }

@@ -1,26 +1,57 @@
 //! The AI broker's pure half (design/31 §5.5): one typed request model whatever the provider,
-//! routing that prefers this computer, per-class floors, a local-only switch, spend caps and an
-//! audit record without content. inferd runs it; wire adapters implement [`Model`].
+//! streaming sessions, routing that prefers this computer, per-class floors, a local-only
+//! switch, spend caps and an audit record without content. inferd runs it; wire adapters
+//! implement [`Model`].
 
 mod audit;
 mod broker;
+mod choice;
+mod cua;
 mod error;
+mod event;
+mod ids;
 mod model;
 mod policy;
+mod readiness;
 mod reply;
 mod request;
 mod route;
+mod session;
+mod speech;
 mod spend;
 
 pub use audit::AuditEntry;
 pub use broker::Broker;
+pub use choice::{
+    AiKind, Fit, LicenceClass, ModelRef, PickerInput, PickerRow, TierMap, TierRow, picker_rows,
+    tier_choice,
+};
+pub use cua::{
+    CuaBegin, CuaStepFailure, CuaStepReply, CuaStepRequest, DropReason, DroppedAction, FrameImage,
+    FrameLayout, MaskedRegions, MediaKind, PrevResult, SafetyHint, StepIndex, TreeText,
+    WindowGeometry,
+};
 pub use error::{InferRefusal, ModelError};
-pub use model::{Model, ModelCard};
+pub use event::{ClientFrame, Flow, InferEvent};
+pub use ids::{
+    AttachIndex, Base64Bytes, JsonSchemaText, JsonText, TextError, ToolCallId, ToolName,
+};
+pub use model::{ChatSink, Model, ModelCard};
 pub use policy::{ClassFloor, Floor, LocalOnly, Policy};
-pub use reply::{ChatReply, EmbedReply, EmbedVector, InferReply, ServedBy, TokenUsage};
+pub use readiness::Readiness;
+pub use reply::{
+    ChatReply, EmbedReply, EmbedVector, InferReply, ServedBy, SpeakReply, TokenUsage,
+    TranscribeReply,
+};
 pub use request::{
-    ChatMessage, ChatRequest, EmbedRequest, ImagePart, InferRequest, MessagePart, ReplyShape, Role,
-    Task, TaskRequest,
+    ChatMessage, ChatRequest, EmbedRequest, ImagePart, ImageSource, InferRequest, MessagePart,
+    ReplyShape, RequestKind, Role, Task, TaskRequest, ToolCallPart, ToolDecl, ToolResultPart,
+    ToolStatus,
 };
 pub use route::{Chosen, RouteAsk, RouteCandidate, TierChoice, route};
+pub use session::{InferSession, SessionError};
+pub use speech::{
+    AudioFrame, AudioFrameOut, AudioRate, HeardDelta, LangPick, SpeakRequest, TranscribeBegin,
+    TranscribeMode, VoiceName,
+};
 pub use spend::{Period, SpendCap, SpendScope, SpendVerdict, cost, spend_verdict};

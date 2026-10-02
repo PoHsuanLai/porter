@@ -13,10 +13,19 @@
      <arg name="tier" type="s" direction="in"/>
      <arg type="h" direction="out"/>
    </method>
+   <method name="Prepare">
+     <arg name="need" type="(sa{sv})" direction="in"/>
+     <arg name="class" type="s" direction="in"/>
+     <arg name="tier" type="s" direction="in"/>
+     <arg type="s" direction="out"/>
+   </method>
    <method name="Usage">
      <arg type="a{sv}" direction="out"/>
    </method>
    <method name="Rescan">
    </method>
+   <signal name="EnginesChanged">
+   </signal>
+   <property name="Gpu" type="s" access="read"/>
  </interface>
 </node>

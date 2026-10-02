@@ -2,6 +2,7 @@
 //! generateContent, Ollama's API, ComfyUI workflows), and the fake tests drive.
 
 use crate::error::ModelError;
+use crate::event::{Flow, InferEvent};
 use crate::reply::{ChatReply, EmbedReply};
 use crate::request::{ChatRequest, EmbedRequest};
 use porter_core::{AccountId, Billing, Capability, Locality, ModelId};
@@ -22,15 +23,24 @@ pub struct ModelCard {
     pub capabilities: Vec<Capability>,
 }
 
+/// Where a turn's events go as they happen.
+pub trait ChatSink: Send {
+    /// One event; `Flow::Stop` ends the turn early.
+    fn event(&mut self, event: InferEvent) -> Flow;
+}
+
 /// One model behind one account.
+///
+/// Cancellation is dropping the future: it closes the engine's stream.
 pub trait Model: Send + Sync {
     /// Its card.
     fn card(&self) -> &ModelCard;
 
-    /// Runs a chat turn.
+    /// Runs a chat turn, pushing deltas and tool calls into `sink`.
     fn chat(
         &self,
         request: &ChatRequest,
+        sink: &mut impl ChatSink,
     ) -> impl Future<Output = Result<ChatReply, ModelError>> + Send;
 
     /// Embeds texts.

@@ -1,0 +1,421 @@
+//! The streaming session's frames, the computer-use step and the speech turn: every variant
+//! survives its serde form and the forms inferd and its clients read keep their JSON.
+
+use cua_action::{
+    Button, ClickCount, Coord, CuaAction, DeviceSize, PixelFormat, Point, Scale120, Size, Target,
+    WindowSpace,
+};
+use porter_core::capability::{CuaEnv, LanguageTag};
+use porter_core::consent::Usage;
+use porter_core::{AccountId, DataClass, Locality, ModelId, Permille, Tokens};
+use porter_infer::*;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
+use std::fmt::Debug;
+
+fn round_trip<T: Serialize + DeserializeOwned + PartialEq + Debug>(value: &T) -> String {
+    let json = serde_json::to_string(value).expect("serializes");
+    assert_eq!(
+        &serde_json::from_str::<T>(&json).expect("deserializes"),
+        value,
+        "{json}"
+    );
+    json
+}
+
+fn served() -> ServedBy {
+    ServedBy {
+        account: AccountId::parse("local").expect("id"),
+        model: ModelId::parse("holo-3.1-4b").expect("id"),
+        locality: Locality::OnDevice,
+    }
+}
+
+fn window_point(x: u32, y: u32) -> Point<WindowSpace> {
+    Point::new(Coord(x), Coord(y))
+}
+
+fn click() -> CuaAction<WindowSpace> {
+    CuaAction::Click {
+        at: Target::Point(window_point(10, 20)),
+        button: Button::Left,
+        count: ClickCount::One,
+        mods: Default::default(),
+    }
+}
+
+fn step_request() -> CuaStepRequest {
+    CuaStepRequest {
+        step: StepIndex(3),
+        window: WindowGeometry {
+            logical: Size::new(Coord(1280), Coord(800)),
+            scale: Scale120(180),
+        },
+        frame: FrameImage {
+            source: ImageSource::Attached(AttachIndex(0)),
+            layout: FrameLayout::Raw {
+                format: PixelFormat::Xrgb8888,
+                size: DeviceSize { w: 1920, h: 1200 },
+                stride: 7680,
+            },
+        },
+        cursor: Some(window_point(5, 6)),
+        prev: vec![
+            PrevResult::Done,
+            PrevResult::Refused("outside the lease".into()),
+            PrevResult::NotRun,
+            PrevResult::Failed("no such button".into()),
+            PrevResult::UserDeclined,
+            PrevResult::UserActed,
+        ],
+        masked: MaskedRegions(2),
+        tree: TreeText::Present("button \"Save\" [12]".into()),
+    }
+}
+
+fn usage() -> TokenUsage {
+    TokenUsage {
+        input: Tokens(10),
+        output: Tokens(5),
+    }
+}
+
+#[test]
+fn every_infer_request_round_trips() {
+    let requests = vec![
+        InferRequest::CuaBegin(CuaBegin {
+            goal: "rename the file".into(),
+            hints: vec!["use the context menu".into()],
+            env: CuaEnv::Desktop,
+        }),
+        InferRequest::CuaStep(step_request()),
+        InferRequest::Transcribe(TranscribeBegin {
+            mode: TranscribeMode::Streaming,
+            lang: LangPick::Prefer(vec![LanguageTag::parse("zh-Hant-TW").expect("tag")]),
+            rate: AudioRate(16_000),
+            usage: Usage::Interactive,
+        }),
+        InferRequest::Transcribe(TranscribeBegin {
+            mode: TranscribeMode::Batch,
+            lang: LangPick::Auto,
+            rate: AudioRate(16_000),
+            usage: Usage::Background,
+        }),
+        InferRequest::Speak(SpeakRequest {
+            text: "Two new messages".into(),
+            voice: Some(VoiceName("af_heart".into())),
+            lang: LanguageTag::parse("en").expect("tag"),
+            class: DataClass::Mail,
+            usage: Usage::Interactive,
+        }),
+    ];
+    for request in &requests {
+        round_trip(request);
+    }
+    let kinds: Vec<RequestKind> = requests.iter().map(InferRequest::kind).collect();
+    assert_eq!(
+        kinds,
+        [
+            RequestKind::CuaBegin,
+            RequestKind::CuaStep,
+            RequestKind::Transcribe,
+            RequestKind::Transcribe,
+            RequestKind::Speak
+        ]
+    );
+}
+
+#[test]
+fn infer_request_speech_round_trip_pins_its_json() {
+    let begin = InferRequest::Transcribe(TranscribeBegin {
+        mode: TranscribeMode::Streaming,
+        lang: LangPick::Auto,
+        rate: AudioRate(16_000),
+        usage: Usage::Interactive,
+    });
+    assert_eq!(
+        round_trip(&begin),
+        r#"{"kind":"transcribe","v":{"mode":"streaming","lang":{"kind":"auto"},"rate":16000,"usage":"interactive"}}"#
+    );
+}
+
+#[test]
+fn client_frame_audio_round_trip() {
+    let frames = [
+        ClientFrame::Request(InferRequest::CuaStep(step_request())),
+        ClientFrame::Cancel,
+        ClientFrame::Audio(AudioFrame {
+            at: 32_000,
+            pcm: Base64Bytes(vec![0, 1, 2, 3]),
+        }),
+        ClientFrame::EndOfAudio,
+    ];
+    frames.iter().for_each(|f| {
+        round_trip(f);
+    });
+    assert_eq!(round_trip(&ClientFrame::Cancel), r#"{"kind":"cancel"}"#);
+    assert_eq!(
+        round_trip(&frames[2]),
+        r#"{"kind":"audio","v":{"at":32000,"pcm":"AAECAw=="}}"#
+    );
+}
+
+#[test]
+fn infer_frames_round_trip() {
+    let events = vec![
+        InferEvent::Routed(served()),
+        InferEvent::Waiting(Readiness::Loading),
+        InferEvent::Waiting(Readiness::Downloading(Permille(420))),
+        InferEvent::TextDelta("he".into()),
+        InferEvent::ThoughtDelta("hmm".into()),
+        InferEvent::ToolCall(ToolCallPart {
+            id: ToolCallId("c1".into()),
+            name: ToolName::parse("mail.thread.archive").expect("name"),
+            args: JsonText::parse("{}").expect("json"),
+        }),
+        InferEvent::ActionProposed(click()),
+        InferEvent::Usage(usage()),
+        InferEvent::Heard(HeardDelta::Partial {
+            text: "hel".into(),
+            from: 0,
+        }),
+        InferEvent::Heard(HeardDelta::Final {
+            text: "hello".into(),
+            from: 0,
+            to: 16_000,
+        }),
+        InferEvent::Heard(HeardDelta::Lang(LanguageTag::parse("en").expect("tag"))),
+        InferEvent::Spoken(AudioFrameOut {
+            rate: AudioRate(24_000),
+            at: 0,
+            pcm: Base64Bytes(vec![9; 8]),
+        }),
+        InferEvent::Finished(InferReply::Cancelled),
+    ];
+    events.iter().for_each(|e| {
+        round_trip(e);
+    });
+    let replies = [
+        InferReply::CuaStep(CuaStepReply {
+            thought: Some("click save".into()),
+            actions: vec![click(), CuaAction::Observe],
+            dropped: vec![DroppedAction {
+                verb: "open_app".into(),
+                reason: DropReason::UnsupportedVerb,
+            }],
+            safety: vec![SafetyHint::RequireConfirmation("sends money".into())],
+        }),
+        InferReply::Transcribed(TranscribeReply {
+            text: "hello".into(),
+            audio_ms: 1_000,
+            served: served(),
+        }),
+        InferReply::Spoke(SpeakReply {
+            audio_ms: 2_000,
+            served: served(),
+        }),
+        InferReply::Refused(InferRefusal::Unsupported),
+        InferReply::Failed(ModelError::RateLimited(7)),
+        InferReply::Cancelled,
+    ];
+    replies.iter().for_each(|r| {
+        round_trip(r);
+    });
+    for failure in [
+        CuaStepFailure::Unparseable,
+        CuaStepFailure::ModelFailed(ModelError::ContextOverflow),
+    ] {
+        round_trip(&failure);
+    }
+}
+
+#[test]
+fn model_errors_and_refusals_keep_their_slugs() {
+    let errors = [
+        (ModelError::Unreachable, r#"{"kind":"unreachable"}"#),
+        (
+            ModelError::RateLimited(3),
+            r#"{"kind":"rate_limited","v":3}"#,
+        ),
+        (ModelError::Unauthorized, r#"{"kind":"unauthorized"}"#),
+        (ModelError::Refused, r#"{"kind":"refused"}"#),
+        (ModelError::Unreadable, r#"{"kind":"unreadable"}"#),
+        (ModelError::NotReady, r#"{"kind":"not_ready"}"#),
+        (
+            ModelError::ContextOverflow,
+            r#"{"kind":"context_overflow"}"#,
+        ),
+        (ModelError::Unparseable, r#"{"kind":"unparseable"}"#),
+    ];
+    for (error, json) in errors {
+        assert_eq!(round_trip(&error), json);
+    }
+    assert_eq!(
+        round_trip(&InferRefusal::Unsupported),
+        r#"{"kind":"unsupported"}"#
+    );
+}
+
+#[test]
+fn picker_data_round_trips_with_plain_slugs() {
+    let model = ModelRef {
+        account: AccountId::parse("local").expect("id"),
+        model: ModelId::parse("nemotron").expect("id"),
+    };
+    let map = TierMap {
+        rows: vec![TierRow {
+            kind: AiKind::SpeechIn,
+            tier: porter_core::Tier::Balanced,
+            model: model.clone(),
+        }],
+    };
+    round_trip(&map);
+    let slugs: Vec<String> = [
+        AiKind::Llm,
+        AiKind::ComputerUse,
+        AiKind::Embeddings,
+        AiKind::SpeechIn,
+        AiKind::SpeechOut,
+        AiKind::ImageGen,
+        AiKind::Rerank,
+    ]
+    .iter()
+    .map(|kind| {
+        let json = round_trip(kind);
+        assert_eq!(json, format!("\"{}\"", kind.slug()));
+        json
+    })
+    .collect();
+    assert_eq!(slugs.len(), 7);
+    round_trip(&PickerRow {
+        model,
+        label: "Nemotron streaming".into(),
+        kind: AiKind::SpeechIn,
+        locality: Locality::OnDevice,
+        billing: porter_core::Billing::Free,
+        readiness: Readiness::Loadable,
+        fit: Fit::Fits,
+        licence: LicenceClass::Open,
+        chosen_for: [porter_core::Tier::Balanced].into(),
+    });
+}
+
+#[test]
+fn readiness_slugs_match_prepare_answers() {
+    let cases = [
+        (Readiness::Ready, "ready"),
+        (Readiness::Loading, "loading"),
+        (Readiness::Loadable, "loadable"),
+        (Readiness::Downloading(Permille(1)), "downloading"),
+        (Readiness::Downloadable, "downloadable"),
+        (Readiness::Unavailable, "unavailable"),
+    ];
+    for (readiness, slug) in cases {
+        assert_eq!(readiness.slug(), slug);
+        let json = round_trip(&readiness);
+        assert!(json.contains(slug), "{json}");
+    }
+}
+
+#[test]
+fn debug_never_shows_what_the_person_said_or_saw() {
+    let shown = [
+        format!(
+            "{:?}",
+            CuaBegin {
+                goal: "pay the plumber".into(),
+                hints: vec![],
+                env: CuaEnv::Desktop
+            }
+        ),
+        format!("{:?}", TreeText::Present("password: hunter2".into())),
+        format!(
+            "{:?}",
+            SpeakRequest {
+                text: "the plumber's number".into(),
+                voice: None,
+                lang: LanguageTag::parse("en").expect("tag"),
+                class: DataClass::Contacts,
+                usage: Usage::Interactive,
+            }
+        ),
+        format!(
+            "{:?}",
+            HeardDelta::Final {
+                text: "pay the plumber".into(),
+                from: 0,
+                to: 1
+            }
+        ),
+        format!(
+            "{:?}",
+            TranscribeReply {
+                text: "pay the plumber".into(),
+                audio_ms: 1,
+                served: served()
+            }
+        ),
+        format!(
+            "{:?}",
+            AudioFrame {
+                at: 0,
+                pcm: Base64Bytes(vec![42; 64])
+            }
+        ),
+    ];
+    for text in shown {
+        for word in ["plumber", "hunter2", "42"] {
+            assert!(!text.contains(word), "{text}");
+        }
+    }
+}
+
+#[test]
+fn local_voice_floor_is_this_computer() {
+    let policy = Policy::proposed();
+    assert_eq!(policy.floor(DataClass::Voice), Floor::OnDevice);
+    assert!(
+        !policy
+            .floor(DataClass::Voice)
+            .admits(&Locality::Cloud { region: None })
+    );
+}
+
+#[test]
+fn every_data_class_has_a_floor_decision() {
+    // The floors table is total: each class is either named in `proposed` or goes anywhere on
+    // purpose. A new class must be added to one of the two lists below.
+    let named_on_device = [
+        DataClass::Mail,
+        DataClass::Photos,
+        DataClass::Notes,
+        DataClass::Files,
+        DataClass::Contacts,
+        DataClass::Calendar,
+        DataClass::Screen,
+        DataClass::Clipboard,
+        DataClass::Voice,
+    ];
+    let goes_anywhere = [DataClass::AppOwn, DataClass::Public];
+    let policy = Policy::proposed();
+    for class in named_on_device {
+        assert_eq!(policy.floor(class), Floor::OnDevice, "{class:?}");
+    }
+    for class in goes_anywhere {
+        assert_eq!(policy.floor(class), Floor::Anywhere, "{class:?}");
+    }
+    let total = |class: DataClass| match class {
+        DataClass::AppOwn
+        | DataClass::Mail
+        | DataClass::Calendar
+        | DataClass::Contacts
+        | DataClass::Notes
+        | DataClass::Files
+        | DataClass::Photos
+        | DataClass::Clipboard
+        | DataClass::Screen
+        | DataClass::Voice
+        | DataClass::Public => (),
+    };
+    total(DataClass::Voice);
+}

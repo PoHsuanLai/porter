@@ -3,8 +3,8 @@
 use porter_core::consent::Usage;
 use porter_core::need::DimsNeed;
 use porter_core::{
-    AccountId, AppId, AppName, Bytes, DataClass, Isolation, Locality, MicroUsd, ModelId, Permille,
-    Tier, Tokens, UnixSeconds,
+    AccountId, AppId, AppName, Bytes, Count, DataClass, Isolation, Locality, MicroUsd, ModelId,
+    Permille, Tier, Tokens, UnixSeconds,
 };
 use porter_infer::*;
 use serde::Serialize;
@@ -44,7 +44,21 @@ fn requests_round_trip() {
                 MessagePart::Text("hi".into()),
                 MessagePart::Image(ImagePart {
                     media_type: "image/png".into(),
-                    bytes: vec![1, 2],
+                    source: ImageSource::Inline(Base64Bytes(vec![1, 2])),
+                }),
+                MessagePart::Image(ImagePart {
+                    media_type: "image/png".into(),
+                    source: ImageSource::Attached(AttachIndex(0)),
+                }),
+                MessagePart::ToolCall(ToolCallPart {
+                    id: ToolCallId("call-1".into()),
+                    name: ToolName::parse("mail.thread.archive").expect("name"),
+                    args: JsonText::parse("{\"thread\":\"t1\"}").expect("json"),
+                }),
+                MessagePart::ToolResult(ToolResultPart {
+                    id: ToolCallId("call-1".into()),
+                    status: ToolStatus::Ok,
+                    parts: vec![MessagePart::Text("done".into())],
                 }),
             ],
         }],
@@ -52,6 +66,11 @@ fn requests_round_trip() {
         tier: Tier::Fast,
         class: DataClass::Mail,
         usage: Usage::Interactive,
+        tools: vec![ToolDecl {
+            name: ToolName::parse("mail.thread.archive").expect("name"),
+            description: "Archive a thread".into(),
+            params: JsonSchemaText(JsonText::parse("{\"type\":\"object\"}").expect("json")),
+        }],
     };
     round_trip(&InferRequest::Chat(chat));
     round_trip(&InferRequest::Embed(EmbedRequest {
@@ -76,6 +95,7 @@ fn replies_and_records_round_trip() {
     };
     round_trip(&InferReply::Chat(ChatReply {
         text: "ok".into(),
+        tool_calls: vec![],
         usage,
         served: served(),
     }));
@@ -104,5 +124,7 @@ fn replies_and_records_round_trip() {
         locality: Locality::Cloud { region: None },
         usage,
         bytes_out: Bytes(512),
+        images: Count(1),
+        audio_ms: Count(1500),
     });
 }

@@ -3,8 +3,8 @@
 
 use super::Transport;
 use crate::error::TransportError;
-use porter_core::{AccountsReply, AccountsRequest, AppId};
-use porter_infer::{InferReply, InferRequest};
+use porter_core::{AccountsReply, AccountsRequest, AppId, DataClass, Need, Tier};
+use porter_infer::{ClientFrame, InferEvent, InferSession, SessionError};
 use porter_provider::Provider;
 use porter_secrets::Secrets;
 use porter_service::{AccountService, Clock, Prompter};
@@ -24,12 +24,35 @@ impl<P, S, U, K> InProcess<P, S, U, K> {
     }
 }
 
+/// A session with the broker this process hosts.
+#[derive(Debug)]
+pub struct InProcessSession {
+    _private: (),
+}
+
+impl InferSession for InProcessSession {
+    async fn send(&mut self, _frame: ClientFrame) -> Result<(), SessionError> {
+        todo!("hand the frame to the hosted porter_infer::Broker")
+    }
+
+    async fn next(&mut self) -> Result<InferEvent, SessionError> {
+        todo!("the next event the hosted broker pushed")
+    }
+}
+
 impl<P: Provider, S: Secrets, U: Prompter, K: Clock> Transport for InProcess<P, S, U, K> {
+    type Session = InProcessSession;
+
     async fn call(&self, request: AccountsRequest) -> Result<AccountsReply, TransportError> {
         Ok(self.service.handle(&self.app, request).await)
     }
 
-    async fn infer(&self, _request: InferRequest) -> Result<InferReply, TransportError> {
+    async fn open(
+        &self,
+        _need: &Need,
+        _class: DataClass,
+        _tier: Tier,
+    ) -> Result<InProcessSession, TransportError> {
         todo!("host porter_infer::Broker beside the service")
     }
 }

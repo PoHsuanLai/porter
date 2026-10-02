@@ -1,7 +1,7 @@
 //! The broker inferd runs: routes each request over its models by the policy, meters spend and
 //! writes the audit. Frozen shape; the body is not built yet.
 
-use crate::model::Model;
+use crate::model::{ChatSink, Model};
 use crate::policy::Policy;
 use crate::reply::InferReply;
 use crate::request::InferRequest;
@@ -32,8 +32,13 @@ impl<M: Model> Broker<M> {
     }
 
     /// Runs one request for `app`: `route` over the models' cards, the app's grants and spend,
-    /// then the chosen model, then the audit entry.
-    pub async fn infer(&self, _app: &AppId, _request: InferRequest) -> InferReply {
+    /// then the chosen model streaming into `sink`, then the audit entry.
+    pub async fn infer(
+        &self,
+        _app: &AppId,
+        _request: InferRequest,
+        _sink: &mut impl ChatSink,
+    ) -> InferReply {
         let _ = (&self.caps, &self.models);
         todo!("route, run the chosen model, meter spend and audit")
     }

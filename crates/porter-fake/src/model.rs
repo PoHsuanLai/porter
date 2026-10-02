@@ -1,9 +1,9 @@
-//! A model that echoes the last user text.
+//! A model that echoes the last user text, as a stream of one text delta and a usage event.
 
 use porter_core::{AccountId, Billing, Capability, Locality, ModelId, Tokens};
 use porter_infer::{
-    ChatReply, ChatRequest, EmbedReply, EmbedRequest, EmbedVector, MessagePart, Model, ModelCard,
-    ModelError, ServedBy, TokenUsage,
+    ChatReply, ChatRequest, ChatSink, EmbedReply, EmbedRequest, EmbedVector, InferEvent,
+    MessagePart, Model, ModelCard, ModelError, ServedBy, TokenUsage,
 };
 
 /// An on-device model of the fake runtime.
@@ -40,14 +40,20 @@ impl Model for FakeModel {
         &self.card
     }
 
-    async fn chat(&self, request: &ChatRequest) -> Result<ChatReply, ModelError> {
+    async fn chat(
+        &self,
+        request: &ChatRequest,
+        sink: &mut impl ChatSink,
+    ) -> Result<ChatReply, ModelError> {
         let text = request
             .messages
             .iter()
             .flat_map(|m| &m.parts)
             .filter_map(|part| match part {
                 MessagePart::Text(text) => Some(text.as_str()),
-                MessagePart::Image(_) => None,
+                MessagePart::Image(_) | MessagePart::ToolCall(_) | MessagePart::ToolResult(_) => {
+                    None
+                }
             })
             .next_back()
             .unwrap_or_default()
@@ -56,8 +62,11 @@ impl Model for FakeModel {
             input: Tokens(1),
             output: Tokens(1),
         };
+        let _ = sink.event(InferEvent::TextDelta(text.clone()));
+        let _ = sink.event(InferEvent::Usage(usage));
         Ok(ChatReply {
             text,
+            tool_calls: Vec::new(),
             usage,
             served: self.served(),
         })

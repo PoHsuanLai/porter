@@ -8,6 +8,7 @@ mod clock;
 mod model;
 mod prompter;
 mod provider;
+mod session;
 mod world;
 
 pub use accounts::{llm_account, mail_account, storage_account};
@@ -15,4 +16,5 @@ pub use clock::FixedClock;
 pub use model::FakeModel;
 pub use prompter::{AskLog, Scripted, ScriptedPrompter};
 pub use provider::{FakeProvider, FakeSession, cloud_provider, llm_provider, mail_provider};
+pub use session::{FakeInferSession, Script, ScriptStep};
 pub use world::{FakeService, NOW, fake_service};

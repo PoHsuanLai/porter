@@ -1,10 +1,8 @@
 //! inferd: the AI broker (design/31 §4.1, §5.5): routing, policy, spend, audit, wire
 //! adapters, the GPU queue. A skeleton: it builds the broker and exits, saying so.
 
-mod adapters;
-
-use adapters::AdapterModel;
 use clap::Parser;
+use inferd::AdapterModel;
 use porter_infer::{Broker, Policy};
 use std::process::ExitCode;
 

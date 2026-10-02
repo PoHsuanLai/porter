@@ -1,7 +1,7 @@
 //! The audit record of one request: who, through what, how much; never the content.
 
 use crate::reply::TokenUsage;
-use porter_core::{AccountId, AppId, Bytes, Locality, ModelId, UnixSeconds};
+use porter_core::{AccountId, AppId, Bytes, Count, Locality, ModelId, UnixSeconds};
 use serde::{Deserialize, Serialize};
 
 /// One audited request.
@@ -21,4 +21,8 @@ pub struct AuditEntry {
     pub usage: TokenUsage,
     /// Bytes that left the machine (zero on device).
     pub bytes_out: Bytes,
+    /// Frames sent to the model: "a frame was sent", never the frame.
+    pub images: Count,
+    /// Milliseconds of audio sent or produced: "audio was sent", never the audio or its text.
+    pub audio_ms: Count,
 }

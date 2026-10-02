@@ -2,19 +2,19 @@
 //! plus ComfyUI workflows). None is built yet, so the set is empty and uninhabited.
 
 use porter_infer::{
-    ChatReply, ChatRequest, EmbedReply, EmbedRequest, Model, ModelCard, ModelError,
+    ChatReply, ChatRequest, ChatSink, EmbedReply, EmbedRequest, Model, ModelCard, ModelError,
 };
 
 /// Every built adapter's model.
 #[derive(Debug)]
-pub(crate) enum AdapterModel {}
+pub enum AdapterModel {}
 
 impl Model for AdapterModel {
     fn card(&self) -> &ModelCard {
         match *self {}
     }
 
-    async fn chat(&self, _: &ChatRequest) -> Result<ChatReply, ModelError> {
+    async fn chat(&self, _: &ChatRequest, _: &mut impl ChatSink) -> Result<ChatReply, ModelError> {
         match *self {}
     }
 

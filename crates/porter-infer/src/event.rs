@@ -1,0 +1,58 @@
+//! The streaming session on the `Open` fd: frames the client writes, events inferd writes.
+
+use crate::readiness::Readiness;
+use crate::reply::{InferReply, ServedBy, TokenUsage};
+use crate::request::{InferRequest, ToolCallPart};
+use crate::speech::{AudioFrame, AudioFrameOut, HeardDelta};
+use cua_action::{CuaAction, WindowSpace};
+use serde::{Deserialize, Serialize};
+
+/// A frame from the client to inferd. Audio frames follow a `Transcribe` request.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "v", rename_all = "snake_case")]
+pub enum ClientFrame {
+    /// Starts a turn. One turn at a time; a second request queues (depth one).
+    Request(InferRequest),
+    /// Ends the running turn; its partial usage is still audited.
+    Cancel,
+    /// A piece of the person's voice for the running `Transcribe` turn.
+    Audio(AudioFrame),
+    /// No more audio: the turn may finish.
+    EndOfAudio,
+}
+
+/// An event from inferd to the client. Exactly one `Finished` ends each turn.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "v", rename_all = "snake_case")]
+pub enum InferEvent {
+    /// Who will answer: the "sent to <provider>" indicator and the orb read it.
+    Routed(ServedBy),
+    /// The engine is loading: presence is "working", never a spinner in the app.
+    Waiting(Readiness),
+    /// Reply text so far.
+    TextDelta(String),
+    /// Reasoning so far.
+    ThoughtDelta(String),
+    /// A function call the model made.
+    ToolCall(ToolCallPart),
+    /// A computer-use action as parsed, for the acting-here glow preview.
+    ActionProposed(CuaAction<WindowSpace>),
+    /// Tokens spent so far.
+    Usage(TokenUsage),
+    /// What the recogniser has heard.
+    Heard(HeardDelta),
+    /// A piece of synthesised speech.
+    Spoken(AudioFrameOut),
+    /// The turn is over.
+    Finished(InferReply),
+}
+
+/// What a sink answers to an event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Flow {
+    /// Keep going.
+    Continue,
+    /// End the turn early (barge-in, the user stopped it).
+    Stop,
+}
