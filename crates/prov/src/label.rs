@@ -335,7 +335,7 @@ mod tests {
     }
 
     fn arb_space() -> impl Strategy<Value = SpaceId> {
-        prop_oneof![Just("desktop"), Just("work"), Just("home"), Just("lab")].prop_map(|s| space(s))
+        prop_oneof![Just("desktop"), Just("work"), Just("home"), Just("lab")].prop_map(space)
     }
 
     fn arb_source() -> impl Strategy<Value = Source> {
