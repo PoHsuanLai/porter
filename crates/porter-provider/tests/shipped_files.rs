@@ -25,7 +25,7 @@ fn shipped() -> Vec<(PathBuf, ProviderSpec)> {
 #[test]
 fn every_shipped_provider_file_parses_and_is_named_by_its_id() {
     let files = shipped();
-    assert_eq!(files.len(), 3);
+    assert_eq!(files.len(), 4);
     for (path, spec) in files {
         let stem = path.file_stem().and_then(|s| s.to_str()).expect("stem");
         assert_eq!(spec.id.as_str(), stem, "{}", path.display());

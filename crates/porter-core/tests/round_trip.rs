@@ -2,19 +2,19 @@
 //! programs read keep their slugs.
 
 use porter_core::capability::{
-    Access, Albums, Capability, CapabilityKind, Delta, EmbedCap, HashKind, IdentityCap,
-    ImageGenCap, ImageMode, KeyValueCap, LabelModel, LanguageSet, LanguageTag, LibraryRead, LlmCap,
-    LlmFeature, LlmWire, MailCap, MailTransport, Modality, NotesCap, NotesTransport, Offered,
-    PhotosCap, PimCap, PimTransport, PushCap, PushChannel, QuotaReport, RerankCap, SpeechCap,
-    SpeechMode, StorageCap, StorageScope,
+    Access, Albums, Capability, CapabilityKind, CuaBatching, CuaCap, CuaEnv, Delta, EmbedCap,
+    HashKind, IdentityCap, ImageGenCap, ImageMode, KeyValueCap, LabelModel, LanguageSet,
+    LanguageTag, LibraryRead, LlmCap, LlmFeature, LlmWire, MailCap, MailTransport, Modality,
+    NotesCap, NotesTransport, Offered, PhotosCap, PimCap, PimTransport, PushCap, PushChannel,
+    QuotaReport, RerankCap, SpeechCap, SpeechMode, StorageCap, StorageScope, VocabVersion,
 };
 use porter_core::consent::{
     AccountChoice, Availability, ConsentAnswer, ConsentAsk, Decision, Grant, GrantKey, GrantScope,
     Usage, Verdict,
 };
 use porter_core::need::{
-    DimsNeed, EmbedNeed, IdentityNeed, ImageGenNeed, KeyValueNeed, LlmNeed, MailNeed, NotesNeed,
-    PhotosNeed, PimNeed, PushNeed, RerankNeed, SpeechNeed, StorageNeed,
+    CuaNeed, DimsNeed, EmbedNeed, IdentityNeed, ImageGenNeed, KeyValueNeed, LlmNeed, MailNeed,
+    NotesNeed, PhotosNeed, PimNeed, PushNeed, RerankNeed, SpeechNeed, StorageNeed,
 };
 use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
 use porter_core::*;
@@ -113,6 +113,13 @@ fn every_capability() -> Vec<Capability> {
         Capability::Rerank(RerankCap {
             max_docs: Count(100),
         }),
+        Capability::ComputerUse(CuaCap {
+            environments: [CuaEnv::Desktop, CuaEnv::Browser].into(),
+            batching: CuaBatching::Many,
+            zoom: Offered::Present,
+            max_image: Px(1568),
+            wire: LlmWire::ChatCompletions,
+        }),
         Capability::KeyValue(KeyValueCap {
             delta: Delta::Poll,
             max_item: Bytes(65_536),
@@ -176,6 +183,9 @@ fn every_need() -> Vec<Need> {
         Need::Rerank(RerankNeed {
             max_docs: Count(10),
         }),
+        Need::ComputerUse(CuaNeed {
+            environments: [CuaEnv::Desktop].into(),
+        }),
         Need::KeyValue(KeyValueNeed {
             delta: Delta::Poll,
             max_item: Bytes(1024),
@@ -219,6 +229,7 @@ fn grant() -> Grant {
             kind: CapabilityKind::Storage,
             class: DataClass::Photos,
             usage: Usage::Background,
+            space: SpaceScope::Only(SpaceId::parse("work").expect("space")),
         },
         decision: Decision::Allow,
         scope: GrantScope::Always,
@@ -434,4 +445,26 @@ fn stored_forms_keep_their_slugs() {
 
 fn json<T: Serialize>(value: &T) -> String {
     serde_json::to_string(value).expect("serializes")
+}
+
+#[test]
+fn the_vocabulary_is_version_two() {
+    assert_eq!(VocabVersion::CURRENT, VocabVersion(2));
+}
+
+#[test]
+fn computer_use_slugs_are_stable() {
+    let json = serde_json::to_string(&CapabilityKind::ComputerUse).expect("json");
+    assert_eq!(json, "\"computer_use\"");
+    assert!(CapabilityKind::ComputerUse.is_ai());
+    let env = serde_json::to_string(&CuaEnv::Browser).expect("json");
+    assert_eq!(env, "\"browser\"");
+}
+
+#[test]
+fn the_voice_data_class_has_its_slug() {
+    assert_eq!(
+        serde_json::to_string(&DataClass::Voice).expect("json"),
+        "\"voice\""
+    );
 }

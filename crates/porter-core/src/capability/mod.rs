@@ -1,6 +1,7 @@
 //! The capability vocabulary (design/31 §2): a closed set, versioned as a whole.
 
 mod ai;
+mod cua;
 mod kind;
 mod mail;
 mod photos;
@@ -13,6 +14,7 @@ pub use ai::{
     EmbedCap, ImageGenCap, ImageMode, LanguageSet, LanguageTag, LlmCap, LlmFeature, LlmWire,
     Modality, RerankCap, SpeechCap, SpeechMode,
 };
+pub use cua::{CuaBatching, CuaCap, CuaEnv};
 pub use kind::{CapabilityKind, VocabVersion};
 pub use mail::{IdentityCap, LabelModel, MailCap, MailTransport};
 pub use photos::{Albums, LibraryRead, PhotosCap};
@@ -53,6 +55,8 @@ pub enum Capability {
     ImageGen(ImageGenCap),
     /// Reranking.
     Rerank(RerankCap),
+    /// A model that operates a window from screenshots.
+    ComputerUse(CuaCap),
     /// Small synced items.
     KeyValue(KeyValueCap),
     /// A push channel.
@@ -76,6 +80,7 @@ impl Capability {
             Capability::Speech(_) => CapabilityKind::Speech,
             Capability::ImageGen(_) => CapabilityKind::ImageGen,
             Capability::Rerank(_) => CapabilityKind::Rerank,
+            Capability::ComputerUse(_) => CapabilityKind::ComputerUse,
             Capability::KeyValue(_) => CapabilityKind::KeyValue,
             Capability::Push(_) => CapabilityKind::Push,
         }

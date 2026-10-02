@@ -1,6 +1,7 @@
 //! The registry's state and the pure answers over it: which accounts fit a need, what the
 //! consent store says for each, and the candidates a caller may see.
 
+use porter_core::SpaceScope;
 use porter_core::consent::{Grant, GrantKey, Usage, Verdict, decide};
 use porter_core::{
     Account, AppId, Candidate, Capability, Claim, DataClass, GrantId, Match, Need, Offer, matches,
@@ -39,6 +40,7 @@ impl Asker<'_> {
             kind: fit.capability.kind(),
             class: self.class,
             usage: self.usage,
+            space: SpaceScope::Any,
         }
     }
 }

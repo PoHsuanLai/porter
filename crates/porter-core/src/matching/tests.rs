@@ -3,9 +3,10 @@ use crate::capability::{
     Access, Albums, CapabilityKind, Delta, LibraryRead, LlmFeature, Offered, PhotosCap,
     QuotaReport, StorageScope,
 };
+use crate::capability::{CuaBatching, CuaCap, CuaEnv, LlmWire};
 use crate::fixtures::{llm, mail, storage};
-use crate::need::{LlmNeed, MailNeed, PhotosNeed, StorageNeed};
-use crate::units::Tokens;
+use crate::need::{CuaNeed, LlmNeed, MailNeed, PhotosNeed, StorageNeed};
+use crate::units::{Px, Tokens};
 
 fn storage_need(access: Access, delta: Delta, scope: StorageScope) -> Need {
     Need::Storage(StorageNeed {
@@ -18,6 +19,22 @@ fn storage_need(access: Access, delta: Delta, scope: StorageScope) -> Need {
 
 fn present(capability: Capability) -> Offer {
     Offer::Present(capability)
+}
+
+fn computer_use(environments: &[CuaEnv]) -> Offer {
+    present(Capability::ComputerUse(CuaCap {
+        environments: environments.iter().copied().collect(),
+        batching: CuaBatching::Many,
+        zoom: Offered::Absent,
+        max_image: Px(1568),
+        wire: LlmWire::ChatCompletions,
+    }))
+}
+
+fn cua_need(environments: &[CuaEnv]) -> Need {
+    Need::ComputerUse(CuaNeed {
+        environments: environments.iter().copied().collect(),
+    })
 }
 
 fn google_photos() -> Offer {
@@ -158,6 +175,24 @@ fn cases() -> Vec<(&'static str, Need, Offer, Match)> {
             }),
             present(llm(&[LlmFeature::Chat], 8_000)),
             Match::Short(Shortfall::Context),
+        ),
+        (
+            "computer use on the desktop fits a desktop model",
+            cua_need(&[CuaEnv::Desktop]),
+            computer_use(&[CuaEnv::Desktop, CuaEnv::Browser]),
+            Match::Fits,
+        ),
+        (
+            "computer use on a phone falls short on environments",
+            cua_need(&[CuaEnv::Desktop, CuaEnv::Mobile]),
+            computer_use(&[CuaEnv::Desktop]),
+            Match::Short(Shortfall::Environments),
+        ),
+        (
+            "a computer-use need is not met by a chat model",
+            cua_need(&[CuaEnv::Desktop]),
+            present(llm(&[LlmFeature::Vision], 8_000)),
+            Match::OtherKind,
         ),
     ]
 }

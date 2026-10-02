@@ -59,6 +59,8 @@ pub enum Shortfall {
     MaxSide,
     /// Fewer documents per call.
     MaxDocs,
+    /// An environment is missing.
+    Environments,
     /// Items are smaller.
     MaxItem,
 }
@@ -135,6 +137,9 @@ fn fit(need: &Need, capability: &Capability) -> Match {
         ]),
         (Need::Rerank(n), Capability::Rerank(c)) => {
             first_short(&[(c.max_docs >= n.max_docs, S::MaxDocs)])
+        }
+        (Need::ComputerUse(n), Capability::ComputerUse(c)) => {
+            first_short(&[(n.environments.is_subset(&c.environments), S::Environments)])
         }
         (Need::KeyValue(n), Capability::KeyValue(c)) => first_short(&[
             (c.delta >= n.delta, S::Delta),

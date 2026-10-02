@@ -75,6 +75,17 @@ fn probe_ports_carry_their_ports() {
 }
 
 #[test]
+fn supervised_discovery_is_a_plain_kind() {
+    let text = file(
+        r#"kind = "local_runtime""#,
+        r#"kind = "supervised""#,
+        &[AI, LLM_ROW],
+    );
+    let spec = parse_provider(&text).expect("parses");
+    assert_eq!(spec.discovery, Discovery::Supervised);
+}
+
+#[test]
 fn provider_files_are_checked() {
     let oauth_with_issuer = r#"kind = "oauth_pkce"
 issuer = "microsoft""#;

@@ -1,0 +1,23 @@
+# The engines inferd runs on this computer (llama.cpp, vLLM, a speech host): no sign-in, found
+# in the model catalog rather than by a probe (design/31 §3.3). The account is present while an
+# engine is stopped; its readiness is `loadable`. The row below is the floor every catalog
+# language model meets; inferd writes the real rows (one per catalog entry, computer use and
+# speech included) at run time.
+id = "local"
+label = "On this computer"
+mark = "local"
+
+[auth]
+kind = "local_runtime"
+
+[discovery]
+kind = "supervised"
+
+[ai]
+locality = { kind = "on_device" }
+billing = { kind = "free" }
+
+[[capability]]
+family = "chat_completions"
+kind = "llm"
+v = { features = ["chat"], context = 2048, max_output = 2048, wire = "chat_completions" }

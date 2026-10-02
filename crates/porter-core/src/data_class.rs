@@ -25,6 +25,8 @@ pub enum DataClass {
     Clipboard,
     /// What is on screen.
     Screen,
+    /// The person's own voice audio (dictation, hold-to-talk). Its floor is this computer.
+    Voice,
     /// Public information (a web page, a question with nothing personal in it).
     Public,
 }

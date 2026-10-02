@@ -2,8 +2,10 @@ use super::*;
 use crate::app_id::{AppId, AppName, Isolation};
 use crate::capability::CapabilityKind;
 use crate::consent::grant::Usage;
+use crate::consent::{Grant, GrantKey};
 use crate::data_class::DataClass;
 use crate::id::AccountId;
+use crate::space::{SpaceId, SpaceScope};
 use crate::units::UnixSeconds;
 
 fn key(app: &str, usage: Usage) -> GrantKey {
@@ -16,6 +18,7 @@ fn key(app: &str, usage: Usage) -> GrantKey {
         kind: CapabilityKind::Storage,
         class: DataClass::Photos,
         usage,
+        space: SpaceScope::Any,
     }
 }
 
@@ -27,6 +30,11 @@ fn grant(id: &str, key: GrantKey, decision: Decision, scope: GrantScope, at: i64
         scope,
         at: UnixSeconds(at),
     }
+}
+
+fn in_space(mut key: GrantKey, space: &str) -> GrantKey {
+    key.space = SpaceScope::Only(SpaceId::parse(space).expect("space id"));
+    key
 }
 
 fn granted(id: &str, scope: GrantScope) -> Verdict {
@@ -106,10 +114,38 @@ fn decide_reads_the_newest_grant_for_the_exact_key() {
             key("org.quire.Photos", Usage::Background),
             Verdict::Ask,
         ),
+        (
+            "a grant for one Space does not cover another",
+            vec![grant("g1", in_space(photos(), "work"), Allow, Always, 1)],
+            in_space(photos(), "home"),
+            Verdict::Ask,
+        ),
+        (
+            "a grant for one Space does not cover any",
+            vec![grant("g1", in_space(photos(), "work"), Allow, Always, 1)],
+            photos(),
+            Verdict::Ask,
+        ),
     ];
     for (name, grants, asked, expected) in cases {
         assert_eq!(decide(&grants, &asked), expected, "{name}");
     }
+}
+
+#[test]
+fn decide_is_generic_over_the_key() {
+    let grants = vec![Grant {
+        id: GrantId::parse("g1").expect("grant id"),
+        key: "mail.thread.archive",
+        decision: Decision::Allow,
+        scope: GrantScope::Always,
+        at: UnixSeconds(1),
+    }];
+    assert_eq!(
+        decide(&grants, &"mail.thread.archive"),
+        granted("g1", GrantScope::Always)
+    );
+    assert_eq!(decide(&grants, &"mail.thread.delete"), Verdict::Ask);
 }
 
 #[test]

@@ -1,6 +1,6 @@
 //! Needs for the AI kinds. Sets are subsets the offer must contain; numbers are minimums.
 
-use crate::capability::{ImageMode, LlmFeature, Modality, SpeechMode};
+use crate::capability::{CuaEnv, ImageMode, LlmFeature, Modality, SpeechMode};
 use crate::units::{Count, Dims, Px, Tokens};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -54,4 +54,12 @@ pub struct ImageGenNeed {
 pub struct RerankNeed {
     /// At least this many documents per call.
     pub max_docs: Count,
+}
+
+/// A computer-use model. Only the environments are asked for; protocol fields (batching, wire,
+/// image size) are the engine's business.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct CuaNeed {
+    /// Environments it must operate.
+    pub environments: BTreeSet<CuaEnv>,
 }

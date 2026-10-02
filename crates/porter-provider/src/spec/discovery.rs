@@ -21,6 +21,10 @@ pub enum Discovery {
         /// The ports, in probe order.
         ports: Vec<Port>,
     },
+    /// Engines inferd runs itself (design/31 §3.3): the models come from the catalog at
+    /// `Provenance::Curated`, and the account is present while an engine is stopped (readiness
+    /// `Loadable`), unlike a probed runtime, which goes offline.
+    Supervised,
     /// The AI provider's model list (`/v1/models`, `models.list`).
     ModelList,
 }

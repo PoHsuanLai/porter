@@ -10,7 +10,7 @@ pub struct VocabVersion(pub u16);
 
 impl VocabVersion {
     /// The version this build speaks.
-    pub const CURRENT: VocabVersion = VocabVersion(1);
+    pub const CURRENT: VocabVersion = VocabVersion(2);
 }
 
 /// A capability's kind without its parameters: the unit of consent, toggles and limits.
@@ -44,6 +44,8 @@ pub enum CapabilityKind {
     ImageGen,
     /// Reranking.
     Rerank,
+    /// A model that operates a window from screenshots.
+    ComputerUse,
     /// Small synced items.
     KeyValue,
     /// A push channel.
@@ -60,6 +62,7 @@ impl CapabilityKind {
                 | CapabilityKind::Speech
                 | CapabilityKind::ImageGen
                 | CapabilityKind::Rerank
+                | CapabilityKind::ComputerUse
         )
     }
 }

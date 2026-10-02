@@ -19,6 +19,7 @@ pub mod need;
 mod offer;
 mod restriction;
 mod secret;
+mod space;
 mod token;
 mod units;
 pub mod wire;
@@ -32,7 +33,7 @@ pub use capability::{Capability, CapabilityKind};
 pub use data_class::DataClass;
 pub use effective::{KindToggle, Toggle, effective};
 pub use error::CoreError;
-pub use id::{AccountId, GrantId, ModelId, ProviderId, object_segment};
+pub use id::{AccountId, GrantId, ModelId, ProviderId, is_id, object_segment};
 pub use matching::{Match, Shortfall, matches};
 pub use need::Need;
 pub use offer::{AbsentReason, Claim, Offer, Provenance, Subject};
@@ -40,6 +41,7 @@ pub use restriction::{
     Limit, LimitReason, Restriction, TenantConsent, TokenLifetime, Verification,
 };
 pub use secret::{Credential, SecretKey, SecretPurpose, SecretText};
+pub use space::{SpaceId, SpaceScope};
 pub use token::{Audience, IssuedToken, TokenKind};
 pub use units::{Bytes, Count, Dims, MicroUsd, Permille, Px, Tokens, UnixSeconds};
 pub use wire::{AccountsReply, AccountsRequest};

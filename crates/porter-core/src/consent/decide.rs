@@ -1,7 +1,7 @@
 //! Consent decisions as pure functions: what the stored grants say for one key, and what an
 //! app may learn about a need without holding a grant.
 
-use super::grant::{Decision, Grant, GrantKey, GrantScope};
+use super::grant::{Decision, Grant, GrantScope};
 use crate::id::GrantId;
 use serde::{Deserialize, Serialize};
 
@@ -23,7 +23,7 @@ pub enum Verdict {
 }
 
 /// The newest grant for exactly this key decides; on equal times a denial wins.
-pub fn decide(grants: &[Grant], key: &GrantKey) -> Verdict {
+pub fn decide<K: Eq>(grants: &[Grant<K>], key: &K) -> Verdict {
     let newest = grants
         .iter()
         .filter(|g| g.key == *key)

@@ -4,6 +4,7 @@ use crate::app_id::AppId;
 use crate::capability::CapabilityKind;
 use crate::data_class::DataClass;
 use crate::id::{AccountId, GrantId};
+use crate::space::SpaceScope;
 use crate::units::UnixSeconds;
 use serde::{Deserialize, Serialize};
 
@@ -20,6 +21,8 @@ pub struct GrantKey {
     pub class: DataClass,
     /// Interactive or background use.
     pub usage: Usage,
+    /// The Spaces it covers: account grants made from the sheet cover `Any`.
+    pub space: SpaceScope,
 }
 
 /// Whether the app acts for a person at the screen or on its own (indexing, backup).
@@ -53,13 +56,14 @@ pub enum GrantScope {
     Always,
 }
 
-/// One stored consent decision.
+/// One stored consent decision, over any key type: accounts use [`GrantKey`], the action
+/// router its own key (an action, a caller and a Space).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct Grant {
+pub struct Grant<K = GrantKey> {
     /// Its id.
     pub id: GrantId,
     /// What it covers.
-    pub key: GrantKey,
+    pub key: K,
     /// The answer.
     pub decision: Decision,
     /// How long it holds.

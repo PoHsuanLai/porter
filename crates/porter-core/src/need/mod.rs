@@ -5,7 +5,7 @@
 mod ai;
 mod data;
 
-pub use ai::{DimsNeed, EmbedNeed, ImageGenNeed, LlmNeed, RerankNeed, SpeechNeed};
+pub use ai::{CuaNeed, DimsNeed, EmbedNeed, ImageGenNeed, LlmNeed, RerankNeed, SpeechNeed};
 pub use data::{
     IdentityNeed, KeyValueNeed, MailNeed, NotesNeed, PhotosNeed, PimNeed, PushNeed, StorageNeed,
 };
@@ -43,6 +43,8 @@ pub enum Need {
     ImageGen(ImageGenNeed),
     /// Reranking.
     Rerank(RerankNeed),
+    /// A model that operates a window from screenshots.
+    ComputerUse(CuaNeed),
     /// Small synced items.
     KeyValue(KeyValueNeed),
     /// A push channel.
@@ -66,6 +68,7 @@ impl Need {
             Need::Speech(_) => CapabilityKind::Speech,
             Need::ImageGen(_) => CapabilityKind::ImageGen,
             Need::Rerank(_) => CapabilityKind::Rerank,
+            Need::ComputerUse(_) => CapabilityKind::ComputerUse,
             Need::KeyValue(_) => CapabilityKind::KeyValue,
             Need::Push(_) => CapabilityKind::Push,
         }

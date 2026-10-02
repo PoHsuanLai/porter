@@ -32,7 +32,7 @@ pub enum Tier {
     Fast,
     /// The everyday default.
     Balanced,
-    /// The strongest model.
+    /// The user's choice for demanding work (a name for a slot, not a ranking of models).
     Best,
 }
 

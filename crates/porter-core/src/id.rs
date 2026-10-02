@@ -11,8 +11,14 @@ use std::fmt;
 /// The longest id, in bytes.
 const MAX_LEN: usize = 64;
 
+/// Whether `text` is a well-formed id (the one grammar every id of ours shares; crates that
+/// mint ids of their own, such as `prov`, check with this).
+pub fn is_id(text: &str) -> bool {
+    well_formed(text)
+}
+
 /// Whether `text` is a well-formed id.
-fn well_formed(text: &str) -> bool {
+pub(crate) fn well_formed(text: &str) -> bool {
     let mut bytes = text.bytes();
     let first_ok = bytes
         .next()
@@ -34,7 +40,7 @@ macro_rules! slug_id {
         impl $name {
             /// The id written as `text`, or why it is not one.
             pub fn parse(text: &str) -> Result<Self, CoreError> {
-                if well_formed(text) {
+                if $crate::id::well_formed(text) {
                     Ok(Self(text.to_owned()))
                 } else {
                     Err(CoreError::MalformedId { what: $what, text: text.to_owned() })
@@ -67,6 +73,7 @@ macro_rules! slug_id {
         }
     };
 }
+pub(crate) use slug_id;
 
 slug_id!(
     /// One configured account (a row in accountd's registry, or a discovered local runtime).
