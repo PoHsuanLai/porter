@@ -4,9 +4,11 @@ use porter_client::{Accounts, ClientError, InferSession, Transport, TransportErr
 use porter_core::need::LlmNeed;
 use porter_core::{AccountsReply, AccountsRequest, DataClass, Need, Tier, Tokens};
 use porter_fake::{FakeInferSession, Script, ScriptStep};
+use porter_infer::OpenOptions;
+use porter_infer::{ChatControl, Knob, Reasoning, ToolChoice, ToolParallelism};
 use porter_infer::{
     ChatReply, ClientFrame, InferEvent, InferRefusal, InferReply, InferRequest, ReplyShape,
-    RequestKind, ServedBy, TokenUsage,
+    RequestKind, ServedBy, StopReason, TokenUsage,
 };
 use std::sync::Mutex;
 
@@ -20,11 +22,12 @@ impl Transport for Scripted {
         Err(TransportError::Unreachable)
     }
 
-    async fn open(
+    async fn open_with(
         &self,
         _need: &Need,
         _class: DataClass,
         _tier: Tier,
+        _options: &OpenOptions,
     ) -> Result<FakeInferSession, TransportError> {
         self.0
             .lock()
@@ -57,6 +60,14 @@ fn chat() -> InferRequest {
         class: DataClass::Public,
         usage: porter_core::consent::Usage::Interactive,
         tools: vec![],
+        control: ChatControl {
+            tool_choice: ToolChoice::Auto,
+            tool_calls: ToolParallelism::Many,
+            max_output: Knob::Off,
+            reasoning: Reasoning::EngineDefault,
+            sampling: Knob::Off,
+            stop: vec![],
+        },
     })
 }
 
@@ -71,10 +82,13 @@ async fn infer_reads_to_the_finished_event() {
     let usage = TokenUsage {
         input: Tokens(1),
         output: Tokens(1),
+        cached: Tokens(0),
     };
     let reply = InferReply::Chat(ChatReply {
         text: "hi".into(),
         tool_calls: vec![],
+        stop: StopReason::EndTurn,
+        thought: None,
         usage,
         served: served(),
     });

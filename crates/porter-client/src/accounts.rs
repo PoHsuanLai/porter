@@ -10,7 +10,7 @@ use porter_core::{
     AccountId, AccountsReply, AccountsRequest, Audience, Candidate, DataClass, GrantId,
     IssuedToken, Need, Tier,
 };
-use porter_infer::{ClientFrame, InferEvent, InferReply, InferRequest, InferSession};
+use porter_infer::{ClientFrame, InferEvent, InferReply, InferRequest, InferSession, OpenOptions};
 
 /// The app's connection to the account service.
 #[derive(Debug)]
@@ -152,6 +152,18 @@ impl<T: Transport> Accounts<T> {
         tier: Tier,
     ) -> Result<T::Session, ClientError> {
         Ok(self.transport.open(need, class, tier).await?)
+    }
+
+    /// [`Accounts::session`] with the options of `Open`: the caller's `traceparent`, so a span
+    /// started here continues in inferd.
+    pub async fn session_with(
+        &self,
+        need: &Need,
+        class: DataClass,
+        tier: Tier,
+        options: &OpenOptions,
+    ) -> Result<T::Session, ClientError> {
+        Ok(self.transport.open_with(need, class, tier, options).await?)
     }
 
     /// Runs one AI request to its end on a fresh session and returns the reply, dropping the

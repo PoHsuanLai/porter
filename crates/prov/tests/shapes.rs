@@ -247,3 +247,64 @@ fn space_vocabulary_is_re_exported_from_porter_core() {
     let scope = SpaceScope::Only(space("work"));
     assert_eq!(round_trip(&scope), r#"{"kind":"only","v":"work"}"#);
 }
+
+#[test]
+fn slugs_equal_the_serde_forms() {
+    use prov::{ActorKind, Effect};
+    for kind in [
+        ActorKind::User,
+        ActorKind::Companion,
+        ActorKind::Cua,
+        ActorKind::Mcp,
+        ActorKind::App,
+        ActorKind::ThirdParty,
+        ActorKind::System,
+        ActorKind::Unknown,
+    ] {
+        assert_eq!(
+            serde_json::to_string(&kind).unwrap(),
+            format!("\"{}\"", kind.slug())
+        );
+    }
+    for effect in [
+        Effect::Read,
+        Effect::UndoableWrite,
+        Effect::Outbound,
+        Effect::Destructive,
+    ] {
+        assert_eq!(
+            serde_json::to_string(&effect).unwrap(),
+            format!("\"{}\"", effect.slug())
+        );
+    }
+}
+
+#[test]
+fn trace_attribute_names_are_unique_and_namespaced() {
+    use prov::trace::attr;
+    let mut seen = std::collections::BTreeSet::new();
+    for key in attr::ALL {
+        assert!(seen.insert(*key), "{key} is listed twice");
+        assert!(key.starts_with("quire."), "{key}");
+    }
+    assert_eq!(attr::ALL.len(), 13);
+    assert_eq!(attr::ACTOR_KIND, "quire.actor.kind");
+    assert_eq!(attr::SPACE_HASH, "quire.space.hash");
+}
+
+#[test]
+fn trace_attributes_carry_no_content_names() {
+    for key in prov::trace::attr::ALL {
+        for forbidden in [
+            "prompt",
+            "message",
+            "argument",
+            "result",
+            "title",
+            "text",
+            "recipient",
+        ] {
+            assert!(!key.contains(forbidden), "{key}");
+        }
+    }
+}

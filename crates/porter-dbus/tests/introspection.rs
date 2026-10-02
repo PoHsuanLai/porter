@@ -78,3 +78,15 @@ fn speech_and_computer_use_are_fd_only() {
         );
     }
 }
+
+#[test]
+fn inference_calls_carry_an_options_dict_for_the_reserved_traceparent() {
+    let xml = introspection(Bus::Inference);
+    assert_eq!(
+        xml.matches("<arg name=\"options\" type=\"a{sv}\" direction=\"in\"/>")
+            .count(),
+        3,
+        "Availability, Open and Prepare"
+    );
+    assert_eq!(porter_dbus::OPTION_TRACEPARENT, "traceparent");
+}

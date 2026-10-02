@@ -3,10 +3,11 @@
 
 use porter_core::capability::{
     Access, Albums, Capability, CapabilityKind, CuaBatching, CuaCap, CuaEnv, Delta, EmbedCap,
-    HashKind, IdentityCap, ImageGenCap, ImageMode, KeyValueCap, LabelModel, LanguageSet,
-    LanguageTag, LibraryRead, LlmCap, LlmFeature, LlmWire, MailCap, MailTransport, Modality,
-    NotesCap, NotesTransport, Offered, PhotosCap, PimCap, PimTransport, PushCap, PushChannel,
-    QuotaReport, RerankCap, SpeechCap, SpeechMode, StorageCap, StorageScope, VocabVersion,
+    EmbedPrompts, HashKind, IdentityCap, ImageGenCap, ImageMode, KeyValueCap, LabelModel,
+    LanguageSet, LanguageTag, LibraryRead, LlmCap, LlmFeature, LlmWire, MailCap, MailTransport,
+    Modality, NotesCap, NotesTransport, Offered, PhotosCap, PimCap, PimTransport, PrefixText,
+    PushCap, PushChannel, QuotaReport, RerankCap, SpeechCap, SpeechMode, StorageCap, StorageScope,
+    VocabVersion,
 };
 use porter_core::consent::{
     AccountChoice, Availability, ConsentAnswer, ConsentAsk, Decision, Grant, GrantKey, GrantScope,
@@ -101,6 +102,11 @@ fn every_capability() -> Vec<Capability> {
             dims: Dims(768),
             modalities: [Modality::Text].into(),
             max_input: Tokens(8_192),
+            max_batch: Count(32),
+            prompts: Box::new(EmbedPrompts {
+                query: PrefixText("search_query: ".into()),
+                document: PrefixText("search_document: ".into()),
+            }),
         }),
         Capability::Speech(SpeechCap {
             modes: [SpeechMode::Stt, SpeechMode::Tts].into(),
@@ -467,4 +473,24 @@ fn the_voice_data_class_has_its_slug() {
         serde_json::to_string(&DataClass::Voice).expect("json"),
         "\"voice\""
     );
+}
+
+#[test]
+fn an_embedding_capability_keeps_its_prompts_with_the_model() {
+    let cap = EmbedCap {
+        dims: Dims(768),
+        modalities: [Modality::Text].into(),
+        max_input: Tokens(8_192),
+        max_batch: Count(32),
+        prompts: Box::new(EmbedPrompts {
+            query: PrefixText("search_query: ".into()),
+            document: PrefixText(String::new()),
+        }),
+    };
+    let json = serde_json::to_string(&cap).expect("serialise");
+    assert_eq!(
+        json,
+        r#"{"dims":768,"modalities":["text"],"max_input":8192,"max_batch":32,"prompts":{"query":"search_query: ","document":""}}"#
+    );
+    assert_eq!(serde_json::from_str::<EmbedCap>(&json).expect("read"), cap);
 }

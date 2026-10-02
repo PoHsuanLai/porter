@@ -6,11 +6,13 @@
 mod audit;
 mod broker;
 mod choice;
+mod control;
 mod cua;
 mod error;
 mod event;
 mod ids;
 mod model;
+mod open;
 mod policy;
 mod readiness;
 mod reply;
@@ -26,6 +28,10 @@ pub use choice::{
     AiKind, Fit, LicenceClass, ModelRef, PickerInput, PickerRow, TierMap, TierRow, picker_rows,
     tier_choice,
 };
+pub use control::{
+    ChatControl, Effort, Knob, Reasoning, Sampling, Seed, StopReason, ThoughtSeal, ToolChoice,
+    ToolParallelism,
+};
 pub use cua::{
     CuaBegin, CuaStepFailure, CuaStepReply, CuaStepRequest, DropReason, DroppedAction, FrameImage,
     FrameLayout, MaskedRegions, MediaKind, PrevResult, SafetyHint, StepIndex, TreeText,
@@ -34,9 +40,11 @@ pub use cua::{
 pub use error::{InferRefusal, ModelError};
 pub use event::{ClientFrame, Flow, InferEvent};
 pub use ids::{
-    AttachIndex, Base64Bytes, JsonSchemaText, JsonText, TextError, ToolCallId, ToolName,
+    AttachIndex, Base64Bytes, JsonSchemaText, JsonText, OpaqueText, SignatureText, TextError,
+    ToolCallId, ToolName, Traceparent,
 };
 pub use model::{ChatSink, Model, ModelCard};
+pub use open::OpenOptions;
 pub use policy::{ClassFloor, Floor, LocalOnly, Policy};
 pub use readiness::Readiness;
 pub use reply::{
@@ -44,9 +52,9 @@ pub use reply::{
     TranscribeReply,
 };
 pub use request::{
-    ChatMessage, ChatRequest, EmbedRequest, ImagePart, ImageSource, InferRequest, MessagePart,
-    ReplyShape, RequestKind, Role, Task, TaskRequest, ToolCallPart, ToolDecl, ToolResultPart,
-    ToolStatus,
+    ChatMessage, ChatRequest, EmbedRequest, EmbedRole, ImagePart, ImageSource, InferRequest,
+    MessagePart, ReplyShape, RequestKind, Role, Task, TaskRequest, ThoughtPart, ToolCallPart,
+    ToolDecl, ToolResultPart, ToolStatus,
 };
 pub use route::{Chosen, RouteAsk, RouteCandidate, TierChoice, route};
 pub use session::{InferSession, SessionError};

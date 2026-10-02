@@ -19,7 +19,7 @@ trait), section 6 (copy the recipe).
 | `porter-provider` | provider files (`ProviderSpec`, `parse_provider`), `ProviderSet`, `Family`, `Issuer`, the `Provider` and `ProviderSession` traits | none |
 | `porter-secrets` | the `Secrets` trait, the Secret Service attribute scheme, `MemorySecrets` (feature `testing`), `Oo7Secrets` (feature `oo7`, stubbed) | none today; oo7 behind its feature |
 | `porter-sync` | the sync contract: `Replica`, `Cursor`/`Anchor`, `BaseVersion`, `Change`/`Tombstone`, `Conflict`, `DatasetKind`; `MemoryReplica` (feature `testing`) | none |
-| `porter-infer` | the AI broker's pure half: requests and replies (chat with tools, embeddings, tasks, computer-use steps, speech), the streaming session (`ClientFrame`, `InferEvent`, `InferSession`), the model picker's data (`AiKind`, `TierMap`, `PickerRow`), `Readiness`, `Policy` and floors, `route`, spend caps, `AuditEntry`, the `Model` trait, `Broker` (stubbed) | none |
+| `porter-infer` | the AI broker's pure half: requests and replies (chat with tools and controls, embeddings with a query/document role, tasks, computer-use steps, speech), `OpenOptions` (the reserved `traceparent`), the streaming session (`ClientFrame`, `InferEvent`, `InferSession`), the model picker's data (`AiKind`, `TierMap`, `PickerRow`), `Readiness`, `Policy` and floors, `route`, spend caps, `AuditEntry`, the `Model` trait, `Broker` (stubbed) | none |
 | `porter-service` | accountd's core over its seams: `AccountService`, `Registry`, the `Prompter` and `Clock` traits | none (seams are passed in) |
 | `porter-client` | the app-facing API: `Accounts`, `Found`, the `Transport` trait (`call` for accountd, `open` for an inference session); `InProcess`, `SocketTransport`, `DbusTransport` (feature `dbus`) | through its transport |
 | `porter-dbus` | `org.quire.Accounts1`, `org.quire.Sync1`, `org.quire.Inference1` as zbus proxies and skeletons; `introspection`; the argument codec (stubbed) | zbus |
@@ -50,12 +50,12 @@ External boundaries: every crate but `porter-dbus` and the daemons never reaches
 
 | Crate | Modules |
 | --- | --- |
-| `prov` | `ids`, `effect`, `actor`, `label`, `consent` |
+| `prov` | `ids`, `effect`, `actor`, `label`, `consent`, `trace` (span attribute names, `slug`s) |
 | `porter-core` | `id`, `app_id`, `units`, `space`, `error` < `capability` (`terms`, `mail`, `pim`, `storage`, `photos`, `ai`, `sync_kinds`, `kind`) < `need` (`data`, `ai`) < `offer`, `effective`, `matching`, `restriction`, `ai_props`, `data_class`, `auth_kind`, `account` < `consent` (`grant`, `decide`, `prompt`) < `secret`, `token`, `candidate` < `wire` (`request`, `reply`, `frame`) |
 | `porter-provider` | `family`, `error` < `spec` (`auth`, `discovery`) < `parse`, `set` < `provider` |
 | `porter-secrets` | `error`, `attributes` < `secrets` < `memory`, `oo7` |
 | `porter-sync` | `anchor`, `item`, `transfer` < `change`, `refusal`, `dataset` < `replica` < `memory` |
-| `porter-infer` | `ids`, `request`, `cua`, `speech`, `reply`, `error`, `readiness` < `event`, `session`, `choice` < `policy`, `spend`, `audit` < `route`, `model` < `broker` |
+| `porter-infer` | `ids`, `control`, `open`, `request`, `cua`, `speech`, `reply`, `error`, `readiness` < `event`, `session`, `choice` < `policy`, `spend`, `audit` < `route`, `model` < `broker` |
 | `porter-service` | `clock`, `prompter` < `registry` < `choose`, `token` < `service` |
 | `porter-client` | `error`, `env`, `found` < `transport` (`in_process`, `socket`, `dbus`; each with its session) < `accounts` |
 | `porter-dbus` | `names`, `args` < `codec` < `manager`, `account`, `grants`, `tokens`, `request`, `sync`, `inference` < `introspect` |
@@ -78,6 +78,10 @@ External boundaries: every crate but `porter-dbus` and the daemons never reaches
 | a Space's id and scope | `porter-core::space` |
 | who acted, labels, effects, the confirmation witness | `prov` |
 | the inference session (frames, events, replies) | `porter-infer::{request, event, reply}` |
+| chat controls (tool choice, parallelism, output limit, reasoning, sampling, stop), `StopReason`, `ThoughtSeal` | `porter-infer::control` |
+| the options of `Open` (the reserved `traceparent`) | `porter-infer::open`; the bus key is `porter-dbus::OPTION_TRACEPARENT` |
+| span attribute names of our own (`quire.*`) | `prov::trace` (the OpenTelemetry `gen_ai.*` names are stoker's `genai-names`) |
+| who retries, who repairs a structured reply | `inferd` (section 7) |
 | the computer-use step contract | `porter-infer::cua` |
 | the speech turn on the wire | `porter-infer::speech` |
 | the model picker's data and the tier map | `porter-infer::choice` |
@@ -148,6 +152,9 @@ pub trait Clock: Send + Sync { fn now(&self) -> UnixSeconds; }
 pub trait Transport: Send + Sync {
     type Session: InferSession;
     fn call(&self, request: AccountsRequest) -> impl Future<Output = Result<AccountsReply, TransportError>> + Send;
+    fn open_with(&self, need: &Need, class: DataClass, tier: Tier, options: &OpenOptions)
+        -> impl Future<Output = Result<Self::Session, TransportError>> + Send;
+    // provided: `open` is `open_with` with no trace context
     fn open(&self, need: &Need, class: DataClass, tier: Tier)
         -> impl Future<Output = Result<Self::Session, TransportError>> + Send;
 }
@@ -185,7 +192,9 @@ the interface other work builds on; a change is a vocabulary bump (section 6) or
 | `prov` ids, `Effect`, `Actor`, `Quarantined`, `ReaderKey`, `Labelled::map` | built, round-trip and redaction tested |
 | `prov` lattice: `Label::join`, `trusted_user`, `untrusted`, `Labelled::zip`, `endorse`, `declassify` | stub |
 | porter-core: `SpaceId`, `SpaceScope`, `GrantKey.space`, `Grant<K>`, `decide<K>`, computer use, `DataClass::Voice`, `VocabVersion(2)` | built, table-tested |
-| porter-infer wire: tools, images, `CuaBegin`/`CuaStep`, `Transcribe`/`Speak`, `ClientFrame`, `InferEvent`, replies | built, round-trip and pinned-JSON tested |
+| porter-infer wire: tools, images, `ChatControl`, `StopReason`, `ThoughtPart`, `ReplyShape::Choice`, `EmbedRole`, `CuaBegin`/`CuaStep`, `Transcribe`/`Speak`, `ClientFrame`, `InferEvent`, replies | built, round-trip and pinned-JSON tested |
+| `OpenOptions`, `Traceparent`, the `options` dictionary of `Inference1.Open`/`Prepare`/`Availability` | built (the key is reserved; nothing reads it until inferd serves) |
+| `prov::trace` names, `ActorKind::slug`, `Effect::slug` | built, tested against the serde forms |
 | `tier_choice`, `AiKind::setting_key`, `InferRequest::kind` | built, table-tested |
 | `picker_rows` | stub |
 | `inferd::session::step` | stub; `fits` built |
@@ -195,7 +204,7 @@ the interface other work builds on; a change is a vocabulary bump (section 6) or
 | `AccountService`: Query, Availability, Choose, ListGrants, Revoke, IssueToken, `remove_account` | built over the seams, tested end to end with the fakes |
 | `AccountService`: AddAccount, Reauthenticate | stub |
 | `Accounts` (client API), `found`, `InProcess` accounts calls | built, tested end to end |
-| `Accounts::connect`, `SocketTransport`, `DbusTransport`, `InProcess::open` and the three sessions | stub; `Accounts::session` and `Accounts::infer` built over `Transport::open` |
+| `Accounts::connect`, `SocketTransport`, `DbusTransport`, `InProcess::open_with` and the three sessions | stub; `Accounts::session`, `session_with` and `Accounts::infer` built over `Transport::open_with` |
 | D-Bus proxies and skeletons, introspection files in `dbus/` | frozen, introspection tested; skeleton methods answer `NotSupported` |
 | D-Bus argument codec (`need_to_dbus` and friends) | stub |
 | daemons | skeletons: build their service, print "not implemented", exit 2 |
@@ -294,3 +303,30 @@ D-Bus on the desktop). Where each mailo piece lands:
 - **Refresh tokens, passwords and keys never cross a transport.** No wire type holds a
   `Credential`; apps receive `IssuedToken`.
 - **Floats** appear only in `EmbedVector` (embeddings are floats end to end).
+
+## 7. Who retries, who repairs
+
+Decided with the rig amendment (the first appears in models.md section 4.2 once the spec is
+edited; it is recorded here so the code and the spec agree):
+
+- **inferd owns retry.** It sees the engine's state, so it retries a failed turn (a 5xx, a
+  rate limit with its `Retry-After`, a not-ready engine that is loading) with stoker's
+  `Retrying` wrapper and its pure `next_wait`, and never after the first event reached the
+  client's sink: a half-delivered turn is not idempotent for the planner. A client sees either a
+  reply or a `ModelError`; it never loops on `RateLimited` itself.
+- **inferd owns validate-and-repair of structured output.** For `ReplyShape::Json` and
+  `ReplyShape::Choice` it runs stoker's `ExtractSession` (`model-extract`): constrained decoding
+  where the engine supports the shape, a synthetic tool call or a prompted schema where it does
+  not, a bounded repair budget (a setting), and a check of the final text with `Shape::check`.
+  A client (readerd, memoryd's consolidator, the action reviewer, the policy writer) gets either
+  a `ChatReply.text` that already passes the check or `ModelError::Unparseable`; it parses into
+  its type with a second, free check. A reply cut by `StopReason::MaxTokens` is never repaired.
+  A repair prompt names the field and the expected shape and never echoes the model's output.
+- **`ModelError::ContextOverflow` carries no limit.** The caller reads the context from the
+  model's `LlmCap.context` (it has the card); stoker's `ProviderError::ContextOverflow { limit }`
+  is mapped without it. `ProviderError::Server(status)` maps to `ModelError::Unreachable`
+  (a gateway 5xx is a transient reach failure to an app).
+- **Trace context.** `Inference1.Open`, `Prepare` and `Availability` take an `options` vardict
+  whose reserved key is `traceparent` (`porter_dbus::OPTION_TRACEPARENT`, a
+  `porter_infer::Traceparent`); `Accounts::session_with` and `Transport::open_with` carry it. No
+  content ever goes on a span (`prov::trace`).

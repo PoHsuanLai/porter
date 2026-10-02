@@ -16,3 +16,16 @@ pub enum Effect {
     /// Removes something for good.
     Destructive,
 }
+
+impl Effect {
+    /// The effect's slug for a span attribute: the same text as its serde form, as a `&'static
+    /// str`. A test pins the two together.
+    pub const fn slug(self) -> &'static str {
+        match self {
+            Effect::Read => "read",
+            Effect::UndoableWrite => "undoable_write",
+            Effect::Outbound => "outbound",
+            Effect::Destructive => "destructive",
+        }
+    }
+}

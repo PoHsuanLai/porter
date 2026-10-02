@@ -117,6 +117,24 @@ pub enum ActorKind {
     Unknown,
 }
 
+impl ActorKind {
+    /// The kind's slug for a span attribute: the same text as its serde form, as a `&'static
+    /// str` (a `tracing` field value must be a constant, which serde cannot give). A test
+    /// pins the two together. This is the one hand-written slug in the repo, kept by that test.
+    pub const fn slug(self) -> &'static str {
+        match self {
+            ActorKind::User => "user",
+            ActorKind::Companion => "companion",
+            ActorKind::Cua => "cua",
+            ActorKind::Mcp => "mcp",
+            ActorKind::App => "app",
+            ActorKind::ThirdParty => "third_party",
+            ActorKind::System => "system",
+            ActorKind::Unknown => "unknown",
+        }
+    }
+}
+
 impl Actor {
     /// The kind of this actor; a computer-use run is its own kind.
     pub fn kind(&self) -> ActorKind {

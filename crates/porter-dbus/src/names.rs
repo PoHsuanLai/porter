@@ -19,6 +19,12 @@ pub const INFERENCE_PATH: &str = "/org/quire/Inference1";
 /// here): the picker rows per kind and the `ai.model.<kind>.<tier>` map.
 pub const INFERENCE_SETTINGS_PATH: &str = "/org/quire/Inference1/settings";
 
+/// The reserved key of the W3C trace context in an `options` vardict (`Inference1.Open`,
+/// `Prepare`, `Availability`, and the same dictionary on the companion and intents interfaces).
+/// The value is a version 00 `traceparent` string (`porter_infer::Traceparent`); a daemon that
+/// finds none starts its own root, and an unknown key is ignored.
+pub const OPTION_TRACEPARENT: &str = "traceparent";
+
 /// The object path of one account (`org.quire.Accounts1.Account`).
 pub fn account_path(id: &AccountId) -> String {
     format!("{ACCOUNTS_PATH}/account/{}", object_segment(id))

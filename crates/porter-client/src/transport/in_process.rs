@@ -4,7 +4,7 @@
 use super::Transport;
 use crate::error::TransportError;
 use porter_core::{AccountsReply, AccountsRequest, AppId, DataClass, Need, Tier};
-use porter_infer::{ClientFrame, InferEvent, InferSession, SessionError};
+use porter_infer::{ClientFrame, InferEvent, InferSession, OpenOptions, SessionError};
 use porter_provider::Provider;
 use porter_secrets::Secrets;
 use porter_service::{AccountService, Clock, Prompter};
@@ -47,11 +47,12 @@ impl<P: Provider, S: Secrets, U: Prompter, K: Clock> Transport for InProcess<P, 
         Ok(self.service.handle(&self.app, request).await)
     }
 
-    async fn open(
+    async fn open_with(
         &self,
         _need: &Need,
         _class: DataClass,
         _tier: Tier,
+        _options: &OpenOptions,
     ) -> Result<InProcessSession, TransportError> {
         todo!("host porter_infer::Broker beside the service")
     }

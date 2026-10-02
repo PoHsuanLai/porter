@@ -1,5 +1,6 @@
 //! What inferd answers.
 
+use crate::control::StopReason;
 use crate::cua::CuaStepReply;
 use crate::error::{InferRefusal, ModelError};
 use porter_core::{AccountId, Locality, ModelId, Tokens};
@@ -35,6 +36,10 @@ pub struct ChatReply {
     pub text: String,
     /// The function calls the model made, in order.
     pub tool_calls: Vec<crate::request::ToolCallPart>,
+    /// Why it ended.
+    pub stop: StopReason,
+    /// What it reasoned, when the request allowed reasoning and the engine returned it.
+    pub thought: Option<String>,
     /// Tokens spent.
     pub usage: TokenUsage,
     /// Who answered: the "sent to <provider>" indicator reads it.
@@ -96,6 +101,8 @@ pub struct TokenUsage {
     pub input: Tokens,
     /// Reply tokens.
     pub output: Tokens,
+    /// Prompt tokens the engine served from its cache; a share of `input`.
+    pub cached: Tokens,
 }
 
 /// The account and model that answered, and where it ran.

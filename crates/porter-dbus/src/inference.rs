@@ -15,14 +15,28 @@ use zbus::zvariant::OwnedFd;
     default_path = "/org/quire/Inference1"
 )]
 pub trait Inference {
-    /// Whether an AI need can be met for this class, revealing no identity.
-    fn availability(&self, need: &NeedArg, class: &str) -> zbus::Result<String>;
+    /// Whether an AI need can be met for this class, revealing no identity. `options` is the
+    /// call's vardict; the reserved key is `traceparent` (`OPTION_TRACEPARENT`).
+    fn availability(&self, need: &NeedArg, class: &str, options: &Details) -> zbus::Result<String>;
     /// A framed request/stream session for `need`, `class` and `tier`, pinned to one model.
-    fn open(&self, need: &NeedArg, class: &str, tier: &str) -> zbus::Result<OwnedFd>;
+    /// `options` carries `traceparent` when the caller has a trace; unknown keys are ignored.
+    fn open(
+        &self,
+        need: &NeedArg,
+        class: &str,
+        tier: &str,
+        options: &Details,
+    ) -> zbus::Result<OwnedFd>;
     /// Warms the engine the route would pick (no mic, no request) and answers its readiness
     /// slug (`ready`, `loading`, `loadable`, `downloading`, `downloadable`, `unavailable`); a
     /// refusal answers with its slug.
-    fn prepare(&self, need: &NeedArg, class: &str, tier: &str) -> zbus::Result<String>;
+    fn prepare(
+        &self,
+        need: &NeedArg,
+        class: &str,
+        tier: &str,
+        options: &Details,
+    ) -> zbus::Result<String>;
     /// The caller's usage this period, by name (tokens, spend, cap).
     fn usage(&self) -> zbus::Result<Details>;
     /// Probes local runtimes again.
@@ -42,18 +56,30 @@ pub struct InferenceSkeleton;
 
 #[zbus::interface(name = "org.quire.Inference1")]
 impl InferenceSkeleton {
-    fn availability(&self, need: NeedArg, class: String) -> fdo::Result<String> {
-        let _ = (need, class);
+    fn availability(&self, need: NeedArg, class: String, options: Details) -> fdo::Result<String> {
+        let _ = (need, class, options);
         Err(crate::introspect::frozen())
     }
 
-    fn open(&self, need: NeedArg, class: String, tier: String) -> fdo::Result<OwnedFd> {
-        let _ = (need, class, tier);
+    fn open(
+        &self,
+        need: NeedArg,
+        class: String,
+        tier: String,
+        options: Details,
+    ) -> fdo::Result<OwnedFd> {
+        let _ = (need, class, tier, options);
         Err(crate::introspect::frozen())
     }
 
-    fn prepare(&self, need: NeedArg, class: String, tier: String) -> fdo::Result<String> {
-        let _ = (need, class, tier);
+    fn prepare(
+        &self,
+        need: NeedArg,
+        class: String,
+        tier: String,
+        options: Details,
+    ) -> fdo::Result<String> {
+        let _ = (need, class, tier, options);
         Err(crate::introspect::frozen())
     }
 

@@ -17,6 +17,9 @@ pub enum TextError {
     /// The text is not base64.
     #[error("not valid base64")]
     NotBase64,
+    /// The text is not a version 00 W3C traceparent.
+    #[error("not a W3C traceparent")]
+    NotTraceparent,
 }
 
 /// The id a model gives one tool call, echoed by its result. Opaque.
@@ -143,6 +146,74 @@ impl<'de> Deserialize<'de> for Base64Bytes {
 #[serde(transparent)]
 pub struct AttachIndex(pub u16);
 
+/// A model's signature over a thought, handed back unchanged on the next turn. Opaque.
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct SignatureText(pub String);
+
+impl fmt::Debug for SignatureText {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "SignatureText(<{} bytes>)", self.0.len())
+    }
+}
+
+/// A thought the provider returned encrypted, handed back unchanged. Opaque.
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct OpaqueText(pub String);
+
+impl fmt::Debug for OpaqueText {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "OpaqueText(<{} bytes>)", self.0.len())
+    }
+}
+
+/// A W3C trace context (`traceparent`): `00-<32 hex>-<16 hex>-<2 hex>`, lower case, neither id
+/// all zero. Carried so one task is one trace across daemons; it holds ids only, never content.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct Traceparent(String);
+
+impl Traceparent {
+    /// The key it travels under in a D-Bus options dictionary.
+    pub const KEY: &'static str = "traceparent";
+
+    /// The header text, if it is a version 00 traceparent.
+    pub fn parse(text: &str) -> Result<Self, TextError> {
+        let parts: Vec<&str> = text.split('-').collect();
+        let hex = |s: &str, len: usize| {
+            s.len() == len && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+        };
+        let nonzero = |s: &str| s.bytes().any(|b| b != b'0');
+        let ok = matches!(parts.as_slice(),
+            ["00", trace, span, flags]
+                if hex(trace, 32) && nonzero(trace) && hex(span, 16) && nonzero(span) && hex(flags, 2));
+        if ok {
+            Ok(Self(text.to_owned()))
+        } else {
+            Err(TextError::NotTraceparent)
+        }
+    }
+
+    /// The text.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for Traceparent {
+    type Error = TextError;
+    fn try_from(text: String) -> Result<Self, TextError> {
+        Self::parse(&text)
+    }
+}
+
+impl From<Traceparent> for String {
+    fn from(parent: Traceparent) -> String {
+        parent.0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -167,6 +238,25 @@ mod tests {
         assert!(JsonText::parse("{").is_err());
         let shown = format!("{:?}", JsonText::parse("\"secret\"").expect("json"));
         assert!(!shown.contains("secret"), "{shown}");
+    }
+
+    #[test]
+    fn traceparents_follow_the_w3c_grammar() {
+        let ok = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+        assert!(Traceparent::parse(ok).is_ok());
+        let bad = [
+            "",
+            "01-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+            "00-4BF92F3577B34DA6A3CE929D0E0E4736-00f067aa0ba902b7-01",
+            "00-00000000000000000000000000000000-00f067aa0ba902b7-01",
+            "00-4bf92f3577b34da6a3ce929d0e0e4736-0000000000000000-01",
+            "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7",
+            "00-4bf92f3577b34da6a3ce929d0e0e473-00f067aa0ba902b7-01",
+        ];
+        for text in bad {
+            assert!(Traceparent::parse(text).is_err(), "{text:?}");
+        }
+        assert_eq!(Traceparent::KEY, "traceparent");
     }
 
     #[test]

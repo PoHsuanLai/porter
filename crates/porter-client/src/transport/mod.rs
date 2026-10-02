@@ -13,7 +13,7 @@ pub use socket::{SocketSession, SocketTransport};
 
 use crate::error::TransportError;
 use porter_core::{AccountsReply, AccountsRequest, DataClass, Need, Tier};
-use porter_infer::{ClientFrame, InferEvent, InferSession, SessionError};
+use porter_infer::{ClientFrame, InferEvent, InferSession, OpenOptions, SessionError};
 use std::future::Future;
 
 /// Carries requests to accountd and inferd.
@@ -29,13 +29,28 @@ pub trait Transport: Send + Sync {
 
     /// Opens a session with inferd for `need`, `class` and `tier`: the route is chosen once, so
     /// the session is pinned to one model. A refusal arrives as the session's first event
-    /// (`Finished(Refused(..))`).
+    /// (`Finished(Refused(..))`). `options` carries the caller's `traceparent` (the bus
+    /// `options` dictionary, the socket's first frame) so one task is one trace.
+    fn open_with(
+        &self,
+        need: &Need,
+        class: DataClass,
+        tier: Tier,
+        options: &OpenOptions,
+    ) -> impl Future<Output = Result<Self::Session, TransportError>> + Send;
+
+    /// [`Transport::open_with`] with no trace context: inferd starts its own root.
     fn open(
         &self,
         need: &Need,
         class: DataClass,
         tier: Tier,
-    ) -> impl Future<Output = Result<Self::Session, TransportError>> + Send;
+    ) -> impl Future<Output = Result<Self::Session, TransportError>> + Send {
+        async move {
+            self.open_with(need, class, tier, &OpenOptions { traceparent: None })
+                .await
+        }
+    }
 }
 
 /// The daemon links `Accounts::connect` picks between.
@@ -87,18 +102,23 @@ impl Transport for AnyTransport {
         }
     }
 
-    async fn open(
+    async fn open_with(
         &self,
         need: &Need,
         class: DataClass,
         tier: Tier,
+        options: &OpenOptions,
     ) -> Result<AnySession, TransportError> {
         match self {
             #[cfg(feature = "dbus")]
-            AnyTransport::Dbus(link) => link.open(need, class, tier).await.map(AnySession::Dbus),
-            AnyTransport::Socket(link) => {
-                link.open(need, class, tier).await.map(AnySession::Socket)
-            }
+            AnyTransport::Dbus(link) => link
+                .open_with(need, class, tier, options)
+                .await
+                .map(AnySession::Dbus),
+            AnyTransport::Socket(link) => link
+                .open_with(need, class, tier, options)
+                .await
+                .map(AnySession::Socket),
         }
     }
 }

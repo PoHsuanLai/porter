@@ -13,6 +13,7 @@ mod consent;
 mod effect;
 mod ids;
 mod label;
+pub mod trace;
 
 pub use actor::{Actor, ActorKind, AgentRole, Channel, SystemPart};
 pub use consent::{ConfirmId, ConfirmReceipt, InputProof, Witness, declassify, endorse};

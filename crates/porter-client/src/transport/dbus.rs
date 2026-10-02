@@ -4,7 +4,7 @@
 use super::Transport;
 use crate::error::TransportError;
 use porter_core::{AccountsReply, AccountsRequest, DataClass, Need, Tier};
-use porter_infer::{ClientFrame, InferEvent, InferSession, SessionError};
+use porter_infer::{ClientFrame, InferEvent, InferSession, OpenOptions, SessionError};
 
 /// accountd and inferd on the session bus.
 #[derive(Debug)]
@@ -43,11 +43,12 @@ impl Transport for DbusTransport {
         todo!("map the request to its Manager/Grants/Tokens method; Request objects for sheets")
     }
 
-    async fn open(
+    async fn open_with(
         &self,
         _need: &Need,
         _class: DataClass,
         _tier: Tier,
+        _options: &OpenOptions,
     ) -> Result<DbusSession, TransportError> {
         todo!("Inference1.Open, then frames on the returned fd")
     }

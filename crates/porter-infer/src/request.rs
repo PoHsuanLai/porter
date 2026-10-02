@@ -1,6 +1,7 @@
 //! What an app sends: one model whatever the provider; wire formats stay in the adapters.
 //! Streaming events are in `event`, the computer-use step in `cua`, speech in `speech`.
 
+use crate::control::{ChatControl, ThoughtSeal};
 use crate::cua::{CuaBegin, CuaStepRequest};
 use crate::ids::{AttachIndex, Base64Bytes, JsonSchemaText, JsonText, ToolCallId, ToolName};
 use crate::speech::{SpeakRequest, TranscribeBegin};
@@ -79,6 +80,8 @@ pub struct ChatRequest {
     pub usage: Usage,
     /// The functions the model may call (from the router's action declarations).
     pub tools: Vec<ToolDecl>,
+    /// Tool choice, parallelism, the output limit, reasoning, sampling and stop strings.
+    pub control: ChatControl,
 }
 
 /// One function a model may call.
@@ -125,6 +128,18 @@ pub enum MessagePart {
     ToolCall(ToolCallPart),
     /// What a function returned.
     ToolResult(ToolResultPart),
+    /// Reasoning the model produced, handed back with its seal. Apps never construct one;
+    /// inferd keeps it across tool turns.
+    Thought(ThoughtPart),
+}
+
+/// A thought in a message.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThoughtPart {
+    /// The reasoning text (empty when the provider redacted it).
+    pub text: String,
+    /// What the provider attached to hand back with it.
+    pub seal: ThoughtSeal,
 }
 
 /// A function call in a message.
@@ -186,6 +201,8 @@ pub enum ReplyShape {
     Text,
     /// JSON matching this JSON Schema (the schema's text).
     Json(String),
+    /// Exactly one of these strings (a reviewer's verdict).
+    Choice(Vec<String>),
 }
 
 /// Embeddings for some texts.
@@ -193,12 +210,25 @@ pub enum ReplyShape {
 pub struct EmbedRequest {
     /// The texts.
     pub inputs: Vec<String>,
+    /// Whether they are search queries or passages to index: asymmetric models embed the two
+    /// differently, and inferd puts the model's prefix in front.
+    pub role: EmbedRole,
     /// The vector length an existing index needs, or any.
     pub dims: DimsNeed,
     /// The data the texts carry.
     pub class: DataClass,
     /// Interactive or background (indexing).
     pub usage: Usage,
+}
+
+/// What an embedded text is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EmbedRole {
+    /// A search query.
+    Query,
+    /// A passage that is indexed.
+    Document,
 }
 
 /// A task above raw chat. Speech to text is not here: its input is audio, not text (see

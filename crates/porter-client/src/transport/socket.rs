@@ -5,7 +5,7 @@ use super::Transport;
 use crate::env::SocketPath;
 use crate::error::TransportError;
 use porter_core::{AccountsReply, AccountsRequest, DataClass, Need, Tier};
-use porter_infer::{ClientFrame, InferEvent, InferSession, SessionError};
+use porter_infer::{ClientFrame, InferEvent, InferSession, OpenOptions, SessionError};
 
 /// A connection to the agent on the latchkey socket.
 #[derive(Debug)]
@@ -44,11 +44,12 @@ impl Transport for SocketTransport {
         todo!("latchkey connect, encode_frame the request, decode_frame the reply")
     }
 
-    async fn open(
+    async fn open_with(
         &self,
         _need: &Need,
         _class: DataClass,
         _tier: Tier,
+        _options: &OpenOptions,
     ) -> Result<SocketSession, TransportError> {
         todo!("the same framing to inferd's socket, one connection per session")
     }

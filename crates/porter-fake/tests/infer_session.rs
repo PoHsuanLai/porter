@@ -85,6 +85,7 @@ async fn a_request_without_a_script_is_refused_and_cancel_ends_a_turn() {
         steps: vec![ScriptStep::Emit(InferEvent::Usage(TokenUsage {
             input: Tokens(1),
             output: Tokens(1),
+            cached: Tokens(0),
         }))],
     };
     let mut session = FakeInferSession::scripted([script]);

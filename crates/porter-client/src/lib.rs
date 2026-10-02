@@ -25,7 +25,7 @@ pub use env::{ClientEnv, LinkChoice, SocketPath};
 pub use error::{ClientError, TransportError};
 pub use found::{ConsentOffer, Found, NoAccount, found};
 /// The client's side of one `Open` fd, from porter-infer.
-pub use porter_infer::{InferSession, SessionError};
+pub use porter_infer::{InferSession, OpenOptions, SessionError, Traceparent};
 pub use transport::{
     AnySession, AnyTransport, InProcess, InProcessSession, SocketSession, SocketTransport,
     Transport,

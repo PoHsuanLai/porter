@@ -24,8 +24,8 @@ pub use inference::{InferenceProxy, InferenceSkeleton};
 pub use introspect::{Bus, introspection};
 pub use manager::{ManagerProxy, ManagerSkeleton};
 pub use names::{
-    ACCOUNTS_BUS, ACCOUNTS_PATH, INFERENCE_BUS, INFERENCE_PATH, INFERENCE_SETTINGS_PATH, SYNC_BUS,
-    SYNC_PATH, account_path,
+    ACCOUNTS_BUS, ACCOUNTS_PATH, INFERENCE_BUS, INFERENCE_PATH, INFERENCE_SETTINGS_PATH,
+    OPTION_TRACEPARENT, SYNC_BUS, SYNC_PATH, account_path,
 };
 pub use request::{RequestProxy, RequestSkeleton};
 pub use sync::{SyncProxy, SyncSkeleton};

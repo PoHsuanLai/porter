@@ -5,18 +5,21 @@
    <method name="Availability">
      <arg name="need" type="(sa{sv})" direction="in"/>
      <arg name="class" type="s" direction="in"/>
+     <arg name="options" type="a{sv}" direction="in"/>
      <arg type="s" direction="out"/>
    </method>
    <method name="Open">
      <arg name="need" type="(sa{sv})" direction="in"/>
      <arg name="class" type="s" direction="in"/>
      <arg name="tier" type="s" direction="in"/>
+     <arg name="options" type="a{sv}" direction="in"/>
      <arg type="h" direction="out"/>
    </method>
    <method name="Prepare">
      <arg name="need" type="(sa{sv})" direction="in"/>
      <arg name="class" type="s" direction="in"/>
      <arg name="tier" type="s" direction="in"/>
+     <arg name="options" type="a{sv}" direction="in"/>
      <arg type="s" direction="out"/>
    </method>
    <method name="Usage">

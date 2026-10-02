@@ -77,6 +77,7 @@ fn usage() -> TokenUsage {
     TokenUsage {
         input: Tokens(10),
         output: Tokens(5),
+        cached: Tokens(0),
     }
 }
 

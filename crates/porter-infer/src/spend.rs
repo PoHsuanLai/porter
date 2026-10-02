@@ -116,6 +116,7 @@ mod tests {
             let usage = TokenUsage {
                 input: Tokens(input),
                 output: Tokens(output),
+                cached: Tokens(0),
             };
             assert_eq!(cost(usage, &price), MicroUsd(expected), "{name}");
         }
@@ -126,6 +127,7 @@ mod tests {
         let usage = TokenUsage {
             input: Tokens(1),
             output: Tokens(0),
+            cached: Tokens(0),
         };
         assert_eq!(
             cost(usage, &cheap),

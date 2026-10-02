@@ -66,6 +66,27 @@ pub struct EmbedCap {
     pub modalities: BTreeSet<Modality>,
     /// The longest input.
     pub max_input: Tokens,
+    /// The most texts one call takes; callers batch to it.
+    pub max_batch: Count,
+    /// The text that goes in front of a query and of a document. It lives with the model, not
+    /// the caller, so an index and its queries cannot disagree. Boxed to keep `Capability`, and
+    /// every `Candidate` that holds one, small.
+    pub prompts: Box<EmbedPrompts>,
+}
+
+/// Text put in front of an input of one role (`search_query: `); empty for a symmetric model.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct PrefixText(pub String);
+
+/// The prefixes of an asymmetric embedding model (nomic, e5, Qwen3-embedding), both empty for a
+/// symmetric one.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct EmbedPrompts {
+    /// Before a search query.
+    pub query: PrefixText,
+    /// Before an indexed passage.
+    pub document: PrefixText,
 }
 
 /// A kind of input an embedding model takes.

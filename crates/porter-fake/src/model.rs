@@ -3,7 +3,7 @@
 use porter_core::{AccountId, Billing, Capability, Locality, ModelId, Tokens};
 use porter_infer::{
     ChatReply, ChatRequest, ChatSink, EmbedReply, EmbedRequest, EmbedVector, InferEvent,
-    MessagePart, Model, ModelCard, ModelError, ServedBy, TokenUsage,
+    MessagePart, Model, ModelCard, ModelError, ServedBy, StopReason, TokenUsage,
 };
 
 /// An on-device model of the fake runtime.
@@ -51,9 +51,10 @@ impl Model for FakeModel {
             .flat_map(|m| &m.parts)
             .filter_map(|part| match part {
                 MessagePart::Text(text) => Some(text.as_str()),
-                MessagePart::Image(_) | MessagePart::ToolCall(_) | MessagePart::ToolResult(_) => {
-                    None
-                }
+                MessagePart::Image(_)
+                | MessagePart::ToolCall(_)
+                | MessagePart::ToolResult(_)
+                | MessagePart::Thought(_) => None,
             })
             .next_back()
             .unwrap_or_default()
@@ -61,12 +62,15 @@ impl Model for FakeModel {
         let usage = TokenUsage {
             input: Tokens(1),
             output: Tokens(1),
+            cached: Tokens(0),
         };
         let _ = sink.event(InferEvent::TextDelta(text.clone()));
         let _ = sink.event(InferEvent::Usage(usage));
         Ok(ChatReply {
             text,
             tool_calls: Vec::new(),
+            stop: StopReason::EndTurn,
+            thought: None,
             usage,
             served: self.served(),
         })
@@ -81,6 +85,7 @@ impl Model for FakeModel {
         let usage = TokenUsage {
             input: Tokens(1),
             output: Tokens(0),
+            cached: Tokens(0),
         };
         Ok(EmbedReply {
             vectors,

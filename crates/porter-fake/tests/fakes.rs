@@ -3,6 +3,7 @@
 use porter_core::consent::Usage;
 use porter_core::{AccountId, DataClass, ModelId, Provenance, Tier};
 use porter_fake::{FakeModel, cloud_provider, llm_account, storage_account};
+use porter_infer::{ChatControl, Knob, Reasoning, ToolChoice, ToolParallelism};
 use porter_infer::{
     ChatMessage, ChatRequest, ChatSink, Flow, InferEvent, MessagePart, Model, ReplyShape, Role,
 };
@@ -60,6 +61,14 @@ async fn the_fake_model_echoes_the_last_text() {
         class: DataClass::Public,
         usage: Usage::Interactive,
         tools: vec![],
+        control: ChatControl {
+            tool_choice: ToolChoice::Auto,
+            tool_calls: ToolParallelism::Many,
+            max_output: Knob::Off,
+            reasoning: Reasoning::EngineDefault,
+            sampling: Knob::Off,
+            stop: vec![],
+        },
     };
     let mut events = Collect::default();
     let reply = model.chat(&request, &mut events).await.expect("chat");

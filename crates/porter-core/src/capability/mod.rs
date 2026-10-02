@@ -11,8 +11,8 @@ mod sync_kinds;
 mod terms;
 
 pub use ai::{
-    EmbedCap, ImageGenCap, ImageMode, LanguageSet, LanguageTag, LlmCap, LlmFeature, LlmWire,
-    Modality, RerankCap, SpeechCap, SpeechMode,
+    EmbedCap, EmbedPrompts, ImageGenCap, ImageMode, LanguageSet, LanguageTag, LlmCap, LlmFeature,
+    LlmWire, Modality, PrefixText, RerankCap, SpeechCap, SpeechMode,
 };
 pub use cua::{CuaBatching, CuaCap, CuaEnv};
 pub use kind::{CapabilityKind, VocabVersion};

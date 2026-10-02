@@ -66,6 +66,20 @@ fn requests_round_trip() {
         tier: Tier::Fast,
         class: DataClass::Mail,
         usage: Usage::Interactive,
+        control: ChatControl {
+            tool_choice: ToolChoice::Named(ToolName::parse("mail.thread.archive").expect("name")),
+            tool_calls: ToolParallelism::One,
+            max_output: Knob::Set(Tokens(1)),
+            reasoning: Reasoning::On(Effort::Low),
+            sampling: Knob::Set(Sampling {
+                temperature: Permille(700),
+                top_p: Knob::Set(Permille(950)),
+                top_k: Knob::Set(Count(20)),
+                min_p: Knob::Off,
+                seed: Knob::Set(Seed(7)),
+            }),
+            stop: vec!["\n\n".into()],
+        },
         tools: vec![ToolDecl {
             name: ToolName::parse("mail.thread.archive").expect("name"),
             description: "Archive a thread".into(),
@@ -75,6 +89,7 @@ fn requests_round_trip() {
     round_trip(&InferRequest::Chat(chat));
     round_trip(&InferRequest::Embed(EmbedRequest {
         inputs: vec!["a".into()],
+        role: EmbedRole::Document,
         dims: DimsNeed::Any,
         class: DataClass::Notes,
         usage: Usage::Background,
@@ -92,10 +107,13 @@ fn replies_and_records_round_trip() {
     let usage = TokenUsage {
         input: Tokens(10),
         output: Tokens(5),
+        cached: Tokens(4),
     };
     round_trip(&InferReply::Chat(ChatReply {
         text: "ok".into(),
         tool_calls: vec![],
+        stop: StopReason::MaxTokens,
+        thought: Some("hm".into()),
         usage,
         served: served(),
     }));
