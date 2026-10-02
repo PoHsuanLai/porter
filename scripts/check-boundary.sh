@@ -14,6 +14,7 @@ cd "$(dirname "$0")/.."
 EFFECTS="zbus zvariant tokio reqwest hyper ureq oo7 keyring secret-service interprocess latchkey"
 RULES=(
   "porter-core: $EFFECTS toml"
+  "prov: $EFFECTS"
   "porter-provider: $EFFECTS"
   "porter-secrets: $EFFECTS"
   "porter-sync: $EFFECTS"
@@ -53,17 +54,18 @@ done
 # the crate no longer has, so the table stays exact. Dev dependencies are outside it.
 EDGES=(
   "porter-core:"
+  "prov: porter-core"
   "porter-provider: porter-core"
   "porter-secrets: porter-core"
   "porter-sync: porter-core"
-  "porter-infer: porter-core"
+  "porter-infer: porter-core cua-action"
   "porter-service: porter-core porter-provider porter-secrets"
   "porter-dbus: porter-core"
   "porter-client: porter-core porter-dbus porter-infer porter-provider porter-secrets porter-service"
   "porter-fake: porter-core porter-infer porter-provider porter-secrets porter-service"
   "accountd: porter-core porter-dbus porter-provider porter-secrets porter-service"
   "syncd: porter-dbus porter-sync"
-  "inferd: porter-core porter-dbus porter-infer"
+  "inferd: porter-core porter-dbus porter-infer cua-action"
 )
 for edge in "${EDGES[@]}"; do
   crate="${edge%%:*}"

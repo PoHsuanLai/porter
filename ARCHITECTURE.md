@@ -14,29 +14,31 @@ trait), section 6 (copy the recipe).
 
 | Crate | Purpose | I/O |
 | --- | --- | --- |
-| `porter-core` | the vocabulary: ids, `Account`, the capability vocabulary (`Capability`, `CapabilityKind`), `Need` and `matches`, provenance and `effective`, `Restriction`, `Locality`/`Tier`/`Billing`, `DataClass`, consent (`Grant`, `decide`, `availability`, the sheet's ask and answer), `Credential`/`SecretKey`, `IssuedToken`, the wire protocol (`AccountsRequest`, `AccountsReply`, frames) | none |
+| `prov` | provenance for the companion: the shared ids (`SessionId`, `RunId`, `EntityId`, `ActionName`), `Effect`, the merged `Actor`, the label lattice (`Label`, `Labelled`, `Quarantined`) and the confirmation `Witness`; re-exports `SpaceId`, `SpaceScope`, `AppName`, `DataClass`, `UnixSeconds` | none |
+| `porter-core` | the vocabulary: ids and `SpaceId`/`SpaceScope`, `Account`, the capability vocabulary (`Capability`, `CapabilityKind`, computer use included), `Need` and `matches`, provenance and `effective`, `Restriction`, `Locality`/`Tier`/`Billing`, `DataClass`, consent (`Grant`, `decide`, `availability`, the sheet's ask and answer), `Credential`/`SecretKey`, `IssuedToken`, the wire protocol (`AccountsRequest`, `AccountsReply`, frames) | none |
 | `porter-provider` | provider files (`ProviderSpec`, `parse_provider`), `ProviderSet`, `Family`, `Issuer`, the `Provider` and `ProviderSession` traits | none |
 | `porter-secrets` | the `Secrets` trait, the Secret Service attribute scheme, `MemorySecrets` (feature `testing`), `Oo7Secrets` (feature `oo7`, stubbed) | none today; oo7 behind its feature |
 | `porter-sync` | the sync contract: `Replica`, `Cursor`/`Anchor`, `BaseVersion`, `Change`/`Tombstone`, `Conflict`, `DatasetKind`; `MemoryReplica` (feature `testing`) | none |
-| `porter-infer` | the AI broker's pure half: requests and replies, `Policy` and floors, `route`, spend caps, `AuditEntry`, the `Model` trait, `Broker` (stubbed) | none |
+| `porter-infer` | the AI broker's pure half: requests and replies (chat with tools, embeddings, tasks, computer-use steps, speech), the streaming session (`ClientFrame`, `InferEvent`, `InferSession`), the model picker's data (`AiKind`, `TierMap`, `PickerRow`), `Readiness`, `Policy` and floors, `route`, spend caps, `AuditEntry`, the `Model` trait, `Broker` (stubbed) | none |
 | `porter-service` | accountd's core over its seams: `AccountService`, `Registry`, the `Prompter` and `Clock` traits | none (seams are passed in) |
-| `porter-client` | the app-facing API: `Accounts`, `Found`, the `Transport` trait; `InProcess`, `SocketTransport`, `DbusTransport` (feature `dbus`) | through its transport |
+| `porter-client` | the app-facing API: `Accounts`, `Found`, the `Transport` trait (`call` for accountd, `open` for an inference session); `InProcess`, `SocketTransport`, `DbusTransport` (feature `dbus`) | through its transport |
 | `porter-dbus` | `org.quire.Accounts1`, `org.quire.Sync1`, `org.quire.Inference1` as zbus proxies and skeletons; `introspection`; the argument codec (stubbed) | zbus |
-| `porter-fake` | test-only: fake providers from real provider files, three accounts, `ScriptedPrompter`, `FixedClock`, `FakeModel`, `fake_service` | none |
-| `accountd`, `syncd`, `inferd` | the daemons: build their service over the seams; skeletons that exit with "not implemented" | everything |
+| `porter-fake` | test-only: fake providers from real provider files, three accounts, `ScriptedPrompter`, `FixedClock`, `FakeModel` (streams), `FakeInferSession` (scripted events per request kind, audio-gated transcripts), `fake_service` | none |
+| `accountd`, `syncd`, `inferd` | the daemons: build their service over the seams; skeletons that exit with "not implemented". `inferd` is also a library (`adapters`, `bridge`, `session`, `engines`, `catalog`, `cua_run`, `speech`) so its modules are tested without a bus | everything |
 
 Allowed direct edges (checked by `scripts/check-boundary.sh`; dev-dependencies are outside it):
 
 | Crate | May depend on |
 | --- | --- |
 | `porter-core` | nothing of ours |
-| `porter-provider`, `porter-secrets`, `porter-sync`, `porter-infer`, `porter-dbus` | `porter-core` |
+| `prov`, `porter-provider`, `porter-secrets`, `porter-sync`, `porter-dbus` | `porter-core` |
+| `porter-infer` | `porter-core`, `cua-action` (stoker's computer-use vocabulary, by sibling path) |
 | `porter-service` | `porter-core`, `porter-provider`, `porter-secrets` |
 | `porter-client` | `porter-core`, `porter-infer`, `porter-provider`, `porter-secrets`, `porter-service`; `porter-dbus` with feature `dbus` |
 | `porter-fake` | `porter-core`, `porter-infer`, `porter-provider`, `porter-secrets`, `porter-service` |
 | `accountd` | `porter-core`, `porter-dbus`, `porter-provider`, `porter-secrets`, `porter-service` |
 | `syncd` | `porter-dbus`, `porter-sync` |
-| `inferd` | `porter-core`, `porter-dbus`, `porter-infer` |
+| `inferd` | `porter-core`, `porter-dbus`, `porter-infer`, `cua-action` |
 
 External boundaries: every crate but `porter-dbus` and the daemons never reaches `zbus`,
 `zvariant`, `tokio`, `reqwest`, `hyper`, `ureq`, `oo7`, `keyring`, `secret-service`,
@@ -48,13 +50,14 @@ External boundaries: every crate but `porter-dbus` and the daemons never reaches
 
 | Crate | Modules |
 | --- | --- |
-| `porter-core` | `id`, `app_id`, `units`, `error` < `capability` (`terms`, `mail`, `pim`, `storage`, `photos`, `ai`, `sync_kinds`, `kind`) < `need` (`data`, `ai`) < `offer`, `effective`, `matching`, `restriction`, `ai_props`, `data_class`, `auth_kind`, `account` < `consent` (`grant`, `decide`, `prompt`) < `secret`, `token`, `candidate` < `wire` (`request`, `reply`, `frame`) |
+| `prov` | `ids`, `effect`, `actor`, `label`, `consent` |
+| `porter-core` | `id`, `app_id`, `units`, `space`, `error` < `capability` (`terms`, `mail`, `pim`, `storage`, `photos`, `ai`, `sync_kinds`, `kind`) < `need` (`data`, `ai`) < `offer`, `effective`, `matching`, `restriction`, `ai_props`, `data_class`, `auth_kind`, `account` < `consent` (`grant`, `decide`, `prompt`) < `secret`, `token`, `candidate` < `wire` (`request`, `reply`, `frame`) |
 | `porter-provider` | `family`, `error` < `spec` (`auth`, `discovery`) < `parse`, `set` < `provider` |
 | `porter-secrets` | `error`, `attributes` < `secrets` < `memory`, `oo7` |
 | `porter-sync` | `anchor`, `item`, `transfer` < `change`, `refusal`, `dataset` < `replica` < `memory` |
-| `porter-infer` | `request`, `reply`, `error` < `policy`, `spend`, `audit` < `route`, `model` < `broker` |
+| `porter-infer` | `ids`, `request`, `cua`, `speech`, `reply`, `error`, `readiness` < `event`, `session`, `choice` < `policy`, `spend`, `audit` < `route`, `model` < `broker` |
 | `porter-service` | `clock`, `prompter` < `registry` < `choose`, `token` < `service` |
-| `porter-client` | `error`, `env`, `found` < `transport` (`in_process`, `socket`, `dbus`) < `accounts` |
+| `porter-client` | `error`, `env`, `found` < `transport` (`in_process`, `socket`, `dbus`; each with its session) < `accounts` |
 | `porter-dbus` | `names`, `args` < `codec` < `manager`, `account`, `grants`, `tokens`, `request`, `sync`, `inference` < `introspect` |
 
 ## 3. One home per concept
@@ -72,6 +75,13 @@ External boundaries: every crate but `porter-dbus` and the daemons never reaches
 | consent decisions | `porter-core::consent::decide`, `availability` |
 | credentials, where they are filed | `porter-core::secret`; attributes in `porter-secrets::attributes` |
 | the wire protocol and its framing | `porter-core::wire` |
+| a Space's id and scope | `porter-core::space` |
+| who acted, labels, effects, the confirmation witness | `prov` |
+| the inference session (frames, events, replies) | `porter-infer::{request, event, reply}` |
+| the computer-use step contract | `porter-infer::cua` |
+| the speech turn on the wire | `porter-infer::speech` |
+| the model picker's data and the tier map | `porter-infer::choice` |
+| which request kinds a session's need admits | `inferd::session::fits` |
 | provider file format | `porter-provider::spec` + `parse` |
 | which secret an auth kind presents | `porter-service::secret_purpose` |
 | the account registry and candidates | `porter-service::registry` |
@@ -123,7 +133,8 @@ pub trait Replica: Send + Sync {
 // porter-infer: one per wire adapter, plus FakeModel.
 pub trait Model: Send + Sync {
     fn card(&self) -> &ModelCard;
-    fn chat(&self, request: &ChatRequest) -> impl Future<Output = Result<ChatReply, ModelError>> + Send;
+    fn chat(&self, request: &ChatRequest, sink: &mut impl ChatSink)
+        -> impl Future<Output = Result<ChatReply, ModelError>> + Send;
     fn embed(&self, request: &EmbedRequest) -> impl Future<Output = Result<EmbedReply, ModelError>> + Send;
 }
 
@@ -135,15 +146,24 @@ pub trait Clock: Send + Sync { fn now(&self) -> UnixSeconds; }
 
 // porter-client: D-Bus, the latchkey socket, in process.
 pub trait Transport: Send + Sync {
+    type Session: InferSession;
     fn call(&self, request: AccountsRequest) -> impl Future<Output = Result<AccountsReply, TransportError>> + Send;
-    fn infer(&self, request: InferRequest) -> impl Future<Output = Result<InferReply, TransportError>> + Send;
+    fn open(&self, need: &Need, class: DataClass, tier: Tier)
+        -> impl Future<Output = Result<Self::Session, TransportError>> + Send;
 }
+
+// porter-infer (re-exported by porter-client): one per transport, plus FakeInferSession.
+pub trait InferSession: Send {
+    fn send(&mut self, frame: ClientFrame) -> impl Future<Output = Result<(), SessionError>> + Send;
+    fn next(&mut self) -> impl Future<Output = Result<InferEvent, SessionError>> + Send;
+}
+pub trait ChatSink: Send { fn event(&mut self, event: InferEvent) -> Flow; }
 ```
 
 Closed sets stay enums: `Capability`/`CapabilityKind`/`Need` (versioned by `VocabVersion`),
 `AuthKind`, `Family`, `Issuer`, `Discovery`, `DataClass`, `Provenance`, `AbsentReason`,
 `Locality`, `SecretPurpose`, `AccountsRequest`/`AccountsReply`/`Refusal`,
-`InferRequest`/`InferReply`/`InferRefusal`, `DatasetKind`, `Found`.
+`InferRequest`/`ClientFrame`/`InferEvent`/`InferReply`/`InferRefusal`, `AiKind`, `Readiness`, `DatasetKind`, `Found`.
 
 ## 5. What is frozen, what is built, what is stubbed
 
@@ -156,16 +176,26 @@ the interface other work builds on; a change is a vocabulary bump (section 6) or
 | consent: `decide`, `availability`, the sheet's ask/answer | built, table-tested |
 | ids, `AppName`, `LanguageTag` parsing; credential redaction | built, tested |
 | wire enums and socket frames | built, round-trip tested |
-| provider file format, parser and checks, `ProviderSet` | built, tested; three shipped files in `providers/` |
+| provider file format, parser and checks, `ProviderSet` | built, tested; four shipped files in `providers/` (`local.toml` is the supervised engines) |
 | `Secrets` trait, attributes, `MemorySecrets` | built, tested |
 | `Oo7Secrets` | stub (`todo!()`) |
 | sync contract and `MemoryReplica` | built, contract-tested |
 | routing, floors, spend arithmetic | built, table-tested |
-| `Broker::infer` | stub |
+| `Broker::infer` (streaming into a `ChatSink`) | stub |
+| `prov` ids, `Effect`, `Actor`, `Quarantined`, `ReaderKey`, `Labelled::map` | built, round-trip and redaction tested |
+| `prov` lattice: `Label::join`, `trusted_user`, `untrusted`, `Labelled::zip`, `endorse`, `declassify` | stub |
+| porter-core: `SpaceId`, `SpaceScope`, `GrantKey.space`, `Grant<K>`, `decide<K>`, computer use, `DataClass::Voice`, `VocabVersion(2)` | built, table-tested |
+| porter-infer wire: tools, images, `CuaBegin`/`CuaStep`, `Transcribe`/`Speak`, `ClientFrame`, `InferEvent`, replies | built, round-trip and pinned-JSON tested |
+| `tier_choice`, `AiKind::setting_key`, `InferRequest::kind` | built, table-tested |
+| `picker_rows` | stub |
+| `inferd::session::step` | stub; `fits` built |
+| `inferd::speech` rules (`check_audio`, `audio_ms`) | built, table-tested; `SpeechRunner` stub |
+| `inferd::{engines, catalog, cua_run}` bodies, `inferd::bridge` provider-type halves | stub (`cua_run::check_class` and `bridge::model_id_of` built) |
+| `FakeInferSession`, `FakeModel` streaming | built, tested |
 | `AccountService`: Query, Availability, Choose, ListGrants, Revoke, IssueToken, `remove_account` | built over the seams, tested end to end with the fakes |
 | `AccountService`: AddAccount, Reauthenticate | stub |
 | `Accounts` (client API), `found`, `InProcess` accounts calls | built, tested end to end |
-| `Accounts::connect`, `SocketTransport`, `DbusTransport`, `InProcess::infer` | stub |
+| `Accounts::connect`, `SocketTransport`, `DbusTransport`, `InProcess::open` and the three sessions | stub; `Accounts::session` and `Accounts::infer` built over `Transport::open` |
 | D-Bus proxies and skeletons, introspection files in `dbus/` | frozen, introspection tested; skeleton methods answer `NotSupported` |
 | D-Bus argument codec (`need_to_dbus` and friends) | stub |
 | daemons | skeletons: build their service, print "not implemented", exit 2 |
@@ -193,6 +223,18 @@ its arm in `AccountService::handle`; the D-Bus member in `porter-dbus` (proxy an
 regenerate and review `dbus/org.quire.Accounts1.xml`; a client method in `Accounts`.
 
 **Add a dataset**: its `DatasetKind` variant and conflict rule; the dataset plug-in in syncd.
+
+**Add a request kind** (a vocabulary bump when it changes a frozen type): its variant in
+`InferRequest` and `RequestKind`, its arm in `kind()`, a row in `inferd::session::fits`, its
+reply in `InferReply`, its events in `InferEvent` if it streams, the round-trip rows in
+`porter-infer/tests/frames.rs`; a design/31 §5.5 line. Speech and computer use are the models:
+they travel on the same `Open` fd and add no D-Bus member.
+
+**Add an AI kind to the picker**: its variant in `AiKind` with its slug and the
+`ai.model.<kind>.<tier>` rows in design/22; the `Need` it maps to in the comment on the enum.
+
+**Add a data class**: its variant in `DataClass`, its floor in `Policy::proposed` (or a line in
+`every_data_class_has_a_floor_decision` saying it goes anywhere), the `ai.floor.<class>` row.
 
 **Add a wire adapter**: a `Model` implementation; its variant in `inferd`'s `AdapterModel`.
 
