@@ -46,6 +46,12 @@ fn every_actor() -> Vec<Actor> {
             session,
             role: AgentRole::Cua { run: run() },
         },
+        Actor::Companion {
+            session: SessionId::parse("s-2").expect("session id"),
+            role: AgentRole::Worker {
+                task: TaskId::parse("t-4").expect("task id"),
+            },
+        },
         Actor::Mcp {
             client: ClientName::parse("Claude Desktop").expect("client"),
         },
@@ -77,6 +83,17 @@ fn actors_round_trip_and_pin_their_json() {
         r#"{"kind":"companion","v":{"session":"s-1","role":{"kind":"cua","v":{"run":"r-7"}}}}"#
     );
     assert_eq!(round_trip(&Actor::Unknown), r#"{"kind":"unknown"}"#);
+    let worker = Actor::Companion {
+        session: SessionId::parse("s-2").expect("id"),
+        role: AgentRole::Worker {
+            task: TaskId::parse("t-4").expect("id"),
+        },
+    };
+    assert_eq!(
+        round_trip(&worker),
+        r#"{"kind":"companion","v":{"session":"s-2","role":{"kind":"worker","v":{"task":"t-4"}}}}"#
+    );
+    assert_eq!(worker.kind(), ActorKind::Companion);
 }
 
 #[test]
@@ -89,6 +106,7 @@ fn every_actor_has_a_kind() {
             ActorKind::Companion,
             ActorKind::Companion,
             ActorKind::Cua,
+            ActorKind::Companion,
             ActorKind::Mcp,
             ActorKind::App,
             ActorKind::ThirdParty,

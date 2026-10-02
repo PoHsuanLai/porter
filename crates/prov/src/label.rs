@@ -114,7 +114,9 @@ impl Label {
     /// The label of anything derived from both: the only combiner.
     pub fn join(&self, other: &Label) -> Label {
         let _ = other;
-        todo!("integrity min, confidentiality max (Private sets union), classes and sources union")
+        todo!(
+            "integrity min, confidentiality via Confidentiality::join (built), classes and sources union"
+        )
     }
 }
 

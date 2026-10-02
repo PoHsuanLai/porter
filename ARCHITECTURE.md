@@ -14,7 +14,7 @@ trait), section 6 (copy the recipe).
 
 | Crate | Purpose | I/O |
 | --- | --- | --- |
-| `prov` | provenance for the companion: the shared ids (`SessionId`, `RunId`, `EntityId`, `ActionName`), `Effect`, the merged `Actor`, the label lattice (`Label`, `Labelled`, `Quarantined`) and the confirmation `Witness`; re-exports `SpaceId`, `SpaceScope`, `AppName`, `DataClass`, `UnixSeconds` | none |
+| `prov` | provenance for the companion: the shared ids (`SessionId`, `RunId`, `TaskId`, `EntityId`, `ActionName`, `MessageId`, `ThreadId`), `Effect`, the merged `Actor` (`AgentRole::Worker` beside `Cua`), the one `Message` model with `AgentRef` and `Address`, the desktop-scope join (`Confidentiality::join`, `flow_to`, `desktop_admits`), the label lattice (`Label`, `Labelled`, `Quarantined`) and the confirmation `Witness`; re-exports `SpaceId`, `SpaceScope`, `AppName`, `DataClass`, `UnixSeconds` | none |
 | `porter-core` | the vocabulary: ids and `SpaceId`/`SpaceScope`, `Account`, the capability vocabulary (`Capability`, `CapabilityKind`, computer use included), `Need` and `matches`, provenance and `effective`, `Restriction`, `Locality`/`Tier`/`Billing`, `DataClass`, consent (`Grant`, `decide`, `availability`, the sheet's ask and answer), `Credential`/`SecretKey`, `IssuedToken`, the wire protocol (`AccountsRequest`, `AccountsReply`, frames) | none |
 | `porter-provider` | provider files (`ProviderSpec`, `parse_provider`), `ProviderSet`, `Family`, `Issuer`, the `Provider` and `ProviderSession` traits | none |
 | `porter-secrets` | the `Secrets` trait, the Secret Service attribute scheme, `MemorySecrets` (feature `testing`), `Oo7Secrets` (feature `oo7`, stubbed) | none today; oo7 behind its feature |
@@ -50,7 +50,7 @@ External boundaries: every crate but `porter-dbus` and the daemons never reaches
 
 | Crate | Modules |
 | --- | --- |
-| `prov` | `ids`, `effect`, `actor`, `label`, `consent`, `trace` (span attribute names, `slug`s) |
+| `prov` | `ids`, `effect`, `actor`, `agent`, `label`, `scope`, `message`, `consent`, `trace` (span attribute names, `slug`s) |
 | `porter-core` | `id`, `app_id`, `units`, `space`, `error` < `capability` (`terms`, `mail`, `pim`, `storage`, `photos`, `ai`, `sync_kinds`, `kind`) < `need` (`data`, `ai`) < `offer`, `effective`, `matching`, `restriction`, `ai_props`, `data_class`, `auth_kind`, `account` < `consent` (`grant`, `decide`, `prompt`) < `secret`, `token`, `candidate` < `wire` (`request`, `reply`, `frame`) |
 | `porter-provider` | `family`, `error` < `spec` (`auth`, `discovery`) < `parse`, `set` < `provider` |
 | `porter-secrets` | `error`, `attributes` < `secrets` < `memory`, `oo7` |
@@ -77,6 +77,9 @@ External boundaries: every crate but `porter-dbus` and the daemons never reaches
 | the wire protocol and its framing | `porter-core::wire` |
 | a Space's id and scope | `porter-core::space` |
 | who acted, labels, effects, the confirmation witness | `prov` |
+| a message between agents (companion, worker, computer-use run, the person; across Spaces too), its thread, kind and typed parts | `prov::message` (there is no other return, result or report type) |
+| the roster's agent reference and a message's address | `prov::agent` |
+| how the `desktop` scope joins a Space's labels | `prov::scope` |
 | the inference session (frames, events, replies) | `porter-infer::{request, event, reply}` |
 | chat controls (tool choice, parallelism, output limit, reasoning, sampling, stop), `StopReason`, `ThoughtSeal` | `porter-infer::control` |
 | the options of `Open` (the reserved `traceparent`) | `porter-infer::open`; the bus key is `porter-dbus::OPTION_TRACEPARENT` |
@@ -190,6 +193,7 @@ the interface other work builds on; a change is a vocabulary bump (section 6) or
 | routing, floors, spend arithmetic | built, table-tested |
 | `Broker::infer` (streaming into a `ChatSink`) | stub |
 | `prov` ids, `Effect`, `Actor`, `Quarantined`, `ReaderKey`, `Labelled::map` | built, round-trip and redaction tested |
+| `prov::{Message, AgentRef, Address}`, `Message::check`, `AgentRef::of`, `Confidentiality::{join, flow_to}`, `desktop_admits` | built, round-trip, pinned-JSON and table tested |
 | `prov` lattice: `Label::join`, `trusted_user`, `untrusted`, `Labelled::zip`, `endorse`, `declassify` | stub |
 | porter-core: `SpaceId`, `SpaceScope`, `GrantKey.space`, `Grant<K>`, `decide<K>`, computer use, `DataClass::Voice`, `VocabVersion(2)` | built, table-tested |
 | porter-infer wire: tools, images, `ChatControl`, `StopReason`, `ThoughtPart`, `ReplyShape::Choice`, `EmbedRole`, `CuaBegin`/`CuaStep`, `Transcribe`/`Speak`, `ClientFrame`, `InferEvent`, replies | built, round-trip and pinned-JSON tested |
@@ -302,6 +306,19 @@ D-Bus on the desktop). Where each mailo piece lands:
   until `dbus/*.xml` equals the skeletons' introspection; the failure prints the new text.
 - **Refresh tokens, passwords and keys never cross a transport.** No wire type holds a
   `Credential`; apps receive `IssuedToken`.
+- **A message carries no authority.** `prov::Message` is the one model for every exchange
+  between agents: a request from the companion to a worker, a worker's or a computer-use run's
+  progress and final report, the person's direct turn to a subagent (the person is a sender,
+  `AgentRef::User`), a note, and a message across Spaces. A message is input. Nothing in it
+  grants the receiver a permission, a budget or a memory read; a `Request` is evaluated under
+  the receiver's own `TaskPolicy` and the router's gating pipeline as if the receiver had
+  thought of it, and an untrusted sender's request is only a suggestion. Its label (the
+  sender's taint included) travels and the receiver joins it into its own. A message may cross
+  Spaces but keeps both ends' Spaces and never grants a memory read in the other. `from` is
+  stamped by the transport from the caller (`Message::sender_matches`), never self-asserted.
+- **The `desktop` scope is a sub-scope of every Space.** It holds only facts the person stated
+  (`desktop_admits`); `Confidentiality::join` drops `desktop` when another Space is present, so
+  reading a desktop fact into a `work` task leaves the task `Private({work})`.
 - **Floats** appear only in `EmbedVector` (embeddings are floats end to end).
 
 ## 7. Who retries, who repairs

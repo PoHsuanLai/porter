@@ -1,6 +1,6 @@
 //! Who acted. Set by the transport or the daemon, never self-asserted in a request body.
 
-use crate::ids::{ClientName, RunId, SessionId};
+use crate::ids::{ClientName, RunId, SessionId, TaskId};
 use porter_core::AppName;
 use serde::{Deserialize, Serialize};
 
@@ -59,6 +59,12 @@ pub enum AgentRole {
         /// The run.
         run: RunId,
     },
+    /// A worker subagent other than a computer-use run (research, watch-for-X, a background
+    /// task): its own docket session, narrowed from its parent's policy, never wider.
+    Worker {
+        /// The task it runs as.
+        task: TaskId,
+    },
 }
 
 /// How a third-party app's activity was observed.
@@ -101,7 +107,7 @@ pub enum SystemPart {
 pub enum ActorKind {
     /// [`Actor::User`].
     User,
-    /// [`Actor::Companion`] as planner or reader.
+    /// [`Actor::Companion`] as planner, reader or worker.
     Companion,
     /// [`Actor::Companion`] as a computer-use run.
     Cua,

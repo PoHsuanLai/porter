@@ -12,7 +12,7 @@ Open items and standing facts. An entry names the condition that closes it.
 | porter-client `connect`, `DbusTransport::{call, open_with}` and `DbusSession::{send, next}`, `SocketTransport::{call, open_with}` and `SocketSession::{send, next}`, `InProcess::open_with` and `InProcessSession::{send, next}` | accountd and inferd serve / an agent hosts the core |
 | porter-infer `Broker::infer` (streaming into a `ChatSink`) | the first wire adapter (Ollama, then llama.cpp and vLLM through stoker's `model-openai-compat`) |
 | porter-infer `picker_rows` | fill wave 1: the order and filter in its doc comment, a table test |
-| prov `Label::{trusted_user, untrusted, join}`, `Labelled::zip`, `endorse`, `declassify` | fill wave 1: the FIDES lattice (integrity min, confidentiality max with Private sets unioned, classes and sources unioned), a proptest that `join` is a commutative, associative, idempotent semilattice |
+| prov `Label::{trusted_user, untrusted, join}`, `Labelled::zip`, `endorse`, `declassify` | fill wave 1: the FIDES lattice (integrity min, confidentiality through the built `Confidentiality::join`, classes and sources unioned), a proptest that `join` is a commutative, associative, idempotent semilattice (the confidentiality half already has an exhaustive test over a small universe) |
 | inferd `session::step` | fill wave 1: the rows of models §4.2 and voice §3.4 as one table test (audio frames use `speech::check_audio`; a `Transcribe` turn on a class other than `Voice` or the caller's own is `Refused(Unsupported)`) |
 | inferd `engines::{Engines::prepare, Engines::gpu}` | fill wave 3: the supervisor host over systemd transient units; needs stoker's `engine-supervisor` |
 | inferd `catalog::local_claims` | fill wave 3: needs stoker's `model-catalog` (merge, then one `Claim` per model capability at `Provenance::Curated`) |
@@ -53,6 +53,44 @@ unchanged by it).
   with the pinned stoker revs of fill wave 1; each pair has a total mapping test then.
 - almanac consumes `ChatRequest`, `EmbedRequest` and `EmbedCap`; its `recall` amendment (item 9)
   adds the role, the batch limit and the prompts on its side.
+
+## The companion amendment (2026-10-03)
+
+Interface changes made before any fill wave, from QUESTIONS "Persistent companion" and "One
+message model" and `research-persistent-agent.md` sections C, D and E. Types, signatures, docs,
+pure tables and tests; no new `todo!()` in porter (one pure function was built instead).
+
+- `prov::Message`, the one message model (`message.rs`): `id`, `thread`, `in_reply_to`, `from`
+  and `to` (`Address` = `AgentRef` + `SpaceId`), `kind` (`Note`, `Request`, `Report { status }`
+  with `ReportStatus { Done, Failed, Cancelled, Progress }`), `parts` (`Part::{Text, Entity,
+  Outcome, Undo}`), `label` (travels, the sender's taint included) and `sent`. There was no
+  separate return or result type in `prov` or `porter-core` to remove; `porter-infer`'s
+  `PrevResult` is the model transport's computer-use feedback, not an agent message, and stays.
+  Docket and cua must not add a result type: a computer-use run's final result is a `Report`
+  whose parts hold `Outcome` refs and text.
+- The rule "a message carries no authority" is in `prov`'s crate docs, in `message.rs` and in
+  `ARCHITECTURE.md` section 9 (repo rules).
+- `AgentRef { Companion, Worker { task }, Cua { run }, User }` (the roster's party; `Reader`
+  and `Planner` are both `Companion`), `Address`, `Crossing`, and `AgentRef::of(&Actor)`.
+- `AgentRole::Worker { task: TaskId }`. `ActorKind` is unchanged: a worker is
+  `ActorKind::Companion` (policy tables and retention classes key on the kind; a worker is the
+  companion's agent). Pinned: `every_actor_has_a_kind` in `tests/shapes.rs` gained the worker
+  row, the only golden that changed.
+- New ids: `TaskId` (moved here from docket-core; SPEC section 2 names docket-core as its home,
+  which must now read prov), `MessageId`, `ThreadId`, and the opaque `OutcomeRef` and
+  `UndoHandle` (1 to 128 bytes, no control characters) that stand in for docket's `Handle` and
+  `UndoId`, which prov cannot name.
+- The desktop join rule (research D G15, user decision Q9), built and table-tested in
+  `scope.rs`: `Confidentiality::join` (Secret absorbs; Public is the identity; Private sets
+  union, and `desktop` is dropped whenever another Space is present, so it is a sub-scope of
+  every Space); `Confidentiality::flow_to(&SpaceId) -> Flow` (every named Space must be the
+  target or `desktop`); `desktop_admits(&Label) -> DesktopVerdict` (admits only `Trusted`,
+  sourced from `{User}` alone, not `Secret`, not private to a real Space). `Label::join`
+  stays a stub and is to call `Confidentiality::join` for its confidentiality half.
+- A message's `Message::check` bounds (`MAX_PARTS` 64, `MAX_TEXT_BYTES` 16 KiB) are a
+  proposal for the router to measure; they are constants, not settings.
+- Open for docket: `Message.label` is one label for the whole message (the join of its
+  parts). A typed ref part keeps its own label at its owner and is read through it.
 
 ## Open
 
