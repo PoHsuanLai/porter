@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
   "crates/porter-core",
+  "crates/prov",
   "crates/porter-provider",
   "crates/porter-secrets",
   "crates/porter-sync",
@@ -26,6 +27,7 @@ publish = false
 
 [workspace.dependencies]
 porter-core     = { path = "crates/porter-core" }
+prov            = { path = "crates/prov" }
 porter-provider = { path = "crates/porter-provider" }
 porter-secrets  = { path = "crates/porter-secrets" }
 porter-sync     = { path = "crates/porter-sync" }
@@ -35,6 +37,10 @@ porter-dbus     = { path = "crates/porter-dbus" }
 porter-client   = { path = "crates/porter-client" }
 porter-fake     = { path = "crates/porter-fake" }
 
+# stoker's computer-use vocabulary, by sibling path until the pinned git rev replaces it (quire
+# CONSUMING.md section 1). stoker has no porter dependency, so there is no cycle.
+cua-action      = { path = "../stoker/crates/cua-action" }
+
 # From quire's pinned block (`docs/workspace-deps.toml`), copied verbatim: only the lines porter
 # names itself, as mailo does.
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
@@ -43,6 +49,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 zbus = { version = "5.19", default-features = false, features = ["tokio"] }  # shell repos only; they also enable ds-settings/tokio. quire itself builds zbus with its async-io default so app consumers keep their own executor.
 toml = "1"
+base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
 
 [workspace.lints.rust]
