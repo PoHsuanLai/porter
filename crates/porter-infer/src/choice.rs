@@ -170,8 +170,52 @@ pub struct PickerRow {
 /// loadable before downloadable, then the order the cards came in (the catalog's order). No
 /// ranking by quality; a non-commercial row is listed and never mapped to a tier by itself.
 pub fn picker_rows(kind: AiKind, cards: &[PickerInput], map: &TierMap) -> Vec<PickerRow> {
-    let _ = (kind, cards, map);
-    todo!("filter by kind, stable sort by (locality closeness, readiness), chosen_for from map")
+    let mut rows: Vec<PickerRow> = cards
+        .iter()
+        .filter(|card| card.kind == kind)
+        .map(|card| row_of(card, map))
+        .collect();
+    // `sort_by_key` is stable: equal keys keep the catalog's order.
+    rows.sort_by_key(|row| (closeness(&row.locality), soonness(row.readiness)));
+    rows
+}
+
+fn row_of(card: &PickerInput, map: &TierMap) -> PickerRow {
+    let chosen_for = [Tier::Fast, Tier::Balanced, Tier::Best]
+        .into_iter()
+        .filter(|tier| tier_choice(map, card.kind, *tier, &card.model) == TierChoice::Chosen)
+        .collect();
+    PickerRow {
+        model: card.model.clone(),
+        label: card.label.clone(),
+        kind: card.kind,
+        locality: card.locality.clone(),
+        billing: card.billing.clone(),
+        readiness: card.readiness,
+        fit: card.fit,
+        licence: card.licence,
+        chosen_for,
+    }
+}
+
+/// This computer, then the user's other machines, then the cloud; regions do not order.
+fn closeness(locality: &Locality) -> u8 {
+    match locality {
+        Locality::OnDevice => 0,
+        Locality::LocalNetwork => 1,
+        Locality::Cloud { .. } => 2,
+    }
+}
+
+/// How soon the model can answer; a download in progress sorts with the downloadable.
+fn soonness(readiness: Readiness) -> u8 {
+    match readiness {
+        Readiness::Ready => 0,
+        Readiness::Loading => 1,
+        Readiness::Loadable => 2,
+        Readiness::Downloading(_) | Readiness::Downloadable => 3,
+        Readiness::Unavailable => 4,
+    }
 }
 
 #[cfg(test)]
@@ -227,6 +271,135 @@ mod tests {
         ];
         for (name, kind, tier, who, expected) in cases {
             assert_eq!(tier_choice(&map, kind, tier, who), expected, "{name}");
+        }
+    }
+
+    fn card(name: &str, kind: AiKind, locality: Locality, readiness: Readiness) -> PickerInput {
+        PickerInput {
+            model: model("local", name),
+            label: name.to_owned(),
+            kind,
+            locality,
+            billing: Billing::Free,
+            readiness,
+            fit: Fit::Fits,
+            licence: LicenceClass::Open,
+        }
+    }
+
+    fn names(rows: &[PickerRow]) -> Vec<&str> {
+        rows.iter().map(|r| r.label.as_str()).collect()
+    }
+
+    #[test]
+    fn picker_rows_filter_then_order_by_closeness_then_readiness() {
+        use Readiness::*;
+        let cloud = |region: Option<&str>| Locality::Cloud {
+            region: region.map(|r| porter_core::Region(r.to_owned())),
+        };
+        let cards = [
+            card("far-ready", AiKind::Llm, cloud(Some("eu-west-1")), Ready),
+            card("speech", AiKind::SpeechIn, Locality::OnDevice, Ready),
+            card("near-down", AiKind::Llm, Locality::OnDevice, Downloadable),
+            card("near-stopped", AiKind::Llm, Locality::OnDevice, Loadable),
+            card("lan", AiKind::Llm, Locality::LocalNetwork, Ready),
+            card("near-ready-a", AiKind::Llm, Locality::OnDevice, Ready),
+            card("near-ready-b", AiKind::Llm, Locality::OnDevice, Ready),
+            card("far-ready-2", AiKind::Llm, cloud(None), Ready),
+            card("near-loading", AiKind::Llm, Locality::OnDevice, Loading),
+            card("near-gone", AiKind::Llm, Locality::OnDevice, Unavailable),
+        ];
+        let cases = [
+            (
+                AiKind::Llm,
+                vec![
+                    "near-ready-a",
+                    "near-ready-b",
+                    "near-loading",
+                    "near-stopped",
+                    "near-down",
+                    "near-gone",
+                    "lan",
+                    "far-ready",
+                    "far-ready-2",
+                ],
+            ),
+            (AiKind::SpeechIn, vec!["speech"]),
+            (AiKind::Rerank, vec![]),
+        ];
+        for (kind, expected) in cases {
+            let rows = picker_rows(kind, &cards, &TierMap::default());
+            assert_eq!(names(&rows), expected, "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn picker_rows_mark_the_tiers_the_user_mapped() {
+        let a = card("a", AiKind::Llm, Locality::OnDevice, Readiness::Ready);
+        let map = TierMap {
+            rows: vec![
+                TierRow {
+                    kind: AiKind::Llm,
+                    tier: Tier::Fast,
+                    model: a.model.clone(),
+                },
+                TierRow {
+                    kind: AiKind::Llm,
+                    tier: Tier::Best,
+                    model: a.model.clone(),
+                },
+                TierRow {
+                    kind: AiKind::SpeechIn,
+                    tier: Tier::Balanced,
+                    model: a.model.clone(),
+                },
+            ],
+        };
+        let rows = picker_rows(AiKind::Llm, &[a], &map);
+        assert_eq!(rows[0].chosen_for, BTreeSet::from([Tier::Fast, Tier::Best]));
+    }
+
+    #[test]
+    fn picker_rows_carry_no_ranking_words() {
+        let cards = [
+            card("a", AiKind::Llm, Locality::OnDevice, Readiness::Ready),
+            card(
+                "b",
+                AiKind::Llm,
+                Locality::LocalNetwork,
+                Readiness::Loadable,
+            ),
+        ];
+        let json = serde_json::to_value(picker_rows(AiKind::Llm, &cards, &TierMap::default()))
+            .expect("serializes");
+        let mut keys = Vec::new();
+        collect_keys(&json, &mut keys);
+        for word in [
+            "rank",
+            "score",
+            "recommended",
+            "best",
+            "top",
+            "preferred",
+            "default",
+        ] {
+            assert!(
+                !keys.iter().any(|k| k.contains(word)),
+                "a row field names `{word}`: {keys:?}"
+            );
+        }
+    }
+
+    fn collect_keys(value: &serde_json::Value, out: &mut Vec<String>) {
+        match value {
+            serde_json::Value::Object(map) => {
+                for (k, v) in map {
+                    out.push(k.clone());
+                    collect_keys(v, out);
+                }
+            }
+            serde_json::Value::Array(items) => items.iter().for_each(|v| collect_keys(v, out)),
+            _ => {}
         }
     }
 

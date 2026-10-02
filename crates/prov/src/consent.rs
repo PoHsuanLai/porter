@@ -1,6 +1,6 @@
 //! The witness that a person said yes, and the two functions that spend it.
 
-use crate::label::{Confidentiality, Labelled};
+use crate::label::{Confidentiality, Integrity, Labelled, Source};
 use porter_core::{CoreError, UnixSeconds, is_id};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -81,12 +81,17 @@ pub enum Witness {
 
 /// Raises integrity to `Trusted` and adds `Source::User`.
 pub fn endorse<T>(value: Labelled<T>, witness: &Witness) -> Labelled<T> {
-    let _ = (value, witness);
-    todo!("integrity Trusted, sources += User")
+    let Witness::UserConfirmed(_) = witness;
+    let mut label = value.label;
+    label.integrity = Integrity::Trusted;
+    label.sources.insert(Source::User);
+    Labelled { label, ..value }
 }
 
 /// Lowers confidentiality to `to`, which must not exceed what the receipt covers.
 pub fn declassify<T>(value: Labelled<T>, to: Confidentiality, witness: &Witness) -> Labelled<T> {
-    let _ = (value, to, witness);
-    todo!("confidentiality := to")
+    let Witness::UserConfirmed(_) = witness;
+    let mut label = value.label;
+    label.confidentiality = to;
+    Labelled { label, ..value }
 }

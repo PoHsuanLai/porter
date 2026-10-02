@@ -10,8 +10,7 @@
 //! **A message carries no authority**: it is input; any request in it is evaluated under the
 //! receiver's own `TaskPolicy` and the gating pipeline (see [`message`](Message)).
 //!
-//! The lattice behaviour (`Label::join`, endorsement, declassification) is frozen as signatures
-//! with `todo!()` bodies; `FINDINGS.md` lists each.
+//! The lattice (`Label::join`, endorsement, declassification) is built and property-tested.
 
 mod actor;
 mod agent;

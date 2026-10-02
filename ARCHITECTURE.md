@@ -201,7 +201,7 @@ the interface other work builds on; a change is a vocabulary bump (section 6) or
 | `prov::trace` names, `ActorKind::slug`, `Effect::slug` | built, tested against the serde forms |
 | `tier_choice`, `AiKind::setting_key`, `InferRequest::kind` | built, table-tested |
 | `picker_rows` | stub |
-| `inferd::session::step` | stub; `fits` built |
+| `inferd::session::step` | built; `fits` built |
 | `inferd::speech` rules (`check_audio`, `audio_ms`) | built, table-tested; `SpeechRunner` stub |
 | `inferd::{engines, catalog, cua_run}` bodies, `inferd::bridge` provider-type halves | stub (`cua_run::check_class` and `bridge::model_id_of` built) |
 | `FakeInferSession`, `FakeModel` streaming | built, tested |

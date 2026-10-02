@@ -11,9 +11,6 @@ Open items and standing facts. An entry names the condition that closes it.
 | porter-dbus codec (`need_to_dbus`, `need_from_dbus`, `candidate_to_dbus`, `candidate_from_dbus`) | accountd serves the bus |
 | porter-client `connect`, `DbusTransport::{call, open_with}` and `DbusSession::{send, next}`, `SocketTransport::{call, open_with}` and `SocketSession::{send, next}`, `InProcess::open_with` and `InProcessSession::{send, next}` | accountd and inferd serve / an agent hosts the core |
 | porter-infer `Broker::infer` (streaming into a `ChatSink`) | the first wire adapter (Ollama, then llama.cpp and vLLM through stoker's `model-openai-compat`) |
-| porter-infer `picker_rows` | fill wave 1: the order and filter in its doc comment, a table test |
-| prov `Label::{trusted_user, untrusted, join}`, `Labelled::zip`, `endorse`, `declassify` | fill wave 1: the FIDES lattice (integrity min, confidentiality through the built `Confidentiality::join`, classes and sources unioned), a proptest that `join` is a commutative, associative, idempotent semilattice (the confidentiality half already has an exhaustive test over a small universe) |
-| inferd `session::step` | fill wave 1: the rows of models §4.2 and voice §3.4 as one table test (audio frames use `speech::check_audio`; a `Transcribe` turn on a class other than `Voice` or the caller's own is `Refused(Unsupported)`) |
 | inferd `engines::{Engines::prepare, Engines::gpu}` | fill wave 3: the supervisor host over systemd transient units; needs stoker's `engine-supervisor` |
 | inferd `catalog::local_claims` | fill wave 3: needs stoker's `model-catalog` (merge, then one `Claim` per model capability at `Provenance::Curated`) |
 | inferd `cua_run::CuaRun::step` | fill wave 3: needs stoker's `cua-session` |

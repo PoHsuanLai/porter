@@ -51,6 +51,7 @@ zbus = { version = "5.19", default-features = false, features = ["tokio"] }  # s
 toml = "1"
 base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
+proptest = "1"
 
 [workspace.lints.rust]
 unsafe_code = "deny"

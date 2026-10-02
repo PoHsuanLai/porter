@@ -1,9 +1,8 @@
 //! The label lattice (FIDES): integrity falls and confidentiality rises as data from more
 //! sources is combined, and only a witness can reverse that.
 //!
-//! Frozen as types and signatures. The behaviour (`join`, the constructors, `zip`) is a
-//! `todo!()` listed in `FINDINGS.md`; the type-level walls (`Quarantined`, `ReaderKey`) are
-//! built.
+//! Frozen as types and signatures; the behaviour (`join`, the constructors, `zip`) and the
+//! type-level walls (`Quarantined`, `ReaderKey`) are built.
 
 use crate::ids::ClientName;
 use porter_core::{AppName, DataClass, SpaceId};
@@ -102,21 +101,32 @@ pub struct Label {
 impl Label {
     /// The label of the person's own words.
     pub fn trusted_user() -> Label {
-        todo!("Trusted, Public, no classes, sources {{User}}")
+        Label {
+            integrity: Integrity::Trusted,
+            confidentiality: Confidentiality::Public,
+            classes: BTreeSet::new(),
+            sources: BTreeSet::from([Source::User]),
+        }
     }
 
     /// The label of content from `source` of class `class`, private to `space`.
     pub fn untrusted(source: Source, class: DataClass, space: SpaceId) -> Label {
-        let _ = (source, class, space);
-        todo!("Untrusted, Private({{space}}), classes {{class}}, sources {{source}}")
+        Label {
+            integrity: Integrity::Untrusted,
+            confidentiality: Confidentiality::Private(BTreeSet::from([space])),
+            classes: BTreeSet::from([class]),
+            sources: BTreeSet::from([source]),
+        }
     }
 
     /// The label of anything derived from both: the only combiner.
     pub fn join(&self, other: &Label) -> Label {
-        let _ = other;
-        todo!(
-            "integrity min, confidentiality via Confidentiality::join (built), classes and sources union"
-        )
+        Label {
+            integrity: self.integrity.min(other.integrity),
+            confidentiality: self.confidentiality.join(&other.confidentiality),
+            classes: self.classes.union(&other.classes).cloned().collect(),
+            sources: self.sources.union(&other.sources).cloned().collect(),
+        }
     }
 }
 
@@ -145,8 +155,11 @@ impl<T> Labelled<T> {
 
     /// Pairs two values; the label is the join of both.
     pub fn zip<U>(self, other: Labelled<U>) -> Labelled<(T, U)> {
-        let _ = other;
-        todo!("(value, other.value) labelled with label.join(&other.label)")
+        let label = self.label.join(&other.label);
+        Labelled {
+            value: (self.value, other.value),
+            label,
+        }
     }
 }
 
@@ -219,5 +232,176 @@ impl ReaderKey {
     /// The key, for the reader host's startup. Calling it anywhere else is a review finding.
     pub fn for_reader_host() -> Self {
         Self(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::consent::{ConfirmId, ConfirmReceipt, InputProof, Witness, declassify, endorse};
+    use porter_core::{AppName, UnixSeconds};
+    use proptest::prelude::*;
+
+    fn space(id: &str) -> SpaceId {
+        SpaceId::parse(id).expect("space id")
+    }
+
+    fn witness() -> Witness {
+        Witness::UserConfirmed(ConfirmReceipt {
+            id: ConfirmId::parse("c-1").expect("id"),
+            input: InputProof::HardwareSeat,
+            at: UnixSeconds(1),
+        })
+    }
+
+    #[test]
+    fn constructors_name_their_rows() {
+        let user = Label::trusted_user();
+        assert_eq!(user.integrity, Integrity::Trusted);
+        assert_eq!(user.confidentiality, Confidentiality::Public);
+        assert!(user.classes.is_empty());
+        assert_eq!(user.sources, BTreeSet::from([Source::User]));
+
+        let mail = Label::untrusted(Source::Mail, DataClass::Mail, space("work"));
+        assert_eq!(mail.integrity, Integrity::Untrusted);
+        assert_eq!(
+            mail.confidentiality,
+            Confidentiality::Private(BTreeSet::from([space("work")]))
+        );
+        assert_eq!(mail.classes, BTreeSet::from([DataClass::Mail]));
+        assert_eq!(mail.sources, BTreeSet::from([Source::Mail]));
+    }
+
+    #[test]
+    fn join_takes_the_worst_of_each_half() {
+        let user = Label::trusted_user();
+        let mail = Label::untrusted(Source::Mail, DataClass::Mail, space("work"));
+        let web = Label::untrusted(Source::Web, DataClass::Public, space("home"));
+        let joined = user.join(&mail);
+        assert_eq!(joined.integrity, Integrity::Untrusted);
+        assert_eq!(joined.sources, BTreeSet::from([Source::User, Source::Mail]));
+        assert_eq!(joined.confidentiality, mail.confidentiality);
+        let both = mail.join(&web);
+        assert_eq!(
+            both.confidentiality,
+            Confidentiality::Private(BTreeSet::from([space("home"), space("work")]))
+        );
+        assert_eq!(
+            both.classes,
+            BTreeSet::from([DataClass::Mail, DataClass::Public])
+        );
+    }
+
+    #[test]
+    fn join_drops_desktop_beside_a_real_space() {
+        let desktop = Label {
+            confidentiality: Confidentiality::Private(BTreeSet::from([SpaceId::desktop()])),
+            ..Label::trusted_user()
+        };
+        let work = Label::untrusted(Source::Mail, DataClass::Mail, space("work"));
+        assert_eq!(
+            desktop.join(&work).confidentiality,
+            Confidentiality::Private(BTreeSet::from([space("work")]))
+        );
+    }
+
+    #[test]
+    fn zip_pairs_values_under_the_joined_label() {
+        let pair = Labelled::new(1, Label::trusted_user()).zip(Labelled::new(
+            "x",
+            Label::untrusted(Source::Web, DataClass::Public, space("work")),
+        ));
+        assert_eq!(pair.value, (1, "x"));
+        assert_eq!(pair.label.integrity, Integrity::Untrusted);
+        assert_eq!(
+            pair.label.sources,
+            BTreeSet::from([Source::User, Source::Web])
+        );
+    }
+
+    #[test]
+    fn witnesses_raise_and_lower() {
+        let mail = Labelled::new(
+            (),
+            Label::untrusted(Source::Mail, DataClass::Mail, space("work")),
+        );
+        let endorsed = endorse(mail, &witness());
+        assert_eq!(endorsed.label.integrity, Integrity::Trusted);
+        assert!(endorsed.label.sources.contains(&Source::User));
+        assert!(endorsed.label.sources.contains(&Source::Mail));
+        let opened = declassify(endorsed, Confidentiality::Public, &witness());
+        assert_eq!(opened.label.confidentiality, Confidentiality::Public);
+        assert_eq!(opened.label.integrity, Integrity::Trusted);
+    }
+
+    fn arb_space() -> impl Strategy<Value = SpaceId> {
+        prop_oneof![Just("desktop"), Just("work"), Just("home"), Just("lab")].prop_map(|s| space(s))
+    }
+
+    fn arb_source() -> impl Strategy<Value = Source> {
+        prop_oneof![
+            Just(Source::User),
+            Just(Source::Mail),
+            Just(Source::Web),
+            Just(Source::Clipboard),
+            Just(Source::App(AppName::parse("org.quire.Mail").expect("app"))),
+            Just(Source::Model(ModelRole::Reader)),
+        ]
+    }
+
+    fn arb_class() -> impl Strategy<Value = DataClass> {
+        prop_oneof![
+            Just(DataClass::Mail),
+            Just(DataClass::Files),
+            Just(DataClass::Voice),
+            Just(DataClass::Public),
+        ]
+    }
+
+    fn arb_label() -> impl Strategy<Value = Label> {
+        let confidentiality = prop_oneof![
+            Just(Confidentiality::Public),
+            Just(Confidentiality::Secret),
+            proptest::collection::btree_set(arb_space(), 1..4).prop_map(Confidentiality::Private),
+        ];
+        (
+            prop_oneof![Just(Integrity::Untrusted), Just(Integrity::Trusted)],
+            confidentiality,
+            proptest::collection::btree_set(arb_class(), 0..4),
+            proptest::collection::btree_set(arb_source(), 0..4),
+        )
+            .prop_map(|(integrity, confidentiality, classes, sources)| Label {
+                integrity,
+                confidentiality,
+                classes,
+                sources,
+            })
+    }
+
+    proptest! {
+        #[test]
+        fn join_is_commutative(a in arb_label(), b in arb_label()) {
+            prop_assert_eq!(a.join(&b), b.join(&a));
+        }
+
+        #[test]
+        fn join_is_associative(a in arb_label(), b in arb_label(), c in arb_label()) {
+            prop_assert_eq!(a.join(&b).join(&c), a.join(&b.join(&c)));
+        }
+
+        #[test]
+        fn join_is_idempotent_once_normalised(a in arb_label()) {
+            let once = a.join(&a);
+            prop_assert_eq!(once.join(&once), once.clone());
+            prop_assert_eq!(once.join(&a), once);
+        }
+
+        #[test]
+        fn join_never_raises_integrity_or_loses_a_source(a in arb_label(), b in arb_label()) {
+            let j = a.join(&b);
+            prop_assert!(j.integrity <= a.integrity && j.integrity <= b.integrity);
+            prop_assert!(a.sources.is_subset(&j.sources) && b.sources.is_subset(&j.sources));
+            prop_assert!(a.classes.is_subset(&j.classes) && b.classes.is_subset(&j.classes));
+        }
     }
 }
