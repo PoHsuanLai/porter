@@ -25,6 +25,8 @@ pub enum Actor {
         /// How it named itself.
         client: ClientName,
     },
+    /// A process running `quire-do`: a terminal cannot tell the person from an agent typing in it.
+    Cli,
     /// An app acting on its own (sync, rules).
     App {
         /// The app.
@@ -113,6 +115,8 @@ pub enum ActorKind {
     Cua,
     /// [`Actor::Mcp`].
     Mcp,
+    /// [`Actor::Cli`].
+    Cli,
     /// [`Actor::App`].
     App,
     /// [`Actor::ThirdParty`].
@@ -133,6 +137,7 @@ impl ActorKind {
             ActorKind::Companion => "companion",
             ActorKind::Cua => "cua",
             ActorKind::Mcp => "mcp",
+            ActorKind::Cli => "cli",
             ActorKind::App => "app",
             ActorKind::ThirdParty => "third_party",
             ActorKind::System => "system",
@@ -152,6 +157,7 @@ impl Actor {
             } => ActorKind::Cua,
             Actor::Companion { .. } => ActorKind::Companion,
             Actor::Mcp { .. } => ActorKind::Mcp,
+            Actor::Cli => ActorKind::Cli,
             Actor::App { .. } => ActorKind::App,
             Actor::ThirdParty { .. } => ActorKind::ThirdParty,
             Actor::System { .. } => ActorKind::System,

@@ -233,6 +233,7 @@ fn the_roster_reference_follows_the_actor() {
             None,
         ),
         (Actor::Unknown, None),
+        (Actor::Cli, None),
     ];
     for (actor, want) in cases {
         assert_eq!(AgentRef::of(&actor), want, "{actor:?}");

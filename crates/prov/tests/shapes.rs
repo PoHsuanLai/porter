@@ -55,6 +55,7 @@ fn every_actor() -> Vec<Actor> {
         Actor::Mcp {
             client: ClientName::parse("Claude Desktop").expect("client"),
         },
+        Actor::Cli,
         Actor::App {
             app: app("org.quire.Mail"),
         },
@@ -83,6 +84,7 @@ fn actors_round_trip_and_pin_their_json() {
         r#"{"kind":"companion","v":{"session":"s-1","role":{"kind":"cua","v":{"run":"r-7"}}}}"#
     );
     assert_eq!(round_trip(&Actor::Unknown), r#"{"kind":"unknown"}"#);
+    assert_eq!(round_trip(&Actor::Cli), r#"{"kind":"cli"}"#);
     let worker = Actor::Companion {
         session: SessionId::parse("s-2").expect("id"),
         role: AgentRole::Worker {
@@ -108,6 +110,7 @@ fn every_actor_has_a_kind() {
             ActorKind::Cua,
             ActorKind::Companion,
             ActorKind::Mcp,
+            ActorKind::Cli,
             ActorKind::App,
             ActorKind::ThirdParty,
             ActorKind::System,
