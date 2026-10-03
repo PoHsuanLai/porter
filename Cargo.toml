@@ -40,6 +40,18 @@ porter-fake     = { path = "crates/porter-fake" }
 # stoker's computer-use vocabulary, by sibling path until the pinned git rev replaces it (quire
 # CONSUMING.md section 1). stoker has no porter dependency, so there is no cycle.
 cua-action      = { path = "../stoker/crates/cua-action" }
+# inferd's other stoker edges (it is the one place porter's types and stoker's meet), by sibling
+# path for the same reason. `model-http` carries the hyper client behind its `hyper` feature;
+# `vision-prep` the frame resize behind `pixels`; the testing features hold stoker's scripted
+# fakes of the supervisor's seams.
+model-provider      = { path = "../stoker/crates/model-provider" }
+model-catalog       = { path = "../stoker/crates/model-catalog" }
+engine-supervisor   = { path = "../stoker/crates/engine-supervisor" }
+model-http          = { path = "../stoker/crates/model-http" }
+model-openai-compat = { path = "../stoker/crates/model-openai-compat" }
+speech-provider     = { path = "../stoker/crates/speech-provider" }
+vision-prep         = { path = "../stoker/crates/vision-prep" }
+cua-parse           = { path = "../stoker/crates/cua-parse" }
 
 # From quire's pinned block (`docs/workspace-deps.toml`), copied verbatim: only the lines porter
 # names itself, as mailo does.

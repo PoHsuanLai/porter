@@ -1,8 +1,15 @@
 //! The seam between porter's wire types and stoker's provider types (`model-provider`):
 //! `ChatRequest` to `TurnRequest`, `ToolCallPart` to `ToolCall`, stoker's `TurnEvent` to
-//! `InferEvent`. stoker's crates join porter's dependencies with fill wave 1 (pinned git revs
-//! replace the sibling paths), so the type-level halves land then; what needs none of them is
-//! here now.
+//! `InferEvent`, `ProviderError` to `ModelError`, `StopReason` both ways. `request` is the way
+//! in and `reply` the way out; the mapping of the served name to a `ModelId` is here.
+
+mod reply;
+mod request;
+
+pub use reply::{Gathered, event, model_error, stop, stop_back, usage, vectors, width};
+pub use request::{
+    BridgeError, Frames, MAX_ATTACHMENT, chat_turn, embed_turns, image_input, task_turn,
+};
 
 use porter_core::{CoreError, ModelId};
 
