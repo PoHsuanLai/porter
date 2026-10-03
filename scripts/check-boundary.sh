@@ -83,7 +83,7 @@ EDGES=(
   "porter-fake: porter-core porter-infer porter-provider porter-secrets porter-service"
   "accountd: porter-core porter-dbus porter-provider porter-secrets porter-service"
   "syncd: porter-dbus porter-sync"
-  "inferd: porter-core porter-dbus porter-infer cua-action cua-parse engine-supervisor model-catalog model-http model-openai-compat model-provider speech-provider vision-prep"
+  "inferd: porter-core porter-dbus porter-infer cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider speech-provider vision-prep"
 )
 for edge in "${EDGES[@]}"; do
   crate="${edge%%:*}"

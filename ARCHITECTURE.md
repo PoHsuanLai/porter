@@ -38,7 +38,7 @@ Allowed direct edges (checked by `scripts/check-boundary.sh`; dev-dependencies a
 | `porter-fake` | `porter-core`, `porter-infer`, `porter-provider`, `porter-secrets`, `porter-service` |
 | `accountd` | `porter-core`, `porter-dbus`, `porter-provider`, `porter-secrets`, `porter-service` |
 | `syncd` | `porter-dbus`, `porter-sync` |
-| `inferd` | `porter-core`, `porter-dbus`, `porter-infer`, `cua-action`, and stoker's `model-provider`, `model-catalog`, `engine-supervisor`, `model-http` (feature `hyper`), `model-openai-compat`, `vision-prep` (feature `pixels`), `cua-parse`, `speech-provider`, by sibling path |
+| `inferd` | `porter-core`, `porter-dbus`, `porter-infer`, `cua-action`, and stoker's `model-provider`, `model-catalog`, `engine-supervisor`, `model-http` (feature `hyper`), `model-openai-compat`, `vision-prep` (feature `pixels`), `cua-parse`, `cua-session`, `cua-vendors`, `model-extract`, `speech-provider`, by sibling path |
 
 External boundaries: every crate but `porter-dbus` and the daemons never reaches `zbus`,
 `zvariant`, `tokio`, `reqwest`, `hyper`, `ureq`, `oo7`, `keyring`, `secret-service`,
