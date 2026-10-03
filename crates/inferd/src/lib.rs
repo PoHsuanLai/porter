@@ -1,7 +1,7 @@
 //! inferd's parts, as a library so the daemon's modules are tested without a bus: the adapters,
 //! the bridge to stoker's provider types, the session machine, the engine host, the catalog,
-//! the computer-use runner and the speech turn. Skeletons behind frozen interfaces; each
-//! `todo!()` is listed in `FINDINGS.md`.
+//! the computer-use runner, the speech turn and the fd session server (`serve`). Skeletons behind
+//! frozen interfaces; each `todo!()` is listed in `FINDINGS.md`.
 
 mod adapters;
 pub mod bridge;

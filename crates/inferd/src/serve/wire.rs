@@ -18,16 +18,12 @@ use tokio::net::UnixStream;
 /// The most descriptors one frame may carry and the most the queue may hold unclaimed.
 pub const MAX_QUEUED_FDS: usize = 32;
 
-/// What reading the socket produced.
-#[derive(Debug)]
-pub enum Read {
-    /// A whole frame and the descriptors it named.
-    Frame(ClientFrame, Vec<OwnedFd>),
-    /// The client closed the socket cleanly.
-    Eof,
-    /// Not porter's protocol; the session ends.
-    Broken,
-}
+/// Not porter's protocol (or the stream broke): the session ends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Broken;
+
+/// A whole frame and the descriptors it named.
+pub type Framed = (ClientFrame, Vec<OwnedFd>);
 
 /// A session's socket with the bytes and descriptors read so far.
 #[derive(Debug)]
@@ -48,7 +44,7 @@ impl Wire {
     }
 
     /// The next frame. Cancel safe: what was read stays in the wire.
-    pub async fn next_frame(&mut self) -> Read {
+    pub async fn next_frame(&mut self) -> Result<Option<Framed>, Broken> {
         loop {
             match decode_frame::<ClientFrame>(&self.inbox) {
                 Ok(FrameRead::Complete(envelope, used)) => {
@@ -56,29 +52,29 @@ impl Wire {
                     return self.claim(envelope.body);
                 }
                 Ok(FrameRead::Partial) => {}
-                Err(_) => return Read::Broken,
+                Err(_) => return Err(Broken),
             }
             match self.read_some().await {
                 Ok(0) => {
                     return match (self.inbox.is_empty(), self.fds.is_empty()) {
-                        (true, true) => Read::Eof,
-                        _ => Read::Broken,
+                        (true, true) => Ok(None),
+                        _ => Err(Broken),
                     };
                 }
                 Ok(_) => {}
-                Err(_) => return Read::Broken,
+                Err(_) => return Err(Broken),
             }
         }
     }
 
     /// Takes the descriptors `frame` names off the queue.
-    fn claim(&mut self, frame: ClientFrame) -> Read {
+    fn claim(&mut self, frame: ClientFrame) -> Result<Option<Framed>, Broken> {
         let named = frame.attachments();
         if self.fds.len() < named {
-            return Read::Broken;
+            return Err(Broken);
         }
         let taken: Vec<OwnedFd> = self.fds.drain(..named).collect();
-        Read::Frame(frame, taken)
+        Ok(Some((frame, taken)))
     }
 
     /// One read: bytes into the inbox, descriptors onto the queue. The byte count, 0 at end.

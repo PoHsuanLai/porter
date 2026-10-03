@@ -21,7 +21,6 @@ use porter_infer::{
     EmbedVector, ImageSource, InferEvent, InferRefusal, InferReply, InferRequest, Readiness,
     RequestKind, ServedBy, TokenUsage,
 };
-use std::os::fd::OwnedFd;
 use std::sync::Arc;
 use tokio::sync::Notify;
 
@@ -245,11 +244,8 @@ async fn a_computer_use_run_needs_its_begin_and_its_frame_rides_as_a_memfd() {
         .session(&need, DataClass::Screen, Tier::Best)
         .await
         .expect("open");
-    let frame = || {
-        OwnedFd::from(
-            rustix::fs::memfd_create("frame", rustix::fs::MemfdFlags::CLOEXEC).expect("memfd"),
-        )
-    };
+    let frame =
+        || rustix::fs::memfd_create("frame", rustix::fs::MemfdFlags::CLOEXEC).expect("memfd");
     let step = ClientFrame::Request(InferRequest::CuaStep(step_request()));
 
     session

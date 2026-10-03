@@ -4,7 +4,7 @@
 use super::seams::{
     AuditSink, EngineFailed, EngineHost, Router, RunningTurn, Seams, TurnRunner, TurnStep,
 };
-use super::wire::{Read, Wire};
+use super::wire::Wire;
 use crate::session::{Phase, SessionIn, SessionOut, SessionSpec, step};
 use porter_infer::{ClientFrame, ServedBy};
 use std::future::Future;
@@ -75,11 +75,11 @@ async fn next_input<E: EngineHost, T: TurnRunner>(
     let Live { turn, wait, .. } = live;
     tokio::select! {
         read = wire.next_frame() => match read {
-            Read::Frame(frame, fds) => {
+            Ok(Some((frame, fds))) => {
                 *incoming = fds;
                 Some(SessionIn::Frame(frame))
             }
-            Read::Eof | Read::Broken => None,
+            Ok(None) | Err(_) => None,
         },
         step = async { match turn { Some(turn) => turn.next().await, None => std::future::pending().await } }, if turn.is_some() => {
             Some(match step {

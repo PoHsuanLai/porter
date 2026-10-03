@@ -201,16 +201,18 @@ the interface other work builds on; a change is a vocabulary bump (section 6) or
 | `prov::trace` names, `ActorKind::slug`, `Effect::slug` | built, tested against the serde forms |
 | `tier_choice`, `AiKind::setting_key`, `InferRequest::kind` | built, table-tested |
 | `picker_rows` | stub |
-| `inferd::session::step` | built; `fits` built |
+| `inferd::session::step` | built (Routed/Waiting events, audio effects, cua progress, one queued request); `fits` built |
+| `inferd::serve` (`serve_session` over `Router`, `EngineHost`, `TurnRunner`, `AuditSink`) | built, tested over scripted seams; the daemon's `Open` handler and its real seams are not |
 | `inferd::speech` rules (`check_audio`, `audio_ms`) | built, table-tested; `SpeechRunner` stub |
 | `inferd::{engines, catalog, cua_run}` bodies, `inferd::bridge` provider-type halves | stub (`cua_run::check_class` and `bridge::model_id_of` built) |
 | `FakeInferSession`, `FakeModel` streaming | built, tested |
 | `AccountService`: Query, Availability, Choose, ListGrants, Revoke, IssueToken, `remove_account` | built over the seams, tested end to end with the fakes |
 | `AccountService`: AddAccount, Reauthenticate | stub |
 | `Accounts` (client API), `found`, `InProcess` accounts calls | built, tested end to end |
-| `Accounts::connect`, `SocketTransport`, `DbusTransport`, `InProcess::open_with` and the three sessions | stub; `Accounts::session`, `session_with` and `Accounts::infer` built over `Transport::open_with` |
+| `Accounts::connect`, `DbusTransport::open_with` and `call` (not the sheet methods), `DbusSession` | built; tested over a private bus against a fake inferd, the real session server and the real `AccountService` behind a bus adapter |
+| `SocketTransport`, `InProcess::open_with` and their sessions, `DbusTransport` sheet calls | stub |
 | D-Bus proxies and skeletons, introspection files in `dbus/` | frozen, introspection tested; skeleton methods answer `NotSupported` |
-| D-Bus argument codec (`need_to_dbus` and friends) | stub |
+| D-Bus argument codec (needs, candidates, grants, tokens, refusal error names) | built, round-tripped over the wire signature |
 | daemons | skeletons: build their service, print "not implemented", exit 2 |
 | protocol families, wire adapters, sign-in flows, discovery, persistence | not started (no provider or AI vendor code by decision) |
 
@@ -257,8 +259,14 @@ they travel on the same `Open` fd and add no D-Bus member.
 `AccountService` over the three fake providers (declared by `crates/porter-fake/providers/*.toml`),
 `MemorySecrets` with their secrets filed, and `FixedClock(NOW)`. An app is
 `Accounts::over(InProcess::new(service, app_id))`. `porter-client/tests/end_to_end.rs` is the
-model. Tests never touch a bus, the network, a keyring or the user's files; the D-Bus test only
-introspects skeletons in memory.
+model. Tests never touch the real bus, the network, a keyring or the user's files. The bus tests
+(`porter-client/tests/{dbus_open,dbus_served,dbus_accounts,connect}.rs`) start a private
+`dbus-daemon` from a scratch config (`tests/common/bus.rs`: cleared environment, scratch HOME and
+runtime directory, killed on drop; `dbus-daemon` must be on `PATH`) and serve a fake `Inference1`
+(`tests/common/inferd.rs`), the real session server over scripted seams
+(`tests/common/served.rs`) or the real `AccountService` behind a bus adapter
+(`tests/common/accountd.rs`). The one place the environment names a bus (`Accounts::connect`) runs
+in a child process the test starts with a private bus address.
 
 ## 8. The mailo mapping
 
