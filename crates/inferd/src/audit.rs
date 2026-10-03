@@ -5,12 +5,13 @@
 //! memoryd's `Record` is not the destination yet: it has no area tag for inference, and `prov`
 //! no system part for inferd (see FINDINGS), and porter does not depend on almanac. The file is
 //! the stand-in; its lines are `AuditEntry`'s serde form, so a bridge reads them unchanged.
-//! `images` and `audio_ms` stay zero: the sink is told the reply, not the request.
+//! `images` and `audio_ms` come from what the session server counted of the request
+//! (`serve::Carried`); the reply alone could not say.
 
 use crate::clock::Clock;
-use crate::serve::AuditSink;
+use crate::serve::{AuditSink, Carried};
 use crate::session::SessionSpec;
-use porter_core::{AppId, Bytes, Count, Tokens};
+use porter_core::{AppId, Bytes, Tokens};
 use porter_infer::{AuditEntry, InferReply, ServedBy, TokenUsage};
 use std::io::Write;
 use std::path::PathBuf;
@@ -119,7 +120,7 @@ impl<O: AuditOut, C: Clock> SessionAudit<O, C> {
         Self { app, out, clock }
     }
 
-    fn entry(&self, served: &ServedBy, reply: &InferReply) -> AuditEntry {
+    fn entry(&self, served: &ServedBy, reply: &InferReply, carried: &Carried) -> AuditEntry {
         AuditEntry {
             at: self.clock.now(),
             app: self.app.clone(),
@@ -128,15 +129,21 @@ impl<O: AuditOut, C: Clock> SessionAudit<O, C> {
             locality: served.locality.clone(),
             usage: usage_of(reply),
             bytes_out: Bytes(0),
-            images: Count(0),
-            audio_ms: Count(0),
+            images: carried.images,
+            audio_ms: carried.audio_ms,
         }
     }
 }
 
 impl<O: AuditOut, C: Clock> AuditSink for SessionAudit<O, C> {
-    fn record(&self, _spec: &SessionSpec, served: &ServedBy, reply: &InferReply) {
-        self.out.append(&self.entry(served, reply));
+    fn record(
+        &self,
+        _spec: &SessionSpec,
+        served: &ServedBy,
+        reply: &InferReply,
+        carried: &Carried,
+    ) {
+        self.out.append(&self.entry(served, reply, carried));
     }
 }
 

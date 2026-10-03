@@ -1,6 +1,6 @@
 [package]
 name = "accountd"
-description = "porter's account and consent daemon: serves org.quire.Accounts1 over porter-service. A skeleton: it builds the service and exits."
+description = "porter's account and consent daemon: org.quire.Accounts1 over porter-service. The library serves the bus objects and the portal-shaped Request objects; the binary is still a skeleton: it builds the service and exits."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -15,6 +15,13 @@ porter-provider = { workspace = true }
 porter-secrets = { workspace = true, features = ["oo7"] }
 porter-service = { workspace = true }
 clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+zbus = { workspace = true }
+
+[dev-dependencies]
+porter-fake = { workspace = true }
 tokio = { workspace = true }
 
 [lints]

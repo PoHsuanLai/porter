@@ -2,7 +2,7 @@
 //! started turn hands the test a sender, and the turn yields whatever the test pushes.
 
 use inferd::serve::{
-    AuditSink, EngineFailed, EngineHost, Router, RunningTurn, TurnRunner, TurnStep,
+    AuditSink, Carried, EngineFailed, EngineHost, Router, RunningTurn, TurnRunner, TurnStep,
 };
 use inferd::session::{RouteDecision, SessionSpec};
 use porter_core::wire::{FrameRead, decode_frame, encode_frame};
@@ -168,13 +168,24 @@ impl RunningTurn for Turn {
     }
 }
 
+/// The replies the audit sink was told of, and what each turn's request carried.
 #[derive(Debug, Default, Clone)]
-pub struct Audit(pub Arc<Mutex<Vec<InferReply>>>);
+pub struct Audit(
+    pub Arc<Mutex<Vec<InferReply>>>,
+    pub Arc<Mutex<Vec<Carried>>>,
+);
 
 impl AuditSink for Audit {
-    fn record(&self, _spec: &SessionSpec, served_by: &ServedBy, reply: &InferReply) {
+    fn record(
+        &self,
+        _spec: &SessionSpec,
+        served_by: &ServedBy,
+        reply: &InferReply,
+        carried: &Carried,
+    ) {
         assert_eq!(served_by, &served());
         self.0.lock().expect("lock").push(reply.clone());
+        self.1.lock().expect("lock").push(*carried);
     }
 }
 

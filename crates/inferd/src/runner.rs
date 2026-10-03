@@ -8,7 +8,7 @@
 //! Speech turns are refused `Unsupported` (the speech runner is not built).
 
 use crate::bridge::{self, Frames};
-use crate::cua_step::{self, Run};
+use crate::cua_run::{CuaRun, StepJob};
 use crate::hosts::unix_endpoint;
 use crate::local::LocalModel;
 use crate::serve::{RunningTurn, TurnRunner, TurnStep};
@@ -19,8 +19,8 @@ use model_provider as sp;
 use model_provider::{Embedder, Provider, Retrying};
 use porter_core::Tier;
 use porter_infer::{
-    CuaStepFailure, CuaStepReply, EmbedReply, InferEvent, InferRefusal, InferReply, InferRequest,
-    ModelError, ServedBy, TokenUsage,
+    ChatSink, CuaStepFailure, CuaStepReply, EmbedReply, Flow, InferEvent, InferRefusal, InferReply,
+    InferRequest, ModelError, ServedBy, TokenUsage,
 };
 use std::future::Future;
 use std::os::fd::OwnedFd;
@@ -106,7 +106,7 @@ pub struct Turns {
     pin: Pin,
     engines: Supervised,
     tier: Tier,
-    run: Arc<Mutex<Option<Run>>>,
+    run: Arc<Mutex<Option<CuaRun>>>,
 }
 
 impl Turns {
@@ -172,8 +172,22 @@ struct Job {
     pinned: Option<Pinned>,
     engines: Supervised,
     tier: Tier,
-    run: Arc<Mutex<Option<Run>>>,
+    run: Arc<Mutex<Option<CuaRun>>>,
     steps: mpsc::UnboundedSender<TurnStep>,
+}
+
+/// Where a computer-use step's events go: to the session.
+struct ToSession {
+    steps: mpsc::UnboundedSender<TurnStep>,
+}
+
+impl ChatSink for ToSession {
+    fn event(&mut self, event: InferEvent) -> Flow {
+        match self.steps.send(TurnStep::Event(event)) {
+            Ok(()) => Flow::Continue,
+            Err(_) => Flow::Stop,
+        }
+    }
 }
 
 /// Where a turn's events go: to the session, and into the reply being gathered.
@@ -235,7 +249,8 @@ impl Job {
             },
             InferRequest::Embed(embed) => self.embed(model, served, &embed).await,
             InferRequest::CuaBegin(begin) => {
-                *self.run.lock().unwrap_or_else(PoisonError::into_inner) = Some(Run::new(begin));
+                *self.run.lock().unwrap_or_else(PoisonError::into_inner) =
+                    Some(CuaRun::begin(begin));
                 InferReply::CuaStep(CuaStepReply {
                     thought: None,
                     actions: Vec::new(),
@@ -319,14 +334,21 @@ impl Job {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
-        let (Some(run), Some(provider)) = (run, chat_provider(model)) else {
+        let (Some(mut run), Some(provider)) = (run, chat_provider(model)) else {
             return refused(InferRefusal::Unsupported);
         };
-        let steps = self.steps.clone();
-        let forward = move |event| send(&steps, event);
-        match cua_step::step(&run, model, &provider, request, frames, forward).await {
-            Ok((reply, next)) => {
-                *self.run.lock().unwrap_or_else(PoisonError::into_inner) = Some(next);
+        let mut sink = ToSession {
+            steps: self.steps.clone(),
+        };
+        let job = StepJob {
+            model,
+            provider: &provider,
+            frames,
+            request,
+        };
+        match run.step(job, &mut sink).await {
+            Ok(reply) => {
+                *self.run.lock().unwrap_or_else(PoisonError::into_inner) = Some(run);
                 InferReply::CuaStep(reply)
             }
             Err(CuaStepFailure::Unparseable) => InferReply::Failed(ModelError::Unparseable),

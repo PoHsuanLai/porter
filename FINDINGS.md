@@ -6,15 +6,14 @@ Open items and standing facts. An entry names the condition that closes it.
 
 | Where | Closes when |
 | --- | --- |
-| porter-service `AddAccount`, `Reauthenticate` | the first family's sign-in (Nextcloud Login Flow v2) |
+| porter-service `AddAccount`, `Reauthenticate` answer `Refused(Unavailable)` (no `todo!()`: the `Provider` seam has no sign-in, and a bus call must not bring a daemon down) | the first family's sign-in (Nextcloud Login Flow v2): a sign-in method on `Provider`, the add sheet through the `Prompter`, discover, store |
 | porter-secrets `Oo7Secrets` | oo7 is in quire `docs/workspace-deps.toml` |
-| porter-client `SocketTransport::{call, open_with}` and `SocketSession::{send, next}` (a socket link is skipped by `connect` until they exist), `InProcess::open_with` and `InProcessSession::{send, next}` | the latchkey carrier lands / an agent hosts the core |
-| porter-client `DbusTransport::call` for `Choose`, `AddAccount` and `Reauthenticate` (they answer `TransportError::Malformed`, not a panic) | accountd serves Request objects (see "Fill F3") |
+| porter-client: the socket carrier needs the `socket` feature (without it nobody is reachable) and no agent serves it in this repo; `InProcess` has no broker unless the app hands one in | an agent hosts the core on the latchkey socket and reads `LinkHello` (see "Fill W4: porter") / porter's own `Broker` is built |
 | porter-infer `Broker::infer` (streaming into a `ChatSink`) | the first wire adapter (Ollama, then llama.cpp and vLLM through stoker's `model-openai-compat`) |
-| inferd `cua_run::CuaRun::step` | its signature cannot run (no engine, no frame bytes: see "Fill F3: inferd"); `cua_step` does the work for the tool dialects until stoker's `cua-session::{request, absorb}` exist, and `step` then takes the shape that file proposes |
+| inferd `cua_step` (the prompt, model turn and parse of a computer-use step, behind `CuaRun::step`) | stoker's `cua-session::{request, absorb}` exist; `cua_step` then shrinks to the model turn |
 | inferd `speech::SpeechRunner::{transcribe, speak}` | the speech runner: needs stoker's `speech-host-client` and the speech host; the closed enums `SttBackend`, `TtsBackend` join then. A speech need is routed `Unavailable` and a speech request on a session is refused `Unsupported` until then |
 | accountd `SheetPrompter` | accounts-ui exists |
-| accountd and syncd serve their bus | the items above (inferd serves its own, see "Fill F3: inferd") |
+| the accountd binary and syncd serve their bus | accountd: its secret store (`Oo7Secrets`), its prompter and a family (the bus objects are a library, tested: "Fill W4: porter"); syncd: the items above (inferd serves its own, see "Fill F3: inferd") |
 
 ## Fill F3: porter-client and the session server (2026-10-03)
 
@@ -61,11 +60,8 @@ What the client does, and the choices made where the specs were silent:
   reply with exactly these names (a `zbus::DBusError` enum with this prefix produces them; the
   test adapter in `porter-client/tests/common/accountd.rs` is the model).
 - The sheet methods (`Choose`, `AddAccount`, `Reauthenticate`) return a Request object whose
-  `Response` signal carries the answer. Not built: the results vardict, the response codes
-  (portal's 0 ok, 1 cancelled, 2 other would map to nothing, `Dismissed`, `Denied`) and the race
-  (a signal may be emitted before the client subscribes: subscribe by match rule on the
-  `org.quire.Accounts1.Request` interface under a path namespace before the call, then filter by
-  the returned path) are for the accountd lane to settle first.
+  `Response` signal carries the answer. The results vardict, the response codes and the
+  subscribe-before-call race were left for the accountd lane; built in "Fill W4: porter".
 - Vocabulary: a frame's `vocab` is not checked on receipt; an older client skips what
   it cannot parse (VocabVersion docs). A mismatch that parses is accepted.
 
@@ -194,8 +190,8 @@ Decisions, where the specs were silent:
   dictionary.
 - **Audit** goes to `$XDG_STATE_HOME/quire/inferd/audit.jsonl` as `AuditEntry` lines, not to
   memoryd: memoryd's `Record` has no area tag for inference and `prov` no system part for inferd,
-  and porter does not depend on almanac. `images` and `audio_ms` are zero: `AuditSink::record` is
-  told the reply, not the request.
+  and porter does not depend on almanac. `images` and `audio_ms` are true since "Fill W4: porter":
+  `AuditSink::record` is also given what the request carried.
 - **Computer use**: `cua_step` runs one step for the tool dialects (`QwenComputerUse`, `Holo31`):
   `vision-prep::prepare` for a raw frame (an encoded one is sent as it is), a model turn with the
   `computer_use` function, `cua-parse`, `FrameMap` into window space, an out-of-frame point
@@ -205,7 +201,7 @@ Decisions, where the specs were silent:
 
 Interface asks (nothing frozen was changed):
 
-1. porter `inferd::cua_run::CuaRun::step(&mut self, request, sink)` cannot run: it has neither the
+1. (closed in W4 with a `StepJob`) porter `inferd::cua_run::CuaRun::step(&mut self, request, sink)` cannot run: it has neither the
    pinned model's provider nor the bytes behind `ImageSource::Attached`. Proposed:
    `step(&mut self, job: StepJob<'_>, sink)` with `StepJob { model: &LocalModel, provider: &P,
    frames: &Frames, request: &CuaStepRequest }`, or delete it once `cua-session` is filled and
@@ -220,7 +216,7 @@ Interface asks (nothing frozen was changed):
    a JSON schema as text. inferd sends it to the engine as the constraint (`OutputShape::JsonSchema`)
    but does not validate and repair the reply (ARCHITECTURE section 7): a dynamic `Shape` built from
    schema text is needed.
-5. `AuditSink::record(&self, spec, served, reply)` should also be told what the request carried
+5. (closed in W4: `Carried`) `AuditSink::record(&self, spec, served, reply)` should also be told what the request carried
    (images, audio milliseconds) so `AuditEntry.images` and `audio_ms` are true.
 6. almanac and prov: an inference audit event needs `AreaTag::Inference` (almanac-core) and
    `SystemPart::Inferd` (prov) before a bridge from `audit.jsonl` to `Memory1.Record` can exist; and
@@ -261,6 +257,135 @@ Still needed before a real local model answers on login:
   on a cold engine and `Finished(Failed(Unparseable))` for a reply with no call.
 - sill / detent: `Inference1.Gpu` and `EnginesChanged` are live; `Prepare` on double-tap ⌘.
 - quire `docs/workspace-deps.toml`: `tokio`'s `test-util` feature (a dev-dependency of inferd).
+
+## Fill W4: porter (2026-10-03)
+
+Lane `w4-porter`, branch `w4-porter` from f4c4d59. `todo!()` bodies in the workspace: 18 before, 8
+after (the 10 gone: `SocketTransport::{call, open_with}`, `SocketSession::{send, next}`,
+`InProcess::open_with`, `InProcessSession::{send, next}`, `CuaRun::step`, and the two of
+`AccountService`, which refuse now). What remains is in the table at the top: `Oo7Secrets` (4),
+`Broker::infer`, the speech runner (2), accountd's `SheetPrompter`.
+
+**The Request-object flow** (accountd's `Choose`, `AddAccount`, `Reauthenticate`; design/31 §4.4):
+
+- *Where.* `/org/quire/Accounts1/request/<sender>/<token>`: the caller's unique name with the colon
+  dropped and each dot an underscore, then the `handle_token` the caller put in the call's
+  `options` (`[A-Za-z0-9_]`, at most 64). A token that is not one, or is in use by a sheet still
+  open, is `InvalidArgs`; with no token accountd mints `accountd_<n>`. The caller names the path
+  so that it can listen before it calls. `porter_dbus::{request_path, request_namespace}`.
+- *Code.* 0 the sheet finished with an answer, 1 the person closed it (`Refusal::Dismissed`), 2
+  anything else, with `refusal` in the results (the `Refusal` slug: `denied` for "Don't Allow",
+  `no_fitting_account`, `unavailable`, ...). A code the shape does not define, or results that
+  break their code's promise, are refused by the reader (`TransportError::Malformed`), never
+  guessed. `porter_dbus::{response_of, reply_of}`, round-tripped through the real `(u, a{sv})`.
+- *Results.* `Choose`: the candidate's fields by name (`account`, `provider`, `subject`,
+  `capability`, `restriction`, `grant`) plus `path` (`o`, checked against the account) and
+  `label`. `AddAccount`: `account` (the exact id) and `path`. `Reauthenticate` and every code 1:
+  empty.
+- *The race.* A daemon may send `Response` before the caller has read the method's reply.
+  `porter_dbus::Sheet::subscribe` puts a match rule on the Request interface under the caller's
+  own namespace (and one on `NameOwnerChanged` for accountd's name) before the call; after it,
+  `response(path)` reads what queued. A signal counts only from the connection that owns
+  `org.quire.Accounts1` and from the returned path, so another process cannot answer for the
+  person (tested with a forged `Dismissed` sent first). If the owner leaves the bus, the wait ends
+  `TransportError::Closed`; it never hangs. A malformed `Response` is `Malformed`.
+- *Daemon side* (`accountd` as a library: `serve`, `Manager`, `Grants`, `Tokens`, one `Account`
+  object per account, `request`). The sheet runs in a task; the `Response` goes to the caller
+  alone (unicast, verified: a second connection with a match rule hears nothing); the object is
+  removed after it. `Close` (callers only: `AccessDenied` for another connection) aborts the call
+  in flight, which takes the prompter's sheet down, and no `Response` follows; the caller leaving
+  the bus does the same; a call that panics answers `unavailable`. A caller that dropped its
+  future closes the sheet too (`porter_dbus::Closer`, spawned from `Drop` by the client).
+- *Errors.* Refusals are `org.quire.Accounts1.Error.<Refusal>`; the bus's own errors keep their
+  real names (`AccessDenied` for a caller accountd does not know, `InvalidArgs`,
+  `UnknownObject`). The `DBusError` derive cannot do the second (it names every non-refusal
+  `org.freedesktop.zbus.Error`), so `RefusedError` is written by hand.
+- *Callers.* A `Callers` seam (`app_of(sender)`) says which app a bus sender is, as inferd's
+  `Peers` does. `TableCallers` is the one implementation (hosts that know their clients, tests);
+  the executable-behind-the-connection table belongs in `porter-dbus` for both daemons when the
+  accountd binary serves. An app that holds no grant for an account cannot see its `Account`
+  object: `Reauthenticate` on it is `UnknownObject` (no bulk enumeration).
+- Not served: the `Account` properties (`Id`, `Provider`, `Label`, `State`, `Capabilities`), the
+  manager's signals, `OpenAuthenticated`, the Settings module. `AddAccount` and `Reauthenticate`
+  answer `unavailable` (no family signs in), which an app already handles.
+- Client: `Accounts::reauthenticate(account, window)` (the request existed, the method did not).
+  An empty `parent_window` is no parent, an empty `provider_hint` the provider list.
+
+**`SocketTransport`/`SocketSession`** (feature `socket`; Unix sockets; a named pipe is not
+built, and without the feature, or on Windows, `call` and `open_with` are `Unreachable`):
+one connection per call, so a `Choose` that waits on a sheet blocks nothing (abandoning it is
+closing the connection). An accountd call is one `AccountsRequest` frame and one `AccountsReply`
+frame; a session is `porter_infer::LinkHello::Open(OpenFrame { need, class, tier, options })`,
+then `ClientFrame`s and `InferEvent`s as on the bus's `Open` fd (descriptors ride as SCM_RIGHTS on
+the frame that names them; a refusal is the first event). The agent reads the first frame once
+and tells the two apart by its `kind` (`open` is not an `AccountsRequest` kind; tested). The
+agent is not built here: the carrier is tested against a hand-written one (`tests/common/agent.rs`)
+over the real `AccountService` and the real session server. The two session types share one
+framed implementation (`framed`, feature `framed`, which `dbus` and `socket` both turn on; the
+pure build still reaches no runtime). `Accounts::connect` reaches a socket link when the agent
+accepts a connection.
+
+**`InProcess::open_with`**: `InProcess<P, S, U, K, B = NoBroker>`; `with_broker(host)` hands in a
+`SessionHost` (`open(app, need, class, tier, options)`, implemented for `Arc<T>` too). With no
+broker a session is `Unreachable`, as when inferd is not running, so memoryd-style callers
+degrade the same way in process. `InProcessSession` stays as `NoBroker`'s session, which cannot
+exist. Porter's own `Broker` is still a stub, so nothing in this repo is a broker yet.
+
+**`CuaRun::step`** (ask 97): `step(&mut self, StepJob { model, provider, frames, request }, sink)`
+over `cua_step` (the run owns the history; a failed step is not remembered, so the same step can be
+asked again; a sink `Stop` ends the proposals). `runner::Turns` runs computer-use steps through it.
+
+**`AuditSink`** (ask 101): `record(spec, served, reply, &Carried)`; `Carried { images, audio_ms }`
+is counted by the loop for the turn in flight (`serve::carried::Tally`): a chat's image parts
+(tool results' too), one frame for a computer-use step, the milliseconds of accepted audio frames
+at the turn's rate plus what a `Spoke` reply says it produced. A turn that failed or was
+cancelled still reports what it carried. `AuditEntry.images`/`audio_ms` are true now.
+
+`porter-fake`: `Scripted::Hang` (a sheet that stays open) and `AskLog::abandoned()` (how many asks
+were dropped while they waited), for the close and leaving-caller tests.
+
+### Interface asks from W4
+
+1. **`TransportError::Denied` not added.** A bus refusal (`AccessDenied`) is still
+   `TransportError::Malformed("refused by the bus: ...")`, because adding a variant breaks two
+   exhaustive matches: almanac `crates/memoryd/src/infer/embed.rs:189` (`transport_failure`:
+   `Unreachable | Closed`, `Malformed`) and cua `crates/cuad/src/model.rs:63` (`Unreachable`,
+   `Closed | Malformed`). Proposed: `TransportError::Denied(String)` after those two matches gain
+   an arm (almanac: unavailable or fatal; cua: `CuaModelError::Fatal`), then
+   `DbusTransport`'s `bus_error` maps `BusFailure::Denied` to it. docket's `exit.rs` has no
+   exhaustive match on porter's type (its `TransportError` is its own).
+2. **The latchkey agent** (mailo's agent, or accountd built without zbus) reads the first frame of
+   each connection as `AccountsRequest` or `LinkHello`, answers a call with one frame and
+   serves a session as `inferd::serve_session` does after the hello; the peer is the connection's.
+   design/31 §4.3 should say so (its "framed messages over latchkey's socket" does not name the
+   session's first frame).
+3. **design/31 §4.4** gains: `handle_token` in the sheet methods' `options` and the Request path
+   form; code 2's `refusal` result and code 1 for `Dismissed`; the results keys above; `Close`
+   by the caller only; an empty `parent_window` and `provider_hint`.
+4. accountd binary: `ProcPeers`-like `Callers` (the executable behind the connection, a caller
+   table in config), which wants `inferd::peers` moved to `porter-dbus` so both daemons share it;
+   the `Account` properties and manager signals; the `SheetPrompter` over accounts-ui.
+5. `Provider` needs a sign-in method (Login Flow v2 first) before `AddAccount` and
+   `Reauthenticate` can leave `unavailable`.
+
+### Call sites that change or may change after W4
+
+- No exhaustive match downstream breaks: almanac (without recall-fastembed) and docket pass
+  `cargo check --locked --workspace --all-targets --all-features` against this worktree; cua passes
+  without `--locked` (its own `Cargo.lock` already fails `--locked` against porter master, with or
+  without this lane). `InProcess` gains a defaulted fifth type parameter
+  (`InProcess<P, S, U, K>` still names the no-broker form); nothing downstream names it yet.
+- mailo's add flow (`Choose`/`AddAccount`) now has a real bus path: `Accounts::request_grant`,
+  `add_account` and the new `reauthenticate` over `DbusTransport` work against accountd; against
+  today's skeleton binary they are `Unreachable`. mailo standalone keeps `InProcess` (no broker:
+  inference is `Unreachable`, which memoryd's degrade path already handles).
+- sill/detent: an add-account or re-sign-in sheet is a Request whose `Response` arrives later;
+  `AddAccount` answers `unavailable` until a family signs in.
+- cua `cuad/src/model.rs`: `TransportError::Malformed` text for a refused caller starts
+  "refused by the bus" (unchanged); see ask 1.
+- almanac/docket/cua tests that implement `porter_client::Transport` need no change; a test that
+  implements `inferd::serve::AuditSink` gains the `&Carried` parameter (none found outside this
+  repo).
 
 ## The rig amendment (2026-10-03)
 

@@ -190,3 +190,36 @@ async fn revoking_a_grant_ends_it() {
     photos.revoke(&chosen.grant).await.expect("revoke");
     assert_eq!(photos.grants().await.expect("grants"), vec![]);
 }
+
+#[tokio::test]
+async fn no_family_signs_in_yet_so_adding_and_reauthenticating_are_unavailable_not_a_panic() {
+    let prompter = ScriptedPrompter::answering([Scripted::AllowFirst(GrantScope::Always)]);
+    let service = Arc::new(fake_service(prompter).await);
+    let photos = app(&service, "org.quire.Photos");
+    let offer = needs_consent(
+        photos
+            .find(&storage(Delta::Poll), DataClass::Photos, Usage::Interactive)
+            .await
+            .expect("find"),
+    );
+    let chosen = photos
+        .request_grant(&offer, &ParentWindow::Unparented)
+        .await
+        .expect("granted");
+
+    assert_eq!(
+        photos
+            .add_account(
+                porter_core::wire::ProviderHint::Any,
+                &ParentWindow::Unparented
+            )
+            .await,
+        Err(ClientError::Refused(Refusal::Unavailable))
+    );
+    assert_eq!(
+        photos
+            .reauthenticate(&chosen.account, &ParentWindow::Unparented)
+            .await,
+        Err(ClientError::Refused(Refusal::Unavailable))
+    );
+}

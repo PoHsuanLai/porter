@@ -1,18 +1,36 @@
-//! Computer-use steps inside inferd: `cua-session` (stoker) assembles the prompt from the goal,
-//! the history and a frame, runs one model turn through the pinned engine, parses and maps the
-//! reply into window space. The history lives in the session, so the session is pinned to one
-//! model.
+//! Computer-use steps inside inferd, as one run on one session: its goal and what it did so
+//! far. A step runs one model turn through the pinned engine, parses and maps the reply into
+//! window space (`cua_step` holds the turn today for the tool dialects, and `cua-session` of
+//! stoker takes the prompt and the parse over when its bodies exist). The history lives in the
+//! run, so the session is pinned to one model.
 
-use cua_action::WindowSpace;
+use crate::bridge::Frames;
+use crate::cua_step::{self, Run};
+use crate::local::LocalModel;
+use model_provider::{Flow as ProviderFlow, Provider};
 use porter_core::DataClass;
 use porter_infer::{
-    ChatSink, CuaBegin, CuaStepFailure, CuaStepReply, CuaStepRequest, InferRefusal,
+    ChatSink, CuaBegin, CuaStepFailure, CuaStepReply, CuaStepRequest, Flow, InferRefusal,
 };
 
 /// One run's state on one session: its goal and history.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CuaRun {
-    begin: CuaBegin,
+    run: Run,
+}
+
+/// Everything one step needs beyond the run: the pinned model, the provider that reaches its
+/// engine, the bytes behind the request's `ImageSource::Attached` and the request itself.
+#[derive(Debug)]
+pub struct StepJob<'a, P> {
+    /// The model the session is pinned to.
+    pub model: &'a LocalModel,
+    /// The engine's provider.
+    pub provider: &'a P,
+    /// The descriptors that arrived with the request's frame.
+    pub frames: &'a Frames,
+    /// The step.
+    pub request: &'a CuaStepRequest,
 }
 
 /// Only `Screen` data may enter a computer-use session: the frames are the screen.
@@ -23,51 +41,45 @@ pub fn check_class(class: DataClass) -> Result<(), InferRefusal> {
     }
 }
 
+/// The provider's flow control for the session's.
+fn provider_flow(flow: Flow) -> ProviderFlow {
+    match flow {
+        Flow::Continue => ProviderFlow::Continue,
+        Flow::Stop => ProviderFlow::Stop,
+    }
+}
+
 impl CuaRun {
-    /// A run for this goal.
+    /// A run for this goal, with nothing done.
     pub fn begin(begin: CuaBegin) -> Self {
-        Self { begin }
+        Self {
+            run: Run::new(begin),
+        }
     }
 
-    /// The window-space actions for one step: prepare the frame, one model turn (streaming
-    /// `ActionProposed` into `sink`), parse, map; one repair prompt is allowed.
-    ///
-    /// A stub: this signature reaches neither the pinned model's engine nor the bytes behind
-    /// `ImageSource::Attached` (FINDINGS "Fill F3: inferd", interface ask 1). `cua_step::step`
-    /// runs a step meanwhile, for the tool dialects.
-    pub async fn step(
+    /// The window-space actions for one step: prepare the frame, one model turn (thoughts as
+    /// they stream, then `ActionProposed` for each action, into `sink`; a `Stop` from it ends
+    /// the proposals), parse, map. A step that succeeds is remembered in the run; one that fails
+    /// is not, so the same step can be asked again.
+    pub async fn step<P: Provider>(
         &mut self,
-        request: &CuaStepRequest,
+        job: StepJob<'_, P>,
         sink: &mut impl ChatSink,
     ) -> Result<CuaStepReply, CuaStepFailure> {
-        let _ = (
-            &self.begin,
-            request,
-            sink,
-            std::marker::PhantomData::<WindowSpace>,
-        );
-        todo!("cua_session::CuaSession::request, the model turn, absorb, one repair")
+        let forward = |event| provider_flow(sink.event(event));
+        let (reply, next) = cua_step::step(
+            &self.run,
+            job.model,
+            job.provider,
+            job.request,
+            job.frames,
+            forward,
+        )
+        .await?;
+        self.run = next;
+        Ok(reply)
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn only_screen_data_enters_a_computer_use_session() {
-        assert_eq!(check_class(DataClass::Screen), Ok(()));
-        for class in [
-            DataClass::Mail,
-            DataClass::Voice,
-            DataClass::Public,
-            DataClass::AppOwn,
-        ] {
-            assert_eq!(
-                check_class(class),
-                Err(InferRefusal::Unsupported),
-                "{class:?}"
-            );
-        }
-    }
-}
+mod tests;

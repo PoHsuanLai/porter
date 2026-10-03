@@ -44,7 +44,7 @@ pub use ids::{
     ToolCallId, ToolName, Traceparent,
 };
 pub use model::{ChatSink, Model, ModelCard};
-pub use open::OpenOptions;
+pub use open::{LinkHello, OpenFrame, OpenOptions};
 pub use policy::{ClassFloor, Floor, LocalOnly, Policy};
 pub use readiness::Readiness;
 pub use reply::{

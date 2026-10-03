@@ -2,6 +2,7 @@
 //! engines behind it, the model turn itself and the audit trail. Async seams return
 //! `impl Future + Send`, as everywhere in porter; none needs `dyn`.
 
+use super::carried::Carried;
 use crate::session::{RouteDecision, SessionSpec};
 use porter_infer::{AudioFrame, InferEvent, InferRefusal, InferReply, InferRequest, ModelRef};
 use std::future::Future;
@@ -65,8 +66,15 @@ pub trait TurnRunner: Send + Sync {
 
 /// Where the finished turns are recorded (spend and the audit entry; never content).
 pub trait AuditSink: Send + Sync {
-    /// One turn ended with `reply` on a session of `spec` pinned to `served`.
-    fn record(&self, spec: &SessionSpec, served: &porter_infer::ServedBy, reply: &InferReply);
+    /// One turn ended with `reply` on a session of `spec` pinned to `served`; `carried` says what
+    /// its request held (how many frames, how much audio), which the reply does not.
+    fn record(
+        &self,
+        spec: &SessionSpec,
+        served: &porter_infer::ServedBy,
+        reply: &InferReply,
+        carried: &Carried,
+    );
 }
 
 /// The four seams one session server uses.

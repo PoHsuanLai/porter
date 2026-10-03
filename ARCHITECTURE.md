@@ -21,10 +21,10 @@ trait), section 6 (copy the recipe).
 | `porter-sync` | the sync contract: `Replica`, `Cursor`/`Anchor`, `BaseVersion`, `Change`/`Tombstone`, `Conflict`, `DatasetKind`; `MemoryReplica` (feature `testing`) | none |
 | `porter-infer` | the AI broker's pure half: requests and replies (chat with tools and controls, embeddings with a query/document role, tasks, computer-use steps, speech), `OpenOptions` (the reserved `traceparent`), the streaming session (`ClientFrame`, `InferEvent`, `InferSession`), the model picker's data (`AiKind`, `TierMap`, `PickerRow`), `Readiness`, `Policy` and floors, `route`, spend caps, `AuditEntry`, the `Model` trait, `Broker` (stubbed) | none |
 | `porter-service` | accountd's core over its seams: `AccountService`, `Registry`, the `Prompter` and `Clock` traits | none (seams are passed in) |
-| `porter-client` | the app-facing API: `Accounts`, `Found`, the `Transport` trait (`call` for accountd, `open` for an inference session); `InProcess`, `SocketTransport`, `DbusTransport` (feature `dbus`) | through its transport |
-| `porter-dbus` | `org.quire.Accounts1`, `org.quire.Sync1`, `org.quire.Inference1` as zbus proxies and skeletons; `introspection`; the argument codec (stubbed) | zbus |
+| `porter-client` | the app-facing API: `Accounts`, `Found`, the `Transport` trait (`call` for accountd, `open` for an inference session); `InProcess` (with a `SessionHost` for inference, `NoBroker` by default), `SocketTransport` (feature `socket`), `DbusTransport` (feature `dbus`); both of those share one framed session over a Unix stream (feature `framed`) | through its transport |
+| `porter-dbus` | `org.quire.Accounts1`, `org.quire.Sync1`, `org.quire.Inference1` as zbus proxies and skeletons; `introspection`; the argument codec; the sheet answer (`sheet`: request paths, response codes, results) and its caller's half (`pending`: subscribe before the call, `Closer`) | zbus |
 | `porter-fake` | test-only: fake providers from real provider files, three accounts, `ScriptedPrompter`, `FixedClock`, `FakeModel` (streams), `FakeInferSession` (scripted events per request kind, audio-gated transcripts), `fake_service` | none |
-| `accountd`, `syncd`, `inferd` | the daemons. `accountd` and `syncd` are skeletons that build their service over the seams and exit with "not implemented"; `inferd` serves `org.quire.Inference1` (section 10). `inferd` is also a library (`adapters`, `bridge`, `session`, `serve`, `service`, `peers`, `router`, `engines`, `supervise`, `hosts`, `local`, `catalog`, `config`, `runner`, `cua_step`, `cua_run`, `audit`, `clock`, `speech`) so its modules are tested without a bus | everything |
+| `accountd`, `syncd`, `inferd` | the daemons. `syncd` is a skeleton that builds its service and exits with "not implemented"; `accountd` is a library (`core`, `manager`, `grants`, `account`, `request`, `callers`, `errors`: the bus objects over `AccountService`, the Request objects of the sheet methods, the caller table seam) whose binary is still a skeleton (its secret store, prompter and families are stubs); `inferd` serves `org.quire.Inference1` (section 10). `inferd` is also a library (`adapters`, `bridge`, `session`, `serve`, `service`, `peers`, `router`, `engines`, `supervise`, `hosts`, `local`, `catalog`, `config`, `runner`, `cua_step`, `cua_run`, `audit`, `clock`, `speech`) so its modules are tested without a bus | everything |
 
 Allowed direct edges (checked by `scripts/check-boundary.sh`; dev-dependencies are outside it):
 
@@ -57,9 +57,9 @@ External boundaries: every crate but `porter-dbus` and the daemons never reaches
 | `porter-sync` | `anchor`, `item`, `transfer` < `change`, `refusal`, `dataset` < `replica` < `memory` |
 | `porter-infer` | `ids`, `control`, `open`, `request`, `cua`, `speech`, `reply`, `error`, `readiness` < `event`, `session`, `choice` < `policy`, `spend`, `audit` < `route`, `model` < `broker` |
 | `porter-service` | `clock`, `prompter` < `registry` < `choose`, `token` < `service` |
-| `porter-client` | `error`, `env`, `found` < `transport` (`in_process`, `socket`, `dbus`; each with its session) < `accounts` |
-| `porter-dbus` | `names`, `args` < `codec` < `manager`, `account`, `grants`, `tokens`, `request`, `sync`, `inference` < `introspect` |
-| `inferd` | `session` (pure machine) < `serve` (the loop over four seams) ; `catalog` < `local` < `router` < `supervise`, `hosts` < `engines` (`Engines`, `SessionRouter`) ; `bridge` (`request`, `reply`) < `cua_step`, `runner` ; `audit`, `clock`, `peers`, `config` < `service` (the bus object) < `main` |
+| `porter-client` | `error`, `env`, `found` < `transport` (`framed`, `in_process`, `socket`, `dbus`; each with its session) < `accounts` |
+| `porter-dbus` | `names`, `args` < `codec` < `sheet` < `pending` ; `manager`, `account`, `grants`, `tokens`, `request`, `sync`, `inference` < `introspect` |
+| `inferd` | `session` (pure machine) < `serve` (`carried`, then the loop over four seams) ; `catalog` < `local` < `router` < `supervise`, `hosts` < `engines` (`Engines`, `SessionRouter`) ; `bridge` (`request`, `reply`) < `cua_step`, `runner` ; `cua_run` (the run and its `StepJob`) over `cua_step` ; `audit`, `clock`, `peers`, `config` < `service` (the bus object) < `main` |
 
 ## 3. One home per concept
 
@@ -213,16 +213,19 @@ the interface other work builds on; a change is a vocabulary bump (section 6) or
 | the real seams: `router` and `engines::SessionRouter`, `engines::Engines` over `supervise` and `hosts`, `runner::Turns` over `bridge` and `cua_step`, `audit` | built; the engine host is child processes (`ProcessHost`), not systemd transient units |
 | `inferd::speech` rules (`check_audio`, `audio_ms`) | built, table-tested; `SpeechRunner` stub |
 | `inferd::{catalog, local, bridge}` (the catalog read, its claims, the model book, both halves of the mapping to stoker's turns) | built, table-tested |
-| `inferd::cua_run::CuaRun::step` | stub (its signature cannot reach the engine or the frame; `cua_step` does the work meanwhile, see FINDINGS "Fill F3: inferd") |
+| `inferd::cua_run::{CuaRun, StepJob}` | built over `cua_step` (the tool dialects); `runner::Turns` runs a computer-use step through it; stoker's `cua-session` shrinks `cua_step` to the model turn when its bodies exist |
 | `FakeInferSession`, `FakeModel` streaming | built, tested |
 | `AccountService`: Query, Availability, Choose, ListGrants, Revoke, IssueToken, `remove_account` | built over the seams, tested end to end with the fakes |
-| `AccountService`: AddAccount, Reauthenticate | stub |
+| `AccountService`: AddAccount, Reauthenticate | answer `Refused(Unavailable)`: the `Provider` seam has no sign-in, so there is nothing to run until the first family's |
 | `Accounts` (client API), `found`, `InProcess` accounts calls | built, tested end to end |
-| `Accounts::connect`, `DbusTransport::open_with` and `call` (not the sheet methods), `DbusSession` | built; tested over a private bus against a fake inferd, the real session server and the real `AccountService` behind a bus adapter |
-| `SocketTransport`, `InProcess::open_with` and their sessions, `DbusTransport` sheet calls | stub |
+| `Accounts::connect`, `DbusTransport::open_with` and `call` (the sheet methods too: `Choose`, `AddAccount`, `Reauthenticate` through a Request object), `DbusSession` | built; tested over a private bus against a fake inferd, the real session server and the real `AccountService` behind a bus adapter |
+| `SocketTransport` and `SocketSession` | built behind feature `socket` (Unix sockets; without it, or on Windows, nobody is reachable), tested against a hand-written agent; the agent itself is not built |
+| `InProcess::open_with` | built over a `SessionHost` the app hands in (`with_broker`); with none, `Unreachable`; porter's own `Broker` is a stub |
+| the Request objects of the sheet methods (`accountd`), the caller's half (`porter_dbus::Sheet`) | built, tested on a private bus (races, forged signals, close, leaving callers) |
 | D-Bus proxies and skeletons, introspection files in `dbus/` | frozen, introspection tested; skeleton methods answer `NotSupported` |
 | D-Bus argument codec (needs, candidates, grants, tokens, refusal error names) | built, round-tripped over the wire signature |
-| `accountd`, `syncd` | skeletons: build their service, print "not implemented", exit 2 |
+| `accountd` (the bus objects, as a library) | built: `Manager`, `Grants`, `Tokens`, `Account.Reauthenticate`, Request objects; not served: the `Account` properties, the manager's signals, `OpenAuthenticated`, the Settings module, a real caller table |
+| `accountd` (the binary), `syncd` | skeletons: build their service, print "not implemented", exit 2 |
 | `inferd` | built: a daemon on the session bus (the checked-in `dist/` files install it) |
 | protocol families, wire adapters, sign-in flows, discovery, persistence | not started (no provider or AI vendor code by decision) |
 
@@ -269,14 +272,19 @@ they travel on the same `Open` fd and add no D-Bus member.
 `AccountService` over the three fake providers (declared by `crates/porter-fake/providers/*.toml`),
 `MemorySecrets` with their secrets filed, and `FixedClock(NOW)`. An app is
 `Accounts::over(InProcess::new(service, app_id))`. `porter-client/tests/end_to_end.rs` is the
-model. Tests never touch the real bus, the network, a keyring or the user's files. The bus tests
-(`porter-client/tests/{dbus_open,dbus_served,dbus_accounts,connect}.rs`) start a private
+model (`in_process_session.rs` for a hosted broker). Tests never touch the real bus, the network, a keyring or the user's files. The bus tests
+(`porter-client/tests/{dbus_open,dbus_served,dbus_accounts,dbus_sheets,accountd_requests,connect}.rs`) start a private
 `dbus-daemon` from a scratch config (`tests/common/bus.rs`: cleared environment, scratch HOME and
 runtime directory, killed on drop; `dbus-daemon` must be on `PATH`) and serve a fake `Inference1`
 (`tests/common/inferd.rs`), the real session server over scripted seams
-(`tests/common/served.rs`) or the real `AccountService` behind a bus adapter
-(`tests/common/accountd.rs`). The one place the environment names a bus (`Accounts::connect`) runs
-in a child process the test starts with a private bus address.
+(`tests/common/served.rs`) or the real accountd front end (`accountd::serve`) over the real
+`AccountService` (`tests/common/accountd.rs`, clients introduced through `TableCallers`;
+`tests/common/racing.rs` is a hand-written `Manager` that answers before it replies and lets a
+stranger answer first). `tests/socket.rs` runs `SocketTransport` against a hand-written agent on a
+Unix socket in a scratch directory (`tests/common/agent.rs`, the real service and the real session
+server behind it); a sheet that waits on the person is `Scripted::Hang` in `porter-fake`, whose
+`AskLog` counts the asks that were dropped. The one place the environment names a bus
+(`Accounts::connect`) runs in a child process the test starts with a private bus address.
 
 `inferd`'s tests: the unit tests are in `src/*/tests.rs` (tables; the supervisor driver runs with a
 paused clock over stoker's fakes or a recorder, and `hosts` over harmless child processes such as
@@ -399,6 +407,8 @@ annotated sample configuration). One `Open` is:
    - `TurnRunner` is `runner::Turns`: stoker's `OpenAiCompat` (`Driver<OpenAiCodec, HttpClient>`)
      over the engine's Unix socket, wrapped in `Retrying`; `bridge` maps both ways; computer-use
      steps are `cua_step`.
-   - `AuditSink` is `audit::SessionAudit` over an `AuditOut` (a JSON-lines file in the daemon).
+   - `AuditSink` is `audit::SessionAudit` over an `AuditOut` (a JSON-lines file in the daemon);
+     the loop tells it what the request carried (`serve::Carried`: frames sent, audio milliseconds
+     sent or produced) beside the reply.
 3. **Away.** The first event is `Waiting(readiness)` when the engine is not ready, then `Routed`,
    then the turn's events and one `Finished` per request, exactly as `session::step` decides.

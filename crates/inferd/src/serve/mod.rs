@@ -3,10 +3,12 @@
 //! on the other; the seams are filled by the router, the engine host, the model adapters and the
 //! audit log, and by scripted ones in tests.
 
+mod carried;
 mod driver;
 mod seams;
 mod wire;
 
+pub use carried::Carried;
 pub use driver::serve_session;
 pub use seams::{
     AuditSink, EngineFailed, EngineHost, Router, RunningTurn, Seams, TurnRunner, TurnStep,

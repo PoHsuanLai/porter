@@ -1,29 +1,20 @@
-//! accountd's immediate calls over a private bus, against the real `AccountService` core behind
-//! a thin bus adapter: find, token, grants and revoke through `DbusTransport`, with refusals
-//! arriving as `org.quire.Accounts1.Error.*` and read back as `Refusal`s.
+//! accountd's calls over a private bus, against the real accountd front end (`accountd::serve`)
+//! over the real `AccountService` core: find, choose, token, grants and revoke through
+//! `DbusTransport`, with refusals arriving as `org.quire.Accounts1.Error.*` (the immediate
+//! calls) or as a `Response` (the sheets) and read back as `Refusal`s. The sheets' own contract
+//! (paths, codes, ordering, close) is in `dbus_sheets.rs`.
 #![cfg(feature = "dbus")]
 
 mod common;
 
-use common::accountd::Core;
-use common::bus::PrivateBus;
-use porter_client::{
-    Accounts, ClientError, DbusTransport, Found, InProcess, NoAccount, TransportError,
-};
+use common::accountd::{Daemon, photos};
+use porter_client::{Accounts, ClientError, DbusTransport, Found, NoAccount};
 use porter_core::capability::{Access, Delta, QuotaReport, StorageScope};
 use porter_core::consent::{GrantScope, Usage};
 use porter_core::need::StorageNeed;
-use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
-use porter_core::{AppId, AppName, Audience, DataClass, GrantId, Isolation, Need};
-use porter_fake::{Scripted, ScriptedPrompter, fake_service};
-use std::sync::Arc;
-
-fn app() -> AppId {
-    AppId {
-        name: AppName::parse("org.quire.Photos").expect("name"),
-        isolation: Isolation::Flatpak,
-    }
-}
+use porter_core::wire::{ParentWindow, Refusal};
+use porter_core::{Audience, DataClass, GrantId, Need};
+use porter_fake::Scripted;
 
 fn storage(delta: Delta) -> Need {
     Need::Storage(StorageNeed {
@@ -35,37 +26,14 @@ fn storage(delta: Delta) -> Need {
 }
 
 struct Rig {
-    _bus: PrivateBus,
-    _daemon: zbus::Connection,
-    /// The same service in process: the sheet (`Choose`) is not served over the bus yet, so a
-    /// test consents here and then reads everything else over the bus.
-    local: Accounts<
-        InProcess<
-            porter_fake::FakeProvider,
-            porter_secrets::MemorySecrets,
-            ScriptedPrompter,
-            porter_fake::FixedClock,
-        >,
-    >,
+    daemon: Daemon,
     remote: Accounts<DbusTransport>,
 }
 
 async fn rig(script: impl IntoIterator<Item = Scripted>) -> Rig {
-    let bus = PrivateBus::start();
-    let service = Arc::new(fake_service(ScriptedPrompter::answering(script)).await);
-    let daemon = bus.connect().await;
-    Core {
-        service: Arc::clone(&service),
-        app: app(),
-    }
-    .serve(&daemon)
-    .await;
-    Rig {
-        local: Accounts::over(InProcess::new(service, app())),
-        remote: Accounts::over(DbusTransport::over(bus.connect().await)),
-        _daemon: daemon,
-        _bus: bus,
-    }
+    let daemon = Daemon::start(script).await;
+    let remote = Accounts::over(DbusTransport::over(daemon.client_as(photos()).await));
+    Rig { daemon, remote }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -83,10 +51,10 @@ async fn find_token_grants_and_revoke_work_over_the_bus() {
         other => panic!("expected NeedsConsent, got {other:?}"),
     };
     let chosen = rig
-        .local
+        .remote
         .request_grant(&offer, &ParentWindow::Unparented)
         .await
-        .expect("granted in process");
+        .expect("chosen over the bus");
 
     match rig
         .remote
@@ -105,8 +73,9 @@ async fn find_token_grants_and_revoke_work_over_the_bus() {
     assert_eq!(token.value.expose(), "fake:fake-storage:webdav");
 
     let grants = rig.remote.grants().await.expect("grants");
-    assert_eq!(grants, rig.local.grants().await.expect("local grants"));
     assert_eq!(grants.len(), 1);
+    assert_eq!(grants[0].id, chosen.grant);
+    assert_eq!(rig.daemon.service.registry().grants, grants);
 
     rig.remote.revoke(&chosen.grant).await.expect("revoke");
     assert_eq!(rig.remote.grants().await.expect("grants"), vec![]);
@@ -148,7 +117,7 @@ async fn a_refusal_crosses_as_its_error_name() {
         other => panic!("{other:?}"),
     };
     let chosen = rig
-        .local
+        .remote
         .request_grant(&offer, &ParentWindow::Unparented)
         .await
         .expect("granted");
@@ -161,17 +130,14 @@ async fn a_refusal_crosses_as_its_error_name() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn the_sheet_calls_wait_for_accountd_and_say_so_rather_than_panic() {
-    let rig = rig([]).await;
-    let got = rig
-        .remote
-        .add_account(ProviderHint::Any, &ParentWindow::Unparented)
+async fn an_unknown_caller_is_refused_by_the_bus_not_answered() {
+    let daemon = Daemon::start([]).await;
+    let stranger = Accounts::over(DbusTransport::over(daemon.stranger().await));
+    let got = stranger
+        .find(&storage(Delta::Poll), DataClass::Photos, Usage::Interactive)
         .await;
     assert!(
-        matches!(
-            got,
-            Err(ClientError::Transport(TransportError::Malformed(_)))
-        ),
+        matches!(&got, Err(ClientError::Transport(porter_client::TransportError::Malformed(why))) if why.contains("refused by the bus")),
         "{got:?}"
     );
 }

@@ -4,6 +4,7 @@ use porter_core::consent::{ConsentAnswer, ConsentAsk, GrantScope};
 use porter_core::wire::ParentWindow;
 use porter_service::Prompter;
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 /// One scripted answer.
@@ -15,6 +16,9 @@ pub enum Scripted {
     Deny,
     /// The sheet is closed.
     Dismiss,
+    /// The sheet stays open: the ask never answers, and the log counts it as abandoned when
+    /// its future is dropped (the caller closed the sheet or left).
+    Hang,
 }
 
 /// Answers asks in order; with the script spent, it dismisses.
@@ -26,12 +30,29 @@ pub struct ScriptedPrompter {
 
 /// What a prompter was asked, readable after the prompter moved into a service.
 #[derive(Debug, Clone, Default)]
-pub struct AskLog(Arc<Mutex<Vec<ConsentAsk>>>);
+pub struct AskLog {
+    asked: Arc<Mutex<Vec<ConsentAsk>>>,
+    abandoned: Arc<AtomicUsize>,
+}
 
 impl AskLog {
     /// Every ask so far, in order.
     pub fn asked(&self) -> Vec<ConsentAsk> {
-        lock(&self.0).clone()
+        lock(&self.asked).clone()
+    }
+
+    /// How many asks were dropped while they waited (a `Hang` that was taken down).
+    pub fn abandoned(&self) -> usize {
+        self.abandoned.load(Ordering::SeqCst)
+    }
+}
+
+/// Counts an ask that is dropped before it answers.
+struct Abandoned(Arc<AtomicUsize>);
+
+impl Drop for Abandoned {
+    fn drop(&mut self) {
+        self.0.fetch_add(1, Ordering::SeqCst);
     }
 }
 
@@ -60,8 +81,12 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 impl Prompter for ScriptedPrompter {
     async fn ask(&self, ask: ConsentAsk, _window: &ParentWindow) -> ConsentAnswer {
         let first = ask.accounts.first().map(|choice| choice.account.clone());
-        lock(&self.asked.0).push(ask);
+        lock(&self.asked.asked).push(ask);
         let next = lock(&self.script).pop_front();
+        if next == Some(Scripted::Hang) {
+            let _abandoned = Abandoned(Arc::clone(&self.asked.abandoned));
+            std::future::pending::<()>().await;
+        }
         match (next, first) {
             (Some(Scripted::AllowFirst(scope)), Some(account)) => {
                 ConsentAnswer::Allow { account, scope }

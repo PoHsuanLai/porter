@@ -9,10 +9,14 @@ dependencies = [
  "clap",
  "porter-core",
  "porter-dbus",
+ "porter-fake",
  "porter-provider",
  "porter-secrets",
  "porter-service",
+ "serde",
+ "serde_json",
  "tokio",
+ "zbus",
 ]
 
 [[package]]
@@ -827,6 +831,7 @@ dependencies = [
 name = "porter-client"
 version = "0.1.0"
 dependencies = [
+ "accountd",
  "cua-action",
  "inferd",
  "porter-core",

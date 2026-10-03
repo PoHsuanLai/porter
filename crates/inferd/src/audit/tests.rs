@@ -1,7 +1,7 @@
 use super::*;
 use crate::clock::FixedClock;
 use crate::testkit::Scratch;
-use porter_core::{AccountId, AppName, Isolation, Locality, ModelId, UnixSeconds};
+use porter_core::{AccountId, AppName, Count, Isolation, Locality, ModelId, UnixSeconds};
 use porter_infer::{ChatReply, EmbedReply, InferRefusal, ModelError, StopReason};
 
 fn app() -> AppId {
@@ -38,6 +38,13 @@ fn chat(usage: TokenUsage) -> InferReply {
     })
 }
 
+fn nothing() -> Carried {
+    Carried {
+        images: Count(0),
+        audio_ms: Count(0),
+    }
+}
+
 fn spec() -> SessionSpec {
     SessionSpec {
         need: porter_core::Need::Llm(porter_core::need::LlmNeed {
@@ -57,7 +64,7 @@ fn a_finished_turn_is_one_entry_with_who_what_and_how_much_and_no_content() {
         memory.clone(),
         FixedClock(UnixSeconds(1_700_000_000)),
     );
-    audit.record(&spec(), &served(), &chat(usage(12, 5)));
+    audit.record(&spec(), &served(), &chat(usage(12, 5)), &nothing());
     let entries = memory.entries();
     assert_eq!(entries.len(), 1);
     let entry = &entries[0];
@@ -107,8 +114,8 @@ fn lines_are_appended_as_json_and_read_back_unchanged() {
     let path = dir.path().join("state").join("audit.jsonl");
     let lines = JsonLines::new(path.clone());
     let audit = SessionAudit::new(app(), lines, FixedClock(UnixSeconds(5)));
-    audit.record(&spec(), &served(), &chat(usage(1, 1)));
-    audit.record(&spec(), &served(), &chat(usage(2, 2)));
+    audit.record(&spec(), &served(), &chat(usage(1, 1)), &nothing());
+    audit.record(&spec(), &served(), &chat(usage(2, 2)), &nothing());
     let text = std::fs::read_to_string(&path).expect("the file and its directory were created");
     let entries: Vec<AuditEntry> = text
         .lines()
@@ -127,12 +134,18 @@ fn an_unwritable_destination_loses_the_entry_and_never_the_turn() {
     let blocker = dir.path().join("blocker");
     std::fs::write(&blocker, "x").expect("file");
     JsonLines::new(blocker.join("audit.jsonl")).append(
-        &SessionAudit::new(app(), Discard, FixedClock(UnixSeconds(0)))
-            .entry(&served(), &InferReply::Cancelled),
+        &SessionAudit::new(app(), Discard, FixedClock(UnixSeconds(0))).entry(
+            &served(),
+            &InferReply::Cancelled,
+            &nothing(),
+        ),
     );
     Discard.append(
-        &SessionAudit::new(app(), Discard, FixedClock(UnixSeconds(0)))
-            .entry(&served(), &InferReply::Cancelled),
+        &SessionAudit::new(app(), Discard, FixedClock(UnixSeconds(0))).entry(
+            &served(),
+            &InferReply::Cancelled,
+            &nothing(),
+        ),
     );
 }
 
@@ -141,7 +154,22 @@ fn a_shared_destination_is_one_destination() {
     let memory = Arc::new(Memory::default());
     let one = SessionAudit::new(app(), Arc::clone(&memory), FixedClock(UnixSeconds(0)));
     let two = SessionAudit::new(app(), Arc::clone(&memory), FixedClock(UnixSeconds(0)));
-    one.record(&spec(), &served(), &InferReply::Cancelled);
-    two.record(&spec(), &served(), &InferReply::Cancelled);
+    one.record(&spec(), &served(), &InferReply::Cancelled, &nothing());
+    two.record(&spec(), &served(), &InferReply::Cancelled, &nothing());
     assert_eq!(memory.entries().len(), 2);
+}
+
+#[test]
+fn what_the_request_carried_is_in_the_entry_as_counts_and_nothing_else() {
+    let memory = Memory::default();
+    let audit = SessionAudit::new(app(), memory.clone(), FixedClock(UnixSeconds(1)));
+    let carried = Carried {
+        images: Count(3),
+        audio_ms: Count(1_250),
+    };
+    audit.record(&spec(), &served(), &chat(usage(1, 1)), &carried);
+    let entry = &memory.entries()[0];
+    assert_eq!((entry.images, entry.audio_ms), (Count(3), Count(1_250)));
+    let text = serde_json::to_string(entry).expect("json");
+    assert!(text.contains(r#""images":3"#) && text.contains(r#""audio_ms":1250"#));
 }

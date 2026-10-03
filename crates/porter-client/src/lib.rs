@@ -27,8 +27,8 @@ pub use found::{ConsentOffer, Found, NoAccount, found};
 /// The client's side of one `Open` fd, from porter-infer.
 pub use porter_infer::{InferSession, OpenOptions, SessionError, Traceparent};
 pub use transport::{
-    AnySession, AnyTransport, InProcess, InProcessSession, SocketSession, SocketTransport,
-    Transport,
+    AnySession, AnyTransport, InProcess, InProcessSession, NoBroker, SessionHost, SocketSession,
+    SocketTransport, Transport,
 };
 #[cfg(feature = "dbus")]
 pub use transport::{DbusSession, DbusTransport, MAX_ATTACHMENTS};

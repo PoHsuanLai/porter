@@ -2,7 +2,9 @@
 //! returns a Request object whose `Response` signal carries the answer). Each interface is
 //! declared twice from one table: a proxy trait for callers and a skeleton for the daemons,
 //! whose introspection is the checked-in `dbus/*.xml` (see `tests/introspection.rs`).
-//! Signatures only: every skeleton method answers `NotSupported`.
+//! The skeletons are signatures only (every method answers `NotSupported`); accountd serves the
+//! real objects. `sheet` and `pending` are the portal shape of a sheet's answer, shared by both
+//! sides: the request path, the response codes and results, and the caller's listener.
 
 mod account;
 mod args;
@@ -15,8 +17,10 @@ mod introspect;
 mod json_value;
 mod manager;
 mod names;
+mod pending;
 mod refusal;
 mod request;
+mod sheet;
 mod sync;
 mod tokens;
 
@@ -33,8 +37,13 @@ pub use names::{
     ACCOUNTS_BUS, ACCOUNTS_PATH, INFERENCE_BUS, INFERENCE_PATH, INFERENCE_SETTINGS_PATH,
     OPTION_TRACEPARENT, SYNC_BUS, SYNC_PATH, account_path,
 };
+pub use pending::{Closer, Sheet, SheetError};
 pub use refusal::{REFUSAL_ERROR_PREFIX, refusal_error_name, refusal_from_error_name};
 pub use request::{RequestProxy, RequestSkeleton};
+pub use sheet::{
+    OPTION_HANDLE_TOKEN, REQUEST_INTERFACE, REQUEST_PATH_ROOT, Response, ResponseCode, SheetKind,
+    is_handle_token, reply_of, request_namespace, request_path, response_of, sender_segment,
+};
 pub use sync::{SyncProxy, SyncSkeleton};
 pub use tokens::{TokensProxy, TokensSkeleton};
 /// The session-bus connection transports and daemons hold.

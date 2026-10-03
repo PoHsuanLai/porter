@@ -5,12 +5,12 @@
 
 mod support;
 
-use inferd::serve::{Seams, TurnStep, serve_session};
+use inferd::serve::{Carried, Seams, TurnStep, serve_session};
 use inferd::session::SessionSpec;
 use porter_core::capability::{CuaEnv, SpeechMode};
 use porter_core::consent::Usage;
 use porter_core::need::{CuaNeed, SpeechNeed};
-use porter_core::{DataClass, Need, Tier, Tokens};
+use porter_core::{Count, DataClass, Need, Tier, Tokens};
 use porter_infer::{
     AttachIndex, AudioFrame, AudioRate, Base64Bytes, ChatControl, ChatMessage, ChatReply,
     ChatRequest, ClientFrame, CuaBegin, CuaStepReply, ImagePart, ImageSource, InferEvent,
@@ -400,6 +400,50 @@ async fn audio_reaches_the_engine_through_the_machine_and_end_of_audio_too() {
     assert_eq!(
         rig.client.until_finished().await,
         vec![InferEvent::Routed(served()), InferEvent::Finished(reply)]
+    );
+    // 320 samples at 16 kHz went to the engine: the audit says so, whatever the reply claims.
+    assert_eq!(
+        *rig.audit.1.lock().expect("lock"),
+        vec![Carried {
+            images: Count(0),
+            audio_ms: Count(20)
+        }]
+    );
+}
+
+#[tokio::test]
+async fn the_audit_is_told_what_each_request_carried() {
+    let mut rig = start(FixedRouter::ready(), Engines::default(), mail());
+    rig.client
+        .send(
+            &ClientFrame::Request(chat_with(vec![
+                MessagePart::Text("look".into()),
+                image(0),
+                image(1),
+            ])),
+            &[memfd(b"one"), memfd(b"two")],
+        )
+        .await;
+    started(&rig, 1).await;
+    push(&rig, 0, TurnStep::Done(answer("two pictures")));
+    rig.client.until_finished().await;
+    rig.client.send(&chat(), &[]).await;
+    started(&rig, 2).await;
+    push(&rig, 1, TurnStep::Done(answer("none")));
+    rig.client.until_finished().await;
+    assert_eq!(
+        *rig.audit.1.lock().expect("lock"),
+        vec![
+            Carried {
+                images: Count(2),
+                audio_ms: Count(0)
+            },
+            Carried {
+                images: Count(0),
+                audio_ms: Count(0)
+            }
+        ],
+        "each turn is told its own request's, not the one before"
     );
 }
 

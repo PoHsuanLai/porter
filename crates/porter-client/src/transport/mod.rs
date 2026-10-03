@@ -7,6 +7,8 @@ mod dbus;
 mod dbus_accounts;
 #[cfg(feature = "dbus")]
 mod dbus_session;
+#[cfg(all(unix, feature = "framed"))]
+mod framed;
 mod in_process;
 mod socket;
 
@@ -14,7 +16,7 @@ mod socket;
 pub use dbus::DbusTransport;
 #[cfg(feature = "dbus")]
 pub use dbus_session::{DbusSession, MAX_ATTACHMENTS};
-pub use in_process::{InProcess, InProcessSession};
+pub use in_process::{InProcess, InProcessSession, NoBroker, SessionHost};
 pub use socket::{SocketSession, SocketTransport};
 
 use crate::error::TransportError;
@@ -88,13 +90,14 @@ impl InferSession for AnySession {
         }
     }
 
-    #[cfg(all(unix, feature = "dbus"))]
+    #[cfg(unix)]
     async fn send_attached(
         &mut self,
         frame: ClientFrame,
         attachments: Vec<std::os::fd::OwnedFd>,
     ) -> Result<(), SessionError> {
         match self {
+            #[cfg(feature = "dbus")]
             AnySession::Dbus(session) => session.send_attached(frame, attachments).await,
             AnySession::Socket(session) => session.send_attached(frame, attachments).await,
         }

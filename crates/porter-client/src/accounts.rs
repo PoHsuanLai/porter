@@ -22,9 +22,9 @@ impl Accounts<AnyTransport> {
     /// Connects over the first reachable link in `env`, in order (D-Bus on the desktop, the
     /// latchkey socket elsewhere). A D-Bus link is reachable when the session bus is: the
     /// daemons are found, and started by bus activation, at the first call, so a machine with
-    /// inferd and no accountd still connects. Without the `dbus` feature, and for a socket
-    /// link (its carrier is not built), a link is skipped; no reachable link is
-    /// `TransportError::Unreachable`.
+    /// inferd and no accountd still connects. A socket link is reachable when the agent accepts
+    /// a connection. Without the `dbus` feature a D-Bus link is skipped, and without `socket` a
+    /// socket link is; no reachable link is `TransportError::Unreachable`.
     pub async fn connect(env: &ClientEnv) -> Result<Self, ClientError> {
         for link in &env.links {
             if let Some(transport) = reach(link).await {
@@ -45,7 +45,10 @@ async fn reach(link: &LinkChoice) -> Option<AnyTransport> {
             .map(AnyTransport::Dbus),
         #[cfg(not(feature = "dbus"))]
         LinkChoice::Dbus => None,
-        LinkChoice::Socket(_) => None,
+        LinkChoice::Socket(path) => {
+            let link = crate::transport::SocketTransport::at(path.clone());
+            link.reachable().await.then_some(AnyTransport::Socket(link))
+        }
     }
 }
 
@@ -124,6 +127,23 @@ impl<T: Transport> Accounts<T> {
         };
         match self.transport.call(request).await? {
             AccountsReply::Added(account) => Ok(account),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// Opens the sheet that signs a granted account in again (its refresh token was revoked, a
+    /// password changed). An account the app holds no grant for is not one it can see.
+    pub async fn reauthenticate(
+        &self,
+        account: &AccountId,
+        window: &ParentWindow,
+    ) -> Result<(), ClientError> {
+        let request = AccountsRequest::Reauthenticate {
+            account: account.clone(),
+            window: window.clone(),
+        };
+        match self.transport.call(request).await? {
+            AccountsReply::Reauthenticated => Ok(()),
             other => Err(unexpected(other)),
         }
     }

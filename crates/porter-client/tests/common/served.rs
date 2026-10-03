@@ -3,7 +3,7 @@
 //! queues, and a computer-use step before a begin is refused.
 
 use inferd::serve::{
-    AuditSink, EngineFailed, EngineHost, Router, RunningTurn, TurnRunner, TurnStep,
+    AuditSink, Carried, EngineFailed, EngineHost, Router, RunningTurn, TurnRunner, TurnStep,
 };
 use inferd::session::{RouteDecision, SessionSpec};
 use porter_fake::{Script, ScriptStep};
@@ -116,5 +116,5 @@ impl RunningTurn for Played {
 pub struct Unaudited;
 
 impl AuditSink for Unaudited {
-    fn record(&self, _spec: &SessionSpec, _served: &ServedBy, _reply: &InferReply) {}
+    fn record(&self, _: &SessionSpec, _: &ServedBy, _: &InferReply, _: &Carried) {}
 }

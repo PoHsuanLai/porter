@@ -22,6 +22,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
+accountd = { path = "../accountd" }
 cua-action = { workspace = true }
 inferd = { path = "../inferd" }
 porter-fake = { workspace = true }
@@ -29,8 +30,14 @@ tokio = { workspace = true }
 zbus = { workspace = true }
 
 [features]
-# The D-Bus transport (Linux, the desktop's accountd).
-dbus = ["dep:porter-dbus", "dep:rustix", "dep:serde", "dep:serde_json", "dep:tokio"]
+# Frames over a Unix stream socket with descriptors riding on them (what both carriers below
+# share). Pulls in the runtime, so it is off by default: the pure build reaches none.
+framed = ["dep:rustix", "dep:serde", "dep:tokio"]
+# The D-Bus transport (Linux, the desktop's accountd and inferd).
+dbus = ["framed", "dep:porter-dbus", "dep:serde_json"]
+# The latchkey socket carrier (other desktops, macOS; a named pipe on Windows is not built):
+# without it `SocketTransport` finds nobody.
+socket = ["framed"]
 
 [lints]
 workspace = true

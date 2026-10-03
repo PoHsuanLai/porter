@@ -72,11 +72,13 @@ impl<P: Provider, S: Secrets, U: Prompter, K: Clock> AccountService<P, S, U, K> 
                 usage,
                 window,
             } => self.choose(caller, need, (class, usage), &window).await,
-            AccountsRequest::AddAccount { .. } => {
-                todo!("open accounts-ui's add sheet, run the provider's sign-in, discover, store")
-            }
-            AccountsRequest::Reauthenticate { .. } => {
-                todo!("run the account's sign-in again and store the new credential")
+            // No protocol family signs in yet (the `Provider` seam has no sign-in), so there is
+            // nothing to run behind either sheet: a caller is told so, and a daemon is never
+            // brought down by a request. The bodies (open accounts-ui's add sheet, run the
+            // provider's sign-in, discover, store; run an account's sign-in again and store the
+            // new credential) arrive with the first family's sign-in (FINDINGS).
+            AccountsRequest::AddAccount { .. } | AccountsRequest::Reauthenticate { .. } => {
+                AccountsReply::Refused(Refusal::Unavailable)
             }
             AccountsRequest::ListGrants => {
                 let grants = self

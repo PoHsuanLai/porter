@@ -1,6 +1,7 @@
 //! The loop of one session: feed the machine (`session::step`) what happens, carry out what it
 //! asks. The machine decides; this file only moves bytes, futures and descriptors.
 
+use super::carried::Tally;
 use super::seams::{
     AuditSink, EngineFailed, EngineHost, Router, RunningTurn, Seams, TurnRunner, TurnStep,
 };
@@ -21,6 +22,8 @@ struct Live<'a, E: EngineHost, T: TurnRunner> {
     wait: Option<Wait<'a>>,
     /// The descriptors of the one request that may be queued, until it starts.
     held: Option<Vec<OwnedFd>>,
+    /// What the turn in flight carries, for the audit entry.
+    tally: Tally,
     engines: &'a E,
 }
 
@@ -41,6 +44,7 @@ pub async fn serve_session<R, E, T, A>(
         turn: None,
         wait: None,
         held: None,
+        tally: Tally::default(),
         engines: &seams.engines,
     };
     let routed = seams.router.route(&spec).await;
@@ -165,10 +169,12 @@ where
                     .take()
                     .or_else(|| live.held.take())
                     .unwrap_or_default();
+                live.tally = Tally::begin(&request);
                 live.turn = Some(seams.runner.start(request, fds));
             }
             SessionOut::DropTurn => live.turn = None,
             SessionOut::Audio(frame) => {
+                live.tally.heard(&frame);
                 if let Some(turn) = live.turn.as_mut() {
                     turn.audio(frame);
                 }
@@ -180,7 +186,8 @@ where
             }
             SessionOut::Audit(reply) => {
                 if let Some(served) = &served {
-                    seams.audit.record(spec, served, &reply);
+                    let carried = live.tally.closing(&reply);
+                    seams.audit.record(spec, served, &reply, &carried);
                 }
             }
         }
