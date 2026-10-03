@@ -173,9 +173,11 @@ fn labels_round_trip_and_pin_their_json() {
         Source::Calendar,
         Source::Contacts,
         Source::Notes,
+        Source::Cli,
     ] {
         round_trip(&source);
     }
+    assert_eq!(round_trip(&Source::Cli), r#"{"kind":"cli"}"#);
     for role in [
         ModelRole::Planner,
         ModelRole::Reader,

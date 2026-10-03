@@ -65,6 +65,8 @@ pub enum Source {
     Model(ModelRole),
     /// An external MCP client's arguments.
     Mcp(ClientName),
+    /// Arguments typed or piped into the `quire-do` command line.
+    Cli,
 }
 
 /// Which model role produced a text.
