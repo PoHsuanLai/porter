@@ -12,6 +12,11 @@ pub enum TransportError {
     /// The connection closed mid-request.
     #[error("connection closed")]
     Closed,
+    /// The daemon refused the caller: the bus's `AccessDenied`, with the daemon's own text (its
+    /// caller table does not name this program, or the app holds no grant for the call). Asking
+    /// again does not help; the person or the packager must change who may call.
+    #[error("refused by the daemon: {0}")]
+    Denied(String),
     /// The other side sent something that is not porter's protocol.
     #[error("malformed reply: {0}")]
     Malformed(String),

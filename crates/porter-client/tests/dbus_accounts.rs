@@ -137,7 +137,7 @@ async fn an_unknown_caller_is_refused_by_the_bus_not_answered() {
         .find(&storage(Delta::Poll), DataClass::Photos, Usage::Interactive)
         .await;
     assert!(
-        matches!(&got, Err(ClientError::Transport(porter_client::TransportError::Malformed(why))) if why.contains("refused by the bus")),
+        matches!(&got, Err(ClientError::Transport(porter_client::TransportError::Denied(why))) if why.contains("AccessDenied")),
         "{got:?}"
     );
 }

@@ -24,7 +24,7 @@ trait), section 6 (copy the recipe).
 | `porter-client` | the app-facing API: `Accounts`, `Found`, the `Transport` trait (`call` for accountd, `open` for an inference session); `InProcess` (with a `SessionHost` for inference, `NoBroker` by default), `SocketTransport` (feature `socket`), `DbusTransport` (feature `dbus`); both of those share one framed session over a Unix stream (feature `framed`) | through its transport |
 | `porter-dbus` | `org.quire.Accounts1`, `org.quire.Sync1`, `org.quire.Inference1` as zbus proxies and skeletons; `introspection`; the argument codec; the sheet answer (`sheet`: request paths, response codes, results) and its caller's half (`pending`: subscribe before the call, `Closer`) | zbus |
 | `porter-fake` | test-only: fake providers from real provider files, three accounts, `ScriptedPrompter`, `FixedClock`, `FakeModel` (streams), `FakeInferSession` (scripted events per request kind, audio-gated transcripts), `fake_service` | none |
-| `accountd`, `syncd`, `inferd` | the daemons. `syncd` is a skeleton that builds its service and exits with "not implemented"; `accountd` is a library (`core`, `manager`, `grants`, `account`, `request`, `callers`, `errors`: the bus objects over `AccountService`, the Request objects of the sheet methods, the caller table seam) whose binary is still a skeleton (its secret store, prompter and families are stubs); `inferd` serves `org.quire.Inference1` (section 10). `inferd` is also a library (`adapters`, `bridge`, `session`, `serve`, `service`, `peers`, `router`, `engines`, `supervise`, `hosts`, `local`, `catalog`, `config`, `runner`, `cua_step`, `cua_run`, `audit`, `clock`, `speech`) so its modules are tested without a bus | everything |
+| `accountd`, `syncd`, `inferd` | the daemons. `syncd` is a skeleton that builds its service and exits with "not implemented"; `accountd` is a library (`core`, `manager`, `grants`, `account`, `request`, `callers`, `errors`: the bus objects over `AccountService`, the Request objects of the sheet methods, the caller table seam) whose binary is still a skeleton (its secret store, prompter and families are stubs); `inferd` serves `org.quire.Inference1` (section 10). `inferd` is also a library (`adapters`, `bridge`, `session`, `serve`, `service`, `peers`, `router`, `engines`, `supervise`, `hosts`, `local`, `catalog`, `config`, `runner`, `structured`, `tee`, `cua_step`, `cua_run`, `audit`, `clock`, `speech`) so its modules are tested without a bus | everything |
 
 Allowed direct edges (checked by `scripts/check-boundary.sh`; dev-dependencies are outside it):
 
@@ -59,7 +59,7 @@ External boundaries: every crate but `porter-dbus` and the daemons never reaches
 | `porter-service` | `clock`, `prompter` < `registry` < `choose`, `token` < `service` |
 | `porter-client` | `error`, `env`, `found` < `transport` (`framed`, `in_process`, `socket`, `dbus`; each with its session) < `accounts` |
 | `porter-dbus` | `names`, `args` < `codec` < `sheet` < `pending` ; `manager`, `account`, `grants`, `tokens`, `request`, `sync`, `inference` < `introspect` |
-| `inferd` | `session` (pure machine) < `serve` (`carried`, then the loop over four seams) ; `catalog` < `local` < `router` < `supervise`, `hosts` < `engines` (`Engines`, `SessionRouter`) ; `bridge` (`request`, `reply`) < `cua_step`, `runner` ; `cua_run` (the run and its `StepJob`) over `cua_step` ; `audit`, `clock`, `peers`, `config` < `service` (the bus object) < `main` |
+| `inferd` | `session` (pure machine) < `serve` (`carried`, then the loop over four seams) ; `catalog` < `local` < `router` < `supervise`, `hosts` < `engines` (`Engines`, `SessionRouter`) ; `bridge` (`request`, `reply`) < `tee`, `structured`, `cua_step`, `runner` ; `cua_run` (the run and its `StepJob`) over `cua_step` ; `audit`, `clock`, `peers`, `config` < `service` (the bus object) < `main` |
 
 ## 3. One home per concept
 
@@ -213,7 +213,7 @@ the interface other work builds on; a change is a vocabulary bump (section 6) or
 | the real seams: `router` and `engines::SessionRouter`, `engines::Engines` over `supervise` and `hosts`, `runner::Turns` over `bridge` and `cua_step`, `audit` | built; the engine host is child processes (`ProcessHost`), not systemd transient units |
 | `inferd::speech` rules (`check_audio`, `audio_ms`) | built, table-tested; `SpeechRunner` stub |
 | `inferd::{catalog, local, bridge}` (the catalog read, its claims, the model book, both halves of the mapping to stoker's turns) | built, table-tested |
-| `inferd::cua_run::{CuaRun, StepJob}` | built over `cua_step` (the tool dialects); `runner::Turns` runs a computer-use step through it; stoker's `cua-session` shrinks `cua_step` to the model turn when its bodies exist |
+| `inferd::cua_run::{CuaRun, StepJob}` | built over `cua_step`, which drives stoker's `CuaSession` (`begin`, `request`, one turn through a `TranscriptSink`, `absorb_for`, one repair turn); `runner::Turns` runs a computer-use step through it (tool and text dialects) |
 | `FakeInferSession`, `FakeModel` streaming | built, tested |
 | `AccountService`: Query, Availability, Choose, ListGrants, Revoke, IssueToken, `remove_account` | built over the seams, tested end to end with the fakes |
 | `AccountService`: AddAccount, Reauthenticate | answer `Refused(Unavailable)`: the `Provider` seam has no sign-in, so there is nothing to run until the first family's |
@@ -406,7 +406,8 @@ annotated sample configuration). One `Open` is:
      unload on the supervisor's idle timer, so `release` does nothing.
    - `TurnRunner` is `runner::Turns`: stoker's `OpenAiCompat` (`Driver<OpenAiCodec, HttpClient>`)
      over the engine's Unix socket, wrapped in `Retrying`; `bridge` maps both ways; computer-use
-     steps are `cua_step`.
+     steps are `cua_step` over stoker's `CuaSession`; a reply of a shape inferd can read is run
+     under `structured` (a `ShapedSession`: validate, repair once).
    - `AuditSink` is `audit::SessionAudit` over an `AuditOut` (a JSON-lines file in the daemon);
      the loop tells it what the request carried (`serve::Carried`: frames sent, audio milliseconds
      sent or produced) beside the reply.

@@ -25,15 +25,9 @@
 # tier = "balanced"
 # model = { account = "local", model = "holo-3.1-4b" }
 
-# What a catalog entry does not say about an embedding model: its vector length, limits and the
-# prefixes of a query and a document. memoryd asks for nomic-embed-text v1.5 (768 numbers).
-# [[embedding]]
-# model = "nomic-embed-text-v1.5"
-# dims = 768
-# max_input = 2048
-# max_batch = 32
-# query_prefix = "search_query: "
-# document_prefix = "search_document: "
+# An embedding model's vector length, limits and prefixes are the catalog entry's `embed` table
+# (stoker catalog file of the model), not this file: memoryd asks for nomic-embed-text v1.5
+# (768 numbers, `search_query: ` and `search_document: `).
 
 # Who may call. A caller is the executable behind a bus connection (the bus names its process,
 # /proc/<pid>/exe names the program); one that is not here is refused. cuad is the only caller that

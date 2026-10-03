@@ -153,24 +153,33 @@ async fn a_step_streams_its_thought_and_proposals_into_the_sink_and_returns_the_
     );
 }
 
-fn user_text(provider: &ScriptedProvider, which: usize) -> String {
-    let sent = &provider.requests()[which];
-    match &sent.messages[1].parts[0] {
-        Part::Text(text) => text.clone(),
-        other => panic!("text, got {other:?}"),
-    }
+fn remembered(run: &CuaRun) -> usize {
+    run.session.as_ref().map_or(0, CuaSession::remembered)
+}
+
+fn images(provider: &ScriptedProvider, which: usize) -> usize {
+    provider.requests()[which]
+        .messages
+        .iter()
+        .flat_map(|m| m.parts.iter())
+        .filter(|part| matches!(part, Part::Image(_)))
+        .count()
 }
 
 #[tokio::test]
-async fn the_run_remembers_its_steps_and_a_failed_step_is_not_one_of_them() {
+async fn the_run_remembers_its_steps_and_a_step_that_failed_to_reach_the_engine_is_not_one_of_them()
+{
     let provider = ScriptedProvider::new(
         vec![],
         vec![
             script(vec![click(
                 r#"{"action":"left_click","coordinate":[500,500]}"#,
             )]),
-            // The second answer has no call: unparseable.
-            script(vec![TurnEvent::TextDelta("hm".into())]),
+            // The engine fails on the second step.
+            Script {
+                events: vec![],
+                end: Err(model_provider::ProviderError::Unreachable),
+            },
             script(vec![click(
                 r#"{"action":"left_click","coordinate":[100,100]}"#,
             )]),
@@ -178,25 +187,86 @@ async fn the_run_remembers_its_steps_and_a_failed_step_is_not_one_of_them() {
     );
     let rig = Rig::new();
     let mut run = CuaRun::begin(begin());
+    assert_eq!(remembered(&run), 0);
     let mut sink = Events::default();
     rig.step(&mut run, &provider, 0, &mut sink)
         .await
         .expect("the first");
+    assert_eq!(remembered(&run), 1);
     assert_eq!(
         rig.step(&mut run, &provider, 1, &mut sink).await.err(),
-        Some(CuaStepFailure::Unparseable)
+        Some(CuaStepFailure::ModelFailed(
+            porter_infer::ModelError::Unreachable
+        ))
     );
+    assert_eq!(remembered(&run), 1, "the failed step is not remembered");
     rig.step(&mut run, &provider, 1, &mut sink)
         .await
         .expect("the same step again");
+    assert_eq!(remembered(&run), 2);
 
-    assert!(!user_text(&provider, 0).contains("Earlier:"));
-    assert!(user_text(&provider, 1).contains("Earlier: you did: click"));
-    let third = user_text(&provider, 2);
+    // Each prompt holds the frames of the steps before it, up to the model's limit.
     assert_eq!(
-        third.matches("Earlier:").count(),
+        (
+            images(&provider, 0),
+            images(&provider, 1),
+            images(&provider, 2)
+        ),
+        (1, 2, 2),
+        "the failed step's retry sees the same one earlier frame"
+    );
+    let shown = format!("{run:?}");
+    assert!(shown.contains("2 remembered steps"), "{shown}");
+    assert!(
+        !shown.contains("open settings"),
+        "Debug shows sizes, not the goal: {shown}"
+    );
+}
+
+#[tokio::test]
+async fn a_reply_that_never_parses_is_a_step_the_model_took() {
+    let provider = ScriptedProvider::new(
+        vec![],
+        vec![
+            script(vec![TurnEvent::TextDelta("hm".into())]),
+            script(vec![TurnEvent::TextDelta("hmm".into())]),
+        ],
+    );
+    let mut run = CuaRun::begin(begin());
+    let got = Rig::new()
+        .step(&mut run, &provider, 0, &mut Events::default())
+        .await;
+    assert_eq!(got.err(), Some(CuaStepFailure::Unparseable));
+    assert_eq!(
+        remembered(&run),
         1,
-        "the failed step was not remembered: {third}"
+        "listed in the next prompt as a step with no actions"
+    );
+}
+
+#[tokio::test]
+async fn a_model_with_no_computer_use_dialect_cannot_run_a_step() {
+    let scratch = Scratch::new("cua-chat");
+    let chat = models(&scratch).remove(0);
+    let provider = ScriptedProvider::new(vec![], vec![]);
+    let frames = Frames::read(vec![memfd(b"png bytes")]).expect("frames");
+    let request = request(0);
+    let got = CuaRun::begin(begin())
+        .step(
+            StepJob {
+                model: &chat,
+                provider: &provider,
+                frames: &frames,
+                request: &request,
+            },
+            &mut Events::default(),
+        )
+        .await;
+    assert_eq!(
+        got.err(),
+        Some(CuaStepFailure::ModelFailed(
+            porter_infer::ModelError::Unreadable
+        ))
     );
 }
 

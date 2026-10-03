@@ -21,6 +21,7 @@ model-openai-compat = { workspace = true }
 vision-prep = { workspace = true, features = ["pixels"] }
 cua-parse = { workspace = true }
 cua-session = { workspace = true }
+cua-vendors = { workspace = true }
 model-extract = { workspace = true }
 speech-provider = { workspace = true }
 clap = { workspace = true }

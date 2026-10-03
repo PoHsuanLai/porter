@@ -165,12 +165,12 @@ fn llm_cap(caps: &Caps, entry: &ModelEntry) -> LlmCap {
     }
 }
 
-/// A computer-use claim needs a tool dialect (the text and wire dialects have no runner yet: the
-/// prompt and parse of a step are `cua-session`'s, and `cua_step` serves only the tool calls)
-/// and a model that sees images.
+/// A computer-use claim needs a dialect an engine on this computer can speak (a tool call or the
+/// text of UI-TARS: `cua-session` builds the prompt and reads the reply of both; a vendor's wire
+/// needs the vendor's backend) and a model that sees images.
 fn cua_cap(caps: &Caps) -> Option<CuaCap> {
     let CuaSupport::Dialect {
-        dialect: CuaDialect::Tool(_),
+        dialect: CuaDialect::Tool(_) | CuaDialect::Text(_),
         batching,
         zoom,
     } = caps.computer_use

@@ -181,3 +181,72 @@ async fn a_step_before_a_begin_and_a_wrong_class_are_refused() {
         ))]
     );
 }
+
+fn click_at_middle() -> Chat {
+    Chat::Call {
+        name: "computer_use",
+        arguments: r#"{"action":"left_click","coordinate":[500,500]}"#.into(),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_reply_with_no_call_is_repaired_and_the_next_step_sees_the_earlier_frame() {
+    let mut plan = cua_world(Role::Cua);
+    plan.scripts = vec![(
+        "tiny-cua",
+        Script {
+            chat: vec![
+                Chat::Say(vec!["I cannot see a button"]),
+                click_at_middle(),
+                click_at_middle(),
+            ],
+            dims: 0,
+        },
+    )];
+    let world = World::start(plan).await;
+    let mut session = world
+        .accounts
+        .session(&cua_need(), DataClass::Screen, Tier::Best)
+        .await
+        .expect("open");
+    session
+        .send(ClientFrame::Request(InferRequest::CuaBegin(begin())))
+        .await
+        .expect("begin");
+    until_finished(&mut session).await;
+
+    let frame = vec![0x80_u8; 200 * 100 * 4];
+    for step in 0..2 {
+        session
+            .send_attached(
+                ClientFrame::Request(InferRequest::CuaStep(step_request(step))),
+                vec![memfd(&frame)],
+            )
+            .await
+            .expect("step");
+        let events = until_finished(&mut session).await;
+        let Some(InferEvent::Finished(InferReply::CuaStep(reply))) = events.last() else {
+            panic!("a step reply, got {events:?}");
+        };
+        assert_eq!(reply.actions.len(), 1, "step {step}: {events:?}");
+    }
+
+    // The first step took two turns (the second named what was wrong), the second step one.
+    let bodies = world.engines["tiny-cua"].bodies("/v1/chat/completions");
+    assert_eq!(bodies.len(), 3);
+    let repair = bodies[1].to_string();
+    assert!(
+        repair.contains("did not hold an action I can run"),
+        "{repair}"
+    );
+    assert!(
+        !repair.contains("I cannot see a button"),
+        "the reply is not repeated"
+    );
+    let frames = |body: &Value| body.to_string().matches("data:image/png;base64,").count();
+    assert_eq!(
+        (frames(&bodies[0]), frames(&bodies[1]), frames(&bodies[2])),
+        (1, 1, 2),
+        "a repair carries the same frame; the next step also shows the one before"
+    );
+}

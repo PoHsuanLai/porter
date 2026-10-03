@@ -155,17 +155,23 @@ fn a_missing_directory_is_an_empty_catalog() {
 }
 
 #[test]
-fn a_computer_use_entry_without_a_tool_dialect_makes_no_computer_use_claim() {
+fn a_computer_use_entry_claims_for_the_dialects_an_engine_here_can_speak() {
+    let claims = |dialect: &str| {
+        let text = entries::cua().replace(r#"{ kind = "tool", v = "holo31" }"#, dialect);
+        capabilities_of(&parse_entry(&text).expect("entry"))
+            .iter()
+            .any(|c| matches!(c, Capability::ComputerUse(_)))
+    };
+    assert!(claims(r#"{ kind = "tool", v = "holo31" }"#));
+    assert!(claims(r#"{ kind = "text", v = "ui_tars15" }"#));
+    assert!(
+        !claims(r#"{ kind = "wire", v = "open_ai_computer" }"#),
+        "a vendor's wire needs the vendor's backend"
+    );
     let text = entries::cua().replace(
         r#"{ kind = "tool", v = "holo31" }"#,
-        r#"{ kind = "text", v = "ui_tars15" }"#,
+        r#"{ kind = "wire", v = "open_ai_computer" }"#,
     );
-    let entry = parse_entry(&text).expect("entry");
-    let caps = capabilities_of(&entry);
-    assert!(
-        caps.iter()
-            .all(|c| !matches!(c, Capability::ComputerUse(_))),
-        "{caps:?}"
-    );
+    let caps = capabilities_of(&parse_entry(&text).expect("entry"));
     assert!(caps.iter().any(|c| matches!(c, Capability::Llm(_))));
 }

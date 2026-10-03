@@ -56,12 +56,13 @@ fn details(options: &OpenOptions) -> Details {
         .collect()
 }
 
-/// A bus error as the transport's: no daemon on the name or no bus is `Unreachable`; anything
-/// else is the other side not speaking porter's protocol.
+/// A bus error as the transport's: no daemon on the name or no bus is `Unreachable`; the bus's
+/// `AccessDenied` (a caller the daemon does not know, or one without the grant) is `Denied` with
+/// the daemon's text; anything else is the other side not speaking porter's protocol.
 pub(super) fn bus_error(error: &BusError) -> TransportError {
     match classify(error) {
         BusFailure::NoDaemon => TransportError::Unreachable,
-        BusFailure::Denied(why) => TransportError::Malformed(format!("refused by the bus: {why}")),
+        BusFailure::Denied(why) => TransportError::Denied(why),
         BusFailure::Other(why) => TransportError::Malformed(format!("bus: {why}")),
     }
 }

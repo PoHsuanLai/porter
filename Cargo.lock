@@ -608,6 +608,7 @@ dependencies = [
  "cua-action",
  "cua-parse",
  "cua-session",
+ "cua-vendors",
  "engine-supervisor",
  "model-catalog",
  "model-extract",

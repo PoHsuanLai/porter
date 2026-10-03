@@ -331,13 +331,13 @@ async fn inferd_absent_is_unreachable() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_caller_the_table_does_not_name_is_refused_by_the_bus_error() {
+async fn a_caller_the_table_does_not_name_is_denied_with_the_daemons_text() {
     let world = World::start(chat_world(Script::default())).await;
     // A second connection nobody introduced.
     let stranger = Accounts::over(DbusTransport::over(world.bus.connect().await));
     let got = stranger.session(&llm(), DataClass::Notes, Tier::Fast).await;
     match got {
-        Err(ClientError::Transport(TransportError::Malformed(why))) => {
+        Err(ClientError::Transport(TransportError::Denied(why))) => {
             assert!(why.contains("caller"), "{why}");
         }
         other => panic!("refused with the daemon's text, got {:?}", other.err()),

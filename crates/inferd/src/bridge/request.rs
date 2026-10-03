@@ -189,9 +189,11 @@ fn effort(effort: pi::Effort) -> sp::Effort {
     }
 }
 
-/// An app that leaves reasoning open gets none (stoker's `EngineDefault` is not passed on), so a
-/// short interactive turn does not spend its tokens thinking. An app that wants it asks for
-/// `On(effort)`.
+/// An app that leaves reasoning open gets none. stoker's `Reasoning::EngineDefault` exists (the
+/// codec then sends no reasoning field), but it means whatever the engine's chat template does,
+/// and for the thinking models that is to think: a short interactive turn would spend its tokens
+/// on it and the app, which never asked, would wait for it. So `EngineDefault` is sent as `Off`
+/// and an app that wants reasoning asks for `On(effort)`.
 fn reasoning(reasoning: pi::Reasoning) -> sp::Reasoning {
     match reasoning {
         pi::Reasoning::EngineDefault | pi::Reasoning::Off => sp::Reasoning::Off,
@@ -200,7 +202,7 @@ fn reasoning(reasoning: pi::Reasoning) -> sp::Reasoning {
 }
 
 /// What the engine's flavor understands beyond the shared fields.
-fn extras(flavor: Option<Flavor>) -> sp::EngineExtras {
+pub fn extras(flavor: Option<Flavor>) -> sp::EngineExtras {
     match flavor {
         Some(Flavor::LlamaServer) => sp::EngineExtras::LlamaServer(sp::LlamaExtras {
             cache_prompt: sp::PromptCache::Reuse,
