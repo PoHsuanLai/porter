@@ -24,7 +24,9 @@ pub mod serve;
 pub mod service;
 pub mod session;
 pub mod speech;
+pub mod structured;
 pub mod supervise;
+pub mod tee;
 
 pub use adapters::AdapterModel;
 

@@ -52,6 +52,8 @@ model-openai-compat = { path = "../stoker/crates/model-openai-compat" }
 speech-provider     = { path = "../stoker/crates/speech-provider" }
 vision-prep         = { path = "../stoker/crates/vision-prep" }
 cua-parse           = { path = "../stoker/crates/cua-parse" }
+cua-session         = { path = "../stoker/crates/cua-session" }
+model-extract       = { path = "../stoker/crates/model-extract" }
 
 # From quire's pinned block (`docs/workspace-deps.toml`), copied verbatim: only the lines porter
 # names itself, as mailo does.

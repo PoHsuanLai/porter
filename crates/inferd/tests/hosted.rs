@@ -130,6 +130,108 @@ async fn a_porter_client_chat_turn_streams_text_from_the_engine() {
     assert_eq!(entries[0].usage.input, Tokens(5));
 }
 
+fn shaped_request(shape: ReplyShape) -> InferRequest {
+    let InferRequest::Chat(chat) = chat_request("rate it", DataClass::Notes) else {
+        unreachable!("a chat request");
+    };
+    InferRequest::Chat(ChatRequest { shape, ..chat })
+}
+
+const SCORE: &str = r#"{"type":"object","additionalProperties":false,"properties":{"score":{"type":"integer","minimum":0,"maximum":10}},"required":["score"]}"#;
+
+async fn finished_chat(world: &World, request: InferRequest) -> (Vec<InferEvent>, InferReply) {
+    let mut session = world
+        .accounts
+        .session(&llm(), DataClass::Notes, Tier::Balanced)
+        .await
+        .expect("open");
+    session
+        .send(ClientFrame::Request(request))
+        .await
+        .expect("send");
+    let events = until_finished(&mut session).await;
+    let Some(InferEvent::Finished(reply)) = events.last().cloned() else {
+        panic!("finished, got {events:?}");
+    };
+    (events, reply)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_json_reply_that_breaks_its_schema_is_repaired_before_the_app_sees_it() {
+    let world = World::start(chat_world(Script {
+        chat: vec![
+            Chat::Say(vec!["{\"score\": ", "11}"]),
+            Chat::Say(vec!["{\"score\": 7}"]),
+        ],
+        dims: 0,
+    }))
+    .await;
+    let (events, reply) =
+        finished_chat(&world, shaped_request(ReplyShape::Json(SCORE.into()))).await;
+    let InferReply::Chat(chat) = reply else {
+        panic!("a chat reply, got {events:?}");
+    };
+    assert_eq!(chat.text, "{\"score\": 7}");
+    let texts: Vec<&InferEvent> = events
+        .iter()
+        .filter(|event| matches!(event, InferEvent::TextDelta(_)))
+        .collect();
+    assert_eq!(
+        texts,
+        vec![&InferEvent::TextDelta("{\"score\": 7}".into())],
+        "the first attempt was never shown"
+    );
+    assert_eq!(
+        (chat.usage.input, chat.usage.output),
+        (Tokens(10), Tokens(4)),
+        "both attempts are counted"
+    );
+    let bodies = world.engines["tiny-chat"].bodies("/v1/chat/completions");
+    assert_eq!(bodies.len(), 2);
+    assert!(bodies[0].to_string().contains("json_schema"));
+    let second = bodies[1].to_string();
+    assert!(second.contains("not accepted") && second.contains("score"));
+    assert!(
+        !second.contains("11"),
+        "the reply is not echoed back: {second}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_schema_the_vocabulary_cannot_read_is_sent_unchecked_and_a_choice_is_checked() {
+    let world = World::start(chat_world(Script {
+        chat: vec![Chat::Say(vec!["whatever the engine says"])],
+        dims: 0,
+    }))
+    .await;
+    let (_, reply) = finished_chat(
+        &world,
+        shaped_request(ReplyShape::Json(r#"{"type":"object"}"#.into())),
+    )
+    .await;
+    let InferReply::Chat(chat) = reply else {
+        panic!("a chat reply");
+    };
+    assert_eq!(chat.text, "whatever the engine says", "passed on as made");
+    assert_eq!(
+        world.engines["tiny-chat"]
+            .bodies("/v1/chat/completions")
+            .len(),
+        1
+    );
+
+    let (_, reply) = finished_chat(
+        &world,
+        shaped_request(ReplyShape::Choice(vec!["allow".into(), "deny".into()])),
+    )
+    .await;
+    assert_eq!(
+        reply,
+        InferReply::Failed(porter_infer::ModelError::Unparseable),
+        "neither attempt names a choice"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn the_one_call_form_the_consumers_use_returns_the_reply() {
     let world = World::start(chat_world(Script {

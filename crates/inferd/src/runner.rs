@@ -12,6 +12,7 @@ use crate::cua_run::{CuaRun, StepJob};
 use crate::hosts::unix_endpoint;
 use crate::local::LocalModel;
 use crate::serve::{RunningTurn, TurnRunner, TurnStep};
+use crate::structured::{self, Shaping};
 use crate::supervise::Supervised;
 use model_http::{HttpClient, Timeouts, WaitMs as HttpWaitMs};
 use model_openai_compat::{Flavor, OpenAiCodec, OpenAiCompat};
@@ -240,11 +241,14 @@ impl Job {
         };
         match request {
             InferRequest::Chat(chat) => match bridge::chat_turn(model, &chat, &frames) {
-                Ok(turn) => self.chat(model, served, &turn).await,
+                Ok(turn) => {
+                    let shaping = structured::shaping(model, &chat);
+                    self.chat(model, served, &turn, shaping).await
+                }
                 Err(_) => refused(InferRefusal::Unsupported),
             },
             InferRequest::Task(task) => match bridge::task_turn(model, &task, self.tier) {
-                Ok(turn) => self.chat(model, served, &turn).await,
+                Ok(turn) => self.chat(model, served, &turn, Shaping::Unchecked).await,
                 Err(_) => refused(InferRefusal::Unsupported),
             },
             InferRequest::Embed(embed) => self.embed(model, served, &embed).await,
@@ -270,10 +274,14 @@ impl Job {
         model: &LocalModel,
         served: &ServedBy,
         turn: &sp::TurnRequest,
+        shaping: Shaping,
     ) -> InferReply {
         let Some(provider) = chat_provider(model) else {
             return refused(InferRefusal::Unsupported);
         };
+        if let Shaping::Checked(checked) = shaping {
+            return self.checked(&provider, model, served, *checked, turn).await;
+        }
         let mut sink = Forward {
             steps: self.steps.clone(),
             engines: self.engines.clone(),
@@ -284,6 +292,34 @@ impl Job {
         match provider.turn(turn, &mut sink).await {
             Ok(end) => InferReply::Chat(sink.gathered.chat_reply(&end, served.clone())),
             Err(error) => InferReply::Failed(bridge::model_error(&error)),
+        }
+    }
+
+    /// A turn whose reply is validated, and repaired once, before the app is told it.
+    async fn checked(
+        &self,
+        provider: &impl sp::Provider,
+        model: &LocalModel,
+        served: &ServedBy,
+        checked: structured::Checked,
+        turn: &sp::TurnRequest,
+    ) -> InferReply {
+        let steps = &self.steps;
+        let mut forward = |event| send(steps, event);
+        let touch = || self.engines.used(&model.spec.id);
+        match structured::run(provider, checked, turn, &mut forward, touch).await {
+            Ok(valid) => {
+                let _ = send(steps, InferEvent::TextDelta(valid.text.clone()));
+                InferReply::Chat(porter_infer::ChatReply {
+                    text: valid.text,
+                    tool_calls: Vec::new(),
+                    stop: porter_infer::StopReason::EndTurn,
+                    thought: valid.thought,
+                    usage: valid.usage,
+                    served: served.clone(),
+                })
+            }
+            Err(error) => InferReply::Failed(error),
         }
     }
 

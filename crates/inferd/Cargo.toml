@@ -20,6 +20,8 @@ model-http = { workspace = true, features = ["hyper"] }
 model-openai-compat = { workspace = true }
 vision-prep = { workspace = true, features = ["pixels"] }
 cua-parse = { workspace = true }
+cua-session = { workspace = true }
+model-extract = { workspace = true }
 speech-provider = { workspace = true }
 clap = { workspace = true }
 rustix = { workspace = true }

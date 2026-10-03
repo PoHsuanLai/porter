@@ -258,6 +258,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "cua-session"
+version = "0.1.0"
+dependencies = [
+ "cua-action",
+ "cua-parse",
+ "cua-vendors",
+ "model-provider",
+ "vision-prep",
+]
+
+[[package]]
+name = "cua-vendors"
+version = "0.1.0"
+dependencies = [
+ "cua-action",
+ "cua-parse",
+ "model-provider",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "document-features"
 version = "0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -584,8 +607,10 @@ dependencies = [
  "clap",
  "cua-action",
  "cua-parse",
+ "cua-session",
  "engine-supervisor",
  "model-catalog",
+ "model-extract",
  "model-http",
  "model-openai-compat",
  "model-provider",
@@ -712,6 +737,14 @@ dependencies = [
  "speech-provider",
  "thiserror",
  "toml",
+]
+
+[[package]]
+name = "model-extract"
+version = "0.1.0"
+dependencies = [
+ "model-provider",
+ "serde_json",
 ]
 
 [[package]]
