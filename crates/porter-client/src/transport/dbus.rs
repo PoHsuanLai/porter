@@ -1,6 +1,6 @@
 //! The D-Bus carrier: porter-dbus proxies on the session bus; the caller's identity is what
 //! the bus says about the connection. `Inference1.Open` is built (a socket fd, framed with
-//! `porter_core::wire`); accountd's calls follow with accountd.
+//! `porter_core::wire`), and so are accountd's immediate calls; the sheet calls wait for accountd.
 
 use super::Transport;
 use super::dbus_session::DbusSession;
@@ -37,7 +37,7 @@ impl DbusTransport {
 }
 
 /// A closed set's serde form is its slug on the bus too.
-fn slug<T: Serialize>(value: &T) -> Result<String, TransportError> {
+pub(super) fn slug<T: Serialize + ?Sized>(value: &T) -> Result<String, TransportError> {
     match serde_json::to_value(value) {
         Ok(serde_json::Value::String(text)) => Ok(text),
         _ => Err(TransportError::Malformed("not a slug".to_owned())),
@@ -58,7 +58,7 @@ fn details(options: &OpenOptions) -> Details {
 
 /// A bus error as the transport's: no daemon on the name or no bus is `Unreachable`; anything
 /// else is the other side not speaking porter's protocol.
-fn bus_error(error: &BusError) -> TransportError {
+pub(super) fn bus_error(error: &BusError) -> TransportError {
     match classify(error) {
         BusFailure::NoDaemon => TransportError::Unreachable,
         BusFailure::Denied(why) => TransportError::Malformed(format!("refused by the bus: {why}")),
@@ -69,9 +69,8 @@ fn bus_error(error: &BusError) -> TransportError {
 impl Transport for DbusTransport {
     type Session = DbusSession;
 
-    async fn call(&self, _request: AccountsRequest) -> Result<AccountsReply, TransportError> {
-        let _ = &self.connection;
-        todo!("map the request to its Manager/Grants/Tokens method; Request objects for sheets")
+    async fn call(&self, request: AccountsRequest) -> Result<AccountsReply, TransportError> {
+        super::dbus_accounts::call(&self.connection, request).await
     }
 
     async fn open_with(

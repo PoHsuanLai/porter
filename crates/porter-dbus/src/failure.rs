@@ -29,6 +29,15 @@ const REFUSED: [&str; 2] = [
     "org.freedesktop.DBus.Error.AuthFailed",
 ];
 
+/// The refusal a daemon's error reply stands for (`org.quire.Accounts1.Error.*`), if it is one.
+pub fn refusal_of(error: &zbus::Error) -> Option<porter_core::wire::Refusal> {
+    let name = match error {
+        zbus::Error::MethodError(name, _, _) => name.as_str().to_owned(),
+        _ => return None,
+    };
+    crate::refusal::refusal_from_error_name(&name)
+}
+
 /// A bus error as a [`BusFailure`].
 pub fn classify(error: &zbus::Error) -> BusFailure {
     let text = error.to_string();

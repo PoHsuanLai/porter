@@ -4,6 +4,8 @@
 #[cfg(feature = "dbus")]
 mod dbus;
 #[cfg(feature = "dbus")]
+mod dbus_accounts;
+#[cfg(feature = "dbus")]
 mod dbus_session;
 mod in_process;
 mod socket;

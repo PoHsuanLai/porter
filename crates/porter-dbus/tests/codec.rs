@@ -273,3 +273,70 @@ fn the_kind_slug_is_the_capability_kind_slug() {
         assert_eq!(slug, Some(need_to_dbus(&need).0));
     }
 }
+
+fn grants() -> Vec<porter_core::consent::Grant> {
+    use porter_core::capability::CapabilityKind;
+    use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
+    use porter_core::{AppId, AppName, Isolation, SpaceId, SpaceScope, UnixSeconds};
+    let key = |space| GrantKey {
+        app: AppId {
+            name: AppName::parse("org.quire.Photos").expect("name"),
+            isolation: Isolation::Flatpak,
+        },
+        account: AccountId::parse("cloud").expect("id"),
+        kind: CapabilityKind::Storage,
+        class: porter_core::DataClass::Photos,
+        usage: Usage::Background,
+        space,
+    };
+    vec![
+        Grant {
+            id: GrantId::parse("g1").expect("id"),
+            key: key(SpaceScope::Only(SpaceId::parse("work").expect("space"))),
+            decision: Decision::Allow,
+            scope: GrantScope::Always,
+            at: UnixSeconds(1_790_000_000),
+        },
+        Grant {
+            id: GrantId::parse("g2").expect("id"),
+            key: key(SpaceScope::Any),
+            decision: Decision::Deny,
+            scope: GrantScope::Once,
+            at: UnixSeconds(1),
+        },
+    ]
+}
+
+#[test]
+fn a_grant_is_its_id_and_the_rest_by_name_and_survives_the_signature() {
+    let ctxt = zbus::zvariant::serialized::Context::new_dbus(zbus::zvariant::LE, 0);
+    for grant in grants() {
+        let arg = porter_dbus::grant_to_dbus(&grant);
+        assert_eq!(arg.0, grant.id.as_str());
+        assert!(!arg.1.contains_key("id"), "the id is not repeated");
+        let bytes = zbus::zvariant::to_bytes(ctxt, &arg).expect("encodes");
+        let (back, _): ((String, porter_dbus::Details), usize) =
+            bytes.deserialize().expect("decodes");
+        assert_eq!(porter_dbus::grant_from_dbus(back), Ok(grant));
+    }
+}
+
+#[test]
+fn a_token_round_trips_and_an_unknown_kind_is_refused() {
+    use porter_core::{IssuedToken, SecretText, TokenKind, UnixSeconds};
+    for kind in [
+        TokenKind::Bearer,
+        TokenKind::Xoauth2,
+        TokenKind::ApiKeyHandle,
+    ] {
+        let token = IssuedToken {
+            kind,
+            value: SecretText::new("abc"),
+            expires: UnixSeconds(1_790_000_000),
+        };
+        let arg = porter_dbus::token_to_dbus(&token);
+        assert_eq!(arg.2, 1_790_000_000);
+        assert_eq!(porter_dbus::token_from_dbus(arg), Ok(token));
+    }
+    assert!(porter_dbus::token_from_dbus(("cookie".into(), "x".into(), 1)).is_err());
+}
