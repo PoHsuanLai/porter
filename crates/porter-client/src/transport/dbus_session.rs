@@ -90,6 +90,14 @@ impl InferSession for DbusSession {
         self.send_with(frame, &[]).await
     }
 
+    async fn send_attached(
+        &mut self,
+        frame: ClientFrame,
+        attachments: Vec<OwnedFd>,
+    ) -> Result<(), SessionError> {
+        self.send_with(frame, &attachments).await
+    }
+
     async fn next(&mut self) -> Result<InferEvent, SessionError> {
         loop {
             match decode_frame::<InferEvent>(&self.inbox) {

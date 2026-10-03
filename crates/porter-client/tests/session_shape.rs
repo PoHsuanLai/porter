@@ -139,3 +139,16 @@ async fn a_session_streams_its_events_one_by_one() {
         .expect("send");
     assert_eq!(session.next().await, Ok(InferEvent::TextDelta("a".into())));
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_session_may_take_attachments_with_a_frame() {
+    let mut session = FakeInferSession::scripted([]);
+    let memfd = std::fs::File::open("/dev/null").expect("a descriptor");
+    session
+        .send_attached(ClientFrame::Cancel, vec![memfd.into()])
+        .await
+        .expect("send");
+    assert_eq!(session.attachment_counts(), [1]);
+    assert_eq!(session.sent(), [ClientFrame::Cancel]);
+}

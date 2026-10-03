@@ -23,7 +23,7 @@ pub enum Integrity {
 
 /// Who may see it. `Public < Private(spaces) < Secret`; a join takes the maximum and unions
 /// the Spaces, so data from two Spaces may flow only where both may.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "v", rename_all = "snake_case")]
 pub enum Confidentiality {
     /// May go anywhere.
@@ -253,6 +253,7 @@ mod tests {
             id: ConfirmId::parse("c-1").expect("id"),
             input: InputProof::HardwareSeat,
             at: UnixSeconds(1),
+            covers: Confidentiality::Public,
         })
     }
 
@@ -331,7 +332,7 @@ mod tests {
         assert_eq!(endorsed.label.integrity, Integrity::Trusted);
         assert!(endorsed.label.sources.contains(&Source::User));
         assert!(endorsed.label.sources.contains(&Source::Mail));
-        let opened = declassify(endorsed, Confidentiality::Public, &witness());
+        let opened = declassify(endorsed, Confidentiality::Public, &witness()).expect("covered");
         assert_eq!(opened.label.confidentiality, Confidentiality::Public);
         assert_eq!(opened.label.integrity, Integrity::Trusted);
     }

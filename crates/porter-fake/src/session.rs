@@ -39,6 +39,7 @@ pub struct FakeInferSession {
     ready: VecDeque<InferEvent>,
     audio_samples: u64,
     sent: Vec<ClientFrame>,
+    attachments: Vec<usize>,
 }
 
 impl FakeInferSession {
@@ -53,6 +54,11 @@ impl FakeInferSession {
     /// Every frame the client sent, in order.
     pub fn sent(&self) -> &[ClientFrame] {
         &self.sent
+    }
+
+    /// How many descriptors rode on each frame sent with `send_attached`, in order.
+    pub fn attachment_counts(&self) -> &[usize] {
+        &self.attachments
     }
 
     /// Moves steps whose condition holds into the ready queue.
@@ -106,6 +112,16 @@ impl InferSession for FakeInferSession {
             ClientFrame::EndOfAudio => self.release(true),
         }
         Ok(())
+    }
+
+    #[cfg(unix)]
+    async fn send_attached(
+        &mut self,
+        frame: ClientFrame,
+        attachments: Vec<std::os::fd::OwnedFd>,
+    ) -> Result<(), SessionError> {
+        self.attachments.push(attachments.len());
+        self.send(frame).await
     }
 
     async fn next(&mut self) -> Result<InferEvent, SessionError> {

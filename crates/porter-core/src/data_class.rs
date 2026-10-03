@@ -27,6 +27,11 @@ pub enum DataClass {
     Screen,
     /// The person's own voice audio (dictation, hold-to-talk). Its floor is this computer.
     Voice,
+    /// What the person typed or said to the companion: their prompts, the words of a request,
+    /// and what a reviewer or a planner quotes of them. Distinct from `Notes` (the notes app's
+    /// data) because a prompt is the person's own words, not a document they keep. Its floor
+    /// is this computer.
+    Prompt,
     /// Public information (a web page, a question with nothing personal in it).
     Public,
 }

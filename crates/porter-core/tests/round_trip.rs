@@ -468,10 +468,14 @@ fn computer_use_slugs_are_stable() {
 }
 
 #[test]
-fn the_voice_data_class_has_its_slug() {
+fn the_voice_and_prompt_data_classes_have_their_slugs() {
     assert_eq!(
         serde_json::to_string(&DataClass::Voice).expect("json"),
         "\"voice\""
+    );
+    assert_eq!(
+        serde_json::to_string(&DataClass::Prompt).expect("json"),
+        "\"prompt\""
     );
 }
 

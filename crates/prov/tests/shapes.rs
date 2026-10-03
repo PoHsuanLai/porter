@@ -253,6 +253,7 @@ fn entities_and_witnesses_round_trip() {
             id: ConfirmId::parse("c-1").expect("confirm id"),
             input,
             at: UnixSeconds(1_790_000_000),
+            covers: Confidentiality::Private([SpaceId::parse("home").expect("space")].into()),
         };
         round_trip(&Witness::UserConfirmed(receipt));
     }

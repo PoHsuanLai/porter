@@ -70,6 +70,16 @@ fn step_request() -> CuaStepRequest {
         ],
         masked: MaskedRegions(2),
         tree: TreeText::Present("button \"Save\" [12]".into()),
+        notes: vec![
+            StepNote {
+                from: NoteFrom::Person,
+                text: "also check the footer".into(),
+            },
+            StepNote {
+                from: NoteFrom::Agent,
+                text: "the file is in Downloads".into(),
+            },
+        ],
     }
 }
 
@@ -396,6 +406,7 @@ fn every_data_class_has_a_floor_decision() {
         DataClass::Screen,
         DataClass::Clipboard,
         DataClass::Voice,
+        DataClass::Prompt,
     ];
     let goes_anywhere = [DataClass::AppOwn, DataClass::Public];
     let policy = Policy::proposed();
@@ -416,7 +427,45 @@ fn every_data_class_has_a_floor_decision() {
         | DataClass::Clipboard
         | DataClass::Screen
         | DataClass::Voice
+        | DataClass::Prompt
         | DataClass::Public => (),
     };
     total(DataClass::Voice);
+}
+
+#[test]
+fn a_scroll_with_no_coordinate_and_a_bad_argument_cross_the_wire() {
+    // Ask 67: the model named nowhere, so the executor resolves the centre of the frame; and a
+    // dropped action may say its argument was unusable. Both mirror stoker's cua-parse.
+    let scroll = CuaAction::Scroll {
+        at: Target::Centre,
+        dir: cua_action::ScrollDir::Down,
+        by: cua_action::ScrollBy::Notches(cua_action::Notches(3)),
+    };
+    let reply = CuaStepReply {
+        thought: None,
+        actions: vec![scroll],
+        dropped: vec![DroppedAction {
+            verb: "key".into(),
+            reason: DropReason::BadArgument,
+        }],
+        safety: vec![],
+    };
+    let json = round_trip(&InferReply::CuaStep(reply));
+    assert!(json.contains(r#""kind":"centre""#), "{json}");
+    assert!(json.contains(r#""reason":"bad_argument""#), "{json}");
+}
+
+#[test]
+fn step_notes_round_trip_pin_their_json_and_hide_their_text() {
+    let note = StepNote {
+        from: NoteFrom::Agent,
+        text: "the file is in Downloads".into(),
+    };
+    assert_eq!(
+        round_trip(&note),
+        r#"{"from":"agent","text":"the file is in Downloads"}"#
+    );
+    assert_eq!(format!("{note:?}"), "StepNote(Agent, <24 bytes>)");
+    assert!(!format!("{:?}", step_request()).contains("footer"));
 }

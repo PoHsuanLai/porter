@@ -24,7 +24,9 @@ pub mod trace;
 
 pub use actor::{Actor, ActorKind, AgentRole, Channel, SystemPart};
 pub use agent::{Address, AgentRef, Crossing};
-pub use consent::{ConfirmId, ConfirmReceipt, InputProof, Witness, declassify, endorse};
+pub use consent::{
+    BeyondReceipt, ConfirmId, ConfirmReceipt, InputProof, Witness, declassify, endorse,
+};
 pub use effect::Effect;
 pub use ids::{
     ActionName, ClientName, EntityId, EntityKey, EntityKind, MessageId, OutcomeRef, RunId,

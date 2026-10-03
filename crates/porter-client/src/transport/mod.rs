@@ -86,6 +86,18 @@ impl InferSession for AnySession {
         }
     }
 
+    #[cfg(all(unix, feature = "dbus"))]
+    async fn send_attached(
+        &mut self,
+        frame: ClientFrame,
+        attachments: Vec<std::os::fd::OwnedFd>,
+    ) -> Result<(), SessionError> {
+        match self {
+            AnySession::Dbus(session) => session.send_attached(frame, attachments).await,
+            AnySession::Socket(session) => session.send_attached(frame, attachments).await,
+        }
+    }
+
     async fn next(&mut self) -> Result<InferEvent, SessionError> {
         match self {
             #[cfg(feature = "dbus")]

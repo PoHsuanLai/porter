@@ -34,8 +34,8 @@ pub use control::{
 };
 pub use cua::{
     CuaBegin, CuaStepFailure, CuaStepReply, CuaStepRequest, DropReason, DroppedAction, FrameImage,
-    FrameLayout, MaskedRegions, MediaKind, PrevResult, SafetyHint, StepIndex, TreeText,
-    WindowGeometry,
+    FrameLayout, MaskedRegions, MediaKind, NoteFrom, PrevResult, SafetyHint, StepIndex, StepNote,
+    TreeText, WindowGeometry,
 };
 pub use error::{InferRefusal, ModelError};
 pub use event::{ClientFrame, Flow, InferEvent};

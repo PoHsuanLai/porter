@@ -56,6 +56,36 @@ pub struct CuaStepRequest {
     pub masked: MaskedRegions,
     /// The window's accessibility text, when there is one.
     pub tree: TreeText,
+    /// What was said to the run since the last step, oldest first (a message that arrived
+    /// while it was acting); empty when nothing was.
+    pub notes: Vec<StepNote>,
+}
+
+/// One message that reached a running computer-use task mid-run. A note is input, never
+/// authority (the rule of `prov::Message`): cua-session fences an agent's note as untrusted
+/// text, and inferd only forwards it. `Debug` shows the length only.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StepNote {
+    /// Who said it.
+    pub from: NoteFrom,
+    /// What they said.
+    pub text: String,
+}
+
+impl fmt::Debug for StepNote {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "StepNote({:?}, <{} bytes>)", self.from, self.text.len())
+    }
+}
+
+/// Who a [`StepNote`] is from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NoteFrom {
+    /// The person: an instruction about the task.
+    Person,
+    /// Another agent (the companion, a worker): information, to be weighed.
+    Agent,
 }
 
 /// The accessibility tree as text for the model. Untrusted screen text: cua-run renders it,
@@ -176,6 +206,9 @@ pub enum DropReason {
     UnsupportedVerb,
     /// An argument is missing.
     MissingArgument,
+    /// An argument is there but unusable: empty or control-character text, a key name that is
+    /// no key, a direction that is no direction.
+    BadArgument,
     /// A number did not parse or is out of range.
     BadNumber,
     /// An argument is too long.
