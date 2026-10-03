@@ -8,6 +8,7 @@ use model_provider::{
     EngineExtras, ModelName, ProviderError, Script, ScriptedProvider, StopReason, ToolCall,
     ToolCallId as CallId, TurnEnd, TurnEvent, TurnUsage,
 };
+use model_provider::{Part, Role, TurnRequest};
 use porter_core::capability::CuaEnv;
 use porter_infer::{AttachIndex, ImageSource, MaskedRegions as Masked, StepIndex as Index};
 use std::io::Write;
@@ -183,8 +184,8 @@ async fn the_prompt_carries_the_goal_the_results_the_notes_the_tree_and_the_fram
         "open settings",
         "it is in the menu",
         "refused (no)",
-        "The person says: careful with the red one",
-        "Window contents:\nButton: OK",
+        "Note: The person says: careful with the red one",
+        "Button: OK",
         "Step 3",
     ] {
         assert!(user.contains(want), "{want:?} in {user:?}");
@@ -441,14 +442,6 @@ async fn a_stop_from_the_sink_ends_the_turn_so_there_is_nothing_to_act_on_and_no
 }
 
 #[test]
-fn the_history_is_one_frame_fewer_than_the_prompt_takes() {
-    let table = [(0, 0), (1, 0), (2, 1), (3, 2), (256, 255), (1000, 255)];
-    for (per_prompt, history) in table {
-        assert_eq!(history_of(per_prompt), FrameBudget(history), "{per_prompt}");
-    }
-}
-
-#[test]
 fn a_session_opens_for_a_tool_or_text_dialect_and_for_nothing_else() {
     let scratch = Scratch::new("cua-open");
     let mut models = models(&scratch);
@@ -502,60 +495,29 @@ fn what_became_of_the_actions_is_told_in_stokers_three_words() {
 }
 
 #[test]
-fn the_context_goes_after_the_lead_and_before_the_frames() {
-    let mut turn = TurnRequest {
-        model: ModelName("m".into()),
-        messages: vec![
-            model_provider::Message {
-                role: Role::System,
-                parts: vec![Part::Text("system".into())],
-            },
-            model_provider::Message {
-                role: Role::User,
-                parts: vec![Part::Text("lead".into()), Part::Text("frame label".into())],
-            },
-        ],
-        tools: vec![],
-        tool_choice: model_provider::ToolChoice::Auto,
-        tool_calls: ToolParallelism::One,
-        output: model_provider::OutputShape::Free,
-        limits: Limits {
-            max_output: model_provider::Tokens(1),
-            stop: vec![],
-        },
-        sampling: model_provider::Sampling {
-            temperature: model_provider::Milli(0),
-            top_p: model_provider::Knob::Off,
-            top_k: model_provider::Knob::Off,
-            min_p: model_provider::Knob::Off,
-            repeat_penalty: model_provider::Knob::Off,
-            seed: model_provider::Knob::Off,
-        },
-        reasoning: model_provider::Reasoning::Off,
-        engine: EngineExtras::None,
-    };
-    add_context(&mut turn, "context".into());
-    let order: Vec<String> = texts(&turn, Role::User);
-    assert_eq!(order, ["lead", "context", "frame label"]);
+fn the_observation_carries_the_window_contents_and_the_notes_with_who_said_them() {
+    let seen = observation(&png_request());
+    assert_eq!(seen.step, StepIndex(3));
     assert_eq!(
-        texts(&turn, Role::System),
-        ["system"],
-        "the system turn is untouched"
+        seen.tree.as_ref().map(|tree| tree.0.as_str()),
+        Some("Button: OK")
     );
-}
-
-#[test]
-fn no_notes_and_no_tree_add_nothing() {
-    let mut bare = png_request();
-    bare.notes.clear();
-    bare.tree = TreeText::Absent;
-    assert_eq!(context_text(&bare), None);
-    let only_notes = CuaStepRequest {
+    assert_eq!(
+        seen.notes,
+        vec![NoteLine("The person says: careful with the red one".into())]
+    );
+    let helper = CuaStepRequest {
+        notes: vec![StepNote {
+            from: NoteFrom::Agent,
+            text: "a dialog opened".into(),
+        }],
         tree: TreeText::Absent,
         ..png_request()
     };
+    let seen = observation(&helper);
+    assert_eq!(seen.tree, None);
     assert_eq!(
-        context_text(&only_notes).as_deref(),
-        Some("The person says: careful with the red one")
+        seen.notes,
+        vec![NoteLine("A helper says: a dialog opened".into())]
     );
 }

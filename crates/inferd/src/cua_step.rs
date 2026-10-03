@@ -8,9 +8,9 @@
 //! the model takes per prompt, one repair) and the `TurnSettings` (the entry's reasoning-off
 //! sampling, its output limit, no reasoning, how many calls a turn may make, the engine's extras).
 //!
-//! Interim: stoker's `ObservationIn` has no place for the window's contents or for notes said to
-//! the run (interface ask 122), so they go in a text part of the step's user message, in the words
-//! inferd used before `cua-session` was filled.
+//! The window's contents and the notes said to the run are `ObservationIn::with_tree` and
+//! `with_notes`; a note keeps who said it in its words ("The person says: ..."), because stoker's
+//! `StepNote` is one line of text.
 
 use crate::bridge::{self, BridgeError, Frames};
 use crate::local::LocalModel;
@@ -20,10 +20,11 @@ use cua_session::{
     CuaProfile, CuaSession, CuaTaskText, FrameBudget, MaskedRegions, ObservationIn, RepairBudget,
     StepIndex, StepLines, StepOutcome, TurnSettings,
 };
+use cua_session::{StepNote as NoteLine, TreeText as WindowText};
 use cua_vendors::StepResult;
 use model_provider::{
-    Batching, CuaSupport, Flow, ImageInput, Limits, Part, Provider, Reasoning, Role, ToolCallId,
-    ToolParallelism, TurnRequest,
+    Batching, CuaSupport, Flow, ImageInput, Limits, Provider, Reasoning, ToolCallId,
+    ToolParallelism,
 };
 use porter_infer::{
     CuaBegin, CuaStepFailure, CuaStepReply, CuaStepRequest, DropReason, DroppedAction, FrameLayout,
@@ -55,11 +56,6 @@ fn unreadable() -> Failed {
     CuaStepFailure::ModelFailed(ModelError::Unreadable).into()
 }
 
-/// The images a prompt may hold are `history + 1` (the past frames and this one).
-fn history_of(per_prompt: u16) -> FrameBudget {
-    FrameBudget(u8::try_from(per_prompt.saturating_sub(1)).unwrap_or(u8::MAX))
-}
-
 /// The session for a run on this model, or none when the model has no tool or text dialect (a
 /// vendor's wire needs the vendor's backend, not an engine on this computer).
 pub fn open(model: &LocalModel, begin: &CuaBegin) -> Option<CuaSession> {
@@ -73,14 +69,15 @@ pub fn open(model: &LocalModel, begin: &CuaBegin) -> Option<CuaSession> {
     if matches!(dialect, CuaDialect::Wire(_)) {
         return None;
     }
-    let profile = CuaProfile {
+    // As many past frames as the model takes with the current one (`per_prompt - 1`); stoker cuts
+    // the wish to what the entry allows.
+    let profile = CuaProfile::for_model(
         dialect,
-        rule: caps.images.rule,
-        space: caps.images.space,
-        history: history_of(caps.images.per_prompt.0),
-        repair: RepairBudget(1),
-        encoding: Encoding::Png,
-    };
+        &caps.images,
+        FrameBudget::within(caps.images.per_prompt),
+        RepairBudget(1),
+        Encoding::Png,
+    );
     let settings = TurnSettings {
         sampling: model.entry.sampling?.reasoning_off,
         limits: Limits {
@@ -130,39 +127,28 @@ fn prev_results(prev: &[PrevResult]) -> Vec<StepResult> {
         .collect()
 }
 
-fn note_text(note: &StepNote) -> String {
+fn note_line(note: &StepNote) -> NoteLine {
     let who = match note.from {
         NoteFrom::Person => "The person says",
         NoteFrom::Agent => "A helper says",
     };
-    format!("{who}: {}", note.text)
+    NoteLine(format!("{who}: {}", note.text))
 }
 
-/// The window's contents and the notes said to the run, as lines; none when there are neither.
-fn context_text(request: &CuaStepRequest) -> Option<String> {
-    let mut lines: Vec<String> = request.notes.iter().map(note_text).collect();
-    if let TreeText::Present(tree) = &request.tree {
-        lines.push(format!("Window contents:\n{tree}"));
+/// What the runner saw before this step, with the window's contents and the notes when there are
+/// any.
+fn observation(request: &CuaStepRequest) -> ObservationIn {
+    let seen = ObservationIn::new(
+        StepIndex(request.step.0),
+        request.cursor,
+        prev_results(&request.prev),
+        MaskedRegions(request.masked.0),
+    )
+    .with_notes(request.notes.iter().map(note_line).collect());
+    match &request.tree {
+        TreeText::Present(tree) => seen.with_tree(WindowText(tree.clone())),
+        TreeText::Absent => seen,
     }
-    (!lines.is_empty()).then(|| lines.join("\n"))
-}
-
-/// Puts `text` in the step's user message, after the lines stoker wrote and before the frames.
-fn add_context(turn: &mut TurnRequest, text: String) {
-    let Some(user) = turn
-        .messages
-        .iter_mut()
-        .rev()
-        .find(|m| m.role == Role::User)
-    else {
-        return;
-    };
-    let at = user
-        .parts
-        .iter()
-        .position(|part| matches!(part, Part::Text(_)))
-        .map_or(0, |first| first + 1);
-    user.parts.insert(at, Part::Text(text));
 }
 
 /// The frame as an image the model is shown.
@@ -230,16 +216,7 @@ pub async fn step<P: Provider>(
     )
     .map_err(|_| unreadable())?;
     let image = frame_image(request, frames, &map).map_err(|_| unreadable())?;
-    let observation = ObservationIn {
-        step: StepIndex(request.step.0),
-        cursor: request.cursor,
-        prev: prev_results(&request.prev),
-        masked: MaskedRegions(request.masked.0),
-    };
-    let mut sent = session.request(&observation, &map, image);
-    if let Some(text) = context_text(request) {
-        add_context(&mut sent, text);
-    }
+    let mut sent = session.request(&observation(request), &map, image);
     let mut session = session;
     loop {
         let mut tee = Tee::new(Echo::ThoughtsAndText, &mut forward);

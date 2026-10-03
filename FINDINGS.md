@@ -461,7 +461,7 @@ still waits for `speech-host-client`); the work was the call sites of stoker's a
   through a `TranscriptSink` (inside `tee::Tee`, which also streams the thoughts), `absorb_for`,
   and one more turn for a `StepOutcome::Repair`. `cua_step::open` builds the `CuaProfile` from the
   entry (`caps.computer_use` dialect, `caps.images.{rule, space}`, history = `per_prompt - 1`
-  frames (3 for Holo means 2), one repair, PNG) and the `TurnSettings` (the entry's `reasoning_off`
+  frames (3 for Holo means 2: `CuaProfile::for_model` with `FrameBudget::within(per_prompt)`), one repair, PNG) and the `TurnSettings` (the entry's `reasoning_off`
   sampling, `max_output`, reasoning `Off`, `ToolParallelism` from the batching, the flavor's
   extras). `PrevResult` is `StepResult` (`Done`, `Refused`, `NotRun`; `Failed`, `UserDeclined`
   and `UserActed` are `Refused` with their words; the call ids are minted, a tool or text dialect
@@ -472,10 +472,10 @@ still waits for `speech-host-client`); the work was the call sites of stoker's a
   past frames are in the prompt (the interim sent text only); the text dialect (UI-TARS) is
   served, so `catalog::cua_cap` claims for a `Text` dialect as well as a `Tool` one (a vendor
   `Wire` still makes no claim: it needs the vendor's backend).
-- **Window contents and notes ride in a text part.** `ObservationIn` has no place for the tree or
-  the notes (stoker ask, 122), so `cua_step` adds one text part to the step's user message, after
-  stoker's lead lines and before the frames, in the words the interim prompt used. It goes when
-  the fields exist.
+- **Window contents and notes** are `ObservationIn::with_tree` and `with_notes` (stoker's W5 fields).
+  stoker's `StepNote` is one line of text, so a note keeps who said it in its words ("The person
+  says: ..."); the prompt shows it as `Note: ...`. (An interim text part did this for a day, until
+  stoker's `w5-stoker` branch; this lane merges with it.)
 - **Item 113, `TransportError::Denied(String)`.** Added with the daemon's text; `DbusTransport`'s
   `bus_error` maps the bus's `AccessDenied` (inferd's caller table, accountd's `Callers`) to it,
   where it was `Malformed("refused by the bus: ...")`. The two matches that would have broken are
@@ -499,10 +499,9 @@ or the real bus.
 
 ### Interface asks from W5
 
-1. **stoker `ObservationIn`** needs `tree: Option<String>` and `notes: Vec<Note>` (ask 122 already
-   lists it) so the text part above can go; and `CuaSession::absorb_for` could take the session by
-   `&mut` or return the old one on a repair that fails, so inferd need not clone the session
-   (frames included) before each step.
+1. **stoker `CuaSession::absorb_for`** could take the session by `&mut` or return the old one when
+   a repair turn fails, so inferd need not clone the session (past frames included) before each
+   step. `StepNote` could keep who said it (`NoteFrom`) instead of one line of text.
 2. **A per-model `reasoning_default`** in the catalog (does the template think when nothing is
    said?) is what would let `Reasoning::EngineDefault` pass through safely (decision above).
 3. **settings rows** for the structured-output limits and the repair budget
