@@ -1,0 +1,220 @@
+//! The rows of audio, model events, cancel and the end of a session.
+
+#![allow(unused_imports)]
+use super::helpers::*;
+use porter_core::consent::Usage;
+use porter_core::{DataClass, Permille};
+use porter_infer::{
+    ClientFrame, InferEvent, InferRefusal, InferReply, ModelError, Readiness, RequestKind,
+};
+
+pub(super) fn rows() -> Vec<Row> {
+    let text = || SessionOut::Emit(InferEvent::TextDelta("hi".into()));
+    let failed = |e| done(InferReply::Failed(e));
+    let lost = InferReply::Failed(ModelError::Unreachable);
+    vec![
+        (
+            "transcribe expects audio from sample zero",
+            speech_spec(DataClass::Voice),
+            idle(RoutedNote::Sent),
+            request(transcribe()),
+            in_turn(RequestKind::Transcribe, expecting(0)),
+            vec![SessionOut::StartTurn(transcribe())],
+        ),
+        (
+            "transcribe on the caller's own class starts",
+            speech_spec(DataClass::Files),
+            idle(RoutedNote::Sent),
+            request(transcribe()),
+            in_turn(RequestKind::Transcribe, expecting(0)),
+            vec![SessionOut::StartTurn(transcribe())],
+        ),
+        (
+            "speak follows the session class",
+            speech_spec(DataClass::Mail),
+            idle(RoutedNote::Sent),
+            request(speak(DataClass::Mail)),
+            in_turn(RequestKind::Speak, AudioCursor::NoAudio),
+            vec![SessionOut::StartTurn(speak(DataClass::Mail))],
+        ),
+        (
+            "speak of another class is refused",
+            speech_spec(DataClass::Voice),
+            idle(RoutedNote::Sent),
+            request(speak(DataClass::Mail)),
+            idle(RoutedNote::Sent),
+            vec![unsupported()],
+        ),
+        (
+            "cancel in idle is nothing",
+            llm_spec(DataClass::Mail),
+            idle(RoutedNote::Sent),
+            frame(ClientFrame::Cancel),
+            idle(RoutedNote::Sent),
+            vec![],
+        ),
+        (
+            "audio outside a turn is refused",
+            speech_spec(DataClass::Voice),
+            idle(RoutedNote::Sent),
+            frame(audio(0, 8)),
+            idle(RoutedNote::Sent),
+            vec![unsupported()],
+        ),
+        (
+            "end of audio outside a turn is refused",
+            speech_spec(DataClass::Voice),
+            idle(RoutedNote::Sent),
+            frame(ClientFrame::EndOfAudio),
+            idle(RoutedNote::Sent),
+            vec![unsupported()],
+        ),
+        (
+            "audio in a non-transcribe turn is refused, the turn runs on",
+            speech_spec(DataClass::Voice),
+            in_turn(RequestKind::Speak, AudioCursor::NoAudio),
+            frame(audio(0, 8)),
+            in_turn(RequestKind::Speak, AudioCursor::NoAudio),
+            vec![unsupported()],
+        ),
+        (
+            "in-order audio advances the cursor",
+            speech_spec(DataClass::Voice),
+            in_turn(RequestKind::Transcribe, expecting(0)),
+            frame(audio(0, 512)),
+            in_turn(RequestKind::Transcribe, expecting(512)),
+            vec![SessionOut::Audio(match audio(0, 512) {
+                ClientFrame::Audio(frame) => frame,
+                _ => unreachable!(),
+            })],
+        ),
+        (
+            "out-of-order audio fails the turn",
+            speech_spec(DataClass::Voice),
+            in_turn(RequestKind::Transcribe, expecting(512)),
+            frame(audio(0, 8)),
+            idle(RoutedNote::Sent),
+            vec![
+                SessionOut::DropTurn,
+                SessionOut::Audit(InferReply::Failed(ModelError::Unreadable)),
+                failed(ModelError::Unreadable),
+            ],
+        ),
+        (
+            "audio over a second fails the turn",
+            speech_spec(DataClass::Voice),
+            in_turn(RequestKind::Transcribe, expecting(0)),
+            frame(audio(0, 16_001)),
+            idle(RoutedNote::Sent),
+            vec![
+                SessionOut::DropTurn,
+                SessionOut::Audit(InferReply::Failed(ModelError::Unreadable)),
+                failed(ModelError::Unreadable),
+            ],
+        ),
+        (
+            "end of audio stops expecting frames",
+            speech_spec(DataClass::Voice),
+            in_turn(RequestKind::Transcribe, expecting(512)),
+            frame(ClientFrame::EndOfAudio),
+            in_turn(RequestKind::Transcribe, AudioCursor::NoAudio),
+            vec![SessionOut::EndAudio],
+        ),
+        (
+            "audio after end of audio fails the turn",
+            speech_spec(DataClass::Voice),
+            in_turn(RequestKind::Transcribe, AudioCursor::NoAudio),
+            frame(audio(512, 8)),
+            idle(RoutedNote::Sent),
+            vec![
+                SessionOut::DropTurn,
+                SessionOut::Audit(InferReply::Failed(ModelError::Unreadable)),
+                failed(ModelError::Unreadable),
+            ],
+        ),
+        (
+            "a model event is passed on",
+            llm_spec(DataClass::Mail),
+            in_turn(RequestKind::Chat, AudioCursor::NoAudio),
+            SessionIn::TurnEvent(InferEvent::TextDelta("hi".into())),
+            in_turn(RequestKind::Chat, AudioCursor::NoAudio),
+            vec![text()],
+        ),
+        (
+            "a model done audits then finishes",
+            llm_spec(DataClass::Mail),
+            in_turn(RequestKind::Chat, AudioCursor::NoAudio),
+            SessionIn::TurnDone(lost.clone()),
+            idle(RoutedNote::Sent),
+            vec![SessionOut::Audit(lost.clone()), done(lost)],
+        ),
+        (
+            "cancel in a turn drops the future and still audits",
+            llm_spec(DataClass::Mail),
+            in_turn(RequestKind::Chat, AudioCursor::NoAudio),
+            frame(ClientFrame::Cancel),
+            idle(RoutedNote::Sent),
+            vec![
+                SessionOut::DropTurn,
+                SessionOut::Audit(InferReply::Cancelled),
+                done(InferReply::Cancelled),
+            ],
+        ),
+        (
+            "cancel drops transcribe audio state with the turn",
+            speech_spec(DataClass::Voice),
+            in_turn(RequestKind::Transcribe, expecting(512)),
+            frame(ClientFrame::Cancel),
+            idle(RoutedNote::Sent),
+            vec![
+                SessionOut::DropTurn,
+                SessionOut::Audit(InferReply::Cancelled),
+                done(InferReply::Cancelled),
+            ],
+        ),
+        (
+            "the engine dying mid-turn closes",
+            llm_spec(DataClass::Mail),
+            in_turn(RequestKind::Chat, AudioCursor::NoAudio),
+            SessionIn::EngineFailed,
+            Phase::Closed,
+            vec![
+                SessionOut::DropTurn,
+                failed(ModelError::NotReady),
+                SessionOut::Release(model()),
+            ],
+        ),
+        (
+            "eof in a turn drops it and releases",
+            llm_spec(DataClass::Mail),
+            in_turn(RequestKind::Chat, AudioCursor::NoAudio),
+            SessionIn::Closed,
+            Phase::Closed,
+            vec![SessionOut::DropTurn, SessionOut::Release(model())],
+        ),
+        (
+            "eof in idle releases",
+            llm_spec(DataClass::Mail),
+            idle(RoutedNote::Sent),
+            SessionIn::Closed,
+            Phase::Closed,
+            vec![SessionOut::Release(model())],
+        ),
+        (
+            "eof while waiting releases",
+            llm_spec(DataClass::Mail),
+            waiting(Some(task(DataClass::Mail))),
+            SessionIn::Closed,
+            Phase::Closed,
+            vec![SessionOut::Release(model())],
+        ),
+        (
+            "eof before the route has nothing to release",
+            llm_spec(DataClass::Mail),
+            Phase::Opened,
+            SessionIn::Closed,
+            Phase::Closed,
+            vec![],
+        ),
+    ]
+}
