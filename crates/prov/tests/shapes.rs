@@ -279,6 +279,7 @@ fn slugs_equal_the_serde_forms() {
         ActorKind::Companion,
         ActorKind::Cua,
         ActorKind::Mcp,
+        ActorKind::Cli,
         ActorKind::App,
         ActorKind::ThirdParty,
         ActorKind::System,
