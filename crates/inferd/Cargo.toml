@@ -14,7 +14,11 @@ cua-action = { workspace = true }
 porter-dbus = { workspace = true }
 porter-infer = { workspace = true }
 clap = { workspace = true }
+rustix = { workspace = true }
 tokio = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
 
 [lints]
 workspace = true

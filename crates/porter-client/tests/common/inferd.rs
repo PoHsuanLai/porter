@@ -49,6 +49,17 @@ pub enum Behaviour {
     Raw(Vec<u8>),
     /// Play these scripts, writing every frame a byte at a time.
     Dribble(Vec<Script>),
+    /// The real session server over a fixed route and these scripts: `Routed`, `Waiting`,
+    /// queueing and refusals come from the session machine, not from the script.
+    Served(Served),
+}
+
+/// The seams of the real server for one test.
+#[derive(Debug, Clone)]
+pub struct Served {
+    pub route: super::served::Route,
+    pub gate: super::served::Gate,
+    pub runner: super::served::Scripted,
 }
 
 /// The interface object.
@@ -94,6 +105,11 @@ impl FakeInferd {
         options: Details,
     ) -> fdo::Result<OwnedFd> {
         let need = need_from_dbus(need).map_err(|e| fdo::Error::InvalidArgs(e.to_string()))?;
+        let spec = inferd::session::SessionSpec {
+            need: need.clone(),
+            class: parse_slug(&class)?,
+            tier: parse_slug(&tier)?,
+        };
         let traceparent = options
             .get(porter_dbus::OPTION_TRACEPARENT)
             .and_then(|v| String::try_from(v.try_clone().ok()?).ok());
@@ -107,13 +123,34 @@ impl FakeInferd {
         ours.set_nonblocking(true)
             .map_err(|e| fdo::Error::Failed(e.to_string()))?;
         let stream = UnixStream::from_std(ours).map_err(|e| fdo::Error::Failed(e.to_string()))?;
-        tokio::spawn(serve_session(
-            stream,
-            self.behaviour.clone(),
-            Arc::clone(&self.seen),
-        ));
+        match &self.behaviour {
+            Behaviour::Served(served) => {
+                let served = served.clone();
+                tokio::spawn(async move {
+                    let seams = inferd::serve::Seams {
+                        router: served.route,
+                        engines: served.gate,
+                        runner: served.runner,
+                        audit: super::served::Unaudited,
+                    };
+                    inferd::serve::serve_session(stream, spec, &seams).await;
+                });
+            }
+            behaviour => {
+                tokio::spawn(serve_session(
+                    stream,
+                    behaviour.clone(),
+                    Arc::clone(&self.seen),
+                ));
+            }
+        }
         Ok(OwnedFd::from(std::os::fd::OwnedFd::from(theirs)))
     }
+}
+
+fn parse_slug<T: serde::de::DeserializeOwned>(text: &str) -> fdo::Result<T> {
+    serde_json::from_value(serde_json::Value::String(text.to_owned()))
+        .map_err(|e| fdo::Error::InvalidArgs(e.to_string()))
 }
 
 async fn write_event(stream: &mut UnixStream, event: &InferEvent, dribble: bool) {
@@ -191,6 +228,7 @@ async fn serve_session(mut stream: UnixStream, behaviour: Behaviour, seen: Arc<M
             return;
         }
         Behaviour::HangUp => (Vec::new(), false),
+        Behaviour::Served(_) => return,
     };
     let mut session = FakeInferSession::scripted(scripts);
     let mut buffer = Vec::new();

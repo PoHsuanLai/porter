@@ -259,7 +259,7 @@ async fn a_memfd_rides_with_the_frame_that_names_it() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn too_many_attachments_are_refused_before_anything_is_written() {
+async fn an_attachment_count_that_is_not_what_the_frame_names_is_refused_unwritten() {
     let rig = rig(Behaviour::Scripted(vec![])).await;
     let mut session = session(&rig, &llm(), DataClass::Public).await;
     let fds: Vec<OwnedFd> = (0..=porter_client::MAX_ATTACHMENTS)
@@ -267,7 +267,20 @@ async fn too_many_attachments_are_refused_before_anything_is_written() {
         .collect();
     let got = session.send_with(ClientFrame::Cancel, &fds).await;
     assert!(matches!(got, Err(SessionError::Malformed(_))), "{got:?}");
-    assert!(rig.seen.lock().expect("lock").frames.is_empty());
+    let named = chat_with(vec![MessagePart::Image(ImagePart {
+        media_type: "image/png".into(),
+        source: ImageSource::Attached(AttachIndex(0)),
+    })]);
+    let none = session.send_with(ClientFrame::Request(named), &[]).await;
+    assert!(matches!(none, Err(SessionError::Malformed(_))), "{none:?}");
+    // Nothing was written, so the session still works.
+    session.send(ClientFrame::Cancel).await.expect("send");
+    session.send(ClientFrame::Cancel).await.expect("send");
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(
+        rig.seen.lock().expect("lock").frames,
+        vec![ClientFrame::Cancel, ClientFrame::Cancel]
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

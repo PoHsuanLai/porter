@@ -21,6 +21,16 @@ pub enum ClientFrame {
     EndOfAudio,
 }
 
+impl ClientFrame {
+    /// How many descriptors ride with this frame (see [`InferRequest::attachments`]).
+    pub fn attachments(&self) -> usize {
+        match self {
+            ClientFrame::Request(request) => request.attachments(),
+            ClientFrame::Cancel | ClientFrame::Audio(_) | ClientFrame::EndOfAudio => 0,
+        }
+    }
+}
+
 /// An event from inferd to the client. Exactly one `Finished` ends each turn.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "v", rename_all = "snake_case")]

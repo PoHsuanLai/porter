@@ -63,6 +63,43 @@ impl InferRequest {
             InferRequest::Speak(_) => RequestKind::Speak,
         }
     }
+
+    /// How many descriptors must ride with the frame that carries this request: one more than
+    /// the highest `AttachIndex` it names, so the receiver takes exactly that many from the
+    /// fd queue (a frame naming none takes none).
+    pub fn attachments(&self) -> usize {
+        let sources: Vec<&ImageSource> = match self {
+            InferRequest::Chat(chat) => chat
+                .messages
+                .iter()
+                .flat_map(|message| message.parts.iter())
+                .flat_map(MessagePart::images)
+                .collect(),
+            InferRequest::CuaStep(step) => vec![&step.frame.source],
+            _ => vec![],
+        };
+        sources
+            .into_iter()
+            .filter_map(|source| match source {
+                ImageSource::Attached(AttachIndex(index)) => Some(usize::from(*index) + 1),
+                ImageSource::Inline(_) => None,
+            })
+            .max()
+            .unwrap_or(0)
+    }
+}
+
+impl MessagePart {
+    /// The image sources in this part, looking inside a tool result.
+    fn images(&self) -> Vec<&ImageSource> {
+        match self {
+            MessagePart::Image(image) => vec![&image.source],
+            MessagePart::ToolResult(result) => {
+                result.parts.iter().flat_map(MessagePart::images).collect()
+            }
+            MessagePart::Text(_) | MessagePart::ToolCall(_) | MessagePart::Thought(_) => vec![],
+        }
+    }
 }
 
 /// A chat turn.

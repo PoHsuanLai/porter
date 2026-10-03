@@ -22,6 +22,8 @@ thiserror = { workspace = true }
 tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
+cua-action = { workspace = true }
+inferd = { path = "../inferd" }
 porter-fake = { workspace = true }
 tokio = { workspace = true }
 zbus = { workspace = true }

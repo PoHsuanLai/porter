@@ -8,6 +8,7 @@ pub mod bridge;
 pub mod catalog;
 pub mod cua_run;
 pub mod engines;
+pub mod serve;
 pub mod session;
 pub mod speech;
 

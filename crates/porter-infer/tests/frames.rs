@@ -469,3 +469,63 @@ fn step_notes_round_trip_pin_their_json_and_hide_their_text() {
     assert_eq!(format!("{note:?}"), "StepNote(Agent, <24 bytes>)");
     assert!(!format!("{:?}", step_request()).contains("footer"));
 }
+
+#[test]
+fn a_frame_names_how_many_descriptors_ride_with_it() {
+    let image = |source| {
+        MessagePart::Image(ImagePart {
+            media_type: "image/png".into(),
+            source,
+        })
+    };
+    let chat = |parts| {
+        ClientFrame::Request(InferRequest::Chat(ChatRequest {
+            messages: vec![ChatMessage {
+                role: Role::User,
+                parts,
+            }],
+            shape: ReplyShape::Text,
+            tier: porter_core::Tier::Fast,
+            class: DataClass::Public,
+            usage: Usage::Interactive,
+            tools: vec![],
+            control: ChatControl {
+                tool_choice: ToolChoice::Auto,
+                tool_calls: ToolParallelism::Many,
+                max_output: Knob::Off,
+                reasoning: Reasoning::EngineDefault,
+                sampling: Knob::Off,
+                stop: vec![],
+            },
+        }))
+    };
+    let inline = || ImageSource::Inline(Base64Bytes(vec![1]));
+    let at = |n| ImageSource::Attached(AttachIndex(n));
+    let nested = MessagePart::ToolResult(ToolResultPart {
+        id: ToolCallId("c".into()),
+        status: ToolStatus::Ok,
+        parts: vec![image(at(2))],
+    });
+    let cases = [
+        ("no parts", chat(vec![]), 0),
+        ("text only", chat(vec![MessagePart::Text("t".into())]), 0),
+        ("inline is not a descriptor", chat(vec![image(inline())]), 0),
+        ("one", chat(vec![image(at(0))]), 1),
+        (
+            "the highest index decides",
+            chat(vec![image(at(0)), image(at(3))]),
+            4,
+        ),
+        ("inside a tool result", chat(vec![nested]), 3),
+        (
+            "a computer-use frame",
+            ClientFrame::Request(InferRequest::CuaStep(step_request())),
+            1,
+        ),
+        ("cancel", ClientFrame::Cancel, 0),
+        ("end of audio", ClientFrame::EndOfAudio, 0),
+    ];
+    for (name, frame, expected) in cases {
+        assert_eq!(frame.attachments(), expected, "{name}");
+    }
+}

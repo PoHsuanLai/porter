@@ -40,16 +40,19 @@ impl DbusSession {
     }
 
     /// Writes `frame` with `attachments` (memfds) riding on it as SCM_RIGHTS. A frame names
-    /// one by its index in `attachments` (`ImageSource::Attached`). Not cancel safe: a dropped
-    /// call may leave half a frame on the socket, so end the session after one.
+    /// one by its index in `attachments` (`ImageSource::Attached`), and exactly as many must be
+    /// given as the frame names (`ClientFrame::attachments`): the daemon takes that many from
+    /// the descriptors it received, in order. Not cancel safe: a dropped call may leave half a
+    /// frame on the socket, so end the session after one.
     pub async fn send_with(
         &mut self,
         frame: ClientFrame,
         attachments: &[OwnedFd],
     ) -> Result<(), SessionError> {
-        if attachments.len() > MAX_ATTACHMENTS {
+        let named = frame.attachments();
+        if attachments.len() != named || named > MAX_ATTACHMENTS {
             return Err(SessionError::Malformed(format!(
-                "{} attachments on one frame; the limit is {MAX_ATTACHMENTS}",
+                "the frame names {named} attachments, {} were given (the limit is {MAX_ATTACHMENTS})",
                 attachments.len()
             )));
         }

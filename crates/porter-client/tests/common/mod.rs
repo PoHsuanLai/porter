@@ -4,3 +4,4 @@
 pub mod accountd;
 pub mod bus;
 pub mod inferd;
+pub mod served;
