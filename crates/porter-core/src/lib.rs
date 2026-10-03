@@ -14,6 +14,7 @@ mod error;
 #[cfg(test)]
 mod fixtures;
 mod id;
+mod identity;
 mod matching;
 pub mod need;
 mod offer;
@@ -34,6 +35,7 @@ pub use data_class::DataClass;
 pub use effective::{KindToggle, Toggle, effective};
 pub use error::CoreError;
 pub use id::{AccountId, GrantId, ModelId, ProviderId, is_id, object_segment};
+pub use identity::{CgroupPath, ClaimedId, PeerFacts, PeerIdentity, SandboxFacts, identity_of};
 pub use matching::{Match, Shortfall, matches};
 pub use need::Need;
 pub use offer::{AbsentReason, Claim, Offer, Provenance, Subject};

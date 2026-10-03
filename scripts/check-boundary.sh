@@ -49,6 +49,24 @@ for rule in "${RULES[@]}"; do
   fi
 done
 
+# PURE FILES: source that parses what an edge read and never reads it itself. A dependency rule
+# cannot see std, so these are checked by name: no file, process, socket or environment access.
+STD_EFFECTS='std::(fs|io|env|process|net|os)\b|\b(File|Command|TcpStream|UnixStream)::'
+PURE_FILES=(
+  "crates/porter-core/src/identity.rs"
+)
+for file in "${PURE_FILES[@]}"; do
+  if [ ! -f "$file" ]; then
+    echo "ERROR: $file is missing; its purity was not checked"
+    fail=1
+  elif grep -nE "$STD_EFFECTS" "$file"; then
+    echo "LEAK: $file reaches std's effects"
+    fail=1
+  else
+    echo "pure: $file reaches none of std's effects"
+  fi
+done
+
 # The allowed edges between our own crates: each crate's DIRECT normal and build path
 # dependencies (all features), and nothing else. A dependency not listed is a leak; so is one
 # the crate no longer has, so the table stays exact. Dev dependencies are outside it.
