@@ -35,6 +35,7 @@ engine-supervisor = { workspace = true, features = ["testing"] }
 model-provider = { workspace = true, features = ["testing"] }
 porter-client = { workspace = true, features = ["dbus"] }
 porter-fake = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true

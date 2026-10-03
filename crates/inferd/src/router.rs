@@ -12,8 +12,8 @@ use porter_core::{DataClass, GrantId, Locality, Need, Tier};
 use porter_core::{Match, matches};
 use porter_core::{Offer as CoreOffer, capability::SpeechMode};
 use porter_infer::{
-    AiKind, Chosen, InferRefusal, ModelCard, ModelRef, Policy, Readiness, RouteAsk,
-    RouteCandidate, SpendVerdict, TierMap, route, tier_choice,
+    AiKind, Chosen, InferRefusal, ModelCard, ModelRef, Policy, Readiness, RouteAsk, RouteCandidate,
+    SpendVerdict, TierMap, route, tier_choice,
 };
 
 /// One model the router may pick, and how soon it can answer.

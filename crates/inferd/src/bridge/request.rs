@@ -95,7 +95,9 @@ fn seal(seal: &pi::ThoughtSeal) -> sp::ThoughtSeal {
     match seal {
         pi::ThoughtSeal::None => sp::ThoughtSeal::None,
         pi::ThoughtSeal::Signed(text) => sp::ThoughtSeal::Signed(sp::SignatureText(text.0.clone())),
-        pi::ThoughtSeal::Redacted(text) => sp::ThoughtSeal::Redacted(sp::OpaqueText(text.0.clone())),
+        pi::ThoughtSeal::Redacted(text) => {
+            sp::ThoughtSeal::Redacted(sp::OpaqueText(text.0.clone()))
+        }
     }
 }
 
@@ -281,7 +283,9 @@ pub fn chat_turn(
 /// The instruction a task kind is carried out under.
 fn task_instruction(task: pi::Task) -> &'static str {
     match task {
-        pi::Task::Summarise => "Summarise the text the user gives you. Reply with the summary only.",
+        pi::Task::Summarise => {
+            "Summarise the text the user gives you. Reply with the summary only."
+        }
         pi::Task::Rewrite => {
             "Rewrite the text the user gives you so it reads better, keeping its meaning. Reply with the rewritten text only."
         }

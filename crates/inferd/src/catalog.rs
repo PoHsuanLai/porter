@@ -8,8 +8,8 @@
 //! prefixes (stoker interface ask: `ModelEntry.embed: Option<EmbedCaps>`), so inferd's own
 //! configuration supplies them until it has.
 
-use model_catalog::{CatalogKind, ModelEntry, merge_catalogs, parse_entry};
 use cua_action::CuaDialect;
+use model_catalog::{CatalogKind, ModelEntry, merge_catalogs, parse_entry};
 use model_provider::{Caps, Constraint, CuaSupport, InputKind, Support, ToolSupport, Zoom};
 use porter_core::capability::{
     Capability, CuaBatching, CuaCap, CuaEnv, EmbedCap, EmbedPrompts, LanguageSet, LanguageTag,
@@ -64,6 +64,11 @@ pub struct Catalog {
     pub entries: Vec<ModelEntry>,
     /// Files that did not read or parse.
     pub skipped: Vec<Skipped>,
+}
+
+/// One entry's text as an entry (stoker's parser, so a test or a caller need not name it).
+pub fn parse_entry_text(text: &str) -> Result<ModelEntry, model_catalog::CatalogError> {
+    parse_entry(text)
 }
 
 /// Reads the system and user directories and merges them (a user file replaces the system file

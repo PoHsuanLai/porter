@@ -19,8 +19,8 @@ use model_provider as sp;
 use model_provider::{Embedder, Provider, Retrying};
 use porter_core::Tier;
 use porter_infer::{
-    CuaStepFailure, CuaStepReply, EmbedReply, InferEvent, InferRefusal, InferReply,
-    InferRequest, ModelError, ServedBy, TokenUsage,
+    CuaStepFailure, CuaStepReply, EmbedReply, InferEvent, InferRefusal, InferReply, InferRequest,
+    ModelError, ServedBy, TokenUsage,
 };
 use std::future::Future;
 use std::os::fd::OwnedFd;
@@ -54,7 +54,7 @@ impl Pin {
         let _ = self.0.set(pinned);
     }
 
-    fn get(&self) -> Option<&Pinned> {
+    pub(crate) fn get(&self) -> Option<&Pinned> {
         self.0.get()
     }
 }
@@ -164,10 +164,7 @@ impl TurnRunner for Turns {
             let reply = job.reply(request, attachments).await;
             let _ = job.steps.send(TurnStep::Done(reply));
         });
-        Turn {
-            steps: inbox,
-            task,
-        }
+        Turn { steps: inbox, task }
     }
 }
 
@@ -238,8 +235,7 @@ impl Job {
             },
             InferRequest::Embed(embed) => self.embed(model, served, &embed).await,
             InferRequest::CuaBegin(begin) => {
-                *self.run.lock().unwrap_or_else(PoisonError::into_inner) =
-                    Some(Run::new(begin));
+                *self.run.lock().unwrap_or_else(PoisonError::into_inner) = Some(Run::new(begin));
                 InferReply::CuaStep(CuaStepReply {
                     thought: None,
                     actions: Vec::new(),
@@ -254,7 +250,12 @@ impl Job {
         }
     }
 
-    async fn chat(&self, model: &LocalModel, served: &ServedBy, turn: &sp::TurnRequest) -> InferReply {
+    async fn chat(
+        &self,
+        model: &LocalModel,
+        served: &ServedBy,
+        turn: &sp::TurnRequest,
+    ) -> InferReply {
         let Some(provider) = chat_provider(model) else {
             return refused(InferRefusal::Unsupported);
         };

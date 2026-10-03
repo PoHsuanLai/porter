@@ -27,3 +27,11 @@ pub mod speech;
 pub mod supervise;
 
 pub use adapters::AdapterModel;
+
+/// The catalog entries the hosted tests use, shared with the unit tests.
+#[cfg(test)]
+#[path = "../tests/hosting/entries.rs"]
+mod entries;
+
+#[cfg(test)]
+mod testkit;

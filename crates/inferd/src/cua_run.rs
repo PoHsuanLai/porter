@@ -31,6 +31,10 @@ impl CuaRun {
 
     /// The window-space actions for one step: prepare the frame, one model turn (streaming
     /// `ActionProposed` into `sink`), parse, map; one repair prompt is allowed.
+    ///
+    /// A stub: this signature reaches neither the pinned model's engine nor the bytes behind
+    /// `ImageSource::Attached` (FINDINGS "Fill F3: inferd", interface ask 1). `cua_step::step`
+    /// runs a step meanwhile, for the tool dialects.
     pub async fn step(
         &mut self,
         request: &CuaStepRequest,

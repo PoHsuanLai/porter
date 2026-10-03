@@ -24,7 +24,7 @@ trait), section 6 (copy the recipe).
 | `porter-client` | the app-facing API: `Accounts`, `Found`, the `Transport` trait (`call` for accountd, `open` for an inference session); `InProcess`, `SocketTransport`, `DbusTransport` (feature `dbus`) | through its transport |
 | `porter-dbus` | `org.quire.Accounts1`, `org.quire.Sync1`, `org.quire.Inference1` as zbus proxies and skeletons; `introspection`; the argument codec (stubbed) | zbus |
 | `porter-fake` | test-only: fake providers from real provider files, three accounts, `ScriptedPrompter`, `FixedClock`, `FakeModel` (streams), `FakeInferSession` (scripted events per request kind, audio-gated transcripts), `fake_service` | none |
-| `accountd`, `syncd`, `inferd` | the daemons: build their service over the seams; skeletons that exit with "not implemented". `inferd` is also a library (`adapters`, `bridge`, `session`, `engines`, `catalog`, `cua_run`, `speech`) so its modules are tested without a bus | everything |
+| `accountd`, `syncd`, `inferd` | the daemons. `accountd` and `syncd` are skeletons that build their service over the seams and exit with "not implemented"; `inferd` serves `org.quire.Inference1` (section 10). `inferd` is also a library (`adapters`, `bridge`, `session`, `serve`, `service`, `peers`, `router`, `engines`, `supervise`, `hosts`, `local`, `catalog`, `config`, `runner`, `cua_step`, `cua_run`, `audit`, `clock`, `speech`) so its modules are tested without a bus | everything |
 
 Allowed direct edges (checked by `scripts/check-boundary.sh`; dev-dependencies are outside it):
 
@@ -38,7 +38,7 @@ Allowed direct edges (checked by `scripts/check-boundary.sh`; dev-dependencies a
 | `porter-fake` | `porter-core`, `porter-infer`, `porter-provider`, `porter-secrets`, `porter-service` |
 | `accountd` | `porter-core`, `porter-dbus`, `porter-provider`, `porter-secrets`, `porter-service` |
 | `syncd` | `porter-dbus`, `porter-sync` |
-| `inferd` | `porter-core`, `porter-dbus`, `porter-infer`, `cua-action` |
+| `inferd` | `porter-core`, `porter-dbus`, `porter-infer`, `cua-action`, and stoker's `model-provider`, `model-catalog`, `engine-supervisor`, `model-http` (feature `hyper`), `model-openai-compat`, `vision-prep` (feature `pixels`), `cua-parse`, `speech-provider`, by sibling path |
 
 External boundaries: every crate but `porter-dbus` and the daemons never reaches `zbus`,
 `zvariant`, `tokio`, `reqwest`, `hyper`, `ureq`, `oo7`, `keyring`, `secret-service`,
@@ -59,6 +59,7 @@ External boundaries: every crate but `porter-dbus` and the daemons never reaches
 | `porter-service` | `clock`, `prompter` < `registry` < `choose`, `token` < `service` |
 | `porter-client` | `error`, `env`, `found` < `transport` (`in_process`, `socket`, `dbus`; each with its session) < `accounts` |
 | `porter-dbus` | `names`, `args` < `codec` < `manager`, `account`, `grants`, `tokens`, `request`, `sync`, `inference` < `introspect` |
+| `inferd` | `session` (pure machine) < `serve` (the loop over four seams) ; `catalog` < `local` < `router` < `supervise`, `hosts` < `engines` (`Engines`, `SessionRouter`) ; `bridge` (`request`, `reply`) < `cua_step`, `runner` ; `audit`, `clock`, `peers`, `config` < `service` (the bus object) < `main` |
 
 ## 3. One home per concept
 
@@ -89,6 +90,11 @@ External boundaries: every crate but `porter-dbus` and the daemons never reaches
 | the speech turn on the wire | `porter-infer::speech` |
 | the model picker's data and the tier map | `porter-infer::choice` |
 | which request kinds a session's need admits | `inferd::session::fits` |
+| who is calling inferd (connection, pid, executable, caller) | `inferd::peers` (`CallerTable` from `inferd.toml`) |
+| which model answers a session, and what it is pinned to | `inferd::router::choose` over `inferd::engines::Engines::route` (the only caller of `porter_infer::route`) |
+| the models this computer can run, from the stoker catalog | `inferd::catalog` (claims) and `inferd::local` (the book) |
+| starting, probing and unloading an engine | `inferd::supervise` (the driver of stoker's `step`) over `inferd::hosts` |
+| porter's request to stoker's turn, and back | `inferd::bridge` (the only mapping) |
 | provider file format | `porter-provider::spec` + `parse` |
 | which secret an auth kind presents | `porter-service::secret_purpose` |
 | the account registry and candidates | `porter-service::registry` |
@@ -197,14 +203,17 @@ the interface other work builds on; a change is a vocabulary bump (section 6) or
 | `prov` lattice: `Label::join`, `trusted_user`, `untrusted`, `Labelled::zip`, `endorse`, `declassify` | stub |
 | porter-core: `SpaceId`, `SpaceScope`, `GrantKey.space`, `Grant<K>`, `decide<K>`, computer use, `DataClass::Voice`, `VocabVersion(2)` | built, table-tested |
 | porter-infer wire: tools, images, `ChatControl`, `StopReason`, `ThoughtPart`, `ReplyShape::Choice`, `EmbedRole`, `CuaBegin`/`CuaStep`, `Transcribe`/`Speak`, `ClientFrame`, `InferEvent`, replies | built, round-trip and pinned-JSON tested |
-| `OpenOptions`, `Traceparent`, the `options` dictionary of `Inference1.Open`/`Prepare`/`Availability` | built (the key is reserved; nothing reads it until inferd serves) |
+| `OpenOptions`, `Traceparent`, the `options` dictionary of `Inference1.Open`/`Prepare`/`Availability` | built (inferd reads `traceparent` and ignores unknown keys; it writes no spans yet) |
 | `prov::trace` names, `ActorKind::slug`, `Effect::slug` | built, tested against the serde forms |
 | `tier_choice`, `AiKind::setting_key`, `InferRequest::kind` | built, table-tested |
 | `picker_rows` | stub |
 | `inferd::session::step` | built (Routed/Waiting events, audio effects, cua progress, one queued request); `fits` built |
-| `inferd::serve` (`serve_session` over `Router`, `EngineHost`, `TurnRunner`, `AuditSink`) | built, tested over scripted seams; the daemon's `Open` handler and its real seams are not |
+| `inferd::serve` (`serve_session` over `Router`, `EngineHost`, `TurnRunner`, `AuditSink`) | built, tested over scripted seams |
+| `inferd::service` (`Inference1`: `Open` with the caller check, `Availability`, `Prepare`, `Usage`, `Rescan`, `EnginesChanged`, `Gpu`), `peers`, `config`, `main` | built; tested on a private bus with fake engines (`tests/hosted.rs`); `Usage` answers an empty dictionary (nothing meters) |
+| the real seams: `router` and `engines::SessionRouter`, `engines::Engines` over `supervise` and `hosts`, `runner::Turns` over `bridge` and `cua_step`, `audit` | built; the engine host is child processes (`ProcessHost`), not systemd transient units |
 | `inferd::speech` rules (`check_audio`, `audio_ms`) | built, table-tested; `SpeechRunner` stub |
-| `inferd::{engines, catalog, cua_run}` bodies, `inferd::bridge` provider-type halves | stub (`cua_run::check_class` and `bridge::model_id_of` built) |
+| `inferd::{catalog, local, bridge}` (the catalog read, its claims, the model book, both halves of the mapping to stoker's turns) | built, table-tested |
+| `inferd::cua_run::CuaRun::step` | stub (its signature cannot reach the engine or the frame; `cua_step` does the work meanwhile, see FINDINGS "Fill F3: inferd") |
 | `FakeInferSession`, `FakeModel` streaming | built, tested |
 | `AccountService`: Query, Availability, Choose, ListGrants, Revoke, IssueToken, `remove_account` | built over the seams, tested end to end with the fakes |
 | `AccountService`: AddAccount, Reauthenticate | stub |
@@ -213,7 +222,8 @@ the interface other work builds on; a change is a vocabulary bump (section 6) or
 | `SocketTransport`, `InProcess::open_with` and their sessions, `DbusTransport` sheet calls | stub |
 | D-Bus proxies and skeletons, introspection files in `dbus/` | frozen, introspection tested; skeleton methods answer `NotSupported` |
 | D-Bus argument codec (needs, candidates, grants, tokens, refusal error names) | built, round-tripped over the wire signature |
-| daemons | skeletons: build their service, print "not implemented", exit 2 |
+| `accountd`, `syncd` | skeletons: build their service, print "not implemented", exit 2 |
+| `inferd` | built: a daemon on the session bus (the checked-in `dist/` files install it) |
 | protocol families, wire adapters, sign-in flows, discovery, persistence | not started (no provider or AI vendor code by decision) |
 
 ## 6. Recipes
@@ -267,6 +277,15 @@ runtime directory, killed on drop; `dbus-daemon` must be on `PATH`) and serve a 
 (`tests/common/served.rs`) or the real `AccountService` behind a bus adapter
 (`tests/common/accountd.rs`). The one place the environment names a bus (`Accounts::connect`) runs
 in a child process the test starts with a private bus address.
+
+`inferd`'s tests: the unit tests are in `src/*/tests.rs` (tables; the supervisor driver runs with a
+paused clock over stoker's fakes or a recorder, and `hosts` over harmless child processes such as
+`sleep`); `tests/serve.rs` is the session server over scripted seams; `tests/hosted.rs` is the whole
+daemon: a private `dbus-daemon` (`tests/hosting/bus.rs`), the real `Inference1` object with the
+client connection introduced as an app (or cuad) through a `TablePeers`, the real router, driver,
+runner and audit sink, and fake OpenAI-compatible engines on Unix sockets (`tests/hosting/engine.rs`)
+that keep the requests they were sent. The engine host there is a recorder that starts nothing, so
+no process runs and no GPU is touched; the weights are empty directories in a scratch HOME.
 
 ## 8. The mailo mapping
 
@@ -355,3 +374,31 @@ edited; it is recorded here so the code and the spec agree):
   whose reserved key is `traceparent` (`porter_dbus::OPTION_TRACEPARENT`, a
   `porter_infer::Traceparent`); `Accounts::session_with` and `Transport::open_with` carry it. No
   content ever goes on a span (`prov::trace`).
+
+## 10. inferd hosted
+
+`org.quire.Inference1` at `/org/quire/Inference1`, claimed by `inferd` on the session bus
+(`dist/dbus/org.quire.Inference1.service` activates `dist/inferd.service`; `dist/inferd.toml` is the
+annotated sample configuration). One `Open` is:
+
+1. **Who.** `peers`: the bus names the sender's pid, `/proc/<pid>/exe` names the program, the
+   caller table names the `Caller` (an `AppId` and a `Role`). A sender the table does not name gets
+   `org.freedesktop.DBus.Error.AccessDenied`. The role `Cua` (cuad's executable) is the only one
+   that may open a computer-use session; any other caller's route is `Refused(Denied)`.
+2. **Where.** A socketpair; one end goes back as the reply descriptor, `serve_session` runs on the
+   other over this session's four seams:
+   - `Router` is `engines::SessionRouter`: `Engines::route` lists the local models (the stoker
+     catalog through `local`) with their readiness from the supervisor's snapshot, then
+     `router::choose` filters by the need (`porter_core::matches`), readiness, consent (a model on
+     this computer is granted; anything else asks) and `porter_infer::route` with the user's
+     policy and tier map. The decision pins the runner through a `Pin` cell.
+   - `EngineHost` is `Engines`: `want` asks the `Supervised` handle, which owns stoker's
+     `Supervisor` and carries out its effects over `engine_supervisor::{EngineHost, ReadyProbe,
+     GpuProbe}` (`ProcessHost`, `HealthProbe`, `NvidiaSmi` in the daemon; fakes in tests). Engines
+     unload on the supervisor's idle timer, so `release` does nothing.
+   - `TurnRunner` is `runner::Turns`: stoker's `OpenAiCompat` (`Driver<OpenAiCodec, HttpClient>`)
+     over the engine's Unix socket, wrapped in `Retrying`; `bridge` maps both ways; computer-use
+     steps are `cua_step`.
+   - `AuditSink` is `audit::SessionAudit` over an `AuditOut` (a JSON-lines file in the daemon).
+3. **Away.** The first event is `Waiting(readiness)` when the engine is not ready, then `Routed`,
+   then the turn's events and one `Finished` per request, exactly as `session::step` decides.

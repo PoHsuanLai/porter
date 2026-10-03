@@ -70,7 +70,10 @@ pub struct Memory(Arc<Mutex<Vec<AuditEntry>>>);
 impl Memory {
     /// The entries so far.
     pub fn entries(&self) -> Vec<AuditEntry> {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner).clone()
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 }
 

@@ -11,12 +11,10 @@ Open items and standing facts. An entry names the condition that closes it.
 | porter-client `SocketTransport::{call, open_with}` and `SocketSession::{send, next}` (a socket link is skipped by `connect` until they exist), `InProcess::open_with` and `InProcessSession::{send, next}` | the latchkey carrier lands / an agent hosts the core |
 | porter-client `DbusTransport::call` for `Choose`, `AddAccount` and `Reauthenticate` (they answer `TransportError::Malformed`, not a panic) | accountd serves Request objects (see "Fill F3") |
 | porter-infer `Broker::infer` (streaming into a `ChatSink`) | the first wire adapter (Ollama, then llama.cpp and vLLM through stoker's `model-openai-compat`) |
-| inferd `engines::{Engines::prepare, Engines::gpu}` | fill wave 3: the supervisor host over systemd transient units; needs stoker's `engine-supervisor` |
-| inferd `catalog::local_claims` | fill wave 3: needs stoker's `model-catalog` (merge, then one `Claim` per model capability at `Provenance::Curated`) |
-| inferd `cua_run::CuaRun::step` | fill wave 3: needs stoker's `cua-session` |
-| inferd `speech::SpeechRunner::{transcribe, speak}` | fill wave 3: needs stoker's `speech-provider` and `speech-host-client`; the closed enums `SttBackend`, `TtsBackend` join then |
+| inferd `cua_run::CuaRun::step` | its signature cannot run (no engine, no frame bytes: see "Fill F3: inferd"); `cua_step` does the work for the tool dialects until stoker's `cua-session::{request, absorb}` exist, and `step` then takes the shape that file proposes |
+| inferd `speech::SpeechRunner::{transcribe, speak}` | the speech runner: needs stoker's `speech-host-client` and the speech host; the closed enums `SttBackend`, `TtsBackend` join then. A speech need is routed `Unavailable` and a speech request on a session is refused `Unsupported` until then |
 | accountd `SheetPrompter` | accounts-ui exists |
-| daemons serve their bus | the items above |
+| accountd and syncd serve their bus | the items above (inferd serves its own, see "Fill F3: inferd") |
 
 ## Fill F3: porter-client and the session server (2026-10-03)
 
@@ -153,6 +151,117 @@ with scripted seams (`inferd/tests/serve.rs`) and from the client over a private
   `DropReason` gains `BadArgument`.
 - almanac `memfiles` settle(Keep) and tests construct `ConfirmReceipt` (ask 5, field `covers`).
 
+## Fill F3: inferd (2026-10-03)
+
+Lane `f3-inferd`. inferd is a daemon: `Inference1.Open` checks the caller, routes, makes the
+socketpair and runs `serve_session` over four real seams; `Availability`, `Prepare`, `Usage`,
+`Rescan`, `EnginesChanged` and `Gpu` are served too. `todo!()` bodies in inferd: 6 before (the two
+`Engines` bodies, `local_claims`, `CuaRun::step`, the speech runner's two), 3 after (`CuaRun::step`
+and the speech runner's two); 22 in the workspace before, 18 after (the other 15 are not this lane's). The tests are in `inferd/src/*/tests.rs`, `tests/serve.rs`,
+`tests/hosted.rs` (the whole daemon on a private bus with fake engines) and `tests/dist.rs`.
+
+Decisions, where the specs were silent:
+
+- **Caller identity** is the executable behind the bus connection, through a caller table in
+  `inferd.toml` (`[callers]`, the shape of memoryd's `callers.toml`). The role is `Cua` for cuad's
+  executable and `App` for every other named one; only `Cua` is routed a computer-use need (`Denied`
+  otherwise). A sender nobody names gets `AccessDenied` from the bus, which the client reports as
+  `TransportError::Malformed` with that text (there is no `Denied` variant on it, FINDINGS above).
+- **Consent** for a model on this computer is granted (no grant to store: the data does not leave
+  the machine, and the class's floor decides what may go where); any other account's model answers
+  `Ask`, so a route to it is `NeedsGrant` until accountd can give grants. Spend is `Within` (nothing
+  meters; local models are free).
+- **Readiness** is `Downloadable` when the weights directory is not in the cache (looked for live,
+  so a finished download shows at once); a `Downloadable` or `Unavailable` model is not offered,
+  because nothing makes the weights. Stopped engines are `Loadable`: the first event of a session
+  is `Waiting(Loadable)`, then `Routed`.
+- **Floors**: the router needs no floor code of its own; `porter_infer::route` reads
+  `Policy::floor(class)` (the proposed policy has `Prompt` on this computer), and a cloud-only
+  route for a floored class is `RequiresCloud(class)` when the user's local-only switch is off, and
+  `Unavailable` when it is on (the cloud is not offered at all).
+- **Engines** are child processes of inferd (`ProcessHost`, unconfined and marked so); the unit in
+  `dist/inferd.service` carries the sandbox for them (no network, read-only home, the GPU devices).
+  Programs come from `inferd.toml`, never from the environment, and a kind with no program is not
+  offered. The GPU probe reads only the total from `nvidia-smi` (`used_by_others` is zero: it
+  counts our own engines, and subtracting them needs per-process accounting).
+- **Retry** is stoker's `Retrying` around the chat provider (3 attempts, 250 ms doubling to 4 s);
+  embeddings are not retried (memoryd degrades). Embedding texts are cut into batches of the
+  model's limit and carry the model's prefix for the request's role.
+- **Reasoning** left open (`EngineDefault`) is sent as `Off`: stoker's `Reasoning` has no unset, and
+  a short interactive turn should not spend its tokens thinking. An app that wants it asks `On`.
+- **`Prepare`** warms a stopped engine and answers `loading`; a later `Prepare` answers `ready`.
+  `Rescan` only emits `EnginesChanged` (readiness is read live). `Usage` answers an empty
+  dictionary.
+- **Audit** goes to `$XDG_STATE_HOME/quire/inferd/audit.jsonl` as `AuditEntry` lines, not to
+  memoryd: memoryd's `Record` has no area tag for inference and `prov` no system part for inferd,
+  and porter does not depend on almanac. `images` and `audio_ms` are zero: `AuditSink::record` is
+  told the reply, not the request.
+- **Computer use**: `cua_step` runs one step for the tool dialects (`QwenComputerUse`, `Holo31`):
+  `vision-prep::prepare` for a raw frame (an encoded one is sent as it is), a model turn with the
+  `computer_use` function, `cua-parse`, `FrameMap` into window space, an out-of-frame point
+  dropped. The prompt is ours and provisional, the history is the last four steps as text, and a
+  reply that does not parse is not repaired. A model whose dialect is a text or wire one makes no
+  computer-use claim. An empty `CuaStepReply` acknowledges `CuaBegin`.
+
+Interface asks (nothing frozen was changed):
+
+1. porter `inferd::cua_run::CuaRun::step(&mut self, request, sink)` cannot run: it has neither the
+   pinned model's provider nor the bytes behind `ImageSource::Attached`. Proposed:
+   `step(&mut self, job: StepJob<'_>, sink)` with `StepJob { model: &LocalModel, provider: &P,
+   frames: &Frames, request: &CuaStepRequest }`, or delete it once `cua-session` is filled and
+   `cua_step` shrinks to the model turn.
+2. stoker `ModelEntry` has no embedding fields: add `embed: Option<EmbedCaps>` (dims, batch limit,
+   input limit, query and document prefixes, `EmbedCaps` already exists in `model-provider`), read
+   when a role is `embeddings`. Until then `inferd.toml` carries `[[embedding]]` rows
+   (`catalog::EmbedSpec`) and a catalog embedding entry without one makes no claim.
+3. stoker `Reasoning` needs `EngineDefault` (or `Knob<Reasoning>` on `TurnRequest`) so an app that
+   leaves reasoning open does not get it forced off.
+4. stoker `model-extract::ExtractSession<T: Extract>` is typed; `ReplyShape::Json(String)` carries
+   a JSON schema as text. inferd sends it to the engine as the constraint (`OutputShape::JsonSchema`)
+   but does not validate and repair the reply (ARCHITECTURE section 7): a dynamic `Shape` built from
+   schema text is needed.
+5. `AuditSink::record(&self, spec, served, reply)` should also be told what the request carried
+   (images, audio milliseconds) so `AuditEntry.images` and `audio_ms` are true.
+6. almanac and prov: an inference audit event needs `AreaTag::Inference` (almanac-core) and
+   `SystemPart::Inferd` (prov) before a bridge from `audit.jsonl` to `Memory1.Record` can exist; and
+   the porter to almanac edge it implies must be decided (almanac's repo graph is kept acyclic by
+   design: "porter has no almanac dependency").
+7. stoker `parse_entry` should refuse a llama-server profile whose weights are not GGUF
+   (`command` already notes it).
+
+Still needed before a real local model answers on login:
+
+- Weights in the Hugging Face cache (downloaded by hand: there is no downloader), and
+  `inferd.toml` with the engine programs (`vllm_python`, `llama_server`), the caller table and, for
+  memoryd, the nomic-embed-text `[[embedding]]` row plus a catalog entry for it.
+- The engines' units: either a per-engine transient systemd unit (the sandbox of models section 3.9,
+  `StartTransientUnit`; `ProcessHost` is the unconfined stand-in) or `dist/inferd.service` verified
+  on the machine with the GPU (the `DeviceAllow` names are unverified, spike S1); llama-server's
+  `--host <socket>` and vLLM's `--uds` need the same spike.
+- The speech runner (`SpeechRunner::{transcribe, speak}`, stoker's `speech-host-client` and the
+  host binary): a speech need is `Unavailable` today.
+- stoker's `cua-session` bodies, and a recorded Holo-3.1-4B step to confirm the `computer_use`
+  schema, the grid of 1000 and the reasoning-off sampling.
+- Spend meters and caps behind `Usage`; per-process GPU accounting; telemetry spans from
+  `traceparent`; validate-and-repair of structured output (ask 4).
+
+### Call sites that should change now inferd serves
+
+- almanac `crates/memoryd/src/main.rs`: already builds `DbusTransport::over(connection)`; its
+  `callers.toml` is memoryd's own, and inferd's `[callers.apps]` must name `memoryd` too. The
+  embedder's card (`default_card`: nomic-embed-text-v1.5, 768, `search_query: ` and
+  `search_document: `) must equal the `[[embedding]]` row.
+- docket `intentd`, `companiond`, `readerd`: the same, and each executable in `[callers.apps]`.
+  `action-review/src/infer.rs` `REVIEW_CLASS` is `DataClass::Prompt` (earlier note); the reviewer
+  and the planner open `Need::Llm` sessions that this router answers with the model the tier map
+  names.
+- cua `cuad/src/model.rs` `InferdCuaModel::{begin, step}`: opens `Need::ComputerUse(Desktop)` with
+  class `Screen` as the `cua` caller; the first request must be `CuaBegin`; steps carry the frame as
+  attach index 0 (raw, `FrameLayout::Raw`, preferred); expect `Waiting(Loadable)` before `Routed`
+  on a cold engine and `Finished(Failed(Unparseable))` for a reply with no call.
+- sill / detent: `Inference1.Gpu` and `EnginesChanged` are live; `Prepare` on double-tap ⌘.
+- quire `docs/workspace-deps.toml`: `tokio`'s `test-util` feature (a dev-dependency of inferd).
+
 ## The rig amendment (2026-10-03)
 
 Interface changes made before any fill wave, from `research-rig.md` section 7 items 7 and 8.
@@ -179,10 +288,8 @@ unchanged by it).
   `format`) are stoker's to pin at fill; porter only carries `ReplyShape::{Json, Choice}`. The
   exact OpenTelemetry attribute names are verified against the current registry when the daemons'
   `telemetry.rs` is written; `prov::trace` holds only our own `quire.*` names.
-- `inferd::bridge` still maps nothing: `ChatControl` to stoker's `TurnRequest` (sampling,
-  `ToolChoice`, `ToolParallelism`, `Reasoning`), `StopReason` both ways, `ThoughtSeal` both ways,
-  `EmbedRole` to `EmbedTurn.role`, and `EmbedCap.prompts` to the prefix applied by inferd, land
-  with the pinned stoker revs of fill wave 1; each pair has a total mapping test then.
+- `inferd::bridge` maps `ChatControl` to stoker's `TurnRequest`, `StopReason` both ways,
+  `ThoughtSeal`, `EmbedRole` and the prefix applied by inferd (built in fill F3, table-tested).
 - almanac consumes `ChatRequest`, `EmbedRequest` and `EmbedCap`; its `recall` amendment (item 9)
   adds the role, the batch limit and the prompts on its side.
 
@@ -226,7 +333,7 @@ pure tables and tests; no new `todo!()` in porter (one pure function was built i
 
 ## Open
 
-- inferd's stoker edges are not in the manifests yet. At the freeze porter path-patches only `cua-action`, because the other stoker crates (`model-provider`, `model-catalog`, `engine-supervisor`, `cua-session`, `speech-provider`, `speech-host-client`, ...) were still being frozen; `inferd::bridge` therefore holds only what needs none of them (`model_id_of`), and the `TurnRequest`/`TurnEvent` mapping lands with the pinned git revs of fill wave 1.
+- inferd's stoker edges are by sibling path (`model-provider`, `model-catalog`, `engine-supervisor`, `model-http`, `model-openai-compat`, `vision-prep`, `cua-parse`, `speech-provider`), like `cua-action`; the pinned git revs replace them with quire's block. `cua-session`, `speech-host-client` and `cua-vendors` are not edges yet (their bodies are stubs).
 - `InferSession` and its `SessionError` live in porter-infer (re-exported by porter-client), not in porter-client as models §3.8 words it: `porter-fake` implements the trait for `FakeInferSession` and must not depend on the client. `next()` returns `Result<InferEvent, SessionError>` (`Closed` after the daemon ends the session) where the spec says `InferEvent`.
 - `DroppedAction`, `DropReason` and `SafetyHint` are named by the specs but not defined; porter-infer defines them (`SafetyHint` mirrors stoker's `SafetySignal`: `RequireConfirmation`, `Blocked`; both only add asks).
 - The picker is a plain list (QUESTIONS V4): no recommended or best row and no ranking language; `Tier` stays because apps ask by tier and `Open` takes one. `picker_rows` breaks ties by the catalog's order, not by label.

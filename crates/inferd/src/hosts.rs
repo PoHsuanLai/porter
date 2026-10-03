@@ -223,10 +223,7 @@ pub fn parse_total(text: &str) -> Result<MiB, GpuError> {
 impl GpuProbe for NvidiaSmi {
     async fn memory(&self) -> Result<GpuMemory, GpuError> {
         let output = Command::new(&self.program)
-            .args([
-                "--query-gpu=memory.total",
-                "--format=csv,noheader,nounits",
-            ])
+            .args(["--query-gpu=memory.total", "--format=csv,noheader,nounits"])
             .stdin(Stdio::null())
             .output()
             .await

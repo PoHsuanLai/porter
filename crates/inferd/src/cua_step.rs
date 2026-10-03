@@ -16,9 +16,9 @@ use cua_action::{
 };
 use cua_parse::{InSpace, ParseLimits, parse_tool_calls};
 use model_provider::{
-    CuaSupport, EngineExtras, Flow, ImageInput, Limits, Message, OutputShape, Part,
-    Provider, ProviderError, Reasoning, Role, SchemaText, ToolCall, ToolChoice, ToolParallelism,
-    ToolSpec, TurnEnd, TurnEvent, TurnRequest, TurnSink,
+    CuaSupport, EngineExtras, Flow, ImageInput, Limits, Message, OutputShape, Part, Provider,
+    ProviderError, Reasoning, Role, SchemaText, ToolCall, ToolChoice, ToolParallelism, ToolSpec,
+    TurnEnd, TurnEvent, TurnRequest, TurnSink,
 };
 use porter_infer::{
     CuaBegin, CuaStepFailure, CuaStepReply, CuaStepRequest, DropReason, DroppedAction, FrameLayout,
@@ -214,9 +214,7 @@ fn dropped_reason(reason: cua_parse::DropReason) -> DropReason {
 fn into_window<S: CoordSpace>(
     actions: Vec<CuaAction<S>>,
     point: impl Fn(Point<S>) -> Result<Point<WindowSpace>, MapError>,
-    length: impl Fn(
-        cua_action::Length<S>,
-    ) -> Result<cua_action::Length<WindowSpace>, MapError>,
+    length: impl Fn(cua_action::Length<S>) -> Result<cua_action::Length<WindowSpace>, MapError>,
 ) -> (Vec<CuaAction<WindowSpace>>, Vec<DroppedAction>) {
     let mut kept = Vec::new();
     let mut dropped = Vec::new();
@@ -261,8 +259,13 @@ pub async fn step<P: Provider>(
     let caps = model.caps().ok_or_else(unreadable)?;
     let dialect = tool_dialect(model).ok_or_else(unreadable)?;
     let space = caps.images.space;
-    let map = FrameMap::new(request.window.logical, request.window.scale, &caps.images.rule, space)
-        .map_err(|_| unreadable())?;
+    let map = FrameMap::new(
+        request.window.logical,
+        request.window.scale,
+        &caps.images.rule,
+        space,
+    )
+    .map_err(|_| unreadable())?;
     let image = frame_image(request, frames, &map).map_err(|_| unreadable())?;
     let schema = model_provider::JsonText::new(TOOL_SCHEMA).map_err(|_| unreadable())?;
     let turn = TurnRequest {
@@ -299,18 +302,22 @@ pub async fn step<P: Provider>(
     };
     let mut said = Said::default();
     let end: TurnEnd = provider
-        .turn(&turn, &mut Collect { said: &mut said, forward: &mut forward })
+        .turn(
+            &turn,
+            &mut Collect {
+                said: &mut said,
+                forward: &mut forward,
+            },
+        )
         .await
         .map_err(|error| failed(&error))?;
     let _ = end;
     let parsed = parse_tool_calls(dialect, space, &said.calls, ParseLimits::default())
         .map_err(|_| CuaStepFailure::Unparseable)?;
     let (actions, mut dropped) = match parsed.actions {
-        InSpace::Grid(_, grid) => into_window::<GridSpace>(
-            grid,
-            |p| map.grid_to_window(p),
-            |l| map.length_to_window(l),
-        ),
+        InSpace::Grid(_, grid) => {
+            into_window::<GridSpace>(grid, |p| map.grid_to_window(p), |l| map.length_to_window(l))
+        }
         InSpace::Image(image) => into_window::<ImageSpace>(
             image,
             |p| map.image_to_window(p),
@@ -326,7 +333,9 @@ pub async fn step<P: Provider>(
             break;
         }
     }
-    let thought = parsed.thought.or_else(|| (!said.thought.is_empty()).then_some(said.thought));
+    let thought = parsed
+        .thought
+        .or_else(|| (!said.thought.is_empty()).then_some(said.thought));
     let mut next = run.clone();
     next.past.push_back(describe(&actions));
     while next.past.len() > REMEMBERED {

@@ -23,6 +23,8 @@ pub enum Chat {
     },
     /// An HTTP error with this status and no usable body.
     Fail(u16),
+    /// Reads the request and never answers.
+    Hang,
 }
 
 /// How the engine answers.
@@ -111,7 +113,8 @@ async fn read_request(stream: &mut UnixStream) -> Option<Seen> {
                 let mut first = head.lines().next()?.split(' ');
                 let method = first.next()?.to_owned();
                 let path = first.next()?.to_owned();
-                let body = serde_json::from_slice(&raw[head_len..head_len + want]).unwrap_or(Value::Null);
+                let body =
+                    serde_json::from_slice(&raw[head_len..head_len + want]).unwrap_or(Value::Null);
                 return Some(Seen { method, path, body });
             }
         }
@@ -147,7 +150,7 @@ fn stream_for(answer: &Chat) -> Vec<Vec<u8>> {
             pieces.push(chunk(&frame(delta, Value::Null)));
             pieces.push(chunk(&frame(json!({}), json!("tool_calls"))));
         }
-        Chat::Fail(_) => {}
+        Chat::Fail(_) | Chat::Hang => {}
     }
     pieces.push(chunk(usage));
     pieces.push(b"0\r\n\r\n".to_vec());
@@ -188,6 +191,12 @@ async fn serve(mut stream: UnixStream, state: State, log: Arc<Mutex<Vec<Seen>>>)
                 }
             };
             match answer {
+                Chat::Hang => {
+                    // Hold the connection until the client leaves.
+                    let mut rest = [0_u8; 64];
+                    while stream.read(&mut rest).await.is_ok_and(|n| n > 0) {}
+                    return;
+                }
                 Chat::Fail(status) => vec![json_response(
                     &format!("{status} Error"),
                     &json!({"error": {"message": "scripted failure", "type": "server_error"}}),
@@ -215,7 +224,10 @@ async fn serve(mut stream: UnixStream, state: State, log: Arc<Mutex<Vec<Seen>>>)
                 &json!({"data": data, "usage": {"prompt_tokens": inputs.len()}}),
             )]
         }
-        _ => vec![json_response("404 Not Found", &json!({"error": {"message": "no such route"}}))],
+        _ => vec![json_response(
+            "404 Not Found",
+            &json!({"error": {"message": "no such route"}}),
+        )],
     };
     for piece in pieces {
         if stream.write_all(&piece).await.is_err() {

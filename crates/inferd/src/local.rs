@@ -31,7 +31,9 @@ pub struct EngineConfig {
     pub speech_host: Option<PathBuf>,
     /// Python of Kokoro-FastAPI's environment.
     pub kokoro_python: Option<PathBuf>,
-    /// `<cache>/hub`: where `models--<org>--<name>` directories are.
+    /// `<cache>/hub`: where `models--<org>--<name>` directories are. Left out of the file, it
+    /// is the default `Dirs` computes.
+    #[serde(default)]
     pub hf_cache: PathBuf,
 }
 
@@ -46,7 +48,13 @@ impl EngineConfig {
     }
 
     fn paths(&self) -> EnginePaths {
-        let program = |kind| ProgramPath(self.program(kind).map(Path::to_path_buf).unwrap_or_default());
+        let program = |kind| {
+            ProgramPath(
+                self.program(kind)
+                    .map(Path::to_path_buf)
+                    .unwrap_or_default(),
+            )
+        };
         EnginePaths {
             vllm_python: program(EngineKind::Vllm),
             llama_server: program(EngineKind::LlamaServer),
@@ -168,9 +176,14 @@ fn one(
         .find(|profile| engines.program(profile.kind).is_some())?
         .clone();
     let id = engine_supervisor::EngineId(format!("{}:{}", kind_slug(profile.kind), entry.id.0));
-    let socket = SocketPath(sockets.join(format!("{}-{}.sock", kind_slug(profile.kind), entry.id.0)));
+    let socket =
+        SocketPath(sockets.join(format!("{}-{}.sock", kind_slug(profile.kind), entry.id.0)));
     let unit = command(entry, &profile, &engines.paths(), &socket);
-    let context = entry.caps.as_ref().map(|caps| caps.context).unwrap_or_default();
+    let context = entry
+        .caps
+        .as_ref()
+        .map(|caps| caps.context)
+        .unwrap_or_default();
     Some(LocalModel {
         card: ModelCard {
             account: AccountId::parse(LOCAL_ACCOUNT).ok()?,

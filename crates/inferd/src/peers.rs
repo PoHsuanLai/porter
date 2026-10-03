@@ -53,6 +53,11 @@ impl CallerTable {
         Self { cua, apps }
     }
 
+    /// The table in TOML text.
+    pub fn from_toml_text(text: &str) -> Result<Self, String> {
+        toml::from_str(text).map_err(|e| e.to_string())
+    }
+
     /// The caller whose executable is `exe`. cuad is checked first, so an app entry cannot
     /// claim its executable.
     pub fn resolve(&self, exe: &Path) -> Option<Caller> {

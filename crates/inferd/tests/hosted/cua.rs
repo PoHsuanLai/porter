@@ -67,7 +67,10 @@ async fn a_cua_step_with_a_memfd_frame_round_trips_to_a_window_space_action() {
         .await
         .expect("begin");
     let events = until_finished(&mut session).await;
-    assert_eq!(events[0], InferEvent::Waiting(porter_infer::Readiness::Loadable));
+    assert_eq!(
+        events[0],
+        InferEvent::Waiting(porter_infer::Readiness::Loadable)
+    );
     assert!(matches!(events[1], InferEvent::Routed(_)), "{events:?}");
     assert!(
         matches!(
@@ -93,7 +96,10 @@ async fn a_cua_step_with_a_memfd_frame_round_trips_to_a_window_space_action() {
         count: ClickCount::One,
         mods: Default::default(),
     };
-    assert!(events.contains(&InferEvent::ActionProposed(click.clone())), "{events:?}");
+    assert!(
+        events.contains(&InferEvent::ActionProposed(click.clone())),
+        "{events:?}"
+    );
     let Some(InferEvent::Finished(InferReply::CuaStep(reply))) = events.last() else {
         panic!("a step reply, got {events:?}");
     };
@@ -107,7 +113,10 @@ async fn a_cua_step_with_a_memfd_frame_round_trips_to_a_window_space_action() {
     let sent = bodies[0].to_string();
     assert!(sent.contains("press the big button"), "the goal");
     assert!(sent.contains("computer_use"), "the tool");
-    assert!(sent.contains("data:image/png;base64,"), "the frame as a PNG");
+    assert!(
+        sent.contains("data:image/png;base64,"),
+        "the frame as a PNG"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

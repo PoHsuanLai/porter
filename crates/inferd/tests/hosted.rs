@@ -17,8 +17,8 @@ use porter_core::need::{CuaNeed, DimsNeed, EmbedNeed, LlmNeed};
 use porter_core::{DataClass, Dims, Need, Tier, Tokens};
 use porter_infer::{
     ChatControl, ChatMessage, ChatRequest, ClientFrame, EmbedRequest, EmbedRole, InferEvent,
-    InferReply, InferRequest, Knob, MessagePart, Reasoning, Readiness, ReplyShape, Role as ChatRole,
-    StopReason, ToolChoice, ToolParallelism,
+    InferReply, InferRequest, Knob, MessagePart, Readiness, Reasoning, ReplyShape,
+    Role as ChatRole, StopReason, ToolChoice, ToolParallelism,
 };
 use serde_json::Value;
 
@@ -85,7 +85,10 @@ async fn a_porter_client_chat_turn_streams_text_from_the_engine() {
         .await
         .expect("open");
     session
-        .send(ClientFrame::Request(chat_request("hi there", DataClass::Notes)))
+        .send(ClientFrame::Request(chat_request(
+            "hi there",
+            DataClass::Notes,
+        )))
         .await
         .expect("send");
     let events = until_finished(&mut session).await;
@@ -108,7 +111,10 @@ async fn a_porter_client_chat_turn_streams_text_from_the_engine() {
     };
     assert_eq!(reply.text, "Hello");
     assert_eq!(reply.stop, StopReason::EndTurn);
-    assert_eq!((reply.usage.input, reply.usage.output), (Tokens(5), Tokens(2)));
+    assert_eq!(
+        (reply.usage.input, reply.usage.output),
+        (Tokens(5), Tokens(2))
+    );
 
     // What the engine was sent: its served model name and the person's words.
     let bodies = world.engines["tiny-chat"].bodies("/v1/chat/completions");
@@ -134,7 +140,12 @@ async fn the_one_call_form_the_consumers_use_returns_the_reply() {
     .await;
     let reply = world
         .accounts
-        .infer(&llm(), DataClass::Notes, Tier::Fast, chat_request("ping", DataClass::Notes))
+        .infer(
+            &llm(),
+            DataClass::Notes,
+            Tier::Fast,
+            chat_request("ping", DataClass::Notes),
+        )
         .await
         .expect("a reply");
     let InferReply::Chat(chat) = reply else {
@@ -197,7 +208,10 @@ async fn an_embedding_request_returns_a_vector_per_text_in_order_with_the_models
     };
     assert_eq!(embed.vectors.len(), 3);
     assert!(embed.vectors.iter().all(|v| v.0.len() == 4));
-    assert_ne!(embed.vectors[0], embed.vectors[1], "the order and the texts survive");
+    assert_ne!(
+        embed.vectors[0], embed.vectors[1],
+        "the order and the texts survive"
+    );
 
     // Three texts under a batch limit of two are two requests, each text carrying the prefix.
     let bodies = world.engines["tiny-embed"].bodies("/v1/embeddings");
@@ -212,11 +226,12 @@ async fn an_embedding_request_returns_a_vector_per_text_in_order_with_the_models
 async fn inferd_absent_is_unreachable() {
     let bus = hosting::bus::PrivateBus::start();
     let accounts = Accounts::over(DbusTransport::over(bus.connect().await));
-    let got = accounts
-        .session(&llm(), DataClass::Notes, Tier::Fast)
-        .await;
+    let got = accounts.session(&llm(), DataClass::Notes, Tier::Fast).await;
     assert!(
-        matches!(got, Err(ClientError::Transport(TransportError::Unreachable))),
+        matches!(
+            got,
+            Err(ClientError::Transport(TransportError::Unreachable))
+        ),
         "no daemon owns the name: {:?}",
         got.err()
     );
@@ -227,9 +242,7 @@ async fn a_caller_the_table_does_not_name_is_refused_by_the_bus_error() {
     let world = World::start(chat_world(Script::default())).await;
     // A second connection nobody introduced.
     let stranger = Accounts::over(DbusTransport::over(world.bus.connect().await));
-    let got = stranger
-        .session(&llm(), DataClass::Notes, Tier::Fast)
-        .await;
+    let got = stranger.session(&llm(), DataClass::Notes, Tier::Fast).await;
     match got {
         Err(ClientError::Transport(TransportError::Malformed(why))) => {
             assert!(why.contains("caller"), "{why}");
@@ -305,3 +318,6 @@ fn cua_need() -> Need {
 
 #[path = "hosted/cua.rs"]
 mod cua;
+
+#[path = "hosted/members.rs"]
+mod members;

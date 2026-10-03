@@ -155,8 +155,13 @@ impl World {
                 }),
             },
         );
-        let served = Engines::new(models.clone(), supervised.clone(), plan.policy, TierMap::default())
-            .with_remote(plan.remote);
+        let served = Engines::new(
+            models.clone(),
+            supervised.clone(),
+            plan.policy,
+            TierMap::default(),
+        )
+        .with_remote(plan.remote);
         let bus = PrivateBus::start();
         let daemon = bus.connect().await;
         let client = bus.connect().await;

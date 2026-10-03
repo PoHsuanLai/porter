@@ -14,9 +14,7 @@ use crate::supervise::{Snapshot, Supervised};
 use engine_supervisor::EngineState;
 use porter_core::consent::Availability;
 use porter_core::{DataClass, Need, Tier};
-use porter_infer::{
-    InferRefusal, ModelCard, ModelRef, Policy, Readiness, ServedBy, TierMap,
-};
+use porter_infer::{InferRefusal, ModelCard, ModelRef, Policy, Readiness, ServedBy, TierMap};
 use std::sync::Arc;
 use std::time::Duration;
 

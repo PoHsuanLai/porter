@@ -15,8 +15,8 @@ use crate::session::SessionSpec;
 use porter_core::{DataClass, Tier};
 use porter_dbus::{Details, INFERENCE_BUS, INFERENCE_PATH, NeedArg, need_from_dbus};
 use porter_infer::InferRefusal;
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use std::os::unix::net::UnixStream as StdStream;
 use std::sync::Arc;
 use tokio::net::UnixStream;
@@ -69,6 +69,14 @@ fn unknown_caller() -> fdo::Error {
     fdo::Error::AccessDenied("inferd: the caller is not in its caller table".into())
 }
 
+/// The W3C trace context of a call, if it carries a valid one (`traceparent` in the options; an
+/// unknown key is ignored, as the interface says). No spans are written yet.
+fn trace_of(options: &Details) -> Option<porter_infer::Traceparent> {
+    let value = options.get(porter_dbus::OPTION_TRACEPARENT)?;
+    let text = String::try_from(value.try_clone().ok()?).ok()?;
+    porter_infer::Traceparent::parse(&text).ok()
+}
+
 fn failed(why: impl ToString) -> fdo::Error {
     fdo::Error::Failed(why.to_string())
 }
@@ -114,11 +122,14 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         #[zbus(header)] header: Header<'_>,
         need: NeedArg,
         class: String,
-        _options: Details,
+        options: Details,
     ) -> fdo::Result<String> {
         let caller = self.caller(&header).await?;
+        let _trace = trace_of(&options);
         let spec = Self::spec(need, &class, "balanced")?;
-        let availability = self.engines.availability(&spec.need, spec.class, caller.role);
+        let availability = self
+            .engines
+            .availability(&spec.need, spec.class, caller.role);
         Ok(slug(&availability, "kind"))
     }
 
@@ -128,9 +139,10 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         need: NeedArg,
         class: String,
         tier: String,
-        _options: Details,
+        options: Details,
     ) -> fdo::Result<OwnedFd> {
         let caller = self.caller(&header).await?;
+        let _trace = trace_of(&options);
         let spec = Self::spec(need, &class, &tier)?;
         self.open_session(caller, spec)
     }
@@ -141,28 +153,32 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         need: NeedArg,
         class: String,
         tier: String,
-        _options: Details,
+        options: Details,
     ) -> fdo::Result<String> {
         let caller = self.caller(&header).await?;
+        let _trace = trace_of(&options);
         let spec = Self::spec(need, &class, &tier)?;
-        Ok(match self
-            .engines
-            .prepare_as(&spec.need, spec.class, spec.tier, caller.role)
-            .await
-        {
-            Ok(readiness) => readiness.slug().to_owned(),
-            Err(refusal) => refusal_slug(&refusal),
-        })
+        Ok(
+            match self
+                .engines
+                .prepare_as(&spec.need, spec.class, spec.tier, caller.role)
+                .await
+            {
+                Ok(readiness) => readiness.slug().to_owned(),
+                Err(refusal) => refusal_slug(&refusal),
+            },
+        )
     }
 
-    /// What the caller used this period. Nothing meters yet, so the dictionary is empty.
+    // What the caller used this period. Nothing meters yet, so the dictionary is empty.
+    // (Plain comments: a doc comment on a member would change the introspection XML.)
     async fn usage(&self, #[zbus(header)] header: Header<'_>) -> fdo::Result<Details> {
         self.caller(&header).await?;
         Ok(Details::new())
     }
 
-    /// Looks again: weights that arrived, engines that stopped. Readiness is read live, so this
-    /// only tells listeners to re-read it.
+    // Looks again: weights that arrived, engines that stopped. Readiness is read live, so this
+    // only tells listeners to re-read it.
     async fn rescan(
         &self,
         #[zbus(header)] header: Header<'_>,
@@ -197,12 +213,13 @@ where
     C: Clock + Clone + 'static,
 {
     let supervised = daemon.engines.supervised().clone();
-    connection.object_server().at(INFERENCE_PATH, daemon).await?;
-    connection.request_name(INFERENCE_BUS).await?;
-    let iface: zbus::object_server::InterfaceRef<Inference<P, O, C>> = connection
+    connection
         .object_server()
-        .interface(INFERENCE_PATH)
+        .at(INFERENCE_PATH, daemon)
         .await?;
+    connection.request_name(INFERENCE_BUS).await?;
+    let iface: zbus::object_server::InterfaceRef<Inference<P, O, C>> =
+        connection.object_server().interface(INFERENCE_PATH).await?;
     tokio::spawn(async move {
         while supervised.changed().await.is_ok() {
             let emitter = iface.signal_emitter();
@@ -213,3 +230,6 @@ where
     });
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

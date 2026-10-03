@@ -1,0 +1,47 @@
+# inferd's configuration: $XDG_CONFIG_HOME/quire/inferd.toml. Every table is optional; without the
+# file inferd serves nobody (no callers) and runs nothing (no engine programs).
+
+# Where the engine programs are, never found from the environment. A kind with no program is not
+# offered: a catalog model whose only engine is vLLM is not available until vllm_python is set.
+# hf_cache is the Hugging Face hub directory the weights were downloaded into (by hand for now);
+# it defaults to $HF_HOME/hub, else ~/.cache/huggingface/hub.
+[engines]
+# vllm_python = "/home/you/vllm/.venv/bin/python"
+# llama_server = "/usr/bin/llama-server"
+# speech_host = "/usr/libexec/quire/speech-host"
+# kokoro_python = "/home/you/kokoro/.venv/bin/python"
+# hf_cache = "/data/hf/hub"
+
+# The user's AI policy (settings ai.local_only and ai.floor.<class>); the design's proposed
+# defaults when absent: local-only on, and personal classes (mail, photos, notes, files, contacts,
+# calendar, screen, clipboard, voice, prompt) on this computer.
+# [policy]
+# local_only = "on"
+# floors = [{ class = "mail", floor = "on_device" }]
+
+# The user's model for a kind and tier (settings ai.model.<kind>.<tier>).
+# [[tiers.rows]]
+# kind = "llm"
+# tier = "balanced"
+# model = { account = "local", model = "holo-3.1-4b" }
+
+# What a catalog entry does not say about an embedding model: its vector length, limits and the
+# prefixes of a query and a document. memoryd asks for nomic-embed-text v1.5 (768 numbers).
+# [[embedding]]
+# model = "nomic-embed-text-v1.5"
+# dims = 768
+# max_input = 2048
+# max_batch = 32
+# query_prefix = "search_query: "
+# document_prefix = "search_document: "
+
+# Who may call. A caller is the executable behind a bus connection (the bus names its process,
+# /proc/<pid>/exe names the program); one that is not here is refused. cuad is the only caller that
+# may open a computer-use session.
+[callers]
+cua = ["/usr/libexec/quire/cuad"]
+[callers.apps]
+"org.quire.Memory" = ["/usr/libexec/quire/memoryd"]
+"org.quire.Intents" = ["/usr/libexec/quire/intentd"]
+"org.quire.Companion" = ["/usr/libexec/quire/companiond"]
+"org.quire.Reader" = ["/usr/libexec/quire/readerd"]

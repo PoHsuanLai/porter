@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=org.quire.Inference1
+Exec=/usr/libexec/quire/inferd
+SystemdService=inferd.service

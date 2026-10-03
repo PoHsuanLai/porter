@@ -180,7 +180,10 @@ where
 
     async fn run(mut self, mut inbox: mpsc::UnboundedReceiver<Command>) {
         loop {
-            let next = self.wakes.first().map(|at| self.origin + Duration::from_millis(at.0));
+            let next = self
+                .wakes
+                .first()
+                .map(|at| self.origin + Duration::from_millis(at.0));
             tokio::select! {
                 command = inbox.recv() => match command {
                     None => break,
