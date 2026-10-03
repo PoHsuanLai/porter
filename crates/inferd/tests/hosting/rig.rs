@@ -7,7 +7,7 @@ use engine_supervisor::{
     SupervisorConfig, UnitSpec,
 };
 use inferd::audit::Memory;
-use inferd::catalog::{CatalogDirs, EmbedSpec, read_catalog};
+use inferd::catalog::{CatalogDirs, read_catalog};
 use inferd::clock::FixedClock;
 use inferd::engines::Engines;
 use inferd::local::{EngineConfig, LocalModel, build};
@@ -52,8 +52,6 @@ pub struct Plan {
     /// What each model's engine says, by catalog id; a model with no script has no engine
     /// listening on its socket.
     pub scripts: Vec<(&'static str, Script)>,
-    /// What the catalog does not say about embedding models.
-    pub embeds: Vec<EmbedSpec>,
     /// Models of accounts that are not on this computer.
     pub remote: Vec<ModelCard>,
     /// The policy in force.
@@ -67,7 +65,6 @@ impl Default for Plan {
         Self {
             catalog: Vec::new(),
             scripts: Vec::new(),
-            embeds: Vec::new(),
             remote: Vec::new(),
             policy: Policy::proposed(),
             role: Role::App,
@@ -125,7 +122,7 @@ impl World {
         };
         let sockets = scratch.join("s");
         std::fs::create_dir_all(&sockets).expect("sockets dir");
-        let models = build(&catalog.entries, &plan.embeds, &engines_config, &sockets);
+        let models = build(&catalog.entries, &engines_config, &sockets);
         for model in &models {
             // The weights are "in the cache": the directory the sandbox binds exists.
             let repo = model.spec.unit.sandbox.read.first().expect("a bind");

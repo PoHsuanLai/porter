@@ -18,7 +18,7 @@ fn capabilities(id: &str) -> Vec<Capability> {
         .iter()
         .find(|entry| entry.id.0 == id)
         .unwrap_or_else(|| panic!("no shipped entry {id}"));
-    capabilities_of(entry, &[])
+    capabilities_of(entry)
 }
 
 #[test]
@@ -95,27 +95,14 @@ fn local_claims_are_curated_per_model_and_leave_embedding_models_out() {
         claims
             .iter()
             .all(|c| !matches!(&c.offer, Offer::Present(Capability::Embeddings(_)))),
-        "the shipped catalog has no embedding entry, and one without an `EmbedSpec` makes none"
+        "the shipped catalog has no embedding entry"
     );
 }
 
 #[test]
-fn an_embedding_entry_makes_a_claim_only_when_a_spec_names_it() {
+fn an_embedding_entry_makes_a_claim_from_its_embed_table() {
     let entry = parse_entry(&entries::embed()).expect("entry");
-    assert_eq!(claims_of(&entry, &[]), vec![]);
-    let spec = EmbedSpec {
-        model: "tiny-embed".into(),
-        dims: 768,
-        max_input: 2048,
-        max_batch: 32,
-        query_prefix: "search_query: ".into(),
-        document_prefix: "search_document: ".into(),
-    };
-    let other = EmbedSpec {
-        model: "another".into(),
-        ..spec.clone()
-    };
-    let claims = claims_of(&entry, &[other, spec]);
+    let claims = claims_of(&entry);
     let [
         Claim {
             offer: Offer::Present(Capability::Embeddings(cap)),
@@ -127,8 +114,9 @@ fn an_embedding_entry_makes_a_claim_only_when_a_spec_names_it() {
         panic!("one embeddings claim: {claims:?}");
     };
     assert_eq!(model.as_str(), "tiny-embed");
-    assert_eq!(cap.dims, Dims(768));
-    assert_eq!(cap.max_batch, Count(32));
+    assert_eq!(cap.dims, Dims(4));
+    assert_eq!(cap.max_input, Tokens(512));
+    assert_eq!(cap.max_batch, Count(2));
     assert_eq!(cap.prompts.query, PrefixText("search_query: ".into()));
     assert_eq!(cap.modalities, BTreeSet::from([Modality::Text]));
 }
@@ -173,7 +161,7 @@ fn a_computer_use_entry_without_a_tool_dialect_makes_no_computer_use_claim() {
         r#"{ kind = "text", v = "ui_tars15" }"#,
     );
     let entry = parse_entry(&text).expect("entry");
-    let caps = capabilities_of(&entry, &[]);
+    let caps = capabilities_of(&entry);
     assert!(
         caps.iter()
             .all(|c| !matches!(c, Capability::ComputerUse(_))),

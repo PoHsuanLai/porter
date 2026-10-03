@@ -1,7 +1,7 @@
 use super::*;
 use crate::catalog::parse_entry_text;
 use crate::entries;
-use crate::testkit::{Scratch, embed_spec, models};
+use crate::testkit::{Scratch, models};
 use porter_core::capability::LlmFeature;
 
 #[test]
@@ -27,21 +27,34 @@ fn each_entry_with_a_capability_and_a_configured_engine_becomes_a_model() {
 }
 
 #[test]
-fn an_embedding_model_carries_its_spec_and_without_one_it_is_not_a_model() {
+fn an_embedding_model_carries_its_catalog_table_and_without_one_it_is_not_a_model() {
     let scratch = Scratch::new("local-embed");
+    let models = models(&scratch);
     assert_eq!(
-        models(&scratch)[1].embed.as_ref().map(|spec| spec.dims),
-        Some(4)
+        models[1].embed().map(|embed| embed.dims.0),
+        Some(4),
+        "read from the entry's `embed` table"
     );
-    let entry = parse_entry_text(&entries::embed()).expect("entry");
+    assert_eq!(
+        models[1].caps(),
+        None,
+        "an embeddings-only entry has no chat fields"
+    );
+    // The cache of an embedding-only entry is sized for its longest input (512 tokens).
+    assert_eq!(models[1].spec.need.0, 50 + 1 + 50);
     let config = EngineConfig {
         llama_server: Some(PathBuf::from("/x")),
         hf_cache: scratch.path().join("hf"),
         ..EngineConfig::default()
     };
-    assert!(build(std::slice::from_ref(&entry), &[], &config, scratch.path()).is_empty());
-    let with = build(&[entry], &[embed_spec()], &config, scratch.path());
-    assert_eq!(with.len(), 1);
+    // The same entry without its table, kept as an embeddings role with chat fields, makes no
+    // claim and so no model.
+    let chat_fields = parse_entry_text(
+        &entries::chat().replace(r#"roles = ["llm"]"#, r#"roles = ["embeddings"]"#),
+    )
+    .expect("entry");
+    assert!(chat_fields.embed.is_none());
+    assert!(build(&[chat_fields], &config, scratch.path()).is_empty());
 }
 
 #[test]
@@ -57,10 +70,10 @@ fn an_engine_kind_with_no_program_is_not_offered() {
         hf_cache: scratch.path().join("hf"),
         ..EngineConfig::default()
     };
-    let only_vllm = build(&entries, &[], &config, scratch.path());
+    let only_vllm = build(&entries, &config, scratch.path());
     let ids: Vec<&str> = only_vllm.iter().map(|m| m.card.model.as_str()).collect();
     assert_eq!(ids, ["tiny-cua"]);
-    assert!(build(&entries, &[], &EngineConfig::default(), scratch.path()).is_empty());
+    assert!(build(&entries, &EngineConfig::default(), scratch.path()).is_empty());
 }
 
 #[test]
@@ -72,7 +85,7 @@ fn weights_are_looked_for_live_in_the_cache() {
         hf_cache: scratch.path().join("hf"),
         ..EngineConfig::default()
     };
-    let models = build(&entries, &[], &config, scratch.path());
+    let models = build(&entries, &config, scratch.path());
     let model = &models[0];
     assert_eq!(model.weights(), Weights::Missing);
     std::fs::create_dir_all(model.spec.unit.sandbox.read.first().expect("bind")).expect("dir");

@@ -8,7 +8,6 @@ mod hosting;
 use hosting::engine::{Chat, Script};
 use hosting::entries;
 use hosting::rig::{Plan, World, test_app};
-use inferd::catalog::EmbedSpec;
 use inferd::peers::Role;
 use porter_client::{Accounts, ClientError, DbusTransport, InferSession, TransportError};
 use porter_core::capability::{CuaEnv, LlmFeature, Modality};
@@ -164,14 +163,6 @@ fn embed_world() -> Plan {
                 dims: 4,
             },
         )],
-        embeds: vec![EmbedSpec {
-            model: "tiny-embed".into(),
-            dims: 4,
-            max_input: 512,
-            max_batch: 2,
-            query_prefix: "search_query: ".into(),
-            document_prefix: "search_document: ".into(),
-        }],
         ..Plan::default()
     }
 }

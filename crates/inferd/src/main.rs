@@ -48,12 +48,7 @@ async fn run(args: Args) -> Result<(), String> {
     for skipped in &catalog.skipped {
         eprintln!("inferd: catalog: {}: {}", skipped.what, skipped.why);
     }
-    let models = build(
-        &catalog.entries,
-        &config.embedding,
-        &config.engines_in(&dirs),
-        &dirs.sockets,
-    );
+    let models = build(&catalog.entries, &config.engines_in(&dirs), &dirs.sockets);
     std::fs::DirBuilder::new()
         .recursive(true)
         .mode(0o700)

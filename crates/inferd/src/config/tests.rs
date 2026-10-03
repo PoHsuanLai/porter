@@ -91,14 +91,6 @@ hf_cache = "/data/hub"
 local_only = "off"
 floors = [{ class = "mail", floor = "local_network" }]
 
-[[embedding]]
-model = "nomic-embed-text-v1.5"
-dims = 768
-max_input = 2048
-max_batch = 32
-query_prefix = "search_query: "
-document_prefix = "search_document: "
-
 [callers]
 cua = ["/usr/libexec/quire/cuad"]
 [callers.apps]
@@ -119,7 +111,6 @@ cua = ["/usr/libexec/quire/cuad"]
         Floor::Anywhere,
         "a class with no row may go anywhere"
     );
-    assert_eq!(config.embedding[0].dims, 768);
     assert!(
         config
             .callers
@@ -134,7 +125,7 @@ fn a_file_that_does_not_read_says_why() {
         "[engines",
         "engines = 3",
         "[policy]\nlocal_only = \"maybe\"",
-        "[[embedding]]\nmodel = 1",
+        "callers = 3",
     ] {
         assert!(
             matches!(InferdConfig::from_toml(text), Err(ConfigError::Toml(_))),

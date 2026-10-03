@@ -3,20 +3,22 @@
 //! (`Discovery::Supervised`). The parsing and the merge are stoker's `model-catalog`; this module
 //! reads the directories and maps an entry's capabilities to porter's vocabulary.
 //!
-//! An entry with the `embeddings` role makes a claim only when an [`EmbedSpec`] names it: the
-//! catalog entry has no field for the vector length, the batch limit or the query and document
-//! prefixes (stoker interface ask: `ModelEntry.embed: Option<EmbedCaps>`), so inferd's own
-//! configuration supplies them until it has.
+//! An entry with the `embeddings` role makes a claim when it has the `embed` table
+//! (`ModelEntry.embed`: the vector length, the batch and input limits, the query and document
+//! prefixes); without the table it makes none. inferd keeps no override of its own: the catalog is
+//! the one place a model's details are written, and a user who needs other prefixes writes a
+//! catalog file of the same id in `$XDG_DATA_HOME/stoker/catalog`.
 
 use cua_action::CuaDialect;
 use model_catalog::{CatalogKind, ModelEntry, merge_catalogs, parse_entry};
-use model_provider::{Caps, Constraint, CuaSupport, InputKind, Support, ToolSupport, Zoom};
+use model_provider::{
+    Caps, Constraint, CuaSupport, EmbedCaps, InputKind, Support, ToolSupport, Zoom,
+};
 use porter_core::capability::{
     Capability, CuaBatching, CuaCap, CuaEnv, EmbedCap, EmbedPrompts, LanguageSet, LanguageTag,
     LlmCap, LlmFeature, LlmWire, Modality, Offered, PrefixText, SpeechCap, SpeechMode,
 };
 use porter_core::{Claim, Count, Dims, ModelId, Offer, Provenance, Px, Subject, Tokens};
-use serde::{Deserialize, Serialize};
 use speech_provider::{LangSet, SpeechDir};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -29,23 +31,6 @@ pub struct CatalogDirs {
     pub system: PathBuf,
     /// `$XDG_DATA_HOME/stoker/catalog`; a file here replaces the system file of the same id.
     pub user: PathBuf,
-}
-
-/// What an embedding model's catalog entry does not say (see the module docs).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct EmbedSpec {
-    /// The catalog id of the entry this describes.
-    pub model: String,
-    /// The vector length.
-    pub dims: u32,
-    /// The longest input, in tokens.
-    pub max_input: u32,
-    /// The most texts in one request.
-    pub max_batch: u32,
-    /// What is put before a query.
-    pub query_prefix: String,
-    /// What is put before a document.
-    pub document_prefix: String,
 }
 
 /// A catalog file that was not used, and why.
@@ -110,22 +95,22 @@ fn read_dir(dir: &Path) -> (Vec<ModelEntry>, Vec<Skipped>) {
 }
 
 /// The claims the catalog makes for the local account: one per model and capability, at the
-/// provenance the catalog gives (`Curated`). Embedding models are left out (see [`claims_of`]).
+/// provenance the catalog gives (`Curated`).
 pub fn local_claims(dirs: &CatalogDirs) -> Vec<Claim> {
     read_catalog(dirs)
         .entries
         .iter()
-        .flat_map(|entry| claims_of(entry, &[]))
+        .flat_map(claims_of)
         .collect()
 }
 
 /// The claims of one entry: a language model, a computer-use model, a speech model, an
-/// embedding model that `embeds` names. An entry whose id is not a model id makes none.
-pub fn claims_of(entry: &ModelEntry, embeds: &[EmbedSpec]) -> Vec<Claim> {
+/// embedding model with an `embed` table. An entry whose id is not a model id makes none.
+pub fn claims_of(entry: &ModelEntry) -> Vec<Claim> {
     let Ok(model) = ModelId::parse(&entry.id.0) else {
         return Vec::new();
     };
-    capabilities_of(entry, embeds)
+    capabilities_of(entry)
         .into_iter()
         .map(|capability| Claim {
             subject: Subject::Model(model.clone()),
@@ -136,17 +121,17 @@ pub fn claims_of(entry: &ModelEntry, embeds: &[EmbedSpec]) -> Vec<Claim> {
 }
 
 /// What the entry's roles make of it, in role order.
-pub fn capabilities_of(entry: &ModelEntry, embeds: &[EmbedSpec]) -> Vec<Capability> {
+pub fn capabilities_of(entry: &ModelEntry) -> Vec<Capability> {
     entry
         .roles
         .iter()
         .filter_map(|role| match (role, &entry.caps) {
             (CatalogKind::Llm, Some(caps)) => Some(Capability::Llm(llm_cap(caps, entry))),
             (CatalogKind::ComputerUse, Some(caps)) => cua_cap(caps).map(Capability::ComputerUse),
-            (CatalogKind::Embeddings, _) => embeds
-                .iter()
-                .find(|spec| spec.model == entry.id.0)
-                .map(|spec| Capability::Embeddings(embed_cap(spec))),
+            (CatalogKind::Embeddings, _) => entry
+                .embed
+                .as_ref()
+                .map(|embed| Capability::Embeddings(embed_cap(embed))),
             (CatalogKind::SpeechIn | CatalogKind::SpeechOut, _) => speech_cap(entry),
             _ => None,
         })
@@ -239,15 +224,15 @@ fn speech_cap(entry: &ModelEntry) -> Option<Capability> {
     }))
 }
 
-fn embed_cap(spec: &EmbedSpec) -> EmbedCap {
+fn embed_cap(embed: &EmbedCaps) -> EmbedCap {
     EmbedCap {
-        dims: Dims(spec.dims),
+        dims: Dims(embed.dims.0),
         modalities: BTreeSet::from([Modality::Text]),
-        max_input: Tokens(spec.max_input),
-        max_batch: Count(spec.max_batch),
+        max_input: Tokens(embed.max_input.0),
+        max_batch: Count(embed.max_batch.0),
         prompts: Box::new(EmbedPrompts {
-            query: PrefixText(spec.query_prefix.clone()),
-            document: PrefixText(spec.document_prefix.clone()),
+            query: PrefixText(embed.prompts.query.0.clone()),
+            document: PrefixText(embed.prompts.document.0.clone()),
         }),
     }
 }

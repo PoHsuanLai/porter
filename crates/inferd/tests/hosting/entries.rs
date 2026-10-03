@@ -31,31 +31,22 @@ weights = {{ kind = "gguf", v = {{ model = "m.gguf", mmproj = "p.gguf" }} }}
     )
 }
 
+/// An embedding-only entry: the `embed` table is all it needs (no chat fields).
 pub fn embed() -> String {
-    format!(
-        r#"id = "tiny-embed"
+    r#"id = "tiny-embed"
 label = "Tiny embedder"
-licence = {{ kind = "open", v = "MIT" }}
-source = {{ kind = "hugging_face", v = {{ repo = "test/tiny-embed", revision = "0000000000000000000000000000000000000002" }} }}
-vram = {{ weights_mib = 50, kv_per_1k_ctx_mib = 1, overhead_mib = 50 }}
+licence = { kind = "open", v = "MIT" }
+source = { kind = "hugging_face", v = { repo = "test/tiny-embed", revision = "0000000000000000000000000000000000000002" } }
+vram = { weights_mib = 50, kv_per_1k_ctx_mib = 1, overhead_mib = 50 }
 roles = ["embeddings"]
-inputs = ["text"]
-tools = "absent"
-output = []
-reasoning = "absent"
-streaming = "absent"
-context = 2048
-max_output = 1
-{SAMPLING}
-images = {{ per_prompt = 0, rule = {{ kind = "identity" }}, space = {{ kind = "image" }} }}
-computer_use = {{ kind = "absent" }}
+embed = { dims = 4, max_batch = 2, max_input = 512, prompts = { query = "search_query: ", document = "search_document: " } }
 
 [[engine]]
 kind = "llama_server"
-args = []
-weights = {{ kind = "gguf", v = {{ model = "e.gguf", mmproj = "p.gguf" }} }}
+args = ["--embeddings"]
+weights = { kind = "gguf", v = { model = "e.gguf", mmproj = "" } }
 "#
-    )
+    .to_string()
 }
 
 pub fn cua() -> String {

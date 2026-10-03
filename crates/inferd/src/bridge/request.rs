@@ -338,16 +338,16 @@ pub fn embed_turns(
     model: &LocalModel,
     request: &pi::EmbedRequest,
 ) -> Result<Vec<sp::EmbedTurn>, BridgeError> {
-    let spec = model.embed.as_ref().ok_or(BridgeError::Unsupported)?;
+    let embed = model.embed().ok_or(BridgeError::Unsupported)?;
     let (prefix, role) = match request.role {
-        pi::EmbedRole::Query => (&spec.query_prefix, sp::EmbedRole::Query),
-        pi::EmbedRole::Document => (&spec.document_prefix, sp::EmbedRole::Document),
+        pi::EmbedRole::Query => (&embed.prompts.query.0, sp::EmbedRole::Query),
+        pi::EmbedRole::Document => (&embed.prompts.document.0, sp::EmbedRole::Document),
     };
     let dims = match request.dims {
         DimsNeed::Any => sp::Knob::Off,
         DimsNeed::Exactly(dims) => sp::Knob::Set(sp::Dims(dims.0)),
     };
-    let batches = sp::plan_batches(request.inputs.len(), sp::BatchMax(spec.max_batch));
+    let batches = sp::plan_batches(request.inputs.len(), embed.max_batch);
     Ok(batches
         .into_iter()
         .map(|range| sp::EmbedTurn {

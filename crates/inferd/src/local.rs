@@ -6,11 +6,11 @@
 //! cache is `Downloadable`, and there is no downloader yet), and the engine programs come from
 //! configuration, never from the environment.
 
-use crate::catalog::{EmbedSpec, claims_of};
+use crate::catalog::claims_of;
 use engine_supervisor::{EnginePaths, EngineSpec, ProgramPath, SocketPath, command};
 use model_catalog::{EngineKind, EngineProfile, ModelEntry};
 use model_openai_compat::Flavor;
-use model_provider::{Caps, ModelName};
+use model_provider::{Caps, EmbedCaps, ModelName, Tokens};
 use porter_core::{AccountId, Billing, Capability, Locality, ModelId, Offer};
 use porter_infer::{ModelCard, ModelRef};
 use serde::{Deserialize, Serialize};
@@ -92,8 +92,6 @@ pub struct LocalModel {
     pub socket: SocketPath,
     /// The wire dialect of the engine, for the chat kinds.
     pub flavor: Option<Flavor>,
-    /// The embedding model's prefixes and width, when the card offers embeddings.
-    pub embed: Option<EmbedSpec>,
 }
 
 impl LocalModel {
@@ -119,6 +117,11 @@ impl LocalModel {
     pub fn caps(&self) -> Option<&Caps> {
         self.entry.caps.as_ref()
     }
+
+    /// The embedding capabilities of the entry (width, limits, prefixes), when it embeds.
+    pub fn embed(&self) -> Option<&EmbedCaps> {
+        self.entry.embed.as_ref()
+    }
 }
 
 fn kind_slug(kind: EngineKind) -> &'static str {
@@ -141,26 +144,16 @@ fn flavor_of(kind: EngineKind) -> Option<Flavor> {
 /// The models `entries` make on this computer: those with a capability, and an engine profile
 /// whose program is configured. The first such profile of an entry is the one used.
 /// `sockets` is the directory the engines' sockets go in (`$XDG_RUNTIME_DIR/inferd`).
-pub fn build(
-    entries: &[ModelEntry],
-    embeds: &[EmbedSpec],
-    engines: &EngineConfig,
-    sockets: &Path,
-) -> Vec<LocalModel> {
+pub fn build(entries: &[ModelEntry], engines: &EngineConfig, sockets: &Path) -> Vec<LocalModel> {
     entries
         .iter()
-        .filter_map(|entry| one(entry, embeds, engines, sockets))
+        .filter_map(|entry| one(entry, engines, sockets))
         .collect()
 }
 
-fn one(
-    entry: &ModelEntry,
-    embeds: &[EmbedSpec],
-    engines: &EngineConfig,
-    sockets: &Path,
-) -> Option<LocalModel> {
+fn one(entry: &ModelEntry, engines: &EngineConfig, sockets: &Path) -> Option<LocalModel> {
     let model = ModelId::parse(&entry.id.0).ok()?;
-    let capabilities: Vec<Capability> = claims_of(entry, embeds)
+    let capabilities: Vec<Capability> = claims_of(entry)
         .into_iter()
         .filter_map(|claim| match claim.offer {
             Offer::Present(capability) => Some(capability),
@@ -179,11 +172,12 @@ fn one(
     let socket =
         SocketPath(sockets.join(format!("{}-{}.sock", kind_slug(profile.kind), entry.id.0)));
     let unit = command(entry, &profile, &engines.paths(), &socket);
-    let context = entry
-        .caps
-        .as_ref()
-        .map(|caps| caps.context)
-        .unwrap_or_default();
+    // An embedding-only entry has no chat context: its longest input is what the cache holds.
+    let context = match (&entry.caps, &entry.embed) {
+        (Some(caps), _) => caps.context,
+        (None, Some(embed)) => embed.max_input,
+        (None, None) => Tokens::default(),
+    };
     Some(LocalModel {
         card: ModelCard {
             account: AccountId::parse(LOCAL_ACCOUNT).ok()?,
@@ -200,7 +194,6 @@ fn one(
         },
         socket,
         flavor: flavor_of(profile.kind),
-        embed: embeds.iter().find(|spec| spec.model == entry.id.0).cloned(),
         entry: entry.clone(),
         profile,
     })

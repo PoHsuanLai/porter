@@ -1,7 +1,7 @@
 //! Helpers the unit tests share: a scratch directory that removes itself, and the local models of
 //! the test catalog entries.
 
-use crate::catalog::{EmbedSpec, parse_entry_text};
+use crate::catalog::parse_entry_text;
 use crate::entries;
 use crate::local::{EngineConfig, LocalModel, build};
 use engine_supervisor::{EngineHost, EngineId, ExitCode, HostError, UnitSpec};
@@ -38,17 +38,6 @@ impl Drop for Scratch {
     }
 }
 
-pub fn embed_spec() -> EmbedSpec {
-    EmbedSpec {
-        model: "tiny-embed".into(),
-        dims: 4,
-        max_input: 512,
-        max_batch: 2,
-        query_prefix: "search_query: ".into(),
-        document_prefix: "search_document: ".into(),
-    }
-}
-
 /// The three test models (`tiny-chat`, `tiny-embed`, `tiny-cua`), with engine programs
 /// configured and the weights directories created under `scratch`.
 pub fn models(scratch: &Scratch) -> Vec<LocalModel> {
@@ -63,12 +52,7 @@ pub fn models(scratch: &Scratch) -> Vec<LocalModel> {
         kokoro_python: None,
         hf_cache: scratch.path().join("hf"),
     };
-    let models = build(
-        &entries,
-        &[embed_spec()],
-        &config,
-        &scratch.path().join("s"),
-    );
+    let models = build(&entries, &config, &scratch.path().join("s"));
     for model in &models {
         std::fs::create_dir_all(model.spec.unit.sandbox.read.first().expect("bind"))
             .expect("weights");

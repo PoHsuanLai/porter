@@ -2,7 +2,7 @@
 //! configuration are. The engine programs and the caller table come from the file, never from the
 //! environment; the directories come from the XDG variables (injected, so a test names its own).
 
-use crate::catalog::{CatalogDirs, EmbedSpec};
+use crate::catalog::CatalogDirs;
 use crate::local::EngineConfig;
 use crate::peers::CallerTable;
 use porter_infer::{Policy, TierMap};
@@ -33,9 +33,6 @@ pub struct InferdConfig {
     /// The user's tier map (settings `ai.model.<kind>.<tier>`).
     #[serde(default)]
     pub tiers: TierMap,
-    /// What the catalog does not say about embedding models.
-    #[serde(default)]
-    pub embedding: Vec<EmbedSpec>,
     /// Which executable is which caller.
     #[serde(default)]
     pub callers: CallerTable,
