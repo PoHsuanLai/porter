@@ -3,11 +3,15 @@
 
 #[cfg(feature = "dbus")]
 mod dbus;
+#[cfg(feature = "dbus")]
+mod dbus_session;
 mod in_process;
 mod socket;
 
 #[cfg(feature = "dbus")]
-pub use dbus::{DbusSession, DbusTransport};
+pub use dbus::DbusTransport;
+#[cfg(feature = "dbus")]
+pub use dbus_session::{DbusSession, MAX_ATTACHMENTS};
 pub use in_process::{InProcess, InProcessSession};
 pub use socket::{SocketSession, SocketTransport};
 

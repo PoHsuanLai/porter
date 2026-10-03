@@ -1,7 +1,7 @@
 //! `Accounts`: the app's handle on porter.
 
-use crate::env::ClientEnv;
-use crate::error::ClientError;
+use crate::env::{ClientEnv, LinkChoice};
+use crate::error::{ClientError, TransportError};
 use crate::found::{ConsentOffer, Found, found};
 use crate::transport::{AnyTransport, Transport};
 use porter_core::consent::{Grant, Usage};
@@ -19,10 +19,33 @@ pub struct Accounts<T> {
 }
 
 impl Accounts<AnyTransport> {
-    /// Connects over the first reachable link in `env` (D-Bus on the desktop, the latchkey
-    /// socket elsewhere).
-    pub async fn connect(_env: &ClientEnv) -> Result<Self, ClientError> {
-        todo!("try each LinkChoice in order: the session bus name, then the socket")
+    /// Connects over the first reachable link in `env`, in order (D-Bus on the desktop, the
+    /// latchkey socket elsewhere). A D-Bus link is reachable when the session bus is: the
+    /// daemons are found, and started by bus activation, at the first call, so a machine with
+    /// inferd and no accountd still connects. Without the `dbus` feature, and for a socket
+    /// link (its carrier is not built), a link is skipped; no reachable link is
+    /// `TransportError::Unreachable`.
+    pub async fn connect(env: &ClientEnv) -> Result<Self, ClientError> {
+        for link in &env.links {
+            if let Some(transport) = reach(link).await {
+                return Ok(Self { transport });
+            }
+        }
+        Err(TransportError::Unreachable.into())
+    }
+}
+
+/// The transport for one link, if it is reachable.
+async fn reach(link: &LinkChoice) -> Option<AnyTransport> {
+    match link {
+        #[cfg(feature = "dbus")]
+        LinkChoice::Dbus => crate::transport::DbusTransport::session()
+            .await
+            .ok()
+            .map(AnyTransport::Dbus),
+        #[cfg(not(feature = "dbus"))]
+        LinkChoice::Dbus => None,
+        LinkChoice::Socket(_) => None,
     }
 }
 
@@ -176,21 +199,21 @@ impl<T: Transport> Accounts<T> {
         request: InferRequest,
     ) -> Result<InferReply, ClientError> {
         let mut session = self.session(need, class, tier).await?;
-        session
-            .send(ClientFrame::Request(request))
-            .await
-            .map_err(crate::error::TransportError::from)?;
+        // A daemon that refuses a session writes the refusal and hangs up, so the write can
+        // fail while the answer is already waiting: read first, and report the write only
+        // when there is nothing to read.
+        let sent = session.send(ClientFrame::Request(request)).await;
         loop {
-            match session
-                .next()
-                .await
-                .map_err(crate::error::TransportError::from)?
-            {
-                InferEvent::Finished(InferReply::Refused(refusal)) => {
+            match session.next().await {
+                Ok(InferEvent::Finished(InferReply::Refused(refusal))) => {
                     return Err(ClientError::InferRefused(refusal));
                 }
-                InferEvent::Finished(reply) => return Ok(reply),
-                _ => {}
+                Ok(InferEvent::Finished(reply)) => return Ok(reply),
+                Ok(_) => {}
+                Err(read) => {
+                    let why = sent.err().unwrap_or(read);
+                    return Err(crate::error::TransportError::from(why).into());
+                }
             }
         }
     }

@@ -15,15 +15,20 @@ porter-provider = { workspace = true }
 porter-secrets = { workspace = true }
 porter-service = { workspace = true }
 porter-dbus = { workspace = true, optional = true }
+rustix = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 thiserror = { workspace = true }
+tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
 porter-fake = { workspace = true }
 tokio = { workspace = true }
+zbus = { workspace = true }
 
 [features]
 # The D-Bus transport (Linux, the desktop's accountd).
-dbus = ["dep:porter-dbus"]
+dbus = ["dep:porter-dbus", "dep:rustix", "dep:serde", "dep:serde_json", "dep:tokio"]
 
 [lints]
 workspace = true

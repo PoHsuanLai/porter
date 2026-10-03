@@ -515,8 +515,12 @@ dependencies = [
  "porter-provider",
  "porter-secrets",
  "porter-service",
+ "rustix",
+ "serde",
+ "serde_json",
  "thiserror",
  "tokio",
+ "zbus",
 ]
 
 [[package]]
@@ -533,6 +537,9 @@ name = "porter-dbus"
 version = "0.1.0"
 dependencies = [
  "porter-core",
+ "proptest",
+ "serde",
+ "serde_json",
  "zbus",
 ]
 

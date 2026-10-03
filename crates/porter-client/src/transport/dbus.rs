@@ -1,37 +1,68 @@
 //! The D-Bus carrier: porter-dbus proxies on the session bus; the caller's identity is what
-//! the bus says about the connection. Frozen shape; not built yet.
+//! the bus says about the connection. `Inference1.Open` is built (a socket fd, framed with
+//! `porter_core::wire`); accountd's calls follow with accountd.
 
 use super::Transport;
+use super::dbus_session::DbusSession;
 use crate::error::TransportError;
 use porter_core::{AccountsReply, AccountsRequest, DataClass, Need, Tier};
-use porter_infer::{ClientFrame, InferEvent, InferSession, OpenOptions, SessionError};
+use porter_dbus::zvariant::{OwnedValue, Value};
+use porter_dbus::{
+    BusConnection, BusError, BusFailure, Details, InferenceProxy, OPTION_TRACEPARENT, classify,
+    need_to_dbus,
+};
+use porter_infer::OpenOptions;
+use serde::Serialize;
 
 /// accountd and inferd on the session bus.
 #[derive(Debug)]
 pub struct DbusTransport {
-    connection: porter_dbus::BusConnection,
+    connection: BusConnection,
 }
 
 impl DbusTransport {
     /// Over an open session-bus connection the app owns.
-    pub fn over(connection: porter_dbus::BusConnection) -> Self {
+    pub fn over(connection: BusConnection) -> Self {
         Self { connection }
     }
-}
 
-/// The fd `Inference1.Open` returned, framed with `porter_core::wire`'s envelope.
-#[derive(Debug)]
-pub struct DbusSession {
-    _private: (),
-}
-
-impl InferSession for DbusSession {
-    async fn send(&mut self, _frame: ClientFrame) -> Result<(), SessionError> {
-        todo!("encode_frame the ClientFrame onto the fd; attach memfds with SCM_RIGHTS")
+    /// Over a new connection to the session bus (`DBUS_SESSION_BUS_ADDRESS` or the runtime
+    /// directory's socket, as the bus library resolves it).
+    pub async fn session() -> Result<Self, TransportError> {
+        BusConnection::session()
+            .await
+            .map(Self::over)
+            .map_err(|e| bus_error(&e))
     }
+}
 
-    async fn next(&mut self) -> Result<InferEvent, SessionError> {
-        todo!("decode_frame the next InferEvent from the fd")
+/// A closed set's serde form is its slug on the bus too.
+fn slug<T: Serialize>(value: &T) -> Result<String, TransportError> {
+    match serde_json::to_value(value) {
+        Ok(serde_json::Value::String(text)) => Ok(text),
+        _ => Err(TransportError::Malformed("not a slug".to_owned())),
+    }
+}
+
+/// The `options` dictionary of `Open`: the reserved `traceparent` when the caller has one.
+fn details(options: &OpenOptions) -> Details {
+    options
+        .traceparent
+        .iter()
+        .filter_map(|trace| {
+            let value = OwnedValue::try_from(Value::from(trace.as_str().to_owned())).ok()?;
+            Some((OPTION_TRACEPARENT.to_owned(), value))
+        })
+        .collect()
+}
+
+/// A bus error as the transport's: no daemon on the name or no bus is `Unreachable`; anything
+/// else is the other side not speaking porter's protocol.
+fn bus_error(error: &BusError) -> TransportError {
+    match classify(error) {
+        BusFailure::NoDaemon => TransportError::Unreachable,
+        BusFailure::Denied(why) => TransportError::Malformed(format!("refused by the bus: {why}")),
+        BusFailure::Other(why) => TransportError::Malformed(format!("bus: {why}")),
     }
 }
 
@@ -45,11 +76,23 @@ impl Transport for DbusTransport {
 
     async fn open_with(
         &self,
-        _need: &Need,
-        _class: DataClass,
-        _tier: Tier,
-        _options: &OpenOptions,
+        need: &Need,
+        class: DataClass,
+        tier: Tier,
+        options: &OpenOptions,
     ) -> Result<DbusSession, TransportError> {
-        todo!("Inference1.Open, then frames on the returned fd")
+        let proxy = InferenceProxy::new(&self.connection)
+            .await
+            .map_err(|e| bus_error(&e))?;
+        let fd = proxy
+            .open(
+                &need_to_dbus(need),
+                &slug(&class)?,
+                &slug(&tier)?,
+                &details(options),
+            )
+            .await
+            .map_err(|e| bus_error(&e))?;
+        DbusSession::over(fd.into())
     }
 }

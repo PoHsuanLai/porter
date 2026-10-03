@@ -31,4 +31,4 @@ pub use transport::{
     Transport,
 };
 #[cfg(feature = "dbus")]
-pub use transport::{DbusSession, DbusTransport};
+pub use transport::{DbusSession, DbusTransport, MAX_ATTACHMENTS};
