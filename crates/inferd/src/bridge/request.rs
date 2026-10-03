@@ -189,9 +189,9 @@ fn effort(effort: pi::Effort) -> sp::Effort {
     }
 }
 
-/// Stoker's `Reasoning` has no "whatever the engine does": an app that leaves it open gets no
-/// reasoning, so a short interactive turn does not spend its tokens thinking. An app that wants
-/// it asks for `On(effort)`.
+/// An app that leaves reasoning open gets none (stoker's `EngineDefault` is not passed on), so a
+/// short interactive turn does not spend its tokens thinking. An app that wants it asks for
+/// `On(effort)`.
 fn reasoning(reasoning: pi::Reasoning) -> sp::Reasoning {
     match reasoning {
         pi::Reasoning::EngineDefault | pi::Reasoning::Off => sp::Reasoning::Off,
@@ -214,7 +214,7 @@ fn extras(flavor: Option<Flavor>) -> sp::EngineExtras {
 /// mode the turn asks for.
 fn default_sampling(model: &LocalModel, reasoning: sp::Reasoning) -> Option<sp::Sampling> {
     model.entry.sampling.map(|defaults| match reasoning {
-        sp::Reasoning::Off => defaults.reasoning_off,
+        sp::Reasoning::Off | sp::Reasoning::EngineDefault => defaults.reasoning_off,
         sp::Reasoning::On(_) => defaults.reasoning_on,
     })
 }
