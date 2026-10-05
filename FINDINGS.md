@@ -4,15 +4,34 @@ Open items and standing facts. An entry names the condition that closes it.
 
 ## Stubs behind frozen interfaces
 
+Each row names the lane of the accounts program (porter PLAN §6) that removes it.
+
 | Where | Closes when |
 | --- | --- |
-| porter-service `AddAccount`, `Reauthenticate` answer `Refused(Unavailable)` (no `todo!()`: the `Provider` seam has no sign-in, and a bus call must not bring a daemon down) | the first family's sign-in (Nextcloud Login Flow v2): a sign-in method on `Provider`, the add sheet through the `Prompter`, discover, store |
-| porter-secrets `Oo7Secrets` | oo7 is in quire `docs/workspace-deps.toml` |
-| porter-client: the socket carrier needs the `socket` feature (without it nobody is reachable) and no agent serves it in this repo; `InProcess` has no broker unless the app hands one in | an agent hosts the core on the latchkey socket and reads `LinkHello` (see "Fill W4: porter") / porter's own `Broker` is built |
+| porter-secrets `Oo7Secrets` (4) | W2a: the oo7 dependency, the file backend in a scratch HOME |
+| porter-secrets `KeyringSecrets` (4, feature `keyring`) | W2a: keyring-core and its platform stores join quire `docs/workspace-deps.toml`; the chunking and the dedicated thread ported from mailo with attribution |
+| porter-core `sheet::step` (1) | W2d: mailo's add-account stage machine rules and tests ported |
+| porter-service `AccountService::{add_account, reauthenticate}` (2, `add.rs`) | W3c (Nextcloud, generic): drive `Provider::sign_in` through `Sheets::conversation` and `sheet::step`, file the credentials, store the account, audit; the ignored `end_to_end.rs` test is rewritten to the flow |
+| porter-service `AccountService::adopt` (1) | W3d: accountd's `[adopt]` table and a legacy-store seam (no PLAN row names it; E2 of the mailo extraction needs it) |
+| porter-service `AccountService::relay_plan` (1) | W3g: read the credential, mint an access token for an OAuth account, build the `RelayAuth` |
+| porter-provider `Issuer::endpoints` (1) | W5a: one row per issuer, each URL checked against its current documentation |
+| porter-dbus `ProcCallers::caller_of` (1) | W2c: the pid, cgroup, Flatpak info and `identity_of`; inferd's `peers` and accountd's `callers` move onto it |
+| porter-client `SocketTransport::open_authenticated` (1) | W3g: the reply frame with the relay's descriptor on `SCM_RIGHTS` |
+| accountd `BusSheets` `consent`, `conversation`, `update`, `input` (4, `sheets.rs`) | W3d: the sheet host over `AccountsSheet1` (tested against a hand-written host) |
+| porter-http `HyperHttp::send` (1) | W3c: hyper-util's client over tokio, hyper-rustls for https (the TLS stack joins `docs/workspace-deps.toml` use then: rustls with `ring` or `aws-lc-rs` changes `deny.toml`'s licences, so it is the first family's decision), timeout, size cap |
+| porter-proxy `ImapRelay::step`, `SmtpRelay::step`, `HttpRelay::step`, `rewrite_head`, `relay` (5) | W3g; the rustls `Connect` needs `tokio-rustls` in the pinned block |
+| porter-oauth `Pkce::challenge`, `parse_redirect`, `exchange_code`, `refresh`, `revoke`, `LoopbackServer::{bind, wait}` (7) | W5a; `challenge` needs a SHA-256 in the pinned block (interface ask below) |
+| porter-discover `autoconfig_urls`, `parse_autoconfig`, `well_known_urls`, `parse_jmap_session`, `parse_ocs_capabilities`, `probe_ports` (6) | W3a; `parse_autoconfig` needs an XML reader in the pinned block |
+| porter-dav `parse_multistatus`, `propfind`, `report_sync_collection`, `parse_sync_collection` (4) | W3b; `parse_multistatus` needs an XML reader in the pinned block |
+| porter-families `nextcloud`, `generic`: `discover`, `open`, `sign_in`, `revoke`, `access_token`, `renewed`, `SignIn::next` (7 each, from one macro) | W3c |
+| porter-families `microsoft` (7) | W5b |
+| porter-families `api_key`, `openrouter` (7 each) | AI2 |
 | porter-infer `Broker::infer` (streaming into a `ChatSink`) | the first wire adapter (Ollama, then llama.cpp and vLLM through stoker's `model-openai-compat`) |
 | inferd `speech::SpeechRunner::{transcribe, speak}` | the speech runner: needs stoker's `speech-host-client` and the speech host; the closed enums `SttBackend`, `TtsBackend` join then. A speech need is routed `Unavailable` and a speech request on a session is refused `Unsupported` until then |
-| accountd `SheetPrompter` | accounts-ui exists |
-| the accountd binary and syncd serve their bus | accountd: its secret store (`Oo7Secrets`), its prompter and a family (the bus objects are a library, tested: "Fill W4: porter"); syncd: the items above (inferd serves its own, see "Fill F3: inferd") |
+| porter-client: the socket carrier needs the `socket` feature (without it nobody is reachable) and no agent serves it in this repo; `InProcess` has no broker unless the app hands one in | an agent hosts the core on the latchkey socket and reads `LinkHello` (see "Fill W4: porter") / porter's own `Broker` is built |
+| the accountd binary and syncd serve their bus | accountd: W3d; syncd: W6a (inferd serves its own, see "Fill F3: inferd") |
+| Google (`providers/google.toml` ships as a file, no family code, no `google` feature in `porter-families`, no gdrive replica) | **TODO, owner decision D1 (2026-10-05)**: W5c when the owner resumes it. Then: Calendar, People, Tasks, Drive AppFolder, Photos upload and picker, Gmail only with a BYO client, the 7-day reminder |
+| `SettingsModule1` on accountd (`/org/quire/Accounts1/settings`) and inferd | accountd serves it in W3d and inferd in AI1a, from quire's `ds-settings` `live` module (W1b); no skeleton lives in porter-dbus |
 
 ## Fill F3: porter-client and the session server (2026-10-03)
 
@@ -556,6 +575,91 @@ pure tables and tests; no new `todo!()` in porter (one pure function was built i
 - Open for docket: `Message.label` is one label for the whole message (the join of its
   parts). A typed ref part keeps its own label at its owner and is read through it.
 
+## W1a: the accounts freeze amendment (2026-10-06)
+
+Lane `w1a-accounts`, branch from 0571e0e. `todo!()` bodies: 8 before; 81 after, counting the five
+family skeletons as the seven each they expand to (53 sites in source). The 74 new ones are the
+table at the top. Design source: `design/31-ACCOUNTS.md` and `~/rs-wt/accounts/PLAN.md`.
+
+Decisions, where the brief or the plan left a choice:
+
+- **`Family` moved to porter-core** (`porter_core::Family`, with `slug`, `relay_protocol`,
+  `serves`), because `ServiceEndpoint.family` names it and porter-core cannot depend on the
+  provider crate. PLAN G1 wrote `FamilyRef`; there is no second type. `porter_provider::Family`
+  is gone (no consumer named it).
+- **No dependency list of porter-core, -provider, -secrets, -service, -client, -dbus, -infer,
+  -fake or `prov` changed**, because almanac, docket, cua and sill lock them: a changed list is
+  a `--locked` failure there. That is why `RelayPlan`, `ByteStream` and the in-memory `duplex`
+  are in porter-core, why `StoreError` and `SheetFault` write `Display` by hand, and why the
+  caller table's TOML is read by the daemon (`CallerTable` is serde only).
+- **`OpenAuthenticated`**: `AccountsRequest::OpenAuthenticated { grant, endpoint: EndpointUrl }`
+  and `AccountsReply::Authenticated` (no value: the descriptor is out of band). The endpoint is
+  the url text a candidate listed, and accountd refuses one the account does not hold for the
+  grant's kind (`Refusal::EndpointNotGranted`, `Registry::relay_target`). `handle` answers it
+  `Unavailable`; `AccountService::open_authenticated` returns a `RelayPlan` and the transport
+  makes the descriptor. `Transport::open_authenticated` is a provided method (default
+  `Unreachable`) so consumers' test transports compile unchanged. `InProcess` takes a `RelayHost`
+  (spawns the relay over `porter_core::stream::duplex`).
+- **Sign-in types are split along the secret**: `porter_core::sheet::{Progress, SignInInput,
+  SignInFault, FieldSpec, Review}` are secret-free values the machine and the views use;
+  `porter_provider::{SignInStep, Signed}` carry the credential, and `SignInStep::progress` is the
+  one mapping. `SignInStep::Review` carries the `Restriction` too, so the review step shows the
+  limits. `SignInFault` has no issuer in `NeedsClientId`.
+- **`Sheets` replaces `Prompter`** with `consent` and `conversation -> Link`; `SheetLink` is a
+  trait (`update`, `input`) because the host owns the channel. `porter_core::sheet::Sheet::new`
+  and `view` are built; `step` is the stub. `ScriptedPrompter` is `ScriptedSheets`.
+- **Persistence**: `AccountService<P, S, U, K, R = NoStore, A = NoAudit>` saves after every
+  change and records one `AuditEntry` per event; a failed save is `Unavailable` to the caller and
+  the change stays in memory. Toggles are `Persisted.toggles` (`AccountToggle`); `Account`
+  carries effective claims only. `VocabVersion(3)`; `FIRST_PERSISTED` is 3 and the migration
+  table is empty, with a test that fails when a bump has no row.
+- **The `IssueToken` audience check is filled**: an audience is a family slug (or the fixed
+  endpoint a row names), and a grant covers the families that serve its kind in the provider
+  file, plus `smtp` for a mail row that sends (`porter-service::audience`).
+- **`Candidate.endpoints`** lists the account's endpoints whose family serves the matched kind;
+  on the bus it is the vardict key `endpoints` (a list of records).
+- **`porter-http` is a crate the brief did not list.** Every family, discovery step and OAuth
+  exchange needs the one HTTP seam, and PLAN D12 allowed "a small `porter-http` client". Its
+  hyper client is behind feature `hyper` (hyper, hyper-util, http-body-util, tokio, as stoker's
+  `model-http` takes them); TLS (hyper-rustls) joins with the first family, see its row above.
+- **`Manager.Adopt(legacy a{sv}) -> s`** is the D-Bus member of `AccountsRequest::Adopt`; accountd
+  does not serve it yet. `LegacyRef` holds non-secret facts (the legacy account id, provider,
+  label, endpoints, which of `Incoming`, `Outgoing`, `OAuth`, `AddressBook` exist); the legacy
+  service comes from the daemon's `[adopt]` table by caller, never from the request.
+- **`Sync1.Status` key `quota`** is `porter_dbus::STATUS_KEY_QUOTA`, a vardict with `used` and, when
+  the provider reports a limit, `total` (both `t`); syncd converts porter-sync's `Quota`.
+- `Replica::quota` is a required method; `MemoryReplica` counts live bytes and takes a limit
+  (`with_limit`, refusing `PutRefused::Quota`).
+
+### Interface asks from W1a
+
+1. **quire `docs/workspace-deps.toml` needs**, before the lanes that use them: a SHA-256
+   (`sha2`) for PKCE S256 (W5a); an XML reader (`quick-xml`) for autoconfig and WebDAV
+   multistatus (W3a, W3b); `tokio-rustls` beside `hyper-rustls`/`rustls` and a decision between
+   `ring` and `aws-lc-rs` (the latter brings `aws-lc-sys`, whose licence `deny.toml` does not
+   allow) (W3c, W3g); `hickory-resolver` for the `Dns` seam (W3a); keyring-core and its
+   platform stores (W2a).
+2. **mailo, E4/E6/E7**: IMAP, SMTP and DAV engines take a pre-authenticated stream. The
+   stream is `porter_client::AuthenticatedStream` (`Fd(OwnedFd)` on Unix, `Memory(DuplexEnd)`
+   in process). An engine over a tokio socket wraps the fd with `UnixStream::from_std` and
+   skips LOGIN/AUTHENTICATE and STARTTLS: it reads `* PREAUTH` (IMAP), `220` and an `EHLO`
+   reply with no `AUTH`/`STARTTLS` (SMTP), and sends plain HTTP/1.1 (DAV). In process, mailo
+   implements `RelayHost` by spawning `porter_proxy::relay` with a `Connect` (TCP plus its TLS
+   choice) and wraps `DuplexEnd` as its engines' stream through `ByteStream`
+   (`porter_proxy::TokioStream` is the other direction). Read the servers from
+   `Candidate.endpoints` instead of `AccountPlan`'s own copies.
+3. **mailo, E2**: `Accounts::adopt(LegacyRef)`; mailo must be named in accountd's `[adopt]`
+   table (`org.quire.Mail = "mailo"`). In process it reads its own entries and files them
+   through `Secrets` directly.
+4. **sill (W3e)** serves `org.quire.AccountsSheet1` (`dbus/org.quire.AccountsSheet1.xml`): views
+   are `porter_core::sheet::SheetView` as JSON, inputs `SheetInput` as JSON (a typed password
+   rides in `FieldValue::Secret`). Only accountd's connection may `Open`.
+5. **quire `ds-shell::accounts`** maps `SheetView` states: `Consent`, `Providers`, `SignIn`
+   (fields are kinds; the UI words them), `BrowserWait`, `ShowCode`, `Review` (with the
+   add-and-allow `allow` app), `Working`, `Failed`, `Done`.
+6. **docket and cua `check-boundary.sh`** (PLAN §5): `Accounts::open_authenticated` and
+   `adopt` join the forbidden calls in agent crates.
+
 ## Open
 
 - inferd's stoker edges are by sibling path (`model-provider`, `model-catalog`, `engine-supervisor`, `model-http`, `model-openai-compat`, `vision-prep`, `cua-parse`, `speech-provider`), like `cua-action`; the pinned git revs replace them with quire's block. `cua-session`, `cua-vendors` (for `StepResult`) and `model-extract` are edges since W5; `speech-host-client` is not (its bodies are stubs).
@@ -566,8 +670,7 @@ pure tables and tests; no new `todo!()` in porter (one pure function was built i
 - `ai.floor.voice` (default on device) has no design/22 row yet; the quire agent adds `voice.*` and `ai.*` rows.
 
 - Proxies are not run against skeletons (needs a zbus p2p test); closes with the codec.
-- `IssueToken` does not check the audience against the grant (`Refusal::AudienceNotGranted` exists); closes with the first OAuth family.
-- The registry is in memory (no persistence); `SettingsModule1` belongs to design/22 §9.4. Closes with accountd's store.
+- accountd has no registry file and no audit file yet (the seams and `Persisted` are frozen); `SettingsModule1` belongs to design/22 §9.4. Closes with W2b and W3d.
 - `PlanBudget` has no request budget; closes with ChatGPT sign-in (R9).
 - Mail signing keys (OpenPGP, S/MIME) have no `SecretPurpose`; the user decides at the mailo migration.
 - Proposed settings keys without design/22 rows: `ai.local_only`, `ai.floor.<class>` (voice and prompt included), `ai.spend.warn_permille` (800), `ai.model.<kind>.<tier>`.
@@ -583,5 +686,4 @@ pure tables and tests; no new `todo!()` in porter (one pure function was built i
 - `todo!()` is allowed only behind a frozen interface; every such stub is listed above.
 - deny.toml is quire's verbatim (the unused MPL allowance warns).
 - The provider file is `ProviderSpec`'s serde form; every field is written, none defaulted.
-- porter-core's vocabulary is `VocabVersion(2)`: computer use joined; `DataClass::Voice` and `GrantKey.space` joined with it.
-- A grant written before `GrantKey.space` existed does not parse: no store persists grants yet.
+- porter-core's vocabulary is `VocabVersion(3)`: endpoints on `Account` and `Candidate`, `OpenAuthenticated`, `Adopt` and the refusal `EndpointNotGranted` joined (2 added computer use, `DataClass::Voice` and `GrantKey.space`). Version 3 is the first a file is written with (`FIRST_PERSISTED`), so a later bump needs a migration row.
