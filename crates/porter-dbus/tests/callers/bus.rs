@@ -68,16 +68,6 @@ impl PrivateBus {
         }
     }
 
-    /// The bus address.
-    pub fn address(&self) -> &str {
-        &self.address
-    }
-
-    /// The scratch directory (HOME and runtime dir of anything the test runs).
-    pub fn scratch(&self) -> &PathBuf {
-        &self.scratch
-    }
-
     /// A new connection to this bus.
     pub async fn connect(&self) -> zbus::Connection {
         zbus::connection::Builder::address(self.address.as_str())
