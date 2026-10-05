@@ -3,8 +3,9 @@
 //! `STARTTLS`, then a session that is already authenticated.
 
 use crate::fault::RelayFault;
-use crate::step::{Effect, Input, Relaying};
 use porter_core::{RelayAuth, RelayPlan};
+
+mod machine;
 
 /// How the relay authenticates to an SMTP server.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -134,8 +135,16 @@ pub enum SmtpPhase {
     Authenticating(SmtpAuth),
     /// Authenticated: waiting for the app's `EHLO`, which is answered from the server's reply.
     AppEhlo(EhloReply),
-    /// Relaying bytes both ways.
+    /// Relaying: the app's lines are commands, passed on except `AUTH`, `STARTTLS` and a
+    /// repeated `EHLO`, which are answered here; the server's bytes pass to the app.
     Relaying,
+    /// Relaying a message body: the app's bytes pass on until the line holding only `.`.
+    Data,
+    /// Relaying a `BDAT` chunk of this many more bytes.
+    Chunk {
+        /// Bytes still to pass.
+        remaining: u64,
+    },
 }
 
 /// One SMTP relay.
@@ -145,6 +154,18 @@ pub struct SmtpRelay {
     pub plan: RelayPlan,
     /// Where it stands.
     pub phase: SmtpPhase,
+    /// Server bytes read and not yet a whole line, until relaying starts.
+    pub buffer: Vec<u8>,
+    /// The lines of the server's reply read so far, with their `CRLF`.
+    pub reply: Vec<u8>,
+    /// The server's latest `EHLO` reply.
+    pub ehlo: Option<EhloReply>,
+    /// App bytes not yet a whole command line (or sent before the relay was ready).
+    pub early: Vec<u8>,
+    /// The start of the server's current line, to see a `354` (the go-ahead for a body).
+    pub head: Vec<u8>,
+    /// The last bytes of the body so far, to see its end across reads.
+    pub tail: Vec<u8>,
 }
 
 impl SmtpRelay {
@@ -153,18 +174,13 @@ impl SmtpRelay {
         Self {
             plan,
             phase: SmtpPhase::Greeting,
+            buffer: Vec::new(),
+            reply: Vec::new(),
+            ehlo: None,
+            early: Vec::new(),
+            head: Vec::new(),
+            tail: Vec::new(),
         }
-    }
-}
-
-impl Relaying for SmtpRelay {
-    fn step(self, input: Input) -> (Self, Vec<Effect>) {
-        let _ = input;
-        todo!(
-            "drive `phase`: EHLO, STARTTLS and EHLO again when the endpoint's TLS says so, AUTH \
-             by `SmtpAuth::choose`, greet the app with `app_greeting`, answer its EHLO with \
-             `EhloReply::offered_to_app`, then relay"
-        )
     }
 }
 

@@ -371,3 +371,51 @@ async fn an_agent_that_hangs_up_mid_call_is_closed_not_hung() {
         .map(|_| ());
     assert_eq!(got, Err(ClientError::Transport(TransportError::Closed)));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_authenticated_relay_arrives_as_a_descriptor_on_the_reply_and_a_refusal_as_one_without()
+{
+    use porter_client::{AuthenticatedStream, Relayed, Transport};
+    use std::io::Read;
+
+    let agent = agent(
+        "relay",
+        vec![Answer::AllowFirst(GrantScope::Always)],
+        ready(),
+        vec![],
+    )
+    .await;
+    let photos = accounts(&agent);
+    let offer = offer(&photos).await;
+    let chosen = photos
+        .request_grant(&offer, &ParentWindow::Unparented)
+        .await
+        .expect("chosen");
+    let (grant, url) = (chosen.grant.clone(), chosen.endpoints[0].url.clone());
+    let transport = SocketTransport::at(SocketPath(agent.path.clone()));
+
+    let Relayed::Stream(AuthenticatedStream::Fd(fd)) = transport
+        .open_authenticated(&grant, &url)
+        .await
+        .expect("carried")
+    else {
+        panic!("expected a relay descriptor");
+    };
+    let mut stream = std::os::unix::net::UnixStream::from(fd);
+    let expected = format!("relay for {url}\r\n");
+    let mut line = vec![0u8; expected.len()];
+    stream
+        .read_exact(&mut line)
+        .expect("the relay speaks first");
+    assert_eq!(String::from_utf8(line).expect("text"), expected);
+
+    let elsewhere = porter_core::EndpointUrl::parse("https://elsewhere.example").expect("url");
+    match transport
+        .open_authenticated(&grant, &elsewhere)
+        .await
+        .expect("carried")
+    {
+        Relayed::Refused(refusal) => assert_eq!(refusal, Refusal::EndpointNotGranted),
+        other => panic!("expected a refusal, got {other:?}"),
+    }
+}

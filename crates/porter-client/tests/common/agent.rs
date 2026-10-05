@@ -7,11 +7,16 @@ use super::served::{Gate, Route, Scripted, Unaudited};
 use inferd::serve::{Seams, serve_session};
 use inferd::session::SessionSpec;
 use porter_core::wire::{FrameRead, decode_frame, encode_frame};
-use porter_core::{AccountsRequest, AppId};
+use porter_core::{AccountsReply, AccountsRequest, AppId};
 use porter_fake::FakeService;
 use porter_infer::LinkHello;
+use rustix::net::{SendAncillaryBuffer, SendAncillaryMessage, SendFlags, sendmsg};
+use std::io::IoSlice;
+use std::mem::MaybeUninit;
+use std::os::fd::{AsFd, OwnedFd};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use tokio::io::Interest;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 
@@ -90,6 +95,9 @@ async fn handle(mut stream: UnixStream, plan: Plan, hellos: Arc<Mutex<Vec<LinkHe
     let Ok(FrameRead::Complete(envelope, _)) = decode_frame::<AccountsRequest>(&bytes) else {
         return;
     };
+    if let AccountsRequest::OpenAuthenticated { grant, endpoint } = &envelope.body {
+        return open_authenticated(stream, &plan, grant, endpoint).await;
+    }
     let reply = plan.service.handle(&plan.app, envelope.body).await;
     if let Ok(frame) = encode_frame(&reply) {
         let _ = stream.write_all(&frame).await;
@@ -117,5 +125,61 @@ pub fn start(name: &str, plan: Plan) -> Agent {
         runner,
         scratch,
         task,
+    }
+}
+
+/// `OpenAuthenticated`: the service plans the relay (or refuses); the agent keeps one end of a
+/// socketpair, writes the planned endpoint on it where a relay would run, and sends the other
+/// end with the reply as `SCM_RIGHTS`.
+async fn open_authenticated(
+    mut stream: UnixStream,
+    plan: &Plan,
+    grant: &porter_core::GrantId,
+    endpoint: &porter_core::EndpointUrl,
+) {
+    let relay_plan = match plan
+        .service
+        .open_authenticated(&plan.app, grant, endpoint)
+        .await
+    {
+        Ok(relay_plan) => relay_plan,
+        Err(refusal) => {
+            if let Ok(frame) = encode_frame(&AccountsReply::Refused(refusal)) {
+                let _ = stream.write_all(&frame).await;
+            }
+            return;
+        }
+    };
+    let Ok((app_end, relay_end)) = std::os::unix::net::UnixStream::pair() else {
+        return;
+    };
+    relay_end.set_nonblocking(true).expect("nonblocking");
+    let mut relay_end = UnixStream::from_std(relay_end).expect("tokio stream");
+    let Ok(frame) = encode_frame(&AccountsReply::Authenticated) else {
+        return;
+    };
+    let fd: OwnedFd = app_end.into();
+    let sent = stream
+        .async_io(Interest::WRITABLE, || {
+            let mut space = [MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(1))];
+            let mut control = SendAncillaryBuffer::new(&mut space);
+            let borrowed = [fd.as_fd()];
+            control.push(SendAncillaryMessage::ScmRights(&borrowed));
+            sendmsg(
+                &stream,
+                &[IoSlice::new(&frame)],
+                &mut control,
+                SendFlags::NOSIGNAL,
+            )
+            .map_err(std::io::Error::from)
+        })
+        .await;
+    if sent.is_ok() {
+        let _ = relay_end
+            .write_all(format!("relay for {}\r\n", relay_plan.endpoint.url).as_bytes())
+            .await;
+        // The relay lives as long as the app's end.
+        let mut sink = [0u8; 64];
+        while relay_end.read(&mut sink).await.is_ok_and(|n| n > 0) {}
     }
 }

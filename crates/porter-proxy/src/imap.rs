@@ -10,8 +10,9 @@
 //!    everything about authenticating or upgrading, then relay bytes both ways.
 
 use crate::fault::RelayFault;
-use crate::step::{Effect, Input, Relaying};
 use porter_core::{RelayAuth, RelayPlan};
+
+mod machine;
 
 /// How the relay authenticates to an IMAP server.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -65,12 +66,18 @@ pub fn preauth_greeting(server_capabilities: &[String]) -> Vec<u8> {
 pub enum ImapPhase {
     /// Waiting for the server's greeting.
     Greeting,
-    /// Waiting for its capabilities.
+    /// Waiting for its capabilities (before authenticating; after a `STARTTLS` upgrade too).
     Capability,
     /// Waiting for the answer to `STARTTLS`, then the upgrade.
     StartTls,
-    /// Authenticating this way, waiting for the tagged answer.
+    /// Authenticating this way, waiting for the tagged answer (or, for `AUTHENTICATE`, the
+    /// server's `+` that asks for the response).
     Authenticating(ImapAuth),
+    /// The `AUTHENTICATE` response is sent; waiting for the tagged answer. A `+` now is the
+    /// server's error challenge, answered with an empty line.
+    Answering,
+    /// Authenticated, and the tagged answer carried no capabilities: waiting for them.
+    PostAuthCapability,
     /// Relaying bytes both ways.
     Relaying,
 }
@@ -82,6 +89,12 @@ pub struct ImapRelay {
     pub plan: RelayPlan,
     /// Where it stands.
     pub phase: ImapPhase,
+    /// Server bytes read and not yet a whole line, until the relay starts relaying.
+    pub buffer: Vec<u8>,
+    /// What the app sent before the relay was ready for it, passed on once it is.
+    pub early: Vec<u8>,
+    /// The server's capabilities as last announced.
+    pub capabilities: Vec<String>,
 }
 
 impl ImapRelay {
@@ -90,17 +103,10 @@ impl ImapRelay {
         Self {
             plan,
             phase: ImapPhase::Greeting,
+            buffer: Vec::new(),
+            early: Vec::new(),
+            capabilities: Vec::new(),
         }
-    }
-}
-
-impl Relaying for ImapRelay {
-    fn step(self, input: Input) -> (Self, Vec<Effect>) {
-        let _ = input;
-        todo!(
-            "drive `phase` as the module doc says: parse untagged and tagged lines, choose with \
-             `ImapAuth::choose`, send the PREAUTH greeting to the app, then relay"
-        )
     }
 }
 

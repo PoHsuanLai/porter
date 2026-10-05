@@ -38,3 +38,11 @@ confidence-threshold = 0.9
 #
 # What stays out of that list is strong copyleft: GPL, AGPL, EUPL. Those would change what this
 # project may be distributed as, and a dependency arriving under one should stop the build.
+
+# Mozilla's CA root bundle, the fallback of porter-proxy's `RustlsConnect` when the platform has
+# no roots (accounts W3g). Scoped to the one crate, as in mailo and almanac: the licence covers
+# the *data* (which certificate authorities to trust), not code, and puts no obligation on
+# anything that reads it. A new dependency arriving under it still stops the build.
+[[licenses.exceptions]]
+name = "webpki-roots"
+allow = ["CDLA-Permissive-2.0"]

@@ -12,8 +12,13 @@
 //! - bodies, chunked or by length, and responses pass through unchanged.
 
 use crate::fault::RelayFault;
-use crate::step::{Effect, Input, Relaying};
 use porter_core::RelayPlan;
+
+mod chunked;
+mod head;
+mod machine;
+
+pub use chunked::{ChunkParser, Chunked};
 
 /// Where the relay stands in the current request.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,6 +43,8 @@ pub struct HttpRelay {
     pub phase: HttpPhase,
     /// Head bytes read so far, until the blank line.
     pub head: Vec<u8>,
+    /// Where a chunked body stands.
+    pub chunks: ChunkParser,
 }
 
 impl HttpRelay {
@@ -47,6 +54,7 @@ impl HttpRelay {
             plan,
             phase: HttpPhase::Head,
             head: Vec::new(),
+            chunks: ChunkParser::default(),
         }
     }
 }
@@ -55,20 +63,8 @@ impl HttpRelay {
 /// line): the target and `Host` checked against the plan's origin, the app's credentials
 /// dropped and the relay's added; or why it is refused.
 pub fn rewrite_head(head: &[u8], plan: &RelayPlan) -> Result<Vec<u8>, RelayFault> {
-    let _ = (head, plan);
-    todo!(
-        "parse the request line and headers, check the target and Host against \
-         `plan.endpoint.url.origin()`, drop Authorization and Proxy-Authorization, refuse \
-         ambiguous framing, add Basic or Bearer from `plan.auth`"
-    )
+    head::rewrite(head, plan).map(|rewritten| rewritten.head)
 }
 
-impl Relaying for HttpRelay {
-    fn step(self, input: Input) -> (Self, Vec<Effect>) {
-        let _ = input;
-        todo!(
-            "buffer a head until the blank line, send `rewrite_head` to the server, pass the \
-             body by `phase`, pass responses to the app unchanged"
-        )
-    }
-}
+#[cfg(test)]
+mod tests;

@@ -88,10 +88,11 @@ impl Transport for SocketTransport {
         grant: &GrantId,
         endpoint: &EndpointUrl,
     ) -> Result<Relayed, TransportError> {
-        let _ = (grant, endpoint);
-        todo!(
-            "send `AccountsRequest::OpenAuthenticated` and read the `Authenticated` reply frame              with the relay's descriptor riding on it (SCM_RIGHTS), as `send_attached` does the              other way"
-        )
+        let request = AccountsRequest::OpenAuthenticated {
+            grant: grant.clone(),
+            endpoint: endpoint.clone(),
+        };
+        link::open_authenticated(&self.path, request).await
     }
 
     async fn open_with(

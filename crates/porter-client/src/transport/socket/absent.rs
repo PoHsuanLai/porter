@@ -1,6 +1,7 @@
 //! The socket carrier where there is none: no `socket` feature (no runtime), or no Unix
 //! sockets. Nobody is reachable on it, and no session exists.
 
+use crate::authenticated::Relayed;
 use crate::env::SocketPath;
 use crate::error::TransportError;
 use porter_core::{AccountsReply, AccountsRequest};
@@ -41,5 +42,12 @@ pub(super) async fn call(
 }
 
 pub(super) async fn open(_path: &SocketPath, _hello: LinkHello) -> Result<Link, TransportError> {
+    Err(TransportError::Unreachable)
+}
+
+pub(super) async fn open_authenticated(
+    _path: &SocketPath,
+    _request: AccountsRequest,
+) -> Result<Relayed, TransportError> {
     Err(TransportError::Unreachable)
 }

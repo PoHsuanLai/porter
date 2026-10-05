@@ -563,6 +563,7 @@ fn endpoints_and_stored_documents_round_trip() {
         EndpointProtocol::Imap,
         EndpointProtocol::Smtp,
         EndpointProtocol::Http,
+        EndpointProtocol::Sieve,
     ] {
         round_trip(&protocol);
     }

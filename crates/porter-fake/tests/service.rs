@@ -213,7 +213,6 @@ async fn a_relay_may_dial_only_an_endpoint_the_account_holds_for_the_grants_kind
 }
 
 #[tokio::test]
-#[ignore = "W3g fills the relay's credential"]
 async fn a_relay_to_an_endpoint_the_account_holds_is_planned() {
     let sheets = ScriptedSheets::answering([Scripted::AllowFirst(GrantScope::Always)]);
     let service = fake_service(sheets).await;
@@ -224,6 +223,45 @@ async fn a_relay_to_an_endpoint_the_account_holds_is_planned() {
         .await
         .expect("planned");
     assert_eq!(plan.endpoint, storage.endpoints[0]);
+}
+
+#[tokio::test]
+async fn a_password_account_plans_its_password_and_an_oauth_account_a_minted_token() {
+    use porter_core::RelayAuth;
+
+    let sheets = ScriptedSheets::answering([
+        Scripted::AllowFirst(GrantScope::Always),
+        Scripted::AllowFirst(GrantScope::Always),
+    ]);
+    let service = fake_service(sheets).await;
+    let me = app("org.quire.Photos");
+    let storage = granted(choose(&service, &me, files(), DataClass::Files).await);
+    let plan = service
+        .open_authenticated(&me, &storage.grant, &storage.endpoints[0].url)
+        .await
+        .expect("planned");
+    assert_eq!(plan.kind, CapabilityKind::Storage);
+    match &plan.auth {
+        RelayAuth::Password(password) => assert_eq!(password.expose(), "app-pw"),
+        other => panic!("expected the password, got {other:?}"),
+    }
+
+    let mailer = granted(choose(&service, &me, mail(), DataClass::Mail).await);
+    for (endpoint, audience) in [
+        (&mailer.endpoints[0], "imap"),
+        (&mailer.endpoints[1], "smtp"),
+    ] {
+        let plan = service
+            .open_authenticated(&me, &mailer.grant, &endpoint.url)
+            .await
+            .expect("planned");
+        match &plan.auth {
+            RelayAuth::AccessToken(token) => {
+                assert_eq!(token.expose(), format!("fake:fake-mail:{audience}"));
+            }
+            other => panic!("expected a minted token, got {other:?}"),
+        }
+    }
 }
 
 #[tokio::test]

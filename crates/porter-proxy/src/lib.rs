@@ -11,6 +11,9 @@
 //!   the stream; the relay adds `Authorization`, forwards over TLS to the endpoint's origin
 //!   only, refuses any other origin and strips the app's own `Authorization`.
 //!
+//! - **ManageSieve** (`sieve`, RFC 5804): the relay does `STARTTLS` and `AUTHENTICATE`; the app
+//!   sees the capability list without `SASL` and `STARTTLS`, then relays bytes.
+//!
 //! Each protocol is a pure machine (`step`: input in, effects out) over frozen types; the
 //! `relay` drives one over two [`porter_core::stream::ByteStream`]s and a [`Connect`] the host
 //! passes in (TCP, and the TLS check against system roots). TLS and certificate checks live in
@@ -20,18 +23,27 @@ mod connect;
 mod fault;
 mod http1;
 mod imap;
+mod lines;
 mod relay;
+mod sieve;
 mod smtp;
 mod step;
+#[cfg(test)]
+mod testing;
+#[cfg(feature = "tls")]
+mod tls;
 #[cfg(feature = "io")]
 mod tokio_stream;
 
 pub use connect::{Connect, ConnectFault};
 pub use fault::RelayFault;
-pub use http1::{HttpPhase, HttpRelay, rewrite_head};
+pub use http1::{ChunkParser, Chunked, HttpPhase, HttpRelay, rewrite_head};
 pub use imap::{ImapAuth, ImapPhase, ImapRelay, app_capabilities, preauth_greeting};
 pub use relay::relay;
+pub use sieve::{SieveAuth, SievePhase, SieveRelay, app_greeting as sieve_greeting};
 pub use smtp::{EhloReply, SmtpAuth, SmtpPhase, SmtpRelay, app_greeting};
 pub use step::{Effect, Input, RelayEnd, Relaying, Side};
+#[cfg(feature = "tls")]
+pub use tls::{NetStream, RustlsConnect};
 #[cfg(feature = "io")]
 pub use tokio_stream::TokioStream;

@@ -53,6 +53,8 @@ pub enum EndpointProtocol {
     Smtp,
     /// HTTP/1.1 (WebDAV, CalDAV, CardDAV, OCS, JMAP): the relay adds `Authorization`.
     Http,
+    /// ManageSieve (RFC 5804): the relay does STARTTLS and AUTHENTICATE.
+    Sieve,
 }
 
 /// The schemes an endpoint URL may have.
@@ -70,6 +72,10 @@ pub enum UrlScheme {
     Smtp,
     /// `smtps`.
     Smtps,
+    /// `sieve` (ManageSieve, STARTTLS).
+    Sieve,
+    /// `sieves` (ManageSieve over TLS from the first byte).
+    Sieves,
 }
 
 impl UrlScheme {
@@ -81,6 +87,8 @@ impl UrlScheme {
             "imaps" => Some(UrlScheme::Imaps),
             "smtp" => Some(UrlScheme::Smtp),
             "smtps" => Some(UrlScheme::Smtps),
+            "sieve" => Some(UrlScheme::Sieve),
+            "sieves" => Some(UrlScheme::Sieves),
             _ => None,
         }
     }
@@ -93,6 +101,8 @@ impl UrlScheme {
             UrlScheme::Imaps => "imaps",
             UrlScheme::Smtp => "smtp",
             UrlScheme::Smtps => "smtps",
+            UrlScheme::Sieve => "sieve",
+            UrlScheme::Sieves => "sieves",
         }
     }
 
@@ -102,6 +112,7 @@ impl UrlScheme {
             UrlScheme::Http | UrlScheme::Https => EndpointProtocol::Http,
             UrlScheme::Imap | UrlScheme::Imaps => EndpointProtocol::Imap,
             UrlScheme::Smtp | UrlScheme::Smtps => EndpointProtocol::Smtp,
+            UrlScheme::Sieve | UrlScheme::Sieves => EndpointProtocol::Sieve,
         }
     }
 
@@ -114,16 +125,21 @@ impl UrlScheme {
             UrlScheme::Imaps => 993,
             UrlScheme::Smtp => 587,
             UrlScheme::Smtps => 465,
+            UrlScheme::Sieve | UrlScheme::Sieves => 4190,
         }
     }
 
     /// The security a scheme allows: `https`, `imaps` and `smtps` are TLS from the first byte,
-    /// `http` has no upgrade, and `imap` and `smtp` upgrade with STARTTLS or stay plain.
+    /// `http` has no upgrade, and `imap`, `smtp` and `sieve` upgrade with STARTTLS or stay plain.
     fn admits(self, tls: Tls) -> bool {
         match self {
-            UrlScheme::Https | UrlScheme::Imaps | UrlScheme::Smtps => tls == Tls::Implicit,
+            UrlScheme::Https | UrlScheme::Imaps | UrlScheme::Smtps | UrlScheme::Sieves => {
+                tls == Tls::Implicit
+            }
             UrlScheme::Http => tls == Tls::Plain,
-            UrlScheme::Imap | UrlScheme::Smtp => matches!(tls, Tls::StartTls | Tls::Plain),
+            UrlScheme::Imap | UrlScheme::Smtp | UrlScheme::Sieve => {
+                matches!(tls, Tls::StartTls | Tls::Plain)
+            }
         }
     }
 }

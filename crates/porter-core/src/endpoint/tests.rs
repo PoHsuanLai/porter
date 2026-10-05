@@ -65,6 +65,22 @@ fn urls_parse_to_their_origin() {
             "/",
         ),
         (
+            "managesieve default",
+            "sieve://mail.example.org",
+            UrlScheme::Sieve,
+            "mail.example.org",
+            4190,
+            "/",
+        ),
+        (
+            "managesieve over tls",
+            "sieves://mail.example.org:5190",
+            UrlScheme::Sieves,
+            "mail.example.org",
+            5190,
+            "/",
+        ),
+        (
             "ipv6",
             "http://[::1]:8080/x",
             UrlScheme::Http,

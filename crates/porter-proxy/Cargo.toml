@@ -9,16 +9,34 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+base64 = { workspace = true }
 porter-core = { workspace = true }
+rustls-native-certs = { workspace = true, optional = true }
+rustls-pki-types = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true, features = ["io-util"] }
+tokio-rustls = { workspace = true, optional = true }
+webpki-roots = { workspace = true, optional = true }
 
 [dev-dependencies]
+porter-fake-servers = { workspace = true }
+porter-proxy = { workspace = true, features = ["tls"] }
+porter-fake = { workspace = true }
 tokio = { workspace = true }
+tokio-rustls = { workspace = true }
 
 [features]
 # `TokioStream`, `ByteStream` over a tokio stream. Pulls in the runtime, so it is off by
 # default: the machines and the relay reach none.
 io = ["dep:tokio"]
+# `RustlsConnect`, the `Connect` over TCP and rustls (ring) with the platform's roots and
+# webpki-roots as the fallback. Certificate checks are always on.
+tls = [
+  "io",
+  "dep:tokio-rustls",
+  "dep:rustls-pki-types",
+  "dep:rustls-native-certs",
+  "dep:webpki-roots",
+]
 
 [lints]
 workspace = true

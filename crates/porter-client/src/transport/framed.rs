@@ -7,7 +7,10 @@
 use crate::error::TransportError;
 use porter_core::wire::{FrameRead, decode_frame, encode_frame};
 use porter_infer::{ClientFrame, InferEvent, InferSession, SessionError};
-use rustix::net::{SendAncillaryBuffer, SendAncillaryMessage, SendFlags, sendmsg};
+use rustix::net::{
+    RecvAncillaryBuffer, RecvAncillaryMessage, RecvFlags, SendAncillaryBuffer,
+    SendAncillaryMessage, SendFlags, recvmsg, sendmsg,
+};
 use std::io::IoSlice;
 use std::mem::MaybeUninit;
 use std::os::fd::{AsFd, OwnedFd};
@@ -77,6 +80,56 @@ impl FramedSession {
                 Ok(0) | Err(_) => return Err(SessionError::Closed),
                 Ok(_) => {}
             }
+        }
+    }
+
+    /// Reads one frame of any body with the descriptors that rode on the bytes of it (a relay's
+    /// end, on `AccountsReply::Authenticated`). Every descriptor received is returned, in
+    /// order, so the caller can refuse a reply that brings too many or too few.
+    pub(crate) async fn read_body_with_fds<T: serde::de::DeserializeOwned>(
+        &mut self,
+    ) -> Result<(T, Vec<OwnedFd>), SessionError> {
+        let mut fds = Vec::new();
+        loop {
+            match decode_frame::<T>(&self.inbox) {
+                Ok(FrameRead::Complete(envelope, used)) => {
+                    self.inbox.drain(..used);
+                    return Ok((envelope.body, fds));
+                }
+                Ok(FrameRead::Partial) => {}
+                Err(error) => return Err(SessionError::Malformed(error.to_string())),
+            }
+            let mut chunk = [0u8; 4096];
+            let (read, mut received) = self
+                .stream
+                .async_io(Interest::READABLE, || {
+                    let mut space =
+                        [MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(MAX_ATTACHMENTS))];
+                    let mut control = RecvAncillaryBuffer::new(&mut space);
+                    let message = recvmsg(
+                        &self.stream,
+                        &mut [std::io::IoSliceMut::new(&mut chunk)],
+                        &mut control,
+                        RecvFlags::CMSG_CLOEXEC,
+                    )
+                    .map_err(std::io::Error::from)?;
+                    let received: Vec<OwnedFd> = control
+                        .drain()
+                        .filter_map(|m| match m {
+                            RecvAncillaryMessage::ScmRights(rights) => Some(rights),
+                            _ => None,
+                        })
+                        .flatten()
+                        .collect();
+                    Ok((message.bytes, received))
+                })
+                .await
+                .map_err(|_| SessionError::Closed)?;
+            fds.append(&mut received);
+            if read == 0 {
+                return Err(SessionError::Closed);
+            }
+            self.inbox.extend_from_slice(&chunk[..read]);
         }
     }
 

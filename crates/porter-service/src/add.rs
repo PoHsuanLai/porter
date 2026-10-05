@@ -61,13 +61,10 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
     /// token the provider session mints.
     pub(crate) async fn relay_plan(
         &self,
-        _account: &Account,
-        _endpoint: &ServiceEndpoint,
-        _kind: CapabilityKind,
+        account: &Account,
+        endpoint: &ServiceEndpoint,
+        kind: CapabilityKind,
     ) -> Result<RelayPlan, Refusal> {
-        todo!(
-            "read the credential, mint an access token for an OAuth account, build the \
-             `RelayAuth`"
-        )
+        self.plan_relay(account, endpoint, kind).await
     }
 }

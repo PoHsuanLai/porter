@@ -10,6 +10,7 @@ mod audit;
 mod choose;
 mod clock;
 mod registry;
+mod relay;
 mod service;
 mod sheets;
 mod store;
