@@ -49,9 +49,9 @@ pub(crate) fn text_of(answers: &[FieldAnswer], kind: FieldKind) -> Option<String
     answers
         .iter()
         .find(|a| a.kind == kind)
-        .and_then(|a| match &a.value {
-            FieldValue::Plain(text) => Some(text.trim().to_owned()),
-            FieldValue::Secret(secret) => Some(secret.expose().trim().to_owned()),
+        .map(|a| match &a.value {
+            FieldValue::Plain(text) => text.trim().to_owned(),
+            FieldValue::Secret(secret) => secret.expose().trim().to_owned(),
         })
         .filter(|text| !text.is_empty())
 }
@@ -61,9 +61,9 @@ pub(crate) fn secret_of(answers: &[FieldAnswer], kind: FieldKind) -> Option<Secr
     answers
         .iter()
         .find(|a| a.kind == kind)
-        .and_then(|a| match &a.value {
-            FieldValue::Secret(secret) => Some(secret.clone()),
-            FieldValue::Plain(text) => Some(SecretText::new(text.clone())),
+        .map(|a| match &a.value {
+            FieldValue::Secret(secret) => secret.clone(),
+            FieldValue::Plain(text) => SecretText::new(text.clone()),
         })
         .filter(|secret| !secret.expose().is_empty())
 }
