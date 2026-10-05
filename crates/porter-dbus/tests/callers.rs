@@ -161,6 +161,32 @@ fn a_process_is_named_by_its_scope_or_unit() {
 }
 
 #[test]
+fn a_scope_named_after_a_daemons_app_is_an_app() {
+    // Any process may start a scope by any name: only the unit itself carries the unit's role.
+    let s = Scratch::new();
+    s.process(30, Some(&scope("app-org.quire.Cua-1.scope")));
+    s.process(31, Some(&scope("app-flatpak-org.quire.Inference-2.scope")));
+    s.process(32, Some(&scope("app-org.quire.Intent-3.scope")));
+    let cases = [
+        (
+            30,
+            got("org.quire.Cua", Isolation::Unsandboxed, CallerRole::App),
+        ),
+        (
+            31,
+            got("org.quire.Inference", Isolation::Flatpak, CallerRole::App),
+        ),
+        (
+            32,
+            got("org.quire.Intent", Isolation::Unsandboxed, CallerRole::App),
+        ),
+    ];
+    for (pid, want) in cases {
+        assert_eq!(resolve(&s, pid), want, "pid {pid}");
+    }
+}
+
+#[test]
 fn a_process_nothing_names_is_nobody() {
     let s = Scratch::new();
     // A session scope; a terminal's child (also a program started by hand); a launcher scope

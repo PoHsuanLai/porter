@@ -84,12 +84,15 @@ impl CallerTable {
         Self { callers }
     }
 
-    /// The role of the app `name`: its last row's (the user's rows come last), `App` for an app
-    /// the table does not name.
+    /// The role of the app `name`, named by a scope: its last row without a unit (the user's rows
+    /// come last), `App` for an app the table does not name. A row that names a unit gives its
+    /// role only to that unit ([`CallerTable::resolve_unit`]): any process may start a scope
+    /// called `app-<id>-<n>.scope`, so a unit's role reached by app name would be anyone's.
     pub fn role_of(&self, name: &AppName) -> CallerRole {
         self.callers
             .iter()
             .rev()
+            .filter(|row| row.unit.is_none())
             .find(|row| &row.app == name)
             .map_or(CallerRole::App, |row| row.role)
     }

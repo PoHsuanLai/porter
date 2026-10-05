@@ -62,6 +62,13 @@ fn an_apps_role_is_its_row_s_and_app_for_an_unlisted_app() {
 }
 
 #[test]
+fn a_scope_named_after_a_units_app_gets_no_role_of_the_unit() {
+    for app in ["org.quire.Inference", "org.quire.Cua"] {
+        assert_eq!(table().role_of(&name(app)), CallerRole::App, "{app}");
+    }
+}
+
+#[test]
 fn a_user_row_replaces_the_system_row_of_the_same_unit_or_app() {
     let user = CallerTable {
         callers: vec![
