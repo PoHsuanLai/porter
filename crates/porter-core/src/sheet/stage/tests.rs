@@ -180,7 +180,6 @@ fn the_review_names_the_app_to_allow_when_a_chooser_started_the_sheet() {
 }
 
 #[test]
-#[ignore = "W2d fills `step`"]
 fn the_machine_closes_on_dismiss() {
     let sheet = Sheet::new(
         Purpose::Add {

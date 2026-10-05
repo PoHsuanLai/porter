@@ -196,13 +196,11 @@ impl Sheet {
 
 /// The sheet after `event`, and what the host must do about it.
 pub fn step(sheet: Sheet, event: SheetEvent) -> (Sheet, Vec<SheetEffect>) {
-    let _ = (sheet, event);
-    todo!(
-        "port mailo's add-account stage machine rules: a lookup only when asked, an add only on \
-         Confirm, secret text only into `Feed(Fields)`, Back and Retry, Left closes, a Stored \
-         event shows Done and closes"
-    )
+    machine::step(sheet, event)
 }
 
+mod machine;
+#[cfg(test)]
+mod machine_tests;
 #[cfg(test)]
 mod tests;
