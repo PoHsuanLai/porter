@@ -119,6 +119,7 @@ impl World {
             speech_host: None,
             kokoro_python: None,
             hf_cache: scratch.join("hf"),
+            ..EngineConfig::default()
         };
         let sockets = scratch.join("s");
         std::fs::create_dir_all(&sockets).expect("sockets dir");

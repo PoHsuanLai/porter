@@ -51,6 +51,7 @@ pub fn models(scratch: &Scratch) -> Vec<LocalModel> {
         speech_host: None,
         kokoro_python: None,
         hf_cache: scratch.path().join("hf"),
+        ..EngineConfig::default()
     };
     let models = build(&entries, &config, &scratch.path().join("s"));
     for model in &models {

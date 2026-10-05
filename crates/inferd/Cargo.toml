@@ -23,6 +23,7 @@ cua-parse = { workspace = true }
 cua-session = { workspace = true }
 cua-vendors = { workspace = true }
 model-extract = { workspace = true }
+model-replay = { workspace = true }
 speech-provider = { workspace = true }
 clap = { workspace = true }
 rustix = { workspace = true }

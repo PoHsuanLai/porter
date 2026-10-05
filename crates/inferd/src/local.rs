@@ -7,6 +7,7 @@
 //! configuration, never from the environment.
 
 use crate::catalog::claims_of;
+use crate::replay::NamedEngine;
 use engine_supervisor::{EnginePaths, EngineSpec, ProgramPath, SocketPath, command};
 use model_catalog::{EngineKind, EngineProfile, ModelEntry};
 use model_openai_compat::Flavor;
@@ -14,6 +15,7 @@ use model_provider::{Caps, EmbedCaps, ModelName, Tokens};
 use porter_core::{AccountId, Billing, Capability, Locality, ModelId, Offer};
 use porter_infer::{ModelCard, ModelRef};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// The account every local model is served under.
@@ -35,6 +37,10 @@ pub struct EngineConfig {
     /// is the default `Dirs` computes.
     #[serde(default)]
     pub hf_cache: PathBuf,
+    /// Engines that play a cassette instead of running a program, by name
+    /// (`[engines.<name>] replay = "<file>"`).
+    #[serde(flatten)]
+    pub named: BTreeMap<String, NamedEngine>,
 }
 
 impl EngineConfig {
@@ -92,6 +98,8 @@ pub struct LocalModel {
     pub socket: SocketPath,
     /// The wire dialect of the engine, for the chat kinds.
     pub flavor: Option<Flavor>,
+    /// The cassette a replay engine plays; its model has no weights to look for.
+    pub cassette: Option<PathBuf>,
 }
 
 impl LocalModel {
@@ -107,6 +115,9 @@ impl LocalModel {
     /// engine's sandbox binds, so it is looked for live (a download that finishes makes the
     /// model loadable without a restart).
     pub fn weights(&self) -> Weights {
+        if self.cassette.is_some() {
+            return Weights::Present;
+        }
         match self.spec.unit.sandbox.read.first() {
             Some(dir) if dir.exists() => Weights::Present,
             _ => Weights::Missing,
@@ -194,6 +205,7 @@ fn one(entry: &ModelEntry, engines: &EngineConfig, sockets: &Path) -> Option<Loc
         },
         socket,
         flavor: flavor_of(profile.kind),
+        cassette: None,
         entry: entry.clone(),
         profile,
     })

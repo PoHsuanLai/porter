@@ -13,6 +13,8 @@ use inferd::engines::Engines;
 use inferd::hosts::{HealthProbe, NvidiaSmi, ProcessHost};
 use inferd::local::build;
 use inferd::peers::ProcPeers;
+use inferd::replay::Replays;
+use inferd::replay::host::SpareGpu;
 use inferd::service::{Inference, serve_on};
 use inferd::supervise::{Ports, Supervised};
 use std::os::unix::fs::DirBuilderExt;
@@ -48,7 +50,12 @@ async fn run(args: Args) -> Result<(), String> {
     for skipped in &catalog.skipped {
         eprintln!("inferd: catalog: {}: {}", skipped.what, skipped.why);
     }
-    let models = build(&catalog.entries, &config.engines_in(&dirs), &dirs.sockets);
+    let mut models = build(&catalog.entries, &config.engines_in(&dirs), &dirs.sockets);
+    let replays = Replays::read(&config.engines.named, &dirs.sockets);
+    for problem in replays.skipped.iter().chain(&replays.unread()) {
+        eprintln!("inferd: replay engine {problem}");
+    }
+    models.extend(replays.models.iter().cloned());
     std::fs::DirBuilder::new()
         .recursive(true)
         .mode(0o700)
@@ -59,13 +66,16 @@ async fn run(args: Args) -> Result<(), String> {
         .iter()
         .map(|model| (model.spec.id.clone(), model.socket.0.clone()))
         .collect();
+    let spare = (!replays.models.is_empty()).then_some(model_catalog::MiB(1 << 20));
     let supervised = Supervised::start(
         specs,
         SupervisorConfig::default(),
         Ports {
-            host: ProcessHost::new(),
+            host: replays.host(ProcessHost::new()),
             probe: HealthProbe::new(sockets),
-            gpu: NvidiaSmi::new(PathBuf::from("nvidia-smi")),
+            // Replay engines need no GPU: with one configured, a missing `nvidia-smi` is a
+            // computer with memory to spare rather than one with none.
+            gpu: SpareGpu::new(NvidiaSmi::new(PathBuf::from("nvidia-smi")), spare),
         },
     );
     let structured = config.ai.resolve();
