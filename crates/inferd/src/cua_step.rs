@@ -32,23 +32,17 @@ use porter_infer::{
 };
 use vision_prep::{Encoding, FrameMap, MediaType, RawFrame, prepare};
 
-/// A step that gave no actions: why, and the session when the step still counts (a reply that
-/// never parsed is a step the model took, so the next prompt lists it).
+/// A step that gave no actions: why the app is told. A reply that never parsed is a step the model
+/// took, which the session (changed in place) already lists; any other failure leaves it as it was.
 #[derive(Debug)]
 pub struct Failed {
     /// What the app is told.
     pub failure: CuaStepFailure,
-    /// The session after the step, for a step that counts; none for one that does not (the same
-    /// step can be asked again).
-    pub kept: Option<Box<CuaSession>>,
 }
 
 impl From<CuaStepFailure> for Failed {
     fn from(failure: CuaStepFailure) -> Self {
-        Self {
-            failure,
-            kept: None,
-        }
+        Self { failure }
     }
 }
 
@@ -195,18 +189,19 @@ fn dropped_reason(reason: cua_parse::DropReason) -> DropReason {
     }
 }
 
-/// One step: the reply and the session with the step remembered. Thoughts stream into `forward`
-/// as the turn runs, then an `ActionProposed` for each action; a `Stop` from it ends the turn
-/// (nobody is listening) or the proposals. `session` is the run's, which the caller keeps its own
-/// copy of: a step that fails leaves the run as it was.
+/// One step on the run's own session, which the step changes in place: the reply, with the step
+/// remembered. Thoughts stream into `forward` as the turn runs, then an `ActionProposed` for each
+/// action; a `Stop` from it ends the turn (nobody is listening) or the proposals. A step that
+/// fails before its reply is absorbed leaves the session's history as it was, and one that fails
+/// after a repair gets its repair budget back, so the same step can be asked again.
 pub async fn step<P: Provider>(
-    session: CuaSession,
+    session: &mut CuaSession,
     model: &LocalModel,
     provider: &P,
     request: &CuaStepRequest,
     frames: &Frames,
     mut forward: impl FnMut(InferEvent) -> Flow + Send,
-) -> Result<(CuaStepReply, CuaSession), Failed> {
+) -> Result<CuaStepReply, Failed> {
     let caps = model.caps().ok_or_else(unreadable)?;
     let map = FrameMap::new(
         request.window.logical,
@@ -217,19 +212,21 @@ pub async fn step<P: Provider>(
     .map_err(|_| unreadable())?;
     let image = frame_image(request, frames, &map).map_err(|_| unreadable())?;
     let mut sent = session.request(&observation(request), &map, image);
-    let mut session = session;
     loop {
         let mut tee = Tee::new(Echo::ThoughtsAndText, &mut forward);
-        let end = provider
-            .turn(&sent, &mut tee)
-            .await
-            .map_err(|error| CuaStepFailure::ModelFailed(bridge::model_error(&error)))?;
+        let end = match provider.turn(&sent, &mut tee).await {
+            Ok(end) => end,
+            Err(error) => {
+                session.refill_repairs();
+                return Err(CuaStepFailure::ModelFailed(bridge::model_error(&error)).into());
+            }
+        };
         if tee.flow() == Flow::Stop {
+            session.refill_repairs();
             // The session is gone: the cut turn holds no call, and a repair would be asked of nobody.
             return Err(CuaStepFailure::Unparseable.into());
         }
-        let (next, outcome) = session.absorb_for(&sent, tee.finish(end), &map);
-        session = next;
+        let outcome = session.absorb_for(&sent, tee.finish(end), &map);
         match outcome {
             StepOutcome::Actions {
                 thought,
@@ -253,13 +250,12 @@ pub async fn step<P: Provider>(
                         .collect(),
                     safety: Vec::<SafetyHint>::new(),
                 };
-                return Ok((reply, session));
+                return Ok(reply);
             }
             StepOutcome::Repair(next) => sent = next,
             StepOutcome::Unparseable(_) => {
                 return Err(Failed {
                     failure: CuaStepFailure::Unparseable,
-                    kept: Some(Box::new(session)),
                 });
             }
         }

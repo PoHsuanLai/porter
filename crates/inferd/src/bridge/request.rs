@@ -189,14 +189,13 @@ fn effort(effort: pi::Effort) -> sp::Effort {
     }
 }
 
-/// An app that leaves reasoning open gets none. stoker's `Reasoning::EngineDefault` exists (the
-/// codec then sends no reasoning field), but it means whatever the engine's chat template does,
-/// and for the thinking models that is to think: a short interactive turn would spend its tokens
-/// on it and the app, which never asked, would wait for it. So `EngineDefault` is sent as `Off`
-/// and an app that wants reasoning asks for `On(effort)`.
+/// Reasoning as the app asked: `EngineDefault` stays `EngineDefault` (the codec then sends no
+/// reasoning field, and the catalog's `reasoning_default` names the sampling that goes with the
+/// engine's own choice).
 fn reasoning(reasoning: pi::Reasoning) -> sp::Reasoning {
     match reasoning {
-        pi::Reasoning::EngineDefault | pi::Reasoning::Off => sp::Reasoning::Off,
+        pi::Reasoning::EngineDefault => sp::Reasoning::EngineDefault,
+        pi::Reasoning::Off => sp::Reasoning::Off,
         pi::Reasoning::On(level) => sp::Reasoning::On(effort(level)),
     }
 }
@@ -215,10 +214,10 @@ pub fn extras(flavor: Option<Flavor>) -> sp::EngineExtras {
 /// The catalog's sampling for a turn that does not choose its own: the set for the reasoning
 /// mode the turn asks for.
 fn default_sampling(model: &LocalModel, reasoning: sp::Reasoning) -> Option<sp::Sampling> {
-    model.entry.sampling.map(|defaults| match reasoning {
-        sp::Reasoning::Off | sp::Reasoning::EngineDefault => defaults.reasoning_off,
-        sp::Reasoning::On(_) => defaults.reasoning_on,
-    })
+    model
+        .entry
+        .sampling
+        .map(|defaults| *defaults.for_reasoning(reasoning))
 }
 
 /// The turn for a chat request. Sampling and the output limit the request leaves open come from

@@ -213,7 +213,7 @@ the interface other work builds on; a change is a vocabulary bump (section 6) or
 | the real seams: `router` and `engines::SessionRouter`, `engines::Engines` over `supervise` and `hosts`, `runner::Turns` over `bridge` and `cua_step`, `audit` | built; the engine host is child processes (`ProcessHost`), not systemd transient units |
 | `inferd::speech` rules (`check_audio`, `audio_ms`) | built, table-tested; `SpeechRunner` stub |
 | `inferd::{catalog, local, bridge}` (the catalog read, its claims, the model book, both halves of the mapping to stoker's turns) | built, table-tested |
-| `inferd::cua_run::{CuaRun, StepJob}` | built over `cua_step`, which drives stoker's `CuaSession` (`begin`, `request`, one turn through a `TranscriptSink`, `absorb_for`, one repair turn); `runner::Turns` runs a computer-use step through it (tool and text dialects) |
+| `inferd::cua_run::{CuaRun, StepJob}` | built over `cua_step`, which drives stoker's `CuaSession` (`begin`, `request`, one turn through a `TranscriptSink`, `absorb_for` in place on the run's one session, one repair turn); `runner::Turns` runs a computer-use step through it (tool and text dialects) |
 | `FakeInferSession`, `FakeModel` streaming | built, tested |
 | `AccountService`: Query, Availability, Choose, ListGrants, Revoke, IssueToken, `remove_account` | built over the seams, tested end to end with the fakes |
 | `AccountService`: AddAccount, Reauthenticate | answer `Refused(Unavailable)`: the `Provider` seam has no sign-in, so there is nothing to run until the first family's |

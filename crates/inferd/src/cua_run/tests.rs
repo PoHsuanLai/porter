@@ -312,3 +312,40 @@ fn only_screen_data_enters_a_computer_use_session() {
         );
     }
 }
+
+#[tokio::test]
+async fn one_session_serves_every_step_and_a_failed_repair_leaves_its_budget_whole() {
+    let provider = ScriptedProvider::new(
+        vec![],
+        vec![
+            script(vec![click(
+                r#"{"action":"left_click","coordinate":[500,500]}"#,
+            )]),
+            // Step 1: a reply that needs a repair, then the engine goes away.
+            script(vec![TurnEvent::TextDelta("hm".into())]),
+            Script {
+                events: vec![],
+                end: Err(model_provider::ProviderError::Unreachable),
+            },
+            // The same step again: it may repair again, and does.
+            script(vec![TurnEvent::TextDelta("hm".into())]),
+            script(vec![click(
+                r#"{"action":"left_click","coordinate":[100,100]}"#,
+            )]),
+            script(vec![click(
+                r#"{"action":"left_click","coordinate":[100,100]}"#,
+            )]),
+        ],
+    );
+    let rig = Rig::new();
+    let mut run = CuaRun::begin(begin());
+    let mut sink = Events::default();
+    let mut counts = Vec::new();
+    for (number, ok) in [(0, true), (1, false), (1, true), (2, true)] {
+        let got = rig.step(&mut run, &provider, number, &mut sink).await;
+        assert_eq!(got.is_ok(), ok, "step {number}");
+        counts.push(remembered(&run));
+    }
+    assert_eq!(counts, vec![1, 1, 2, 3], "one session grows across steps");
+    assert_eq!(provider.requests().len(), 6);
+}

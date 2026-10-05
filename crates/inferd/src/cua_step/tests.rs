@@ -95,29 +95,23 @@ fn session(model: &LocalModel) -> CuaSession {
     open(model, &begin()).expect("a session")
 }
 
-type Stepped = Result<(CuaStepReply, CuaSession), Failed>;
+type Stepped = Result<CuaStepReply, Failed>;
 
 async fn run_one(
     provider: &ScriptedProvider,
     request: &CuaStepRequest,
-) -> (Stepped, Vec<InferEvent>) {
+) -> (Stepped, CuaSession, Vec<InferEvent>) {
     let scratch = Scratch::new("cua-step");
     let model = cua_model(&scratch);
     let frames = Frames::read(vec![memfd(b"png bytes")]).expect("frames");
     let mut seen = Vec::new();
-    let result = step(
-        session(&model),
-        &model,
-        provider,
-        request,
-        &frames,
-        |event| {
-            seen.push(event);
-            Flow::Continue
-        },
-    )
+    let mut kept = session(&model);
+    let result = step(&mut kept, &model, provider, request, &frames, |event| {
+        seen.push(event);
+        Flow::Continue
+    })
     .await;
-    (result, seen)
+    (result, kept, seen)
 }
 
 fn click_at(x: u32, y: u32) -> CuaAction<WindowSpace> {
@@ -156,8 +150,8 @@ async fn a_click_on_the_grid_lands_in_window_space_and_is_proposed_then_replied(
         TurnEvent::TextDelta("click it".into()),
         click(r#"{"action":"left_click","coordinate":[500,250]}"#),
     ]);
-    let (result, events) = run_one(&provider, &png_request()).await;
-    let (reply, kept) = result.expect("a reply");
+    let (result, kept, events) = run_one(&provider, &png_request()).await;
+    let reply = result.expect("a reply");
     assert_eq!(reply.actions, vec![click_at(100, 25)]);
     assert_eq!(reply.thought.as_deref(), Some("I will click it"));
     assert_eq!(
@@ -231,7 +225,8 @@ async fn a_raw_frame_is_prepared_into_a_png_at_the_size_the_model_is_shown() {
         size: DeviceSize { w: 200, h: 100 },
         stride: 800,
     });
-    let result = step(session(&model), &model, &provider, &raw, &frames, |_| {
+    let mut fresh = session(&model);
+    let result = step(&mut fresh, &model, &provider, &raw, &frames, |_| {
         Flow::Continue
     })
     .await;
@@ -253,8 +248,8 @@ async fn a_point_outside_the_frame_is_dropped_not_clamped_after_one_repair() {
     };
     // Every action refused is answered with a repair; when that fails too, the refusals are told.
     let provider = ScriptedProvider::new(vec![], vec![off(), off()]);
-    let (result, events) = run_one(&provider, &png_request()).await;
-    let (reply, _) = result.expect("a reply");
+    let (result, _, events) = run_one(&provider, &png_request()).await;
+    let reply = result.expect("a reply");
     assert_eq!(reply.actions, vec![]);
     assert_eq!(
         reply.dropped,
@@ -271,8 +266,8 @@ async fn a_point_outside_the_frame_is_dropped_not_clamped_after_one_repair() {
         click(r#"{"action":"left_click","coordinate":[1000,500]}"#),
         click(r#"{"action":"left_click","coordinate":[500,250]}"#),
     ]);
-    let (result, _) = run_one(&mixed, &png_request()).await;
-    let (reply, _) = result.expect("a reply");
+    let (result, _, _) = run_one(&mixed, &png_request()).await;
+    let reply = result.expect("a reply");
     assert_eq!(reply.actions, vec![click_at(100, 25)]);
     assert_eq!(reply.dropped.len(), 1);
     assert_eq!(mixed.requests().len(), 1);
@@ -284,8 +279,8 @@ async fn a_verb_the_dialect_does_not_have_is_dropped_with_its_reason() {
         click(r#"{"action":"left_click","coordinate":[500,500]}"#),
         click(r#"{"action":"fly_away"}"#),
     ]);
-    let (result, _) = run_one(&provider, &png_request()).await;
-    let (reply, _) = result.expect("a reply");
+    let (result, _, _) = run_one(&provider, &png_request()).await;
+    let reply = result.expect("a reply");
     assert_eq!(reply.actions.len(), 1);
     assert_eq!(
         reply.dropped,
@@ -307,8 +302,8 @@ async fn a_reply_that_does_not_parse_is_asked_again_once_with_the_same_frame() {
             )]),
         ],
     );
-    let (result, _) = run_one(&provider, &png_request()).await;
-    let (reply, kept) = result.expect("the repaired reply");
+    let (result, kept, _) = run_one(&provider, &png_request()).await;
+    let reply = result.expect("the repaired reply");
     assert_eq!(reply.actions, vec![click_at(100, 25)]);
     let requests = provider.requests();
     assert_eq!(requests.len(), 2, "one turn, one repair turn");
@@ -339,12 +334,12 @@ async fn a_reply_that_never_parses_is_unparseable_and_the_step_still_counts() {
             script(vec![TurnEvent::TextDelta("hmm".into())]),
         ],
     );
-    let (result, _) = run_one(&provider, &png_request()).await;
-    let Err(Failed { failure, kept }) = result else {
+    let (result, kept, _) = run_one(&provider, &png_request()).await;
+    let Err(Failed { failure }) = result else {
         panic!("a failure");
     };
     assert_eq!(failure, CuaStepFailure::Unparseable);
-    assert_eq!(kept.map(|session| session.remembered()), Some(1));
+    assert_eq!(kept.remembered(), 1);
     assert_eq!(provider.requests().len(), 2);
 }
 
@@ -357,15 +352,15 @@ async fn an_engine_failure_is_told_as_such_and_the_step_does_not_count() {
             end: Err(ProviderError::Unreachable),
         }],
     );
-    let (result, _) = run_one(&down, &png_request()).await;
-    let Err(Failed { failure, kept }) = result else {
+    let (result, kept, _) = run_one(&down, &png_request()).await;
+    let Err(Failed { failure }) = result else {
         panic!("a failure");
     };
     assert_eq!(
         failure,
         CuaStepFailure::ModelFailed(ModelError::Unreachable)
     );
-    assert!(kept.is_none());
+    assert_eq!(kept.remembered(), 0);
 }
 
 #[tokio::test]
@@ -385,12 +380,16 @@ async fn the_prompt_holds_one_frame_fewer_than_the_model_takes_and_lists_the_ste
     let mut current = session(&model);
     for _ in 0..5 {
         let frames = Frames::read(vec![memfd(b"png")]).expect("frames");
-        let (_, next) = step(current, &model, &provider, &png_request(), &frames, |_| {
-            Flow::Continue
-        })
+        step(
+            &mut current,
+            &model,
+            &provider,
+            &png_request(),
+            &frames,
+            |_| Flow::Continue,
+        )
         .await
         .expect("a step");
-        current = next;
     }
     let requests = provider.requests();
     let held: Vec<usize> = requests.iter().map(images).collect();
@@ -421,8 +420,9 @@ async fn a_stop_from_the_sink_ends_the_turn_so_there_is_nothing_to_act_on_and_no
     let model = cua_model(&scratch);
     let frames = Frames::read(vec![memfd(b"png")]).expect("frames");
     let mut count = 0;
+    let mut kept = session(&model);
     let result = step(
-        session(&model),
+        &mut kept,
         &model,
         &provider,
         &png_request(),
@@ -520,4 +520,41 @@ fn the_observation_carries_the_window_contents_and_the_notes_with_who_said_them(
         seen.notes,
         vec![NoteLine("A helper says: a dialog opened".into())]
     );
+}
+
+#[tokio::test]
+async fn an_engine_failure_after_a_repair_gives_the_repair_budget_back() {
+    let scratch = Scratch::new("cua-refill");
+    let model = cua_model(&scratch);
+    let frames = Frames::read(vec![memfd(b"png bytes")]).expect("frames");
+    let provider = ScriptedProvider::new(
+        vec![],
+        vec![
+            script(vec![TurnEvent::TextDelta("hm".into())]),
+            Script {
+                events: vec![],
+                end: Err(ProviderError::Unreachable),
+            },
+        ],
+    );
+    let mut kept = session(&model);
+    let full = kept.repairs_left();
+    let result = step(
+        &mut kept,
+        &model,
+        &provider,
+        &png_request(),
+        &frames,
+        |_| Flow::Continue,
+    )
+    .await;
+    assert!(matches!(
+        result,
+        Err(Failed {
+            failure: CuaStepFailure::ModelFailed(ModelError::Unreachable)
+        })
+    ));
+    assert_eq!(provider.requests().len(), 2, "the turn, then the repair");
+    assert_eq!(kept.repairs_left(), full, "the same step can repair again");
+    assert_eq!(kept.remembered(), 0, "the step does not count");
 }

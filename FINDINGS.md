@@ -572,6 +572,11 @@ pure tables and tests; no new `todo!()` in porter (one pure function was built i
 - Mail signing keys (OpenPGP, S/MIME) have no `SecretPurpose`; the user decides at the mailo migration.
 - Proposed settings keys without design/22 rows: `ai.local_only`, `ai.floor.<class>` (voice and prompt included), `ai.spend.warn_permille` (800), `ai.model.<kind>.<tier>`.
 
+## Fill F4: inferd on stoker 9052bf3 (2026-10-06)
+
+- `cua_step::step` takes the run's `&mut CuaSession` and `CuaRun` keeps one session across steps (no clone, no `Failed.kept`); a step that fails after a repair calls `refill_repairs`.
+- `Reasoning::EngineDefault` is sent as `EngineDefault` (it was `Off`); the sampling for it is `SamplingDefaults::for_reasoning`, which follows the entry's `reasoning_default`. Computer-use turns keep `Reasoning::Off` on purpose.
+
 ## Standing facts
 
 - No ds-core: a closed set's serde form is its slug; UI crates map slugs to labels.

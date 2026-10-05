@@ -77,8 +77,9 @@ fn a_plain_turn_takes_the_models_name_defaults_and_flavor_extras() {
             parts: vec![sp::Part::Text("hi".into())]
         }]
     );
-    // Reasoning left open is off, so the catalog's reasoning-off sampling (greedy) applies.
-    assert_eq!(turn.reasoning, sp::Reasoning::Off);
+    // Reasoning left open stays the engine's own; the entry's `reasoning_default` (off) picks the
+    // greedy sampling.
+    assert_eq!(turn.reasoning, sp::Reasoning::EngineDefault);
     assert_eq!(turn.sampling.temperature, sp::Milli(0));
     // The output limit is the entry's.
     assert_eq!(turn.limits.max_output, sp::Tokens(1024));

@@ -84,11 +84,16 @@ impl CuaRun {
         job: StepJob<'_, P>,
         sink: &mut impl ChatSink,
     ) -> Result<CuaStepReply, CuaStepFailure> {
-        let session = match &self.session {
-            Some(session) => session.clone(),
-            None => cua_step::open(job.model, &self.begin)
-                .ok_or(CuaStepFailure::ModelFailed(ModelError::Unreadable))?,
-        };
+        if self.session.is_none() {
+            self.session = Some(
+                cua_step::open(job.model, &self.begin)
+                    .ok_or(CuaStepFailure::ModelFailed(ModelError::Unreadable))?,
+            );
+        }
+        let session = self
+            .session
+            .as_mut()
+            .ok_or(CuaStepFailure::ModelFailed(ModelError::Unreadable))?;
         let forward = |event| provider_flow(sink.event(event));
         match cua_step::step(
             session,
@@ -100,14 +105,8 @@ impl CuaRun {
         )
         .await
         {
-            Ok((reply, next)) => {
-                self.session = Some(next);
-                Ok(reply)
-            }
-            Err(Failed { failure, kept }) => {
-                self.session = kept.map(|kept| *kept).or_else(|| self.session.take());
-                Err(failure)
-            }
+            Ok(reply) => Ok(reply),
+            Err(Failed { failure }) => Err(failure),
         }
     }
 }
