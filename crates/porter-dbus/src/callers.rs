@@ -5,6 +5,14 @@
 //! sender is refused by the daemon (`AccessDenied`), never given a role.
 
 use crate::BusConnection;
+use zbus::fdo::DBusProxy;
+use zbus::names::BusName;
+
+mod procfs;
+mod table_file;
+
+pub use table_file::TableFileError;
+
 use porter_core::{AppId, AppName, Isolation};
 use serde::{Deserialize, Serialize};
 use std::future::Future;
@@ -70,6 +78,16 @@ impl CallerTable {
         Self { callers }
     }
 
+    /// The role of the app `name`: its last row's (the user's rows come last), `App` for an app
+    /// the table does not name.
+    pub fn role_of(&self, name: &AppName) -> CallerRole {
+        self.callers
+            .iter()
+            .rev()
+            .find(|row| &row.app == name)
+            .map_or(CallerRole::App, |row| row.role)
+    }
+
     /// The caller whose executable is `exe`, as an unsandboxed native process. A sandboxed app
     /// is named by its Flatpak info instead, and takes its role from the row of its app.
     pub fn resolve(&self, exe: &Path) -> Option<Caller> {
@@ -99,113 +117,57 @@ impl<T: Callers> Callers for std::sync::Arc<T> {
 }
 
 /// Callers by process: the bus names the connection's pid, the cgroup and Flatpak info name the
-/// app, the table names the role.
+/// app, the table names the role. The `/proc` root is the caller's to give, so a test reads a
+/// fixture tree.
 #[derive(Debug)]
 pub struct ProcCallers {
     connection: BusConnection,
     table: CallerTable,
+    proc_root: PathBuf,
 }
 
 impl ProcCallers {
-    /// Resolves senders on `connection` through `table`.
+    /// Resolves senders on `connection` through `table`, reading the system's `/proc`.
     pub fn new(connection: BusConnection, table: CallerTable) -> Self {
-        Self { connection, table }
+        Self::with_proc_root(connection, table, PathBuf::from("/proc"))
+    }
+
+    /// As [`ProcCallers::new`], reading `proc_root` instead of `/proc`.
+    pub fn with_proc_root(
+        connection: BusConnection,
+        table: CallerTable,
+        proc_root: PathBuf,
+    ) -> Self {
+        Self {
+            connection,
+            table,
+            proc_root,
+        }
+    }
+
+    /// The caller that is process `pid` of the `/proc` tree at `proc_root`, as [`ProcCallers`]
+    /// reads it once the bus has named the pid.
+    pub fn caller_of_pid(proc_root: &Path, pid: u32, table: &CallerTable) -> Option<Caller> {
+        procfs::caller_of_pid(proc_root, pid, table)
+    }
+
+    /// The pid of the process behind `sender`, as the bus knows it.
+    async fn pid_of(&self, sender: &str) -> Option<u32> {
+        let name = BusName::try_from(sender).ok()?;
+        let bus = DBusProxy::new(&self.connection).await.ok()?;
+        bus.get_connection_credentials(name)
+            .await
+            .ok()?
+            .process_id()
     }
 }
 
 impl Callers for ProcCallers {
     async fn caller_of(&self, sender: &str) -> Option<Caller> {
-        let _ = (&self.connection, &self.table, sender);
-        todo!(
-            "GetConnectionCredentials for the pid, read /proc/<pid>/cgroup and the Flatpak info, \
-             `identity_of` for the app, the table for the role; None for a scope-less caller"
-        )
+        let pid = self.pid_of(sender).await?;
+        Self::caller_of_pid(&self.proc_root, pid, &self.table)
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn row(exe: &str, app: &str, role: CallerRole) -> CallerRow {
-        CallerRow {
-            exe: PathBuf::from(exe),
-            app: AppName::parse(app).expect("name"),
-            role,
-        }
-    }
-
-    fn table() -> CallerTable {
-        CallerTable {
-            callers: vec![
-                row(
-                    "/usr/libexec/quire/inferd",
-                    "org.quire.Inference",
-                    CallerRole::PorterDaemon,
-                ),
-                row(
-                    "/usr/bin/detent",
-                    "org.quire.Settings",
-                    CallerRole::Settings,
-                ),
-                row("/usr/libexec/quire/cuad", "org.quire.Cua", CallerRole::Cua),
-            ],
-        }
-    }
-
-    #[test]
-    fn an_executable_resolves_to_its_app_and_role() {
-        let cases = [
-            (
-                "/usr/libexec/quire/inferd",
-                Some(("org.quire.Inference", CallerRole::PorterDaemon)),
-            ),
-            (
-                "/usr/bin/detent",
-                Some(("org.quire.Settings", CallerRole::Settings)),
-            ),
-            ("/usr/bin/detent (deleted)", None),
-            ("/usr/bin/bash", None),
-        ];
-        for (exe, want) in cases {
-            let got = table()
-                .resolve(Path::new(exe))
-                .map(|c| (c.app.name.to_string(), c.role));
-            assert_eq!(got, want.map(|(n, r)| (n.to_owned(), r)), "{exe}");
-        }
-        assert_eq!(
-            table()
-                .resolve(Path::new("/usr/bin/detent"))
-                .map(|c| c.app.isolation),
-            Some(Isolation::Unsandboxed)
-        );
-    }
-
-    #[test]
-    fn a_user_row_replaces_the_system_row_of_the_same_executable() {
-        let user = CallerTable {
-            callers: vec![row(
-                "/usr/bin/detent",
-                "org.example.MySettings",
-                CallerRole::App,
-            )],
-        };
-        let merged = CallerTable::layered(table(), user);
-        let got = merged.resolve(Path::new("/usr/bin/detent")).expect("named");
-        assert_eq!(
-            (got.app.name.as_str(), got.role),
-            ("org.example.MySettings", CallerRole::App)
-        );
-        assert_eq!(merged.callers.len(), 3);
-    }
-
-    #[test]
-    fn a_table_round_trips_through_its_serde_form() {
-        let json = serde_json::to_string(&table()).expect("json");
-        assert_eq!(
-            serde_json::from_str::<CallerTable>(&json).expect("table"),
-            table()
-        );
-        assert!(json.contains(r#""role":"porter_daemon""#));
-    }
-}
+mod tests;

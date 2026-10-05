@@ -1,13 +1,15 @@
 //! Who is calling: a bus connection's unique name to a [`Caller`].
 //!
 //! The caller is derived by the transport, never sent: the bus says which process owns a
-//! connection, and that process's executable decides the caller through the caller table
-//! (`[callers]` of `inferd.toml`). This is advisory for unsandboxed processes (porter R12): a
+//! connection, and `porter_dbus::ProcCallers` (shared with accountd) names it. inferd's own
+//! `[callers]` table of `inferd.toml` is rows of that shared table: cuad's executables with the
+//! `Cua` role, each app's with `App`. This is advisory for unsandboxed processes (porter R12): a
 //! process that can run an allowed executable can be that caller. cuad is a fixed executable and
 //! the only caller that may open a computer-use session; an app is whichever executable the
 //! table names for it.
 
-use porter_core::{AppId, AppName, Isolation};
+use porter_core::{AppId, AppName};
+use porter_dbus::{BusConnection, CallerRole, CallerRow, ProcCallers};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
@@ -58,31 +60,48 @@ impl CallerTable {
         toml::from_str(text).map_err(|e| e.to_string())
     }
 
-    /// The caller whose executable is `exe`. cuad is checked first, so an app entry cannot
-    /// claim its executable.
-    pub fn resolve(&self, exe: &Path) -> Option<Caller> {
-        let unsandboxed = |name: &str| {
-            Some(AppId {
-                name: AppName::parse(name).ok()?,
-                isolation: Isolation::Unsandboxed,
+    /// The rows of the shared table this table is: cuad's first, so an app entry cannot claim its
+    /// executable (the shared table answers with the first row that names one).
+    pub fn rows(&self) -> porter_dbus::CallerTable {
+        let cua_app = AppName::parse(CUA_APP).ok();
+        let cua = cua_app.into_iter().flat_map(|app| {
+            self.cua.iter().map(move |exe| CallerRow {
+                exe: exe.clone(),
+                app: app.clone(),
+                role: CallerRole::Cua,
             })
-        };
-        if self.cua.contains(exe) {
-            return Some(Caller {
-                app: unsandboxed("org.quire.Cua")?,
-                role: Role::Cua,
-            });
+        });
+        let apps = self.apps.iter().flat_map(|(app, exes)| {
+            exes.iter().map(move |exe| CallerRow {
+                exe: exe.clone(),
+                app: app.clone(),
+                role: CallerRole::App,
+            })
+        });
+        porter_dbus::CallerTable {
+            callers: cua.chain(apps).collect(),
         }
-        self.apps
-            .iter()
-            .find(|(_, exes)| exes.contains(exe))
-            .map(|(name, _)| Caller {
-                app: AppId {
-                    name: name.clone(),
-                    isolation: Isolation::Unsandboxed,
-                },
-                role: Role::App,
-            })
+    }
+
+    /// The caller whose executable is `exe`, through [`CallerTable::rows`].
+    pub fn resolve(&self, exe: &Path) -> Option<Caller> {
+        self.rows().resolve(exe).map(Caller::from_shared)
+    }
+}
+
+/// The app cuad is.
+const CUA_APP: &str = "org.quire.Cua";
+
+impl Caller {
+    /// A shared caller as inferd knows roles: the `Cua` role, and `App` for every other.
+    pub fn from_shared(caller: porter_dbus::Caller) -> Self {
+        Self {
+            app: caller.app,
+            role: match caller.role {
+                CallerRole::Cua => Role::Cua,
+                _ => Role::App,
+            },
+        }
     }
 }
 
@@ -99,33 +118,26 @@ impl<T: Peers> Peers for std::sync::Arc<T> {
     }
 }
 
-/// Peers by process: the bus names the connection's pid, `/proc/<pid>/exe` names the program,
-/// the [`CallerTable`] names the caller.
+/// Peers by process: [`ProcCallers`] over the rows of the [`CallerTable`].
 #[derive(Debug)]
 pub struct ProcPeers {
-    connection: zbus::Connection,
-    table: CallerTable,
+    callers: ProcCallers,
 }
 
 impl ProcPeers {
     /// Resolves senders on `connection` through `table`.
-    pub fn new(connection: zbus::Connection, table: CallerTable) -> Self {
-        Self { connection, table }
+    pub fn new(connection: BusConnection, table: CallerTable) -> Self {
+        Self {
+            callers: ProcCallers::new(connection, table.rows()),
+        }
     }
-}
-
-/// The program a process runs. A replaced binary reads back with `" (deleted)"` appended, which
-/// is not the program that was allowed.
-fn exe_of(pid: u32) -> Option<PathBuf> {
-    std::fs::read_link(format!("/proc/{pid}/exe")).ok()
 }
 
 impl Peers for ProcPeers {
     async fn caller_of(&self, sender: &str) -> Option<Caller> {
-        let name = zbus::names::BusName::try_from(sender).ok()?;
-        let bus = zbus::fdo::DBusProxy::new(&self.connection).await.ok()?;
-        let pid = bus.get_connection_unix_process_id(name).await.ok()?;
-        exe_of(pid).and_then(|exe| self.table.resolve(&exe))
+        porter_dbus::Callers::caller_of(&self.callers, sender)
+            .await
+            .map(Caller::from_shared)
     }
 }
 

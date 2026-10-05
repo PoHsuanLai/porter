@@ -1,4 +1,5 @@
 use super::*;
+use porter_core::Isolation;
 
 fn table() -> CallerTable {
     CallerTable::from_toml_text(
@@ -71,4 +72,22 @@ async fn introduced_connections_are_known_and_others_are_not() {
     assert_eq!(peers.caller_of(":1.43").await, None);
     let shared = std::sync::Arc::new(peers);
     assert_eq!(shared.caller_of(":1.42").await, Some(caller));
+}
+
+#[test]
+fn the_table_is_rows_of_the_shared_table_with_cuad_first() {
+    let rows = table().rows();
+    let roles: Vec<_> = rows.callers.iter().map(|row| row.role).collect();
+    assert_eq!(roles[0], porter_dbus::CallerRole::Cua);
+    assert!(
+        roles[1..]
+            .iter()
+            .all(|r| *r == porter_dbus::CallerRole::App)
+    );
+    assert_eq!(rows.callers.len(), 5);
+    // The first row for cuad's executable is cuad's, not the sneaky app's.
+    let cuad = rows
+        .resolve(Path::new("/usr/libexec/quire/cuad"))
+        .expect("cuad");
+    assert_eq!(cuad.role, porter_dbus::CallerRole::Cua);
 }

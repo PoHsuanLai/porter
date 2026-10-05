@@ -72,8 +72,9 @@ impl<H: Host, C: Callers> Core<H, C> {
             .sender()
             .ok_or_else(|| RefusedError::access_denied("no sender"))?;
         self.callers
-            .app_of(sender.as_str())
+            .caller_of(sender.as_str())
             .await
+            .map(|caller| caller.app)
             .ok_or_else(|| RefusedError::access_denied("accountd does not know this caller"))
     }
 
