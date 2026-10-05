@@ -1,17 +1,16 @@
 //! Who is calling: a bus connection's unique name to a [`Caller`] (an app and a role), for both
 //! daemons (porter PLAN §2.1). The process behind the connection is found through the bus
-//! (pid), `/proc/<pid>/cgroup` and the Flatpak info, and named by `identity_of`; the role comes
-//! from a table of executables (`/etc/porter/callers.toml`, a user file wins). An unidentified
-//! sender is refused by the daemon (`AccessDenied`), never given a role.
+//! (pid) and `/proc/<pid>/cgroup` alone, which no ptrace check guards, so the same code runs
+//! inside a Landlock domain: `app-flatpak-<id>-<n>.scope` is a Flatpak app, `app-<id>-<n>.scope`
+//! a native app (named by `identity_of`), `<name>.service` a daemon's unit. The role comes from a
+//! table keyed by app id and unit name (`callers.toml`, a user file wins; the daemons read the
+//! files). An unidentified sender is refused by the daemon (`AccessDenied`), never given a role.
 
 use crate::BusConnection;
 use zbus::fdo::DBusProxy;
 use zbus::names::BusName;
 
 mod procfs;
-mod table_file;
-
-pub use table_file::TableFileError;
 
 use porter_core::{AppId, AppName, Isolation};
 use serde::{Deserialize, Serialize};
@@ -46,18 +45,20 @@ pub struct Caller {
     pub role: CallerRole,
 }
 
-/// One executable and who it is.
+/// One app or unit and its role.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CallerRow {
-    /// The program's path, as `/proc/<pid>/exe` reads it.
-    pub exe: PathBuf,
-    /// The app it is.
+    /// The app: what an app scope or Flatpak scope names, or what the unit is known as.
     pub app: AppName,
+    /// The systemd service unit (`inferd.service`) that is this app, for daemons that run in
+    /// their own unit. Without one the row only gives the app its role.
+    #[serde(default)]
+    pub unit: Option<String>,
     /// Its role.
     pub role: CallerRole,
 }
 
-/// The table of executables: `[[caller]]` rows in `callers.toml`.
+/// The table of apps and units: `[[caller]]` rows in `callers.toml`.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct CallerTable {
     /// The rows.
@@ -66,13 +67,18 @@ pub struct CallerTable {
 }
 
 impl CallerTable {
-    /// The system's table with the user's laid over it: a user row for an executable the system
-    /// names replaces it.
+    /// The system's table with the user's laid over it: a user row replaces the system's row
+    /// for the same unit, or for the same app when neither names a unit.
     pub fn layered(system: CallerTable, user: CallerTable) -> Self {
+        let same = |a: &CallerRow, b: &CallerRow| match (&a.unit, &b.unit) {
+            (Some(x), Some(y)) => x == y,
+            (None, None) => a.app == b.app,
+            _ => false,
+        };
         let mut callers: Vec<CallerRow> = system
             .callers
             .into_iter()
-            .filter(|row| !user.callers.iter().any(|mine| mine.exe == row.exe))
+            .filter(|row| !user.callers.iter().any(|mine| same(mine, row)))
             .collect();
         callers.extend(user.callers);
         Self { callers }
@@ -88,12 +94,12 @@ impl CallerTable {
             .map_or(CallerRole::App, |row| row.role)
     }
 
-    /// The caller whose executable is `exe`, as an unsandboxed native process. A sandboxed app
-    /// is named by its Flatpak info instead, and takes its role from the row of its app.
-    pub fn resolve(&self, exe: &Path) -> Option<Caller> {
+    /// The caller that is the service unit `unit`, an unsandboxed native process. The first row
+    /// for a unit wins.
+    pub fn resolve_unit(&self, unit: &str) -> Option<Caller> {
         self.callers
             .iter()
-            .find(|row| row.exe == exe)
+            .find(|row| row.unit.as_deref() == Some(unit))
             .map(|row| Caller {
                 app: AppId {
                     name: row.app.clone(),
@@ -116,8 +122,8 @@ impl<T: Callers> Callers for std::sync::Arc<T> {
     }
 }
 
-/// Callers by process: the bus names the connection's pid, the cgroup and Flatpak info name the
-/// app, the table names the role. The `/proc` root is the caller's to give, so a test reads a
+/// Callers by process: the bus names the connection's pid, its cgroup names the app or unit, the
+/// table names the role. The `/proc` root is the caller's to give, so a test reads a
 /// fixture tree.
 #[derive(Debug)]
 pub struct ProcCallers {

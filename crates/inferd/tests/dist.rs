@@ -2,7 +2,7 @@
 //! the daemon claims, and the sample configuration reads.
 
 use inferd::config::InferdConfig;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 fn dist(file: &str) -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -41,16 +41,12 @@ fn the_unit_gives_engines_the_gpu_and_the_network_to_nobody() {
 #[test]
 fn the_sample_configuration_reads_and_names_the_callers_the_design_calls_for() {
     let config = InferdConfig::from_toml(&dist("inferd.toml")).expect("the sample reads");
-    let cua = config
-        .callers
-        .resolve(Path::new("/usr/libexec/quire/cuad"))
-        .expect("cuad");
+    let cua = config.callers.resolve("cuad.service").expect("cuad");
     assert_eq!(cua.role, inferd::peers::Role::Cua);
     for exe in ["memoryd", "intentd", "companiond", "readerd"] {
-        let path = PathBuf::from("/usr/libexec/quire").join(exe);
         let caller = config
             .callers
-            .resolve(&path)
+            .resolve(&format!("{exe}.service"))
             .unwrap_or_else(|| panic!("{exe}"));
         assert_eq!(caller.role, inferd::peers::Role::App);
     }

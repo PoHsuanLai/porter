@@ -35,16 +35,16 @@
 # (stoker catalog file of the model), not this file: memoryd asks for nomic-embed-text v1.5
 # (768 numbers, `search_query: ` and `search_document: `).
 
-# Who may call. A caller is the executable behind a bus connection (the bus names its process,
-# /proc/<pid>/exe names the program); one that is not here is refused. cuad is the only caller that
-# may open a computer-use session.
+# Who may call. A caller is the systemd unit behind a bus connection (the bus names its process,
+# /proc/<pid>/cgroup names the unit); an app in its own app scope or Flatpak scope is an App
+# without a line here. cuad is the only caller that may open a computer-use session.
 [callers]
-cua = ["/usr/libexec/quire/cuad"]
+cua = ["cuad.service"]
 [callers.apps]
-"org.quire.Memory" = ["/usr/libexec/quire/memoryd"]
-"org.quire.Intents" = ["/usr/libexec/quire/intentd"]
-"org.quire.Companion" = ["/usr/libexec/quire/companiond"]
-"org.quire.Reader" = ["/usr/libexec/quire/readerd"]
+"org.quire.Memory" = ["memoryd.service"]
+"org.quire.Intents" = ["intentd.service"]
+"org.quire.Companion" = ["companiond.service"]
+"org.quire.Reader" = ["readerd.service"]
 
 # Structured-output limits (settings ai.structured.*; each row's range is in dist/inferd.settings.toml).
 # A value out of range is logged and replaced by the default, for that field only.

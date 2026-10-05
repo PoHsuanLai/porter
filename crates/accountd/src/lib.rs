@@ -15,12 +15,13 @@
 //!
 //! Not served yet: the `Account` properties (`Id`, `Provider`, `Label`, `State`,
 //! `Capabilities`), the manager's signals, `Adopt`, `Tokens.OpenAuthenticated`, `Peer`, the
-//! Settings module and a caller table over `porter_dbus::Callers`. The binary still exits "not
+//! Settings module. The binary still exits "not
 //! implemented": its secret store and sheets are stubs and its families have no bodies.
 
 mod account;
 mod audit;
 mod callers;
+mod callers_file;
 mod core;
 mod errors;
 mod grants;
@@ -30,6 +31,7 @@ mod store;
 
 pub use audit::FileAudit;
 pub use callers::{Callers, TableCallers};
+pub use callers_file::{CallerFileError, load_callers, table_from_file, table_from_toml};
 pub use core::{Host, serve};
 pub use errors::RefusedError;
 pub use store::FileStore;

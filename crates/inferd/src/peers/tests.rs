@@ -4,11 +4,11 @@ use porter_core::Isolation;
 fn table() -> CallerTable {
     CallerTable::from_toml_text(
         r#"
-cua = ["/usr/libexec/quire/cuad"]
+cua = ["cuad.service"]
 [apps]
-"org.quire.Memory" = ["/usr/libexec/quire/memoryd"]
-"org.quire.Mail" = ["/usr/bin/mailo", "/opt/mailo/mailo"]
-"org.quire.Sneaky" = ["/usr/libexec/quire/cuad"]
+"org.quire.Memory" = ["memoryd.service"]
+"org.quire.Mail" = ["mailo.service", "mailo-dev.service"]
+"org.quire.Sneaky" = ["cuad.service"]
 "#,
     )
     .expect("table")
@@ -19,26 +19,22 @@ fn named(caller: &Caller) -> (&str, Role, Isolation) {
 }
 
 #[test]
-fn an_executable_is_the_caller_the_table_names_for_it() {
+fn a_unit_is_the_caller_the_table_names_for_it() {
     let table = table();
-    let memory = table
-        .resolve(Path::new("/usr/libexec/quire/memoryd"))
-        .expect("memoryd");
+    let memory = table.resolve("memoryd.service").expect("memoryd");
     assert_eq!(
         named(&memory),
         ("org.quire.Memory", Role::App, Isolation::Unsandboxed)
     );
-    for exe in ["/usr/bin/mailo", "/opt/mailo/mailo"] {
-        let mail = table.resolve(Path::new(exe)).expect("mailo");
+    for exe in ["mailo.service", "mailo-dev.service"] {
+        let mail = table.resolve(exe).expect("mailo");
         assert_eq!(mail.app.name.as_str(), "org.quire.Mail");
     }
 }
 
 #[test]
-fn cuad_is_the_one_computer_use_caller_and_an_app_entry_cannot_claim_its_executable() {
-    let cuad = table()
-        .resolve(Path::new("/usr/libexec/quire/cuad"))
-        .expect("cuad");
+fn cuad_is_the_one_computer_use_caller_and_an_app_entry_cannot_claim_its_unit() {
+    let cuad = table().resolve("cuad.service").expect("cuad");
     assert_eq!(
         named(&cuad),
         ("org.quire.Cua", Role::Cua, Isolation::Unsandboxed)
@@ -48,25 +44,22 @@ fn cuad_is_the_one_computer_use_caller_and_an_app_entry_cannot_claim_its_executa
 #[test]
 fn a_program_the_table_does_not_name_is_nobody() {
     let table = table();
-    for exe in ["/usr/bin/bash", "/usr/libexec/quire/memoryd (deleted)", ""] {
-        assert_eq!(table.resolve(Path::new(exe)), None, "{exe:?}");
+    for exe in ["bash.service", "memoryd.service.d", ""] {
+        assert_eq!(table.resolve(exe), None, "{exe:?}");
     }
-    assert_eq!(
-        CallerTable::default().resolve(Path::new("/usr/bin/mailo")),
-        None
-    );
+    assert_eq!(CallerTable::default().resolve("mailo.service"), None);
 }
 
 #[test]
 fn a_table_with_a_malformed_app_name_does_not_parse() {
-    assert!(CallerTable::from_toml_text("[apps]\n\"not a name\" = [\"/x\"]\n").is_err());
+    assert!(CallerTable::from_toml_text("[apps]\n\"not a name\" = [\"x.service\"]\n").is_err());
     assert!(CallerTable::from_toml_text("cua = 3").is_err());
 }
 
 #[tokio::test]
 async fn introduced_connections_are_known_and_others_are_not() {
     let peers = TablePeers::new();
-    let caller = table().resolve(Path::new("/usr/bin/mailo")).expect("mailo");
+    let caller = table().resolve("mailo.service").expect("mailo");
     peers.introduce(":1.42", caller.clone());
     assert_eq!(peers.caller_of(":1.42").await, Some(caller.clone()));
     assert_eq!(peers.caller_of(":1.43").await, None);
@@ -85,9 +78,7 @@ fn the_table_is_rows_of_the_shared_table_with_cuad_first() {
             .all(|r| *r == porter_dbus::CallerRole::App)
     );
     assert_eq!(rows.callers.len(), 5);
-    // The first row for cuad's executable is cuad's, not the sneaky app's.
-    let cuad = rows
-        .resolve(Path::new("/usr/libexec/quire/cuad"))
-        .expect("cuad");
+    // The first row for cuad's unit is cuad's, not the sneaky app's.
+    let cuad = rows.resolve_unit("cuad.service").expect("cuad");
     assert_eq!(cuad.role, porter_dbus::CallerRole::Cua);
 }

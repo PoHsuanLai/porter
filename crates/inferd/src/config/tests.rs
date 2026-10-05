@@ -92,9 +92,9 @@ local_only = "off"
 floors = [{ class = "mail", floor = "local_network" }]
 
 [callers]
-cua = ["/usr/libexec/quire/cuad"]
+cua = ["cuad.service"]
 [callers.apps]
-"org.quire.Memory" = ["/usr/libexec/quire/memoryd"]
+"org.quire.Memory" = ["memoryd.service"]
 "#,
     )
     .expect("config");
@@ -111,12 +111,7 @@ cua = ["/usr/libexec/quire/cuad"]
         Floor::Anywhere,
         "a class with no row may go anywhere"
     );
-    assert!(
-        config
-            .callers
-            .resolve(std::path::Path::new("/usr/libexec/quire/cuad"))
-            .is_some()
-    );
+    assert!(config.callers.resolve("cuad.service").is_some());
 }
 
 #[test]

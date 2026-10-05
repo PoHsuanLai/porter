@@ -2,18 +2,18 @@
 //!
 //! The caller is derived by the transport, never sent: the bus says which process owns a
 //! connection, and `porter_dbus::ProcCallers` (shared with accountd) names it. inferd's own
-//! `[callers]` table of `inferd.toml` is rows of that shared table: cuad's executables with the
-//! `Cua` role, each app's with `App`. This is advisory for unsandboxed processes (porter R12): a
-//! process that can run an allowed executable can be that caller. cuad is a fixed executable and
-//! the only caller that may open a computer-use session; an app is whichever executable the
-//! table names for it.
+//! `[callers]` table of `inferd.toml` is rows of that shared table, keyed by systemd unit (never
+//! by executable path: the cgroup is all `ProcCallers` reads): cuad's units with the `Cua` role,
+//! each app's with `App`. This is advisory for unsandboxed processes (porter R12): a
+//! process that can start an allowed unit or app scope can be that caller. cuad is a fixed unit and
+//! the only caller that may open a computer-use session; an app is whichever unit the table
+//! names for it, or any identified app scope.
 
 use porter_core::{AppId, AppName};
 use porter_dbus::{BusConnection, CallerRole, CallerRow, ProcCallers};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
-use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
 /// What a caller may ask for, beyond what its data class and consent allow.
@@ -34,24 +34,24 @@ pub struct Caller {
     pub role: Role,
 }
 
-/// Which executable is which caller.
+/// Which systemd unit is which caller.
 ///
 /// ```toml
-/// cua = ["/usr/libexec/quire/cuad"]
+/// cua = ["cuad.service"]
 /// [apps]
-/// "org.quire.Memory" = ["/usr/libexec/quire/memoryd"]
+/// "org.quire.Memory" = ["memoryd.service"]
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct CallerTable {
     #[serde(default)]
-    cua: BTreeSet<PathBuf>,
+    cua: BTreeSet<String>,
     #[serde(default)]
-    apps: BTreeMap<AppName, BTreeSet<PathBuf>>,
+    apps: BTreeMap<AppName, BTreeSet<String>>,
 }
 
 impl CallerTable {
-    /// A table naming cuad's executables and each app's.
-    pub fn new(cua: BTreeSet<PathBuf>, apps: BTreeMap<AppName, BTreeSet<PathBuf>>) -> Self {
+    /// A table naming cuad's units and each app's.
+    pub fn new(cua: BTreeSet<String>, apps: BTreeMap<AppName, BTreeSet<String>>) -> Self {
         Self { cua, apps }
     }
 
@@ -61,19 +61,19 @@ impl CallerTable {
     }
 
     /// The rows of the shared table this table is: cuad's first, so an app entry cannot claim its
-    /// executable (the shared table answers with the first row that names one).
+    /// unit (the shared table answers with the first row that names one).
     pub fn rows(&self) -> porter_dbus::CallerTable {
         let cua_app = AppName::parse(CUA_APP).ok();
         let cua = cua_app.into_iter().flat_map(|app| {
-            self.cua.iter().map(move |exe| CallerRow {
-                exe: exe.clone(),
+            self.cua.iter().map(move |unit| CallerRow {
+                unit: Some(unit.clone()),
                 app: app.clone(),
                 role: CallerRole::Cua,
             })
         });
-        let apps = self.apps.iter().flat_map(|(app, exes)| {
-            exes.iter().map(move |exe| CallerRow {
-                exe: exe.clone(),
+        let apps = self.apps.iter().flat_map(|(app, units)| {
+            exes.iter().map(move |unit| CallerRow {
+                unit: Some(unit.clone()),
                 app: app.clone(),
                 role: CallerRole::App,
             })
@@ -83,9 +83,9 @@ impl CallerTable {
         }
     }
 
-    /// The caller whose executable is `exe`, through [`CallerTable::rows`].
-    pub fn resolve(&self, exe: &Path) -> Option<Caller> {
-        self.rows().resolve(exe).map(Caller::from_shared)
+    /// The caller that is the unit `unit`, through [`CallerTable::rows`].
+    pub fn resolve(&self, unit: &str) -> Option<Caller> {
+        self.rows().resolve_unit(unit).map(Caller::from_shared)
     }
 }
 

@@ -1,33 +1,27 @@
 use super::*;
 
-const INFO: &str = "[Application]\nname=org.example.Photos\nruntime=runtime/org.gnome.Platform/x86_64/47\n\n[Instance]\ninstance-id=1234567\napp-path=/x\n";
-
 #[test]
-fn a_flatpak_info_names_the_app_and_the_instance() {
-    assert_eq!(
-        flatpak_facts(INFO),
-        Some(SandboxFacts::Flatpak {
-            app: "org.example.Photos".to_owned(),
-            instance: "1234567".to_owned()
-        })
-    );
-}
-
-#[test]
-fn a_flatpak_info_without_an_application_name_is_not_understood() {
-    for text in ["", "[Instance]\ninstance-id=1\n", "name=org.example.A\n"] {
-        assert_eq!(flatpak_facts(text), None, "{text:?}");
+fn a_flatpak_scope_names_its_app_with_the_id_unescaped() {
+    let cases = [
+        (
+            "app-flatpak-org.example.Photos-5.scope",
+            Some("org.example.Photos"),
+        ),
+        (
+            "app-flatpak-org.example.My\\x2dApp-1234.scope",
+            Some("org.example.My-App"),
+        ),
+        ("app-flatpak-org.example.Photos.scope", None),
+        ("app-flatpak-notaname-5.scope", None),
+        ("app-flatpak-org.example.A-5.service", None),
+        ("app-gnome-org.example.A-5.scope", None),
+        ("app-flatpak-org.example.A\\xZZ-5.scope", None),
+    ];
+    for (leaf, want) in cases {
+        assert_eq!(
+            flatpak_scope_app(leaf).as_ref().map(AppName::as_str),
+            want,
+            "{leaf}"
+        );
     }
-}
-
-#[test]
-fn a_name_in_another_section_is_not_the_application() {
-    let text = "[Context]\nname=org.example.Evil\n[Application]\nname=org.example.Good\n";
-    assert_eq!(
-        flatpak_facts(text),
-        Some(SandboxFacts::Flatpak {
-            app: "org.example.Good".to_owned(),
-            instance: String::new()
-        })
-    );
 }

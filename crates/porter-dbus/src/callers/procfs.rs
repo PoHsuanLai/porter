@@ -1,87 +1,89 @@
-//! Reading a process's facts out of a `/proc` tree and naming its caller. The root is a
-//! parameter, so the tests read fixture trees and nothing below the daemon's main reads the real
-//! `/proc` by itself.
+//! Naming a process from its cgroup, the one file read. `/proc/<pid>/exe` and
+//! `/proc/<pid>/root/.flatpak-info` are ptrace-gated and a Landlock domain blocks them, so
+//! nothing here touches them. The root is a parameter, so the tests read fixture trees.
 
-use super::{Caller, CallerRole, CallerTable};
-use porter_core::{AppId, CgroupPath, PeerFacts, PeerIdentity, SandboxFacts, identity_of};
-use std::io::ErrorKind;
+use super::{Caller, CallerTable};
+use porter_core::identity_of;
+use porter_core::{AppId, AppName, CgroupPath, Isolation, PeerFacts, PeerIdentity, SandboxFacts};
 use std::path::Path;
+
+/// The launcher scope Flatpak makes: `app-flatpak-<escaped id>-<n>.scope`.
+const FLATPAK_PREFIX: &str = "app-flatpak-";
 
 /// The caller that is process `pid` under `proc_root`, or `None` for a process nothing names.
 ///
-/// - A native process whose executable the table names is that row's caller, wherever it was
-///   launched from (a daemon under its own unit, a program started from a terminal).
-/// - A Flatpak process is the app its `.flatpak-info` names, with the role of the table row for
-///   that app, `App` otherwise.
-/// - Any other native process is the app its launcher's `app-<id>-*.scope` names, as an `App`.
-/// - A process with none of these, or a sandbox whose info cannot be read, is nobody.
+/// - `<name>.service`: the unit the table names, as that row's caller.
+/// - `app-flatpak-<id>-<n>.scope`: the Flatpak app `<id>`, with the role of its table row.
+/// - `app-[<launcher>-]<id>-<n>.scope`: the native app `<id>`, with the role of its table row.
+/// - Anything else (a terminal's child, a session scope, an unlisted unit, no cgroup): nobody.
 pub(super) fn caller_of_pid(proc_root: &Path, pid: u32, table: &CallerTable) -> Option<Caller> {
-    let dir = proc_root.join(pid.to_string());
-    let sandbox = sandbox_facts(&dir)?;
-    if sandbox == SandboxFacts::Native {
-        // A replaced binary reads back with " (deleted)" appended, which no row names.
-        if let Some(caller) = std::fs::read_link(dir.join("exe"))
-            .ok()
-            .and_then(|exe| table.resolve(&exe))
-        {
-            return Some(caller);
-        }
+    let text = std::fs::read_to_string(proc_root.join(pid.to_string()).join("cgroup")).ok()?;
+    let cgroup = CgroupPath::from_proc_cgroup(&text).ok()?;
+    let leaf = cgroup.as_str().rsplit('/').next().unwrap_or_default();
+    if leaf.ends_with(".service") {
+        return table.resolve_unit(leaf);
     }
-    let cgroup = std::fs::read_to_string(dir.join("cgroup"))
-        .ok()
-        .and_then(|text| CgroupPath::from_proc_cgroup(&text).ok());
+    let app = flatpak_scope_app(leaf).map(|name| AppId {
+        name,
+        isolation: Isolation::Flatpak,
+    });
+    let app = match app {
+        Some(app) => app,
+        None => native_app(pid, cgroup)?,
+    };
+    Some(Caller {
+        role: table.role_of(&app.name),
+        app,
+    })
+}
+
+/// The app a native launcher's scope names.
+fn native_app(pid: u32, cgroup: CgroupPath) -> Option<AppId> {
     let facts = PeerFacts {
         pid,
-        cgroup: cgroup.or_else(|| CgroupPath::parse("/").ok())?,
-        sandbox: sandbox.clone(),
+        cgroup,
+        sandbox: SandboxFacts::Native,
     };
     match identity_of(&facts) {
-        PeerIdentity::Proven(app) => Some(Caller {
-            role: role_of(&app, &sandbox, table),
-            app,
-        }),
+        PeerIdentity::Proven(app) => Some(app),
         PeerIdentity::Unproven => None,
     }
 }
 
-/// A sandboxed app's role is its table row's; a native app's comes from its executable alone,
-/// since a scope's name is the launcher's word and an executable row is the table's.
-fn role_of(app: &AppId, sandbox: &SandboxFacts, table: &CallerTable) -> CallerRole {
-    match sandbox {
-        SandboxFacts::Native => CallerRole::App,
-        _ => table.role_of(&app.name),
+/// The app of `app-flatpak-<escaped id>-<n>.scope`.
+fn flatpak_scope_app(leaf: &str) -> Option<AppName> {
+    let unit = leaf.strip_prefix(FLATPAK_PREFIX)?.strip_suffix(".scope")?;
+    let (id, instance) = unit.rsplit_once('-')?;
+    let numeric = !instance.is_empty() && instance.bytes().all(|b| b.is_ascii_alphanumeric());
+    if !numeric {
+        return None;
     }
+    AppName::parse(&unescape(id)?).ok()
 }
 
-/// What the process's sandbox says: `Native` without a `.flatpak-info` in its root, the facts of
-/// one that parses, `None` for one that is there and cannot be read or understood.
-fn sandbox_facts(dir: &Path) -> Option<SandboxFacts> {
-    match std::fs::read_to_string(dir.join("root/.flatpak-info")) {
-        Ok(text) => flatpak_facts(&text),
-        Err(e) if e.kind() == ErrorKind::NotFound => Some(SandboxFacts::Native),
-        Err(_) => None,
-    }
-}
-
-/// `[Application] name` and `[Instance] instance-id` of a `.flatpak-info` (key-file text).
-fn flatpak_facts(text: &str) -> Option<SandboxFacts> {
-    let mut section = "";
-    let (mut app, mut instance) = (None, None);
-    for line in text.lines().map(str::trim) {
-        if let Some(name) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
-            section = name;
-        } else if let Some((key, value)) = line.split_once('=') {
-            match (section, key.trim()) {
-                ("Application", "name") => app = Some(value.trim().to_owned()),
-                ("Instance", "instance-id") => instance = Some(value.trim().to_owned()),
-                _ => {}
+/// A unit name component with its `\xHH` escapes undone, or `None` for a broken escape.
+fn unescape(text: &str) -> Option<String> {
+    let mut bytes = Vec::with_capacity(text.len());
+    let mut rest = text.as_bytes();
+    while let Some((&first, tail)) = rest.split_first() {
+        rest = match (first, tail) {
+            (b'\\', [b'x', high, low, after @ ..]) => {
+                let digit = |b: u8| {
+                    char::from(b)
+                        .to_digit(16)
+                        .and_then(|d| u8::try_from(d).ok())
+                };
+                bytes.push((digit(*high)? << 4) | digit(*low)?);
+                after
             }
-        }
+            (b'\\', _) => return None,
+            _ => {
+                bytes.push(first);
+                tail
+            }
+        };
     }
-    Some(SandboxFacts::Flatpak {
-        app: app?,
-        instance: instance.unwrap_or_default(),
-    })
+    String::from_utf8(bytes).ok()
 }
 
 #[cfg(test)]
