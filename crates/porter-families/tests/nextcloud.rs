@@ -151,7 +151,8 @@ async fn login_flow_v2_signs_in_and_reviews_what_the_server_offers() {
     let present: Vec<CapabilityKind> = signed
         .claims
         .iter()
-        .filter_map(|c| matches!(c.offer, Offer::Present(_)).then(|| c.offer.kind()))
+        .filter(|c| matches!(c.offer, Offer::Present(_)))
+        .map(|c| c.offer.kind())
         .collect();
     assert_eq!(
         present,
