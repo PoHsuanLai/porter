@@ -4,7 +4,7 @@
 //! not built). Nothing starts an engine until a session asks for its model.
 
 use clap::Parser;
-use engine_supervisor::{EngineId, SupervisorConfig};
+use engine_supervisor::EngineId;
 use inferd::audit::JsonLines;
 use inferd::catalog::read_catalog;
 use inferd::clock::SystemClock;
