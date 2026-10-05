@@ -1,0 +1,1 @@
+{"object":"list","data":[{"id":"qwen2.5-7b-instruct","object":"model","owned_by":"lmstudio"},{"id":"text-embedding-nomic","object":"model","owned_by":"lmstudio"}]}

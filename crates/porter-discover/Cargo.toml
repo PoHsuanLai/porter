@@ -12,7 +12,20 @@ publish.workspace = true
 porter-core = { workspace = true }
 porter-http = { workspace = true }
 porter-provider = { workspace = true }
+roxmltree = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
+hickory-resolver = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+toml = { workspace = true }
+
+[features]
+# `HickoryDns`, the `Dns` seam over the system resolver. Pulls in the runtime, so it is off by
+# default: the parsers and the search reach none.
+io = ["dep:hickory-resolver"]
 
 [lints]
 workspace = true
