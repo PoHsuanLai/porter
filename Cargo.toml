@@ -84,6 +84,11 @@ toml = "1"
 base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
 proptest = "1"
+oo7 = "0.6"
+# porter-secrets `KeyringSecrets` (macOS, Windows); Linux stays on oo7 (accounts D5).
+keyring-core = "1"
+apple-native-keyring-store = { version = "1", features = ["keychain"] }
+windows-native-keyring-store = "1"
 rustix = { version = "1.1", default-features = false, features = ["std", "event", "fs", "net", "time", "process"] }
 
 [workspace.lints.rust]

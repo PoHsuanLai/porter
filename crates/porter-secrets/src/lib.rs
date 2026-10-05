@@ -15,9 +15,9 @@ mod secrets;
 pub use attributes::{SERVICE, SecretAttributes, attributes};
 pub use error::SecretsError;
 #[cfg(feature = "keyring")]
-pub use keyring::KeyringSecrets;
+pub use keyring::{KeyringSecrets, StoreSecrets};
 #[cfg(feature = "testing")]
 pub use memory::MemorySecrets;
 #[cfg(feature = "oo7")]
-pub use oo7::Oo7Secrets;
+pub use oo7::{Oo7KeyringSecrets, Oo7Secrets};
 pub use secrets::Secrets;

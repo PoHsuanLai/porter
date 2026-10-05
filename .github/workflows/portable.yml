@@ -1,0 +1,21 @@
+name: portable
+
+# The crates that must build and pass on macOS and Windows, where the keyring store is the
+# platform's own (keychain, credential manager).
+on:
+  push:
+  pull_request:
+
+jobs:
+  portable:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: test
+        run: cargo test -p porter-core -p porter-provider -p porter-secrets --features porter-secrets/keyring -p porter-service -p porter-client
