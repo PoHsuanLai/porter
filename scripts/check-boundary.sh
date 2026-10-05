@@ -89,6 +89,7 @@ EDGES=(
   "porter-dbus: porter-core"
   "porter-client: porter-core porter-dbus porter-infer porter-provider porter-secrets porter-service"
   "porter-fake: porter-core porter-infer porter-provider porter-secrets porter-service"
+  "porter-fake-servers: porter-core porter-discover porter-fake porter-provider"
   "porter-http: porter-core"
   "porter-proxy: porter-core"
   "porter-oauth: porter-core porter-http porter-provider"
@@ -116,6 +117,19 @@ done
 # Every workspace member has a row above, so a new crate cannot slip in unchecked.
 for member in $(sed -n 's#^  "crates/\(.*\)",$#\1#p' Cargo.toml); do
   printf '%s\n' "${EDGES[@]}" | grep -q "^$member:" || { echo "ERROR: $member has no row in EDGES"; fail=1; }
+done
+
+# A test-only crate is never a dependency (normal, build or dev) of another crate of ours:
+# `cargo tree -i` prints the crate itself on its first line and each dependent below it.
+for testonly in porter-fake-servers; do
+  dependents=$(cargo tree -p "$testonly" -i "$testonly" -e normal,build,dev --prefix none 2>/dev/null \
+    | grep '(/' | awk '{print $1}' | grep -vx "$testonly" | tr '\n' ' ')
+  if [ -n "$dependents" ]; then
+    echo "LEAK: $testonly is a dependency of [${dependents% }]"
+    fail=1
+  else
+    echo "test-only: nothing depends on $testonly"
+  fi
 done
 
 exit "$fail"

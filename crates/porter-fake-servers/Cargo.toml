@@ -1,0 +1,25 @@
+[package]
+name = "porter-fake-servers"
+description = "Test-only: fake OAuth issuer, IMAP, SMTP, Nextcloud, DAV, autoconfig, DNS and model-list servers on loopback or scratch sockets, built from the shipped provider files. Never a dependency of a non-test crate."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+base64 = { workspace = true }
+porter-core = { workspace = true }
+porter-discover = { workspace = true }
+porter-fake = { workspace = true }
+porter-provider = { workspace = true }
+rustls = { workspace = true }
+rustls-pki-types = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+tokio = { workspace = true }
+tokio-rustls = { workspace = true }
+
+[lints]
+workspace = true

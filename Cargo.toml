@@ -11,6 +11,7 @@ members = [
   "crates/porter-dbus",
   "crates/porter-client",
   "crates/porter-fake",
+  "crates/porter-fake-servers",
   "crates/porter-http",
   "crates/porter-proxy",
   "crates/porter-oauth",
@@ -42,6 +43,7 @@ porter-service  = { path = "crates/porter-service" }
 porter-dbus     = { path = "crates/porter-dbus" }
 porter-client   = { path = "crates/porter-client" }
 porter-fake     = { path = "crates/porter-fake" }
+porter-fake-servers = { path = "crates/porter-fake-servers" }
 porter-http     = { path = "crates/porter-http" }
 porter-proxy    = { path = "crates/porter-proxy" }
 porter-oauth    = { path = "crates/porter-oauth" }
@@ -82,6 +84,12 @@ serde_json = "1"
 zbus = { version = "5.19", default-features = false, features = ["tokio"] }  # shell repos only; they also enable ds-settings/tokio. quire itself builds zbus with its async-io default so app consumers keep their own executor.
 toml = "1"
 base64 = "0.22"
+# The fake servers' TLS and PKCE (quire accounts-pins 21c453eb, pending): rustls on `ring`, no
+# default features, as hyper-rustls is pinned.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
+rustls-pki-types = "1"
+sha2 = "0.10"
 clap = { version = "4", features = ["derive"] }
 proptest = "1"
 oo7 = "0.6"
