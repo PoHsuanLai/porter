@@ -1,7 +1,7 @@
 //! The audit record of one request: who, through what, how much; never the content.
 
 use crate::reply::TokenUsage;
-use porter_core::{AccountId, AppId, Bytes, Count, Locality, ModelId, UnixSeconds};
+use porter_core::{AccountId, AppId, Bytes, Count, DataClass, Locality, ModelId, UnixSeconds};
 use serde::{Deserialize, Serialize};
 
 /// One audited request.
@@ -13,6 +13,8 @@ pub struct AuditEntry {
     pub app: AppId,
     /// The account.
     pub account: AccountId,
+    /// The data class of the request: metadata like the rest, never the content.
+    pub class: DataClass,
     /// The model.
     pub model: ModelId,
     /// Where it ran.

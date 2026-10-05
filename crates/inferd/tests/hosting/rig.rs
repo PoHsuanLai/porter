@@ -141,6 +141,7 @@ impl World {
                     (*name).to_owned(),
                     NamedEngine {
                         replay: file.clone(),
+                        record: None,
                     },
                 )
             })

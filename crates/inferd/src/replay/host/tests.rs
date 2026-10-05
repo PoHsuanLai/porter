@@ -40,6 +40,7 @@ async fn a_replay_only_config_with_no_gpu_starts_and_serves() {
         "scripted".to_owned(),
         NamedEngine {
             replay: cassette(&dir),
+            record: None,
         },
     )]
     .into();
@@ -67,6 +68,7 @@ async fn the_headroom_is_kept_when_a_real_engine_is_among_the_models() {
         "scripted".to_owned(),
         NamedEngine {
             replay: cassette(&dir),
+            record: None,
         },
     )]
     .into();

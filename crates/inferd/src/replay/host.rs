@@ -4,6 +4,7 @@
 //! difference: an engine starts, answers `/health`, serves chat on its socket, and unloads.
 
 use super::engine::serve;
+use super::record::Recorder;
 use super::replayer::{ReplayError, Replayer};
 use engine_supervisor::{EngineHost, EngineId, ExitCode, HostError, UnitSpec};
 use std::collections::BTreeMap;
@@ -20,6 +21,8 @@ pub struct Replaying {
     pub socket: PathBuf,
     /// The cassette, read once at startup; a failure refuses the engine's start.
     pub replayer: Result<Arc<Replayer>, ReplayError>,
+    /// Where the request bodies are appended, when the table says so.
+    pub record: Option<Recorder>,
 }
 
 struct Live {
@@ -60,7 +63,7 @@ impl<H> ReplayHost<H> {
         let _ = std::fs::remove_file(&replaying.socket);
         let listener = UnixListener::bind(&replaying.socket).map_err(|_| HostError::Refused)?;
         let (exit, _) = watch::channel(None);
-        let task = tokio::spawn(serve(listener, replayer));
+        let task = tokio::spawn(serve(listener, replayer, replaying.record.clone()));
         if let Some(old) = self.live().insert(id.clone(), Live { task, exit }) {
             old.task.abort();
         }

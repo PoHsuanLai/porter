@@ -120,11 +120,18 @@ impl<O: AuditOut, C: Clock> SessionAudit<O, C> {
         Self { app, out, clock }
     }
 
-    fn entry(&self, served: &ServedBy, reply: &InferReply, carried: &Carried) -> AuditEntry {
+    fn entry(
+        &self,
+        spec: &SessionSpec,
+        served: &ServedBy,
+        reply: &InferReply,
+        carried: &Carried,
+    ) -> AuditEntry {
         AuditEntry {
             at: self.clock.now(),
             app: self.app.clone(),
             account: served.account.clone(),
+            class: spec.class,
             model: served.model.clone(),
             locality: served.locality.clone(),
             usage: usage_of(reply),
@@ -136,14 +143,8 @@ impl<O: AuditOut, C: Clock> SessionAudit<O, C> {
 }
 
 impl<O: AuditOut, C: Clock> AuditSink for SessionAudit<O, C> {
-    fn record(
-        &self,
-        _spec: &SessionSpec,
-        served: &ServedBy,
-        reply: &InferReply,
-        carried: &Carried,
-    ) {
-        self.out.append(&self.entry(served, reply, carried));
+    fn record(&self, spec: &SessionSpec, served: &ServedBy, reply: &InferReply, carried: &Carried) {
+        self.out.append(&self.entry(spec, served, reply, carried));
     }
 }
 

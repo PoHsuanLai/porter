@@ -74,6 +74,7 @@ fn a_finished_turn_is_one_entry_with_who_what_and_how_much_and_no_content() {
         (entry.account.as_str(), entry.model.as_str()),
         ("local", "m")
     );
+    assert_eq!(entry.class, porter_core::DataClass::Notes);
     assert_eq!(entry.locality, Locality::OnDevice);
     assert_eq!(entry.usage, usage(12, 5));
     assert_eq!(entry.bytes_out, Bytes(0));
@@ -135,6 +136,7 @@ fn an_unwritable_destination_loses_the_entry_and_never_the_turn() {
     std::fs::write(&blocker, "x").expect("file");
     JsonLines::new(blocker.join("audit.jsonl")).append(
         &SessionAudit::new(app(), Discard, FixedClock(UnixSeconds(0))).entry(
+            &spec(),
             &served(),
             &InferReply::Cancelled,
             &nothing(),
@@ -142,6 +144,7 @@ fn an_unwritable_destination_loses_the_entry_and_never_the_turn() {
     );
     Discard.append(
         &SessionAudit::new(app(), Discard, FixedClock(UnixSeconds(0))).entry(
+            &spec(),
             &served(),
             &InferReply::Cancelled,
             &nothing(),
@@ -172,4 +175,34 @@ fn what_the_request_carried_is_in_the_entry_as_counts_and_nothing_else() {
     assert_eq!((entry.images, entry.audio_ms), (Count(3), Count(1_250)));
     let text = serde_json::to_string(entry).expect("json");
     assert!(text.contains(r#""images":3"#) && text.contains(r#""audio_ms":1250"#));
+}
+
+#[test]
+fn the_json_shape_is_pinned_and_carries_the_class_never_content() {
+    let memory = Memory::default();
+    let audit = SessionAudit::new(app(), memory.clone(), FixedClock(UnixSeconds(7)));
+    audit.record(&spec(), &served(), &chat(usage(12, 5)), &nothing());
+    let value = serde_json::to_value(&memory.entries()[0]).expect("json");
+    let keys: Vec<&str> = value
+        .as_object()
+        .expect("object")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        keys,
+        [
+            "account",
+            "app",
+            "at",
+            "audio_ms",
+            "bytes_out",
+            "class",
+            "images",
+            "locality",
+            "model",
+            "usage"
+        ]
+    );
+    assert_eq!(value["class"], "notes");
 }

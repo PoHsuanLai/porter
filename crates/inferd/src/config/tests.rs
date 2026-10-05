@@ -160,3 +160,30 @@ fn a_named_engine_with_a_cassette_reads_beside_the_programs() {
     assert!(InferdConfig::from_toml("[engines.x]\nnope = 1\n").is_err());
     assert!(InferdConfig::default().engines.named.is_empty());
 }
+
+#[test]
+fn record_is_a_key_of_a_replay_engine_and_of_nothing_else() {
+    let ok = InferdConfig::from_toml(
+        "[engines.scripted]\nreplay = \"/c.jsonl\"\nrecord = \"/sent.jsonl\"\n",
+    )
+    .expect("config");
+    assert_eq!(
+        ok.engines
+            .named
+            .get("scripted")
+            .and_then(|e| e.record.clone()),
+        Some(PathBuf::from("/sent.jsonl"))
+    );
+    let refused = [
+        // a table with no cassette is not a replay engine
+        "[engines.real]\nrecord = \"/sent.jsonl\"\n",
+        // the real engines are programs, not tables
+        "[engines]\nllama_server = \"/usr/bin/llama-server\"\nrecord = \"/sent.jsonl\"\n",
+        "[engines.llama_server]\nrecord = \"/sent.jsonl\"\n",
+        "[engines.vllm_python]\nreplay = \"/c\"\nrecord = \"/s\"\n",
+        "[engines.scripted]\nreplay = \"/c.jsonl\"\nrecord = 1\n",
+    ];
+    for text in refused {
+        assert!(InferdConfig::from_toml(text).is_err(), "{text}");
+    }
+}

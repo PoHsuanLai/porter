@@ -21,6 +21,7 @@ pub mod cassette;
 pub mod engine;
 pub mod host;
 pub mod model;
+pub mod record;
 pub mod render;
 pub mod replayer;
 
@@ -40,6 +41,11 @@ use std::sync::Arc;
 pub struct NamedEngine {
     /// The cassette's file.
     pub replay: PathBuf,
+    /// A file that gets every request body this engine receives, one JSON line each. This
+    /// writes prompts to disk; it exists for acceptance runs and is accepted only here, on a
+    /// replay engine (a table with `record` and no `replay` does not parse).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub record: Option<PathBuf>,
 }
 
 /// The context a replay model claims when its cassette cannot be read.
@@ -74,6 +80,7 @@ impl Replays {
                             Replaying {
                                 socket: model.socket.0.clone(),
                                 replayer,
+                                record: engine.record.clone().map(record::Recorder::new),
                             },
                         );
                         replays.models.push(model);

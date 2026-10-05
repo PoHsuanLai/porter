@@ -138,6 +138,7 @@ fn replies_and_records_round_trip() {
         at: UnixSeconds(1),
         app: app(),
         account: served().account,
+        class: DataClass::Mail,
         model: served().model,
         locality: Locality::Cloud { region: None },
         usage,

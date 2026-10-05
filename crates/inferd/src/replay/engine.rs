@@ -4,6 +4,7 @@
 //! router, supervisor driver, runner and codec run unchanged. One connection serves one request,
 //! as `HttpClient` makes them. It opens no network socket and no file but the cassette's.
 
+use super::record::Recorder;
 use super::render::{self, Delivery};
 use super::replayer::Replayer;
 use serde_json::Value;
@@ -69,10 +70,13 @@ pub fn respond(replayer: &Replayer, request: &Request) -> Vec<Vec<u8>> {
     }
 }
 
-async fn serve_one(mut stream: UnixStream, replayer: Arc<Replayer>) {
+async fn serve_one(mut stream: UnixStream, replayer: Arc<Replayer>, record: Option<Recorder>) {
     let Some(request) = read_request(&mut stream).await else {
         return;
     };
+    if let Some(record) = record.filter(|_| request.method == "POST") {
+        record.append(&request.body);
+    }
     for piece in respond(&replayer, &request) {
         if stream.write_all(&piece).await.is_err() {
             return;
@@ -82,12 +86,12 @@ async fn serve_one(mut stream: UnixStream, replayer: Arc<Replayer>) {
 }
 
 /// Accepts connections on `listener` until the task is dropped or aborted.
-pub async fn serve(listener: UnixListener, replayer: Arc<Replayer>) {
+pub async fn serve(listener: UnixListener, replayer: Arc<Replayer>, record: Option<Recorder>) {
     loop {
         let Ok((stream, _)) = listener.accept().await else {
             return;
         };
-        tokio::spawn(serve_one(stream, Arc::clone(&replayer)));
+        tokio::spawn(serve_one(stream, Arc::clone(&replayer), record.clone()));
     }
 }
 

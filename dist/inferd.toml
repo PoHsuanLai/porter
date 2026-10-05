@@ -17,6 +17,9 @@
 # The model is served under the table's name. See crates/inferd/tests/cassettes for the format.
 # [engines.scripted]
 # replay = "/path/to/cassette.jsonl"
+# record = "/path/to/sent.jsonl"  # WRITES EVERY PROMPT THIS ENGINE RECEIVES TO DISK, one JSON line
+#                                 # per request, file mode 0600; only on a replay engine, only
+#                                 # for acceptance runs. Never enable it in a shipped config.
 
 # The user's AI policy (settings ai.local_only and ai.floor.<class>); the design's proposed
 # defaults when absent: local-only on, and personal classes (mail, photos, notes, files, contacts,

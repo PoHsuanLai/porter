@@ -726,3 +726,5 @@ output entry with zero VRAM). The GPU is reported as it is: with only replay eng
 - deny.toml is quire's verbatim (the unused MPL allowance warns).
 - The provider file is `ProviderSpec`'s serde form; every field is written, none defaulted.
 - porter-core's vocabulary is `VocabVersion(3)`: endpoints on `Account` and `Candidate`, `OpenAuthenticated`, `Adopt` and the refusal `EndpointNotGranted` joined (2 added computer use, `DataClass::Voice` and `GrantKey.space`). Version 3 is the first a file is written with (`FIRST_PERSISTED`), so a later bump needs a migration row.
+- `AuditEntry.class` (the request's data class) has no serde default: DataClass has none, and nothing reads old `audit.jsonl` lines back, so old lines do not parse.
+- inferd's replay engine takes `record = "<file>"` (prompts to disk, 0600, replay engines only, never in dist). inferd's `test-proc-root` feature (off by default, never in dist) honours `INFERD_PROC_ROOT=<dir>` for caller lookup (`<dir>/<pid>/cgroup`); without it the variable is ignored with a line on stderr.

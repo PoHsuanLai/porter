@@ -66,7 +66,7 @@ fn a_request_is_read_across_chunks() {
 async fn the_server_answers_over_a_socket() {
     let (mut client, server) = UnixStream::pair().expect("pair");
     let played = Arc::new(replayer());
-    let task = tokio::spawn(serve_one(server, played));
+    let task = tokio::spawn(serve_one(server, played, None));
     client
         .write_all(b"GET /health HTTP/1.1\r\n\r\n")
         .await
@@ -75,4 +75,35 @@ async fn the_server_answers_over_a_socket() {
     client.read_to_string(&mut out).await.expect("read");
     assert!(out.starts_with("HTTP/1.1 200"), "{out}");
     task.await.expect("served");
+}
+
+#[tokio::test]
+async fn a_recording_engine_appends_each_posted_body_and_not_a_get() {
+    let dir = crate::testkit::Scratch::new("engine-record");
+    let path = dir.path().join("sent.jsonl");
+    let played = Arc::new(replayer());
+    for (head, body) in [
+        ("GET /health", ""),
+        (
+            "POST /v1/chat/completions",
+            r#"{"messages":[{"content":"hi"}]}"#,
+        ),
+    ] {
+        let (mut client, server) = UnixStream::pair().expect("pair");
+        let task = tokio::spawn(serve_one(
+            server,
+            Arc::clone(&played),
+            Some(Recorder::new(path.clone())),
+        ));
+        let raw = format!(
+            "{head} HTTP/1.1\r\nContent-Length: {}\r\n\r\n{body}",
+            body.len()
+        );
+        client.write_all(raw.as_bytes()).await.expect("write");
+        let mut out = String::new();
+        client.read_to_string(&mut out).await.expect("read");
+        task.await.expect("served");
+    }
+    let text = std::fs::read_to_string(&path).expect("file");
+    assert_eq!(text, "{\"messages\":[{\"content\":\"hi\"}]}\n");
 }

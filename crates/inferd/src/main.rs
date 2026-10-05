@@ -12,7 +12,7 @@ use inferd::config::{Dirs, InferdConfig};
 use inferd::engines::Engines;
 use inferd::hosts::{HealthProbe, NvidiaSmi, ProcessHost};
 use inferd::local::build;
-use inferd::peers::ProcPeers;
+use inferd::peers::{ProcGate, ProcPeers, ProcRoot};
 use inferd::replay::Replays;
 use inferd::service::{Inference, serve_on};
 use inferd::supervise::{Ports, Supervised};
@@ -84,7 +84,14 @@ async fn run(args: Args) -> Result<(), String> {
         .build()
         .await
         .map_err(|e| e.to_string())?;
-    let peers = ProcPeers::new(connection.clone(), config.callers.clone());
+    let root = ProcRoot::select(
+        ProcGate::BUILT,
+        std::env::var("INFERD_PROC_ROOT").ok().as_deref(),
+    );
+    if let Some(line) = root.notice() {
+        eprintln!("{line}");
+    }
+    let peers = ProcPeers::with_root(connection.clone(), config.callers.clone(), &root);
     let daemon = Inference::new(engines, peers, JsonLines::new(dirs.audit), SystemClock)
         .limited(structured.limits);
     serve_on(&connection, daemon)

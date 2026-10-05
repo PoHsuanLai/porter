@@ -8,6 +8,12 @@ rust-version.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[features]
+# TEST ONLY, off by default and never in dist: `INFERD_PROC_ROOT=<dir>` makes the caller lookup read
+# `<dir>/<pid>/cgroup` instead of `/proc`, for acceptance runs whose processes are in no unit.
+# Without this feature the variable is ignored (with a line on standard error).
+test-proc-root = []
+
 [dependencies]
 porter-core = { workspace = true }
 cua-action = { workspace = true }

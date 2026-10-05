@@ -82,3 +82,31 @@ fn the_table_is_rows_of_the_shared_table_with_cuad_first() {
     let cuad = rows.resolve_unit("cuad.service").expect("cuad");
     assert_eq!(cuad.role, porter_dbus::CallerRole::Cua);
 }
+
+#[test]
+fn the_proc_root_variable_is_honoured_only_by_a_test_build() {
+    use std::path::PathBuf;
+    let dir = || PathBuf::from("/fake");
+    let cases = [
+        (ProcGate::Honour, None, ProcRoot::System),
+        (ProcGate::Honour, Some(""), ProcRoot::System),
+        (ProcGate::Honour, Some("/fake"), ProcRoot::Fake(dir())),
+        (ProcGate::Ignore, None, ProcRoot::System),
+        (ProcGate::Ignore, Some("/fake"), ProcRoot::Ignored(dir())),
+    ];
+    for (gate, var, expected) in cases {
+        let got = ProcRoot::select(gate, var);
+        assert_eq!(got, expected, "{gate:?} {var:?}");
+        assert_eq!(got.notice().is_some(), var.is_some_and(|v| !v.is_empty()));
+    }
+    assert!(
+        ProcRoot::Ignored(dir())
+            .notice()
+            .expect("line")
+            .contains("ignored")
+    );
+    assert_eq!(
+        ProcGate::BUILT == ProcGate::Honour,
+        cfg!(feature = "test-proc-root")
+    );
+}

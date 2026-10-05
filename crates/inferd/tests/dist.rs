@@ -118,3 +118,33 @@ fn the_schema_defaults_written_as_a_file_resolve_to_the_defaults() {
     assert_eq!(resolved.limits, inferd::structured::Limits::default());
     assert!(resolved.rejected.is_empty());
 }
+
+#[test]
+fn the_sample_configuration_never_enables_the_prompt_recorder() {
+    let live: Vec<_> = dist("inferd.toml")
+        .lines()
+        .filter(|line| line.trim_start().starts_with("record"))
+        .map(str::to_owned)
+        .collect();
+    assert!(live.is_empty(), "{live:?}");
+}
+
+#[test]
+fn the_test_proc_root_is_in_no_default_feature_and_no_unit() {
+    let manifest = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"))
+        .expect("manifest");
+    let manifest: toml::Table = manifest.parse().expect("toml");
+    let features = manifest["features"].as_table().expect("features");
+    let default = features.get("default").and_then(toml::Value::as_array);
+    assert!(
+        default.is_none_or(|on| on.iter().all(|f| f.as_str() != Some("test-proc-root"))),
+        "default features must not enable test-proc-root"
+    );
+    for file in [
+        "inferd.service",
+        "inferd.toml",
+        "dbus/org.quire.Inference1.service",
+    ] {
+        assert!(!dist(file).contains("INFERD_PROC_ROOT"), "{file}");
+    }
+}
