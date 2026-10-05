@@ -14,7 +14,6 @@ use inferd::hosts::{HealthProbe, NvidiaSmi, ProcessHost};
 use inferd::local::build;
 use inferd::peers::ProcPeers;
 use inferd::replay::Replays;
-use inferd::replay::host::SpareGpu;
 use inferd::service::{Inference, serve_on};
 use inferd::supervise::{Ports, Supervised};
 use std::os::unix::fs::DirBuilderExt;
@@ -66,16 +65,13 @@ async fn run(args: Args) -> Result<(), String> {
         .iter()
         .map(|model| (model.spec.id.clone(), model.socket.0.clone()))
         .collect();
-    let spare = (!replays.models.is_empty()).then_some(model_catalog::MiB(1 << 20));
     let supervised = Supervised::start(
         specs,
-        SupervisorConfig::default(),
+        replays.supervisor_config(models.len()),
         Ports {
             host: replays.host(ProcessHost::new()),
             probe: HealthProbe::new(sockets),
-            // Replay engines need no GPU: with one configured, a missing `nvidia-smi` is a
-            // computer with memory to spare rather than one with none.
-            gpu: SpareGpu::new(NvidiaSmi::new(PathBuf::from("nvidia-smi")), spare),
+            gpu: NvidiaSmi::new(PathBuf::from("nvidia-smi")),
         },
     );
     let structured = config.ai.resolve();

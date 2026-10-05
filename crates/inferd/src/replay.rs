@@ -25,8 +25,9 @@ pub mod render;
 pub mod replayer;
 
 use crate::local::LocalModel;
-use engine_supervisor::EngineId;
+use engine_supervisor::{EngineId, SupervisorConfig};
 use host::{ReplayHost, Replaying};
+use model_catalog::MiB;
 use model_provider::Tokens;
 use replayer::Replayer;
 use serde::{Deserialize, Serialize};
@@ -95,6 +96,21 @@ impl Replays {
                     .map(|why| format!("{}: {why}", id.0))
             })
             .collect()
+    }
+
+    /// The supervisor's settings for a daemon of `total` models. When every model is a replay
+    /// engine nothing takes GPU memory, so the headroom kept free for a real engine's growth is
+    /// zero and a computer with no GPU (no `nvidia-smi`) can still start them. With any real
+    /// engine among the models the default stands. The GPU is reported as it is either way.
+    pub fn supervisor_config(&self, total: usize) -> SupervisorConfig {
+        let only_replay = total == self.models.len();
+        match only_replay && !self.models.is_empty() {
+            true => SupervisorConfig {
+                headroom: MiB(0),
+                ..SupervisorConfig::default()
+            },
+            false => SupervisorConfig::default(),
+        }
     }
 
     /// The host that plays these engines and hands every other to `inner`.

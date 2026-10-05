@@ -5,10 +5,7 @@
 
 use super::engine::serve;
 use super::replayer::{ReplayError, Replayer};
-use engine_supervisor::{
-    EngineHost, EngineId, ExitCode, GpuError, GpuMemory, GpuProbe, HostError, UnitSpec,
-};
-use model_catalog::MiB;
+use engine_supervisor::{EngineHost, EngineId, ExitCode, HostError, UnitSpec};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -104,35 +101,6 @@ impl<H: EngineHost> EngineHost for ReplayHost<H> {
             if exit.changed().await.is_err() {
                 return ExitCode(0);
             }
-        }
-    }
-}
-
-/// The GPU as the probe underneath reports it; when it reports nothing and `spare` is set, a
-/// computer with that much memory and nobody else on it. Replay engines need none, and a
-/// daemon with no GPU (a build box, the acceptance jail) must still be able to start them.
-#[derive(Debug, Clone)]
-pub struct SpareGpu<G> {
-    inner: G,
-    spare: Option<MiB>,
-}
-
-impl<G> SpareGpu<G> {
-    /// `inner`, with `spare` memory when it fails.
-    pub fn new(inner: G, spare: Option<MiB>) -> Self {
-        Self { inner, spare }
-    }
-}
-
-impl<G: GpuProbe> GpuProbe for SpareGpu<G> {
-    async fn memory(&self) -> Result<GpuMemory, GpuError> {
-        match (self.inner.memory().await, self.spare) {
-            (Ok(memory), _) => Ok(memory),
-            (Err(_), Some(total)) => Ok(GpuMemory {
-                total,
-                used_by_others: MiB(0),
-            }),
-            (Err(why), None) => Err(why),
         }
     }
 }

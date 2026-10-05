@@ -54,7 +54,7 @@ fn request(text: &str, tools: Vec<ToolDecl>) -> InferRequest {
 
 fn tool() -> ToolDecl {
     ToolDecl {
-        name: ToolName::parse("org.quire.Mail-mail.thread.find").expect("name"),
+        name: ToolName::parse("org.quire.Mail-mail.thread.search").expect("name"),
         description: "find threads".into(),
         params: JsonSchemaText(JsonText::parse(r#"{"type":"object"}"#).expect("json")),
     }
@@ -97,7 +97,7 @@ async fn a_chat_session_is_answered_from_the_cassette() {
     assert_eq!(first.tool_calls.len(), 1);
     assert_eq!(
         first.tool_calls[0].name.as_str(),
-        "org.quire.Mail-mail.thread.find"
+        "org.quire.Mail-mail.thread.search"
     );
     assert_eq!(first.tool_calls[0].args.as_str(), r#"{"query":"Lisbon"}"#);
     // Entries are played in order: the next planner request gets the next step.

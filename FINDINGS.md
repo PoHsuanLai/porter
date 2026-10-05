@@ -692,8 +692,7 @@ serves the chat route (`POST /v1/chat/completions`, streaming SSE or one JSON bo
 the engine's socket from inside the daemon; `ReplayHost` is an `EngineHost` that plays these engines
 and hands every other to `ProcessHost`, so the router, the supervisor, the runner and the codec run
 unchanged. The model is served under the table's name (a synthesised text, tools and structured
-output entry with zero VRAM). With a replay engine configured and no `nvidia-smi`, `SpareGpu` reports
-a large GPU so the budget fits.
+output entry with zero VRAM). The GPU is reported as it is: with only replay engines among the models the supervisor's headroom is zero (`Replays::supervisor_config`), so zero-VRAM engines fit on a computer with no `nvidia-smi`; any real engine keeps the default headroom.
 
 - Cassette file: JSON Lines. Line 1 is stoker's `model-replay` `CassetteHeader` (`vocab` 1, `engine`,
   `model`, `recorded`, `context` whose `loaded` is the model's context, `speech` null). Every later
@@ -702,7 +701,7 @@ a large GPU so the budget fits.
   its messages; the first entry that admits a request and is not spent answers it (`once`, the default,
   is spent after one answer; the cursor lives for the daemon's life, not an engine process's). A reply
   is `{"kind":"text","v":"words"}`, `{"kind":"calls","v":[{"name":..,"arguments":{..}}]}` (the tool
-  name as the planner offered it, `org.quire.Mail-mail.thread.find` for Mail), `{"kind":"fail","v":503}`
+  name as the planner offered it, `org.quire.Mail-mail.thread.search` for Mail), `{"kind":"fail","v":503}`
   or `{"kind":"wire","v":<model-replay WireReply>}` (a recorded exchange, frame by frame).
 - Errors are typed and never reach the network: a missing or malformed file leaves the engine unable
   to start (`HostError::Refused`, logged at startup; the session ends `Failed`), and a request no entry
@@ -711,12 +710,12 @@ a large GPU so the budget fits.
   planner's view carries handle numbers and prose the cassette's author cannot predict, so entries
   match on role (tools present, the writer's and the reader's fixed instruction) and play in order.
 - `tests/cassettes/docket-flow-a.jsonl` is docket-accept flow (a) as the scripted `Inference1` plays
-  it: the policy writer's draft (`uses: always`) and the planner's four steps (find, search, forward,
+  it: the policy writer's draft (`uses: always`) and the planner's four steps (search, contact search, forward,
   the closing words). Flow (c) names handles from the planner's own view (`value #N`) and the docket
   side writes its cassette: planner steps in order, the reader as `{"when":{"tools":"absent",
   "contains":["fence"]},"reply":{"kind":"text","v":"{\"answer\":\"...\"}"}}`.
 - Edges: inferd gains `model-replay` (workspace dependency, `check-boundary.sh`, ARCHITECTURE section 1).
-  `EngineConfig` gains a flattened `named` map, so an unknown scalar under `[engines]` is now an error.
+  `EngineConfig` gains a flattened `named` map, so an unknown or misspelled scalar key under `[engines]` is now a config error instead of being ignored: a behaviour change for existing `inferd.toml` files (kept on purpose).
 
 ## Standing facts
 
