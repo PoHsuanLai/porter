@@ -38,6 +38,7 @@ pub use failure::{BusFailure, classify, refusal_of};
 pub use grants::{GrantsProxy, GrantsSkeleton};
 pub use inference::{InferenceProxy, InferenceSkeleton};
 pub use introspect::{Bus, introspection};
+pub use json_value::to_vardict;
 pub use manager::{ManagerProxy, ManagerSkeleton};
 pub use names::{
     ACCOUNTS_BUS, ACCOUNTS_PATH, INFERENCE_BUS, INFERENCE_PATH, INFERENCE_SETTINGS_PATH,

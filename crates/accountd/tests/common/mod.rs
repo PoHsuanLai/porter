@@ -1,0 +1,349 @@
+//! The rig every bus test of accountd uses: a private bus, accountd's front end over the real
+//! `AccountService` with the fake providers, a hand-written sheet host, and clients introduced
+//! by unique name. Nothing here reaches the real session, Secret Service or network.
+#![allow(dead_code)]
+
+pub mod bus;
+pub mod host;
+
+pub use host::SheetHost;
+pub use porter_fake::{mail_account, storage_account};
+
+use accountd::{AdoptConfig, BusSheets, Options, TableCallers, serve_with};
+use bus::PrivateBus;
+use host::HostLog;
+use porter_core::{
+    AccountId, AppId, AppName, Credential, Isolation, SecretKey, SecretPurpose, SecretText,
+};
+use porter_dbus::{Caller, CallerRole, SHEET_BUS, SHEET_PATH};
+use porter_fake::{
+    FakeProvider, FixedClock, MemoryStore, RecordingAudit, cloud_provider, llm_account,
+    llm_provider, mail_provider,
+};
+use porter_secrets::{MemorySecrets, Secrets, SecretsError};
+use porter_service::{AccountService, Registry};
+use std::sync::Arc;
+
+pub const APP_PASSWORD: &str = "S3CRET-APP-PASSWORD";
+pub const REFRESH_TOKEN: &str = "S3CRET-REFRESH-TOKEN";
+pub const ACCESS_TOKEN: &str = "S3CRET-ACCESS-TOKEN";
+
+/// Secrets the test can still read after they moved into the service.
+#[derive(Debug, Clone, Default)]
+pub struct Shared(pub Arc<MemorySecrets>);
+
+impl Secrets for Shared {
+    async fn put(&self, key: &SecretKey, value: &Credential) -> Result<(), SecretsError> {
+        self.0.put(key, value).await
+    }
+    async fn get(&self, key: &SecretKey) -> Result<Credential, SecretsError> {
+        self.0.get(key).await
+    }
+    async fn delete(&self, key: &SecretKey) -> Result<(), SecretsError> {
+        self.0.delete(key).await
+    }
+    async fn delete_account(&self, account: &AccountId) -> Result<(), SecretsError> {
+        self.0.delete_account(account).await
+    }
+}
+
+pub type Svc = AccountService<
+    FakeProvider,
+    Shared,
+    BusSheets<TableCallers>,
+    FixedClock,
+    MemoryStore,
+    RecordingAudit,
+>;
+
+pub fn app(name: &str) -> AppId {
+    AppId {
+        name: AppName::parse(name).expect("app name"),
+        isolation: Isolation::Flatpak,
+    }
+}
+
+pub fn photos() -> AppId {
+    app("org.quire.Photos")
+}
+
+pub fn caller(name: &str, role: CallerRole) -> Caller {
+    Caller {
+        app: app(name),
+        role,
+    }
+}
+
+/// accountd, serving, with a sheet host on the bus.
+#[derive(Debug)]
+pub struct Rig {
+    pub bus: PrivateBus,
+    pub connection: zbus::Connection,
+    pub callers: Arc<TableCallers>,
+    pub service: Arc<Svc>,
+    pub secrets: Shared,
+    pub audit: RecordingAudit,
+    pub store: MemoryStore,
+    pub host_connection: zbus::Connection,
+    pub host_log: HostLog,
+}
+
+impl Rig {
+    pub async fn start() -> Self {
+        Self::start_with(Options::default(), SheetHost::quiet()).await
+    }
+
+    pub async fn start_with(options: Options, host: SheetHost) -> Self {
+        let bus = PrivateBus::start();
+        let callers = Arc::new(TableCallers::new());
+        let connection = bus.connect().await;
+
+        let host_log = host.log();
+        let host_connection = bus.connect().await;
+        host_connection
+            .object_server()
+            .at(SHEET_PATH, host)
+            .await
+            .expect("host object");
+        host_connection
+            .request_name(SHEET_BUS)
+            .await
+            .expect("host name");
+        callers.introduce_as(
+            host_connection.unique_name().expect("name").as_str(),
+            caller("org.example.SheetHost", CallerRole::SheetHost),
+        );
+
+        let secrets = Shared::default();
+        for (account, purpose, credential) in [
+            (
+                storage_account().id,
+                SecretPurpose::Password,
+                Credential::Password(SecretText::new(APP_PASSWORD)),
+            ),
+            (
+                mail_account().id,
+                SecretPurpose::OAuthRefresh,
+                Credential::OAuth {
+                    access: SecretText::new(ACCESS_TOKEN),
+                    refresh: SecretText::new(REFRESH_TOKEN),
+                    expires_at: porter_core::UnixSeconds(1_790_000_000),
+                },
+            ),
+        ] {
+            let _ = secrets
+                .put(&SecretKey { account, purpose }, &credential)
+                .await;
+        }
+        let registry = Registry {
+            accounts: vec![storage_account(), mail_account(), llm_account()],
+            grants: vec![],
+            toggles: vec![],
+        };
+        let store = MemoryStore::default();
+        let audit = RecordingAudit::default();
+        let sheets = BusSheets::new(connection.clone(), Arc::clone(&callers));
+        let service = Arc::new(
+            AccountService::new(
+                vec![cloud_provider(), mail_provider(), llm_provider()],
+                registry,
+                secrets.clone(),
+                sheets,
+                FixedClock(porter_fake::NOW),
+            )
+            .with_store(store.clone())
+            .with_audit(audit.clone()),
+        );
+        serve_with(
+            &connection,
+            Arc::clone(&service),
+            Arc::clone(&callers),
+            options,
+        )
+        .await
+        .expect("accountd serves");
+        Self {
+            bus,
+            connection,
+            callers,
+            service,
+            secrets,
+            audit,
+            store,
+            host_connection,
+            host_log,
+        }
+    }
+
+    /// A new connection that accountd knows as `who`.
+    pub async fn client_as(&self, who: Caller) -> zbus::Connection {
+        let connection = self.bus.connect().await;
+        let name = connection.unique_name().expect("name").to_string();
+        self.callers.introduce_as(&name, who);
+        connection
+    }
+
+    /// A connection that is app `name` in the `App` role.
+    pub async fn client(&self, name: &str) -> zbus::Connection {
+        self.client_as(caller(name, CallerRole::App)).await
+    }
+
+    /// A connection accountd does not know.
+    pub async fn stranger(&self) -> zbus::Connection {
+        self.bus.connect().await
+    }
+
+    pub fn adopt_nothing() -> AdoptConfig {
+        AdoptConfig::default()
+    }
+}
+
+/// Polls `condition` until it holds, up to five seconds.
+pub async fn eventually(what: &str, mut condition: impl FnMut() -> bool) {
+    for _ in 0..250 {
+        if condition() {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    panic!("timed out waiting for {what}");
+}
+
+use porter_core::Need;
+use porter_core::capability::{Access, Delta, QuotaReport, StorageScope};
+use porter_core::consent::{ConsentAnswer, GrantScope};
+use porter_core::need::StorageNeed;
+use porter_core::sheet::SheetInput;
+use porter_core::wire::Refusal;
+use porter_dbus::{Details, ManagerProxy, NeedArg, Sheet, need_to_dbus, refusal_error_name};
+
+pub fn storage_need() -> NeedArg {
+    need_to_dbus(&Need::Storage(StorageNeed {
+        access: Access::ReadWrite,
+        delta: Delta::Poll,
+        scope: StorageScope::AppFolder,
+        quota: QuotaReport::Unreported,
+    }))
+}
+
+/// A host that allows `fake-storage` always, whatever it is asked.
+pub fn allowing_host() -> SheetHost {
+    SheetHost::answering(SheetInput::Answer(ConsentAnswer::Allow {
+        account: storage_account().id,
+        scope: GrantScope::Always,
+    }))
+}
+
+/// `Manager.Choose` as `connection`, and the Request's response.
+pub async fn choose(connection: &zbus::Connection) -> (u32, Details) {
+    let mut sheet = Sheet::subscribe(connection).await.expect("subscribe");
+    let manager = ManagerProxy::new(connection).await.expect("proxy");
+    let path = manager
+        .choose(
+            &storage_need(),
+            "photos",
+            "interactive",
+            "",
+            &sheet.options(),
+        )
+        .await
+        .expect("choose");
+    sheet.response(&path).await.expect("response")
+}
+
+/// The text of a vardict entry.
+pub fn text_of(details: &Details, key: &str) -> Option<String> {
+    let value = details.get(key)?.try_clone().ok()?;
+    String::try_from(value).ok()
+}
+
+/// The grant a `Choose` response carries.
+pub fn grant_in(results: &Details) -> porter_core::GrantId {
+    porter_core::GrantId::parse(&text_of(results, "grant").expect("a grant")).expect("grant id")
+}
+
+/// The D-Bus error name of a failed call.
+pub fn error_name(error: &zbus::Error) -> String {
+    match error {
+        zbus::Error::MethodError(name, _, _) => name.to_string(),
+        zbus::Error::FDO(fdo) => {
+            use zbus::DBusError;
+            fdo.name().to_string()
+        }
+        other => format!("{other:?}"),
+    }
+}
+
+pub fn refusal_name(refusal: Refusal) -> String {
+    refusal_error_name(refusal)
+}
+
+pub const ACCESS_DENIED: &str = "org.freedesktop.DBus.Error.AccessDenied";
+pub const UNKNOWN_OBJECT: &str = "org.freedesktop.DBus.Error.UnknownObject";
+
+/// Grants `photos` the storage account through the sheet and returns the grant.
+pub async fn grant_photos(rig: &Rig) -> (zbus::Connection, porter_core::GrantId) {
+    let client = rig.client("org.quire.Photos").await;
+    let (code, results) = choose(&client).await;
+    assert_eq!(code, 0, "{results:?}");
+    let grant = grant_in(&results);
+    (client, grant)
+}
+
+use ds_settings::live::LiveClient;
+use ds_settings::schema::KeyPath;
+
+/// A client of the settings module as `who`.
+pub async fn settings_as(rig: &Rig, who: Caller) -> LiveClient {
+    let connection = rig.client_as(who).await;
+    LiveClient::new(
+        &connection,
+        "org.quire.Accounts1",
+        &accountd::settings_path(),
+    )
+    .await
+    .expect("client")
+}
+
+/// The Settings app's own client.
+pub async fn settings(rig: &Rig) -> LiveClient {
+    settings_as(rig, caller("org.quire.Settings", CallerRole::Settings)).await
+}
+
+pub fn key(path: &str) -> KeyPath {
+    KeyPath(path.to_owned())
+}
+
+/// Collects the manager's signals a connection receives, by member name.
+pub async fn listen(connection: &zbus::Connection) -> zbus::MessageStream {
+    let rule = zbus::MatchRule::builder()
+        .msg_type(zbus::message::Type::Signal)
+        .interface("org.quire.Accounts1.Manager")
+        .expect("interface")
+        .build();
+    zbus::MessageStream::for_match_rule(rule, connection, None)
+        .await
+        .expect("stream")
+}
+
+/// The member names received within `wait`.
+pub async fn heard(stream: &mut zbus::MessageStream, wait: std::time::Duration) -> Vec<String> {
+    use zbus::export::futures_core::Stream;
+    let mut names = Vec::new();
+    let deadline = tokio::time::Instant::now() + wait;
+    loop {
+        let next = tokio::time::timeout_at(
+            deadline,
+            std::future::poll_fn(|cx| std::pin::Pin::new(&mut *stream).poll_next(cx)),
+        )
+        .await;
+        match next {
+            Ok(Some(Ok(message))) => {
+                if let Some(member) = message.header().member() {
+                    names.push(member.to_string());
+                }
+            }
+            _ => return names,
+        }
+    }
+}

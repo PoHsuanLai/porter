@@ -13,7 +13,7 @@ cd "$(dirname "$0")/.."
 # through its `dbus` feature; porter-dbus reaches tokio only through zbus's `tokio` feature.
 # porter-http, porter-proxy and porter-oauth reach tokio (and porter-http hyper) only through
 # their named I/O feature (`hyper`, `io`), and porter-families through no feature of its own.
-EFFECTS="zbus zvariant tokio reqwest hyper ureq oo7 keyring secret-service interprocess latchkey"
+EFFECTS="zbus zvariant tokio reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
 RULES=(
   "porter-core: $EFFECTS toml"
   "prov: $EFFECTS"
@@ -30,7 +30,7 @@ RULES=(
   "porter-discover: $EFFECTS"
   "porter-dav: $EFFECTS"
   "porter-families: $EFFECTS"
-  "porter-dbus: reqwest hyper ureq oo7 keyring secret-service"
+  "porter-dbus: reqwest hyper ureq oo7 keyring secret-service ds-settings"
 )
 fail=0
 
@@ -96,7 +96,7 @@ EDGES=(
   "porter-discover: porter-core porter-http porter-provider"
   "porter-dav: porter-core porter-http"
   "porter-families: porter-core porter-dav porter-discover porter-http porter-oauth porter-provider"
-  "accountd: porter-core porter-dbus porter-families porter-provider porter-secrets porter-service"
+  "accountd: ds-settings porter-core porter-dbus porter-families porter-provider porter-secrets porter-service"
   "syncd: porter-dbus porter-sync"
   "inferd: porter-core porter-dbus porter-infer cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay speech-provider vision-prep"
 )
@@ -113,6 +113,15 @@ for edge in "${EDGES[@]}"; do
     echo "edges hold: $crate depends on [${found% }]"
   fi
 done
+
+# accountd's test-only knob (`ACCOUNTD_PROC_ROOT`, feature `test-proc-root`) is never on in a
+# default build: the features cargo resolves for accountd without any flag must not name it.
+if cargo tree -p accountd --depth 0 -f '{p} {f}' 2>/dev/null | grep -q 'test-proc-root'; then
+  echo "LEAK: accountd enables test-proc-root by default"
+  fail=1
+else
+  echo "test-only: accountd's default features do not include test-proc-root"
+fi
 
 # Every workspace member has a row above, so a new crate cannot slip in unchecked.
 for member in $(sed -n 's#^  "crates/\(.*\)",$#\1#p' Cargo.toml); do

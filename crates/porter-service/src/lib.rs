@@ -5,10 +5,12 @@
 //! it behind D-Bus and the socket, and an app may host it in process.
 
 mod add;
+mod adopt;
 mod audience;
 mod audit;
 mod choose;
 mod clock;
+mod manage;
 mod registry;
 mod relay;
 mod service;
@@ -16,8 +18,10 @@ mod sheets;
 mod store;
 mod token;
 
+pub use adopt::{LegacyFault, LegacyStore, legacy_entry};
 pub use audit::{AuditSink, NoAudit};
 pub use clock::Clock;
+pub use manage::RevokeReport;
 pub use registry::Registry;
 pub use service::AccountService;
 pub use sheets::{SheetFault, SheetLink, SheetOpen, Sheets};

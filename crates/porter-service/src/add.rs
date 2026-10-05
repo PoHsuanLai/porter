@@ -1,5 +1,5 @@
 //! The flows that need a family's sign-in or an app's legacy store: add an account, sign one in
-//! again, adopt a legacy account, and what an authenticated relay presents. The checks that
+//! again, and what an authenticated relay presents. The checks that
 //! need no provider are built (`Registry::relay_target`, the audience rule); these bodies wait
 //! for the first family.
 
@@ -8,7 +8,7 @@ use crate::clock::Clock;
 use crate::service::AccountService;
 use crate::sheets::Sheets;
 use crate::store::RegistryStore;
-use porter_core::wire::{LegacyRef, ParentWindow, ProviderHint, Refusal};
+use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
 use porter_core::{
     Account, AccountId, AccountsReply, AppId, CapabilityKind, RelayPlan, ServiceEndpoint,
 };
@@ -44,16 +44,6 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             "open the sheet on the account's provider, drive `Provider::sign_in` with \
              `SignInMode::Reauthenticate`, replace the credential, set the state Ok, audit \
              `Reauthed`"
-        )
-    }
-
-    /// Reads the app's old secret items (the daemon's `[adopt]` table names the legacy service
-    /// for the caller), makes the account and files its credentials.
-    pub(crate) async fn adopt(&self, _caller: &AppId, _legacy: LegacyRef) -> AccountsReply {
-        todo!(
-            "check the caller against the `[adopt]` table, read each `LegacyItem` through the \
-             legacy store seam, file it under its `SecretPurpose`, store the account, audit \
-             `Adopted`"
         )
     }
 

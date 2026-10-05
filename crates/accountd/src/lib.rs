@@ -13,10 +13,17 @@
 //!   `Close` from the caller, or the caller leaving the bus, ends the sheet and no `Response`
 //!   follows.
 //!
-//! Not served yet: the `Account` properties (`Id`, `Provider`, `Label`, `State`,
-//! `Capabilities`), the manager's signals, `Adopt`, `Tokens.OpenAuthenticated`, `Peer`, the
-//! Settings module. The binary still exits "not
-//! implemented": its secret store and sheets are stubs and its families have no bodies.
+//! - `Account` properties (`Id`, `Provider`, `Label`, `State`, `Capabilities`), readable only with a
+//!   grant for the account; the manager's five signals, unicast to the apps that hold a relevant
+//!   grant (`hub`); `Manager.Adopt` through the `[adopt]` table and a legacy store (`legacy`);
+//!   `Peer` for the porter daemons; and `org.quire.SettingsModule1` at `settings_path()` for the
+//!   Settings role, through quire's `ds_settings::live`.
+//! - Roles: an `Agent` is refused `Choose`, `AddAccount`, `Reauthenticate`, `IssueToken`,
+//!   `OpenAuthenticated` and `Adopt` (`Refusal::Denied`).
+//! - `BusSheets` is the sheet link to the host over `org.quire.AccountsSheet1`.
+//!
+//! Not served: `Tokens.OpenAuthenticated` (a marked seam for W3g), `Peer.ResolveKey` and
+//! `Peer.ReportLocal`.
 
 mod account;
 mod audit;
@@ -25,13 +32,25 @@ mod callers_file;
 mod core;
 mod errors;
 mod grants;
+mod hub;
+mod legacy;
 mod manager;
+pub mod paths;
+mod peer;
+pub mod providers;
 mod request;
+mod roster;
+mod settings;
+mod settings_keys;
+mod sheets;
 mod store;
 
 pub use audit::FileAudit;
 pub use callers::{Callers, TableCallers};
 pub use callers_file::{CallerFileError, load_callers, table_from_file, table_from_toml};
-pub use core::{Host, serve};
+pub use core::{Host, Options, serve, serve_with};
 pub use errors::RefusedError;
+pub use legacy::{AdoptConfig, AdoptTable, MemoryLegacy, Oo7Legacy, from_mailo};
+pub use settings::settings_path;
+pub use sheets::{BusLink, BusSheets};
 pub use store::FileStore;

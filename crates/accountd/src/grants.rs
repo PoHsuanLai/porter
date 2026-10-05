@@ -1,7 +1,7 @@
 //! `Grants` and `Tokens`: the methods that answer at once.
 
 use crate::callers::Callers;
-use crate::core::{Core, Host};
+use crate::core::{Core, Host, Standing};
 use crate::errors::RefusedError;
 use porter_core::{AccountsReply, AccountsRequest, Audience, GrantId};
 use porter_dbus::{Details, TokenArg, grant_to_dbus, token_to_dbus};
@@ -38,7 +38,11 @@ impl<H: Host, C: Callers> Grants<H, C> {
         &self,
         #[zbus(header)] header: Header<'_>,
     ) -> Result<Vec<(String, Details)>, RefusedError> {
-        match self.0.answer(&header, AccountsRequest::ListGrants).await? {
+        match self
+            .0
+            .answer(&header, Standing::Any, AccountsRequest::ListGrants)
+            .await?
+        {
             AccountsReply::Grants(list) => Ok(list.iter().map(grant_to_dbus).collect()),
             other => Err(mismatched(other)),
         }
@@ -52,7 +56,7 @@ impl<H: Host, C: Callers> Grants<H, C> {
         let grant = GrantId::parse(&grant).map_err(RefusedError::invalid)?;
         match self
             .0
-            .answer(&header, AccountsRequest::Revoke { grant })
+            .answer(&header, Standing::Any, AccountsRequest::Revoke { grant })
             .await?
         {
             AccountsReply::Revoked => Ok(()),
@@ -73,9 +77,28 @@ impl<H: Host, C: Callers> Tokens<H, C> {
             grant: GrantId::parse(&grant).map_err(RefusedError::invalid)?,
             audience: Audience(audience),
         };
-        match self.0.answer(&header, request).await? {
+        match self.0.answer(&header, Standing::Acting, request).await? {
             AccountsReply::Token(token) => Ok(token_to_dbus(&token)),
             other => Err(mismatched(other)),
         }
+    }
+
+    /// A socket to a daemon-side authenticated relay (`OpenAuthenticated`).
+    ///
+    /// Role check done here: an `Agent` is refused `Denied`, an unknown sender `AccessDenied`.
+    ///
+    /// W3G SEAM: the serving path is W3g's. It checks the grant and the endpoint
+    /// (`AccountService::open_authenticated`), makes the descriptor pair, runs the relay
+    /// (`porter_proxy::relay`) and returns the client's end. Until then this answers
+    /// `Unavailable` without touching the service (`relay_plan` is still a stub there).
+    async fn open_authenticated(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        grant: String,
+        endpoint: String,
+    ) -> Result<zbus::zvariant::OwnedFd, RefusedError> {
+        let _app = self.0.acting(&header).await?;
+        let _ = (grant, endpoint);
+        Err(RefusedError::of(porter_core::wire::Refusal::Unavailable))
     }
 }

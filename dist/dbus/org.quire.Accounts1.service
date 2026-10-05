@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=org.quire.Accounts1
+Exec=/usr/libexec/quire/accountd
+SystemdService=accountd.service

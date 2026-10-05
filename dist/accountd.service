@@ -1,0 +1,48 @@
+# accountd as a systemd user unit: the account registry, consent store and token broker
+# (org.quire.Accounts1 on the session bus). It is found, and started, by D-Bus activation
+# (dbus/org.quire.Accounts1.service) the first time an app asks for an account.
+#
+# accountd talks to the session bus, the Secret Service on it, the sheet host (sill) on it, and
+# the network (provider sign-in and revocation). It reads /proc to know who is calling, so the
+# unit must not hide other processes' cgroups (no ProtectProc, no PrivatePID).
+[Unit]
+Description=quire accounts and consent (org.quire.Accounts1)
+
+[Service]
+Type=dbus
+BusName=org.quire.Accounts1
+ExecStart=/usr/libexec/quire/accountd
+Restart=on-failure
+RestartSec=2
+KillMode=control-group
+TimeoutStopSec=20
+
+# --- Sandbox ---
+# Unix sockets for the bus, and the internet for the providers.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# The person's files are out of reach except what accountd writes: the registry (porter/), its
+# audit file (quire/accountd/) and the user's clients file (Settings writes it through accountd).
+ProtectHome=read-only
+ProtectSystem=strict
+ReadWritePaths=%h/.local/state/porter %h/.local/state/quire/accountd %h/.config/porter
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+# Files accountd creates are private to it.
+UMask=0077
+
+[Install]
+WantedBy=default.target

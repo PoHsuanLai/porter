@@ -51,6 +51,10 @@ porter-discover = { path = "crates/porter-discover" }
 porter-dav      = { path = "crates/porter-dav" }
 porter-families = { path = "crates/porter-families" }
 
+# quire's live settings modules (`org.quire.SettingsModule1`), for accountd only: the one porter -> quire
+# edge (ARCHITECTURE section 1). By sibling path like stoker; `live` is the module, `tokio` drives its zbus.
+ds-settings     = { path = "../quire/crates/ds-settings", features = ["live", "tokio"] }
+
 # stoker's computer-use vocabulary, by sibling path until the pinned git rev replaces it (quire
 # CONSUMING.md section 1). stoker has no porter dependency, so there is no cycle.
 cua-action      = { path = "../stoker/crates/cua-action" }

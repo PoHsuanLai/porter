@@ -75,14 +75,14 @@ impl<H: Host, C: Callers> Core<H, C> {
     /// Starts a sheet for the caller of `header`: registers its Request object and runs
     /// `request` for the app behind the sender. Returns the object's path.
     pub(crate) async fn sheet(
-        &self,
+        self: &Arc<Self>,
         header: &Header<'_>,
         connection: &Connection,
         kind: SheetKind,
         options: &Details,
         request: AccountsRequest,
     ) -> Result<OwnedObjectPath, RefusedError> {
-        let app = self.caller(header).await?;
+        let app = self.acting(header).await?;
         let sender = header
             .sender()
             .ok_or_else(|| RefusedError::access_denied("no sender"))?
@@ -100,8 +100,12 @@ impl<H: Host, C: Callers> Core<H, C> {
             .and_then(|path| ObjectPath::try_from(path).ok())
             .map(OwnedObjectPath::from)
             .ok_or_else(|| RefusedError::invalid("no request path for this sender"))?;
-        let host = Arc::clone(&self.host);
-        let run = async move { host.handle(&app, request).await };
+        let core = Arc::clone(self);
+        let run = async move {
+            let reply = core.host.handle(&app, request).await;
+            core.publish().await;
+            reply
+        };
         start(connection, sender, path, kind, run).await
     }
 }

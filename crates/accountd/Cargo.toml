@@ -1,6 +1,6 @@
 [package]
 name = "accountd"
-description = "porter's account and consent daemon: org.quire.Accounts1 over porter-service. The library serves the bus objects and the portal-shaped Request objects; the binary is still a skeleton: it builds the service and exits."
+description = "porter's account and consent daemon: org.quire.Accounts1 over porter-service. The library serves the bus objects (Manager, Grants, Tokens, Account, Peer, the Request objects and the settings module) and the sheet link to the sheet host; the binary resolves its paths, builds the service over its seams and serves."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -15,7 +15,9 @@ porter-families = { workspace = true, features = ["nextcloud", "generic", "micro
 porter-provider = { workspace = true }
 porter-secrets = { workspace = true, features = ["oo7"] }
 porter-service = { workspace = true }
+ds-settings = { workspace = true }
 clap = { workspace = true }
+oo7 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
@@ -28,3 +30,10 @@ tokio = { workspace = true }
 
 [lints]
 workspace = true
+
+[features]
+# Test builds only, never default and never in dist: `ACCOUNTD_PROC_ROOT=<dir>` makes the binary
+# read caller identities from <dir> instead of /proc, because the jailed and acceptance tests run
+# processes outside service cgroups. A release build ignores the variable. A test in
+# tests/dist.rs fails if this feature is ever default, and check-boundary.sh checks it too.
+test-proc-root = []
