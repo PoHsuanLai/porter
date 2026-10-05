@@ -11,6 +11,12 @@
 # speech_host = "/usr/libexec/quire/speech-host"
 # kokoro_python = "/home/you/kokoro/.venv/bin/python"
 # hf_cache = "/data/hf/hub"
+#
+# A replay engine plays a cassette instead of running a program (acceptance runs, machines with
+# no GPU). It exists only when named here; the file is read from this path and from nowhere else.
+# The model is served under the table's name. See crates/inferd/tests/cassettes for the format.
+# [engines.scripted]
+# replay = "/path/to/cassette.jsonl"
 
 # The user's AI policy (settings ai.local_only and ai.floor.<class>); the design's proposed
 # defaults when absent: local-only on, and personal classes (mail, photos, notes, files, contacts,

@@ -684,6 +684,40 @@ Decisions, where the brief or the plan left a choice:
 - `cua_step::step` takes the run's `&mut CuaSession` and `CuaRun` keeps one session across steps (no clone, no `Failed.kept`); a step that fails after a repair calls `refill_repairs`.
 - `Reasoning::EngineDefault` is sent as `EngineDefault` (it was `Off`); the sampling for it is `SamplingDefaults::for_reasoning`, which follows the entry's `reasoning_default`. Computer-use turns keep `Reasoning::Off` on purpose.
 
+## Fill F4: inferd replay engine (2026-10-06)
+
+Lane `f4-inferd-replay`. `[engines.<name>] replay = "<file>"` in `inferd.toml` names an engine that
+plays a cassette; nothing else creates one, and the path is read from the table only. `inferd::replay`
+serves the chat route (`POST /v1/chat/completions`, streaming SSE or one JSON body) and `/health` on
+the engine's socket from inside the daemon; `ReplayHost` is an `EngineHost` that plays these engines
+and hands every other to `ProcessHost`, so the router, the supervisor, the runner and the codec run
+unchanged. The model is served under the table's name (a synthesised text, tools and structured
+output entry with zero VRAM). With a replay engine configured and no `nvidia-smi`, `SpareGpu` reports
+a large GPU so the budget fits.
+
+- Cassette file: JSON Lines. Line 1 is stoker's `model-replay` `CassetteHeader` (`vocab` 1, `engine`,
+  `model`, `recorded`, `context` whose `loaded` is the model's context, `speech` null). Every later
+  line is an entry: `{"when": {"tools": "any"|"present"|"absent", "contains": [..], "lacks": [..]},
+  "reply": <reply>, "uses": "once"|"always"}`. `when` reads the request's offered tools and the text of
+  its messages; the first entry that admits a request and is not spent answers it (`once`, the default,
+  is spent after one answer; the cursor lives for the daemon's life, not an engine process's). A reply
+  is `{"kind":"text","v":"words"}`, `{"kind":"calls","v":[{"name":..,"arguments":{..}}]}` (the tool
+  name as the planner offered it, `org.quire.Mail-mail.thread.find` for Mail), `{"kind":"fail","v":503}`
+  or `{"kind":"wire","v":<model-replay WireReply>}` (a recorded exchange, frame by frame).
+- Errors are typed and never reach the network: a missing or malformed file leaves the engine unable
+  to start (`HostError::Refused`, logged at startup; the session ends `Failed`), and a request no entry
+  answers gets HTTP 422 with `error.type = "replay_miss"` (`ReplayError::slug`).
+- Why not match wire cassettes by request: `WireCassette` matches a request by its whole body; the
+  planner's view carries handle numbers and prose the cassette's author cannot predict, so entries
+  match on role (tools present, the writer's and the reader's fixed instruction) and play in order.
+- `tests/cassettes/docket-flow-a.jsonl` is docket-accept flow (a) as the scripted `Inference1` plays
+  it: the policy writer's draft (`uses: always`) and the planner's four steps (find, search, forward,
+  the closing words). Flow (c) names handles from the planner's own view (`value #N`) and the docket
+  side writes its cassette: planner steps in order, the reader as `{"when":{"tools":"absent",
+  "contains":["fence"]},"reply":{"kind":"text","v":"{\"answer\":\"...\"}"}}`.
+- Edges: inferd gains `model-replay` (workspace dependency, `check-boundary.sh`, ARCHITECTURE section 1).
+  `EngineConfig` gains a flattened `named` map, so an unknown scalar under `[engines]` is now an error.
+
 ## Standing facts
 
 - No ds-core: a closed set's serde form is its slug; UI crates map slugs to labels.

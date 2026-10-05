@@ -143,3 +143,21 @@ fn the_weights_cache_is_the_files_or_the_default() {
     let own = InferdConfig::from_toml("[engines]\nhf_cache = \"/mine\"").expect("config");
     assert_eq!(own.engines_in(&dirs).hf_cache, PathBuf::from("/mine"));
 }
+
+#[test]
+fn a_named_engine_with_a_cassette_reads_beside_the_programs() {
+    let config = InferdConfig::from_toml(
+        "[engines]\nllama_server = \"/usr/bin/llama-server\"\n[engines.scripted]\nreplay = \"/c/flow.jsonl\"\n",
+    )
+    .expect("config");
+    assert_eq!(
+        config.engines.llama_server,
+        Some(PathBuf::from("/usr/bin/llama-server"))
+    );
+    assert_eq!(
+        config.engines.named.get("scripted").map(|e| e.replay.clone()),
+        Some(PathBuf::from("/c/flow.jsonl"))
+    );
+    assert!(InferdConfig::from_toml("[engines.x]\nnope = 1\n").is_err());
+    assert!(InferdConfig::default().engines.named.is_empty());
+}
