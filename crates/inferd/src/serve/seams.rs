@@ -4,7 +4,7 @@
 
 use super::carried::Carried;
 use crate::session::{RouteDecision, SessionSpec};
-use porter_infer::{AudioFrame, InferEvent, InferRefusal, InferReply, InferRequest, ModelRef};
+use porter_infer::{AudioFrame, InferEvent, InferReply, InferRequest, ModelRef, PickRefusal, Why};
 use std::future::Future;
 use std::os::fd::OwnedFd;
 
@@ -15,7 +15,7 @@ pub trait Router: Send + Sync {
     fn route(
         &self,
         spec: &SessionSpec,
-    ) -> impl Future<Output = Result<RouteDecision, InferRefusal>> + Send;
+    ) -> impl Future<Output = Result<RouteDecision, PickRefusal>> + Send;
 }
 
 /// The engine could not be brought up.
@@ -67,13 +67,15 @@ pub trait TurnRunner: Send + Sync {
 /// Where the finished turns are recorded (spend and the audit entry; never content).
 pub trait AuditSink: Send + Sync {
     /// One turn ended with `reply` on a session of `spec` pinned to `served`; `carried` says what
-    /// its request held (how many frames, how much audio), which the reply does not.
+    /// its request held (how many frames, how much audio), which the reply does not; `why` is the
+    /// route's reason, recorded beside the model.
     fn record(
         &self,
         spec: &SessionSpec,
         served: &porter_infer::ServedBy,
         reply: &InferReply,
         carried: &Carried,
+        why: &Why,
     );
 }
 

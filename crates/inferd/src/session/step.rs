@@ -1,12 +1,13 @@
 //! The transition function of one session (see the parent module for the states).
 
 use super::{
-    AudioCursor, CuaProgress, Phase, RoutedNote, SessionIn, SessionOut, SessionSpec, fits, model_of,
+    AudioCursor, CuaProgress, Phase, RouteDecision, RoutedNote, SessionIn, SessionOut, SessionSpec,
+    fits, model_of,
 };
 use crate::speech::check_audio;
 use porter_infer::{
-    AudioRate, ClientFrame, InferEvent, InferRefusal, InferReply, InferRequest, ModelError,
-    Readiness, RequestKind, ServedBy,
+    AudioRate, ClientFrame, Declined, InferEvent, InferRefusal, InferReply, InferRequest,
+    ModelError, Readiness, RequestKind, ServedBy, ShowReason, Why,
 };
 
 /// The next state and effects for `input` in `phase` (models §4.2, voice §3.4).
@@ -17,10 +18,15 @@ pub fn step(spec: &SessionSpec, phase: Phase, input: SessionIn) -> (Phase, Vec<S
     match (phase, input) {
         (Phase::Closed, _) => (Phase::Closed, vec![]),
         (phase, SessionIn::Closed) => close(phase),
-        (Phase::Opened, SessionIn::Routed(Err(refusal))) => {
-            (Phase::Closed, vec![finished(InferReply::Refused(refusal))])
-        }
+        (Phase::Opened, SessionIn::Routed(Err(refused))) => (
+            Phase::Closed,
+            declined_event(refused.declined)
+                .into_iter()
+                .chain([finished(InferReply::Refused(refused.refusal))])
+                .collect(),
+        ),
         (Phase::Opened, SessionIn::Routed(Ok(decision))) => {
+            let why = why_event(&decision);
             let wait = waiting_event(decision.readiness);
             let want = SessionOut::Want(model_of(&decision.served));
             (
@@ -28,7 +34,7 @@ pub fn step(spec: &SessionSpec, phase: Phase, input: SessionIn) -> (Phase, Vec<S
                     served: decision.served,
                     queued: None,
                 },
-                wait.into_iter().chain([want]).collect(),
+                why.into_iter().chain(wait).chain([want]).collect(),
             )
         }
         (phase @ Phase::Waiting { .. }, SessionIn::EngineProgress(readiness)) => {
@@ -103,6 +109,19 @@ fn finished(reply: InferReply) -> SessionOut {
 
 fn refused(refusal: InferRefusal) -> SessionOut {
     finished(InferReply::Refused(refusal))
+}
+
+/// The reason, before anything else: announced when the person asked to see it, and always when
+/// a model is unloaded for this one (a swap is never hidden).
+fn why_event(decision: &RouteDecision) -> Option<SessionOut> {
+    let evicting = matches!(decision.why, Why::Evicted { .. });
+    (decision.show == ShowReason::On || evicting)
+        .then(|| SessionOut::Emit(InferEvent::Why(decision.why.clone())))
+}
+
+/// Which named model could not serve, ahead of the refusal that ends the session.
+fn declined_event(declined: Option<Declined>) -> Option<SessionOut> {
+    declined.map(|declined| SessionOut::Emit(InferEvent::Declined(declined)))
 }
 
 /// What the client sees while an engine is not ready: nothing once it is.

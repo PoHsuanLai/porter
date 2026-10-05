@@ -7,7 +7,7 @@ use super::seams::{
 };
 use super::wire::Wire;
 use crate::session::{Phase, SessionIn, SessionOut, SessionSpec, step};
-use porter_infer::{ClientFrame, ServedBy};
+use porter_infer::{ClientFrame, ServedBy, Why};
 use std::future::Future;
 use std::os::fd::OwnedFd;
 use std::pin::Pin;
@@ -24,6 +24,8 @@ struct Live<'a, E: EngineHost, T: TurnRunner> {
     held: Option<Vec<OwnedFd>>,
     /// What the turn in flight carries, for the audit entry.
     tally: Tally,
+    /// Why the route chose the model the session is pinned to, for the audit entry.
+    why: Why,
     engines: &'a E,
 }
 
@@ -45,9 +47,13 @@ pub async fn serve_session<R, E, T, A>(
         wait: None,
         held: None,
         tally: Tally::default(),
+        why: Why::Named,
         engines: &seams.engines,
     };
     let routed = seams.router.route(&spec).await;
+    if let Ok(decision) = &routed {
+        live.why = decision.why.clone();
+    }
     let mut input = SessionIn::Routed(routed);
     let mut incoming: Vec<OwnedFd> = Vec::new();
     loop {
@@ -187,7 +193,9 @@ where
             SessionOut::Audit(reply) => {
                 if let Some(served) = &served {
                     let carried = live.tally.closing(&reply);
-                    seams.audit.record(spec, served, &reply, &carried);
+                    seams
+                        .audit
+                        .record(spec, served, &reply, &carried, &live.why);
                 }
             }
         }

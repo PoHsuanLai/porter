@@ -2,6 +2,7 @@
 //! and the plain list a settings page draws. The list ranks nothing: no model is marked best or
 //! recommended, and a model the user mapped to a tier is only marked as theirs.
 
+use crate::pick::{AutoMode, Pick};
 use crate::readiness::Readiness;
 use crate::route::TierChoice;
 use porter_core::{AccountId, Billing, Locality, ModelId, Tier};
@@ -65,6 +66,16 @@ impl AiKind {
     }
 }
 
+/// The label a settings page draws for a tier. The key segment stays `best` (a name for a slot,
+/// kept for compatibility), but the label says what the slot is for and ranks nothing.
+pub fn tier_label(tier: Tier) -> &'static str {
+    match tier {
+        Tier::Fast => "Fast",
+        Tier::Balanced => "Balanced",
+        Tier::Best => "Demanding",
+    }
+}
+
 /// The user's choice for one kind and tier.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TierRow {
@@ -76,11 +87,44 @@ pub struct TierRow {
     pub model: ModelRef,
 }
 
-/// Every choice the user made: settings `ai.model.<kind>.<tier>` = `<account>/<model>`.
+/// A kind and tier the user set to "auto": settings `ai.model.<kind>.<tier>` = `"auto"`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct AutoRow {
+    /// The kind.
+    pub kind: AiKind,
+    /// The tier.
+    pub tier: Tier,
+    /// What Automatic does for it.
+    pub mode: AutoMode,
+}
+
+/// Every choice the user made: settings `ai.model.<kind>.<tier>` = `<account>/<model>` or `"auto"`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TierMap {
-    /// The rows; at most one per kind and tier.
+    /// The rows naming a model; at most one per kind and tier.
     pub rows: Vec<TierRow>,
+    /// The rows set to "auto"; at most one per kind and tier.
+    #[serde(default)]
+    pub autos: Vec<AutoRow>,
+}
+
+impl TierMap {
+    /// The person's pick for `kind` and `tier`, or `None` when the row is empty (the catalogue's
+    /// own choice, as before). A row that names a model wins over an "auto" row for the same
+    /// slot: a named model is never overridden, so a file that says both stays with the name.
+    pub fn pick(&self, kind: AiKind, tier: Tier) -> Option<Pick> {
+        let named = self
+            .rows
+            .iter()
+            .find(|row| row.kind == kind && row.tier == tier)
+            .map(|row| Pick::Named(row.model.clone()));
+        named.or_else(|| {
+            self.autos
+                .iter()
+                .find(|row| row.kind == kind && row.tier == tier)
+                .map(|row| Pick::Auto(row.mode))
+        })
+    }
 }
 
 /// Whether `model` is the user's choice for `kind` at `tier`. Feeds `route` unchanged.
@@ -238,6 +282,7 @@ mod tests {
                 tier: Tier::Balanced,
                 model: nemotron.clone(),
             }],
+            autos: vec![],
         };
         let cases = [
             (
@@ -354,6 +399,7 @@ mod tests {
                     model: a.model.clone(),
                 },
             ],
+            autos: vec![],
         };
         let rows = picker_rows(AiKind::Llm, &[a], &map);
         assert_eq!(rows[0].chosen_for, BTreeSet::from([Tier::Fast, Tier::Best]));
@@ -413,5 +459,68 @@ mod tests {
             AiKind::ComputerUse.setting_key(Tier::Balanced),
             "ai.model.computer_use.balanced"
         );
+    }
+
+    #[test]
+    fn the_best_slot_keeps_its_key_and_shows_another_label() {
+        assert_eq!(AiKind::Llm.setting_key(Tier::Best), "ai.model.llm.best");
+        let labels: Vec<_> = [Tier::Fast, Tier::Balanced, Tier::Best]
+            .into_iter()
+            .map(tier_label)
+            .collect();
+        assert_eq!(labels, ["Fast", "Balanced", "Demanding"]);
+        for label in labels {
+            for word in ["best", "recommended", "optimal", "smart", "premium"] {
+                assert!(!label.to_lowercase().contains(word), "{label}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_tier_map_says_named_auto_or_nothing_and_a_name_wins() {
+        let a = model("local", "a");
+        let map = TierMap {
+            rows: vec![
+                TierRow {
+                    kind: AiKind::Llm,
+                    tier: Tier::Fast,
+                    model: a.clone(),
+                },
+                TierRow {
+                    kind: AiKind::Llm,
+                    tier: Tier::Best,
+                    model: a.clone(),
+                },
+            ],
+            autos: vec![
+                AutoRow {
+                    kind: AiKind::Llm,
+                    tier: Tier::Balanced,
+                    mode: AutoMode::WarmFirst,
+                },
+                AutoRow {
+                    kind: AiKind::Llm,
+                    tier: Tier::Best,
+                    mode: AutoMode::WarmFirst,
+                },
+            ],
+        };
+        assert_eq!(
+            map.pick(AiKind::Llm, Tier::Fast),
+            Some(Pick::Named(a.clone()))
+        );
+        assert_eq!(
+            map.pick(AiKind::Llm, Tier::Balanced),
+            Some(Pick::Auto(AutoMode::WarmFirst))
+        );
+        assert_eq!(map.pick(AiKind::Llm, Tier::Best), Some(Pick::Named(a)));
+        assert_eq!(map.pick(AiKind::Embeddings, Tier::Fast), None);
+    }
+
+    #[test]
+    fn a_tier_map_written_before_auto_rows_still_reads() {
+        let old = r#"{"rows":[]}"#;
+        let map: TierMap = serde_json::from_str(old).expect("reads");
+        assert_eq!(map, TierMap::default());
     }
 }

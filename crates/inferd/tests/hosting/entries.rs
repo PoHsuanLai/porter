@@ -9,6 +9,8 @@ pub fn chat() -> String {
         r#"id = "tiny-chat"
 label = "Tiny chat"
 licence = {{ kind = "open", v = "MIT" }}
+family = "test"
+cold_start_estimate_s = 0
 source = {{ kind = "hugging_face", v = {{ repo = "test/tiny-chat", revision = "0000000000000000000000000000000000000001" }} }}
 vram = {{ weights_mib = 100, kv_per_1k_ctx_mib = 1, overhead_mib = 50 }}
 roles = ["llm"]
@@ -36,6 +38,8 @@ pub fn embed() -> String {
     r#"id = "tiny-embed"
 label = "Tiny embedder"
 licence = { kind = "open", v = "MIT" }
+family = "test"
+cold_start_estimate_s = 0
 source = { kind = "hugging_face", v = { repo = "test/tiny-embed", revision = "0000000000000000000000000000000000000002" } }
 vram = { weights_mib = 50, kv_per_1k_ctx_mib = 1, overhead_mib = 50 }
 roles = ["embeddings"]
@@ -54,6 +58,8 @@ pub fn cua() -> String {
         r#"id = "tiny-cua"
 label = "Tiny computer use"
 licence = {{ kind = "open", v = "MIT" }}
+family = "test"
+cold_start_estimate_s = 0
 source = {{ kind = "hugging_face", v = {{ repo = "test/tiny-cua", revision = "0000000000000000000000000000000000000003" }} }}
 vram = {{ weights_mib = 100, kv_per_1k_ctx_mib = 1, overhead_mib = 50 }}
 roles = ["llm", "computer_use"]

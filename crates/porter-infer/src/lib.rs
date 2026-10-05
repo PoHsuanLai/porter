@@ -13,6 +13,7 @@ mod event;
 mod ids;
 mod model;
 mod open;
+mod pick;
 mod policy;
 mod readiness;
 mod reply;
@@ -25,8 +26,8 @@ mod spend;
 pub use audit::AuditEntry;
 pub use broker::Broker;
 pub use choice::{
-    AiKind, Fit, LicenceClass, ModelRef, PickerInput, PickerRow, TierMap, TierRow, picker_rows,
-    tier_choice,
+    AiKind, AutoRow, Fit, LicenceClass, ModelRef, PickerInput, PickerRow, TierMap, TierRow,
+    picker_rows, tier_choice, tier_label,
 };
 pub use control::{
     ChatControl, Effort, Knob, Reasoning, Sampling, Seed, StopReason, ThoughtSeal, ToolChoice,
@@ -45,6 +46,10 @@ pub use ids::{
 };
 pub use model::{ChatSink, Model, ModelCard};
 pub use open::{LinkHello, OpenFrame, OpenOptions};
+pub use pick::{
+    AutoEvict, AutoMode, AutoPolicy, Declined, DeclinedBecause, EngineLoad, Pick, PickCandidate,
+    PickPolicy, PickRefusal, Picked, ShowReason, SwapCost, Why, pick,
+};
 pub use policy::{ClassFloor, Floor, LocalOnly, Policy};
 pub use readiness::Readiness;
 pub use reply::{
@@ -56,7 +61,7 @@ pub use request::{
     MessagePart, ReplyShape, RequestKind, Role, Task, TaskRequest, ThoughtPart, ToolCallPart,
     ToolDecl, ToolResultPart, ToolStatus,
 };
-pub use route::{Chosen, RouteAsk, RouteCandidate, TierChoice, route};
+pub use route::{Chosen, RouteAsk, RouteCandidate, TierChoice, admit, route};
 pub use session::{InferSession, SessionError};
 pub use speech::{
     AudioFrame, AudioFrameOut, AudioRate, HeardDelta, LangPick, SpeakRequest, TranscribeBegin,

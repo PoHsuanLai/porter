@@ -78,7 +78,12 @@ async fn run(args: Args) -> Result<(), String> {
     for path in &structured.rejected {
         eprintln!("inferd: {path}: out of range; using its default");
     }
-    let engines = Engines::new(models, supervised, config.policy(), config.tiers.clone());
+    let auto = config.ai.auto.resolve();
+    for path in &auto.rejected {
+        eprintln!("inferd: {path}: unknown value; using its default");
+    }
+    let engines = Engines::new(models, supervised, config.policy(), config.tiers.clone())
+        .with_auto(auto.policy);
     let connection = zbus::connection::Builder::session()
         .map_err(|e| e.to_string())?
         .build()

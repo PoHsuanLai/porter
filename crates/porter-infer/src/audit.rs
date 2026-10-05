@@ -1,5 +1,6 @@
 //! The audit record of one request: who, through what, how much; never the content.
 
+use crate::pick::Why;
 use crate::reply::TokenUsage;
 use porter_core::{AccountId, AppId, Bytes, Count, DataClass, Locality, ModelId, UnixSeconds};
 use serde::{Deserialize, Serialize};
@@ -27,4 +28,8 @@ pub struct AuditEntry {
     pub images: Count,
     /// Milliseconds of audio sent or produced: "audio was sent", never the audio or its text.
     pub audio_ms: Count,
+    /// Why the route chose this model: a closed set of facts, never content. Absent in entries
+    /// written before the router said why.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub why: Option<Why>,
 }

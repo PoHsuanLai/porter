@@ -11,10 +11,15 @@ use crate::runner::{Pin, Pinned};
 use crate::serve::{EngineFailed, EngineHost};
 use crate::session::{RouteDecision, SessionSpec};
 use crate::supervise::{Snapshot, Supervised};
-use engine_supervisor::EngineState;
+use crate::swap::{Budget, running_of, swap_cost};
+use engine_supervisor::{EngineId, EngineState, MonoMs};
+use model_catalog::Licence;
 use porter_core::consent::Availability;
 use porter_core::{DataClass, Need, Tier};
-use porter_infer::{InferRefusal, ModelCard, ModelRef, Policy, Readiness, ServedBy, TierMap};
+use porter_infer::{
+    AutoPolicy, InferRefusal, LicenceClass, ModelCard, ModelRef, PickRefusal, Policy, Readiness,
+    ServedBy, SwapCost, TierMap,
+};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -47,6 +52,7 @@ struct Book {
     remote: Vec<ModelCard>,
     policy: Option<Policy>,
     tiers: TierMap,
+    auto: AutoPolicy,
 }
 
 /// Every engine inferd supervises, and the models behind them.
@@ -80,8 +86,24 @@ impl Engines {
                 remote: Vec::new(),
                 policy: Some(policy),
                 tiers,
+                auto: AutoPolicy::default(),
             }),
             supervised,
+        }
+    }
+
+    /// The same, with the `ai.auto.*` rows the daemon read (the default rows otherwise).
+    pub fn with_auto(self, auto: AutoPolicy) -> Self {
+        let book = Book {
+            local: self.book.local.clone(),
+            remote: self.book.remote.clone(),
+            policy: self.book.policy.clone(),
+            tiers: self.book.tiers.clone(),
+            auto,
+        };
+        Self {
+            book: Arc::new(book),
+            supervised: self.supervised,
         }
     }
 
@@ -94,6 +116,7 @@ impl Engines {
             remote,
             policy: self.book.policy.clone(),
             tiers: self.book.tiers.clone(),
+            auto: self.book.auto,
         };
         Self {
             book: Arc::new(book),
@@ -119,16 +142,54 @@ impl Engines {
         readiness_in(&self.supervised.snapshot(), model)
     }
 
-    /// Every model a session may be routed to, with its readiness now.
+    /// Every model a session may be routed to, with its readiness now and what loading it would
+    /// take (stoker's `budget`, asked speculatively: nothing is started).
     pub fn listed(&self) -> Vec<Listed> {
         let snapshot = self.supervised.snapshot();
-        let local = self.book.local.iter().map(|model| Listed {
-            card: model.card.clone(),
-            readiness: readiness_in(&snapshot, model),
+        let running = running_of(snapshot.states.iter(), |id| {
+            self.book
+                .local
+                .iter()
+                .find(|model| model.spec.id == *id)
+                .map(|model| model.spec.need)
+        });
+        let budget_now = Budget {
+            gpu: snapshot.gpu,
+            headroom: self.supervised.headroom(),
+            now: snapshot.now.unwrap_or(MonoMs(0)),
+            probe_every: self.supervised.probe_every(),
+        };
+        let model_of = |id: &EngineId| {
+            self.book
+                .local
+                .iter()
+                .find(|model| model.spec.id == *id)
+                .map(|model| model.model_ref())
+        };
+        let local = self.book.local.iter().map(|model| {
+            let readiness = readiness_in(&snapshot, model);
+            let swap = match readiness {
+                Readiness::Ready | Readiness::Loading => SwapCost::Resident,
+                _ => swap_cost(
+                    &model.spec,
+                    &running,
+                    budget_now,
+                    model_of,
+                    model.entry.cold_start_estimate_s.0,
+                ),
+            };
+            Listed {
+                card: model.card.clone(),
+                readiness,
+                swap,
+                licence: licence_of(&model.entry.licence),
+            }
         });
         let remote = self.book.remote.iter().map(|card| Listed {
             card: card.clone(),
             readiness: Readiness::Ready,
+            swap: SwapCost::Resident,
+            licence: LicenceClass::Proprietary,
         });
         local.chain(remote).collect()
     }
@@ -140,24 +201,35 @@ impl Engines {
         spec: &SessionSpec,
         role: Role,
     ) -> Result<(RouteDecision, Pinned), InferRefusal> {
+        self.route_detailed(spec, role).map_err(|r| r.refusal)
+    }
+
+    /// `route`, with the reason a named model could not serve when that is why it refused.
+    pub fn route_detailed(
+        &self,
+        spec: &SessionSpec,
+        role: Role,
+    ) -> Result<(RouteDecision, Pinned), PickRefusal> {
         if matches!(spec.need, Need::ComputerUse(_)) && role != Role::Cua {
-            return Err(InferRefusal::Denied);
+            return Err(InferRefusal::Denied.into());
         }
-        let (chosen, readiness) = choose(
+        let decided = choose(
             &spec.need,
             spec.class,
             spec.tier,
             &self.listed_for(&spec.need),
             &self.policy(),
             &self.book.tiers,
+            self.book.auto,
         )?;
+        let (chosen, readiness) = (decided.chosen, decided.readiness);
         let model = self
             .local(&ModelRef {
                 account: chosen.account.clone(),
                 model: chosen.model.clone(),
             })
             .cloned()
-            .ok_or(InferRefusal::Unavailable)?;
+            .ok_or(PickRefusal::from(InferRefusal::Unavailable))?;
         let served = ServedBy {
             account: chosen.account,
             model: chosen.model,
@@ -167,6 +239,8 @@ impl Engines {
             RouteDecision {
                 served: served.clone(),
                 readiness,
+                why: decided.why,
+                show: self.book.auto.show_reason,
             },
             Pinned {
                 served,
@@ -254,6 +328,14 @@ impl Engines {
     }
 }
 
+fn licence_of(licence: &Licence) -> LicenceClass {
+    match licence {
+        Licence::Open(_) => LicenceClass::Open,
+        Licence::NonCommercial(_) => LicenceClass::NonCommercial,
+        Licence::Proprietary => LicenceClass::Proprietary,
+    }
+}
+
 fn readiness_in(snapshot: &Snapshot, model: &LocalModel) -> Readiness {
     if model.weights() == Weights::Missing {
         return Readiness::Downloadable;
@@ -309,8 +391,8 @@ pub struct SessionRouter {
 }
 
 impl crate::serve::Router for SessionRouter {
-    async fn route(&self, spec: &SessionSpec) -> Result<RouteDecision, InferRefusal> {
-        let (decision, pinned) = self.engines.route(spec, self.role)?;
+    async fn route(&self, spec: &SessionSpec) -> Result<RouteDecision, PickRefusal> {
+        let (decision, pinned) = self.engines.route_detailed(spec, self.role)?;
         self.pin.set(pinned);
         Ok(decision)
     }

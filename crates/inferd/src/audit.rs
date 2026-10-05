@@ -12,7 +12,7 @@ use crate::clock::Clock;
 use crate::serve::{AuditSink, Carried};
 use crate::session::SessionSpec;
 use porter_core::{AppId, Bytes, Tokens};
-use porter_infer::{AuditEntry, InferReply, ServedBy, TokenUsage};
+use porter_infer::{AuditEntry, InferReply, ServedBy, TokenUsage, Why};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -126,6 +126,7 @@ impl<O: AuditOut, C: Clock> SessionAudit<O, C> {
         served: &ServedBy,
         reply: &InferReply,
         carried: &Carried,
+        why: &Why,
     ) -> AuditEntry {
         AuditEntry {
             at: self.clock.now(),
@@ -138,13 +139,22 @@ impl<O: AuditOut, C: Clock> SessionAudit<O, C> {
             bytes_out: Bytes(0),
             images: carried.images,
             audio_ms: carried.audio_ms,
+            why: Some(why.clone()),
         }
     }
 }
 
 impl<O: AuditOut, C: Clock> AuditSink for SessionAudit<O, C> {
-    fn record(&self, spec: &SessionSpec, served: &ServedBy, reply: &InferReply, carried: &Carried) {
-        self.out.append(&self.entry(spec, served, reply, carried));
+    fn record(
+        &self,
+        spec: &SessionSpec,
+        served: &ServedBy,
+        reply: &InferReply,
+        carried: &Carried,
+        why: &Why,
+    ) {
+        self.out
+            .append(&self.entry(spec, served, reply, carried, why));
     }
 }
 

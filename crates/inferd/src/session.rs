@@ -12,8 +12,8 @@
 use porter_core::capability::SpeechMode;
 use porter_core::{DataClass, Need, Tier};
 use porter_infer::{
-    AudioFrame, ClientFrame, InferEvent, InferRefusal, InferReply, InferRequest, ModelRef,
-    Readiness, RequestKind, ServedBy,
+    AudioFrame, ClientFrame, InferEvent, InferReply, InferRequest, ModelRef, PickRefusal,
+    Readiness, RequestKind, ServedBy, ShowReason, Why,
 };
 
 /// What the session was opened for: fixed for its life, so the route is chosen once.
@@ -55,6 +55,10 @@ pub struct RouteDecision {
     pub served: ServedBy,
     /// How soon it can answer; not `Ready` shows the client a `Waiting` event.
     pub readiness: Readiness,
+    /// Why this model: announced to the client, and recorded in the audit entry.
+    pub why: Why,
+    /// Whether the reason is announced (`ai.auto.show_reason`); an eviction always is.
+    pub show: ShowReason,
 }
 
 /// The engine's key for a served model.
@@ -121,7 +125,7 @@ pub enum Phase {
 #[derive(Debug, Clone, PartialEq)]
 pub enum SessionIn {
     /// The route decided: who answers, or why none.
-    Routed(Result<RouteDecision, InferRefusal>),
+    Routed(Result<RouteDecision, PickRefusal>),
     /// The chosen engine is ready.
     EngineReady,
     /// The engine's readiness changed while the session waits (a download's progress); the

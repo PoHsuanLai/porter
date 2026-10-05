@@ -145,5 +145,6 @@ fn replies_and_records_round_trip() {
         bytes_out: Bytes(512),
         images: Count(1),
         audio_ms: Count(1500),
+        why: Some(porter_infer::Why::Warm),
     });
 }

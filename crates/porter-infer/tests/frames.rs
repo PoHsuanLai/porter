@@ -279,6 +279,7 @@ fn picker_data_round_trips_with_plain_slugs() {
             tier: porter_core::Tier::Balanced,
             model: model.clone(),
         }],
+        autos: vec![],
     };
     round_trip(&map);
     let slugs: Vec<String> = [

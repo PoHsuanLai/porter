@@ -29,6 +29,9 @@ pub struct Snapshot {
     pub states: BTreeMap<EngineId, EngineState>,
     /// The driver's clock when the snapshot was taken.
     pub now: Option<MonoMs>,
+    /// The GPU as the driver last read it (each time an engine was asked for); `None` before the
+    /// first look. The router reads it to cost a swap.
+    pub gpu: Option<GpuMemory>,
 }
 
 #[derive(Debug)]
@@ -54,6 +57,7 @@ pub struct Supervised {
     commands: mpsc::UnboundedSender<Command>,
     state: watch::Receiver<Snapshot>,
     probe_every: Duration,
+    headroom: MiB,
 }
 
 impl Supervised {
@@ -65,6 +69,7 @@ impl Supervised {
             commands,
             state,
             probe_every: SupervisorConfig::default().probe_every,
+            headroom: SupervisorConfig::default().headroom,
         }
     }
 
@@ -88,6 +93,7 @@ impl Supervised {
                 .map(|id| (id.clone(), EngineState::Stopped))
                 .collect(),
             now: None,
+            gpu: None,
         });
         let nothing = GpuMemory {
             total: MiB(0),
@@ -102,12 +108,14 @@ impl Supervised {
             wakes: BTreeSet::new(),
             origin: Instant::now(),
             publish,
+            gpu: None,
         };
         tokio::spawn(driver.run(inbox));
         Self {
             commands,
             state,
             probe_every: config.probe_every,
+            headroom: config.headroom,
         }
     }
 
@@ -151,6 +159,11 @@ impl Supervised {
         self.probe_every
     }
 
+    /// The memory kept free beside an engine (what `budget` is asked with).
+    pub fn headroom(&self) -> MiB {
+        self.headroom
+    }
+
     /// Resolves when any engine's state changes (for `EnginesChanged`).
     pub async fn changed(&self) -> Result<(), Failed> {
         self.state.clone().changed().await.map_err(|_| Failed)
@@ -166,6 +179,7 @@ struct Driver<H, P, G> {
     wakes: BTreeSet<MonoMs>,
     origin: Instant,
     publish: watch::Sender<Snapshot>,
+    gpu: Option<GpuMemory>,
 }
 
 impl<H, P, G> Driver<H, P, G>
@@ -211,6 +225,7 @@ where
                     total: MiB(0),
                     used_by_others: MiB(0),
                 });
+                self.gpu = Some(memory);
                 self.pump(vec![SupervisorIn::Gpu(memory), SupervisorIn::Want(id)])
                     .await;
                 let _ = ack.send(());
@@ -239,6 +254,7 @@ where
         self.publish.send_replace(Snapshot {
             states,
             now: Some(self.now()),
+            gpu: self.gpu,
         });
     }
 

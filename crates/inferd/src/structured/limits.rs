@@ -79,6 +79,9 @@ pub struct AiConfig {
     /// `ai.structured.*`.
     #[serde(default)]
     pub structured: StructuredConfig,
+    /// `ai.auto.*`.
+    #[serde(default)]
+    pub auto: crate::auto::AutoConfig,
 }
 
 /// What a structured turn runs under.

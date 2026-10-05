@@ -4,7 +4,7 @@ use porter_core::capability::{
 };
 use porter_core::need::{CuaNeed, LlmNeed};
 use porter_core::{AccountId, Billing, ModelId, Px, Tokens};
-use porter_infer::{LocalOnly, TierRow};
+use porter_infer::{AutoMode, AutoRow, Declined, DeclinedBecause, LocalOnly, TierRow};
 
 fn llm_cap() -> Capability {
     Capability::Llm(LlmCap {
@@ -26,7 +26,12 @@ fn card(account: &str, model: &str, locality: Locality, capability: Capability) 
 }
 
 fn listed(card: ModelCard, readiness: Readiness) -> Listed {
-    Listed { card, readiness }
+    Listed {
+        card,
+        readiness,
+        swap: SwapCost::Resident,
+        licence: LicenceClass::Open,
+    }
 }
 
 fn local(model: &str) -> ModelCard {
@@ -92,8 +97,10 @@ fn pick(
         models,
         policy,
         &TierMap::default(),
+        AutoPolicy::default(),
     )
-    .map(|(chosen, readiness)| (chosen.model.as_str().to_owned(), readiness))
+    .map(|d| (d.chosen.model.as_str().to_owned(), d.readiness))
+    .map_err(|r| r.refusal)
 }
 
 #[test]
@@ -259,6 +266,7 @@ fn the_users_tier_choice_decides_between_models_that_fit() {
                 model: ModelId::parse(model).expect("id"),
             },
         }],
+        autos: vec![],
     };
     let route = |tier: Tier, map: &TierMap| {
         choose(
@@ -268,8 +276,10 @@ fn the_users_tier_choice_decides_between_models_that_fit() {
             &models,
             &Policy::proposed(),
             map,
+            AutoPolicy::default(),
         )
-        .map(|(chosen, _)| chosen.model.as_str().to_owned())
+        .map(|d| d.chosen.model.as_str().to_owned())
+        .map_err(|r| r.refusal)
     };
     assert_eq!(route(Tier::Best, &tiers("beta")).as_deref(), Ok("beta"));
     assert_eq!(route(Tier::Best, &tiers("alpha")).as_deref(), Ok("alpha"));
@@ -307,4 +317,140 @@ fn needs_map_to_the_picker_kinds() {
     for (need, kind) in cases {
         assert_eq!(ai_kind(&need), kind);
     }
+}
+
+fn named(model: &str) -> ModelRef {
+    ModelRef {
+        account: AccountId::parse("local").expect("id"),
+        model: ModelId::parse(model).expect("id"),
+    }
+}
+
+fn decide(models: &[Listed], tiers: &TierMap, auto: AutoPolicy) -> Result<Decided, PickRefusal> {
+    choose(
+        &need(),
+        DataClass::Notes,
+        Tier::Balanced,
+        models,
+        &Policy::proposed(),
+        tiers,
+        auto,
+    )
+}
+
+fn auto_map() -> TierMap {
+    TierMap {
+        rows: vec![],
+        autos: vec![AutoRow {
+            kind: AiKind::Llm,
+            tier: Tier::Balanced,
+            mode: AutoMode::WarmFirst,
+        }],
+    }
+}
+
+#[test]
+fn an_empty_row_says_why_in_catalogue_terms() {
+    let one = [listed(local("alpha"), Readiness::Loadable)];
+    let two = [
+        listed(local("alpha"), Readiness::Loadable),
+        listed(local("beta"), Readiness::Ready),
+    ];
+    let none = TierMap::default();
+    let only = decide(&one, &none, AutoPolicy::default()).expect("one");
+    assert_eq!(only.why, Why::OnlyOne);
+    let first = decide(&two, &none, AutoPolicy::default()).expect("first");
+    assert_eq!(
+        (first.chosen.model.as_str(), first.why),
+        ("alpha", Why::CatalogueOrder)
+    );
+}
+
+#[test]
+fn automatic_prefers_the_loaded_model_and_says_so() {
+    let models = [
+        listed(local("alpha"), Readiness::Loadable),
+        listed(local("beta"), Readiness::Ready),
+    ];
+    let got = decide(&models, &auto_map(), AutoPolicy::default()).expect("picks");
+    assert_eq!((got.chosen.model.as_str(), got.why), ("beta", Why::Warm));
+    assert_eq!(got.readiness, Readiness::Ready);
+}
+
+#[test]
+fn automatic_names_the_idle_model_it_unloads_and_only_when_allowed() {
+    let swapping = Listed {
+        swap: SwapCost::Evicts {
+            victim: named("old"),
+            load: porter_infer::EngineLoad::Idle,
+            cold_start_estimate_s: 90,
+        },
+        ..listed(local("alpha"), Readiness::Loadable)
+    };
+    let got = decide(&[swapping.clone()], &auto_map(), AutoPolicy::default()).expect("swaps");
+    assert_eq!(
+        got.why,
+        Why::Evicted {
+            model: named("old")
+        }
+    );
+    let never = AutoPolicy {
+        allow_evict: porter_infer::AutoEvict::Never,
+        ..AutoPolicy::default()
+    };
+    assert_eq!(
+        decide(&[swapping], &auto_map(), never)
+            .expect_err("no swap")
+            .refusal,
+        InferRefusal::Unavailable
+    );
+}
+
+#[test]
+fn automatic_takes_the_cloud_only_when_the_floor_and_local_only_allow() {
+    let models = [listed(cloud("claude"), Readiness::Ready)];
+    // Notes data stays on this computer by default: not even Automatic widens the floor.
+    assert_eq!(
+        decide(&models, &auto_map(), AutoPolicy::default())
+            .expect_err("floor")
+            .refusal,
+        InferRefusal::Unavailable
+    );
+    let open = choose(
+        &need(),
+        DataClass::Public,
+        Tier::Balanced,
+        &models,
+        &off(),
+        &auto_map(),
+        AutoPolicy::default(),
+    )
+    .expect_err("a cloud model needs a grant, which only accountd can give and cannot yet");
+    // `admit` lets Public data reach the cloud; consent is the rule that stops it today.
+    assert_eq!(open.refusal, InferRefusal::NeedsGrant);
+}
+
+#[test]
+fn a_named_model_that_cannot_serve_refuses_naming_it_and_no_other_answers() {
+    let models = [
+        listed(local("alpha"), Readiness::Ready),
+        listed(local("beta"), Readiness::Downloadable),
+    ];
+    let tiers = TierMap {
+        rows: vec![TierRow {
+            kind: AiKind::Llm,
+            tier: Tier::Balanced,
+            model: named("beta"),
+        }],
+        autos: vec![],
+    };
+    let err = decide(&models, &tiers, AutoPolicy::default()).expect_err("refuses");
+    assert_eq!(err.refusal, InferRefusal::Unavailable);
+    assert_eq!(
+        err.declined,
+        Some(Declined {
+            model: named("beta"),
+            because: DeclinedBecause::NotInstalled
+        })
+    );
 }

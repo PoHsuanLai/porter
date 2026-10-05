@@ -12,8 +12,9 @@ use porter_core::{DataClass, GrantId, Locality, Need, Tier};
 use porter_core::{Match, matches};
 use porter_core::{Offer as CoreOffer, capability::SpeechMode};
 use porter_infer::{
-    AiKind, Chosen, InferRefusal, ModelCard, ModelRef, Policy, Readiness, RouteAsk, RouteCandidate,
-    SpendVerdict, TierMap, route, tier_choice,
+    AiKind, AutoPolicy, Chosen, InferRefusal, LicenceClass, ModelCard, ModelRef, PickCandidate,
+    PickPolicy, PickRefusal, Policy, Readiness, RouteAsk, RouteCandidate, SpendVerdict, SwapCost,
+    TierMap, Why, pick, route, tier_choice,
 };
 
 /// One model the router may pick, and how soon it can answer.
@@ -23,6 +24,22 @@ pub struct Listed {
     pub card: ModelCard,
     /// Whether it can answer now.
     pub readiness: Readiness,
+    /// What loading it now would take (`swap::swap_cost`); `Resident` for a model that is not
+    /// ours to load.
+    pub swap: SwapCost,
+    /// How it may be used.
+    pub licence: LicenceClass,
+}
+
+/// What the router decided: the model, how ready it is, and why it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Decided {
+    /// The model and the spend verdict.
+    pub chosen: Chosen,
+    /// Whether it can answer now.
+    pub readiness: Readiness,
+    /// Why this model.
+    pub why: Why,
 }
 
 /// The kind of AI work a need is, for the user's tier map.
@@ -70,6 +87,10 @@ fn fits(need: &Need, card: &ModelCard) -> bool {
 /// The model to run for a session of this need, class and tier, and its readiness; or why none
 /// may. A computer-use need with any class but `Screen` is `Unsupported`, as the session
 /// machine would answer it later.
+///
+/// The person's pick for the kind and tier decides how: a named model is served or refused
+/// (never replaced), "auto" is `porter_infer::pick`, and an empty row is the catalogue's own
+/// choice, as it always was (`route`).
 pub fn choose(
     need: &Need,
     class: DataClass,
@@ -77,41 +98,87 @@ pub fn choose(
     listed: &[Listed],
     policy: &Policy,
     tiers: &TierMap,
-) -> Result<(Chosen, Readiness), InferRefusal> {
+    auto: AutoPolicy,
+) -> Result<Decided, PickRefusal> {
     if matches!(need, Need::ComputerUse(_)) {
-        check_class(class)?;
+        check_class(class).map_err(plain)?;
     }
-    let kind = ai_kind(need).ok_or(InferRefusal::Unsupported)?;
-    let usable: Vec<&Listed> = listed
+    let kind = ai_kind(need).ok_or(plain(InferRefusal::Unsupported))?;
+    let fitting: Vec<&Listed> = listed.iter().filter(|one| fits(need, &one.card)).collect();
+    let candidates: Vec<PickCandidate> = fitting
         .iter()
-        .filter(|one| fits(need, &one.card) && can_serve(one.readiness))
-        .collect();
-    let candidates: Vec<RouteCandidate> = usable
-        .iter()
-        .map(|one| RouteCandidate {
-            account: one.card.account.clone(),
-            model: one.card.model.clone(),
-            locality: one.card.locality.clone(),
-            billing: one.card.billing.clone(),
-            tier: tier_choice(
-                tiers,
-                kind,
-                tier,
-                &ModelRef {
-                    account: one.card.account.clone(),
-                    model: one.card.model.clone(),
-                },
-            ),
-            permission: consent_of(&one.card),
-            spend: SpendVerdict::Within,
+        .enumerate()
+        .map(|(index, one)| PickCandidate {
+            route: RouteCandidate {
+                account: one.card.account.clone(),
+                model: one.card.model.clone(),
+                locality: one.card.locality.clone(),
+                billing: one.card.billing.clone(),
+                tier: tier_choice(
+                    tiers,
+                    kind,
+                    tier,
+                    &ModelRef {
+                        account: one.card.account.clone(),
+                        model: one.card.model.clone(),
+                    },
+                ),
+                permission: consent_of(&one.card),
+                spend: SpendVerdict::Within,
+            },
+            readiness: one.readiness,
+            swap: one.swap.clone(),
+            licence: one.licence,
+            catalogue_index: u32::try_from(index).unwrap_or(u32::MAX),
         })
         .collect();
-    let chosen = route(RouteAsk { class }, &candidates, policy)?;
+    let ask = RouteAsk { class };
+    match tiers.pick(kind, tier) {
+        Some(chosen_pick) => {
+            let rules = PickPolicy { policy, auto };
+            pick(ask, &chosen_pick, &candidates, rules).map(|picked| Decided {
+                chosen: picked.chosen,
+                readiness: picked.readiness,
+                why: picked.why,
+            })
+        }
+        None => catalogue_choice(ask, &candidates, policy),
+    }
+}
+
+fn plain(refusal: InferRefusal) -> PickRefusal {
+    PickRefusal {
+        refusal,
+        declined: None,
+    }
+}
+
+/// An empty row: what `route` has always chosen among the models that can answer.
+fn catalogue_choice(
+    ask: RouteAsk,
+    candidates: &[PickCandidate],
+    policy: &Policy,
+) -> Result<Decided, PickRefusal> {
+    let usable: Vec<&PickCandidate> = candidates
+        .iter()
+        .filter(|one| can_serve(one.readiness))
+        .collect();
+    let routes: Vec<RouteCandidate> = usable.iter().map(|one| one.route.clone()).collect();
+    let chosen = route(ask, &routes, policy).map_err(plain)?;
     let readiness = usable
         .iter()
-        .find(|one| one.card.account == chosen.account && one.card.model == chosen.model)
+        .find(|one| one.route.account == chosen.account && one.route.model == chosen.model)
         .map_or(Readiness::Unavailable, |one| one.readiness);
-    Ok((chosen, readiness))
+    let why = if usable.len() == 1 {
+        Why::OnlyOne
+    } else {
+        Why::CatalogueOrder
+    };
+    Ok(Decided {
+        chosen,
+        readiness,
+        why,
+    })
 }
 
 #[cfg(test)]

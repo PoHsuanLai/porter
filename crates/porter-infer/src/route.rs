@@ -54,14 +54,18 @@ pub struct Chosen {
     pub spend: SpendVerdict,
 }
 
-/// The model to run for `ask`, or why none may.
-pub fn route(
+/// The candidates the hard rules leave, or the typed refusal for the first rule that left none:
+/// `ai.local_only` (`Unavailable`), the data class's floor (`RequiresCloud`), the app's consent
+/// (`NeedsGrant` when one could be asked, else `Denied`), the spend caps (`OverBudget`). These
+/// rules live here and nowhere else: [`route`] and `pick` both go through it, so neither can
+/// admit what the other would refuse. Pure; the order of the input is kept.
+pub fn admit<'a>(
     ask: RouteAsk,
-    candidates: &[RouteCandidate],
+    candidates: impl IntoIterator<Item = &'a RouteCandidate>,
     policy: &Policy,
-) -> Result<Chosen, InferRefusal> {
+) -> Result<Vec<&'a RouteCandidate>, InferRefusal> {
     let reachable: Vec<&RouteCandidate> = candidates
-        .iter()
+        .into_iter()
         .filter(|c| policy.local_only == LocalOnly::Off || !is_cloud(&c.locality))
         .collect();
     if reachable.is_empty() {
@@ -88,24 +92,45 @@ pub fn route(
             InferRefusal::Denied
         });
     }
-    permitted
+    let affordable: Vec<&RouteCandidate> = permitted
         .into_iter()
         .filter(|c| c.spend != SpendVerdict::Stop)
-        .min_by_key(|c| (closeness(&c.locality), c.tier, price_rank(&c.billing)))
-        .map(|c| Chosen {
-            account: c.account.clone(),
-            model: c.model.clone(),
-            spend: c.spend,
-        })
-        .ok_or(InferRefusal::OverBudget)
+        .collect();
+    if affordable.is_empty() {
+        Err(InferRefusal::OverBudget)
+    } else {
+        Ok(affordable)
+    }
 }
 
-fn is_cloud(locality: &Locality) -> bool {
+/// The model to run for `ask`, or why none may.
+pub fn route(
+    ask: RouteAsk,
+    candidates: &[RouteCandidate],
+    policy: &Policy,
+) -> Result<Chosen, InferRefusal> {
+    admit(ask, candidates, policy)?
+        .into_iter()
+        .min_by_key(|c| (closeness(&c.locality), c.tier, price_rank(&c.billing)))
+        .map(chosen_of)
+        .ok_or(InferRefusal::Unavailable)
+}
+
+/// What a candidate becomes when it is the answer.
+pub(crate) fn chosen_of(c: &RouteCandidate) -> Chosen {
+    Chosen {
+        account: c.account.clone(),
+        model: c.model.clone(),
+        spend: c.spend,
+    }
+}
+
+pub(crate) fn is_cloud(locality: &Locality) -> bool {
     matches!(locality, Locality::Cloud { .. })
 }
 
 /// This computer, then the user's network, then the cloud.
-fn closeness(locality: &Locality) -> u8 {
+pub(crate) fn closeness(locality: &Locality) -> u8 {
     match locality {
         Locality::OnDevice => 0,
         Locality::LocalNetwork => 1,
@@ -114,7 +139,7 @@ fn closeness(locality: &Locality) -> u8 {
 }
 
 /// Free, then plan allowance, then metered by list price.
-fn price_rank(billing: &Billing) -> (u8, u64) {
+pub(crate) fn price_rank(billing: &Billing) -> (u8, u64) {
     match billing {
         Billing::Free => (0, 0),
         Billing::PlanBudget => (1, 0),

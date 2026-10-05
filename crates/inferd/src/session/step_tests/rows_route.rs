@@ -5,8 +5,23 @@ use super::helpers::*;
 use porter_core::consent::Usage;
 use porter_core::{DataClass, Permille};
 use porter_infer::{
-    ClientFrame, InferEvent, InferRefusal, InferReply, ModelError, Readiness, RequestKind,
+    ClientFrame, Declined, DeclinedBecause, InferEvent, InferRefusal, InferReply, ModelError,
+    ModelRef, PickRefusal, Readiness, RequestKind, ShowReason, Why,
 };
+
+fn old() -> ModelRef {
+    ModelRef {
+        account: porter_core::AccountId::parse("local").expect("id"),
+        model: porter_core::ModelId::parse("old").expect("id"),
+    }
+}
+
+fn declined() -> Declined {
+    Declined {
+        model: old(),
+        because: DeclinedBecause::NoRoom,
+    }
+}
 
 pub(super) fn rows() -> Vec<Row> {
     let failed = |e| done(InferReply::Failed(e));
@@ -15,9 +30,51 @@ pub(super) fn rows() -> Vec<Row> {
             "route refused closes",
             llm_spec(DataClass::Mail),
             Phase::Opened,
-            SessionIn::Routed(Err(InferRefusal::NeedsGrant)),
+            SessionIn::Routed(Err(InferRefusal::NeedsGrant.into())),
             Phase::Closed,
             vec![done(InferReply::Refused(InferRefusal::NeedsGrant))],
+        ),
+        (
+            "a named model that cannot serve says which and why, then refuses",
+            llm_spec(DataClass::Mail),
+            Phase::Opened,
+            SessionIn::Routed(Err(PickRefusal {
+                refusal: InferRefusal::Unavailable,
+                declined: Some(declined()),
+            })),
+            Phase::Closed,
+            vec![
+                SessionOut::Emit(InferEvent::Declined(declined())),
+                done(InferReply::Refused(InferRefusal::Unavailable)),
+            ],
+        ),
+        (
+            "the reason goes out first when the person asked to see it",
+            llm_spec(DataClass::Mail),
+            Phase::Opened,
+            decided_why(Readiness::Loadable, Why::Warm, ShowReason::On),
+            waiting(None),
+            vec![
+                SessionOut::Emit(InferEvent::Why(Why::Warm)),
+                SessionOut::Emit(InferEvent::Waiting(Readiness::Loadable)),
+                SessionOut::Want(model()),
+            ],
+        ),
+        (
+            "an eviction is announced even with the reasons off, before the wait",
+            llm_spec(DataClass::Mail),
+            Phase::Opened,
+            decided_why(
+                Readiness::Loadable,
+                Why::Evicted { model: old() },
+                ShowReason::Off,
+            ),
+            waiting(None),
+            vec![
+                SessionOut::Emit(InferEvent::Why(Why::Evicted { model: old() })),
+                SessionOut::Emit(InferEvent::Waiting(Readiness::Loadable)),
+                SessionOut::Want(model()),
+            ],
         ),
         (
             "route chosen waits for the engine",

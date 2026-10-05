@@ -8,6 +8,7 @@
 
 mod adapters;
 pub mod audit;
+pub mod auto;
 pub mod bridge;
 pub mod catalog;
 pub mod clock;
@@ -27,6 +28,7 @@ pub mod session;
 pub mod speech;
 pub mod structured;
 pub mod supervise;
+pub mod swap;
 pub mod tee;
 
 pub use adapters::AdapterModel;

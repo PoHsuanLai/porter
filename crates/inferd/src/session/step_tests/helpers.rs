@@ -11,7 +11,7 @@ use porter_core::{AccountId, DataClass, Locality, ModelId, Need, Tier, Tokens};
 use porter_infer::{
     AudioFrame, AudioRate, Base64Bytes, ClientFrame, CuaBegin, CuaStepReply, InferEvent,
     InferRefusal, InferReply, InferRequest, LangPick, ModelError, ModelRef, Readiness, RequestKind,
-    ServedBy, SpeakRequest, Task, TaskRequest, TranscribeBegin, TranscribeMode,
+    ServedBy, ShowReason, SpeakRequest, Task, TaskRequest, TranscribeBegin, TranscribeMode, Why,
 };
 
 pub(super) fn model() -> ModelRef {
@@ -33,6 +33,17 @@ pub(super) fn decided(readiness: Readiness) -> SessionIn {
     SessionIn::Routed(Ok(RouteDecision {
         served: served(),
         readiness,
+        why: Why::Named,
+        show: ShowReason::Off,
+    }))
+}
+
+pub(super) fn decided_why(readiness: Readiness, why: Why, show: ShowReason) -> SessionIn {
+    SessionIn::Routed(Ok(RouteDecision {
+        served: served(),
+        readiness,
+        why,
+        show,
     }))
 }
 

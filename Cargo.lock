@@ -2174,6 +2174,7 @@ dependencies = [
  "base64",
  "cua-action",
  "porter-core",
+ "proptest",
  "serde",
  "serde_json",
  "thiserror",

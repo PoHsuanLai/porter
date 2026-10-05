@@ -8,8 +8,8 @@ use inferd::session::{RouteDecision, SessionSpec};
 use porter_core::wire::{FrameRead, decode_frame, encode_frame};
 use porter_core::{AccountId, DataClass, Locality, ModelId, Need, Tier, Tokens};
 use porter_infer::{
-    AudioFrame, ClientFrame, InferEvent, InferRefusal, InferReply, InferRequest, ModelRef,
-    Readiness, ServedBy,
+    AudioFrame, ClientFrame, InferEvent, InferReply, InferRequest, ModelRef, PickRefusal,
+    Readiness, ServedBy, ShowReason, Why,
 };
 use rustix::net::{SendAncillaryBuffer, SendAncillaryMessage, SendFlags, sendmsg};
 use std::io::{IoSlice, Read, Seek};
@@ -53,13 +53,15 @@ pub fn llm() -> Need {
 
 /// A router with one fixed answer.
 #[derive(Debug)]
-pub struct FixedRouter(pub Result<RouteDecision, InferRefusal>);
+pub struct FixedRouter(pub Result<RouteDecision, PickRefusal>);
 
 impl FixedRouter {
     pub fn ready() -> Self {
         Self(Ok(RouteDecision {
             served: served(),
             readiness: Readiness::Ready,
+            why: Why::Named,
+            show: ShowReason::Off,
         }))
     }
 
@@ -67,12 +69,14 @@ impl FixedRouter {
         Self(Ok(RouteDecision {
             served: served(),
             readiness: Readiness::Loadable,
+            why: Why::Named,
+            show: ShowReason::Off,
         }))
     }
 }
 
 impl Router for FixedRouter {
-    async fn route(&self, _spec: &SessionSpec) -> Result<RouteDecision, InferRefusal> {
+    async fn route(&self, _spec: &SessionSpec) -> Result<RouteDecision, PickRefusal> {
         self.0.clone()
     }
 }
@@ -182,7 +186,9 @@ impl AuditSink for Audit {
         served_by: &ServedBy,
         reply: &InferReply,
         carried: &Carried,
+        why: &Why,
     ) {
+        assert_eq!(why, &Why::Named);
         assert_eq!(served_by, &served());
         self.0.lock().expect("lock").push(reply.clone());
         self.1.lock().expect("lock").push(*carried);

@@ -21,6 +21,8 @@ fn entry_text(name: &str, context: Tokens) -> String {
         r#"id = "{name}"
 label = "Replay {name}"
 licence = {{ kind = "open", v = "MIT" }}
+family = "replay"
+cold_start_estimate_s = 0
 source = {{ kind = "hugging_face", v = {{ repo = "replay/{name}", revision = "0000000000000000000000000000000000000000" }} }}
 vram = {{ weights_mib = 0, kv_per_1k_ctx_mib = 0, overhead_mib = 0 }}
 roles = ["llm"]

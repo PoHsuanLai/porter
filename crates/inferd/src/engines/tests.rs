@@ -72,6 +72,7 @@ fn snapshot(states: &[(&str, EngineState)], now: u64) -> Snapshot {
             .map(|(id, state)| (EngineId((*id).into()), *state))
             .collect(),
         now: Some(MonoMs(now)),
+        gpu: None,
     }
 }
 
@@ -164,6 +165,7 @@ fn the_gpu_is_loading_while_an_engine_starts_busy_in_a_turn_and_idle_otherwise()
             Snapshot {
                 states: [(EngineId("a".into()), ready(0))].into(),
                 now: None,
+                gpu: None,
             },
             GpuState::Idle,
         ),
@@ -263,7 +265,7 @@ async fn the_session_router_writes_the_pin_the_runner_reads() {
     let none = Engines::default().router(empty.clone(), Role::App);
     assert_eq!(
         none.route(&spec(llm(), DataClass::Notes)).await.err(),
-        Some(InferRefusal::Unavailable)
+        Some(InferRefusal::Unavailable.into())
     );
     assert!(empty.get().is_none());
 }
@@ -380,4 +382,35 @@ async fn what_an_app_is_told_without_a_session_reveals_no_identity() {
         Availability::AvailableNeedsConsent
     );
     assert_eq!(remote.listed().len(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_route_says_why_and_the_snapshot_keeps_the_gpu_the_swap_cost_reads() {
+    let scratch = Scratch::new("eng-why");
+    let engines = start(&scratch, Recorder::default());
+    let (decision, _) = engines
+        .route(&spec(llm(), DataClass::Notes), Role::App)
+        .expect("route");
+    assert_eq!(decision.why, porter_infer::Why::CatalogueOrder);
+    assert_eq!(decision.show, porter_infer::ShowReason::On);
+    // Nothing has looked at the GPU yet; a cold model is then costed as fitting.
+    assert_eq!(engines.supervised().snapshot().gpu, None);
+    assert!(matches!(
+        engines.listed()[0].swap,
+        porter_infer::SwapCost::Fits { .. }
+    ));
+    let model = ModelRef {
+        account: decision.served.account,
+        model: decision.served.model,
+    };
+    assert_eq!(engines.want(model).await, Ok(()));
+    assert_eq!(
+        engines.supervised().snapshot().gpu,
+        Some(GpuMemory {
+            total: MiB(16_000),
+            used_by_others: MiB(0)
+        })
+    );
+    // Loaded now: nothing to swap.
+    assert_eq!(engines.listed()[0].swap, porter_infer::SwapCost::Resident);
 }

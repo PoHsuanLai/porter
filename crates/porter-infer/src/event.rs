@@ -1,5 +1,6 @@
 //! The streaming session on the `Open` fd: frames the client writes, events inferd writes.
 
+use crate::pick::{Declined, Why};
 use crate::readiness::Readiness;
 use crate::reply::{InferReply, ServedBy, TokenUsage};
 use crate::request::{InferRequest, ToolCallPart};
@@ -37,6 +38,13 @@ impl ClientFrame {
 pub enum InferEvent {
     /// Who will answer: the "sent to <provider>" indicator and the orb read it.
     Routed(ServedBy),
+    /// Why that model answers (a closed set of facts), sent when the route is decided, before
+    /// any `Waiting` and before `Routed`. `Why::Evicted` names the idle model being unloaded: a
+    /// swap is never silent. Additive: a reader that does not know it must skip it.
+    Why(Why),
+    /// The model the person named cannot serve, and why; `Finished(Refused(..))` follows. No
+    /// other model answers in its place.
+    Declined(Declined),
     /// The engine is loading: presence is "working", never a spinner in the app.
     Waiting(Readiness),
     /// Reply text so far.
