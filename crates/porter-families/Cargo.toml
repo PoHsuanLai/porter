@@ -15,6 +15,14 @@ porter-http = { workspace = true }
 porter-dav = { workspace = true, optional = true }
 porter-discover = { workspace = true, optional = true }
 porter-oauth = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true, features = ["rt", "time", "net", "io-util"] }
+
+[dev-dependencies]
+porter-fake = { workspace = true }
+porter-fake-servers = { workspace = true }
+tokio = { workspace = true, features = ["rt", "macros", "net", "time", "io-util"] }
 
 [features]
 # Nextcloud: Login Flow v2, OCS discovery, WebDAV, CalDAV, CardDAV, Notes.
@@ -22,7 +30,7 @@ nextcloud = ["dep:porter-dav", "dep:porter-discover"]
 # Generic IMAP/SMTP and DAV with a password or app password, found by autoconfig.
 generic = ["dep:porter-dav", "dep:porter-discover"]
 # Microsoft: OAuth PKCE and device code, IMAP/SMTP XOAUTH2, Graph.
-microsoft = ["dep:porter-oauth", "dep:porter-discover"]
+microsoft = ["dep:porter-oauth", "dep:porter-discover", "porter-oauth/io", "porter-http/hyper", "dep:serde", "dep:serde_json", "dep:tokio"]
 # AI providers with a pasted API key (Anthropic, OpenAI).
 api_key = []
 # OpenRouter: OAuth PKCE that mints a key.
@@ -30,3 +38,7 @@ openrouter = ["dep:porter-oauth"]
 
 [lints]
 workspace = true
+
+[[test]]
+name = "microsoft"
+required-features = ["microsoft"]

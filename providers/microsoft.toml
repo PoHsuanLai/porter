@@ -1,0 +1,54 @@
+# Microsoft, personal and work or school accounts, through one multi-tenant client (design/31
+# §3.2). Mail is IMAP and SMTP with XOAUTH2 (the sign-in's `outlook.office.com` scopes); the rest
+# is Graph. A tenant that forbids a Graph service answers its probe with 403, and the account
+# shows that kind as absent for tenant consent (R13). OneNote has no delta (C11).
+id = "microsoft"
+label = "Microsoft"
+mark = "microsoft"
+
+[auth]
+kind = "oauth_pkce"
+issuer = "microsoft"
+
+[discovery]
+kind = "fixed"
+
+[matching]
+domains = ["outlook.com", "hotmail.com", "live.com", "msn.com", "onmicrosoft.com"]
+mx_suffixes = ["mail.protection.outlook.com", "outlook.com"]
+
+[[capability]]
+family = "imap"
+endpoint = "imaps://outlook.office365.com:993"
+kind = "mail"
+v = { access = "read_write", send = "present", delta = "push", transport = "imap", labels = "folders" }
+
+[[capability]]
+family = "graph"
+endpoint = "https://graph.microsoft.com"
+kind = "calendar"
+v = { access = "read_write", delta = "poll", transport = "graph", collections = "present" }
+
+[[capability]]
+family = "graph"
+endpoint = "https://graph.microsoft.com"
+kind = "contacts"
+v = { access = "read_write", delta = "poll", transport = "graph", collections = "present" }
+
+[[capability]]
+family = "graph"
+endpoint = "https://graph.microsoft.com"
+kind = "tasks"
+v = { access = "read_write", delta = "poll", transport = "graph", collections = "present" }
+
+[[capability]]
+family = "graph"
+endpoint = "https://graph.microsoft.com"
+kind = "notes"
+v = { access = "read_write", delta = "none", transport = "one_note" }
+
+[[capability]]
+family = "graph"
+endpoint = "https://graph.microsoft.com"
+kind = "storage"
+v = { access = "read_write", delta = "poll", quota = "reported", scope = "full", hashes = "quick_xor", ranges = "present", chunked_upload = "present" }

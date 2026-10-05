@@ -1,0 +1,140 @@
+//! An open Microsoft account: the refresh token, and the short-lived tokens minted from it, one
+//! per resource (Exchange for IMAP and SMTP, Graph for the rest).
+
+use super::env::MicrosoftEnv;
+use super::graph::{Found, probe};
+use super::graph_origin;
+use super::scopes::audience_scope;
+use porter_core::{AccountId, Audience, Credential, IssuedToken, UnixSeconds};
+use porter_http::Http;
+use porter_oauth::{ExchangeFault, Renewal, endpoints_of, refresh_scoped, renewal};
+use porter_provider::{Presented, ProviderError, ProviderSession, ProviderSpec};
+use std::collections::HashMap;
+use std::sync::{Mutex, MutexGuard};
+
+/// An open Microsoft account.
+pub struct MicrosoftSession<H = porter_http::HyperHttp> {
+    account: AccountId,
+    spec: ProviderSpec,
+    env: MicrosoftEnv<H>,
+    state: Mutex<State>,
+}
+
+#[derive(Debug)]
+struct State {
+    credential: Credential,
+    /// The token last minted for each resource scope.
+    minted: HashMap<String, IssuedToken>,
+    /// The credential to store again, once, after the refresh token rotated.
+    renewed: Option<Credential>,
+}
+
+impl<H> std::fmt::Debug for MicrosoftSession<H> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MicrosoftSession")
+            .field("account", &self.account)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<H: Http> MicrosoftSession<H> {
+    pub(super) fn new(
+        account: AccountId,
+        spec: ProviderSpec,
+        env: MicrosoftEnv<H>,
+        presented: Presented,
+    ) -> Result<Self, ProviderError> {
+        let Presented::Credential(credential @ Credential::OAuth { .. }) = presented else {
+            return Err(ProviderError::Unauthorized);
+        };
+        Ok(Self {
+            account,
+            spec,
+            env,
+            state: Mutex::new(State {
+                credential,
+                minted: HashMap::new(),
+                renewed: None,
+            }),
+        })
+    }
+
+    /// What the account's Graph services answer.
+    pub(super) async fn probe(&self) -> Result<Found, ProviderError> {
+        let base = graph_origin(&self.spec);
+        let token = self
+            .access_token(&Audience(base.as_str().to_owned()))
+            .await?;
+        probe(&*self.env.http, &self.spec, &base, token.value.expose()).await
+    }
+
+    fn state(&self) -> MutexGuard<'_, State> {
+        self.state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn fresh(&self, scope: &str, now: UnixSeconds) -> Option<IssuedToken> {
+        self.state()
+            .minted
+            .get(scope)
+            .filter(|t| renewal(t.expires, now) == Renewal::Fresh)
+            .cloned()
+    }
+}
+
+impl<H: Http> ProviderSession for MicrosoftSession<H> {
+    async fn access_token(&self, audience: &Audience) -> Result<IssuedToken, ProviderError> {
+        let graph = graph_origin(&self.spec);
+        let (scope, kind) =
+            audience_scope(audience, graph.as_str()).ok_or(ProviderError::Forbidden)?;
+        let now = (self.env.clock)();
+        if let Some(token) = self.fresh(&scope, now) {
+            return Ok(token);
+        }
+        let Credential::OAuth { refresh, .. } = self.state().credential.clone() else {
+            return Err(ProviderError::Unauthorized);
+        };
+        // No client id configured is a fault of this install, not of the account: offline, so
+        // the person is not asked to sign in again for it.
+        let client = self
+            .env
+            .registry
+            .lookup(porter_provider::Issuer::Microsoft, self.env.channel)
+            .ok_or(ProviderError::Unreachable)?;
+        let tokens = refresh_scoped(
+            &*self.env.http,
+            &endpoints_of(client),
+            client,
+            &refresh,
+            Some(&scope),
+        )
+        .await
+        .map_err(|fault| match fault {
+            ExchangeFault::Refused => ProviderError::Unauthorized,
+            ExchangeFault::Unreachable => ProviderError::Unreachable,
+            ExchangeFault::Unreadable => ProviderError::Unreadable,
+        })?;
+        let issued = IssuedToken {
+            kind,
+            expires: tokens.expires_at(now),
+            value: tokens.access_token.clone(),
+        };
+        let mut state = self.state();
+        if let Some(rotated) = tokens.refresh_token.filter(|r| *r != refresh) {
+            let credential = Credential::OAuth {
+                access: tokens.access_token,
+                refresh: rotated,
+                expires_at: issued.expires,
+            };
+            state.credential = credential.clone();
+            state.renewed = Some(credential);
+        }
+        state.minted.insert(scope, issued.clone());
+        Ok(issued)
+    }
+
+    fn renewed(&self) -> Option<Credential> {
+        self.state().renewed.take()
+    }
+}

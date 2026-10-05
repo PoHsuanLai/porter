@@ -25,7 +25,7 @@ fn shipped() -> Vec<(PathBuf, ProviderSpec)> {
 #[test]
 fn every_shipped_provider_file_parses_and_is_named_by_its_id() {
     let files = shipped();
-    assert_eq!(files.len(), 4);
+    assert_eq!(files.len(), 5);
     for (path, spec) in files {
         let stem = path.file_stem().and_then(|s| s.to_str()).expect("stem");
         assert_eq!(spec.id.as_str(), stem, "{}", path.display());
@@ -53,4 +53,38 @@ fn a_user_file_replaces_the_system_file_of_the_same_id() {
     let set = ProviderSet::layered(specs.clone(), vec![mine.clone()]);
     assert_eq!(set.specs().len(), specs.len());
     assert_eq!(set.get(&mine.id).map(|s| s.label.as_str()), Some("My own"));
+}
+
+#[test]
+fn the_microsoft_file_declares_mail_over_imap_and_the_rest_over_graph() {
+    use porter_core::Family;
+    use porter_core::capability::CapabilityKind as K;
+    let spec = shipped()
+        .into_iter()
+        .map(|(_, spec)| spec)
+        .find(|spec| spec.id.as_str() == "microsoft")
+        .expect("microsoft.toml ships");
+    let rows: Vec<(K, Family)> = spec
+        .capabilities
+        .iter()
+        .map(|row| (row.capability.kind(), row.family))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            (K::Mail, Family::Imap),
+            (K::Calendar, Family::Graph),
+            (K::Contacts, Family::Graph),
+            (K::Tasks, Family::Graph),
+            (K::Notes, Family::Graph),
+            (K::Storage, Family::Graph),
+        ]
+    );
+    assert_eq!(spec.auth.issuer, Some(porter_provider::Issuer::Microsoft));
+    assert!(
+        spec.matching
+            .domains
+            .iter()
+            .any(|d| d.as_str() == "outlook.com")
+    );
 }

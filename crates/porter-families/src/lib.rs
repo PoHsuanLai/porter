@@ -32,7 +32,10 @@ pub use dispatch::{FamilyProvider, FamilySession, FamilySignIn};
 #[cfg(feature = "generic")]
 pub use generic::{GenericProvider, GenericSession, GenericSignIn};
 #[cfg(feature = "microsoft")]
-pub use microsoft::{MicrosoftProvider, MicrosoftSession, MicrosoftSignIn};
+pub use microsoft::{
+    AccountClass, Clock, MicrosoftEnv, MicrosoftProvider, MicrosoftSession, MicrosoftSignIn,
+    Random, SignInFlow, classify,
+};
 #[cfg(feature = "nextcloud")]
 pub use nextcloud::{NextcloudProvider, NextcloudSession, NextcloudSignIn};
 #[cfg(feature = "openrouter")]

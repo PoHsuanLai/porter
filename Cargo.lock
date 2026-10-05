@@ -1805,9 +1805,14 @@ dependencies = [
  "porter-core",
  "porter-dav",
  "porter-discover",
+ "porter-fake",
+ "porter-fake-servers",
  "porter-http",
  "porter-oauth",
  "porter-provider",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
