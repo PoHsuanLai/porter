@@ -19,13 +19,17 @@
 //! implemented": its secret store and sheets are stubs and its families have no bodies.
 
 mod account;
+mod audit;
 mod callers;
 mod core;
 mod errors;
 mod grants;
 mod manager;
 mod request;
+mod store;
 
+pub use audit::FileAudit;
 pub use callers::{Callers, TableCallers};
 pub use core::{Host, serve};
 pub use errors::RefusedError;
+pub use store::FileStore;

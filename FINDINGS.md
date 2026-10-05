@@ -672,7 +672,7 @@ Decisions, where the brief or the plan left a choice:
 - `ai.floor.voice` (default on device) has no design/22 row yet; the quire agent adds `voice.*` and `ai.*` rows.
 
 - Proxies are not run against skeletons (needs a zbus p2p test); closes with the codec.
-- accountd has no registry file and no audit file yet (the seams and `Persisted` are frozen); `SettingsModule1` belongs to design/22 §9.4. Closes with W2b and W3d.
+- accountd has `FileStore` (`registry.json`) and `FileAudit` (`audit.jsonl`) in its library (W2b), but `main` does not use them yet: it must resolve `$XDG_STATE_HOME`, load the store (refusing a `StoreFault`) and pass both to the service. `SettingsModule1` belongs to design/22 §9.4. Closes with W3d (the daemon wiring).
 - `PlanBudget` has no request budget; closes with ChatGPT sign-in (R9).
 - Mail signing keys (OpenPGP, S/MIME) have no `SecretPurpose`; the user decides at the mailo migration.
 - Proposed settings keys without design/22 rows: `ai.local_only`, `ai.floor.<class>` (voice and prompt included), `ai.spend.warn_permille` (800), `ai.model.<kind>.<tier>`.
