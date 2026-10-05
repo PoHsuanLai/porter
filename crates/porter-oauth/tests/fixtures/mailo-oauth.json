@@ -1,0 +1,17 @@
+{
+  "registrations": [
+    {
+      "issuer": "google",
+      "client_id": "123.apps.googleusercontent.com",
+      "client_secret": "GOCSPX-example"
+    },
+    {
+      "issuer": "microsoft",
+      "client_id": "ms-client",
+      "endpoints": {
+        "auth": "https://login.microsoftonline.us/organizations/oauth2/v2.0/authorize",
+        "token": "https://login.microsoftonline.us/organizations/oauth2/v2.0/token"
+      }
+    }
+  ]
+}

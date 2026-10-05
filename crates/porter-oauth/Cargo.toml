@@ -14,11 +14,16 @@ porter-http = { workspace = true }
 porter-provider = { workspace = true }
 base64 = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
 thiserror = { workspace = true }
+toml = { workspace = true }
 tokio = { workspace = true, optional = true, features = ["net", "time", "io-util"] }
 
 [dev-dependencies]
-serde_json = { workspace = true }
+porter-fake = { workspace = true }
+porter-fake-servers = { workspace = true }
+tokio = { workspace = true, features = ["rt", "macros", "net", "time", "io-util"] }
 
 [features]
 # `LoopbackServer`, the 127.0.0.1 listener. Pulls in the runtime, so it is off by default: the
@@ -27,3 +32,7 @@ io = ["dep:tokio"]
 
 [lints]
 workspace = true
+
+[[test]]
+name = "fake_issuer"
+required-features = ["io"]

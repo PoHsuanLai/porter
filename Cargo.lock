@@ -1833,12 +1833,16 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "porter-core",
+ "porter-fake",
+ "porter-fake-servers",
  "porter-http",
  "porter-provider",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror",
  "tokio",
+ "toml",
 ]
 
 [[package]]
