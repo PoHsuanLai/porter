@@ -155,7 +155,11 @@ fn a_named_engine_with_a_cassette_reads_beside_the_programs() {
         Some(PathBuf::from("/usr/bin/llama-server"))
     );
     assert_eq!(
-        config.engines.named.get("scripted").map(|e| e.replay.clone()),
+        config
+            .engines
+            .named
+            .get("scripted")
+            .map(|e| e.replay.clone()),
         Some(PathBuf::from("/c/flow.jsonl"))
     );
     assert!(InferdConfig::from_toml("[engines.x]\nnope = 1\n").is_err());
