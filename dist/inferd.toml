@@ -39,3 +39,11 @@ cua = ["/usr/libexec/quire/cuad"]
 "org.quire.Intents" = ["/usr/libexec/quire/intentd"]
 "org.quire.Companion" = ["/usr/libexec/quire/companiond"]
 "org.quire.Reader" = ["/usr/libexec/quire/readerd"]
+
+# Structured-output limits (settings ai.structured.*; each row's range is in dist/inferd.settings.toml).
+# A value out of range is logged and replaced by the default, for that field only.
+# [ai.structured]
+# open_text = 4096
+# open_list = 256
+# depth = 16
+# repair_budget = 1

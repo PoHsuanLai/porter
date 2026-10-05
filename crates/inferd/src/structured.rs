@@ -4,7 +4,7 @@
 //! a `ShapedSession` around the turn, so the reply an app gets has passed `Shape::check`, or the
 //! turn fails `Unparseable` (never a string that merely looks like it). The session picks how to
 //! ask (`choose`: the engine's constraint, else a synthetic `final_result` tool, else the schema in
-//! the prompt) and may repair once, naming the field and never echoing the reply.
+//! the prompt) and may repair (once by default), naming the field and never echoing the reply.
 //!
 //! What is not checked: a schema the shape vocabulary cannot say (a number, a `pattern`, an open
 //! object: `Shape::from_json_schema` refuses it) is sent to the engine as the constraint, as
@@ -12,29 +12,23 @@
 //! its own, because its turn may rightly end in a call of one of them and not in a reply of the
 //! shape.
 //!
+//! The limits (what a schema may leave open, how deep it nests, how many repairs) come from the
+//! daemon's configuration, `[ai.structured]` of `inferd.toml` (settings `ai.structured.*`, design/22
+//! section 3.26), passed in as a [`Limits`]; the constants in `limits` are only the defaults.
+//!
 //! While the turns run only the thoughts stream: the text of a first attempt may be repaired, so
 //! the reply is told once, when it has been checked.
 
 use crate::bridge;
 use crate::local::LocalModel;
 use crate::tee::{Echo, Tee};
-use model_extract::{ExtractFailure, Extracted, RepairBudget, ShapedSession, ToolsPresent, choose};
-use model_provider::{
-    CharCount, ChoiceText, Count, Flow, JsonText, Provider, SchemaLimits, SchemaText, Shape,
-    TurnRequest,
-};
+use model_extract::{ExtractFailure, Extracted, ShapedSession, ToolsPresent, choose};
+use model_provider::{ChoiceText, Flow, JsonText, Provider, SchemaText, Shape, TurnRequest};
 use porter_core::Tokens;
 use porter_infer::{self as pi, InferEvent, ModelError};
 
-/// What a schema may leave open, and how deep it may nest. Fixed until the settings rows exist.
-const LIMITS: SchemaLimits = SchemaLimits {
-    open_text: CharCount(4096),
-    open_list: Count(256),
-    depth: Count(16),
-};
-
-/// One repair, as the typed session's rule has it.
-const REPAIRS: RepairBudget = RepairBudget(1);
+pub mod limits;
+pub use limits::{AiConfig, Limits, Resolved, StructuredConfig};
 
 /// Whether a reply is a JSON value or one of the offered strings (which the app gets bare).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,17 +49,17 @@ pub struct Checked {
 pub enum Shaping {
     /// Send the turn as built; the reply is not checked.
     Unchecked,
-    /// Check the reply, repair once.
+    /// Check the reply, repair as often as the limits allow.
     Checked(Box<Checked>),
 }
 
 /// The shape of a request's reply as a value, when the vocabulary can say it.
-fn read(shape: &pi::ReplyShape) -> Option<(Shape, Kind)> {
+fn read(shape: &pi::ReplyShape, limits: Limits) -> Option<(Shape, Kind)> {
     match shape {
         pi::ReplyShape::Text => None,
         pi::ReplyShape::Json(schema) => {
             let schema = SchemaText(JsonText::new(schema.as_str()).ok()?);
-            Shape::from_json_schema(&schema, LIMITS)
+            Shape::from_json_schema(&schema, limits.schema)
                 .ok()
                 .map(|shape| (shape, Kind::Json))
         }
@@ -77,11 +71,12 @@ fn read(shape: &pi::ReplyShape) -> Option<(Shape, Kind)> {
 }
 
 /// How the request's reply is checked on this model.
-pub fn shaping(model: &LocalModel, request: &pi::ChatRequest) -> Shaping {
+pub fn shaping(model: &LocalModel, request: &pi::ChatRequest, limits: Limits) -> Shaping {
     let (Some(caps), Some(flavor)) = (model.caps(), model.flavor) else {
         return Shaping::Unchecked;
     };
-    let Some((shape, kind)) = read(&request.shape).filter(|_| request.tools.is_empty()) else {
+    let Some((shape, kind)) = read(&request.shape, limits).filter(|_| request.tools.is_empty())
+    else {
         return Shaping::Unchecked;
     };
     let mode = choose(
@@ -91,7 +86,7 @@ pub fn shaping(model: &LocalModel, request: &pi::ChatRequest) -> Shaping {
         flavor.quirks().shape_with_tools,
     );
     Shaping::Checked(Box::new(Checked {
-        session: ShapedSession::new(shape, mode, REPAIRS),
+        session: ShapedSession::new(shape, mode, limits.repairs),
         kind,
     }))
 }

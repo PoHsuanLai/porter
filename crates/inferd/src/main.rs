@@ -68,6 +68,10 @@ async fn run(args: Args) -> Result<(), String> {
             gpu: NvidiaSmi::new(PathBuf::from("nvidia-smi")),
         },
     );
+    let structured = config.ai.resolve();
+    for path in &structured.rejected {
+        eprintln!("inferd: {path}: out of range; using its default");
+    }
     let engines = Engines::new(models, supervised, config.policy(), config.tiers.clone());
     let connection = zbus::connection::Builder::session()
         .map_err(|e| e.to_string())?
@@ -75,7 +79,8 @@ async fn run(args: Args) -> Result<(), String> {
         .await
         .map_err(|e| e.to_string())?;
     let peers = ProcPeers::new(connection.clone(), config.callers.clone());
-    let daemon = Inference::new(engines, peers, JsonLines::new(dirs.audit), SystemClock);
+    let daemon = Inference::new(engines, peers, JsonLines::new(dirs.audit), SystemClock)
+        .limited(structured.limits);
     serve_on(&connection, daemon)
         .await
         .map_err(|e| e.to_string())?;

@@ -32,6 +32,7 @@ Each row names the lane of the accounts program (porter PLAN §6) that removes i
 | the accountd binary and syncd serve their bus | accountd: W3d; syncd: W6a (inferd serves its own, see "Fill F3: inferd") |
 | Google (`providers/google.toml` ships as a file, no family code, no `google` feature in `porter-families`, no gdrive replica) | **TODO, owner decision D1 (2026-10-05)**: W5c when the owner resumes it. Then: Calendar, People, Tasks, Drive AppFolder, Photos upload and picker, Gmail only with a BYO client, the 7-day reminder |
 | `SettingsModule1` on accountd (`/org/quire/Accounts1/settings`) and inferd | accountd serves it in W3d and inferd in AI1a, from quire's `ds-settings` `live` module (W1b); no skeleton lives in porter-dbus |
+| inferd `ai.structured.*` live rows (open_text, open_list, depth, repair_budget): the schema is a static `dist/inferd.settings.toml` (all four rows hands-off, `bounded`, page `intelligence`) and the values are read from `[ai.structured]` of `inferd.toml` at start; an out-of-range value falls back to its default and is logged. Open edge question: inferd has no `ds-settings` dependency because that would be a new porter -> quire edge the boundary table does not list; AI1a decides whether inferd takes it (`--write-schema` and `org.quire.SettingsModule1`) or keeps the static file | AI1a: ai.structured.* live rows |
 
 ## Fill F3: porter-client and the session server (2026-10-03)
 

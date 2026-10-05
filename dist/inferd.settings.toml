@@ -1,0 +1,84 @@
+# inferd's settings schema (design/22 section 9.2): the rows of `ai.structured.*`, written by hand
+# until inferd can write its own (`--write-schema`) and serve org.quire.SettingsModule1 (FINDINGS
+# "ai.structured.* live rows: AI1a"). Install to $XDG_DATA_DIRS/quire/settings/inferd.settings.toml.
+# Every row is hands-off: ai.* is never agent-settable (AGENT_NEVER_SETTABLE), so no row carries
+# `agent = "settable"`.
+app = "inferd"
+file = "quire/inferd.toml"
+version = 1
+
+[[key]]
+path = "ai.structured.open_text"
+default = 4096
+label = "Longest free text"
+help = "The longest free-text value a structured output may carry, in characters."
+section = "Structured output"
+exposure = "advanced"
+
+[key.kind]
+kind = "bounded"
+
+[key.kind.v]
+min = 256
+max = 65536
+unit = "chars"
+
+[key.page]
+kind = "intelligence"
+
+[[key]]
+path = "ai.structured.open_list"
+default = 256
+label = "Longest open list"
+help = "The most items an open list in a structured output may carry."
+section = "Structured output"
+exposure = "advanced"
+
+[key.kind]
+kind = "bounded"
+
+[key.kind.v]
+min = 16
+max = 4096
+unit = "items"
+
+[key.page]
+kind = "intelligence"
+
+[[key]]
+path = "ai.structured.depth"
+default = 16
+label = "Deepest nesting"
+help = "The deepest nesting a structured output may have."
+section = "Structured output"
+exposure = "advanced"
+
+[key.kind]
+kind = "bounded"
+
+[key.kind.v]
+min = 4
+max = 64
+unit = "levels"
+
+[key.page]
+kind = "intelligence"
+
+[[key]]
+path = "ai.structured.repair_budget"
+default = 1
+label = "Repairs"
+help = "Re-asks after a structured output fails its schema."
+section = "Structured output"
+exposure = "advanced"
+
+[key.kind]
+kind = "bounded"
+
+[key.kind.v]
+min = 0
+max = 3
+unit = "re-asks"
+
+[key.page]
+kind = "intelligence"

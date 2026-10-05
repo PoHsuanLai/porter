@@ -12,6 +12,7 @@ use crate::peers::{Caller, Peers};
 use crate::runner::{Pin, Turns};
 use crate::serve::{Seams, serve_session};
 use crate::session::SessionSpec;
+use crate::structured::Limits;
 use porter_core::{DataClass, Tier};
 use porter_dbus::{Details, INFERENCE_BUS, INFERENCE_PATH, NeedArg, need_from_dbus};
 use porter_infer::InferRefusal;
@@ -32,6 +33,7 @@ pub struct Inference<P, O, C> {
     peers: P,
     audit: Arc<O>,
     clock: C,
+    limits: Limits,
 }
 
 impl<P, O, C> Inference<P, O, C> {
@@ -42,7 +44,13 @@ impl<P, O, C> Inference<P, O, C> {
             peers,
             audit: Arc::new(audit),
             clock,
+            limits: Limits::default(),
         }
+    }
+
+    /// The same object under the configured structured-output limits.
+    pub fn limited(self, limits: Limits) -> Self {
+        Self { limits, ..self }
     }
 }
 
@@ -107,7 +115,8 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         let seams = Seams {
             router: self.engines.router(pin.clone(), caller.role),
             engines: self.engines.clone(),
-            runner: Turns::new(pin, self.engines.supervised().clone(), spec.tier),
+            runner: Turns::new(pin, self.engines.supervised().clone(), spec.tier)
+                .limited(self.limits),
             audit: SessionAudit::new(caller.app, Arc::clone(&self.audit), self.clock.clone()),
         };
         tokio::spawn(async move { serve_session(stream, spec, &seams).await });

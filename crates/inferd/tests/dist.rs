@@ -55,3 +55,70 @@ fn the_sample_configuration_reads_and_names_the_callers_the_design_calls_for() {
         assert_eq!(caller.role, inferd::peers::Role::App);
     }
 }
+
+fn schema_keys() -> Vec<toml::Table> {
+    let schema: toml::Table = dist("inferd.settings.toml")
+        .parse()
+        .expect("the schema is TOML");
+    schema["key"]
+        .as_array()
+        .expect("key tables")
+        .iter()
+        .map(|key| key.as_table().expect("a table").clone())
+        .collect()
+}
+
+#[test]
+fn the_schema_rows_are_the_four_structured_rows_with_the_codes_defaults_and_ranges() {
+    use inferd::structured::limits::{DEPTH, OPEN_LIST, OPEN_TEXT, REPAIR_BUDGET};
+    let keys = schema_keys();
+    let rows = [OPEN_TEXT, OPEN_LIST, DEPTH, REPAIR_BUDGET];
+    assert_eq!(keys.len(), rows.len());
+    for (key, row) in keys.iter().zip(rows) {
+        assert_eq!(key["path"].as_str(), Some(row.path));
+        assert_eq!(key["default"].as_integer(), Some(i64::from(row.default)));
+        let kind = key["kind"]["v"].as_table().expect("bounded");
+        assert_eq!(
+            kind["min"].as_integer(),
+            Some(i64::from(*row.range.start()))
+        );
+        assert_eq!(kind["max"].as_integer(), Some(i64::from(*row.range.end())));
+        assert_eq!(key["page"]["kind"].as_str(), Some("intelligence"));
+    }
+}
+
+#[test]
+fn every_ai_row_is_hands_off() {
+    // design/22 section 9.7: `ai.` is in AGENT_NEVER_SETTABLE; a row marked settable would be
+    // refused by the schema loader.
+    for key in schema_keys() {
+        assert!(key["path"].as_str().expect("path").starts_with("ai."));
+        assert_eq!(key.get("agent"), None, "{}", key["path"]);
+    }
+}
+
+#[test]
+fn the_schema_defaults_written_as_a_file_resolve_to_the_defaults() {
+    let mut structured = toml::Table::new();
+    for key in schema_keys() {
+        let name = key["path"]
+            .as_str()
+            .expect("path")
+            .rsplit('.')
+            .next()
+            .expect("name");
+        structured.insert(name.to_owned(), key["default"].clone());
+    }
+    let text = toml::to_string(&toml::Table::from_iter([(
+        "ai".to_owned(),
+        toml::Value::Table(toml::Table::from_iter([(
+            "structured".to_owned(),
+            toml::Value::Table(structured),
+        )])),
+    )]))
+    .expect("toml");
+    let config = InferdConfig::from_toml(&text).expect("reads");
+    let resolved = config.ai.resolve();
+    assert_eq!(resolved.limits, inferd::structured::Limits::default());
+    assert!(resolved.rejected.is_empty());
+}

@@ -5,6 +5,7 @@
 use crate::catalog::CatalogDirs;
 use crate::local::EngineConfig;
 use crate::peers::CallerTable;
+use crate::structured::AiConfig;
 use porter_infer::{Policy, TierMap};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -36,6 +37,9 @@ pub struct InferdConfig {
     /// Which executable is which caller.
     #[serde(default)]
     pub callers: CallerTable,
+    /// The `ai.*` settings rows that are not the policy or the tier map (`ai.structured.*`).
+    #[serde(default)]
+    pub ai: AiConfig,
 }
 
 impl InferdConfig {

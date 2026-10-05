@@ -12,7 +12,7 @@ use crate::cua_run::{CuaRun, StepJob};
 use crate::hosts::unix_endpoint;
 use crate::local::LocalModel;
 use crate::serve::{RunningTurn, TurnRunner, TurnStep};
-use crate::structured::{self, Shaping};
+use crate::structured::{self, Limits, Shaping};
 use crate::supervise::Supervised;
 use model_http::{HttpClient, Timeouts, WaitMs as HttpWaitMs};
 use model_openai_compat::{Flavor, OpenAiCodec, OpenAiCompat};
@@ -108,6 +108,7 @@ pub struct Turns {
     engines: Supervised,
     tier: Tier,
     run: Arc<Mutex<Option<CuaRun>>>,
+    limits: Limits,
 }
 
 impl Turns {
@@ -118,7 +119,13 @@ impl Turns {
             engines,
             tier,
             run: Arc::default(),
+            limits: Limits::default(),
         }
+    }
+
+    /// The same turns under the configured structured-output limits.
+    pub fn limited(self, limits: Limits) -> Self {
+        Self { limits, ..self }
     }
 }
 
@@ -159,6 +166,7 @@ impl TurnRunner for Turns {
             engines: self.engines.clone(),
             tier: self.tier,
             run: Arc::clone(&self.run),
+            limits: self.limits,
             steps,
         };
         let task = tokio::spawn(async move {
@@ -174,6 +182,7 @@ struct Job {
     engines: Supervised,
     tier: Tier,
     run: Arc<Mutex<Option<CuaRun>>>,
+    limits: Limits,
     steps: mpsc::UnboundedSender<TurnStep>,
 }
 
@@ -242,7 +251,7 @@ impl Job {
         match request {
             InferRequest::Chat(chat) => match bridge::chat_turn(model, &chat, &frames) {
                 Ok(turn) => {
-                    let shaping = structured::shaping(model, &chat);
+                    let shaping = structured::shaping(model, &chat, self.limits);
                     self.chat(model, served, &turn, shaping).await
                 }
                 Err(_) => refused(InferRefusal::Unsupported),

@@ -445,7 +445,7 @@ edited; it is recorded here so the code and the spec agree):
 - **inferd owns validate-and-repair of structured output.** For `ReplyShape::Json` and
   `ReplyShape::Choice` it runs stoker's `ExtractSession` (`model-extract`): constrained decoding
   where the engine supports the shape, a synthetic tool call or a prompted schema where it does
-  not, a bounded repair budget (a setting), and a check of the final text with `Shape::check`.
+  not, a bounded repair budget (the setting `ai.structured.repair_budget`, with `open_text`, `open_list` and `depth`: `[ai.structured]` of `inferd.toml`, read by `main` and passed down as `structured::Limits`; `config` therefore reads one type from `structured::limits`), and a check of the final text with `Shape::check`.
   A client (readerd, memoryd's consolidator, the action reviewer, the policy writer) gets either
   a `ChatReply.text` that already passes the check or `ModelError::Unparseable`; it parses into
   its type with a second, free check. A reply cut by `StopReason::MaxTokens` is never repaired.
