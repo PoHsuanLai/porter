@@ -57,6 +57,8 @@ fn table() -> CallerTable {
         {"app": "org.quire.Sill", "role": "sheet_host"},
         {"app": "org.quire.Inference", "unit": "inferd.service", "role": "porter_daemon"},
         {"app": "org.example.Sheets", "role": "sheet_host"},
+        {"app": "org.quire.Shell", "unit": "sill-shell.scope", "role": "sheet_host"},
+        {"app": "org.quire.Trap", "unit": "app-org.quire.Trap-1.scope", "role": "settings"},
     ]}))
     .expect("table")
 }
@@ -184,6 +186,30 @@ fn a_scope_named_after_a_daemons_app_is_an_app() {
     for (pid, want) in cases {
         assert_eq!(resolve(&s, pid), want, "pid {pid}");
     }
+}
+
+#[test]
+fn a_scope_a_row_names_as_its_unit_is_that_unit_exactly() {
+    let s = Scratch::new();
+    s.process(40, Some(&scope("sill-shell.scope")));
+    s.process(41, Some(&scope("sill-shell-2.scope")));
+    s.process(42, Some(&scope("xsill-shell.scope")));
+    // An app scope never takes a unit row's role, even one naming it exactly.
+    s.process(43, Some(&scope("app-org.quire.Trap-1.scope")));
+    assert_eq!(
+        resolve(&s, 40),
+        got(
+            "org.quire.Shell",
+            Isolation::Unsandboxed,
+            CallerRole::SheetHost
+        )
+    );
+    assert_eq!(resolve(&s, 41), None);
+    assert_eq!(resolve(&s, 42), None);
+    assert_eq!(
+        resolve(&s, 43),
+        got("org.quire.Trap", Isolation::Unsandboxed, CallerRole::App)
+    );
 }
 
 #[test]

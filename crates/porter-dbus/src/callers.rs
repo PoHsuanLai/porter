@@ -97,8 +97,8 @@ impl CallerTable {
             .map_or(CallerRole::App, |row| row.role)
     }
 
-    /// The caller that is the service unit `unit`, an unsandboxed native process. The first row
-    /// for a unit wins.
+    /// The caller that is the unit `unit` (a service, or a scope outside the `app-` namespace),
+    /// an unsandboxed native process. The first row for a unit wins.
     pub fn resolve_unit(&self, unit: &str) -> Option<Caller> {
         self.callers
             .iter()
