@@ -23,6 +23,10 @@ testing = []
 # `Oo7Secrets`, the Secret Service store. Its body is stubbed; the `oo7` dependency joins
 # quire's `docs/workspace-deps.toml` before the store is built (FINDINGS.md).
 oo7 = []
+# `KeyringSecrets`, the platform keyring store (Apple keychain, Windows credential manager, and
+# the Secret Service for a standalone Linux app). Its body is stubbed; the keyring crates join
+# quire's `docs/workspace-deps.toml` before it is built (FINDINGS.md).
+keyring = []
 
 [lints]
 workspace = true

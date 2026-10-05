@@ -5,7 +5,8 @@ use porter_core::capability::{Access, Capability, Delta, HashKind, Offered};
 use porter_core::capability::{QuotaReport, StorageCap, StorageScope};
 use porter_core::wire::Refusal;
 use porter_core::{
-    AccountId, AccountLabel, AccountsReply, Candidate, GrantId, ProviderId, Restriction, Subject,
+    AccountId, AccountLabel, AccountsReply, Candidate, EndpointUrl, Family, GrantId, LoginName,
+    ProviderId, Restriction, ServiceEndpoint, Subject, Tls,
 };
 use porter_dbus::{
     Details, ResponseCode, SheetKind, account_path, is_handle_token, reply_of, request_namespace,
@@ -30,6 +31,12 @@ fn candidate() -> Candidate {
         }),
         restriction: Restriction::none(),
         grant: GrantId::parse("grant-1").expect("grant"),
+        endpoints: vec![ServiceEndpoint {
+            family: Family::WebDav,
+            url: EndpointUrl::parse("https://cloud.example.org/dav/").expect("url"),
+            tls: Tls::Implicit,
+            login: LoginName("ada".into()),
+        }],
     }
 }
 
@@ -126,6 +133,7 @@ fn a_chosen_account_carries_its_path_and_label_beside_its_fields() {
         [
             "account",
             "capability",
+            "endpoints",
             "grant",
             "label",
             "path",

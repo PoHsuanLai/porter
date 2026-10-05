@@ -2,6 +2,7 @@
 
 use crate::account::AccountLabel;
 use crate::capability::Capability;
+use crate::endpoint::ServiceEndpoint;
 use crate::id::{AccountId, GrantId, ProviderId};
 use crate::offer::Subject;
 use crate::restriction::Restriction;
@@ -24,4 +25,8 @@ pub struct Candidate {
     pub restriction: Restriction,
     /// The grant the app holds for it; tokens are asked for by this.
     pub grant: GrantId,
+    /// The account's servers for the kind that fits (an IMAP and an SMTP host for mail, the
+    /// WebDAV root for files), so a granted app learns where to connect. Empty for an account
+    /// with none (a local runtime). On the bus this is the vardict key `endpoints`.
+    pub endpoints: Vec<ServiceEndpoint>,
 }

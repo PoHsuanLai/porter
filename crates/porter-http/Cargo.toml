@@ -1,0 +1,25 @@
+[package]
+name = "porter-http"
+description = "porter's HTTP seam: request and response values and the `Http` trait every family, discovery and OAuth call goes through; the hyper client is behind the `hyper` feature."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+porter-core = { workspace = true }
+thiserror = { workspace = true }
+hyper = { workspace = true, optional = true, features = ["client", "http1"] }
+hyper-util = { workspace = true, optional = true, features = ["tokio"] }
+http-body-util = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true, features = ["net", "time", "io-util", "rt"] }
+
+[features]
+# `HyperHttp`, the client over hyper (D12). Pulls in the runtime, so it is off by default: the
+# pure build reaches none. Its TLS (hyper-rustls) joins with the first family that needs it.
+hyper = ["dep:hyper", "dep:hyper-util", "dep:http-body-util", "dep:tokio"]
+
+[lints]
+workspace = true

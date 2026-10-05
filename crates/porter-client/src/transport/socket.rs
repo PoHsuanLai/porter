@@ -25,9 +25,10 @@ mod link;
 mod link;
 
 use super::Transport;
+use crate::authenticated::Relayed;
 use crate::env::SocketPath;
 use crate::error::TransportError;
-use porter_core::{AccountsReply, AccountsRequest, DataClass, Need, Tier};
+use porter_core::{AccountsReply, AccountsRequest, DataClass, EndpointUrl, GrantId, Need, Tier};
 use porter_infer::{
     ClientFrame, InferEvent, InferSession, LinkHello, OpenFrame, OpenOptions, SessionError,
 };
@@ -80,6 +81,17 @@ impl Transport for SocketTransport {
 
     async fn call(&self, request: AccountsRequest) -> Result<AccountsReply, TransportError> {
         link::call(&self.path, request).await
+    }
+
+    async fn open_authenticated(
+        &self,
+        grant: &GrantId,
+        endpoint: &EndpointUrl,
+    ) -> Result<Relayed, TransportError> {
+        let _ = (grant, endpoint);
+        todo!(
+            "send `AccountsRequest::OpenAuthenticated` and read the `Authenticated` reply frame              with the relay's descriptor riding on it (SCM_RIGHTS), as `send_attached` does the              other way"
+        )
     }
 
     async fn open_with(

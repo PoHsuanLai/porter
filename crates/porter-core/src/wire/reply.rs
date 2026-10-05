@@ -26,6 +26,12 @@ pub enum AccountsReply {
     Revoked,
     /// For `IssueToken`.
     Token(IssuedToken),
+    /// For `OpenAuthenticated`: the relay is running and its descriptor travels beside this
+    /// reply, out of band (a D-Bus `h`, an `SCM_RIGHTS` descriptor on the socket frame, an
+    /// in-memory duplex in process). The reply itself carries no value.
+    Authenticated,
+    /// For `Adopt`: the legacy account is now this account.
+    Adopted(AccountId),
     /// The request was refused, and why.
     Refused(Refusal),
 }
@@ -48,4 +54,7 @@ pub enum Refusal {
     NeedsReauth,
     /// The account or the secret store cannot be reached.
     Unavailable,
+    /// The endpoint is not one of the account's for the grant's kind: the relay dials only
+    /// what the account holds, never an address the app names.
+    EndpointNotGranted,
 }

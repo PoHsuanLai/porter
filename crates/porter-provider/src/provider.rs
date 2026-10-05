@@ -1,6 +1,7 @@
 //! The seam each protocol family implements, and the fake porter-fake drives (CONVENTIONS §5).
 
 use crate::error::ProviderError;
+use crate::sign_in::{RevokeOutcome, SignIn, SignInStart};
 use crate::spec::ProviderSpec;
 use porter_core::{AccountId, Audience, AuthKind, Claim, Credential, IssuedToken};
 use std::future::Future;
@@ -19,6 +20,9 @@ pub enum Presented {
 pub trait Provider: Send + Sync {
     /// The live connection an open account holds.
     type Session: ProviderSession;
+
+    /// The conversation that signs an account in.
+    type SignIn: SignIn;
 
     /// The declaration this provider serves.
     fn spec(&self) -> &ProviderSpec;
@@ -42,6 +46,17 @@ pub trait Provider: Send + Sync {
         account: &AccountId,
         presented: Presented,
     ) -> impl Future<Output = Result<Self::Session, ProviderError>> + Send;
+
+    /// Begins signing an account in (a new one, or an existing one again). The host drives the
+    /// returned conversation; nothing is stored until it ends in `Done`.
+    fn sign_in(&self, start: SignInStart) -> Result<Self::SignIn, ProviderError>;
+
+    /// Asks the provider to stop honouring `presented` (Google's revoke endpoint, Nextcloud's
+    /// app-password delete), best effort, when an account is removed.
+    fn revoke(
+        &self,
+        presented: &Presented,
+    ) -> impl Future<Output = Result<RevokeOutcome, ProviderError>> + Send;
 }
 
 /// An open account: the only holder of its long-lived credential, inside accountd.

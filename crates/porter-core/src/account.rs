@@ -1,12 +1,13 @@
 //! One account as accountd holds it and as a granted app may read it.
 
 use crate::auth_kind::AuthKind;
+use crate::endpoint::ServiceEndpoint;
 use crate::id::{AccountId, ProviderId};
 use crate::offer::Claim;
 use crate::restriction::Restriction;
 use serde::{Deserialize, Serialize};
 
-/// An account: a provider, a person's credential for it, and what it can do.
+/// An account: a provider, a person's credential for it, what it can do and where it is.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Account {
     /// Its id.
@@ -23,6 +24,9 @@ pub struct Account {
     pub capabilities: Vec<Claim>,
     /// What limits it.
     pub restriction: Restriction,
+    /// Its servers: what mailo dials for mail, what syncd reads for files. Found at sign-in
+    /// (autoconfig, Login Flow v2's `server`) and stored with the account; none is secret.
+    pub endpoints: Vec<ServiceEndpoint>,
 }
 
 /// The name an account is shown by (`ada@example.org`, "Ollama on this computer").

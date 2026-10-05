@@ -11,7 +11,7 @@ use porter_core::{AccountsReply, AccountsRequest, AppId, ProviderId};
 use porter_dbus::{ACCOUNTS_BUS, ACCOUNTS_PATH, Details};
 use porter_provider::Provider;
 use porter_secrets::Secrets;
-use porter_service::{AccountService, Clock, Prompter, Registry};
+use porter_service::{AccountService, AuditSink, Clock, Registry, RegistryStore, Sheets};
 use serde::de::DeserializeOwned;
 use std::future::Future;
 use std::sync::Arc;
@@ -34,12 +34,14 @@ pub trait Host: Send + Sync + 'static {
     fn registry(&self) -> Registry;
 }
 
-impl<P, S, U, K> Host for AccountService<P, S, U, K>
+impl<P, S, U, K, R, A> Host for AccountService<P, S, U, K, R, A>
 where
     P: Provider + 'static,
     S: Secrets + 'static,
-    U: Prompter + 'static,
+    U: Sheets + 'static,
     K: Clock + 'static,
+    R: RegistryStore + 'static,
+    A: AuditSink + 'static,
 {
     fn handle(
         &self,

@@ -4,6 +4,7 @@
 use crate::anchor::{Anchor, Cursor};
 use crate::change::{Change, ChangePage, More, Tombstone};
 use crate::item::{BaseVersion, RemoteId, RemoteItem, RemoteVersion};
+use crate::quota::Quota;
 use crate::refusal::{Conflict, PutRefused, RemoteSide, ReplicaError};
 use crate::replica::Replica;
 use crate::transfer::{Blob, ByteRange, PutItem, PutTarget};
@@ -18,6 +19,7 @@ pub struct MemoryReplica {
     features: StorageCap,
     page: usize,
     now: UnixSeconds,
+    limit: Option<Bytes>,
     state: Mutex<State>,
 }
 
@@ -38,7 +40,17 @@ impl MemoryReplica {
             features,
             page: page.max(1),
             now,
+            limit: None,
             state: Mutex::default(),
+        }
+    }
+
+    /// The same replica with room for `limit` bytes: a write that would pass it is refused
+    /// `PutRefused::Quota`, and `quota` reports it as the total.
+    pub fn with_limit(self, limit: Bytes) -> Self {
+        Self {
+            limit: Some(limit),
+            ..self
         }
     }
 
@@ -67,6 +79,14 @@ fn seq_of(anchor: &Anchor) -> Option<u64> {
 }
 
 impl State {
+    /// Bytes held by live items.
+    fn used(&self) -> u64 {
+        self.live
+            .values()
+            .map(|(_, Blob(bytes))| bytes.len() as u64)
+            .sum()
+    }
+
     fn bump(&mut self) -> (u64, RemoteVersion) {
         self.head += 1;
         (self.head, RemoteVersion(format!("v{}", self.head)))
@@ -175,8 +195,13 @@ impl Replica for MemoryReplica {
                 (RemoteId(format!("id-{}", state.head + 1)), path)
             }
         };
-        let (seq, version) = state.bump();
         let size = Bytes(item.content.0.len() as u64);
+        let replaced = state.live.get(&id).map_or(0, |(old, _)| old.size.0);
+        let after = state.used().saturating_sub(replaced).saturating_add(size.0);
+        if self.limit.is_some_and(|Bytes(limit)| after > limit) {
+            return Err(PutRefused::Quota);
+        }
+        let (seq, version) = state.bump();
         let stored = RemoteItem {
             id: id.clone(),
             version: version.clone(),
@@ -207,6 +232,13 @@ impl Replica for MemoryReplica {
         state.live.remove(item);
         state.deleted.insert(item.clone(), version.clone());
         Ok(version)
+    }
+
+    async fn quota(&self) -> Result<Quota, ReplicaError> {
+        Ok(Quota {
+            used: Bytes(self.state().used()),
+            total: self.limit,
+        })
     }
 
     fn features(&self) -> StorageCap {

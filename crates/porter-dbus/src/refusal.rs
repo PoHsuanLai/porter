@@ -7,7 +7,7 @@ use porter_core::wire::Refusal;
 pub const REFUSAL_ERROR_PREFIX: &str = "org.quire.Accounts1.Error.";
 
 /// Every refusal, so the name table is total by construction.
-const ALL: [Refusal; 7] = [
+const ALL: [Refusal; 8] = [
     Refusal::Dismissed,
     Refusal::Denied,
     Refusal::NoFittingAccount,
@@ -15,6 +15,7 @@ const ALL: [Refusal; 7] = [
     Refusal::AudienceNotGranted,
     Refusal::NeedsReauth,
     Refusal::Unavailable,
+    Refusal::EndpointNotGranted,
 ];
 
 /// The error name a daemon replies with for `refusal`.
@@ -85,7 +86,8 @@ mod tests {
             | Refusal::UnknownGrant
             | Refusal::AudienceNotGranted
             | Refusal::NeedsReauth
-            | Refusal::Unavailable => ALL.contains(&refusal),
+            | Refusal::Unavailable
+            | Refusal::EndpointNotGranted => ALL.contains(&refusal),
         };
         assert!(ALL.into_iter().all(covered));
     }

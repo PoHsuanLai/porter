@@ -1,14 +1,16 @@
 //! `Accounts`: the app's handle on porter.
 
+use crate::authenticated::{AuthenticatedStream, Relayed};
 use crate::env::{ClientEnv, LinkChoice};
 use crate::error::{ClientError, TransportError};
 use crate::found::{ConsentOffer, Found, found};
 use crate::transport::{AnyTransport, Transport};
 use porter_core::consent::{Grant, Usage};
+use porter_core::wire::LegacyRef;
 use porter_core::wire::{ParentWindow, ProviderHint};
 use porter_core::{
-    AccountId, AccountsReply, AccountsRequest, Audience, Candidate, DataClass, GrantId,
-    IssuedToken, Need, Tier,
+    AccountId, AccountsReply, AccountsRequest, Audience, Candidate, DataClass, EndpointUrl,
+    GrantId, IssuedToken, Need, Tier,
 };
 use porter_infer::{ClientFrame, InferEvent, InferReply, InferRequest, InferSession, OpenOptions};
 
@@ -160,6 +162,37 @@ impl<T: Transport> Accounts<T> {
         };
         match self.transport.call(request).await? {
             AccountsReply::Token(token) => Ok(token),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// A byte stream to `endpoint`, one of the account's servers the candidate listed, already
+    /// authenticated by a daemon-side relay: an IMAP, SMTP or HTTP engine speaks its protocol on
+    /// it and never holds the password. The IMAP stream starts with a `PREAUTH` greeting, the
+    /// SMTP one with a `220` and an `EHLO` reply that offers no `AUTH` and no `STARTTLS`, and the
+    /// HTTP one takes plain HTTP/1.1 requests (the relay adds `Authorization`, refuses any other
+    /// origin and strips the app's own `Authorization`).
+    pub async fn open_authenticated(
+        &self,
+        grant: &GrantId,
+        endpoint: &EndpointUrl,
+    ) -> Result<AuthenticatedStream, ClientError> {
+        match self.transport.open_authenticated(grant, endpoint).await? {
+            Relayed::Stream(stream) => Ok(stream),
+            Relayed::Refused(refusal) => Err(ClientError::Refused(refusal)),
+        }
+    }
+
+    /// Brings the app's own earlier account in as an account of porter (mailo's keyring entries
+    /// become a porter account): `legacy` names it by non-secret facts and accountd reads the
+    /// old secret items itself, so no credential crosses the transport.
+    pub async fn adopt(&self, legacy: LegacyRef) -> Result<AccountId, ClientError> {
+        match self
+            .transport
+            .call(AccountsRequest::Adopt { legacy })
+            .await?
+        {
+            AccountsReply::Adopted(account) => Ok(account),
             other => Err(unexpected(other)),
         }
     }

@@ -4,6 +4,8 @@
 
 mod attributes;
 mod error;
+#[cfg(feature = "keyring")]
+mod keyring;
 #[cfg(feature = "testing")]
 mod memory;
 #[cfg(feature = "oo7")]
@@ -12,6 +14,8 @@ mod secrets;
 
 pub use attributes::{SERVICE, SecretAttributes, attributes};
 pub use error::SecretsError;
+#[cfg(feature = "keyring")]
+pub use keyring::KeyringSecrets;
 #[cfg(feature = "testing")]
 pub use memory::MemorySecrets;
 #[cfg(feature = "oo7")]

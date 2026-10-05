@@ -89,6 +89,7 @@ mod tests {
             }),
             restriction: Restriction::none(),
             grant: GrantId::parse(grant).expect("id"),
+            endpoints: Vec::new(),
         }
     }
 

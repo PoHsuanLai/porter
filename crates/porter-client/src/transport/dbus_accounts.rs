@@ -18,7 +18,7 @@ use porter_dbus::zvariant::OwnedObjectPath;
 use porter_dbus::{
     AccountProxy, BusConnection, BusError, Closer, Details, GrantsProxy, ManagerProxy, Sheet,
     SheetError, SheetKind, TokensProxy, account_path, candidate_from_dbus, grant_from_dbus,
-    need_to_dbus, refusal_of, reply_of, token_from_dbus,
+    legacy_to_dbus, need_to_dbus, refusal_of, reply_of, token_from_dbus,
 };
 
 /// A call that came back as a value, or as a refusal accountd gave, or not at all.
@@ -125,6 +125,19 @@ pub(super) async fn call(
                 },
             )
         }
+        AccountsRequest::Adopt { legacy } => {
+            let proxy = manager(connection).await?;
+            let result = proxy.adopt(&legacy_to_dbus(&legacy)).await;
+            settled(result, |id| {
+                porter_core::AccountId::parse(&id)
+                    .map(AccountsReply::Adopted)
+                    .map_err(malformed)
+            })
+        }
+        // The relay's descriptor is out of band, so this request has its own transport method.
+        AccountsRequest::OpenAuthenticated { .. } => Err(TransportError::Malformed(
+            "OpenAuthenticated carries a descriptor: use `open_authenticated`".to_owned(),
+        )),
         AccountsRequest::Choose {
             need,
             class,

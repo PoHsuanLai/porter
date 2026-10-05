@@ -11,6 +11,8 @@ cd "$(dirname "$0")/.."
 # RULES: what a crate reaches through ANY path (transitive, default features). The pure crates
 # never reach a bus, a runtime, an HTTP client or a keyring; porter-client reaches zbus only
 # through its `dbus` feature; porter-dbus reaches tokio only through zbus's `tokio` feature.
+# porter-http, porter-proxy and porter-oauth reach tokio (and porter-http hyper) only through
+# their named I/O feature (`hyper`, `io`), and porter-families through no feature of its own.
 EFFECTS="zbus zvariant tokio reqwest hyper ureq oo7 keyring secret-service interprocess latchkey"
 RULES=(
   "porter-core: $EFFECTS toml"
@@ -22,6 +24,12 @@ RULES=(
   "porter-service: $EFFECTS"
   "porter-client: $EFFECTS"
   "porter-fake: $EFFECTS"
+  "porter-http: $EFFECTS"
+  "porter-proxy: $EFFECTS"
+  "porter-oauth: $EFFECTS"
+  "porter-discover: $EFFECTS"
+  "porter-dav: $EFFECTS"
+  "porter-families: $EFFECTS"
   "porter-dbus: reqwest hyper ureq oo7 keyring secret-service"
 )
 fail=0
@@ -81,7 +89,13 @@ EDGES=(
   "porter-dbus: porter-core"
   "porter-client: porter-core porter-dbus porter-infer porter-provider porter-secrets porter-service"
   "porter-fake: porter-core porter-infer porter-provider porter-secrets porter-service"
-  "accountd: porter-core porter-dbus porter-provider porter-secrets porter-service"
+  "porter-http: porter-core"
+  "porter-proxy: porter-core"
+  "porter-oauth: porter-core porter-http porter-provider"
+  "porter-discover: porter-core porter-http porter-provider"
+  "porter-dav: porter-core porter-http"
+  "porter-families: porter-core porter-dav porter-discover porter-http porter-oauth porter-provider"
+  "accountd: porter-core porter-dbus porter-families porter-provider porter-secrets porter-service"
   "syncd: porter-dbus porter-sync"
   "inferd: porter-core porter-dbus porter-infer cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider speech-provider vision-prep"
 )

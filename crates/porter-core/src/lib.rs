@@ -4,13 +4,16 @@
 mod account;
 mod ai_props;
 mod app_id;
+pub mod audit;
 mod auth_kind;
 mod candidate;
 pub mod capability;
 pub mod consent;
 mod data_class;
 mod effective;
+mod endpoint;
 mod error;
+mod family;
 #[cfg(test)]
 mod fixtures;
 mod id;
@@ -20,7 +23,10 @@ pub mod need;
 mod offer;
 mod restriction;
 mod secret;
+pub mod sheet;
 mod space;
+pub mod store;
+pub mod stream;
 mod token;
 mod units;
 pub mod wire;
@@ -33,7 +39,12 @@ pub use candidate::Candidate;
 pub use capability::{Capability, CapabilityKind};
 pub use data_class::DataClass;
 pub use effective::{KindToggle, Toggle, effective};
+pub use endpoint::{
+    EndpointFault, EndpointProtocol, EndpointUrl, LoginName, Origin, RelayAuth, RelayPlan,
+    ServiceEndpoint, Tls, UrlScheme,
+};
 pub use error::CoreError;
+pub use family::Family;
 pub use id::{AccountId, GrantId, ModelId, ProviderId, is_id, object_segment};
 pub use identity::{CgroupPath, ClaimedId, PeerFacts, PeerIdentity, SandboxFacts, identity_of};
 pub use matching::{Match, Shortfall, matches};

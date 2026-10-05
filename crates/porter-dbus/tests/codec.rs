@@ -10,8 +10,9 @@ use porter_core::need::{
     NotesNeed, PhotosNeed, PimNeed, PushNeed, RerankNeed, SpeechNeed, StorageNeed,
 };
 use porter_core::{
-    AccountId, Bytes, Candidate, Count, Dims, GrantId, Limit, LimitReason, ModelId, Need, Px,
-    Restriction, Subject, TenantConsent, TokenLifetime, Tokens, Verification,
+    AccountId, Bytes, Candidate, Count, Dims, EndpointUrl, Family, GrantId, Limit, LimitReason,
+    LoginName, ModelId, Need, Px, Restriction, ServiceEndpoint, Subject, TenantConsent, Tls,
+    TokenLifetime, Tokens, Verification,
 };
 use porter_dbus::{
     account_path, candidate_from_dbus, candidate_to_dbus, need_from_dbus, need_to_dbus,
@@ -201,6 +202,14 @@ fn candidates() -> Vec<Candidate> {
             capability: storage,
             restriction: Restriction::none(),
             grant: GrantId::parse("g1").expect("grant"),
+            endpoints: vec![
+                endpoint(
+                    Family::WebDav,
+                    "https://cloud.example.org/remote.php/dav/",
+                    Tls::Implicit,
+                ),
+                endpoint(Family::Imap, "imap://imap.example.org:143", Tls::StartTls),
+            ],
         },
         Candidate {
             account: AccountId::parse("local-ollama").expect("id"),
@@ -220,8 +229,18 @@ fn candidates() -> Vec<Candidate> {
                 }],
             },
             grant: GrantId::parse("g2").expect("grant"),
+            endpoints: vec![],
         },
     ]
+}
+
+fn endpoint(family: Family, url: &str, tls: Tls) -> ServiceEndpoint {
+    ServiceEndpoint {
+        family,
+        url: EndpointUrl::parse(url).expect("url"),
+        tls,
+        login: LoginName("ada".into()),
+    }
 }
 
 trait ParseProvider {
@@ -339,4 +358,42 @@ fn a_token_round_trips_and_an_unknown_kind_is_refused() {
         assert_eq!(porter_dbus::token_from_dbus(arg), Ok(token));
     }
     assert!(porter_dbus::token_from_dbus(("cookie".into(), "x".into(), 1)).is_err());
+}
+
+#[test]
+fn a_legacy_reference_survives_its_vardict() {
+    use porter_core::wire::{LegacyItem, LegacyRef};
+    use porter_core::{
+        AccountLabel, EndpointUrl, Family, LoginName, ProviderId, ServiceEndpoint, Tls,
+    };
+    use porter_dbus::{legacy_from_dbus, legacy_to_dbus};
+    let legacy = LegacyRef {
+        account: AccountId::parse("67e55044-10b1-426f-9247-bb680e5fe0c8").expect("id"),
+        provider: ProviderId::parse("generic-imap").expect("provider"),
+        label: AccountLabel("ada@example.org".into()),
+        endpoints: vec![ServiceEndpoint {
+            family: Family::Imap,
+            url: EndpointUrl::parse("imaps://imap.example.org").expect("url"),
+            tls: Tls::Implicit,
+            login: LoginName("ada@example.org".into()),
+        }],
+        items: vec![LegacyItem::Incoming, LegacyItem::OAuth],
+    };
+    let details = legacy_to_dbus(&legacy);
+    assert_eq!(legacy_from_dbus(&details), Ok(legacy));
+    assert!(legacy_from_dbus(&Default::default()).is_err());
+}
+
+#[test]
+fn a_candidate_carries_its_endpoints_in_the_endpoints_key() {
+    let [with, without] = <[Candidate; 2]>::try_from(candidates()).expect("two");
+    let arg = candidate_to_dbus(&with);
+    assert!(arg.2.contains_key("endpoints"), "{:?}", arg.2.keys());
+    assert_eq!(candidate_from_dbus(arg), Ok(with));
+    let arg = candidate_to_dbus(&without);
+    assert!(
+        arg.2.contains_key("endpoints"),
+        "an empty list is still written"
+    );
+    assert_eq!(candidate_from_dbus(arg), Ok(without));
 }

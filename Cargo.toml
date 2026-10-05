@@ -11,6 +11,12 @@ members = [
   "crates/porter-dbus",
   "crates/porter-client",
   "crates/porter-fake",
+  "crates/porter-http",
+  "crates/porter-proxy",
+  "crates/porter-oauth",
+  "crates/porter-discover",
+  "crates/porter-dav",
+  "crates/porter-families",
   "crates/accountd",
   "crates/syncd",
   "crates/inferd",
@@ -36,6 +42,12 @@ porter-service  = { path = "crates/porter-service" }
 porter-dbus     = { path = "crates/porter-dbus" }
 porter-client   = { path = "crates/porter-client" }
 porter-fake     = { path = "crates/porter-fake" }
+porter-http     = { path = "crates/porter-http" }
+porter-proxy    = { path = "crates/porter-proxy" }
+porter-oauth    = { path = "crates/porter-oauth" }
+porter-discover = { path = "crates/porter-discover" }
+porter-dav      = { path = "crates/porter-dav" }
+porter-families = { path = "crates/porter-families" }
 
 # stoker's computer-use vocabulary, by sibling path until the pinned git rev replaces it (quire
 # CONSUMING.md section 1). stoker has no porter dependency, so there is no cycle.
@@ -60,6 +72,11 @@ model-extract       = { path = "../stoker/crates/model-extract" }
 # names itself, as mailo does.
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "net", "io-util", "process"] }
 thiserror = "2"
+# porter-http's client, as stoker's model-http takes it. The TLS stack (hyper-rustls, rustls)
+# joins with the first family that dials a TLS endpoint (FINDINGS.md).
+hyper = "1"
+hyper-util = "0.1.21"
+http-body-util = "0.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 zbus = { version = "5.19", default-features = false, features = ["tokio"] }  # shell repos only; they also enable ds-settings/tokio. quire itself builds zbus with its async-io default so app consumers keep their own executor.

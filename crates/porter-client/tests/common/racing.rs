@@ -34,6 +34,7 @@ pub fn candidate() -> Candidate {
             .expect("a capability"),
         restriction: Restriction::none(),
         grant: GrantId::parse("grant-1").expect("grant"),
+        endpoints: porter_fake::storage_account().endpoints,
     }
 }
 

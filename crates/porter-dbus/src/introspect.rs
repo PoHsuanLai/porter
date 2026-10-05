@@ -5,7 +5,9 @@ use crate::account::AccountSkeleton;
 use crate::grants::GrantsSkeleton;
 use crate::inference::InferenceSkeleton;
 use crate::manager::ManagerSkeleton;
+use crate::peer::PeerSkeleton;
 use crate::request::RequestSkeleton;
+use crate::sheet_backend::AccountsSheetSkeleton;
 use crate::sync::SyncSkeleton;
 use crate::tokens::TokensSkeleton;
 use zbus::fdo;
@@ -16,6 +18,8 @@ use zbus::object_server::Interface;
 pub enum Bus {
     /// `org.quire.Accounts1` (accountd).
     Accounts,
+    /// `org.quire.AccountsSheet1` (the sheet host).
+    AccountsSheet,
     /// `org.quire.Sync1` (syncd).
     Sync,
     /// `org.quire.Inference1` (inferd).
@@ -27,6 +31,7 @@ impl Bus {
     pub fn file_name(self) -> &'static str {
         match self {
             Bus::Accounts => "org.quire.Accounts1.xml",
+            Bus::AccountsSheet => "org.quire.AccountsSheet1.xml",
             Bus::Sync => "org.quire.Sync1.xml",
             Bus::Inference => "org.quire.Inference1.xml",
         }
@@ -42,7 +47,9 @@ pub fn introspection(bus: Bus) -> String {
             &GrantsSkeleton,
             &TokensSkeleton,
             &RequestSkeleton,
+            &PeerSkeleton,
         ],
+        Bus::AccountsSheet => vec![&AccountsSheetSkeleton],
         Bus::Sync => vec![&SyncSkeleton],
         Bus::Inference => vec![&InferenceSkeleton],
     };

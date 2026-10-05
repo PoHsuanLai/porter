@@ -1,0 +1,32 @@
+[package]
+name = "porter-families"
+description = "The protocol families as code, one feature each: FamilyProvider dispatches porter-provider's Provider over the built families, for accountd and for an app hosting porter in process."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+porter-core = { workspace = true }
+porter-provider = { workspace = true }
+porter-http = { workspace = true }
+porter-dav = { workspace = true, optional = true }
+porter-discover = { workspace = true, optional = true }
+porter-oauth = { workspace = true, optional = true }
+
+[features]
+# Nextcloud: Login Flow v2, OCS discovery, WebDAV, CalDAV, CardDAV, Notes.
+nextcloud = ["dep:porter-dav", "dep:porter-discover"]
+# Generic IMAP/SMTP and DAV with a password or app password, found by autoconfig.
+generic = ["dep:porter-dav", "dep:porter-discover"]
+# Microsoft: OAuth PKCE and device code, IMAP/SMTP XOAUTH2, Graph.
+microsoft = ["dep:porter-oauth", "dep:porter-discover"]
+# AI providers with a pasted API key (Anthropic, OpenAI).
+api_key = []
+# OpenRouter: OAuth PKCE that mints a key.
+openrouter = ["dep:porter-oauth"]
+
+[lints]
+workspace = true

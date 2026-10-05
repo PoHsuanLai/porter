@@ -3,7 +3,7 @@
 use porter_core::{Bytes, UnixSeconds};
 use porter_sync::{
     Anchor, BaseVersion, Change, ChangePage, Conflict, ConflictRule, ContentHash, Cursor,
-    DatasetKind, ItemPath, More, RemoteId, RemoteItem, RemoteSide, RemoteVersion, Tombstone,
+    DatasetKind, ItemPath, More, Quota, RemoteId, RemoteItem, RemoteSide, RemoteVersion, Tombstone,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -24,6 +24,10 @@ fn journal_values_round_trip() {
     let version = RemoteVersion("v1".into());
     round_trip(&Cursor::Start);
     round_trip(&Cursor::At(Anchor("token".into())));
+    round_trip(&Quota {
+        used: Bytes(10),
+        total: Some(Bytes(100)),
+    });
     round_trip(&ChangePage {
         changes: vec![
             Change::Upsert(RemoteItem {

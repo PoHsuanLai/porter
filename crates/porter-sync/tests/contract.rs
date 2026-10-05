@@ -1,13 +1,14 @@
 //! The sync contract (design/31 §6.1), driven through the reference replica: anchors, base
 //! versions, conflicts as values, tombstones, and cursor reset.
 
-use porter_core::UnixSeconds;
 use porter_core::capability::{
     Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
 };
+use porter_core::{Bytes, UnixSeconds};
 use porter_sync::{
     BaseVersion, Blob, ByteRange, Change, ChangePage, Conflict, Cursor, ItemPath, MemoryReplica,
-    More, PutItem, PutRefused, PutTarget, RemoteId, RemoteSide, Replica, ReplicaError, Tombstone,
+    More, PutItem, PutRefused, PutTarget, Quota, RemoteId, RemoteSide, Replica, ReplicaError,
+    Tombstone,
 };
 
 fn replica(page: usize) -> MemoryReplica {
@@ -211,4 +212,58 @@ async fn a_range_fetch_returns_only_that_span() {
         len: porter_core::Bytes(3),
     };
     assert_eq!(replica.fetch(&id, span).await, Ok(Blob(b"234".to_vec())));
+}
+
+#[tokio::test]
+async fn the_quota_counts_live_bytes_and_a_removal_gives_them_back() {
+    let replica = replica(10);
+    assert_eq!(
+        replica.quota().await,
+        Ok(Quota {
+            used: Bytes(0),
+            total: None
+        })
+    );
+    let (id, version) = replica
+        .put(new_item("a.jpg", b"12345"), BaseVersion::Absent)
+        .await
+        .expect("put");
+    replica
+        .put(new_item("b.jpg", b"123"), BaseVersion::Absent)
+        .await
+        .expect("put");
+    assert_eq!(replica.quota().await.map(|q| q.used), Ok(Bytes(8)));
+    replica
+        .remove(&id, BaseVersion::At(version))
+        .await
+        .expect("remove");
+    assert_eq!(replica.quota().await.map(|q| q.used), Ok(Bytes(3)));
+}
+
+#[tokio::test]
+async fn a_write_past_the_limit_is_refused_and_a_rewrite_counts_only_the_difference() {
+    let replica = replica(10).with_limit(Bytes(10));
+    let (id, version) = replica
+        .put(new_item("a.jpg", b"123456"), BaseVersion::Absent)
+        .await
+        .expect("put");
+    assert_eq!(
+        replica.quota().await,
+        Ok(Quota {
+            used: Bytes(6),
+            total: Some(Bytes(10))
+        })
+    );
+    assert_eq!(
+        replica
+            .put(new_item("b.jpg", b"12345"), BaseVersion::Absent)
+            .await,
+        Err(PutRefused::Quota)
+    );
+    // Replacing the 6 bytes with 9 fits: 9 <= 10, though 6 + 9 would not.
+    replica
+        .put(change_to(&id, b"123456789"), BaseVersion::At(version))
+        .await
+        .expect("rewrite fits");
+    assert_eq!(replica.quota().await.map(|q| q.used), Ok(Bytes(9)));
 }

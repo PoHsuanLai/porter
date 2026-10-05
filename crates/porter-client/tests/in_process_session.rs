@@ -8,7 +8,7 @@ use porter_client::{
 use porter_core::need::LlmNeed;
 use porter_core::{AppId, AppName, DataClass, Isolation, Need, Tier, Tokens};
 use porter_fake::fake_service;
-use porter_fake::{FakeInferSession, FakeService, Script, ScriptStep, ScriptedPrompter};
+use porter_fake::{FakeInferSession, FakeService, Script, ScriptStep, ScriptedSheets};
 use porter_infer::{
     ChatControl, ChatReply, ClientFrame, InferEvent, InferReply, InferRequest, Knob, OpenOptions,
     Reasoning, ReplyShape, RequestKind, ServedBy, StopReason, TokenUsage, ToolChoice,
@@ -73,7 +73,7 @@ fn reply() -> InferReply {
 }
 
 async fn service() -> Arc<FakeService> {
-    Arc::new(fake_service(ScriptedPrompter::answering([])).await)
+    Arc::new(fake_service(ScriptedSheets::answering([])).await)
 }
 
 #[tokio::test]

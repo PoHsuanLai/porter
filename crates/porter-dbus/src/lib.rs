@@ -8,8 +8,10 @@
 
 mod account;
 mod args;
+mod callers;
 mod codec;
 mod codec_grants;
+mod codec_legacy;
 mod failure;
 mod grants;
 mod inference;
@@ -17,17 +19,21 @@ mod introspect;
 mod json_value;
 mod manager;
 mod names;
+mod peer;
 mod pending;
 mod refusal;
 mod request;
 mod sheet;
+mod sheet_backend;
 mod sync;
 mod tokens;
 
 pub use account::{AccountProxy, AccountSkeleton};
-pub use args::{CandidateArg, Details, NeedArg, TokenArg};
+pub use args::{AppArg, CandidateArg, Details, NeedArg, TokenArg, VerdictArg};
+pub use callers::{Caller, CallerRole, CallerRow, CallerTable, Callers, ProcCallers};
 pub use codec::{candidate_from_dbus, candidate_to_dbus, need_from_dbus, need_to_dbus};
 pub use codec_grants::{grant_from_dbus, grant_to_dbus, token_from_dbus, token_to_dbus};
+pub use codec_legacy::{legacy_from_dbus, legacy_to_dbus};
 pub use failure::{BusFailure, classify, refusal_of};
 pub use grants::{GrantsProxy, GrantsSkeleton};
 pub use inference::{InferenceProxy, InferenceSkeleton};
@@ -35,8 +41,9 @@ pub use introspect::{Bus, introspection};
 pub use manager::{ManagerProxy, ManagerSkeleton};
 pub use names::{
     ACCOUNTS_BUS, ACCOUNTS_PATH, INFERENCE_BUS, INFERENCE_PATH, INFERENCE_SETTINGS_PATH,
-    OPTION_TRACEPARENT, SYNC_BUS, SYNC_PATH, account_path,
+    OPTION_TRACEPARENT, SHEET_BUS, SHEET_PATH, STATUS_KEY_QUOTA, SYNC_BUS, SYNC_PATH, account_path,
 };
+pub use peer::{PeerProxy, PeerSkeleton};
 pub use pending::{Closer, Sheet, SheetError};
 pub use refusal::{REFUSAL_ERROR_PREFIX, refusal_error_name, refusal_from_error_name};
 pub use request::{RequestProxy, RequestSkeleton};
@@ -44,6 +51,7 @@ pub use sheet::{
     OPTION_HANDLE_TOKEN, REQUEST_INTERFACE, REQUEST_PATH_ROOT, Response, ResponseCode, SheetKind,
     is_handle_token, reply_of, request_namespace, request_path, response_of, sender_segment,
 };
+pub use sheet_backend::{AccountsSheetProxy, AccountsSheetSkeleton};
 pub use sync::{SyncProxy, SyncSkeleton};
 pub use tokens::{TokensProxy, TokensSkeleton};
 /// The session-bus connection transports and daemons hold.

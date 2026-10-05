@@ -2,18 +2,45 @@
 //! consent store says for each, and the candidates a caller may see.
 
 use porter_core::SpaceScope;
-use porter_core::consent::{Grant, GrantKey, Usage, Verdict, decide};
+use porter_core::capability::VocabVersion;
+use porter_core::consent::{Decision, Grant, GrantKey, Usage, Verdict, decide};
+use porter_core::store::{AccountToggle, Persisted};
+use porter_core::wire::Refusal;
 use porter_core::{
-    Account, AppId, Candidate, Capability, Claim, DataClass, GrantId, Match, Need, Offer, matches,
+    Account, AppId, Candidate, Capability, CapabilityKind, Claim, DataClass, EndpointUrl, GrantId,
+    Match, Need, Offer, ServiceEndpoint, matches,
 };
 
-/// Every account and every grant accountd holds.
+/// Every account, every grant and every toggle accountd holds.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Registry {
     /// The accounts.
     pub accounts: Vec<Account>,
     /// The consent store.
     pub grants: Vec<Grant>,
+    /// What the user turned off, per account and kind.
+    pub toggles: Vec<AccountToggle>,
+}
+
+impl Registry {
+    /// What a store holds, as the registry the service runs on.
+    pub fn from_persisted(stored: Persisted) -> Self {
+        Self {
+            accounts: stored.accounts,
+            grants: stored.grants,
+            toggles: stored.toggles,
+        }
+    }
+
+    /// The registry as the document a store keeps.
+    pub fn persisted(&self) -> Persisted {
+        Persisted {
+            vocab: VocabVersion::CURRENT,
+            accounts: self.accounts.clone(),
+            grants: self.grants.clone(),
+            toggles: self.toggles.clone(),
+        }
+    }
 }
 
 /// One account whose effective capability meets a need.
@@ -95,10 +122,56 @@ impl Registry {
             .iter()
             .find(|g| g.id == *id && g.key.app == *app)
     }
+
+    /// The account and endpoint a relay opened under `app`'s grant `id` may dial, and the
+    /// kind of the grant. The endpoint must be one the account holds for the grant's kind,
+    /// exactly as a candidate listed it: an app never names an address of its own.
+    pub(crate) fn relay_target(
+        &self,
+        app: &AppId,
+        id: &GrantId,
+        endpoint: &EndpointUrl,
+    ) -> Result<RelayTarget<'_>, Refusal> {
+        let grant = self
+            .grant_of(app, id)
+            .filter(|g| g.decision == Decision::Allow)
+            .ok_or(Refusal::UnknownGrant)?;
+        let account = self
+            .accounts
+            .iter()
+            .find(|a| a.id == grant.key.account)
+            .ok_or(Refusal::UnknownGrant)?;
+        let kind = grant.key.kind;
+        let endpoint = account
+            .endpoints
+            .iter()
+            .filter(|e| serves(e, kind))
+            .find(|e| e.url == *endpoint)
+            .ok_or(Refusal::EndpointNotGranted)?;
+        Ok(RelayTarget {
+            account,
+            endpoint,
+            kind,
+        })
+    }
+}
+
+/// What a relay is allowed to dial under one grant.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RelayTarget<'a> {
+    pub(crate) account: &'a Account,
+    pub(crate) endpoint: &'a ServiceEndpoint,
+    pub(crate) kind: CapabilityKind,
+}
+
+/// Whether `endpoint` is one a grant for `kind` may reach, and one a relay can carry.
+fn serves(endpoint: &ServiceEndpoint, kind: CapabilityKind) -> bool {
+    endpoint.protocol().is_some() && endpoint.family.serves(kind)
 }
 
 /// The candidate for one fitting account under `grant`.
 pub(crate) fn candidate(fit: &Fit<'_>, grant: GrantId) -> Candidate {
+    let kind = fit.capability.kind();
     Candidate {
         account: fit.account.id.clone(),
         label: fit.account.label.clone(),
@@ -107,5 +180,12 @@ pub(crate) fn candidate(fit: &Fit<'_>, grant: GrantId) -> Candidate {
         capability: fit.capability.clone(),
         restriction: fit.account.restriction.clone(),
         grant,
+        endpoints: fit
+            .account
+            .endpoints
+            .iter()
+            .filter(|e| e.family.serves(kind))
+            .cloned()
+            .collect(),
     }
 }

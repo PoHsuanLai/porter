@@ -1,0 +1,29 @@
+[package]
+name = "porter-oauth"
+description = "OAuth for porter's families: PKCE, the loopback redirect rules, the client registry, renewal, and the token, refresh and revoke exchanges over the `Http` seam; the loopback listener is behind the `io` feature."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+porter-core = { workspace = true }
+porter-http = { workspace = true }
+porter-provider = { workspace = true }
+base64 = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, optional = true, features = ["net", "time", "io-util"] }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[features]
+# `LoopbackServer`, the 127.0.0.1 listener. Pulls in the runtime, so it is off by default: the
+# rules, the registry and the exchanges reach none.
+io = ["dep:tokio"]
+
+[lints]
+workspace = true

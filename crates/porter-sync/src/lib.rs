@@ -8,6 +8,7 @@ mod dataset;
 mod item;
 #[cfg(feature = "testing")]
 mod memory;
+mod quota;
 mod refusal;
 mod replica;
 mod transfer;
@@ -18,6 +19,7 @@ pub use dataset::{ConflictRule, DatasetKind};
 pub use item::{BaseVersion, ContentHash, ItemPath, RemoteId, RemoteItem, RemoteVersion};
 #[cfg(feature = "testing")]
 pub use memory::MemoryReplica;
+pub use quota::Quota;
 pub use refusal::{Conflict, PutRefused, RemoteSide, ReplicaError, RetryAfter};
 pub use replica::Replica;
 pub use transfer::{Blob, ByteRange, PutItem, PutTarget};

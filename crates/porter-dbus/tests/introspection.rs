@@ -7,7 +7,7 @@ use std::path::PathBuf;
 #[test]
 fn checked_in_introspection_matches_the_interfaces() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../dbus");
-    for bus in [Bus::Accounts, Bus::Sync, Bus::Inference] {
+    for bus in [Bus::Accounts, Bus::AccountsSheet, Bus::Sync, Bus::Inference] {
         let path = dir.join(bus.file_name());
         let expected =
             std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
@@ -33,6 +33,7 @@ fn every_accounts_member_is_declared() {
         "<method name=\"Revoke\">",
         "<method name=\"IssueToken\">",
         "<method name=\"OpenAuthenticated\">",
+        "<method name=\"Adopt\">",
         "<method name=\"Close\">",
         "<signal name=\"AccountAdded\">",
         "<signal name=\"AccountRemoved\">",
@@ -89,4 +90,52 @@ fn inference_calls_carry_an_options_dict_for_the_reserved_traceparent() {
         "Availability, Open and Prepare"
     );
     assert_eq!(porter_dbus::OPTION_TRACEPARENT, "traceparent");
+}
+
+#[test]
+fn the_peer_interface_is_the_three_daemon_to_daemon_members() {
+    let xml = introspection(Bus::Accounts);
+    let peer = xml
+        .split("<interface name=\"org.quire.Accounts1.Peer\">")
+        .nth(1)
+        .and_then(|rest| rest.split("</interface>").next())
+        .expect("the Peer interface is declared");
+    for member in [
+        "<method name=\"Verdicts\">",
+        "<method name=\"ResolveKey\">",
+        "<method name=\"ReportLocal\">",
+    ] {
+        assert!(peer.contains(member), "missing {member}");
+    }
+    assert_eq!(peer.matches("<method ").count(), 3);
+    assert!(
+        !peer.contains("OpenCredential"),
+        "syncd opens an authenticated stream like any app"
+    );
+    assert!(
+        peer.contains("<arg type=\"h\" direction=\"out\"/>"),
+        "a key travels on a descriptor, never a string"
+    );
+}
+
+#[test]
+fn the_sheet_backend_takes_views_in_and_sends_inputs_out() {
+    let xml = introspection(Bus::AccountsSheet);
+    for member in [
+        "<method name=\"Open\">",
+        "<method name=\"Update\">",
+        "<method name=\"Close\">",
+        "<signal name=\"Input\">",
+    ] {
+        assert!(xml.contains(member), "missing {member}");
+    }
+    let declared = xml.matches("<method ").count() + xml.matches("<signal ").count();
+    assert_eq!(declared, 4);
+    assert_eq!(porter_dbus::SHEET_BUS, "org.quire.AccountsSheet1");
+}
+
+#[test]
+fn syncd_and_inferd_declare_what_they_did() {
+    assert_eq!(introspection(Bus::Sync).matches("<method ").count(), 4);
+    assert_eq!(porter_dbus::STATUS_KEY_QUOTA, "quota");
 }

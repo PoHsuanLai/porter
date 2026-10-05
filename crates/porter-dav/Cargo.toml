@@ -1,0 +1,18 @@
+[package]
+name = "porter-dav"
+description = "WebDAV for porter's families: PROPFIND and REPORT requests and the parsed multistatus, sync-collection and quota replies; pure, over the HTTP seam's values."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+porter-core = { workspace = true }
+porter-http = { workspace = true }
+
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

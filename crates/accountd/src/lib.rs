@@ -14,8 +14,9 @@
 //!   follows.
 //!
 //! Not served yet: the `Account` properties (`Id`, `Provider`, `Label`, `State`,
-//! `Capabilities`), the manager's signals, `OpenAuthenticated`, the Settings module. The binary
-//! still exits "not implemented": its secret store, prompter and families are stubs.
+//! `Capabilities`), the manager's signals, `Adopt`, `Tokens.OpenAuthenticated`, `Peer`, the
+//! Settings module and a caller table over `porter_dbus::Callers`. The binary still exits "not
+//! implemented": its secret store and sheets are stubs and its families have no bodies.
 
 mod account;
 mod callers;

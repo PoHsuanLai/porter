@@ -17,7 +17,13 @@ use porter_core::need::{
     CuaNeed, DimsNeed, EmbedNeed, IdentityNeed, ImageGenNeed, KeyValueNeed, LlmNeed, MailNeed,
     NotesNeed, PhotosNeed, PimNeed, PushNeed, RerankNeed, SpeechNeed, StorageNeed,
 };
-use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
+use porter_core::sheet::{
+    Entry, FieldAnswer, FieldKind, FieldProblem, FieldSpec, FieldValue, Presence, ProblemKind,
+    Progress, ProviderRow, Review, ReviewView, ServiceChoice, ServiceRow, ServiceState, SheetInput,
+    SheetView, SignInFault, SignInView, UserCode,
+};
+use porter_core::store::{AccountToggle, Persisted};
+use porter_core::wire::{LegacyItem, LegacyRef, ParentWindow, ProviderHint, Refusal};
 use porter_core::*;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -200,6 +206,45 @@ fn every_need() -> Vec<Need> {
     ]
 }
 
+fn endpoints() -> Vec<ServiceEndpoint> {
+    let url = |text: &str| EndpointUrl::parse(text).expect("url");
+    vec![
+        ServiceEndpoint {
+            family: Family::Imap,
+            url: url("imaps://imap.example.org"),
+            tls: Tls::Implicit,
+            login: LoginName("ada@example.org".into()),
+        },
+        ServiceEndpoint {
+            family: Family::Smtp,
+            url: url("smtp://smtp.example.org:587"),
+            tls: Tls::StartTls,
+            login: LoginName("ada".into()),
+        },
+        ServiceEndpoint {
+            family: Family::WebDav,
+            url: url("https://cloud.example.org/remote.php/dav/"),
+            tls: Tls::Implicit,
+            login: LoginName("ada".into()),
+        },
+    ]
+}
+
+fn legacy_ref() -> LegacyRef {
+    LegacyRef {
+        account: account_id("67e55044-10b1-426f-9247-bb680e5fe0c8"),
+        provider: ProviderId::parse("generic-imap").expect("provider"),
+        label: AccountLabel("ada@example.org".into()),
+        endpoints: endpoints()[..2].to_vec(),
+        items: vec![
+            LegacyItem::Incoming,
+            LegacyItem::Outgoing,
+            LegacyItem::OAuth,
+            LegacyItem::AddressBook,
+        ],
+    }
+}
+
 fn restriction() -> Restriction {
     Restriction {
         verification: Verification::Unverified {
@@ -223,6 +268,7 @@ fn candidate() -> Candidate {
         capability: every_capability()[6].clone(),
         restriction: restriction(),
         grant: grant_id("g1"),
+        endpoints: endpoints(),
     }
 }
 
@@ -280,6 +326,7 @@ fn accounts_and_ai_properties_round_trip() {
         auth: AuthKind::OAuthPkce,
         capabilities: vec![],
         restriction: restriction(),
+        endpoints: endpoints(),
     });
     round_trip(&Locality::Cloud {
         region: Some(Region("eu-west-1".into())),
@@ -393,6 +440,13 @@ fn every_request_and_reply_round_trips() {
             grant: grant_id("g1"),
             audience: Audience("imap".into()),
         },
+        AccountsRequest::OpenAuthenticated {
+            grant: grant_id("g1"),
+            endpoint: endpoints()[0].url.clone(),
+        },
+        AccountsRequest::Adopt {
+            legacy: legacy_ref(),
+        },
     ];
     requests.iter().for_each(round_trip);
     let replies = vec![
@@ -408,7 +462,10 @@ fn every_request_and_reply_round_trips() {
             value: SecretText::new("t"),
             expires: UnixSeconds(1),
         }),
+        AccountsReply::Authenticated,
+        AccountsReply::Adopted(account_id("cloud")),
         AccountsReply::Refused(Refusal::AudienceNotGranted),
+        AccountsReply::Refused(Refusal::EndpointNotGranted),
     ];
     replies.iter().for_each(round_trip);
 }
@@ -454,8 +511,8 @@ fn json<T: Serialize>(value: &T) -> String {
 }
 
 #[test]
-fn the_vocabulary_is_version_two() {
-    assert_eq!(VocabVersion::CURRENT, VocabVersion(2));
+fn the_vocabulary_is_version_three() {
+    assert_eq!(VocabVersion::CURRENT, VocabVersion(3));
 }
 
 #[test]
@@ -497,4 +554,206 @@ fn an_embedding_capability_keeps_its_prompts_with_the_model() {
         r#"{"dims":768,"modalities":["text"],"max_input":8192,"max_batch":32,"prompts":{"query":"search_query: ","document":""}}"#
     );
     assert_eq!(serde_json::from_str::<EmbedCap>(&json).expect("read"), cap);
+}
+
+#[test]
+fn endpoints_and_stored_documents_round_trip() {
+    endpoints().iter().for_each(round_trip);
+    for protocol in [
+        EndpointProtocol::Imap,
+        EndpointProtocol::Smtp,
+        EndpointProtocol::Http,
+    ] {
+        round_trip(&protocol);
+    }
+    round_trip(&legacy_ref());
+    let stored = Persisted {
+        vocab: VocabVersion::CURRENT,
+        accounts: vec![Account {
+            id: account_id("cloud"),
+            provider: ProviderId::parse("nextcloud").expect("provider"),
+            label: AccountLabel("ada@example.org".into()),
+            state: AccountState::Ok,
+            auth: AuthKind::LoginFlowV2,
+            capabilities: vec![],
+            restriction: Restriction::none(),
+            endpoints: endpoints(),
+        }],
+        grants: vec![grant()],
+        toggles: vec![AccountToggle {
+            account: account_id("cloud"),
+            kind: CapabilityKind::Notes,
+            toggle: Toggle::Off,
+        }],
+    };
+    round_trip(&stored);
+    assert_eq!(
+        Persisted::from_json(&stored.to_json().expect("json")).expect("read"),
+        stored
+    );
+}
+
+#[test]
+fn a_candidate_carries_the_endpoints_of_its_kind() {
+    let json = json(&candidate());
+    assert!(
+        json.contains(r#""endpoints":[{"family":"imap","url":"imaps://imap.example.org","tls":"implicit","login":"ada@example.org"}"#),
+        "{json}"
+    );
+}
+
+fn field(kind: FieldKind, entry: Entry) -> FieldSpec {
+    FieldSpec {
+        kind,
+        entry,
+        presence: Presence::Required,
+        prefill: None,
+    }
+}
+
+fn review() -> Review {
+    Review {
+        label: AccountLabel("ada@example.org".into()),
+        services: vec![
+            ServiceRow {
+                kind: CapabilityKind::Storage,
+                state: ServiceState::Offered(Toggle::On),
+                limit: Some(LimitReason::AppFolderOnly),
+            },
+            ServiceRow {
+                kind: CapabilityKind::Notes,
+                state: ServiceState::Absent(AbsentReason::NotOnServer),
+                limit: None,
+            },
+        ],
+        endpoints: endpoints(),
+    }
+}
+
+#[test]
+fn every_sheet_view_round_trips() {
+    let nextcloud = ProviderId::parse("nextcloud").expect("provider");
+    let url = EndpointUrl::parse("https://cloud.example.org/login/v2/flow/abc").expect("url");
+    let views = vec![
+        SheetView::Consent(ConsentAsk {
+            app: app(),
+            kind: CapabilityKind::Storage,
+            class: DataClass::Photos,
+            usage: Usage::Interactive,
+            accounts: vec![AccountChoice {
+                account: account_id("cloud"),
+                label: AccountLabel("Nextcloud".into()),
+                provider: nextcloud.clone(),
+            }],
+        }),
+        SheetView::Providers(vec![ProviderRow {
+            id: nextcloud.clone(),
+            label: "Nextcloud".into(),
+            mark: "nextcloud".into(),
+        }]),
+        SheetView::SignIn(SignInView {
+            provider: nextcloud.clone(),
+            fields: vec![
+                field(FieldKind::Address, Entry::Plain),
+                field(FieldKind::Password, Entry::Secret),
+            ],
+            problem: Some(FieldProblem {
+                field: FieldKind::Password,
+                problem: ProblemKind::Refused,
+            }),
+        }),
+        SheetView::BrowserWait {
+            provider: nextcloud.clone(),
+            url: url.clone(),
+        },
+        SheetView::ShowCode {
+            provider: nextcloud.clone(),
+            user_code: UserCode("ABCD-EFGH".into()),
+            url,
+        },
+        SheetView::Review(ReviewView {
+            provider: nextcloud.clone(),
+            review: review(),
+            allow: Some(app()),
+        }),
+        SheetView::Working(nextcloud.clone()),
+        SheetView::Failed {
+            provider: nextcloud,
+            fault: SignInFault::NeedsClientId,
+        },
+        SheetView::Done,
+    ];
+    views.iter().for_each(round_trip);
+}
+
+#[test]
+fn every_sheet_input_and_progress_round_trips() {
+    let inputs = vec![
+        SheetInput::Answer(ConsentAnswer::Deny),
+        SheetInput::Pick(ProviderId::parse("nextcloud").expect("provider")),
+        SheetInput::Submit(vec![
+            FieldAnswer {
+                kind: FieldKind::Address,
+                value: FieldValue::Plain("ada@example.org".into()),
+            },
+            FieldAnswer {
+                kind: FieldKind::Password,
+                value: FieldValue::Secret(SecretText::new("pw")),
+            },
+        ]),
+        SheetInput::Confirm(vec![ServiceChoice {
+            kind: CapabilityKind::Notes,
+            toggle: Toggle::Off,
+        }]),
+        SheetInput::Back,
+        SheetInput::Retry,
+        SheetInput::Dismiss,
+    ];
+    inputs.iter().for_each(round_trip);
+    let url = EndpointUrl::parse("https://login.example.org/device").expect("url");
+    let steps = vec![
+        Progress::Ask(vec![field(FieldKind::ApiKey, Entry::Secret)]),
+        Progress::Browser(url.clone()),
+        Progress::Code {
+            user_code: UserCode("ABCD".into()),
+            url,
+        },
+        Progress::Waiting,
+        Progress::Review(review()),
+        Progress::Done,
+        Progress::Failed(SignInFault::TimedOut),
+    ];
+    steps.iter().for_each(round_trip);
+}
+
+#[test]
+fn a_typed_password_is_redacted_in_debug_and_present_on_the_wire() {
+    let input = SheetInput::Submit(vec![FieldAnswer {
+        kind: FieldKind::Password,
+        value: FieldValue::Secret(SecretText::new("hunter2")),
+    }]);
+    assert!(!format!("{input:?}").contains("hunter2"));
+    assert_eq!(
+        json(&input),
+        r#"{"kind":"submit","v":[{"kind":"password","value":{"kind":"secret","v":"hunter2"}}]}"#
+    );
+}
+
+#[test]
+fn new_wire_requests_keep_their_slugs() {
+    assert_eq!(
+        json(&AccountsRequest::OpenAuthenticated {
+            grant: grant_id("g1"),
+            endpoint: endpoints()[0].url.clone(),
+        }),
+        r#"{"kind":"open_authenticated","v":{"grant":"g1","endpoint":"imaps://imap.example.org"}}"#
+    );
+    assert_eq!(
+        json(&AccountsReply::Authenticated),
+        r#"{"kind":"authenticated"}"#
+    );
+    assert_eq!(
+        json(&AccountsReply::Refused(Refusal::EndpointNotGranted)),
+        r#"{"kind":"refused","v":"endpoint_not_granted"}"#
+    );
 }

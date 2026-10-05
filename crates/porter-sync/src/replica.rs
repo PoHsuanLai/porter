@@ -3,6 +3,7 @@
 use crate::anchor::Cursor;
 use crate::change::ChangePage;
 use crate::item::{BaseVersion, RemoteId, RemoteVersion};
+use crate::quota::Quota;
 use crate::refusal::{PutRefused, ReplicaError};
 use crate::transfer::{Blob, ByteRange, PutItem};
 use porter_core::capability::StorageCap;
@@ -36,6 +37,10 @@ pub trait Replica: Send + Sync {
         item: &RemoteId,
         base: BaseVersion,
     ) -> impl Future<Output = Result<RemoteVersion, PutRefused>> + Send;
+
+    /// What the account has used and may use (`StorageCap.quota` says whether the backend
+    /// reports it; a backend that does not answers `total: None`).
+    fn quota(&self) -> impl Future<Output = Result<Quota, ReplicaError>> + Send;
 
     /// What the backend offers (delta, hashes, ranges, chunked upload).
     fn features(&self) -> StorageCap;

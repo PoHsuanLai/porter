@@ -5,7 +5,7 @@
 use super::bus::PrivateBus;
 use accountd::TableCallers;
 use porter_core::{AppId, AppName, Isolation};
-use porter_fake::{AskLog, FakeService, Scripted, ScriptedPrompter, fake_service};
+use porter_fake::{AskLog, FakeService, Scripted, ScriptedSheets, fake_service};
 use std::sync::Arc;
 
 /// The app every test client is, unless it says otherwise.
@@ -36,7 +36,7 @@ impl Daemon {
     /// Starts accountd on a fresh private bus; the consent sheet answers `script`.
     pub async fn start(script: impl IntoIterator<Item = Scripted>) -> Self {
         let bus = PrivateBus::start();
-        let prompter = ScriptedPrompter::answering(script);
+        let prompter = ScriptedSheets::answering(script);
         let asked = prompter.log();
         let service = Arc::new(fake_service(prompter).await);
         let callers = Arc::new(TableCallers::new());

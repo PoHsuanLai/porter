@@ -19,8 +19,9 @@ pub use dbus_session::{DbusSession, MAX_ATTACHMENTS};
 pub use in_process::{InProcess, InProcessSession, NoBroker, SessionHost};
 pub use socket::{SocketSession, SocketTransport};
 
+use crate::authenticated::Relayed;
 use crate::error::TransportError;
-use porter_core::{AccountsReply, AccountsRequest, DataClass, Need, Tier};
+use porter_core::{AccountsReply, AccountsRequest, DataClass, EndpointUrl, GrantId, Need, Tier};
 use porter_infer::{ClientFrame, InferEvent, InferSession, OpenOptions, SessionError};
 use std::future::Future;
 
@@ -34,6 +35,18 @@ pub trait Transport: Send + Sync {
         &self,
         request: AccountsRequest,
     ) -> impl Future<Output = Result<AccountsReply, TransportError>> + Send;
+
+    /// A byte stream to one endpoint of a granted account, authenticated by a daemon-side relay
+    /// (`Tokens.OpenAuthenticated`). The descriptor is out of band, so it is not a `call`. A
+    /// transport that cannot carry one is `Unreachable`.
+    fn open_authenticated(
+        &self,
+        grant: &GrantId,
+        endpoint: &EndpointUrl,
+    ) -> impl Future<Output = Result<Relayed, TransportError>> + Send {
+        let _ = (grant, endpoint);
+        async { Err(TransportError::Unreachable) }
+    }
 
     /// Opens a session with inferd for `need`, `class` and `tier`: the route is chosen once, so
     /// the session is pinned to one model. A refusal arrives as the session's first event
@@ -120,6 +133,18 @@ impl Transport for AnyTransport {
             #[cfg(feature = "dbus")]
             AnyTransport::Dbus(link) => link.call(request).await,
             AnyTransport::Socket(link) => link.call(request).await,
+        }
+    }
+
+    async fn open_authenticated(
+        &self,
+        grant: &GrantId,
+        endpoint: &EndpointUrl,
+    ) -> Result<Relayed, TransportError> {
+        match self {
+            #[cfg(feature = "dbus")]
+            AnyTransport::Dbus(link) => link.open_authenticated(grant, endpoint).await,
+            AnyTransport::Socket(link) => link.open_authenticated(grant, endpoint).await,
         }
     }
 

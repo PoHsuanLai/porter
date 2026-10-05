@@ -1,0 +1,22 @@
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+<node>
+ <interface name="org.quire.AccountsSheet1">
+   <method name="Open">
+     <arg name="handle" type="s" direction="in"/>
+     <arg name="parent_window" type="s" direction="in"/>
+     <arg name="view" type="s" direction="in"/>
+   </method>
+   <method name="Update">
+     <arg name="handle" type="s" direction="in"/>
+     <arg name="view" type="s" direction="in"/>
+   </method>
+   <method name="Close">
+     <arg name="handle" type="s" direction="in"/>
+   </method>
+   <signal name="Input">
+     <arg name="handle" type="s"/>
+     <arg name="input" type="s"/>
+   </signal>
+ </interface>
+</node>

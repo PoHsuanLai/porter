@@ -2,15 +2,14 @@
 //! (design/31 §4.1). A skeleton: it builds the service over its seams and exits, saying so.
 
 mod clock;
-mod families;
-mod prompter;
+mod sheets;
 
 use clap::Parser;
 use clock::SystemClock;
-use families::FamilyProvider;
+use porter_families::FamilyProvider;
 use porter_secrets::Oo7Secrets;
 use porter_service::{AccountService, Registry};
-use prompter::SheetPrompter;
+use sheets::BusSheets;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -27,12 +26,12 @@ struct Args {
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
     let args = Args::parse();
-    let service: AccountService<FamilyProvider, Oo7Secrets, SheetPrompter, SystemClock> =
+    let service: AccountService<FamilyProvider, Oo7Secrets, BusSheets, SystemClock> =
         AccountService::new(
             Vec::new(),
             Registry::default(),
             Oo7Secrets,
-            SheetPrompter,
+            BusSheets,
             SystemClock,
         );
     let _ = (&service, &args.provider_dirs, porter_dbus::ACCOUNTS_BUS);

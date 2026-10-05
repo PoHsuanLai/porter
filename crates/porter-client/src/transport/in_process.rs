@@ -8,14 +8,22 @@
 //! would on the bus.
 
 use super::Transport;
+use crate::authenticated::{AuthenticatedStream, Relayed};
 use crate::error::TransportError;
-use porter_core::{AccountsReply, AccountsRequest, AppId, DataClass, Need, Tier};
+use crate::relays::{NoRelays, RelayHost};
+use porter_core::stream::duplex;
+use porter_core::{
+    AccountsReply, AccountsRequest, AppId, DataClass, EndpointUrl, GrantId, Need, Tier,
+};
 use porter_infer::{ClientFrame, InferEvent, InferSession, OpenOptions, SessionError};
 use porter_provider::Provider;
 use porter_secrets::Secrets;
-use porter_service::{AccountService, Clock, Prompter};
+use porter_service::{AccountService, AuditSink, Clock, NoAudit, NoStore, RegistryStore, Sheets};
 use std::future::Future;
 use std::sync::Arc;
+
+/// How much of a relay's traffic an in-memory stream holds before the writer waits.
+const RELAY_BUFFER: usize = 64 * 1024;
 
 /// Where an in-process app's inference sessions come from.
 pub trait SessionHost: Send + Sync {
@@ -86,43 +94,84 @@ impl SessionHost for NoBroker {
     }
 }
 
-/// The core, hosted in this process, answering for one app.
+/// The core, hosted in this process, answering for one app. The registry store, the audit sink,
+/// the inference broker and the relay host default to none.
 #[derive(Debug)]
-pub struct InProcess<P, S, U, K, B = NoBroker> {
-    service: Arc<AccountService<P, S, U, K>>,
+pub struct InProcess<P, S, U, K, B = NoBroker, R = NoStore, A = NoAudit, H = NoRelays> {
+    service: Arc<AccountService<P, S, U, K, R, A>>,
     app: AppId,
     broker: B,
+    relays: H,
 }
 
-impl<P, S, U, K> InProcess<P, S, U, K> {
-    /// `app`'s link to a service this process hosts, with no broker.
-    pub fn new(service: Arc<AccountService<P, S, U, K>>, app: AppId) -> Self {
+impl<P, S, U, K, R, A> InProcess<P, S, U, K, NoBroker, R, A, NoRelays> {
+    /// `app`'s link to a service this process hosts, with no broker and no relays.
+    pub fn new(service: Arc<AccountService<P, S, U, K, R, A>>, app: AppId) -> Self {
         Self {
             service,
             app,
             broker: NoBroker,
+            relays: NoRelays,
         }
     }
 }
 
-impl<P, S, U, K, B> InProcess<P, S, U, K, B> {
+impl<P, S, U, K, B, R, A, H> InProcess<P, S, U, K, B, R, A, H> {
     /// The same link with `broker` serving its inference sessions.
-    pub fn with_broker<N: SessionHost>(self, broker: N) -> InProcess<P, S, U, K, N> {
+    pub fn with_broker<N: SessionHost>(self, broker: N) -> InProcess<P, S, U, K, N, R, A, H> {
         InProcess {
             service: self.service,
             app: self.app,
             broker,
+            relays: self.relays,
+        }
+    }
+
+    /// The same link with `relays` running the relays of its authenticated streams.
+    pub fn with_relays<N: RelayHost>(self, relays: N) -> InProcess<P, S, U, K, B, R, A, N> {
+        InProcess {
+            service: self.service,
+            app: self.app,
+            broker: self.broker,
+            relays,
         }
     }
 }
 
-impl<P: Provider, S: Secrets, U: Prompter, K: Clock, B: SessionHost> Transport
-    for InProcess<P, S, U, K, B>
+impl<P, S, U, K, B, R, A, H> Transport for InProcess<P, S, U, K, B, R, A, H>
+where
+    P: Provider,
+    S: Secrets,
+    U: Sheets,
+    K: Clock,
+    B: SessionHost,
+    R: RegistryStore,
+    A: AuditSink,
+    H: RelayHost,
 {
     type Session = B::Session;
 
     async fn call(&self, request: AccountsRequest) -> Result<AccountsReply, TransportError> {
         Ok(self.service.handle(&self.app, request).await)
+    }
+
+    async fn open_authenticated(
+        &self,
+        grant: &GrantId,
+        endpoint: &EndpointUrl,
+    ) -> Result<Relayed, TransportError> {
+        match self
+            .service
+            .open_authenticated(&self.app, grant, endpoint)
+            .await
+        {
+            Ok(plan) => {
+                let (app_end, relay_end) = duplex(RELAY_BUFFER);
+                self.relays.run(plan, relay_end);
+                Ok(Relayed::Stream(AuthenticatedStream::Memory(app_end)))
+            }
+            Err(refusal) => Ok(Relayed::Refused(refusal)),
+        }
     }
 
     async fn open_with(

@@ -1,11 +1,13 @@
 //! A provider that answers from its declaration and mints predictable tokens.
 
+use porter_core::sheet::{SignInFault, SignInInput};
 use porter_core::{
-    AccountId, Audience, Claim, IssuedToken, Offer, Provenance, SecretText, Subject, TokenKind,
-    UnixSeconds,
+    AccountId, AccountLabel, Audience, Claim, Credential, IssuedToken, Offer, Provenance,
+    Restriction, SecretPurpose, SecretText, Subject, TokenKind, UnixSeconds,
 };
 use porter_provider::{
-    Presented, Provider, ProviderError, ProviderSession, ProviderSpec, parse_provider,
+    Presented, Provider, ProviderError, ProviderSession, ProviderSpec, RevokeOutcome, SignIn,
+    SignInStart, SignInStep, Signed, parse_provider,
 };
 
 /// A provider over one parsed provider file.
@@ -43,8 +45,35 @@ pub struct FakeSession {
     account: AccountId,
 }
 
+/// A sign-in that needs nothing from the person: `Start` signs in at once with a fixed
+/// password, and anything after it is a refusal. A real family asks, waits and reviews.
+#[derive(Debug)]
+pub struct FakeSignIn {
+    label: AccountLabel,
+    claims: Vec<Claim>,
+}
+
+impl SignIn for FakeSignIn {
+    async fn next(&mut self, input: SignInInput) -> SignInStep {
+        match input {
+            SignInInput::Start => SignInStep::Done(Signed {
+                label: self.label.clone(),
+                credentials: vec![(
+                    SecretPurpose::Password,
+                    Credential::Password(SecretText::new("fake-signed-in")),
+                )],
+                claims: self.claims.clone(),
+                endpoints: Vec::new(),
+                restriction: Restriction::none(),
+            }),
+            _ => SignInStep::Failed(SignInFault::Cancelled),
+        }
+    }
+}
+
 impl Provider for FakeProvider {
     type Session = FakeSession;
+    type SignIn = FakeSignIn;
 
     fn spec(&self) -> &ProviderSpec {
         &self.spec
@@ -79,6 +108,26 @@ impl Provider for FakeProvider {
                 account: account.clone(),
             }),
         }
+    }
+
+    fn sign_in(&self, _start: SignInStart) -> Result<FakeSignIn, ProviderError> {
+        Ok(FakeSignIn {
+            label: AccountLabel(self.spec.label.clone()),
+            claims: self
+                .spec
+                .capabilities
+                .iter()
+                .map(|row| Claim {
+                    subject: Subject::Account,
+                    offer: Offer::Present(row.capability.clone()),
+                    provenance: Provenance::Declared,
+                })
+                .collect(),
+        })
+    }
+
+    async fn revoke(&self, _presented: &Presented) -> Result<RevokeOutcome, ProviderError> {
+        Ok(RevokeOutcome::Revoked)
     }
 }
 

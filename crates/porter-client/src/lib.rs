@@ -15,17 +15,21 @@
 //! socket where D-Bus is absent, or [`InProcess`] where the app hosts the core itself.
 
 mod accounts;
+mod authenticated;
 mod env;
 mod error;
 mod found;
+mod relays;
 mod transport;
 
 pub use accounts::Accounts;
+pub use authenticated::{AuthenticatedStream, Relayed};
 pub use env::{ClientEnv, LinkChoice, SocketPath};
 pub use error::{ClientError, TransportError};
 pub use found::{ConsentOffer, Found, NoAccount, found};
 /// The client's side of one `Open` fd, from porter-infer.
 pub use porter_infer::{InferSession, OpenOptions, SessionError, Traceparent};
+pub use relays::{NoRelays, RelayHost};
 pub use transport::{
     AnySession, AnyTransport, InProcess, InProcessSession, NoBroker, SessionHost, SocketSession,
     SocketTransport, Transport,

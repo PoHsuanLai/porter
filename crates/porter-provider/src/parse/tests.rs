@@ -1,8 +1,7 @@
 use super::*;
-use crate::family::Family;
 use crate::spec::{Discovery, Port};
 use porter_core::capability::{Access, Delta, StorageScope};
-use porter_core::{AuthKind, Capability};
+use porter_core::{AuthKind, Capability, Family};
 
 const HEAD: &str = r#"
 id = "example"

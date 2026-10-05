@@ -89,3 +89,63 @@ impl ChatSink for Collect {
         Flow::Continue
     }
 }
+
+#[tokio::test]
+async fn a_scripted_conversation_shows_its_views_and_reads_its_inputs_then_closes() {
+    use porter_core::sheet::{SheetInput, SheetView};
+    use porter_core::wire::ParentWindow;
+    use porter_fake::ScriptedSheets;
+    use porter_service::{SheetFault, SheetLink, SheetOpen, Sheets};
+    let sheets =
+        ScriptedSheets::default().conversing([vec![SheetInput::Back, SheetInput::Dismiss]]);
+    let log = sheets.log();
+    let mut link = sheets
+        .conversation(SheetOpen {
+            window: ParentWindow::Unparented,
+            view: SheetView::Done,
+        })
+        .await
+        .expect("opens");
+    link.update(SheetView::Providers(vec![]))
+        .await
+        .expect("update");
+    assert_eq!(link.input().await, Ok(SheetInput::Back));
+    assert_eq!(link.input().await, Ok(SheetInput::Dismiss));
+    assert_eq!(link.input().await, Err(SheetFault::Closed));
+    assert_eq!(
+        log.shown(),
+        vec![SheetView::Done, SheetView::Providers(vec![])]
+    );
+    let none = ScriptedSheets::default()
+        .conversation(SheetOpen {
+            window: ParentWindow::Unparented,
+            view: SheetView::Done,
+        })
+        .await;
+    assert_eq!(none.err(), Some(SheetFault::Unavailable));
+}
+
+#[tokio::test]
+async fn the_fake_provider_signs_in_at_once_and_revokes() {
+    use porter_core::sheet::{SignInFault, SignInInput};
+    use porter_provider::{RevokeOutcome, SignIn, SignInMode, SignInStart, SignInStep};
+    let provider = cloud_provider();
+    let mut sign_in = provider
+        .sign_in(SignInStart {
+            mode: SignInMode::Add,
+        })
+        .expect("starts");
+    let SignInStep::Done(signed) = sign_in.next(SignInInput::Start).await else {
+        panic!("not done");
+    };
+    assert_eq!(signed.credentials.len(), 1);
+    assert!(!format!("{signed:?}").contains("fake-signed-in"));
+    assert_eq!(
+        sign_in.next(SignInInput::Poll).await,
+        SignInStep::Failed(SignInFault::Cancelled)
+    );
+    assert_eq!(
+        provider.revoke(&Presented::Anonymous).await,
+        Ok(RevokeOutcome::Revoked)
+    );
+}

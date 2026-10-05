@@ -3,12 +3,14 @@
 
 mod auth;
 mod discovery;
+mod matching;
 
-pub use auth::{AuthSpec, Issuer};
+pub use auth::{AuthSpec, Issuer, IssuerEndpoints};
 pub use discovery::{Discovery, Port};
+pub use matching::{DomainMatch, DomainName, Matching};
 
-use crate::family::Family;
-use porter_core::{Billing, Capability, Locality, ProviderId};
+use porter_core::sheet::ProviderRow;
+use porter_core::{Billing, Capability, Family, Locality, ProviderId};
 use serde::{Deserialize, Serialize};
 
 /// One provider, as its file declares it.
@@ -24,6 +26,10 @@ pub struct ProviderSpec {
     pub auth: AuthSpec,
     /// How an account's servers and capabilities are found.
     pub discovery: Discovery,
+    /// The address domains and MX hosts that mark an address as this provider's; empty for a
+    /// provider no address implies (Nextcloud, a local runtime).
+    #[serde(default)]
+    pub matching: Matching,
     /// Where its AI models run and what they cost; absent for providers without AI kinds.
     #[serde(default)]
     pub ai: Option<AiSpec>,
@@ -65,4 +71,15 @@ pub struct AiSpec {
     pub locality: Locality,
     /// How they are paid for.
     pub billing: Billing,
+}
+
+impl ProviderSpec {
+    /// The row the sheet's provider list shows for this provider.
+    pub fn sheet_row(&self) -> ProviderRow {
+        ProviderRow {
+            id: self.id.clone(),
+            label: self.label.clone(),
+            mark: self.mark.clone(),
+        }
+    }
 }

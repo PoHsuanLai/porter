@@ -28,6 +28,10 @@
      <arg name="options" type="a{sv}" direction="in"/>
      <arg type="o" direction="out"/>
    </method>
+   <method name="Adopt">
+     <arg name="legacy" type="a{sv}" direction="in"/>
+     <arg type="s" direction="out"/>
+   </method>
    <signal name="AccountAdded">
      <arg name="account" type="o"/>
    </signal>
@@ -83,5 +87,24 @@
      <arg name="response" type="u"/>
      <arg name="results" type="a{sv}"/>
    </signal>
+ </interface>
+ <interface name="org.quire.Accounts1.Peer">
+   <method name="Verdicts">
+     <arg name="app" type="(ss)" direction="in"/>
+     <arg name="need" type="(sa{sv})" direction="in"/>
+     <arg name="class" type="s" direction="in"/>
+     <arg name="usage" type="s" direction="in"/>
+     <arg type="a(ssa{sv})" direction="out"/>
+   </method>
+   <method name="ResolveKey">
+     <arg name="grant" type="s" direction="in"/>
+     <arg type="h" direction="out"/>
+   </method>
+   <method name="ReportLocal">
+     <arg name="provider" type="s" direction="in"/>
+     <arg name="claims" type="a(sa{sv})" direction="in"/>
+     <arg name="state" type="s" direction="in"/>
+     <arg type="s" direction="out"/>
+   </method>
  </interface>
 </node>

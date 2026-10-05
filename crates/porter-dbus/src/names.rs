@@ -10,6 +10,15 @@ pub const ACCOUNTS_PATH: &str = "/org/quire/Accounts1";
 pub const SYNC_BUS: &str = "org.quire.Sync1";
 /// syncd's object.
 pub const SYNC_PATH: &str = "/org/quire/Sync1";
+/// The sheet host's bus name (`org.quire.AccountsSheet1`, served by sill or a standalone host).
+pub const SHEET_BUS: &str = "org.quire.AccountsSheet1";
+/// The sheet host's object.
+pub const SHEET_PATH: &str = "/org/quire/AccountsSheet1";
+
+/// The key of the quota in `Sync1.Status` (a vardict `a{sv}` holding `used` as a `t` and, when
+/// the provider reports a limit, `total` as a `t`). syncd builds it from porter-sync's `Quota`.
+pub const STATUS_KEY_QUOTA: &str = "quota";
+
 /// inferd's bus name.
 pub const INFERENCE_BUS: &str = "org.quire.Inference1";
 /// inferd's object.

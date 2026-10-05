@@ -10,6 +10,7 @@ dependencies = [
  "porter-core",
  "porter-dbus",
  "porter-fake",
+ "porter-families",
  "porter-provider",
  "porter-secrets",
  "porter-service",
@@ -893,6 +894,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "porter-dav"
+version = "0.1.0"
+dependencies = [
+ "porter-core",
+ "porter-http",
+ "thiserror",
+]
+
+[[package]]
 name = "porter-dbus"
 version = "0.1.0"
 dependencies = [
@@ -904,6 +914,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "porter-discover"
+version = "0.1.0"
+dependencies = [
+ "porter-core",
+ "porter-http",
+ "porter-provider",
+ "thiserror",
+]
+
+[[package]]
 name = "porter-fake"
 version = "0.1.0"
 dependencies = [
@@ -912,6 +932,30 @@ dependencies = [
  "porter-provider",
  "porter-secrets",
  "porter-service",
+ "tokio",
+]
+
+[[package]]
+name = "porter-families"
+version = "0.1.0"
+dependencies = [
+ "porter-core",
+ "porter-dav",
+ "porter-discover",
+ "porter-http",
+ "porter-oauth",
+ "porter-provider",
+]
+
+[[package]]
+name = "porter-http"
+version = "0.1.0"
+dependencies = [
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "porter-core",
+ "thiserror",
  "tokio",
 ]
 
@@ -928,6 +972,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "porter-oauth"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "porter-core",
+ "porter-http",
+ "porter-provider",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "porter-provider"
 version = "0.1.0"
 dependencies = [
@@ -935,6 +993,14 @@ dependencies = [
  "serde",
  "thiserror",
  "toml",
+]
+
+[[package]]
+name = "porter-proxy"
+version = "0.1.0"
+dependencies = [
+ "porter-core",
+ "tokio",
 ]
 
 [[package]]

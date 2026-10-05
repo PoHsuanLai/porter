@@ -4,12 +4,13 @@
 
 use super::Transport;
 use super::dbus_session::DbusSession;
+use crate::authenticated::{AuthenticatedStream, Relayed};
 use crate::error::TransportError;
-use porter_core::{AccountsReply, AccountsRequest, DataClass, Need, Tier};
+use porter_core::{AccountsReply, AccountsRequest, DataClass, EndpointUrl, GrantId, Need, Tier};
 use porter_dbus::zvariant::{OwnedValue, Value};
 use porter_dbus::{
-    BusConnection, BusError, BusFailure, Details, InferenceProxy, OPTION_TRACEPARENT, classify,
-    need_to_dbus,
+    BusConnection, BusError, BusFailure, Details, InferenceProxy, OPTION_TRACEPARENT, TokensProxy,
+    classify, need_to_dbus, refusal_of,
 };
 use porter_infer::OpenOptions;
 use serde::Serialize;
@@ -72,6 +73,26 @@ impl Transport for DbusTransport {
 
     async fn call(&self, request: AccountsRequest) -> Result<AccountsReply, TransportError> {
         super::dbus_accounts::call(&self.connection, request).await
+    }
+
+    async fn open_authenticated(
+        &self,
+        grant: &GrantId,
+        endpoint: &EndpointUrl,
+    ) -> Result<Relayed, TransportError> {
+        let proxy = TokensProxy::new(&self.connection)
+            .await
+            .map_err(|e| bus_error(&e))?;
+        match proxy
+            .open_authenticated(grant.as_str(), endpoint.as_str())
+            .await
+        {
+            Ok(fd) => Ok(Relayed::Stream(AuthenticatedStream::Fd(fd.into()))),
+            Err(error) => match refusal_of(&error) {
+                Some(refusal) => Ok(Relayed::Refused(refusal)),
+                None => Err(bus_error(&error)),
+            },
+        }
     }
 
     async fn open_with(
