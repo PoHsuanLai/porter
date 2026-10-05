@@ -292,6 +292,42 @@ async fn a_verb_the_dialect_does_not_have_is_dropped_with_its_reason() {
 }
 
 #[tokio::test]
+async fn a_scroll_that_names_no_point_is_proposed_at_the_centre_of_the_frame() {
+    let provider = says(vec![click(r#"{"action":"scroll","pixels":-300}"#)]);
+    let (result, _, events) = run_one(&provider, &png_request()).await;
+    let reply = result.expect("a reply");
+    assert!(matches!(
+        reply.actions.as_slice(),
+        [CuaAction::Scroll {
+            at: Target::Centre,
+            ..
+        }]
+    ));
+    assert_eq!(
+        events,
+        vec![InferEvent::ActionProposed(reply.actions[0].clone())]
+    );
+}
+
+#[tokio::test]
+async fn text_that_is_no_key_is_dropped_as_a_bad_argument() {
+    let provider = says(vec![
+        click(r#"{"action":"left_click","coordinate":[500,500]}"#),
+        click(r#"{"action":"key","keys":["NoSuchKey"]}"#),
+    ]);
+    let (result, _, _) = run_one(&provider, &png_request()).await;
+    let reply = result.expect("a reply");
+    assert_eq!(reply.actions.len(), 1);
+    assert_eq!(
+        reply.dropped,
+        vec![DroppedAction {
+            verb: "key".into(),
+            reason: DropReason::BadArgument
+        }]
+    );
+}
+
+#[tokio::test]
 async fn a_reply_that_does_not_parse_is_asked_again_once_with_the_same_frame() {
     let provider = ScriptedProvider::new(
         vec![],
