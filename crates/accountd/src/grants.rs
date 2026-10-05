@@ -3,7 +3,8 @@
 use crate::callers::Callers;
 use crate::core::{Core, Host, Standing};
 use crate::errors::RefusedError;
-use porter_core::{AccountsReply, AccountsRequest, Audience, GrantId};
+use porter_core::wire::Refusal;
+use porter_core::{AccountsReply, AccountsRequest, Audience, EndpointUrl, GrantId};
 use porter_dbus::{Details, TokenArg, grant_to_dbus, token_to_dbus};
 use std::sync::Arc;
 use zbus::message::Header;
@@ -85,20 +86,35 @@ impl<H: Host, C: Callers> Tokens<H, C> {
 
     /// A socket to a daemon-side authenticated relay (`OpenAuthenticated`).
     ///
-    /// Role check done here: an `Agent` is refused `Denied`, an unknown sender `AccessDenied`.
-    ///
-    /// W3G SEAM: the serving path is W3g's. It checks the grant and the endpoint
-    /// (`AccountService::open_authenticated`), makes the descriptor pair, runs the relay
-    /// (`porter_proxy::relay`) and returns the client's end. Until then this answers
-    /// `Unavailable` without touching the service (`relay_plan` is still a stub there).
+    /// Role check first: an `Agent` is refused `Denied`, an unknown sender `AccessDenied`. The
+    /// service checks the grant and that `endpoint` is one the account holds for it, and reads
+    /// what the relay presents; that goes to the relay task and nowhere else. The descriptor is
+    /// the app's end of a socketpair and is returned once the relay has authenticated.
     async fn open_authenticated(
         &self,
         #[zbus(header)] header: Header<'_>,
         grant: String,
         endpoint: String,
     ) -> Result<zbus::zvariant::OwnedFd, RefusedError> {
-        let _app = self.0.acting(&header).await?;
-        let _ = (grant, endpoint);
-        Err(RefusedError::of(porter_core::wire::Refusal::Unavailable))
+        let app = self.0.acting(&header).await?;
+        let grant = GrantId::parse(&grant).map_err(RefusedError::invalid)?;
+        let endpoint = EndpointUrl::parse(&endpoint).map_err(RefusedError::invalid)?;
+        let plan = self
+            .0
+            .host
+            .open_relay(&app, &grant, &endpoint)
+            .await
+            .map_err(RefusedError::of)?;
+        match self.0.relays.open(plan).await {
+            Ok(fd) => Ok(fd),
+            Err(refusal) => {
+                // The server refused the credential the account holds: say so, as the signals
+                // and the Settings module show it.
+                if refusal == Refusal::NeedsReauth {
+                    self.0.needs_reauth(&grant).await;
+                }
+                Err(RefusedError::of(refusal))
+            }
+        }
     }
 }

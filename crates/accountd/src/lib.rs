@@ -22,8 +22,11 @@
 //!   `OpenAuthenticated` and `Adopt` (`Refusal::Denied`).
 //! - `BusSheets` is the sheet link to the host over `org.quire.AccountsSheet1`.
 //!
-//! Not served: `Tokens.OpenAuthenticated` (a marked seam for W3g), `Peer.ResolveKey` and
-//! `Peer.ReportLocal`.
+//! - `Tokens.OpenAuthenticated`: the grant and endpoint checked by the service, then a socketpair
+//!   whose far end runs `porter_proxy::relay` (`relay`); the descriptor is returned once the relay
+//!   has authenticated. `Options::relay_roots` is the test seam for the trusted roots.
+//!
+//! Not served: `Peer.ResolveKey` and `Peer.ReportLocal`.
 
 mod account;
 mod audit;
@@ -38,6 +41,7 @@ mod manager;
 pub mod paths;
 mod peer;
 pub mod providers;
+mod relay;
 mod request;
 mod roster;
 mod settings;
@@ -51,6 +55,7 @@ pub use callers_file::{CallerFileError, load_callers, table_from_file, table_fro
 pub use core::{Host, Options, serve, serve_with};
 pub use errors::RefusedError;
 pub use legacy::{AdoptConfig, AdoptTable, MemoryLegacy, Oo7Legacy, from_mailo};
+pub use relay::RelayRoots;
 pub use settings::settings_path;
 pub use sheets::{BusLink, BusSheets};
 pub use store::FileStore;

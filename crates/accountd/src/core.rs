@@ -8,10 +8,11 @@ use crate::grants::{Grants, Tokens};
 use crate::hub::{Event, audience, events};
 use crate::legacy::AdoptConfig;
 use crate::manager::Manager;
+use crate::relay::{RelayRoots, Relays};
 use porter_core::wire::{LegacyRef, ParentWindow, ProviderHint, Refusal};
 use porter_core::{
-    AccountId, AccountState, AccountsReply, AccountsRequest, AppId, CapabilityKind, GrantId,
-    ProviderId, Toggle,
+    AccountId, AccountState, AccountsReply, AccountsRequest, AppId, CapabilityKind, EndpointUrl,
+    GrantId, ProviderId, RelayPlan, Toggle,
 };
 use porter_dbus::{ACCOUNTS_BUS, ACCOUNTS_PATH, Caller, CallerRole, Details, account_path};
 use porter_provider::Provider;
@@ -55,6 +56,18 @@ pub trait Host: Send + Sync + 'static {
     ) -> impl Future<Output = AccountsReply> + Send {
         let _ = (store, service, caller, legacy);
         async { AccountsReply::Refused(Refusal::Unavailable) }
+    }
+
+    /// What the relay for `endpoint` under `caller`'s `grant` presents, once the grant and the
+    /// endpoint are checked. A host with no relay says unavailable.
+    fn open_relay(
+        &self,
+        caller: &AppId,
+        grant: &GrantId,
+        endpoint: &EndpointUrl,
+    ) -> impl Future<Output = Result<RelayPlan, Refusal>> + Send {
+        let _ = (caller, grant, endpoint);
+        async { Err(Refusal::Unavailable) }
     }
 
     /// Removes an account: revoke at the provider (best effort), then every wipe. A host that
@@ -122,6 +135,15 @@ where
         AccountService::adopt_from(self, store, service, caller, legacy)
     }
 
+    fn open_relay(
+        &self,
+        caller: &AppId,
+        grant: &GrantId,
+        endpoint: &EndpointUrl,
+    ) -> impl Future<Output = Result<RelayPlan, Refusal>> + Send {
+        AccountService::open_authenticated(self, caller, grant, endpoint)
+    }
+
     fn remove(
         &self,
         id: &AccountId,
@@ -173,6 +195,8 @@ pub(crate) struct Core<H, C> {
     pub(crate) adopt: AdoptConfig,
     /// The user's `clients.toml`, which Settings writes.
     pub(crate) clients: Option<std::path::PathBuf>,
+    /// The connector the authenticated relays dial with.
+    pub(crate) relays: Relays,
 }
 
 fn held<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -226,6 +250,25 @@ impl<H: Host, C: Callers> Core<H, C> {
         match reply {
             AccountsReply::Refused(refusal) => Err(RefusedError::of(refusal)),
             reply => Ok(reply),
+        }
+    }
+
+    /// Marks the account `grant` is for as needing reauthentication, and tells the clients.
+    pub(crate) async fn needs_reauth(self: &Arc<Self>, grant: &GrantId) {
+        let account = self
+            .host
+            .registry()
+            .grants
+            .iter()
+            .find(|g| g.id == *grant)
+            .map(|g| g.key.account.clone());
+        if let Some(account) = account
+            && self
+                .host
+                .set_state(&account, AccountState::NeedsReauth)
+                .await
+        {
+            self.publish().await;
         }
     }
 
@@ -326,6 +369,9 @@ pub struct Options {
     /// The user's `clients.toml` (`$XDG_CONFIG_HOME/porter/clients.toml`), which the settings
     /// module writes; none refuses writes.
     pub clients: Option<std::path::PathBuf>,
+    /// The certificates an authenticated relay trusts: the platform's, or (a test seam) a
+    /// scratch CA alone.
+    pub relay_roots: RelayRoots,
 }
 
 /// Serves `org.quire.Accounts1` on `connection` over `host`, answering for the apps `callers`
@@ -356,6 +402,7 @@ pub async fn serve_with<H: Host, C: Callers>(
         published: Mutex::new(published),
         adopt: options.adopt,
         clients: options.clients,
+        relays: Relays::new(options.relay_roots),
     });
     let server: &ObjectServer = connection.object_server();
     server

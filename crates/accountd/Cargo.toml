@@ -15,11 +15,13 @@ porter-discover = { workspace = true, features = ["io"] }
 porter-families = { workspace = true, features = ["nextcloud", "generic", "microsoft", "api_key", "openrouter"] }
 porter-http = { workspace = true, features = ["hyper"] }
 porter-provider = { workspace = true }
+porter-proxy = { workspace = true, features = ["tls"] }
 porter-secrets = { workspace = true, features = ["oo7"] }
 porter-service = { workspace = true }
 ds-settings = { workspace = true }
 clap = { workspace = true }
 oo7 = { workspace = true }
+rustls-pki-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
@@ -28,6 +30,7 @@ zbus = { workspace = true }
 
 [dev-dependencies]
 porter-fake = { workspace = true }
+porter-fake-servers = { workspace = true }
 tokio = { workspace = true }
 
 [lints]

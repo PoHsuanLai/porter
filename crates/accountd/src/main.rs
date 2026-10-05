@@ -10,8 +10,8 @@ mod clock;
 
 use accountd::paths::{BUILD, Paths, proc_root};
 use accountd::{
-    AdoptConfig, AdoptTable, BusSheets, FileAudit, FileStore, Oo7Legacy, Options, load_callers,
-    serve_with,
+    AdoptConfig, AdoptTable, BusSheets, FileAudit, FileStore, Oo7Legacy, Options, RelayRoots,
+    load_callers, serve_with,
 };
 use clap::Parser;
 use clock::SystemClock;
@@ -104,6 +104,7 @@ async fn main() -> ExitCode {
             store: Some(Arc::new(Oo7Legacy)),
         },
         clients: Some(paths.clients_user.clone()),
+        relay_roots: RelayRoots::Platform,
     };
     if let Err(why) = serve_with(&connection, service, callers, options).await {
         return fail(format!("cannot serve {}: {why}", porter_dbus::ACCOUNTS_BUS));
