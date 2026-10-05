@@ -61,7 +61,11 @@ async fn main() -> ExitCode {
     for (file, why) in &loaded.skipped {
         eprintln!("accountd: skipped provider file {}: {why}", file.display());
     }
-    let (families, unserved) = accountd::providers::served(loaded.specs);
+    let io = accountd::providers::FamilyIo::system(porter_provider::ProviderSet::layered(
+        loaded.specs.clone(),
+        Vec::new(),
+    ));
+    let (families, unserved) = accountd::providers::served(loaded.specs, &io);
     for spec in &unserved {
         eprintln!("accountd: no family serves provider `{}` yet", spec.id);
     }

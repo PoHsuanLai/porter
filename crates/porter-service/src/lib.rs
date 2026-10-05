@@ -5,9 +5,9 @@
 //! it behind D-Bus and the socket, and an app may host it in process.
 
 mod add;
-mod adopt;
 mod add_flow;
 mod add_store;
+mod adopt;
 mod audience;
 mod audit;
 mod choose;
@@ -21,8 +21,8 @@ mod sheets;
 mod store;
 mod token;
 
-pub use adopt::{LegacyFault, LegacyStore, legacy_entry};
 pub use add_flow::AllowFor;
+pub use adopt::{LegacyFault, LegacyStore, legacy_entry};
 pub use audit::{AuditSink, NoAudit};
 pub use clock::Clock;
 pub use manage::RevokeReport;

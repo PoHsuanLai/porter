@@ -11,7 +11,9 @@ publish.workspace = true
 [dependencies]
 porter-core = { workspace = true }
 porter-dbus = { workspace = true }
+porter-discover = { workspace = true, features = ["io"] }
 porter-families = { workspace = true, features = ["nextcloud", "generic", "microsoft", "api_key", "openrouter"] }
+porter-http = { workspace = true, features = ["hyper"] }
 porter-provider = { workspace = true }
 porter-secrets = { workspace = true, features = ["oo7"] }
 porter-service = { workspace = true }
