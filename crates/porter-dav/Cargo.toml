@@ -13,6 +13,7 @@ porter-core = { workspace = true }
 porter-http = { workspace = true }
 
 thiserror = { workspace = true }
+roxmltree = { workspace = true }
 
 [lints]
 workspace = true

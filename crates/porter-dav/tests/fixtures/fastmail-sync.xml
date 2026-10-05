@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<D:multistatus xmlns:D="DAV:" xmlns:A="urn:ietf:params:xml:ns:carddav">
+<D:response>
+<D:href>/dav/addressbooks/user/alice@fastmail.example/Default/6f1c.vcf</D:href>
+<D:propstat><D:prop><D:getetag>"1b2c3d"</D:getetag></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat>
+</D:response>
+<D:response>
+<D:href>/dav/addressbooks/user/alice@fastmail.example/Default/91aa.vcf</D:href>
+<D:propstat><D:prop><D:getetag>"4e5f6a"</D:getetag></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat>
+</D:response>
+<D:response>
+<D:href>/dav/addressbooks/user/alice@fastmail.example/Default/dead.vcf</D:href>
+<D:status>HTTP/1.1 404 Not Found</D:status>
+</D:response>
+<D:response>
+<D:href>/dav/addressbooks/user/alice@fastmail.example/Default/dead2.vcf</D:href>
+<D:status>HTTP/1.1 404 Not Found</D:status>
+</D:response>
+<D:sync-token>data:,2f9a1c</D:sync-token>
+</D:multistatus>

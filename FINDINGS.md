@@ -25,7 +25,6 @@ Each row names the lane of the accounts program (porter PLAN §6) that removes i
 | porter-discover MX to ISPDB uses each parent of the MX host, not the public-suffix list | `psl` joins the pinned block (mailo uses `psl = "2"`); until then a miss costs a few 404s to the ISPDB, and nothing sensitive is sent |
 | porter-oauth: no shipped `/usr/share/porter/clients.toml` yet, and the Microsoft client id in it | packaging, once the owner has registered the Entra app (D2); `ClientRegistry::from_paths` reads it. No Google row ships (Google is a TODO). Issuer endpoint URLs in `Issuer::endpoints` were written from the issuers' documented values and were not re-fetched in the jail (no network): re-check each against its current documentation when the Microsoft family (W5b) and OpenRouter (AI2) first run live |
 | porter-oauth: mailo E4 | `from_mailo` + `clients_toml` read mailo's `oauth.json` and write the person's `clients.toml`; E4 calls them once and deletes mailo's `oauth.rs`, `signin.rs`, `renewal.rs`, `loopback.rs` |
-| porter-dav `parse_multistatus`, `propfind`, `report_sync_collection`, `parse_sync_collection` (4) | W3b; `parse_multistatus` needs an XML reader in the pinned block |
 | porter-families `nextcloud`, `generic`: `discover`, `open`, `sign_in`, `revoke`, `access_token`, `renewed`, `SignIn::next` (7 each, from one macro) | W3c |
 | porter-families `microsoft` (7) | W5b |
 | porter-families `api_key`, `openrouter` (7 each) | AI2 |

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<multistatus xmlns="DAV:">
+  <response>
+    <href>/dav/cal/work/a.ics</href>
+    <propstat><prop><getetag>"a1"</getetag></prop><status>HTTP/1.1 200 OK</status></propstat>
+  </response>
+  <response>
+    <href>/dav/cal/work/b.ics</href>
+    <propstat><prop><getetag>"b1"</getetag></prop><status>HTTP/1.1 200 OK</status></propstat>
+  </response>
+  <sync-token>urn:sync:1</sync-token>
+</multistatus>
