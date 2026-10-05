@@ -72,7 +72,7 @@ impl CallerTable {
             })
         });
         let apps = self.apps.iter().flat_map(|(app, units)| {
-            exes.iter().map(move |unit| CallerRow {
+            units.iter().map(move |unit| CallerRow {
                 unit: Some(unit.clone()),
                 app: app.clone(),
                 role: CallerRole::App,

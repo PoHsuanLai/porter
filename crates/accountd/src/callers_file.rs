@@ -64,8 +64,7 @@ mod tests {
         [[caller]]\napp = \"org.example.Mine\"\nunit = \"inferd.service\"\nrole = \"app\"\n";
 
     fn scratch(name: &str) -> PathBuf {
-        let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-            .join(format!("callers-file-{}-{name}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("callers-file-{}-{name}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("scratch");
         dir
     }

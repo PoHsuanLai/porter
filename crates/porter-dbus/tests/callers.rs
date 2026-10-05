@@ -191,7 +191,7 @@ fn nothing_but_the_cgroup_file_is_read() {
         let dir = s.path().join(pid.to_string());
         for entry in ["exe", "root"] {
             std::fs::create_dir(dir.join(entry)).expect("entry");
-            std::fs::set_permissions(dir.join(entry), std::fs::Permissions::from_mode(0))
+            std::fs::set_permissions(dir.join(entry), std::fs::Permissions::from_mode(0o0))
                 .expect("chmod");
         }
     }
