@@ -127,7 +127,6 @@ pub struct Rig {
     pub graph: Arc<Graph>,
     pub clock: Arc<AtomicI64>,
     pub provider: MicrosoftProvider<Wire>,
-    pub env: MicrosoftEnv<Wire>,
 }
 
 pub fn client(issuer: &IssuerHandle) -> ClientEntry {
@@ -177,8 +176,7 @@ impl Rig {
             issuer,
             graph,
             clock,
-            provider: MicrosoftProvider::with_env(spec(), env.clone()),
-            env,
+            provider: MicrosoftProvider::with_env(spec(), env),
         }
     }
 
