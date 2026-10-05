@@ -44,20 +44,28 @@ pub trait Host: Send + Sync + 'static {
     /// A copy of the registry, for the objects that mirror accounts.
     fn registry(&self) -> Registry;
 
-    /// Adopts a legacy account from `store` under the legacy `service`.
+    /// Adopts a legacy account from `store` under the legacy `service`. A host with no legacy
+    /// store refuses.
     fn adopt_from(
         &self,
         store: &dyn LegacyStore,
         service: &str,
         caller: &AppId,
         legacy: LegacyRef,
-    ) -> impl Future<Output = AccountsReply> + Send;
+    ) -> impl Future<Output = AccountsReply> + Send {
+        let _ = (store, service, caller, legacy);
+        async { AccountsReply::Refused(Refusal::Unavailable) }
+    }
 
-    /// Removes an account: revoke at the provider (best effort), then every wipe.
+    /// Removes an account: revoke at the provider (best effort), then every wipe. A host that
+    /// cannot manage accounts says its secret store is unavailable.
     fn remove(
         &self,
         id: &AccountId,
-    ) -> impl Future<Output = Result<RevokeReport, SecretsError>> + Send;
+    ) -> impl Future<Output = Result<RevokeReport, SecretsError>> + Send {
+        let _ = id;
+        async { Err(SecretsError::Unavailable) }
+    }
 
     /// Switches one kind of one account on or off.
     fn set_toggle(
@@ -65,13 +73,22 @@ pub trait Host: Send + Sync + 'static {
         id: &AccountId,
         kind: CapabilityKind,
         toggle: Toggle,
-    ) -> impl Future<Output = Result<(), Refusal>> + Send;
+    ) -> impl Future<Output = Result<(), Refusal>> + Send {
+        let _ = (id, kind, toggle);
+        async { Err(Refusal::Unavailable) }
+    }
 
     /// Withdraws any grant, whoever holds it.
-    fn revoke_grant(&self, grant: &GrantId) -> impl Future<Output = Result<(), Refusal>> + Send;
+    fn revoke_grant(&self, grant: &GrantId) -> impl Future<Output = Result<(), Refusal>> + Send {
+        let _ = grant;
+        async { Err(Refusal::Unavailable) }
+    }
 
     /// Sets an account's state; whether it changed.
-    fn set_state(&self, id: &AccountId, state: AccountState) -> impl Future<Output = bool> + Send;
+    fn set_state(&self, id: &AccountId, state: AccountState) -> impl Future<Output = bool> + Send {
+        let _ = (id, state);
+        async { false }
+    }
 }
 
 impl<P, S, U, K, R, A> Host for AccountService<P, S, U, K, R, A>
