@@ -75,7 +75,6 @@ model-replay        = { path = "../stoker/crates/model-replay" }
 # names itself, as mailo does.
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "net", "io-util", "process"] }
 thiserror = "2"
-# porter-discover (autoconfig XML), porter-dav (multistatus): mailo's parser, so its tests port as they are.
 roxmltree = "0.21"
 # porter-http's client, as stoker's model-http takes it. The TLS stack (hyper-rustls, rustls)
 # joins with the first family that dials a TLS endpoint (FINDINGS.md).
@@ -100,8 +99,6 @@ oo7 = "0.6"
 keyring-core = "1"
 apple-native-keyring-store = { version = "1", features = ["keychain"] }
 windows-native-keyring-store = "1"
-# porter-discover (autoconfig XML), porter-dav (multistatus): mailo's parser, so its tests port as they are.
-roxmltree = "0.21"
 # porter-discover: SRV and MX behind the `Dns` seam.
 hickory-resolver = "0.26"
 rustix = { version = "1.1", default-features = false, features = ["std", "event", "fs", "net", "time", "process"] }
