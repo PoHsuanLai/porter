@@ -1897,7 +1897,6 @@ dependencies = [
 name = "porter-service"
 version = "0.1.0"
 dependencies = [
- "base64",
  "porter-core",
  "porter-provider",
  "porter-secrets",

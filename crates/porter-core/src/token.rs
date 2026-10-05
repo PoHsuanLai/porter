@@ -16,7 +16,8 @@ pub struct Audience(pub String);
 pub enum TokenKind {
     /// An HTTP bearer access token.
     Bearer,
-    /// A SASL XOAUTH2 string for IMAP and SMTP.
+    /// A SASL XOAUTH2 string for IMAP and SMTP, unencoded (`user=..^Aauth=Bearer ..^A^A`); the
+    /// protocol base64-encodes it on the wire.
     Xoauth2,
     /// A handle inferd resolves to an API key; the key itself never leaves the daemons.
     ApiKeyHandle,

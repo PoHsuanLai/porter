@@ -9,8 +9,6 @@ use crate::clock::Clock;
 use crate::service::AccountService;
 use crate::sheets::Sheets;
 use crate::token::{provider_refusal, secret_purpose, secrets_refusal};
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD;
 use porter_core::wire::Refusal;
 use porter_core::{
     Account, Audience, CapabilityKind, Credential, Family, RelayAuth, RelayPlan, SecretKey,
@@ -31,24 +29,14 @@ fn password_purposes(family: Family, kind: CapabilityKind) -> Vec<SecretPurpose>
 }
 
 /// The bearer inside a token a provider issued as `kind`: a bearer is the token itself; an
-/// XOAUTH2 string is `user=..^Aauth=Bearer <token>^A^A`, plain or base64.
+/// XOAUTH2 string is `user=..^Aauth=Bearer <token>^A^A`, unencoded (porter-core `TokenKind`).
 fn bearer_of(kind: TokenKind, value: &SecretText) -> Option<SecretText> {
     match kind {
         TokenKind::Bearer => Some(value.clone()),
         TokenKind::Xoauth2 => {
-            let text = value.expose();
-            let decoded = STANDARD
-                .decode(text)
-                .ok()
-                .and_then(|bytes| String::from_utf8(bytes).ok());
-            [Some(text.to_owned()), decoded]
-                .into_iter()
-                .flatten()
-                .find_map(|candidate| {
-                    let after = candidate.split_once("auth=Bearer ")?.1;
-                    let token = after.split('\x01').next()?;
-                    (!token.is_empty()).then(|| SecretText::new(token))
-                })
+            let after = value.expose().split_once("auth=Bearer ")?.1;
+            let token = after.split('\x01').next()?;
+            (!token.is_empty()).then(|| SecretText::new(token))
         }
         TokenKind::ApiKeyHandle => None,
     }
@@ -150,12 +138,10 @@ mod tests {
     #[test]
     fn the_bearer_comes_out_of_whichever_form_the_provider_issued() {
         let raw = SecretText::new("user=ada\x01auth=Bearer tok-1\x01\x01");
-        let wrapped = SecretText::new(STANDARD.encode("user=ada\x01auth=Bearer tok-2\x01\x01"));
         let plain = SecretText::new("tok-3");
         let cases = [
             (TokenKind::Bearer, &plain, Some("tok-3")),
             (TokenKind::Xoauth2, &raw, Some("tok-1")),
-            (TokenKind::Xoauth2, &wrapped, Some("tok-2")),
             (TokenKind::Xoauth2, &plain, None),
             (TokenKind::ApiKeyHandle, &plain, None),
         ];

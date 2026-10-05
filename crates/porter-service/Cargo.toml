@@ -11,7 +11,6 @@ publish.workspace = true
 [dependencies]
 porter-core = { workspace = true }
 porter-provider = { workspace = true }
-base64 = { workspace = true }
 porter-secrets = { workspace = true }
 
 [lints]
