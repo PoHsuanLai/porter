@@ -111,15 +111,24 @@ impl Family {
     /// contacts CardDAV (or JMAP); notes the Nextcloud Notes API. Every other family is
     /// reached through its own client, not through an endpoint a candidate lists.
     pub fn serves(self, kind: CapabilityKind) -> bool {
-        match (self, kind) {
-            (Family::Imap | Family::Smtp | Family::Jmap, CapabilityKind::Mail)
-            | (Family::WebDav, CapabilityKind::Storage | CapabilityKind::Photos)
-            | (Family::CalDav, CapabilityKind::Calendar | CapabilityKind::Tasks)
-            | (Family::CardDav, CapabilityKind::Contacts)
-            | (Family::NextcloudNotes, CapabilityKind::Notes)
-            | (Family::Jmap, CapabilityKind::Calendar | CapabilityKind::Contacts) => true,
-            _ => false,
-        }
+        matches!(
+            (self, kind),
+            (
+                Family::Imap | Family::Smtp | Family::Jmap,
+                CapabilityKind::Mail
+            ) | (
+                Family::WebDav,
+                CapabilityKind::Storage | CapabilityKind::Photos
+            ) | (
+                Family::CalDav,
+                CapabilityKind::Calendar | CapabilityKind::Tasks
+            ) | (Family::CardDav, CapabilityKind::Contacts)
+                | (Family::NextcloudNotes, CapabilityKind::Notes)
+                | (
+                    Family::Jmap,
+                    CapabilityKind::Calendar | CapabilityKind::Contacts
+                )
+        )
     }
 }
 

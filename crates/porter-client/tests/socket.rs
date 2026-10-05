@@ -15,7 +15,7 @@ use porter_client::{
 use porter_core::capability::{Access, CuaEnv, Delta, QuotaReport, StorageScope};
 use porter_core::consent::{GrantScope, Usage};
 use porter_core::need::{CuaNeed, DimsNeed, EmbedNeed, StorageNeed};
-use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
+use porter_core::wire::{ParentWindow, Refusal};
 use porter_core::{
     AccountId, AppId, AppName, Audience, DataClass, Dims, Isolation, Locality, ModelId, Need, Tier,
     Tokens,

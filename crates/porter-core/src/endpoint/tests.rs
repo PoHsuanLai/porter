@@ -123,7 +123,14 @@ fn origins_compare_whole_hosts_not_suffixes() {
 
 #[test]
 fn an_endpoint_must_be_coherent() {
-    const CASES: &[(&str, Family, &str, Tls, Result<(), EndpointFault>)] = &[
+    type Case = (
+        &'static str,
+        Family,
+        &'static str,
+        Tls,
+        Result<(), EndpointFault>,
+    );
+    const CASES: &[Case] = &[
         (
             "imaps",
             Family::Imap,

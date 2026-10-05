@@ -688,7 +688,7 @@ fn every_sheet_view_round_trips() {
 
 #[test]
 fn every_sheet_input_and_progress_round_trips() {
-    let inputs = vec![
+    let inputs = [
         SheetInput::Answer(ConsentAnswer::Deny),
         SheetInput::Pick(ProviderId::parse("nextcloud").expect("provider")),
         SheetInput::Submit(vec![
@@ -711,7 +711,7 @@ fn every_sheet_input_and_progress_round_trips() {
     ];
     inputs.iter().for_each(round_trip);
     let url = EndpointUrl::parse("https://login.example.org/device").expect("url");
-    let steps = vec![
+    let steps = [
         Progress::Ask(vec![field(FieldKind::ApiKey, Entry::Secret)]),
         Progress::Browser(url.clone()),
         Progress::Code {
