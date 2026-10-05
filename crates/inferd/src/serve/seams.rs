@@ -3,8 +3,10 @@
 //! `impl Future + Send`, as everywhere in porter; none needs `dyn`.
 
 use super::carried::Carried;
-use crate::session::{RouteDecision, SessionSpec};
-use porter_infer::{AudioFrame, InferEvent, InferReply, InferRequest, ModelRef, PickRefusal, Why};
+use crate::session::{RouteDecision, Routing, SessionSpec};
+use porter_infer::{
+    AudioFrame, InferEvent, InferRefusal, InferReply, InferRequest, ModelRef, PickRefusal, Why,
+};
 use std::future::Future;
 use std::os::fd::OwnedFd;
 
@@ -15,7 +17,21 @@ pub trait Router: Send + Sync {
     fn route(
         &self,
         spec: &SessionSpec,
-    ) -> impl Future<Output = Result<RouteDecision, PickRefusal>> + Send;
+    ) -> impl Future<Output = Result<RouteDecision, InferRefusal>> + Send;
+
+    /// `route` with the reason, and the named model that could not serve when that is why it
+    /// refused. A router that has no reason to give is as good as named and announces nothing.
+    fn route_why(
+        &self,
+        spec: &SessionSpec,
+    ) -> impl Future<Output = Result<Routing, PickRefusal>> + Send {
+        async move {
+            self.route(spec)
+                .await
+                .map(Routing::from)
+                .map_err(PickRefusal::from)
+        }
+    }
 }
 
 /// The engine could not be brought up.
@@ -67,16 +83,28 @@ pub trait TurnRunner: Send + Sync {
 /// Where the finished turns are recorded (spend and the audit entry; never content).
 pub trait AuditSink: Send + Sync {
     /// One turn ended with `reply` on a session of `spec` pinned to `served`; `carried` says what
-    /// its request held (how many frames, how much audio), which the reply does not; `why` is the
-    /// route's reason, recorded beside the model.
+    /// its request held (how many frames, how much audio), which the reply does not.
     fn record(
         &self,
         spec: &SessionSpec,
         served: &porter_infer::ServedBy,
         reply: &InferReply,
         carried: &Carried,
-        why: &Why,
     );
+
+    /// `record` with the route's reason, which the audit entry keeps beside the model. A sink
+    /// that does not keep it drops it.
+    fn record_why(
+        &self,
+        spec: &SessionSpec,
+        served: &porter_infer::ServedBy,
+        reply: &InferReply,
+        carried: &Carried,
+        why: &Why,
+    ) {
+        let _ = why;
+        self.record(spec, served, reply, carried);
+    }
 }
 
 /// The four seams one session server uses.

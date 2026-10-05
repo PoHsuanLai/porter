@@ -50,7 +50,7 @@ pub async fn serve_session<R, E, T, A>(
         why: Why::Named,
         engines: &seams.engines,
     };
-    let routed = seams.router.route(&spec).await;
+    let routed = seams.router.route_why(&spec).await;
     if let Ok(decision) = &routed {
         live.why = decision.why.clone();
     }
@@ -195,7 +195,7 @@ where
                     let carried = live.tally.closing(&reply);
                     seams
                         .audit
-                        .record(spec, served, &reply, &carried, &live.why);
+                        .record_why(spec, served, &reply, &carried, &live.why);
                 }
             }
         }

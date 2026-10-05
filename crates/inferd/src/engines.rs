@@ -9,7 +9,7 @@ use crate::peers::Role;
 use crate::router::{Listed, choose};
 use crate::runner::{Pin, Pinned};
 use crate::serve::{EngineFailed, EngineHost};
-use crate::session::{RouteDecision, SessionSpec};
+use crate::session::{RouteDecision, Routing, SessionSpec};
 use crate::supervise::{Snapshot, Supervised};
 use crate::swap::{Budget, running_of, swap_cost};
 use engine_supervisor::{EngineId, EngineState, MonoMs};
@@ -201,7 +201,9 @@ impl Engines {
         spec: &SessionSpec,
         role: Role,
     ) -> Result<(RouteDecision, Pinned), InferRefusal> {
-        self.route_detailed(spec, role).map_err(|r| r.refusal)
+        self.route_detailed(spec, role)
+            .map(|(routing, pinned)| (routing.decision(), pinned))
+            .map_err(|r| r.refusal)
     }
 
     /// `route`, with the reason a named model could not serve when that is why it refused.
@@ -209,7 +211,7 @@ impl Engines {
         &self,
         spec: &SessionSpec,
         role: Role,
-    ) -> Result<(RouteDecision, Pinned), PickRefusal> {
+    ) -> Result<(Routing, Pinned), PickRefusal> {
         if matches!(spec.need, Need::ComputerUse(_)) && role != Role::Cua {
             return Err(InferRefusal::Denied.into());
         }
@@ -236,7 +238,7 @@ impl Engines {
             locality: model.card.locality.clone(),
         };
         Ok((
-            RouteDecision {
+            Routing {
                 served: served.clone(),
                 readiness,
                 why: decided.why,
@@ -391,10 +393,19 @@ pub struct SessionRouter {
 }
 
 impl crate::serve::Router for SessionRouter {
-    async fn route(&self, spec: &SessionSpec) -> Result<RouteDecision, PickRefusal> {
-        let (decision, pinned) = self.engines.route_detailed(spec, self.role)?;
+    async fn route(&self, spec: &SessionSpec) -> Result<RouteDecision, InferRefusal> {
+        let (routing, pinned) = self
+            .engines
+            .route_detailed(spec, self.role)
+            .map_err(|r| r.refusal)?;
         self.pin.set(pinned);
-        Ok(decision)
+        Ok(routing.decision())
+    }
+
+    async fn route_why(&self, spec: &SessionSpec) -> Result<Routing, PickRefusal> {
+        let (routing, pinned) = self.engines.route_detailed(spec, self.role)?;
+        self.pin.set(pinned);
+        Ok(routing)
     }
 }
 

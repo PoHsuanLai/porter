@@ -1,8 +1,7 @@
 //! Builders the step tables share.
 
 pub(super) use crate::session::{
-    AudioCursor, CuaProgress, Phase, RouteDecision, RoutedNote, SessionIn, SessionOut, SessionSpec,
-    step,
+    AudioCursor, CuaProgress, Phase, RoutedNote, Routing, SessionIn, SessionOut, SessionSpec, step,
 };
 use porter_core::capability::{CuaEnv, LanguageTag, SpeechMode};
 use porter_core::consent::Usage;
@@ -30,7 +29,7 @@ pub(super) fn served() -> ServedBy {
 }
 
 pub(super) fn decided(readiness: Readiness) -> SessionIn {
-    SessionIn::Routed(Ok(RouteDecision {
+    SessionIn::Routed(Ok(Routing {
         served: served(),
         readiness,
         why: Why::Named,
@@ -39,7 +38,7 @@ pub(super) fn decided(readiness: Readiness) -> SessionIn {
 }
 
 pub(super) fn decided_why(readiness: Readiness, why: Why, show: ShowReason) -> SessionIn {
-    SessionIn::Routed(Ok(RouteDecision {
+    SessionIn::Routed(Ok(Routing {
         served: served(),
         readiness,
         why,

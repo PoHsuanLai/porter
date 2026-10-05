@@ -64,7 +64,7 @@ fn a_finished_turn_is_one_entry_with_who_what_and_how_much_and_no_content() {
         memory.clone(),
         FixedClock(UnixSeconds(1_700_000_000)),
     );
-    audit.record(
+    audit.record_why(
         &spec(),
         &served(),
         &chat(usage(12, 5)),
@@ -121,14 +121,14 @@ fn lines_are_appended_as_json_and_read_back_unchanged() {
     let path = dir.path().join("state").join("audit.jsonl");
     let lines = JsonLines::new(path.clone());
     let audit = SessionAudit::new(app(), lines, FixedClock(UnixSeconds(5)));
-    audit.record(
+    audit.record_why(
         &spec(),
         &served(),
         &chat(usage(1, 1)),
         &nothing(),
         &Why::Named,
     );
-    audit.record(
+    audit.record_why(
         &spec(),
         &served(),
         &chat(usage(2, 2)),
@@ -158,7 +158,7 @@ fn an_unwritable_destination_loses_the_entry_and_never_the_turn() {
             &served(),
             &InferReply::Cancelled,
             &nothing(),
-            &Why::Named,
+            Some(&Why::Named),
         ),
     );
     Discard.append(
@@ -167,7 +167,7 @@ fn an_unwritable_destination_loses_the_entry_and_never_the_turn() {
             &served(),
             &InferReply::Cancelled,
             &nothing(),
-            &Why::Named,
+            Some(&Why::Named),
         ),
     );
 }
@@ -177,14 +177,14 @@ fn a_shared_destination_is_one_destination() {
     let memory = Arc::new(Memory::default());
     let one = SessionAudit::new(app(), Arc::clone(&memory), FixedClock(UnixSeconds(0)));
     let two = SessionAudit::new(app(), Arc::clone(&memory), FixedClock(UnixSeconds(0)));
-    one.record(
+    one.record_why(
         &spec(),
         &served(),
         &InferReply::Cancelled,
         &nothing(),
         &Why::Named,
     );
-    two.record(
+    two.record_why(
         &spec(),
         &served(),
         &InferReply::Cancelled,
@@ -202,7 +202,7 @@ fn what_the_request_carried_is_in_the_entry_as_counts_and_nothing_else() {
         images: Count(3),
         audio_ms: Count(1_250),
     };
-    audit.record(
+    audit.record_why(
         &spec(),
         &served(),
         &chat(usage(1, 1)),
@@ -219,7 +219,7 @@ fn what_the_request_carried_is_in_the_entry_as_counts_and_nothing_else() {
 fn the_json_shape_is_pinned_and_carries_the_class_never_content() {
     let memory = Memory::default();
     let audit = SessionAudit::new(app(), memory.clone(), FixedClock(UnixSeconds(7)));
-    audit.record(
+    audit.record_why(
         &spec(),
         &served(),
         &chat(usage(12, 5)),
@@ -262,7 +262,7 @@ fn the_entry_records_why_the_route_chose_the_model_and_an_old_line_still_reads()
             model: ModelId::parse("old").expect("id"),
         },
     };
-    audit.record(&spec(), &served(), &chat(usage(1, 1)), &nothing(), &why);
+    audit.record_why(&spec(), &served(), &chat(usage(1, 1)), &nothing(), &why);
     let entry = memory.entries().remove(0);
     assert_eq!(entry.why, Some(why));
     // A line written before the router said why has no `why` key.
@@ -270,4 +270,12 @@ fn the_entry_records_why_the_route_chose_the_model_and_an_old_line_still_reads()
     json.as_object_mut().expect("object").remove("why");
     let old: AuditEntry = serde_json::from_value(json).expect("reads");
     assert_eq!(old.why, None);
+}
+
+#[test]
+fn a_sink_asked_without_a_reason_records_none() {
+    let memory = Memory::default();
+    let audit = SessionAudit::new(app(), memory.clone(), FixedClock(UnixSeconds(0)));
+    audit.record(&spec(), &served(), &chat(usage(1, 1)), &nothing());
+    assert_eq!(memory.entries()[0].why, None);
 }

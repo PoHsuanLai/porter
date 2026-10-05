@@ -1,8 +1,8 @@
 //! The transition function of one session (see the parent module for the states).
 
 use super::{
-    AudioCursor, CuaProgress, Phase, RouteDecision, RoutedNote, SessionIn, SessionOut, SessionSpec,
-    fits, model_of,
+    AudioCursor, CuaProgress, Phase, RoutedNote, Routing, SessionIn, SessionOut, SessionSpec, fits,
+    model_of,
 };
 use crate::speech::check_audio;
 use porter_infer::{
@@ -113,7 +113,7 @@ fn refused(refusal: InferRefusal) -> SessionOut {
 
 /// The reason, before anything else: announced when the person asked to see it, and always when
 /// a model is unloaded for this one (a swap is never hidden).
-fn why_event(decision: &RouteDecision) -> Option<SessionOut> {
+fn why_event(decision: &Routing) -> Option<SessionOut> {
     let evicting = matches!(decision.why, Why::Evicted { .. });
     (decision.show == ShowReason::On || evicting)
         .then(|| SessionOut::Emit(InferEvent::Why(decision.why.clone())))

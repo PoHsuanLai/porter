@@ -387,7 +387,12 @@ fn automatic_names_the_idle_model_it_unloads_and_only_when_allowed() {
         },
         ..listed(local("alpha"), Readiness::Loadable)
     };
-    let got = decide(&[swapping.clone()], &auto_map(), AutoPolicy::default()).expect("swaps");
+    let got = decide(
+        std::slice::from_ref(&swapping),
+        &auto_map(),
+        AutoPolicy::default(),
+    )
+    .expect("swaps");
     assert_eq!(
         got.why,
         Why::Evicted {

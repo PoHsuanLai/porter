@@ -137,7 +137,7 @@ fn push(rig: &Rig, which: usize, step: TurnStep) {
 #[tokio::test]
 async fn a_refused_route_is_the_first_event_and_then_the_socket_closes() {
     let mut rig = start(
-        FixedRouter(Err(InferRefusal::NeedsGrant.into())),
+        FixedRouter(Err(InferRefusal::NeedsGrant)),
         Engines::default(),
         mail(),
     );

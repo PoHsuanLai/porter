@@ -55,10 +55,41 @@ pub struct RouteDecision {
     pub served: ServedBy,
     /// How soon it can answer; not `Ready` shows the client a `Waiting` event.
     pub readiness: Readiness,
+}
+
+/// A [`RouteDecision`] with the reason for it: what the session machine and the audit entry read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Routing {
+    /// The account, model and locality the session is pinned to.
+    pub served: ServedBy,
+    /// How soon it can answer; not `Ready` shows the client a `Waiting` event.
+    pub readiness: Readiness,
     /// Why this model: announced to the client, and recorded in the audit entry.
     pub why: Why,
     /// Whether the reason is announced (`ai.auto.show_reason`); an eviction always is.
     pub show: ShowReason,
+}
+
+impl Routing {
+    /// The decision without its reason.
+    pub fn decision(&self) -> RouteDecision {
+        RouteDecision {
+            served: self.served.clone(),
+            readiness: self.readiness,
+        }
+    }
+}
+
+impl From<RouteDecision> for Routing {
+    /// A router that gives no reason: the model is as good as named, and nothing is announced.
+    fn from(decision: RouteDecision) -> Self {
+        Self {
+            served: decision.served,
+            readiness: decision.readiness,
+            why: Why::Named,
+            show: ShowReason::Off,
+        }
+    }
 }
 
 /// The engine's key for a served model.
@@ -125,7 +156,7 @@ pub enum Phase {
 #[derive(Debug, Clone, PartialEq)]
 pub enum SessionIn {
     /// The route decided: who answers, or why none.
-    Routed(Result<RouteDecision, PickRefusal>),
+    Routed(Result<Routing, PickRefusal>),
     /// The chosen engine is ready.
     EngineReady,
     /// The engine's readiness changed while the session waits (a download's progress); the

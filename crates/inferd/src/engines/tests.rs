@@ -265,7 +265,7 @@ async fn the_session_router_writes_the_pin_the_runner_reads() {
     let none = Engines::default().router(empty.clone(), Role::App);
     assert_eq!(
         none.route(&spec(llm(), DataClass::Notes)).await.err(),
-        Some(InferRefusal::Unavailable.into())
+        Some(InferRefusal::Unavailable)
     );
     assert!(empty.get().is_none());
 }
@@ -389,7 +389,7 @@ async fn a_route_says_why_and_the_snapshot_keeps_the_gpu_the_swap_cost_reads() {
     let scratch = Scratch::new("eng-why");
     let engines = start(&scratch, Recorder::default());
     let (decision, _) = engines
-        .route(&spec(llm(), DataClass::Notes), Role::App)
+        .route_detailed(&spec(llm(), DataClass::Notes), Role::App)
         .expect("route");
     assert_eq!(decision.why, porter_infer::Why::CatalogueOrder);
     assert_eq!(decision.show, porter_infer::ShowReason::On);

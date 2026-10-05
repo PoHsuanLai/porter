@@ -126,7 +126,7 @@ impl<O: AuditOut, C: Clock> SessionAudit<O, C> {
         served: &ServedBy,
         reply: &InferReply,
         carried: &Carried,
-        why: &Why,
+        why: Option<&Why>,
     ) -> AuditEntry {
         AuditEntry {
             at: self.clock.now(),
@@ -139,13 +139,18 @@ impl<O: AuditOut, C: Clock> SessionAudit<O, C> {
             bytes_out: Bytes(0),
             images: carried.images,
             audio_ms: carried.audio_ms,
-            why: Some(why.clone()),
+            why: why.cloned(),
         }
     }
 }
 
 impl<O: AuditOut, C: Clock> AuditSink for SessionAudit<O, C> {
-    fn record(
+    fn record(&self, spec: &SessionSpec, served: &ServedBy, reply: &InferReply, carried: &Carried) {
+        self.out
+            .append(&self.entry(spec, served, reply, carried, None));
+    }
+
+    fn record_why(
         &self,
         spec: &SessionSpec,
         served: &ServedBy,
@@ -154,7 +159,7 @@ impl<O: AuditOut, C: Clock> AuditSink for SessionAudit<O, C> {
         why: &Why,
     ) {
         self.out
-            .append(&self.entry(spec, served, reply, carried, why));
+            .append(&self.entry(spec, served, reply, carried, Some(why)));
     }
 }
 
