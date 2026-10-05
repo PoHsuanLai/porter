@@ -9,7 +9,9 @@
 //!
 //! Rules, in order of importance:
 //! - A typed secret appears in exactly one effect, `Feed(Fields)`; nothing else carries it.
-//! - `Store` comes only from `Confirm`, or from `Done` of a re-sign-in (which has no review).
+//! - `Store` comes only when the sign-in says `Done`: after a `Confirm` it carries the person's
+//!   choices (kept in `Stage::Confirming`), after a re-sign-in's `Done` with no review it is empty.
+//!   A sign-in that fails after `Confirm` stores nothing.
 //! - A second press while something runs does nothing (`Working` takes no input but Dismiss).
 //! - Dismiss and `Left` cancel a sign-in that is in flight, then close; every stage can end.
 //! - What does not fit the stage (a late progress, a pick on the form) is dropped, not guessed.
@@ -22,6 +24,7 @@ use crate::sheet::fields::{FieldAnswer, FieldKind, FieldSpec, FieldValue, Presen
 use crate::sheet::input::SheetInput;
 use crate::sheet::progress::{Progress, SignInFault, SignInInput};
 use crate::sheet::view::{FieldProblem, ProblemKind};
+use crate::wire::ProviderHint;
 
 pub(super) fn step(sheet: Sheet, event: SheetEvent) -> (Sheet, Vec<SheetEffect>) {
     match event {
@@ -54,6 +57,7 @@ fn in_flight(stage: &Stage) -> bool {
             | Stage::Asking { .. }
             | Stage::Browser { .. }
             | Stage::Code { .. }
+            | Stage::Confirming { .. }
             | Stage::Reviewing { .. }
     )
 }
@@ -84,13 +88,8 @@ fn on_input(sheet: Sheet, input: SheetInput) -> (Sheet, Vec<SheetEffect>) {
         (Stage::Reviewing { provider, .. }, SheetInput::Confirm(choices)) => {
             let provider = provider.clone();
             let feed = SheetEffect::Feed(SignInInput::Confirm(choices.clone()));
-            let store = match sheet.purpose {
-                Purpose::Add { .. } => Some(SheetEffect::Store(choices)),
-                Purpose::Reauthenticate { .. } => None,
-            };
-            let (sheet, mut effects) = to(sheet, Stage::Working(provider));
+            let (sheet, mut effects) = to(sheet, Stage::Confirming { provider, choices });
             effects.push(feed);
-            effects.extend(store);
             (sheet, effects)
         }
         (Stage::Failed { provider, fault }, SheetInput::Retry) if retryable(*fault) => {
@@ -107,10 +106,31 @@ fn on_input(sheet: Sheet, input: SheetInput) -> (Sheet, Vec<SheetEffect>) {
         ) => {
             let provider = provider.clone();
             let cancel = in_flight(&sheet.stage);
-            restart(sheet, provider, cancel)
+            back(sheet, provider, cancel)
         }
         _ => ignore(sheet),
     }
+}
+
+/// One step back: to the provider list where the person chose from it, else the provider's
+/// sign-in starts over from its first question.
+fn back(sheet: Sheet, provider: crate::id::ProviderId, cancel: bool) -> (Sheet, Vec<SheetEffect>) {
+    let listed = matches!(
+        sheet.purpose,
+        Purpose::Add {
+            hint: ProviderHint::Any,
+            ..
+        }
+    ) && !sheet.providers.is_empty();
+    if !listed {
+        return restart(sheet, provider, cancel);
+    }
+    let list = Stage::Choosing(sheet.providers.clone());
+    let (sheet, mut effects) = to(sheet, list);
+    if cancel {
+        effects.push(SheetEffect::Feed(SignInInput::Cancel));
+    }
+    (sheet, effects)
 }
 
 /// Starts the provider's sign-in again from its first question.
@@ -199,11 +219,18 @@ fn submit(sheet: Sheet, answers: Vec<FieldAnswer>) -> (Sheet, Vec<SheetEffect>) 
 fn on_progress(sheet: Sheet, progress: Progress) -> (Sheet, Vec<SheetEffect>) {
     let provider = match &sheet.stage {
         Stage::Working(p)
+        | Stage::Confirming { provider: p, .. }
         | Stage::Browser { provider: p, .. }
         | Stage::Code { provider: p, .. } => p.clone(),
         _ => return ignore(sheet),
     };
     match progress {
+        Progress::Done => done(sheet),
+        Progress::Waiting => (sheet, vec![SheetEffect::Feed(SignInInput::Poll)]),
+        Progress::Failed(fault) => to(sheet, Stage::Failed { provider, fault }),
+        // A question, a page, a code or a review belongs to a sign-in that has not been
+        // confirmed; after `Confirm` they are dropped.
+        _ if matches!(sheet.stage, Stage::Confirming { .. }) => ignore(sheet),
         Progress::Ask(fields) => to(
             sheet,
             Stage::Asking {
@@ -221,19 +248,27 @@ fn on_progress(sheet: Sheet, progress: Progress) -> (Sheet, Vec<SheetEffect>) {
                 url,
             },
         ),
-        Progress::Waiting => (sheet, vec![SheetEffect::Feed(SignInInput::Poll)]),
         Progress::Review(review) => to(sheet, Stage::Reviewing { provider, review }),
-        Progress::Done => match sheet.purpose {
-            Purpose::Reauthenticate { .. } => (sheet, vec![SheetEffect::Store(vec![])]),
-            Purpose::Add { .. } => ignore(sheet),
-        },
-        Progress::Failed(fault) => to(sheet, Stage::Failed { provider, fault }),
+    }
+}
+
+/// The sign-in is done: the only place an account is stored.
+fn done(sheet: Sheet) -> (Sheet, Vec<SheetEffect>) {
+    match (&sheet.stage, &sheet.purpose) {
+        (Stage::Confirming { choices, .. }, _) => {
+            let store = SheetEffect::Store(choices.clone());
+            (sheet, vec![store])
+        }
+        (Stage::Working(_), Purpose::Reauthenticate { .. }) => {
+            (sheet, vec![SheetEffect::Store(vec![])])
+        }
+        _ => ignore(sheet),
     }
 }
 
 fn on_stored(sheet: Sheet) -> (Sheet, Vec<SheetEffect>) {
     match sheet.stage {
-        Stage::Working(_) => {
+        Stage::Working(_) | Stage::Confirming { .. } => {
             let (sheet, mut effects) = to(sheet, Stage::Added);
             effects.push(SheetEffect::Close(SheetEnd::Added));
             (sheet, effects)
@@ -244,10 +279,10 @@ fn on_stored(sheet: Sheet) -> (Sheet, Vec<SheetEffect>) {
 
 fn on_store_failed(sheet: Sheet) -> (Sheet, Vec<SheetEffect>) {
     match &sheet.stage {
-        Stage::Working(provider) => {
+        Stage::Working(provider) | Stage::Confirming { provider, .. } => {
             let stage = Stage::Failed {
                 provider: provider.clone(),
-                fault: SignInFault::Unreadable,
+                fault: SignInFault::StoreFailed,
             };
             to(sheet, stage)
         }

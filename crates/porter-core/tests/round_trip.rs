@@ -722,6 +722,7 @@ fn every_sheet_input_and_progress_round_trips() {
         Progress::Review(review()),
         Progress::Done,
         Progress::Failed(SignInFault::TimedOut),
+        Progress::Failed(SignInFault::StoreFailed),
     ];
     steps.iter().for_each(round_trip);
 }

@@ -78,6 +78,7 @@ fn every_stage_has_its_view() {
             allow: None,
         },
         stage,
+        providers: rows(),
     };
     let cases: Vec<(&str, Stage, SheetView)> = vec![
         (
@@ -172,6 +173,7 @@ fn the_review_names_the_app_to_allow_when_a_chooser_started_the_sheet() {
             provider: provider("nextcloud"),
             review: review(),
         },
+        providers: rows(),
     };
     match sheet.view() {
         SheetView::Review(view) => assert_eq!(view.allow, Some(app)),

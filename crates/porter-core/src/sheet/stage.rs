@@ -65,6 +65,14 @@ pub enum Stage {
         /// The page.
         url: EndpointUrl,
     },
+    /// Confirmed: the sign-in is finishing, and the account is stored with these choices only
+    /// when it says it is done.
+    Confirming {
+        /// The provider.
+        provider: ProviderId,
+        /// The person's service choices.
+        choices: Vec<ServiceChoice>,
+    },
     /// What was found, shown and not used yet.
     Reviewing {
         /// The provider.
@@ -90,6 +98,8 @@ pub struct Sheet {
     pub purpose: Purpose,
     /// Where it stands.
     pub stage: Stage,
+    /// The providers the person may pick from; `Back` returns to this list.
+    pub providers: Vec<ProviderRow>,
 }
 
 /// What happened to the sheet.
@@ -144,9 +154,13 @@ impl Sheet {
             Purpose::Add {
                 hint: ProviderHint::Any,
                 ..
-            } => Stage::Choosing(providers),
+            } => Stage::Choosing(providers.clone()),
         };
-        Self { purpose, stage }
+        Self {
+            purpose,
+            stage,
+            providers,
+        }
     }
 
     /// What the host draws for this state.
@@ -166,7 +180,9 @@ impl Sheet {
                 fields: fields.clone(),
                 problem: *problem,
             }),
-            Stage::Working(provider) => SheetView::Working(provider.clone()),
+            Stage::Working(provider) | Stage::Confirming { provider, .. } => {
+                SheetView::Working(provider.clone())
+            }
             Stage::Browser { provider, url } => SheetView::BrowserWait {
                 provider: provider.clone(),
                 url: url.clone(),

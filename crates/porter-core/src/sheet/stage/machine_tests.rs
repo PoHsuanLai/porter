@@ -93,7 +93,11 @@ fn reauth() -> Purpose {
 }
 
 fn at(purpose: Purpose, stage: Stage) -> Sheet {
-    Sheet { purpose, stage }
+    Sheet {
+        purpose,
+        stage,
+        providers: rows(),
+    }
 }
 
 fn asking(problem: Option<FieldProblem>) -> Stage {
@@ -126,6 +130,13 @@ fn reviewing() -> Stage {
     }
 }
 
+fn confirming() -> Stage {
+    Stage::Confirming {
+        provider: nc(),
+        choices: choices(),
+    }
+}
+
 fn failed(fault: SignInFault) -> Stage {
     Stage::Failed {
         provider: nc(),
@@ -141,6 +152,7 @@ fn every_stage() -> Vec<(&'static str, Stage)> {
         ("browser", browser()),
         ("code", code()),
         ("reviewing", reviewing()),
+        ("confirming", confirming()),
         ("added", Stage::Added),
         ("failed", failed(SignInFault::Refused)),
     ]
@@ -266,7 +278,10 @@ fn progress_that_does_not_fit_the_stage_is_dropped() {
     for (name, stage) in every_stage() {
         if matches!(
             stage,
-            Stage::Working(_) | Stage::Browser { .. } | Stage::Code { .. }
+            Stage::Working(_)
+                | Stage::Confirming { .. }
+                | Stage::Browser { .. }
+                | Stage::Code { .. }
         ) {
             continue;
         }
@@ -351,25 +366,30 @@ fn a_form_can_be_resubmitted_after_a_problem_is_marked() {
 }
 
 #[test]
-fn add_stores_only_on_confirm_and_with_the_persons_choices() {
+fn confirm_stores_nothing_and_done_stores_the_choices() {
     let (stage, effects) = run(
         at(add(), reviewing()),
         input(SheetInput::Confirm(choices())),
     );
-    assert_eq!(stage, Stage::Working(nc()));
+    assert_eq!(stage, confirming());
     assert_eq!(
         effects,
         vec![
             SheetEffect::Show(SheetView::Working(nc())),
             SheetEffect::Feed(SignInInput::Confirm(choices())),
-            SheetEffect::Store(choices()),
-        ]
+        ],
+        "no Store before Done"
     );
-    // Reaching the review, or a sign-in that says Done, stores nothing for an add.
+    let (stage, effects) = run(at(add(), stage), SheetEvent::SignIn(Progress::Done));
+    assert_eq!(stage, confirming());
+    assert_eq!(effects, vec![SheetEffect::Store(choices())]);
+    // Reaching the review, or a sign-in that says Done with nothing confirmed, stores nothing.
     let (_, effects) = run(
         at(add(), Stage::Working(nc())),
         SheetEvent::SignIn(Progress::Done),
     );
+    assert_eq!(effects, vec![]);
+    let (_, effects) = run(at(add(), reviewing()), SheetEvent::SignIn(Progress::Done));
     assert_eq!(effects, vec![]);
     for (name, stage) in every_stage() {
         if matches!(stage, Stage::Reviewing { .. }) {
@@ -378,6 +398,28 @@ fn add_stores_only_on_confirm_and_with_the_persons_choices() {
         let (_, effects) = run(at(add(), stage), input(SheetInput::Confirm(choices())));
         assert!(effects.is_empty(), "{name}: Confirm outside the review");
     }
+}
+
+#[test]
+fn a_sign_in_that_fails_after_confirm_stores_nothing() {
+    for fault in [
+        SignInFault::Refused,
+        SignInFault::TimedOut,
+        SignInFault::Unreachable,
+    ] {
+        let (stage, effects) = run(
+            at(add(), confirming()),
+            SheetEvent::SignIn(Progress::Failed(fault)),
+        );
+        assert_eq!(stage, failed(fault));
+        assert_eq!(effects, vec![shown(failed(fault))], "{fault:?}: no Store");
+    }
+    // Questions and reviews after Confirm are dropped.
+    let (stage, effects) = run(
+        at(add(), confirming()),
+        SheetEvent::SignIn(Progress::Review(review())),
+    );
+    assert_eq!((stage, effects), (confirming(), vec![]));
 }
 
 #[test]
@@ -396,10 +438,11 @@ fn add_and_allow_stores_the_same_way_and_the_view_names_the_app() {
         [SheetEffect::Show(SheetView::Review(view))] => assert_eq!(view.allow, Some(app)),
         other => panic!("not the review: {other:?}"),
     }
-    let (_, effects) = step(sheet, input(SheetInput::Confirm(choices())));
+    let (sheet, _) = step(sheet, input(SheetInput::Confirm(choices())));
+    let (_, effects) = step(sheet, SheetEvent::SignIn(Progress::Done));
     assert_eq!(
-        effects.last(),
-        Some(&SheetEffect::Store(choices())),
+        effects,
+        vec![SheetEffect::Store(choices())],
         "one store, one grant"
     );
 }
@@ -430,10 +473,12 @@ fn stored_shows_done_and_closes_and_a_failed_store_fails_the_sheet() {
         ]
     );
     let (stage, effects) = run(at(add(), Stage::Working(nc())), SheetEvent::StoreFailed);
-    assert_eq!(stage, failed(SignInFault::Unreadable));
-    assert_eq!(effects, vec![shown(failed(SignInFault::Unreadable))]);
+    assert_eq!(stage, failed(SignInFault::StoreFailed));
+    assert_eq!(effects, vec![shown(failed(SignInFault::StoreFailed))]);
+    let (stage, _) = run(at(add(), confirming()), SheetEvent::Stored);
+    assert_eq!(stage, Stage::Added);
     for (name, stage) in every_stage() {
-        if matches!(stage, Stage::Working(_)) {
+        if matches!(stage, Stage::Working(_) | Stage::Confirming { .. }) {
             continue;
         }
         for event in [SheetEvent::Stored, SheetEvent::StoreFailed] {
@@ -466,7 +511,7 @@ fn retry_starts_over_unless_asking_again_cannot_help() {
 }
 
 #[test]
-fn back_cancels_what_runs_and_starts_the_provider_over() {
+fn back_returns_to_the_list_where_the_person_chose_from_it() {
     for (name, stage) in [
         ("form", asking(None)),
         ("browser", browser()),
@@ -474,24 +519,58 @@ fn back_cancels_what_runs_and_starts_the_provider_over() {
         ("review", reviewing()),
     ] {
         let (after, effects) = run(at(add(), stage), input(SheetInput::Back));
-        assert_eq!(after, Stage::Working(nc()), "{name}");
+        assert_eq!(after, Stage::Choosing(rows()), "{name}");
+        assert_eq!(
+            effects,
+            vec![
+                SheetEffect::Show(SheetView::Providers(rows())),
+                SheetEffect::Feed(SignInInput::Cancel)
+            ],
+            "{name}"
+        );
+    }
+    let (after, effects) = run(
+        at(add(), failed(SignInFault::Refused)),
+        input(SheetInput::Back),
+    );
+    assert_eq!(after, Stage::Choosing(rows()));
+    assert_eq!(
+        effects,
+        vec![SheetEffect::Show(SheetView::Providers(rows()))],
+        "nothing runs"
+    );
+    for stage in [
+        Stage::Choosing(rows()),
+        Stage::Working(nc()),
+        confirming(),
+        Stage::Added,
+    ] {
+        let (after, effects) = run(at(add(), stage.clone()), input(SheetInput::Back));
+        assert_eq!((after, effects), (stage, vec![]));
+    }
+}
+
+#[test]
+fn back_starts_a_known_provider_over() {
+    let hinted = Purpose::Add {
+        hint: ProviderHint::Provider(nc()),
+        allow: None,
+    };
+    for purpose in [hinted, reauth()] {
+        let (after, effects) = run(at(purpose.clone(), reviewing()), input(SheetInput::Back));
+        assert_eq!(after, Stage::Working(nc()));
         assert_eq!(
             effects[1..],
             [
                 SheetEffect::Feed(SignInInput::Cancel),
                 SheetEffect::Feed(SignInInput::Start)
-            ],
-            "{name}"
+            ]
         );
-    }
-    let (_, effects) = run(
-        at(add(), failed(SignInFault::Refused)),
-        input(SheetInput::Back),
-    );
-    assert_eq!(effects[1..], [SheetEffect::Feed(SignInInput::Start)]);
-    for stage in [Stage::Choosing(rows()), Stage::Working(nc()), Stage::Added] {
-        let (after, effects) = run(at(add(), stage.clone()), input(SheetInput::Back));
-        assert_eq!((after, effects), (stage, vec![]));
+        let (_, effects) = run(
+            at(purpose, failed(SignInFault::Refused)),
+            input(SheetInput::Back),
+        );
+        assert_eq!(effects[1..], [SheetEffect::Feed(SignInInput::Start)]);
     }
 }
 
@@ -502,6 +581,7 @@ fn every_stage_can_be_dismissed_and_a_running_sign_in_is_cancelled() {
             let running = matches!(
                 stage,
                 Stage::Working(_)
+                    | Stage::Confirming { .. }
                     | Stage::Asking { .. }
                     | Stage::Browser { .. }
                     | Stage::Code { .. }
@@ -602,6 +682,7 @@ fn event_strategy() -> impl Strategy<Value = SheetEvent> {
             SECRET
         )]))),
         Just(input(SheetInput::Confirm(choices()))),
+        Just(SheetEvent::SignIn(Progress::Failed(SignInFault::TimedOut))),
         Just(input(SheetInput::Back)),
         Just(input(SheetInput::Retry)),
         Just(input(SheetInput::Dismiss)),

@@ -33,6 +33,8 @@ pub enum SignInFault {
     Cancelled,
     /// The organisation or the provider forbids it (a tenant needing admin consent).
     Forbidden,
+    /// The sign-in succeeded but the account could not be stored (the disk or the secret store).
+    StoreFailed,
 }
 
 /// One service row of the review step.
