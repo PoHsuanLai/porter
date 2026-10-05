@@ -4,7 +4,7 @@
 //! `crates/mail-pim/src/dav/reply.rs` and `mod.rs` (same author, MIT OR Apache-2.0).
 
 use crate::multistatus::{DavFault, Multistatus};
-use crate::names::{GETETAG, SYNC_TOKEN};
+use crate::names::GETETAG;
 
 /// One change a sync-collection report lists.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,8 +41,8 @@ pub struct SyncReply {
 pub fn parse_sync_collection(status: &Multistatus) -> Result<SyncReply, DavFault> {
     let mut changes = Vec::new();
     let mut truncated = false;
-    for response in status.resources() {
-        match response.status() {
+    for response in status.responses.iter() {
+        match response.status {
             Some(404) => changes.push(SyncChange::Removed {
                 href: response.href.clone(),
             }),
@@ -55,9 +55,9 @@ pub fn parse_sync_collection(status: &Multistatus) -> Result<SyncReply, DavFault
         }
     }
     let sync_token = status
-        .sync_token()
-        .filter(|t| !t.is_empty() && !truncated)
-        .map(str::to_owned);
+        .sync_token
+        .clone()
+        .filter(|t| !t.is_empty() && !truncated);
     Ok(SyncReply {
         changes,
         sync_token,
@@ -70,9 +70,6 @@ pub fn token_expired(http_status: u16, body: &str) -> bool {
     http_status == 507
         || (matches!(http_status, 403 | 409 | 412) && body.contains("valid-sync-token"))
 }
-
-/// The pseudo-property name the token is held under, for callers reading a [`Multistatus`] raw.
-pub const TOKEN_PROP: &str = SYNC_TOKEN;
 
 #[cfg(test)]
 mod tests {

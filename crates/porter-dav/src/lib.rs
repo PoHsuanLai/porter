@@ -12,4 +12,4 @@ mod sync;
 pub use discover::{Home, Quota, collections, current_user_principal, home_set, quota};
 pub use multistatus::{DavFault, Multistatus, Prop, PropStatus, Response, parse_multistatus};
 pub use request::{Depth, propfind, report_sync_collection};
-pub use sync::{SyncChange, SyncReply, TOKEN_PROP, parse_sync_collection, token_expired};
+pub use sync::{SyncChange, SyncReply, parse_sync_collection, token_expired};

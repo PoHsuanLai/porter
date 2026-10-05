@@ -3,13 +3,8 @@
 //! Adapted from mailo `crates/mail-pim/src/dav/reply.rs` (same author, MIT OR Apache-2.0): the
 //! namespace-matched reading, `propstat` status handling and the DOCTYPE refusal. mailo's typed
 //! CardDAV properties become named [`Prop`]s here.
-//!
-//! The frozen shapes have no field for a response's own `status` or for the multistatus-level
-//! `sync-token`, so both are carried as properties (see FINDINGS, interface ask): a response's
-//! `status` element is a [`Prop`] named `DAV:status` whose value is the status line, and the
-//! `sync-token` is a [`Prop`] named `DAV:sync-token` on a [`Response`] with an empty href.
 
-use crate::names::{RESPONSE_STATUS, SYNC_TOKEN, qualify};
+use crate::names::qualify;
 use roxmltree::{Document, Node};
 use thiserror::Error;
 
@@ -42,6 +37,9 @@ pub enum PropStatus {
 pub struct Response {
     /// The resource, as written (a path or a URL).
     pub href: String,
+    /// The status of the response as a whole, where it has one instead of per-property ones
+    /// (in a sync-collection reply, 404 reports a removed member).
+    pub status: Option<u16>,
     /// Its properties.
     pub props: Vec<Prop>,
 }
@@ -51,6 +49,8 @@ pub struct Response {
 pub struct Multistatus {
     /// The responses, in order.
     pub responses: Vec<Response>,
+    /// The `sync-token` a sync-collection reply ends with.
+    pub sync_token: Option<String>,
 }
 
 /// Why a body was not a multistatus.
@@ -70,34 +70,10 @@ pub fn parse_multistatus(xml: &str) -> Result<Multistatus, DavFault> {
     if !root.has_tag_name((DAV, "multistatus")) {
         return Err(DavFault::Unreadable);
     }
-    let mut responses: Vec<Response> = children(root, "response").map(response).collect();
-    if let Some(token) = children(root, "sync-token").next() {
-        responses.push(Response {
-            href: String::new(),
-            props: vec![Prop {
-                name: SYNC_TOKEN.to_owned(),
-                value: text(token),
-                status: PropStatus::Found,
-            }],
-        });
-    }
-    Ok(Multistatus { responses })
-}
-
-impl Multistatus {
-    /// The multistatus-level `sync-token`, if the body had one.
-    pub fn sync_token(&self) -> Option<&str> {
-        self.responses
-            .iter()
-            .find(|r| r.href.is_empty())
-            .and_then(|r| r.prop(SYNC_TOKEN))
-            .map(|p| p.value.as_str())
-    }
-
-    /// The real responses: those with an href.
-    pub fn resources(&self) -> impl Iterator<Item = &Response> {
-        self.responses.iter().filter(|r| !r.href.is_empty())
-    }
+    Ok(Multistatus {
+        responses: children(root, "response").map(response).collect(),
+        sync_token: children(root, "sync-token").next().map(text),
+    })
 }
 
 impl Response {
@@ -111,16 +87,6 @@ impl Response {
         self.prop(name)
             .filter(|p| p.status == PropStatus::Found)
             .map(|p| p.value.as_str())
-    }
-
-    /// The status of the response as a whole, where it has one instead of per-property ones.
-    pub fn status(&self) -> Option<u16> {
-        let prop = self.prop(RESPONSE_STATUS)?;
-        code(&prop.value).or(match prop.status {
-            PropStatus::Found => Some(200),
-            PropStatus::Missing => Some(404),
-            PropStatus::Other(_) => None,
-        })
     }
 }
 
@@ -139,15 +105,9 @@ fn response(node: Node<'_, '_>) -> Response {
             }));
         }
     }
-    if let Some(line) = children(node, "status").next() {
-        props.push(Prop {
-            name: RESPONSE_STATUS.to_owned(),
-            value: text(line),
-            status: code(&text(line)).map_or(PropStatus::Other(0), prop_status),
-        });
-    }
     Response {
         href: children(node, "href").next().map(text).unwrap_or_default(),
+        status: children(node, "status").next().and_then(|s| code(&text(s))),
         props,
     }
 }
@@ -261,12 +221,12 @@ mod tests {
           <d:sync-token>http://x.test/sync/2</d:sync-token>
         </d:multistatus>"#;
         let reply = parse_multistatus(xml).unwrap();
-        assert_eq!(reply.sync_token(), Some("http://x.test/sync/2"));
-        let rs: Vec<_> = reply.resources().collect();
+        assert_eq!(reply.sync_token.as_deref(), Some("http://x.test/sync/2"));
+        let rs = &reply.responses;
         assert_eq!(rs.len(), 2);
         assert_eq!(rs[0].found("DAV:getetag"), Some("\"1\""));
-        assert_eq!(rs[0].status(), None);
-        assert_eq!(rs[1].status(), Some(404));
+        assert_eq!(rs[0].status, None);
+        assert_eq!(rs[1].status, Some(404));
     }
 
     #[test]

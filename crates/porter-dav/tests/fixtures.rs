@@ -161,9 +161,9 @@ fn a_507_member_makes_the_anchor_expired() {
 #[test]
 fn a_207_with_mixed_statuses_per_href_and_per_property() {
     let ms = fixture("generic-mixed.xml");
-    let rs: Vec<_> = ms.resources().collect();
+    let rs = &ms.responses;
     assert_eq!(rs.len(), 3);
-    let work = rs[0];
+    let work = &rs[0];
     assert_eq!(work.found("DAV:displayname"), Some("Work"));
     assert_eq!(
         work.prop("DAV:getetag").unwrap().status,
@@ -173,9 +173,9 @@ fn a_207_with_mixed_statuses_per_href_and_per_property() {
         work.prop("DAV:sync-token").unwrap().status,
         PropStatus::Other(403)
     );
-    assert_eq!(work.status(), None);
-    assert_eq!(rs[1].status(), Some(403));
-    assert_eq!(rs[2].status(), Some(404));
+    assert_eq!(work.status, None);
+    assert_eq!(rs[1].status, Some(403));
+    assert_eq!(rs[2].status, Some(404));
     assert_eq!(collections(&ms, Home::Calendar), ["/dav/cal/work/"]);
     // Sync reads the same body: the 404 is a removal, the 403 is not a change, no token.
     let reply = parse_sync_collection(&ms).unwrap();

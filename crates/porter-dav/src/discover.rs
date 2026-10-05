@@ -52,7 +52,8 @@ pub fn home_set(status: &Multistatus, home: Home) -> Vec<String> {
 /// address book): what a PROPFIND at depth 1 on the home lists.
 pub fn collections(status: &Multistatus, home: Home) -> Vec<String> {
     status
-        .resources()
+        .responses
+        .iter()
         .filter(|r| {
             r.found(RESOURCETYPE)
                 .is_some_and(|t| t.split_whitespace().any(|k| k == home.collection_type()))
@@ -81,7 +82,8 @@ pub fn quota(status: &Multistatus) -> Quota {
 
 fn first_found<'a>(status: &'a Multistatus, name: &str) -> Option<&'a str> {
     status
-        .resources()
+        .responses
+        .iter()
         .find_map(|r: &Response| r.found(name))
         .filter(|v| !v.is_empty())
 }

@@ -19,8 +19,6 @@ pub const QUOTA_AVAILABLE: &str = "DAV:quota-available-bytes";
 pub const ADDRESSBOOK_HOME_SET: &str = "urn:ietf:params:xml:ns:carddav:addressbook-home-set";
 /// `calendar-home-set` (RFC 4791).
 pub const CALENDAR_HOME_SET: &str = "urn:ietf:params:xml:ns:caldav:calendar-home-set";
-/// The pseudo-property a response's own `status` element becomes (see [`crate::Response`]).
-pub const RESPONSE_STATUS: &str = "DAV:status";
 
 /// Splits `ns:local` or `ns/local` at the last separator: the namespace as XML writes it
 /// (`DAV:` keeps its colon, `urn:...:carddav` loses the joining one) and the local name.
