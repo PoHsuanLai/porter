@@ -67,11 +67,12 @@ async fn a_cua_step_with_a_memfd_frame_round_trips_to_a_window_space_action() {
         .await
         .expect("begin");
     let events = until_finished(&mut session).await;
+    assert!(matches!(events[0], InferEvent::Why(_)), "{events:?}");
     assert_eq!(
-        events[0],
+        events[1],
         InferEvent::Waiting(porter_infer::Readiness::Loadable)
     );
-    assert!(matches!(events[1], InferEvent::Routed(_)), "{events:?}");
+    assert!(matches!(events[2], InferEvent::Routed(_)), "{events:?}");
     assert!(
         matches!(
             events.last(),

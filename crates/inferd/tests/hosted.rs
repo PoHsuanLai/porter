@@ -91,15 +91,16 @@ async fn a_porter_client_chat_turn_streams_text_from_the_engine() {
         .await
         .expect("send");
     let events = until_finished(&mut session).await;
-    // The engine was stopped: the client is told it waits, then who answers.
-    assert_eq!(events[0], InferEvent::Waiting(Readiness::Loadable));
-    let InferEvent::Routed(served) = &events[1] else {
+    // The engine was stopped: the client is told why this model, that it waits, then who answers.
+    assert!(matches!(events[0], InferEvent::Why(_)), "{events:?}");
+    assert_eq!(events[1], InferEvent::Waiting(Readiness::Loadable));
+    let InferEvent::Routed(served) = &events[2] else {
         panic!("Routed after Waiting, got {events:?}");
     };
     assert_eq!(served.model.as_str(), "tiny-chat");
     assert_eq!(served.account.as_str(), "local");
     assert_eq!(
-        events[2..4],
+        events[3..5],
         [
             InferEvent::TextDelta("Hel".into()),
             InferEvent::TextDelta("lo".into())
