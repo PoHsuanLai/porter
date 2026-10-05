@@ -33,8 +33,8 @@ const SMTP_ORIGIN: &str = "smtp://smtp.office365.com:587";
 
 /// The Microsoft sign-in.
 pub struct MicrosoftSignIn<H = porter_http::HyperHttp> {
-    spec: ProviderSpec,
-    env: MicrosoftEnv<H>,
+    spec: Box<ProviderSpec>,
+    env: Box<MicrosoftEnv<H>>,
     start: SignInStart,
     phase: Phase,
 }
@@ -100,8 +100,8 @@ struct Device {
 impl<H> MicrosoftSignIn<H> {
     pub(super) fn new(spec: ProviderSpec, env: MicrosoftEnv<H>, start: SignInStart) -> Self {
         Self {
-            spec,
-            env,
+            spec: Box::new(spec),
+            env: Box::new(env),
             start,
             phase: Phase::Fresh,
         }
@@ -378,10 +378,8 @@ fn endpoints_for(spec: &ProviderSpec, found: &Found) -> Vec<ServiceEndpoint> {
     let mut out = Vec::new();
     if let Some(Capability::Mail(mail)) = present(CapabilityKind::Mail) {
         out.push(endpoint(Family::Imap, imap_origin(spec)));
-        if mail.send == Offered::Present {
-            if let Ok(smtp) = EndpointUrl::parse(SMTP_ORIGIN) {
-                out.push(endpoint(Family::Smtp, smtp));
-            }
+        if let (Offered::Present, Ok(smtp)) = (mail.send, EndpointUrl::parse(SMTP_ORIGIN)) {
+            out.push(endpoint(Family::Smtp, smtp));
         }
     }
     let graph_on = found

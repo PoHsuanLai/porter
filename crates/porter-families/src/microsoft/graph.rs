@@ -65,6 +65,24 @@ struct Quota {
     total: Option<u64>,
 }
 
+/// The account's address: its mail address, else its user principal name.
+pub(super) async fn whoami<H: Http>(
+    http: &H,
+    base: &EndpointUrl,
+    token: &str,
+) -> Result<String, ProviderError> {
+    let me = get(http, base, "/v1.0/me", token).await?;
+    let me: Me = match me.status.0 {
+        200..=299 => serde_json::from_slice(&me.body).map_err(|_| ProviderError::Unreadable)?,
+        status => return Err(fault(status)),
+    };
+    [me.mail, me.user_principal_name]
+        .into_iter()
+        .flatten()
+        .find(|a| !a.is_empty())
+        .ok_or(ProviderError::Unreadable)
+}
+
 /// Probes the account behind `token` for every kind `spec` declares.
 pub(super) async fn probe<H: Http>(
     http: &H,
@@ -72,16 +90,7 @@ pub(super) async fn probe<H: Http>(
     base: &EndpointUrl,
     token: &str,
 ) -> Result<Found, ProviderError> {
-    let me = get(http, base, "/v1.0/me", token).await?;
-    let me: Me = match me.status.0 {
-        200..=299 => serde_json::from_slice(&me.body).map_err(|_| ProviderError::Unreadable)?,
-        status => return Err(fault(status)),
-    };
-    let address = [me.mail, me.user_principal_name]
-        .into_iter()
-        .flatten()
-        .find(|a| !a.is_empty())
-        .ok_or(ProviderError::Unreadable)?;
+    let address = whoami(http, base, token).await?;
     let class = classify(&address);
     let mut claims = Vec::new();
     let mut seen = Vec::new();

@@ -2,10 +2,12 @@
 //! per resource (Exchange for IMAP and SMTP, Graph for the rest).
 
 use super::env::MicrosoftEnv;
-use super::graph::{Found, probe};
+use super::graph::{Found, probe, whoami};
 use super::graph_origin;
 use super::scopes::audience_scope;
-use porter_core::{AccountId, Audience, Credential, IssuedToken, UnixSeconds};
+use porter_core::{
+    AccountId, Audience, Credential, IssuedToken, SecretText, TokenKind, UnixSeconds,
+};
 use porter_http::Http;
 use porter_oauth::{ExchangeFault, Renewal, endpoints_of, refresh_scoped, renewal};
 use porter_provider::{Presented, ProviderError, ProviderSession, ProviderSpec};
@@ -15,9 +17,9 @@ use std::sync::{Mutex, MutexGuard};
 /// An open Microsoft account.
 pub struct MicrosoftSession<H = porter_http::HyperHttp> {
     account: AccountId,
-    spec: ProviderSpec,
-    env: MicrosoftEnv<H>,
-    state: Mutex<State>,
+    spec: Box<ProviderSpec>,
+    env: Box<MicrosoftEnv<H>>,
+    state: Box<Mutex<State>>,
 }
 
 #[derive(Debug)]
@@ -27,6 +29,8 @@ struct State {
     minted: HashMap<String, IssuedToken>,
     /// The credential to store again, once, after the refresh token rotated.
     renewed: Option<Credential>,
+    /// The mailbox address, read once from Graph: XOAUTH2 names the user.
+    address: Option<String>,
 }
 
 impl<H> std::fmt::Debug for MicrosoftSession<H> {
@@ -49,13 +53,14 @@ impl<H: Http> MicrosoftSession<H> {
         };
         Ok(Self {
             account,
-            spec,
-            env,
-            state: Mutex::new(State {
+            spec: Box::new(spec),
+            env: Box::new(env),
+            state: Box::new(Mutex::new(State {
                 credential,
                 minted: HashMap::new(),
                 renewed: None,
-            }),
+                address: None,
+            })),
         })
     }
 
@@ -83,11 +88,24 @@ impl<H: Http> MicrosoftSession<H> {
     }
 }
 
-impl<H: Http> ProviderSession for MicrosoftSession<H> {
-    async fn access_token(&self, audience: &Audience) -> Result<IssuedToken, ProviderError> {
-        let graph = graph_origin(&self.spec);
-        let (scope, kind) =
-            audience_scope(audience, graph.as_str()).ok_or(ProviderError::Forbidden)?;
+impl<H: Http> MicrosoftSession<H> {
+    /// The address the account signs in with, from Graph's `/me` (once).
+    async fn address(&self) -> Result<String, ProviderError> {
+        if let Some(address) = self.state().address.clone() {
+            return Ok(address);
+        }
+        let base = graph_origin(&self.spec);
+        let graph = self
+            .mint(super::scopes::GRAPH_DEFAULT, TokenKind::Bearer)
+            .await?;
+        let address = whoami(&*self.env.http, &base, graph.value.expose()).await?;
+        self.state().address = Some(address.clone());
+        Ok(address)
+    }
+
+    /// A raw access token for `scope`, reused while fresh, renewed from the refresh token.
+    async fn mint(&self, scope: &str, kind: TokenKind) -> Result<IssuedToken, ProviderError> {
+        let scope = scope.to_owned();
         let now = (self.env.clock)();
         if let Some(token) = self.fresh(&scope, now) {
             return Ok(token);
@@ -132,6 +150,28 @@ impl<H: Http> ProviderSession for MicrosoftSession<H> {
         }
         state.minted.insert(scope, issued.clone());
         Ok(issued)
+    }
+}
+
+impl<H: Http> ProviderSession for MicrosoftSession<H> {
+    async fn access_token(&self, audience: &Audience) -> Result<IssuedToken, ProviderError> {
+        let graph = graph_origin(&self.spec);
+        let (scope, kind) =
+            audience_scope(audience, graph.as_str()).ok_or(ProviderError::Forbidden)?;
+        let token = self.mint(&scope, kind).await?;
+        match kind {
+            TokenKind::Xoauth2 => {
+                let user = self.address().await?;
+                Ok(IssuedToken {
+                    value: SecretText::new(format!(
+                        "user={user}\u{1}auth=Bearer {}\u{1}\u{1}",
+                        token.value.expose()
+                    )),
+                    ..token
+                })
+            }
+            _ => Ok(token),
+        }
     }
 
     fn renewed(&self) -> Option<Credential> {

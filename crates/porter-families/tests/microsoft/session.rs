@@ -41,10 +41,16 @@ async fn tokens_come_per_audience_in_the_form_the_protocol_takes() {
             .await
             .expect(audience);
         assert_eq!(token.kind, kind, "{audience}");
-        assert!(
-            rig.issuer.access_is_live(token.value.expose()),
-            "{audience}"
-        );
+        let bearer = match kind {
+            TokenKind::Xoauth2 => token
+                .value
+                .expose()
+                .strip_prefix("user=ada@contoso.onmicrosoft.com\u{1}auth=Bearer ")
+                .and_then(|rest| rest.strip_suffix("\u{1}\u{1}"))
+                .unwrap_or_else(|| panic!("{audience}: not the unencoded SASL string")),
+            _ => token.value.expose(),
+        };
+        assert!(rig.issuer.access_is_live(bearer), "{audience}");
         assert_eq!(token.expires, UnixSeconds(1_000_000 + 3600), "{audience}");
     }
     assert_eq!(
@@ -83,7 +89,8 @@ async fn a_token_is_reused_until_it_is_due_and_then_renewed_with_the_rotated_ref
             .filter(|e| matches!(e, porter_fake_servers::IssuerEvent::Token { .. }))
             .count()
     };
-    assert_eq!(calls(&rig), 1);
+    // The IMAP token, and the Graph token that named the mailbox.
+    assert_eq!(calls(&rig), 2);
 
     // The rotated refresh token from the first renewal is to be stored, once.
     let stored = session.renewed().expect("the refresh token rotated");
@@ -99,7 +106,7 @@ async fn a_token_is_reused_until_it_is_due_and_then_renewed_with_the_rotated_ref
         .await
         .expect("token");
     assert_ne!(renewed.value, first.value);
-    assert_eq!(calls(&rig), 2);
+    assert_eq!(calls(&rig), 3);
     let Credential::OAuth {
         refresh: second, ..
     } = session.renewed().expect("rotated again")
