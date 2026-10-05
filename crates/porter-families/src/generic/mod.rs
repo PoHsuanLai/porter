@@ -1,5 +1,124 @@
-//! The Generic family (lane W3c fills it).
+//! The Generic family: a mail server or a DAV server with a password (or an app password) and
+//! no provider of its own. Two provider files use it: `generic-imap`, found by autoconfig, SRV
+//! and MX from the address, and `generic-dav`, found by `.well-known` from the server's name.
+//!
+//! Like Nextcloud's, a session mints no token (the relay presents the password), `discover`
+//! answers what the provider file declares, and `revoke` has nothing to do at a server that
+//! has no such call: removing the account wipes the password locally.
 
-use crate::skeleton::family_skeleton;
+mod dav;
+mod mail;
+mod sign_in;
 
-family_skeleton!(GenericProvider, GenericSession, GenericSignIn, "Generic");
+use crate::io::{Io, SharedDns};
+use crate::password::{declared, password_of};
+use porter_core::{AccountId, Audience, Claim, Credential, IssuedToken};
+use porter_discover::Dns;
+use porter_http::{NoSleep, SharedHttp};
+use porter_provider::{
+    Discovery, Presented, Provider, ProviderError, ProviderSession, ProviderSet, ProviderSpec,
+    RevokeOutcome, SignInStart,
+};
+
+pub use sign_in::GenericSignIn;
+
+/// The Generic family's provider.
+#[derive(Debug, Clone)]
+pub struct GenericProvider {
+    spec: ProviderSpec,
+    io: Io,
+    dns: SharedDns,
+    providers: ProviderSet,
+}
+
+impl GenericProvider {
+    /// The provider serving the accounts of `spec`, dialling through `http` and resolving
+    /// through `dns`. It knows no other provider, so every address is searched for.
+    pub fn new(spec: ProviderSpec, http: SharedHttp, dns: impl Dns + 'static) -> Self {
+        Self {
+            spec,
+            io: Io::new(http, NoSleep),
+            dns: SharedDns::new(dns),
+            providers: ProviderSet::default(),
+        }
+    }
+
+    /// The same provider that lets these providers claim an address first (a Fastmail address
+    /// is Fastmail's to sign in).
+    pub fn with_providers(self, providers: ProviderSet) -> Self {
+        Self { providers, ..self }
+    }
+}
+
+/// An open generic account.
+#[derive(Debug)]
+pub struct GenericSession {
+    account: AccountId,
+}
+
+impl GenericSession {
+    /// The account it is open for.
+    pub fn account(&self) -> &AccountId {
+        &self.account
+    }
+}
+
+impl Provider for GenericProvider {
+    type Session = GenericSession;
+    type SignIn = GenericSignIn;
+
+    fn spec(&self) -> &ProviderSpec {
+        &self.spec
+    }
+
+    async fn discover(
+        &self,
+        _account: &AccountId,
+        _presented: &Presented,
+    ) -> Result<Vec<Claim>, ProviderError> {
+        Ok(declared(&self.spec))
+    }
+
+    async fn open(
+        &self,
+        account: &AccountId,
+        presented: Presented,
+    ) -> Result<GenericSession, ProviderError> {
+        password_of(&presented)?;
+        Ok(GenericSession {
+            account: account.clone(),
+        })
+    }
+
+    fn sign_in(&self, start: SignInStart) -> Result<GenericSignIn, ProviderError> {
+        let flavor = match self.spec.discovery {
+            Discovery::Autoconfig => sign_in::Flavor::Mail,
+            Discovery::WellKnown => sign_in::Flavor::Dav,
+            _ => return Err(ProviderError::Unreadable),
+        };
+        Ok(GenericSignIn::new(
+            self.io.clone(),
+            self.dns.clone(),
+            self.providers.clone(),
+            self.spec.clone(),
+            flavor,
+            start.mode,
+        ))
+    }
+
+    async fn revoke(&self, presented: &Presented) -> Result<RevokeOutcome, ProviderError> {
+        password_of(presented)?;
+        Ok(RevokeOutcome::Unsupported)
+    }
+}
+
+impl ProviderSession for GenericSession {
+    async fn access_token(&self, _audience: &Audience) -> Result<IssuedToken, ProviderError> {
+        // A password is never handed to an app; the relay presents it.
+        Err(ProviderError::Forbidden)
+    }
+
+    fn renewed(&self) -> Option<Credential> {
+        None
+    }
+}

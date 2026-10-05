@@ -6,11 +6,14 @@
 
 mod add;
 mod adopt;
+mod add_flow;
+mod add_store;
 mod audience;
 mod audit;
 mod choose;
 mod clock;
 mod manage;
+mod race;
 mod registry;
 mod relay;
 mod service;
@@ -19,6 +22,7 @@ mod store;
 mod token;
 
 pub use adopt::{LegacyFault, LegacyStore, legacy_entry};
+pub use add_flow::AllowFor;
 pub use audit::{AuditSink, NoAudit};
 pub use clock::Clock;
 pub use manage::RevokeReport;

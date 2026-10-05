@@ -22,29 +22,22 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
     /// the account and, when the sheet was opened by an app's chooser, its first grant.
     pub(crate) async fn add_account(
         &self,
-        _caller: &AppId,
-        _hint: ProviderHint,
-        _window: ParentWindow,
+        caller: &AppId,
+        hint: ProviderHint,
+        window: ParentWindow,
     ) -> AccountsReply {
-        todo!(
-            "open the sheet with `Sheet::new`, drive `Provider::sign_in` and `sheet::step` until \
-             Done, file the credentials, store the account with its endpoints, audit `SignedIn`"
-        )
+        self.run_add(caller, hint, window, None).await
     }
 
     /// Runs the provider's sign-in again for an account the caller holds a grant for and files
     /// the new credential under the same id.
     pub(crate) async fn reauthenticate(
         &self,
-        _caller: &AppId,
-        _account: &AccountId,
-        _window: ParentWindow,
+        caller: &AppId,
+        account: &AccountId,
+        window: ParentWindow,
     ) -> AccountsReply {
-        todo!(
-            "open the sheet on the account's provider, drive `Provider::sign_in` with \
-             `SignInMode::Reauthenticate`, replace the credential, set the state Ok, audit \
-             `Reauthed`"
-        )
+        self.run_reauthenticate(caller, account, window).await
     }
 
     /// What the relay for one checked endpoint presents: the account's password, or an access

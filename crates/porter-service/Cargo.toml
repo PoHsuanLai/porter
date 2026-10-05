@@ -13,5 +13,9 @@ porter-core = { workspace = true }
 porter-provider = { workspace = true }
 porter-secrets = { workspace = true }
 
+[dev-dependencies]
+porter-fake = { workspace = true }
+tokio = { workspace = true }
+
 [lints]
 workspace = true

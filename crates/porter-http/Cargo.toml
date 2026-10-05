@@ -12,14 +12,32 @@ publish.workspace = true
 porter-core = { workspace = true }
 thiserror = { workspace = true }
 hyper = { workspace = true, optional = true, features = ["client", "http1"] }
-hyper-util = { workspace = true, optional = true, features = ["tokio"] }
+hyper-util = { workspace = true, optional = true, features = ["tokio", "client-legacy", "http1"] }
+hyper-rustls = { workspace = true, optional = true }
 http-body-util = { workspace = true, optional = true }
+rustls = { workspace = true, optional = true }
+rustls-native-certs = { workspace = true, optional = true }
+rustls-pki-types = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true, features = ["net", "time", "io-util", "rt"] }
 
+[dev-dependencies]
+porter-fake-servers = { workspace = true }
+tokio = { workspace = true }
+
 [features]
-# `HyperHttp`, the client over hyper (D12). Pulls in the runtime, so it is off by default: the
-# pure build reaches none. Its TLS (hyper-rustls) joins with the first family that needs it.
-hyper = ["dep:hyper", "dep:hyper-util", "dep:http-body-util", "dep:tokio"]
+# `HyperHttp`, the client over hyper (D12), with TLS through rustls on `ring` and the platform's
+# trust roots, and `TokioSleep`. Pulls in the runtime, so it is off by default: the pure build
+# reaches none.
+hyper = [
+  "dep:hyper",
+  "dep:hyper-util",
+  "dep:hyper-rustls",
+  "dep:http-body-util",
+  "dep:rustls",
+  "dep:rustls-native-certs",
+  "dep:rustls-pki-types",
+  "dep:tokio",
+]
 
 [lints]
 workspace = true

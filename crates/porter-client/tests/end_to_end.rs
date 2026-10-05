@@ -191,39 +191,152 @@ async fn revoking_a_grant_ends_it() {
     assert_eq!(photos.grants().await.expect("grants"), vec![]);
 }
 
-// `add_account` and `reauthenticate` are `todo!()` in porter-service until the first family's
-// sign-in: lane W3c replaces this test with the Nextcloud flow (add, consent, a second app
-// queries). Over the bus a panicking call answers `unavailable` (`dbus_sheets.rs`).
+/// A DAV account added through a real family (the generic one, over a fake DAV server) from the
+/// app's own call, then granted, then signed in again: the whole path of `AddAccount` and
+/// `Reauthenticate` over the in-process carrier.
 #[tokio::test]
-#[ignore = "W3c fills AccountService::add_account and reauthenticate"]
-async fn adding_and_reauthenticating_are_refused_until_a_family_signs_in() {
-    let prompter = ScriptedSheets::answering([Scripted::AllowFirst(GrantScope::Always)]);
-    let service = Arc::new(fake_service(prompter).await);
-    let photos = app(&service, "org.quire.Photos");
+async fn an_app_adds_an_account_through_a_family_is_granted_it_and_signs_it_in_again() {
+    use porter_core::capability::{Access, Delta};
+    use porter_core::need::PimNeed;
+    use porter_core::sheet::{FieldAnswer, FieldKind, FieldValue, ServiceChoice, SheetInput};
+    use porter_core::{ProviderId, SecretText, Toggle};
+    use porter_fake::{FixedClock, NOW};
+    use porter_fake_servers::{FakeDav, FakeDns};
+    use porter_families::{FamilyProvider, GenericProvider};
+    use porter_http::{HyperHttp, SharedHttp};
+    use porter_provider::parse_provider;
+    use porter_secrets::MemorySecrets;
+    use porter_service::{AccountService, Registry};
+
+    let dav = FakeDav::start("bob", "hunter2").await.expect("dav");
+    let spec = parse_provider(include_str!("../../../providers/generic-dav.toml")).expect("file");
+    let provider = FamilyProvider::Generic(GenericProvider::new(
+        spec,
+        SharedHttp::new(HyperHttp::new()),
+        FakeDns::new(),
+    ));
+    let form = |password: &str| {
+        SheetInput::Submit(vec![
+            FieldAnswer {
+                kind: FieldKind::Server,
+                value: FieldValue::Plain(format!("{}/dav/calendar/", dav.base_url())),
+            },
+            FieldAnswer {
+                kind: FieldKind::Username,
+                value: FieldValue::Plain("bob".into()),
+            },
+            FieldAnswer {
+                kind: FieldKind::Password,
+                value: FieldValue::Secret(SecretText::new(password)),
+            },
+        ])
+    };
+    let review = SheetInput::Confirm(vec![
+        ServiceChoice {
+            kind: porter_core::CapabilityKind::Calendar,
+            toggle: Toggle::On,
+        },
+        ServiceChoice {
+            kind: porter_core::CapabilityKind::Contacts,
+            toggle: Toggle::Off,
+        },
+    ]);
+    let sheets =
+        ScriptedSheets::answering([Scripted::AllowFirst(GrantScope::Always)]).conversing([
+            // The add: pick the provider, fill the form, confirm the review.
+            vec![
+                SheetInput::Pick(ProviderId::parse("generic-dav").expect("id")),
+                form("hunter2"),
+                review,
+            ],
+            // Signing in again: the form, and no review.
+            vec![form("hunter2")],
+            // A password the server refuses.
+            vec![form("wrong"), SheetInput::Dismiss],
+        ]);
+    let service = Arc::new(AccountService::new(
+        vec![provider],
+        Registry::default(),
+        MemorySecrets::default(),
+        sheets,
+        FixedClock(NOW),
+    ));
+    let calendar = app_over(&service, "org.quire.Calendar");
+
+    let added = calendar
+        .add_account(
+            porter_core::wire::ProviderHint::Any,
+            &ParentWindow::Unparented,
+        )
+        .await
+        .expect("added");
+    assert_eq!(added.as_str(), "generic-dav-bob-127.0.0.1");
+
+    let need = Need::Calendar(PimNeed {
+        access: Access::ReadWrite,
+        delta: Delta::Poll,
+    });
     let offer = needs_consent(
-        photos
-            .find(&storage(Delta::Poll), DataClass::Photos, Usage::Interactive)
+        calendar
+            .find(&need, DataClass::Calendar, Usage::Interactive)
             .await
             .expect("find"),
     );
-    let chosen = photos
+    let chosen = calendar
         .request_grant(&offer, &ParentWindow::Unparented)
         .await
         .expect("granted");
+    assert_eq!(chosen.account, added);
+    assert_eq!(
+        chosen.endpoints.len(),
+        1,
+        "only the CalDav endpoint serves a calendar"
+    );
 
+    calendar
+        .reauthenticate(&added, &ParentWindow::Unparented)
+        .await
+        .expect("signed in again");
     assert_eq!(
-        photos
-            .add_account(
-                porter_core::wire::ProviderHint::Any,
-                &ParentWindow::Unparented
-            )
+        calendar
+            .reauthenticate(&added, &ParentWindow::Unparented)
             .await,
-        Err(ClientError::Refused(Refusal::Unavailable))
+        Err(ClientError::Refused(Refusal::Denied)),
+        "the server refused the password"
     );
+    // Another app was never granted the account, so it cannot sign it in again.
+    let other = app_over(&service, "org.quire.Other");
     assert_eq!(
-        photos
-            .reauthenticate(&chosen.account, &ParentWindow::Unparented)
+        other
+            .reauthenticate(&added, &ParentWindow::Unparented)
             .await,
-        Err(ClientError::Refused(Refusal::Unavailable))
+        Err(ClientError::Refused(Refusal::UnknownGrant))
     );
+}
+
+type FamilyApp = Accounts<
+    InProcess<
+        porter_families::FamilyProvider,
+        porter_secrets::MemorySecrets,
+        ScriptedSheets,
+        porter_fake::FixedClock,
+    >,
+>;
+
+fn app_over(
+    service: &Arc<
+        porter_service::AccountService<
+            porter_families::FamilyProvider,
+            porter_secrets::MemorySecrets,
+            ScriptedSheets,
+            porter_fake::FixedClock,
+        >,
+    >,
+    name: &str,
+) -> FamilyApp {
+    let id = AppId {
+        name: AppName::parse(name).expect("app name"),
+        isolation: Isolation::Flatpak,
+    };
+    Accounts::over(InProcess::new(Arc::clone(service), id))
 }

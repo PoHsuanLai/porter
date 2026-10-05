@@ -18,17 +18,21 @@ porter-oauth = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true, features = ["rt", "time", "net", "io-util"] }
+base64 = { workspace = true, optional = true }
 
 [dev-dependencies]
 porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }
 tokio = { workspace = true, features = ["rt", "macros", "net", "time", "io-util"] }
+porter-http = { workspace = true, features = ["hyper"] }
+porter-secrets = { workspace = true, features = ["testing"] }
+porter-service = { workspace = true }
 
 [features]
 # Nextcloud: Login Flow v2, OCS discovery, WebDAV, CalDAV, CardDAV, Notes.
-nextcloud = ["dep:porter-dav", "dep:porter-discover"]
+nextcloud = ["dep:porter-dav", "dep:porter-discover", "dep:base64", "dep:serde_json"]
 # Generic IMAP/SMTP and DAV with a password or app password, found by autoconfig.
-generic = ["dep:porter-dav", "dep:porter-discover"]
+generic = ["dep:porter-dav", "dep:porter-discover", "dep:base64"]
 # Microsoft: OAuth PKCE and device code, IMAP/SMTP XOAUTH2, Graph.
 microsoft = ["dep:porter-oauth", "dep:porter-discover", "porter-oauth/io", "porter-http/hyper", "dep:serde", "dep:serde_json", "dep:tokio"]
 # AI providers with a pasted API key (Anthropic, OpenAI).

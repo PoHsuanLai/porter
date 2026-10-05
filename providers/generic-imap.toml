@@ -1,0 +1,17 @@
+# Any mail server with a password or an app password, found from the address by autoconfig, SRV
+# and MX (design/31 §3.2). No domains are listed: a provider that knows an address (Fastmail,
+# iCloud) claims it first, and this one takes the rest.
+id = "generic-imap"
+label = "Email (IMAP)"
+mark = "mail"
+
+[auth]
+kind = "password"
+
+[discovery]
+kind = "autoconfig"
+
+[[capability]]
+family = "imap"
+kind = "mail"
+v = { access = "read_write", send = "present", delta = "poll", transport = "imap", labels = "folders" }

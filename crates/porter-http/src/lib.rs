@@ -11,10 +11,14 @@ mod http;
 #[cfg(feature = "hyper")]
 mod hyper_client;
 mod message;
+mod shared;
+mod sleep;
 
 pub use error::HttpError;
 pub use headers::{Header, HeaderName, HeaderValue};
 pub use http::Http;
 #[cfg(feature = "hyper")]
-pub use hyper_client::HyperHttp;
+pub use hyper_client::{HyperHttp, Limits, TokioSleep};
 pub use message::{HttpRequest, HttpResponse, Method, Status};
+pub use shared::SharedHttp;
+pub use sleep::{NoSleep, SharedSleep, Sleep};

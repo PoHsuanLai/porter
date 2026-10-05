@@ -25,7 +25,7 @@ fn shipped() -> Vec<(PathBuf, ProviderSpec)> {
 #[test]
 fn every_shipped_provider_file_parses_and_is_named_by_its_id() {
     let files = shipped();
-    assert_eq!(files.len(), 5);
+    assert_eq!(files.len(), 7);
     for (path, spec) in files {
         let stem = path.file_stem().and_then(|s| s.to_str()).expect("stem");
         assert_eq!(spec.id.as_str(), stem, "{}", path.display());
@@ -86,5 +86,57 @@ fn the_microsoft_file_declares_mail_over_imap_and_the_rest_over_graph() {
             .domains
             .iter()
             .any(|d| d.as_str() == "outlook.com")
+    );
+}
+
+fn shipped_spec(id: &str) -> ProviderSpec {
+    shipped()
+        .into_iter()
+        .map(|(_, spec)| spec)
+        .find(|spec| spec.id.as_str() == id)
+        .unwrap_or_else(|| panic!("{id} ships"))
+}
+
+#[test]
+fn the_generic_files_declare_what_the_generic_family_finds() {
+    use porter_core::{AuthKind, Family};
+    use porter_provider::Discovery;
+    let families = |spec: &ProviderSpec| -> Vec<Family> {
+        spec.capabilities.iter().map(|row| row.family).collect()
+    };
+    let imap = shipped_spec("generic-imap");
+    assert_eq!(imap.auth.kind, AuthKind::Password);
+    assert_eq!(imap.discovery, Discovery::Autoconfig);
+    assert_eq!(families(&imap), [Family::Imap]);
+    let dav = shipped_spec("generic-dav");
+    assert_eq!(dav.auth.kind, AuthKind::Password);
+    assert_eq!(dav.discovery, Discovery::WellKnown);
+    assert_eq!(families(&dav), [Family::CalDav, Family::CardDav]);
+    // They are the fallback: no address is theirs by name, and a file that names domains
+    // (Fastmail, iCloud) claims it first.
+    for spec in [imap, dav] {
+        assert!(spec.matching.domains.is_empty(), "{}", spec.id);
+        assert!(spec.matching.mx_suffixes.is_empty(), "{}", spec.id);
+        assert!(
+            spec.capabilities.iter().all(|row| row.endpoint.is_none()),
+            "{}",
+            spec.id
+        );
+    }
+}
+
+#[test]
+fn the_nextcloud_file_names_the_login_flow_and_no_server() {
+    use porter_core::AuthKind;
+    use porter_provider::Discovery;
+    let nextcloud = shipped_spec("nextcloud");
+    assert_eq!(nextcloud.auth.kind, AuthKind::LoginFlowV2);
+    assert_eq!(nextcloud.discovery, Discovery::NextcloudOcs);
+    // A Nextcloud is wherever the person says: no row has an endpoint, so the sign-in asks.
+    assert!(
+        nextcloud
+            .capabilities
+            .iter()
+            .all(|row| row.endpoint.is_none())
     );
 }

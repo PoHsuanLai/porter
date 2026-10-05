@@ -26,6 +26,9 @@ accountd = { path = "../accountd" }
 cua-action = { workspace = true }
 inferd = { path = "../inferd" }
 porter-fake = { workspace = true }
+porter-fake-servers = { workspace = true }
+porter-families = { workspace = true, features = ["generic"] }
+porter-http = { workspace = true, features = ["hyper"] }
 tokio = { workspace = true }
 zbus = { workspace = true }
 

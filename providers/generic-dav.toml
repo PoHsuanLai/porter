@@ -1,0 +1,22 @@
+# Any CalDAV and CardDAV server with a password or an app password, found from the server's name
+# by `.well-known` (design/31 §3.2). Files are not offered here: a generic WebDAV root has no
+# discovery that tells a files tree from a calendar home.
+id = "generic-dav"
+label = "Calendar and contacts (DAV)"
+mark = "dav"
+
+[auth]
+kind = "password"
+
+[discovery]
+kind = "well_known"
+
+[[capability]]
+family = "caldav"
+kind = "calendar"
+v = { access = "read_write", delta = "poll", transport = "caldav", collections = "present" }
+
+[[capability]]
+family = "carddav"
+kind = "contacts"
+v = { access = "read_write", delta = "poll", transport = "carddav", collections = "present" }

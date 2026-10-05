@@ -11,12 +11,16 @@ mod api_key;
 mod dispatch;
 #[cfg(feature = "generic")]
 mod generic;
+#[cfg(any(feature = "nextcloud", feature = "generic"))]
+mod io;
 #[cfg(feature = "microsoft")]
 mod microsoft;
 #[cfg(feature = "nextcloud")]
 mod nextcloud;
 #[cfg(feature = "openrouter")]
 mod openrouter;
+#[cfg(any(feature = "nextcloud", feature = "generic"))]
+mod password;
 #[cfg(any(
     feature = "nextcloud",
     feature = "generic",
@@ -31,6 +35,8 @@ pub use api_key::{ApiKeyProvider, ApiKeySession, ApiKeySignIn};
 pub use dispatch::{FamilyProvider, FamilySession, FamilySignIn};
 #[cfg(feature = "generic")]
 pub use generic::{GenericProvider, GenericSession, GenericSignIn};
+#[cfg(any(feature = "nextcloud", feature = "generic"))]
+pub use io::{Pacing, SharedDns};
 #[cfg(feature = "microsoft")]
 pub use microsoft::{
     AccountClass, Clock, MicrosoftEnv, MicrosoftProvider, MicrosoftSession, MicrosoftSignIn,
