@@ -20,6 +20,7 @@ dependencies = [
  "porter-proxy",
  "porter-secrets",
  "porter-service",
+ "rustix",
  "rustls-pki-types",
  "serde",
  "serde_json",

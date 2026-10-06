@@ -21,6 +21,7 @@ porter-service = { workspace = true }
 ds-settings = { workspace = true }
 clap = { workspace = true }
 oo7 = { workspace = true }
+rustix = { workspace = true }
 rustls-pki-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

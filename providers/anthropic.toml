@@ -1,0 +1,25 @@
+# Anthropic (Claude). Checked with GET /v1/models, headers x-api-key and anthropic-version.
+# The account is an API key the person pastes, like an email password: no sign-in with the company.
+# `discover` checks the key with one call to the models list and keeps none of the answer. The
+# row below is the floor every chat model meets; the models themselves are the curated catalogue
+# (stoker), grouped by company, and accountd keeps no list. The price is a mid-range floor
+# (millionths of a dollar per million tokens) that the catalogue's per-model prices replace.
+id = "anthropic"
+label = "Anthropic (Claude)"
+mark = "anthropic"
+
+[auth]
+kind = "api_key"
+
+[discovery]
+kind = "model_list"
+
+[ai]
+locality = { kind = "cloud", v = {} }
+billing = { kind = "metered", v = { input_per_mtok = 3000000, output_per_mtok = 15000000 } }
+
+[[capability]]
+family = "messages"
+endpoint = "https://api.anthropic.com/v1"
+kind = "llm"
+v = { features = ["chat"], context = 8192, max_output = 4096, wire = "messages" }

@@ -73,7 +73,7 @@ a daemon or an app hosting porter turns those features on.
 | `porter-oauth` | `pkce`, `loopback`, `registry`, `renewal`, `device` < `exchange`; `loopback_io` |
 | `porter-discover` | `found`, `dns` < `autoconfig`, `well_known`, `ocs`, `probe` |
 | `porter-dav` | `multistatus` < `request`, `sync` |
-| `porter-families` | `skeleton` < one module per family (`nextcloud`, `generic`, `microsoft`, `api_key`, `openrouter`) < `dispatch` |
+| `porter-families` | `skeleton` (the families not built yet) < `key` (what the cloud-AI key check shares) < one module per family (`nextcloud`, `generic`, `microsoft`, `api_key`, `openrouter`) < `dispatch` |
 | `porter-infer` | `ids`, `control`, `open`, `request`, `cua`, `speech`, `reply`, `error`, `readiness` < `event`, `session`, `choice` < `policy`, `spend`, `audit` < `route` < `pick`, `model` < `broker` |
 | `porter-service` | `clock`, `sheets`, `store`, `audit` < `registry` < `choose`, `token`, `audience` < `service` < `add` |
 | `porter-client` | `error`, `env`, `found`, `authenticated`, `relays` < `transport` (`framed`, `in_process`, `socket`, `dbus`; each with its session) < `accounts` |
@@ -294,8 +294,8 @@ the interface other work builds on; a change is a vocabulary bump (section 6) or
 | the Request objects of the sheet methods (`accountd`), the caller's half (`porter_dbus::Sheet`) | built, tested on a private bus (races, forged signals, close, leaving callers) |
 | D-Bus proxies and skeletons, introspection files in `dbus/` | frozen, introspection tested; skeleton methods answer `NotSupported` |
 | D-Bus argument codec (needs, candidates, grants, tokens, refusal error names) | built, round-tripped over the wire signature |
-| `accountd` (the bus objects, as a library) | built and tested on a private bus: `Manager` (with `Adopt` and the five unicast signals), `Grants`, `Tokens`, `Account` (the properties, readable only with a grant, and `Reauthenticate`), `Peer` (`Verdicts`; role `PorterDaemon` only), the Request objects, `org.quire.SettingsModule1` at `/org/quire/Accounts1/settings` (role `Settings` only), `BusSheets`; an `Agent` is refused what acts for the person; not served: `OpenAuthenticated` (a marked W3g seam, role check done), `Peer.ResolveKey` and `Peer.ReportLocal` |
-| `accountd` (the binary) | built; `ACCOUNTD_PROC_ROOT` is honoured only by a `test-proc-root` build |
+| `accountd` (the bus objects, as a library) | built and tested on a private bus: `Manager` (with `Adopt` and the five unicast signals), `Grants`, `Tokens`, `Account` (the properties, readable only with a grant, and `Reauthenticate`), `Peer` (`Verdicts` and `ResolveKey`, the API key on a sealed memfd; role `PorterDaemon` only), the Request objects, `org.quire.SettingsModule1` at `/org/quire/Accounts1/settings` (role `Settings` only), `BusSheets`; an `Agent` is refused what acts for the person; not served: `OpenAuthenticated` (a marked W3g seam, role check done) and `Peer.ReportLocal` |
+| `accountd` (the binary) | built; `ACCOUNTD_PROC_ROOT` is honoured only by a `test-proc-root` build; `accountd add <provider-id> [--allow <app-id>]... [--class <class>]...` adds an account from a terminal (`add`: a terminal `Sheets`, the key read with echo off) and holds the bus name `org.quire.Accounts1` while it runs, which is the lock against a running daemon; `Peer.ResolveKey` reads through `keys::KeyDesk` (`SecretsDesk` over the secret store, an audit sink and a clock) |
 | `syncd` | skeleton: builds its service, prints "not implemented", exits 2 |
 | `inferd` | built: a daemon on the session bus (the checked-in `dist/` files install it) |
 | protocol families (the skeletons are in `porter-families`), wire adapters, the daemon's registry file and audit file, Google (the owner deferred it) | not started |

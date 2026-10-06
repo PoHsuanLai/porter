@@ -236,3 +236,86 @@ async fn a_caller_table_that_does_not_parse_stops_the_daemon_naming_the_file() {
         daemon.stderr()
     );
 }
+
+/// `accountd add ...` to the end, with no input, on the private bus with the shipped provider
+/// files: its exit status, standard output and standard error.
+fn add(bus: &PrivateBus, home: &Path, args: &[&str]) -> (bool, String, String) {
+    let providers = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../providers");
+    let output = Command::new(env!("CARGO_BIN_EXE_accountd"))
+        .env_clear()
+        .env("HOME", home)
+        .env("XDG_STATE_HOME", home.join("state"))
+        .env("XDG_CONFIG_HOME", home.join("config"))
+        .env("XDG_DATA_HOME", home.join("data"))
+        .env("XDG_RUNTIME_DIR", bus.scratch())
+        .env("DBUS_SESSION_BUS_ADDRESS", bus.address())
+        .arg("--providers")
+        .arg(providers)
+        .arg("add")
+        .args(args)
+        .stdin(Stdio::null())
+        .output()
+        .expect("accountd add runs");
+    (
+        output.status.success(),
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+    )
+}
+
+#[test]
+fn add_says_what_it_does_what_the_allow_means_and_what_to_do_with_the_daemon() {
+    let output = Command::new(env!("CARGO_BIN_EXE_accountd"))
+        .args(["add", "--help"])
+        .env_clear()
+        .output()
+        .expect("help");
+    let help = String::from_utf8_lossy(&output.stdout).into_owned();
+    assert!(output.status.success(), "{help}");
+    for phrase in [
+        "Usage: accountd add [OPTIONS] <PROVIDER>",
+        "--allow <APP-ID>",
+        "--class <CLASS>",
+        "echo off",
+        "You typing this command is the consent",
+        "\"Allow, always\"",
+        "systemctl --user stop accountd.service",
+        "openrouter",
+    ] {
+        assert!(help.contains(phrase), "{phrase}: {help}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn add_stops_while_the_daemon_runs_and_names_how_to_go_on() {
+    let bus = PrivateBus::start();
+    let home = scratch(&bus, "home");
+    let mut daemon = spawn(&bus, &home, None);
+    assert!(serving(&bus, &mut daemon).await, "{}", daemon.stderr());
+    let (ok, _stdout, stderr) = add(&bus, &home, &["anthropic"]);
+    assert!(!ok);
+    assert!(
+        stderr.contains("owns org.quire.Accounts1") && stderr.contains("systemctl --user stop"),
+        "{stderr}"
+    );
+    assert!(!home.join("state/porter/registry.json").exists());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn add_refuses_what_it_cannot_serve_before_it_asks_for_anything() {
+    let bus = PrivateBus::start();
+    let home = scratch(&bus, "home");
+    let cases: &[(&[&str], &str)] = &[
+        (&["nosuch"], "no provider `nosuch` is served"),
+        (&["Not A Provider"], "not understood"),
+        (&["anthropic", "--allow", "not a name"], "not understood"),
+        (&["anthropic", "--class", "secrets"], "not understood"),
+    ];
+    for (args, want) in cases {
+        let (ok, stdout, stderr) = add(&bus, &home, args);
+        assert!(!ok, "{args:?}");
+        assert!(stderr.contains(want), "{args:?}: {stderr}");
+        assert!(!stdout.contains("Added"), "{args:?}");
+    }
+    assert!(!home.join("state/porter/registry.json").exists());
+}

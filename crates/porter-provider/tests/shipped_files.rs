@@ -25,7 +25,7 @@ fn shipped() -> Vec<(PathBuf, ProviderSpec)> {
 #[test]
 fn every_shipped_provider_file_parses_and_is_named_by_its_id() {
     let files = shipped();
-    assert_eq!(files.len(), 7);
+    assert_eq!(files.len(), 12);
     for (path, spec) in files {
         let stem = path.file_stem().and_then(|s| s.to_str()).expect("stem");
         assert_eq!(spec.id.as_str(), stem, "{}", path.display());
@@ -139,4 +139,71 @@ fn the_nextcloud_file_names_the_login_flow_and_no_server() {
             .iter()
             .all(|row| row.endpoint.is_none())
     );
+}
+
+#[test]
+fn the_ai_company_files_declare_a_cloud_llm_row_behind_a_pasted_key() {
+    use porter_core::capability::CapabilityKind as K;
+    use porter_core::{AuthKind, Family, Locality};
+    use porter_provider::Discovery;
+    for (id, label, family, endpoint) in [
+        (
+            "anthropic",
+            "Anthropic (Claude)",
+            Family::Messages,
+            "https://api.anthropic.com/v1",
+        ),
+        (
+            "google-ai",
+            "Google (Gemini)",
+            Family::GenerateContent,
+            "https://generativelanguage.googleapis.com/v1beta",
+        ),
+        (
+            "moonshot",
+            "Moonshot (Kimi)",
+            Family::ChatCompletions,
+            "https://api.moonshot.ai/v1",
+        ),
+        (
+            "openrouter",
+            "OpenRouter",
+            Family::ChatCompletions,
+            "https://openrouter.ai/api/v1",
+        ),
+        (
+            "openai",
+            "OpenAI",
+            Family::ChatCompletions,
+            "https://api.openai.com/v1",
+        ),
+    ] {
+        let spec = shipped_spec(id);
+        assert_eq!(spec.label, label, "{id}");
+        assert_eq!(
+            (spec.auth.kind, spec.auth.issuer),
+            (AuthKind::ApiKey, None),
+            "{id}"
+        );
+        assert_eq!(spec.discovery, Discovery::ModelList, "{id}");
+        // Keys are not found from an email address.
+        assert!(spec.matching.domains.is_empty() && spec.matching.mx_suffixes.is_empty());
+        assert_eq!(
+            spec.ai.as_ref().map(|ai| ai.locality.clone()),
+            Some(Locality::Cloud { region: None }),
+            "{id}"
+        );
+        assert_eq!(spec.capabilities.len(), 1, "{id}");
+        let row = &spec.capabilities[0];
+        assert_eq!(
+            (row.capability.kind(), row.family),
+            (K::Llm, family),
+            "{id}"
+        );
+        assert_eq!(
+            row.endpoint.as_ref().map(|e| e.0.as_str()),
+            Some(endpoint),
+            "{id}"
+        );
+    }
 }

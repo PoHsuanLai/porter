@@ -13,6 +13,8 @@ mod dispatch;
 mod generic;
 #[cfg(any(feature = "nextcloud", feature = "generic"))]
 mod io;
+#[cfg(feature = "api_key")]
+mod key;
 #[cfg(feature = "microsoft")]
 mod microsoft;
 #[cfg(feature = "nextcloud")]
@@ -21,13 +23,7 @@ mod nextcloud;
 mod openrouter;
 #[cfg(any(feature = "nextcloud", feature = "generic"))]
 mod password;
-#[cfg(any(
-    feature = "nextcloud",
-    feature = "generic",
-    feature = "microsoft",
-    feature = "api_key",
-    feature = "openrouter"
-))]
+#[cfg(feature = "openrouter")]
 mod skeleton;
 
 #[cfg(feature = "api_key")]

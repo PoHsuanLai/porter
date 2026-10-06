@@ -26,9 +26,13 @@
 //!   whose far end runs `porter_proxy::relay` (`relay`); the descriptor is returned once the relay
 //!   has authenticated. `Options::relay_roots` is the test seam for the trusted roots.
 //!
-//! Not served: `Peer.ResolveKey` and `Peer.ReportLocal`.
+//! - `Peer.ResolveKey`: an API key of a granted Llm account on a sealed memfd, for a porter daemon
+//!   only (`keys`); the key is read by `Options::keys`.
+//!
+//! Not served: `Peer.ReportLocal`.
 
 mod account;
+pub mod add;
 mod audit;
 mod callers;
 mod callers_file;
@@ -36,6 +40,7 @@ mod core;
 mod errors;
 mod grants;
 mod hub;
+mod keys;
 mod legacy;
 mod manager;
 pub mod paths;
@@ -54,6 +59,7 @@ pub use callers::{Callers, TableCallers};
 pub use callers_file::{CallerFileError, load_callers, table_from_file, table_from_toml};
 pub use core::{Host, Options, serve, serve_with};
 pub use errors::RefusedError;
+pub use keys::{KeyDesk, RESOLVE_AUDIENCE, SecretsDesk, sealed_key};
 pub use legacy::{AdoptConfig, AdoptTable, MemoryLegacy, Oo7Legacy, from_mailo};
 pub use relay::RelayRoots;
 pub use settings::settings_path;

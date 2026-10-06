@@ -24,6 +24,20 @@ pub fn local() -> ProviderSpec {
     parse(include_str!("../../../providers/local.toml"))
 }
 
+/// The shipped `providers/<id>.toml` of an AI company served by the `api_key` family
+/// (`anthropic`, `google-ai`, `moonshot`, `openai`, `openrouter`).
+pub fn ai(id: &str) -> ProviderSpec {
+    let text = match id {
+        "anthropic" => include_str!("../../../providers/anthropic.toml"),
+        "google-ai" => include_str!("../../../providers/google-ai.toml"),
+        "moonshot" => include_str!("../../../providers/moonshot.toml"),
+        "openrouter" => include_str!("../../../providers/openrouter.toml"),
+        "openai" => include_str!("../../../providers/openai.toml"),
+        other => panic!("no shipped AI provider file `{other}`"),
+    };
+    parse(text)
+}
+
 /// A provider file's text; panics on a bad file (the shipped files are tested elsewhere).
 pub fn parse(text: &str) -> ProviderSpec {
     parse_provider(text).unwrap_or_else(|e| panic!("provider file: {e}"))

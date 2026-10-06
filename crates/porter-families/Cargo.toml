@@ -36,7 +36,7 @@ generic = ["dep:porter-dav", "dep:porter-discover", "dep:base64"]
 # Microsoft: OAuth PKCE and device code, IMAP/SMTP XOAUTH2, Graph.
 microsoft = ["dep:porter-oauth", "dep:porter-discover", "porter-oauth/io", "porter-http/hyper", "dep:serde", "dep:serde_json", "dep:tokio"]
 # AI providers with a pasted API key (Anthropic, OpenAI).
-api_key = []
+api_key = ["porter-http/hyper"]
 # OpenRouter: OAuth PKCE that mints a key.
 openrouter = ["dep:porter-oauth"]
 
@@ -46,3 +46,7 @@ workspace = true
 [[test]]
 name = "microsoft"
 required-features = ["microsoft"]
+
+[[test]]
+name = "api_key"
+required-features = ["api_key"]

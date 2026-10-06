@@ -6,6 +6,7 @@ use crate::callers::Callers;
 use crate::errors::RefusedError;
 use crate::grants::{Grants, Tokens};
 use crate::hub::{Event, audience, events};
+use crate::keys::KeyDesk;
 use crate::legacy::AdoptConfig;
 use crate::manager::Manager;
 use crate::relay::{RelayRoots, Relays};
@@ -197,6 +198,8 @@ pub(crate) struct Core<H, C> {
     pub(crate) clients: Option<std::path::PathBuf>,
     /// The connector the authenticated relays dial with.
     pub(crate) relays: Relays,
+    /// Reads the API keys `Peer.ResolveKey` releases; none refuses it `Unavailable`.
+    pub(crate) keys: Option<Arc<dyn KeyDesk>>,
 }
 
 fn held<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -372,6 +375,8 @@ pub struct Options {
     /// The certificates an authenticated relay trusts: the platform's, or (a test seam) a
     /// scratch CA alone.
     pub relay_roots: RelayRoots,
+    /// Where `Peer.ResolveKey` reads API keys from; none leaves it refusing `Unavailable`.
+    pub keys: Option<Arc<dyn KeyDesk>>,
 }
 
 /// Serves `org.quire.Accounts1` on `connection` over `host`, answering for the apps `callers`
@@ -403,6 +408,7 @@ pub async fn serve_with<H: Host, C: Callers>(
         adopt: options.adopt,
         clients: options.clients,
         relays: Relays::new(options.relay_roots),
+        keys: options.keys,
     });
     let server: &ObjectServer = connection.object_server();
     server

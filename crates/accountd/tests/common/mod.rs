@@ -9,7 +9,7 @@ pub mod host;
 pub use host::SheetHost;
 pub use porter_fake::{mail_account, storage_account};
 
-use accountd::{AdoptConfig, BusSheets, Options, TableCallers, serve_with};
+use accountd::{AdoptConfig, BusSheets, Options, SecretsDesk, TableCallers, serve_with};
 use bus::PrivateBus;
 use host::HostLog;
 use porter_core::{
@@ -93,7 +93,7 @@ impl Rig {
         Self::start_with(Options::default(), SheetHost::quiet()).await
     }
 
-    pub async fn start_with(options: Options, host: SheetHost) -> Self {
+    pub async fn start_with(mut options: Options, host: SheetHost) -> Self {
         let bus = PrivateBus::start();
         let callers = Arc::new(TableCallers::new());
         let connection = bus.connect().await;
@@ -142,6 +142,13 @@ impl Rig {
         };
         let store = MemoryStore::default();
         let audit = RecordingAudit::default();
+        if options.keys.is_none() {
+            options.keys = Some(Arc::new(SecretsDesk::new(
+                secrets.clone(),
+                audit.clone(),
+                FixedClock(porter_fake::NOW),
+            )));
+        }
         let sheets = BusSheets::new(connection.clone(), Arc::clone(&callers));
         let service = Arc::new(
             AccountService::new(
@@ -346,4 +353,45 @@ pub async fn heard(stream: &mut zbus::MessageStream, wait: std::time::Duration) 
             _ => return names,
         }
     }
+}
+
+/// Every message on the bus, from the moment the tap is set: the bytes of each, as a monitor sees
+/// them (file descriptors are not bytes, so what travels on one is not in them).
+pub struct Tap(zbus::MessageStream);
+
+impl Tap {
+    pub async fn start(bus: &PrivateBus) -> Self {
+        let monitor = bus.connect().await;
+        zbus::fdo::MonitoringProxy::new(&monitor)
+            .await
+            .expect("proxy")
+            .become_monitor(&[], 0)
+            .await
+            .expect("monitor");
+        Self(zbus::MessageStream::from(monitor))
+    }
+
+    /// What has gone by so far.
+    pub async fn drain(&mut self) -> Vec<Vec<u8>> {
+        use zbus::export::futures_core::Stream;
+        let mut seen = Vec::new();
+        loop {
+            let next = tokio::time::timeout(
+                std::time::Duration::from_millis(300),
+                std::future::poll_fn(|cx| std::pin::Pin::new(&mut self.0).poll_next(cx)),
+            )
+            .await;
+            match next {
+                Ok(Some(Ok(message))) => seen.push(message.data().to_vec()),
+                _ => return seen,
+            }
+        }
+    }
+}
+
+/// Whether `needle` is anywhere in `haystack`.
+pub fn contains(haystack: &[u8], needle: &str) -> bool {
+    haystack
+        .windows(needle.len())
+        .any(|window| window == needle.as_bytes())
 }
