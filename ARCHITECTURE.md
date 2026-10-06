@@ -49,7 +49,7 @@ Allowed direct edges (checked by `scripts/check-boundary.sh`; dev-dependencies a
 | `porter-fake` | `porter-core`, `porter-infer`, `porter-provider`, `porter-secrets`, `porter-service` |
 | `porter-fake-servers` | `porter-core`, `porter-discover`, `porter-fake`, `porter-provider` (and nothing may depend on it) |
 | `accountd` | `porter-core`, `porter-dbus`, `porter-families`, `porter-provider`, `porter-proxy` (feature `tls`, for `OpenAuthenticated`), `porter-secrets`, `porter-service`, and quire's `ds-settings` (feature `live`, by sibling path like stoker) for `org.quire.SettingsModule1`: the one porter -> quire edge, accountd and inferd (its model picker), never a library crate (check-boundary forbids it everywhere else) |
-| `syncd` | `porter-client` (no features: `Accounts<T>` over a `Transport`, for `open_authenticated`), `porter-core`, `porter-dbus`, `porter-http`, `porter-sync`, `storage-webdav` (and rusqlite, SQLCipher built from source with a vendored OpenSSL, used unkeyed) |
+| `syncd` | `porter-client` (feature `dbus`: `Accounts<T>` over a `Transport`, for `open_authenticated` and the PIM supervisor's `find`; the binary's `DbusTransport`), `porter-core`, `porter-dav` (the PIM mirror's discovery), `porter-dbus`, `porter-http`, `porter-sync`, `storage-webdav` (and rusqlite, SQLCipher built from source with a vendored OpenSSL, used unkeyed) |
 | `inferd` | `porter-core`, `porter-dbus`, `porter-infer`, `cua-action`, quire's `ds-settings` (feature `live`, as accountd's, for the model picker), and stoker's `model-provider`, `model-catalog`, `engine-supervisor`, `model-http` (feature `hyper`), `model-openai-compat`, `vision-prep` (feature `pixels`), `cua-parse`, `cua-session`, `cua-vendors`, `model-extract`, `model-replay`, `speech-provider`, by sibling path |
 
 External boundaries: every crate but `porter-dbus` and the daemons never reaches `zbus`,
@@ -70,7 +70,7 @@ a daemon or an app hosting porter turns those features on.
 | `porter-provider` | `error` < `spec` (`auth`, `discovery`, `matching`), `clients` < `parse`, `set` < `sign_in` < `provider` |
 | `porter-secrets` | `error`, `attributes` < `secrets` < `memory`, `oo7`, `keyring` |
 | `porter-sync` | `anchor`, `item`, `transfer`, `quota` < `change`, `refusal`, `dataset` < `journal` < `journal_reconcile`, `replica` < `memory` |
-| `syncd` | `paths`, `callers_file`, `clock` ; `journal` (`schema`, `rows`) ; `dataset` (`memory`, feature `testing`) < `engine` (`pull`, `push`, `resolve`) < `driver` ; `scheduler` (`backoff`) ; `service` (`hub`, `status`, `errors`) < `object` ; `removal` ; `webdav` (`RelayDial`, `webdav_replica`) |
+| `syncd` | `paths`, `callers_file`, `clock` ; `journal` (`schema`, `rows`) ; `dataset` (`memory`, feature `testing`) < `engine` (`pull`, `push`, `resolve`) < `driver` ; `scheduler` (`backoff`) ; `service` (`hub`, `status`, `errors`) < `object` ; `removal` ; `webdav` (`RelayDial`, `webdav_replica`) ; `datasets::pim` (`vdir`, `mirror` (`PimMirror`), `discover`, `plan`, `relay`, `grants`, `mirrors`, `supervisor`) |
 | `porter-http` | `error`, `headers` < `message` < `http` < `hyper_client` |
 | `porter-proxy` | `fault`, `step`, `connect` < `imap`, `smtp`, `http1` < `relay`; `tokio_stream` |
 | `porter-oauth` | `pkce`, `loopback`, `registry`, `renewal`, `device` < `exchange`; `loopback_io` |
