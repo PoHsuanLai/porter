@@ -5,6 +5,7 @@
 use crate::pick::{AutoMode, Pick};
 use crate::readiness::Readiness;
 use crate::route::TierChoice;
+use crate::slot::Slot;
 use porter_core::{AccountId, Billing, Locality, ModelId, Tier};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -16,54 +17,6 @@ pub struct ModelRef {
     pub account: AccountId,
     /// Its id.
     pub model: ModelId,
-}
-
-/// The AI kinds a user maps models to: `CapabilityKind`'s AI subset, with speech split by
-/// direction because a speech-to-text model and a text-to-speech model are chosen separately.
-///
-/// `SpeechIn` stands for `Need::Speech` with `{Stt}`, `SpeechOut` for `{Tts}`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AiKind {
-    /// Language models.
-    Llm,
-    /// Computer-use models.
-    ComputerUse,
-    /// Embedding models.
-    Embeddings,
-    /// Speech to text.
-    SpeechIn,
-    /// Text to speech.
-    SpeechOut,
-    /// Image generators.
-    ImageGen,
-    /// Rerankers.
-    Rerank,
-}
-
-impl AiKind {
-    /// The kind's stable slug: its serde form and its settings-key segment.
-    pub fn slug(self) -> &'static str {
-        match self {
-            AiKind::Llm => "llm",
-            AiKind::ComputerUse => "computer_use",
-            AiKind::Embeddings => "embeddings",
-            AiKind::SpeechIn => "speech_in",
-            AiKind::SpeechOut => "speech_out",
-            AiKind::ImageGen => "image_gen",
-            AiKind::Rerank => "rerank",
-        }
-    }
-
-    /// The settings key for the model chosen at `tier` (`ai.model.speech_in.balanced`).
-    pub fn setting_key(self, tier: Tier) -> String {
-        let tier = match tier {
-            Tier::Fast => "fast",
-            Tier::Balanced => "balanced",
-            Tier::Best => "best",
-        };
-        format!("ai.model.{}.{tier}", self.slug())
-    }
 }
 
 /// The label a settings page draws for a tier. The key segment stays `best` (a name for a slot,
@@ -80,7 +33,7 @@ pub fn tier_label(tier: Tier) -> &'static str {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TierRow {
     /// The kind.
-    pub kind: AiKind,
+    pub kind: Slot,
     /// The tier.
     pub tier: Tier,
     /// The model chosen.
@@ -91,7 +44,7 @@ pub struct TierRow {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct AutoRow {
     /// The kind.
-    pub kind: AiKind,
+    pub kind: Slot,
     /// The tier.
     pub tier: Tier,
     /// What Automatic does for it.
@@ -112,7 +65,7 @@ impl TierMap {
     /// The person's pick for `kind` and `tier`, or `None` when the row is empty (the catalogue's
     /// own choice, as before). A row that names a model wins over an "auto" row for the same
     /// slot: a named model is never overridden, so a file that says both stays with the name.
-    pub fn pick(&self, kind: AiKind, tier: Tier) -> Option<Pick> {
+    pub fn pick(&self, kind: Slot, tier: Tier) -> Option<Pick> {
         let named = self
             .rows
             .iter()
@@ -128,7 +81,7 @@ impl TierMap {
 }
 
 /// Whether `model` is the user's choice for `kind` at `tier`. Feeds `route` unchanged.
-pub fn tier_choice(map: &TierMap, kind: AiKind, tier: Tier, model: &ModelRef) -> TierChoice {
+pub fn tier_choice(map: &TierMap, kind: Slot, tier: Tier, model: &ModelRef) -> TierChoice {
     let chosen = map
         .rows
         .iter()
@@ -174,7 +127,7 @@ pub struct PickerInput {
     /// The name to show.
     pub label: String,
     /// Which kind it serves.
-    pub kind: AiKind,
+    pub kind: Slot,
     /// Where it runs.
     pub locality: Locality,
     /// What it costs.
@@ -195,7 +148,7 @@ pub struct PickerRow {
     /// The name to show.
     pub label: String,
     /// Which kind it serves.
-    pub kind: AiKind,
+    pub kind: Slot,
     /// Where it runs.
     pub locality: Locality,
     /// What it costs.
@@ -213,7 +166,7 @@ pub struct PickerRow {
 /// The plain list for `kind`: models of that kind only, this computer first, then ready before
 /// loadable before downloadable, then the order the cards came in (the catalog's order). No
 /// ranking by quality; a non-commercial row is listed and never mapped to a tier by itself.
-pub fn picker_rows(kind: AiKind, cards: &[PickerInput], map: &TierMap) -> Vec<PickerRow> {
+pub fn picker_rows(kind: Slot, cards: &[PickerInput], map: &TierMap) -> Vec<PickerRow> {
     let mut rows: Vec<PickerRow> = cards
         .iter()
         .filter(|card| card.kind == kind)
@@ -278,7 +231,7 @@ mod tests {
         let nemotron = model("local", "nemotron");
         let map = TierMap {
             rows: vec![TierRow {
-                kind: AiKind::SpeechIn,
+                kind: Slot::VoiceIn,
                 tier: Tier::Balanced,
                 model: nemotron.clone(),
             }],
@@ -287,28 +240,28 @@ mod tests {
         let cases = [
             (
                 "the chosen model",
-                AiKind::SpeechIn,
+                Slot::VoiceIn,
                 Tier::Balanced,
                 &nemotron,
                 TierChoice::Chosen,
             ),
             (
                 "another tier",
-                AiKind::SpeechIn,
+                Slot::VoiceIn,
                 Tier::Fast,
                 &nemotron,
                 TierChoice::Other,
             ),
             (
                 "another kind",
-                AiKind::SpeechOut,
+                Slot::VoiceOut,
                 Tier::Balanced,
                 &nemotron,
                 TierChoice::Other,
             ),
             (
                 "another model",
-                AiKind::SpeechIn,
+                Slot::VoiceIn,
                 Tier::Balanced,
                 &model("local", "whisper"),
                 TierChoice::Other,
@@ -319,7 +272,7 @@ mod tests {
         }
     }
 
-    fn card(name: &str, kind: AiKind, locality: Locality, readiness: Readiness) -> PickerInput {
+    fn card(name: &str, kind: Slot, locality: Locality, readiness: Readiness) -> PickerInput {
         PickerInput {
             model: model("local", name),
             label: name.to_owned(),
@@ -343,20 +296,20 @@ mod tests {
             region: region.map(|r| porter_core::Region(r.to_owned())),
         };
         let cards = [
-            card("far-ready", AiKind::Llm, cloud(Some("eu-west-1")), Ready),
-            card("speech", AiKind::SpeechIn, Locality::OnDevice, Ready),
-            card("near-down", AiKind::Llm, Locality::OnDevice, Downloadable),
-            card("near-stopped", AiKind::Llm, Locality::OnDevice, Loadable),
-            card("lan", AiKind::Llm, Locality::LocalNetwork, Ready),
-            card("near-ready-a", AiKind::Llm, Locality::OnDevice, Ready),
-            card("near-ready-b", AiKind::Llm, Locality::OnDevice, Ready),
-            card("far-ready-2", AiKind::Llm, cloud(None), Ready),
-            card("near-loading", AiKind::Llm, Locality::OnDevice, Loading),
-            card("near-gone", AiKind::Llm, Locality::OnDevice, Unavailable),
+            card("far-ready", Slot::Text, cloud(Some("eu-west-1")), Ready),
+            card("speech", Slot::VoiceIn, Locality::OnDevice, Ready),
+            card("near-down", Slot::Text, Locality::OnDevice, Downloadable),
+            card("near-stopped", Slot::Text, Locality::OnDevice, Loadable),
+            card("lan", Slot::Text, Locality::LocalNetwork, Ready),
+            card("near-ready-a", Slot::Text, Locality::OnDevice, Ready),
+            card("near-ready-b", Slot::Text, Locality::OnDevice, Ready),
+            card("far-ready-2", Slot::Text, cloud(None), Ready),
+            card("near-loading", Slot::Text, Locality::OnDevice, Loading),
+            card("near-gone", Slot::Text, Locality::OnDevice, Unavailable),
         ];
         let cases = [
             (
-                AiKind::Llm,
+                Slot::Text,
                 vec![
                     "near-ready-a",
                     "near-ready-b",
@@ -369,8 +322,8 @@ mod tests {
                     "far-ready-2",
                 ],
             ),
-            (AiKind::SpeechIn, vec!["speech"]),
-            (AiKind::Rerank, vec![]),
+            (Slot::VoiceIn, vec!["speech"]),
+            (Slot::Rerank, vec![]),
         ];
         for (kind, expected) in cases {
             let rows = picker_rows(kind, &cards, &TierMap::default());
@@ -380,43 +333,38 @@ mod tests {
 
     #[test]
     fn picker_rows_mark_the_tiers_the_user_mapped() {
-        let a = card("a", AiKind::Llm, Locality::OnDevice, Readiness::Ready);
+        let a = card("a", Slot::Text, Locality::OnDevice, Readiness::Ready);
         let map = TierMap {
             rows: vec![
                 TierRow {
-                    kind: AiKind::Llm,
+                    kind: Slot::Text,
                     tier: Tier::Fast,
                     model: a.model.clone(),
                 },
                 TierRow {
-                    kind: AiKind::Llm,
+                    kind: Slot::Text,
                     tier: Tier::Best,
                     model: a.model.clone(),
                 },
                 TierRow {
-                    kind: AiKind::SpeechIn,
+                    kind: Slot::VoiceIn,
                     tier: Tier::Balanced,
                     model: a.model.clone(),
                 },
             ],
             autos: vec![],
         };
-        let rows = picker_rows(AiKind::Llm, &[a], &map);
+        let rows = picker_rows(Slot::Text, &[a], &map);
         assert_eq!(rows[0].chosen_for, BTreeSet::from([Tier::Fast, Tier::Best]));
     }
 
     #[test]
     fn picker_rows_carry_no_ranking_words() {
         let cards = [
-            card("a", AiKind::Llm, Locality::OnDevice, Readiness::Ready),
-            card(
-                "b",
-                AiKind::Llm,
-                Locality::LocalNetwork,
-                Readiness::Loadable,
-            ),
+            card("a", Slot::Text, Locality::OnDevice, Readiness::Ready),
+            card("b", Slot::Text, Locality::LocalNetwork, Readiness::Loadable),
         ];
-        let json = serde_json::to_value(picker_rows(AiKind::Llm, &cards, &TierMap::default()))
+        let json = serde_json::to_value(picker_rows(Slot::Text, &cards, &TierMap::default()))
             .expect("serializes");
         let mut keys = Vec::new();
         collect_keys(&json, &mut keys);
@@ -452,18 +400,18 @@ mod tests {
     #[test]
     fn setting_keys_name_kind_and_tier() {
         assert_eq!(
-            AiKind::SpeechIn.setting_key(Tier::Fast),
-            "ai.model.speech_in.fast"
+            Slot::VoiceIn.setting_key(Tier::Fast),
+            "ai.model.voice_in.fast"
         );
         assert_eq!(
-            AiKind::ComputerUse.setting_key(Tier::Balanced),
+            Slot::ComputerUse.setting_key(Tier::Balanced),
             "ai.model.computer_use.balanced"
         );
     }
 
     #[test]
     fn the_best_slot_keeps_its_key_and_shows_another_label() {
-        assert_eq!(AiKind::Llm.setting_key(Tier::Best), "ai.model.llm.best");
+        assert_eq!(Slot::Text.setting_key(Tier::Best), "ai.model.text.best");
         let labels: Vec<_> = [Tier::Fast, Tier::Balanced, Tier::Best]
             .into_iter()
             .map(tier_label)
@@ -482,39 +430,39 @@ mod tests {
         let map = TierMap {
             rows: vec![
                 TierRow {
-                    kind: AiKind::Llm,
+                    kind: Slot::Text,
                     tier: Tier::Fast,
                     model: a.clone(),
                 },
                 TierRow {
-                    kind: AiKind::Llm,
+                    kind: Slot::Text,
                     tier: Tier::Best,
                     model: a.clone(),
                 },
             ],
             autos: vec![
                 AutoRow {
-                    kind: AiKind::Llm,
+                    kind: Slot::Text,
                     tier: Tier::Balanced,
                     mode: AutoMode::WarmFirst,
                 },
                 AutoRow {
-                    kind: AiKind::Llm,
+                    kind: Slot::Text,
                     tier: Tier::Best,
                     mode: AutoMode::WarmFirst,
                 },
             ],
         };
         assert_eq!(
-            map.pick(AiKind::Llm, Tier::Fast),
+            map.pick(Slot::Text, Tier::Fast),
             Some(Pick::Named(a.clone()))
         );
         assert_eq!(
-            map.pick(AiKind::Llm, Tier::Balanced),
+            map.pick(Slot::Text, Tier::Balanced),
             Some(Pick::Auto(AutoMode::WarmFirst))
         );
-        assert_eq!(map.pick(AiKind::Llm, Tier::Best), Some(Pick::Named(a)));
-        assert_eq!(map.pick(AiKind::Embeddings, Tier::Fast), None);
+        assert_eq!(map.pick(Slot::Text, Tier::Best), Some(Pick::Named(a)));
+        assert_eq!(map.pick(Slot::Embeddings, Tier::Fast), None);
     }
 
     #[test]

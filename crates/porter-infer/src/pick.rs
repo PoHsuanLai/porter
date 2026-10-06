@@ -219,6 +219,24 @@ pub enum Why {
         /// The idle model that is unloaded.
         model: ModelRef,
     },
+    /// A hosted model is reached through this provider, by this door ("via OpenRouter"). Appended
+    /// after the others: a reader that does not know it must skip it.
+    Reached {
+        /// The provider's id (`openrouter`, `anthropic`, ...).
+        provider: crate::pipeline::ProviderId,
+        /// Whether the provider is the model's own company or a gateway.
+        door: Door,
+    },
+}
+
+/// How a hosted model is reached.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Door {
+    /// The model's own company's account.
+    Direct,
+    /// A gateway that reaches many companies (OpenRouter).
+    Gateway,
 }
 
 /// What a pick resolves to.

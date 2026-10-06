@@ -175,6 +175,14 @@ fn client_frame_audio_round_trip() {
 fn infer_frames_round_trip() {
     let events = vec![
         InferEvent::Routed(served()),
+        InferEvent::Stage(StageNote {
+            role: StageRole::Hear,
+            served: served(),
+            why: Why::Reached {
+                provider: ProviderId("openrouter".into()),
+                door: Door::Gateway,
+            },
+        }),
         InferEvent::Waiting(Readiness::Loading),
         InferEvent::Waiting(Readiness::Downloading(Permille(420))),
         InferEvent::TextDelta("he".into()),
@@ -275,7 +283,7 @@ fn picker_data_round_trips_with_plain_slugs() {
     };
     let map = TierMap {
         rows: vec![TierRow {
-            kind: AiKind::SpeechIn,
+            kind: Slot::VoiceIn,
             tier: porter_core::Tier::Balanced,
             model: model.clone(),
         }],
@@ -283,13 +291,13 @@ fn picker_data_round_trips_with_plain_slugs() {
     };
     round_trip(&map);
     let slugs: Vec<String> = [
-        AiKind::Llm,
-        AiKind::ComputerUse,
-        AiKind::Embeddings,
-        AiKind::SpeechIn,
-        AiKind::SpeechOut,
-        AiKind::ImageGen,
-        AiKind::Rerank,
+        Slot::Text,
+        Slot::ComputerUse,
+        Slot::Embeddings,
+        Slot::VoiceIn,
+        Slot::VoiceOut,
+        Slot::ImageGen,
+        Slot::Rerank,
     ]
     .iter()
     .map(|kind| {
@@ -299,10 +307,19 @@ fn picker_data_round_trips_with_plain_slugs() {
     })
     .collect();
     assert_eq!(slugs.len(), 7);
+    // A frame written before the rename still reads, as the slot its kind became.
+    assert_eq!(
+        serde_json::from_str::<Slot>(r#""speech_in""#).ok(),
+        Some(Slot::VoiceIn)
+    );
+    assert_eq!(
+        serde_json::from_str::<Slot>(r#""llm""#).ok(),
+        Some(Slot::Text)
+    );
     round_trip(&PickerRow {
         model,
         label: "Nemotron streaming".into(),
-        kind: AiKind::SpeechIn,
+        kind: Slot::VoiceIn,
         locality: Locality::OnDevice,
         billing: porter_core::Billing::Free,
         readiness: Readiness::Loadable,
@@ -529,4 +546,22 @@ fn a_frame_names_how_many_descriptors_ride_with_it() {
     for (name, frame, expected) in cases {
         assert_eq!(frame.attachments(), expected, "{name}");
     }
+}
+
+#[test]
+fn why_reached_and_stage_notes_keep_their_json() {
+    let why = Why::Reached {
+        provider: ProviderId("openrouter".into()),
+        door: Door::Gateway,
+    };
+    assert_eq!(
+        round_trip(&why),
+        r#"{"kind":"reached","provider":"openrouter","door":"gateway"}"#
+    );
+    assert_eq!(round_trip(&Why::Named), r#"{"kind":"named"}"#);
+    round_trip(&StageNote {
+        role: StageRole::Answer,
+        served: served(),
+        why: Why::Nearest,
+    });
 }

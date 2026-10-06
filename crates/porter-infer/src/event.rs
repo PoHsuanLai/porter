@@ -1,6 +1,7 @@
 //! The streaming session on the `Open` fd: frames the client writes, events inferd writes.
 
 use crate::pick::{Declined, Why};
+use crate::pipeline::StageRole;
 use crate::readiness::Readiness;
 use crate::reply::{InferReply, ServedBy, TokenUsage};
 use crate::request::{InferRequest, ToolCallPart};
@@ -45,6 +46,10 @@ pub enum InferEvent {
     /// The model the person named cannot serve, and why; `Finished(Refused(..))` follows. No
     /// other model answers in its place.
     Declined(Declined),
+    /// One stage of a pipeline and who runs it, sent before that stage runs: the footer reads
+    /// them ("Heard by Whisper, Answered by Gemma 4"). A one-stage session sends one. Additive: a
+    /// reader that does not know it must skip it.
+    Stage(StageNote),
     /// The engine is loading: presence is "working", never a spinner in the app.
     Waiting(Readiness),
     /// Reply text so far.
@@ -73,4 +78,15 @@ pub enum Flow {
     Continue,
     /// End the turn early (barge-in, the user stopped it).
     Stop,
+}
+
+/// One stage of the pipeline that answers a session.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StageNote {
+    /// What the stage does.
+    pub role: StageRole,
+    /// Who runs it.
+    pub served: ServedBy,
+    /// Why that model (the person sees it when `ai.auto.show_reason` is on).
+    pub why: Why,
 }
