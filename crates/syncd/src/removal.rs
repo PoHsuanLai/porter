@@ -21,10 +21,10 @@ use zbus::Connection;
 use zbus::export::futures_core::Stream;
 use zbus::fdo::DBusProxy;
 
-/// Stops the account's datasets and deletes its journals and mirrors; how many directories
-/// existed. A directory already gone is not an error.
-pub fn wipe(paths: &Paths, hub: &Hub, account: &AccountDir) -> std::io::Result<usize> {
-    hub.forget_account(account);
+/// Stops the account's datasets, waits until none is in a cycle, and deletes its journals and
+/// mirrors; how many directories existed. A directory already gone is not an error.
+pub async fn wipe(paths: &Paths, hub: &Hub, account: &AccountDir) -> std::io::Result<usize> {
+    hub.stop_account(account).await;
     let mut removed = 0;
     for dir in paths.account_dirs(account) {
         match std::fs::remove_dir_all(&dir) {
@@ -66,7 +66,7 @@ pub async fn watch(connection: &Connection, hub: Hub, paths: Paths) -> zbus::Res
             let Some(account) = AccountDir::of_object_path(args.account().as_str()) else {
                 continue;
             };
-            if let Err(why) = wipe(&paths, &hub, &account) {
+            if let Err(why) = wipe(&paths, &hub, &account).await {
                 eprintln!("syncd: cannot wipe account {account}: {why}");
             }
         }
@@ -88,8 +88,8 @@ mod tests {
     use crate::testing::scratch;
     use std::collections::BTreeSet;
 
-    #[test]
-    fn a_wipe_removes_that_accounts_journals_and_mirrors_and_nothing_else() {
+    #[tokio::test]
+    async fn a_wipe_removes_that_accounts_journals_and_mirrors_and_nothing_else() {
         let root = scratch("wipe");
         let paths = Paths {
             journals: root.join("state/porter/sync"),
@@ -113,7 +113,7 @@ mod tests {
         let name = crate::service::DatasetName::parse("a1/files").expect("name");
         let handle = hub.register(name, crate::service::Access::default());
 
-        assert_eq!(wipe(&paths, &hub, &gone).expect("wipe"), 2);
+        assert_eq!(wipe(&paths, &hub, &gone).await.expect("wipe"), 2);
         let left: BTreeSet<_> = [&paths.journals, &paths.mirrors]
             .iter()
             .flat_map(|dir| std::fs::read_dir(dir).expect("dir"))
@@ -121,7 +121,11 @@ mod tests {
             .collect();
         assert_eq!(left, BTreeSet::from(["a2".to_owned()]));
         assert!(!handle.is_registered(), "its engines are stopped");
-        assert_eq!(wipe(&paths, &hub, &gone).expect("again"), 0, "idempotent");
+        assert_eq!(
+            wipe(&paths, &hub, &gone).await.expect("again"),
+            0,
+            "idempotent"
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 }

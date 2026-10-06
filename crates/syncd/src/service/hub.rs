@@ -108,6 +108,25 @@ struct Entry {
     access: Access,
     status: StatusSnapshot,
     pausing: watch::Sender<Pausing>,
+    cycling: Cycling,
+}
+
+/// Held by a dataset's engine for the length of one cycle, so whoever stops the dataset can wait
+/// until no cycle is writing its files any more.
+#[derive(Debug, Clone, Default)]
+pub struct Cycling(Arc<tokio::sync::Mutex<()>>);
+
+/// How long a stop waits for a cycle in flight (a fetch that hangs on the network) before it
+/// goes on without it.
+const STOP_WITHIN: std::time::Duration = std::time::Duration::from_secs(30);
+
+impl Cycling {
+    /// Waits until no cycle holds it, at most [`STOP_WITHIN`]; whether it was free in time.
+    async fn finished(&self) -> bool {
+        tokio::time::timeout(STOP_WITHIN, self.0.lock())
+            .await
+            .is_ok()
+    }
 }
 
 #[derive(Debug)]
@@ -141,18 +160,21 @@ impl Hub {
     /// Registers a running dataset (replacing one of the same name) and returns the engine's end.
     pub fn register(&self, name: DatasetName, access: Access) -> Handle {
         let (pausing, watching) = watch::channel(Pausing::Running);
+        let cycling = Cycling::default();
         self.datasets().insert(
             name.clone(),
             Entry {
                 access,
                 status: StatusSnapshot::default(),
                 pausing,
+                cycling: cycling.clone(),
             },
         );
         Handle {
             hub: self.clone(),
             name,
             pausing: watching,
+            cycling,
         }
     }
 
@@ -216,6 +238,47 @@ impl Hub {
         gone
     }
 
+    /// Drops `name` and waits until its engine is between cycles (it stops at the next look), so
+    /// nothing writes its files once this returns; whether it was there.
+    pub async fn stop(&self, name: &DatasetName) -> bool {
+        let entry = self.datasets().remove(name);
+        match entry {
+            Some(entry) => {
+                if !entry.cycling.finished().await {
+                    eprintln!("syncd: {name}: a cycle still running after the stop wait");
+                }
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// [`Hub::forget_account`], then waits until none of the account's engines is in a cycle:
+    /// once it returns, nothing writes the account's journals or mirrors again.
+    pub async fn stop_account(&self, account: &AccountDir) -> Vec<DatasetName> {
+        let stopped: Vec<(DatasetName, Cycling)> = {
+            let mut datasets = self.datasets();
+            let names: Vec<DatasetName> = datasets
+                .keys()
+                .filter(|name| name.account == *account)
+                .cloned()
+                .collect();
+            names
+                .into_iter()
+                .filter_map(|name| {
+                    let entry = datasets.remove(&name)?;
+                    Some((name, entry.cycling))
+                })
+                .collect()
+        };
+        for (name, cycling) in &stopped {
+            if !cycling.finished().await {
+                eprintln!("syncd: {name}: a cycle still running after the stop wait");
+            }
+        }
+        stopped.into_iter().map(|(name, _)| name).collect()
+    }
+
     /// Events as they happen (a lagging receiver loses the oldest).
     pub fn subscribe(&self) -> broadcast::Receiver<Event> {
         self.0.events.subscribe()
@@ -228,6 +291,7 @@ pub struct Handle {
     hub: Hub,
     name: DatasetName,
     pausing: watch::Receiver<Pausing>,
+    cycling: Cycling,
 }
 
 impl Handle {
@@ -257,6 +321,14 @@ impl Handle {
     /// (its account was removed) and the engine should stop.
     pub async fn changed(&mut self) -> bool {
         self.pausing.changed().await.is_ok()
+    }
+
+    /// Starts a cycle: holds the dataset's cycle lock until the guard drops. `None` when the
+    /// dataset was dropped from the hub (checked under the lock, so a stop that has begun is
+    /// never raced by a cycle that starts after it).
+    pub async fn begin_cycle(&self) -> Option<tokio::sync::OwnedMutexGuard<()>> {
+        let guard = Arc::clone(&self.cycling.0).lock_owned().await;
+        self.is_registered().then_some(guard)
     }
 
     /// Whether the hub still holds this dataset.

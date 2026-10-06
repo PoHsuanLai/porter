@@ -134,7 +134,7 @@ impl AccountMirrors {
             .cloned()
             .collect();
         for id in gone {
-            self.retire(wiring, &id);
+            self.retire(wiring, &id).await;
         }
         failure.map_or(Ok(()), |why| Err(RefreshError::Open(why)))
     }
@@ -199,24 +199,29 @@ impl AccountMirrors {
         Ok(())
     }
 
-    /// Stops one collection and deletes what it kept: its files, its journal.
-    fn retire<T>(&mut self, wiring: &Wiring<T>, id: &DatasetId) {
+    /// Stops one collection and deletes what it kept: its files, its journal. The engine is
+    /// stopped first and waited for between cycles (a cycle's file writes run on blocking
+    /// threads an abort does not stop), so nothing writes the files once they are deleted.
+    async fn retire<T>(&mut self, wiring: &Wiring<T>, id: &DatasetId) {
         let Some(held) = self.running.remove(id) else {
             return;
         };
+        wiring
+            .hub
+            .stop(&DatasetName {
+                account: self.account.clone(),
+                dataset: id.clone(),
+            })
+            .await;
         held.task.abort();
-        wiring.hub.forget(&DatasetName {
-            account: self.account.clone(),
-            dataset: id.clone(),
-        });
         let _ = std::fs::remove_dir_all(held.mirror.root());
         let _ = std::fs::remove_file(wiring.paths.journal(&self.account, id.as_str()));
     }
 
     /// Stops every collection and deletes what they kept (the grant is gone).
-    pub fn retire_all<T>(&mut self, wiring: &Wiring<T>) {
+    pub async fn retire_all<T>(&mut self, wiring: &Wiring<T>) {
         for id in self.datasets() {
-            self.retire(wiring, &id);
+            self.retire(wiring, &id).await;
         }
     }
 }

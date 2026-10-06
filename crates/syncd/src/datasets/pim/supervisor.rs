@@ -86,7 +86,7 @@ where
                 .collect();
             for key in stale {
                 if let Some(mut mirrors) = self.accounts.remove(&key) {
-                    mirrors.retire_all(&self.wiring);
+                    mirrors.retire_all(&self.wiring).await;
                 }
             }
         }

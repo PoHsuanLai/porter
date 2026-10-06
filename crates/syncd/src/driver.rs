@@ -65,7 +65,14 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
                 settings: self.settings,
             };
             match next_wake(&inputs, now, &mut self.jitter) {
-                Wake::Now => self.cycle().await,
+                Wake::Now => {
+                    // Under the dataset's cycle lock: a removal waits for it, so no file is
+                    // written once the account's mirror is deleted.
+                    let Some(_cycle) = self.handle.begin_cycle().await else {
+                        break;
+                    };
+                    self.cycle().await;
+                }
                 Wake::At(at) => {
                     let wait = u64::try_from(at.0.saturating_sub(now.0)).unwrap_or(0);
                     self.wait(Some(Duration::from_secs(wait))).await;
