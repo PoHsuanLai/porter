@@ -11,19 +11,41 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
+/// How the redirect URI ends. An issuer that compares redirect URIs byte for byte against the
+/// registration needs the form that was registered; the listener accepts either, because a
+/// browser sends `GET /?code=...` for both.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum RedirectPath {
+    /// `http://127.0.0.1:<port>/`, porter's form and the default.
+    #[default]
+    Slash,
+    /// `http://127.0.0.1:<port>`, with no path, the form mailo registered.
+    Bare,
+}
+
 /// A listener on 127.0.0.1 at a port the OS chose.
 #[derive(Debug)]
 pub struct LoopbackServer {
     listener: TcpListener,
     port: u16,
+    path: RedirectPath,
 }
 
 impl LoopbackServer {
     /// Binds 127.0.0.1 on a free port.
     pub async fn bind() -> std::io::Result<Self> {
+        Self::bind_with(RedirectPath::default()).await
+    }
+
+    /// [`bind`](Self::bind) with the redirect URI ending as `path` says.
+    pub async fn bind_with(path: RedirectPath) -> std::io::Result<Self> {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let port = listener.local_addr()?.port();
-        Ok(Self { listener, port })
+        Ok(Self {
+            listener,
+            port,
+            path,
+        })
     }
 
     /// The port, for the redirect URI.
@@ -31,10 +53,14 @@ impl LoopbackServer {
         self.port
     }
 
-    /// The redirect URI to send with the authorize request. It has a path (`/`), so the issuer
-    /// appends `?code=` to a URL with an explicit target.
+    /// The redirect URI to send with the authorize request, and to the token call: the two must
+    /// match. Under [`RedirectPath::Slash`] (the default) it has a path (`/`), so the issuer
+    /// appends `?code=` to a URL with an explicit target; under [`RedirectPath::Bare`] it has none.
     pub fn redirect_uri(&self) -> String {
-        format!("http://127.0.0.1:{}/", self.port)
+        match self.path {
+            RedirectPath::Slash => format!("http://127.0.0.1:{}/", self.port),
+            RedirectPath::Bare => format!("http://127.0.0.1:{}", self.port),
+        }
     }
 
     /// Accepts one request within the wait limit, answers the person with a page, and returns
@@ -309,5 +335,44 @@ mod tests {
             wait.await.expect("join"),
             Err(LoopbackFault::Refused("access_denied".into()))
         );
+    }
+
+    #[tokio::test]
+    async fn the_redirect_uri_follows_the_chosen_path_and_the_default_is_unchanged() {
+        let default = LoopbackServer::bind().await.expect("bind");
+        assert_eq!(
+            default.redirect_uri(),
+            format!("http://127.0.0.1:{}/", default.port())
+        );
+        let slash = LoopbackServer::bind_with(RedirectPath::Slash)
+            .await
+            .expect("bind");
+        assert_eq!(
+            slash.redirect_uri(),
+            format!("http://127.0.0.1:{}/", slash.port())
+        );
+        let bare = LoopbackServer::bind_with(RedirectPath::Bare)
+            .await
+            .expect("bind");
+        let uri = bare.redirect_uri();
+        assert_eq!(uri, format!("http://127.0.0.1:{}", bare.port()));
+        assert!(!uri.ends_with('/'));
+    }
+
+    #[tokio::test]
+    async fn the_listener_accepts_a_redirect_made_to_either_form() {
+        for path in [RedirectPath::Slash, RedirectPath::Bare] {
+            let server = LoopbackServer::bind_with(path).await.expect("bind");
+            // What a browser sends after following `<redirect_uri>?code=..&state=..`: the
+            // request target is `/` in both forms (a bare authority has the root path).
+            let uri = server.redirect_uri();
+            let target = uri.strip_prefix("http://127.0.0.1:").expect("prefix");
+            let target = target.find('/').map_or("/", |at| &target[at..]);
+            let request = format!("GET {target}?code=abc&state=st-1 HTTP/1.1\r\n\r\n");
+            let client = tokio::spawn(send_raw(server.port(), request.into_bytes()));
+            let code = server.wait(&state()).await.expect("code");
+            assert_eq!(code.0.expose(), "abc", "{path:?}");
+            assert!(client.await.expect("client").contains("Signed in"));
+        }
     }
 }

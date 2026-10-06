@@ -34,7 +34,7 @@ pub use loopback::{
     STRAY_READ_SECONDS, parse_redirect,
 };
 #[cfg(feature = "io")]
-pub use loopback_io::LoopbackServer;
+pub use loopback_io::{LoopbackServer, RedirectPath};
 pub use mint::mint_key;
 pub use pkce::{CodeChallenge, OAuthState, Pkce};
 pub use registry::{ClientRegistry, RegistryError, clients_toml, endpoints_of, from_mailo};
