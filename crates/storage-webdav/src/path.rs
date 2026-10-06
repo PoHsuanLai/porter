@@ -128,7 +128,7 @@ pub fn decode(text: &str) -> String {
         let pair = bytes
             .get(at + 1)
             .zip(bytes.get(at + 2))
-            .and_then(|(hi, lo)| Some(u8::try_from(hex(*hi)? * 16 + hex(*lo)?).ok()?));
+            .and_then(|(hi, lo)| u8::try_from(hex(*hi)? * 16 + hex(*lo)?).ok());
         match (bytes[at], pair) {
             (b'%', Some(byte)) => {
                 out.push(byte);

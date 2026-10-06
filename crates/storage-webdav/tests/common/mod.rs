@@ -42,14 +42,11 @@ pub struct TcpDial(pub u16);
 impl Dial for TcpDial {
     type Stream = Tcp;
 
-    fn dial(&self) -> impl Future<Output = Result<Tcp, HttpError>> + Send {
-        let port = self.0;
-        async move {
-            TcpStream::connect(("127.0.0.1", port))
-                .await
-                .map(Tcp)
-                .map_err(|_| HttpError::Unreachable)
-        }
+    async fn dial(&self) -> Result<Tcp, HttpError> {
+        TcpStream::connect(("127.0.0.1", self.0))
+            .await
+            .map(Tcp)
+            .map_err(|_| HttpError::Unreachable)
     }
 }
 

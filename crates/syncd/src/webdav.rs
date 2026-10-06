@@ -9,7 +9,6 @@
 use porter_client::{Accounts, AuthenticatedStream, Transport};
 use porter_core::stream::{ByteStream, DuplexEnd};
 use porter_core::{EndpointUrl, GrantId, WebUrl};
-use std::future::Future;
 use std::io;
 use std::sync::Arc;
 use storage_webdav::{Clock, Dial, StreamHttp, StreamLimits, WebDavReplica};
@@ -73,15 +72,13 @@ pub struct RelayDial<T> {
 impl<T: Transport> Dial for RelayDial<T> {
     type Stream = RelayStream;
 
-    fn dial(&self) -> impl Future<Output = Result<RelayStream, porter_http::HttpError>> + Send {
-        async move {
-            let stream = self
-                .accounts
-                .open_authenticated(&self.grant, &self.endpoint)
-                .await
-                .map_err(|_| porter_http::HttpError::Unreachable)?;
-            RelayStream::from_relay(stream).map_err(|_| porter_http::HttpError::Unreachable)
-        }
+    async fn dial(&self) -> Result<RelayStream, porter_http::HttpError> {
+        let stream = self
+            .accounts
+            .open_authenticated(&self.grant, &self.endpoint)
+            .await
+            .map_err(|_| porter_http::HttpError::Unreachable)?;
+        RelayStream::from_relay(stream).map_err(|_| porter_http::HttpError::Unreachable)
     }
 }
 
