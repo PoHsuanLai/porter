@@ -211,3 +211,80 @@ async fn with_no_legacy_store_adopt_is_unavailable() {
         .expect_err("unavailable");
     assert_eq!(error_name(&err), refusal_name(Refusal::Unavailable));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn items_the_app_already_filed_itself_are_skipped_and_kept() {
+    // mailo's own adoption (E2) filed the incoming password and the OAuth token and deleted their
+    // legacy entries; only the outgoing one is still in the old store.
+    let entry = |what: &str| format!("{UUID}:{what}");
+    let store = MemoryLegacy::default().with(
+        "mailo",
+        &entry("outgoing"),
+        r#"{"kind":"password","v":"S3CRET-SMTP"}"#,
+    );
+    let rig = Rig::start_with(options(Some(store)), SheetHost::quiet()).await;
+    let filed_by_mailo = Credential::Password(SecretText::new("FILED-BY-MAILO"));
+    let rotated = Credential::Password(SecretText::new("ROTATED-SINCE"));
+    rig.secrets
+        .put(&key(SecretPurpose::IncomingPassword), &filed_by_mailo)
+        .await
+        .expect("filed");
+    rig.secrets
+        .put(&key(SecretPurpose::OAuthRefresh), &rotated)
+        .await
+        .expect("filed");
+
+    let mail = rig.client("org.quire.Mail").await;
+    let id = ManagerProxy::new(&mail)
+        .await
+        .expect("proxy")
+        .adopt(&legacy(vec![
+            LegacyItem::Incoming,
+            LegacyItem::Outgoing,
+            LegacyItem::OAuth,
+        ]))
+        .await
+        .expect("adopted");
+    assert_eq!(id, UUID);
+
+    // What mailo filed is not replaced; what was still legacy is filed now.
+    assert_eq!(
+        rig.secrets.get(&key(SecretPurpose::IncomingPassword)).await,
+        Ok(filed_by_mailo)
+    );
+    assert_eq!(
+        rig.secrets.get(&key(SecretPurpose::OAuthRefresh)).await,
+        Ok(rotated)
+    );
+    assert_eq!(
+        rig.secrets.get(&key(SecretPurpose::OutgoingPassword)).await,
+        Ok(Credential::Password(SecretText::new("S3CRET-SMTP")))
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_item_neither_in_the_old_store_nor_filed_still_refuses() {
+    let rig = Rig::start_with(options(Some(MemoryLegacy::default())), SheetHost::quiet()).await;
+    rig.secrets
+        .put(
+            &key(SecretPurpose::OAuthRefresh),
+            &Credential::Password(SecretText::new("FILED")),
+        )
+        .await
+        .expect("filed");
+    let mail = rig.client("org.quire.Mail").await;
+    let err = ManagerProxy::new(&mail)
+        .await
+        .expect("proxy")
+        .adopt(&legacy(vec![LegacyItem::OAuth, LegacyItem::Incoming]))
+        .await
+        .expect_err("incoming is nowhere");
+    assert_eq!(error_name(&err), refusal_name(Refusal::Unavailable));
+    // The refusal leaves what the app filed alone.
+    assert!(
+        rig.secrets
+            .get(&key(SecretPurpose::OAuthRefresh))
+            .await
+            .is_ok()
+    );
+}

@@ -103,13 +103,15 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         let mut read = Vec::new();
         for item in &legacy.items {
             let entry = legacy_entry(&legacy.account, *item);
-            let credential = match store.read(service, &entry).await {
-                Ok(Some(credential)) => credential,
+            match store.read(service, &entry).await {
+                Ok(Some(credential)) => read.push((*item, credential)),
+                // The app adopted this one itself (mailo E2): it is filed already, so there is
+                // nothing left to read and nothing to file.
+                Ok(None) if self.already_filed(&legacy.account, *item).await => {}
                 Ok(None) | Err(LegacyFault::Unavailable) => {
                     return AccountsReply::Refused(Refusal::Unavailable);
                 }
-            };
-            read.push((*item, credential));
+            }
         }
         let account = Account {
             id: legacy.account.clone(),
@@ -129,15 +131,20 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             restriction: porter_core::Restriction::none(),
             endpoints: legacy.endpoints.clone(),
         };
+        let mut written = Vec::new();
         for (purpose, credential) in filed(read) {
             let key = SecretKey {
                 account: account.id.clone(),
                 purpose,
             };
             if self.secrets.put(&key, &credential).await.is_err() {
-                let _ = self.secrets.delete_account(&account.id).await;
+                // Undo only what this call wrote: what the app filed itself stays.
+                for key in &written {
+                    let _ = self.secrets.delete(key).await;
+                }
                 return AccountsReply::Refused(Refusal::Unavailable);
             }
+            written.push(key);
         }
         let id = account.id.clone();
         self.lock().accounts.push(account);
@@ -146,6 +153,35 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             Ok(()) => AccountsReply::Adopted(id),
             Err(refusal) => AccountsReply::Refused(refusal),
         }
+    }
+}
+
+impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSink>
+    AccountService<P, S, U, K, R, A>
+{
+    /// Whether the secret a legacy `item` held is filed under one of the purposes it becomes.
+    async fn already_filed(&self, account: &AccountId, item: LegacyItem) -> bool {
+        for purpose in filed_purposes(item) {
+            let key = SecretKey {
+                account: account.clone(),
+                purpose,
+            };
+            if self.secrets.get(&key).await.is_ok() {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+/// The purposes a legacy item may be filed under: a password under its own purpose, or under
+/// `Password` when the incoming and outgoing ones were the same.
+fn filed_purposes(item: LegacyItem) -> Vec<SecretPurpose> {
+    match item {
+        LegacyItem::Incoming => vec![SecretPurpose::IncomingPassword, SecretPurpose::Password],
+        LegacyItem::Outgoing => vec![SecretPurpose::OutgoingPassword, SecretPurpose::Password],
+        LegacyItem::OAuth => vec![SecretPurpose::OAuthRefresh],
+        LegacyItem::AddressBook => vec![SecretPurpose::ServicePassword(CapabilityKind::Contacts)],
     }
 }
 
