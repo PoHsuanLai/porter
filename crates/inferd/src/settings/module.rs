@@ -11,8 +11,8 @@ use crate::cloud::picker::{Availability, Choice, NEEDS_ACCOUNT, choices};
 use crate::peers::{Peers, Role};
 use ds_settings::live::{Access, Caller, LiveError, LiveModule, LiveSchema, Verdict, serve};
 use ds_settings::schema::{
-    AgentSetting, ChoiceWord, Exposure, Help, KeyKind, KeyPath, KeySpec, Label, Page, Section,
-    UnavailableReason, WordLabels,
+    AgentSetting, ChoiceGroup, ChoiceWord, Exposure, Help, KeyKind, KeyPath, KeySpec, Label, Page,
+    Section, UnavailableReason, WordLabels,
 };
 use porter_core::consent::Usage;
 use porter_core::{AppId, AppName, DataClass, Isolation, Tier};
@@ -21,6 +21,9 @@ use porter_infer::{Slot, tier_label};
 
 /// The picker value that is Automatic.
 const AUTO: &str = "auto";
+
+/// The group the models this computer runs are listed under, before each company's hosted ones.
+const ON_THIS_COMPUTER: &str = "On this computer";
 
 /// The app the picker asks accountd about the person's accounts as: `Verdicts` lists every account
 /// that serves a language need, and the picker reads only that an account exists.
@@ -108,8 +111,9 @@ impl<P: Peers> InferdSettings<P> {
 
     fn spec(&self, kind: Slot, tier: Tier, hosted: &[Choice]) -> KeySpec {
         let current = self.current(kind, tier);
+        let local = self.models_for(kind);
         let mut variants = vec![String::new(), AUTO.to_owned()];
-        variants.extend(self.models_for(kind));
+        variants.extend(local.iter().cloned());
         variants.extend(hosted.iter().map(|choice| choice.value.clone()));
         if !variants.contains(&current) {
             variants.push(current);
@@ -140,6 +144,23 @@ impl<P: Peers> InferdSettings<P> {
                 )
             })
             .collect();
+        // Local models under one group, hosted ones under their company; the default and
+        // Automatic stay ungrouped, so they come first.
+        let groups = local
+            .iter()
+            .map(|model| {
+                (
+                    ChoiceWord(model.clone()),
+                    ChoiceGroup(ON_THIS_COMPUTER.to_owned()),
+                )
+            })
+            .chain(hosted.iter().map(|choice| {
+                (
+                    ChoiceWord(choice.value.clone()),
+                    ChoiceGroup(choice.company.clone()),
+                )
+            }))
+            .collect();
         KeySpec {
             path: KeyPath(model_path(kind, tier)),
             kind: KeyKind::Menu { variants },
@@ -156,6 +177,7 @@ impl<P: Peers> InferdSettings<P> {
             exposure: Exposure::Basic,
             labels,
             unavailable,
+            groups,
             agent: AgentSetting::HandsOff,
         }
     }

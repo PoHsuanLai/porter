@@ -112,6 +112,7 @@ fn spec(
         },
         labels: Default::default(),
         unavailable: Default::default(),
+        groups: Default::default(),
         agent: AgentSetting::HandsOff,
     }
 }

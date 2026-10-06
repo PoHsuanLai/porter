@@ -861,6 +861,17 @@ async fn the_picker_lists_every_hosted_model_by_company_and_marks_the_ones_no_ac
                 "{value}"
             );
         }
+        // Hosted models sit under their company; the default and Automatic stay ungrouped, first.
+        for value in &hosted {
+            let group = row
+                .groups
+                .get(&ds_settings::schema::ChoiceWord((*value).to_owned()))
+                .unwrap_or_else(|| panic!("{value} has a group"));
+            assert_ne!(group.0, "On this computer", "{value}");
+        }
+        let grouped = row.grouped_choices();
+        assert_eq!(grouped[0].group, None);
+        assert_eq!(grouped[0].choices[..2], ["", "auto"]);
         let path = KeyPath("ai.model.text.balanced".into());
         // A reachable one is a value the row takes; an unreachable one is refused with the
         // reason, and the row keeps what it had.
