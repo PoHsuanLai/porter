@@ -2,7 +2,7 @@
 
 use super::{Compared, Engine, Halt, Report, conflict_of, halt, provisional};
 use crate::clock::Clock;
-use crate::dataset::{Dataset, fingerprint};
+use crate::dataset::{Dataset, Direction, fingerprint};
 use crate::journal::Op;
 use porter_sync::{
     Acknowledgement, Anchor, BaseVersion, Blob, ByteRange, Change, Cursor, ItemState, JournalItem,
@@ -215,7 +215,9 @@ impl<R: Replica, D: Dataset, K: Clock> Engine<R, D, K> {
                         &item.version,
                     ))])?),
                     Compared::Differs(fetched) => {
-                        if self.moved_since_scan(&row).await {
+                        let edited = self.dataset.direction() == Direction::TwoWay
+                            && self.moved_since_scan(&row).await;
+                        if edited {
                             // Edited after this cycle's scan: not the replica's to overwrite.
                             let remote = RemoteSide::Changed(item.version.clone());
                             let conflict = conflict_of(&item.id, row.base.clone(), remote);

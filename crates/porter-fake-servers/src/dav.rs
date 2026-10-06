@@ -209,6 +209,11 @@ impl Tree {
         Ok(())
     }
 
+    /// Whether anything is at `path`.
+    pub fn exists(&self, path: &str) -> bool {
+        self.nodes.contains_key(path)
+    }
+
     /// Sets what the collection at `path` calls itself.
     pub fn set_meta(&mut self, path: &str, meta: CollectionMeta) {
         self.meta.insert(path.to_owned(), meta);

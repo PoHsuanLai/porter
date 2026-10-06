@@ -338,7 +338,7 @@ async fn two_calendars_and_an_address_book_mirror_into_the_vdir_with_their_metad
     let rig = rig(true).await;
     let personal = rig.calendar("personal");
     let work = rig.calendar("work");
-    let contacts = rig.calendar("contacts");
+    let contacts = rig.calendar("contacts-contacts");
     eventually("every item is mirrored", || {
         items_in(&personal, PimKind::Calendar) == ["ev1.ics", "ev2.ics"]
             && items_in(&work, PimKind::Calendar) == ["w1.ics"]
@@ -374,11 +374,11 @@ async fn two_calendars_and_an_address_book_mirror_into_the_vdir_with_their_metad
         .map(|e| e.expect("e").file_name().to_string_lossy().into_owned())
         .collect();
     collections.sort();
-    assert_eq!(collections, ["contacts", "personal", "work"]);
+    assert_eq!(collections, ["contacts-contacts", "personal", "work"]);
 
     // Sync1 names them <account>/<dataset>.
     let mut want = vec![
-        format!("{SEGMENT}/pim_card_contacts"),
+        format!("{SEGMENT}/pim_card_contacts_contacts"),
         format!("{SEGMENT}/pim_cal_personal"),
         format!("{SEGMENT}/pim_cal_work"),
     ];
@@ -470,7 +470,7 @@ async fn an_expired_sync_token_lists_again_and_downloads_nothing_it_already_has(
     eventually("the first mirror", || {
         items_in(&personal, PimKind::Calendar) == ["ev1.ics", "ev2.ics"]
             && items_in(&rig.calendar("work"), PimKind::Calendar) == ["w1.ics"]
-            && items_in(&rig.calendar("contacts"), PimKind::Contacts).len() == 2
+            && items_in(&rig.calendar("contacts-contacts"), PimKind::Contacts).len() == 2
     })
     .await;
     // Let the cycles that follow the first settle, then count what was downloaded so far.
@@ -520,12 +520,22 @@ async fn a_local_edit_a_deletion_and_a_new_file_are_never_sent_to_the_server() {
         .filter(|h| matches!(h.method.as_str(), "PUT" | "DELETE" | "MKCOL"))
         .collect();
     assert!(writes.is_empty(), "{writes:?}");
-    // The server's state is back in the vdir; the stray file is left alone and never uploaded.
+    // Pull-only: the local state stays until the server next changes those items, which then
+    // overwrite it (no conflict); the stray file is left alone and never uploaded.
     assert_eq!(
-        read(&personal.join("ev1.ics")),
-        Some(event("ev1", "Dentist"))
+        read(&personal.join("ev1.ics")).as_deref(),
+        Some("locally edited")
     );
-    assert_eq!(read(&personal.join("ev2.ics")), Some(event("ev2", "Lunch")));
+    assert!(!personal.join("ev2.ics").exists());
+    rig.nextcloud
+        .put_item("personal", "ev1.ics", &event("ev1", "Dentist (moved)"));
+    rig.nextcloud
+        .put_item("personal", "ev2.ics", &event("ev2", "Brunch"));
+    eventually("the server's state replaces the local one", || {
+        read(&personal.join("ev1.ics")) == Some(event("ev1", "Dentist (moved)"))
+            && read(&personal.join("ev2.ics")) == Some(event("ev2", "Brunch"))
+    })
+    .await;
     assert!(personal.join("mine.ics").exists());
 }
 
@@ -596,7 +606,7 @@ async fn account_removed_removes_the_mirror_and_it_does_not_come_back() {
     let rig = rig(true).await;
     eventually("mirrored", || {
         items_in(&rig.calendar("personal"), PimKind::Calendar).len() == 2
-            && items_in(&rig.calendar("contacts"), PimKind::Contacts).len() == 2
+            && items_in(&rig.calendar("contacts-contacts"), PimKind::Contacts).len() == 2
     })
     .await;
     assert!(rig.account_dir().exists());
@@ -627,7 +637,7 @@ async fn account_removed_removes_the_mirror_and_it_does_not_come_back() {
 async fn a_revoked_grant_stops_and_removes_the_mirror_but_an_unreachable_accountd_changes_nothing()
 {
     let rig = rig(true).await;
-    let contacts = rig.calendar("contacts");
+    let contacts = rig.calendar("contacts-contacts");
     eventually("mirrored", || {
         items_in(&rig.calendar("personal"), PimKind::Calendar).len() == 2
             && items_in(&contacts, PimKind::Contacts).len() == 2
@@ -664,4 +674,30 @@ async fn with_no_grant_nothing_is_mirrored_and_the_server_is_not_even_asked() {
     assert!(!rig.account_dir().exists());
     assert!(names(&rig).is_empty());
     assert_eq!(rig.requests("REPORT") + rig.requests("PROPFIND"), 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_calendar_and_an_address_book_of_one_name_keep_apart_and_retiring_one_leaves_the_other() {
+    let rig = rig(true).await;
+    rig.nextcloud
+        .add_calendar("shared", "VEVENT", "Shared", "#111111FF");
+    rig.nextcloud
+        .put_item("shared", "s1.ics", &event("s1", "Offsite"));
+    rig.nextcloud.add_addressbook("shared", "Shared people");
+    rig.nextcloud
+        .put_book_item("shared", "p1.vcf", &card("p1", "Katherine Johnson"));
+    let (calendar, book) = (rig.calendar("shared"), rig.calendar("shared-contacts"));
+    eventually("both mirror, each in its own directory", || {
+        items_in(&calendar, PimKind::Calendar) == ["s1.ics"]
+            && items_in(&book, PimKind::Contacts) == ["p1.vcf"]
+    })
+    .await;
+    assert!(items_in(&calendar, PimKind::Contacts).is_empty());
+    assert!(items_in(&book, PimKind::Calendar).is_empty());
+
+    // The Contacts grant is withdrawn: the address book goes, the calendar of that name stays.
+    rig.accounts.revoke(&rig.grants[1]).await.expect("revoke");
+    eventually("the address book is gone", || !book.exists()).await;
+    assert_eq!(items_in(&calendar, PimKind::Calendar), ["s1.ics"]);
+    assert_eq!(read(&calendar.join(DISPLAYNAME)).as_deref(), Some("Shared"));
 }

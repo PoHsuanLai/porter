@@ -6,9 +6,9 @@
 //! one file per item, `<uid>.ics` or `<uid>.vcf`, and the files `displayname` and `color`
 //! (vdirsyncer's storage spec, which sill's `calendar.sources = auto` and khal read).
 //!
-//! - `mirror`: [`PimMirror`], the [`crate::dataset::Dataset`] of one collection. Server to disk
-//!   only: it reports to the engine what it stored, never what is on disk, so a file edited or
-//!   deleted locally is never uploaded.
+//! - `mirror`: [`PimMirror`], the [`crate::dataset::Dataset`] of one collection, pull-only: the
+//!   engine never uploads or removes anything for it, so a file edited or deleted locally never
+//!   reaches the server.
 //! - `vdir`: the file rules (names, atomic writes, metadata).
 //! - `discover`: the collections of an account, from the principal and home sets (porter-dav).
 //! - `plan`: collection names as directories and dataset slugs.
@@ -27,7 +27,7 @@ mod vdir;
 
 pub use discover::{Found, discover};
 pub use grants::{AccountdUnavailable, ClientGrants, PimGrants, need_of};
-pub use mirror::{ITEM_CAP, PimMirror, TOTAL_CAP};
+pub use mirror::PimMirror;
 pub use mirrors::{AccountMirrors, Wiring};
 pub use plan::{Planned, plan};
 pub use relay::{PimDial, pim_http, pim_replica};
@@ -81,7 +81,15 @@ impl PimKind {
         }
     }
 
-    /// The prefix of its datasets' names (`pim_cal_personal`, `pim_card_contacts`).
+    /// What its directories end in: nothing for a calendar, `-contacts` for an address book.
+    pub fn dir_suffix(self) -> &'static str {
+        match self {
+            PimKind::Calendar => "",
+            PimKind::Contacts => "-contacts",
+        }
+    }
+
+    /// The prefix of its datasets' names (`pim_cal_personal`, `pim_card_contacts_contacts`).
     pub fn slug(self) -> &'static str {
         match self {
             PimKind::Calendar => "pim_cal",

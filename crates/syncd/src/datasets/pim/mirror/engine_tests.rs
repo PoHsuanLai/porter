@@ -116,7 +116,7 @@ impl Server {
 }
 
 fn big(uid: &str, tag: &str) -> Blob {
-    let pad = "X".repeat(ITEM_CAP);
+    let pad = "X".repeat(300 * 1024);
     Blob(
         format!("BEGIN:VCALENDAR\r\nUID:{uid}\r\nDESCRIPTION:{tag}{pad}\r\nEND:VCALENDAR\r\n")
             .into_bytes(),
@@ -143,7 +143,8 @@ fn engine(
 }
 
 #[tokio::test]
-async fn a_local_edit_a_deletion_and_a_stray_file_cost_the_server_nothing() {
+async fn a_local_edit_a_deletion_and_a_stray_file_cost_the_server_nothing_and_the_next_change_overwrites()
+ {
     let dir = scratch("engine-readonly");
     let server = Server::new();
     server.set("a.ics", ics("a", "one")).await;
@@ -156,7 +157,6 @@ async fn a_local_edit_a_deletion_and_a_stray_file_cost_the_server_nothing() {
         ["a.ics", "big.ics"]
     );
 
-    std::fs::write(mirror.root().join("a.ics"), "edited").expect("edit");
     std::fs::write(mirror.root().join("big.ics"), "edited").expect("edit");
     std::fs::write(mirror.root().join("stray.ics"), "mine").expect("stray");
     std::fs::remove_file(mirror.root().join("a.ics")).expect("delete");
@@ -171,11 +171,25 @@ async fn a_local_edit_a_deletion_and_a_stray_file_cost_the_server_nothing() {
         (0, 0, 0, 0)
     );
     assert_eq!(server.writes(), 0, "nothing was uploaded or removed");
+    assert!(
+        !mirror.root().join("a.ics").exists(),
+        "no server change, no write-back"
+    );
+
+    // The server changes both: the server's state wins, with no conflict.
+    server.set("a.ics", ics("a", "two")).await;
+    server.set("big.ics", big("big", "v2")).await;
+    let changed = engine.sync_once().await.expect("sync");
+    assert_eq!((changed.fetched, changed.conflicts.len()), (2, 0));
     assert_eq!(
         std::fs::read(mirror.root().join("a.ics")).expect("a"),
-        ics("a", "one").0,
-        "the small item is written back at once"
+        ics("a", "two").0
     );
+    assert_eq!(
+        std::fs::read(mirror.root().join("big.ics")).expect("big"),
+        big("big", "v2").0
+    );
+    assert_eq!(server.writes(), 0);
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -191,39 +205,25 @@ async fn a_restart_fetches_again_exactly_the_items_whose_files_were_damaged() {
     let fetched = server.fetches();
     assert_eq!(fetched, 3);
 
-    // A large item edited while syncd runs stays edited (only small ones are kept to be written
-    // back), and the server changing it meanwhile is stored as a conflict, not overwritten.
+    // Damaged while syncd ran and while it was down: a deleted file is no server change, so only
+    // a restart brings it back.
     std::fs::write(mirror.root().join("big.ics"), "edited").expect("edit");
-    server.set("big.ics", big("big", "v2")).await;
-    let report = first.sync_once().await.expect("sync");
-    assert_eq!(report.conflicts.len(), 1, "{report:?}");
-    assert_eq!(
-        std::fs::read(mirror.root().join("big.ics")).expect("big"),
-        b"edited"
-    );
-
-    // The process restarts: the damaged file's row is dropped, the next cycle lists again and
-    // fetches that one item and no other.
+    std::fs::remove_file(mirror.root().join("a.ics")).expect("delete");
     drop(first);
-    std::fs::write(mirror.root().join("a.ics"), "damaged while syncd was down").expect("damage");
     let (second, reopened) = engine(&server, &dir);
-    assert_eq!(
-        reopened.healed(),
-        2,
-        "the conflicted large item and the damaged small one"
-    );
+    assert_eq!(reopened.healed(), 2);
     let report = second.sync_once().await.expect("sync");
     assert_eq!((report.fetched, report.uploaded, report.removed), (2, 0, 0));
     assert!(report.conflicts.is_empty());
     assert_eq!(
         server.fetches(),
-        fetched + 3,
-        "two items and the change that made the conflict"
+        fetched + 2,
+        "those two items and no other"
     );
     assert_eq!(server.writes(), 0);
     assert_eq!(
         std::fs::read(reopened.root().join("big.ics")).expect("big"),
-        big("big", "v2").0
+        big("big", "v1").0
     );
     assert_eq!(
         std::fs::read(reopened.root().join("a.ics")).expect("a"),

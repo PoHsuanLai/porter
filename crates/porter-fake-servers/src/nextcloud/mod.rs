@@ -171,15 +171,17 @@ impl NextcloudHandle {
             .expect("the collection exists");
     }
 
-    /// The path of a collection: a calendar (`personal`) or the address book `contacts`.
+    /// The path of a collection: the address book `contacts`, a calendar of that name if there
+    /// is one, else an address book of that name.
     fn collection_path(&self, collection: &str) -> String {
-        let user = lock(&self.shared.state).user.clone();
+        let state = lock(&self.shared.state);
+        let user = state.user.clone();
+        let calendar = format!("/remote.php/dav/calendars/{user}/{collection}");
+        let book = format!("/remote.php/dav/addressbooks/users/{user}/{collection}");
         match collection {
-            "contacts" => format!("/remote.php/dav/addressbooks/users/{user}/contacts"),
-            other if other.starts_with("book-") => {
-                format!("/remote.php/dav/addressbooks/users/{user}/{other}")
-            }
-            other => format!("/remote.php/dav/calendars/{user}/{other}"),
+            "contacts" => book,
+            _ if state.tree.exists(&calendar) || !state.tree.exists(&book) => calendar,
+            _ => book,
         }
     }
 
@@ -201,10 +203,11 @@ impl NextcloudHandle {
         );
     }
 
-    /// Makes an address book called `book-<name>` in the URL, shown as `displayname`.
+    /// Makes an address book called `name` in the URL (a calendar may have the same name),
+    /// shown as `displayname`.
     pub fn add_addressbook(&self, name: &str, displayname: &str) {
-        let path = self.collection_path(&format!("book-{name}"));
         let mut state = lock(&self.shared.state);
+        let path = format!("/remote.php/dav/addressbooks/users/{}/{name}", state.user);
         state
             .tree
             .make_collection(&path, Kind::AddressBook)
@@ -216,6 +219,19 @@ impl NextcloudHandle {
                 color: None,
             },
         );
+    }
+
+    /// Puts a contact into the address book `book` (made by [`Self::add_addressbook`]).
+    pub fn put_book_item(&self, book: &str, name: &str, body: &str) {
+        let mut state = lock(&self.shared.state);
+        let path = format!(
+            "/remote.php/dav/addressbooks/users/{}/{book}/{name}",
+            state.user
+        );
+        state
+            .tree
+            .put(&path, body.as_bytes())
+            .expect("the address book exists");
     }
 
     /// Renames and recolours a collection (`personal`, `contacts`, ...).

@@ -487,3 +487,89 @@ async fn a_local_edit_made_after_the_scan_is_never_overwritten_by_a_fetch() {
     );
     assert_eq!(world.remote_files().await, files(&[("a.txt", "theirs")]));
 }
+
+/// A dataset that only mirrors: the memory dataset, told to travel replica to local.
+#[derive(Debug)]
+struct Mirror(Arc<MemoryDataset>);
+
+impl Dataset for Mirror {
+    fn id(&self) -> DatasetId {
+        self.0.id()
+    }
+
+    fn conflict_rule(&self) -> ConflictRule {
+        self.0.conflict_rule()
+    }
+
+    fn direction(&self) -> crate::dataset::Direction {
+        crate::dataset::Direction::PullOnly
+    }
+
+    async fn scan(&self) -> Result<Vec<Scanned>, DatasetError> {
+        self.0.scan().await
+    }
+
+    async fn read(&self, item: &LocalId) -> Result<Blob, DatasetError> {
+        self.0.read(item).await
+    }
+
+    async fn store(
+        &self,
+        at: Option<&LocalId>,
+        path: &ItemPath,
+        content: Blob,
+    ) -> Result<Scanned, DatasetError> {
+        self.0.store(at, path, content).await
+    }
+
+    async fn discard(&self, item: &LocalId) -> Result<(), DatasetError> {
+        self.0.discard(item).await
+    }
+}
+
+/// What a locally edited item, a locally deleted one and a new local file become, by direction:
+/// two-way uploads, removes and conflicts; pull-only does none of it and the server's next
+/// change overwrites the edit.
+#[tokio::test]
+async fn a_local_edit_is_a_conflict_or_an_upload_two_way_and_overwritten_pull_only() {
+    for pull_only in [false, true] {
+        let world = World::new(if pull_only { "pull" } else { "two" }, sha(), 10);
+        let edited = world.remote_put("edited.txt", b"v1").await;
+        world.remote_put("deleted.txt", b"v1").await;
+        let journal = Journal::open(&world.dir.join("files.sqlite")).expect("journal");
+        let clock = Arc::clone(&world.clock);
+        let replica = Shared(Arc::clone(&world.replica));
+        let report = if pull_only {
+            let engine = Engine::new(replica, Mirror(Arc::clone(&world.dataset)), journal, clock);
+            engine.sync_once().await.expect("first");
+            world.dataset.put("edited.txt", b"mine");
+            world.dataset.remove("deleted.txt");
+            world.dataset.put("new.txt", b"mine");
+            world.remote_edit(&edited, b"v2").await;
+            engine.sync_once().await.expect("second")
+        } else {
+            let engine = Engine::new(replica, Arc::clone(&world.dataset), journal, clock);
+            engine.sync_once().await.expect("first");
+            world.dataset.put("edited.txt", b"mine");
+            world.dataset.remove("deleted.txt");
+            world.dataset.put("new.txt", b"mine");
+            world.remote_edit(&edited, b"v2").await;
+            engine.sync_once().await.expect("second")
+        };
+        let kept = world.dataset.get("edited.txt");
+        let (puts, removes, conflicts) = (world.puts(), report.removed, report.conflicts.len());
+        let want = match pull_only {
+            // The edit is the server's now; nothing was sent; the file the person deleted and
+            // the one they added are left as they are.
+            true => (Some(b"v2".to_vec()), 0, 0, 0),
+            // The edit crossed the server's: a stored conflict, the local copy kept, the
+            // addition uploaded, the deletion sent.
+            false => (Some(b"mine".to_vec()), 1, 1, 1),
+        };
+        assert_eq!(
+            (kept, puts, removes, conflicts),
+            want,
+            "pull_only={pull_only}"
+        );
+    }
+}

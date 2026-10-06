@@ -1,19 +1,18 @@
 //! [`PimMirror`]: the local side of one collection, a directory of the vdir.
 //!
-//! **Read-only.** The engine is two-way: it diffs [`Dataset::scan`] against its journal and
-//! uploads what differs. This dataset reports what *it stored* (its ledger, seeded from the
-//! journal when opened), never what is on disk, so an edit, a new file or a deletion made in the
-//! vdir looks like no change at all and nothing is uploaded or removed on the server. The v1
-//! rule: a local change does not survive. A small item (up to [`ITEM_CAP`] bytes, [`TOTAL_CAP`]
-//! in all) is kept in memory as stored, and every scan, which opens each cycle, writes back any
-//! of them whose file was edited or deleted. A larger one stays as edited until the server next
-//! changes it (the engine then stores a conflict rather than overwrite what it thinks is
-//! someone's edit) or syncd next starts: [`PimMirror::open`] queues every item whose file is
-//! damaged or missing to be fetched again.
+//! **Read-only.** The mirror is [`Direction::PullOnly`]: the engine never scans it for local
+//! changes and never uploads or removes anything for it, so an edit, a new file or a deletion
+//! made in the vdir reaches no server. An edited item is overwritten by the server's state at
+//! that item's next change, whatever its size, and never stored as a conflict. A file that is
+//! damaged or missing is not a server change, so it is fetched again when syncd next starts:
+//! [`PimMirror::open`] queues every such item.
+//!
+//! The ledger of what was stored is kept for naming (no two items share a file name) and for
+//! the `scan` the trait requires.
 
 use super::PimKind;
 use super::vdir::{self, Meta};
-use crate::dataset::{Dataset, DatasetError, DatasetId, fingerprint};
+use crate::dataset::{Dataset, DatasetError, DatasetId, Direction, fingerprint};
 use crate::journal::{Journal, Op};
 use porter_core::Bytes;
 use porter_sync::{Blob, ConflictRule, ContentHash, ItemPath, ItemState, LocalId, Scanned};
@@ -21,35 +20,6 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-
-/// The largest item kept in memory to be written back.
-pub const ITEM_CAP: usize = 256 * 1024;
-/// The most bytes of items kept in memory.
-pub const TOTAL_CAP: usize = 32 * 1024 * 1024;
-
-/// The items kept in memory as stored.
-#[derive(Debug, Default)]
-struct Pristine {
-    bytes: usize,
-    items: BTreeMap<LocalId, Vec<u8>>,
-}
-
-impl Pristine {
-    fn drop_item(&mut self, local: &LocalId) {
-        if let Some(old) = self.items.remove(local) {
-            self.bytes -= old.len();
-        }
-    }
-
-    /// Keeps `content` as `local`'s if it fits.
-    fn keep(&mut self, local: &LocalId, content: &[u8]) {
-        self.drop_item(local);
-        if content.len() <= ITEM_CAP && self.bytes + content.len() <= TOTAL_CAP {
-            self.bytes += content.len();
-            self.items.insert(local.clone(), content.to_vec());
-        }
-    }
-}
 
 /// What the mirror stored for one file.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,7 +35,6 @@ struct Inner {
     kind: PimKind,
     root: PathBuf,
     ledger: Mutex<BTreeMap<LocalId, Held>>,
-    pristine: Mutex<Pristine>,
 }
 
 /// One collection's directory as a dataset. Cheap to clone: the clones are one mirror.
@@ -147,7 +116,6 @@ impl PimMirror {
                 kind,
                 root,
                 ledger: Mutex::new(ledger),
-                pristine: Mutex::default(),
             }),
             healed: damaged.len(),
         })
@@ -173,26 +141,6 @@ impl Inner {
     fn ledger(&self) -> MutexGuard<'_, BTreeMap<LocalId, Held>> {
         // Every critical section is a map update.
         self.ledger.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    fn pristine(&self) -> MutexGuard<'_, Pristine> {
-        self.pristine.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    /// Writes back every kept item whose file is not what was stored.
-    fn restore(&self) {
-        let kept: Vec<(LocalId, Vec<u8>)> = self
-            .pristine()
-            .items
-            .iter()
-            .map(|(local, bytes)| (local.clone(), bytes.clone()))
-            .collect();
-        for (local, bytes) in kept {
-            let held = std::fs::read(self.root.join(&local.0)).ok();
-            if held.as_deref() != Some(bytes.as_slice()) {
-                let _ = vdir::write_atomic(&self.root, &local.0, &bytes);
-            }
-        }
     }
 
     /// The file name for the item the server calls `path`, holding `content`: its UID, else the
@@ -244,14 +192,12 @@ impl Inner {
         }
         let local = LocalId(name);
         let size = Bytes(content.0.len() as u64);
-        self.pristine().keep(&local, &content.0);
         let mut ledger = self.ledger();
         if let Some(old) = at.filter(|old| **old != local) {
             // The item moved to another file name; the old file goes once the new one is whole.
             vdir::remove_file(&self.root, &old.0)
                 .map_err(|e| fail(&format!("cannot remove {}", old.0), e))?;
             ledger.remove(old);
-            self.pristine().drop_item(old);
         }
         ledger.insert(
             local.clone(),
@@ -274,12 +220,10 @@ impl Inner {
         vdir::remove_file(&self.root, &item.0)
             .map_err(|e| fail(&format!("cannot remove {}", item.0), e))?;
         self.ledger().remove(item);
-        self.pristine().drop_item(item);
         Ok(())
     }
 
     fn scan(&self) -> Vec<Scanned> {
-        self.restore();
         self.ledger()
             .iter()
             .map(|(local, held)| Scanned {
@@ -308,6 +252,10 @@ impl Dataset for PimMirror {
     fn conflict_rule(&self) -> ConflictRule {
         // The server's copy always wins; nothing here is ever uploaded, so none can arise.
         ConflictRule::ShowInApp
+    }
+
+    fn direction(&self) -> Direction {
+        Direction::PullOnly
     }
 
     async fn scan(&self) -> Result<Vec<Scanned>, DatasetError> {

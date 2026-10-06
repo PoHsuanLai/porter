@@ -46,6 +46,18 @@ impl std::fmt::Display for DatasetId {
 #[error("dataset: {0}")]
 pub struct DatasetError(pub String);
 
+/// Which way a dataset's items travel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Direction {
+    /// Both: local changes are uploaded and replica changes stored (the engine's default).
+    #[default]
+    TwoWay,
+    /// Replica to local only (a mirror): the engine neither scans for local changes nor uploads
+    /// or removes anything, and a changed item overwrites its local copy even if that was
+    /// edited, never a conflict.
+    PullOnly,
+}
+
 /// The local side of one dataset.
 pub trait Dataset: Send + Sync {
     /// Its name.
@@ -53,6 +65,11 @@ pub trait Dataset: Send + Sync {
 
     /// How it settles a conflict.
     fn conflict_rule(&self) -> ConflictRule;
+
+    /// Which way its items travel.
+    fn direction(&self) -> Direction {
+        Direction::TwoWay
+    }
 
     /// Everything held locally now, each with its content's [`fingerprint`] (SHA-256 hex, always:
     /// the engine compares it with its own reading of the bytes): the engine diffs this against
@@ -82,6 +99,10 @@ impl<T: Dataset + ?Sized> Dataset for std::sync::Arc<T> {
 
     fn conflict_rule(&self) -> ConflictRule {
         (**self).conflict_rule()
+    }
+
+    fn direction(&self) -> Direction {
+        (**self).direction()
     }
 
     fn scan(&self) -> impl Future<Output = Result<Vec<Scanned>, DatasetError>> + Send {

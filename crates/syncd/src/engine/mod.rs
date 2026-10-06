@@ -15,7 +15,7 @@ mod resolve;
 mod tests;
 
 use crate::clock::Clock;
-use crate::dataset::{Dataset, DatasetError, replica_hash};
+use crate::dataset::{Dataset, DatasetError, Direction, replica_hash};
 use crate::journal::{Journal, JournalError, Op};
 use porter_core::UnixSeconds;
 use porter_core::capability::QuotaReport;
@@ -156,10 +156,17 @@ impl<R: Replica, D: Dataset, K: Clock> Engine<R, D, K> {
     }
 
     async fn cycle(&self, report: &mut Report) -> Result<(), Halt> {
+        let direction = self.dataset.direction();
         self.resume(report).await?;
-        self.record_local().await?;
+        // A pull-only dataset (a mirror) has no local changes to record and nothing to push.
+        if direction == Direction::TwoWay {
+            self.record_local().await?;
+        }
         self.pull(report).await?;
-        let pushed = self.push(report).await;
+        let pushed = match direction {
+            Direction::TwoWay => self.push(report).await,
+            Direction::PullOnly => Ok(()),
+        };
         // Uploads that stopped for room still leave the cycle's other work and the quota read.
         if self.replica.features().quota == QuotaReport::Reported {
             report.quota = self.replica.quota().await.ok();

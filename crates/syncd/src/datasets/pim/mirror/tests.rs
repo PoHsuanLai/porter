@@ -130,52 +130,33 @@ async fn a_uid_that_changes_moves_the_file_and_a_shared_uid_keeps_both_items() {
 }
 
 #[tokio::test]
-async fn a_local_edit_or_deletion_is_never_reported_as_a_change() {
+async fn the_mirror_is_pull_only_and_a_local_edit_or_deletion_is_not_a_change() {
     let (mirror, _journal, dir) = open("readonly");
-    let small = mirror
+    assert_eq!(mirror.direction(), Direction::PullOnly);
+    let item = mirror
         .store(None, &path("s.ics"), ics("s", "small"))
-        .await
-        .expect("store");
-    let big_text = format!("{}{}", "X".repeat(ITEM_CAP), "tail");
-    let big_blob = Blob(
-        format!("BEGIN:VCALENDAR\r\nUID:big\r\nDESCRIPTION:{big_text}\r\nEND:VCALENDAR\r\n")
-            .into_bytes(),
-    );
-    let big = mirror
-        .store(None, &path("big.ics"), big_blob.clone())
         .await
         .expect("store");
     let before = mirror.scan().await.expect("scan");
 
-    std::fs::write(mirror.root().join(&small.local.0), "edited").expect("edit");
-    std::fs::write(mirror.root().join(&big.local.0), "edited").expect("edit");
+    std::fs::write(mirror.root().join(&item.local.0), "edited").expect("edit");
     std::fs::write(mirror.root().join("stray.ics"), "new file").expect("stray");
-    let after = mirror.scan().await.expect("scan");
-    assert_eq!(after, before, "what the mirror stored, not what is on disk");
-    // The small one was written back at once, the big one stays edited and is not listed as new.
-    assert_eq!(
-        mirror.read(&small.local).await.expect("read"),
-        ics("s", "small")
-    );
-    assert_eq!(
-        std::fs::read(mirror.root().join(&big.local.0)).expect("big"),
-        b"edited"
-    );
-
-    std::fs::remove_file(mirror.root().join(&small.local.0)).expect("delete");
-    std::fs::remove_file(mirror.root().join(&big.local.0)).expect("delete");
     assert_eq!(
         mirror.scan().await.expect("scan"),
         before,
-        "a deletion is no removal either"
+        "what was stored, not what is on disk"
     );
-    assert!(
-        mirror.root().join(&small.local.0).exists(),
-        "the small one is back"
-    );
-    assert!(
-        !mirror.root().join(&big.local.0).exists(),
-        "the big one waits for the server"
+    std::fs::remove_file(mirror.root().join(&item.local.0)).expect("delete");
+    assert_eq!(mirror.scan().await.expect("scan"), before);
+
+    // The server's next change to the item brings the file back, whatever was done to it.
+    mirror
+        .store(Some(&item.local), &path("s.ics"), ics("s", "changed"))
+        .await
+        .expect("store");
+    assert_eq!(
+        mirror.read(&item.local).await.expect("read"),
+        ics("s", "changed")
     );
     let _ = std::fs::remove_dir_all(dir);
 }

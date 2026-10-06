@@ -56,8 +56,6 @@ Each row names the lane of the accounts program (porter PLAN §6) that removes i
 | storage-webdav: a tombstone's version is the constant `deleted`, and a PUT whose answer has no `ETag` and no readable PROPFIND returns the empty version | a server that keeps a version for deletions, or one that sends no `ETag`; the next read settles the empty version by content |
 | syncd: a dataset's `store` is not atomic with the engine's pre-store check | the engine re-reads the local file against the journal's fingerprint just before it overwrites (`moved_since_scan`), but a user edit in the instant between that read and `Dataset::store` is the dataset's to guard (write to a temp file and rename); `PimMirror` (W6e) does, W6f implements `store` that way |
 | syncd PIM: no flow gives syncd a Calendar or Contacts grant | the supervisor mirrors an account only when syncd already holds a grant for it (`PimGrants`, `ClientGrants` over `Accounts::find`; a consent sheet needs a parent window and a host to draw it, which a daemon lacks). Tests seed the grants; today the person would have to make them in Settings. Closes with W3e (the sheet host) plus a Settings action "Sync calendars and contacts to this computer" (or a first-run `Choose` from syncd): W3e / the detent accounts pane |
-| syncd PIM: the engine has no read-only mode, so `PimMirror` fakes one | `Dataset` has no direction and the engine always scans and pushes, so the mirror reports what it stored, never what is on disk. Small items (<= 256 KiB, 32 MiB in all) are kept in memory and written back every scan; a larger item edited locally stays edited until the server next changes it (a stored conflict, no overwrite) or syncd restarts (`PimMirror::open` queues every damaged or missing file to be fetched again). Closes with an interface ask to syncd's owner: `Dataset::direction() -> Direction::{TwoWay, PullOnly}` with the engine skipping `record_local` and `push` and `moved_since_scan` for `PullOnly` (diff in the lane w6e-pim report) |
-| syncd PIM: a same-named calendar and address book of one account share one vdir directory | `<account>/<segment>`, the files have different extensions and each mirror only touches its own, but retiring one (the server deleted it, the grant was withdrawn) removes the whole directory; closes with a kind suffix on the clash, W6e follow-up |
 | syncd PIM: collections are found again every ten minutes, items every poll (sync-collection, else an etag walk) | a new, renamed or recoloured calendar appears within `PimConfig::rescan`; no CTag shortcut and no push; tasks calendars (VTODO) are mirrored like any calendar. Closes if the delay shows |
 | syncd PIM: collections are on the endpoint's origin only | the relay dials the endpoint's origin; a home set on another host (rare; iCloud shards) is an `Unreadable` discovery. Closes with the iCloud provider lane (W6g) |
 | syncd: `Engine::resolve` (KeepLocal, KeepRemote) has no D-Bus method | `Sync1` is frozen (four methods); the owning app resolves through a method a later interface lane adds (see "Interface asks from W6a"); the journal and engine side is built and tested |
@@ -834,7 +832,7 @@ daemon. No `todo!()` was left behind (none in syncd before or after).
   `ClientGrants`), `mirrors` (`AccountMirrors`: one account's collections as engines and drivers
   in the hub) and `supervisor` (`PimSupervisor`, `PimConfig`). `main` starts the supervisor.
 - vdir layout, `$XDG_DATA_HOME/porter/vdir/<account>/<collection>/`: `<account>` is
-  `object_segment(account)`, `<collection>` the last segment of the collection's URL made safe;
+  `object_segment(account)`, `<collection>` the last segment of the collection's URL made safe, plus `-contacts` for an address book (so a calendar and an address book of one name never share a directory);
   `<uid>.ics` or `<uid>.vcf` (the item's UID when it is a plain name, else the server's file name,
   else that plus a hash), `displayname`, `color` (calendars only). Sync1 names a collection
   `<account>/pim_cal_<dir>` or `<account>/pim_card_<dir>`; its journal is
@@ -843,6 +841,7 @@ daemon. No `todo!()` was left behind (none in syncd before or after).
   their directories and journals; an accountd that cannot be asked changes nothing
   (`AccountdUnavailable`). `AccountRemoved` still wipes the account's directory at once
   (`removal::wipe`, tested against the live mirrors).
+- `Dataset::direction()` (`Direction::{TwoWay, PullOnly}`, default `TwoWay`): a pull-only cycle records no local change and pushes nothing, and `upsert_known` never makes an edit a conflict. `PimMirror` is `PullOnly`, so a local edit of any size is overwritten at the item's next server change and the in-memory write-back cache was dropped; a file deleted or damaged locally is no server change, so `PimMirror::open` still queues it to be fetched again at the next start.
 - Additive outside the owned paths: `Hub::forget` (one dataset), the fake DAV tree's principal,
   home sets, `Principal`, `CollectionMeta` and `Tree::make_collection`/`set_meta`, and the
   Nextcloud handle's `add_calendar`, `add_addressbook`, `set_collection_meta`, `delete_item`,

@@ -58,14 +58,16 @@ fn slug(kind: PimKind, dir: &str) -> String {
     }
 }
 
-/// Names for `found`, in order. Two collections that would share a directory (or a slug, which
-/// is only lowercasing of it) all get the same name plus a short hash of their URL, so the names
-/// depend on the set and never on the order the server lists it in.
+/// Names for `found`, in order. A calendar is its segment and an address book its segment plus
+/// `-contacts`, always, so a calendar and an address book of one account never share a
+/// directory whatever order they are found in. Two of one kind that would share a directory (or
+/// a slug, which is only lowercasing of it) all get the same name plus a short hash of their
+/// URL, so the names depend on the set and never on the order the server lists it in.
 pub fn plan(kind: PimKind, found: Vec<Found>) -> Vec<Planned> {
     let names: Vec<(String, String)> = found
         .iter()
         .map(|f| {
-            let dir = dir_name(&f.segment);
+            let dir = format!("{}{}", dir_name(&f.segment), kind.dir_suffix());
             let slug = slug(kind, &dir);
             (dir, slug)
         })
@@ -176,5 +178,33 @@ mod tests {
         sorted_one.sort();
         sorted_two.sort();
         assert_eq!(sorted_one, sorted_two);
+    }
+}
+
+#[cfg(test)]
+mod kind_tests {
+    use super::*;
+    use porter_core::WebUrl;
+
+    #[test]
+    fn a_calendar_and_an_address_book_of_one_name_never_share_a_directory_or_a_dataset() {
+        let one = |kind| {
+            plan(
+                kind,
+                vec![Found {
+                    url: WebUrl::parse("http://127.0.0.1:1/shared/").expect("url"),
+                    segment: "shared".to_owned(),
+                    displayname: None,
+                    color: None,
+                }],
+            )
+            .remove(0)
+        };
+        let (calendar, book) = (one(PimKind::Calendar), one(PimKind::Contacts));
+        assert_eq!(
+            (calendar.dir.as_str(), book.dir.as_str()),
+            ("shared", "shared-contacts")
+        );
+        assert_ne!(calendar.dataset, book.dataset);
     }
 }
