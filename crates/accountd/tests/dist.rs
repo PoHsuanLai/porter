@@ -71,3 +71,28 @@ fn the_test_proc_root_feature_is_not_a_default_feature() {
         "{default:?}"
     );
 }
+
+#[test]
+fn the_sample_caller_table_gives_settings_the_sheet_host_and_both_daemons_their_roles() {
+    use porter_core::AppName;
+    use porter_dbus::CallerRole;
+    let table = accountd::table_from_toml(&dist("callers.toml")).expect("the sample reads");
+    let app = |name: &str| AppName::parse(name).expect("name");
+    assert_eq!(
+        table.role_of(&app("org.quire.Settings")),
+        CallerRole::Settings
+    );
+    for (unit, role) in [
+        ("sill-shell.scope", CallerRole::SheetHost),
+        ("inferd.service", CallerRole::PorterDaemon),
+        ("syncd.service", CallerRole::PorterDaemon),
+    ] {
+        assert_eq!(
+            table.resolve_unit(unit).map(|caller| caller.role),
+            Some(role),
+            "{unit}"
+        );
+    }
+    // A unit row grants nothing to an app scope named after its app.
+    assert_eq!(table.role_of(&app("org.quire.Inference")), CallerRole::App);
+}
