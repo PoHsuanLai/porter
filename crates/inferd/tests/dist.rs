@@ -38,6 +38,26 @@ fn the_unit_gives_engines_the_gpu_and_the_network_to_nobody() {
     // Engines' JIT needs writable and executable memory, so the one line cuad's unit has is absent.
     assert_eq!(key(&unit, "MemoryDenyWriteExecute"), None);
     assert!(unit.lines().any(|line| line.starts_with("DeviceAllow=")));
+    // What inferd writes is created by systemd before the sandbox starts.
+    assert_eq!(key(&unit, "RuntimeDirectory"), Some("inferd"));
+    assert_eq!(key(&unit, "StateDirectory"), Some("quire/inferd"));
+    assert_eq!(key(&unit, "ReadWritePaths"), None);
+}
+
+#[test]
+fn the_cloud_drop_in_opens_the_internet_families_and_nothing_else() {
+    let drop_in = dist("inferd-cloud.conf");
+    assert_eq!(key(&drop_in, "PrivateNetwork"), Some("no"));
+    assert_eq!(
+        key(&drop_in, "RestrictAddressFamilies"),
+        Some("AF_UNIX AF_INET AF_INET6")
+    );
+    // Only those two lines: the rest of the sandbox stays as the unit has it.
+    let settings: Vec<_> = drop_in
+        .lines()
+        .filter(|line| !line.starts_with('#') && line.contains('='))
+        .collect();
+    assert_eq!(settings.len(), 2, "{settings:?}");
 }
 
 #[test]

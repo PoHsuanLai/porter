@@ -24,13 +24,22 @@ TimeoutStopSec=20
 # Only Unix sockets: the session bus, and the engines' sockets under %t/inferd. Nothing can reach
 # the network, so a compromised engine cannot send what it was shown anywhere, and weights are
 # never fetched from here (HF_HUB_OFFLINE=1 in every engine's environment).
+#
+# Hosted models (a cloud account the person added and granted) need the network. That is an
+# opt-in drop-in, dist/inferd-cloud.conf, installed by the person (or by Settings when a cloud
+# account is added) as $XDG_CONFIG_HOME/systemd/user/inferd.service.d/cloud.conf: the engines
+# share this sandbox until each has its own (models section 3.9), so a person who stays
+# on-device keeps an inferd that cannot reach the network at all.
 RestrictAddressFamilies=AF_UNIX
 PrivateNetwork=yes
-# The person's files are out of reach except what inferd writes: its engines' sockets, and the
-# audit file. The weights cache is read through ProtectHome=read-only.
+# The person's files are out of reach except what inferd writes: its engines' sockets (the
+# runtime directory, %t/inferd) and its state (the audit file and the spend ledger, under
+# $XDG_STATE_HOME/quire/inferd). systemd creates both before the sandbox starts. The weights
+# cache is read through ProtectHome=read-only.
 ProtectHome=read-only
 ProtectSystem=strict
-ReadWritePaths=%t/inferd %h/.local/state/quire/inferd
+RuntimeDirectory=inferd
+StateDirectory=quire/inferd
 # Engines write scratch files (vLLM, torch and Triton caches): private, and gone with the unit.
 PrivateTmp=yes
 # No setuid gain. MemoryDenyWriteExecute is NOT set: CUDA and the engines' JIT need writable and

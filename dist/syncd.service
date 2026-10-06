@@ -22,10 +22,13 @@ TimeoutStopSec=20
 # Unix sockets for the bus and the relay descriptors; no internet.
 RestrictAddressFamilies=AF_UNIX
 # The person's files are out of reach except what syncd keeps: the journals (porter/sync under
-# state) and the PIM mirrors (porter/vdir under data).
+# $XDG_STATE_HOME, which systemd creates) and the PIM mirrors (porter/vdir under the data home;
+# systemd has no data-directory setting, so the pre-start step, outside the sandbox, makes it).
 ProtectHome=read-only
 ProtectSystem=strict
-ReadWritePaths=%h/.local/state/porter/sync %h/.local/share/porter/vdir
+StateDirectory=porter/sync
+ExecStartPre=+/usr/bin/mkdir -p %h/.local/share/porter/vdir
+ReadWritePaths=%h/.local/share/porter/vdir
 PrivateTmp=yes
 PrivateDevices=yes
 NoNewPrivileges=yes

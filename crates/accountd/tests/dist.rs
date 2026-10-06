@@ -96,3 +96,16 @@ fn the_sample_caller_table_gives_settings_the_sheet_host_and_both_daemons_their_
     // A unit row grants nothing to an app scope named after its app.
     assert_eq!(table.role_of(&app("org.quire.Inference")), CallerRole::App);
 }
+
+#[test]
+fn what_the_unit_writes_is_created_before_the_sandbox_starts() {
+    let unit = dist("accountd.service");
+    // A missing ReadWritePaths entry fails the unit; systemd's own directories cannot be missing.
+    assert_eq!(
+        value(&unit, "StateDirectory"),
+        Some("porter quire/accountd")
+    );
+    assert_eq!(value(&unit, "ConfigurationDirectory"), Some("porter"));
+    assert_eq!(value(&unit, "ReadWritePaths"), None);
+    assert_eq!(value(&unit, "ProtectHome"), Some("read-only"));
+}

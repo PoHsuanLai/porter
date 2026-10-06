@@ -46,10 +46,16 @@ fn the_unit_is_a_sandbox_that_writes_only_its_own_directories() {
     assert_eq!(value(&unit, "CapabilityBoundingSet"), Some(""));
     assert_eq!(value(&unit, "ProtectSystem"), Some("strict"));
     assert_eq!(value(&unit, "ProtectHome"), Some("read-only"));
-    // Journals under state, mirrors under data: nothing else is writable.
+    // Journals under state, mirrors under data: nothing else is writable, and both exist before
+    // the sandbox starts (a missing ReadWritePaths entry fails the unit).
+    assert_eq!(value(&unit, "StateDirectory"), Some("porter/sync"));
     assert_eq!(
         value(&unit, "ReadWritePaths"),
-        Some("%h/.local/state/porter/sync %h/.local/share/porter/vdir")
+        Some("%h/.local/share/porter/vdir")
+    );
+    assert_eq!(
+        value(&unit, "ExecStartPre"),
+        Some("+/usr/bin/mkdir -p %h/.local/share/porter/vdir")
     );
     // The bus and the replicas' servers (through accountd's relay, syncd itself holds no
     // credential and dials only its own session bus): Unix sockets only.

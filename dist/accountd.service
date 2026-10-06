@@ -20,11 +20,14 @@ TimeoutStopSec=20
 # --- Sandbox ---
 # Unix sockets for the bus, and the internet for the providers.
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-# The person's files are out of reach except what accountd writes: the registry (porter/), its
-# audit file (quire/accountd/) and the user's clients file (Settings writes it through accountd).
+# The person's files are out of reach except what accountd writes: the registry (porter/ under
+# $XDG_STATE_HOME), its audit file (quire/accountd/ there) and the user's clients file and caller
+# table (porter/ under $XDG_CONFIG_HOME; Settings writes them through accountd). systemd creates
+# them before the sandbox starts.
 ProtectHome=read-only
 ProtectSystem=strict
-ReadWritePaths=%h/.local/state/porter %h/.local/state/quire/accountd %h/.config/porter
+StateDirectory=porter quire/accountd
+ConfigurationDirectory=porter
 PrivateTmp=yes
 PrivateDevices=yes
 NoNewPrivileges=yes
