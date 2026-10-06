@@ -13,6 +13,7 @@ pub mod paths;
 pub mod removal;
 pub mod scheduler;
 pub mod service;
+pub mod webdav;
 
 #[cfg(test)]
 mod testing;

@@ -304,6 +304,7 @@ fn reason(status: u16) -> &'static str {
         200 => "OK",
         201 => "Created",
         204 => "No Content",
+        206 => "Partial Content",
         207 => "Multi-Status",
         301 => "Moved Permanently",
         302 => "Found",
@@ -313,7 +314,11 @@ fn reason(status: u16) -> &'static str {
         403 => "Forbidden",
         404 => "Not Found",
         405 => "Method Not Allowed",
+        409 => "Conflict",
         412 => "Precondition Failed",
+        416 => "Range Not Satisfiable",
+        501 => "Not Implemented",
+        507 => "Insufficient Storage",
         _ => "Status",
     }
 }

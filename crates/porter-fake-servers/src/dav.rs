@@ -46,6 +46,45 @@ pub struct Tree {
     seq: u64,
     oldest_valid: u64,
     quota: Quota,
+    limit: Option<u64>,
+    behaviour: Behaviour,
+}
+
+/// How this server differs from the plain one: knobs a replica test turns to meet servers that
+/// answer unlike each other.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Behaviour {
+    /// Whether a change to a file changes the etag of every folder above it (Nextcloud's files).
+    pub etag_propagation: Propagation,
+    /// Whether the server answers the `sync-collection` REPORT (Nextcloud's files do not).
+    pub sync_collection: SyncCollection,
+}
+
+/// Whether folder etags follow their contents.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Propagation {
+    /// A folder's etag changes when anything below it does.
+    Up,
+    /// A folder's etag is its own.
+    Off,
+}
+
+/// Whether the REPORT is served.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyncCollection {
+    /// Served, at `sync-level` 1 and `infinite`.
+    Served,
+    /// Answered `501 Not Implemented`.
+    NotImplemented,
+}
+
+impl Default for Behaviour {
+    fn default() -> Self {
+        Self {
+            etag_propagation: Propagation::Off,
+            sync_collection: SyncCollection::Served,
+        }
+    }
 }
 
 const NAMESPACES: &str = "xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:oc=\"http://owncloud.org/ns\" \
@@ -60,6 +99,10 @@ fn escape(text: &str) -> String {
 
 fn parent_of(path: &str) -> &str {
     path.rsplit_once('/').map_or("", |(p, _)| p)
+}
+
+fn etag(changed: u64) -> String {
+    format!("\"{changed:x}\"")
 }
 
 fn token_url(seq: u64) -> String {
@@ -78,6 +121,8 @@ impl Tree {
                 used_base: 0,
                 available: -3,
             },
+            limit: None,
+            behaviour: Behaviour::default(),
         };
         for (path, kind) in collections {
             tree.insert(path, kind.clone(), Vec::new(), "httpd/unix-directory");
@@ -125,6 +170,20 @@ impl Tree {
             changed: self.seq,
         };
         self.nodes.insert(path.to_owned(), node);
+        self.touch_above(path);
+    }
+
+    /// Under etag propagation, the folders above `path` change with it.
+    fn touch_above(&mut self, path: &str) {
+        if self.behaviour.etag_propagation == Propagation::Off {
+            return;
+        }
+        let seq = self.seq;
+        let mut up = parent_of(path).to_owned();
+        while let Some(node) = self.nodes.get_mut(&up) {
+            node.changed = seq;
+            up = parent_of(&up).to_owned();
+        }
     }
 
     /// Creates or replaces the item at `path` (its parent collection must exist).
@@ -175,6 +234,9 @@ impl Tree {
             self.nodes.remove(key);
             self.deleted.push((key.clone(), self.seq));
         }
+        if !gone.is_empty() {
+            self.touch_above(path);
+        }
         !gone.is_empty()
     }
 
@@ -187,6 +249,22 @@ impl Tree {
     /// Sets what quota reports.
     pub fn set_quota(&mut self, quota: Quota) {
         self.quota = quota;
+    }
+
+    /// Gives the account room for `total` bytes: a PUT past it is `507`, and the quota
+    /// properties report what is left.
+    pub fn set_limit(&mut self, total: u64) {
+        self.limit = Some(total);
+    }
+
+    /// How this server differs from the plain one.
+    pub fn set_behaviour(&mut self, behaviour: Behaviour) {
+        self.behaviour = behaviour;
+    }
+
+    /// The etag of the node at `path`, quoted as the server sends it.
+    pub fn etag_of(&self, path: &str) -> Option<String> {
+        self.nodes.get(path).map(|n| etag(n.changed))
     }
 
     /// The sync token a client would get now.
@@ -214,6 +292,37 @@ impl Tree {
             .map(|(_, n)| n.body.len() as u64)
             .sum();
         self.quota.used_base + files
+    }
+
+    /// Bytes of every file in any files folder, plus what the server counts before them.
+    fn used_total(&self) -> u64 {
+        let files: u64 = self
+            .nodes
+            .iter()
+            .filter(|(k, n)| n.kind == Kind::Item && self.in_files(k))
+            .map(|(_, n)| n.body.len() as u64)
+            .sum();
+        self.quota.used_base + files
+    }
+
+    fn in_files(&self, path: &str) -> bool {
+        let mut up = parent_of(path);
+        while let Some(node) = self.nodes.get(up) {
+            if node.kind == Kind::Files {
+                return true;
+            }
+            up = parent_of(up);
+        }
+        false
+    }
+
+    fn available(&self) -> i64 {
+        match self.limit {
+            Some(total) => {
+                i64::try_from(total.saturating_sub(self.used_total())).unwrap_or(i64::MAX)
+            }
+            None => self.quota.available,
+        }
     }
 
     fn props(&self, path: &str, node: &Node, requested: &str) -> String {
@@ -278,7 +387,7 @@ impl Tree {
                 if wants("quota-available-bytes") {
                     out.push_str(&format!(
                         "<d:quota-available-bytes>{}</d:quota-available-bytes>",
-                        self.quota.available
+                        self.available()
                     ));
                 }
             }
@@ -329,8 +438,12 @@ impl Tree {
         Self::multistatus(&out, "")
     }
 
-    /// The `sync-collection` REPORT: what changed under `path` since the token in `body`.
+    /// The `sync-collection` REPORT: what changed under `path` since the token in `body`, among
+    /// its members (`sync-level` 1) or everything below it (`infinite`).
     pub fn report(&self, path: &str, body: &str) -> Response {
+        if self.behaviour.sync_collection == SyncCollection::NotImplemented {
+            return Response::new(501);
+        }
         if self.nodes.get(path).is_none_or(|n| n.kind == Kind::Item) {
             return Response::new(404);
         }
@@ -344,20 +457,34 @@ impl Tree {
                 .strip_prefix("http://fake.test/ns/sync/")
                 .and_then(|n| n.parse::<u64>().ok()),
         };
-        let valid = since.filter(|s| *s >= self.oldest_valid);
+        // The first listing (no token) is always good; a token must not predate the pruning.
+        let valid = match token.trim().is_empty() {
+            true => Some(0),
+            false => since.filter(|s| *s >= self.oldest_valid),
+        };
         let Some(since) = valid else {
             let error =
                 "<?xml version=\"1.0\"?><d:error xmlns:d=\"DAV:\"><d:valid-sync-token/></d:error>";
             return Response::new(403).typed("application/xml; charset=utf-8", error);
         };
+        let infinite = element_text(body, "sync-level").is_some_and(|l| l.trim() == "infinite");
+        let below = format!("{path}/");
+        let within = |p: &str| match infinite {
+            true => p.starts_with(&below),
+            false => parent_of(p) == path,
+        };
         let mut out = String::new();
-        for (child_path, child) in self.children(path).filter(|(_, n)| n.changed > since) {
+        for (child_path, child) in self
+            .nodes
+            .iter()
+            .filter(|(k, n)| within(k) && n.changed > since)
+        {
             out.push_str(&self.response_for(child_path, child, body));
         }
         for (gone, _) in self
             .deleted
             .iter()
-            .filter(|(p, at)| *at > since && parent_of(p) == path)
+            .filter(|(p, at)| *at > since && within(p))
         {
             if !self.nodes.contains_key(gone) {
                 out.push_str(&format!(
@@ -370,6 +497,94 @@ impl Tree {
             &out,
             &format!("<d:sync-token>{}</d:sync-token>", self.sync_token()),
         )
+    }
+
+    /// `412` when the request's `If-Match` or `If-None-Match` does not hold for the node at
+    /// `path` (RFC 9110 section 13.1; an etag compares as the server wrote it, weak or not).
+    fn precondition_failed(&self, request: &Request, path: &str) -> bool {
+        let current = self
+            .nodes
+            .get(path)
+            .filter(|n| n.kind == Kind::Item)
+            .map(|n| etag(n.changed));
+        let listed = |value: &str| -> Vec<String> {
+            value
+                .split(',')
+                .map(|t| t.trim().trim_start_matches("W/").to_owned())
+                .collect()
+        };
+        let if_match = request.header("if-match").map(listed);
+        let if_none_match = request.header("if-none-match").map(listed);
+        let match_fails = if_match.is_some_and(|tags| match &current {
+            None => true,
+            Some(now) => !tags.iter().any(|t| t == "*" || t == now),
+        });
+        let none_match_fails = if_none_match.is_some_and(|tags| match &current {
+            None => false,
+            Some(now) => tags.iter().any(|t| t == "*" || t == now),
+        });
+        match_fails || none_match_fails
+    }
+
+    /// A GET, with the `Range` header honoured (`bytes=a-b`, `bytes=a-`).
+    fn get(&self, request: &Request, path: &str) -> Response {
+        let Some(node) = self.nodes.get(path).filter(|n| n.kind == Kind::Item) else {
+            return Response::new(404);
+        };
+        let whole = Response::new(200)
+            .with_header("ETag", &etag(node.changed))
+            .with_header("Accept-Ranges", "bytes")
+            .typed(&node.content_type, node.body.clone());
+        let Some(spec) = request
+            .header("range")
+            .and_then(|r| r.strip_prefix("bytes="))
+        else {
+            return whole;
+        };
+        let (from, to) = spec.split_once('-').unwrap_or((spec, ""));
+        let len = node.body.len() as u64;
+        let Ok(start) = from.parse::<u64>() else {
+            return whole;
+        };
+        if start >= len {
+            return Response::new(416).with_header("Content-Range", &format!("bytes */{len}"));
+        }
+        let end = to.parse::<u64>().map_or(len - 1, |e| e.min(len - 1));
+        let slice = node.body[start as usize..=end as usize].to_vec();
+        Response::new(206)
+            .with_header("ETag", &etag(node.changed))
+            .with_header("Content-Range", &format!("bytes {start}-{end}/{len}"))
+            .typed(&node.content_type, slice)
+    }
+
+    /// A PUT with preconditions, quota and the new etag.
+    fn put_request(&mut self, request: &Request, path: &str) -> Response {
+        if self.precondition_failed(request, path) {
+            return Response::new(412);
+        }
+        if let Some(total) = self.limit {
+            let old = self
+                .nodes
+                .get(path)
+                .filter(|n| n.kind == Kind::Item)
+                .map_or(0, |n| n.body.len() as u64);
+            let after = self.used_total().saturating_sub(old) + request.body.len() as u64;
+            if after > total {
+                return Response::new(507);
+            }
+        }
+        match self.put(path, &request.body) {
+            Ok(outcome) => {
+                let status = match outcome {
+                    PutOutcome::Created => 201,
+                    PutOutcome::Replaced => 204,
+                };
+                let tag = self.etag_of(path).unwrap_or_default();
+                Response::new(status).with_header("ETag", &tag)
+            }
+            Err(PutError::NoParent) => Response::new(409),
+            Err(PutError::Exists) => Response::new(405),
+        }
     }
 
     /// Answers a DAV request at `path`.
@@ -387,16 +602,14 @@ impl Tree {
                 &request.body_text(),
             ),
             "REPORT" => self.report(path, &request.body_text()),
-            "PUT" => created(self.put(path, &request.body)),
+            "PUT" => self.put_request(request, path),
             "MKCOL" => created(self.mkcol(path).map(|()| PutOutcome::Created)),
+            "DELETE" if self.precondition_failed(request, path) => Response::new(412),
             "DELETE" => match self.delete(path) {
                 true => Response::new(204),
                 false => Response::new(404),
             },
-            "GET" => match self.body(path) {
-                Some((body, content_type)) => Response::new(200).typed(content_type, body.to_vec()),
-                None => Response::new(404),
-            },
+            "GET" => self.get(request, path),
             _ => Response::new(405),
         }
     }

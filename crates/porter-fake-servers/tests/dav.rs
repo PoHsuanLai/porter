@@ -259,3 +259,126 @@ async fn rewrite_points_dav_rows_at_the_plain_dav_server() {
             .all(|r| r.endpoint.is_none())
     );
 }
+
+const FILES: &str = "/remote.php/dav/files/alice";
+
+#[tokio::test]
+async fn put_and_delete_honour_if_match_and_if_none_match_and_answer_the_etag() {
+    let (running, address) = nextcloud().await;
+    running.seed_app_password("pw");
+    let url = format!("{FILES}/a.txt");
+    let put = |body: &str| dav("PUT", &url, "pw").with_body(body);
+    let created = call(&address, put("one").with_header("If-None-Match", "*")).await;
+    assert_eq!(created.status, 201);
+    let etag = created.header("etag").expect("an etag").to_owned();
+    let again = call(&address, put("two").with_header("If-None-Match", "*")).await;
+    assert_eq!(again.status, 412);
+    let stale = call(&address, put("two").with_header("If-Match", "\"0\"")).await;
+    assert_eq!(stale.status, 412);
+    let fresh = call(&address, put("two").with_header("If-Match", &etag)).await;
+    assert_eq!(fresh.status, 204);
+    assert_ne!(fresh.header("etag"), Some(etag.as_str()));
+    let missing = call(
+        &address,
+        dav("PUT", &format!("{FILES}/none.txt"), "pw")
+            .with_body("x")
+            .with_header("If-Match", &etag),
+    )
+    .await;
+    assert_eq!(missing.status, 412);
+    let delete = |tag: &str| dav("DELETE", &url, "pw").with_header("If-Match", tag);
+    assert_eq!(call(&address, delete(&etag)).await.status, 412);
+    let now = fresh.header("etag").expect("etag").to_owned();
+    assert_eq!(call(&address, delete(&now)).await.status, 204);
+}
+
+#[tokio::test]
+async fn a_range_get_answers_206_with_its_span_and_416_past_the_end() {
+    let (running, address) = nextcloud().await;
+    running.seed_app_password("pw");
+    running.put_file("n.bin", b"0123456789");
+    let get = |range: &str| dav("GET", &format!("{FILES}/n.bin"), "pw").with_header("Range", range);
+    let part = call(&address, get("bytes=2-4")).await;
+    assert_eq!((part.status, part.text()), (206, "234".to_owned()));
+    assert_eq!(part.header("content-range"), Some("bytes 2-4/10"));
+    assert_eq!(call(&address, get("bytes=7-")).await.text(), "789");
+    assert_eq!(call(&address, get("bytes=10-")).await.status, 416);
+}
+
+#[tokio::test]
+async fn a_limit_makes_a_put_past_it_507_and_shrinks_what_quota_reports() {
+    let (running, address) = nextcloud().await;
+    running.seed_app_password("pw");
+    running.set_limit(10);
+    let put = |name: &str, body: &str| dav("PUT", &format!("{FILES}/{name}"), "pw").with_body(body);
+    assert_eq!(call(&address, put("a", "123456")).await.status, 201);
+    assert_eq!(call(&address, put("b", "12345")).await.status, 507);
+    assert_eq!(call(&address, put("a", "123456789")).await.status, 204);
+    let quota = call(
+        &address,
+        dav("PROPFIND", &format!("{FILES}/"), "pw").with_header("Depth", "0"),
+    )
+    .await
+    .text();
+    assert!(
+        quota.contains("<d:quota-available-bytes>1</d:quota-available-bytes>"),
+        "{quota}"
+    );
+}
+
+#[tokio::test]
+async fn the_report_can_be_infinite_deep_and_the_server_can_decline_it() {
+    use porter_fake_servers::dav::{Behaviour, SyncCollection};
+    let (running, address) = nextcloud().await;
+    running.seed_app_password("pw");
+    running.mkdir("d");
+    running.put_file("d/deep.txt", b"x");
+    running.put_file("top.txt", b"y");
+    let report = |level: &str| {
+        let body = format!(
+            "<d:sync-collection xmlns:d=\"DAV:\"><d:sync-token></d:sync-token><d:sync-level>{level}</d:sync-level><d:prop><d:getetag/></d:prop></d:sync-collection>"
+        );
+        dav("REPORT", &format!("{FILES}/"), "pw").with_body(body)
+    };
+    let shallow = hrefs(&call(&address, report("1")).await);
+    let deep = hrefs(&call(&address, report("infinite")).await);
+    assert_eq!(shallow.len(), 2, "{shallow:?}");
+    assert_eq!(deep.len(), 3, "{deep:?}");
+    running.set_behaviour(Behaviour {
+        sync_collection: SyncCollection::NotImplemented,
+        ..Behaviour::default()
+    });
+    assert_eq!(call(&address, report("1")).await.status, 501);
+}
+
+#[tokio::test]
+async fn with_propagation_a_folder_etag_follows_what_is_below_it() {
+    use porter_fake_servers::dav::{Behaviour, Propagation};
+    let (running, address) = nextcloud().await;
+    running.seed_app_password("pw");
+    running.mkdir("d");
+    let etag_of_root = || async {
+        let body = "<d:propfind xmlns:d=\"DAV:\"><d:prop><d:getetag/></d:prop></d:propfind>";
+        let reply = call(
+            &address,
+            dav("PROPFIND", &format!("{FILES}/"), "pw")
+                .with_header("Depth", "0")
+                .with_body(body),
+        )
+        .await;
+        reply.text()
+    };
+    let before = etag_of_root().await;
+    running.put_file("d/a", b"x");
+    assert_eq!(
+        etag_of_root().await,
+        before,
+        "off: the folder's etag is its own"
+    );
+    running.set_behaviour(Behaviour {
+        etag_propagation: Propagation::Up,
+        ..Behaviour::default()
+    });
+    running.put_file("d/b", b"x");
+    assert_ne!(etag_of_root().await, before);
+}

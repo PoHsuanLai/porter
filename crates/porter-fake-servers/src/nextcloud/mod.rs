@@ -5,7 +5,7 @@
 mod login;
 mod notes;
 
-use crate::dav::{Quota, Tree};
+use crate::dav::{Behaviour, Quota, Tree};
 use crate::http::{Hit, Request, Response, serve};
 use crate::net::{Bind, Listener};
 use crate::seen::{Running, Seen, lock};
@@ -187,6 +187,16 @@ impl NextcloudHandle {
     /// Sync tokens handed out so far are no longer valid.
     pub fn expire_sync_tokens(&self) {
         lock(&self.shared.state).tree.expire_sync_tokens();
+    }
+
+    /// Gives the account room for `total` bytes: a PUT past it is `507`.
+    pub fn set_limit(&self, total: u64) {
+        lock(&self.shared.state).tree.set_limit(total);
+    }
+
+    /// How this server differs from the plain one (etag propagation, the REPORT).
+    pub fn set_behaviour(&self, behaviour: Behaviour) {
+        lock(&self.shared.state).tree.set_behaviour(behaviour);
     }
 
     /// Every request answered, oldest first.

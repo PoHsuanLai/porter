@@ -24,6 +24,7 @@ trait), section 6 (copy the recipe).
 | `porter-oauth` | PKCE, the loopback redirect rules, `ClientRegistry`, renewal, the token, refresh and revoke exchanges over `Http`; `LoopbackServer` (feature `io`) | none by default |
 | `porter-discover` | one function per `Discovery` kind: autoconfig, SRV and MX leads, well-known, JMAP session, Nextcloud OCS, port probes; the `Dns` seam | none |
 | `porter-dav` | WebDAV requests (PROPFIND, sync-collection REPORT) and the parsed multistatus, sync and quota replies | none |
+| `storage-webdav` | `WebDavReplica`, porter-sync's `Replica` over one WebDAV folder: changes by sync-collection (RFC 6578, `sync-level` infinite) or an etag tree walk where the server has none, writes guarded by `If-Match`/`If-None-Match`, quota from RFC 4331; `StreamHttp`, an HTTP/1.1 client over a `Dial` of authenticated byte streams (syncd: accountd's `OpenAuthenticated`) | none |
 | `porter-families` | the protocol families as code, one feature each (`nextcloud`, `generic`, `microsoft`, `api_key`, `openrouter`), and `FamilyProvider` over them | none by default |
 | `porter-infer` | the AI broker's pure half: requests and replies (chat with tools and controls, embeddings with a query/document role, tasks, computer-use steps, speech), `OpenOptions` (the reserved `traceparent`), the streaming session (`ClientFrame`, `InferEvent`, `InferSession`), the model picker's data (`AiKind`, `TierMap`, `PickerRow`), `Readiness`, `Policy` and floors, `admit` (the hard rules), `route` and `pick` (Named or Automatic, warm first) with the `Why` of every answer, spend caps, `AuditEntry`, the `Model` trait, `Broker` (stubbed) | none |
 | `porter-service` | accountd's core over its seams: `AccountService`, `Registry`, the `Sheets` (with `SheetLink`), `Clock`, `RegistryStore` and `AuditSink` traits | none (seams are passed in) |
@@ -41,13 +42,14 @@ Allowed direct edges (checked by `scripts/check-boundary.sh`; dev-dependencies a
 | `prov`, `porter-provider`, `porter-secrets`, `porter-sync`, `porter-dbus`, `porter-http`, `porter-proxy`, `porter-dav` (also `porter-http`) | `porter-core` |
 | `porter-oauth`, `porter-discover` | `porter-core`, `porter-http`, `porter-provider` |
 | `porter-families` | `porter-core`, `porter-provider`, `porter-http`, `porter-dav`, `porter-discover`, `porter-oauth` |
+| `storage-webdav` | `porter-core`, `porter-dav`, `porter-http`, `porter-sync` (used by syncd only; no consumer repo) |
 | `porter-infer` | `porter-core`, `cua-action` (stoker's computer-use vocabulary, by sibling path) |
 | `porter-service` | `porter-core`, `porter-provider`, `porter-secrets` |
 | `porter-client` | `porter-core`, `porter-infer`, `porter-provider`, `porter-secrets`, `porter-service`; `porter-dbus` with feature `dbus` |
 | `porter-fake` | `porter-core`, `porter-infer`, `porter-provider`, `porter-secrets`, `porter-service` |
 | `porter-fake-servers` | `porter-core`, `porter-discover`, `porter-fake`, `porter-provider` (and nothing may depend on it) |
 | `accountd` | `porter-core`, `porter-dbus`, `porter-families`, `porter-provider`, `porter-proxy` (feature `tls`, for `OpenAuthenticated`), `porter-secrets`, `porter-service`, and quire's `ds-settings` (feature `live`, by sibling path like stoker) for `org.quire.SettingsModule1`: the one porter -> quire edge, accountd and inferd (its model picker), never a library crate (check-boundary forbids it everywhere else) |
-| `syncd` | `porter-core`, `porter-dbus`, `porter-sync` (and rusqlite, SQLCipher built from source with a vendored OpenSSL, used unkeyed) |
+| `syncd` | `porter-client` (no features: `Accounts<T>` over a `Transport`, for `open_authenticated`), `porter-core`, `porter-dbus`, `porter-http`, `porter-sync`, `storage-webdav` (and rusqlite, SQLCipher built from source with a vendored OpenSSL, used unkeyed) |
 | `inferd` | `porter-core`, `porter-dbus`, `porter-infer`, `cua-action`, quire's `ds-settings` (feature `live`, as accountd's, for the model picker), and stoker's `model-provider`, `model-catalog`, `engine-supervisor`, `model-http` (feature `hyper`), `model-openai-compat`, `vision-prep` (feature `pixels`), `cua-parse`, `cua-session`, `cua-vendors`, `model-extract`, `model-replay`, `speech-provider`, by sibling path |
 
 External boundaries: every crate but `porter-dbus` and the daemons never reaches `zbus`,
@@ -68,12 +70,13 @@ a daemon or an app hosting porter turns those features on.
 | `porter-provider` | `error` < `spec` (`auth`, `discovery`, `matching`), `clients` < `parse`, `set` < `sign_in` < `provider` |
 | `porter-secrets` | `error`, `attributes` < `secrets` < `memory`, `oo7`, `keyring` |
 | `porter-sync` | `anchor`, `item`, `transfer`, `quota` < `change`, `refusal`, `dataset` < `journal` < `journal_reconcile`, `replica` < `memory` |
-| `syncd` | `paths`, `callers_file`, `clock` ; `journal` (`schema`, `rows`) ; `dataset` (`memory`, feature `testing`) < `engine` (`pull`, `push`, `resolve`) < `driver` ; `scheduler` (`backoff`) ; `service` (`hub`, `status`, `errors`) < `object` ; `removal` |
+| `syncd` | `paths`, `callers_file`, `clock` ; `journal` (`schema`, `rows`) ; `dataset` (`memory`, feature `testing`) < `engine` (`pull`, `push`, `resolve`) < `driver` ; `scheduler` (`backoff`) ; `service` (`hub`, `status`, `errors`) < `object` ; `removal` ; `webdav` (`RelayDial`, `webdav_replica`) |
 | `porter-http` | `error`, `headers` < `message` < `http` < `hyper_client` |
 | `porter-proxy` | `fault`, `step`, `connect` < `imap`, `smtp`, `http1` < `relay`; `tokio_stream` |
 | `porter-oauth` | `pkce`, `loopback`, `registry`, `renewal`, `device` < `exchange`; `loopback_io` |
 | `porter-discover` | `found`, `dns` < `autoconfig`, `well_known`, `ocs`, `probe` |
 | `porter-dav` | `multistatus` < `request`, `sync` |
+| `storage-webdav` | `path`, `clock`, `refuse`, `entry`, `requests`, `wire` < `stream_http`; `replica` < `feed`, `write` |
 | `porter-families` | `skeleton` (the families not built yet) < `key` (what the cloud-AI key check shares) < one module per family (`nextcloud`, `generic`, `microsoft`, `api_key`, `openrouter`) < `dispatch` |
 | `porter-infer` | `ids`, `control`, `open`, `request`, `cua`, `speech`, `reply`, `error`, `readiness` < `event`, `session`, `choice` < `policy`, `spend`, `audit` < `route` < `pick`, `model` < `broker` |
 | `porter-service` | `clock`, `sheets`, `store`, `audit` < `registry` < `choose`, `token`, `audience` < `service` < `add` |
@@ -297,7 +300,7 @@ the interface other work builds on; a change is a vocabulary bump (section 6) or
 | D-Bus argument codec (needs, candidates, grants, tokens, refusal error names) | built, round-tripped over the wire signature |
 | `accountd` (the bus objects, as a library) | built and tested on a private bus: `Manager` (with `Adopt` and the five unicast signals), `Grants`, `Tokens`, `Account` (the properties, readable only with a grant, and `Reauthenticate`), `Peer` (`Verdicts` and `ResolveKey`, the API key on a sealed memfd; role `PorterDaemon` only), the Request objects, `org.quire.SettingsModule1` at `/org/quire/Accounts1/settings` (role `Settings` only), `BusSheets`; an `Agent` is refused what acts for the person; not served: `OpenAuthenticated` (a marked W3g seam, role check done) and `Peer.ReportLocal` |
 | `accountd` (the binary) | built; `ACCOUNTD_PROC_ROOT` is honoured only by a `test-proc-root` build; `accountd add <provider-id> [--allow <app-id>]... [--class <class>]...` adds an account from a terminal (`add`: a terminal `Sheets`, the key read with echo off) and holds the bus name `org.quire.Accounts1` while it runs, which is the lock against a running daemon; `Peer.ResolveKey` reads through `keys::KeyDesk` (`SecretsDesk` over the secret store, an audit sink and a clock) |
-| `syncd` (the engine) | built and tested: the SQLite journal (versioned schema, migrations), the engine over a `Replica` and a `Dataset` (paged feed, anchor expiry by content hash, base versions, stored conflicts, tombstones until acknowledged, every step resumable: a table over every cut point), the pure scheduler (push or poll, idle and failure backoff, seeded jitter, batched wake-ups, metered pause), `Sync1` served on the session bus (callers by `ProcCallers`, `STATUS_KEY_QUOTA`, unicast signals) and the `AccountRemoved` wipe. No replica and no dataset ships in it yet (W6b-d replicas, W6e PIM mirror, W6f Photos) |
+| `syncd` (the engine) | built and tested: the SQLite journal (versioned schema, migrations), the engine over a `Replica` and a `Dataset` (paged feed, anchor expiry by content hash, base versions, stored conflicts, tombstones until acknowledged, every step resumable: a table over every cut point), the pure scheduler (push or poll, idle and failure backoff, seeded jitter, batched wake-ups, metered pause), `Sync1` served on the session bus (callers by `ProcCallers`, `STATUS_KEY_QUOTA`, unicast signals) and the `AccountRemoved` wipe. The WebDAV replica is wired as `syncd::webdav` (relays from `OpenAuthenticated`) and proven end to end on a private bus against the fake Nextcloud; the daemon registers none until a dataset exists (W6c-d replicas, W6e PIM mirror, W6f Photos) |
 | `syncd` (the binary) | built; `SYNCD_PROC_ROOT` is honoured only by a `test-proc-root` build; `dist/syncd.service` and `dist/dbus/org.quire.Sync1.service` install it |
 | `inferd` | built: a daemon on the session bus (the checked-in `dist/` files install it) |
 | protocol families (the skeletons are in `porter-families`), wire adapters, the daemon's registry file and audit file, Google (the owner deferred it) | not started |

@@ -1,7 +1,7 @@
 //! A plain DAV server (no Nextcloud around it): files, a calendar and an address book under
 //! `/dav/`, behind HTTP Basic with one fixed user and password.
 
-use crate::dav::{Kind, Quota, Tree};
+use crate::dav::{Behaviour, Kind, Quota, Tree};
 use crate::http::{Hit, Request, Response, serve};
 use crate::net::{Bind, Listener};
 use crate::seen::{Running, Seen, lock};
@@ -84,6 +84,13 @@ impl DavHandle {
             .expect("the parent folder exists");
     }
 
+    /// Makes a folder under `/dav/files/`.
+    pub fn mkdir(&self, rel: &str) {
+        lock(&self.shared.tree)
+            .mkcol(&format!("/dav/files/{rel}"))
+            .expect("the parent folder exists and the folder is new");
+    }
+
     /// Removes a file or folder under `/dav/files/`.
     pub fn delete_file(&self, rel: &str) {
         lock(&self.shared.tree).delete(&format!("/dav/files/{rel}"));
@@ -100,6 +107,21 @@ impl DavHandle {
     /// The sync token a client would get now.
     pub fn sync_token(&self) -> String {
         lock(&self.shared.tree).sync_token()
+    }
+
+    /// Sync tokens handed out so far are no longer valid.
+    pub fn expire_sync_tokens(&self) {
+        lock(&self.shared.tree).expire_sync_tokens();
+    }
+
+    /// Gives the account room for `total` bytes: a PUT past it is `507`.
+    pub fn set_limit(&self, total: u64) {
+        lock(&self.shared.tree).set_limit(total);
+    }
+
+    /// How this server differs from the plain one (etag propagation, the REPORT).
+    pub fn set_behaviour(&self, behaviour: Behaviour) {
+        lock(&self.shared.tree).set_behaviour(behaviour);
     }
 
     /// Every request answered, oldest first.

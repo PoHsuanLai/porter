@@ -78,6 +78,12 @@ pub struct Hit {
     pub target: String,
     /// The `Authorization` header exactly as received, if any.
     pub authorization: Option<String>,
+    /// The `If-Match` header as received, if any.
+    pub if_match: Option<String>,
+    /// The `If-None-Match` header as received, if any.
+    pub if_none_match: Option<String>,
+    /// The `Range` header as received, if any.
+    pub range: Option<String>,
     /// The status sent back.
     pub status: u16,
 }
@@ -89,6 +95,9 @@ impl Hit {
             method: request.method.clone(),
             target: request.target.clone(),
             authorization: request.header("authorization").map(str::to_owned),
+            if_match: request.header("if-match").map(str::to_owned),
+            if_none_match: request.header("if-none-match").map(str::to_owned),
+            range: request.header("range").map(str::to_owned),
             status: response.status,
         }
     }

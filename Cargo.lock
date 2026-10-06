@@ -2914,6 +2914,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
+name = "storage-webdav"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "porter-core",
+ "porter-dav",
+ "porter-fake",
+ "porter-fake-servers",
+ "porter-http",
+ "porter-sync",
+ "roxmltree",
+ "tokio",
+]
+
+[[package]]
 name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2951,14 +2966,23 @@ dependencies = [
 name = "syncd"
 version = "0.1.0"
 dependencies = [
+ "accountd",
+ "base64",
  "clap",
+ "porter-client",
  "porter-core",
  "porter-dbus",
+ "porter-fake",
+ "porter-fake-servers",
+ "porter-http",
+ "porter-secrets",
+ "porter-service",
  "porter-sync",
  "rusqlite",
  "serde",
  "serde_json",
  "sha2",
+ "storage-webdav",
  "syncd",
  "thiserror",
  "tokio",

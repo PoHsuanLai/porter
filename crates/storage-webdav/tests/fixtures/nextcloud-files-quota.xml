@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<d:multistatus xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns" xmlns:oc="http://owncloud.org/ns" xmlns:nc="http://nextcloud.org/ns">
+ <d:response>
+  <d:href>/remote.php/dav/files/alice/Photos/</d:href>
+  <d:propstat>
+   <d:prop>
+    <d:quota-used-bytes>2393889</d:quota-used-bytes>
+    <d:quota-available-bytes>10737418240</d:quota-available-bytes>
+   </d:prop>
+   <d:status>HTTP/1.1 200 OK</d:status>
+  </d:propstat>
+ </d:response>
+</d:multistatus>
