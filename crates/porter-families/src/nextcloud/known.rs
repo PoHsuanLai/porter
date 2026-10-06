@@ -34,9 +34,16 @@ mod tests {
         }
     }
 
+    /// A name, the endpoints, and the server and login expected.
+    type Case = (
+        &'static str,
+        Vec<ServiceEndpoint>,
+        Option<(&'static str, &'static str)>,
+    );
+
     #[test]
     fn the_server_is_the_root_above_the_first_nextcloud_path() {
-        let cases: &[(&str, Vec<ServiceEndpoint>, Option<(&str, &str)>)] = &[
+        let cases: &[Case] = &[
             (
                 "webdav under the root",
                 vec![endpoint(
