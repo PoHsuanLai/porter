@@ -82,6 +82,7 @@ async fn handle(mut stream: UnixStream, plan: Plan, hellos: Arc<Mutex<Vec<LinkHe
             need: open.need,
             class: open.class,
             tier: open.tier,
+            usage: porter_core::consent::Usage::Interactive,
         };
         let seams = Seams {
             router: plan.route,

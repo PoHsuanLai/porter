@@ -109,6 +109,7 @@ impl FakeInferd {
             need: need.clone(),
             class: parse_slug(&class)?,
             tier: parse_slug(&tier)?,
+            usage: porter_core::consent::Usage::Interactive,
         };
         let traceparent = options
             .get(porter_dbus::OPTION_TRACEPARENT)
