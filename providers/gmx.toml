@@ -1,0 +1,28 @@
+# GMX Mail (design/31 §3.2). The account password, once IMAP/POP3 access is switched on in the
+# mailbox's settings (it is off by default). IMAP and SMTP are on implicit TLS at GMX's published
+# hosts. The country domains share one set of servers; the list below is GMX's own domains.
+id = "gmx"
+label = "GMX"
+mark = "gmx"
+
+[auth]
+kind = "password"
+
+[discovery]
+kind = "fixed"
+
+[matching]
+domains = ["gmx.com", "gmx.net", "gmx.de", "gmx.at", "gmx.ch"]
+mx_suffixes = ["gmx.net"]
+
+[[capability]]
+family = "imap"
+endpoint = "imaps://imap.gmx.com:993"
+kind = "mail"
+v = { access = "read_write", send = "present", delta = "push", transport = "imap", labels = "folders" }
+
+[[capability]]
+family = "smtp"
+endpoint = "smtps://mail.gmx.com:465"
+kind = "mail"
+v = { access = "read_write", send = "present", delta = "push", transport = "imap", labels = "folders" }

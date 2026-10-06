@@ -1,0 +1,41 @@
+# iCloud Mail (design/31 §3.2). Apple accepts only an app-specific password for third-party mail
+# clients (two-factor authentication must be on), so the sign-in asks for one and says so. Mail is
+# IMAP on implicit TLS and SMTP submission on STARTTLS (Apple's published hosts); calendar and
+# contacts are its DAV hosts. IMAP IDLE is offered.
+id = "icloud"
+label = "iCloud"
+mark = "icloud"
+
+[auth]
+kind = "app_password"
+
+[discovery]
+kind = "fixed"
+
+[matching]
+domains = ["icloud.com", "me.com", "mac.com"]
+mx_suffixes = ["mail.icloud.com", "mail.me.com"]
+
+[[capability]]
+family = "imap"
+endpoint = "imaps://imap.mail.me.com:993"
+kind = "mail"
+v = { access = "read_write", send = "present", delta = "push", transport = "imap", labels = "folders" }
+
+[[capability]]
+family = "smtp"
+endpoint = "smtp://smtp.mail.me.com:587"
+kind = "mail"
+v = { access = "read_write", send = "present", delta = "push", transport = "imap", labels = "folders" }
+
+[[capability]]
+family = "caldav"
+endpoint = "https://caldav.icloud.com"
+kind = "calendar"
+v = { access = "read_write", delta = "poll", transport = "caldav", collections = "present" }
+
+[[capability]]
+family = "carddav"
+endpoint = "https://contacts.icloud.com"
+kind = "contacts"
+v = { access = "read_write", delta = "poll", transport = "carddav", collections = "present" }

@@ -1,0 +1,19 @@
+# Any JMAP mail server (RFC 8620, RFC 8621), found from the address's domain by
+# `/.well-known/jmap` and the session resource (design/31 §3.2). Password or token, as the server
+# takes it. Sending goes through the same server (EmailSubmission), so there is one row. No
+# domains are listed: Fastmail's address is claimed by `fastmail`, and this one takes the rest
+# once discovery finds a session.
+id = "generic-jmap"
+label = "Email (JMAP)"
+mark = "mail"
+
+[auth]
+kind = "password"
+
+[discovery]
+kind = "jmap_session"
+
+[[capability]]
+family = "jmap"
+kind = "mail"
+v = { access = "read_write", send = "present", delta = "push", transport = "jmap", labels = "labels" }

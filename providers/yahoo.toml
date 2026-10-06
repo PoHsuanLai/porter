@@ -1,0 +1,29 @@
+# Yahoo Mail (design/31 §3.2). Yahoo requires an app password for IMAP and SMTP (the account
+# password is refused; generating one needs two-step verification), so the sign-in asks for one.
+# IMAP and SMTP are on implicit TLS. Claimed by Yahoo's own domains and by an MX under
+# yahoodns.net, where a custom domain hosted at Yahoo points.
+id = "yahoo"
+label = "Yahoo Mail"
+mark = "yahoo"
+
+[auth]
+kind = "app_password"
+
+[discovery]
+kind = "fixed"
+
+[matching]
+domains = ["yahoo.com", "ymail.com", "rocketmail.com"]
+mx_suffixes = ["yahoodns.net"]
+
+[[capability]]
+family = "imap"
+endpoint = "imaps://imap.mail.yahoo.com:993"
+kind = "mail"
+v = { access = "read_write", send = "present", delta = "push", transport = "imap", labels = "folders" }
+
+[[capability]]
+family = "smtp"
+endpoint = "smtps://smtp.mail.yahoo.com:465"
+kind = "mail"
+v = { access = "read_write", send = "present", delta = "push", transport = "imap", labels = "folders" }

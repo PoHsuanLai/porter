@@ -1,0 +1,42 @@
+# Fastmail (design/31 §3.2). Mail over IMAP and SMTP with an app password (Fastmail asks for one
+# per client; the account password does not work for IMAP or SMTP once two-step is on), calendar
+# and contacts over its DAV hosts. Hosts are Fastmail's published ones. Claimed by its own domains
+# and by an MX under messagingengine.com, which is where a custom domain hosted there points.
+# JMAP (api.fastmail.com) is `generic-jmap`'s: a Fastmail address reaches mail through IMAP here.
+id = "fastmail"
+label = "Fastmail"
+mark = "fastmail"
+
+[auth]
+kind = "app_password"
+
+[discovery]
+kind = "fixed"
+
+[matching]
+domains = ["fastmail.com", "fastmail.fm"]
+mx_suffixes = ["messagingengine.com"]
+
+[[capability]]
+family = "imap"
+endpoint = "imaps://imap.fastmail.com:993"
+kind = "mail"
+v = { access = "read_write", send = "present", delta = "push", transport = "imap", labels = "folders" }
+
+[[capability]]
+family = "smtp"
+endpoint = "smtps://smtp.fastmail.com:465"
+kind = "mail"
+v = { access = "read_write", send = "present", delta = "push", transport = "imap", labels = "folders" }
+
+[[capability]]
+family = "caldav"
+endpoint = "https://caldav.fastmail.com"
+kind = "calendar"
+v = { access = "read_write", delta = "poll", transport = "caldav", collections = "present" }
+
+[[capability]]
+family = "carddav"
+endpoint = "https://carddav.fastmail.com"
+kind = "contacts"
+v = { access = "read_write", delta = "poll", transport = "carddav", collections = "present" }

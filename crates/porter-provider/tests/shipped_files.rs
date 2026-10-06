@@ -25,7 +25,7 @@ fn shipped() -> Vec<(PathBuf, ProviderSpec)> {
 #[test]
 fn every_shipped_provider_file_parses_and_is_named_by_its_id() {
     let files = shipped();
-    assert_eq!(files.len(), 12);
+    assert_eq!(files.len(), 17);
     for (path, spec) in files {
         let stem = path.file_stem().and_then(|s| s.to_str()).expect("stem");
         assert_eq!(spec.id.as_str(), stem, "{}", path.display());
@@ -206,4 +206,63 @@ fn the_ai_company_files_declare_a_cloud_llm_row_behind_a_pasted_key() {
             "{id}"
         );
     }
+}
+
+#[test]
+fn the_brand_files_declare_their_servers_and_how_their_accounts_sign_in() {
+    use porter_core::{AuthKind, Family};
+    use porter_provider::Discovery;
+    // (id, auth, imap endpoint, smtp endpoint): mailo's presets table became these files.
+    const CASES: &[(&str, AuthKind, &str, &str)] = &[
+        (
+            "fastmail",
+            AuthKind::AppPassword,
+            "imaps://imap.fastmail.com:993",
+            "smtps://smtp.fastmail.com:465",
+        ),
+        (
+            "icloud",
+            AuthKind::AppPassword,
+            "imaps://imap.mail.me.com:993",
+            "smtp://smtp.mail.me.com:587",
+        ),
+        (
+            "yahoo",
+            AuthKind::AppPassword,
+            "imaps://imap.mail.yahoo.com:993",
+            "smtps://smtp.mail.yahoo.com:465",
+        ),
+        (
+            "gmx",
+            AuthKind::Password,
+            "imaps://imap.gmx.com:993",
+            "smtps://mail.gmx.com:465",
+        ),
+    ];
+    for (id, auth, imap, smtp) in CASES {
+        let spec = shipped_spec(id);
+        assert_eq!(spec.auth.kind, *auth, "{id}");
+        assert_eq!(spec.discovery, Discovery::Fixed, "{id}");
+        assert!(!spec.matching.domains.is_empty(), "{id} claims its domains");
+        let endpoint = |family: Family| {
+            spec.capabilities
+                .iter()
+                .find(|row| row.family == family)
+                .and_then(|row| row.endpoint.as_ref())
+                .map(|e| e.0.as_str())
+        };
+        assert_eq!(endpoint(Family::Imap), Some(*imap), "{id}");
+        assert_eq!(endpoint(Family::Smtp), Some(*smtp), "{id}");
+    }
+    let jmap = shipped_spec("generic-jmap");
+    assert_eq!(jmap.auth.kind, AuthKind::Password);
+    assert_eq!(jmap.discovery, Discovery::JmapSession);
+    assert_eq!(
+        jmap.capabilities
+            .iter()
+            .map(|row| row.family)
+            .collect::<Vec<_>>(),
+        [Family::Jmap]
+    );
+    assert!(jmap.capabilities.iter().all(|row| row.endpoint.is_none()));
 }
