@@ -125,3 +125,56 @@ fn the_card_offers_what_the_entry_can_do() {
     );
     assert_eq!(models[0].model_ref().model.as_str(), "tiny-chat");
 }
+
+#[test]
+fn a_speech_host_model_runs_the_hosts_program_with_the_entrys_arguments_and_its_libraries() {
+    let scratch = Scratch::new("local-speech");
+    let entry = parse_entry_text(&entries::speech_in()).expect("entry");
+    let config = EngineConfig {
+        speech_host: Some(PathBuf::from("/usr/libexec/quire/speech-host")),
+        speech_host_libs: Some(PathBuf::from("/opt/sherpa/lib")),
+        hf_cache: scratch.path().join("hf"),
+        ..EngineConfig::default()
+    };
+    let sockets = scratch.path().join("run");
+    let models = build(std::slice::from_ref(&entry), &config, &sockets);
+    let model = &models[0];
+    assert_eq!(model.flavor, None, "it speaks the host protocol, not HTTP");
+    assert_eq!(model.socket.0, sockets.join("speech_host-tiny-ears.sock"));
+    assert_eq!(model.spec.need.0, 0, "no VRAM is asked of the GPU");
+    let unit = &model.spec.unit;
+    assert_eq!(
+        unit.program.0,
+        PathBuf::from("/usr/libexec/quire/speech-host")
+    );
+    let args: Vec<&str> = unit.args.iter().map(|a| a.0.as_str()).collect();
+    let socket = model.socket.0.to_string_lossy();
+    let snapshot = args[1];
+    assert_eq!(args[0], "--model-dir");
+    assert!(
+        snapshot.contains("models--test--tiny-ears/snapshots/"),
+        "{args:?}"
+    );
+    assert_eq!(
+        &args[2..],
+        ["--socket", &*socket, "--threads", "6", "--chunk-ms", "560"]
+    );
+    let names: Vec<&str> = unit.env.iter().map(|e| e.name.as_str()).collect();
+    assert_eq!(names, ["HF_HUB_OFFLINE", "LD_LIBRARY_PATH"]);
+    assert_eq!(unit.env[1].value, "/opt/sherpa/lib");
+    assert_eq!(
+        unit.sandbox.read.last(),
+        Some(&PathBuf::from("/opt/sherpa/lib")),
+        "the libraries are readable in the sandbox; the weights stay the first bind"
+    );
+    assert_eq!(unit.sandbox.gpu, engine_supervisor::GpuAccess::Absent);
+
+    // Without the libraries configured, the unit is as `command` made it.
+    let bare = EngineConfig {
+        speech_host_libs: None,
+        ..config
+    };
+    let unit = &build(&[entry], &bare, &sockets)[0].spec.unit;
+    assert_eq!(unit.env.len(), 1);
+    assert_eq!(unit.sandbox.read.len(), 1);
+}

@@ -45,5 +45,10 @@ pub use adapters::AdapterModel;
 #[path = "../tests/hosting/entries.rs"]
 mod entries;
 
+/// The fake speech host the speech tests share with the hosted ones.
+#[cfg(test)]
+#[path = "../tests/hosting/speech_host.rs"]
+mod speech_host;
+
 #[cfg(test)]
 mod testkit;

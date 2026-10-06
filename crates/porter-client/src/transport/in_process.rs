@@ -15,7 +15,7 @@ use porter_core::stream::duplex;
 use porter_core::{
     AccountsReply, AccountsRequest, AppId, DataClass, EndpointUrl, GrantId, Need, Tier,
 };
-use porter_infer::{ClientFrame, InferEvent, InferSession, OpenOptions, SessionError};
+use porter_infer::{ClientFrame, InferEvent, InferSession, OpenOptions, Readiness, SessionError};
 use porter_provider::Provider;
 use porter_secrets::Secrets;
 use porter_service::{AccountService, AuditSink, Clock, NoAudit, NoStore, RegistryStore, Sheets};
@@ -40,6 +40,20 @@ pub trait SessionHost: Send + Sync {
         tier: Tier,
         options: &OpenOptions,
     ) -> impl Future<Output = Result<Self::Session, TransportError>> + Send;
+
+    /// Warms the engine the host would route `need`, `class` and `tier` to and says how ready it
+    /// is. A host that has no engines to warm keeps the default, `Unreachable`.
+    fn prepare(
+        &self,
+        app: &AppId,
+        need: &Need,
+        class: DataClass,
+        tier: Tier,
+        options: &OpenOptions,
+    ) -> impl Future<Output = Result<Readiness, TransportError>> + Send {
+        let _ = (app, need, class, tier, options);
+        async { Err(TransportError::Unreachable) }
+    }
 }
 
 /// One broker may serve several apps' links.
@@ -55,6 +69,17 @@ impl<T: SessionHost> SessionHost for Arc<T> {
         options: &OpenOptions,
     ) -> impl Future<Output = Result<T::Session, TransportError>> + Send {
         (**self).open(app, need, class, tier, options)
+    }
+
+    fn prepare(
+        &self,
+        app: &AppId,
+        need: &Need,
+        class: DataClass,
+        tier: Tier,
+        options: &OpenOptions,
+    ) -> impl Future<Output = Result<Readiness, TransportError>> + Send {
+        (**self).prepare(app, need, class, tier, options)
     }
 }
 
@@ -183,6 +208,17 @@ where
     ) -> Result<B::Session, TransportError> {
         self.broker
             .open(&self.app, need, class, tier, options)
+            .await
+    }
+    async fn prepare(
+        &self,
+        need: &Need,
+        class: DataClass,
+        tier: Tier,
+        options: &OpenOptions,
+    ) -> Result<Readiness, TransportError> {
+        self.broker
+            .prepare(&self.app, need, class, tier, options)
             .await
     }
 }

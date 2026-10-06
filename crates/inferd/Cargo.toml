@@ -36,6 +36,7 @@ model-extract = { workspace = true }
 model-replay = { workspace = true }
 model-wire = { workspace = true }
 speech-provider = { workspace = true }
+speech-host-client = { workspace = true }
 clap = { workspace = true }
 rustix = { workspace = true }
 serde = { workspace = true }

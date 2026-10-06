@@ -9,6 +9,9 @@
 # vllm_python = "/home/you/vllm/.venv/bin/python"
 # llama_server = "/usr/bin/llama-server"
 # speech_host = "/usr/libexec/quire/speech-host"
+# speech_host_libs = "/usr/lib/quire/sherpa"  # the directory of libsherpa-onnx-c-api.so and
+#                                             # libonnxruntime.so: the speech host's LD_LIBRARY_PATH,
+#                                             # and readable in its sandbox
 # kokoro_python = "/home/you/kokoro/.venv/bin/python"
 # hf_cache = "/data/hf/hub"
 #
@@ -89,6 +92,9 @@ settings = ["org.quire.Settings"]
 "org.quire.Intents" = ["intentd.service"]
 "org.quire.Companion" = ["companiond.service"]
 "org.quire.Reader" = ["readerd.service"]
+# voiced holds the microphone and asks for speech to text, which runs on the speech host on this
+# computer: the default floor keeps the data class `voice` on_device.
+"org.quire.Voice" = ["voiced.service"]
 
 # Structured-output limits (settings ai.structured.*; each row's range is in dist/inferd.settings.toml).
 # A value out of range is logged and replaced by the default, for that field only. Read at start.

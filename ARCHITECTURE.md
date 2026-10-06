@@ -52,7 +52,7 @@ Allowed direct edges (checked by `scripts/check-boundary.sh`; dev-dependencies a
 | `porter-fake-servers` | `porter-core`, `porter-discover`, `porter-fake`, `porter-provider` (and nothing may depend on it) |
 | `accountd` | `porter-core`, `porter-dbus`, `porter-families`, `porter-provider`, `porter-proxy` (feature `tls`, for `OpenAuthenticated`), `porter-secrets`, `porter-service`, and quire's `ds-settings` (feature `live`, by sibling path like stoker) for `org.quire.SettingsModule1`: the one porter -> quire edge, accountd and inferd (its model picker), never a library crate (check-boundary forbids it everywhere else) |
 | `syncd` | `porter-client` (feature `dbus`: `Accounts<T>` over a `Transport`, for `open_authenticated` and the PIM supervisor's `find`; the binary's `DbusTransport`), `porter-core`, `porter-dav` (the PIM mirror's discovery), `porter-dbus`, `porter-http`, `porter-sync`, `storage-graph`, `storage-webdav` (and rusqlite, SQLCipher built from source with a vendored OpenSSL, used unkeyed) |
-| `inferd` | `porter-core`, `porter-dbus`, `porter-discover` (the probe of local runtimes' ports), `porter-http` (feature `hyper`: the plain-HTTP client of that probe), `porter-infer`, `porter-provider` (`Port`), `cua-action`, quire's `ds-settings` (feature `live`, as accountd's, for the model picker), and stoker's `model-provider`, `model-catalog`, `engine-supervisor`, `model-http` (features `hyper` and `tls`), `model-openai-compat`, `vision-prep` (feature `pixels`), `cua-parse`, `cua-session`, `cua-vendors`, `model-extract`, `model-replay`, `model-wire` (the `Driver` over inferd's body-shaping wrapper of `HttpClient`), `speech-provider`, by sibling path |
+| `inferd` | `porter-core`, `porter-dbus`, `porter-discover` (the probe of local runtimes' ports), `porter-http` (feature `hyper`: the plain-HTTP client of that probe), `porter-infer`, `porter-provider` (`Port`), `cua-action`, quire's `ds-settings` (feature `live`, as accountd's, for the model picker), and stoker's `model-provider`, `model-catalog`, `engine-supervisor`, `model-http` (features `hyper` and `tls`), `model-openai-compat`, `vision-prep` (feature `pixels`), `cua-parse`, `cua-session`, `cua-vendors`, `model-extract`, `model-replay`, `model-wire` (the `Driver` over inferd's body-shaping wrapper of `HttpClient`), `speech-provider`, `speech-host-client`, by sibling path |
 
 External boundaries: every crate but `porter-dbus` and the daemons never reaches `zbus`,
 `zvariant`, `tokio`, `reqwest`, `hyper`, `ureq`, `oo7`, `keyring`, `secret-service`,
@@ -279,8 +279,8 @@ the interface other work builds on; a change is a vocabulary bump (section 6) or
 | `inferd::serve` (`serve_session` over `Router`, `EngineHost`, `TurnRunner`, `AuditSink`) | built, tested over scripted seams |
 | `inferd::service` (`Inference1`: `Open` with the caller check, `Availability`, `Prepare`, `Usage`, `Rescan`, `EnginesChanged`, `Gpu`), `peers`, `config`, `main` | built; tested on a private bus with fake engines (`tests/hosted.rs`); `Usage` answers the caller's spend (empty on a daemon with no hosted models) |
 | the real seams: `router` and `engines::SessionRouter`, `engines::Engines` over `supervise` and `hosts`, `runner::Turns` over `bridge` and `cua_step`, `audit` | built; the engine host is child processes (`ProcessHost`), not systemd transient units |
-| `inferd::speech` rules (`check_audio`, `audio_ms`) | built, table-tested; `SpeechRunner` stub |
 | `inferd::{probe, probed, report, watch}` (local runtimes as accounts: Ollama on `:11434`, llama.cpp on `:8080`, LM Studio on `:1234`, ports from `[probe]` in `inferd.toml`; each found one is a `ProbedBook` entry, its models `LocalModel`s served by plain HTTP to loopback (`LocalModel.loopback`) and listed on-device, ready while the runtime answers and `Unavailable` after; `Peer.ReportLocal` makes it an account and then `offline`) | built; tested over loopback fakes and on a private bus (`tests/probed.rs`, acceptance 6) |
+| `inferd::speech` rules (`check_audio`, `audio_ms`), `SttBackend::SpeechHost`, `SpeechRunner::{for_model, transcribe}`, `Ears` | built: a `Transcribe` turn runs on the speech host (a supervised CPU engine, probed with `Hello`), tested against a fake host on a Unix socket (`tests/speech.rs`); `SpeechRunner::speak` stub |
 | `inferd::{catalog, local, bridge}` (the catalog read, its claims, the model book, both halves of the mapping to stoker's turns) | built, table-tested |
 | `inferd::cua_run::{CuaRun, StepJob}` | built over `cua_step`, which drives stoker's `CuaSession` (`begin`, `request`, one turn through a `TranscriptSink`, `absorb_for` in place on the run's one session, one repair turn); `runner::Turns` runs a computer-use step through it (tool and text dialects) |
 | `FakeInferSession`, `FakeModel` streaming | built, tested |
@@ -506,7 +506,10 @@ annotated sample configuration). One `Open` is:
    - `TurnRunner` is `runner::Turns`: stoker's `OpenAiCompat` (`Driver<OpenAiCodec, HttpClient>`)
      over the engine's Unix socket, wrapped in `Retrying`; `bridge` maps both ways; computer-use
      steps are `cua_step` over stoker's `CuaSession`; a reply of a shape inferd can read is run
-     under `structured` (a `ShapedSession`: validate, repair once).
+     under `structured` (a `ShapedSession`: validate, repair once); a `Transcribe` turn is
+     `speech::SpeechRunner` over `SttBackend::SpeechHost` (stoker's `speech-host-client` to the supervised
+     speech host, a CPU engine probed with the host protocol's `Hello`): the session's audio frames
+     reach the turn through a channel and the host's events leave as `Heard` deltas.
    - `AuditSink` is `audit::SessionAudit` over an `AuditOut` (a JSON-lines file in the daemon);
      the loop tells it what the request carried (`serve::Carried`: frames sent, audio milliseconds
      sent or produced) beside the reply.

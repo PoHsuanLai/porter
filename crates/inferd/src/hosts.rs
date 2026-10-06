@@ -16,10 +16,13 @@ use model_http::{
     AuthHeader, BodySink, ChunkFlow, Exchange, Framing, HttpClient, HttpEndpoint, HttpTarget,
     ResponseHead, RouteRoot, Timeouts, Transport, UrlPath, Verb, WaitMs,
 };
-use std::collections::BTreeMap;
+use speech_host_client::{HostSocket, SpeechHostClient};
+use speech_provider::SpeechToText;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 use tokio::process::Command;
 use tokio::sync::{oneshot, watch};
 
@@ -117,10 +120,13 @@ impl EngineHost for ProcessHost {
 }
 
 /// `GET /health` over each engine's socket (llama-server and vLLM both answer it at the server
-/// root: 200 when ready, 503 while the model loads).
+/// root: 200 when ready, 503 while the model loads). A speech host does not speak HTTP: its
+/// engines are probed with the host protocol's `Hello` ([`HealthProbe::speech_hosts`]), which it
+/// answers once its model is loaded and it is accepting connections.
 #[derive(Debug, Clone, Default)]
 pub struct HealthProbe {
     sockets: BTreeMap<EngineId, PathBuf>,
+    speech: BTreeSet<EngineId>,
 }
 
 impl HealthProbe {
@@ -128,6 +134,15 @@ impl HealthProbe {
     pub fn new(sockets: impl IntoIterator<Item = (EngineId, PathBuf)>) -> Self {
         Self {
             sockets: sockets.into_iter().collect(),
+            speech: BTreeSet::new(),
+        }
+    }
+
+    /// The same probe, asking these engines (speech hosts) `Hello` instead of `GET /health`.
+    pub fn speech_hosts(self, engines: impl IntoIterator<Item = EngineId>) -> Self {
+        Self {
+            speech: engines.into_iter().collect(),
+            ..self
         }
     }
 }
@@ -183,6 +198,9 @@ impl ReadyProbe for HealthProbe {
         let Some(socket) = self.sockets.get(id) else {
             return Probe::Down;
         };
+        if self.speech.contains(id) {
+            return hello(socket).await;
+        }
         let client = HttpClient::new(unix_endpoint(
             socket.clone(),
             "",
@@ -206,6 +224,21 @@ impl ReadyProbe for HealthProbe {
             Some(503) => Probe::Loading,
             _ => Probe::Down,
         }
+    }
+}
+
+/// A speech host is ready when it answers `Hello` (checked, within a second); not yet listening,
+/// or not answering, is down.
+async fn hello(socket: &std::path::Path) -> Probe {
+    let client = SpeechHostClient::new(HostSocket(socket.to_path_buf()));
+    match tokio::time::timeout(
+        Duration::from_millis(u64::from(PROBE_TIMEOUT.0)),
+        client.describe(),
+    )
+    .await
+    {
+        Ok(Ok(_)) => Probe::Ready,
+        _ => Probe::Down,
     }
 }
 

@@ -102,7 +102,7 @@ EDGES=(
   "storage-webdav: porter-core porter-dav porter-http porter-sync"
   "storage-graph: porter-core porter-http porter-sync storage-webdav"
   "syncd: porter-client porter-core porter-dav porter-dbus porter-http porter-sync storage-graph storage-webdav"
-  "inferd: ds-settings porter-core porter-dbus porter-discover porter-http porter-infer porter-provider cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-provider vision-prep"
+  "inferd: ds-settings porter-core porter-dbus porter-discover porter-http porter-infer porter-provider cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
 )
 for edge in "${EDGES[@]}"; do
   crate="${edge%%:*}"

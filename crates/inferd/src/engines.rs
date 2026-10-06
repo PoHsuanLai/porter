@@ -19,6 +19,7 @@ use crate::supervise::{Snapshot, Supervised};
 use crate::swap::{Budget, running_of, swap_cost};
 use engine_supervisor::{EngineId, EngineState, MonoMs};
 use model_catalog::Licence;
+use porter_core::capability::SpeechMode;
 use porter_core::consent::{Availability, Usage};
 use porter_core::{AccountId, AppId, DataClass, Need, Tier};
 use porter_infer::{
@@ -256,6 +257,12 @@ impl Engines {
             .or_else(|| self.book.probed.find(model))
     }
 
+    /// The local model `model` names, when this computer has it (the speech `Hear` stage looks
+    /// up the host to run on this way).
+    pub fn local_model(&self, model: &ModelRef) -> Option<Arc<LocalModel>> {
+        self.local(model)
+    }
+
     /// How ready one local model is now: a supervised one by its engine, a probed one by whether
     /// its runtime answered the last look.
     pub fn readiness(&self, model: &LocalModel) -> Readiness {
@@ -356,7 +363,7 @@ impl Engines {
     }
 
     /// Decides who answers a session, and what the runner is to be pinned to. A need no runner
-    /// can serve yet (speech) and a model that is not on this computer are `Unavailable`.
+    /// can serve yet (speaking) and a model that is not on this computer are `Unavailable`.
     pub fn route(
         &self,
         spec: &SessionSpec,
@@ -443,10 +450,11 @@ impl Engines {
         ))
     }
 
-    /// Models for a need; none when no runner serves that kind of need yet.
+    /// Models for a need; none when no runner serves that kind of need yet: speech to text runs
+    /// on the speech host, speaking has no runner.
     fn listed_for(&self, need: &Need, offered: &Offered) -> Vec<Listed> {
         match need {
-            Need::Speech(_) => Vec::new(),
+            Need::Speech(speech) if !speech.modes.contains(&SpeechMode::Stt) => Vec::new(),
             _ => self.listed_with(offered),
         }
     }

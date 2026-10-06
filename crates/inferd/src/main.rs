@@ -22,6 +22,7 @@ use inferd::service::{Inference, serve_on};
 use inferd::settings::{ConfigFile, InferdSettings, Reload, resolve, serve_settings};
 use inferd::supervise::{Ports, Supervised};
 use inferd::watch::Watch;
+use model_catalog::EngineKind;
 use porter_http::{HyperHttp, Limits};
 use std::os::unix::fs::DirBuilderExt;
 use std::path::PathBuf;
@@ -80,6 +81,11 @@ async fn run(args: Args) -> Result<(), String> {
         .create(&dirs.sockets)
         .map_err(|e| format!("{}: {e}", dirs.sockets.display()))?;
     let specs = models.iter().map(|model| model.spec.clone()).collect();
+    let speech_hosts: Vec<EngineId> = models
+        .iter()
+        .filter(|model| model.profile.kind == EngineKind::SpeechHost)
+        .map(|model| model.spec.id.clone())
+        .collect();
     let sockets: Vec<(EngineId, PathBuf)> = models
         .iter()
         .map(|model| (model.spec.id.clone(), model.socket.0.clone()))
@@ -89,7 +95,7 @@ async fn run(args: Args) -> Result<(), String> {
         replays.supervisor_config(models.len()),
         Ports {
             host: replays.host(ProcessHost::new()),
-            probe: HealthProbe::new(sockets),
+            probe: HealthProbe::new(sockets).speech_hosts(speech_hosts),
             gpu: NvidiaSmi::new(PathBuf::from("nvidia-smi")),
         },
     );

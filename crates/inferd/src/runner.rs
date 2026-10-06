@@ -5,7 +5,9 @@
 //!
 //! What a session is pinned to is decided by its router and read here through a [`Pin`] cell:
 //! `serve_session` calls the router once and the runner never sees the decision otherwise.
-//! Speech turns are refused `Unsupported` (the speech runner is not built).
+//! A `Transcribe` turn runs on the speech host ([`crate::speech::SpeechRunner`]): the session's
+//! audio frames are queued to the turn, `end_audio` closes the queue. `Speak` is refused
+//! `Unsupported` (no text-to-speech runner yet).
 
 use crate::bridge::{self, Frames};
 use crate::cloud::Cloud;
@@ -14,6 +16,7 @@ use crate::cua_run::{CuaRun, StepJob};
 use crate::hosts::{loopback_endpoint, unix_endpoint};
 use crate::local::LocalModel;
 use crate::serve::{RunningTurn, TurnRunner, TurnStep};
+use crate::speech::{ChannelAudio, SpeechRunner};
 use crate::structured::{self, Limits, Shaping};
 use crate::supervise::Supervised;
 use model_http::{HttpClient, Timeouts, WaitMs as HttpWaitMs};
@@ -22,8 +25,8 @@ use model_provider as sp;
 use model_provider::{Embedder, Provider, Retrying};
 use porter_core::Tier;
 use porter_infer::{
-    ChatSink, CuaStepFailure, CuaStepReply, EmbedReply, Flow, InferEvent, InferRefusal, InferReply,
-    InferRequest, ModelError, ServedBy, TokenUsage,
+    AudioFrame, ChatSink, CuaStepFailure, CuaStepReply, EmbedReply, Flow, InferEvent, InferRefusal,
+    InferReply, InferRequest, ModelError, ServedBy, TokenUsage, TranscribeBegin,
 };
 use std::future::Future;
 use std::os::fd::OwnedFd;
@@ -152,6 +155,8 @@ impl Turns {
 pub struct Turn {
     steps: mpsc::UnboundedReceiver<TurnStep>,
     task: JoinHandle<()>,
+    /// Where a `Transcribe` turn's audio goes; none once the person stopped talking.
+    audio: Option<mpsc::UnboundedSender<AudioFrame>>,
 }
 
 impl Drop for Turn {
@@ -161,9 +166,15 @@ impl Drop for Turn {
 }
 
 impl RunningTurn for Turn {
-    fn audio(&mut self, _: porter_infer::AudioFrame) {}
+    fn audio(&mut self, frame: AudioFrame) {
+        if let Some(audio) = &self.audio {
+            let _ = audio.send(frame);
+        }
+    }
 
-    fn end_audio(&mut self) {}
+    fn end_audio(&mut self) {
+        self.audio = None;
+    }
 
     async fn next(&mut self) -> TurnStep {
         match self.steps.recv().await {
@@ -179,6 +190,7 @@ impl TurnRunner for Turns {
 
     fn start(&self, request: InferRequest, attachments: Vec<OwnedFd>) -> Turn {
         let (steps, inbox) = mpsc::unbounded_channel();
+        let (audio, frames) = mpsc::unbounded_channel();
         let job = Job {
             pinned: self.pin.get().cloned(),
             engines: self.engines.clone(),
@@ -189,10 +201,14 @@ impl TurnRunner for Turns {
             steps,
         };
         let task = tokio::spawn(async move {
-            let reply = job.reply(request, attachments).await;
+            let reply = job.reply(request, attachments, frames).await;
             let _ = job.steps.send(TurnStep::Done(reply));
         });
-        Turn { steps: inbox, task }
+        Turn {
+            steps: inbox,
+            task,
+            audio: Some(audio),
+        }
     }
 }
 
@@ -255,7 +271,12 @@ fn refused(refusal: InferRefusal) -> InferReply {
 }
 
 impl Job {
-    async fn reply(&self, request: InferRequest, attachments: Vec<OwnedFd>) -> InferReply {
+    async fn reply(
+        &self,
+        request: InferRequest,
+        attachments: Vec<OwnedFd>,
+        audio: mpsc::UnboundedReceiver<AudioFrame>,
+    ) -> InferReply {
         if let (
             Some(Pinned {
                 served,
@@ -313,9 +334,32 @@ impl Job {
                 })
             }
             InferRequest::CuaStep(step) => self.cua(model, &step, &frames).await,
-            InferRequest::Transcribe(_) | InferRequest::Speak(_) => {
-                refused(InferRefusal::Unsupported)
+            InferRequest::Transcribe(begin) => {
+                self.transcribe(model, served, &begin, ChannelAudio(audio))
+                    .await
             }
+            InferRequest::Speak(_) => refused(InferRefusal::Unsupported),
+        }
+    }
+
+    /// Hears the session's audio on the model's speech host and tells the app what it heard.
+    async fn transcribe(
+        &self,
+        model: &LocalModel,
+        served: &ServedBy,
+        begin: &TranscribeBegin,
+        mut audio: ChannelAudio,
+    ) -> InferReply {
+        let Some(runner) = SpeechRunner::for_model(model, served.clone(), self.engines.clone())
+        else {
+            return refused(InferRefusal::Unsupported);
+        };
+        let mut sink = ToSession {
+            steps: self.steps.clone(),
+        };
+        match runner.transcribe(begin, &mut audio, &mut sink).await {
+            Ok(reply) => InferReply::Transcribed(reply),
+            Err(error) => InferReply::Failed(error),
         }
     }
 

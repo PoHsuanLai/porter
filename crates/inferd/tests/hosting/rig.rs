@@ -4,8 +4,9 @@ use super::accountd::{FakeAccount, FakeAccountd};
 use super::bus::PrivateBus;
 use super::cloud::FakeCloud;
 use super::engine::{FakeEngine, Script};
+use super::speech_host::SpeechEngines;
 use engine_supervisor::{
-    EngineHost, EngineId, ExitCode, FakeGpu, FakeReadyProbe, GpuMemory, HostError, Probe,
+    EngineHost, EngineId, ExitCode, FakeGpu, GpuMemory, HostError, Probe, ReadyProbe,
     SupervisorConfig, UnitSpec,
 };
 use inferd::audit::Memory;
@@ -16,6 +17,7 @@ use inferd::cloud::accountd::PeerAccountd;
 use inferd::cloud::spend::Ledger;
 use inferd::cloud::wire::{Door, Doors};
 use inferd::engines::Engines;
+use inferd::hosts::HealthProbe;
 use inferd::local::{EngineConfig, LocalModel, build};
 use inferd::peers::{Caller, Role, TablePeers};
 use inferd::probe::ProbeConfig;
@@ -54,6 +56,77 @@ impl EngineHost for Recorder {
 
     async fn exited(&self, _: &EngineId) -> ExitCode {
         std::future::pending().await
+    }
+}
+
+/// Where the fake speech host's program "is" (it is never run: the fake engine host serves the
+/// protocol in place of it).
+pub const SPEECH_HOST_PROGRAM: &str = "/fake/speech-host";
+
+/// A speech host in the world: what it says, and the libraries its unit is told about.
+#[derive(Debug, Clone)]
+pub struct SpeechPlan {
+    /// The words each utterance is heard as.
+    pub words: Vec<&'static str>,
+    /// `engines.speech_host_libs`.
+    pub libs: Option<PathBuf>,
+}
+
+/// An engine host with two halves: the speech engine's program is the fake speech host, anything
+/// else is recorded and starts nothing.
+#[derive(Debug, Clone)]
+struct Hub {
+    recorder: Recorder,
+    speech: SpeechEngines,
+}
+
+impl EngineHost for Hub {
+    async fn spawn(&self, id: &EngineId, unit: &UnitSpec) -> Result<(), HostError> {
+        if unit.program.0 == std::path::Path::new(SPEECH_HOST_PROGRAM) {
+            self.speech.spawn(id, unit).await
+        } else {
+            self.recorder.spawn(id, unit).await
+        }
+    }
+
+    async fn stop(&self, id: &EngineId) -> Result<(), HostError> {
+        match self.speech.stop(id).await {
+            Err(HostError::NotRunning) => self.recorder.stop(id).await,
+            done => done,
+        }
+    }
+
+    async fn exited(&self, id: &EngineId) -> ExitCode {
+        if self
+            .speech
+            .units
+            .lock()
+            .expect("lock")
+            .iter()
+            .any(|(one, _)| one == id)
+        {
+            self.speech.exited(id).await
+        } else {
+            self.recorder.exited(id).await
+        }
+    }
+}
+
+/// The speech engines are asked `Hello` (the real probe over the real socket); every other engine
+/// answers ready.
+#[derive(Debug, Clone)]
+struct Probes {
+    speech: HealthProbe,
+    ids: Vec<EngineId>,
+}
+
+impl ReadyProbe for Probes {
+    async fn probe(&self, id: &EngineId) -> Probe {
+        if self.ids.contains(id) {
+            self.speech.probe(id).await
+        } else {
+            Probe::Ready
+        }
     }
 }
 
@@ -98,6 +171,10 @@ pub struct Plan {
     /// Which ports are probed for runtimes the person runs (the fake accountd hears the
     /// reports); none probes nothing and wires nothing.
     pub probe: Option<ProbeConfig>,
+    /// A speech host (the fake one), when the plan has speech models.
+    pub speech: Option<SpeechPlan>,
+    /// The supervisor's timing, when a test needs a restart to take milliseconds.
+    pub supervisor: Option<SupervisorConfig>,
 }
 
 impl Default for Plan {
@@ -113,6 +190,8 @@ impl Default for Plan {
             hosted: None,
             spend: SpendLine::default(),
             probe: None,
+            speech: None,
+            supervisor: None,
         }
     }
 }
@@ -141,6 +220,8 @@ pub struct World {
     pub accountd_bus: Option<zbus::Connection>,
     /// The look for local runtimes, when the plan has one (it stops with this).
     pub probing: Option<Probing>,
+    /// The fake speech engines, when the plan has a speech host.
+    pub speech: Option<SpeechEngines>,
 }
 
 static NEXT: AtomicU32 = AtomicU32::new(0);
@@ -173,7 +254,11 @@ impl World {
         let engines_config = EngineConfig {
             vllm_python: Some(PathBuf::from("/nonexistent/python")),
             llama_server: Some(PathBuf::from("/nonexistent/llama-server")),
-            speech_host: None,
+            speech_host: plan
+                .speech
+                .as_ref()
+                .map(|_| PathBuf::from(SPEECH_HOST_PROGRAM)),
+            speech_host_libs: plan.speech.as_ref().and_then(|speech| speech.libs.clone()),
             kokoro_python: None,
             hf_cache: scratch.join("hf"),
             ..EngineConfig::default()
@@ -213,12 +298,33 @@ impl World {
             })
             .collect();
         let host = Recorder::default();
+        let speech = plan
+            .speech
+            .as_ref()
+            .map(|speech| SpeechEngines::new(&speech.words));
+        let speech_ids: Vec<EngineId> = models
+            .iter()
+            .filter(|m| m.profile.kind == model_catalog::EngineKind::SpeechHost)
+            .map(|m| m.spec.id.clone())
+            .collect();
+        let probes = Probes {
+            speech: HealthProbe::new(
+                models
+                    .iter()
+                    .map(|m| (m.spec.id.clone(), m.socket.0.clone())),
+            )
+            .speech_hosts(speech_ids.clone()),
+            ids: speech_ids,
+        };
         let supervised = Supervised::start(
             models.iter().map(|m| m.spec.clone()).collect(),
-            SupervisorConfig::default(),
+            plan.supervisor.unwrap_or_default(),
             Ports {
-                host: replays.host(host.clone()),
-                probe: FakeReadyProbe(Probe::Ready),
+                host: replays.host(Hub {
+                    recorder: host.clone(),
+                    speech: speech.clone().unwrap_or_else(|| SpeechEngines::new(&[])),
+                }),
+                probe: probes,
                 gpu: FakeGpu(GpuMemory {
                     total: MiB(16_000),
                     used_by_others: MiB(0),
@@ -321,6 +427,7 @@ impl World {
             peers,
             accountd_bus,
             probing,
+            speech,
         }
     }
 }

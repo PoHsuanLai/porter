@@ -12,7 +12,9 @@ use porter_core::{
     AccountId, AccountsReply, AccountsRequest, Audience, Candidate, DataClass, EndpointUrl,
     GrantId, IssuedToken, Need, Tier,
 };
-use porter_infer::{ClientFrame, InferEvent, InferReply, InferRequest, InferSession, OpenOptions};
+use porter_infer::{
+    ClientFrame, InferEvent, InferReply, InferRequest, InferSession, OpenOptions, Readiness,
+};
 
 /// The app's connection to the account service.
 #[derive(Debug)]
@@ -240,6 +242,19 @@ impl<T: Transport> Accounts<T> {
         options: &OpenOptions,
     ) -> Result<T::Session, ClientError> {
         Ok(self.transport.open_with(need, class, tier, options).await?)
+    }
+
+    /// Warms the engine inferd would route `need` to and says how ready it is
+    /// ([`Transport::prepare`]): a hold that is about to begin asks first, so the model is
+    /// loading while the person starts to talk.
+    pub async fn prepare(
+        &self,
+        need: &Need,
+        class: DataClass,
+        tier: Tier,
+        options: &OpenOptions,
+    ) -> Result<Readiness, ClientError> {
+        Ok(self.transport.prepare(need, class, tier, options).await?)
     }
 
     /// Runs one AI request to its end on a fresh session and returns the reply, dropping the

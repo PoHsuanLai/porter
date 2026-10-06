@@ -10,7 +10,9 @@
 //! Wired: the text stage on every `Llm` session (so every route goes through the planner), and the
 //! text plus `voice_in` plan run by [`run::run_pipeline`] over an engine that hears. Typed as not
 //! yet, with a reason ([`run::unsupported`]): a `describe` stage (image_in), a `speak` stage
-//! (voice_out), and the daemon's own speech-to-text engine, which is not built (`speech.rs`).
+//! (voice_out). The daemon's own speech-to-text engine is built (`speech::Ears` over the speech
+//! host); no session path builds a plan from an audio chat request yet, so `run_pipeline` runs
+//! in tests.
 
 mod run;
 

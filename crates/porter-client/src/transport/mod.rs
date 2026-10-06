@@ -22,7 +22,7 @@ pub use socket::{SocketSession, SocketTransport};
 use crate::authenticated::Relayed;
 use crate::error::TransportError;
 use porter_core::{AccountsReply, AccountsRequest, DataClass, EndpointUrl, GrantId, Need, Tier};
-use porter_infer::{ClientFrame, InferEvent, InferSession, OpenOptions, SessionError};
+use porter_infer::{ClientFrame, InferEvent, InferSession, OpenOptions, Readiness, SessionError};
 use std::future::Future;
 
 /// Carries requests to accountd and inferd.
@@ -59,6 +59,25 @@ pub trait Transport: Send + Sync {
         tier: Tier,
         options: &OpenOptions,
     ) -> impl Future<Output = Result<Self::Session, TransportError>> + Send;
+
+    /// Warms the engine inferd would pick for `need`, `class` and `tier` (no request, no
+    /// microphone) and answers how ready it is (`Inference1.Prepare`). The wait is the caller's
+    /// next `open`. A model that is not yet there is `Loadable` or `Downloadable`, one that
+    /// cannot be served is `Unavailable`; any other refusal (no grant, denied, a spend cap, a
+    /// class that may not leave the machine) is `TransportError::Denied` with its slug.
+    ///
+    /// The default is `Unreachable`, so a transport that has no inferd (and every implementor
+    /// outside this crate) compiles and degrades as it does when inferd is not running.
+    fn prepare(
+        &self,
+        need: &Need,
+        class: DataClass,
+        tier: Tier,
+        options: &OpenOptions,
+    ) -> impl Future<Output = Result<Readiness, TransportError>> + Send {
+        let _ = (need, class, tier, options);
+        async { Err(TransportError::Unreachable) }
+    }
 
     /// [`Transport::open_with`] with no trace context: inferd starts its own root.
     fn open(
@@ -165,6 +184,20 @@ impl Transport for AnyTransport {
                 .open_with(need, class, tier, options)
                 .await
                 .map(AnySession::Socket),
+        }
+    }
+
+    async fn prepare(
+        &self,
+        need: &Need,
+        class: DataClass,
+        tier: Tier,
+        options: &OpenOptions,
+    ) -> Result<Readiness, TransportError> {
+        match self {
+            #[cfg(feature = "dbus")]
+            AnyTransport::Dbus(link) => link.prepare(need, class, tier, options).await,
+            AnyTransport::Socket(link) => link.prepare(need, class, tier, options).await,
         }
     }
 }

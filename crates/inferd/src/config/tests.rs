@@ -107,6 +107,7 @@ cua = ["cuad.service"]
         Some(PathBuf::from("/opt/vllm/bin/python"))
     );
     assert_eq!(config.engines.speech_host, None);
+    assert_eq!(config.engines.speech_host_libs, None);
     let policy = config.policy();
     assert_eq!(policy.local_only, LocalOnly::Off);
     assert_eq!(policy.floor(DataClass::Mail), Floor::LocalNetwork);
@@ -190,4 +191,31 @@ fn record_is_a_key_of_a_replay_engine_and_of_nothing_else() {
     for text in refused {
         assert!(InferdConfig::from_toml(text).is_err(), "{text}");
     }
+}
+
+#[test]
+fn the_speech_host_and_its_libraries_are_read_from_the_engines_table() {
+    let config = InferdConfig::from_toml(
+        r#"
+[engines]
+speech_host = "/usr/libexec/quire/speech-host"
+speech_host_libs = "/opt/sherpa/lib"
+[engines.scripted]
+replay = "/tmp/c.jsonl"
+"#,
+    )
+    .expect("config");
+    assert_eq!(
+        config.engines.speech_host,
+        Some(PathBuf::from("/usr/libexec/quire/speech-host"))
+    );
+    assert_eq!(
+        config.engines.speech_host_libs,
+        Some(PathBuf::from("/opt/sherpa/lib"))
+    );
+    assert_eq!(
+        config.engines.named.len(),
+        1,
+        "the key is not a replay engine's name"
+    );
 }

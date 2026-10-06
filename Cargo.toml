@@ -72,6 +72,8 @@ engine-supervisor   = { path = "../stoker/crates/engine-supervisor" }
 model-http          = { path = "../stoker/crates/model-http" }
 model-openai-compat = { path = "../stoker/crates/model-openai-compat" }
 speech-provider     = { path = "../stoker/crates/speech-provider" }
+# the client of the speech host (the STT engine process): inferd's `SttBackend::SpeechHost`.
+speech-host-client  = { path = "../stoker/crates/speech-host-client" }
 vision-prep         = { path = "../stoker/crates/vision-prep" }
 cua-parse           = { path = "../stoker/crates/cua-parse" }
 cua-session         = { path = "../stoker/crates/cua-session" }

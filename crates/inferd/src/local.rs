@@ -8,7 +8,9 @@
 
 use crate::catalog::claims_of;
 use crate::replay::NamedEngine;
-use engine_supervisor::{EnginePaths, EngineSpec, ProgramPath, SocketPath, command};
+use engine_supervisor::{
+    EnginePaths, EngineSpec, EnvPair, ProgramPath, SocketPath, UnitSpec, command,
+};
 use model_catalog::{EngineKind, EngineProfile, ModelEntry};
 use model_http::Port;
 use model_openai_compat::Flavor;
@@ -32,6 +34,10 @@ pub struct EngineConfig {
     pub llama_server: Option<PathBuf>,
     /// quire's speech host.
     pub speech_host: Option<PathBuf>,
+    /// The directory of the shared libraries the speech host loads (sherpa-onnx and onnxruntime),
+    /// set as the host's `LD_LIBRARY_PATH` and bound read-only into its sandbox.
+    #[serde(default)]
+    pub speech_host_libs: Option<PathBuf>,
     /// Python of Kokoro-FastAPI's environment.
     pub kokoro_python: Option<PathBuf>,
     /// `<cache>/hub`: where `models--<org>--<name>` directories are. Left out of the file, it
@@ -140,6 +146,19 @@ impl LocalModel {
     }
 }
 
+/// The speech host's unit with its libraries: `LD_LIBRARY_PATH` names the configured directory
+/// and the sandbox reads it. Any other engine's unit is as `command` made it.
+fn host_libs(mut unit: UnitSpec, kind: EngineKind, engines: &EngineConfig) -> UnitSpec {
+    if let (EngineKind::SpeechHost, Some(libs)) = (kind, &engines.speech_host_libs) {
+        unit.env.push(EnvPair {
+            name: "LD_LIBRARY_PATH".to_owned(),
+            value: libs.to_string_lossy().into_owned(),
+        });
+        unit.sandbox.read.push(libs.clone());
+    }
+    unit
+}
+
 fn kind_slug(kind: EngineKind) -> &'static str {
     match kind {
         EngineKind::Vllm => "vllm",
@@ -187,7 +206,11 @@ fn one(entry: &ModelEntry, engines: &EngineConfig, sockets: &Path) -> Option<Loc
     let id = engine_supervisor::EngineId(format!("{}:{}", kind_slug(profile.kind), entry.id.0));
     let socket =
         SocketPath(sockets.join(format!("{}-{}.sock", kind_slug(profile.kind), entry.id.0)));
-    let unit = command(entry, &profile, &engines.paths(), &socket);
+    let unit = host_libs(
+        command(entry, &profile, &engines.paths(), &socket),
+        profile.kind,
+        engines,
+    );
     // An embedding-only entry has no chat context: its longest input is what the cache holds.
     let context = match (&entry.caps, &entry.embed) {
         (Some(caps), _) => caps.context,

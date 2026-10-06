@@ -43,9 +43,9 @@ Each row names the lane of the accounts program (porter PLAN §6) that removes i
 | porter-families `microsoft`: `MicrosoftProvider::new(spec)` reads `/usr/share/porter/clients.toml` and `$XDG_CONFIG_HOME/porter/clients.toml` and needs `HyperHttp::send` (W3c) and `/dev/urandom` (no Windows randomness: `getrandom` is not in the porter dependency block) | W3d builds it with `MicrosoftEnv`; the Windows path needs `getrandom` in the pinned block (interface ask) when mailo hosts the family there |
 | porter-families `microsoft`: probe paths, scope names and the personal-domain list are from Microsoft's documentation and mailo, not a recorded live answer; personal vs work is by address domain (a personal account on a custom domain is classed Work) | The owner's live smoke once the Entra app exists (D2) |
 | porter-infer `Broker::infer` (streaming into a `ChatSink`) | the first wire adapter (Ollama, then llama.cpp and vLLM through stoker's `model-openai-compat`) |
-| inferd `speech::SpeechRunner::{transcribe, speak}` | the speech runner: needs stoker's `speech-host-client` and the speech host; the closed enums `SttBackend`, `TtsBackend` join then. A speech need is routed `Unavailable` and a speech request on a session is refused `Unsupported` until then |
+| inferd `speech::SpeechRunner::speak` (one `todo!()`) | the text-to-speech runner: `TtsBackend` over stoker's `TextToSpeech` (Kokoro-FastAPI as a supervised engine, `OpenAiSpeech`); a `Speak` request on a session is refused `Unsupported` and a speech need that asks for `Tts` is routed `Unavailable` until then. Speech to text is built ("Fill voice-inferd" below) |
 | porter-infer `AiKind` (deprecated alias of `Slot`, with its variant-named constants and the old slugs `llm`, `speech_in`, `speech_out` still read) | removed once docket, almanac and cua name `Slot` (the slots lane's consumers); then the old `ai.model.<kind>.<tier>` rows stop loading one release after detent writes the slot rows |
-| inferd pipeline stages `Describe` (images through the `image_in` slot) and `Speak` (the answer through `voice_out`) answer `Refusal::NotYet`, so a plan that needs them is `Unsupported`; audio-in sessions too | the pipeline lane that runs them (Describe needs a vision model in the catalogue; Speak and real STT need the speech runner below) |
+| inferd pipeline stages `Describe` (images through the `image_in` slot) and `Speak` (the answer through `voice_out`) answer `Refusal::NotYet`, so a plan that needs them is `Unsupported`. A `Hear` stage runs (`speech::Ears`, the speech host), but no session path builds a plan from an audio chat request yet: `run_pipeline` is called by tests only | the pipeline lane that runs them (Describe needs a vision model in the catalogue; Speak needs the text-to-speech runner above) and that wires `plan` + `run_pipeline` into the session server |
 | porter-client: the socket carrier needs the `socket` feature (without it nobody is reachable) and no agent serves it in this repo; `InProcess` has no broker unless the app hands one in | an agent hosts the core on the latchkey socket and reads `LinkHello` (see "Fill W4: porter") / porter's own `Broker` is built |
 | Google (`providers/google.toml` ships as a file, no family code, no `google` feature in `porter-families`, no gdrive replica) | **TODO, owner decision D1 (2026-10-05)**: W5c when the owner resumes it. Then: Calendar, People, Tasks, Drive AppFolder, Photos upload and picker, Gmail only with a BYO client, the 7-day reminder |
 | inferd `ai.structured.*` rows are read at start only: `Inference.limits` is fixed when the daemon builds it, so a page edit of them needs a restart (the other `ai.*` rows reload; `Limits` would join `settings::Settings`). The rows themselves are in the schema, read at `[ai.structured]`, | a later inferd lane |
@@ -734,7 +734,7 @@ Decisions, where the brief or the plan left a choice:
 
 ## Open
 
-- inferd's stoker edges are by sibling path (`model-provider`, `model-catalog`, `engine-supervisor`, `model-http`, `model-openai-compat`, `vision-prep`, `cua-parse`, `speech-provider`), like `cua-action`; the pinned git revs replace them with quire's block. `cua-session`, `cua-vendors` (for `StepResult`) and `model-extract` are edges since W5; `speech-host-client` is not (its bodies are stubs).
+- inferd's stoker edges are by sibling path (`model-provider`, `model-catalog`, `engine-supervisor`, `model-http`, `model-openai-compat`, `vision-prep`, `cua-parse`, `speech-provider`), like `cua-action`; the pinned git revs replace them with quire's block. `cua-session`, `cua-vendors` (for `StepResult`) and `model-extract` are edges since W5; `speech-host-client` is since the voice-inferd lane (inferd's `SttBackend::SpeechHost`).
 - `InferSession` and its `SessionError` live in porter-infer (re-exported by porter-client), not in porter-client as models §3.8 words it: `porter-fake` implements the trait for `FakeInferSession` and must not depend on the client. `next()` returns `Result<InferEvent, SessionError>` (`Closed` after the daemon ends the session) where the spec says `InferEvent`.
 - `DroppedAction`, `DropReason` and `SafetyHint` are named by the specs but not defined; porter-infer defines them (`SafetyHint` mirrors stoker's `SafetySignal`: `RequireConfirmation`, `Blocked`; both only add asks).
 - The picker is a plain list (QUESTIONS V4): no recommended or best row and no ranking language; `Tier` stays because apps ask by tier and `Open` takes one. `picker_rows` breaks ties by the catalog's order, not by label.
@@ -942,6 +942,57 @@ Lane `w6c-graph`, branch `w6c-graph` from 11651d4.
 4. `porter-fake`: `FakeProtocol` gains `Graph`:
    `/// A Microsoft Graph drive.` `Graph,` (porter-fake is consumer-used; additive to a
    non-exhaustive match only if the consumers match it with a wildcard).
+
+## Fill voice-inferd: Transcribe over the speech host
+
+Lane `voice-inferd`, branch from 0941881. porter-client `Transport::prepare`; inferd's speech to text.
+
+- **`Transport::prepare(need, class, tier, options) -> Result<Readiness, TransportError>`**, over
+  `Inference1.Prepare` (`DbusTransport`) and through `SessionHost::prepare` (`InProcess`); `AnyTransport`
+  forwards it. Both traits have a default body (`Unreachable`), because almanac, docket, cua, sill and mailo
+  have `impl Transport` of their own (checked by grep, read only), so none of them changes. `SocketTransport` keeps
+  the default (the latchkey socket carries `Open` only). `Accounts::prepare` is the app-facing call. The bus answers a
+  slug: `ready`, `loading`, `loadable`, `downloading` (its progress is not on the bus, so it reads
+  `Downloading(Permille(0))`), `downloadable`, `unavailable`; any other slug is a refusal (`needs_grant`, `denied`,
+  `over_budget`, `unsupported`, `requires_cloud`) and is `TransportError::Denied("inferd refused: <slug>")`, since
+  the return type has no room for an `InferRefusal`. Tests: `porter-client/tests/prepare.rs` (4).
+- **`SttBackend`** (`inferd::speech`): the closed set of engines a `Transcribe` turn runs on; one arm,
+  `SpeechHost(SpeechHostClient)`, over the engine's Unix socket. One connection per utterance; dropping the turn drops
+  the future, which sends `Cancel` and closes the socket, so inferd keeps no audio. `SpeechRunner::for_model` (a model
+  whose engine kind is the speech host) and `transcribe` map the session's frames to `AudioChunk`s and the host's
+  events to `Heard` deltas (a language the wire cannot spell is dropped); `SttShape` is the model's name and its
+  `--chunk-ms` (560 when the entry says none). `runner::Turns` runs a `Transcribe` turn through it: the session machine's
+  checked frames go to the turn through a channel, `end_audio` closes it. `Ears` is the `pipeline::Transcriber` a `Hear`
+  stage runs on (it asks for the engine first).
+- **The engine is supervised as a CPU engine from its catalogue entry**: `local::build` already made the unit
+  (`stoker::command`: `paths.speech_host`, `--model-dir <snapshot>`, then the entry's args with `{socket}`); this lane adds
+  `[engines] speech_host_libs`, which becomes the unit's `LD_LIBRARY_PATH` and a read-only bind of its sandbox, and a
+  readiness probe that asks the host `Hello` (`HealthProbe::speech_hosts`; the HTTP `/health` probe cannot reach it).
+  The socket is `$XDG_RUNTIME_DIR/inferd/speech_host-<model id>.sock` (the existing `<kind>-<id>` naming). A speech
+  need that asks for `Stt` is listed like any other (`Engines::listed_for`); one that asks for `Tts` stays `Unavailable`.
+- **Default grant for `org.quire.Voice`**: `dist/inferd.toml` `[callers.apps]` names `voiced.service` (docket's unit)
+  as `org.quire.Voice`. A model on this computer is granted by its locality, so that row is the grant; the default floor
+  keeps `voice` on this computer.
+- **A session is `Waiting` while its engine loads, and a `Waiting` session refuses audio** (`Finished(Refused(Unsupported))`).
+  voiced buffers until it sees the turn start (`utt.ready`); any other client must wait for `Routed` (or call `prepare`
+  first). Not changed: the session machine is shared with every other turn kind.
+- Tests (no real binary, model or library; a fake host on a Unix socket, the supervisor running it through a fake
+  engine host on a private bus): `speech::stt::tests` (7), `local::tests` (speech unit), `config::tests`, `hosts::tests`
+  (Hello probe; a child gets its unit's environment), `tests/speech.rs` (6: streaming partials and a final, the audit entry,
+  restart after a crash with a turn cut mid-utterance, `Prepare`, no host, Hear then Answer over a text model).
+- Not built: the text-to-speech runner (above); the session wiring of `plan` + `run_pipeline` for an audio chat request;
+  the systemd transient-unit host (the sandbox spec is built, the host is a child process).
+
+### Owner: to run it for real
+
+1. Build the host (stoker `dev/build-sherpa.sh` once, then `cargo build --release` in `speech-host-sherpa`) and the
+   Nemotron weights (stoker FINDINGS "Fill V-H": `csukuangfj2/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11`
+   at `ab43d895f5985b1bbab8b6eac8607fcdc05343f3`, into the Hugging Face cache so `models--csukuangfj2--...` exists).
+2. `$XDG_CONFIG_HOME/quire/inferd.toml`: `[engines] speech_host = "<path>/speech-host"`,
+   `speech_host_libs = "<sherpa install>/lib"` (the directory with `libsherpa-onnx-c-api.so` and `libonnxruntime.so`),
+   `hf_cache` if it is not the default; the stoker catalogue directory must hold `nemotron-3.5-asr-streaming.toml`.
+3. `[callers.apps] "org.quire.Voice" = ["voiced.service"]` (in `dist/inferd.toml`).
+4. Start inferd, then voiced; `Voice1.Prepare` starts the engine (about 1 to 2 s to load), the first hold hears.
 
 ## Standing facts
 

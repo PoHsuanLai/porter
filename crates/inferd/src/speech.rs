@@ -1,18 +1,23 @@
 //! Speech turns: the audio rules every `Transcribe` turn obeys, and the runners that connect a
-//! turn to a speech engine. The engines are stoker's `speech-provider` backends (an STT host
-//! over a Unix socket, an OpenAI-compatible audio endpoint, a replay), closed enums in inferd
-//! (`SttBackend`, `TtsBackend`) that join with the stoker dependency edge in fill wave 1; the
-//! rules and the seams are built here.
+//! turn to a speech engine. The engines are stoker's `speech-provider` backends, closed enums in
+//! inferd: [`SttBackend`] is built (one arm, [`speech_host_client::SpeechHostClient`] over the
+//! engine's Unix socket; `stt.rs`), `TtsBackend` is not (`speak` below). The rules and the seams
+//! are built here.
 //!
 //! inferd keeps no audio after a turn: frames live in the buffer of the running engine call
 //! and are dropped with it, on `Cancel` too.
 
 use crate::session::AudioCursor;
+use crate::supervise::Supervised;
+use engine_supervisor::EngineId;
 use porter_infer::{
-    AudioFrame, AudioRate, ChatSink, InferRefusal, ModelError, SpeakReply, SpeakRequest,
-    TranscribeBegin, TranscribeReply,
+    AudioFrame, AudioRate, ChatSink, InferRefusal, ModelError, ServedBy, SpeakReply, SpeakRequest,
 };
 use std::future::Future;
+
+mod stt;
+
+pub use stt::{ChannelAudio, Ears, SttBackend, SttShape};
 
 /// The longest audio one frame may carry, in milliseconds.
 pub const MAX_FRAME_MS: u32 = 1_000;
@@ -64,24 +69,19 @@ pub trait AudioIn: Send {
     fn next(&mut self) -> impl Future<Output = AudioPull> + Send;
 }
 
-/// Runs speech turns against the engines the route chose.
-#[derive(Debug, Default)]
+/// Runs speech turns against the engine the route chose: the turn's model, who is told it
+/// answered, and the supervisor that is told the engine is in use. Built per turn
+/// ([`SpeechRunner::for_model`]).
+#[derive(Debug, Clone)]
 pub struct SpeechRunner {
-    _private: (),
+    backend: SttBackend,
+    request: SttShape,
+    served: ServedBy,
+    engines: Supervised,
+    engine: EngineId,
 }
 
 impl SpeechRunner {
-    /// A speech-to-text turn: audio in, `Heard` events into `sink`, the transcript out.
-    pub async fn transcribe(
-        &self,
-        begin: &TranscribeBegin,
-        audio: &mut impl AudioIn,
-        sink: &mut impl ChatSink,
-    ) -> Result<TranscribeReply, ModelError> {
-        let _ = (begin, audio, sink);
-        todo!("SttBackend::transcribe over speech_provider::SpeechToText; map events to HeardDelta")
-    }
-
     /// A text-to-speech turn: `Spoken` events into `sink`; a sink answering `Stop` is
     /// barge-in.
     pub async fn speak(

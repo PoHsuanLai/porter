@@ -179,3 +179,26 @@ pub fn kimi() -> String {
         ],
     )
 }
+
+/// A speech-to-text entry on the speech host, as the shipped Nemotron entry is written (CPU only:
+/// no VRAM, 16 kHz, a 560 ms chunk and six threads in its engine args).
+pub fn speech_in() -> String {
+    r#"id = "tiny-ears"
+label = "Tiny ears"
+licence = { kind = "open", v = "MIT" }
+family = "test"
+cold_start_estimate_s = 0
+source = { kind = "hugging_face", v = { repo = "test/tiny-ears", revision = "0000000000000000000000000000000000000004" } }
+vram = { weights_mib = 0, kv_per_1k_ctx_mib = 0, overhead_mib = 0 }
+inputs = ["audio"]
+outputs = ["text"]
+text_out = { tools = "absent", structured = [], reasoning = "absent", streaming = "present", context = 0, max_output = 0 }
+audio_in = { dir = "in", streaming = "present", partials = "present", punctuation = "present", timestamps = "present", langs = { kind = "listed", v = ["en-US", "zh-CN"] }, max_audio_ms = 120000, input = { rate = 16000, pcm = "s16_le" } }
+
+[[engine]]
+kind = "speech_host"
+args = ["--socket", "{socket}", "--threads", "6", "--chunk-ms", "560"]
+weights = { kind = "sherpa_dir" }
+"#
+    .to_string()
+}

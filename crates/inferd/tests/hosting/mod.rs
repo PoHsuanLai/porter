@@ -11,3 +11,4 @@ pub mod cloud;
 pub mod engine;
 pub mod entries;
 pub mod rig;
+pub mod speech_host;

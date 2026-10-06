@@ -124,3 +124,55 @@ async fn the_health_probe_reads_the_status_off_the_engines_socket() {
     assert_eq!(probe.probe(&id("gone")).await, Probe::Down);
     assert_eq!(probe.probe(&id("unknown")).await, Probe::Down);
 }
+
+#[tokio::test]
+async fn a_speech_host_is_probed_with_hello_not_with_http() {
+    use crate::speech_host::{FakeSpeechHost, Words};
+    let dir = Scratch::new("hosts-speech-probe");
+    let host_socket = dir.path().join("host.sock");
+    let host = FakeSpeechHost::start(&host_socket, Words(vec![]));
+    // An engine that speaks HTTP, probed as a speech host, does not say Hello.
+    let http = answering(
+        &dir,
+        "http.sock",
+        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}",
+    );
+    let probe = HealthProbe::new([
+        (id("speech"), host_socket.clone()),
+        (id("http-as-speech"), http.clone()),
+        (id("gone"), dir.path().join("nobody-listens.sock")),
+        (id("http"), http),
+    ])
+    .speech_hosts([id("speech"), id("http-as-speech"), id("gone")]);
+    assert_eq!(probe.probe(&id("speech")).await, Probe::Ready);
+    assert_eq!(host.seen.lock().expect("lock").hellos, 1);
+    assert_eq!(probe.probe(&id("http-as-speech")).await, Probe::Down);
+    assert_eq!(probe.probe(&id("gone")).await, Probe::Down);
+    // The same socket under the plain probe is asked for `/health`, as before.
+    assert_eq!(probe.probe(&id("http")).await, Probe::Ready);
+    host.crash();
+}
+
+#[tokio::test]
+async fn a_child_process_gets_the_environment_its_unit_names() {
+    let dir = Scratch::new("hosts-env");
+    let out = dir.path().join("env.txt");
+    let mut spec = unit(
+        "sh",
+        &[
+            "-c",
+            &format!("printf '%s' \"$LD_LIBRARY_PATH\" > {}", out.display()),
+        ],
+    );
+    spec.env.push(EnvPair {
+        name: "LD_LIBRARY_PATH".into(),
+        value: "/opt/sherpa/lib".into(),
+    });
+    let host = ProcessHost::new();
+    host.spawn(&id("env"), &spec).await.expect("spawn");
+    assert_eq!(host.exited(&id("env")).await, ExitCode(0));
+    assert_eq!(
+        std::fs::read_to_string(out).expect("written"),
+        "/opt/sherpa/lib"
+    );
+}

@@ -65,7 +65,7 @@ fn the_sample_configuration_reads_and_names_the_callers_the_design_calls_for() {
     let config = InferdConfig::from_toml(&dist("inferd.toml")).expect("the sample reads");
     let cua = config.callers.resolve("cuad.service").expect("cuad");
     assert_eq!(cua.role, inferd::peers::Role::Cua);
-    for exe in ["memoryd", "intentd", "companiond", "readerd"] {
+    for exe in ["memoryd", "intentd", "companiond", "readerd", "voiced"] {
         let caller = config
             .callers
             .resolve(&format!("{exe}.service"))

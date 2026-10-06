@@ -32,6 +32,8 @@ pub struct Opened {
 #[derive(Debug, Default)]
 pub struct Seen {
     pub opens: Vec<Opened>,
+    /// What each `Prepare` call asked for.
+    pub prepares: Vec<Opened>,
     pub frames: Vec<ClientFrame>,
     /// The bytes of each descriptor received, in order.
     pub attachments: Vec<Vec<u8>>,
@@ -68,6 +70,8 @@ pub struct Served {
 pub struct FakeInferd {
     pub seen: Arc<Mutex<Seen>>,
     behaviour: Behaviour,
+    /// What `Prepare` answers (the slug).
+    prepare: Arc<Mutex<String>>,
 }
 
 impl FakeInferd {
@@ -77,9 +81,16 @@ impl FakeInferd {
             Self {
                 seen: Arc::clone(&seen),
                 behaviour,
+                prepare: Arc::new(Mutex::new("ready".to_owned())),
             },
             seen,
         )
+    }
+
+    /// The same fake, answering `Prepare` with `slug`.
+    pub fn preparing(self, slug: &str) -> Self {
+        *self.prepare.lock().expect("lock") = slug.to_owned();
+        self
     }
 
     /// Serves `self` on `connection` under the real bus name and path.
@@ -98,6 +109,29 @@ impl FakeInferd {
 
 #[zbus::interface(name = "org.quire.Inference1")]
 impl FakeInferd {
+    async fn prepare(
+        &self,
+        need: NeedArg,
+        class: String,
+        tier: String,
+        options: Details,
+    ) -> fdo::Result<String> {
+        let need = need_from_dbus(need).map_err(|e| fdo::Error::InvalidArgs(e.to_string()))?;
+        let text = |key: &str| {
+            options
+                .get(key)
+                .and_then(|v| String::try_from(v.try_clone().ok()?).ok())
+        };
+        self.seen.lock().expect("lock").prepares.push(Opened {
+            need,
+            class,
+            tier,
+            traceparent: text(porter_dbus::OPTION_TRACEPARENT),
+            usage: text(porter_dbus::OPTION_USAGE),
+        });
+        Ok(self.prepare.lock().expect("lock").clone())
+    }
+
     async fn open(
         &self,
         need: NeedArg,
