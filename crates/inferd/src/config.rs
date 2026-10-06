@@ -27,17 +27,19 @@ pub struct InferdConfig {
     /// Engine programs and the weights cache.
     #[serde(default)]
     pub engines: EngineConfig,
-    /// The user's AI policy (settings `ai.local_only`, `ai.floor.<class>`); the design's
-    /// proposed defaults when absent.
+    /// The old shape of the policy, a `[policy]` table. Still read (one way: the rows at their
+    /// settings paths under `[ai]` win over it, and a write by Settings goes there); the design's
+    /// proposed defaults when absent. Goes when FINDINGS "inferd.toml: the old [policy] and
+    /// [tiers] tables" says.
     #[serde(default)]
     pub policy: Option<Policy>,
-    /// The user's tier map (settings `ai.model.<kind>.<tier>`).
+    /// The old shape of the tier map, `[[tiers.rows]]`: read the same way as `policy`.
     #[serde(default)]
     pub tiers: TierMap,
     /// Which executable is which caller.
     #[serde(default)]
     pub callers: CallerTable,
-    /// The `ai.*` settings rows that are not the policy or the tier map (`ai.structured.*`).
+    /// The `ai.*` settings rows, at their paths.
     #[serde(default)]
     pub ai: AiConfig,
 }
@@ -48,7 +50,8 @@ impl InferdConfig {
         toml::from_str(text).map_err(|e| ConfigError::Toml(e.to_string()))
     }
 
-    /// The policy in force.
+    /// The policy of the old `[policy]` table, or the proposed one; the `ai.*` rows are laid over
+    /// it by [`crate::settings::resolve`].
     pub fn policy(&self) -> Policy {
         self.policy.clone().unwrap_or_else(Policy::proposed)
     }

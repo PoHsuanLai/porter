@@ -12,6 +12,7 @@ use crate::peers::{Caller, Peers};
 use crate::runner::{Pin, Turns};
 use crate::serve::{Seams, serve_session};
 use crate::session::SessionSpec;
+use crate::settings::Reload;
 use crate::structured::Limits;
 use porter_core::{DataClass, Tier};
 use porter_dbus::{Details, INFERENCE_BUS, INFERENCE_PATH, NeedArg, need_from_dbus};
@@ -34,6 +35,7 @@ pub struct Inference<P, O, C> {
     audit: Arc<O>,
     clock: C,
     limits: Limits,
+    reload: Option<Reload>,
 }
 
 impl<P, O, C> Inference<P, O, C> {
@@ -45,6 +47,15 @@ impl<P, O, C> Inference<P, O, C> {
             audit: Arc::new(audit),
             clock,
             limits: Limits::default(),
+            reload: None,
+        }
+    }
+
+    /// The same object, whose `Rescan` reloads the settings from the file through `reload`.
+    pub fn reloading(self, reload: Reload) -> Self {
+        Self {
+            reload: Some(reload),
+            ..self
         }
     }
 
@@ -186,14 +197,18 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         Ok(Details::new())
     }
 
-    // Looks again: weights that arrived, engines that stopped. Readiness is read live, so this
-    // only tells listeners to re-read it.
+    // Looks again: weights that arrived, engines that stopped, and the settings file (a file that
+    // does not read keeps the settings in force and is the error). Readiness is read live, so
+    // for it this only tells listeners to re-read.
     async fn rescan(
         &self,
         #[zbus(header)] header: Header<'_>,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> fdo::Result<()> {
         self.caller(&header).await?;
+        if let Some(reload) = &self.reload {
+            reload.now().map_err(failed)?;
+        }
         Self::engines_changed(&emitter).await.map_err(failed)
     }
 

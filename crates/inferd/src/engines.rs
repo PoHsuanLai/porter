@@ -10,6 +10,7 @@ use crate::router::{Listed, choose};
 use crate::runner::{Pin, Pinned};
 use crate::serve::{EngineFailed, EngineHost};
 use crate::session::{RouteDecision, Routing, SessionSpec};
+use crate::settings::{Live, Settings};
 use crate::supervise::{Snapshot, Supervised};
 use crate::swap::{Budget, running_of, swap_cost};
 use engine_supervisor::{EngineId, EngineState, MonoMs};
@@ -50,9 +51,8 @@ impl GpuState {
 struct Book {
     local: Vec<Arc<LocalModel>>,
     remote: Vec<ModelCard>,
-    policy: Option<Policy>,
-    tiers: TierMap,
-    auto: AutoPolicy,
+    /// The settings in force; shared by every clone, replaced when the file changes.
+    live: Live,
 }
 
 /// Every engine inferd supervises, and the models behind them.
@@ -84,9 +84,11 @@ impl Engines {
             book: Arc::new(Book {
                 local: local.into_iter().map(Arc::new).collect(),
                 remote: Vec::new(),
-                policy: Some(policy),
-                tiers,
-                auto: AutoPolicy::default(),
+                live: Live::new(Settings {
+                    policy,
+                    tiers,
+                    ..Settings::default()
+                }),
             }),
             supervised,
         }
@@ -94,17 +96,35 @@ impl Engines {
 
     /// The same, with the `ai.auto.*` rows the daemon read (the default rows otherwise).
     pub fn with_auto(self, auto: AutoPolicy) -> Self {
+        let settings = Settings {
+            auto,
+            ..(*self.settings()).clone()
+        };
+        self.with_settings(settings)
+    }
+
+    /// The same, starting from these settings (a new holder: the old one's clones keep theirs).
+    pub fn with_settings(self, settings: Settings) -> Self {
         let book = Book {
             local: self.book.local.clone(),
             remote: self.book.remote.clone(),
-            policy: self.book.policy.clone(),
-            tiers: self.book.tiers.clone(),
-            auto,
+            live: Live::new(settings),
         };
         Self {
             book: Arc::new(book),
             supervised: self.supervised,
         }
+    }
+
+    /// The settings in force now.
+    pub fn settings(&self) -> Arc<Settings> {
+        self.book.live.get()
+    }
+
+    /// Puts new settings in force for every clone of these engines: the next session is routed
+    /// by them, a session already open keeps the decision it was given.
+    pub fn apply(&self, settings: Settings) {
+        self.book.live.set(settings);
     }
 
     /// The same, with models of accounts that are not on this computer. They take part in
@@ -114,9 +134,7 @@ impl Engines {
         let book = Book {
             local: self.book.local.clone(),
             remote,
-            policy: self.book.policy.clone(),
-            tiers: self.book.tiers.clone(),
-            auto: self.book.auto,
+            live: self.book.live.clone(),
         };
         Self {
             book: Arc::new(book),
@@ -127,10 +145,6 @@ impl Engines {
     /// The supervisor handle (the runner marks engines used through it).
     pub fn supervised(&self) -> &Supervised {
         &self.supervised
-    }
-
-    fn policy(&self) -> Policy {
-        self.book.policy.clone().unwrap_or_else(Policy::proposed)
     }
 
     fn local(&self, model: &ModelRef) -> Option<&Arc<LocalModel>> {
@@ -215,14 +229,15 @@ impl Engines {
         if matches!(spec.need, Need::ComputerUse(_)) && role != Role::Cua {
             return Err(InferRefusal::Denied.into());
         }
+        let settings = self.settings();
         let decided = choose(
             &spec.need,
             spec.class,
             spec.tier,
             &self.listed_for(&spec.need),
-            &self.policy(),
-            &self.book.tiers,
-            self.book.auto,
+            &settings.policy,
+            &settings.tiers,
+            settings.auto,
         )?;
         let (chosen, readiness) = (decided.chosen, decided.readiness);
         let model = self
@@ -242,7 +257,7 @@ impl Engines {
                 served: served.clone(),
                 readiness,
                 why: decided.why,
-                show: self.book.auto.show_reason,
+                show: settings.auto.show_reason,
             },
             Pinned {
                 served,

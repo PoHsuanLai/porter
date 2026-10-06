@@ -25,6 +25,7 @@ pub mod runner;
 pub mod serve;
 pub mod service;
 pub mod session;
+pub mod settings;
 pub mod speech;
 pub mod structured;
 pub mod supervise;

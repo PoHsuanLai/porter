@@ -24,6 +24,8 @@ pub enum Role {
     App,
     /// cuad: the one caller that may open a computer-use session.
     Cua,
+    /// detent, the Settings app: the one caller of `org.quire.SettingsModule1`.
+    Settings,
 }
 
 /// Who a connection is.
@@ -39,6 +41,7 @@ pub struct Caller {
 ///
 /// ```toml
 /// cua = ["cuad.service"]
+/// settings = ["org.quire.Settings"]
 /// [apps]
 /// "org.quire.Memory" = ["memoryd.service"]
 /// ```
@@ -48,12 +51,27 @@ pub struct CallerTable {
     cua: BTreeSet<String>,
     #[serde(default)]
     apps: BTreeMap<AppName, BTreeSet<String>>,
+    /// The apps that may use the settings module, found by their app scope.
+    #[serde(default)]
+    settings: BTreeSet<AppName>,
 }
 
 impl CallerTable {
     /// A table naming cuad's units and each app's.
     pub fn new(cua: BTreeSet<String>, apps: BTreeMap<AppName, BTreeSet<String>>) -> Self {
-        Self { cua, apps }
+        Self {
+            cua,
+            apps,
+            settings: BTreeSet::new(),
+        }
+    }
+
+    /// The same table, naming `apps` as the ones that may use the settings module.
+    pub fn with_settings(self, apps: BTreeSet<AppName>) -> Self {
+        Self {
+            settings: apps,
+            ..self
+        }
     }
 
     /// The table in TOML text.
@@ -79,8 +97,13 @@ impl CallerTable {
                 role: CallerRole::App,
             })
         });
+        let settings = self.settings.iter().map(|app| CallerRow {
+            unit: None,
+            app: app.clone(),
+            role: CallerRole::Settings,
+        });
         porter_dbus::CallerTable {
-            callers: cua.chain(apps).collect(),
+            callers: cua.chain(apps).chain(settings).collect(),
         }
     }
 
@@ -94,12 +117,13 @@ impl CallerTable {
 const CUA_APP: &str = "org.quire.Cua";
 
 impl Caller {
-    /// A shared caller as inferd knows roles: the `Cua` role, and `App` for every other.
+    /// A shared caller as inferd knows roles: `Cua` and `Settings`, and `App` for every other.
     pub fn from_shared(caller: porter_dbus::Caller) -> Self {
         Self {
             app: caller.app,
             role: match caller.role {
                 CallerRole::Cua => Role::Cua,
+                CallerRole::Settings => Role::Settings,
                 _ => Role::App,
             },
         }

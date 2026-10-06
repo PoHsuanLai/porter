@@ -98,7 +98,7 @@ EDGES=(
   "porter-families: porter-core porter-dav porter-discover porter-http porter-oauth porter-provider"
   "accountd: ds-settings porter-core porter-dbus porter-discover porter-families porter-http porter-provider porter-proxy porter-secrets porter-service"
   "syncd: porter-dbus porter-sync"
-  "inferd: porter-core porter-dbus porter-infer cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay speech-provider vision-prep"
+  "inferd: ds-settings porter-core porter-dbus porter-infer cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay speech-provider vision-prep"
 )
 for edge in "${EDGES[@]}"; do
   crate="${edge%%:*}"

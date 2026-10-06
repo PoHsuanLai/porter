@@ -1,11 +1,383 @@
-# inferd's settings schema (design/22 section 9.2): the rows of `ai.structured.*`, written by hand
-# until inferd can write its own (`--write-schema`) and serve org.quire.SettingsModule1 (FINDINGS
-# "ai.structured.* live rows: AI1a"). Install to $XDG_DATA_DIRS/quire/settings/inferd.settings.toml.
+# inferd's settings schema (design/22 section 9.2): every row below is read by inferd at exactly
+# this path in $XDG_CONFIG_HOME/quire/inferd.toml (a test walks this file and checks that each row
+# changes what inferd does), written by hand until inferd can write its own (`--write-schema`).
+# Install to $XDG_DATA_DIRS/quire/settings/inferd.settings.toml.
+#
+# Not in this file: `ai.model.<kind>.<tier>`, the model picker. Its choices are the models inferd
+# knows now, so inferd describes those rows itself, as the live module org.quire.SettingsModule1 at
+# /org/quire/Inference1/settings (callable by the Settings role only).
+#
 # Every row is hands-off: ai.* is never agent-settable (AGENT_NEVER_SETTABLE), so no row carries
 # `agent = "settable"`.
 app = "inferd"
 file = "quire/inferd.toml"
 version = 1
+
+[[key]]
+path = "ai.local_only"
+default = "on"
+label = "Keep AI on this computer"
+help = "While on, no request goes to a cloud account, whatever a data class allows."
+section = "Models"
+exposure = "basic"
+
+[key.kind]
+kind = "toggle"
+
+[key.kind.v]
+variants = ["on", "off"]
+
+[key.labels]
+on = "On"
+off = "Off"
+
+[key.page]
+kind = "intelligence"
+
+[[key]]
+path = "ai.floor.app_own"
+default = "anywhere"
+label = "The app's own data"
+help = "The farthest data of this kind may travel to be answered by a model."
+section = "Models"
+exposure = "basic"
+
+[key.kind]
+kind = "segmented"
+
+[key.kind.v]
+variants = ["on_device", "local_network", "anywhere"]
+
+[key.labels]
+on_device = "This computer"
+local_network = "My machines"
+anywhere = "Anywhere"
+
+[key.page]
+kind = "intelligence"
+
+[[key]]
+path = "ai.floor.mail"
+default = "on_device"
+label = "Mail"
+help = "The farthest data of this kind may travel to be answered by a model."
+section = "Models"
+exposure = "basic"
+
+[key.kind]
+kind = "segmented"
+
+[key.kind.v]
+variants = ["on_device", "local_network", "anywhere"]
+
+[key.labels]
+on_device = "This computer"
+local_network = "My machines"
+anywhere = "Anywhere"
+
+[key.page]
+kind = "intelligence"
+
+[[key]]
+path = "ai.floor.calendar"
+default = "on_device"
+label = "Calendar"
+help = "The farthest data of this kind may travel to be answered by a model."
+section = "Models"
+exposure = "basic"
+
+[key.kind]
+kind = "segmented"
+
+[key.kind.v]
+variants = ["on_device", "local_network", "anywhere"]
+
+[key.labels]
+on_device = "This computer"
+local_network = "My machines"
+anywhere = "Anywhere"
+
+[key.page]
+kind = "intelligence"
+
+[[key]]
+path = "ai.floor.contacts"
+default = "on_device"
+label = "Contacts"
+help = "The farthest data of this kind may travel to be answered by a model."
+section = "Models"
+exposure = "basic"
+
+[key.kind]
+kind = "segmented"
+
+[key.kind.v]
+variants = ["on_device", "local_network", "anywhere"]
+
+[key.labels]
+on_device = "This computer"
+local_network = "My machines"
+anywhere = "Anywhere"
+
+[key.page]
+kind = "intelligence"
+
+[[key]]
+path = "ai.floor.notes"
+default = "on_device"
+label = "Notes"
+help = "The farthest data of this kind may travel to be answered by a model."
+section = "Models"
+exposure = "basic"
+
+[key.kind]
+kind = "segmented"
+
+[key.kind.v]
+variants = ["on_device", "local_network", "anywhere"]
+
+[key.labels]
+on_device = "This computer"
+local_network = "My machines"
+anywhere = "Anywhere"
+
+[key.page]
+kind = "intelligence"
+
+[[key]]
+path = "ai.floor.files"
+default = "on_device"
+label = "Files"
+help = "The farthest data of this kind may travel to be answered by a model."
+section = "Models"
+exposure = "basic"
+
+[key.kind]
+kind = "segmented"
+
+[key.kind.v]
+variants = ["on_device", "local_network", "anywhere"]
+
+[key.labels]
+on_device = "This computer"
+local_network = "My machines"
+anywhere = "Anywhere"
+
+[key.page]
+kind = "intelligence"
+
+[[key]]
+path = "ai.floor.photos"
+default = "on_device"
+label = "Photos"
+help = "The farthest data of this kind may travel to be answered by a model."
+section = "Models"
+exposure = "basic"
+
+[key.kind]
+kind = "segmented"
+
+[key.kind.v]
+variants = ["on_device", "local_network", "anywhere"]
+
+[key.labels]
+on_device = "This computer"
+local_network = "My machines"
+anywhere = "Anywhere"
+
+[key.page]
+kind = "intelligence"
+
+[[key]]
+path = "ai.floor.clipboard"
+default = "on_device"
+label = "Clipboard"
+help = "The farthest data of this kind may travel to be answered by a model."
+section = "Models"
+exposure = "basic"
+
+[key.kind]
+kind = "segmented"
+
+[key.kind.v]
+variants = ["on_device", "local_network", "anywhere"]
+
+[key.labels]
+on_device = "This computer"
+local_network = "My machines"
+anywhere = "Anywhere"
+
+[key.page]
+kind = "intelligence"
+
+[[key]]
+path = "ai.floor.screen"
+default = "on_device"
+label = "What is on screen"
+help = "The farthest data of this kind may travel to be answered by a model."
+section = "Models"
+exposure = "basic"
+
+[key.kind]
+kind = "segmented"
+
+[key.kind.v]
+variants = ["on_device", "local_network", "anywhere"]
+
+[key.labels]
+on_device = "This computer"
+local_network = "My machines"
+anywhere = "Anywhere"
+
+[key.page]
+kind = "intelligence"
+
+[[key]]
+path = "ai.floor.voice"
+default = "on_device"
+label = "Your voice"
+help = "The farthest data of this kind may travel to be answered by a model."
+section = "Models"
+exposure = "basic"
+
+[key.kind]
+kind = "segmented"
+
+[key.kind.v]
+variants = ["on_device", "local_network", "anywhere"]
+
+[key.labels]
+on_device = "This computer"
+local_network = "My machines"
+anywhere = "Anywhere"
+
+[key.page]
+kind = "intelligence"
+
+[[key]]
+path = "ai.floor.prompt"
+default = "on_device"
+label = "What you type to the assistant"
+help = "The farthest data of this kind may travel to be answered by a model."
+section = "Models"
+exposure = "basic"
+
+[key.kind]
+kind = "segmented"
+
+[key.kind.v]
+variants = ["on_device", "local_network", "anywhere"]
+
+[key.labels]
+on_device = "This computer"
+local_network = "My machines"
+anywhere = "Anywhere"
+
+[key.page]
+kind = "intelligence"
+
+[[key]]
+path = "ai.floor.public"
+default = "anywhere"
+label = "Public information"
+help = "The farthest data of this kind may travel to be answered by a model."
+section = "Models"
+exposure = "basic"
+
+[key.kind]
+kind = "segmented"
+
+[key.kind.v]
+variants = ["on_device", "local_network", "anywhere"]
+
+[key.labels]
+on_device = "This computer"
+local_network = "My machines"
+anywhere = "Anywhere"
+
+[key.page]
+kind = "intelligence"
+
+[[key]]
+path = "ai.auto.mode"
+default = "warm_first"
+label = "Automatic chooses"
+help = "How a kind set to Automatic picks among the models it is allowed."
+section = "Automatic"
+exposure = "advanced"
+
+[key.kind]
+kind = "fixed"
+
+[key.kind.v]
+variant = "warm_first"
+
+[key.labels]
+warm_first = "One already loaded first"
+
+[key.page]
+kind = "intelligence"
+
+[[key]]
+path = "ai.auto.allow_evict"
+default = "idle_only"
+label = "Unload for Automatic"
+help = "Whether Automatic may unload a model that is idle to load another."
+section = "Automatic"
+exposure = "advanced"
+
+[key.kind]
+kind = "toggle"
+
+[key.kind.v]
+variants = ["never", "idle_only"]
+
+[key.labels]
+never = "Never"
+idle_only = "When idle"
+
+[key.page]
+kind = "intelligence"
+
+[[key]]
+path = "ai.auto.show_reason"
+default = "on"
+label = "Say why"
+help = "Whether each answer says why Automatic chose its model."
+section = "Automatic"
+exposure = "advanced"
+
+[key.kind]
+kind = "toggle"
+
+[key.kind.v]
+variants = ["off", "on"]
+
+[key.labels]
+on = "On"
+off = "Off"
+
+[key.page]
+kind = "intelligence"
+
+[[key]]
+path = "ai.spend.warn_permille"
+default = 800
+label = "Warn at"
+help = "The share of a spending cap at which a request is warned about, in thousandths."
+section = "Automatic"
+exposure = "advanced"
+
+[key.kind]
+kind = "bounded"
+
+[key.kind.v]
+min = 1
+max = 1000
+unit = "permille"
+
+[key.page]
+kind = "intelligence"
 
 [[key]]
 path = "ai.structured.open_text"

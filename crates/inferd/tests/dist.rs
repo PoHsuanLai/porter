@@ -1,7 +1,9 @@
 //! The files under `dist/` agree with the code: the activation file and the unit name the bus name
 //! the daemon claims, and the sample configuration reads.
 
+use ds_settings::schema::{AgentSetting, Exposure, KeyKind, KeySpec, Page, Schema};
 use inferd::config::InferdConfig;
+use inferd::settings::{self, CLASSES, slug_of};
 use std::path::PathBuf;
 
 fn dist(file: &str) -> String {
@@ -52,71 +54,251 @@ fn the_sample_configuration_reads_and_names_the_callers_the_design_calls_for() {
     }
 }
 
-fn schema_keys() -> Vec<toml::Table> {
-    let schema: toml::Table = dist("inferd.settings.toml")
-        .parse()
-        .expect("the schema is TOML");
-    schema["key"]
-        .as_array()
-        .expect("key tables")
-        .iter()
-        .map(|key| key.as_table().expect("a table").clone())
-        .collect()
+fn schema() -> Schema {
+    Schema::from_toml(&dist("inferd.settings.toml")).expect("the schema parses and is hands-off")
+}
+
+fn schema_keys() -> Vec<KeySpec> {
+    schema().key
+}
+
+/// What a configuration makes inferd do, as far as these rows go: the policy as it answers for
+/// every class, the tier map, Automatic, the spend line and the structured limits.
+fn effect(text: &str) -> (String, Vec<String>) {
+    let config = InferdConfig::from_toml(text).unwrap_or_else(|e| panic!("{text}: {e}"));
+    let resolved = settings::resolve(&config);
+    let s = resolved.settings;
+    let floors: Vec<_> = CLASSES.iter().map(|class| s.policy.floor(*class)).collect();
+    let limits = config.ai.resolve().limits;
+    let mut rejected = resolved.rejected;
+    rejected.extend(config.ai.resolve().rejected.iter().map(|p| (*p).to_owned()));
+    (
+        format!(
+            "{:?} {floors:?} {:?} {:?} {:?} {limits:?}",
+            s.policy.local_only, s.tiers, s.auto, s.spend
+        ),
+        rejected,
+    )
+}
+
+fn file_with(path: &str, value: toml::Value) -> String {
+    let mut table = toml::Table::new();
+    let mut at = &mut table;
+    let parts: Vec<&str> = path.split('.').collect();
+    for part in &parts[..parts.len() - 1] {
+        at = at
+            .entry((*part).to_owned())
+            .or_insert_with(|| toml::Value::Table(toml::Table::new()))
+            .as_table_mut()
+            .expect("table");
+    }
+    at.insert(parts[parts.len() - 1].to_owned(), value);
+    toml::to_string(&table).expect("toml")
 }
 
 #[test]
-fn the_schema_rows_are_the_four_structured_rows_with_the_codes_defaults_and_ranges() {
+fn the_schema_holds_the_rows_the_design_names_and_each_is_a_page_row_of_intelligence() {
+    let keys = schema_keys();
+    let paths: Vec<&str> = keys.iter().map(|k| k.path.0.as_str()).collect();
+    let mut want: Vec<String> = ["ai.local_only"].map(String::from).to_vec();
+    want.extend(CLASSES.iter().map(|c| format!("ai.floor.{}", slug_of(c))));
+    want.extend(
+        [
+            "ai.auto.mode",
+            "ai.auto.allow_evict",
+            "ai.auto.show_reason",
+            "ai.spend.warn_permille",
+            "ai.structured.open_text",
+            "ai.structured.open_list",
+            "ai.structured.depth",
+            "ai.structured.repair_budget",
+        ]
+        .map(String::from),
+    );
+    assert_eq!(paths, want);
+    for key in &keys {
+        assert_eq!(key.page, Page::Intelligence, "{}", key.path.0);
+        let want_section = match key.path.0.as_str() {
+            p if p.starts_with("ai.structured.") => "Structured output",
+            p if p.starts_with("ai.auto.") || p.starts_with("ai.spend.") => "Automatic",
+            _ => "Models",
+        };
+        assert_eq!(key.section.0, want_section, "{}", key.path.0);
+        let advanced = want_section != "Models";
+        assert_eq!(
+            key.exposure,
+            if advanced {
+                Exposure::Advanced
+            } else {
+                Exposure::Basic
+            },
+            "{}",
+            key.path.0
+        );
+    }
+}
+
+#[test]
+fn the_structured_rows_keep_the_codes_defaults_and_ranges() {
     use inferd::structured::limits::{DEPTH, OPEN_LIST, OPEN_TEXT, REPAIR_BUDGET};
     let keys = schema_keys();
-    let rows = [OPEN_TEXT, OPEN_LIST, DEPTH, REPAIR_BUDGET];
-    assert_eq!(keys.len(), rows.len());
-    for (key, row) in keys.iter().zip(rows) {
-        assert_eq!(key["path"].as_str(), Some(row.path));
-        assert_eq!(key["default"].as_integer(), Some(i64::from(row.default)));
-        let kind = key["kind"]["v"].as_table().expect("bounded");
+    for row in [OPEN_TEXT, OPEN_LIST, DEPTH, REPAIR_BUDGET] {
+        let key = keys.iter().find(|k| k.path.0 == row.path).expect(row.path);
+        assert_eq!(key.default, toml::Value::Integer(i64::from(row.default)));
         assert_eq!(
-            kind["min"].as_integer(),
-            Some(i64::from(*row.range.start()))
+            key.kind,
+            KeyKind::Bounded {
+                min: i64::from(*row.range.start()),
+                max: i64::from(*row.range.end()),
+                unit: key.kind_unit(),
+            }
         );
-        assert_eq!(kind["max"].as_integer(), Some(i64::from(*row.range.end())));
-        assert_eq!(key["page"]["kind"].as_str(), Some("intelligence"));
     }
+}
+
+trait Unit {
+    fn kind_unit(&self) -> Option<String>;
+}
+impl Unit for KeySpec {
+    fn kind_unit(&self) -> Option<String> {
+        match &self.kind {
+            KeyKind::Bounded { unit, .. } => unit.clone(),
+            _ => None,
+        }
+    }
+}
+
+#[test]
+fn the_spend_row_is_bounded_one_to_a_thousand_and_defaults_to_the_codes_line() {
+    let keys = schema_keys();
+    let key = keys
+        .iter()
+        .find(|k| k.path.0 == settings::SPEND_WARN)
+        .expect("row");
+    assert_eq!(
+        key.kind,
+        KeyKind::Bounded {
+            min: i64::from(*settings::SPEND_WARN_RANGE.start()),
+            max: i64::from(*settings::SPEND_WARN_RANGE.end()),
+            unit: key.kind_unit(),
+        }
+    );
+    assert_eq!(
+        key.default,
+        toml::Value::Integer(i64::from(settings::SPEND_WARN_DEFAULT))
+    );
 }
 
 #[test]
 fn every_ai_row_is_hands_off() {
     // design/22 section 9.7: `ai.` is in AGENT_NEVER_SETTABLE; a row marked settable would be
-    // refused by the schema loader.
+    // refused by the schema loader (and `schema()` above parses through it).
     for key in schema_keys() {
-        assert!(key["path"].as_str().expect("path").starts_with("ai."));
-        assert_eq!(key.get("agent"), None, "{}", key["path"]);
+        assert!(key.path.0.starts_with("ai."));
+        assert_eq!(key.agent, AgentSetting::HandsOff, "{}", key.path.0);
+    }
+    assert!(
+        !dist("inferd.settings.toml")
+            .lines()
+            .any(|line| line.trim_start().starts_with("agent"))
+    );
+}
+
+/// A value of the row other than its default, when it has one.
+fn other_than_default(key: &KeySpec) -> Option<toml::Value> {
+    let text = |v: &str| toml::Value::String(v.to_owned());
+    match &key.kind {
+        KeyKind::Toggle { variants } => variants
+            .iter()
+            .find(|v| toml::Value::String((*v).clone()) != key.default)
+            .map(|v| text(v)),
+        KeyKind::Segmented { variants } | KeyKind::Menu { variants } => variants
+            .iter()
+            .find(|v| toml::Value::String((*v).clone()) != key.default)
+            .map(|v| text(v)),
+        KeyKind::Bounded { min, max, .. } => Some(toml::Value::Integer(
+            if key.default == toml::Value::Integer(*min) {
+                *max
+            } else {
+                *min
+            },
+        )),
+        _ => None,
     }
 }
 
 #[test]
-fn the_schema_defaults_written_as_a_file_resolve_to_the_defaults() {
-    let mut structured = toml::Table::new();
+fn every_row_of_the_schema_is_read_by_inferd_at_its_path_and_changes_what_it_does() {
+    let nothing = effect("");
+    assert_eq!(nothing.1, Vec::<String>::new());
     for key in schema_keys() {
-        let name = key["path"]
-            .as_str()
-            .expect("path")
-            .rsplit('.')
-            .next()
-            .expect("name");
-        structured.insert(name.to_owned(), key["default"].clone());
+        let path = key.path.0.as_str();
+        // Its default, written at its path, is accepted and is what no file says.
+        let said_default = effect(&file_with(path, key.default.clone()));
+        assert_eq!(said_default.1, Vec::<String>::new(), "{path} default");
+        assert_eq!(
+            said_default.0, nothing.0,
+            "{path}: the schema default is the code's"
+        );
+        match other_than_default(&key) {
+            Some(value) => {
+                let changed = effect(&file_with(path, value.clone()));
+                assert_eq!(changed.1, Vec::<String>::new(), "{path} = {value}");
+                assert_ne!(changed.0, nothing.0, "{path} = {value} changes nothing");
+            }
+            None => {
+                // A row with one value (`ai.auto.mode`): inferd still reads it at its path, and
+                // names it when it holds anything else.
+                let refused = effect(&file_with(path, toml::Value::String("bogus".into())));
+                assert_eq!(refused.1, vec![path.to_owned()], "{path}");
+            }
+        }
     }
-    let text = toml::to_string(&toml::Table::from_iter([(
-        "ai".to_owned(),
-        toml::Value::Table(toml::Table::from_iter([(
-            "structured".to_owned(),
-            toml::Value::Table(structured),
-        )])),
-    )]))
-    .expect("toml");
-    let config = InferdConfig::from_toml(&text).expect("reads");
-    let resolved = config.ai.resolve();
-    assert_eq!(resolved.limits, inferd::structured::Limits::default());
-    assert!(resolved.rejected.is_empty());
+}
+
+#[test]
+fn every_model_row_the_live_module_can_describe_is_read_at_its_path() {
+    let nothing = effect("");
+    for kind in settings::KINDS {
+        for tier in settings::TIERS {
+            let path = settings::model_path(kind, tier);
+            for value in ["auto", "local/some-model"] {
+                let got = effect(&file_with(&path, toml::Value::String(value.into())));
+                assert_eq!(got.1, Vec::<String>::new(), "{path} = {value}");
+                assert_ne!(got.0, nothing.0, "{path} = {value}");
+            }
+            let empty = effect(&file_with(&path, toml::Value::String(String::new())));
+            assert_eq!(empty.0, nothing.0, "{path}: empty is the catalogue default");
+        }
+    }
+}
+
+#[test]
+fn the_sample_configuration_names_the_settings_app_and_its_example_rows_are_accepted() {
+    let text = dist("inferd.toml");
+    let config = InferdConfig::from_toml(&text).expect("the sample reads");
+    let app = porter_core::AppName::parse("org.quire.Settings").expect("name");
+    assert_eq!(
+        config.callers.rows().role_of(&app),
+        porter_dbus::CallerRole::Settings
+    );
+    // The commented examples of the ai rows, uncommented, are accepted as they stand.
+    let start = text.find("# [ai]\n").expect("the ai example");
+    let end = text.find("# The old shape").expect("its end");
+    let example: String = text[start..end]
+        .lines()
+        .filter_map(|line| line.strip_prefix("# "))
+        .filter(|line| {
+            line.starts_with('[')
+                || line
+                    .split_once(" = ")
+                    .is_some_and(|(key, _)| key.chars().all(|c| c.is_ascii_lowercase() || c == '_'))
+        })
+        .map(|line| format!("{line}\n"))
+        .collect();
+    let got = effect(&example);
+    assert_eq!(got.1, Vec::<String>::new(), "{example}");
+    assert_ne!(got, effect(""), "the example says something");
 }
 
 #[test]

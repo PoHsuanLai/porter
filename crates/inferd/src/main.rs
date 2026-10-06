@@ -1,5 +1,5 @@
 //! inferd: the AI broker (design/31 §4.1, §5.5): serves `org.quire.Inference1` on the session
-//! bus. It reads `inferd.toml` (engine programs, policy, tier map, the caller table), the stoker
+//! bus. It reads `inferd.toml` (engine programs, the `ai.*` settings rows, the caller table), the stoker
 //! catalog, and runs engines as child processes of its own (the systemd transient-unit host is
 //! not built). Nothing starts an engine until a session asks for its model.
 
@@ -15,10 +15,16 @@ use inferd::local::build;
 use inferd::peers::{ProcGate, ProcPeers, ProcRoot};
 use inferd::replay::Replays;
 use inferd::service::{Inference, serve_on};
+use inferd::settings::{ConfigFile, InferdSettings, Reload, resolve, serve_settings};
 use inferd::supervise::{Ports, Supervised};
 use std::os::unix::fs::DirBuilderExt;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::Arc;
+use std::time::Duration;
+
+/// How often the daemon looks at its file for a change by someone else.
+const RELOAD_EVERY: Duration = Duration::from_secs(2);
 
 /// porter's AI broker (`org.quire.Inference1`).
 #[derive(Debug, Parser)]
@@ -44,7 +50,8 @@ fn read_config(path: &std::path::Path) -> Result<InferdConfig, String> {
 
 async fn run(args: Args) -> Result<(), String> {
     let dirs = Dirs::from_env().map_err(|e| e.to_string())?;
-    let config = read_config(&args.config.clone().unwrap_or_else(|| dirs.config.clone()))?;
+    let config_path = args.config.clone().unwrap_or_else(|| dirs.config.clone());
+    let config = read_config(&config_path)?;
     let catalog = read_catalog(&dirs.catalog);
     for skipped in &catalog.skipped {
         eprintln!("inferd: catalog: {}: {}", skipped.what, skipped.why);
@@ -78,12 +85,19 @@ async fn run(args: Args) -> Result<(), String> {
     for path in &structured.rejected {
         eprintln!("inferd: {path}: out of range; using its default");
     }
-    let auto = config.ai.auto.resolve();
-    for path in &auto.rejected {
-        eprintln!("inferd: {path}: unknown value; using its default");
+    let settings = resolve(&config);
+    for path in &settings.rejected {
+        eprintln!("inferd: {path}: not accepted; using its default");
     }
-    let engines = Engines::new(models, supervised, config.policy(), config.tiers.clone())
-        .with_auto(auto.policy);
+    let engines = Engines::new(
+        models,
+        supervised,
+        settings.settings.policy.clone(),
+        settings.settings.tiers.clone(),
+    )
+    .with_settings(settings.settings);
+    let reload = Reload::new(ConfigFile::new(config_path), engines.clone());
+    reload.clone().watch(RELOAD_EVERY);
     let connection = zbus::connection::Builder::session()
         .map_err(|e| e.to_string())?
         .build()
@@ -96,10 +110,23 @@ async fn run(args: Args) -> Result<(), String> {
     if let Some(line) = root.notice() {
         eprintln!("{line}");
     }
-    let peers = ProcPeers::with_root(connection.clone(), config.callers.clone(), &root);
-    let daemon = Inference::new(engines, peers, JsonLines::new(dirs.audit), SystemClock)
-        .limited(structured.limits);
+    let peers = Arc::new(ProcPeers::with_root(
+        connection.clone(),
+        config.callers.clone(),
+        &root,
+    ));
+    let daemon = Inference::new(
+        engines,
+        Arc::clone(&peers),
+        JsonLines::new(dirs.audit),
+        SystemClock,
+    )
+    .limited(structured.limits)
+    .reloading(reload.clone());
     serve_on(&connection, daemon)
+        .await
+        .map_err(|e| e.to_string())?;
+    serve_settings(&connection, InferdSettings::new(peers, reload))
         .await
         .map_err(|e| e.to_string())?;
     std::future::pending::<()>().await;

@@ -72,10 +72,24 @@ pub struct StructuredConfig {
     pub repair_budget: Option<i64>,
 }
 
-/// The `[ai]` table: the settings rows of the `ai` domain that inferd reads and that are not the
-/// policy or the tier map (those keep their own tables).
+/// The `[ai]` table: every settings row of the `ai` domain at its settings path, as a settings
+/// writer lays a file out (`ai.local_only`, `ai.floor.<class>`, `ai.model.<kind>.<tier>`,
+/// `ai.auto.*`, `ai.spend.*`, `ai.structured.*`). Values are the rows' slugs, resolved (and
+/// refused field by field) in `settings`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AiConfig {
+    /// `ai.local_only`: `on` or `off`.
+    #[serde(default)]
+    pub local_only: Option<String>,
+    /// `ai.floor.<class>`: `on_device`, `local_network` or `anywhere`, by class slug.
+    #[serde(default)]
+    pub floor: std::collections::BTreeMap<String, String>,
+    /// `ai.model.<kind>.<tier>`: `""`, `auto` or `<account>/<model>`, by kind slug, then tier.
+    #[serde(default)]
+    pub model: std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>,
+    /// `ai.spend.*`.
+    #[serde(default)]
+    pub spend: crate::settings::SpendConfig,
     /// `ai.structured.*`.
     #[serde(default)]
     pub structured: StructuredConfig,

@@ -19,6 +19,7 @@ porter-core = { workspace = true }
 cua-action = { workspace = true }
 porter-dbus = { workspace = true }
 porter-infer = { workspace = true }
+ds-settings = { workspace = true }
 model-provider = { workspace = true }
 model-catalog = { workspace = true }
 engine-supervisor = { workspace = true }

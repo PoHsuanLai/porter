@@ -21,18 +21,43 @@
 #                                 # per request, file mode 0600; only on a replay engine, only
 #                                 # for acceptance runs. Never enable it in a shipped config.
 
-# The user's AI policy (settings ai.local_only and ai.floor.<class>); the design's proposed
-# defaults when absent: local-only on, and personal classes (mail, photos, notes, files, contacts,
-# calendar, screen, clipboard, voice, prompt) on this computer.
-# [policy]
+# The settings rows, at the paths the Settings app writes them (the schema is
+# dist/inferd.settings.toml; the model rows are served by inferd itself). inferd reads the file again
+# a moment after it changes, and on Rescan, so an edit needs no restart; a session already open
+# keeps the model it was given. Every row is optional; a value a row does not accept is logged and
+# replaced by the row's default, for that row only.
+#
+# Local-only (on: no request goes to a cloud account) and how far each data class may travel
+# (on_device, local_network, anywhere). The defaults: local-only on, and personal classes (mail,
+# photos, notes, files, contacts, calendar, screen, clipboard, voice, prompt) on this computer.
+# [ai]
 # local_only = "on"
-# floors = [{ class = "mail", floor = "on_device" }]
-
-# The user's model for a kind and tier (settings ai.model.<kind>.<tier>).
-# [[tiers.rows]]
-# kind = "llm"
-# tier = "balanced"
-# model = { account = "local", model = "holo-3.1-4b" }
+# [ai.floor]
+# mail = "on_device"
+# voice = "on_device"
+# prompt = "on_device"
+#
+# The user's model for a kind and tier: "" (the catalogue's choice), "auto" (inferd picks among
+# what is allowed) or "<account>/<model>". Kinds: llm, computer_use, embeddings, speech_in,
+# speech_out, image_gen, rerank; tiers: fast, balanced, best.
+# [ai.model.llm]
+# balanced = "local/holo-3.1-4b"
+# fast = "auto"
+#
+# What Automatic does (ai.auto.*): warm_first is its only mode; allow_evict is "never" or
+# "idle_only"; show_reason is "on" or "off".
+# [ai.auto]
+# mode = "warm_first"
+# allow_evict = "idle_only"
+# show_reason = "on"
+#
+# The share of a spending cap at which a request is warned about, 1 to 1000 (ai.spend.warn_permille).
+# [ai.spend]
+# warn_permille = 800
+#
+# The old shape, still read: a [policy] table (local_only, floors) and [[tiers.rows]] (kind, tier,
+# model = { account, model }). The rows above win over it where both say something. It goes when
+# FINDINGS "inferd.toml: the old [policy] and [tiers] tables" says.
 
 # An embedding model's vector length, limits and prefixes are the catalog entry's `embed` table
 # (stoker catalog file of the model), not this file: memoryd asks for nomic-embed-text v1.5
@@ -43,6 +68,8 @@
 # without a line here. cuad is the only caller that may open a computer-use session.
 [callers]
 cua = ["cuad.service"]
+# The Settings app: the only caller of inferd's settings module (the model picker).
+settings = ["org.quire.Settings"]
 [callers.apps]
 "org.quire.Memory" = ["memoryd.service"]
 "org.quire.Intents" = ["intentd.service"]
@@ -50,7 +77,7 @@ cua = ["cuad.service"]
 "org.quire.Reader" = ["readerd.service"]
 
 # Structured-output limits (settings ai.structured.*; each row's range is in dist/inferd.settings.toml).
-# A value out of range is logged and replaced by the default, for that field only.
+# A value out of range is logged and replaced by the default, for that field only. Read at start.
 # [ai.structured]
 # open_text = 4096
 # open_list = 256
