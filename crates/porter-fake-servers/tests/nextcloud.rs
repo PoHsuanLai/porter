@@ -310,3 +310,116 @@ async fn rewrite_points_the_shipped_nextcloud_rows_at_the_fake() {
     );
     assert_eq!(rewritten.capabilities.len(), spec.capabilities.len());
 }
+
+/// A PROPFIND at depth `depth` asking for `props` (each an element of its own namespace).
+fn propfind(path: &str, depth: &str, props: &str, password: &str) -> Request {
+    let body = format!(
+        r#"<d:propfind xmlns:d="DAV:" xmlns:cal="urn:ietf:params:xml:ns:caldav" xmlns:card="urn:ietf:params:xml:ns:carddav" xmlns:ic="http://apple.com/ns/ical/"><d:prop>{props}</d:prop></d:propfind>"#
+    );
+    dav("PROPFIND", path, password)
+        .with_header("Depth", depth)
+        .with_body(body.into_bytes())
+}
+
+#[tokio::test]
+async fn discovery_walks_principal_home_sets_and_collections_with_names_and_colours() {
+    let (running, address) = nextcloud().await;
+    running.seed_app_password("pw");
+    running.add_calendar("work", "VEVENT", "Work & Play", "#ff0000FF");
+    running.add_addressbook("friends", "Friends");
+    running.set_collection_meta("personal", "Personal", Some("#0082c9FF"));
+
+    // The endpoint names the principal.
+    let root = call(
+        &address,
+        propfind("/remote.php/dav/", "0", "<d:current-user-principal/>", "pw"),
+    )
+    .await;
+    assert_eq!(root.status, 207);
+    assert_eq!(
+        common::hrefs(&root).get(1).map(String::as_str),
+        Some("/remote.php/dav/principals/users/alice/")
+    );
+    // The principal names both home sets.
+    let principal = call(
+        &address,
+        propfind(
+            "/remote.php/dav/principals/users/alice/",
+            "0",
+            "<cal:calendar-home-set/><card:addressbook-home-set/>",
+            "pw",
+        ),
+    )
+    .await;
+    let homes = common::hrefs(&principal);
+    assert!(
+        homes.contains(&"/remote.php/dav/calendars/alice/".to_owned()),
+        "{homes:?}"
+    );
+    assert!(
+        homes.contains(&"/remote.php/dav/addressbooks/users/alice/".to_owned()),
+        "{homes:?}"
+    );
+    // The calendar home lists its calendars with their names and colours.
+    let listing = call(
+        &address,
+        propfind(
+            "/remote.php/dav/calendars/alice/",
+            "1",
+            "<d:resourcetype/><d:displayname/><ic:calendar-color/>",
+            "pw",
+        ),
+    )
+    .await;
+    let text = listing.text();
+    assert!(
+        text.contains("<d:displayname>Work &amp; Play</d:displayname>"),
+        "{text}"
+    );
+    assert!(
+        text.contains("<ic:calendar-color>#ff0000FF</ic:calendar-color>"),
+        "{text}"
+    );
+    assert!(
+        text.contains("<d:displayname>Personal</d:displayname>"),
+        "{text}"
+    );
+    assert!(
+        text.contains("<ic:calendar-color>#0082c9FF</ic:calendar-color>"),
+        "{text}"
+    );
+    // The address book home lists its books, and a book has no colour.
+    let books = call(
+        &address,
+        propfind(
+            "/remote.php/dav/addressbooks/users/alice/",
+            "1",
+            "<d:resourcetype/><d:displayname/><ic:calendar-color/>",
+            "pw",
+        ),
+    )
+    .await;
+    let text = books.text();
+    assert!(
+        text.contains("<d:displayname>Friends</d:displayname>"),
+        "{text}"
+    );
+    assert!(!text.contains("calendar-color>"), "{text}");
+    assert!(text.contains("<card:addressbook/>"), "{text}");
+
+    // Items and collections come and go.
+    running.put_item("work", "w.ics", "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n");
+    running.delete_item("work", "w.ics");
+    running.delete_collection("work");
+    let gone = call(
+        &address,
+        propfind(
+            "/remote.php/dav/calendars/alice/work/",
+            "0",
+            "<d:resourcetype/>",
+            "pw",
+        ),
+    )
+    .await;
+    assert_eq!(gone.status, 404);
+}

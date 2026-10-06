@@ -38,10 +38,33 @@ pub struct Quota {
     pub available: i64,
 }
 
+/// What a collection says about itself besides its path: the name and colour a calendar app
+/// shows (`DAV:displayname`, Apple's `calendar-color`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CollectionMeta {
+    /// `DAV:displayname`; the last path segment when `None`.
+    pub displayname: Option<String>,
+    /// `http://apple.com/ns/ical/calendar-color`, as the server writes it (`#0082c9FF`).
+    pub color: Option<String>,
+}
+
+/// Where a user's principal and home sets are (what discovery walks: RFC 5397, 4791, 6352).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Principal {
+    /// The principal's path.
+    pub path: String,
+    /// The calendar home set's path.
+    pub calendar_home: String,
+    /// The address book home set's path.
+    pub addressbook_home: String,
+}
+
 /// The tree and its change log.
 #[derive(Debug, Clone)]
 pub struct Tree {
     nodes: BTreeMap<String, Node>,
+    meta: BTreeMap<String, CollectionMeta>,
+    principal: Option<Principal>,
     deleted: Vec<(String, u64)>,
     seq: u64,
     oldest_valid: u64,
@@ -89,7 +112,7 @@ impl Default for Behaviour {
 
 const NAMESPACES: &str = "xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xmlns:oc=\"http://owncloud.org/ns\" \
     xmlns:nc=\"http://nextcloud.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" \
-    xmlns:card=\"urn:ietf:params:xml:ns:carddav\" xmlns:cs=\"http://calendarserver.org/ns/\"";
+    xmlns:card=\"urn:ietf:params:xml:ns:carddav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:ic=\"http://apple.com/ns/ical/\"";
 
 fn escape(text: &str) -> String {
     text.replace('&', "&amp;")
@@ -114,6 +137,8 @@ impl Tree {
     pub fn with_collections(collections: &[(&str, Kind)]) -> Self {
         let mut tree = Self {
             nodes: BTreeMap::new(),
+            meta: BTreeMap::new(),
+            principal: None,
             deleted: Vec::new(),
             seq: 1,
             oldest_valid: 0,
@@ -157,7 +182,36 @@ impl Tree {
         ];
         let borrowed: Vec<(&str, Kind)> =
             paths.iter().map(|(p, k)| (p.as_str(), k.clone())).collect();
-        Self::with_collections(&borrowed)
+        let mut tree = Self::with_collections(&borrowed);
+        let principal = format!("{dav}/principals/users/{user}");
+        for parent in [
+            format!("{dav}/principals"),
+            format!("{dav}/principals/users"),
+            principal.clone(),
+        ] {
+            tree.insert(&parent, Kind::Container, Vec::new(), "httpd/unix-directory");
+        }
+        tree.principal = Some(Principal {
+            path: principal,
+            calendar_home: format!("{dav}/calendars/{user}"),
+            addressbook_home: format!("{dav}/addressbooks/users/{user}"),
+        });
+        tree
+    }
+
+    /// Makes a calendar or address book at `path` (its parent must exist).
+    pub fn make_collection(&mut self, path: &str, kind: Kind) -> Result<(), PutError> {
+        if self.nodes.contains_key(path) {
+            return Err(PutError::Exists);
+        }
+        self.nodes.get(parent_of(path)).ok_or(PutError::NoParent)?;
+        self.insert(path, kind, Vec::new(), "httpd/unix-directory");
+        Ok(())
+    }
+
+    /// Sets what the collection at `path` calls itself.
+    pub fn set_meta(&mut self, path: &str, meta: CollectionMeta) {
+        self.meta.insert(path.to_owned(), meta);
     }
 
     fn insert(&mut self, path: &str, kind: Kind, body: Vec<u8>, content_type: &str) {
@@ -355,12 +409,28 @@ impl Tree {
             out.push_str(&format!("<oc:fileid>{}</oc:fileid>", node.id));
         }
         if collection {
-            let name = path.rsplit('/').next().unwrap_or("");
+            let meta = self.meta.get(path);
+            let name = meta
+                .and_then(|m| m.displayname.as_deref())
+                .unwrap_or_else(|| path.rsplit('/').next().unwrap_or(""));
             out.push_str(&if wants("displayname") {
                 format!("<d:displayname>{}</d:displayname>", escape(name))
             } else {
                 String::new()
             });
+            if let (Some(color), Kind::Calendar(_), true) = (
+                meta.and_then(|m| m.color.as_deref()),
+                &node.kind,
+                wants("calendar-color"),
+            ) {
+                out.push_str(&format!(
+                    "<ic:calendar-color>{}</ic:calendar-color>",
+                    escape(color)
+                ));
+            }
+            if let Some(principal) = &self.principal {
+                out.push_str(&self.principal_props(path, principal, requested));
+            }
             if wants("sync-token") {
                 out.push_str(&format!(
                     "<d:sync-token>{}</d:sync-token>",
@@ -402,6 +472,33 @@ impl Tree {
                 out.push_str(&format!(
                     "<d:getcontenttype>{}</d:getcontenttype>",
                     node.content_type
+                ));
+            }
+        }
+        out
+    }
+
+    /// `current-user-principal` on every collection, the home sets on the principal itself.
+    fn principal_props(&self, path: &str, principal: &Principal, requested: &str) -> String {
+        let asked = |name: &str| requested.contains(name);
+        let mut out = String::new();
+        if asked("current-user-principal") {
+            out.push_str(&format!(
+                "<d:current-user-principal><d:href>{}/</d:href></d:current-user-principal>",
+                escape(&principal.path)
+            ));
+        }
+        if path == principal.path {
+            if asked("calendar-home-set") {
+                out.push_str(&format!(
+                    "<cal:calendar-home-set><d:href>{}/</d:href></cal:calendar-home-set>",
+                    escape(&principal.calendar_home)
+                ));
+            }
+            if asked("addressbook-home-set") {
+                out.push_str(&format!(
+                    "<card:addressbook-home-set><d:href>{}/</d:href></card:addressbook-home-set>",
+                    escape(&principal.addressbook_home)
                 ));
             }
         }

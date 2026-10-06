@@ -148,3 +148,14 @@ async fn events_reach_subscribers_and_nobody_listening_is_fine() {
         }
     ));
 }
+
+#[test]
+fn forgetting_one_dataset_stops_it_and_leaves_the_others() {
+    let hub = Hub::default();
+    let gone = hub.register(name("a1/pim_cal_work"), Access::default());
+    let kept = hub.register(name("a1/pim_cal_personal"), Access::default());
+    assert!(hub.forget(&name("a1/pim_cal_work")));
+    assert!(!hub.forget(&name("a1/pim_cal_work")), "already gone");
+    assert!(!gone.is_registered());
+    assert!(kept.is_registered());
+}

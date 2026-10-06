@@ -6,6 +6,7 @@
 pub mod callers_file;
 pub mod clock;
 pub mod dataset;
+pub mod datasets;
 pub mod driver;
 pub mod engine;
 pub mod journal;

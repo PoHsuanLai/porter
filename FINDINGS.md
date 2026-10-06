@@ -48,13 +48,18 @@ Each row names the lane of the accounts program (porter PLAN §6) that removes i
 | porter-infer `pick` / `admit`: the P1 request-shape rules (tools, images, structured output against what a model declares) and the `context_needed` pre-check are not applied | the routing P1 lane (research-routing-fit) |
 | porter-infer `pick`: no reviewer family filter (a reviewer pick from another family than the author's) | the routing P1 lane |
 | porter-infer `Why::FallbackFrom` is defined but unused: `if_unavailable = "auto"` does not fall back yet | the routing P1 lane |
-| syncd: the daemon registers no replica and no dataset | `Datasets` answers an empty list and every name the refusal `NoFittingAccount` until W6e (PimMirror) and W6f (Photos) register datasets and choose their account and folder; `syncd::webdav::webdav_replica` builds the WebDAV replica (W6b, done), W6c (graph) and W6d (storage families) add theirs; `syncd`'s main builds none |
+| syncd: only the PIM mirror is registered; no Photos, Files or graph/storage dataset | `Datasets` lists what the PIM supervisor (W6e) runs and answers the refusal `NoFittingAccount` for any other name; `syncd::webdav::webdav_replica` builds the WebDAV replica (W6b, done), W6c (graph) and W6d (storage families) add theirs and W6f (Photos) its dataset and folder |
 | storage-webdav: the tree walk lists every folder on every poll (PROPFIND depth 1 each, no pruning by folder etag) | Nextcloud propagates a change to every parent etag, so a walk could skip unchanged folders; a generic DAV share does not, and the replica cannot tell which it has. Closes with a `Propagation` probe (compare a folder's etag across a write of ours) or a setting, when a photo library makes a poll slow |
 | storage-webdav: a tree-walk anchor and the listing a sync-collection removal needs are in memory | after a daemon restart a tree anchor is `AnchorExpired`, and a sync anchor with a removal in it is too; the engine lists again and reconciles by version, so nothing known is fetched or uploaded again. Closes if listing cost shows: persist the listing in the journal (a `Replica` cannot reach it; an interface ask) |
 | storage-webdav: `hashes: None` and whole-body transfers | WebDAV servers report SHA-1 or MD5 (Nextcloud `oc:checksums`) and the engine compares SHA-256 only, so an item whose etag changed is compared by fetching it; `Http` bodies are whole vectors (`StreamLimits::max_body`, 256 MiB), so a larger file needs ranged fetches by the engine or chunked upload (`chunked_upload` is `Absent`). Closes with Nextcloud's `uploads` chunking and checksums on upload, with W6f's photo sizes |
 | storage-webdav: the fixtures are written from Nextcloud's and Sabre's documented answers, not recorded from a live server; the fake serves sync-collection on files although real Nextcloud does not | the owner's live Nextcloud smoke; `Behaviour::NotImplemented` + `Propagation::Up` is the Nextcloud-files shape |
 | storage-webdav: a tombstone's version is the constant `deleted`, and a PUT whose answer has no `ETag` and no readable PROPFIND returns the empty version | a server that keeps a version for deletions, or one that sends no `ETag`; the next read settles the empty version by content |
-| syncd: a dataset's `store` is not atomic with the engine's pre-store check | the engine re-reads the local file against the journal's fingerprint just before it overwrites (`moved_since_scan`), but a user edit in the instant between that read and `Dataset::store` is the dataset's to guard (write to a temp file and rename); W6e and W6f implement `store` that way |
+| syncd: a dataset's `store` is not atomic with the engine's pre-store check | the engine re-reads the local file against the journal's fingerprint just before it overwrites (`moved_since_scan`), but a user edit in the instant between that read and `Dataset::store` is the dataset's to guard (write to a temp file and rename); `PimMirror` (W6e) does, W6f implements `store` that way |
+| syncd PIM: no flow gives syncd a Calendar or Contacts grant | the supervisor mirrors an account only when syncd already holds a grant for it (`PimGrants`, `ClientGrants` over `Accounts::find`; a consent sheet needs a parent window and a host to draw it, which a daemon lacks). Tests seed the grants; today the person would have to make them in Settings. Closes with W3e (the sheet host) plus a Settings action "Sync calendars and contacts to this computer" (or a first-run `Choose` from syncd): W3e / the detent accounts pane |
+| syncd PIM: the engine has no read-only mode, so `PimMirror` fakes one | `Dataset` has no direction and the engine always scans and pushes, so the mirror reports what it stored, never what is on disk. Small items (<= 256 KiB, 32 MiB in all) are kept in memory and written back every scan; a larger item edited locally stays edited until the server next changes it (a stored conflict, no overwrite) or syncd restarts (`PimMirror::open` queues every damaged or missing file to be fetched again). Closes with an interface ask to syncd's owner: `Dataset::direction() -> Direction::{TwoWay, PullOnly}` with the engine skipping `record_local` and `push` and `moved_since_scan` for `PullOnly` (diff in the lane w6e-pim report) |
+| syncd PIM: a same-named calendar and address book of one account share one vdir directory | `<account>/<segment>`, the files have different extensions and each mirror only touches its own, but retiring one (the server deleted it, the grant was withdrawn) removes the whole directory; closes with a kind suffix on the clash, W6e follow-up |
+| syncd PIM: collections are found again every ten minutes, items every poll (sync-collection, else an etag walk) | a new, renamed or recoloured calendar appears within `PimConfig::rescan`; no CTag shortcut and no push; tasks calendars (VTODO) are mirrored like any calendar. Closes if the delay shows |
+| syncd PIM: collections are on the endpoint's origin only | the relay dials the endpoint's origin; a home set on another host (rare; iCloud shards) is an `Unreadable` discovery. Closes with the iCloud provider lane (W6g) |
 | syncd: `Engine::resolve` (KeepLocal, KeepRemote) has no D-Bus method | `Sync1` is frozen (four methods); the owning app resolves through a method a later interface lane adds (see "Interface asks from W6a"); the journal and engine side is built and tested |
 | syncd: the network seam (`watch::Receiver<Network>`) has no NetworkManager reader | the daemon's main passes no engines yet; the lane that registers the first replica reads `org.freedesktop.NetworkManager` `Metered` (never in tests) |
 | syncd: SQLite calls run on the async runtime's thread (current_thread in main) | each journal write is one short transaction; move to `spawn_blocking` if a W6f photo import shows stalls |
@@ -817,6 +822,37 @@ daemon. No `todo!()` was left behind (none in syncd before or after).
    added here.
 3. `DatasetKind` has no variant for the PIM mirror (W6e); datasets are `DatasetId` slugs in syncd,
    so nothing is needed unless the owner wants it in the frozen enum.
+
+## Lane w6e-pim (syncd, the PIM mirror)
+
+- `crates/syncd/src/datasets/pim/**`: `PimMirror` (the `Dataset` of one collection: ledger of what
+  it stored, atomic temp-file-and-rename writes, UID file names, the open-time heal), `discover`
+  (endpoint, principal, home set, collections with `displayname` and `calendar-color`, over
+  porter-dav), `plan` (directory names and dataset slugs, clash-proof and order-independent),
+  `relay` (`PimDial`, `pim_http`, `pim_replica`: relays to the endpoint, a replica over the
+  collection's own URL, which `webdav_replica` cannot express), `grants` (`PimGrants`,
+  `ClientGrants`), `mirrors` (`AccountMirrors`: one account's collections as engines and drivers
+  in the hub) and `supervisor` (`PimSupervisor`, `PimConfig`). `main` starts the supervisor.
+- vdir layout, `$XDG_DATA_HOME/porter/vdir/<account>/<collection>/`: `<account>` is
+  `object_segment(account)`, `<collection>` the last segment of the collection's URL made safe;
+  `<uid>.ics` or `<uid>.vcf` (the item's UID when it is a plain name, else the server's file name,
+  else that plus a hash), `displayname`, `color` (calendars only). Sync1 names a collection
+  `<account>/pim_cal_<dir>` or `<account>/pim_card_<dir>`; its journal is
+  `$XDG_STATE_HOME/porter/sync/<account>/<slug>.sqlite`.
+- A grant that disappears (revoked, account removed) stops the account's mirrors and deletes
+  their directories and journals; an accountd that cannot be asked changes nothing
+  (`AccountdUnavailable`). `AccountRemoved` still wipes the account's directory at once
+  (`removal::wipe`, tested against the live mirrors).
+- Additive outside the owned paths: `Hub::forget` (one dataset), the fake DAV tree's principal,
+  home sets, `Principal`, `CollectionMeta` and `Tree::make_collection`/`set_meta`, and the
+  Nextcloud handle's `add_calendar`, `add_addressbook`, `set_collection_meta`, `delete_item`,
+  `delete_collection`. `syncd` gains `porter-dav` and `porter-client/dbus` as dependencies and
+  `porter-provider` as a dev-dependency.
+- The fake Nextcloud's `expire_sync_tokens` only stales tokens older than the server's counter,
+  so a test that wants an expiry makes a change first.
+- sill: `calendar.sources = auto` needs a new place kind to read `porter/vdir/*/*`; the diff is in
+  the lane report (sill is Whopper's repo). sill reads `.ics` only and ignores the `displayname`
+  and `color` files; the calendar's name in the widget is its directory name.
 
 ## Standing facts
 

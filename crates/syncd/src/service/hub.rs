@@ -197,6 +197,11 @@ impl Hub {
         true
     }
 
+    /// Drops one dataset (its engine stops); whether it was there.
+    pub fn forget(&self, name: &DatasetName) -> bool {
+        self.datasets().remove(name).is_some()
+    }
+
     /// Drops every dataset of `account` (its engines stop): the names that were running.
     pub fn forget_account(&self, account: &AccountDir) -> Vec<DatasetName> {
         let mut datasets = self.datasets();

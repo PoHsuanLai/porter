@@ -2,16 +2,20 @@
 //!
 //! It resolves its paths from the environment, loads the caller tables (the files accountd
 //! reads), serves `org.quire.Sync1` over the hub of running datasets, and listens for accountd's
-//! `AccountRemoved` to wipe an account's journals and mirrors. No replica and no dataset is
-//! registered yet (W6b-f add them), so `Datasets` answers an empty list and every name the
-//! refusal `NoFittingAccount`.
+//! `AccountRemoved` to wipe an account's journals and mirrors. The PIM supervisor (W6e) keeps a
+//! calendar or address book mirror running for every Calendar or Contacts grant syncd holds;
+//! with no grant `Datasets` answers an empty list and every name the refusal
+//! `NoFittingAccount`.
 
 use clap::Parser;
+use porter_client::{Accounts, DbusTransport};
 use porter_dbus::ProcCallers;
 use std::process::ExitCode;
 use std::sync::Arc;
+use syncd::datasets::pim::{ClientGrants, PimConfig, PimSupervisor, Wiring};
 use syncd::paths::{BUILD, Paths, proc_root};
-use syncd::service::Hub;
+use syncd::scheduler::{Network, Settings};
+use syncd::service::{Access, Hub};
 use syncd::{callers_file, removal, service};
 
 /// porter's sync service (`org.quire.Sync1`).
@@ -53,6 +57,19 @@ async fn main() -> ExitCode {
         },
     );
     let hub = Hub::default();
+    // NetworkManager is not read yet: the network is taken as unmetered and up.
+    let (_network_keeps, network) = tokio::sync::watch::channel(Network::Unmetered);
+    let accounts = Arc::new(Accounts::over(DbusTransport::over(connection.clone())));
+    let wiring = Wiring {
+        accounts: Arc::clone(&accounts),
+        hub: hub.clone(),
+        paths: paths.clone(),
+        settings: Settings::default(),
+        network,
+        owners: Access::default(),
+    };
+    let _supervisor =
+        PimSupervisor::new(wiring, ClientGrants::new(accounts), PimConfig::default()).spawn();
     if let Err(why) = removal::watch(&connection, hub.clone(), paths).await {
         return fail(format!("cannot listen for AccountRemoved: {why}"));
     }

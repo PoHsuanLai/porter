@@ -5,7 +5,7 @@
 mod login;
 mod notes;
 
-use crate::dav::{Behaviour, Quota, Tree};
+use crate::dav::{Behaviour, CollectionMeta, Kind, Quota, Tree};
 use crate::http::{Hit, Request, Response, serve};
 use crate::net::{Bind, Listener};
 use crate::seen::{Running, Seen, lock};
@@ -169,6 +169,77 @@ impl NextcloudHandle {
             .tree
             .put(&path, body.as_bytes())
             .expect("the collection exists");
+    }
+
+    /// The path of a collection: a calendar (`personal`) or the address book `contacts`.
+    fn collection_path(&self, collection: &str) -> String {
+        let user = lock(&self.shared.state).user.clone();
+        match collection {
+            "contacts" => format!("/remote.php/dav/addressbooks/users/{user}/contacts"),
+            other if other.starts_with("book-") => {
+                format!("/remote.php/dav/addressbooks/users/{user}/{other}")
+            }
+            other => format!("/remote.php/dav/calendars/{user}/{other}"),
+        }
+    }
+
+    /// Makes a calendar of `component` (`VEVENT`, `VTODO`) called `name` in the URL, shown as
+    /// `displayname` in `color` (`#0082c9FF`).
+    pub fn add_calendar(&self, name: &str, component: &str, displayname: &str, color: &str) {
+        let path = self.collection_path(name);
+        let mut state = lock(&self.shared.state);
+        state
+            .tree
+            .make_collection(&path, Kind::Calendar(component.to_owned()))
+            .expect("the calendar home exists and the calendar is new");
+        state.tree.set_meta(
+            &path,
+            CollectionMeta {
+                displayname: Some(displayname.to_owned()),
+                color: Some(color.to_owned()),
+            },
+        );
+    }
+
+    /// Makes an address book called `book-<name>` in the URL, shown as `displayname`.
+    pub fn add_addressbook(&self, name: &str, displayname: &str) {
+        let path = self.collection_path(&format!("book-{name}"));
+        let mut state = lock(&self.shared.state);
+        state
+            .tree
+            .make_collection(&path, Kind::AddressBook)
+            .expect("the address book home exists and the book is new");
+        state.tree.set_meta(
+            &path,
+            CollectionMeta {
+                displayname: Some(displayname.to_owned()),
+                color: None,
+            },
+        );
+    }
+
+    /// Renames and recolours a collection (`personal`, `contacts`, ...).
+    pub fn set_collection_meta(&self, collection: &str, displayname: &str, color: Option<&str>) {
+        let path = self.collection_path(collection);
+        lock(&self.shared.state).tree.set_meta(
+            &path,
+            CollectionMeta {
+                displayname: Some(displayname.to_owned()),
+                color: color.map(str::to_owned),
+            },
+        );
+    }
+
+    /// Removes an item from a collection.
+    pub fn delete_item(&self, collection: &str, name: &str) {
+        let path = format!("{}/{name}", self.collection_path(collection));
+        lock(&self.shared.state).tree.delete(&path);
+    }
+
+    /// Removes a whole collection and its items.
+    pub fn delete_collection(&self, collection: &str) {
+        let path = self.collection_path(collection);
+        lock(&self.shared.state).tree.delete(&path);
     }
 
     /// What quota reports.
