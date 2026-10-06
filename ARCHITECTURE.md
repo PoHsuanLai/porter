@@ -26,7 +26,7 @@ trait), section 6 (copy the recipe).
 | `porter-dav` | WebDAV requests (PROPFIND, sync-collection REPORT) and the parsed multistatus, sync and quota replies | none |
 | `storage-webdav` | `WebDavReplica`, porter-sync's `Replica` over one WebDAV folder: changes by sync-collection (RFC 6578, `sync-level` infinite) or an etag tree walk where the server has none, writes guarded by `If-Match`/`If-None-Match`, quota from RFC 4331; `StreamHttp`, an HTTP/1.1 client over a `Dial` of authenticated byte streams (syncd: accountd's `OpenAuthenticated`) | none |
 | `porter-families` | the protocol families as code, one feature each (`nextcloud`, `generic`, `microsoft`, `api_key`, `openrouter`), and `FamilyProvider` over them | none by default |
-| `porter-infer` | the AI broker's pure half: requests and replies (chat with tools and controls, embeddings with a query/document role, tasks, computer-use steps, speech), `OpenOptions` (the reserved `traceparent`), the streaming session (`ClientFrame`, `InferEvent`, `InferSession`), the model picker's data (`AiKind`, `TierMap`, `PickerRow`), `Readiness`, `Policy` and floors, `admit` (the hard rules), `route` and `pick` (Named or Automatic, warm first) with the `Why` of every answer, spend caps, `AuditEntry`, the `Model` trait, `Broker` (stubbed) | none |
+| `porter-infer` | the AI broker's pure half: requests and replies (chat with tools and controls, embeddings with a query/document role, tasks, computer-use steps, speech), `OpenOptions` (the reserved `traceparent`), the streaming session (`ClientFrame`, `InferEvent`, `InferSession`), the model picker's data (`Slot`, `TierMap`, `PickerRow`), `plan_pipeline`, `Readiness`, `Policy` and floors, `admit` (the hard rules), `route` and `pick` (Named or Automatic, warm first) with the `Why` of every answer, spend caps, `AuditEntry`, the `Model` trait, `Broker` (stubbed) | none |
 | `porter-service` | accountd's core over its seams: `AccountService`, `Registry`, the `Sheets` (with `SheetLink`), `Clock`, `RegistryStore` and `AuditSink` traits | none (seams are passed in) |
 | `porter-client` | the app-facing API: `Accounts` (with `open_authenticated` and `adopt`), `Found`, `AuthenticatedStream`, the `Transport` trait (`call` for accountd, `open_authenticated` for a relay, `open` for an inference session); `InProcess` (with a `SessionHost` for inference, `NoBroker` by default, and a `RelayHost`, `NoRelays` by default), `SocketTransport` (feature `socket`), `DbusTransport` (feature `dbus`); both of those share one framed session over a Unix stream (feature `framed`) | through its transport |
 | `porter-dbus` | `org.quire.Accounts1` (with `Peer`), `org.quire.AccountsSheet1`, `org.quire.Sync1`, `org.quire.Inference1` as zbus proxies and skeletons; `introspection`; the argument codec; the sheet answer (`sheet`: request paths, response codes, results) and its caller's half (`pending`: subscribe before the call, `Closer`); `callers` (`CallerRole`, `CallerTable`, `ProcCallers`) | zbus |
@@ -243,7 +243,7 @@ pub trait ChatSink: Send { fn event(&mut self, event: InferEvent) -> Flow; }
 Closed sets stay enums: `Capability`/`CapabilityKind`/`Need` (versioned by `VocabVersion`),
 `AuthKind`, `Family`, `EndpointProtocol`, `Issuer`, `Discovery`, `DataClass`, `Provenance`, `AbsentReason`,
 `Locality`, `SecretPurpose`, `AccountsRequest`/`AccountsReply`/`Refusal`,
-`InferRequest`/`ClientFrame`/`InferEvent`/`InferReply`/`InferRefusal`, `AiKind`, `Readiness`, `DatasetKind`, `Found`.
+`InferRequest`/`ClientFrame`/`InferEvent`/`InferReply`/`InferRefusal`, `Slot` (and its deprecated alias `AiKind`), `Readiness`, `DatasetKind`, `Found`.
 
 ## 5. What is frozen, what is built, what is stubbed
 
@@ -269,7 +269,7 @@ the interface other work builds on; a change is a vocabulary bump (section 6) or
 | porter-infer wire: tools, images, `ChatControl`, `StopReason`, `ThoughtPart`, `ReplyShape::Choice`, `EmbedRole`, `CuaBegin`/`CuaStep`, `Transcribe`/`Speak`, `ClientFrame`, `InferEvent`, replies | built, round-trip and pinned-JSON tested |
 | `OpenOptions`, `Traceparent`, the `options` dictionary of `Inference1.Open`/`Prepare`/`Availability` | built (inferd reads `traceparent` and ignores unknown keys; it writes no spans yet) |
 | `prov::trace` names, `ActorKind::slug`, `Effect::slug` | built, tested against the serde forms |
-| `tier_choice`, `AiKind::setting_key`, `InferRequest::kind` | built, table-tested |
+| `tier_choice`, `Slot::setting_key`, `InferRequest::kind` | built, table-tested |
 | `picker_rows` | stub |
 | `inferd::session::step` | built (Routed/Waiting events, audio effects, cua progress, one queued request); `fits` built |
 | `inferd::serve` (`serve_session` over `Router`, `EngineHost`, `TurnRunner`, `AuditSink`) | built, tested over scripted seams |
@@ -339,8 +339,9 @@ reply in `InferReply`, its events in `InferEvent` if it streams, the round-trip 
 `porter-infer/tests/frames.rs`; a design/31 §5.5 line. Speech and computer use are the models:
 they travel on the same `Open` fd and add no D-Bus member.
 
-**Add an AI kind to the picker**: its variant in `AiKind` with its slug and the
-`ai.model.<kind>.<tier>` rows in design/22; the `Need` it maps to in the comment on the enum.
+**Add a slot to the picker**: its variant in `Slot` with its slug (and stoker's catalogue `Slot`
+with the same slug), the `ai.model.<slot>.<tier>` rows in design/22 and inferd's settings keys;
+the `Need` it maps to in the comment on the enum.
 
 **Add a data class**: its variant in `DataClass`, its floor in `Policy::proposed` (or a line in
 `every_data_class_has_a_floor_decision` saying it goes anywhere), the `ai.floor.<class>` row.
