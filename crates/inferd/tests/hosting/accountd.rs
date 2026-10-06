@@ -21,6 +21,14 @@ pub enum Standing {
         grant: &'static str,
         key: Option<&'static str>,
     },
+    /// As `Granted`, but the grant is for one usage (`interactive` or `background`, as `Verdicts`
+    /// is asked); for the other the app is asked.
+    GrantedFor {
+        usage: &'static str,
+        to: Vec<&'static str>,
+        grant: &'static str,
+        key: Option<&'static str>,
+    },
     /// Nobody holds a grant.
     Ask,
     /// The person refused every app.
@@ -111,8 +119,9 @@ impl FakePeer {
     ) -> fdo::Result<Vec<VerdictArg>> {
         let mut calls = self.0.calls.lock().expect("lock");
         calls.verdicts.push((app.0.clone(), class));
-        calls.usages.push(usage);
+        calls.usages.push(usage.clone());
         drop(calls);
+        let usage_asked = usage;
         let accounts = self.0.accounts.lock().expect("lock").clone();
         Ok(accounts
             .into_iter()
@@ -124,7 +133,17 @@ impl FakePeer {
                         details.extend(text("always").map(|v| ("scope".to_owned(), v)));
                         "granted"
                     }
-                    Standing::Granted { .. } | Standing::Ask => "ask",
+                    Standing::GrantedFor {
+                        usage: held,
+                        to,
+                        grant,
+                        ..
+                    } if *held == usage_asked && to.contains(&app.0.as_str()) => {
+                        details.extend(text(grant).map(|v| ("grant".to_owned(), v)));
+                        details.extend(text("always").map(|v| ("scope".to_owned(), v)));
+                        "granted"
+                    }
+                    Standing::Granted { .. } | Standing::GrantedFor { .. } | Standing::Ask => "ask",
                     Standing::Denied => "denied",
                 };
                 (account.id.to_owned(), word.to_owned(), details)
@@ -142,6 +161,11 @@ impl FakePeer {
         let accounts = self.0.accounts.lock().expect("lock").clone();
         let key = accounts.iter().find_map(|account| match &account.standing {
             Standing::Granted {
+                grant: held,
+                key: Some(key),
+                ..
+            }
+            | Standing::GrantedFor {
                 grant: held,
                 key: Some(key),
                 ..

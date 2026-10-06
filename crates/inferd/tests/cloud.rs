@@ -19,8 +19,8 @@ use porter_core::{AppId, AppName, DataClass, Isolation, MicroUsd, Need, Tier, To
 use porter_dbus::PeerProxy;
 use porter_infer::{
     ChatControl, ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRefusal, InferReply,
-    InferRequest, Knob, LocalOnly, MessagePart, ModelError, Policy, Reasoning, ReplyShape,
-    Role as ChatRole, StopReason, ToolChoice, ToolParallelism,
+    InferRequest, Knob, LocalOnly, MessagePart, ModelError, OpenOptions, Policy, Reasoning,
+    ReplyShape, Role as ChatRole, StopReason, ToolChoice, ToolParallelism,
 };
 use std::path::Path;
 
@@ -98,6 +98,38 @@ fn finished(events: &[InferEvent]) -> &InferReply {
     match events.last() {
         Some(InferEvent::Finished(reply)) => reply,
         other => panic!("a finished session, got {other:?}"),
+    }
+}
+
+/// One chat turn of a session opened as `usage` (the option of its `Open`), the events it produced.
+async fn turn_as(world: &World, usage: Usage) -> Vec<InferEvent> {
+    let mut session = world
+        .accounts
+        .session_with(
+            &llm(),
+            DataClass::Prompt,
+            Tier::Balanced,
+            &OpenOptions::default().with_usage(usage),
+        )
+        .await
+        .expect("open");
+    let mut request = chat_request("indexing", DataClass::Prompt);
+    if let InferRequest::Chat(chat) = &mut request {
+        chat.usage = usage;
+    }
+    let _ = session.send(ClientFrame::Request(request)).await;
+    until_finished(&mut session).await
+}
+
+fn grant_for(usage: &'static str) -> FakeAccount {
+    FakeAccount {
+        id: "openrouter",
+        standing: Standing::GrantedFor {
+            usage,
+            to: vec![COMPANION],
+            grant: "grant-openrouter",
+            key: Some(KEY_OR),
+        },
     }
 }
 
@@ -947,5 +979,48 @@ async fn a_session_asks_accountd_for_the_usage_it_was_opened_with() {
     assert_eq!(
         calls.usages,
         vec!["background".to_owned(), "interactive".to_owned()]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_background_session_asks_verdicts_as_background_and_an_interactive_one_as_interactive() {
+    let world = World::start(plan(vec![grant_for("background")], COMPANION)).await;
+    let background = turn_as(&world, Usage::Background).await;
+    assert_eq!(routed(&background).account.as_str(), "openrouter");
+    let interactive = turn(&world, "hi").await;
+    assert_eq!(
+        interactive,
+        vec![InferEvent::Finished(InferReply::Refused(
+            InferRefusal::NeedsGrant
+        ))]
+    );
+    let calls = world.accountd.as_ref().expect("accountd").calls();
+    assert_eq!(calls.usages, vec!["background", "interactive"], "{calls:?}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_background_session_is_not_served_on_a_grant_held_for_interactive_use_only() {
+    let world = World::start(plan(vec![grant_for("interactive")], COMPANION)).await;
+    assert_eq!(
+        turn_as(&world, Usage::Background).await,
+        vec![InferEvent::Finished(InferReply::Refused(
+            InferRefusal::NeedsGrant
+        ))]
+    );
+    assert!(
+        world
+            .provider
+            .as_ref()
+            .expect("provider")
+            .requests()
+            .is_empty()
+    );
+    let calls = world.accountd.as_ref().expect("accountd").calls();
+    assert_eq!(calls.usages, vec!["background"]);
+    assert_eq!(calls.resolved, Vec::<String>::new(), "no key was fetched");
+    // The same grant serves a session that names no usage.
+    assert_eq!(
+        routed(&turn(&world, "hi").await).account.as_str(),
+        "openrouter"
     );
 }

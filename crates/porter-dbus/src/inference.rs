@@ -16,10 +16,12 @@ use zbus::zvariant::OwnedFd;
 )]
 pub trait Inference {
     /// Whether an AI need can be met for this class, revealing no identity. `options` is the
-    /// call's vardict; the reserved key is `traceparent` (`OPTION_TRACEPARENT`).
+    /// call's vardict; the reserved keys are `traceparent` (`OPTION_TRACEPARENT`) and `usage`
+    /// (`OPTION_USAGE`).
     fn availability(&self, need: &NeedArg, class: &str, options: &Details) -> zbus::Result<String>;
     /// A framed request/stream session for `need`, `class` and `tier`, pinned to one model.
-    /// `options` carries `traceparent` when the caller has a trace; unknown keys are ignored.
+    /// `options` carries `traceparent` when the caller has a trace and `usage` when the session
+    /// is not interactive; unknown keys are ignored.
     fn open(
         &self,
         need: &NeedArg,

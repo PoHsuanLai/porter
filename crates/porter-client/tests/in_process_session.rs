@@ -137,6 +137,7 @@ async fn a_hosted_broker_serves_the_sessions_for_the_app_the_host_names() {
         .expect("traceparent");
     let options = OpenOptions {
         traceparent: Some(parent),
+        ..OpenOptions::default()
     };
     let mut session = accounts
         .session_with(&need(), DataClass::Public, Tier::Fast, &options)

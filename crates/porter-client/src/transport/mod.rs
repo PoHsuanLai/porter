@@ -68,7 +68,7 @@ pub trait Transport: Send + Sync {
         tier: Tier,
     ) -> impl Future<Output = Result<Self::Session, TransportError>> + Send {
         async move {
-            self.open_with(need, class, tier, &OpenOptions { traceparent: None })
+            self.open_with(need, class, tier, &OpenOptions::default())
                 .await
         }
     }

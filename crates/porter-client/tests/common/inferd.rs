@@ -25,6 +25,7 @@ pub struct Opened {
     pub class: String,
     pub tier: String,
     pub traceparent: Option<String>,
+    pub usage: Option<String>,
 }
 
 /// What the fake saw, shared with the test.
@@ -114,11 +115,15 @@ impl FakeInferd {
         let traceparent = options
             .get(porter_dbus::OPTION_TRACEPARENT)
             .and_then(|v| String::try_from(v.try_clone().ok()?).ok());
+        let usage = options
+            .get(porter_dbus::OPTION_USAGE)
+            .and_then(|v| String::try_from(v.try_clone().ok()?).ok());
         self.seen.lock().expect("lock").opens.push(Opened {
             need,
             class,
             tier,
             traceparent,
+            usage,
         });
         let (ours, theirs) = StdStream::pair().map_err(|e| fdo::Error::Failed(e.to_string()))?;
         ours.set_nonblocking(true)

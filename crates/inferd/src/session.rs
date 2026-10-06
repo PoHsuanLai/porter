@@ -27,8 +27,8 @@ pub struct SessionSpec {
     /// The tier the app asked for.
     pub tier: Tier,
     /// Whether a person is waiting (`Interactive`) or nobody is (`Background`): what accountd is
-    /// asked a verdict for. The session's `Open` carries none yet, so every session opens as
-    /// `Interactive` until the wire says otherwise.
+    /// asked a verdict for. It is the `usage` option of the session's `Open` (`Interactive`
+    /// when the call names none).
     pub usage: Usage,
 }
 

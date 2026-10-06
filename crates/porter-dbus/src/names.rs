@@ -34,6 +34,13 @@ pub const INFERENCE_SETTINGS_PATH: &str = "/org/quire/Inference1/settings";
 /// finds none starts its own root, and an unknown key is ignored.
 pub const OPTION_TRACEPARENT: &str = "traceparent";
 
+/// The reserved key of the session's usage in the same `options` vardict (`Inference1.Open`,
+/// `Prepare`, `Availability`): whether a person is waiting on it or nobody is. The value is a
+/// string, `porter_core::consent::Usage`'s slug (`interactive`, `background`); inferd asks
+/// accountd's `Verdicts` with it. Absent means `interactive`; an unknown slug is refused as
+/// invalid args.
+pub const OPTION_USAGE: &str = "usage";
+
 /// The object path of one account (`org.quire.Accounts1.Account`).
 pub fn account_path(id: &AccountId) -> String {
     format!("{ACCOUNTS_PATH}/account/{}", object_segment(id))

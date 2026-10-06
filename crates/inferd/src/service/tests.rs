@@ -31,6 +31,34 @@ fn a_traceparent_in_the_options_is_read_when_valid_and_ignored_otherwise() {
 }
 
 #[test]
+fn a_usage_in_the_options_is_its_slug_absent_is_interactive_and_unknown_is_refused() {
+    use porter_core::consent::Usage;
+    assert_eq!(usage_of(&Details::new()), Ok(Usage::Interactive));
+    assert_eq!(
+        usage_of(&options(&[("usage", "interactive")])),
+        Ok(Usage::Interactive)
+    );
+    assert_eq!(
+        usage_of(&options(&[("usage", "background")])),
+        Ok(Usage::Background)
+    );
+    for bad in ["Background", "", "batch"] {
+        assert!(
+            matches!(
+                usage_of(&options(&[("usage", bad)])),
+                Err(fdo::Error::InvalidArgs(_))
+            ),
+            "{bad:?}"
+        );
+    }
+    let number = Details::from([(
+        "usage".to_owned(),
+        OwnedValue::try_from(Value::U32(1)).expect("value"),
+    )]);
+    assert!(matches!(usage_of(&number), Err(fdo::Error::InvalidArgs(_))));
+}
+
+#[test]
 fn refusals_and_closed_sets_are_written_as_their_slugs() {
     let refusals = [
         (

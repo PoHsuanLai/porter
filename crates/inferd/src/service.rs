@@ -96,6 +96,20 @@ fn trace_of(options: &Details) -> Option<porter_infer::Traceparent> {
     porter_infer::Traceparent::parse(&text).ok()
 }
 
+/// The usage a call names (`usage` in the options): `Interactive` when it names none, and
+/// invalid args for a slug that is not one.
+fn usage_of(options: &Details) -> fdo::Result<porter_core::consent::Usage> {
+    let Some(value) = options.get(porter_dbus::OPTION_USAGE) else {
+        return Ok(porter_core::consent::Usage::Interactive);
+    };
+    let text = value
+        .try_clone()
+        .ok()
+        .and_then(|value| String::try_from(value).ok())
+        .ok_or_else(|| fdo::Error::InvalidArgs("usage is not a string".into()))?;
+    parse_slug(&text)
+}
+
 fn failed(why: impl ToString) -> fdo::Error {
     fdo::Error::Failed(why.to_string())
 }
@@ -109,12 +123,12 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
             .ok_or_else(unknown_caller)
     }
 
-    fn spec(need: NeedArg, class: &str, tier: &str) -> fdo::Result<SessionSpec> {
+    fn spec(need: NeedArg, class: &str, tier: &str, options: &Details) -> fdo::Result<SessionSpec> {
         Ok(SessionSpec {
             need: need_from_dbus(need).map_err(|e| fdo::Error::InvalidArgs(e.to_string()))?,
             class: parse_slug::<DataClass>(class)?,
             tier: parse_slug::<Tier>(tier)?,
-            usage: porter_core::consent::Usage::Interactive,
+            usage: usage_of(options)?,
         })
     }
 
@@ -151,10 +165,10 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
     ) -> fdo::Result<String> {
         let caller = self.caller(&header).await?;
         let _trace = trace_of(&options);
-        let spec = Self::spec(need, &class, "balanced")?;
+        let spec = Self::spec(need, &class, "balanced", &options)?;
         let availability = self
             .engines
-            .availability_for(&spec.need, spec.class, &caller)
+            .availability_for(&spec.need, spec.class, spec.usage, &caller)
             .await;
         Ok(slug(&availability, "kind"))
     }
@@ -169,7 +183,7 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
     ) -> fdo::Result<OwnedFd> {
         let caller = self.caller(&header).await?;
         let _trace = trace_of(&options);
-        let spec = Self::spec(need, &class, &tier)?;
+        let spec = Self::spec(need, &class, &tier, &options)?;
         self.open_session(caller, spec)
     }
 
@@ -183,11 +197,11 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
     ) -> fdo::Result<String> {
         let caller = self.caller(&header).await?;
         let _trace = trace_of(&options);
-        let spec = Self::spec(need, &class, &tier)?;
+        let spec = Self::spec(need, &class, &tier, &options)?;
         Ok(
             match self
                 .engines
-                .prepare_for(&spec.need, spec.class, spec.tier, &caller)
+                .prepare_for(&spec.need, spec.class, spec.tier, spec.usage, &caller)
                 .await
             {
                 Ok(readiness) => readiness.slug().to_owned(),

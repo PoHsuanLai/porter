@@ -421,8 +421,15 @@ impl Engines {
         tier: Tier,
         role: Role,
     ) -> Result<Readiness, InferRefusal> {
-        self.prepare_with(need, class, tier, role, &Offered::default())
-            .await
+        self.prepare_with(
+            need,
+            class,
+            tier,
+            Usage::Interactive,
+            role,
+            &Offered::default(),
+        )
+        .await
     }
 
     /// `prepare` for this caller: the hosted models its grants reach are among the candidates (a
@@ -432,10 +439,11 @@ impl Engines {
         need: &Need,
         class: DataClass,
         tier: Tier,
+        usage: Usage,
         caller: &Caller,
     ) -> Result<Readiness, InferRefusal> {
-        let offered = self.offer(&caller.app, class, Usage::Interactive).await;
-        self.prepare_with(need, class, tier, caller.role, &offered)
+        let offered = self.offer(&caller.app, class, usage).await;
+        self.prepare_with(need, class, tier, usage, caller.role, &offered)
             .await
     }
 
@@ -444,6 +452,7 @@ impl Engines {
         need: &Need,
         class: DataClass,
         tier: Tier,
+        usage: Usage,
         role: Role,
         offered: &Offered,
     ) -> Result<Readiness, InferRefusal> {
@@ -451,7 +460,7 @@ impl Engines {
             need: need.clone(),
             class,
             tier,
-            usage: porter_core::consent::Usage::Interactive,
+            usage,
         };
         let (decision, pinned) = self
             .route_with(&spec, role, offered)
@@ -475,7 +484,7 @@ impl Engines {
     /// What an app is told about a need without a session (`Inference1.Availability`): whether
     /// the route would run, without revealing which account or model.
     pub fn availability(&self, need: &Need, class: DataClass, role: Role) -> Availability {
-        self.availability_with(need, class, role, &Offered::default())
+        self.availability_with(need, class, Usage::Interactive, role, &Offered::default())
     }
 
     /// `availability` for this caller: the hosted models its grants reach are among the candidates.
@@ -483,16 +492,18 @@ impl Engines {
         &self,
         need: &Need,
         class: DataClass,
+        usage: Usage,
         caller: &Caller,
     ) -> Availability {
-        let offered = self.offer(&caller.app, class, Usage::Interactive).await;
-        self.availability_with(need, class, caller.role, &offered)
+        let offered = self.offer(&caller.app, class, usage).await;
+        self.availability_with(need, class, usage, caller.role, &offered)
     }
 
     fn availability_with(
         &self,
         need: &Need,
         class: DataClass,
+        usage: Usage,
         role: Role,
         offered: &Offered,
     ) -> Availability {
@@ -500,7 +511,7 @@ impl Engines {
             need: need.clone(),
             class,
             tier: Tier::Balanced,
-            usage: porter_core::consent::Usage::Interactive,
+            usage,
         };
         match self.route_with(&spec, role, offered).map_err(|r| r.refusal) {
             Ok(_) => Availability::Granted,

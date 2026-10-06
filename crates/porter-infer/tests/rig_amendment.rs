@@ -110,12 +110,30 @@ fn open_options_reserve_the_traceparent() {
     pinned(
         &OpenOptions {
             traceparent: Some(parent),
+            ..OpenOptions::default()
         },
         r#"{"traceparent":"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"}"#,
     );
-    pinned(
-        &OpenOptions { traceparent: None },
-        r#"{"traceparent":null}"#,
-    );
+    pinned(&OpenOptions::default(), r#"{"traceparent":null}"#);
     assert!(serde_json::from_str::<OpenOptions>(r#"{"traceparent":"nope"}"#).is_err());
+}
+
+#[test]
+fn open_options_carry_the_usage_as_its_slug() {
+    use porter_core::consent::Usage;
+    pinned(
+        &OpenOptions::default().with_usage(Usage::Background),
+        r#"{"traceparent":null,"usage":"background"}"#,
+    );
+    pinned(
+        &OpenOptions::default().with_usage(Usage::Interactive),
+        r#"{"traceparent":null,"usage":"interactive"}"#,
+    );
+    // Absent is `None` and reads as Interactive; an older writer's JSON still reads.
+    let old: OpenOptions = serde_json::from_str(r#"{"traceparent":null}"#).expect("old");
+    assert_eq!(
+        (old.usage, old.usage_or_default()),
+        (None, Usage::Interactive)
+    );
+    assert!(serde_json::from_str::<OpenOptions>(r#"{"usage":"batch"}"#).is_err());
 }

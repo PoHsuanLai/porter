@@ -200,6 +200,7 @@ async fn the_traceparent_rides_in_the_options() {
     let text = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
     let options = OpenOptions {
         traceparent: Some(Traceparent::parse(text).expect("traceparent")),
+        ..OpenOptions::default()
     };
     rig.accounts
         .session_with(&llm(), DataClass::Public, Tier::Best, &options)
@@ -208,6 +209,21 @@ async fn the_traceparent_rides_in_the_options() {
     let seen = rig.seen.lock().expect("lock");
     assert_eq!(seen.opens[0].traceparent.as_deref(), Some(text));
     assert_eq!(seen.opens[0].tier, "best");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_usage_rides_in_the_options_as_its_slug_and_is_absent_otherwise() {
+    let rig = rig(Behaviour::Scripted(vec![])).await;
+    let options = OpenOptions::default().with_usage(porter_core::consent::Usage::Background);
+    for options in [&options, &OpenOptions::default()] {
+        rig.accounts
+            .session_with(&llm(), DataClass::Public, Tier::Fast, options)
+            .await
+            .expect("open");
+    }
+    let seen = rig.seen.lock().expect("lock");
+    assert_eq!(seen.opens[0].usage.as_deref(), Some("background"));
+    assert_eq!(seen.opens[1].usage, None);
 }
 
 #[tokio::test(flavor = "multi_thread")]

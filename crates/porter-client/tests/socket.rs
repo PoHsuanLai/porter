@@ -226,6 +226,7 @@ async fn a_session_opens_with_a_hello_and_streams_what_the_machine_says() {
         .expect("traceparent");
     let options = OpenOptions {
         traceparent: Some(parent),
+        ..OpenOptions::default()
     };
     let mut session = photos
         .session_with(&embeddings(), DataClass::Notes, Tier::Fast, &options)

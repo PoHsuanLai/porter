@@ -1,17 +1,46 @@
 //! What a client may attach when it opens a session, beside the need, the class and the tier.
 
 use crate::ids::Traceparent;
+use porter_core::consent::Usage;
 use porter_core::{DataClass, Need, Tier};
 use serde::{Deserialize, Serialize};
 
 /// The options of `Inference1.Open`, `Prepare` and `Availability` (the `options` dictionary on the
 /// bus, the first frame's options on the socket). Today one key is reserved; an unknown key is
 /// ignored by inferd, so a newer client works with an older daemon.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct OpenOptions {
     /// The caller's trace, so a span started in companiond continues in inferd and one task is
     /// one trace. When absent, inferd starts its own root.
     pub traceparent: Option<Traceparent>,
+    /// Whether a person is waiting on the session (`interactive`) or nobody is (`background`):
+    /// what inferd asks accountd's `Verdicts` with. Absent means `Interactive`, at the reader
+    /// ([`OpenOptions::usage_or_default`]); an unknown slug is refused.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<Usage>,
+}
+
+impl OpenOptions {
+    /// These options with the session's usage named.
+    pub fn with_usage(self, usage: Usage) -> Self {
+        Self {
+            usage: Some(usage),
+            ..self
+        }
+    }
+
+    /// These options with the caller's trace.
+    pub fn with_traceparent(self, traceparent: Traceparent) -> Self {
+        Self {
+            traceparent: Some(traceparent),
+            ..self
+        }
+    }
+
+    /// The usage the session is for: the one named, else `Interactive`.
+    pub fn usage_or_default(&self) -> Usage {
+        self.usage.unwrap_or(Usage::Interactive)
+    }
 }
 
 /// What `Inference1.Open` takes, as a frame: the session a connection on the latchkey socket

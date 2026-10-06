@@ -13,7 +13,7 @@ fn hello() -> LinkHello {
         }),
         class: DataClass::Notes,
         tier: Tier::Fast,
-        options: OpenOptions { traceparent: None },
+        options: OpenOptions::default(),
     })
 }
 

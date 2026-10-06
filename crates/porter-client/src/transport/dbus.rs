@@ -9,8 +9,8 @@ use crate::error::TransportError;
 use porter_core::{AccountsReply, AccountsRequest, DataClass, EndpointUrl, GrantId, Need, Tier};
 use porter_dbus::zvariant::{OwnedValue, Value};
 use porter_dbus::{
-    BusConnection, BusError, BusFailure, Details, InferenceProxy, OPTION_TRACEPARENT, TokensProxy,
-    classify, need_to_dbus, refusal_of,
+    BusConnection, BusError, BusFailure, Details, InferenceProxy, OPTION_TRACEPARENT, OPTION_USAGE,
+    TokensProxy, classify, need_to_dbus, refusal_of,
 };
 use porter_infer::OpenOptions;
 use serde::Serialize;
@@ -45,14 +45,22 @@ pub(super) fn slug<T: Serialize + ?Sized>(value: &T) -> Result<String, Transport
     }
 }
 
-/// The `options` dictionary of `Open`: the reserved `traceparent` when the caller has one.
+/// The `options` dictionary of `Open`: the reserved `traceparent` and `usage` when the caller has
+/// them (`usage` as its slug).
 fn details(options: &OpenOptions) -> Details {
-    options
+    let trace = options
         .traceparent
         .iter()
-        .filter_map(|trace| {
-            let value = OwnedValue::try_from(Value::from(trace.as_str().to_owned())).ok()?;
-            Some((OPTION_TRACEPARENT.to_owned(), value))
+        .map(|trace| (OPTION_TRACEPARENT, trace.as_str().to_owned()));
+    let usage = options
+        .usage
+        .iter()
+        .filter_map(|usage| Some((OPTION_USAGE, slug(usage).ok()?)));
+    trace
+        .chain(usage)
+        .filter_map(|(key, text)| {
+            let value = OwnedValue::try_from(Value::from(text)).ok()?;
+            Some((key.to_owned(), value))
         })
         .collect()
 }
