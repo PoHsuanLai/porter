@@ -6,11 +6,13 @@
 //! bulk enumeration (design/31 §4.4).
 
 use crate::callers::Callers;
-use crate::core::{Core, Host, window};
+use crate::core::{Core, Host, Standing, window};
 use crate::errors::RefusedError;
 use porter_core::consent::Decision;
 use porter_core::{Account, AccountId, AccountState, AccountsRequest, AppId, object_segment};
-use porter_dbus::{ACCOUNTS_PATH, Details, SheetKind, account_path, to_vardict};
+use porter_dbus::{
+    ACCOUNTS_PATH, Caller, CallerRole, Details, SheetKind, account_path, to_vardict,
+};
 use std::sync::Arc;
 use zbus::fdo;
 use zbus::message::Header;
@@ -43,15 +45,15 @@ async fn visible<H: Host, C: Callers>(
     header: Option<&Header<'_>>,
 ) -> fdo::Result<(Account, AppId)> {
     let header = header.ok_or_else(|| fdo::Error::AccessDenied("no caller".into()))?;
-    let app = core
-        .caller(header)
+    let caller = core
+        .identify(header, Standing::Any)
         .await
         .map_err(|_| fdo::Error::AccessDenied("accountd does not know this caller".into()))?;
     let registry = core.host.registry();
     let path = header.path().map(|p| p.as_str()).unwrap_or_default();
     account_at(&registry.accounts, path)
-        .filter(|account| holds_grant(core.host.as_ref(), &app, &account.id))
-        .map(|account| (account.clone(), app))
+        .filter(|account| sees(core.host.as_ref(), &caller, &account.id))
+        .map(|account| (account.clone(), caller.app))
         .ok_or_else(|| fdo::Error::UnknownObject("no such account for this caller".into()))
 }
 
@@ -61,6 +63,12 @@ fn account_at<'a>(accounts: &'a [Account], path: &str) -> Option<&'a Account> {
     accounts
         .iter()
         .find(|account| object_segment(&account.id) == segment)
+}
+
+/// Whether `caller` may see `account`: it holds an allowing grant for it, or it is the shell,
+/// which tells the person when an account must be signed in again.
+fn sees(host: &impl Host, caller: &Caller, account: &AccountId) -> bool {
+    caller.role == CallerRole::SheetHost || holds_grant(host, &caller.app, account)
 }
 
 /// Whether `app` holds an allowing grant for `account`.
@@ -136,11 +144,11 @@ impl<H: Host, C: Callers> AccountObject<H, C> {
         parent_window: String,
         options: Details,
     ) -> Result<OwnedObjectPath, RefusedError> {
-        let app = self.0.acting(&header).await?;
+        let caller = self.0.identify(&header, Standing::Acting).await?;
         let registry = self.0.host.registry();
         let path = header.path().map(|p| p.as_str()).unwrap_or_default();
         let account = account_at(&registry.accounts, path)
-            .filter(|account| holds_grant(self.0.host.as_ref(), &app, &account.id))
+            .filter(|account| sees(self.0.host.as_ref(), &caller, &account.id))
             .map(|account| account.id.clone())
             .ok_or_else(|| RefusedError::unknown_object("no such account for this caller"))?;
         let request = AccountsRequest::Reauthenticate {

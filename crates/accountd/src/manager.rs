@@ -5,9 +5,10 @@ use crate::core::{Core, Host, Standing, hint, slug, window};
 use crate::errors::RefusedError;
 use porter_core::consent::Availability;
 use porter_core::wire::Refusal;
-use porter_core::{AccountsReply, AccountsRequest};
+use porter_core::{AccountState, AccountsReply, AccountsRequest};
 use porter_dbus::{
-    CandidateArg, Details, NeedArg, SheetKind, candidate_to_dbus, legacy_from_dbus, need_from_dbus,
+    CallerRole, CandidateArg, Details, NeedArg, SheetKind, account_path, candidate_to_dbus,
+    legacy_from_dbus, need_from_dbus,
 };
 use std::sync::Arc;
 use zbus::Connection;
@@ -149,6 +150,31 @@ impl<H: Host, C: Callers> Manager<H, C> {
             AccountsReply::Refused(refusal) => Err(RefusedError::of(refusal)),
             other => Err(mismatched(other)),
         }
+    }
+
+    /// The accounts that need signing in again now, for the shell alone (`SheetHost`). Asking
+    /// joins the caller to the roster, so it is then sent `NeedsReauth` and `State` changes for
+    /// every account.
+    async fn needing_reauth(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+    ) -> Result<Vec<(OwnedObjectPath, String)>, RefusedError> {
+        let caller = self.0.identify(&header, Standing::Any).await?;
+        if caller.role != CallerRole::SheetHost {
+            return Err(RefusedError::of(Refusal::Denied));
+        }
+        self.0
+            .host
+            .registry()
+            .accounts
+            .iter()
+            .filter(|account| account.state == AccountState::NeedsReauth)
+            .map(|account| {
+                OwnedObjectPath::try_from(account_path(&account.id))
+                    .map(|path| (path, account.label.0.clone()))
+                    .map_err(|e| RefusedError::failed(e.to_string()))
+            })
+            .collect()
     }
 
     #[zbus(signal)]

@@ -5,7 +5,7 @@ use crate::account::{AccountObject, publish_accounts};
 use crate::callers::Callers;
 use crate::errors::RefusedError;
 use crate::grants::{Grants, Tokens};
-use crate::hub::{Event, audience, events};
+use crate::hub::{Event, audience, events, shell_hears};
 use crate::keys::KeyDesk;
 use crate::legacy::AdoptConfig;
 use crate::manager::Manager;
@@ -22,12 +22,14 @@ use porter_service::{
     AccountService, AuditSink, Clock, LegacyStore, Registry, RegistryStore, RevokeReport, Sheets,
 };
 use serde::de::DeserializeOwned;
-use std::collections::BTreeMap;
+use std::borrow::Cow;
+use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex, PoisonError};
+use zbus::fdo::Properties;
 use zbus::message::Header;
-use zbus::names::BusName;
+use zbus::names::{BusName, InterfaceName};
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::ObjectPath;
 use zbus::{Connection, ObjectServer};
@@ -189,7 +191,7 @@ pub(crate) struct Core<H, C> {
     /// The connection the objects are served on, for the signals.
     pub(crate) connection: Connection,
     /// The connections that have called, by unique name: who a unicast signal can reach.
-    pub(crate) roster: Mutex<BTreeMap<String, AppId>>,
+    pub(crate) roster: Mutex<BTreeMap<String, Caller>>,
     /// The registry as clients were last told of it.
     pub(crate) published: Mutex<Registry>,
     /// What `Adopt` reads and who may ask.
@@ -226,13 +228,8 @@ impl<H: Host, C: Callers> Core<H, C> {
         if standing == Standing::Acting && caller.role == CallerRole::Agent {
             return Err(RefusedError::of(Refusal::Denied));
         }
-        held(&self.roster).insert(sender.to_string(), caller.app.clone());
+        held(&self.roster).insert(sender.to_string(), caller.clone());
         Ok(caller)
-    }
-
-    /// The app behind the sender of the call, or `AccessDenied`.
-    pub(crate) async fn caller(&self, header: &Header<'_>) -> Result<AppId, RefusedError> {
-        self.identify(header, Standing::Any).await.map(|c| c.app)
     }
 
     /// The app behind the sender of a call an `Agent` may not make.
@@ -301,7 +298,10 @@ impl<H: Host, C: Callers> Core<H, C> {
             let apps = audience(&event, &before, &after);
             let names: Vec<String> = held(&self.roster)
                 .iter()
-                .filter(|(_, app)| apps.contains(app))
+                .filter(|(_, who)| {
+                    apps.contains(&who.app)
+                        || (who.role == CallerRole::SheetHost && shell_hears(&event))
+                })
                 .map(|(name, _)| name.clone())
                 .collect();
             for name in names {
@@ -322,6 +322,19 @@ impl<H: Host, C: Callers> Core<H, C> {
                 Manager::<H, C>::capability_changed(&emitter, path(id)?).await
             }
             Event::NeedsReauth(id) => Manager::<H, C>::needs_reauth(&emitter, path(id)?).await,
+            Event::StateChanged(id) => {
+                // The new value is read by the receiver, which `State` lets only a holder of a
+                // grant, or the shell, do.
+                let emitter = SignalEmitter::new(&self.connection, account_path(id))?
+                    .set_destination(BusName::try_from(name.to_owned())?);
+                Properties::properties_changed(
+                    &emitter,
+                    InterfaceName::try_from("org.quire.Accounts1.Account")?,
+                    HashMap::new(),
+                    Cow::Borrowed(&["State"]),
+                )
+                .await
+            }
             Event::GrantChanged(grant) => {
                 Manager::<H, C>::grant_changed(&emitter, grant.as_str()).await
             }

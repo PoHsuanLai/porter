@@ -18,6 +18,8 @@ pub(crate) enum Event {
     CapabilityChanged(AccountId),
     /// `NeedsReauth`.
     NeedsReauth(AccountId),
+    /// The account's `State` property changed: the shell is told to read it again.
+    StateChanged(AccountId),
     /// `GrantChanged`: a grant was given, changed or revoked.
     GrantChanged(GrantId),
 }
@@ -41,6 +43,9 @@ pub(crate) fn events(before: &Registry, after: &Registry) -> Vec<Event> {
             Some(old) => {
                 if old.capabilities != account.capabilities {
                     out.push(Event::CapabilityChanged(account.id.clone()));
+                }
+                if old.state != account.state {
+                    out.push(Event::StateChanged(account.id.clone()));
                 }
                 let now_refused = account.state == AccountState::NeedsReauth;
                 if now_refused && old.state != AccountState::NeedsReauth {
@@ -78,6 +83,12 @@ fn holders(account: &AccountId, before: &Registry, after: &Registry) -> Vec<AppI
     apps
 }
 
+/// Whether the shell (`CallerRole::SheetHost`) is told of `event` whatever grants it holds: the
+/// shell notices an account that must be signed in again, and when it is well.
+pub(crate) fn shell_hears(event: &Event) -> bool {
+    matches!(event, Event::NeedsReauth(_) | Event::StateChanged(_))
+}
+
 /// The apps `event` is for: the holders of a grant on its account (a removed account's holders
 /// are found in `before`), or the holder of the grant a `GrantChanged` names.
 pub(crate) fn audience(event: &Event, before: &Registry, after: &Registry) -> Vec<AppId> {
@@ -85,7 +96,8 @@ pub(crate) fn audience(event: &Event, before: &Registry, after: &Registry) -> Ve
         Event::Added(id)
         | Event::Removed(id)
         | Event::CapabilityChanged(id)
-        | Event::NeedsReauth(id) => holders(id, before, after),
+        | Event::NeedsReauth(id)
+        | Event::StateChanged(id) => holders(id, before, after),
         Event::GrantChanged(grant) => before
             .grants
             .iter()
@@ -148,15 +160,17 @@ mod tests {
         assert_eq!(
             list,
             vec![
+                Event::StateChanged(storage.id.clone()),
                 Event::NeedsReauth(storage.id.clone()),
                 Event::Added(mail.id.clone())
             ]
         );
         assert_eq!(
-            audience(&list[0], &before, &after),
+            audience(&list[1], &before, &after),
             vec![app("org.example.Holder")]
         );
-        assert!(audience(&list[1], &before, &after).is_empty());
+        assert!(audience(&list[2], &before, &after).is_empty());
+        assert!(shell_hears(&list[0]) && shell_hears(&list[1]) && !shell_hears(&list[2]));
 
         let gone = registry(vec![mail], vec![]);
         let list = events(&before, &gone);
