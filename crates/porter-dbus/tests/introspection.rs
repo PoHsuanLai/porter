@@ -137,6 +137,15 @@ fn the_sheet_backend_takes_views_in_and_sends_inputs_out() {
 
 #[test]
 fn syncd_and_inferd_declare_what_they_did() {
-    assert_eq!(introspection(Bus::Sync).matches("<method ").count(), 4);
+    let sync = introspection(Bus::Sync);
+    assert_eq!(sync.matches("<method ").count(), 5);
+    assert!(sync.contains("<method name=\"Resolve\">"));
+    assert!(sync.contains("<arg name=\"conflict\" type=\"x\" direction=\"in\"/>"));
+    assert_eq!(porter_dbus::RESOLVE_KEEP_LOCAL, "keep_local");
+    assert_eq!(porter_dbus::RESOLVE_KEEP_REMOTE, "keep_remote");
+    assert_eq!(
+        porter_dbus::SYNC_ERROR_NO_SUCH_CONFLICT,
+        format!("{}NoSuchConflict", porter_dbus::SYNC_ERROR_PREFIX)
+    );
     assert_eq!(porter_dbus::STATUS_KEY_QUOTA, "quota");
 }

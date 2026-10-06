@@ -10,15 +10,23 @@
 //! - `Status` is `anchor_age` (seconds, once there is an anchor), `pending`, `conflicts`,
 //!   `paused` and, where the replica reports one, `quota` (`STATUS_KEY_QUOTA`: `used` and
 //!   `total`, both `t`).
+//! - `Resolve(dataset, conflict, how)` settles a stored conflict (`how` is `keep_local` or
+//!   `keep_remote`; the `Conflict` signal's `number` is the conflict). Only the dataset's owning
+//!   app may call it (Settings and the porter daemons see a dataset but do not own it: `Denied`);
+//!   a dataset the caller cannot see answers `NoFittingAccount` as for the other methods, a
+//!   conflict unknown or already settled `org.quire.Sync1.Error.NoSuchConflict`, any other `how`
+//!   `InvalidArgs`. The dataset's driver settles it between cycles and runs the next soon.
 //! - `Progress` and `Conflict` go to the connections that called and may see the dataset, never
 //!   broadcast; a connection that leaves the bus is forgotten.
 
 mod errors;
 mod hub;
 mod object;
+mod resolve;
 mod status;
 
 pub use errors::RefusedError;
-pub use hub::{Access, DatasetName, Event, Handle, Hub, StatusSnapshot};
+pub use hub::{Access, DatasetName, Event, Handle, Hub, Nudge, StatusSnapshot};
 pub use object::serve;
+pub use resolve::{ConflictNumber, How, Settle, SettleError, UnknownHow};
 pub use status::{conflict_details, progress_details, status_details};

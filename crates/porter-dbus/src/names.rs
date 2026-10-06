@@ -19,6 +19,22 @@ pub const SHEET_PATH: &str = "/org/quire/AccountsSheet1";
 /// the provider reports a limit, `total` as a `t`). syncd builds it from porter-sync's `Quota`.
 pub const STATUS_KEY_QUOTA: &str = "quota";
 
+/// The key of the conflict's number in the `Sync1.Conflict` signal's details (an `x`): the
+/// number `Sync1.Resolve` takes as `conflict`.
+pub const CONFLICT_KEY_NUMBER: &str = "number";
+
+/// `Sync1.Resolve`'s `how`: upload the local content over the replica's current version.
+pub const RESOLVE_KEEP_LOCAL: &str = "keep_local";
+/// `Sync1.Resolve`'s `how`: take the replica's version and drop the local change.
+pub const RESOLVE_KEEP_REMOTE: &str = "keep_remote";
+
+/// The prefix of the errors `Sync1` names itself (a refusal of accountd's vocabulary keeps its
+/// `org.quire.Accounts1.Error.` name).
+pub const SYNC_ERROR_PREFIX: &str = "org.quire.Sync1.Error.";
+/// `Sync1.Resolve` on a conflict that is not there: never stored, or already settled
+/// (`org.quire.Sync1.Error.NoSuchConflict`).
+pub const SYNC_ERROR_NO_SUCH_CONFLICT: &str = "org.quire.Sync1.Error.NoSuchConflict";
+
 /// inferd's bus name.
 pub const INFERENCE_BUS: &str = "org.quire.Inference1";
 /// inferd's object.

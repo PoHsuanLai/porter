@@ -2,6 +2,7 @@
 //! it, its latest status and its pause switch. An engine's driver holds a [`Handle`] and
 //! publishes; the `Sync1` object reads. Nothing here is async or does I/O.
 
+use super::resolve::{ConflictNumber, How, Settle, SettleError};
 use crate::dataset::DatasetId;
 use crate::paths::AccountDir;
 use crate::scheduler::Pausing;
@@ -10,7 +11,7 @@ use porter_dbus::{Caller, CallerRole};
 use porter_sync::{Quota, StoredConflict};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use tokio::sync::{broadcast, watch};
+use tokio::sync::{broadcast, mpsc, oneshot, watch};
 
 /// A dataset of an account as `Sync1` names it: `<account>/<dataset>`, the account's object
 /// path segment and the dataset slug.
@@ -54,6 +55,20 @@ impl Access {
             CallerRole::Settings | CallerRole::PorterDaemon => true,
             CallerRole::App | CallerRole::SheetHost => self.owners.contains(&caller.app.name),
             CallerRole::Agent | CallerRole::Cua => false,
+        }
+    }
+}
+
+impl Access {
+    /// Whether `caller` is an app that owns the dataset (Settings and the porter daemons see it
+    /// but do not own it).
+    pub fn owned_by(&self, caller: &Caller) -> bool {
+        match caller.role {
+            CallerRole::App | CallerRole::SheetHost => self.owners.contains(&caller.app.name),
+            CallerRole::Settings
+            | CallerRole::PorterDaemon
+            | CallerRole::Agent
+            | CallerRole::Cua => false,
         }
     }
 }
@@ -108,7 +123,22 @@ struct Entry {
     access: Access,
     status: StatusSnapshot,
     pausing: watch::Sender<Pausing>,
+    settling: mpsc::Sender<Settle>,
     cycling: Cycling,
+}
+
+/// Requests waiting for a driver at most (a driver answers between cycles).
+const SETTLES_QUEUED: usize = 8;
+
+/// What woke a driver that was waiting on its handle.
+#[derive(Debug)]
+pub enum Nudge {
+    /// The pause switch changed.
+    Pause,
+    /// The owning app asked to settle a conflict.
+    Settle(Settle),
+    /// The dataset was dropped from the hub.
+    Dropped,
 }
 
 /// Held by a dataset's engine for the length of one cycle, so whoever stops the dataset can wait
@@ -161,12 +191,14 @@ impl Hub {
     pub fn register(&self, name: DatasetName, access: Access) -> Handle {
         let (pausing, watching) = watch::channel(Pausing::Running);
         let cycling = Cycling::default();
+        let (settling, settles) = mpsc::channel(SETTLES_QUEUED);
         self.datasets().insert(
             name.clone(),
             Entry {
                 access,
                 status: StatusSnapshot::default(),
                 pausing,
+                settling,
                 cycling: cycling.clone(),
             },
         );
@@ -174,8 +206,38 @@ impl Hub {
             hub: self.clone(),
             name,
             pausing: watching,
+            settles,
             cycling,
         }
+    }
+
+    /// Settles conflict `number` of `name` for `caller`, as the dataset's driver does between
+    /// cycles: the owning app only. A dataset the caller may not see is [`SettleError::NoSuchDataset`],
+    /// as a missing one is.
+    pub async fn settle(
+        &self,
+        caller: &Caller,
+        name: &DatasetName,
+        number: ConflictNumber,
+        how: How,
+    ) -> Result<(), SettleError> {
+        let queue = {
+            let datasets = self.datasets();
+            let entry = datasets
+                .get(name)
+                .filter(|entry| entry.access.admits(caller))
+                .ok_or(SettleError::NoSuchDataset)?;
+            if !entry.access.owned_by(caller) {
+                return Err(SettleError::NotOwner);
+            }
+            entry.settling.clone()
+        };
+        let (reply, answer) = oneshot::channel();
+        queue
+            .send(Settle { number, how, reply })
+            .await
+            .map_err(|_| SettleError::NoSuchDataset)?;
+        answer.await.unwrap_or(Err(SettleError::NoSuchDataset))
     }
 
     /// The names `caller` may see.
@@ -291,6 +353,7 @@ pub struct Handle {
     hub: Hub,
     name: DatasetName,
     pausing: watch::Receiver<Pausing>,
+    settles: mpsc::Receiver<Settle>,
     cycling: Cycling,
 }
 
@@ -321,6 +384,25 @@ impl Handle {
     /// (its account was removed) and the engine should stop.
     pub async fn changed(&mut self) -> bool {
         self.pausing.changed().await.is_ok()
+    }
+
+    /// Waits for the pause switch to change or for a request to settle a conflict.
+    pub async fn nudged(&mut self) -> Nudge {
+        tokio::select! {
+            changed = self.pausing.changed() => match changed {
+                Ok(()) => Nudge::Pause,
+                Err(_) => Nudge::Dropped,
+            },
+            request = self.settles.recv() => match request {
+                Some(request) => Nudge::Settle(request),
+                None => Nudge::Dropped,
+            },
+        }
+    }
+
+    /// A request to settle a conflict that is already waiting.
+    pub fn settle_waiting(&mut self) -> Option<Settle> {
+        self.settles.try_recv().ok()
     }
 
     /// Starts a cycle: holds the dataset's cycle lock until the guard drops. `None` when the

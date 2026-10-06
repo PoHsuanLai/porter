@@ -2,6 +2,7 @@
 
 use super::errors::RefusedError;
 use super::hub::{DatasetName, Event, Hub};
+use super::resolve::{ConflictNumber, How, SettleError};
 use super::status::{conflict_details, progress_details, status_details};
 use crate::scheduler::Pausing;
 use porter_core::wire::Refusal;
@@ -142,6 +143,29 @@ impl<C: Callers> SyncObject<C> {
         dataset: String,
     ) -> Result<(), RefusedError> {
         self.0.pausing(&header, &dataset, Pausing::Running).await
+    }
+
+    async fn resolve(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        dataset: String,
+        conflict: i64,
+        how: String,
+    ) -> Result<(), RefusedError> {
+        let caller = self.0.identify(&header).await?;
+        // The words first: a malformed call is the caller's to fix whatever it may see.
+        let how = how.parse::<How>().map_err(RefusedError::invalid)?;
+        let name = self.0.visible(&caller, &dataset)?;
+        self.0
+            .hub
+            .settle(&caller, &name, ConflictNumber(conflict), how)
+            .await
+            .map_err(|error| match error {
+                SettleError::NoSuchDataset => RefusedError::of(Refusal::NoFittingAccount),
+                SettleError::NotOwner => RefusedError::of(Refusal::Denied),
+                SettleError::NoSuchConflict => RefusedError::no_such_conflict(),
+                SettleError::Failed(why) => RefusedError::failed(why),
+            })
     }
 
     #[zbus(signal)]

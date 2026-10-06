@@ -15,6 +15,21 @@
    <method name="Resume">
      <arg name="dataset" type="s" direction="in"/>
    </method>
+   <!--
+    Settles one stored conflict of `dataset` (`<account>/<dataset>`). `conflict` is the number
+    the `Conflict` signal carried (its `number` key); `how` is `keep_local` (upload the local
+    content over the replica's version) or `keep_remote` (take the replica's version and drop
+    the local change), and the next cycle does it. Only the dataset's owning app may call it.
+    Errors: `InvalidArgs` for any other `how`; `org.quire.Accounts1.Error.NoFittingAccount`
+    when the caller sees no such dataset; `org.quire.Accounts1.Error.Denied` when it sees the
+    dataset but does not own it; `org.quire.Sync1.Error.NoSuchConflict` when the conflict is
+    unknown or already settled.
+    -->
+   <method name="Resolve">
+     <arg name="dataset" type="s" direction="in"/>
+     <arg name="conflict" type="x" direction="in"/>
+     <arg name="how" type="s" direction="in"/>
+   </method>
    <signal name="Progress">
      <arg name="dataset" type="s"/>
      <arg name="progress" type="a{sv}"/>

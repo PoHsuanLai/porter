@@ -77,7 +77,7 @@ Each row names the lane of the accounts program (porter PLAN §6) that removes i
 | syncd PIM: no flow gives syncd a Calendar or Contacts grant | the supervisor mirrors an account only when syncd already holds a grant for it (`PimGrants`, `ClientGrants` over `Accounts::find`; a consent sheet needs a parent window and a host to draw it, which a daemon lacks). Tests seed the grants; today the person would have to make them in Settings. Closes with W3e (the sheet host) plus a Settings action "Sync calendars and contacts to this computer" (or a first-run `Choose` from syncd): W3e / the detent accounts pane |
 | syncd PIM: collections are found again every ten minutes, items every poll (sync-collection, else an etag walk) | a new, renamed or recoloured calendar appears within `PimConfig::rescan`; no CTag shortcut and no push; tasks calendars (VTODO) are mirrored like any calendar. Closes if the delay shows |
 | syncd PIM: collections are on the endpoint's origin only | the relay dials the endpoint's origin; a home set on another host (rare; iCloud shards) is an `Unreadable` discovery. Closes with the iCloud provider lane (W6g) |
-| syncd: `Engine::resolve` (KeepLocal, KeepRemote) has no D-Bus method | `Sync1` is frozen (four methods); the owning app resolves through a method a later interface lane adds (see "Interface asks from W6a"); the journal and engine side is built and tested |
+| syncd `Sync1.Resolve`: a dataset registered with `Access::default()` (no owning app) cannot be settled by anyone (Settings and the daemons see it and are `Denied`); a call waits for the dataset's driver, which answers between cycles (a cycle stuck on the network delays it) | every dataset syncd runs today names its owners (PIM, Photos); if an ownerless dataset appears, decide whether Settings may settle it. `Sync1` has no owner notion of its own: ownership is `Access.owners`, the rule `Datasets`/`Status` use, narrowed to the app itself |
 | syncd: the network seam (`watch::Receiver<Network>`) has no NetworkManager reader | the daemon's main passes no engines yet; the lane that registers the first replica reads `org.freedesktop.NetworkManager` `Metered` (never in tests) |
 | syncd: SQLite calls run on the async runtime's thread (current_thread in main) | each journal write is one short transaction; W6f's file work already runs on blocking threads, the journal's does not: a 1 000-photo cycle is one transaction per item, each synced to disk, so a cycle is slow under load (acceptance 5 takes about a minute on a busy machine); batch the journal ops of a page if it matters |
 | Photos (W6f): no app, no grant flow, no daemon wiring | `datasets::photos::start` runs both datasets over replicas it is handed and is off by default (`PhotosSwitch`, `SYNCD_PHOTOS=on` is how a host would read it); `main` does not call it. The supervisor that asks accountd for a Storage grant for Photos, builds `webdav_replica`s for `Photos/Originals` and `Photos/Metadata` and makes those folders on a fresh account comes with the Photos app (D7) |
@@ -819,7 +819,7 @@ daemon. No `todo!()` was left behind (none in syncd before or after).
   failure backs off exponentially and never sooner than `Retry-After`, equal jitter from a seeded
   `SplitMix64`, `coalesce` batches wake-ups, metered/offline/user pause hold. `syncd::driver` is the
   loop around it.
-- **Sync1** (`syncd::service`): all four methods and both signals of the frozen XML, callers by
+- **Sync1** (`syncd::service`): the four methods and both signals of the frozen XML (and `Resolve`, added after: see Interface asks, item 2), callers by
   `ProcCallers` (the `test-proc-root` feature, `SYNCD_PROC_ROOT`, a dist test and a check-boundary
   row as accountd). A dataset is named `<account>/<dataset>`; apps see the datasets they own,
   Settings and the porter daemons all; an unknown or invisible name is the refusal
@@ -843,9 +843,12 @@ daemon. No `todo!()` was left behind (none in syncd before or after).
 1. `porter-dbus` `sync.rs`, doc comments only (the XML is unchanged): `datasets` returns
    "the dataset names the caller may see, as `<account>/<dataset>`" and `status`, `pause`,
    `resume` take such a name.
-2. A way for the owning app to settle a conflict (`Engine::resolve` exists): a later `Sync1`
-   method, for example `Resolve(dataset: s, conflict: x, how: s)`; the XML is frozen so it is not
-   added here.
+2. DONE (lane sync-resolve, owner decision 2026-10-07): `Sync1.Resolve(dataset: s, conflict: x,
+   how: s)` settles a conflict (`how` is `keep_local` or `keep_remote`; `conflict` is the `number`
+   key of the `Conflict` signal, which now carries it). Errors: `InvalidArgs` (bad `how`),
+   `org.quire.Accounts1.Error.NoFittingAccount` (no such dataset for the caller),
+   `org.quire.Accounts1.Error.Denied` (sees it, does not own it), `org.quire.Sync1.Error.NoSuchConflict`
+   (unknown or already settled). The driver settles it between cycles and runs the next at once.
 3. `DatasetKind` has no variant for the PIM mirror (W6e); datasets are `DatasetId` slugs in syncd,
    so nothing is needed unless the owner wants it in the frozen enum.
 

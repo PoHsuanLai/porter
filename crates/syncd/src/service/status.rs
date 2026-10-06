@@ -3,7 +3,7 @@
 
 use super::hub::StatusSnapshot;
 use crate::scheduler::Pausing;
-use porter_dbus::{Details, STATUS_KEY_QUOTA, to_vardict, zvariant};
+use porter_dbus::{CONFLICT_KEY_NUMBER, Details, STATUS_KEY_QUOTA, to_vardict, zvariant};
 use porter_sync::{BaseVersion, Quota, RemoteSide, StoredConflict};
 use serde_json::json;
 use zvariant::{Dict, OwnedValue, Signature, Value};
@@ -67,7 +67,8 @@ pub fn progress_details(fetched: u64, uploaded: u64) -> Details {
     json.as_object().map(to_vardict).unwrap_or_default()
 }
 
-/// What `Conflict` carries: the item, the base, the replica's side and the local item.
+/// What `Conflict` carries: the `number` (what `Resolve` takes; absent only for a conflict not
+/// stored yet), the item, the base, the replica's side and the local item.
 pub fn conflict_details(stored: &StoredConflict) -> Details {
     let (side, version, id) = match &stored.conflict.remote {
         RemoteSide::Changed(v) => ("changed", Some(&v.0), None),
@@ -79,6 +80,7 @@ pub fn conflict_details(stored: &StoredConflict) -> Details {
         BaseVersion::At(v) => Some(&v.0),
     };
     let json = json!({
+        CONFLICT_KEY_NUMBER: stored.number,
         "item": stored.conflict.item.0,
         "local": stored.local.0,
         "remote": side,
@@ -167,6 +169,8 @@ mod tests {
         assert_eq!(text(&details, "remote_version").as_deref(), Some("v3"));
         assert_eq!(text(&details, "local").as_deref(), Some("a.txt"));
         assert!(!details.contains_key("base"));
+        assert_eq!(details["number"].value_signature().to_string(), "x");
+        assert_eq!(i64::try_from(&details["number"]).ok(), Some(1));
         let progress = progress_details(2, 1);
         assert_eq!(progress.len(), 2);
     }

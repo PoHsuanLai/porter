@@ -19,10 +19,22 @@ pub trait Sync {
     fn pause(&self, dataset: &str) -> zbus::Result<()>;
     /// Starts it again.
     fn resume(&self, dataset: &str) -> zbus::Result<()>;
+    /// Settles one stored conflict of `dataset` (`<account>/<dataset>`): `conflict` is the number
+    /// the `Conflict` signal carried (its `number` key, `CONFLICT_KEY_NUMBER`), `how` is
+    /// `keep_local` (upload the local content over the replica's version) or `keep_remote` (take
+    /// the replica's version, drop the local change); the next cycle does it. Only the dataset's
+    /// owning app may call it. Errors: `InvalidArgs` for any other `how` (the message names the
+    /// two words); `org.quire.Accounts1.Error.NoFittingAccount` when the caller sees no such
+    /// dataset; `org.quire.Accounts1.Error.Denied` when it sees the dataset but does not own
+    /// it; `org.quire.Sync1.Error.NoSuchConflict` when the conflict is unknown or already
+    /// settled.
+    fn resolve(&self, dataset: &str, conflict: i64, how: &str) -> zbus::Result<()>;
     /// Transfer progress.
     #[zbus(signal)]
     fn progress(&self, dataset: &str, progress: Details) -> zbus::Result<()>;
-    /// A conflict was stored for the owning app to resolve.
+    /// A conflict was stored for the owning app to resolve. The details carry `number` (an `x`,
+    /// what `resolve` takes), `item`, `local`, `remote` (`changed`, `deleted` or `exists`),
+    /// `remote_version`, `remote_id`, `base` and `at`.
     #[zbus(signal)]
     fn conflict(&self, dataset: &str, conflict: Details) -> zbus::Result<()>;
 }
@@ -49,6 +61,19 @@ impl SyncSkeleton {
 
     fn resume(&self, dataset: String) -> fdo::Result<()> {
         let _ = dataset;
+        Err(crate::introspect::frozen())
+    }
+
+    /// Settles one stored conflict of `dataset` (`<account>/<dataset>`). `conflict` is the number
+    /// the `Conflict` signal carried (its `number` key); `how` is `keep_local` (upload the local
+    /// content over the replica's version) or `keep_remote` (take the replica's version and drop
+    /// the local change), and the next cycle does it. Only the dataset's owning app may call it.
+    /// Errors: `InvalidArgs` for any other `how`; `org.quire.Accounts1.Error.NoFittingAccount`
+    /// when the caller sees no such dataset; `org.quire.Accounts1.Error.Denied` when it sees the
+    /// dataset but does not own it; `org.quire.Sync1.Error.NoSuchConflict` when the conflict is
+    /// unknown or already settled.
+    fn resolve(&self, dataset: String, conflict: i64, how: String) -> fdo::Result<()> {
+        let _ = (dataset, conflict, how);
         Err(crate::introspect::frozen())
     }
 

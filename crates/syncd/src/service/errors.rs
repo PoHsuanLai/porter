@@ -5,7 +5,7 @@
 //! `DBusError` derive names every non-refusal `org.freedesktop.zbus.Error`.
 
 use porter_core::wire::Refusal;
-use porter_dbus::refusal_error_name;
+use porter_dbus::{SYNC_ERROR_NO_SUCH_CONFLICT, refusal_error_name};
 use zbus::DBusError;
 use zbus::fdo;
 use zbus::message::{Header, Message};
@@ -40,6 +40,20 @@ impl RefusedError {
     /// An argument that is not what the interface says.
     pub fn invalid(why: impl ToString) -> Self {
         Self::bus(fdo::Error::InvalidArgs(why.to_string()))
+    }
+
+    /// A conflict that is not there (unknown, or already settled):
+    /// `org.quire.Sync1.Error.NoSuchConflict`.
+    pub fn no_such_conflict() -> Self {
+        Self {
+            name: ErrorName::from_static_str_unchecked(SYNC_ERROR_NO_SUCH_CONFLICT),
+            text: "no such conflict, or it is already settled".to_owned(),
+        }
+    }
+
+    /// The daemon could not do it.
+    pub fn failed(why: impl ToString) -> Self {
+        Self::bus(fdo::Error::Failed(why.to_string()))
     }
 
     /// A caller the daemon will not answer.

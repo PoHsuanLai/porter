@@ -8,8 +8,8 @@ use crate::clock::Clock;
 use crate::dataset::Dataset;
 use crate::engine::{Engine, Outcome, Report, SyncError};
 use crate::scheduler::{Inputs, Jitter, Last, Network, PushSignal, Settings, Wake, next_wake};
-use crate::service::{Event, Handle, StatusSnapshot};
-use porter_sync::{Quota, Replica};
+use crate::service::{Event, Handle, Nudge, Settle, SettleError, StatusSnapshot};
+use porter_sync::{Quota, Replica, StoredConflict};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{Notify, watch};
@@ -55,6 +55,9 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
     /// Runs until the dataset is dropped from the hub (its account was removed).
     pub async fn run(mut self) {
         while self.handle.is_registered() {
+            while let Some(request) = self.handle.settle_waiting() {
+                self.settle(request);
+            }
             let now = self.engine_now();
             let inputs = Inputs {
                 delta: self.engine.replica().features().delta,
@@ -97,7 +100,11 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
         };
         tokio::select! {
             () = sleep => {}
-            _ = self.handle.changed() => {}
+            nudge = self.handle.nudged() => {
+                if let Nudge::Settle(request) = nudge {
+                    self.settle(request);
+                }
+            }
             _ = self.network.changed() => {}
             () = self.push.notified() => {
                 if self.waiting == PushSignal::Quiet {
@@ -105,6 +112,23 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
                 }
             }
         }
+    }
+
+    /// Settles one conflict between cycles (the engine is this driver's alone), answers the
+    /// caller and, when it was settled, has the next cycle run at once to do it.
+    fn settle(&mut self, request: Settle) {
+        let Settle { number, how, reply } = request;
+        let answer = match self.engine.resolve(number.0, how.0) {
+            Ok(true) => Ok(()),
+            Ok(false) => Err(SettleError::NoSuchConflict),
+            Err(error) => Err(SettleError::Failed(error.to_string())),
+        };
+        if answer.is_ok() {
+            self.last = Last::Never;
+            self.publish(self.engine_now());
+        }
+        // The caller may have gone: nothing to tell then.
+        let _ = reply.send(answer);
     }
 
     async fn cycle(&mut self) {
@@ -165,10 +189,11 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
                 uploaded: report.uploaded as u64,
             });
         }
+        let stored = self.engine.journal().conflicts().unwrap_or_default();
         for conflict in &report.conflicts {
             self.handle.tell(Event::Conflict {
                 dataset: dataset.clone(),
-                conflict: Box::new(conflict.clone()),
+                conflict: Box::new(numbered(conflict, &stored)),
             });
         }
     }
@@ -191,5 +216,19 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
             pausing: self.handle.pausing(),
             quota: self.quota,
         });
+    }
+}
+
+/// `reported` with the number the journal gave it (the report is made before the row is
+/// stored): the newest stored conflict of the same local item and sides, if any.
+fn numbered(reported: &StoredConflict, stored: &[StoredConflict]) -> StoredConflict {
+    let number = stored
+        .iter()
+        .rev()
+        .find(|row| row.local == reported.local && row.conflict == reported.conflict)
+        .and_then(|row| row.number);
+    StoredConflict {
+        number: number.or(reported.number),
+        ..reported.clone()
     }
 }
