@@ -19,8 +19,18 @@ pub struct TokenResponse {
     /// A refresh token; absent when the issuer does not rotate it.
     #[serde(default)]
     pub refresh_token: Option<SecretText>,
-    /// Seconds the access token lasts.
+    /// Seconds the access token lasts. RFC 6749 section 5.1 makes `expires_in` RECOMMENDED, not
+    /// required, so an answer without it reads as [`DEFAULT_EXPIRES_IN_SECONDS`] (one hour, what
+    /// mailo assumed).
+    #[serde(default = "default_expires_in")]
     pub expires_in: u32,
+}
+
+/// What `expires_in` is taken to be when the issuer's answer leaves it out: one hour.
+pub const DEFAULT_EXPIRES_IN_SECONDS: u32 = 3600;
+
+fn default_expires_in() -> u32 {
+    DEFAULT_EXPIRES_IN_SECONDS
 }
 
 impl TokenResponse {
@@ -287,5 +297,37 @@ mod tests {
             revoke(&http, &ends, &token).await,
             Err(ExchangeFault::Unreachable)
         );
+    }
+
+    #[tokio::test]
+    async fn an_answer_without_expires_in_lasts_an_hour() {
+        let now = UnixSeconds(1_000);
+        let cases = [
+            ("absent", r#"{"access_token":"a"}"#, 3600),
+            (
+                "absent, rotated",
+                r#"{"access_token":"a","refresh_token":"r2"}"#,
+                3600,
+            ),
+            ("given", r#"{"access_token":"a","expires_in":60}"#, 60),
+            (
+                "zero is the issuer's word",
+                r#"{"access_token":"a","expires_in":0}"#,
+                0,
+            ),
+        ];
+        for (name, body, seconds) in cases {
+            let tokens = refresh_with(vec![answer(200, body)]).await.expect(name);
+            assert_eq!(tokens.expires_in, seconds, "{name}");
+            assert_eq!(
+                tokens.expires_at(now),
+                UnixSeconds(1_000 + i64::from(seconds)),
+                "{name}"
+            );
+        }
+        assert_eq!(DEFAULT_EXPIRES_IN_SECONDS, 3600);
+        // Still not an answer: no access token.
+        let bare = refresh_with(vec![answer(200, r#"{"expires_in":60}"#)]).await;
+        assert_eq!(bare, Err(ExchangeFault::Unreadable));
     }
 }
