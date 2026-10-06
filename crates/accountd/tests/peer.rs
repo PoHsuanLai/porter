@@ -26,6 +26,16 @@ async fn only_a_porter_daemon_may_ask_and_it_sees_the_consent_stores_verdict() {
         (before[0].0.as_str(), before[0].1.as_str()),
         ("fake-storage", "ask")
     );
+    // Every row names the provider file its account was made from, granted or not.
+    let provider = rig
+        .service
+        .registry()
+        .accounts
+        .iter()
+        .find(|a| a.id.as_str() == "fake-storage")
+        .map(|a| a.provider.to_string())
+        .expect("the account");
+    assert_eq!(text_of(&before[0].2, "provider"), Some(provider));
 
     let (_photos, grant) = grant_photos(&rig).await;
     let after = peer

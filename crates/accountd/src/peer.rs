@@ -80,6 +80,9 @@ impl<H: Host, C: Callers> Peer<H, C> {
                     space: SpaceScope::Any,
                 };
                 let mut details = Details::new();
+                // The provider file the account was made from: inferd reaches a hosted model
+                // through it, so it never guesses from the account id.
+                details.extend(text(account.provider.as_str()).map(|v| ("provider".to_owned(), v)));
                 let word = match decide(&registry.grants, &key) {
                     Verdict::Granted { grant, scope } => {
                         details.extend(text(grant.as_str()).map(|v| ("grant".to_owned(), v)));
