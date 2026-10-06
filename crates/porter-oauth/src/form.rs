@@ -4,8 +4,9 @@
 //! The percent-decoder is ported from mailo's loopback listener
 //! (`~/mailo/crates/mail-runtime/src/loopback.rs`).
 
+use crate::exchange::ExchangeFault;
 use porter_core::EndpointUrl;
-use porter_http::{HttpRequest, HttpResponse, Method};
+use porter_http::{Http, HttpRequest, HttpResponse, Method};
 
 /// Percent-encodes everything but the RFC 3986 unreserved set.
 pub(crate) fn encode(text: &str) -> String {
@@ -66,12 +67,21 @@ pub(crate) fn body(pairs: &[(&str, &str)]) -> String {
         .join("&")
 }
 
-/// A form POST to `url`.
-pub(crate) fn post(url: &EndpointUrl, pairs: &[(&str, &str)]) -> HttpRequest {
-    HttpRequest::new(Method::Post, url.clone())
+/// A form POST to `url`, sent over `http`. An endpoint that is not a web URL, a request that
+/// went nowhere: both are an issuer that cannot be reached.
+pub(crate) async fn send_form<H: Http>(
+    http: &H,
+    url: &EndpointUrl,
+    pairs: &[(&str, &str)],
+) -> Result<HttpResponse, ExchangeFault> {
+    let request = HttpRequest::to(Method::Post, url)
+        .map_err(|_| ExchangeFault::Unreachable)?
         .with_header("Content-Type", "application/x-www-form-urlencoded")
         .with_header("Accept", "application/json")
-        .with_body(body(pairs))
+        .with_body(body(pairs));
+    http.send(request)
+        .await
+        .map_err(|_| ExchangeFault::Unreachable)
 }
 
 /// The `error` of an OAuth error body, if the body is one.

@@ -13,7 +13,7 @@ use porter_dav::names::{
 };
 use porter_dav::{Depth, Home, home_set, parse_multistatus, propfind};
 use porter_discover::parse_ocs_capabilities;
-use porter_http::{Http, HttpRequest, HttpResponse, Method};
+use porter_http::{Http, HttpRequest, HttpResponse, Method, web_url};
 
 /// Who is signed in, and where.
 #[derive(Debug, Clone)]
@@ -31,18 +31,19 @@ pub(super) struct Found {
 }
 
 impl Who {
-    fn get(&self, url: EndpointUrl) -> HttpRequest {
-        HttpRequest::new(Method::Get, url)
-            .with_header("Authorization", basic(&self.login.0, &self.password))
+    fn get(&self, url: &EndpointUrl) -> Result<HttpRequest, SignInFault> {
+        Ok(HttpRequest::to(Method::Get, url)
+            .map_err(fault_of)?
+            .with_header("Authorization", basic(&self.login.0, &self.password)))
     }
 
-    fn propfind(&self, url: EndpointUrl, props: &[&str]) -> HttpRequest {
-        let mut request = propfind(url, Depth::Zero, props);
+    fn propfind(&self, url: &EndpointUrl, props: &[&str]) -> Result<HttpRequest, SignInFault> {
+        let mut request = propfind(web_url(url).map_err(fault_of)?, Depth::Zero, props);
         request.headers.push(porter_http::Header::new(
             "Authorization",
             basic(&self.login.0, &self.password),
         ));
-        request
+        Ok(request)
     }
 }
 
@@ -66,7 +67,7 @@ pub(super) async fn discover(io: &Io, who: &Who) -> Result<Found, SignInFault> {
     let dav = join(&who.server, "/remote.php/dav/").ok_or_else(unreadable)?;
 
     // The principal is also the first call that needs the password, so a refusal shows here.
-    let principal = send(io, who.propfind(dav.clone(), &[CURRENT_USER_PRINCIPAL])).await?;
+    let principal = send(io, who.propfind(&dav, &[CURRENT_USER_PRINCIPAL])?).await?;
     let principal = parse_multistatus(&text(&principal))
         .ok()
         .and_then(|status| porter_dav::current_user_principal(&status))
@@ -78,7 +79,7 @@ pub(super) async fn discover(io: &Io, who: &Who) -> Result<Found, SignInFault> {
 
     let capabilities = {
         let request = who
-            .get(join(&who.server, "/ocs/v2.php/cloud/capabilities").ok_or_else(unreadable)?)
+            .get(&join(&who.server, "/ocs/v2.php/cloud/capabilities").ok_or_else(unreadable)?)?
             .with_header("OCS-APIRequest", "true")
             .with_header("Accept", "application/json");
         send(io, request).await?
@@ -94,11 +95,7 @@ pub(super) async fn discover(io: &Io, who: &Who) -> Result<Found, SignInFault> {
     .ok_or_else(unreadable)?;
     // The files root answers or the account has no storage worth offering; the quota is the
     // question asked (the claim says it is reported).
-    send(
-        io,
-        who.propfind(files.clone(), &[QUOTA_USED, QUOTA_AVAILABLE]),
-    )
-    .await?;
+    send(io, who.propfind(&files, &[QUOTA_USED, QUOTA_AVAILABLE])?).await?;
 
     let homes = homes(io, who, principal.as_ref()).await;
     let calendars = homes
@@ -145,10 +142,9 @@ async fn homes(
     let Some(principal) = principal else {
         return (None, None);
     };
-    let request = who.propfind(
-        principal.clone(),
-        &[CALENDAR_HOME_SET, ADDRESSBOOK_HOME_SET],
-    );
+    let Ok(request) = who.propfind(principal, &[CALENDAR_HOME_SET, ADDRESSBOOK_HOME_SET]) else {
+        return (None, None);
+    };
     let Ok(response) = send(io, request).await else {
         return (None, None);
     };

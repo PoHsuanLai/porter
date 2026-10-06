@@ -17,26 +17,38 @@
 use crate::config::{self, AuthMethod, ClientConfig, Server, ServerProtocol, SocketType};
 use crate::found::{DiscoverFault, Found, Source};
 use crate::mail::{imap_claim, imap_endpoint, smtp_endpoint};
-use porter_core::{EndpointUrl, LoginName, ServiceEndpoint, Tls};
+use porter_core::{LoginName, ServiceEndpoint, Tls, WebUrl};
 use porter_provider::DomainName;
 
 /// Where the public ISPDB is served; the domain is appended.
 pub const ISPDB: &str = "https://autoconfig.thunderbird.net/v1.1/";
 
 /// The URLs to try for an address at `domain`, in order: the domain's own `autoconfig` host, its
-/// `.well-known` path, then the ISP database. All HTTPS, and none carries the address: an
-/// `EndpointUrl` has no query, so mailo's `?emailaddress=` is not sent (FINDINGS: interface ask).
-pub fn autoconfig_urls(domain: &DomainName, address: &str) -> Vec<EndpointUrl> {
-    // The address would be the query; see above.
-    let _ = address;
+/// `.well-known` path, then the ISP database. All HTTPS. The first two carry the address as
+/// mailo sends it, `?emailaddress=<address>` percent-encoded, because some hosts answer per
+/// mailbox; the ISP database is a third party's public service and is asked for the domain only.
+pub fn autoconfig_urls(domain: &DomainName, address: &str) -> Vec<WebUrl> {
+    let query = format!("?emailaddress={}", percent_encode(address));
     [
-        format!("https://autoconfig.{domain}/mail/config-v1.1.xml"),
-        format!("https://{domain}/.well-known/autoconfig/mail/config-v1.1.xml"),
+        format!("https://autoconfig.{domain}/mail/config-v1.1.xml{query}"),
+        format!("https://{domain}/.well-known/autoconfig/mail/config-v1.1.xml{query}"),
         ispdb_url(domain),
     ]
     .iter()
-    .filter_map(|text| EndpointUrl::parse(text).ok())
+    .filter_map(|text| WebUrl::parse(text).ok())
     .collect()
+}
+
+/// `text` as one query value: unreserved characters stay, every other byte is `%XX`.
+fn percent_encode(text: &str) -> String {
+    text.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                char::from(b).to_string()
+            }
+            other => format!("%{other:02X}"),
+        })
+        .collect()
 }
 
 /// The ISP database's document URL for `domain` as text.

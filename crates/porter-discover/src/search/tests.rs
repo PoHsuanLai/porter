@@ -6,8 +6,9 @@ use super::*;
 use crate::testing::{ADDRESS, Records, Table, mx, respond, srv};
 use porter_provider::ProviderSpec;
 
-const OWN: &str = "https://autoconfig.example.test/mail/config-v1.1.xml";
-const WELL_KNOWN: &str = "https://example.test/.well-known/autoconfig/mail/config-v1.1.xml";
+const OWN: &str =
+    "https://autoconfig.example.test/mail/config-v1.1.xml?emailaddress=someone%40example.test";
+const WELL_KNOWN: &str = "https://example.test/.well-known/autoconfig/mail/config-v1.1.xml?emailaddress=someone%40example.test";
 const ISPDB: &str = "https://autoconfig.thunderbird.net/v1.1/example.test";
 
 fn document(incoming: &str, outgoing: &str) -> String {
@@ -107,7 +108,7 @@ async fn the_well_known_path_is_tried_next() {
 }
 
 #[tokio::test]
-async fn the_ispdb_is_asked_for_the_domain_and_never_sent_the_address() {
+async fn the_own_hosts_get_the_address_and_the_ispdb_is_asked_for_the_domain_only() {
     let http = Table::default().get(
         ISPDB,
         respond(200, &document("imap.provider.test", "smtp.provider.test")),
@@ -118,12 +119,19 @@ async fn the_ispdb_is_asked_for_the_domain_and_never_sent_the_address() {
             .expect("found"),
     );
     assert_eq!(first_url(&found), "imaps://imap.provider.test:993");
+    let seen = http.seen();
+    assert_eq!(seen.len(), 3, "{seen:?}");
     assert!(
-        http.seen()
-            .iter()
-            .all(|s| !s.contains("emailaddress") && !s.contains("%40")),
-        "{:?}",
-        http.seen()
+        seen[0].contains("?emailaddress=someone%40example.test"),
+        "{seen:?}"
+    );
+    assert!(
+        seen[1].contains("?emailaddress=someone%40example.test"),
+        "{seen:?}"
+    );
+    assert!(
+        !seen[2].contains("emailaddress") && !seen[2].contains("%40"),
+        "{seen:?}"
     );
 }
 

@@ -16,7 +16,7 @@ use porter_core::{
     Account, AccountId, AccountLabel, AccountState, AccountsReply, AccountsRequest, AppId, AppName,
     AuthKind, Claim, Credential, DataClass, EndpointUrl, Family, Isolation, LoginName, Offer,
     Provenance, ProviderId, Restriction, SecretKey, SecretPurpose, SecretText, ServiceEndpoint,
-    SpaceScope, Subject, Tls, Toggle, UnixSeconds,
+    SpaceScope, Subject, Tls, Toggle, UnixSeconds, WebUrl,
 };
 use porter_fake::{FixedClock, MemoryStore, RecordingAudit, ScriptedSheets};
 use porter_provider::{
@@ -68,6 +68,10 @@ struct Script {
     steps: Arc<Mutex<VecDeque<SignInStep>>>,
     told: Arc<Mutex<Vec<&'static str>>>,
     modes: Arc<Mutex<Vec<SignInMode>>>,
+    /// The accounts the provider was asked to revoke, as it was handed them.
+    revoked: Arc<Mutex<Vec<Account>>>,
+    /// Whether the provider fails when asked to revoke.
+    revoke_fails: Arc<Mutex<bool>>,
 }
 
 impl Script {
@@ -125,7 +129,7 @@ impl Provider for ScriptedProvider {
 
     async fn discover(
         &self,
-        _account: &AccountId,
+        _account: &Account,
         _presented: &Presented,
     ) -> Result<Vec<Claim>, ProviderError> {
         Ok(vec![])
@@ -147,8 +151,20 @@ impl Provider for ScriptedProvider {
         }
     }
 
-    async fn revoke(&self, _presented: &Presented) -> Result<RevokeOutcome, ProviderError> {
-        Ok(RevokeOutcome::Unsupported)
+    async fn revoke(
+        &self,
+        account: &Account,
+        _presented: &Presented,
+    ) -> Result<RevokeOutcome, ProviderError> {
+        self.script
+            .revoked
+            .lock()
+            .expect("revoked")
+            .push(account.clone());
+        match *self.script.revoke_fails.lock().expect("flag") {
+            true => Err(ProviderError::Unreachable),
+            false => Ok(RevokeOutcome::Revoked),
+        }
     }
 }
 
@@ -635,7 +651,8 @@ async fn a_host_with_no_sheet_is_unavailable() {
 
 #[tokio::test]
 async fn a_browser_step_is_polled_until_the_sign_in_is_done() {
-    let page = EndpointUrl::parse("https://login.example.org/flow/1").expect("url");
+    let page =
+        WebUrl::parse("https://login.example.org/authorize?state=1&scope=a%20b").expect("url");
     let script = Script::answering(vec![
         SignInStep::OpenBrowser { url: page.clone() },
         SignInStep::Waiting,
@@ -686,7 +703,8 @@ async fn a_code_step_is_polled_too() {
 
 #[tokio::test]
 async fn closing_the_sheet_ends_a_wait_for_the_browser_at_once() {
-    let page = EndpointUrl::parse("https://login.example.org/flow/1").expect("url");
+    let page =
+        WebUrl::parse("https://login.example.org/authorize?state=1&scope=a%20b").expect("url");
     // The sign-in would wait for ever.
     let script = Script::answering(vec![SignInStep::OpenBrowser { url: page }]);
     let gives_up: Reactor = Arc::new(|view| match view {
@@ -862,7 +880,8 @@ async fn signing_in_again_replaces_the_secrets_sets_the_account_working_and_audi
     assert_eq!(
         script.modes.lock().expect("modes").clone(),
         vec![SignInMode::Reauthenticate {
-            account: AccountId::parse("scripted-ada").expect("id")
+            account: AccountId::parse("scripted-ada").expect("id"),
+            endpoints: vec![imap("ada")],
         }]
     );
     assert_eq!(script.told(), ["start"]);
@@ -887,7 +906,7 @@ async fn signing_in_again_replaces_the_secrets_sets_the_account_working_and_audi
 #[tokio::test]
 async fn signing_in_again_through_the_browser_is_stored_when_the_sign_in_is_done() {
     let mail = app("org.quire.Mail");
-    let page = EndpointUrl::parse("https://login.example.org/flow/2").expect("url");
+    let page = WebUrl::parse("https://login.example.org/authorize?state=2").expect("url");
     let script = Script::answering(vec![
         SignInStep::OpenBrowser { url: page },
         SignInStep::Waiting,
@@ -962,4 +981,53 @@ async fn a_denied_grant_is_not_a_grant_to_sign_in_again() {
         service.handle(&mail, reauth_request()).await,
         AccountsReply::Refused(Refusal::UnknownGrant)
     );
+}
+
+#[tokio::test]
+async fn removing_an_account_asks_the_provider_to_revoke_it_with_the_stored_account_first() {
+    let mail = app("org.quire.Mail");
+    let script = Script::default();
+    let (service, kept) = reauth_service(&script, AccountState::Ok, vec![], &mail);
+    let key = SecretKey {
+        account: AccountId::parse("scripted-ada").expect("id"),
+        purpose: SecretPurpose::Password,
+    };
+    kept.secrets
+        .put(&key, &Credential::Password(SecretText::new("in-pw")))
+        .await
+        .expect("put");
+    service.remove_account(&key.account).await.expect("removed");
+    let revoked = script.revoked.lock().expect("revoked").clone();
+    assert_eq!(revoked, vec![held_account("ada", AccountState::Ok)]);
+    assert!(service.registry().accounts.is_empty());
+    assert_eq!(kept.secrets.get(&key).await, Err(SecretsError::Missing));
+}
+
+#[tokio::test]
+async fn a_provider_that_cannot_revoke_never_stops_the_removal() {
+    let mail = app("org.quire.Mail");
+    let script = Script::default();
+    *script.revoke_fails.lock().expect("flag") = true;
+    let (service, kept) = reauth_service(&script, AccountState::Ok, vec![], &mail);
+    let key = SecretKey {
+        account: AccountId::parse("scripted-ada").expect("id"),
+        purpose: SecretPurpose::Password,
+    };
+    kept.secrets
+        .put(&key, &Credential::Password(SecretText::new("in-pw")))
+        .await
+        .expect("put");
+    let report = service
+        .remove_with_revoke(&key.account)
+        .await
+        .expect("removed");
+    assert_eq!(report, porter_service::RevokeReport::Skipped);
+    assert_eq!(script.revoked.lock().expect("revoked").len(), 1);
+    assert!(service.registry().accounts.is_empty());
+    assert_eq!(kept.secrets.get(&key).await, Err(SecretsError::Missing));
+    // No credential filed: the provider is not asked, and the removal goes through.
+    let (service, _kept) = reauth_service(&script, AccountState::Ok, vec![], &mail);
+    let before = script.revoked.lock().expect("revoked").len();
+    service.remove_account(&key.account).await.expect("removed");
+    assert_eq!(script.revoked.lock().expect("revoked").len(), before);
 }

@@ -273,6 +273,7 @@ async fn signing_in_again_to_a_mail_account_asks_the_form_and_finishes_without_a
     let start = SignInStart {
         mode: SignInMode::Reauthenticate {
             account: AccountId::parse("generic-imap-ada").expect("id"),
+            endpoints: vec![],
         },
     };
     let mut signin = mail.provider.sign_in(start).expect("sign-in");
@@ -530,13 +531,34 @@ async fn a_session_never_hands_out_the_password_and_revoke_has_nothing_to_do() {
         Some(ProviderError::Unauthorized)
     );
     assert_eq!(
-        mail.provider.revoke(&presented).await,
+        mail.provider
+            .revoke(
+                &held_by(&account, porter_core::AuthKind::Password, "generic-imap"),
+                &presented
+            )
+            .await,
         Ok(porter_provider::RevokeOutcome::Unsupported)
     );
     let claims = mail
         .provider
-        .discover(&account, &presented)
+        .discover(
+            &held_by(&account, porter_core::AuthKind::Password, "generic-imap"),
+            &presented,
+        )
         .await
         .expect("claims");
     assert_eq!(claims.len(), 1);
+}
+
+fn held_by(id: &AccountId, auth: porter_core::AuthKind, provider: &str) -> porter_core::Account {
+    porter_core::Account {
+        id: id.clone(),
+        provider: porter_core::ProviderId::parse(provider).expect("provider"),
+        label: porter_core::AccountLabel("held".into()),
+        state: porter_core::AccountState::Ok,
+        auth,
+        capabilities: vec![],
+        restriction: porter_core::Restriction::none(),
+        endpoints: vec![],
+    }
 }

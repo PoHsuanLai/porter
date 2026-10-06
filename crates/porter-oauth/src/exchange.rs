@@ -116,10 +116,7 @@ pub async fn revoke<H: Http>(
     let Some(url) = &endpoints.revoke else {
         return Ok(());
     };
-    let response = http
-        .send(form::post(url, &[("token", token.expose())]))
-        .await
-        .map_err(|_| ExchangeFault::Unreachable)?;
+    let response = form::send_form(http, url, &[("token", token.expose())]).await?;
     match response.status.0 {
         200..=299 => Ok(()),
         401 => Err(ExchangeFault::Refused),
@@ -141,10 +138,7 @@ pub(crate) async fn token_call<H: Http>(
             .as_ref()
             .map(|s| ("client_secret", s.expose())),
     );
-    let response = http
-        .send(form::post(&endpoints.token, &pairs))
-        .await
-        .map_err(|_| ExchangeFault::Unreachable)?;
+    let response = form::send_form(http, &endpoints.token, &pairs).await?;
     read_tokens(&response)
 }
 
@@ -269,7 +263,10 @@ mod tests {
             "grant_type=refresh_token&refresh_token=r%261&scope=a%20b&client_id=cid&client_secret=app%20secret"
         );
         let seen = http.seen.lock().expect("lock");
-        assert_eq!(seen[0].url, Issuer::Google.endpoints().token);
+        assert_eq!(
+            seen[0].url.as_str(),
+            Issuer::Google.endpoints().token.as_str()
+        );
     }
 
     #[tokio::test]

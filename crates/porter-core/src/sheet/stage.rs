@@ -10,6 +10,7 @@ use super::view::{FieldProblem, ProviderRow, ReviewView, SheetView, SignInView};
 use crate::app_id::AppId;
 use crate::endpoint::EndpointUrl;
 use crate::id::{AccountId, ProviderId};
+use crate::weburl::WebUrl;
 use crate::wire::ProviderHint;
 
 /// What the sheet was opened for.
@@ -54,7 +55,7 @@ pub enum Stage {
         /// The provider.
         provider: ProviderId,
         /// The page that was opened.
-        url: EndpointUrl,
+        url: WebUrl,
     },
     /// Waiting for the person to type a code at a page.
     Code {

@@ -28,7 +28,8 @@ pub async fn mint_key<H: Http>(
         "code_verifier": pkce.verifier.expose(),
         "code_challenge_method": "S256",
     });
-    let request = HttpRequest::new(Method::Post, endpoints.token.clone())
+    let request = HttpRequest::to(Method::Post, &endpoints.token)
+        .map_err(|_| ExchangeFault::Unreachable)?
         .with_header("Content-Type", "application/json")
         .with_header("Accept", "application/json")
         .with_body(body.to_string());

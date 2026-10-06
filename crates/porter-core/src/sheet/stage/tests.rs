@@ -66,6 +66,7 @@ fn a_new_sheet_starts_where_the_purpose_says() {
 fn every_stage_has_its_view() {
     let nextcloud = provider("nextcloud");
     let url = EndpointUrl::parse("https://cloud.example.org/login/v2/flow").expect("url");
+    let page = WebUrl::parse("https://login.example.org/authorize?state=b").expect("url");
     let field = FieldSpec {
         kind: FieldKind::Password,
         entry: Entry::Secret,
@@ -108,11 +109,11 @@ fn every_stage_has_its_view() {
             "browser",
             Stage::Browser {
                 provider: nextcloud.clone(),
-                url: url.clone(),
+                url: page.clone(),
             },
             SheetView::BrowserWait {
                 provider: nextcloud.clone(),
-                url: url.clone(),
+                url: page.clone(),
             },
         ),
         (

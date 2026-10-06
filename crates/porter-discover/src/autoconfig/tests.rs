@@ -14,7 +14,8 @@ fn urls(found: &Found) -> Vec<String> {
 }
 
 #[test]
-fn the_urls_are_the_domains_own_then_well_known_then_the_ispdb_and_never_carry_the_address() {
+fn the_urls_are_the_domains_own_then_well_known_then_the_ispdb_and_only_the_first_two_carry_the_address()
+ {
     let urls: Vec<String> = autoconfig_urls(&name("example.test"), ADDRESS)
         .iter()
         .map(ToString::to_string)
@@ -22,11 +23,32 @@ fn the_urls_are_the_domains_own_then_well_known_then_the_ispdb_and_never_carry_t
     assert_eq!(
         urls,
         [
-            "https://autoconfig.example.test/mail/config-v1.1.xml",
-            "https://example.test/.well-known/autoconfig/mail/config-v1.1.xml",
+            "https://autoconfig.example.test/mail/config-v1.1.xml?emailaddress=someone%40example.test",
+            "https://example.test/.well-known/autoconfig/mail/config-v1.1.xml?emailaddress=someone%40example.test",
             "https://autoconfig.thunderbird.net/v1.1/example.test",
         ]
     );
+}
+
+#[test]
+fn the_address_in_the_query_is_encoded_so_nothing_in_it_can_end_the_url() {
+    let cases = [
+        ("a.b-c_d~e@x.test", "a.b-c_d~e%40x.test"),
+        ("a+b@x.test", "a%2Bb%40x.test"),
+        ("a b@x.test", "a%20b%40x.test"),
+        ("a&b=c#d?e@x.test", "a%26b%3Dc%23d%3Fe%40x.test"),
+        ("é@x.test", "%C3%A9%40x.test"),
+    ];
+    for (address, encoded) in cases {
+        assert_eq!(percent_encode(address), encoded, "{address}");
+        let urls = autoconfig_urls(&name("x.test"), address);
+        assert_eq!(urls.len(), 3, "{address}");
+        assert_eq!(
+            urls[0].query(),
+            Some(format!("emailaddress={encoded}").as_str())
+        );
+        assert_eq!(urls[2].query(), None, "the ISPDB is never sent the address");
+    }
 }
 
 #[test]

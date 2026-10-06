@@ -180,9 +180,15 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         Ok(plan)
     }
 
-    /// Removes an account and everything filed for it: secrets, grants, toggles, the registry
-    /// row.
+    /// Removes an account and everything filed for it: its provider is asked to stop honouring
+    /// the credential first (best effort, `remove_with_revoke` says what it answered), then the
+    /// secrets, grants, toggles and the registry row go.
     pub async fn remove_account(&self, id: &AccountId) -> Result<(), SecretsError> {
+        self.remove_with_revoke(id).await.map(|_| ())
+    }
+
+    /// The wipe of `remove_account`: secrets, grants, toggles, the registry row, one audit line.
+    pub(crate) async fn wipe_account(&self, id: &AccountId) -> Result<(), SecretsError> {
         self.secrets.delete_account(id).await?;
         {
             let mut registry = self.lock();

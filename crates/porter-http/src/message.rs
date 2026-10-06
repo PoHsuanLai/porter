@@ -1,7 +1,8 @@
 //! A request and its response as values.
 
+use crate::error::HttpError;
 use crate::headers::{Header, HeaderName};
-use porter_core::EndpointUrl;
+use porter_core::{EndpointUrl, UrlScheme, WebUrl};
 
 /// The methods porter sends: HTTP's, and WebDAV's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -43,13 +44,22 @@ impl Method {
     }
 }
 
+/// An endpoint's URL as a web URL. A scheme that is not HTTP is `Malformed`, and plain `http`
+/// to another computer is `Tls`: no credential is sent in the clear.
+pub fn web_url(url: &EndpointUrl) -> Result<WebUrl, HttpError> {
+    WebUrl::try_from(url).map_err(|_| match url.origin().scheme {
+        UrlScheme::Http => HttpError::Tls,
+        _ => HttpError::Malformed,
+    })
+}
+
 /// One request.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HttpRequest {
     /// The method.
     pub method: Method,
-    /// Where to. An endpoint URL, so a request goes to a scheme and host porter knows.
-    pub url: EndpointUrl,
+    /// Where to: `https`, or `http` to this computer, with a path and a query.
+    pub url: WebUrl,
     /// The headers, in order.
     pub headers: Vec<Header>,
     /// The body.
@@ -58,13 +68,19 @@ pub struct HttpRequest {
 
 impl HttpRequest {
     /// A request with no headers and no body.
-    pub fn new(method: Method, url: EndpointUrl) -> Self {
+    pub fn new(method: Method, url: WebUrl) -> Self {
         Self {
             method,
             url,
             headers: Vec::new(),
             body: Vec::new(),
         }
+    }
+
+    /// A request to an endpoint's URL. A scheme that is not HTTP is `Malformed`, and plain
+    /// `http` to another computer is `Tls`: no credential is sent in the clear.
+    pub fn to(method: Method, url: &EndpointUrl) -> Result<Self, HttpError> {
+        web_url(url).map(|web| Self::new(method, web))
     }
 
     /// The same request with one more header.
@@ -121,7 +137,7 @@ mod tests {
 
     #[test]
     fn a_request_is_built_up_and_a_response_is_read_without_case() {
-        let url = EndpointUrl::parse("https://cloud.example.org/remote.php/dav/").expect("url");
+        let url = WebUrl::parse("https://cloud.example.org/remote.php/dav/?a=b").expect("url");
         let request = HttpRequest::new(Method::Propfind, url)
             .with_header("Depth", "1")
             .with_body("<propfind/>");
@@ -136,5 +152,23 @@ mod tests {
         assert_eq!(response.header("etag"), None);
         assert!(response.status.is_success());
         assert!(!Status(401).is_success());
+    }
+
+    #[test]
+    fn a_request_to_an_endpoint_refuses_what_is_not_web() {
+        let cases = [
+            ("https://cloud.example.org/dav/", Ok(())),
+            ("http://127.0.0.1:8080/dav/", Ok(())),
+            ("http://cloud.example.org/dav/", Err(HttpError::Tls)),
+            ("imaps://mail.example.org", Err(HttpError::Malformed)),
+        ];
+        for (text, want) in cases {
+            let url = EndpointUrl::parse(text).expect(text);
+            let got = HttpRequest::to(Method::Get, &url).map(|r| r.url.to_string());
+            assert_eq!(got.map(|_| ()), want, "{text}");
+        }
+        let url = EndpointUrl::parse("https://cloud.example.org/dav/").expect("url");
+        let request = HttpRequest::to(Method::Get, &url).expect("request");
+        assert_eq!(request.url.as_str(), url.as_str());
     }
 }

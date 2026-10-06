@@ -81,7 +81,10 @@ pub async fn discover_well_known<H: Http>(
 ) -> Result<Found, DiscoverFault> {
     let mut fault = DiscoverFault::NoServers;
     for url in well_known_urls(domain, kind) {
-        match http.send(HttpRequest::new(Method::Get, url.clone())).await {
+        let Ok(request) = HttpRequest::to(Method::Get, &url) else {
+            continue;
+        };
+        match http.send(request).await {
             Err(_) => fault = DiscoverFault::Unreachable,
             Ok(response) => match well_known_found(kind, &url, &response, login) {
                 Ok(found) => return Ok(found),

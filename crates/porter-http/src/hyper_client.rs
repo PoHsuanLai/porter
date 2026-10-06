@@ -16,7 +16,6 @@ use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
 use hyper_util::client::legacy::Client;
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::rt::TokioExecutor;
-use porter_core::UrlScheme;
 use rustls::crypto::ring::default_provider;
 use rustls::{ClientConfig, RootCertStore};
 use rustls_pki_types::CertificateDer;
@@ -93,14 +92,7 @@ impl HyperHttp {
     }
 
     async fn exchange(&self, request: HttpRequest) -> Result<HttpResponse, HttpError> {
-        let origin = request.url.origin();
-        match origin.scheme {
-            UrlScheme::Https => {}
-            UrlScheme::Http if origin.is_loopback() => {}
-            // Plain HTTP to another computer would send a credential in the clear.
-            UrlScheme::Http => return Err(HttpError::Tls),
-            _ => return Err(HttpError::Malformed),
-        }
+        // A `WebUrl` is `https`, or `http` to this computer: nothing is sent in the clear.
         let outgoing = build(request)?;
         let response = self.client.request(outgoing).await.map_err(client_fault)?;
         let (head, mut body) = response.into_parts();

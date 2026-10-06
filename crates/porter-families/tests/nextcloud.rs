@@ -8,7 +8,9 @@ use common::{Fakes, all_on, plain};
 use porter_core::capability::CapabilityKind;
 use porter_core::sheet::{FieldKind, SignInFault, SignInInput};
 use porter_core::{
-    AccountId, Credential, EndpointUrl, Family, LoginName, Offer, SecretPurpose, SecretText, Tls,
+    Account, AccountId, AccountLabel, AccountState, AuthKind, Credential, EndpointUrl, Family,
+    LoginName, Offer, ProviderId, Restriction, SecretPurpose, SecretText, ServiceEndpoint, Tls,
+    WebUrl,
 };
 use porter_fake::FakeServer;
 use porter_fake_servers::browser::split_loopback;
@@ -57,6 +59,27 @@ async fn world() -> World {
     }
 }
 
+/// The account the fake's Nextcloud gives "alice": what the registry would hold after adding.
+fn held(world: &World) -> Account {
+    let at =
+        |path: &str| EndpointUrl::parse(&format!("{}{path}", world.base().as_str())).expect("url");
+    Account {
+        id: AccountId::parse("nextcloud-alice").expect("id"),
+        provider: ProviderId::parse("nextcloud").expect("id"),
+        label: AccountLabel("alice".into()),
+        state: AccountState::Ok,
+        auth: AuthKind::LoginFlowV2,
+        capabilities: vec![],
+        restriction: Restriction::none(),
+        endpoints: vec![ServiceEndpoint {
+            family: Family::WebDav,
+            url: at("/remote.php/dav/files/alice/"),
+            tls: Tls::Plain,
+            login: LoginName("alice".into()),
+        }],
+    }
+}
+
 fn add() -> SignInStart {
     SignInStart {
         mode: SignInMode::Add,
@@ -64,7 +87,7 @@ fn add() -> SignInStart {
 }
 
 /// The person opens the page the sign-in sent them to.
-async fn visit(url: &EndpointUrl) {
+async fn visit(url: &WebUrl) {
     let (address, target) = split_loopback(url.as_str()).expect("loopback page");
     let page = send(&address, Scheme::Http, &Request::new("GET", &target))
         .await
@@ -73,7 +96,7 @@ async fn visit(url: &EndpointUrl) {
 }
 
 /// Opens the page when the sign-in asks, confirms the review, answers a server question.
-fn person(server: String) -> impl FnMut(&SignInStep) -> (SignInInput, Option<EndpointUrl>) {
+fn person(server: String) -> impl FnMut(&SignInStep) -> (SignInInput, Option<WebUrl>) {
     move |step| match step {
         SignInStep::AskFields(_) => (
             SignInInput::Fields(vec![plain(FieldKind::Server, &server)]),
@@ -337,6 +360,7 @@ async fn signing_in_again_replaces_the_password_without_a_review() {
     let start = SignInStart {
         mode: SignInMode::Reauthenticate {
             account: AccountId::parse("nextcloud-alice").expect("id"),
+            endpoints: held(&world).endpoints,
         },
     };
     let steps = sign_in(&world.fixed, start, "").await;
@@ -350,24 +374,80 @@ async fn signing_in_again_replaces_the_password_without_a_review() {
 }
 
 #[tokio::test]
+async fn signing_in_again_starts_at_the_accounts_own_server_without_asking_for_it() {
+    let world = world().await;
+    world.nextcloud.set_login_policy(LoginPolicy::Approve);
+    // The shipped file names no server, so an Add asks; a sign-in again reads it off the
+    // account's endpoints.
+    let start = SignInStart {
+        mode: SignInMode::Reauthenticate {
+            account: AccountId::parse("nextcloud-alice").expect("id"),
+            endpoints: held(&world).endpoints,
+        },
+    };
+    let steps = sign_in(&world.open, start, "").await;
+    assert!(
+        !steps
+            .iter()
+            .any(|s| matches!(s, SignInStep::AskFields(_) | SignInStep::Review { .. })),
+        "{steps:?}"
+    );
+    assert!(
+        matches!(steps[0], SignInStep::OpenBrowser { .. }),
+        "{steps:?}"
+    );
+    assert_eq!(signed(&steps).endpoints.len(), 4);
+
+    // An account with no Nextcloud endpoint to read a server from asks like an Add.
+    let start = SignInStart {
+        mode: SignInMode::Reauthenticate {
+            account: AccountId::parse("nextcloud-alice").expect("id"),
+            endpoints: vec![],
+        },
+    };
+    let typed = world.nextcloud.base_url().to_owned();
+    let steps = sign_in(&world.open, start, &typed).await;
+    assert!(matches!(steps[0], SignInStep::AskFields(_)), "{steps:?}");
+}
+
+#[tokio::test]
 async fn discovery_with_a_password_the_server_refuses_is_unauthorized() {
     let world = world().await;
     world.nextcloud.seed_app_password("good");
-    let login = LoginName("alice".into());
-    let server = world.base();
-    let found = world
+    let account = held(&world);
+    let claims = world
         .open
-        .discover_at(&server, &login, &SecretText::new("good"))
+        .discover(&account, &password("good"))
         .await
         .expect("discovered");
-    assert_eq!(found.1.len(), 4);
     assert_eq!(
-        world
-            .open
-            .discover_at(&server, &login, &SecretText::new("bad"))
-            .await,
+        claims
+            .iter()
+            .filter(|c| matches!(c.offer, Offer::Present(_)))
+            .count(),
+        4
+    );
+    assert_eq!(
+        world.open.discover(&account, &password("bad")).await,
         Err(ProviderError::Unauthorized)
     );
+    // No credential, an account with no server to ask, and a credential of the wrong kind.
+    assert_eq!(
+        world.open.discover(&account, &Presented::Anonymous).await,
+        Err(ProviderError::Unauthorized)
+    );
+    let homeless = Account {
+        endpoints: vec![],
+        ..account
+    };
+    assert_eq!(
+        world.open.discover(&homeless, &password("good")).await,
+        Err(ProviderError::Unreadable)
+    );
+}
+
+fn password(text: &str) -> Presented {
+    Presented::Credential(Credential::Password(SecretText::new(text)))
 }
 
 #[tokio::test]
@@ -375,13 +455,9 @@ async fn revoking_deletes_the_app_password_at_the_server() {
     let world = world().await;
     world.nextcloud.seed_app_password("mine");
     world.nextcloud.seed_app_password("another device");
-    let (server, login, password) = (
-        world.base(),
-        LoginName("alice".into()),
-        SecretText::new("mine"),
-    );
+    let account = held(&world);
     assert_eq!(
-        world.open.revoke_at(&server, &login, &password).await,
+        world.open.revoke(&account, &password("mine")).await,
         Ok(RevokeOutcome::Revoked)
     );
     assert_eq!(
@@ -390,12 +466,20 @@ async fn revoking_deletes_the_app_password_at_the_server() {
     );
     // Already gone: the server refuses the password, which is what revoking was for.
     assert_eq!(
-        world.open.revoke_at(&server, &login, &password).await,
+        world.open.revoke(&account, &password("mine")).await,
         Ok(RevokeOutcome::Revoked)
     );
     assert_eq!(
         world.nextcloud.app_passwords(),
         vec!["another device".to_owned()]
+    );
+    let homeless = Account {
+        endpoints: vec![],
+        ..account
+    };
+    assert_eq!(
+        world.open.revoke(&homeless, &password("mine")).await,
+        Err(ProviderError::Unreadable)
     );
 }
 
@@ -423,18 +507,4 @@ async fn a_session_holds_the_account_and_never_hands_out_its_password() {
         world.open.open(&account, key).await.err(),
         Some(ProviderError::Unreadable)
     );
-}
-
-#[tokio::test]
-async fn what_the_provider_declares_is_what_discover_answers_without_an_endpoint() {
-    let world = world().await;
-    let claims = world
-        .open
-        .discover(
-            &AccountId::parse("nextcloud-alice").expect("id"),
-            &Presented::Anonymous,
-        )
-        .await
-        .expect("claims");
-    assert_eq!(claims.len(), 5, "the five rows of nextcloud.toml");
 }

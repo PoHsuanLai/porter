@@ -18,6 +18,8 @@ pub enum Family {
     Pop3,
     /// JMAP (mail, contacts, calendars).
     Jmap,
+    /// ManageSieve (RFC 5804): the server-side mail filters.
+    Sieve,
     /// CalDAV.
     #[serde(rename = "caldav")]
     CalDav,
@@ -79,6 +81,7 @@ impl Family {
         match self {
             Family::Imap => Some(EndpointProtocol::Imap),
             Family::Smtp => Some(EndpointProtocol::Smtp),
+            Family::Sieve => Some(EndpointProtocol::Sieve),
             Family::Jmap
             | Family::CalDav
             | Family::CardDav
@@ -114,7 +117,7 @@ impl Family {
         matches!(
             (self, kind),
             (
-                Family::Imap | Family::Smtp | Family::Jmap,
+                Family::Imap | Family::Smtp | Family::Sieve | Family::Jmap,
                 CapabilityKind::Mail
             ) | (
                 Family::WebDav,
@@ -139,6 +142,12 @@ mod tests {
     const CASES: &[(&str, Family, &str, Option<EndpointProtocol>)] = &[
         ("imap", Family::Imap, "imap", Some(EndpointProtocol::Imap)),
         ("smtp", Family::Smtp, "smtp", Some(EndpointProtocol::Smtp)),
+        (
+            "sieve",
+            Family::Sieve,
+            "sieve",
+            Some(EndpointProtocol::Sieve),
+        ),
         (
             "webdav",
             Family::WebDav,
@@ -166,6 +175,13 @@ mod tests {
         const CASES: &[(&str, Family, CapabilityKind, bool)] = &[
             ("imap for mail", Family::Imap, CapabilityKind::Mail, true),
             ("smtp for mail", Family::Smtp, CapabilityKind::Mail, true),
+            ("sieve for mail", Family::Sieve, CapabilityKind::Mail, true),
+            (
+                "sieve not for files",
+                Family::Sieve,
+                CapabilityKind::Storage,
+                false,
+            ),
             (
                 "webdav for files",
                 Family::WebDav,

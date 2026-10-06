@@ -2,7 +2,6 @@
 //! answers sheets.
 #![allow(dead_code)]
 
-use porter_core::EndpointUrl;
 use porter_core::sheet::{
     FieldAnswer, FieldKind, FieldValue, ServiceChoice, SheetInput, SheetView,
 };
@@ -58,7 +57,7 @@ impl Http for Fakes {
                 .filter(|p| p.host == origin.host && request.url.path().starts_with(p.prefix))
                 .max_by_key(|p| p.prefix.len())
                 .ok_or(HttpError::Unreachable)?;
-            request.url = EndpointUrl::parse(&format!(
+            request.url = porter_core::WebUrl::parse(&format!(
                 "http://127.0.0.1:{}{}",
                 place.port,
                 request.url.path()

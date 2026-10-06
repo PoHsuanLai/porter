@@ -18,7 +18,9 @@ use porter_core::sheet::{
     step,
 };
 use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
-use porter_core::{AccountId, AccountsReply, AppId, AuthKind, DataClass, Need, ProviderId};
+use porter_core::{
+    AccountId, AccountsReply, AppId, AuthKind, DataClass, Need, ProviderId, ServiceEndpoint,
+};
 use porter_provider::{
     Provider, ProviderError, ProviderSpec, SignIn, SignInMode, SignInStart, SignInStep, Signed,
 };
@@ -48,6 +50,8 @@ pub(crate) enum Job {
     Reauthenticate {
         account: AccountId,
         provider: ProviderId,
+        /// The account's servers as stored, for the family to start from.
+        endpoints: Vec<ServiceEndpoint>,
     },
 }
 
@@ -121,7 +125,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         account: &AccountId,
         window: ParentWindow,
     ) -> AccountsReply {
-        let provider = {
+        let (provider, endpoints) = {
             let registry = self.lock();
             let held = registry.grants.iter().any(|g| {
                 g.key.app == *caller
@@ -130,13 +134,14 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             });
             let row = registry.accounts.iter().find(|a| a.id == *account);
             match (held, row) {
-                (true, Some(row)) => row.provider.clone(),
+                (true, Some(row)) => (row.provider.clone(), row.endpoints.clone()),
                 _ => return AccountsReply::Refused(Refusal::UnknownGrant),
             }
         };
         let job = Job::Reauthenticate {
             account: account.clone(),
             provider,
+            endpoints,
         };
         match self.drive(caller, window, &job).await {
             Ok(Stored::Reauthenticated) => AccountsReply::Reauthenticated,
@@ -174,7 +179,9 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                     allow: allow.as_ref().map(|_| caller.clone()),
                 }
             }
-            Job::Reauthenticate { account, provider } => Purpose::Reauthenticate {
+            Job::Reauthenticate {
+                account, provider, ..
+            } => Purpose::Reauthenticate {
                 account: account.clone(),
                 provider: provider.clone(),
             },
@@ -216,13 +223,13 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                     SheetEffect::Close(end) => return finish(end, run.stored.take()),
                 };
                 if let Some(event) = event {
-                    let (next, effects) = advance(sheet, job, event);
+                    let (next, effects) = step(sheet, event);
                     sheet = next;
                     queue.extend(effects);
                 }
             }
             let event = self.wait(&mut link, &mut run).await;
-            let (next, effects) = advance(sheet, job, event);
+            let (next, effects) = step(sheet, event);
             sheet = next;
             queue.extend(effects);
         }
@@ -274,8 +281,11 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                     provider.sign_in(SignInStart {
                         mode: match job {
                             Job::Add { .. } => SignInMode::Add,
-                            Job::Reauthenticate { account, .. } => SignInMode::Reauthenticate {
+                            Job::Reauthenticate {
+                                account, endpoints, ..
+                            } => SignInMode::Reauthenticate {
                                 account: account.clone(),
+                                endpoints: endpoints.clone(),
                             },
                         },
                     })
@@ -341,21 +351,6 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             Err(()) => SheetEvent::StoreFailed,
         }
     }
-}
-
-/// The machine's step for `event`.
-///
-/// A sign-in again that goes through the browser (Login Flow v2, OAuth) is done while the sheet
-/// shows the page or the code, and the machine stores a sign-in again only from the working
-/// stage (FINDINGS: an ask on `porter_core::sheet`). The sheet is put back to working first, which
-/// is where it would be had the sign-in not needed a page.
-fn advance(mut sheet: Sheet, job: &Job, event: SheetEvent) -> (Sheet, Vec<SheetEffect>) {
-    if let (Job::Reauthenticate { .. }, SheetEvent::SignIn(Progress::Done)) = (job, &event)
-        && let Stage::Browser { provider, .. } | Stage::Code { provider, .. } = &sheet.stage
-    {
-        sheet.stage = Stage::Working(provider.clone());
-    }
-    step(sheet, event)
 }
 
 /// What a finished sheet answers.

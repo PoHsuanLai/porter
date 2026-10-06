@@ -64,6 +64,17 @@ impl<H: Http> MicrosoftSession<H> {
         })
     }
 
+    /// The same session continuing from `credential`, a rotation of the one it was opened with:
+    /// it mints from the new token, and reports it as renewed.
+    pub(super) fn adopt(self, credential: Credential) -> Self {
+        {
+            let mut state = self.state();
+            state.credential = credential.clone();
+            state.renewed = Some(credential);
+        }
+        self
+    }
+
     /// What the account's Graph services answer.
     pub(super) async fn probe(&self) -> Result<Found, ProviderError> {
         let base = graph_origin(&self.spec);

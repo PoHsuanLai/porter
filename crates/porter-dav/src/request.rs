@@ -4,7 +4,7 @@
 //! body building and escaping; the vocabulary is generalised from CardDAV to any property name.
 
 use crate::names::split;
-use porter_core::EndpointUrl;
+use porter_core::WebUrl;
 use porter_http::{HttpRequest, Method};
 
 const HEAD: &str = r#"<?xml version="1.0" encoding="utf-8"?>"#;
@@ -29,7 +29,7 @@ impl Depth {
 }
 
 /// A PROPFIND of `props` (namespace-qualified names) on `url`.
-pub fn propfind(url: EndpointUrl, depth: Depth, props: &[&str]) -> HttpRequest {
+pub fn propfind(url: WebUrl, depth: Depth, props: &[&str]) -> HttpRequest {
     // Each property gets its own namespace declaration: names are free-form, so no prefix table.
     let asked: String = props
         .iter()
@@ -43,7 +43,7 @@ pub fn propfind(url: EndpointUrl, depth: Depth, props: &[&str]) -> HttpRequest {
 }
 
 /// A sync-collection REPORT on `url` from `sync_token` (empty for the first listing).
-pub fn report_sync_collection(url: EndpointUrl, sync_token: &str) -> HttpRequest {
+pub fn report_sync_collection(url: WebUrl, sync_token: &str) -> HttpRequest {
     let token = escape(sync_token);
     let body = format!(
         r#"{HEAD}<d:sync-collection xmlns:d="DAV:"><d:sync-token>{token}</d:sync-token><d:sync-level>1</d:sync-level><d:prop><d:getetag/></d:prop></d:sync-collection>"#
@@ -51,7 +51,7 @@ pub fn report_sync_collection(url: EndpointUrl, sync_token: &str) -> HttpRequest
     xml(Method::Report, url, Depth::Zero, body)
 }
 
-fn xml(method: Method, url: EndpointUrl, depth: Depth, body: String) -> HttpRequest {
+fn xml(method: Method, url: WebUrl, depth: Depth, body: String) -> HttpRequest {
     let mut request = HttpRequest::new(method, url)
         .with_header("Depth", depth.header())
         .with_header("Content-Type", XML);
@@ -81,8 +81,8 @@ mod tests {
 
     const DAV: &str = "DAV:";
 
-    fn url() -> EndpointUrl {
-        EndpointUrl::parse("https://dav.example.test/remote.php/dav/").unwrap()
+    fn url() -> WebUrl {
+        WebUrl::parse("https://dav.example.test/remote.php/dav/").unwrap()
     }
 
     fn body(request: &HttpRequest) -> String {

@@ -9,7 +9,6 @@
 
 mod env;
 mod graph;
-mod launcher;
 mod scopes;
 mod session;
 mod signin;
@@ -20,11 +19,12 @@ pub use session::MicrosoftSession;
 pub use signin::MicrosoftSignIn;
 
 use porter_core::capability::CapabilityKind;
-use porter_core::{AccountId, Claim, EndpointUrl, Family};
+use porter_core::{Account, AccountId, Claim, Credential, EndpointUrl, Family, SecretText};
 use porter_http::{Http, HyperHttp};
 use porter_provider::{
-    Presented, Provider, ProviderError, ProviderSpec, RevokeOutcome, SignInStart,
+    Presented, Provider, ProviderError, ProviderSession, ProviderSpec, RevokeOutcome, SignInStart,
 };
+use std::collections::HashMap;
 
 /// Where a person ends access an app was given to their Microsoft account.
 const APP_ACCESS_PAGE: &str = "https://account.microsoft.com/privacy/app-access";
@@ -37,13 +37,20 @@ const IMAP_ORIGIN: &str = "imaps://outlook.office365.com:993";
 pub struct MicrosoftProvider<H = HyperHttp> {
     spec: ProviderSpec,
     env: MicrosoftEnv<H>,
+    rotations: Rotations,
 }
+
+/// Refresh tokens that `discover` rotated, by account: `(the token it was given, what replaced
+/// it)`. `discover` cannot return a credential, so the next `open` of the account, which
+/// presents the same old token, starts from the new one and reports it through `renewed`.
+type Rotations = std::sync::Arc<std::sync::Mutex<HashMap<AccountId, (SecretText, Credential)>>>;
 
 impl<H> Clone for MicrosoftProvider<H> {
     fn clone(&self) -> Self {
         Self {
             spec: self.spec.clone(),
             env: self.env.clone(),
+            rotations: self.rotations.clone(),
         }
     }
 }
@@ -67,7 +74,17 @@ impl<H: Http + Default> MicrosoftProvider<H> {
 impl<H> MicrosoftProvider<H> {
     /// The provider serving the accounts of `spec` in `env`.
     pub fn with_env(spec: ProviderSpec, env: MicrosoftEnv<H>) -> Self {
-        Self { spec, env }
+        Self {
+            spec,
+            env,
+            rotations: Rotations::default(),
+        }
+    }
+
+    fn rotations(&self) -> std::sync::MutexGuard<'_, HashMap<AccountId, (SecretText, Credential)>> {
+        self.rotations
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }
 
@@ -113,11 +130,18 @@ impl<H: Http + 'static> Provider for MicrosoftProvider<H> {
 
     async fn discover(
         &self,
-        account: &AccountId,
+        account: &Account,
         presented: &Presented,
     ) -> Result<Vec<Claim>, ProviderError> {
-        let session = self.open(account, presented.clone()).await?;
-        Ok(session.probe().await?.claims)
+        let session = self.open(&account.id, presented.clone()).await?;
+        let found = session.probe().await?;
+        if let (Some(renewed), Presented::Credential(Credential::OAuth { refresh, .. })) =
+            (session.renewed(), presented)
+        {
+            self.rotations()
+                .insert(account.id.clone(), (refresh.clone(), renewed));
+        }
+        Ok(found.claims)
     }
 
     async fn open(
@@ -125,12 +149,26 @@ impl<H: Http + 'static> Provider for MicrosoftProvider<H> {
         account: &AccountId,
         presented: Presented,
     ) -> Result<MicrosoftSession<H>, ProviderError> {
-        MicrosoftSession::new(
+        let rotated = match &presented {
+            Presented::Credential(Credential::OAuth { refresh, .. }) => {
+                let mut held = self.rotations();
+                match held.get(account) {
+                    Some((from, _)) if from == refresh => held.remove(account).map(|(_, to)| to),
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
+        let session = MicrosoftSession::new(
             account.clone(),
             self.spec.clone(),
             self.env.clone(),
             presented,
-        )
+        )?;
+        Ok(match rotated {
+            Some(credential) => session.adopt(credential),
+            None => session,
+        })
     }
 
     fn sign_in(&self, start: SignInStart) -> Result<MicrosoftSignIn<H>, ProviderError> {
@@ -141,7 +179,11 @@ impl<H: Http + 'static> Provider for MicrosoftProvider<H> {
         ))
     }
 
-    async fn revoke(&self, _presented: &Presented) -> Result<RevokeOutcome, ProviderError> {
+    async fn revoke(
+        &self,
+        _account: &Account,
+        _presented: &Presented,
+    ) -> Result<RevokeOutcome, ProviderError> {
         // Microsoft's v2 endpoint has no revoke; the account page lists and removes apps.
         Ok(EndpointUrl::parse(APP_ACCESS_PAGE)
             .map_or(RevokeOutcome::Unsupported, RevokeOutcome::Manual))

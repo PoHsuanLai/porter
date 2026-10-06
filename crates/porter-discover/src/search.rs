@@ -20,7 +20,7 @@ use crate::dns::{Dns, DnsFault};
 use crate::found::{DiscoverFault, Found, Source};
 use crate::mx::{ProviderLead, ispdb_candidates, lookup_mx, provider_leads};
 use crate::srv::{found_from_srv, lookup_srv};
-use porter_core::EndpointUrl;
+use porter_core::WebUrl;
 use porter_http::{Http, HttpError, HttpRequest, Method};
 use porter_provider::{DomainMatch, ProviderSet};
 use std::fmt;
@@ -173,7 +173,7 @@ async fn search<H: Http, D: Dns>(
         .map(|host| ispdb_candidates(&host, &domain))
         .unwrap_or_default();
     for candidate in candidates {
-        let Ok(url) = EndpointUrl::parse(&ispdb_url(&candidate)) else {
+        let Ok(url) = WebUrl::parse(&ispdb_url(&candidate)) else {
             continue;
         };
         if let Some(found) = document(http, &url, address, Source::Mx, tried).await {
@@ -198,7 +198,7 @@ fn dns_miss(fault: DnsFault) -> Miss {
 /// replaces `Autoconfig` when the document was reached through an MX lead.
 async fn document<H: Http>(
     http: &H,
-    url: &EndpointUrl,
+    url: &WebUrl,
     address: &str,
     source: Source,
     tried: &mut Vec<Tried>,
@@ -219,7 +219,7 @@ async fn document<H: Http>(
 }
 
 /// GETs a document, at most [`MAX_DOCUMENT`] of it.
-async fn fetch<H: Http>(http: &H, url: &EndpointUrl) -> Result<String, Miss> {
+async fn fetch<H: Http>(http: &H, url: &WebUrl) -> Result<String, Miss> {
     let response = http
         .send(HttpRequest::new(Method::Get, url.clone()))
         .await

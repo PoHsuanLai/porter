@@ -9,7 +9,7 @@
 use porter_core::capability::{
     Capability, EmbedCap, EmbedPrompts, LlmCap, LlmFeature, LlmWire, Modality, PrefixText,
 };
-use porter_core::{Claim, Count, Dims, EndpointUrl, ModelId, Offer, Provenance, Subject, Tokens};
+use porter_core::{Claim, Count, Dims, ModelId, Offer, Provenance, Subject, Tokens, WebUrl};
 use porter_http::{Http, HttpRequest, Method};
 use porter_provider::Port;
 use serde_json::{Value, json};
@@ -75,7 +75,7 @@ impl<H: Http> Ask<'_, H> {
 
     /// The JSON a successful answer carries; `None` for a refusal, an error or other text.
     async fn call(&self, method: Method, path: &str, body: Vec<u8>) -> Option<Value> {
-        let url = EndpointUrl::parse(&format!("http://127.0.0.1:{}{path}", self.port.0)).ok()?;
+        let url = WebUrl::parse(&format!("http://127.0.0.1:{}{path}", self.port.0)).ok()?;
         let request = HttpRequest::new(method, url)
             .with_header("Content-Type", "application/json")
             .with_body(body);

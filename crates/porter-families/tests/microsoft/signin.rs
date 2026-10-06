@@ -225,12 +225,7 @@ async fn cancelling_closes_the_listeners_and_ends_the_sign_in() {
         panic!("expected the browser")
     };
     assert_eq!(signin.next(SignInInput::Poll).await, SignInStep::Waiting);
-    let port: u16 = url
-        .as_str()
-        .rsplit(':')
-        .next()
-        .and_then(|p| p.trim_end_matches('/').parse().ok())
-        .expect("a port");
+    let port = redirect_port(url.as_str()).expect("the redirect names a port");
     assert!(
         tokio::net::TcpStream::connect(("127.0.0.1", port))
             .await
@@ -241,7 +236,7 @@ async fn cancelling_closes_the_listeners_and_ends_the_sign_in() {
         SignInStep::Failed(SignInFault::Cancelled)
     );
     drop(signin);
-    // The launcher task is aborted with the sign-in; give the runtime a turn to close it.
+    // The listener's task is aborted with the sign-in; give the runtime a turn to close it.
     for _ in 0..50 {
         if tokio::net::TcpStream::connect(("127.0.0.1", port))
             .await
@@ -251,7 +246,7 @@ async fn cancelling_closes_the_listeners_and_ends_the_sign_in() {
         }
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
-    panic!("the launcher is still listening");
+    panic!("the loopback listener is still listening");
 }
 
 #[tokio::test]

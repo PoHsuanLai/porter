@@ -8,6 +8,7 @@ use crate::effective::Toggle;
 use crate::endpoint::{EndpointUrl, ServiceEndpoint};
 use crate::offer::AbsentReason;
 use crate::restriction::LimitReason;
+use crate::weburl::WebUrl;
 use serde::{Deserialize, Serialize};
 
 /// The short code a person types at a provider's page (the device-code flow). Shown, not secret.
@@ -77,7 +78,7 @@ pub enum Progress {
     /// It needs these answers.
     Ask(Vec<FieldSpec>),
     /// The person goes to this page in the browser.
-    Browser(EndpointUrl),
+    Browser(WebUrl),
     /// The person types this code at this page.
     Code {
         /// The code.

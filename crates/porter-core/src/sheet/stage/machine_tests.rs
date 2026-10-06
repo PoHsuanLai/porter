@@ -42,6 +42,10 @@ fn url() -> EndpointUrl {
     EndpointUrl::parse("https://cloud.example.org/login/v2/flow").expect("url")
 }
 
+fn page() -> WebUrl {
+    WebUrl::parse("https://login.example.org/authorize?client_id=a&state=b").expect("url")
+}
+
 fn spec(kind: FieldKind, entry: Entry, presence: Presence) -> FieldSpec {
     FieldSpec {
         kind,
@@ -111,7 +115,7 @@ fn asking(problem: Option<FieldProblem>) -> Stage {
 fn browser() -> Stage {
     Stage::Browser {
         provider: nc(),
-        url: url(),
+        url: page(),
     }
 }
 
@@ -217,7 +221,7 @@ fn a_pick_of_a_provider_not_in_the_list_is_dropped() {
 fn progress_moves_a_working_sheet_to_what_the_sign_in_needs() {
     let cases = [
         ("ask", Progress::Ask(form()), asking(None)),
-        ("browser", Progress::Browser(url()), browser()),
+        ("browser", Progress::Browser(page()), browser()),
         (
             "code",
             Progress::Code {
@@ -449,11 +453,20 @@ fn add_and_allow_stores_the_same_way_and_the_view_names_the_app() {
 
 #[test]
 fn a_re_sign_in_stores_on_done_and_never_on_confirm() {
-    let (_, effects) = run(
-        at(reauth(), Stage::Working(nc())),
-        SheetEvent::SignIn(Progress::Done),
-    );
-    assert_eq!(effects, vec![SheetEffect::Store(vec![])]);
+    // Working, and the stages a page or a code leaves the sheet in: all store.
+    for (name, stage) in [
+        ("working", Stage::Working(nc())),
+        ("browser", browser()),
+        ("code", code()),
+    ] {
+        let (_, effects) = run(at(reauth(), stage), SheetEvent::SignIn(Progress::Done));
+        assert_eq!(effects, vec![SheetEffect::Store(vec![])], "{name}");
+    }
+    // A new account is stored only after Confirm, never from a page.
+    for (name, stage) in [("browser", browser()), ("code", code())] {
+        let (_, effects) = run(at(add(), stage), SheetEvent::SignIn(Progress::Done));
+        assert_eq!(effects, vec![], "{name}: add");
+    }
     let (_, effects) = run(
         at(reauth(), reviewing()),
         input(SheetInput::Confirm(vec![])),
@@ -484,6 +497,34 @@ fn stored_shows_done_and_closes_and_a_failed_store_fails_the_sheet() {
         for event in [SheetEvent::Stored, SheetEvent::StoreFailed] {
             let (after, effects) = run(at(add(), stage.clone()), event);
             assert_eq!((after, effects), (stage.clone(), vec![]), "{name}");
+        }
+    }
+}
+
+#[test]
+fn a_stored_re_sign_in_closes_the_sheet_from_the_page_and_the_code() {
+    for (name, stage) in [("browser", browser()), ("code", code())] {
+        let (after, effects) = run(at(reauth(), stage.clone()), SheetEvent::Stored);
+        assert_eq!(after, Stage::Added, "{name}");
+        assert_eq!(
+            effects,
+            vec![
+                SheetEffect::Show(SheetView::Done),
+                SheetEffect::Close(SheetEnd::Added)
+            ],
+            "{name}"
+        );
+        let (after, effects) = run(at(reauth(), stage.clone()), SheetEvent::StoreFailed);
+        assert_eq!(after, failed(SignInFault::StoreFailed), "{name}");
+        assert_eq!(
+            effects,
+            vec![shown(failed(SignInFault::StoreFailed))],
+            "{name}"
+        );
+        // Adding never stores from a page, so a store answer there is stale.
+        for event in [SheetEvent::Stored, SheetEvent::StoreFailed] {
+            let (after, effects) = run(at(add(), stage.clone()), event);
+            assert_eq!((after, effects), (stage.clone(), vec![]), "{name}: add");
         }
     }
 }
@@ -687,7 +728,7 @@ fn event_strategy() -> impl Strategy<Value = SheetEvent> {
         Just(input(SheetInput::Retry)),
         Just(input(SheetInput::Dismiss)),
         Just(SheetEvent::SignIn(Progress::Ask(form()))),
-        Just(SheetEvent::SignIn(Progress::Browser(url()))),
+        Just(SheetEvent::SignIn(Progress::Browser(page()))),
         Just(SheetEvent::SignIn(Progress::Waiting)),
         Just(SheetEvent::SignIn(Progress::Review(review()))),
         Just(SheetEvent::SignIn(Progress::Done)),

@@ -7,7 +7,7 @@ use crate::clock::Clock;
 use crate::service::AccountService;
 use crate::sheets::Sheets;
 use crate::store::RegistryStore;
-use crate::token::secret_purpose;
+use crate::token::{provider_refusal, secret_purpose};
 use porter_core::audit::AuditEvent;
 use porter_core::store::AccountToggle;
 use porter_core::wire::Refusal;
@@ -15,7 +15,7 @@ use porter_core::{
     AbsentReason, AccountId, AccountState, CapabilityKind, Claim, GrantId, Offer, Provenance,
     SecretKey, Subject, Toggle, effective,
 };
-use porter_provider::{Presented, Provider, RevokeOutcome};
+use porter_provider::{Presented, Provider, ProviderSession, RevokeOutcome};
 use porter_secrets::{Secrets, SecretsError};
 
 /// What removing an account did at the provider.
@@ -39,7 +39,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             Some(account) => self.revoke_at_provider(&account).await,
             None => RevokeReport::Skipped,
         };
-        self.remove_account(id).await?;
+        self.wipe_account(id).await?;
         Ok(report)
     }
 
@@ -51,23 +51,86 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         else {
             return RevokeReport::Skipped;
         };
-        let presented = match secret_purpose(account.auth) {
-            None => Presented::Anonymous,
+        let Ok(presented) = self.presented(account).await else {
+            return RevokeReport::Skipped;
+        };
+        match provider.revoke(account, &presented).await {
+            Ok(outcome) => RevokeReport::Asked(outcome),
+            Err(_) => RevokeReport::Skipped,
+        }
+    }
+
+    /// What the account presents to its provider: its stored credential, or nothing for a
+    /// provider that needs none.
+    async fn presented(&self, account: &porter_core::Account) -> Result<Presented, SecretsError> {
+        match secret_purpose(account.auth) {
+            None => Ok(Presented::Anonymous),
             Some(purpose) => {
                 let key = SecretKey {
                     account: account.id.clone(),
                     purpose,
                 };
-                match self.secrets.get(&key).await {
-                    Ok(credential) => Presented::Credential(credential),
-                    Err(_) => return RevokeReport::Skipped,
-                }
+                self.secrets.get(&key).await.map(Presented::Credential)
             }
-        };
-        match provider.revoke(&presented).await {
-            Ok(outcome) => RevokeReport::Asked(outcome),
-            Err(_) => RevokeReport::Skipped,
         }
+    }
+
+    /// Asks the provider what the account can do now and records it (the claims, with the
+    /// account's toggles applied). A refresh token the provider rotated while it looked is read
+    /// back from a session opened afterwards (`renewed`) and stored, so the next sign-in
+    /// check does not present a token the issuer has since replaced.
+    pub async fn rediscover(&self, id: &AccountId) -> Result<Vec<Claim>, Refusal> {
+        let account = self
+            .lock()
+            .accounts
+            .iter()
+            .find(|a| a.id == *id)
+            .cloned()
+            .ok_or(Refusal::UnknownGrant)?;
+        let provider = self
+            .providers
+            .iter()
+            .find(|p| p.spec().id == account.provider)
+            .ok_or(Refusal::Unavailable)?;
+        let presented = self
+            .presented(&account)
+            .await
+            .map_err(crate::token::secrets_refusal)?;
+        let claims = provider
+            .discover(&account, &presented)
+            .await
+            .map_err(provider_refusal)?;
+        let session = provider
+            .open(&account.id, presented)
+            .await
+            .map_err(provider_refusal)?;
+        if let (Some(renewed), Some(purpose)) = (session.renewed(), secret_purpose(account.auth)) {
+            let key = SecretKey {
+                account: account.id.clone(),
+                purpose,
+            };
+            self.secrets
+                .put(&key, &renewed)
+                .await
+                .map_err(crate::token::secrets_refusal)?;
+        }
+        {
+            let mut registry = self.lock();
+            let off: Vec<_> = registry
+                .toggles
+                .iter()
+                .filter(|t| t.account == *id)
+                .map(|t| porter_core::KindToggle {
+                    kind: t.kind,
+                    toggle: t.toggle,
+                })
+                .collect();
+            if let Some(held) = registry.accounts.iter_mut().find(|a| a.id == *id) {
+                held.capabilities = effective(&claims, &off);
+            }
+        }
+        self.persist().await?;
+        Ok(claims)
     }
 
     /// Switches one kind of one account on or off: the toggle row is kept, and the account's

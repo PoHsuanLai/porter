@@ -40,7 +40,7 @@ macro_rules! family_skeleton {
 
             async fn discover(
                 &self,
-                _account: &porter_core::AccountId,
+                _account: &porter_core::Account,
                 _presented: &porter_provider::Presented,
             ) -> Result<Vec<porter_core::Claim>, porter_provider::ProviderError> {
                 todo!(concat!("discover what a ", $what, " account can do"))
@@ -65,6 +65,7 @@ macro_rules! family_skeleton {
 
             async fn revoke(
                 &self,
+                _account: &porter_core::Account,
                 _presented: &porter_provider::Presented,
             ) -> Result<porter_provider::RevokeOutcome, porter_provider::ProviderError> {
                 todo!(concat!("revoke a ", $what, " account at its provider"))

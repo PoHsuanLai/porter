@@ -62,7 +62,13 @@ type Migration = fn(Value) -> Result<Value, StoreFault>;
 
 /// Every step, keyed by the version it starts from. A bump of `VocabVersion::CURRENT` adds its
 /// row here, with a fixture of the old document in the tests.
-const MIGRATIONS: &[(VocabVersion, Migration)] = &[];
+const MIGRATIONS: &[(VocabVersion, Migration)] = &[(VocabVersion(3), from_three)];
+
+/// 3 to 4 added the `sieve` family and changed the sheet's wire types; the stored document is
+/// the same shape, so only its version moves.
+fn from_three(document: Value) -> Result<Value, StoreFault> {
+    Ok(document)
+}
 
 impl Persisted {
     /// A registry with nothing in it, at this build's vocabulary.

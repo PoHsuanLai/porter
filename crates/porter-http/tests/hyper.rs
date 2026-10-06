@@ -4,6 +4,7 @@
 #![cfg(feature = "hyper")]
 
 use porter_core::EndpointUrl;
+use porter_core::WebUrl;
 use porter_fake_servers::http::{Request, Response, serve};
 use porter_fake_servers::net::{Bind, Listener, port_of};
 use porter_fake_servers::tls;
@@ -32,8 +33,8 @@ async fn fake(secure: bool, handler: impl Fn(Request) -> Response + Send + Sync 
     Fake { port, task }
 }
 
-fn url(scheme: &str, host: &str, port: u16, path: &str) -> EndpointUrl {
-    EndpointUrl::parse(&format!("{scheme}://{host}:{port}{path}")).expect("url")
+fn url(scheme: &str, host: &str, port: u16, path: &str) -> WebUrl {
+    WebUrl::parse(&format!("{scheme}://{host}:{port}{path}")).expect("url")
 }
 
 fn echo(request: Request) -> Response {
@@ -187,18 +188,34 @@ async fn a_certificate_is_checked_against_the_roots_and_a_private_ca_must_be_add
 #[tokio::test]
 async fn plain_http_is_for_this_computer_only() {
     // Refused before anything is dialled, so the address need not answer.
-    let outcome = HyperHttp::new()
-        .send(HttpRequest::new(
-            Method::Get,
-            EndpointUrl::parse("http://192.0.2.1/").expect("url"),
-        ))
-        .await;
-    assert_eq!(outcome, Err(HttpError::Tls));
-    let other_scheme = HyperHttp::new()
-        .send(HttpRequest::new(
-            Method::Get,
-            EndpointUrl::parse("imaps://mail.example.org").expect("url"),
-        ))
-        .await;
-    assert_eq!(other_scheme, Err(HttpError::Malformed));
+    let plain = EndpointUrl::parse("http://192.0.2.1/").expect("url");
+    assert_eq!(
+        HttpRequest::to(Method::Get, &plain).map(|_| ()),
+        Err(HttpError::Tls)
+    );
+    let other = EndpointUrl::parse("imaps://mail.example.org").expect("url");
+    assert_eq!(
+        HttpRequest::to(Method::Get, &other).map(|_| ()),
+        Err(HttpError::Malformed)
+    );
+    assert!(WebUrl::parse("http://192.0.2.1/").is_err());
+}
+
+#[tokio::test]
+async fn the_query_goes_out_with_the_path() {
+    let server = fake(false, |request| {
+        Response::new(200).typed("text/plain", request.target.clone())
+    })
+    .await;
+    let target = url(
+        "http",
+        "127.0.0.1",
+        server.port,
+        "/mail/config?emailaddress=a%40b.test",
+    );
+    let response = HyperHttp::new()
+        .send(HttpRequest::new(Method::Get, target))
+        .await
+        .expect("response");
+    assert_eq!(response.body, b"/mail/config?emailaddress=a%40b.test");
 }

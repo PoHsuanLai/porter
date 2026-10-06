@@ -16,7 +16,8 @@ pub(super) async fn revoke(
     password: &SecretText,
 ) -> Result<RevokeOutcome, ProviderError> {
     let url = join(server, "/ocs/v2.php/core/apppassword").ok_or(ProviderError::Unreadable)?;
-    let request = HttpRequest::new(Method::Delete, url)
+    let request = HttpRequest::to(Method::Delete, &url)
+        .map_err(|_| ProviderError::Unreadable)?
         .with_header("Authorization", basic(&login.0, password))
         .with_header("OCS-APIRequest", "true")
         .with_header("Accept", "application/json");

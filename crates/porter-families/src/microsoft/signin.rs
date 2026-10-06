@@ -6,14 +6,13 @@
 
 use super::env::{MicrosoftEnv, SignInFlow};
 use super::graph::{Found, probe};
-use super::launcher::Launcher;
 use super::scopes::{GRAPH_DEFAULT, graph_only, scopes_for};
 use super::{declared_kinds, graph_origin, imap_origin};
 use porter_core::capability::{Capability, CapabilityKind, Offered};
 use porter_core::sheet::{SignInFault, SignInInput, UserCode};
 use porter_core::{
     AccountLabel, Credential, EndpointUrl, Family, LoginName, Offer, Restriction, SecretPurpose,
-    ServiceEndpoint, TenantConsent, Tls, UnixSeconds,
+    ServiceEndpoint, TenantConsent, Tls, UnixSeconds, WebUrl,
 };
 use porter_http::Http;
 use porter_oauth::{
@@ -85,7 +84,6 @@ struct Browser {
     pkce: Pkce,
     redirect: String,
     wait: Task<Result<AuthCode, LoopbackFault>>,
-    _launcher: Launcher,
 }
 
 #[derive(Debug)]
@@ -165,10 +163,7 @@ impl<H: Http + 'static> MicrosoftSignIn<H> {
             &redirect,
             &grant.scopes,
         );
-        let launcher = Launcher::start(target)
-            .await
-            .map_err(|_| SignInFault::Unreachable)?;
-        let url = EndpointUrl::parse(&launcher.page()).map_err(|_| SignInFault::Unreadable)?;
+        let url = WebUrl::parse(&target).map_err(|_| SignInFault::Unreadable)?;
         let expected: OAuthState = pkce.state.clone();
         let wait = Task(tokio::spawn(async move { server.wait(&expected).await }));
         self.phase = Phase::Browser(Box::new(Browser {
@@ -176,7 +171,6 @@ impl<H: Http + 'static> MicrosoftSignIn<H> {
             pkce,
             redirect,
             wait,
-            _launcher: launcher,
         }));
         Ok(SignInStep::OpenBrowser { url })
     }

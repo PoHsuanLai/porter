@@ -2,7 +2,7 @@
 
 use porter_core::sheet::{SignInFault, SignInInput};
 use porter_core::{
-    AccountId, AccountLabel, Audience, Claim, Credential, IssuedToken, Offer, Provenance,
+    Account, AccountId, AccountLabel, Audience, Claim, Credential, IssuedToken, Offer, Provenance,
     Restriction, SecretPurpose, SecretText, Subject, TokenKind, UnixSeconds,
 };
 use porter_provider::{
@@ -81,7 +81,7 @@ impl Provider for FakeProvider {
 
     async fn discover(
         &self,
-        _account: &AccountId,
+        _account: &Account,
         _presented: &Presented,
     ) -> Result<Vec<Claim>, ProviderError> {
         Ok(self
@@ -126,7 +126,11 @@ impl Provider for FakeProvider {
         })
     }
 
-    async fn revoke(&self, _presented: &Presented) -> Result<RevokeOutcome, ProviderError> {
+    async fn revoke(
+        &self,
+        _account: &Account,
+        _presented: &Presented,
+    ) -> Result<RevokeOutcome, ProviderError> {
         Ok(RevokeOutcome::Revoked)
     }
 }

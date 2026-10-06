@@ -8,7 +8,7 @@ use porter_core::sheet::{
 };
 use porter_core::{
     AccountId, AccountLabel, Claim, Credential, EndpointUrl, Offer, Restriction, SecretPurpose,
-    ServiceEndpoint, Toggle,
+    ServiceEndpoint, Toggle, WebUrl,
 };
 use std::future::Future;
 
@@ -21,6 +21,9 @@ pub enum SignInMode {
     Reauthenticate {
         /// The account, so the new credential replaces the old one under the same id.
         account: AccountId,
+        /// Its servers as stored, so a family that signs in again needs no discovery to find
+        /// them (Nextcloud's login name and server are among them).
+        endpoints: Vec<ServiceEndpoint>,
     },
 }
 
@@ -54,8 +57,8 @@ pub enum SignInStep {
     AskFields(Vec<FieldSpec>),
     /// Open this page in the browser, then feed `Poll` until it says more.
     OpenBrowser {
-        /// The page.
-        url: EndpointUrl,
+        /// The page, with its query (an authorize URL is all query).
+        url: WebUrl,
     },
     /// Show this code and page (the device flow), then feed `Poll`.
     ShowCode {

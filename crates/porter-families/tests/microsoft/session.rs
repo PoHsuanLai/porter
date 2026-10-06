@@ -10,6 +10,19 @@ fn account() -> AccountId {
     AccountId::parse("11111111-1111-4111-8111-111111111111").expect("account id")
 }
 
+fn held_account() -> porter_core::Account {
+    porter_core::Account {
+        id: account(),
+        provider: porter_core::ProviderId::parse("microsoft").expect("provider"),
+        label: porter_core::AccountLabel("ada".into()),
+        state: porter_core::AccountState::Ok,
+        auth: porter_core::AuthKind::OAuthPkce,
+        capabilities: vec![],
+        restriction: porter_core::Restriction::none(),
+        endpoints: vec![],
+    }
+}
+
 fn seeded(rig: &Rig) -> Presented {
     let refresh = rig.issuer.seed_refresh(CLIENT_ID, "offline_access");
     Presented::Credential(Credential::OAuth {
@@ -157,7 +170,7 @@ async fn discover_probes_graph_again_and_shows_a_tenant_change() {
     let rig = Rig::new(SignInFlow::Loopback, true).await;
     let before = rig
         .provider
-        .discover(&account(), &seeded(&rig))
+        .discover(&held_account(), &seeded(&rig))
         .await
         .expect("claims");
     assert!(before.iter().all(|c| matches!(c.offer, Offer::Present(_))));
@@ -165,7 +178,7 @@ async fn discover_probes_graph_again_and_shows_a_tenant_change() {
     rig.graph.refuse("/v1.0/me/onenote/notebooks", 403);
     let after = rig
         .provider
-        .discover(&account(), &seeded(&rig))
+        .discover(&held_account(), &seeded(&rig))
         .await
         .expect("claims");
     let changed: Vec<_> = before.iter().zip(&after).filter(|(a, b)| a != b).collect();
@@ -183,10 +196,139 @@ async fn discover_probes_graph_again_and_shows_a_tenant_change() {
 #[tokio::test]
 async fn revoking_sends_the_person_to_their_microsoft_account_page() {
     let rig = Rig::new(SignInFlow::Loopback, true).await;
-    let outcome = rig.provider.revoke(&seeded(&rig)).await.expect("outcome");
+    let outcome = rig
+        .provider
+        .revoke(&held_account(), &seeded(&rig))
+        .await
+        .expect("outcome");
     let RevokeOutcome::Manual(page) = outcome else {
         panic!("expected a page")
     };
     assert_eq!(page.origin().host, "account.microsoft.com");
     assert!(rig.issuer.events().is_empty());
+}
+
+mod service {
+    use super::*;
+    use porter_core::AccountId as Id;
+    use porter_core::{
+        Account, AccountLabel, AccountState, AuthKind, ProviderId, Restriction, SecretKey,
+        SecretPurpose,
+    };
+    use porter_fake::{FixedClock, ScriptedSheets};
+    use porter_secrets::{MemorySecrets, Secrets, SecretsError};
+    use porter_service::{AccountService, Registry};
+    use std::sync::Arc;
+
+    /// A store the test keeps a handle on after the service has one.
+    #[derive(Debug, Clone, Default)]
+    struct Shared(Arc<MemorySecrets>);
+
+    impl Secrets for Shared {
+        async fn put(&self, key: &SecretKey, value: &Credential) -> Result<(), SecretsError> {
+            self.0.put(key, value).await
+        }
+        async fn get(&self, key: &SecretKey) -> Result<Credential, SecretsError> {
+            self.0.get(key).await
+        }
+        async fn delete(&self, key: &SecretKey) -> Result<(), SecretsError> {
+            self.0.delete(key).await
+        }
+        async fn delete_account(&self, account: &Id) -> Result<(), SecretsError> {
+            self.0.delete_account(account).await
+        }
+    }
+
+    fn held() -> Account {
+        Account {
+            id: account(),
+            provider: ProviderId::parse("microsoft").expect("provider"),
+            label: AccountLabel("ada@contoso.onmicrosoft.com".into()),
+            state: AccountState::Ok,
+            auth: AuthKind::OAuthPkce,
+            capabilities: vec![],
+            restriction: Restriction::none(),
+            endpoints: vec![],
+        }
+    }
+
+    fn refresh_of(credential: &Credential) -> String {
+        match credential {
+            Credential::OAuth { refresh, .. } => refresh.expose().to_owned(),
+            other => panic!("not an OAuth credential: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn rediscovering_stores_the_refresh_token_the_issuer_rotated() {
+        let rig = Rig::new(SignInFlow::Loopback, true).await;
+        let Presented::Credential(old) = seeded(&rig) else {
+            panic!("a credential")
+        };
+        let key = SecretKey {
+            account: account(),
+            purpose: SecretPurpose::OAuthRefresh,
+        };
+        let secrets = Shared::default();
+        secrets.put(&key, &old).await.expect("put");
+        let service = AccountService::new(
+            vec![rig.provider.clone()],
+            Registry {
+                accounts: vec![held()],
+                ..Registry::default()
+            },
+            secrets.clone(),
+            ScriptedSheets::answering(vec![]),
+            FixedClock(porter_fake::NOW),
+        );
+
+        let claims = service.rediscover(&account()).await.expect("claims");
+        assert!(!claims.is_empty());
+        assert!(claims.iter().all(|c| matches!(c.offer, Offer::Present(_))));
+        assert_eq!(
+            service.registry().accounts[0].capabilities.len(),
+            claims.len()
+        );
+
+        // The issuer replaced the token it was given; the new one is what is filed, and it is
+        // live: discovering again from the stored token works.
+        let stored = secrets.get(&key).await.expect("stored");
+        assert_ne!(refresh_of(&stored), refresh_of(&old), "the token rotated");
+        assert!(!rig.issuer.refresh_is_live(&refresh_of(&old)));
+        assert!(rig.issuer.refresh_is_live(&refresh_of(&stored)));
+        service.rediscover(&account()).await.expect("again");
+        let after = secrets.get(&key).await.expect("stored");
+        assert!(rig.issuer.refresh_is_live(&refresh_of(&after)));
+    }
+
+    #[tokio::test]
+    async fn a_refused_refresh_token_is_a_sign_in_again_and_nothing_is_stored() {
+        let rig = Rig::new(SignInFlow::Loopback, true).await;
+        let key = SecretKey {
+            account: account(),
+            purpose: SecretPurpose::OAuthRefresh,
+        };
+        let secrets = Shared::default();
+        let dead = Credential::OAuth {
+            access: SecretText::new("stale"),
+            refresh: SecretText::new("never-issued"),
+            expires_at: UnixSeconds(0),
+        };
+        secrets.put(&key, &dead).await.expect("put");
+        let service = AccountService::new(
+            vec![rig.provider.clone()],
+            Registry {
+                accounts: vec![held()],
+                ..Registry::default()
+            },
+            secrets.clone(),
+            ScriptedSheets::answering(vec![]),
+            FixedClock(porter_fake::NOW),
+        );
+        assert_eq!(
+            service.rediscover(&account()).await,
+            Err(porter_core::wire::Refusal::NeedsReauth)
+        );
+        assert_eq!(secrets.get(&key).await, Ok(dead));
+    }
 }

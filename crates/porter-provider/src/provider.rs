@@ -3,7 +3,7 @@
 use crate::error::ProviderError;
 use crate::sign_in::{RevokeOutcome, SignIn, SignInStart};
 use crate::spec::ProviderSpec;
-use porter_core::{AccountId, Audience, AuthKind, Claim, Credential, IssuedToken};
+use porter_core::{Account, AccountId, Audience, AuthKind, Claim, Credential, IssuedToken};
 use std::future::Future;
 
 /// What an account presents when it talks to its provider.
@@ -33,10 +33,11 @@ pub trait Provider: Send + Sync {
     }
 
     /// What the account can do, as the protocol's own session answer says (at add time and on
-    /// every reconnect): claims at `Discovered` or `Probed` provenance.
+    /// every reconnect): claims at `Discovered` or `Probed` provenance. The account is the
+    /// stored one (its endpoints and login name), so the family asks the servers it already knows.
     fn discover(
         &self,
-        account: &AccountId,
+        account: &Account,
         presented: &Presented,
     ) -> impl Future<Output = Result<Vec<Claim>, ProviderError>> + Send;
 
@@ -52,9 +53,11 @@ pub trait Provider: Send + Sync {
     fn sign_in(&self, start: SignInStart) -> Result<Self::SignIn, ProviderError>;
 
     /// Asks the provider to stop honouring `presented` (Google's revoke endpoint, Nextcloud's
-    /// app-password delete), best effort, when an account is removed.
+    /// app-password delete), best effort, when an account is removed. The account names the
+    /// servers (`Account::endpoints`) and the login a revoke is addressed to.
     fn revoke(
         &self,
+        account: &Account,
         presented: &Presented,
     ) -> impl Future<Output = Result<RevokeOutcome, ProviderError>> + Send;
 }

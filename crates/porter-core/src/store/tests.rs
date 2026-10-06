@@ -161,3 +161,15 @@ fn every_version_since_the_first_stored_one_has_a_migration() {
         );
     }
 }
+
+#[test]
+fn a_document_stored_at_vocabulary_three_is_read_unchanged() {
+    // The fixture is what the build before the `sieve` family wrote.
+    let at_three = filled().to_json().expect("json").replacen(
+        &format!("\"vocab\": {}", VocabVersion::CURRENT.0),
+        "\"vocab\": 3",
+        1,
+    );
+    assert!(at_three.contains("\"vocab\": 3"));
+    assert_eq!(Persisted::from_json(&at_three), Ok(filled()));
+}

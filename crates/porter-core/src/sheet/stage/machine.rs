@@ -259,33 +259,43 @@ fn done(sheet: Sheet) -> (Sheet, Vec<SheetEffect>) {
             let store = SheetEffect::Store(choices.clone());
             (sheet, vec![store])
         }
-        (Stage::Working(_), Purpose::Reauthenticate { .. }) => {
-            (sheet, vec![SheetEffect::Store(vec![])])
-        }
+        // A sign-in again that needed a page or a code is done while the sheet still shows it.
+        (
+            Stage::Working(_) | Stage::Browser { .. } | Stage::Code { .. },
+            Purpose::Reauthenticate { .. },
+        ) => (sheet, vec![SheetEffect::Store(vec![])]),
         _ => ignore(sheet),
     }
 }
 
 fn on_stored(sheet: Sheet) -> (Sheet, Vec<SheetEffect>) {
     match sheet.stage {
-        Stage::Working(_) | Stage::Confirming { .. } => {
-            let (sheet, mut effects) = to(sheet, Stage::Added);
-            effects.push(SheetEffect::Close(SheetEnd::Added));
-            (sheet, effects)
-        }
+        Stage::Working(_) | Stage::Confirming { .. } => stored(sheet),
+        Stage::Browser { .. } | Stage::Code { .. } if again(&sheet) => stored(sheet),
         _ => ignore(sheet),
     }
 }
 
+/// Whether the sheet signs an existing account in again.
+fn again(sheet: &Sheet) -> bool {
+    matches!(sheet.purpose, Purpose::Reauthenticate { .. })
+}
+
+fn stored(sheet: Sheet) -> (Sheet, Vec<SheetEffect>) {
+    let (sheet, mut effects) = to(sheet, Stage::Added);
+    effects.push(SheetEffect::Close(SheetEnd::Added));
+    (sheet, effects)
+}
+
 fn on_store_failed(sheet: Sheet) -> (Sheet, Vec<SheetEffect>) {
-    match &sheet.stage {
-        Stage::Working(provider) | Stage::Confirming { provider, .. } => {
-            let stage = Stage::Failed {
-                provider: provider.clone(),
-                fault: SignInFault::StoreFailed,
-            };
-            to(sheet, stage)
-        }
-        _ => ignore(sheet),
-    }
+    let provider = match &sheet.stage {
+        Stage::Working(provider) | Stage::Confirming { provider, .. } => provider,
+        Stage::Browser { provider, .. } | Stage::Code { provider, .. } if again(&sheet) => provider,
+        _ => return ignore(sheet),
+    };
+    let stage = Stage::Failed {
+        provider: provider.clone(),
+        fault: SignInFault::StoreFailed,
+    };
+    to(sheet, stage)
 }

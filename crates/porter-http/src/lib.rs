@@ -19,6 +19,6 @@ pub use headers::{Header, HeaderName, HeaderValue};
 pub use http::Http;
 #[cfg(feature = "hyper")]
 pub use hyper_client::{HyperHttp, Limits, TokioSleep};
-pub use message::{HttpRequest, HttpResponse, Method, Status};
+pub use message::{HttpRequest, HttpResponse, Method, Status, web_url};
 pub use shared::SharedHttp;
 pub use sleep::{NoSleep, SharedSleep, Sleep};

@@ -218,7 +218,7 @@ impl EndpointUrl {
 }
 
 /// `host[:port]` or `[v6][:port]`; the host is never empty.
-fn split_authority(authority: &str) -> Option<(&str, Option<&str>)> {
+pub(crate) fn split_authority(authority: &str) -> Option<(&str, Option<&str>)> {
     let (host, port) = match authority.strip_prefix('[') {
         Some(bracketed) => {
             let (host, after) = bracketed.split_once(']')?;
@@ -258,7 +258,11 @@ impl fmt::Display for EndpointUrl {
 impl Origin {
     /// Whether the host is this computer (`localhost`, `127.0.0.0/8`, `::1`).
     pub fn is_loopback(&self) -> bool {
-        self.host == "localhost" || self.host == "::1" || self.host.starts_with("127.")
+        self.host == "localhost"
+            || self
+                .host
+                .parse::<std::net::IpAddr>()
+                .is_ok_and(|ip| ip.is_loopback())
     }
 }
 

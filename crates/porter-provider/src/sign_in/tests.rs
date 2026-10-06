@@ -88,6 +88,7 @@ fn what_the_sheet_is_told_of_a_step_never_holds_the_credential() {
 #[test]
 fn the_other_steps_pass_through() {
     let url = EndpointUrl::parse("https://cloud.example.org/login/v2/flow").expect("url");
+    let page = WebUrl::parse("https://login.example.org/authorize?state=a&scope=b").expect("url");
     let code = UserCode("ABCD-EFGH".into());
     let cases = [
         (SignInStep::Waiting, Progress::Waiting),
@@ -96,8 +97,8 @@ fn the_other_steps_pass_through() {
             Progress::Failed(SignInFault::Refused),
         ),
         (
-            SignInStep::OpenBrowser { url: url.clone() },
-            Progress::Browser(url.clone()),
+            SignInStep::OpenBrowser { url: page.clone() },
+            Progress::Browser(page),
         ),
         (
             SignInStep::ShowCode {

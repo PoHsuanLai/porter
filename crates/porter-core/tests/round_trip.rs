@@ -227,6 +227,12 @@ fn endpoints() -> Vec<ServiceEndpoint> {
             tls: Tls::Implicit,
             login: LoginName("ada".into()),
         },
+        ServiceEndpoint {
+            family: Family::Sieve,
+            url: url("sieve://imap.example.org:4190"),
+            tls: Tls::StartTls,
+            login: LoginName("ada@example.org".into()),
+        },
     ]
 }
 
@@ -511,8 +517,8 @@ fn json<T: Serialize>(value: &T) -> String {
 }
 
 #[test]
-fn the_vocabulary_is_version_three() {
-    assert_eq!(VocabVersion::CURRENT, VocabVersion(3));
+fn the_vocabulary_is_version_four() {
+    assert_eq!(VocabVersion::CURRENT, VocabVersion(4));
 }
 
 #[test]
@@ -665,7 +671,7 @@ fn every_sheet_view_round_trips() {
         }),
         SheetView::BrowserWait {
             provider: nextcloud.clone(),
-            url: url.clone(),
+            url: WebUrl::parse("https://login.example.org/authorize?state=abc").expect("url"),
         },
         SheetView::ShowCode {
             provider: nextcloud.clone(),
@@ -714,7 +720,10 @@ fn every_sheet_input_and_progress_round_trips() {
     let url = EndpointUrl::parse("https://login.example.org/device").expect("url");
     let steps = [
         Progress::Ask(vec![field(FieldKind::ApiKey, Entry::Secret)]),
-        Progress::Browser(url.clone()),
+        Progress::Browser(
+            WebUrl::parse("https://login.example.org/authorize?client_id=a&scope=b%20c")
+                .expect("url"),
+        ),
         Progress::Code {
             user_code: UserCode("ABCD".into()),
             url,

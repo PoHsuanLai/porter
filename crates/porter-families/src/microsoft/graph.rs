@@ -184,11 +184,11 @@ async fn get<H: Http>(
 ) -> Result<HttpResponse, ProviderError> {
     let url = EndpointUrl::parse(&format!("{}{path}", base.as_str().trim_end_matches('/')))
         .map_err(|_| ProviderError::Unreadable)?;
-    http.send(
-        HttpRequest::new(Method::Get, url)
-            .with_header("Authorization", format!("Bearer {token}"))
-            .with_header("Accept", "application/json"),
-    )
-    .await
-    .map_err(|_| ProviderError::Unreachable)
+    let request = HttpRequest::to(Method::Get, &url)
+        .map_err(|_| ProviderError::Unreadable)?
+        .with_header("Authorization", format!("Bearer {token}"))
+        .with_header("Accept", "application/json");
+    http.send(request)
+        .await
+        .map_err(|_| ProviderError::Unreachable)
 }

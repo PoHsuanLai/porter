@@ -3,6 +3,7 @@
 
 use super::discover::{Found, Who, discover};
 use super::flow::{Granted, Polled, Started, poll, start};
+use super::known::server_of;
 use crate::io::Io;
 use crate::password::{parse_server, plain, text_of};
 use porter_core::sheet::{FieldKind, SignInFault, SignInInput};
@@ -55,6 +56,16 @@ impl NextcloudSignIn {
             fixed,
             state: State::Fresh,
         }
+    }
+
+    /// The server to start at without asking: the provider file's, or the account's own when
+    /// it signs in again.
+    fn known_server(&self) -> Option<EndpointUrl> {
+        let held = match &self.mode {
+            SignInMode::Reauthenticate { endpoints, .. } => server_of(endpoints).map(|(s, _)| s),
+            SignInMode::Add => None,
+        };
+        held.or_else(|| self.fixed.clone())
     }
 
     fn ask_server() -> SignInStep {
@@ -172,7 +183,7 @@ impl SignIn for NextcloudSignIn {
         match (state, input) {
             (_, SignInInput::Cancel) => SignInStep::Failed(SignInFault::Cancelled),
             // Begin, and begin again after a step back.
-            (_, SignInInput::Start) => match self.fixed.clone() {
+            (_, SignInInput::Start) => match self.known_server() {
                 Some(server) => self.begin(server).await,
                 None => {
                     self.state = State::AskedServer;

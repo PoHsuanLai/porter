@@ -2,24 +2,20 @@
 //! discovery, WebDAV, CalDAV, CardDAV and the Notes API, over one app password.
 //!
 //! A password never leaves accountd, so a session mints no token; apps reach the servers through
-//! the authenticated relay. The trait's `discover`, `open` and `revoke` are handed an account id
-//! and a credential and not the account's server, which a Nextcloud needs (FINDINGS): `open`
-//! needs none, `discover` answers what the provider file declares, and the real calls are
-//! [`NextcloudProvider::discover_at`] and [`NextcloudProvider::revoke_at`], which take the
-//! account's endpoint.
+//! the authenticated relay. The trait's `discover` and `revoke` are handed the account, whose
+//! endpoints name the server and the login; the app password is what it presents.
 
 mod discover;
 mod flow;
+mod known;
 mod revoke;
 mod sign_in;
 
 use crate::io::{Io, Pacing};
-use crate::password::{declared, password_of};
+use crate::password::password_of;
 use discover::Who;
-use porter_core::{
-    AccountId, Audience, Claim, Credential, EndpointUrl, IssuedToken, LoginName, SecretText,
-    ServiceEndpoint,
-};
+use porter_core::sheet::SignInFault;
+use porter_core::{Account, AccountId, Audience, Claim, Credential, EndpointUrl, IssuedToken};
 use porter_http::{SharedHttp, Sleep};
 use porter_provider::{
     Presented, Provider, ProviderError, ProviderSession, ProviderSpec, RevokeOutcome, SignInStart,
@@ -63,39 +59,6 @@ impl NextcloudProvider {
                 .flatten()
         })
     }
-
-    /// What the account at `server` can do now: the OCS capabilities, the DAV principal and the
-    /// homes. A refused password is `Unauthorized`.
-    pub async fn discover_at(
-        &self,
-        server: &EndpointUrl,
-        login: &LoginName,
-        password: &SecretText,
-    ) -> Result<(Vec<Claim>, Vec<ServiceEndpoint>), ProviderError> {
-        let who = Who {
-            server: server.clone(),
-            login: login.clone(),
-            password: password.clone(),
-        };
-        discover::discover(&self.io, &who)
-            .await
-            .map(|found| (found.claims, found.endpoints))
-            .map_err(|fault| match fault {
-                porter_core::sheet::SignInFault::Refused => ProviderError::Unauthorized,
-                porter_core::sheet::SignInFault::Unreachable => ProviderError::Unreachable,
-                _ => ProviderError::Unreadable,
-            })
-    }
-
-    /// Deletes the app password at `server` (OCS `DELETE /ocs/v2.php/core/apppassword`).
-    pub async fn revoke_at(
-        &self,
-        server: &EndpointUrl,
-        login: &LoginName,
-        password: &SecretText,
-    ) -> Result<RevokeOutcome, ProviderError> {
-        revoke::revoke(&self.io, server, login, password).await
-    }
 }
 
 /// An open Nextcloud account.
@@ -121,10 +84,24 @@ impl Provider for NextcloudProvider {
 
     async fn discover(
         &self,
-        _account: &AccountId,
-        _presented: &Presented,
+        account: &Account,
+        presented: &Presented,
     ) -> Result<Vec<Claim>, ProviderError> {
-        Ok(declared(&self.spec))
+        let (server, login) =
+            known::server_of(&account.endpoints).ok_or(ProviderError::Unreadable)?;
+        let who = Who {
+            server,
+            login,
+            password: password_of(presented)?.clone(),
+        };
+        discover::discover(&self.io, &who)
+            .await
+            .map(|found| found.claims)
+            .map_err(|fault| match fault {
+                SignInFault::Refused => ProviderError::Unauthorized,
+                SignInFault::Unreachable => ProviderError::Unreachable,
+                _ => ProviderError::Unreadable,
+            })
     }
 
     async fn open(
@@ -146,10 +123,14 @@ impl Provider for NextcloudProvider {
         ))
     }
 
-    async fn revoke(&self, presented: &Presented) -> Result<RevokeOutcome, ProviderError> {
-        // The server and the login name are the account's, which the trait does not pass.
-        password_of(presented)?;
-        Ok(RevokeOutcome::Unsupported)
+    async fn revoke(
+        &self,
+        account: &Account,
+        presented: &Presented,
+    ) -> Result<RevokeOutcome, ProviderError> {
+        let (server, login) =
+            known::server_of(&account.endpoints).ok_or(ProviderError::Unreadable)?;
+        revoke::revoke(&self.io, &server, &login, password_of(presented)?).await
     }
 }
 

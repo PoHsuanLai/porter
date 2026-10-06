@@ -195,15 +195,22 @@ pub fn audience(text: &str) -> Audience {
     Audience(text.to_owned())
 }
 
-/// The scripted browser: opens the launcher page, then follows what it redirects to.
+/// The scripted browser: opens the authorize URL itself, which the fake issuer redirects to the
+/// sign-in's loopback listener.
 pub async fn browse(page: &str) -> std::io::Result<porter_fake_servers::Visit> {
-    let (address, target) = split_loopback(page)?;
-    let first = send(&address, Scheme::Http, &Request::new("GET", &target)).await?;
-    let location = first
-        .header("location")
-        .map(str::to_owned)
-        .ok_or_else(|| std::io::Error::other("the launcher did not redirect"))?;
-    porter_fake_servers::follow(&location).await
+    porter_fake_servers::follow(page).await
+}
+
+/// The port of the loopback listener an authorize URL asks the browser to come back to (its
+/// percent-encoded `redirect_uri` parameter).
+pub fn redirect_port(page: &str) -> Option<u16> {
+    let query = page.split_once('?')?.1;
+    let redirect = query
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("redirect_uri="))?;
+    let decoded = redirect.replace("%3A", ":").replace("%2F", "/");
+    let authority = decoded.strip_prefix("http://127.0.0.1:")?;
+    authority.split('/').next()?.parse().ok()
 }
 
 /// Feeds `Poll` until the sign-in says something other than `Waiting` (at most `limit` times).

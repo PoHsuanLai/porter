@@ -7,7 +7,7 @@
 use crate::io::Io;
 use crate::password::{fault_of, join, parse_server};
 use porter_core::sheet::SignInFault;
-use porter_core::{EndpointUrl, LoginName, SecretText};
+use porter_core::{EndpointUrl, LoginName, SecretText, WebUrl};
 use porter_http::{Http, HttpRequest, Method, Status};
 use serde_json::Value;
 
@@ -15,7 +15,7 @@ use serde_json::Value;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Started {
     /// The page the person opens.
-    pub(super) login: EndpointUrl,
+    pub(super) login: WebUrl,
     /// Where to poll.
     pub(super) poll: EndpointUrl,
     /// What to post there.
@@ -46,7 +46,8 @@ pub(super) enum Polled {
 /// Starts a flow at `server`.
 pub(super) async fn start(io: &Io, server: &EndpointUrl) -> Result<Started, SignInFault> {
     let url = join(server, "/index.php/login/v2").ok_or(SignInFault::Unreadable)?;
-    let request = HttpRequest::new(Method::Post, url)
+    let request = HttpRequest::to(Method::Post, &url)
+        .map_err(fault_of)?
         .with_header("User-Agent", "Porter")
         .with_header("Accept", "application/json");
     let response = io.http.send(request).await.map_err(fault_of)?;
@@ -61,7 +62,7 @@ fn started(body: &[u8]) -> Option<Started> {
     let json: Value = serde_json::from_slice(body).ok()?;
     let text = |pointer: &str| json.pointer(pointer).and_then(Value::as_str);
     Some(Started {
-        login: parse_server(text("/login")?)?,
+        login: WebUrl::parse(text("/login")?).ok()?,
         poll: parse_server(text("/poll/endpoint")?)?,
         token: text("/poll/token").filter(|t| !t.is_empty())?.to_owned(),
     })
@@ -69,10 +70,13 @@ fn started(body: &[u8]) -> Option<Started> {
 
 /// Polls once.
 pub(super) async fn poll(io: &Io, started: &Started) -> Polled {
-    let request = HttpRequest::new(Method::Post, started.poll.clone())
-        .with_header("User-Agent", "Porter")
-        .with_header("Content-Type", "application/x-www-form-urlencoded")
-        .with_body(format!("token={}", started.token));
+    let request = match HttpRequest::to(Method::Post, &started.poll) {
+        Ok(request) => request,
+        Err(error) => return Polled::Failed(fault_of(error)),
+    }
+    .with_header("User-Agent", "Porter")
+    .with_header("Content-Type", "application/x-www-form-urlencoded")
+    .with_body(format!("token={}", started.token));
     let response = match io.http.send(request).await {
         Ok(response) => response,
         Err(error) => {

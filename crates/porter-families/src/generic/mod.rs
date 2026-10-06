@@ -12,7 +12,7 @@ mod sign_in;
 
 use crate::io::{Io, SharedDns};
 use crate::password::{declared, password_of};
-use porter_core::{AccountId, Audience, Claim, Credential, IssuedToken};
+use porter_core::{Account, AccountId, Audience, Claim, Credential, IssuedToken};
 use porter_discover::Dns;
 use porter_http::{NoSleep, SharedHttp};
 use porter_provider::{
@@ -73,7 +73,7 @@ impl Provider for GenericProvider {
 
     async fn discover(
         &self,
-        _account: &AccountId,
+        _account: &Account,
         _presented: &Presented,
     ) -> Result<Vec<Claim>, ProviderError> {
         Ok(declared(&self.spec))
@@ -106,7 +106,11 @@ impl Provider for GenericProvider {
         ))
     }
 
-    async fn revoke(&self, presented: &Presented) -> Result<RevokeOutcome, ProviderError> {
+    async fn revoke(
+        &self,
+        _account: &Account,
+        presented: &Presented,
+    ) -> Result<RevokeOutcome, ProviderError> {
         password_of(presented)?;
         Ok(RevokeOutcome::Unsupported)
     }

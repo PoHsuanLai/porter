@@ -75,13 +75,12 @@ pub async fn request_device_code<H: Http>(
     scope: &str,
 ) -> Result<DeviceCodeResponse, DeviceFault> {
     let url = endpoints.device.as_ref().ok_or(DeviceFault::Unsupported)?;
-    let response = http
-        .send(form::post(
-            url,
-            &[("client_id", client.client_id.0.as_str()), ("scope", scope)],
-        ))
-        .await
-        .map_err(|_| ExchangeFault::Unreachable)?;
+    let response = form::send_form(
+        http,
+        url,
+        &[("client_id", client.client_id.0.as_str()), ("scope", scope)],
+    )
+    .await?;
     match response.status.0 {
         200..=299 => {
             serde_json::from_slice(&response.body).map_err(|_| ExchangeFault::Unreadable.into())
@@ -109,10 +108,7 @@ pub async fn poll_device<H: Http>(
             .as_ref()
             .map(|s| ("client_secret", s.expose())),
     );
-    let response = http
-        .send(form::post(&endpoints.token, &pairs))
-        .await
-        .map_err(|_| ExchangeFault::Unreachable)?;
+    let response = form::send_form(http, &endpoints.token, &pairs).await?;
     read_poll(&response)
 }
 

@@ -13,7 +13,7 @@ use porter_core::{
 use porter_dav::names::CURRENT_USER_PRINCIPAL;
 use porter_dav::{Depth, propfind};
 use porter_discover::well_known_found;
-use porter_http::{Header, Http, HttpRequest, Method};
+use porter_http::{Header, Http, HttpRequest, Method, web_url};
 use porter_provider::ProviderSpec;
 
 /// The two DAV services a generic server may offer, and the family of each.
@@ -89,7 +89,7 @@ async fn root(
     };
     let response = io
         .http
-        .send(HttpRequest::new(Method::Get, requested.clone()))
+        .send(HttpRequest::to(Method::Get, &requested).map_err(fault_of)?)
         .await
         .map_err(fault_of)?;
     Ok(well_known_found(kind, &requested, &response, login)
@@ -106,7 +106,11 @@ async fn check(
     login: &LoginName,
     password: &SecretText,
 ) -> Result<bool, SignInFault> {
-    let mut request = propfind(url.clone(), Depth::Zero, &[CURRENT_USER_PRINCIPAL]);
+    let mut request = propfind(
+        web_url(url).map_err(fault_of)?,
+        Depth::Zero,
+        &[CURRENT_USER_PRINCIPAL],
+    );
     request
         .headers
         .push(Header::new("Authorization", basic(&login.0, password)));

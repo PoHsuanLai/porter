@@ -2,7 +2,7 @@
 //! its feature is on.
 
 use porter_core::sheet::SignInInput;
-use porter_core::{AccountId, Audience, Claim, Credential, IssuedToken};
+use porter_core::{Account, AccountId, Audience, Claim, Credential, IssuedToken};
 use porter_provider::{
     Presented, Provider, ProviderError, ProviderSession, ProviderSpec, RevokeOutcome, SignIn,
     SignInStart, SignInStep,
@@ -99,7 +99,7 @@ impl Provider for FamilyProvider {
 
     async fn discover(
         &self,
-        account: &AccountId,
+        account: &Account,
         presented: &Presented,
     ) -> Result<Vec<Claim>, ProviderError> {
         each_family!(self, p => p.discover(account, presented).await)
@@ -158,8 +158,12 @@ impl Provider for FamilyProvider {
         }
     }
 
-    async fn revoke(&self, presented: &Presented) -> Result<RevokeOutcome, ProviderError> {
-        each_family!(self, p => p.revoke(presented).await)
+    async fn revoke(
+        &self,
+        account: &Account,
+        presented: &Presented,
+    ) -> Result<RevokeOutcome, ProviderError> {
+        each_family!(self, p => p.revoke(account, presented).await)
     }
 }
 

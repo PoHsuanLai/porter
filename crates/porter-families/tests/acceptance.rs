@@ -535,3 +535,25 @@ async fn add_and_allow_grants_nothing_when_the_new_account_does_not_meet_the_nee
     added(reply);
     assert!(service.registry().grants.is_empty());
 }
+
+#[tokio::test]
+async fn removing_a_nextcloud_account_deletes_its_app_password_at_the_server_then_wipes_it() {
+    let nextcloud = nextcloud().await;
+    let (service, kept, id) = with_account(
+        &nextcloud,
+        consent(vec![]),
+        vec![adding(nextcloud.base_url())],
+    )
+    .await;
+    let password = kept.secrets.password(&id).await.expect("filed");
+    assert!(nextcloud.app_passwords().contains(&password));
+
+    service.remove_account(&id).await.expect("removed");
+
+    assert!(
+        !nextcloud.app_passwords().contains(&password),
+        "the server no longer honours the app password"
+    );
+    assert!(service.registry().accounts.is_empty());
+    assert_eq!(kept.secrets.password(&id).await, None);
+}

@@ -14,7 +14,7 @@ async fn discovery_reports_every_declared_row_as_discovered() {
     let provider = cloud_provider();
     let account = storage_account();
     let claims = provider
-        .discover(&account.id, &Presented::Anonymous)
+        .discover(&account, &Presented::Anonymous)
         .await
         .expect("discovers");
     let kinds: Vec<_> = claims
@@ -145,7 +145,9 @@ async fn the_fake_provider_signs_in_at_once_and_revokes() {
         SignInStep::Failed(SignInFault::Cancelled)
     );
     assert_eq!(
-        provider.revoke(&Presented::Anonymous).await,
+        provider
+            .revoke(&storage_account(), &Presented::Anonymous)
+            .await,
         Ok(RevokeOutcome::Revoked)
     );
 }

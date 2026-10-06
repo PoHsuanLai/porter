@@ -29,6 +29,7 @@ pub mod store;
 pub mod stream;
 mod token;
 mod units;
+mod weburl;
 pub mod wire;
 
 pub use account::{Account, AccountLabel, AccountState};
@@ -57,4 +58,5 @@ pub use secret::{Credential, SecretKey, SecretPurpose, SecretText};
 pub use space::{SpaceId, SpaceScope};
 pub use token::{Audience, IssuedToken, TokenKind};
 pub use units::{Bytes, Count, Dims, MicroUsd, Permille, Px, Tokens, UnixSeconds};
+pub use weburl::WebUrl;
 pub use wire::{AccountsReply, AccountsRequest};
