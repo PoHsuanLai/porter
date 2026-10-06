@@ -3,7 +3,8 @@
 # changes what inferd does), written by hand until inferd can write its own (`--write-schema`).
 # Install to $XDG_DATA_DIRS/quire/settings/inferd.settings.toml.
 #
-# Not in this file: `ai.model.<kind>.<tier>`, the model picker. Its choices are the models inferd
+# Not in this file: `ai.model.<slot>.<tier>`, the model picker (slots: text, voice_in, voice_out,
+# image_in, computer_use, embeddings; the old kind segments llm, speech_in and speech_out still read). Its choices are the models inferd
 # knows now, so inferd describes those rows itself, as the live module org.quire.SettingsModule1 at
 # /org/quire/Inference1/settings (callable by the Settings role only).
 #
@@ -527,6 +528,27 @@ kind = "bounded"
 min = 0
 max = 3
 unit = "re-asks"
+
+[key.page]
+kind = "intelligence"
+
+[[key]]
+path = "ai.pipeline.describe_images"
+default = "off"
+label = "Describe images for text-only models"
+help = "When the answering model cannot read an image, let another model describe it first. The description loses detail, so the answer says it was used. Off refuses instead."
+section = "Models"
+exposure = "basic"
+
+[key.kind]
+kind = "toggle"
+
+[key.kind.v]
+variants = ["off", "on"]
+
+[key.labels]
+off = "Off"
+on = "On"
 
 [key.page]
 kind = "intelligence"

@@ -39,6 +39,8 @@ pub struct FakeAccount {
 pub struct Calls {
     /// (app name, class) of each `Verdicts`.
     pub verdicts: Vec<(String, String)>,
+    /// The `usage` of each `Verdicts`, in the same order.
+    pub usages: Vec<String>,
     /// The grant of each `ResolveKey`.
     pub resolved: Vec<String>,
 }
@@ -105,14 +107,12 @@ impl FakePeer {
         app: AppArg,
         _need: NeedArg,
         class: String,
-        _usage: String,
+        usage: String,
     ) -> fdo::Result<Vec<VerdictArg>> {
-        self.0
-            .calls
-            .lock()
-            .expect("lock")
-            .verdicts
-            .push((app.0.clone(), class));
+        let mut calls = self.0.calls.lock().expect("lock");
+        calls.verdicts.push((app.0.clone(), class));
+        calls.usages.push(usage);
+        drop(calls);
         let accounts = self.0.accounts.lock().expect("lock").clone();
         Ok(accounts
             .into_iter()

@@ -16,6 +16,23 @@ fn old() -> ModelRef {
     }
 }
 
+fn reached() -> Why {
+    Why::Reached {
+        provider: porter_infer::ProviderId("openrouter".into()),
+        door: porter_infer::Door::Gateway,
+    }
+}
+
+fn decided_reached(readiness: Readiness, show: ShowReason) -> SessionIn {
+    SessionIn::Routed(Ok(crate::session::Routing {
+        served: served(),
+        readiness,
+        why: Why::Warm,
+        reached: Some(reached()),
+        show,
+    }))
+}
+
 fn declined() -> Declined {
     Declined {
         model: old(),
@@ -26,6 +43,30 @@ fn declined() -> Declined {
 pub(super) fn rows() -> Vec<Row> {
     let failed = |e| done(InferReply::Failed(e));
     vec![
+        (
+            "a hosted model's door is announced after the reason, when reasons are shown",
+            llm_spec(DataClass::Mail),
+            Phase::Opened,
+            decided_reached(Readiness::Loadable, ShowReason::On),
+            waiting(None),
+            vec![
+                SessionOut::Emit(InferEvent::Why(Why::Warm)),
+                SessionOut::Emit(InferEvent::Why(reached())),
+                SessionOut::Emit(InferEvent::Waiting(Readiness::Loadable)),
+                SessionOut::Want(model()),
+            ],
+        ),
+        (
+            "a hosted model's door stays quiet when reasons are off",
+            llm_spec(DataClass::Mail),
+            Phase::Opened,
+            decided_reached(Readiness::Loadable, ShowReason::Off),
+            waiting(None),
+            vec![
+                SessionOut::Emit(InferEvent::Waiting(Readiness::Loadable)),
+                SessionOut::Want(model()),
+            ],
+        ),
         (
             "route refused closes",
             llm_spec(DataClass::Mail),

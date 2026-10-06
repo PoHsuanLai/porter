@@ -1,5 +1,5 @@
-//! The hosted models as the model picker lists them: every curated remote entry that fits the
-//! language slot, grouped by company, whether or not the person has an account for it. An entry no
+//! The hosted models as the model picker lists them: every curated remote entry that fits a
+//! slot, grouped by company, whether or not the person has an account for it. An entry no
 //! account reaches is listed and says so ("Add an account to use"), so the picker is company then
 //! model regardless of accounts. The label carries what a search and a tools filter read: the
 //! company, and the capabilities the entry declares.
@@ -7,7 +7,7 @@
 use super::accountd::AccountVerdict;
 use super::models::{WIRES, known_providers, provider_of};
 use crate::engines::CLOUD_ACCOUNT;
-use model_catalog::{Modality, ModelEntry, Slot, reachable, slot_members};
+use model_catalog::{Modality, ModelEntry, reachable, slot_members};
 use model_provider::ToolSupport;
 
 /// What the label says of a model nobody can reach yet.
@@ -52,6 +52,22 @@ pub fn company_of(family: &str) -> String {
     }
 }
 
+/// The catalogue's slot for porter's: the two have the same names, but the catalogue has no
+/// `image_gen` or `rerank` yet, so those list no hosted model.
+pub fn catalog_slot(slot: porter_infer::Slot) -> Option<model_catalog::Slot> {
+    use model_catalog::Slot as C;
+    use porter_infer::Slot as P;
+    match slot {
+        P::Text => Some(C::Text),
+        P::VoiceIn => Some(C::VoiceIn),
+        P::VoiceOut => Some(C::VoiceOut),
+        P::ImageIn => Some(C::ImageIn),
+        P::ComputerUse => Some(C::ComputerUse),
+        P::Embeddings => Some(C::Embeddings),
+        P::ImageGen | P::Rerank => None,
+    }
+}
+
 /// What an entry declares it can do, as the words a filter reads.
 fn capabilities_of(entry: &ModelEntry) -> Vec<&'static str> {
     let caps = &entry.capabilities;
@@ -66,6 +82,7 @@ fn capabilities_of(entry: &ModelEntry) -> Vec<&'static str> {
     [
         (tools, "tools"),
         (caps.inputs.contains(Modality::Image), "images"),
+        (caps.inputs.contains(Modality::Audio), "audio"),
         (reasoning, "reasoning"),
     ]
     .into_iter()
@@ -73,22 +90,29 @@ fn capabilities_of(entry: &ModelEntry) -> Vec<&'static str> {
     .collect()
 }
 
-/// The hosted models of the language slot, grouped by company (companies in the order the
+/// The hosted models of `slot`, grouped by company (companies in the order the
 /// catalogue first names them, models in catalogue order), marked by `accounts`: every account of
 /// the person's, whatever the app's grant says.
-pub fn choices(entries: &[ModelEntry], accounts: &[AccountVerdict]) -> Vec<Choice> {
+pub fn choices(
+    entries: &[ModelEntry],
+    accounts: &[AccountVerdict],
+    slot: porter_infer::Slot,
+) -> Vec<Choice> {
+    let Some(slot) = catalog_slot(slot) else {
+        return Vec::new();
+    };
     let known = known_providers(entries);
     let held: Vec<_> = accounts
         .iter()
         .filter_map(|one| provider_of(one, &known))
         .collect();
     let mut grouped: Vec<(String, Vec<Choice>)> = Vec::new();
-    for entry in slot_members(Slot::Text, entries, &[]) {
+    for entry in slot_members(slot, entries, &[]) {
         let Some(reach) = reachable_or_not(entry, &held) else {
             continue;
         };
         let company = company_of(&entry.family.0);
-        let mut words = vec![company.clone()];
+        let mut words = vec![company.clone(), entry.family.0.clone()];
         words.extend(capabilities_of(entry).into_iter().map(str::to_owned));
         let mut label = format!("{} ({})", entry.label, words.join(", "));
         if reach == Availability::NeedsAccount {

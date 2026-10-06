@@ -37,10 +37,11 @@
 # voice = "on_device"
 # prompt = "on_device"
 #
-# The user's model for a kind and tier: "" (the catalogue's choice), "auto" (inferd picks among
-# what is allowed) or "<account>/<model>". Kinds: llm, computer_use, embeddings, speech_in,
-# speech_out, image_gen, rerank; tiers: fast, balanced, best.
-# [ai.model.llm]
+# The user's model for a slot and tier: "" (the catalogue's choice), "auto" (inferd picks among
+# what is allowed) or "<account>/<model>". Slots: text, voice_in, voice_out, image_in,
+# computer_use, embeddings, image_gen, rerank (the old kinds llm, speech_in and speech_out still
+# read, as text, voice_in and voice_out); tiers: fast, balanced, best.
+# [ai.model.text]
 # balanced = "local/holo-3.1-4b"
 # fast = "auto"
 #
@@ -50,6 +51,11 @@
 # mode = "warm_first"
 # allow_evict = "idle_only"
 # show_reason = "on"
+#
+# Whether an image the answering model cannot read may be described by the image_in model first
+# (ai.pipeline.describe_images): "off" (refuse, with the reason) or "on".
+# [ai.pipeline]
+# describe_images = "off"
 #
 # The share of a spending cap at which a request is warned about, 1 to 1000 (ai.spend.warn_permille),
 # and the caps on cloud models, in US cents (0 is no cap): on each account, counting every app that

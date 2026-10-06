@@ -33,6 +33,7 @@ pub(super) fn decided(readiness: Readiness) -> SessionIn {
         served: served(),
         readiness,
         why: Why::Named,
+        reached: None,
         show: ShowReason::Off,
     }))
 }
@@ -42,6 +43,7 @@ pub(super) fn decided_why(readiness: Readiness, why: Why, show: ShowReason) -> S
         served: served(),
         readiness,
         why,
+        reached: None,
         show,
     }))
 }
@@ -58,6 +60,7 @@ pub(super) fn llm_spec(class: DataClass) -> SessionSpec {
         }),
         class,
         tier: Tier::Balanced,
+        usage: porter_core::consent::Usage::Interactive,
     }
 }
 
@@ -68,6 +71,7 @@ pub(super) fn speech_spec(class: DataClass) -> SessionSpec {
         }),
         class,
         tier: Tier::Fast,
+        usage: porter_core::consent::Usage::Interactive,
     }
 }
 
@@ -78,6 +82,7 @@ pub(super) fn cua_spec(class: DataClass) -> SessionSpec {
         }),
         class,
         tier: Tier::Best,
+        usage: porter_core::consent::Usage::Interactive,
     }
 }
 

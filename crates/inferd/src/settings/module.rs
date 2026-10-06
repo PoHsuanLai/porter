@@ -1,10 +1,11 @@
 //! `org.quire.SettingsModule1` at `/org/quire/Inference1/settings` (design/22 section 9.4): the
-//! `ai.model.<kind>.<tier>` picker, whose choices are the models inferd knows now. Only the
+//! `ai.model.<slot>.<tier>` picker, whose choices are the models inferd knows now (and, per slot,
+//! the curated hosted models, company then model, each marked when no account reaches it). Only the
 //! `Settings` role may `Describe`, `Get` or `Set`. A `Set` validates the model, writes it to
 //! `inferd.toml` at that path and puts it in force; the next session is routed by it.
 
 use super::file::Reload;
-use super::keys::{KINDS, TIERS, kinds_of, model_path, parse_model_path};
+use super::keys::{SLOTS, TIERS, model_path, parse_model_path, slots_of};
 use super::resolve::{model_text, parse_model, slot_value};
 use crate::cloud::picker::{Choice, choices};
 use crate::peers::{Peers, Role};
@@ -12,9 +13,10 @@ use ds_settings::live::{Access, Caller, LiveError, LiveModule, LiveSchema, Verdi
 use ds_settings::schema::{
     AgentSetting, Exposure, Help, KeyKind, KeyPath, KeySpec, Label, Page, Section, WordLabels,
 };
+use porter_core::consent::Usage;
 use porter_core::{AppId, AppName, DataClass, Isolation, Tier};
 use porter_dbus::INFERENCE_SETTINGS_PATH;
-use porter_infer::{AiKind, tier_label};
+use porter_infer::{Slot, tier_label};
 
 /// The picker value that is Automatic.
 const AUTO: &str = "auto";
@@ -54,12 +56,12 @@ impl<P: Peers> InferdSettings<P> {
     }
 
     /// The models inferd knows for `kind`, as `account/model`, with their names.
-    fn models_for(&self, kind: AiKind) -> Vec<String> {
+    fn models_for(&self, kind: Slot) -> Vec<String> {
         self.reload
             .engines()
             .listed()
             .into_iter()
-            .filter(|one| kinds_of(&one.card).contains(&kind))
+            .filter(|one| slots_of(&one.card).contains(&kind))
             .map(|one| {
                 model_text(&porter_infer::ModelRef {
                     account: one.card.account,
@@ -69,25 +71,41 @@ impl<P: Peers> InferdSettings<P> {
             .collect()
     }
 
-    /// The hosted models for `kind` (the language slot), with whether the person has an account
-    /// that reaches each; none for another kind, and none when this daemon serves none.
-    async fn hosted(&self, kind: AiKind) -> Vec<Choice> {
-        let (AiKind::Llm, Some(cloud), Some(app)) =
-            (kind, self.reload.engines().cloud().cloned(), picker_app())
+    /// The hosted models that fit `slot`, company then model, with whether the person has an
+    /// account that reaches each; none when this daemon serves none.
+    async fn hosted(&self, slot: Slot) -> Vec<Choice> {
+        let (Some(cloud), Some(app)) = (self.reload.engines().cloud().cloned(), picker_app())
         else {
             return Vec::new();
         };
         choices(
             cloud.entries(),
-            &cloud.accounts(&app, DataClass::Prompt).await,
+            &cloud
+                .accounts(&app, DataClass::Prompt, Usage::Interactive)
+                .await,
+            slot,
         )
     }
 
-    fn current(&self, kind: AiKind, tier: Tier) -> String {
+    /// The path of the old-kind row for this slot and tier, when the file has one.
+    fn legacy_row(&self, slot: Slot, tier: Tier) -> Option<String> {
+        let old = slot.legacy_slug()?;
+        let path = model_path(slot, tier).replacen(slot.slug(), old, 1);
+        let config = self.reload.file().read().ok()?;
+        let (_, tier_slug) = path.strip_prefix("ai.model.")?.split_once('.')?;
+        config
+            .ai
+            .model
+            .get(old)
+            .is_some_and(|row| row.contains_key(tier_slug))
+            .then_some(path)
+    }
+
+    fn current(&self, kind: Slot, tier: Tier) -> String {
         slot_value(&self.reload.engines().settings().tiers, kind, tier)
     }
 
-    fn spec(&self, kind: AiKind, tier: Tier, hosted: &[Choice]) -> KeySpec {
+    fn spec(&self, kind: Slot, tier: Tier, hosted: &[Choice]) -> KeySpec {
         let current = self.current(kind, tier);
         let mut variants = vec![String::new(), AUTO.to_owned()];
         variants.extend(self.models_for(kind));
@@ -113,9 +131,9 @@ impl<P: Peers> InferdSettings<P> {
             path: KeyPath(model_path(kind, tier)),
             kind: KeyKind::Menu { variants },
             default: toml::Value::String(String::new()),
-            label: Label(format!("{}: {}", kind_label(kind), tier_label(tier))),
+            label: Label(format!("{}: {}", slot_label(kind), tier_label(tier))),
             help: Help(
-                "The model used for this kind of work at this tier. Automatic picks one that \
+                "The model used for this slot at this tier. Automatic picks one that \
                  is allowed and already loaded when it can."
                     .to_owned(),
             ),
@@ -128,15 +146,16 @@ impl<P: Peers> InferdSettings<P> {
     }
 }
 
-fn kind_label(kind: AiKind) -> &'static str {
-    match kind {
-        AiKind::Llm => "Language",
-        AiKind::ComputerUse => "Computer use",
-        AiKind::Embeddings => "Embeddings",
-        AiKind::SpeechIn => "Speech to text",
-        AiKind::SpeechOut => "Text to speech",
-        AiKind::ImageGen => "Images",
-        AiKind::Rerank => "Reranking",
+fn slot_label(slot: Slot) -> &'static str {
+    match slot {
+        Slot::Text => "Language",
+        Slot::VoiceIn => "Speech to text",
+        Slot::VoiceOut => "Text to speech",
+        Slot::ImageIn => "Reading images",
+        Slot::ComputerUse => "Computer use",
+        Slot::Embeddings => "Embeddings",
+        Slot::ImageGen => "Images",
+        Slot::Rerank => "Reranking",
     }
 }
 
@@ -154,7 +173,7 @@ impl<P: Peers> LiveModule for InferdSettings<P> {
 
     async fn describe(&self) -> LiveSchema {
         let mut key = Vec::new();
-        for kind in KINDS {
+        for kind in SLOTS {
             let hosted = self.hosted(kind).await;
             let known = !self.models_for(kind).is_empty()
                 || !hosted.is_empty()
@@ -175,8 +194,9 @@ impl<P: Peers> LiveModule for InferdSettings<P> {
     }
 
     async fn set(&self, key: &KeyPath, value: toml::Value) -> Result<(), LiveError> {
-        let (kind, _) =
+        let (slot, tier) =
             parse_model_path(&key.0).ok_or_else(|| LiveError::UnknownKey(key.0.clone()))?;
+        let kind = slot;
         let toml::Value::String(text) = value else {
             return Err(LiveError::BadValue("a model is text".into()));
         };
@@ -194,10 +214,15 @@ impl<P: Peers> LiveModule for InferdSettings<P> {
             )));
         }
         let _one_writer = self.writing.lock().await;
-        self.reload
-            .file()
-            .set(&key.0, toml::Value::String(text))
+        // Always the slot's own path; an old kind row for the same slot, if the file still has
+        // one, is kept in step so it cannot say otherwise.
+        let file = self.reload.file();
+        let value = toml::Value::String(text);
+        file.set(&model_path(slot, tier), value.clone())
             .map_err(failed)?;
+        if let Some(old) = self.legacy_row(slot, tier) {
+            file.set(&old, value).map_err(failed)?;
+        }
         self.reload.now().map_err(failed).map(|_| ())
     }
 }

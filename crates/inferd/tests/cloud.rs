@@ -815,7 +815,7 @@ async fn the_picker_lists_every_hosted_model_by_company_and_marks_the_ones_no_ac
         let row = schema
             .key
             .iter()
-            .find(|k| k.path.0 == "ai.model.llm.balanced")
+            .find(|k| k.path.0 == "ai.model.text.balanced")
             .expect("the language row");
         let KeyKind::Menu { variants } = &row.kind else {
             panic!("a menu, got {:?}", row.kind);
@@ -830,6 +830,19 @@ async fn the_picker_lists_every_hosted_model_by_company_and_marks_the_ones_no_ac
             ["cloud/claude-opus-5.5", "cloud/gpt-6-luna", "cloud/kimi-k3"],
             "every curated model is listed, in catalogue order, grouped by company"
         );
+        // Every slot a hosted model fits has its own picker row, grouped the same way.
+        let image_row = schema
+            .key
+            .iter()
+            .find(|k| k.path.0 == "ai.model.image_in.balanced")
+            .expect("the image row");
+        let KeyKind::Menu {
+            variants: image_variants,
+        } = &image_row.kind
+        else {
+            panic!("a menu, got {:?}", image_row.kind);
+        };
+        assert!(image_variants.iter().any(|v| v == "cloud/claude-opus-5.5"));
         for value in &reachable {
             let label = &row.labels.0[*value];
             assert!(!label.contains("Add an account to use"), "{value}: {label}");
@@ -840,13 +853,13 @@ async fn the_picker_lists_every_hosted_model_by_company_and_marks_the_ones_no_ac
         }
         // Choosing one, whatever the accounts, is a value the row accepts.
         live.set(
-            &KeyPath("ai.model.llm.balanced".into()),
+            &KeyPath("ai.model.text.balanced".into()),
             &toml::Value::String("cloud/kimi-k3".into()),
         )
         .await
         .expect("a hosted model is a value");
         assert_eq!(
-            live.get(&KeyPath("ai.model.llm.balanced".into()))
+            live.get(&KeyPath("ai.model.text.balanced".into()))
                 .await
                 .expect("get"),
             toml::Value::String("cloud/kimi-k3".into())
@@ -861,7 +874,7 @@ async fn a_picked_hosted_model_is_served_through_the_account_the_app_is_granted(
     // The person picked Kimi K3 for balanced work: `cloud/kimi-k3`, an account of nobody's.
     let mut settings = world.served.settings().as_ref().clone();
     settings.tiers.rows.push(porter_infer::TierRow {
-        kind: porter_infer::AiKind::Llm,
+        kind: porter_infer::Slot::Text,
         tier: Tier::Balanced,
         model: porter_infer::ModelRef {
             account: porter_core::AccountId::parse("cloud").expect("id"),
@@ -878,4 +891,31 @@ async fn a_picked_hosted_model_is_served_through_the_account_the_app_is_granted(
     );
     let requests = world.provider.as_ref().expect("provider").requests();
     assert_eq!(requests[0].body["model"], "moonshotai/kimi-k3");
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            InferEvent::Why(porter_infer::Why::Reached {
+                provider,
+                door: porter_infer::Door::Gateway,
+            }) if provider.0 == "openrouter"
+        )),
+        "the footer can say it came via OpenRouter: {events:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_session_asks_accountd_for_the_usage_it_was_opened_with() {
+    let world = World::start(plan(vec![openrouter(&[COMPANION])], COMPANION)).await;
+    for usage in [Usage::Background, Usage::Interactive] {
+        let offered = world
+            .served
+            .offer(&app(COMPANION), DataClass::Prompt, usage)
+            .await;
+        assert_eq!(offered.models().count(), 3, "{usage:?}");
+    }
+    let calls = world.accountd.as_ref().expect("accountd").calls();
+    assert_eq!(
+        calls.usages,
+        vec!["background".to_owned(), "interactive".to_owned()]
+    );
 }

@@ -29,6 +29,7 @@ use model_catalog::ModelEntry;
 use model_http::{AuthHeader, HostName, HttpEndpoint, HttpTarget, Port, Proxy, Secret, Timeouts};
 use model_http::{UrlPath, WaitMs};
 use models::{RemoteModel, remote_entries, remote_models};
+use porter_core::consent::Usage;
 use porter_core::{AppId, DataClass, GrantId, SecretText, UnixSeconds};
 use porter_infer::SpendVerdict;
 use spend::{Ledger, estimate};
@@ -114,17 +115,22 @@ impl Cloud {
 
     /// The accounts `app` has a verdict on for data of `class`; none when accountd cannot be
     /// reached (nothing hosted is served then).
-    pub async fn accounts(&self, app: &AppId, class: DataClass) -> Vec<AccountVerdict> {
+    pub async fn accounts(
+        &self,
+        app: &AppId,
+        class: DataClass,
+        usage: Usage,
+    ) -> Vec<AccountVerdict> {
         self.0
             .accountd
-            .verdicts(app, class)
+            .verdicts(app, class, usage)
             .await
             .unwrap_or_default()
     }
 
     /// The hosted models `app` is offered for data of `class`.
-    pub async fn models(&self, app: &AppId, class: DataClass) -> Vec<RemoteModel> {
-        remote_models(&self.0.entries, &self.accounts(app, class).await)
+    pub async fn models(&self, app: &AppId, class: DataClass, usage: Usage) -> Vec<RemoteModel> {
+        remote_models(&self.0.entries, &self.accounts(app, class, usage).await)
     }
 
     /// What the caps say about one more turn of `app` on `model`.

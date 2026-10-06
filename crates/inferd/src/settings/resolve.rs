@@ -1,5 +1,6 @@
 //! The file's `[ai]` table (laid over the old `[policy]` and `[tiers]` tables) as [`Settings`].
 
+use super::DESCRIBE_IMAGES;
 use super::keys::{from_slug, slug_of};
 use super::{
     SPEND_ACCOUNT_DAILY, SPEND_ACCOUNT_MONTHLY, SPEND_APP_DAILY, SPEND_APP_MONTHLY,
@@ -10,7 +11,7 @@ use crate::config::InferdConfig;
 use crate::structured::AiConfig;
 use porter_core::{DataClass, Permille, Tier};
 use porter_infer::{
-    AiKind, AutoRow, ClassFloor, Floor, LocalOnly, ModelRef, Policy, TierMap, TierRow,
+    AutoRow, ClassFloor, DescribeImages, Floor, LocalOnly, ModelRef, Policy, Slot, TierMap, TierRow,
 };
 
 /// The settings in force, and the paths of the rows whose values were refused.
@@ -59,42 +60,65 @@ fn policy_of(ai: &AiConfig, mut policy: Policy, rejected: &mut Vec<String>) -> P
     policy
 }
 
+/// The rows of `[ai.model.*]` in the order they apply: a row under an old kind segment first, so
+/// a row under the slot's own segment wins over it when a file says both.
+fn model_rows(ai: &AiConfig) -> Vec<(&str, &str, &str)> {
+    let mut rows: Vec<(&str, &str, &str)> = ai
+        .model
+        .iter()
+        .flat_map(|(slot, tiers)| {
+            tiers
+                .iter()
+                .map(move |(tier, text)| (slot.as_str(), tier.as_str(), text.as_str()))
+        })
+        .collect();
+    rows.sort_by_key(|(slot, _, _)| !Slot::is_legacy_slug(slot));
+    rows
+}
+
 fn tiers_of(ai: &AiConfig, mut tiers: TierMap, rejected: &mut Vec<String>) -> TierMap {
-    for (kind_slug, row) in &ai.model {
-        for (tier_slug, text) in row {
-            let path = format!("ai.model.{kind_slug}.{tier_slug}");
-            let (Some(kind), Some(tier)) =
-                (from_slug::<AiKind>(kind_slug), from_slug::<Tier>(tier_slug))
-            else {
-                rejected.push(path);
-                continue;
-            };
-            let slot = |row_kind: AiKind, row_tier: Tier| row_kind == kind && row_tier == tier;
-            let named = match text.as_str() {
-                "" | "auto" => None,
-                other => match parse_model(other) {
-                    Some(model) => Some(model),
-                    None => {
-                        rejected.push(path);
-                        continue;
-                    }
-                },
-            };
-            // The row at its settings path replaces whatever the old tables said for the slot.
-            tiers.rows.retain(|r| !slot(r.kind, r.tier));
-            tiers.autos.retain(|r| !slot(r.kind, r.tier));
-            match (text.as_str(), named) {
-                (_, Some(model)) => tiers.rows.push(TierRow { kind, tier, model }),
-                ("auto", None) => tiers.autos.push(AutoRow {
-                    kind,
-                    tier,
-                    mode: Default::default(),
-                }),
-                _ => {}
-            }
+    for (slot_slug, tier_slug, text) in model_rows(ai) {
+        let path = format!("ai.model.{slot_slug}.{tier_slug}");
+        let (Some(kind), Some(tier)) = (Slot::from_slug(slot_slug), from_slug::<Tier>(tier_slug))
+        else {
+            rejected.push(path);
+            continue;
+        };
+        let slot = |row_kind: Slot, row_tier: Tier| row_kind == kind && row_tier == tier;
+        let named = match text {
+            "" | "auto" => None,
+            other => match parse_model(other) {
+                Some(model) => Some(model),
+                None => {
+                    rejected.push(path);
+                    continue;
+                }
+            },
+        };
+        // The row at its settings path replaces whatever the old tables said for the slot.
+        tiers.rows.retain(|r| !slot(r.kind, r.tier));
+        tiers.autos.retain(|r| !slot(r.kind, r.tier));
+        match (text, named) {
+            (_, Some(model)) => tiers.rows.push(TierRow { kind, tier, model }),
+            ("auto", None) => tiers.autos.push(AutoRow {
+                kind,
+                tier,
+                mode: Default::default(),
+            }),
+            _ => {}
         }
     }
     tiers
+}
+
+fn describe_images_of(ai: &AiConfig, rejected: &mut Vec<String>) -> DescribeImages {
+    match ai.pipeline.describe_images.as_deref() {
+        None => DescribeImages::default(),
+        Some(text) => DescribeImages::from_slug(text).unwrap_or_else(|| {
+            rejected.push(DESCRIBE_IMAGES.to_owned());
+            DescribeImages::default()
+        }),
+    }
 }
 
 fn spend_of(ai: &AiConfig, rejected: &mut Vec<String>) -> SpendLine {
@@ -142,12 +166,13 @@ pub fn resolve(config: &InferdConfig) -> Resolved {
         tiers: tiers_of(&config.ai, config.tiers.clone(), &mut rejected),
         auto: auto.policy,
         spend: spend_of(&config.ai, &mut rejected),
+        describe_images: describe_images_of(&config.ai, &mut rejected),
     };
     Resolved { settings, rejected }
 }
 
 /// What the file says for one slot, as the picker's value: `""`, `auto` or `account/model`.
-pub fn slot_value(tiers: &TierMap, kind: AiKind, tier: Tier) -> String {
+pub fn slot_value(tiers: &TierMap, kind: Slot, tier: Tier) -> String {
     match tiers.pick(kind, tier) {
         None => String::new(),
         Some(porter_infer::Pick::Named(model)) => model_text(&model),

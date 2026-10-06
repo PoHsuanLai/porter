@@ -19,7 +19,7 @@ use porter_core::{
     AccountId, AppId, AppName, Billing, Isolation, Locality, ModelId, Tokens, UnixSeconds,
 };
 use porter_dbus::{INFERENCE_BUS, INFERENCE_PATH, INFERENCE_SETTINGS_PATH, InferenceProxy};
-use porter_infer::{AiKind, Pick, Policy, TierMap};
+use porter_infer::{Pick, Policy, Slot, TierMap};
 use std::path::PathBuf;
 use std::sync::Arc;
 use zbus::Connection;
@@ -129,7 +129,7 @@ async fn the_settings_path_is_under_inference1_and_named_in_porter_dbus() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn describe_lists_the_picker_rows_of_the_kinds_inferd_has_models_for() {
+async fn describe_lists_the_picker_rows_of_the_slots_inferd_has_models_for() {
     let rig = Rig::start().await;
     let settings = rig.live(&rig.client(Role::Settings).await).await;
     let schema: LiveSchema = settings.describe().await.expect("schema");
@@ -138,9 +138,9 @@ async fn describe_lists_the_picker_rows_of_the_kinds_inferd_has_models_for() {
     assert_eq!(
         paths,
         [
-            "ai.model.llm.fast",
-            "ai.model.llm.balanced",
-            "ai.model.llm.best"
+            "ai.model.text.fast",
+            "ai.model.text.balanced",
+            "ai.model.text.best"
         ]
     );
     for spec in &schema.key {
@@ -165,12 +165,12 @@ async fn describe_lists_the_picker_rows_of_the_kinds_inferd_has_models_for() {
 async fn a_set_by_the_settings_role_is_validated_written_and_in_force_for_the_next_route() {
     let rig = Rig::start().await;
     let settings = rig.live(&rig.client(Role::Settings).await).await;
-    let slot = key("ai.model.llm.balanced");
+    let slot = key("ai.model.text.balanced");
     let in_force = || {
         rig.engines
             .settings()
             .tiers
-            .pick(AiKind::Llm, porter_core::Tier::Balanced)
+            .pick(Slot::Text, porter_core::Tier::Balanced)
     };
     assert_eq!(settings.get(&slot).await.expect("get"), text(""));
     assert_eq!(in_force(), None);
@@ -190,7 +190,7 @@ async fn a_set_by_the_settings_role_is_validated_written_and_in_force_for_the_ne
         .parse()
         .expect("toml");
     assert_eq!(
-        written["ai"]["model"]["llm"]["balanced"].as_str(),
+        written["ai"]["model"]["text"]["balanced"].as_str(),
         Some("anthropic/sonnet")
     );
 
@@ -205,7 +205,7 @@ async fn a_set_by_the_settings_role_is_validated_written_and_in_force_for_the_ne
 async fn a_set_that_names_no_model_inferd_knows_is_a_bad_value_and_changes_nothing() {
     let rig = Rig::start().await;
     let settings = rig.live(&rig.client(Role::Settings).await).await;
-    let slot = key("ai.model.llm.fast");
+    let slot = key("ai.model.text.fast");
     for bad in [
         text("local/ghost"),
         text("sonnet"),
@@ -221,7 +221,7 @@ async fn a_set_that_names_no_model_inferd_knows_is_a_bad_value_and_changes_nothi
         .await;
     assert!(matches!(got, Err(LiveError::BadValue(_))), "{got:?}");
     for unknown in [
-        "ai.model.llm.huge",
+        "ai.model.text.huge",
         "ai.model.tv.fast",
         "ai.local_only",
         "accounts.x",
@@ -239,7 +239,7 @@ async fn a_set_that_names_no_model_inferd_knows_is_a_bad_value_and_changes_nothi
 #[tokio::test(flavor = "multi_thread")]
 async fn nobody_but_the_settings_role_may_describe_get_or_set() {
     let rig = Rig::start().await;
-    let slot = key("ai.model.llm.fast");
+    let slot = key("ai.model.text.fast");
     let stranger = rig.bus.connect().await;
     for connection in [
         rig.client(Role::App).await,
@@ -285,4 +285,56 @@ async fn rescan_reads_the_file_again_and_a_file_that_does_not_read_is_its_error(
         rig.engines.settings().auto.allow_evict,
         porter_infer::AutoEvict::Never
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_old_kind_row_in_the_file_is_the_slots_row_and_a_set_keeps_the_two_in_step() {
+    let rig = Rig::start().await;
+    let settings = rig.live(&rig.client(Role::Settings).await).await;
+    std::fs::write(
+        &rig.file,
+        "[ai.model.llm]\nbalanced = \"anthropic/sonnet\"\n",
+    )
+    .expect("write");
+    let connection = rig.client(Role::App).await;
+    InferenceProxy::new(&connection)
+        .await
+        .expect("proxy")
+        .rescan()
+        .await
+        .expect("rescan");
+    let slot = key("ai.model.text.balanced");
+    assert_eq!(
+        settings.get(&slot).await.expect("get"),
+        text("anthropic/sonnet")
+    );
+    // The old key still names the same row for a client that has not moved.
+    assert_eq!(
+        settings
+            .get(&key("ai.model.llm.balanced"))
+            .await
+            .expect("get"),
+        text("anthropic/sonnet")
+    );
+    settings.set(&slot, &text("auto")).await.expect("set");
+    let written: toml::Table = std::fs::read_to_string(&rig.file)
+        .expect("file")
+        .parse()
+        .expect("toml");
+    assert_eq!(
+        written["ai"]["model"]["text"]["balanced"].as_str(),
+        Some("auto")
+    );
+    assert_eq!(
+        written["ai"]["model"]["llm"]["balanced"].as_str(),
+        Some("auto"),
+        "the old row cannot say otherwise"
+    );
+    assert!(matches!(
+        rig.engines
+            .settings()
+            .tiers
+            .pick(Slot::Text, porter_core::Tier::Balanced),
+        Some(Pick::Auto(_))
+    ));
 }

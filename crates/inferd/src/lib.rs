@@ -20,6 +20,7 @@ pub mod engines;
 pub mod hosts;
 pub mod local;
 pub mod peers;
+pub mod pipeline;
 pub mod replay;
 pub mod router;
 pub mod runner;

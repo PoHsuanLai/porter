@@ -13,9 +13,9 @@ use porter_core::{DataClass, GrantId, Locality, Need, Tier};
 use porter_core::{Match, matches};
 use porter_core::{Offer as CoreOffer, capability::SpeechMode};
 use porter_infer::{
-    AiKind, AutoPolicy, Chosen, InferRefusal, LicenceClass, ModelCard, ModelRef, PickCandidate,
-    PickPolicy, PickRefusal, Policy, Readiness, RouteAsk, RouteCandidate, SpendVerdict, SwapCost,
-    TierMap, Why, pick, route, tier_choice,
+    AutoPolicy, Chosen, InferRefusal, LicenceClass, ModelCard, ModelRef, PickCandidate, PickPolicy,
+    PickRefusal, Policy, ProviderId, Readiness, RouteAsk, RouteCandidate, Slot, SpendVerdict,
+    SwapCost, TierMap, Why, default_choice, pick, tier_choice,
 };
 
 /// One model the router may pick, and how soon it can answer.
@@ -34,6 +34,8 @@ pub struct Listed {
     pub permission: Verdict,
     /// What the spend caps say about one more request on it.
     pub spend: SpendVerdict,
+    /// The provider that reaches it, for a hosted model; none for one on this computer.
+    pub provider: Option<ProviderId>,
 }
 
 impl Listed {
@@ -52,6 +54,7 @@ impl Listed {
             licence,
             permission,
             spend: SpendVerdict::Within,
+            provider: None,
         }
     }
 }
@@ -67,24 +70,18 @@ pub struct Decided {
     pub why: Why,
 }
 
-/// The kind of AI work a need is, for the user's tier map.
-pub fn ai_kind(need: &Need) -> Option<AiKind> {
+/// The slot a need is served from, for the user's picks.
+pub fn slot_of_need(need: &Need) -> Option<Slot> {
     match need {
-        Need::Llm(_) => Some(AiKind::Llm),
-        Need::ComputerUse(_) => Some(AiKind::ComputerUse),
-        Need::Embeddings(_) => Some(AiKind::Embeddings),
-        Need::Speech(speech) if speech.modes.contains(&SpeechMode::Tts) => Some(AiKind::SpeechOut),
-        Need::Speech(_) => Some(AiKind::SpeechIn),
-        Need::ImageGen(_) => Some(AiKind::ImageGen),
-        Need::Rerank(_) => Some(AiKind::Rerank),
+        Need::Llm(_) => Some(Slot::Text),
+        Need::ComputerUse(_) => Some(Slot::ComputerUse),
+        Need::Embeddings(_) => Some(Slot::Embeddings),
+        Need::Speech(speech) if speech.modes.contains(&SpeechMode::Tts) => Some(Slot::VoiceOut),
+        Need::Speech(_) => Some(Slot::VoiceIn),
+        Need::ImageGen(_) => Some(Slot::ImageGen),
+        Need::Rerank(_) => Some(Slot::Rerank),
         _ => None,
     }
-}
-
-/// Whether a model's readiness lets a session wait for it: one that is not installed or not
-/// available cannot answer, and there is no downloader to make it.
-fn can_serve(readiness: Readiness) -> bool {
-    !matches!(readiness, Readiness::Downloadable | Readiness::Unavailable)
 }
 
 /// The grant the on-device models carry: one name for all of them.
@@ -104,7 +101,7 @@ pub(crate) fn consent_of(card: &ModelCard) -> Verdict {
     }
 }
 
-fn fits(need: &Need, card: &ModelCard) -> bool {
+pub(crate) fn fits(need: &Need, card: &ModelCard) -> bool {
     card.capabilities
         .iter()
         .any(|capability| matches(need, &CoreOffer::Present(capability.clone())) == Match::Fits)
@@ -129,7 +126,11 @@ pub fn choose(
     if matches!(need, Need::ComputerUse(_)) {
         check_class(class).map_err(plain)?;
     }
-    let kind = ai_kind(need).ok_or(plain(InferRefusal::Unsupported))?;
+    let kind = slot_of_need(need).ok_or(plain(InferRefusal::Unsupported))?;
+    if let Need::Llm(_) = need {
+        // The language slot is planned as a pipeline: today a text-only request, so one stage.
+        return crate::pipeline::decide_text(need, class, tier, listed, policy, tiers, auto);
+    }
     let fitting: Vec<&Listed> = listed.iter().filter(|one| fits(need, &one.card)).collect();
     let candidates: Vec<PickCandidate> = fitting
         .iter()
@@ -159,52 +160,25 @@ pub fn choose(
         })
         .collect();
     let ask = RouteAsk { class };
-    match tiers.pick(kind, tier) {
+    let picked = match tiers.pick(kind, tier) {
         Some(chosen_pick) => {
             let rules = PickPolicy { policy, auto };
-            pick(ask, &chosen_pick, &candidates, rules).map(|picked| Decided {
-                chosen: picked.chosen,
-                readiness: picked.readiness,
-                why: picked.why,
-            })
+            pick(ask, &chosen_pick, &candidates, rules)?
         }
-        None => catalogue_choice(ask, &candidates, policy),
-    }
+        None => default_choice(ask, &candidates, policy)?,
+    };
+    Ok(Decided {
+        chosen: picked.chosen,
+        readiness: picked.readiness,
+        why: picked.why,
+    })
 }
 
-fn plain(refusal: InferRefusal) -> PickRefusal {
+pub(crate) fn plain(refusal: InferRefusal) -> PickRefusal {
     PickRefusal {
         refusal,
         declined: None,
     }
-}
-
-/// An empty row: what `route` has always chosen among the models that can answer.
-fn catalogue_choice(
-    ask: RouteAsk,
-    candidates: &[PickCandidate],
-    policy: &Policy,
-) -> Result<Decided, PickRefusal> {
-    let usable: Vec<&PickCandidate> = candidates
-        .iter()
-        .filter(|one| can_serve(one.readiness))
-        .collect();
-    let routes: Vec<RouteCandidate> = usable.iter().map(|one| one.route.clone()).collect();
-    let chosen = route(ask, &routes, policy).map_err(plain)?;
-    let readiness = usable
-        .iter()
-        .find(|one| one.route.account == chosen.account && one.route.model == chosen.model)
-        .map_or(Readiness::Unavailable, |one| one.readiness);
-    let why = if usable.len() == 1 {
-        Why::OnlyOne
-    } else {
-        Why::CatalogueOrder
-    };
-    Ok(Decided {
-        chosen,
-        readiness,
-        why,
-    })
 }
 
 #[cfg(test)]

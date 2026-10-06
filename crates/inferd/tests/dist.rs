@@ -94,8 +94,8 @@ fn effect(text: &str) -> (String, Vec<String>) {
     rejected.extend(config.ai.resolve().rejected.iter().map(|p| (*p).to_owned()));
     (
         format!(
-            "{:?} {floors:?} {:?} {:?} {:?} {limits:?}",
-            s.policy.local_only, s.tiers, s.auto, s.spend
+            "{:?} {floors:?} {:?} {:?} {:?} {:?} {limits:?}",
+            s.policy.local_only, s.tiers, s.auto, s.spend, s.describe_images
         ),
         rejected,
     )
@@ -136,6 +136,7 @@ fn the_schema_holds_the_rows_the_design_names_and_each_is_a_page_row_of_intellig
             "ai.structured.open_list",
             "ai.structured.depth",
             "ai.structured.repair_budget",
+            "ai.pipeline.describe_images",
         ]
         .map(String::from),
     );
@@ -316,7 +317,7 @@ fn every_row_of_the_schema_is_read_by_inferd_at_its_path_and_changes_what_it_doe
 #[test]
 fn every_model_row_the_live_module_can_describe_is_read_at_its_path() {
     let nothing = effect("");
-    for kind in settings::KINDS {
+    for kind in settings::SLOTS {
         for tier in settings::TIERS {
             let path = settings::model_path(kind, tier);
             for value in ["auto", "local/some-model"] {

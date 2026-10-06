@@ -53,6 +53,7 @@ fn spec() -> SessionSpec {
         }),
         class: porter_core::DataClass::Notes,
         tier: porter_core::Tier::Fast,
+        usage: porter_core::consent::Usage::Interactive,
     }
 }
 

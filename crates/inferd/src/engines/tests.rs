@@ -30,6 +30,7 @@ fn spec(need: Need, class: DataClass) -> SessionSpec {
         need,
         class,
         tier: Tier::Balanced,
+        usage: porter_core::consent::Usage::Interactive,
     }
 }
 

@@ -84,12 +84,16 @@ pub struct AiConfig {
     /// `ai.floor.<class>`: `on_device`, `local_network` or `anywhere`, by class slug.
     #[serde(default)]
     pub floor: std::collections::BTreeMap<String, String>,
-    /// `ai.model.<kind>.<tier>`: `""`, `auto` or `<account>/<model>`, by kind slug, then tier.
+    /// `ai.model.<slot>.<tier>`: `""`, `auto` or `<account>/<model>`, by slot slug (or an old
+    /// kind slug), then tier.
     #[serde(default)]
     pub model: std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>,
     /// `ai.spend.*`.
     #[serde(default)]
     pub spend: crate::settings::SpendConfig,
+    /// `ai.pipeline.*`.
+    #[serde(default)]
+    pub pipeline: crate::settings::PipelineConfig,
     /// `ai.structured.*`.
     #[serde(default)]
     pub structured: StructuredConfig,

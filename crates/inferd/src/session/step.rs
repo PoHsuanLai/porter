@@ -113,10 +113,19 @@ fn refused(refusal: InferRefusal) -> SessionOut {
 
 /// The reason, before anything else: announced when the person asked to see it, and always when
 /// a model is unloaded for this one (a swap is never hidden).
-fn why_event(decision: &Routing) -> Option<SessionOut> {
+fn why_event(decision: &Routing) -> Vec<SessionOut> {
     let evicting = matches!(decision.why, Why::Evicted { .. });
-    (decision.show == ShowReason::On || evicting)
-        .then(|| SessionOut::Emit(InferEvent::Why(decision.why.clone())))
+    let announce = decision.show == ShowReason::On || evicting;
+    let reached = decision
+        .reached
+        .iter()
+        .filter(|_| decision.show == ShowReason::On);
+    announce
+        .then_some(&decision.why)
+        .into_iter()
+        .chain(reached)
+        .map(|why| SessionOut::Emit(InferEvent::Why(why.clone())))
+        .collect()
 }
 
 /// Which named model could not serve, ahead of the refusal that ends the session.

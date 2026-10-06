@@ -114,6 +114,7 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
             need: need_from_dbus(need).map_err(|e| fdo::Error::InvalidArgs(e.to_string()))?,
             class: parse_slug::<DataClass>(class)?,
             tier: parse_slug::<Tier>(tier)?,
+            usage: porter_core::consent::Usage::Interactive,
         })
     }
 

@@ -10,6 +10,7 @@
 //! a running turn.
 
 use porter_core::capability::SpeechMode;
+use porter_core::consent::Usage;
 use porter_core::{DataClass, Need, Tier};
 use porter_infer::{
     AudioFrame, ClientFrame, InferEvent, InferReply, InferRequest, ModelRef, PickRefusal,
@@ -25,6 +26,10 @@ pub struct SessionSpec {
     pub class: DataClass,
     /// The tier the app asked for.
     pub tier: Tier,
+    /// Whether a person is waiting (`Interactive`) or nobody is (`Background`): what accountd is
+    /// asked a verdict for. The session's `Open` carries none yet, so every session opens as
+    /// `Interactive` until the wire says otherwise.
+    pub usage: Usage,
 }
 
 /// Whether the `Routed` event has gone out yet (it goes out once, with the session's first
@@ -66,6 +71,9 @@ pub struct Routing {
     pub readiness: Readiness,
     /// Why this model: announced to the client, and recorded in the audit entry.
     pub why: Why,
+    /// For a hosted model, how it is reached (`Why::Reached`): announced beside `why`, so the
+    /// footer can say "via OpenRouter". None for a model on this computer.
+    pub reached: Option<Why>,
     /// Whether the reason is announced (`ai.auto.show_reason`); an eviction always is.
     pub show: ShowReason,
 }
@@ -87,6 +95,7 @@ impl From<RouteDecision> for Routing {
             served: decision.served,
             readiness: decision.readiness,
             why: Why::Named,
+            reached: None,
             show: ShowReason::Off,
         }
     }

@@ -6,7 +6,7 @@
 //! [`Accountd`] is the seam: the bus peer in the daemon, a scripted fake in the unit tests.
 
 use porter_core::capability::LlmFeature;
-use porter_core::consent::{GrantScope, Verdict};
+use porter_core::consent::{GrantScope, Usage, Verdict};
 use porter_core::need::LlmNeed;
 use porter_core::{AccountId, AppId, DataClass, GrantId, Need, SecretText, Tokens};
 use porter_dbus::{Details, PeerProxy, need_to_dbus};
@@ -46,19 +46,17 @@ pub enum AccountdFault {
 
 /// accountd, as inferd uses it.
 pub trait Accountd: Debug + Send + Sync + 'static {
-    /// The grants `app` holds, for data of `class`, on every account that serves a language need.
+    /// The grants `app` holds, for data of `class` used as `usage`, on every account that serves a language need.
     fn verdicts<'a>(
         &'a self,
         app: &'a AppId,
         class: DataClass,
+        usage: Usage,
     ) -> Boxed<'a, Result<Vec<AccountVerdict>, AccountdFault>>;
 
     /// The API key behind `grant`.
     fn key<'a>(&'a self, grant: &'a GrantId) -> Boxed<'a, Result<SecretText, AccountdFault>>;
 }
-
-/// The `usage` a verdict is asked for: a person is waiting.
-const USAGE: &str = "interactive";
 
 /// The slug of a closed set's value.
 fn slug<T: Serialize>(value: &T) -> String {
@@ -144,6 +142,7 @@ impl Accountd for PeerAccountd {
         &'a self,
         app: &'a AppId,
         class: DataClass,
+        usage: Usage,
     ) -> Boxed<'a, Result<Vec<AccountVerdict>, AccountdFault>> {
         Box::pin(async move {
             let peer = PeerProxy::new(&self.connection)
@@ -151,7 +150,12 @@ impl Accountd for PeerAccountd {
                 .map_err(|e| fault_of(&e))?;
             let app = (app.name.as_str().to_owned(), slug(&app.isolation));
             let rows = peer
-                .verdicts(&app, &need_to_dbus(&llm_need()), &slug(&class), USAGE)
+                .verdicts(
+                    &app,
+                    &need_to_dbus(&llm_need()),
+                    &slug(&class),
+                    &slug(&usage),
+                )
                 .await
                 .map_err(|e| fault_of(&e))?;
             Ok(rows.into_iter().filter_map(verdict_of).collect())

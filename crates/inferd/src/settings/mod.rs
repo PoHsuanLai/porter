@@ -1,8 +1,8 @@
 //! The settings inferd serves and reads (design/22 section 5, the Intelligence page): the rows of
-//! `dist/inferd.settings.toml` and the `ai.model.<kind>.<tier>` picker, a live module.
+//! `dist/inferd.settings.toml` and the `ai.model.<slot>.<tier>` picker, a live module.
 //!
 //! * [`Settings`] is what routing runs under: the policy (`ai.local_only`, `ai.floor.<class>`), the
-//!   tier map (`ai.model.<kind>.<tier>`), Automatic (`ai.auto.*`) and the spend line
+//!   tier map (`ai.model.<slot>.<tier>`), Automatic (`ai.auto.*`) and the spend line
 //!   (`ai.spend.warn_permille`). [`resolve`] reads it from the file's `[ai]` table, laid over the
 //!   old `[policy]` and `[tiers]` tables; a value a row does not accept falls back to the row's
 //!   default, for that field only, and is named in [`Resolved::rejected`].
@@ -19,14 +19,18 @@ mod module;
 mod resolve;
 
 pub use file::{ConfigFile, FileError, Reload, ReloadFailed, Reloaded};
-pub use keys::{CLASSES, KINDS, TIERS, from_slug, model_path, slug_of};
+pub use keys::slots_of;
+pub use keys::{CLASSES, SLOTS, TIERS, from_slug, model_path, slug_of};
 pub use module::{InferdSettings, serve_settings};
 pub use resolve::{Resolved, floor_value, model_text, parse_model, resolve, slot_value};
 
 use porter_core::{AccountId, AppId, MicroUsd, Permille};
-use porter_infer::{AutoPolicy, Period, Policy, SpendCap, SpendScope, TierMap};
+use porter_infer::{AutoPolicy, DescribeImages, Period, Policy, SpendCap, SpendScope, TierMap};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, PoisonError, RwLock};
+
+/// `ai.pipeline.describe_images`.
+pub const DESCRIBE_IMAGES: &str = "ai.pipeline.describe_images";
 
 /// `ai.spend.warn_permille`.
 pub const SPEND_WARN: &str = "ai.spend.warn_permille";
@@ -68,6 +72,14 @@ pub struct SpendConfig {
     /// `ai.spend.app_monthly_cents`.
     #[serde(default)]
     pub app_monthly_cents: Option<i64>,
+}
+
+/// The `[ai.pipeline]` table, as written.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PipelineConfig {
+    /// `ai.pipeline.describe_images`: `off` or `on`.
+    #[serde(default)]
+    pub describe_images: Option<String>,
 }
 
 /// One scope's limits: none where the person set none.
@@ -158,12 +170,14 @@ impl SpendLine {
 pub struct Settings {
     /// `ai.local_only` and `ai.floor.<class>`.
     pub policy: Policy,
-    /// `ai.model.<kind>.<tier>`.
+    /// `ai.model.<slot>.<tier>`.
     pub tiers: TierMap,
     /// `ai.auto.*`.
     pub auto: AutoPolicy,
     /// `ai.spend.*`.
     pub spend: SpendLine,
+    /// `ai.pipeline.describe_images`.
+    pub describe_images: DescribeImages,
 }
 
 impl Default for Settings {
@@ -173,6 +187,7 @@ impl Default for Settings {
             tiers: TierMap::default(),
             auto: AutoPolicy::default(),
             spend: SpendLine::default(),
+            describe_images: DescribeImages::default(),
         }
     }
 }

@@ -18,11 +18,11 @@ use crate::supervise::{Snapshot, Supervised};
 use crate::swap::{Budget, running_of, swap_cost};
 use engine_supervisor::{EngineId, EngineState, MonoMs};
 use model_catalog::Licence;
-use porter_core::consent::Availability;
+use porter_core::consent::{Availability, Usage};
 use porter_core::{AccountId, AppId, DataClass, Need, Tier};
 use porter_infer::{
     AutoPolicy, InferRefusal, LicenceClass, ModelCard, ModelRef, PickRefusal, Policy, Readiness,
-    ServedBy, SpendVerdict, SwapCost, TierMap,
+    ServedBy, SpendVerdict, SwapCost, TierMap, Why,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -208,13 +208,13 @@ impl Engines {
     /// The hosted models `app` is offered for data of `class` now: what its grants reach, and the
     /// caps' verdict on each. None when this daemon has no hosted models or accountd does not
     /// answer.
-    pub async fn offer(&self, app: &AppId, class: DataClass) -> Offered {
+    pub async fn offer(&self, app: &AppId, class: DataClass, usage: Usage) -> Offered {
         let Some(cloud) = &self.book.cloud else {
             return Offered::default();
         };
         let line = self.settings().spend;
         let models = cloud
-            .models(app, class)
+            .models(app, class, usage)
             .await
             .into_iter()
             .map(|model| {
@@ -301,6 +301,7 @@ impl Engines {
         let hosted = offered.models.iter().map(|(model, spend)| Listed {
             permission: model.verdict.clone(),
             spend: *spend,
+            provider: Some(porter_infer::ProviderId(model.reach.provider.0.clone())),
             ..Listed::new(
                 model.card.clone(),
                 Readiness::Ready,
@@ -381,6 +382,7 @@ impl Engines {
                 served: served.clone(),
                 readiness,
                 why: decided.why,
+                reached: cloud.as_ref().map(|pin| reached_of(&pin.model.reach)),
                 show: settings.auto.show_reason,
             },
             Pinned {
@@ -432,7 +434,7 @@ impl Engines {
         tier: Tier,
         caller: &Caller,
     ) -> Result<Readiness, InferRefusal> {
-        let offered = self.offer(&caller.app, class).await;
+        let offered = self.offer(&caller.app, class, Usage::Interactive).await;
         self.prepare_with(need, class, tier, caller.role, &offered)
             .await
     }
@@ -449,6 +451,7 @@ impl Engines {
             need: need.clone(),
             class,
             tier,
+            usage: porter_core::consent::Usage::Interactive,
         };
         let (decision, pinned) = self
             .route_with(&spec, role, offered)
@@ -482,7 +485,7 @@ impl Engines {
         class: DataClass,
         caller: &Caller,
     ) -> Availability {
-        let offered = self.offer(&caller.app, class).await;
+        let offered = self.offer(&caller.app, class, Usage::Interactive).await;
         self.availability_with(need, class, caller.role, &offered)
     }
 
@@ -497,6 +500,7 @@ impl Engines {
             need: need.clone(),
             class,
             tier: Tier::Balanced,
+            usage: porter_core::consent::Usage::Interactive,
         };
         match self.route_with(&spec, role, offered).map_err(|r| r.refusal) {
             Ok(_) => Availability::Granted,
@@ -527,6 +531,18 @@ impl Engines {
             app: Some(caller.app.clone()),
             ..self.router(pin, caller.role)
         }
+    }
+}
+
+/// How a hosted model is reached, as the footer says it ("via OpenRouter").
+fn reached_of(reach: &model_catalog::Reach) -> Why {
+    Why::Reached {
+        provider: porter_infer::ProviderId(reach.provider.0.clone()),
+        door: if reach.is_via_gateway() {
+            porter_infer::Door::Gateway
+        } else {
+            porter_infer::Door::Direct
+        },
     }
 }
 
@@ -606,7 +622,7 @@ impl SessionRouter {
     /// What the session's app is offered: the hosted models its grants reach, when it is known.
     async fn offered(&self, spec: &SessionSpec) -> Offered {
         match &self.app {
-            Some(app) => self.engines.offer(app, spec.class).await,
+            Some(app) => self.engines.offer(app, spec.class, spec.usage).await,
             None => Offered::default(),
         }
     }

@@ -1,9 +1,9 @@
-//! The vocabulary of the rows: slugs, the classes, kinds and tiers they range over, and the
-//! `ai.model.<kind>.<tier>` paths.
+//! The vocabulary of the rows: slugs, the classes, slots and tiers they range over, and the
+//! `ai.model.<slot>.<tier>` paths (the old `<kind>` segments still read).
 
-use porter_core::capability::SpeechMode;
+use porter_core::capability::{LlmFeature, SpeechMode};
 use porter_core::{Capability, DataClass, Tier};
-use porter_infer::{AiKind, ModelCard};
+use porter_infer::{ModelCard, Slot};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
@@ -23,16 +23,8 @@ pub const CLASSES: [DataClass; 12] = [
     DataClass::Public,
 ];
 
-/// Every kind, one `ai.model.<kind>.<tier>` row each per tier.
-pub const KINDS: [AiKind; 7] = [
-    AiKind::Llm,
-    AiKind::ComputerUse,
-    AiKind::Embeddings,
-    AiKind::SpeechIn,
-    AiKind::SpeechOut,
-    AiKind::ImageGen,
-    AiKind::Rerank,
-];
+/// Every slot, one `ai.model.<slot>.<tier>` row each per tier.
+pub const SLOTS: [Slot; 8] = Slot::ALL;
 
 /// Every tier.
 pub const TIERS: [Tier; 3] = [Tier::Fast, Tier::Balanced, Tier::Best];
@@ -50,42 +42,54 @@ pub fn from_slug<T: DeserializeOwned>(text: &str) -> Option<T> {
     serde_json::from_value(serde_json::Value::String(text.to_owned())).ok()
 }
 
-/// `ai.model.<kind>.<tier>`.
-pub fn model_path(kind: AiKind, tier: Tier) -> String {
-    kind.setting_key(tier)
+/// `ai.model.<slot>.<tier>`.
+pub fn model_path(slot: Slot, tier: Tier) -> String {
+    slot.setting_key(tier)
 }
 
-/// The kind and tier an `ai.model.<kind>.<tier>` path names.
-pub fn parse_model_path(path: &str) -> Option<(AiKind, Tier)> {
-    let (kind, tier) = path.strip_prefix("ai.model.")?.split_once('.')?;
-    Some((from_slug(kind)?, from_slug(tier)?))
+/// The slot and tier an `ai.model.<slot>.<tier>` path names. An old kind segment (`llm`,
+/// `speech_in`, `speech_out`) names the slot it became.
+pub fn parse_model_path(path: &str) -> Option<(Slot, Tier)> {
+    let (slot, tier) = path.strip_prefix("ai.model.")?.split_once('.')?;
+    Some((Slot::from_slug(slot)?, from_slug(tier)?))
 }
 
-/// The kinds a model serves, from its capabilities.
-pub fn kinds_of(card: &ModelCard) -> Vec<AiKind> {
-    let mut kinds: Vec<AiKind> = card
+/// The slots a model serves, from its capabilities: a language model is in `text`, and in
+/// `image_in` when it takes images and `voice_in` when it takes audio; a computer-use model reads
+/// images too.
+pub fn slots_of(card: &ModelCard) -> Vec<Slot> {
+    let mut slots: Vec<Slot> = card
         .capabilities
         .iter()
         .flat_map(|capability| match capability {
-            Capability::Llm(_) => vec![AiKind::Llm],
-            Capability::ComputerUse(_) => vec![AiKind::ComputerUse],
-            Capability::Embeddings(_) => vec![AiKind::Embeddings],
-            Capability::ImageGen(_) => vec![AiKind::ImageGen],
-            Capability::Rerank(_) => vec![AiKind::Rerank],
+            Capability::Llm(llm) => {
+                let extra = [
+                    (LlmFeature::Vision, Slot::ImageIn),
+                    (LlmFeature::AudioIn, Slot::VoiceIn),
+                ]
+                .into_iter()
+                .filter(|(feature, _)| llm.features.contains(feature))
+                .map(|(_, slot)| slot);
+                std::iter::once(Slot::Text).chain(extra).collect()
+            }
+            Capability::ComputerUse(_) => vec![Slot::ComputerUse, Slot::ImageIn],
+            Capability::Embeddings(_) => vec![Slot::Embeddings],
+            Capability::ImageGen(_) => vec![Slot::ImageGen],
+            Capability::Rerank(_) => vec![Slot::Rerank],
             Capability::Speech(speech) => [
-                (SpeechMode::Stt, AiKind::SpeechIn),
-                (SpeechMode::Tts, AiKind::SpeechOut),
+                (SpeechMode::Stt, Slot::VoiceIn),
+                (SpeechMode::Tts, Slot::VoiceOut),
             ]
             .into_iter()
             .filter(|(mode, _)| speech.modes.contains(mode))
-            .map(|(_, kind)| kind)
+            .map(|(_, slot)| slot)
             .collect(),
             _ => Vec::new(),
         })
         .collect();
-    kinds.sort();
-    kinds.dedup();
-    kinds
+    slots.sort();
+    slots.dedup();
+    slots
 }
 
 #[cfg(test)]
@@ -117,33 +121,43 @@ mod tests {
     }
 
     #[test]
-    fn kinds_are_listed() {
-        for kind in KINDS {
-            match kind {
-                AiKind::Llm
-                | AiKind::ComputerUse
-                | AiKind::Embeddings
-                | AiKind::SpeechIn
-                | AiKind::SpeechOut
-                | AiKind::ImageGen
-                | AiKind::Rerank => {}
+    fn slots_are_listed() {
+        for slot in SLOTS {
+            match slot {
+                Slot::Text
+                | Slot::VoiceIn
+                | Slot::VoiceOut
+                | Slot::ImageIn
+                | Slot::ComputerUse
+                | Slot::Embeddings
+                | Slot::ImageGen
+                | Slot::Rerank => {}
             }
         }
+        assert_eq!(SLOTS.len(), 8);
     }
 
     #[test]
-    fn model_paths_round_trip() {
-        for kind in KINDS {
+    fn model_paths_round_trip_and_old_kinds_map_to_slots() {
+        for slot in SLOTS {
             for tier in TIERS {
                 assert_eq!(
-                    parse_model_path(&model_path(kind, tier)),
-                    Some((kind, tier))
+                    parse_model_path(&model_path(slot, tier)),
+                    Some((slot, tier))
                 );
             }
         }
+        let old = [
+            ("ai.model.llm.fast", Slot::Text, Tier::Fast),
+            ("ai.model.speech_in.balanced", Slot::VoiceIn, Tier::Balanced),
+            ("ai.model.speech_out.best", Slot::VoiceOut, Tier::Best),
+        ];
+        for (path, slot, tier) in old {
+            assert_eq!(parse_model_path(path), Some((slot, tier)), "{path}");
+        }
         for bad in [
-            "ai.model.llm",
-            "ai.model.llm.huge",
+            "ai.model.text",
+            "ai.model.text.huge",
             "ai.model.tv.fast",
             "ai.auto.mode",
         ] {

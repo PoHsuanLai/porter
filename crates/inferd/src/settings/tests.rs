@@ -17,8 +17,8 @@ use porter_core::{
     AccountId, Billing, DataClass, Locality, MicroUsd, ModelId, Need, Permille, Tier, Tokens,
 };
 use porter_infer::{
-    AiKind, AutoEvict, EngineLoad, InferRefusal, LicenceClass, LocalOnly, ModelCard, ModelRef,
-    Pick, PickRefusal, Policy, Readiness, ShowReason, SwapCost, Why,
+    AutoEvict, EngineLoad, InferRefusal, LicenceClass, LocalOnly, ModelCard, ModelRef, Pick,
+    PickRefusal, Policy, Readiness, ShowReason, Slot, SwapCost, Why,
 };
 use std::time::Duration;
 
@@ -273,6 +273,7 @@ fn spec() -> SessionSpec {
         need: need(),
         class: DataClass::Notes,
         tier: Tier::Balanced,
+        usage: porter_core::consent::Usage::Interactive,
     }
 }
 
@@ -476,7 +477,7 @@ fn the_old_tables_still_read_and_the_rows_at_their_paths_win_over_them() {
         porter_infer::Floor::Anywhere
     );
     assert!(
-        matches!(s.tiers.pick(AiKind::Llm, Tier::Fast), Some(Pick::Named(m)) if m.model.as_str() == "alpha")
+        matches!(s.tiers.pick(Slot::Text, Tier::Fast), Some(Pick::Named(m)) if m.model.as_str() == "alpha")
     );
     // The same file with rows at the settings paths: they win, field by field.
     let both = format!(
@@ -489,10 +490,10 @@ fn the_old_tables_still_read_and_the_rows_at_their_paths_win_over_them() {
         porter_infer::Floor::OnDevice
     );
     assert!(matches!(
-        s.tiers.pick(AiKind::Llm, Tier::Fast),
+        s.tiers.pick(Slot::Text, Tier::Fast),
         Some(Pick::Auto(_))
     ));
-    assert_eq!(s.tiers.pick(AiKind::Llm, Tier::Best), None);
+    assert_eq!(s.tiers.pick(Slot::Text, Tier::Best), None);
     // What the old tables said and the rows did not touch stays.
     assert_eq!(
         s.policy.floor(DataClass::Photos),
@@ -530,8 +531,8 @@ fn a_value_a_row_does_not_accept_is_named_and_falls_back_for_that_row_only() {
         porter_infer::Floor::OnDevice
     );
     assert_eq!(s.auto.show_reason, ShowReason::Off);
-    assert!(s.tiers.pick(AiKind::Llm, Tier::Balanced).is_some());
-    assert_eq!(s.tiers.pick(AiKind::Llm, Tier::Fast), None);
+    assert!(s.tiers.pick(Slot::Text, Tier::Balanced).is_some());
+    assert_eq!(s.tiers.pick(Slot::Text, Tier::Fast), None);
 }
 
 #[test]
@@ -555,4 +556,84 @@ fn set_writes_one_row_at_its_path_and_keeps_the_rest() {
     std::fs::write(file.path(), "[ai\n").expect("write");
     assert!(file.set("ai.local_only", "off".into()).is_err());
     assert_eq!(std::fs::read_to_string(file.path()).expect("read"), "[ai\n");
+}
+
+fn picked(settings: &Settings, slot: Slot) -> Option<Pick> {
+    settings.tiers.pick(slot, Tier::Balanced)
+}
+
+#[test]
+fn a_slot_row_and_the_old_kind_row_load_to_the_same_slot() {
+    let cases = [
+        ("text", "llm", Slot::Text),
+        ("voice_in", "speech_in", Slot::VoiceIn),
+        ("voice_out", "speech_out", Slot::VoiceOut),
+    ];
+    for (new, old, slot) in cases {
+        let from_new = settings(&format!("[ai.model.{new}]\nbalanced = \"local/alpha\"\n"));
+        let from_old = settings(&format!("[ai.model.{old}]\nbalanced = \"local/alpha\"\n"));
+        assert_eq!(from_new.tiers, from_old.tiers, "{new} / {old}");
+        assert!(
+            matches!(picked(&from_new, slot), Some(Pick::Named(m)) if m.model.as_str() == "alpha"),
+            "{new}"
+        );
+    }
+    let rows = [
+        "text",
+        "voice_in",
+        "voice_out",
+        "image_in",
+        "computer_use",
+        "embeddings",
+    ];
+    for slug in rows {
+        let slot = from_slug::<Slot>(slug).expect(slug);
+        let got = settings(&format!("[ai.model.{slug}]\nbalanced = \"auto\"\n"));
+        assert!(matches!(picked(&got, slot), Some(Pick::Auto(_))), "{slug}");
+    }
+}
+
+#[test]
+fn when_a_file_says_both_the_slots_own_row_wins_whatever_the_order() {
+    let got = settings(
+        "[ai.model.text]\nbalanced = \"local/new\"\n[ai.model.llm]\nbalanced = \"local/old\"\nfast = \"auto\"\n",
+    );
+    assert!(matches!(
+        picked(&got, Slot::Text),
+        Some(Pick::Named(m)) if m.model.as_str() == "new"
+    ));
+    assert!(
+        matches!(got.tiers.pick(Slot::Text, Tier::Fast), Some(Pick::Auto(_))),
+        "an old row for another tier still applies"
+    );
+}
+
+#[test]
+fn the_describe_images_row_defaults_off_reads_on_and_names_a_bad_value() {
+    use porter_infer::DescribeImages;
+    assert_eq!(settings("").describe_images, DescribeImages::Off);
+    for (word, want) in [("on", DescribeImages::On), ("off", DescribeImages::Off)] {
+        let got = settings(&format!("[ai.pipeline]\ndescribe_images = \"{word}\"\n"));
+        assert_eq!(got.describe_images, want, "{word}");
+    }
+    let resolved = resolve(&config("[ai.pipeline]\ndescribe_images = \"maybe\"\n"));
+    assert_eq!(resolved.rejected, vec![DESCRIBE_IMAGES.to_owned()]);
+    assert_eq!(resolved.settings.describe_images, DescribeImages::Off);
+}
+
+#[test]
+fn a_language_model_is_in_the_slots_its_features_put_it_in() {
+    let mut vision = card("local", "seer", Locality::OnDevice);
+    if let Some(Capability::Llm(llm)) = vision.capabilities.first_mut() {
+        llm.features
+            .extend([LlmFeature::Vision, LlmFeature::AudioIn]);
+    }
+    assert_eq!(
+        keys::slots_of(&vision),
+        vec![Slot::Text, Slot::VoiceIn, Slot::ImageIn]
+    );
+    assert_eq!(
+        keys::slots_of(&card("local", "plain", Locality::OnDevice)),
+        vec![Slot::Text]
+    );
 }

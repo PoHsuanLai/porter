@@ -254,7 +254,7 @@ fn the_users_tier_choice_decides_between_models_that_fit() {
     ];
     let tiers = |model: &str| TierMap {
         rows: vec![TierRow {
-            kind: AiKind::Llm,
+            kind: Slot::Text,
             tier: Tier::Best,
             model: ModelRef {
                 account: AccountId::parse("local").expect("id"),
@@ -292,25 +292,25 @@ fn needs_map_to_the_picker_kinds() {
         })
     };
     let cases = [
-        (need(), Some(AiKind::Llm)),
-        (cua_need(), Some(AiKind::ComputerUse)),
+        (need(), Some(Slot::Text)),
+        (cua_need(), Some(Slot::ComputerUse)),
         (
             Need::Embeddings(EmbedNeed {
                 dims: DimsNeed::Any,
                 modalities: Default::default(),
             }),
-            Some(AiKind::Embeddings),
+            Some(Slot::Embeddings),
         ),
-        (speech(&[SpeechMode::Stt]), Some(AiKind::SpeechIn)),
-        (speech(&[SpeechMode::Tts]), Some(AiKind::SpeechOut)),
+        (speech(&[SpeechMode::Stt]), Some(Slot::VoiceIn)),
+        (speech(&[SpeechMode::Tts]), Some(Slot::VoiceOut)),
         (
             speech(&[SpeechMode::Stt, SpeechMode::Tts]),
-            Some(AiKind::SpeechOut),
+            Some(Slot::VoiceOut),
         ),
         (identity(), None),
     ];
     for (need, kind) in cases {
-        assert_eq!(ai_kind(&need), kind);
+        assert_eq!(slot_of_need(&need), kind);
     }
 }
 
@@ -337,7 +337,7 @@ fn auto_map() -> TierMap {
     TierMap {
         rows: vec![],
         autos: vec![AutoRow {
-            kind: AiKind::Llm,
+            kind: Slot::Text,
             tier: Tier::Balanced,
             mode: AutoMode::WarmFirst,
         }],
@@ -438,7 +438,7 @@ fn a_named_model_that_cannot_serve_refuses_naming_it_and_no_other_answers() {
     ];
     let tiers = TierMap {
         rows: vec![TierRow {
-            kind: AiKind::Llm,
+            kind: Slot::Text,
             tier: Tier::Balanced,
             model: named("beta"),
         }],
