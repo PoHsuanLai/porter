@@ -222,4 +222,6 @@ mod machine;
 #[cfg(test)]
 mod machine_tests;
 #[cfg(test)]
+mod manual_tests;
+#[cfg(test)]
 mod tests;

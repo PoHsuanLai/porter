@@ -4,6 +4,7 @@ use crate::connect::{Connect, ConnectFault};
 use crate::fault::RelayFault;
 use crate::http1::HttpRelay;
 use crate::imap::ImapRelay;
+use crate::pop3::Pop3Relay;
 use crate::sieve::SieveRelay;
 use crate::smtp::SmtpRelay;
 use crate::step::{Effect, Input, RelayEnd, Relaying, Side};
@@ -40,6 +41,7 @@ pub async fn relay<A: ByteStream, C: Connect>(plan: RelayPlan, app: A, connect: 
         EndpointProtocol::Smtp => run(SmtpRelay::new(plan), ends, connect).await,
         EndpointProtocol::Http => run(HttpRelay::new(plan), ends, connect).await,
         EndpointProtocol::Sieve => run(SieveRelay::new(plan), ends, connect).await,
+        EndpointProtocol::Pop3 => run(Pop3Relay::new(plan), ends, connect).await,
     }
 }
 

@@ -3,8 +3,9 @@
 
 use crate::io::{Io, SharedDns};
 use crate::password::declared;
-use porter_core::sheet::SignInFault;
-use porter_core::{Claim, EndpointUrl, Family, LoginName, ServiceEndpoint, Tls, UrlScheme};
+use porter_core::capability::{Capability, MailCap, MailTransport};
+use porter_core::sheet::{Hop, MailServers, Security, SignInFault};
+use porter_core::{Claim, EndpointUrl, Family, LoginName, Offer, ServiceEndpoint, Tls, UrlScheme};
 use porter_discover::{Outcome, discover_mail};
 use porter_provider::{DomainName, ProviderSet, ProviderSpec};
 
@@ -42,49 +43,95 @@ pub(super) async fn look(
     }
 }
 
-/// The servers at the host a person typed: IMAP over implicit TLS, SMTP submission with
-/// STARTTLS, both logged in as the address.
+/// One typed server as an endpoint: the scheme says the family and, with the security, whether
+/// the connection is encrypted from the first byte (`imaps`, `pop3s`, `smtps`), upgraded (`imap`,
+/// `pop3`, `smtp` with STARTTLS) or plain (this computer only; `check` refuses it anywhere else).
+fn endpoint(family: Family, hop: &Hop, login: &LoginName) -> Option<ServiceEndpoint> {
+    let (scheme, tls) = match (family, hop.security) {
+        (Family::Imap, Security::Tls) => ("imaps", Tls::Implicit),
+        (Family::Imap, Security::StartTls) => ("imap", Tls::StartTls),
+        (Family::Imap, Security::Plain) => ("imap", Tls::Plain),
+        (Family::Pop3, Security::Tls) => ("pop3s", Tls::Implicit),
+        (Family::Pop3, Security::StartTls) => ("pop3", Tls::StartTls),
+        (Family::Pop3, Security::Plain) => ("pop3", Tls::Plain),
+        (Family::Smtp, Security::Tls) => ("smtps", Tls::Implicit),
+        (Family::Smtp, Security::StartTls) => ("smtp", Tls::StartTls),
+        (Family::Smtp, Security::Plain) => ("smtp", Tls::Plain),
+        _ => return None,
+    };
+    let endpoint = ServiceEndpoint {
+        family,
+        url: EndpointUrl::parse(&format!("{scheme}://{}:{}", hop.host, hop.port)).ok()?,
+        tls,
+        login: login.clone(),
+    };
+    endpoint.check().ok().map(|()| endpoint)
+}
+
+/// The servers a person typed for an IMAP or POP3 account (`incoming`): that protocol and SMTP at
+/// the hosts, ports and securities given, both logged in as the typed login name, or as the
+/// address when there is none.
 pub(super) fn typed(
-    host: &str,
+    incoming: Family,
+    servers: &MailServers,
     address: &str,
     spec: &ProviderSpec,
 ) -> Result<(Vec<ServiceEndpoint>, Vec<Claim>), SignInFault> {
-    let host = DomainName::parse(host.trim()).map_err(|_| SignInFault::Unreadable)?;
-    let login = LoginName(address.to_owned());
-    let endpoint = |family, text: String, tls| {
-        let endpoint = ServiceEndpoint {
-            family,
-            url: EndpointUrl::parse(&text).ok()?,
-            tls,
-            login: login.clone(),
-        };
-        endpoint.check().ok().map(|()| endpoint)
-    };
+    let login = LoginName(servers.login.clone().unwrap_or_else(|| address.to_owned()));
     let endpoints = [
-        endpoint(Family::Imap, format!("imaps://{host}:993"), Tls::Implicit),
-        endpoint(Family::Smtp, format!("smtp://{host}:587"), Tls::StartTls),
+        endpoint(incoming, &servers.incoming, &login),
+        endpoint(Family::Smtp, &servers.outgoing, &login),
     ]
     .into_iter()
     .collect::<Option<Vec<_>>>()
     .ok_or(SignInFault::Unreadable)?;
-    Ok((endpoints, declared(spec)))
+    Ok((endpoints, claims_for(incoming, declared(spec))))
+}
+
+/// The file's claims for an account read by `incoming`: the file describes IMAP, so a POP3
+/// account's mail claim names POP3, which an app that plans around the transport sees.
+fn claims_for(incoming: Family, claims: Vec<Claim>) -> Vec<Claim> {
+    if incoming != Family::Pop3 {
+        return claims;
+    }
+    claims
+        .into_iter()
+        .map(|claim| match claim.offer {
+            Offer::Present(Capability::Mail(mail)) => Claim {
+                offer: Offer::Present(Capability::Mail(MailCap {
+                    transport: MailTransport::Pop3,
+                    ..mail
+                })),
+                ..claim
+            },
+            _ => claim,
+        })
+        .collect()
 }
 
 /// The TLS a file's endpoint URL means: `imaps`, `smtps` and `https` are implicit TLS; `imap`,
-/// `smtp` and `sieve` upgrade with STARTTLS, except on this computer, where they may stay plain
+/// `smtp`, `pop3` and `sieve` upgrade with STARTTLS, except on this computer, where they may stay plain
 /// (a fake server in a test). Anything else has no mail meaning.
 fn tls_of_scheme(url: &EndpointUrl) -> Option<Tls> {
     let origin = url.origin();
     match origin.scheme {
-        UrlScheme::Imaps | UrlScheme::Smtps | UrlScheme::Https | UrlScheme::Sieves => {
-            Some(Tls::Implicit)
-        }
-        UrlScheme::Imap | UrlScheme::Smtp | UrlScheme::Sieve | UrlScheme::Http
+        UrlScheme::Imaps
+        | UrlScheme::Smtps
+        | UrlScheme::Pop3s
+        | UrlScheme::Https
+        | UrlScheme::Sieves => Some(Tls::Implicit),
+        UrlScheme::Imap
+        | UrlScheme::Smtp
+        | UrlScheme::Pop3
+        | UrlScheme::Sieve
+        | UrlScheme::Http
             if origin.is_loopback() =>
         {
             Some(Tls::Plain)
         }
-        UrlScheme::Imap | UrlScheme::Smtp | UrlScheme::Sieve => Some(Tls::StartTls),
+        UrlScheme::Imap | UrlScheme::Smtp | UrlScheme::Pop3 | UrlScheme::Sieve => {
+            Some(Tls::StartTls)
+        }
         UrlScheme::Http => None,
     }
 }

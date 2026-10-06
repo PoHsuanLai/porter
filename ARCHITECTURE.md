@@ -15,12 +15,12 @@ trait), section 6 (copy the recipe).
 | Crate | Purpose | I/O |
 | --- | --- | --- |
 | `prov` | provenance for the companion: the shared ids (`SessionId`, `RunId`, `TaskId`, `EntityId`, `ActionName`, `MessageId`, `ThreadId`), `Effect`, the merged `Actor` (`AgentRole::Worker` beside `Cua`), the one `Message` model with `AgentRef` and `Address`, the desktop-scope join (`Confidentiality::join`, `flow_to`, `desktop_admits`), the label lattice (`Label`, `Labelled`, `Quarantined`) and the confirmation `Witness`; re-exports `SpaceId`, `SpaceScope`, `AppName`, `DataClass`, `UnixSeconds` | none |
-| `porter-core` | the vocabulary: ids and `SpaceId`/`SpaceScope`, `Account` (with its `endpoints`), `Family`, endpoints (`ServiceEndpoint`, `EndpointUrl`, `Tls`, `LoginName`, `EndpointProtocol`, `RelayPlan` with `RelayAuth` (`Password`, `AccessToken`, `Anonymous`: no credential, for a linked origin)), the capability vocabulary (computer use included), `Need` and `matches`, provenance and `effective`, `Restriction`, `Locality`/`Tier`/`Billing`, `DataClass`, consent (`Grant`, `decide`, `availability`, the sheet's ask and answer), `Credential`/`SecretKey`, `IssuedToken`, the sheet (`SheetView`, `SheetInput`, `Progress`, the stage machine), `AuditEntry`, `Persisted`, `ByteStream` and the in-memory `duplex`, the wire protocol (`AccountsRequest` with `OpenAuthenticated`, `OpenLinked` and `Adopt`, `AccountsReply`, frames) | none |
+| `porter-core` | the vocabulary: ids and `SpaceId`/`SpaceScope`, `Account` (with its `endpoints`), `Family`, endpoints (`ServiceEndpoint`, `EndpointUrl`, `Tls`, `LoginName`, `EndpointProtocol`, `RelayPlan` with `RelayAuth` (`Password`, `AccessToken`, `Anonymous`: no credential, for a linked origin)), the capability vocabulary (computer use included), `Need` and `matches`, provenance and `effective`, `Restriction`, `Locality`/`Tier`/`Billing`, `DataClass`, consent (`Grant`, `decide`, `availability`, the sheet's ask and answer), `Credential` (`Password`, `OAuth`, `ApiKey`, `Bearer`, `KeyPair`)/`SecretKey`, `IssuedToken`, the sheet (`SheetView`, `SheetInput`, `Progress`, the stage machine, and the hand-typed mail server form: `manual_form`, `refit`, `form_problem`, `parse_manual`), `AuditEntry`, `Persisted`, `ByteStream` and the in-memory `duplex`, the wire protocol (`AccountsRequest` with `OpenAuthenticated`, `OpenLinked` and `Adopt`, `AccountsReply`, frames) | none |
 | `porter-provider` | provider files (`ProviderSpec` with its `matching`, `CapabilityRow.linked_origins` (`LinkedOrigin`: the hosts a service's pre-authenticated links may point at), `parse_provider`), `ProviderSet`, `Issuer` and its endpoints, the client registry's file format (`ClientsFile`), the `Provider`, `ProviderSession` and `SignIn` traits with `SignInStep`, `Signed` and `RevokeOutcome` | none |
 | `porter-secrets` | the `Secrets` trait, the Secret Service attribute scheme, `MemorySecrets` (feature `testing`), `Oo7Secrets` (feature `oo7`, stubbed), `KeyringSecrets` (feature `keyring`, stubbed) | none today; oo7 behind its feature |
 | `porter-sync` | the sync contract: `Replica` (with `quota`), `Quota`, `Cursor`/`Anchor`, `BaseVersion`, `Change`/`Tombstone`, `Conflict`, `DatasetKind`; the journal's vocabulary and pure rules (`ItemState`, `JournalItem`, `StoredConflict`, `reconcile`, `local_changes`); `MemoryReplica` (feature `testing`) | none |
 | `porter-http` | the HTTP seam: `HttpRequest`, `HttpResponse`, the `Http` trait; `HyperHttp` (feature `hyper`, stubbed) | none by default |
-| `porter-proxy` | the authenticated relay: per `EndpointProtocol` a pure machine (`ImapRelay`, `SmtpRelay`, `HttpRelay`) and `relay` over `ByteStream`s and a `Connect` the host passes in; `TokioStream` (feature `io`) | none by default |
+| `porter-proxy` | the authenticated relay: per `EndpointProtocol` a pure machine (`ImapRelay`, `SmtpRelay`, `HttpRelay`, `SieveRelay`, `Pop3Relay`) and `relay` over `ByteStream`s and a `Connect` the host passes in; `TokioStream` (feature `io`) | none by default |
 | `porter-oauth` | PKCE, the loopback redirect rules, `ClientRegistry`, renewal, the token, refresh and revoke exchanges over `Http`; `LoopbackServer` (feature `io`) | none by default |
 | `porter-discover` | one function per `Discovery` kind: autoconfig, SRV and MX leads, well-known, JMAP session, Nextcloud OCS, port probes; the `Dns` seam | none |
 | `porter-dav` | WebDAV requests (PROPFIND, sync-collection REPORT) and the parsed multistatus, sync and quota replies | none |
@@ -74,7 +74,7 @@ a daemon or an app hosting porter turns those features on.
 | `porter-sync` | `anchor`, `item`, `transfer`, `quota` < `change`, `refusal`, `dataset` < `journal` < `journal_reconcile`, `replica` < `memory` |
 | `syncd` | `paths`, `callers_file`, `clock` ; `journal` (`schema`, `rows`) ; `dataset` (`memory`, feature `testing`) < `engine` (`pull`, `push`, `resolve`) < `driver` ; `scheduler` (`backoff`) ; `service` (`hub`, `status`, `errors`) < `object` ; `removal` ; `webdav` (`RelayDial`, `webdav_replica`) ; `datasets::pim` (`vdir`, `mirror` (`PimMirror`), `discover`, `plan`, `relay`, `grants`, `mirrors`, `supervisor`) |
 | `porter-http` | `error`, `headers` < `message` < `http` < `hyper_client` |
-| `porter-proxy` | `fault`, `step`, `connect` < `imap`, `smtp`, `http1` < `relay`; `tokio_stream` |
+| `porter-proxy` | `fault`, `step`, `connect` < `imap`, `smtp`, `pop3`, `http1` < `relay`; `tokio_stream` |
 | `porter-oauth` | `pkce`, `loopback`, `registry`, `renewal`, `device` < `exchange`; `loopback_io` |
 | `porter-discover` | `found`, `dns` < `autoconfig`, `well_known`, `ocs`, `probe` |
 | `porter-dav` | `multistatus` < `request`, `sync` |
@@ -141,7 +141,7 @@ a daemon or an app hosting porter turns those features on.
 | the OAuth client registry's file | `porter-provider::clients`; the registry is `porter-oauth::registry` |
 | a sign-in conversation | `porter-provider::sign_in` (`SignIn`, `SignInStep`, `Signed`) |
 | HTTP requests and responses | `porter-http` |
-| the authenticated relay's protocol rules | `porter-proxy` (`imap`, `smtp`, `http1`) |
+| the authenticated relay's protocol rules | `porter-proxy` (`imap`, `smtp`, `pop3`, `http1`) |
 | who is calling a daemon, and its role | `porter-dbus::callers` |
 | the sheet host's bus interface | `porter-dbus::sheet_backend` |
 

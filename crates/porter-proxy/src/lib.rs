@@ -13,6 +13,9 @@
 //!
 //! - **ManageSieve** (`sieve`, RFC 5804): the relay does `STARTTLS` and `AUTHENTICATE`; the app
 //!   sees the capability list without `SASL` and `STARTTLS`, then relays bytes.
+//! - **POP3** (`pop3`): the relay does `CAPA`, `STLS` and `USER`/`PASS` (or `AUTH`); the app sees
+//!   `+OK porter relay ready` in the transaction state, and its own login commands are answered
+//!   here, never forwarded.
 //!
 //! Each protocol is a pure machine (`step`: input in, effects out) over frozen types; the
 //! `relay` drives one over two [`porter_core::stream::ByteStream`]s and a [`Connect`] the host
@@ -24,6 +27,7 @@ mod fault;
 mod http1;
 mod imap;
 mod lines;
+mod pop3;
 mod relay;
 mod sieve;
 mod smtp;
@@ -39,6 +43,7 @@ pub use connect::{Connect, ConnectFault};
 pub use fault::RelayFault;
 pub use http1::{ChunkParser, Chunked, HttpPhase, HttpRelay, rewrite_head};
 pub use imap::{ImapAuth, ImapPhase, ImapRelay, app_capabilities, preauth_greeting};
+pub use pop3::{Pop3Auth, Pop3Phase, Pop3Relay, app_greeting as pop3_greeting};
 pub use relay::relay;
 pub use sieve::{SieveAuth, SievePhase, SieveRelay, app_greeting as sieve_greeting};
 pub use smtp::{EhloReply, SmtpAuth, SmtpPhase, SmtpRelay, app_greeting};

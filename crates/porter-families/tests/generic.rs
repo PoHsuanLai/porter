@@ -7,7 +7,7 @@ mod common;
 
 use common::{Fakes, Place, all_on, drive, plain, secret};
 use porter_core::capability::CapabilityKind;
-use porter_core::sheet::{FieldKind, SignInFault, SignInInput};
+use porter_core::sheet::{FieldAnswer, FieldKind, SignInFault, SignInInput};
 use porter_core::{AccountId, Credential, Family, Offer, SecretPurpose, SecretText, Tls};
 use porter_discover::{MxRecord, SrvRecord};
 use porter_fake::FakeServer;
@@ -84,7 +84,13 @@ fn mail_person<'a>(
                 secret(FieldKind::Password, password),
             ])
         }
-        SignInStep::AskFields(_) => SignInInput::Fields(vec![plain(FieldKind::Server, server)]),
+        SignInStep::AskFields(_) => SignInInput::Fields(vec![
+            plain(FieldKind::Protocol, "imap"),
+            plain(FieldKind::Server, server),
+            plain(FieldKind::Security, "tls"),
+            plain(FieldKind::OutgoingServer, server),
+            plain(FieldKind::OutgoingSecurity, "starttls"),
+        ]),
         SignInStep::Review { claims, .. } => {
             SignInInput::Confirm(all_on(claims.iter().map(|c| c.offer.kind())))
         }
@@ -210,11 +216,21 @@ async fn a_domain_that_publishes_nothing_gets_a_question_for_the_server() {
             _ => None,
         })
         .collect();
+    use FieldKind::*;
     assert_eq!(
         questions,
         vec![
-            vec![FieldKind::Address, FieldKind::Password],
-            vec![FieldKind::Server]
+            vec![Address, Password],
+            vec![
+                Protocol,
+                Server,
+                Security,
+                Port,
+                OutgoingServer,
+                OutgoingSecurity,
+                OutgoingPort,
+                Username
+            ]
         ]
     );
     let signed = done(&steps);
@@ -224,6 +240,406 @@ async fn a_domain_that_publishes_nothing_gets_a_question_for_the_server() {
         ["imaps://mail.fake.test:993", "smtp://mail.fake.test:587"]
     );
     assert_eq!(signed.label.0, "ada@fake.test");
+}
+
+/// The first form's answers, then `typed` for the question of the server form that a domain
+/// publishing nothing leads to; the review with everything on.
+fn manual_person<'a>(typed: Vec<FieldAnswer>) -> impl FnMut(&SignInStep) -> SignInInput + 'a {
+    move |step| match step {
+        SignInStep::AskFields(fields) if fields.iter().any(|f| f.kind == FieldKind::Address) => {
+            SignInInput::Fields(vec![
+                plain(FieldKind::Address, "ada@fake.test"),
+                secret(FieldKind::Password, "s3cret"),
+            ])
+        }
+        SignInStep::AskFields(_) => SignInInput::Fields(typed.clone()),
+        SignInStep::Review { claims, .. } => {
+            SignInInput::Confirm(all_on(claims.iter().map(|c| c.offer.kind())))
+        }
+        _ => SignInInput::Cancel,
+    }
+}
+
+async fn nothing_published() -> Mail {
+    mail_with(FakeDns::new()).await
+}
+
+fn shown(signed: &Signed) -> Vec<(Family, String, Tls, String)> {
+    signed
+        .endpoints
+        .iter()
+        .map(|e| (e.family, e.url.to_string(), e.tls, e.login.0.clone()))
+        .collect()
+}
+
+#[tokio::test]
+async fn typed_imap_and_smtp_on_other_ports_with_starttls_and_a_login_name() {
+    let mail = nothing_published().await;
+    let mut signin = mail.provider.sign_in(add()).expect("sign-in");
+    let typed = vec![
+        plain(FieldKind::Protocol, "imap"),
+        plain(FieldKind::Server, "mail.fake.test"),
+        plain(FieldKind::Security, "starttls"),
+        plain(FieldKind::Port, "1143"),
+        plain(FieldKind::OutgoingServer, "relay.fake.test"),
+        plain(FieldKind::OutgoingSecurity, "starttls"),
+        plain(FieldKind::OutgoingPort, "2587"),
+        plain(FieldKind::Username, "ada.login"),
+    ];
+    let steps = drive(&mut signin, manual_person(typed)).await;
+    let signed = done(&steps);
+    assert_eq!(
+        shown(signed),
+        vec![
+            (
+                Family::Imap,
+                "imap://mail.fake.test:1143".into(),
+                Tls::StartTls,
+                "ada.login".into()
+            ),
+            (
+                Family::Smtp,
+                "smtp://relay.fake.test:2587".into(),
+                Tls::StartTls,
+                "ada.login".into()
+            ),
+        ]
+    );
+    assert_eq!(
+        signed.label.0, "ada@fake.test",
+        "the account is the address"
+    );
+}
+
+#[tokio::test]
+async fn typed_ports_default_from_the_security_when_left_empty() {
+    let mail = nothing_published().await;
+    let mut signin = mail.provider.sign_in(add()).expect("sign-in");
+    let typed = vec![
+        plain(FieldKind::Protocol, "imap"),
+        plain(FieldKind::Server, "mail.fake.test"),
+        plain(FieldKind::Security, "starttls"),
+        plain(FieldKind::OutgoingServer, "mail.fake.test"),
+        plain(FieldKind::OutgoingSecurity, "tls"),
+    ];
+    let steps = drive(&mut signin, manual_person(typed)).await;
+    let urls: Vec<_> = done(&steps)
+        .endpoints
+        .iter()
+        .map(|e| e.url.to_string())
+        .collect();
+    assert_eq!(
+        urls,
+        ["imap://mail.fake.test:143", "smtps://mail.fake.test:465"]
+    );
+}
+
+#[tokio::test]
+async fn typed_servers_on_this_computer_may_be_plain() {
+    let mail = nothing_published().await;
+    let mut signin = mail.provider.sign_in(add()).expect("sign-in");
+    let typed = vec![
+        plain(FieldKind::Protocol, "imap"),
+        plain(FieldKind::Server, "127.0.0.1"),
+        plain(FieldKind::Security, "plain"),
+        plain(FieldKind::Port, "31143"),
+        plain(FieldKind::OutgoingServer, "127.0.0.1"),
+        plain(FieldKind::OutgoingSecurity, "plain"),
+        plain(FieldKind::OutgoingPort, "31587"),
+    ];
+    let steps = drive(&mut signin, manual_person(typed)).await;
+    assert_eq!(
+        shown(done(&steps)),
+        vec![
+            (
+                Family::Imap,
+                "imap://127.0.0.1:31143".into(),
+                Tls::Plain,
+                "ada@fake.test".into()
+            ),
+            (
+                Family::Smtp,
+                "smtp://127.0.0.1:31587".into(),
+                Tls::Plain,
+                "ada@fake.test".into()
+            ),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn typed_plain_off_this_computer_is_not_accepted() {
+    let mail = nothing_published().await;
+    let mut signin = mail.provider.sign_in(add()).expect("sign-in");
+    let typed = vec![
+        plain(FieldKind::Protocol, "imap"),
+        plain(FieldKind::Server, "mail.fake.test"),
+        plain(FieldKind::Security, "plain"),
+        plain(FieldKind::OutgoingServer, "mail.fake.test"),
+        plain(FieldKind::OutgoingSecurity, "tls"),
+    ];
+    let steps = drive(&mut signin, manual_person(typed)).await;
+    assert_eq!(
+        steps.last(),
+        Some(&SignInStep::Failed(SignInFault::Unreadable))
+    );
+}
+
+/// A JMAP server the form names: a session resource that wants Basic with the login name.
+#[derive(Debug, Clone)]
+struct FakeJmap {
+    login: &'static str,
+    password: &'static str,
+    api_user: &'static str,
+    status: u16,
+    /// An API token the session wants as a bearer, instead of Basic.
+    token: Option<&'static str>,
+}
+
+impl porter_http::Http for FakeJmap {
+    async fn send(
+        &self,
+        request: porter_http::HttpRequest,
+    ) -> Result<porter_http::HttpResponse, porter_http::HttpError> {
+        use base64::Engine;
+        let want = match self.token {
+            Some(token) => format!("Bearer {token}"),
+            None => format!(
+                "Basic {}",
+                base64::engine::general_purpose::STANDARD
+                    .encode(format!("{}:{}", self.login, self.password))
+            ),
+        };
+        let ok = request
+            .headers
+            .iter()
+            .any(|h| h.name.as_str().eq_ignore_ascii_case("authorization") && h.value.0 == want);
+        let status = match (self.status, ok) {
+            (200, true) => 200,
+            (200, false) => 401,
+            (other, _) => other,
+        };
+        let body = format!(
+            r#"{{"capabilities":{{"urn:ietf:params:jmap:core":{{}},"urn:ietf:params:jmap:mail":{{}},"urn:ietf:params:jmap:submission":{{}}}},"apiUrl":"https://jmap.fake.test/api","username":"{}"}}"#,
+            self.api_user
+        );
+        Ok(porter_http::HttpResponse {
+            status: porter_http::Status(status),
+            headers: vec![],
+            body: body.into_bytes(),
+        })
+    }
+}
+
+fn jmap_provider(fake: FakeJmap) -> GenericProvider {
+    GenericProvider::new(imap_spec(), SharedHttp::new(fake), FakeDns::new())
+}
+
+fn jmap_answers(login: Option<&str>) -> Vec<FieldAnswer> {
+    let mut typed = vec![
+        plain(FieldKind::Protocol, "jmap"),
+        plain(FieldKind::SessionUrl, "https://jmap.fake.test/session"),
+    ];
+    typed.extend(login.map(|l| plain(FieldKind::Username, l)));
+    typed
+}
+
+#[tokio::test]
+async fn typed_jmap_reads_the_session_with_the_password_and_the_login_name() {
+    let provider = jmap_provider(FakeJmap {
+        login: "ada.login",
+        password: "s3cret",
+        api_user: "someone-else",
+        status: 200,
+        token: None,
+    });
+    let mut signin = provider.sign_in(add()).expect("sign-in");
+    let steps = drive(&mut signin, manual_person(jmap_answers(Some("ada.login")))).await;
+    let signed = done(&steps);
+    assert_eq!(
+        shown(signed),
+        vec![(
+            Family::Jmap,
+            "https://jmap.fake.test/api".into(),
+            Tls::Implicit,
+            "ada.login".into()
+        )],
+        "the login that authenticated, not the one the session reports"
+    );
+    assert!(
+        signed
+            .claims
+            .iter()
+            .any(|c| c.offer.kind() == CapabilityKind::Mail)
+    );
+}
+
+#[tokio::test]
+async fn typed_jmap_with_no_login_name_signs_in_as_the_address() {
+    let provider = jmap_provider(FakeJmap {
+        login: "ada@fake.test",
+        password: "s3cret",
+        api_user: "ada@fake.test",
+        status: 200,
+        token: None,
+    });
+    let mut signin = provider.sign_in(add()).expect("sign-in");
+    let steps = drive(&mut signin, manual_person(jmap_answers(None))).await;
+    assert_eq!(done(&steps).endpoints[0].login.0, "ada@fake.test");
+}
+
+#[tokio::test]
+async fn typed_jmap_refused_unreachable_and_unreadable_are_said() {
+    for (status, fault) in [
+        (401, SignInFault::Refused),
+        (503, SignInFault::Unreachable),
+        (404, SignInFault::Unreadable),
+    ] {
+        let provider = jmap_provider(FakeJmap {
+            login: "ada@fake.test",
+            password: "s3cret",
+            api_user: "x",
+            status,
+            token: None,
+        });
+        let mut signin = provider.sign_in(add()).expect("sign-in");
+        let steps = drive(&mut signin, manual_person(jmap_answers(None))).await;
+        assert_eq!(steps.last(), Some(&SignInStep::Failed(fault)), "{status}");
+    }
+    // A wrong password is a refusal too.
+    let provider = jmap_provider(FakeJmap {
+        login: "ada@fake.test",
+        password: "other",
+        api_user: "x",
+        status: 200,
+        token: None,
+    });
+    let mut signin = provider.sign_in(add()).expect("sign-in");
+    let steps = drive(&mut signin, manual_person(jmap_answers(None))).await;
+    assert_eq!(
+        steps.last(),
+        Some(&SignInStep::Failed(SignInFault::Refused))
+    );
+}
+
+#[tokio::test]
+async fn typed_jmap_with_an_api_token_presents_a_bearer_and_stores_the_token() {
+    let provider = jmap_provider(FakeJmap {
+        login: "ada@fake.test",
+        password: "s3cret",
+        api_user: "ada@fake.test",
+        status: 200,
+        token: Some("api-token-1"),
+    });
+    let mut signin = provider.sign_in(add()).expect("sign-in");
+    let mut typed = jmap_answers(None);
+    typed.push(secret(FieldKind::Token, "api-token-1"));
+    let steps = drive(&mut signin, manual_person(typed)).await;
+    let signed = done(&steps);
+    assert_eq!(
+        signed.credentials,
+        vec![(
+            SecretPurpose::Password,
+            Credential::Bearer(SecretText::new("api-token-1"))
+        )],
+        "the token is the account's secret, not the password typed first"
+    );
+    assert_eq!(signed.endpoints[0].family, Family::Jmap);
+
+    // The password does not open a session that wants the token.
+    let mut signin = provider.sign_in(add()).expect("sign-in");
+    let steps = drive(&mut signin, manual_person(jmap_answers(None))).await;
+    assert_eq!(
+        steps.last(),
+        Some(&SignInStep::Failed(SignInFault::Refused))
+    );
+    // And a wrong token is refused.
+    let mut signin = provider.sign_in(add()).expect("sign-in");
+    let mut typed = jmap_answers(None);
+    typed.push(secret(FieldKind::Token, "wrong"));
+    let steps = drive(&mut signin, manual_person(typed)).await;
+    assert_eq!(
+        steps.last(),
+        Some(&SignInStep::Failed(SignInFault::Refused))
+    );
+}
+
+#[tokio::test]
+async fn typed_pop3_builds_pop3_and_smtp_endpoints_with_the_login_name() {
+    let mail = nothing_published().await;
+    let mut signin = mail.provider.sign_in(add()).expect("sign-in");
+    let typed = vec![
+        plain(FieldKind::Protocol, "pop3"),
+        plain(FieldKind::Server, "pop.fake.test"),
+        plain(FieldKind::Security, "tls"),
+        plain(FieldKind::OutgoingServer, "smtp.fake.test"),
+        plain(FieldKind::OutgoingSecurity, "starttls"),
+        plain(FieldKind::Username, "ada.login"),
+    ];
+    let steps = drive(&mut signin, manual_person(typed)).await;
+    let signed = done(&steps);
+    assert_eq!(
+        shown(signed),
+        vec![
+            (
+                Family::Pop3,
+                "pop3s://pop.fake.test:995".into(),
+                Tls::Implicit,
+                "ada.login".into()
+            ),
+            (
+                Family::Smtp,
+                "smtp://smtp.fake.test:587".into(),
+                Tls::StartTls,
+                "ada.login".into()
+            ),
+        ]
+    );
+    assert!(signed.endpoints.iter().all(|e| e.check().is_ok()));
+    assert_eq!(
+        signed.credentials,
+        vec![(
+            SecretPurpose::Password,
+            Credential::Password(SecretText::new("s3cret"))
+        )]
+    );
+}
+
+#[tokio::test]
+async fn typed_pop3_starttls_defaults_to_port_110_and_may_be_plain_on_this_computer() {
+    for (security, host, port, scheme, tls) in [
+        (
+            "starttls",
+            "pop.fake.test",
+            "",
+            "pop3://pop.fake.test:110",
+            Tls::StartTls,
+        ),
+        (
+            "plain",
+            "127.0.0.1",
+            "31110",
+            "pop3://127.0.0.1:31110",
+            Tls::Plain,
+        ),
+    ] {
+        let mail = nothing_published().await;
+        let mut signin = mail.provider.sign_in(add()).expect("sign-in");
+        let typed = vec![
+            plain(FieldKind::Protocol, "pop3"),
+            plain(FieldKind::Server, host),
+            plain(FieldKind::Security, security),
+            plain(FieldKind::Port, port),
+            plain(FieldKind::OutgoingServer, host),
+            plain(FieldKind::OutgoingSecurity, security),
+        ];
+        let steps = drive(&mut signin, manual_person(typed)).await;
+        let first = &done(&steps).endpoints[0];
+        assert_eq!(
+            (first.family, first.url.to_string(), first.tls),
+            (Family::Pop3, scheme.into(), tls)
+        );
+    }
 }
 
 #[tokio::test]

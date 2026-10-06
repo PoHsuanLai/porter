@@ -55,6 +55,9 @@ pub enum EndpointProtocol {
     Http,
     /// ManageSieve (RFC 5804): the relay does STARTTLS and AUTHENTICATE.
     Sieve,
+    /// POP3 (RFC 1939): the relay does `STLS` and `USER`/`PASS` (or `AUTH`); the app sees a
+    /// session that is already in the transaction state.
+    Pop3,
 }
 
 /// The schemes an endpoint URL may have.
@@ -76,6 +79,10 @@ pub enum UrlScheme {
     Sieve,
     /// `sieves` (ManageSieve over TLS from the first byte).
     Sieves,
+    /// `pop3` (POP3, STARTTLS as `STLS`).
+    Pop3,
+    /// `pop3s` (POP3 over TLS from the first byte).
+    Pop3s,
 }
 
 impl UrlScheme {
@@ -89,6 +96,8 @@ impl UrlScheme {
             "smtps" => Some(UrlScheme::Smtps),
             "sieve" => Some(UrlScheme::Sieve),
             "sieves" => Some(UrlScheme::Sieves),
+            "pop3" => Some(UrlScheme::Pop3),
+            "pop3s" => Some(UrlScheme::Pop3s),
             _ => None,
         }
     }
@@ -103,6 +112,8 @@ impl UrlScheme {
             UrlScheme::Smtps => "smtps",
             UrlScheme::Sieve => "sieve",
             UrlScheme::Sieves => "sieves",
+            UrlScheme::Pop3 => "pop3",
+            UrlScheme::Pop3s => "pop3s",
         }
     }
 
@@ -113,6 +124,7 @@ impl UrlScheme {
             UrlScheme::Imap | UrlScheme::Imaps => EndpointProtocol::Imap,
             UrlScheme::Smtp | UrlScheme::Smtps => EndpointProtocol::Smtp,
             UrlScheme::Sieve | UrlScheme::Sieves => EndpointProtocol::Sieve,
+            UrlScheme::Pop3 | UrlScheme::Pop3s => EndpointProtocol::Pop3,
         }
     }
 
@@ -126,18 +138,23 @@ impl UrlScheme {
             UrlScheme::Smtp => 587,
             UrlScheme::Smtps => 465,
             UrlScheme::Sieve | UrlScheme::Sieves => 4190,
+            UrlScheme::Pop3 => 110,
+            UrlScheme::Pop3s => 995,
         }
     }
 
     /// The security a scheme allows: `https`, `imaps` and `smtps` are TLS from the first byte,
-    /// `http` has no upgrade, and `imap`, `smtp` and `sieve` upgrade with STARTTLS or stay plain.
+    /// `http` has no upgrade, and `imap`, `smtp`, `sieve` and `pop3` upgrade with STARTTLS or
+    /// stay plain.
     fn admits(self, tls: Tls) -> bool {
         match self {
-            UrlScheme::Https | UrlScheme::Imaps | UrlScheme::Smtps | UrlScheme::Sieves => {
-                tls == Tls::Implicit
-            }
+            UrlScheme::Https
+            | UrlScheme::Imaps
+            | UrlScheme::Smtps
+            | UrlScheme::Sieves
+            | UrlScheme::Pop3s => tls == Tls::Implicit,
             UrlScheme::Http => tls == Tls::Plain,
-            UrlScheme::Imap | UrlScheme::Smtp | UrlScheme::Sieve => {
+            UrlScheme::Imap | UrlScheme::Smtp | UrlScheme::Sieve | UrlScheme::Pop3 => {
                 matches!(tls, Tls::StartTls | Tls::Plain)
             }
         }

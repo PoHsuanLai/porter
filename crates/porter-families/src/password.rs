@@ -130,7 +130,7 @@ pub(crate) fn segment(text: &str) -> String {
 /// The TLS mode a URL's scheme means.
 pub(crate) fn tls_of(url: &EndpointUrl) -> Tls {
     match url.origin().scheme {
-        UrlScheme::Https | UrlScheme::Imaps | UrlScheme::Smtps => Tls::Implicit,
+        UrlScheme::Https | UrlScheme::Imaps | UrlScheme::Smtps | UrlScheme::Pop3s => Tls::Implicit,
         _ => Tls::Plain,
     }
 }
@@ -182,6 +182,14 @@ pub(crate) fn password_of(presented: &Presented) -> Result<&SecretText, Provider
         Presented::Credential(Credential::Password(password)) => Ok(password),
         Presented::Anonymous => Err(ProviderError::Unauthorized),
         Presented::Credential(_) => Err(ProviderError::Unreadable),
+    }
+}
+
+/// The secret a generic account presents: a password, or a bearer token the person pasted.
+pub(crate) fn secret_presented(presented: &Presented) -> Result<&SecretText, ProviderError> {
+    match presented {
+        Presented::Credential(Credential::Bearer(token)) => Ok(token),
+        other => password_of(other),
     }
 }
 

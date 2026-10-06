@@ -124,6 +124,8 @@ where
             };
             match self.secrets.get(&key).await {
                 Ok(Credential::Password(password)) => return Ok(RelayAuth::Password(password)),
+                // A token the person pasted (a JMAP API token): presented as a bearer.
+                Ok(Credential::Bearer(token)) => return Ok(RelayAuth::AccessToken(token)),
                 Ok(_) => return Err(Refusal::Unavailable),
                 Err(SecretsError::Missing) => {}
                 Err(error) => return Err(secrets_refusal(error)),

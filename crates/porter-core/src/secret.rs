@@ -81,6 +81,9 @@ pub enum Credential {
     },
     /// An API key.
     ApiKey(SecretText),
+    /// A bearer token the person pasted (a JMAP API token): presented as a bearer, with no
+    /// refresh. It is filed where a password would be, so an account has one such secret.
+    Bearer(SecretText),
     /// An access key pair.
     KeyPair {
         /// The public half (an access key id).
@@ -95,6 +98,7 @@ impl fmt::Debug for Credential {
         match self {
             Credential::Password(_) => f.write_str("Credential::Password(<redacted>)"),
             Credential::ApiKey(_) => f.write_str("Credential::ApiKey(<redacted>)"),
+            Credential::Bearer(_) => f.write_str("Credential::Bearer(<redacted>)"),
             Credential::OAuth { expires_at, .. } => f
                 .debug_struct("Credential::OAuth")
                 .field("access", &"<redacted>")

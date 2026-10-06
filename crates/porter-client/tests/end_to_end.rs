@@ -314,6 +314,130 @@ async fn an_app_adds_an_account_through_a_family_is_granted_it_and_signs_it_in_a
     );
 }
 
+/// An HTTP client that finds nothing anywhere: every address publishes no server.
+#[derive(Debug, Clone)]
+struct NothingPublished;
+
+impl porter_http::Http for NothingPublished {
+    async fn send(
+        &self,
+        _request: porter_http::HttpRequest,
+    ) -> Result<porter_http::HttpResponse, porter_http::HttpError> {
+        Ok(porter_http::HttpResponse {
+            status: porter_http::Status(404),
+            headers: vec![],
+            body: Vec::new(),
+        })
+    }
+}
+
+/// A mail address whose domain publishes no server: the sheet asks for the server by hand, and a
+/// POP3 account typed there is added, then found by a mail need with its POP3 and SMTP
+/// endpoints and a login name that is not the address.
+#[tokio::test]
+async fn a_typed_pop3_server_is_added_through_the_sheet_and_found_by_a_mail_need() {
+    use porter_core::capability::Offered;
+    use porter_core::need::MailNeed;
+    use porter_core::sheet::{FieldAnswer, FieldKind, FieldValue, ServiceChoice, SheetInput};
+    use porter_core::{Family, ProviderId, SecretText, Toggle};
+    use porter_fake::{FixedClock, NOW};
+    use porter_fake_servers::FakeDns;
+    use porter_families::{FamilyProvider, GenericProvider};
+    use porter_http::SharedHttp;
+    use porter_provider::parse_provider;
+    use porter_secrets::MemorySecrets;
+    use porter_service::{AccountService, Registry};
+
+    let plain = |kind, text: &str| FieldAnswer {
+        kind,
+        value: FieldValue::Plain(text.to_owned()),
+    };
+    let spec = parse_provider(include_str!("../../../providers/generic-imap.toml")).expect("file");
+    let provider = FamilyProvider::Generic(GenericProvider::new(
+        spec,
+        SharedHttp::new(NothingPublished),
+        FakeDns::new(),
+    ));
+    let first = SheetInput::Submit(vec![
+        plain(FieldKind::Address, "ada@old-isp.example"),
+        FieldAnswer {
+            kind: FieldKind::Password,
+            value: FieldValue::Secret(SecretText::new("s3cret")),
+        },
+    ]);
+    let manual = SheetInput::Submit(vec![
+        plain(FieldKind::Protocol, "pop3"),
+        plain(FieldKind::Server, "pop.old-isp.example"),
+        plain(FieldKind::Security, "starttls"),
+        plain(FieldKind::OutgoingServer, "smtp.old-isp.example"),
+        plain(FieldKind::OutgoingSecurity, "starttls"),
+        plain(FieldKind::OutgoingPort, "2525"),
+        plain(FieldKind::Username, "ada.login"),
+    ]);
+    let review = SheetInput::Confirm(vec![ServiceChoice {
+        kind: porter_core::CapabilityKind::Mail,
+        toggle: Toggle::On,
+    }]);
+    let sheets =
+        ScriptedSheets::answering([Scripted::AllowFirst(GrantScope::Always)]).conversing([vec![
+            SheetInput::Pick(ProviderId::parse("generic-imap").expect("id")),
+            first,
+            manual,
+            review,
+        ]]);
+    let service = Arc::new(AccountService::new(
+        vec![provider],
+        Registry::default(),
+        MemorySecrets::default(),
+        sheets,
+        FixedClock(NOW),
+    ));
+    let mail = app_over(&service, "org.quire.Mail");
+    let added = mail
+        .add_account(
+            porter_core::wire::ProviderHint::Any,
+            &ParentWindow::Unparented,
+        )
+        .await
+        .expect("added");
+
+    let need = Need::Mail(MailNeed {
+        access: Access::Read,
+        send: Offered::Present,
+        delta: Delta::Poll,
+    });
+    let offer = needs_consent(
+        mail.find(&need, DataClass::Mail, Usage::Interactive)
+            .await
+            .expect("find"),
+    );
+    let chosen = mail
+        .request_grant(&offer, &ParentWindow::Unparented)
+        .await
+        .expect("granted");
+    assert_eq!(chosen.account, added);
+    let shown: Vec<_> = chosen
+        .endpoints
+        .iter()
+        .map(|e| (e.family, e.url.to_string(), e.login.0.clone()))
+        .collect();
+    assert_eq!(
+        shown,
+        [
+            (
+                Family::Pop3,
+                "pop3://pop.old-isp.example:110".to_owned(),
+                "ada.login".to_owned()
+            ),
+            (
+                Family::Smtp,
+                "smtp://smtp.old-isp.example:2525".to_owned(),
+                "ada.login".to_owned()
+            ),
+        ]
+    );
+}
+
 type FamilyApp = Accounts<
     InProcess<
         porter_families::FamilyProvider,

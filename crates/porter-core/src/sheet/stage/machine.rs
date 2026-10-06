@@ -20,10 +20,10 @@
 //! this machine's input and is dropped here.
 
 use super::{Purpose, Sheet, SheetEffect, SheetEnd, SheetEvent, Stage};
-use crate::sheet::fields::{FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence};
+use crate::sheet::fields::{FieldAnswer, FieldSpec, FieldValue};
 use crate::sheet::input::SheetInput;
+use crate::sheet::manual;
 use crate::sheet::progress::{Progress, SignInFault, SignInInput};
-use crate::sheet::view::{FieldProblem, ProblemKind};
 use crate::wire::ProviderHint;
 
 pub(super) fn step(sheet: Sheet, event: SheetEvent) -> (Sheet, Vec<SheetEffect>) {
@@ -156,27 +156,6 @@ fn retryable(fault: SignInFault) -> bool {
     !matches!(fault, SignInFault::Forbidden | SignInFault::NeedsClientId)
 }
 
-fn is_empty(value: &FieldValue) -> bool {
-    match value {
-        FieldValue::Plain(text) => text.trim().is_empty(),
-        FieldValue::Secret(secret) => secret.expose().is_empty(),
-    }
-}
-
-/// The first required field with no answer, in the form's order.
-fn missing(fields: &[FieldSpec], answers: &[FieldAnswer]) -> Option<FieldKind> {
-    fields
-        .iter()
-        .filter(|spec| spec.presence == Presence::Required)
-        .find(|spec| {
-            answers
-                .iter()
-                .find(|a| a.kind == spec.kind)
-                .is_none_or(|a| is_empty(&a.value))
-        })
-        .map(|spec| spec.kind)
-}
-
 /// The answers to fields that were asked, in the form's order, plain text trimmed.
 fn asked(fields: &[FieldSpec], answers: Vec<FieldAnswer>) -> Vec<FieldAnswer> {
     fields
@@ -202,14 +181,14 @@ fn submit(sheet: Sheet, answers: Vec<FieldAnswer>) -> (Sheet, Vec<SheetEffect>) 
     else {
         return ignore(sheet);
     };
-    if let Some(field) = missing(fields, &answers) {
+    // The server form changes with its answers (JMAP has no outgoing server): what is checked
+    // and sent is the form as the answers make it.
+    let fields = &manual::refit(fields, &answers);
+    if let Some(problem) = manual::form_problem(fields, &answers) {
         let stage = Stage::Asking {
             provider: provider.clone(),
             fields: fields.clone(),
-            problem: Some(FieldProblem {
-                field,
-                problem: ProblemKind::Missing,
-            }),
+            problem: Some(problem),
         };
         return to(sheet, stage);
     }

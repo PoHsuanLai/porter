@@ -96,7 +96,7 @@ Each row names the lane of the accounts program (porter PLAN §6) that removes i
 | porter-infer `route` with an empty picker row does not exclude `NonCommercial` models | the routing P1 lane |
 | inferd `Why::Evicted` names only the first victim of a swap | the routing P1 lane, if a swap ever evicts more than one |
 | `AccountService::add_and_allow` (built, tested) is not called by `Choose` | `choose` answers `NoFittingAccount` when nothing fits, and the app opens the add sheet itself with `AddAccount`, which carries no need and so grants nothing. "Add, and allow" in one step needs the `Choose` flow (or an `AddAccount` that carries a need) to call `add_and_allow`; closes where the app-facing add path is decided (W3d's bus method or mailo E1) |
-| Generic IMAP checks no password at add time; one password only | `porter-families` has no IMAP client (the relay's is porter-proxy's, W3g), so a wrong password is found by the first relay or `open` and sets `NeedsReauth`; a separate outgoing password (`SecretPurpose::OutgoingPassword`) is not asked for either. Closes with an IMAP login probe in the family, or a decision that the relay's first refusal is the check (W3g) |
+| Generic IMAP, POP3 and typed SMTP check no password at add time; one password only | `porter-families` has no IMAP client (the relay's is porter-proxy's, W3g), so a wrong password is found by the first relay or `open` and sets `NeedsReauth`; a separate outgoing password (`SecretPurpose::OutgoingPassword`) is not asked for either. Closes with an IMAP login probe in the family, or a decision that the relay's first refusal is the check (W3g) |
 | porter-families Nextcloud discovery falls back to conventional DAV paths | The fake Nextcloud (W2e) answers no `current-user-principal` or `calendar-home-set`, so the conformance tests walk the fallback (`/remote.php/dav/calendars/<user>/`, `/addressbooks/users/<user>/`); the principal walk is written over porter-dav's parsers but not exercised end to end. Closes when the fake serves principals, or at the owner's live Nextcloud smoke |
 | `HyperHttp` trusts the platform's roots only | The pinned `webpki-roots` fallback is not used: its licence (CDLA-Permissive-2.0) is not in `deny.toml`'s allow list. A host with no system roots (a minimal container) can trust a private CA through `HyperHttp::with_extra_roots` and nothing else. Closes when the owner allows the licence and the fallback joins `with_extra_roots` |
 | Login Flow v2 does not follow a redirect | `HyperHttp` never follows one, so a server whose `/index.php/login/v2` redirects (a canonical host) fails `Unreadable`; the person types the canonical address |
@@ -1031,6 +1031,43 @@ Lane `voice-inferd`, branch from 0941881. porter-client `Transport::prepare`; in
   portal path. Tests: `open_again_on_the_browser_page_opens_it_again_and_does_not_restart`,
   `open_again_means_nothing_off_the_browser_page` (core), `open_again_shows_the_browser_page_again_without_restarting_the_sign_in` (porter-service).
 - `porter-fake`: `Scripted::AddAccount` (additive). Sill's fallbacks for the three asks end when sill switches to these.
+
+## Lane manual-server (the hand-typed server form, 2026-10-07)
+
+- **The form.** When the lookup finds no server the generic mail sign-in asks `porter_core::sheet::manual_form`: `Protocol`
+  (a choice: `imap`, `pop3`, `jmap`), then for IMAP and POP3 `Server`, `Security` (`tls`, `starttls`), `Port`, `OutgoingServer`,
+  `OutgoingSecurity`, `OutgoingPort`, and for JMAP `SessionUrl` and `Token` (a secret, optional: an API token instead of the
+  password typed on the first form), then `Username` (optional; empty is the address). Hosts draw every field from `FieldKind`;
+  `FieldKind::choices()` lists the values of a choice field (a pop-up or segmented control sends one of those texts). Ports,
+  host guesses (`imap.`/`pop.`/`smtp.<domain>`, `https://<domain>/.well-known/jmap`) and the security prefill come from the
+  form; an empty port is the usual one for protocol and security (993/995/143/110, 465/587).
+- **Shape: new `FieldKind` variants** (`Protocol`, `Port`, `Security`, `OutgoingServer`, `OutgoingPort`, `OutgoingSecurity`,
+  `SessionUrl`) plus `FieldKind::choices()`; `FieldSpec` is unchanged and `SignInView` JSON written before still reads
+  (test `an_old_sign_in_view_still_reads`). `ProblemKind::Invalid` is new (a field-level problem: port not 1-65535, host with a
+  scheme or path, a session URL that is not `https`, plain off this computer). Consumers match `FieldKind` and `ProblemKind`
+  exhaustively (sill `accounts_sheet/props.rs`, mailo E5 `map.rs`): see the lane report for the exact diffs.
+- **Validation lives in porter-core** (`sheet/manual.rs`: `refit`, `form_problem`, `parse_manual`); the stage machine refits the
+  form to the protocol typed and returns the first bad field as `SignInView.problem` before anything is sent. A host keeps
+  Continue off while `form_problem(fields, answers)` is `Some`. `plain` security is accepted for a loopback host only (the
+  one place `ServiceEndpoint::check` allows it); `SECURITY_CHOICES` never lists it and porter-discover never offers it.
+- **POP3 is a relayed protocol**: `UrlScheme::{Pop3, Pop3s}` (110/995), `EndpointProtocol::Pop3`, `Family::Pop3` relays
+  and serves Mail, `porter-proxy` `Pop3Relay` (`CAPA`, `STLS`, `USER`/`PASS`, `AUTH PLAIN`, `AUTH XOAUTH2`; the app is greeted
+  `+OK porter relay ready` in the transaction state, and its own `USER`/`PASS`/`APOP` are answered `+OK` and never forwarded,
+  `AUTH`/`STLS` refused). `FakePop3` in porter-fake-servers. A POP3 account's mail claim names `MailTransport::Pop3`.
+  Tests: `porter-proxy` `pop3::tests` and `tests/pop3.rs`, `accountd` `tests/relay.rs`, `porter-families` `tests/generic.rs`.
+- **JMAP API token**: `Credential::Bearer(SecretText)` (serde `bearer`; every older stored credential still reads). It is filed
+  under `SecretPurpose::Password` (an account has one secret; re-signing in with a password replaces a token and the other
+  way round), the generic sign-in fetches the session with `Authorization: Bearer`, and `plan_relay` presents a `Bearer`
+  as `RelayAuth::AccessToken`.
+- **Open: no sign-in probe for IMAP, POP3 or SMTP.** `porter-families` has no socket seam, so a typed server is not logged in to
+  at add time; a wrong password or port is found by the first relay (`NeedsReauth` or `Offline`). JMAP is checked (the session
+  fetch is the login). Closes with a socket seam in `Io` and a probe per protocol, or the decision that the relay's first
+  refusal is the check (same row as Generic IMAP above).
+- **Open: a looked-up POP3 server is still not an endpoint.** `porter-discover` reports POP3 as data (`Found.pop3`); only the
+  typed form builds POP3 endpoints. Mapping `Found.pop3` to `Family::Pop3` endpoints is the caller's (mailo E3 follow-up).
+- **Open: the form asks the JMAP token beside a required password.** The first form asks the password; a person with only a
+  token types any text there and the token in the `Token` field (the token is what is stored). Closes when the first form
+  learns the protocol (an `Address`-only first form for a typed JMAP server).
 
 ## Standing facts
 

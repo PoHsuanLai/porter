@@ -19,6 +19,34 @@ pub enum FieldKind {
     ApiKey,
     /// An API token (a JMAP bearer token).
     Token,
+    /// How a typed mail server speaks: a choice (`FieldKind::choices`), `imap` or `jmap`.
+    Protocol,
+    /// The incoming server's port, a number; empty means the port the protocol and security
+    /// usually use.
+    Port,
+    /// The incoming server's security, a choice: `tls` or `starttls`.
+    Security,
+    /// The outgoing (SMTP) server's host.
+    OutgoingServer,
+    /// The outgoing server's port, as `Port`.
+    OutgoingPort,
+    /// The outgoing server's security, a choice: `tls` or `starttls`.
+    OutgoingSecurity,
+    /// A JMAP session URL (`https://...`).
+    SessionUrl,
+}
+
+impl FieldKind {
+    /// The values a choice field takes, as the answer's text; empty for a field that is typed.
+    /// A host words each value and draws the choice (a segmented control, a pop-up); what it
+    /// sends back is one of these.
+    pub fn choices(self) -> &'static [&'static str] {
+        match self {
+            FieldKind::Protocol => super::manual::PROTOCOL_CHOICES,
+            FieldKind::Security | FieldKind::OutgoingSecurity => super::manual::SECURITY_CHOICES,
+            _ => &[],
+        }
+    }
 }
 
 /// Whether what is typed is shown.
@@ -52,6 +80,28 @@ pub struct FieldSpec {
     pub presence: Presence,
     /// What it starts with (the address typed a moment ago); never a secret.
     pub prefill: Option<String>,
+}
+
+/// Whether an answer holds nothing but white space.
+pub(super) fn is_empty(value: &FieldValue) -> bool {
+    match value {
+        FieldValue::Plain(text) => text.trim().is_empty(),
+        FieldValue::Secret(secret) => secret.expose().is_empty(),
+    }
+}
+
+/// The first required field with no answer, in the form's order.
+pub fn first_missing(fields: &[FieldSpec], answers: &[FieldAnswer]) -> Option<FieldKind> {
+    fields
+        .iter()
+        .filter(|spec| spec.presence == Presence::Required)
+        .find(|spec| {
+            answers
+                .iter()
+                .find(|a| a.kind == spec.kind)
+                .is_none_or(|a| is_empty(&a.value))
+        })
+        .map(|spec| spec.kind)
 }
 
 /// What was typed. `Debug` redacts the secret form.

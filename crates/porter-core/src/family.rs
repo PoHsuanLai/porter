@@ -82,14 +82,14 @@ impl Family {
             Family::Imap => Some(EndpointProtocol::Imap),
             Family::Smtp => Some(EndpointProtocol::Smtp),
             Family::Sieve => Some(EndpointProtocol::Sieve),
+            Family::Pop3 => Some(EndpointProtocol::Pop3),
             Family::Jmap
             | Family::CalDav
             | Family::CardDav
             | Family::WebDav
             | Family::NextcloudNotes
             | Family::Graph => Some(EndpointProtocol::Http),
-            Family::Pop3
-            | Family::GmailApi
+            Family::GmailApi
             | Family::GoogleCalendar
             | Family::GooglePeople
             | Family::GoogleTasks
@@ -117,7 +117,7 @@ impl Family {
         matches!(
             (self, kind),
             (
-                Family::Imap | Family::Smtp | Family::Sieve | Family::Jmap,
+                Family::Imap | Family::Smtp | Family::Pop3 | Family::Sieve | Family::Jmap,
                 CapabilityKind::Mail
             ) | (
                 Family::WebDav | Family::Graph,
@@ -172,7 +172,12 @@ mod tests {
             "graph",
             Some(EndpointProtocol::Http),
         ),
-        ("pop3 is not relayed", Family::Pop3, "pop3", None),
+        (
+            "pop3 is relayed",
+            Family::Pop3,
+            "pop3",
+            Some(EndpointProtocol::Pop3),
+        ),
     ];
 
     #[test]

@@ -17,6 +17,8 @@ pub enum FakeProtocol {
     Imap,
     /// An SMTP submission server: EHLO, STARTTLS, AUTH.
     Smtp,
+    /// A POP3 server: CAPA, STLS, USER/PASS, AUTH PLAIN and XOAUTH2.
+    Pop3,
     /// A Nextcloud: Login Flow v2, OCS capabilities, DAV with a sync token, quota, notes.
     Nextcloud,
     /// A plain DAV server.

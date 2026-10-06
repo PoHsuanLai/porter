@@ -8,8 +8,8 @@
 
 use porter_core::consent::{ConsentAnswer, ConsentAsk, GrantScope};
 use porter_core::sheet::{
-    Entry, FieldAnswer, FieldKind, FieldValue, Presence, ServiceChoice, ServiceState, SheetInput,
-    SheetView,
+    Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence, ServiceChoice, ServiceState,
+    SheetInput, SheetView, refit,
 };
 use porter_core::wire::ParentWindow;
 use porter_core::{AccountId, SecretText, Toggle};
@@ -197,7 +197,31 @@ fn label_of(kind: FieldKind) -> &'static str {
         FieldKind::Password => "Password",
         FieldKind::ApiKey => "API key (hidden)",
         FieldKind::Token => "API token (hidden)",
+        FieldKind::Protocol => "Mail protocol",
+        FieldKind::Port => "Port",
+        FieldKind::Security => "Security",
+        FieldKind::OutgoingServer => "Outgoing (SMTP) server",
+        FieldKind::OutgoingPort => "Outgoing port",
+        FieldKind::OutgoingSecurity => "Outgoing security",
+        FieldKind::SessionUrl => "JMAP session URL",
     }
+}
+
+/// The line that asks for `field`: its name, the values it takes when it is a choice, and what
+/// an empty answer means when the form prefilled one.
+fn prompt_of(field: &FieldSpec) -> String {
+    let mut label = label_of(field.kind).to_owned();
+    if field.presence == Presence::Optional {
+        label.push_str(" (optional)");
+    }
+    if let Some((last, rest)) = field.kind.choices().split_last() {
+        label.push_str(&format!(" [{} or {last}]", rest.join(", ")));
+    }
+    // A secret is never prefilled, so none is shown.
+    if let (Some(default), Entry::Plain) = (&field.prefill, field.entry) {
+        label.push_str(&format!(" (empty: {default})"));
+    }
+    label
 }
 
 impl<T: Terminal> TerminalLink<T> {
@@ -211,17 +235,25 @@ impl<T: Terminal> TerminalLink<T> {
     }
 
     async fn fields(&self, view: porter_core::sheet::SignInView) -> Result<SheetInput, SheetFault> {
-        let mut answers = Vec::new();
-        for field in view.fields {
-            let mut label = label_of(field.kind).to_owned();
-            if field.presence == Presence::Optional {
-                label.push_str(" (optional)");
-            }
+        let mut answers: Vec<FieldAnswer> = Vec::new();
+        let mut fields = view.fields;
+        let mut at = 0;
+        // The server form changes with the protocol and the security typed before a field (JMAP
+        // has no outgoing server, a STARTTLS port is another), so it is fitted before each ask.
+        while at < fields.len() {
+            fields = refit(&fields, &answers);
+            let Some(field) = fields.get(at).cloned() else {
+                break;
+            };
             let echo = match field.entry {
                 Entry::Plain => Echo::On,
                 Entry::Secret => Echo::Off,
             };
-            let typed = self.ask(label, echo).await?;
+            let typed = self.ask(prompt_of(&field), echo).await?;
+            let typed = match (typed.trim().is_empty(), &field.prefill) {
+                (true, Some(default)) if field.entry == Entry::Plain => default.clone(),
+                _ => typed,
+            };
             answers.push(FieldAnswer {
                 kind: field.kind,
                 value: match field.entry {
@@ -229,6 +261,7 @@ impl<T: Terminal> TerminalLink<T> {
                     Entry::Secret => FieldValue::Secret(SecretText::new(typed)),
                 },
             });
+            at += 1;
         }
         Ok(SheetInput::Submit(answers))
     }
@@ -314,3 +347,6 @@ impl<T: Terminal> SheetLink for TerminalLink<T> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -1,5 +1,5 @@
 //! Test-only fake servers for the accounts program (PLAN §6 row W2e, §8): an OAuth issuer with a
-//! scripted browser, IMAP and SMTP with a scratch CA, a Nextcloud, a plain DAV server, autoconfig
+//! scripted browser, IMAP, POP3 and SMTP with a scratch CA, a Nextcloud, a plain DAV server, autoconfig
 //! and well-known answers, a DNS answer table behind `porter-discover`'s `Dns` seam, and Ollama
 //! and OpenAI-compatible model lists.
 //!
@@ -23,6 +23,7 @@ pub mod models;
 pub mod net;
 pub mod nextcloud;
 pub mod oauth;
+pub mod pop3;
 pub mod seen;
 pub mod shipped;
 pub mod smtp;
@@ -40,5 +41,6 @@ pub use models::{FakeModels, ModelDef, ModelsHandle, Wire};
 pub use net::{Bind, Peer};
 pub use nextcloud::{FakeNextcloud, LoginPolicy, NextcloudHandle};
 pub use oauth::{Consent, FakeIssuer, IssuerEvent, IssuerHandle, TokenResult};
+pub use pop3::FakePop3;
 pub use seen::{Running, Seen};
 pub use smtp::FakeSmtp;

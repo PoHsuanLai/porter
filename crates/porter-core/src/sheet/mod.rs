@@ -10,12 +10,17 @@
 
 mod fields;
 mod input;
+mod manual;
 mod progress;
 mod stage;
 mod view;
 
-pub use fields::{Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence};
+pub use fields::{Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence, first_missing};
 pub use input::SheetInput;
+pub use manual::{
+    Hop, JmapServer, MailServers, Manual, Protocol, Security, form_problem, manual_form,
+    parse_manual, refit,
+};
 pub use progress::{
     Progress, Review, ServiceChoice, ServiceRow, ServiceState, SignInFault, SignInInput, UserCode,
 };

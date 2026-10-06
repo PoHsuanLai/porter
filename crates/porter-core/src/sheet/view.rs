@@ -43,6 +43,9 @@ pub enum ProblemKind {
     Missing,
     /// The server refused what was typed.
     Refused,
+    /// What was typed cannot be right (a port that is not a number, a host with a path, a
+    /// session URL that is not `https`); checked before anything is sent.
+    Invalid,
 }
 
 /// A field to mark, and why.

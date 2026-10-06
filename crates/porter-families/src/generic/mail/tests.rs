@@ -24,16 +24,40 @@ fn an_address_has_a_domain_only_when_it_is_one() {
     }
 }
 
-#[test]
-fn a_typed_host_makes_implicit_tls_imap_and_starttls_submission_logged_in_as_the_address() {
-    let (endpoints, claims) =
-        typed(" mail.example.org ", "ada@example.org", &spec()).expect("endpoints");
-    let shown: Vec<_> = endpoints
+fn hop(host: &str, port: u16, security: Security) -> Hop {
+    Hop {
+        host: host.to_owned(),
+        port,
+        security,
+    }
+}
+
+fn servers(incoming: Hop, outgoing: Hop, login: Option<&str>) -> MailServers {
+    MailServers {
+        incoming,
+        outgoing,
+        login: login.map(str::to_owned),
+    }
+}
+
+fn shown(servers: &MailServers, address: &str) -> Vec<(Family, String, Tls, String)> {
+    let (endpoints, claims) = typed(Family::Imap, servers, address, &spec()).expect("endpoints");
+    assert_eq!(claims.len(), 1, "the file's one mail row");
+    endpoints
         .iter()
         .map(|e| (e.family, e.url.to_string(), e.tls, e.login.0.clone()))
-        .collect();
+        .collect()
+}
+
+#[test]
+fn typed_servers_make_imap_and_smtp_as_their_ports_and_securities_say() {
+    let tls = servers(
+        hop("mail.example.org", 993, Security::Tls),
+        hop("smtp.example.org", 465, Security::Tls),
+        None,
+    );
     assert_eq!(
-        shown,
+        shown(&tls, "ada@example.org"),
         vec![
             (
                 Family::Imap,
@@ -43,27 +67,90 @@ fn a_typed_host_makes_implicit_tls_imap_and_starttls_submission_logged_in_as_the
             ),
             (
                 Family::Smtp,
-                "smtp://mail.example.org:587".into(),
+                "smtps://smtp.example.org:465".into(),
+                Tls::Implicit,
+                "ada@example.org".into()
+            ),
+        ]
+    );
+    let starttls = servers(
+        hop("mail.example.org", 1143, Security::StartTls),
+        hop("mail.example.org", 2587, Security::StartTls),
+        None,
+    );
+    assert_eq!(
+        shown(&starttls, "ada@example.org"),
+        vec![
+            (
+                Family::Imap,
+                "imap://mail.example.org:1143".into(),
+                Tls::StartTls,
+                "ada@example.org".into()
+            ),
+            (
+                Family::Smtp,
+                "smtp://mail.example.org:2587".into(),
                 Tls::StartTls,
                 "ada@example.org".into()
             ),
         ]
     );
-    assert_eq!(claims.len(), 1, "the file's one mail row");
 }
 
 #[test]
-fn a_typed_host_that_is_not_a_name_is_refused() {
-    for bad in [
-        "",
-        "mail example.org",
-        "https://mail.example.org",
-        "mail_example.org",
-    ] {
-        assert_eq!(
-            typed(bad, "ada@example.org", &spec()).err(),
-            Some(SignInFault::Unreadable),
-            "{bad:?}"
-        );
-    }
+fn a_typed_login_name_is_the_login_of_both_servers() {
+    let named = servers(
+        hop("mail.example.org", 993, Security::Tls),
+        hop("smtp.example.org", 587, Security::StartTls),
+        Some("ada.l"),
+    );
+    let logins: Vec<_> = shown(&named, "ada@example.org")
+        .into_iter()
+        .map(|(_, _, _, login)| login)
+        .collect();
+    assert_eq!(logins, ["ada.l", "ada.l"]);
+}
+
+#[test]
+fn plain_is_for_loopback_only() {
+    let local = servers(
+        hop("127.0.0.1", 143, Security::Plain),
+        hop("127.0.0.1", 587, Security::Plain),
+        None,
+    );
+    let tls: Vec<_> = shown(&local, "ada@example.org")
+        .into_iter()
+        .map(|(_, _, tls, _)| tls)
+        .collect();
+    assert_eq!(tls, [Tls::Plain, Tls::Plain]);
+    let elsewhere = servers(
+        hop("mail.example.org", 143, Security::Plain),
+        hop("smtp.example.org", 587, Security::StartTls),
+        None,
+    );
+    assert_eq!(
+        typed(Family::Imap, &elsewhere, "ada@example.org", &spec()).err(),
+        Some(SignInFault::Unreadable)
+    );
+}
+
+#[test]
+fn a_pop3_account_claims_a_pop3_mailbox_and_an_imap_one_keeps_the_files_claim() {
+    let same = servers(
+        hop("pop.example.org", 995, Security::Tls),
+        hop("smtp.example.org", 465, Security::Tls),
+        None,
+    );
+    let transport = |family| {
+        let (_, claims) = typed(family, &same, "ada@example.org", &spec()).expect("typed");
+        claims
+            .iter()
+            .find_map(|c| match &c.offer {
+                Offer::Present(Capability::Mail(mail)) => Some(mail.transport),
+                _ => None,
+            })
+            .expect("a mail claim")
+    };
+    assert_eq!(transport(Family::Pop3), MailTransport::Pop3);
+    assert_eq!(transport(Family::Imap), MailTransport::Imap);
 }

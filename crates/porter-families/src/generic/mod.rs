@@ -9,11 +9,12 @@
 //! has no such call: removing the account wipes the password locally.
 
 mod dav;
+mod jmap;
 mod mail;
 mod sign_in;
 
 use crate::io::{Io, SharedDns};
-use crate::password::{declared, password_of};
+use crate::password::{declared, secret_presented};
 use porter_core::{Account, AccountId, Audience, Claim, Credential, IssuedToken};
 use porter_discover::Dns;
 use porter_http::{NoSleep, SharedHttp};
@@ -86,7 +87,7 @@ impl Provider for GenericProvider {
         account: &AccountId,
         presented: Presented,
     ) -> Result<GenericSession, ProviderError> {
-        password_of(&presented)?;
+        secret_presented(&presented)?;
         Ok(GenericSession {
             account: account.clone(),
         })
@@ -114,7 +115,7 @@ impl Provider for GenericProvider {
         _account: &Account,
         presented: &Presented,
     ) -> Result<RevokeOutcome, ProviderError> {
-        password_of(presented)?;
+        secret_presented(presented)?;
         Ok(RevokeOutcome::Unsupported)
     }
 }

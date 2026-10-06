@@ -2,15 +2,16 @@
 //! finds the servers from the address (the server too, when none is published); a DAV account
 //! asks for the server, a user name and a password.
 
-use super::dav;
 use super::mail::{self, Looked};
+use super::{dav, jmap};
 use crate::io::{Io, SharedDns};
-use crate::password::{field, parse_server, password, plain, secret_of, text_of};
+use crate::password::{parse_server, password, plain, secret_of, text_of};
 use porter_core::sheet::{
-    Entry, FieldAnswer, FieldKind, FieldSpec, Presence, SignInFault, SignInInput,
+    FieldAnswer, FieldKind, FieldSpec, Manual, Protocol, SignInFault, SignInInput, manual_form,
+    parse_manual,
 };
 use porter_core::{
-    AccountLabel, Claim, Credential, LoginName, Restriction, SecretPurpose, SecretText,
+    AccountLabel, Claim, Credential, Family, LoginName, Restriction, SecretPurpose, SecretText,
     ServiceEndpoint,
 };
 use porter_provider::{ProviderSet, ProviderSpec, SignIn, SignInMode, SignInStep, Signed};
@@ -97,14 +98,14 @@ impl GenericSignIn {
     /// The account is known: review it (a new account) or finish (a sign-in again).
     fn found(
         &mut self,
-        password: SecretText,
+        credential: Credential,
         label: String,
         endpoints: Vec<ServiceEndpoint>,
         claims: Vec<Claim>,
     ) -> SignInStep {
         let signed = Signed {
             label: AccountLabel(label),
-            credentials: vec![(SecretPurpose::Password, Credential::Password(password))],
+            credentials: vec![(SecretPurpose::Password, credential)],
             claims,
             endpoints,
             restriction: Restriction::none(),
@@ -146,7 +147,9 @@ impl GenericSignIn {
             return self.failed(SignInFault::Unreadable);
         }
         match mail::fixed(&address, &self.spec) {
-            Ok((endpoints, claims)) => self.found(password, address, endpoints, claims),
+            Ok((endpoints, claims)) => {
+                self.found(Credential::Password(password), address, endpoints, claims)
+            }
             Err(fault) => self.failed(fault),
         }
     }
@@ -164,18 +167,15 @@ impl GenericSignIn {
         match mail::look(&self.io, &self.dns, &self.providers, &address).await {
             Looked::Found(endpoints, claims) => {
                 let label = address;
-                self.found(password, label, endpoints, claims)
+                self.found(Credential::Password(password), label, endpoints, claims)
             }
             Looked::Ask => {
+                let domain = mail::domain_of(&address).map(|d| d.as_str().to_owned());
                 self.state = State::AskedServer(Typed {
                     login: address,
                     password,
                 });
-                SignInStep::AskFields(vec![field(
-                    FieldKind::Server,
-                    Entry::Plain,
-                    Presence::Required,
-                )])
+                SignInStep::AskFields(manual_form(Protocol::Imap, domain.as_deref()))
             }
             Looked::Offline => self.failed(SignInFault::Unreachable),
         }
@@ -193,20 +193,41 @@ impl GenericSignIn {
         match dav::discover(&self.io, &self.spec, &server, &login, &password).await {
             Ok(found) => {
                 let label = format!("{user}@{}", server.origin().host);
-                self.found(password, label, found.endpoints, found.claims)
+                self.found(
+                    Credential::Password(password),
+                    label,
+                    found.endpoints,
+                    found.claims,
+                )
             }
             Err(fault) => self.failed(fault),
         }
     }
 
-    fn typed_server(&mut self, typed: Typed, answers: &[FieldAnswer]) -> SignInStep {
-        let Some(host) = text_of(answers, FieldKind::Server) else {
+    /// The servers the person typed. The sheet's machine has checked them already; a form that
+    /// still does not read is unreadable. The endpoints go the way a looked-up candidate's do:
+    /// to the review, then stored. A JMAP API token, when typed, is the credential instead of
+    /// the password.
+    async fn typed_server(&mut self, typed: Typed, answers: &[FieldAnswer]) -> SignInStep {
+        let Ok(manual) = parse_manual(answers) else {
             return self.failed(SignInFault::Unreadable);
         };
-        match mail::typed(&host, &typed.login, &self.spec) {
+        let login = LoginName(manual.login().map_or(typed.login.clone(), str::to_owned));
+        let mut credential = Credential::Password(typed.password.clone());
+        let built = match &manual {
+            Manual::Imap(servers) => mail::typed(Family::Imap, servers, &typed.login, &self.spec),
+            Manual::Pop3(servers) => mail::typed(Family::Pop3, servers, &typed.login, &self.spec),
+            Manual::Jmap(server) => {
+                if let Some(token) = &server.token {
+                    credential = Credential::Bearer(token.clone());
+                }
+                jmap::session(&self.io, &server.session, &login, &credential).await
+            }
+        };
+        match built {
             Ok((endpoints, claims)) => {
                 let label = typed.login.clone();
-                self.found(typed.password, label, endpoints, claims)
+                self.found(credential, label, endpoints, claims)
             }
             Err(fault) => self.failed(fault),
         }
@@ -225,7 +246,7 @@ impl SignIn for GenericSignIn {
             }
             (State::Asked, SignInInput::Fields(answers)) => self.submitted(answers).await,
             (State::AskedServer(typed), SignInInput::Fields(answers)) => {
-                self.typed_server(typed, &answers)
+                self.typed_server(typed, &answers).await
             }
             (State::Reviewing(signed), SignInInput::Confirm(_)) => SignInStep::Done(*signed),
             _ => self.failed(SignInFault::Unreadable),

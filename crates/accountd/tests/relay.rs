@@ -93,8 +93,19 @@ async fn serve<C: Callers>(
     (port, stored_password): (u16, &str),
     roots: RelayRoots,
 ) -> (zbus::Connection, Arc<impl Host + use<C>>) {
+    let stored = Credential::Password(SecretText::new(stored_password));
+    serve_account(bus, callers, holder, (account(port), stored), roots).await
+}
+
+/// As `serve`, for any account and the credential filed for it.
+async fn serve_account<C: Callers>(
+    bus: &PrivateBus,
+    callers: Arc<C>,
+    holder: porter_core::AppId,
+    (account, stored): (Account, Credential),
+    roots: RelayRoots,
+) -> (zbus::Connection, Arc<impl Host + use<C>>) {
     let connection = bus.connect().await;
-    let account = account(port);
     let secrets = Shared::default();
     secrets
         .put(
@@ -102,7 +113,7 @@ async fn serve<C: Callers>(
                 account: account.id.clone(),
                 purpose: SecretPurpose::Password,
             },
-            &Credential::Password(SecretText::new(stored_password)),
+            &stored,
         )
         .await
         .expect("secret");
@@ -463,4 +474,88 @@ async fn acceptance_9_a_flatpak_app_reads_mail_and_no_bus_message_holds_the_pass
     for message in clean {
         assert!(!contains(message, APP_PASSWORD));
     }
+}
+
+/// `fake-mail` as a password POP3 account at the fake, over implicit TLS.
+fn pop3_account(port: u16) -> Account {
+    let mut account = account(port);
+    account.auth = AuthKind::Password;
+    account.endpoints[0].family = porter_core::Family::Pop3;
+    account.endpoints[0].url =
+        porter_core::EndpointUrl::parse(&format!("pop3s://127.0.0.1:{port}")).expect("url");
+    account
+}
+
+async fn pop3() -> (Fake, u16) {
+    let accounts = porter_fake_servers::Accounts::password(USER, APP_PASSWORD).with_bearer("api-9");
+    let fake = porter_fake_servers::FakePop3::start(
+        &Bind::Loopback,
+        porter_core::Tls::Implicit,
+        accounts,
+        mailbox(3),
+    )
+    .await
+    .expect("pop3");
+    let port = match fake.address() {
+        porter_fake::FakeAddress::Loopback(port) => *port,
+        porter_fake::FakeAddress::Socket(_) => panic!("a loopback fake"),
+    };
+    (fake, port)
+}
+
+/// An app opens the POP3 relay of `account` filed with `stored`; what the fake saw is returned.
+async fn through_pop3(account: Account, stored: Credential, fake: &Fake, port: u16) -> String {
+    let bus = PrivateBus::start();
+    let callers = Arc::new(TableCallers::new());
+    let _server = serve_account(
+        &bus,
+        Arc::clone(&callers),
+        app("org.quire.Mail"),
+        (account, stored),
+        fake_ca(),
+    )
+    .await;
+    let mail = client(&bus, &callers, "org.quire.Mail", CallerRole::App).await;
+    let fd = tokens(&mail)
+        .await
+        .open_authenticated(GRANT, &format!("pop3s://127.0.0.1:{port}"))
+        .await
+        .expect("a relay");
+    let mut app = stream_of(fd);
+    let mut seen = String::new();
+    read_until(&mut app, &mut seen, "\r\n").await;
+    assert!(seen.starts_with("+OK porter relay ready"), "{seen}");
+    app.write_all(b"RETR 2\r\n").await.expect("write");
+    read_until(&mut app, &mut seen, "\r\n.\r\n").await;
+    assert!(seen.contains("Subject: message 2"), "{seen}");
+    assert!(!seen.contains(APP_PASSWORD) && !seen.contains("api-9"));
+    assert_eq!(connected(fake), 1, "the app never dialed the server itself");
+    seen
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pop3_account_is_read_through_a_relay_that_logs_in_with_its_password() {
+    let (fake, port) = pop3().await;
+    let stored = Credential::Password(SecretText::new(APP_PASSWORD));
+    through_pop3(pop3_account(port), stored, &fake, port).await;
+    let attempts = fake.attempts();
+    assert_eq!(attempts.len(), 1, "one login, made by the relay");
+    assert_eq!(attempts[0].user, USER);
+    assert_eq!(attempts[0].secret, Secret::Password(APP_PASSWORD.into()));
+    assert!(attempts[0].accepted);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stored_api_token_is_presented_as_a_bearer() {
+    let (fake, port) = pop3().await;
+    let stored = Credential::Bearer(SecretText::new("api-9"));
+    through_pop3(pop3_account(port), stored, &fake, port).await;
+    let attempts = fake.attempts();
+    assert_eq!(attempts.len(), 1);
+    assert_eq!(
+        attempts[0].mechanism,
+        porter_fake_servers::Mechanism::Xoauth2
+    );
+    assert_eq!(attempts[0].secret, Secret::Bearer("api-9".into()));
+    assert!(attempts[0].accepted);
 }

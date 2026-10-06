@@ -403,6 +403,24 @@ fn secrets_and_tokens_round_trip() {
         access_key: "AKIA".into(),
         secret: SecretText::new("s"),
     });
+    round_trip(&Credential::Bearer(SecretText::new("api-token")));
+    // The JSON a store wrote before the bearer existed still reads, and the bearer is its own
+    // kind: a stored password is not read as a token.
+    for old in [
+        r#"{"kind":"password","v":"pw"}"#,
+        r#"{"kind":"api_key","v":"k"}"#,
+        r#"{"kind":"key_pair","v":{"access_key":"A","secret":"s"}}"#,
+    ] {
+        serde_json::from_str::<Credential>(old).expect(old);
+    }
+    assert_eq!(
+        serde_json::to_string(&Credential::Bearer(SecretText::new("t"))).expect("json"),
+        r#"{"kind":"bearer","v":"t"}"#
+    );
+    assert_eq!(
+        serde_json::from_str::<Credential>(r#"{"kind":"password","v":"pw"}"#).expect("old"),
+        Credential::Password(SecretText::new("pw"))
+    );
     round_trip(&IssuedToken {
         kind: TokenKind::Xoauth2,
         value: SecretText::new("t"),
