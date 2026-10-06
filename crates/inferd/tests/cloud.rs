@@ -893,17 +893,26 @@ async fn the_picker_lists_every_hosted_model_by_company_and_marks_the_ones_no_ac
                 "{value}"
             );
         }
-        // Hosted models sit under their company; the default and Automatic stay ungrouped, first.
-        for value in &hosted {
-            let group = row
-                .groups
-                .get(&ds_settings::schema::ChoiceWord((*value).to_owned()))
-                .unwrap_or_else(|| panic!("{value} has a group"));
-            assert_ne!(group.0, "On this computer", "{value}");
-        }
-        let grouped = row.grouped_choices();
-        assert_eq!(grouped[0].group, None);
-        assert_eq!(grouped[0].choices[..2], ["", "auto"]);
+        // Each hosted model is grouped under its company; the default and Automatic stay
+        // ungrouped on top, so the sections read: (none), Anthropic, OpenAI, Moonshot.
+        let group_of = |value: &str| {
+            row.groups
+                .get(&ds_settings::schema::ChoiceWord(value.to_owned()))
+                .map(|g| g.0.as_str())
+        };
+        assert_eq!(group_of("cloud/claude-opus-5.5"), Some("Anthropic"));
+        assert_eq!(group_of("cloud/gpt-6-luna"), Some("OpenAI"));
+        assert_eq!(group_of("cloud/kimi-k3"), Some("Moonshot"));
+        assert_eq!(group_of(""), None);
+        assert_eq!(group_of("auto"), None);
+        let sections: Vec<(Option<&str>, Vec<&str>)> = row
+            .grouped_choices()
+            .iter()
+            .map(|s| (s.group.map(|g| g.0.as_str()), s.choices.clone()))
+            .collect();
+        assert_eq!(sections[0], (None, vec!["", "auto"]));
+        let named: Vec<Option<&str>> = sections.iter().map(|(g, _)| *g).collect();
+        assert_eq!(named.len(), 4, "{named:?}");
         let path = KeyPath("ai.model.text.balanced".into());
         // A reachable one is a value the row takes; an unreachable one is refused with the
         // reason, and the row keeps what it had.

@@ -476,7 +476,7 @@ session and `Peer.ResolveKey` once per turn (a sealed memfd, read into a `Secret
 `cloud::models` picks each entry's reach with stoker's `reachable` (a company's own account before
 OpenRouter) and makes the card (locality cloud, the reach's price); `cloud::transport` is the TLS
 `Transport` under stoker's `Driver<OpenAiCodec, _>`, `cloud::spend` the ledger and caps
-(`ai.spend.*`), `cloud::turn` one turn, `cloud::picker` the `cloud/<model>` choices. The key is in
+(`ai.spend.*`), `cloud::turn` one turn, `cloud::picker` the `cloud/<model>` choices. The picker's `KeySpec.groups` puts each hosted choice under its company and each on-device model under "On this computer" (`settings::module`), "" and `auto` ungrouped on top. The key is in
 no event, log, audit line or file; `tests/cloud.rs` scans every bus message with a positive control.
 
 `org.quire.Inference1` at `/org/quire/Inference1`, claimed by `inferd` on the session bus

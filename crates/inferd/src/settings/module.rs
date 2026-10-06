@@ -15,7 +15,7 @@ use ds_settings::schema::{
     Section, UnavailableReason, WordLabels,
 };
 use porter_core::consent::Usage;
-use porter_core::{AppId, AppName, DataClass, Isolation, Tier};
+use porter_core::{AppId, AppName, DataClass, Isolation, Locality, Tier};
 use porter_dbus::INFERENCE_SETTINGS_PATH;
 use porter_infer::{Slot, tier_label};
 
@@ -61,16 +61,25 @@ impl<P: Peers> InferdSettings<P> {
 
     /// The models inferd knows for `kind`, as `account/model`, with their names.
     fn models_for(&self, kind: Slot) -> Vec<String> {
+        self.known_for(kind)
+            .into_iter()
+            .map(|(text, _)| text)
+            .collect()
+    }
+
+    /// `models_for`, each with where it runs.
+    fn known_for(&self, kind: Slot) -> Vec<(String, Locality)> {
         self.reload
             .engines()
             .listed()
             .into_iter()
             .filter(|one| slots_of(&one.card).contains(&kind))
             .map(|one| {
-                model_text(&porter_infer::ModelRef {
+                let text = model_text(&porter_infer::ModelRef {
                     account: one.card.account,
                     model: one.card.model,
-                })
+                });
+                (text, one.card.locality)
             })
             .collect()
     }
@@ -111,9 +120,9 @@ impl<P: Peers> InferdSettings<P> {
 
     fn spec(&self, kind: Slot, tier: Tier, hosted: &[Choice]) -> KeySpec {
         let current = self.current(kind, tier);
-        let local = self.models_for(kind);
         let mut variants = vec![String::new(), AUTO.to_owned()];
-        variants.extend(local.iter().cloned());
+        let known = self.known_for(kind);
+        variants.extend(known.iter().map(|(text, _)| text.clone()));
         variants.extend(hosted.iter().map(|choice| choice.value.clone()));
         if !variants.contains(&current) {
             variants.push(current);
@@ -144,22 +153,19 @@ impl<P: Peers> InferdSettings<P> {
                 )
             })
             .collect();
-        // Local models under one group, hosted ones under their company; the default and
+        // The models this computer runs under one group (an engine model whose card says Cloud is
+        // not one of them: it stays ungrouped), hosted ones under their company; the default and
         // Automatic stay ungrouped, so they come first.
-        let groups = local
-            .iter()
-            .map(|model| {
-                (
-                    ChoiceWord(model.clone()),
-                    ChoiceGroup(ON_THIS_COMPUTER.to_owned()),
-                )
-            })
-            .chain(hosted.iter().map(|choice| {
-                (
-                    ChoiceWord(choice.value.clone()),
-                    ChoiceGroup(choice.company.clone()),
-                )
-            }))
+        let groups = known
+            .into_iter()
+            .filter(|(_, locality)| *locality == Locality::OnDevice)
+            .map(|(word, _)| (word, ON_THIS_COMPUTER.to_owned()))
+            .chain(
+                hosted
+                    .iter()
+                    .map(|choice| (choice.value.clone(), choice.company.clone())),
+            )
+            .map(|(word, group)| (ChoiceWord(word), ChoiceGroup(group)))
             .collect();
         KeySpec {
             path: KeyPath(model_path(kind, tier)),

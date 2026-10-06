@@ -5,7 +5,7 @@
 mod hosting;
 
 use ds_settings::live::{LiveClient, LiveError, LiveSchema};
-use ds_settings::schema::{AgentSetting, KeyKind, KeyPath, Page};
+use ds_settings::schema::{AgentSetting, ChoiceWord, KeyKind, KeyPath, Page};
 use hosting::bus::PrivateBus;
 use inferd::audit::Memory;
 use inferd::clock::FixedClock;
@@ -59,6 +59,10 @@ fn sonnet() -> porter_infer::ModelCard {
 
 impl Rig {
     async fn start() -> Rig {
+        Self::start_with(vec![sonnet()]).await
+    }
+
+    async fn start_with(cards: Vec<porter_infer::ModelCard>) -> Rig {
         let bus = PrivateBus::start();
         let file = bus.scratch().join("inferd.toml");
         let engines = Engines::new(
@@ -67,7 +71,7 @@ impl Rig {
             Policy::proposed(),
             TierMap::default(),
         )
-        .with_remote(vec![sonnet()]);
+        .with_remote(cards);
         let reload = Reload::new(ConfigFile::new(file.clone()), engines.clone());
         let daemon = bus.connect().await;
         let peers = Arc::new(TablePeers::new());
@@ -166,6 +170,42 @@ async fn describe_lists_the_picker_rows_of_the_slots_inferd_has_models_for() {
         .map(|spec| spec.label.0.as_str())
         .collect();
     assert_eq!(labels, ["Fast", "Balanced", "Demanding"]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_model_on_this_computer_is_grouped_and_the_default_and_automatic_are_not() {
+    let mut here = sonnet();
+    here.account = AccountId::parse("llama").expect("id");
+    here.model = ModelId::parse("tiny").expect("id");
+    here.locality = Locality::OnDevice;
+    let rig = Rig::start_with(vec![sonnet(), here]).await;
+    let settings = rig.live(&rig.client(Role::Settings).await).await;
+    let schema: LiveSchema = settings.describe().await.expect("schema");
+    schema.check().expect("a clean schema");
+    for spec in &schema.key {
+        let group = |word: &str| {
+            spec.groups
+                .get(&ChoiceWord(word.to_owned()))
+                .map(|g| g.0.as_str())
+        };
+        assert_eq!(group("llama/tiny"), Some("On this computer"));
+        // Not on this computer and not a curated hosted entry: no group.
+        assert_eq!(group("anthropic/sonnet"), None);
+        assert_eq!(group(""), None);
+        assert_eq!(group("auto"), None);
+        let sections: Vec<(Option<&str>, Vec<&str>)> = spec
+            .grouped_choices()
+            .iter()
+            .map(|s| (s.group.map(|g| g.0.as_str()), s.choices.clone()))
+            .collect();
+        assert_eq!(
+            sections,
+            [
+                (None, vec!["", "auto", "anthropic/sonnet"]),
+                (Some("On this computer"), vec!["llama/tiny"]),
+            ]
+        );
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
