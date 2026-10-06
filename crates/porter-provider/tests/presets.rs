@@ -93,10 +93,10 @@ fn every_former_preset_address_and_mx_resolves_to_its_file() {
             None,
         ),
         (
-            "tenant host through its MX",
+            "tenant host with its MX (the domain wins)",
             "me@contoso.onmicrosoft.com",
             &["contoso-onmicrosoft-com.mail.protection.outlook.com"],
-            Some(("microsoft", Mx)),
+            Some(("microsoft", Domain)),
         ),
         (
             "company domain on Microsoft 365 (issuer by MX, outlook.com)",
