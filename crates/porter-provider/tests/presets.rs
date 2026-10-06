@@ -78,6 +78,20 @@ fn every_former_preset_address_and_mx_resolves_to_its_file() {
             &[],
             Some(("microsoft", Domain)),
         ),
+        // A tenant host is claimed by its domain suffix with no MX at all, and a lookalike is not.
+        (
+            "tenant host, no MX",
+            "me@contoso.onmicrosoft.com",
+            &[],
+            Some(("microsoft", Domain)),
+        ),
+        ("notonmicrosoft.com", "me@notonmicrosoft.com", &[], None),
+        (
+            "onmicrosoft.com.evil.test",
+            "me@onmicrosoft.com.evil.test",
+            &[],
+            None,
+        ),
         (
             "tenant host through its MX",
             "me@contoso.onmicrosoft.com",

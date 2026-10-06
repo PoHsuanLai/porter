@@ -10,8 +10,11 @@ use porter_core::capability::CapabilityKind;
 use porter_core::sheet::{FieldKind, SignInFault, SignInInput};
 use porter_core::{AccountId, Credential, Family, Offer, SecretPurpose, SecretText, Tls};
 use porter_discover::{MxRecord, SrvRecord};
+use porter_fake::FakeServer;
+use porter_fake_servers::net::Bind;
 use porter_fake_servers::{
-    AutoconfigHandle, DavHandle, FakeAutoconfig, FakeDav, FakeDns, Running, autoconfig_xml,
+    Accounts, AutoconfigHandle, DavHandle, FakeAutoconfig, FakeDav, FakeDns, FakeImap, FakeSmtp,
+    Running, autoconfig_xml, mailbox,
 };
 use porter_families::GenericProvider;
 use porter_http::SharedHttp;
@@ -560,5 +563,240 @@ fn held_by(id: &AccountId, auth: porter_core::AuthKind, provider: &str) -> porte
         capabilities: vec![],
         restriction: porter_core::Restriction::none(),
         endpoints: vec![],
+    }
+}
+
+// ---- a brand file with fixed endpoints ----
+
+fn brand(id: &str) -> ProviderSpec {
+    let shipped = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../providers");
+    let text =
+        std::fs::read_to_string(shipped.join(format!("{id}.toml"))).expect("the shipped file");
+    spec(&text)
+}
+
+fn fixed_provider(spec: ProviderSpec) -> GenericProvider {
+    GenericProvider::new(
+        spec,
+        SharedHttp::new(Fakes::loopback()),
+        FakeDns::new().unreachable(),
+    )
+}
+
+/// Answers the first form with `address` and `password`, and the review with everything on.
+fn fixed_person<'a>(
+    address: &'a str,
+    password: &'a str,
+) -> impl FnMut(&SignInStep) -> SignInInput + 'a {
+    move |step| match step {
+        SignInStep::AskFields(_) => SignInInput::Fields(vec![
+            plain(FieldKind::Address, address),
+            secret(FieldKind::Password, password),
+        ]),
+        SignInStep::Review { claims, .. } => {
+            SignInInput::Confirm(all_on(claims.iter().map(|c| c.offer.kind())))
+        }
+        _ => SignInInput::Cancel,
+    }
+}
+
+async fn line(stream: &mut tokio::io::BufReader<tokio::net::TcpStream>) -> String {
+    use tokio::io::AsyncBufReadExt;
+    let mut text = String::new();
+    stream.read_line(&mut text).await.expect("a line");
+    text
+}
+
+async fn say(stream: &mut tokio::io::BufReader<tokio::net::TcpStream>, text: &str) {
+    use tokio::io::AsyncWriteExt;
+    stream.write_all(text.as_bytes()).await.expect("write");
+}
+
+/// What a client does with a signed account's endpoint: connect to the host and port it names,
+/// log in with the login name and the password the sign-in produced.
+async fn dial(url: &str) -> tokio::io::BufReader<tokio::net::TcpStream> {
+    let authority = url.split_once("://").expect("scheme").1;
+    let stream = tokio::net::TcpStream::connect(authority.trim_end_matches('/'))
+        .await
+        .expect("the fake");
+    tokio::io::BufReader::new(stream)
+}
+
+#[tokio::test]
+async fn a_fixed_file_signs_in_to_the_servers_it_names_and_the_password_logs_in() {
+    let accounts = Accounts::password("ada@fastmail.com", "app-pw");
+    let imap = FakeImap::bind(&Bind::Loopback, Tls::Plain, accounts.clone(), mailbox(1))
+        .await
+        .expect("imap");
+    let smtp = FakeSmtp::bind(&Bind::Loopback, Tls::Plain, accounts)
+        .await
+        .expect("smtp");
+    let file = smtp.rewrite(&imap.rewrite(&brand("fastmail")));
+    let (imap_handle, smtp_handle) = (imap.handle(), smtp.handle());
+    let (_imap, _smtp) = (
+        Running::spawn(imap, imap_handle.clone()),
+        Running::spawn(smtp, smtp_handle.clone()),
+    );
+
+    let provider = fixed_provider(file);
+    let mut signin = provider.sign_in(add()).expect("sign-in");
+    let steps = drive(&mut signin, fixed_person("ada@fastmail.com", "app-pw")).await;
+    let asked: Vec<FieldKind> = match &steps[0] {
+        SignInStep::AskFields(form) => form.iter().map(|f| f.kind).collect(),
+        other => panic!("a form first: {other:?}"),
+    };
+    assert_eq!(asked, [FieldKind::Address, FieldKind::Password]);
+    let signed = done(&steps);
+    assert_eq!(signed.label.0, "ada@fastmail.com");
+    let [(SecretPurpose::Password, Credential::Password(password))] = signed.credentials.as_slice()
+    else {
+        panic!("one password: {:?}", signed.credentials);
+    };
+    assert!(
+        signed
+            .endpoints
+            .iter()
+            .all(|e| e.login.0 == "ada@fastmail.com")
+    );
+
+    let of = |family| {
+        signed
+            .endpoints
+            .iter()
+            .find(|e| e.family == family)
+            .unwrap_or_else(|| panic!("{family:?}"))
+    };
+    let (imap_end, smtp_end) = (of(Family::Imap), of(Family::Smtp));
+    assert_eq!((imap_end.tls, smtp_end.tls), (Tls::Plain, Tls::Plain));
+
+    let mut stream = dial(imap_end.url.as_str()).await;
+    assert!(line(&mut stream).await.starts_with("* OK"));
+    say(
+        &mut stream,
+        &format!(
+            "a1 LOGIN \"{}\" \"{}\"\r\n",
+            imap_end.login.0,
+            password.expose()
+        ),
+    )
+    .await;
+    assert!(line(&mut stream).await.contains("a1 OK"));
+    let mut stream = dial(smtp_end.url.as_str()).await;
+    assert!(line(&mut stream).await.starts_with("220"));
+    say(&mut stream, "EHLO test\r\n").await;
+    while !line(&mut stream).await.starts_with("250 ") {}
+    let plain =
+        porter_fake_servers::mail::b64(&format!("\0{}\0{}", smtp_end.login.0, password.expose()));
+    say(&mut stream, &format!("AUTH PLAIN {plain}\r\n")).await;
+    assert!(line(&mut stream).await.starts_with("235"));
+
+    for (who, handle) in [("imap", &imap_handle), ("smtp", &smtp_handle)] {
+        let attempts = handle.attempts();
+        assert!(
+            matches!(attempts.as_slice(), [a] if a.accepted && a.user == "ada@fastmail.com"),
+            "{who}: {attempts:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn the_review_of_a_fixed_file_shows_the_files_endpoints_and_claims() {
+    let provider = fixed_provider(brand("icloud"));
+    let mut signin = provider.sign_in(add()).expect("sign-in");
+    let steps = drive(&mut signin, fixed_person("ada@icloud.com", "app-pw")).await;
+    let SignInStep::Review {
+        claims,
+        endpoints,
+        label,
+        ..
+    } = &steps[1]
+    else {
+        panic!("a review after the form: {steps:?}");
+    };
+    assert_eq!(label.0, "ada@icloud.com");
+    let shown: Vec<_> = endpoints
+        .iter()
+        .map(|e| (e.family, e.url.to_string(), e.tls, e.login.0.as_str()))
+        .collect();
+    assert_eq!(
+        shown,
+        vec![
+            (
+                Family::Imap,
+                "imaps://imap.mail.me.com:993".to_owned(),
+                Tls::Implicit,
+                "ada@icloud.com"
+            ),
+            (
+                Family::Smtp,
+                "smtp://smtp.mail.me.com:587".to_owned(),
+                Tls::StartTls,
+                "ada@icloud.com"
+            ),
+            (
+                Family::CalDav,
+                "https://caldav.icloud.com".to_owned(),
+                Tls::Implicit,
+                "ada@icloud.com"
+            ),
+            (
+                Family::CardDav,
+                "https://contacts.icloud.com".to_owned(),
+                Tls::Implicit,
+                "ada@icloud.com"
+            ),
+        ]
+    );
+    let kinds: Vec<_> = claims.iter().map(|c| c.offer.kind()).collect();
+    assert_eq!(
+        kinds,
+        [
+            CapabilityKind::Mail,
+            CapabilityKind::Calendar,
+            CapabilityKind::Contacts
+        ],
+        "the file's claims, the mail capability once"
+    );
+    assert!(claims.iter().all(|c| matches!(c.offer, Offer::Present(_))));
+}
+
+#[tokio::test]
+async fn a_fixed_file_refuses_a_bad_form_and_signs_in_again_without_a_review() {
+    let provider = fixed_provider(brand("gmx"));
+    for (address, password) in [("not-an-address", "pw"), ("ada@gmx.de", ""), ("", "pw")] {
+        let mut signin = provider.sign_in(add()).expect("sign-in");
+        let steps = drive(&mut signin, fixed_person(address, password)).await;
+        assert_eq!(
+            steps.last(),
+            Some(&SignInStep::Failed(SignInFault::Unreadable)),
+            "{address:?}"
+        );
+    }
+    let start = SignInStart {
+        mode: SignInMode::Reauthenticate {
+            account: AccountId::parse("gmx-ada").expect("id"),
+            endpoints: vec![],
+        },
+    };
+    let mut signin = provider.sign_in(start).expect("sign-in");
+    let steps = drive(&mut signin, fixed_person("ada@gmx.de", "new")).await;
+    assert_eq!(steps.len(), 2, "{steps:?}");
+    assert!(
+        matches!(&done(&steps).credentials[0].1, Credential::Password(p) if p.expose() == "new")
+    );
+}
+
+#[tokio::test]
+async fn a_fastmail_address_through_generic_imap_still_reports_the_fastmail_provider() {
+    use porter_discover::{Outcome, discover_mail};
+    let providers =
+        porter_provider::ProviderSet::layered(vec![brand("fastmail"), brand("gmx")], vec![]);
+    let http = SharedHttp::new(Fakes::loopback());
+    let dns = FakeDns::new();
+    for (address, id) in [("ada@fastmail.com", "fastmail"), ("ada@gmx.de", "gmx")] {
+        match discover_mail(&http, &dns, &providers, address).await {
+            Ok(Outcome::Provider(lead)) => assert_eq!(lead.provider.as_str(), id, "{address}"),
+            other => panic!("{address}: {other:?}"),
+        }
     }
 }

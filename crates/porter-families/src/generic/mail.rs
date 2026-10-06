@@ -4,7 +4,7 @@
 use crate::io::{Io, SharedDns};
 use crate::password::declared;
 use porter_core::sheet::SignInFault;
-use porter_core::{Claim, EndpointUrl, Family, LoginName, ServiceEndpoint, Tls};
+use porter_core::{Claim, EndpointUrl, Family, LoginName, ServiceEndpoint, Tls, UrlScheme};
 use porter_discover::{Outcome, discover_mail};
 use porter_provider::{DomainName, ProviderSet, ProviderSpec};
 
@@ -68,6 +68,63 @@ pub(super) fn typed(
     .collect::<Option<Vec<_>>>()
     .ok_or(SignInFault::Unreadable)?;
     Ok((endpoints, declared(spec)))
+}
+
+/// The TLS a file's endpoint URL means: `imaps`, `smtps` and `https` are implicit TLS; `imap`,
+/// `smtp` and `sieve` upgrade with STARTTLS, except on this computer, where they may stay plain
+/// (a fake server in a test). Anything else has no mail meaning.
+fn tls_of_scheme(url: &EndpointUrl) -> Option<Tls> {
+    let origin = url.origin();
+    match origin.scheme {
+        UrlScheme::Imaps | UrlScheme::Smtps | UrlScheme::Https | UrlScheme::Sieves => {
+            Some(Tls::Implicit)
+        }
+        UrlScheme::Imap | UrlScheme::Smtp | UrlScheme::Sieve | UrlScheme::Http
+            if origin.is_loopback() =>
+        {
+            Some(Tls::Plain)
+        }
+        UrlScheme::Imap | UrlScheme::Smtp | UrlScheme::Sieve => Some(Tls::StartTls),
+        UrlScheme::Http => None,
+    }
+}
+
+/// The servers a provider file with `discovery = "fixed"` names: one endpoint per capability row
+/// that has a URL, its family and TLS from the row and its scheme, logged in as the address. The
+/// claims are the file's, once each (an SMTP row repeats its IMAP row's mail capability).
+pub(super) fn fixed(
+    address: &str,
+    spec: &ProviderSpec,
+) -> Result<(Vec<ServiceEndpoint>, Vec<Claim>), SignInFault> {
+    let login = LoginName(address.to_owned());
+    let endpoints = spec
+        .capabilities
+        .iter()
+        .filter_map(|row| row.endpoint.as_ref().map(|url| (row.family, url)))
+        .map(|(family, url)| {
+            let url = EndpointUrl::parse(&url.0).map_err(|_| SignInFault::Unreadable)?;
+            let endpoint = ServiceEndpoint {
+                family,
+                tls: tls_of_scheme(&url).ok_or(SignInFault::Unreadable)?,
+                url,
+                login: login.clone(),
+            };
+            endpoint
+                .check()
+                .map(|()| endpoint)
+                .map_err(|_| SignInFault::Unreadable)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if endpoints.is_empty() {
+        return Err(SignInFault::Unreadable);
+    }
+    let mut claims: Vec<Claim> = Vec::new();
+    for claim in declared(spec) {
+        if !claims.contains(&claim) {
+            claims.push(claim);
+        }
+    }
+    Ok((endpoints, claims))
 }
 
 #[cfg(test)]

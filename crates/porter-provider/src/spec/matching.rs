@@ -75,6 +75,10 @@ pub struct Matching {
     pub domains: Vec<DomainName>,
     /// MX hosts under these names mark a domain as the provider's.
     pub mx_suffixes: Vec<DomainName>,
+    /// Address domains at or under these names (`onmicrosoft.com` claims
+    /// `contoso.onmicrosoft.com`), compared label by label.
+    #[serde(default)]
+    pub domain_suffixes: Vec<DomainName>,
 }
 
 /// How a provider came to claim an address.
@@ -91,7 +95,8 @@ impl Matching {
     /// Whether the provider claims an address at `domain` whose MX hosts are `mx_hosts`; a
     /// listed domain wins over an MX hint.
     pub fn claims(&self, domain: &DomainName, mx_hosts: &[DomainName]) -> Option<DomainMatch> {
-        if self.domains.contains(domain) {
+        if self.domains.contains(domain) || self.domain_suffixes.iter().any(|s| domain.is_within(s))
+        {
             return Some(DomainMatch::Domain);
         }
         mx_hosts
@@ -113,6 +118,7 @@ mod tests {
         Matching {
             domains: vec![name("outlook.com"), name("hotmail.com")],
             mx_suffixes: vec![name("mail.protection.outlook.com")],
+            domain_suffixes: vec![name("onmicrosoft.com")],
         }
     }
 
@@ -179,5 +185,13 @@ mod tests {
         );
         assert_eq!(claims("example.org", &["mx.example.org"]), None);
         assert_eq!(claims("sub.outlook.com", &[]), None, "domains are exact");
+        assert_eq!(
+            claims("contoso.onmicrosoft.com", &[]),
+            Some(DomainMatch::Domain),
+            "a suffix claims what is under it"
+        );
+        assert_eq!(claims("onmicrosoft.com", &[]), Some(DomainMatch::Domain));
+        assert_eq!(claims("notonmicrosoft.com", &[]), None);
+        assert_eq!(claims("onmicrosoft.com.evil.test", &[]), None);
     }
 }

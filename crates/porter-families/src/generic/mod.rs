@@ -1,6 +1,8 @@
 //! The Generic family: a mail server or a DAV server with a password (or an app password) and
-//! no provider of its own. Two provider files use it: `generic-imap`, found by autoconfig, SRV
-//! and MX from the address, and `generic-dav`, found by `.well-known` from the server's name.
+//! no provider of its own. `generic-imap` is found by autoconfig, SRV and MX from the address,
+//! `generic-dav` by `.well-known` from the server's name, and a brand file with fixed endpoints
+//! (`fastmail`, `icloud`, `yahoo`, `gmx`) asks for an address and a password and uses the servers
+//! the file names.
 //!
 //! Like Nextcloud's, a session mints no token (the relay presents the password), `discover`
 //! answers what the provider file declares, and `revoke` has nothing to do at a server that
@@ -94,6 +96,7 @@ impl Provider for GenericProvider {
         let flavor = match self.spec.discovery {
             Discovery::Autoconfig => sign_in::Flavor::Mail,
             Discovery::WellKnown => sign_in::Flavor::Dav,
+            Discovery::Fixed => sign_in::Flavor::Fixed,
             _ => return Err(ProviderError::Unreadable),
         };
         Ok(GenericSignIn::new(

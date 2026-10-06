@@ -22,6 +22,9 @@ pub(super) enum Flavor {
     Mail,
     /// CalDAV and CardDAV, found from a server.
     Dav,
+    /// A provider that names its own servers (Fastmail, iCloud, Yahoo, GMX): the file's
+    /// endpoints, asked for an address and a password only.
+    Fixed,
 }
 
 /// What was typed that a later step still needs.
@@ -77,7 +80,7 @@ impl GenericSignIn {
 
     fn form(flavor: Flavor) -> Vec<FieldSpec> {
         match flavor {
-            Flavor::Mail => vec![plain(FieldKind::Address), password()],
+            Flavor::Mail | Flavor::Fixed => vec![plain(FieldKind::Address), password()],
             Flavor::Dav => vec![
                 plain(FieldKind::Server),
                 plain(FieldKind::Username),
@@ -128,6 +131,23 @@ impl GenericSignIn {
         match self.flavor {
             Flavor::Mail => self.submitted_mail(answers).await,
             Flavor::Dav => self.submitted_dav(answers).await,
+            Flavor::Fixed => self.submitted_fixed(answers),
+        }
+    }
+
+    fn submitted_fixed(&mut self, answers: Vec<FieldAnswer>) -> SignInStep {
+        let (Some(address), Some(password)) = (
+            text_of(&answers, FieldKind::Address),
+            secret_of(&answers, FieldKind::Password),
+        ) else {
+            return self.failed(SignInFault::Unreadable);
+        };
+        if mail::domain_of(&address).is_none() {
+            return self.failed(SignInFault::Unreadable);
+        }
+        match mail::fixed(&address, &self.spec) {
+            Ok((endpoints, claims)) => self.found(password, address, endpoints, claims),
+            Err(fault) => self.failed(fault),
         }
     }
 

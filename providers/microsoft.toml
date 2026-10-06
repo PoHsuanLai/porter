@@ -15,6 +15,7 @@ kind = "fixed"
 
 [matching]
 domains = ["outlook.com", "hotmail.com", "live.com", "msn.com", "onmicrosoft.com"]
+domain_suffixes = ["onmicrosoft.com"]
 mx_suffixes = ["mail.protection.outlook.com", "outlook.com"]
 
 [[capability]]
