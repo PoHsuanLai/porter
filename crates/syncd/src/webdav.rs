@@ -69,6 +69,17 @@ pub struct RelayDial<T> {
     endpoint: EndpointUrl,
 }
 
+impl<T> RelayDial<T> {
+    /// Relays to `endpoint` under `grant`, opened through `accounts`.
+    pub fn new(accounts: Arc<Accounts<T>>, grant: GrantId, endpoint: EndpointUrl) -> Self {
+        Self {
+            accounts,
+            grant,
+            endpoint,
+        }
+    }
+}
+
 impl<T: Transport> Dial for RelayDial<T> {
     type Stream = RelayStream;
 

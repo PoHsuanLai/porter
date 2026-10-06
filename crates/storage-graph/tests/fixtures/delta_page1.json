@@ -1,0 +1,35 @@
+{
+  "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#Collection(driveItem)",
+  "@odata.nextLink": "https://graph.microsoft.com/v1.0/me/drive/special/approot/delta?$skiptoken=MTIzNDU2",
+  "value": [
+    {
+      "id": "01IMG0000000000000000000000001",
+      "name": "IMG_0001.HEIC",
+      "size": 2048,
+      "eTag": "\"{01IMG1},3\"",
+      "cTag": "\"c:{01IMG1},2\"",
+      "lastModifiedDateTime": "2026-09-30T08:01:02Z",
+      "parentReference": { "driveId": "b!x", "id": "01YEAR0000000000000000000000026" },
+      "file": {
+        "mimeType": "image/heic",
+        "hashes": { "quickXorHash": "AAECAwQFBgcICQoLDA0ODxAREhM=" }
+      }
+    },
+    {
+      "id": "01YEAR0000000000000000000000026",
+      "name": "2026",
+      "size": 2048,
+      "eTag": "\"{01YEAR},1\"",
+      "parentReference": { "driveId": "b!x", "id": "01APPROOT0000000000000000000000" },
+      "folder": { "childCount": 1 }
+    },
+    {
+      "id": "01NOTE000000000000000000000001",
+      "name": "Notes",
+      "eTag": "\"{01NOTE},1\"",
+      "parentReference": { "driveId": "b!x", "id": "01APPROOT0000000000000000000000" },
+      "package": { "type": "oneNote" },
+      "folder": { "childCount": 0 }
+    }
+  ]
+}

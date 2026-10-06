@@ -2922,6 +2922,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
+name = "storage-graph"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "porter-core",
+ "porter-fake",
+ "porter-fake-servers",
+ "porter-http",
+ "porter-sync",
+ "serde",
+ "serde_json",
+ "storage-webdav",
+ "tokio",
+]
+
+[[package]]
 name = "storage-webdav"
 version = "0.1.0"
 dependencies = [
@@ -2992,6 +3008,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "storage-graph",
  "storage-webdav",
  "syncd",
  "thiserror",

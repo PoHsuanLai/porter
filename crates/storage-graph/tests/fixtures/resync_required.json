@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "resyncRequired",
+    "message": "Resync required. Replace any local items with the server's content.",
+    "innerError": { "request-id": "00000000-0000-0000-0000-000000000000", "date": "2026-09-30T08:05:00" }
+  }
+}

@@ -31,6 +31,7 @@ RULES=(
   "porter-dav: $EFFECTS"
   "porter-families: $EFFECTS"
   "storage-webdav: $EFFECTS"
+  "storage-graph: $EFFECTS"
   "porter-dbus: reqwest hyper ureq oo7 keyring secret-service ds-settings"
 )
 fail=0
@@ -99,7 +100,8 @@ EDGES=(
   "porter-families: porter-core porter-dav porter-discover porter-http porter-oauth porter-provider"
   "accountd: ds-settings porter-core porter-dbus porter-discover porter-families porter-http porter-provider porter-proxy porter-secrets porter-service"
   "storage-webdav: porter-core porter-dav porter-http porter-sync"
-  "syncd: porter-client porter-core porter-dav porter-dbus porter-http porter-sync storage-webdav"
+  "storage-graph: porter-core porter-http porter-sync storage-webdav"
+  "syncd: porter-client porter-core porter-dav porter-dbus porter-http porter-sync storage-graph storage-webdav"
   "inferd: ds-settings porter-core porter-dbus porter-discover porter-http porter-infer porter-provider cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-provider vision-prep"
 )
 for edge in "${EDGES[@]}"; do

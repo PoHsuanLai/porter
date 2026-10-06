@@ -54,12 +54,21 @@ Each row names the lane of the accounts program (porter PLAN §6) that removes i
 | porter-infer `pick` / `admit`: the P1 request-shape rules (tools, images, structured output against what a model declares) and the `context_needed` pre-check are not applied | the routing P1 lane (research-routing-fit) |
 | porter-infer `pick`: no reviewer family filter (a reviewer pick from another family than the author's) | the routing P1 lane |
 | porter-infer `Why::FallbackFrom` is defined but unused: `if_unavailable = "auto"` does not fall back yet | the routing P1 lane |
-| syncd: the PIM mirror runs by default, Photos only behind a switch; no Files or graph/storage dataset | `Datasets` lists what the PIM supervisor (W6e) and `datasets::photos::start` (W6f, `PhotosSwitch`, off) run and answers the refusal `NoFittingAccount` for any other name; `syncd::webdav::webdav_replica` builds the WebDAV replica (W6b, done), W6c (graph) and W6d (storage families) add theirs |
+| syncd: the PIM mirror runs by default, Photos only behind a switch; no Files or graph/storage dataset | `Datasets` lists what the PIM supervisor (W6e) and `datasets::photos::start` (W6f, `PhotosSwitch`, off) run and answers the refusal `NoFittingAccount` for any other name; `syncd::webdav::webdav_replica` builds the WebDAV replica (W6b, done), `syncd::graph::graph_replica` the Graph one (W6c, done: built and proven on a bus, not yet run by the daemon for a real account), W6d (storage families) adds its own |
 | storage-webdav: the tree walk lists every folder on every poll (PROPFIND depth 1 each, no pruning by folder etag) | Nextcloud propagates a change to every parent etag, so a walk could skip unchanged folders; a generic DAV share does not, and the replica cannot tell which it has. Closes with a `Propagation` probe (compare a folder's etag across a write of ours) or a setting, when a photo library makes a poll slow |
 | storage-webdav: a tree-walk anchor and the listing a sync-collection removal needs are in memory | after a daemon restart a tree anchor is `AnchorExpired`, and a sync anchor with a removal in it is too; the engine lists again and reconciles by version, so nothing known is fetched or uploaded again. Closes if listing cost shows: persist the listing in the journal (a `Replica` cannot reach it; an interface ask) |
 | storage-webdav: `hashes: None` and whole-body transfers | WebDAV servers report SHA-1 or MD5 (Nextcloud `oc:checksums`) and the engine compares SHA-256 only, so an item whose etag changed is compared by fetching it; `Http` bodies are whole vectors (`StreamLimits::max_body`, 256 MiB), so a larger file needs ranged fetches by the engine or chunked upload (`chunked_upload` is `Absent`). Closes with Nextcloud's `uploads` chunking and checksums on upload, with W6f's photo sizes |
 | storage-webdav: the fixtures are written from Nextcloud's and Sabre's documented answers, not recorded from a live server; the fake serves sync-collection on files although real Nextcloud does not | the owner's live Nextcloud smoke; `Behaviour::NotImplemented` + `Propagation::Up` is the Nextcloud-files shape |
 | storage-webdav: a tombstone's version is the constant `deleted`, and a PUT whose answer has no `ETag` and no readable PROPFIND returns the empty version | a server that keeps a version for deletions, or one that sends no `ETag`; the next read settles the empty version by content |
+| storage-graph: accountd's relay does not carry the `graph` family (`Family::Graph.relay_protocol()` is `None`), so the replica cannot run for a real Microsoft account yet | interface ask 1 of W6c (the porter-core diff); the bus test labels its Graph-shaped endpoint `webdav` to run the real relay |
+| storage-graph: the upload session URL and a download's redirect are on another host than `graph.microsoft.com` (a pre-authenticated `uploadUrl` on `*.up.1drv.com`; `GET .../content` answers `302` to a `downloadUrl` on a CDN host), and accountd's relay reaches the endpoint's origin only and adds the bearer to every request | the replica sends both through the same `Http`, which in syncd is a relay to `graph.microsoft.com`: a live account's large uploads and downloads fail until accountd opens a second authenticated (or anonymous) stream for a named origin, or the replica is handed a second `Http` for pre-authenticated URLs (interface ask 2 of W6c). The fake serves them on its own origin, so tests cannot show it |
+| storage-graph: delta on a folder other than the drive root is documented for OneDrive personal only (Business and SharePoint answer delta for the root only), and a delta item often has no `parentReference.path` | the replica asks delta of the dataset's folder (the app folder or one below it) and builds paths from ids (folders seen in the feed, else `GET items/{id}` up to the dataset folder); a Business account's folder delta is not shown to work. Closes with a live smoke, then a root delta filtered to the folder if it fails |
+| storage-graph: the folders and files seen are in memory | a deleted folder is reported alone by Graph, so the replica gives tombstones to the files it saw in it; after a restart it has seen none, so a deleted folder's files are tombstoned only by the engine's next full listing (an expired anchor), which reconciles by content. A renamed or moved folder is one change, so its files keep their old `ItemPath` until they change themselves or the engine lists again |
+| storage-graph: `hashes` is `QuickXor`, which the engine does not compute, and `scope` is `AppFolder` | an item whose eTag differs is compared by fetching it; the provider file (`providers/microsoft.toml`) declares `scope = "full"` and porter-families' scopes ask `Files.ReadWrite.All` because the account's Storage grant is the whole drive, while the replica touches `special/approot` only (`Files.ReadWrite.AppFolder` would do). Closes with a QuickXorHash in syncd's `replica_hash`, and a scope decision for what Storage over Graph is granted as (interface ask 3) |
+| storage-graph: the fixtures are written from Microsoft's documented Graph answers, not recorded from a live account; the fake keeps OneDrive's eTag shape (`"{ID},n"`), parent-folder changes in delta, a deleted folder reported alone, `409 nameAlreadyExists`, `412`, `410 resyncRequired`, `507`, `Prefer: odata.maxpagesize`, 320 KiB chunks | the owner's live OneDrive smoke; the fake's quota carries no `total` until a limit is set (a real drive always has one), and a delta listing omits the app folder until something changes in it |
+| storage-graph: a write is one request per file (simple upload up to 4 000 000 bytes) or one session (chunks of 10 MiB), whole in memory; a session that fails mid-way is abandoned and the file sent again from the start | `Http` bodies are whole vectors; `Replica::put` takes the whole content. Closes with W6f's photo sizes, as storage-webdav's row |
+| porter-fake-servers: `FakeGraph::protocol()` answers `FakeProtocol::Dav` | `FakeProtocol` (porter-fake) has no `Graph` variant (interface ask 4); nothing reads it for this fake |
+| syncd: a dataset's `store` is not atomic with the engine's pre-store check | the engine re-reads the local file against the journal's fingerprint just before it overwrites (`moved_since_scan`), but a user edit in the instant between that read and `Dataset::store` is the dataset's to guard (write to a temp file and rename); `PimMirror` (W6e) does, W6f implements `store` that way |
 | syncd: a dataset's `store` is not atomic with the engine's pre-store check | the engine re-reads the local file against the journal's fingerprint just before it overwrites (`moved_since_scan`), but a user edit in the instant between that read and `Dataset::store` is the dataset's to guard (write to a temp file and rename); `PimMirror` (W6e) does, `PhotoOriginals` and `PhotoMetadata` (W6f) do the same |
 | syncd PIM: no flow gives syncd a Calendar or Contacts grant | the supervisor mirrors an account only when syncd already holds a grant for it (`PimGrants`, `ClientGrants` over `Accounts::find`; a consent sheet needs a parent window and a host to draw it, which a daemon lacks). Tests seed the grants; today the person would have to make them in Settings. Closes with W3e (the sheet host) plus a Settings action "Sync calendars and contacts to this computer" (or a first-run `Choose` from syncd): W3e / the detent accounts pane |
 | syncd PIM: collections are found again every ten minutes, items every poll (sync-collection, else an etag walk) | a new, renamed or recoloured calendar appears within `PimConfig::rescan`; no CTag shortcut and no push; tasks calendars (VTODO) are mirrored like any calendar. Closes if the delay shows |
@@ -869,6 +878,66 @@ daemon. No `todo!()` was left behind (none in syncd before or after).
   and `color` files; the calendar's name in the widget is its directory name.
 
 - AI1a (local runtimes as accounts): inferd's `[probe]` table (`ollama`, `llama_cpp`, `lm_studio` port lists, `every_s`, `longest_s`; a runtime with no ports is not asked) is the one place a daemon looks at a loopback port. `tests/proc_root.rs` writes it empty so the spawned daemon never asks a port of this machine. A probed account's id is its provider's id (`ollama`, `llama-cpp`, `lm-studio`; `providers/llama-cpp.toml` and `providers/lm-studio.toml` were added for the last two, additive in `SHIPPED_FILES` and the count in `shipped_files.rs`). `porter-service` gains `AccountService::report_local` (new file `local.rs`, `LocalFault`, `MAX_LOCAL_CLAIMS`), the only owned-path exception; `porter-fake-servers` gains `Bind::Port`, `FakeModels::bind_on`, `say` and `chats`, and a chat-completions answer on both wires.
+
+## Lane w6c-graph (storage-graph, the Microsoft Graph replica)
+
+Lane `w6c-graph`, branch `w6c-graph` from 11651d4.
+
+- **`storage-graph`** (new crate; depends on porter-core, porter-http, porter-sync and storage-webdav,
+  none changed): `GraphReplica<H: Http>` is porter-sync's `Replica` over a folder of OneDrive's app
+  folder (`/me/drive/special/approot`). `changes` is a delta query (`Prefer: odata.maxpagesize`), the
+  next or delta link as the anchor, a `410` (`resyncRequired`) or a link from another origin
+  `AnchorExpired`; `fetch` is `GET items/{id}/content` with `Range`, following the one redirect
+  Graph answers with; `put` is one PUT up to `SIMPLE_MAX` (4 000 000 bytes, Graph's simple-upload
+  limit) and an upload session past it, chunks of a multiple of 320 KiB (`Uploads`, default 10 MiB);
+  a new item carries `@microsoft.graph.conflictBehavior=fail` (`409`), a changed item or a removal
+  `If-Match` with its eTag (`412`), and the refusal is read back into a `Conflict` (`Changed`,
+  `Deleted`, `Exists`); `quota` is `GET /me/drive` `quota` (a `total` of 0 is no limit);
+  `features()` is read-write, poll, quota reported, `AppFolder`, `QuickXor`, ranges, chunked upload.
+- It reuses storage-webdav's `StreamHttp`, `Dial`, `Clock` and `DELETED` (re-exported) and copies
+  nothing of it; its error classes, URLs and wire reading are its own. The bearer is added by
+  accountd's relay; a test asserts the replica sends no `Authorization` itself.
+- **syncd**: `syncd::graph::graph_replica` (the relays of `syncd::webdav::RelayDial`, which gained a
+  `RelayDial::new`); no daemon wiring beyond it (FINDINGS row above).
+- **porter-fake-servers**: `graph` (`FakeGraph`, `GraphHandle`, `Knobs`): a drive of items with
+  OneDrive's eTags, delta with tokens and skip tokens, children, content with ranges and
+  redirects, simple and session uploads with 320 KiB chunks, quota, throttling, and a bearer
+  check; additive.
+- Tests: the contract suite of storage-webdav (the same nine cases) over `MemoryReplica` and over
+  `GraphReplica` in three setups (simple upload, every file in a session, redirected downloads);
+  documented-shape fixtures through a scripted `Http`; the replica against the fake (dataset folder
+  made and filtered, deleted folder, upload threshold and chunks, conditions on sessions, a remote
+  edit or delete between listing and write is a `Conflict`, anchor expiry with zero writes,
+  redirect and range, throttling, no credential from the replica); and
+  `syncd/tests/graph_bus.rs`: syncd, the real accountd (a fake provider minting the bearer) and
+  the fake drive on a private bus, with `Sync1.Status` showing the quota, a large file in a session,
+  and an expired delta token uploading nothing.
+
+### Interface asks from W6c
+
+1. accountd's relay does not carry a `Family::Graph` endpoint at all: `Family::relay_protocol()`
+   is `None` for it and `Family::serves(Storage)` is false, so `OpenAuthenticated` on a Microsoft
+   account's `graph` endpoint is `EndpointNotGranted` (found by the bus test, which runs the real
+   accountd and had to label its Graph-shaped endpoint `webdav`). porter-core diff:
+   `Family::Graph` moves from the `None` arm of `relay_protocol` to
+   `Some(EndpointProtocol::Http)`, and `serves` gains
+   `(Family::Graph, CapabilityKind::Storage | CapabilityKind::Photos)`; then accountd's `covers`
+   (audience `graph`, the provider file's row) and `token_for` (`GRAPH_DEFAULT`, a bearer) are
+   already what the relay needs. porter-core is frozen and consumer-used (consumer checks).
+   Without it, no Graph replica can run for a real account.
+2. accountd's relay (or `OpenAuthenticated`) must reach the hosts Graph hands out links to: the
+   `uploadUrl` of a session and the `downloadUrl` a content request redirects to. Both are
+   pre-authenticated (sending the bearer to them is refused by OneDrive), so a second kind of
+   stream is needed: `OpenAuthenticated(grant, endpoint)` for a named other origin the first
+   answer announced, with no credential added, or a plain `Dial` syncd may use for an origin accountd
+   vouches for. Until then a live account's files past a few MB cannot move (FINDINGS row).
+3. What Storage over Graph is granted as (`porter-families` microsoft `scopes.rs`): the replica
+   needs `Files.ReadWrite.AppFolder` only; the declared scope is `Files.ReadWrite.All` and the
+   provider row `scope = "full"`. Decide whether Storage over Graph asks the narrower scope (an
+   `AppFolder` row in `providers/microsoft.toml`, the `Storage` kind's scope mapped in `scopes_for`).
+4. `porter-fake`: `FakeProtocol` gains `Graph`:
+   `/// A Microsoft Graph drive.` `Graph,` (porter-fake is consumer-used; additive to a
+   non-exhaustive match only if the consumers match it with a wildcard).
 
 ## Standing facts
 

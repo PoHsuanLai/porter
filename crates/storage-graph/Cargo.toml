@@ -1,0 +1,27 @@
+[package]
+name = "storage-graph"
+description = "The Microsoft Graph replica: porter-sync's Replica over OneDrive's app folder (`/me/drive/special/approot`). Changes by delta query with the delta link as the anchor (a resync is AnchorExpired), writes guarded by If-Match and conflictBehavior=fail, small files by simple upload and large ones by upload session, quota from the drive. Its HTTP goes through the Http it is handed (in syncd, storage-webdav's StreamHttp over accountd's OpenAuthenticated, which adds the bearer). Pure: no runtime, no socket."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+base64 = { workspace = true }
+porter-core = { workspace = true }
+porter-http = { workspace = true }
+porter-sync = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+storage-webdav = { workspace = true }
+
+[dev-dependencies]
+porter-fake = { workspace = true }
+porter-fake-servers = { workspace = true }
+porter-sync = { workspace = true, features = ["testing"] }
+tokio = { workspace = true }
+
+[lints]
+workspace = true

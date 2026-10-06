@@ -1,0 +1,34 @@
+{
+  "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#Collection(driveItem)",
+  "@odata.deltaLink": "https://graph.microsoft.com/v1.0/me/drive/special/approot/delta?token=MjAyNi0wOS0zMFQwODowMjowMFo",
+  "value": [
+    {
+      "id": "01APPROOT0000000000000000000000",
+      "name": "Quire",
+      "eTag": "\"{01APPROOT},4\"",
+      "parentReference": { "driveId": "b!x", "id": "01APPS000000000000000000000000" },
+      "folder": { "childCount": 2 }
+    },
+    {
+      "id": "01OLD0000000000000000000000001",
+      "name": "old.jpg",
+      "parentReference": { "driveId": "b!x", "id": "01APPROOT0000000000000000000000" },
+      "deleted": { "state": "deleted" }
+    },
+    {
+      "id": "01TOP0000000000000000000000001",
+      "name": "cover.jpg",
+      "size": 12,
+      "eTag": "\"{01TOP},1\"",
+      "parentReference": { "driveId": "b!x", "id": "01APPROOT0000000000000000000000" },
+      "file": { "mimeType": "image/jpeg" }
+    },
+    {
+      "id": "01LINK00000000000000000000001",
+      "name": "shared.docx",
+      "parentReference": { "driveId": "b!x", "id": "01APPROOT0000000000000000000000" },
+      "file": { "mimeType": "application/octet-stream" },
+      "remoteItem": { "id": "01OTHER", "parentReference": { "driveId": "b!other" } }
+    }
+  ]
+}

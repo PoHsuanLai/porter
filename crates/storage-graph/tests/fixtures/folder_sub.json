@@ -1,0 +1,7 @@
+{
+  "id": "01SUB00000000000000000000000001",
+  "name": "sub",
+  "eTag": "\"{01SUB},1\"",
+  "parentReference": { "driveId": "b!x", "id": "01YEAR0000000000000000000000026" },
+  "folder": { "childCount": 1 }
+}

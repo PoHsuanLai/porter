@@ -1,0 +1,10 @@
+{
+  "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#drives('b!x')/special('approot')/$entity",
+  "id": "01APPROOT0000000000000000000000",
+  "name": "Quire",
+  "size": 0,
+  "eTag": "\"{01APPROOT},1\"",
+  "folder": { "childCount": 2 },
+  "specialFolder": { "name": "approot" },
+  "parentReference": { "driveId": "b!x", "id": "01APPS000000000000000000000000", "path": "/drive/root:/Apps" }
+}

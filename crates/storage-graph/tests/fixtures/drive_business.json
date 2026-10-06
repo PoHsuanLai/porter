@@ -1,0 +1,6 @@
+{
+  "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#drives/$entity",
+  "id": "b!x",
+  "driveType": "business",
+  "quota": { "deleted": 1024, "remaining": 1099511627776, "state": "normal", "total": 1099511628800, "used": 1024 }
+}

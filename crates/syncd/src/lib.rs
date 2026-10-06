@@ -9,6 +9,7 @@ pub mod dataset;
 pub mod datasets;
 pub mod driver;
 pub mod engine;
+pub mod graph;
 pub mod journal;
 pub mod paths;
 pub mod removal;
