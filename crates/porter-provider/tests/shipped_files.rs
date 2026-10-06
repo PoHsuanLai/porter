@@ -266,3 +266,28 @@ fn the_brand_files_declare_their_servers_and_how_their_accounts_sign_in() {
     );
     assert!(jmap.capabilities.iter().all(|row| row.endpoint.is_none()));
 }
+
+#[test]
+fn the_compiled_in_files_are_the_whole_providers_directory_byte_for_byte() {
+    let on_disk = shipped();
+    assert_eq!(porter_provider::SHIPPED_FILES.len(), on_disk.len());
+    // By id, not by position: `google-ai.toml` sorts before `google.toml` as a path.
+    for (path, _) in &on_disk {
+        let stem = path.file_stem().and_then(|s| s.to_str()).expect("stem");
+        let (_, text) = porter_provider::SHIPPED_FILES
+            .iter()
+            .find(|(id, _)| *id == stem)
+            .unwrap_or_else(|| panic!("{stem} is not compiled in"));
+        assert_eq!(
+            *text,
+            std::fs::read_to_string(path).expect("readable"),
+            "{stem}"
+        );
+    }
+    let set = porter_provider::shipped();
+    assert_eq!(set.specs().len(), on_disk.len());
+    for (id, _) in porter_provider::SHIPPED_FILES {
+        let id = porter_core::ProviderId::parse(id).expect("id");
+        assert!(set.get(&id).is_some(), "{id}");
+    }
+}
