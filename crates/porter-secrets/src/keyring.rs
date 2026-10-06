@@ -20,7 +20,7 @@ mod thread;
 
 use crate::attributes::{SERVICE, attributes};
 use crate::error::SecretsError;
-use crate::secrets::Secrets;
+use crate::secrets::{PutOutcome, Secrets};
 use chunks::{Limit, Slots};
 use keyring_core::{CredentialStore, Error};
 use porter_core::{AccountId, Credential, SecretKey};
@@ -179,6 +179,24 @@ impl StoreSecrets {
         Ok(())
     }
 
+    /// Read, then write, in one thread job. A keyring-core store has no create-if-missing, so
+    /// another process (or another `StoreSecrets` on the same store) can file the key between
+    /// the two; within one process the mutex below serialises the callers of this method.
+    fn put_if_absent_now(
+        &self,
+        key: &SecretKey,
+        value: &Credential,
+    ) -> Result<PutOutcome, SecretsError> {
+        static GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _held = GUARD
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        match chunks::get(self, &entry_name(key))? {
+            Some(_) => Ok(PutOutcome::AlreadyThere),
+            None => self.put_now(key, value).map(|()| PutOutcome::Stored),
+        }
+    }
+
     fn get_now(&self, key: &SecretKey) -> Result<Credential, SecretsError> {
         let stored = chunks::get(self, &entry_name(key))?.ok_or(SecretsError::Missing)?;
         serde_json::from_str(&stored).map_err(|_| SecretsError::Unreadable)
@@ -209,6 +227,15 @@ impl Secrets for StoreSecrets {
         off_thread(move || this.put_now(&key, &value)).await?
     }
 
+    async fn put_if_absent(
+        &self,
+        key: &SecretKey,
+        value: &Credential,
+    ) -> Result<PutOutcome, SecretsError> {
+        let (this, key, value) = (self.clone(), key.clone(), value.clone());
+        off_thread(move || this.put_if_absent_now(&key, &value)).await?
+    }
+
     async fn get(&self, key: &SecretKey) -> Result<Credential, SecretsError> {
         let (this, key) = (self.clone(), key.clone());
         off_thread(move || this.get_now(&key)).await?
@@ -232,6 +259,14 @@ impl Secrets for KeyringSecrets {
 
     async fn get(&self, key: &SecretKey) -> Result<Credential, SecretsError> {
         resolve()?.get(key).await
+    }
+
+    async fn put_if_absent(
+        &self,
+        key: &SecretKey,
+        value: &Credential,
+    ) -> Result<PutOutcome, SecretsError> {
+        resolve()?.put_if_absent(key, value).await
     }
 
     async fn delete(&self, key: &SecretKey) -> Result<(), SecretsError> {

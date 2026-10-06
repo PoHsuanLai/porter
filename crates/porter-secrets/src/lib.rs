@@ -20,4 +20,4 @@ pub use keyring::{KeyringSecrets, StoreSecrets};
 pub use memory::MemorySecrets;
 #[cfg(feature = "oo7")]
 pub use oo7::{Oo7KeyringSecrets, Oo7Secrets};
-pub use secrets::Secrets;
+pub use secrets::{PutOutcome, Secrets};

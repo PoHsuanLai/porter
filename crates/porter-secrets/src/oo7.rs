@@ -4,7 +4,7 @@
 
 use crate::attributes::{SERVICE, attributes};
 use crate::error::SecretsError;
-use crate::secrets::Secrets;
+use crate::secrets::{PutOutcome, Secrets};
 use porter_core::{AccountId, Credential, SecretKey};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -80,6 +80,48 @@ impl Secrets for Oo7KeyringSecrets {
             .map_err(refused)
     }
 
+    async fn put_if_absent(
+        &self,
+        key: &SecretKey,
+        value: &Credential,
+    ) -> Result<PutOutcome, SecretsError> {
+        let encoded = serde_json::to_vec(value).map_err(|_| SecretsError::Unreadable)?;
+        let label = format!("porter {}", key.account);
+        let at = search(key);
+        match &*self.keyring {
+            // The file backend: the keyring's own write lock is held across the look and the
+            // create, which excludes every other user of this open keyring. The inner calls
+            // take only the inner keyring's lock, never this one.
+            oo7::Keyring::File(shared) => {
+                let guard = shared.write().await;
+                let Some(oo7::file::Keyring::Unlocked(file)) = guard.as_ref() else {
+                    return Err(SecretsError::Locked);
+                };
+                match file.lookup_item(&at).await.map_err(|e| refused(e.into()))? {
+                    Some(_) => Ok(PutOutcome::AlreadyThere),
+                    None => file
+                        .create_item(&label, &at, oo7::Secret::blob(encoded), false)
+                        .await
+                        .map(|_| PutOutcome::Stored)
+                        .map_err(|e| refused(e.into())),
+                }
+            }
+            // The Secret Service has no create-if-missing: read, then create, with a window.
+            oo7::Keyring::DBus(_) => {
+                let found = self.keyring.search_items(&at).await.map_err(refused)?;
+                match found.is_empty() {
+                    false => Ok(PutOutcome::AlreadyThere),
+                    true => self
+                        .keyring
+                        .create_item(&label, &at, oo7::Secret::blob(encoded), false)
+                        .await
+                        .map(|()| PutOutcome::Stored)
+                        .map_err(refused),
+                }
+            }
+        }
+    }
+
     async fn get(&self, key: &SecretKey) -> Result<Credential, SecretsError> {
         let items = self
             .keyring
@@ -111,6 +153,14 @@ impl Secrets for Oo7Secrets {
 
     async fn get(&self, key: &SecretKey) -> Result<Credential, SecretsError> {
         ambient().await?.get(key).await
+    }
+
+    async fn put_if_absent(
+        &self,
+        key: &SecretKey,
+        value: &Credential,
+    ) -> Result<PutOutcome, SecretsError> {
+        ambient().await?.put_if_absent(key, value).await
     }
 
     async fn delete(&self, key: &SecretKey) -> Result<(), SecretsError> {

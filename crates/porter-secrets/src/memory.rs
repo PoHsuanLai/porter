@@ -1,9 +1,10 @@
 //! An in-memory store: never the user's keyring, never on disk. Tests and porter-fake.
 
 use crate::error::SecretsError;
-use crate::secrets::Secrets;
+use crate::secrets::{PutOutcome, Secrets};
 use porter_core::{AccountId, Credential, SecretKey};
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::sync::{Mutex, MutexGuard};
 
 /// Credentials in a map.
@@ -25,6 +26,21 @@ impl Secrets for MemorySecrets {
     async fn put(&self, key: &SecretKey, value: &Credential) -> Result<(), SecretsError> {
         self.entries().insert(key.clone(), value.clone());
         Ok(())
+    }
+
+    async fn put_if_absent(
+        &self,
+        key: &SecretKey,
+        value: &Credential,
+    ) -> Result<PutOutcome, SecretsError> {
+        // One lock for the check and the insert: atomic.
+        match self.entries().entry(key.clone()) {
+            Entry::Occupied(_) => Ok(PutOutcome::AlreadyThere),
+            Entry::Vacant(slot) => {
+                slot.insert(value.clone());
+                Ok(PutOutcome::Stored)
+            }
+        }
     }
 
     async fn get(&self, key: &SecretKey) -> Result<Credential, SecretsError> {

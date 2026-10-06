@@ -3,7 +3,7 @@
 //! keyring: the Secret Service is never opened.
 
 use porter_core::{AccountId, CapabilityKind, Credential, SecretKey, SecretPurpose, SecretText};
-use porter_secrets::{MemorySecrets, Secrets, SecretsError, StoreSecrets};
+use porter_secrets::{MemorySecrets, PutOutcome, Secrets, SecretsError, StoreSecrets};
 use std::sync::Arc;
 
 fn key(account: &str, purpose: SecretPurpose) -> SecretKey {
@@ -49,6 +49,51 @@ async fn contract<F: Fixture>(fixture: F) {
     if let Some(filed) = fixture.filed("cloud", r#"{"kind":"password"}"#).await {
         assert!(filed, "filed under porter/cloud/password");
     }
+
+    // put_if_absent files a missing key once and never replaces what is there.
+    let fresh = key("fresh", SecretPurpose::Password);
+    assert_eq!(
+        store.put_if_absent(&fresh, &password("first")).await,
+        Ok(PutOutcome::Stored)
+    );
+    assert_eq!(
+        store.put_if_absent(&fresh, &password("second")).await,
+        Ok(PutOutcome::AlreadyThere)
+    );
+    assert_eq!(store.get(&fresh).await, Ok(password("first")));
+    // Present under another purpose or account is not present under this one.
+    let sibling = key("fresh", SecretPurpose::ApiKey);
+    assert_eq!(
+        store
+            .put_if_absent(&sibling, &Credential::ApiKey(SecretText::new("k2")))
+            .await,
+        Ok(PutOutcome::Stored)
+    );
+    // After a delete it is absent again.
+    store.delete(&fresh).await.expect("delete");
+    assert_eq!(
+        store.put_if_absent(&fresh, &password("third")).await,
+        Ok(PutOutcome::Stored)
+    );
+    assert_eq!(store.get(&fresh).await, Ok(password("third")));
+    // Two racing callers: exactly one stores.
+    let raced = key("raced", SecretPurpose::Password);
+    let (one, two) = (password("a"), password("b"));
+    let (a, b) = tokio::join!(
+        store.put_if_absent(&raced, &one),
+        store.put_if_absent(&raced, &two)
+    );
+    let outcomes = [a.expect("a"), b.expect("b")];
+    assert_eq!(
+        outcomes
+            .iter()
+            .filter(|o| **o == PutOutcome::Stored)
+            .count(),
+        1,
+        "{outcomes:?}"
+    );
+    store.delete_account(&fresh.account).await.expect("wipe");
+    store.delete_account(&raced.account).await.expect("wipe");
 
     // Every credential shape survives.
     let shapes = [
@@ -191,6 +236,21 @@ async fn the_platform_store_is_the_default_store_once_one_is_set() {
         .await
         .expect("put");
     assert_eq!(KeyringSecrets.get(&filed).await, Ok(password("p")));
+    // put_if_absent is forwarded to the store's own, not left to the default body.
+    assert_eq!(
+        KeyringSecrets.put_if_absent(&filed, &password("q")).await,
+        Ok(PutOutcome::AlreadyThere)
+    );
+    let fresh = key("forwarded", SecretPurpose::Password);
+    assert_eq!(
+        KeyringSecrets.put_if_absent(&fresh, &password("a")).await,
+        Ok(PutOutcome::Stored)
+    );
+    KeyringSecrets
+        .delete_account(&fresh.account)
+        .await
+        .expect("wipe");
+    assert_eq!(KeyringSecrets.get(&filed).await, Ok(password("p")));
     KeyringSecrets
         .delete_account(&filed.account)
         .await
@@ -267,4 +327,48 @@ async fn a_large_secret_is_filed_in_numbered_parts_and_leaves_none_behind() {
     store.put(&big, &password("s")).await.expect("shrink");
     assert!(part(1).is_err_and(|e| matches!(e, keyring_core::Error::NoEntry)));
     assert_eq!(store.get(&big).await, Ok(password("s")));
+}
+
+/// A store that knows only `get` and `put`, as one written before `put_if_absent` existed.
+struct Plain(MemorySecrets, std::sync::atomic::AtomicBool);
+
+impl Secrets for Plain {
+    async fn put(&self, key: &SecretKey, value: &Credential) -> Result<(), SecretsError> {
+        self.0.put(key, value).await
+    }
+    async fn get(&self, key: &SecretKey) -> Result<Credential, SecretsError> {
+        match self.1.load(std::sync::atomic::Ordering::SeqCst) {
+            true => Err(SecretsError::Locked),
+            false => self.0.get(key).await,
+        }
+    }
+    async fn delete(&self, key: &SecretKey) -> Result<(), SecretsError> {
+        self.0.delete(key).await
+    }
+    async fn delete_account(&self, account: &AccountId) -> Result<(), SecretsError> {
+        self.0.delete_account(account).await
+    }
+}
+
+#[tokio::test]
+async fn the_default_put_if_absent_reads_then_writes_and_a_locked_read_writes_nothing() {
+    let store = Plain(MemorySecrets::default(), false.into());
+    let k = key("plain", SecretPurpose::Password);
+    assert_eq!(
+        store.put_if_absent(&k, &password("one")).await,
+        Ok(PutOutcome::Stored)
+    );
+    assert_eq!(
+        store.put_if_absent(&k, &password("two")).await,
+        Ok(PutOutcome::AlreadyThere)
+    );
+    assert_eq!(store.get(&k).await, Ok(password("one")));
+    let other = key("plain2", SecretPurpose::Password);
+    store.1.store(true, std::sync::atomic::Ordering::SeqCst);
+    assert_eq!(
+        store.put_if_absent(&other, &password("x")).await,
+        Err(SecretsError::Locked)
+    );
+    store.1.store(false, std::sync::atomic::Ordering::SeqCst);
+    assert_eq!(store.get(&other).await, Err(SecretsError::Missing));
 }
