@@ -153,12 +153,19 @@ async fn describe_lists_the_picker_rows_of_the_slots_inferd_has_models_for() {
         );
         assert_eq!(spec.default, text(""));
         assert_eq!(spec.page, Page::Intelligence);
-        assert_eq!(spec.section.0, "Models");
+        // A section per slot, the tier as the label (best reads "Demanding").
+        assert_eq!(spec.section.0, "Models / Text");
         assert_eq!(spec.agent, AgentSetting::HandsOff);
         assert_eq!(spec.labels.of(""), Some("Catalogue default"));
         assert_eq!(spec.labels.of("auto"), Some("Automatic"));
         assert_eq!(spec.labels.of("anthropic/sonnet"), Some("sonnet"));
     }
+    let labels: Vec<&str> = schema
+        .key
+        .iter()
+        .map(|spec| spec.label.0.as_str())
+        .collect();
+    assert_eq!(labels, ["Fast", "Balanced", "Demanding"]);
 }
 
 #[tokio::test(flavor = "multi_thread")]

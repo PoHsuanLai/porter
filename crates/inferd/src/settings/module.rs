@@ -144,14 +144,15 @@ impl<P: Peers> InferdSettings<P> {
             path: KeyPath(model_path(kind, tier)),
             kind: KeyKind::Menu { variants },
             default: toml::Value::String(String::new()),
-            label: Label(format!("{}: {}", slot_label(kind), tier_label(tier))),
+            // Grouped by job: a section per slot, the tiers listed under it.
+            label: Label(tier_label(tier).to_owned()),
             help: Help(
                 "The model used for this slot at this tier. Automatic picks one that \
                  is allowed and already loaded when it can."
                     .to_owned(),
             ),
             page: Page::Intelligence,
-            section: Section("Models".to_owned()),
+            section: Section(format!("Models / {}", slot_label(kind))),
             exposure: Exposure::Basic,
             labels,
             unavailable,
@@ -162,13 +163,13 @@ impl<P: Peers> InferdSettings<P> {
 
 fn slot_label(slot: Slot) -> &'static str {
     match slot {
-        Slot::Text => "Language",
+        Slot::Text => "Text",
         Slot::VoiceIn => "Speech to text",
         Slot::VoiceOut => "Text to speech",
         Slot::ImageIn => "Reading images",
         Slot::ComputerUse => "Computer use",
         Slot::Embeddings => "Embeddings",
-        Slot::ImageGen => "Images",
+        Slot::ImageGen => "Image generation",
         Slot::Rerank => "Reranking",
     }
 }
