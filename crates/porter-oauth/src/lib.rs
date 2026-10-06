@@ -25,8 +25,9 @@ pub use device::{
     DeviceCodeResponse, DeviceFault, DevicePoll, await_device, poll_device, request_device_code,
 };
 pub use exchange::{
-    DEFAULT_EXPIRES_IN_SECONDS, ExchangeFault, TokenResponse, exchange_code, exchange_code_scoped,
-    refresh, refresh_scoped, revoke,
+    DEFAULT_EXPIRES_IN_SECONDS, ExchangeFailure, ExchangeFault, IssuerSays, SAYS_MAX_CHARS,
+    TokenResponse, exchange_code, exchange_code_scoped, exchange_code_scoped_detailed, refresh,
+    refresh_scoped, refresh_scoped_detailed, revoke,
 };
 pub use loopback::{
     AuthCode, LoopbackFault, MAX_REDIRECT_BYTES, MAX_STRAY_REQUESTS, REDIRECT_WAIT_SECONDS,

@@ -54,6 +54,38 @@ pub enum ExchangeFault {
     Unreadable,
 }
 
+/// What an issuer wrote in its error body: the `error` code and the human `error_description`
+/// (RFC 6749 section 5.2), for a host to show. Both are untrusted text from the network, so each
+/// has its control characters stripped and is cut to [`SAYS_MAX_CHARS`] characters.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IssuerSays {
+    /// The `error` code, e.g. `invalid_grant`.
+    pub error: Option<String>,
+    /// The `error_description`.
+    pub description: Option<String>,
+}
+
+/// The most characters kept of each of an issuer's `error` and `error_description`.
+pub const SAYS_MAX_CHARS: usize = 200;
+
+/// An [`ExchangeFault`] with what the issuer said about it, from the `*_detailed` calls. The
+/// plain calls return the fault alone, unchanged; a host that wants to show the issuer's reason
+/// (mailo does) calls the detailed one and reads `says`.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{fault}")]
+pub struct ExchangeFailure {
+    /// What it amounts to; the same value the plain call returns.
+    pub fault: ExchangeFault,
+    /// The issuer's own words, when its answer had an OAuth error body.
+    pub says: Option<IssuerSays>,
+}
+
+impl From<ExchangeFault> for ExchangeFailure {
+    fn from(fault: ExchangeFault) -> Self {
+        Self { fault, says: None }
+    }
+}
+
 /// Exchanges the redirect's code for tokens, with the PKCE verifier.
 pub async fn exchange_code<H: Http>(
     http: &H,
@@ -76,6 +108,21 @@ pub async fn exchange_code_scoped<H: Http>(
     redirect: &str,
     scope: Option<&str>,
 ) -> Result<TokenResponse, ExchangeFault> {
+    exchange_code_scoped_detailed(http, endpoints, client, pkce, code, redirect, scope)
+        .await
+        .map_err(|failure| failure.fault)
+}
+
+/// [`exchange_code_scoped`] with the issuer's `error` and `error_description` on a failure.
+pub async fn exchange_code_scoped_detailed<H: Http>(
+    http: &H,
+    endpoints: &IssuerEndpoints,
+    client: &ClientEntry,
+    pkce: &Pkce,
+    code: &AuthCode,
+    redirect: &str,
+    scope: Option<&str>,
+) -> Result<TokenResponse, ExchangeFailure> {
     let mut pairs = vec![
         ("grant_type", "authorization_code"),
         ("code", code.0.expose()),
@@ -83,7 +130,7 @@ pub async fn exchange_code_scoped<H: Http>(
         ("code_verifier", pkce.verifier.expose()),
     ];
     pairs.extend(scope.map(|s| ("scope", s)));
-    token_call(http, endpoints, client, pairs).await
+    token_call_detailed(http, endpoints, client, pairs).await
 }
 
 /// Renews an access token from the refresh token; `Refused` for `invalid_grant`. The answer's
@@ -108,12 +155,25 @@ pub async fn refresh_scoped<H: Http>(
     refresh_token: &SecretText,
     scope: Option<&str>,
 ) -> Result<TokenResponse, ExchangeFault> {
+    refresh_scoped_detailed(http, endpoints, client, refresh_token, scope)
+        .await
+        .map_err(|failure| failure.fault)
+}
+
+/// [`refresh_scoped`] with the issuer's `error` and `error_description` on a failure.
+pub async fn refresh_scoped_detailed<H: Http>(
+    http: &H,
+    endpoints: &IssuerEndpoints,
+    client: &ClientEntry,
+    refresh_token: &SecretText,
+    scope: Option<&str>,
+) -> Result<TokenResponse, ExchangeFailure> {
     let mut pairs = vec![
         ("grant_type", "refresh_token"),
         ("refresh_token", refresh_token.expose()),
     ];
     pairs.extend(scope.map(|s| ("scope", s)));
-    token_call(http, endpoints, client, pairs).await
+    token_call_detailed(http, endpoints, client, pairs).await
 }
 
 /// Revokes a token at the issuer, best effort; an issuer without a revoke endpoint is a success
@@ -135,12 +195,12 @@ pub async fn revoke<H: Http>(
     }
 }
 
-pub(crate) async fn token_call<H: Http>(
+pub(crate) async fn token_call_detailed<H: Http>(
     http: &H,
     endpoints: &IssuerEndpoints,
     client: &ClientEntry,
     mut pairs: Vec<(&str, &str)>,
-) -> Result<TokenResponse, ExchangeFault> {
+) -> Result<TokenResponse, ExchangeFailure> {
     pairs.push(("client_id", client.client_id.0.as_str()));
     pairs.extend(
         client
@@ -149,20 +209,34 @@ pub(crate) async fn token_call<H: Http>(
             .map(|s| ("client_secret", s.expose())),
     );
     let response = form::send_form(http, &endpoints.token, &pairs).await?;
-    read_tokens(&response)
+    read_tokens_detailed(&response)
 }
 
 /// A token endpoint's answer as tokens, or the fault it amounts to.
 pub(crate) fn read_tokens(response: &HttpResponse) -> Result<TokenResponse, ExchangeFault> {
-    match response.status.0 {
-        200..=299 => serde_json::from_slice(&response.body).map_err(|_| ExchangeFault::Unreadable),
-        401 => Err(ExchangeFault::Refused),
-        400 if form::oauth_error(response).as_deref() == Some("invalid_grant") => {
-            Err(ExchangeFault::Refused)
+    read_tokens_detailed(response).map_err(|failure| failure.fault)
+}
+
+/// [`read_tokens`] keeping what the issuer said.
+pub(crate) fn read_tokens_detailed(
+    response: &HttpResponse,
+) -> Result<TokenResponse, ExchangeFailure> {
+    let fault = match response.status.0 {
+        200..=299 => {
+            return serde_json::from_slice(&response.body)
+                .map_err(|_| ExchangeFault::Unreadable.into());
         }
-        429 | 500..=599 => Err(ExchangeFault::Unreachable),
-        _ => Err(ExchangeFault::Unreadable),
-    }
+        401 => ExchangeFault::Refused,
+        400 if form::oauth_error(response).as_deref() == Some("invalid_grant") => {
+            ExchangeFault::Refused
+        }
+        429 | 500..=599 => ExchangeFault::Unreachable,
+        _ => ExchangeFault::Unreadable,
+    };
+    Err(ExchangeFailure {
+        fault,
+        says: form::issuer_says(response),
+    })
 }
 
 #[cfg(test)]
@@ -329,5 +403,114 @@ mod tests {
         // Still not an answer: no access token.
         let bare = refresh_with(vec![answer(200, r#"{"expires_in":60}"#)]).await;
         assert_eq!(bare, Err(ExchangeFault::Unreadable));
+    }
+
+    #[tokio::test]
+    async fn a_failure_carries_what_the_issuer_said_tidied_and_capped() {
+        let long = "x".repeat(500);
+        let body = format!(
+            r#"{{"error":"invalid_grant","error_description":"Token\n\u001b[31mexpired {long}"}}"#
+        );
+        let http = Scripted::new(vec![answer(400, &body)]);
+        let failure = refresh_scoped_detailed(
+            &http,
+            &Issuer::Microsoft.endpoints(),
+            &client(None),
+            &SecretText::new("r"),
+            None,
+        )
+        .await
+        .expect_err("refused");
+        assert_eq!(failure.fault, ExchangeFault::Refused);
+        let says = failure.says.expect("says");
+        assert_eq!(says.error.as_deref(), Some("invalid_grant"));
+        let text = says.description.expect("description");
+        assert!(text.starts_with("Token[31mexpired x"), "{text}");
+        assert!(!text.chars().any(char::is_control));
+        assert_eq!(text.chars().count(), SAYS_MAX_CHARS);
+    }
+
+    #[tokio::test]
+    async fn the_issuers_words_come_only_from_the_detailed_calls_and_only_when_there_are_some() {
+        let cases: Vec<(&str, Result<HttpResponse, HttpError>, ExchangeFault, bool)> = vec![
+            (
+                "401 with a body",
+                answer(
+                    401,
+                    r#"{"error":"invalid_token","error_description":"gone"}"#,
+                ),
+                ExchangeFault::Refused,
+                true,
+            ),
+            (
+                "401 without",
+                answer(401, ""),
+                ExchangeFault::Refused,
+                false,
+            ),
+            (
+                "html",
+                answer(400, "<html>"),
+                ExchangeFault::Unreadable,
+                false,
+            ),
+            (
+                "blank description",
+                answer(400, r#"{"error_description":" \n "}"#),
+                ExchangeFault::Unreadable,
+                false,
+            ),
+            (
+                "no route",
+                Err(HttpError::Unreachable),
+                ExchangeFault::Unreachable,
+                false,
+            ),
+        ];
+        for (name, scripted, fault, has_says) in cases {
+            let http = Scripted::new(vec![scripted.clone()]);
+            let failure = refresh_scoped_detailed(
+                &http,
+                &Issuer::Microsoft.endpoints(),
+                &client(None),
+                &SecretText::new("r"),
+                None,
+            )
+            .await
+            .expect_err(name);
+            assert_eq!(
+                (failure.fault, failure.says.is_some()),
+                (fault, has_says),
+                "{name}"
+            );
+            // The plain call is unchanged: the fault alone.
+            assert_eq!(refresh_with(vec![scripted]).await, Err(fault), "{name}");
+        }
+    }
+
+    #[tokio::test]
+    async fn the_detailed_code_exchange_reads_the_same_way() {
+        use crate::loopback::AuthCode;
+        let http = Scripted::new(vec![answer(
+            400,
+            r#"{"error":"invalid_grant","error_description":"code spent"}"#,
+        )]);
+        let pkce = Pkce::from_random([1; 32], [2; 16]);
+        let failure = exchange_code_scoped_detailed(
+            &http,
+            &Issuer::Microsoft.endpoints(),
+            &client(None),
+            &pkce,
+            &AuthCode(SecretText::new("c")),
+            "http://127.0.0.1:1/",
+            None,
+        )
+        .await
+        .expect_err("refused");
+        assert_eq!(failure.fault, ExchangeFault::Refused);
+        assert_eq!(
+            failure.says.and_then(|s| s.description).as_deref(),
+            Some("code spent")
+        );
     }
 }

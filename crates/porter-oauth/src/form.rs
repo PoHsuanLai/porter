@@ -4,7 +4,7 @@
 //! The percent-decoder is ported from mailo's loopback listener
 //! (`~/mailo/crates/mail-runtime/src/loopback.rs`).
 
-use crate::exchange::ExchangeFault;
+use crate::exchange::{ExchangeFault, IssuerSays, SAYS_MAX_CHARS};
 use porter_core::EndpointUrl;
 use porter_http::{Http, HttpRequest, HttpResponse, Method};
 
@@ -91,6 +91,30 @@ pub(crate) fn oauth_error(response: &HttpResponse) -> Option<String> {
         .get("error")?
         .as_str()
         .map(str::to_owned)
+}
+
+/// Untrusted issuer text made safe to show: control characters dropped, cut to the cap, and
+/// `None` when nothing printable is left.
+fn tidy(text: &str) -> Option<String> {
+    let kept: String = text
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(SAYS_MAX_CHARS)
+        .collect();
+    let kept = kept.trim();
+    (!kept.is_empty()).then(|| kept.to_owned())
+}
+
+/// What an OAuth error body says (`error`, `error_description`), tidied; `None` when the body is
+/// not one or says nothing.
+pub(crate) fn issuer_says(response: &HttpResponse) -> Option<IssuerSays> {
+    let body = serde_json::from_slice::<serde_json::Value>(&response.body).ok()?;
+    let field = |name: &str| body.get(name)?.as_str().and_then(tidy);
+    let says = IssuerSays {
+        error: field("error"),
+        description: field("error_description"),
+    };
+    (says.error.is_some() || says.description.is_some()).then_some(says)
 }
 
 #[cfg(test)]
