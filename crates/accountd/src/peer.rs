@@ -9,7 +9,6 @@ use crate::callers::Callers;
 use crate::core::{Core, Host, slug};
 use crate::errors::RefusedError;
 use crate::keys::sealed_key;
-use crate::vardict::record_of;
 use porter_core::consent::{Decision, GrantKey, Verdict, decide};
 use porter_core::wire::Refusal;
 use porter_core::{AccountState, CapabilityKind, Claim, GrantId, ProviderId, Toggle};
@@ -184,7 +183,8 @@ impl<H: Host, C: Callers> Peer<H, C> {
 /// One reported claim: the kind's slug and the fields by name, as `Account.Capabilities` has them.
 /// The slug must be the kind of the offer the fields carry.
 fn claim_of(kind: &str, fields: &Details) -> Result<Claim, RefusedError> {
-    let record = record_of(fields).map_err(RefusedError::invalid)?;
+    let record =
+        porter_dbus::from_vardict(fields).map_err(|e| RefusedError::invalid(e.to_string()))?;
     let claim: Claim = serde_json::from_value(serde_json::Value::Object(record))
         .map_err(|e| RefusedError::invalid(format!("claim: {e}")))?;
     let stated: CapabilityKind = slug(kind)?;

@@ -300,3 +300,35 @@ async fn a_client_id_is_written_to_the_users_file_only_by_settings() {
     );
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_state_row_is_announced_when_an_account_needs_sign_in_and_when_it_recovers() {
+    use zbus::export::futures_core::Stream;
+    let rig = Rig::start().await;
+    let mail = mail_account();
+    let client = settings(&rig).await;
+    let mut changes = client.changes().await.expect("changes");
+    let other = rig.client("org.quire.Mail").await;
+    let manager = ManagerProxy::new(&other).await.expect("proxy");
+
+    for (state, slug) in [
+        (AccountState::NeedsReauth, "needs_reauth"),
+        (AccountState::Ok, "ok"),
+    ] {
+        assert!(rig.service.set_state(&mail.id, state).await);
+        // Any call ends in a publish, which tells whoever is to be told.
+        let _ = manager
+            .query(&storage_need(), "photos", "interactive")
+            .await;
+        let change = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            std::future::poll_fn(|cx| std::pin::Pin::new(&mut changes).poll_next(cx)),
+        )
+        .await
+        .expect("a Changed in time")
+        .expect("open stream")
+        .expect("a change");
+        assert_eq!(change.key, key("accounts.fake-mail.state"));
+        assert_eq!(change.value, toml::Value::String(slug.into()));
+    }
+}

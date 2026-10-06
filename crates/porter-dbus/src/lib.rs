@@ -38,12 +38,12 @@ pub use failure::{BusFailure, classify, refusal_of};
 pub use grants::{GrantsProxy, GrantsSkeleton};
 pub use inference::{InferenceProxy, InferenceSkeleton};
 pub use introspect::{Bus, introspection};
-pub use json_value::to_vardict;
+pub use json_value::{from_vardict, to_vardict};
 pub use manager::{ManagerProxy, ManagerSkeleton};
 pub use names::{
-    ACCOUNTS_BUS, ACCOUNTS_PATH, INFERENCE_BUS, INFERENCE_PATH, INFERENCE_SETTINGS_PATH,
-    OPTION_TRACEPARENT, OPTION_USAGE, SHEET_BUS, SHEET_PATH, STATUS_KEY_QUOTA, SYNC_BUS, SYNC_PATH,
-    account_path,
+    ACCOUNTS_BUS, ACCOUNTS_PATH, ACCOUNTS_SETTINGS_PATH, INFERENCE_BUS, INFERENCE_PATH,
+    INFERENCE_SETTINGS_PATH, OPTION_TRACEPARENT, OPTION_USAGE, SHEET_BUS, SHEET_PATH,
+    STATUS_KEY_QUOTA, SYNC_BUS, SYNC_PATH, account_path,
 };
 pub use peer::{PeerProxy, PeerSkeleton};
 pub use pending::{Closer, Sheet, SheetError};

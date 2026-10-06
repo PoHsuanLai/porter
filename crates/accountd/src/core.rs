@@ -10,6 +10,7 @@ use crate::keys::KeyDesk;
 use crate::legacy::AdoptConfig;
 use crate::manager::Manager;
 use crate::relay::{RelayRoots, Relays};
+use ds_settings::schema::KeyPath;
 use porter_core::wire::{LegacyRef, ParentWindow, ProviderHint, Refusal};
 use porter_core::{
     AccountId, AccountState, AccountsReply, AccountsRequest, AppId, CapabilityKind, Claim,
@@ -27,7 +28,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
 use std::sync::atomic::AtomicU64;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use zbus::fdo::Properties;
 use zbus::message::Header;
 use zbus::names::{BusName, InterfaceName};
@@ -224,6 +225,9 @@ pub(crate) struct Core<H, C> {
     pub(crate) relays: Relays,
     /// Reads the API keys `Peer.ResolveKey` releases; none refuses it `Unavailable`.
     pub(crate) keys: Option<Arc<dyn KeyDesk>>,
+    /// The served settings module, which announces an account's new state as `Changed`; set
+    /// once the module is served.
+    pub(crate) settings: OnceLock<ds_settings::live::Served>,
 }
 
 fn held<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -316,6 +320,7 @@ impl<H: Host, C: Callers> Core<H, C> {
                 _ => {}
             }
         }
+        self.announce_states(&list, &after).await;
         for event in list {
             let apps = audience(&event, &before, &after);
             let names: Vec<String> = held(&self.roster)
@@ -329,6 +334,28 @@ impl<H: Host, C: Callers> Core<H, C> {
             for name in names {
                 let _ = self.tell(&name, &event).await;
             }
+        }
+    }
+
+    /// Tells the settings module's listeners (the Settings role is the only one it admits) each
+    /// state that changed, as `Changed("accounts.<id>.state", <state slug>)`: the row Settings
+    /// reads, so a sign-in that finishes later reaches its pane without a `Set`.
+    async fn announce_states(&self, list: &[Event], after: &Registry) {
+        let Some(module) = self.settings.get() else {
+            return;
+        };
+        for event in list {
+            let Event::StateChanged(id) = event else {
+                continue;
+            };
+            let Some(account) = after.accounts.iter().find(|a| a.id == *id) else {
+                continue;
+            };
+            let key = KeyPath(crate::settings_keys::path(
+                &crate::settings_keys::Key::State(id.clone()),
+            ));
+            let value = toml::Value::String(crate::account::state_slug(account.state).to_owned());
+            let _ = module.changed(&key, &value).await;
         }
     }
 
@@ -444,6 +471,7 @@ pub async fn serve_with<H: Host, C: Callers>(
         clients: options.clients,
         relays: Relays::new(options.relay_roots),
         keys: options.keys,
+        settings: OnceLock::new(),
     });
     let server: &ObjectServer = connection.object_server();
     server

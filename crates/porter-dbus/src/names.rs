@@ -24,6 +24,10 @@ pub const INFERENCE_BUS: &str = "org.quire.Inference1";
 /// inferd's object.
 pub const INFERENCE_PATH: &str = "/org/quire/Inference1";
 
+/// accountd's settings module (`org.quire.SettingsModule1`): the account, grant and client-id
+/// rows the Accounts pane reads.
+pub const ACCOUNTS_SETTINGS_PATH: &str = "/org/quire/Accounts1/settings";
+
 /// inferd's settings module (`org.quire.SettingsModule1`, declared in design/22 §9.4, not
 /// here): the picker rows per kind and the `ai.model.<kind>.<tier>` map.
 pub const INFERENCE_SETTINGS_PATH: &str = "/org/quire/Inference1/settings";

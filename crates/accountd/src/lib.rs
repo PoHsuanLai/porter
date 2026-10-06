@@ -55,7 +55,6 @@ mod settings;
 mod settings_keys;
 mod sheets;
 mod store;
-mod vardict;
 
 pub use audit::FileAudit;
 pub use callers::{Callers, TableCallers};

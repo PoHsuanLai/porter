@@ -10,14 +10,14 @@ use ds_settings::live::{Access, Caller, LiveError, LiveModule, LiveSchema, Verdi
 use ds_settings::schema::KeyPath;
 use porter_core::wire::ParentWindow;
 use porter_core::{AccountsReply, AccountsRequest, AppId, AppName, Isolation, Toggle};
-use porter_dbus::{ACCOUNTS_PATH, CallerRole};
+use porter_dbus::{ACCOUNTS_SETTINGS_PATH, CallerRole};
 use porter_provider::{ClientChannel, ClientEntry, ClientId, ClientsFile, Issuer, parse_clients};
 use std::sync::Arc;
 use zbus::Connection;
 
 /// The settings module's path.
 pub fn settings_path() -> String {
-    format!("{ACCOUNTS_PATH}/settings")
+    ACCOUNTS_SETTINGS_PATH.to_owned()
 }
 
 /// The channel this build presents its client ids under.
@@ -202,12 +202,14 @@ pub(crate) async fn serve_settings<H: Host, C: Callers>(
     connection: &Connection,
     core: &Arc<Core<H, C>>,
 ) -> zbus::Result<()> {
-    serve(
+    let served = serve(
         connection,
-        &settings_path(),
+        ACCOUNTS_SETTINGS_PATH,
         AccountsSettings(Arc::clone(core)),
     )
     .await
-    .map(|_| ())
-    .map_err(|e| zbus::Error::Failure(e.to_string()))
+    .map_err(|e| zbus::Error::Failure(e.to_string()))?;
+    // Served once; a second call leaves the first in place.
+    let _ = core.settings.set(served);
+    Ok(())
 }
