@@ -168,7 +168,16 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         if account.state == AccountState::NeedsReauth {
             return Err(Refusal::NeedsReauth);
         }
-        self.relay_plan(&account, &endpoint, kind).await
+        let plan = self.relay_plan(&account, &endpoint, kind).await?;
+        self.note(
+            Some(caller.clone()),
+            Some(account.id.clone()),
+            AuditEvent::ProxyOpened {
+                grant: grant.clone(),
+                endpoint: endpoint.url.clone(),
+            },
+        );
+        Ok(plan)
     }
 
     /// Removes an account and everything filed for it: secrets, grants, toggles, the registry

@@ -226,6 +226,45 @@ async fn a_relay_to_an_endpoint_the_account_holds_is_planned() {
 }
 
 #[tokio::test]
+async fn an_opened_relay_is_audited_with_its_grant_and_endpoint_and_a_refused_one_is_not() {
+    let audit = RecordingAudit::default();
+    let sheets = ScriptedSheets::answering([Scripted::AllowFirst(GrantScope::Always)]);
+    let service = fake_service(sheets).await.with_audit(audit.clone());
+    let me = app("org.quire.Photos");
+    let storage = granted(choose(&service, &me, files(), DataClass::Files).await);
+    let opened = |entries: Vec<porter_core::audit::AuditEntry>| {
+        entries
+            .into_iter()
+            .filter(|e| matches!(e.event, AuditEvent::ProxyOpened { .. }))
+            .collect::<Vec<_>>()
+    };
+    let refused = service
+        .open_authenticated(
+            &me,
+            &storage.grant,
+            &url("https://evil.invalid/remote.php/dav/files/ada/"),
+        )
+        .await;
+    assert_eq!(refused.err(), Some(Refusal::EndpointNotGranted));
+    assert!(opened(audit.entries()).is_empty());
+
+    service
+        .open_authenticated(&me, &storage.grant, &storage.endpoints[0].url)
+        .await
+        .expect("planned");
+    let entries = opened(audit.entries());
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].app.as_ref(), Some(&me));
+    assert_eq!(
+        entries[0].event,
+        AuditEvent::ProxyOpened {
+            grant: storage.grant.clone(),
+            endpoint: storage.endpoints[0].url.clone(),
+        }
+    );
+}
+
+#[tokio::test]
 async fn a_password_account_plans_its_password_and_an_oauth_account_a_minted_token() {
     use porter_core::RelayAuth;
 
