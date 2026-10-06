@@ -21,7 +21,13 @@ fn token() -> RelayAuth {
 
 #[test]
 fn the_relay_picks_the_way_the_server_and_the_credential_allow() {
-    const CASES: &[(&str, &[&str], bool, Result<Pop3Auth, RelayFault>)] = &[
+    type Case = (
+        &'static str,
+        &'static [&'static str],
+        bool,
+        Result<Pop3Auth, RelayFault>,
+    );
+    const CASES: &[Case] = &[
         ("user and pass", &["USER", "TOP"], false, Ok(Pop3Auth::User)),
         ("no capa at all", &[], false, Ok(Pop3Auth::User)),
         (

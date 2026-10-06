@@ -20,6 +20,9 @@ use std::io;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 
+/// Reads a SASL initial response.
+type Decode = fn(&str) -> Option<(String, Secret)>;
+
 #[derive(Debug, Clone)]
 struct Shared {
     ctx: MailCtx,
@@ -299,8 +302,7 @@ async fn auth<S: AsyncRead + AsyncWrite + Unpin>(
     let mut words = rest.split_whitespace();
     let mechanism = words.next().unwrap_or("").to_ascii_uppercase();
     let initial = words.next().map(str::to_owned);
-    let (mech, decode): (Mechanism, fn(&str) -> Option<(String, Secret)>) = match mechanism.as_str()
-    {
+    let (mech, decode): (Mechanism, Decode) = match mechanism.as_str() {
         "PLAIN" => (Mechanism::Plain, decode_plain),
         "XOAUTH2" => (Mechanism::Xoauth2, decode_xoauth2),
         _ => return Ok(false),
