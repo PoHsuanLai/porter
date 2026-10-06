@@ -311,3 +311,31 @@ async fn a_pop3_only_document_is_returned_under_report_and_skipped_otherwise() {
         "imaps://imap.isp.test:993"
     );
 }
+
+#[tokio::test]
+async fn a_domain_with_only_pop3_srv_records_is_found_under_report_and_not_otherwise() {
+    let mut dns = Records::default();
+    dns.srv.insert(
+        "_pop3s._tcp.example.test".to_owned(),
+        vec![crate::testing::srv(0, 0, 995, "pop.example.test")],
+    );
+    dns.srv.insert(
+        "_submissions._tcp.example.test".to_owned(),
+        vec![crate::testing::srv(0, 0, 465, "smtp.example.test")],
+    );
+    let http = Table::default();
+    let providers = ProviderSet::layered(vec![], vec![]);
+    let found = match discover_mail_with(&http, &dns, &providers, ADDRESS, &report()).await {
+        Ok(Outcome::Servers(found)) => found,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(found.source, Source::Srv);
+    assert_eq!(found.pop3.len(), 1);
+    assert_eq!(found.endpoints.len(), 1);
+    let ignored =
+        discover_mail_with(&http, &dns, &providers, ADDRESS, &SearchOptions::default()).await;
+    assert!(
+        !matches!(ignored, Ok(Outcome::Servers(_))),
+        "pop3-only SRV is a miss by default: {ignored:?}"
+    );
+}

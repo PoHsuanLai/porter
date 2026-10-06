@@ -19,7 +19,7 @@ use crate::autoconfig::{autoconfig_urls, domain_of, ispdb_url, parse_autoconfig_
 use crate::dns::{Dns, DnsFault};
 use crate::found::{DiscoverFault, Found, SearchOptions, Source, StartTlsOnly};
 use crate::mx::{ProviderLead, ispdb_candidates, lookup_mx, provider_leads};
-use crate::srv::{found_from_srv, lookup_srv};
+use crate::srv::{found_from_srv_with, lookup_srv};
 use porter_core::{Tls, WebUrl};
 use porter_http::{Http, HttpError, HttpRequest, Method};
 use porter_provider::{DomainMatch, ProviderSet};
@@ -152,7 +152,9 @@ async fn search<H: Http, D: Dns>(
 
     // 3. SRV.
     match lookup_srv(dns, &domain).await {
-        Ok(answers) => match found_from_srv(address, &answers).and_then(|f| tls_ok(f, options)) {
+        Ok(answers) => match found_from_srv_with(address, &answers, options.pop3)
+            .and_then(|f| tls_ok(f, options))
+        {
             Ok(found) => return Some(Outcome::Servers(found)),
             Err(why) => tried.push(Tried {
                 what: format!("SRV records for {domain}"),

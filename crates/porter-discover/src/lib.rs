@@ -36,5 +36,5 @@ pub use mx::{ProviderLead, ispdb_candidates, lookup_mx, mx_hosts, provider_leads
 pub use ocs::parse_ocs_capabilities;
 pub use probe::{ProbeHit, probe_ports};
 pub use search::{Miss, NotFound, Outcome, Tried, discover_mail, discover_mail_with};
-pub use srv::{SrvAnswers, found_from_srv, lookup_srv, srv_names};
+pub use srv::{SrvAnswers, found_from_srv, found_from_srv_with, lookup_srv, srv_names};
 pub use well_known::{discover_well_known, parse_jmap_session, well_known_found, well_known_urls};
