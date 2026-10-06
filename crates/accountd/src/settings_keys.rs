@@ -10,7 +10,7 @@ use ds_settings::schema::{
     LiveAction, Page, Section,
 };
 use porter_core::consent::{Decision, Grant};
-use porter_core::{Account, AccountId, CapabilityKind, GrantId, Offer};
+use porter_core::{Account, AccountId, AuthKind, CapabilityKind, GrantId, Offer};
 use porter_provider::Issuer;
 use porter_service::Registry;
 
@@ -26,6 +26,8 @@ pub(crate) enum Key {
     State(AccountId),
     /// `accounts.<id>.label`.
     Label(AccountId),
+    /// `accounts.<id>.place`.
+    Place(AccountId),
     /// `accounts.<id>.grant.<grant>`.
     Grant(AccountId, GrantId),
     /// `accounts.<id>.reauth`.
@@ -64,6 +66,7 @@ pub(crate) fn parse(path: &str, registry: &Registry) -> Option<Key> {
         match tail {
             "state" => Some(Key::State(id)),
             "label" => Some(Key::Label(id)),
+            "place" => Some(Key::Place(id)),
             "reauth" => Some(Key::Reauth(id)),
             "remove" => Some(Key::Remove(id)),
             _ => {
@@ -83,6 +86,7 @@ pub(crate) fn path(key: &Key) -> String {
         Key::Service(id, kind) => format!("accounts.{id}.service.{}", slug(kind)),
         Key::State(id) => format!("accounts.{id}.state"),
         Key::Label(id) => format!("accounts.{id}.label"),
+        Key::Place(id) => format!("accounts.{id}.place"),
         Key::Grant(id, grant) => format!("accounts.{id}.grant.{grant}"),
         Key::Reauth(id) => format!("accounts.{id}.reauth"),
         Key::Remove(id) => format!("accounts.{id}.remove"),
@@ -145,6 +149,16 @@ fn account_keys(account: &Account, grants: &[Grant]) -> Vec<KeySpec> {
             toml::Value::String(account.label.0.clone()),
         ),
         spec(
+            &Key::Place(id.clone()),
+            section,
+            "Where".to_owned(),
+            "",
+            KeyKind::Fixed {
+                variant: place_slug(account).to_owned(),
+            },
+            toml::Value::String(place_slug(account).to_owned()),
+        ),
+        spec(
             &Key::State(id.clone()),
             section,
             "Status".to_owned(),
@@ -155,7 +169,9 @@ fn account_keys(account: &Account, grants: &[Grant]) -> Vec<KeySpec> {
             toml::Value::String(crate::account::state_slug(account.state).to_owned()),
         ),
     ];
-    let toggles = account
+    // An account with several models holds one claim per model of the same kind: one switch.
+    let mut toggles: Vec<CapabilityKind> = Vec::new();
+    for kind in account
         .capabilities
         .iter()
         .filter_map(|claim| match &claim.offer {
@@ -165,7 +181,12 @@ fn account_keys(account: &Account, grants: &[Grant]) -> Vec<KeySpec> {
                 reason: porter_core::AbsentReason::TurnedOff,
             } => Some(*kind),
             Offer::Absent { .. } => None,
-        });
+        })
+    {
+        if !toggles.contains(&kind) {
+            toggles.push(kind);
+        }
+    }
     for kind in toggles {
         keys.push(spec(
             &Key::Service(id.clone(), kind),
@@ -213,6 +234,16 @@ fn account_keys(account: &Account, grants: &[Grant]) -> Vec<KeySpec> {
         off(),
     ));
     keys
+}
+
+/// Where an account lives, as the `place` row says it: a program on this computer (a probed
+/// runtime, which signs in with nothing) or anywhere else. Settings lists the first kind under
+/// "On this computer".
+pub(crate) fn place_slug(account: &Account) -> &'static str {
+    match account.auth {
+        AuthKind::LocalRuntime => "this_computer",
+        _ => "elsewhere",
+    }
 }
 
 /// The schema of the module for `registry`.
@@ -281,10 +312,31 @@ mod tests {
             "accounts.fake-storage.remove",
             "accounts.fake-storage.reauth",
             "accounts.fake-mail.state",
+            "accounts.fake-mail.place",
             "accounts.clients.microsoft",
         ] {
             assert!(paths.contains(&want), "{want} in {paths:?}");
         }
+    }
+
+    #[test]
+    fn a_service_claimed_once_per_model_is_one_switch() {
+        let mut runtime = storage_account();
+        runtime.capabilities.push(runtime.capabilities[0].clone());
+        let rows = account_keys(&runtime, &[]);
+        let paths: Vec<&str> = rows.iter().map(|k| k.path.0.as_str()).collect();
+        let mut unique = paths.clone();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(paths.len(), unique.len(), "{paths:?}");
+    }
+
+    #[test]
+    fn a_probed_runtime_is_on_this_computer_and_every_other_account_is_elsewhere() {
+        let mut runtime = storage_account();
+        runtime.auth = AuthKind::LocalRuntime;
+        assert_eq!(place_slug(&runtime), "this_computer");
+        assert_eq!(place_slug(&mail_account()), "elsewhere");
     }
 
     #[test]
