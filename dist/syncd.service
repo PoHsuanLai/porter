@@ -1,0 +1,49 @@
+# syncd as a systemd user unit: the sync engine (org.quire.Sync1 on the session bus). It is found,
+# and started, by D-Bus activation (dbus/org.quire.Sync1.service) the first time an app asks for
+# a dataset, or by accountd's introduction when it starts.
+#
+# syncd talks to the session bus only: accountd on it (the grants and AccountRemoved; replicas
+# are reached through accountd's authenticated relay, whose descriptor arrives over the bus), and
+# nothing else, so it holds no network family and no credential. It reads /proc to know who is
+# calling, so the unit must not hide other processes' cgroups (no ProtectProc, no PrivatePID).
+[Unit]
+Description=quire sync engine (org.quire.Sync1)
+
+[Service]
+Type=dbus
+BusName=org.quire.Sync1
+ExecStart=/usr/libexec/quire/syncd
+Restart=on-failure
+RestartSec=2
+KillMode=control-group
+TimeoutStopSec=20
+
+# --- Sandbox ---
+# Unix sockets for the bus and the relay descriptors; no internet.
+RestrictAddressFamilies=AF_UNIX
+# The person's files are out of reach except what syncd keeps: the journals (porter/sync under
+# state) and the PIM mirrors (porter/vdir under data).
+ProtectHome=read-only
+ProtectSystem=strict
+ReadWritePaths=%h/.local/state/porter/sync %h/.local/share/porter/vdir
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+# Files syncd creates are private to it.
+UMask=0077
+
+[Install]
+WantedBy=default.target

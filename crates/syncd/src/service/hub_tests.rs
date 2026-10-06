@@ -1,0 +1,150 @@
+use super::*;
+use porter_core::{AppId, Isolation};
+
+fn caller(name: &str, role: CallerRole) -> Caller {
+    Caller {
+        app: AppId {
+            name: AppName::parse(name).expect("name"),
+            isolation: Isolation::Flatpak,
+        },
+        role,
+    }
+}
+
+fn name(text: &str) -> DatasetName {
+    DatasetName::parse(text).expect("dataset name")
+}
+
+fn owned_by(app: &str) -> Access {
+    Access {
+        owners: [AppName::parse(app).expect("name")].into(),
+    }
+}
+
+#[test]
+fn a_dataset_name_is_an_account_segment_a_slash_and_a_slug() {
+    assert_eq!(name("acct_1/pim").to_string(), "acct_1/pim");
+    for bad in [
+        "", "pim", "a/", "/pim", "a/b/c", "a-b/pim", "a/Pim", "../pim",
+    ] {
+        assert_eq!(DatasetName::parse(bad), None, "{bad:?}");
+    }
+}
+
+#[test]
+fn who_sees_a_dataset_by_role_and_ownership() {
+    let access = owned_by("org.quire.Photos");
+    let cases = [
+        (
+            "the owner",
+            caller("org.quire.Photos", CallerRole::App),
+            true,
+        ),
+        (
+            "another app",
+            caller("org.example.Other", CallerRole::App),
+            false,
+        ),
+        (
+            "settings",
+            caller("org.quire.Settings", CallerRole::Settings),
+            true,
+        ),
+        (
+            "a porter daemon",
+            caller("org.quire.Inference", CallerRole::PorterDaemon),
+            true,
+        ),
+        (
+            "an agent",
+            caller("org.quire.Photos", CallerRole::Agent),
+            false,
+        ),
+        ("cua", caller("org.quire.Cua", CallerRole::Cua), false),
+    ];
+    for (who, caller, sees) in cases {
+        assert_eq!(access.admits(&caller), sees, "{who}");
+    }
+}
+
+#[test]
+fn a_hub_lists_shows_pauses_and_forgets_only_what_a_caller_may_see() {
+    let hub = Hub::default();
+    let mine = hub.register(name("a1/photos_originals"), owned_by("org.quire.Photos"));
+    let _theirs = hub.register(name("a2/pim"), owned_by("org.quire.Sill"));
+    let photos = caller("org.quire.Photos", CallerRole::App);
+    let settings = caller("org.quire.Settings", CallerRole::Settings);
+    assert_eq!(hub.names_for(&photos), ["a1/photos_originals"]);
+    assert_eq!(hub.names_for(&settings), ["a1/photos_originals", "a2/pim"]);
+
+    mine.publish(StatusSnapshot {
+        pending: 3,
+        ..StatusSnapshot::default()
+    });
+    let status = hub
+        .status_for(&photos, &name("a1/photos_originals"))
+        .expect("visible");
+    assert_eq!((status.pending, status.pausing), (3, Pausing::Running));
+    assert_eq!(hub.status_for(&photos, &name("a2/pim")), None);
+
+    assert!(
+        !hub.set_pausing(&photos, &name("a2/pim"), Pausing::Paused),
+        "not theirs"
+    );
+    assert!(hub.set_pausing(&photos, &name("a1/photos_originals"), Pausing::Paused));
+    assert_eq!(mine.pausing(), Pausing::Paused);
+    let status = hub
+        .status_for(&settings, &name("a1/photos_originals"))
+        .expect("status");
+    assert_eq!(
+        status.pausing,
+        Pausing::Paused,
+        "the pause shows in the status"
+    );
+
+    let account = AccountDir::parse("a1").expect("account");
+    assert_eq!(
+        hub.forget_account(&account),
+        vec![name("a1/photos_originals")]
+    );
+    assert!(!mine.is_registered());
+    assert_eq!(hub.names_for(&settings), ["a2/pim"]);
+}
+
+#[tokio::test]
+async fn a_handle_learns_of_a_pause_and_of_being_dropped() {
+    let hub = Hub::default();
+    let mut handle = hub.register(name("a1/pim"), Access::default());
+    let settings = caller("org.quire.Settings", CallerRole::Settings);
+    assert!(hub.set_pausing(&settings, &name("a1/pim"), Pausing::Paused));
+    assert!(handle.changed().await, "the switch changed");
+    hub.forget_account(&AccountDir::parse("a1").expect("account"));
+    assert!(!handle.changed().await, "dropped: the engine stops");
+}
+
+#[tokio::test]
+async fn events_reach_subscribers_and_nobody_listening_is_fine() {
+    let hub = Hub::default();
+    let handle = hub.register(name("a1/pim"), Access::default());
+    handle.tell(Event::Progress {
+        dataset: name("a1/pim"),
+        fetched: 0,
+        uploaded: 0,
+    });
+    let mut events = hub.subscribe();
+    handle.tell(Event::Progress {
+        dataset: name("a1/pim"),
+        fetched: 2,
+        uploaded: 1,
+    });
+    let got = events.recv().await.expect("event");
+    assert_eq!(got.dataset(), &name("a1/pim"));
+    assert!(matches!(
+        got,
+        Event::Progress {
+            fetched: 2,
+            uploaded: 1,
+            ..
+        }
+    ));
+}

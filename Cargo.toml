@@ -108,6 +108,8 @@ apple-native-keyring-store = { version = "1", features = ["keychain"] }
 windows-native-keyring-store = "1"
 # porter-discover: SRV and MX behind the `Dns` seam.
 hickory-resolver = "0.26"
+# syncd's journal: SQLCipher built from source with a vendored OpenSSL, used unkeyed (quire's pinned line).
+rusqlite = { version = "0.40", features = ["bundled-sqlcipher-vendored-openssl"] }
 rustix = { version = "1.1", default-features = false, features = ["std", "event", "fs", "net", "time", "process"] }
 
 [workspace.lints.rust]

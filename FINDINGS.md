@@ -42,6 +42,11 @@ Each row names the lane of the accounts program (porter PLAN §6) that removes i
 | porter-infer `pick` / `admit`: the P1 request-shape rules (tools, images, structured output against what a model declares) and the `context_needed` pre-check are not applied | the routing P1 lane (research-routing-fit) |
 | porter-infer `pick`: no reviewer family filter (a reviewer pick from another family than the author's) | the routing P1 lane |
 | porter-infer `Why::FallbackFrom` is defined but unused: `if_unavailable = "auto"` does not fall back yet | the routing P1 lane |
+| syncd: no replica and no dataset ships | `Datasets` answers an empty list and every name the refusal `NoFittingAccount` until W6b (webdav), W6c (graph), W6d (storage families) register replicas and W6e (PimMirror), W6f (Photos) register datasets; `syncd`'s main builds none |
+| syncd: a dataset's `store` is not atomic with the engine's pre-store check | the engine re-reads the local file against the journal's fingerprint just before it overwrites (`moved_since_scan`), but a user edit in the instant between that read and `Dataset::store` is the dataset's to guard (write to a temp file and rename); W6e and W6f implement `store` that way |
+| syncd: `Engine::resolve` (KeepLocal, KeepRemote) has no D-Bus method | `Sync1` is frozen (four methods); the owning app resolves through a method a later interface lane adds (see "Interface asks from W6a"); the journal and engine side is built and tested |
+| syncd: the network seam (`watch::Receiver<Network>`) has no NetworkManager reader | the daemon's main passes no engines yet; the lane that registers the first replica reads `org.freedesktop.NetworkManager` `Metered` (never in tests) |
+| syncd: SQLite calls run on the async runtime's thread (current_thread in main) | each journal write is one short transaction; move to `spawn_blocking` if a W6f photo import shows stalls |
 | inferd Automatic never picks a cloud model: `consent_of` answers Ask for anything off this computer until accountd grants exist for AI accounts | AI2 (a granted API key through accountd) |
 | inferd `ai.spend.warn_permille` is read (`settings::SpendLine`, the only maker of a `SpendCap`) but nothing in inferd holds a cap or meters spend yet (`router::choose` passes `SpendVerdict::Within`, `Usage` is empty), so the row's only consumer today is the cap constructor, tested at the warn line; it moves a request's verdict once caps (limits per account and app) and the meter exist | the spend lane (caps, meter, `Usage`) |
 | inferd.toml: the old `[policy]` and `[tiers]` tables are still read (one way; the `[ai]` rows at their settings paths win field by field); `Set` rewrites the file from its parsed form, so comments in it are lost (no `toml_edit` in the pinned block) | `[policy]`/`[tiers]` go one release after detent writes the `ai.*` paths; comments are kept when quire pins `toml_edit` (an interface ask) |
@@ -738,6 +743,69 @@ output entry with zero VRAM). The GPU is reported as it is: with only replay eng
   "contains":["fence"]},"reply":{"kind":"text","v":"{\"answer\":\"...\"}"}}`.
 - Edges: inferd gains `model-replay` (workspace dependency, `check-boundary.sh`, ARCHITECTURE section 1).
   `EngineConfig` gains a flattened `named` map, so an unknown or misspelled scalar key under `[engines]` is now a config error instead of being ignored: a behaviour change for existing `inferd.toml` files (kept on purpose).
+
+## Lane w6a-syncd (syncd, the engine)
+
+Lane `w6a-syncd`, branch `w6a-syncd` from ea27908. syncd was a skeleton; it is now a library and a
+daemon. No `todo!()` was left behind (none in syncd before or after).
+
+- **Journal** (`syncd::journal`, rows and pure rules in `porter_sync::journal`,
+  `journal_reconcile`): SQLite per dataset at `$XDG_STATE_HOME/porter/sync/<account>/<dataset>.sqlite`
+  (`<account>` is the object-path segment, `porter_core::object_segment`, so `AccountRemoved` names
+  the directory). Tables `items`, `anchors`, `tombstones`, `conflicts`, `schema_migrations`;
+  `MIGRATIONS[n]` takes version n to n+1, a file from a newer syncd is refused, a test opens a
+  hand-written v1 file and one brings it to a v2. `rusqlite` is quire's pinned line verbatim
+  (`bundled-sqlcipher-vendored-openssl`, used unkeyed): `cargo deny check licenses` passes with it.
+  Every change is one transaction (`Journal::apply(&[Op])`).
+- **Engine** (`syncd::engine`): a cycle is resume, record the local scan, pull, push, compact. Item
+  states name the step that finishes them (`fetching`, `discarding`, `pending_upload`,
+  `pending_remove`, `conflicted`), so a crash between any two writes is finished by the next cycle:
+  `engine::tests::cut_points` cuts before every journal write of a mixed scenario (remote edit,
+  delete and create; local create, edit and delete), with and without replica hashes, and the sides
+  must converge to the clean run's state. The local scan is recorded before the pull and a fetch
+  re-checks the local file, so a local edit is never overwritten. `AnchorExpired` lists in full and
+  reconciles by content hash (a deleted and re-created item with the same bytes is re-bound, not
+  fetched); a replica that reports no SHA-256 is compared by bytes. A refused write is a stored
+  conflict (`Changed`, `Deleted`, `Exists`), never an overwrite; the same bytes already there are
+  adopted. Tombstones are kept until the feed shows them (or a full listing proves them gone),
+  then compacted.
+- **Datasets**: `syncd::dataset::Dataset` (scan, read, store, discard; fingerprints are SHA-256 hex,
+  `dataset::fingerprint`), `MemoryDataset` behind feature `testing`. `DatasetKind` has no PimMirror
+  variant (W6e names its dataset by slug through `DatasetId`; the frozen enum is not touched).
+- **Scheduler** (`syncd::scheduler`, pure): inputs are the clock, the network and each dataset's
+  history; push waits a batching window then runs, poll doubles its interval per idle cycle, a
+  failure backs off exponentially and never sooner than `Retry-After`, equal jitter from a seeded
+  `SplitMix64`, `coalesce` batches wake-ups, metered/offline/user pause hold. `syncd::driver` is the
+  loop around it.
+- **Sync1** (`syncd::service`): all four methods and both signals of the frozen XML, callers by
+  `ProcCallers` (the `test-proc-root` feature, `SYNCD_PROC_ROOT`, a dist test and a check-boundary
+  row as accountd). A dataset is named `<account>/<dataset>`; apps see the datasets they own,
+  Settings and the porter daemons all; an unknown or invisible name is the refusal
+  `org.quire.Accounts1.Error.NoFittingAccount`, a malformed one `InvalidArgs`, an unnamed sender
+  `AccessDenied`. `Status`: `anchor_age` (x), `pending`, `conflicts` (t), `paused` (b), `quota`
+  (`STATUS_KEY_QUOTA`, a{sv} with `used` and `total`, both t). Signals are unicast to callers who
+  may see the dataset.
+- **AccountRemoved** (`syncd::removal`): wipes `<state>/porter/sync/<account>` and
+  `<data>/porter/vdir/<account>` and stops the account's datasets. accountd unicasts only to
+  connections that have called it, so syncd calls `Grants.List` at start and whenever
+  `org.quire.Accounts1` gets a new owner. W6e: the mirror directory under `vdir/` must be named by
+  the same account segment.
+- `dist/syncd.service` (AF_UNIX only; writes only the journals and mirrors) and
+  `dist/dbus/org.quire.Sync1.service`. check-boundary: the syncd row gains `porter-core`, plus the
+  `test-proc-root` leak check. `/etc/porter/callers.toml` needs a `[[caller]]` row for
+  `syncd.service` with role `porter_daemon` (packaging; not a file of this lane).
+- porter-sync gained `journal` and `journal_reconcile` (no new dependency; not consumer-used).
+
+### Interface asks from W6a
+
+1. `porter-dbus` `sync.rs`, doc comments only (the XML is unchanged): `datasets` returns
+   "the dataset names the caller may see, as `<account>/<dataset>`" and `status`, `pause`,
+   `resume` take such a name.
+2. A way for the owning app to settle a conflict (`Engine::resolve` exists): a later `Sync1`
+   method, for example `Resolve(dataset: s, conflict: x, how: s)`; the XML is frozen so it is not
+   added here.
+3. `DatasetKind` has no variant for the PIM mirror (W6e); datasets are `DatasetId` slugs in syncd,
+   so nothing is needed unless the owner wants it in the frozen enum.
 
 ## Standing facts
 

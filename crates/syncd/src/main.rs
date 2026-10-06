@@ -1,24 +1,65 @@
-//! syncd: the sync journal, anchors, the polling scheduler and the dataset plug-ins
-//! (design/31 §4.1, §6). A skeleton: it names what it would carry and exits, saying so.
+//! syncd: the sync daemon (`org.quire.Sync1`, design/31 §4.1, §6).
+//!
+//! It resolves its paths from the environment, loads the caller tables (the files accountd
+//! reads), serves `org.quire.Sync1` over the hub of running datasets, and listens for accountd's
+//! `AccountRemoved` to wipe an account's journals and mirrors. No replica and no dataset is
+//! registered yet (W6b-f add them), so `Datasets` answers an empty list and every name the
+//! refusal `NoFittingAccount`.
 
 use clap::Parser;
-use porter_sync::DatasetKind;
+use porter_dbus::ProcCallers;
 use std::process::ExitCode;
+use std::sync::Arc;
+use syncd::paths::{BUILD, Paths, proc_root};
+use syncd::service::Hub;
+use syncd::{callers_file, removal, service};
 
 /// porter's sync service (`org.quire.Sync1`).
 #[derive(Debug, Parser)]
 #[command(name = "syncd", version)]
 struct Args {}
 
+/// The daemon's one log path is standard error, prefixed with its name.
+fn fail(why: impl std::fmt::Display) -> ExitCode {
+    eprintln!("syncd: {why}");
+    ExitCode::FAILURE
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
     let Args {} = Args::parse();
-    let datasets = [DatasetKind::PhotosOriginals, DatasetKind::PhotosMetadata];
-    let rules: Vec<_> = datasets.iter().map(|d| (d, d.conflict_rule())).collect();
-    // The daemon's one log path is standard error, prefixed with its name.
-    eprintln!(
-        "syncd: not implemented: {} is frozen as an interface; {rules:?} have no journal yet",
-        porter_dbus::SYNC_BUS
+    let paths = match Paths::resolve(|name| std::env::var(name).ok()) {
+        Ok(paths) => paths,
+        Err(why) => return fail(why),
+    };
+    let table = match callers_file::load_callers(&paths.callers_system, &paths.callers_user) {
+        Ok(table) => table,
+        Err(why) => return fail(why),
+    };
+    let connection = match zbus::Connection::session().await {
+        Ok(connection) => connection,
+        Err(why) => return fail(format!("no session bus: {why}")),
+    };
+    let callers = Arc::new(
+        match proc_root(BUILD, std::env::var("SYNCD_PROC_ROOT").ok()) {
+            Some(root) => {
+                eprintln!(
+                    "syncd: reading callers from {} (test-proc-root build)",
+                    root.display()
+                );
+                ProcCallers::with_proc_root(connection.clone(), table, root)
+            }
+            None => ProcCallers::new(connection.clone(), table),
+        },
     );
-    ExitCode::from(2)
+    let hub = Hub::default();
+    if let Err(why) = removal::watch(&connection, hub.clone(), paths).await {
+        return fail(format!("cannot listen for AccountRemoved: {why}"));
+    }
+    if let Err(why) = service::serve(&connection, hub, callers).await {
+        return fail(format!("cannot serve {}: {why}", porter_dbus::SYNC_BUS));
+    }
+    // Serves until the session ends or the unit stops it (SIGTERM ends the process).
+    std::future::pending::<()>().await;
+    ExitCode::SUCCESS
 }

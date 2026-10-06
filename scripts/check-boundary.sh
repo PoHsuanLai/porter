@@ -97,7 +97,7 @@ EDGES=(
   "porter-dav: porter-core porter-http"
   "porter-families: porter-core porter-dav porter-discover porter-http porter-oauth porter-provider"
   "accountd: ds-settings porter-core porter-dbus porter-discover porter-families porter-http porter-provider porter-proxy porter-secrets porter-service"
-  "syncd: porter-dbus porter-sync"
+  "syncd: porter-core porter-dbus porter-sync"
   "inferd: ds-settings porter-core porter-dbus porter-infer cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay speech-provider vision-prep"
 )
 for edge in "${EDGES[@]}"; do
@@ -121,6 +121,14 @@ if cargo tree -p accountd --depth 0 -f '{p} {f}' 2>/dev/null | grep -q 'test-pro
   fail=1
 else
   echo "test-only: accountd's default features do not include test-proc-root"
+fi
+
+# syncd's test-only knob (`SYNCD_PROC_ROOT`, feature `test-proc-root`), the same rule.
+if cargo tree -p syncd --depth 0 -f '{p} {f}' 2>/dev/null | grep -q 'test-proc-root'; then
+  echo "LEAK: syncd enables test-proc-root by default"
+  fail=1
+else
+  echo "test-only: syncd's default features do not include test-proc-root"
 fi
 
 # Every workspace member has a row above, so a new crate cannot slip in unchecked.

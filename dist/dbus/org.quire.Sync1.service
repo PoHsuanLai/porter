@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=org.quire.Sync1
+Exec=/usr/libexec/quire/syncd
+SystemdService=syncd.service

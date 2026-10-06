@@ -1,6 +1,6 @@
 [package]
 name = "syncd"
-description = "porter's sync daemon: serves org.quire.Sync1 over porter-sync replicas. A skeleton: it names its datasets and exits."
+description = "porter's sync daemon: org.quire.Sync1 over porter-sync replicas. The library holds the SQLite journal, the engine over a Replica and a Dataset, the pure scheduler and the bus objects; the binary resolves its paths and serves. No replica and no dataset yet (W6b-f)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,10 +9,32 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+porter-core = { workspace = true }
 porter-dbus = { workspace = true }
 porter-sync = { workspace = true }
 clap = { workspace = true }
+rusqlite = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+toml = { workspace = true }
+zbus = { workspace = true }
+
+[dev-dependencies]
+syncd = { path = ".", features = ["testing"] }
+porter-sync = { workspace = true, features = ["testing"] }
 tokio = { workspace = true }
 
 [lints]
 workspace = true
+
+[features]
+# Test builds only, never default and never in dist: `SYNCD_PROC_ROOT=<dir>` makes the binary
+# read caller identities from <dir> instead of /proc, because the jailed and acceptance tests run
+# processes outside service cgroups. A release build ignores the variable. A test in
+# tests/dist.rs fails if this feature is ever default, and check-boundary.sh checks it too.
+test-proc-root = []
+# `MemoryDataset`, the in-memory local side the engine's tests (and daemon tests) drive.
+testing = []
