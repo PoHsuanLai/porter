@@ -25,7 +25,7 @@ trait), section 6 (copy the recipe).
 | `porter-discover` | one function per `Discovery` kind: autoconfig, SRV and MX leads, well-known, JMAP session, Nextcloud OCS, port probes; the `Dns` seam | none |
 | `porter-dav` | WebDAV requests (PROPFIND, sync-collection REPORT) and the parsed multistatus, sync and quota replies | none |
 | `porter-families` | the protocol families as code, one feature each (`nextcloud`, `generic`, `microsoft`, `api_key`, `openrouter`), and `FamilyProvider` over them | none by default |
-| `porter-infer` | the AI broker's pure half: requests and replies (chat with tools and controls, embeddings with a query/document role, tasks, computer-use steps, speech), `OpenOptions` (the reserved `traceparent`), the streaming session (`ClientFrame`, `InferEvent`, `InferSession`), the model picker's data (`AiKind`, `TierMap`, `PickerRow`), `Readiness`, `Policy` and floors, `route`, spend caps, `AuditEntry`, the `Model` trait, `Broker` (stubbed) | none |
+| `porter-infer` | the AI broker's pure half: requests and replies (chat with tools and controls, embeddings with a query/document role, tasks, computer-use steps, speech), `OpenOptions` (the reserved `traceparent`), the streaming session (`ClientFrame`, `InferEvent`, `InferSession`), the model picker's data (`AiKind`, `TierMap`, `PickerRow`), `Readiness`, `Policy` and floors, `admit` (the hard rules), `route` and `pick` (Named or Automatic, warm first) with the `Why` of every answer, spend caps, `AuditEntry`, the `Model` trait, `Broker` (stubbed) | none |
 | `porter-service` | accountd's core over its seams: `AccountService`, `Registry`, the `Sheets` (with `SheetLink`), `Clock`, `RegistryStore` and `AuditSink` traits | none (seams are passed in) |
 | `porter-client` | the app-facing API: `Accounts` (with `open_authenticated` and `adopt`), `Found`, `AuthenticatedStream`, the `Transport` trait (`call` for accountd, `open_authenticated` for a relay, `open` for an inference session); `InProcess` (with a `SessionHost` for inference, `NoBroker` by default, and a `RelayHost`, `NoRelays` by default), `SocketTransport` (feature `socket`), `DbusTransport` (feature `dbus`); both of those share one framed session over a Unix stream (feature `framed`) | through its transport |
 | `porter-dbus` | `org.quire.Accounts1` (with `Peer`), `org.quire.AccountsSheet1`, `org.quire.Sync1`, `org.quire.Inference1` as zbus proxies and skeletons; `introspection`; the argument codec; the sheet answer (`sheet`: request paths, response codes, results) and its caller's half (`pending`: subscribe before the call, `Closer`); `callers` (`CallerRole`, `CallerTable`, `ProcCallers`) | zbus |
@@ -74,11 +74,11 @@ a daemon or an app hosting porter turns those features on.
 | `porter-discover` | `found`, `dns` < `autoconfig`, `well_known`, `ocs`, `probe` |
 | `porter-dav` | `multistatus` < `request`, `sync` |
 | `porter-families` | `skeleton` < one module per family (`nextcloud`, `generic`, `microsoft`, `api_key`, `openrouter`) < `dispatch` |
-| `porter-infer` | `ids`, `control`, `open`, `request`, `cua`, `speech`, `reply`, `error`, `readiness` < `event`, `session`, `choice` < `policy`, `spend`, `audit` < `route`, `model` < `broker` |
+| `porter-infer` | `ids`, `control`, `open`, `request`, `cua`, `speech`, `reply`, `error`, `readiness` < `event`, `session`, `choice` < `policy`, `spend`, `audit` < `route` < `pick`, `model` < `broker` |
 | `porter-service` | `clock`, `sheets`, `store`, `audit` < `registry` < `choose`, `token`, `audience` < `service` < `add` |
 | `porter-client` | `error`, `env`, `found`, `authenticated`, `relays` < `transport` (`framed`, `in_process`, `socket`, `dbus`; each with its session) < `accounts` |
 | `porter-dbus` | `names`, `args` < `codec`, `codec_grants`, `codec_legacy` < `sheet` < `pending`, `callers` ; `manager`, `account`, `grants`, `tokens`, `request`, `peer`, `sheet_backend`, `sync`, `inference` < `introspect` |
-| `inferd` | `session` (pure machine) < `serve` (`carried`, then the loop over four seams) ; `catalog` < `local` < `router` < `supervise`, `hosts` < `engines` (`Engines`, `SessionRouter`) ; `bridge` (`request`, `reply`) < `tee`, `structured`, `cua_step`, `runner` ; `cua_run` (the run and its `StepJob`) over `cua_step` ; `replay` (`cassette` < `replayer` < `engine`, `render`; `host`, `model`) beside `hosts`, feeding `main` ; `audit`, `clock`, `peers`, `config` < `service` (the bus object) < `main` |
+| `inferd` | `session` (pure machine) < `serve` (`carried`, then the loop over four seams) ; `catalog` < `local` < `auto` (the `ai.auto.*` rows), `swap` (the cost of loading a model now, from stoker's `budget`) < `router` < `supervise`, `hosts` < `engines` (`Engines`, `SessionRouter`) ; `bridge` (`request`, `reply`) < `tee`, `structured`, `cua_step`, `runner` ; `cua_run` (the run and its `StepJob`) over `cua_step` ; `replay` (`cassette` < `replayer` < `engine`, `render`; `host`, `model`) beside `hosts`, feeding `main` ; `audit`, `clock`, `peers`, `config` < `service` (the bus object) < `main` |
 
 ## 3. One home per concept
 
@@ -110,7 +110,7 @@ a daemon or an app hosting porter turns those features on.
 | the model picker's data and the tier map | `porter-infer::choice` |
 | which request kinds a session's need admits | `inferd::session::fits` |
 | who is calling inferd (connection, pid, executable, caller) | `inferd::peers` (`CallerTable` from `inferd.toml`) |
-| which model answers a session, and what it is pinned to | `inferd::router::choose` over `inferd::engines::Engines::route` (the only caller of `porter_infer::route`) |
+| which model answers a session, and what it is pinned to | `inferd::router::choose` over `inferd::engines::Engines::route` (the only caller of `porter_infer::pick` and `porter_infer::route`) |
 | the models this computer can run, from the stoker catalog | `inferd::catalog` (claims) and `inferd::local` (the book) |
 | starting, probing and unloading an engine | `inferd::supervise` (the driver of stoker's `step`) over `inferd::hosts` |
 | porter's request to stoker's turn, and back | `inferd::bridge` (the only mapping) |
@@ -119,7 +119,7 @@ a daemon or an app hosting porter turns those features on.
 | the account registry and candidates | `porter-service::registry` |
 | the chooser/consent flow | `porter-service::choose` |
 | the sync contract | `porter-sync::replica` |
-| AI routing | `porter-infer::route` (the only place) |
+| AI routing | `porter-infer::admit` holds the hard rules (the only place); `route` and `pick` call it |
 | spend arithmetic | `porter-infer::spend` |
 | D-Bus names and paths | `porter-dbus::names` |
 | D-Bus argument shapes | `porter-dbus::args`, conversions in `porter-dbus::codec` |
