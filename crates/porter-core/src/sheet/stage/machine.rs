@@ -92,6 +92,10 @@ fn on_input(sheet: Sheet, input: SheetInput) -> (Sheet, Vec<SheetEffect>) {
             effects.push(feed);
             (sheet, effects)
         }
+        (Stage::Browser { url, .. }, SheetInput::OpenAgain) => {
+            let effects = vec![SheetEffect::OpenBrowser(url.clone())];
+            (sheet, effects)
+        }
         (Stage::Failed { provider, fault }, SheetInput::Retry) if retryable(*fault) => {
             let provider = provider.clone();
             restart(sheet, provider, false)

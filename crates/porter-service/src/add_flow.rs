@@ -220,6 +220,14 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                     SheetEffect::Store(choices) => {
                         Some(self.store(caller, job, &sheet, &mut run, &choices).await)
                     }
+                    // The host opens a page it is shown; showing the same page again opens it
+                    // again, through the host's own portal path.
+                    SheetEffect::OpenBrowser(_) => {
+                        link.update(sheet.view())
+                            .await
+                            .map_err(|_| Refusal::Unavailable)?;
+                        None
+                    }
                     SheetEffect::Close(end) => return finish(end, run.stored.take()),
                 };
                 if let Some(event) = event {
@@ -404,5 +412,42 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         ask: AllowFor,
     ) -> AccountsReply {
         self.run_add(caller, hint, window, Some(ask)).await
+    }
+}
+
+impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSink>
+    AccountService<P, S, U, K, R, A>
+{
+    /// The answer "Add Account…" to a consent alert: runs the add sheet with the app's ask
+    /// attached, so the account added is granted to it in the same step (one grant, no second
+    /// prompt, audited by the add). A cancelled or failed add stores no grant and answers as the
+    /// add did; an account added that does not meet the need is kept, ungranted, and the app is
+    /// told no account fits.
+    pub(crate) async fn add_and_allow_for(
+        &self,
+        caller: &AppId,
+        need: Need,
+        asker: crate::registry::Asker<'_>,
+        window: &ParentWindow,
+    ) -> AccountsReply {
+        let ask = AllowFor {
+            need: need.clone(),
+            class: asker.class,
+            usage: asker.usage,
+        };
+        match self
+            .add_and_allow(caller, ProviderHint::Any, window.clone(), ask)
+            .await
+        {
+            AccountsReply::Added(account) => self
+                .lock()
+                .candidates(&need, asker)
+                .into_iter()
+                .find(|c| c.account == account)
+                .map_or(AccountsReply::Refused(Refusal::NoFittingAccount), |c| {
+                    AccountsReply::Chosen(c)
+                }),
+            refused => refused,
+        }
     }
 }

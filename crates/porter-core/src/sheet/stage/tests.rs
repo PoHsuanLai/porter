@@ -14,6 +14,7 @@ fn rows() -> Vec<ProviderRow> {
         id: provider("nextcloud"),
         label: "Nextcloud".into(),
         mark: "nextcloud".into(),
+        kind: crate::sheet::view::RowKind::Provider,
     }]
 }
 

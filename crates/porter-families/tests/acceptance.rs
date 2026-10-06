@@ -557,3 +557,74 @@ async fn removing_a_nextcloud_account_deletes_its_app_password_at_the_server_the
     assert!(service.registry().accounts.is_empty());
     assert_eq!(kept.secrets.password(&id).await, None);
 }
+
+fn choose_as(files: &AppId) -> (AppId, AccountsRequest) {
+    (
+        files.clone(),
+        AccountsRequest::Choose {
+            need: storage(),
+            class: DataClass::Files,
+            usage: Usage::Interactive,
+            window: ParentWindow::Unparented,
+        },
+    )
+}
+
+#[tokio::test]
+async fn add_account_on_the_alert_adds_and_allows_in_one_step_with_one_grant() {
+    let nextcloud = nextcloud().await;
+    let (service, kept, first) = with_account(
+        &nextcloud,
+        consent(vec![Scripted::AddAccount]),
+        vec![adding(nextcloud.base_url()), adding(nextcloud.base_url())],
+    )
+    .await;
+    let (files, request) = choose_as(&app("org.quire.Files"));
+    let AccountsReply::Chosen(chosen) = service.handle(&files, request).await else {
+        panic!("the new account is chosen");
+    };
+    assert_ne!(chosen.account, first, "the account is the one just added");
+    let registry = service.registry();
+    assert_eq!(registry.accounts.len(), 2);
+    assert_eq!(registry.grants.len(), 1, "one grant, not a second prompt");
+    let grant = &registry.grants[0];
+    assert_eq!(
+        (&grant.key.app, &grant.key.account),
+        (&files, &chosen.account)
+    );
+    assert_eq!(grant.id, chosen.grant);
+    let granted = kept
+        .audit
+        .entries()
+        .iter()
+        .filter(|e| matches!(e.event, AuditEvent::Granted { .. }))
+        .count();
+    assert_eq!(granted, 1);
+}
+
+#[tokio::test]
+async fn cancelling_the_add_from_the_alert_grants_nothing() {
+    let nextcloud = nextcloud().await;
+    let mut gives_up = adding(nextcloud.base_url());
+    gives_up.opens_page_after = None;
+    gives_up.gives_up = true;
+    let (service, _kept, _first) = with_account(
+        &nextcloud,
+        consent(vec![Scripted::AddAccount]),
+        vec![adding(nextcloud.base_url()), gives_up],
+    )
+    .await;
+    nextcloud.set_login_policy(LoginPolicy::Pending);
+    let (files, request) = choose_as(&app("org.quire.Files"));
+    let reply = service.handle(&files, request).await;
+    assert!(
+        matches!(reply, AccountsReply::Refused(_)),
+        "no account chosen: {reply:?}"
+    );
+    let registry = service.registry();
+    assert_eq!(registry.accounts.len(), 1);
+    assert!(
+        registry.grants.is_empty(),
+        "cancelling the add grants nothing"
+    );
+}

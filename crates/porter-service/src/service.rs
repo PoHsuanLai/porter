@@ -9,7 +9,7 @@ use crate::sheets::Sheets;
 use crate::store::{NoStore, RegistryStore};
 use crate::token::{provider_refusal, secret_purpose, secrets_refusal};
 use porter_core::audit::{AuditEntry, AuditEvent};
-use porter_core::consent::{GrantScope, Usage, availability};
+use porter_core::consent::{ConsentAnswer, GrantScope, Usage, availability};
 use porter_core::wire::{ParentWindow, Refusal};
 use porter_core::{
     AccountId, AccountState, AccountsReply, AccountsRequest, AppId, Audience, DataClass,
@@ -261,6 +261,9 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             return AccountsReply::Refused(Refusal::NoFittingAccount);
         };
         let answer = self.sheets.consent(ask, window).await;
+        if answer == ConsentAnswer::AddAccount {
+            return self.add_and_allow_for(caller, need, asker, window).await;
+        }
         let reply = settle(&mut self.lock(), &need, asker, answer, self.clock.now());
         match &reply {
             AccountsReply::Chosen(candidate) => self.note(

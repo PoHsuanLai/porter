@@ -207,6 +207,11 @@ pub trait SheetLink: Send {
     fn update(&mut self, view: SheetView) -> impl Future<Output = Result<(), SheetFault>> + Send;
     fn input(&mut self) -> impl Future<Output = Result<SheetInput, SheetFault>> + Send;
 }
+// Consent and the sheet machine: `ConsentAnswer::AddAccount` ("Add Account…") makes the service run the
+// add sheet with the alert's ask attached (add-and-allow, one grant); `ProviderRow.kind: RowKind
+// { Provider, Generic }` marks the generic-* "Other…" row; `SheetInput::OpenAgain` on the browser
+// step makes the machine emit `SheetEffect::OpenBrowser(url)`, which the service serves by showing
+// `BrowserWait` again.
 pub trait Clock: Send + Sync { fn now(&self) -> UnixSeconds; }
 pub trait RegistryStore: Send + Sync {
     fn load(&self) -> impl Future<Output = Result<Persisted, StoreError>> + Send;

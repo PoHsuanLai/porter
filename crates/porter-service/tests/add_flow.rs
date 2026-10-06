@@ -723,6 +723,46 @@ async fn closing_the_sheet_ends_a_wait_for_the_browser_at_once() {
 }
 
 #[tokio::test]
+async fn open_again_shows_the_browser_page_again_without_restarting_the_sign_in() {
+    let page =
+        WebUrl::parse("https://login.example.org/authorize?state=1&scope=a%20b").expect("url");
+    let script = Script::answering(vec![SignInStep::OpenBrowser { url: page }]);
+    let seen = Arc::new(Mutex::new(0u32));
+    let person: Reactor = Arc::new(move |view| match view {
+        SheetView::BrowserWait { .. } => {
+            let mut n = seen.lock().expect("seen");
+            *n += 1;
+            Some(match *n {
+                1 => SheetInput::OpenAgain,
+                _ => SheetInput::Dismiss,
+            })
+        }
+        other => typist()(other),
+    });
+    let (service, kept) = service(&script, vec![person]);
+    let reply = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        added(&service, &app("org.quire.Mail")),
+    )
+    .await
+    .expect("ends");
+    assert_eq!(reply, AccountsReply::Refused(Refusal::Dismissed));
+    let waits = kept
+        .shown
+        .lock()
+        .expect("shown")
+        .iter()
+        .filter(|v| matches!(v, SheetView::BrowserWait { .. }))
+        .count();
+    assert_eq!(waits, 2, "shown, then shown again for the open");
+    assert_eq!(
+        script.told().iter().filter(|t| **t == "start").count(),
+        1,
+        "the sign-in was not restarted"
+    );
+}
+
+#[tokio::test]
 async fn an_endpoint_porter_would_not_use_is_not_stored() {
     let mut bad = signed("ada");
     bad.endpoints = vec![ServiceEndpoint {

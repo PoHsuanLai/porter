@@ -138,6 +138,8 @@ pub enum SheetEffect {
     Feed(SignInInput),
     /// Store the account the sign-in produced, with these service choices.
     Store(Vec<ServiceChoice>),
+    /// Open the browser page again (`OpenAgain`), through the portal path.
+    OpenBrowser(WebUrl),
     /// Close the sheet.
     Close(SheetEnd),
 }

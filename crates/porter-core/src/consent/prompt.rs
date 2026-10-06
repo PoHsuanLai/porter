@@ -51,4 +51,7 @@ pub enum ConsentAnswer {
     Deny,
     /// The sheet was closed without an answer; nothing is stored.
     Dismissed,
+    /// "Add Account…": add an account and allow the app in the same step (the add sheet's last
+    /// button reads "Add, and allow"). Cancelling the add stores no grant.
+    AddAccount,
 }

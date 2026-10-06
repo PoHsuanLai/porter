@@ -228,3 +228,38 @@ async fn a_link_reports_closed_when_the_host_goes() {
     assert_eq!(link.input().await, Err(SheetFault::Closed));
     assert_eq!(link.update(SheetView::Done).await, Err(SheetFault::Closed));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn add_account_on_the_alert_opens_the_add_sheet_and_cancelling_it_grants_nothing() {
+    let rig = Rig::start_with(Default::default(), SheetHost::quiet()).await;
+    let (_client, mut sheet, path, handle) = choosing(&rig).await;
+    // The wire slug sill sends.
+    assert_eq!(
+        serde_json::to_string(&SheetInput::Answer(ConsentAnswer::AddAccount)).expect("json"),
+        r#"{"kind":"answer","v":{"kind":"add_account"}}"#
+    );
+    send_input(
+        &rig.host_connection,
+        &handle,
+        &SheetInput::Answer(ConsentAnswer::AddAccount),
+    )
+    .await;
+    // The alert is taken down and the add sheet is opened for the same window.
+    eventually("the add sheet to be opened", || {
+        rig.host_log.calls().opened.len() == 2
+    })
+    .await;
+    let (add_handle, window, view) = rig.host_log.calls().opened[1].clone();
+    assert_ne!(add_handle, handle);
+    assert_eq!(window, "wayland:abc");
+    let view: SheetView = serde_json::from_str(&view).expect("a view");
+    assert!(
+        matches!(view, SheetView::Providers(_)),
+        "the provider list: {view:?}"
+    );
+    // Cancel the add: nothing is granted and the app is told it was dismissed.
+    send_input(&rig.host_connection, &add_handle, &SheetInput::Dismiss).await;
+    let (code, results) = sheet.response(&path).await.expect("response");
+    assert_eq!(code, 1, "{results:?}");
+    assert!(rig.service.registry().grants.is_empty());
+}

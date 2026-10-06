@@ -25,6 +25,8 @@ pub enum SheetInput {
     Back,
     /// Try the failed step again.
     Retry,
+    /// "Open Again" on the browser step: open the page once more. The flow does not restart.
+    OpenAgain,
     /// The sheet was closed.
     Dismiss,
 }

@@ -54,6 +54,9 @@ pub(crate) fn settle(
             }
             AccountsReply::Refused(Refusal::Denied)
         }
+        // The service runs the add sheet for this answer before it settles (`add_and_allow`); a
+        // settle that is handed it records nothing.
+        ConsentAnswer::AddAccount => AccountsReply::Refused(Refusal::Dismissed),
         ConsentAnswer::Allow { account, scope } => {
             allow(registry, need, asker, &account, scope, at)
         }

@@ -20,4 +20,6 @@ pub use progress::{
     Progress, Review, ServiceChoice, ServiceRow, ServiceState, SignInFault, SignInInput, UserCode,
 };
 pub use stage::{Purpose, Sheet, SheetEffect, SheetEnd, SheetEvent, Stage, step};
-pub use view::{FieldProblem, ProblemKind, ProviderRow, ReviewView, SheetView, SignInView};
+pub use view::{
+    FieldProblem, ProblemKind, ProviderRow, ReviewView, RowKind, SheetView, SignInView,
+};

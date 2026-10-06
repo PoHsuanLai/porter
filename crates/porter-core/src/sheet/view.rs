@@ -19,6 +19,20 @@ pub struct ProviderRow {
     pub label: String,
     /// The provider mark glyph's name.
     pub mark: String,
+    /// Whether this is a provider or the generic "Other…" row.
+    #[serde(default)]
+    pub kind: RowKind,
+}
+
+/// What a row of the provider list stands for.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RowKind {
+    /// One named provider.
+    #[default]
+    Provider,
+    /// A generic protocol file (`generic-imap`, `generic-dav`, `generic-jmap`): the "Other…" row.
+    Generic,
 }
 
 /// What is wrong with a field.

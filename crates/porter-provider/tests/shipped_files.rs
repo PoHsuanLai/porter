@@ -319,3 +319,26 @@ fn only_microsofts_storage_row_declares_linked_origins_and_asks_the_app_folder_o
         )]
     );
 }
+
+#[test]
+fn the_generic_files_make_generic_rows_and_every_other_file_a_provider_row() {
+    use porter_core::sheet::RowKind;
+    let rows: Vec<_> = shipped().iter().map(|(_, spec)| spec.sheet_row()).collect();
+    let generic: Vec<_> = rows
+        .iter()
+        .filter(|r| r.kind == RowKind::Generic)
+        .map(|r| r.id.as_str().to_owned())
+        .collect();
+    assert!(!generic.is_empty());
+    assert!(generic.iter().all(|id| id.starts_with("generic-")));
+    assert!(
+        rows.iter()
+            .filter(|r| r.id.as_str().starts_with("generic-"))
+            .all(|r| r.kind == RowKind::Generic)
+    );
+    assert!(
+        rows.iter()
+            .filter(|r| !r.id.as_str().starts_with("generic-"))
+            .all(|r| r.kind == RowKind::Provider)
+    );
+}

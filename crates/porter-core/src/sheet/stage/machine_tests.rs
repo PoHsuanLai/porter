@@ -13,7 +13,7 @@ use crate::sheet::input::SheetInput;
 use crate::sheet::progress::{
     Progress, Review, ServiceChoice, ServiceRow, ServiceState, SignInFault, SignInInput, UserCode,
 };
-use crate::sheet::view::{FieldProblem, ProblemKind, ProviderRow, SheetView};
+use crate::sheet::view::{FieldProblem, ProblemKind, ProviderRow, RowKind, SheetView};
 use crate::wire::ProviderHint;
 use proptest::prelude::*;
 
@@ -34,6 +34,10 @@ fn rows() -> Vec<ProviderRow> {
             id: provider(id),
             label: id.into(),
             mark: id.into(),
+            kind: match id.starts_with("generic-") {
+                true => RowKind::Generic,
+                false => RowKind::Provider,
+            },
         })
         .collect()
 }
@@ -657,6 +661,38 @@ fn a_consent_answer_is_not_the_machines_input() {
 }
 
 #[test]
+fn open_again_on_the_browser_page_opens_it_again_and_does_not_restart() {
+    let sheet = at(add(), browser());
+    let (after, effects) = step(sheet.clone(), input(SheetInput::OpenAgain));
+    assert_eq!(after, sheet);
+    assert_eq!(effects, vec![SheetEffect::OpenBrowser(page())]);
+    // Again, and again: the same, and nothing is cancelled or fed.
+    let (after, effects) = step(after, input(SheetInput::OpenAgain));
+    assert_eq!(after, sheet);
+    assert_eq!(effects, vec![SheetEffect::OpenBrowser(page())]);
+}
+
+#[test]
+fn open_again_means_nothing_off_the_browser_page() {
+    for (name, stage) in every_stage() {
+        if matches!(stage, Stage::Browser { .. }) {
+            continue;
+        }
+        let (after, effects) = run(at(add(), stage.clone()), input(SheetInput::OpenAgain));
+        assert_eq!((after, effects), (stage, vec![]), "{name}");
+    }
+}
+
+#[test]
+fn the_generic_rows_of_the_list_are_marked_generic_in_the_view() {
+    let SheetView::Providers(rows) = at(add(), Stage::Choosing(rows())).view() else {
+        panic!("the list");
+    };
+    let kinds: Vec<_> = rows.iter().map(|r| r.kind).collect();
+    assert_eq!(kinds, vec![RowKind::Provider, RowKind::Generic]);
+}
+
+#[test]
 fn the_device_code_flow_from_start_to_stored() {
     let sheet = Sheet::new(
         Purpose::Add {
@@ -701,6 +737,7 @@ fn leaks(effect: &SheetEffect) -> bool {
         SheetEffect::Show(view) => serde_json::to_string(view).expect("view"),
         SheetEffect::Store(choices) => serde_json::to_string(choices).expect("choices"),
         SheetEffect::Close(end) => format!("{end:?}"),
+        SheetEffect::OpenBrowser(url) => format!("{url:?}"),
         SheetEffect::Feed(SignInInput::Fields(_)) => return false,
         SheetEffect::Feed(other) => format!("{other:?}"),
     };
@@ -717,6 +754,7 @@ fn event_strategy() -> impl Strategy<Value = SheetEvent> {
     };
     prop_oneof![
         Just(input(SheetInput::Pick(nc()))),
+        Just(input(SheetInput::OpenAgain)),
         Just(input(SheetInput::Submit(secret_answers()))),
         Just(input(SheetInput::Submit(vec![secret(
             FieldKind::Password,

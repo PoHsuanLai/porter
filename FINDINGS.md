@@ -1006,6 +1006,29 @@ Lane `voice-inferd`, branch from 0941881. porter-client `Transport::prepare`; in
 3. `[callers.apps] "org.quire.Voice" = ["voiced.service"]` (in `dist/inferd.toml`).
 4. Start inferd, then voiced; `Voice1.Prepare` starts the engine (about 1 to 2 s to load), the first hold hears.
 
+## Lane sheet-asks (sill's three accounts-sheet asks, 2026-10-07)
+
+- **`ConsentAnswer::AddAccount`** (wire `{"kind":"add_account"}`, in a sheet input `{"kind":"answer","v":{"kind":"add_account"}}`).
+  On this answer `AccountService::choose` runs the add sheet (`ProviderHint::Any`, the same window) with the alert's ask
+  attached (`add_and_allow_for`): one grant, the add's own `Granted` audit line, no second prompt; the reply is `Chosen`
+  for the new account. A cancelled or failed add answers as the add did (`Dismissed`, ...) and stores no grant; a new account
+  that does not meet the need is kept, ungranted, and the reply is `NoFittingAccount`. `settle` treats the answer as dismissed
+  (the service runs the add before it settles). Tests: `porter-families` `acceptance` (`add_account_on_the_alert_adds_and_allows_in_one_step_with_one_grant`,
+  `cancelling_the_add_from_the_alert_grants_nothing`), `accountd` `bus_sheets` (`add_account_on_the_alert_opens_the_add_sheet_and_cancelling_it_grants_nothing`).
+  Open: the bus test cannot finish an add (the fake provider is `Done` at once, which the machine does not store), so the
+  success path is proven over `TestSheets` and a real Nextcloud fake, not over the bus.
+- **`ProviderRow.kind: RowKind { Provider, Generic }`** (serde `default`, slugs `provider`, `generic`). Rows are built by
+  `ProviderSpec::sheet_row` (porter-provider), the one place `AccountService::drive` takes them from the installed providers;
+  a file whose id begins `generic-` (generic-imap, generic-dav, generic-jmap) is `Generic`. Test: `porter-provider`
+  `shipped_files` `the_generic_files_make_generic_rows_and_every_other_file_a_provider_row`; core round trips.
+- **`SheetInput::OpenAgain`** (wire `{"kind":"open_again"}`). On `Stage::Browser` the machine answers `SheetEffect::OpenBrowser(url)`
+  (new effect; no state change, nothing cancelled or fed); off the browser step it is dropped. There was no open effect before:
+  the host opened a page it was shown. `drive` serves `OpenBrowser` by showing the `BrowserWait` view again over the same
+  link, so a host that opens the page on seeing the view (accountd's terminal host, sill) opens it again through its own
+  portal path. Tests: `open_again_on_the_browser_page_opens_it_again_and_does_not_restart`,
+  `open_again_means_nothing_off_the_browser_page` (core), `open_again_shows_the_browser_page_again_without_restarting_the_sign_in` (porter-service).
+- `porter-fake`: `Scripted::AddAccount` (additive). Sill's fallbacks for the three asks end when sill switches to these.
+
 ## Standing facts
 
 - No ds-core: a closed set's serde form is its slug; UI crates map slugs to labels.

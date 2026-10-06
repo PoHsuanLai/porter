@@ -19,8 +19,8 @@ use porter_core::need::{
 };
 use porter_core::sheet::{
     Entry, FieldAnswer, FieldKind, FieldProblem, FieldSpec, FieldValue, Presence, ProblemKind,
-    Progress, ProviderRow, Review, ReviewView, ServiceChoice, ServiceRow, ServiceState, SheetInput,
-    SheetView, SignInFault, SignInView, UserCode,
+    Progress, ProviderRow, Review, ReviewView, RowKind, ServiceChoice, ServiceRow, ServiceState,
+    SheetInput, SheetView, SignInFault, SignInView, UserCode,
 };
 use porter_core::store::{AccountToggle, Persisted};
 use porter_core::wire::{LegacyItem, LegacyRef, ParentWindow, ProviderHint, Refusal};
@@ -370,6 +370,11 @@ fn consent_values_round_trip() {
         scope: GrantScope::Always,
     });
     round_trip(&ConsentAnswer::Dismissed);
+    round_trip(&ConsentAnswer::AddAccount);
+    assert_eq!(
+        serde_json::to_string(&ConsentAnswer::AddAccount).expect("json"),
+        r#"{"kind":"add_account"}"#
+    );
 }
 
 #[test]
@@ -661,6 +666,7 @@ fn every_sheet_view_round_trips() {
             id: nextcloud.clone(),
             label: "Nextcloud".into(),
             mark: "nextcloud".into(),
+            kind: RowKind::Provider,
         }]),
         SheetView::SignIn(SignInView {
             provider: nextcloud.clone(),
@@ -718,9 +724,23 @@ fn every_sheet_input_and_progress_round_trips() {
         }]),
         SheetInput::Back,
         SheetInput::Retry,
+        SheetInput::OpenAgain,
         SheetInput::Dismiss,
     ];
     inputs.iter().for_each(round_trip);
+    assert_eq!(
+        serde_json::to_string(&SheetInput::OpenAgain).expect("json"),
+        r#"{"kind":"open_again"}"#
+    );
+    // A row from a host that predates `kind` is a provider row.
+    let old: ProviderRow =
+        serde_json::from_str(r#"{"id":"nextcloud","label":"Nextcloud","mark":"nextcloud"}"#)
+            .expect("row");
+    assert_eq!(old.kind, RowKind::Provider);
+    assert_eq!(
+        serde_json::to_string(&RowKind::Generic).expect("json"),
+        r#""generic""#
+    );
     let url = EndpointUrl::parse("https://login.example.org/device").expect("url");
     let steps = [
         Progress::Ask(vec![field(FieldKind::ApiKey, Entry::Secret)]),

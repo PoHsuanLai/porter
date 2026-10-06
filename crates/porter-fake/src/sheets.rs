@@ -18,6 +18,8 @@ pub enum Scripted {
     Deny,
     /// The sheet is closed.
     Dismiss,
+    /// "Add Account…".
+    AddAccount,
     /// The sheet stays open: the ask never answers, and the log counts it as abandoned when
     /// its future is dropped (the caller closed the sheet or left).
     Hang,
@@ -142,6 +144,7 @@ impl Sheets for ScriptedSheets {
                 ConsentAnswer::Allow { account, scope }
             }
             (Some(Scripted::Deny), _) => ConsentAnswer::Deny,
+            (Some(Scripted::AddAccount), _) => ConsentAnswer::AddAccount,
             _ => ConsentAnswer::Dismissed,
         }
     }
