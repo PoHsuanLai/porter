@@ -118,7 +118,7 @@ async fn a_file_that_cannot_be_read_is_unavailable_not_empty() {
 }
 
 /// The migration table: one row per vocabulary bump. There is no bump yet (the current version
-/// is the first one persisted), so the rows are: older than any file ever written has no
+/// was the first one persisted, and 3 migrates), so the rows are: older than any file ever written has no
 /// migration, newer than this build is refused, and the current one loads. A bump adds its row
 /// here with the old document as a fixture.
 #[tokio::test]
@@ -131,7 +131,7 @@ async fn the_vocabulary_of_the_file_decides_whether_it_loads() {
     assert!(text.contains(&current));
     let with = |v: u16| text.replace(&current, &format!("\"vocab\": {v}"));
 
-    let older = VocabVersion(VocabVersion::CURRENT.0 - 1);
+    let older = VocabVersion(porter_core::store::FIRST_PERSISTED.0 - 1);
     std::fs::write(store.path(), with(older.0)).expect("write");
     assert_eq!(
         store.load().await,
