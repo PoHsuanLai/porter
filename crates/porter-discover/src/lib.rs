@@ -15,6 +15,8 @@ mod found;
 mod mail;
 mod mx;
 mod ocs;
+#[cfg(test)]
+mod options;
 mod probe;
 mod search;
 mod srv;
@@ -22,14 +24,17 @@ mod srv;
 mod testing;
 mod well_known;
 
-pub use autoconfig::{ISPDB, autoconfig_urls, parse_autoconfig};
+pub use autoconfig::{ISPDB, autoconfig_urls, parse_autoconfig, parse_autoconfig_with};
 pub use dns::{Dns, DnsFault, MxRecord, SrvRecord};
 #[cfg(feature = "io")]
 pub use dns_io::HickoryDns;
-pub use found::{DiscoverFault, Found, Source};
+pub use found::{
+    Direction, DiscoverFault, Found, OAuthOffer, OAuthOnly, OAuthServer, Pop3, Pop3Server,
+    SearchOptions, Source, StartTlsOnly,
+};
 pub use mx::{ProviderLead, ispdb_candidates, lookup_mx, mx_hosts, provider_leads};
 pub use ocs::parse_ocs_capabilities;
 pub use probe::{ProbeHit, probe_ports};
-pub use search::{Miss, NotFound, Outcome, Tried, discover_mail};
+pub use search::{Miss, NotFound, Outcome, Tried, discover_mail, discover_mail_with};
 pub use srv::{SrvAnswers, found_from_srv, lookup_srv, srv_names};
 pub use well_known::{discover_well_known, parse_jmap_session, well_known_found, well_known_urls};

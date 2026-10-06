@@ -69,6 +69,8 @@ pub fn found_from_srv(address: &str, answers: &SrvAnswers) -> Result<Found, Disc
             endpoints: vec![imap, smtp],
             claims: vec![imap_claim()],
             source: Source::Srv,
+            oauth: None,
+            pop3: Vec::new(),
         }),
         _ => Err(DiscoverFault::NoServers),
     }

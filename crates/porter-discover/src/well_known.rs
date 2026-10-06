@@ -67,6 +67,8 @@ pub fn well_known_found(
         }],
         claims: vec![well_known_claim(kind)],
         source: Source::WellKnown,
+        oauth: None,
+        pop3: Vec::new(),
     })
 }
 
@@ -187,6 +189,8 @@ pub fn parse_jmap_session(json: &str) -> Result<Found, DiscoverFault> {
         endpoints: vec![endpoint],
         claims,
         source: Source::JmapSession,
+        oauth: None,
+        pop3: Vec::new(),
     })
 }
 

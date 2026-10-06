@@ -81,6 +81,8 @@ pub fn parse_ocs_capabilities(json: &str) -> Result<Found, DiscoverFault> {
         endpoints: Vec::new(),
         claims,
         source: Source::Ocs,
+        oauth: None,
+        pop3: Vec::new(),
     })
 }
 

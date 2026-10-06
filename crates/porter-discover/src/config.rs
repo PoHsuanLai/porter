@@ -23,8 +23,6 @@ pub(crate) struct ClientConfig {
     /// Every `outgoingServer`, in document order.
     pub(crate) outgoing: Vec<Server>,
     /// The `oAuth2/issuer` host, when the document names an authorization server.
-    #[allow(dead_code)]
-    // read by the OAuth lane (W5b), which maps an issuer host to a provider
     pub(crate) oauth_issuer: Option<String>,
 }
 

@@ -15,12 +15,12 @@
 //! per-request timeout, size cap and redirect policy; this caps the document it will read.
 //! Nothing is sent to a discovered server: the result goes to the review step.
 
-use crate::autoconfig::{autoconfig_urls, domain_of, ispdb_url, parse_autoconfig};
+use crate::autoconfig::{autoconfig_urls, domain_of, ispdb_url, parse_autoconfig_with};
 use crate::dns::{Dns, DnsFault};
-use crate::found::{DiscoverFault, Found, Source};
+use crate::found::{DiscoverFault, Found, SearchOptions, Source, StartTlsOnly};
 use crate::mx::{ProviderLead, ispdb_candidates, lookup_mx, provider_leads};
 use crate::srv::{found_from_srv, lookup_srv};
-use porter_core::WebUrl;
+use porter_core::{Tls, WebUrl};
 use porter_http::{Http, HttpError, HttpRequest, Method};
 use porter_provider::{DomainMatch, ProviderSet};
 use std::fmt;
@@ -92,15 +92,30 @@ impl fmt::Display for NotFound {
     }
 }
 
-/// Searches every source in order for `address`, stopping at the first usable answer.
+/// Searches every source in order for `address`, stopping at the first usable answer, under the
+/// default [`SearchOptions`] (`STARTTLS` accepted, POP3 ignored).
 pub async fn discover_mail<H: Http, D: Dns>(
     http: &H,
     dns: &D,
     providers: &ProviderSet,
     address: &str,
 ) -> Result<Outcome, NotFound> {
+    discover_mail_with(http, dns, providers, address, &SearchOptions::default()).await
+}
+
+/// [`discover_mail`] under `options`. With `StartTlsOnly::TryNext`, a source whose servers need
+/// `STARTTLS` (a document, or SRV submission) is a miss and the next source is tried, as mailo
+/// did; with `Pop3::Report`, documents' POP3 servers come back on [`Found::pop3`] and a POP3-only
+/// document is a finding.
+pub async fn discover_mail_with<H: Http, D: Dns>(
+    http: &H,
+    dns: &D,
+    providers: &ProviderSet,
+    address: &str,
+    options: &SearchOptions,
+) -> Result<Outcome, NotFound> {
     let mut tried = Vec::new();
-    match search(http, dns, providers, address, &mut tried).await {
+    match search(http, dns, providers, address, options, &mut tried).await {
         Some(outcome) => Ok(outcome),
         None => Err(NotFound { tried }),
     }
@@ -111,6 +126,7 @@ async fn search<H: Http, D: Dns>(
     dns: &D,
     providers: &ProviderSet,
     address: &str,
+    options: &SearchOptions,
     tried: &mut Vec<Tried>,
 ) -> Option<Outcome> {
     let Some(domain) = domain_of(address) else {
@@ -128,14 +144,15 @@ async fn search<H: Http, D: Dns>(
 
     // 2. Documents.
     for url in autoconfig_urls(&domain, address) {
-        if let Some(found) = document(http, &url, address, Source::Autoconfig, tried).await {
+        if let Some(found) = document(http, &url, address, Source::Autoconfig, options, tried).await
+        {
             return Some(Outcome::Servers(found));
         }
     }
 
     // 3. SRV.
     match lookup_srv(dns, &domain).await {
-        Ok(answers) => match found_from_srv(address, &answers) {
+        Ok(answers) => match found_from_srv(address, &answers).and_then(|f| tls_ok(f, options)) {
             Ok(found) => return Some(Outcome::Servers(found)),
             Err(why) => tried.push(Tried {
                 what: format!("SRV records for {domain}"),
@@ -176,7 +193,7 @@ async fn search<H: Http, D: Dns>(
         let Ok(url) = WebUrl::parse(&ispdb_url(&candidate)) else {
             continue;
         };
-        if let Some(found) = document(http, &url, address, Source::Mx, tried).await {
+        if let Some(found) = document(http, &url, address, Source::Mx, options, tried).await {
             return Some(Outcome::Servers(found));
         }
     }
@@ -185,6 +202,15 @@ async fn search<H: Http, D: Dns>(
         miss: Miss::Absent,
     });
     None
+}
+
+/// Under `TryNext`, a finding with a `STARTTLS` endpoint is not one.
+fn tls_ok(found: Found, options: &SearchOptions) -> Result<Found, DiscoverFault> {
+    let starttls = found.endpoints.iter().any(|e| e.tls == Tls::StartTls);
+    match (options.starttls_only, starttls) {
+        (StartTlsOnly::TryNext, true) => Err(DiscoverFault::NoServers),
+        _ => Ok(found),
+    }
 }
 
 fn dns_miss(fault: DnsFault) -> Miss {
@@ -201,10 +227,11 @@ async fn document<H: Http>(
     url: &WebUrl,
     address: &str,
     source: Source,
+    options: &SearchOptions,
     tried: &mut Vec<Tried>,
 ) -> Option<Found> {
     let miss = match fetch(http, url).await {
-        Ok(body) => match parse_autoconfig(&body, address) {
+        Ok(body) => match parse_autoconfig_with(&body, address, options) {
             Ok(found) => return Some(Found { source, ..found }),
             Err(DiscoverFault::Unreadable) => Miss::Malformed,
             Err(why) => Miss::Unusable(why),
