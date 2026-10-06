@@ -9,6 +9,7 @@ use crate::cloud::models::RemoteModel;
 use crate::cloud::turn::CloudPin;
 use crate::local::{LocalModel, Weights};
 use crate::peers::{Caller, Role};
+use crate::probed::{ProbedBook, Standing};
 use crate::router::{Listed, choose};
 use crate::runner::{Pin, Pinned};
 use crate::serve::{EngineFailed, EngineHost};
@@ -82,6 +83,9 @@ struct Book {
     cloud: Option<Cloud>,
     /// The settings in force; shared by every clone, replaced when the file changes.
     live: Live,
+    /// The runtimes the person runs themselves, as the last probe found them; shared by every
+    /// clone.
+    probed: ProbedBook,
 }
 
 /// Every engine inferd supervises, and the models behind them.
@@ -119,6 +123,7 @@ impl Engines {
                     tiers,
                     ..Settings::default()
                 }),
+                probed: ProbedBook::default(),
             }),
             supervised,
         }
@@ -140,6 +145,7 @@ impl Engines {
             remote: self.book.remote.clone(),
             cloud: self.book.cloud.clone(),
             live: Live::new(settings),
+            probed: self.book.probed.clone(),
         };
         Self {
             book: Arc::new(book),
@@ -167,6 +173,7 @@ impl Engines {
             remote,
             cloud: self.book.cloud.clone(),
             live: self.book.live.clone(),
+            probed: self.book.probed.clone(),
         };
         Self {
             book: Arc::new(book),
@@ -182,11 +189,18 @@ impl Engines {
             remote: self.book.remote.clone(),
             cloud: Some(cloud),
             live: self.book.live.clone(),
+            probed: self.book.probed.clone(),
         };
         Self {
             book: Arc::new(book),
             supervised: self.supervised,
         }
+    }
+
+    /// The runtimes the person runs themselves, as the last probe found them. The probe writes
+    /// here (`watch`); routing, the picker and the session machine read.
+    pub fn probed(&self) -> &ProbedBook {
+        &self.book.probed
     }
 
     /// The hosted models, when this daemon serves any.
@@ -233,13 +247,29 @@ impl Engines {
         &self.supervised
     }
 
-    fn local(&self, model: &ModelRef) -> Option<&Arc<LocalModel>> {
-        self.book.local.iter().find(|one| one.model_ref() == *model)
+    fn local(&self, model: &ModelRef) -> Option<Arc<LocalModel>> {
+        self.book
+            .local
+            .iter()
+            .find(|one| one.model_ref() == *model)
+            .cloned()
+            .or_else(|| self.book.probed.find(model))
     }
 
-    /// How ready one local model is now.
+    /// How ready one local model is now: a supervised one by its engine, a probed one by whether
+    /// its runtime answered the last look.
     pub fn readiness(&self, model: &LocalModel) -> Readiness {
-        readiness_in(&self.supervised.snapshot(), model)
+        match model.loopback {
+            Some(_) => self.runtime_readiness(model),
+            None => readiness_in(&self.supervised.snapshot(), model),
+        }
+    }
+
+    fn runtime_readiness(&self, model: &LocalModel) -> Readiness {
+        self.book
+            .probed
+            .standing_of(&model.card.account)
+            .map_or(Readiness::Unavailable, Standing::readiness)
     }
 
     /// Every model a session may be routed to, with its readiness now and what loading it would
@@ -271,6 +301,15 @@ impl Engines {
                 .find(|model| model.spec.id == *id)
                 .map(|model| model.model_ref())
         };
+        let probed = self.book.probed.models();
+        let on_runtime = probed.iter().map(|(model, standing)| {
+            Listed::new(
+                model.card.clone(),
+                standing.readiness(),
+                SwapCost::Resident,
+                licence_of(&model.entry.licence),
+            )
+        });
         let local = self.book.local.iter().map(|model| {
             let readiness = readiness_in(&snapshot, model);
             let swap = match readiness {
@@ -309,7 +348,11 @@ impl Engines {
                 LicenceClass::Proprietary,
             )
         });
-        local.chain(remote).chain(hosted).collect()
+        local
+            .chain(on_runtime)
+            .chain(remote)
+            .chain(hosted)
+            .collect()
     }
 
     /// Decides who answers a session, and what the runner is to be pinned to. A need no runner
@@ -360,7 +403,7 @@ impl Engines {
             model: chosen.model.clone(),
         };
         let (locality, model, cloud) = match (self.local(&chosen_ref), offered.find(&chosen_ref)) {
-            (Some(local), _) => (local.card.locality.clone(), Some(Arc::clone(local)), None),
+            (Some(local), _) => (local.card.locality.clone(), Some(local), None),
             (None, Some(hosted)) => (
                 hosted.card.locality.clone(),
                 None,
@@ -615,6 +658,13 @@ impl EngineHost for Engines {
             });
             return if hosted { Ok(()) } else { Err(EngineFailed) };
         };
+        // A runtime the person runs is not started or stopped here: it is there or it is not.
+        if local.loopback.is_some() {
+            return match self.runtime_readiness(&local) {
+                Readiness::Ready => Ok(()),
+                _ => Err(EngineFailed),
+            };
+        }
         self.supervised
             .want(&local.spec.id)
             .await

@@ -15,6 +15,8 @@ use tokio::net::{TcpListener, TcpStream, UnixListener, UnixStream};
 pub enum Bind {
     /// An ephemeral port on `127.0.0.1`.
     Loopback,
+    /// This port on `127.0.0.1` (a fake that stops and comes back where it was).
+    Port(u16),
     /// A socket file in this (scratch) directory, named after the fake.
     Socket(PathBuf),
 }
@@ -60,6 +62,13 @@ impl Listener {
                 Ok(Self {
                     kind: Kind::Tcp(listener),
                     address: FakeAddress::Loopback(port),
+                })
+            }
+            Bind::Port(port) => {
+                let listener = TcpListener::bind(("127.0.0.1", *port)).await?;
+                Ok(Self {
+                    kind: Kind::Tcp(listener),
+                    address: FakeAddress::Loopback(*port),
                 })
             }
             Bind::Socket(dir) => {

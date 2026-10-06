@@ -86,3 +86,21 @@ impl EngineHost for Recorder {
         ExitCode(0)
     }
 }
+
+/// A model of an account that is not on this computer, for routing tests that must not reach it.
+pub fn cloud_card() -> porter_infer::ModelCard {
+    use porter_core::capability::{Capability, LlmCap, LlmFeature, LlmWire};
+    use porter_core::{AccountId, Billing, Locality, ModelId, Tokens};
+    porter_infer::ModelCard {
+        account: AccountId::parse("anthropic").expect("id"),
+        model: ModelId::parse("sonnet").expect("id"),
+        locality: Locality::Cloud { region: None },
+        billing: Billing::PlanBudget,
+        capabilities: vec![Capability::Llm(LlmCap {
+            features: [LlmFeature::Chat].into(),
+            context: Tokens(100_000),
+            max_output: Tokens(4096),
+            wire: LlmWire::Messages,
+        })],
+    }
+}

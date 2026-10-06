@@ -85,6 +85,7 @@ pub fn model(name: &str, cassette: &Path, context: Tokens, sockets: &Path) -> Op
         socket,
         flavor: Some(Flavor::LlamaServer),
         cassette: Some(cassette.to_path_buf()),
+        loopback: None,
         entry,
         profile,
     })

@@ -1,8 +1,10 @@
-//! Model lists: Ollama's `/api/tags` and `/api/show`, and an OpenAI-compatible `/v1/models`.
+//! Model lists: Ollama's `/api/tags` and `/api/show`, and an OpenAI-compatible `/v1/models`. Both
+//! wires also answer `POST /v1/chat/completions` (what a real Ollama, llama.cpp and LM Studio do)
+//! with a scripted stream, so a local runtime can be probed and then asked.
 
 use crate::http::{Hit, Request, Response, serve};
 use crate::net::{Bind, Listener};
-use crate::seen::{Running, Seen};
+use crate::seen::{Running, Seen, lock};
 use crate::shipped::point;
 use porter_core::Family;
 use porter_fake::{FakeAddress, FakeProtocol, FakeServer};
@@ -10,7 +12,7 @@ use porter_provider::ProviderSpec;
 use serde_json::{Value, json};
 use std::future::Future;
 use std::io;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 /// What one model is.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,6 +63,9 @@ impl ModelDef {
             format!("{}.context_length", self.family),
             json!(self.context),
         );
+        if self.capabilities.iter().any(|c| c == "embedding") {
+            info.insert(format!("{}.embedding_length", self.family), json!(768));
+        }
         json!({
             "modelfile": format!("FROM {}", self.name), "template": "{{ .Prompt }}",
             "details": { "format": "gguf", "family": self.family, "parameter_size": "3.2B", "quantization_level": "Q4_K_M" },
@@ -85,6 +90,10 @@ struct Shared {
     models: Arc<Vec<ModelDef>>,
     key: Option<String>,
     hits: Seen<Hit>,
+    /// The deltas the chat answer is made of, one per piece.
+    says: Arc<Mutex<Vec<String>>>,
+    /// The JSON bodies of the chat requests received.
+    chats: Seen<Value>,
 }
 
 /// The test's side of a running model-list server.
@@ -104,7 +113,17 @@ impl FakeModels {
     /// Binds a server of this wire holding `models`; `key` (OpenAI wire) is the bearer token it
     /// requires.
     pub async fn bind(wire: Wire, models: Vec<ModelDef>, key: Option<&str>) -> io::Result<Self> {
-        let listener = Listener::bind(&Bind::Loopback, "models").await?;
+        Self::bind_on(&Bind::Loopback, wire, models, key).await
+    }
+
+    /// `bind`, at `bind` (`Bind::Port` to come back where a stopped server was).
+    pub async fn bind_on(
+        bind: &Bind,
+        wire: Wire,
+        models: Vec<ModelDef>,
+        key: Option<&str>,
+    ) -> io::Result<Self> {
+        let listener = Listener::bind(bind, "models").await?;
         let port = crate::net::port_of(listener.address());
         Ok(Self {
             listener,
@@ -114,6 +133,8 @@ impl FakeModels {
                 models: Arc::new(models),
                 key: key.map(str::to_owned),
                 hits: Seen::default(),
+                says: Arc::new(Mutex::new(vec!["ok".to_owned()])),
+                chats: Seen::default(),
             },
         })
     }
@@ -146,6 +167,16 @@ impl ModelsHandle {
     /// Every request answered, oldest first.
     pub fn hits(&self) -> Vec<Hit> {
         self.shared.hits.all()
+    }
+
+    /// The JSON bodies of the chat requests received, oldest first.
+    pub fn chats(&self) -> Vec<Value> {
+        self.shared.chats.all()
+    }
+
+    /// What the chat answer says from now on, one delta per piece.
+    pub fn say(&self, pieces: &[&str]) {
+        *lock(&self.shared.says) = pieces.iter().map(|p| (*p).to_owned()).collect();
     }
 }
 
@@ -223,6 +254,34 @@ fn answer(shared: &Shared, request: &Request) -> Response {
                 .collect();
             Response::json(200, &json!({ "object": "list", "data": data }))
         }
+        (_, "POST", "/v1/chat/completions") => chat(shared, request),
         _ => Response::new(404),
     }
+}
+
+/// The scripted stream of a chat request: the pieces as deltas, a stop, usage, and `[DONE]`.
+fn chat(shared: &Shared, request: &Request) -> Response {
+    let wanted: Value = serde_json::from_slice(&request.body).unwrap_or(Value::Null);
+    let model = wanted.get("model").and_then(Value::as_str).unwrap_or("");
+    shared.chats.push(wanted.clone());
+    if !shared.models.iter().any(|m| m.name == model) {
+        return Response::json(
+            404,
+            &json!({ "error": { "message": format!("model '{model}' not found"), "type": "not_found" } }),
+        );
+    }
+    let frame = |delta: Value, finish: Value| {
+        let body = json!({ "id": "c1", "object": "chat.completion.chunk", "model": model,
+            "choices": [{ "index": 0, "delta": delta, "finish_reason": finish }] });
+        format!("data: {body}\n\n")
+    };
+    let mut body: String = lock(&shared.says)
+        .iter()
+        .map(|text| frame(json!({ "content": text }), Value::Null))
+        .collect();
+    body.push_str(&frame(json!({}), json!("stop")));
+    body.push_str(
+        "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":2}}\n\ndata: [DONE]\n\n",
+    );
+    Response::new(200).typed("text/event-stream", body)
 }

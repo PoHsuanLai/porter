@@ -11,7 +11,9 @@ use porter_dbus::{Details, INFERENCE_BUS, InferenceProxy, need_to_dbus};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 
-const CONFIG: &str = "[callers.apps]\n\"org.quire.Companion\" = [\"companiond.service\"]\n";
+/// The probe table names no port: this daemon must not ask a port of this computer what it is
+/// (a real Ollama may be on one).
+const CONFIG: &str = "[callers.apps]\n\"org.quire.Companion\" = [\"companiond.service\"]\n\n[probe]\nollama = []\nllama_cpp = []\nlm_studio = []\n";
 const CGROUP: &str =
     "0::/user.slice/user-1000.slice/user@1000.service/app.slice/companiond.service\n";
 

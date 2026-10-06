@@ -12,14 +12,15 @@ use crate::manager::Manager;
 use crate::relay::{RelayRoots, Relays};
 use porter_core::wire::{LegacyRef, ParentWindow, ProviderHint, Refusal};
 use porter_core::{
-    AccountId, AccountState, AccountsReply, AccountsRequest, AppId, CapabilityKind, EndpointUrl,
-    GrantId, ProviderId, RelayPlan, Toggle,
+    AccountId, AccountState, AccountsReply, AccountsRequest, AppId, CapabilityKind, Claim,
+    EndpointUrl, GrantId, ProviderId, RelayPlan, Toggle,
 };
 use porter_dbus::{ACCOUNTS_BUS, ACCOUNTS_PATH, Caller, CallerRole, Details, account_path};
 use porter_provider::Provider;
 use porter_secrets::{Secrets, SecretsError};
 use porter_service::{
-    AccountService, AuditSink, Clock, LegacyStore, Registry, RegistryStore, RevokeReport, Sheets,
+    AccountService, AuditSink, Clock, LegacyStore, LocalFault, Registry, RegistryStore,
+    RevokeReport, Sheets,
 };
 use serde::de::DeserializeOwned;
 use std::borrow::Cow;
@@ -105,6 +106,18 @@ pub trait Host: Send + Sync + 'static {
         let _ = (id, state);
         async { false }
     }
+
+    /// Takes a local runtime's report (`Peer.ReportLocal`): the account of `provider`, its
+    /// models as claims, its state. A host that keeps no such accounts says unavailable.
+    fn report_local(
+        &self,
+        provider: &ProviderId,
+        models: Vec<Claim>,
+        state: AccountState,
+    ) -> impl Future<Output = Result<AccountId, LocalFault>> + Send {
+        let _ = (provider, models, state);
+        async { Err(LocalFault::Unavailable) }
+    }
 }
 
 impl<P, S, U, K, R, A> Host for AccountService<P, S, U, K, R, A>
@@ -169,6 +182,15 @@ where
 
     fn set_state(&self, id: &AccountId, state: AccountState) -> impl Future<Output = bool> + Send {
         AccountService::set_state(self, id, state)
+    }
+
+    fn report_local(
+        &self,
+        provider: &ProviderId,
+        models: Vec<Claim>,
+        state: AccountState,
+    ) -> impl Future<Output = Result<AccountId, LocalFault>> + Send {
+        AccountService::report_local(self, provider, models, state)
     }
 }
 

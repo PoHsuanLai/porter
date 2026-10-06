@@ -209,6 +209,52 @@ async fn a_model_on_this_computer_is_grouped_and_the_default_and_automatic_are_n
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_model_of_a_probed_runtime_is_listed_under_this_computer_and_stays_listed_when_it_stops()
+{
+    use inferd::probe::{Found, Probed, Runtime};
+    use inferd::probed::Standing;
+    use porter_core::capability::{Capability, LlmCap, LlmFeature, LlmWire};
+    use porter_core::{Claim, Offer, Provenance, Subject, Tokens};
+    let id = ModelId::parse("llama3.2-3b").expect("id");
+    let found = Found {
+        runtime: Runtime::Ollama,
+        port: porter_provider::Port(11_434),
+        models: vec![Probed {
+            id: id.clone(),
+            name: "llama3.2:3b".into(),
+            claims: vec![Claim {
+                subject: Subject::Model(id),
+                offer: Offer::Present(Capability::Llm(LlmCap {
+                    features: [LlmFeature::Chat].into(),
+                    context: Tokens(8192),
+                    max_output: Tokens(8192),
+                    wire: LlmWire::OllamaNative,
+                })),
+                provenance: Provenance::Discovered,
+            }],
+        }],
+    };
+    let rig = Rig::start_with(vec![]).await;
+    rig.engines.probed().set(
+        Runtime::Ollama,
+        Standing::Online,
+        Some(found.local_models(std::path::Path::new("/nonexistent"))),
+    );
+    let settings = rig.live(&rig.client(Role::Settings).await).await;
+    for standing in [Standing::Online, Standing::Offline] {
+        rig.engines.probed().set(Runtime::Ollama, standing, None);
+        let schema: LiveSchema = settings.describe().await.expect("schema");
+        for spec in &schema.key {
+            let group = spec
+                .groups
+                .get(&ChoiceWord("ollama/llama3.2-3b".to_owned()))
+                .map(|g| g.0.as_str());
+            assert_eq!(group, Some("On this computer"), "{standing:?}");
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_set_by_the_settings_role_is_validated_written_and_in_force_for_the_next_route() {
     let rig = Rig::start().await;
     let settings = rig.live(&rig.client(Role::Settings).await).await;

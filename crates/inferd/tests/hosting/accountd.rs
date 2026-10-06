@@ -51,6 +51,8 @@ pub struct Calls {
     pub usages: Vec<String>,
     /// The grant of each `ResolveKey`.
     pub resolved: Vec<String>,
+    /// (provider, state, how many claims) of each `ReportLocal`, in order.
+    pub reported: Vec<(String, String, usize)>,
 }
 
 /// The fake, shared between the bus object and the test.
@@ -149,6 +151,22 @@ impl FakePeer {
                 (account.id.to_owned(), word.to_owned(), details)
             })
             .collect())
+    }
+
+    /// A probed runtime: recorded, and its account is the provider's id, as accountd's is.
+    fn report_local(
+        &self,
+        provider: String,
+        claims: Vec<(String, Details)>,
+        state: String,
+    ) -> fdo::Result<String> {
+        self.0
+            .calls
+            .lock()
+            .expect("lock")
+            .reported
+            .push((provider.clone(), state, claims.len()));
+        Ok(provider)
     }
 
     fn resolve_key(&self, grant: String) -> fdo::Result<OwnedFd> {

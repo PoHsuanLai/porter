@@ -18,10 +18,13 @@ use inferd::cloud::wire::{Door, Doors};
 use inferd::engines::Engines;
 use inferd::local::{EngineConfig, LocalModel, build};
 use inferd::peers::{Caller, Role, TablePeers};
+use inferd::probe::ProbeConfig;
 use inferd::replay::{NamedEngine, Replays};
+use inferd::report::PeerReports;
 use inferd::service::{Inference, serve_on};
 use inferd::settings::{Settings, SpendLine};
 use inferd::supervise::{Ports, Supervised};
+use inferd::watch::{Probing, Watch};
 use model_catalog::MiB;
 use model_http::{DerCertificate, TlsRoots};
 use porter_client::{Accounts, DbusTransport};
@@ -92,6 +95,9 @@ pub struct Plan {
     pub hosted: Option<Hosted>,
     /// The spend rows in force.
     pub spend: SpendLine,
+    /// Which ports are probed for runtimes the person runs (the fake accountd hears the
+    /// reports); none probes nothing and wires nothing.
+    pub probe: Option<ProbeConfig>,
 }
 
 impl Default for Plan {
@@ -106,6 +112,7 @@ impl Default for Plan {
             app: None,
             hosted: None,
             spend: SpendLine::default(),
+            probe: None,
         }
     }
 }
@@ -132,6 +139,8 @@ pub struct World {
     pub peers: Arc<TablePeers>,
     /// The connection the fake accountd is served on (it is gone with this).
     pub accountd_bus: Option<zbus::Connection>,
+    /// The look for local runtimes, when the plan has one (it stops with this).
+    pub probing: Option<Probing>,
 }
 
 static NEXT: AtomicU32 = AtomicU32::new(0);
@@ -273,17 +282,28 @@ impl World {
             },
         );
         let audit = Memory::default();
-        serve_on(
-            &daemon,
-            Inference::new(
+        let probing = plan.probe.map(|config| {
+            Watch::new(
+                porter_http::HyperHttp::new(),
+                config,
                 served.clone(),
-                Arc::clone(&peers),
-                audit.clone(),
-                FixedClock(UnixSeconds(1_700_000_000)),
-            ),
-        )
-        .await
-        .expect("serve Inference1");
+                Arc::new(PeerReports::new(daemon.clone())),
+                scratch.join("s"),
+            )
+            .spawn()
+        });
+        let mut inference = Inference::new(
+            served.clone(),
+            Arc::clone(&peers),
+            audit.clone(),
+            FixedClock(UnixSeconds(1_700_000_000)),
+        );
+        if let Some(probing) = &probing {
+            inference = inference.probing(probing.clone());
+        }
+        serve_on(&daemon, inference)
+            .await
+            .expect("serve Inference1");
         World {
             accounts: Accounts::over(DbusTransport::over(client.clone())),
             bus,
@@ -300,6 +320,7 @@ impl World {
             provider,
             peers,
             accountd_bus,
+            probing,
         }
     }
 }

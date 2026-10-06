@@ -11,7 +11,7 @@ use crate::bridge::{self, Frames};
 use crate::cloud::Cloud;
 use crate::cloud::turn::{self as hosted, CloudPin};
 use crate::cua_run::{CuaRun, StepJob};
-use crate::hosts::unix_endpoint;
+use crate::hosts::{loopback_endpoint, unix_endpoint};
 use crate::local::LocalModel;
 use crate::serve::{RunningTurn, TurnRunner, TurnStep};
 use crate::structured::{self, Limits, Shaping};
@@ -93,7 +93,11 @@ const TIMEOUTS: Timeouts = Timeouts {
 const TOUCH_EVERY: Duration = Duration::from_millis(250);
 
 fn client(model: &LocalModel) -> HttpClient {
-    HttpClient::new(unix_endpoint(model.socket.0.clone(), "/v1", TIMEOUTS))
+    HttpClient::new(match model.loopback {
+        // A runtime the person runs: plain HTTP to loopback, nothing else.
+        Some(port) => loopback_endpoint(port, "/v1", TIMEOUTS),
+        None => unix_endpoint(model.socket.0.clone(), "/v1", TIMEOUTS),
+    })
 }
 
 fn chat_provider(model: &LocalModel) -> Option<Retrying<OpenAiCompat, TokioSleep>> {

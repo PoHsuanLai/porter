@@ -18,6 +18,9 @@ test-proc-root = []
 porter-core = { workspace = true }
 cua-action = { workspace = true }
 porter-dbus = { workspace = true }
+porter-discover = { workspace = true }
+porter-http = { workspace = true, features = ["hyper"] }
+porter-provider = { workspace = true }
 porter-infer = { workspace = true }
 ds-settings = { workspace = true }
 model-provider = { workspace = true }

@@ -366,22 +366,30 @@ where
 }
 
 /// Accepts connections and answers each request with `handler`, over TLS when `tls` is given.
-/// Runs until the future is dropped.
+/// Runs until the future is dropped, which also ends every connection it is serving (a stopped
+/// fake does not go on answering a client that kept its connection open).
 pub async fn serve<H>(listener: Listener, tls: Option<TlsAcceptor>, handler: Arc<H>)
 where
     H: Fn(Request) -> Response + Send + Sync + 'static,
 {
-    while let Ok((conn, _peer)) = listener.accept().await {
-        let (handler, tls) = (Arc::clone(&handler), tls.clone());
-        tokio::spawn(async move {
-            // A connection that fails mid-request is a client that went away.
-            let _ = match tls {
-                Some(acceptor) => match acceptor.accept(conn).await {
-                    Ok(stream) => serve_stream(stream, &*handler).await,
-                    Err(e) => Err(e),
-                },
-                None => serve_stream(conn, &*handler).await,
-            };
-        });
+    let mut connections = tokio::task::JoinSet::new();
+    loop {
+        tokio::select! {
+            accepted = listener.accept() => {
+                let Ok((conn, _peer)) = accepted else { return };
+                let (handler, tls) = (Arc::clone(&handler), tls.clone());
+                connections.spawn(async move {
+                    // A connection that fails mid-request is a client that went away.
+                    let _ = match tls {
+                        Some(acceptor) => match acceptor.accept(conn).await {
+                            Ok(stream) => serve_stream(stream, &*handler).await,
+                            Err(e) => Err(e),
+                        },
+                        None => serve_stream(conn, &*handler).await,
+                    };
+                });
+            }
+            Some(_) = connections.join_next(), if !connections.is_empty() => {}
+        }
     }
 }

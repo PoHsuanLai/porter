@@ -76,17 +76,3 @@ async fn only_a_porter_daemon_may_ask_and_it_sees_the_consent_stores_verdict() {
         assert_eq!(error_name(&err), ACCESS_DENIED);
     }
 }
-
-#[tokio::test(flavor = "multi_thread")]
-async fn the_lane_that_owns_the_rest_of_the_peer_says_so() {
-    let rig = Rig::start().await;
-    let inferd = rig
-        .client_as(caller("org.quire.Inference", CallerRole::PorterDaemon))
-        .await;
-    let peer = PeerProxy::new(&inferd).await.expect("proxy");
-    let err = peer
-        .report_local("ollama", vec![], "ok")
-        .await
-        .expect_err("not yet");
-    assert!(error_name(&err).contains("NotSupported"), "{err:?}");
-}

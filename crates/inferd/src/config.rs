@@ -5,6 +5,7 @@
 use crate::catalog::CatalogDirs;
 use crate::local::EngineConfig;
 use crate::peers::CallerTable;
+use crate::probe::ProbeConfig;
 use crate::structured::AiConfig;
 use porter_infer::{Policy, TierMap};
 use serde::{Deserialize, Serialize};
@@ -42,6 +43,10 @@ pub struct InferdConfig {
     /// The `ai.*` settings rows, at their paths.
     #[serde(default)]
     pub ai: AiConfig,
+    /// Which ports are probed for the runtimes the person runs themselves (Ollama, llama.cpp,
+    /// LM Studio), and how often. Left out of the file while it is the default.
+    #[serde(default, skip_serializing_if = "ProbeConfig::is_default")]
+    pub probe: ProbeConfig,
 }
 
 impl InferdConfig {

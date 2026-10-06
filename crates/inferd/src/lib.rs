@@ -21,7 +21,10 @@ pub mod hosts;
 pub mod local;
 pub mod peers;
 pub mod pipeline;
+pub mod probe;
+pub mod probed;
 pub mod replay;
+pub mod report;
 pub mod router;
 pub mod runner;
 pub mod serve;
@@ -33,6 +36,7 @@ pub mod structured;
 pub mod supervise;
 pub mod swap;
 pub mod tee;
+pub mod watch;
 
 pub use adapters::AdapterModel;
 

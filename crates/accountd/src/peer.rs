@@ -2,21 +2,21 @@
 //! Only a connection whose caller role is `PorterDaemon` may call; every other sender is
 //! `AccessDenied`. The app is named by the daemon from its own connection, never by the app.
 //!
-//! `Verdicts` and `ResolveKey` (a sealed memfd of an API key) are served. `ReportLocal` (a probed
-//! runtime becoming an account) belongs to the local-runtime lane and answers `NotSupported`
-//! until it lands (FINDINGS).
+//! `Verdicts`, `ResolveKey` (a sealed memfd of an API key) and `ReportLocal` (a probed local
+//! runtime becoming an account, or going offline) are served.
 
 use crate::callers::Callers;
 use crate::core::{Core, Host, slug};
 use crate::errors::RefusedError;
 use crate::keys::sealed_key;
+use crate::vardict::record_of;
 use porter_core::consent::{Decision, GrantKey, Verdict, decide};
 use porter_core::wire::Refusal;
-use porter_core::{AccountState, CapabilityKind, GrantId, Toggle};
+use porter_core::{AccountState, CapabilityKind, Claim, GrantId, ProviderId, Toggle};
 use porter_core::{AppId, AppName, Isolation, Match, Offer, SpaceScope, matches};
 use porter_dbus::{AppArg, CallerRole, Details, NeedArg, VerdictArg, need_from_dbus};
+use porter_service::LocalFault;
 use std::sync::Arc;
-use zbus::fdo;
 use zbus::message::Header;
 use zbus::zvariant::{OwnedFd, OwnedValue, Value};
 
@@ -148,16 +148,57 @@ impl<H: Host, C: Callers> Peer<H, C> {
         Ok(OwnedFd::from(fd))
     }
 
+    /// A probed local runtime becoming an account of `provider` (`ollama`, `llama-cpp`,
+    /// `lm-studio`): its models as `Discovered` claims, its state `ok` or `offline`. Returns the
+    /// account id. The account is made on the first report and never deleted for going offline.
     async fn report_local(
         &self,
         #[zbus(header)] header: Header<'_>,
         provider: String,
         claims: Vec<(String, Details)>,
         state: String,
-    ) -> fdo::Result<String> {
-        let _ = (header, provider, claims, state);
-        Err(fdo::Error::NotSupported(
-            "ReportLocal waits for the local runtime lane".into(),
-        ))
+    ) -> Result<String, RefusedError> {
+        let caller = self.0.identify(&header, crate::core::Standing::Any).await?;
+        if caller.role != CallerRole::PorterDaemon {
+            return Err(RefusedError::access_denied(
+                "only a porter daemon may ask the peer interface",
+            ));
+        }
+        let provider = ProviderId::parse(&provider).map_err(RefusedError::invalid)?;
+        let state: AccountState = slug(&state)?;
+        let models = claims
+            .iter()
+            .map(|(kind, fields)| claim_of(kind, fields))
+            .collect::<Result<Vec<_>, _>>()?;
+        let id = self
+            .0
+            .host
+            .report_local(&provider, models, state)
+            .await
+            .map_err(fault)?;
+        self.0.publish().await;
+        Ok(id.to_string())
+    }
+}
+
+/// One reported claim: the kind's slug and the fields by name, as `Account.Capabilities` has them.
+/// The slug must be the kind of the offer the fields carry.
+fn claim_of(kind: &str, fields: &Details) -> Result<Claim, RefusedError> {
+    let record = record_of(fields).map_err(RefusedError::invalid)?;
+    let claim: Claim = serde_json::from_value(serde_json::Value::Object(record))
+        .map_err(|e| RefusedError::invalid(format!("claim: {e}")))?;
+    let stated: CapabilityKind = slug(kind)?;
+    match claim.offer.kind() == stated {
+        true => Ok(claim),
+        false => Err(RefusedError::invalid(format!(
+            "claim of kind `{kind}` carries another kind"
+        ))),
+    }
+}
+
+fn fault(fault: LocalFault) -> RefusedError {
+    match fault {
+        LocalFault::Unavailable => RefusedError::of(Refusal::Unavailable),
+        other => RefusedError::invalid(format!("{other:?}")),
     }
 }

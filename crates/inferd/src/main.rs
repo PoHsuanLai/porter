@@ -17,9 +17,12 @@ use inferd::hosts::{HealthProbe, NvidiaSmi, ProcessHost};
 use inferd::local::build;
 use inferd::peers::{ProcGate, ProcPeers, ProcRoot};
 use inferd::replay::Replays;
+use inferd::report::PeerReports;
 use inferd::service::{Inference, serve_on};
 use inferd::settings::{ConfigFile, InferdSettings, Reload, resolve, serve_settings};
 use inferd::supervise::{Ports, Supervised};
+use inferd::watch::Watch;
+use porter_http::{HyperHttp, Limits};
 use std::os::unix::fs::DirBuilderExt;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -28,6 +31,12 @@ use std::time::Duration;
 
 /// How often the daemon looks at its file for a change by someone else.
 const RELOAD_EVERY: Duration = Duration::from_secs(2);
+
+/// How long a runtime may take to answer a probe: one that does not is not running.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// The most a runtime's model list may hold, in bytes.
+const PROBE_MAX_BODY: usize = 1024 * 1024;
 
 /// porter's AI broker (`org.quire.Inference1`).
 #[derive(Debug, Parser)]
@@ -112,6 +121,19 @@ async fn run(args: Args) -> Result<(), String> {
     )
     .with_settings(settings.settings)
     .with_cloud(cloud);
+    // The runtimes the person runs themselves: looked for now, on `Rescan` and on a timer, and
+    // reported to accountd as accounts.
+    let probing = Watch::new(
+        HyperHttp::new().with_limits(Limits {
+            timeout: PROBE_TIMEOUT,
+            max_body: PROBE_MAX_BODY,
+        }),
+        config.probe.clone(),
+        engines.clone(),
+        Arc::new(PeerReports::new(connection.clone())),
+        dirs.sockets.clone(),
+    )
+    .spawn();
     let reload = Reload::new(ConfigFile::new(config_path), engines.clone());
     reload.clone().watch(RELOAD_EVERY);
     let root = ProcRoot::select(
@@ -133,7 +155,8 @@ async fn run(args: Args) -> Result<(), String> {
         SystemClock,
     )
     .limited(structured.limits)
-    .reloading(reload.clone());
+    .reloading(reload.clone())
+    .probing(probing);
     serve_on(&connection, daemon)
         .await
         .map_err(|e| e.to_string())?;

@@ -14,6 +14,7 @@ use crate::serve::{Seams, serve_session};
 use crate::session::SessionSpec;
 use crate::settings::Reload;
 use crate::structured::Limits;
+use crate::watch::Probing;
 use porter_core::{DataClass, Tier};
 use porter_dbus::{Details, INFERENCE_BUS, INFERENCE_PATH, NeedArg, need_from_dbus};
 use porter_infer::InferRefusal;
@@ -36,6 +37,7 @@ pub struct Inference<P, O, C> {
     clock: C,
     limits: Limits,
     reload: Option<Reload>,
+    probing: Option<Probing>,
 }
 
 impl<P, O, C> Inference<P, O, C> {
@@ -48,6 +50,7 @@ impl<P, O, C> Inference<P, O, C> {
             clock,
             limits: Limits::default(),
             reload: None,
+            probing: None,
         }
     }
 
@@ -55,6 +58,14 @@ impl<P, O, C> Inference<P, O, C> {
     pub fn reloading(self, reload: Reload) -> Self {
         Self {
             reload: Some(reload),
+            ..self
+        }
+    }
+
+    /// The same object, whose `Rescan` also looks at once for the runtimes the person runs.
+    pub fn probing(self, probing: Probing) -> Self {
+        Self {
+            probing: Some(probing),
             ..self
         }
     }
@@ -238,6 +249,9 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         if let Some(reload) = &self.reload {
             reload.now().map_err(failed)?;
         }
+        if let Some(probing) = &self.probing {
+            probing.now().await;
+        }
         Self::engines_changed(&emitter).await.map_err(failed)
     }
 
@@ -266,6 +280,7 @@ where
     C: Clock + Clone + 'static,
 {
     let supervised = daemon.engines.supervised().clone();
+    let probed = daemon.engines.probed().clone();
     connection
         .object_server()
         .at(INFERENCE_PATH, daemon)
@@ -279,6 +294,16 @@ where
             let _ = Inference::<P, O, C>::engines_changed(emitter).await;
             let guard = iface.get().await;
             let _ = guard.gpu_changed(emitter).await;
+        }
+    });
+    // A runtime the person runs came up, went away or changed its models.
+    let probed = probed.changed();
+    let iface: zbus::object_server::InterfaceRef<Inference<P, O, C>> =
+        connection.object_server().interface(INFERENCE_PATH).await?;
+    tokio::spawn(async move {
+        loop {
+            probed.notified().await;
+            let _ = Inference::<P, O, C>::engines_changed(iface.signal_emitter()).await;
         }
     });
     Ok(())

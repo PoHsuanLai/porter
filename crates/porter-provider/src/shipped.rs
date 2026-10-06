@@ -30,6 +30,14 @@ pub const SHIPPED_FILES: &[(&str, &str)] = &[
         include_str!("../../../providers/google-ai.toml"),
     ),
     ("icloud", include_str!("../../../providers/icloud.toml")),
+    (
+        "llama-cpp",
+        include_str!("../../../providers/llama-cpp.toml"),
+    ),
+    (
+        "lm-studio",
+        include_str!("../../../providers/lm-studio.toml"),
+    ),
     ("local", include_str!("../../../providers/local.toml")),
     (
         "microsoft",

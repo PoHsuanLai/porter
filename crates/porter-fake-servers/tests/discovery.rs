@@ -226,3 +226,74 @@ fn every_shipped_provider_file_is_readable_here() {
     .collect();
     assert_eq!(ids.len(), 4);
 }
+
+async fn chat(base: &str, model: &str) -> porter_fake_servers::Response {
+    let (address, _) = split_loopback(base).expect("address");
+    let request = Request::new("POST", "/v1/chat/completions")
+        .with_body(format!("{{\"model\":\"{model}\",\"stream\":true}}"));
+    send(&address, Scheme::Http, &request).await.expect("chat")
+}
+
+#[tokio::test]
+async fn both_wires_answer_a_chat_request_with_the_scripted_stream_and_keep_the_request() {
+    for wire in [Wire::Ollama, Wire::OpenAi] {
+        let server = FakeModels::start(wire, vec![ModelDef::chat("llama3.2:3b", 8192)], None)
+            .await
+            .expect("server");
+        server.say(&["Hel", "lo"]);
+        let answer = chat(server.base_url(), "llama3.2:3b").await;
+        assert_eq!(answer.status, 200, "{wire:?}");
+        assert_eq!(answer.header("content-type"), Some("text/event-stream"));
+        let text = answer.text();
+        let deltas: Vec<String> = text
+            .lines()
+            .filter_map(|line| line.strip_prefix("data: "))
+            .filter_map(|data| serde_json::from_str::<serde_json::Value>(data).ok())
+            .filter_map(|frame| {
+                frame["choices"][0]["delta"]["content"]
+                    .as_str()
+                    .map(str::to_owned)
+            })
+            .collect();
+        assert_eq!(deltas, ["Hel", "lo"], "{wire:?}");
+        assert!(text.contains("\"finish_reason\":\"stop\""));
+        assert!(text.trim_end().ends_with("data: [DONE]"));
+        // What was asked is kept, whole, for the test to read.
+        assert_eq!(server.chats().len(), 1);
+        assert_eq!(server.chats()[0]["model"], "llama3.2:3b");
+        // A model the runtime does not have is a 404 with the error a runtime sends.
+        let missing = chat(server.base_url(), "nope").await;
+        assert_eq!(missing.status, 404);
+        assert!(
+            missing.json_body().expect("json")["error"]["message"]
+                .as_str()
+                .expect("message")
+                .contains("not found")
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_server_that_stopped_comes_back_on_the_port_it_had() {
+    use porter_fake_servers::net::Bind;
+    let first = FakeModels::bind(Wire::Ollama, vec![ModelDef::chat("m", 2048)], None)
+        .await
+        .expect("bind");
+    let base = first.handle().base_url().to_owned();
+    let port: u16 = base
+        .rsplit(':')
+        .next()
+        .expect("port")
+        .parse()
+        .expect("number");
+    drop(first);
+    let again = FakeModels::bind_on(
+        &Bind::Port(port),
+        Wire::Ollama,
+        vec![ModelDef::chat("m", 2048)],
+        None,
+    )
+    .await
+    .expect("rebind");
+    assert_eq!(again.handle().base_url(), base);
+}

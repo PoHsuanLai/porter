@@ -10,6 +10,7 @@ use crate::catalog::claims_of;
 use crate::replay::NamedEngine;
 use engine_supervisor::{EnginePaths, EngineSpec, ProgramPath, SocketPath, command};
 use model_catalog::{EngineKind, EngineProfile, ModelEntry};
+use model_http::Port;
 use model_openai_compat::Flavor;
 use model_provider::{Caps, EmbedCaps, ModelName, Tokens};
 use porter_core::{AccountId, Billing, Capability, Locality, ModelId, Offer};
@@ -100,6 +101,10 @@ pub struct LocalModel {
     pub flavor: Option<Flavor>,
     /// The cassette a replay engine plays; its model has no weights to look for.
     pub cassette: Option<PathBuf>,
+    /// The loopback port of a runtime the person runs themselves (Ollama, llama.cpp, LM
+    /// Studio): the model is reached there over plain HTTP, `socket` is unused, there are no
+    /// weights to look for, and nothing here starts or stops anything (`probe`).
+    pub loopback: Option<Port>,
 }
 
 impl LocalModel {
@@ -115,7 +120,7 @@ impl LocalModel {
     /// engine's sandbox binds, so it is looked for live (a download that finishes makes the
     /// model loadable without a restart).
     pub fn weights(&self) -> Weights {
-        if self.cassette.is_some() {
+        if self.cassette.is_some() || self.loopback.is_some() {
             return Weights::Present;
         }
         match self.spec.unit.sandbox.read.first() {
@@ -206,6 +211,7 @@ fn one(entry: &ModelEntry, engines: &EngineConfig, sockets: &Path) -> Option<Loc
         socket,
         flavor: flavor_of(profile.kind),
         cassette: None,
+        loopback: None,
         entry: entry.clone(),
         profile,
     })

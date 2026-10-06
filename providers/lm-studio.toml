@@ -1,0 +1,23 @@
+# LM Studio's local server on this computer: found by a probe, no sign-in; its models are read
+# from the OpenAI-compatible /v1/models (design/31 §3.3). inferd reports it through
+# `Peer.ReportLocal`; the account goes `offline` when the server stops and is never deleted for
+# it. The row below is the floor every chat model meets.
+id = "lm-studio"
+label = "LM Studio"
+mark = "lm-studio"
+
+[auth]
+kind = "local_runtime"
+
+[discovery]
+kind = "probe_ports"
+v = { ports = [1234] }
+
+[ai]
+locality = { kind = "on_device" }
+billing = { kind = "free" }
+
+[[capability]]
+family = "chat_completions"
+kind = "llm"
+v = { features = ["chat"], context = 2048, max_output = 2048, wire = "chat_completions" }

@@ -163,6 +163,21 @@ pub fn unix_endpoint(socket: PathBuf, base: &str, timeouts: Timeouts) -> HttpEnd
     }
 }
 
+/// An endpoint on `127.0.0.1` at `port` over plain HTTP, with no auth: a runtime the person runs.
+pub fn loopback_endpoint(port: model_http::Port, base: &str, timeouts: Timeouts) -> HttpEndpoint {
+    HttpEndpoint {
+        target: HttpTarget::Tcp {
+            host: model_http::HostName("127.0.0.1".to_owned()),
+            port,
+        },
+        proxy: model_http::Proxy::Direct,
+        base: UrlPath(base.to_owned()),
+        auth: AuthHeader::None,
+        headers: Vec::new(),
+        timeouts,
+    }
+}
+
 impl ReadyProbe for HealthProbe {
     async fn probe(&self, id: &EngineId) -> Probe {
         let Some(socket) = self.sockets.get(id) else {

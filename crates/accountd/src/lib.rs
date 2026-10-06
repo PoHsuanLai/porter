@@ -29,7 +29,9 @@
 //! - `Peer.ResolveKey`: an API key of a granted Llm account on a sealed memfd, for a porter daemon
 //!   only (`keys`); the key is read by `Options::keys`.
 //!
-//! Not served: `Peer.ReportLocal`.
+//! - `Peer.ReportLocal`: a probed local runtime (Ollama, llama.cpp, LM Studio) as an account of its
+//!   provider file, its models as claims, `offline` when it stops (`peer`); a porter daemon only.
+//!
 
 mod account;
 pub mod add;
@@ -53,6 +55,7 @@ mod settings;
 mod settings_keys;
 mod sheets;
 mod store;
+mod vardict;
 
 pub use audit::FileAudit;
 pub use callers::{Callers, TableCallers};
