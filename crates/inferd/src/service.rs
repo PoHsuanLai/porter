@@ -9,6 +9,7 @@ use crate::audit::{AuditOut, SessionAudit};
 use crate::clock::Clock;
 use crate::engines::Engines;
 use crate::peers::{Caller, Peers};
+use crate::pipeline::Hearing;
 use crate::runner::{Pin, Turns};
 use crate::serve::{Seams, serve_session};
 use crate::session::SessionSpec;
@@ -150,7 +151,12 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         let stream = UnixStream::from_std(ours).map_err(failed)?;
         let pin = Pin::new();
         let turns = Turns::new(pin.clone(), self.engines.supervised().clone(), spec.tier)
-            .limited(self.limits);
+            .limited(self.limits)
+            .hearing(Hearing {
+                engines: self.engines.clone(),
+                app: Some(caller.app.clone()),
+                spec: spec.clone(),
+            });
         let seams = Seams {
             router: self.engines.router_for(pin, &caller),
             engines: self.engines.clone(),

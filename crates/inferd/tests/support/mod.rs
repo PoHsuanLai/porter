@@ -150,6 +150,15 @@ impl TurnRunner for Runner {
             runner: self.clone(),
         }
     }
+
+    fn start_heard(
+        &self,
+        chat: porter_infer::ChatRequest,
+        heard: inferd::session::HeardAudio,
+    ) -> Turn {
+        self.audio.lock().expect("lock").extend(heard.frames);
+        self.start(InferRequest::Chat(chat), Vec::new())
+    }
 }
 
 impl RunningTurn for Turn {

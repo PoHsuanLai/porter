@@ -93,6 +93,14 @@ impl TurnRunner for Scripted {
             after_audio: later.into_iter().map(event).collect(),
         }
     }
+
+    fn start_heard(
+        &self,
+        chat: porter_infer::ChatRequest,
+        _: inferd::session::HeardAudio,
+    ) -> Played {
+        self.start(InferRequest::Chat(chat), Vec::new())
+    }
 }
 
 impl RunningTurn for Played {

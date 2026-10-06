@@ -6,8 +6,8 @@ use super::seams::{
     AuditSink, EngineFailed, EngineHost, Router, RunningTurn, Seams, TurnRunner, TurnStep,
 };
 use super::wire::Wire;
-use crate::session::{Phase, SessionIn, SessionOut, SessionSpec, step};
-use porter_infer::{ClientFrame, ServedBy, Why};
+use crate::session::{HeardAudio, Phase, SessionIn, SessionOut, SessionSpec, step};
+use porter_infer::{ClientFrame, InferRequest, ServedBy, Why};
 use std::future::Future;
 use std::os::fd::OwnedFd;
 use std::pin::Pin;
@@ -22,6 +22,8 @@ struct Live<'a, E: EngineHost, T: TurnRunner> {
     wait: Option<Wait<'a>>,
     /// The descriptors of the one request that may be queued, until it starts.
     held: Option<Vec<OwnedFd>>,
+    /// The audio of a voice chat, from the machine's `Hear` until the `StartTurn` after it.
+    heard: Option<HeardAudio>,
     /// What the turn in flight carries, for the audit entry.
     tally: Tally,
     /// Why the route chose the model the session is pinned to, for the audit entry.
@@ -46,6 +48,7 @@ pub async fn serve_session<R, E, T, A>(
         turn: None,
         wait: None,
         held: None,
+        heard: None,
         tally: Tally::default(),
         why: Why::Named,
         engines: &seams.engines,
@@ -176,8 +179,18 @@ where
                     .or_else(|| live.held.take())
                     .unwrap_or_default();
                 live.tally = Tally::begin(&request);
-                live.turn = Some(seams.runner.start(request, fds));
+                live.turn = Some(match (live.heard.take(), request) {
+                    (Some(heard), InferRequest::Chat(chat)) => {
+                        heard
+                            .frames
+                            .iter()
+                            .for_each(|frame| live.tally.heard(frame));
+                        seams.runner.start_heard(chat, heard)
+                    }
+                    (_, request) => seams.runner.start(request, fds),
+                });
             }
+            SessionOut::Hear(heard) => live.heard = Some(heard),
             SessionOut::DropTurn => live.turn = None,
             SessionOut::Audio(frame) => {
                 live.tally.heard(&frame);
@@ -207,6 +220,7 @@ fn served_of(phase: &Phase) -> Option<ServedBy> {
     match phase {
         Phase::Waiting { served, .. }
         | Phase::Idle { served, .. }
+        | Phase::Hearing { served, .. }
         | Phase::InTurn { served, .. } => Some(served.clone()),
         Phase::Opened | Phase::Closed => None,
     }

@@ -1,13 +1,14 @@
 //! The transition function of one session (see the parent module for the states).
 
 use super::{
-    AudioCursor, CuaProgress, Phase, RoutedNote, Routing, SessionIn, SessionOut, SessionSpec, fits,
-    model_of,
+    AudioCursor, CuaProgress, EngineNow, HeardAudio, MAX_HEARD_MS, Phase, RoutedNote, Routing,
+    SessionIn, SessionOut, SessionSpec, fits, model_of,
 };
-use crate::speech::check_audio;
+use crate::speech::{audio_ms, check_audio};
+use porter_core::Need;
 use porter_infer::{
     AudioRate, ClientFrame, Declined, InferEvent, InferRefusal, InferReply, InferRequest,
-    ModelError, Readiness, RequestKind, ServedBy, ShowReason, StageNote, Why,
+    ModelError, Readiness, RequestKind, ServedBy, ShowReason, StageNote, TranscribeBegin, Why,
 };
 
 /// The next state and effects for `input` in `phase` (models §4.2, voice §3.4).
@@ -18,6 +19,11 @@ pub fn step(spec: &SessionSpec, phase: Phase, input: SessionIn) -> (Phase, Vec<S
     match (phase, input) {
         (Phase::Closed, _) => (Phase::Closed, vec![]),
         (phase, SessionIn::Closed) => close(phase),
+        (phase @ Phase::Hearing { .. }, input) => hearing(spec, phase, input),
+        (
+            waiting @ Phase::Waiting { queued: None, .. },
+            SessionIn::Frame(ClientFrame::Request(InferRequest::Transcribe(begin))),
+        ) if matches!(spec.need, Need::Llm(_)) => start_hearing(waiting, &begin),
         (Phase::Opened, SessionIn::Routed(Err(refused))) => (
             Phase::Closed,
             declined_event(refused.declined)
@@ -109,6 +115,10 @@ pub fn step(spec: &SessionSpec, phase: Phase, input: SessionIn) -> (Phase, Vec<S
                 vec![refused(InferRefusal::Unsupported)],
             ),
         },
+        (
+            idle @ Phase::Idle { .. },
+            SessionIn::Frame(ClientFrame::Request(InferRequest::Transcribe(begin))),
+        ) if matches!(spec.need, Need::Llm(_)) => start_hearing(idle, &begin),
         (idle @ Phase::Idle { .. }, SessionIn::Frame(ClientFrame::Request(request))) => {
             request_in_idle(spec, idle, request)
         }
@@ -170,6 +180,7 @@ fn pinned(phase: &Phase) -> Option<&ServedBy> {
     match phase {
         Phase::Waiting { served, .. }
         | Phase::Idle { served, .. }
+        | Phase::Hearing { served, .. }
         | Phase::InTurn { served, .. } => Some(served),
         Phase::Opened | Phase::Closed => None,
     }
@@ -253,6 +264,182 @@ fn request_in_idle(
 
 /// The only audio rate of v1 (`AudioRate` docs).
 const V1_RATE: AudioRate = AudioRate(16_000);
+
+/// A voice chat begins on a language session, idle or still waiting for its engine: its
+/// `Transcribe` request says how the audio that follows is to be heard, and the audio is kept
+/// (up to [`MAX_HEARD_MS`]) until the chat it belongs to. Nothing is announced yet. A rate other
+/// than v1's is refused, as a transcription's frames would be.
+fn start_hearing(before: Phase, begin: &TranscribeBegin) -> (Phase, Vec<SessionOut>) {
+    let (served, answer, routed, cua, engine) = match before {
+        Phase::Idle {
+            served,
+            answer,
+            routed,
+            cua,
+        } => (served, answer, routed, cua, EngineNow::Ready),
+        Phase::Waiting {
+            served,
+            answer,
+            queued: None,
+        } => (
+            served,
+            answer,
+            RoutedNote::Pending,
+            CuaProgress::NotBegun,
+            EngineNow::Loading,
+        ),
+        other => return (other, vec![refused(InferRefusal::Unsupported)]),
+    };
+    let hearing = Phase::Hearing {
+        served,
+        answer,
+        routed,
+        cua,
+        heard: HeardAudio {
+            begin: begin.clone(),
+            frames: Vec::new(),
+        },
+        audio: AudioCursor::Expecting { next: 0 },
+        engine,
+        chat: None,
+    };
+    if begin.rate == V1_RATE {
+        (hearing, vec![])
+    } else {
+        (settle(hearing), vec![refused(InferRefusal::Unsupported)])
+    }
+}
+
+/// The phase a `Hearing` session goes back to when no voice chat is under way.
+fn settle(hearing: Phase) -> Phase {
+    match hearing {
+        Phase::Hearing {
+            served,
+            answer,
+            routed,
+            cua,
+            engine: EngineNow::Ready,
+            ..
+        } => Phase::Idle {
+            served,
+            answer,
+            routed,
+            cua,
+        },
+        Phase::Hearing { served, answer, .. } => Phase::Waiting {
+            served,
+            answer,
+            queued: None,
+        },
+        other => other,
+    }
+}
+
+/// What a language session does while it collects the audio of a voice chat: frames fill the
+/// buffer, `EndOfAudio` closes it, the `Chat` that follows starts the pipeline turn (once the
+/// engine is up). Anything else is refused and changes nothing, except a cancel, which drops the
+/// audio, and a failure of the engine, which ends the session.
+fn hearing(spec: &SessionSpec, phase: Phase, input: SessionIn) -> (Phase, Vec<SessionOut>) {
+    let Phase::Hearing {
+        served,
+        answer,
+        routed,
+        cua,
+        heard,
+        audio,
+        engine,
+        chat,
+    } = phase
+    else {
+        return (phase, vec![]);
+    };
+    let ended = audio == AudioCursor::NoAudio;
+    let same = |heard, audio, engine, chat| Phase::Hearing {
+        served: served.clone(),
+        answer: answer.clone(),
+        routed,
+        cua,
+        heard,
+        audio,
+        engine,
+        chat,
+    };
+    let back = |heard: HeardAudio| settle(same(heard, audio, engine, chat.clone()));
+    let begin_turn = |request: InferRequest, heard: HeardAudio| {
+        (
+            Phase::InTurn {
+                served: served.clone(),
+                answer: answer.clone(),
+                kind: RequestKind::Chat,
+                audio: AudioCursor::NoAudio,
+                cua,
+                queued: None,
+            },
+            vec![SessionOut::Hear(heard), SessionOut::StartTurn(request)],
+        )
+    };
+    match input {
+        SessionIn::Frame(ClientFrame::Cancel) => {
+            (back(heard), vec![finished(InferReply::Cancelled)])
+        }
+        SessionIn::Frame(ClientFrame::Audio(frame)) if !ended => {
+            match check_audio(audio, V1_RATE, &frame) {
+                Ok(next @ AudioCursor::Expecting { next: samples })
+                    if audio_ms(V1_RATE, samples) <= MAX_HEARD_MS =>
+                {
+                    let mut heard = heard;
+                    heard.frames.push(frame);
+                    (same(heard, next, engine, chat), vec![])
+                }
+                Ok(_) | Err(_) => (
+                    back(heard),
+                    vec![finished(InferReply::Failed(ModelError::Unreadable))],
+                ),
+            }
+        }
+        SessionIn::Frame(ClientFrame::EndOfAudio) if !ended && heard.frames.is_empty() => (
+            back(heard),
+            vec![finished(InferReply::Failed(ModelError::Unreadable))],
+        ),
+        SessionIn::Frame(ClientFrame::EndOfAudio) if !ended => {
+            (same(heard, AudioCursor::NoAudio, engine, chat), vec![])
+        }
+        SessionIn::Frame(ClientFrame::Request(request @ InferRequest::Chat(_)))
+            if ended && chat.is_none() && admits(spec, cua, &request) =>
+        {
+            match engine {
+                EngineNow::Ready => begin_turn(request, heard),
+                EngineNow::Loading => (same(heard, audio, engine, Some(request)), vec![]),
+            }
+        }
+        SessionIn::EngineReady => match chat {
+            Some(request) => begin_turn(request, heard),
+            None => (same(heard, audio, EngineNow::Ready, None), vec![]),
+        },
+        SessionIn::EngineProgress(readiness) if engine == EngineNow::Loading => (
+            same(heard, audio, engine, chat),
+            waiting_event(readiness).into_iter().collect(),
+        ),
+        SessionIn::EngineFailed => (
+            Phase::Closed,
+            [
+                finished(InferReply::Failed(ModelError::NotReady)),
+                SessionOut::Release(model_of(&served)),
+            ]
+            .into_iter()
+            .collect(),
+        ),
+        SessionIn::Frame(_) => (
+            same(heard, audio, engine, chat),
+            vec![refused(InferRefusal::Unsupported)],
+        ),
+        SessionIn::Routed(_)
+        | SessionIn::EngineProgress(_)
+        | SessionIn::TurnEvent(_)
+        | SessionIn::TurnDone(_)
+        | SessionIn::Closed => (same(heard, audio, engine, chat), vec![]),
+    }
+}
 
 /// A turn is over: back to idle, then the queued request, if any, starts at once.
 fn turn_over(

@@ -3,6 +3,7 @@
 
 mod helpers;
 mod rows_cua;
+mod rows_hear;
 mod rows_queue;
 mod rows_route;
 mod rows_turn;

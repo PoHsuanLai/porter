@@ -15,7 +15,9 @@ use crate::cloud::turn::{self as hosted, CloudPin};
 use crate::cua_run::{CuaRun, StepJob};
 use crate::hosts::{loopback_endpoint, unix_endpoint};
 use crate::local::LocalModel;
+use crate::pipeline::Hearing;
 use crate::serve::{RunningTurn, TurnRunner, TurnStep};
+use crate::session::HeardAudio;
 use crate::speech::{ChannelAudio, SpeechRunner};
 use crate::structured::{self, Limits, Shaping};
 use crate::supervise::Supervised;
@@ -25,8 +27,8 @@ use model_provider as sp;
 use model_provider::{Embedder, Provider, Retrying};
 use porter_core::Tier;
 use porter_infer::{
-    AudioFrame, ChatSink, CuaStepFailure, CuaStepReply, EmbedReply, Flow, InferEvent, InferRefusal,
-    InferReply, InferRequest, ModelError, ServedBy, TokenUsage, TranscribeBegin,
+    AudioFrame, ChatRequest, ChatSink, CuaStepFailure, CuaStepReply, EmbedReply, Flow, InferEvent,
+    InferRefusal, InferReply, InferRequest, ModelError, ServedBy, TokenUsage, TranscribeBegin,
 };
 use std::future::Future;
 use std::os::fd::OwnedFd;
@@ -121,6 +123,7 @@ pub struct Turns {
     run: Arc<Mutex<Option<CuaRun>>>,
     limits: Limits,
     cloud: Option<Cloud>,
+    hearing: Option<Hearing>,
 }
 
 impl Turns {
@@ -133,6 +136,27 @@ impl Turns {
             run: Arc::default(),
             limits: Limits::default(),
             cloud: None,
+            hearing: None,
+        }
+    }
+
+    /// The same turns, able to answer a voice chat (`start_heard`).
+    pub fn hearing(self, hearing: Hearing) -> Self {
+        Self {
+            hearing: Some(hearing),
+            ..self
+        }
+    }
+
+    /// These turns pinned to another model (the answering stage of a pipeline): a fresh cell,
+    /// the same engines, limits and hosted reach.
+    pub(crate) fn pinned_to(&self, pinned: Pinned) -> Self {
+        let pin = Pin::new();
+        pin.set(pinned);
+        Self {
+            pin,
+            hearing: None,
+            ..self.clone()
         }
     }
 
@@ -157,6 +181,17 @@ pub struct Turn {
     task: JoinHandle<()>,
     /// Where a `Transcribe` turn's audio goes; none once the person stopped talking.
     audio: Option<mpsc::UnboundedSender<AudioFrame>>,
+}
+
+impl Turn {
+    /// A turn that is the task `task`, whose steps arrive on `steps`; it takes no audio.
+    pub(crate) fn running(steps: mpsc::UnboundedReceiver<TurnStep>, task: JoinHandle<()>) -> Self {
+        Self {
+            steps,
+            task,
+            audio: None,
+        }
+    }
 }
 
 impl Drop for Turn {
@@ -209,6 +244,22 @@ impl TurnRunner for Turns {
             task,
             audio: Some(audio),
         }
+    }
+
+    fn start_heard(&self, chat: ChatRequest, heard: HeardAudio) -> Turn {
+        let (steps, inbox) = mpsc::unbounded_channel();
+        let turns = self.clone();
+        let task = tokio::spawn(async move {
+            let mut sink = ToSession {
+                steps: steps.clone(),
+            };
+            let reply = match &turns.hearing {
+                Some(hearing) => hearing.run(&turns, chat, heard, &mut sink).await,
+                None => refused(InferRefusal::Unsupported),
+            };
+            let _ = steps.send(TurnStep::Done(reply));
+        });
+        Turn::running(inbox, task)
     }
 }
 

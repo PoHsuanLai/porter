@@ -21,7 +21,7 @@ use engine_supervisor::{EngineId, EngineState, MonoMs};
 use model_catalog::Licence;
 use porter_core::capability::SpeechMode;
 use porter_core::consent::{Availability, Usage};
-use porter_core::{AccountId, AppId, DataClass, Need, Tier};
+use porter_core::{AccountId, AppId, DataClass, Locality, Need, Tier};
 use porter_infer::{
     AutoPolicy, InferRefusal, LicenceClass, ModelCard, ModelRef, PickRefusal, Policy, Readiness,
     ServedBy, SpendVerdict, SwapCost, TierMap, Why,
@@ -409,25 +409,10 @@ impl Engines {
             account: chosen.account.clone(),
             model: chosen.model.clone(),
         };
-        let (locality, model, cloud) = match (self.local(&chosen_ref), offered.find(&chosen_ref)) {
-            (Some(local), _) => (local.card.locality.clone(), Some(local), None),
-            (None, Some(hosted)) => (
-                hosted.card.locality.clone(),
-                None,
-                offered.app.clone().map(|app| CloudPin {
-                    model: Arc::clone(hosted),
-                    app,
-                    line: settings.spend,
-                }),
-            ),
-            (None, None) => return Err(PickRefusal::from(InferRefusal::Unavailable)),
-        };
-        let name = match (&model, &cloud) {
-            (Some(local), _) => Some(local.entry.label.clone()),
-            (None, Some(pin)) => Some(pin.model.entry.label.clone()),
-            (None, None) => None,
-        }
-        .map(porter_infer::ModelLabel);
+        let (locality, model, cloud) = self
+            .backing(&chosen_ref, offered, &settings)
+            .ok_or_else(|| PickRefusal::from(InferRefusal::Unavailable))?;
+        let name = self.label_of(&chosen_ref, offered);
         let served = ServedBy {
             account: chosen.account,
             model: chosen.model,
@@ -448,6 +433,56 @@ impl Engines {
                 cloud,
             },
         ))
+    }
+
+    /// What runs `model` for a session: where it is (`Locality`), the local model behind it, or the
+    /// hosted one (for the app `offered` is for). None for a model nothing here can run.
+    fn backing(
+        &self,
+        model: &ModelRef,
+        offered: &Offered,
+        settings: &Settings,
+    ) -> Option<(Locality, Option<Arc<LocalModel>>, Option<CloudPin>)> {
+        match (self.local(model), offered.find(model)) {
+            (Some(local), _) => Some((local.card.locality.clone(), Some(local), None)),
+            (None, Some(hosted)) => Some((
+                hosted.card.locality.clone(),
+                None,
+                offered.app.clone().map(|app| CloudPin {
+                    model: Arc::clone(hosted),
+                    app,
+                    line: settings.spend,
+                }),
+            )),
+            (None, None) => None,
+        }
+    }
+
+    /// The catalogue label of `model`, local or hosted: what a person reads as its name.
+    pub fn label_of(
+        &self,
+        model: &ModelRef,
+        offered: &Offered,
+    ) -> Option<porter_infer::ModelLabel> {
+        self.local(model)
+            .map(|local| local.entry.label.clone())
+            .or_else(|| offered.find(model).map(|hosted| hosted.entry.label.clone()))
+            .map(porter_infer::ModelLabel)
+    }
+
+    /// What a turn on `model` is pinned to, for a model that is not the one a session's route
+    /// chose (the answering stage of a pipeline). None for a model nothing here can run.
+    pub fn pinned_for(&self, model: &ModelRef, offered: &Offered) -> Option<Pinned> {
+        let (locality, local, cloud) = self.backing(model, offered, &self.settings())?;
+        Some(Pinned {
+            served: ServedBy {
+                account: model.account.clone(),
+                model: model.model.clone(),
+                locality,
+            },
+            model: local,
+            cloud,
+        })
     }
 
     /// Models for a need; none when no runner serves that kind of need yet: speech to text runs
@@ -723,7 +758,7 @@ impl crate::serve::Router for SessionRouter {
 /// The tier map with every `cloud/<model>` row (a hosted model picked without an account) naming
 /// the account that reaches it for this app; a row nothing reaches stays as it is, and so names a
 /// model no candidate has.
-fn through_grants(tiers: &TierMap, offered: &Offered) -> TierMap {
+pub(crate) fn through_grants(tiers: &TierMap, offered: &Offered) -> TierMap {
     let virtual_account = AccountId::parse(CLOUD_ACCOUNT).ok();
     let resolve = |model: &ModelRef| match offered.models().find(|one| {
         Some(&model.account) == virtual_account.as_ref() && one.card.model == model.model

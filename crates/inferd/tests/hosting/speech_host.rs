@@ -15,6 +15,7 @@ use speech_provider::{
 };
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
@@ -61,7 +62,19 @@ struct Utterance {
     samples: u64,
 }
 
-async fn serve_connection(mut stream: UnixStream, words: Words, seen: Arc<Mutex<Seen>>) {
+/// Waits while the test holds the host's answer to the end of an utterance.
+async fn held(hold: &AtomicBool) {
+    while hold.load(Ordering::SeqCst) {
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+}
+
+async fn serve_connection(
+    mut stream: UnixStream,
+    words: Words,
+    seen: Arc<Mutex<Seen>>,
+    hold: Arc<AtomicBool>,
+) {
     let mut utterance: Option<Utterance> = None;
     while let Some(message) = read_in(&mut stream).await {
         let replies: Vec<HostOut> = match message {
@@ -110,6 +123,7 @@ async fn serve_connection(mut stream: UnixStream, words: Words, seen: Arc<Mutex<
             }
             HostIn::End => {
                 lock(&seen).ends += 1;
+                held(&hold).await;
                 match utterance.take() {
                     Some(utterance) => {
                         let text = HeardText(words.0.join(" "));
@@ -163,6 +177,16 @@ impl FakeSpeechHost {
 
     /// As `start`, recording into `seen` (so several runs of one engine share a record).
     pub fn start_into(socket: &Path, words: Words, seen: Arc<Mutex<Seen>>) -> Self {
+        Self::start_held(socket, words, seen, Arc::default())
+    }
+
+    /// As `start_into`; while `hold` is set the host does not answer the end of an utterance.
+    pub fn start_held(
+        socket: &Path,
+        words: Words,
+        seen: Arc<Mutex<Seen>>,
+        hold: Arc<AtomicBool>,
+    ) -> Self {
         let _ = std::fs::remove_file(socket);
         let listener = UnixListener::bind(socket).expect("bind the host's socket");
         let log = Arc::clone(&seen);
@@ -171,7 +195,7 @@ impl FakeSpeechHost {
                 let Ok((stream, _)) = listener.accept().await else {
                     return;
                 };
-                serve_connection(stream, words.clone(), Arc::clone(&log)).await;
+                serve_connection(stream, words.clone(), Arc::clone(&log), Arc::clone(&hold)).await;
             }
         });
         Self {
@@ -209,6 +233,10 @@ pub struct SpeechEngines {
     exits: Arc<Mutex<BTreeMap<EngineId, watch::Receiver<Option<ExitCode>>>>>,
     pub units: Arc<Mutex<Vec<(EngineId, UnitSpec)>>>,
     pub seen: Arc<Mutex<Seen>>,
+    /// While set, a host does not answer the end of an utterance (a Hear stage is mid-way).
+    pub hold_end: Arc<AtomicBool>,
+    /// While set, the engine's program cannot be started (the host is down).
+    pub refuse: Arc<AtomicBool>,
 }
 
 impl std::fmt::Debug for SpeechEngines {
@@ -225,6 +253,8 @@ impl SpeechEngines {
             exits: Arc::default(),
             units: Arc::default(),
             seen: Arc::default(),
+            hold_end: Arc::default(),
+            refuse: Arc::default(),
         }
     }
 
@@ -252,9 +282,17 @@ fn socket_of(unit: &UnitSpec) -> Option<PathBuf> {
 impl EngineHost for SpeechEngines {
     async fn spawn(&self, id: &EngineId, unit: &UnitSpec) -> Result<(), HostError> {
         lock(&self.units).push((id.clone(), unit.clone()));
+        if self.refuse.load(Ordering::SeqCst) {
+            return Err(HostError::Refused);
+        }
         let socket = socket_of(unit).ok_or(HostError::Refused)?;
         // Every run reports into the one record the test reads.
-        let host = FakeSpeechHost::start_into(&socket, self.words.clone(), Arc::clone(&self.seen));
+        let host = FakeSpeechHost::start_held(
+            &socket,
+            self.words.clone(),
+            Arc::clone(&self.seen),
+            Arc::clone(&self.hold_end),
+        );
         let (exit, exited) = watch::channel(None);
         lock(&self.exits).insert(id.clone(), exited);
         lock(&self.running).insert(id.clone(), Running { host, exit });

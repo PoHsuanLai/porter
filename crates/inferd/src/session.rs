@@ -14,7 +14,8 @@ use porter_core::consent::Usage;
 use porter_core::{DataClass, Need, Tier};
 use porter_infer::{
     AudioFrame, ClientFrame, InferEvent, InferReply, InferRequest, ModelLabel, ModelRef,
-    PickRefusal, Readiness, RequestKind, ServedBy, ShowReason, StageNote, StageRole, Why,
+    PickRefusal, Readiness, RequestKind, ServedBy, ShowReason, StageNote, StageRole,
+    TranscribeBegin, Why,
 };
 
 /// What the session was opened for: fixed for its life, so the route is chosen once.
@@ -134,6 +135,30 @@ pub enum AudioCursor {
     },
 }
 
+/// The most audio a language session buffers for a pipeline's `Hear` stage, in milliseconds. A
+/// longer utterance fails the turn (`Unreadable`) instead of growing the daemon's memory.
+pub const MAX_HEARD_MS: u32 = 60_000;
+
+/// The person's voice, buffered by a language session until the chat it belongs to arrives: what
+/// a pipeline's `Hear` stage reads. It lives in the machine's state and in the turn that runs it,
+/// and is dropped with them (inferd keeps no audio after a turn).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HeardAudio {
+    /// How the audio is to be heard (rate, language, mode).
+    pub begin: TranscribeBegin,
+    /// The checked frames, in order.
+    pub frames: Vec<AudioFrame>,
+}
+
+/// Whether the engine a session is pinned to can answer yet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EngineNow {
+    /// Still loading: the session was `Waiting`.
+    Loading,
+    /// Up.
+    Ready,
+}
+
 /// The state of one session.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Phase {
@@ -158,6 +183,32 @@ pub enum Phase {
         routed: RoutedNote,
         /// The computer-use run's progress.
         cua: CuaProgress,
+    },
+    /// A language session is collecting the audio of a voice chat: a `Transcribe` request opened
+    /// it, audio frames fill it, `EndOfAudio` closes it, and the `Chat` that follows is answered
+    /// through a pipeline (the `Hear` stage reads the audio). No turn runs yet and nothing is
+    /// announced: the pipeline announces each stage, `Routed` and `Stage` note, as it runs.
+    Hearing {
+        /// Who the session is pinned to.
+        served: ServedBy,
+        /// The `Answer` note of this session's one-stage turns (a pipeline turn sends its own).
+        answer: StageNote,
+        /// Whether `Routed` was sent.
+        routed: RoutedNote,
+        /// The computer-use run's progress.
+        cua: CuaProgress,
+        /// The audio so far, and the next sample expected.
+        heard: HeardAudio,
+        /// Where the audio has got to: `NoAudio` once `EndOfAudio` has arrived, and only then is
+        /// a chat taken.
+        audio: AudioCursor,
+        /// Whether the text engine is up: a session that was still `Waiting` when the voice chat
+        /// began buffers the audio meanwhile (a client cannot tell when the engine is ready, as
+        /// `Routed` goes out with the first turn).
+        engine: EngineNow,
+        /// The chat, arrived after the audio ended but before the engine was ready (queue depth
+        /// one); it starts when the engine is.
+        chat: Option<InferRequest>,
     },
     /// A turn is running. `Routed` has gone out: a turn starts only after it.
     InTurn {
@@ -211,6 +262,9 @@ pub enum SessionOut {
     Release(ModelRef),
     /// Write this event to the client.
     Emit(InferEvent),
+    /// The audio of a voice chat, handed over just before the `StartTurn` of its chat: that turn
+    /// is a pipeline (Hear, then Answer) and announces its own stages.
+    Hear(HeardAudio),
     /// Start the model future for this request.
     StartTurn(InferRequest),
     /// Hand an accepted audio frame to the running turn's engine.

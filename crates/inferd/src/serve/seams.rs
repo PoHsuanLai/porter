@@ -3,9 +3,10 @@
 //! `impl Future + Send`, as everywhere in porter; none needs `dyn`.
 
 use super::carried::Carried;
-use crate::session::{RouteDecision, Routing, SessionSpec};
+use crate::session::{HeardAudio, RouteDecision, Routing, SessionSpec};
 use porter_infer::{
-    AudioFrame, InferEvent, InferRefusal, InferReply, InferRequest, ModelRef, PickRefusal, Why,
+    AudioFrame, ChatRequest, InferEvent, InferRefusal, InferReply, InferRequest, ModelRef,
+    PickRefusal, Why,
 };
 use std::future::Future;
 use std::os::fd::OwnedFd;
@@ -78,6 +79,11 @@ pub trait TurnRunner: Send + Sync {
     /// frame: the request names them by index (`ImageSource::Attached`), and exactly as many as
     /// it names are given.
     fn start(&self, request: InferRequest, attachments: Vec<OwnedFd>) -> Self::Turn;
+
+    /// Starts the turn of a voice chat: `chat` is answered over what `heard` says, through a
+    /// pipeline (the `Hear` stage reads the audio, then the answering model gets the transcript).
+    /// The turn announces its own stages; its events and reply are those of any chat turn.
+    fn start_heard(&self, chat: ChatRequest, heard: HeardAudio) -> Self::Turn;
 }
 
 /// Where the finished turns are recorded (spend and the audit entry; never content).

@@ -175,6 +175,9 @@ pub struct Plan {
     pub speech: Option<SpeechPlan>,
     /// The supervisor's timing, when a test needs a restart to take milliseconds.
     pub supervisor: Option<SupervisorConfig>,
+    /// Models (catalog ids) whose language card also takes audio: the catalogue has no entry
+    /// that says so yet, and a test needs a text model that hears.
+    pub hears: Vec<&'static str>,
 }
 
 impl Default for Plan {
@@ -192,6 +195,7 @@ impl Default for Plan {
             probe: None,
             speech: None,
             supervisor: None,
+            hears: Vec::new(),
         }
     }
 }
@@ -266,7 +270,15 @@ impl World {
         let sockets = scratch.join("s");
         std::fs::create_dir_all(&sockets).expect("sockets dir");
         let mut models = build(&catalog.entries, &engines_config, &sockets);
-        for model in &models {
+        for model in &mut models {
+            if plan.hears.contains(&model.entry.id.0.as_str()) {
+                for capability in &mut model.card.capabilities {
+                    if let porter_core::Capability::Llm(llm) = capability {
+                        llm.features
+                            .insert(porter_core::capability::LlmFeature::AudioIn);
+                    }
+                }
+            }
             // The weights are "in the cache": the directory the sandbox binds exists.
             let repo = model.spec.unit.sandbox.read.first().expect("a bind");
             std::fs::create_dir_all(repo).expect("weights dir");
