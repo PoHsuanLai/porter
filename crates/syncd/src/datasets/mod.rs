@@ -2,5 +2,7 @@
 //!
 //! - `pim`: calendars and address books mirrored from a CalDAV/CardDAV server into a local vdir
 //!   (W6e), read-only.
+//! - `photos`: originals by content and an HLC-stamped metadata manifest (W6f), off by default.
 
+pub mod photos;
 pub mod pim;

@@ -65,6 +65,16 @@ impl Paths {
             .join(format!("{dataset}.sqlite"))
     }
 
+    /// The Photos library of one account, `$XDG_DATA_HOME/porter/photos/<account>` (W6f): beside
+    /// the PIM mirrors, so `AccountRemoved` wipes it with them.
+    pub fn photos_dir(&self, account: &AccountDir) -> PathBuf {
+        self.mirrors
+            .parent()
+            .unwrap_or(&self.mirrors)
+            .join("photos")
+            .join(account.as_str())
+    }
+
     /// Everything of one account that syncd keeps: its journals and its mirrors.
     pub fn account_dirs(&self, account: &AccountDir) -> [PathBuf; 2] {
         [
@@ -177,6 +187,16 @@ mod tests {
             Path::new("/home/ada/.local/share/porter/vdir")
         );
         assert_eq!(Paths::resolve(env(&[])), Err(PathError::NoHome));
+    }
+
+    #[test]
+    fn a_photos_library_lives_beside_the_vdir_under_its_account() {
+        let paths = Paths::resolve(env(&[("HOME", "/h")])).expect("paths");
+        let account = AccountDir::parse("a1").expect("segment");
+        assert_eq!(
+            paths.photos_dir(&account),
+            Path::new("/h/.local/share/porter/photos/a1")
+        );
     }
 
     #[test]

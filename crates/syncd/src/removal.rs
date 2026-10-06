@@ -1,6 +1,6 @@
 //! `AccountRemoved`: when accountd says an account is gone, syncd forgets everything of it:
-//! its running datasets, its journals and anchors (`<state>/porter/sync/<account>`) and its
-//! mirrors (`<data>/porter/vdir/<account>`) (PLAN §2.9: "syncd | journal rows, anchors and
+//! its running datasets, its journals and anchors (`<state>/porter/sync/<account>`), its
+//! mirrors (`<data>/porter/vdir/<account>`) and its photos library (`<data>/porter/photos/<account>`) (PLAN §2.9: "syncd | journal rows, anchors and
 //! mirrors of that account").
 //!
 //! The signal is accountd's, unicast to the apps that hold a grant for the account; the proxy
@@ -26,7 +26,11 @@ use zbus::fdo::DBusProxy;
 pub async fn wipe(paths: &Paths, hub: &Hub, account: &AccountDir) -> std::io::Result<usize> {
     hub.stop_account(account).await;
     let mut removed = 0;
-    for dir in paths.account_dirs(account) {
+    for dir in paths
+        .account_dirs(account)
+        .into_iter()
+        .chain([paths.photos_dir(account)])
+    {
         match std::fs::remove_dir_all(&dir) {
             Ok(()) => removed += 1,
             Err(e) if e.kind() == ErrorKind::NotFound => {}
