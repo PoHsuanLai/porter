@@ -68,6 +68,8 @@ pub struct Dirs {
     pub sockets: PathBuf,
     /// `$XDG_STATE_HOME/quire/inferd/audit.jsonl`.
     pub audit: PathBuf,
+    /// `$XDG_STATE_HOME/quire/inferd/spend.json`: what hosted models have cost this day and month.
+    pub spend: PathBuf,
     /// `$HF_HOME/hub`, else `~/.cache/huggingface/hub`: the weights, when the file names none.
     pub hf_cache: PathBuf,
 }
@@ -102,6 +104,7 @@ impl Dirs {
             },
             sockets: runtime.join("inferd"),
             audit: state.join("quire").join("inferd").join("audit.jsonl"),
+            spend: state.join("quire").join("inferd").join("spend.json"),
             hf_cache,
         })
     }

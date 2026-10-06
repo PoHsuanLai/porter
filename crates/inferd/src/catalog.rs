@@ -94,12 +94,14 @@ fn read_dir(dir: &Path) -> (Vec<ModelEntry>, Vec<Skipped>) {
     (entries, skipped)
 }
 
-/// The claims the catalog makes for the local account: one per model and capability, at the
-/// provenance the catalog gives (`Curated`).
+/// The claims the catalog makes for the local account: one per model and capability of an entry
+/// that runs on this computer, at the provenance the catalog gives (`Curated`); a hosted entry is
+/// not the local account's.
 pub fn local_claims(dirs: &CatalogDirs) -> Vec<Claim> {
     read_catalog(dirs)
         .entries
         .iter()
+        .filter(|entry| entry.locality.is_on_device())
         .flat_map(claims_of)
         .collect()
 }

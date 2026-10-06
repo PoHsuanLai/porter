@@ -380,6 +380,82 @@ unit = "permille"
 kind = "intelligence"
 
 [[key]]
+path = "ai.spend.account_daily_cents"
+default = 0
+label = "Daily cap per account"
+help = "The most a cloud account may cost in a day, in US cents, counting every app that uses it. 0 is no cap. Days and months are counted in UTC."
+section = "Automatic"
+exposure = "advanced"
+
+[key.kind]
+kind = "bounded"
+
+[key.kind.v]
+min = 0
+max = 10000000
+unit = "cents"
+
+[key.page]
+kind = "intelligence"
+
+[[key]]
+path = "ai.spend.account_monthly_cents"
+default = 0
+label = "Monthly cap per account"
+help = "The most a cloud account may cost in a month, in US cents, counting every app that uses it. 0 is no cap. Days and months are counted in UTC."
+section = "Automatic"
+exposure = "advanced"
+
+[key.kind]
+kind = "bounded"
+
+[key.kind.v]
+min = 0
+max = 10000000
+unit = "cents"
+
+[key.page]
+kind = "intelligence"
+
+[[key]]
+path = "ai.spend.app_daily_cents"
+default = 0
+label = "Daily cap per app"
+help = "The most one app may spend on cloud models in a day, in US cents, whichever account pays. 0 is no cap. Days and months are counted in UTC."
+section = "Automatic"
+exposure = "advanced"
+
+[key.kind]
+kind = "bounded"
+
+[key.kind.v]
+min = 0
+max = 10000000
+unit = "cents"
+
+[key.page]
+kind = "intelligence"
+
+[[key]]
+path = "ai.spend.app_monthly_cents"
+default = 0
+label = "Monthly cap per app"
+help = "The most one app may spend on cloud models in a month, in US cents, whichever account pays. 0 is no cap. Days and months are counted in UTC."
+section = "Automatic"
+exposure = "advanced"
+
+[key.kind]
+kind = "bounded"
+
+[key.kind.v]
+min = 0
+max = 10000000
+unit = "cents"
+
+[key.page]
+kind = "intelligence"
+
+[[key]]
 path = "ai.structured.open_text"
 default = 4096
 label = "Longest free text"

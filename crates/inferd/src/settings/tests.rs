@@ -55,12 +55,7 @@ fn card(account: &str, model: &str, locality: Locality) -> ModelCard {
 }
 
 fn listed(card: ModelCard, readiness: Readiness) -> Listed {
-    Listed {
-        card,
-        readiness,
-        swap: SwapCost::Resident,
-        licence: LicenceClass::Open,
-    }
+    Listed::new(card, readiness, SwapCost::Resident, LicenceClass::Open)
 }
 
 fn local(model: &str) -> Listed {
@@ -390,6 +385,84 @@ fn the_warn_line_is_the_rows_permille() {
 }
 
 use porter_infer::{SpendCap, SpendVerdict, spend_verdict};
+
+fn companion() -> porter_core::AppId {
+    porter_core::AppId {
+        name: porter_core::AppName::parse("org.quire.Companion").expect("name"),
+        isolation: porter_core::Isolation::Unsandboxed,
+    }
+}
+
+#[test]
+fn the_cap_rows_are_cents_per_scope_and_period_and_zero_is_no_cap() {
+    let through = AccountId::parse("openrouter").expect("id");
+    let caps = |text: &str| -> Vec<(SpendScope, Period, MicroUsd, Permille)> {
+        settings(text)
+            .spend
+            .caps_for(&companion(), &through)
+            .into_iter()
+            .map(|cap| (cap.scope, cap.period, cap.limit, cap.warn_at))
+            .collect()
+    };
+    assert_eq!(caps(""), vec![], "no row, no cap");
+    assert_eq!(
+        caps("[ai.spend]\napp_daily_cents = 0\n"),
+        vec![],
+        "zero is no cap"
+    );
+    let app = SpendScope::App(companion());
+    let account = SpendScope::Account(through.clone());
+    assert_eq!(
+        caps(
+            "[ai.spend]\nwarn_permille = 500\naccount_daily_cents = 250\naccount_monthly_cents = 1\n\
+             app_daily_cents = 10000000\napp_monthly_cents = 7\n"
+        ),
+        vec![
+            (
+                account.clone(),
+                Period::Daily,
+                MicroUsd(2_500_000),
+                Permille(500)
+            ),
+            (account, Period::Monthly, MicroUsd(10_000), Permille(500)),
+            (
+                app.clone(),
+                Period::Daily,
+                MicroUsd(100_000_000_000),
+                Permille(500)
+            ),
+            (app, Period::Monthly, MicroUsd(70_000), Permille(500)),
+        ]
+    );
+}
+
+#[test]
+fn a_cap_out_of_range_is_no_cap_and_is_named() {
+    for (row, path) in [
+        ("account_daily_cents", SPEND_ACCOUNT_DAILY),
+        ("account_monthly_cents", SPEND_ACCOUNT_MONTHLY),
+        ("app_daily_cents", SPEND_APP_DAILY),
+        ("app_monthly_cents", SPEND_APP_MONTHLY),
+    ] {
+        for bad in ["-1", "10000001"] {
+            let resolved = resolve(&config(&format!("[ai.spend]\n{row} = {bad}\n")));
+            assert_eq!(
+                resolved.settings.spend,
+                SpendLine::default(),
+                "{row} = {bad}"
+            );
+            assert_eq!(resolved.rejected, vec![path.to_owned()], "{row} = {bad}");
+        }
+        for edge in ["0", "1", "10000000"] {
+            assert!(
+                resolve(&config(&format!("[ai.spend]\n{row} = {edge}\n")))
+                    .rejected
+                    .is_empty(),
+                "{row} = {edge}"
+            );
+        }
+    }
+}
 
 #[test]
 fn the_old_tables_still_read_and_the_rows_at_their_paths_win_over_them() {

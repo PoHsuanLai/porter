@@ -3,8 +3,9 @@
 //! of models and their readiness; the engines and the clock are somebody else's.
 //!
 //! Consent: a model on this computer needs no grant (the data does not leave the machine, and
-//! the class's floor already decides which classes may be sent where); any other model needs a
-//! grant that only accountd can give, which it cannot yet, so it answers `Ask` (`NeedsGrant`).
+//! the class's floor already decides which classes may be sent where). A hosted model carries the
+//! verdict accountd gave the app for its account (`Listed::permission`, from `cloud::models`); a
+//! model of an account inferd knows nothing of is `Ask` (`NeedsGrant`).
 
 use crate::cua_run::check_class;
 use porter_core::consent::{GrantScope, Verdict};
@@ -29,6 +30,30 @@ pub struct Listed {
     pub swap: SwapCost,
     /// How it may be used.
     pub licence: LicenceClass,
+    /// What the consent store says for the app on this model's account.
+    pub permission: Verdict,
+    /// What the spend caps say about one more request on it.
+    pub spend: SpendVerdict,
+}
+
+impl Listed {
+    /// A model with the consent its locality carries (`consent_of`) and no spend against it.
+    pub fn new(
+        card: ModelCard,
+        readiness: Readiness,
+        swap: SwapCost,
+        licence: LicenceClass,
+    ) -> Self {
+        let permission = consent_of(&card);
+        Self {
+            card,
+            readiness,
+            swap,
+            licence,
+            permission,
+            spend: SpendVerdict::Within,
+        }
+    }
 }
 
 /// What the router decided: the model, how ready it is, and why it.
@@ -67,8 +92,9 @@ fn local_grant() -> Option<GrantId> {
     GrantId::parse("on-this-computer").ok()
 }
 
-/// What the consent store says for `card`, today.
-fn consent_of(card: &ModelCard) -> Verdict {
+/// What the consent store says for `card` when nobody has said: a model on this computer is
+/// granted, any other asks.
+pub(crate) fn consent_of(card: &ModelCard) -> Verdict {
     match (&card.locality, local_grant()) {
         (Locality::OnDevice, Some(grant)) => Verdict::Granted {
             grant,
@@ -123,8 +149,8 @@ pub fn choose(
                         model: one.card.model.clone(),
                     },
                 ),
-                permission: consent_of(&one.card),
-                spend: SpendVerdict::Within,
+                permission: one.permission.clone(),
+                spend: one.spend,
             },
             readiness: one.readiness,
             swap: one.swap.clone(),

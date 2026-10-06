@@ -19,12 +19,11 @@ mod module;
 mod resolve;
 
 pub use file::{ConfigFile, FileError, Reload, ReloadFailed, Reloaded};
-pub use keys::{CLASSES, KINDS, TIERS, model_path, slug_of};
+pub use keys::{CLASSES, KINDS, TIERS, from_slug, model_path, slug_of};
 pub use module::{InferdSettings, serve_settings};
 pub use resolve::{Resolved, floor_value, model_text, parse_model, resolve, slot_value};
 
-use porter_core::MicroUsd;
-use porter_core::Permille;
+use porter_core::{AccountId, AppId, MicroUsd, Permille};
 use porter_infer::{AutoPolicy, Period, Policy, SpendCap, SpendScope, TierMap};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, PoisonError, RwLock};
@@ -36,27 +35,80 @@ pub const SPEND_WARN_DEFAULT: u32 = 800;
 /// The values the row accepts.
 pub const SPEND_WARN_RANGE: std::ops::RangeInclusive<u32> = 1..=1000;
 
+/// The four cap rows, in whole US cents; `0` is no cap. A cap on an account counts everything
+/// spent through it, whoever spent it; a cap on an app counts everything it spends, whichever
+/// account paid.
+pub const SPEND_ACCOUNT_DAILY: &str = "ai.spend.account_daily_cents";
+/// `ai.spend.account_monthly_cents`.
+pub const SPEND_ACCOUNT_MONTHLY: &str = "ai.spend.account_monthly_cents";
+/// `ai.spend.app_daily_cents`.
+pub const SPEND_APP_DAILY: &str = "ai.spend.app_daily_cents";
+/// `ai.spend.app_monthly_cents`.
+pub const SPEND_APP_MONTHLY: &str = "ai.spend.app_monthly_cents";
+/// The values the cap rows accept: up to a hundred thousand dollars.
+pub const SPEND_CAP_RANGE: std::ops::RangeInclusive<u32> = 0..=10_000_000;
+/// Micro-dollars in a cent.
+const MICRO_USD_PER_CENT: u64 = 10_000;
+
 /// The `[ai.spend]` table, as written. Signed, so a negative number reaches the range check.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SpendConfig {
     /// `ai.spend.warn_permille`.
     #[serde(default)]
     pub warn_permille: Option<i64>,
+    /// `ai.spend.account_daily_cents`.
+    #[serde(default)]
+    pub account_daily_cents: Option<i64>,
+    /// `ai.spend.account_monthly_cents`.
+    #[serde(default)]
+    pub account_monthly_cents: Option<i64>,
+    /// `ai.spend.app_daily_cents`.
+    #[serde(default)]
+    pub app_daily_cents: Option<i64>,
+    /// `ai.spend.app_monthly_cents`.
+    #[serde(default)]
+    pub app_monthly_cents: Option<i64>,
 }
 
-/// The share of a cap at which a request is warned about.
+/// One scope's limits: none where the person set none.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ScopeLimits {
+    /// Per calendar day.
+    pub daily: Option<MicroUsd>,
+    /// Per calendar month.
+    pub monthly: Option<MicroUsd>,
+}
+
+/// The caps the person set: on each account, and on each app.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SpendLimits {
+    /// Per account.
+    pub account: ScopeLimits,
+    /// Per app.
+    pub app: ScopeLimits,
+}
+
+/// The share of a cap at which a request is warned about, and the caps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SpendLine {
     /// `ai.spend.warn_permille`.
     pub warn_at: Permille,
+    /// `ai.spend.{account,app}_{daily,monthly}_cents`.
+    pub limits: SpendLimits,
 }
 
 impl Default for SpendLine {
     fn default() -> Self {
         Self {
             warn_at: Permille(SPEND_WARN_DEFAULT),
+            limits: SpendLimits::default(),
         }
     }
+}
+
+/// A cap row's value in micro-dollars; `None` for no cap (`0`).
+pub fn cents_to_limit(cents: u32) -> Option<MicroUsd> {
+    (cents > 0).then(|| MicroUsd(u64::from(cents) * MICRO_USD_PER_CENT))
 }
 
 impl SpendLine {
@@ -69,6 +121,35 @@ impl SpendLine {
             limit,
             warn_at: self.warn_at,
         }
+    }
+
+    /// The caps that bear on one more request by `app` through `account`.
+    pub fn caps_for(self, app: &AppId, account: &AccountId) -> Vec<SpendCap> {
+        let SpendLimits {
+            account: on_account,
+            app: on_app,
+        } = self.limits;
+        let rows = [
+            (
+                SpendScope::Account(account.clone()),
+                Period::Daily,
+                on_account.daily,
+            ),
+            (
+                SpendScope::Account(account.clone()),
+                Period::Monthly,
+                on_account.monthly,
+            ),
+            (SpendScope::App(app.clone()), Period::Daily, on_app.daily),
+            (
+                SpendScope::App(app.clone()),
+                Period::Monthly,
+                on_app.monthly,
+            ),
+        ];
+        rows.into_iter()
+            .filter_map(|(scope, period, limit)| Some(self.cap(scope, period, limit?)))
+            .collect()
     }
 }
 

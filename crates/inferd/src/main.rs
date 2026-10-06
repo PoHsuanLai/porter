@@ -8,6 +8,9 @@ use engine_supervisor::EngineId;
 use inferd::audit::JsonLines;
 use inferd::catalog::read_catalog;
 use inferd::clock::SystemClock;
+use inferd::cloud::Cloud;
+use inferd::cloud::accountd::PeerAccountd;
+use inferd::cloud::spend::Ledger;
 use inferd::config::{Dirs, InferdConfig};
 use inferd::engines::Engines;
 use inferd::hosts::{HealthProbe, NvidiaSmi, ProcessHost};
@@ -89,20 +92,28 @@ async fn run(args: Args) -> Result<(), String> {
     for path in &settings.rejected {
         eprintln!("inferd: {path}: not accepted; using its default");
     }
+    let connection = zbus::connection::Builder::session()
+        .map_err(|e| e.to_string())?
+        .build()
+        .await
+        .map_err(|e| e.to_string())?;
+    // The hosted models of the catalogue, reached through accounts accountd holds the keys of.
+    let cloud = Cloud::new(
+        Arc::new(PeerAccountd::new(connection.clone())),
+        &catalog.entries,
+        Ledger::open(dirs.spend.clone()),
+        Arc::new(SystemClock),
+    );
     let engines = Engines::new(
         models,
         supervised,
         settings.settings.policy.clone(),
         settings.settings.tiers.clone(),
     )
-    .with_settings(settings.settings);
+    .with_settings(settings.settings)
+    .with_cloud(cloud);
     let reload = Reload::new(ConfigFile::new(config_path), engines.clone());
     reload.clone().watch(RELOAD_EVERY);
-    let connection = zbus::connection::Builder::session()
-        .map_err(|e| e.to_string())?
-        .build()
-        .await
-        .map_err(|e| e.to_string())?;
     let root = ProcRoot::select(
         ProcGate::BUILT,
         std::env::var("INFERD_PROC_ROOT").ok().as_deref(),

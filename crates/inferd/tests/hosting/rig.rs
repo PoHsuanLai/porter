@@ -1,6 +1,8 @@
 //! The world of one test.
 
+use super::accountd::{FakeAccount, FakeAccountd};
 use super::bus::PrivateBus;
+use super::cloud::FakeCloud;
 use super::engine::{FakeEngine, Script};
 use engine_supervisor::{
     EngineHost, EngineId, ExitCode, FakeGpu, FakeReadyProbe, GpuMemory, HostError, Probe,
@@ -9,11 +11,17 @@ use engine_supervisor::{
 use inferd::audit::Memory;
 use inferd::catalog::{CatalogDirs, read_catalog};
 use inferd::clock::FixedClock;
+use inferd::cloud::Cloud;
+use inferd::cloud::accountd::PeerAccountd;
+use inferd::cloud::spend::Ledger;
+use inferd::cloud::transport::Roots;
+use inferd::cloud::wire::{Door, Doors};
 use inferd::engines::Engines;
 use inferd::local::{EngineConfig, LocalModel, build};
 use inferd::peers::{Caller, Role, TablePeers};
 use inferd::replay::{NamedEngine, Replays};
 use inferd::service::{Inference, serve_on};
+use inferd::settings::{Settings, SpendLine};
 use inferd::supervise::{Ports, Supervised};
 use model_catalog::MiB;
 use porter_client::{Accounts, DbusTransport};
@@ -46,6 +54,23 @@ impl EngineHost for Recorder {
     }
 }
 
+/// Whom a daemon trusts to be a hosted model's server.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Trust {
+    /// The scratch CA the fake provider's certificate is signed by.
+    ScratchCa,
+    /// No one: every handshake fails.
+    NoOne,
+}
+
+/// The hosted side of a test: the accounts the fake accountd holds and how the fake provider
+/// answers. Every provider the shipped catalogue reaches is the one fake, at its own base path.
+pub struct Hosted {
+    pub accounts: Vec<FakeAccount>,
+    pub chat: Script,
+    pub trust: Trust,
+}
+
 /// What a test sets up.
 pub struct Plan {
     /// Catalog files: (file name, text).
@@ -61,6 +86,12 @@ pub struct Plan {
     pub policy: Policy,
     /// The role of the client connection.
     pub role: Role,
+    /// The app the client connection is (`test_app()` when none).
+    pub app: Option<AppId>,
+    /// Hosted models: a fake accountd and a fake provider; none when absent.
+    pub hosted: Option<Hosted>,
+    /// The spend rows in force.
+    pub spend: SpendLine,
 }
 
 impl Default for Plan {
@@ -72,6 +103,9 @@ impl Default for Plan {
             remote: Vec::new(),
             policy: Policy::proposed(),
             role: Role::App,
+            app: None,
+            hosted: None,
+            spend: SpendLine::default(),
         }
     }
 }
@@ -88,6 +122,16 @@ pub struct World {
     pub audit: Memory,
     pub host: Recorder,
     pub supervised: Supervised,
+    /// The engines the daemon routes through (its cloud, ledger and settings are reachable).
+    pub served: Engines,
+    /// The fake accountd, when the plan has hosted models.
+    pub accountd: Option<FakeAccountd>,
+    /// The fake provider, when it has.
+    pub provider: Option<FakeCloud>,
+    /// Who the daemon knows the bus connections as; a test introduces more.
+    pub peers: Arc<TablePeers>,
+    /// The connection the fake accountd is served on (it is gone with this).
+    pub accountd_bus: Option<zbus::Connection>,
 }
 
 static NEXT: AtomicU32 = AtomicU32::new(0);
@@ -172,21 +216,57 @@ impl World {
                 }),
             },
         );
-        let served = Engines::new(
+        let mut served = Engines::new(
             models.clone(),
             supervised.clone(),
-            plan.policy,
+            plan.policy.clone(),
             TierMap::default(),
         )
+        .with_settings(Settings {
+            policy: plan.policy,
+            spend: plan.spend,
+            ..Settings::default()
+        })
         .with_remote(plan.remote);
         let bus = PrivateBus::start();
         let daemon = bus.connect().await;
         let client = bus.connect().await;
+        let (mut accountd, mut provider, mut accountd_bus) = (None, None, None);
+        if let Some(hosted) = plan.hosted {
+            let fake = FakeAccountd::new(hosted.accounts);
+            let held = bus.connect().await;
+            fake.serve(&held).await;
+            accountd_bus = Some(held);
+            let api = FakeCloud::start(hosted.chat).await;
+            let door = |base: &str| Door {
+                host: "localhost".to_owned(),
+                port: api.port,
+                base: base.to_owned(),
+            };
+            let doors = Doors::real()
+                .with("openrouter", door("/api/v1"))
+                .with("openai", door("/v1"))
+                .with("moonshot", door("/moonshot/v1"))
+                .with("google-ai", door("/gemini/v1beta/openai"));
+            let roots = match hosted.trust {
+                Trust::ScratchCa => Roots::Only(vec![porter_fake_servers::tls::ca_der()]),
+                Trust::NoOne => Roots::Only(Vec::new()),
+            };
+            let cloud = Cloud::new(
+                Arc::new(PeerAccountd::new(daemon.clone())),
+                &catalog.entries,
+                Ledger::in_memory(),
+                Arc::new(FixedClock(UnixSeconds(1_700_000_000))),
+            )
+            .at(doors, roots);
+            served = served.with_cloud(cloud);
+            (accountd, provider) = (Some(fake), Some(api));
+        }
         let peers = Arc::new(TablePeers::new());
         peers.introduce(
             client.unique_name().expect("unique name").as_str(),
             Caller {
-                app: test_app(),
+                app: plan.app.unwrap_or_else(test_app),
                 role: plan.role,
             },
         );
@@ -194,8 +274,8 @@ impl World {
         serve_on(
             &daemon,
             Inference::new(
-                served,
-                peers,
+                served.clone(),
+                Arc::clone(&peers),
                 audit.clone(),
                 FixedClock(UnixSeconds(1_700_000_000)),
             ),
@@ -213,6 +293,11 @@ impl World {
             audit,
             host,
             supervised,
+            served,
+            accountd,
+            provider,
+            peers,
+            accountd_bus,
         }
     }
 }

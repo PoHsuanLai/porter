@@ -8,6 +8,8 @@
 //! Speech turns are refused `Unsupported` (the speech runner is not built).
 
 use crate::bridge::{self, Frames};
+use crate::cloud::Cloud;
+use crate::cloud::turn::{self as hosted, CloudPin};
 use crate::cua_run::{CuaRun, StepJob};
 use crate::hosts::unix_endpoint;
 use crate::local::LocalModel;
@@ -38,6 +40,8 @@ pub struct Pinned {
     pub served: ServedBy,
     /// The local model behind it; none for a model that is not served from this computer.
     pub model: Option<Arc<LocalModel>>,
+    /// The hosted model behind it, when that is what the session was routed to.
+    pub cloud: Option<CloudPin>,
 }
 
 /// The cell the router writes and the runner reads.
@@ -71,7 +75,7 @@ impl sp::Sleeper for TokioSleep {
 }
 
 /// Three attempts, a quarter of a second doubling to four seconds.
-const RETRY: sp::RetryPolicy = sp::RetryPolicy {
+pub(crate) const RETRY: sp::RetryPolicy = sp::RetryPolicy {
     attempts: sp::Attempt(3),
     base: sp::WaitMs(250),
     cap: sp::WaitMs(4000),
@@ -109,6 +113,7 @@ pub struct Turns {
     tier: Tier,
     run: Arc<Mutex<Option<CuaRun>>>,
     limits: Limits,
+    cloud: Option<Cloud>,
 }
 
 impl Turns {
@@ -120,6 +125,15 @@ impl Turns {
             tier,
             run: Arc::default(),
             limits: Limits::default(),
+            cloud: None,
+        }
+    }
+
+    /// The same turns, able to run a session that was routed to a hosted model.
+    pub fn hosted(self, cloud: Cloud) -> Self {
+        Self {
+            cloud: Some(cloud),
+            ..self
         }
     }
 
@@ -167,6 +181,7 @@ impl TurnRunner for Turns {
             tier: self.tier,
             run: Arc::clone(&self.run),
             limits: self.limits,
+            cloud: self.cloud.clone(),
             steps,
         };
         let task = tokio::spawn(async move {
@@ -183,6 +198,7 @@ struct Job {
     tier: Tier,
     run: Arc<Mutex<Option<CuaRun>>>,
     limits: Limits,
+    cloud: Option<Cloud>,
     steps: mpsc::UnboundedSender<TurnStep>,
 }
 
@@ -236,9 +252,30 @@ fn refused(refusal: InferRefusal) -> InferReply {
 
 impl Job {
     async fn reply(&self, request: InferRequest, attachments: Vec<OwnedFd>) -> InferReply {
+        if let (
+            Some(Pinned {
+                served,
+                cloud: Some(pin),
+                ..
+            }),
+            Some(cloud),
+        ) = (&self.pinned, &self.cloud)
+        {
+            return hosted::reply(
+                cloud,
+                pin,
+                served,
+                self.tier,
+                self.steps.clone(),
+                &request,
+                attachments,
+            )
+            .await;
+        }
         let Some(Pinned {
             served,
             model: Some(model),
+            ..
         }) = &self.pinned
         else {
             return InferReply::Failed(ModelError::Unreachable);

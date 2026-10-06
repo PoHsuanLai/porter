@@ -50,6 +50,7 @@ fn turns(scratch: &Scratch, which: usize) -> (Turns, Arc<LocalModel>) {
     pin.set(Pinned {
         served: served(),
         model: Some(Arc::clone(&model)),
+        cloud: None,
     });
     (Turns::new(pin, Supervised::idle(), Tier::Fast), model)
 }
@@ -78,12 +79,14 @@ async fn a_pin_keeps_its_first_decision() {
     pin.set(Pinned {
         served: served(),
         model: None,
+        cloud: None,
     });
     let mut other = served();
     other.model = ModelId::parse("other").expect("id");
     pin.set(Pinned {
         served: other,
         model: None,
+        cloud: None,
     });
     assert_eq!(
         pin.get().map(|p| p.served.model.as_str().to_owned()),

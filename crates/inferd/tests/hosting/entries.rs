@@ -81,3 +81,101 @@ weights = {{ kind = "hf_snapshot" }}
 "#
     )
 }
+
+/// A hosted entry: `reaches` are (provider, the model's id there, wire, input and output price
+/// per million tokens in micro-dollars). It takes text and images, calls tools natively and
+/// writes no sampling, as the shipped hosted entries do.
+pub fn hosted(
+    id: &str,
+    label: &str,
+    family: &str,
+    reaches: &[(&str, &str, &str, u64, u64)],
+) -> String {
+    let reach = reaches
+        .iter()
+        .map(|(provider, model, wire, input, output)| {
+            format!(
+                "  {{ provider = \"{provider}\", model = \"{model}\", price = {{ input_per_mtok = {input}, output_per_mtok = {output} }}, wire = \"{wire}\" }},\n"
+            )
+        })
+        .collect::<String>();
+    format!(
+        r#"id = "{id}"
+label = "{label}"
+licence = {{ kind = "proprietary" }}
+family = "{family}"
+cold_start_estimate_s = 0
+source = {{ kind = "hosted" }}
+vram = {{ weights_mib = 0, kv_per_1k_ctx_mib = 0, overhead_mib = 0 }}
+locality = {{ kind = "remote", v = {{ reach = [
+{reach}] }} }}
+inputs = ["text", "image"]
+outputs = ["text"]
+text_out = {{ tools = "native", structured = [], reasoning = "present", streaming = "present", context = 200000, max_output = 64000 }}
+image_in = {{ per_prompt = 1, rule = {{ kind = "identity" }}, space = {{ kind = "image" }} }}
+"#
+    )
+}
+
+/// Claude Opus 5.5 as the shipped catalogue reaches it: Anthropic's own account, and OpenRouter.
+pub fn claude() -> String {
+    hosted(
+        "claude-opus-5.5",
+        "Claude Opus 5.5",
+        "claude",
+        &[
+            (
+                "anthropic",
+                "claude-opus-5-5",
+                "anthropic_messages",
+                4_000_000,
+                20_000_000,
+            ),
+            (
+                "openrouter",
+                "anthropic/claude-opus-5.5",
+                "open_ai_compat",
+                4_000_000,
+                20_000_000,
+            ),
+        ],
+    )
+}
+
+/// GPT-6 Luna: OpenAI's own account, and OpenRouter.
+pub fn luna() -> String {
+    hosted(
+        "gpt-6-luna",
+        "GPT-6 Luna",
+        "gpt",
+        &[
+            ("openai", "gpt-6-luna", "open_ai_compat", 100_000, 500_000),
+            (
+                "openrouter",
+                "openai/gpt-6-luna",
+                "open_ai_compat",
+                100_000,
+                500_000,
+            ),
+        ],
+    )
+}
+
+/// Kimi K3: Moonshot's own account, and OpenRouter.
+pub fn kimi() -> String {
+    hosted(
+        "kimi-k3",
+        "Kimi K3",
+        "kimi",
+        &[
+            ("moonshot", "kimi-k3", "open_ai_compat", 600_000, 2_500_000),
+            (
+                "openrouter",
+                "moonshotai/kimi-k3",
+                "open_ai_compat",
+                600_000,
+                2_500_000,
+            ),
+        ],
+    )
+}

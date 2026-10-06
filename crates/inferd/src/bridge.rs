@@ -8,7 +8,8 @@ mod request;
 
 pub use reply::{Gathered, event, model_error, stop, stop_back, usage, vectors, width};
 pub use request::{
-    BridgeError, Frames, MAX_ATTACHMENT, chat_turn, embed_turns, extras, image_input, task_turn,
+    BridgeError, DefaultSampling, Frames, MAX_ATTACHMENT, Target, chat_turn, chat_turn_for,
+    embed_turns, extras, image_input, task_turn, task_turn_for,
 };
 
 use porter_core::{CoreError, ModelId};

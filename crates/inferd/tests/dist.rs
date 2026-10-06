@@ -108,6 +108,10 @@ fn the_schema_holds_the_rows_the_design_names_and_each_is_a_page_row_of_intellig
             "ai.auto.allow_evict",
             "ai.auto.show_reason",
             "ai.spend.warn_permille",
+            "ai.spend.account_daily_cents",
+            "ai.spend.account_monthly_cents",
+            "ai.spend.app_daily_cents",
+            "ai.spend.app_monthly_cents",
             "ai.structured.open_text",
             "ai.structured.open_list",
             "ai.structured.depth",
@@ -187,6 +191,39 @@ fn the_spend_row_is_bounded_one_to_a_thousand_and_defaults_to_the_codes_line() {
         key.default,
         toml::Value::Integer(i64::from(settings::SPEND_WARN_DEFAULT))
     );
+}
+
+#[test]
+fn the_cap_rows_are_cents_from_zero_and_default_to_no_cap() {
+    let keys = schema_keys();
+    for path in [
+        settings::SPEND_ACCOUNT_DAILY,
+        settings::SPEND_ACCOUNT_MONTHLY,
+        settings::SPEND_APP_DAILY,
+        settings::SPEND_APP_MONTHLY,
+    ] {
+        let key = keys.iter().find(|k| k.path.0 == path).expect(path);
+        assert_eq!(
+            key.kind,
+            KeyKind::Bounded {
+                min: i64::from(*settings::SPEND_CAP_RANGE.start()),
+                max: i64::from(*settings::SPEND_CAP_RANGE.end()),
+                unit: Some("cents".into()),
+            },
+            "{path}"
+        );
+        assert_eq!(key.default, toml::Value::Integer(0), "{path}");
+        // Zero is no cap, and a number is that many cents in micro-dollars.
+        assert_eq!(
+            effect(&file_with(path, toml::Value::Integer(0))).0,
+            effect("").0
+        );
+    }
+    assert_eq!(
+        settings::cents_to_limit(250),
+        Some(porter_core::MicroUsd(2_500_000))
+    );
+    assert_eq!(settings::cents_to_limit(0), None);
 }
 
 #[test]

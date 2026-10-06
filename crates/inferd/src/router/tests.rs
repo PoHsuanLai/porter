@@ -26,12 +26,7 @@ fn card(account: &str, model: &str, locality: Locality, capability: Capability) 
 }
 
 fn listed(card: ModelCard, readiness: Readiness) -> Listed {
-    Listed {
-        card,
-        readiness,
-        swap: SwapCost::Resident,
-        licence: LicenceClass::Open,
-    }
+    Listed::new(card, readiness, SwapCost::Resident, LicenceClass::Open)
 }
 
 fn local(model: &str) -> ModelCard {

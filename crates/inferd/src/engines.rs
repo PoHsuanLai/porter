@@ -4,8 +4,11 @@
 //! `Inference1` handler and the session server share: it knows the models, their readiness, and
 //! how to ask for an engine.
 
+use crate::cloud::Cloud;
+use crate::cloud::models::RemoteModel;
+use crate::cloud::turn::CloudPin;
 use crate::local::{LocalModel, Weights};
-use crate::peers::Role;
+use crate::peers::{Caller, Role};
 use crate::router::{Listed, choose};
 use crate::runner::{Pin, Pinned};
 use crate::serve::{EngineFailed, EngineHost};
@@ -16,10 +19,10 @@ use crate::swap::{Budget, running_of, swap_cost};
 use engine_supervisor::{EngineId, EngineState, MonoMs};
 use model_catalog::Licence;
 use porter_core::consent::Availability;
-use porter_core::{DataClass, Need, Tier};
+use porter_core::{AccountId, AppId, DataClass, Need, Tier};
 use porter_infer::{
     AutoPolicy, InferRefusal, LicenceClass, ModelCard, ModelRef, PickRefusal, Policy, Readiness,
-    ServedBy, SwapCost, TierMap,
+    ServedBy, SpendVerdict, SwapCost, TierMap,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -46,11 +49,37 @@ impl GpuState {
     }
 }
 
+/// The account a hosted model is picked under in `ai.model.<kind>.<tier>`: the person picks a
+/// model, not an account, and the account that serves it is whichever the app holds a grant on.
+/// Routing reads `cloud/<model>` as "this model, through the reach the app is granted".
+pub const CLOUD_ACCOUNT: &str = "cloud";
+
+/// The hosted models one session may be routed to: what the app's grants reach, with what the
+/// spend caps say about one more request on each.
+#[derive(Debug, Clone, Default)]
+pub struct Offered {
+    models: Vec<(Arc<RemoteModel>, SpendVerdict)>,
+    app: Option<AppId>,
+}
+
+impl Offered {
+    /// The hosted models offered, in catalogue order.
+    pub fn models(&self) -> impl Iterator<Item = &Arc<RemoteModel>> {
+        self.models.iter().map(|(model, _)| model)
+    }
+
+    fn find(&self, model: &ModelRef) -> Option<&Arc<RemoteModel>> {
+        self.models().find(|one| one.model_ref() == *model)
+    }
+}
+
 /// What routing and readiness are computed from.
 #[derive(Debug, Default)]
 struct Book {
     local: Vec<Arc<LocalModel>>,
     remote: Vec<ModelCard>,
+    /// The hosted models of the curated catalogue and how they are reached.
+    cloud: Option<Cloud>,
     /// The settings in force; shared by every clone, replaced when the file changes.
     live: Live,
 }
@@ -84,6 +113,7 @@ impl Engines {
             book: Arc::new(Book {
                 local: local.into_iter().map(Arc::new).collect(),
                 remote: Vec::new(),
+                cloud: None,
                 live: Live::new(Settings {
                     policy,
                     tiers,
@@ -108,6 +138,7 @@ impl Engines {
         let book = Book {
             local: self.book.local.clone(),
             remote: self.book.remote.clone(),
+            cloud: self.book.cloud.clone(),
             live: Live::new(settings),
         };
         Self {
@@ -134,11 +165,66 @@ impl Engines {
         let book = Book {
             local: self.book.local.clone(),
             remote,
+            cloud: self.book.cloud.clone(),
             live: self.book.live.clone(),
         };
         Self {
             book: Arc::new(book),
             supervised: self.supervised,
+        }
+    }
+
+    /// The same, serving the hosted models of the catalogue to the apps that hold a grant on an
+    /// account that reaches them.
+    pub fn with_cloud(self, cloud: Cloud) -> Self {
+        let book = Book {
+            local: self.book.local.clone(),
+            remote: self.book.remote.clone(),
+            cloud: Some(cloud),
+            live: self.book.live.clone(),
+        };
+        Self {
+            book: Arc::new(book),
+            supervised: self.supervised,
+        }
+    }
+
+    /// The hosted models, when this daemon serves any.
+    pub fn cloud(&self) -> Option<&Cloud> {
+        self.book.cloud.as_ref()
+    }
+
+    /// What `app` has used of hosted models today and this month, by name; empty when this daemon
+    /// has none (the `Usage` dictionary of `Inference1`).
+    pub fn usage_of(&self, app: &AppId) -> Vec<(String, u64)> {
+        match &self.book.cloud {
+            Some(cloud) => cloud
+                .ledger()
+                .usage_of(self.settings().spend, app, cloud.now()),
+            None => Vec::new(),
+        }
+    }
+
+    /// The hosted models `app` is offered for data of `class` now: what its grants reach, and the
+    /// caps' verdict on each. None when this daemon has no hosted models or accountd does not
+    /// answer.
+    pub async fn offer(&self, app: &AppId, class: DataClass) -> Offered {
+        let Some(cloud) = &self.book.cloud else {
+            return Offered::default();
+        };
+        let line = self.settings().spend;
+        let models = cloud
+            .models(app, class)
+            .await
+            .into_iter()
+            .map(|model| {
+                let spend = cloud.spend(line, app, &model);
+                (Arc::new(model), spend)
+            })
+            .collect();
+        Offered {
+            models,
+            app: Some(app.clone()),
         }
     }
 
@@ -159,6 +245,11 @@ impl Engines {
     /// Every model a session may be routed to, with its readiness now and what loading it would
     /// take (stoker's `budget`, asked speculatively: nothing is started).
     pub fn listed(&self) -> Vec<Listed> {
+        self.listed_with(&Offered::default())
+    }
+
+    /// `listed`, and the hosted models `offered` to the app that is asking.
+    pub fn listed_with(&self, offered: &Offered) -> Vec<Listed> {
         let snapshot = self.supervised.snapshot();
         let running = running_of(snapshot.states.iter(), |id| {
             self.book
@@ -192,20 +283,32 @@ impl Engines {
                     model.entry.cold_start_estimate_s.0,
                 ),
             };
-            Listed {
-                card: model.card.clone(),
+            Listed::new(
+                model.card.clone(),
                 readiness,
                 swap,
-                licence: licence_of(&model.entry.licence),
-            }
+                licence_of(&model.entry.licence),
+            )
         });
-        let remote = self.book.remote.iter().map(|card| Listed {
-            card: card.clone(),
-            readiness: Readiness::Ready,
-            swap: SwapCost::Resident,
-            licence: LicenceClass::Proprietary,
+        let remote = self.book.remote.iter().map(|card| {
+            Listed::new(
+                card.clone(),
+                Readiness::Ready,
+                SwapCost::Resident,
+                LicenceClass::Proprietary,
+            )
         });
-        local.chain(remote).collect()
+        let hosted = offered.models.iter().map(|(model, spend)| Listed {
+            permission: model.verdict.clone(),
+            spend: *spend,
+            ..Listed::new(
+                model.card.clone(),
+                Readiness::Ready,
+                SwapCost::Resident,
+                LicenceClass::Proprietary,
+            )
+        });
+        local.chain(remote).chain(hosted).collect()
     }
 
     /// Decides who answers a session, and what the runner is to be pinned to. A need no runner
@@ -226,31 +329,52 @@ impl Engines {
         spec: &SessionSpec,
         role: Role,
     ) -> Result<(Routing, Pinned), PickRefusal> {
+        self.route_with(spec, role, &Offered::default())
+    }
+
+    /// `route_detailed` for an app that is offered the hosted models in `offered`.
+    pub fn route_with(
+        &self,
+        spec: &SessionSpec,
+        role: Role,
+        offered: &Offered,
+    ) -> Result<(Routing, Pinned), PickRefusal> {
         if matches!(spec.need, Need::ComputerUse(_)) && role != Role::Cua {
             return Err(InferRefusal::Denied.into());
         }
         let settings = self.settings();
+        let tiers = through_grants(&settings.tiers, offered);
         let decided = choose(
             &spec.need,
             spec.class,
             spec.tier,
-            &self.listed_for(&spec.need),
+            &self.listed_for(&spec.need, offered),
             &settings.policy,
-            &settings.tiers,
+            &tiers,
             settings.auto,
         )?;
         let (chosen, readiness) = (decided.chosen, decided.readiness);
-        let model = self
-            .local(&ModelRef {
-                account: chosen.account.clone(),
-                model: chosen.model.clone(),
-            })
-            .cloned()
-            .ok_or(PickRefusal::from(InferRefusal::Unavailable))?;
+        let chosen_ref = ModelRef {
+            account: chosen.account.clone(),
+            model: chosen.model.clone(),
+        };
+        let (locality, model, cloud) = match (self.local(&chosen_ref), offered.find(&chosen_ref)) {
+            (Some(local), _) => (local.card.locality.clone(), Some(Arc::clone(local)), None),
+            (None, Some(hosted)) => (
+                hosted.card.locality.clone(),
+                None,
+                offered.app.clone().map(|app| CloudPin {
+                    model: Arc::clone(hosted),
+                    app,
+                    line: settings.spend,
+                }),
+            ),
+            (None, None) => return Err(PickRefusal::from(InferRefusal::Unavailable)),
+        };
         let served = ServedBy {
             account: chosen.account,
             model: chosen.model,
-            locality: model.card.locality.clone(),
+            locality,
         };
         Ok((
             Routing {
@@ -261,16 +385,17 @@ impl Engines {
             },
             Pinned {
                 served,
-                model: Some(model),
+                model,
+                cloud,
             },
         ))
     }
 
     /// Models for a need; none when no runner serves that kind of need yet.
-    fn listed_for(&self, need: &Need) -> Vec<Listed> {
+    fn listed_for(&self, need: &Need, offered: &Offered) -> Vec<Listed> {
         match need {
             Need::Speech(_) => Vec::new(),
-            _ => self.listed(),
+            _ => self.listed_with(offered),
         }
     }
 
@@ -294,12 +419,41 @@ impl Engines {
         tier: Tier,
         role: Role,
     ) -> Result<Readiness, InferRefusal> {
+        self.prepare_with(need, class, tier, role, &Offered::default())
+            .await
+    }
+
+    /// `prepare` for this caller: the hosted models its grants reach are among the candidates (a
+    /// hosted model is always ready, so there is nothing to warm for one).
+    pub async fn prepare_for(
+        &self,
+        need: &Need,
+        class: DataClass,
+        tier: Tier,
+        caller: &Caller,
+    ) -> Result<Readiness, InferRefusal> {
+        let offered = self.offer(&caller.app, class).await;
+        self.prepare_with(need, class, tier, caller.role, &offered)
+            .await
+    }
+
+    async fn prepare_with(
+        &self,
+        need: &Need,
+        class: DataClass,
+        tier: Tier,
+        role: Role,
+        offered: &Offered,
+    ) -> Result<Readiness, InferRefusal> {
         let spec = SessionSpec {
             need: need.clone(),
             class,
             tier,
         };
-        let (decision, pinned) = self.route(&spec, role)?;
+        let (decision, pinned) = self
+            .route_with(&spec, role, offered)
+            .map(|(routing, pinned)| (routing.decision(), pinned))
+            .map_err(|r| r.refusal)?;
         match (decision.readiness, pinned.model) {
             (Readiness::Loadable, Some(model)) => {
                 self.supervised.warm(&model.spec.id);
@@ -318,12 +472,33 @@ impl Engines {
     /// What an app is told about a need without a session (`Inference1.Availability`): whether
     /// the route would run, without revealing which account or model.
     pub fn availability(&self, need: &Need, class: DataClass, role: Role) -> Availability {
+        self.availability_with(need, class, role, &Offered::default())
+    }
+
+    /// `availability` for this caller: the hosted models its grants reach are among the candidates.
+    pub async fn availability_for(
+        &self,
+        need: &Need,
+        class: DataClass,
+        caller: &Caller,
+    ) -> Availability {
+        let offered = self.offer(&caller.app, class).await;
+        self.availability_with(need, class, caller.role, &offered)
+    }
+
+    fn availability_with(
+        &self,
+        need: &Need,
+        class: DataClass,
+        role: Role,
+        offered: &Offered,
+    ) -> Availability {
         let spec = SessionSpec {
             need: need.clone(),
             class,
             tier: Tier::Balanced,
         };
-        match self.route(&spec, role) {
+        match self.route_with(&spec, role, offered).map_err(|r| r.refusal) {
             Ok(_) => Availability::Granted,
             Err(InferRefusal::NeedsGrant) => Availability::AvailableNeedsConsent,
             Err(InferRefusal::Denied | InferRefusal::OverBudget) => Availability::Denied,
@@ -341,6 +516,16 @@ impl Engines {
             engines: self.clone(),
             pin,
             role,
+            app: None,
+        }
+    }
+
+    /// The router for one session of `caller`: as `router`, and the hosted models its grants reach
+    /// are among the candidates. (A router made by `router` knows no app and serves none.)
+    pub fn router_for(&self, pin: Pin, caller: &Caller) -> SessionRouter {
+        SessionRouter {
+            app: Some(caller.app.clone()),
+            ..self.router(pin, caller.role)
         }
     }
 }
@@ -386,7 +571,16 @@ fn gpu_in(snapshot: &Snapshot, in_turn: Duration) -> GpuState {
 
 impl EngineHost for Engines {
     async fn want(&self, model: ModelRef) -> Result<(), EngineFailed> {
-        let local = self.local(&model).ok_or(EngineFailed)?;
+        let Some(local) = self.local(&model) else {
+            // A hosted model has no engine to start: the route said it is ready.
+            let hosted = self.book.cloud.as_ref().is_some_and(|cloud| {
+                cloud
+                    .entries()
+                    .iter()
+                    .any(|entry| entry.id.0 == model.model.as_str())
+            });
+            return if hosted { Ok(()) } else { Err(EngineFailed) };
+        };
         self.supervised
             .want(&local.spec.id)
             .await
@@ -405,22 +599,56 @@ pub struct SessionRouter {
     engines: Engines,
     pin: Pin,
     role: Role,
+    app: Option<AppId>,
+}
+
+impl SessionRouter {
+    /// What the session's app is offered: the hosted models its grants reach, when it is known.
+    async fn offered(&self, spec: &SessionSpec) -> Offered {
+        match &self.app {
+            Some(app) => self.engines.offer(app, spec.class).await,
+            None => Offered::default(),
+        }
+    }
 }
 
 impl crate::serve::Router for SessionRouter {
     async fn route(&self, spec: &SessionSpec) -> Result<RouteDecision, InferRefusal> {
-        let (routing, pinned) = self
-            .engines
-            .route_detailed(spec, self.role)
-            .map_err(|r| r.refusal)?;
-        self.pin.set(pinned);
-        Ok(routing.decision())
+        self.route_why(spec)
+            .await
+            .map(|routing| routing.decision())
+            .map_err(|r| r.refusal)
     }
 
     async fn route_why(&self, spec: &SessionSpec) -> Result<Routing, PickRefusal> {
-        let (routing, pinned) = self.engines.route_detailed(spec, self.role)?;
+        let offered = self.offered(spec).await;
+        let (routing, pinned) = self.engines.route_with(spec, self.role, &offered)?;
         self.pin.set(pinned);
         Ok(routing)
+    }
+}
+
+/// The tier map with every `cloud/<model>` row (a hosted model picked without an account) naming
+/// the account that reaches it for this app; a row nothing reaches stays as it is, and so names a
+/// model no candidate has.
+fn through_grants(tiers: &TierMap, offered: &Offered) -> TierMap {
+    let virtual_account = AccountId::parse(CLOUD_ACCOUNT).ok();
+    let resolve = |model: &ModelRef| match offered.models().find(|one| {
+        Some(&model.account) == virtual_account.as_ref() && one.card.model == model.model
+    }) {
+        Some(hosted) => hosted.model_ref(),
+        None => model.clone(),
+    };
+    TierMap {
+        rows: tiers
+            .rows
+            .iter()
+            .map(|row| porter_infer::TierRow {
+                model: resolve(&row.model),
+                ..row.clone()
+            })
+            .collect(),
+        autos: tiers.autos.clone(),
     }
 }
 

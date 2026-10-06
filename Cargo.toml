@@ -76,6 +76,9 @@ cua-session         = { path = "../stoker/crates/cua-session" }
 cua-vendors         = { path = "../stoker/crates/cua-vendors" }
 model-extract       = { path = "../stoker/crates/model-extract" }
 model-replay        = { path = "../stoker/crates/model-replay" }
+# the codec-over-transport `Driver`: inferd's TLS transport to a cloud model is a `model_http::Transport`
+# of its own (stoker's hyper client does not speak TLS yet), so it names the driver that takes one.
+model-wire          = { path = "../stoker/crates/model-wire" }
 
 # From quire's pinned block (`docs/workspace-deps.toml`), copied verbatim: only the lines porter
 # names itself, as mailo does.

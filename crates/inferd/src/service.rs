@@ -123,11 +123,15 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         ours.set_nonblocking(true).map_err(failed)?;
         let stream = UnixStream::from_std(ours).map_err(failed)?;
         let pin = Pin::new();
+        let turns = Turns::new(pin.clone(), self.engines.supervised().clone(), spec.tier)
+            .limited(self.limits);
         let seams = Seams {
-            router: self.engines.router(pin.clone(), caller.role),
+            router: self.engines.router_for(pin, &caller),
             engines: self.engines.clone(),
-            runner: Turns::new(pin, self.engines.supervised().clone(), spec.tier)
-                .limited(self.limits),
+            runner: match self.engines.cloud() {
+                Some(cloud) => turns.hosted(cloud.clone()),
+                None => turns,
+            },
             audit: SessionAudit::new(caller.app, Arc::clone(&self.audit), self.clock.clone()),
         };
         tokio::spawn(async move { serve_session(stream, spec, &seams).await });
@@ -149,7 +153,8 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         let spec = Self::spec(need, &class, "balanced")?;
         let availability = self
             .engines
-            .availability(&spec.need, spec.class, caller.role);
+            .availability_for(&spec.need, spec.class, &caller)
+            .await;
         Ok(slug(&availability, "kind"))
     }
 
@@ -181,7 +186,7 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         Ok(
             match self
                 .engines
-                .prepare_as(&spec.need, spec.class, spec.tier, caller.role)
+                .prepare_for(&spec.need, spec.class, spec.tier, &caller)
                 .await
             {
                 Ok(readiness) => readiness.slug().to_owned(),
@@ -190,11 +195,20 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         )
     }
 
-    // What the caller used this period. Nothing meters yet, so the dictionary is empty.
+    // What the caller used this period, by name: tokens and micro-dollars of today, micro-dollars of
+    // the month, and each spend cap that is set; empty on a daemon that serves no hosted model.
     // (Plain comments: a doc comment on a member would change the introspection XML.)
     async fn usage(&self, #[zbus(header)] header: Header<'_>) -> fdo::Result<Details> {
-        self.caller(&header).await?;
-        Ok(Details::new())
+        let caller = self.caller(&header).await?;
+        Ok(self
+            .engines
+            .usage_of(&caller.app)
+            .into_iter()
+            .filter_map(|(name, value)| {
+                let value = zbus::zvariant::OwnedValue::try_from(zbus::zvariant::Value::U64(value));
+                Some((name, value.ok()?))
+            })
+            .collect())
     }
 
     // Looks again: weights that arrived, engines that stopped, and the settings file (a file that

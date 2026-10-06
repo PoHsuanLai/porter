@@ -12,6 +12,7 @@ pub mod auto;
 pub mod bridge;
 pub mod catalog;
 pub mod clock;
+pub mod cloud;
 pub mod config;
 pub mod cua_run;
 pub mod cua_step;

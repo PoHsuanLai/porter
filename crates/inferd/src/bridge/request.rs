@@ -4,6 +4,7 @@
 //! flavor. The only place the two vocabularies meet on the way in.
 
 use crate::local::LocalModel;
+use model_catalog::SamplingDefaults;
 use model_openai_compat::Flavor;
 use model_provider as sp;
 use porter_core::need::DimsNeed;
@@ -211,13 +212,60 @@ pub fn extras(flavor: Option<Flavor>) -> sp::EngineExtras {
     }
 }
 
-/// The catalog's sampling for a turn that does not choose its own: the set for the reasoning
-/// mode the turn asks for.
-fn default_sampling(model: &LocalModel, reasoning: sp::Reasoning) -> Option<sp::Sampling> {
-    model
-        .entry
-        .sampling
-        .map(|defaults| *defaults.for_reasoning(reasoning))
+/// What a turn is asked of: the name the server knows the model by, what the turn takes from the
+/// model's entry when the request leaves it open, and the dialect of the server.
+#[derive(Debug, Clone)]
+pub struct Target {
+    /// The name in the request's `model` field.
+    pub name: sp::ModelName,
+    /// Where a sampling the request leaves open comes from.
+    pub sampling: DefaultSampling,
+    /// The reply limit a request leaves open.
+    pub max_output: sp::Tokens,
+    /// The engine's flavor, when it has one.
+    pub flavor: Option<Flavor>,
+}
+
+/// Where a sampling the request leaves open comes from.
+#[derive(Debug, Clone, Copy)]
+pub enum DefaultSampling {
+    /// The entry's table for the reasoning mode asked (none written is a request that cannot be
+    /// expressed).
+    Entry(Option<SamplingDefaults>),
+    /// The provider's own defaults: the turn carries a placeholder and whoever sends it leaves the
+    /// field out (a hosted model's entry writes no sampling).
+    Provider,
+}
+
+/// The sampling a turn carries when the provider's defaults apply: never sent as it stands.
+const PROVIDER_DEFAULT: sp::Sampling = sp::Sampling {
+    temperature: sp::Milli(1000),
+    top_p: sp::Knob::Off,
+    top_k: sp::Knob::Off,
+    min_p: sp::Knob::Off,
+    repeat_penalty: sp::Knob::Off,
+    seed: sp::Knob::Off,
+};
+
+impl Target {
+    /// The turn target of a model on this computer.
+    pub fn local(model: &LocalModel) -> Self {
+        Self {
+            name: model.name.clone(),
+            sampling: DefaultSampling::Entry(model.entry.sampling),
+            max_output: model.caps().map(|caps| caps.max_output).unwrap_or_default(),
+            flavor: model.flavor,
+        }
+    }
+}
+
+fn default_sampling(target: &Target, reasoning: sp::Reasoning) -> Option<sp::Sampling> {
+    match target.sampling {
+        DefaultSampling::Entry(defaults) => {
+            defaults.map(|defaults| *defaults.for_reasoning(reasoning))
+        }
+        DefaultSampling::Provider => Some(PROVIDER_DEFAULT),
+    }
 }
 
 /// The turn for a chat request. Sampling and the output limit the request leaves open come from
@@ -227,19 +275,28 @@ pub fn chat_turn(
     request: &pi::ChatRequest,
     frames: &Frames,
 ) -> Result<sp::TurnRequest, BridgeError> {
+    chat_turn_for(&Target::local(model), request, frames)
+}
+
+/// `chat_turn` for any target.
+pub fn chat_turn_for(
+    target: &Target,
+    request: &pi::ChatRequest,
+    frames: &Frames,
+) -> Result<sp::TurnRequest, BridgeError> {
     let control = &request.control;
     let reasoning = reasoning(control.reasoning);
     let sampling = match control.sampling {
         pi::Knob::Set(own) => Some(sampling(own)),
-        pi::Knob::Off => default_sampling(model, reasoning),
+        pi::Knob::Off => default_sampling(target, reasoning),
     }
     .ok_or(BridgeError::Unsupported)?;
     let max_output = match control.max_output {
         pi::Knob::Set(tokens) => sp::Tokens(tokens.0),
-        pi::Knob::Off => model.caps().map(|caps| caps.max_output).unwrap_or_default(),
+        pi::Knob::Off => target.max_output,
     };
     Ok(sp::TurnRequest {
-        model: model.name.clone(),
+        model: target.name.clone(),
         messages: request
             .messages
             .iter()
@@ -277,7 +334,7 @@ pub fn chat_turn(
         },
         sampling,
         reasoning,
-        engine: extras(model.flavor),
+        engine: extras(target.flavor),
     })
 }
 
@@ -302,6 +359,15 @@ fn task_instruction(task: pi::Task) -> &'static str {
 /// A task as a chat turn: its instruction, then the text.
 pub fn task_turn(
     model: &LocalModel,
+    request: &pi::TaskRequest,
+    tier: porter_core::Tier,
+) -> Result<sp::TurnRequest, BridgeError> {
+    task_turn_for(&Target::local(model), request, tier)
+}
+
+/// `task_turn` for any target.
+pub fn task_turn_for(
+    target: &Target,
     request: &pi::TaskRequest,
     tier: porter_core::Tier,
 ) -> Result<sp::TurnRequest, BridgeError> {
@@ -330,7 +396,7 @@ pub fn task_turn(
             stop: Vec::new(),
         },
     };
-    chat_turn(model, &chat, &Frames::default())
+    chat_turn_for(target, &chat, &Frames::default())
 }
 
 /// The embedding turns of a request: the model's prefix for the request's role goes before every

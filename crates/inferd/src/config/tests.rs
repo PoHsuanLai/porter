@@ -36,6 +36,10 @@ fn the_directories_follow_xdg_and_fall_back_under_home() {
         PathBuf::from("/home/u/.local/state/quire/inferd/audit.jsonl")
     );
     assert_eq!(
+        from_home.spend,
+        PathBuf::from("/home/u/.local/state/quire/inferd/spend.json")
+    );
+    assert_eq!(
         from_home.hf_cache,
         PathBuf::from("/home/u/.cache/huggingface/hub")
     );

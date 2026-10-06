@@ -6,17 +6,27 @@
 use super::file::Reload;
 use super::keys::{KINDS, TIERS, kinds_of, model_path, parse_model_path};
 use super::resolve::{model_text, parse_model, slot_value};
+use crate::cloud::picker::{Choice, choices};
 use crate::peers::{Peers, Role};
 use ds_settings::live::{Access, Caller, LiveError, LiveModule, LiveSchema, Verdict, serve};
 use ds_settings::schema::{
     AgentSetting, Exposure, Help, KeyKind, KeyPath, KeySpec, Label, Page, Section, WordLabels,
 };
-use porter_core::Tier;
+use porter_core::{AppId, AppName, DataClass, Isolation, Tier};
 use porter_dbus::INFERENCE_SETTINGS_PATH;
 use porter_infer::{AiKind, tier_label};
 
 /// The picker value that is Automatic.
 const AUTO: &str = "auto";
+
+/// The app the picker asks accountd about the person's accounts as: `Verdicts` lists every account
+/// that serves a language need, and the picker reads only that an account exists.
+fn picker_app() -> Option<AppId> {
+    Some(AppId {
+        name: AppName::parse("org.quire.Settings").ok()?,
+        isolation: Isolation::Unsandboxed,
+    })
+}
 
 /// The module over the daemon's engines and its file.
 pub struct InferdSettings<P> {
@@ -59,14 +69,29 @@ impl<P: Peers> InferdSettings<P> {
             .collect()
     }
 
+    /// The hosted models for `kind` (the language slot), with whether the person has an account
+    /// that reaches each; none for another kind, and none when this daemon serves none.
+    async fn hosted(&self, kind: AiKind) -> Vec<Choice> {
+        let (AiKind::Llm, Some(cloud), Some(app)) =
+            (kind, self.reload.engines().cloud().cloned(), picker_app())
+        else {
+            return Vec::new();
+        };
+        choices(
+            cloud.entries(),
+            &cloud.accounts(&app, DataClass::Prompt).await,
+        )
+    }
+
     fn current(&self, kind: AiKind, tier: Tier) -> String {
         slot_value(&self.reload.engines().settings().tiers, kind, tier)
     }
 
-    fn spec(&self, kind: AiKind, tier: Tier) -> KeySpec {
+    fn spec(&self, kind: AiKind, tier: Tier, hosted: &[Choice]) -> KeySpec {
         let current = self.current(kind, tier);
         let mut variants = vec![String::new(), AUTO.to_owned()];
         variants.extend(self.models_for(kind));
+        variants.extend(hosted.iter().map(|choice| choice.value.clone()));
         if !variants.contains(&current) {
             variants.push(current);
         }
@@ -80,6 +105,9 @@ impl<P: Peers> InferdSettings<P> {
                 .split_once('/')
                 .map_or(model.as_str(), |(_, name)| name);
             labels.0.insert(model.clone(), name.to_owned());
+        }
+        for choice in hosted {
+            labels.0.insert(choice.value.clone(), choice.label.clone());
         }
         KeySpec {
             path: KeyPath(model_path(kind, tier)),
@@ -125,20 +153,19 @@ impl<P: Peers> LiveModule for InferdSettings<P> {
     }
 
     async fn describe(&self) -> LiveSchema {
-        let known = |kind: AiKind| {
-            !self.models_for(kind).is_empty()
+        let mut key = Vec::new();
+        for kind in KINDS {
+            let hosted = self.hosted(kind).await;
+            let known = !self.models_for(kind).is_empty()
+                || !hosted.is_empty()
                 || TIERS
                     .iter()
-                    .any(|tier| !self.current(kind, *tier).is_empty())
-        };
-        LiveSchema {
-            version: 1,
-            key: KINDS
-                .into_iter()
-                .filter(|kind| known(*kind))
-                .flat_map(|kind| TIERS.map(|tier| self.spec(kind, tier)))
-                .collect(),
+                    .any(|tier| !self.current(kind, *tier).is_empty());
+            if known {
+                key.extend(TIERS.map(|tier| self.spec(kind, tier, &hosted)));
+            }
         }
+        LiveSchema { version: 1, key }
     }
 
     async fn get(&self, key: &KeyPath) -> Result<toml::Value, LiveError> {
@@ -153,9 +180,13 @@ impl<P: Peers> LiveModule for InferdSettings<P> {
         let toml::Value::String(text) = value else {
             return Err(LiveError::BadValue("a model is text".into()));
         };
+        let hosted = self.hosted(kind).await;
         let known = text.is_empty()
             || text == AUTO
-            || parse_model(&text).is_some_and(|_| self.models_for(kind).contains(&text));
+            || parse_model(&text).is_some_and(|_| {
+                self.models_for(kind).contains(&text)
+                    || hosted.iter().any(|choice| choice.value == text)
+            });
         if !known {
             return Err(LiveError::BadValue(format!(
                 "{text}: not a model inferd knows for {}",

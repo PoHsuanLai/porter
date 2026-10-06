@@ -7,8 +7,8 @@ use serde_json::{Value, json};
 use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{UnixListener, UnixStream};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::net::UnixListener;
 use tokio::task::JoinHandle;
 
 /// What the engine says to one chat request.
@@ -41,7 +41,19 @@ pub struct Script {
 pub struct Seen {
     pub method: String,
     pub path: String,
+    /// Header names in lower case, with their values.
+    pub headers: Vec<(String, String)>,
     pub body: Value,
+}
+
+impl Seen {
+    /// The value of the header `name` (lower case), if the request had one.
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(have, _)| have == name)
+            .map(|(_, value)| value.as_str())
+    }
 }
 
 /// A running fake engine.
@@ -88,9 +100,9 @@ impl FakeEngine {
     }
 }
 
-type State = Arc<Mutex<(VecDeque<Chat>, usize)>>;
+pub type State = Arc<Mutex<(VecDeque<Chat>, usize)>>;
 
-async fn read_request(stream: &mut UnixStream) -> Option<Seen> {
+async fn read_request<S: AsyncRead + Unpin>(stream: &mut S) -> Option<Seen> {
     let mut raw = Vec::new();
     let mut chunk = [0_u8; 8192];
     loop {
@@ -115,7 +127,20 @@ async fn read_request(stream: &mut UnixStream) -> Option<Seen> {
                 let path = first.next()?.to_owned();
                 let body =
                     serde_json::from_slice(&raw[head_len..head_len + want]).unwrap_or(Value::Null);
-                return Some(Seen { method, path, body });
+                let headers = head
+                    .lines()
+                    .skip(1)
+                    .filter_map(|line| line.split_once(':'))
+                    .map(|(name, value)| {
+                        (name.trim().to_ascii_lowercase(), value.trim().to_owned())
+                    })
+                    .collect();
+                return Some(Seen {
+                    method,
+                    path,
+                    headers,
+                    body,
+                });
             }
         }
     }
@@ -174,14 +199,18 @@ fn vector(text: &str, dims: usize) -> Vec<f64> {
         .collect()
 }
 
-async fn serve(mut stream: UnixStream, state: State, log: Arc<Mutex<Vec<Seen>>>) {
+pub async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
+    mut stream: S,
+    state: State,
+    log: Arc<Mutex<Vec<Seen>>>,
+) {
     let Some(seen) = read_request(&mut stream).await else {
         return;
     };
     log.lock().expect("lock").push(seen.clone());
     let pieces: Vec<Vec<u8>> = match (seen.method.as_str(), seen.path.as_str()) {
         ("GET", "/health") => vec![json_response("200 OK", &json!({"status": "ok"}))],
-        ("POST", "/v1/chat/completions") => {
+        ("POST", path) if path.ends_with("/chat/completions") => {
             let answer = {
                 let mut state = state.lock().expect("lock");
                 match state.0.len() {
@@ -204,7 +233,7 @@ async fn serve(mut stream: UnixStream, state: State, log: Arc<Mutex<Vec<Seen>>>)
                 other => stream_for(&other),
             }
         }
-        ("POST", "/v1/embeddings") => {
+        ("POST", path) if path.ends_with("/embeddings") => {
             let dims = state.lock().expect("lock").1;
             let inputs: Vec<String> = seen.body["input"]
                 .as_array()

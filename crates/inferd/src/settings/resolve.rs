@@ -1,7 +1,11 @@
 //! The file's `[ai]` table (laid over the old `[policy]` and `[tiers]` tables) as [`Settings`].
 
 use super::keys::{from_slug, slug_of};
-use super::{SPEND_WARN, SPEND_WARN_DEFAULT, SPEND_WARN_RANGE, Settings, SpendLine};
+use super::{
+    SPEND_ACCOUNT_DAILY, SPEND_ACCOUNT_MONTHLY, SPEND_APP_DAILY, SPEND_APP_MONTHLY,
+    SPEND_CAP_RANGE, SPEND_WARN, SPEND_WARN_DEFAULT, SPEND_WARN_RANGE, ScopeLimits, Settings,
+    SpendLimits, SpendLine, cents_to_limit,
+};
 use crate::config::InferdConfig;
 use crate::structured::AiConfig;
 use porter_core::{DataClass, Permille, Tier};
@@ -94,10 +98,8 @@ fn tiers_of(ai: &AiConfig, mut tiers: TierMap, rejected: &mut Vec<String>) -> Ti
 }
 
 fn spend_of(ai: &AiConfig, rejected: &mut Vec<String>) -> SpendLine {
-    let line = |permille: u32| SpendLine {
-        warn_at: Permille(permille),
-    };
-    match ai.spend.warn_permille {
+    let line = |permille: u32| Permille(permille);
+    let warn_at = match ai.spend.warn_permille {
         None => line(SPEND_WARN_DEFAULT),
         Some(said) => match u32::try_from(said) {
             Ok(value) if SPEND_WARN_RANGE.contains(&value) => line(value),
@@ -106,7 +108,28 @@ fn spend_of(ai: &AiConfig, rejected: &mut Vec<String>) -> SpendLine {
                 line(SPEND_WARN_DEFAULT)
             }
         },
-    }
+    };
+    let mut cap = |said: Option<i64>, path: &str| match said {
+        None => None,
+        Some(said) => match u32::try_from(said) {
+            Ok(cents) if SPEND_CAP_RANGE.contains(&cents) => cents_to_limit(cents),
+            _ => {
+                rejected.push(path.to_owned());
+                None
+            }
+        },
+    };
+    let limits = SpendLimits {
+        account: ScopeLimits {
+            daily: cap(ai.spend.account_daily_cents, SPEND_ACCOUNT_DAILY),
+            monthly: cap(ai.spend.account_monthly_cents, SPEND_ACCOUNT_MONTHLY),
+        },
+        app: ScopeLimits {
+            daily: cap(ai.spend.app_daily_cents, SPEND_APP_DAILY),
+            monthly: cap(ai.spend.app_monthly_cents, SPEND_APP_MONTHLY),
+        },
+    };
+    SpendLine { warn_at, limits }
 }
 
 /// The settings a configuration says.

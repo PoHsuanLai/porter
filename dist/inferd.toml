@@ -51,9 +51,17 @@
 # allow_evict = "idle_only"
 # show_reason = "on"
 #
-# The share of a spending cap at which a request is warned about, 1 to 1000 (ai.spend.warn_permille).
+# The share of a spending cap at which a request is warned about, 1 to 1000 (ai.spend.warn_permille),
+# and the caps on cloud models, in US cents (0 is no cap): on each account, counting every app that
+# uses it, and on each app, whichever account pays; per day and per month, counted in UTC. A cap
+# reached refuses the request (spend cap reached). What was spent is kept in
+# $XDG_STATE_HOME/quire/inferd/spend.json (money and token counts only).
 # [ai.spend]
 # warn_permille = 800
+# account_daily_cents = 500
+# account_monthly_cents = 5000
+# app_daily_cents = 200
+# app_monthly_cents = 2000
 #
 # The old shape, still read: a [policy] table (local_only, floors) and [[tiers.rows]] (kind, tier,
 # model = { account, model }). The rows above win over it where both say something. It goes when
