@@ -111,6 +111,7 @@ fn spec(
             _ => Exposure::Basic,
         },
         labels: Default::default(),
+        unavailable: Default::default(),
         agent: AgentSetting::HandsOff,
     }
 }

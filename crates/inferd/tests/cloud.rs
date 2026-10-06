@@ -843,27 +843,46 @@ async fn the_picker_lists_every_hosted_model_by_company_and_marks_the_ones_no_ac
             panic!("a menu, got {:?}", image_row.kind);
         };
         assert!(image_variants.iter().any(|v| v == "cloud/claude-opus-5.5"));
+        // A model no account reaches is listed, unavailable with the reason; one an account
+        // reaches is not. The labels carry no reason (Settings greys the choice).
+        let reason = |value: &str| {
+            row.unavailable
+                .get(&ds_settings::schema::ChoiceWord(value.to_owned()))
+                .map(|r| r.0.clone())
+        };
         for value in &reachable {
-            let label = &row.labels.0[*value];
-            assert!(!label.contains("Add an account to use"), "{value}: {label}");
+            assert_eq!(reason(value), None, "{value}");
+            assert!(!row.labels.0[*value].contains("Add an account"), "{value}");
         }
         for value in &unreachable {
-            let label = &row.labels.0[*value];
-            assert!(label.ends_with("Add an account to use"), "{value}: {label}");
+            assert_eq!(
+                reason(value).as_deref(),
+                Some("Add an account to use"),
+                "{value}"
+            );
         }
-        // Choosing one, whatever the accounts, is a value the row accepts.
-        live.set(
-            &KeyPath("ai.model.text.balanced".into()),
-            &toml::Value::String("cloud/kimi-k3".into()),
-        )
-        .await
-        .expect("a hosted model is a value");
-        assert_eq!(
-            live.get(&KeyPath("ai.model.text.balanced".into()))
+        let path = KeyPath("ai.model.text.balanced".into());
+        // A reachable one is a value the row takes; an unreachable one is refused with the
+        // reason, and the row keeps what it had.
+        for value in &reachable {
+            live.set(&path, &toml::Value::String((*value).into()))
                 .await
-                .expect("get"),
-            toml::Value::String("cloud/kimi-k3".into())
-        );
+                .expect("a reachable hosted model is a value");
+            assert_eq!(
+                live.get(&path).await.expect("get"),
+                toml::Value::String((*value).into())
+            );
+        }
+        let before = live.get(&path).await.expect("get");
+        for value in &unreachable {
+            match live.set(&path, &toml::Value::String((*value).into())).await {
+                Err(ds_settings::live::LiveError::Unavailable(why)) => {
+                    assert_eq!(why, "Add an account to use", "{value}");
+                }
+                other => panic!("{value}: expected Unavailable, got {other:?}"),
+            }
+        }
+        assert_eq!(live.get(&path).await.expect("get"), before);
     }
 }
 

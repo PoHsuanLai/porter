@@ -65,10 +65,10 @@ fn a_model_no_account_reaches_says_to_add_one_and_the_others_do_not() {
     let by_value = |value: &str| listed.iter().find(|c| c.value == value).expect(value);
     let luna = by_value("cloud/gpt-6-luna");
     assert_eq!(luna.available, Availability::Reachable);
-    assert!(!luna.label.contains(NEEDS_ACCOUNT), "{}", luna.label);
     let kimi = by_value("cloud/kimi-k3");
     assert_eq!(kimi.available, Availability::NeedsAccount);
-    assert!(kimi.label.ends_with(NEEDS_ACCOUNT), "{}", kimi.label);
+    // The reason is the schema's `unavailable`, not the label's.
+    assert!(!kimi.label.contains(NEEDS_ACCOUNT), "{}", kimi.label);
 }
 
 #[test]
@@ -86,7 +86,7 @@ fn a_label_carries_the_company_and_the_capabilities_a_filter_reads() {
     let listed = choices(&catalogue(), &[], Slot::Text);
     assert_eq!(
         listed[0].label,
-        "Claude Opus 5.5 (Anthropic, claude, tools, images, reasoning) - Add an account to use"
+        "Claude Opus 5.5 (Anthropic, claude, tools, images, reasoning)"
     );
 }
 

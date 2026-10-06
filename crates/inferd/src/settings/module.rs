@@ -7,11 +7,12 @@
 use super::file::Reload;
 use super::keys::{SLOTS, TIERS, model_path, parse_model_path, slots_of};
 use super::resolve::{model_text, parse_model, slot_value};
-use crate::cloud::picker::{Choice, choices};
+use crate::cloud::picker::{Availability, Choice, NEEDS_ACCOUNT, choices};
 use crate::peers::{Peers, Role};
 use ds_settings::live::{Access, Caller, LiveError, LiveModule, LiveSchema, Verdict, serve};
 use ds_settings::schema::{
-    AgentSetting, Exposure, Help, KeyKind, KeyPath, KeySpec, Label, Page, Section, WordLabels,
+    AgentSetting, ChoiceWord, Exposure, Help, KeyKind, KeyPath, KeySpec, Label, Page, Section,
+    UnavailableReason, WordLabels,
 };
 use porter_core::consent::Usage;
 use porter_core::{AppId, AppName, DataClass, Isolation, Tier};
@@ -127,6 +128,18 @@ impl<P: Peers> InferdSettings<P> {
         for choice in hosted {
             labels.0.insert(choice.value.clone(), choice.label.clone());
         }
+        // A hosted model no account reaches is listed, greyed, with the reason: the skeleton
+        // refuses a Set of it (`Unavailable`), so a pick names only what can run.
+        let unavailable = hosted
+            .iter()
+            .filter(|choice| choice.available == Availability::NeedsAccount)
+            .map(|choice| {
+                (
+                    ChoiceWord(choice.value.clone()),
+                    UnavailableReason(NEEDS_ACCOUNT.to_owned()),
+                )
+            })
+            .collect();
         KeySpec {
             path: KeyPath(model_path(kind, tier)),
             kind: KeyKind::Menu { variants },
@@ -141,6 +154,7 @@ impl<P: Peers> InferdSettings<P> {
             section: Section("Models".to_owned()),
             exposure: Exposure::Basic,
             labels,
+            unavailable,
             agent: AgentSetting::HandsOff,
         }
     }

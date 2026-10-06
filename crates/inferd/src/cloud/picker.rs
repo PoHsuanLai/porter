@@ -1,6 +1,7 @@
 //! The hosted models as the model picker lists them: every curated remote entry that fits a
 //! slot, grouped by company, whether or not the person has an account for it. An entry no
-//! account reaches is listed and says so ("Add an account to use"), so the picker is company then
+//! account reaches is listed, unavailable with the reason "Add an account to use" (the schema's
+//! `unavailable`, which Settings greys and the module refuses to set), so the picker is company then
 //! model regardless of accounts. The label carries what a search and a tools filter read: the
 //! company, and the capabilities the entry declares.
 
@@ -10,7 +11,8 @@ use crate::engines::CLOUD_ACCOUNT;
 use model_catalog::{Modality, ModelEntry, reachable, slot_members};
 use model_provider::ToolSupport;
 
-/// What the label says of a model nobody can reach yet.
+/// Why a model nobody can reach yet cannot be picked (the schema's `unavailable` reason; the
+/// Settings app shows it and greys the choice).
 pub const NEEDS_ACCOUNT: &str = "Add an account to use";
 
 /// One hosted model in the picker.
@@ -114,10 +116,7 @@ pub fn choices(
         let company = company_of(&entry.family.0);
         let mut words = vec![company.clone(), entry.family.0.clone()];
         words.extend(capabilities_of(entry).into_iter().map(str::to_owned));
-        let mut label = format!("{} ({})", entry.label, words.join(", "));
-        if reach == Availability::NeedsAccount {
-            label = format!("{label} - {NEEDS_ACCOUNT}");
-        }
+        let label = format!("{} ({})", entry.label, words.join(", "));
         let choice = Choice {
             value: format!("{CLOUD_ACCOUNT}/{}", entry.id.0),
             label,
