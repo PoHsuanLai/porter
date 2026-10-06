@@ -10,7 +10,7 @@
 use super::Cloud;
 use super::accountd::AccountdFault;
 use super::models::RemoteModel;
-use super::transport::TlsTransport;
+use super::transport::ShapedTransport;
 use super::wire::{BodyShape, Temperature, flavor_of};
 use crate::bridge::{self, DefaultSampling, Frames, Target};
 use crate::runner::{RETRY, TokioSleep};
@@ -174,9 +174,9 @@ pub async fn reply(
 /// The provider a transport is driven through: stoker's chat-completions codec in the provider's
 /// dialect, retried as inferd retries a local engine.
 fn provider_over(
-    transport: TlsTransport,
+    transport: ShapedTransport,
     provider: &model_catalog::ProviderId,
-) -> Retrying<Driver<OpenAiCodec, TlsTransport>, TokioSleep> {
+) -> Retrying<Driver<OpenAiCodec, ShapedTransport>, TokioSleep> {
     Retrying::new(
         Driver::new(OpenAiCodec::new(flavor_of(provider)), transport),
         RETRY,

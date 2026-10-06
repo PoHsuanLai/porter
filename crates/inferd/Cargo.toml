@@ -23,7 +23,7 @@ ds-settings = { workspace = true }
 model-provider = { workspace = true }
 model-catalog = { workspace = true }
 engine-supervisor = { workspace = true }
-model-http = { workspace = true, features = ["hyper"] }
+model-http = { workspace = true, features = ["hyper", "tls"] }
 model-openai-compat = { workspace = true }
 vision-prep = { workspace = true, features = ["pixels"] }
 cua-parse = { workspace = true }
@@ -35,13 +35,6 @@ model-wire = { workspace = true }
 speech-provider = { workspace = true }
 clap = { workspace = true }
 rustix = { workspace = true }
-hyper = { workspace = true, features = ["client", "http1"] }
-hyper-util = { workspace = true, features = ["tokio"] }
-http-body-util = { workspace = true }
-tokio-rustls = { workspace = true }
-rustls-pki-types = { workspace = true }
-rustls-native-certs = { workspace = true }
-webpki-roots = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

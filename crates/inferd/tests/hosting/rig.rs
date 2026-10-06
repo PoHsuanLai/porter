@@ -14,7 +14,6 @@ use inferd::clock::FixedClock;
 use inferd::cloud::Cloud;
 use inferd::cloud::accountd::PeerAccountd;
 use inferd::cloud::spend::Ledger;
-use inferd::cloud::transport::Roots;
 use inferd::cloud::wire::{Door, Doors};
 use inferd::engines::Engines;
 use inferd::local::{EngineConfig, LocalModel, build};
@@ -24,6 +23,7 @@ use inferd::service::{Inference, serve_on};
 use inferd::settings::{Settings, SpendLine};
 use inferd::supervise::{Ports, Supervised};
 use model_catalog::MiB;
+use model_http::{DerCertificate, TlsRoots};
 use porter_client::{Accounts, DbusTransport};
 use porter_core::{AppId, AppName, Isolation, UnixSeconds};
 use porter_infer::{ModelCard, Policy, TierMap};
@@ -249,8 +249,10 @@ impl World {
                 .with("moonshot", door("/moonshot/v1"))
                 .with("google-ai", door("/gemini/v1beta/openai"));
             let roots = match hosted.trust {
-                Trust::ScratchCa => Roots::Only(vec![porter_fake_servers::tls::ca_der()]),
-                Trust::NoOne => Roots::Only(Vec::new()),
+                Trust::ScratchCa => TlsRoots::Only(vec![DerCertificate(
+                    porter_fake_servers::tls::ca_der().to_vec(),
+                )]),
+                Trust::NoOne => TlsRoots::Only(Vec::new()),
             };
             let cloud = Cloud::new(
                 Arc::new(PeerAccountd::new(daemon.clone())),

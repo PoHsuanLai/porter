@@ -6,7 +6,7 @@
 //! * [`models`]: the entries an app's grants reach, each through one reach, as routing's cards.
 //! * [`picker`]: the hosted models as the model picker lists them.
 //! * [`wire`]: where each provider is and how a request is shaped for it.
-//! * [`transport`]: the TLS `Transport` stoker's `Driver` runs over.
+//! * [`transport`]: stoker's TLS `HttpClient` behind inferd's body shaping.
 //! * [`spend`]: the meter and the caps.
 //! * [`turn`]: one chat turn to a hosted model: key, request, reply, meter.
 //!
@@ -26,6 +26,7 @@ use crate::clock::Clock;
 use crate::settings::SpendLine;
 use accountd::{AccountVerdict, Accountd, AccountdFault};
 use model_catalog::ModelEntry;
+use model_http::TlsRoots;
 use model_http::{AuthHeader, HostName, HttpEndpoint, HttpTarget, Port, Proxy, Secret, Timeouts};
 use model_http::{UrlPath, WaitMs};
 use models::{RemoteModel, remote_entries, remote_models};
@@ -33,9 +34,8 @@ use porter_core::consent::Usage;
 use porter_core::{AppId, DataClass, GrantId, SecretText, UnixSeconds};
 use porter_infer::SpendVerdict;
 use spend::{Ledger, estimate};
-use std::sync::{Arc, OnceLock};
-use tokio_rustls::TlsConnector;
-use transport::{Roots, TlsTransport};
+use std::sync::Arc;
+use transport::ShapedTransport;
 use wire::{BodyShape, Doors};
 
 /// Waits for a hosted model: the connection, the first byte (a long prompt, a model that thinks
@@ -52,8 +52,7 @@ struct Inner {
     ledger: Ledger,
     clock: Arc<dyn Clock>,
     doors: Doors,
-    roots: Roots,
-    connector: OnceLock<TlsConnector>,
+    roots: TlsRoots,
 }
 
 /// The hosted models of one daemon.
@@ -83,14 +82,13 @@ impl Cloud {
             ledger,
             clock,
             doors: Doors::real(),
-            roots: Roots::Platform,
-            connector: OnceLock::new(),
+            roots: TlsRoots::Platform,
         }))
     }
 
     /// The same, with the providers somewhere else (a test's loopback fake) and `roots` trusted.
     /// Called right after `new`, before the value is shared.
-    pub fn at(mut self, doors: Doors, roots: Roots) -> Self {
+    pub fn at(mut self, doors: Doors, roots: TlsRoots) -> Self {
         if let Some(inner) = Arc::get_mut(&mut self.0) {
             inner.doors = doors;
             inner.roots = roots;
@@ -156,7 +154,7 @@ impl Cloud {
         model: &RemoteModel,
         key: &SecretText,
         shape: BodyShape,
-    ) -> Option<TlsTransport> {
+    ) -> Option<ShapedTransport> {
         let door = self.0.doors.of(&model.reach.provider)?;
         let endpoint = HttpEndpoint {
             target: HttpTarget::Tls {
@@ -169,7 +167,6 @@ impl Cloud {
             headers: Vec::new(),
             timeouts: TIMEOUTS,
         };
-        let connector = self.0.connector.get_or_init(|| self.0.roots.connector());
-        Some(TlsTransport::new(endpoint, connector.clone(), shape))
+        Some(ShapedTransport::new(endpoint, self.0.roots.clone(), shape))
     }
 }

@@ -1394,9 +1394,6 @@ dependencies = [
  "cua-vendors",
  "ds-settings",
  "engine-supervisor",
- "http-body-util",
- "hyper",
- "hyper-util",
  "model-catalog",
  "model-extract",
  "model-http",
@@ -1411,17 +1408,13 @@ dependencies = [
  "porter-fake-servers",
  "porter-infer",
  "rustix",
- "rustls-native-certs",
- "rustls-pki-types",
  "serde",
  "serde_json",
  "speech-provider",
  "thiserror",
  "tokio",
- "tokio-rustls",
  "toml",
  "vision-prep",
- "webpki-roots",
  "zbus",
 ]
 
@@ -1729,9 +1722,12 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "rustls-native-certs",
+ "rustls-pki-types",
  "serde",
  "thiserror",
  "tokio",
+ "tokio-rustls",
 ]
 
 [[package]]
