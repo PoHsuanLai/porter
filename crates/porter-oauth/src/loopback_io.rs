@@ -3,7 +3,8 @@
 //! which would accept an authorization code from anywhere on the network.
 
 use crate::loopback::{
-    AuthCode, LoopbackFault, MAX_REDIRECT_BYTES, REDIRECT_WAIT_SECONDS, parse_redirect,
+    AuthCode, LoopbackFault, MAX_REDIRECT_BYTES, MAX_STRAY_REQUESTS, REDIRECT_WAIT_SECONDS,
+    STRAY_READ_SECONDS, parse_redirect,
 };
 use crate::pkce::OAuthState;
 use std::time::Duration;
@@ -54,6 +55,24 @@ impl LoopbackServer {
             .unwrap_or(Err(LoopbackFault::TimedOut))
     }
 
+    /// Like [`wait`](Self::wait), but a request that is not the answer (a wrong or missing
+    /// `state`, a probe, a favicon, an oversized or malformed request) is answered with the
+    /// fixed error page and the listener keeps waiting for the right one, as mailo's did. It is
+    /// bounded three ways, so a page cannot hold the port open: it ends with the last stray's
+    /// fault after [`MAX_STRAY_REQUESTS`] of them, with `TimedOut` at `deadline`, and a
+    /// connection that sends nothing is cut after [`STRAY_READ_SECONDS`] and counts as a stray.
+    /// A request with the right `state` ends the wait whatever it carries (a code, the issuer's
+    /// `error`, or nothing). Cancel by dropping the future: the listener goes with it.
+    pub async fn wait_until(
+        self,
+        expected: &OAuthState,
+        deadline: Duration,
+    ) -> Result<AuthCode, LoopbackFault> {
+        tokio::time::timeout(deadline, self.accept_until_answered(expected))
+            .await
+            .unwrap_or(Err(LoopbackFault::TimedOut))
+    }
+
     async fn accept_one(self, expected: &OAuthState) -> Result<AuthCode, LoopbackFault> {
         let (mut socket, _) = self
             .listener
@@ -61,13 +80,50 @@ impl LoopbackServer {
             .await
             .map_err(|_| LoopbackFault::Malformed)?;
         drop(self.listener);
-        let outcome = match read_head(&mut socket).await {
-            Ok(head) => parse_redirect(&head, expected),
-            Err(fault) => Err(fault),
-        };
-        respond(&mut socket, page(&outcome)).await;
-        outcome
+        serve(&mut socket, expected).await
     }
+
+    async fn accept_until_answered(self, expected: &OAuthState) -> Result<AuthCode, LoopbackFault> {
+        let mut strays = 0;
+        loop {
+            let (mut socket, _) = self
+                .listener
+                .accept()
+                .await
+                .map_err(|_| LoopbackFault::Malformed)?;
+            let limit = Duration::from_secs(STRAY_READ_SECONDS);
+            let outcome = tokio::time::timeout(limit, serve(&mut socket, expected))
+                .await
+                .unwrap_or(Err(LoopbackFault::Malformed));
+            match outcome {
+                Err(fault) if is_stray(&fault) => {
+                    strays += 1;
+                    if strays >= MAX_STRAY_REQUESTS {
+                        return Err(fault);
+                    }
+                }
+                answered => return answered,
+            }
+        }
+    }
+}
+
+/// Reads one request, answers the person, and says what it amounted to.
+async fn serve(socket: &mut TcpStream, expected: &OAuthState) -> Result<AuthCode, LoopbackFault> {
+    let outcome = match read_head(socket).await {
+        Ok(head) => parse_redirect(&head, expected),
+        Err(fault) => Err(fault),
+    };
+    respond(socket, page(&outcome)).await;
+    outcome
+}
+
+/// Whether a fault is a request that is not the sign-in's answer, so `wait_until` goes on.
+fn is_stray(fault: &LoopbackFault) -> bool {
+    matches!(
+        fault,
+        LoopbackFault::WrongState | LoopbackFault::Malformed | LoopbackFault::Oversized
+    )
 }
 
 /// Reads through the blank line, and no further than the cap.
@@ -180,5 +236,78 @@ mod tests {
         let server = LoopbackServer::bind().await.expect("bind");
         let outcome = server.wait_for(&state(), Duration::from_millis(50)).await;
         assert_eq!(outcome, Err(LoopbackFault::TimedOut));
+    }
+
+    async fn probe(port: u16, request: &str) -> String {
+        send_raw(port, request.as_bytes().to_vec()).await
+    }
+
+    #[tokio::test]
+    async fn wait_until_answers_a_wrong_state_and_keeps_waiting_for_the_right_one() {
+        let server = LoopbackServer::bind().await.expect("bind");
+        let port = server.port();
+        let wait =
+            tokio::spawn(async move { server.wait_until(&state(), Duration::from_secs(30)).await });
+        for request in [
+            "GET /?code=stolen&state=wrong HTTP/1.1\r\n\r\n",
+            "GET /favicon.ico HTTP/1.1\r\n\r\n",
+            "POST /?code=c&state=st-1 HTTP/1.1\r\n\r\n",
+        ] {
+            let page = probe(port, request).await;
+            assert!(page.contains("Not what this port is for."), "{request}");
+            assert!(!page.contains("stolen"));
+        }
+        let page = probe(port, "GET /?code=abc&state=st-1 HTTP/1.1\r\n\r\n").await;
+        assert!(page.contains("Signed in"));
+        let code = wait.await.expect("join").expect("code");
+        assert_eq!(code.0.expose(), "abc");
+        assert!(TcpStream::connect(("127.0.0.1", port)).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn wait_until_ends_at_the_stray_cap_so_a_page_cannot_hold_it_open() {
+        let server = LoopbackServer::bind().await.expect("bind");
+        let port = server.port();
+        let wait =
+            tokio::spawn(async move { server.wait_until(&state(), Duration::from_secs(30)).await });
+        for _ in 0..MAX_STRAY_REQUESTS {
+            probe(port, "GET /?code=x&state=wrong HTTP/1.1\r\n\r\n").await;
+        }
+        assert_eq!(wait.await.expect("join"), Err(LoopbackFault::WrongState));
+        assert!(TcpStream::connect(("127.0.0.1", port)).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn wait_until_ends_at_its_deadline_and_a_dropped_wait_frees_the_port() {
+        let server = LoopbackServer::bind().await.expect("bind");
+        let outcome = server.wait_until(&state(), Duration::from_millis(50)).await;
+        assert_eq!(outcome, Err(LoopbackFault::TimedOut));
+
+        let server = LoopbackServer::bind().await.expect("bind");
+        let port = server.port();
+        let wait =
+            tokio::spawn(async move { server.wait_until(&state(), Duration::from_secs(30)).await });
+        probe(port, "GET /?state=wrong HTTP/1.1\r\n\r\n").await;
+        wait.abort();
+        let _ = wait.await;
+        assert!(TcpStream::connect(("127.0.0.1", port)).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn wait_until_ends_on_the_right_state_with_the_issuers_refusal() {
+        let server = LoopbackServer::bind().await.expect("bind");
+        let port = server.port();
+        let wait =
+            tokio::spawn(async move { server.wait_until(&state(), Duration::from_secs(30)).await });
+        probe(port, "GET /?state=wrong HTTP/1.1\r\n\r\n").await;
+        probe(
+            port,
+            "GET /?error=access_denied&state=st-1 HTTP/1.1\r\n\r\n",
+        )
+        .await;
+        assert_eq!(
+            wait.await.expect("join"),
+            Err(LoopbackFault::Refused("access_denied".into()))
+        );
     }
 }

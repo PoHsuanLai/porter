@@ -29,7 +29,8 @@ pub use exchange::{
     revoke,
 };
 pub use loopback::{
-    AuthCode, LoopbackFault, MAX_REDIRECT_BYTES, REDIRECT_WAIT_SECONDS, parse_redirect,
+    AuthCode, LoopbackFault, MAX_REDIRECT_BYTES, MAX_STRAY_REQUESTS, REDIRECT_WAIT_SECONDS,
+    STRAY_READ_SECONDS, parse_redirect,
 };
 #[cfg(feature = "io")]
 pub use loopback_io::LoopbackServer;

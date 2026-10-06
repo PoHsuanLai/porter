@@ -1,9 +1,10 @@
 //! What a loopback redirect may be, from mailo's rules: the listener is on 127.0.0.1 only, reads
 //! at most 8 KiB, waits at most 300 s, accepts one request, and the `state` must be the one the
 //! sign-in sent. Ported from mailo's loopback listener (`~/mailo/crates/mail-runtime/src/loopback.rs`),
-//! with one change: mailo keeps listening after a request with the wrong state; here the
-//! listener takes exactly one request and is gone, so a second one is refused by the OS and a
-//! wrong-state redirect ends the sign-in instead of leaving a port open for guessing.
+//! with one change: mailo keeps listening after a request with the wrong state; here `wait`
+//! takes exactly one request and is gone, so a second one is refused by the OS and a
+//! wrong-state redirect ends the sign-in. A host that wants mailo's behaviour opts in with
+//! `wait_until`, which is bounded (`MAX_STRAY_REQUESTS`, a deadline).
 
 use crate::form;
 use crate::pkce::OAuthState;
@@ -13,6 +14,11 @@ use porter_core::SecretText;
 pub const MAX_REDIRECT_BYTES: usize = 8 * 1024;
 /// How long the listener waits for the person, in seconds.
 pub const REDIRECT_WAIT_SECONDS: u64 = 300;
+/// The most requests that are not the answer (wrong `state`, probes, malformed) that
+/// `LoopbackServer::wait_until` tolerates before it ends.
+pub const MAX_STRAY_REQUESTS: usize = 8;
+/// How long `wait_until` lets one connection take to send its request line and headers.
+pub const STRAY_READ_SECONDS: u64 = 5;
 
 /// The authorization code a redirect carried; secret until exchanged.
 #[derive(Debug, Clone, PartialEq, Eq)]
