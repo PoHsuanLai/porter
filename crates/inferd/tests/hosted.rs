@@ -99,8 +99,18 @@ async fn a_porter_client_chat_turn_streams_text_from_the_engine() {
     };
     assert_eq!(served.model.as_str(), "tiny-chat");
     assert_eq!(served.account.as_str(), "local");
+    // A one-stage answer says who answered, by the entry's label, before its first token.
+    let InferEvent::Stage(note) = &events[3] else {
+        panic!("a Stage(Answer) after Routed, got {events:?}");
+    };
+    assert_eq!(note.role, porter_infer::StageRole::Answer);
+    assert_eq!(&note.served, served);
     assert_eq!(
-        events[3..5],
+        note.name,
+        Some(porter_infer::ModelLabel("Tiny chat".into()))
+    );
+    assert_eq!(
+        events[4..6],
         [
             InferEvent::TextDelta("Hel".into()),
             InferEvent::TextDelta("lo".into())

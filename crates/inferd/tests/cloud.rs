@@ -269,6 +269,22 @@ async fn acceptance_7_a_chat_turn_goes_to_a_hosted_model_through_openrouter_and_
         served.locality,
         porter_core::Locality::Cloud { .. }
     ));
+    // The Answer note names the hosted entry by its label, after Routed and before any token.
+    let at = |want: fn(&InferEvent) -> bool| events.iter().position(want).expect("event");
+    let (routed_at, stage_at, first_token) = (
+        at(|e| matches!(e, InferEvent::Routed(_))),
+        at(|e| matches!(e, InferEvent::Stage(_))),
+        at(|e| matches!(e, InferEvent::TextDelta(_))),
+    );
+    assert!(routed_at < stage_at && stage_at < first_token, "{events:?}");
+    let InferEvent::Stage(note) = &events[stage_at] else {
+        unreachable!()
+    };
+    assert_eq!(note.role, porter_infer::StageRole::Answer);
+    assert_eq!(
+        note.name,
+        Some(porter_infer::ModelLabel("GPT-6 Luna".into()))
+    );
     let InferReply::Chat(reply) = finished(&events) else {
         panic!("a chat reply, got {events:?}");
     };

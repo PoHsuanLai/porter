@@ -17,8 +17,8 @@ use porter_core::need::LlmNeed;
 use porter_core::{AccountId, Billing, Locality, ModelId, Tokens};
 use porter_infer::{
     AudioFrame, AudioRate, Base64Bytes, ChatControl, ChatMessage, ChatReply, InferEvent,
-    InferRefusal, InferReply, Knob, LangPick, LicenceClass, ModelCard, ModelError, ModelRef,
-    Reasoning, ReplyShape, Role, ShowReason, Slot, StageRole, SwapCost, ToolChoice,
+    InferRefusal, InferReply, Knob, LangPick, LicenceClass, ModelCard, ModelError, ModelLabel,
+    ModelRef, Reasoning, ReplyShape, Role, ShowReason, Slot, StageRole, SwapCost, ToolChoice,
     ToolParallelism, TranscribeBegin, TranscribeMode, TranscribeReply,
 };
 use std::sync::{Arc, Mutex};
@@ -38,6 +38,13 @@ fn card(account: &str, name: &str, capability: Capability) -> ModelCard {
         locality: Locality::OnDevice,
         billing: Billing::Free,
         capabilities: vec![capability],
+    }
+}
+
+fn model_ref(name: &str) -> ModelRef {
+    ModelRef {
+        account: AccountId::parse("local").expect("id"),
+        model: ModelId::parse(name).expect("id"),
     }
 }
 
@@ -354,6 +361,10 @@ async fn a_voice_request_is_heard_by_one_model_and_answered_by_another_over_the_
             VecAudio([pcm(), pcm()].into()),
         )),
         chat: chat(),
+        names: [("whisper", "Whisper"), ("scripted", "Scripted 1")]
+            .into_iter()
+            .map(|(id, label)| (model_ref(id), ModelLabel(label.into())))
+            .collect(),
     };
     let fake = FakeEars {
         heard: Mutex::default(),
@@ -370,6 +381,22 @@ async fn a_voice_request_is_heard_by_one_model_and_answered_by_another_over_the_
         *fake.heard.lock().expect("lock"),
         vec![("whisper".to_owned(), 2)],
         "the hearing stage read both frames"
+    );
+    let names: Vec<(StageRole, Option<String>)> = events
+        .0
+        .iter()
+        .filter_map(|event| match event {
+            InferEvent::Stage(note) => Some((note.role, note.name.as_ref().map(|n| n.0.clone()))),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        names,
+        [
+            (StageRole::Hear, Some("Whisper".to_owned())),
+            (StageRole::Answer, Some("Scripted 1".to_owned()))
+        ],
+        "each stage's note carries its model's label"
     );
     // The footer: one Routed, one Stage and (with show_reason on) one Why per stage, in order.
     let shape: Vec<String> = events
@@ -419,6 +446,7 @@ async fn show_reason_off_keeps_the_stage_notes_and_drops_the_whys() {
             VecAudio([pcm()].into()),
         )),
         chat: chat(),
+        names: Default::default(),
     };
     let fake = FakeEars {
         heard: Mutex::default(),
@@ -461,6 +489,7 @@ async fn a_plan_with_a_stage_the_runner_does_not_run_is_refused_before_anything_
     let input = PipelineInput {
         audio: None,
         chat: chat(),
+        names: Default::default(),
     };
     let reply = run_pipeline(&planned, ShowReason::On, input, &fake, &turns, &mut events).await;
     assert_eq!(reply, InferReply::Refused(InferRefusal::Unsupported));

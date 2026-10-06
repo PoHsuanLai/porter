@@ -47,8 +47,11 @@ pub enum InferEvent {
     /// other model answers in its place.
     Declined(Declined),
     /// One stage of a pipeline and who runs it, sent before that stage runs: the footer reads
-    /// them ("Heard by Whisper, Answered by Gemma 4"). A one-stage session sends one. Additive: a
-    /// reader that does not know it must skip it.
+    /// them ("Heard by Whisper, Answered by Gemma 4"). Every answer sends an `Answer` note, a
+    /// plain one-stage answer included: it comes after `Routed` (and `Why`) and before the
+    /// answer's first token, once per chat or task turn. In a pipeline each stage's note comes
+    /// after that stage's `Routed` and before the stage runs. Additive: a reader that does not
+    /// know it must skip it.
     Stage(StageNote),
     /// The engine is loading: presence is "working", never a spinner in the app.
     Waiting(Readiness),
@@ -81,7 +84,7 @@ pub enum Flow {
 }
 
 /// One stage of the pipeline that answers a session.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StageNote {
     /// What the stage does.
     pub role: StageRole,
@@ -89,4 +92,15 @@ pub struct StageNote {
     pub served: ServedBy,
     /// Why that model (the person sees it when `ai.auto.show_reason` is on).
     pub why: Why,
+    /// The model's name as a person reads it ("Gemma 4"), from the catalogue entry's label. Absent
+    /// when inferd has no label for the model, and in a note from an inferd that predates it: a
+    /// payload without it decodes, and a note without it is written without the field, so old
+    /// readers see the bytes they always did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<ModelLabel>,
 }
+
+/// A model's display name (the catalogue entry's label), for the footer's "Answered by <name>".
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct ModelLabel(pub String);

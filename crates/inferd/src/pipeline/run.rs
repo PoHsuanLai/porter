@@ -8,10 +8,10 @@ use crate::serve::{RunningTurn, TurnRunner, TurnStep};
 use crate::speech::{AudioIn, AudioPull};
 use porter_infer::{
     AudioFrame, ChatMessage, ChatRequest, ChatSink, Flow, InferEvent, InferReply, InferRequest,
-    MessagePart, ModelError, Pipeline, Refusal, Role, ShowReason, Stage, StageNote, StageRole,
-    TranscribeBegin, TranscribeReply, Why,
+    MessagePart, ModelError, ModelLabel, ModelRef, Pipeline, Refusal, Role, ShowReason, Stage,
+    StageNote, StageRole, TranscribeBegin, TranscribeReply, Why,
 };
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
 
 /// What a speech-to-text stage runs on (stoker's `SpeechToText` behind the engine the stage's
@@ -47,6 +47,8 @@ pub struct PipelineInput {
     pub audio: Option<(TranscribeBegin, VecAudio)>,
     /// The chat the answering model is given; a transcript is appended to its last user message.
     pub chat: ChatRequest,
+    /// The label of each model a stage may name (the catalogue entry's), for the `Stage` notes.
+    pub names: BTreeMap<ModelRef, ModelLabel>,
 }
 
 /// Why a plan cannot run here yet, as a typed refusal (none for a plan this build runs).
@@ -60,7 +62,12 @@ pub fn unsupported(pipeline: &Pipeline) -> Option<Refusal> {
     })
 }
 
-fn announce(stage: &Stage, show: ShowReason, sink: &mut impl ChatSink) -> Flow {
+fn announce(
+    stage: &Stage,
+    names: &BTreeMap<ModelRef, ModelLabel>,
+    show: ShowReason,
+    sink: &mut impl ChatSink,
+) -> Flow {
     let evicting = matches!(stage.picked.why, Why::Evicted { .. });
     let why =
         (show == ShowReason::On || evicting).then(|| InferEvent::Why(stage.picked.why.clone()));
@@ -68,6 +75,12 @@ fn announce(stage: &Stage, show: ShowReason, sink: &mut impl ChatSink) -> Flow {
         role: stage.role,
         served: stage.served(),
         why: stage.picked.why.clone(),
+        name: names
+            .get(&ModelRef {
+                account: stage.picked.chosen.account.clone(),
+                model: stage.picked.chosen.model.clone(),
+            })
+            .cloned(),
     });
     let events = why
         .into_iter()
@@ -114,9 +127,10 @@ pub async fn run_pipeline<H: Transcriber, T: TurnRunner>(
     let PipelineInput {
         mut audio,
         mut chat,
+        names,
     } = input;
     for stage in &pipeline.stages {
-        if announce(stage, show, sink) == Flow::Stop {
+        if announce(stage, &names, show, sink) == Flow::Stop {
             return InferReply::Cancelled;
         }
         match stage.role {

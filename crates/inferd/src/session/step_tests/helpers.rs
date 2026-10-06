@@ -28,6 +28,29 @@ pub(super) fn served() -> ServedBy {
     }
 }
 
+pub(super) fn label() -> porter_infer::ModelLabel {
+    porter_infer::ModelLabel("Qwen".into())
+}
+
+/// The `Answer` note of a turn on `served()` as routed by `decided`.
+pub(super) fn answer() -> porter_infer::StageNote {
+    answer_for(Why::Named)
+}
+
+/// The `Answer` note of a turn routed for this reason.
+pub(super) fn answer_for(why: Why) -> porter_infer::StageNote {
+    porter_infer::StageNote {
+        role: porter_infer::StageRole::Answer,
+        served: served(),
+        why,
+        name: Some(label()),
+    }
+}
+
+pub(super) fn answer_event() -> SessionOut {
+    SessionOut::Emit(InferEvent::Stage(answer()))
+}
+
 pub(super) fn decided(readiness: Readiness) -> SessionIn {
     SessionIn::Routed(Ok(Routing {
         served: served(),
@@ -35,6 +58,7 @@ pub(super) fn decided(readiness: Readiness) -> SessionIn {
         why: Why::Named,
         reached: None,
         show: ShowReason::Off,
+        name: Some(label()),
     }))
 }
 
@@ -45,6 +69,7 @@ pub(super) fn decided_why(readiness: Readiness, why: Why, show: ShowReason) -> S
         why,
         reached: None,
         show,
+        name: Some(label()),
     }))
 }
 
@@ -130,8 +155,14 @@ pub(super) fn audio(at: u64, samples: usize) -> ClientFrame {
 }
 
 pub(super) fn waiting(queued: Option<InferRequest>) -> Phase {
+    waiting_for(answer(), queued)
+}
+
+/// Waiting on a model routed with this note.
+pub(super) fn waiting_for(answer: porter_infer::StageNote, queued: Option<InferRequest>) -> Phase {
     Phase::Waiting {
         served: served(),
+        answer,
         queued,
     }
 }
@@ -143,6 +174,7 @@ pub(super) fn idle(routed: RoutedNote) -> Phase {
 pub(super) fn idle_cua(routed: RoutedNote, cua: CuaProgress) -> Phase {
     Phase::Idle {
         served: served(),
+        answer: answer(),
         routed,
         cua,
     }
@@ -160,6 +192,7 @@ pub(super) fn in_turn_with(
 ) -> Phase {
     Phase::InTurn {
         served: served(),
+        answer: answer(),
         kind,
         audio,
         cua,

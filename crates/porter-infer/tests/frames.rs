@@ -182,6 +182,7 @@ fn infer_frames_round_trip() {
                 provider: ProviderId("openrouter".into()),
                 door: Door::Gateway,
             },
+            name: Some(ModelLabel("Whisper".into())),
         }),
         InferEvent::Waiting(Readiness::Loading),
         InferEvent::Waiting(Readiness::Downloading(Permille(420))),
@@ -563,5 +564,36 @@ fn why_reached_and_stage_notes_keep_their_json() {
         role: StageRole::Answer,
         served: served(),
         why: Why::Nearest,
+        name: None,
     });
+}
+
+#[test]
+fn a_stage_note_without_a_name_decodes_and_is_written_without_one() {
+    let named = StageNote {
+        role: StageRole::Answer,
+        served: served(),
+        why: Why::Nearest,
+        name: Some(ModelLabel("Gemma 4".into())),
+    };
+    let json = serde_json::to_string(&named).expect("serializes");
+    assert!(json.contains(r#""name":"Gemma 4""#), "{json}");
+    // The payload an inferd that predates `name` writes: the same note without the key.
+    let mut old = serde_json::to_value(&named).expect("value");
+    old.as_object_mut().expect("object").remove("name");
+    let note: StageNote = serde_json::from_value(old.clone()).expect("an old payload decodes");
+    assert_eq!(note.name, None);
+    assert_eq!(note.served, named.served);
+    // A note without a name is written as that old payload, byte for byte.
+    assert_eq!(serde_json::to_value(&note).expect("value"), old);
+    assert!(!serde_json::to_string(&note).expect("json").contains("name"));
+    // An old reader (no `name` field, unknown fields skipped) reads the new bytes.
+    #[derive(serde::Deserialize)]
+    struct Old {
+        role: StageRole,
+    }
+    assert_eq!(
+        serde_json::from_str::<Old>(&json).expect("old reader").role,
+        StageRole::Answer
+    );
 }

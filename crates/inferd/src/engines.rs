@@ -372,6 +372,12 @@ impl Engines {
             ),
             (None, None) => return Err(PickRefusal::from(InferRefusal::Unavailable)),
         };
+        let name = match (&model, &cloud) {
+            (Some(local), _) => Some(local.entry.label.clone()),
+            (None, Some(pin)) => Some(pin.model.entry.label.clone()),
+            (None, None) => None,
+        }
+        .map(porter_infer::ModelLabel);
         let served = ServedBy {
             account: chosen.account,
             model: chosen.model,
@@ -384,6 +390,7 @@ impl Engines {
                 why: decided.why,
                 reached: cloud.as_ref().map(|pin| reached_of(&pin.model.reach)),
                 show: settings.auto.show_reason,
+                name,
             },
             Pinned {
                 served,

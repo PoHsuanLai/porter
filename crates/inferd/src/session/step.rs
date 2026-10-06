@@ -7,7 +7,7 @@ use super::{
 use crate::speech::check_audio;
 use porter_infer::{
     AudioRate, ClientFrame, Declined, InferEvent, InferRefusal, InferReply, InferRequest,
-    ModelError, Readiness, RequestKind, ServedBy, ShowReason, Why,
+    ModelError, Readiness, RequestKind, ServedBy, ShowReason, StageNote, Why,
 };
 
 /// The next state and effects for `input` in `phase` (models §4.2, voice §3.4).
@@ -29,9 +29,11 @@ pub fn step(spec: &SessionSpec, phase: Phase, input: SessionIn) -> (Phase, Vec<S
             let why = why_event(&decision);
             let wait = waiting_event(decision.readiness);
             let want = SessionOut::Want(model_of(&decision.served));
+            let answer = decision.answer_note();
             (
                 Phase::Waiting {
                     served: decision.served,
+                    answer,
                     queued: None,
                 },
                 why.into_iter().chain(wait).chain([want]).collect(),
@@ -40,9 +42,17 @@ pub fn step(spec: &SessionSpec, phase: Phase, input: SessionIn) -> (Phase, Vec<S
         (phase @ Phase::Waiting { .. }, SessionIn::EngineProgress(readiness)) => {
             (phase, waiting_event(readiness).into_iter().collect())
         }
-        (Phase::Waiting { served, queued }, SessionIn::EngineReady) => {
+        (
+            Phase::Waiting {
+                served,
+                answer,
+                queued,
+            },
+            SessionIn::EngineReady,
+        ) => {
             let idle = Phase::Idle {
                 served,
+                answer,
                 routed: RoutedNote::Pending,
                 cua: CuaProgress::NotBegun,
             };
@@ -58,10 +68,18 @@ pub fn step(spec: &SessionSpec, phase: Phase, input: SessionIn) -> (Phase, Vec<S
                 SessionOut::Release(model_of(&served)),
             ],
         ),
-        (Phase::Waiting { served, queued }, SessionIn::Frame(frame)) => match (frame, queued) {
+        (
+            Phase::Waiting {
+                served,
+                answer,
+                queued,
+            },
+            SessionIn::Frame(frame),
+        ) => match (frame, queued) {
             (ClientFrame::Request(request), None) => (
                 Phase::Waiting {
                     served,
+                    answer,
                     queued: Some(request),
                 },
                 vec![],
@@ -69,6 +87,7 @@ pub fn step(spec: &SessionSpec, phase: Phase, input: SessionIn) -> (Phase, Vec<S
             (ClientFrame::Cancel, Some(_)) => (
                 Phase::Waiting {
                     served,
+                    answer,
                     queued: None,
                 },
                 vec![finished(InferReply::Cancelled)],
@@ -76,12 +95,17 @@ pub fn step(spec: &SessionSpec, phase: Phase, input: SessionIn) -> (Phase, Vec<S
             (ClientFrame::Cancel, None) => (
                 Phase::Waiting {
                     served,
+                    answer,
                     queued: None,
                 },
                 vec![],
             ),
             (_, queued) => (
-                Phase::Waiting { served, queued },
+                Phase::Waiting {
+                    served,
+                    answer,
+                    queued,
+                },
                 vec![refused(InferRefusal::Unsupported)],
             ),
         },
@@ -187,6 +211,7 @@ fn request_in_idle(
 ) -> (Phase, Vec<SessionOut>) {
     let Phase::Idle {
         served,
+        answer,
         routed,
         cua,
     } = &idle
@@ -205,8 +230,12 @@ fn request_in_idle(
         RoutedNote::Pending => Some(SessionOut::Emit(InferEvent::Routed(served.clone()))),
         RoutedNote::Sent => None,
     };
+    // Every answer says who gave it before its first token, even a plain one-stage answer.
+    let answer_note = matches!(kind, RequestKind::Chat | RequestKind::Task)
+        .then(|| SessionOut::Emit(InferEvent::Stage(answer.clone())));
     let next = Phase::InTurn {
         served: served.clone(),
+        answer: answer.clone(),
         kind,
         audio,
         cua: *cua,
@@ -216,6 +245,7 @@ fn request_in_idle(
         next,
         routed_event
             .into_iter()
+            .chain(answer_note)
             .chain([SessionOut::StartTurn(request)])
             .collect(),
     )
@@ -232,11 +262,13 @@ fn turn_over(
 ) -> (Phase, Vec<SessionOut>) {
     let Ended {
         served,
+        answer,
         cua,
         queued,
     } = ended;
     let idle = Phase::Idle {
         served,
+        answer,
         routed: RoutedNote::Sent,
         cua,
     };
@@ -252,6 +284,7 @@ fn turn_over(
 /// What a finished turn leaves behind.
 struct Ended {
     served: ServedBy,
+    answer: StageNote,
     cua: CuaProgress,
     queued: Option<InferRequest>,
 }
@@ -259,6 +292,7 @@ struct Ended {
 fn in_turn(spec: &SessionSpec, phase: Phase, input: SessionIn) -> (Phase, Vec<SessionOut>) {
     let Phase::InTurn {
         served,
+        answer,
         kind,
         audio,
         cua,
@@ -269,11 +303,13 @@ fn in_turn(spec: &SessionSpec, phase: Phase, input: SessionIn) -> (Phase, Vec<Se
     };
     let ended = |cua| Ended {
         served: served.clone(),
+        answer: answer.clone(),
         cua,
         queued: queued.clone(),
     };
     let same = |audio, queued| Phase::InTurn {
         served: served.clone(),
+        answer: answer.clone(),
         kind,
         audio,
         cua,

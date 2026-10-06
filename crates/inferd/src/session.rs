@@ -13,8 +13,8 @@ use porter_core::capability::SpeechMode;
 use porter_core::consent::Usage;
 use porter_core::{DataClass, Need, Tier};
 use porter_infer::{
-    AudioFrame, ClientFrame, InferEvent, InferReply, InferRequest, ModelRef, PickRefusal,
-    Readiness, RequestKind, ServedBy, ShowReason, Why,
+    AudioFrame, ClientFrame, InferEvent, InferReply, InferRequest, ModelLabel, ModelRef,
+    PickRefusal, Readiness, RequestKind, ServedBy, ShowReason, StageNote, StageRole, Why,
 };
 
 /// What the session was opened for: fixed for its life, so the route is chosen once.
@@ -76,9 +76,21 @@ pub struct Routing {
     pub reached: Option<Why>,
     /// Whether the reason is announced (`ai.auto.show_reason`); an eviction always is.
     pub show: ShowReason,
+    /// The model's name as a person reads it: the catalogue entry's label. None when there is none.
+    pub name: Option<ModelLabel>,
 }
 
 impl Routing {
+    /// The `Answer` stage note of a turn this routing serves.
+    pub fn answer_note(&self) -> StageNote {
+        StageNote {
+            role: StageRole::Answer,
+            served: self.served.clone(),
+            why: self.why.clone(),
+            name: self.name.clone(),
+        }
+    }
+
     /// The decision without its reason.
     pub fn decision(&self) -> RouteDecision {
         RouteDecision {
@@ -97,6 +109,7 @@ impl From<RouteDecision> for Routing {
             why: Why::Named,
             reached: None,
             show: ShowReason::Off,
+            name: None,
         }
     }
 }
@@ -130,6 +143,8 @@ pub enum Phase {
     Waiting {
         /// Who the route chose.
         served: ServedBy,
+        /// The `Answer` note each chat or task turn sends before its first token.
+        answer: StageNote,
         /// A request that arrived meanwhile (queue depth one).
         queued: Option<InferRequest>,
     },
@@ -137,6 +152,8 @@ pub enum Phase {
     Idle {
         /// Who the session is pinned to.
         served: ServedBy,
+        /// The `Answer` note each chat or task turn sends before its first token.
+        answer: StageNote,
         /// Whether `Routed` was sent.
         routed: RoutedNote,
         /// The computer-use run's progress.
@@ -146,6 +163,8 @@ pub enum Phase {
     InTurn {
         /// Who the session is pinned to.
         served: ServedBy,
+        /// The `Answer` note of this session's turns.
+        answer: StageNote,
         /// What kind of request is running.
         kind: RequestKind,
         /// Audio progress, for `Transcribe`.

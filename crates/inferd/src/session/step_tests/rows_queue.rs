@@ -44,6 +44,7 @@ pub(super) fn rows() -> Vec<Row> {
             vec![
                 SessionOut::Audit(lost_reply()),
                 done(lost_reply()),
+                answer_event(),
                 SessionOut::StartTurn(task(DataClass::Mail)),
             ],
         ),
@@ -57,6 +58,7 @@ pub(super) fn rows() -> Vec<Row> {
                 SessionOut::DropTurn,
                 SessionOut::Audit(InferReply::Cancelled),
                 done(InferReply::Cancelled),
+                answer_event(),
                 SessionOut::StartTurn(task(DataClass::Mail)),
             ],
         ),

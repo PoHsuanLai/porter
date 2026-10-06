@@ -271,6 +271,7 @@ the interface other work builds on; a change is a vocabulary bump (section 6) or
 | `prov::trace` names, `ActorKind::slug`, `Effect::slug` | built, tested against the serde forms |
 | `tier_choice`, `Slot::setting_key`, `InferRequest::kind` | built, table-tested |
 | `picker_rows` | stub |
+| `StageNote` on the wire (`porter-infer::event`) | built: `role`, `served`, `why` and `name: Option<ModelLabel>` (the catalogue entry's label, serde default and skipped when absent, so a payload without it decodes and a note without a name is the bytes it always was); every chat or task turn sends an `Answer` note after `Routed` and before its first token, a pipeline one per stage; pinned-JSON and old-payload tested |
 | `inferd::session::step` | built (Routed/Waiting events, audio effects, cua progress, one queued request); `fits` built |
 | `inferd::serve` (`serve_session` over `Router`, `EngineHost`, `TurnRunner`, `AuditSink`) | built, tested over scripted seams |
 | `inferd::service` (`Inference1`: `Open` with the caller check, `Availability`, `Prepare`, `Usage`, `Rescan`, `EnginesChanged`, `Gpu`), `peers`, `config`, `main` | built; tested on a private bus with fake engines (`tests/hosted.rs`); `Usage` answers the caller's spend (empty on a daemon with no hosted models) |

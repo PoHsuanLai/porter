@@ -19,6 +19,17 @@ use porter_infer::{
     TranscribeReply,
 };
 use std::os::fd::OwnedFd;
+
+/// The `Answer` note every chat turn sends after `Routed`: the router here names the model as
+/// asked for and has no label.
+fn stage() -> InferEvent {
+    InferEvent::Stage(porter_infer::StageNote {
+        role: porter_infer::StageRole::Answer,
+        served: served(),
+        why: porter_infer::Why::Named,
+        name: None,
+    })
+}
 use std::sync::{Arc, Mutex};
 use support::*;
 use tokio::net::UnixStream;
@@ -168,6 +179,7 @@ async fn a_turn_streams_routed_deltas_and_finished_and_is_audited_once() {
         rig.client.until_finished().await,
         vec![
             InferEvent::Routed(served()),
+            stage(),
             InferEvent::TextDelta("he".into()),
             InferEvent::TextDelta("llo".into()),
             InferEvent::Finished(answer("hello")),
@@ -181,7 +193,7 @@ async fn a_turn_streams_routed_deltas_and_finished_and_is_audited_once() {
     push(&rig, 1, TurnStep::Done(answer("again")));
     assert_eq!(
         rig.client.until_finished().await,
-        vec![InferEvent::Finished(answer("again"))]
+        vec![stage(), InferEvent::Finished(answer("again"))]
     );
 }
 
@@ -208,6 +220,7 @@ async fn a_loading_engine_shows_waiting_and_a_request_sent_meanwhile_starts_when
         rig.client.until_finished().await,
         vec![
             InferEvent::Routed(served()),
+            stage(),
             InferEvent::Finished(answer("late"))
         ]
     );
@@ -252,6 +265,7 @@ async fn one_request_queues_behind_a_running_turn_with_its_own_descriptors() {
         Some(InferEvent::Routed(served())),
         "routed went out with the first turn"
     );
+    assert_eq!(rig.client.event().await, Some(stage()));
     assert_eq!(
         rig.client.event().await,
         Some(InferEvent::Finished(InferReply::Refused(
@@ -273,7 +287,7 @@ async fn one_request_queues_behind_a_running_turn_with_its_own_descriptors() {
     push(&rig, 1, TurnStep::Done(answer("second")));
     assert_eq!(
         rig.client.until_finished().await,
-        vec![InferEvent::Finished(answer("second"))]
+        vec![stage(), InferEvent::Finished(answer("second"))]
     );
 }
 
@@ -323,6 +337,7 @@ async fn cancel_drops_the_turn_audits_and_finishes_cancelled() {
         rig.client.until_finished().await,
         vec![
             InferEvent::Routed(served()),
+            stage(),
             InferEvent::Finished(InferReply::Cancelled)
         ]
     );

@@ -30,6 +30,7 @@ fn decided_reached(readiness: Readiness, show: ShowReason) -> SessionIn {
         why: Why::Warm,
         reached: Some(reached()),
         show,
+        name: Some(label()),
     }))
 }
 
@@ -48,7 +49,7 @@ pub(super) fn rows() -> Vec<Row> {
             llm_spec(DataClass::Mail),
             Phase::Opened,
             decided_reached(Readiness::Loadable, ShowReason::On),
-            waiting(None),
+            waiting_for(answer_for(Why::Warm), None),
             vec![
                 SessionOut::Emit(InferEvent::Why(Why::Warm)),
                 SessionOut::Emit(InferEvent::Why(reached())),
@@ -61,7 +62,7 @@ pub(super) fn rows() -> Vec<Row> {
             llm_spec(DataClass::Mail),
             Phase::Opened,
             decided_reached(Readiness::Loadable, ShowReason::Off),
-            waiting(None),
+            waiting_for(answer_for(Why::Warm), None),
             vec![
                 SessionOut::Emit(InferEvent::Waiting(Readiness::Loadable)),
                 SessionOut::Want(model()),
@@ -94,7 +95,7 @@ pub(super) fn rows() -> Vec<Row> {
             llm_spec(DataClass::Mail),
             Phase::Opened,
             decided_why(Readiness::Loadable, Why::Warm, ShowReason::On),
-            waiting(None),
+            waiting_for(answer_for(Why::Warm), None),
             vec![
                 SessionOut::Emit(InferEvent::Why(Why::Warm)),
                 SessionOut::Emit(InferEvent::Waiting(Readiness::Loadable)),
@@ -110,7 +111,7 @@ pub(super) fn rows() -> Vec<Row> {
                 Why::Evicted { model: old() },
                 ShowReason::Off,
             ),
-            waiting(None),
+            waiting_for(answer_for(Why::Evicted { model: old() }), None),
             vec![
                 SessionOut::Emit(InferEvent::Why(Why::Evicted { model: old() })),
                 SessionOut::Emit(InferEvent::Waiting(Readiness::Loadable)),
@@ -176,7 +177,11 @@ pub(super) fn rows() -> Vec<Row> {
             waiting(Some(task(DataClass::Mail))),
             SessionIn::EngineReady,
             in_turn(RequestKind::Task, AudioCursor::NoAudio),
-            vec![routed(), SessionOut::StartTurn(task(DataClass::Mail))],
+            vec![
+                routed(),
+                answer_event(),
+                SessionOut::StartTurn(task(DataClass::Mail)),
+            ],
         ),
         (
             "engine ready refuses a queued request that does not fit",
@@ -232,7 +237,7 @@ pub(super) fn rows() -> Vec<Row> {
             idle(RoutedNote::Sent),
             request(task(DataClass::Mail)),
             in_turn(RequestKind::Task, AudioCursor::NoAudio),
-            vec![SessionOut::StartTurn(task(DataClass::Mail))],
+            vec![answer_event(), SessionOut::StartTurn(task(DataClass::Mail))],
         ),
         (
             "the first turn says who answers",
@@ -240,7 +245,11 @@ pub(super) fn rows() -> Vec<Row> {
             idle(RoutedNote::Pending),
             request(task(DataClass::Mail)),
             in_turn(RequestKind::Task, AudioCursor::NoAudio),
-            vec![routed(), SessionOut::StartTurn(task(DataClass::Mail))],
+            vec![
+                routed(),
+                answer_event(),
+                SessionOut::StartTurn(task(DataClass::Mail)),
+            ],
         ),
         (
             "a refused first request does not spend the routed note",
