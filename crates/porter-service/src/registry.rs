@@ -132,16 +132,7 @@ impl Registry {
         id: &GrantId,
         endpoint: &EndpointUrl,
     ) -> Result<RelayTarget<'_>, Refusal> {
-        let grant = self
-            .grant_of(app, id)
-            .filter(|g| g.decision == Decision::Allow)
-            .ok_or(Refusal::UnknownGrant)?;
-        let account = self
-            .accounts
-            .iter()
-            .find(|a| a.id == grant.key.account)
-            .ok_or(Refusal::UnknownGrant)?;
-        let kind = grant.key.kind;
+        let (account, kind) = self.grant_account(app, id)?;
         let endpoint = account
             .endpoints
             .iter()
@@ -154,6 +145,24 @@ impl Registry {
             kind,
         })
     }
+
+    /// The account and kind of `app`'s grant `id`, when the grant is an allowing one.
+    pub(crate) fn grant_account(
+        &self,
+        app: &AppId,
+        id: &GrantId,
+    ) -> Result<(&Account, CapabilityKind), Refusal> {
+        let grant = self
+            .grant_of(app, id)
+            .filter(|g| g.decision == Decision::Allow)
+            .ok_or(Refusal::UnknownGrant)?;
+        let account = self
+            .accounts
+            .iter()
+            .find(|a| a.id == grant.key.account)
+            .ok_or(Refusal::UnknownGrant)?;
+        Ok((account, grant.key.kind))
+    }
 }
 
 /// What a relay is allowed to dial under one grant.
@@ -165,7 +174,7 @@ pub(crate) struct RelayTarget<'a> {
 }
 
 /// Whether `endpoint` is one a grant for `kind` may reach, and one a relay can carry.
-fn serves(endpoint: &ServiceEndpoint, kind: CapabilityKind) -> bool {
+pub(crate) fn serves(endpoint: &ServiceEndpoint, kind: CapabilityKind) -> bool {
     endpoint.protocol().is_some() && endpoint.family.serves(kind)
 }
 

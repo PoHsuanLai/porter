@@ -95,6 +95,18 @@ impl Transport for SocketTransport {
         link::open_authenticated(&self.path, request).await
     }
 
+    async fn open_linked(
+        &self,
+        grant: &GrantId,
+        origin: &EndpointUrl,
+    ) -> Result<Relayed, TransportError> {
+        let request = AccountsRequest::OpenLinked {
+            grant: grant.clone(),
+            origin: origin.clone(),
+        };
+        link::open_authenticated(&self.path, request).await
+    }
+
     async fn open_with(
         &self,
         need: &Need,

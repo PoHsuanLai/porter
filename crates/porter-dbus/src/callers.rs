@@ -30,7 +30,7 @@ pub enum CallerRole {
     /// inferd and syncd: may use `Accounts1.Peer`.
     PorterDaemon,
     /// intentd, companiond, readerd, cuad, quire-do, actions-mcp: refused `Choose`,
-    /// `AddAccount`, `Reauthenticate`, `IssueToken` and `OpenAuthenticated`; they keep inferd.
+    /// `AddAccount`, `Reauthenticate`, `IssueToken`, `OpenAuthenticated` and `OpenLinked`; they keep inferd.
     Agent,
     /// cuad, for inferd: the only role that may open a computer-use session.
     Cua,

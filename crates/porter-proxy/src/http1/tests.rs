@@ -84,6 +84,23 @@ fn a_head_is_rewritten_to_the_origin_with_the_relays_credential() {
 }
 
 #[test]
+fn an_anonymous_relay_adds_no_credential_and_drops_the_apps() {
+    let linked = plan("https://up.1drv.com/", Tls::Implicit, RelayAuth::Anonymous);
+    let out = rewrite_head(
+        b"PUT /up/s1 HTTP/1.1\r\nHost: up.1drv.com\r\nAuthorization: Bearer stolen\r\nContent-Length: 3\r\n\r\n",
+        &linked,
+    )
+    .expect("rewritten");
+    assert_eq!(
+        String::from_utf8(out).expect("text"),
+        "PUT /up/s1 HTTP/1.1\r\nHost: up.1drv.com\r\nContent-Length: 3\r\n\r\n"
+    );
+    // The origin check is the same: another host is refused.
+    let foreign = rewrite_head(b"GET /x HTTP/1.1\r\nHost: evil.example\r\n\r\n", &linked);
+    assert_eq!(foreign, Err(RelayFault::ForeignOrigin));
+}
+
+#[test]
 fn a_token_is_presented_as_a_bearer_and_a_custom_port_stays_in_host() {
     let token = plan(
         "https://cloud.example.org:8443/",

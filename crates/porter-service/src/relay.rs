@@ -6,13 +6,14 @@
 use crate::audience::covers;
 use crate::audit::AuditSink;
 use crate::clock::Clock;
+use crate::registry::serves;
 use crate::service::AccountService;
 use crate::sheets::Sheets;
 use crate::token::{provider_refusal, secret_purpose, secrets_refusal};
 use porter_core::wire::Refusal;
 use porter_core::{
-    Account, Audience, CapabilityKind, Credential, Family, RelayAuth, RelayPlan, SecretKey,
-    SecretPurpose, SecretText, ServiceEndpoint, TokenKind,
+    Account, AppId, Audience, CapabilityKind, Credential, EndpointUrl, Family, GrantId, RelayAuth,
+    RelayPlan, SecretKey, SecretPurpose, SecretText, ServiceEndpoint, TokenKind,
 };
 use porter_provider::{Presented, Provider, ProviderSession};
 use porter_secrets::{Secrets, SecretsError};
@@ -64,6 +65,50 @@ where
             kind,
             auth,
         })
+    }
+
+    /// The plan of a relay to `origin`, an origin the account's provider file declares for a
+    /// kind of the grant (`linked_origins`) and that is as secure as the endpoint it belongs to
+    /// (never `http` for an `https` service). It presents nothing; the origin is all it may dial.
+    /// `EndpointNotGranted` for any origin the file does not declare, or one with a path.
+    pub(crate) fn plan_linked(
+        &self,
+        caller: &AppId,
+        grant: &GrantId,
+        origin: &EndpointUrl,
+    ) -> Result<(RelayPlan, Account), Refusal> {
+        let registry = self.lock();
+        let (account, kind) = registry.grant_account(caller, grant)?;
+        let spec = self
+            .catalog
+            .get(&account.provider)
+            .ok_or(Refusal::Unavailable)?;
+        let dialled = origin.origin();
+        let bare = origin.path() == "/" && !origin.as_str().ends_with('/');
+        let declared = |endpoint: &ServiceEndpoint| {
+            spec.capabilities
+                .iter()
+                .filter(|row| row.family == endpoint.family && row.capability.kind() == kind)
+                .any(|row| row.linked_origins.iter().any(|o| o.allows(&dialled)))
+        };
+        let home = account
+            .endpoints
+            .iter()
+            .filter(|e| serves(e, kind))
+            .find(|e| bare && e.url.origin().scheme == dialled.scheme && declared(e))
+            .ok_or(Refusal::EndpointNotGranted)?;
+        let endpoint = ServiceEndpoint {
+            url: EndpointUrl::parse(&dialled.to_string())
+                .map_err(|_| Refusal::EndpointNotGranted)?,
+            ..home.clone()
+        };
+        endpoint.check().map_err(|_| Refusal::EndpointNotGranted)?;
+        let plan = RelayPlan {
+            endpoint,
+            kind,
+            auth: RelayAuth::Anonymous,
+        };
+        Ok((plan, account.clone()))
     }
 
     async fn password_for(

@@ -117,4 +117,28 @@ impl<H: Host, C: Callers> Tokens<H, C> {
             }
         }
     }
+
+    /// A socket to a relay that adds no credential, to an origin the account's provider file
+    /// declares for the grant's kind (`OpenLinked`: Graph's `uploadUrl` and `downloadUrl` hosts).
+    ///
+    /// The same role check as `OpenAuthenticated`. The service refuses (`EndpointNotGranted`)
+    /// any origin the file does not declare, so the daemon is never an open proxy; the relay
+    /// dials that origin only and drops any `Authorization` the app writes.
+    async fn open_linked(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        grant: String,
+        origin: String,
+    ) -> Result<zbus::zvariant::OwnedFd, RefusedError> {
+        let app = self.0.acting(&header).await?;
+        let grant = GrantId::parse(&grant).map_err(RefusedError::invalid)?;
+        let origin = EndpointUrl::parse(&origin).map_err(RefusedError::invalid)?;
+        let plan = self
+            .0
+            .host
+            .open_linked_relay(&app, &grant, &origin)
+            .await
+            .map_err(RefusedError::of)?;
+        self.0.relays.open(plan).await.map_err(RefusedError::of)
+    }
 }

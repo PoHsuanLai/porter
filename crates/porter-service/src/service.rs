@@ -144,7 +144,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             AccountsRequest::IssueToken { grant, audience } => {
                 self.issue_token(caller, &grant, &audience).await
             }
-            AccountsRequest::OpenAuthenticated { .. } => {
+            AccountsRequest::OpenAuthenticated { .. } | AccountsRequest::OpenLinked { .. } => {
                 AccountsReply::Refused(Refusal::Unavailable)
             }
             AccountsRequest::Adopt { legacy } => self.adopt(caller, legacy).await,
@@ -175,6 +175,28 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             AuditEvent::ProxyOpened {
                 grant: grant.clone(),
                 endpoint: endpoint.url.clone(),
+            },
+        );
+        Ok(plan)
+    }
+
+    /// What the relay for `OpenLinked` is told: checks that `caller` holds the grant and that
+    /// `origin` is one its account's provider file declares for the grant's kind, then plans a
+    /// relay that adds no credential. The audit line names the origin, never a link's path (a
+    /// pre-authenticated URL carries its secret there).
+    pub async fn open_linked(
+        &self,
+        caller: &AppId,
+        grant: &GrantId,
+        origin: &EndpointUrl,
+    ) -> Result<RelayPlan, Refusal> {
+        let (plan, account) = self.plan_linked(caller, grant, origin)?;
+        self.note(
+            Some(caller.clone()),
+            Some(account.id.clone()),
+            AuditEvent::ProxyOpened {
+                grant: grant.clone(),
+                endpoint: plan.endpoint.url.clone(),
             },
         );
         Ok(plan)

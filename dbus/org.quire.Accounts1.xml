@@ -82,6 +82,11 @@
      <arg name="endpoint" type="s" direction="in"/>
      <arg type="h" direction="out"/>
    </method>
+   <method name="OpenLinked">
+     <arg name="grant" type="s" direction="in"/>
+     <arg name="origin" type="s" direction="in"/>
+     <arg type="h" direction="out"/>
+   </method>
  </interface>
  <interface name="org.quire.Accounts1.Request">
    <method name="Close">

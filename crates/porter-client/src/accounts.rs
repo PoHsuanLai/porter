@@ -185,6 +185,23 @@ impl<T: Transport> Accounts<T> {
         }
     }
 
+    /// A byte stream to `origin` (`https://host[:port]`, no path), a host the account's provider
+    /// file declares as one its pre-authenticated links point at: Microsoft Graph's `uploadUrl`
+    /// and the `downloadUrl` a content request redirects to. The relay speaks TLS and plain
+    /// HTTP/1.1 on the stream and adds **no** credential (the link carries its own), drops any
+    /// `Authorization` the app writes and refuses any other origin. An origin the file does not
+    /// declare is `Refused(EndpointNotGranted)`.
+    pub async fn open_linked(
+        &self,
+        grant: &GrantId,
+        origin: &EndpointUrl,
+    ) -> Result<AuthenticatedStream, ClientError> {
+        match self.transport.open_linked(grant, origin).await? {
+            Relayed::Stream(stream) => Ok(stream),
+            Relayed::Refused(refusal) => Err(ClientError::Refused(refusal)),
+        }
+    }
+
     /// Brings the app's own earlier account in as an account of porter (mailo's keyring entries
     /// become a porter account): `legacy` names it by non-secret facts and accountd reads the
     /// old secret items itself, so no credential crosses the transport.

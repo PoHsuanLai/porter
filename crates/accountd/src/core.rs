@@ -75,6 +75,19 @@ pub trait Host: Send + Sync + 'static {
         async { Err(Refusal::Unavailable) }
     }
 
+    /// What the relay for `origin` under `caller`'s `grant` is told: no credential, and only an
+    /// origin the account's provider file declares as one its links point at. A host with no
+    /// relay says unavailable.
+    fn open_linked_relay(
+        &self,
+        caller: &AppId,
+        grant: &GrantId,
+        origin: &EndpointUrl,
+    ) -> impl Future<Output = Result<RelayPlan, Refusal>> + Send {
+        let _ = (caller, grant, origin);
+        async { Err(Refusal::Unavailable) }
+    }
+
     /// Removes an account: revoke at the provider (best effort), then every wipe. A host that
     /// cannot manage accounts says its secret store is unavailable.
     fn remove(
@@ -159,6 +172,15 @@ where
         endpoint: &EndpointUrl,
     ) -> impl Future<Output = Result<RelayPlan, Refusal>> + Send {
         AccountService::open_authenticated(self, caller, grant, endpoint)
+    }
+
+    fn open_linked_relay(
+        &self,
+        caller: &AppId,
+        grant: &GrantId,
+        origin: &EndpointUrl,
+    ) -> impl Future<Output = Result<RelayPlan, Refusal>> + Send {
+        AccountService::open_linked(self, caller, grant, origin)
     }
 
     fn remove(

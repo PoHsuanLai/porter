@@ -19,12 +19,15 @@
 //!   `Peer` for the porter daemons; and `org.quire.SettingsModule1` at `settings_path()` for the
 //!   Settings role, through quire's `ds_settings::live`.
 //! - Roles: an `Agent` is refused `Choose`, `AddAccount`, `Reauthenticate`, `IssueToken`,
-//!   `OpenAuthenticated` and `Adopt` (`Refusal::Denied`).
+//!   `OpenAuthenticated`, `OpenLinked` and `Adopt` (`Refusal::Denied`).
 //! - `BusSheets` is the sheet link to the host over `org.quire.AccountsSheet1`.
 //!
 //! - `Tokens.OpenAuthenticated`: the grant and endpoint checked by the service, then a socketpair
 //!   whose far end runs `porter_proxy::relay` (`relay`); the descriptor is returned once the relay
 //!   has authenticated. `Options::relay_roots` is the test seam for the trusted roots.
+//! - `Tokens.OpenLinked`: the same socketpair for an origin the account's provider file declares
+//!   in `linked_origins` (a pre-authenticated link's host: Graph's `uploadUrl` and download
+//!   redirect), checked by the service; the relay adds no credential and dials that origin only.
 //!
 //! - `Peer.ResolveKey`: an API key of a granted Llm account on a sealed memfd, for a porter daemon
 //!   only (`keys`); the key is read by `Options::keys`.

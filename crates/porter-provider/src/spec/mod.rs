@@ -3,10 +3,12 @@
 
 mod auth;
 mod discovery;
+mod linked;
 mod matching;
 
 pub use auth::{AuthSpec, Issuer, IssuerEndpoints};
 pub use discovery::{Discovery, Port};
+pub use linked::LinkedOrigin;
 pub use matching::{DomainMatch, DomainName, Matching};
 
 use porter_core::sheet::ProviderRow;
@@ -57,6 +59,11 @@ pub struct CapabilityRow {
     /// The capability.
     #[serde(flatten)]
     pub capability: Capability,
+    /// The other origins this row's service hands out pre-authenticated links to (Graph's
+    /// `uploadUrl` and `downloadUrl`), which `OpenLinked` may reach for a grant of this row's
+    /// kind with no credential added. Empty for a service with no such links.
+    #[serde(default)]
+    pub linked_origins: Vec<LinkedOrigin>,
 }
 
 /// A service URL written in a provider file.

@@ -16,7 +16,7 @@ use crate::seen::{Running, Seen, lock};
 use drive::Body;
 use porter_fake::{FakeAddress, FakeProtocol, FakeServer};
 use porter_provider::ProviderSpec;
-use routes::{State, answer};
+use routes::{Origins, State, answer, answer_link};
 use std::future::Future;
 use std::io;
 use std::sync::{Arc, Mutex};
@@ -24,6 +24,9 @@ use std::sync::{Arc, Mutex};
 #[derive(Debug, Clone)]
 struct Shared {
     base: String,
+    /// The origin the links point at, when it is not `base`.
+    link: Option<String>,
+    link_hits: Seen<Hit>,
     token: String,
     state: Arc<Mutex<State>>,
     hits: Seen<Hit>,
@@ -39,6 +42,7 @@ pub struct GraphHandle {
 #[derive(Debug)]
 pub struct FakeGraph {
     listener: Listener,
+    links: Option<Listener>,
     shared: Shared,
 }
 
@@ -56,13 +60,38 @@ impl FakeGraph {
         let port = crate::net::port_of(listener.address());
         Ok(Self {
             listener,
+            links: None,
             shared: Shared {
                 base: format!("http://127.0.0.1:{port}"),
+                link: None,
+                link_hits: Seen::default(),
                 token: token.to_owned(),
                 state: Arc::default(),
                 hits: Seen::default(),
             },
         })
+    }
+
+    /// Binds a drive whose upload sessions and redirected downloads are on a SECOND loopback
+    /// origin, as Graph's are on another host. That origin serves only those links and refuses
+    /// (`401`) any request that carries an `Authorization` header; the drive's own origin does
+    /// not serve them.
+    pub async fn bind_linked(token: &str) -> io::Result<Self> {
+        let mut fake = Self::bind(token).await?;
+        let links = Listener::bind(&Bind::Loopback, "graph-links").await?;
+        fake.shared.link = Some(format!(
+            "http://127.0.0.1:{}",
+            crate::net::port_of(links.address())
+        ));
+        fake.links = Some(links);
+        Ok(fake)
+    }
+
+    /// Like [`FakeGraph::bind_linked`], serving on a task.
+    pub async fn start_linked(token: &str) -> io::Result<Running<GraphHandle>> {
+        let fake = Self::bind_linked(token).await?;
+        let handle = fake.handle();
+        Ok(Running::spawn(fake, handle))
     }
 
     /// The handle onto this fake.
@@ -84,6 +113,16 @@ impl GraphHandle {
     /// `http://127.0.0.1:port`.
     pub fn base_url(&self) -> &str {
         &self.shared.base
+    }
+
+    /// `http://127.0.0.1:port` of the origin the links point at, when it is not the drive's own.
+    pub fn link_url(&self) -> Option<&str> {
+        self.shared.link.as_deref()
+    }
+
+    /// Every request the links' origin answered, oldest first.
+    pub fn link_hits(&self) -> Vec<Hit> {
+        self.shared.link_hits.all()
     }
 
     /// Creates or replaces the file at `path` below the app folder (folders on the way are made),
@@ -187,10 +226,8 @@ fn path_of(drive: &Drive, id: &str) -> String {
 }
 
 impl FakeServer for FakeGraph {
-    // `porter-fake`'s `FakeProtocol` has no `Graph` variant yet (an interface ask), and this is
-    // the nearest: a drive over HTTP.
     fn protocol(&self) -> FakeProtocol {
-        FakeProtocol::Dav
+        FakeProtocol::Graph
     }
 
     fn address(&self) -> &FakeAddress {
@@ -203,17 +240,41 @@ impl FakeServer for FakeGraph {
 
     fn serve(self) -> impl Future<Output = ()> + Send {
         let shared = self.shared;
-        serve(
+        let drive_state = Arc::clone(&shared.state);
+        let own = shared.clone();
+        let main = serve(
             self.listener,
             None,
             Arc::new(move |request: Request| {
                 let response: Response = {
-                    let mut state = lock(&shared.state);
-                    answer(&mut state, &shared.base, &shared.token, &request)
+                    let mut state = lock(&own.state);
+                    let origins = Origins {
+                        base: &own.base,
+                        link: own.link.as_deref().unwrap_or(&own.base),
+                    };
+                    answer(&mut state, origins, &own.token, &request)
                 };
-                shared.hits.push(Hit::of(&request, &response));
+                own.hits.push(Hit::of(&request, &response));
                 response
             }),
-        )
+        );
+        let links = self.links;
+        async move {
+            match links {
+                None => main.await,
+                Some(listener) => {
+                    let side = serve(
+                        listener,
+                        None,
+                        Arc::new(move |request: Request| {
+                            let response = answer_link(&mut lock(&drive_state), true, &request);
+                            shared.link_hits.push(Hit::of(&request, &response));
+                            response
+                        }),
+                    );
+                    tokio::join!(main, side);
+                }
+            }
+        }
     }
 }

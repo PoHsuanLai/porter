@@ -240,12 +240,12 @@ fn slice(bytes: &[u8], range: Option<&str>) -> Response {
         .typed("application/octet-stream", &bytes[first..=last])
 }
 
-fn content_of(state: &State, base: &str, node: &Node, request: &Request) -> Response {
+fn content_of(state: &State, link: &str, node: &Node, request: &Request) -> Response {
     let Body::File(bytes) = &node.body else {
         return error(400, "invalidRequest");
     };
     if state.knobs.redirect_downloads {
-        return Response::new(302).with_header("Location", &format!("{base}/dl/{}", node.id));
+        return Response::new(302).with_header("Location", &format!("{link}/dl/{}", node.id));
     }
     slice(bytes, request.header("range"))
 }
@@ -311,7 +311,7 @@ fn quota(drive: &Drive) -> Response {
     )
 }
 
-fn create_session(state: &mut State, base: &str, address: &Address, request: &Request) -> Response {
+fn create_session(state: &mut State, link: &str, address: &Address, request: &Request) -> Response {
     let body: Option<Value> = serde_json::from_slice(&request.body).ok();
     let fail = fails(request, body.as_ref());
     let if_match = request.header("if-match").map(str::to_owned);
@@ -339,7 +339,7 @@ fn create_session(state: &mut State, base: &str, address: &Address, request: &Re
     });
     Response::json(
         200,
-        &json!({"uploadUrl": format!("{base}/upload/{id}"), "expirationDateTime": "2099-01-01T00:00:00Z"}),
+        &json!({"uploadUrl": format!("{link}/upload/{id}"), "expirationDateTime": "2099-01-01T00:00:00Z"}),
     )
 }
 
@@ -408,10 +408,23 @@ fn children(state: &mut State, address: &Address, request: &Request) -> Response
     }
 }
 
-/// Answers `request`; `base` is this server's origin (the links it hands out point back at it).
-pub fn answer(state: &mut State, base: &str, token: &str, request: &Request) -> Response {
+/// Where the pre-authenticated links a drive hands out point.
+#[derive(Debug, Clone, Copy)]
+pub struct Origins<'a> {
+    /// This server's origin.
+    pub base: &'a str,
+    /// The origin of the links (`/dl/..`, `/upload/..`): this server's own, or another one.
+    pub link: &'a str,
+}
+
+/// Answers a request to the origin of the links: downloads and upload sessions, pre-authenticated,
+/// so they carry no bearer. With `strict`, a request that carries any `Authorization` is refused
+/// (`401`): OneDrive refuses a bearer sent to such a host.
+pub fn answer_link(state: &mut State, strict: bool, request: &Request) -> Response {
     let path = request.path().to_owned();
-    // Download and upload URLs are pre-authenticated: they carry no bearer.
+    if strict && request.header("authorization").is_some() {
+        return error(401, "InvalidAuthenticationToken");
+    }
     if let Some(id) = path.strip_prefix("/dl/") {
         return match state.drive.live(id) {
             Some(node) => match &node.body {
@@ -430,6 +443,17 @@ pub fn answer(state: &mut State, base: &str, token: &str, request: &Request) -> 
             }
             _ => error(405, "methodNotAllowed"),
         };
+    }
+    error(404, "itemNotFound")
+}
+
+/// Answers `request` to the drive's own origin. When the links point at another origin, this one
+/// does not serve them.
+pub fn answer(state: &mut State, origins: Origins<'_>, token: &str, request: &Request) -> Response {
+    let path = request.path().to_owned();
+    let own_links = origins.base == origins.link;
+    if own_links && (path.starts_with("/dl/") || path.starts_with("/upload/")) {
+        return answer_link(state, false, request);
     }
     if request.bearer() != Some(token) {
         return error(401, "InvalidAuthenticationToken");
@@ -457,11 +481,11 @@ pub fn answer(state: &mut State, base: &str, token: &str, request: &Request) -> 
         ),
         ("GET", "content") => node.map_or_else(
             || error(404, "itemNotFound"),
-            |n| content_of(state, base, n, request),
+            |n| content_of(state, origins.link, n, request),
         ),
         ("GET", "delta") => node.map_or_else(
             || error(404, "itemNotFound"),
-            |n| delta(state, base, &n.id, request),
+            |n| delta(state, origins.base, &n.id, request),
         ),
         ("DELETE", "") => match node.map(|n| (n.id.clone(), matches_etag(n, if_match))) {
             None => error(404, "itemNotFound"),
@@ -484,7 +508,7 @@ pub fn answer(state: &mut State, base: &str, token: &str, request: &Request) -> 
                 request.body.clone(),
             )
         }
-        ("POST", "createUploadSession") => create_session(state, base, &address, request),
+        ("POST", "createUploadSession") => create_session(state, origins.link, &address, request),
         ("POST", "children") => children(state, &address, request),
         _ => error(404, "itemNotFound"),
     }

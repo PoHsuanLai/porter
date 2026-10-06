@@ -450,6 +450,10 @@ fn every_request_and_reply_round_trips() {
             grant: grant_id("g1"),
             endpoint: endpoints()[0].url.clone(),
         },
+        AccountsRequest::OpenLinked {
+            grant: grant_id("g1"),
+            origin: endpoints()[0].url.clone(),
+        },
         AccountsRequest::Adopt {
             legacy: legacy_ref(),
         },
@@ -758,6 +762,13 @@ fn new_wire_requests_keep_their_slugs() {
             endpoint: endpoints()[0].url.clone(),
         }),
         r#"{"kind":"open_authenticated","v":{"grant":"g1","endpoint":"imaps://imap.example.org"}}"#
+    );
+    assert_eq!(
+        json(&AccountsRequest::OpenLinked {
+            grant: grant_id("g1"),
+            origin: endpoints()[0].url.clone(),
+        }),
+        r#"{"kind":"open_linked","v":{"grant":"g1","origin":"imaps://imap.example.org"}}"#
     );
     assert_eq!(
         json(&AccountsReply::Authenticated),

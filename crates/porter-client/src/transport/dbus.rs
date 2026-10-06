@@ -105,6 +105,23 @@ impl Transport for DbusTransport {
         }
     }
 
+    async fn open_linked(
+        &self,
+        grant: &GrantId,
+        origin: &EndpointUrl,
+    ) -> Result<Relayed, TransportError> {
+        let proxy = TokensProxy::new(&self.connection)
+            .await
+            .map_err(|e| bus_error(&e))?;
+        match proxy.open_linked(grant.as_str(), origin.as_str()).await {
+            Ok(fd) => Ok(Relayed::Stream(AuthenticatedStream::Fd(fd.into()))),
+            Err(error) => match refusal_of(&error) {
+                Some(refusal) => Ok(Relayed::Refused(refusal)),
+                None => Err(bus_error(&error)),
+            },
+        }
+    }
+
     async fn open_with(
         &self,
         need: &Need,

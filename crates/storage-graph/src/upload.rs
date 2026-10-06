@@ -3,8 +3,9 @@
 //! next, `200` or `201` carries the finished item. The conditions travel with the session: `fail`
 //! for a new item, `If-Match` for an existing one, and the server checks them again at the end.
 //!
-//! The session URL is pre-authenticated and on another host in Graph; here it is sent through
-//! the same `Http` as everything else (FINDINGS: the relay reaches one origin).
+//! The session URL is pre-authenticated and on another host in Graph; it is sent through the same
+//! `Http` as everything else, which routes a request for another origin to a stream that adds no
+//! credential ([`crate::Routed`]).
 
 use crate::json::Session;
 use crate::replica::GraphReplica;

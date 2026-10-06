@@ -21,6 +21,8 @@ pub enum FakeProtocol {
     Nextcloud,
     /// A plain DAV server.
     Dav,
+    /// A Microsoft Graph drive.
+    Graph,
     /// An autoconfig and DNS answer.
     Autoconfig,
     /// A model list: Ollama's, or an OpenAI-compatible one.

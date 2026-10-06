@@ -102,13 +102,15 @@ fn target_for(target: &str, origin: &Origin) -> Result<String, RelayFault> {
     }
 }
 
-fn credential(auth: &RelayAuth, login: &str) -> String {
+/// The `Authorization` header line the relay adds, or none for a relay that adds no credential.
+fn credential(auth: &RelayAuth, login: &str) -> Option<String> {
     match auth {
-        RelayAuth::Password(password) => format!(
+        RelayAuth::Password(password) => Some(format!(
             "Basic {}",
             STANDARD.encode(format!("{login}:{}", password.expose()))
-        ),
-        RelayAuth::AccessToken(token) => format!("Bearer {}", token.expose()),
+        )),
+        RelayAuth::AccessToken(token) => Some(format!("Bearer {}", token.expose())),
+        RelayAuth::Anonymous => None,
     }
 }
 
@@ -195,10 +197,10 @@ pub fn rewrite(head: &[u8], plan: &RelayPlan) -> Result<Rewritten, RelayFault> {
         out.push_str(line);
         out.push_str("\r\n");
     }
-    out.push_str(&format!(
-        "Authorization: {}\r\n\r\n",
-        credential(&plan.auth, &plan.endpoint.login.0)
-    ));
+    if let Some(value) = credential(&plan.auth, &plan.endpoint.login.0) {
+        out.push_str(&format!("Authorization: {value}\r\n"));
+    }
+    out.push_str("\r\n");
     Ok(Rewritten {
         head: out.into_bytes(),
         framing,

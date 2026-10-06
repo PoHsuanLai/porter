@@ -138,6 +138,9 @@ pub(super) async fn call(
         AccountsRequest::OpenAuthenticated { .. } => Err(TransportError::Malformed(
             "OpenAuthenticated carries a descriptor: use `open_authenticated`".to_owned(),
         )),
+        AccountsRequest::OpenLinked { .. } => Err(TransportError::Malformed(
+            "OpenLinked carries a descriptor: use `open_linked`".to_owned(),
+        )),
         AccountsRequest::Choose {
             need,
             class,

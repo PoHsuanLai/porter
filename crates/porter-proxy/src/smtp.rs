@@ -110,7 +110,9 @@ impl SmtpAuth {
         match auth {
             RelayAuth::AccessToken(_) if offered("XOAUTH2") => Ok(SmtpAuth::Xoauth2),
             RelayAuth::Password(_) if offered("PLAIN") => Ok(SmtpAuth::Plain),
-            RelayAuth::AccessToken(_) | RelayAuth::Password(_) => Err(RelayFault::Protocol),
+            RelayAuth::AccessToken(_) | RelayAuth::Password(_) | RelayAuth::Anonymous => {
+                Err(RelayFault::Protocol)
+            }
         }
     }
 }

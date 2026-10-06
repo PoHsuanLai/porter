@@ -63,7 +63,9 @@ impl SieveAuth {
         match auth {
             RelayAuth::Password(_) if has("PLAIN") => Ok(SieveAuth::Plain),
             RelayAuth::AccessToken(_) if has("XOAUTH2") => Ok(SieveAuth::Xoauth2),
-            RelayAuth::Password(_) | RelayAuth::AccessToken(_) => Err(RelayFault::Protocol),
+            RelayAuth::Password(_) | RelayAuth::AccessToken(_) | RelayAuth::Anonymous => {
+                Err(RelayFault::Protocol)
+            }
         }
     }
 }

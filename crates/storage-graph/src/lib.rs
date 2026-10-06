@@ -10,9 +10,11 @@
 //!   [`SIMPLE_MAX`] bytes (Graph's 4 MB simple-upload limit) is one PUT; a larger one goes in an
 //!   upload session, in chunks of a multiple of [`CHUNK_UNIT`] (320 KiB).
 //! - **Quota** is the drive's `quota` (`used`, `total`).
-//! - **The connection** is whatever [`porter_http::Http`] the replica is handed. In syncd it is
-//!   `storage_webdav::StreamHttp` over the descriptors of accountd's `Tokens.OpenAuthenticated`,
-//!   whose relay adds the bearer, so syncd never holds a token.
+//! - **The connection** is whatever [`porter_http::Http`] the replica is handed. In syncd it is a
+//!   [`Routed`]: `storage_webdav::StreamHttp` over the descriptors of accountd's
+//!   `Tokens.OpenAuthenticated` (whose relay adds the bearer, so syncd never holds a token) for
+//!   the Graph host, and over those of `Tokens.OpenLinked` (no credential) for the hosts of an
+//!   `uploadUrl` and of the redirect a download answers with.
 //!
 //! The crate is pure: no runtime and no socket. It reuses storage-webdav's `StreamHttp`, `Dial`
 //! and `Clock` (nothing of it changed) and keeps its own error classes and wire reading.
@@ -22,8 +24,10 @@ mod feed;
 mod json;
 mod refuse;
 mod replica;
+mod route;
 mod upload;
 mod write;
 
 pub use replica::{CHUNK_UNIT, GraphReplica, SIMPLE_MAX, Uploads};
+pub use route::Routed;
 pub use storage_webdav::{Clock, DELETED, Dial, StreamHttp, StreamLimits};

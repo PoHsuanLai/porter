@@ -321,6 +321,10 @@ pub enum RelayAuth {
     /// A short-lived access token, minted by the provider session: `XOAUTH2` for IMAP and
     /// SMTP, a bearer header for HTTP.
     AccessToken(SecretText),
+    /// Nothing: the stream reaches a linked origin (`OpenLinked`) whose URLs carry their own
+    /// authorisation, and a credential sent there would be refused or leaked. Only the HTTP
+    /// relay carries it; the password protocols refuse it.
+    Anonymous,
 }
 
 /// What a relay is told: the one endpoint it dials and what it presents there. It stays inside

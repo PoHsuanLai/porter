@@ -291,3 +291,31 @@ fn the_compiled_in_files_are_the_whole_providers_directory_byte_for_byte() {
         assert!(set.get(&id).is_some(), "{id}");
     }
 }
+
+#[test]
+fn only_microsofts_storage_row_declares_linked_origins_and_asks_the_app_folder_only() {
+    use porter_core::CapabilityKind;
+    let rows: Vec<(String, CapabilityKind, Vec<String>)> = shipped()
+        .into_iter()
+        .flat_map(|(_, spec)| {
+            let id = spec.id.as_str().to_owned();
+            spec.capabilities.into_iter().map(move |row| {
+                let origins = row.linked_origins.iter().map(ToString::to_string).collect();
+                (id.clone(), row.capability.kind(), origins)
+            })
+        })
+        .filter(|(_, _, origins): &(String, CapabilityKind, Vec<String>)| !origins.is_empty())
+        .collect();
+    assert_eq!(
+        rows,
+        [(
+            "microsoft".to_owned(),
+            CapabilityKind::Storage,
+            vec![
+                "*.up.1drv.com".to_owned(),
+                "*.files.1drv.com".to_owned(),
+                "*.sharepoint.com".to_owned()
+            ]
+        )]
+    );
+}

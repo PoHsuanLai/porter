@@ -52,4 +52,10 @@ v = { access = "read_write", delta = "none", transport = "one_note" }
 family = "graph"
 endpoint = "https://graph.microsoft.com"
 kind = "storage"
-v = { access = "read_write", delta = "poll", quota = "reported", scope = "full", hashes = "quick_xor", ranges = "present", chunked_upload = "present" }
+# Graph answers an upload session with an `uploadUrl` and a content request with a redirect to a
+# `downloadUrl`; both are pre-authenticated and on these hosts (Microsoft Graph docs, "Upload
+# large files with an upload session" and "driveItem: download": personal OneDrive
+# `https://<n>.up.1drv.com/up/<token>` and `https://<n>.files.1drv.com/...`, OneDrive for Business
+# and SharePoint `https://<tenant>[-my].sharepoint.com/...`). `*.sharepoint.com` is every tenant's.
+linked_origins = ["*.up.1drv.com", "*.files.1drv.com", "*.sharepoint.com"]
+v = { access = "read_write", delta = "poll", quota = "reported", scope = "app_folder", hashes = "quick_xor", ranges = "present", chunked_upload = "present" }

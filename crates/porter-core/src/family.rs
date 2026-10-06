@@ -86,9 +86,9 @@ impl Family {
             | Family::CalDav
             | Family::CardDav
             | Family::WebDav
-            | Family::NextcloudNotes => Some(EndpointProtocol::Http),
+            | Family::NextcloudNotes
+            | Family::Graph => Some(EndpointProtocol::Http),
             Family::Pop3
-            | Family::Graph
             | Family::GmailApi
             | Family::GoogleCalendar
             | Family::GooglePeople
@@ -120,7 +120,7 @@ impl Family {
                 Family::Imap | Family::Smtp | Family::Sieve | Family::Jmap,
                 CapabilityKind::Mail
             ) | (
-                Family::WebDav,
+                Family::WebDav | Family::Graph,
                 CapabilityKind::Storage | CapabilityKind::Photos
             ) | (
                 Family::CalDav,
@@ -166,7 +166,12 @@ mod tests {
             "nextcloud_notes",
             Some(EndpointProtocol::Http),
         ),
-        ("graph takes tokens", Family::Graph, "graph", None),
+        (
+            "graph is a relayed http api",
+            Family::Graph,
+            "graph",
+            Some(EndpointProtocol::Http),
+        ),
         ("pop3 is not relayed", Family::Pop3, "pop3", None),
     ];
 
@@ -210,6 +215,18 @@ mod tests {
                 "jmap for calendars",
                 Family::Jmap,
                 CapabilityKind::Calendar,
+                true,
+            ),
+            (
+                "graph for files",
+                Family::Graph,
+                CapabilityKind::Storage,
+                true,
+            ),
+            (
+                "graph for photos",
+                Family::Graph,
+                CapabilityKind::Photos,
                 true,
             ),
             (

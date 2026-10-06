@@ -48,6 +48,19 @@ pub trait Transport: Send + Sync {
         async { Err(TransportError::Unreachable) }
     }
 
+    /// A byte stream to `origin`, a host the account's provider file declares for the grant's
+    /// kind as one its pre-authenticated links point at (`Tokens.OpenLinked`); the relay adds no
+    /// credential. The descriptor is out of band. A transport that cannot carry one is
+    /// `Unreachable`.
+    fn open_linked(
+        &self,
+        grant: &GrantId,
+        origin: &EndpointUrl,
+    ) -> impl Future<Output = Result<Relayed, TransportError>> + Send {
+        let _ = (grant, origin);
+        async { Err(TransportError::Unreachable) }
+    }
+
     /// Opens a session with inferd for `need`, `class` and `tier`: the route is chosen once, so
     /// the session is pinned to one model. A refusal arrives as the session's first event
     /// (`Finished(Refused(..))`). `options` carries the caller's `traceparent` (the bus
@@ -164,6 +177,18 @@ impl Transport for AnyTransport {
             #[cfg(feature = "dbus")]
             AnyTransport::Dbus(link) => link.open_authenticated(grant, endpoint).await,
             AnyTransport::Socket(link) => link.open_authenticated(grant, endpoint).await,
+        }
+    }
+
+    async fn open_linked(
+        &self,
+        grant: &GrantId,
+        origin: &EndpointUrl,
+    ) -> Result<Relayed, TransportError> {
+        match self {
+            #[cfg(feature = "dbus")]
+            AnyTransport::Dbus(link) => link.open_linked(grant, origin).await,
+            AnyTransport::Socket(link) => link.open_linked(grant, origin).await,
         }
     }
 

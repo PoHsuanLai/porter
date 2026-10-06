@@ -13,6 +13,7 @@ kind = "fixed"
 family = "webdav"
 endpoint = "https://cloud.invalid/remote.php/dav/"
 kind = "storage"
+linked_origins = ["*.cdn.cloud.invalid"]
 v = { access = "read_write", delta = "poll", quota = "reported", scope = "full", hashes = "sha1", ranges = "present", chunked_upload = "absent" }
 
 [[capability]]

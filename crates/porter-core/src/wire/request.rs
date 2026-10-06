@@ -81,6 +81,16 @@ pub enum AccountsRequest {
         /// One of the account's endpoints for the grant's kind, as the candidate listed it.
         endpoint: EndpointUrl,
     },
+    /// A descriptor to a relay that adds no credential, to an origin the account's provider file
+    /// declares as one its pre-authenticated links may point at (`linked_origins`), under a
+    /// grant that holds an endpoint of that family (`Tokens.OpenLinked`). The descriptor is out
+    /// of band; the reply is `AccountsReply::Authenticated`.
+    OpenLinked {
+        /// The grant.
+        grant: GrantId,
+        /// The origin (`https://host[:port]`, no path), as the link named it.
+        origin: EndpointUrl,
+    },
     /// Bring an app's own earlier account in as a porter account: the daemon reads the old
     /// secret store item itself, so no credential crosses a transport (`Manager.Adopt`). Only
     /// an app the daemon's `[adopt]` table names may ask, and only for the legacy service the

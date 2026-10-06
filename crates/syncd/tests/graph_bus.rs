@@ -2,7 +2,10 @@
 //! `Tokens.OpenAuthenticated`, on one private bus: accountd (the real service over in-memory
 //! secrets, a fake provider that mints a token for the endpoint's audience) holds the OAuth credential
 //! and runs the relay, which adds the bearer; syncd's replica gets only a descriptor and so no
-//! token. `Sync1.Status` shows the quota the drive reports, a large file goes up in an upload
+//! token. The endpoint is a real `graph` one. The fake drive hands out its upload sessions and
+//! redirected downloads on a SECOND loopback origin, which the provider file declares in
+//! `linked_origins`; the replica reaches it through `Tokens.OpenLinked`, whose relay adds no
+//! credential. `Sync1.Status` shows the quota the drive reports, a large file goes up in an upload
 //! session, and an expired delta token uploads nothing again.
 
 mod common;
@@ -12,6 +15,7 @@ use common::bus::PrivateBus;
 use common::{Known, client, eventually};
 use porter_client::{Accounts, DbusTransport};
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
+use porter_core::stream::ByteStream;
 use porter_core::{
     Account, AccountId, AccountLabel, AccountState, AppId, AppName, AuthKind, CapabilityKind,
     Claim, Credential, DataClass, EndpointUrl, Family, GrantId, Isolation, LoginName, Offer,
@@ -20,6 +24,7 @@ use porter_core::{
 };
 use porter_dbus::{Caller, CallerRole, STATUS_KEY_QUOTA, SyncProxy};
 use porter_fake::{FakeProvider, FixedClock, MemoryStore, RecordingAudit};
+use porter_fake_servers::graph::Knobs;
 use porter_fake_servers::{FakeGraph, GraphHandle, Running};
 use porter_provider::Provider;
 use porter_secrets::{MemorySecrets, Secrets};
@@ -37,6 +42,7 @@ use syncd::graph::graph_replica;
 use syncd::journal::Journal;
 use syncd::scheduler::{MeteredPolicy, Network, Settings};
 use syncd::service::{Access as Visible, DatasetName, Hub, serve};
+use syncd::webdav::RelayStream;
 use tokio::sync::{Notify, watch};
 use zbus::zvariant::OwnedValue;
 
@@ -45,13 +51,13 @@ const ACCOUNT: &str = "graph-acct";
 const SYNCD: &str = "org.quire.Syncd";
 const PHOTOS: &str = "org.quire.Photos";
 /// What the fake provider mints for the audience of this account's endpoint (its family's slug).
-const BEARER: &str = "fake:graph-acct:webdav";
+const BEARER: &str = "fake:graph-acct:graph";
 
-/// A Microsoft-shaped provider: OAuth, Storage over an HTTP drive API. The endpoint's family is
-/// `webdav` only because accountd's relay carries no `graph` family today (`Family::relay_protocol`
-/// is `None` for it: interface ask 1 of W6c); the relay, the bearer and the replica are the real
-/// ones, and only the family label differs from a Microsoft account's.
-const PROVIDER: &str = r#"
+/// A Microsoft-shaped provider: OAuth, Storage over a `graph` endpoint, with the origin of the
+/// fake's links (its second loopback port) declared as one pre-authenticated links may point at.
+fn provider_file(linked: &str) -> String {
+    format!(
+        r#"
 id = "fake-graph"
 label = "Fake Microsoft"
 mark = "generic"
@@ -64,10 +70,13 @@ issuer = "microsoft"
 kind = "autoconfig"
 
 [[capability]]
-family = "webdav"
+family = "graph"
 kind = "storage"
-v = { access = "read_write", delta = "poll", quota = "reported", scope = "full", hashes = "quick_xor", ranges = "present", chunked_upload = "present" }
-"#;
+linked_origins = ["{linked}"]
+v = {{ access = "read_write", delta = "poll", quota = "reported", scope = "app_folder", hashes = "quick_xor", ranges = "present", chunked_upload = "present" }}
+"#
+    )
+}
 
 fn app(name: &str) -> AppId {
     AppId {
@@ -106,6 +115,7 @@ struct Rig {
     accounts: Arc<Accounts<DbusTransport>>,
     grant: GrantId,
     endpoint: EndpointUrl,
+    link: EndpointUrl,
     _keep: Vec<zbus::Connection>,
 }
 
@@ -128,7 +138,7 @@ fn account(provider: &FakeProvider, url: &EndpointUrl) -> Account {
             .collect(),
         restriction: Restriction::none(),
         endpoints: vec![ServiceEndpoint {
-            family: Family::WebDav,
+            family: Family::Graph,
             url: url.clone(),
             tls: Tls::Plain,
             login: LoginName("ada@outlook.test".into()),
@@ -137,10 +147,16 @@ fn account(provider: &FakeProvider, url: &EndpointUrl) -> Account {
 }
 
 async fn rig() -> Rig {
-    let graph = FakeGraph::start(BEARER).await.expect("graph");
+    let graph = FakeGraph::start_linked(BEARER).await.expect("graph");
     graph.set_limit(1_000_000);
+    graph.set_knobs(Knobs {
+        redirect_downloads: true,
+        ..Knobs::default()
+    });
     let endpoint = EndpointUrl::parse(graph.base_url()).expect("url");
-    let provider = FakeProvider::from_file(PROVIDER);
+    let link = EndpointUrl::parse(graph.link_url().expect("a linked fake")).expect("url");
+    let declared = link.as_str().trim_start_matches("http://").to_owned();
+    let provider = FakeProvider::from_file(&provider_file(&declared));
     let account = account(&provider, &endpoint);
     let grant = Grant {
         id: GrantId::parse(GRANT).expect("grant"),
@@ -218,14 +234,17 @@ async fn rig() -> Rig {
         accounts,
         grant: GrantId::parse(GRANT).expect("grant"),
         endpoint,
+        link,
         _keep: vec![accountd, syncd_side, server],
     }
 }
 
+/// Every write the drive or its links' origin saw.
 fn uploads(graph: &GraphHandle) -> usize {
     graph
         .hits()
         .iter()
+        .chain(graph.link_hits().iter())
         .filter(|h| matches!(h.method.as_str(), "PUT" | "POST"))
         .count()
 }
@@ -288,12 +307,19 @@ async fn a_folder_syncs_against_graph_through_the_relay_and_status_shows_the_quo
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
     assert_eq!(quota, Some((used, Some(1_000_000))));
+    let link_hits = rig.graph.link_hits();
+    assert!(
+        link_hits
+            .iter()
+            .any(|h| h.method == "PUT" && h.target.starts_with("/upload/") && h.status == 201),
+        "the large file went through a session on the second origin: {link_hits:?}"
+    );
     assert!(
         rig.graph
             .hits()
             .iter()
-            .any(|h| h.method == "PUT" && h.target.starts_with("/upload/")),
-        "the large file went through a session"
+            .all(|h| !h.target.starts_with("/upload/")),
+        "no chunk went to the drive's own origin"
     );
 
     // Down: a file put on the drive by another device arrives locally.
@@ -305,6 +331,21 @@ async fn a_folder_syncs_against_graph_through_the_relay_and_status_shows_the_quo
 
     // The relay, not syncd, authenticated: every request the drive saw carries the bearer the
     // fake provider minted, and the credential accountd holds appears nowhere.
+    assert!(
+        rig.graph
+            .link_hits()
+            .iter()
+            .any(|h| h.method == "GET" && h.target.starts_with("/dl/") && h.status == 200),
+        "the remote file came down from the second origin"
+    );
+    assert!(
+        rig.graph
+            .link_hits()
+            .iter()
+            .all(|h| h.authorization.is_none() && h.status != 401),
+        "no bearer reached the linked origin: {:?}",
+        rig.graph.link_hits()
+    );
     let api: Vec<_> = rig.graph.hits();
     assert!(!api.is_empty());
     let want = format!("Bearer {BEARER}");
@@ -324,4 +365,89 @@ async fn a_folder_syncs_against_graph_through_the_relay_and_status_shows_the_quo
     rig.hub
         .forget_account(&syncd::paths::AccountDir::parse("a1").expect("account"));
     eventually("the driver stops", || running.is_finished()).await;
+}
+
+/// Reads one HTTP response off a relay: its status line and whatever else came with it.
+async fn status_of(stream: &mut RelayStream) -> String {
+    let mut seen = Vec::new();
+    let mut buf = [0u8; 2048];
+    while !seen.windows(4).any(|w| w == b"\r\n\r\n") {
+        let n = stream.read(&mut buf).await.expect("read");
+        assert!(
+            n > 0,
+            "the relay closed: {}",
+            String::from_utf8_lossy(&seen)
+        );
+        seen.extend_from_slice(&buf[..n]);
+    }
+    String::from_utf8_lossy(&seen)
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .to_owned()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_linked_relay_reaches_a_declared_origin_only_adds_no_credential_and_strips_the_apps() {
+    let rig = rig().await;
+
+    // An origin the provider file does not declare (the drive's own port is not a linked one,
+    // nor is a host that is not on this computer's declared list): refused, no descriptor.
+    for origin in [
+        rig.endpoint.as_str(),
+        "http://127.0.0.1:9",
+        "https://files.1drv.com",
+    ] {
+        let refused = rig
+            .accounts
+            .open_linked(&rig.grant, &EndpointUrl::parse(origin).expect("url"))
+            .await;
+        assert!(
+            matches!(
+                refused,
+                Err(porter_client::ClientError::Refused(
+                    porter_core::wire::Refusal::EndpointNotGranted
+                ))
+            ),
+            "{origin}: {:?}",
+            refused.err()
+        );
+    }
+    assert!(rig.graph.link_hits().is_empty() && rig.graph.hits().is_empty());
+
+    // The declared one opens. The app writes a bearer of its own; the relay drops it, and the
+    // linked origin (which refuses any Authorization) answers the request itself.
+    let stream = rig
+        .accounts
+        .open_linked(&rig.grant, &rig.link)
+        .await
+        .expect("a declared origin");
+    let mut stream = RelayStream::from_relay(stream).expect("stream");
+    let host = rig.link.as_str().trim_start_matches("http://");
+    let request =
+        format!("GET /dl/missing HTTP/1.1\r\nHost: {host}\r\nAuthorization: Bearer stolen\r\n\r\n");
+    stream.write_all(request.as_bytes()).await.expect("write");
+    assert_eq!(status_of(&mut stream).await, "HTTP/1.1 404 Not Found");
+    let seen = rig.graph.link_hits();
+    assert_eq!(seen.len(), 1, "{seen:?}");
+    assert_eq!(
+        seen[0].authorization, None,
+        "no credential, not even the app's"
+    );
+
+    // The relay dials that origin only: a request for the drive's host over it is refused.
+    let request = format!(
+        "GET /v1.0/me/drive HTTP/1.1\r\nHost: {}\r\n\r\n",
+        rig.endpoint.as_str().trim_start_matches("http://")
+    );
+    let _ = stream.write_all(request.as_bytes()).await;
+    let mut rest = Vec::new();
+    let mut buf = [0u8; 1024];
+    while let Ok(n) = stream.read(&mut buf).await {
+        if n == 0 {
+            break;
+        }
+        rest.extend_from_slice(&buf[..n]);
+    }
+    assert!(rig.graph.hits().is_empty(), "the drive saw nothing");
 }

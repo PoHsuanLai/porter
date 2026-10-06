@@ -54,6 +54,11 @@ async fn an_agent_is_refused_every_method_that_acts_for_the_person() {
         .await
         .expect_err("relay");
     assert_eq!(error_name(&relay), denied);
+    let linked = tokens
+        .open_linked("g1", "https://files.example.invalid")
+        .await
+        .expect_err("linked relay");
+    assert_eq!(error_name(&linked), denied);
 
     // Nothing was shown to anyone.
     assert!(rig.host_log.calls().opened.is_empty());

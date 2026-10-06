@@ -34,7 +34,7 @@ pub(super) fn scopes_for(kinds: &[CapabilityKind]) -> Vec<String> {
         (CapabilityKind::Contacts, "Contacts.ReadWrite"),
         (CapabilityKind::Tasks, "Tasks.ReadWrite"),
         (CapabilityKind::Notes, "Notes.ReadWrite"),
-        (CapabilityKind::Storage, "Files.ReadWrite.All"),
+        (CapabilityKind::Storage, "Files.ReadWrite.AppFolder"),
     ];
     scopes.extend(
         per_kind
@@ -113,7 +113,7 @@ mod tests {
             [
                 "https://graph.microsoft.com/User.Read",
                 "https://graph.microsoft.com/Notes.ReadWrite",
-                "https://graph.microsoft.com/Files.ReadWrite.All",
+                "https://graph.microsoft.com/Files.ReadWrite.AppFolder",
                 "offline_access",
                 "openid",
             ]

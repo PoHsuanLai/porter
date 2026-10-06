@@ -265,6 +265,91 @@ async fn an_opened_relay_is_audited_with_its_grant_and_endpoint_and_a_refused_on
 }
 
 #[tokio::test]
+async fn a_linked_relay_dials_only_an_origin_the_provider_file_declares_and_presents_nothing() {
+    use porter_core::RelayAuth;
+
+    let audit = RecordingAudit::default();
+    let sheets = ScriptedSheets::answering([
+        Scripted::AllowFirst(GrantScope::Always),
+        Scripted::AllowFirst(GrantScope::Always),
+    ]);
+    let service = fake_service(sheets).await.with_audit(audit.clone());
+    let me = app("org.quire.Photos");
+    let storage = granted(choose(&service, &me, files(), DataClass::Files).await);
+    let mailer = granted(choose(&service, &me, mail(), DataClass::Mail).await);
+    let opened = |entries: Vec<porter_core::audit::AuditEntry>| {
+        entries
+            .into_iter()
+            .filter(|e| matches!(e.event, AuditEvent::ProxyOpened { .. }))
+            .count()
+    };
+
+    let plan = service
+        .open_linked(&me, &storage.grant, &url("https://files.cdn.cloud.invalid"))
+        .await
+        .expect("a declared origin");
+    assert_eq!(plan.auth, RelayAuth::Anonymous);
+    assert_eq!(plan.kind, CapabilityKind::Storage);
+    assert_eq!(
+        plan.endpoint.url,
+        url("https://files.cdn.cloud.invalid:443")
+    );
+    assert_eq!(plan.endpoint.family, Family::WebDav);
+    assert_eq!(opened(audit.entries()), 1);
+
+    const REFUSED: &[(&str, &str)] = &[
+        (
+            "an origin the file does not declare",
+            "https://evil.invalid",
+        ),
+        ("the account's own host", "https://cloud.invalid"),
+        ("the suffix itself", "https://cdn.cloud.invalid"),
+        (
+            "a host that only ends alike",
+            "https://evilcdn.cloud.invalid",
+        ),
+        (
+            "a declared host on another port",
+            "https://a.cdn.cloud.invalid:8443",
+        ),
+        ("a downgrade to plain http", "http://a.cdn.cloud.invalid"),
+        ("a link with a path", "https://a.cdn.cloud.invalid/up/s1"),
+        ("another scheme", "imaps://a.cdn.cloud.invalid"),
+    ];
+    for (name, origin) in REFUSED {
+        assert_eq!(
+            service
+                .open_linked(&me, &storage.grant, &url(origin))
+                .await
+                .err(),
+            Some(Refusal::EndpointNotGranted),
+            "{name}"
+        );
+    }
+    assert_eq!(
+        service
+            .open_linked(&me, &mailer.grant, &url("https://files.cdn.cloud.invalid"))
+            .await
+            .err(),
+        Some(Refusal::EndpointNotGranted),
+        "a mail grant has no linked origins"
+    );
+    assert_eq!(
+        service
+            .open_linked(
+                &app("org.quire.Notes"),
+                &storage.grant,
+                &url("https://files.cdn.cloud.invalid")
+            )
+            .await
+            .err(),
+        Some(Refusal::UnknownGrant),
+        "another app's grant"
+    );
+    assert_eq!(opened(audit.entries()), 1, "a refused one is not audited");
+}
+
+#[tokio::test]
 async fn a_password_account_plans_its_password_and_an_oauth_account_a_minted_token() {
     use porter_core::RelayAuth;
 

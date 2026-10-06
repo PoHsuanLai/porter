@@ -94,7 +94,9 @@ impl ImapRelay {
             }
             (ImapAuth::Plain, _) => format!("{AUTH} AUTHENTICATE PLAIN"),
             (ImapAuth::Xoauth2, _) => format!("{AUTH} AUTHENTICATE XOAUTH2"),
-            (ImapAuth::Login, RelayAuth::AccessToken(_)) => return fail(RelayFault::Protocol),
+            (ImapAuth::Login, RelayAuth::AccessToken(_) | RelayAuth::Anonymous) => {
+                return fail(RelayFault::Protocol);
+            }
         };
         self.phase = ImapPhase::Authenticating(auth);
         vec![send_line(Side::Server, &line)]

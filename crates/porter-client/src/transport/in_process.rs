@@ -199,6 +199,21 @@ where
         }
     }
 
+    async fn open_linked(
+        &self,
+        grant: &GrantId,
+        origin: &EndpointUrl,
+    ) -> Result<Relayed, TransportError> {
+        match self.service.open_linked(&self.app, grant, origin).await {
+            Ok(plan) => {
+                let (app_end, relay_end) = duplex(RELAY_BUFFER);
+                self.relays.run(plan, relay_end);
+                Ok(Relayed::Stream(AuthenticatedStream::Memory(app_end)))
+            }
+            Err(refusal) => Ok(Relayed::Refused(refusal)),
+        }
+    }
+
     async fn open_with(
         &self,
         need: &Need,

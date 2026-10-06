@@ -36,7 +36,7 @@ impl ImapAuth {
             RelayAuth::AccessToken(_) => Err(RelayFault::Protocol),
             RelayAuth::Password(_) if has("AUTH=PLAIN") => Ok(ImapAuth::Plain),
             RelayAuth::Password(_) if !has("LOGINDISABLED") => Ok(ImapAuth::Login),
-            RelayAuth::Password(_) => Err(RelayFault::Protocol),
+            RelayAuth::Password(_) | RelayAuth::Anonymous => Err(RelayFault::Protocol),
         }
     }
 }
