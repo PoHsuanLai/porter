@@ -118,3 +118,57 @@ fn what_the_unit_writes_is_created_before_the_sandbox_starts() {
     assert_eq!(value(&unit, "ReadWritePaths"), None);
     assert_eq!(value(&unit, "ProtectHome"), Some("read-only"));
 }
+
+/// What `[features] default` lists in a crate's manifest, and whether `feature` is declared.
+fn default_features(manifest: &str, feature: &str) -> (bool, Vec<String>) {
+    let manifest: toml::Table = manifest.parse().expect("manifest");
+    let features = manifest["features"].as_table().expect("features");
+    let default = features
+        .get("default")
+        .and_then(|d| d.as_array())
+        .map(|d| {
+            d.iter()
+                .filter_map(|f| f.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default();
+    (features.contains_key(feature), default)
+}
+
+#[test]
+fn the_test_keys_feature_is_declared_and_is_not_a_default_feature_of_accountd_or_porter_secrets() {
+    for (manifest, feature) in [
+        (include_str!("../Cargo.toml"), "test-keys"),
+        (include_str!("../../porter-secrets/Cargo.toml"), "test-keys"),
+    ] {
+        let (declared, default) = default_features(manifest, feature);
+        assert!(declared, "{feature} is declared");
+        assert!(
+            default.iter().all(|f| !f.contains("test-keys")),
+            "default features: {default:?}"
+        );
+    }
+    // And accountd's own feature is the only thing that turns porter-secrets' on.
+    let manifest: toml::Table = include_str!("../Cargo.toml").parse().expect("manifest");
+    let dependency = &manifest["dependencies"]["porter-secrets"];
+    assert!(
+        !dependency.to_string().contains("test-keys"),
+        "the normal dependency on porter-secrets does not name test-keys: {dependency}"
+    );
+}
+
+#[test]
+fn nothing_that_ships_names_the_file_key_store() {
+    for name in [
+        "accountd.service",
+        "callers.toml",
+        "dbus/org.quire.Accounts1.service",
+        "inferd.service",
+        "syncd.service",
+    ] {
+        let file = dist(name);
+        for knob in ["ACCOUNTD_KEYS", "test-keys"] {
+            assert!(!file.contains(knob), "{name} names {knob}");
+        }
+    }
+}

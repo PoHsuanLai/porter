@@ -130,6 +130,18 @@ else
   echo "test-only: accountd's default features do not include test-proc-root"
 fi
 
+# accountd's file key store (`ACCOUNTD_KEYS=file:`, feature `test-keys`, porter-secrets'
+# `FileSecrets`) keeps credentials as plain text: neither crate's default build, nor accountd's
+# whole normal dependency tree, may have the feature on.
+for crate in accountd porter-secrets; do
+  if cargo tree -p "$crate" -e normal --prefix none -f '{p} {f}' 2>/dev/null | grep -q 'test-keys'; then
+    echo "LEAK: $crate's default build enables test-keys"
+    fail=1
+  else
+    echo "test-only: $crate's default build does not include test-keys"
+  fi
+done
+
 # syncd's test-only knob (`SYNCD_PROC_ROOT`, feature `test-proc-root`), the same rule.
 if cargo tree -p syncd --depth 0 -f '{p} {f}' 2>/dev/null | grep -q 'test-proc-root'; then
   echo "LEAK: syncd enables test-proc-root by default"

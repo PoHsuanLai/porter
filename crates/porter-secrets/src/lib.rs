@@ -4,6 +4,8 @@
 
 mod attributes;
 mod error;
+#[cfg(all(feature = "test-keys", unix))]
+mod file;
 #[cfg(feature = "keyring")]
 mod keyring;
 #[cfg(feature = "testing")]
@@ -14,6 +16,8 @@ mod secrets;
 
 pub use attributes::{SERVICE, SecretAttributes, attributes};
 pub use error::SecretsError;
+#[cfg(all(feature = "test-keys", unix))]
+pub use file::{FileSecrets, FileSecretsError};
 #[cfg(feature = "keyring")]
 pub use keyring::{KeyringSecrets, StoreSecrets};
 #[cfg(feature = "testing")]

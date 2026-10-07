@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 /// The user's Secret Service collection, opened on first use and kept.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Oo7Secrets;
 
 /// Secrets over one given oo7 keyring: what [`Oo7Secrets`] does once it has opened its own, and

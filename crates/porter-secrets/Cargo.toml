@@ -22,7 +22,7 @@ apple-native-keyring-store = { workspace = true, optional = true }
 windows-native-keyring-store = { workspace = true, optional = true }
 
 [dev-dependencies]
-porter-secrets = { path = ".", features = ["testing", "keyring"] }
+porter-secrets = { path = ".", features = ["testing", "keyring", "test-keys"] }
 tokio = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
@@ -31,6 +31,10 @@ porter-secrets = { path = ".", features = ["oo7"] }
 [features]
 # `MemorySecrets`, for tests and porter-fake.
 testing = []
+# `FileSecrets`, one 0600 JSON file of plain-text credentials, for private-bus and scratch runs.
+# TEST ONLY: never default, never in a release or dist build (accountd's `test-keys` turns it on;
+# check-boundary.sh and accountd's tests/dist.rs fail if a default build gets it).
+test-keys = []
 # `Oo7Secrets`, the Secret Service store (oo7's file backend inside a sandbox).
 oo7 = ["dep:oo7"]
 # `KeyringSecrets`, the platform keyring store (Apple keychain, Windows credential manager).

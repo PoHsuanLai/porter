@@ -47,6 +47,7 @@ mod errors;
 mod grants;
 mod hub;
 mod keys;
+pub mod keysel;
 mod manager;
 pub mod paths;
 mod peer;

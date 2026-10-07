@@ -43,3 +43,8 @@ workspace = true
 # processes outside service cgroups. A release build ignores the variable. A test in
 # tests/dist.rs fails if this feature is ever default, and check-boundary.sh checks it too.
 test-proc-root = []
+# Test builds only, never default and never in dist: `ACCOUNTD_KEYS=file:<absolute path>` keeps
+# credentials in one 0600 plain-text JSON file (porter-secrets' `FileSecrets`) instead of the
+# Secret Service, for private-bus and scratch runs with no keyring. A release build ignores the
+# variable and says so once. tests/dist.rs and check-boundary.sh fail if this feature is default.
+test-keys = ["porter-secrets/test-keys"]

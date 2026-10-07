@@ -3,12 +3,14 @@
 //!
 //! It resolves its paths from the environment, loads the caller tables, the provider files and
 //! the registry (refusing to start over a registry it cannot read), builds the service over its
-//! seams (the Secret Service through oo7, the sheet host over `org.quire.AccountsSheet1`, the
+//! seams (the Secret Service through oo7, or in a `test-keys` build the key file `ACCOUNTD_KEYS`
+//! names, the sheet host over `org.quire.AccountsSheet1`, the
 //! families, the file store and audit) and serves `org.quire.Accounts1`.
 
 mod clock;
 
 use accountd::add::{AddArgs, StdTerminal, TerminalSheets};
+use accountd::keysel::{AnyKeys, Chosen};
 use accountd::paths::{BUILD, Paths, proc_root};
 use accountd::{
     AppNames, BusSheets, FileAudit, FileStore, Options, RelayRoots, SecretsDesk, load_callers,
@@ -17,7 +19,6 @@ use accountd::{
 use clap::{Parser, Subcommand};
 use clock::SystemClock;
 use porter_dbus::ProcCallers;
-use porter_secrets::Oo7Secrets;
 use porter_service::{AccountService, Registry, RegistryStore};
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -80,13 +81,20 @@ async fn main() -> ExitCode {
         Ok(paths) => paths,
         Err(why) => return fail(why),
     };
+    // Which secret store, before anything reads or files a credential: refused here, not later.
+    let chosen = match Chosen::from_env() {
+        Ok(chosen) => chosen,
+        Err(why) => return fail(why),
+    };
+    eprintln!("accountd: {}", chosen.said);
+    let secrets = chosen.keys;
     if let Some(Command::Add {
         provider,
         allow,
         classes,
     }) = &args.command
     {
-        return add(&paths, provider, allow, classes).await;
+        return add(&paths, secrets, provider, allow, classes).await;
     }
     let table = match load_callers(&paths.callers_system, &paths.callers_user) {
         Ok(table) => table,
@@ -132,12 +140,12 @@ async fn main() -> ExitCode {
     );
     let sheets = BusSheets::new(connection.clone(), Arc::clone(&callers));
     let service = Arc::new(
-        AccountService::new(families, registry, Oo7Secrets, sheets, SystemClock)
+        AccountService::new(families, registry, secrets.clone(), sheets, SystemClock)
             .with_local_runtimes(local)
             .with_store(store)
             .with_audit(FileAudit::new(paths.audit.clone())),
     );
-    let keys = SecretsDesk::new(Oo7Secrets, FileAudit::new(paths.audit.clone()), SystemClock);
+    let keys = SecretsDesk::new(secrets, FileAudit::new(paths.audit.clone()), SystemClock);
     let options = Options {
         clients: Some(paths.clients_user.clone()),
         relay_roots: RelayRoots::Platform,
@@ -154,7 +162,13 @@ async fn main() -> ExitCode {
 
 /// `accountd add`: the provider files, the registry and the secret store the daemon uses, a
 /// terminal for a sheet, and the bus name as the lock.
-async fn add(paths: &Paths, provider: &str, allow: &[String], classes: &[String]) -> ExitCode {
+async fn add(
+    paths: &Paths,
+    secrets: AnyKeys,
+    provider: &str,
+    allow: &[String],
+    classes: &[String],
+) -> ExitCode {
     let args = match AddArgs::parse(provider, allow, classes) {
         Ok(args) => args,
         Err(why) => return fail(why),
@@ -190,7 +204,7 @@ async fn add(paths: &Paths, provider: &str, allow: &[String], classes: &[String]
         Err(why) => return fail(format!("{}: {why}", store.path().display())),
     };
     let sheets = TerminalSheets::new(StdTerminal);
-    let service = AccountService::new(families, registry, Oo7Secrets, sheets.clone(), SystemClock)
+    let service = AccountService::new(families, registry, secrets, sheets.clone(), SystemClock)
         .with_store(store)
         .with_audit(FileAudit::new(paths.audit.clone()));
     match accountd::add::run(&service, &sheets, &served, &args).await {

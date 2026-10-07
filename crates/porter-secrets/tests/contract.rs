@@ -186,6 +186,45 @@ async fn memory_keeps_the_contract() {
     contract(Memory(MemorySecrets::default())).await;
 }
 
+#[cfg(unix)]
+mod file_store {
+    use super::*;
+    use porter_secrets::FileSecrets;
+
+    struct File(FileSecrets);
+
+    impl Fixture for File {
+        type Store = FileSecrets;
+        fn store(&self) -> &FileSecrets {
+            &self.0
+        }
+        async fn filed(&self, account: &str, purpose: &str) -> Option<bool> {
+            let text = std::fs::read_to_string(self.0.path()).expect("the key file");
+            let document: serde_json::Value = serde_json::from_str(&text).expect("json");
+            Some(
+                document["items"]
+                    .as_array()
+                    .expect("items")
+                    .iter()
+                    .any(|item| {
+                        item["service"] == "porter"
+                            && item["account"] == account
+                            && item["purpose"] == purpose
+                    }),
+            )
+        }
+    }
+
+    #[tokio::test]
+    async fn the_test_key_file_keeps_the_contract() {
+        let dir = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+            .join(format!("contract-file-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let store = FileSecrets::open(dir.join("keys.json")).expect("opens");
+        contract(File(store)).await;
+    }
+}
+
 /// The keyring store over a mock, cutting values at 256 UTF-16 units as Windows would.
 struct Mock {
     store: StoreSecrets,
