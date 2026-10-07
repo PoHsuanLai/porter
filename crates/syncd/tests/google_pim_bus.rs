@@ -315,6 +315,21 @@ async fn rig(kinds: &[PimKind]) -> Rig {
     }
 }
 
+/// Whether a path is one item's read (`events.get`, `tasks.get`, `people.get`) rather than a
+/// listing.
+fn is_single_fetch(path: &str) -> bool {
+    let parts: Vec<&str> = path.split('/').filter(|p| !p.is_empty()).collect();
+    let after = |name: &str| {
+        parts
+            .iter()
+            .position(|p| *p == name)
+            .map(|at| &parts[at + 1..])
+    };
+    after("calendars").is_some_and(|rest| rest.len() == 3)
+        || after("lists").is_some_and(|rest| rest.len() == 3)
+        || after("people").is_some_and(|rest| rest.len() == 1 && rest[0] != "me")
+}
+
 const ALL: [PimKind; 3] = [PimKind::Calendar, PimKind::Contacts, PimKind::Tasks];
 
 fn timed(uid: &str, summary: &str, hour: u32) -> Value {
@@ -496,12 +511,8 @@ async fn two_calendars_the_contacts_and_two_task_lists_mirror_into_the_vdir() {
     }
     assert!(hits.iter().all(|h| h.method == "GET"));
     assert!(
-        hits.iter().all(|h| {
-            let path = h.target.split('?').next().unwrap_or("");
-            !(path.contains("/events/")
-                || path.contains("/tasks/")
-                || path.starts_with("/v1/people/c"))
-        }),
+        hits.iter()
+            .all(|h| !is_single_fetch(h.target.split('?').next().unwrap_or(""))),
         "{:?}",
         hits.iter().map(|h| &h.target).collect::<Vec<_>>()
     );
