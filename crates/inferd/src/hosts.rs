@@ -23,6 +23,7 @@ use speech_provider::SpeechToText;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 use tokio::io::AsyncReadExt;
@@ -68,15 +69,78 @@ pub const STOP_GRACE: Duration = Duration::from_secs(5);
 /// group still running.
 pub struct ProcessHost {
     running: Arc<Mutex<BTreeMap<EngineId, Running>>>,
+    closed: Arc<AtomicBool>,
     sockets: BTreeMap<EngineId, PathBuf>,
     diagnostics: Diagnostics,
     grace: Duration,
+}
+
+type Table = Arc<Mutex<BTreeMap<EngineId, Running>>>;
+
+/// A handle on a [`ProcessHost`] that outlives the move of the host into the supervisor: it ends
+/// every engine when the daemon is told to stop ([`crate::shutdown`]). Once [`HostCloser::end_all`]
+/// has begun the host starts nothing more.
+#[derive(Clone)]
+pub struct HostCloser {
+    running: Table,
+    closed: Arc<AtomicBool>,
+}
+
+impl std::fmt::Debug for HostCloser {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("HostCloser")
+    }
+}
+
+impl HostCloser {
+    /// Refuses new engines, then stops every engine the way a stop does (the group is sent
+    /// `SIGTERM`, given the host's grace, then killed) and returns when each has gone. At most two
+    /// graces plus the time the engines take to be reaped.
+    pub async fn end_all(&self) {
+        self.closed.store(true, Ordering::SeqCst);
+        let exits: Vec<Exit> = self
+            .running
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .values_mut()
+            .map(|running| {
+                if let Some(stop) = running.stop.take() {
+                    let _ = stop.send(());
+                }
+                running.exit.clone()
+            })
+            .collect();
+        for mut exit in exits {
+            while exit.borrow_and_update().is_none() {
+                if exit.changed().await.is_err() {
+                    break;
+                }
+            }
+        }
+    }
+
+    /// `SIGKILL` to every group still running, at once, and nothing waited for.
+    pub fn kill_all(&self) {
+        self.closed.store(true, Ordering::SeqCst);
+        for running in self
+            .running
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .values()
+        {
+            let group = running.group.lock().unwrap_or_else(PoisonError::into_inner);
+            if let Some(group) = *group {
+                group::sweep(group);
+            }
+        }
+    }
 }
 
 impl Default for ProcessHost {
     fn default() -> Self {
         Self {
             running: Arc::default(),
+            closed: Arc::default(),
             sockets: BTreeMap::new(),
             diagnostics: Diagnostics::default(),
             grace: STOP_GRACE,
@@ -122,6 +186,14 @@ impl ProcessHost {
         self.diagnostics.clone()
     }
 
+    /// The handle that ends every engine of this host at shutdown.
+    pub fn closer(&self) -> HostCloser {
+        HostCloser {
+            running: Arc::clone(&self.running),
+            closed: Arc::clone(&self.closed),
+        }
+    }
+
     fn table(&self) -> std::sync::MutexGuard<'_, BTreeMap<EngineId, Running>> {
         self.running.lock().unwrap_or_else(PoisonError::into_inner)
     }
@@ -147,6 +219,10 @@ async fn drain(mut stderr: tokio::process::ChildStderr, live: Arc<Mutex<TailBuf>
 
 impl EngineHost for ProcessHost {
     async fn spawn(&self, id: &EngineId, unit: &UnitSpec) -> Result<(), HostError> {
+        if self.closed.load(Ordering::SeqCst) {
+            // The daemon is stopping: nothing new starts.
+            return Err(HostError::Refused);
+        }
         let live = self.diagnostics.begin(id);
         if let Some(socket) = self.sockets.get(id)
             && let Err(cause) = clear_socket(socket)
@@ -222,14 +298,16 @@ impl EngineHost for ProcessHost {
             let code = status.and_then(|status| status.code()).unwrap_or(-1);
             let _ = publish.send(Some(ExitCode(code)));
         });
-        self.table().insert(
-            id.clone(),
-            Running {
-                stop: Some(stop),
-                exit,
-                group,
-            },
-        );
+        let mut table = self.table();
+        // A shutdown that began while this child was starting has already gone through the table:
+        // this one is stopped here, under the same lock.
+        let stop = if self.closed.load(Ordering::SeqCst) {
+            let _ = stop.send(());
+            None
+        } else {
+            Some(stop)
+        };
+        table.insert(id.clone(), Running { stop, exit, group });
         Ok(())
     }
 

@@ -31,6 +31,7 @@ pub mod serve;
 pub mod service;
 pub mod session;
 pub mod settings;
+pub mod shutdown;
 pub mod speech;
 pub mod startup;
 pub mod structured;

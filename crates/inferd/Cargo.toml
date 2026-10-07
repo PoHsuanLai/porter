@@ -42,7 +42,9 @@ rustix = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true }
+# `signal` is the one feature this crate adds to the pinned line: SIGTERM and SIGINT end the daemon
+# gracefully (`shutdown`).
+tokio = { workspace = true, features = ["signal"] }
 toml = { workspace = true }
 zbus = { workspace = true }
 

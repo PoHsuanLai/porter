@@ -1,7 +1,9 @@
 //! inferd: the AI broker (design/31 §4.1, §5.5): serves `org.quire.Inference1` on the session
 //! bus. It reads `inferd.toml` (engine programs, the `ai.*` settings rows, the caller table), the stoker
 //! catalog, and runs engines as child processes of its own (the systemd transient-unit host is
-//! not built). Nothing starts an engine until a session asks for its model.
+//! not built). Nothing starts an engine until a session asks for its model. `SIGTERM` and `SIGINT`
+//! stop it gracefully: the bus name is released, every engine's process group is ended, and it
+//! exits 0 (`inferd::shutdown`).
 
 use clap::Parser;
 use engine_supervisor::EngineId;
@@ -20,9 +22,11 @@ use inferd::replay::Replays;
 use inferd::report::PeerReports;
 use inferd::service::{Inference, serve_on};
 use inferd::settings::{ConfigFile, InferdSettings, Reload, resolve, serve_settings};
+use inferd::shutdown::{self, Ended, Signals};
 use inferd::supervise::{Ports, Supervised};
 use inferd::watch::Watch;
 use model_catalog::EngineKind;
+use porter_dbus::INFERENCE_BUS;
 use porter_http::{HyperHttp, Limits};
 use std::os::unix::fs::DirBuilderExt;
 use std::path::PathBuf;
@@ -62,6 +66,8 @@ fn read_config(path: &std::path::Path) -> Result<InferdConfig, String> {
 }
 
 async fn run(args: Args) -> Result<(), String> {
+    // Listening starts before anything else: a signal during start-up is kept, not fatal.
+    let mut signals = Signals::listen().map_err(|e| format!("signal handlers: {e}"))?;
     let dirs = Dirs::from_env().map_err(|e| e.to_string())?;
     let config_path = args.config.clone().unwrap_or_else(|| dirs.config.clone());
     let config = read_config(&config_path)?;
@@ -92,6 +98,7 @@ async fn run(args: Args) -> Result<(), String> {
         .collect();
     let processes = ProcessHost::new().with_sockets(sockets.clone());
     let diagnostics = processes.diagnostics();
+    let closer = processes.closer();
     let supervised = Supervised::start_with(
         specs,
         replays.supervisor_config(models.len()),
@@ -172,8 +179,20 @@ async fn run(args: Args) -> Result<(), String> {
     serve_settings(&connection, InferdSettings::new(peers, reload))
         .await
         .map_err(|e| e.to_string())?;
-    std::future::pending::<()>().await;
-    Ok(())
+    let release = async {
+        // No new caller finds the daemon; a failure to release is no reason not to stop engines.
+        if let Err(e) = connection.release_name(INFERENCE_BUS).await {
+            eprintln!("inferd: releasing {INFERENCE_BUS}: {e}");
+        }
+    };
+    match shutdown::on_signal(&mut signals, &closer, release, shutdown::BOUND).await {
+        Ended::Done => Ok(()),
+        Ended::TimedOut => Err(format!(
+            "shutdown took longer than {} s; every engine killed",
+            shutdown::BOUND.as_secs()
+        )),
+        Ended::Hurried => Err("second signal during shutdown; every engine killed".to_owned()),
+    }
 }
 
 #[tokio::main]

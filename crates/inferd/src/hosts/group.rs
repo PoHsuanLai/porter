@@ -8,6 +8,8 @@
 //! - the supervisor stops or evicts it, or a start never becomes ready: [`end`] (the whole group,
 //!   before the engine is reported gone, so the next engine finds the memory free);
 //! - the engine's leader exits or crashes by itself: [`sweep`] kills what is left of its group;
+//! - inferd gets `SIGTERM` or `SIGINT`: `crate::shutdown` stops every engine this way (bounded
+//!   at 15 s; a second signal or the bound kills every group at once) and exits 0;
 //! - inferd exits normally (returns, or unwinds): `ProcessHost`'s drop kills every group still
 //!   running;
 //! - inferd is killed (`SIGKILL`, the OOM killer): nothing of inferd runs. The kernel kills the
