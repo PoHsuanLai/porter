@@ -39,7 +39,7 @@ impl FeedCursor for SyncCursor {
     fn decode(text: &str) -> Option<Self> {
         let (tag, rest) = text.split_once(':')?;
         match tag {
-            "sync" => Some(SyncCursor::Synced(decode(rest))).filter(|_| !rest.is_empty()),
+            "sync" => (!rest.is_empty()).then_some(SyncCursor::Synced(decode(rest))),
             "page" => {
                 let (page, sync) = rest.split_once(':')?;
                 (!page.is_empty()).then(|| SyncCursor::Paging {
