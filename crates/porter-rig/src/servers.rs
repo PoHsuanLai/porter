@@ -40,6 +40,8 @@ pub struct Options {
     pub oauth: bool,
     /// The Graph drive, which accepts the issuer's tokens (so it starts the issuer too).
     pub graph: bool,
+    /// The `expires_in` of the issuer's access tokens, in seconds (none: the issuer's 3600).
+    pub token_lifetime_s: Option<u64>,
     /// An Ollama.
     pub ollama: bool,
     /// An LLM API that wants a bearer key.
@@ -222,10 +224,16 @@ impl Rig {
             let issuer = FakeIssuer::start().await?;
             issuer.seed_refresh_as(OAUTH_REFRESH_TOKEN, OAUTH_CLIENT, OAUTH_SCOPE);
             issuer.seed_access_as(OAUTH_ACCESS_TOKEN, OAUTH_CLIENT);
+            if let Some(seconds) = options.token_lifetime_s {
+                issuer.set_token_lifetime(seconds);
+            }
             rig.issuer = Some(issuer);
         }
         if let (true, Some(issuer)) = (options.graph, &rig.issuer) {
-            rig.graph = Some(FakeGraph::start_issued(issuer).await?);
+            let graph = FakeGraph::start_issued(issuer).await?;
+            // The account the Microsoft sign-in reads from `GET /v1.0/me` is the rig's one user.
+            graph.set_mail(MAIL_USER);
+            rig.graph = Some(graph);
         }
         if options.llm_api {
             let api = FakeLlmApi::start(Auth::Bearer).await?;
@@ -241,6 +249,21 @@ impl Rig {
     /// The issuer's handle, when it runs.
     pub fn issuer(&self) -> Option<IssuerHandle> {
         self.issuer.as_ref().map(|running| (**running).clone())
+    }
+
+    /// The IMAP server's handle, when it runs.
+    pub fn imap(&self) -> Option<MailHandle> {
+        self.imap.as_ref().map(|running| (**running).clone())
+    }
+
+    /// The SMTP server's handle, when it runs.
+    pub fn smtp(&self) -> Option<MailHandle> {
+        self.smtp.as_ref().map(|running| (**running).clone())
+    }
+
+    /// The POP3 server's handle, when it runs.
+    pub fn pop3(&self) -> Option<MailHandle> {
+        self.pop3.as_ref().map(|running| (**running).clone())
     }
 
     /// The Graph drive's handle, when it runs.

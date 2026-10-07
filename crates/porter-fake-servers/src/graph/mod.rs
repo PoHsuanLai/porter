@@ -8,7 +8,7 @@ mod drive;
 mod routes;
 
 pub use drive::{CHUNK_UNIT, Drive};
-pub use routes::Knobs;
+pub use routes::{DEFAULT_MAIL, Knobs};
 
 use crate::http::{Hit, Request, Response, serve};
 use crate::net::{Bind, Listener};
@@ -228,6 +228,11 @@ impl GraphHandle {
     /// Gives the drive room for `total` bytes.
     pub fn set_limit(&self, total: u64) {
         lock(&self.shared.state).drive.set_limit(total);
+    }
+
+    /// Sets the address `GET /v1.0/me` names (the account's mail address).
+    pub fn set_mail(&self, address: &str) {
+        lock(&self.shared.state).mail = address.to_owned();
     }
 
     /// Changes how the server answers.

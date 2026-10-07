@@ -69,3 +69,31 @@ async fn a_drive_bound_to_one_token_still_serves_only_that_token() {
     assert_eq!(status(&drive, Some("the-token")).await, 200);
     assert_eq!(status(&drive, Some("fake-access-1")).await, 401);
 }
+
+#[tokio::test]
+async fn me_says_who_the_token_is_for_and_only_to_a_token_the_drive_accepts() {
+    let graph = FakeGraph::start("tok-1").await.expect("graph");
+    let (drive, _) = split_loopback(graph.base_url()).expect("address");
+    let me = |bearer: Option<&str>| {
+        let mut request = Request::new("GET", "/v1.0/me");
+        if let Some(token) = bearer {
+            request = request.with_header("Authorization", &format!("Bearer {token}"));
+        }
+        let drive = drive.clone();
+        async move { send(&drive, Scheme::Http, &request).await.expect("request") }
+    };
+
+    assert_eq!(me(None).await.status, 401);
+    assert_eq!(me(Some("tok-2")).await.status, 401);
+    let answer = me(Some("tok-1")).await;
+    assert_eq!(answer.status, 200);
+    let who: serde_json::Value = serde_json::from_slice(&answer.body).expect("json");
+    // The two fields the Microsoft sign-in reads: `mail` first, then `userPrincipalName`.
+    assert_eq!(who["mail"], porter_fake_servers::graph::DEFAULT_MAIL);
+    assert_eq!(who["userPrincipalName"], who["mail"]);
+
+    graph.set_mail("grace@work.example");
+    let who: serde_json::Value =
+        serde_json::from_slice(&me(Some("tok-1")).await.body).expect("json");
+    assert_eq!(who["mail"], "grace@work.example");
+}

@@ -14,6 +14,7 @@
 //! | `GET /graph/files` | `{"files":[{"path":..,"size":..}]}` |
 //! | `POST /graph/expire-delta` | every delta token handed out is stale (`410`) |
 //! | `GET /graph/hits` | `{"hits":[{"method","target","status","bearer"}]}` (never the token) |
+//! | `GET /imap/attempts`, `/smtp/attempts`, `/pop3/attempts` | `{"attempts":[{"user","outcome"}]}`, oldest first, `outcome` is `accepted` or `refused`; never the password or token |
 //! | `POST /ollama/stop`, `POST /ollama/start` | stops the fake Ollama / starts it on the same port |
 //! | `GET /ollama/status` | `{"running":bool,"chats":N}` |
 //! | `POST /stop` | ends the rig as SIGTERM does |
@@ -22,7 +23,7 @@ use crate::planted::OAUTH_REFRESH_TOKEN;
 use crate::servers::Ollama;
 use porter_fake_servers::http::{Request, Response, Scheme, post_form, send, serve};
 use porter_fake_servers::net::{Bind, Listener};
-use porter_fake_servers::{GraphHandle, IssuerHandle, browser::split_loopback};
+use porter_fake_servers::{GraphHandle, IssuerHandle, MailHandle, browser::split_loopback};
 use serde_json::{Value, json};
 use std::io;
 use std::sync::Arc;
@@ -35,6 +36,12 @@ pub struct Levers {
     pub issuer: Option<IssuerHandle>,
     /// The Graph drive, when it runs.
     pub graph: Option<GraphHandle>,
+    /// The IMAP server, when it runs.
+    pub imap: Option<MailHandle>,
+    /// The SMTP server, when it runs.
+    pub smtp: Option<MailHandle>,
+    /// The POP3 server, when it runs.
+    pub pop3: Option<MailHandle>,
     /// The fake Ollama, when it runs.
     pub ollama: Option<Arc<Ollama>>,
     /// The text `GET /rig` answers.
@@ -62,6 +69,25 @@ fn absent(what: &str) -> Response {
 /// Runs an async step from the handler (which is a plain function on a runtime thread).
 fn run<T>(work: impl std::future::Future<Output = T>) -> T {
     tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(work))
+}
+
+/// The login attempts a mail fake recorded: who tried and how it ended, never what was
+/// presented (a password or a bearer token stays in the fake).
+fn attempts(server: Option<&MailHandle>, name: &str) -> Response {
+    let Some(server) = server else {
+        return absent(name);
+    };
+    let attempts: Vec<Value> = server
+        .attempts()
+        .iter()
+        .map(|a| {
+            json!({
+                "user": a.user,
+                "outcome": if a.accepted { "accepted" } else { "refused" },
+            })
+        })
+        .collect();
+    ok(json!({ "attempts": attempts }))
 }
 
 impl Levers {
@@ -162,6 +188,9 @@ impl Levers {
                     ok(json!({ "hits": hits }))
                 }
             },
+            ("GET", "/imap/attempts") => attempts(self.imap.as_ref(), "the IMAP server"),
+            ("GET", "/smtp/attempts") => attempts(self.smtp.as_ref(), "the SMTP server"),
+            ("GET", "/pop3/attempts") => attempts(self.pop3.as_ref(), "the POP3 server"),
             ("POST", "/ollama/stop") => match self.ollama.as_ref() {
                 None => absent("the fake Ollama"),
                 Some(ollama) => ok(json!({ "stopped": run(ollama.stop()) })),

@@ -206,6 +206,10 @@ async fn a_rig_asked_for_nothing_starts_only_its_control_endpoint_and_a_lever_on
         .await
         .expect("lever");
     assert_eq!(lever.status, 409);
+    let lever = call(&file.control, "GET", "/imap/attempts", b"")
+        .await
+        .expect("lever");
+    assert_eq!(lever.status, 409);
     let stop = call(&file.control, "POST", "/stop", b"")
         .await
         .expect("stop");
@@ -214,5 +218,121 @@ async fn a_rig_asked_for_nothing_starts_only_its_control_endpoint_and_a_lever_on
         .await
         .expect("join");
     assert!(status.success(), "POST /stop ends it cleanly");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+fn imap_line(stream: &mut TcpStream, send: Option<&str>) -> String {
+    use std::io::{BufRead, BufReader, Write};
+    if let Some(line) = send {
+        stream.write_all(line.as_bytes()).expect("write");
+    }
+    let mut reader = BufReader::new(stream.try_clone().expect("clone"));
+    let mut line = String::new();
+    reader.read_line(&mut line).expect("read");
+    line
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_rig_serves_me_lists_login_attempts_without_secrets_and_issues_short_tokens() {
+    let dir = scratch("servers-levers");
+    let mut rig = Proc::spawn(
+        env!("CARGO_BIN_EXE_porter-rig-servers"),
+        &[
+            "--dir",
+            dir.to_str().expect("utf-8"),
+            "--graph",
+            "--imap",
+            "--smtp",
+            "--pop3",
+            "--tls",
+            "plain",
+            "--token-lifetime-s",
+            "7",
+        ],
+        &[],
+    );
+    let file = eventually("rig.json is written", || RigFile::read(&dir).ok()).await;
+
+    // `GET /v1.0/me` names the rig's one user to the planted token, and only to it.
+    let graph = file.graph.clone().expect("graph");
+    let (address, _) = split_loopback(&graph.url).expect("address");
+    let me = |bearer: &'static str| {
+        let request = Request::new("GET", "/v1.0/me")
+            .with_header("Authorization", &format!("Bearer {bearer}"));
+        let address = address.clone();
+        async move { send(&address, Scheme::Http, &request).await.expect("me") }
+    };
+    let answer = me(planted::OAUTH_ACCESS_TOKEN).await;
+    assert_eq!(answer.status, 200);
+    let who = json(&answer.text());
+    assert_eq!(who["mail"], planted::MAIL_USER);
+    assert_eq!(who["userPrincipalName"], planted::MAIL_USER);
+    assert_eq!(me("not-a-token").await.status, 401);
+
+    // The issuer's `expires_in` is the one asked for.
+    let oauth = file.oauth.clone().expect("oauth");
+    let (issuer, _) = split_loopback(&oauth.url).expect("address");
+    let renewed = post_form(
+        &issuer,
+        "/token",
+        &[
+            ("grant_type", "refresh_token"),
+            ("refresh_token", planted::OAUTH_REFRESH_TOKEN),
+            ("client_id", planted::OAUTH_CLIENT),
+        ],
+    )
+    .await
+    .expect("token");
+    assert_eq!(renewed.status, 200);
+    assert_eq!(json(&renewed.text())["expires_in"], 7);
+
+    // Login attempts: who and how it ended, never the password.
+    let imap = file.imap.clone().expect("imap");
+    let attempts = |server: &str| {
+        let control = file.control.clone();
+        let target = format!("/{server}/attempts");
+        async move { call(&control, "GET", &target, b"").await.expect("attempts") }
+    };
+    assert_eq!(
+        json(&attempts("imap").await.text())["attempts"],
+        serde_json::json!([])
+    );
+    let mut stream = TcpStream::connect(("127.0.0.1", imap.port)).expect("imap");
+    assert!(imap_line(&mut stream, None).contains("OK"));
+    let wrong = imap_line(
+        &mut stream,
+        Some(&format!(
+            "a1 LOGIN {} wrong-password\r\n",
+            planted::MAIL_USER
+        )),
+    );
+    assert!(wrong.contains("a1 NO"), "{wrong}");
+    let right = imap_line(
+        &mut stream,
+        Some(&format!(
+            "a2 LOGIN {} {}\r\n",
+            planted::MAIL_USER,
+            planted::MAIL_PASSWORD
+        )),
+    );
+    assert!(right.contains("a2 OK"), "{right}");
+    let seen = attempts("imap").await;
+    assert_eq!(seen.status, 200);
+    assert_eq!(
+        json(&seen.text())["attempts"],
+        serde_json::json!([
+            {"user": planted::MAIL_USER, "outcome": "refused"},
+            {"user": planted::MAIL_USER, "outcome": "accepted"},
+        ])
+    );
+    for secret in [planted::MAIL_PASSWORD, "wrong-password"] {
+        assert!(!seen.text().contains(secret), "{}", seen.text());
+    }
+    for other in ["smtp", "pop3"] {
+        let none = attempts(other).await;
+        assert_eq!(none.status, 200, "{other}");
+        assert_eq!(json(&none.text())["attempts"], serde_json::json!([]));
+    }
+    assert!(rig.terminate().success());
     let _ = std::fs::remove_dir_all(dir);
 }

@@ -107,3 +107,22 @@ fn syncd_is_one_app_id_in_the_caller_table_and_in_every_test_and_doc() {
         }
     }
 }
+
+#[test]
+fn the_shipped_rescan_is_ten_minutes_and_only_a_test_build_can_change_it() {
+    let ten_minutes = std::time::Duration::from_secs(600);
+    assert_eq!(
+        syncd::datasets::storage::StorageConfig::default().rescan,
+        ten_minutes
+    );
+    assert_eq!(
+        syncd::datasets::pim::PimConfig::default().rescan,
+        ten_minutes
+    );
+    let main = include_str!("../src/main.rs");
+    // The variable goes through `paths::rescan`, which ignores it outside a test build.
+    assert!(
+        main.contains("rescan(BUILD, rescan_var"),
+        "main reads it by build"
+    );
+}

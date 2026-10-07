@@ -372,3 +372,35 @@ async fn the_client_lists_datasets_watches_conflicts_and_settles_one() {
         "{lines:?}"
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn add_account_and_reauthenticate_drive_accountds_sheets_and_say_how_they_ended() {
+    let rig = rig().await;
+
+    // No sheet host is on this bus, so accountd cannot show the sheet: the command reached it
+    // (the Request object and its Response) and says what the Response was, exit 1.
+    for args in [
+        &["add-account"][..],
+        &["add-account", "fake-graph"][..],
+        &["reauthenticate", ACCOUNT][..],
+    ] {
+        let (lines, ok) = rig.run(args).await;
+        assert!(!ok, "{args:?}: {lines:?}");
+        assert_eq!(result_of(&lines), "refused", "{args:?}: {lines:?}");
+        assert_eq!(
+            lines.last().expect("a line")["refusal"],
+            "Unavailable",
+            "{args:?}"
+        );
+    }
+
+    // A word that is no provider or account id never reaches the bus.
+    for args in [
+        &["add-account", "Not A Provider"][..],
+        &["reauthenticate", "A B"][..],
+    ] {
+        let (lines, ok) = rig.run(args).await;
+        assert!(!ok, "{args:?}");
+        assert_eq!(result_of(&lines), "error", "{args:?}: {lines:?}");
+    }
+}

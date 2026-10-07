@@ -38,12 +38,32 @@ pub struct State {
     pub drive: Drive,
     /// The knobs.
     pub knobs: Knobs,
+    /// Who `GET /v1.0/me` says the account is: its mail address (empty: [`DEFAULT_MAIL`]).
+    pub mail: String,
 }
+
+/// The address `GET /v1.0/me` names when a test set none.
+pub const DEFAULT_MAIL: &str = "ada@graph.fake.test";
 
 const DRIVE: &str = "/v1.0/me/drive";
 
 fn error(status: u16, code: &str) -> Response {
     Response::json(status, &json!({"error": {"code": code, "message": code}}))
+}
+
+/// `GET /v1.0/me`: who the token is for, the fields the Microsoft sign-in reads (`mail`, else
+/// `userPrincipalName`) and a display name.
+fn me(mail: &str) -> Response {
+    let mail = if mail.is_empty() { DEFAULT_MAIL } else { mail };
+    Response::json(
+        200,
+        &json!({
+            "id": "fake-user",
+            "displayName": "Ada",
+            "mail": mail,
+            "userPrincipalName": mail,
+        }),
+    )
 }
 
 fn item_json(drive: &Drive, node: &Node) -> Value {
@@ -469,6 +489,9 @@ pub fn answer(
     }
     if path == DRIVE {
         return quota(&state.drive);
+    }
+    if path == "/v1.0/me" && request.method == "GET" {
+        return me(&state.mail);
     }
     let Some((address, op)) = route(&path) else {
         return error(404, "itemNotFound");

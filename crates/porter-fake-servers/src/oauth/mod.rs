@@ -120,6 +120,8 @@ struct State {
     counter: u64,
     consent: Consent,
     refuse_refreshes: u32,
+    /// The `expires_in` of every access token issued from now on, in seconds.
+    lifetime_s: u64,
     codes: HashMap<String, Code>,
     refresh: HashMap<String, Grant>,
     access: HashMap<String, String>,
@@ -155,6 +157,7 @@ impl FakeIssuer {
             counter: 0,
             consent: Consent::Grant,
             refuse_refreshes: 0,
+            lifetime_s: routes::DEFAULT_LIFETIME_S,
             codes: HashMap::new(),
             refresh: HashMap::new(),
             access: HashMap::new(),
@@ -212,6 +215,12 @@ impl IssuerHandle {
     /// The next `count` refresh requests get `invalid_grant`, as for a revoked or expired grant.
     pub fn refuse_refreshes(&self, count: u32) {
         lock(&self.shared.state).refuse_refreshes = count;
+    }
+
+    /// The `expires_in` of every access token issued from now on, in seconds (default 3600): a
+    /// short one makes a client refresh again within a test's time.
+    pub fn set_token_lifetime(&self, seconds: u64) {
+        lock(&self.shared.state).lifetime_s = seconds;
     }
 
     /// Issues a refresh token as if the person had already signed in (a seeded account).

@@ -12,6 +12,10 @@
 //!   status of a `GET P`).
 //! - `sync-resolve <dataset> <number> <keep_local|keep_remote>`.
 //! - `watch-conflicts [--count N] [--timeout-s S]`: `{"event":"conflict",..}` lines.
+//! - `add-account [<provider>]`: opens accountd's add-account sheet (the provider's form when
+//!   named) and waits for the answer: `{"result":"added","account":..}`, or
+//!   `{"result":"refused","refusal":"Cancelled"|"Unavailable"|..}` and exit 1.
+//! - `reauthenticate <account>`: the same for signing an account in again.
 //! - `datasets`, `status <dataset>`, `grants`.
 //! - `write-identity --pid N`: only writes the identity fixture for process N (it is kept).
 //!
@@ -23,8 +27,8 @@
 //! Identity: see `porter_rig::fixture`. Test tooling, never installed.
 
 use clap::{Parser, Subcommand};
-use porter_core::DataClass;
 use porter_core::consent::Usage;
+use porter_core::{AccountId, DataClass, ProviderId};
 use porter_rig::client::{Ask, Command, parse_need, run, word};
 use porter_rig::fixture::Identity;
 use std::path::PathBuf;
@@ -87,6 +91,13 @@ enum Sub {
         count: Option<usize>,
         #[arg(long)]
         timeout_s: Option<u64>,
+    },
+    AddAccount {
+        /// The provider's file id (`microsoft`, `nextcloud`, ...); the list when absent.
+        provider: Option<String>,
+    },
+    Reauthenticate {
+        account: String,
     },
     Datasets,
     Status {
@@ -156,6 +167,17 @@ fn command(sub: Sub) -> Result<Command, String> {
         Sub::WatchConflicts { count, timeout_s } => Command::WatchConflicts {
             count,
             timeout: timeout_s.map(Duration::from_secs),
+        },
+        Sub::AddAccount { provider } => Command::AddAccount {
+            provider: provider
+                .map(|id| {
+                    ProviderId::parse(&id).map_err(|e| format!("`{id}` is not a provider: {e}"))
+                })
+                .transpose()?,
+        },
+        Sub::Reauthenticate { account } => Command::Reauthenticate {
+            account: AccountId::parse(&account)
+                .map_err(|e| format!("`{account}` is not an account id: {e}"))?,
         },
         Sub::Datasets => Command::Datasets,
         Sub::Status { dataset } => Command::Status { dataset },

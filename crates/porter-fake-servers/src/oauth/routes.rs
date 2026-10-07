@@ -78,6 +78,9 @@ fn authorize(shared: &Shared, request: &Request) -> Response {
     }
 }
 
+/// The `expires_in` of an access token unless a test set another.
+pub(super) const DEFAULT_LIFETIME_S: u64 = 3600;
+
 fn issue(state: &mut State, client_id: &str, scope: &str) -> (String, String, serde_json::Value) {
     let access = next(state, "fake-access");
     let refresh = next(state, "fake-refresh");
@@ -88,7 +91,7 @@ fn issue(state: &mut State, client_id: &str, scope: &str) -> (String, String, se
     };
     state.refresh.insert(refresh.clone(), grant);
     let body = json!({
-        "access_token": access, "token_type": "Bearer", "expires_in": 3600,
+        "access_token": access, "token_type": "Bearer", "expires_in": state.lifetime_s,
         "refresh_token": refresh, "scope": scope,
     });
     (access, refresh, body)

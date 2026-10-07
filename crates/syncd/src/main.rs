@@ -7,7 +7,8 @@
 //! with no grant `Datasets` answers an empty list and every name the refusal
 //! `NoFittingAccount`. The storage supervisor keeps an app folder mirror running for every
 //! Storage grant (class Files) on a Microsoft account and, with `SYNCD_PHOTOS=on`, the Photos
-//! datasets for every one of class Photos.
+//! datasets for every one of class Photos. A test build (`test-proc-root`) reads
+//! `SYNCD_RESCAN_S` as how often both supervisors read grants again; the default is ten minutes.
 
 use clap::Parser;
 use porter_client::{Accounts, DbusTransport};
@@ -17,7 +18,7 @@ use std::sync::Arc;
 use syncd::datasets::photos::PhotosSwitch;
 use syncd::datasets::pim::{ClientGrants, PimConfig, PimSupervisor, Wiring};
 use syncd::datasets::storage::{ClientStorageGrants, StorageConfig, StorageSupervisor};
-use syncd::paths::{BUILD, Paths, proc_root};
+use syncd::paths::{BUILD, Paths, proc_root, rescan};
 use syncd::scheduler::{Network, Settings};
 use syncd::service::{Access, Hub};
 use syncd::{callers_file, removal, service};
@@ -72,15 +73,22 @@ async fn main() -> ExitCode {
         network,
         owners: Access::default(),
     };
+    // `SYNCD_RESCAN_S` shortens how often grants are read again, in a test build only.
+    let rescan_var = std::env::var("SYNCD_RESCAN_S").ok();
+    let pim = PimConfig::default();
     let _pim = PimSupervisor::new(
         wiring(network.clone()),
         ClientGrants::new(Arc::clone(&accounts)),
-        PimConfig::default(),
+        PimConfig {
+            rescan: rescan(BUILD, rescan_var.clone(), pim.rescan),
+        },
     )
     .spawn();
     // Storage over Graph: the app folder mirror for a Files grant, and Photos for a Photos grant
     // when `SYNCD_PHOTOS=on` (it is off otherwise: there is no Photos app yet).
+    let storage = StorageConfig::default();
     let storage = StorageConfig {
+        rescan: rescan(BUILD, rescan_var, storage.rescan),
         photos: PhotosSwitch::from_var(std::env::var("SYNCD_PHOTOS").ok().as_deref()),
         ..StorageConfig::default()
     };

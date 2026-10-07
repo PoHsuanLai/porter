@@ -10,8 +10,8 @@ use porter_client::{Accounts, ClientError, DbusTransport, Found, InferSession, O
 use porter_core::capability::{Access, Delta, Offered, QuotaReport, StorageScope};
 use porter_core::consent::Usage;
 use porter_core::need::{LlmNeed, MailNeed, NotesNeed, PimNeed, StorageNeed};
-use porter_core::wire::ParentWindow;
-use porter_core::{Candidate, DataClass, Need, Tier, Tokens};
+use porter_core::wire::{ParentWindow, ProviderHint};
+use porter_core::{AccountId, Candidate, DataClass, Need, ProviderId, Tier, Tokens};
 use porter_dbus::{SyncProxy, from_vardict};
 use porter_infer::{
     ChatControl, ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRequest, Knob,
@@ -137,6 +137,18 @@ pub enum Command {
         /// Stop after this long.
         timeout: Option<Duration>,
     },
+    /// Opens accountd's add-account sheet (`Manager.AddAccount`) and waits for the Request's
+    /// `Response`: the account added, or why not.
+    AddAccount {
+        /// The provider whose form opens first; none: the provider list.
+        provider: Option<ProviderId>,
+    },
+    /// Opens the sheet that signs an account in again (`Account.Reauthenticate`) and waits for
+    /// the `Response`.
+    Reauthenticate {
+        /// The account.
+        account: AccountId,
+    },
     /// The datasets syncd shows this app.
     Datasets,
     /// One dataset's status.
@@ -178,6 +190,8 @@ pub async fn run(
         Command::WatchConflicts { count, timeout } => {
             watch_conflicts(connection, count, timeout, emit).await
         }
+        Command::AddAccount { provider } => add_account(&accounts, provider, emit).await,
+        Command::Reauthenticate { account } => reauthenticate(&accounts, &account, emit).await,
         Command::Datasets => match SyncProxy::new(connection).await {
             Ok(sync) => match sync.datasets().await {
                 Ok(names) => {
@@ -205,6 +219,50 @@ pub async fn run(
                 false
             }
         },
+    }
+}
+
+/// What a sheet that did not finish tells: `refused` with accountd's word for it (`Cancelled`
+/// when the person closed the sheet, `Unavailable` when no sheet host answered, ...).
+fn sheet_failure(why: ClientError, emit: &mut impl FnMut(Value)) -> bool {
+    match why {
+        ClientError::Refused(refusal) => {
+            emit(json!({ "result": "refused", "refusal": format!("{refusal:?}") }));
+        }
+        other => emit(failure(other)),
+    }
+    false
+}
+
+async fn add_account(
+    accounts: &Accounts<DbusTransport>,
+    provider: Option<ProviderId>,
+    emit: &mut impl FnMut(Value),
+) -> bool {
+    let hint = provider.map_or(ProviderHint::Any, ProviderHint::Provider);
+    match accounts.add_account(hint, &ParentWindow::Unparented).await {
+        Ok(account) => {
+            emit(json!({ "result": "added", "account": account.as_str() }));
+            true
+        }
+        Err(why) => sheet_failure(why, emit),
+    }
+}
+
+async fn reauthenticate(
+    accounts: &Accounts<DbusTransport>,
+    account: &AccountId,
+    emit: &mut impl FnMut(Value),
+) -> bool {
+    match accounts
+        .reauthenticate(account, &ParentWindow::Unparented)
+        .await
+    {
+        Ok(()) => {
+            emit(json!({ "result": "reauthenticated", "account": account.as_str() }));
+            true
+        }
+        Err(why) => sheet_failure(why, emit),
     }
 }
 

@@ -1,5 +1,6 @@
 //! `porter-rig-servers --dir <scratch> [--imap] [--smtp] [--pop3] [--dav] [--nextcloud]
-//! [--oauth] [--graph] [--ollama] [--llm-api] [--tls implicit|starttls|plain]`
+//! [--oauth] [--graph] [--token-lifetime-s N] [--ollama] [--llm-api]
+//! [--tls implicit|starttls|plain]`
 //!
 //! Starts the fakes on 127.0.0.1, writes `<scratch>/rig.json` and `<scratch>/ca.pem`, serves
 //! the control endpoint (see `porter_rig::control`) and waits. SIGTERM, SIGINT or
@@ -51,6 +52,10 @@ struct Args {
     /// The Graph drive (starts the issuer too: the drive accepts its tokens).
     #[arg(long)]
     graph: bool,
+    /// The `expires_in` of the issuer's access tokens, in seconds (the issuer's own: 3600). A
+    /// short one makes a daemon refresh again inside a scenario.
+    #[arg(long, value_name = "SECONDS")]
+    token_lifetime_s: Option<u64>,
     /// An Ollama (stop and start it from the control endpoint).
     #[arg(long)]
     ollama: bool,
@@ -79,6 +84,7 @@ async fn main() -> ExitCode {
         nextcloud: args.nextcloud,
         oauth: args.oauth,
         graph: args.graph,
+        token_lifetime_s: args.token_lifetime_s,
         ollama: args.ollama,
         llm_api: args.llm_api,
         tls: match args.tls {
@@ -98,6 +104,9 @@ async fn main() -> ExitCode {
     let levers = Levers {
         issuer: rig.issuer(),
         graph: rig.graph(),
+        imap: rig.imap(),
+        smtp: rig.smtp(),
+        pop3: rig.pop3(),
         ollama: rig.ollama(),
         rig: Arc::new(Mutex::new(String::new())),
         stop: Arc::clone(&stop),
