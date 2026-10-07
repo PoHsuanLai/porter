@@ -9,7 +9,7 @@ use common::{Server, TOKEN};
 use porter_fake_servers::google::md5_hex;
 use porter_sync::{
     Anchor, BaseVersion, Blob, ByteRange, Change, Cursor, ItemPath, More, PutItem, PutRefused,
-    PutTarget, RemoteId, Replica as _, ReplicaError, RetryAfter,
+    PutTarget, Replica as _, ReplicaError, RetryAfter,
 };
 use storage_gdrive::{CHUNK_UNIT, Uploads};
 
@@ -190,7 +190,7 @@ async fn a_small_file_is_one_multipart_request_and_a_large_one_a_resumable_sessi
     replica.changes(Cursor::Start).await.expect("listing");
     let before = server.google.hits().len();
 
-    let (small_id, small_version) = replica
+    let (small_id, _) = replica
         .put(new_item("small.bin", &[7; 900]), BaseVersion::Absent)
         .await
         .expect("small");
@@ -272,7 +272,6 @@ async fn a_small_file_is_one_multipart_request_and_a_large_one_a_resumable_sessi
             .all(|h| !h.target.contains("upload")),
         "a stale base sends no content"
     );
-    let _ = small_version;
 }
 
 fn server_version(server: &Server, path: &str) -> porter_sync::RemoteVersion {
@@ -413,5 +412,4 @@ async fn every_request_carries_the_relays_bearer_and_the_replica_adds_none_of_it
     );
     // The app data folder only: no request names a space or a drive but its own.
     assert!(hits.iter().all(|h| !h.target.contains("spaces=drive")));
-    let _ = RemoteId(String::new());
 }

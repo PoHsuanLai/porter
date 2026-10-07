@@ -86,6 +86,27 @@ impl Paths {
             .join(account.as_str())
     }
 
+    /// The folder whose files syncd uploads to the account's Google Photos,
+    /// `$XDG_DATA_HOME/porter/photos/<account>/upload`: inside the Photos library directory, so
+    /// `AccountRemoved` wipes it with the rest.
+    pub fn photos_upload_dir(&self, account: &AccountDir) -> PathBuf {
+        self.photos_dir(account).join("upload")
+    }
+
+    /// Where the Google Photos picker puts what the person picked,
+    /// `$XDG_DATA_HOME/porter/photos/<account>/picked`; one folder per session below it.
+    pub fn photos_picked_dir(&self, account: &AccountDir) -> PathBuf {
+        self.photos_dir(account).join("picked")
+    }
+
+    /// The ledger of what was uploaded to Google Photos (the album and every content hash sent),
+    /// beside the account's journals so it goes with them.
+    pub fn photos_ledger(&self, account: &AccountDir) -> PathBuf {
+        self.journals
+            .join(account.as_str())
+            .join("google_photos_upload.ledger.json")
+    }
+
     /// Everything of one account that syncd keeps: its journals and its mirrors.
     pub fn account_dirs(&self, account: &AccountDir) -> [PathBuf; 2] {
         [

@@ -352,7 +352,7 @@ fn chunk(drive: &mut Drive, request: &Request) -> Response {
             return incomplete(upload.received.len());
         }
         let last = total.is_some_and(|t| start + request.body.len() >= t);
-        if !last && request.body.len() % CHUNK_UNIT != 0 {
+        if !last && !request.body.len().is_multiple_of(CHUNK_UNIT) {
             return error(400, "badRequest");
         }
         upload.received.extend_from_slice(&request.body);

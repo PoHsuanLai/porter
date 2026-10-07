@@ -15,6 +15,7 @@ porter-dav = { workspace = true }
 porter-dbus = { workspace = true }
 porter-http = { workspace = true }
 porter-sync = { workspace = true }
+storage-gdrive = { workspace = true }
 storage-graph = { workspace = true }
 storage-webdav = { workspace = true }
 clap = { workspace = true }

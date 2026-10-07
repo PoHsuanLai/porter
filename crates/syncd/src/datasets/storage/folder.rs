@@ -108,12 +108,22 @@ fn prune(root: &Path, from: &Path) {
 #[derive(Debug, Clone)]
 pub struct FolderDataset {
     root: PathBuf,
+    slug: DatasetId,
 }
 
 impl FolderDataset {
-    /// The files under `root` (made when it is first written to).
+    /// The files under `root` (made when it is first written to), as the dataset
+    /// `storage_app_folder`.
     pub fn new(root: PathBuf) -> Self {
-        Self { root }
+        Self::named(root, SLUG).expect("the app folder's slug is one")
+    }
+
+    /// The files under `root` as the dataset `slug`; `None` if that is not a dataset name.
+    pub fn named(root: PathBuf, slug: &str) -> Option<Self> {
+        Some(Self {
+            root,
+            slug: DatasetId::parse(slug)?,
+        })
     }
 
     /// The directory.
@@ -128,7 +138,7 @@ impl FolderDataset {
 
 impl Dataset for FolderDataset {
     fn id(&self) -> DatasetId {
-        DatasetId::parse(SLUG).expect("a slug")
+        self.slug.clone()
     }
 
     /// Both sides changed is shown to the owning app, which settles it with `Sync1.Resolve`.

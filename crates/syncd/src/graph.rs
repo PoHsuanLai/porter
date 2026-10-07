@@ -55,7 +55,7 @@ impl<T: Transport> Dial for LinkedDial<T> {
 }
 
 /// The origin as the bare URL `OpenLinked` takes (`https://host[:port]`, an IPv6 host bracketed).
-fn bare_url(origin: &Origin) -> Option<EndpointUrl> {
+pub(crate) fn bare_url(origin: &Origin) -> Option<EndpointUrl> {
     let host = match origin.host.contains(':') {
         true => format!("[{}]", origin.host),
         false => origin.host.clone(),

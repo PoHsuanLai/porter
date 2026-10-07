@@ -3135,6 +3135,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "storage-gdrive",
  "storage-graph",
  "storage-webdav",
  "syncd",

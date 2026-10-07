@@ -22,13 +22,15 @@ pub fn md5_hex(bytes: &[u8]) -> String {
         message.push(0);
     }
     message.extend_from_slice(&((bytes.len() as u64).wrapping_mul(8)).to_le_bytes());
-    for block in message.chunks_exact(64) {
+    for block in message.as_chunks::<64>().0 {
         let words: Vec<u32> = block
-            .chunks_exact(4)
-            .map(|w| u32::from_le_bytes([w[0], w[1], w[2], w[3]]))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|w| u32::from_le_bytes(*w))
             .collect();
         let [mut a, mut b, mut c, mut d] = state;
-        for i in 0..64 {
+        for (i, shift) in S.iter().enumerate() {
             let (f, g) = match i / 16 {
                 0 => ((b & c) | (!b & d), i),
                 1 => ((d & b) | (!d & c), (5 * i + 1) % 16),
@@ -39,7 +41,7 @@ pub fn md5_hex(bytes: &[u8]) -> String {
                 .wrapping_add(f)
                 .wrapping_add(k(i))
                 .wrapping_add(words[g])
-                .rotate_left(S[i]);
+                .rotate_left(*shift);
             (a, d, c) = (d, c, b);
             b = b.wrapping_add(rotated);
         }

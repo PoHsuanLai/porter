@@ -26,6 +26,7 @@
 //! fresh account, streaming transfers of originals larger than one `Http` body (FINDINGS).
 
 pub(crate) mod cas;
+pub mod google;
 mod hlc;
 mod library;
 mod manifest;

@@ -3,6 +3,7 @@
 //! to the claims, the session's tokens per audience, the seven day rule, revoke, and the guide
 //! the owner follows matching the scopes the code asks.
 
+mod drive_photos;
 mod guide;
 mod rig;
 mod session;
