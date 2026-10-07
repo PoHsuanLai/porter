@@ -23,6 +23,7 @@ members = [
   "crates/inferd",
   "crates/storage-webdav",
   "crates/storage-graph",
+  "crates/porter-rig",
 ]
 
 [workspace.package]

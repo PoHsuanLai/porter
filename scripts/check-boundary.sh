@@ -102,6 +102,7 @@ EDGES=(
   "storage-webdav: porter-core porter-dav porter-http porter-sync"
   "storage-graph: porter-core porter-http porter-sync storage-webdav"
   "syncd: porter-client porter-core porter-dav porter-dbus porter-http porter-sync storage-graph storage-webdav"
+  "porter-rig: porter-client porter-core porter-dbus porter-fake porter-fake-servers porter-infer"
   "inferd: ds-settings porter-core porter-dbus porter-discover porter-http porter-infer porter-provider cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
 )
 for edge in "${EDGES[@]}"; do
@@ -152,5 +153,27 @@ for testonly in porter-fake-servers; do
     echo "test-only: nothing depends on $testonly"
   fi
 done
+
+# porter-rig is test tooling (the rig a jailed scenario drives porter with): no other crate of
+# ours names it, not even as a dev dependency, it is never published, and nothing in dist/ (the
+# units, the packaging) mentions it, so it is never installed.
+for manifest in crates/*/Cargo.toml; do
+  [ "$manifest" = "crates/porter-rig/Cargo.toml" ] && continue
+  if grep -q 'porter-rig' "$manifest"; then
+    echo "LEAK: $manifest names porter-rig"
+    fail=1
+  fi
+done
+if ! grep -q '^publish.workspace = true' crates/porter-rig/Cargo.toml \
+  || ! grep -q '^publish = false' Cargo.toml; then
+  echo "LEAK: porter-rig is publishable"
+  fail=1
+fi
+if grep -rq 'porter-rig' dist; then
+  echo "LEAK: dist/ names porter-rig"
+  fail=1
+else
+  echo "test-only: nothing depends on porter-rig, and dist/ does not name it"
+fi
 
 exit "$fail"

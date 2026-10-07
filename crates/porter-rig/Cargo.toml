@@ -1,0 +1,48 @@
+[package]
+name = "porter-rig"
+description = "Test tooling, never installed and never in dist: the rig a jailed scenario drives porter with. porter-rig-servers starts porter-fake-servers' fakes on loopback and plants known secrets, porter-rig-client acts as an app over the session bus, porter-rig-secrets is a fake org.freedesktop.secrets so the real accountd runs with no keyring. Nothing shipped depends on it."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "porter-rig-servers"
+path = "src/bin/porter-rig-servers.rs"
+
+[[bin]]
+name = "porter-rig-client"
+path = "src/bin/porter-rig-client.rs"
+
+[[bin]]
+name = "porter-rig-secrets"
+path = "src/bin/porter-rig-secrets.rs"
+
+[dependencies]
+porter-core = { workspace = true }
+porter-client = { workspace = true, features = ["dbus"] }
+porter-dbus = { workspace = true }
+porter-fake = { workspace = true }
+porter-fake-servers = { workspace = true }
+porter-infer = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# `signal` is the one feature this crate adds to the pinned line: SIGTERM ends the servers cleanly.
+tokio = { workspace = true, features = ["signal"] }
+zbus = { workspace = true }
+
+[dev-dependencies]
+accountd = { path = "../accountd" }
+porter-provider = { workspace = true }
+porter-secrets = { workspace = true, features = ["oo7"] }
+porter-service = { workspace = true }
+porter-sync = { workspace = true }
+rustix = { workspace = true }
+syncd = { path = "../syncd", features = ["testing"] }
+tokio = { workspace = true }
+
+[lints]
+workspace = true

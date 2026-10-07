@@ -2315,6 +2315,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "porter-rig"
+version = "0.1.0"
+dependencies = [
+ "accountd",
+ "clap",
+ "porter-client",
+ "porter-core",
+ "porter-dbus",
+ "porter-fake",
+ "porter-fake-servers",
+ "porter-infer",
+ "porter-provider",
+ "porter-secrets",
+ "porter-service",
+ "porter-sync",
+ "rustix",
+ "serde",
+ "serde_json",
+ "syncd",
+ "tokio",
+ "zbus",
+]
+
+[[package]]
 name = "porter-secrets"
 version = "0.1.0"
 dependencies = [
