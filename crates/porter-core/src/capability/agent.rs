@@ -14,7 +14,7 @@ use std::collections::BTreeSet;
 /// id): 1 to 48 bytes of lowercase ASCII letters, digits and `-`, starting with a letter.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
-pub struct AgentProgram(String);
+pub struct AgentProgram(Box<str>);
 
 impl AgentProgram {
     /// The program written as `text`.
@@ -24,7 +24,7 @@ impl AgentProgram {
             && bytes.next().is_some_and(|b| b.is_ascii_lowercase())
             && bytes.all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
         if ok {
-            Ok(Self(text.to_owned()))
+            Ok(Self(text.into()))
         } else {
             Err(CoreError::MalformedId {
                 what: "agent program",
@@ -48,7 +48,7 @@ impl TryFrom<String> for AgentProgram {
 
 impl From<AgentProgram> for String {
     fn from(program: AgentProgram) -> String {
-        program.0
+        program.0.into()
     }
 }
 
