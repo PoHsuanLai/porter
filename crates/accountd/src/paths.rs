@@ -14,9 +14,6 @@ pub struct Paths {
     pub callers_system: PathBuf,
     /// The user's caller table, `$XDG_CONFIG_HOME/porter/callers.toml`; its rows win.
     pub callers_user: PathBuf,
-    /// The daemon's config with its `[adopt]` table, `/etc/porter/accountd.toml`. Only the
-    /// system's: a user file could let any app read the legacy store.
-    pub config: PathBuf,
     /// The shipped clients, `/usr/share/porter/clients.toml`.
     pub clients_shipped: PathBuf,
     /// The user's clients, `$XDG_CONFIG_HOME/porter/clients.toml` (Settings writes it).
@@ -86,7 +83,6 @@ impl Paths {
             audit: state.join("quire/accountd/audit.jsonl"),
             callers_system: PathBuf::from("/etc/porter/callers.toml"),
             callers_user: config.join("porter/callers.toml"),
-            config: PathBuf::from("/etc/porter/accountd.toml"),
             clients_shipped: PathBuf::from("/usr/share/porter/clients.toml"),
             clients_user: config.join("porter/clients.toml"),
             provider_dirs,

@@ -28,10 +28,6 @@
      <arg name="options" type="a{sv}" direction="in"/>
      <arg type="o" direction="out"/>
    </method>
-   <method name="Adopt">
-     <arg name="legacy" type="a{sv}" direction="in"/>
-     <arg type="s" direction="out"/>
-   </method>
    <method name="NeedingReauth">
      <arg type="a(os)" direction="out"/>
    </method>

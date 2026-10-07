@@ -92,8 +92,6 @@ async fn an_unknown_sender_is_access_denied_everywhere() {
         .await
         .expect_err("query");
     assert_eq!(error_name(&query), ACCESS_DENIED);
-    let adopt = manager.adopt(&Details::new()).await.expect_err("adopt");
-    assert_eq!(error_name(&adopt), ACCESS_DENIED);
     let tokens = TokensProxy::new(&stranger).await.expect("proxy");
     let issue = tokens.issue_token("g", "a").await.expect_err("token");
     assert_eq!(error_name(&issue), ACCESS_DENIED);

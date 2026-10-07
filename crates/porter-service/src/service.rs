@@ -165,7 +165,6 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             AccountsRequest::OpenAuthenticated { .. } | AccountsRequest::OpenLinked { .. } => {
                 AccountsReply::Refused(Refusal::Unavailable)
             }
-            AccountsRequest::Adopt { legacy } => self.adopt(caller, legacy).await,
         }
     }
 

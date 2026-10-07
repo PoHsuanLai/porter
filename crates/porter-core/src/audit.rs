@@ -65,7 +65,8 @@ pub enum AuditEvent {
     Reauthed,
     /// An account and everything filed for it was removed.
     Removed,
-    /// An app's legacy account was adopted.
+    /// An app's legacy account was adopted. No longer written (the `Adopt` request is gone); kept
+    /// so an `audit.jsonl` written by an earlier daemon still reads.
     Adopted,
 }
 
@@ -138,5 +139,12 @@ mod tests {
                 entry
             );
         }
+    }
+
+    #[test]
+    fn a_line_an_earlier_daemon_wrote_for_an_adoption_still_reads() {
+        let line = r#"{"at":1790000000,"app":null,"account":"cloud","event":{"kind":"adopted"}}"#;
+        let entry: AuditEntry = serde_json::from_str(line).expect("old line");
+        assert_eq!(entry.event, AuditEvent::Adopted);
     }
 }

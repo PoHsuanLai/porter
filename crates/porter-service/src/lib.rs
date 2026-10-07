@@ -7,7 +7,6 @@
 mod add;
 mod add_flow;
 mod add_store;
-mod adopt;
 mod audience;
 mod audit;
 mod choose;
@@ -24,7 +23,6 @@ mod sync_grant;
 mod token;
 
 pub use add_flow::AllowFor;
-pub use adopt::{LegacyFault, LegacyStore, legacy_entry};
 pub use audit::{AuditSink, NoAudit};
 pub use clock::Clock;
 pub use local::{LocalFault, MAX_LOCAL_CLAIMS};

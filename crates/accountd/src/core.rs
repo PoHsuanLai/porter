@@ -8,10 +8,9 @@ use crate::errors::RefusedError;
 use crate::grants::{Grants, Tokens};
 use crate::hub::{Event, audience, events, settings_news, shell_hears};
 use crate::keys::KeyDesk;
-use crate::legacy::AdoptConfig;
 use crate::manager::Manager;
 use crate::relay::{RelayRoots, Relays};
-use porter_core::wire::{LegacyRef, ParentWindow, ProviderHint, Refusal};
+use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
 use porter_core::{
     AccountId, AccountState, AccountsReply, AccountsRequest, AppId, CapabilityKind, Claim,
     EndpointUrl, GrantId, ProviderId, RelayPlan, Toggle,
@@ -20,8 +19,8 @@ use porter_dbus::{ACCOUNTS_BUS, ACCOUNTS_PATH, Caller, CallerRole, Details, acco
 use porter_provider::Provider;
 use porter_secrets::{Secrets, SecretsError};
 use porter_service::{
-    AccountService, AuditSink, Clock, LegacyStore, LocalFault, Registry, RegistryStore,
-    RevokeReport, Sheets, SyncClass,
+    AccountService, AuditSink, Clock, LocalFault, Registry, RegistryStore, RevokeReport, Sheets,
+    SyncClass,
 };
 use serde::de::DeserializeOwned;
 use std::borrow::Cow;
@@ -49,19 +48,6 @@ pub trait Host: Send + Sync + 'static {
 
     /// A copy of the registry, for the objects that mirror accounts.
     fn registry(&self) -> Registry;
-
-    /// Adopts a legacy account from `store` under the legacy `service`. A host with no legacy
-    /// store refuses.
-    fn adopt_from(
-        &self,
-        store: &dyn LegacyStore,
-        service: &str,
-        caller: &AppId,
-        legacy: LegacyRef,
-    ) -> impl Future<Output = AccountsReply> + Send {
-        let _ = (store, service, caller, legacy);
-        async { AccountsReply::Refused(Refusal::Unavailable) }
-    }
 
     /// What the relay for `endpoint` under `caller`'s `grant` presents, once the grant and the
     /// endpoint are checked. A host with no relay says unavailable.
@@ -179,16 +165,6 @@ where
         AccountService::registry(self)
     }
 
-    fn adopt_from(
-        &self,
-        store: &dyn LegacyStore,
-        service: &str,
-        caller: &AppId,
-        legacy: LegacyRef,
-    ) -> impl Future<Output = AccountsReply> + Send {
-        AccountService::adopt_from(self, store, service, caller, legacy)
-    }
-
     fn open_relay(
         &self,
         caller: &AppId,
@@ -281,8 +257,6 @@ pub(crate) struct Core<H, C> {
     pub(crate) roster: Mutex<BTreeMap<String, Caller>>,
     /// The registry as clients were last told of it.
     pub(crate) published: Mutex<Registry>,
-    /// What `Adopt` reads and who may ask.
-    pub(crate) adopt: AdoptConfig,
     /// The user's `clients.toml`, which Settings writes.
     pub(crate) clients: Option<std::path::PathBuf>,
     /// The connector the authenticated relays dial with.
@@ -493,8 +467,6 @@ pub(crate) fn handle_token(options: &Details) -> Option<String> {
 /// What `serve_with` adds to the objects every accountd serves.
 #[derive(Debug, Default)]
 pub struct Options {
-    /// The legacy store `Manager.Adopt` reads and the apps allowed to use it.
-    pub adopt: AdoptConfig,
     /// The user's `clients.toml` (`$XDG_CONFIG_HOME/porter/clients.toml`), which the settings
     /// module writes; none refuses writes.
     pub clients: Option<std::path::PathBuf>,
@@ -510,7 +482,7 @@ pub struct Options {
 
 /// Serves `org.quire.Accounts1` on `connection` over `host`, answering for the apps `callers`
 /// names, and takes the name. One `Account` object is registered per account the registry holds
-/// now; `Adopt` is refused (no legacy store) and the settings module and `Peer` are served.
+/// now; the settings module and `Peer` are served.
 pub async fn serve<H: Host, C: Callers>(
     connection: &Connection,
     host: Arc<H>,
@@ -534,7 +506,6 @@ pub async fn serve_with<H: Host, C: Callers>(
         connection: connection.clone(),
         roster: Mutex::new(BTreeMap::new()),
         published: Mutex::new(published),
-        adopt: options.adopt,
         clients: options.clients,
         relays: Relays::new(options.relay_roots),
         keys: options.keys,

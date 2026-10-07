@@ -30,8 +30,6 @@ pub enum AccountsReply {
     /// reply, out of band (a D-Bus `h`, an `SCM_RIGHTS` descriptor on the socket frame, an
     /// in-memory duplex in process). The reply itself carries no value.
     Authenticated,
-    /// For `Adopt`: the legacy account is now this account.
-    Adopted(AccountId),
     /// The request was refused, and why.
     Refused(Refusal),
 }

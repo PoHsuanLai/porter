@@ -9,7 +9,7 @@ pub mod host;
 pub use host::SheetHost;
 pub use porter_fake::{mail_account, storage_account};
 
-use accountd::{AdoptConfig, BusSheets, Options, SecretsDesk, TableCallers, serve_with};
+use accountd::{BusSheets, Options, SecretsDesk, TableCallers, serve_with};
 use bus::PrivateBus;
 use host::HostLog;
 use porter_core::{
@@ -208,10 +208,6 @@ impl Rig {
     /// A connection accountd does not know.
     pub async fn stranger(&self) -> zbus::Connection {
         self.bus.connect().await
-    }
-
-    pub fn adopt_nothing() -> AdoptConfig {
-        AdoptConfig::default()
     }
 }
 

@@ -1,10 +1,9 @@
 //! What an app asks accountd. The caller's identity is not part of it: each transport derives
 //! it from the connection.
 
-use crate::account::AccountLabel;
 use crate::consent::Usage;
 use crate::data_class::DataClass;
-use crate::endpoint::{EndpointUrl, ServiceEndpoint};
+use crate::endpoint::EndpointUrl;
 use crate::id::{AccountId, GrantId, ProviderId};
 use crate::need::Need;
 use crate::token::Audience;
@@ -91,45 +90,6 @@ pub enum AccountsRequest {
         /// The origin (`https://host[:port]`, no path), as the link named it.
         origin: EndpointUrl,
     },
-    /// Bring an app's own earlier account in as a porter account: the daemon reads the old
-    /// secret store item itself, so no credential crosses a transport (`Manager.Adopt`). Only
-    /// an app the daemon's `[adopt]` table names may ask, and only for the legacy service the
-    /// table gives it.
-    Adopt {
-        /// What to adopt.
-        legacy: LegacyRef,
-    },
-}
-
-/// An earlier account of the calling app, named by non-secret facts. The legacy store and
-/// service are the daemon's to know (its `[adopt]` table maps the caller to them), and the
-/// credentials are read by the daemon, never sent.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct LegacyRef {
-    /// The id the app filed the account's secrets under (a UUID's hyphenated text is an id).
-    pub account: AccountId,
-    /// The provider it becomes an account of.
-    pub provider: ProviderId,
-    /// What the user reads.
-    pub label: AccountLabel,
-    /// Its servers, which the app already knows.
-    pub endpoints: Vec<ServiceEndpoint>,
-    /// Which of the app's old secret items exist and are to be read.
-    pub items: Vec<LegacyItem>,
-}
-
-/// One of an app's old secret items for an account.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum LegacyItem {
-    /// The incoming server's password.
-    Incoming,
-    /// The outgoing server's password.
-    Outgoing,
-    /// OAuth tokens.
-    OAuth,
-    /// The address book's password (CardDAV).
-    AddressBook,
 }
 
 /// The window a sheet attaches to: an xdg-foreign handle as portals take it

@@ -17,7 +17,6 @@ Each row names the lane of the accounts program (porter PLAN §6) that removes i
 | a runtime account the person removes in Settings comes back the next time inferd reports that runtime (a start of the runtime, a changed model list) | a setting that ignores a runtime (`ai.runtime.<provider>.ignore`), written by detent and read by inferd's probe; not asked for yet |
 | probed models: licence is `open("unknown")` (a runtime does not say), no `StructuredOutput` feature (a probe cannot know it), the context is what the runtime reports or the 2048 floor, and a model with no list name that makes its id is left out | a probe that reads `/api/show` licence and a one-call structured-output check (`Probed` claims) |
 | the Alert before a removal | detent confirms (`Alert{Critical}`, its `ActionWeight::Destructive` row) before it sets `accounts.<id>.remove`; porter-core has no `SheetView` for it, so accountd draws none. If the owner wants accountd to ask too, it needs a `SheetView::ConfirmRemove` (porter-core, an interface ask) |
-| accountd `Adopt` legacy store against a live Secret Service | The integration scenario with mailo's real entries: `Oo7Legacy` finds an item by the attributes `service` and `username` (the platform keyring crate's shape), written from the keyring crate's documentation and not checked against a keyring mailo wrote; the fixtures are `MemoryLegacy` |
 | accountd settings: a service toggled back on | reads as its provider file declares it until the next discovery refreshes it: `Persisted` keeps only effective claims, so the pre-toggle `Discovered` parameters are not kept |
 | accountd `Account` object per account is registered at start and on `AccountAdded`; an account the registry gains outside accountd's own calls (a second accountd process) is not seen | no second writer exists; the registry store is single-writer |
 | porter-discover `HickoryDns` (feature `io`) against a real resolver | The integration scenario that runs discovery on a machine with DNS; W3a built it from mailo's `SystemDns` and tests the parsers and search over table fakes only |
@@ -709,10 +708,13 @@ Decisions, where the brief or the plan left a choice:
   exchange needs the one HTTP seam, and PLAN D12 allowed "a small `porter-http` client". Its
   hyper client is behind feature `hyper` (hyper, hyper-util, http-body-util, tokio, as stoker's
   `model-http` takes them); TLS (hyper-rustls) joins with the first family, see its row above.
-- **`Manager.Adopt(legacy a{sv}) -> s`** is the D-Bus member of `AccountsRequest::Adopt`; accountd
-  does not serve it yet. `LegacyRef` holds non-secret facts (the legacy account id, provider,
-  label, endpoints, which of `Incoming`, `Outgoing`, `OAuth`, `AddressBook` exist); the legacy
-  service comes from the daemon's `[adopt]` table by caller, never from the request.
+- **`Adopt` is removed** (owner decision, drop-adopt lane): accountd holds every account and an
+  app's older keyring sign-ins (mailo's `service=mailo` entries) are not moved; the person signs
+  in again. Gone: `AccountsRequest::Adopt`, `LegacyRef`, `LegacyItem`, `AccountsReply::Adopted`,
+  `Accounts::adopt`, `Manager.Adopt` (and its introspection), accountd's `legacy` module and
+  `[adopt]` table (`/etc/porter/accountd.toml` is no longer read), porter-service's `adopt`.
+  `AuditEvent::Adopted` stays as a variant nothing writes, so an `audit.jsonl` an earlier daemon
+  wrote still reads. `VocabVersion` stays 4.
 - **`Sync1.Status` key `quota`** is `porter_dbus::STATUS_KEY_QUOTA`, a vardict with `used` and, when
   the provider reports a limit, `total` (both `t`); syncd converts porter-sync's `Quota`.
 - `Replica::quota` is a required method; `MemoryReplica` counts live bytes and takes a limit
@@ -735,17 +737,14 @@ Decisions, where the brief or the plan left a choice:
    choice) and wraps `DuplexEnd` as its engines' stream through `ByteStream`
    (`porter_proxy::TokioStream` is the other direction). Read the servers from
    `Candidate.endpoints` instead of `AccountPlan`'s own copies.
-3. **mailo, E2**: `Accounts::adopt(LegacyRef)`; mailo must be named in accountd's `[adopt]`
-   table (`org.quire.Mail = "mailo"`). In process it reads its own entries and files them
-   through `Secrets` directly.
+3. **mailo, E2**: dropped with `Adopt` (the person signs in again).
 4. **sill (W3e)** serves `org.quire.AccountsSheet1` (`dbus/org.quire.AccountsSheet1.xml`): views
    are `porter_core::sheet::SheetView` as JSON, inputs `SheetInput` as JSON (a typed password
    rides in `FieldValue::Secret`). Only accountd's connection may `Open`.
 5. **quire `ds-shell::accounts`** maps `SheetView` states: `Consent`, `Providers`, `SignIn`
    (fields are kinds; the UI words them), `BrowserWait`, `ShowCode`, `Review` (with the
    add-and-allow `allow` app), `Working`, `Failed`, `Done`.
-6. **docket and cua `check-boundary.sh`** (PLAN §5): `Accounts::open_authenticated` and
-   `adopt` join the forbidden calls in agent crates.
+6. **docket and cua `check-boundary.sh`** (PLAN §5): `Accounts::open_authenticated` joins the forbidden calls in agent crates.
 
 ## Open
 
@@ -758,7 +757,7 @@ Decisions, where the brief or the plan left a choice:
 
 - Proxies are not run against skeletons (needs a zbus p2p test); closes with the codec.
 - accountd's `main` resolves `$XDG_STATE_HOME` (`accountd::paths`), loads `FileStore` (refusing a `StoreFault`: the daemon exits and leaves the file alone) and passes it and `FileAudit` to the service. The caller's pid is read from the bus's `GetConnectionCredentials` and not from the bus's `ProcessFD`, so a pid that is reused between the bus's answer and the `/proc` read names the wrong process: `ProcessFD` is a later hardening (it needs zbus's credentials `ProcessFD` and a pidfd-based cgroup read).
-- accountd reads its caller tables from `/etc/porter/callers.toml` and `$XDG_CONFIG_HOME/porter/callers.toml` (the user's rows win), its `[adopt]` table from `/etc/porter/accountd.toml` only (a user file could let any app read the legacy store), provider files from `/usr/share/porter/providers`, `$XDG_DATA_HOME/porter/providers` and each `--providers DIR`, and the user's `clients.toml` from `$XDG_CONFIG_HOME/porter/`. `ACCOUNTD_PROC_ROOT` (a `/proc` fixture for the jailed tests) works only in a build with the non-default `test-proc-root` feature, and the build then logs one line naming it.
+- accountd reads its caller tables from `/etc/porter/callers.toml` and `$XDG_CONFIG_HOME/porter/callers.toml` (the user's rows win), provider files from `/usr/share/porter/providers`, `$XDG_DATA_HOME/porter/providers` and each `--providers DIR`, and the user's `clients.toml` from `$XDG_CONFIG_HOME/porter/`. `ACCOUNTD_PROC_ROOT` (a `/proc` fixture for the jailed tests) works only in a build with the non-default `test-proc-root` feature, and the build then logs one line naming it.
 - `PlanBudget` has no request budget; closes with ChatGPT sign-in (R9).
 - Mail signing keys (OpenPGP, S/MIME) have no `SecretPurpose`; the user decides at the mailo migration.
 - Proposed settings keys without design/22 rows: `ai.local_only`, `ai.floor.<class>` (voice and prompt included), `ai.spend.warn_permille` (800), `ai.model.<kind>.<tier>`.
@@ -1090,7 +1089,7 @@ Lane `voice-inferd`, branch from 0941881. porter-client `Transport::prepare`; in
 - `todo!()` is allowed only behind a frozen interface; every such stub is listed above.
 - deny.toml is quire's verbatim (the unused MPL allowance warns).
 - The provider file is `ProviderSpec`'s serde form; every field is written, none defaulted.
-- porter-core's vocabulary is `VocabVersion(3)`: endpoints on `Account` and `Candidate`, `OpenAuthenticated`, `Adopt` and the refusal `EndpointNotGranted` joined (2 added computer use, `DataClass::Voice` and `GrantKey.space`). Version 3 is the first a file is written with (`FIRST_PERSISTED`), so a later bump needs a migration row.
+- porter-core's vocabulary is `VocabVersion(3)`: endpoints on `Account` and `Candidate`, `OpenAuthenticated` and the refusal `EndpointNotGranted` joined (2 added computer use, `DataClass::Voice` and `GrantKey.space`). Version 3 is the first a file is written with (`FIRST_PERSISTED`), so a later bump needs a migration row.
 - `AuditEntry.class` (the request's data class) has no serde default: DataClass has none, and nothing reads old `audit.jsonl` lines back, so old lines do not parse.
 - inferd's replay engine takes `record = "<file>"` (prompts to disk, 0600, replay engines only, never in dist). inferd's `test-proc-root` feature (off by default, never in dist) honours `INFERD_PROC_ROOT=<dir>` for caller lookup (`<dir>/<pid>/cgroup`); without it the variable is ignored with a line on stderr.
 - `StageNote.name` (the model's label) is read by the agent session's footer ("Answered by <name>"): inferd fills it from stoker's `ModelEntry.label` of the model that ran the stage, local or hosted, so the label lives on inferd's `Routing` and the session `Phase`, not on `ServedBy` or `ModelCard`. A model with no catalogue entry (the test `with_remote` cards) has no name. The live session sends the `Answer` note once per chat or task turn (a second turn on the same session sends it again); a voice chat turn runs `run_pipeline`, which sends one note per stage, and the session's own note is replaced for that turn (the machine sends neither it nor `Routed`): exactly one `Answer` note per turn.

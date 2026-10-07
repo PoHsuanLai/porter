@@ -15,11 +15,11 @@
 //!
 //! - `Account` properties (`Id`, `Provider`, `Label`, `State`, `Capabilities`), readable only with a
 //!   grant for the account; the manager's five signals, unicast to the apps that hold a relevant
-//!   grant (`hub`); `Manager.Adopt` through the `[adopt]` table and a legacy store (`legacy`);
+//!   grant (`hub`);
 //!   `Peer` for the porter daemons; and `org.quire.SettingsModule1` at `settings_path()` for the
 //!   Settings role, through quire's `ds_settings::live`.
 //! - Roles: an `Agent` is refused `Choose`, `AddAccount`, `Reauthenticate`, `IssueToken`,
-//!   `OpenAuthenticated`, `OpenLinked` and `Adopt` (`Refusal::Denied`).
+//!   `OpenAuthenticated` and `OpenLinked` (`Refusal::Denied`).
 //! - `BusSheets` is the sheet link to the host over `org.quire.AccountsSheet1`.
 //!
 //! - `Tokens.OpenAuthenticated`: the grant and endpoint checked by the service, then a socketpair
@@ -47,7 +47,6 @@ mod errors;
 mod grants;
 mod hub;
 mod keys;
-mod legacy;
 mod manager;
 pub mod paths;
 mod peer;
@@ -67,7 +66,6 @@ pub use callers_file::{CallerFileError, load_callers, table_from_file, table_fro
 pub use core::{Host, Options, serve, serve_with};
 pub use errors::RefusedError;
 pub use keys::{KeyDesk, RESOLVE_AUDIENCE, SecretsDesk, sealed_key};
-pub use legacy::{AdoptConfig, AdoptTable, MemoryLegacy, Oo7Legacy, from_mailo};
 pub use relay::RelayRoots;
 pub use settings::settings_path;
 pub use sheets::{BusLink, BusSheets};

@@ -33,10 +33,6 @@ pub trait Manager {
         parent_window: &str,
         options: &Details,
     ) -> zbus::Result<OwnedObjectPath>;
-    /// Brings the caller's own earlier account in as an account of porter: `legacy` names it by
-    /// non-secret facts (`LegacyRef`), and accountd reads the old secret items itself. Only an
-    /// app accountd's `[adopt]` table names may ask. Returns the account's id.
-    fn adopt(&self, legacy: &Details) -> zbus::Result<String>;
     /// The accounts that need signing in again now, as object path and label: only the shell
     /// (`CallerRole::SheetHost`) may ask. Asking also joins the caller to the connections that
     /// are sent `NeedsReauth` for every account, and `State` changes of every account.
@@ -93,11 +89,6 @@ impl ManagerSkeleton {
         options: Details,
     ) -> fdo::Result<OwnedObjectPath> {
         let _ = (provider_hint, parent_window, options);
-        Err(crate::introspect::frozen())
-    }
-
-    fn adopt(&self, legacy: Details) -> fdo::Result<String> {
-        let _ = legacy;
         Err(crate::introspect::frozen())
     }
 

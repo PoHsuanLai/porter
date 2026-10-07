@@ -23,7 +23,7 @@ use porter_core::sheet::{
     SheetInput, SheetView, SignInFault, SignInView, UserCode,
 };
 use porter_core::store::{AccountToggle, Persisted};
-use porter_core::wire::{LegacyItem, LegacyRef, ParentWindow, ProviderHint, Refusal};
+use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
 use porter_core::*;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -234,21 +234,6 @@ fn endpoints() -> Vec<ServiceEndpoint> {
             login: LoginName("ada@example.org".into()),
         },
     ]
-}
-
-fn legacy_ref() -> LegacyRef {
-    LegacyRef {
-        account: account_id("67e55044-10b1-426f-9247-bb680e5fe0c8"),
-        provider: ProviderId::parse("generic-imap").expect("provider"),
-        label: AccountLabel("ada@example.org".into()),
-        endpoints: endpoints()[..2].to_vec(),
-        items: vec![
-            LegacyItem::Incoming,
-            LegacyItem::Outgoing,
-            LegacyItem::OAuth,
-            LegacyItem::AddressBook,
-        ],
-    }
 }
 
 fn restriction() -> Restriction {
@@ -477,9 +462,6 @@ fn every_request_and_reply_round_trips() {
             grant: grant_id("g1"),
             origin: endpoints()[0].url.clone(),
         },
-        AccountsRequest::Adopt {
-            legacy: legacy_ref(),
-        },
     ];
     requests.iter().for_each(round_trip);
     let replies = vec![
@@ -496,7 +478,6 @@ fn every_request_and_reply_round_trips() {
             expires: UnixSeconds(1),
         }),
         AccountsReply::Authenticated,
-        AccountsReply::Adopted(account_id("cloud")),
         AccountsReply::Refused(Refusal::AudienceNotGranted),
         AccountsReply::Refused(Refusal::EndpointNotGranted),
     ];
@@ -600,7 +581,6 @@ fn endpoints_and_stored_documents_round_trip() {
     ] {
         round_trip(&protocol);
     }
-    round_trip(&legacy_ref());
     let stored = Persisted {
         vocab: VocabVersion::CURRENT,
         accounts: vec![Account {

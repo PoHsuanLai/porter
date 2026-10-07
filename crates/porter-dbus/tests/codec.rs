@@ -361,30 +361,6 @@ fn a_token_round_trips_and_an_unknown_kind_is_refused() {
 }
 
 #[test]
-fn a_legacy_reference_survives_its_vardict() {
-    use porter_core::wire::{LegacyItem, LegacyRef};
-    use porter_core::{
-        AccountLabel, EndpointUrl, Family, LoginName, ProviderId, ServiceEndpoint, Tls,
-    };
-    use porter_dbus::{legacy_from_dbus, legacy_to_dbus};
-    let legacy = LegacyRef {
-        account: AccountId::parse("67e55044-10b1-426f-9247-bb680e5fe0c8").expect("id"),
-        provider: ProviderId::parse("generic-imap").expect("provider"),
-        label: AccountLabel("ada@example.org".into()),
-        endpoints: vec![ServiceEndpoint {
-            family: Family::Imap,
-            url: EndpointUrl::parse("imaps://imap.example.org").expect("url"),
-            tls: Tls::Implicit,
-            login: LoginName("ada@example.org".into()),
-        }],
-        items: vec![LegacyItem::Incoming, LegacyItem::OAuth],
-    };
-    let details = legacy_to_dbus(&legacy);
-    assert_eq!(legacy_from_dbus(&details), Ok(legacy));
-    assert!(legacy_from_dbus(&Default::default()).is_err());
-}
-
-#[test]
 fn a_candidate_carries_its_endpoints_in_the_endpoints_key() {
     let [with, without] = <[Candidate; 2]>::try_from(candidates()).expect("two");
     let arg = candidate_to_dbus(&with);

@@ -8,7 +8,6 @@ use crate::transport::{AnyTransport, Transport};
 #[cfg(feature = "infer")]
 use porter_core::Tier;
 use porter_core::consent::{Grant, Usage};
-use porter_core::wire::LegacyRef;
 use porter_core::wire::{ParentWindow, ProviderHint};
 use porter_core::{
     AccountId, AccountsReply, AccountsRequest, Audience, Candidate, DataClass, EndpointUrl,
@@ -202,20 +201,6 @@ impl<T: Transport> Accounts<T> {
         match self.transport.open_linked(grant, origin).await? {
             Relayed::Stream(stream) => Ok(stream),
             Relayed::Refused(refusal) => Err(ClientError::Refused(refusal)),
-        }
-    }
-
-    /// Brings the app's own earlier account in as an account of porter (mailo's keyring entries
-    /// become a porter account): `legacy` names it by non-secret facts and accountd reads the
-    /// old secret items itself, so no credential crosses the transport.
-    pub async fn adopt(&self, legacy: LegacyRef) -> Result<AccountId, ClientError> {
-        match self
-            .transport
-            .call(AccountsRequest::Adopt { legacy })
-            .await?
-        {
-            AccountsReply::Adopted(account) => Ok(account),
-            other => Err(unexpected(other)),
         }
     }
 

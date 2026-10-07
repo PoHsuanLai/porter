@@ -8,7 +8,7 @@ use porter_core::wire::Refusal;
 use porter_core::{AccountState, AccountsReply, AccountsRequest};
 use porter_dbus::{
     CallerRole, CandidateArg, Details, NeedArg, SheetKind, account_path, candidate_to_dbus,
-    legacy_from_dbus, need_from_dbus,
+    need_from_dbus,
 };
 use std::sync::Arc;
 use zbus::Connection;
@@ -120,36 +120,6 @@ impl<H: Host, C: Callers> Manager<H, C> {
                 request,
             )
             .await
-    }
-
-    /// Brings the caller's own earlier account in (design/31 §4.4): the daemon reads the old
-    /// secret items itself, for the legacy service its `[adopt]` table names for this caller.
-    async fn adopt(
-        &self,
-        #[zbus(header)] header: Header<'_>,
-        legacy: Details,
-    ) -> Result<String, RefusedError> {
-        let app = self.0.acting(&header).await?;
-        let service = self
-            .0
-            .adopt
-            .table
-            .service_of(&app.name)
-            .ok_or_else(|| RefusedError::of(Refusal::Denied))?;
-        let store = self
-            .0
-            .adopt
-            .store
-            .as_deref()
-            .ok_or_else(|| RefusedError::of(Refusal::Unavailable))?;
-        let legacy = legacy_from_dbus(&legacy).map_err(RefusedError::invalid)?;
-        let reply = self.0.host.adopt_from(store, service, &app, legacy).await;
-        self.0.publish().await;
-        match reply {
-            AccountsReply::Adopted(id) => Ok(id.to_string()),
-            AccountsReply::Refused(refusal) => Err(RefusedError::of(refusal)),
-            other => Err(mismatched(other)),
-        }
     }
 
     /// The accounts that need signing in again now, for the shell alone (`SheetHost`). Asking

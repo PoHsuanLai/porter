@@ -34,7 +34,6 @@ fn every_accounts_member_is_declared() {
         "<method name=\"IssueToken\">",
         "<method name=\"OpenAuthenticated\">",
         "<method name=\"OpenLinked\">",
-        "<method name=\"Adopt\">",
         "<method name=\"Close\">",
         "<signal name=\"AccountAdded\">",
         "<signal name=\"AccountRemoved\">",

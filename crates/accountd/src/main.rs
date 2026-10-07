@@ -11,8 +11,8 @@ mod clock;
 use accountd::add::{AddArgs, StdTerminal, TerminalSheets};
 use accountd::paths::{BUILD, Paths, proc_root};
 use accountd::{
-    AdoptConfig, AdoptTable, AppNames, BusSheets, FileAudit, FileStore, Oo7Legacy, Options,
-    RelayRoots, SecretsDesk, load_callers, serve_with,
+    AppNames, BusSheets, FileAudit, FileStore, Options, RelayRoots, SecretsDesk, load_callers,
+    serve_with,
 };
 use clap::{Parser, Subcommand};
 use clock::SystemClock;
@@ -92,13 +92,6 @@ async fn main() -> ExitCode {
         Ok(table) => table,
         Err(why) => return fail(why),
     };
-    let adopt = match std::fs::read_to_string(&paths.config) {
-        Ok(text) => match AdoptTable::from_config(&text) {
-            Ok(table) => table,
-            Err(why) => return fail(format!("{}: {why}", paths.config.display())),
-        },
-        Err(_) => AdoptTable::default(),
-    };
 
     let loaded = accountd::providers::load_specs(&paths.provider_dirs);
     for (file, why) in &loaded.skipped {
@@ -146,10 +139,6 @@ async fn main() -> ExitCode {
     );
     let keys = SecretsDesk::new(Oo7Secrets, FileAudit::new(paths.audit.clone()), SystemClock);
     let options = Options {
-        adopt: AdoptConfig {
-            table: adopt,
-            store: Some(Arc::new(Oo7Legacy)),
-        },
         clients: Some(paths.clients_user.clone()),
         relay_roots: RelayRoots::Platform,
         keys: Some(Arc::new(keys)),
