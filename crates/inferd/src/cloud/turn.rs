@@ -44,23 +44,21 @@ pub struct CloudPin {
     pub line: SpendLine,
 }
 
-impl Target {
-    /// The turn target of a hosted model on the reach chosen: the provider's own name for it,
-    /// the provider's defaults for sampling, a bounded reply.
-    pub fn remote(model: &RemoteModel) -> Self {
-        let limit = model
-            .entry
-            .capabilities
-            .text_out
-            .as_ref()
-            .map_or(DEFAULT_MAX_OUTPUT, |text| text.max_output.0)
-            .min(DEFAULT_MAX_OUTPUT);
-        Self {
-            name: sp::ModelName(model.reach.model.0.clone()),
-            sampling: DefaultSampling::Provider,
-            max_output: sp::Tokens(limit),
-            flavor: Some(flavor_of(&model.reach.provider)),
-        }
+/// The turn target of a hosted model on the reach chosen: the provider's own name for it, the
+/// provider's defaults for sampling, a bounded reply.
+pub fn remote_target(model: &RemoteModel) -> Target {
+    let limit = model
+        .entry
+        .capabilities
+        .text_out
+        .as_ref()
+        .map_or(DEFAULT_MAX_OUTPUT, |text| text.max_output.0)
+        .min(DEFAULT_MAX_OUTPUT);
+    Target {
+        name: sp::ModelName(model.reach.model.0.clone()),
+        sampling: DefaultSampling::Provider,
+        max_output: sp::Tokens(limit),
+        flavor: Some(flavor_of(&model.reach.provider)),
     }
 }
 
@@ -98,7 +96,7 @@ fn turn_of(
     frames: &Frames,
     tier: porter_core::Tier,
 ) -> Option<Result<(sp::TurnRequest, Temperature), bridge::BridgeError>> {
-    let target = Target::remote(&pin.model);
+    let target = remote_target(&pin.model);
     match request {
         InferRequest::Chat(chat) => {
             let temperature = match chat.control.sampling {

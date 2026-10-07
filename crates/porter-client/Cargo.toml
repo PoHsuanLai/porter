@@ -11,6 +11,11 @@ publish.workspace = true
 [dependencies]
 porter-core = { workspace = true }
 porter-infer = { workspace = true, optional = true }
+porter-bridge = { workspace = true, optional = true }
+model-http = { workspace = true, optional = true, features = ["hyper", "tls"] }
+model-openai-compat = { workspace = true, optional = true }
+model-provider = { workspace = true, optional = true }
+model-wire = { workspace = true, optional = true }
 porter-provider = { workspace = true }
 porter-secrets = { workspace = true }
 porter-service = { workspace = true }
@@ -40,6 +45,15 @@ zbus = { workspace = true }
 # `socket` or `dbus`) and builds no porter-infer, so no stoker.
 default = ["infer"]
 infer = ["dep:porter-infer"]
+# Inference with no inferd: `EngineHost`, a `SessionHost` that routes need -> engine over a table
+# the app gives and drives the OpenAI-compatible engines it points at (Ollama, llama.cpp, LM
+# Studio, vLLM, a company's API), with keys from a `KeySource` the app implements. Off by
+# default: it brings stoker's HTTP client with TLS (hyper, rustls) and a runtime, which neither
+# an accounts-only app nor one that talks to inferd needs.
+engines = [
+  "infer", "dep:tokio", "dep:serde_json", "dep:porter-bridge", "dep:model-http",
+  "dep:model-openai-compat", "dep:model-provider", "dep:model-wire",
+]
 # Frames over a Unix stream socket with descriptors riding on them (what both carriers below
 # share). Pulls in the runtime, so it is off by default: the pure build reaches none.
 framed = ["dep:rustix", "dep:serde", "dep:tokio"]
@@ -52,3 +66,7 @@ socket = ["framed", "dep:latchkey"]
 
 [lints]
 workspace = true
+
+[[test]]
+name = "engines"
+required-features = ["engines"]

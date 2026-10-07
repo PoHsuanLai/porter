@@ -7,6 +7,7 @@ members = [
   "crates/porter-secrets",
   "crates/porter-sync",
   "crates/porter-infer",
+  "crates/porter-bridge",
   "crates/porter-service",
   "crates/porter-dbus",
   "crates/porter-client",
@@ -42,6 +43,7 @@ porter-provider = { path = "crates/porter-provider" }
 porter-secrets  = { path = "crates/porter-secrets" }
 porter-sync     = { path = "crates/porter-sync" }
 porter-infer    = { path = "crates/porter-infer" }
+porter-bridge   = { path = "crates/porter-bridge" }
 porter-service  = { path = "crates/porter-service" }
 porter-dbus     = { path = "crates/porter-dbus" }
 porter-client   = { path = "crates/porter-client" }

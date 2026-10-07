@@ -21,6 +21,7 @@ RULES=(
   "porter-secrets: $EFFECTS"
   "porter-sync: $EFFECTS"
   "porter-infer: $EFFECTS"
+  "porter-bridge: $EFFECTS"
   "porter-service: $EFFECTS"
   "porter-client: $EFFECTS"
   "porter-fake: $EFFECTS"
@@ -89,7 +90,8 @@ EDGES=(
   "porter-infer: porter-core cua-action"
   "porter-service: porter-core porter-provider porter-secrets"
   "porter-dbus: porter-core"
-  "porter-client: porter-core porter-dbus porter-infer porter-provider porter-secrets porter-service"
+  "porter-bridge: porter-core porter-infer model-catalog model-openai-compat model-provider vision-prep"
+  "porter-client: porter-bridge porter-core porter-dbus porter-infer porter-provider porter-secrets porter-service model-http model-openai-compat model-provider model-wire"
   "porter-fake: porter-core porter-infer porter-provider porter-secrets porter-service"
   "porter-fake-servers: porter-core porter-discover porter-fake porter-provider"
   "porter-http: porter-core"
@@ -103,7 +105,7 @@ EDGES=(
   "storage-graph: porter-core porter-http porter-sync storage-webdav"
   "syncd: porter-client porter-core porter-dav porter-dbus porter-http porter-sync storage-graph storage-webdav"
   "porter-rig: porter-client porter-core porter-dbus porter-fake porter-fake-servers porter-infer"
-  "inferd: ds-settings porter-core porter-dbus porter-discover porter-http porter-infer porter-provider cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
+  "inferd: ds-settings porter-bridge porter-core porter-dbus porter-discover porter-http porter-infer porter-provider cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
 )
 for edge in "${EDGES[@]}"; do
   crate="${edge%%:*}"

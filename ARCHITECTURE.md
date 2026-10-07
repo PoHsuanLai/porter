@@ -47,8 +47,9 @@ Allowed direct edges (checked by `scripts/check-boundary.sh`; dev-dependencies a
 | `storage-graph` | `porter-core`, `porter-http`, `porter-sync`, `storage-webdav` (its `StreamHttp`, `Dial`, `Clock`), serde, serde_json, base64 (used by syncd only; no consumer repo) |
 | `storage-webdav` | `porter-core`, `porter-dav`, `porter-http`, `porter-sync` (used by syncd only; no consumer repo) |
 | `porter-infer` | `porter-core`, `cua-action` (stoker's computer-use vocabulary, by sibling path) |
+| `porter-bridge` | `porter-core`, `porter-infer`, and stoker's `model-provider`, `model-catalog`, `model-openai-compat`, `vision-prep` (pure: the one mapping between porter's wire types and stoker's turns, shared by inferd and porter-client's `engines`) |
 | `porter-service` | `porter-core`, `porter-provider`, `porter-secrets` |
-| `porter-client` | `porter-core`, `porter-provider`, `porter-secrets`, `porter-service`; `porter-infer` with feature `infer` (default); `porter-dbus` with feature `dbus`; latchkey (git, not ours) with feature `socket` |
+| `porter-client` | `porter-core`, `porter-provider`, `porter-secrets`, `porter-service`; `porter-infer` with feature `infer` (default); `porter-dbus` with feature `dbus`; latchkey (git, not ours) with feature `socket` (a Unix socket, or a named pipe on Windows); with feature `engines` (off by default; inference with no inferd: `engines::EngineHost`, a `SessionHost` over a routing table, a `Policy` and the app's `KeySource`) `porter-bridge` and stoker's `model-http` (`hyper`, `tls`), `model-openai-compat`, `model-provider`, `model-wire` |
 | `porter-fake` | `porter-core`, `porter-infer`, `porter-provider`, `porter-secrets`, `porter-service` |
 | `porter-fake-servers` | `porter-core`, `porter-discover`, `porter-fake`, `porter-provider` (and nothing may depend on it) |
 | `porter-rig` | `porter-client` (feature `dbus`), `porter-core`, `porter-dbus`, `porter-fake`, `porter-fake-servers`, `porter-infer`, clap, serde, serde_json, tokio (with `signal`), zbus (and nothing may depend on it) |
@@ -122,7 +123,8 @@ a daemon or an app hosting porter turns those features on.
 | which model answers a session, and what it is pinned to | `inferd::router::choose` over `inferd::engines::Engines::route` (the only caller of `porter_infer::pick` and `porter_infer::route`) |
 | the models this computer can run, from the stoker catalog | `inferd::catalog` (claims) and `inferd::local` (the book) |
 | starting, probing and unloading an engine | `inferd::supervise` (the driver of stoker's `step`) over `inferd::hosts` |
-| porter's request to stoker's turn, and back | `inferd::bridge` (the only mapping) |
+| porter's request to stoker's turn, and back | `porter-bridge` (the only mapping; `inferd::bridge` adds the `LocalModel` targets) |
+| inference in an app with no inferd | `porter-client::engines` (`EngineHost`: the app's table and policy, `porter_infer::admit` for the hard rules, the app's `KeySource`) |
 | provider file format | `porter-provider::spec` + `parse` |
 | which secret an auth kind presents | `porter-service::secret_purpose` |
 | the account registry and candidates | `porter-service::registry` |

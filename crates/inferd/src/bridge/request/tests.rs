@@ -1,8 +1,10 @@
 use super::*;
 use crate::testkit::{Scratch, models};
 use porter_core::consent::Usage;
+use porter_core::need::DimsNeed;
 use porter_core::{DataClass, Permille, Tier};
 use std::io::Write;
+use std::os::fd::OwnedFd;
 
 fn chat_model() -> (Scratch, LocalModel) {
     let scratch = Scratch::new("bridge");
@@ -133,12 +135,6 @@ fn reasoning_picks_the_catalog_sampling_set_and_an_explicit_sampling_wins() {
             stop: vec!["END".into()]
         }
     );
-}
-
-#[test]
-fn a_temperature_past_what_a_milli_holds_saturates() {
-    assert_eq!(milli(Permille(70_000)), sp::Milli(u16::MAX));
-    assert_eq!(milli(Permille(700)), sp::Milli(700));
 }
 
 #[test]

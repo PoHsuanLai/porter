@@ -1,8 +1,10 @@
 //! The latchkey socket carrier: `porter_core::wire` frames over a Unix socket, for other
-//! desktops and macOS. The agent's address, its single-instance lock and how it is started are
-//! latchkey's (`SocketAgent` names the agent; the path is never ours to write down). A named pipe
-//! on Windows is not built (there `SocketTransport` finds nobody), nor is it without the `socket`
-//! feature (the carrier needs a runtime and latchkey, which the pure build does not reach).
+//! desktops and macOS, and over a named pipe on Windows (`socket/windows.rs`: no descriptors
+//! there, so relays are refused and attached images must be inline; checked for
+//! `x86_64-pc-windows-msvc` from Linux, never run). The agent's address, its single-instance lock
+//! and how it is started are latchkey's (`SocketAgent` names the agent; the path is never ours to
+//! write down). Without the `socket` feature there is no carrier (it needs a runtime and
+//! latchkey, which the pure build does not reach): `SocketTransport` finds nobody.
 //!
 //! One connection per call, so a `Choose` waiting on a sheet blocks nothing else:
 //!
@@ -21,7 +23,11 @@
 #[path = "socket/unix.rs"]
 mod link;
 
-#[cfg(not(all(unix, feature = "socket")))]
+#[cfg(all(windows, feature = "socket"))]
+#[path = "socket/windows.rs"]
+mod link;
+
+#[cfg(not(all(any(unix, windows), feature = "socket")))]
 #[path = "socket/absent.rs"]
 mod link;
 

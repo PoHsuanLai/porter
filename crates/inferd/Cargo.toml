@@ -22,6 +22,7 @@ porter-discover = { workspace = true }
 porter-http = { workspace = true, features = ["hyper"] }
 porter-provider = { workspace = true }
 porter-infer = { workspace = true }
+porter-bridge = { workspace = true }
 ds-settings = { workspace = true }
 model-provider = { workspace = true }
 model-catalog = { workspace = true }

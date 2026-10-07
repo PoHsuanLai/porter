@@ -1,0 +1,21 @@
+[package]
+name = "porter-bridge"
+description = "The one mapping between porter's wire types (porter-infer) and stoker's provider types (model-provider): a chat, task or embedding request as a turn, a turn's events and end as porter's, a provider error as a ModelError. Pure: no runtime, no socket, no HTTP. inferd and porter-client's in-process engine host share it."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+model-catalog = { workspace = true }
+model-openai-compat = { workspace = true }
+model-provider = { workspace = true }
+porter-core = { workspace = true }
+porter-infer = { workspace = true }
+thiserror = { workspace = true }
+vision-prep = { workspace = true }
+
+[lints]
+workspace = true

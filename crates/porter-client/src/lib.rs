@@ -19,9 +19,14 @@
 //! no zbus, no porter-infer and no stoker. Inference (sessions, `prepare`, `infer`, `Need::Llm`
 //! paths) is the default feature `infer`; an accounts-only consumer says
 //! `default-features = false, features = ["socket"]`.
+//!
+//! An app with no inferd turns on `engines` for [`engines::EngineHost`]: inference routed in the
+//! app and sent to the OpenAI-compatible engines it points at (a local runtime, a company's API).
 
 mod accounts;
 mod authenticated;
+#[cfg(feature = "engines")]
+pub mod engines;
 mod env;
 mod error;
 mod found;
@@ -33,6 +38,9 @@ pub use authenticated::{AuthenticatedStream, Relayed};
 pub use env::{ClientEnv, LinkChoice, Place, START_WAIT, SocketAgent, StartAgent};
 pub use error::{ClientError, TransportError};
 pub use found::{ConsentOffer, Found, NoAccount, found};
+/// What an [`engines::EngineHost`] is built from, from porter-infer.
+#[cfg(feature = "engines")]
+pub use porter_infer::{InferRefusal, Policy, Slot};
 /// The client's side of one `Open` fd, from porter-infer.
 #[cfg(feature = "infer")]
 pub use porter_infer::{InferSession, OpenOptions, SessionError, Traceparent};

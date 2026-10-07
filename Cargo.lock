@@ -1407,6 +1407,7 @@ dependencies = [
  "model-provider",
  "model-replay",
  "model-wire",
+ "porter-bridge",
  "porter-client",
  "porter-core",
  "porter-dbus",
@@ -2146,6 +2147,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "05c8b63e8d9609db387f0324918f81d68fe27748f084ef092fb35954d0539a85"
 
 [[package]]
+name = "porter-bridge"
+version = "0.1.0"
+dependencies = [
+ "model-catalog",
+ "model-openai-compat",
+ "model-provider",
+ "porter-core",
+ "porter-infer",
+ "thiserror",
+ "vision-prep",
+]
+
+[[package]]
 name = "porter-client"
 version = "0.1.0"
 dependencies = [
@@ -2153,6 +2167,11 @@ dependencies = [
  "cua-action",
  "inferd",
  "latchkey",
+ "model-http",
+ "model-openai-compat",
+ "model-provider",
+ "model-wire",
+ "porter-bridge",
  "porter-core",
  "porter-dbus",
  "porter-fake",

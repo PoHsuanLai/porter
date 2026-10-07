@@ -22,6 +22,8 @@ mod dbus_session;
 ))]
 mod framed;
 mod in_process;
+#[cfg(all(windows, feature = "socket"))]
+mod pipe;
 mod socket;
 
 #[cfg(feature = "dbus")]
