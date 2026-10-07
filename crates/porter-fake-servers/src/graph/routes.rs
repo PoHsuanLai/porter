@@ -449,13 +449,18 @@ pub fn answer_link(state: &mut State, strict: bool, request: &Request) -> Respon
 
 /// Answers `request` to the drive's own origin. When the links point at another origin, this one
 /// does not serve them.
-pub fn answer(state: &mut State, origins: Origins<'_>, token: &str, request: &Request) -> Response {
+pub fn answer(
+    state: &mut State,
+    origins: Origins<'_>,
+    accepts: &super::Accepts,
+    request: &Request,
+) -> Response {
     let path = request.path().to_owned();
     let own_links = origins.base == origins.link;
     if own_links && (path.starts_with("/dl/") || path.starts_with("/upload/")) {
         return answer_link(state, false, request);
     }
-    if request.bearer() != Some(token) {
+    if !accepts.admits(request.bearer()) {
         return error(401, "InvalidAuthenticationToken");
     }
     if let Some((left, after)) = state.knobs.throttle {

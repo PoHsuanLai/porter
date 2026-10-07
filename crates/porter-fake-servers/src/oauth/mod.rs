@@ -226,6 +226,27 @@ impl IssuerHandle {
         token
     }
 
+    /// Plants this exact refresh token as if the person had already signed in: the same as
+    /// [`IssuerHandle::seed_refresh`] with a name the caller chose (a string a secret scan can
+    /// look for).
+    pub fn seed_refresh_as(&self, token: &str, client_id: &str, scope: &str) {
+        let grant = Grant {
+            client_id: client_id.to_owned(),
+            scope: scope.to_owned(),
+        };
+        lock(&self.shared.state)
+            .refresh
+            .insert(token.to_owned(), grant);
+    }
+
+    /// Plants this exact access token as live (the issuer and every drive that asks it accept it
+    /// until it is revoked).
+    pub fn seed_access_as(&self, token: &str, client_id: &str) {
+        lock(&self.shared.state)
+            .access
+            .insert(token.to_owned(), client_id.to_owned());
+    }
+
     /// The person approves the device code with this user code.
     pub fn approve_device(&self, user_code: &str) {
         self.answer_device(user_code, DeviceState::Approved);

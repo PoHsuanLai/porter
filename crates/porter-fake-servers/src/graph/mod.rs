@@ -12,6 +12,7 @@ pub use routes::Knobs;
 
 use crate::http::{Hit, Request, Response, serve};
 use crate::net::{Bind, Listener};
+use crate::oauth::IssuerHandle;
 use crate::seen::{Running, Seen, lock};
 use drive::Body;
 use porter_fake::{FakeAddress, FakeProtocol, FakeServer};
@@ -21,13 +22,32 @@ use std::future::Future;
 use std::io;
 use std::sync::{Arc, Mutex};
 
+/// Which bearers the drive accepts.
+#[derive(Debug, Clone)]
+pub(crate) enum Accepts {
+    /// This one token.
+    Fixed(String),
+    /// Any access token this issuer minted and has not revoked.
+    Issued(IssuerHandle),
+}
+
+impl Accepts {
+    pub(crate) fn admits(&self, bearer: Option<&str>) -> bool {
+        match (self, bearer) {
+            (_, None) => false,
+            (Accepts::Fixed(token), Some(presented)) => token == presented,
+            (Accepts::Issued(issuer), Some(presented)) => issuer.access_is_live(presented),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct Shared {
     base: String,
     /// The origin the links point at, when it is not `base`.
     link: Option<String>,
     link_hits: Seen<Hit>,
-    token: String,
+    accepts: Accepts,
     state: Arc<Mutex<State>>,
     hits: Seen<Hit>,
 }
@@ -65,7 +85,7 @@ impl FakeGraph {
                 base: format!("http://127.0.0.1:{port}"),
                 link: None,
                 link_hits: Seen::default(),
-                token: token.to_owned(),
+                accepts: Accepts::Fixed(token.to_owned()),
                 state: Arc::default(),
                 hits: Seen::default(),
             },
@@ -85,6 +105,22 @@ impl FakeGraph {
         ));
         fake.links = Some(links);
         Ok(fake)
+    }
+
+    /// Binds a drive (its links on its own origin, as [`FakeGraph::bind`]) that accepts
+    /// every access token `issuer` has minted and not revoked, so a client that signs in to
+    /// the fake issuer and refreshes is served; a token the issuer does not know is `401`.
+    pub async fn bind_issued(issuer: &IssuerHandle) -> io::Result<Self> {
+        let mut fake = Self::bind("").await?;
+        fake.shared.accepts = Accepts::Issued(issuer.clone());
+        Ok(fake)
+    }
+
+    /// [`FakeGraph::bind_issued`], serving on a task.
+    pub async fn start_issued(issuer: &IssuerHandle) -> io::Result<Running<GraphHandle>> {
+        let fake = Self::bind_issued(issuer).await?;
+        let handle = fake.handle();
+        Ok(Running::spawn(fake, handle))
     }
 
     /// Like [`FakeGraph::bind_linked`], serving on a task.
@@ -252,7 +288,7 @@ impl FakeServer for FakeGraph {
                         base: &own.base,
                         link: own.link.as_deref().unwrap_or(&own.base),
                     };
-                    answer(&mut state, origins, &own.token, &request)
+                    answer(&mut state, origins, &own.accepts, &request)
                 };
                 own.hits.push(Hit::of(&request, &response));
                 response
