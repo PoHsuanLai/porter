@@ -9,7 +9,25 @@
 //! The paths are Google's own (`/calendar/v3/users/me/calendarList`, `/v1/contactGroups`,
 //! `/tasks/v1/users/@me/lists`, `/drive/v3/files`, `/v1/userinfo`), so a provider file rewritten
 //! by [`FakeServer::rewrite`] keeps each row's path and only moves its origin. The calendar
-//! mirror, the Drive replica and Photos are not here: they follow the lanes that need them.
+//! mirror is not here: it follows the lane that needs it.
+//!
+//! The Drive app data folder (`drive`, `drive_routes`: files, folders, `changes.list`,
+//! multipart and resumable uploads, the quota) and Google Photos (`photos`: the Library API's
+//! append-only upload and the Picker API's sessions) are served beside them, with control levers
+//! on [`GoogleHandle`] (another device writes or deletes a file, a person picks photos). A fake
+//! made with [`FakeGoogle::bind_fixed`] accepts fixed bearers (what accountd's relay adds in a
+//! bus test) instead of an issuer's tokens.
+
+mod drive;
+mod drive_routes;
+mod levers;
+mod md5;
+mod photos;
+
+pub use drive::{ALIAS, CHUNK_UNIT, FOLDER};
+pub use drive_routes::DriveKnobs;
+pub use md5::md5_hex;
+pub use photos::{Album, MediaItem, Pick, Session};
 
 use crate::http::{Hit, Request, Response, serve};
 use crate::net::{Bind, Listener};
@@ -27,8 +45,26 @@ use std::sync::{Arc, Mutex};
 /// The address `GET /v1/userinfo` names unless a test sets another.
 pub const DEFAULT_ADDRESS: &str = "ada@gmail.com";
 
-/// The scopes (any one of) a path wants, or none for a path that wants none.
-fn wants(path: &str) -> Option<&'static [&'static str]> {
+const APPDATA: &str = "https://www.googleapis.com/auth/drive.appdata";
+const PHOTOS_UPLOAD: &str = "https://www.googleapis.com/auth/photoslibrary.appendonly";
+const PHOTOS_PICKER: &str = "https://www.googleapis.com/auth/photospicker.mediaitems.readonly";
+
+/// The scopes (any one of) a request wants, or none for a path this fake does not serve.
+fn wants(request: &Request) -> Option<&'static [&'static str]> {
+    let path = request.path();
+    if path.starts_with("/drive/v3/") || path.starts_with("/upload/drive/v3/") {
+        return Some(&[APPDATA]);
+    }
+    match path {
+        "/v1/uploads" | "/v1/mediaItems:batchCreate" | "/v1/albums" => {
+            return Some(&[PHOTOS_UPLOAD]);
+        }
+        "/v1/sessions" | "/v1/mediaItems" => return Some(&[PHOTOS_PICKER]),
+        _ => {}
+    }
+    if path.starts_with("/v1/sessions/") || path.starts_with("/dl/") {
+        return Some(&[PHOTOS_PICKER]);
+    }
     match path {
         "/v1/userinfo" => Some(&[
             "https://www.googleapis.com/auth/userinfo.email",
@@ -38,7 +74,6 @@ fn wants(path: &str) -> Option<&'static [&'static str]> {
         "/calendar/v3/users/me/calendarList" => Some(&["https://www.googleapis.com/auth/calendar"]),
         "/v1/contactGroups" => Some(&["https://www.googleapis.com/auth/contacts"]),
         "/tasks/v1/users/@me/lists" => Some(&["https://www.googleapis.com/auth/tasks"]),
-        "/drive/v3/files" => Some(&["https://www.googleapis.com/auth/drive.appdata"]),
         _ => None,
     }
 }
@@ -51,12 +86,22 @@ struct State {
     statuses: HashMap<String, u16>,
     /// Paths whose API is not switched on in the project: `403 accessNotConfigured`.
     disabled: Vec<String>,
+    /// Bearers accepted as they are (no issuer, no scope check).
+    fixed: Vec<String>,
+    /// The Drive app data folder.
+    drive: drive::Drive,
+    /// How the Drive answers.
+    drive_knobs: DriveKnobs,
+    /// Google Photos: the library and the picker.
+    photos: photos::Photos,
+    /// How many requests are still to be answered `429`, and their `Retry-After`.
+    throttle: Option<(u32, u32)>,
 }
 
 #[derive(Debug, Clone)]
 struct Shared {
     base: String,
-    issuer: IssuerHandle,
+    issuer: Option<IssuerHandle>,
     state: Arc<Mutex<State>>,
     hits: Seen<Hit>,
 }
@@ -88,11 +133,41 @@ impl FakeGoogle {
             listener,
             shared: Shared {
                 base: format!("http://127.0.0.1:{port}"),
-                issuer: issuer.clone(),
+                issuer: Some(issuer.clone()),
                 state: Arc::new(Mutex::new(state)),
                 hits: Seen::default(),
             },
         })
+    }
+
+    /// Binds APIs that accept `Authorization: Bearer <token>` as it is (and any more a test adds
+    /// with [`GoogleHandle::accept_bearer`]): what accountd's relay adds in a bus test. There is
+    /// no issuer, so no scope is checked.
+    pub async fn bind_fixed(token: &str) -> io::Result<Self> {
+        let listener = Listener::bind(&Bind::Loopback, "google").await?;
+        let port = crate::net::port_of(listener.address());
+        let state = State {
+            address: DEFAULT_ADDRESS.to_owned(),
+            name: "Ada Lovelace".to_owned(),
+            fixed: vec![token.to_owned()],
+            ..State::default()
+        };
+        Ok(Self {
+            listener,
+            shared: Shared {
+                base: format!("http://127.0.0.1:{port}"),
+                issuer: None,
+                state: Arc::new(Mutex::new(state)),
+                hits: Seen::default(),
+            },
+        })
+    }
+
+    /// [`FakeGoogle::bind_fixed`], serving on a task.
+    pub async fn start_fixed(token: &str) -> io::Result<Running<GoogleHandle>> {
+        let fake = Self::bind_fixed(token).await?;
+        let handle = fake.handle();
+        Ok(Running::spawn(fake, handle))
     }
 
     /// The handle onto these APIs.
@@ -177,43 +252,57 @@ fn point_at(base: &str, spec: &ProviderSpec) -> ProviderSpec {
     out
 }
 
+fn denied(status: u16, reason: &str) -> Response {
+    Response::json(
+        status,
+        &json!({"error": {"code": status, "status": reason, "errors": [{"reason": reason}]}}),
+    )
+}
+
 fn answer(shared: &Shared, request: &Request) -> Response {
     let path = request.path();
-    let Some(any_of) = wants(path) else {
+    let Some(any_of) = wants(request) else {
         return Response::new(404);
     };
-    let live = request
-        .bearer()
-        .filter(|token| shared.issuer.access_is_live(token));
+    let mut state = lock(&shared.state);
+    let presented = request.bearer();
+    let fixed = presented.is_some_and(|token| state.fixed.iter().any(|f| f == token));
+    let live = presented.filter(|token| {
+        fixed
+            || shared
+                .issuer
+                .as_ref()
+                .is_some_and(|issuer| issuer.access_is_live(token))
+    });
     let Some(token) = live else {
-        return Response::json(
-            401,
-            &json!({"error": {"code": 401, "status": "UNAUTHENTICATED"}}),
-        );
+        return denied(401, "UNAUTHENTICATED");
     };
-    let state = lock(&shared.state);
+    if let Some((left, after)) = state.throttle {
+        state.throttle = (left > 1).then_some((left - 1, after));
+        return denied(429, "rateLimitExceeded").with_header("Retry-After", &after.to_string());
+    }
     if state.disabled.iter().any(|p| p == path) {
-        return Response::json(
-            403,
-            &json!({"error": {"code": 403, "errors": [{"reason": "accessNotConfigured"}]}}),
-        );
+        return denied(403, "accessNotConfigured");
     }
     // A token the issuer issued carries the scopes it was issued for; a planted one carries none
     // that were recorded, and is let through.
-    let scoped_out = shared.issuer.access_scope(token).is_some_and(|granted| {
-        !granted
-            .split_whitespace()
-            .any(|scope| any_of.contains(&scope))
-    });
+    let scoped_out = !fixed
+        && shared
+            .issuer
+            .as_ref()
+            .and_then(|issuer| issuer.access_scope(token))
+            .is_some_and(|granted| {
+                !granted
+                    .split_whitespace()
+                    .any(|scope| any_of.contains(&scope))
+            });
     if scoped_out {
-        return Response::json(
-            403,
-            &json!({"error": {"code": 403, "errors": [{"reason": "insufficientPermissions"}]}}),
-        );
+        return denied(403, "insufficientPermissions");
     }
     if let Some(status) = state.statuses.get(path) {
         return Response::json(*status, &json!({"error": {"code": status}}));
     }
+    let state = &mut *state;
     let body = match path {
         "/v1/userinfo" => json!({
             "sub": "1001", "email": state.address, "email_verified": true, "name": state.name,
@@ -227,7 +316,12 @@ fn answer(shared: &Shared, request: &Request) -> Response {
         "/tasks/v1/users/@me/lists" => {
             json!({"kind": "tasks#taskLists", "items": [{"id": "list-1", "title": "My Tasks"}]})
         }
-        _ => json!({"kind": "drive#fileList", "files": []}),
+        _ => {
+            let drive =
+                drive_routes::answer(&mut state.drive, state.drive_knobs, &shared.base, request);
+            let other = || photos::answer(&mut state.photos, &shared.base, request);
+            return drive.or_else(other).unwrap_or_else(|| Response::new(404));
+        }
     };
     Response::json(200, &body)
 }

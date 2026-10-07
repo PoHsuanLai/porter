@@ -33,6 +33,7 @@ RULES=(
   "porter-families: $EFFECTS"
   "storage-webdav: $EFFECTS"
   "storage-graph: $EFFECTS"
+  "storage-gdrive: $EFFECTS"
   "porter-dbus: reqwest hyper ureq oo7 keyring secret-service ds-settings"
 )
 fail=0
@@ -103,7 +104,8 @@ EDGES=(
   "accountd: ds-settings porter-core porter-dbus porter-discover porter-families porter-http porter-provider porter-proxy porter-secrets porter-service"
   "storage-webdav: porter-core porter-dav porter-http porter-sync"
   "storage-graph: porter-core porter-http porter-sync storage-webdav"
-  "syncd: porter-client porter-core porter-dav porter-dbus porter-http porter-sync storage-graph storage-webdav"
+  "storage-gdrive: porter-core porter-http porter-sync storage-webdav"
+  "syncd: porter-client porter-core porter-dav porter-dbus porter-http porter-sync storage-gdrive storage-graph storage-webdav"
   "porter-rig: porter-client porter-core porter-dbus porter-fake porter-fake-servers porter-infer"
   "inferd: ds-settings porter-bridge porter-core porter-dbus porter-discover porter-http porter-infer porter-provider cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
 )

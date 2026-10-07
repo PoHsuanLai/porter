@@ -2,12 +2,13 @@
 //! audited, one per account and class, only for an account syncd can mirror.
 
 use porter_core::audit::AuditEvent;
-use porter_core::capability::Offered;
+use porter_core::capability::{Albums, LibraryRead, Offered, PhotosCap};
 use porter_core::consent::{Decision, GrantScope, Usage};
 use porter_core::wire::Refusal;
 use porter_core::{
-    Account, AccountId, AppId, AppName, Capability, CapabilityKind, DataClass, EndpointUrl, Family,
-    Isolation, LoginName, Offer, ServiceEndpoint, SpaceScope, Tls, Toggle,
+    Account, AccountId, AppId, AppName, Capability, CapabilityKind, Claim, DataClass, EndpointUrl,
+    Family, Isolation, LoginName, Offer, Provenance, ServiceEndpoint, SpaceScope, Subject, Tls,
+    Toggle,
 };
 use porter_fake::{
     FixedClock, MemoryStore, RecordingAudit, ScriptedSheets, cloud_provider, mail_account,
@@ -15,7 +16,8 @@ use porter_fake::{
 };
 use porter_secrets::MemorySecrets;
 use porter_service::{
-    AccountService, Registry, SyncClass, sync_allowed, sync_app, sync_key, sync_offers,
+    AccountService, Registry, SyncClass, photos_key, sync_allowed, sync_app, sync_key, sync_key_of,
+    sync_offers,
 };
 
 type Svc = AccountService<
@@ -41,6 +43,50 @@ fn graph_account(chunked: Offered) -> Account {
         if let Offer::Present(Capability::Storage(cap)) = &mut claim.offer {
             cap.chunked_upload = chunked;
         }
+    }
+    account
+}
+
+/// A Google account: the Drive app data folder and, as `photos` says, Google Photos (upload and
+/// picker), at servers that are not there.
+fn google_account(drive: bool, photos: bool) -> Account {
+    let mut account = graph_account(Offered::Present);
+    account.id = AccountId::parse("fake-google").expect("id");
+    account.endpoints.clear();
+    let endpoint = |family: Family, url: &str| ServiceEndpoint {
+        family,
+        url: EndpointUrl::parse(url).expect("url"),
+        tls: Tls::Implicit,
+        login: LoginName("ada@gmail.invalid".into()),
+    };
+    if drive {
+        account.endpoints.push(endpoint(
+            Family::GoogleDrive,
+            "https://drive.invalid/drive/v3",
+        ));
+    } else {
+        account.capabilities.clear();
+    }
+    if photos {
+        account.endpoints.push(endpoint(
+            Family::GooglePhotosUpload,
+            "https://photos.invalid/v1",
+        ));
+        account.endpoints.push(endpoint(
+            Family::GooglePhotosPicker,
+            "https://picker.invalid/v1",
+        ));
+        account.capabilities.push(Claim {
+            subject: Subject::Account,
+            offer: Offer::Present(Capability::Photos(PhotosCap {
+                library_read: LibraryRead::PickerOnly,
+                upload: Offered::Present,
+                albums: Albums::AppCreated,
+                video: Offered::Present,
+                delta: porter_core::capability::Delta::None,
+            })),
+            provenance: Provenance::Declared,
+        });
     }
     account
 }
@@ -109,6 +155,21 @@ fn an_account_offers_files_over_graph_and_photos_when_uploads_resume() {
         ),
         ("webdav storage", storage_account(), vec![]),
         ("mail", mail_account(), vec![]),
+        (
+            "google with the app data folder and photos",
+            google_account(true, true),
+            vec![SyncClass::Files, SyncClass::Photos],
+        ),
+        (
+            "google with the app data folder only",
+            google_account(true, false),
+            vec![SyncClass::Files],
+        ),
+        (
+            "google with photos only (the person unticked Drive)",
+            google_account(false, true),
+            vec![SyncClass::Photos],
+        ),
     ];
     for (name, account, want) in cases {
         assert_eq!(sync_offers(&account), want, "{name}");
@@ -265,4 +326,66 @@ async fn an_account_syncd_cannot_mirror_or_one_that_is_not_there_is_refused() {
     }
     assert!(service.registry().grants.is_empty());
     assert_eq!(store.saves(), 0);
+}
+
+#[tokio::test]
+async fn the_photos_of_a_google_account_are_a_photos_kind_grant_and_files_stay_storage() {
+    let account = google_account(true, true);
+    let (service, _, audit) = service(vec![account.clone()]);
+    assert_eq!(
+        sync_key_of(&account, SyncClass::Files),
+        sync_key(&account.id, SyncClass::Files)
+    );
+    let photos = sync_key_of(&account, SyncClass::Photos);
+    assert_eq!(photos, photos_key(&account.id));
+    assert_eq!(
+        (photos.kind, photos.class, photos.usage),
+        (CapabilityKind::Photos, DataClass::Photos, Usage::Background)
+    );
+
+    for class in SyncClass::ALL {
+        service
+            .set_sync(&id(&account), class, Toggle::On)
+            .await
+            .expect("on");
+    }
+    let grants = service.registry().grants;
+    let mut kinds: Vec<(DataClass, CapabilityKind)> =
+        grants.iter().map(|g| (g.key.class, g.key.kind)).collect();
+    kinds.sort_by_key(|(class, _)| format!("{class:?}"));
+    assert_eq!(
+        kinds,
+        [
+            (DataClass::Files, CapabilityKind::Storage),
+            (DataClass::Photos, CapabilityKind::Photos)
+        ]
+    );
+    assert!(
+        SyncClass::ALL
+            .iter()
+            .all(|class| sync_allowed(&grants, &account.id, *class))
+    );
+    // On twice is one grant.
+    service
+        .set_sync(&id(&account), SyncClass::Photos, Toggle::On)
+        .await
+        .expect("on again");
+    assert_eq!(service.registry().grants.len(), 2);
+
+    service
+        .set_sync(&id(&account), SyncClass::Photos, Toggle::Off)
+        .await
+        .expect("off");
+    let grants = service.registry().grants;
+    assert!(sync_allowed(&grants, &account.id, SyncClass::Files));
+    assert!(!sync_allowed(&grants, &account.id, SyncClass::Photos));
+    let kinds: Vec<CapabilityKind> = audit
+        .entries()
+        .into_iter()
+        .filter_map(|e| match e.event {
+            AuditEvent::Granted { kind, .. } => Some(kind),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(kinds, [CapabilityKind::Storage, CapabilityKind::Photos]);
 }

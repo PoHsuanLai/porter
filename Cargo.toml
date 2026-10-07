@@ -24,6 +24,7 @@ members = [
   "crates/inferd",
   "crates/storage-webdav",
   "crates/storage-graph",
+  "crates/storage-gdrive",
   "crates/porter-rig",
 ]
 
@@ -57,6 +58,7 @@ porter-dav      = { path = "crates/porter-dav" }
 porter-families = { path = "crates/porter-families" }
 storage-webdav  = { path = "crates/storage-webdav" }
 storage-graph   = { path = "crates/storage-graph" }
+storage-gdrive  = { path = "crates/storage-gdrive" }
 
 # quire's live settings modules (`org.quire.SettingsModule1`), for accountd only: the one porter -> quire
 # edge (ARCHITECTURE section 1). By git at quire's pinned rev (a local checkout overrides it: ARCHITECTURE section 1); `live` is the module, `tokio` drives its zbus.

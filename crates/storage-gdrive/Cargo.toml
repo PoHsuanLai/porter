@@ -1,0 +1,26 @@
+[package]
+name = "storage-gdrive"
+description = "The Google Drive replica: porter-sync's Replica over the app data folder (`spaces=appDataFolder`, scope drive.appdata). Changes by changes.list with a page token as the anchor (a refused token is AnchorExpired), writes checked against the file's `version` first, small files by multipart upload and large ones by a resumable session, md5Checksum as the content hash, quota from `about`. Its HTTP goes through the Http it is handed (in syncd, storage-webdav's StreamHttp over accountd's OpenAuthenticated, which adds the bearer). Pure: no runtime, no socket."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+porter-core = { workspace = true }
+porter-http = { workspace = true }
+porter-sync = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+storage-webdav = { workspace = true }
+
+[dev-dependencies]
+porter-fake = { workspace = true }
+porter-fake-servers = { workspace = true }
+porter-sync = { workspace = true, features = ["testing"] }
+tokio = { workspace = true }
+
+[lints]
+workspace = true

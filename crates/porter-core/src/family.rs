@@ -91,14 +91,14 @@ impl Family {
             | Family::CardDav
             | Family::WebDav
             | Family::NextcloudNotes
-            | Family::Graph => Some(EndpointProtocol::Http),
+            | Family::Graph
+            | Family::GoogleDrive
+            | Family::GooglePhotosUpload
+            | Family::GooglePhotosPicker => Some(EndpointProtocol::Http),
             Family::GmailApi
             | Family::GoogleCalendar
             | Family::GooglePeople
             | Family::GoogleTasks
-            | Family::GoogleDrive
-            | Family::GooglePhotosUpload
-            | Family::GooglePhotosPicker
             | Family::Dropbox
             | Family::S3
             | Family::ChatCompletions
@@ -115,8 +115,9 @@ impl Family {
 impl Family {
     /// Whether an endpoint of this family is one a grant for `kind` may reach: mail reaches
     /// IMAP, SMTP and JMAP; files and photos WebDAV; calendars and tasks CalDAV (or JMAP);
-    /// contacts CardDAV (or JMAP); notes the Nextcloud Notes API. Every other family is
-    /// reached through its own client, not through an endpoint a candidate lists.
+    /// contacts CardDAV (or JMAP); notes the Nextcloud Notes API; Graph files and photos; the
+    /// Google Drive API files; the Google Photos APIs photos. Every other family is reached
+    /// through its own client, not through an endpoint a candidate lists.
     pub fn serves(self, kind: CapabilityKind) -> bool {
         matches!(
             (self, kind),
@@ -126,10 +127,16 @@ impl Family {
             ) | (
                 Family::WebDav | Family::Graph,
                 CapabilityKind::Storage | CapabilityKind::Photos
-            ) | (
-                Family::CalDav,
-                CapabilityKind::Calendar | CapabilityKind::Tasks
-            ) | (Family::CardDav, CapabilityKind::Contacts)
+            ) | (Family::GoogleDrive, CapabilityKind::Storage)
+                | (
+                    Family::GooglePhotosUpload | Family::GooglePhotosPicker,
+                    CapabilityKind::Photos
+                )
+                | (
+                    Family::CalDav,
+                    CapabilityKind::Calendar | CapabilityKind::Tasks
+                )
+                | (Family::CardDav, CapabilityKind::Contacts)
                 | (
                     Family::Graph,
                     CapabilityKind::Calendar | CapabilityKind::Contacts | CapabilityKind::Tasks
@@ -178,6 +185,24 @@ mod tests {
             "graph is a relayed http api",
             Family::Graph,
             "graph",
+            Some(EndpointProtocol::Http),
+        ),
+        (
+            "google drive is a relayed http api",
+            Family::GoogleDrive,
+            "google_drive",
+            Some(EndpointProtocol::Http),
+        ),
+        (
+            "google photos upload is a relayed http api",
+            Family::GooglePhotosUpload,
+            "google_photos_upload",
+            Some(EndpointProtocol::Http),
+        ),
+        (
+            "google photos picker is a relayed http api",
+            Family::GooglePhotosPicker,
+            "google_photos_picker",
             Some(EndpointProtocol::Http),
         ),
         (
@@ -259,6 +284,42 @@ mod tests {
                 Family::Graph,
                 CapabilityKind::Tasks,
                 true,
+            ),
+            (
+                "google drive for files",
+                Family::GoogleDrive,
+                CapabilityKind::Storage,
+                true,
+            ),
+            (
+                "google drive not for photos",
+                Family::GoogleDrive,
+                CapabilityKind::Photos,
+                false,
+            ),
+            (
+                "google photos upload for photos",
+                Family::GooglePhotosUpload,
+                CapabilityKind::Photos,
+                true,
+            ),
+            (
+                "google photos picker for photos",
+                Family::GooglePhotosPicker,
+                CapabilityKind::Photos,
+                true,
+            ),
+            (
+                "google photos not for files",
+                Family::GooglePhotosUpload,
+                CapabilityKind::Storage,
+                false,
+            ),
+            (
+                "google photos not for mail",
+                Family::GooglePhotosUpload,
+                CapabilityKind::Mail,
+                false,
             ),
             (
                 "graph has no endpoint to list",

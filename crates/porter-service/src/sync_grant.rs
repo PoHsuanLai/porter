@@ -4,6 +4,12 @@
 //! holds a `Storage` grant for, with usage `Background` and the class of the data (`Files` for
 //! the app folder, `Photos` for the Photos datasets). No sheet can ask the person for this
 //! grant (a daemon has no window), so Settings makes it and takes it back.
+//!
+//! Photos on a Google account is the one exception to the `Storage` kind: Google Photos is not a
+//! store syncd mirrors, it is an upload target and a picker import with APIs of their own, and
+//! their audiences (`google_photos_upload`, `google_photos_picker`) belong to the `Photos` kind
+//! of the provider file. syncd's key for it is `Photos`-kind, class `Photos` ([`photos_key`]),
+//! so a `Storage` grant of syncd's (the Drive app folder) never reaches them.
 
 use crate::audit::AuditSink;
 use crate::choose::next_grant_id;
@@ -72,9 +78,41 @@ pub fn sync_key(account: &AccountId, class: SyncClass) -> GrantKey {
     }
 }
 
+/// The key of the grant that lets syncd upload to, and import from, the Google Photos of
+/// `account`: `Photos` kind, class `Photos`.
+pub fn photos_key(account: &AccountId) -> GrantKey {
+    GrantKey {
+        kind: CapabilityKind::Photos,
+        ..sync_key(account, SyncClass::Photos)
+    }
+}
+
+/// The key of the grant that lets syncd keep `class` of `account`: [`sync_key`], except for the
+/// Photos of an account whose photos are Google's ([`photos_key`]).
+pub fn sync_key_of(account: &Account, class: SyncClass) -> GrantKey {
+    match (class, google_photos(account)) {
+        (SyncClass::Photos, true) => photos_key(&account.id),
+        _ => sync_key(&account.id, class),
+    }
+}
+
+fn has_endpoint(account: &Account, family: Family) -> bool {
+    account.endpoints.iter().any(|e| e.family == family)
+}
+
+/// Whether `account` offers Google Photos uploads (a Photos capability that uploads, and the
+/// upload API's endpoint).
+fn google_photos(account: &Account) -> bool {
+    let uploads = account.capabilities.iter().any(|claim| {
+        matches!(&claim.offer, Offer::Present(Capability::Photos(cap)) if cap.upload == Offered::Present)
+    });
+    uploads && has_endpoint(account, Family::GooglePhotosUpload)
+}
+
 /// What syncd can keep of `account`: the app folder when the account offers Storage over Graph
-/// (the only store syncd mirrors), and Photos besides when that store takes resumable uploads,
-/// which original photos need.
+/// or the Google Drive app data folder (the stores syncd mirrors), and Photos besides when that
+/// store takes resumable uploads, which original photos need; for a Google account, Photos is
+/// the upload target and the picker import, whatever its Drive offers.
 pub fn sync_offers(account: &Account) -> Vec<SyncClass> {
     let storage = account
         .capabilities
@@ -83,25 +121,42 @@ pub fn sync_offers(account: &Account) -> Vec<SyncClass> {
             Offer::Present(Capability::Storage(cap)) => Some(cap),
             _ => None,
         });
-    let graph = account.endpoints.iter().any(|e| e.family == Family::Graph);
+    let graph = has_endpoint(account, Family::Graph);
+    let drive = has_endpoint(account, Family::GoogleDrive);
+    let mut offered = Vec::new();
     match storage {
         Some(cap) if graph => {
-            let mut offered = vec![SyncClass::Files];
+            offered.push(SyncClass::Files);
             if cap.chunked_upload == Offered::Present {
                 offered.push(SyncClass::Photos);
             }
-            offered
         }
-        _ => Vec::new(),
+        Some(_) if drive => offered.push(SyncClass::Files),
+        _ => {}
     }
+    if google_photos(account) {
+        offered.push(SyncClass::Photos);
+    }
+    offered
 }
 
-/// Whether syncd holds an allowing grant for `class` of `account`.
+/// Every key a grant for `class` of `account` may have: the Storage one, and for Photos the
+/// Photos-kind one of a Google account.
+fn keys_of(account: &AccountId, class: SyncClass) -> Vec<GrantKey> {
+    let mut keys = vec![sync_key(account, class)];
+    if class == SyncClass::Photos {
+        keys.push(photos_key(account));
+    }
+    keys
+}
+
+/// Whether syncd holds an allowing grant for `class` of `account`: under either key it may
+/// have (the Storage one, or the Photos one of a Google account).
 pub fn sync_allowed(grants: &[Grant], account: &AccountId, class: SyncClass) -> bool {
-    let key = sync_key(account, class);
+    let wanted = keys_of(account, class);
     grants
         .iter()
-        .any(|g| g.key == key && g.decision == Decision::Allow)
+        .any(|g| wanted.contains(&g.key) && g.decision == Decision::Allow)
 }
 
 impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSink>
@@ -117,19 +172,20 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         class: SyncClass,
         toggle: Toggle,
     ) -> Result<(), Refusal> {
-        let key = sync_key(account, class);
-        let (changed, made, taken) = {
+        let (changed, made, taken, kind) = {
             let mut registry = self.lock();
             let row = registry
                 .accounts
                 .iter()
                 .find(|a| a.id == *account)
                 .ok_or(Refusal::UnknownGrant)?;
+            let key = sync_key_of(row, class);
+            let kind = key.kind;
             let offered = sync_offers(row).contains(&class);
             match toggle {
                 Toggle::On if !offered => return Err(Refusal::NoFittingAccount),
                 Toggle::On if sync_allowed(&registry.grants, account, class) => {
-                    (false, None, Vec::new())
+                    (false, None, Vec::new(), kind)
                 }
                 Toggle::On => {
                     // A refusal kept for this key would outrank nothing here: the person's
@@ -149,17 +205,19 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                         scope: GrantScope::Always,
                         at: self.clock.now(),
                     });
-                    (true, Some(id), taken)
+                    (true, Some(id), taken, kind)
                 }
                 Toggle::Off => {
+                    // Both keys a class may have: a switch off takes back whichever is held.
+                    let wanted = keys_of(account, class);
                     let taken: Vec<Grant> = registry
                         .grants
                         .iter()
-                        .filter(|g| g.key == key)
+                        .filter(|g| wanted.contains(&g.key))
                         .cloned()
                         .collect();
-                    registry.grants.retain(|g| g.key != key);
-                    (!taken.is_empty(), None, taken)
+                    registry.grants.retain(|g| !wanted.contains(&g.key));
+                    (!taken.is_empty(), None, taken, kind)
                 }
             }
         };
@@ -177,10 +235,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             self.note(
                 Some(sync_app()),
                 Some(account.clone()),
-                AuditEvent::Granted {
-                    grant,
-                    kind: CapabilityKind::Storage,
-                },
+                AuditEvent::Granted { grant, kind },
             );
         }
         self.persist().await
