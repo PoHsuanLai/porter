@@ -233,6 +233,53 @@ fn imap_line(stream: &mut TcpStream, send: Option<&str>) -> String {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn the_rig_starts_a_fake_google_that_wants_the_planted_application_secret() {
+    let dir = scratch("servers-google");
+    let _rig = Proc::spawn(
+        env!("CARGO_BIN_EXE_porter-rig-servers"),
+        &["--dir", dir.to_str().expect("utf-8"), "--google"],
+        &[],
+    );
+    let file = eventually("rig.json is written", || RigFile::read(&dir).ok()).await;
+    let google = file.google.clone().expect("--google");
+    assert!(
+        file.oauth.is_none() && file.graph.is_none(),
+        "its own issuer"
+    );
+    assert_eq!(google.client_secret, planted::GOOGLE_CLIENT_SECRET);
+    assert!(
+        file.secrets
+            .iter()
+            .any(|s| s == planted::GOOGLE_CLIENT_SECRET)
+    );
+    assert!(google.userinfo.starts_with(&google.api));
+    for port in [google.port, google.api_port] {
+        assert!(port >= 1024);
+        TcpStream::connect(("127.0.0.1", port)).expect("listens");
+    }
+    // The token endpoint refuses a request without the application secret (`invalid_client`),
+    // and the APIs refuse a request without a live bearer.
+    let (issuer, _) = split_loopback(&google.url).expect("address");
+    let refused = post_form(
+        &issuer,
+        "/token",
+        &[
+            ("grant_type", "refresh_token"),
+            ("refresh_token", "nothing"),
+            ("client_id", &google.client_id),
+        ],
+    )
+    .await
+    .expect("token");
+    assert_eq!(json(&refused.text())["error"], "invalid_client");
+    let (api, _) = split_loopback(&google.api).expect("address");
+    let me = send(&api, Scheme::Http, &Request::new("GET", "/v1/userinfo"))
+        .await
+        .expect("userinfo");
+    assert_eq!(me.status, 401);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn the_rig_serves_me_lists_login_attempts_without_secrets_and_issues_short_tokens() {
     let dir = scratch("servers-levers");
     let mut rig = Proc::spawn(

@@ -1,5 +1,5 @@
 //! `porter-rig-servers --dir <scratch> [--imap] [--smtp] [--pop3] [--dav] [--nextcloud]
-//! [--oauth] [--graph] [--token-lifetime-s N] [--ollama] [--llm-api]
+//! [--oauth] [--graph] [--google] [--token-lifetime-s N] [--ollama] [--llm-api]
 //! [--tls implicit|starttls|plain]`
 //!
 //! Starts the fakes on 127.0.0.1, writes `<scratch>/rig.json` and `<scratch>/ca.pem`, serves
@@ -52,6 +52,10 @@ struct Args {
     /// The Graph drive (starts the issuer too: the drive accepts its tokens).
     #[arg(long)]
     graph: bool,
+    /// A fake Google: its own issuer (Google's style, wanting the planted application secret)
+    /// and the account APIs that accept its tokens. Independent of `--oauth` and `--graph`.
+    #[arg(long)]
+    google: bool,
     /// The `expires_in` of the issuer's access tokens, in seconds (the issuer's own: 3600). A
     /// short one makes a daemon refresh again inside a scenario.
     #[arg(long, value_name = "SECONDS")]
@@ -84,6 +88,7 @@ async fn main() -> ExitCode {
         nextcloud: args.nextcloud,
         oauth: args.oauth,
         graph: args.graph,
+        google: args.google,
         token_lifetime_s: args.token_lifetime_s,
         ollama: args.ollama,
         llm_api: args.llm_api,

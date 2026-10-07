@@ -64,6 +64,31 @@ pub struct OauthAt {
     pub access_token: String,
 }
 
+/// The fake Google: its issuer and its account APIs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GoogleAt {
+    /// The issuer, `http://127.0.0.1:<port>`.
+    pub url: String,
+    /// The issuer's port.
+    pub port: u16,
+    /// `<url>/authorize`.
+    pub authorize: String,
+    /// `<url>/token`.
+    pub token: String,
+    /// `<url>/revoke`.
+    pub revoke: String,
+    /// The account APIs, `http://127.0.0.1:<port>`.
+    pub api: String,
+    /// The APIs' port.
+    pub api_port: u16,
+    /// Where userinfo is read.
+    pub userinfo: String,
+    /// The client id the issuer accepts.
+    pub client_id: String,
+    /// The application secret the token endpoint wants (planted).
+    pub client_secret: String,
+}
+
 /// The LLM API fake.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LlmApiAt {
@@ -124,6 +149,9 @@ pub struct RigFile {
     /// The Graph drive (it accepts the issuer's access tokens).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub graph: Option<HttpAt>,
+    /// The fake Google (its own issuer, not the OAuth issuer above).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub google: Option<GoogleAt>,
     /// The fake Ollama.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ollama: Option<OllamaAt>,

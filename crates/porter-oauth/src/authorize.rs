@@ -11,7 +11,9 @@ use porter_provider::{ClientEntry, Issuer, IssuerEndpoints};
 /// The authorize URL for `client` at `endpoints`, redirecting to `redirect`.
 ///
 /// Google gets `access_type=offline` and `prompt=consent`: without them a repeat authorization
-/// returns no refresh token and the account stops working an hour later.
+/// returns no refresh token and the account stops working an hour later. It also gets
+/// `include_granted_scopes=true`, so asking for one more service later (incremental
+/// authorization) keeps what was granted before.
 pub fn authorize_url(
     endpoints: &IssuerEndpoints,
     client: &ClientEntry,
@@ -33,7 +35,11 @@ pub fn authorize_url(
         ("code_challenge_method", "S256"),
     ]);
     if client.issuer == Issuer::Google {
-        pairs.extend([("access_type", "offline"), ("prompt", "consent")]);
+        pairs.extend([
+            ("access_type", "offline"),
+            ("prompt", "consent"),
+            ("include_granted_scopes", "true"),
+        ]);
     }
     with_query(endpoints.authorize.as_str(), &pairs)
 }
@@ -141,6 +147,15 @@ mod tests {
             &[],
         );
         assert!(url.contains("access_type=offline") && url.contains("prompt=consent"));
+        assert!(url.contains("include_granted_scopes=true"));
+        let microsoft = authorize_url(
+            &Issuer::Microsoft.endpoints(),
+            &client(Issuer::Microsoft),
+            &pkce,
+            "http://127.0.0.1:4000",
+            &[],
+        );
+        assert!(!microsoft.contains("include_granted_scopes"));
     }
 
     #[test]

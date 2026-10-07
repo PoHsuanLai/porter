@@ -5,7 +5,7 @@
 //!   `a_mail_exchanger_in_a_providers_domain_gives_that_providers_preset`,
 //!   `only_the_two_known_issuers_are_recognised` (`is_personal_microsoft`), `last_at_wins`;
 //! - `crates/mail-core/src/provider.rs`, test `the_preset_wins_and_a_lookalike_host_does_not`
-//!   (the host-suffix brand rows: Microsoft, Fastmail, iCloud, Yahoo; Google has no file, D1).
+//!   (the host-suffix brand rows: Microsoft, Fastmail, iCloud, Yahoo, Google).
 //!
 //! mailo has no domain table for Fastmail, iCloud, Yahoo or GMX (its brand is read from the
 //! incoming host); their domains and MX suffixes are the providers' public facts.
@@ -167,14 +167,41 @@ fn every_former_preset_address_and_mx_resolves_to_its_file() {
             &["mx.outlook.com"],
             Some(("icloud", Domain)),
         ),
-        // Google keeps its file with no `matching`: Gmail is a TODO (owner decision D1), so
-        // mailo's gmail/googlemail preset and its google.com MX rule resolve to nothing here.
-        ("gmail (D1)", "someone@gmail.com", &[], None),
-        ("googlemail (D1)", "someone@GoogleMail.COM", &[], None),
+        // Google (W5c): mailo's gmail/googlemail preset and its google.com MX rule.
         (
-            "google MX (D1)",
+            "gmail",
+            "someone@gmail.com",
+            &[],
+            Some(("google", Domain)),
+        ),
+        (
+            "googlemail",
+            "someone@GoogleMail.COM",
+            &[],
+            Some(("google", Domain)),
+        ),
+        (
+            "google MX",
             "me@firm.example",
             &["aspmx.l.google.com"],
+            Some(("google", Mx)),
+        ),
+        (
+            "google MX, the other domain",
+            "me@firm.example",
+            &["gmr-smtp-in.l.google.com", "alt1.aspmx.l.googlemail.com"],
+            Some(("google", Mx)),
+        ),
+        (
+            "lookalike google MX",
+            "me@firm.example",
+            &["notgoogle.com"],
+            None,
+        ),
+        (
+            "google as a prefix label",
+            "me@firm.example",
+            &["google.com.example.test"],
             None,
         ),
         // Unknown and malformed (mailo `unknown_and_malformed`); `generic-*` claim nothing by
@@ -254,13 +281,13 @@ fn file_serving(set: &ProviderSet, host: &str) -> Option<String> {
 
 #[test]
 fn the_hosts_mailo_branded_are_the_hosts_the_files_declare() {
-    // mail-core `provider.rs` cases: (host, brand). Google has no file (D1).
+    // mail-core `provider.rs` cases: (host, brand). Google's mail row names Gmail's host.
     const CASES: &[(&str, &str, Option<&str>)] = &[
         ("office365 host", "outlook.office365.com", Some("microsoft")),
         ("fastmail host", "imap.fastmail.com", Some("fastmail")),
         ("icloud host", "imap.mail.me.com", Some("icloud")),
         ("yahoo host", "imap.mail.yahoo.com", Some("yahoo")),
-        ("gmail host (D1)", "imap.gmail.com", None),
+        ("gmail host", "imap.gmail.com", Some("google")),
         ("lookalike", "imap.fastmail.com.evil.test", None),
         ("anything else", "imap.example.test", None),
     ];
@@ -295,9 +322,9 @@ fn a_listed_domain_is_claimed_by_one_file_only() {
 }
 
 #[test]
-fn the_fallbacks_claim_nothing_and_google_stays_unclaimed() {
+fn the_fallbacks_claim_nothing() {
     let set = set();
-    for id in ["generic-imap", "generic-dav", "generic-jmap", "google"] {
+    for id in ["generic-imap", "generic-dav", "generic-jmap"] {
         let spec = set
             .specs()
             .iter()

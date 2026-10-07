@@ -25,6 +25,8 @@ pub enum FakeProtocol {
     Dav,
     /// A Microsoft Graph drive.
     Graph,
+    /// Google's account APIs: userinfo, Calendar, People, Tasks, Drive's app folder.
+    Google,
     /// An autoconfig and DNS answer.
     Autoconfig,
     /// A model list: Ollama's, or an OpenAI-compatible one.

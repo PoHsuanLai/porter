@@ -12,7 +12,7 @@ publish.workspace = true
 porter-core = { workspace = true }
 porter-dbus = { workspace = true }
 porter-discover = { workspace = true, features = ["io"] }
-porter-families = { workspace = true, features = ["nextcloud", "generic", "microsoft", "api_key", "openrouter", "agent_login"] }
+porter-families = { workspace = true, features = ["nextcloud", "generic", "microsoft", "google", "api_key", "openrouter", "agent_login"] }
 porter-http = { workspace = true, features = ["hyper"] }
 porter-provider = { workspace = true }
 porter-proxy = { workspace = true, features = ["tls"] }
@@ -32,6 +32,7 @@ zbus = { workspace = true }
 [dev-dependencies]
 porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }
+porter-oauth = { workspace = true }
 tokio = { workspace = true }
 
 [lints]

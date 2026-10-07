@@ -24,6 +24,11 @@ pub struct TokenResponse {
     /// mailo assumed).
     #[serde(default = "default_expires_in")]
     pub expires_in: u32,
+    /// The scopes the issuer granted, space separated, when its answer says (Google's does, and
+    /// a person may have unticked some of what was asked: granular consent). Absent when the
+    /// issuer does not say.
+    #[serde(default)]
+    pub scope: Option<String>,
 }
 
 /// What `expires_in` is taken to be when the issuer's answer leaves it out: one hour.
@@ -34,6 +39,14 @@ fn default_expires_in() -> u32 {
 }
 
 impl TokenResponse {
+    /// The scopes the issuer says it granted, one each; empty when it did not say.
+    pub fn granted_scopes(&self) -> Vec<String> {
+        self.scope
+            .as_deref()
+            .map(|s| s.split_whitespace().map(str::to_owned).collect())
+            .unwrap_or_default()
+    }
+
     /// When the access token expires, given the time of the request.
     pub fn expires_at(&self, now: UnixSeconds) -> UnixSeconds {
         UnixSeconds(now.0 + i64::from(self.expires_in))

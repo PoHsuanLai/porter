@@ -16,7 +16,9 @@ use porter_core::{Account, AccountId, AuthKind, CapabilityKind, GrantId, Offer};
 use porter_provider::Issuer;
 use porter_service::{Registry, SyncClass, sync_offers};
 
-/// The issuers a bring-your-own client id may be set for (Google is a TODO, FINDINGS).
+/// The issuers a bring-your-own client id may be set for. Google is not here on purpose: its row
+/// carries an application secret and the `testing` and `byo` flags, which this writer would drop,
+/// so the owner edits it by hand (docs/google.md).
 pub(crate) const ISSUERS: &[Issuer] = &[Issuer::Microsoft];
 
 /// What a key names.

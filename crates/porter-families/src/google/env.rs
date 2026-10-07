@@ -1,10 +1,15 @@
-//! What a Microsoft provider needs from its surroundings, handed in rather than read where it is
-//! used: the HTTP seam, the client registry, the build channel, the clock, randomness and how a
-//! sign-in is asked to proceed. Tests hand in a fake issuer's seam and a counting clock;
-//! [`MicrosoftEnv::system`] is what accountd and an app hosting porter in process use.
+//! What a Google provider needs from its surroundings, handed in rather than read where it is
+//! used: the HTTP seam, the client registry, the build channel, the clock, randomness and where
+//! the account's identity is read. Tests hand in a fake Google's seam and a counting clock;
+//! [`GoogleEnv::system`] is what accountd and an app hosting porter in process use.
+//!
+//! Google's installed-app flow is the loopback redirect only: its device flow serves a short
+//! list of scopes that has none of Calendar, People or Tasks, so there is no `SignInFlow`.
 
-pub use crate::env_common::{Clock, Random};
-use crate::env_common::{SHIPPED_CLIENTS, own_clients_path, system_now, system_random};
+use crate::env_common::{
+    Clock, Random, SHIPPED_CLIENTS, own_clients_path, system_now, system_random,
+};
+use porter_core::EndpointUrl;
 use porter_http::Http;
 use porter_oauth::ClientRegistry;
 use porter_provider::ClientChannel;
@@ -12,19 +17,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-/// How the person is asked to sign in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum SignInFlow {
-    /// The browser on this computer, redirecting to a loopback listener (PKCE, S256).
-    #[default]
-    Loopback,
-    /// A code typed on another device (headless and SSH sessions).
-    DeviceCode,
-}
+/// OpenID Connect's userinfo endpoint, where the account's address and name are read.
+const USERINFO: &str = "https://openidconnect.googleapis.com/v1/userinfo";
 
-/// The surroundings of one Microsoft provider.
-pub struct MicrosoftEnv<H> {
-    /// Every call to the issuer and to Graph goes through it.
+/// The surroundings of one Google provider.
+pub struct GoogleEnv<H> {
+    /// Every call to the issuer and to Google's APIs goes through it.
     pub http: Arc<H>,
     /// Which client id this build presents.
     pub registry: ClientRegistry,
@@ -34,13 +32,13 @@ pub struct MicrosoftEnv<H> {
     pub clock: Clock,
     /// Randomness for PKCE.
     pub random: Random,
-    /// The sign-in flow to start.
-    pub flow: SignInFlow,
+    /// Where the account's address and name are read.
+    pub userinfo: EndpointUrl,
     /// How long one `Poll` waits before answering `Waiting`.
     pub poll_slice: Duration,
 }
 
-impl<H> Clone for MicrosoftEnv<H> {
+impl<H> Clone for GoogleEnv<H> {
     fn clone(&self) -> Self {
         Self {
             http: Arc::clone(&self.http),
@@ -48,25 +46,25 @@ impl<H> Clone for MicrosoftEnv<H> {
             channel: self.channel,
             clock: Arc::clone(&self.clock),
             random: Arc::clone(&self.random),
-            flow: self.flow,
+            userinfo: self.userinfo.clone(),
             poll_slice: self.poll_slice,
         }
     }
 }
 
-impl<H> std::fmt::Debug for MicrosoftEnv<H> {
+impl<H> std::fmt::Debug for GoogleEnv<H> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("MicrosoftEnv")
+        f.debug_struct("GoogleEnv")
             .field("channel", &self.channel)
-            .field("flow", &self.flow)
+            .field("userinfo", &self.userinfo)
             .field("poll_slice", &self.poll_slice)
             .finish_non_exhaustive()
     }
 }
 
-impl<H: Http> MicrosoftEnv<H> {
+impl<H: Http> GoogleEnv<H> {
     /// An environment over `http` with the system's clock and randomness, `registry` for the
-    /// clients, the stable channel, the loopback flow and a two-second poll.
+    /// clients, the stable channel, Google's userinfo endpoint and a two-second poll.
     pub fn new(http: H, registry: ClientRegistry) -> Self {
         Self {
             http: Arc::new(http),
@@ -74,7 +72,7 @@ impl<H: Http> MicrosoftEnv<H> {
             channel: ClientChannel::Stable,
             clock: Arc::new(system_now),
             random: Arc::new(system_random),
-            flow: SignInFlow::default(),
+            userinfo: userinfo_endpoint(USERINFO),
             poll_slice: Duration::from_secs(2),
         }
     }
@@ -82,11 +80,6 @@ impl<H: Http> MicrosoftEnv<H> {
     /// With this build channel.
     pub fn with_channel(self, channel: ClientChannel) -> Self {
         Self { channel, ..self }
-    }
-
-    /// With this sign-in flow.
-    pub fn with_flow(self, flow: SignInFlow) -> Self {
-        Self { flow, ..self }
     }
 
     /// With this clock.
@@ -103,9 +96,14 @@ impl<H: Http> MicrosoftEnv<H> {
     pub fn with_poll_slice(self, poll_slice: Duration) -> Self {
         Self { poll_slice, ..self }
     }
+
+    /// Reading the account's identity from `userinfo` (a fake Google in a test).
+    pub fn with_userinfo(self, userinfo: EndpointUrl) -> Self {
+        Self { userinfo, ..self }
+    }
 }
 
-impl<H: Http + Default> MicrosoftEnv<H> {
+impl<H: Http + Default> GoogleEnv<H> {
     /// The environment of a daemon: the shipped clients file and the person's own, found from
     /// `XDG_CONFIG_HOME` and `HOME`. A damaged clients file leaves the registry empty, so the
     /// sign-in says it needs a client id rather than guessing one.
@@ -117,5 +115,33 @@ impl<H: Http + Default> MicrosoftEnv<H> {
         let registry =
             ClientRegistry::from_paths(Path::new(SHIPPED_CLIENTS), &own).unwrap_or_default();
         Self::new(H::default(), registry)
+    }
+}
+
+fn userinfo_endpoint(url: &str) -> EndpointUrl {
+    EndpointUrl::parse(url).unwrap_or_else(|_| unreachable!("{url} is a literal endpoint URL"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use porter_http::{HttpError, HttpRequest, HttpResponse};
+
+    #[derive(Default)]
+    struct Nowhere;
+
+    impl Http for Nowhere {
+        async fn send(&self, _: HttpRequest) -> Result<HttpResponse, HttpError> {
+            Err(HttpError::Unreachable)
+        }
+    }
+
+    #[test]
+    fn the_defaults_are_googles_and_the_stable_channel() {
+        let env = GoogleEnv::new(Nowhere, ClientRegistry::default());
+        assert_eq!(env.userinfo.as_str(), USERINFO);
+        assert_eq!(env.channel, ClientChannel::Stable);
+        let moved = env.with_userinfo(userinfo_endpoint("http://127.0.0.1:1/v1/userinfo"));
+        assert!(moved.userinfo.as_str().starts_with("http://127.0.0.1"));
     }
 }

@@ -36,6 +36,7 @@ fn authorize(shared: &Shared, request: &Request) -> Response {
     let (Some(client_id), Some(redirect_uri)) = (q("client_id"), q("redirect_uri")) else {
         return refuse("invalid_request: client_id and redirect_uri are required");
     };
+    shared.queries.push(request.query());
     let state_param = q("state");
     let back = |query: String| {
         let sep = if redirect_uri.contains('?') { '&' } else { '?' };
@@ -67,6 +68,7 @@ fn authorize(shared: &Shared, request: &Request) -> Response {
         Consent::Grant => {
             let code = next(&mut state, "fake-code");
             let grant = Code {
+                offline: q("access_type").as_deref() == Some("offline"),
                 client_id,
                 redirect_uri: redirect_uri.clone(),
                 challenge: q("code_challenge").unwrap_or_default(),
@@ -84,7 +86,7 @@ pub(super) const DEFAULT_LIFETIME_S: u64 = 3600;
 fn issue(state: &mut State, client_id: &str, scope: &str) -> (String, String, serde_json::Value) {
     let access = next(state, "fake-access");
     let refresh = next(state, "fake-refresh");
-    state.access.insert(access.clone(), client_id.to_owned());
+    record_access(state, &access, client_id, scope);
     let grant = Grant {
         client_id: client_id.to_owned(),
         scope: scope.to_owned(),
@@ -97,11 +99,44 @@ fn issue(state: &mut State, client_id: &str, scope: &str) -> (String, String, se
     (access, refresh, body)
 }
 
+/// An access token alone, for the refresh token `kept`, which stays valid (Google's refresh).
+fn issue_access(state: &mut State, client_id: &str, scope: &str, kept: &str) -> Issued {
+    let access = next(state, "fake-access");
+    record_access(state, &access, client_id, scope);
+    let body = json!({
+        "access_token": access, "token_type": "Bearer", "expires_in": state.lifetime_s,
+        "scope": scope,
+    });
+    Ok((access, kept.to_owned(), body))
+}
+
+/// A code's first tokens: Google issues a refresh token only to a code that asked for offline
+/// access.
+fn issue_for_code(state: &mut State, offline: bool, client_id: &str, scope: &str) -> Issued {
+    match (state.style, offline) {
+        (Style::Google, false) => {
+            let access = next(state, "fake-access");
+            record_access(state, &access, client_id, scope);
+            let body = json!({
+                "access_token": access, "token_type": "Bearer",
+                "expires_in": state.lifetime_s, "scope": scope,
+            });
+            Ok((access, String::new(), body))
+        }
+        _ => Ok(issue(state, client_id, scope)),
+    }
+}
+
 fn token(shared: &Shared, request: &Request) -> Response {
     let form = |name: &str| request.form_value(name).unwrap_or_default();
     let (grant_type, client_id) = (form("grant_type"), form("client_id"));
     let mut state = lock(&shared.state);
+    let secret_ok = state
+        .client_secret
+        .as_deref()
+        .is_none_or(|want| form("client_secret") == want);
     let outcome = match grant_type.as_str() {
+        _ if !secret_ok => Err("invalid_client".to_owned()),
         "authorization_code" => exchange_code(&mut state, request, &client_id),
         "refresh_token" => refresh(&mut state, &form("refresh_token"), &client_id),
         DEVICE_GRANT => poll_device(&mut state, &form("device_code"), &client_id),
@@ -132,7 +167,7 @@ fn exchange_code(state: &mut State, request: &Request, client_id: &str) -> Issue
     let proves = !verifier.is_empty() && s256(&verifier) == code.challenge;
     let matches = code.client_id == client_id && code.redirect_uri == form("redirect_uri");
     match proves && matches {
-        true => Ok(issue(state, client_id, &code.scope)),
+        true => issue_for_code(state, code.offline, client_id, &code.scope),
         false => Err("invalid_grant".to_owned()),
     }
 }
@@ -142,13 +177,16 @@ fn refresh(state: &mut State, presented: &str, client_id: &str) -> Issued {
         state.refuse_refreshes -= 1;
         return Err("invalid_grant".to_owned());
     }
-    match state.refresh.get(presented) {
-        Some(grant) if grant.client_id == client_id => {}
+    let scope = match state.refresh.get(presented) {
+        Some(grant) if grant.client_id == client_id => grant.scope.clone(),
         _ => return Err("invalid_grant".to_owned()),
+    };
+    if state.style == Style::Google {
+        return issue_access(state, client_id, &scope, presented);
     }
     // Rotation: the presented token is spent, a new one comes back.
-    let grant = state.refresh.remove(presented).ok_or("invalid_grant")?;
-    Ok(issue(state, client_id, &grant.scope))
+    state.refresh.remove(presented);
+    Ok(issue(state, client_id, &scope))
 }
 
 fn poll_device(state: &mut State, device_code: &str, client_id: &str) -> Issued {
@@ -198,4 +236,12 @@ fn device(shared: &Shared, request: &Request) -> Response {
             "expires_in": 600, "interval": 1,
         }),
     )
+}
+
+/// Notes an issued access token, its client and the scopes it carries.
+fn record_access(state: &mut State, access: &str, client_id: &str, scope: &str) {
+    state.access.insert(access.to_owned(), client_id.to_owned());
+    state
+        .access_scopes
+        .insert(access.to_owned(), scope.to_owned());
 }

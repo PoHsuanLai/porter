@@ -1,5 +1,14 @@
 # Google with this build's non-restricted scopes (design/31 R1-R5): Drive is the app folder,
-# Photos is an upload target and a picker import, never a library mirror.
+# Photos is an upload target and a picker import, never a library mirror. The sign-in is the
+# installed-app flow of a Google Cloud OAuth client the owner registers (docs/google.md); with no
+# client row in clients.toml the provider is listed and adding says it needs a client id.
+#
+# Mail is the one row that is not for every client: Gmail over IMAP and SMTP needs the restricted
+# scope `https://mail.google.com/`, which Google grants only to a client it has assessed, so the
+# row is for a person's own client (`byo = true` in its clients.toml row). A provider file cannot
+# make a row conditional, so the Google family drops the row from an account whose client is not
+# the person's own (claim `Absent`, `UnverifiedBuild`, no scope asked); the row is here so the
+# file says what the provider can do and so an `imap`/`smtp` audience is a covered one.
 id = "google"
 label = "Google"
 mark = "google"
@@ -11,27 +20,51 @@ issuer = "google"
 [discovery]
 kind = "fixed"
 
+# gmail.com and googlemail.com, and a domain whose mail Google hosts (Workspace): the generic
+# add flow offers Google for these. mailo's preset and its google.com MX rule are the same.
+[matching]
+domains = ["gmail.com", "googlemail.com"]
+mx_suffixes = ["google.com", "googlemail.com"]
+
+[[capability]]
+family = "imap"
+endpoint = "imaps://imap.gmail.com:993"
+kind = "mail"
+v = { access = "read_write", send = "present", delta = "push", transport = "imap", labels = "labels" }
+
 [[capability]]
 family = "google_calendar"
+endpoint = "https://www.googleapis.com/calendar/v3"
 kind = "calendar"
 v = { access = "read_write", delta = "poll", transport = "google_api", collections = "present" }
 
 [[capability]]
 family = "google_people"
+endpoint = "https://people.googleapis.com/v1"
 kind = "contacts"
 v = { access = "read_write", delta = "poll", transport = "google_api", collections = "absent" }
 
 [[capability]]
 family = "google_tasks"
+endpoint = "https://tasks.googleapis.com/tasks/v1"
 kind = "tasks"
 v = { access = "read_write", delta = "none", transport = "google_api", collections = "present" }
 
 [[capability]]
 family = "google_drive"
+endpoint = "https://www.googleapis.com/drive/v3"
 kind = "storage"
+# The app data folder (scope drive.appdata): a hidden folder only this client reads.
 v = { access = "read_write", delta = "poll", quota = "reported", scope = "app_folder", hashes = "md5", ranges = "present", chunked_upload = "present" }
 
 [[capability]]
 family = "google_photos_upload"
+endpoint = "https://photoslibrary.googleapis.com/v1"
+kind = "photos"
+v = { library_read = "picker_only", upload = "present", albums = "app_created", video = "present", delta = "none" }
+
+[[capability]]
+family = "google_photos_picker"
+endpoint = "https://photospicker.googleapis.com/v1"
 kind = "photos"
 v = { library_read = "picker_only", upload = "present", albums = "app_created", video = "present", delta = "none" }

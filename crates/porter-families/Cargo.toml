@@ -35,6 +35,9 @@ nextcloud = ["dep:porter-dav", "dep:porter-discover", "dep:base64", "dep:serde_j
 generic = ["dep:porter-dav", "dep:porter-discover", "dep:base64"]
 # Microsoft: OAuth PKCE and device code, IMAP/SMTP XOAUTH2, Graph.
 microsoft = ["dep:porter-oauth", "dep:porter-discover", "porter-oauth/io", "porter-http/hyper", "dep:serde", "dep:serde_json", "dep:tokio"]
+# Google: OAuth PKCE through a loopback redirect with the owner's own client, Calendar, People,
+# Tasks, the Drive app folder, Photos, and Gmail IMAP/SMTP XOAUTH2 for a client of one's own.
+google = ["dep:porter-oauth", "porter-oauth/io", "porter-http/hyper", "dep:serde", "dep:serde_json", "dep:tokio"]
 # AI providers with a pasted API key (Anthropic, OpenAI).
 api_key = ["porter-http/hyper"]
 # Coding agents that sign themselves in (Claude Code, Gemini CLI, Codex): no credential held.
@@ -48,6 +51,10 @@ workspace = true
 [[test]]
 name = "microsoft"
 required-features = ["microsoft"]
+
+[[test]]
+name = "google"
+required-features = ["google"]
 
 [[test]]
 name = "agent_login"

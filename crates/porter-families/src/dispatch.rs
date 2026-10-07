@@ -18,6 +18,8 @@ macro_rules! each_family {
             Self::Generic($p) => $body,
             #[cfg(feature = "microsoft")]
             Self::Microsoft($p) => $body,
+            #[cfg(feature = "google")]
+            Self::Google($p) => $body,
             #[cfg(feature = "api_key")]
             Self::ApiKey($p) => $body,
             #[cfg(feature = "openrouter")]
@@ -43,6 +45,9 @@ pub enum FamilyProvider {
     /// Microsoft.
     #[cfg(feature = "microsoft")]
     Microsoft(crate::MicrosoftProvider),
+    /// Google.
+    #[cfg(feature = "google")]
+    Google(crate::GoogleProvider),
     /// Pasted API keys.
     #[cfg(feature = "api_key")]
     ApiKey(crate::ApiKeyProvider),
@@ -66,6 +71,9 @@ pub enum FamilySession {
     /// Microsoft.
     #[cfg(feature = "microsoft")]
     Microsoft(crate::MicrosoftSession),
+    /// Google.
+    #[cfg(feature = "google")]
+    Google(crate::GoogleSession),
     /// Pasted API keys.
     #[cfg(feature = "api_key")]
     ApiKey(crate::ApiKeySession),
@@ -89,6 +97,9 @@ pub enum FamilySignIn {
     /// Microsoft.
     #[cfg(feature = "microsoft")]
     Microsoft(crate::MicrosoftSignIn),
+    /// Google.
+    #[cfg(feature = "google")]
+    Google(crate::GoogleSignIn),
     /// Pasted API keys.
     #[cfg(feature = "api_key")]
     ApiKey(crate::ApiKeySignIn),
@@ -134,6 +145,8 @@ impl Provider for FamilyProvider {
                 .open(account, presented)
                 .await
                 .map(FamilySession::Microsoft),
+            #[cfg(feature = "google")]
+            Self::Google(p) => p.open(account, presented).await.map(FamilySession::Google),
             #[cfg(feature = "api_key")]
             Self::ApiKey(p) => p.open(account, presented).await.map(FamilySession::ApiKey),
             #[cfg(feature = "openrouter")]
@@ -162,6 +175,8 @@ impl Provider for FamilyProvider {
             Self::Generic(p) => p.sign_in(start).map(FamilySignIn::Generic),
             #[cfg(feature = "microsoft")]
             Self::Microsoft(p) => p.sign_in(start).map(FamilySignIn::Microsoft),
+            #[cfg(feature = "google")]
+            Self::Google(p) => p.sign_in(start).map(FamilySignIn::Google),
             #[cfg(feature = "api_key")]
             Self::ApiKey(p) => p.sign_in(start).map(FamilySignIn::ApiKey),
             #[cfg(feature = "openrouter")]

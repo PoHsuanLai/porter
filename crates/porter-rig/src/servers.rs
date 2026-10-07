@@ -4,17 +4,17 @@
 //! never below 1024), and everything of the rig lives in one scratch directory.
 
 use crate::planted::{
-    API_KEY, DAV_PASSWORD, DAV_USER, MAIL_PASSWORD, MAIL_USER, NEXTCLOUD_APP_PASSWORD,
-    OAUTH_ACCESS_TOKEN, OAUTH_CLIENT, OAUTH_REFRESH_TOKEN, OAUTH_SCOPE,
+    API_KEY, DAV_PASSWORD, DAV_USER, GOOGLE_CLIENT, GOOGLE_CLIENT_SECRET, MAIL_PASSWORD, MAIL_USER,
+    NEXTCLOUD_APP_PASSWORD, OAUTH_ACCESS_TOKEN, OAUTH_CLIENT, OAUTH_REFRESH_TOKEN, OAUTH_SCOPE,
 };
-use crate::rigfile::{HttpAt, LlmApiAt, MailAt, OauthAt, OllamaAt, RigFile};
+use crate::rigfile::{GoogleAt, HttpAt, LlmApiAt, MailAt, OauthAt, OllamaAt, RigFile};
 use porter_core::Tls;
 use porter_fake_servers::imap::mailbox;
 use porter_fake_servers::mail::Accounts;
 use porter_fake_servers::net::Bind;
 use porter_fake_servers::{
     DavHandle, FakeDav, FakeGraph, FakeImap, FakeIssuer, FakeLlmApi, FakeModels, FakeNextcloud,
-    FakePop3, FakeSmtp, GraphHandle, IssuerHandle, LlmApiHandle, MailHandle, ModelDef,
+    FakePop3, FakeSmtp, Google, GraphHandle, IssuerHandle, LlmApiHandle, MailHandle, ModelDef,
     ModelsHandle, NextcloudHandle, Running, Wire, llm_api::Auth, tls,
 };
 use std::io;
@@ -40,6 +40,9 @@ pub struct Options {
     pub oauth: bool,
     /// The Graph drive, which accepts the issuer's tokens (so it starts the issuer too).
     pub graph: bool,
+    /// A fake Google: its own issuer (Google's style, wanting the planted application secret)
+    /// and the account APIs that accept its tokens.
+    pub google: bool,
     /// The `expires_in` of the issuer's access tokens, in seconds (none: the issuer's 3600).
     pub token_lifetime_s: Option<u64>,
     /// An Ollama.
@@ -186,6 +189,7 @@ pub struct Rig {
     nextcloud: Option<Running<NextcloudHandle>>,
     issuer: Option<Running<IssuerHandle>>,
     graph: Option<Running<GraphHandle>>,
+    google: Option<Google>,
     llm_api: Option<Running<LlmApiHandle>>,
     ollama: Option<Arc<Ollama>>,
     tls: Option<Tls>,
@@ -235,6 +239,13 @@ impl Rig {
             graph.set_mail(MAIL_USER);
             rig.graph = Some(graph);
         }
+        if options.google {
+            let google = Google::start(GOOGLE_CLIENT_SECRET).await?;
+            if let Some(seconds) = options.token_lifetime_s {
+                google.issuer.set_token_lifetime(seconds);
+            }
+            rig.google = Some(google);
+        }
         if options.llm_api {
             let api = FakeLlmApi::start(Auth::Bearer).await?;
             api.seed_key(API_KEY);
@@ -264,6 +275,11 @@ impl Rig {
     /// The POP3 server's handle, when it runs.
     pub fn pop3(&self) -> Option<MailHandle> {
         self.pop3.as_ref().map(|running| (**running).clone())
+    }
+
+    /// The fake Google's issuer and APIs, when they run.
+    pub fn google(&self) -> Option<&Google> {
+        self.google.as_ref()
     }
 
     /// The Graph drive's handle, when it runs.
@@ -319,6 +335,21 @@ impl Rig {
                 .graph
                 .as_ref()
                 .map(|r| http_at(r.base_url(), None, None)),
+            google: self.google.as_ref().map(|g| {
+                let url = g.issuer.base_url().to_owned();
+                GoogleAt {
+                    port: port_of(&url),
+                    authorize: format!("{url}/authorize"),
+                    token: format!("{url}/token"),
+                    revoke: format!("{url}/revoke"),
+                    url,
+                    api: g.api.base_url().to_owned(),
+                    api_port: port_of(g.api.base_url()),
+                    userinfo: g.api.userinfo_url(),
+                    client_id: GOOGLE_CLIENT.to_owned(),
+                    client_secret: GOOGLE_CLIENT_SECRET.to_owned(),
+                }
+            }),
             ollama: self.ollama.as_ref().map(|o| OllamaAt {
                 url: format!("http://127.0.0.1:{}", o.port()),
                 port: o.port(),

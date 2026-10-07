@@ -1,14 +1,15 @@
 //! The provider files the daemon serves, and the family that serves each. Files are read from
 //! the directories in order, a later directory's file replacing an earlier one's of the same
 //! id (the user's over the system's); a file that does not parse is skipped and named on
-//! standard error, never fatal. A provider whose sign-in no built family serves (Google, which
-//! is a TODO; a local runtime, which inferd reports) is kept out of the served set.
+//! standard error, never fatal. A provider whose sign-in no built family serves (a local runtime,
+//! which inferd reports) is kept out of the served set. Google is served with or without a client
+//! id registered: without one, adding it says it needs one.
 
 use porter_core::AuthKind;
 use porter_discover::{Dns, DnsFault, HickoryDns, MxRecord, SrvRecord};
 use porter_families::{
-    AgentLoginProvider, ApiKeyProvider, FamilyProvider, GenericProvider, MicrosoftProvider,
-    NextcloudProvider, OpenRouterProvider, SharedDns,
+    AgentLoginProvider, ApiKeyProvider, FamilyProvider, GenericProvider, GoogleProvider,
+    MicrosoftProvider, NextcloudProvider, OpenRouterProvider, SharedDns,
 };
 use porter_http::{HyperHttp, SharedHttp, TokioSleep};
 use porter_provider::{DomainName, Issuer, ProviderSet, ProviderSpec, parse_provider};
@@ -121,6 +122,9 @@ pub fn family_of(spec: ProviderSpec, io: &FamilyIo) -> Result<FamilyProvider, Bo
         (AuthKind::OAuthPkce, Some(Issuer::Microsoft)) => {
             Ok(FamilyProvider::Microsoft(MicrosoftProvider::new(spec)))
         }
+        (AuthKind::OAuthPkce, Some(Issuer::Google)) => {
+            Ok(FamilyProvider::Google(GoogleProvider::new(spec)))
+        }
         (AuthKind::ApiKey, _) => Ok(FamilyProvider::ApiKey(ApiKeyProvider::new(spec))),
         (AuthKind::AgentLogin, _) => Ok(FamilyProvider::AgentLogin(AgentLoginProvider::new(spec))),
         (AuthKind::OAuthMintsKey, Some(Issuer::OpenRouter)) => {
@@ -156,6 +160,7 @@ pub fn local_runtimes(unserved: &[ProviderSpec]) -> Vec<ProviderSpec> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use porter_provider::Provider;
 
     fn scratch(name: &str) -> PathBuf {
         let dir =
@@ -181,8 +186,12 @@ mod tests {
         let (families, unserved) = served(loaded.specs, &io);
         let ids: Vec<String> = unserved.iter().map(|s| s.id.to_string()).collect();
         assert!(!families.is_empty());
-        // Google has no family (a TODO); the local runtimes are reported by inferd.
-        assert!(ids.contains(&"google".to_owned()), "{ids:?}");
+        // Google has its family; the local runtimes are reported by inferd.
+        assert!(!ids.contains(&"google".to_owned()), "{ids:?}");
+        assert!(
+            families.iter().any(|f| f.spec().id.as_str() == "google"),
+            "google is served"
+        );
         assert!(!ids.contains(&"nextcloud".to_owned()), "{ids:?}");
         let local: Vec<String> = local_runtimes(&unserved)
             .iter()

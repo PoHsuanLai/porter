@@ -38,6 +38,19 @@ enum DeviceState {
     Denied,
 }
 
+/// How the issuer behaves where issuers differ.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Style {
+    /// Microsoft's: every refresh returns a new refresh token and spends the one presented, and
+    /// a refresh token comes with every code.
+    #[default]
+    Rotating,
+    /// Google's: a refresh token is issued once, only to a code that asked for
+    /// `access_type=offline`; refreshing returns an access token alone and the refresh token
+    /// stays valid.
+    Google,
+}
+
 /// What a token request got.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenResult {
@@ -96,6 +109,7 @@ pub enum IssuerEvent {
 
 #[derive(Debug)]
 struct Code {
+    offline: bool,
     client_id: String,
     redirect_uri: String,
     challenge: String,
@@ -119,12 +133,17 @@ struct Grant {
 struct State {
     counter: u64,
     consent: Consent,
+    style: Style,
+    /// When set, a token request must present this `client_secret`.
+    client_secret: Option<String>,
     refuse_refreshes: u32,
     /// The `expires_in` of every access token issued from now on, in seconds.
     lifetime_s: u64,
     codes: HashMap<String, Code>,
     refresh: HashMap<String, Grant>,
     access: HashMap<String, String>,
+    /// The scopes each issued access token carries (a planted one has none recorded).
+    access_scopes: HashMap<String, String>,
     devices: HashMap<String, Device>,
 }
 
@@ -133,6 +152,8 @@ struct Shared {
     base: String,
     state: Arc<Mutex<State>>,
     events: Seen<IssuerEvent>,
+    /// The query of every authorize request, decoded, in arrival order.
+    queries: Seen<Vec<(String, String)>>,
 }
 
 /// The test's side of a running issuer: what it saw and the knobs.
@@ -156,11 +177,14 @@ impl FakeIssuer {
         let state = State {
             counter: 0,
             consent: Consent::Grant,
+            style: Style::default(),
+            client_secret: None,
             refuse_refreshes: 0,
             lifetime_s: routes::DEFAULT_LIFETIME_S,
             codes: HashMap::new(),
             refresh: HashMap::new(),
             access: HashMap::new(),
+            access_scopes: HashMap::new(),
             devices: HashMap::new(),
         };
         Ok(Self {
@@ -169,6 +193,7 @@ impl FakeIssuer {
                 base: format!("http://127.0.0.1:{port}"),
                 state: Arc::new(Mutex::new(state)),
                 events: Seen::default(),
+                queries: Seen::default(),
             },
         })
     }
@@ -210,6 +235,22 @@ impl IssuerHandle {
     /// What the person does from now on at the authorize page.
     pub fn set_consent(&self, consent: Consent) {
         lock(&self.shared.state).consent = consent;
+    }
+
+    /// How the issuer behaves where issuers differ (default: [`Style::Rotating`]).
+    pub fn set_style(&self, style: Style) {
+        lock(&self.shared.state).style = style;
+    }
+
+    /// From now on a token request must carry this `client_secret`, as Google's installed-app
+    /// clients must; one that does not is refused with `invalid_client`.
+    pub fn require_client_secret(&self, secret: &str) {
+        lock(&self.shared.state).client_secret = Some(secret.to_owned());
+    }
+
+    /// The query of every authorize request, decoded, oldest first.
+    pub fn authorize_queries(&self) -> Vec<Vec<(String, String)>> {
+        self.shared.queries.all()
     }
 
     /// The next `count` refresh requests get `invalid_grant`, as for a revoked or expired grant.
@@ -287,6 +328,12 @@ impl IssuerHandle {
     /// Whether this access token is live.
     pub fn access_is_live(&self, token: &str) -> bool {
         lock(&self.shared.state).access.contains_key(token)
+    }
+
+    /// The scopes this access token was issued for, when the issuer issued it (a token planted
+    /// with `seed_access_as` has none recorded).
+    pub fn access_scope(&self, token: &str) -> Option<String> {
+        lock(&self.shared.state).access_scopes.get(token).cloned()
     }
 
     /// Everything the issuer received, oldest first.

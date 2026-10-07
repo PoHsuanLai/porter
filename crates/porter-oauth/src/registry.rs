@@ -3,8 +3,8 @@
 //!
 //! Nothing here finds a file: the caller passes the paths (`/usr/share/porter/clients.toml`,
 //! `$XDG_CONFIG_HOME/porter/clients.toml`), so a test never reads the machine's. The Microsoft
-//! client is ours and is shipped in the first file; no Google client id is shipped (Google is a
-//! TODO), though a person may register their own. The mailo migration reads mailo's
+//! client is ours and is shipped in the first file; no Google client id is shipped (the owner
+//! registers one, docs/google.md), and a person may register their own. The mailo migration reads mailo's
 //! `OAuthRegistry` (`oauth.json`, `~/mailo/crates/mail-runtime/src/signin.rs`) so E4 can move
 //! `saved_clients` into the person's own file.
 
@@ -16,19 +16,65 @@ use porter_provider::{
 use serde::Deserialize;
 use std::path::Path;
 
+/// Whether a client may be used for mail.
+///
+/// Gmail's IMAP and SMTP need the restricted scope `https://mail.google.com/`, which Google
+/// grants a client only after a security assessment. A person's own client may use it (it is
+/// their own project, in testing mode, for their own addresses), so a row says `byo = true`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum MailRights {
+    /// Not a client of the person's own: mail's restricted scope is not asked.
+    #[default]
+    Withheld,
+    /// The person's own client: mail may be asked.
+    Byo,
+}
+
+/// Whether the client's consent screen is verified.
+///
+/// An app Google has not verified is in *testing*: only its test users may sign in, and Google
+/// ends their sign-ins after seven days (design/31 R5). A row says `testing = true`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum AppReview {
+    /// Verified, or not an issuer that has the notion: sign-ins last until revoked.
+    #[default]
+    Verified,
+    /// In testing: sign-ins last seven days.
+    Testing,
+}
+
+/// What a client row says besides its id, secret and endpoints. [`porter_provider::ClientEntry`]
+/// does not carry these (it is shared with mailo, which builds it field by field), so the
+/// registry reads them from the same files beside it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct ClientTraits {
+    /// Whether mail may be asked.
+    pub mail: MailRights,
+    /// Whether the app is in testing.
+    pub review: AppReview,
+}
+
+/// One row's traits, keyed as the row is.
+type TraitRow = (Issuer, ClientChannel, ClientTraits);
+
 /// The clients of this build, shipped and the person's own.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ClientRegistry {
     shipped: Vec<ClientEntry>,
     own: Vec<ClientEntry>,
+    shipped_traits: Vec<TraitRow>,
+    own_traits: Vec<TraitRow>,
 }
 
 impl ClientRegistry {
-    /// The shipped clients with the person's own laid over them.
+    /// The shipped clients with the person's own laid over them. Every row has the default
+    /// [`ClientTraits`]; [`ClientRegistry::with_traits`] and [`ClientRegistry::from_paths`] set them.
     pub fn layered(shipped: ClientsFile, own: ClientsFile) -> Self {
         Self {
             shipped: shipped.clients,
             own: own.clients,
+            shipped_traits: Vec::new(),
+            own_traits: Vec::new(),
         }
     }
 
@@ -36,7 +82,57 @@ impl ClientRegistry {
     /// is empty (a fresh install has no override); one that exists and is damaged is an error,
     /// never read as empty: that would report a configured client as missing.
     pub fn from_paths(shipped: &Path, own: &Path) -> Result<Self, RegistryError> {
-        Ok(Self::layered(read_clients(shipped)?, read_clients(own)?))
+        let (shipped_file, shipped_traits) = read_clients(shipped)?;
+        let (own_file, own_traits) = read_clients(own)?;
+        Ok(Self {
+            shipped_traits,
+            own_traits,
+            ..Self::layered(shipped_file, own_file)
+        })
+    }
+
+    /// The same registry, the row [`ClientRegistry::lookup`] finds for `issuer` on `channel`
+    /// having `traits` (nothing changes when there is no such row).
+    pub fn with_traits(
+        mut self,
+        issuer: Issuer,
+        channel: ClientChannel,
+        traits: ClientTraits,
+    ) -> Self {
+        let held = |entries: &[ClientEntry]| {
+            entries
+                .iter()
+                .any(|c| c.issuer == issuer && c.channel == channel)
+        };
+        let layer = match held(&self.own) {
+            true => &mut self.own_traits,
+            false if held(&self.shipped) => &mut self.shipped_traits,
+            false => return self,
+        };
+        layer.retain(|(i, c, _)| !(*i == issuer && *c == channel));
+        layer.push((issuer, channel, traits));
+        self
+    }
+
+    /// What the row [`ClientRegistry::lookup`] finds for `issuer` on `channel` says besides its
+    /// id: the person's own row's if they have one, else the shipped row's. A client with
+    /// nothing said has the defaults (no mail, verified).
+    pub fn traits(&self, issuer: Issuer, channel: ClientChannel) -> ClientTraits {
+        let row = |entries: &[ClientEntry], traits: &[TraitRow]| {
+            entries
+                .iter()
+                .any(|c| c.issuer == issuer && c.channel == channel)
+                .then(|| {
+                    traits
+                        .iter()
+                        .find(|(i, c, _)| *i == issuer && *c == channel)
+                        .map(|(_, _, t)| *t)
+                        .unwrap_or_default()
+                })
+        };
+        row(&self.own, &self.own_traits)
+            .or_else(|| row(&self.shipped, &self.shipped_traits))
+            .unwrap_or_default()
     }
 
     /// The client for `issuer` on `channel`: the person's own if they registered one, else the
@@ -81,10 +177,55 @@ pub enum RegistryError {
     Mailo(String),
 }
 
-fn read_clients(path: &Path) -> Result<ClientsFile, RegistryError> {
+#[derive(Deserialize)]
+struct RawFile {
+    #[serde(rename = "client", default)]
+    clients: Vec<RawRow>,
+}
+
+#[derive(Deserialize)]
+struct RawRow {
+    issuer: Issuer,
+    channel: ClientChannel,
+    #[serde(default)]
+    byo: bool,
+    #[serde(default)]
+    testing: bool,
+}
+
+/// The traits a clients file's rows say (`byo`, `testing`); the file was already parsed as a
+/// clients file, so it is valid TOML of the clients schema.
+fn traits_of(text: &str) -> Vec<TraitRow> {
+    toml::from_str::<RawFile>(text)
+        .map(|file| {
+            file.clients
+                .into_iter()
+                .map(|row| {
+                    let traits = ClientTraits {
+                        mail: if row.byo {
+                            MailRights::Byo
+                        } else {
+                            MailRights::Withheld
+                        },
+                        review: if row.testing {
+                            AppReview::Testing
+                        } else {
+                            AppReview::Verified
+                        },
+                    };
+                    (row.issuer, row.channel, traits)
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn read_clients(path: &Path) -> Result<(ClientsFile, Vec<TraitRow>), RegistryError> {
     let text = match std::fs::read_to_string(path) {
         Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(ClientsFile::default()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok((ClientsFile::default(), Vec::new()));
+        }
         Err(e) => {
             return Err(RegistryError::Unreadable {
                 path: path.display().to_string(),
@@ -92,10 +233,11 @@ fn read_clients(path: &Path) -> Result<ClientsFile, RegistryError> {
             });
         }
     };
-    parse_clients(&text).map_err(|source| RegistryError::Invalid {
+    let file = parse_clients(&text).map_err(|source| RegistryError::Invalid {
         path: path.display().to_string(),
         source,
-    })
+    })?;
+    Ok((file, traits_of(&text)))
 }
 
 /// A clients file as TOML, for the person's own file.
@@ -291,5 +433,66 @@ mod tests {
             .lookup(Issuer::Microsoft, ClientChannel::Stable)
             .expect("client");
         assert_eq!(endpoints_of(client), Issuer::Microsoft.endpoints());
+    }
+
+    #[test]
+    fn a_rows_byo_and_testing_are_read_and_the_persons_row_wins() {
+        let dir = std::env::temp_dir().join(format!("porter-oauth-traits-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        let (shipped, own) = (dir.join("shipped.toml"), dir.join("own.toml"));
+        std::fs::write(
+            &shipped,
+            "[[client]]\nissuer = \"google\"\nchannel = \"stable\"\nclient_id = \"s\"\ntesting = true\n",
+        )
+        .expect("write");
+        let at = |r: &ClientRegistry, c| r.traits(Issuer::Google, c);
+        let alone = ClientRegistry::from_paths(&shipped, &dir.join("absent.toml")).expect("reads");
+        assert_eq!(
+            at(&alone, ClientChannel::Stable),
+            ClientTraits {
+                mail: MailRights::Withheld,
+                review: AppReview::Testing
+            }
+        );
+        std::fs::write(
+            &own,
+            "[[client]]\nissuer = \"google\"\nchannel = \"stable\"\nclient_id = \"m\"\nbyo = true\n",
+        )
+        .expect("write");
+        let both = ClientRegistry::from_paths(&shipped, &own).expect("reads");
+        // The row the lookup finds is the person's, so are its traits: not a mix of the two.
+        assert_eq!(
+            at(&both, ClientChannel::Stable),
+            ClientTraits {
+                mail: MailRights::Byo,
+                review: AppReview::Verified
+            }
+        );
+        // No row, no traits to speak of.
+        assert_eq!(at(&both, ClientChannel::Beta), ClientTraits::default());
+        let set = ClientRegistry::default().with_traits(
+            Issuer::Google,
+            ClientChannel::Stable,
+            ClientTraits {
+                mail: MailRights::Byo,
+                review: AppReview::Testing,
+            },
+        );
+        // A traits entry for a row that does not exist says nothing.
+        assert_eq!(at(&set, ClientChannel::Stable), ClientTraits::default());
+        let held = ClientRegistry::layered(
+            file("[[client]]\nissuer = \"google\"\nchannel = \"stable\"\nclient_id = \"s\"\n"),
+            ClientsFile::default(),
+        )
+        .with_traits(
+            Issuer::Google,
+            ClientChannel::Stable,
+            ClientTraits {
+                mail: MailRights::Byo,
+                review: AppReview::Testing,
+            },
+        );
+        assert_eq!(at(&held, ClientChannel::Stable).review, AppReview::Testing);
+        std::fs::remove_dir_all(&dir).expect("cleanup");
     }
 }

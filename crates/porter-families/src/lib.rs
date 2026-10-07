@@ -3,16 +3,20 @@
 //! built. accountd and an app hosting porter in process (mailo) both build it, so a family is
 //! written once. With no feature on, the set is empty and uninhabited.
 //!
-//! Google is not here: the owner deferred it (FINDINGS.md), so `providers/google.toml` ships as
-//! a file and has no family code behind it.
+//! Google is the `google` feature: the owner's own Google Cloud client, a sign-in that says it
+//! needs a client id until one is registered (docs/google.md).
 
 #[cfg(feature = "agent_login")]
 mod agent_login;
 #[cfg(feature = "api_key")]
 mod api_key;
 mod dispatch;
+#[cfg(any(feature = "microsoft", feature = "google"))]
+mod env_common;
 #[cfg(feature = "generic")]
 mod generic;
+#[cfg(feature = "google")]
+mod google;
 #[cfg(any(feature = "nextcloud", feature = "generic"))]
 mod io;
 #[cfg(feature = "api_key")]
@@ -35,6 +39,11 @@ pub use api_key::{ApiKeyProvider, ApiKeySession, ApiKeySignIn};
 pub use dispatch::{FamilyProvider, FamilySession, FamilySignIn};
 #[cfg(feature = "generic")]
 pub use generic::{GenericProvider, GenericSession, GenericSignIn};
+#[cfg(feature = "google")]
+pub use google::{
+    GoogleEnv, GoogleProvider, GoogleSession, GoogleSignIn, ReauthReason, Sensitivity,
+    TESTING_SIGN_IN_SECONDS, scope_sensitivity, scopes_of, testing_expires,
+};
 #[cfg(any(feature = "nextcloud", feature = "generic"))]
 pub use io::{Pacing, SharedDns};
 #[cfg(feature = "microsoft")]
