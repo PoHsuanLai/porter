@@ -219,23 +219,17 @@ where
         AccountService::reauthenticate_any(self, caller, account, window)
     }
 
-    fn login_agent(
+    async fn login_agent(
         &self,
         caller: &AppId,
         account: &AccountId,
         window: ParentWindow,
         shell: bool,
         launchers: &impl LaunchersSeam,
-    ) -> impl Future<Output = AccountsReply> + Send {
-        async move {
-            match shell {
-                true => {
-                    AccountService::login_agent_any(self, caller, account, window, launchers).await
-                }
-                false => {
-                    AccountService::login_agent(self, caller, account, window, launchers).await
-                }
-            }
+    ) -> AccountsReply {
+        match shell {
+            true => AccountService::login_agent_any(self, caller, account, window, launchers).await,
+            false => AccountService::login_agent(self, caller, account, window, launchers).await,
         }
     }
 
