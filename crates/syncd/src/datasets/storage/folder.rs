@@ -30,15 +30,19 @@ async fn blocking<T: Send + 'static>(
         .map_err(|e| fail("file work stopped", e))?
 }
 
-/// The path below the root that `rel` names, if it names one: plain names only.
+/// The path below the root that `rel` names, if it names one: plain names only, each segment
+/// spelled once (no `.`, no empty segment from `//` or a trailing `/`, no `..`), so one file has
+/// one path.
 fn below(root: &Path, rel: &str) -> Option<PathBuf> {
-    let path = Path::new(rel);
     let plain = !rel.is_empty()
         && !rel.contains('\\')
-        && path.components().all(
-            |c| matches!(c, Component::Normal(name) if !is_temporary(name.to_str().unwrap_or(""))),
-        );
-    plain.then(|| root.join(path))
+        && rel
+            .split('/')
+            .all(|name| !matches!(name, "" | "." | "..") && !is_temporary(name))
+        && Path::new(rel)
+            .components()
+            .all(|c| matches!(c, Component::Normal(_)));
+    plain.then(|| root.join(rel))
 }
 
 fn is_temporary(name: &str) -> bool {
@@ -225,6 +229,8 @@ mod tests {
             ("../x", false),
             ("a/../../x", false),
             ("a/./b", false),
+            ("a//b", false),
+            ("a/b/", false),
             ("a\\b", false),
             (".tmp-1-1", false),
             ("dir/.tmp-1-1", false),
