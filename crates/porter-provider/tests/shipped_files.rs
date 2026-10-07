@@ -350,7 +350,14 @@ fn the_agent_files_hold_no_secret_and_name_their_program_and_variables() {
     use porter_core::{AuthKind, Capability, Family};
     use porter_provider::Discovery;
     // (id, program, key variable, base-url variable, protocols)
-    const CASES: &[(&str, &str, Option<&str>, Option<&str>, &[P])] = &[
+    type Row = (
+        &'static str,
+        &'static str,
+        Option<&'static str>,
+        Option<&'static str>,
+        &'static [P],
+    );
+    const CASES: &[Row] = &[
         (
             "claude-code",
             "claude-code",
