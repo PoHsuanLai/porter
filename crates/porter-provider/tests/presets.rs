@@ -168,12 +168,7 @@ fn every_former_preset_address_and_mx_resolves_to_its_file() {
             Some(("icloud", Domain)),
         ),
         // Google (W5c): mailo's gmail/googlemail preset and its google.com MX rule.
-        (
-            "gmail",
-            "someone@gmail.com",
-            &[],
-            Some(("google", Domain)),
-        ),
+        ("gmail", "someone@gmail.com", &[], Some(("google", Domain))),
         (
             "googlemail",
             "someone@GoogleMail.COM",
