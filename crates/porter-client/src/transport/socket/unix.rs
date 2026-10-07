@@ -1,9 +1,9 @@
 //! The socket carrier over a Unix stream socket, at the address latchkey gives the agent.
 //!
 //! latchkey decides where the socket is, whether an agent already holds it (an advisory lock, not
-//! a look at the file) and how one is started. The bytes then go over a tokio stream to that
-//! address: latchkey's own `Stream` is a blocking one with no descriptor access, and a relay's
-//! descriptor rides on the reply as SCM_RIGHTS (see FINDINGS: the latchkey ask).
+//! a look at the file), how one is knocked on and how one is started. The connected stream comes
+//! out of latchkey as a descriptor (`latchkey::into_fd`) and becomes a tokio stream, so the bytes
+//! go over a plain Unix socket and a relay's descriptor can ride on the reply as SCM_RIGHTS.
 
 use crate::authenticated::{AuthenticatedStream, Relayed};
 use crate::env::{Place, SocketAgent, StartAgent};
@@ -12,7 +12,7 @@ use crate::transport::framed::FramedSession;
 use latchkey::{Agent, Environment, Error, here};
 use porter_core::{AccountsReply, AccountsRequest};
 use std::io::ErrorKind;
-use std::path::PathBuf;
+use std::os::unix::net::UnixStream as StdStream;
 use tokio::net::UnixStream;
 
 /// The session's link: frames over the connected stream.
@@ -48,13 +48,6 @@ impl Door {
     fn agent(&self) -> Result<&Agent, TransportError> {
         self.0.as_ref().map_err(Clone::clone)
     }
-
-    fn socket(&self) -> Result<PathBuf, TransportError> {
-        self.agent()?
-            .socket()
-            .map(PathBuf::from)
-            .ok_or(TransportError::Unreachable)
-    }
 }
 
 /// A connect that failed: nobody listening is `Unreachable`, anything else is the socket
@@ -70,46 +63,61 @@ fn unreachable_or_malformed(error: &std::io::Error) -> TransportError {
     }
 }
 
-async fn knock(door: &Door) -> Result<FramedSession, TransportError> {
-    let path = door.socket()?;
-    UnixStream::connect(&path)
-        .await
+/// latchkey's stream as a framed tokio session over the same connection.
+fn framed(stream: latchkey::Stream) -> Result<FramedSession, TransportError> {
+    let std_stream = latchkey::into_fd(stream).map(StdStream::from);
+    std_stream
+        .and_then(|std_stream| {
+            std_stream.set_nonblocking(true)?;
+            UnixStream::from_std(std_stream)
+        })
         .map(FramedSession::from_stream)
         .map_err(|e| unreachable_or_malformed(&e))
 }
 
-/// Starts the agent by the app's policy, off the runtime (latchkey's wait is a blocking one).
-/// latchkey's lock decides who the agent is: a second client that starts one at the same moment
-/// starts a process that finds the lock taken.
-async fn start(door: &Door, how: &StartAgent) -> Result<(), TransportError> {
+/// latchkey's errors as the carrier's: a door that cannot be reached is nobody home.
+fn transport_error(error: Error) -> TransportError {
+    match error {
+        Error::Connect { cause, .. } | Error::Io { cause, .. } => unreachable_or_malformed(&cause),
+        Error::Busy | Error::NeverAnswered(_) | Error::CannotSpawn(_) | Error::NoSelf(_) => {
+            TransportError::Unreachable
+        }
+        other => TransportError::Malformed(format!("agent: {other}")),
+    }
+}
+
+/// Knocks (latchkey's: the socket file, then a connect). Nobody home is `Unreachable`.
+fn knock(door: &Door) -> Result<FramedSession, TransportError> {
+    door.agent()?
+        .connect()
+        .map_err(transport_error)?
+        .ok_or(TransportError::Unreachable)
+        .and_then(framed)
+}
+
+/// Starts the agent by the app's policy, off the runtime (latchkey's wait is a blocking one), and
+/// returns the connection latchkey's wait ended on. latchkey's lock decides who the agent is: a
+/// second client that starts one at the same moment starts a process that finds the lock taken.
+async fn start(door: &Door, how: &StartAgent) -> Result<FramedSession, TransportError> {
     let StartAgent::Spawn { args, wait } = how else {
         return Err(TransportError::Unreachable);
     };
     let agent = door.agent()?.clone();
     let (args, wait) = (args.clone(), *wait);
-    tokio::task::spawn_blocking(move || {
+    let stream = tokio::task::spawn_blocking(move || {
         let args: Vec<&str> = args.iter().map(String::as_str).collect();
-        agent
-            .connect_or_start(|| latchkey::spawn(&args), wait)
-            .map(drop)
+        agent.connect_or_start(|| latchkey::spawn(&args), wait)
     })
     .await
     .map_err(|_| TransportError::Closed)?
-    .map_err(|error| match error {
-        Error::NeverAnswered(_) | Error::CannotSpawn(_) | Error::NoSelf(_) => {
-            TransportError::Unreachable
-        }
-        other => TransportError::Malformed(format!("agent: {other}")),
-    })
+    .map_err(transport_error)?;
+    framed(stream)
 }
 
 /// A connection to the agent: knock, and start it if nobody answers and the app said to.
 async fn connect(door: &Door, how: &StartAgent) -> Result<FramedSession, TransportError> {
-    match knock(door).await {
-        Err(TransportError::Unreachable) if *how != StartAgent::Never => {
-            start(door, how).await?;
-            knock(door).await
-        }
+    match knock(door) {
+        Err(TransportError::Unreachable) if *how != StartAgent::Never => start(door, how).await,
         reached => reached,
     }
 }
