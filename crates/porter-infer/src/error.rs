@@ -1,5 +1,6 @@
 //! Why inferd refuses, and why a model call fails.
 
+use crate::control::StopReason;
 use porter_core::DataClass;
 use serde::{Deserialize, Serialize};
 
@@ -58,4 +59,13 @@ pub enum ModelError {
     /// The model's reply is not in the format its dialect promises.
     #[error("reply could not be parsed")]
     Unparseable,
+    /// The model reasoned and said nothing: no text and no function call. It is a failure, not an
+    /// empty success. Only the lengths are kept, never the thought (ask I4).
+    #[error("the reply was only reasoning ({thought_len} bytes)")]
+    OnlyThought {
+        /// Why the reply ended.
+        stop: StopReason,
+        /// How many bytes of reasoning it held.
+        thought_len: u32,
+    },
 }

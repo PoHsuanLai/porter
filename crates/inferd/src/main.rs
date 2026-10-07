@@ -7,6 +7,7 @@
 
 use clap::Parser;
 use engine_supervisor::EngineId;
+use inferd::agent::Agents;
 use inferd::attached::AttachedBook;
 use inferd::audit::JsonLines;
 use inferd::catalog::read_catalog;
@@ -196,12 +197,20 @@ async fn run(args: Args) -> Result<(), String> {
         config.callers.clone(),
         &root,
     ));
+    // The agent endpoints are always served; `ai.agents.endpoint` (off by default) decides
+    // whether the launcher, who is in no table until a machine lists it, may open one.
+    let agents = Agents::new(
+        engines.clone(),
+        Arc::new(JsonLines::new(dirs.audit.clone())),
+        Arc::new(SystemClock),
+    );
     let daemon = Inference::new(
         engines,
         Arc::clone(&peers),
         JsonLines::new(dirs.audit),
         SystemClock,
     )
+    .agents(agents)
     .limited(structured.limits)
     .reloading(reload.clone())
     .probing(probing);

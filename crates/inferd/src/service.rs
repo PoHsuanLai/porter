@@ -5,10 +5,12 @@
 //! turns and its audit sink. The introspection of this object is the checked-in
 //! `dbus/org.quire.Inference1.xml` (`tests/introspection.rs`).
 
+use crate::agent::Agents;
+use crate::agent::service::AgentsService;
 use crate::audit::{AuditOut, SessionAudit};
 use crate::clock::Clock;
 use crate::engines::Engines;
-use crate::peers::{Caller, Peers};
+use crate::peers::{Caller, Peers, Role};
 use crate::pipeline::Hearing;
 use crate::runner::{Pin, Turns};
 use crate::serve::{Seams, serve_session};
@@ -33,12 +35,13 @@ use zbus::zvariant::OwnedFd;
 #[derive(Debug)]
 pub struct Inference<P, O, C> {
     engines: Engines,
-    peers: P,
+    peers: Arc<P>,
     audit: Arc<O>,
     clock: C,
     limits: Limits,
     reload: Option<Reload>,
     probing: Option<Probing>,
+    agents: Option<Agents>,
 }
 
 impl<P, O, C> Inference<P, O, C> {
@@ -46,12 +49,22 @@ impl<P, O, C> Inference<P, O, C> {
     pub fn new(engines: Engines, peers: P, audit: O, clock: C) -> Self {
         Self {
             engines,
-            peers,
+            peers: Arc::new(peers),
             audit: Arc::new(audit),
             clock,
             limits: Limits::default(),
             reload: None,
             probing: None,
+            agents: None,
+        }
+    }
+
+    /// The same object, also serving `org.quire.Inference1.Agents` to the agent launcher over
+    /// these endpoints (`serve_on` puts it on the bus).
+    pub fn agents(self, agents: Agents) -> Self {
+        Self {
+            agents: Some(agents),
+            ..self
         }
     }
 
@@ -129,10 +142,18 @@ fn failed(why: impl ToString) -> fdo::Error {
 impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O, C> {
     async fn caller(&self, header: &Header<'_>) -> fdo::Result<Caller> {
         let sender = header.sender().ok_or_else(unknown_caller)?;
-        self.peers
+        let caller = self
+            .peers
             .caller_of(sender.as_str())
             .await
-            .ok_or_else(unknown_caller)
+            .ok_or_else(unknown_caller)?;
+        // The agent launcher has the endpoint interface and nothing else here.
+        match caller.role {
+            Role::AgentLauncher => Err(fdo::Error::AccessDenied(
+                "inferd: the agent launcher may only open agent endpoints".into(),
+            )),
+            _ => Ok(caller),
+        }
     }
 
     fn spec(need: NeedArg, class: &str, tier: &str, options: &Details) -> fdo::Result<SessionSpec> {
@@ -287,10 +308,20 @@ where
 {
     let supervised = daemon.engines.supervised().clone();
     let probed = daemon.engines.probed().clone();
+    let agents = daemon.agents.clone().map(|agents| AgentsService {
+        peers: Arc::clone(&daemon.peers),
+        agents,
+    });
     connection
         .object_server()
         .at(INFERENCE_PATH, daemon)
         .await?;
+    if let Some(agents) = agents {
+        connection
+            .object_server()
+            .at(INFERENCE_PATH, agents)
+            .await?;
+    }
     connection.request_name(INFERENCE_BUS).await?;
     let iface: zbus::object_server::InterfaceRef<Inference<P, O, C>> =
         connection.object_server().interface(INFERENCE_PATH).await?;

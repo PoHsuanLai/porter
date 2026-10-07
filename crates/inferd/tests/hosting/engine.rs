@@ -21,6 +21,10 @@ pub enum Chat {
         name: &'static str,
         arguments: String,
     },
+    /// Reasoning only (`reasoning_content` deltas), then a stop: no text, no call.
+    Think(Vec<&'static str>),
+    /// Reasoning, then text.
+    ThinkSay(Vec<&'static str>, Vec<&'static str>),
     /// An HTTP error with this status and no usable body.
     Fail(u16),
     /// Reads the request and never answers.
@@ -175,11 +179,122 @@ fn stream_for(answer: &Chat) -> Vec<Vec<u8>> {
             pieces.push(chunk(&frame(delta, Value::Null)));
             pieces.push(chunk(&frame(json!({}), json!("tool_calls"))));
         }
+        Chat::ThinkSay(thoughts, says) => {
+            pieces.extend(
+                thoughts
+                    .iter()
+                    .map(|text| chunk(&frame(json!({"reasoning_content": text}), Value::Null))),
+            );
+            pieces.extend(
+                says.iter()
+                    .map(|text| chunk(&frame(json!({"content": text}), Value::Null))),
+            );
+            pieces.push(chunk(&frame(json!({}), json!("stop"))));
+        }
+        Chat::Think(deltas) => {
+            pieces.extend(
+                deltas
+                    .iter()
+                    .map(|text| chunk(&frame(json!({"reasoning_content": text}), Value::Null))),
+            );
+            pieces.push(chunk(&frame(json!({}), json!("stop"))));
+        }
         Chat::Fail(_) | Chat::Hang => {}
     }
     pieces.push(chunk(usage));
     pieces.push(b"0\r\n\r\n".to_vec());
     pieces
+}
+
+fn event(name: &str, data: &Value) -> String {
+    format!("event: {name}\ndata: {data}\n\n")
+}
+
+/// What an Anthropic Messages server streams for `answer`: text deltas, or one tool_use block.
+fn messages_stream(answer: &Chat) -> Vec<Vec<u8>> {
+    let head = b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n".to_vec();
+    let mut events = vec![event(
+        "message_start",
+        &json!({"type": "message_start", "message": {"id": "msg_fake", "type": "message",
+            "role": "assistant", "model": "m", "content": [],
+            "usage": {"input_tokens": 5, "output_tokens": 1}}}),
+    )];
+    let stop = match answer {
+        Chat::Call { name, arguments } => {
+            events.push(event("content_block_start", &json!({"type": "content_block_start",
+                "index": 0, "content_block": {"type": "tool_use", "id": "toolu_fake", "name": name, "input": {}}})));
+            events.push(event(
+                "content_block_delta",
+                &json!({"type": "content_block_delta", "index": 0,
+                "delta": {"type": "input_json_delta", "partial_json": arguments}}),
+            ));
+            events.push(event(
+                "content_block_stop",
+                &json!({"type": "content_block_stop", "index": 0}),
+            ));
+            "tool_use"
+        }
+        Chat::Say(deltas) => {
+            events.push(event(
+                "content_block_start",
+                &json!({"type": "content_block_start",
+                "index": 0, "content_block": {"type": "text", "text": ""}}),
+            ));
+            for text in deltas {
+                events.push(event(
+                    "content_block_delta",
+                    &json!({"type": "content_block_delta", "index": 0,
+                    "delta": {"type": "text_delta", "text": text}}),
+                ));
+            }
+            events.push(event(
+                "content_block_stop",
+                &json!({"type": "content_block_stop", "index": 0}),
+            ));
+            "end_turn"
+        }
+        _ => "end_turn",
+    };
+    events.push(event(
+        "message_delta",
+        &json!({"type": "message_delta",
+        "delta": {"stop_reason": stop, "stop_sequence": null}, "usage": {"output_tokens": 2}}),
+    ));
+    events.push(event("message_stop", &json!({"type": "message_stop"})));
+    let mut pieces = vec![head];
+    pieces.extend(events.iter().map(|e| chunk(e)));
+    pieces.push(b"0\r\n\r\n".to_vec());
+    pieces
+}
+
+/// The whole message a non-streaming Anthropic server answers.
+fn messages_whole(answer: &Chat) -> Value {
+    let content = match answer {
+        Chat::Call { name, arguments } => {
+            json!([{"type": "tool_use", "id": "toolu_fake", "name": name,
+            "input": serde_json::from_str::<Value>(arguments).unwrap_or(Value::Null)}])
+        }
+        Chat::Say(deltas) => json!([{"type": "text", "text": deltas.concat()}]),
+        _ => json!([]),
+    };
+    json!({"id": "msg_fake", "type": "message", "role": "assistant", "model": "m", "content": content,
+        "stop_reason": if matches!(answer, Chat::Call { .. }) { "tool_use" } else { "end_turn" },
+        "usage": {"input_tokens": 5, "output_tokens": 2}})
+}
+
+/// The whole completion a non-streaming chat-completions server answers.
+fn completion_whole(answer: &Chat) -> Value {
+    let message = match answer {
+        Chat::Call { name, arguments } => json!({"role": "assistant", "content": null,
+            "tool_calls": [{"id": "call_1", "type": "function",
+                "function": {"name": name, "arguments": arguments}}]}),
+        Chat::Say(deltas) => json!({"role": "assistant", "content": deltas.concat()}),
+        _ => json!({"role": "assistant", "content": ""}),
+    };
+    json!({"id": "c1", "object": "chat.completion", "model": "m",
+        "choices": [{"index": 0, "message": message,
+            "finish_reason": if matches!(answer, Chat::Call { .. }) { "tool_calls" } else { "stop" }}],
+        "usage": {"prompt_tokens": 5, "completion_tokens": 2}})
 }
 
 fn json_response(status: &str, body: &Value) -> Vec<u8> {
@@ -210,7 +325,9 @@ pub async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
     log.lock().expect("lock").push(seen.clone());
     let pieces: Vec<Vec<u8>> = match (seen.method.as_str(), seen.path.as_str()) {
         ("GET", "/health") => vec![json_response("200 OK", &json!({"status": "ok"}))],
-        ("POST", path) if path.ends_with("/chat/completions") => {
+        ("POST", path) if path.ends_with("/chat/completions") || path.ends_with("/messages") => {
+            let anthropic = path.ends_with("/messages");
+            let streaming = seen.body["stream"] == json!(true);
             let answer = {
                 let mut state = state.lock().expect("lock");
                 match state.0.len() {
@@ -230,7 +347,10 @@ pub async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
                     &format!("{status} Error"),
                     &json!({"error": {"message": "scripted failure", "type": "server_error"}}),
                 )],
-                other => stream_for(&other),
+                other if anthropic && streaming => messages_stream(&other),
+                other if anthropic => vec![json_response("200 OK", &messages_whole(&other))],
+                other if streaming => stream_for(&other),
+                other => vec![json_response("200 OK", &completion_whole(&other))],
             }
         }
         ("POST", path) if path.ends_with("/embeddings") => {

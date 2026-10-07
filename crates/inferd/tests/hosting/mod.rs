@@ -6,6 +6,7 @@
 #![allow(dead_code)]
 
 pub mod accountd;
+pub mod agent;
 pub mod bus;
 pub mod cloud;
 pub mod engine;

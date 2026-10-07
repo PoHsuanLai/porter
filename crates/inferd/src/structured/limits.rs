@@ -103,6 +103,9 @@ pub struct AiConfig {
     /// `ai.attached.*`.
     #[serde(default)]
     pub attached: crate::settings::AttachedConfig,
+    /// `ai.agents.*`.
+    #[serde(default)]
+    pub agents: crate::settings::AgentsConfig,
 }
 
 /// What a structured turn runs under.

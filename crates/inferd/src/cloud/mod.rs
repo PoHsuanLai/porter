@@ -25,9 +25,12 @@ pub mod wire;
 use crate::clock::Clock;
 use crate::settings::SpendLine;
 use accountd::{AccountVerdict, Accountd, AccountdFault};
-use model_catalog::ModelEntry;
+use model_catalog::{ModelEntry, ProviderId, Wire};
 use model_http::TlsRoots;
-use model_http::{AuthHeader, HostName, HttpEndpoint, HttpTarget, Port, Proxy, Secret, Timeouts};
+use model_http::{
+    AuthHeader, ExtraHeader, HeaderName, HostName, HttpClient, HttpEndpoint, HttpTarget, Port,
+    Proxy, Secret, Timeouts,
+};
 use model_http::{UrlPath, WaitMs};
 use models::{RemoteModel, remote_entries, remote_models};
 use porter_core::consent::Usage;
@@ -168,5 +171,44 @@ impl Cloud {
             timeouts: TIMEOUTS,
         };
         Some(ShapedTransport::new(endpoint, self.0.roots.clone(), shape))
+    }
+
+    /// A client for an agent's request to `provider`, authenticated with `key` the way the wire
+    /// asks (`x-api-key` for Anthropic's Messages, a bearer for chat completions) and sending
+    /// `extra` headers beside it; `None` when this build has no address for the provider. Built
+    /// for one request and dropped with it, like a turn's transport.
+    pub fn agent_client(
+        &self,
+        provider: &ProviderId,
+        wire: Wire,
+        key: &SecretText,
+        extra: Vec<(String, String)>,
+    ) -> Option<HttpClient> {
+        let door = self.0.doors.of(provider)?;
+        let secret = Secret(key.expose().to_owned());
+        let endpoint = HttpEndpoint {
+            target: HttpTarget::Tls {
+                host: HostName(door.host.clone()),
+                port: Port(door.port),
+            },
+            proxy: Proxy::Direct,
+            base: UrlPath(door.base.clone()),
+            auth: match wire {
+                Wire::AnthropicMessages => AuthHeader::Header {
+                    name: HeaderName("x-api-key".to_owned()),
+                    value: secret,
+                },
+                Wire::OpenAiCompat => AuthHeader::Bearer(secret),
+            },
+            headers: extra
+                .into_iter()
+                .map(|(name, value)| ExtraHeader {
+                    name: HeaderName(name),
+                    value: Secret(value),
+                })
+                .collect(),
+            timeouts: TIMEOUTS,
+        };
+        Some(HttpClient::with_roots(endpoint, self.0.roots.clone()))
     }
 }

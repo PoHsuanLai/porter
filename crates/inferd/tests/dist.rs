@@ -74,6 +74,33 @@ fn the_sample_configuration_reads_and_names_the_callers_the_design_calls_for() {
     }
 }
 
+#[test]
+fn the_agent_launcher_is_listed_by_the_machine_that_runs_it_never_by_default() {
+    let shipped = dist("inferd.toml");
+    let config = InferdConfig::from_toml(&shipped).expect("the sample reads");
+    assert!(
+        config
+            .callers
+            .rows()
+            .callers
+            .iter()
+            .all(|row| row.role != porter_dbus::CallerRole::AgentLauncher),
+        "no launcher by default"
+    );
+    // The line the sample's comment shows is the one a machine writes, uncommented.
+    let documented = shipped
+        .lines()
+        .find_map(|line| line.strip_prefix("# agent_launcher = "))
+        .map(|rest| format!("[callers]\nagent_launcher = {rest}"))
+        .expect("the documented line");
+    let mine = InferdConfig::from_toml(&documented).expect("the documented line reads");
+    let launcher = mine
+        .callers
+        .resolve("docket-acp.service")
+        .expect("the unit");
+    assert_eq!(launcher.role, inferd::peers::Role::AgentLauncher);
+}
+
 fn schema() -> Schema {
     Schema::from_toml(&dist("inferd.settings.toml")).expect("the schema parses and is hands-off")
 }
@@ -104,8 +131,14 @@ fn effect(text: &str) -> (String, Vec<String>) {
     rejected.extend(config.ai.resolve().rejected.iter().map(|p| (*p).to_owned()));
     (
         format!(
-            "{:?} {floors:?} {:?} {:?} {:?} {:?} {:?} {limits:?}",
-            s.policy.local_only, s.tiers, s.auto, s.spend, s.describe_images, s.my_network
+            "{:?} {floors:?} {:?} {:?} {:?} {:?} {:?} {:?} {limits:?}",
+            s.policy.local_only,
+            s.tiers,
+            s.auto,
+            s.spend,
+            s.describe_images,
+            s.my_network,
+            s.agent_endpoint
         ),
         rejected,
     )
@@ -130,9 +163,13 @@ fn file_with(path: &str, value: toml::Value) -> String {
 fn the_schema_holds_the_rows_the_design_names_and_each_is_a_page_row_of_intelligence() {
     let keys = schema_keys();
     let paths: Vec<&str> = keys.iter().map(|k| k.path.0.as_str()).collect();
-    let mut want: Vec<String> = ["ai.local_only", "ai.attached.my_network"]
-        .map(String::from)
-        .to_vec();
+    let mut want: Vec<String> = [
+        "ai.local_only",
+        "ai.attached.my_network",
+        "ai.agents.endpoint",
+    ]
+    .map(String::from)
+    .to_vec();
     want.extend(CLASSES.iter().map(|c| format!("ai.floor.{}", slug_of(c))));
     want.extend(
         [

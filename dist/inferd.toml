@@ -118,6 +118,10 @@
 cua = ["cuad.service"]
 # The Settings app: the only caller of inferd's settings module (the model picker).
 settings = ["org.quire.Settings"]
+# The agent launcher (docket-acp): the only caller of org.quire.Inference1.Agents, which opens a
+# loopback model endpoint for an external coding agent, and of nothing else. Never listed by
+# default: a machine that runs the launcher writes its unit here, and turns on ai.agents.endpoint.
+# agent_launcher = ["docket-acp.service"]
 [callers.apps]
 "org.quire.Memory" = ["memoryd.service"]
 "org.quire.Intents" = ["intentd.service"]

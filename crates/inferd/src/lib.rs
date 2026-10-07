@@ -7,6 +7,7 @@
 //! `FINDINGS.md`.
 
 mod adapters;
+pub mod agent;
 pub mod attached;
 pub mod audit;
 pub mod auto;

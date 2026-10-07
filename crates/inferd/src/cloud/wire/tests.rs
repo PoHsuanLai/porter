@@ -16,7 +16,9 @@ fn every_provider_this_build_speaks_has_a_door_and_the_others_have_none() {
             "google-ai",
             Some(("generativelanguage.googleapis.com", "/v1beta/openai")),
         ),
-        ("anthropic", None),
+        // Anthropic's Messages API is not a wire a turn speaks; only an agent's request is
+        // forwarded there (`Cloud::agent_client`).
+        ("anthropic", Some(("api.anthropic.com", "/v1"))),
         ("nobody", None),
     ];
     for (id, want) in cases {

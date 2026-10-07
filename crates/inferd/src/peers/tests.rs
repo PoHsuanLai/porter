@@ -5,10 +5,11 @@ fn table() -> CallerTable {
     CallerTable::from_toml_text(
         r#"
 cua = ["cuad.service"]
+agent_launcher = ["docket-acp.service"]
 [apps]
 "org.quire.Memory" = ["memoryd.service"]
 "org.quire.Mail" = ["mailo.service", "mailo-dev.service"]
-"org.quire.Sneaky" = ["cuad.service"]
+"org.quire.Sneaky" = ["cuad.service", "docket-acp.service"]
 "#,
     )
     .expect("table")
@@ -38,6 +39,26 @@ fn cuad_is_the_one_computer_use_caller_and_an_app_entry_cannot_claim_its_unit() 
     assert_eq!(
         named(&cuad),
         ("org.quire.Cua", Role::Cua, Isolation::Unsandboxed)
+    );
+}
+
+#[test]
+fn the_agent_launcher_is_the_unit_the_table_names_and_an_app_entry_cannot_claim_it() {
+    let launcher = table().resolve("docket-acp.service").expect("the launcher");
+    assert_eq!(
+        named(&launcher),
+        (
+            "org.quire.AgentLauncher",
+            Role::AgentLauncher,
+            Isolation::Unsandboxed
+        )
+    );
+    assert_eq!(
+        CallerTable::default()
+            .with_agent_launcher(["x.service".to_owned()].into())
+            .resolve("x.service")
+            .map(|c| c.role),
+        Some(Role::AgentLauncher)
     );
 }
 
@@ -72,15 +93,18 @@ fn the_table_is_rows_of_the_shared_table_with_cuad_first() {
     let rows = table().rows();
     let roles: Vec<_> = rows.callers.iter().map(|row| row.role).collect();
     assert_eq!(roles[0], porter_dbus::CallerRole::Cua);
+    assert_eq!(roles[1], porter_dbus::CallerRole::AgentLauncher);
     assert!(
-        roles[1..]
+        roles[2..]
             .iter()
             .all(|r| *r == porter_dbus::CallerRole::App)
     );
-    assert_eq!(rows.callers.len(), 5);
+    assert_eq!(rows.callers.len(), 7);
     // The first row for cuad's unit is cuad's, not the sneaky app's.
     let cuad = rows.resolve_unit("cuad.service").expect("cuad");
     assert_eq!(cuad.role, porter_dbus::CallerRole::Cua);
+    let launcher = rows.resolve_unit("docket-acp.service").expect("launcher");
+    assert_eq!(launcher.role, porter_dbus::CallerRole::AgentLauncher);
 }
 
 #[test]

@@ -2,6 +2,7 @@
 //! equal it.
 
 use crate::account::AccountSkeleton;
+use crate::agents::AgentsSkeleton;
 use crate::grants::GrantsSkeleton;
 use crate::inference::InferenceSkeleton;
 use crate::manager::ManagerSkeleton;
@@ -24,6 +25,8 @@ pub enum Bus {
     Sync,
     /// `org.quire.Inference1` (inferd).
     Inference,
+    /// `org.quire.Inference1.Agents` (inferd's agent endpoints), on inferd's bus name.
+    InferenceAgents,
 }
 
 impl Bus {
@@ -34,6 +37,7 @@ impl Bus {
             Bus::AccountsSheet => "org.quire.AccountsSheet1.xml",
             Bus::Sync => "org.quire.Sync1.xml",
             Bus::Inference => "org.quire.Inference1.xml",
+            Bus::InferenceAgents => "org.quire.Inference1.Agents.xml",
         }
     }
 }
@@ -52,6 +56,7 @@ pub fn introspection(bus: Bus) -> String {
         Bus::AccountsSheet => vec![&AccountsSheetSkeleton],
         Bus::Sync => vec![&SyncSkeleton],
         Bus::Inference => vec![&InferenceSkeleton],
+        Bus::InferenceAgents => vec![&AgentsSkeleton],
     };
     let mut xml = String::from(
         "<!DOCTYPE node PUBLIC \"-//freedesktop//DTD D-BUS Object Introspection 1.0//EN\"\n \"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\">\n<node>\n",

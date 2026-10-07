@@ -26,6 +26,9 @@ pub enum Role {
     Cua,
     /// detent, the Settings app: the one caller of `org.quire.SettingsModule1`.
     Settings,
+    /// The agent launcher (docket-acp): the one caller of `org.quire.Inference1.Agents`, and of
+    /// nothing else here.
+    AgentLauncher,
 }
 
 /// Who a connection is.
@@ -49,6 +52,9 @@ pub struct Caller {
 pub struct CallerTable {
     #[serde(default)]
     cua: BTreeSet<String>,
+    /// The units of the agent launcher.
+    #[serde(default)]
+    agent_launcher: BTreeSet<String>,
     #[serde(default)]
     apps: BTreeMap<AppName, BTreeSet<String>>,
     /// The apps that may use the settings module, found by their app scope.
@@ -61,8 +67,17 @@ impl CallerTable {
     pub fn new(cua: BTreeSet<String>, apps: BTreeMap<AppName, BTreeSet<String>>) -> Self {
         Self {
             cua,
+            agent_launcher: BTreeSet::new(),
             apps,
             settings: BTreeSet::new(),
+        }
+    }
+
+    /// The same table, naming `units` as the agent launcher's.
+    pub fn with_agent_launcher(self, units: BTreeSet<String>) -> Self {
+        Self {
+            agent_launcher: units,
+            ..self
         }
     }
 
@@ -91,6 +106,15 @@ impl CallerTable {
                 name: None,
             })
         });
+        let launcher_app = AppName::parse(LAUNCHER_APP).ok();
+        let launcher = launcher_app.into_iter().flat_map(|app| {
+            self.agent_launcher.iter().map(move |unit| CallerRow {
+                unit: Some(unit.clone()),
+                app: app.clone(),
+                role: CallerRole::AgentLauncher,
+                name: None,
+            })
+        });
         let apps = self.apps.iter().flat_map(|(app, units)| {
             units.iter().map(move |unit| CallerRow {
                 unit: Some(unit.clone()),
@@ -106,7 +130,7 @@ impl CallerTable {
             name: None,
         });
         porter_dbus::CallerTable {
-            callers: cua.chain(apps).chain(settings).collect(),
+            callers: cua.chain(launcher).chain(apps).chain(settings).collect(),
         }
     }
 
@@ -119,6 +143,9 @@ impl CallerTable {
 /// The app cuad is.
 const CUA_APP: &str = "org.quire.Cua";
 
+/// The app the agent launcher is.
+const LAUNCHER_APP: &str = "org.quire.AgentLauncher";
+
 impl Caller {
     /// A shared caller as inferd knows roles: `Cua` and `Settings`, and `App` for every other.
     pub fn from_shared(caller: porter_dbus::Caller) -> Self {
@@ -127,6 +154,7 @@ impl Caller {
             role: match caller.role {
                 CallerRole::Cua => Role::Cua,
                 CallerRole::Settings => Role::Settings,
+                CallerRole::AgentLauncher => Role::AgentLauncher,
                 _ => Role::App,
             },
         }

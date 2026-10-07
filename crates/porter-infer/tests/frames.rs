@@ -266,6 +266,13 @@ fn model_errors_and_refusals_keep_their_slugs() {
             r#"{"kind":"context_overflow"}"#,
         ),
         (ModelError::Unparseable, r#"{"kind":"unparseable"}"#),
+        (
+            ModelError::OnlyThought {
+                stop: StopReason::EndTurn,
+                thought_len: 12,
+            },
+            r#"{"kind":"only_thought","v":{"stop":"end_turn","thought_len":12}}"#,
+        ),
     ];
     for (error, json) in errors {
         assert_eq!(round_trip(&error), json);

@@ -55,6 +55,29 @@ pub struct AttachedConfig {
     pub my_network: Option<String>,
 }
 
+/// `ai.agents.endpoint`.
+pub const AGENT_ENDPOINT: &str = "ai.agents.endpoint";
+
+/// `ai.agents.endpoint`: whether inferd opens loopback model endpoints for the external coding
+/// agents the launcher starts. Off by default, like the other ways in for agents (ACP, MCP).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentEndpoint {
+    /// `OpenEndpoint` is refused `EndpointOff`.
+    #[default]
+    Off,
+    /// The launcher may open endpoints.
+    On,
+}
+
+/// The `[ai.agents]` table, as written.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentsConfig {
+    /// `ai.agents.endpoint`: `off` or `on`.
+    #[serde(default)]
+    pub endpoint: Option<String>,
+}
+
 /// `ai.pipeline.describe_images`.
 pub const DESCRIBE_IMAGES: &str = "ai.pipeline.describe_images";
 
@@ -206,6 +229,8 @@ pub struct Settings {
     pub describe_images: DescribeImages,
     /// `ai.attached.my_network`.
     pub my_network: MyNetwork,
+    /// `ai.agents.endpoint`.
+    pub agent_endpoint: AgentEndpoint,
 }
 
 impl Settings {
@@ -240,6 +265,7 @@ impl Default for Settings {
             spend: SpendLine::default(),
             describe_images: DescribeImages::default(),
             my_network: MyNetwork::default(),
+            agent_endpoint: AgentEndpoint::default(),
         }
     }
 }

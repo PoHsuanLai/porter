@@ -7,7 +7,13 @@ use std::path::PathBuf;
 #[test]
 fn checked_in_introspection_matches_the_interfaces() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../dbus");
-    for bus in [Bus::Accounts, Bus::AccountsSheet, Bus::Sync, Bus::Inference] {
+    for bus in [
+        Bus::Accounts,
+        Bus::AccountsSheet,
+        Bus::Sync,
+        Bus::Inference,
+        Bus::InferenceAgents,
+    ] {
         let path = dir.join(bus.file_name());
         let expected =
             std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));

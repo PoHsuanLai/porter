@@ -94,6 +94,15 @@ impl FakeAccountd {
         self.calls.lock().expect("lock").clone()
     }
 
+    /// Changes what the person's account says of the apps, as a person does in Settings.
+    pub fn set_standing(&self, id: &str, standing: Standing) {
+        for account in self.accounts.lock().expect("lock").iter_mut() {
+            if account.id == id {
+                account.standing = standing.clone();
+            }
+        }
+    }
+
     /// Serves `org.quire.Accounts1` on `connection`.
     pub async fn serve(&self, connection: &zbus::Connection) {
         connection

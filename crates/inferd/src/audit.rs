@@ -140,6 +140,7 @@ impl<O: AuditOut, C: Clock> SessionAudit<O, C> {
             images: carried.images,
             audio_ms: carried.audio_ms,
             why: why.cloned(),
+            cost: None,
         }
     }
 }

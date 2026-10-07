@@ -2,7 +2,9 @@
 
 use crate::pick::Why;
 use crate::reply::TokenUsage;
-use porter_core::{AccountId, AppId, Bytes, Count, DataClass, Locality, ModelId, UnixSeconds};
+use porter_core::{
+    AccountId, AppId, Bytes, Count, DataClass, Locality, MicroUsd, ModelId, UnixSeconds,
+};
 use serde::{Deserialize, Serialize};
 
 /// One audited request.
@@ -32,4 +34,9 @@ pub struct AuditEntry {
     /// written before the router said why.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub why: Option<Why>,
+    /// What the request cost at the reach's price, when it was metered (a hosted model or an
+    /// agent's API-key account); absent for a model on this computer and in entries written
+    /// before the field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost: Option<MicroUsd>,
 }

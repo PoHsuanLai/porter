@@ -60,6 +60,27 @@ on = "On"
 kind = "intelligence"
 
 [[key]]
+path = "ai.agents.endpoint"
+default = "off"
+label = "Let coding agents use my AI models"
+help = "While on, an external coding agent that your desktop starts may be given a private address on this computer through which it uses an AI account you have granted it, or a model on this computer, with your spend limits and without ever holding the account's key. While off, no such address is opened."
+section = "Models"
+exposure = "basic"
+
+[key.kind]
+kind = "toggle"
+
+[key.kind.v]
+variants = ["off", "on"]
+
+[key.labels]
+off = "Off"
+on = "On"
+
+[key.page]
+kind = "intelligence"
+
+[[key]]
 path = "ai.floor.app_own"
 default = "anywhere"
 label = "The app's own data"

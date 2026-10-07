@@ -1,7 +1,7 @@
 //! The file's `[ai]` table (laid over the old `[policy]` and `[tiers]` tables) as [`Settings`].
 
 use super::keys::{from_slug, slug_of};
-use super::{DESCRIBE_IMAGES, MY_NETWORK, MyNetwork};
+use super::{AGENT_ENDPOINT, AgentEndpoint, DESCRIBE_IMAGES, MY_NETWORK, MyNetwork};
 use super::{
     SPEND_ACCOUNT_DAILY, SPEND_ACCOUNT_MONTHLY, SPEND_APP_DAILY, SPEND_APP_MONTHLY,
     SPEND_CAP_RANGE, SPEND_WARN, SPEND_WARN_DEFAULT, SPEND_WARN_RANGE, ScopeLimits, Settings,
@@ -131,6 +131,16 @@ fn my_network_of(ai: &AiConfig, rejected: &mut Vec<String>) -> MyNetwork {
     }
 }
 
+fn agent_endpoint_of(ai: &AiConfig, rejected: &mut Vec<String>) -> AgentEndpoint {
+    match ai.agents.endpoint.as_deref() {
+        None => AgentEndpoint::default(),
+        Some(text) => from_slug(text).unwrap_or_else(|| {
+            rejected.push(AGENT_ENDPOINT.to_owned());
+            AgentEndpoint::default()
+        }),
+    }
+}
+
 fn spend_of(ai: &AiConfig, rejected: &mut Vec<String>) -> SpendLine {
     let line = |permille: u32| Permille(permille);
     let warn_at = match ai.spend.warn_permille {
@@ -178,6 +188,7 @@ pub fn resolve(config: &InferdConfig) -> Resolved {
         spend: spend_of(&config.ai, &mut rejected),
         describe_images: describe_images_of(&config.ai, &mut rejected),
         my_network: my_network_of(&config.ai, &mut rejected),
+        agent_endpoint: agent_endpoint_of(&config.ai, &mut rejected),
     };
     Resolved { settings, rejected }
 }

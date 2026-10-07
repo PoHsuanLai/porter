@@ -41,6 +41,7 @@ impl Doors {
         };
         Self(BTreeMap::from([
             at("openrouter", "openrouter.ai", "/api/v1"),
+            at("anthropic", "api.anthropic.com", "/v1"),
             at("openai", "api.openai.com", "/v1"),
             at("moonshot", "api.moonshot.ai", "/v1"),
             at(

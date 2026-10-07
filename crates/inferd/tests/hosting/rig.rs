@@ -199,6 +199,15 @@ pub struct Plan {
     /// Engines the person already runs (`[engines.attached.<id>]`), each over a catalog entry of
     /// `catalog`; inferd looks at them and never starts them.
     pub attached: Vec<Attached>,
+    /// The agent endpoints (`org.quire.Inference1.Agents`): served when present.
+    pub agents: Option<AgentsPlan>,
+}
+
+/// The agent endpoints of a world: the setting, and who the launcher is.
+#[derive(Debug, Clone, Copy)]
+pub struct AgentsPlan {
+    /// `ai.agents.endpoint`.
+    pub endpoint: inferd::settings::AgentEndpoint,
 }
 
 /// The program a real-process world runs as llama-server (a script the test wrote).
@@ -228,6 +237,7 @@ impl Default for Plan {
             hears: Vec::new(),
             processes: None,
             attached: Vec::new(),
+            agents: None,
         }
     }
 }
@@ -433,6 +443,9 @@ impl World {
         .with_settings(Settings {
             policy: plan.policy,
             spend: plan.spend,
+            agent_endpoint: plan
+                .agents
+                .map_or_else(Default::default, |agents| agents.endpoint),
             ..Settings::default()
         })
         .with_remote(plan.remote)
@@ -458,6 +471,7 @@ impl World {
                 base: base.to_owned(),
             };
             let doors = Doors::real()
+                .with("anthropic", door("/v1"))
                 .with("openrouter", door("/api/v1"))
                 .with("openai", door("/v1"))
                 .with("moonshot", door("/moonshot/v1"))
@@ -505,6 +519,13 @@ impl World {
         );
         if let Some(probing) = &probing {
             inference = inference.probing(probing.clone());
+        }
+        if plan.agents.is_some() {
+            inference = inference.agents(inferd::agent::Agents::new(
+                served.clone(),
+                Arc::new(audit.clone()),
+                Arc::new(FixedClock(UnixSeconds(1_700_000_000))),
+            ));
         }
         serve_on(&daemon, inference)
             .await
