@@ -72,14 +72,17 @@ fn fault_of(error: ProviderError) -> SignInFault {
 }
 
 /// What an app is told when the sheet ends without an account.
-fn refusal_of(fault: SignInFault) -> Refusal {
+pub(crate) fn refusal_of(fault: SignInFault) -> Refusal {
     match fault {
         SignInFault::Cancelled => Refusal::Dismissed,
+        SignInFault::NoLauncher => Refusal::NoLauncher,
         SignInFault::Forbidden | SignInFault::Refused => Refusal::Denied,
         SignInFault::Unreachable
         | SignInFault::Unreadable
         | SignInFault::NeedsClientId
         | SignInFault::TimedOut
+        | SignInFault::Expired
+        | SignInFault::NotInstalled
         | SignInFault::StoreFailed => Refusal::Unavailable,
     }
 }

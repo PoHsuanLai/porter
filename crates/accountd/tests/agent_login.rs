@@ -6,69 +6,24 @@ mod common;
 
 use accountd::add::{AddArgs, Echo, Terminal, TerminalSheets, run};
 use accountd::{FileAudit, FileStore};
+use common::agents::*;
 use common::*;
 use ds_settings::live::LiveError;
 use porter_core::capability::{AgentProgram, Offered};
 use porter_core::need::AgentNeed;
 use porter_core::store::Persisted;
 use porter_core::{
-    Account, AccountId, AccountLabel, AccountState, AuthKind, Capability, CapabilityKind, Claim,
-    Match, Need, Offer, Provenance, ProviderId, Restriction, SecretKey, SecretPurpose, Shortfall,
-    Subject, matches,
+    Account, AccountId, AccountState, AuthKind, CapabilityKind, Match, Need, ProviderId, SecretKey,
+    SecretPurpose, Shortfall, Subject, matches,
 };
 use porter_dbus::{CallerRole, ManagerProxy, PeerProxy, TokensProxy};
 use porter_families::{AgentLoginProvider, FamilyProvider};
-use porter_provider::{Provider, ProviderSpec, shipped_specs};
+use porter_provider::Provider;
 use porter_secrets::Secrets;
 use porter_service::{AccountService, RegistryStore};
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-
-fn shipped(id: &str) -> ProviderSpec {
-    shipped_specs()
-        .into_iter()
-        .find(|spec| spec.id.as_str() == id)
-        .unwrap_or_else(|| panic!("{id} ships"))
-}
-
-/// The claims a shipped provider file declares for an agent, as an account would hold them.
-fn agent_claims(spec: &ProviderSpec) -> Vec<Claim> {
-    spec.capabilities
-        .iter()
-        .filter_map(|row| match &row.capability {
-            Capability::Agent(agent) => Some(Claim {
-                subject: Subject::Agent(agent.program.clone()),
-                offer: Offer::Present(row.capability.clone()),
-                provenance: Provenance::Declared,
-            }),
-            _ => None,
-        })
-        .collect()
-}
-
-fn agent_account(provider: &str, state: AccountState) -> Account {
-    let spec = shipped(provider);
-    Account {
-        id: AccountId::parse(provider).expect("id"),
-        provider: ProviderId::parse(provider).expect("provider"),
-        label: AccountLabel(spec.label.clone()),
-        state,
-        auth: AuthKind::AgentLogin,
-        capabilities: agent_claims(&spec),
-        restriction: Restriction::none(),
-        endpoints: Vec::new(),
-    }
-}
-
-async fn rig_with_an_agent(state: AccountState) -> Rig {
-    let accounts = vec![
-        storage_account(),
-        agent_account("claude-code", state),
-        agent_account("codex", state),
-    ];
-    Rig::start_holding(Default::default(), SheetHost::quiet(), Vec::new(), accounts).await
-}
 
 fn claude_code() -> AccountId {
     AccountId::parse("claude-code").expect("id")

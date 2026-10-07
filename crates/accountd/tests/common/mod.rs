@@ -3,6 +3,7 @@
 //! by unique name. Nothing here reaches the real session, Secret Service or network.
 #![allow(dead_code)]
 
+pub mod agents;
 pub mod bus;
 pub mod host;
 

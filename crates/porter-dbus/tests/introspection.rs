@@ -99,7 +99,7 @@ fn inference_calls_carry_an_options_dict_for_the_reserved_traceparent() {
 }
 
 #[test]
-fn the_peer_interface_is_the_three_daemon_to_daemon_members() {
+fn the_peer_interface_is_the_daemon_members_and_the_launchers() {
     let xml = introspection(Bus::Accounts);
     let peer = xml
         .split("<interface name=\"org.quire.Accounts1.Peer\">")
@@ -111,10 +111,16 @@ fn the_peer_interface_is_the_three_daemon_to_daemon_members() {
         "<method name=\"ResolveKey\">",
         "<method name=\"ReportLocal\">",
         "<method name=\"SetAgentState\">",
+        "<method name=\"RegisterLauncher\">",
+        "<method name=\"ReportAgentLogin\">",
+        "<method name=\"ReportAgentLogout\">",
+        "<signal name=\"AgentLoginRequested\">",
+        "<signal name=\"AgentLogoutRequested\">",
     ] {
         assert!(peer.contains(member), "missing {member}");
     }
-    assert_eq!(peer.matches("<method ").count(), 4);
+    assert_eq!(peer.matches("<method ").count(), 7);
+    assert_eq!(peer.matches("<signal ").count(), 2);
     assert!(
         !peer.contains("OpenCredential"),
         "syncd opens an authenticated stream like any app"

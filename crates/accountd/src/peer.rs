@@ -2,8 +2,9 @@
 //! Only a connection whose caller role is `PorterDaemon` may call; every other sender is
 //! `AccessDenied`. The app is named by the daemon from its own connection, never by the app.
 //!
-//! `SetAgentState` is the one method the agent launcher (role `AgentLauncher`) may call, and the
-//! only one it may call.
+//! `SetAgentState`, `RegisterLauncher`, `ReportAgentLogin` and `ReportAgentLogout` are the methods
+//! the agent launcher (role `AgentLauncher`) may call, and the only ones it may call; the
+//! signals `AgentLoginRequested` and `AgentLogoutRequested` are sent to it alone (`launchers`).
 //!
 //! `Verdicts`, `ResolveKey` (a sealed memfd of an API key) and `ReportLocal` (a probed local
 //! runtime becoming an account, or going offline) are served.
@@ -12,16 +13,20 @@ use crate::callers::Callers;
 use crate::core::{Core, Host, Standing, slug};
 use crate::errors::RefusedError;
 use crate::keys::sealed_key;
+use crate::launchers::Ask;
+use porter_core::capability::AgentProgram;
 use porter_core::consent::{Decision, GrantKey, Verdict, decide};
 use porter_core::wire::Refusal;
 use porter_core::{
-    AccountId, AccountState, AgentState, CapabilityKind, Claim, GrantId, ProviderId, Toggle,
+    AccountId, AccountState, AgentState, CapabilityKind, Claim, GrantId, LoginOutcome,
+    LoginRequestId, ProviderId, Toggle,
 };
 use porter_core::{AppId, AppName, Isolation, Match, Offer, SpaceScope, matches};
 use porter_dbus::{AppArg, CallerRole, Details, NeedArg, VerdictArg, need_from_dbus};
-use porter_service::{AgentFault, LocalFault};
+use porter_service::{AgentFault, LocalFault, LoginEnd};
 use std::sync::Arc;
 use zbus::message::Header;
+use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{OwnedFd, OwnedValue, Value};
 
 /// The peer object at the accountd path.
@@ -212,6 +217,121 @@ impl<H: Host, C: Callers> Peer<H, C> {
             self.0.publish().await;
         }
         Ok(())
+    }
+
+    /// Makes the caller the launcher of these agent programs, for as long as its connection
+    /// lives. One launcher per program, first wins (`AlreadyRegistered`); a program the caller
+    /// holds already is a no-op, and a later call adds more.
+    async fn register_launcher(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        programs: Vec<String>,
+    ) -> Result<(), RefusedError> {
+        let sender = self.launcher(&header).await?;
+        let programs = programs
+            .iter()
+            .map(|program| AgentProgram::parse(program).map_err(RefusedError::invalid))
+            .collect::<Result<Vec<_>, _>>()?;
+        if programs.is_empty() {
+            return Err(RefusedError::invalid("no program to launch"));
+        }
+        self.0
+            .launchers
+            .register(&sender, &programs)
+            .await
+            .map_err(|fault| RefusedError::launcher(fault, "a launcher holds that program"))
+    }
+
+    /// What the launcher reports of an `AgentLoginRequested`. `ready` sets the account's state
+    /// ready (as `SetAgentState` does) before whoever waits is told. Only the connection that
+    /// was sent the request may answer it.
+    async fn report_agent_login(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        request: String,
+        outcome: String,
+        reason: String,
+    ) -> Result<(), RefusedError> {
+        self.report(&header, Ask::Login, &request, &outcome, &reason)
+            .await
+    }
+
+    /// What the launcher reports of an `AgentLogoutRequested`. `ready` (done) sets the account's
+    /// state to `needs_login`.
+    async fn report_agent_logout(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        request: String,
+        outcome: String,
+        reason: String,
+    ) -> Result<(), RefusedError> {
+        self.report(&header, Ask::Logout, &request, &outcome, &reason)
+            .await
+    }
+
+    /// Sent to the registrant of `program` alone.
+    #[zbus(signal)]
+    async fn agent_login_requested(
+        emitter: &SignalEmitter<'_>,
+        request: &str,
+        account: &str,
+        program: &str,
+    ) -> zbus::Result<()>;
+
+    /// Sent to the registrant of `program` alone.
+    #[zbus(signal)]
+    async fn agent_logout_requested(
+        emitter: &SignalEmitter<'_>,
+        request: &str,
+        account: &str,
+        program: &str,
+    ) -> zbus::Result<()>;
+}
+
+impl<H: Host, C: Callers> Peer<H, C> {
+    /// The unique name of a caller that is the agent launcher; anyone else is `AccessDenied`.
+    async fn launcher(&self, header: &Header<'_>) -> Result<String, RefusedError> {
+        let caller = self.0.identify(header, Standing::Launching).await?;
+        if caller.role != CallerRole::AgentLauncher {
+            return Err(RefusedError::access_denied(
+                "only the agent launcher may register or answer for a launcher",
+            ));
+        }
+        header
+            .sender()
+            .map(|sender| sender.to_string())
+            .ok_or_else(|| RefusedError::access_denied("no sender"))
+    }
+
+    async fn report(
+        &self,
+        header: &Header<'_>,
+        kind: Ask,
+        request: &str,
+        outcome: &str,
+        reason: &str,
+    ) -> Result<(), RefusedError> {
+        let sender = self.launcher(header).await?;
+        let request = LoginRequestId::parse(request).map_err(RefusedError::invalid)?;
+        // The words are not echoed back: whatever else a launcher sent stays its own.
+        let outcome = LoginOutcome::from_wire(outcome, reason)
+            .map_err(|_| RefusedError::invalid("not an outcome of a login"))?;
+        let pending = self.0.launchers.take(&sender, &request, kind)?;
+        // The state first, so whoever waits finds the account as the report left it.
+        let state = match (kind, outcome) {
+            (Ask::Login, LoginOutcome::Ready) => Some(AgentState::Ready),
+            (Ask::Logout, LoginOutcome::Ready) => Some(AgentState::NeedsLogin),
+            _ => None,
+        };
+        let saved = match state {
+            Some(state) => self.0.host.set_agent_state(&pending.account, state).await,
+            None => Ok(false),
+        };
+        if saved == Ok(true) {
+            self.0.publish().await;
+        }
+        pending.end(LoginEnd::Reported(outcome));
+        saved.map(|_| ()).map_err(agent_fault)
     }
 }
 

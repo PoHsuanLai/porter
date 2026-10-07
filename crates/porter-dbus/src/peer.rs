@@ -1,13 +1,16 @@
 //! `org.quire.Accounts1.Peer` at `/org/quire/Accounts1`: what the other daemons ask accountd on
 //! behalf of an app (porter PLAN G3). Callable only by a connection whose caller role is
 //! `PorterDaemon` (inferd, syncd); accountd refuses every other sender `AccessDenied`. The one
-//! exception is `SetAgentState`, which only `AgentLauncher` may call (and `PorterDaemon` may
-//! not). The app
+//! exception is the launcher's three (`SetAgentState`, `RegisterLauncher`, `ReportAgentLogin`,
+//! `ReportAgentLogout`), which only `AgentLauncher` may call (and `PorterDaemon` may
+//! not); accountd answers it with two unicast signals, `AgentLoginRequested` and
+//! `AgentLogoutRequested`, sent to the connection that registered the agent's program. The app
 //! is named by the calling daemon from its own connection, never by the app. There is no
 //! `OpenCredential`: syncd opens an authenticated stream like any app (`Tokens`).
 
 use crate::args::{AppArg, Details, NeedArg, VerdictArg};
 use zbus::fdo;
+use zbus::object_server::SignalEmitter;
 use zbus::zvariant::OwnedFd;
 
 /// The daemon's side of the conversation.
@@ -41,6 +44,36 @@ pub trait Peer {
     /// of an agent that signs itself in (`AuthKind::AgentLogin`). Only the launcher
     /// (`CallerRole::AgentLauncher`) may say it; porter holds no more of an agent's login.
     fn set_agent_state(&self, account: &str, state: &str) -> zbus::Result<()>;
+    /// Registers the connection as the launcher of these agent programs (`AgentProgram` ids).
+    /// `AgentLauncher` only. The registration lives as long as the connection. One launcher per
+    /// program, first wins: a program a live connection already holds is `AlreadyRegistered`
+    /// (`LauncherFault`); registering a program the caller holds is a no-op, and later
+    /// calls add more programs.
+    fn register_launcher(&self, programs: &[&str]) -> zbus::Result<()>;
+    /// What the launcher reports of an `AgentLoginRequested`: `outcome` is `ready`, `failed` or
+    /// `cancelled`, `reason` one of `LoginFault`'s words for `failed` and empty otherwise (see
+    /// `LoginOutcome::to_wire`). Only the connection that got the request may answer it; any
+    /// other is `UnknownRequest`. Nothing else crosses: no token, no URL, no code.
+    fn report_agent_login(&self, request: &str, outcome: &str, reason: &str) -> zbus::Result<()>;
+    /// What the launcher reports of an `AgentLogoutRequested`; `ready` means signed out.
+    fn report_agent_logout(&self, request: &str, outcome: &str, reason: &str) -> zbus::Result<()>;
+    /// Sent to the registrant of `program` alone: sign the agent in (the agent does it itself;
+    /// accountd learns only the outcome).
+    #[zbus(signal)]
+    fn agent_login_requested(
+        &self,
+        request: String,
+        account: String,
+        program: String,
+    ) -> zbus::Result<()>;
+    /// Sent to the registrant of `program` alone: sign the agent out.
+    #[zbus(signal)]
+    fn agent_logout_requested(
+        &self,
+        request: String,
+        account: String,
+        program: String,
+    ) -> zbus::Result<()>;
 }
 
 /// accountd's side.
@@ -79,4 +112,45 @@ impl PeerSkeleton {
         let _ = (account, state);
         Err(crate::introspect::frozen())
     }
+
+    fn register_launcher(&self, programs: Vec<String>) -> fdo::Result<()> {
+        let _ = programs;
+        Err(crate::introspect::frozen())
+    }
+
+    fn report_agent_login(
+        &self,
+        request: String,
+        outcome: String,
+        reason: String,
+    ) -> fdo::Result<()> {
+        let _ = (request, outcome, reason);
+        Err(crate::introspect::frozen())
+    }
+
+    fn report_agent_logout(
+        &self,
+        request: String,
+        outcome: String,
+        reason: String,
+    ) -> fdo::Result<()> {
+        let _ = (request, outcome, reason);
+        Err(crate::introspect::frozen())
+    }
+
+    #[zbus(signal)]
+    async fn agent_login_requested(
+        emitter: &SignalEmitter<'_>,
+        request: &str,
+        account: &str,
+        program: &str,
+    ) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    async fn agent_logout_requested(
+        emitter: &SignalEmitter<'_>,
+        request: &str,
+        account: &str,
+        program: &str,
+    ) -> zbus::Result<()>;
 }

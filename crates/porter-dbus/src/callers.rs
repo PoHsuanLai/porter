@@ -35,7 +35,8 @@ pub enum CallerRole {
     /// cuad, for inferd: the only role that may open a computer-use session.
     Cua,
     /// The agent launcher (docket-acp), which runs external coding agents: may call
-    /// `Peer.SetAgentState` and nothing else. Never granted by default: `dist/callers.toml`
+    /// `Peer.SetAgentState`, `RegisterLauncher`, `ReportAgentLogin` and `ReportAgentLogout` and
+    /// nothing else. Never granted by default: `dist/callers.toml`
     /// has no row for it, so a machine lists the launcher by its own row.
     AgentLauncher,
 }

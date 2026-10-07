@@ -8,19 +8,20 @@ use crate::errors::RefusedError;
 use crate::grants::{Grants, Tokens};
 use crate::hub::{Event, audience, events, settings_news, shell_hears};
 use crate::keys::KeyDesk;
+use crate::launchers::{Launchers, LoginTiming, SignOutNews};
 use crate::manager::Manager;
 use crate::relay::{RelayRoots, Relays};
 use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
 use porter_core::{
-    AccountId, AccountState, AccountsReply, AccountsRequest, AgentState, AppId, CapabilityKind,
-    Claim, EndpointUrl, GrantId, ProviderId, RelayPlan, Toggle,
+    AccountId, AccountState, AccountsReply, AccountsRequest, AgentState, AppId, AuthKind,
+    CapabilityKind, Claim, EndpointUrl, GrantId, ProviderId, RelayPlan, Toggle,
 };
 use porter_dbus::{ACCOUNTS_BUS, ACCOUNTS_PATH, Caller, CallerRole, Details, account_path};
 use porter_provider::Provider;
 use porter_secrets::{Secrets, SecretsError};
 use porter_service::{
-    AccountService, AgentFault, AuditSink, Clock, LocalFault, Registry, RegistryStore,
-    RevokeReport, Sheets, SyncClass,
+    AccountService, AgentFault, AuditSink, Clock, Launchers as LaunchersSeam, LocalFault, Registry,
+    RegistryStore, RevokeReport, Sheets, SyncClass,
 };
 use serde::de::DeserializeOwned;
 use std::borrow::Cow;
@@ -83,6 +84,21 @@ pub trait Host: Send + Sync + 'static {
         window: ParentWindow,
     ) -> impl Future<Output = AccountsReply> + Send {
         let _ = (caller, account, window);
+        async { AccountsReply::Refused(Refusal::Unavailable) }
+    }
+
+    /// Signs an agent account in through its launcher, with a sheet that shows the wait and the
+    /// outcome (`shell` is the sheet host or Settings, which need no grant; an app needs one).
+    /// A host with no sign-in says unavailable.
+    fn login_agent(
+        &self,
+        caller: &AppId,
+        account: &AccountId,
+        window: ParentWindow,
+        shell: bool,
+        launchers: &impl LaunchersSeam,
+    ) -> impl Future<Output = AccountsReply> + Send {
+        let _ = (caller, account, window, shell, launchers);
         async { AccountsReply::Refused(Refusal::Unavailable) }
     }
 
@@ -203,6 +219,26 @@ where
         AccountService::reauthenticate_any(self, caller, account, window)
     }
 
+    fn login_agent(
+        &self,
+        caller: &AppId,
+        account: &AccountId,
+        window: ParentWindow,
+        shell: bool,
+        launchers: &impl LaunchersSeam,
+    ) -> impl Future<Output = AccountsReply> + Send {
+        async move {
+            match shell {
+                true => {
+                    AccountService::login_agent_any(self, caller, account, window, launchers).await
+                }
+                false => {
+                    AccountService::login_agent(self, caller, account, window, launchers).await
+                }
+            }
+        }
+    }
+
     fn remove(
         &self,
         id: &AccountId,
@@ -287,6 +323,8 @@ pub(crate) struct Core<H, C> {
     pub(crate) keys: Option<Arc<dyn KeyDesk>>,
     /// What the settings module calls an app.
     pub(crate) app_names: AppNames,
+    /// The agent launchers and the requests they carry.
+    pub(crate) launchers: Launchers,
     /// The served settings module, which announces an account's new state as `Changed`; set
     /// once the module is served.
     pub(crate) settings: OnceLock<ds_settings::live::Served>,
@@ -357,6 +395,15 @@ impl<H: Host, C: Callers> Core<H, C> {
             .map(|g| g.key.account.clone())
     }
 
+    /// Whether `account` is an agent that signs itself in (`AuthKind::AgentLogin`).
+    pub(crate) fn is_agent(&self, account: &AccountId) -> bool {
+        self.host
+            .registry()
+            .accounts
+            .iter()
+            .any(|a| a.id == *account && a.auth == AuthKind::AgentLogin)
+    }
+
     /// Marks `account` as needing reauthentication, and tells the clients.
     pub(crate) async fn needs_reauth(self: &Arc<Self>, account: &AccountId) {
         if self
@@ -425,6 +472,20 @@ impl<H: Host, C: Callers> Core<H, C> {
         }
     }
 
+    /// Tells the settings module's listeners how a sign out went: `Changed("accounts.<id>.sign_out",
+    /// <word>)`.
+    pub(crate) async fn announce_sign_out(&self, id: &AccountId, news: SignOutNews) {
+        if let Some(module) = self.settings.get() {
+            let key = crate::settings_keys::path(&crate::settings_keys::Key::SignOut(id.clone()));
+            let _ = module
+                .changed(
+                    &ds_settings::schema::KeyPath(key),
+                    &toml::Value::String(news.slug().to_owned()),
+                )
+                .await;
+        }
+    }
+
     /// Sends `event` to the connection `name` alone.
     async fn tell(&self, name: &str, event: &Event) -> zbus::Result<()> {
         let emitter = SignalEmitter::new(&self.connection, ACCOUNTS_PATH)?
@@ -459,6 +520,7 @@ impl<H: Host, C: Callers> Core<H, C> {
     /// Forgets a connection that left the bus.
     pub(crate) fn left(&self, name: &str) {
         held(&self.roster).remove(name);
+        self.launchers.left(name);
     }
 }
 
@@ -506,6 +568,9 @@ pub struct Options {
     /// Where the settings module gets an app's display name; the default names no app, so every
     /// app shows its id.
     pub app_names: AppNames,
+    /// The clock and bound of a request to an agent launcher; the default is the system clock
+    /// and ten minutes.
+    pub login: LoginTiming,
 }
 
 /// Serves `org.quire.Accounts1` on `connection` over `host`, answering for the apps `callers`
@@ -538,6 +603,7 @@ pub async fn serve_with<H: Host, C: Callers>(
         relays: Relays::new(options.relay_roots),
         keys: options.keys,
         app_names: options.app_names,
+        launchers: Launchers::new(connection.clone(), options.login),
         settings: OnceLock::new(),
     });
     let server: &ObjectServer = connection.object_server();

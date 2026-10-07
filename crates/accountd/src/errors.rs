@@ -55,6 +55,16 @@ impl RefusedError {
         Self::bus(fdo::Error::UnknownObject(why.to_string()))
     }
 
+    /// A launcher's call accountd refuses, under its own typed name.
+    pub(crate) fn launcher(fault: porter_dbus::LauncherFault, why: impl ToString) -> Self {
+        Self {
+            name: ErrorName::try_from(fault.error_name()).unwrap_or_else(|_| {
+                ErrorName::from_static_str_unchecked("org.freedesktop.DBus.Error.Failed")
+            }),
+            text: why.to_string(),
+        }
+    }
+
     /// Something the daemon could not do.
     pub(crate) fn failed(why: impl ToString) -> Self {
         Self::bus(fdo::Error::Failed(why.to_string()))

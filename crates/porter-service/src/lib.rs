@@ -8,6 +8,7 @@ mod add;
 mod add_flow;
 mod add_store;
 mod agent;
+mod agent_login;
 mod audience;
 mod audit;
 mod choose;
@@ -25,6 +26,7 @@ mod token;
 
 pub use add_flow::AllowFor;
 pub use agent::AgentFault;
+pub use agent_login::{Launchers, LoginEnd, NoLauncher, Waiting, program_of};
 pub use audit::{AuditSink, NoAudit};
 pub use clock::Clock;
 pub use local::{LocalFault, MAX_LOCAL_CLAIMS};

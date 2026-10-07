@@ -32,6 +32,12 @@
 //! - `Peer.ResolveKey`: an API key of a granted Llm account on a sealed memfd, for a porter daemon
 //!   only (`keys`); the key is read by `Options::keys`.
 //!
+//! - `Peer.RegisterLauncher`, `Peer.ReportAgentLogin`, `Peer.ReportAgentLogout` and the unicast signals
+//!   `AgentLoginRequested` and `AgentLogoutRequested` (`launchers`): the agent launcher registers the
+//!   programs it runs, accountd asks it to sign an agent in or out, and it answers with a coarse
+//!   outcome. The login itself never reaches accountd: no token, no URL, no code. `AgentLauncher`
+//!   only.
+//!
 //! - `Peer.ReportLocal`: a probed local runtime (Ollama, llama.cpp, LM Studio) as an account of its
 //!   provider file, its models as claims, `offline` when it stops (`peer`); a porter daemon only.
 //!
@@ -48,6 +54,7 @@ mod grants;
 mod hub;
 mod keys;
 pub mod keysel;
+mod launchers;
 mod manager;
 pub mod paths;
 mod peer;
@@ -67,6 +74,7 @@ pub use callers_file::{CallerFileError, load_callers, table_from_file, table_fro
 pub use core::{Host, Options, serve, serve_with};
 pub use errors::RefusedError;
 pub use keys::{KeyDesk, RESOLVE_AUDIENCE, SecretsDesk, sealed_key};
+pub use launchers::{DEFAULT_BOUND, DEFAULT_TICK, LoginTiming};
 pub use relay::RelayRoots;
 pub use settings::settings_path;
 pub use sheets::{BusLink, BusSheets};

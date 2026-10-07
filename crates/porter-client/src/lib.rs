@@ -30,6 +30,8 @@ pub mod engines;
 mod env;
 mod error;
 mod found;
+#[cfg(feature = "dbus")]
+mod launcher;
 mod relays;
 mod transport;
 
@@ -38,6 +40,8 @@ pub use authenticated::{AuthenticatedStream, Relayed};
 pub use env::{ClientEnv, LinkChoice, Place, START_WAIT, SocketAgent, StartAgent};
 pub use error::{ClientError, TransportError};
 pub use found::{ConsentOffer, Found, NoAccount, found};
+#[cfg(feature = "dbus")]
+pub use launcher::{AskKind, Launcher, LauncherError, LauncherRequest, Requests};
 /// What an [`engines::EngineHost`] is built from, from porter-infer.
 #[cfg(feature = "engines")]
 pub use porter_infer::{InferRefusal, Policy, Slot};

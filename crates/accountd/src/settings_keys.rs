@@ -278,7 +278,7 @@ fn account_keys(account: &Account, grants: &[Grant], names: &AppNames) -> Vec<Ke
             &Key::SignOut(id.clone()),
             section,
             "Sign out".to_owned(),
-            "Forgets that this agent was signed in. The agent's own login is not touched.",
+            "Asks the agent to sign itself out when its launcher is running; otherwise it only forgets here that it was signed in, and the agent's own login is not touched.",
             action("Sign out", ActionWeight::Plain),
             off(),
         ),

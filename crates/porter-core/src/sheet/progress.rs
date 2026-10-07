@@ -36,6 +36,12 @@ pub enum SignInFault {
     Forbidden,
     /// The sign-in succeeded but the account could not be stored (the disk or the secret store).
     StoreFailed,
+    /// An agent's own login was asked for and no launcher is registered for its program.
+    NoLauncher,
+    /// The launcher was asked and did not answer in time (accountd's own clock).
+    Expired,
+    /// The agent program is not installed (the launcher's word).
+    NotInstalled,
 }
 
 /// One service row of the review step.

@@ -5,6 +5,7 @@
 
 use crate::callers::Callers;
 use crate::core::{Core, Host};
+use crate::launchers::SignOutNews;
 use crate::settings_keys::{Key, parse, schema};
 use ds_settings::live::{Access, Caller, LiveError, LiveModule, LiveSchema, Verdict, serve};
 use ds_settings::schema::KeyPath;
@@ -12,6 +13,7 @@ use porter_core::wire::ParentWindow;
 use porter_core::{AccountsReply, AppId, AppName, Isolation, Toggle};
 use porter_dbus::{ACCOUNTS_SETTINGS_PATH, CallerRole};
 use porter_provider::{ClientChannel, ClientEntry, ClientId, ClientsFile, Issuer, parse_clients};
+use porter_service::Launchers as _;
 use std::sync::Arc;
 use zbus::Connection;
 
@@ -169,13 +171,7 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
                     core.publish().await;
                 });
             }
-            Key::SignOut(id) => {
-                self.0
-                    .host
-                    .set_agent_state(&id, porter_core::AgentState::NeedsLogin)
-                    .await
-                    .map_err(|fault| failed(format!("refused: {fault:?}")))?;
-            }
+            Key::SignOut(id) => self.sign_out(&id).await?,
             Key::Client(issuer) => {
                 let text = match &value {
                     toml::Value::String(text) => text.trim().to_owned(),
@@ -188,6 +184,46 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
             }
         }
         self.0.publish().await;
+        Ok(())
+    }
+}
+
+impl<H: Host, C: Callers> AccountsSettings<H, C> {
+    /// Signs an agent account out. With its program's launcher registered, the launcher is asked
+    /// (the agent signs itself out) and the pane hears `asked` now and the outcome when it
+    /// comes, as `Changed("accounts.<id>.sign_out", <word>)`; the state follows only a `ready`
+    /// report. With none, porter's state goes to `needs_login` as it always did, the agent's own
+    /// login is not touched, and the pane hears `login_untouched`.
+    async fn sign_out(&self, id: &porter_core::AccountId) -> Result<(), LiveError> {
+        let program = self
+            .0
+            .host
+            .registry()
+            .accounts
+            .iter()
+            .find(|a| a.id == *id && a.auth == porter_core::AuthKind::AgentLogin)
+            .and_then(porter_service::program_of);
+        let waiting = match program {
+            Some(program) => self.0.launchers.ask_logout(id, &program).await.ok(),
+            None => None,
+        };
+        let Some(waiting) = waiting else {
+            self.0
+                .host
+                .set_agent_state(id, porter_core::AgentState::NeedsLogin)
+                .await
+                .map_err(|fault| failed(format!("refused: {fault:?}")))?;
+            self.0
+                .announce_sign_out(id, SignOutNews::LoginUntouched)
+                .await;
+            return Ok(());
+        };
+        self.0.announce_sign_out(id, SignOutNews::Asked).await;
+        let (core, id) = (Arc::clone(&self.0), id.clone());
+        tokio::spawn(async move {
+            let news = SignOutNews::of(waiting.await);
+            core.announce_sign_out(&id, news).await;
+        });
         Ok(())
     }
 }

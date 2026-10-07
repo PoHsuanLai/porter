@@ -55,4 +55,7 @@ pub enum Refusal {
     /// The endpoint is not one of the account's for the grant's kind: the relay dials only
     /// what the account holds, never an address the app names.
     EndpointNotGranted,
+    /// An agent account asked to sign in or out, and no launcher has registered the agent's
+    /// program: only the agent can log itself in, and nobody is there to ask it.
+    NoLauncher,
 }

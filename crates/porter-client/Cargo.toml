@@ -28,6 +28,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
+ds-settings = { workspace = true }
 latchkey = { workspace = true }
 accountd = { path = "../accountd" }
 cua-action = { workspace = true }
@@ -70,3 +71,7 @@ workspace = true
 [[test]]
 name = "engines"
 required-features = ["engines"]
+
+[[test]]
+name = "launcher"
+required-features = ["dbus"]

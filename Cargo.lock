@@ -2185,6 +2185,7 @@ version = "0.1.0"
 dependencies = [
  "accountd",
  "cua-action",
+ "ds-settings",
  "inferd",
  "latchkey",
  "model-http",

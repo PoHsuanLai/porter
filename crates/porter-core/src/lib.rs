@@ -2,6 +2,7 @@
 //! consent, credentials' filing, and the wire protocol. No I/O, no runtime, portable.
 
 mod account;
+mod agent_login;
 mod ai_props;
 mod app_id;
 pub mod audit;
@@ -33,6 +34,7 @@ mod weburl;
 pub mod wire;
 
 pub use account::{Account, AccountLabel, AccountState, AgentState};
+pub use agent_login::{LoginFault, LoginOutcome, LoginRequestId};
 pub use ai_props::{Billing, Locality, PriceTable, Region, Tier};
 pub use app_id::{AppId, AppName, Isolation};
 pub use auth_kind::AuthKind;

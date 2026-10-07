@@ -114,5 +114,28 @@
      <arg name="account" type="s" direction="in"/>
      <arg name="state" type="s" direction="in"/>
    </method>
+   <method name="RegisterLauncher">
+     <arg name="programs" type="as" direction="in"/>
+   </method>
+   <method name="ReportAgentLogin">
+     <arg name="request" type="s" direction="in"/>
+     <arg name="outcome" type="s" direction="in"/>
+     <arg name="reason" type="s" direction="in"/>
+   </method>
+   <method name="ReportAgentLogout">
+     <arg name="request" type="s" direction="in"/>
+     <arg name="outcome" type="s" direction="in"/>
+     <arg name="reason" type="s" direction="in"/>
+   </method>
+   <signal name="AgentLoginRequested">
+     <arg name="request" type="s"/>
+     <arg name="account" type="s"/>
+     <arg name="program" type="s"/>
+   </signal>
+   <signal name="AgentLogoutRequested">
+     <arg name="request" type="s"/>
+     <arg name="account" type="s"/>
+     <arg name="program" type="s"/>
+   </signal>
  </interface>
 </node>

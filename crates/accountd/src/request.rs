@@ -105,6 +105,12 @@ impl<H: Host, C: Callers> Core<H, C> {
         let core = Arc::clone(self);
         let run = async move {
             let reply = match request {
+                // An agent signs itself in: the sheet waits for its launcher's report.
+                AccountsRequest::Reauthenticate { account, window } if core.is_agent(&account) => {
+                    core.host
+                        .login_agent(&app, &account, window, shell, &core.launchers)
+                        .await
+                }
                 // The shell signs any account in again; an app needs its grant.
                 AccountsRequest::Reauthenticate { account, window } if shell => {
                     core.host.reauthenticate_any(&app, &account, window).await
