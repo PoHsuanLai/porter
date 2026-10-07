@@ -7,7 +7,7 @@ use super::target::Target;
 use crate::catalog::claims_of;
 use crate::local::{LOCAL_ACCOUNT, LocalModel, flavor_of};
 use engine_supervisor::{EngineId, EnginePaths, EngineSpec, ProgramPath, SocketPath, command};
-use model_catalog::{EngineKind, MiB, ModelEntry};
+use model_catalog::{EngineProfile, MiB, ModelEntry, Serving, WeightFiles};
 use model_provider::ModelName;
 use porter_core::{AccountId, Billing, Capability, Offer};
 use porter_infer::ModelCard;
@@ -47,21 +47,23 @@ pub fn local_model(
     let no_chat = || AttachedError::NoChatEngine {
         id: name.to_owned(),
     };
-    // The engine the owner runs is vLLM when the entry has a profile for it, else the first
-    // profile that speaks OpenAI-compatible chat.
-    let profile = entry
-        .engines
-        .iter()
-        .find(|profile| profile.kind == EngineKind::Vllm)
-        .or_else(|| {
-            entry
-                .engines
-                .iter()
-                .find(|profile| flavor_of(profile.kind).is_some())
-        })
-        .ok_or_else(no_chat)?
-        .clone();
-    let flavor = flavor_of(profile.kind).ok_or_else(no_chat)?;
+    // Only an entry the catalogue says is served by an engine somebody else started can be
+    // attached; one inferd launches itself cannot.
+    let Serving::Attached(served) = &entry.serving else {
+        return Err(AttachedError::NotAttachable {
+            id: name.to_owned(),
+        });
+    };
+    let flavor = flavor_of(served.engine).ok_or_else(no_chat)?;
+    // An attached entry has no engine profile (nothing is launched): the one made here names the
+    // wire and is never run.
+    let profile = EngineProfile {
+        kind: served.engine,
+        args: Vec::new(),
+        weights: WeightFiles::HfSnapshot,
+        inputs: None,
+        outputs: None,
+    };
     let target = Target::of(attached);
     let socket = SocketPath(match target.socket() {
         Some(path) => path.clone(),
@@ -82,8 +84,9 @@ pub fn local_model(
             billing: Billing::Free,
             capabilities,
         },
-        // The catalogue serves the model under its id, and so does the owner's engine.
-        name: ModelName(entry.id.0.clone()),
+        // The name the catalogue says the engine serves the model under, which a request names and
+        // `/v1/models` must list.
+        name: ModelName(served.served_name.0.clone()),
         spec: EngineSpec {
             id: engine_id(name),
             need: MiB(0),

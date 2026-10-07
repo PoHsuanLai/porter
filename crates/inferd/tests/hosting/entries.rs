@@ -202,3 +202,19 @@ weights = { kind = "sherpa_dir" }
 "#
     .to_string()
 }
+
+/// The id of the shipped attached entry, served by an engine on another machine.
+pub const ATTACHED: &str = "qwen3.5-35b-a3b-fp8";
+
+/// The name the lab serves it under in the tests (the shipped entry's own is its id): what a
+/// request names and `/v1/models` lists.
+pub const SERVED: &str = "lab-qwen";
+
+/// The shipped entry of an attached engine (stoker's `catalog/qwen3.5-35b-a3b-fp8.toml`: serving
+/// attached, locality on-device, no engine profile), with the served name `SERVED`.
+pub fn attached() -> String {
+    include_str!("../../../../../stoker/catalog/qwen3.5-35b-a3b-fp8.toml").replace(
+        "served_name = \"qwen3.5-35b-a3b-fp8\"",
+        &format!("served_name = \"{SERVED}\""),
+    )
+}

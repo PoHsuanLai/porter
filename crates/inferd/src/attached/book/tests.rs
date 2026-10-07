@@ -12,12 +12,12 @@ use std::sync::Mutex;
 
 fn model_on(reach: Reach, place: Place, scratch: &Scratch) -> LocalModel {
     let attached = Attached {
-        id: ModelId::parse("tiny-chat").expect("id"),
+        id: ModelId::parse(entries::ATTACHED).expect("id"),
         reach,
         key_file: None,
         place,
     };
-    let entry = parse_entry_text(&entries::chat()).expect("entry");
+    let entry = parse_entry_text(&entries::attached()).expect("entry");
     local_model(&attached, &[entry], scratch.path()).expect("model")
 }
 
@@ -36,7 +36,7 @@ async fn an_engine_not_yet_looked_at_is_unavailable_and_a_look_makes_it_ready() 
     let lab = Lab::start(
         &Bind::Socket(scratch.path().to_path_buf()),
         "lab",
-        &["tiny-chat"],
+        &[entries::SERVED],
         None,
     )
     .await;
@@ -53,7 +53,7 @@ async fn an_engine_not_yet_looked_at_is_unavailable_and_a_look_makes_it_ready() 
 #[tokio::test(start_paused = true)]
 async fn nothing_looks_between_two_opens_and_each_open_looks_once_per_engine() {
     let scratch = Scratch::new("bk");
-    let lab = Lab::start(&Bind::Loopback, "lab", &["tiny-chat"], None).await;
+    let lab = Lab::start(&Bind::Loopback, "lab", &[entries::SERVED], None).await;
     let model = model_on(
         Reach::Loopback {
             host: std::net::Ipv4Addr::LOCALHOST,
@@ -77,7 +77,7 @@ async fn an_engine_that_goes_away_and_comes_back_is_re_probed_on_the_next_look()
     let lab = Lab::start(
         &Bind::Socket(scratch.path().to_path_buf()),
         "lab",
-        &["tiny-chat"],
+        &[entries::SERVED],
         None,
     )
     .await;
@@ -99,7 +99,7 @@ async fn an_engine_that_goes_away_and_comes_back_is_re_probed_on_the_next_look()
     let lab = Lab::start(
         &Bind::Socket(scratch.path().to_path_buf()),
         "lab",
-        &["tiny-chat"],
+        &[entries::SERVED],
         None,
     )
     .await;
@@ -109,7 +109,10 @@ async fn an_engine_that_goes_away_and_comes_back_is_re_probed_on_the_next_look()
     let lines = lines.lock().expect("lock");
     assert_eq!(lines.len(), 1, "{lines:?}");
     assert_eq!(lines[0].0, Level::Warn);
-    assert!(lines[0].1.contains("attached:tiny-chat"), "{lines:?}");
+    assert!(
+        lines[0].1.contains("attached:qwen3.5-35b-a3b-fp8"),
+        "{lines:?}"
+    );
     assert!(lines[0].1.contains("is the tunnel up?"), "{lines:?}");
 }
 

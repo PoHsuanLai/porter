@@ -101,7 +101,10 @@ pub fn local_claims(dirs: &CatalogDirs) -> Vec<Claim> {
     read_catalog(dirs)
         .entries
         .iter()
-        .filter(|entry| entry.locality.is_on_device())
+        // An attached entry is the catalogue's word that an engine exists somewhere; where it is
+        // is the person's (`where`), so it makes no claim until inferd attaches it, and then its
+        // card says where the data goes.
+        .filter(|entry| entry.locality.is_on_device() && entry.serving.is_launched())
         .flat_map(claims_of)
         .collect()
 }

@@ -164,6 +164,15 @@ pub enum AttachedError {
         /// The entry.
         id: String,
     },
+    /// A catalogue entry that inferd launches itself: only an entry whose serving is `attached`
+    /// can be attached.
+    #[error(
+        "engines.attached.{id}: the catalogue entry is not one served by an engine of yours (serving is not attached)"
+    )]
+    NotAttachable {
+        /// The entry.
+        id: String,
+    },
     /// A catalogue entry whose engine does not speak OpenAI-compatible chat.
     #[error("engines.attached.{id}: the catalogue entry has no OpenAI-compatible engine profile")]
     NoChatEngine {

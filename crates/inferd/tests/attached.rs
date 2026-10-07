@@ -31,12 +31,14 @@ use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
+const ATTACHED: &str = entries::ATTACHED;
+
 const KEY: &str = "sk-lab-1234-NOT-A-REAL-KEY";
 
 static NEXT: AtomicU32 = AtomicU32::new(0);
 
 /// The lab engine as a process of its own. Run as a test it does nothing; run by the tests below
-/// with `FAKE_LAB_DIR` set, it serves `tiny-chat` on `<dir>/lab.sock` (wanting `FAKE_LAB_KEY`
+/// with `FAKE_LAB_DIR` set, it serves the attached entry on `<dir>/lab.sock` (wanting `FAKE_LAB_KEY`
 /// when that is set) until it is killed.
 #[test]
 fn fake_lab_process() {
@@ -58,7 +60,7 @@ fn fake_lab_process() {
         let _lab = Lab::start(
             &Bind::Socket(dir.clone()),
             "lab",
-            &["tiny-chat"],
+            &[entries::SERVED],
             key.as_deref(),
         )
         .await;
@@ -94,7 +96,13 @@ impl Dir {
 
     /// A lab engine on this directory's socket.
     async fn lab(&self, key: Option<&str>) -> Lab {
-        Lab::start(&Bind::Socket(self.0.clone()), "lab", &["tiny-chat"], key).await
+        Lab::start(
+            &Bind::Socket(self.0.clone()),
+            "lab",
+            &[entries::SERVED],
+            key,
+        )
+        .await
     }
 }
 
@@ -154,7 +162,7 @@ fn signal(pid: u32, signal: Signal) {
 
 fn attach(reach: Reach, place: Place, key_file: Option<PathBuf>) -> Attached {
     Attached {
-        id: ModelId::parse("tiny-chat").expect("id"),
+        id: ModelId::parse(entries::ATTACHED).expect("id"),
         reach,
         key_file,
         place,
@@ -167,7 +175,7 @@ fn on_socket(dir: &Dir, place: Place, key_file: Option<PathBuf>) -> Attached {
 
 async fn world(attached: Vec<Attached>) -> World {
     World::start(Plan {
-        catalog: vec![("tiny-chat.toml", entries::chat())],
+        catalog: vec![("attached.toml", entries::attached())],
         attached,
         ..Plan::default()
     })
@@ -177,7 +185,7 @@ async fn world(attached: Vec<Attached>) -> World {
 fn model() -> ModelRef {
     ModelRef {
         account: porter_core::AccountId::parse("local").expect("id"),
-        model: ModelId::parse("tiny-chat").expect("id"),
+        model: ModelId::parse(entries::ATTACHED).expect("id"),
     }
 }
 
@@ -283,7 +291,7 @@ async fn a_chat_streams_over_the_socket_and_nothing_is_started() {
     let served = routed(&events);
     assert_eq!(
         (served.account.as_str(), served.model.as_str()),
-        ("local", "tiny-chat")
+        ("local", entries::ATTACHED)
     );
     assert_eq!(served.locality, Locality::OnDevice);
     assert_eq!(said(&events), "The lab says hello.");
@@ -291,7 +299,7 @@ async fn a_chat_streams_over_the_socket_and_nothing_is_started() {
     // The catalogue's own name on the wire, the prompt in the body.
     let chats = lab.chats();
     assert_eq!(chats.len(), 1);
-    assert_eq!(chats[0]["model"], "tiny-chat");
+    assert_eq!(chats[0]["model"], entries::SERVED);
     assert!(chats[0].to_string().contains("the meeting moved to noon"));
     // The engine was looked at as the session opened and asked once for the turn.
     let paths: Vec<_> = lab.seen().into_iter().map(|seen| seen.path).collect();
@@ -315,7 +323,7 @@ async fn a_chat_streams_over_the_socket_and_nothing_is_started() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_chat_streams_over_a_loopback_port_too() {
-    let lab = Lab::start(&Bind::Loopback, "lab", &["tiny-chat"], None).await;
+    let lab = Lab::start(&Bind::Loopback, "lab", &[entries::SERVED], None).await;
     let reach = Reach::Loopback {
         host: std::net::Ipv4Addr::LOCALHOST,
         port: model_http::Port(lab.port()),
@@ -360,7 +368,7 @@ async fn each_way_an_engine_cannot_answer_is_a_typed_cause_and_the_session_is_un
     );
     // It is looked at again at the next open: the engine now serves the model, and the very next
     // session is answered (no restart, no rescan).
-    lab.serve_models(&["tiny-chat"]);
+    lab.serve_models(&[entries::SERVED]);
     let events = turn(&world, DataClass::Public, "now?").await;
     assert_eq!(said(&events), "The lab says hello.");
     assert_eq!(
@@ -507,7 +515,7 @@ async fn an_eviction_pass_leaves_the_attached_engines_process_alive_and_still_re
     };
     let world = World::start(Plan {
         catalog: vec![
-            ("tiny-chat.toml", entries::chat()),
+            ("attached.toml", entries::attached()),
             ("big-a.toml", big("big-a")),
             ("big-b.toml", big("big-b")),
         ],
@@ -530,7 +538,7 @@ async fn an_eviction_pass_leaves_the_attached_engines_process_alive_and_still_re
         world
             .models
             .iter()
-            .all(|model| model.entry.id.0 != "tiny-chat"),
+            .all(|model| model.entry.id.0 != ATTACHED),
         "an attached id is not also one inferd runs"
     );
 
@@ -635,10 +643,10 @@ async fn sigterm_to_the_real_inferd_leaves_the_attached_engines_process_alive() 
     let lab = lab_process(&dir, None);
     let pid = lab.0.id();
     let config = format!(
-        "{NO_PROBE}\n[engines.attached.\"tiny-chat\"]\nsocket = \"{}\"\nwhere = \"my-network\"\n",
+        "{NO_PROBE}\n[engines.attached.\"{ATTACHED}\"]\nsocket = \"{}\"\nwhere = \"my-network\"\n",
         dir.socket().display()
     );
-    let mut inferd = real_inferd(&bus, &config, &[("tiny-chat.toml", entries::chat())]);
+    let mut inferd = real_inferd(&bus, &config, &[("attached.toml", entries::attached())]);
     let client = bus.connect().await;
     let dbus = zbus::fdo::DBusProxy::new(&client).await.expect("dbus");
     let name = zbus::names::BusName::try_from(porter_dbus::INFERENCE_BUS).expect("bus name");
@@ -660,26 +668,33 @@ async fn sigterm_to_the_real_inferd_leaves_the_attached_engines_process_alive() 
         key: None,
         place: Place::MyNetwork,
     };
-    assert_eq!(inferd::attached::probe(&target, "tiny-chat").await, Ok(()));
+    assert_eq!(
+        inferd::attached::probe(&target, entries::SERVED).await,
+        Ok(())
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_real_inferd_refuses_to_start_on_a_bad_attached_table_and_says_which() {
     let table = [
         (
-            "[engines.attached.\"tiny-chat\"]\nurl = \"http://10.1.2.3:8000\"\nwhere = \"my-network\"\n",
+            format!("[engines.attached.\"{ATTACHED}\"]\nurl = \"http://10.1.2.3:8000\"\nwhere = \"my-network\"\n"),
             "not loopback",
         ),
         (
-            "[engines.attached.\"tiny-chat\"]\nsocket = \"/run/lab.sock\"\n",
+            format!("[engines.attached.\"{ATTACHED}\"]\nsocket = \"/run/lab.sock\"\n"),
             "`where` is required",
         ),
         (
-            "[engines.attached.\"not-in-the-catalogue\"]\nsocket = \"/run/lab.sock\"\nwhere = \"this-device\"\n",
+            "[engines.attached.\"not-in-the-catalogue\"]\nsocket = \"/run/lab.sock\"\nwhere = \"this-device\"\n".to_owned(),
             "no model of that id in the catalogue",
         ),
         (
-            "[engines.attached.\"tiny-chat\"]\nsocket = \"/run/lab.sock\"\nurl = \"http://127.0.0.1:1\"\nwhere = \"this-device\"\n",
+            "[engines.attached.\"tiny-chat\"]\nsocket = \"/run/lab.sock\"\nwhere = \"this-device\"\n".to_owned(),
+            "serving is not attached",
+        ),
+        (
+            format!("[engines.attached.\"{ATTACHED}\"]\nsocket = \"/run/lab.sock\"\nurl = \"http://127.0.0.1:1\"\nwhere = \"this-device\"\n"),
             "not both",
         ),
     ];
@@ -688,7 +703,10 @@ async fn the_real_inferd_refuses_to_start_on_a_bad_attached_table_and_says_which
         let mut inferd = real_inferd(
             &bus,
             &format!("{NO_PROBE}\n{tables}"),
-            &[("tiny-chat.toml", entries::chat())],
+            &[
+                ("attached.toml", entries::attached()),
+                ("tiny-chat.toml", entries::chat()),
+            ],
         );
         assert_eq!(
             exit_within(&mut inferd, Duration::from_secs(20)),
