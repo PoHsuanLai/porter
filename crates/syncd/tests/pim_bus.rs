@@ -79,14 +79,21 @@ fn card(uid: &str, name: &str) -> String {
 }
 
 /// Polls every 20 ms for up to ten seconds (a poll cycle is a second here).
-async fn eventually(what: &str, mut check: impl FnMut() -> bool) {
-    for _ in 0..500 {
+async fn eventually(what: &str, check: impl FnMut() -> bool) {
+    eventually_within(Duration::from_secs(10), what, check).await;
+}
+
+/// Polls every 20 ms for up to `limit`: for waits whose work grows with a loaded machine (twenty
+/// large items a round), which ten seconds does not cover when every core is busy.
+async fn eventually_within(limit: Duration, what: &str, mut check: impl FnMut() -> bool) {
+    let tries = limit.as_millis() / 20;
+    for _ in 0..tries {
         if check() {
             return;
         }
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-    panic!("never happened: {what}");
+    panic!("never happened within {limit:?}: {what}");
 }
 
 /// Tells a blocking helper to stop when the test ends, by success or by panic: the runtime waits
@@ -591,7 +598,7 @@ async fn a_reader_never_sees_a_file_that_is_not_a_complete_item() {
                 .put_item("personal", &format!("big{n}.ics"), &big(round, n));
         }
         let marker = format!("round-{round}");
-        eventually("the round is mirrored", || {
+        eventually_within(Duration::from_secs(90), "the round is mirrored", || {
             (0..20).all(|n| {
                 read(&personal.join(format!("big{n}.ics"))).is_some_and(|t| t.contains(&marker))
             })
