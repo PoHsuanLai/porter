@@ -20,7 +20,7 @@ use porter_provider::Provider;
 use porter_secrets::{Secrets, SecretsError};
 use porter_service::{
     AccountService, AuditSink, Clock, LegacyStore, LocalFault, Registry, RegistryStore,
-    RevokeReport, Sheets,
+    RevokeReport, Sheets, SyncClass,
 };
 use serde::de::DeserializeOwned;
 use std::borrow::Cow;
@@ -126,6 +126,18 @@ pub trait Host: Send + Sync + 'static {
         async { Err(Refusal::Unavailable) }
     }
 
+    /// Lets syncd keep `class` of an account on this computer, or takes that back (Settings'
+    /// sync rows).
+    fn set_sync(
+        &self,
+        id: &AccountId,
+        class: SyncClass,
+        toggle: Toggle,
+    ) -> impl Future<Output = Result<(), Refusal>> + Send {
+        let _ = (id, class, toggle);
+        async { Err(Refusal::Unavailable) }
+    }
+
     /// Sets an account's state; whether it changed.
     fn set_state(&self, id: &AccountId, state: AccountState) -> impl Future<Output = bool> + Send {
         let _ = (id, state);
@@ -221,6 +233,15 @@ where
 
     fn revoke_grant(&self, grant: &GrantId) -> impl Future<Output = Result<(), Refusal>> + Send {
         AccountService::revoke_grant(self, grant)
+    }
+
+    fn set_sync(
+        &self,
+        id: &AccountId,
+        class: SyncClass,
+        toggle: Toggle,
+    ) -> impl Future<Output = Result<(), Refusal>> + Send {
+        AccountService::set_sync(self, id, class, toggle)
     }
 
     fn set_state(&self, id: &AccountId, state: AccountState) -> impl Future<Output = bool> + Send {

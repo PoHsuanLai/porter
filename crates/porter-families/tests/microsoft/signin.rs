@@ -2,11 +2,12 @@ use super::rig::*;
 use porter_core::capability::CapabilityKind as K;
 use porter_core::sheet::{ServiceChoice, SignInFault, SignInInput};
 use porter_core::{
-    AbsentReason, Credential, Family, Offer, Provenance, SecretPurpose, TenantConsent, Toggle,
+    AbsentReason, AccountId, Credential, Family, Offer, Provenance, SecretPurpose, TenantConsent,
+    Toggle,
 };
 use porter_fake_servers::{Consent, IssuerEvent, TokenResult};
 use porter_families::SignInFlow;
-use porter_provider::{Provider, SignIn, SignInStep};
+use porter_provider::{Provider, SignIn, SignInMode, SignInStart, SignInStep};
 
 fn grant_types(rig: &Rig) -> Vec<String> {
     rig.issuer
@@ -267,6 +268,49 @@ async fn a_device_code_sign_in_shows_the_code_then_reviews_once_it_is_approved()
     assert!(matches!(step, SignInStep::Review { .. }), "{step:?}");
     let done = signin.next(SignInInput::Confirm(Vec::new())).await;
     assert!(matches!(done, SignInStep::Done(_)));
+}
+
+fn again() -> SignInStart {
+    SignInStart {
+        mode: SignInMode::Reauthenticate {
+            account: AccountId::parse("ada").expect("id"),
+            endpoints: Vec::new(),
+        },
+    }
+}
+
+#[tokio::test]
+async fn a_loopback_sign_in_again_ends_done_without_a_review() {
+    let rig = Rig::new(SignInFlow::Loopback, true).await;
+    let mut signin = rig.provider.sign_in(again()).expect("sign in");
+    let SignInStep::OpenBrowser { url } = signin.next(SignInInput::Start).await else {
+        panic!("expected the browser")
+    };
+    let page = url.as_str().to_owned();
+    let browser = tokio::spawn(async move { browse(&page).await });
+    let step = until_settled(&mut signin, 200).await;
+    browser.await.expect("task").expect("browser");
+    let SignInStep::Done(signed) = step else {
+        panic!("expected done with no review, got {step:?}")
+    };
+    assert_eq!(signed.label.0, "ada@contoso.onmicrosoft.com");
+    assert!(matches!(
+        signed.credentials.as_slice(),
+        [(SecretPurpose::OAuthRefresh, Credential::OAuth { .. })]
+    ));
+}
+
+#[tokio::test]
+async fn a_device_code_sign_in_again_ends_done_without_a_review() {
+    let rig = Rig::new(SignInFlow::DeviceCode, true).await;
+    let mut signin = rig.provider.sign_in(again()).expect("sign in");
+    let SignInStep::ShowCode { user_code, .. } = signin.next(SignInInput::Start).await else {
+        panic!("expected a code")
+    };
+    rig.issuer.approve_device(&user_code.0);
+    rig.advance(2);
+    let step = until_settled(&mut signin, 5).await;
+    assert!(matches!(step, SignInStep::Done(_)), "{step:?}");
 }
 
 #[tokio::test]

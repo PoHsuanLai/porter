@@ -3062,6 +3062,7 @@ dependencies = [
  "accountd",
  "base64",
  "clap",
+ "ds-settings",
  "porter-client",
  "porter-core",
  "porter-dav",

@@ -8,7 +8,7 @@ use crate::settings_keys::{Key, path};
 use ds_settings::schema::KeyPath;
 use porter_core::consent::Decision;
 use porter_core::{AccountId, AccountState, AppId, GrantId};
-use porter_service::Registry;
+use porter_service::{Registry, SyncClass, sync_allowed};
 
 /// One change a client may be told of.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -146,6 +146,18 @@ pub(crate) fn settings_news(
             .is_some_and(|old| old.label != account.label);
         if renamed {
             news.push((row(Key::Label(account.id.clone())), text(&account.label.0)));
+        }
+        // A sync row follows syncd's grant, however it came or went (the Revoke row of that
+        // grant included).
+        for class in SyncClass::ALL {
+            let allowed = |registry: &Registry| sync_allowed(&registry.grants, &account.id, class);
+            let now = allowed(after);
+            if now != allowed(before) {
+                news.push((
+                    row(Key::Sync(account.id.clone(), class)),
+                    text(if now { "on" } else { "off" }),
+                ));
+            }
         }
     }
     news

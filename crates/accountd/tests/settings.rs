@@ -332,3 +332,34 @@ async fn the_state_row_is_announced_when_an_account_needs_sign_in_and_when_it_re
         assert_eq!(change.value, toml::Value::String(slug.into()));
     }
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_account_syncd_cannot_mirror_has_no_sync_row_and_its_switch_is_refused() {
+    // `fake-storage` is a WebDAV account: syncd mirrors storage over Graph only.
+    let rig = Rig::start().await;
+    let client = settings(&rig).await;
+    let schema = client.describe().await.expect("schema");
+    assert!(schema.key.iter().all(|k| !k.path.0.contains(".sync.")));
+    let row = key("accounts.fake-storage.sync.files");
+    assert_eq!(
+        client.get(&row).await.expect("get"),
+        toml::Value::String("off".into())
+    );
+    assert!(
+        client
+            .set(&row, &toml::Value::String("on".into()))
+            .await
+            .is_err()
+    );
+    assert!(matches!(
+        client.set(&row, &toml::Value::Integer(1)).await,
+        Err(LiveError::BadValue(_))
+    ));
+    assert!(rig.service.registry().grants.is_empty());
+    // The sync rows never belong to anyone but Settings.
+    let app = settings_as(&rig, caller("org.example.App", CallerRole::App)).await;
+    assert!(matches!(
+        app.set(&row, &toml::Value::String("on".into())).await,
+        Err(LiveError::NotPermitted(_))
+    ));
+}

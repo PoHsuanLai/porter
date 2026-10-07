@@ -963,6 +963,25 @@ async fn signing_in_again_through_the_browser_is_stored_when_the_sign_in_is_done
 }
 
 #[tokio::test]
+async fn a_sign_in_again_that_offers_a_review_is_never_asked_again_and_keeps_its_services() {
+    let mail = app("org.quire.Mail");
+    // The sign-in offers a review (as Microsoft's did), then is done once it is confirmed.
+    let script = Script::answering(vec![review("ada"), SignInStep::Done(signed("ada"))]);
+    let (service, kept) = reauth_service(&script, AccountState::NeedsReauth, vec![typist()], &mail);
+    let before = service.registry().accounts[0].clone();
+    assert_eq!(
+        service.handle(&mail, reauth_request()).await,
+        AccountsReply::Reauthenticated
+    );
+    assert_eq!(script.told(), ["start", "confirm"]);
+    assert_eq!(kinds(&kept.shown), ["working", "done"]);
+    let after = service.registry().accounts[0].clone();
+    assert_eq!(after.state, AccountState::Ok);
+    assert_eq!(after.capabilities, before.capabilities);
+    assert_eq!(after.endpoints, before.endpoints);
+}
+
+#[tokio::test]
 async fn another_persons_login_does_not_replace_the_credential() {
     let mail = app("org.quire.Mail");
     let script = Script::answering(vec![SignInStep::Done(signed("eve"))]);

@@ -20,6 +20,7 @@ mod relay;
 mod service;
 mod sheets;
 mod store;
+mod sync_grant;
 mod token;
 
 pub use add_flow::AllowFor;
@@ -32,4 +33,5 @@ pub use registry::Registry;
 pub use service::AccountService;
 pub use sheets::{SheetFault, SheetLink, SheetOpen, Sheets};
 pub use store::{NoStore, RegistryStore, StoreError};
+pub use sync_grant::{SyncClass, sync_allowed, sync_app, sync_key, sync_offers};
 pub use token::secret_purpose;

@@ -95,6 +95,13 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
                     if on { "on" } else { "off" }.to_owned(),
                 ))
             }
+            Key::Sync(id, class) => {
+                account(&id)?;
+                let on = porter_service::sync_allowed(&registry.grants, &id, class);
+                Ok(toml::Value::String(
+                    if on { "on" } else { "off" }.to_owned(),
+                ))
+            }
             Key::State(id) => Ok(toml::Value::String(
                 crate::account::state_slug(account(&id)?.state).to_owned(),
             )),
@@ -126,6 +133,15 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
                 self.0
                     .host
                     .set_toggle(&id, kind, toggle)
+                    .await
+                    .map_err(refused)?;
+            }
+            Key::Sync(id, class) => {
+                let toggle = word(&value)
+                    .ok_or_else(|| LiveError::BadValue("a sync row is `on` or `off`".into()))?;
+                self.0
+                    .host
+                    .set_sync(&id, class, toggle)
                     .await
                     .map_err(refused)?;
             }

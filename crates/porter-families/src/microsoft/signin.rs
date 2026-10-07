@@ -2,7 +2,8 @@
 //! one Graph read to learn the address and what the tenant allows, then a review.
 //!
 //! The host feeds `Start`, then `Poll` until the browser (or the other device) has answered,
-//! then `Confirm`. `Cancel` ends it at any step and frees the listeners.
+//! then `Confirm`. `Cancel` ends it at any step and frees the listeners. Signing in again
+//! (`SignInMode::Reauthenticate`) has no review: it is `Done` after the Graph read.
 
 use super::env::{MicrosoftEnv, SignInFlow};
 use super::graph::{Found, probe};
@@ -21,7 +22,8 @@ use porter_oauth::{
     exchange_code_scoped, poll_device, redeem_scope, refresh_scoped, request_device_code,
 };
 use porter_provider::{
-    ClientEntry, Issuer, IssuerEndpoints, ProviderSpec, SignIn, SignInStart, SignInStep, Signed,
+    ClientEntry, Issuer, IssuerEndpoints, ProviderSpec, SignIn, SignInMode, SignInStart,
+    SignInStep, Signed,
 };
 use tokio::task::JoinHandle;
 
@@ -302,6 +304,10 @@ impl<H: Http + 'static> MicrosoftSignIn<H> {
                 refresh,
             },
         );
+        // Signing in again does not ask what to use again: the account keeps its services.
+        if matches!(self.start.mode, SignInMode::Reauthenticate { .. }) {
+            return Ok(SignInStep::Done(signed));
+        }
         let step = review_of(&signed);
         self.phase = Phase::Review(Box::new(signed));
         Ok(step)

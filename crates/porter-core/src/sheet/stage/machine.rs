@@ -214,6 +214,21 @@ fn on_progress(sheet: Sheet, progress: Progress) -> (Sheet, Vec<SheetEffect>) {
         // A question, a page, a code or a review belongs to a sign-in that has not been
         // confirmed; after `Confirm` they are dropped.
         _ if matches!(sheet.stage, Stage::Confirming { .. }) => ignore(sheet),
+        // Signing in again never asks what to use again: the account keeps its services, so a
+        // sign-in that offers a review is confirmed at once with no changes.
+        Progress::Review(_) if again(&sheet) => {
+            let stage = Stage::Confirming {
+                provider,
+                choices: Vec::new(),
+            };
+            // Confirming draws what Working did: a sheet already working shows nothing new.
+            let (sheet, mut effects) = match sheet.stage {
+                Stage::Working(_) => (Sheet { stage, ..sheet }, vec![]),
+                _ => to(sheet, stage),
+            };
+            effects.push(SheetEffect::Feed(SignInInput::Confirm(Vec::new())));
+            (sheet, effects)
+        }
         Progress::Ask(fields) => to(
             sheet,
             Stage::Asking {

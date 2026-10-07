@@ -31,6 +31,7 @@ zbus = { workspace = true }
 syncd = { path = ".", features = ["testing"] }
 accountd = { path = "../accountd" }
 base64 = { workspace = true }
+ds-settings = { workspace = true }
 porter-client = { workspace = true, features = ["dbus"] }
 porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }

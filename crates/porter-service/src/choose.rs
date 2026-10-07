@@ -89,7 +89,7 @@ fn allow(
 }
 
 /// A grant id unused in `registry`.
-fn next_grant_id(registry: &Registry) -> GrantId {
+pub(crate) fn next_grant_id(registry: &Registry) -> GrantId {
     let n = registry.grants.len() + 1;
     let taken = |id: &GrantId| registry.grants.iter().any(|g| g.id == *id);
     (n..)

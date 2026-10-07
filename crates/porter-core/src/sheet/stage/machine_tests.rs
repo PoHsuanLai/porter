@@ -282,6 +282,40 @@ fn the_browser_and_code_waits_poll_until_the_sign_in_moves() {
 }
 
 #[test]
+fn a_review_offered_to_a_sign_in_again_is_confirmed_unchanged_not_shown() {
+    for (name, stage, shows) in [
+        ("working", Stage::Working(nc()), vec![]),
+        (
+            "browser",
+            browser(),
+            vec![SheetEffect::Show(SheetView::Working(nc()))],
+        ),
+        (
+            "code",
+            code(),
+            vec![SheetEffect::Show(SheetView::Working(nc()))],
+        ),
+    ] {
+        let (after, effects) = run(
+            at(reauth(), stage),
+            SheetEvent::SignIn(Progress::Review(review())),
+        );
+        assert_eq!(
+            after,
+            Stage::Confirming {
+                provider: nc(),
+                choices: vec![]
+            },
+            "{name}"
+        );
+        let confirm = SheetEffect::Feed(SignInInput::Confirm(vec![]));
+        assert_eq!(effects, [shows, vec![confirm]].concat(), "{name}");
+        let (_, effects) = run(at(reauth(), after), SheetEvent::SignIn(Progress::Done));
+        assert_eq!(effects, vec![SheetEffect::Store(vec![])], "{name}");
+    }
+}
+
+#[test]
 fn progress_that_does_not_fit_the_stage_is_dropped() {
     for (name, stage) in every_stage() {
         if matches!(

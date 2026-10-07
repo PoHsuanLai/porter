@@ -1,6 +1,7 @@
 //! The keys of accountd's settings module (PLAN §2.5), as a pure function of the registry: one
 //! row per account for its state and label (read-outs), one toggle per service kind, one
-//! Revoke per grant, "Sign in again" and "Remove account" actions, and one text row per OAuth
+//! Revoke per grant, a sync switch per class syncd can keep of the account, "Sign in again" and
+//! "Remove account" actions, and one text row per OAuth
 //! issuer for a bring-your-own client id. Every key is under `accounts.`, so it is never
 //! agent-settable (`ds-settings` refuses a schema that says otherwise).
 
@@ -12,7 +13,7 @@ use ds_settings::schema::{
 use porter_core::consent::{Decision, Grant};
 use porter_core::{Account, AccountId, AuthKind, CapabilityKind, GrantId, Offer};
 use porter_provider::Issuer;
-use porter_service::Registry;
+use porter_service::{Registry, SyncClass, sync_offers};
 
 /// The issuers a bring-your-own client id may be set for (Google is a TODO, FINDINGS).
 pub(crate) const ISSUERS: &[Issuer] = &[Issuer::Microsoft];
@@ -22,6 +23,8 @@ pub(crate) const ISSUERS: &[Issuer] = &[Issuer::Microsoft];
 pub(crate) enum Key {
     /// `accounts.<id>.service.<kind>`.
     Service(AccountId, CapabilityKind),
+    /// `accounts.<id>.sync.files` and `.sync.photos`: whether syncd keeps that on this computer.
+    Sync(AccountId, SyncClass),
     /// `accounts.<id>.state`.
     State(AccountId),
     /// `accounts.<id>.label`.
@@ -73,6 +76,12 @@ pub(crate) fn parse(path: &str, registry: &Registry) -> Option<Key> {
                 if let Some(kind) = tail.strip_prefix("service.") {
                     return from_slug(kind).map(|k| Key::Service(id, k));
                 }
+                if let Some(what) = tail.strip_prefix("sync.") {
+                    return SyncClass::ALL
+                        .into_iter()
+                        .find(|c| c.slug() == what)
+                        .map(|c| Key::Sync(id, c));
+                }
                 let grant = tail.strip_prefix("grant.")?;
                 GrantId::parse(grant).ok().map(|g| Key::Grant(id, g))
             }
@@ -84,6 +93,7 @@ pub(crate) fn parse(path: &str, registry: &Registry) -> Option<Key> {
 pub(crate) fn path(key: &Key) -> String {
     match key {
         Key::Service(id, kind) => format!("accounts.{id}.service.{}", slug(kind)),
+        Key::Sync(id, class) => format!("accounts.{id}.sync.{}", class.slug()),
         Key::State(id) => format!("accounts.{id}.state"),
         Key::Label(id) => format!("accounts.{id}.label"),
         Key::Place(id) => format!("accounts.{id}.place"),
@@ -199,6 +209,28 @@ fn account_keys(account: &Account, grants: &[Grant]) -> Vec<KeySpec> {
             toml::Value::String("on".to_owned()),
         ));
     }
+    for class in sync_offers(account) {
+        let (label, help) = match class {
+            SyncClass::Files => (
+                "Keep this account's files on this computer",
+                "Lets the sync service keep a copy of this account's app folder here.",
+            ),
+            SyncClass::Photos => (
+                "Back up photos",
+                "Lets the sync service keep this account's photos here and back them up.",
+            ),
+        };
+        keys.push(spec(
+            &Key::Sync(id.clone(), class),
+            section,
+            label.to_owned(),
+            help,
+            KeyKind::Toggle {
+                variants: ["on".to_owned(), "off".to_owned()],
+            },
+            toml::Value::String("off".to_owned()),
+        ));
+    }
     for grant in grants.iter().filter(|g| g.key.account == *id) {
         let what = match grant.decision {
             Decision::Allow => "allowed",
@@ -293,8 +325,55 @@ mod tests {
                 scope: GrantScope::Always,
                 at: UnixSeconds(1),
             }],
-            accounts: vec![storage, mail_account()],
+            accounts: vec![storage, mail_account(), graph()],
             toggles: vec![],
+        }
+    }
+
+    /// A storage account at a Graph server whose uploads resume.
+    fn graph() -> Account {
+        let mut account = storage_account();
+        account.id = AccountId::parse("fake-graph").expect("id");
+        account.endpoints.push(porter_core::ServiceEndpoint {
+            family: porter_core::Family::Graph,
+            url: porter_core::EndpointUrl::parse("https://graph.invalid").expect("url"),
+            tls: porter_core::Tls::Implicit,
+            login: porter_core::LoginName("ada".into()),
+        });
+        for claim in &mut account.capabilities {
+            if let Offer::Present(porter_core::Capability::Storage(cap)) = &mut claim.offer {
+                cap.chunked_upload = porter_core::capability::Offered::Present;
+            }
+        }
+        account
+    }
+
+    #[test]
+    fn only_an_account_syncd_can_mirror_has_the_sync_rows_plainly_worded_and_off_by_default() {
+        let schema = schema(&registry());
+        let sync: Vec<_> = schema
+            .key
+            .iter()
+            .filter(|k| k.path.0.contains(".sync."))
+            .collect();
+        let shown: Vec<(&str, &str)> = sync
+            .iter()
+            .map(|k| (k.path.0.as_str(), k.label.0.as_str()))
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                (
+                    "accounts.fake-graph.sync.files",
+                    "Keep this account's files on this computer"
+                ),
+                ("accounts.fake-graph.sync.photos", "Back up photos"),
+            ]
+        );
+        for row in sync {
+            assert!(matches!(row.kind, KeyKind::Toggle { .. }));
+            assert_eq!(row.default, toml::Value::String("off".into()));
+            assert_eq!(row.agent, AgentSetting::HandsOff);
         }
     }
 
