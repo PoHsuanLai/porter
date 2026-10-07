@@ -1201,3 +1201,71 @@ Built, not run against Google: nothing here has touched a real Google client or 
 - **Least privilege.** The refresh does not pass `scope`, so every token carries every granted scope; narrowing a token to a grant's service (Google allows a subset on refresh, unverified) is a later hardening.
 - **Follow-up lanes.** *Google calendar source*: syncd's PIM mirror reads CalDAV/CardDAV; graph-calendar adds the source seam, and a `google_api` source (Calendar API `events.list` with `syncToken`, 410 as `AnchorExpired`, People `connections.list` with `requestSyncToken`) follows it through a `google_calendar`/`google_people` bearer from `IssueToken`; the fake needs those endpoints (only the probes exist). *Drive app folder*: a `storage-gdrive` replica over `files` with `spaces=appDataFolder`, `changes.list` with `startPageToken`, resumable uploads (the upload host `www.googleapis.com/upload` is authenticated, so it is the same relay, not a linked origin), MD5 checksums; the fake needs the Drive files API. *Photos*: the append-only upload (two steps: bytes, then `batchCreate`) and the Picker session (`sessions.create`, poll, list picked items) belong to the Photos app lane; D7 keeps that app out of v1.
 - **Consumers.** Public additions only (`TokenResponse.scope`, `FamilyProvider::Google`, `FakeProtocol::Google`, `ClientRegistry::traits`); no consumer-used `[dependencies]` changed.
+
+## Lane graph-calendar (syncd, the PIM source seam and the Microsoft calendar mirror)
+
+Lane `graph-calendar`, branch from 177fb33.
+
+- **The seam** (`crates/syncd/src/datasets/pim/source/`): `PimSource` (per account and kind:
+  `collections(kind) -> Vec<Found>` with id/URL, display name, colour; `feed(&Found) -> Feed`) and
+  `Feed` (per collection: `changes(Option<Cursor>) -> Page<Cursor>` of `FeedChange::Upsert { item,
+  content: Option<Vec<u8>> }` and `Delete`, `fetch(id)`, `features()`, `quota()`), with the cursor type
+  the source's own (`FeedCursor`: `encode`/`decode` to the journal's anchor text; text that does not
+  decode is `AnchorExpired`). `FeedReplica<F>` makes any feed the `Replica` the engine runs over.
+  The vdir writer, `PimMirror`, journal, `PullOnly`, rescan and supervisor are unchanged and shared.
+  The source is chosen by `choose(kind, candidate)` from the capability's `PimCap.transport`
+  (`caldav`/`carddav` -> `DavSource`, `graph` calendar -> `GraphCalendarSource`; any other
+  kind/transport pair is `NoSource`, reported once per rescan on standard error), never by provider.
+- **CalDAV/CardDAV** is `source::dav` (`DavSource`, `DavFeed` over the existing `WebDavReplica`; its
+  upserts carry no content, so the engine still fetches each item). The CalDAV tests are unchanged.
+- **Graph calendar** (`source::graph`): `GET /v1.0/me/calendars` (paged; `name`, `hexColor`, else the
+  named `color` mapped to an approximate hue) and per calendar `GET .../events/delta` with the
+  `@odata.deltaLink` as cursor, `@odata.nextLink` pages, `@removed` as deletes, `410` as
+  `AnchorExpired`; whole events arrive in the page, so a fetch costs no request (a fetch after a restart
+  is `GET .../events/{id}`). Requests go through `pim_http` (accountd's `OpenAuthenticated` relay),
+  as `syncd::graph` does. A calendar's directory is `graph-<12 hex of sha256(id)>` (stable under
+  renames; the name is in `displayname`), its files `<UID>.ics`.
+- **Converter** (`source::graph::convert::to_ics`, pure, table-tested; output is one VCALENDAR with
+  one VEVENT and passes `is_complete`): UID (`iCalUId`, else `seriesMasterId`, else `id`), DTSTAMP/
+  CREATED/LAST-MODIFIED, SUMMARY, DTSTART/DTEND (UTC `Z`, `TZID` from a Windows or IANA zone name, a
+  `VALUE=DATE` for all-day; a zone not in the table of 40 Windows names is written floating with a
+  COMMENT), LOCATION, DESCRIPTION (text body, HTML reduced to text, else `bodyPreview`), RRULE for
+  `daily`, `weekly`, `absoluteMonthly`, `relativeMonthly`, `absoluteYearly`, `relativeYearly` with
+  `noEnd`/`endDate`/`numbered` (any other pattern: the series master with no RRULE and a COMMENT),
+  RECURRENCE-ID for `exception`/`occurrence`, STATUS (cancelled, tentative, confirmed), CLASS, TRANSP,
+  ORGANIZER, ATTENDEE (ROLE, PARTSTAT, CN), 75-octet folding, TEXT escaping. Not carried: reminders,
+  categories, online-meeting links, attachments, VTIMEZONE blocks (TZID names are IANA).
+- Known gaps: an exception is its own file sharing the series' UID with a RECURRENCE-ID, and the master
+  has no EXDATE for it, so a reader that does not merge by UID shows the original occurrence too; Graph
+  `events/delta` on one calendar is **unverified** (no Graph docs are vendored; `calendarView/delta`
+  is the documented form but expands occurrences inside a window and cannot carry a master with its
+  rule); `Prefer: outlook.body-content-type="text"` is assumed to apply to it.
+- **Scopes**: the Microsoft family asks `Calendars.ReadWrite` for a calendar grant, which covers the
+  read this mirror does; refresh uses `.default`. No scope change. But `Family::serves` (porter-core)
+  did not let a `graph` endpoint serve Calendar, Contacts or Tasks, so a Microsoft calendar grant had
+  no candidate endpoint and accountd's relay refused it (`EndpointNotGranted`): fixed in
+  `porter-core/src/family.rs` (three more `graph` arms and table rows), the smallest change.
+- **Fake Graph** (`porter-fake-servers::graph::calendar`, additive): calendars, events, `events/delta`
+  with `$deltatoken`/`$skiptoken` links and `@removed` stubs, `410 syncStateNotFound`, one event by id;
+  `GraphHandle::{seed_calendars, set_calendar, remove_calendar, put_event, remove_event, events}`,
+  `expire_delta_tokens` also expires calendar tokens; rig control routes `POST /graph/calendars-seed`,
+  `/graph/calendar`, `/graph/event`, `/graph/event-remove`.
+- Still pull-only: nothing written to a Microsoft calendar from the vdir (`PullOnly`); Microsoft contacts
+  and To Do have no source (`NoSource`).
+- **What a `google_api` source must implement** (one module `source::google`, one `Chosen` arm, one arm
+  in `AccountMirrors::refresh`; `PimKind` gains `Tasks` for the third, which needs a `DataClass` for its
+  grant that porter-core does not have yet, an ask for that lane):
+  - Calendar: `collections` = `GET calendar/v3/users/me/calendarList` (id, summary, backgroundColor);
+    `Feed::changes` = `events.list` with `syncToken` as cursor (`nextPageToken` pages; `410 GONE` is
+    `AnchorExpired`; `showDeleted=true` gives `status: cancelled` stubs as deletes); upserts as VEVENT
+    `.ics` bytes (a Google event JSON converter like the Graph one; recurring events with `recurrence`
+    RRULE lines and `recurringEventId`/`originalStartTime` for exceptions).
+  - Contacts: `collections` = the contact groups of `people/v1` (or one "My contacts" collection);
+    `Feed::changes` = `people.connections.list` with `requestSyncToken` and `syncToken` (`EXPIRED_SYNC_TOKEN`
+    is `AnchorExpired`; `metadata.deleted` is a delete); upserts as vCard 3.0 `.vcf` bytes.
+  - Tasks: `collections` = `tasks/v1/users/@me/lists`; `Feed::changes` = `tasks.list` with `updatedMin`
+    and `showDeleted=true` (Tasks has no sync token, so the cursor is the max `updated` time and a
+    deleted task is `deleted: true`); upserts as VTODO `.ics` bytes; the mirror's extension and
+    envelope for Tasks are `.ics`/VCALENDAR as for a calendar (VTODO inside).
+  - Each: `FeedCursor` type, requests through `pim_http` to the family's endpoint
+    (`GoogleCalendar`/`GooglePeople`/`GoogleTasks`), the relay adding the bearer.

@@ -40,6 +40,8 @@ pub struct State {
     pub knobs: Knobs,
     /// Who `GET /v1.0/me` says the account is: its mail address (empty: [`DEFAULT_MAIL`]).
     pub mail: String,
+    /// The calendars and their events.
+    pub calendars: super::calendar::Calendars,
 }
 
 /// The address `GET /v1.0/me` names when a test set none.
@@ -492,6 +494,15 @@ pub fn answer(
     }
     if path == "/v1.0/me" && request.method == "GET" {
         return me(&state.mail);
+    }
+    if let Some(response) = super::calendar::answer(
+        &state.calendars,
+        origins.base,
+        state.knobs.page,
+        &path,
+        request,
+    ) {
+        return response;
     }
     let Some((address, op)) = route(&path) else {
         return error(404, "itemNotFound");

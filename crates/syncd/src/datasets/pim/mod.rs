@@ -13,6 +13,8 @@
 //! - `discover`: the collections of an account, from the principal and home sets (porter-dav).
 //! - `plan`: collection names as directories and dataset slugs.
 //! - `grants`: which granted accounts there are to mirror (a seam over porter-client).
+//! - `source`: where the items come from (CalDAV/CardDAV, Graph calendars), by the capability's
+//!   transport; see its module docs for the seam.
 //! - `mirrors`: one account's collections kept running (replicas over the relay, one engine
 //!   each) and the supervisor over every granted account.
 
@@ -22,6 +24,7 @@ mod mirror;
 mod mirrors;
 mod plan;
 mod relay;
+pub mod source;
 mod supervisor;
 mod vdir;
 

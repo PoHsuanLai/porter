@@ -4,10 +4,12 @@
 //! new collections, rewrites renamed or recoloured ones, and retires the ones the server no
 //! longer has.
 
-use super::discover::{DiscoverError, discover};
+use super::discover::DiscoverError;
 use super::mirror::PimMirror;
 use super::plan::{Planned, plan};
-use super::relay::{pim_http, pim_replica};
+use super::source::{
+    Chosen, DavSource, FeedReplica, GraphCalendarSource, NoSource, PimSource, choose, endpoint_of,
+};
 use super::{Meta, PimKind};
 use crate::clock::SystemClock;
 use crate::dataset::DatasetId;
@@ -18,11 +20,10 @@ use crate::paths::{AccountDir, Paths};
 use crate::scheduler::{Network, Settings};
 use crate::service::{Access, DatasetName, Hub};
 use porter_client::{Accounts, Transport};
-use porter_core::{Candidate, WebUrl};
+use porter_core::Candidate;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use storage_webdav::Clock;
 use tokio::sync::{Notify, watch};
 use tokio::task::JoinHandle;
 
@@ -50,6 +51,9 @@ pub enum RefreshError {
     /// The candidate lists no server for this kind.
     #[error("the account has no {0:?} server")]
     NoEndpoint(PimKind),
+    /// No source reads the grant's transport for this kind.
+    #[error(transparent)]
+    NoSource(#[from] NoSource),
     /// The server's collections could not be read.
     #[error(transparent)]
     Discover(#[from] DiscoverError),
@@ -88,25 +92,42 @@ impl AccountMirrors {
         self.running.keys().cloned().collect()
     }
 
-    /// Reads the account's collections and brings the running ones to match.
+    /// Reads the account's collections and brings the running ones to match, through the source
+    /// the grant's transport names.
     pub async fn refresh<T: Transport + 'static>(
         &mut self,
         wiring: &Wiring<T>,
         candidate: &Candidate,
     ) -> Result<(), RefreshError> {
-        let endpoint = candidate
-            .endpoints
-            .iter()
-            .find(|e| e.family == self.kind.family())
-            .or_else(|| candidate.endpoints.first())
-            .ok_or(RefreshError::NoEndpoint(self.kind))?;
-        let web = WebUrl::try_from(&endpoint.url).map_err(|_| DiscoverError::Unreadable)?;
-        let http = pim_http(
-            Arc::clone(&wiring.accounts),
-            candidate.grant.clone(),
-            endpoint.url.clone(),
-        );
-        let planned = plan(self.kind, discover(&http, &web, self.kind).await?);
+        let chosen = choose(self.kind, candidate)?;
+        let family = match chosen {
+            Chosen::Dav => self.kind.family(),
+            Chosen::GraphCalendar => porter_core::Family::Graph,
+        };
+        let endpoint = endpoint_of(candidate, family)
+            .ok_or(RefreshError::NoEndpoint(self.kind))?
+            .url
+            .clone();
+        let accounts = Arc::clone(&wiring.accounts);
+        let grant = candidate.grant.clone();
+        match chosen {
+            Chosen::Dav => {
+                let source = DavSource::new(accounts, grant, endpoint);
+                self.refresh_with(wiring, source).await
+            }
+            Chosen::GraphCalendar => {
+                let source = GraphCalendarSource::new(accounts, grant, endpoint)?;
+                self.refresh_with(wiring, source).await
+            }
+        }
+    }
+
+    async fn refresh_with<T: Transport + 'static, S: PimSource>(
+        &mut self,
+        wiring: &Wiring<T>,
+        source: S,
+    ) -> Result<(), RefreshError> {
+        let planned = plan(self.kind, source.collections(self.kind).await?);
         let mut failure = None;
         for next in &planned {
             let meta = Meta {
@@ -122,7 +143,7 @@ impl AccountMirrors {
                 }
                 Some(_) => Err("two collections want one name".to_owned()),
                 None => self
-                    .start(wiring, candidate, next, &meta)
+                    .start(wiring, &source, next, &meta)
                     .map_err(|e| format!("{}: {e}", next.dir)),
             };
             failure = failure.or(kept.err());
@@ -139,19 +160,13 @@ impl AccountMirrors {
         failure.map_or(Ok(()), |why| Err(RefreshError::Open(why)))
     }
 
-    fn start<T: Transport + 'static>(
+    fn start<T: Transport + 'static, S: PimSource>(
         &mut self,
         wiring: &Wiring<T>,
-        candidate: &Candidate,
+        source: &S,
         next: &Planned,
         meta: &Meta,
     ) -> Result<(), String> {
-        let endpoint = candidate
-            .endpoints
-            .iter()
-            .find(|e| e.family == self.kind.family())
-            .or_else(|| candidate.endpoints.first())
-            .ok_or("no server")?;
         let journal = Journal::open(&wiring.paths.journal(&self.account, next.dataset.as_str()))
             .map_err(|e| e.to_string())?;
         let root = wiring
@@ -162,13 +177,7 @@ impl AccountMirrors {
         let mirror =
             PimMirror::open(next.dataset.clone(), self.kind, root, &journal).map_err(|e| e.0)?;
         mirror.write_meta(meta).map_err(|e| e.0)?;
-        let replica = pim_replica(
-            Arc::clone(&wiring.accounts),
-            candidate.grant.clone(),
-            endpoint.url.clone(),
-            &next.found.url,
-            Clock::system(),
-        );
+        let replica = FeedReplica::new(source.feed(&next.found));
         let engine = Engine::new(replica, mirror.clone(), journal, SystemClock);
         let name = DatasetName {
             account: self.account.clone(),

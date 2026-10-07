@@ -1,12 +1,15 @@
 //! A fake Microsoft Graph drive: the part of `/v1.0/me/drive` a replica of OneDrive's app folder
 //! uses (items by id and by path under `special/approot`, content with ranges and redirects,
-//! simple and session uploads, delta, children, quota), behind `Authorization: Bearer`. Plain
+//! simple and session uploads, delta, children, quota) and the calendars of `/v1.0/me/calendars`
+//! (events, `events/delta`, see `calendar`), behind `Authorization: Bearer`. Plain
 //! HTTP on loopback. The bearer is what accountd's relay adds, so a test asserts that the app
 //! side never sent one.
 
+mod calendar;
 mod drive;
 mod routes;
 
+pub use calendar::Calendars;
 pub use drive::{CHUNK_UNIT, Drive};
 pub use routes::{DEFAULT_MAIL, Knobs};
 
@@ -220,9 +223,50 @@ impl GraphHandle {
         found
     }
 
-    /// Delta tokens handed out so far are no longer valid (`410 resyncRequired`).
+    /// Delta tokens handed out so far are no longer valid (`410 resyncRequired` for the drive,
+    /// `410 syncStateNotFound` for a calendar).
     pub fn expire_delta_tokens(&self) {
-        lock(&self.shared.state).drive.expire_tokens();
+        let mut state = lock(&self.shared.state);
+        state.drive.expire_tokens();
+        state.calendars.expire();
+    }
+
+    /// Fills the account with a small calendar set (see [`Calendars::seed`]).
+    pub fn seed_calendars(&self) {
+        lock(&self.shared.state).calendars.seed();
+    }
+
+    /// Adds the calendar `id` named `name`, or renames and recolours it. `hex_color` may be empty
+    /// (Graph then names a `color` such as `lightBlue`, which is empty here too).
+    pub fn set_calendar(&self, id: &str, name: &str, hex_color: &str) {
+        lock(&self.shared.state)
+            .calendars
+            .set_calendar(id, name, hex_color, "auto");
+    }
+
+    /// Removes a calendar and its events.
+    pub fn remove_calendar(&self, id: &str) {
+        lock(&self.shared.state).calendars.remove_calendar(id);
+    }
+
+    /// Creates or replaces the event `id` of a calendar with this Graph event JSON (the fake adds
+    /// `id`, `changeKey` and `lastModifiedDateTime`), as another device of the account would.
+    pub fn put_event(&self, calendar: &str, id: &str, event: serde_json::Value) {
+        lock(&self.shared.state)
+            .calendars
+            .put_event(calendar, id, event);
+    }
+
+    /// Deletes an event; the next delta reports it `@removed`.
+    pub fn remove_event(&self, calendar: &str, id: &str) {
+        lock(&self.shared.state)
+            .calendars
+            .remove_event(calendar, id);
+    }
+
+    /// The live events of a calendar: id and Graph JSON.
+    pub fn events(&self, calendar: &str) -> Vec<(String, serde_json::Value)> {
+        lock(&self.shared.state).calendars.events(calendar)
     }
 
     /// Gives the drive room for `total` bytes.

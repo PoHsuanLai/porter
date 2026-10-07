@@ -130,6 +130,10 @@ impl Family {
                 Family::CalDav,
                 CapabilityKind::Calendar | CapabilityKind::Tasks
             ) | (Family::CardDav, CapabilityKind::Contacts)
+                | (
+                    Family::Graph,
+                    CapabilityKind::Calendar | CapabilityKind::Contacts | CapabilityKind::Tasks
+                )
                 | (Family::NextcloudNotes, CapabilityKind::Notes)
                 | (
                     Family::Jmap,
@@ -236,6 +240,24 @@ mod tests {
                 "graph for photos",
                 Family::Graph,
                 CapabilityKind::Photos,
+                true,
+            ),
+            (
+                "graph for calendars",
+                Family::Graph,
+                CapabilityKind::Calendar,
+                true,
+            ),
+            (
+                "graph for contacts",
+                Family::Graph,
+                CapabilityKind::Contacts,
+                true,
+            ),
+            (
+                "graph for tasks",
+                Family::Graph,
+                CapabilityKind::Tasks,
                 true,
             ),
             (

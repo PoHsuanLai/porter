@@ -146,6 +146,47 @@ impl Levers {
                     ok(json!({ "path": path }))
                 }
             },
+            ("POST", "/graph/calendars-seed") => match self.graph.as_ref() {
+                None => absent("the Graph drive"),
+                Some(graph) => {
+                    graph.seed_calendars();
+                    ok(json!({}))
+                }
+            },
+            ("POST", "/graph/calendar") => match (self.graph.as_ref(), query("id")) {
+                (None, _) => absent("the Graph drive"),
+                (_, None) => refused(400, "id is required"),
+                (Some(graph), Some(id)) => {
+                    let name = query("name").unwrap_or_else(|| id.clone());
+                    graph.set_calendar(&id, &name, &query("color").unwrap_or_default());
+                    ok(json!({ "id": id }))
+                }
+            },
+            ("POST", "/graph/event") => {
+                match (self.graph.as_ref(), query("calendar"), query("id")) {
+                    (None, ..) => absent("the Graph drive"),
+                    (_, None, _) | (_, _, None) => refused(400, "calendar and id are required"),
+                    (Some(graph), Some(calendar), Some(id)) => {
+                        match serde_json::from_slice::<Value>(&request.body) {
+                            Ok(event) => {
+                                graph.put_event(&calendar, &id, event);
+                                ok(json!({ "calendar": calendar, "id": id }))
+                            }
+                            Err(_) => refused(400, "the body is not JSON"),
+                        }
+                    }
+                }
+            }
+            ("POST", "/graph/event-remove") => {
+                match (self.graph.as_ref(), query("calendar"), query("id")) {
+                    (None, ..) => absent("the Graph drive"),
+                    (_, None, _) | (_, _, None) => refused(400, "calendar and id are required"),
+                    (Some(graph), Some(calendar), Some(id)) => {
+                        graph.remove_event(&calendar, &id);
+                        ok(json!({ "calendar": calendar, "id": id }))
+                    }
+                }
+            }
             ("GET", "/graph/file") => match (self.graph.as_ref(), query("path")) {
                 (None, _) => absent("the Graph drive"),
                 (_, None) => refused(400, "path is required"),
