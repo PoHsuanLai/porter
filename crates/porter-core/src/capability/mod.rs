@@ -64,7 +64,8 @@ pub enum Capability {
     /// A push channel.
     Push(PushCap),
     /// An external coding agent program that an account runs (family `acp_agent`).
-    Agent(AgentCap),
+    /// Boxed to keep `Capability`, and every `Candidate` that holds one, small.
+    Agent(Box<AgentCap>),
 }
 
 impl Capability {

@@ -139,13 +139,13 @@ fn every_capability() -> Vec<Capability> {
         Capability::Push(PushCap {
             channel: PushChannel::WebSocket,
         }),
-        Capability::Agent(claude_code()),
-        Capability::Agent(AgentCap {
+        Capability::Agent(Box::new(claude_code())),
+        Capability::Agent(Box::new(AgentCap {
             program: AgentProgram::parse("acp-agent").expect("program"),
             key_env: None,
             base_url_env: None,
             protocols: [AgentProtocol::OpenAiCompatible].into(),
-        }),
+        })),
     ]
 }
 
@@ -323,7 +323,7 @@ fn capabilities_needs_and_offers_round_trip() {
     });
     round_trip(&Claim {
         subject: Subject::Agent(AgentProgram::parse("claude-code").expect("program")),
-        offer: Offer::Present(Capability::Agent(claude_code())),
+        offer: Offer::Present(Capability::Agent(Box::new(claude_code()))),
         provenance: Provenance::Declared,
     });
     round_trip(&Match::Short(Shortfall::Scope));
@@ -586,7 +586,7 @@ fn agent_values_keep_their_slugs_and_hold_no_secret() {
         ),
         (
             "capability",
-            json(&Capability::Agent(claude_code())),
+            json(&Capability::Agent(Box::new(claude_code()))),
             r#"{"kind":"agent","v":{"program":"claude-code","key_env":"ANTHROPIC_API_KEY","base_url_env":"ANTHROPIC_BASE_URL","protocols":["anthropic_messages"]}}"#,
         ),
         (

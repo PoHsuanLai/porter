@@ -251,12 +251,12 @@ fn an_agent_candidate_with_no_variable_to_set_round_trips() {
         label: porter_core::AccountLabel("Gemini CLI".into()),
         provider: "gemini-cli".parse_provider(),
         subject: Subject::Agent(AgentProgram::parse("gemini-cli").expect("program")),
-        capability: Capability::Agent(AgentCap {
+        capability: Capability::Agent(Box::new(AgentCap {
             program: AgentProgram::parse("gemini-cli").expect("program"),
             key_env: Some(porter_core::capability::EnvName::parse("GEMINI_API_KEY").expect("env")),
             base_url_env: None,
             protocols: [AgentProtocol::GenerateContent].into(),
-        }),
+        })),
         restriction: Restriction::none(),
         grant: GrantId::parse("g3").expect("grant"),
         endpoints: vec![],

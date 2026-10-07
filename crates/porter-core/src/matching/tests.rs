@@ -11,12 +11,12 @@ use crate::need::{CuaNeed, LlmNeed, MailNeed, PhotosNeed, StorageNeed};
 use crate::units::{Px, Tokens};
 
 fn agent(program: &str, base_url_env: Option<&str>, protocols: &[AgentProtocol]) -> Offer {
-    present(Capability::Agent(AgentCap {
+    present(Capability::Agent(Box::new(AgentCap {
         program: AgentProgram::parse(program).expect("program"),
         key_env: Some(EnvName::parse("SOME_API_KEY").expect("env")),
         base_url_env: base_url_env.map(|name| EnvName::parse(name).expect("env")),
         protocols: protocols.iter().copied().collect(),
-    }))
+    })))
 }
 
 fn agent_need(program: &str, protocols: &[AgentProtocol], base_url: Offered) -> Need {
