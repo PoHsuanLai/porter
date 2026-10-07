@@ -97,7 +97,17 @@ async fn the_shell_is_told_of_a_refusal_and_a_recovery_and_reads_the_account() {
         .await
         .expect("a request");
 
-    assert!(rig.service.set_state(&mail.id, AccountState::Ok).await);
+    // The sign-in the shell just started (it needs no grant) may finish first and make the
+    // account well itself; either way it is well once this returns.
+    let _ = rig.service.set_state(&mail.id, AccountState::Ok).await;
+    eventually("the account is well", || {
+        rig.service
+            .registry()
+            .accounts
+            .iter()
+            .any(|a| a.id == mail.id && a.state == AccountState::Ok)
+    })
+    .await;
     let _ = other_manager
         .query(&storage_need(), "photos", "interactive")
         .await;
