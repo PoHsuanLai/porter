@@ -25,3 +25,9 @@ family = "generate_content"
 endpoint = "https://generativelanguage.googleapis.com/v1beta"
 kind = "llm"
 v = { features = ["chat"], context = 8192, max_output = 4096, wire = "generate_content" }
+
+# The agent programs that may run on this key (see anthropic.toml).
+[[capability]]
+family = "acp_agent"
+kind = "agent"
+v = { program = "gemini-cli", key_env = "GEMINI_API_KEY", protocols = ["generate_content"] }

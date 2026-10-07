@@ -22,6 +22,8 @@ macro_rules! each_family {
             Self::ApiKey($p) => $body,
             #[cfg(feature = "openrouter")]
             Self::OpenRouter($p) => $body,
+            #[cfg(feature = "agent_login")]
+            Self::AgentLogin($p) => $body,
             // Present for the build with no family, where the enum has no variant to match.
             #[allow(unreachable_patterns)]
             _ => unreachable!("no family is built"),
@@ -47,6 +49,9 @@ pub enum FamilyProvider {
     /// OpenRouter.
     #[cfg(feature = "openrouter")]
     OpenRouter(crate::OpenRouterProvider),
+    /// An agent program that signs itself in.
+    #[cfg(feature = "agent_login")]
+    AgentLogin(crate::AgentLoginProvider),
 }
 
 /// An open account of a built family.
@@ -67,6 +72,9 @@ pub enum FamilySession {
     /// OpenRouter.
     #[cfg(feature = "openrouter")]
     OpenRouter(crate::OpenRouterSession),
+    /// An agent program that signs itself in.
+    #[cfg(feature = "agent_login")]
+    AgentLogin(crate::AgentLoginSession),
 }
 
 /// A sign-in conversation of a built family.
@@ -87,6 +95,9 @@ pub enum FamilySignIn {
     /// OpenRouter.
     #[cfg(feature = "openrouter")]
     OpenRouter(crate::OpenRouterSignIn),
+    /// An agent program that signs itself in.
+    #[cfg(feature = "agent_login")]
+    AgentLogin(crate::AgentLoginSignIn),
 }
 
 impl Provider for FamilyProvider {
@@ -130,6 +141,11 @@ impl Provider for FamilyProvider {
                 .open(account, presented)
                 .await
                 .map(FamilySession::OpenRouter),
+            #[cfg(feature = "agent_login")]
+            Self::AgentLogin(p) => p
+                .open(account, presented)
+                .await
+                .map(FamilySession::AgentLogin),
             #[allow(unreachable_patterns)]
             _ => {
                 let _ = (account, presented);
@@ -150,6 +166,8 @@ impl Provider for FamilyProvider {
             Self::ApiKey(p) => p.sign_in(start).map(FamilySignIn::ApiKey),
             #[cfg(feature = "openrouter")]
             Self::OpenRouter(p) => p.sign_in(start).map(FamilySignIn::OpenRouter),
+            #[cfg(feature = "agent_login")]
+            Self::AgentLogin(p) => p.sign_in(start).map(FamilySignIn::AgentLogin),
             #[allow(unreachable_patterns)]
             _ => {
                 let _ = start;

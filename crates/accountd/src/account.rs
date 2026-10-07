@@ -36,6 +36,7 @@ pub(crate) fn state_slug(state: AccountState) -> &'static str {
         AccountState::NeedsReauth => "needs_reauth",
         AccountState::Offline => "offline",
         AccountState::Limited => "limited",
+        AccountState::NeedsLogin => "needs_login",
     }
 }
 

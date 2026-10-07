@@ -12,7 +12,7 @@ publish.workspace = true
 porter-core = { workspace = true }
 porter-dbus = { workspace = true }
 porter-discover = { workspace = true, features = ["io"] }
-porter-families = { workspace = true, features = ["nextcloud", "generic", "microsoft", "api_key", "openrouter"] }
+porter-families = { workspace = true, features = ["nextcloud", "generic", "microsoft", "api_key", "openrouter", "agent_login"] }
 porter-http = { workspace = true, features = ["hyper"] }
 porter-provider = { workspace = true }
 porter-proxy = { workspace = true, features = ["tls"] }

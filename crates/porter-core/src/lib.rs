@@ -32,7 +32,7 @@ mod units;
 mod weburl;
 pub mod wire;
 
-pub use account::{Account, AccountLabel, AccountState};
+pub use account::{Account, AccountLabel, AccountState, AgentState};
 pub use ai_props::{Billing, Locality, PriceTable, Region, Tier};
 pub use app_id::{AppId, AppName, Isolation};
 pub use auth_kind::AuthKind;

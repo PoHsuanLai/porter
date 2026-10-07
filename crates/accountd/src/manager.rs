@@ -5,7 +5,7 @@ use crate::core::{Core, Host, Standing, hint, slug, window};
 use crate::errors::RefusedError;
 use porter_core::consent::Availability;
 use porter_core::wire::Refusal;
-use porter_core::{AccountState, AccountsReply, AccountsRequest};
+use porter_core::{AccountsReply, AccountsRequest};
 use porter_dbus::{
     CallerRole, CandidateArg, Details, NeedArg, SheetKind, account_path, candidate_to_dbus,
     need_from_dbus,
@@ -138,7 +138,7 @@ impl<H: Host, C: Callers> Manager<H, C> {
             .registry()
             .accounts
             .iter()
-            .filter(|account| account.state == AccountState::NeedsReauth)
+            .filter(|account| account.state.needs_person())
             .map(|account| {
                 OwnedObjectPath::try_from(account_path(&account.id))
                     .map(|path| (path, account.label.0.clone()))

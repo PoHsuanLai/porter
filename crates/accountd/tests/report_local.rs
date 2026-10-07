@@ -52,7 +52,7 @@ fn models_of(account: &porter_core::Account) -> Vec<String> {
         .iter()
         .filter_map(|claim| match &claim.subject {
             Subject::Model(id) => Some(id.to_string()),
-            Subject::Account => None,
+            Subject::Account | Subject::Agent(_) => None,
         })
         .collect()
 }

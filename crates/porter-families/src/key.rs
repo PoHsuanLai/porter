@@ -3,6 +3,7 @@
 //! check (a 200 with a readable body is a live key); nothing in it is kept, so no model list
 //! sits in accountd or on any bus: inferd fetches its own with the key `Peer.ResolveKey` gives it.
 
+use porter_core::Capability;
 use porter_core::capability::CapabilityKind;
 use porter_core::sheet::SignInFault;
 use porter_core::{
@@ -101,17 +102,32 @@ fn is_listing(body: &[u8]) -> bool {
     text.starts_with('{') && (text.contains("\"data\"") || text.contains("\"models\""))
 }
 
-/// What a live key can do: the file's language-model rows, shown by a small real call.
+/// What a live key can do: the file's language-model rows, shown by a small real call, and the
+/// agent programs it names.
 pub(crate) fn claims(spec: &ProviderSpec) -> Vec<Claim> {
-    spec.capabilities
+    let models = spec
+        .capabilities
         .iter()
         .filter(|row| row.capability.kind() == CapabilityKind::Llm)
         .map(|row| Claim {
             subject: Subject::Account,
             offer: Offer::Present(row.capability.clone()),
             provenance: Provenance::Probed,
-        })
-        .collect()
+        });
+    // The agent programs the file names may run on this key. Declared, not probed: the file says
+    // so, and the key's one call checks the key, not the programs.
+    let agents = spec
+        .capabilities
+        .iter()
+        .filter_map(|row| match &row.capability {
+            Capability::Agent(agent) => Some(Claim {
+                subject: Subject::Agent(agent.program.clone()),
+                offer: Offer::Present(row.capability.clone()),
+                provenance: Provenance::Declared,
+            }),
+            _ => None,
+        });
+    models.chain(agents).collect()
 }
 
 /// The finished sign-in of a live key.

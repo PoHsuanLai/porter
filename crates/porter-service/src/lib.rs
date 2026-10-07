@@ -7,6 +7,7 @@
 mod add;
 mod add_flow;
 mod add_store;
+mod agent;
 mod audience;
 mod audit;
 mod choose;
@@ -23,6 +24,7 @@ mod sync_grant;
 mod token;
 
 pub use add_flow::AllowFor;
+pub use agent::AgentFault;
 pub use audit::{AuditSink, NoAudit};
 pub use clock::Clock;
 pub use local::{LocalFault, MAX_LOCAL_CLAIMS};

@@ -1,6 +1,8 @@
 //! `org.quire.Accounts1.Peer` at `/org/quire/Accounts1`: what the other daemons ask accountd on
 //! behalf of an app (porter PLAN G3). Callable only by a connection whose caller role is
-//! `PorterDaemon` (inferd, syncd); accountd refuses every other sender `AccessDenied`. The app
+//! `PorterDaemon` (inferd, syncd); accountd refuses every other sender `AccessDenied`. The one
+//! exception is `SetAgentState`, which only `AgentLauncher` may call (and `PorterDaemon` may
+//! not). The app
 //! is named by the calling daemon from its own connection, never by the app. There is no
 //! `OpenCredential`: syncd opens an authenticated stream like any app (`Tokens`).
 
@@ -35,6 +37,10 @@ pub trait Peer {
         claims: Vec<(String, Details)>,
         state: &str,
     ) -> zbus::Result<String>;
+    /// What an agent program says of its own sign-in (`ready`, `needs_login`), for the account
+    /// of an agent that signs itself in (`AuthKind::AgentLogin`). Only the launcher
+    /// (`CallerRole::AgentLauncher`) may say it; porter holds no more of an agent's login.
+    fn set_agent_state(&self, account: &str, state: &str) -> zbus::Result<()>;
 }
 
 /// accountd's side.
@@ -66,6 +72,11 @@ impl PeerSkeleton {
         state: String,
     ) -> fdo::Result<String> {
         let _ = (provider, claims, state);
+        Err(crate::introspect::frozen())
+    }
+
+    fn set_agent_state(&self, account: String, state: String) -> fdo::Result<()> {
+        let _ = (account, state);
         Err(crate::introspect::frozen())
     }
 }

@@ -3,10 +3,29 @@ use crate::capability::{
     Access, Albums, CapabilityKind, Delta, LibraryRead, LlmFeature, Offered, PhotosCap,
     QuotaReport, StorageScope,
 };
+use crate::capability::{AgentCap, AgentProgram, AgentProtocol, EnvName};
 use crate::capability::{CuaBatching, CuaCap, CuaEnv, LlmWire};
 use crate::fixtures::{llm, mail, storage};
+use crate::need::AgentNeed;
 use crate::need::{CuaNeed, LlmNeed, MailNeed, PhotosNeed, StorageNeed};
 use crate::units::{Px, Tokens};
+
+fn agent(program: &str, base_url_env: Option<&str>, protocols: &[AgentProtocol]) -> Offer {
+    present(Capability::Agent(AgentCap {
+        program: AgentProgram::parse(program).expect("program"),
+        key_env: Some(EnvName::parse("SOME_API_KEY").expect("env")),
+        base_url_env: base_url_env.map(|name| EnvName::parse(name).expect("env")),
+        protocols: protocols.iter().copied().collect(),
+    }))
+}
+
+fn agent_need(program: &str, protocols: &[AgentProtocol], base_url: Offered) -> Need {
+    Need::Agent(AgentNeed {
+        program: AgentProgram::parse(program).expect("program"),
+        protocols: protocols.iter().copied().collect(),
+        base_url,
+    })
+}
 
 fn storage_need(access: Access, delta: Delta, scope: StorageScope) -> Need {
     Need::Storage(StorageNeed {
@@ -175,6 +194,54 @@ fn cases() -> Vec<(&'static str, Need, Offer, Match)> {
             }),
             present(llm(&[LlmFeature::Chat], 8_000)),
             Match::Short(Shortfall::Context),
+        ),
+        (
+            "the agent asked for fits the agent offered",
+            agent_need("claude-code", &[], Offered::Absent),
+            agent("claude-code", None, &[AgentProtocol::AnthropicMessages]),
+            Match::Fits,
+        ),
+        (
+            "another agent program is not the one asked for",
+            agent_need("codex", &[], Offered::Absent),
+            agent("claude-code", Some("ANTHROPIC_BASE_URL"), &[]),
+            Match::Short(Shortfall::Program),
+        ),
+        (
+            "an agent that speaks only Messages falls short of an OpenAI-compatible need",
+            agent_need(
+                "claude-code",
+                &[AgentProtocol::OpenAiCompatible],
+                Offered::Absent,
+            ),
+            agent("claude-code", None, &[AgentProtocol::AnthropicMessages]),
+            Match::Short(Shortfall::Protocols),
+        ),
+        (
+            "an agent with no base-url variable falls short of a routed need",
+            agent_need("gemini-cli", &[], Offered::Present),
+            agent("gemini-cli", None, &[AgentProtocol::OpenAiCompatible]),
+            Match::Short(Shortfall::BaseUrl),
+        ),
+        (
+            "an agent with a base-url variable fits a routed need",
+            agent_need(
+                "codex",
+                &[AgentProtocol::OpenAiCompatible],
+                Offered::Present,
+            ),
+            agent(
+                "codex",
+                Some("OPENAI_BASE_URL"),
+                &[AgentProtocol::OpenAiCompatible],
+            ),
+            Match::Fits,
+        ),
+        (
+            "an llm offer is another kind for an agent need",
+            agent_need("codex", &[], Offered::Absent),
+            present(llm(&[LlmFeature::Chat], 8_000)),
+            Match::OtherKind,
         ),
         (
             "computer use on the desktop fits a desktop model",

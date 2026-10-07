@@ -37,6 +37,8 @@ generic = ["dep:porter-dav", "dep:porter-discover", "dep:base64"]
 microsoft = ["dep:porter-oauth", "dep:porter-discover", "porter-oauth/io", "porter-http/hyper", "dep:serde", "dep:serde_json", "dep:tokio"]
 # AI providers with a pasted API key (Anthropic, OpenAI).
 api_key = ["porter-http/hyper"]
+# Coding agents that sign themselves in (Claude Code, Gemini CLI, Codex): no credential held.
+agent_login = []
 # OpenRouter: OAuth PKCE that mints a key.
 openrouter = ["dep:porter-oauth"]
 
@@ -46,6 +48,10 @@ workspace = true
 [[test]]
 name = "microsoft"
 required-features = ["microsoft"]
+
+[[test]]
+name = "agent_login"
+required-features = ["agent_login"]
 
 [[test]]
 name = "api_key"

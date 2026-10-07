@@ -12,15 +12,15 @@ use crate::manager::Manager;
 use crate::relay::{RelayRoots, Relays};
 use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
 use porter_core::{
-    AccountId, AccountState, AccountsReply, AccountsRequest, AppId, CapabilityKind, Claim,
-    EndpointUrl, GrantId, ProviderId, RelayPlan, Toggle,
+    AccountId, AccountState, AccountsReply, AccountsRequest, AgentState, AppId, CapabilityKind,
+    Claim, EndpointUrl, GrantId, ProviderId, RelayPlan, Toggle,
 };
 use porter_dbus::{ACCOUNTS_BUS, ACCOUNTS_PATH, Caller, CallerRole, Details, account_path};
 use porter_provider::Provider;
 use porter_secrets::{Secrets, SecretsError};
 use porter_service::{
-    AccountService, AuditSink, Clock, LocalFault, Registry, RegistryStore, RevokeReport, Sheets,
-    SyncClass,
+    AccountService, AgentFault, AuditSink, Clock, LocalFault, Registry, RegistryStore,
+    RevokeReport, Sheets, SyncClass,
 };
 use serde::de::DeserializeOwned;
 use std::borrow::Cow;
@@ -131,6 +131,17 @@ pub trait Host: Send + Sync + 'static {
         async { false }
     }
 
+    /// Records what an agent program says of its own sign-in (`Peer.SetAgentState`); whether
+    /// the account's state changed. A host that keeps no such accounts says unavailable.
+    fn set_agent_state(
+        &self,
+        account: &AccountId,
+        state: AgentState,
+    ) -> impl Future<Output = Result<bool, AgentFault>> + Send {
+        let _ = (account, state);
+        async { Err(AgentFault::Unavailable) }
+    }
+
     /// Takes a local runtime's report (`Peer.ReportLocal`): the account of `provider`, its
     /// models as claims, its state. A host that keeps no such accounts says unavailable.
     fn report_local(
@@ -233,6 +244,14 @@ where
     ) -> impl Future<Output = Result<AccountId, LocalFault>> + Send {
         AccountService::report_local(self, provider, models, state)
     }
+
+    fn set_agent_state(
+        &self,
+        account: &AccountId,
+        state: AgentState,
+    ) -> impl Future<Output = Result<bool, AgentFault>> + Send {
+        AccountService::set_agent_state(self, account, state)
+    }
 }
 
 /// How much of its role a caller must have for a method.
@@ -242,6 +261,9 @@ pub(crate) enum Standing {
     Any,
     /// A caller that may act for the person: an `Agent` is refused (`Denied`).
     Acting,
+    /// A caller reporting an agent's state: the only standing an `AgentLauncher` has, and the
+    /// method that asks for it checks the role itself.
+    Launching,
 }
 
 /// The shared state of every object accountd serves.
@@ -293,6 +315,12 @@ impl<H: Host, C: Callers> Core<H, C> {
             .ok_or_else(|| RefusedError::access_denied("accountd does not know this caller"))?;
         if standing == Standing::Acting && caller.role == CallerRole::Agent {
             return Err(RefusedError::of(Refusal::Denied));
+        }
+        // The launcher is narrow: it reports an agent's state and is nothing else to accountd.
+        if standing != Standing::Launching && caller.role == CallerRole::AgentLauncher {
+            return Err(RefusedError::access_denied(
+                "the agent launcher may only report an agent's state",
+            ));
         }
         held(&self.roster).insert(sender.to_string(), caller.clone());
         Ok(caller)

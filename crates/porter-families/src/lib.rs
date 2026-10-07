@@ -6,6 +6,8 @@
 //! Google is not here: the owner deferred it (FINDINGS.md), so `providers/google.toml` ships as
 //! a file and has no family code behind it.
 
+#[cfg(feature = "agent_login")]
+mod agent_login;
 #[cfg(feature = "api_key")]
 mod api_key;
 mod dispatch;
@@ -26,6 +28,8 @@ mod password;
 #[cfg(feature = "openrouter")]
 mod skeleton;
 
+#[cfg(feature = "agent_login")]
+pub use agent_login::{AgentLoginProvider, AgentLoginSession, AgentLoginSignIn};
 #[cfg(feature = "api_key")]
 pub use api_key::{ApiKeyProvider, ApiKeySession, ApiKeySignIn};
 pub use dispatch::{FamilyProvider, FamilySession, FamilySignIn};

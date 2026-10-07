@@ -104,10 +104,11 @@ fn the_peer_interface_is_the_three_daemon_to_daemon_members() {
         "<method name=\"Verdicts\">",
         "<method name=\"ResolveKey\">",
         "<method name=\"ReportLocal\">",
+        "<method name=\"SetAgentState\">",
     ] {
         assert!(peer.contains(member), "missing {member}");
     }
-    assert_eq!(peer.matches("<method ").count(), 3);
+    assert_eq!(peer.matches("<method ").count(), 4);
     assert!(
         !peer.contains("OpenCredential"),
         "syncd opens an authenticated stream like any app"

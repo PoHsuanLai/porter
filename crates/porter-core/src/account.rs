@@ -46,4 +46,36 @@ pub enum AccountState {
     Offline,
     /// Working, with a restriction the UI explains.
     Limited,
+    /// An agent program has not signed in (or says it is signed out); the person signs in
+    /// inside the agent, never through porter. Only `AgentLogin` accounts are ever here.
+    NeedsLogin,
+}
+
+impl AccountState {
+    /// Whether the person has to do something before the account works again: sign it in again
+    /// (`NeedsReauth`) or sign the agent in (`NeedsLogin`). The shell hears both the same way.
+    pub fn needs_person(self) -> bool {
+        matches!(self, AccountState::NeedsReauth | AccountState::NeedsLogin)
+    }
+}
+
+/// What an agent program says of its own sign-in, as the launcher reports it. It is the only
+/// thing porter holds for an `AgentLogin` account.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentState {
+    /// The agent says it is signed in (a session started, or its `authenticate` succeeded).
+    Ready,
+    /// The agent says it needs a login.
+    NeedsLogin,
+}
+
+impl AgentState {
+    /// The state an account in this agent state has.
+    pub fn account_state(self) -> AccountState {
+        match self {
+            AgentState::Ready => AccountState::Ok,
+            AgentState::NeedsLogin => AccountState::NeedsLogin,
+        }
+    }
 }

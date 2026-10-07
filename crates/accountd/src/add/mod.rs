@@ -232,6 +232,19 @@ where
         _ => return Err(AddError::Refused(Refusal::Unavailable)),
     };
     sheets.allow(account.clone());
+    // `--allow` gives an app an account for language models. An agent that signs itself in has
+    // none to give (no model, no key), so its grants are not made; the account stays.
+    let signs_itself_in = service
+        .registry()
+        .accounts
+        .iter()
+        .any(|a| a.id == account && a.auth == porter_core::AuthKind::AgentLogin);
+    if signs_itself_in && !args.allow.is_empty() {
+        return Err(AddError::AllowFailed {
+            account,
+            refusal: Refusal::NoFittingAccount,
+        });
+    }
     let mut grants = Vec::new();
     for app in &args.allow {
         for class in args.granted_classes() {

@@ -25,7 +25,7 @@ fn shipped() -> Vec<(PathBuf, ProviderSpec)> {
 #[test]
 fn every_shipped_provider_file_parses_and_is_named_by_its_id() {
     let files = shipped();
-    assert_eq!(files.len(), 19);
+    assert_eq!(files.len(), 23);
     for (path, spec) in files {
         let stem = path.file_stem().and_then(|s| s.to_str()).expect("stem");
         assert_eq!(spec.id.as_str(), stem, "{}", path.display());
@@ -193,7 +193,8 @@ fn the_ai_company_files_declare_a_cloud_llm_row_behind_a_pasted_key() {
             Some(Locality::Cloud { region: None }),
             "{id}"
         );
-        assert_eq!(spec.capabilities.len(), 1, "{id}");
+        // The model row first, then the agent programs allowed to use the key.
+        assert!(!spec.capabilities.is_empty(), "{id}");
         let row = &spec.capabilities[0];
         assert_eq!(
             (row.capability.kind(), row.family),
@@ -341,4 +342,112 @@ fn the_generic_files_make_generic_rows_and_every_other_file_a_provider_row() {
             .filter(|r| !r.id.as_str().starts_with("generic-"))
             .all(|r| r.kind == RowKind::Provider)
     );
+}
+
+#[test]
+fn the_agent_files_hold_no_secret_and_name_their_program_and_variables() {
+    use porter_core::capability::{AgentProtocol as P, CapabilityKind as K};
+    use porter_core::{AuthKind, Capability, Family};
+    use porter_provider::Discovery;
+    // (id, program, key variable, base-url variable, protocols)
+    const CASES: &[(&str, &str, Option<&str>, Option<&str>, &[P])] = &[
+        (
+            "claude-code",
+            "claude-code",
+            Some("ANTHROPIC_API_KEY"),
+            Some("ANTHROPIC_BASE_URL"),
+            &[P::AnthropicMessages],
+        ),
+        (
+            "gemini-cli",
+            "gemini-cli",
+            Some("GEMINI_API_KEY"),
+            None,
+            &[P::GenerateContent],
+        ),
+        (
+            "codex",
+            "codex",
+            Some("OPENAI_API_KEY"),
+            Some("OPENAI_BASE_URL"),
+            &[P::OpenAiCompatible],
+        ),
+        ("acp-agent", "acp-agent", None, None, &[P::OpenAiCompatible]),
+    ];
+    for (id, program, key, base_url, protocols) in CASES {
+        let spec = shipped_spec(id);
+        assert_eq!(
+            (spec.auth.kind, spec.auth.issuer),
+            (AuthKind::AgentLogin, None),
+            "{id}"
+        );
+        assert_eq!(spec.discovery, Discovery::Fixed, "{id}");
+        assert!(spec.ai.is_none(), "{id}");
+        assert_eq!(spec.capabilities.len(), 1, "{id}");
+        let row = &spec.capabilities[0];
+        assert_eq!(
+            (row.capability.kind(), row.family),
+            (K::Agent, Family::AcpAgent)
+        );
+        assert!(
+            row.endpoint.is_none() && row.linked_origins.is_empty(),
+            "{id}"
+        );
+        let Capability::Agent(agent) = &row.capability else {
+            panic!("{id}: not an agent row");
+        };
+        assert_eq!(agent.program.as_str(), *program, "{id}");
+        assert_eq!(agent.key_env.as_ref().map(|n| n.as_str()), *key, "{id}");
+        assert_eq!(
+            agent.base_url_env.as_ref().map(|n| n.as_str()),
+            *base_url,
+            "{id}"
+        );
+        assert_eq!(agent.protocols, protocols.iter().copied().collect(), "{id}");
+    }
+}
+
+#[test]
+fn a_key_provider_names_the_agent_programs_that_may_use_its_key() {
+    use porter_core::Capability;
+    use porter_core::capability::CapabilityKind as K;
+    // Every key provider's named programs, by file id; a key file that names none is listed empty.
+    let named = |id: &str| -> Vec<String> {
+        shipped_spec(id)
+            .capabilities
+            .iter()
+            .filter_map(|row| match &row.capability {
+                Capability::Agent(agent) => Some(agent.program.to_string()),
+                _ => None,
+            })
+            .collect()
+    };
+    assert_eq!(named("anthropic"), ["claude-code"]);
+    assert_eq!(named("openai"), ["codex"]);
+    assert_eq!(named("google-ai"), ["gemini-cli"]);
+    assert!(named("openrouter").is_empty());
+    assert!(named("moonshot").is_empty());
+    // The model row is still the first row of a key provider.
+    for id in ["anthropic", "openai", "google-ai"] {
+        assert_eq!(shipped_spec(id).capabilities[0].capability.kind(), K::Llm);
+    }
+    // The program each key file names is the program of the agent file that shares its vendor,
+    // with the same variables: one fact, written twice, must agree.
+    for (key_file, agent_file) in [
+        ("anthropic", "claude-code"),
+        ("openai", "codex"),
+        ("google-ai", "gemini-cli"),
+    ] {
+        let agent_cap = |id: &str| {
+            shipped_spec(id)
+                .capabilities
+                .iter()
+                .find_map(|row| match &row.capability {
+                    Capability::Agent(agent) => Some(agent.clone()),
+                    _ => None,
+                })
+                .expect("an agent row")
+        };
+        assert_eq!(agent_cap(key_file), agent_cap(agent_file), "{key_file}");
+    }
 }

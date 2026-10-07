@@ -109,7 +109,9 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
             Key::Place(id) => Ok(toml::Value::String(
                 crate::settings_keys::place_slug(account(&id)?).to_owned(),
             )),
-            Key::Grant(..) | Key::Reauth(_) | Key::Remove(_) => Ok(toml::Value::Boolean(false)),
+            Key::Grant(..) | Key::Reauth(_) | Key::SignOut(_) | Key::Remove(_) => {
+                Ok(toml::Value::Boolean(false))
+            }
             Key::Client(issuer) => Ok(toml::Value::String(
                 self.clients()
                     .clients
@@ -166,6 +168,13 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
                     }
                     core.publish().await;
                 });
+            }
+            Key::SignOut(id) => {
+                self.0
+                    .host
+                    .set_agent_state(&id, porter_core::AgentState::NeedsLogin)
+                    .await
+                    .map_err(|fault| failed(format!("refused: {fault:?}")))?;
             }
             Key::Client(issuer) => {
                 let text = match &value {

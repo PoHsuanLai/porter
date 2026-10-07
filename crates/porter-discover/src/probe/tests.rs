@@ -13,7 +13,7 @@ fn model_ids(claims: &[Claim]) -> Vec<(String, CapabilityKind)> {
         .iter()
         .map(|c| match &c.subject {
             Subject::Model(id) => (id.to_string(), c.offer.kind()),
-            Subject::Account => panic!("{c:?}"),
+            Subject::Account | Subject::Agent(_) => panic!("{c:?}"),
         })
         .collect()
 }

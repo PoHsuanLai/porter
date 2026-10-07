@@ -63,6 +63,12 @@ pub enum Shortfall {
     Environments,
     /// Items are smaller.
     MaxItem,
+    /// A different agent program.
+    Program,
+    /// The agent does not speak a protocol asked for.
+    Protocols,
+    /// The agent cannot be pointed at another base URL.
+    BaseUrl,
 }
 
 /// How `offer` answers `need`.
@@ -146,6 +152,11 @@ fn fit(need: &Need, capability: &Capability) -> Match {
             (c.max_item >= n.max_item, S::MaxItem),
         ]),
         (Need::Push(_), Capability::Push(_)) => Match::Fits,
+        (Need::Agent(n), Capability::Agent(c)) => first_short(&[
+            (n.program == c.program, S::Program),
+            (n.protocols.is_subset(&c.protocols), S::Protocols),
+            (c.base_url() >= n.base_url, S::BaseUrl),
+        ]),
         _ => Match::OtherKind,
     }
 }

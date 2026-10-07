@@ -23,3 +23,11 @@ family = "messages"
 endpoint = "https://api.anthropic.com/v1"
 kind = "llm"
 v = { features = ["chat"], context = 8192, max_output = 4096, wire = "messages" }
+
+# The agent programs that may run on this key (the launcher hands a program the key through its
+# `key_env`, or better routes it through inferd with `base_url_env`; FINDINGS, P1). A program not
+# named here is refused this key.
+[[capability]]
+family = "acp_agent"
+kind = "agent"
+v = { program = "claude-code", key_env = "ANTHROPIC_API_KEY", base_url_env = "ANTHROPIC_BASE_URL", protocols = ["anthropic_messages"] }

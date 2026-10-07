@@ -2,12 +2,13 @@
 //! says: a kind slug and a vardict for a need, a path, a label and a vardict for a candidate.
 
 use porter_core::capability::{
-    Access, Albums, Capability, CapabilityKind, CuaEnv, Delta, HashKind, LibraryRead, LlmCap,
-    LlmFeature, LlmWire, Modality, Offered, QuotaReport, SpeechMode, StorageCap, StorageScope,
+    Access, AgentCap, AgentProgram, AgentProtocol, Albums, Capability, CapabilityKind, CuaEnv,
+    Delta, HashKind, LibraryRead, LlmCap, LlmFeature, LlmWire, Modality, Offered, QuotaReport,
+    SpeechMode, StorageCap, StorageScope,
 };
 use porter_core::need::{
-    CuaNeed, DimsNeed, EmbedNeed, IdentityNeed, ImageGenNeed, KeyValueNeed, LlmNeed, MailNeed,
-    NotesNeed, PhotosNeed, PimNeed, PushNeed, RerankNeed, SpeechNeed, StorageNeed,
+    AgentNeed, CuaNeed, DimsNeed, EmbedNeed, IdentityNeed, ImageGenNeed, KeyValueNeed, LlmNeed,
+    MailNeed, NotesNeed, PhotosNeed, PimNeed, PushNeed, RerankNeed, SpeechNeed, StorageNeed,
 };
 use porter_core::{
     AccountId, Bytes, Candidate, Count, Dims, EndpointUrl, Family, GrantId, Limit, LimitReason,
@@ -123,6 +124,14 @@ fn every_need() -> Vec<(&'static str, Need)> {
             }),
         ),
         ("push", Need::Push(PushNeed {})),
+        (
+            "agent",
+            Need::Agent(AgentNeed {
+                program: AgentProgram::parse("claude-code").expect("program"),
+                protocols: [AgentProtocol::AnthropicMessages].into(),
+                base_url: Offered::Present,
+            }),
+        ),
     ]
 }
 
@@ -232,6 +241,31 @@ fn candidates() -> Vec<Candidate> {
             endpoints: vec![],
         },
     ]
+}
+
+#[test]
+fn an_agent_candidate_with_no_variable_to_set_round_trips() {
+    // An absent variable is an absent entry, not a null: the vardict has no null.
+    let candidate = Candidate {
+        account: AccountId::parse("gemini-cli").expect("id"),
+        label: porter_core::AccountLabel("Gemini CLI".into()),
+        provider: "gemini-cli".parse_provider(),
+        subject: Subject::Agent(AgentProgram::parse("gemini-cli").expect("program")),
+        capability: Capability::Agent(AgentCap {
+            program: AgentProgram::parse("gemini-cli").expect("program"),
+            key_env: Some(porter_core::capability::EnvName::parse("GEMINI_API_KEY").expect("env")),
+            base_url_env: None,
+            protocols: [AgentProtocol::GenerateContent].into(),
+        }),
+        restriction: Restriction::none(),
+        grant: GrantId::parse("g3").expect("grant"),
+        endpoints: vec![],
+    };
+    let ctxt = zbus::zvariant::serialized::Context::new_dbus(zbus::zvariant::LE, 0);
+    let arg = candidate_to_dbus(&candidate);
+    let bytes = zbus::zvariant::to_bytes(ctxt, &arg).expect("encodes");
+    let (back, _): (porter_dbus::CandidateArg, usize) = bytes.deserialize().expect("decodes");
+    assert_eq!(candidate_from_dbus(back), Ok(candidate));
 }
 
 fn endpoint(family: Family, url: &str, tls: Tls) -> ServiceEndpoint {

@@ -53,6 +53,9 @@ pub enum Subject {
     Account,
     /// One model of an AI account.
     Model(ModelId),
+    /// One agent program an account can run (`AgentCap::program`), so an account that may run
+    /// several keeps one claim for each.
+    Agent(crate::capability::AgentProgram),
 }
 
 /// How a claim is known. Ordered by authority: a later variant corrects an earlier one.

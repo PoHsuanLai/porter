@@ -33,4 +33,8 @@ pub enum AuthKind {
     OAuthPlan,
     /// A cloud identity (Entra, Vertex ADC, an AWS profile).
     CloudIdentity,
+    /// An agent program that signs itself in to its own plan (Claude Code, Gemini CLI, Codex):
+    /// the account holds no credential of any kind, only whether the agent says it is signed
+    /// in (design/31 R7, R8).
+    AgentLogin,
 }

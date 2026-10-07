@@ -7,8 +7,8 @@
 use porter_core::AuthKind;
 use porter_discover::{Dns, DnsFault, HickoryDns, MxRecord, SrvRecord};
 use porter_families::{
-    ApiKeyProvider, FamilyProvider, GenericProvider, MicrosoftProvider, NextcloudProvider,
-    OpenRouterProvider, SharedDns,
+    AgentLoginProvider, ApiKeyProvider, FamilyProvider, GenericProvider, MicrosoftProvider,
+    NextcloudProvider, OpenRouterProvider, SharedDns,
 };
 use porter_http::{HyperHttp, SharedHttp, TokioSleep};
 use porter_provider::{DomainName, Issuer, ProviderSet, ProviderSpec, parse_provider};
@@ -122,6 +122,7 @@ pub fn family_of(spec: ProviderSpec, io: &FamilyIo) -> Result<FamilyProvider, Bo
             Ok(FamilyProvider::Microsoft(MicrosoftProvider::new(spec)))
         }
         (AuthKind::ApiKey, _) => Ok(FamilyProvider::ApiKey(ApiKeyProvider::new(spec))),
+        (AuthKind::AgentLogin, _) => Ok(FamilyProvider::AgentLogin(AgentLoginProvider::new(spec))),
         (AuthKind::OAuthMintsKey, Some(Issuer::OpenRouter)) => {
             Ok(FamilyProvider::OpenRouter(OpenRouterProvider::new(spec)))
         }

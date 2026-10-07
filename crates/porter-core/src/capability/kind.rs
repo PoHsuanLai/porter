@@ -10,7 +10,7 @@ pub struct VocabVersion(pub u16);
 
 impl VocabVersion {
     /// The version this build speaks.
-    pub const CURRENT: VocabVersion = VocabVersion(4);
+    pub const CURRENT: VocabVersion = VocabVersion(5);
 }
 
 /// A capability's kind without its parameters: the unit of consent, toggles and limits.
@@ -50,6 +50,8 @@ pub enum CapabilityKind {
     KeyValue,
     /// A push channel.
     Push,
+    /// An external coding agent program.
+    Agent,
 }
 
 impl CapabilityKind {

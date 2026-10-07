@@ -7,7 +7,7 @@ use crate::account::state_slug;
 use crate::settings_keys::{Key, path};
 use ds_settings::schema::KeyPath;
 use porter_core::consent::Decision;
-use porter_core::{AccountId, AccountState, AppId, GrantId};
+use porter_core::{AccountId, AppId, GrantId};
 use porter_service::{Registry, SyncClass, sync_allowed};
 
 /// One change a client may be told of.
@@ -19,7 +19,7 @@ pub(crate) enum Event {
     Removed(AccountId),
     /// `CapabilityChanged`: the account's effective capabilities differ.
     CapabilityChanged(AccountId),
-    /// `NeedsReauth`.
+    /// `NeedsReauth`, also sent when an agent account goes `NeedsLogin`.
     NeedsReauth(AccountId),
     /// The account's `State` property changed: the shell is told to read it again.
     StateChanged(AccountId),
@@ -50,8 +50,10 @@ pub(crate) fn events(before: &Registry, after: &Registry) -> Vec<Event> {
                 if old.state != account.state {
                     out.push(Event::StateChanged(account.id.clone()));
                 }
-                let now_refused = account.state == AccountState::NeedsReauth;
-                if now_refused && old.state != AccountState::NeedsReauth {
+                // `NeedsLogin` (an agent that must be signed in, inside the agent) is told as
+                // `NeedsReauth` is: the shell shows one notice for both.
+                let now_refused = account.state.needs_person();
+                if now_refused && !old.state.needs_person() {
                     out.push(Event::NeedsReauth(account.id.clone()));
                 }
             }
@@ -167,7 +169,9 @@ pub(crate) fn settings_news(
 mod tests {
     use super::*;
     use porter_core::consent::{Grant, GrantKey, GrantScope, Usage};
-    use porter_core::{AppName, CapabilityKind, DataClass, Isolation, SpaceScope, UnixSeconds};
+    use porter_core::{
+        AccountState, AppName, CapabilityKind, DataClass, Isolation, SpaceScope, UnixSeconds,
+    };
     use porter_fake::{mail_account, storage_account};
 
     fn app(name: &str) -> AppId {

@@ -15,8 +15,8 @@ use porter_core::consent::{ConsentAnswer, GrantScope};
 use porter_core::sheet::ServiceChoice;
 use porter_core::store::AccountToggle;
 use porter_core::{
-    Account, AccountId, AccountState, AccountsReply, AppId, KindToggle, LoginName, ProviderId,
-    SecretKey, Toggle, effective,
+    Account, AccountId, AccountState, AccountsReply, AppId, AuthKind, KindToggle, LoginName,
+    ProviderId, SecretKey, Toggle, effective,
 };
 use porter_provider::{Provider, ProviderSpec, Signed};
 use porter_secrets::Secrets;
@@ -58,6 +58,15 @@ pub(crate) fn fresh_id(registry: &Registry, provider: &ProviderId, label: &str) 
         .unwrap_or_else(|| unreachable!("the suffixes are unbounded and each id is well formed"))
 }
 
+/// The state a new account starts in: working, except an agent that signs itself in, which is
+/// waiting for the agent to say it is (`Peer.SetAgentState`); porter has no way to know.
+fn first_state(auth: AuthKind) -> AccountState {
+    match auth {
+        AuthKind::AgentLogin => AccountState::NeedsLogin,
+        _ => AccountState::Ok,
+    }
+}
+
 /// The logins an account's endpoints are for.
 fn logins(endpoints: &[porter_core::ServiceEndpoint]) -> HashSet<&LoginName> {
     endpoints.iter().map(|e| &e.login).collect()
@@ -94,7 +103,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                 id,
                 provider: spec.id.clone(),
                 label: signed.label.clone(),
-                state: AccountState::Ok,
+                state: first_state(spec.auth.kind),
                 auth: spec.auth.kind,
                 capabilities: effective(&signed.claims, &off),
                 restriction: signed.restriction.clone(),
@@ -210,7 +219,13 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                 .iter_mut()
                 .find(|a| a.id == *account)
                 .ok_or(())?;
-            std::mem::replace(&mut row.state, AccountState::Ok)
+            // Signing in again makes a refused credential good. An agent account has none: the
+            // agent says when it is signed in, so the state stays what the agent last said.
+            let next = match row.auth {
+                AuthKind::AgentLogin => row.state,
+                _ => AccountState::Ok,
+            };
+            std::mem::replace(&mut row.state, next)
         };
         if self.persist().await.is_err() {
             if let Some(row) = self.lock().accounts.iter_mut().find(|a| a.id == *account) {

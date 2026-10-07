@@ -1,0 +1,19 @@
+# Codex (OpenAI's coding agent), run by the launcher as an ACP agent. It signs itself in to the
+# person's ChatGPT plan or an API key of its own; the agent owns that login (design/31 R9), so this
+# account holds NO credential of any kind (state `ok` or `needs_login`, reported by the launcher).
+# OpenAI API-key accounts (openai.toml) name this program too. The environment variable names are
+# unverified against the product's own docs (FINDINGS, P1).
+id = "codex"
+label = "Codex"
+mark = "openai"
+
+[auth]
+kind = "agent_login"
+
+[discovery]
+kind = "fixed"
+
+[[capability]]
+family = "acp_agent"
+kind = "agent"
+v = { program = "codex", key_env = "OPENAI_API_KEY", base_url_env = "OPENAI_BASE_URL", protocols = ["openai_compatible"] }

@@ -100,9 +100,20 @@ impl Rig {
 
     /// As `start_with`, over these providers (the accounts are the fake three).
     pub async fn start_over(
+        options: Options,
+        host: SheetHost,
+        providers: Vec<FakeProvider>,
+    ) -> Self {
+        let accounts = vec![storage_account(), mail_account(), llm_account()];
+        Self::start_holding(options, host, providers, accounts).await
+    }
+
+    /// As `start_over`, with `accounts` in the registry in place of the fake three.
+    pub async fn start_holding(
         mut options: Options,
         host: SheetHost,
         providers: Vec<FakeProvider>,
+        accounts: Vec<porter_core::Account>,
     ) -> Self {
         let bus = PrivateBus::start();
         let callers = Arc::new(TableCallers::new());
@@ -146,7 +157,7 @@ impl Rig {
                 .await;
         }
         let registry = Registry {
-            accounts: vec![storage_account(), mail_account(), llm_account()],
+            accounts,
             grants: vec![],
             toggles: vec![],
         };

@@ -1,5 +1,6 @@
 //! The capability vocabulary (design/31 §2): a closed set, versioned as a whole.
 
+mod agent;
 mod ai;
 mod cua;
 mod kind;
@@ -10,6 +11,7 @@ mod storage;
 mod sync_kinds;
 mod terms;
 
+pub use agent::{AgentCap, AgentProgram, AgentProtocol, EnvName};
 pub use ai::{
     EmbedCap, EmbedPrompts, ImageGenCap, ImageMode, LanguageSet, LanguageTag, LlmCap, LlmFeature,
     LlmWire, Modality, PrefixText, RerankCap, SpeechCap, SpeechMode,
@@ -61,6 +63,8 @@ pub enum Capability {
     KeyValue(KeyValueCap),
     /// A push channel.
     Push(PushCap),
+    /// An external coding agent program that an account runs (family `acp_agent`).
+    Agent(AgentCap),
 }
 
 impl Capability {
@@ -83,6 +87,7 @@ impl Capability {
             Capability::ComputerUse(_) => CapabilityKind::ComputerUse,
             Capability::KeyValue(_) => CapabilityKind::KeyValue,
             Capability::Push(_) => CapabilityKind::Push,
+            Capability::Agent(_) => CapabilityKind::Agent,
         }
     }
 }

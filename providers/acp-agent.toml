@@ -1,0 +1,19 @@
+# Any other coding agent that speaks ACP (agentclientprotocol.com), run by the launcher. It signs
+# itself in however it does; this account holds NO credential of any kind (state `ok` or
+# `needs_login`, reported by the launcher). Nothing is known of how such a program takes a key or a
+# base URL, so no variable is declared and only the OpenAI-compatible protocol is assumed: a
+# person's own provider file can name a particular program with its real variables.
+id = "acp-agent"
+label = "Other ACP agent"
+mark = "agent"
+
+[auth]
+kind = "agent_login"
+
+[discovery]
+kind = "fixed"
+
+[[capability]]
+family = "acp_agent"
+kind = "agent"
+v = { program = "acp-agent", protocols = ["openai_compatible"] }

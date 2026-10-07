@@ -23,6 +23,13 @@ kind = "llm"
 v = { features = ["chat", "tools"], context = 8192, max_output = 1024, wire = "chat_completions" }
 "#;
 
+const AGENT_ROW: &str = r#"
+[[capability]]
+family = "acp_agent"
+kind = "agent"
+v = { program = "claude-code", key_env = "ANTHROPIC_API_KEY", base_url_env = "ANTHROPIC_BASE_URL", protocols = ["anthropic_messages"] }
+"#;
+
 const AI: &str = r#"
 [ai]
 locality = { kind = "cloud", v = { region = "eu-west-1" } }
@@ -138,6 +145,56 @@ issuer = "microsoft""#;
             Err(ProviderFileError::AiSpecMismatch(id())),
         ),
         (
+            "an agent that signs itself in",
+            file(r#"kind = "agent_login""#, r#"kind = "fixed""#, &[AGENT_ROW]),
+            Ok(()),
+        ),
+        (
+            "a key provider that names an agent beside its model row",
+            file(
+                r#"kind = "api_key""#,
+                r#"kind = "model_list""#,
+                &[AI, LLM_ROW, AGENT_ROW],
+            ),
+            Ok(()),
+        ),
+        (
+            "an agent login provider with a storage row too",
+            file(
+                r#"kind = "agent_login""#,
+                r#"kind = "fixed""#,
+                &[AGENT_ROW, STORAGE_ROW],
+            ),
+            Err(ProviderFileError::AgentRows(id())),
+        ),
+        (
+            "an agent row served by another family",
+            file(
+                r#"kind = "agent_login""#,
+                r#"kind = "fixed""#,
+                &[&AGENT_ROW.replace("acp_agent", "messages")],
+            ),
+            Err(ProviderFileError::AgentRows(id())),
+        ),
+        (
+            "a family acp_agent row that is not an agent",
+            file(
+                r#"kind = "password""#,
+                r#"kind = "fixed""#,
+                &[&STORAGE_ROW.replace("webdav", "acp_agent")],
+            ),
+            Err(ProviderFileError::AgentRows(id())),
+        ),
+        (
+            "the same program named twice",
+            file(
+                r#"kind = "api_key""#,
+                r#"kind = "model_list""#,
+                &[AI, LLM_ROW, AGENT_ROW, AGENT_ROW],
+            ),
+            Err(ProviderFileError::AgentRows(id())),
+        ),
+        (
             "[ai] on a storage provider",
             file(
                 r#"kind = "password""#,
@@ -150,6 +207,32 @@ issuer = "microsoft""#;
     for (name, text, expected) in cases {
         assert_eq!(parse_provider(&text).map(|_| ()), expected, "{name}");
     }
+}
+
+#[test]
+fn an_agent_row_parses_to_its_typed_fields() {
+    use porter_core::capability::{AgentProgram, AgentProtocol};
+    let text = file(r#"kind = "agent_login""#, r#"kind = "fixed""#, &[AGENT_ROW]);
+    let spec = parse_provider(&text).expect("parses");
+    assert_eq!(spec.auth.kind, AuthKind::AgentLogin);
+    assert!(spec.ai.is_none());
+    let Capability::Agent(agent) = &spec.capabilities[0].capability else {
+        panic!("not an agent: {:?}", spec.capabilities[0].capability);
+    };
+    assert_eq!(spec.capabilities[0].family, Family::AcpAgent);
+    assert_eq!(
+        agent.program,
+        AgentProgram::parse("claude-code").expect("program")
+    );
+    assert_eq!(
+        agent.key_env.as_ref().map(|n| n.as_str()),
+        Some("ANTHROPIC_API_KEY")
+    );
+    assert_eq!(
+        agent.base_url_env.as_ref().map(|n| n.as_str()),
+        Some("ANTHROPIC_BASE_URL")
+    );
+    assert_eq!(agent.protocols, [AgentProtocol::AnthropicMessages].into());
 }
 
 #[test]
@@ -173,6 +256,22 @@ fn unknown_words_are_syntax_errors() {
                 r#"kind = "password""#,
                 r#"kind = "fixed""#,
                 &[&STORAGE_ROW.replace(r#", hashes = "none""#, "")],
+            ),
+        ),
+        (
+            "an environment variable name in lower case",
+            file(
+                r#"kind = "agent_login""#,
+                r#"kind = "fixed""#,
+                &[&AGENT_ROW.replace("ANTHROPIC_API_KEY", "anthropic_api_key")],
+            ),
+        ),
+        (
+            "an unknown protocol",
+            file(
+                r#"kind = "agent_login""#,
+                r#"kind = "fixed""#,
+                &[&AGENT_ROW.replace("anthropic_messages", "smoke_signals")],
             ),
         ),
         (

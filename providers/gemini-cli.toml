@@ -1,0 +1,19 @@
+# Gemini CLI (Google's coding agent), run by the launcher as an ACP agent. It signs itself in to
+# the person's Google login or an AI Studio key of its own; the agent owns that login (design/31
+# R8, C6), so this account holds NO credential of any kind (state `ok` or `needs_login`, reported
+# by the launcher). Google AI Studio keys (google-ai.toml) name this program too. The program is
+# not known to take a base-URL variable, so none is declared (unverified: FINDINGS, P1).
+id = "gemini-cli"
+label = "Gemini CLI"
+mark = "gemini"
+
+[auth]
+kind = "agent_login"
+
+[discovery]
+kind = "fixed"
+
+[[capability]]
+family = "acp_agent"
+kind = "agent"
+v = { program = "gemini-cli", key_env = "GEMINI_API_KEY", protocols = ["generate_content"] }

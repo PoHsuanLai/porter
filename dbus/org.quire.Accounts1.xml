@@ -110,5 +110,9 @@
      <arg name="state" type="s" direction="in"/>
      <arg type="s" direction="out"/>
    </method>
+   <method name="SetAgentState">
+     <arg name="account" type="s" direction="in"/>
+     <arg name="state" type="s" direction="in"/>
+   </method>
  </interface>
 </node>

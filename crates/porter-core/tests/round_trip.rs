@@ -2,20 +2,20 @@
 //! programs read keep their slugs.
 
 use porter_core::capability::{
-    Access, Albums, Capability, CapabilityKind, CuaBatching, CuaCap, CuaEnv, Delta, EmbedCap,
-    EmbedPrompts, HashKind, IdentityCap, ImageGenCap, ImageMode, KeyValueCap, LabelModel,
-    LanguageSet, LanguageTag, LibraryRead, LlmCap, LlmFeature, LlmWire, MailCap, MailTransport,
-    Modality, NotesCap, NotesTransport, Offered, PhotosCap, PimCap, PimTransport, PrefixText,
-    PushCap, PushChannel, QuotaReport, RerankCap, SpeechCap, SpeechMode, StorageCap, StorageScope,
-    VocabVersion,
+    Access, AgentCap, AgentProgram, AgentProtocol, Albums, Capability, CapabilityKind, CuaBatching,
+    CuaCap, CuaEnv, Delta, EmbedCap, EmbedPrompts, EnvName, HashKind, IdentityCap, ImageGenCap,
+    ImageMode, KeyValueCap, LabelModel, LanguageSet, LanguageTag, LibraryRead, LlmCap, LlmFeature,
+    LlmWire, MailCap, MailTransport, Modality, NotesCap, NotesTransport, Offered, PhotosCap,
+    PimCap, PimTransport, PrefixText, PushCap, PushChannel, QuotaReport, RerankCap, SpeechCap,
+    SpeechMode, StorageCap, StorageScope, VocabVersion,
 };
 use porter_core::consent::{
     AccountChoice, Availability, ConsentAnswer, ConsentAsk, Decision, Grant, GrantKey, GrantScope,
     Usage, Verdict,
 };
 use porter_core::need::{
-    CuaNeed, DimsNeed, EmbedNeed, IdentityNeed, ImageGenNeed, KeyValueNeed, LlmNeed, MailNeed,
-    NotesNeed, PhotosNeed, PimNeed, PushNeed, RerankNeed, SpeechNeed, StorageNeed,
+    AgentNeed, CuaNeed, DimsNeed, EmbedNeed, IdentityNeed, ImageGenNeed, KeyValueNeed, LlmNeed,
+    MailNeed, NotesNeed, PhotosNeed, PimNeed, PushNeed, RerankNeed, SpeechNeed, StorageNeed,
 };
 use porter_core::sheet::{
     Entry, FieldAnswer, FieldKind, FieldProblem, FieldSpec, FieldValue, Presence, ProblemKind,
@@ -139,7 +139,23 @@ fn every_capability() -> Vec<Capability> {
         Capability::Push(PushCap {
             channel: PushChannel::WebSocket,
         }),
+        Capability::Agent(claude_code()),
+        Capability::Agent(AgentCap {
+            program: AgentProgram::parse("acp-agent").expect("program"),
+            key_env: None,
+            base_url_env: None,
+            protocols: [AgentProtocol::OpenAiCompatible].into(),
+        }),
     ]
+}
+
+fn claude_code() -> AgentCap {
+    AgentCap {
+        program: AgentProgram::parse("claude-code").expect("program"),
+        key_env: Some(EnvName::parse("ANTHROPIC_API_KEY").expect("env")),
+        base_url_env: Some(EnvName::parse("ANTHROPIC_BASE_URL").expect("env")),
+        protocols: [AgentProtocol::AnthropicMessages].into(),
+    }
 }
 
 fn every_need() -> Vec<Need> {
@@ -203,6 +219,11 @@ fn every_need() -> Vec<Need> {
             max_item: Bytes(1024),
         }),
         Need::Push(PushNeed {}),
+        Need::Agent(AgentNeed {
+            program: AgentProgram::parse("claude-code").expect("program"),
+            protocols: [AgentProtocol::AnthropicMessages].into(),
+            base_url: Offered::Present,
+        }),
     ]
 }
 
@@ -300,7 +321,13 @@ fn capabilities_needs_and_offers_round_trip() {
         },
         provenance: Provenance::Curated,
     });
+    round_trip(&Claim {
+        subject: Subject::Agent(AgentProgram::parse("claude-code").expect("program")),
+        offer: Offer::Present(Capability::Agent(claude_code())),
+        provenance: Provenance::Declared,
+    });
     round_trip(&Match::Short(Shortfall::Scope));
+    round_trip(&Match::Short(Shortfall::Program));
     round_trip(&KindToggle {
         kind: CapabilityKind::Mail,
         toggle: Toggle::Off,
@@ -318,6 +345,16 @@ fn accounts_and_ai_properties_round_trip() {
         capabilities: vec![],
         restriction: restriction(),
         endpoints: endpoints(),
+    });
+    round_trip(&Account {
+        id: account_id("claude-code"),
+        provider: ProviderId::parse("claude-code").expect("provider"),
+        label: AccountLabel("Claude Code".into()),
+        state: AccountState::NeedsLogin,
+        auth: AuthKind::AgentLogin,
+        capabilities: vec![],
+        restriction: Restriction::none(),
+        endpoints: vec![],
     });
     round_trip(&Locality::Cloud {
         region: Some(Region("eu-west-1".into())),
@@ -525,8 +562,59 @@ fn json<T: Serialize>(value: &T) -> String {
 }
 
 #[test]
-fn the_vocabulary_is_version_four() {
-    assert_eq!(VocabVersion::CURRENT, VocabVersion(4));
+fn the_vocabulary_is_version_five() {
+    assert_eq!(VocabVersion::CURRENT, VocabVersion(5));
+}
+
+#[test]
+fn agent_values_keep_their_slugs_and_hold_no_secret() {
+    let cases = [
+        ("auth kind", json(&AuthKind::AgentLogin), r#""agent_login""#),
+        ("state", json(&AccountState::NeedsLogin), r#""needs_login""#),
+        ("agent state", json(&AgentState::Ready), r#""ready""#),
+        (
+            "agent state",
+            json(&AgentState::NeedsLogin),
+            r#""needs_login""#,
+        ),
+        ("kind", json(&CapabilityKind::Agent), r#""agent""#),
+        ("family", json(&Family::AcpAgent), r#""acp_agent""#),
+        (
+            "protocol",
+            json(&AgentProtocol::OpenAiCompatible),
+            r#""openai_compatible""#,
+        ),
+        (
+            "capability",
+            json(&Capability::Agent(claude_code())),
+            r#"{"kind":"agent","v":{"program":"claude-code","key_env":"ANTHROPIC_API_KEY","base_url_env":"ANTHROPIC_BASE_URL","protocols":["anthropic_messages"]}}"#,
+        ),
+        (
+            "subject",
+            json(&Subject::Agent(
+                AgentProgram::parse("codex").expect("program"),
+            )),
+            r#"{"kind":"agent","v":"codex"}"#,
+        ),
+    ];
+    for (name, got, want) in cases {
+        assert_eq!(got, want, "{name}");
+    }
+    assert!(!CapabilityKind::Agent.is_ai());
+    for bad in ["", "Claude", "1x", "a b", "claude_code", &"a".repeat(49)] {
+        assert!(AgentProgram::parse(bad).is_err(), "{bad:?}");
+    }
+    for bad in ["", "anthropic_api_key", "1KEY", "A-B", "A B"] {
+        assert!(EnvName::parse(bad).is_err(), "{bad:?}");
+    }
+    assert!(serde_json::from_str::<AgentProgram>("\"Not Ok\"").is_err());
+    assert!(AccountState::NeedsLogin.needs_person() && AccountState::NeedsReauth.needs_person());
+    assert!(!AccountState::Ok.needs_person() && !AccountState::Offline.needs_person());
+    assert_eq!(AgentState::Ready.account_state(), AccountState::Ok);
+    assert_eq!(
+        AgentState::NeedsLogin.account_state(),
+        AccountState::NeedsLogin
+    );
 }
 
 #[test]

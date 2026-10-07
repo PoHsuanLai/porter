@@ -108,8 +108,15 @@ fn key_of(signed: &Signed) -> String {
 }
 
 fn assert_one_llm_claim(signed: &Signed) {
-    assert_eq!(signed.claims.len(), 1);
-    let claim = &signed.claims[0];
+    // The one claim about the account itself; the agent programs a file names are claims about
+    // those programs (`Subject::Agent`).
+    let own: Vec<_> = signed
+        .claims
+        .iter()
+        .filter(|claim| claim.subject == porter_core::Subject::Account)
+        .collect();
+    assert_eq!(own.len(), 1);
+    let claim = own[0];
     assert_eq!(claim.provenance, Provenance::Probed);
     assert!(matches!(&claim.offer, Offer::Present(Capability::Llm(_))));
     assert_eq!(claim.offer.kind(), CapabilityKind::Llm);
@@ -322,4 +329,49 @@ async fn a_file_with_no_known_keys_page_has_nothing_to_revoke_with() {
             .await,
         Ok(RevokeOutcome::Unsupported)
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_key_account_holds_a_claim_for_each_agent_program_its_file_names() {
+    use porter_core::{Provenance, Subject};
+    // (company, the programs its file names)
+    const NAMED: &[(&str, &[&str])] = &[
+        ("anthropic", &["claude-code"]),
+        ("google-ai", &["gemini-cli"]),
+        ("openai", &["codex"]),
+        ("moonshot", &[]),
+        ("openrouter", &[]),
+    ];
+    for (id, auth, _) in COMPANIES {
+        let (fake, provider) = company(id, *auth).await;
+        fake.seed_key(PASTED);
+        let claims = provider
+            .discover(&account(id), &live(PASTED))
+            .await
+            .expect("a live key");
+        let programs: Vec<&str> = claims
+            .iter()
+            .filter_map(|claim| match &claim.subject {
+                Subject::Agent(program) => Some(program.as_str()),
+                _ => None,
+            })
+            .collect();
+        let want = NAMED
+            .iter()
+            .find(|(c, _)| c == id)
+            .map(|(_, p)| *p)
+            .expect("row");
+        assert_eq!(programs, want, "{id}");
+        for claim in claims
+            .iter()
+            .filter(|c| matches!(c.subject, Subject::Agent(_)))
+        {
+            // Declared by the file, and the capability is about the program its subject names.
+            assert_eq!(claim.provenance, Provenance::Declared);
+            let Offer::Present(Capability::Agent(agent)) = &claim.offer else {
+                panic!("{id}: not an agent offer: {claim:?}");
+            };
+            assert_eq!(claim.subject, Subject::Agent(agent.program.clone()));
+        }
+    }
 }

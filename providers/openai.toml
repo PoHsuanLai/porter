@@ -23,3 +23,9 @@ family = "chat_completions"
 endpoint = "https://api.openai.com/v1"
 kind = "llm"
 v = { features = ["chat"], context = 8192, max_output = 4096, wire = "chat_completions" }
+
+# The agent programs that may run on this key (see anthropic.toml).
+[[capability]]
+family = "acp_agent"
+kind = "agent"
+v = { program = "codex", key_env = "OPENAI_API_KEY", base_url_env = "OPENAI_BASE_URL", protocols = ["openai_compatible"] }

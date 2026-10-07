@@ -60,7 +60,7 @@ fn models(service: &Svc) -> Vec<String> {
         .flat_map(|a| &a.capabilities)
         .filter_map(|c| match &c.subject {
             Subject::Model(id) => Some(id.to_string()),
-            Subject::Account => None,
+            Subject::Account | Subject::Agent(_) => None,
         })
         .collect()
 }

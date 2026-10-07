@@ -36,6 +36,8 @@ pub(crate) enum Key {
     Grant(AccountId, GrantId),
     /// `accounts.<id>.reauth`.
     Reauth(AccountId),
+    /// `accounts.<id>.sign_out`: for an agent that signs itself in, forgets that it was signed in.
+    SignOut(AccountId),
     /// `accounts.<id>.remove`.
     Remove(AccountId),
     /// `accounts.clients.<issuer>`.
@@ -72,6 +74,7 @@ pub(crate) fn parse(path: &str, registry: &Registry) -> Option<Key> {
             "label" => Some(Key::Label(id)),
             "place" => Some(Key::Place(id)),
             "reauth" => Some(Key::Reauth(id)),
+            "sign_out" => Some(Key::SignOut(id)),
             "remove" => Some(Key::Remove(id)),
             _ => {
                 if let Some(kind) = tail.strip_prefix("service.") {
@@ -100,6 +103,7 @@ pub(crate) fn path(key: &Key) -> String {
         Key::Place(id) => format!("accounts.{id}.place"),
         Key::Grant(id, grant) => format!("accounts.{id}.grant.{grant}"),
         Key::Reauth(id) => format!("accounts.{id}.reauth"),
+        Key::SignOut(id) => format!("accounts.{id}.sign_out"),
         Key::Remove(id) => format!("accounts.{id}.remove"),
         Key::Client(issuer) => format!("accounts.clients.{}", slug(issuer)),
     }
@@ -265,14 +269,26 @@ fn account_keys(account: &Account, grants: &[Grant], names: &AppNames) -> Vec<Ke
             off(),
         ));
     }
-    keys.push(spec(
-        &Key::Reauth(id.clone()),
-        section,
-        "Sign in again".to_owned(),
-        "",
-        action("Sign in again", ActionWeight::Plain),
-        off(),
-    ));
+    keys.push(match account.auth {
+        // An agent signs itself in, inside the agent: porter holds only whether it said so, and
+        // signing out forgets that. The agent's own login files are the agent's.
+        AuthKind::AgentLogin => spec(
+            &Key::SignOut(id.clone()),
+            section,
+            "Sign out".to_owned(),
+            "Forgets that this agent was signed in. The agent's own login is not touched.",
+            action("Sign out", ActionWeight::Plain),
+            off(),
+        ),
+        _ => spec(
+            &Key::Reauth(id.clone()),
+            section,
+            "Sign in again".to_owned(),
+            "",
+            action("Sign in again", ActionWeight::Plain),
+            off(),
+        ),
+    });
     keys.push(spec(
         &Key::Remove(id.clone()),
         section,

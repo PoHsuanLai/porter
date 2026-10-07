@@ -1,0 +1,21 @@
+# Claude Code (Anthropic's coding agent), run by the launcher as an ACP agent. It signs itself in
+# to the person's Claude plan, or to a Console key of its own: the agent owns that login (design/31
+# R7, C5), so this account holds NO credential of any kind. Its only state is `ok` or
+# `needs_login`, set by the launcher when the agent says so (`Peer.SetAgentState`); porter never
+# reads the agent's own login files. An Anthropic API-key account (anthropic.toml) names this
+# program too, so a key the person gave porter can run it. The names below are the environment
+# variables the program reads (unverified against the product's own docs: FINDINGS, P1).
+id = "claude-code"
+label = "Claude Code"
+mark = "anthropic"
+
+[auth]
+kind = "agent_login"
+
+[discovery]
+kind = "fixed"
+
+[[capability]]
+family = "acp_agent"
+kind = "agent"
+v = { program = "claude-code", key_env = "ANTHROPIC_API_KEY", base_url_env = "ANTHROPIC_BASE_URL", protocols = ["anthropic_messages"] }

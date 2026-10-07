@@ -172,3 +172,34 @@ fn nothing_that_ships_names_the_file_key_store() {
         }
     }
 }
+
+#[test]
+fn no_shipped_row_grants_the_agent_launcher_role_and_the_documented_row_reads() {
+    use porter_core::AppName;
+    use porter_dbus::CallerRole;
+    let shipped = dist("callers.toml");
+    let table = accountd::table_from_toml(&shipped).expect("the sample reads");
+    assert!(
+        table
+            .callers
+            .iter()
+            .all(|row| row.role != CallerRole::AgentLauncher),
+        "the launcher is listed by the machine that runs it, never by default"
+    );
+    // The row the sample's comment shows is the one a machine writes, uncommented.
+    let documented: String = shipped
+        .lines()
+        .skip_while(|line| !line.starts_with("#   [[caller]]"))
+        .take_while(|line| line.starts_with("#   "))
+        .map(|line| line.trim_start_matches("#   "))
+        .map(|line| line.split('#').next().unwrap_or_default().trim_end())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mine = accountd::table_from_toml(&documented).expect("the documented row reads");
+    let launcher = mine.resolve_unit("docket-acp.service").expect("the unit");
+    assert_eq!(launcher.role, CallerRole::AgentLauncher);
+    assert_eq!(
+        mine.role_of(&AppName::parse("org.quire.DocketAcp").expect("name")),
+        CallerRole::AgentLauncher
+    );
+}

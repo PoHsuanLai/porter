@@ -2,19 +2,24 @@
 //! Only a connection whose caller role is `PorterDaemon` may call; every other sender is
 //! `AccessDenied`. The app is named by the daemon from its own connection, never by the app.
 //!
+//! `SetAgentState` is the one method the agent launcher (role `AgentLauncher`) may call, and the
+//! only one it may call.
+//!
 //! `Verdicts`, `ResolveKey` (a sealed memfd of an API key) and `ReportLocal` (a probed local
 //! runtime becoming an account, or going offline) are served.
 
 use crate::callers::Callers;
-use crate::core::{Core, Host, slug};
+use crate::core::{Core, Host, Standing, slug};
 use crate::errors::RefusedError;
 use crate::keys::sealed_key;
 use porter_core::consent::{Decision, GrantKey, Verdict, decide};
 use porter_core::wire::Refusal;
-use porter_core::{AccountState, CapabilityKind, Claim, GrantId, ProviderId, Toggle};
+use porter_core::{
+    AccountId, AccountState, AgentState, CapabilityKind, Claim, GrantId, ProviderId, Toggle,
+};
 use porter_core::{AppId, AppName, Isolation, Match, Offer, SpaceScope, matches};
 use porter_dbus::{AppArg, CallerRole, Details, NeedArg, VerdictArg, need_from_dbus};
-use porter_service::LocalFault;
+use porter_service::{AgentFault, LocalFault};
 use std::sync::Arc;
 use zbus::message::Header;
 use zbus::zvariant::{OwnedFd, OwnedValue, Value};
@@ -177,6 +182,46 @@ impl<H: Host, C: Callers> Peer<H, C> {
             .map_err(fault)?;
         self.0.publish().await;
         Ok(id.to_string())
+    }
+
+    /// What an agent program says of its own sign-in, for the account of an agent that signs
+    /// itself in. Only the launcher (`AgentLauncher`) may say it, and it may say nothing else;
+    /// `PorterDaemon` may not. Porter keeps this word and nothing of the agent's login: no
+    /// token, no key, no file of the agent's is read.
+    async fn set_agent_state(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        account: String,
+        state: String,
+    ) -> Result<(), RefusedError> {
+        let caller = self.0.identify(&header, Standing::Launching).await?;
+        if caller.role != CallerRole::AgentLauncher {
+            return Err(RefusedError::access_denied(
+                "only the agent launcher may report an agent's state",
+            ));
+        }
+        let account = AccountId::parse(&account).map_err(RefusedError::invalid)?;
+        let state: AgentState = slug(&state)?;
+        let changed = self
+            .0
+            .host
+            .set_agent_state(&account, state)
+            .await
+            .map_err(agent_fault)?;
+        if changed {
+            self.0.publish().await;
+        }
+        Ok(())
+    }
+}
+
+fn agent_fault(fault: AgentFault) -> RefusedError {
+    match fault {
+        AgentFault::UnknownAccount => RefusedError::invalid("no such account"),
+        AgentFault::NotAnAgent => {
+            RefusedError::invalid("not an account of an agent that signs itself in")
+        }
+        AgentFault::Unavailable => RefusedError::of(Refusal::Unavailable),
     }
 }
 

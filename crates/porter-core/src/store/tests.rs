@@ -173,3 +173,35 @@ fn a_document_stored_at_vocabulary_three_is_read_unchanged() {
     assert!(at_three.contains("\"vocab\": 3"));
     assert_eq!(Persisted::from_json(&at_three), Ok(filled()));
 }
+
+#[test]
+fn a_document_stored_at_vocabulary_four_is_read_unchanged() {
+    // The fixture is what the build before the `agent` kind wrote.
+    let at_four = filled().to_json().expect("json").replacen(
+        &format!("\"vocab\": {}", VocabVersion::CURRENT.0),
+        "\"vocab\": 4",
+        1,
+    );
+    assert!(at_four.contains("\"vocab\": 4"));
+    assert_eq!(Persisted::from_json(&at_four), Ok(filled()));
+}
+
+#[test]
+fn an_agent_login_account_survives_its_document_and_keeps_its_slugs() {
+    let mut registry = filled();
+    registry.accounts.push(Account {
+        id: AccountId::parse("claude-code").expect("id"),
+        provider: ProviderId::parse("claude-code").expect("id"),
+        label: AccountLabel("Claude Code".into()),
+        state: AccountState::NeedsLogin,
+        auth: AuthKind::AgentLogin,
+        capabilities: Vec::new(),
+        restriction: Restriction::none(),
+        endpoints: Vec::new(),
+    });
+    let json = registry.to_json().expect("json");
+    let document: Value = serde_json::from_str(&json).expect("value");
+    assert_eq!(document["accounts"][1]["state"], "needs_login");
+    assert_eq!(document["accounts"][1]["auth"], "agent_login");
+    assert_eq!(Persisted::from_json(&json), Ok(registry));
+}

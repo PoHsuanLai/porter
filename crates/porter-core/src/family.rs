@@ -63,6 +63,9 @@ pub enum Family {
     OllamaNative,
     /// A ComfyUI workflow registry.
     ComfyWorkflow,
+    /// An external coding agent that speaks ACP and signs in by itself, or runs on an API key
+    /// an account holds.
+    AcpAgent,
 }
 
 impl Family {
@@ -103,7 +106,8 @@ impl Family {
             | Family::Messages
             | Family::GenerateContent
             | Family::OllamaNative
-            | Family::ComfyWorkflow => None,
+            | Family::ComfyWorkflow
+            | Family::AcpAgent => None,
         }
     }
 }

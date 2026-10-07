@@ -7,10 +7,23 @@ use crate::{ProviderSet, ProviderSpec, parse_provider};
 /// Every shipped provider file, by its id (the file stem), in id order.
 pub const SHIPPED_FILES: &[(&str, &str)] = &[
     (
+        "acp-agent",
+        include_str!("../../../providers/acp-agent.toml"),
+    ),
+    (
         "anthropic",
         include_str!("../../../providers/anthropic.toml"),
     ),
+    (
+        "claude-code",
+        include_str!("../../../providers/claude-code.toml"),
+    ),
+    ("codex", include_str!("../../../providers/codex.toml")),
     ("fastmail", include_str!("../../../providers/fastmail.toml")),
+    (
+        "gemini-cli",
+        include_str!("../../../providers/gemini-cli.toml"),
+    ),
     (
         "generic-dav",
         include_str!("../../../providers/generic-dav.toml"),

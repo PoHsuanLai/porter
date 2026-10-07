@@ -2,9 +2,11 @@
 //! minimum. Protocol fields (transport, wire, hashes) are the engine's business and are not
 //! asked for.
 
+mod agent;
 mod ai;
 mod data;
 
+pub use agent::AgentNeed;
 pub use ai::{CuaNeed, DimsNeed, EmbedNeed, ImageGenNeed, LlmNeed, RerankNeed, SpeechNeed};
 pub use data::{
     IdentityNeed, KeyValueNeed, MailNeed, NotesNeed, PhotosNeed, PimNeed, PushNeed, StorageNeed,
@@ -49,6 +51,8 @@ pub enum Need {
     KeyValue(KeyValueNeed),
     /// A push channel.
     Push(PushNeed),
+    /// An account that runs an agent program.
+    Agent(AgentNeed),
 }
 
 impl Need {
@@ -71,6 +75,7 @@ impl Need {
             Need::ComputerUse(_) => CapabilityKind::ComputerUse,
             Need::KeyValue(_) => CapabilityKind::KeyValue,
             Need::Push(_) => CapabilityKind::Push,
+            Need::Agent(_) => CapabilityKind::Agent,
         }
     }
 }
