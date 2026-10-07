@@ -98,6 +98,15 @@ const TIMEOUTS: Timeouts = Timeouts {
 const TOUCH_EVERY: Duration = Duration::from_millis(250);
 
 fn client(model: &LocalModel) -> HttpClient {
+    if let Some(target) = &model.attached {
+        // An engine the person attached: its token is read now (so a rotated one is the one
+        // sent). A key file that is refused sends no token at all: the engine answers 401.
+        return HttpClient::new(
+            target
+                .endpoint("/v1", TIMEOUTS)
+                .unwrap_or_else(|_| target.unsigned("/v1", TIMEOUTS)),
+        );
+    }
     HttpClient::new(match model.loopback {
         // A runtime the person runs: plain HTTP to loopback, nothing else.
         Some(port) => loopback_endpoint(port, "/v1", TIMEOUTS),

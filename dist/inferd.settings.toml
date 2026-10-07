@@ -39,6 +39,27 @@ off = "Off"
 kind = "intelligence"
 
 [[key]]
+path = "ai.attached.my_network"
+default = "off"
+label = "Count my other machines as this computer"
+help = "An AI model you set up on another of your own machines (reached through a tunnel, such as a lab server) keeps your data on your own network, but it is not this computer. While off, data set to stay on this computer is not sent to it. While on, it may receive that data too."
+section = "Models"
+exposure = "basic"
+
+[key.kind]
+kind = "toggle"
+
+[key.kind.v]
+variants = ["off", "on"]
+
+[key.labels]
+off = "Off"
+on = "On"
+
+[key.page]
+kind = "intelligence"
+
+[[key]]
 path = "ai.floor.app_own"
 default = "anywhere"
 label = "The app's own data"

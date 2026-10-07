@@ -166,6 +166,7 @@ pub fn local_model(
         flavor: Some(Flavor::LlamaServer),
         cassette: None,
         loopback: Some(Port(port.0)),
+        attached: None,
         entry,
         profile,
     })

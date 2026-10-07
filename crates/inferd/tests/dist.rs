@@ -104,8 +104,8 @@ fn effect(text: &str) -> (String, Vec<String>) {
     rejected.extend(config.ai.resolve().rejected.iter().map(|p| (*p).to_owned()));
     (
         format!(
-            "{:?} {floors:?} {:?} {:?} {:?} {:?} {limits:?}",
-            s.policy.local_only, s.tiers, s.auto, s.spend, s.describe_images
+            "{:?} {floors:?} {:?} {:?} {:?} {:?} {:?} {limits:?}",
+            s.policy.local_only, s.tiers, s.auto, s.spend, s.describe_images, s.my_network
         ),
         rejected,
     )
@@ -130,7 +130,9 @@ fn file_with(path: &str, value: toml::Value) -> String {
 fn the_schema_holds_the_rows_the_design_names_and_each_is_a_page_row_of_intelligence() {
     let keys = schema_keys();
     let paths: Vec<&str> = keys.iter().map(|k| k.path.0.as_str()).collect();
-    let mut want: Vec<String> = ["ai.local_only"].map(String::from).to_vec();
+    let mut want: Vec<String> = ["ai.local_only", "ai.attached.my_network"]
+        .map(String::from)
+        .to_vec();
     want.extend(CLASSES.iter().map(|c| format!("ai.floor.{}", slug_of(c))));
     want.extend(
         [

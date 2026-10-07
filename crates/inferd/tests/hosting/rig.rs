@@ -9,6 +9,7 @@ use engine_supervisor::{
     EngineHost, EngineId, ExitCode, FakeGpu, GpuMemory, HostError, Probe, ReadyProbe,
     SupervisorConfig, UnitSpec,
 };
+use inferd::attached::{Attached, AttachedBook};
 use inferd::audit::Memory;
 use inferd::catalog::{CatalogDirs, read_catalog};
 use inferd::clock::FixedClock;
@@ -38,25 +39,38 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
-/// An engine host that starts nothing: it records what it was asked for and its engines never
-/// exit.
+/// An engine host that starts nothing: it records what it was asked for. An engine never exits by
+/// itself; one that is stopped exits (an eviction or an idle unload completes).
 #[derive(Debug, Clone, Default)]
 pub struct Recorder {
     pub spawned: Arc<Mutex<Vec<EngineId>>>,
+    pub stopped: Arc<Mutex<Vec<EngineId>>>,
+    gone: Arc<tokio::sync::Notify>,
 }
 
 impl EngineHost for Recorder {
     async fn spawn(&self, id: &EngineId, _: &UnitSpec) -> Result<(), HostError> {
+        self.stopped.lock().expect("lock").retain(|one| one != id);
         self.spawned.lock().expect("lock").push(id.clone());
         Ok(())
     }
 
-    async fn stop(&self, _: &EngineId) -> Result<(), HostError> {
+    async fn stop(&self, id: &EngineId) -> Result<(), HostError> {
+        self.stopped.lock().expect("lock").push(id.clone());
+        self.gone.notify_waiters();
         Ok(())
     }
 
-    async fn exited(&self, _: &EngineId) -> ExitCode {
-        std::future::pending().await
+    async fn exited(&self, id: &EngineId) -> ExitCode {
+        loop {
+            let woken = self.gone.notified();
+            tokio::pin!(woken);
+            woken.as_mut().enable();
+            if self.stopped.lock().expect("lock").contains(id) {
+                return ExitCode(0);
+            }
+            woken.await;
+        }
     }
 }
 
@@ -182,6 +196,9 @@ pub struct Plan {
     /// Engines that are real child processes: llama-server's program is this one, run on the
     /// model's socket by the real process host (no recorder, no fake probe).
     pub processes: Option<Processes>,
+    /// Engines the person already runs (`[engines.attached.<id>]`), each over a catalog entry of
+    /// `catalog`; inferd looks at them and never starts them.
+    pub attached: Vec<Attached>,
 }
 
 /// The program a real-process world runs as llama-server (a script the test wrote).
@@ -210,6 +227,7 @@ impl Default for Plan {
             supervisor: None,
             hears: Vec::new(),
             processes: None,
+            attached: Vec::new(),
         }
     }
 }
@@ -317,6 +335,13 @@ impl World {
             .collect();
         let replays = Replays::read(&named, &sockets);
         models.extend(replays.models.iter().cloned());
+        let attached = inferd::attached::models(&plan.attached, &catalog.entries, &sockets)
+            .expect("the attached engines name catalog entries");
+        models.retain(|model| {
+            attached
+                .iter()
+                .all(|one| one.entry.id.0 != model.entry.id.0)
+        });
         let engines: BTreeMap<String, FakeEngine> = plan
             .scripts
             .into_iter()
@@ -410,7 +435,13 @@ impl World {
             spend: plan.spend,
             ..Settings::default()
         })
-        .with_remote(plan.remote);
+        .with_remote(plan.remote)
+        .with_attached({
+            let sink = Arc::clone(&log);
+            AttachedBook::new(attached).logging_to(Log::to(move |level, text| {
+                sink.lock().expect("lock").push((level, text.to_owned()));
+            }))
+        });
         let bus = PrivateBus::start();
         let daemon = bus.connect().await;
         let client = bus.connect().await;

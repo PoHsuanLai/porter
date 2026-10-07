@@ -7,6 +7,7 @@
 
 use clap::Parser;
 use engine_supervisor::EngineId;
+use inferd::attached::AttachedBook;
 use inferd::audit::JsonLines;
 use inferd::catalog::read_catalog;
 use inferd::clock::SystemClock;
@@ -65,6 +66,28 @@ fn read_config(path: &std::path::Path) -> Result<InferdConfig, String> {
     }
 }
 
+/// The engines the file attaches, as models; a key file that is refused is said now (and again, as
+/// the reason, whenever a session asks for the engine). The token is never read into the line.
+fn attached_models(
+    config: &InferdConfig,
+    entries: &[model_catalog::ModelEntry],
+    dirs: &Dirs,
+) -> Result<Vec<inferd::local::LocalModel>, String> {
+    let named = config.engines.attached().map_err(|e| e.to_string())?;
+    let models =
+        inferd::attached::models(&named, entries, &dirs.sockets).map_err(|e| e.to_string())?;
+    for model in &models {
+        let key = model
+            .attached
+            .as_ref()
+            .and_then(|target| target.key.as_ref());
+        if let Some(Err(why)) = key.map(inferd::attached::KeyFile::read) {
+            eprintln!("inferd: attached engine {}: {why}", model.spec.id.0);
+        }
+    }
+    Ok(models)
+}
+
 async fn run(args: Args) -> Result<(), String> {
     // Listening starts before anything else: a signal during start-up is kept, not fatal.
     let mut signals = Signals::listen().map_err(|e| format!("signal handlers: {e}"))?;
@@ -81,6 +104,14 @@ async fn run(args: Args) -> Result<(), String> {
         eprintln!("inferd: replay engine {problem}");
     }
     models.extend(replays.models.iter().cloned());
+    // An engine the person already runs is used and never started: an id they attached is not
+    // also one inferd starts, and none of the attached is given to the supervisor.
+    let attached = attached_models(&config, &catalog.entries, &dirs)?;
+    models.retain(|model| {
+        attached
+            .iter()
+            .all(|one| one.entry.id.0 != model.entry.id.0)
+    });
     std::fs::DirBuilder::new()
         .recursive(true)
         .mode(0o700)
@@ -136,7 +167,8 @@ async fn run(args: Args) -> Result<(), String> {
         settings.settings.tiers.clone(),
     )
     .with_settings(settings.settings)
-    .with_cloud(cloud);
+    .with_cloud(cloud)
+    .with_attached(AttachedBook::new(attached));
     // The runtimes the person runs themselves: looked for now, on `Rescan` and on a timer, and
     // reported to accountd as accounts.
     let probing = Watch::new(

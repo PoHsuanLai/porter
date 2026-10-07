@@ -4,6 +4,7 @@
 //! `Inference1` handler and the session server share: it knows the models, their readiness, and
 //! how to ask for an engine.
 
+use crate::attached::AttachedBook;
 use crate::cloud::Cloud;
 use crate::cloud::models::RemoteModel;
 use crate::cloud::turn::CloudPin;
@@ -15,6 +16,7 @@ use crate::runner::{Pin, Pinned};
 use crate::serve::{EngineFailed, EngineHost};
 use crate::session::{RouteDecision, Routing, SessionSpec};
 use crate::settings::{Live, Settings};
+use crate::startup::Cause;
 use crate::supervise::{Snapshot, Supervised};
 use crate::swap::{Budget, running_of, swap_cost};
 use engine_supervisor::{EngineId, EngineState, MonoMs};
@@ -87,6 +89,9 @@ struct Book {
     /// The runtimes the person runs themselves, as the last probe found them; shared by every
     /// clone.
     probed: ProbedBook,
+    /// The engines the person already runs; never started, stopped or evicted, looked at when a
+    /// session opens.
+    attached: AttachedBook,
 }
 
 /// Every engine inferd supervises, and the models behind them.
@@ -125,6 +130,7 @@ impl Engines {
                     ..Settings::default()
                 }),
                 probed: ProbedBook::default(),
+                attached: AttachedBook::default(),
             }),
             supervised,
         }
@@ -147,6 +153,7 @@ impl Engines {
             cloud: self.book.cloud.clone(),
             live: Live::new(settings),
             probed: self.book.probed.clone(),
+            attached: self.book.attached.clone(),
         };
         Self {
             book: Arc::new(book),
@@ -175,6 +182,7 @@ impl Engines {
             cloud: self.book.cloud.clone(),
             live: self.book.live.clone(),
             probed: self.book.probed.clone(),
+            attached: self.book.attached.clone(),
         };
         Self {
             book: Arc::new(book),
@@ -191,11 +199,34 @@ impl Engines {
             cloud: Some(cloud),
             live: self.book.live.clone(),
             probed: self.book.probed.clone(),
+            attached: self.book.attached.clone(),
         };
         Self {
             book: Arc::new(book),
             supervised: self.supervised,
         }
+    }
+
+    /// The same, using the engines the person attached (`attached::models`). They are in no
+    /// supervisor: nothing here starts, stops, evicts or kills them.
+    pub fn with_attached(self, attached: AttachedBook) -> Self {
+        let book = Book {
+            local: self.book.local.clone(),
+            remote: self.book.remote.clone(),
+            cloud: self.book.cloud.clone(),
+            live: self.book.live.clone(),
+            probed: self.book.probed.clone(),
+            attached,
+        };
+        Self {
+            book: Arc::new(book),
+            supervised: self.supervised,
+        }
+    }
+
+    /// The engines the person attached, and what the last look found of each.
+    pub fn attached(&self) -> &AttachedBook {
+        &self.book.attached
     }
 
     /// The runtimes the person runs themselves, as the last probe found them. The probe writes
@@ -224,6 +255,7 @@ impl Engines {
     /// caps' verdict on each. None when this daemon has no hosted models or accountd does not
     /// answer.
     pub async fn offer(&self, app: &AppId, class: DataClass, usage: Usage) -> Offered {
+        self.look_at_attached().await;
         let Some(cloud) = &self.book.cloud else {
             return Offered::default();
         };
@@ -243,6 +275,13 @@ impl Engines {
         }
     }
 
+    /// Looks at every engine the person attached, now: what a session is decided by is read from
+    /// this look. It is made when a session opens (`offer`, and a router that knows no app) and
+    /// nowhere else; nothing polls.
+    pub async fn look_at_attached(&self) {
+        self.book.attached.reprobe_all().await;
+    }
+
     /// The supervisor handle (the runner marks engines used through it).
     pub fn supervised(&self) -> &Supervised {
         &self.supervised
@@ -255,6 +294,7 @@ impl Engines {
             .find(|one| one.model_ref() == *model)
             .cloned()
             .or_else(|| self.book.probed.find(model))
+            .or_else(|| self.book.attached.find(model))
     }
 
     /// The local model `model` names, when this computer has it (the speech `Hear` stage looks
@@ -266,9 +306,10 @@ impl Engines {
     /// How ready one local model is now: a supervised one by its engine, a probed one by whether
     /// its runtime answered the last look.
     pub fn readiness(&self, model: &LocalModel) -> Readiness {
-        match model.loopback {
-            Some(_) => self.runtime_readiness(model),
-            None => readiness_in(&self.supervised.snapshot(), model),
+        match (&model.attached, model.loopback) {
+            (Some(_), _) => self.book.attached.readiness(&model.model_ref()),
+            (None, Some(_)) => self.runtime_readiness(model),
+            (None, None) => readiness_in(&self.supervised.snapshot(), model),
         }
     }
 
@@ -317,6 +358,15 @@ impl Engines {
                 licence_of(&model.entry.licence),
             )
         });
+        let attached = self.book.attached.models().iter().map(|model| Listed {
+            permission: attached_grant(),
+            ..Listed::new(
+                model.card.clone(),
+                self.book.attached.readiness(&model.model_ref()),
+                SwapCost::Resident,
+                licence_of(&model.entry.licence),
+            )
+        });
         let local = self.book.local.iter().map(|model| {
             let readiness = readiness_in(&snapshot, model);
             let swap = match readiness {
@@ -356,6 +406,7 @@ impl Engines {
             )
         });
         local
+            .chain(attached)
             .chain(on_runtime)
             .chain(remote)
             .chain(hosted)
@@ -400,7 +451,7 @@ impl Engines {
             spec.class,
             spec.tier,
             &self.listed_for(&spec.need, offered),
-            &settings.policy,
+            &settings.routing_policy(),
             &tiers,
             settings.auto,
         )?;
@@ -650,6 +701,18 @@ fn reached_of(reach: &model_catalog::Reach) -> Why {
     }
 }
 
+/// The verdict an attached engine carries: the person named it, so no grant is asked of accountd
+/// (where its data goes is `where`, which the class floor reads).
+fn attached_grant() -> porter_core::consent::Verdict {
+    match porter_core::GrantId::parse("attached-engine") {
+        Ok(grant) => porter_core::consent::Verdict::Granted {
+            grant,
+            scope: porter_core::consent::GrantScope::Always,
+        },
+        Err(_) => porter_core::consent::Verdict::Ask,
+    }
+}
+
 fn licence_of(licence: &Licence) -> LicenceClass {
     match licence {
         Licence::Open(_) => LicenceClass::Open,
@@ -713,6 +776,17 @@ impl EngineHost for Engines {
                 Err(EngineFailed::unknown())
             };
         };
+        // An attached engine is looked at, never started: it answers or it says why not.
+        if local.attached.is_some() {
+            return self
+                .book
+                .attached
+                .reprobe(&model)
+                .await
+                .map_err(|why| EngineFailed {
+                    cause: Cause::Attached(why),
+                });
+        }
         // A runtime the person runs is not started or stopped here: it is there or it is not.
         if local.loopback.is_some() {
             return match self.runtime_readiness(&local) {
@@ -748,7 +822,10 @@ impl SessionRouter {
     async fn offered(&self, spec: &SessionSpec) -> Offered {
         match &self.app {
             Some(app) => self.engines.offer(app, spec.class, spec.usage).await,
-            None => Offered::default(),
+            None => {
+                self.engines.look_at_attached().await;
+                Offered::default()
+            }
         }
     }
 }

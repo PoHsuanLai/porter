@@ -24,6 +24,29 @@
 #                                 # per request, file mode 0600; only on a replay engine, only
 #                                 # for acceptance runs. Never enable it in a shipped config.
 
+# An engine you already run, which inferd uses and never starts, stops, evicts or kills: a vLLM on
+# a lab machine, reached through an SSH tunnel to a local Unix socket
+#   ssh -N -L /run/user/1000/lab-vllm.sock:127.0.0.1:8000 lab
+# or on a loopback port. The table's name is the catalog id of the model it serves (the name
+# `GET /v1/models` lists is the catalog id: start vLLM with --served-model-name <id>); the
+# catalog's codec and tool and reasoning parsers are used, and no account or spend is involved.
+#   socket   = "<path>"            a Unix socket the engine speaks HTTP over, or
+#   url      = "http://127.0.0.1:<port>"  loopback only; any other host is refused when this file loads
+#   key_file = "<path>"            optional: the bearer token (vLLM --api-key), read at each connect,
+#                                  never logged; refused unless only you can read it (mode 0600)
+#   where    = "this-device" | "my-network"   required, no default: where the data goes.
+#              "this-device" is on this computer. "my-network" is another machine of yours: the data
+#              leaves this computer, so data set to stay on it is refused unless ai.attached.my_network
+#              is on (below).
+# No TLS: a socket or a loopback address only, and the tunnel's lifetime is yours. The engine is
+# looked at when a session opens (and not otherwise); if it is down or does not list the model the
+# session is told it is not ready and the log says why. inferd.service has PrivateNetwork=yes: a
+# `url` needs a drop-in like inferd-cloud.conf (the loopback of the host, AF_INET); a `socket` does not.
+# [engines.attached."qwen3-32b"]
+# socket = "/run/user/1000/lab-vllm.sock"
+# key_file = "/home/you/.config/lab/vllm.key"
+# where = "my-network"
+#
 # The settings rows, at the paths the Settings app writes them (the schema is
 # dist/inferd.settings.toml; the model rows are served by inferd itself). inferd reads the file again
 # a moment after it changes, and on Rescan, so an edit needs no restart; a session already open
@@ -59,6 +82,14 @@
 # (ai.pipeline.describe_images): "off" (refuse, with the reason) or "on".
 # [ai.pipeline]
 # describe_images = "off"
+#
+# Whether a model on another of your machines (an engine attached with where = "my-network", see
+# the engines.attached example above) counts as this computer for data whose floor is "this
+# computer" (ai.attached.my_network): "off" (the default: such data is not sent to it) or "on". A floor that
+# already says local_network lets it through either way. The data leaves this computer, so the
+# default is off.
+# [ai.attached]
+# my_network = "on"
 #
 # The share of a spending cap at which a request is warned about, 1 to 1000 (ai.spend.warn_permille),
 # and the caps on cloud models, in US cents (0 is no cap): on each account, counting every app that

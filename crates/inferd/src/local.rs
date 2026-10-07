@@ -6,6 +6,7 @@
 //! cache is `Downloadable`, and there is no downloader yet), and the engine programs come from
 //! configuration, never from the environment.
 
+use crate::attached::{Attached, AttachedEntry, AttachedError, Target};
 use crate::catalog::claims_of;
 use crate::replay::NamedEngine;
 use engine_supervisor::{
@@ -48,9 +49,21 @@ pub struct EngineConfig {
     /// (`[engines.<name>] replay = "<file>"`).
     #[serde(flatten)]
     pub named: BTreeMap<String, NamedEngine>,
+    /// Engines the person already runs and inferd only uses, by catalogue id
+    /// (`[engines.attached."<id>"]`, see [`crate::attached`]).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub attached: BTreeMap<String, AttachedEntry>,
 }
 
 impl EngineConfig {
+    /// The attached engines the file names, each past the checks the file alone allows.
+    pub fn attached(&self) -> Result<Vec<Attached>, AttachedError> {
+        self.attached
+            .iter()
+            .map(|(name, entry)| entry.check(name))
+            .collect()
+    }
+
     fn program(&self, kind: EngineKind) -> Option<&Path> {
         match kind {
             EngineKind::Vllm => self.vllm_python.as_deref(),
@@ -111,6 +124,10 @@ pub struct LocalModel {
     /// Studio): the model is reached there over plain HTTP, `socket` is unused, there are no
     /// weights to look for, and nothing here starts or stops anything (`probe`).
     pub loopback: Option<Port>,
+    /// Set for an engine the person already runs and attached (`crate::attached`): it is reached
+    /// at this target, `socket` and `loopback` are unused for it, there are no weights to look
+    /// for, and nothing here starts, stops or evicts it.
+    pub attached: Option<Target>,
 }
 
 impl LocalModel {
@@ -126,7 +143,7 @@ impl LocalModel {
     /// engine's sandbox binds, so it is looked for live (a download that finishes makes the
     /// model loadable without a restart).
     pub fn weights(&self) -> Weights {
-        if self.cassette.is_some() || self.loopback.is_some() {
+        if self.cassette.is_some() || self.loopback.is_some() || self.attached.is_some() {
             return Weights::Present;
         }
         match self.spec.unit.sandbox.read.first() {
@@ -168,7 +185,7 @@ fn kind_slug(kind: EngineKind) -> &'static str {
     }
 }
 
-fn flavor_of(kind: EngineKind) -> Option<Flavor> {
+pub(crate) fn flavor_of(kind: EngineKind) -> Option<Flavor> {
     match kind {
         EngineKind::Vllm => Some(Flavor::Vllm),
         EngineKind::LlamaServer => Some(Flavor::LlamaServer),
@@ -235,6 +252,7 @@ fn one(entry: &ModelEntry, engines: &EngineConfig, sockets: &Path) -> Option<Loc
         flavor: flavor_of(profile.kind),
         cassette: None,
         loopback: None,
+        attached: None,
         entry: entry.clone(),
         profile,
     })

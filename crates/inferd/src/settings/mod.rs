@@ -25,9 +25,35 @@ pub use module::{InferdSettings, serve_settings};
 pub use resolve::{Resolved, floor_value, model_text, parse_model, resolve, slot_value};
 
 use porter_core::{AccountId, AppId, MicroUsd, Permille};
-use porter_infer::{AutoPolicy, DescribeImages, Period, Policy, SpendCap, SpendScope, TierMap};
+use porter_infer::{
+    AutoPolicy, ClassFloor, DescribeImages, Floor, Period, Policy, SpendCap, SpendScope, TierMap,
+};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, PoisonError, RwLock};
+
+/// `ai.attached.my_network`.
+pub const MY_NETWORK: &str = "ai.attached.my_network";
+
+/// `ai.attached.my_network`: whether an engine the person attached on another machine of theirs
+/// (`where = "my-network"`) counts as this computer for a data class whose floor is "this
+/// computer". Off by default: such data goes only to this computer.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MyNetwork {
+    /// An on-device floor refuses a model on another machine of the person's.
+    #[default]
+    Off,
+    /// An on-device floor admits it (a floor that already says "my machines" admits it either way).
+    On,
+}
+
+/// The `[ai.attached]` table, as written.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttachedConfig {
+    /// `ai.attached.my_network`: `off` or `on`.
+    #[serde(default)]
+    pub my_network: Option<String>,
+}
 
 /// `ai.pipeline.describe_images`.
 pub const DESCRIBE_IMAGES: &str = "ai.pipeline.describe_images";
@@ -178,6 +204,31 @@ pub struct Settings {
     pub spend: SpendLine,
     /// `ai.pipeline.describe_images`.
     pub describe_images: DescribeImages,
+    /// `ai.attached.my_network`.
+    pub my_network: MyNetwork,
+}
+
+impl Settings {
+    /// The policy routing runs under: `policy`, with every floor that says "this computer" let
+    /// reach the person's other machines when `ai.attached.my_network` is on. `local_only` and the
+    /// floors that already allow more are as the person set them.
+    pub fn routing_policy(&self) -> Policy {
+        match self.my_network {
+            MyNetwork::Off => self.policy.clone(),
+            MyNetwork::On => Policy {
+                floors: self
+                    .policy
+                    .floors
+                    .iter()
+                    .map(|row| ClassFloor {
+                        floor: row.floor.max(Floor::LocalNetwork),
+                        ..*row
+                    })
+                    .collect(),
+                ..self.policy.clone()
+            },
+        }
+    }
 }
 
 impl Default for Settings {
@@ -188,6 +239,7 @@ impl Default for Settings {
             auto: AutoPolicy::default(),
             spend: SpendLine::default(),
             describe_images: DescribeImages::default(),
+            my_network: MyNetwork::default(),
         }
     }
 }
@@ -213,5 +265,7 @@ impl Live {
     }
 }
 
+#[cfg(test)]
+mod my_network_tests;
 #[cfg(test)]
 mod tests;

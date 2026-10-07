@@ -17,6 +17,9 @@ pub enum ConfigError {
     /// The file is not valid TOML of the expected shape.
     #[error("{0}")]
     Toml(String),
+    /// An `[engines.attached."<id>"]` table the checks of the file refuse.
+    #[error("{0}")]
+    Attached(#[from] crate::attached::AttachedError),
     /// Neither `$XDG_RUNTIME_DIR` nor a home to place the sockets in.
     #[error("no $XDG_RUNTIME_DIR and no $HOME")]
     NoDirs,
@@ -50,9 +53,12 @@ pub struct InferdConfig {
 }
 
 impl InferdConfig {
-    /// The configuration in `text`.
+    /// The configuration in `text`. An attached engine that is named wrongly (no `where`, a
+    /// `url` that is not loopback, both a socket and a url) refuses the whole file.
     pub fn from_toml(text: &str) -> Result<Self, ConfigError> {
-        toml::from_str(text).map_err(|e| ConfigError::Toml(e.to_string()))
+        let config: Self = toml::from_str(text).map_err(|e| ConfigError::Toml(e.to_string()))?;
+        config.engines.attached()?;
+        Ok(config)
     }
 
     /// The policy of the old `[policy]` table, or the proposed one; the `ai.*` rows are laid over

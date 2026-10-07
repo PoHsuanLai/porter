@@ -183,6 +183,9 @@ pub enum Cause {
     },
     /// The model's profile cannot be run.
     BadProfile,
+    /// An engine the person attached cannot answer (nothing here started it, and nothing here
+    /// will).
+    Attached(crate::attached::NotReady),
     /// Nothing is known (the supervisor is not running, or the engine is not one of its own).
     Unknown,
 }
@@ -198,7 +201,7 @@ impl Cause {
                 | Cause::SocketPathUnusable { .. }
                 | Cause::CannotSpawn { .. }
                 | Cause::Refused
-        )
+        ) || matches!(self, Cause::Attached(why) if why.is_setup())
     }
 
     /// The tail of standard error, when this cause has one.
@@ -214,7 +217,7 @@ impl Cause {
     pub fn pauses(&self) -> bool {
         !matches!(
             self,
-            Cause::NoRoom { .. } | Cause::BadProfile | Cause::Unknown
+            Cause::NoRoom { .. } | Cause::BadProfile | Cause::Unknown | Cause::Attached(_)
         )
     }
 }
@@ -272,6 +275,7 @@ impl fmt::Display for Cause {
                 )
             }
             Cause::BadProfile => f.write_str("the model's engine profile cannot be run"),
+            Cause::Attached(why) => write!(f, "{why}"),
             Cause::Unknown => f.write_str("the engine is unknown to the supervisor"),
         }
     }

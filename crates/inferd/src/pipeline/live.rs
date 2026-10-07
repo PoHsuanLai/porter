@@ -46,7 +46,10 @@ impl Hearing {
         let spec = &self.spec;
         let offered = match &self.app {
             Some(app) => self.engines.offer(app, spec.class, spec.usage).await,
-            None => Offered::default(),
+            None => {
+                self.engines.look_at_attached().await;
+                Offered::default()
+            }
         };
         let settings = self.engines.settings();
         let shape = RequestShape {
@@ -59,7 +62,7 @@ impl Hearing {
             &spec.need,
             spec.tier,
             &self.engines.listed_with(&offered),
-            &settings.policy,
+            &settings.routing_policy(),
             &through_grants(&settings.tiers, &offered),
             settings.auto,
             settings.describe_images,
