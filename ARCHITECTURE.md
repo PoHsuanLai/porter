@@ -46,16 +46,33 @@ Allowed direct edges (checked by `scripts/check-boundary.sh`; dev-dependencies a
 | `porter-families` | `porter-core`, `porter-provider`, `porter-http`, `porter-dav`, `porter-discover`, `porter-oauth` |
 | `storage-graph` | `porter-core`, `porter-http`, `porter-sync`, `storage-webdav` (its `StreamHttp`, `Dial`, `Clock`), serde, serde_json, base64 (used by syncd only; no consumer repo) |
 | `storage-webdav` | `porter-core`, `porter-dav`, `porter-http`, `porter-sync` (used by syncd only; no consumer repo) |
-| `porter-infer` | `porter-core`, `cua-action` (stoker's computer-use vocabulary, by sibling path) |
+| `porter-infer` | `porter-core`, `cua-action` (stoker's computer-use vocabulary, by git rev) |
 | `porter-bridge` | `porter-core`, `porter-infer`, and stoker's `model-provider`, `model-catalog`, `model-openai-compat`, `vision-prep` (pure: the one mapping between porter's wire types and stoker's turns, shared by inferd and porter-client's `engines`) |
 | `porter-service` | `porter-core`, `porter-provider`, `porter-secrets` |
 | `porter-client` | `porter-core`, `porter-provider`, `porter-secrets`, `porter-service`; `porter-infer` with feature `infer` (default); `porter-dbus` with feature `dbus`; latchkey (git, not ours) with feature `socket` (a Unix socket, or a named pipe on Windows); with feature `engines` (off by default; inference with no inferd: `engines::EngineHost`, a `SessionHost` over a routing table, a `Policy` and the app's `KeySource`) `porter-bridge` and stoker's `model-http` (`hyper`, `tls`), `model-openai-compat`, `model-provider`, `model-wire` |
 | `porter-fake` | `porter-core`, `porter-infer`, `porter-provider`, `porter-secrets`, `porter-service` |
 | `porter-fake-servers` | `porter-core`, `porter-discover`, `porter-fake`, `porter-provider` (and nothing may depend on it) |
 | `porter-rig` | `porter-client` (feature `dbus`), `porter-core`, `porter-dbus`, `porter-fake`, `porter-fake-servers`, `porter-infer`, clap, serde, serde_json, tokio (with `signal`), zbus (and nothing may depend on it) |
-| `accountd` | `porter-core`, `porter-dbus`, `porter-families`, `porter-provider`, `porter-proxy` (feature `tls`, for `OpenAuthenticated`), `porter-secrets`, `porter-service`, and quire's `ds-settings` (feature `live`, by sibling path like stoker) for `org.quire.SettingsModule1`: the one porter -> quire edge, accountd and inferd (its model picker), never a library crate (check-boundary forbids it everywhere else) |
+| `accountd` | `porter-core`, `porter-dbus`, `porter-families`, `porter-provider`, `porter-proxy` (feature `tls`, for `OpenAuthenticated`), `porter-secrets`, `porter-service`, and quire's `ds-settings` (feature `live`, by git rev like stoker) for `org.quire.SettingsModule1`: the one porter -> quire edge, accountd and inferd (its model picker), never a library crate (check-boundary forbids it everywhere else) |
 | `syncd` | `porter-client` (feature `dbus`: `Accounts<T>` over a `Transport`, for `open_authenticated` and the PIM supervisor's `find`; the binary's `DbusTransport`), `porter-core`, `porter-dav` (the PIM mirror's discovery), `porter-dbus`, `porter-http`, `porter-sync`, `storage-graph`, `storage-webdav` (and rusqlite, SQLCipher built from source with a vendored OpenSSL, used unkeyed) |
-| `inferd` | `porter-core`, `porter-dbus`, `porter-discover` (the probe of local runtimes' ports), `porter-http` (feature `hyper`: the plain-HTTP client of that probe), `porter-infer`, `porter-provider` (`Port`), `cua-action`, quire's `ds-settings` (feature `live`, as accountd's, for the model picker), and stoker's `model-provider`, `model-catalog`, `engine-supervisor`, `model-http` (features `hyper` and `tls`), `model-openai-compat`, `vision-prep` (feature `pixels`), `cua-parse`, `cua-session`, `cua-vendors`, `model-extract`, `model-replay`, `model-wire` (the `Driver` over inferd's body-shaping wrapper of `HttpClient`), `speech-provider`, `speech-host-client`, by sibling path |
+| `inferd` | `porter-core`, `porter-dbus`, `porter-discover` (the probe of local runtimes' ports), `porter-http` (feature `hyper`: the plain-HTTP client of that probe), `porter-infer`, `porter-provider` (`Port`), `cua-action`, quire's `ds-settings` (feature `live`, as accountd's, for the model picker), and stoker's `model-provider`, `model-catalog`, `engine-supervisor`, `model-http` (features `hyper` and `tls`), `model-openai-compat`, `vision-prep` (feature `pixels`), `cua-parse`, `cua-session`, `cua-vendors`, `model-extract`, `model-replay`, `model-wire` (the `Driver` over inferd's body-shaping wrapper of `HttpClient`), `speech-provider`, `speech-host-client`, by git rev |
+
+Cross-repo dependencies are git deps at pinned revs, so a git checkout of porter builds with no
+sibling checkout: stoker (`https://github.com/PoHsuanLai/stoker`, rev in the root `Cargo.toml`) and
+quire's `ds-settings` (`https://github.com/PoHsuanLai/quire.git`, rev as quire's pinned block). To
+work on them locally, put a git-ignored `.cargo/config.toml` in the porter root (never commit it):
+
+```toml
+[patch."https://github.com/PoHsuanLai/stoker"]
+cua-action = { path = "../stoker/crates/cua-action" }
+# ... one line per stoker crate porter names (the root Cargo.toml lists them)
+[patch."https://github.com/PoHsuanLai/quire.git"]
+ds-settings = { path = "../quire/crates/ds-settings" }
+# plus every ds-* crate that resolves from the same rev, so one copy of each is built
+```
+
+A consumer that also takes quire or stoker by path needs the same `[patch]` in its own workspace
+root, or its graph holds two copies of `ds-*` (the git one through porter, its path one).
 
 External boundaries: every crate but `porter-dbus` and the daemons never reaches `zbus`,
 `zvariant`, `tokio`, `reqwest`, `hyper`, `ureq`, `oo7`, `keyring`, `secret-service`,
