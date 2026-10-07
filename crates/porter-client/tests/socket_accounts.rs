@@ -118,7 +118,7 @@ async fn a_name_that_cannot_be_a_directory_is_malformed_not_unreachable() {
 #[test]
 #[ignore = "the agent the spawn test starts; run only as that child"]
 fn child_agent() {
-    let Some(dir) = std::env::args().last().map(PathBuf::from) else {
+    let Some(dir) = std::env::args().next_back().map(PathBuf::from) else {
         return;
     };
     std::thread::spawn(|| {
