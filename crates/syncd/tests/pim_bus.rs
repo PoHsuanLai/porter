@@ -89,6 +89,17 @@ async fn eventually(what: &str, mut check: impl FnMut() -> bool) {
     panic!("never happened: {what}");
 }
 
+/// Tells a blocking helper to stop when the test ends, by success or by panic: the runtime waits
+/// for its blocking threads when it drops, so a helper still looping after a panic hangs the test
+/// instead of failing it.
+struct StopOnDrop(Arc<AtomicBool>);
+
+impl Drop for StopOnDrop {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+}
+
 fn read(path: &std::path::Path) -> Option<String> {
     std::fs::read_to_string(path).ok()
 }
@@ -550,6 +561,7 @@ async fn a_reader_never_sees_a_file_that_is_not_a_complete_item() {
         )
     };
     let stop = Arc::new(AtomicBool::new(false));
+    let _stop_on_panic = StopOnDrop(Arc::clone(&stop));
     let reader = {
         let (dir, stop) = (personal.clone(), Arc::clone(&stop));
         tokio::task::spawn_blocking(move || {
