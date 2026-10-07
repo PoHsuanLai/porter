@@ -1,6 +1,7 @@
 //! porter-client's errors.
 
 use porter_core::wire::Refusal;
+#[cfg(feature = "infer")]
 use porter_infer::{InferRefusal, SessionError};
 
 /// Why a transport could not carry a request.
@@ -31,7 +32,8 @@ pub enum ClientError {
     /// accountd refused.
     #[error("refused: {0:?}")]
     Refused(Refusal),
-    /// inferd refused.
+    /// inferd refused (feature `infer`).
+    #[cfg(feature = "infer")]
     #[error(transparent)]
     InferRefused(#[from] InferRefusal),
     /// The reply does not answer the request (a daemon of another version).
@@ -39,6 +41,7 @@ pub enum ClientError {
     Mismatched,
 }
 
+#[cfg(feature = "infer")]
 impl From<SessionError> for TransportError {
     fn from(error: SessionError) -> Self {
         match error {

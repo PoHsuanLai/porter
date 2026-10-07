@@ -1,33 +1,53 @@
 //! The carrier seam: one request in, one reply out. The caller's identity is the transport's
 //! to establish, never the request's.
+//!
+//! One trait for accounts and inference. Inference is the feature `infer`: its items (`Session`,
+//! `open_with`, `prepare`, `open`) exist only with it, so a build without it has a `Transport`
+//! with the accounts calls alone. A separate `InferTransport` trait would have broken every
+//! consumer that names `Transport` for `open` and `prepare` (docket does, on thirty call sites);
+//! the cfg'd items break nobody, and only an implementor outside this crate that builds with
+//! `infer` has to give a `Session`, as it did before.
 
 #[cfg(feature = "dbus")]
 mod dbus;
 #[cfg(feature = "dbus")]
 mod dbus_accounts;
-#[cfg(feature = "dbus")]
+#[cfg(all(feature = "dbus", feature = "infer"))]
+mod dbus_infer;
+#[cfg(all(feature = "dbus", feature = "infer"))]
 mod dbus_session;
-#[cfg(all(unix, feature = "framed"))]
+#[cfg(all(
+    unix,
+    any(feature = "socket", all(feature = "dbus", feature = "infer"))
+))]
 mod framed;
 mod in_process;
 mod socket;
 
 #[cfg(feature = "dbus")]
 pub use dbus::DbusTransport;
-#[cfg(feature = "dbus")]
+#[cfg(all(feature = "dbus", feature = "infer"))]
 pub use dbus_session::{DbusSession, MAX_ATTACHMENTS};
-pub use in_process::{InProcess, InProcessSession, NoBroker, SessionHost};
-pub use socket::{SocketSession, SocketTransport};
+pub use in_process::{InProcess, NoBroker};
+#[cfg(feature = "infer")]
+pub use in_process::{InProcessSession, SessionHost};
+#[cfg(feature = "infer")]
+pub use socket::SocketSession;
+pub use socket::SocketTransport;
 
 use crate::authenticated::Relayed;
 use crate::error::TransportError;
-use porter_core::{AccountsReply, AccountsRequest, DataClass, EndpointUrl, GrantId, Need, Tier};
+use porter_core::{AccountsReply, AccountsRequest, EndpointUrl, GrantId};
+#[cfg(feature = "infer")]
+use porter_core::{DataClass, Need, Tier};
+#[cfg(feature = "infer")]
 use porter_infer::{ClientFrame, InferEvent, InferSession, OpenOptions, Readiness, SessionError};
 use std::future::Future;
 
 /// Carries requests to accountd and inferd.
 pub trait Transport: Send + Sync {
     /// The streaming session `open` returns.
+    #[cfg(feature = "infer")]
     type Session: InferSession;
 
     /// One request to accountd.
@@ -65,6 +85,7 @@ pub trait Transport: Send + Sync {
     /// the session is pinned to one model. A refusal arrives as the session's first event
     /// (`Finished(Refused(..))`). `options` carries the caller's `traceparent` (the bus
     /// `options` dictionary, the socket's first frame) so one task is one trace.
+    #[cfg(feature = "infer")]
     fn open_with(
         &self,
         need: &Need,
@@ -81,6 +102,7 @@ pub trait Transport: Send + Sync {
     ///
     /// The default is `Unreachable`, so a transport that has no inferd (and every implementor
     /// outside this crate) compiles and degrades as it does when inferd is not running.
+    #[cfg(feature = "infer")]
     fn prepare(
         &self,
         need: &Need,
@@ -93,6 +115,7 @@ pub trait Transport: Send + Sync {
     }
 
     /// [`Transport::open_with`] with no trace context: inferd starts its own root.
+    #[cfg(feature = "infer")]
     fn open(
         &self,
         need: &Need,
@@ -117,6 +140,7 @@ pub enum AnyTransport {
 }
 
 /// The sessions of [`AnyTransport`].
+#[cfg(feature = "infer")]
 #[derive(Debug)]
 pub enum AnySession {
     /// Over inferd on the session bus.
@@ -126,6 +150,7 @@ pub enum AnySession {
     Socket(SocketSession),
 }
 
+#[cfg(feature = "infer")]
 impl InferSession for AnySession {
     async fn send(&mut self, frame: ClientFrame) -> Result<(), SessionError> {
         match self {
@@ -158,6 +183,7 @@ impl InferSession for AnySession {
 }
 
 impl Transport for AnyTransport {
+    #[cfg(feature = "infer")]
     type Session = AnySession;
 
     async fn call(&self, request: AccountsRequest) -> Result<AccountsReply, TransportError> {
@@ -192,6 +218,7 @@ impl Transport for AnyTransport {
         }
     }
 
+    #[cfg(feature = "infer")]
     async fn open_with(
         &self,
         need: &Need,
@@ -212,6 +239,7 @@ impl Transport for AnyTransport {
         }
     }
 
+    #[cfg(feature = "infer")]
     async fn prepare(
         &self,
         need: &Need,

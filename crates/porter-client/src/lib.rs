@@ -12,7 +12,13 @@
 //! ```
 //!
 //! Transport-agnostic behind [`Transport`]: D-Bus to accountd (feature `dbus`), the latchkey
-//! socket where D-Bus is absent, or [`InProcess`] where the app hosts the core itself.
+//! socket where D-Bus is absent (feature `socket`), or [`InProcess`] where the app hosts the core
+//! itself.
+//!
+//! Features (design/36 §1): the accounts core builds with `--no-default-features`, which reaches
+//! no zbus, no porter-infer and no stoker. Inference (sessions, `prepare`, `infer`, `Need::Llm`
+//! paths) is the default feature `infer`; an accounts-only consumer says
+//! `default-features = false, features = ["socket"]`.
 
 mod accounts;
 mod authenticated;
@@ -24,15 +30,17 @@ mod transport;
 
 pub use accounts::Accounts;
 pub use authenticated::{AuthenticatedStream, Relayed};
-pub use env::{ClientEnv, LinkChoice, SocketPath};
+pub use env::{ClientEnv, LinkChoice, Place, START_WAIT, SocketAgent, StartAgent};
 pub use error::{ClientError, TransportError};
 pub use found::{ConsentOffer, Found, NoAccount, found};
 /// The client's side of one `Open` fd, from porter-infer.
+#[cfg(feature = "infer")]
 pub use porter_infer::{InferSession, OpenOptions, SessionError, Traceparent};
 pub use relays::{NoRelays, RelayHost};
-pub use transport::{
-    AnySession, AnyTransport, InProcess, InProcessSession, NoBroker, SessionHost, SocketSession,
-    SocketTransport, Transport,
-};
 #[cfg(feature = "dbus")]
-pub use transport::{DbusSession, DbusTransport, MAX_ATTACHMENTS};
+pub use transport::DbusTransport;
+#[cfg(feature = "infer")]
+pub use transport::{AnySession, InProcessSession, SessionHost, SocketSession};
+pub use transport::{AnyTransport, InProcess, NoBroker, SocketTransport, Transport};
+#[cfg(all(feature = "dbus", feature = "infer"))]
+pub use transport::{DbusSession, MAX_ATTACHMENTS};

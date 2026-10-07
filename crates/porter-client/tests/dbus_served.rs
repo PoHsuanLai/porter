@@ -2,7 +2,7 @@
 //! `inferd::serve` serves with the real session machine over scripted seams. What the machine
 //! adds to the scripts (`Routed`, `Waiting`, refusals, the computer-use begin) reaches the client
 //! over the bus exactly as inferd will send it.
-#![cfg(feature = "dbus")]
+#![cfg(all(feature = "dbus", feature = "infer"))]
 
 mod common;
 

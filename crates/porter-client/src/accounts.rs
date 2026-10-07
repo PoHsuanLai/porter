@@ -5,13 +5,16 @@ use crate::env::{ClientEnv, LinkChoice};
 use crate::error::{ClientError, TransportError};
 use crate::found::{ConsentOffer, Found, found};
 use crate::transport::{AnyTransport, Transport};
+#[cfg(feature = "infer")]
+use porter_core::Tier;
 use porter_core::consent::{Grant, Usage};
 use porter_core::wire::LegacyRef;
 use porter_core::wire::{ParentWindow, ProviderHint};
 use porter_core::{
     AccountId, AccountsReply, AccountsRequest, Audience, Candidate, DataClass, EndpointUrl,
-    GrantId, IssuedToken, Need, Tier,
+    GrantId, IssuedToken, Need,
 };
+#[cfg(feature = "infer")]
 use porter_infer::{
     ClientFrame, InferEvent, InferReply, InferRequest, InferSession, OpenOptions, Readiness,
 };
@@ -49,8 +52,8 @@ async fn reach(link: &LinkChoice) -> Option<AnyTransport> {
             .map(AnyTransport::Dbus),
         #[cfg(not(feature = "dbus"))]
         LinkChoice::Dbus => None,
-        LinkChoice::Socket(path) => {
-            let link = crate::transport::SocketTransport::at(path.clone());
+        LinkChoice::Socket(agent) => {
+            let link = crate::transport::SocketTransport::at(agent.clone());
             link.reachable().await.then_some(AnyTransport::Socket(link))
         }
     }
@@ -240,6 +243,7 @@ impl<T: Transport> Accounts<T> {
 
     /// Opens a streaming session with inferd: write `ClientFrame`s, read `InferEvent`s. The
     /// route is chosen once, so the session is pinned to one model.
+    #[cfg(feature = "infer")]
     pub async fn session(
         &self,
         need: &Need,
@@ -251,6 +255,7 @@ impl<T: Transport> Accounts<T> {
 
     /// [`Accounts::session`] with the options of `Open`: the caller's `traceparent`, so a span
     /// started here continues in inferd.
+    #[cfg(feature = "infer")]
     pub async fn session_with(
         &self,
         need: &Need,
@@ -264,6 +269,7 @@ impl<T: Transport> Accounts<T> {
     /// Warms the engine inferd would route `need` to and says how ready it is
     /// ([`Transport::prepare`]): a hold that is about to begin asks first, so the model is
     /// loading while the person starts to talk.
+    #[cfg(feature = "infer")]
     pub async fn prepare(
         &self,
         need: &Need,
@@ -276,6 +282,7 @@ impl<T: Transport> Accounts<T> {
 
     /// Runs one AI request to its end on a fresh session and returns the reply, dropping the
     /// deltas; a refusal is an error the app shows.
+    #[cfg(feature = "infer")]
     pub async fn infer(
         &self,
         need: &Need,

@@ -3,17 +3,15 @@
 //! `porter_core::wire`), and so are accountd's immediate calls; the sheet calls wait for accountd.
 
 use super::Transport;
+#[cfg(feature = "infer")]
 use super::dbus_session::DbusSession;
 use crate::authenticated::{AuthenticatedStream, Relayed};
 use crate::error::TransportError;
-use porter_core::{
-    AccountsReply, AccountsRequest, DataClass, EndpointUrl, GrantId, Need, Permille, Tier,
-};
-use porter_dbus::zvariant::{OwnedValue, Value};
-use porter_dbus::{
-    BusConnection, BusError, BusFailure, Details, InferenceProxy, OPTION_TRACEPARENT, OPTION_USAGE,
-    TokensProxy, classify, need_to_dbus, refusal_of,
-};
+use porter_core::{AccountsReply, AccountsRequest, EndpointUrl, GrantId};
+#[cfg(feature = "infer")]
+use porter_core::{DataClass, Need, Tier};
+use porter_dbus::{BusConnection, BusError, BusFailure, TokensProxy, classify, refusal_of};
+#[cfg(feature = "infer")]
 use porter_infer::{OpenOptions, Readiness};
 use serde::Serialize;
 
@@ -37,6 +35,12 @@ impl DbusTransport {
             .map(Self::over)
             .map_err(|e| bus_error(&e))
     }
+
+    /// The connection, for the inference calls.
+    #[cfg(feature = "infer")]
+    pub(super) fn connection(&self) -> &BusConnection {
+        &self.connection
+    }
 }
 
 /// A closed set's serde form is its slug on the bus too.
@@ -45,26 +49,6 @@ pub(super) fn slug<T: Serialize + ?Sized>(value: &T) -> Result<String, Transport
         Ok(serde_json::Value::String(text)) => Ok(text),
         _ => Err(TransportError::Malformed("not a slug".to_owned())),
     }
-}
-
-/// The `options` dictionary of `Open`: the reserved `traceparent` and `usage` when the caller has
-/// them (`usage` as its slug).
-fn details(options: &OpenOptions) -> Details {
-    let trace = options
-        .traceparent
-        .iter()
-        .map(|trace| (OPTION_TRACEPARENT, trace.as_str().to_owned()));
-    let usage = options
-        .usage
-        .iter()
-        .filter_map(|usage| Some((OPTION_USAGE, slug(usage).ok()?)));
-    trace
-        .chain(usage)
-        .filter_map(|(key, text)| {
-            let value = OwnedValue::try_from(Value::from(text)).ok()?;
-            Some((key.to_owned(), value))
-        })
-        .collect()
 }
 
 /// A bus error as the transport's: no daemon on the name or no bus is `Unreachable`; the bus's
@@ -79,6 +63,7 @@ pub(super) fn bus_error(error: &BusError) -> TransportError {
 }
 
 impl Transport for DbusTransport {
+    #[cfg(feature = "infer")]
     type Session = DbusSession;
 
     async fn call(&self, request: AccountsRequest) -> Result<AccountsReply, TransportError> {
@@ -122,6 +107,7 @@ impl Transport for DbusTransport {
         }
     }
 
+    #[cfg(feature = "infer")]
     async fn open_with(
         &self,
         need: &Need,
@@ -129,20 +115,10 @@ impl Transport for DbusTransport {
         tier: Tier,
         options: &OpenOptions,
     ) -> Result<DbusSession, TransportError> {
-        let proxy = InferenceProxy::new(&self.connection)
-            .await
-            .map_err(|e| bus_error(&e))?;
-        let fd = proxy
-            .open(
-                &need_to_dbus(need),
-                &slug(&class)?,
-                &slug(&tier)?,
-                &details(options),
-            )
-            .await
-            .map_err(|e| bus_error(&e))?;
-        DbusSession::over(fd.into())
+        self.open_session(need, class, tier, options).await
     }
+
+    #[cfg(feature = "infer")]
     async fn prepare(
         &self,
         need: &Need,
@@ -150,34 +126,6 @@ impl Transport for DbusTransport {
         tier: Tier,
         options: &OpenOptions,
     ) -> Result<Readiness, TransportError> {
-        let proxy = InferenceProxy::new(&self.connection)
-            .await
-            .map_err(|e| bus_error(&e))?;
-        let text = proxy
-            .prepare(
-                &need_to_dbus(need),
-                &slug(&class)?,
-                &slug(&tier)?,
-                &details(options),
-            )
-            .await
-            .map_err(|e| bus_error(&e))?;
-        readiness_of(&text)
-    }
-}
-
-/// The readiness a `Prepare` slug names. `downloading` carries no progress on the bus (the slug
-/// is all there is), so it reads as zero; `unavailable` is also the refusal of that name; every
-/// other refusal slug is the daemon saying no.
-fn readiness_of(text: &str) -> Result<Readiness, TransportError> {
-    match text {
-        "ready" => Ok(Readiness::Ready),
-        "loading" => Ok(Readiness::Loading),
-        "loadable" => Ok(Readiness::Loadable),
-        "downloading" => Ok(Readiness::Downloading(Permille(0))),
-        "downloadable" => Ok(Readiness::Downloadable),
-        "unavailable" => Ok(Readiness::Unavailable),
-        "" => Err(TransportError::Malformed("empty Prepare answer".to_owned())),
-        refusal => Err(TransportError::Denied(format!("inferd refused: {refusal}"))),
+        self.prepare_engine(need, class, tier, options).await
     }
 }

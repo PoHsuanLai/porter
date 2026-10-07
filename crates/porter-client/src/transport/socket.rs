@@ -1,34 +1,38 @@
 //! The latchkey socket carrier: `porter_core::wire` frames over a Unix socket, for other
-//! desktops and macOS. A named pipe on Windows is not built (there `SocketTransport` finds
-//! nobody), nor is it without the `socket` feature (the carrier needs a runtime, which the pure
-//! build does not reach).
+//! desktops and macOS. The agent's address, its single-instance lock and how it is started are
+//! latchkey's (`SocketAgent` names the agent; the path is never ours to write down). A named pipe
+//! on Windows is not built (there `SocketTransport` finds nobody), nor is it without the `socket`
+//! feature (the carrier needs a runtime and latchkey, which the pure build does not reach).
 //!
 //! One connection per call, so a `Choose` waiting on a sheet blocks nothing else:
 //!
 //! - an accountd call is one `AccountsRequest` frame out and one `AccountsReply` frame back
 //!   (a sheet's reply comes when the sheet ends; closing the connection abandons it);
-//! - a session is a `LinkHello::Open` frame, then `ClientFrame`s out and `InferEvent`s back, as
-//!   the bus's `Open` fd carries them (descriptors ride on the frame that names them); a refusal
-//!   is the first event.
+//! - a session (feature `infer`) is a `LinkHello::Open` frame, then `ClientFrame`s out and
+//!   `InferEvent`s back, as the bus's `Open` fd carries them (descriptors ride on the frame that
+//!   names them); a refusal is the first event.
 //!
 //! The caller's identity is never in a frame: the agent derives it from the connection (peer
 //! credentials). The agent is not built in this repo (accountd serves the bus; the socket front
 //! belongs to the agent that hosts the core elsewhere), so this side is tested against a hand
-//! written one.
+//! written one and against a `latchkey::Agent::listen` door.
 
-#[cfg(all(unix, feature = "framed"))]
+#[cfg(all(unix, feature = "socket"))]
 #[path = "socket/unix.rs"]
 mod link;
 
-#[cfg(not(all(unix, feature = "framed")))]
+#[cfg(not(all(unix, feature = "socket")))]
 #[path = "socket/absent.rs"]
 mod link;
 
 use super::Transport;
 use crate::authenticated::Relayed;
-use crate::env::SocketPath;
+use crate::env::SocketAgent;
 use crate::error::TransportError;
-use porter_core::{AccountsReply, AccountsRequest, DataClass, EndpointUrl, GrantId, Need, Tier};
+use porter_core::{AccountsReply, AccountsRequest, EndpointUrl, GrantId};
+#[cfg(feature = "infer")]
+use porter_core::{DataClass, Need, Tier};
+#[cfg(feature = "infer")]
 use porter_infer::{
     ClientFrame, InferEvent, InferSession, LinkHello, OpenFrame, OpenOptions, SessionError,
 };
@@ -36,27 +40,31 @@ use porter_infer::{
 /// A connection to the agent on the latchkey socket (made for each call).
 #[derive(Debug)]
 pub struct SocketTransport {
-    path: SocketPath,
+    agent: SocketAgent,
+    door: link::Door,
 }
 
 impl SocketTransport {
-    /// A transport to the agent at `path`.
-    pub fn at(path: SocketPath) -> Self {
-        Self { path }
+    /// A transport to `agent`, at the address latchkey gives it.
+    pub fn at(agent: SocketAgent) -> Self {
+        let door = link::door(&agent);
+        Self { agent, door }
     }
 
-    /// Whether the agent accepts a connection now.
+    /// Whether the agent accepts a connection now (starting it first if the app said to).
     pub(crate) async fn reachable(&self) -> bool {
-        link::reachable(&self.path).await
+        link::reachable(&self.door, &self.agent.start).await
     }
 }
 
 /// A streaming session on the agent's socket.
+#[cfg(feature = "infer")]
 #[derive(Debug)]
 pub struct SocketSession {
     link: link::Link,
 }
 
+#[cfg(feature = "infer")]
 impl InferSession for SocketSession {
     async fn send(&mut self, frame: ClientFrame) -> Result<(), SessionError> {
         self.link.send(frame).await
@@ -77,10 +85,11 @@ impl InferSession for SocketSession {
 }
 
 impl Transport for SocketTransport {
+    #[cfg(feature = "infer")]
     type Session = SocketSession;
 
     async fn call(&self, request: AccountsRequest) -> Result<AccountsReply, TransportError> {
-        link::call(&self.path, request).await
+        link::call(&self.door, &self.agent.start, request).await
     }
 
     async fn open_authenticated(
@@ -92,7 +101,7 @@ impl Transport for SocketTransport {
             grant: grant.clone(),
             endpoint: endpoint.clone(),
         };
-        link::open_authenticated(&self.path, request).await
+        link::open_authenticated(&self.door, &self.agent.start, request).await
     }
 
     async fn open_linked(
@@ -104,9 +113,10 @@ impl Transport for SocketTransport {
             grant: grant.clone(),
             origin: origin.clone(),
         };
-        link::open_authenticated(&self.path, request).await
+        link::open_authenticated(&self.door, &self.agent.start, request).await
     }
 
+    #[cfg(feature = "infer")]
     async fn open_with(
         &self,
         need: &Need,
@@ -120,7 +130,7 @@ impl Transport for SocketTransport {
             tier,
             options: options.clone(),
         });
-        link::open(&self.path, hello)
+        link::open(&self.door, &self.agent.start, hello)
             .await
             .map(|link| SocketSession { link })
     }

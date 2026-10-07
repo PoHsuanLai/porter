@@ -13,6 +13,9 @@
 app = "inferd"
 file = "quire/inferd.toml"
 version = 1
+# The tables inferd keeps in its file beside the rows (quire's ForeignTables; v0.2.19's parser
+# ignores this line, v0.2.20 reads it).
+foreign = ["engines", "probe", "callers"]
 
 [[key]]
 path = "ai.local_only"

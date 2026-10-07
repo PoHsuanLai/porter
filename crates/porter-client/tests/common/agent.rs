@@ -20,9 +20,28 @@ use tokio::io::Interest;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 
+/// The agent's name under its scratch runtime directory (short: the socket path has 108 bytes).
+pub const AGENT_NAME: &str = "pt";
+
+/// Where latchkey puts the agent called `name` under the runtime directory `dir`.
+pub fn socket_in(dir: &std::path::Path, name: &str) -> PathBuf {
+    let env = latchkey::Environment {
+        runtime_dir: Some(dir.as_os_str()),
+        tmpdir: Some(dir.as_os_str()),
+        ..latchkey::Environment::default()
+    };
+    latchkey::Agent::in_environment(name, latchkey::here(), &env)
+        .expect("an address")
+        .socket()
+        .expect("a socket")
+        .to_path_buf()
+}
+
 /// A running agent.
 #[derive(Debug)]
 pub struct Agent {
+    /// How a client names it: latchkey's agent under the scratch runtime directory.
+    pub door: porter_client::SocketAgent,
     pub path: PathBuf,
     /// Every hello it was sent, in order.
     pub hellos: Arc<Mutex<Vec<LinkHello>>>,
@@ -51,10 +70,11 @@ pub struct Plan {
 
 /// A directory of this test's own.
 fn scratch(name: &str) -> PathBuf {
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
-        "agent-{name}-{}-{:?}",
+        "a-{name}-{}-{}",
         std::process::id(),
-        std::thread::current().id()
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("scratch dir");
@@ -108,7 +128,8 @@ async fn handle(mut stream: UnixStream, plan: Plan, hellos: Arc<Mutex<Vec<LinkHe
 /// Starts an agent on a new socket.
 pub fn start(name: &str, plan: Plan) -> Agent {
     let scratch = scratch(name);
-    let path = scratch.join("agent.sock");
+    let path = socket_in(&scratch, AGENT_NAME);
+    std::fs::create_dir_all(path.parent().expect("parent")).expect("agent dir");
     let listener = UnixListener::bind(&path).expect("bind");
     let hellos = Arc::new(Mutex::new(Vec::new()));
     let runner = plan.runner.clone();
@@ -121,6 +142,7 @@ pub fn start(name: &str, plan: Plan) -> Agent {
         }
     });
     Agent {
+        door: porter_client::SocketAgent::named(AGENT_NAME).in_runtime_dir(scratch.clone()),
         path,
         hellos,
         runner,

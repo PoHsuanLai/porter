@@ -1,13 +1,13 @@
 //! `Accounts::connect`: the first reachable link wins. The session bus is found through the
 //! environment, so the D-Bus case runs the connecting half in a child process whose
 //! environment names a private bus; this process never edits its own.
-#![cfg(feature = "dbus")]
+#![cfg(all(feature = "dbus", feature = "infer"))]
 
 mod common;
 
 use common::bus::PrivateBus;
 use common::inferd::{Behaviour, FakeInferd};
-use porter_client::{Accounts, ClientEnv, ClientError, LinkChoice, SocketPath, TransportError};
+use porter_client::{Accounts, ClientEnv, ClientError, LinkChoice, SocketAgent, TransportError};
 use porter_core::consent::Usage;
 use porter_core::need::LlmNeed;
 use porter_core::{AccountId, DataClass, ModelId, Need, Tier, Tokens};
@@ -67,7 +67,7 @@ fn request() -> InferRequest {
 }
 
 fn socket_link() -> LinkChoice {
-    LinkChoice::Socket(SocketPath(PathBuf::from("/nonexistent/porter.sock")))
+    LinkChoice::Socket(SocketAgent::porter().in_runtime_dir(PathBuf::from("/nonexistent/runtime")))
 }
 
 #[tokio::test]

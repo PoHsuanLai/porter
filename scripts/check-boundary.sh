@@ -176,4 +176,8 @@ else
   echo "test-only: nothing depends on porter-rig, and dist/ does not name it"
 fi
 
+# The portable cores build without the desktop and reach no D-Bus; the accounts-only client
+# reaches no inference either (quire design/36).
+./scripts/check-portable.sh || fail=1
+
 exit "$fail"

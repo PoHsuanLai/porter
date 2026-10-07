@@ -1,16 +1,19 @@
-//! The socket carrier where there is none: no `socket` feature (no runtime), or no Unix
-//! sockets. Nobody is reachable on it, and no session exists.
+//! The socket carrier where there is none: no `socket` feature (no runtime, no latchkey), or no
+//! Unix sockets. Nobody is reachable on it, and no session exists.
 
 use crate::authenticated::Relayed;
-use crate::env::SocketPath;
+use crate::env::{SocketAgent, StartAgent};
 use crate::error::TransportError;
 use porter_core::{AccountsReply, AccountsRequest};
+#[cfg(feature = "infer")]
 use porter_infer::{ClientFrame, InferEvent, LinkHello, SessionError};
 
 /// A session that cannot exist: [`open`] never makes one.
+#[cfg(feature = "infer")]
 #[derive(Debug)]
 pub(super) enum Link {}
 
+#[cfg(feature = "infer")]
 impl Link {
     pub(super) async fn send(&mut self, _frame: ClientFrame) -> Result<(), SessionError> {
         match *self {}
@@ -30,23 +33,38 @@ impl Link {
     }
 }
 
-pub(super) async fn reachable(_path: &SocketPath) -> bool {
+/// No address: nothing to resolve.
+#[derive(Debug)]
+pub(super) struct Door;
+
+pub(super) fn door(_agent: &SocketAgent) -> Door {
+    Door
+}
+
+pub(super) async fn reachable(_door: &Door, _how: &StartAgent) -> bool {
     false
 }
 
 pub(super) async fn call(
-    _path: &SocketPath,
+    _door: &Door,
+    _how: &StartAgent,
     _request: AccountsRequest,
 ) -> Result<AccountsReply, TransportError> {
     Err(TransportError::Unreachable)
 }
 
-pub(super) async fn open(_path: &SocketPath, _hello: LinkHello) -> Result<Link, TransportError> {
+#[cfg(feature = "infer")]
+pub(super) async fn open(
+    _door: &Door,
+    _how: &StartAgent,
+    _hello: LinkHello,
+) -> Result<Link, TransportError> {
     Err(TransportError::Unreachable)
 }
 
 pub(super) async fn open_authenticated(
-    _path: &SocketPath,
+    _door: &Door,
+    _how: &StartAgent,
     _request: AccountsRequest,
 ) -> Result<Relayed, TransportError> {
     Err(TransportError::Unreachable)

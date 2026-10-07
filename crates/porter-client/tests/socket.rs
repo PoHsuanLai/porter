@@ -1,7 +1,7 @@
 //! `SocketTransport` against a hand-written agent on a Unix socket: accountd calls answered by
 //! the real `AccountService`, sessions by the real session server over scripted seams. One
 //! connection per call, a hello first on a session.
-#![cfg(all(unix, feature = "socket"))]
+#![cfg(all(unix, feature = "socket", feature = "infer"))]
 
 mod common;
 
@@ -9,7 +9,7 @@ use common::agent::{Agent, Plan, start};
 use common::served::{Gate, Route, Scripted};
 use inferd::session::RouteDecision;
 use porter_client::{
-    Accounts, ClientEnv, ClientError, Found, InferSession, LinkChoice, OpenOptions, SocketPath,
+    Accounts, ClientEnv, ClientError, Found, InferSession, LinkChoice, OpenOptions, SocketAgent,
     SocketTransport, TransportError,
 };
 use porter_core::capability::{Access, CuaEnv, Delta, QuotaReport, StorageScope};
@@ -65,7 +65,7 @@ async fn agent(name: &str, answers: Vec<Answer>, route: Route, scripts: Vec<Scri
 }
 
 fn accounts(agent: &Agent) -> Accounts<SocketTransport> {
-    Accounts::over(SocketTransport::at(SocketPath(agent.path.clone())))
+    Accounts::over(SocketTransport::at(agent.door.clone()))
 }
 
 fn storage(delta: Delta) -> Need {
@@ -142,9 +142,9 @@ async fn a_sheet_waiting_on_the_person_blocks_no_other_call() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn nobody_listening_is_unreachable_and_connect_skips_the_link() {
-    let dir = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("socket-nobody");
+    let dir = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("s-nobody");
     std::fs::create_dir_all(&dir).expect("dir");
-    let path = SocketPath(dir.join("none.sock"));
+    let path = SocketAgent::named("none").in_runtime_dir(dir);
     let transport = SocketTransport::at(path.clone());
     let accounts = Accounts::over(transport);
     assert_eq!(
@@ -168,8 +168,11 @@ async fn connect_reaches_an_agent_and_the_link_answers() {
     let agent = agent("connect", vec![], ready(), vec![]).await;
     let env = ClientEnv {
         links: vec![
-            LinkChoice::Socket(SocketPath(agent.path.with_file_name("nobody.sock"))),
-            LinkChoice::Socket(SocketPath(agent.path.clone())),
+            LinkChoice::Socket(SocketAgent {
+                name: "nobody".to_owned(),
+                ..agent.door.clone()
+            }),
+            LinkChoice::Socket(agent.door.clone()),
         ],
     };
     let connected = Accounts::connect(&env)
@@ -355,17 +358,20 @@ async fn a_frame_rides_the_socket_as_a_memfd() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agent_that_hangs_up_mid_call_is_closed_not_hung() {
-    let dir = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("socket-hangup");
+    let dir = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("s-hangup");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("dir");
-    let path = dir.join("agent.sock");
+    let path = common::agent::socket_in(&dir, "hup");
+    std::fs::create_dir_all(path.parent().expect("parent")).expect("agent dir");
     let listener = tokio::net::UnixListener::bind(&path).expect("bind");
     tokio::spawn(async move {
         while let Ok((stream, _)) = listener.accept().await {
             drop(stream);
         }
     });
-    let photos = Accounts::over(SocketTransport::at(SocketPath(path)));
+    let photos = Accounts::over(SocketTransport::at(
+        SocketAgent::named("hup").in_runtime_dir(dir),
+    ));
     let got = photos
         .find(&storage(Delta::Poll), DataClass::Photos, Usage::Interactive)
         .await
@@ -393,7 +399,7 @@ async fn an_authenticated_relay_arrives_as_a_descriptor_on_the_reply_and_a_refus
         .await
         .expect("chosen");
     let (grant, url) = (chosen.grant.clone(), chosen.endpoints[0].url.clone());
-    let transport = SocketTransport::at(SocketPath(agent.path.clone()));
+    let transport = SocketTransport::at(agent.door.clone());
 
     let Relayed::Stream(AuthenticatedStream::Fd(fd)) = transport
         .open_authenticated(&grant, &url)

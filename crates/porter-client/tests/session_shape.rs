@@ -1,4 +1,5 @@
 //! `Accounts::session` and `Accounts::infer` over a transport whose sessions are scripted.
+#![cfg(feature = "infer")]
 
 use porter_client::{Accounts, ClientError, InferSession, Transport, TransportError};
 use porter_core::need::LlmNeed;

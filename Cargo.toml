@@ -120,6 +120,9 @@ windows-native-keyring-store = "1"
 hickory-resolver = "0.26"
 # syncd's journal: SQLCipher built from source with a vendored OpenSSL, used unkeyed (quire's pinned line).
 rusqlite = { version = "0.40", features = ["bundled-sqlcipher-vendored-openssl"] }
+# The per-user agent's address, lock and start (the `socket` carrier of porter-client). The standalone
+# repo at the rev mailo pins; quire's block still names the old copy inside mailo (see FINDINGS).
+latchkey = { git = "https://github.com/PoHsuanLai/latchkey", rev = "7b250b9e3b17bccd2a20126c6106461bc2050313" }
 rustix = { version = "1.1", default-features = false, features = ["std", "event", "fs", "net", "time", "process"] }
 
 [workspace.lints.rust]

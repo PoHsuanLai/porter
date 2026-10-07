@@ -10,11 +10,12 @@ publish.workspace = true
 
 [dependencies]
 porter-core = { workspace = true }
-porter-infer = { workspace = true }
+porter-infer = { workspace = true, optional = true }
 porter-provider = { workspace = true }
 porter-secrets = { workspace = true }
 porter-service = { workspace = true }
 porter-dbus = { workspace = true, optional = true }
+latchkey = { workspace = true, optional = true }
 rustix = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
@@ -22,6 +23,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
+latchkey = { workspace = true }
 accountd = { path = "../accountd" }
 cua-action = { workspace = true }
 inferd = { path = "../inferd" }
@@ -33,14 +35,20 @@ tokio = { workspace = true }
 zbus = { workspace = true }
 
 [features]
+# Inference: sessions with inferd, `Need::Llm` paths, `prepare`. Default on so every existing
+# consumer builds as before; an accounts-only consumer says `default-features = false` (plus
+# `socket` or `dbus`) and builds no porter-infer, so no stoker.
+default = ["infer"]
+infer = ["dep:porter-infer"]
 # Frames over a Unix stream socket with descriptors riding on them (what both carriers below
 # share). Pulls in the runtime, so it is off by default: the pure build reaches none.
 framed = ["dep:rustix", "dep:serde", "dep:tokio"]
 # The D-Bus transport (Linux, the desktop's accountd and inferd).
 dbus = ["framed", "dep:porter-dbus", "dep:serde_json"]
 # The latchkey socket carrier (other desktops, macOS; a named pipe on Windows is not built):
-# without it `SocketTransport` finds nobody.
-socket = ["framed"]
+# the agent's address, lock and start come from latchkey. Without it `SocketTransport` finds
+# nobody.
+socket = ["framed", "dep:latchkey"]
 
 [lints]
 workspace = true

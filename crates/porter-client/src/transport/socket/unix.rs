@@ -1,16 +1,61 @@
-//! The socket carrier over a Unix stream socket.
+//! The socket carrier over a Unix stream socket, at the address latchkey gives the agent.
+//!
+//! latchkey decides where the socket is, whether an agent already holds it (an advisory lock, not
+//! a look at the file) and how one is started. The bytes then go over a tokio stream to that
+//! address: latchkey's own `Stream` is a blocking one with no descriptor access, and a relay's
+//! descriptor rides on the reply as SCM_RIGHTS (see FINDINGS: the latchkey ask).
 
 use crate::authenticated::{AuthenticatedStream, Relayed};
-use crate::env::SocketPath;
+use crate::env::{Place, SocketAgent, StartAgent};
 use crate::error::TransportError;
 use crate::transport::framed::FramedSession;
+use latchkey::{Agent, Environment, Error, here};
 use porter_core::{AccountsReply, AccountsRequest};
-use porter_infer::LinkHello;
 use std::io::ErrorKind;
+use std::path::PathBuf;
 use tokio::net::UnixStream;
 
 /// The session's link: frames over the connected stream.
+#[cfg(feature = "infer")]
 pub(super) type Link = FramedSession;
+
+/// The agent's address as latchkey resolved it, or why it could not be.
+#[derive(Debug)]
+pub(super) struct Door(Result<Agent, TransportError>);
+
+/// latchkey's address for `agent`: its own rules over the process environment, or under the
+/// runtime directory the app named.
+pub(super) fn door(agent: &SocketAgent) -> Door {
+    let built = match &agent.place {
+        Place::Ambient => Agent::new(&agent.name),
+        Place::RuntimeDir(dir) => {
+            let env = Environment {
+                runtime_dir: Some(dir.as_os_str()),
+                tmpdir: Some(dir.as_os_str()),
+                ..Environment::default()
+            };
+            Agent::in_environment(&agent.name, here(), &env)
+        }
+    };
+    Door(built.map_err(|error| match error {
+        // Nowhere to put a socket is nobody to talk to.
+        Error::Homeless(_) => TransportError::Unreachable,
+        other => TransportError::Malformed(format!("agent address: {other}")),
+    }))
+}
+
+impl Door {
+    fn agent(&self) -> Result<&Agent, TransportError> {
+        self.0.as_ref().map_err(Clone::clone)
+    }
+
+    fn socket(&self) -> Result<PathBuf, TransportError> {
+        self.agent()?
+            .socket()
+            .map(PathBuf::from)
+            .ok_or(TransportError::Unreachable)
+    }
+}
 
 /// A connect that failed: nobody listening is `Unreachable`, anything else is the socket
 /// misbehaving.
@@ -25,35 +70,78 @@ fn unreachable_or_malformed(error: &std::io::Error) -> TransportError {
     }
 }
 
-async fn connect(path: &SocketPath) -> Result<Link, TransportError> {
-    UnixStream::connect(&path.0)
+async fn knock(door: &Door) -> Result<FramedSession, TransportError> {
+    let path = door.socket()?;
+    UnixStream::connect(&path)
         .await
         .map(FramedSession::from_stream)
         .map_err(|e| unreachable_or_malformed(&e))
 }
 
-pub(super) async fn reachable(path: &SocketPath) -> bool {
-    connect(path).await.is_ok()
+/// Starts the agent by the app's policy, off the runtime (latchkey's wait is a blocking one).
+/// latchkey's lock decides who the agent is: a second client that starts one at the same moment
+/// starts a process that finds the lock taken.
+async fn start(door: &Door, how: &StartAgent) -> Result<(), TransportError> {
+    let StartAgent::Spawn { args, wait } = how else {
+        return Err(TransportError::Unreachable);
+    };
+    let agent = door.agent()?.clone();
+    let (args, wait) = (args.clone(), *wait);
+    tokio::task::spawn_blocking(move || {
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        agent
+            .connect_or_start(|| latchkey::spawn(&args), wait)
+            .map(drop)
+    })
+    .await
+    .map_err(|_| TransportError::Closed)?
+    .map_err(|error| match error {
+        Error::NeverAnswered(_) | Error::CannotSpawn(_) | Error::NoSelf(_) => {
+            TransportError::Unreachable
+        }
+        other => TransportError::Malformed(format!("agent: {other}")),
+    })
+}
+
+/// A connection to the agent: knock, and start it if nobody answers and the app said to.
+async fn connect(door: &Door, how: &StartAgent) -> Result<FramedSession, TransportError> {
+    match knock(door).await {
+        Err(TransportError::Unreachable) if *how != StartAgent::Never => {
+            start(door, how).await?;
+            knock(door).await
+        }
+        reached => reached,
+    }
+}
+
+pub(super) async fn reachable(door: &Door, how: &StartAgent) -> bool {
+    connect(door, how).await.is_ok()
 }
 
 /// One call: a request frame out, a reply frame back. A daemon that refuses writes the reply and
 /// hangs up, so the write can fail with the reply waiting: read first, and report the write only
 /// when there is nothing to read.
 pub(super) async fn call(
-    path: &SocketPath,
+    door: &Door,
+    how: &StartAgent,
     request: AccountsRequest,
 ) -> Result<AccountsReply, TransportError> {
-    let mut link = connect(path).await?;
+    let mut link = connect(door, how).await?;
     let sent = link.write_body(&request).await;
     match link.read_body::<AccountsReply>().await {
         Ok(reply) => Ok(reply),
-        Err(read) => Err(sent.err().unwrap_or(read).into()),
+        Err(read) => Err(sent.err().unwrap_or(read)),
     }
 }
 
 /// A session: the hello out, then the link is the caller's.
-pub(super) async fn open(path: &SocketPath, hello: LinkHello) -> Result<Link, TransportError> {
-    let mut link = connect(path).await?;
+#[cfg(feature = "infer")]
+pub(super) async fn open(
+    door: &Door,
+    how: &StartAgent,
+    hello: porter_infer::LinkHello,
+) -> Result<Link, TransportError> {
+    let mut link = connect(door, how).await?;
     link.write_body(&hello).await?;
     Ok(link)
 }
@@ -61,14 +149,15 @@ pub(super) async fn open(path: &SocketPath, hello: LinkHello) -> Result<Link, Tr
 /// `OpenAuthenticated`: the request frame out, the reply frame back with the relay's descriptor
 /// riding on it. A refusal brings none, and `Authenticated` exactly one.
 pub(super) async fn open_authenticated(
-    path: &SocketPath,
+    door: &Door,
+    how: &StartAgent,
     request: AccountsRequest,
 ) -> Result<Relayed, TransportError> {
-    let mut link = connect(path).await?;
+    let mut link = connect(door, how).await?;
     let sent = link.write_body(&request).await;
     let (reply, mut fds) = match link.read_body_with_fds::<AccountsReply>().await {
         Ok(read) => read,
-        Err(read) => return Err(sent.err().unwrap_or(read).into()),
+        Err(read) => return Err(sent.err().unwrap_or(read)),
     };
     match (reply, fds.len()) {
         (AccountsReply::Authenticated, 1) => fds

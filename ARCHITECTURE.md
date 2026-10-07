@@ -29,7 +29,7 @@ trait), section 6 (copy the recipe).
 | `porter-families` | the protocol families as code, one feature each (`nextcloud`, `generic`, `microsoft`, `api_key`, `openrouter`), and `FamilyProvider` over them | none by default |
 | `porter-infer` | the AI broker's pure half: requests and replies (chat with tools and controls, embeddings with a query/document role, tasks, computer-use steps, speech), `OpenOptions` (the reserved `traceparent` and `usage`: `interactive` or `background`, absent meaning `interactive`), the streaming session (`ClientFrame`, `InferEvent`, `InferSession`), the model picker's data (`Slot`, `TierMap`, `PickerRow`), `plan_pipeline`, `Readiness`, `Policy` and floors, `admit` (the hard rules), `route` and `pick` (Named or Automatic, warm first) with the `Why` of every answer, spend caps, `AuditEntry`, the `Model` trait, `Broker` (stubbed) | none |
 | `porter-service` | accountd's core over its seams: `AccountService`, `Registry`, the `Sheets` (with `SheetLink`), `Clock`, `RegistryStore` and `AuditSink` traits | none (seams are passed in) |
-| `porter-client` | the app-facing API: `Accounts` (with `open_authenticated` and `adopt`), `Found`, `AuthenticatedStream`, the `Transport` trait (`call` for accountd, `open_authenticated` for a relay, `open` for an inference session); `InProcess` (with a `SessionHost` for inference, `NoBroker` by default, and a `RelayHost`, `NoRelays` by default), `SocketTransport` (feature `socket`), `DbusTransport` (feature `dbus`); both of those share one framed session over a Unix stream (feature `framed`) | through its transport |
+| `porter-client` | the app-facing API: `Accounts` (with `open_authenticated` and `adopt`), `Found`, `AuthenticatedStream`, the `Transport` trait (`call` for accountd, `open_authenticated` for a relay; with feature `infer`, `open` for an inference session and `prepare`); `InProcess` (with a `SessionHost` for inference under `infer`, `NoBroker` by default, and a `RelayHost`, `NoRelays` by default), `SocketTransport` (feature `socket`: the agent is a `SocketAgent`, its address, lock and start are latchkey's), `DbusTransport` (feature `dbus`); both of those share one framed session over a Unix stream (feature `framed`). Feature `infer` (default on) is inference: without it (`default-features = false`) the crate reaches no porter-infer, so no stoker, and no zbus (quire design/36) | through its transport |
 | `porter-dbus` | `org.quire.Accounts1` (with `Peer`), `org.quire.AccountsSheet1`, `org.quire.Sync1`, `org.quire.Inference1` as zbus proxies and skeletons; `introspection`; the argument codec; the sheet answer (`sheet`: request paths, response codes, results) and its caller's half (`pending`: subscribe before the call, `Closer`); `callers` (`CallerRole`, `CallerTable`, `ProcCallers`) | zbus |
 | `porter-fake` | test-only: fake providers from real provider files, three accounts (with endpoints), `ScriptedSheets`, `FixedClock`, `MemoryStore`, `RecordingAudit`, the `FakeServer` seam, `FakeModel` (streams), `FakeInferSession` (scripted events per request kind, audio-gated transcripts), `fake_service` | none |
 | `porter-fake-servers` | test-only (never a dependency of anything else, checked): fake servers on loopback or scratch Unix sockets, built from the shipped `providers/*.toml` with endpoints rewritten (`FakeServer::rewrite`), each recording what it received on a handle: a Microsoft Graph drive (OneDrive's app folder: delta, ETags, simple and session uploads; it accepts one fixed bearer, or every access token a fake issuer minted and has not revoked), an OAuth issuer (authorize with PKCE S256 and state, token, refresh rotation, revoke, `invalid_grant`, device code) with a scripted browser, IMAP and SMTP (STARTTLS and implicit TLS with a scratch CA made by `fixtures/regen.sh` with the openssl CLI), a Nextcloud (Login Flow v2, OCS app-password delete, WebDAV with sync tokens and quota, CalDAV and CardDAV with principal, home sets, collection names and colours, Notes), a plain DAV server, autoconfig and well-known routes, `FakeDns` behind `porter-discover`'s `Dns`, and Ollama and OpenAI-compatible model lists | tokio, rustls (ring), loopback only |
@@ -48,7 +48,7 @@ Allowed direct edges (checked by `scripts/check-boundary.sh`; dev-dependencies a
 | `storage-webdav` | `porter-core`, `porter-dav`, `porter-http`, `porter-sync` (used by syncd only; no consumer repo) |
 | `porter-infer` | `porter-core`, `cua-action` (stoker's computer-use vocabulary, by sibling path) |
 | `porter-service` | `porter-core`, `porter-provider`, `porter-secrets` |
-| `porter-client` | `porter-core`, `porter-infer`, `porter-provider`, `porter-secrets`, `porter-service`; `porter-dbus` with feature `dbus` |
+| `porter-client` | `porter-core`, `porter-provider`, `porter-secrets`, `porter-service`; `porter-infer` with feature `infer` (default); `porter-dbus` with feature `dbus`; latchkey (git, not ours) with feature `socket` |
 | `porter-fake` | `porter-core`, `porter-infer`, `porter-provider`, `porter-secrets`, `porter-service` |
 | `porter-fake-servers` | `porter-core`, `porter-discover`, `porter-fake`, `porter-provider` (and nothing may depend on it) |
 | `porter-rig` | `porter-client` (feature `dbus`), `porter-core`, `porter-dbus`, `porter-fake`, `porter-fake-servers`, `porter-infer`, clap, serde, serde_json, tokio (with `signal`), zbus (and nothing may depend on it) |
@@ -230,6 +230,7 @@ pub trait Http: Send + Sync { /* send(HttpRequest) -> HttpResponse */ }
 
 // porter-client: D-Bus, the latchkey socket, in process.
 pub trait Transport: Send + Sync {
+    // `Session`, `open_with`, `prepare` and `open` exist with feature `infer` (default on)
     type Session: InferSession;
     fn call(&self, request: AccountsRequest) -> impl Future<Output = Result<AccountsReply, TransportError>> + Send;
     // provided: a transport that cannot carry the relay's descriptor is `Unreachable`
@@ -415,7 +416,7 @@ D-Bus on the desktop). Where each mailo piece lands:
 | `ui/add_account/flow.rs` (the stage machine) | `porter_core::sheet` (`Sheet`, `Stage`, `step`); the view is quire's `ds-shell::accounts`, mapped from `SheetView` |
 | the keyring entries `service=mailo` | `AccountsRequest::Adopt { legacy: LegacyRef }`: the daemon reads them itself |
 | `presets/` (provider table) | provider files in `providers/`, claiming addresses through `ProviderSpec.matching` |
-| `latchkey` (agent lifecycle, socket/pipe) | `SocketTransport`'s carrier; frames are `porter_core::wire` |
+| `latchkey` (agent lifecycle, socket/pipe) | still latchkey (standalone repo): `SocketTransport` takes the agent's address, single-instance lock and start from it (`SocketAgent`); frames are `porter_core::wire` |
 
 ## 9. Repo rules
 

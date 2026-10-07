@@ -12,20 +12,23 @@ use crate::authenticated::{AuthenticatedStream, Relayed};
 use crate::error::TransportError;
 use crate::relays::{NoRelays, RelayHost};
 use porter_core::stream::duplex;
-use porter_core::{
-    AccountsReply, AccountsRequest, AppId, DataClass, EndpointUrl, GrantId, Need, Tier,
-};
+use porter_core::{AccountsReply, AccountsRequest, AppId, EndpointUrl, GrantId};
+#[cfg(feature = "infer")]
+use porter_core::{DataClass, Need, Tier};
+#[cfg(feature = "infer")]
 use porter_infer::{ClientFrame, InferEvent, InferSession, OpenOptions, Readiness, SessionError};
 use porter_provider::Provider;
 use porter_secrets::Secrets;
 use porter_service::{AccountService, AuditSink, Clock, NoAudit, NoStore, RegistryStore, Sheets};
+#[cfg(feature = "infer")]
 use std::future::Future;
 use std::sync::Arc;
 
 /// How much of a relay's traffic an in-memory stream holds before the writer waits.
 const RELAY_BUFFER: usize = 64 * 1024;
 
-/// Where an in-process app's inference sessions come from.
+/// Where an in-process app's inference sessions come from (feature `infer`).
+#[cfg(feature = "infer")]
 pub trait SessionHost: Send + Sync {
     /// The session `open` returns.
     type Session: InferSession;
@@ -57,6 +60,7 @@ pub trait SessionHost: Send + Sync {
 }
 
 /// One broker may serve several apps' links.
+#[cfg(feature = "infer")]
 impl<T: SessionHost> SessionHost for Arc<T> {
     type Session = T::Session;
 
@@ -88,12 +92,15 @@ impl<T: SessionHost> SessionHost for Arc<T> {
 pub struct NoBroker;
 
 /// The session of [`NoBroker`]: there is none, so this holds nothing and is never made.
+#[cfg(feature = "infer")]
 #[derive(Debug)]
 pub struct InProcessSession(Never);
 
+#[cfg(feature = "infer")]
 #[derive(Debug)]
 enum Never {}
 
+#[cfg(feature = "infer")]
 impl InferSession for InProcessSession {
     async fn send(&mut self, _frame: ClientFrame) -> Result<(), SessionError> {
         match self.0 {}
@@ -104,6 +111,7 @@ impl InferSession for InProcessSession {
     }
 }
 
+#[cfg(feature = "infer")]
 impl SessionHost for NoBroker {
     type Session = InProcessSession;
 
@@ -125,6 +133,7 @@ impl SessionHost for NoBroker {
 pub struct InProcess<P, S, U, K, B = NoBroker, R = NoStore, A = NoAudit, H = NoRelays> {
     service: Arc<AccountService<P, S, U, K, R, A>>,
     app: AppId,
+    #[cfg_attr(not(feature = "infer"), allow(dead_code))]
     broker: B,
     relays: H,
 }
@@ -142,7 +151,8 @@ impl<P, S, U, K, R, A> InProcess<P, S, U, K, NoBroker, R, A, NoRelays> {
 }
 
 impl<P, S, U, K, B, R, A, H> InProcess<P, S, U, K, B, R, A, H> {
-    /// The same link with `broker` serving its inference sessions.
+    /// The same link with `broker` serving its inference sessions (feature `infer`).
+    #[cfg(feature = "infer")]
     pub fn with_broker<N: SessionHost>(self, broker: N) -> InProcess<P, S, U, K, N, R, A, H> {
         InProcess {
             service: self.service,
@@ -163,6 +173,83 @@ impl<P, S, U, K, B, R, A, H> InProcess<P, S, U, K, B, R, A, H> {
     }
 }
 
+/// The accounts half, the same with and without inference.
+impl<P, S, U, K, B, R, A, H> InProcess<P, S, U, K, B, R, A, H>
+where
+    P: Provider,
+    S: Secrets,
+    U: Sheets,
+    K: Clock,
+    R: RegistryStore,
+    A: AuditSink,
+    H: RelayHost,
+{
+    async fn call_service(&self, request: AccountsRequest) -> AccountsReply {
+        self.service.handle(&self.app, request).await
+    }
+
+    async fn relayed_authenticated(&self, grant: &GrantId, endpoint: &EndpointUrl) -> Relayed {
+        match self
+            .service
+            .open_authenticated(&self.app, grant, endpoint)
+            .await
+        {
+            Ok(plan) => {
+                let (app_end, relay_end) = duplex(RELAY_BUFFER);
+                self.relays.run(plan, relay_end);
+                Relayed::Stream(AuthenticatedStream::Memory(app_end))
+            }
+            Err(refusal) => Relayed::Refused(refusal),
+        }
+    }
+
+    async fn relayed_linked(&self, grant: &GrantId, origin: &EndpointUrl) -> Relayed {
+        match self.service.open_linked(&self.app, grant, origin).await {
+            Ok(plan) => {
+                let (app_end, relay_end) = duplex(RELAY_BUFFER);
+                self.relays.run(plan, relay_end);
+                Relayed::Stream(AuthenticatedStream::Memory(app_end))
+            }
+            Err(refusal) => Relayed::Refused(refusal),
+        }
+    }
+}
+
+/// Accounts alone: no broker to name.
+#[cfg(not(feature = "infer"))]
+impl<P, S, U, K, B, R, A, H> Transport for InProcess<P, S, U, K, B, R, A, H>
+where
+    P: Provider,
+    S: Secrets,
+    U: Sheets,
+    K: Clock,
+    B: Send + Sync,
+    R: RegistryStore,
+    A: AuditSink,
+    H: RelayHost,
+{
+    async fn call(&self, request: AccountsRequest) -> Result<AccountsReply, TransportError> {
+        Ok(self.call_service(request).await)
+    }
+
+    async fn open_authenticated(
+        &self,
+        grant: &GrantId,
+        endpoint: &EndpointUrl,
+    ) -> Result<Relayed, TransportError> {
+        Ok(self.relayed_authenticated(grant, endpoint).await)
+    }
+
+    async fn open_linked(
+        &self,
+        grant: &GrantId,
+        origin: &EndpointUrl,
+    ) -> Result<Relayed, TransportError> {
+        Ok(self.relayed_linked(grant, origin).await)
+    }
+}
+
+#[cfg(feature = "infer")]
 impl<P, S, U, K, B, R, A, H> Transport for InProcess<P, S, U, K, B, R, A, H>
 where
     P: Provider,
@@ -177,7 +264,7 @@ where
     type Session = B::Session;
 
     async fn call(&self, request: AccountsRequest) -> Result<AccountsReply, TransportError> {
-        Ok(self.service.handle(&self.app, request).await)
+        Ok(self.call_service(request).await)
     }
 
     async fn open_authenticated(
@@ -185,18 +272,7 @@ where
         grant: &GrantId,
         endpoint: &EndpointUrl,
     ) -> Result<Relayed, TransportError> {
-        match self
-            .service
-            .open_authenticated(&self.app, grant, endpoint)
-            .await
-        {
-            Ok(plan) => {
-                let (app_end, relay_end) = duplex(RELAY_BUFFER);
-                self.relays.run(plan, relay_end);
-                Ok(Relayed::Stream(AuthenticatedStream::Memory(app_end)))
-            }
-            Err(refusal) => Ok(Relayed::Refused(refusal)),
-        }
+        Ok(self.relayed_authenticated(grant, endpoint).await)
     }
 
     async fn open_linked(
@@ -204,14 +280,7 @@ where
         grant: &GrantId,
         origin: &EndpointUrl,
     ) -> Result<Relayed, TransportError> {
-        match self.service.open_linked(&self.app, grant, origin).await {
-            Ok(plan) => {
-                let (app_end, relay_end) = duplex(RELAY_BUFFER);
-                self.relays.run(plan, relay_end);
-                Ok(Relayed::Stream(AuthenticatedStream::Memory(app_end)))
-            }
-            Err(refusal) => Ok(Relayed::Refused(refusal)),
-        }
+        Ok(self.relayed_linked(grant, origin).await)
     }
 
     async fn open_with(
