@@ -1,7 +1,7 @@
 //! The files under `dist/` agree with the code: the activation file and the unit name the bus name
 //! the daemon claims, and the sample configuration reads.
 
-use ds_settings::schema::{AgentSetting, Exposure, KeyKind, KeySpec, Page, Schema};
+use ds_settings::schema::{AgentSetting, Exposure, ForeignTables, KeyKind, KeySpec, Page, Schema};
 use inferd::config::InferdConfig;
 use inferd::settings::{self, CLASSES, slug_of};
 use std::path::PathBuf;
@@ -76,6 +76,16 @@ fn the_sample_configuration_reads_and_names_the_callers_the_design_calls_for() {
 
 fn schema() -> Schema {
     Schema::from_toml(&dist("inferd.settings.toml")).expect("the schema parses and is hands-off")
+}
+
+#[test]
+fn the_schema_names_the_three_tables_inferd_keeps_beside_its_rows() {
+    let expected = ForeignTables(vec![
+        "engines".to_owned(),
+        "probe".to_owned(),
+        "callers".to_owned(),
+    ]);
+    assert_eq!(schema().foreign, expected);
 }
 
 fn schema_keys() -> Vec<KeySpec> {
