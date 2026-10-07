@@ -198,8 +198,9 @@ fn no_shipped_row_grants_the_agent_launcher_role_and_the_documented_row_reads() 
     let mine = accountd::table_from_toml(&documented).expect("the documented row reads");
     let launcher = mine.resolve_unit("docket-acp.service").expect("the unit");
     assert_eq!(launcher.role, CallerRole::AgentLauncher);
+    // As for every unit row, the app scope of the same name is only an app.
     assert_eq!(
         mine.role_of(&AppName::parse("org.quire.DocketAcp").expect("name")),
-        CallerRole::AgentLauncher
+        CallerRole::App
     );
 }

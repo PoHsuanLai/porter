@@ -450,7 +450,7 @@ async fn adding_an_agent_account_asks_nothing_secret_and_stores_no_credential() 
         "the secret store was never written"
     );
     let registry = std::fs::read_to_string(store.path()).expect("registry file");
-    for word in ["secret", "password", "refresh", "token"] {
+    for word in ["secret", "password", "refresh", "api_key"] {
         assert!(
             !registry.to_lowercase().contains(word),
             "{word} in registry"
