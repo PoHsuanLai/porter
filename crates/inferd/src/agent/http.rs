@@ -79,7 +79,14 @@ fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .position(|window| window == needle)
 }
 
-fn parse_head(head: &str) -> Result<(String, String, Vec<(String, String)>), ReadError> {
+/// The request line and headers of a head.
+struct Head {
+    method: String,
+    target: String,
+    headers: Vec<(String, String)>,
+}
+
+fn parse_head(head: &str) -> Result<Head, ReadError> {
     let mut lines = head.split("\r\n");
     let mut first = lines.next().ok_or(ReadError::Malformed)?.split(' ');
     let (method, target, version) = (first.next(), first.next(), first.next());
@@ -97,7 +104,11 @@ fn parse_head(head: &str) -> Result<(String, String, Vec<(String, String)>), Rea
                 .ok_or(ReadError::Malformed)
         })
         .collect::<Result<Vec<_>, _>>()?;
-    Ok((method.to_owned(), target.to_owned(), headers))
+    Ok(Head {
+        method: method.to_owned(),
+        target: target.to_owned(),
+        headers,
+    })
 }
 
 /// Reads at least `want` bytes of `buffer`, from `stream`.
@@ -182,7 +193,11 @@ pub async fn read_request<S: AsyncRead + AsyncWrite + Unpin>(
         fill(stream, &mut buffer, want).await?;
     };
     let head = std::str::from_utf8(&buffer[..head_end]).map_err(|_| ReadError::Malformed)?;
-    let (method, target, headers) = parse_head(head)?;
+    let Head {
+        method,
+        target,
+        headers,
+    } = parse_head(head)?;
     buffer.drain(..head_end + 4);
     let head_only = Request {
         method: method.clone(),

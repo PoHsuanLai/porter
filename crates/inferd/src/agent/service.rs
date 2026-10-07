@@ -77,6 +77,8 @@ async fn watch(connection: &zbus::Connection, agents: Agents, owner: String) {
 
 #[zbus::interface(name = "org.quire.Inference1.Agents")]
 impl<P: Peers> AgentsService<P> {
+    // The bus's arguments are the interface's: five of its own, the header and the connection.
+    #[allow(clippy::too_many_arguments)]
     async fn open_endpoint(
         &self,
         #[zbus(header)] header: Header<'_>,
