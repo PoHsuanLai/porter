@@ -111,4 +111,21 @@ mod tests {
         assert!(table_from_toml("[[caller]]\napp = \"not a name\"\nrole = \"app\"\n").is_err());
         let _ = std::fs::remove_dir_all(dir);
     }
+
+    #[test]
+    fn a_row_may_carry_the_name_a_person_reads() {
+        let table = table_from_toml(
+            "[[caller]]\napp = \"org.quire.Sync\"\nunit = \"syncd.service\"\nrole = \"porter_daemon\"\nname = \"Sync\"\n\n\
+             [[caller]]\napp = \"org.quire.Settings\"\nrole = \"settings\"\n",
+        )
+        .expect("table");
+        assert_eq!(
+            table.title_of(&name("org.quire.Sync")),
+            Some(&porter_dbus::AppTitle("Sync".to_owned()))
+        );
+        assert_eq!(table.title_of(&name("org.quire.Settings")), None);
+        assert!(
+            table_from_toml("[[caller]]\napp = \"org.x.A\"\nrole = \"app\"\nname = 3\n").is_err()
+        );
+    }
 }

@@ -5,6 +5,7 @@ fn row(app: &str, unit: Option<&str>, role: CallerRole) -> CallerRow {
         app: AppName::parse(app).expect("name"),
         unit: unit.map(str::to_owned),
         role,
+        name: None,
     }
 }
 
@@ -106,4 +107,26 @@ fn a_row_without_a_unit_deserializes() {
         serde_json::from_str(r#"{"caller":[{"app":"org.quire.Settings","role":"settings"}]}"#)
             .expect("table");
     assert_eq!(table.callers[0].unit, None);
+}
+
+#[test]
+fn the_last_row_with_a_name_names_the_app_whatever_its_unit() {
+    let named = |app: &str, unit: Option<&str>, title: &str| CallerRow {
+        name: Some(AppTitle(title.to_owned())),
+        ..row(app, unit, CallerRole::App)
+    };
+    let table = CallerTable {
+        callers: vec![
+            named("org.quire.Sync", Some("syncd.service"), "Sync"),
+            row("org.quire.Settings", None, CallerRole::Settings),
+            named("org.quire.Sync", None, "Mine"),
+            row("org.quire.Sync", None, CallerRole::App),
+        ],
+    };
+    assert_eq!(
+        table.title_of(&name("org.quire.Sync")),
+        Some(&AppTitle("Mine".to_owned()))
+    );
+    assert_eq!(table.title_of(&name("org.quire.Settings")), None);
+    assert_eq!(table.title_of(&name("org.quire.Nobody")), None);
 }

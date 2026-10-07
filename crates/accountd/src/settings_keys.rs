@@ -5,6 +5,7 @@
 //! issuer for a bring-your-own client id. Every key is under `accounts.`, so it is never
 //! agent-settable (`ds-settings` refuses a schema that says otherwise).
 
+use crate::app_names::AppNames;
 use ds_settings::live::LiveSchema;
 use ds_settings::schema::{
     ActionLabel, ActionWeight, AgentSetting, Exposure, Help, KeyKind, KeyPath, KeySpec, Label,
@@ -144,7 +145,30 @@ fn off() -> toml::Value {
     toml::Value::Boolean(false)
 }
 
-fn account_keys(account: &Account, grants: &[Grant]) -> Vec<KeySpec> {
+/// A service as a person reads it: the Services switch's label, and the noun in a grant's row.
+fn service_label(kind: &CapabilityKind) -> String {
+    let slug = slug(kind);
+    let mut letters = slug.chars();
+    letters
+        .next()
+        .map(|first| first.to_uppercase().chain(letters).collect())
+        .unwrap_or_default()
+}
+
+/// A grant's row: "Sync can use Storage" (allowed) or "Mail can't use Contacts" (refused).
+fn grant_label(grant: &Grant, names: &AppNames) -> String {
+    let can = match grant.decision {
+        Decision::Allow => "can",
+        Decision::Deny => "can't",
+    };
+    format!(
+        "{} {can} use {}",
+        names.title_of(&grant.key.app.name).0,
+        service_label(&grant.key.kind)
+    )
+}
+
+fn account_keys(account: &Account, grants: &[Grant], names: &AppNames) -> Vec<KeySpec> {
     let section = account.label.0.as_str();
     let id = &account.id;
     let mut keys = vec![
@@ -201,7 +225,7 @@ fn account_keys(account: &Account, grants: &[Grant]) -> Vec<KeySpec> {
         keys.push(spec(
             &Key::Service(id.clone(), kind),
             section,
-            slug(&kind),
+            service_label(&kind),
             "Whether apps may use this service of the account.",
             KeyKind::Toggle {
                 variants: ["on".to_owned(), "off".to_owned()],
@@ -232,18 +256,10 @@ fn account_keys(account: &Account, grants: &[Grant]) -> Vec<KeySpec> {
         ));
     }
     for grant in grants.iter().filter(|g| g.key.account == *id) {
-        let what = match grant.decision {
-            Decision::Allow => "allowed",
-            Decision::Deny => "refused",
-        };
         keys.push(spec(
             &Key::Grant(id.clone(), grant.id.clone()),
             section,
-            format!(
-                "{} {what}: {}",
-                grant.key.app.name.as_str(),
-                slug(&grant.key.kind)
-            ),
+            grant_label(grant, names),
             "Revoking asks the app again the next time it needs the account.",
             action("Revoke", ActionWeight::Plain),
             off(),
@@ -279,11 +295,11 @@ pub(crate) fn place_slug(account: &Account) -> &'static str {
 }
 
 /// The schema of the module for `registry`.
-pub(crate) fn schema(registry: &Registry) -> LiveSchema {
+pub(crate) fn schema(registry: &Registry, names: &AppNames) -> LiveSchema {
     let mut key: Vec<KeySpec> = registry
         .accounts
         .iter()
-        .flat_map(|account| account_keys(account, &registry.grants))
+        .flat_map(|account| account_keys(account, &registry.grants, names))
         .collect();
     key.extend(ISSUERS.iter().map(|issuer| {
         spec(
@@ -350,7 +366,7 @@ mod tests {
 
     #[test]
     fn only_an_account_syncd_can_mirror_has_the_sync_rows_plainly_worded_and_off_by_default() {
-        let schema = schema(&registry());
+        let schema = schema(&registry(), &AppNames::default());
         let sync: Vec<_> = schema
             .key
             .iter()
@@ -377,9 +393,78 @@ mod tests {
         }
     }
 
+    fn grant_row(decision: Decision, app: &str, kind: CapabilityKind, names: &AppNames) -> String {
+        let mut grants = registry().grants;
+        grants[0].decision = decision;
+        grants[0].key.app.name = AppName::parse(app).expect("name");
+        grants[0].key.kind = kind;
+        let rows = account_keys(&storage_account(), &grants, names);
+        let row = rows
+            .iter()
+            .find(|k| k.path.0 == "accounts.fake-storage.grant.g1")
+            .expect("grant row");
+        assert_eq!(
+            row.help.0,
+            "Revoking asks the app again the next time it needs the account."
+        );
+        row.label.0.clone()
+    }
+
+    #[test]
+    fn a_grant_row_says_in_a_sentence_what_the_app_can_or_cannot_use() {
+        let dirs = std::env::temp_dir().join(format!("grant-label-{}", std::process::id()));
+        std::fs::create_dir_all(&dirs).expect("scratch");
+        std::fs::write(
+            dirs.join("org.example.Mail.desktop"),
+            "[Desktop Entry]\nName=Mail\n",
+        )
+        .expect("entry");
+        let names = AppNames::new(
+            porter_dbus::CallerTable {
+                callers: vec![porter_dbus::CallerRow {
+                    app: AppName::parse("org.quire.Sync").expect("name"),
+                    unit: None,
+                    role: porter_dbus::CallerRole::PorterDaemon,
+                    name: Some(porter_dbus::AppTitle("Sync".into())),
+                }],
+            },
+            vec![dirs.clone()],
+        );
+        let storage = CapabilityKind::Storage;
+        assert_eq!(
+            grant_row(Decision::Allow, "org.quire.Sync", storage, &names),
+            "Sync can use Storage"
+        );
+        assert_eq!(
+            grant_row(
+                Decision::Deny,
+                "org.example.Mail",
+                CapabilityKind::Contacts,
+                &names
+            ),
+            "Mail can't use Contacts"
+        );
+        assert_eq!(
+            grant_row(Decision::Allow, "org.example.Ghost", storage, &names),
+            "org.example.Ghost can use Storage"
+        );
+        let _ = std::fs::remove_dir_all(dirs);
+    }
+
+    #[test]
+    fn the_service_switch_and_the_grant_row_call_a_service_the_same_thing() {
+        let rows = account_keys(&storage_account(), &[], &AppNames::default());
+        let switch = rows
+            .iter()
+            .find(|k| k.path.0 == "accounts.fake-storage.service.storage")
+            .expect("switch");
+        assert_eq!(switch.label.0, service_label(&CapabilityKind::Storage));
+        assert_eq!(switch.label.0, "Storage");
+    }
+
     #[test]
     fn every_key_is_under_accounts_and_hands_off_and_the_schema_checks() {
-        let schema = schema(&registry());
+        let schema = schema(&registry(), &AppNames::default());
         assert!(schema.check().is_ok());
         assert!(schema.key.iter().all(|k| k.path.0.starts_with("accounts.")));
         assert!(schema.key.iter().all(|k| k.agent == AgentSetting::HandsOff));
@@ -402,7 +487,7 @@ mod tests {
     fn a_service_claimed_once_per_model_is_one_switch() {
         let mut runtime = storage_account();
         runtime.capabilities.push(runtime.capabilities[0].clone());
-        let rows = account_keys(&runtime, &[]);
+        let rows = account_keys(&runtime, &[], &AppNames::default());
         let paths: Vec<&str> = rows.iter().map(|k| k.path.0.as_str()).collect();
         let mut unique = paths.clone();
         unique.sort_unstable();
@@ -420,7 +505,7 @@ mod tests {
 
     #[test]
     fn a_destructive_action_is_marked_so() {
-        let schema = schema(&registry());
+        let schema = schema(&registry(), &AppNames::default());
         let remove = schema
             .key
             .iter()
@@ -435,7 +520,7 @@ mod tests {
     #[test]
     fn paths_parse_back_to_their_keys() {
         let registry = registry();
-        for key in &schema(&registry).key {
+        for key in &schema(&registry, &AppNames::default()).key {
             let parsed = parse(&key.path.0, &registry).unwrap_or_else(|| panic!("{}", key.path.0));
             assert_eq!(path(&parsed), key.path.0);
         }

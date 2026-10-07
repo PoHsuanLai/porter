@@ -2,6 +2,7 @@
 //! with. [`serve`] puts the objects on a connection.
 
 use crate::account::{AccountObject, publish_accounts};
+use crate::app_names::AppNames;
 use crate::callers::Callers;
 use crate::errors::RefusedError;
 use crate::grants::{Grants, Tokens};
@@ -288,6 +289,8 @@ pub(crate) struct Core<H, C> {
     pub(crate) relays: Relays,
     /// Reads the API keys `Peer.ResolveKey` releases; none refuses it `Unavailable`.
     pub(crate) keys: Option<Arc<dyn KeyDesk>>,
+    /// What the settings module calls an app.
+    pub(crate) app_names: AppNames,
     /// The served settings module, which announces an account's new state as `Changed`; set
     /// once the module is served.
     pub(crate) settings: OnceLock<ds_settings::live::Served>,
@@ -500,6 +503,9 @@ pub struct Options {
     pub relay_roots: RelayRoots,
     /// Where `Peer.ResolveKey` reads API keys from; none leaves it refusing `Unavailable`.
     pub keys: Option<Arc<dyn KeyDesk>>,
+    /// Where the settings module gets an app's display name; the default names no app, so every
+    /// app shows its id.
+    pub app_names: AppNames,
 }
 
 /// Serves `org.quire.Accounts1` on `connection` over `host`, answering for the apps `callers`
@@ -532,6 +538,7 @@ pub async fn serve_with<H: Host, C: Callers>(
         clients: options.clients,
         relays: Relays::new(options.relay_roots),
         keys: options.keys,
+        app_names: options.app_names,
         settings: OnceLock::new(),
     });
     let server: &ObjectServer = connection.object_server();

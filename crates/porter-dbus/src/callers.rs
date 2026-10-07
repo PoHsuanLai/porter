@@ -45,6 +45,11 @@ pub struct Caller {
     pub role: CallerRole,
 }
 
+/// What a person reads for an app: "Sync", not `org.quire.Sync`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct AppTitle(pub String);
+
 /// One app or unit and its role.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CallerRow {
@@ -56,6 +61,10 @@ pub struct CallerRow {
     pub unit: Option<String>,
     /// Its role.
     pub role: CallerRole,
+    /// Its name as a person reads it (`name = "Sync"`), where accountd's Settings lists what the
+    /// app may use. Without one accountd looks for the app's desktop entry.
+    #[serde(default)]
+    pub name: Option<AppTitle>,
 }
 
 /// The table of apps and units: `[[caller]]` rows in `callers.toml`.
@@ -95,6 +104,16 @@ impl CallerTable {
             .filter(|row| row.unit.is_none())
             .find(|row| &row.app == name)
             .map_or(CallerRole::App, |row| row.role)
+    }
+
+    /// The name a row gives the app `name`: its last row that has one (the user's rows come
+    /// last), whether or not the row names a unit.
+    pub fn title_of(&self, name: &AppName) -> Option<&AppTitle> {
+        self.callers
+            .iter()
+            .rev()
+            .filter(|row| &row.app == name)
+            .find_map(|row| row.name.as_ref())
     }
 
     /// The caller that is the unit `unit` (a service, or a scope outside the `app-` namespace),

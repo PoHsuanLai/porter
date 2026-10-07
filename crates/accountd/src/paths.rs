@@ -23,6 +23,10 @@ pub struct Paths {
     pub clients_user: PathBuf,
     /// Provider file directories, later ones winning: the system's, then the user's.
     pub provider_dirs: Vec<PathBuf>,
+    /// The `applications` directories that hold desktop entries, the person's first:
+    /// `$XDG_DATA_HOME/applications`, then each absolute `$XDG_DATA_DIRS` entry's (default
+    /// `/usr/local/share:/usr/share`).
+    pub applications: Vec<PathBuf>,
 }
 
 /// Why paths could not be resolved.
@@ -66,6 +70,17 @@ impl Paths {
             data.join("porter/providers"),
         ];
         provider_dirs.extend_from_slice(extra_providers);
+        let data_dirs = var("XDG_DATA_DIRS")
+            .filter(|dirs| !dirs.is_empty())
+            .unwrap_or_else(|| "/usr/local/share:/usr/share".to_owned());
+        let applications = std::iter::once(data.clone())
+            .chain(
+                data_dirs
+                    .split(':')
+                    .filter_map(|dir| absolute(Some(dir.to_owned()))),
+            )
+            .map(|dir| dir.join("applications"))
+            .collect();
         Ok(Self {
             registry_dir: state.join("porter"),
             audit: state.join("quire/accountd/audit.jsonl"),
@@ -75,6 +90,7 @@ impl Paths {
             clients_shipped: PathBuf::from("/usr/share/porter/clients.toml"),
             clients_user: config.join("porter/clients.toml"),
             provider_dirs,
+            applications,
         })
     }
 }
@@ -133,6 +149,38 @@ mod tests {
             Path::new("/home/ada/.config/porter/clients.toml")
         );
         assert_eq!(paths.provider_dirs.last(), Some(&PathBuf::from("/extra")));
+    }
+
+    #[test]
+    fn desktop_entries_are_looked_for_in_the_data_home_then_the_data_dirs() {
+        let defaults = Paths::resolve(env(&[("HOME", "/home/ada")]), &[]).expect("paths");
+        assert_eq!(
+            defaults.applications,
+            [
+                "/home/ada/.local/share/applications",
+                "/usr/local/share/applications",
+                "/usr/share/applications"
+            ]
+            .map(PathBuf::from)
+        );
+        let set = Paths::resolve(
+            env(&[
+                ("HOME", "/home/ada"),
+                ("XDG_DATA_HOME", "/scratch/data"),
+                ("XDG_DATA_DIRS", "/one:relative:/two"),
+            ]),
+            &[],
+        )
+        .expect("paths");
+        assert_eq!(
+            set.applications,
+            [
+                "/scratch/data/applications",
+                "/one/applications",
+                "/two/applications"
+            ]
+            .map(PathBuf::from)
+        );
     }
 
     #[test]

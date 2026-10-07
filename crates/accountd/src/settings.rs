@@ -73,7 +73,7 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
     }
 
     async fn describe(&self) -> LiveSchema {
-        schema(&self.0.host.registry())
+        schema(&self.0.host.registry(), &self.0.app_names)
     }
 
     async fn get(&self, key: &KeyPath) -> Result<toml::Value, LiveError> {

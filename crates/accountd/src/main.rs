@@ -11,8 +11,8 @@ mod clock;
 use accountd::add::{AddArgs, StdTerminal, TerminalSheets};
 use accountd::paths::{BUILD, Paths, proc_root};
 use accountd::{
-    AdoptConfig, AdoptTable, BusSheets, FileAudit, FileStore, Oo7Legacy, Options, RelayRoots,
-    SecretsDesk, load_callers, serve_with,
+    AdoptConfig, AdoptTable, AppNames, BusSheets, FileAudit, FileStore, Oo7Legacy, Options,
+    RelayRoots, SecretsDesk, load_callers, serve_with,
 };
 use clap::{Parser, Subcommand};
 use clock::SystemClock;
@@ -124,6 +124,7 @@ async fn main() -> ExitCode {
         Ok(connection) => connection,
         Err(why) => return fail(format!("no session bus: {why}")),
     };
+    let app_names = AppNames::new(table.clone(), paths.applications.clone());
     let callers = Arc::new(
         match proc_root(BUILD, std::env::var("ACCOUNTD_PROC_ROOT").ok()) {
             Some(root) => {
@@ -152,6 +153,7 @@ async fn main() -> ExitCode {
         clients: Some(paths.clients_user.clone()),
         relay_roots: RelayRoots::Platform,
         keys: Some(Arc::new(keys)),
+        app_names,
     };
     if let Err(why) = serve_with(&connection, service, callers, options).await {
         return fail(format!("cannot serve {}: {why}", porter_dbus::ACCOUNTS_BUS));

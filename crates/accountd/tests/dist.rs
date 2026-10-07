@@ -93,6 +93,15 @@ fn the_sample_caller_table_gives_settings_the_sheet_host_and_both_daemons_their_
             "{unit}"
         );
     }
+    // Every caller a person may see in an account's Apps group has a name to read.
+    for (id, title) in [
+        ("org.quire.Settings", "Settings"),
+        ("org.quire.Shell", "Shell"),
+        ("org.quire.Inference", "Intelligence"),
+        ("org.quire.Sync", "Sync"),
+    ] {
+        assert_eq!(table.title_of(&app(id)).map(|t| t.0.as_str()), Some(title));
+    }
     // A unit row grants nothing to an app scope named after its app.
     assert_eq!(table.role_of(&app("org.quire.Inference")), CallerRole::App);
 }

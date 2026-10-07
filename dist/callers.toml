@@ -4,26 +4,33 @@
 # scope (`app-…-<app id>-N.scope`) by its app id, a daemon by the unit named in its row. Roles:
 # `settings` (the Settings app), `sheet_host` (draws the accounts sheets), `porter_daemon` (inferd
 # and syncd: the Peer methods, ResolveKey), `agent`, `cua`; anything unlisted is an `app`.
+# An optional `name = "..."` is what a person reads for the app (Settings' account page says "Sync
+# can use Storage", not "org.quire.Sync can use storage"); an app without one is named by its
+# desktop entry (`<app id>.desktop`, its `Name=`), else by its id.
 
 # The Settings app (detent).
 [[caller]]
 app = "org.quire.Settings"
 role = "settings"
+name = "Settings"
 
 # The shell that draws the accounts sheets.
 [[caller]]
 app = "org.quire.Shell"
 unit = "sill-shell.scope"
 role = "sheet_host"
+name = "Shell"
 
 # inferd: asks for verdicts and resolves API keys for the models it runs.
 [[caller]]
 app = "org.quire.Inference"
 unit = "inferd.service"
 role = "porter_daemon"
+name = "Intelligence"
 
 # syncd: lists grants and opens authenticated relays for its replicas.
 [[caller]]
 app = "org.quire.Sync"
 unit = "syncd.service"
 role = "porter_daemon"
+name = "Sync"

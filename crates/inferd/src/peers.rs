@@ -88,6 +88,7 @@ impl CallerTable {
                 unit: Some(unit.clone()),
                 app: app.clone(),
                 role: CallerRole::Cua,
+                name: None,
             })
         });
         let apps = self.apps.iter().flat_map(|(app, units)| {
@@ -95,12 +96,14 @@ impl CallerTable {
                 unit: Some(unit.clone()),
                 app: app.clone(),
                 role: CallerRole::App,
+                name: None,
             })
         });
         let settings = self.settings.iter().map(|app| CallerRow {
             unit: None,
             app: app.clone(),
             role: CallerRole::Settings,
+            name: None,
         });
         porter_dbus::CallerTable {
             callers: cua.chain(apps).chain(settings).collect(),

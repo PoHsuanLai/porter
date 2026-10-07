@@ -38,6 +38,7 @@
 
 mod account;
 pub mod add;
+mod app_names;
 mod audit;
 mod callers;
 mod callers_file;
@@ -59,6 +60,7 @@ mod settings_keys;
 mod sheets;
 mod store;
 
+pub use app_names::AppNames;
 pub use audit::FileAudit;
 pub use callers::{Callers, TableCallers};
 pub use callers_file::{CallerFileError, load_callers, table_from_file, table_from_toml};
