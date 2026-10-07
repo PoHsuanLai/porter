@@ -229,7 +229,7 @@ async fn a_caller_sees_what_it_owns_settings_sees_all_and_status_carries_quota_a
 
 async fn next<S: Stream + Unpin>(stream: &mut S) -> S::Item {
     tokio::time::timeout(
-        Duration::from_secs(5),
+        Duration::from_secs(60),
         std::future::poll_fn(|cx| Pin::new(&mut *stream).poll_next(cx)),
     )
     .await

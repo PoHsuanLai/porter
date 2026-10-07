@@ -206,7 +206,7 @@ async fn conflicted(rig: &Rig) -> (zbus::Connection, i64, RemoteId) {
     sync.resume(DATASET).await.expect("resume");
 
     let signal = tokio::time::timeout(
-        Duration::from_secs(30),
+        Duration::from_secs(120),
         std::future::poll_fn(|cx| Pin::new(&mut conflicts).poll_next(cx)),
     )
     .await

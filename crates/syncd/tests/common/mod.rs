@@ -76,9 +76,10 @@ pub async fn client(
     connection
 }
 
-/// Polls `check` every 20 ms for up to five seconds.
+/// Polls `check` every 20 ms for up to a minute: a passing check returns at once, and a loaded
+/// machine (a load average over a hundred) needs far more than the few seconds an idle one does.
 pub async fn eventually(what: &str, mut check: impl FnMut() -> bool) {
-    for _ in 0..250 {
+    for _ in 0..3000 {
         if check() {
             return;
         }

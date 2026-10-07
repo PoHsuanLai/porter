@@ -78,9 +78,10 @@ fn card(uid: &str, name: &str) -> String {
     format!("BEGIN:VCARD\r\nVERSION:3.0\r\nUID:{uid}\r\nFN:{name}\r\nEND:VCARD\r\n")
 }
 
-/// Polls every 20 ms for up to ten seconds (a poll cycle is a second here).
+/// Polls every 20 ms for up to a minute (a poll cycle is a second here; a loaded machine needs
+/// the margin, a passing check returns at once).
 async fn eventually(what: &str, check: impl FnMut() -> bool) {
-    eventually_within(Duration::from_secs(10), what, check).await;
+    eventually_within(Duration::from_secs(60), what, check).await;
 }
 
 /// Polls every 20 ms for up to `limit`: for waits whose work grows with a loaded machine (twenty

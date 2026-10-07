@@ -346,7 +346,7 @@ async fn a_two_sided_edit_is_a_conflict_signal_with_a_number_and_keep_remote_set
     sync.resume(DATASET).await.expect("resume");
 
     let signal = tokio::time::timeout(
-        Duration::from_secs(30),
+        Duration::from_secs(120),
         std::future::poll_fn(|cx| Pin::new(&mut conflicts).poll_next(cx)),
     )
     .await
