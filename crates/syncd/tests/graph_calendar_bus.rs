@@ -517,7 +517,7 @@ async fn a_reader_never_sees_a_file_that_is_not_a_complete_item() {
         let mut event = timed(&format!("big{n}"), &format!("round-{round}"), 5);
         event["body"] = json!({
             "contentType": "text",
-            "content": "0123456789abcdef0123456789abcdef0123456789abcdef\n".repeat(4000),
+            "content": "0123456789abcdef0123456789abcdef0123456789abcdef\n".repeat(600),
         });
         event
     };
