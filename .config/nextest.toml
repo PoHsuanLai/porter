@@ -1,0 +1,5 @@
+# A test that hangs fails instead of holding the gate: nextest names it slow every minute and ends it
+# after ten. The bus and supervisor tests take seconds; under a heavily loaded machine the slowest
+# take a few minutes, well inside the limit.
+[profile.default]
+slow-timeout = { period = "60s", terminate-after = 10 }
