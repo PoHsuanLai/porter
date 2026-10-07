@@ -78,7 +78,7 @@ pub fn fold(line: &str) -> String {
 }
 
 /// A parameter value, quoted when it holds a character that would end it.
-fn param(text: &str) -> String {
+pub(in crate::datasets::pim::source) fn param(text: &str) -> String {
     let clean: String = text
         .chars()
         .filter(|c| !matches!(c, '"' | '\r' | '\n'))

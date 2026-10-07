@@ -109,6 +109,7 @@ async fn main() -> ExitCode {
     let levers = Levers {
         issuer: rig.issuer(),
         graph: rig.graph(),
+        google: rig.google().map(|google| (*google.api).clone()),
         imap: rig.imap(),
         smtp: rig.smtp(),
         pop3: rig.pop3(),

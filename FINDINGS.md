@@ -1314,3 +1314,100 @@ Built, not run against Google: nothing here has touched a real Google client or 
 - **Unverified (no network):** see the storage-gdrive rows above; for Photos: the Library API's `uploads` (`X-Goog-Upload-Protocol: raw`, `X-Goog-Upload-Content-Type`, the token as the body), `albums` and `mediaItems:batchCreate` (`newMediaItemResults[].status`), that the append-only scope may create an album and add to it, the Picker API's `sessions` (`pickerUri`, `pollingConfig`, `mediaItemsSet`), `mediaItems?sessionId=` (`mediaFile.baseUrl`, `filename`, `type`), `=d` and `=dv`, and that the app-created album survives the person deleting it (then a `400`/`404` makes the next upload create a new one).
 - **Not done.** (1) *Picked items' bytes against the real service.* A `baseUrl` is on another host (`lh3.googleusercontent.com`) and Google wants the bearer on it; the picker's `Http` sends the Picker origin through the authenticated relay and any other origin through `OpenLinked`, which adds no credential and which accountd opens only for an origin the provider file declares, so the download fails against Google (it works against the fake, whose items are on the Picker origin). Interface ask (porter-provider `CapabilityRow`, porter-service `plan_linked`, accountd): a row field `auth_origins = ["*.googleusercontent.com"]` that `Tokens.OpenAuthenticated` accepts as an origin of the grant's kind and relays with the bearer; `google.toml`'s `google_photos_picker` row then declares it. (2) *No bus method for the picker.* `Sync1` carries datasets, not sessions; the picker is a Rust API on the supervisor until an interface exists. Interface ask (porter-dbus, a new XML `org.quire.Photos1.Picker`, caller `org.quire.Photos` only): `Start(account s) -> (session s, picker_uri s, poll_s u)`, `Poll(account s, session s) -> state s` (`waiting` or `picked`), `Import(account s, session s) -> as` (the files' paths), `Cancel(account s, session s)`. (3) *Granular consent.* An account where the person ticked only the Picker scope still offers Photos and the upload API answers `403`, which the engine counts as a refused item; the family could withhold the upload endpoint. (4) Settings words: "Back up photos" for a Google account means the upload folder; the sheet and the guide (docs/google.md) do not say so or name the folder yet. (5) The seven-day expiry of a client in testing makes the relays `Unauthorized` until the person signs in again; the datasets stop with `NeedsReauth` as any account's do. (6) Video: the upload folder takes videos by extension; the Library API's size limits are not enforced here.
 - **Consumers.** `porter-core` (`Family::relay_protocol`, `Family::serves`: behaviour only) and `porter-service` (`photos_key`, `sync_key_of` added; `sync_offers`, `sync_allowed` and `set_sync` behave as before for every account but a Google one) changed with no `[dependencies]` change; `storage-gdrive` is new and used by syncd only.
+
+## Lane google-pim (syncd, Google Calendar, Contacts and Tasks behind the PIM source seam)
+
+Lane `google-pim`, branch from 84980d8. Built and tested against the fake only; nothing here has
+touched Google or the network.
+
+- **Covered.** Three `google_api` sources in `syncd/src/datasets/pim/source/google/`, each a `PimSource`
+  and a `Feed` through accountd's relay (`pim_http`; syncd holds no token), chosen by `choose` from the
+  capability's transport and the kind (`Chosen::{GoogleCalendar, GooglePeople, GoogleTasks}`, one arm
+  each in `AccountMirrors::refresh`, which takes a Google API's own endpoint only, never the account's
+  first one):
+  - *Calendar* (`calendar.rs`, converter `event.rs`): `users/me/calendarList` (id, `summary`, else
+    `summaryOverride`, `backgroundColor`; `freeBusyReader` calendars left out) and per calendar
+    `events.list`: `nextSyncToken` is the cursor, `nextPageToken` pages (a mid-listing cursor keeps the
+    sync token the listing began with), `410` on a cursor is `AnchorExpired`, a cancelled event is a
+    delete. A listing from the start asks for no deleted events; one from a token asks (`showDeleted`).
+    Directory `google-<12 hex of sha256(id)>`, files by UID (an exception shares its series' UID and is
+    named by the event id's hash, as for Graph). Converter: UID (`iCalUID`, else `id`), DTSTAMP/CREATED/
+    LAST-MODIFIED/SEQUENCE, SUMMARY, DESCRIPTION, LOCATION, `date` as `VALUE=DATE`, `dateTime` as UTC
+    (a single event) or `TZID` and wall-clock (a member of a series, so the rule keeps the zone's clock
+    across daylight saving), `recurrence` lines passed through (only RRULE, EXRULE, RDATE, EXDATE, with
+    line breaks stripped), RECURRENCE-ID from `originalStartTime`, STATUS, CLASS, TRANSP, ORGANIZER,
+    ATTENDEE (CN, ROLE, PARTSTAT, CUTYPE), 75-octet folding and TEXT escaping reused from the Graph
+    converter. Not carried: reminders, conference data, attachments, colours per event.
+  - *Contacts* (`people.rs`, converter `person.rs`): one collection, "Contacts" (directory
+    `google-contacts`); `people/me/connections` with `personFields`, `requestSyncToken=true`, `syncToken`;
+    `400` with `EXPIRED_SYNC_TOKEN` is `AnchorExpired`; `metadata.deleted` is a delete. vCard 3.0: UID
+    (= resource name), FN (display name, else the parts, else an address, number or organisation), N,
+    EMAIL, TEL, ADR (structured, else the formatted text as street), ORG, TITLE, BDAY (`--MM-DD` with no
+    year, the RFC 6350 form), NOTE, URL. Files `people_c123.vcf`. Not carried: photos, nicknames,
+    relations, other events, custom fields, groups.
+  - *Tasks* (`tasks.rs`, converter `task.rs`): `users/@me/lists` (directory `google-<hash>-tasks`) and per
+    list `tasks.list` with `showCompleted`, `showHidden`, and from a cursor `updatedMin` and
+    `showDeleted`; the cursor is the newest `updated` seen (a mid-listing cursor keeps the time the
+    listing began after and the newest so far); `deleted: true` is a delete. VTODO: UID (= id), SUMMARY,
+    DESCRIPTION (notes), `DUE;VALUE=DATE`, STATUS NEEDS-ACTION/COMPLETED, COMPLETED (UTC),
+    RELATED-TO;RELTYPE=PARENT, DTSTAMP and LAST-MODIFIED (= `updated`). Files `<id>.ics`. `updatedMin` is
+    taken as inclusive, so the newest task comes again at every poll with an unchanged version, which the
+    engine leaves alone (tested against a locally edited file); a strict `updatedMin` works too.
+  - Cursor types `SyncCursor` and `TaskCursor` (`sync.rs`) round-trip through the journal's anchor text;
+    text that is not one is `AnchorExpired`. `time.rs` is the RFC 3339 reading and UTC arithmetic.
+- **Tasks as a kind.** `porter_core::DataClass::Tasks` (slug `tasks`, after `Contacts`) and
+  `VocabVersion` 6 (`store::from_five`, a fixture test of a document stored at 5; the tests for the
+  slug and for old slugs still reading). syncd: `PimKind::Tasks` (`.ics`, VCALENDAR with VTODO,
+  directory suffix `-tasks`, dataset prefix `pim_task`), `ALL` has three kinds so the supervisor looks
+  for Tasks grants. `need_of(Tasks)` asks `Delta::None` (Google's Tasks capability is `delta = "none"`;
+  a `Poll` need would never have matched it). A Tasks grant on a CalDAV account is **not** mapped: it is
+  `NoSource`. The account's VTODO calendars already mirror as calendars (unchanged), and a second mirror
+  of the same collection under `-tasks` would need a component filter in `discover` and would duplicate
+  every list, which is more than one line. Also `inferd`: `ai.floor.tasks` (default `on_device`, in
+  `dist/inferd.settings.toml`, `CLASSES`, `Policy::proposed`), and `accountd::add::ALL_CLASSES`.
+- **The relay for Google's API families.** `Family::relay_protocol` was `None` for `google_calendar`,
+  `google_people`, `google_tasks` and `Family::serves` did not let them serve their kind, so accountd would
+  have refused a Google PIM grant (`EndpointNotGranted`) exactly as it did Graph before graph-calendar.
+  porter-core `family.rs`: the three are `Some(Http)` (their bearer is added by the relay) and serve
+  Calendar, Contacts, Tasks respectively (table rows). **Merge note for the Drive lane**: it edits the
+  same two matches for `GoogleDrive` (the `None` list in `relay_protocol` and `serves`); the hunks are
+  adjacent and a conflict there is a union. The photos families stay unrelayed.
+- **FakeGoogle** (new files `porter-fake-servers/src/google/{pim,calendar,people,tasks}.rs`; `google.rs`
+  gains four `mod` lines, a `pim` field in `State` and one dispatch line in `serve`): calendarList and
+  `events.list` with `syncToken`, `nextPageToken`, cancelled stubs, `410 fullSyncRequired`; `events.get`;
+  `people/me/connections` with sync tokens, `metadata.deleted`, `400 EXPIRED_SYNC_TOKEN`; `people/{id}`;
+  `users/@me/lists`; `tasks.list` with `updatedMin` (inclusive), `showDeleted`, `showHidden`,
+  `showCompleted`, paging; `tasks.get`. Bearer: a token the issuer minted with the service's scope, or one
+  given to `GoogleHandle::accept_bearer` (for a test whose tokens come from a fake provider). While no
+  calendar or list is set the old probe answers stand. `GoogleHandle::{accept_bearer, expire_sync_tokens,
+  seed_calendars, set_calendar, remove_calendar, put_event, remove_event, events, seed_people, put_person,
+  remove_person, people, seed_tasks, set_task_list, remove_task_list, put_task, remove_task, tasks}`; rig
+  control routes `POST /google/{seed,calendar,calendar-remove,event,event-remove,person,person-remove,
+  task-list,task-list-remove,task,task-remove,expire-sync}` and `GET /google/hits` (`porter-rig`
+  `control/google.rs`; `Levers` gains `google`).
+- **Unverified endpoints and behaviour (no network; check when the owner's client first runs).** Every
+  path and parameter above; that `events.list` with a `syncToken` returns cancelled stubs and rejects other
+  filters and that a bad one is `410`; that the People sync token's expiry is `400` with `EXPIRED_SYNC_TOKEN`
+  in the body (not `410`); that `personFields` accepts exactly the names asked; that a deleted contact
+  arrives with `metadata.deleted` and only its resource name; that `updatedMin` is inclusive and
+  `showDeleted` lists `deleted: true` tasks; the page sizes (`maxResults` 250 events, 100 tasks;
+  `pageSize` 200 contacts); that `dateTime` is the wall-clock time of `timeZone` (which is why a single
+  event is written in UTC and only a series uses the zone); `accessRole: freeBusyReader` as the calendars
+  that cannot be listed; the quota and rate-limit reasons (`rateLimitExceeded`, `userRateLimitExceeded`,
+  `quotaExceeded`, answered `403`) as transient.
+- **Gaps.** Pull-only (`PullOnly`): nothing is written back. A series master has no `EXDATE` for an
+  exception or a cancelled instance Google sent as its own event, so a reader that does not merge by UID
+  shows the original occurrence too (as for Graph). A cancelled instance of a series is deleted from the
+  vdir, the master does not learn it. Tasks has no token to expire, so `expire_sync_tokens` leaves it; a
+  task completed and cleared on another device stays in the vdir (`showHidden`) as completed. Sill reads
+  `.ics` and takes every directory under `vdir/<account>/` for a calendar, so a task list (VTODO only) is
+  listed as a calendar named by its directory (`google-<hash>-tasks`): sill needs to skip `-tasks`
+  directories or read `displayname`. The client needs `Calendar`/`Contacts`/`Tasks` grants for syncd
+  made in Settings (no flow gives them, as for the other PIM grants). The task list "My Tasks" and the
+  default calendar are ordinary collections.
+- **Consumer arms for the new `DataClass::Tasks`** (read from origin/master, not edited): almanac
+  `almanac-service/src/class.rs` `BY_SENSITIVITY: [DataClass; 12]` (add `Tasks` after `Calendar`, 13) and
+  `memoryd/tests/it/infer.rs` (an exhaustive `match` at line 777 and a list at 791: `DataClass::Tasks =>
+  "tasks"`); docket `docket-reader/src/request.rs` `BY_SENSITIVITY: [DataClass; 12]` (add `Tasks`; without
+  it a Tasks-labelled input is classed as the person's own words, `Prompt`); sill, detent, mailo and cua
+  match no `DataClass`. Syncd's `PimKind` and `Chosen` are used by no consumer.

@@ -50,14 +50,14 @@ pub enum DiscoverError {
 
 fn home_of(kind: PimKind) -> Home {
     match kind {
-        PimKind::Calendar => Home::Calendar,
+        PimKind::Calendar | PimKind::Tasks => Home::Calendar,
         PimKind::Contacts => Home::Addressbook,
     }
 }
 
 fn home_property(kind: PimKind) -> &'static str {
     match kind {
-        PimKind::Calendar => names::CALENDAR_HOME_SET,
+        PimKind::Calendar | PimKind::Tasks => names::CALENDAR_HOME_SET,
         PimKind::Contacts => names::ADDRESSBOOK_HOME_SET,
     }
 }

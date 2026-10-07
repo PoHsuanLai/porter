@@ -1,4 +1,4 @@
-//! Which accounts syncd may mirror: the ones it holds a Calendar or Contacts grant for.
+//! Which accounts syncd may mirror: the ones it holds a Calendar, Contacts or Tasks grant for.
 //!
 //! The seam is [`PimGrants`]; [`ClientGrants`] answers it through porter-client's `find`, which
 //! lists only grants syncd already holds. **No flow gives syncd such a grant yet**: a consent
@@ -15,15 +15,18 @@ use porter_core::{Candidate, Need};
 use std::future::Future;
 use std::sync::Arc;
 
-/// The need syncd asks accounts to meet: to read the collections and poll them.
+/// The need syncd asks accounts to meet: to read the collections and poll them. A task list asks
+/// for no more than a full listing can give (`Delta::None`), because Google Tasks has no change
+/// token and its feed polls by update time; a list that does better fits too.
 pub fn need_of(kind: PimKind) -> Need {
-    let need = PimNeed {
+    let need = |delta| PimNeed {
         access: Access::Read,
-        delta: Delta::Poll,
+        delta,
     };
     match kind {
-        PimKind::Calendar => Need::Calendar(need),
-        PimKind::Contacts => Need::Contacts(need),
+        PimKind::Calendar => Need::Calendar(need(Delta::Poll)),
+        PimKind::Contacts => Need::Contacts(need(Delta::Poll)),
+        PimKind::Tasks => Need::Tasks(need(Delta::None)),
     }
 }
 

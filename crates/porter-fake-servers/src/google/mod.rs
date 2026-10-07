@@ -8,8 +8,7 @@
 //!
 //! The paths are Google's own (`/calendar/v3/users/me/calendarList`, `/v1/contactGroups`,
 //! `/tasks/v1/users/@me/lists`, `/drive/v3/files`, `/v1/userinfo`), so a provider file rewritten
-//! by [`FakeServer::rewrite`] keeps each row's path and only moves its origin. The calendar
-//! mirror is not here: it follows the lane that needs it.
+//! by [`FakeServer::rewrite`] keeps each row's path and only moves its origin.
 //!
 //! The Drive app data folder (`drive`, `drive_routes`: files, folders, `changes.list`,
 //! multipart and resumable uploads, the quota) and Google Photos (`photos`: the Library API's
@@ -17,6 +16,9 @@
 //! on [`GoogleHandle`] (another device writes or deletes a file, a person picks photos). A fake
 //! made with [`FakeGoogle::bind_fixed`] accepts fixed bearers (what accountd's relay adds in a
 //! bus test) instead of an issuer's tokens.
+//!
+//! The PIM APIs (Calendar events with sync tokens, People connections with sync tokens, Tasks with
+//! `updatedMin`) are in `pim`, `calendar`, `people` and `tasks`.
 
 mod drive;
 mod drive_routes;
@@ -41,6 +43,15 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::io;
 use std::sync::{Arc, Mutex};
+
+mod calendar;
+mod people;
+mod pim;
+mod tasks;
+
+pub use calendar::Calendars;
+pub use people::People;
+pub use tasks::Tasks;
 
 /// The address `GET /v1/userinfo` names unless a test sets another.
 pub const DEFAULT_ADDRESS: &str = "ada@gmail.com";
@@ -96,6 +107,8 @@ struct State {
     photos: photos::Photos,
     /// How many requests are still to be answered `429`, and their `Retry-After`.
     throttle: Option<(u32, u32)>,
+    /// Calendar, People and Tasks content (`pim`).
+    pim: pim::Pim,
 }
 
 #[derive(Debug, Clone)]
@@ -346,7 +359,8 @@ impl FakeServer for FakeGoogle {
             self.listener,
             None,
             Arc::new(move |request: Request| {
-                let response = answer(&shared, &request);
+                let response =
+                    pim::answer(&shared, &request).unwrap_or_else(|| answer(&shared, &request));
                 shared.hits.push(Hit::of(&request, &response));
                 response
             }),

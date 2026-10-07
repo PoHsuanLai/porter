@@ -68,6 +68,7 @@ impl Policy {
             DataClass::Files,
             DataClass::Contacts,
             DataClass::Calendar,
+            DataClass::Tasks,
             DataClass::Screen,
             DataClass::Clipboard,
             DataClass::Voice,

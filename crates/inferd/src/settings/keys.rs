@@ -8,11 +8,12 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 /// Every data class, one `ai.floor.<class>` row each. `class_is_listed` keeps this complete.
-pub const CLASSES: [DataClass; 12] = [
+pub const CLASSES: [DataClass; 13] = [
     DataClass::AppOwn,
     DataClass::Mail,
     DataClass::Calendar,
     DataClass::Contacts,
+    DataClass::Tasks,
     DataClass::Notes,
     DataClass::Files,
     DataClass::Photos,
@@ -105,6 +106,7 @@ mod tests {
                 | DataClass::Mail
                 | DataClass::Calendar
                 | DataClass::Contacts
+                | DataClass::Tasks
                 | DataClass::Notes
                 | DataClass::Files
                 | DataClass::Photos
@@ -117,7 +119,7 @@ mod tests {
         }
         let mut slugs: Vec<String> = CLASSES.iter().map(slug_of).collect();
         slugs.dedup();
-        assert_eq!(slugs.len(), 12);
+        assert_eq!(slugs.len(), 13);
     }
 
     #[test]

@@ -8,7 +8,8 @@ use super::discover::DiscoverError;
 use super::mirror::PimMirror;
 use super::plan::{Planned, plan};
 use super::source::{
-    Chosen, DavSource, FeedReplica, GraphCalendarSource, NoSource, PimSource, choose, endpoint_of,
+    Chosen, DavSource, FeedReplica, GoogleCalendarSource, GooglePeopleSource, GoogleTasksSource,
+    GraphCalendarSource, NoSource, PimSource, choose, endpoint_of,
 };
 use super::{Meta, PimKind};
 use crate::clock::SystemClock;
@@ -103,8 +104,18 @@ impl AccountMirrors {
         let family = match chosen {
             Chosen::Dav => self.kind.family(),
             Chosen::GraphCalendar => porter_core::Family::Graph,
+            Chosen::GoogleCalendar => porter_core::Family::GoogleCalendar,
+            Chosen::GooglePeople => porter_core::Family::GooglePeople,
+            Chosen::GoogleTasks => porter_core::Family::GoogleTasks,
         };
+        // A Google API is reached at its own server only: the first of the account's other
+        // endpoints (its IMAP host, say) is never the calendar's.
+        let own_only = matches!(
+            chosen,
+            Chosen::GoogleCalendar | Chosen::GooglePeople | Chosen::GoogleTasks
+        );
         let endpoint = endpoint_of(candidate, family)
+            .filter(|e| !own_only || e.family == family)
             .ok_or(RefreshError::NoEndpoint(self.kind))?
             .url
             .clone();
@@ -117,6 +128,18 @@ impl AccountMirrors {
             }
             Chosen::GraphCalendar => {
                 let source = GraphCalendarSource::new(accounts, grant, endpoint)?;
+                self.refresh_with(wiring, source).await
+            }
+            Chosen::GoogleCalendar => {
+                let source = GoogleCalendarSource::new(accounts, grant, endpoint)?;
+                self.refresh_with(wiring, source).await
+            }
+            Chosen::GooglePeople => {
+                let source = GooglePeopleSource::new(accounts, grant, endpoint)?;
+                self.refresh_with(wiring, source).await
+            }
+            Chosen::GoogleTasks => {
+                let source = GoogleTasksSource::new(accounts, grant, endpoint)?;
                 self.refresh_with(wiring, source).await
             }
         }

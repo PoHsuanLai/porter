@@ -59,17 +59,33 @@ fn the_source_is_chosen_by_the_capabilitys_transport_never_by_the_provider() {
             (
                 PimKind::Calendar,
                 calendar(P::GoogleApi),
-                Err(NoSource {
-                    kind: PimKind::Calendar,
-                    transport: P::GoogleApi,
-                }),
+                Ok(Chosen::GoogleCalendar),
             ),
             (
                 PimKind::Contacts,
                 contacts(P::GoogleApi),
+                Ok(Chosen::GooglePeople),
+            ),
+            (
+                PimKind::Tasks,
+                Capability::Tasks(cap(P::GoogleApi)),
+                Ok(Chosen::GoogleTasks),
+            ),
+            // A task list on a CalDAV account is a calendar of VTODOs, mirrored as one.
+            (
+                PimKind::Tasks,
+                Capability::Tasks(cap(P::CalDav)),
                 Err(NoSource {
-                    kind: PimKind::Contacts,
-                    transport: P::GoogleApi,
+                    kind: PimKind::Tasks,
+                    transport: P::CalDav,
+                }),
+            ),
+            (
+                PimKind::Tasks,
+                Capability::Tasks(cap(P::Graph)),
+                Err(NoSource {
+                    kind: PimKind::Tasks,
+                    transport: P::Graph,
                 }),
             ),
             (

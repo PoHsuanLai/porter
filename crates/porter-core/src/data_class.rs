@@ -15,6 +15,8 @@ pub enum DataClass {
     Calendar,
     /// Contacts.
     Contacts,
+    /// Task lists.
+    Tasks,
     /// Notes.
     Notes,
     /// The user's files.

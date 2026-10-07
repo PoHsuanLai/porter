@@ -429,6 +429,7 @@ fn every_data_class_has_a_floor_decision() {
         DataClass::Files,
         DataClass::Contacts,
         DataClass::Calendar,
+        DataClass::Tasks,
         DataClass::Screen,
         DataClass::Clipboard,
         DataClass::Voice,
@@ -447,6 +448,7 @@ fn every_data_class_has_a_floor_decision() {
         | DataClass::Mail
         | DataClass::Calendar
         | DataClass::Contacts
+        | DataClass::Tasks
         | DataClass::Notes
         | DataClass::Files
         | DataClass::Photos

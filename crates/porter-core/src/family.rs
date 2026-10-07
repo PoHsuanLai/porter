@@ -94,11 +94,11 @@ impl Family {
             | Family::Graph
             | Family::GoogleDrive
             | Family::GooglePhotosUpload
-            | Family::GooglePhotosPicker => Some(EndpointProtocol::Http),
-            Family::GmailApi
+            | Family::GooglePhotosPicker
             | Family::GoogleCalendar
             | Family::GooglePeople
-            | Family::GoogleTasks
+            | Family::GoogleTasks => Some(EndpointProtocol::Http),
+            Family::GmailApi
             | Family::Dropbox
             | Family::S3
             | Family::ChatCompletions
@@ -146,6 +146,9 @@ impl Family {
                     Family::Jmap,
                     CapabilityKind::Calendar | CapabilityKind::Contacts
                 )
+                | (Family::GoogleCalendar, CapabilityKind::Calendar)
+                | (Family::GooglePeople, CapabilityKind::Contacts)
+                | (Family::GoogleTasks, CapabilityKind::Tasks)
         )
     }
 }
@@ -203,6 +206,24 @@ mod tests {
             "google photos picker is a relayed http api",
             Family::GooglePhotosPicker,
             "google_photos_picker",
+            Some(EndpointProtocol::Http),
+        ),
+        (
+            "google calendar is a relayed http api",
+            Family::GoogleCalendar,
+            "google_calendar",
+            Some(EndpointProtocol::Http),
+        ),
+        (
+            "google people is a relayed http api",
+            Family::GooglePeople,
+            "google_people",
+            Some(EndpointProtocol::Http),
+        ),
+        (
+            "google tasks is a relayed http api",
+            Family::GoogleTasks,
+            "google_tasks",
             Some(EndpointProtocol::Http),
         ),
         (
@@ -319,6 +340,36 @@ mod tests {
                 "google photos not for mail",
                 Family::GooglePhotosUpload,
                 CapabilityKind::Mail,
+                false,
+            ),
+            (
+                "google calendar api for calendars",
+                Family::GoogleCalendar,
+                CapabilityKind::Calendar,
+                true,
+            ),
+            (
+                "google calendar api not for tasks",
+                Family::GoogleCalendar,
+                CapabilityKind::Tasks,
+                false,
+            ),
+            (
+                "google people api for contacts",
+                Family::GooglePeople,
+                CapabilityKind::Contacts,
+                true,
+            ),
+            (
+                "google tasks api for tasks",
+                Family::GoogleTasks,
+                CapabilityKind::Tasks,
+                true,
+            ),
+            (
+                "google tasks api not for calendars",
+                Family::GoogleTasks,
+                CapabilityKind::Calendar,
                 false,
             ),
             (

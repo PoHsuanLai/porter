@@ -39,11 +39,12 @@ use std::collections::BTreeSet;
 use zbus::fdo::RequestNameReply;
 
 /// Every data class, for `--allow` without `--class`.
-pub const ALL_CLASSES: [DataClass; 12] = [
+pub const ALL_CLASSES: [DataClass; 13] = [
     DataClass::AppOwn,
     DataClass::Mail,
     DataClass::Calendar,
     DataClass::Contacts,
+    DataClass::Tasks,
     DataClass::Notes,
     DataClass::Files,
     DataClass::Photos,

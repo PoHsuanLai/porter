@@ -562,8 +562,8 @@ fn json<T: Serialize>(value: &T) -> String {
 }
 
 #[test]
-fn the_vocabulary_is_version_five() {
-    assert_eq!(VocabVersion::CURRENT, VocabVersion(5));
+fn the_vocabulary_is_version_six() {
+    assert_eq!(VocabVersion::CURRENT, VocabVersion(6));
 }
 
 #[test]
@@ -636,6 +636,23 @@ fn the_voice_and_prompt_data_classes_have_their_slugs() {
         serde_json::to_string(&DataClass::Prompt).expect("json"),
         "\"prompt\""
     );
+}
+
+#[test]
+fn the_tasks_data_class_has_its_slug_and_old_slugs_still_read() {
+    assert_eq!(
+        serde_json::to_string(&DataClass::Tasks).expect("json"),
+        "\"tasks\""
+    );
+    for (slug, class) in [
+        ("calendar", DataClass::Calendar),
+        ("contacts", DataClass::Contacts),
+        ("tasks", DataClass::Tasks),
+        ("notes", DataClass::Notes),
+    ] {
+        let read: DataClass = serde_json::from_str(&format!("\"{slug}\"")).expect("slug");
+        assert_eq!(read, class);
+    }
 }
 
 #[test]

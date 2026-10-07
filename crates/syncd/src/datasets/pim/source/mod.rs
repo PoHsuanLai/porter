@@ -13,18 +13,20 @@
 //!
 //! [`FeedReplica`] makes any feed a porter-sync `Replica` for the engine, which is why nothing
 //! else in syncd changed. The source is chosen by the capability's transport
-//! ([`choose`]: `caldav` and `carddav` are [`dav`], `graph` is [`graph`]), never by provider.
+//! ([`choose`]: `caldav` and `carddav` are [`dav`], `graph` is [`graph`], `google_api` is
+//! [`google`], one source per kind), never by provider.
 //!
-//! **A new source is one module** (`google` for `google_api`): a `PimSource` and a `Feed`, one
-//! more arm in [`choose`], one more arm in `AccountMirrors::refresh`. Nothing else is touched.
-//! What a Google source needs is in FINDINGS ("Lane graph-calendar").
+//! **A new source is one module**: a `PimSource` and a `Feed`, one more arm in [`choose`], one
+//! more arm in `AccountMirrors::refresh`. Nothing else is touched.
 
 mod adapter;
 pub mod dav;
+pub mod google;
 pub mod graph;
 
 pub use adapter::FeedReplica;
 pub use dav::{DavFeed, DavSource};
+pub use google::{GoogleCalendarSource, GooglePeopleSource, GoogleTasksSource};
 pub use graph::{GraphCalendarFeed, GraphCalendarSource};
 
 use super::PimKind;
@@ -139,6 +141,12 @@ pub enum Chosen {
     Dav,
     /// Microsoft Graph calendars.
     GraphCalendar,
+    /// Google Calendar.
+    GoogleCalendar,
+    /// Google contacts (the People API).
+    GooglePeople,
+    /// Google Tasks.
+    GoogleTasks,
 }
 
 /// Why no source reads a grant.
@@ -155,7 +163,8 @@ pub struct NoSource {
 fn transport_of(kind: PimKind, candidate: &Candidate) -> Option<PimTransport> {
     match (kind, &candidate.capability) {
         (PimKind::Calendar, Capability::Calendar(cap))
-        | (PimKind::Contacts, Capability::Contacts(cap)) => Some(cap.transport),
+        | (PimKind::Contacts, Capability::Contacts(cap))
+        | (PimKind::Tasks, Capability::Tasks(cap)) => Some(cap.transport),
         _ => None,
     }
 }
@@ -167,10 +176,17 @@ pub fn choose(kind: PimKind, candidate: &Candidate) -> Result<Chosen, NoSource> 
     let transport = transport_of(kind, candidate).unwrap_or(match kind {
         PimKind::Calendar => PimTransport::CalDav,
         PimKind::Contacts => PimTransport::CardDav,
+        PimKind::Tasks => PimTransport::CalDav,
     });
     match (kind, transport) {
+        // A task list over CalDAV is a calendar of `VTODO`s: the CalDAV account's calendars
+        // already mirror it as one, so a second mirror of the same collection is not made.
+        (PimKind::Tasks, PimTransport::CalDav) => Err(NoSource { kind, transport }),
         (_, PimTransport::CalDav | PimTransport::CardDav) => Ok(Chosen::Dav),
         (PimKind::Calendar, PimTransport::Graph) => Ok(Chosen::GraphCalendar),
+        (PimKind::Calendar, PimTransport::GoogleApi) => Ok(Chosen::GoogleCalendar),
+        (PimKind::Contacts, PimTransport::GoogleApi) => Ok(Chosen::GooglePeople),
+        (PimKind::Tasks, PimTransport::GoogleApi) => Ok(Chosen::GoogleTasks),
         (kind, transport) => Err(NoSource { kind, transport }),
     }
 }

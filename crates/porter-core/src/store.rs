@@ -62,8 +62,11 @@ type Migration = fn(Value) -> Result<Value, StoreFault>;
 
 /// Every step, keyed by the version it starts from. A bump of `VocabVersion::CURRENT` adds its
 /// row here, with a fixture of the old document in the tests.
-const MIGRATIONS: &[(VocabVersion, Migration)] =
-    &[(VocabVersion(3), from_three), (VocabVersion(4), from_four)];
+const MIGRATIONS: &[(VocabVersion, Migration)] = &[
+    (VocabVersion(3), from_three),
+    (VocabVersion(4), from_four),
+    (VocabVersion(5), from_five),
+];
 
 /// 3 to 4 added the `sieve` family and changed the sheet's wire types; the stored document is
 /// the same shape, so only its version moves.
@@ -75,6 +78,12 @@ fn from_three(document: Value) -> Result<Value, StoreFault> {
 /// `AccountState::NeedsLogin`, all new variants: a document written at 4 has none of them and
 /// reads as it was, so only its version moves.
 fn from_four(document: Value) -> Result<Value, StoreFault> {
+    Ok(document)
+}
+
+/// 5 to 6 added the `tasks` data class (a grant for Task lists): a new variant, so a document
+/// written at 5 has none and reads as it was, and only its version moves.
+fn from_five(document: Value) -> Result<Value, StoreFault> {
     Ok(document)
 }
 

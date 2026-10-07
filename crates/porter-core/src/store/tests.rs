@@ -205,3 +205,15 @@ fn an_agent_login_account_survives_its_document_and_keeps_its_slugs() {
     assert_eq!(document["accounts"][1]["auth"], "agent_login");
     assert_eq!(Persisted::from_json(&json), Ok(registry));
 }
+
+#[test]
+fn a_document_stored_at_vocabulary_five_is_read_unchanged() {
+    // The fixture is what the build before the `tasks` data class wrote.
+    let at_five = filled().to_json().expect("json").replacen(
+        &format!("\"vocab\": {}", VocabVersion::CURRENT.0),
+        "\"vocab\": 5",
+        1,
+    );
+    assert!(at_five.contains("\"vocab\": 5"));
+    assert_eq!(Persisted::from_json(&at_five), Ok(filled()));
+}

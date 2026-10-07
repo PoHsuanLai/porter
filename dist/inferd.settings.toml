@@ -169,6 +169,28 @@ anywhere = "Anywhere"
 kind = "intelligence"
 
 [[key]]
+path = "ai.floor.tasks"
+default = "on_device"
+label = "Tasks"
+help = "The farthest data of this kind may travel to be answered by a model."
+section = "Models"
+exposure = "basic"
+
+[key.kind]
+kind = "segmented"
+
+[key.kind.v]
+variants = ["on_device", "local_network", "anywhere"]
+
+[key.labels]
+on_device = "This computer"
+local_network = "My machines"
+anywhere = "Anywhere"
+
+[key.page]
+kind = "intelligence"
+
+[[key]]
 path = "ai.floor.notes"
 default = "on_device"
 label = "Notes"

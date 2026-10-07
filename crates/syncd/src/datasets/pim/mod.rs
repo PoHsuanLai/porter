@@ -13,7 +13,8 @@
 //! - `discover`: the collections of an account, from the principal and home sets (porter-dav).
 //! - `plan`: collection names as directories and dataset slugs.
 //! - `grants`: which granted accounts there are to mirror (a seam over porter-client).
-//! - `source`: where the items come from (CalDAV/CardDAV, Graph calendars), by the capability's
+//! - `source`: where the items come from (CalDAV/CardDAV, Graph calendars, Google's Calendar,
+//!   People and Tasks APIs), by the capability's
 //!   transport; see its module docs for the seam.
 //! - `mirrors`: one account's collections kept running (replicas over the relay, one engine
 //!   each) and the supervisor over every granted account.
@@ -46,16 +47,18 @@ pub enum PimKind {
     Calendar,
     /// Address books (CardDAV): `.vcf` files.
     Contacts,
+    /// Task lists: `.ics` files holding a `VTODO`, in their own directories.
+    Tasks,
 }
 
 impl PimKind {
     /// Every kind.
-    pub const ALL: [PimKind; 2] = [PimKind::Calendar, PimKind::Contacts];
+    pub const ALL: [PimKind; 3] = [PimKind::Calendar, PimKind::Contacts, PimKind::Tasks];
 
     /// The file extension of an item, with its dot.
     pub fn extension(self) -> &'static str {
         match self {
-            PimKind::Calendar => ".ics",
+            PimKind::Calendar | PimKind::Tasks => ".ics",
             PimKind::Contacts => ".vcf",
         }
     }
@@ -63,15 +66,16 @@ impl PimKind {
     /// The `BEGIN` and `END` lines a whole item opens and closes with.
     pub fn envelope(self) -> (&'static str, &'static str) {
         match self {
-            PimKind::Calendar => ("BEGIN:VCALENDAR", "END:VCALENDAR"),
+            PimKind::Calendar | PimKind::Tasks => ("BEGIN:VCALENDAR", "END:VCALENDAR"),
             PimKind::Contacts => ("BEGIN:VCARD", "END:VCARD"),
         }
     }
 
-    /// The protocol family that reaches it.
+    /// The protocol family that reaches it over DAV (a task list is a CalDAV collection of
+    /// `VTODO`s).
     pub fn family(self) -> Family {
         match self {
-            PimKind::Calendar => Family::CalDav,
+            PimKind::Calendar | PimKind::Tasks => Family::CalDav,
             PimKind::Contacts => Family::CardDav,
         }
     }
@@ -81,14 +85,17 @@ impl PimKind {
         match self {
             PimKind::Calendar => DataClass::Calendar,
             PimKind::Contacts => DataClass::Contacts,
+            PimKind::Tasks => DataClass::Tasks,
         }
     }
 
-    /// What its directories end in: nothing for a calendar, `-contacts` for an address book.
+    /// What its directories end in: nothing for a calendar, `-contacts` for an address book,
+    /// `-tasks` for a task list (so the three never share a directory).
     pub fn dir_suffix(self) -> &'static str {
         match self {
             PimKind::Calendar => "",
             PimKind::Contacts => "-contacts",
+            PimKind::Tasks => "-tasks",
         }
     }
 
@@ -97,6 +104,7 @@ impl PimKind {
         match self {
             PimKind::Calendar => "pim_cal",
             PimKind::Contacts => "pim_card",
+            PimKind::Tasks => "pim_task",
         }
     }
 }

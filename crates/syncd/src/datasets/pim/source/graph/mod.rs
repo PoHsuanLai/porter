@@ -82,12 +82,12 @@ pub struct GraphCalendarFeed<T: Transport> {
     clock: Clock,
 }
 
-fn origin(base: &WebUrl) -> String {
+pub(super) fn origin(base: &WebUrl) -> String {
     base.as_str().trim_end_matches('/').to_owned()
 }
 
 /// A path segment: everything but unreserved characters and `=` percent-encoded.
-fn encode(segment: &str) -> String {
+pub(super) fn encode(segment: &str) -> String {
     segment
         .bytes()
         .map(
@@ -99,7 +99,7 @@ fn encode(segment: &str) -> String {
         .collect()
 }
 
-fn decode(segment: &str) -> String {
+pub(super) fn decode(segment: &str) -> String {
     let bytes = segment.as_bytes();
     let mut out = Vec::new();
     let mut at = 0;
@@ -122,7 +122,7 @@ fn decode(segment: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-fn hex(bytes: &[u8]) -> String {
+pub(super) fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
@@ -133,7 +133,7 @@ fn segment_of(id: &str) -> String {
 }
 
 /// The file name of an event: short and safe whatever its id.
-fn name_of(id: &str) -> ItemPath {
+pub(super) fn name_of(id: &str) -> ItemPath {
     ItemPath(format!("{}.ics", hex(&Sha256::digest(id.as_bytes())[..10])))
 }
 
@@ -158,7 +158,7 @@ fn color_of(calendar: &Calendar) -> Option<String> {
     Some(named.to_owned())
 }
 
-fn retry_after(response: &HttpResponse) -> RetryAfter {
+pub(super) fn retry_after(response: &HttpResponse) -> RetryAfter {
     response
         .header("retry-after")
         .and_then(|v| v.trim().parse::<u32>().ok())
@@ -173,11 +173,11 @@ fn read_error(response: &HttpResponse) -> ReplicaError {
     }
 }
 
-fn unreached(_: HttpError) -> ReplicaError {
+pub(super) fn unreached(_: HttpError) -> ReplicaError {
     ReplicaError::Transient(RetryAfter(30))
 }
 
-async fn get<H: Http>(
+pub(super) async fn get<H: Http>(
     http: &H,
     url: &str,
     prefer: Option<&str>,
