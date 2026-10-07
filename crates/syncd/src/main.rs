@@ -5,14 +5,18 @@
 //! `AccountRemoved` to wipe an account's journals and mirrors. The PIM supervisor (W6e) keeps a
 //! calendar or address book mirror running for every Calendar or Contacts grant syncd holds;
 //! with no grant `Datasets` answers an empty list and every name the refusal
-//! `NoFittingAccount`.
+//! `NoFittingAccount`. The storage supervisor keeps an app folder mirror running for every
+//! Storage grant (class Files) on a Microsoft account and, with `SYNCD_PHOTOS=on`, the Photos
+//! datasets for every one of class Photos.
 
 use clap::Parser;
 use porter_client::{Accounts, DbusTransport};
 use porter_dbus::ProcCallers;
 use std::process::ExitCode;
 use std::sync::Arc;
+use syncd::datasets::photos::PhotosSwitch;
 use syncd::datasets::pim::{ClientGrants, PimConfig, PimSupervisor, Wiring};
+use syncd::datasets::storage::{ClientStorageGrants, StorageConfig, StorageSupervisor};
 use syncd::paths::{BUILD, Paths, proc_root};
 use syncd::scheduler::{Network, Settings};
 use syncd::service::{Access, Hub};
@@ -60,7 +64,7 @@ async fn main() -> ExitCode {
     // NetworkManager is not read yet: the network is taken as unmetered and up.
     let (_network_keeps, network) = tokio::sync::watch::channel(Network::Unmetered);
     let accounts = Arc::new(Accounts::over(DbusTransport::over(connection.clone())));
-    let wiring = Wiring {
+    let wiring = |network| Wiring {
         accounts: Arc::clone(&accounts),
         hub: hub.clone(),
         paths: paths.clone(),
@@ -68,8 +72,24 @@ async fn main() -> ExitCode {
         network,
         owners: Access::default(),
     };
-    let _supervisor =
-        PimSupervisor::new(wiring, ClientGrants::new(accounts), PimConfig::default()).spawn();
+    let _pim = PimSupervisor::new(
+        wiring(network.clone()),
+        ClientGrants::new(Arc::clone(&accounts)),
+        PimConfig::default(),
+    )
+    .spawn();
+    // Storage over Graph: the app folder mirror for a Files grant, and Photos for a Photos grant
+    // when `SYNCD_PHOTOS=on` (it is off otherwise: there is no Photos app yet).
+    let storage = StorageConfig {
+        photos: PhotosSwitch::from_var(std::env::var("SYNCD_PHOTOS").ok().as_deref()),
+        ..StorageConfig::default()
+    };
+    let _storage = StorageSupervisor::new(
+        wiring(network),
+        ClientStorageGrants::new(Arc::clone(&accounts)),
+        storage,
+    )
+    .spawn();
     if let Err(why) = removal::watch(&connection, hub.clone(), paths).await {
         return fail(format!("cannot listen for AccountRemoved: {why}"));
     }

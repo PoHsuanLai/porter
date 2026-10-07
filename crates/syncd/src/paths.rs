@@ -75,6 +75,16 @@ impl Paths {
             .join(account.as_str())
     }
 
+    /// The app folder mirror of one account, `$XDG_DATA_HOME/porter/storage/<account>`: beside
+    /// the PIM mirrors, so `AccountRemoved` wipes it with them.
+    pub fn storage_dir(&self, account: &AccountDir) -> PathBuf {
+        self.mirrors
+            .parent()
+            .unwrap_or(&self.mirrors)
+            .join("storage")
+            .join(account.as_str())
+    }
+
     /// Everything of one account that syncd keeps: its journals and its mirrors.
     pub fn account_dirs(&self, account: &AccountDir) -> [PathBuf; 2] {
         [

@@ -25,7 +25,7 @@
 //! Not here yet: purging the originals of deleted photos, the replica folders' creation on a
 //! fresh account, streaming transfers of originals larger than one `Http` body (FINDINGS).
 
-mod cas;
+pub(crate) mod cas;
 mod hlc;
 mod library;
 mod manifest;
