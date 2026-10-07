@@ -104,7 +104,7 @@ async fn next_input<E: EngineHost, T: TurnRunner>(
             *wait = None;
             Some(match ready {
                 Ok(()) => SessionIn::EngineReady,
-                Err(EngineFailed) => SessionIn::EngineFailed,
+                Err(EngineFailed { .. }) => SessionIn::EngineFailed,
             })
         },
     }

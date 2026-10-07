@@ -17,7 +17,7 @@ use inferd::cloud::accountd::PeerAccountd;
 use inferd::cloud::spend::Ledger;
 use inferd::cloud::wire::{Door, Doors};
 use inferd::engines::Engines;
-use inferd::hosts::HealthProbe;
+use inferd::hosts::{HealthProbe, ProcessHost};
 use inferd::local::{EngineConfig, LocalModel, build};
 use inferd::peers::{Caller, Role, TablePeers};
 use inferd::probe::ProbeConfig;
@@ -25,6 +25,7 @@ use inferd::replay::{NamedEngine, Replays};
 use inferd::report::PeerReports;
 use inferd::service::{Inference, serve_on};
 use inferd::settings::{Settings, SpendLine};
+use inferd::startup::{Level, Log};
 use inferd::supervise::{Ports, Supervised};
 use inferd::watch::{Probing, Watch};
 use model_catalog::MiB;
@@ -178,7 +179,19 @@ pub struct Plan {
     /// Models (catalog ids) whose language card also takes audio: the catalogue has no entry
     /// that says so yet, and a test needs a text model that hears.
     pub hears: Vec<&'static str>,
+    /// Engines that are real child processes: llama-server's program is this one, run on the
+    /// model's socket by the real process host (no recorder, no fake probe).
+    pub processes: Option<Processes>,
 }
+
+/// The program a real-process world runs as llama-server (a script the test wrote).
+#[derive(Debug, Clone)]
+pub struct Processes {
+    pub program: PathBuf,
+}
+
+/// The lines inferd logged in a real-process world.
+pub type LogLines = Arc<Mutex<Vec<(Level, String)>>>;
 
 impl Default for Plan {
     fn default() -> Self {
@@ -196,6 +209,7 @@ impl Default for Plan {
             speech: None,
             supervisor: None,
             hears: Vec::new(),
+            processes: None,
         }
     }
 }
@@ -226,6 +240,8 @@ pub struct World {
     pub probing: Option<Probing>,
     /// The fake speech engines, when the plan has a speech host.
     pub speech: Option<SpeechEngines>,
+    /// What inferd logged (kept only in a real-process world).
+    pub log: LogLines,
 }
 
 static NEXT: AtomicU32 = AtomicU32::new(0);
@@ -257,7 +273,10 @@ impl World {
         assert_eq!(catalog.skipped, vec![], "every test entry parses");
         let engines_config = EngineConfig {
             vllm_python: Some(PathBuf::from("/nonexistent/python")),
-            llama_server: Some(PathBuf::from("/nonexistent/llama-server")),
+            llama_server: Some(plan.processes.as_ref().map_or_else(
+                || PathBuf::from("/nonexistent/llama-server"),
+                |p| p.program.clone(),
+            )),
             speech_host: plan
                 .speech
                 .as_ref()
@@ -328,21 +347,58 @@ impl World {
             .speech_hosts(speech_ids.clone()),
             ids: speech_ids,
         };
-        let supervised = Supervised::start(
-            models.iter().map(|m| m.spec.clone()).collect(),
-            plan.supervisor.unwrap_or_default(),
-            Ports {
-                host: replays.host(Hub {
-                    recorder: host.clone(),
-                    speech: speech.clone().unwrap_or_else(|| SpeechEngines::new(&[])),
-                }),
-                probe: probes,
-                gpu: FakeGpu(GpuMemory {
-                    total: MiB(16_000),
-                    used_by_others: MiB(0),
-                }),
-            },
-        );
+        let gpu = FakeGpu(GpuMemory {
+            total: MiB(16_000),
+            used_by_others: MiB(0),
+        });
+        let specs: Vec<_> = models.iter().map(|m| m.spec.clone()).collect();
+        let timing = plan.supervisor.unwrap_or_default();
+        let log: LogLines = Arc::default();
+        let supervised = match &plan.processes {
+            None => Supervised::start(
+                specs,
+                timing,
+                Ports {
+                    host: replays.host(Hub {
+                        recorder: host.clone(),
+                        speech: speech.clone().unwrap_or_else(|| SpeechEngines::new(&[])),
+                    }),
+                    probe: probes,
+                    gpu,
+                },
+            ),
+            // Real child processes (the scratch program), the real health probe over their
+            // sockets, and inferd's log lines kept for the test to read.
+            Some(_) => {
+                let processes = ProcessHost::new().with_sockets(
+                    models
+                        .iter()
+                        .map(|m| (m.spec.id.clone(), m.socket.0.clone())),
+                );
+                let sink = Arc::clone(&log);
+                let diagnostics =
+                    processes
+                        .diagnostics()
+                        .logging_to(Log::to(move |level, text| {
+                            sink.lock().expect("lock").push((level, text.to_owned()));
+                        }));
+                let probe = HealthProbe::new(
+                    models
+                        .iter()
+                        .map(|m| (m.spec.id.clone(), m.socket.0.clone())),
+                );
+                Supervised::start_with(
+                    specs,
+                    timing,
+                    Ports {
+                        host: replays.host(processes),
+                        probe,
+                        gpu,
+                    },
+                    diagnostics,
+                )
+            }
+        };
         let mut served = Engines::new(
             models.clone(),
             supervised.clone(),
@@ -440,6 +496,7 @@ impl World {
             accountd_bus,
             probing,
             speech,
+            log,
         }
     }
 }

@@ -92,7 +92,7 @@ impl EngineHost for Engines {
             go.notified().await;
         }
         match self.fail {
-            true => Err(EngineFailed),
+            true => Err(EngineFailed::unknown()),
             false => Ok(()),
         }
     }

@@ -72,6 +72,7 @@ fn snapshot(states: &[(&str, EngineState)], now: u64) -> Snapshot {
             .iter()
             .map(|(id, state)| (EngineId((*id).into()), *state))
             .collect(),
+        failures: Default::default(),
         now: Some(MonoMs(now)),
         gpu: None,
     }
@@ -165,6 +166,7 @@ fn the_gpu_is_loading_while_an_engine_starts_busy_in_a_turn_and_idle_otherwise()
             "not yet stepped",
             Snapshot {
                 states: [(EngineId("a".into()), ready(0))].into(),
+                failures: Default::default(),
                 now: None,
                 gpu: None,
             },
@@ -243,7 +245,7 @@ async fn a_route_pins_the_model_and_the_engine_is_asked_for_through_the_host_sea
         account: AccountId::parse("anthropic").expect("id"),
         model: ModelId::parse("sonnet").expect("id"),
     };
-    assert_eq!(engines.want(other).await, Err(EngineFailed));
+    assert_eq!(engines.want(other).await, Err(EngineFailed::unknown()));
 }
 
 #[tokio::test(start_paused = true)]

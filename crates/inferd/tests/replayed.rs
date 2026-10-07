@@ -61,10 +61,9 @@ fn tool() -> ToolDecl {
 }
 
 async fn finished(session: &mut impl InferSession, asked: InferRequest) -> InferReply {
-    session
-        .send(ClientFrame::Request(asked))
-        .await
-        .expect("send");
+    // An engine that cannot start now fails the session at Open, before the request is sent: a
+    // closed session is not an error here, its `Finished` is still to be read.
+    let _ = session.send(ClientFrame::Request(asked)).await;
     loop {
         if let InferEvent::Finished(reply) = session.next().await.expect("an event") {
             return reply;

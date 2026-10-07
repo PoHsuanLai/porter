@@ -666,7 +666,15 @@ fn readiness_in(snapshot: &Snapshot, model: &LocalModel) -> Readiness {
         Some(EngineState::Ready { .. }) => Readiness::Ready,
         Some(EngineState::Starting { .. } | EngineState::Backoff { .. }) => Readiness::Loading,
         Some(EngineState::Stopped | EngineState::Stopping { .. }) => Readiness::Loadable,
-        Some(EngineState::Failed(_)) | None => Readiness::Unavailable,
+        // An engine that failed to start is unavailable for a pause (its failure is the answer), and
+        // loadable again when the pause has run out: a request then tries it once more.
+        Some(EngineState::Failed(_)) => match snapshot.failures.get(&model.spec.id) {
+            Some(failure) if failure.cause.pauses() && snapshot.now >= Some(failure.retry_at) => {
+                Readiness::Loadable
+            }
+            _ => Readiness::Unavailable,
+        },
+        None => Readiness::Unavailable,
     }
 }
 
@@ -699,19 +707,25 @@ impl EngineHost for Engines {
                     .iter()
                     .any(|entry| entry.id.0 == model.model.as_str())
             });
-            return if hosted { Ok(()) } else { Err(EngineFailed) };
+            return if hosted {
+                Ok(())
+            } else {
+                Err(EngineFailed::unknown())
+            };
         };
         // A runtime the person runs is not started or stopped here: it is there or it is not.
         if local.loopback.is_some() {
             return match self.runtime_readiness(&local) {
                 Readiness::Ready => Ok(()),
-                _ => Err(EngineFailed),
+                _ => Err(EngineFailed::unknown()),
             };
         }
         self.supervised
             .want(&local.spec.id)
             .await
-            .map_err(|_| EngineFailed)
+            .map_err(|failed| EngineFailed {
+                cause: failed.cause,
+            })
     }
 
     /// Engines unload when idle (the supervisor's timer), not when a session ends: the next

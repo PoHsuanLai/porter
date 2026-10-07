@@ -35,9 +35,22 @@ pub trait Router: Send + Sync {
     }
 }
 
-/// The engine could not be brought up.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EngineFailed;
+/// The engine could not be brought up, and why. The session is told `NotReady` (the wire has no
+/// room for a cause); the cause is for inferd's own log and its tests.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EngineFailed {
+    /// Why.
+    pub cause: crate::startup::Cause,
+}
+
+impl EngineFailed {
+    /// A failure nothing more is known about.
+    pub fn unknown() -> Self {
+        Self {
+            cause: crate::startup::Cause::Unknown,
+        }
+    }
+}
 
 /// Brings an engine up for a session and gives it back.
 pub trait EngineHost: Send + Sync {

@@ -7,6 +7,7 @@
 //! (`PrivateNetwork`, a read-only home, the GPU device and a memory cap), is not built; the unit
 //! spec already carries the sandbox for it.
 
+use crate::startup::{Cause, Diagnostics, TailBuf, clear_socket};
 use engine_supervisor::{
     EngineHost, EngineId, ExitCode, GpuError, GpuMemory, GpuProbe, HostError, Probe, ReadyProbe,
     UnitSpec,
@@ -16,6 +17,7 @@ use model_http::{
     AuthHeader, BodySink, ChunkFlow, Exchange, Framing, HttpClient, HttpEndpoint, HttpTarget,
     ResponseHead, RouteRoot, Timeouts, Transport, UrlPath, Verb, WaitMs,
 };
+use rustix::process::Pid;
 use speech_host_client::{HostSocket, SpeechHostClient};
 use speech_provider::SpeechToText;
 use std::collections::{BTreeMap, BTreeSet};
@@ -23,6 +25,7 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
+use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio::sync::{oneshot, watch};
 
@@ -32,12 +35,53 @@ type Exit = watch::Receiver<Option<ExitCode>>;
 struct Running {
     stop: Option<oneshot::Sender<()>>,
     exit: Exit,
+    /// The engine's process group while any of it may be running; the monitor clears it once the
+    /// group is gone, so a group id the system has reused is never signalled.
+    group: Arc<Mutex<Option<Pid>>>,
 }
 
-/// Engines as child processes of the daemon.
-#[derive(Default)]
+impl Drop for Running {
+    fn drop(&mut self) {
+        let group = self.group.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(group) = *group {
+            group::sweep(group);
+        }
+    }
+}
+
+/// How long the end of a process waits for its standard error to end too (a grandchild that holds
+/// the pipe open must not hold the exit back).
+const STDERR_GRACE: Duration = Duration::from_secs(1);
+
+/// How long an engine that was sent `SIGTERM` has to go (the leader, then the rest of its group)
+/// before the group is killed. Under the unit's `TimeoutStopSec=20`.
+pub const STOP_GRACE: Duration = Duration::from_secs(5);
+
+/// Engines as child processes of the daemon. Told each engine's socket
+/// ([`ProcessHost::with_sockets`]) it looks at the path before it spawns: a path too long to bind
+/// or something that is not a socket is refused, a socket an earlier run left is removed. The
+/// standard error of every process is read (and passed on to ours); the last lines of it, and why
+/// a spawn was refused, are in the [`Diagnostics`] the driver reads.
+///
+/// Each engine leads a process group of its own and dies with inferd (see [`group`]): ending it
+/// signals the whole group (`SIGTERM`, [`STOP_GRACE`], `SIGKILL`), dropping the host kills every
+/// group still running.
 pub struct ProcessHost {
     running: Arc<Mutex<BTreeMap<EngineId, Running>>>,
+    sockets: BTreeMap<EngineId, PathBuf>,
+    diagnostics: Diagnostics,
+    grace: Duration,
+}
+
+impl Default for ProcessHost {
+    fn default() -> Self {
+        Self {
+            running: Arc::default(),
+            sockets: BTreeMap::new(),
+            diagnostics: Diagnostics::default(),
+            grace: STOP_GRACE,
+        }
+    }
 }
 
 impl std::fmt::Debug for ProcessHost {
@@ -52,30 +96,129 @@ impl ProcessHost {
         Self::default()
     }
 
+    /// The same, checking each of these engines' socket before it spawns.
+    pub fn with_sockets(self, sockets: impl IntoIterator<Item = (EngineId, PathBuf)>) -> Self {
+        Self {
+            sockets: sockets.into_iter().collect(),
+            ..self
+        }
+    }
+
+    /// The same, writing what it learns to `diagnostics` (the one the supervisor is given).
+    pub fn with_diagnostics(self, diagnostics: Diagnostics) -> Self {
+        Self {
+            diagnostics,
+            ..self
+        }
+    }
+
+    /// The same, giving a stopped engine `grace` to go before its group is killed.
+    pub fn with_grace(self, grace: Duration) -> Self {
+        Self { grace, ..self }
+    }
+
+    /// What this host learns about starts: give it to [`crate::supervise::Supervised::start_with`].
+    pub fn diagnostics(&self) -> Diagnostics {
+        self.diagnostics.clone()
+    }
+
     fn table(&self) -> std::sync::MutexGuard<'_, BTreeMap<EngineId, Running>> {
         self.running.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 
+/// Reads a process's standard error to its end: into the bounded tail, and on to ours.
+async fn drain(mut stderr: tokio::process::ChildStderr, live: Arc<Mutex<TailBuf>>) {
+    let mut chunk = [0u8; 4096];
+    loop {
+        match stderr.read(&mut chunk).await {
+            Ok(0) | Err(_) => break,
+            Ok(n) => {
+                live.lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .push(&chunk[..n]);
+                // The engine's own words still reach inferd's standard error (and the journal).
+                let _ = std::io::Write::write_all(&mut std::io::stderr(), &chunk[..n]);
+            }
+        }
+    }
+    live.lock().unwrap_or_else(PoisonError::into_inner).finish();
+}
+
 impl EngineHost for ProcessHost {
     async fn spawn(&self, id: &EngineId, unit: &UnitSpec) -> Result<(), HostError> {
+        let live = self.diagnostics.begin(id);
+        if let Some(socket) = self.sockets.get(id)
+            && let Err(cause) = clear_socket(socket)
+        {
+            self.diagnostics.refuse(id, cause);
+            return Err(HostError::Refused);
+        }
         let mut command = Command::new(&unit.program.0);
         command
             .args(unit.args.iter().map(|arg| &arg.0))
             .envs(unit.env.iter().map(|pair| (&pair.name, &pair.value)))
             .stdin(Stdio::null())
+            .stderr(Stdio::piped())
+            .process_group(0)
             .kill_on_drop(true);
-        let mut child = command.spawn().map_err(|_| HostError::Refused)?;
+        group::die_with_parent(&mut command);
+        let mut child = command.spawn().map_err(|e| {
+            self.diagnostics.refuse(
+                id,
+                Cause::CannotSpawn {
+                    program: unit.program.0.clone(),
+                    kind: e.kind(),
+                },
+            );
+            HostError::Refused
+        })?;
+        let reader = child
+            .stderr
+            .take()
+            .map(|stderr| tokio::spawn(drain(stderr, live)));
         let (stop, stopped) = oneshot::channel::<()>();
         let (publish, exit) = watch::channel(None);
+        let leads = group::group_of(&child);
+        let group = Arc::new(Mutex::new(leads));
+        let grace = self.grace;
+        let held = Arc::clone(&group);
         tokio::spawn(async move {
             let status = tokio::select! {
-                status = child.wait() => status.ok(),
+                status = child.wait() => {
+                    // It ended by itself: what it left running in its group goes with it.
+                    if let Some(group) = leads {
+                        group::sweep(group);
+                    }
+                    status.ok()
+                }
                 _ = stopped => {
-                    let _ = child.kill().await;
-                    child.wait().await.ok()
+                    // Told to stop: the group is asked to go, the leader is waited for, and
+                    // whatever of the group is still there when the grace is over is killed.
+                    if let Some(group) = leads {
+                        group::terminate(group);
+                    }
+                    let status = match tokio::time::timeout(grace, child.wait()).await {
+                        Ok(status) => status.ok(),
+                        Err(_) => {
+                            if let Some(group) = leads {
+                                group::sweep(group);
+                            }
+                            let _ = child.kill().await;
+                            child.wait().await.ok()
+                        }
+                    };
+                    if let Some(group) = leads {
+                        group::end(group, grace).await;
+                    }
+                    status
                 }
             };
+            *held.lock().unwrap_or_else(PoisonError::into_inner) = None;
+            // Its last words are in the tail before anyone is told it is gone.
+            if let Some(reader) = reader {
+                let _ = tokio::time::timeout(STDERR_GRACE, reader).await;
+            }
             let code = status.and_then(|status| status.code()).unwrap_or(-1);
             let _ = publish.send(Some(ExitCode(code)));
         });
@@ -84,6 +227,7 @@ impl EngineHost for ProcessHost {
             Running {
                 stop: Some(stop),
                 exit,
+                group,
             },
         );
         Ok(())
@@ -285,6 +429,8 @@ impl GpuProbe for NvidiaSmi {
         })
     }
 }
+
+pub mod group;
 
 #[cfg(test)]
 mod tests;

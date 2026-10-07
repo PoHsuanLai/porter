@@ -90,14 +90,17 @@ async fn run(args: Args) -> Result<(), String> {
         .iter()
         .map(|model| (model.spec.id.clone(), model.socket.0.clone()))
         .collect();
-    let supervised = Supervised::start(
+    let processes = ProcessHost::new().with_sockets(sockets.clone());
+    let diagnostics = processes.diagnostics();
+    let supervised = Supervised::start_with(
         specs,
         replays.supervisor_config(models.len()),
         Ports {
-            host: replays.host(ProcessHost::new()),
+            host: replays.host(processes),
             probe: HealthProbe::new(sockets).speech_hosts(speech_hosts),
             gpu: NvidiaSmi::new(PathBuf::from("nvidia-smi")),
         },
+        diagnostics,
     );
     let structured = config.ai.resolve();
     for path in &structured.rejected {
