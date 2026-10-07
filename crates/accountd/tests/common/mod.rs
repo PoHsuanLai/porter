@@ -93,7 +93,17 @@ impl Rig {
         Self::start_with(Options::default(), SheetHost::quiet()).await
     }
 
-    pub async fn start_with(mut options: Options, host: SheetHost) -> Self {
+    pub async fn start_with(options: Options, host: SheetHost) -> Self {
+        let providers = vec![cloud_provider(), mail_provider(), llm_provider()];
+        Self::start_over(options, host, providers).await
+    }
+
+    /// As `start_with`, over these providers (the accounts are the fake three).
+    pub async fn start_over(
+        mut options: Options,
+        host: SheetHost,
+        providers: Vec<FakeProvider>,
+    ) -> Self {
         let bus = PrivateBus::start();
         let callers = Arc::new(TableCallers::new());
         let connection = bus.connect().await;
@@ -152,7 +162,7 @@ impl Rig {
         let sheets = BusSheets::new(connection.clone(), Arc::clone(&callers));
         let service = Arc::new(
             AccountService::new(
-                vec![cloud_provider(), mail_provider(), llm_provider()],
+                providers,
                 registry,
                 secrets.clone(),
                 sheets,

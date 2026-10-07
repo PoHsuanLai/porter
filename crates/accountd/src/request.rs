@@ -13,11 +13,11 @@
 //! answers `Refusal::Unavailable`: the caller is never left waiting on a task that is gone.
 
 use crate::callers::Callers;
-use crate::core::{Core, Host, handle_token};
+use crate::core::{Core, Host, Standing, handle_token};
 use crate::errors::RefusedError;
 use porter_core::wire::Refusal;
 use porter_core::{AccountsReply, AccountsRequest};
-use porter_dbus::{Details, SheetKind, is_handle_token, request_path, response_of};
+use porter_dbus::{CallerRole, Details, SheetKind, is_handle_token, request_path, response_of};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::Ordering;
@@ -82,7 +82,9 @@ impl<H: Host, C: Callers> Core<H, C> {
         options: &Details,
         request: AccountsRequest,
     ) -> Result<OwnedObjectPath, RefusedError> {
-        let app = self.acting(header).await?;
+        let caller = self.identify(header, Standing::Acting).await?;
+        let app = caller.app.clone();
+        let shell = matches!(caller.role, CallerRole::SheetHost | CallerRole::Settings);
         let sender = header
             .sender()
             .ok_or_else(|| RefusedError::access_denied("no sender"))?
@@ -102,7 +104,13 @@ impl<H: Host, C: Callers> Core<H, C> {
             .ok_or_else(|| RefusedError::invalid("no request path for this sender"))?;
         let core = Arc::clone(self);
         let run = async move {
-            let reply = core.host.handle(&app, request).await;
+            let reply = match request {
+                // The shell signs any account in again; an app needs its grant.
+                AccountsRequest::Reauthenticate { account, window } if shell => {
+                    core.host.reauthenticate_any(&app, &account, window).await
+                }
+                request => core.host.handle(&app, request).await,
+            };
             core.publish().await;
             reply
         };

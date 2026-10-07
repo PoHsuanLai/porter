@@ -3,6 +3,7 @@
 //! need no provider are built (`Registry::relay_target`, the audience rule); these bodies wait
 //! for the first family.
 
+use crate::add_flow::Reauth;
 use crate::audit::AuditSink;
 use crate::clock::Clock;
 use crate::service::AccountService;
@@ -37,7 +38,19 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         account: &AccountId,
         window: ParentWindow,
     ) -> AccountsReply {
-        self.run_reauthenticate(caller, account, window).await
+        self.run_reauthenticate(caller, account, window, Reauth::Held)
+            .await
+    }
+
+    /// Runs the sign-in again for any account, with no grant: for the sheet host and Settings.
+    pub async fn reauthenticate_any(
+        &self,
+        caller: &AppId,
+        account: &AccountId,
+        window: ParentWindow,
+    ) -> AccountsReply {
+        self.run_reauthenticate(caller, account, window, Reauth::Shell)
+            .await
     }
 
     /// What the relay for one checked endpoint presents: the account's password, or an access

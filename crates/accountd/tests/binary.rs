@@ -38,6 +38,16 @@ fn scratch(bus: &PrivateBus, name: &str) -> PathBuf {
 }
 
 fn spawn(bus: &PrivateBus, home: &Path, proc_root: Option<&Path>) -> Daemon {
+    spawn_over(bus, home, proc_root, &[])
+}
+
+/// As `spawn`, with these arguments (`--providers <dir>`).
+fn spawn_over(
+    bus: &PrivateBus,
+    home: &Path,
+    proc_root: Option<&Path>,
+    args: &[&std::ffi::OsStr],
+) -> Daemon {
     let stderr = home.join("stderr.log");
     let mut command = Command::new(env!("CARGO_BIN_EXE_accountd"));
     command
@@ -48,6 +58,7 @@ fn spawn(bus: &PrivateBus, home: &Path, proc_root: Option<&Path>) -> Daemon {
         .env("XDG_DATA_HOME", home.join("data"))
         .env("XDG_RUNTIME_DIR", bus.scratch())
         .env("DBUS_SESSION_BUS_ADDRESS", bus.address())
+        .args(args)
         .stdout(Stdio::null())
         .stderr(std::fs::File::create(&stderr).expect("stderr file"));
     if let Some(root) = proc_root {
@@ -318,4 +329,54 @@ async fn add_refuses_what_it_cannot_serve_before_it_asks_for_anything() {
         assert!(!stdout.contains("Added"), "{args:?}");
     }
     assert!(!home.join("state/porter/registry.json").exists());
+}
+
+/// The real binary, with the shipped provider files and this process named a porter daemon by
+/// the callers table and the /proc fixture (inferd's seat), takes `Peer.ReportLocal` for each
+/// local runtime the files declare: the wiring in `main`, not only the service. Before the fix
+/// the binary kept only the providers a family serves, and every report was `UnknownProvider`.
+#[cfg(feature = "test-proc-root")]
+#[tokio::test(flavor = "multi_thread")]
+async fn the_binary_makes_accounts_of_the_local_runtimes_inferd_reports() {
+    let bus = PrivateBus::start();
+    let home = scratch(&bus, "home");
+    let root = proc_tree(&home);
+    let config = home.join("config/porter");
+    std::fs::create_dir_all(&config).expect("config dir");
+    std::fs::write(
+        config.join("callers.toml"),
+        "[[caller]]\napp = \"org.example.Probe\"\nrole = \"porter_daemon\"\n",
+    )
+    .expect("callers");
+    let providers = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../providers");
+    let mut daemon = spawn_over(
+        &bus,
+        &home,
+        Some(&root),
+        &["--providers".as_ref(), providers.as_os_str()],
+    );
+    assert!(serving(&bus, &mut daemon).await, "{}", daemon.stderr());
+    assert!(
+        !daemon
+            .stderr()
+            .contains("no family serves provider `ollama`"),
+        "{}",
+        daemon.stderr()
+    );
+
+    let client = bus.connect().await;
+    let peer = porter_dbus::PeerProxy::new(&client).await.expect("proxy");
+    for runtime in ["ollama", "llama-cpp", "lm-studio"] {
+        let id = peer
+            .report_local(runtime, Vec::new(), "ok")
+            .await
+            .unwrap_or_else(|e| panic!("{runtime}: {e} {}", daemon.stderr()));
+        assert_eq!(id, runtime);
+    }
+    // A provider no family serves and that is no runtime is still not an account.
+    let err = peer
+        .report_local("google", Vec::new(), "ok")
+        .await
+        .expect_err("google is a TODO, not a runtime");
+    let _ = err;
 }

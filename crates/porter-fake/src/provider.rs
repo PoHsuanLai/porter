@@ -14,13 +14,25 @@ use porter_provider::{
 #[derive(Debug, Clone)]
 pub struct FakeProvider {
     spec: ProviderSpec,
+    refuses_refresh: bool,
 }
 
 impl FakeProvider {
     /// The provider the file text declares. Panics on a bad file: the files are this crate's.
     pub fn from_file(text: &str) -> Self {
         let spec = parse_provider(text).unwrap_or_else(|e| panic!("fake provider file: {e}"));
-        Self { spec }
+        Self {
+            spec,
+            refuses_refresh: false,
+        }
+    }
+
+    /// The same provider with its issuer refusing every stored credential (`invalid_grant`):
+    /// `open` answers `Unauthorized`, as a revoked refresh token does.
+    #[must_use]
+    pub fn refusing_refresh(mut self) -> Self {
+        self.refuses_refresh = true;
+        self
     }
 }
 
@@ -104,6 +116,9 @@ impl Provider for FakeProvider {
         let needs_secret = porter_service::secret_purpose(self.auth_kind()).is_some();
         match (needs_secret, presented) {
             (true, Presented::Anonymous) => Err(ProviderError::Unauthorized),
+            (_, Presented::Credential(_)) if self.refuses_refresh => {
+                Err(ProviderError::Unauthorized)
+            }
             _ => Ok(FakeSession {
                 account: account.clone(),
             }),

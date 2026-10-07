@@ -68,7 +68,7 @@ fn account(port: u16) -> Account {
     account
 }
 
-fn grant_for(app: porter_core::AppId, account: &Account) -> Grant {
+fn grant_for(app: porter_core::AppId, account: &Account, scope: GrantScope) -> Grant {
     Grant {
         id: GrantId::parse(GRANT).expect("id"),
         key: GrantKey {
@@ -80,7 +80,7 @@ fn grant_for(app: porter_core::AppId, account: &Account) -> Grant {
             space: SpaceScope::Any,
         },
         decision: Decision::Allow,
-        scope: GrantScope::Always,
+        scope,
         at: UnixSeconds(1),
     }
 }
@@ -102,7 +102,19 @@ async fn serve_account<C: Callers>(
     bus: &PrivateBus,
     callers: Arc<C>,
     holder: porter_core::AppId,
+    held: (Account, Credential),
+    roots: RelayRoots,
+) -> (zbus::Connection, Arc<impl Host + use<C>>) {
+    serve_scoped(bus, callers, holder, held, GrantScope::Always, roots).await
+}
+
+/// As `serve_account`, the grant held `scope`.
+async fn serve_scoped<C: Callers>(
+    bus: &PrivateBus,
+    callers: Arc<C>,
+    holder: porter_core::AppId,
     (account, stored): (Account, Credential),
+    scope: GrantScope,
     roots: RelayRoots,
 ) -> (zbus::Connection, Arc<impl Host + use<C>>) {
     let connection = bus.connect().await;
@@ -118,7 +130,7 @@ async fn serve_account<C: Callers>(
         .await
         .expect("secret");
     let registry = Registry {
-        grants: vec![grant_for(holder, &account)],
+        grants: vec![grant_for(holder, &account, scope)],
         accounts: vec![account],
         toggles: vec![],
     };
@@ -558,4 +570,48 @@ async fn a_stored_api_token_is_presented_as_a_bearer() {
     );
     assert_eq!(attempts[0].secret, Secret::Bearer("api-9".into()));
     assert!(attempts[0].accepted);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_allow_once_grant_is_spent_by_the_relay_it_opens_and_the_second_open_is_refused() {
+    let (fake, port) = imap().await;
+    let bus = PrivateBus::start();
+    let callers = Arc::new(TableCallers::new());
+    let stored = Credential::Password(SecretText::new(APP_PASSWORD));
+    let (_connection, accountd) = serve_scoped(
+        &bus,
+        Arc::clone(&callers),
+        app("org.quire.Mail"),
+        (account(port), stored),
+        GrantScope::Once,
+        fake_ca(),
+    )
+    .await;
+    let mail = client(&bus, &callers, "org.quire.Mail", CallerRole::App).await;
+    assert_eq!(accountd.registry().grants.len(), 1);
+
+    let fd = tokens(&mail)
+        .await
+        .open_authenticated(GRANT, &imap_url(port))
+        .await
+        .expect("the first open is the grant's one use");
+    drop(stream_of(fd));
+    assert!(
+        accountd.registry().grants.is_empty(),
+        "the relay spent the grant"
+    );
+
+    let again = tokens(&mail)
+        .await
+        .open_authenticated(GRANT, &imap_url(port))
+        .await
+        .expect_err("a spent grant opens nothing");
+    assert_eq!(error_name(&again), refusal_name(Refusal::UnknownGrant));
+    let token = tokens(&mail)
+        .await
+        .issue_token(GRANT, "mail")
+        .await
+        .expect_err("nor does it issue a token");
+    assert_eq!(error_name(&token), refusal_name(Refusal::UnknownGrant));
+    assert_eq!(fake.attempts().len(), 1, "only the first open dialed");
 }

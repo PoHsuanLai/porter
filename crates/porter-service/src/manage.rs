@@ -7,7 +7,7 @@ use crate::clock::Clock;
 use crate::service::AccountService;
 use crate::sheets::Sheets;
 use crate::store::RegistryStore;
-use crate::token::{provider_refusal, secret_purpose};
+use crate::token::secret_purpose;
 use porter_core::audit::AuditEvent;
 use porter_core::store::AccountToggle;
 use porter_core::wire::Refusal;
@@ -96,14 +96,14 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             .presented(&account)
             .await
             .map_err(crate::token::secrets_refusal)?;
-        let claims = provider
-            .discover(&account, &presented)
-            .await
-            .map_err(provider_refusal)?;
-        let session = provider
-            .open(&account.id, presented)
-            .await
-            .map_err(provider_refusal)?;
+        let claims = match provider.discover(&account, &presented).await {
+            Ok(claims) => claims,
+            Err(error) => return Err(self.refused_refresh(&account.id, error).await),
+        };
+        let session = match provider.open(&account.id, presented).await {
+            Ok(session) => session,
+            Err(error) => return Err(self.refused_refresh(&account.id, error).await),
+        };
         if let (Some(renewed), Some(purpose)) = (session.renewed(), secret_purpose(account.auth)) {
             let key = SecretKey {
                 account: account.id.clone(),

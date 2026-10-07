@@ -12,10 +12,12 @@ use porter_core::audit::{AuditEntry, AuditEvent};
 use porter_core::consent::{ConsentAnswer, GrantScope, Usage, availability};
 use porter_core::wire::{ParentWindow, Refusal};
 use porter_core::{
-    AccountId, AccountState, AccountsReply, AccountsRequest, AppId, Audience, DataClass,
-    EndpointUrl, GrantId, Need, RelayPlan, SecretKey,
+    AccountId, AccountState, AccountsReply, AccountsRequest, AppId, Audience, AuthKind, DataClass,
+    EndpointUrl, GrantId, Need, ProviderId, RelayPlan, SecretKey,
 };
-use porter_provider::{Presented, Provider, ProviderSession, ProviderSet};
+use porter_provider::{
+    Presented, Provider, ProviderError, ProviderSession, ProviderSet, ProviderSpec,
+};
 use porter_secrets::{Secrets, SecretsError};
 use std::sync::{Mutex, MutexGuard};
 
@@ -78,6 +80,22 @@ impl<P, S, U, K, R, A> AccountService<P, S, U, K, R, A> {
             audit,
             registry: self.registry,
         }
+    }
+
+    /// The same service knowing the local runtimes (`AuthKind::LocalRuntime`) among `specs`:
+    /// they have no family to sign in through, but `Peer.ReportLocal` makes their accounts and
+    /// the catalogue lists them. Any other spec is ignored (a provider needs its family).
+    #[must_use]
+    pub fn with_local_runtimes(mut self, specs: Vec<ProviderSpec>) -> Self {
+        let mut all = self.catalog.specs().to_vec();
+        let known = |all: &[ProviderSpec], id: &ProviderId| all.iter().any(|s| s.id == *id);
+        for spec in specs {
+            if spec.auth.kind == AuthKind::LocalRuntime && !known(&all, &spec.id) {
+                all.push(spec);
+            }
+        }
+        self.catalog = ProviderSet::layered(all, Vec::new());
+        self
     }
 
     pub(crate) fn lock(&self) -> MutexGuard<'_, Registry> {
@@ -169,6 +187,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             return Err(Refusal::NeedsReauth);
         }
         let plan = self.relay_plan(&account, &endpoint, kind).await?;
+        self.spend_once(caller, grant).await?;
         self.note(
             Some(caller.clone()),
             Some(account.id.clone()),
@@ -191,6 +210,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         origin: &EndpointUrl,
     ) -> Result<RelayPlan, Refusal> {
         let (plan, account) = self.plan_linked(caller, grant, origin)?;
+        self.spend_once(caller, grant).await?;
         self.note(
             Some(caller.clone()),
             Some(account.id.clone()),
@@ -310,6 +330,39 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         }
     }
 
+    /// Spends `caller`'s grant when it is a `Once` one: the first use of any kind (a token
+    /// issued, a relay opened) drops it, so a second use asks again.
+    pub(crate) async fn spend_once(&self, caller: &AppId, grant: &GrantId) -> Result<(), Refusal> {
+        let spent = {
+            let mut registry = self.lock();
+            let once = registry
+                .grant_of(caller, grant)
+                .is_some_and(|g| g.scope == GrantScope::Once);
+            if once {
+                registry.grants.retain(|g| g.id != *grant);
+            }
+            once
+        };
+        if spent {
+            self.persist().await?;
+        }
+        Ok(())
+    }
+
+    /// A refresh the provider refused (`Unauthorized`) leaves the account `NeedsReauth`, which
+    /// the host announces; every other error is only the app's refusal.
+    pub(crate) async fn refused_refresh(
+        &self,
+        account: &AccountId,
+        error: ProviderError,
+    ) -> Refusal {
+        let refusal = provider_refusal(error);
+        if refusal == Refusal::NeedsReauth {
+            self.set_state(account, AccountState::NeedsReauth).await;
+        }
+        refusal
+    }
+
     async fn issue_token(
         &self,
         caller: &AppId,
@@ -357,11 +410,15 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         };
         let session = match provider.open(&account.id, presented).await {
             Ok(session) => session,
-            Err(error) => return AccountsReply::Refused(provider_refusal(error)),
+            Err(error) => {
+                return AccountsReply::Refused(self.refused_refresh(&account.id, error).await);
+            }
         };
         let token = match session.access_token(audience).await {
             Ok(token) => token,
-            Err(error) => return AccountsReply::Refused(provider_refusal(error)),
+            Err(error) => {
+                return AccountsReply::Refused(self.refused_refresh(&account.id, error).await);
+            }
         };
         if let (Some(renewed), Some(purpose)) = (session.renewed(), secret_purpose(account.auth)) {
             let key = SecretKey {
@@ -372,11 +429,10 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                 return AccountsReply::Refused(secrets_refusal(error));
             }
         }
-        if scope == GrantScope::Once {
-            self.lock().grants.retain(|g| g.id != *grant);
-            if let Err(refusal) = self.persist().await {
-                return AccountsReply::Refused(refusal);
-            }
+        if scope == GrantScope::Once
+            && let Err(refusal) = self.spend_once(caller, grant).await
+        {
+            return AccountsReply::Refused(refusal);
         }
         self.note(
             Some(caller.clone()),

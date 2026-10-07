@@ -109,7 +109,8 @@ async fn main() -> ExitCode {
         Vec::new(),
     ));
     let (families, unserved) = accountd::providers::served(loaded.specs, &io);
-    for spec in &unserved {
+    let local = accountd::providers::local_runtimes(&unserved);
+    for spec in unserved.iter().filter(|s| !local.contains(s)) {
         eprintln!("accountd: no family serves provider `{}` yet", spec.id);
     }
 
@@ -138,6 +139,7 @@ async fn main() -> ExitCode {
     let sheets = BusSheets::new(connection.clone(), Arc::clone(&callers));
     let service = Arc::new(
         AccountService::new(families, registry, Oo7Secrets, sheets, SystemClock)
+            .with_local_runtimes(local)
             .with_store(store)
             .with_audit(FileAudit::new(paths.audit.clone())),
     );

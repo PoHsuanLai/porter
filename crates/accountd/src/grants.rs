@@ -99,19 +99,21 @@ impl<H: Host, C: Callers> Tokens<H, C> {
         let app = self.0.acting(&header).await?;
         let grant = GrantId::parse(&grant).map_err(RefusedError::invalid)?;
         let endpoint = EndpointUrl::parse(&endpoint).map_err(RefusedError::invalid)?;
-        let plan = self
-            .0
-            .host
-            .open_relay(&app, &grant, &endpoint)
-            .await
-            .map_err(RefusedError::of)?;
+        // Read before the plan: a `Once` grant is spent by the open itself.
+        let account = self.0.account_of_grant(&grant);
+        let planned = self.0.host.open_relay(&app, &grant, &endpoint).await;
+        // A refused refresh, or a spent `Once` grant, changed the registry: tell the clients.
+        self.0.publish().await;
+        let plan = planned.map_err(RefusedError::of)?;
         match self.0.relays.open(plan).await {
             Ok(fd) => Ok(fd),
             Err(refusal) => {
                 // The server refused the credential the account holds: say so, as the signals
                 // and the Settings module show it.
-                if refusal == Refusal::NeedsReauth {
-                    self.0.needs_reauth(&grant).await;
+                if refusal == Refusal::NeedsReauth
+                    && let Some(account) = account
+                {
+                    self.0.needs_reauth(&account).await;
                 }
                 Err(RefusedError::of(refusal))
             }
@@ -133,12 +135,9 @@ impl<H: Host, C: Callers> Tokens<H, C> {
         let app = self.0.acting(&header).await?;
         let grant = GrantId::parse(&grant).map_err(RefusedError::invalid)?;
         let origin = EndpointUrl::parse(&origin).map_err(RefusedError::invalid)?;
-        let plan = self
-            .0
-            .host
-            .open_linked_relay(&app, &grant, &origin)
-            .await
-            .map_err(RefusedError::of)?;
+        let planned = self.0.host.open_linked_relay(&app, &grant, &origin).await;
+        self.0.publish().await;
+        let plan = planned.map_err(RefusedError::of)?;
         self.0.relays.open(plan).await.map_err(RefusedError::of)
     }
 }

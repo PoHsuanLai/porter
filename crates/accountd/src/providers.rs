@@ -141,6 +141,17 @@ pub fn served(specs: Vec<ProviderSpec>, io: &FamilyIo) -> (Vec<FamilyProvider>, 
     (families, unserved)
 }
 
+/// The local runtimes among the providers no family serves (`ollama`, `llama-cpp`, `lm-studio`):
+/// they sign in through nothing, and inferd reports them with `Peer.ReportLocal`, so the
+/// service keeps them in its catalogue.
+pub fn local_runtimes(unserved: &[ProviderSpec]) -> Vec<ProviderSpec> {
+    unserved
+        .iter()
+        .filter(|spec| spec.auth.kind == AuthKind::LocalRuntime)
+        .cloned()
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -172,6 +183,14 @@ mod tests {
         // Google has no family (a TODO); the local runtimes are reported by inferd.
         assert!(ids.contains(&"google".to_owned()), "{ids:?}");
         assert!(!ids.contains(&"nextcloud".to_owned()), "{ids:?}");
+        let local: Vec<String> = local_runtimes(&unserved)
+            .iter()
+            .map(|s| s.id.to_string())
+            .collect();
+        for runtime in ["ollama", "llama-cpp", "lm-studio"] {
+            assert!(local.contains(&runtime.to_owned()), "{local:?}");
+        }
+        assert!(!local.contains(&"google".to_owned()), "{local:?}");
     }
 
     #[test]

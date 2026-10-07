@@ -9,7 +9,7 @@ use crate::clock::Clock;
 use crate::registry::serves;
 use crate::service::AccountService;
 use crate::sheets::Sheets;
-use crate::token::{provider_refusal, secret_purpose, secrets_refusal};
+use crate::token::{secret_purpose, secrets_refusal};
 use porter_core::wire::Refusal;
 use porter_core::{
     Account, AppId, Audience, CapabilityKind, Credential, EndpointUrl, Family, GrantId, RelayAuth,
@@ -158,14 +158,17 @@ where
             purpose: SecretPurpose::OAuthRefresh,
         };
         let credential = self.secrets.get(&key).await.map_err(secrets_refusal)?;
-        let session = provider
+        let session = match provider
             .open(&account.id, Presented::Credential(credential))
             .await
-            .map_err(provider_refusal)?;
-        let issued = session
-            .access_token(&audience)
-            .await
-            .map_err(provider_refusal)?;
+        {
+            Ok(session) => session,
+            Err(error) => return Err(self.refused_refresh(&account.id, error).await),
+        };
+        let issued = match session.access_token(&audience).await {
+            Ok(issued) => issued,
+            Err(error) => return Err(self.refused_refresh(&account.id, error).await),
+        };
         if let Some(renewed) = session.renewed() {
             self.secrets
                 .put(&key, &renewed)

@@ -5,12 +5,11 @@ use crate::account::{AccountObject, publish_accounts};
 use crate::callers::Callers;
 use crate::errors::RefusedError;
 use crate::grants::{Grants, Tokens};
-use crate::hub::{Event, audience, events, shell_hears};
+use crate::hub::{Event, audience, events, settings_news, shell_hears};
 use crate::keys::KeyDesk;
 use crate::legacy::AdoptConfig;
 use crate::manager::Manager;
 use crate::relay::{RelayRoots, Relays};
-use ds_settings::schema::KeyPath;
 use porter_core::wire::{LegacyRef, ParentWindow, ProviderHint, Refusal};
 use porter_core::{
     AccountId, AccountState, AccountsReply, AccountsRequest, AppId, CapabilityKind, Claim,
@@ -86,6 +85,18 @@ pub trait Host: Send + Sync + 'static {
     ) -> impl Future<Output = Result<RelayPlan, Refusal>> + Send {
         let _ = (caller, grant, origin);
         async { Err(Refusal::Unavailable) }
+    }
+
+    /// Signs any account in again for the sheet host or Settings, which need no grant (accountd
+    /// checks the role). A host with no sign-in says unavailable.
+    fn reauthenticate_any(
+        &self,
+        caller: &AppId,
+        account: &AccountId,
+        window: ParentWindow,
+    ) -> impl Future<Output = AccountsReply> + Send {
+        let _ = (caller, account, window);
+        async { AccountsReply::Refused(Refusal::Unavailable) }
     }
 
     /// Removes an account: revoke at the provider (best effort), then every wipe. A host that
@@ -181,6 +192,15 @@ where
         origin: &EndpointUrl,
     ) -> impl Future<Output = Result<RelayPlan, Refusal>> + Send {
         AccountService::open_linked(self, caller, grant, origin)
+    }
+
+    fn reauthenticate_any(
+        &self,
+        caller: &AppId,
+        account: &AccountId,
+        window: ParentWindow,
+    ) -> impl Future<Output = AccountsReply> + Send {
+        AccountService::reauthenticate_any(self, caller, account, window)
     }
 
     fn remove(
@@ -301,20 +321,22 @@ impl<H: Host, C: Callers> Core<H, C> {
         }
     }
 
-    /// Marks the account `grant` is for as needing reauthentication, and tells the clients.
-    pub(crate) async fn needs_reauth(self: &Arc<Self>, grant: &GrantId) {
-        let account = self
-            .host
+    /// The account a grant is for, as the registry holds it now.
+    pub(crate) fn account_of_grant(&self, grant: &GrantId) -> Option<AccountId> {
+        self.host
             .registry()
             .grants
             .iter()
             .find(|g| g.id == *grant)
-            .map(|g| g.key.account.clone());
-        if let Some(account) = account
-            && self
-                .host
-                .set_state(&account, AccountState::NeedsReauth)
-                .await
+            .map(|g| g.key.account.clone())
+    }
+
+    /// Marks `account` as needing reauthentication, and tells the clients.
+    pub(crate) async fn needs_reauth(self: &Arc<Self>, account: &AccountId) {
+        if self
+            .host
+            .set_state(account, AccountState::NeedsReauth)
+            .await
         {
             self.publish().await;
         }
@@ -342,7 +364,7 @@ impl<H: Host, C: Callers> Core<H, C> {
                 _ => {}
             }
         }
-        self.announce_states(&list, &after).await;
+        self.announce_states(&list, &before, &after).await;
         for event in list {
             let apps = audience(&event, &before, &after);
             let names: Vec<String> = held(&self.roster)
@@ -359,25 +381,21 @@ impl<H: Host, C: Callers> Core<H, C> {
         }
     }
 
-    /// Tells the settings module's listeners (the Settings role is the only one it admits) each
-    /// state that changed, as `Changed("accounts.<id>.state", <state slug>)`: the row Settings
-    /// reads, so a sign-in that finishes later reaches its pane without a `Set`.
-    async fn announce_states(&self, list: &[Event], after: &Registry) {
+    /// Tells the settings module's listeners (the Settings role is the only one it admits) what
+    /// changed in the keys they list, as `Changed(key, value)`:
+    ///
+    /// - a new state: `accounts.<id>.state` with the state slug, so a sign-in that finishes
+    ///   later reaches its pane without a `Set`;
+    /// - an account that appeared: its `state` row, and one that went: the same key with
+    ///   `removed`, since the module has no signal for "the key set changed" and a pane reads
+    ///   the schema again on any `Changed` (detent's `Followed::Changed`);
+    /// - a new label: `accounts.<id>.label`.
+    async fn announce_states(&self, list: &[Event], before: &Registry, after: &Registry) {
         let Some(module) = self.settings.get() else {
             return;
         };
-        for event in list {
-            let Event::StateChanged(id) = event else {
-                continue;
-            };
-            let Some(account) = after.accounts.iter().find(|a| a.id == *id) else {
-                continue;
-            };
-            let key = KeyPath(crate::settings_keys::path(
-                &crate::settings_keys::Key::State(id.clone()),
-            ));
-            let value = toml::Value::String(crate::account::state_slug(account.state).to_owned());
-            let _ = module.changed(&key, &value).await;
+        for (path, value) in settings_news(list, before, after) {
+            let _ = module.changed(&path, &value).await;
         }
     }
 

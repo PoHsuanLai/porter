@@ -148,7 +148,10 @@ impl<H: Host, C: Callers> AccountObject<H, C> {
         let registry = self.0.host.registry();
         let path = header.path().map(|p| p.as_str()).unwrap_or_default();
         let account = account_at(&registry.accounts, path)
-            .filter(|account| sees(self.0.host.as_ref(), &caller, &account.id))
+            .filter(|account| {
+                caller.role == CallerRole::Settings
+                    || sees(self.0.host.as_ref(), &caller, &account.id)
+            })
             .map(|account| account.id.clone())
             .ok_or_else(|| RefusedError::unknown_object("no such account for this caller"))?;
         let request = AccountsRequest::Reauthenticate {

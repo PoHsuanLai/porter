@@ -9,7 +9,7 @@ use crate::settings_keys::{Key, parse, schema};
 use ds_settings::live::{Access, Caller, LiveError, LiveModule, LiveSchema, Verdict, serve};
 use ds_settings::schema::KeyPath;
 use porter_core::wire::ParentWindow;
-use porter_core::{AccountsReply, AccountsRequest, AppId, AppName, Isolation, Toggle};
+use porter_core::{AccountsReply, AppId, AppName, Isolation, Toggle};
 use porter_dbus::{ACCOUNTS_SETTINGS_PATH, CallerRole};
 use porter_provider::{ClientChannel, ClientEntry, ClientId, ClientsFile, Issuer, parse_clients};
 use std::sync::Arc;
@@ -141,12 +141,10 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
             Key::Reauth(id) => {
                 let core = Arc::clone(&self.0);
                 tokio::spawn(async move {
-                    let request = AccountsRequest::Reauthenticate {
-                        account: id,
-                        window: ParentWindow::Unparented,
-                    };
-                    if let AccountsReply::Refused(why) =
-                        core.host.handle(&settings_app(), request).await
+                    if let AccountsReply::Refused(why) = core
+                        .host
+                        .reauthenticate_any(&settings_app(), &id, ParentWindow::Unparented)
+                        .await
                     {
                         eprintln!("accountd: reauthenticate from Settings refused: {why:?}");
                     }

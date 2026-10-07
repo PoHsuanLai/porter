@@ -50,7 +50,9 @@ pub enum Decision {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GrantScope {
-    /// For one use; accountd drops it after that use.
+    /// For one use; accountd drops it after that use. A use is the first of any kind: a token
+    /// issued (`IssueToken`) or a relay opened (`OpenAuthenticated`, `OpenLinked`). Design/31
+    /// §5.4 wrote "the first token issued" before relays existed; the first relay spends it too.
     Once,
     /// Until revoked in Settings.
     Always,

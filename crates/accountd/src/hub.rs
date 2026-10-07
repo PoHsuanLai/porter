@@ -3,6 +3,9 @@
 //! half: the events between two registries and the apps each is for. `core` is the live half
 //! (the roster of connections, the signals sent).
 
+use crate::account::state_slug;
+use crate::settings_keys::{Key, path};
+use ds_settings::schema::KeyPath;
 use porter_core::consent::Decision;
 use porter_core::{AccountId, AccountState, AppId, GrantId};
 use porter_service::Registry;
@@ -108,6 +111,46 @@ pub(crate) fn audience(event: &Event, before: &Registry, after: &Registry) -> Ve
     }
 }
 
+/// What the settings module's listeners are told as `Changed(key, value)`, in order. The module
+/// has no signal for "the key set changed"; a pane reads the schema again on any `Changed`
+/// (detent's `Followed::Changed`), so an account that appeared or went, and a new label, are
+/// said on a row of that account:
+///
+/// - a new state, or an account that appeared: `accounts.<id>.state` with the state slug;
+/// - an account that went: the same key with `removed` (the row is gone from the schema);
+/// - a new label: `accounts.<id>.label` with the label.
+pub(crate) fn settings_news(
+    list: &[Event],
+    before: &Registry,
+    after: &Registry,
+) -> Vec<(KeyPath, toml::Value)> {
+    let row = |key: Key| KeyPath(path(&key));
+    let text = |slug: &str| toml::Value::String(slug.to_owned());
+    let mut news = Vec::new();
+    for event in list {
+        match event {
+            Event::Removed(id) => news.push((row(Key::State(id.clone())), text("removed"))),
+            Event::Added(id) | Event::StateChanged(id) => {
+                if let Some(account) = after.accounts.iter().find(|a| a.id == *id) {
+                    news.push((row(Key::State(id.clone())), text(state_slug(account.state))));
+                }
+            }
+            _ => {}
+        }
+    }
+    for account in &after.accounts {
+        let renamed = before
+            .accounts
+            .iter()
+            .find(|a| a.id == account.id)
+            .is_some_and(|old| old.label != account.label);
+        if renamed {
+            news.push((row(Key::Label(account.id.clone())), text(&account.label.0)));
+        }
+    }
+    news
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -190,5 +233,31 @@ mod tests {
     fn no_change_is_no_event() {
         let r = registry(vec![storage_account()], vec![]);
         assert!(events(&r, &r.clone()).is_empty());
+    }
+
+    #[test]
+    fn the_settings_module_is_told_of_an_account_that_came_went_or_was_renamed() {
+        let (storage, mail) = (storage_account(), mail_account());
+        let before = registry(vec![storage.clone()], vec![]);
+        let mut renamed = storage.clone();
+        renamed.label = porter_core::AccountLabel("Work".into());
+        let after = registry(vec![renamed, mail.clone()], vec![]);
+        let key = |text: &str| KeyPath(text.to_owned());
+        let said = |value: &str| toml::Value::String(value.to_owned());
+        assert_eq!(
+            settings_news(&events(&before, &after), &before, &after),
+            vec![
+                (key("accounts.fake-mail.state"), said("ok")),
+                (key("accounts.fake-storage.label"), said("Work")),
+            ]
+        );
+        assert_eq!(
+            settings_news(&events(&after, &before), &after, &before),
+            vec![
+                (key("accounts.fake-mail.state"), said("removed")),
+                (key("accounts.fake-storage.label"), said(&storage.label.0)),
+            ]
+        );
+        assert!(settings_news(&events(&before, &before), &before, &before).is_empty());
     }
 }
