@@ -60,32 +60,32 @@ storage-graph   = { path = "crates/storage-graph" }
 
 # quire's live settings modules (`org.quire.SettingsModule1`), for accountd only: the one porter -> quire
 # edge (ARCHITECTURE section 1). By git at quire's pinned rev (a local checkout overrides it: ARCHITECTURE section 1); `live` is the module, `tokio` drives its zbus.
-ds-settings     = { git = "https://github.com/PoHsuanLai/quire.git", rev = "a781a289894202df6416e5bbfeb6d4984f7505c6", features = ["live", "tokio"] }
+ds-settings     = { git = "https://github.com/PoHsuanLai/quire.git", rev = "c2375087b86204fbcda00da77b181f8103980972", features = ["live", "tokio"] }
 
 # stoker's computer-use vocabulary, by git at stoker's pinned rev (quire
 # CONSUMING.md section 1; a local checkout overrides it, ARCHITECTURE section 1). stoker has no porter dependency, so there is no cycle.
-cua-action      = { git = "https://github.com/PoHsuanLai/stoker", rev = "a30bee878dcb1ad1218533da83b9f2ec489da5fa" }
+cua-action      = { git = "https://github.com/PoHsuanLai/stoker", rev = "b24f6d456e7915f1052c722f5aebabf1ee0f0e74" }
 # inferd's other stoker edges (it is the one place porter's types and stoker's meet), by git at
 # the same rev. `model-http` carries the hyper client behind its `hyper` feature;
 # `vision-prep` the frame resize behind `pixels`; the testing features hold stoker's scripted
 # fakes of the supervisor's seams.
-model-provider      = { git = "https://github.com/PoHsuanLai/stoker", rev = "a30bee878dcb1ad1218533da83b9f2ec489da5fa" }
-model-catalog       = { git = "https://github.com/PoHsuanLai/stoker", rev = "a30bee878dcb1ad1218533da83b9f2ec489da5fa" }
-engine-supervisor   = { git = "https://github.com/PoHsuanLai/stoker", rev = "a30bee878dcb1ad1218533da83b9f2ec489da5fa" }
-model-http          = { git = "https://github.com/PoHsuanLai/stoker", rev = "a30bee878dcb1ad1218533da83b9f2ec489da5fa" }
-model-openai-compat = { git = "https://github.com/PoHsuanLai/stoker", rev = "a30bee878dcb1ad1218533da83b9f2ec489da5fa" }
-speech-provider     = { git = "https://github.com/PoHsuanLai/stoker", rev = "a30bee878dcb1ad1218533da83b9f2ec489da5fa" }
+model-provider      = { git = "https://github.com/PoHsuanLai/stoker", rev = "b24f6d456e7915f1052c722f5aebabf1ee0f0e74" }
+model-catalog       = { git = "https://github.com/PoHsuanLai/stoker", rev = "b24f6d456e7915f1052c722f5aebabf1ee0f0e74" }
+engine-supervisor   = { git = "https://github.com/PoHsuanLai/stoker", rev = "b24f6d456e7915f1052c722f5aebabf1ee0f0e74" }
+model-http          = { git = "https://github.com/PoHsuanLai/stoker", rev = "b24f6d456e7915f1052c722f5aebabf1ee0f0e74" }
+model-openai-compat = { git = "https://github.com/PoHsuanLai/stoker", rev = "b24f6d456e7915f1052c722f5aebabf1ee0f0e74" }
+speech-provider     = { git = "https://github.com/PoHsuanLai/stoker", rev = "b24f6d456e7915f1052c722f5aebabf1ee0f0e74" }
 # the client of the speech host (the STT engine process): inferd's `SttBackend::SpeechHost`.
-speech-host-client  = { git = "https://github.com/PoHsuanLai/stoker", rev = "a30bee878dcb1ad1218533da83b9f2ec489da5fa" }
-vision-prep         = { git = "https://github.com/PoHsuanLai/stoker", rev = "a30bee878dcb1ad1218533da83b9f2ec489da5fa" }
-cua-parse           = { git = "https://github.com/PoHsuanLai/stoker", rev = "a30bee878dcb1ad1218533da83b9f2ec489da5fa" }
-cua-session         = { git = "https://github.com/PoHsuanLai/stoker", rev = "a30bee878dcb1ad1218533da83b9f2ec489da5fa" }
-cua-vendors         = { git = "https://github.com/PoHsuanLai/stoker", rev = "a30bee878dcb1ad1218533da83b9f2ec489da5fa" }
-model-extract       = { git = "https://github.com/PoHsuanLai/stoker", rev = "a30bee878dcb1ad1218533da83b9f2ec489da5fa" }
-model-replay        = { git = "https://github.com/PoHsuanLai/stoker", rev = "a30bee878dcb1ad1218533da83b9f2ec489da5fa" }
+speech-host-client  = { git = "https://github.com/PoHsuanLai/stoker", rev = "b24f6d456e7915f1052c722f5aebabf1ee0f0e74" }
+vision-prep         = { git = "https://github.com/PoHsuanLai/stoker", rev = "b24f6d456e7915f1052c722f5aebabf1ee0f0e74" }
+cua-parse           = { git = "https://github.com/PoHsuanLai/stoker", rev = "b24f6d456e7915f1052c722f5aebabf1ee0f0e74" }
+cua-session         = { git = "https://github.com/PoHsuanLai/stoker", rev = "b24f6d456e7915f1052c722f5aebabf1ee0f0e74" }
+cua-vendors         = { git = "https://github.com/PoHsuanLai/stoker", rev = "b24f6d456e7915f1052c722f5aebabf1ee0f0e74" }
+model-extract       = { git = "https://github.com/PoHsuanLai/stoker", rev = "b24f6d456e7915f1052c722f5aebabf1ee0f0e74" }
+model-replay        = { git = "https://github.com/PoHsuanLai/stoker", rev = "b24f6d456e7915f1052c722f5aebabf1ee0f0e74" }
 # the codec-over-transport `Driver`: inferd's TLS transport to a cloud model is a `model_http::Transport`
 # of its own (stoker's hyper client does not speak TLS yet), so it names the driver that takes one.
-model-wire          = { git = "https://github.com/PoHsuanLai/stoker", rev = "a30bee878dcb1ad1218533da83b9f2ec489da5fa" }
+model-wire          = { git = "https://github.com/PoHsuanLai/stoker", rev = "b24f6d456e7915f1052c722f5aebabf1ee0f0e74" }
 
 # From quire's pinned block (`docs/workspace-deps.toml`), copied verbatim: only the lines porter
 # names itself, as mailo does.
