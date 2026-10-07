@@ -45,7 +45,7 @@ use zbus::export::futures_core::Stream;
 
 const ACCOUNT: &str = "graph-acct";
 const SEGMENT: &str = "graph_acct";
-const SYNCD: &str = "org.quire.Syncd";
+const SYNCD: &str = "org.quire.Sync";
 const BEARER: &str = "fake:graph-acct:graph";
 const DATASET: &str = "graph_acct/storage_app_folder";
 

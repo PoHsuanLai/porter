@@ -8,7 +8,7 @@
 //!   ([`StorageKind`]): the app folder at `$XDG_DATA_HOME/porter/storage/<account>/`, and (behind
 //!   the Photos switch) the Photos datasets over `Photos/Originals` and `Photos/Metadata`.
 //!
-//! A person needs: a Microsoft account in accountd, and a Storage grant for `org.quire.Syncd`
+//! A person needs: a Microsoft account in accountd, and a Storage grant for `org.quire.Sync`
 //! made in Settings (class Files for the app folder, class Photos for Photos); for Photos also
 //! `SYNCD_PHOTOS=on` in syncd's environment.
 

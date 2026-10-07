@@ -38,7 +38,7 @@ use zbus::zvariant::OwnedValue;
 
 const PASSWORD: &str = "S3CRET-NEXTCLOUD-APP-PASSWORD";
 const GRANT: &str = "sync-grant";
-const SYNCD: &str = "org.quire.Syncd";
+const SYNCD: &str = "org.quire.Sync";
 const PHOTOS: &str = "org.quire.Photos";
 
 fn app(name: &str) -> AppId {

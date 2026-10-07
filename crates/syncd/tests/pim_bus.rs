@@ -40,7 +40,7 @@ use syncd::service::{Access, Hub};
 use tokio::sync::watch;
 
 const PASSWORD: &str = "S3CRET-PIM-APP-PASSWORD";
-const SYNCD: &str = "org.quire.Syncd";
+const SYNCD: &str = "org.quire.Sync";
 const ACCOUNT: &str = "pim-cloud";
 const SEGMENT: &str = "pim_cloud";
 const PROVIDER: &str = r#"
