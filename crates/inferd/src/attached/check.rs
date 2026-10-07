@@ -119,13 +119,13 @@ fn names_in(body: &[u8]) -> Option<Vec<String>> {
 
 /// Asks the engine at `target` whether it serves `served` now.
 pub async fn probe(target: &Target, served: &str) -> Result<(), NotReady> {
-    if let Some(path) = target.socket() {
-        if matches!(
+    if let Some(path) = target.socket()
+        && matches!(
             std::fs::symlink_metadata(path),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound
-        ) {
-            return Err(NotReady::SocketMissing { path: path.clone() });
-        }
+        )
+    {
+        return Err(NotReady::SocketMissing { path: path.clone() });
     }
     let timeouts = Timeouts {
         connect: WAIT,
