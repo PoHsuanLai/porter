@@ -503,8 +503,11 @@ async fn an_expired_delta_token_lists_again_and_keeps_every_event() {
     )
     .await;
     assert_eq!(rig.items("Work").len(), 1);
-    let gone = rig.graph.hits().iter().filter(|h| h.status == 410).count();
-    assert!(gone >= 2, "both calendars met the expiry: {gone}");
+    // Work polls on its own schedule: it may not have met its 410 yet when Personal is done.
+    eventually("both calendars met the expiry", || {
+        rig.graph.hits().iter().filter(|h| h.status == 410).count() >= 2
+    })
+    .await;
     assert!(rig.delta_requests() > before);
 }
 
