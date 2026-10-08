@@ -1,0 +1,93 @@
+name: ci
+
+# Linux checks: formatting, lints, licences, the crate boundaries and the tests.
+#
+# Porter's dependencies on stoker and quire are git dependencies on private repositories, so every
+# job that loads the workspace first points git at GitHub with a token. The token is a repository
+# secret named DEPS_TOKEN (a fine-grained token with read access to PoHsuanLai/stoker,
+# PoHsuanLai/quire and PoHsuanLai/latchkey, contents: read). No secret is written in this file;
+# without the secret the jobs fail at the first fetch. Whether those repositories are private is
+# not checked here: if they are public, the step is harmless.
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: private dependencies
+        env:
+          DEPS_TOKEN: ${{ secrets.DEPS_TOKEN }}
+        run: git config --global url."https://x-access-token:${DEPS_TOKEN}@github.com/".insteadOf "https://github.com/"
+      # .cargo/config.toml links with clang and mold.
+      - name: linker
+        run: sudo apt-get update && sudo apt-get install -y clang mold
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - name: format
+        run: cargo fmt --all --check
+      - name: clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: licences
+        run: cargo deny check licenses
+      - name: crate boundaries
+        run: scripts/check-boundary.sh
+
+  # Everything that does not start a session bus. The packages left out here are the ones whose
+  # tests do (see the next job).
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: private dependencies
+        env:
+          DEPS_TOKEN: ${{ secrets.DEPS_TOKEN }}
+        run: git config --global url."https://x-access-token:${DEPS_TOKEN}@github.com/".insteadOf "https://github.com/"
+      - name: linker
+        run: sudo apt-get update && sudo apt-get install -y clang mold
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - name: test
+        run: >
+          cargo nextest run --workspace --all-features
+          --exclude accountd --exclude syncd --exclude inferd
+          --exclude porter-client --exclude porter-dbus --exclude porter-rig
+      - name: doc tests
+        run: cargo test --doc --workspace --all-features
+
+  # The tests that start a private dbus-daemon of their own (accountd, syncd, inferd, porter-client,
+  # porter-dbus, porter-rig). They are run on the author's machine inside a jail that has no real
+  # session, no devices and no network. A hosted runner has none of that, and has not been tried,
+  # so this job does not fail the build until it has been seen to pass; remove continue-on-error
+  # then.
+  bus-tests:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: private dependencies
+        env:
+          DEPS_TOKEN: ${{ secrets.DEPS_TOKEN }}
+        run: git config --global url."https://x-access-token:${DEPS_TOKEN}@github.com/".insteadOf "https://github.com/"
+      - name: linker and bus
+        run: sudo apt-get update && sudo apt-get install -y clang mold dbus
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - name: test
+        run: >
+          cargo nextest run --all-features
+          -p accountd -p syncd -p inferd -p porter-client -p porter-dbus -p porter-rig

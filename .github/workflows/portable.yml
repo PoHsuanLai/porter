@@ -15,6 +15,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      # stoker and quire are private git dependencies; the token is the repository secret
+      # DEPS_TOKEN (read access to those repositories). See ci.yml.
+      - name: private dependencies
+        shell: bash
+        env:
+          DEPS_TOKEN: ${{ secrets.DEPS_TOKEN }}
+        run: git config --global url."https://x-access-token:${DEPS_TOKEN}@github.com/".insteadOf "https://github.com/"
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: test
