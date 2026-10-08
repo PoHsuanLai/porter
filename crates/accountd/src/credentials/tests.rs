@@ -80,14 +80,60 @@ fn a_tmpfs_credential_is_a_0600_file_in_a_0700_directory_of_its_own_and_ending_i
     assert_eq!(mode(&root), 0o700);
 
     // Only the connection it was issued to may end it.
-    assert!(credentials.take(":1.8", &id).is_none());
+    assert!(credentials.take(":1.8", &id, |_| {}).is_none());
     assert!(path.exists());
-    let held = credentials.take(":1.7", &id).expect("ended");
+    let held = credentials.take(":1.7", &id, |_| {}).expect("ended");
     assert_eq!(held.owner, ":1.7");
     assert!(!path.exists());
     assert!(!path.parent().expect("dir").exists());
     assert!(root.exists(), "the agent directory itself stays");
-    assert!(credentials.take(":1.7", &id).is_none(), "once");
+    assert!(credentials.take(":1.7", &id, |_| {}).is_none(), "once");
+}
+
+#[test]
+fn the_end_is_noted_while_the_file_is_still_there() {
+    // The audit line comes first: a reader who sees the file gone finds the line that says why
+    // (rel-13: a launcher's credentials were unlinked, then audited, and a test that looked in
+    // between found no line).
+    let scratch = Scratch::new();
+    let credentials = Credentials::new(Some(&scratch.0));
+    let (gone, one) = issue(&credentials, ":1.1", Handoff::TmpfsFile).expect("first");
+    let (taken, two) = issue(&credentials, ":1.2", Handoff::TmpfsFile).expect("second");
+    let (Handle::Path(one), Handle::Path(two)) = (one, two) else {
+        panic!("paths");
+    };
+    let noted = std::cell::RefCell::new(Vec::new());
+    credentials.end_where(
+        |held| (held.owner == ":1.1").then_some(CredentialEnd::LauncherGone),
+        |held, reason| {
+            noted
+                .borrow_mut()
+                .push((held.owner.clone(), reason, one.exists()))
+        },
+    );
+    assert_eq!(
+        noted.take(),
+        [(":1.1".to_owned(), CredentialEnd::LauncherGone, true)]
+    );
+    assert!(!one.exists());
+    let seen = credentials.take(":1.2", &taken, |held| {
+        noted.borrow_mut().push((
+            held.owner.clone(),
+            CredentialEnd::ProcessExited,
+            two.exists(),
+        ));
+    });
+    assert!(seen.is_some());
+    assert_eq!(
+        noted.take(),
+        [(":1.2".to_owned(), CredentialEnd::ProcessExited, true)]
+    );
+    assert!(!two.exists());
+    assert!(
+        credentials
+            .take(":1.1", &gone, |_| panic!("not held"))
+            .is_none()
+    );
 }
 
 #[test]
@@ -100,8 +146,10 @@ fn two_credentials_get_two_files_and_ending_one_leaves_the_other() {
     let (Handle::Path(one), Handle::Path(two)) = (one, two) else {
         panic!("paths");
     };
-    let ended =
-        credentials.end_where(|held| (held.owner == ":1.1").then_some(CredentialEnd::LauncherGone));
+    let ended = credentials.end_where(
+        |held| (held.owner == ":1.1").then_some(CredentialEnd::LauncherGone),
+        |_, _| {},
+    );
     assert_eq!(ended.len(), 1);
     assert_eq!(
         (&ended[0].0, ended[0].2),
@@ -132,7 +180,7 @@ fn a_memfd_credential_is_a_sealed_descriptor_and_leaves_no_file() {
         !scratch.0.join("porter").exists(),
         "a memfd touches no directory"
     );
-    assert!(credentials.take(":1.7", &id).is_some());
+    assert!(credentials.take(":1.7", &id, |_| {}).is_some());
 }
 
 #[test]

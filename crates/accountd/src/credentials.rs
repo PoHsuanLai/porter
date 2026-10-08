@@ -159,37 +159,55 @@ impl Credentials {
             .map_err(|_| Refusal::Unavailable)
     }
 
-    /// Ends `id` for the connection `owner` that was issued it: its file goes. Any other
-    /// connection, or an id that is not in force, is `None`.
-    pub(crate) fn take(&self, owner: &str, id: &ProcessCredentialId) -> Option<Held> {
-        let mut state = locked(&self.state);
-        match state.held.get(id) {
-            Some(held) if held.owner == owner => state.held.remove(id),
-            _ => None,
-        }
-        .inspect(Held::erase)
+    /// Ends `id` for the connection `owner` that was issued it: `note` is told (the audit line),
+    /// then its file goes. Any other connection, or an id that is not in force, is `None` and
+    /// nothing is told.
+    pub(crate) fn take(
+        &self,
+        owner: &str,
+        id: &ProcessCredentialId,
+        note: impl FnOnce(&Held),
+    ) -> Option<Held> {
+        let held = {
+            let mut state = locked(&self.state);
+            match state.held.get(id) {
+                Some(held) if held.owner == owner => state.held.remove(id),
+                _ => None,
+            }
+        }?;
+        note(&held);
+        held.erase();
+        Some(held)
     }
 
-    /// Ends every credential `why` gives an end for, removing their files; what ended, with the
-    /// reason each did.
+    /// Ends every credential `why` gives an end for: `note` is told of each (the audit line),
+    /// then its file goes, so whoever sees a file gone finds the line that says why. What ended,
+    /// with the reason each did.
     pub(crate) fn end_where(
         &self,
         why: impl Fn(&Held) -> Option<CredentialEnd>,
+        note: impl Fn(&Held, CredentialEnd),
     ) -> Vec<(ProcessCredentialId, Held, CredentialEnd)> {
-        let mut state = locked(&self.state);
-        let ended: Vec<(ProcessCredentialId, CredentialEnd)> = state
-            .held
-            .iter()
-            .filter_map(|(id, held)| why(held).map(|reason| (id.clone(), reason)))
-            .collect();
+        let ended: Vec<(ProcessCredentialId, Held, CredentialEnd)> = {
+            let mut state = locked(&self.state);
+            let ending: Vec<(ProcessCredentialId, CredentialEnd)> = state
+                .held
+                .iter()
+                .filter_map(|(id, held)| why(held).map(|reason| (id.clone(), reason)))
+                .collect();
+            ending
+                .into_iter()
+                .filter_map(|(id, reason)| {
+                    let held = state.held.remove(&id)?;
+                    Some((id, held, reason))
+                })
+                .collect()
+        };
+        for (_, held, reason) in &ended {
+            note(held, *reason);
+            held.erase();
+        }
         ended
-            .into_iter()
-            .filter_map(|(id, reason)| {
-                let held = state.held.remove(&id)?;
-                held.erase();
-                Some((id, held, reason))
-            })
-            .collect()
     }
 }
 

@@ -169,7 +169,8 @@ impl<H: Host, C: Callers> Core<H, C> {
                     .is_none_or(|session| self.launchers.session_open(&owner, session))
         });
         if !still {
-            self.credentials.take(&owner, &id);
+            // Never handed over, so not audited as ended.
+            self.credentials.take(&owner, &id, |_| {});
             return Err(RefusedError::of(Refusal::UnknownGrant));
         }
         desk.note_handoff(&audience, &account.id, handoff);
@@ -185,13 +186,16 @@ impl<H: Host, C: Callers> Core<H, C> {
     ) -> Result<(), RefusedError> {
         let owner = self.launcher_of(header).await?;
         let id = ProcessCredentialId::parse(id).map_err(RefusedError::invalid)?;
-        let held = self.credentials.take(&owner, &id).ok_or_else(|| {
-            RefusedError::launcher(
-                LauncherFault::UnknownCredential,
-                "no such credential for this connection",
-            )
-        })?;
-        self.note_end(&held.audience, &held.account, CredentialEnd::ProcessExited);
+        self.credentials
+            .take(&owner, &id, |held| {
+                self.note_end(&held.audience, &held.account, CredentialEnd::ProcessExited);
+            })
+            .ok_or_else(|| {
+                RefusedError::launcher(
+                    LauncherFault::UnknownCredential,
+                    "no such credential for this connection",
+                )
+            })?;
         Ok(())
     }
 
@@ -206,13 +210,15 @@ impl<H: Host, C: Callers> Core<H, C> {
         };
         let account_gone =
             |account: &AccountId| !registry.accounts.iter().any(|a| a.id == *account);
-        let ended = self.credentials.end_where(|held| match gone(&held.grant) {
-            true if account_gone(&held.account) => Some(CredentialEnd::AccountRemoved),
-            true => Some(CredentialEnd::GrantRevoked),
-            false => None,
-        });
+        let ended = self.credentials.end_where(
+            |held| match gone(&held.grant) {
+                true if account_gone(&held.account) => Some(CredentialEnd::AccountRemoved),
+                true => Some(CredentialEnd::GrantRevoked),
+                false => None,
+            },
+            |held, reason| self.note_end(&held.audience, &held.account, reason),
+        );
         for (id, held, reason) in ended {
-            self.note_end(&held.audience, &held.account, reason);
             self.tell_revoked(&held.owner, &id, reason).await;
         }
     }
@@ -231,13 +237,15 @@ impl<H: Host, C: Callers> Core<H, C> {
             .filter(|g| g.scope.session() == Some(session))
             .map(|g| g.id.clone())
             .collect();
-        let ended = self.credentials.end_where(|held| {
-            grants
-                .contains(&held.grant)
-                .then_some(CredentialEnd::SessionClosed)
-        });
+        let ended = self.credentials.end_where(
+            |held| {
+                grants
+                    .contains(&held.grant)
+                    .then_some(CredentialEnd::SessionClosed)
+            },
+            |held, reason| self.note_end(&held.audience, &held.account, reason),
+        );
         for (id, held, reason) in ended {
-            self.note_end(&held.audience, &held.account, reason);
             if tell {
                 self.tell_revoked(&held.owner, &id, reason).await;
             }
@@ -248,12 +256,10 @@ impl<H: Host, C: Callers> Core<H, C> {
 
     /// A launcher's connection left the bus: its credentials end; nobody is left to tell.
     pub(crate) fn credentials_left(&self, name: &str) {
-        let ended = self
-            .credentials
-            .end_where(|held| (held.owner == name).then_some(CredentialEnd::LauncherGone));
-        for (_, held, reason) in ended {
-            self.note_end(&held.audience, &held.account, reason);
-        }
+        self.credentials.end_where(
+            |held| (held.owner == name).then_some(CredentialEnd::LauncherGone),
+            |held, reason| self.note_end(&held.audience, &held.account, reason),
+        );
     }
 
     fn note_end(&self, audience: &AppId, account: &AccountId, reason: CredentialEnd) {
