@@ -166,7 +166,13 @@ fn the_data_the_daemons_read_lands_where_they_look_for_it() {
         repo().join("dist/clients.toml").exists()
     );
     // The daemons are executable, the data is not.
-    let mode = |path: &str| fs::metadata(run.at(path)).expect("meta").permissions().mode() & 0o777;
+    let mode = |path: &str| {
+        fs::metadata(run.at(path))
+            .expect("meta")
+            .permissions()
+            .mode()
+            & 0o777
+    };
     assert_eq!(mode("/usr/libexec/quire/accountd"), 0o755);
     assert_eq!(mode("/etc/porter/callers.toml"), 0o644);
 }
@@ -175,7 +181,10 @@ fn the_data_the_daemons_read_lands_where_they_look_for_it() {
 fn a_second_run_changes_nothing_and_a_home_directory_is_never_written() {
     let run = Run::new("again");
     let first = run.install(&[]);
-    assert!(first.contains("installed /usr/libexec/quire/accountd"), "{first}");
+    assert!(
+        first.contains("installed /usr/libexec/quire/accountd"),
+        "{first}"
+    );
     let before: Vec<_> = files_under(&run.destdir)
         .into_iter()
         .map(|p| {
@@ -197,7 +206,10 @@ fn a_second_run_changes_nothing_and_a_home_directory_is_never_written() {
     // Everything is under the prefix or the configuration directory, and nothing is left staged.
     for path in files_under(&run.destdir) {
         let rel = path.strip_prefix(&run.destdir).expect("under destdir");
-        assert!(rel.starts_with("usr") || rel.starts_with("etc/porter"), "{rel:?}");
+        assert!(
+            rel.starts_with("usr") || rel.starts_with("etc/porter"),
+            "{rel:?}"
+        );
         assert!(!path.to_string_lossy().contains(".new."), "{path:?}");
     }
 }
@@ -223,7 +235,10 @@ fn a_caller_table_the_person_changed_is_kept_and_the_shipped_one_is_put_beside_i
 #[test]
 fn the_script_builds_the_daemons_with_their_default_features_only() {
     let script = fs::read_to_string(repo().join("scripts/install.sh")).expect("script");
-    let builds: Vec<_> = script.lines().filter(|l| l.contains("cargo build")).collect();
+    let builds: Vec<_> = script
+        .lines()
+        .filter(|l| l.contains("cargo build"))
+        .collect();
     assert_eq!(builds.len(), 1, "{builds:?}");
     assert!(!builds[0].contains("feature"), "{}", builds[0]);
     assert!(builds[0].contains("--release"));
