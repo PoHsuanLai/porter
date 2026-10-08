@@ -126,7 +126,7 @@ async fn ask<H: Http>(
     let request: HttpRequest = propfind(url, depth, props);
     debug_assert_eq!(request.method, Method::Propfind);
     let response = http.send(request).await.map_err(|e| match e {
-        HttpError::Unreachable => DiscoverError::Unreachable,
+        HttpError::Unreachable | HttpError::TimedOut => DiscoverError::Unreachable,
         _ => DiscoverError::Unreadable,
     })?;
     match response.status.0 {

@@ -9,15 +9,34 @@
 use porter_client::{Accounts, AuthenticatedStream, Transport};
 use porter_core::stream::{ByteStream, DuplexEnd};
 use porter_core::{EndpointUrl, GrantId, WebUrl};
+use std::future::Future;
 use std::io;
 use std::sync::Arc;
+use std::time::Duration;
 use storage_webdav::{Clock, Dial, StreamHttp, StreamLimits, WebDavReplica};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 
-/// The app's end of a relay, as a byte stream.
+/// How long a relay may stay silent, once a request is waiting on it, before the exchange fails:
+/// the wait for a response head, and the wait between two chunks of a body. A server that stops
+/// answering (a half-open connection the far end never closes) would otherwise stall the
+/// dataset forever.
+pub const RELAY_IDLE: Duration = Duration::from_secs(60);
+
+/// The most written under one idle time.
+const WRITE_PIECE: usize = 64 * 1024;
+
+/// The app's end of a relay, as a byte stream. Every read and every write gives up with
+/// [`io::ErrorKind::TimedOut`] after the stream's idle time, which `storage-webdav` reports as
+/// `HttpError::TimedOut` (and never retries on a new connection).
 #[derive(Debug)]
-pub enum RelayStream {
+pub struct RelayStream {
+    end: End,
+    idle: Duration,
+}
+
+#[derive(Debug)]
+enum End {
     /// The descriptor of a Unix stream socket.
     Unix(UnixStream),
     /// An in-memory duplex (an app hosting accountd's core in process).
@@ -27,36 +46,67 @@ pub enum RelayStream {
 impl RelayStream {
     /// The stream an accepted relay is.
     pub fn from_relay(stream: AuthenticatedStream) -> io::Result<Self> {
-        match stream {
+        let end = match stream {
             AuthenticatedStream::Fd(fd) => {
                 let std_stream = std::os::unix::net::UnixStream::from(fd);
                 std_stream.set_nonblocking(true)?;
-                Ok(Self::Unix(UnixStream::from_std(std_stream)?))
+                End::Unix(UnixStream::from_std(std_stream)?)
             }
-            AuthenticatedStream::Memory(end) => Ok(Self::Memory(end)),
+            AuthenticatedStream::Memory(end) => End::Memory(end),
+        };
+        Ok(Self {
+            end,
+            idle: RELAY_IDLE,
+        })
+    }
+
+    /// The same stream giving up after `idle` of silence instead of [`RELAY_IDLE`].
+    #[must_use]
+    pub fn with_idle(mut self, idle: Duration) -> Self {
+        self.idle = idle;
+        self
+    }
+
+    /// A stream over a Unix socket the caller holds (a test's end of a socket pair).
+    pub fn from_unix(stream: UnixStream) -> Self {
+        Self {
+            end: End::Unix(stream),
+            idle: RELAY_IDLE,
         }
     }
 }
 
+/// `work`, or a timed-out error once `idle` has passed.
+async fn within<T>(idle: Duration, work: impl Future<Output = io::Result<T>>) -> io::Result<T> {
+    tokio::time::timeout(idle, work)
+        .await
+        .unwrap_or_else(|_| Err(io::ErrorKind::TimedOut.into()))
+}
+
 impl ByteStream for RelayStream {
     async fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        match self {
-            Self::Unix(stream) => stream.read(buf).await,
-            Self::Memory(end) => end.read(buf).await,
+        match &mut self.end {
+            End::Unix(stream) => within(self.idle, stream.read(buf)).await,
+            End::Memory(end) => within(self.idle, end.read(buf)).await,
         }
     }
 
     async fn write_all(&mut self, bytes: &[u8]) -> io::Result<()> {
-        match self {
-            Self::Unix(stream) => stream.write_all(bytes).await,
-            Self::Memory(end) => end.write_all(bytes).await,
+        // The idle time is per piece, so a large upload on a slow link is not cut short while
+        // the far end keeps taking it.
+        for piece in bytes.chunks(WRITE_PIECE) {
+            match &mut self.end {
+                End::Unix(stream) => within(self.idle, stream.write_all(piece)).await?,
+                End::Memory(end) => within(self.idle, end.write_all(piece)).await?,
+            }
         }
+        Ok(())
     }
 
     async fn shutdown(&mut self) -> io::Result<()> {
-        match self {
-            Self::Unix(stream) => stream.shutdown().await,
-            Self::Memory(end) => end.shutdown().await,
+        match &mut self.end {
+            End::Unix(stream) => within(self.idle, stream.shutdown()).await,
+            End::Memory(end) => within(self.idle, end.shutdown()).await,
         }
     }
 }

@@ -142,7 +142,7 @@ pub(super) async fn list_all<T: Transport, I: DeserializeOwned>(
             asked.push(("pageToken", page));
         }
         let response = api.get(&api.url(path, &asked)).await.map_err(|e| match e {
-            HttpError::Unreachable => DiscoverError::Unreachable,
+            HttpError::Unreachable | HttpError::TimedOut => DiscoverError::Unreachable,
             _ => DiscoverError::Unreadable,
         })?;
         match response.status.0 {

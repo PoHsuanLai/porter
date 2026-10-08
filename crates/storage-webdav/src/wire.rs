@@ -121,11 +121,23 @@ pub async fn read_response<S: ByteStream>(
     })
 }
 
-/// Reads at least one more byte into `buf`; the end of the stream is `Unreachable`.
+/// What a failed read or write of the stream means: a stream that gave up waiting
+/// ([`std::io::ErrorKind::TimedOut`], which the stream's owner sets as its idle limit) is
+/// `TimedOut`, never mistaken for a connection the server closed.
+pub(crate) fn io_fault(error: &std::io::Error) -> HttpError {
+    match error.kind() {
+        std::io::ErrorKind::TimedOut => HttpError::TimedOut,
+        _ => HttpError::Unreachable,
+    }
+}
+
+/// Reads at least one more byte into `buf`; the end of the stream is `Unreachable`, and a read
+/// the stream gave up on is `TimedOut`.
 async fn fill<S: ByteStream>(stream: &mut S, buf: &mut Vec<u8>) -> Result<(), HttpError> {
     let mut chunk = [0u8; 16 * 1024];
     match stream.read(&mut chunk).await {
-        Ok(0) | Err(_) => Err(HttpError::Unreachable),
+        Err(error) => Err(io_fault(&error)),
+        Ok(0) => Err(HttpError::Unreachable),
         Ok(n) => {
             buf.extend_from_slice(&chunk[..n]);
             Ok(())
@@ -338,5 +350,66 @@ mod tests {
             .await
             .expect_err("eof");
         assert_eq!(got, HttpError::Unreachable);
+    }
+
+    /// A stream that says `sent` and then stops answering: its owner's idle limit, as
+    /// `TimedOut`, is what a read finds next.
+    struct GoesQuiet {
+        sent: Vec<u8>,
+    }
+
+    impl ByteStream for GoesQuiet {
+        async fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if self.sent.is_empty() {
+                return Err(std::io::ErrorKind::TimedOut.into());
+            }
+            let n = self.sent.len().min(buf.len());
+            buf[..n].copy_from_slice(&self.sent[..n]);
+            self.sent.drain(..n);
+            Ok(n)
+        }
+
+        async fn write_all(&mut self, _: &[u8]) -> std::io::Result<()> {
+            Ok(())
+        }
+
+        async fn shutdown(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn a_server_that_stops_answering_is_timed_out_in_the_head_and_in_every_kind_of_body() {
+        const CASES: &[&[u8]] = &[
+            // Nothing at all.
+            b"",
+            // Half a head.
+            b"HTTP/1.1 207 Multi-Status\r\nContent-Le",
+            // A length it never finishes.
+            b"HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\nabc",
+            // Chunks it never finishes.
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc\r\n",
+            // A body that runs to the end of the stream: a stall is not that end, so the part
+            // read is never taken for the whole answer.
+            b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\nabc",
+        ];
+        for bytes in CASES {
+            let mut stream = GoesQuiet {
+                sent: bytes.to_vec(),
+            };
+            let got = read_response(&mut stream, Method::Get, 100)
+                .await
+                .expect_err("a stall");
+            assert_eq!(got, HttpError::TimedOut, "{}", String::from_utf8_lossy(bytes));
+        }
+    }
+
+    #[test]
+    fn only_a_timed_out_stream_is_a_timeout() {
+        use std::io::{Error, ErrorKind};
+        assert_eq!(io_fault(&Error::from(ErrorKind::TimedOut)), HttpError::TimedOut);
+        for kind in [ErrorKind::BrokenPipe, ErrorKind::ConnectionReset, ErrorKind::UnexpectedEof] {
+            assert_eq!(io_fault(&Error::from(kind)), HttpError::Unreachable, "{kind:?}");
+        }
     }
 }

@@ -3,7 +3,7 @@
 //! and speaks TLS, so this client writes plain HTTP/1.1 and never holds a password. In a test a
 //! dial is a loopback socket to the fake server.
 
-use crate::wire::{Exchange, encode, read_response};
+use crate::wire::{Exchange, encode, io_fault, read_response};
 use porter_core::stream::ByteStream;
 use porter_http::{Http, HttpError, HttpRequest, HttpResponse};
 use std::future::Future;
@@ -69,7 +69,7 @@ impl<D: Dial> StreamHttp<D> {
         stream
             .write_all(bytes)
             .await
-            .map_err(|_| HttpError::Unreachable)?;
+            .map_err(|error| io_fault(&error))?;
         read_response(stream, request.method, self.limits.max_body).await
     }
 

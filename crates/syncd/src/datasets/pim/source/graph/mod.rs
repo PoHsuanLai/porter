@@ -205,7 +205,7 @@ impl<T: Transport + 'static> PimSource for GraphCalendarSource<T> {
         // A user has tens of calendars; a bound keeps a looping server from holding the loop.
         for _ in 0..50 {
             let response = get(&*self.http, &url, None).await.map_err(|e| match e {
-                HttpError::Unreachable => DiscoverError::Unreachable,
+                HttpError::Unreachable | HttpError::TimedOut => DiscoverError::Unreachable,
                 _ => DiscoverError::Unreadable,
             })?;
             match response.status.0 {
