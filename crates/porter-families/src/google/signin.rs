@@ -118,13 +118,12 @@ impl<H: Http + 'static> GoogleSignIn<H> {
     }
 
     async fn begin(&mut self) -> Step {
-        let client = self
-            .env
-            .registry
+        let clients = self.env.clients().into_owned();
+        let client = clients
             .lookup(Issuer::Google, self.env.channel)
             .cloned()
             .ok_or(SignInFault::NeedsClientId)?;
-        let traits = self.env.registry.traits(Issuer::Google, self.env.channel);
+        let traits = clients.traits(Issuer::Google, self.env.channel);
         let scopes = scopes_for(&declared_kinds(&self.spec), traits.mail);
         let (verifier, state) = (self.env.random)().ok_or(SignInFault::Unreadable)?;
         let pkce = Pkce::from_random(verifier, state);

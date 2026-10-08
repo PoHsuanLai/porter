@@ -218,6 +218,50 @@ async fn a_build_with_no_client_id_says_so_before_opening_anything() {
     assert!(rig.issuer.events().is_empty());
 }
 
+/// ux-2: a client id written to the person's clients file while the provider is running (what
+/// Settings does) is used by the next sign-in, with no new provider and no restart.
+#[tokio::test]
+async fn a_client_id_written_after_start_is_used_by_the_next_sign_in() {
+    let rig = Rig::new(SignInFlow::Loopback, false).await;
+    let dir = std::env::temp_dir().join(format!("families-ux2-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("scratch");
+    let files = porter_families::ClientFiles {
+        shipped: dir.join("shipped.toml"),
+        own: dir.join("clients.toml"),
+    };
+    let env = porter_families::MicrosoftEnv::new(
+        Wire {
+            graph: std::sync::Arc::clone(&rig.graph),
+        },
+        porter_oauth::ClientRegistry::default(),
+    )
+    .with_channel(porter_provider::ClientChannel::Development)
+    .with_files(files.clone());
+    let provider = porter_families::MicrosoftProvider::with_env(spec(), env);
+
+    let mut before = provider.sign_in(start()).expect("sign in");
+    assert_eq!(
+        before.next(SignInInput::Start).await,
+        SignInStep::Failed(SignInFault::NeedsClientId)
+    );
+    std::fs::write(
+        &files.own,
+        "[[client]]\nissuer = \"microsoft\"\nchannel = \"development\"\nclient_id = \"set-in-settings\"\n",
+    )
+    .expect("write");
+    let mut after = provider.sign_in(start()).expect("sign in");
+    let SignInStep::OpenBrowser { url } = after.next(SignInInput::Start).await else {
+        panic!("expected the browser once a client id is set")
+    };
+    assert!(
+        url.as_str().contains("client_id=set-in-settings"),
+        "{}",
+        url.as_str()
+    );
+    let _ = after.next(SignInInput::Cancel).await;
+    let _ = std::fs::remove_file(&files.own);
+}
+
 #[tokio::test]
 async fn cancelling_closes_the_listeners_and_ends_the_sign_in() {
     let rig = Rig::new(SignInFlow::Loopback, true).await;

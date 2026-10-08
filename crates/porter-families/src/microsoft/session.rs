@@ -130,13 +130,14 @@ impl<H: Http> MicrosoftSession<H> {
         // the person is not asked to sign in again for it.
         let client = self
             .env
-            .registry
+            .clients()
             .lookup(porter_provider::Issuer::Microsoft, self.env.channel)
+            .cloned()
             .ok_or(ProviderError::Unreachable)?;
         let tokens = refresh_scoped(
             &*self.env.http,
-            &endpoints_of(client),
-            client,
+            &endpoints_of(&client),
+            &client,
             &refresh,
             Some(&scope),
         )

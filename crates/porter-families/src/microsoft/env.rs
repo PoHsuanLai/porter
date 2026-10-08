@@ -3,12 +3,12 @@
 //! sign-in is asked to proceed. Tests hand in a fake issuer's seam and a counting clock;
 //! [`MicrosoftEnv::system`] is what accountd and an app hosting porter in process use.
 
+use crate::env_common::{ClientFiles, clients_now, system_now, system_random};
 pub use crate::env_common::{Clock, Random};
-use crate::env_common::{SHIPPED_CLIENTS, own_clients_path, system_now, system_random};
 use porter_http::Http;
 use porter_oauth::ClientRegistry;
 use porter_provider::ClientChannel;
-use std::path::{Path, PathBuf};
+use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -26,8 +26,11 @@ pub enum SignInFlow {
 pub struct MicrosoftEnv<H> {
     /// Every call to the issuer and to Graph goes through it.
     pub http: Arc<H>,
-    /// Which client id this build presents.
+    /// Which client id this build presents, when no clients files are read.
     pub registry: ClientRegistry,
+    /// The clients files, read again at every use in place of `registry` (a daemon's: Settings
+    /// writes the person's own while it runs).
+    pub files: Option<ClientFiles>,
     /// Which build channel's client to look up.
     pub channel: ClientChannel,
     /// The time.
@@ -45,6 +48,7 @@ impl<H> Clone for MicrosoftEnv<H> {
         Self {
             http: Arc::clone(&self.http),
             registry: self.registry.clone(),
+            files: self.files.clone(),
             channel: self.channel,
             clock: Arc::clone(&self.clock),
             random: Arc::clone(&self.random),
@@ -71,11 +75,20 @@ impl<H: Http> MicrosoftEnv<H> {
         Self {
             http: Arc::new(http),
             registry,
+            files: None,
             channel: ClientChannel::Stable,
             clock: Arc::new(system_now),
             random: Arc::new(system_random),
             flow: SignInFlow::default(),
             poll_slice: Duration::from_secs(2),
+        }
+    }
+
+    /// Reading the clients from `files` at every use, in place of the registry it was made with.
+    pub fn with_files(self, files: ClientFiles) -> Self {
+        Self {
+            files: Some(files),
+            ..self
         }
     }
 
@@ -105,17 +118,23 @@ impl<H: Http> MicrosoftEnv<H> {
     }
 }
 
+impl<H> MicrosoftEnv<H> {
+    /// The clients as they are now: the files' when it reads files, else its registry.
+    pub fn clients(&self) -> Cow<'_, ClientRegistry> {
+        clients_now(self.files.as_ref(), &self.registry)
+    }
+}
+
 impl<H: Http + Default> MicrosoftEnv<H> {
     /// The environment of a daemon: the shipped clients file and the person's own, found from
-    /// `XDG_CONFIG_HOME` and `HOME`. A damaged clients file leaves the registry empty, so the
-    /// sign-in says it needs a client id rather than guessing one.
+    /// `XDG_CONFIG_HOME` and `HOME`, read again at every use. A damaged clients file reads as
+    /// empty, so the sign-in says it needs a client id rather than guessing one.
     pub fn system() -> Self {
-        let own = own_clients_path(
-            std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from),
-            std::env::var_os("HOME").map(PathBuf::from),
-        );
-        let registry =
-            ClientRegistry::from_paths(Path::new(SHIPPED_CLIENTS), &own).unwrap_or_default();
-        Self::new(H::default(), registry)
+        Self::with_client_files(ClientFiles::system())
+    }
+
+    /// The environment of a daemon reading its clients from `files`.
+    pub fn with_client_files(files: ClientFiles) -> Self {
+        Self::new(H::default(), ClientRegistry::default()).with_files(files)
     }
 }

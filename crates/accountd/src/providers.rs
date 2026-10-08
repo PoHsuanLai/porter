@@ -9,8 +9,9 @@
 use porter_core::{AuthKind, EndpointUrl};
 use porter_discover::{Dns, DnsFault, HickoryDns, MxRecord, SrvRecord};
 use porter_families::{
-    AgentLoginProvider, ApiKeyProvider, FamilyProvider, GenericProvider, GoogleProvider,
-    MicrosoftProvider, NextcloudProvider, OpenRouterProvider, SharedDns,
+    AgentLoginProvider, ApiKeyProvider, ClientFiles, FamilyProvider, GenericProvider, GoogleEnv,
+    GoogleProvider, MicrosoftEnv, MicrosoftProvider, NextcloudProvider, OpenRouterProvider,
+    SharedDns,
 };
 use porter_http::{HyperHttp, SharedHttp, TokioSleep};
 use porter_provider::{DomainName, Issuer, ProviderSet, ProviderSpec, parse_provider};
@@ -157,13 +158,16 @@ pub struct FamilyIo {
     pub dns: SharedDns,
     /// Every loaded provider.
     pub providers: ProviderSet,
+    /// The clients files the OAuth families read at every sign-in and token: the person's own
+    /// is the one Settings writes, so a client id set there is used without a restart.
+    pub clients: ClientFiles,
 }
 
 impl FamilyIo {
     /// The system's: hyper over the platform's roots and the system resolver, or a resolver that
     /// answers `Unreachable` when the system names none (discovery then falls back to
     /// autoconfig and a server the person types).
-    pub fn system(providers: ProviderSet) -> Self {
+    pub fn system(providers: ProviderSet, clients: ClientFiles) -> Self {
         let dns = match HickoryDns::system() {
             Ok(dns) => SharedDns::new(dns),
             Err(_) => SharedDns::new(NoResolver),
@@ -172,6 +176,7 @@ impl FamilyIo {
             http: SharedHttp::new(HyperHttp::new()),
             dns,
             providers,
+            clients,
         }
     }
 }
@@ -202,12 +207,12 @@ pub fn family_of(spec: ProviderSpec, io: &FamilyIo) -> Result<FamilyProvider, Bo
             GenericProvider::new(spec, io.http.clone(), io.dns.clone())
                 .with_providers(io.providers.clone()),
         )),
-        (AuthKind::OAuthPkce, Some(Issuer::Microsoft)) => {
-            Ok(FamilyProvider::Microsoft(MicrosoftProvider::new(spec)))
-        }
-        (AuthKind::OAuthPkce, Some(Issuer::Google)) => {
-            Ok(FamilyProvider::Google(GoogleProvider::new(spec)))
-        }
+        (AuthKind::OAuthPkce, Some(Issuer::Microsoft)) => Ok(FamilyProvider::Microsoft(
+            MicrosoftProvider::with_env(spec, MicrosoftEnv::with_client_files(io.clients.clone())),
+        )),
+        (AuthKind::OAuthPkce, Some(Issuer::Google)) => Ok(FamilyProvider::Google(
+            GoogleProvider::with_env(spec, GoogleEnv::with_client_files(io.clients.clone())),
+        )),
         (AuthKind::ApiKey, _) => Ok(FamilyProvider::ApiKey(ApiKeyProvider::new(spec))),
         (AuthKind::AgentLogin, _) => Ok(FamilyProvider::AgentLogin(AgentLoginProvider::new(spec))),
         (AuthKind::OAuthMintsKey, Some(Issuer::OpenRouter)) => {
@@ -265,6 +270,10 @@ mod tests {
             http: SharedHttp::new(HyperHttp::new()),
             dns: SharedDns::new(NoResolver),
             providers: ProviderSet::layered(loaded.specs.clone(), Vec::new()),
+            clients: ClientFiles {
+                shipped: PathBuf::from("/nonexistent/clients.toml"),
+                own: PathBuf::from("/nonexistent/own-clients.toml"),
+            },
         };
         let (families, unserved) = served(loaded.specs, &io);
         let ids: Vec<String> = unserved.iter().map(|s| s.id.to_string()).collect();

@@ -136,7 +136,7 @@ impl<H: Http + 'static> MicrosoftSignIn<H> {
     async fn begin(&mut self) -> Step {
         let client = self
             .env
-            .registry
+            .clients()
             .lookup(Issuer::Microsoft, self.env.channel)
             .cloned()
             .ok_or(SignInFault::NeedsClientId)?;

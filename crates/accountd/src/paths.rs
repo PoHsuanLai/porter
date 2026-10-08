@@ -107,6 +107,14 @@ impl Paths {
             })
             .collect()
     }
+
+    /// The clients files the OAuth families read: the shipped one and the one Settings writes.
+    pub fn client_files(&self) -> porter_families::ClientFiles {
+        porter_families::ClientFiles {
+            shipped: self.clients_shipped.clone(),
+            own: self.clients_user.clone(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -156,6 +164,22 @@ mod tests {
                 PathBuf::from("/home/ada/.local/share/porter/providers")
             ]
         );
+    }
+
+    #[test]
+    fn the_families_read_the_clients_file_settings_writes() {
+        let paths = Paths::resolve(
+            env(&[
+                ("HOME", "/home/ada"),
+                ("XDG_CONFIG_HOME", "/scratch/config"),
+            ]),
+            &[],
+        )
+        .expect("paths");
+        let files = paths.client_files();
+        assert_eq!(files.own, paths.clients_user);
+        assert_eq!(files.own, Path::new("/scratch/config/porter/clients.toml"));
+        assert_eq!(files.shipped, paths.clients_shipped);
     }
 
     #[test]

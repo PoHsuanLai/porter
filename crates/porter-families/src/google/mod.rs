@@ -177,7 +177,8 @@ impl<H: Http + 'static> Provider for GoogleProvider<H> {
         let Presented::Credential(Credential::OAuth { refresh, .. }) = presented else {
             return Ok(RevokeOutcome::Unsupported);
         };
-        let Some(client) = self.env.registry.lookup(Issuer::Google, self.env.channel) else {
+        let clients = self.env.clients().into_owned();
+        let Some(client) = clients.lookup(Issuer::Google, self.env.channel) else {
             // No client is configured: nothing can be asked of Google, and the account's own
             // secrets are deleted regardless.
             return Ok(RevokeOutcome::Unsupported);

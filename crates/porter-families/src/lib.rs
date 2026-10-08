@@ -37,6 +37,8 @@ pub use agent_login::{AgentLoginProvider, AgentLoginSession, AgentLoginSignIn};
 #[cfg(feature = "api_key")]
 pub use api_key::{ApiKeyProvider, ApiKeySession, ApiKeySignIn};
 pub use dispatch::{FamilyProvider, FamilySession, FamilySignIn};
+#[cfg(any(feature = "microsoft", feature = "google"))]
+pub use env_common::ClientFiles;
 #[cfg(feature = "generic")]
 pub use generic::{GenericProvider, GenericSession, GenericSignIn};
 #[cfg(feature = "google")]

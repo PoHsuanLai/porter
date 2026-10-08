@@ -131,10 +131,10 @@ async fn main() -> ExitCode {
     let app_names =
         AppNames::new(table.clone(), paths.applications.clone()).with_agents(&loaded.specs);
     let provider_names = ProviderNames::from_specs(&loaded.specs);
-    let io = accountd::providers::FamilyIo::system(porter_provider::ProviderSet::layered(
-        loaded.specs.clone(),
-        Vec::new(),
-    ));
+    let io = accountd::providers::FamilyIo::system(
+        porter_provider::ProviderSet::layered(loaded.specs.clone(), Vec::new()),
+        paths.client_files(),
+    );
     let (families, unserved) = accountd::providers::served(loaded.specs, &io);
     let local = accountd::providers::local_runtimes(&unserved);
     for spec in unserved.iter().filter(|s| !local.contains(s)) {
@@ -213,10 +213,10 @@ async fn add(
     for (file, why) in &loaded.skipped {
         eprintln!("accountd: skipped provider file {}: {why}", file.display());
     }
-    let io = accountd::providers::FamilyIo::system(porter_provider::ProviderSet::layered(
-        loaded.specs.clone(),
-        Vec::new(),
-    ));
+    let io = accountd::providers::FamilyIo::system(
+        porter_provider::ProviderSet::layered(loaded.specs.clone(), Vec::new()),
+        paths.client_files(),
+    );
     let (families, _unserved) = accountd::providers::served(loaded.specs, &io);
     let served: Vec<_> = families
         .iter()

@@ -119,7 +119,7 @@ impl<H: Http> GoogleSession<H> {
 
     fn mail_rights(&self) -> MailRights {
         self.env
-            .registry
+            .clients()
             .traits(Issuer::Google, self.env.channel)
             .mail
     }
@@ -162,9 +162,8 @@ impl<H: Http> GoogleSession<H> {
         };
         // No client id configured is a fault of this install, not of the account: offline, so
         // the person is not asked to sign in again for it.
-        let client = self
-            .env
-            .registry
+        let clients = self.env.clients().into_owned();
+        let client = clients
             .lookup(Issuer::Google, self.env.channel)
             .ok_or(ProviderError::Unreachable)?;
         let tokens = refresh_scoped(
@@ -177,11 +176,7 @@ impl<H: Http> GoogleSession<H> {
         .await
         .map_err(|fault| match fault {
             ExchangeFault::Refused => {
-                let review = self
-                    .env
-                    .registry
-                    .traits(Issuer::Google, self.env.channel)
-                    .review;
+                let review = clients.traits(Issuer::Google, self.env.channel).review;
                 let mut state = self.state();
                 state.reauth = Some(ReauthReason::of_refusal(review, state.signed_in, now));
                 ProviderError::Unauthorized
