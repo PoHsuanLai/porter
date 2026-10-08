@@ -29,6 +29,27 @@ fn the_activation_file_and_the_unit_name_the_bus_name_and_each_other() {
     assert_eq!(key(&unit, "Type"), Some("dbus"));
 }
 
+/// sec-3 follow-up: the shipped table gives the settings module to the Settings app's unit
+/// (`org.quire.Settings.service`, as accountd's callers.toml), never by the app's name alone.
+#[test]
+fn the_shipped_table_names_settings_by_its_unit() {
+    let config = InferdConfig::from_toml(&dist("inferd.toml")).expect("the sample reads");
+    let rows = config.callers.rows();
+    let settings: Vec<_> = rows
+        .callers
+        .iter()
+        .filter(|row| row.role == porter_dbus::CallerRole::Settings)
+        .map(|row| (row.unit.as_deref(), row.app.to_string()))
+        .collect();
+    assert_eq!(
+        settings,
+        [(
+            Some("org.quire.Settings.service"),
+            "org.quire.Settings".to_owned()
+        )]
+    );
+}
+
 #[test]
 fn the_unit_gives_engines_the_gpu_and_only_this_computers_own_addresses() {
     let unit = dist("inferd.service");
@@ -387,10 +408,18 @@ fn every_model_row_the_live_module_can_describe_is_read_at_its_path() {
 fn the_sample_configuration_names_the_settings_app_and_its_example_rows_are_accepted() {
     let text = dist("inferd.toml");
     let config = InferdConfig::from_toml(&text).expect("the sample reads");
+    // Settings is its unit; an app scope of its name is an app like any other (sec-3).
     let app = porter_core::AppName::parse("org.quire.Settings").expect("name");
     assert_eq!(
         config.callers.rows().role_of(&app),
-        porter_dbus::CallerRole::Settings
+        porter_dbus::CallerRole::App
+    );
+    assert_eq!(
+        config
+            .callers
+            .resolve("org.quire.Settings.service")
+            .map(|caller| caller.role),
+        Some(inferd::peers::Role::Settings)
     );
     // The commented examples of the ai rows, uncommented, are accepted as they stand.
     let start = text.find("# [ai]\n").expect("the ai example");

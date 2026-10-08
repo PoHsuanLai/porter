@@ -107,6 +107,81 @@ fn the_table_is_rows_of_the_shared_table_with_cuad_first() {
     assert_eq!(launcher.role, porter_dbus::CallerRole::AgentLauncher);
 }
 
+/// sec-3 follow-up: the settings module's caller is the Settings app's unit, not its name. An
+/// app-name entry (the old form) stands for `<app>.service`; the row comes before the apps', so
+/// an app entry cannot claim the unit; a malformed entry is refused.
+#[test]
+fn settings_is_a_unit_and_an_app_name_stands_for_its_service() {
+    for entry in ["org.quire.Settings.service", "org.quire.Settings"] {
+        let table = CallerTable::from_toml_text(&format!(
+            "settings = [\"{entry}\"]\n[apps]\n\"org.example.Sneaky\" = [\"org.quire.Settings.service\"]\n"
+        ))
+        .expect("table");
+        let rows = table.rows();
+        let settings: Vec<_> = rows
+            .callers
+            .iter()
+            .filter(|row| row.role == porter_dbus::CallerRole::Settings)
+            .map(|row| (row.unit.clone(), row.app.to_string()))
+            .collect();
+        assert_eq!(
+            settings,
+            [(
+                Some("org.quire.Settings.service".to_owned()),
+                "org.quire.Settings".to_owned()
+            )],
+            "{entry}"
+        );
+        let caller = table
+            .resolve("org.quire.Settings.service")
+            .expect("the unit");
+        assert_eq!(
+            named(&caller),
+            ("org.quire.Settings", Role::Settings, Isolation::Unsandboxed),
+            "{entry}"
+        );
+    }
+    for bad in ["not a name", ".service"] {
+        assert!(
+            CallerTable::from_toml_text(&format!("settings = [\"{bad}\"]\n")).is_err(),
+            "{bad}"
+        );
+    }
+}
+
+/// sec-3 follow-up, through porter_dbus's fixture tree (`<root>/<pid>/cgroup`,
+/// `<root>/units/<unit>` for a unit's main process): only the main process of the Settings unit
+/// has the role; a process moved into its cgroup, and one in an app scope named like the app,
+/// do not.
+#[test]
+fn only_the_settings_units_main_process_is_settings() {
+    let root = std::env::temp_dir().join(format!("inferd-settings-unit-{}", std::process::id()));
+    let slice = "/user.slice/user-1000.slice/user@1000.service/app.slice";
+    let process = |pid: u32, unit: &str| {
+        let dir = root.join(pid.to_string());
+        std::fs::create_dir_all(&dir).expect("proc dir");
+        std::fs::write(dir.join("cgroup"), format!("0::{slice}/{unit}\n")).expect("cgroup");
+    };
+    process(20, "org.quire.Settings.service");
+    process(21, "org.quire.Settings.service");
+    process(22, "app-org.quire.Settings-7.scope");
+    std::fs::create_dir_all(root.join("units")).expect("units");
+    std::fs::write(root.join("units/org.quire.Settings.service"), "20\n").expect("main pid");
+    let rows = CallerTable::from_toml_text("settings = [\"org.quire.Settings.service\"]\n")
+        .expect("table")
+        .rows();
+    let role =
+        |pid| porter_dbus::ProcCallers::caller_of_pid(&root, pid, &rows).map(|caller| caller.role);
+    assert_eq!(role(20), Some(porter_dbus::CallerRole::Settings));
+    assert_eq!(role(21), None, "in the unit's cgroup, not its main process");
+    assert_ne!(
+        role(22),
+        Some(porter_dbus::CallerRole::Settings),
+        "an app scope of the app's name"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
 #[test]
 fn the_proc_root_variable_is_honoured_only_by_a_test_build() {
     use std::path::PathBuf;

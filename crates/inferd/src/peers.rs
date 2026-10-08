@@ -44,7 +44,7 @@ pub struct Caller {
 ///
 /// ```toml
 /// cua = ["cuad.service"]
-/// settings = ["org.quire.Settings"]
+/// settings = ["org.quire.Settings.service"]
 /// [apps]
 /// "org.quire.Memory" = ["memoryd.service"]
 /// ```
@@ -57,9 +57,27 @@ pub struct CallerTable {
     agent_launcher: BTreeSet<String>,
     #[serde(default)]
     apps: BTreeMap<AppName, BTreeSet<String>>,
-    /// The apps that may use the settings module, found by their app scope.
+    /// The Settings app's units: the only callers of the settings module, each only as its unit's
+    /// main process (as accountd's `callers.toml` row for Settings). An entry that is an app name
+    /// (the form this table had, `"org.quire.Settings"`) stands for that app's unit,
+    /// `<app>.service`: never for any process in an app scope of that name, which any program can
+    /// start.
     #[serde(default)]
-    settings: BTreeSet<AppName>,
+    settings: BTreeSet<String>,
+}
+
+/// The unit and the app a `settings` entry stands for: a `.service` unit is the Settings app's;
+/// an app name is that app's `<app>.service`. Anything else is no entry.
+fn settings_unit(entry: &str) -> Option<(String, AppName)> {
+    match entry.strip_suffix(".service") {
+        Some(name) if !name.is_empty() => {
+            Some((entry.to_owned(), AppName::parse(SETTINGS_APP).ok()?))
+        }
+        Some(_) => None,
+        None => AppName::parse(entry)
+            .ok()
+            .map(|app| (format!("{entry}.service"), app)),
+    }
 }
 
 impl CallerTable {
@@ -81,17 +99,25 @@ impl CallerTable {
         }
     }
 
-    /// The same table, naming `apps` as the ones that may use the settings module.
-    pub fn with_settings(self, apps: BTreeSet<AppName>) -> Self {
+    /// The same table, naming `units` (or app names, each standing for `<app>.service`) as the
+    /// Settings app's, the only callers of the settings module.
+    pub fn with_settings(self, units: BTreeSet<String>) -> Self {
         Self {
-            settings: apps,
+            settings: units,
             ..self
         }
     }
 
-    /// The table in TOML text.
+    /// The table in TOML text. A `settings` entry that is neither a `.service` unit nor an app
+    /// name is refused.
     pub fn from_toml_text(text: &str) -> Result<Self, String> {
-        toml::from_str(text).map_err(|e| e.to_string())
+        let table: Self = toml::from_str(text).map_err(|e| e.to_string())?;
+        match table.settings.iter().find(|e| settings_unit(e).is_none()) {
+            Some(bad) => Err(format!(
+                "settings: `{bad}` is neither a .service unit nor an app name"
+            )),
+            None => Ok(table),
+        }
     }
 
     /// The rows of the shared table this table is: cuad's first, so an app entry cannot claim its
@@ -115,6 +141,18 @@ impl CallerTable {
                 name: None,
             })
         });
+        // Settings by its unit, whose main process alone has the role (porter_dbus::MainPids):
+        // before the apps, so an app entry cannot claim the unit.
+        let settings = self
+            .settings
+            .iter()
+            .filter_map(|entry| settings_unit(entry))
+            .map(|(unit, app)| CallerRow {
+                unit: Some(unit),
+                app,
+                role: CallerRole::Settings,
+                name: None,
+            });
         let apps = self.apps.iter().flat_map(|(app, units)| {
             units.iter().map(move |unit| CallerRow {
                 unit: Some(unit.clone()),
@@ -123,14 +161,8 @@ impl CallerTable {
                 name: None,
             })
         });
-        let settings = self.settings.iter().map(|app| CallerRow {
-            unit: None,
-            app: app.clone(),
-            role: CallerRole::Settings,
-            name: None,
-        });
         porter_dbus::CallerTable {
-            callers: cua.chain(launcher).chain(apps).chain(settings).collect(),
+            callers: cua.chain(launcher).chain(settings).chain(apps).collect(),
         }
     }
 
@@ -145,6 +177,9 @@ const CUA_APP: &str = "org.quire.Cua";
 
 /// The app the agent launcher is.
 const LAUNCHER_APP: &str = "org.quire.AgentLauncher";
+
+/// The Settings app, which a `settings` entry that is a unit runs.
+const SETTINGS_APP: &str = "org.quire.Settings";
 
 impl Caller {
     /// A shared caller as inferd knows roles: `Cua` and `Settings`, and `App` for every other.

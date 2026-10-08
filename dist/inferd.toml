@@ -116,8 +116,11 @@
 # without a line here. cuad is the only caller that may open a computer-use session.
 [callers]
 cua = ["cuad.service"]
-# The Settings app: the only caller of inferd's settings module (the model picker).
-settings = ["org.quire.Settings"]
+# The Settings app: the only caller of inferd's settings module (the model picker), as the unit the
+# desktop runs it in, and only that unit's main process (as accountd's callers.toml). An app name
+# here (the old form, "org.quire.Settings") stands for "<app>.service", never for an app scope of
+# that name, which any program can start.
+settings = ["org.quire.Settings.service"]
 # The agent launcher (docket-acp): the only caller of org.quire.Inference1.Agents, which opens a
 # loopback model endpoint for an external coding agent, and of nothing else. Never listed by
 # default: a machine that runs the launcher writes its unit here, and turns on ai.agents.endpoint.
