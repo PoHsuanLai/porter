@@ -619,7 +619,7 @@ fn agent_service(script: &Script, launchers: &'static [&'static str]) -> (Servic
         vec![agent],
         Registry::default(),
         Shared::default(),
-        vec![typist()],
+        vec![typist(), typist()],
     );
     service.set_launcher_roster(porter_service::Roster::new(move |program| {
         launchers.contains(&program.as_str())
@@ -650,6 +650,32 @@ async fn adding_an_agent_with_a_launcher_makes_a_needs_login_account() {
     let registry = service.registry();
     assert_eq!(registry.accounts.len(), 1);
     assert_eq!(registry.accounts[0].state, AccountState::NeedsLogin);
+}
+
+#[tokio::test]
+async fn the_same_agent_added_twice_is_already_added_whatever_its_sign_in_shows() {
+    let script = Script::answering(vec![review("claude"), SignInStep::Done(signed("claude"))]);
+    let (service, kept) = agent_service(&script, &["claude-code"]);
+    let caller = app("org.quire.Mail");
+    assert!(matches!(
+        added(&service, &caller).await,
+        AccountsReply::Added(_)
+    ));
+    let held = service.registry().accounts.clone();
+    // Another name in the second sign-in: an agent is one account of its program however its
+    // sign-in reads, so only the agent rule can say it is there already.
+    script
+        .steps
+        .lock()
+        .expect("steps")
+        .extend([review("other"), SignInStep::Done(signed("other"))]);
+    kept.shown.lock().expect("shown").clear();
+    assert_eq!(
+        added(&service, &caller).await,
+        AccountsReply::Refused(Refusal::Unavailable)
+    );
+    assert_eq!(kinds(&kept.shown).last(), Some(&"failed"));
+    assert_eq!(service.registry().accounts, held);
 }
 
 #[tokio::test]

@@ -78,17 +78,25 @@ fn servers(endpoints: &[porter_core::ServiceEndpoint]) -> HashSet<porter_core::O
 }
 
 /// Whether `held` and `new` are the same login at the same servers. An account with no login
-/// (an API key, an agent) is never the same as another: two keys of one provider are two accounts.
+/// (an API key) is never the same as another: two keys of one provider are two accounts.
 fn same_login(held: &[porter_core::ServiceEndpoint], new: &[porter_core::ServiceEndpoint]) -> bool {
     let (held_logins, new_logins) = (logins(held), logins(new));
     !new_logins.is_empty() && held_logins == new_logins && servers(held) == servers(new)
+}
+
+/// Whether `held` is the account that adding `new` through `provider` would make again. An agent
+/// program signs itself in to the one plan its own login holds, so a second account of the same
+/// agent provider is the same account; any other is the same login at the same servers.
+fn duplicate(held: &Account, provider: &ProviderId, new: &[porter_core::ServiceEndpoint]) -> bool {
+    held.provider == *provider
+        && (held.auth == AuthKind::AgentLogin || same_login(&held.endpoints, new))
 }
 
 impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSink>
     AccountService<P, S, U, K, R, A>
 {
     /// Whether the sign-in's `step` shows an account that `provider` already has: the same login at
-    /// the same servers. Only the review and the finished sign-in show one.
+    /// the same servers, or the same agent. Only the review and the finished sign-in show one.
     pub(crate) fn already_added(&self, provider: &ProviderId, step: &SignInStep) -> bool {
         let endpoints = match step {
             SignInStep::Review { endpoints, .. } => endpoints,
@@ -98,7 +106,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         self.lock()
             .accounts
             .iter()
-            .any(|a| a.provider == *provider && same_login(&a.endpoints, endpoints))
+            .any(|a| duplicate(a, provider, endpoints))
     }
 
     /// Stores the account `signed` describes, with the person's service `choices`, and the
@@ -129,7 +137,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             if registry
                 .accounts
                 .iter()
-                .any(|a| a.provider == spec.id && same_login(&a.endpoints, &signed.endpoints))
+                .any(|a| duplicate(a, &spec.id, &signed.endpoints))
             {
                 return Err(());
             }
