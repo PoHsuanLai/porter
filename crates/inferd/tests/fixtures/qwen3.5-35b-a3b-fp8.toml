@@ -1,0 +1,26 @@
+# A copy of stoker's catalog/qwen3.5-35b-a3b-fp8.toml (stoker, same author, MIT OR Apache-2.0),
+# vendored here so the tests build from a plain clone with no sibling stoker checkout. It is the
+# shipped entry of an attached engine; the tests only need its shape (serving attached, locality
+# on-device, no engine profile). Refresh it from stoker when that entry changes.
+#
+# Qwen3.5 35B-A3B (Qwen), the FP8 checkpoint, a mixture-of-experts model (about 3B parameters
+# active per token) that is ATTACHED: it is served on another machine and never started here.
+id = "qwen3.5-35b-a3b-fp8"
+label = "Qwen3.5 35B-A3B FP8"
+licence = { kind = "open", v = "Apache-2.0" }
+family = "qwen"
+cold_start_estimate_s = 120
+source = { kind = "hugging_face", v = { repo = "Qwen/Qwen3.5-35B-A3B-FP8", revision = "9d1823d2dee688a6b25e77009dc727688c44936e" } }
+vram = { weights_mib = 35287, kv_per_1k_ctx_mib = 22, overhead_mib = 2996 }
+serving = { kind = "attached", v = { engine = "vllm", served_name = "qwen3.5-35b-a3b-fp8", tool_parser = "qwen3_coder", reasoning_parser = "qwen3" } }
+inputs = ["text"]
+outputs = ["text"]
+
+[text_out]
+tools = "server_parsed"
+structured = ["json_schema"]
+reasoning = "present"
+streaming = "present"
+context = 65536
+max_output = 8192
+sampling = { reasoning_on = { temperature = 600, top_p = { kind = "set", v = 950 }, top_k = { kind = "set", v = 20 }, min_p = { kind = "off" }, repeat_penalty = { kind = "off" }, seed = { kind = "off" } }, reasoning_off = { temperature = 700, top_p = { kind = "set", v = 800 }, top_k = { kind = "set", v = 20 }, min_p = { kind = "off" }, repeat_penalty = { kind = "off" }, seed = { kind = "off" } }, reasoning_default = "on" }
