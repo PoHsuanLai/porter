@@ -5,6 +5,7 @@ use crate::audience::covers;
 use crate::audit::{AuditSink, NoAudit};
 use crate::choose::{ask_for, settle};
 use crate::clock::Clock;
+use crate::gate::Gate;
 use crate::registry::{Asker, Registry};
 use crate::sheets::Sheets;
 use crate::store::{NoStore, RegistryStore};
@@ -36,7 +37,7 @@ pub struct AccountService<P, S, U, K, R = NoStore, A = NoAudit> {
     pub(crate) audit: A,
     pub(crate) registry: Mutex<Registry>,
     /// Held across a save's snapshot and write, so saves do not overlap.
-    pub(crate) persist_gate: tokio::sync::Mutex<()>,
+    pub(crate) persist_gate: Gate,
     /// Account ids an add has chosen and is still filing secrets for: not in the registry yet
     /// (the row is added only once its secrets are stored), and taken all the same.
     pub(crate) reserved: Mutex<HashSet<AccountId>>,
@@ -58,7 +59,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock> AccountService<P, S, U, K> {
             store: NoStore,
             audit: NoAudit,
             registry: Mutex::new(registry),
-            persist_gate: tokio::sync::Mutex::new(()),
+            persist_gate: Gate::default(),
             reserved: Mutex::new(HashSet::new()),
             roster: OnceLock::new(),
         }

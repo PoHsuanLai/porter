@@ -12,11 +12,10 @@ publish.workspace = true
 porter-core = { workspace = true }
 porter-provider = { workspace = true }
 porter-secrets = { workspace = true }
-# Only `tokio::sync::Mutex` (the save gate), which needs no runtime.
-tokio = { workspace = true }
 
 [dev-dependencies]
 porter-fake = { workspace = true }
+tokio = { workspace = true }
 
 [lints]
 workspace = true

@@ -13,6 +13,7 @@ mod audience;
 mod audit;
 mod choose;
 mod clock;
+mod gate;
 mod local;
 mod manage;
 mod race;
