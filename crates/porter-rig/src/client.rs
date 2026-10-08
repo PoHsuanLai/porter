@@ -245,6 +245,11 @@ async fn add_account(
             emit(json!({ "result": "added", "account": account.as_str() }));
             true
         }
+        // The account was already here: nothing was added, and this is the one it is.
+        Err(ClientError::AlreadyAdded(account)) => {
+            emit(json!({ "result": "already_added", "account": account.as_str() }));
+            false
+        }
         Err(why) => sheet_failure(why, emit),
     }
 }

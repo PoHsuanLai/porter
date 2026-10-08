@@ -404,8 +404,9 @@ async fn adding_the_same_login_twice_is_refused_and_another_server_is_another_ac
     let stored = service.registry().accounts;
     let password = kept.secrets.password(&first).await;
 
-    // The same login at the same server: the sheet ends, nothing is stored or replaced.
-    assert_eq!(add().await, AccountsReply::Refused(Refusal::Unavailable));
+    // The same login at the same server: the sheet ends, nothing is stored or replaced, and the
+    // app is told which account it already is (the mailo ask).
+    assert_eq!(add().await, AccountsReply::AlreadyAdded(first.clone()));
     assert_eq!(service.registry().accounts, stored);
     assert_eq!(kept.secrets.password(&first).await, password);
 
