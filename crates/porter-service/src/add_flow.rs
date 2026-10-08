@@ -6,6 +6,7 @@
 //! While the person is in the browser (or reading a code) the loop polls the sign-in and
 //! listens to the sheet at the same time, so closing the sheet ends the wait at once.
 
+use crate::agent_login::program_of_spec;
 use crate::audit::AuditSink;
 use crate::clock::Clock;
 use crate::race::{Raced, race};
@@ -301,6 +302,18 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                 let Stage::Working(id) = &sheet.stage else {
                     return None;
                 };
+                // An agent signs itself in through its launcher: with none for its program there
+                // is nobody to do it, and no account is made to wait for one.
+                if matches!(job, Job::Add { .. })
+                    && let Some(roster) = self.roster.get()
+                    && let Some(spec) = self.provider_of(id).map(Provider::spec)
+                    && spec.auth.kind == AuthKind::AgentLogin
+                    && program_of_spec(spec).is_some_and(|program| !roster.has(&program))
+                {
+                    return Some(SheetEvent::SignIn(Progress::Failed(
+                        SignInFault::NoLauncher,
+                    )));
+                }
                 let started = self.provider_of(id).map(|provider| {
                     provider.sign_in(SignInStart {
                         mode: match job {

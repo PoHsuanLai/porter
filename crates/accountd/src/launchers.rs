@@ -19,7 +19,9 @@ use porter_core::audit::{AuditEntry, AuditEvent};
 use porter_core::capability::AgentProgram;
 use porter_core::{AccountId, LauncherSession, LoginRequestId, UnixSeconds};
 use porter_dbus::{ACCOUNTS_PATH, LauncherFault};
-use porter_service::{AuditSink, Clock, Launchers as LaunchersSeam, LoginEnd, NoLauncher, Waiting};
+use porter_service::{
+    AuditSink, Clock, Launchers as LaunchersSeam, LoginEnd, NoLauncher, Roster, Waiting,
+};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -210,6 +212,13 @@ impl Launchers {
             state.programs.insert(program.clone(), owner.to_owned());
         }
         Ok(())
+    }
+
+    /// Which programs have a launcher now, for the add sheet to ask. A connection that left is
+    /// not one (`left` frees its programs).
+    pub(crate) fn roster(&self) -> Roster {
+        let state = Arc::clone(&self.state);
+        Roster::new(move |program| held(&state).programs.contains_key(program))
     }
 
     /// Whether `owner` holds a registration of `program` (a connection that left holds none).

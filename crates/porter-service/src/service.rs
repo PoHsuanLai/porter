@@ -1,5 +1,6 @@
 //! The service: one request in, one reply out, for a caller the transport has identified.
 
+use crate::agent_login::Roster;
 use crate::audience::covers;
 use crate::audit::{AuditSink, NoAudit};
 use crate::choose::{ask_for, settle};
@@ -19,7 +20,7 @@ use porter_provider::{
     Presented, Provider, ProviderError, ProviderSession, ProviderSet, ProviderSpec,
 };
 use porter_secrets::{Secrets, SecretsError};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
 /// accountd's core over its seams. The store and the audit sink default to none: the registry
 /// then lives for the process, and nothing is logged.
@@ -33,6 +34,8 @@ pub struct AccountService<P, S, U, K, R = NoStore, A = NoAudit> {
     pub(crate) store: R,
     pub(crate) audit: A,
     pub(crate) registry: Mutex<Registry>,
+    /// Which agent programs have a launcher, once the host says (accountd, when it serves).
+    pub(crate) roster: OnceLock<Roster>,
 }
 
 impl<P: Provider, S: Secrets, U: Sheets, K: Clock> AccountService<P, S, U, K> {
@@ -49,6 +52,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock> AccountService<P, S, U, K> {
             store: NoStore,
             audit: NoAudit,
             registry: Mutex::new(registry),
+            roster: OnceLock::new(),
         }
     }
 }
@@ -65,6 +69,7 @@ impl<P, S, U, K, R, A> AccountService<P, S, U, K, R, A> {
             store,
             audit: self.audit,
             registry: self.registry,
+            roster: self.roster,
         }
     }
 
@@ -79,7 +84,16 @@ impl<P, S, U, K, R, A> AccountService<P, S, U, K, R, A> {
             store: self.store,
             audit,
             registry: self.registry,
+            roster: self.roster,
         }
+    }
+
+    /// Tells the service which agent programs have a launcher, so that adding an agent account
+    /// with none ends in `SignInFault::NoLauncher` before anything is stored. Set once; a
+    /// service that is never told (no launcher bus: an app hosting porter in process) adds
+    /// agent accounts as it always did.
+    pub fn set_launcher_roster(&self, roster: Roster) {
+        let _ = self.roster.set(roster);
     }
 
     /// The same service knowing the local runtimes (`AuthKind::LocalRuntime`) among `specs`:

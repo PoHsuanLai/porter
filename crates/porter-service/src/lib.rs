@@ -26,7 +26,7 @@ mod token;
 
 pub use add_flow::AllowFor;
 pub use agent::AgentFault;
-pub use agent_login::{Launchers, LoginEnd, NoLauncher, Waiting, program_of};
+pub use agent_login::{Launchers, LoginEnd, NoLauncher, Roster, Waiting, program_of};
 pub use audit::{AuditSink, NoAudit};
 pub use clock::Clock;
 pub use local::{LocalFault, MAX_LOCAL_CLAIMS};

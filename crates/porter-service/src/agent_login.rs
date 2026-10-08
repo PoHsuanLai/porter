@@ -24,6 +24,7 @@ use porter_provider::Provider;
 use porter_secrets::Secrets;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 
 /// How a request to a launcher ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,6 +60,28 @@ impl LoginEnd {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NoLauncher;
 
+/// Which agent programs have a launcher right now: what the add sheet asks before an agent
+/// account is made (accountd reads its registrations).
+#[derive(Clone)]
+pub struct Roster(Arc<dyn Fn(&AgentProgram) -> bool + Send + Sync>);
+
+impl Roster {
+    /// A roster answering by `registered`.
+    pub fn new(registered: impl Fn(&AgentProgram) -> bool + Send + Sync + 'static) -> Self {
+        Self(Arc::new(registered))
+    }
+
+    pub(crate) fn has(&self, program: &AgentProgram) -> bool {
+        (self.0)(program)
+    }
+}
+
+impl std::fmt::Debug for Roster {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Roster")
+    }
+}
+
 /// The end of a request, waited for. Dropping it does not withdraw the request: it stays pending
 /// until the launcher answers, the bound runs out, or the launcher leaves.
 pub type Waiting = Pin<Box<dyn Future<Output = LoginEnd> + Send>>;
@@ -91,6 +114,16 @@ pub fn program_of(account: &Account) -> Option<AgentProgram> {
             (Subject::Agent(program), Offer::Present(Capability::Agent(_))) => {
                 Some(program.clone())
             }
+            _ => None,
+        })
+}
+
+/// The program a provider file for an agent runs: the one its agent capability names.
+pub(crate) fn program_of_spec(spec: &porter_provider::ProviderSpec) -> Option<AgentProgram> {
+    spec.capabilities
+        .iter()
+        .find_map(|row| match &row.capability {
+            Capability::Agent(agent) => Some(agent.program.clone()),
             _ => None,
         })
 }

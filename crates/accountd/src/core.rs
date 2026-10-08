@@ -24,7 +24,7 @@ use porter_provider::Provider;
 use porter_secrets::{Secrets, SecretsError};
 use porter_service::{
     AccountService, AgentFault, AuditSink, Clock, Launchers as LaunchersSeam, LocalFault, Registry,
-    RegistryStore, RevokeReport, Sheets, SyncClass,
+    RegistryStore, RevokeReport, Roster, Sheets, SyncClass,
 };
 use serde::de::DeserializeOwned;
 use std::borrow::Cow;
@@ -52,6 +52,12 @@ pub trait Host: Send + Sync + 'static {
 
     /// A copy of the registry, for the objects that mirror accounts.
     fn registry(&self) -> Registry;
+
+    /// Tells the host which agent programs have a launcher, so that adding an agent account
+    /// with none ends in `NoLauncher`. A host that adds no agent accounts ignores it.
+    fn use_launcher_roster(&self, roster: Roster) {
+        let _ = roster;
+    }
 
     /// What the relay for `endpoint` under `caller`'s `grant` presents, once the grant and the
     /// endpoint are checked. A host with no relay says unavailable.
@@ -219,6 +225,10 @@ where
 
     fn registry(&self) -> Registry {
         AccountService::registry(self)
+    }
+
+    fn use_launcher_roster(&self, roster: Roster) {
+        AccountService::set_launcher_roster(self, roster);
     }
 
     fn open_relay(
@@ -664,6 +674,7 @@ pub async fn serve_with<H: Host, C: Callers>(
         credentials: Credentials::new(options.runtime_dir.as_deref()),
         settings: OnceLock::new(),
     });
+    core.host.use_launcher_roster(core.launchers.roster());
     let server: &ObjectServer = connection.object_server();
     server
         .at(ACCOUNTS_PATH, Manager::new(Arc::clone(&core)))

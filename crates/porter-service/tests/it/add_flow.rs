@@ -606,6 +606,52 @@ async fn a_failed_sign_in_ends_with_the_refusal_the_fault_means() {
     }
 }
 
+/// An agent that signs itself in (Claude Code), with a sign-in that would review and finish.
+fn agent_service(script: &Script, launchers: &'static [&'static str]) -> (Service, Kept) {
+    let spec = parse_provider(include_str!("../../../../providers/claude-code.toml"))
+        .expect("the shipped file");
+    let agent = ScriptedProvider {
+        spec,
+        script: script.clone(),
+        refuses_to_start: false,
+    };
+    let (service, kept) = service_over(
+        vec![agent],
+        Registry::default(),
+        Shared::default(),
+        vec![typist()],
+    );
+    service.set_launcher_roster(porter_service::Roster::new(move |program| {
+        launchers.contains(&program.as_str())
+    }));
+    (service, kept)
+}
+
+#[tokio::test]
+async fn adding_an_agent_with_no_launcher_ends_no_launcher_and_stores_nothing() {
+    let script = Script::answering(vec![review("claude"), SignInStep::Done(signed("claude"))]);
+    let (service, kept) = agent_service(&script, &["codex"]);
+    assert_eq!(
+        added(&service, &app("org.quire.Mail")).await,
+        AccountsReply::Refused(Refusal::NoLauncher)
+    );
+    assert!(service.registry().accounts.is_empty());
+    assert_eq!(script.told(), Vec::<&str>::new(), "the sign-in never began");
+    assert_eq!(kept.audit.entries(), vec![]);
+    assert_eq!(kinds(&kept.shown), ["providers", "working", "failed"]);
+}
+
+#[tokio::test]
+async fn adding_an_agent_with_a_launcher_makes_a_needs_login_account() {
+    let script = Script::answering(vec![review("claude"), SignInStep::Done(signed("claude"))]);
+    let (service, _kept) = agent_service(&script, &["claude-code"]);
+    let reply = added(&service, &app("org.quire.Mail")).await;
+    assert!(matches!(reply, AccountsReply::Added(_)), "{reply:?}");
+    let registry = service.registry();
+    assert_eq!(registry.accounts.len(), 1);
+    assert_eq!(registry.accounts[0].state, AccountState::NeedsLogin);
+}
+
 #[tokio::test]
 async fn the_same_login_added_twice_ends_at_the_review_and_stores_nothing_more() {
     let script = Script::answering(vec![ask(), review("ada"), SignInStep::Done(signed("ada"))]);
