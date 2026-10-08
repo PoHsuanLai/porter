@@ -109,10 +109,13 @@ fn allow(
 
 /// A grant id unused in `registry`.
 pub(crate) fn next_grant_id(registry: &Registry) -> GrantId {
-    let n = registry.grants.len() + 1;
+    let held = registry.grants.len();
+    let first = held.saturating_add(1);
     let taken = |id: &GrantId| registry.grants.iter().any(|g| g.id == *id);
-    (n..)
+    // `held + 1` numbers and at most `held` grants: one of them is free, so the search is
+    // bounded and never runs off the end of the numbers.
+    (first..=first.saturating_add(held))
         .filter_map(|i| GrantId::parse(&format!("grant-{i}")).ok())
         .find(|id| !taken(id))
-        .unwrap_or_else(|| unreachable!("the ids are unbounded and grant-<n> is well formed"))
+        .unwrap_or_else(|| unreachable!("more numbers than grants, and grant-<n> is well formed"))
 }

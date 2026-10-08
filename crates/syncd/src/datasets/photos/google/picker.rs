@@ -193,7 +193,7 @@ fn unique(name: &str, taken: &[String]) -> String {
         Some((stem, ext)) if !stem.is_empty() => (stem, format!(".{ext}")),
         _ => (name, String::new()),
     };
-    (2u32..)
+    (2..=u32::MAX)
         .map(|n| format!("{stem}-{n}{ext}"))
         .find(|candidate| !taken.contains(candidate))
         .unwrap_or_default()

@@ -187,6 +187,50 @@ async fn creates_are_limited_per_app_within_the_window() {
     assert_eq!(book.list().len(), CREATES_PER_WINDOW + 2);
 }
 
+/// idiom-11: the counter is read from a file, so a file whose counter is at the top of its range
+/// must be refused as a full counter. Before, `n + 1` overflowed (a panic in a debug build, a
+/// wrap to 0 in a release build, which would mint `space-0` and then reuse every id).
+#[tokio::test]
+async fn a_counter_at_the_top_of_its_range_is_refused_and_not_wrapped() {
+    let scratch = Scratch::new();
+    let dir = scratch.path().join("porter");
+    std::fs::create_dir_all(&dir).expect("dir");
+    let file = dir.join("spaces.json");
+    let at = (Instant::now(), NOW);
+    let photos = app("org.quire.Photos");
+
+    // The last id the counter can mint is made; the counter cannot move past it.
+    let almost = format!(
+        r#"{{"version":{VERSION},"next":{},"spaces":[]}}"#,
+        u64::MAX - 1
+    );
+    std::fs::write(&file, &almost).expect("write");
+    let (mut book, said) = SpaceBook::open(&scratch.store(), &[], NOW).await;
+    assert_eq!(said, None);
+    let made = book
+        .create(&photos, name("Last"), SpaceLook::default(), at)
+        .await
+        .expect("the second to last number is still there");
+    assert_eq!(made.as_str(), format!("space-{}", u64::MAX - 1));
+    assert_eq!(
+        book.create(&photos, name("More"), SpaceLook::default(), at)
+            .await,
+        Err(SpaceFault::Unsaved)
+    );
+    assert_eq!(book.list().len(), 1, "the refused create changed nothing");
+
+    // A file that starts at the top: refused outright.
+    let full = format!(r#"{{"version":{VERSION},"next":{},"spaces":[]}}"#, u64::MAX);
+    std::fs::write(&file, &full).expect("write");
+    let (mut book, _) = SpaceBook::open(&scratch.store(), &[], NOW).await;
+    assert_eq!(
+        book.create(&photos, name("x"), SpaceLook::default(), at)
+            .await,
+        Err(SpaceFault::Unsaved)
+    );
+    assert_eq!(std::fs::read_to_string(&file).expect("read"), full);
+}
+
 #[tokio::test]
 async fn an_unreadable_file_is_left_alone_and_nothing_changes() {
     let scratch = Scratch::new();

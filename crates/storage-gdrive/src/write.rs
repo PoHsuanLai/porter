@@ -33,7 +33,8 @@ fn boundary_for(content: &[u8]) -> String {
         let needle = b.as_bytes();
         content.windows(needle.len()).any(|w| w == needle)
     };
-    (0u32..)
+    // Every occurrence rules out one boundary, so any content under 4 GiB leaves one free.
+    (0..=u32::MAX)
         .map(|n| format!("porter-gdrive-{n:08x}"))
         .find(|b| !occurs(b))
         .unwrap_or_default()
