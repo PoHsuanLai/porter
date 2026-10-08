@@ -500,3 +500,45 @@ async fn an_account_syncd_cannot_mirror_has_no_sync_row_and_its_switch_is_refuse
         Err(LiveError::NotPermitted(_))
     ));
 }
+
+/// The next word said on `row` (the action's own `Set` answers with a button's `false`).
+async fn word_on(changes: &mut ds_settings::live::Changes, row: &KeyPath) -> String {
+    use zbus::export::futures_core::Stream;
+    loop {
+        let change = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            std::future::poll_fn(|cx| std::pin::Pin::new(&mut *changes).poll_next(cx)),
+        )
+        .await
+        .expect("a Changed in time")
+        .expect("open stream")
+        .expect("a change");
+        if change.key == *row && change.value.is_str() {
+            return change.value.as_str().unwrap_or_default().to_owned();
+        }
+    }
+}
+
+/// ux-8: a "Sign in again" pressed in Settings that does not end signed in is said on its row,
+/// and a program on this computer has no such row and refuses the action.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sign_in_again_that_ends_without_signing_in_is_said_on_its_row() {
+    // The mail account's provider is not loaded: its sign-in fails, and the person closes the
+    // sheet that says so.
+    let rig = Rig::start_over(
+        Default::default(),
+        SheetHost::answering(porter_core::sheet::SheetInput::Dismiss),
+        vec![porter_fake::cloud_provider(), porter_fake::llm_provider()],
+    )
+    .await;
+    let client = settings(&rig).await;
+    let mut changes = client.changes().await.expect("changes");
+    let row = key("accounts.fake-mail.reauth");
+    client.invoke(&row).await.expect("the action is under way");
+    assert_eq!(word_on(&mut changes, &row).await, "failed");
+
+    let local = key("accounts.fake-llm.reauth");
+    let schema = client.describe().await.expect("schema");
+    assert!(!schema.key.iter().any(|k| k.path == local));
+    assert!(client.invoke(&local).await.is_err());
+}

@@ -476,25 +476,27 @@ fn account_keys(
             &SCOPE_WORDS,
         ));
     }
-    keys.push(match account.auth {
+    keys.extend(match account.auth {
         // An agent signs itself in, inside the agent: porter holds only whether it said so, and
         // signing out forgets that. The agent's own login files are the agent's.
-        AuthKind::AgentLogin => spec(
+        AuthKind::AgentLogin => Some(spec(
             &Key::SignOut(id.clone()),
             section,
             "Sign out".to_owned(),
             "Asks the assistant to sign itself out when it is running; otherwise it only forgets here that it was signed in, and the assistant's own login is not touched.",
             action("Sign out", ActionWeight::Plain),
             off(),
-        ),
-        _ => spec(
+        )),
+        // A program on this computer signs in with nothing: there is nothing to sign in to.
+        AuthKind::LocalRuntime | AuthKind::None => None,
+        _ => Some(spec(
             &Key::Reauth(id.clone()),
             section,
             "Sign in again".to_owned(),
             "",
             action("Sign in again", ActionWeight::Plain),
             off(),
-        ),
+        )),
     });
     keys.push(spec(
         &Key::Remove(id.clone()),
@@ -1054,6 +1056,25 @@ mod tests {
             parse("accounts.clients.google.secret", &registry()),
             Some(Key::ClientSecret(Issuer::Google))
         );
+    }
+
+    /// ux-8: a program on this computer has no "Sign in again" row; an account elsewhere has.
+    #[test]
+    fn a_local_runtime_is_not_offered_sign_in_again() {
+        let mut runtime = storage_account();
+        runtime.auth = AuthKind::LocalRuntime;
+        let registry = Registry {
+            accounts: vec![runtime, mail_account()],
+            ..registry()
+        };
+        let schema = schema(&registry, &AppNames::default(), &ProviderNames::default());
+        let paths: Vec<&str> = schema.key.iter().map(|k| k.path.0.as_str()).collect();
+        assert!(
+            !paths.contains(&"accounts.fake-storage.reauth"),
+            "{paths:?}"
+        );
+        assert!(paths.contains(&"accounts.fake-storage.remove"), "{paths:?}");
+        assert!(paths.contains(&"accounts.fake-mail.reauth"), "{paths:?}");
     }
 
     #[test]

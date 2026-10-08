@@ -12,7 +12,7 @@ use ds_settings::live::{Access, Caller, LiveError, LiveModule, LiveSchema, Verdi
 use ds_settings::schema::KeyPath;
 use porter_core::audit::{AuditEvent, ClientIdChange, IssuerSlug};
 use porter_core::wire::ParentWindow;
-use porter_core::{AccountsReply, AppId, AppName, Isolation, Toggle};
+use porter_core::{AccountsReply, AppId, AppName, AuthKind, Isolation, Toggle};
 use porter_dbus::{ACCOUNTS_SETTINGS_PATH, CallerRole};
 use porter_provider::{ClientChannel, ClientsFile, Issuer, parse_clients};
 use porter_service::Launchers as _;
@@ -37,6 +37,45 @@ fn settings_app() -> AppId {
     AppId {
         name: AppName::parse("org.quire.Settings").expect("a literal app name"),
         isolation: Isolation::Unsandboxed,
+    }
+}
+
+/// How a "Sign in again" pressed in Settings ended, as the word `accounts.<id>.reauth` changes
+/// to (the pane says it on the row; a refusal is no longer silent).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReauthNews {
+    /// Signed in again.
+    Done,
+    /// The person closed the sheet.
+    Cancelled,
+    /// The service said no: the sign-in was refused or forbidden.
+    Refused,
+    /// An agent with no launcher to ask.
+    NoLauncher,
+    /// It could not be done (unreachable, no client for the issuer, the store failed, ...).
+    Failed,
+}
+
+impl ReauthNews {
+    pub(crate) fn of(reply: &AccountsReply) -> Self {
+        use porter_core::wire::Refusal;
+        match reply {
+            AccountsReply::Reauthenticated => ReauthNews::Done,
+            AccountsReply::Refused(Refusal::Dismissed) => ReauthNews::Cancelled,
+            AccountsReply::Refused(Refusal::Denied) => ReauthNews::Refused,
+            AccountsReply::Refused(Refusal::NoLauncher) => ReauthNews::NoLauncher,
+            _ => ReauthNews::Failed,
+        }
+    }
+
+    pub(crate) fn slug(self) -> &'static str {
+        match self {
+            ReauthNews::Done => "done",
+            ReauthNews::Cancelled => "cancelled",
+            ReauthNews::Refused => "refused",
+            ReauthNews::NoLauncher => "no_launcher",
+            ReauthNews::Failed => "failed",
+        }
     }
 }
 
@@ -207,15 +246,27 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
                 self.0.host.remove(&id).await.map_err(failed)?;
             }
             Key::Reauth(id) => {
+                // A program on this computer has nothing to sign in to (the row is not offered).
+                let local = registry.accounts.iter().any(|a| {
+                    a.id == id && matches!(a.auth, AuthKind::LocalRuntime | AuthKind::None)
+                });
+                if local {
+                    return Err(LiveError::NotPermitted(
+                        "this account has nothing to sign in to".into(),
+                    ));
+                }
                 let core = Arc::clone(&self.0);
                 tokio::spawn(async move {
-                    if let AccountsReply::Refused(why) = core
+                    let reply = core
                         .host
                         .reauthenticate_any(&settings_app(), &id, ParentWindow::Unparented)
-                        .await
-                    {
+                        .await;
+                    if let AccountsReply::Refused(why) = &reply {
                         eprintln!("accountd: reauthenticate from Settings refused: {why:?}");
                     }
+                    // The pane hears how it ended on the row, as it does for a sign-out.
+                    core.announce_row(&Key::Reauth(id), ReauthNews::of(&reply).slug())
+                        .await;
                     core.publish().await;
                 });
             }

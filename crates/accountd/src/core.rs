@@ -543,12 +543,19 @@ impl<H: Host, C: Callers> Core<H, C> {
     /// Tells the settings module's listeners how a sign out went: `Changed("accounts.<id>.sign_out",
     /// <word>)`.
     pub(crate) async fn announce_sign_out(&self, id: &AccountId, news: SignOutNews) {
+        self.announce_row(&crate::settings_keys::Key::SignOut(id.clone()), news.slug())
+            .await;
+    }
+
+    /// Tells the settings module's listeners `Changed(<the key's path>, <word>)`: how an action
+    /// row's action went.
+    pub(crate) async fn announce_row(&self, key: &crate::settings_keys::Key, word: &str) {
         if let Some(module) = self.settings.get() {
-            let key = crate::settings_keys::path(&crate::settings_keys::Key::SignOut(id.clone()));
+            let path = crate::settings_keys::path(key);
             let _ = module
                 .changed(
-                    &ds_settings::schema::KeyPath(key),
-                    &toml::Value::String(news.slug().to_owned()),
+                    &ds_settings::schema::KeyPath(path),
+                    &toml::Value::String(word.to_owned()),
                 )
                 .await;
         }
