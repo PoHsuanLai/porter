@@ -214,8 +214,20 @@ async fn only_the_photos_app_may_call_and_every_bad_word_or_missing_picker_is_a_
 
     // Google not answering is `Unavailable`, not a hang or a panic.
     let (session, _, _) = picker.start(SEGMENT).await.expect("start");
+    // Dropping the fake asks its tasks to stop; a connection syncd keeps open may still be served
+    // for a moment after (a poll then said "waiting", rel-13 follow-up), so ask until it is down.
     drop(rig.google);
-    let refused = picker.poll(SEGMENT, &session).await.expect_err("down");
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
+    let refused = loop {
+        match picker.poll(SEGMENT, &session).await {
+            Err(refused) => break refused,
+            Ok(answer) => assert!(
+                tokio::time::Instant::now() < deadline,
+                "the fake Google still answered 60 s after it was dropped: {answer:?}"
+            ),
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
     assert_eq!(error_name(&refused), UNAVAILABLE);
 }
 
