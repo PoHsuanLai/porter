@@ -11,6 +11,7 @@ mod common;
 mod dist;
 mod file_keys;
 mod google;
+mod install;
 mod peer;
 mod process_credential;
 mod relay;
