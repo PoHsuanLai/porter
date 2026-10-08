@@ -2,6 +2,7 @@
 
 mod binary;
 mod common;
+mod confirm_bus;
 mod dist;
 mod gdrive_bus;
 mod google_pim_bus;

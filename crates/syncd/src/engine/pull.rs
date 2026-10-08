@@ -98,8 +98,12 @@ impl<R: Replica, D: Dataset, K: Clock> Engine<R, D, K> {
         // (an empty answer, a half-built folder) than the person's wish: nothing is discarded
         // until they say so, and the next listing may show the items again. The anchor stays
         // cleared, so every cycle asks for the listing afresh.
+        // The person's word is for the next listing only, whether or not that listing turns out
+        // to be a mass delete: a server that healed meanwhile must not leave it standing for a
+        // later one.
+        let confirmed = self.mass_delete_confirmed.swap(false, Ordering::SeqCst);
         if let Some(mass) = mass_delete(&rows, &changes)
-            && !self.mass_delete_confirmed.swap(false, Ordering::SeqCst)
+            && !confirmed
         {
             return Err(Halt::Stop(Outcome::NeedsConfirmation(mass)));
         }

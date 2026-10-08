@@ -359,6 +359,35 @@ async fn a_server_that_lists_its_items_again_is_not_held_and_loses_nothing() {
 }
 
 #[tokio::test]
+async fn a_confirmation_the_server_made_unneeded_does_not_stand_for_a_later_mass_delete() {
+    let (world, engine, _) = after_an_empty_listing("mass-stale").await;
+    assert!(matches!(
+        engine.sync_once().await.expect("cycle").outcome,
+        Outcome::NeedsConfirmation(_)
+    ));
+    engine.confirm_mass_delete();
+    // The server lists its items again before the confirmed listing is read: nothing to discard.
+    let mut again = Vec::new();
+    for file in ["a.txt", "b.txt", "c.txt"] {
+        again.push(world.remote_put(file, file.as_bytes()).await);
+    }
+    let report = engine.sync_once().await.expect("cycle");
+    assert_eq!((report.outcome, report.discarded), (Outcome::Done, 0));
+    // Later it really is emptied: the old word does not cover this one.
+    for id in &again {
+        world.remote_remove(id).await;
+    }
+    world.replica.inner.compact();
+    let report = engine.sync_once().await.expect("cycle");
+    assert!(matches!(report.outcome, Outcome::NeedsConfirmation(_)));
+    assert_eq!(
+        world.dataset.snapshot().len(),
+        3,
+        "the local files are kept"
+    );
+}
+
+#[tokio::test]
 async fn a_replica_without_hashes_is_reconciled_by_bytes_and_still_uploads_nothing_known() {
     let world = World::new("hashless", hashless(), 10);
     let a = world.remote_put("a.txt", b"same").await;

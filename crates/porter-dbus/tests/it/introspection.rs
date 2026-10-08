@@ -159,7 +159,14 @@ fn syncd_and_inferd_declare_what_they_did() {
     let (sync1, picker) = sync
         .split_once("<interface name=\"org.quire.Photos1.Picker\">")
         .expect("the Picker interface is declared beside Sync1");
-    assert_eq!(sync1.matches("<method ").count(), 5);
+    assert_eq!(sync1.matches("<method ").count(), 6);
+    assert_eq!(sync1.matches("<signal ").count(), 3);
+    assert!(sync1.contains("<method name=\"ConfirmDiscard\">"));
+    assert!(sync1.contains("<signal name=\"NeedsConfirmation\">"));
+    assert_eq!(
+        porter_dbus::SYNC_ERROR_NOTHING_HELD,
+        format!("{}NothingHeld", porter_dbus::SYNC_ERROR_PREFIX)
+    );
     for member in ["Start", "Poll", "Import", "Cancel"] {
         assert!(
             picker.contains(&format!("<method name=\"{member}\">")),

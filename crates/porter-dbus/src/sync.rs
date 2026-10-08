@@ -29,6 +29,16 @@ pub trait Sync {
     /// it; `org.quire.Sync1.Error.NoSuchConflict` when the conflict is unknown or already
     /// settled.
     fn resolve(&self, dataset: &str, conflict: i64, how: &str) -> zbus::Result<()>;
+    /// Lets one discard through for `dataset` (`<account>/<dataset>`) while it is held: the
+    /// replica's listing lacks all, or most, of what the dataset holds (`Status` carries
+    /// `needs_confirmation`, `NeedsConfirmation` announces it) and nothing was removed here. The
+    /// next cycle runs at once and removes those items; the hold is cleared when it ends.
+    /// Anyone who may pause the dataset may call it (its owning app, Settings, the porter
+    /// daemons). Keeping is not calling it: the dataset stays held and nothing is removed,
+    /// every cycle asking the replica for its listing again. Errors:
+    /// `org.quire.Accounts1.Error.NoFittingAccount` when the caller sees no such dataset;
+    /// `org.quire.Sync1.Error.NothingHeld` when nothing is held (never, or already confirmed).
+    fn confirm_discard(&self, dataset: &str) -> zbus::Result<()>;
     /// Transfer progress.
     #[zbus(signal)]
     fn progress(&self, dataset: &str, progress: Details) -> zbus::Result<()>;
@@ -37,6 +47,11 @@ pub trait Sync {
     /// `remote_version`, `remote_id`, `base` and `at`.
     #[zbus(signal)]
     fn conflict(&self, dataset: &str, conflict: Details) -> zbus::Result<()>;
+    /// A hold started or ended. The details are those of `Status`'s `needs_confirmation` key
+    /// (`discard` and `held`, both `t`) when the dataset is now held, and empty when the hold
+    /// ended (confirmed and done, or the replica listed its items again).
+    #[zbus(signal)]
+    fn needs_confirmation(&self, dataset: &str, held: Details) -> zbus::Result<()>;
 }
 
 /// The daemon's side.
@@ -77,6 +92,20 @@ impl SyncSkeleton {
         Err(crate::introspect::frozen())
     }
 
+    /// Lets one discard through for `dataset` (`<account>/<dataset>`) while it is held: the
+    /// replica's listing lacks all, or most, of what the dataset holds (`Status` carries
+    /// `needs_confirmation`, `NeedsConfirmation` announces it) and nothing was removed here. The
+    /// next cycle runs at once and removes those items; the hold is cleared when it ends.
+    /// Anyone who may pause the dataset may call it (its owning app, Settings, the porter
+    /// daemons). Keeping is not calling it: the dataset stays held and nothing is removed,
+    /// every cycle asking the replica for its listing again. Errors:
+    /// `org.quire.Accounts1.Error.NoFittingAccount` when the caller sees no such dataset;
+    /// `org.quire.Sync1.Error.NothingHeld` when nothing is held (never, or already confirmed).
+    fn confirm_discard(&self, dataset: String) -> fdo::Result<()> {
+        let _ = dataset;
+        Err(crate::introspect::frozen())
+    }
+
     #[zbus(signal)]
     async fn progress(
         emitter: &SignalEmitter<'_>,
@@ -89,5 +118,15 @@ impl SyncSkeleton {
         emitter: &SignalEmitter<'_>,
         dataset: &str,
         conflict: Details,
+    ) -> zbus::Result<()>;
+
+    /// A hold started or ended. The details are those of `Status`'s `needs_confirmation` key
+    /// (`discard` and `held`, both `t`) when the dataset is now held, and empty when the hold
+    /// ended (confirmed and done, or the replica listed its items again).
+    #[zbus(signal)]
+    async fn needs_confirmation(
+        emitter: &SignalEmitter<'_>,
+        dataset: &str,
+        held: Details,
     ) -> zbus::Result<()>;
 }

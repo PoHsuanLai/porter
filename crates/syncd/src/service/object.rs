@@ -2,8 +2,8 @@
 
 use super::errors::RefusedError;
 use super::hub::{DatasetName, Event, Hub};
-use super::resolve::{ConflictNumber, How, SettleError};
-use super::status::{conflict_details, progress_details, status_details};
+use super::resolve::{ConfirmError, ConflictNumber, How, SettleError};
+use super::status::{conflict_details, held_details, progress_details, status_details};
 use crate::scheduler::Pausing;
 use porter_core::wire::Refusal;
 use porter_dbus::{Caller, Callers, Details, SYNC_BUS, SYNC_PATH};
@@ -97,6 +97,10 @@ impl<C: Callers> Core<C> {
                 let details = conflict_details(conflict);
                 SyncObject::<C>::conflict(&emitter, &dataset.to_string(), details).await
             }
+            Event::Held { dataset, held } => {
+                let details = held_details(held.as_ref());
+                SyncObject::<C>::needs_confirmation(&emitter, &dataset.to_string(), details).await
+            }
         }
     }
 }
@@ -176,6 +180,32 @@ impl<C: Callers> SyncObject<C> {
             })
     }
 
+    /// Lets one discard through for `dataset` (`<account>/<dataset>`) while it is held: the
+    /// replica's listing lacks all, or most, of what the dataset holds (`Status` carries
+    /// `needs_confirmation`, `NeedsConfirmation` announces it) and nothing was removed here. The
+    /// next cycle runs at once and removes those items; the hold is cleared when it ends.
+    /// Anyone who may pause the dataset may call it (its owning app, Settings, the porter
+    /// daemons). Keeping is not calling it: the dataset stays held and nothing is removed,
+    /// every cycle asking the replica for its listing again. Errors:
+    /// `org.quire.Accounts1.Error.NoFittingAccount` when the caller sees no such dataset;
+    /// `org.quire.Sync1.Error.NothingHeld` when nothing is held (never, or already confirmed).
+    async fn confirm_discard(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        dataset: String,
+    ) -> Result<(), RefusedError> {
+        let caller = self.0.identify(&header).await?;
+        let name = self.0.visible(&caller, &dataset)?;
+        self.0
+            .hub
+            .confirm_discard(&caller, &name)
+            .await
+            .map_err(|error| match error {
+                ConfirmError::NoSuchDataset => RefusedError::of(Refusal::NoFittingAccount),
+                ConfirmError::NothingHeld => RefusedError::nothing_held(),
+            })
+    }
+
     #[zbus(signal)]
     async fn progress(
         emitter: &SignalEmitter<'_>,
@@ -188,6 +218,16 @@ impl<C: Callers> SyncObject<C> {
         emitter: &SignalEmitter<'_>,
         dataset: &str,
         conflict: Details,
+    ) -> zbus::Result<()>;
+
+    /// A hold started or ended. The details are those of `Status`'s `needs_confirmation` key
+    /// (`discard` and `held`, both `t`) when the dataset is now held, and empty when the hold
+    /// ended (confirmed and done, or the replica listed its items again).
+    #[zbus(signal)]
+    async fn needs_confirmation(
+        emitter: &SignalEmitter<'_>,
+        dataset: &str,
+        held: Details,
     ) -> zbus::Result<()>;
 }
 

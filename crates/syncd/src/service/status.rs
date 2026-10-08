@@ -80,6 +80,20 @@ pub fn status_details(status: &StatusSnapshot) -> Details {
     details
 }
 
+/// What `NeedsConfirmation` carries: `{discard: t, held: t}` while held, empty when the hold
+/// ended.
+pub fn held_details(held: Option<&MassDelete>) -> Details {
+    let mut details = Details::new();
+    if let Some(held) = held {
+        let mut put = |key: &str, count: usize| {
+            details.extend(owned(Value::U64(count as u64)).map(|v| (key.to_owned(), v)));
+        };
+        put("discard", held.discard);
+        put("held", held.held);
+    }
+    details
+}
+
 /// What `Progress` carries for one finished cycle.
 pub fn progress_details(fetched: u64, uploaded: u64) -> Details {
     let json = json!({ "fetched": fetched, "uploaded": uploaded });
@@ -170,6 +184,17 @@ mod tests {
             held.try_clone().expect("clone").try_into().expect("a{sv}");
         assert_eq!(u64::try_from(&nested["discard"]).ok(), Some(30));
         assert_eq!(u64::try_from(&nested["held"]).ok(), Some(40));
+    }
+
+    #[test]
+    fn the_hold_signal_carries_the_counts_while_held_and_nothing_when_it_ends() {
+        let held = held_details(Some(&MassDelete {
+            discard: 30,
+            held: 40,
+        }));
+        assert_eq!(u64::try_from(&held["discard"]).ok(), Some(30));
+        assert_eq!(u64::try_from(&held["held"]).ok(), Some(40));
+        assert!(held_details(None).is_empty());
     }
 
     #[test]

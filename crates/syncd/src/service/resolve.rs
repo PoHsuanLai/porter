@@ -59,6 +59,22 @@ pub struct Settle {
     pub reply: oneshot::Sender<Result<(), SettleError>>,
 }
 
+/// Why a discard was not let through.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConfirmError {
+    /// There is no such dataset for the caller (as [`SettleError::NoSuchDataset`]).
+    NoSuchDataset,
+    /// Nothing is held for confirmation: it never was, or the discard was already confirmed.
+    NothingHeld,
+}
+
+/// One request to a dataset's driver: let the held discard through.
+#[derive(Debug)]
+pub struct Confirm {
+    /// Where the driver answers.
+    pub reply: oneshot::Sender<Result<(), ConfirmError>>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

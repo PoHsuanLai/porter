@@ -16,7 +16,15 @@
 //!   a dataset the caller cannot see answers `NoFittingAccount` as for the other methods, a
 //!   conflict unknown or already settled `org.quire.Sync1.Error.NoSuchConflict`, any other `how`
 //!   `InvalidArgs`. The dataset's driver settles it between cycles and runs the next soon.
-//! - `Progress` and `Conflict` go to the connections that called and may see the dataset, never
+//! - `ConfirmDiscard(dataset)` lets one discard through for a dataset held with
+//!   `needs_confirmation` in `Status`; whoever may pause the dataset may call it (the owning
+//!   app, Settings, the porter daemons); a dataset the caller cannot see answers
+//!   `NoFittingAccount`, one not held `org.quire.Sync1.Error.NothingHeld`. The driver takes the
+//!   request between cycles and runs the next at once. `NeedsConfirmation(dataset, held)` tells
+//!   when a hold starts (the same `{discard, held}` as `Status`) and when it ends (empty).
+//!   syncd writes no audit events (it has none for pause and resume either), so this is not
+//!   audited.
+//! - `Progress`, `Conflict` and `NeedsConfirmation` go to the connections that called and may see the dataset, never
 //!   broadcast; a connection that leaves the bus is forgotten.
 
 mod errors;
@@ -30,5 +38,5 @@ pub use errors::RefusedError;
 pub use hub::{Access, DatasetName, Event, Handle, Hub, Nudge, StatusSnapshot};
 pub use object::serve;
 pub use picker::{PickerDesk, Pickers, serve_picker};
-pub use resolve::{ConflictNumber, How, Settle, SettleError, UnknownHow};
-pub use status::{conflict_details, progress_details, status_details};
+pub use resolve::{Confirm, ConfirmError, ConflictNumber, How, Settle, SettleError, UnknownHow};
+pub use status::{conflict_details, held_details, progress_details, status_details};

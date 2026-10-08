@@ -2,7 +2,7 @@
 //! it, its latest status and its pause switch. An engine's driver holds a [`Handle`] and
 //! publishes; the `Sync1` object reads. Nothing here is async or does I/O.
 
-use super::resolve::{ConflictNumber, How, Settle, SettleError};
+use super::resolve::{Confirm, ConfirmError, ConflictNumber, How, Settle, SettleError};
 use crate::dataset::DatasetId;
 use crate::paths::AccountDir;
 use crate::scheduler::Pausing;
@@ -111,13 +111,22 @@ pub enum Event {
         /// The conflict.
         conflict: Box<StoredConflict>,
     },
+    /// A hold for the person's confirmation started (`Some`) or ended (`None`).
+    Held {
+        /// The dataset.
+        dataset: DatasetName,
+        /// What the replica's listing would discard, while it is held.
+        held: Option<MassDelete>,
+    },
 }
 
 impl Event {
     /// The dataset it is about.
     pub fn dataset(&self) -> &DatasetName {
         match self {
-            Event::Progress { dataset, .. } | Event::Conflict { dataset, .. } => dataset,
+            Event::Progress { dataset, .. }
+            | Event::Conflict { dataset, .. }
+            | Event::Held { dataset, .. } => dataset,
         }
     }
 }
@@ -128,6 +137,7 @@ struct Entry {
     status: StatusSnapshot,
     pausing: watch::Sender<Pausing>,
     settling: mpsc::Sender<Settle>,
+    confirming: mpsc::Sender<Confirm>,
     cycling: Cycling,
 }
 
@@ -141,6 +151,8 @@ pub enum Nudge {
     Pause,
     /// The owning app asked to settle a conflict.
     Settle(Settle),
+    /// A caller asked to let the held discard through.
+    Confirm(Confirm),
     /// The dataset was dropped from the hub.
     Dropped,
 }
@@ -196,6 +208,7 @@ impl Hub {
         let (pausing, watching) = watch::channel(Pausing::Running);
         let cycling = Cycling::default();
         let (settling, settles) = mpsc::channel(SETTLES_QUEUED);
+        let (confirming, confirms) = mpsc::channel(SETTLES_QUEUED);
         self.datasets().insert(
             name.clone(),
             Entry {
@@ -203,6 +216,7 @@ impl Hub {
                 status: StatusSnapshot::default(),
                 pausing,
                 settling,
+                confirming,
                 cycling: cycling.clone(),
             },
         );
@@ -211,8 +225,37 @@ impl Hub {
             name,
             pausing: watching,
             settles,
+            confirms,
             cycling,
         }
+    }
+
+    /// Lets the discard held for `name` through, for `caller` (whoever may pause it, as
+    /// [`Hub::set_pausing`]): the dataset's driver takes the request between cycles. A dataset
+    /// the caller may not see is [`ConfirmError::NoSuchDataset`], as a missing one is; one not
+    /// held is [`ConfirmError::NothingHeld`].
+    pub async fn confirm_discard(
+        &self,
+        caller: &Caller,
+        name: &DatasetName,
+    ) -> Result<(), ConfirmError> {
+        let queue = {
+            let datasets = self.datasets();
+            let entry = datasets
+                .get(name)
+                .filter(|entry| entry.access.admits(caller))
+                .ok_or(ConfirmError::NoSuchDataset)?;
+            if entry.status.needs_confirmation.is_none() {
+                return Err(ConfirmError::NothingHeld);
+            }
+            entry.confirming.clone()
+        };
+        let (reply, answer) = oneshot::channel();
+        queue
+            .send(Confirm { reply })
+            .await
+            .map_err(|_| ConfirmError::NoSuchDataset)?;
+        answer.await.unwrap_or(Err(ConfirmError::NoSuchDataset))
     }
 
     /// Settles conflict `number` of `name` for `caller`, as the dataset's driver does between
@@ -358,6 +401,7 @@ pub struct Handle {
     name: DatasetName,
     pausing: watch::Receiver<Pausing>,
     settles: mpsc::Receiver<Settle>,
+    confirms: mpsc::Receiver<Confirm>,
     cycling: Cycling,
 }
 
@@ -390,7 +434,8 @@ impl Handle {
         self.pausing.changed().await.is_ok()
     }
 
-    /// Waits for the pause switch to change or for a request to settle a conflict.
+    /// Waits for the pause switch to change or for a request to settle a conflict or to confirm
+    /// a held discard.
     pub async fn nudged(&mut self) -> Nudge {
         tokio::select! {
             changed = self.pausing.changed() => match changed {
@@ -401,7 +446,16 @@ impl Handle {
                 Some(request) => Nudge::Settle(request),
                 None => Nudge::Dropped,
             },
+            request = self.confirms.recv() => match request {
+                Some(request) => Nudge::Confirm(request),
+                None => Nudge::Dropped,
+            },
         }
+    }
+
+    /// A request to confirm a held discard that is already waiting.
+    pub fn confirm_waiting(&mut self) -> Option<Confirm> {
+        self.confirms.try_recv().ok()
     }
 
     /// A request to settle a conflict that is already waiting.

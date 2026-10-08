@@ -34,6 +34,9 @@ pub const SYNC_ERROR_PREFIX: &str = "org.quire.Sync1.Error.";
 /// `Sync1.Resolve` on a conflict that is not there: never stored, or already settled
 /// (`org.quire.Sync1.Error.NoSuchConflict`).
 pub const SYNC_ERROR_NO_SUCH_CONFLICT: &str = "org.quire.Sync1.Error.NoSuchConflict";
+/// `Sync1.ConfirmDiscard` on a dataset that is not held for confirmation: it never was, or the
+/// discard was already confirmed (`org.quire.Sync1.Error.NothingHeld`).
+pub const SYNC_ERROR_NOTHING_HELD: &str = "org.quire.Sync1.Error.NothingHeld";
 
 /// inferd's bus name.
 pub const INFERENCE_BUS: &str = "org.quire.Inference1";

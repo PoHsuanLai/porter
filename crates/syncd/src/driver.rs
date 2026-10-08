@@ -8,7 +8,9 @@ use crate::clock::Clock;
 use crate::dataset::Dataset;
 use crate::engine::{Engine, Outcome, Report, SyncError};
 use crate::scheduler::{Inputs, Jitter, Last, Network, PushSignal, Settings, Wake, next_wake};
-use crate::service::{Event, Handle, Nudge, Settle, SettleError, StatusSnapshot};
+use crate::service::{
+    Confirm, ConfirmError, Event, Handle, Nudge, Settle, SettleError, StatusSnapshot,
+};
 use porter_sync::{MassDelete, Quota, Replica, StoredConflict};
 use std::sync::Arc;
 use std::time::Duration;
@@ -43,6 +45,8 @@ pub struct Driver<R, D, K> {
     quota: Option<Quota>,
     /// What the last cycle held back for the person's confirmation, if it did.
     held: Option<MassDelete>,
+    /// The person let the held discard through and no cycle has run since.
+    confirmed: bool,
 }
 
 impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
@@ -67,6 +71,7 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
             waiting: PushSignal::Quiet,
             quota: None,
             held: None,
+            confirmed: false,
         }
     }
 
@@ -75,6 +80,9 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
         while self.handle.is_registered() {
             while let Some(request) = self.handle.settle_waiting() {
                 self.settle(request);
+            }
+            while let Some(request) = self.handle.confirm_waiting() {
+                self.confirm(request);
             }
             let now = self.engine_now();
             let inputs = Inputs {
@@ -145,8 +153,10 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
         tokio::select! {
             () = sleep => return Slept::Through,
             nudge = self.handle.nudged() => {
-                if let Nudge::Settle(request) = nudge {
-                    self.settle(request);
+                match nudge {
+                    Nudge::Settle(request) => self.settle(request),
+                    Nudge::Confirm(request) => self.confirm(request),
+                    Nudge::Pause | Nudge::Dropped => {}
                 }
             }
             _ = self.network.changed() => {}
@@ -176,6 +186,22 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
         let _ = reply.send(answer);
     }
 
+    /// Lets the held discard through (the engine is this driver's alone) and has the next cycle
+    /// run at once to do it. Nothing held, or already confirmed, is refused.
+    fn confirm(&mut self, request: Confirm) {
+        let answer = match (self.held, self.confirmed) {
+            (Some(_), false) => {
+                self.engine.confirm_mass_delete();
+                self.confirmed = true;
+                self.last = Last::Never;
+                Ok(())
+            }
+            _ => Err(ConfirmError::NothingHeld),
+        };
+        // The caller may have gone: nothing to tell then.
+        let _ = request.reply.send(answer);
+    }
+
     async fn cycle(&mut self) {
         let result = self.engine.sync_once().await;
         let now = self.engine_now();
@@ -183,10 +209,19 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
         self.last = self.next_last(&result, now);
         if let Ok(report) = &result {
             self.quota = report.quota.or(self.quota);
+            let before = self.held;
             self.held = match report.outcome {
                 Outcome::NeedsConfirmation(held) => Some(held),
                 _ => None,
             };
+            // The listing the person confirmed has been acted on (or the server healed).
+            self.confirmed = false;
+            if self.held != before {
+                self.handle.tell(Event::Held {
+                    dataset: self.handle.name().clone(),
+                    held: self.held,
+                });
+            }
             self.announce(report);
         }
         self.publish(now);

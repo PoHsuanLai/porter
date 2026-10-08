@@ -7,7 +7,7 @@
 use porter_core::wire::Refusal;
 use porter_dbus::{
     PICKER_ERROR_NO_SUCH_SESSION, PICKER_ERROR_NOT_YET, SYNC_ERROR_NO_SUCH_CONFLICT,
-    refusal_error_name,
+    SYNC_ERROR_NOTHING_HELD, refusal_error_name,
 };
 use zbus::DBusError;
 use zbus::fdo;
@@ -51,6 +51,14 @@ impl RefusedError {
         Self {
             name: ErrorName::from_static_str_unchecked(SYNC_ERROR_NO_SUCH_CONFLICT),
             text: "no such conflict, or it is already settled".to_owned(),
+        }
+    }
+
+    /// `ConfirmDiscard` on a dataset that is not held: `org.quire.Sync1.Error.NothingHeld`.
+    pub fn nothing_held() -> Self {
+        Self {
+            name: ErrorName::from_static_str_unchecked(SYNC_ERROR_NOTHING_HELD),
+            text: "nothing is held for confirmation".to_owned(),
         }
     }
 

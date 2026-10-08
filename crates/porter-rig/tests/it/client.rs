@@ -218,7 +218,7 @@ async fn rig() -> Rig {
                         .push((request.number.0, format!("{:?}", request.how.0)));
                     let _ = request.reply.send(Ok(()));
                 }
-                Nudge::Pause => {}
+                Nudge::Pause | Nudge::Confirm(_) => {}
                 Nudge::Dropped => break,
             }
         }
