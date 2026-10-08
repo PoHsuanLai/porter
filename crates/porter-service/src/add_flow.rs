@@ -6,7 +6,7 @@
 //! While the person is in the browser (or reading a code) the loop polls the sign-in and
 //! listens to the sheet at the same time, so closing the sheet ends the wait at once.
 
-use crate::agent_login::program_of_spec;
+use crate::agent_login::{Roster, program_of_spec};
 use crate::audit::AuditSink;
 use crate::clock::Clock;
 use crate::race::{Raced, race};
@@ -111,10 +111,25 @@ fn signable(spec: &ProviderSpec) -> bool {
 }
 
 /// Whether the add list shows `provider` now: one a person can sign in to, and whose sign-in
-/// can start (an OAuth issuer with a client for this build). Asked each time a sheet opens, so a
-/// client set in Settings shows its row at the next one.
-fn listed<P: Provider>(provider: &P) -> bool {
-    signable(provider.spec()) && provider.readiness() == Readiness::Ready
+/// can start (an OAuth issuer with a client for this build; an agent whose program has a
+/// launcher, when the host keeps a roster). Asked each time a sheet opens, so a client set in
+/// Settings, or a launcher that registers, shows its row at the next one.
+fn listed<P: Provider>(provider: &P, roster: Option<&Roster>) -> bool {
+    signable(provider.spec())
+        && provider.readiness() == Readiness::Ready
+        && !launcherless(provider.spec(), roster)
+}
+
+/// An agent provider whose program no launcher has registered for, by a roster the host keeps:
+/// only the agent signs itself in, and with no launcher there is nobody to ask it.
+fn launcherless(spec: &ProviderSpec, roster: Option<&Roster>) -> bool {
+    match roster {
+        Some(roster) => {
+            spec.auth.kind == AuthKind::AgentLogin
+                && program_of_spec(spec).is_some_and(|program| !roster.has(&program))
+        }
+        None => false,
+    }
 }
 
 /// Providers whose file stays loaded (an account made from it still signs in again) but that the
@@ -210,7 +225,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         let rows = ordered(
             self.providers
                 .iter()
-                .filter(|provider| listed(*provider))
+                .filter(|provider| listed(*provider, self.roster.get()))
                 .map(|provider| provider.spec().sheet_row())
                 .collect(),
         );
@@ -219,7 +234,12 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                 if let ProviderHint::Provider(id) = hint
                     && !rows.iter().any(|row| row.id == *id)
                 {
-                    return Err(Refusal::Unavailable);
+                    // An agent asked for by name that has no launcher is told so.
+                    let agent = self.provider_of(id).map(Provider::spec);
+                    return Err(match agent {
+                        Some(spec) if launcherless(spec, self.roster.get()) => Refusal::NoLauncher,
+                        _ => Refusal::Unavailable,
+                    });
                 }
                 Purpose::Add {
                     hint: hint.clone(),
@@ -333,12 +353,11 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                     return None;
                 };
                 // An agent signs itself in through its launcher: with none for its program there
-                // is nobody to do it, and no account is made to wait for one.
+                // is nobody to do it, and no account is made to wait for one. The list leaves
+                // such an agent out; this is for a launcher that left after the list was drawn.
                 if matches!(job, Job::Add { .. })
-                    && let Some(roster) = self.roster.get()
                     && let Some(spec) = self.provider_of(id).map(Provider::spec)
-                    && spec.auth.kind == AuthKind::AgentLogin
-                    && program_of_spec(spec).is_some_and(|program| !roster.has(&program))
+                    && launcherless(spec, self.roster.get())
                 {
                     return Some(SheetEvent::SignIn(Progress::Failed(
                         SignInFault::NoLauncher,

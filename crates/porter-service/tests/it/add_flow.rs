@@ -618,6 +618,18 @@ async fn a_failed_sign_in_ends_with_the_refusal_the_fault_means() {
 
 /// An agent that signs itself in (Claude Code), with a sign-in that would review and finish.
 fn agent_service(script: &Script, launchers: &'static [&'static str]) -> (Service, Kept) {
+    agent_service_with(
+        script,
+        vec![typist(), typist()],
+        porter_service::Roster::new(move |program| launchers.contains(&program.as_str())),
+    )
+}
+
+fn agent_service_with(
+    script: &Script,
+    people: Vec<Reactor>,
+    roster: porter_service::Roster,
+) -> (Service, Kept) {
     let spec = parse_provider(include_str!("../../../../providers/claude-code.toml"))
         .expect("the shipped file");
     let agent = ScriptedProvider {
@@ -625,22 +637,80 @@ fn agent_service(script: &Script, launchers: &'static [&'static str]) -> (Servic
         script: script.clone(),
         refuses_to_start: false,
     };
-    let (service, kept) = service_over(
-        vec![agent],
-        Registry::default(),
-        Shared::default(),
-        vec![typist(), typist()],
-    );
-    service.set_launcher_roster(porter_service::Roster::new(move |program| {
-        launchers.contains(&program.as_str())
-    }));
+    let (service, kept) = service_over(vec![agent], Registry::default(), Shared::default(), people);
+    service.set_launcher_roster(roster);
     (service, kept)
 }
 
+/// ux-4: an agent whose program has no launcher is not on the add list, a request naming it is
+/// told there is no launcher, and its row is there at the next sheet once a launcher registers.
 #[tokio::test]
-async fn adding_an_agent_with_no_launcher_ends_no_launcher_and_stores_nothing() {
+async fn an_agent_with_no_launcher_is_not_listed_until_one_registers() {
     let script = Script::answering(vec![review("claude"), SignInStep::Done(signed("claude"))]);
-    let (service, kept) = agent_service(&script, &["codex"]);
+    let registered = Arc::new(Mutex::new(Vec::<String>::new()));
+    let roster = {
+        let registered = Arc::clone(&registered);
+        porter_service::Roster::new(move |program| {
+            registered
+                .lock()
+                .expect("roster")
+                .iter()
+                .any(|p| p == program.as_str())
+        })
+    };
+    let lists = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let counts: Reactor = {
+        let lists = Arc::clone(&lists);
+        Arc::new(move |view| match view {
+            SheetView::Providers(rows) => {
+                lists.lock().expect("lists").push(rows.len());
+                Some(SheetInput::Dismiss)
+            }
+            _ => None,
+        })
+    };
+    let (service, kept) = agent_service_with(&script, vec![Arc::clone(&counts), typist()], roster);
+    let caller = app("org.quire.Mail");
+    assert_eq!(
+        added(&service, &caller).await,
+        AccountsReply::Refused(Refusal::Dismissed)
+    );
+    assert_eq!(*lists.lock().expect("lists"), [0], "no agent row");
+    let by_name = AccountsRequest::AddAccount {
+        hint: ProviderHint::Provider(ProviderId::parse("claude-code").expect("id")),
+        window: ParentWindow::Unparented,
+    };
+    assert_eq!(
+        service.handle(&caller, by_name).await,
+        AccountsReply::Refused(Refusal::NoLauncher)
+    );
+    assert_eq!(script.told(), Vec::<&str>::new(), "the sign-in never began");
+    registered
+        .lock()
+        .expect("roster")
+        .push("claude-code".into());
+    kept.shown.lock().expect("shown").clear();
+    let reply = added(&service, &caller).await;
+    assert!(matches!(reply, AccountsReply::Added(_)), "{reply:?}");
+    assert_eq!(kinds(&kept.shown).first(), Some(&"providers"));
+}
+
+/// A launcher that leaves after the list was drawn: the pick ends `NoLauncher` and nothing is
+/// stored.
+#[tokio::test]
+async fn adding_an_agent_whose_launcher_left_ends_no_launcher_and_stores_nothing() {
+    let script = Script::answering(vec![review("claude"), SignInStep::Done(signed("claude"))]);
+    // Registered when the list is drawn, gone when the pick starts the sign-in.
+    let asked = Arc::new(Mutex::new(0usize));
+    let roster = {
+        let asked = Arc::clone(&asked);
+        porter_service::Roster::new(move |_| {
+            let mut asked = asked.lock().expect("asked");
+            *asked += 1;
+            *asked == 1
+        })
+    };
+    let (service, kept) = agent_service_with(&script, vec![typist()], roster);
     assert_eq!(
         added(&service, &app("org.quire.Mail")).await,
         AccountsReply::Refused(Refusal::NoLauncher)
