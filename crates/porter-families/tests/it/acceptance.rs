@@ -375,35 +375,44 @@ async fn a_service_the_person_turns_off_is_absent_and_remembered() {
 }
 
 #[tokio::test]
-async fn adding_the_same_account_twice_makes_two_accounts_with_their_own_ids() {
-    let nextcloud = nextcloud().await;
-    let (service, _kept) = service(
+async fn adding_the_same_login_twice_is_refused_and_another_server_is_another_account() {
+    let (here, there) = (nextcloud().await, nextcloud().await);
+    let (service, kept) = service(
         vec![provider()],
         TestSheets::new(
-            vec![adding(nextcloud.base_url()), adding(nextcloud.base_url())],
+            vec![
+                adding(here.base_url()),
+                adding(here.base_url()),
+                adding(there.base_url()),
+            ],
             consent(vec![]),
         ),
     );
-    let mut ids = Vec::new();
-    for _ in 0..2 {
-        ids.push(added(
-            service
-                .handle(
-                    &app("org.quire.Photos"),
-                    AccountsRequest::AddAccount {
-                        hint: ProviderHint::Any,
-                        window: ParentWindow::Unparented,
-                    },
-                )
-                .await,
-        ));
-    }
-    assert_eq!(
-        ids.iter()
-            .map(|id| id.as_str().to_owned())
-            .collect::<Vec<_>>(),
-        [expected_id(&nextcloud, ""), expected_id(&nextcloud, "-2")]
-    );
+    let add = || async {
+        service
+            .handle(
+                &app("org.quire.Photos"),
+                AccountsRequest::AddAccount {
+                    hint: ProviderHint::Any,
+                    window: ParentWindow::Unparented,
+                },
+            )
+            .await
+    };
+    let first = added(add().await);
+    assert_eq!(first.as_str(), expected_id(&here, ""));
+    let stored = service.registry().accounts;
+    let password = kept.secrets.password(&first).await;
+
+    // The same login at the same server: the sheet ends, nothing is stored or replaced.
+    assert_eq!(add().await, AccountsReply::Refused(Refusal::Unavailable));
+    assert_eq!(service.registry().accounts, stored);
+    assert_eq!(kept.secrets.password(&first).await, password);
+
+    // The same login name at another server is another account.
+    let other = added(add().await);
+    assert_eq!(other.as_str(), expected_id(&there, ""));
+    assert_eq!(service.registry().accounts.len(), 2);
 }
 
 #[tokio::test]
@@ -573,10 +582,12 @@ fn choose_as(files: &AppId) -> (AppId, AccountsRequest) {
 #[tokio::test]
 async fn add_account_on_the_alert_adds_and_allows_in_one_step_with_one_grant() {
     let nextcloud = nextcloud().await;
+    // The account added from the alert is another server's: the same login twice is refused.
+    let another = self::nextcloud().await;
     let (service, kept, first) = with_account(
         &nextcloud,
         consent(vec![Scripted::AddAccount]),
-        vec![adding(nextcloud.base_url()), adding(nextcloud.base_url())],
+        vec![adding(nextcloud.base_url()), adding(another.base_url())],
     )
     .await;
     let (files, request) = choose_as(&app("org.quire.Files"));

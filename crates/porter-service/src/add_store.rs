@@ -72,16 +72,16 @@ fn logins(endpoints: &[porter_core::ServiceEndpoint]) -> HashSet<&LoginName> {
     endpoints.iter().map(|e| &e.login).collect()
 }
 
-/// The servers an account's endpoints are at.
-fn hosts(endpoints: &[porter_core::ServiceEndpoint]) -> HashSet<String> {
-    endpoints.iter().map(|e| e.url.origin().host).collect()
+/// The servers an account's endpoints are at (scheme, host and port).
+fn servers(endpoints: &[porter_core::ServiceEndpoint]) -> HashSet<porter_core::Origin> {
+    endpoints.iter().map(|e| e.url.origin()).collect()
 }
 
 /// Whether `held` and `new` are the same login at the same servers. An account with no login
 /// (an API key, an agent) is never the same as another: two keys of one provider are two accounts.
 fn same_login(held: &[porter_core::ServiceEndpoint], new: &[porter_core::ServiceEndpoint]) -> bool {
     let (held_logins, new_logins) = (logins(held), logins(new));
-    !new_logins.is_empty() && held_logins == new_logins && hosts(held) == hosts(new)
+    !new_logins.is_empty() && held_logins == new_logins && servers(held) == servers(new)
 }
 
 impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSink>
