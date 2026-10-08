@@ -10,7 +10,7 @@ pub struct VocabVersion(pub u16);
 
 impl VocabVersion {
     /// The version this build speaks.
-    pub const CURRENT: VocabVersion = VocabVersion(10);
+    pub const CURRENT: VocabVersion = VocabVersion(11);
 }
 
 /// A capability's kind without its parameters: the unit of consent, toggles and limits.

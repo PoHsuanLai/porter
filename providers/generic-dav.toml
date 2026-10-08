@@ -4,6 +4,7 @@
 id = "generic-dav"
 label = "Calendar and contacts (DAV)"
 mark = "dav"
+group = "internet"
 
 [auth]
 kind = "password"

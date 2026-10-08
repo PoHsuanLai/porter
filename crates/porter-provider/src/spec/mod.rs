@@ -12,7 +12,7 @@ pub use linked::{AuthOrigin, LinkedOrigin};
 pub use matching::{DomainMatch, DomainName, Matching};
 
 use porter_core::AuthKind;
-use porter_core::sheet::{MarkFace, ProviderKind, ProviderRow, RowKind};
+use porter_core::sheet::{MarkFace, ProviderGroup, ProviderKind, ProviderRow, RowKind};
 use porter_core::{Billing, Capability, Family, Locality, ProviderId};
 use serde::{Deserialize, Serialize};
 
@@ -31,6 +31,11 @@ pub struct ProviderSpec {
     /// string key.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mark_face: Option<MarkFace>,
+    /// The group of the Accounts page it is listed under: `group = "internet"`, `"intelligence"`
+    /// or `"agent"`, top level in the file. Every shipped file names one; a file that does not
+    /// is placed by [`ProviderGroup::fallback`] (read it through [`ProviderSpec::group`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<ProviderGroup>,
     /// How its accounts sign in.
     pub auth: AuthSpec,
     /// How an account's servers and capabilities are found.
@@ -94,6 +99,19 @@ pub struct AiSpec {
 }
 
 impl ProviderSpec {
+    /// The group it is listed under: the file's, else the one decided from its sign-in and
+    /// services.
+    pub fn group(&self) -> ProviderGroup {
+        self.group.unwrap_or_else(|| {
+            let kinds: Vec<_> = self
+                .capabilities
+                .iter()
+                .map(|r| r.capability.kind())
+                .collect();
+            ProviderGroup::fallback(self.auth.kind, &kinds)
+        })
+    }
+
     /// The row the sheet's provider list shows for this provider.
     pub fn sheet_row(&self) -> ProviderRow {
         ProviderRow {
@@ -109,6 +127,7 @@ impl ProviderSpec {
                 _ => ProviderKind::Service,
             },
             mark_face: self.mark_face.clone(),
+            group: Some(self.group()),
         }
     }
 }

@@ -2,6 +2,7 @@
 //! `ds-shell::accounts` props in one small table-tested file.
 
 use super::fields::{FieldKind, FieldSpec};
+use super::group::ProviderGroup;
 use super::mark::MarkFace;
 use super::progress::{Review, SignInFault, UserCode};
 use crate::app_id::{AppId, AppLabel};
@@ -32,6 +33,10 @@ pub struct ProviderRow {
     /// out when the file has none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mark_face: Option<MarkFace>,
+    /// The part of the Accounts page the provider's accounts are listed under, and so the part
+    /// of the add list it is in. Left out when unknown (a row written by an older build).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<ProviderGroup>,
 }
 
 /// Who signs a provider's account in.

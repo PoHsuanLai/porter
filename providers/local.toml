@@ -6,6 +6,7 @@
 id = "local"
 label = "On this computer"
 mark = "local"
+group = "intelligence"
 
 [auth]
 kind = "local_runtime"

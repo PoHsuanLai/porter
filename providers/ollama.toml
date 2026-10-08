@@ -3,6 +3,7 @@
 id = "ollama"
 label = "Ollama"
 mark = "ollama"
+group = "intelligence"
 
 [mark_face]
 letter = "Ol"

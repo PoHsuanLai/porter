@@ -5,6 +5,7 @@
 id = "icloud"
 label = "iCloud"
 mark = "icloud"
+group = "internet"
 
 [auth]
 kind = "app_password"

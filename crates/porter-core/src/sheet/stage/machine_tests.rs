@@ -42,6 +42,7 @@ fn rows() -> Vec<ProviderRow> {
             },
             auth: ProviderKind::Service,
             mark_face: None,
+            group: None,
         })
         .collect()
 }

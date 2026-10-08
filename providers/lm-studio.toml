@@ -5,6 +5,7 @@
 id = "lm-studio"
 label = "LM Studio"
 mark = "lm-studio"
+group = "intelligence"
 
 [mark_face]
 letter = "LM"

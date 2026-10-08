@@ -6,6 +6,7 @@
 id = "acp-agent"
 label = "Other ACP agent"
 mark = "agent"
+group = "agent"
 
 [mark_face]
 letter = "A"

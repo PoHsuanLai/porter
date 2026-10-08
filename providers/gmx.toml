@@ -4,6 +4,7 @@
 id = "gmx"
 label = "GMX"
 mark = "gmx"
+group = "internet"
 
 [mark_face]
 letter = "G"

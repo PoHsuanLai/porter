@@ -6,6 +6,7 @@
 id = "generic-jmap"
 label = "Email (JMAP)"
 mark = "mail"
+group = "internet"
 
 [auth]
 kind = "password"

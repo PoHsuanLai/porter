@@ -9,6 +9,7 @@
 //! flows outward.
 
 mod fields;
+mod group;
 mod input;
 mod manual;
 mod mark;
@@ -17,6 +18,7 @@ mod stage;
 mod view;
 
 pub use fields::{Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence, first_missing};
+pub use group::ProviderGroup;
 pub use input::SheetInput;
 pub use manual::{
     Hop, JmapServer, MailServers, Manual, Protocol, Security, form_problem, manual_form,

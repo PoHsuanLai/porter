@@ -6,6 +6,7 @@
 id = "codex"
 label = "Codex"
 mark = "openai"
+group = "agent"
 
 [mark_face]
 letter = "Cx"

@@ -4,6 +4,7 @@
 id = "generic-imap"
 label = "Email (IMAP)"
 mark = "mail"
+group = "internet"
 
 [auth]
 kind = "password"

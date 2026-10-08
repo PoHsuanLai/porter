@@ -19,9 +19,9 @@ use porter_core::need::{
 };
 use porter_core::sheet::{
     Entry, FieldAnswer, FieldKind, FieldProblem, FieldSpec, FieldValue, MarkColour, MarkFace,
-    MarkLetter, Presence, ProblemKind, Progress, ProviderKind, ProviderRow, Review, ReviewView,
-    RowKind, ServiceChoice, ServiceRow, ServiceState, SheetInput, SheetView, SignInFault,
-    SignInView, UserCode,
+    MarkLetter, Presence, ProblemKind, Progress, ProviderGroup, ProviderKind, ProviderRow, Review,
+    ReviewView, RowKind, ServiceChoice, ServiceRow, ServiceState, SheetInput, SheetView,
+    SignInFault, SignInView, UserCode,
 };
 use porter_core::store::{AccountToggle, Persisted};
 use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
@@ -638,8 +638,51 @@ fn json<T: Serialize>(value: &T) -> String {
 }
 
 #[test]
-fn the_vocabulary_is_version_ten() {
-    assert_eq!(VocabVersion::CURRENT, VocabVersion(10));
+fn the_vocabulary_is_version_eleven() {
+    assert_eq!(VocabVersion::CURRENT, VocabVersion(11));
+}
+
+#[test]
+fn a_provider_row_names_its_group_only_when_it_has_one_and_an_old_row_reads_as_none() {
+    let mut row = ProviderRow {
+        id: ProviderId::parse("openai").expect("provider"),
+        label: "OpenAI".into(),
+        mark: "openai".into(),
+        kind: RowKind::Provider,
+        auth: ProviderKind::Service,
+        mark_face: None,
+        group: None,
+    };
+    assert!(!json(&row).contains("group"), "{}", json(&row));
+    assert_eq!(
+        serde_json::from_str::<ProviderRow>(&json(&row)).expect("row"),
+        row
+    );
+    // What the build before `group` wrote.
+    let old =
+        r#"{"id":"openai","label":"OpenAI","mark":"openai","kind":"provider","auth":"service"}"#;
+    assert_eq!(
+        serde_json::from_str::<ProviderRow>(old).expect("old").group,
+        None
+    );
+    for (group, slug) in [
+        (ProviderGroup::Internet, "internet"),
+        (ProviderGroup::Intelligence, "intelligence"),
+        (ProviderGroup::Agent, "agent"),
+    ] {
+        row.group = Some(group);
+        assert!(
+            json(&row).contains(&format!(r#""group":"{slug}""#)),
+            "{}",
+            json(&row)
+        );
+        assert_eq!(
+            serde_json::from_str::<ProviderRow>(&json(&row)).expect("row"),
+            row
+        );
+    }
+    let bad = r#"{"id":"openai","label":"OpenAI","mark":"openai","group":"cloud"}"#;
+    assert!(serde_json::from_str::<ProviderRow>(bad).is_err());
 }
 
 #[test]
@@ -651,6 +694,7 @@ fn a_provider_row_names_its_face_only_when_it_has_one_and_an_old_row_reads_as_no
         kind: RowKind::Provider,
         auth: ProviderKind::Service,
         mark_face: None,
+        group: None,
     };
     assert!(!json(&row).contains("mark_face"), "{}", json(&row));
     assert_eq!(
@@ -908,6 +952,7 @@ fn every_sheet_view_round_trips() {
         kind: RowKind::Provider,
         auth: ProviderKind::Service,
         mark_face: None,
+        group: Some(ProviderGroup::Internet),
     });
     let views = vec![
         SheetView::Consent(ConsentAsk {
@@ -933,6 +978,7 @@ fn every_sheet_view_round_trips() {
                 letter: MarkLetter::parse("Cx").expect("letter"),
                 colour: MarkColour::parse("#10a37f").expect("colour"),
             }),
+            group: Some(ProviderGroup::Agent),
         }]),
         SheetView::SignIn(SignInView {
             provider: nextcloud.clone(),

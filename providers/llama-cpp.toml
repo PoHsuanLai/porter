@@ -5,6 +5,7 @@
 id = "llama-cpp"
 label = "llama.cpp"
 mark = "llama-cpp"
+group = "intelligence"
 
 [mark_face]
 letter = "L"

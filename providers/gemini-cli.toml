@@ -6,6 +6,7 @@
 id = "gemini-cli"
 label = "Gemini CLI"
 mark = "gemini"
+group = "agent"
 
 [mark_face]
 letter = "G"

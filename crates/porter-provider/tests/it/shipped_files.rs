@@ -538,6 +538,48 @@ fn the_shipped_files_carry_the_agreed_faces_and_the_named_mark_providers_carry_n
 }
 
 #[test]
+fn every_shipped_file_names_its_group_and_it_is_the_expected_one() {
+    use porter_core::sheet::ProviderGroup::{Agent, Intelligence, Internet};
+    let expected = [
+        ("acp-agent", Agent),
+        ("claude-code", Agent),
+        ("codex", Agent),
+        ("gemini-cli", Agent),
+        ("anthropic", Intelligence),
+        ("google-ai", Intelligence),
+        ("llama-cpp", Intelligence),
+        ("lm-studio", Intelligence),
+        ("local", Intelligence),
+        ("moonshot", Intelligence),
+        ("ollama", Intelligence),
+        ("openai", Intelligence),
+        ("openrouter", Intelligence),
+        ("fastmail", Internet),
+        ("generic-dav", Internet),
+        ("generic-imap", Internet),
+        ("generic-jmap", Internet),
+        ("gmx", Internet),
+        ("google", Internet),
+        ("icloud", Internet),
+        ("microsoft", Internet),
+        ("nextcloud", Internet),
+        ("yahoo", Internet),
+    ];
+    let files = shipped();
+    assert_eq!(expected.len(), files.len());
+    for (path, spec) in &files {
+        let want = expected
+            .iter()
+            .find(|(id, _)| *id == spec.id.as_str())
+            .unwrap_or_else(|| panic!("{} is not in the table", spec.id))
+            .1;
+        // Named in the file itself, not only decided by the fallback.
+        assert_eq!(spec.group, Some(want), "{}", path.display());
+        assert_eq!(spec.sheet_row().group, Some(want), "{}", path.display());
+    }
+}
+
+#[test]
 fn the_sheet_rows_of_the_shipped_files_carry_their_face() {
     let rows: Vec<_> = shipped().iter().map(|(_, spec)| spec.sheet_row()).collect();
     let row = |id: &str| rows.iter().find(|r| r.id.as_str() == id).expect(id);

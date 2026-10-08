@@ -6,6 +6,7 @@
 id = "fastmail"
 label = "Fastmail"
 mark = "fastmail"
+group = "internet"
 
 [auth]
 kind = "app_password"

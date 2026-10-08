@@ -5,6 +5,7 @@
 id = "microsoft"
 label = "Microsoft"
 mark = "microsoft"
+group = "internet"
 
 [auth]
 kind = "oauth_pkce"

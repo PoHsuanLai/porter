@@ -12,6 +12,7 @@
 id = "google"
 label = "Google"
 mark = "google"
+group = "internet"
 
 [auth]
 kind = "oauth_pkce"

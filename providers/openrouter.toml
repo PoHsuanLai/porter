@@ -9,6 +9,7 @@
 id = "openrouter"
 label = "OpenRouter"
 mark = "openrouter"
+group = "intelligence"
 
 [mark_face]
 letter = "OR"

@@ -350,6 +350,78 @@ fn a_bad_or_half_written_mark_face_refuses_the_file_and_names_the_field() {
     }
 }
 
+fn with_group(word: &str, text: String) -> String {
+    text.replace(
+        "mark = \"example\"\n",
+        &format!("mark = \"example\"\ngroup = \"{word}\"\n"),
+    )
+}
+
+#[test]
+fn a_group_word_in_the_file_gives_the_spec_and_the_row_that_group() {
+    use porter_core::sheet::ProviderGroup;
+    let plain = || file(r#"kind = "password""#, r#"kind = "fixed""#, &[STORAGE_ROW]);
+    for (word, group) in [
+        ("internet", ProviderGroup::Internet),
+        ("intelligence", ProviderGroup::Intelligence),
+        ("agent", ProviderGroup::Agent),
+    ] {
+        let spec = parse_provider(&with_group(word, plain())).expect("parses");
+        assert_eq!(spec.group, Some(group), "{word}");
+        assert_eq!(spec.group(), group, "{word}");
+        assert_eq!(spec.sheet_row().group, Some(group), "{word}");
+    }
+    assert!(matches!(
+        parse_provider(&with_group("cloud", plain())),
+        Err(ProviderFileError::Syntax(message)) if message.contains("group") || message.contains("cloud")
+    ));
+}
+
+#[test]
+fn a_file_without_a_group_gets_one_from_its_sign_in_and_its_services() {
+    use porter_core::sheet::ProviderGroup;
+    let agent_login = file(r#"kind = "agent_login""#, r#"kind = "fixed""#, &[AGENT_ROW]);
+    let key_ai = file(
+        r#"kind = "api_key""#,
+        r#"kind = "model_list""#,
+        &[AI, LLM_ROW],
+    );
+    let runtime = file(
+        r#"kind = "local_runtime""#,
+        r#"kind = "supervised""#,
+        &[AI, LLM_ROW],
+    );
+    let mail_or_files = file(r#"kind = "password""#, r#"kind = "fixed""#, &[STORAGE_ROW]);
+    let table = [
+        (
+            "an agent that signs itself in",
+            agent_login,
+            ProviderGroup::Agent,
+        ),
+        (
+            "an AI service with a key",
+            key_ai,
+            ProviderGroup::Intelligence,
+        ),
+        (
+            "a runtime on this computer",
+            runtime,
+            ProviderGroup::Intelligence,
+        ),
+        (
+            "files with a password",
+            mail_or_files,
+            ProviderGroup::Internet,
+        ),
+    ];
+    for (name, text, want) in table {
+        let spec = parse_provider(&text).unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert_eq!(spec.group, None, "{name}");
+        assert_eq!(spec.group(), want, "{name}");
+        assert_eq!(spec.sheet_row().group, Some(want), "{name}");
+    }
+}
+
 fn id() -> porter_core::ProviderId {
     porter_core::ProviderId::parse("example").expect("id")
 }

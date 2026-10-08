@@ -70,6 +70,7 @@ const MIGRATIONS: &[(VocabVersion, Migration)] = &[
     (VocabVersion(7), from_seven),
     (VocabVersion(8), from_eight),
     (VocabVersion(9), from_nine),
+    (VocabVersion(10), from_ten),
 ];
 
 /// 3 to 4 added the `sieve` family and changed the sheet's wire types; the stored document is
@@ -116,6 +117,12 @@ fn from_eight(document: Value) -> Result<Value, StoreFault> {
 /// `MarkColour`), all of the sheet's wire and none of the document: a document written at 9
 /// reads as it was, so only its version moves.
 fn from_nine(document: Value) -> Result<Value, StoreFault> {
+    Ok(document)
+}
+
+/// 10 to 11 added the defaulted `group` of `ProviderRow` (`ProviderGroup`), the sheet's wire and
+/// none of the document: a document written at 10 reads as it was, so only its version moves.
+fn from_ten(document: Value) -> Result<Value, StoreFault> {
     Ok(document)
 }
 

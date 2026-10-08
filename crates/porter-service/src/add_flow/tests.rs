@@ -9,6 +9,7 @@ fn row(id: &str, label: &str, kind: RowKind) -> ProviderRow {
         kind,
         auth: ProviderKind::Service,
         mark_face: None,
+        group: None,
     }
 }
 

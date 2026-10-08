@@ -8,6 +8,7 @@
 id = "claude-code"
 label = "Claude Code"
 mark = "anthropic"
+group = "agent"
 
 [mark_face]
 letter = "C"

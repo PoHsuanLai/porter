@@ -2,6 +2,7 @@
 id = "nextcloud"
 label = "Nextcloud"
 mark = "nextcloud"
+group = "internet"
 
 [mark_face]
 letter = "N"

@@ -17,6 +17,7 @@ fn rows() -> Vec<ProviderRow> {
         kind: crate::sheet::view::RowKind::Provider,
         auth: crate::sheet::view::ProviderKind::Service,
         mark_face: None,
+        group: None,
     }]
 }
 
@@ -217,6 +218,7 @@ fn every_view_of_an_agent_provider_carries_its_display_name_and_kind() {
         kind: crate::sheet::view::RowKind::Provider,
         auth: crate::sheet::view::ProviderKind::AgentLogin,
         mark_face: None,
+        group: None,
     };
     let sheet = Sheet {
         purpose: Purpose::Reauthenticate {

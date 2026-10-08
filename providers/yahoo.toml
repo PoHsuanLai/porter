@@ -5,6 +5,7 @@
 id = "yahoo"
 label = "Yahoo Mail"
 mark = "yahoo"
+group = "internet"
 
 [auth]
 kind = "app_password"
