@@ -100,7 +100,7 @@ EDGES=(
   "porter-oauth: porter-core porter-http porter-provider"
   "porter-discover: porter-core porter-http porter-provider"
   "porter-dav: porter-core porter-http"
-  "porter-families: porter-core porter-dav porter-discover porter-http porter-oauth porter-provider"
+  "porter-families: porter-core porter-dav porter-discover porter-http porter-oauth porter-provider porter-proxy"
   "accountd: ds-settings porter-core porter-dbus porter-discover porter-families porter-http porter-provider porter-proxy porter-secrets porter-service"
   "storage-webdav: porter-core porter-dav porter-http porter-sync"
   "storage-graph: porter-core porter-http porter-sync storage-webdav"

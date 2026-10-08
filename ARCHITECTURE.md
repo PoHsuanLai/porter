@@ -44,7 +44,7 @@ Allowed direct edges (checked by `scripts/check-boundary.sh`; dev-dependencies a
 | `porter-core` | nothing of ours |
 | `prov`, `porter-provider`, `porter-secrets`, `porter-sync`, `porter-dbus`, `porter-http`, `porter-proxy`, `porter-dav` (also `porter-http`) | `porter-core` |
 | `porter-oauth`, `porter-discover` | `porter-core`, `porter-http`, `porter-provider` |
-| `porter-families` | `porter-core`, `porter-provider`, `porter-http`, `porter-dav`, `porter-discover`, `porter-oauth` |
+| `porter-families` | `porter-core`, `porter-provider`, `porter-http`, `porter-dav`, `porter-discover`, `porter-oauth`, `porter-proxy` (feature `generic` only: the relay's own login tries a typed mail password before the account is added) |
 | `storage-graph` | `porter-core`, `porter-http`, `porter-sync`, `storage-webdav` (its `StreamHttp`, `Dial`, `Clock`), serde, serde_json, base64 (used by syncd only; no consumer repo) |
 | `storage-gdrive` | `porter-core`, `porter-http`, `porter-sync`, `storage-webdav` (its `StreamHttp`, `Dial`, `Clock`), serde, serde_json (used by syncd only; no consumer repo) |
 | `storage-webdav` | `porter-core`, `porter-dav`, `porter-http`, `porter-sync` (used by syncd only; no consumer repo) |
