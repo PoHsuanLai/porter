@@ -472,10 +472,10 @@ fn the_four_agent_files_make_agent_login_rows_named_by_their_labels() {
     assert_eq!(
         agents,
         [
-            ("acp-agent", "Other ACP agent"),
+            ("acp-agent", "Other assistant"),
             ("claude-code", "Claude Code"),
             ("codex", "Codex"),
-            ("gemini-cli", "Gemini CLI"),
+            ("gemini-cli", "Gemini assistant"),
         ]
         .map(|(id, label)| (id.to_owned(), label.to_owned()))
     );
@@ -576,6 +576,46 @@ fn every_shipped_file_names_its_group_and_it_is_the_expected_one() {
         // Named in the file itself, not only decided by the fallback.
         assert_eq!(spec.group, Some(want), "{}", path.display());
         assert_eq!(spec.sheet_row().group, Some(want), "{}", path.display());
+    }
+}
+
+#[test]
+fn no_shipped_provider_label_uses_a_developer_word() {
+    const JARGON: [&str; 17] = [
+        "acp", "mcp", "oauth", "pkce", "imap", "smtp", "pop", "pop3", "jmap", "dav", "caldav",
+        "carddav", "cli", "token", "endpoint", "relay", "scope",
+    ];
+    for (path, spec) in &shipped() {
+        let words: Vec<String> = spec
+            .label
+            .split(|c: char| !c.is_alphanumeric())
+            .map(str::to_lowercase)
+            .collect();
+        for word in JARGON {
+            assert!(
+                !words.iter().any(|w| w == word),
+                "{}: {:?} says {word}",
+                path.display(),
+                spec.label
+            );
+        }
+        assert!(
+            !words.iter().any(|w| w == "api" || w == "grant"),
+            "{:?}",
+            spec.label
+        );
+    }
+    let labels: std::collections::BTreeMap<_, _> = shipped()
+        .iter()
+        .map(|(_, spec)| (spec.id.as_str().to_owned(), spec.label.clone()))
+        .collect();
+    for (id, label) in [
+        ("acp-agent", "Other assistant"),
+        ("generic-imap", "Other email account"),
+        ("generic-dav", "Other calendar and contacts"),
+        ("generic-jmap", "Other email account (newer servers)"),
+    ] {
+        assert_eq!(labels[id], label, "{id}");
     }
 }
 

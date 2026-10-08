@@ -18,10 +18,19 @@ fn labels(rows: Vec<ProviderRow>) -> Vec<String> {
 }
 
 #[test]
+fn the_add_list_leaves_out_the_jmap_file_but_the_file_stays_loaded() {
+    let all = porter_provider::shipped_specs();
+    assert!(all.iter().any(|s| s.id.as_str() == "generic-jmap"));
+    let listed: Vec<_> = all.iter().filter(|s| signable(s)).collect();
+    assert!(listed.iter().all(|s| s.id.as_str() != "generic-jmap"));
+    assert!(listed.iter().any(|s| s.id.as_str() == "generic-imap"));
+}
+
+#[test]
 fn rows_are_ordered_by_label_not_id_with_the_generic_rows_last_and_mail_first_of_them() {
     // The order the provider files load in is by id: "acp-agent" first, "google-ai" before "google".
     let loaded = vec![
-        row("acp-agent", "Other ACP agent", RowKind::Provider),
+        row("acp-agent", "Other assistant", RowKind::Provider),
         row("anthropic", "Anthropic", RowKind::Provider),
         row(
             "generic-dav",
@@ -43,7 +52,7 @@ fn rows_are_ordered_by_label_not_id_with_the_generic_rows_last_and_mail_first_of
             "Google",
             "Google (Gemini)",
             "iCloud",
-            "Other ACP agent",
+            "Other assistant",
             "Other mail account",
             "Other calendar or contacts server",
             "Other JMAP server",

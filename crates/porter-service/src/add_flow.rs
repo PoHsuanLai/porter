@@ -106,7 +106,14 @@ pub(crate) fn ordered(mut rows: Vec<ProviderRow>) -> Vec<ProviderRow> {
 
 /// Providers a person can sign in to: not the ones with nothing to sign in.
 fn signable(spec: &ProviderSpec) -> bool {
-    !matches!(spec.auth.kind, AuthKind::None | AuthKind::LocalRuntime)
+    !matches!(spec.auth.kind, AuthKind::None | AuthKind::LocalRuntime) && !unlisted(spec)
+}
+
+/// Providers whose file stays loaded (an account made from it still signs in again) but that the
+/// add list no longer shows: "Other email account" reaches a JMAP server too, through the
+/// protocol choice of its typed-server form.
+fn unlisted(spec: &ProviderSpec) -> bool {
+    spec.id.as_str() == "generic-jmap"
 }
 
 /// The conversation's own state: the sign-in in flight and what it produced.

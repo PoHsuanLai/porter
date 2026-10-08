@@ -4,7 +4,7 @@
 # base URL, so no variable is declared and only the OpenAI-compatible protocol is assumed: a
 # person's own provider file can name a particular program with its real variables.
 id = "acp-agent"
-label = "Other ACP agent"
+label = "Other assistant"
 mark = "agent"
 group = "agent"
 

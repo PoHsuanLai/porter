@@ -4,7 +4,7 @@
 # by the launcher). Google AI Studio keys (google-ai.toml) name this program too. The program is
 # not known to take a base-URL variable, so none is declared (unverified: FINDINGS, P1).
 id = "gemini-cli"
-label = "Gemini CLI"
+label = "Gemini assistant"
 mark = "gemini"
 group = "agent"
 

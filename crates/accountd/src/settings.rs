@@ -161,7 +161,10 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
         let registry = self.0.host.registry();
         let parsed =
             parse(&key.0, &registry).ok_or_else(|| LiveError::UnknownKey(key.0.clone()))?;
-        let refused = |r: porter_core::wire::Refusal| failed(format!("refused: {r:?}"));
+        let refused = |r: porter_core::wire::Refusal| {
+            eprintln!("accountd: a Settings change was refused: {r:?}");
+            failed("That could not be done.")
+        };
         match parsed {
             Key::Service(id, kind) => {
                 let toggle = word(&value)
@@ -207,7 +210,7 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
             Key::Client(issuer) => {
                 let text = match &value {
                     toml::Value::String(text) => text.trim().to_owned(),
-                    _ => return Err(LiveError::BadValue("a client id is text".into())),
+                    _ => return Err(LiveError::BadValue("a sign-in key is text".into())),
                 };
                 self.write_client(issuer, &text)?;
             }
@@ -252,7 +255,10 @@ impl<H: Host, C: Callers> AccountsSettings<H, C> {
                 .host
                 .set_agent_state(id, porter_core::AgentState::NeedsLogin)
                 .await
-                .map_err(|fault| failed(format!("refused: {fault:?}")))?;
+                .map_err(|fault| {
+                    eprintln!("accountd: signing an assistant out was refused: {fault:?}");
+                    failed("That could not be done.")
+                })?;
             self.0
                 .announce_sign_out(id, SignOutNews::LoginUntouched)
                 .await;

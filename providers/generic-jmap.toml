@@ -4,7 +4,7 @@
 # domains are listed: Fastmail's address is claimed by `fastmail`, and this one takes the rest
 # once discovery finds a session.
 id = "generic-jmap"
-label = "Email (JMAP)"
+label = "Other email account (newer servers)"
 mark = "mail"
 group = "internet"
 

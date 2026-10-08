@@ -89,7 +89,7 @@ impl CapabilityKind {
             CapabilityKind::ComputerUse => "Operating windows",
             CapabilityKind::KeyValue => "Small synced items",
             CapabilityKind::Push => "Notifications",
-            CapabilityKind::Agent => "Coding agent",
+            CapabilityKind::Agent => "Assistant",
         }
     }
 }

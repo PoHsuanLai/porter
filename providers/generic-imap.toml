@@ -2,7 +2,7 @@
 # and MX (design/31 §3.2). No domains are listed: a provider that knows an address (Fastmail,
 # iCloud) claims it first, and this one takes the rest.
 id = "generic-imap"
-label = "Email (IMAP)"
+label = "Other email account"
 mark = "mail"
 group = "internet"
 

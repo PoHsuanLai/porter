@@ -73,6 +73,15 @@ fn slug<T: serde::Serialize>(value: &T) -> String {
         .unwrap_or_default()
 }
 
+/// `word` with its first letter in capitals ("microsoft" -> "Microsoft").
+fn sentence_case(word: &str) -> String {
+    let mut chars = word.chars();
+    chars
+        .next()
+        .map(|first| first.to_uppercase().chain(chars).collect())
+        .unwrap_or_default()
+}
+
 fn from_slug<T: serde::de::DeserializeOwned>(text: &str) -> Option<T> {
     serde_json::from_value(serde_json::Value::String(text.to_owned())).ok()
 }
@@ -462,7 +471,7 @@ fn account_keys(
             &Key::SignOut(id.clone()),
             section,
             "Sign out".to_owned(),
-            "Asks the agent to sign itself out when its launcher is running; otherwise it only forgets here that it was signed in, and the agent's own login is not touched.",
+            "Asks the assistant to sign itself out when it is running; otherwise it only forgets here that it was signed in, and the assistant's own login is not touched.",
             action("Sign out", ActionWeight::Plain),
             off(),
         ),
@@ -511,8 +520,8 @@ pub(crate) fn schema(
         spec(
             &Key::Client(*issuer),
             "Sign-in clients",
-            format!("{} client id", slug(issuer)),
-            "Bring your own OAuth client id; empty uses the one this build ships.",
+            format!("{} sign-in key", sentence_case(&slug(issuer))),
+            "A sign-in key from your own Google or Microsoft developer account. Leave it empty to use the one built in.",
             KeyKind::Text,
             toml::Value::String(String::new()),
         )
@@ -761,7 +770,7 @@ mod tests {
             (ComputerUse, "Operating windows"),
             (KeyValue, "Small synced items"),
             (Push, "Notifications"),
-            (Agent, "Coding agent"),
+            (Agent, "Assistant"),
         ];
         for (kind, words) in table {
             assert_eq!(service_label(&kind), words, "{kind:?}");
@@ -944,6 +953,39 @@ mod tests {
             assert_eq!(path(&key), text);
         }
         assert_eq!(parse(&base, &registry), Some(Key::Grant(id, g1)));
+    }
+
+    #[test]
+    fn no_label_or_help_a_person_reads_uses_a_developer_word() {
+        const JARGON: [&str; 17] = [
+            "acp", "mcp", "oauth", "pkce", "imap", "smtp", "pop", "jmap", "dav", "caldav",
+            "carddav", "api", "cli", "token", "endpoint", "relay", "scope",
+        ];
+        let mut agent = storage_account();
+        agent.auth = AuthKind::AgentLogin;
+        let mut registry = registry();
+        registry.accounts.push(agent);
+        let schema = schema(&registry, &AppNames::default(), &ProviderNames::default());
+        for key in &schema.key {
+            let mut texts = vec![key.label.0.clone(), key.help.0.clone()];
+            texts.extend(key.labels.0.values().cloned());
+            for text in texts {
+                let lower = text.to_lowercase();
+                for word in lower.split(|c: char| !c.is_alphanumeric()) {
+                    assert!(!JARGON.contains(&word), "{}: {text:?}", key.path.0);
+                }
+            }
+        }
+        let client = schema
+            .key
+            .iter()
+            .find(|k| k.path.0 == "accounts.clients.microsoft")
+            .expect("client row");
+        assert_eq!(client.label.0, "Microsoft sign-in key");
+        assert_eq!(
+            client.help.0,
+            "A sign-in key from your own Google or Microsoft developer account. Leave it empty to use the one built in."
+        );
     }
 
     #[test]

@@ -2,7 +2,7 @@
 # by `.well-known` (design/31 §3.2). Files are not offered here: a generic WebDAV root has no
 # discovery that tells a files tree from a calendar home.
 id = "generic-dav"
-label = "Calendar and contacts (DAV)"
+label = "Other calendar and contacts"
 mark = "dav"
 group = "internet"
 
