@@ -1,6 +1,11 @@
 //! What a finished sign-in becomes: the account row, its secrets, its toggles, its audit line
 //! and, for "Add, and allow", its first grant. Each store is all or nothing: a secret that
 //! cannot be filed or a registry that cannot be written leaves nothing behind.
+//!
+//! The row is added only once its secrets are filed (the id is reserved meanwhile), and nothing
+//! is awaited between adding it and its grant. An add that is dropped midway (the caller went
+//! away) therefore leaves either no row, or a whole account; at worst some secrets filed under
+//! an id no account has, which nothing reads and a later account of that id overwrites.
 
 use crate::add_flow::AllowFor;
 use crate::audit::AuditSink;
@@ -21,10 +26,17 @@ use porter_core::{
 use porter_provider::{Provider, ProviderSpec, SignInStep, Signed};
 use porter_secrets::Secrets;
 use std::collections::HashSet;
+use std::sync::{Mutex, MutexGuard};
 
-/// An account id for `label` at `provider` that no account in `registry` has: the provider's id
-/// and the label as a slug, with a number after it when that is taken.
-pub(crate) fn fresh_id(registry: &Registry, provider: &ProviderId, label: &str) -> AccountId {
+/// An account id for `label` at `provider` that no account in `registry` has and no add in
+/// flight has reserved: the provider's id and the label as a slug, with a number after it when
+/// that is taken.
+pub(crate) fn fresh_id(
+    registry: &Registry,
+    reserved: &HashSet<AccountId>,
+    provider: &ProviderId,
+    label: &str,
+) -> AccountId {
     let slug: String = label
         .to_ascii_lowercase()
         .chars()
@@ -37,7 +49,8 @@ pub(crate) fn fresh_id(registry: &Registry, provider: &ProviderId, label: &str) 
         .filter(|part| !part.is_empty())
         .collect::<Vec<_>>()
         .join("-");
-    let taken = |id: &AccountId| registry.accounts.iter().any(|a| a.id == *id);
+    let taken =
+        |id: &AccountId| reserved.contains(id) || registry.accounts.iter().any(|a| a.id == *id);
     let stem = match slug.is_empty() {
         true => provider.to_string(),
         false => format!("{provider}-{slug}"),
@@ -92,9 +105,32 @@ fn duplicate(held: &Account, provider: &ProviderId, new: &[porter_core::ServiceE
         && (held.auth == AuthKind::AgentLogin || same_login(&held.endpoints, new))
 }
 
+/// An account id an add has chosen and is filing secrets under. Dropping it (the add finished,
+/// failed, or was cancelled) frees the id: by then the row holds it, or nothing does.
+struct Reservation<'a> {
+    held: &'a Mutex<HashSet<AccountId>>,
+    id: AccountId,
+}
+
+impl Drop for Reservation<'_> {
+    fn drop(&mut self) {
+        // A plain set update that cannot panic midway.
+        self.held
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(&self.id);
+    }
+}
+
 impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSink>
     AccountService<P, S, U, K, R, A>
 {
+    fn reserved_ids(&self) -> MutexGuard<'_, HashSet<AccountId>> {
+        self.reserved
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     /// Whether the sign-in's `step` shows an account that `provider` already has: the same login at
     /// the same servers, or the same agent. Only the review and the finished sign-in show one.
     pub(crate) fn already_added(&self, provider: &ProviderId, step: &SignInStep) -> bool {
@@ -130,8 +166,10 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                 toggle: Toggle::Off,
             })
             .collect();
-        let account = {
-            let mut registry = self.lock();
+        // The id is chosen and reserved first, the secrets are filed under it, and only then
+        // does the row appear: a drop at an await leaves no row without its secrets.
+        let reservation = {
+            let registry = self.lock();
             // The sheet stops a second add of one login at the review; a second sheet that got
             // here first is the same thing, caught where the registry is written.
             if registry
@@ -141,35 +179,58 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             {
                 return Err(());
             }
-            let id = fresh_id(&registry, &spec.id, &signed.label.0);
-            let account = Account {
+            let mut reserved = self.reserved_ids();
+            let id = fresh_id(&registry, &reserved, &spec.id, &signed.label.0);
+            reserved.insert(id.clone());
+            Reservation {
+                held: &self.reserved,
                 id,
-                provider: spec.id.clone(),
-                label: signed.label.clone(),
-                state: first_state(spec.auth.kind),
-                auth: spec.auth.kind,
-                capabilities: effective(&signed.claims, &off),
-                restriction: signed.restriction.clone(),
-                endpoints: signed.endpoints.clone(),
-            };
-            registry.accounts.push(account.clone());
-            registry.toggles.extend(off.iter().map(|t| AccountToggle {
-                account: account.id.clone(),
-                kind: t.kind,
-                toggle: t.toggle,
-            }));
-            account
+            }
         };
         for (purpose, credential) in &signed.credentials {
             let key = SecretKey {
-                account: account.id.clone(),
+                account: reservation.id.clone(),
                 purpose: *purpose,
             };
             if self.secrets.put(&key, credential).await.is_err() {
-                self.undo_add(&account.id).await;
+                // Nothing more can be done for a secret that cannot be deleted.
+                let _ = self.secrets.delete_account(&reservation.id).await;
                 return Err(());
             }
         }
+        let pushed = {
+            let mut registry = self.lock();
+            if registry
+                .accounts
+                .iter()
+                .any(|a| duplicate(a, &spec.id, &signed.endpoints))
+            {
+                None
+            } else {
+                let account = Account {
+                    id: reservation.id.clone(),
+                    provider: spec.id.clone(),
+                    label: signed.label.clone(),
+                    state: first_state(spec.auth.kind),
+                    auth: spec.auth.kind,
+                    capabilities: effective(&signed.claims, &off),
+                    restriction: signed.restriction.clone(),
+                    endpoints: signed.endpoints.clone(),
+                };
+                registry.accounts.push(account.clone());
+                registry.toggles.extend(off.iter().map(|t| AccountToggle {
+                    account: account.id.clone(),
+                    kind: t.kind,
+                    toggle: t.toggle,
+                }));
+                Some(account)
+            }
+        };
+        // Another add of the same login finished while the secrets were being filed.
+        let Some(account) = pushed else {
+            let _ = self.secrets.delete_account(&reservation.id).await;
+            return Err(());
+        };
         let granted = allow.and_then(|ask| self.grant_first(caller, &account.id, ask));
         if self.persist().await.is_err() {
             self.undo_add(&account.id).await;

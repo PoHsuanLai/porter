@@ -1251,3 +1251,131 @@ async fn a_provider_that_cannot_revoke_never_stops_the_removal() {
     service.remove_account(&key.account).await.expect("removed");
     assert_eq!(script.revoked.lock().expect("revoked").len(), before);
 }
+
+// ---- an add or a wipe that is dropped midway (rel-4) ----
+
+/// What the secret store does at the call that matters.
+#[derive(Debug, Clone, Copy)]
+enum Trouble {
+    /// The second `put` never returns (the caller gives up while it waits).
+    SecondPutStalls,
+    /// `delete_account` never returns.
+    DeleteStalls,
+    /// `delete_account` fails.
+    DeleteFails,
+}
+
+#[derive(Debug)]
+struct Troubled(Shared, Trouble, Mutex<usize>);
+
+impl Troubled {
+    fn new(trouble: Trouble) -> Self {
+        Self(Shared::default(), trouble, Mutex::new(0))
+    }
+}
+
+impl Secrets for Troubled {
+    async fn put(&self, key: &SecretKey, value: &Credential) -> Result<(), SecretsError> {
+        let nth = {
+            let mut count = self.2.lock().expect("count");
+            *count += 1;
+            *count
+        };
+        if matches!(self.1, Trouble::SecondPutStalls) && nth == 2 {
+            std::future::pending::<()>().await;
+        }
+        self.0.put(key, value).await
+    }
+    async fn get(&self, key: &SecretKey) -> Result<Credential, SecretsError> {
+        self.0.get(key).await
+    }
+    async fn delete(&self, key: &SecretKey) -> Result<(), SecretsError> {
+        self.0.delete(key).await
+    }
+    async fn delete_account(&self, account: &AccountId) -> Result<(), SecretsError> {
+        match self.1 {
+            Trouble::DeleteStalls => {
+                std::future::pending::<()>().await;
+                Ok(())
+            }
+            Trouble::DeleteFails => Err(SecretsError::Unavailable),
+            Trouble::SecondPutStalls => self.0.delete_account(account).await,
+        }
+    }
+}
+
+const PATIENCE: std::time::Duration = std::time::Duration::from_millis(200);
+
+/// Before the fix the row was pushed before the first secret was filed, so a drop at the second
+/// secret left a row (in memory, and so in the next save) whose credentials were half there.
+#[tokio::test]
+async fn an_add_dropped_while_filing_secrets_leaves_no_row_and_no_save() {
+    let script = Script::answering(vec![ask(), review("ada"), SignInStep::Done(signed("ada"))]);
+    let (service, kept) = service_over(
+        vec![provider(&script)],
+        Registry::default(),
+        Troubled::new(Trouble::SecondPutStalls),
+        vec![typist()],
+    );
+    let dropped =
+        tokio::time::timeout(PATIENCE, added_over(&service, &app("org.quire.Mail"))).await;
+    assert!(dropped.is_err(), "the add was still waiting for its secret");
+    assert!(service.registry().accounts.is_empty());
+    assert!(service.registry().toggles.is_empty());
+    assert_eq!(kept.store.saves(), 0);
+    assert_eq!(kept.audit.entries(), vec![]);
+}
+
+async fn added_over<S: Secrets>(service: &Service<S>, caller: &AppId) -> AccountsReply {
+    service.handle(caller, add_request()).await
+}
+
+/// Before the fix the secrets were deleted first and the rows after, so a drop between left an
+/// account that was listed and could not sign in.
+#[tokio::test]
+async fn a_wipe_dropped_while_deleting_secrets_leaves_no_account_without_credentials() {
+    let mail = app("org.quire.Mail");
+    let account = held_account("ada", AccountState::Ok);
+    let registry = Registry {
+        grants: vec![grant_to(&mail, &account)],
+        accounts: vec![account],
+        toggles: vec![],
+    };
+    let (service, _kept) = service_over(
+        vec![provider(&Script::default())],
+        registry,
+        Troubled::new(Trouble::DeleteStalls),
+        vec![],
+    );
+    let id = AccountId::parse("scripted-ada").expect("id");
+    let dropped = tokio::time::timeout(PATIENCE, service.remove_account(&id)).await;
+    assert!(dropped.is_err(), "the wipe was still waiting");
+    let left = service.registry();
+    assert!(left.accounts.is_empty(), "{:?}", left.accounts);
+    assert!(left.grants.is_empty());
+}
+
+/// The old promise kept: secrets that cannot be deleted leave the account exactly as it was.
+#[tokio::test]
+async fn a_wipe_whose_secrets_cannot_be_deleted_keeps_the_account_and_its_grants() {
+    let mail = app("org.quire.Mail");
+    let account = held_account("ada", AccountState::Ok);
+    let registry = Registry {
+        grants: vec![grant_to(&mail, &account)],
+        accounts: vec![account],
+        toggles: vec![],
+    };
+    let (service, kept) = service_over(
+        vec![provider(&Script::default())],
+        registry.clone(),
+        Troubled::new(Trouble::DeleteFails),
+        vec![],
+    );
+    let id = AccountId::parse("scripted-ada").expect("id");
+    assert_eq!(
+        service.remove_account(&id).await,
+        Err(SecretsError::Unavailable)
+    );
+    assert_eq!(service.registry(), registry);
+    assert_eq!(kept.audit.entries(), vec![]);
+}

@@ -20,6 +20,7 @@ use porter_provider::{
     Presented, Provider, ProviderError, ProviderSession, ProviderSet, ProviderSpec,
 };
 use porter_secrets::{Secrets, SecretsError};
+use std::collections::HashSet;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 /// accountd's core over its seams. The store and the audit sink default to none: the registry
@@ -34,6 +35,9 @@ pub struct AccountService<P, S, U, K, R = NoStore, A = NoAudit> {
     pub(crate) store: R,
     pub(crate) audit: A,
     pub(crate) registry: Mutex<Registry>,
+    /// Account ids an add has chosen and is still filing secrets for: not in the registry yet
+    /// (the row is added only once its secrets are stored), and taken all the same.
+    pub(crate) reserved: Mutex<HashSet<AccountId>>,
     /// Which agent programs have a launcher, once the host says (accountd, when it serves).
     pub(crate) roster: OnceLock<Roster>,
 }
@@ -52,6 +56,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock> AccountService<P, S, U, K> {
             store: NoStore,
             audit: NoAudit,
             registry: Mutex::new(registry),
+            reserved: Mutex::new(HashSet::new()),
             roster: OnceLock::new(),
         }
     }
@@ -69,6 +74,7 @@ impl<P, S, U, K, R, A> AccountService<P, S, U, K, R, A> {
             store,
             audit: self.audit,
             registry: self.registry,
+            reserved: self.reserved,
             roster: self.roster,
         }
     }
@@ -84,6 +90,7 @@ impl<P, S, U, K, R, A> AccountService<P, S, U, K, R, A> {
             store: self.store,
             audit,
             registry: self.registry,
+            reserved: self.reserved,
             roster: self.roster,
         }
     }
@@ -254,12 +261,31 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
 
     /// The wipe of `remove_account`: secrets, grants, toggles, the registry row, one audit line.
     pub(crate) async fn wipe_account(&self, id: &AccountId) -> Result<(), SecretsError> {
-        self.secrets.delete_account(id).await?;
-        {
+        // The rows go first, in one step with no await, and come back if the secrets cannot be
+        // deleted. A wipe dropped while it awaits the secrets therefore leaves no account
+        // without its credentials; at worst credentials with no account, which nothing reads.
+        let (accounts, grants, toggles) = {
             let mut registry = self.lock();
-            registry.accounts.retain(|a| a.id != *id);
-            registry.grants.retain(|g| g.key.account != *id);
-            registry.toggles.retain(|t| t.account != *id);
+            let (gone, kept) = std::mem::take(&mut registry.accounts)
+                .into_iter()
+                .partition(|a| a.id == *id);
+            registry.accounts = kept;
+            let (dropped, kept) = std::mem::take(&mut registry.grants)
+                .into_iter()
+                .partition(|g| g.key.account == *id);
+            registry.grants = kept;
+            let (off, kept) = std::mem::take(&mut registry.toggles)
+                .into_iter()
+                .partition(|t| t.account == *id);
+            registry.toggles = kept;
+            (gone, dropped, off)
+        };
+        if let Err(why) = self.secrets.delete_account(id).await {
+            let mut registry = self.lock();
+            registry.accounts.extend(accounts);
+            registry.grants.extend(grants);
+            registry.toggles.extend(toggles);
+            return Err(why);
         }
         self.note(None, Some(id.clone()), AuditEvent::Removed);
         // The in-memory registry is already without the account; a store that cannot be
