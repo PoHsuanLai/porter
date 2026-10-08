@@ -15,8 +15,8 @@ use crate::sheets::{SheetFault, SheetLink, SheetOpen, Sheets};
 use crate::store::RegistryStore;
 use porter_core::consent::Usage;
 use porter_core::sheet::{
-    Progress, Purpose, Sheet, SheetEffect, SheetEnd, SheetEvent, SignInFault, SignInInput, Stage,
-    step,
+    Progress, ProviderRow, Purpose, RowKind, Sheet, SheetEffect, SheetEnd, SheetEvent, SignInFault,
+    SignInInput, Stage, step,
 };
 use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
 use porter_core::{
@@ -87,6 +87,21 @@ pub(crate) fn refusal_of(fault: SignInFault) -> Refusal {
         | SignInFault::AlreadyAdded
         | SignInFault::StoreFailed => Refusal::Unavailable,
     }
+}
+
+/// The provider list as the person reads it: the named providers by label (case does not count),
+/// then the generic "Other..." rows, mail first. The label is what is drawn, so it is what orders;
+/// the provider id (which sorted "Other ACP agent" before "Google") does not.
+pub(crate) fn ordered(mut rows: Vec<ProviderRow>) -> Vec<ProviderRow> {
+    rows.sort_by_cached_key(|row| {
+        (
+            row.kind == RowKind::Generic,
+            row.id.as_str() != "generic-imap",
+            row.label.to_lowercase(),
+            row.id.clone(),
+        )
+    });
+    rows
 }
 
 /// Providers a person can sign in to: not the ones with nothing to sign in.
@@ -177,13 +192,14 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         window: ParentWindow,
         job: &Job,
     ) -> Result<Stored, Refusal> {
-        let rows: Vec<_> = self
-            .providers
-            .iter()
-            .map(Provider::spec)
-            .filter(|spec| signable(spec))
-            .map(ProviderSpec::sheet_row)
-            .collect();
+        let rows = ordered(
+            self.providers
+                .iter()
+                .map(Provider::spec)
+                .filter(|spec| signable(spec))
+                .map(ProviderSpec::sheet_row)
+                .collect(),
+        );
         let purpose = match job {
             Job::Add { hint, allow } => {
                 if let ProviderHint::Provider(id) = hint
@@ -495,3 +511,6 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
