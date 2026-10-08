@@ -359,14 +359,9 @@ impl Launchers {
             clock,
             self.timing.tick,
         ));
-        let sent = self
-            .send(kind, &owner, &request, account, program)
-            .await
-            .is_ok();
-        if !sent {
-            held(&self.state).pending.remove(&request);
-            return Err(NoLauncher);
-        }
+        // The line is written before the signal leaves: once it has, the launcher may answer and
+        // its outcome be recorded at any moment, and the ask must come first in the log. A send
+        // that fails (accountd's own connection is gone) leaves the line and answers NoLauncher.
         if let Some(audit) = &self.timing.audit {
             let (request, program) = (request.clone(), program.clone());
             audit.record(AuditEntry {
@@ -378,6 +373,14 @@ impl Launchers {
                     Ask::Logout => AuditEvent::AgentLogoutAsked { request, program },
                 },
             });
+        }
+        let sent = self
+            .send(kind, &owner, &request, account, program)
+            .await
+            .is_ok();
+        if !sent {
+            held(&self.state).pending.remove(&request);
+            return Err(NoLauncher);
         }
         Ok(Box::pin(async move {
             waiting.await.unwrap_or(LoginEnd::LauncherGone)

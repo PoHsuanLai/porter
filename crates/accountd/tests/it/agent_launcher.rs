@@ -1032,3 +1032,69 @@ async fn settings_offers_sign_in_to_an_assistant_that_needs_one_and_it_asks_the_
     );
     assert!(!paths.contains(&"accounts.claude-code.reauth"), "{paths:?}");
 }
+
+/// An audit sink that notes, as each ask is recorded, whether the launcher had already heard it:
+/// it waits a little for word from a listener on the launcher's connection.
+struct Witness {
+    heard: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
+    /// For each ask recorded, in order: whether the launcher had heard it first.
+    heard_first: Arc<std::sync::Mutex<Vec<bool>>>,
+}
+
+impl porter_service::AuditSink for Witness {
+    fn record(&self, entry: porter_core::audit::AuditEntry) {
+        use porter_core::audit::AuditEvent;
+        if matches!(
+            entry.event,
+            AuditEvent::AgentLoginAsked { .. } | AuditEvent::AgentLogoutAsked { .. }
+        ) {
+            let heard = self
+                .heard
+                .lock()
+                .expect("lock")
+                .recv_timeout(Duration::from_millis(500))
+                .is_ok();
+            self.heard_first.lock().expect("lock").push(heard);
+        }
+    }
+}
+
+// The ask is in the log before the launcher can hear it, so nothing the launcher does in reply
+// (a report, the state it sets) comes before it in the log, and a reader who has seen the
+// request finds the line. Written after the signal, the launcher heard it first.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_request_is_recorded_before_the_launcher_hears_it() {
+    let (tell, heard) = std::sync::mpsc::channel();
+    let heard_first = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let options = Options {
+        login: LoginTiming {
+            clock: Some(Arc::new(TestClock::default())),
+            bound: Duration::from_secs(BOUND),
+            tick: Duration::from_millis(20),
+            audit: Some(Arc::new(Witness {
+                heard: std::sync::Mutex::new(heard),
+                heard_first: Arc::clone(&heard_first),
+            })),
+        },
+        ..Options::default()
+    };
+    let accounts = vec![agent_account("claude-code", AccountState::NeedsLogin)];
+    let rig = Rig::start_holding(options, SheetHost::quiet(), Vec::new(), accounts).await;
+    let mut launcher = Launcher::registered(&rig, "org.example.Launcher", &["claude-code"]).await;
+    // A second listener on the launcher's own connection says when the request arrives.
+    let mut arrivals = PeerProxy::new(&launcher._connection)
+        .await
+        .expect("proxy")
+        .receive_agent_login_requested()
+        .await
+        .expect("stream");
+    tokio::spawn(async move {
+        while next(&mut arrivals).await.is_some() {
+            let _ = tell.send(());
+        }
+    });
+    let shell = Shell::new(&rig, &claude_code()).await;
+    let _request = shell.ask().await;
+    let _ = launcher.login_request().await;
+    assert_eq!(*heard_first.lock().expect("lock"), [false]);
+}
