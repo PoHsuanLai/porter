@@ -80,6 +80,41 @@ async fn the_fake_model_echoes_the_last_text() {
     );
 }
 
+/// The broker body is not built: a request is refused (nothing panics) and no event is sent.
+#[tokio::test]
+async fn the_unbuilt_broker_refuses_instead_of_panicking() {
+    use porter_core::{AppId, AppName, Isolation};
+    use porter_infer::{Broker, InferRefusal, InferReply, InferRequest, Policy};
+    let broker: Broker<FakeModel> = Broker::new(Policy::proposed(), Vec::new(), Vec::new());
+    let app = AppId {
+        name: AppName::parse("org.quire.Mail").expect("name"),
+        isolation: Isolation::Unsandboxed,
+    };
+    let request = InferRequest::Chat(ChatRequest {
+        messages: vec![ChatMessage {
+            role: Role::User,
+            parts: vec![MessagePart::Text("hi".into())],
+        }],
+        shape: ReplyShape::Text,
+        tier: Tier::Fast,
+        class: DataClass::Public,
+        usage: Usage::Interactive,
+        tools: vec![],
+        control: ChatControl {
+            tool_choice: ToolChoice::Auto,
+            tool_calls: ToolParallelism::Many,
+            max_output: Knob::Off,
+            reasoning: Reasoning::EngineDefault,
+            sampling: Knob::Off,
+            stop: vec![],
+        },
+    });
+    let mut events = Collect::default();
+    let reply = broker.infer(&app, request, &mut events).await;
+    assert_eq!(reply, InferReply::Refused(InferRefusal::Unavailable));
+    assert!(events.0.is_empty());
+}
+
 #[derive(Default)]
 struct Collect(Vec<InferEvent>);
 

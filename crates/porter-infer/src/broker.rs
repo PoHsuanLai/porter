@@ -1,6 +1,7 @@
 //! The broker inferd runs: routes each request over its models by the policy, meters spend and
 //! writes the audit. Frozen shape; the body is not built yet.
 
+use crate::error::InferRefusal;
 use crate::model::{ChatSink, Model};
 use crate::policy::Policy;
 use crate::reply::InferReply;
@@ -40,6 +41,8 @@ impl<M: Model> Broker<M> {
         _sink: &mut impl ChatSink,
     ) -> InferReply {
         let _ = (&self.caps, &self.models);
-        todo!("route, run the chosen model, meter spend and audit")
+        // Not built: no model is chosen and nothing is run, metered or audited. inferd serves
+        // requests through its own pipeline, not through this type.
+        InferReply::Refused(InferRefusal::Unavailable)
     }
 }

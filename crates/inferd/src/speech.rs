@@ -89,8 +89,10 @@ impl SpeechRunner {
         request: &SpeakRequest,
         sink: &mut impl ChatSink,
     ) -> Result<SpeakReply, ModelError> {
+        // Not built (`TtsBackend` over speech_provider::TextToSpeech is the lane that fills
+        // it): the engine is not ready, and no audio is made.
         let _ = (request, sink, InferRefusal::Unsupported);
-        todo!("TtsBackend::speak over speech_provider::TextToSpeech; map chunks to AudioFrameOut")
+        Err(ModelError::NotReady)
     }
 }
 
