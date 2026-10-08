@@ -18,9 +18,10 @@ use porter_core::need::{
     MailNeed, NotesNeed, PhotosNeed, PimNeed, PushNeed, RerankNeed, SpeechNeed, StorageNeed,
 };
 use porter_core::sheet::{
-    Entry, FieldAnswer, FieldKind, FieldProblem, FieldSpec, FieldValue, Presence, ProblemKind,
-    Progress, ProviderKind, ProviderRow, Review, ReviewView, RowKind, ServiceChoice, ServiceRow,
-    ServiceState, SheetInput, SheetView, SignInFault, SignInView, UserCode,
+    Entry, FieldAnswer, FieldKind, FieldProblem, FieldSpec, FieldValue, MarkColour, MarkFace,
+    MarkLetter, Presence, ProblemKind, Progress, ProviderKind, ProviderRow, Review, ReviewView,
+    RowKind, ServiceChoice, ServiceRow, ServiceState, SheetInput, SheetView, SignInFault,
+    SignInView, UserCode,
 };
 use porter_core::store::{AccountToggle, Persisted};
 use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
@@ -637,8 +638,43 @@ fn json<T: Serialize>(value: &T) -> String {
 }
 
 #[test]
-fn the_vocabulary_is_version_nine() {
-    assert_eq!(VocabVersion::CURRENT, VocabVersion(9));
+fn the_vocabulary_is_version_ten() {
+    assert_eq!(VocabVersion::CURRENT, VocabVersion(10));
+}
+
+#[test]
+fn a_provider_row_names_its_face_only_when_it_has_one_and_an_old_row_reads_as_none() {
+    let mut row = ProviderRow {
+        id: ProviderId::parse("openai").expect("provider"),
+        label: "OpenAI".into(),
+        mark: "openai".into(),
+        kind: RowKind::Provider,
+        auth: ProviderKind::Service,
+        mark_face: None,
+    };
+    assert!(!json(&row).contains("mark_face"), "{}", json(&row));
+    assert_eq!(
+        serde_json::from_str::<ProviderRow>(&json(&row)).expect("row"),
+        row
+    );
+    let old =
+        r#"{"id":"openai","label":"OpenAI","mark":"openai","kind":"provider","auth":"service"}"#;
+    assert_eq!(serde_json::from_str::<ProviderRow>(old).expect("old"), row);
+    row.mark_face = Some(MarkFace {
+        letter: MarkLetter::parse("O").expect("letter"),
+        colour: MarkColour::parse("#10a37f").expect("colour"),
+    });
+    assert!(
+        json(&row).contains(r##""mark_face":{"letter":"O","colour":"#10A37F"}"##),
+        "{}",
+        json(&row)
+    );
+    assert_eq!(
+        serde_json::from_str::<ProviderRow>(&json(&row)).expect("row"),
+        row
+    );
+    let bad = r##"{"id":"openai","label":"OpenAI","mark":"openai","mark_face":{"letter":"OPE","colour":"#10A37F"}}"##;
+    assert!(serde_json::from_str::<ProviderRow>(bad).is_err());
 }
 
 #[test]
@@ -871,6 +907,7 @@ fn every_sheet_view_round_trips() {
         mark: "nextcloud".into(),
         kind: RowKind::Provider,
         auth: ProviderKind::Service,
+        mark_face: None,
     });
     let views = vec![
         SheetView::Consent(ConsentAsk {
@@ -892,6 +929,10 @@ fn every_sheet_view_round_trips() {
             mark: "nextcloud".into(),
             kind: RowKind::Provider,
             auth: ProviderKind::AgentLogin,
+            mark_face: Some(MarkFace {
+                letter: MarkLetter::parse("Cx").expect("letter"),
+                colour: MarkColour::parse("#10a37f").expect("colour"),
+            }),
         }]),
         SheetView::SignIn(SignInView {
             provider: nextcloud.clone(),

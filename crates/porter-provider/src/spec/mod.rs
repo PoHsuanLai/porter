@@ -12,7 +12,7 @@ pub use linked::{AuthOrigin, LinkedOrigin};
 pub use matching::{DomainMatch, DomainName, Matching};
 
 use porter_core::AuthKind;
-use porter_core::sheet::{ProviderKind, ProviderRow, RowKind};
+use porter_core::sheet::{MarkFace, ProviderKind, ProviderRow, RowKind};
 use porter_core::{Billing, Capability, Family, Locality, ProviderId};
 use serde::{Deserialize, Serialize};
 
@@ -25,6 +25,12 @@ pub struct ProviderSpec {
     pub label: String,
     /// The provider mark glyph's name (design/30 §2.11).
     pub mark: String,
+    /// The letter and colour of its mark, for the UI to draw when it has no named mark for the
+    /// provider. In the file this is the table `[mark_face]` (`letter`, `colour`; both
+    /// required): `[mark]` cannot be a table beside the word `mark = "..."`, which is a TOML
+    /// string key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mark_face: Option<MarkFace>,
     /// How its accounts sign in.
     pub auth: AuthSpec,
     /// How an account's servers and capabilities are found.
@@ -102,6 +108,7 @@ impl ProviderSpec {
                 AuthKind::AgentLogin => ProviderKind::AgentLogin,
                 _ => ProviderKind::Service,
             },
+            mark_face: self.mark_face.clone(),
         }
     }
 }

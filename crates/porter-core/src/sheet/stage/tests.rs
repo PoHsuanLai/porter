@@ -16,6 +16,7 @@ fn rows() -> Vec<ProviderRow> {
         mark: "nextcloud".into(),
         kind: crate::sheet::view::RowKind::Provider,
         auth: crate::sheet::view::ProviderKind::Service,
+        mark_face: None,
     }]
 }
 
@@ -215,6 +216,7 @@ fn every_view_of_an_agent_provider_carries_its_display_name_and_kind() {
         mark: "claude-code".into(),
         kind: crate::sheet::view::RowKind::Provider,
         auth: crate::sheet::view::ProviderKind::AgentLogin,
+        mark_face: None,
     };
     let sheet = Sheet {
         purpose: Purpose::Reauthenticate {

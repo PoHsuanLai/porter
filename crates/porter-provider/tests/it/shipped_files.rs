@@ -487,6 +487,71 @@ fn the_four_agent_files_make_agent_login_rows_named_by_their_labels() {
 }
 
 #[test]
+fn the_shipped_files_carry_the_agreed_faces_and_the_named_mark_providers_carry_none() {
+    let face = |id: &str| {
+        let spec = shipped()
+            .into_iter()
+            .map(|(_, spec)| spec)
+            .find(|spec| spec.id.as_str() == id)
+            .unwrap_or_else(|| panic!("{id}.toml ships"));
+        spec.mark_face
+            .map(|f| (f.letter.as_str().to_owned(), f.colour.as_str().to_owned()))
+    };
+    let given = [
+        ("anthropic", "A", "#D97757"),
+        ("claude-code", "C", "#D97757"),
+        ("openai", "O", "#10A37F"),
+        ("codex", "Cx", "#10A37F"),
+        ("google-ai", "G", "#8E75B2"),
+        ("gemini-cli", "G", "#8E75B2"),
+        ("gmx", "G", "#1C449B"),
+        ("moonshot", "K", "#16191E"),
+        ("nextcloud", "N", "#0082C9"),
+        ("openrouter", "OR", "#6467F2"),
+        ("ollama", "Ol", "#1F1F1F"),
+        ("lm-studio", "LM", "#4B3CC9"),
+        ("llama-cpp", "L", "#8A5A44"),
+        ("acp-agent", "A", "#5D6660"),
+    ];
+    for (id, letter, colour) in given {
+        assert_eq!(
+            face(id),
+            Some((letter.to_owned(), colour.to_owned())),
+            "{id}"
+        );
+    }
+    let none = [
+        "google",
+        "microsoft",
+        "fastmail",
+        "icloud",
+        "yahoo",
+        "generic-imap",
+        "generic-jmap",
+        "generic-dav",
+        "local",
+    ];
+    for id in none {
+        assert_eq!(face(id), None, "{id}");
+    }
+    assert_eq!(given.len() + none.len(), shipped().len());
+}
+
+#[test]
+fn the_sheet_rows_of_the_shipped_files_carry_their_face() {
+    let rows: Vec<_> = shipped().iter().map(|(_, spec)| spec.sheet_row()).collect();
+    let row = |id: &str| rows.iter().find(|r| r.id.as_str() == id).expect(id);
+    let codex = row("codex").mark_face.as_ref().expect("codex face");
+    assert_eq!(
+        (codex.letter.as_str(), codex.colour.as_str()),
+        ("Cx", "#10A37F")
+    );
+    assert_eq!(row("codex").mark, "openai");
+    assert_eq!(row("google").mark_face, None);
+    assert_eq!(rows.iter().filter(|r| r.mark_face.is_some()).count(), 14);
+}
+
+#[test]
 fn only_googles_picker_row_lists_an_authenticated_origin_and_it_is_one_exact_host() {
     let listed: Vec<(String, String, Vec<String>)> = shipped()
         .iter()

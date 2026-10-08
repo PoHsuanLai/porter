@@ -8,6 +8,7 @@ fn row(id: &str, label: &str, kind: RowKind) -> ProviderRow {
         mark: "generic".to_owned(),
         kind,
         auth: ProviderKind::Service,
+        mark_face: None,
     }
 }
 

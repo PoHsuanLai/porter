@@ -10,6 +10,10 @@ id = "openrouter"
 label = "OpenRouter"
 mark = "openrouter"
 
+[mark_face]
+letter = "OR"
+colour = "#6467F2"
+
 [auth]
 kind = "api_key"
 

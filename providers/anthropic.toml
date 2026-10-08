@@ -8,6 +8,10 @@ id = "anthropic"
 label = "Anthropic (Claude)"
 mark = "anthropic"
 
+[mark_face]
+letter = "A"
+colour = "#D97757"
+
 [auth]
 kind = "api_key"
 

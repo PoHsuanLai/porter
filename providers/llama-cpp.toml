@@ -6,6 +6,10 @@ id = "llama-cpp"
 label = "llama.cpp"
 mark = "llama-cpp"
 
+[mark_face]
+letter = "L"
+colour = "#8A5A44"
+
 [auth]
 kind = "local_runtime"
 

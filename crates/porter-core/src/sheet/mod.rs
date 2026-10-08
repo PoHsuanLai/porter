@@ -11,6 +11,7 @@
 mod fields;
 mod input;
 mod manual;
+mod mark;
 mod progress;
 mod stage;
 mod view;
@@ -21,6 +22,7 @@ pub use manual::{
     Hop, JmapServer, MailServers, Manual, Protocol, Security, form_problem, manual_form,
     parse_manual, refit,
 };
+pub use mark::{MarkColour, MarkFace, MarkFaceError, MarkLetter};
 pub use progress::{
     Progress, Review, ServiceChoice, ServiceRow, ServiceState, SignInFault, SignInInput, UserCode,
 };

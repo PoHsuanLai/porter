@@ -8,6 +8,10 @@ id = "openai"
 label = "OpenAI"
 mark = "openai"
 
+[mark_face]
+letter = "O"
+colour = "#10A37F"
+
 [auth]
 kind = "api_key"
 

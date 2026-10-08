@@ -7,6 +7,10 @@ id = "codex"
 label = "Codex"
 mark = "openai"
 
+[mark_face]
+letter = "Cx"
+colour = "#10A37F"
+
 [auth]
 kind = "agent_login"
 

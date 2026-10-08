@@ -5,6 +5,10 @@ id = "gmx"
 label = "GMX"
 mark = "gmx"
 
+[mark_face]
+letter = "G"
+colour = "#1C449B"
+
 [auth]
 kind = "password"
 

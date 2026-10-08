@@ -3,6 +3,10 @@ id = "nextcloud"
 label = "Nextcloud"
 mark = "nextcloud"
 
+[mark_face]
+letter = "N"
+colour = "#0082C9"
+
 [auth]
 kind = "login_flow_v2"
 

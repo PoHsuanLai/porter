@@ -251,6 +251,18 @@ fn a_document_stored_at_vocabulary_eight_is_read_unchanged() {
 }
 
 #[test]
+fn a_document_stored_at_vocabulary_nine_is_read_unchanged() {
+    // The fixture is what the build before `ProviderRow::mark_face` wrote.
+    let at_nine = filled().to_json().expect("json").replacen(
+        &format!("\"vocab\": {}", VocabVersion::CURRENT.0),
+        "\"vocab\": 9",
+        1,
+    );
+    assert!(at_nine.contains("\"vocab\": 9"));
+    assert_eq!(Persisted::from_json(&at_nine), Ok(filled()));
+}
+
+#[test]
 fn a_session_grant_survives_the_document_and_keeps_its_form() {
     let mut registry = filled();
     registry.grants[0].scope = GrantScope::Session(LauncherSession::parse("sess-1").expect("id"));

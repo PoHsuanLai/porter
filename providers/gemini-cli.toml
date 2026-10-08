@@ -7,6 +7,10 @@ id = "gemini-cli"
 label = "Gemini CLI"
 mark = "gemini"
 
+[mark_face]
+letter = "G"
+colour = "#8E75B2"
+
 [auth]
 kind = "agent_login"
 

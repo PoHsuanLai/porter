@@ -2,6 +2,7 @@
 //! `ds-shell::accounts` props in one small table-tested file.
 
 use super::fields::{FieldKind, FieldSpec};
+use super::mark::MarkFace;
 use super::progress::{Review, SignInFault, UserCode};
 use crate::app_id::{AppId, AppLabel};
 use crate::consent::ConsentAsk;
@@ -26,6 +27,11 @@ pub struct ProviderRow {
     /// The row's `label` is the display name ("Claude Code").
     #[serde(default)]
     pub auth: ProviderKind,
+    /// The letter and colour the provider file gives its mark, for a provider the UI has no
+    /// named mark for. Order of use: this face, then the named variant `mark`, then "@". Left
+    /// out when the file has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mark_face: Option<MarkFace>,
 }
 
 /// Who signs a provider's account in.

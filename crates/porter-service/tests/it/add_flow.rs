@@ -973,6 +973,46 @@ async fn providers_with_nothing_to_sign_in_are_not_listed() {
     );
 }
 
+#[tokio::test]
+async fn the_providers_step_carries_the_face_a_provider_file_gives_its_mark() {
+    let script = Script::default();
+    let with_face = SPEC.replace(
+        "mark = \"generic\"\n",
+        "mark = \"generic\"\n[mark_face]\nletter = \"Sc\"\ncolour = \"#aabbcc\"\n",
+    );
+    let faced = ScriptedProvider {
+        spec: parse_provider(&with_face).expect("spec"),
+        script: script.clone(),
+        refuses_to_start: false,
+    };
+    let sees_face: Reactor = Arc::new(|view| match view {
+        SheetView::Providers(rows) => {
+            assert_eq!(rows.len(), 1, "{rows:?}");
+            assert_eq!(rows[0].mark, "generic");
+            let face = rows[0]
+                .mark_face
+                .as_ref()
+                .expect("the row carries the face");
+            assert_eq!(
+                (face.letter.as_str(), face.colour.as_str()),
+                ("Sc", "#AABBCC")
+            );
+            Some(SheetInput::Dismiss)
+        }
+        _ => None,
+    });
+    let (service, _kept) = service_over(
+        vec![faced],
+        Registry::default(),
+        Shared::default(),
+        vec![sees_face],
+    );
+    assert_eq!(
+        service.handle(&app("org.quire.Mail"), add_request()).await,
+        AccountsReply::Refused(Refusal::Dismissed)
+    );
+}
+
 // ---- signing in again ----
 
 fn held_account(login: &str, state: AccountState) -> Account {

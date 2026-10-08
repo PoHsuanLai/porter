@@ -8,6 +8,10 @@ id = "moonshot"
 label = "Moonshot (Kimi)"
 mark = "moonshot"
 
+[mark_face]
+letter = "K"
+colour = "#16191E"
+
 [auth]
 kind = "api_key"
 

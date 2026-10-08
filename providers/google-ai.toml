@@ -10,6 +10,10 @@ id = "google-ai"
 label = "Google (Gemini)"
 mark = "gemini"
 
+[mark_face]
+letter = "G"
+colour = "#8E75B2"
+
 [auth]
 kind = "api_key"
 

@@ -6,6 +6,10 @@ id = "lm-studio"
 label = "LM Studio"
 mark = "lm-studio"
 
+[mark_face]
+letter = "LM"
+colour = "#4B3CC9"
+
 [auth]
 kind = "local_runtime"
 

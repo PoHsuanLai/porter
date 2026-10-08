@@ -295,6 +295,61 @@ fn an_unknown_key_does_not_stop_a_load() {
     assert!(parse_provider(&text).is_ok());
 }
 
+fn with_face(face: &str) -> String {
+    file(r#"kind = "password""#, r#"kind = "fixed""#, &[STORAGE_ROW]).replace(
+        "mark = \"example\"\n",
+        &format!("mark = \"example\"\n\n[mark_face]\n{face}\n"),
+    )
+}
+
+#[test]
+fn a_mark_face_table_gives_the_row_its_letter_and_colour_and_the_word_stays() {
+    let spec = parse_provider(&with_face("letter = \"Cx\"\ncolour = \"#d97757\"")).expect("parses");
+    assert_eq!(spec.mark, "example");
+    let face = spec.mark_face.as_ref().expect("face");
+    assert_eq!(
+        (face.letter.as_str(), face.colour.as_str()),
+        ("Cx", "#D97757")
+    );
+    let row = spec.sheet_row();
+    assert_eq!(row.mark, "example");
+    assert_eq!(row.mark_face, spec.mark_face);
+}
+
+#[test]
+fn a_file_without_a_mark_face_makes_a_row_without_one() {
+    let text = file(r#"kind = "password""#, r#"kind = "fixed""#, &[STORAGE_ROW]);
+    let spec = parse_provider(&text).expect("parses");
+    assert_eq!(spec.mark_face, None);
+    assert_eq!(spec.sheet_row().mark_face, None);
+}
+
+#[test]
+fn a_bad_or_half_written_mark_face_refuses_the_file_and_names_the_field() {
+    let cases = [
+        ("letter = \"ABC\"\ncolour = \"#D97757\"", "letter"),
+        ("letter = \"\"\ncolour = \"#D97757\"", "letter"),
+        ("letter = \"A B\"\ncolour = \"#D97757\"", "letter"),
+        ("letter = \"A\"\ncolour = \"red\"", "colour"),
+        ("letter = \"A\"\ncolour = \"#FFF\"", "colour"),
+        ("letter = \"A\"\ncolour = \"D97757\"", "colour"),
+        ("letter = \"A\"", "colour"),
+        ("colour = \"#D97757\"", "letter"),
+    ];
+    for (face, field) in cases {
+        match parse_provider(&with_face(face)) {
+            Err(ProviderFileError::Syntax(message)) => {
+                assert!(message.contains(field), "{face}: {message}");
+                assert!(
+                    message.contains("mark_face") || message.contains(field),
+                    "{message}"
+                );
+            }
+            other => panic!("{face}: {other:?}"),
+        }
+    }
+}
+
 fn id() -> porter_core::ProviderId {
     porter_core::ProviderId::parse("example").expect("id")
 }

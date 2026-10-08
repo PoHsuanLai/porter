@@ -9,6 +9,10 @@ id = "claude-code"
 label = "Claude Code"
 mark = "anthropic"
 
+[mark_face]
+letter = "C"
+colour = "#D97757"
+
 [auth]
 kind = "agent_login"
 

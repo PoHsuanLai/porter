@@ -7,6 +7,10 @@ id = "acp-agent"
 label = "Other ACP agent"
 mark = "agent"
 
+[mark_face]
+letter = "A"
+colour = "#5D6660"
+
 [auth]
 kind = "agent_login"
 

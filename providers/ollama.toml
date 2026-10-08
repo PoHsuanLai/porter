@@ -4,6 +4,10 @@ id = "ollama"
 label = "Ollama"
 mark = "ollama"
 
+[mark_face]
+letter = "Ol"
+colour = "#1F1F1F"
+
 [auth]
 kind = "local_runtime"
 
