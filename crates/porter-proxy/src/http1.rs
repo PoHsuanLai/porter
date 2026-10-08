@@ -4,6 +4,9 @@
 //! - the request target is origin-form, or absolute-form with the endpoint's origin (rewritten
 //!   to origin-form); any other origin, and a `Host` that is not the endpoint's, is refused
 //!   with `ForeignOrigin` and the connection ends;
+//! - the target's path stays where the endpoint's family reaches (`reach`): a contacts grant's
+//!   relay to a Nextcloud stays under its address books, never its files or OCS; any other path
+//!   is refused with `ForeignOrigin`;
 //! - every `Authorization` and `Proxy-Authorization` the app sent is dropped, and the relay adds
 //!   its own (`Basic` from the endpoint's login and the password, `Bearer` for an access
 //!   token);
@@ -17,6 +20,7 @@ use porter_core::RelayPlan;
 mod chunked;
 mod head;
 mod machine;
+mod reach;
 
 pub use chunked::{ChunkParser, Chunked};
 

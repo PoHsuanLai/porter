@@ -14,16 +14,25 @@ use porter_provider::{
     ClientChannel, ClientEntry, ClientId, ClientsFile, Issuer, ProviderSpec, SignIn, SignInMode,
     SignInStart, SignInStep,
 };
-use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 pub const CLIENT_ID: &str = "google-test-client.apps.googleusercontent.com";
 pub const SECRET: &str = "GOCSPX-test-application-secret";
 
-/// Everything goes to the loopback fake the URL names.
+/// Everything goes to the loopback fake the URL names; the `scope` of every refresh is noted.
 #[derive(Debug, Clone, Default)]
-pub struct Wire;
+pub struct Wire {
+    refresh_scopes: Arc<Mutex<Vec<Option<String>>>>,
+}
+
+impl Wire {
+    /// The `scope` of every refresh sent, in order (`None`: no scope named, the whole grant).
+    pub fn refresh_scopes(&self) -> Vec<Option<String>> {
+        self.refresh_scopes.lock().unwrap().clone()
+    }
+}
 
 impl Http for Wire {
     async fn send(&self, request: HttpRequest) -> Result<HttpResponse, HttpError> {
@@ -32,6 +41,12 @@ impl Http for Wire {
         let mut wire = Request::new(request.method.token(), &target).with_body(request.body);
         for h in &request.headers {
             wire = wire.with_header(h.name.as_str(), &h.value.0);
+        }
+        if wire.form_value("grant_type").as_deref() == Some("refresh_token") {
+            self.refresh_scopes
+                .lock()
+                .unwrap()
+                .push(wire.form_value("scope"));
         }
         let response = send(&address, Scheme::Http, &wire)
             .await
@@ -75,6 +90,7 @@ pub struct Rig {
     pub clock: Arc<AtomicI64>,
     pub provider: GoogleProvider<Wire>,
     pub spec: ProviderSpec,
+    pub wire: Wire,
 }
 
 pub fn entry(google: &Google) -> ClientEntry {
@@ -105,7 +121,8 @@ impl Rig {
         let clock = Arc::new(AtomicI64::new(1_000_000));
         let ticking = Arc::clone(&clock);
         let counter = Arc::new(AtomicI64::new(0));
-        let env = GoogleEnv::new(Wire, registry)
+        let wire = Wire::default();
+        let env = GoogleEnv::new(wire.clone(), registry)
             .with_channel(ClientChannel::Development)
             .with_poll_slice(Duration::from_millis(20))
             .with_userinfo(
@@ -124,6 +141,7 @@ impl Rig {
             clock,
             provider,
             spec,
+            wire,
         }
     }
 

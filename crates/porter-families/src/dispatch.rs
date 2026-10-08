@@ -2,7 +2,7 @@
 //! its feature is on.
 
 use porter_core::sheet::SignInInput;
-use porter_core::{Account, AccountId, Audience, Claim, Credential, IssuedToken};
+use porter_core::{Account, AccountId, Audience, CapabilityKind, Claim, Credential, IssuedToken};
 use porter_provider::{
     Presented, Provider, ProviderError, ProviderSession, ProviderSpec, RevokeOutcome, SignIn,
     SignInStart, SignInStep,
@@ -203,6 +203,14 @@ impl Provider for FamilyProvider {
 impl ProviderSession for FamilySession {
     async fn access_token(&self, audience: &Audience) -> Result<IssuedToken, ProviderError> {
         each_family!(self, s => s.access_token(audience).await)
+    }
+
+    async fn access_token_for(
+        &self,
+        audience: &Audience,
+        kind: CapabilityKind,
+    ) -> Result<IssuedToken, ProviderError> {
+        each_family!(self, s => s.access_token_for(audience, kind).await)
     }
 
     fn renewed(&self) -> Option<Credential> {

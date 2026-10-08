@@ -34,9 +34,15 @@ pub struct Graph {
     pub statuses: Mutex<HashMap<String, u16>>,
     pub calls: Mutex<Vec<(String, String)>>,
     pub down: Mutex<bool>,
+    /// The `scope` of every refresh sent to the issuer, in order (`None`: no scope named).
+    pub refresh_scopes: Mutex<Vec<Option<String>>>,
 }
 
 impl Graph {
+    pub fn refresh_scopes(&self) -> Vec<Option<String>> {
+        self.refresh_scopes.lock().unwrap().clone()
+    }
+
     pub fn refuse(&self, path: &str, status: u16) {
         self.statuses
             .lock()
@@ -107,6 +113,13 @@ impl Http for Wire {
         for h in &request.headers {
             wire = wire.with_header(h.name.as_str(), &h.value.0);
         }
+        if wire.form_value("grant_type").as_deref() == Some("refresh_token") {
+            self.graph
+                .refresh_scopes
+                .lock()
+                .unwrap()
+                .push(wire.form_value("scope"));
+        }
         let response = send(&address, Scheme::Http, &wire)
             .await
             .map_err(|_| HttpError::Unreachable)?;
@@ -148,6 +161,7 @@ impl Rig {
             statuses: Mutex::default(),
             calls: Mutex::default(),
             down: Mutex::new(false),
+            refresh_scopes: Mutex::default(),
         });
         let clients = match with_client {
             true => vec![client(&issuer)],

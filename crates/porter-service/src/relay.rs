@@ -205,7 +205,8 @@ where
             Ok(session) => session,
             Err(error) => return Err(self.refused_refresh(&account.id, error).await),
         };
-        let issued = match session.access_token(&audience).await {
+        // The grant's kind, so the bearer reaches that kind's service alone.
+        let issued = match session.access_token_for(&audience, kind).await {
             Ok(issued) => issued,
             Err(error) => return Err(self.refused_refresh(&account.id, error).await),
         };

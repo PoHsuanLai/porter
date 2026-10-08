@@ -13,6 +13,7 @@ pub enum RelayFault {
     /// The server (or, for HTTP, the app) did not speak the protocol, or offered no way to
     /// authenticate the credential's kind (a password with `LOGINDISABLED` and no TLS).
     Protocol,
-    /// The app asked for an origin other than the endpoint's.
+    /// The app asked for an origin other than the endpoint's, or (HTTP) a path outside where
+    /// the endpoint's grant reaches.
     ForeignOrigin,
 }

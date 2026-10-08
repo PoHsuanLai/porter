@@ -3,7 +3,9 @@
 use crate::error::ProviderError;
 use crate::sign_in::{RevokeOutcome, SignIn, SignInStart};
 use crate::spec::ProviderSpec;
-use porter_core::{Account, AccountId, Audience, AuthKind, Claim, Credential, IssuedToken};
+use porter_core::{
+    Account, AccountId, Audience, AuthKind, CapabilityKind, Claim, Credential, IssuedToken,
+};
 use std::future::Future;
 
 /// What an account presents when it talks to its provider.
@@ -69,6 +71,20 @@ pub trait ProviderSession: Send + Sync {
         &self,
         audience: &Audience,
     ) -> impl Future<Output = Result<IssuedToken, ProviderError>> + Send;
+
+    /// A short-lived token for `audience` under a grant for `kind`: it reaches that kind's
+    /// service and no other of the account's (a calendar grant's Microsoft token carries the
+    /// calendar scope, not every Graph permission). The host asks this for every token an app
+    /// receives or a relay presents. A family whose tokens are not per kind keeps the default,
+    /// which is [`ProviderSession::access_token`].
+    fn access_token_for(
+        &self,
+        audience: &Audience,
+        kind: CapabilityKind,
+    ) -> impl Future<Output = Result<IssuedToken, ProviderError>> + Send {
+        let _ = kind;
+        self.access_token(audience)
+    }
 
     /// The credential to store again when renewal changed it (a rotated refresh token), or
     /// `None` when it is unchanged.

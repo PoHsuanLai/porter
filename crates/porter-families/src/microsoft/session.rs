@@ -1,12 +1,13 @@
 //! An open Microsoft account: the refresh token, and the short-lived tokens minted from it, one
-//! per resource (Exchange for IMAP and SMTP, Graph for the rest).
+//! per scope (Exchange for IMAP and SMTP; for Graph, the one permission of a grant's kind).
 
 use super::env::MicrosoftEnv;
 use super::graph::{Found, probe, whoami};
 use super::graph_origin;
-use super::scopes::audience_scope;
+use super::scopes::{audience_scope, grant_scope};
 use porter_core::{
-    AccountId, Audience, Credential, IssuedToken, SecretText, TokenKind, UnixSeconds,
+    AccountId, Audience, CapabilityKind, Credential, IssuedToken, SecretText, TokenKind,
+    UnixSeconds,
 };
 use porter_http::Http;
 use porter_oauth::{ExchangeFault, Renewal, endpoints_of, refresh_scoped, renewal};
@@ -106,8 +107,9 @@ impl<H: Http> MicrosoftSession<H> {
             return Ok(address);
         }
         let base = graph_origin(&self.spec);
+        // The profile scope alone: the address is all this token is for.
         let graph = self
-            .mint(super::scopes::GRAPH_DEFAULT, TokenKind::Bearer)
+            .mint(super::scopes::USER_READ, TokenKind::Bearer)
             .await?;
         let address = whoami(&*self.env.http, &base, graph.value.expose()).await?;
         self.state().address = Some(address.clone());
@@ -164,12 +166,11 @@ impl<H: Http> MicrosoftSession<H> {
     }
 }
 
-impl<H: Http> ProviderSession for MicrosoftSession<H> {
-    async fn access_token(&self, audience: &Audience) -> Result<IssuedToken, ProviderError> {
-        let graph = graph_origin(&self.spec);
-        let (scope, kind) =
-            audience_scope(audience, graph.as_str()).ok_or(ProviderError::Forbidden)?;
-        let token = self.mint(&scope, kind).await?;
+impl<H: Http> MicrosoftSession<H> {
+    /// The token minted for `scope`, in the form `kind` says: an XOAUTH2 string names the
+    /// mailbox.
+    async fn issue(&self, scope: &str, kind: TokenKind) -> Result<IssuedToken, ProviderError> {
+        let token = self.mint(scope, kind).await?;
         match kind {
             TokenKind::Xoauth2 => {
                 let user = self.address().await?;
@@ -183,6 +184,30 @@ impl<H: Http> ProviderSession for MicrosoftSession<H> {
             }
             _ => Ok(token),
         }
+    }
+}
+
+impl<H: Http> ProviderSession for MicrosoftSession<H> {
+    /// A token for porter's own use: Graph's is for every permission consented (`.default`).
+    /// The host gives apps and relays only [`Self::access_token_for`]'s.
+    async fn access_token(&self, audience: &Audience) -> Result<IssuedToken, ProviderError> {
+        let graph = graph_origin(&self.spec);
+        let (scope, kind) =
+            audience_scope(audience, graph.as_str()).ok_or(ProviderError::Forbidden)?;
+        self.issue(&scope, kind).await
+    }
+
+    /// A token carrying the scope of `kind` alone (`grant_scope`): a calendar grant's Graph
+    /// token is for `Calendars.ReadWrite`, so it cannot read the account's files or mail.
+    async fn access_token_for(
+        &self,
+        audience: &Audience,
+        kind: CapabilityKind,
+    ) -> Result<IssuedToken, ProviderError> {
+        let graph = graph_origin(&self.spec);
+        let (scope, form) =
+            grant_scope(audience, kind, graph.as_str()).ok_or(ProviderError::Forbidden)?;
+        self.issue(&scope, form).await
     }
 
     fn renewed(&self) -> Option<Credential> {

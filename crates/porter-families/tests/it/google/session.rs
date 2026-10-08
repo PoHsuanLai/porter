@@ -91,6 +91,92 @@ async fn a_token_for_a_calendar_grant_is_a_live_bearer_with_the_calendar_scope()
     }
 }
 
+const CALENDAR: &str = "https://www.googleapis.com/auth/calendar";
+const TASKS: &str = "https://www.googleapis.com/auth/tasks";
+
+#[tokio::test]
+async fn a_grants_refresh_carries_its_own_kinds_scope_alone() {
+    let rig = Rig::new(PLAIN).await;
+    let session = open(&rig).await;
+    let token = session
+        .access_token_for(&audience("google_calendar"), K::Calendar)
+        .await
+        .expect("calendar");
+    assert_eq!(token.kind, TokenKind::Bearer);
+    assert!(rig.google.issuer.access_is_live(token.value.expose()));
+    assert_eq!(rig.wire.refresh_scopes(), [Some(CALENDAR.to_owned())]);
+
+    session
+        .access_token_for(&audience("google_tasks"), K::Tasks)
+        .await
+        .expect("tasks");
+    session
+        .access_token_for(&audience("google_drive"), K::Storage)
+        .await
+        .expect("drive");
+    assert_eq!(
+        rig.wire.refresh_scopes(),
+        [
+            Some(CALENDAR.to_owned()),
+            Some(TASKS.to_owned()),
+            Some("https://www.googleapis.com/auth/drive.appdata".to_owned()),
+        ],
+        "each kind its own scope, never the whole grant"
+    );
+    // A grant reaches only its own kind's rows.
+    for (name, kind) in [
+        ("google_drive", K::Calendar),
+        ("google_calendar", K::Tasks),
+        ("imap", K::Mail),
+        ("google_calendar", K::Mail),
+    ] {
+        assert_eq!(
+            session.access_token_for(&audience(name), kind).await,
+            Err(ProviderError::Forbidden),
+            "{name} {kind:?}"
+        );
+    }
+    // Photos asks for the one scope its API takes: a person may have ticked only the picker.
+    let fresh = open(&rig).await;
+    let _ = fresh
+        .access_token_for(&audience("google_photos_picker"), K::Photos)
+        .await;
+    assert_eq!(
+        rig.wire.refresh_scopes().last(),
+        Some(&Some(
+            "https://www.googleapis.com/auth/photospicker.mediaitems.readonly".to_owned()
+        ))
+    );
+}
+
+#[tokio::test]
+async fn a_grants_refresh_never_asks_beyond_what_was_granted() {
+    let rig = Rig::new(PLAIN).await;
+    let session = open(&rig).await;
+    // Porter's own token: the answer says what the grant holds (no contacts).
+    session
+        .access_token(&audience("google_tasks"))
+        .await
+        .expect("own token");
+    assert_eq!(rig.wire.refresh_scopes(), [None]);
+    assert_eq!(
+        session
+            .access_token_for(&audience("google_people"), K::Contacts)
+            .await,
+        Err(ProviderError::Forbidden)
+    );
+    assert_eq!(
+        rig.wire.refresh_scopes(),
+        [None],
+        "no refresh named a scope the grant does not hold"
+    );
+    session
+        .access_token_for(&audience("google_tasks"), K::Tasks)
+        .await
+        .expect("tasks is in the grant");
+    assert_eq!(rig.wire.refresh_scopes(), [None, Some(TASKS.to_owned())]);
+}
+
 #[tokio::test]
 async fn mail_audiences_are_only_for_a_persons_own_client() {
     let plain = Rig::new(PLAIN).await;

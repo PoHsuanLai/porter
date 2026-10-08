@@ -78,6 +78,77 @@ async fn tokens_come_per_audience_in_the_form_the_protocol_takes() {
     );
 }
 
+#[tokio::test]
+async fn a_calendar_grants_token_request_names_only_the_calendar_scope() {
+    const CALENDARS: &str = "https://graph.microsoft.com/Calendars.ReadWrite";
+    let rig = Rig::new(SignInFlow::Loopback, true).await;
+    let session = open(&rig).await;
+    for audience in ["graph", GRAPH] {
+        let token = session
+            .access_token_for(&audience_of(audience), K::Calendar)
+            .await
+            .expect(audience);
+        assert_eq!(token.kind, TokenKind::Bearer, "{audience}");
+        assert!(
+            rig.issuer.access_is_live(token.value.expose()),
+            "{audience}"
+        );
+    }
+    // One refresh (the second audience reuses the fresh token), naming the calendar alone.
+    assert_eq!(rig.graph.refresh_scopes(), [Some(CALENDARS.to_owned())]);
+
+    // Each kind its own scope, never Graph's `.default`; mail only over IMAP and SMTP.
+    for (kind, scope) in [
+        (
+            K::Contacts,
+            "https://graph.microsoft.com/Contacts.ReadWrite",
+        ),
+        (K::Tasks, "https://graph.microsoft.com/Tasks.ReadWrite"),
+        (K::Notes, "https://graph.microsoft.com/Notes.ReadWrite"),
+        (
+            K::Storage,
+            "https://graph.microsoft.com/Files.ReadWrite.AppFolder",
+        ),
+    ] {
+        session
+            .access_token_for(&audience_of("graph"), kind)
+            .await
+            .expect("token");
+        assert_eq!(
+            rig.graph.refresh_scopes().last(),
+            Some(&Some(scope.to_owned())),
+            "{kind:?}"
+        );
+    }
+    let mail = session
+        .access_token_for(&audience_of("imap"), K::Mail)
+        .await
+        .expect("imap");
+    assert_eq!(mail.kind, TokenKind::Xoauth2);
+    for (audience, kind) in [
+        ("graph", K::Mail),
+        ("imap", K::Calendar),
+        ("smtp", K::Storage),
+        ("https://graph.evil.test", K::Calendar),
+    ] {
+        assert_eq!(
+            session.access_token_for(&audience_of(audience), kind).await,
+            Err(ProviderError::Forbidden),
+            "{audience} {kind:?}"
+        );
+    }
+    // No refresh for a grant named Graph's `.default`; the mailbox address for XOAUTH2 was read
+    // with the profile scope alone.
+    let scopes = rig.graph.refresh_scopes();
+    assert!(
+        scopes
+            .iter()
+            .all(|s| s.as_deref() != Some("https://graph.microsoft.com/.default")),
+        "{scopes:?}"
+    );
+    assert!(scopes.contains(&Some("https://graph.microsoft.com/User.Read".to_owned())));
+}
+
 fn audience_of(text: &str) -> porter_core::Audience {
     audience(text)
 }

@@ -147,6 +147,65 @@ async fn a_different_origin_is_refused_with_a_4xx_and_nothing_is_sent() {
 }
 
 #[tokio::test]
+async fn a_contacts_relay_reaches_the_address_books_and_not_the_files_or_ocs() {
+    let contacts_plan = |base: &str| {
+        let mut plan = plan(
+            Family::CardDav,
+            &format!("{base}/dav/addressbooks/users/alice/"),
+            Tls::Plain,
+            password(),
+        );
+        plan.endpoint.login.0 = "alice".into();
+        plan.kind = porter_core::CapabilityKind::Contacts;
+        plan
+    };
+    const REFUSED: &[(&str, &str)] = &[
+        (
+            "the files",
+            "PROPFIND /dav/files/ HTTP/1.1\r\nHost: {host}\r\nDepth: 1\r\n\r\n",
+        ),
+        (
+            "ocs",
+            "GET /ocs/v2.php/core/apppassword HTTP/1.1\r\nHost: {host}\r\n\r\n",
+        ),
+        (
+            "out by dot segments",
+            "GET /dav/addressbooks/users/alice/../../../files/ HTTP/1.1\r\nHost: {host}\r\n\r\n",
+        ),
+    ];
+    for (name, request) in REFUSED {
+        let dav = FakeDav::start("alice", PASSWORD).await.expect("dav");
+        let base = dav.base_url().to_owned();
+        let host = base.trim_start_matches("http://").to_owned();
+        let mut app = start(contacts_plan(&base), trusting_fakes());
+        app.send(&request.replace("{host}", &host)).await;
+        let text = app.read_to_end().await;
+        assert!(text.starts_with("HTTP/1.1 403"), "{name}: {text}");
+        assert_eq!(
+            app.ended().await,
+            RelayEnd::Failed(RelayFault::ForeignOrigin),
+            "{name}"
+        );
+        assert!(dav.hits().is_empty(), "{name}: nothing reached the server");
+    }
+    let dav = FakeDav::start("alice", PASSWORD).await.expect("dav");
+    let base = dav.base_url().to_owned();
+    let host = base.trim_start_matches("http://").to_owned();
+    let mut app = start(contacts_plan(&base), trusting_fakes());
+    app.send(&format!(
+        "PROPFIND /dav/addressbooks/users/alice/ HTTP/1.1\r\nHost: {host}\r\nDepth: 1\r\nContent-Length: 0\r\n\r\n"
+    ))
+    .await;
+    let head = app.read_until("\r\n\r\n").await;
+    assert!(head.starts_with("HTTP/1.1 "), "{head}");
+    assert!(!head.starts_with("HTTP/1.1 403"), "{head}");
+    let hits = dav.hits();
+    assert_eq!(hits.len(), 1, "the address book request reached the server");
+    assert_eq!(hits[0].method, "PROPFIND");
+    drop(app);
+}
+
+#[tokio::test]
 async fn keep_alive_requests_with_length_and_chunked_bodies_pass() {
     let dav = FakeDav::start("alice", PASSWORD).await.expect("dav");
     let base = dav.base_url().to_owned();

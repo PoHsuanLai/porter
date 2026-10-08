@@ -75,7 +75,12 @@ async fn call(
     for (name, value) in extra {
         request = request.with_header(name, *value);
     }
-    Wire.send(request).await.expect("answer").status.0
+    Wire::default()
+        .send(request)
+        .await
+        .expect("answer")
+        .status
+        .0
 }
 
 #[tokio::test]

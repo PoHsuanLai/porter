@@ -49,6 +49,18 @@ pub fn scopes_of(kind: CapabilityKind) -> &'static [&'static str] {
     }
 }
 
+/// The scopes a token for a grant of `kind`, used against the API of `family`, is refreshed
+/// with: the kind's own, and for Photos only the one its API takes (a person may have ticked one
+/// of the two). Never the identity scopes or another kind's. Empty for a kind Google has no
+/// service for.
+pub(super) fn grant_scopes(kind: CapabilityKind, family: Family) -> &'static [&'static str] {
+    match (kind, family) {
+        (CapabilityKind::Photos, Family::GooglePhotosUpload) => &[PHOTOS_UPLOAD],
+        (CapabilityKind::Photos, Family::GooglePhotosPicker) => &[PHOTOS_PICKER],
+        _ => scopes_of(kind),
+    }
+}
+
 /// How Google classes `scope`; a scope this table does not know is taken as the most demanding.
 pub fn scope_sensitivity(scope: &str) -> Sensitivity {
     match scope {
@@ -100,6 +112,12 @@ impl Granted {
 }
 
 impl Granted {
+    /// Whether every one of `scopes` was granted (all of them, when the answer did not say):
+    /// a refresh may only narrow the grant, never ask beyond it.
+    pub(super) fn holds_all(&self, scopes: &[&str]) -> bool {
+        scopes.iter().all(|scope| self.holds(scope))
+    }
+
     fn holds(&self, scope: &str) -> bool {
         self.0
             .as_ref()
@@ -208,6 +226,38 @@ mod tests {
         .filter(|s| scope_sensitivity(s) == Sensitivity::Restricted)
         .collect();
         assert_eq!(restricted, [MAIL]);
+    }
+
+    #[test]
+    fn a_grant_is_refreshed_with_its_own_kinds_scopes_only() {
+        use Family as F;
+        const CASES: &[(K, F, &[&str])] = &[
+            (K::Calendar, F::GoogleCalendar, &[CALENDAR]),
+            (K::Contacts, F::GooglePeople, &[CONTACTS]),
+            (K::Tasks, F::GoogleTasks, &[TASKS]),
+            (K::Storage, F::GoogleDrive, &[DRIVE_APP_FOLDER]),
+            (K::Photos, F::GooglePhotosUpload, &[PHOTOS_UPLOAD]),
+            (K::Photos, F::GooglePhotosPicker, &[PHOTOS_PICKER]),
+            (K::Mail, F::Imap, &[MAIL]),
+            (K::Mail, F::Smtp, &[MAIL]),
+            (K::Notes, F::GoogleDrive, &[]),
+        ];
+        for (kind, family, want) in CASES {
+            let got = grant_scopes(*kind, *family);
+            assert_eq!(got, *want, "{kind:?} {family:?}");
+            assert!(
+                got.iter().all(|s| !IDENTITY.contains(s)),
+                "{kind:?}: no identity scope in an app's token"
+            );
+        }
+        let granted =
+            |scopes: &[&str]| Granted::of(scopes.iter().map(|s| (*s).to_owned()).collect());
+        let some = granted(&[OPENID, CALENDAR, PHOTOS_PICKER]);
+        assert!(some.holds_all(&[CALENDAR]));
+        assert!(some.holds_all(&[PHOTOS_PICKER]));
+        assert!(!some.holds_all(&[PHOTOS_UPLOAD]));
+        assert!(!some.holds_all(&[CALENDAR, TASKS]));
+        assert!(granted(&[]).holds_all(&[TASKS]), "unknown is not a refusal");
     }
 
     #[test]

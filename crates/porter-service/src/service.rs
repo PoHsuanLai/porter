@@ -508,7 +508,8 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                 return AccountsReply::Refused(self.refused_refresh(&account.id, error).await);
             }
         };
-        let token = match session.access_token(audience).await {
+        // The grant's kind, so the token reaches that kind's service alone.
+        let token = match session.access_token_for(audience, kind).await {
             Ok(token) => token,
             Err(error) => {
                 return AccountsReply::Refused(self.refused_refresh(&account.id, error).await);

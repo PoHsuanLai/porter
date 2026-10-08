@@ -1,6 +1,7 @@
 //! Reading and rewriting one request head. Pure: bytes and a plan in, bytes and the body's
 //! framing out, or why the request is refused.
 
+use super::reach;
 use crate::fault::RelayFault;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
@@ -139,6 +140,7 @@ pub fn rewrite(head: &[u8], plan: &RelayPlan) -> Result<Rewritten, RelayFault> {
 
     let mut kept = Vec::new();
     let mut hosts = Vec::new();
+    let mut depths = Vec::new();
     let (mut lengths, mut codings) = (Vec::new(), Vec::new());
     for line in lines {
         let (name, value) = line.split_once(':').ok_or(RelayFault::Protocol)?;
@@ -152,6 +154,10 @@ pub fn rewrite(head: &[u8], plan: &RelayPlan) -> Result<Rewritten, RelayFault> {
             "authorization" | "proxy-authorization" => {}
             "host" => hosts.push(value),
             "upgrade" => return Err(RelayFault::Protocol),
+            "depth" => {
+                depths.push(value);
+                kept.push(line);
+            }
             "content-length" => {
                 lengths.push(value);
                 kept.push(line);
@@ -188,6 +194,13 @@ pub fn rewrite(head: &[u8], plan: &RelayPlan) -> Result<Rewritten, RelayFault> {
         // body somewhere else than the relay does.
         _ => return Err(RelayFault::Protocol),
     };
+    // A repeated Depth could be read one way here and another by the server.
+    let depth = match depths.as_slice() {
+        [] => None,
+        [one] => Some(*one),
+        _ => return Err(RelayFault::Protocol),
+    };
+    reach::check(plan, method, &target, depth)?;
 
     let mut out = format!(
         "{method} {target} {version}\r\nHost: {}\r\n",

@@ -18,9 +18,11 @@ fn plan(url: &str, tls: Tls, auth: RelayAuth) -> RelayPlan {
     }
 }
 
+/// A WebDAV server at the origin's root, so every path is the endpoint's: these tests are about
+/// the head; where a narrower endpoint reaches is `reach`'s, and the last test here.
 fn cloud() -> RelayPlan {
     plan(
-        "https://cloud.example.org/remote.php/dav/",
+        "https://cloud.example.org/",
         Tls::Implicit,
         RelayAuth::Password(SecretText::new("hunter2")),
     )
@@ -318,4 +320,45 @@ fn responses_pass_unchanged_and_blank_lines_before_a_request_are_skipped() {
     );
     let (_, effects) = HttpRelay::new(cloud()).step(Input::Closed(Side::App));
     assert!(effects_close(&effects, RelayEnd::Finished));
+}
+
+#[test]
+fn a_contacts_grants_relay_refuses_the_files_and_ocs_and_passes_its_address_books() {
+    let mut contacts = plan(
+        "https://cloud.example.org/remote.php/dav/addressbooks/users/ada/",
+        Tls::Implicit,
+        RelayAuth::Password(SecretText::new("hunter2")),
+    );
+    contacts.endpoint.family = Family::CardDav;
+    contacts.kind = CapabilityKind::Contacts;
+    for refused in [
+        "PROPFIND /remote.php/dav/files/ada/ HTTP/1.1\r\nDepth: 1\r\n\r\n",
+        "GET /ocs/v2.php/core/apppassword HTTP/1.1\r\nOCS-APIRequest: true\r\n\r\n",
+        "POST /ocs/v2.php/core/apppassword/rotate HTTP/1.1\r\nOCS-APIRequest: true\r\n\r\n",
+        "GET https://cloud.example.org/remote.php/dav/files/ada/x HTTP/1.1\r\n\r\n",
+    ] {
+        let (_, effects) = whole(
+            HttpRelay::new(contacts.clone()),
+            Side::App,
+            refused.as_bytes(),
+        );
+        assert!(
+            sent(&effects, Side::App).starts_with("HTTP/1.1 403 "),
+            "{refused}"
+        );
+        assert_eq!(sent(&effects, Side::Server), "", "{refused}");
+        assert!(
+            effects_close(&effects, RelayEnd::Failed(RelayFault::ForeignOrigin)),
+            "{refused}"
+        );
+    }
+    let (_, effects) = whole(
+        HttpRelay::new(contacts),
+        Side::App,
+        b"PROPFIND /remote.php/dav/addressbooks/users/ada/contacts/ HTTP/1.1\r\nDepth: 1\r\n\r\n",
+    );
+    assert!(sent(&effects, Side::Server).starts_with(
+        "PROPFIND /remote.php/dav/addressbooks/users/ada/contacts/ HTTP/1.1\r\nHost: cloud.example.org\r\nDepth: 1\r\n"
+    ));
+    assert_eq!(sent(&effects, Side::App), "");
 }
