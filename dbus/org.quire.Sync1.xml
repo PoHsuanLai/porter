@@ -44,6 +44,15 @@
    <method name="ConfirmDiscard">
      <arg name="dataset" type="s" direction="in"/>
    </method>
+   <!--
+    Joins the caller to the connections syncd tells, without asking for any data: any
+    identified caller may call it. A connection is told only after it has called syncd, so
+    the shell calls this once at start. The shell (`CallerRole::SheetHost`) is then told
+    `NeedsConfirmation` for every dataset, the holds already on at once, and nothing else of
+    a dataset it does not own. Errors: `AccessDenied` for a sender syncd does not know.
+    -->
+   <method name="Watch">
+   </method>
    <signal name="Progress">
      <arg name="dataset" type="s"/>
      <arg name="progress" type="a{sv}"/>
@@ -54,7 +63,8 @@
    </signal>
    <!--
     A hold started or ended. The details are those of `Status`'s `needs_confirmation` key
-    (`discard` and `held`, both `t`) when the dataset is now held, and empty when the hold
+    (`discard` and `held`, both `t`) plus `account` (`s`, the account's object path under
+    `/org/quire/Accounts1/account/`) when the dataset is now held, and empty when the hold
     ended (confirmed and done, or the replica listed its items again).
     -->
    <signal name="NeedsConfirmation">

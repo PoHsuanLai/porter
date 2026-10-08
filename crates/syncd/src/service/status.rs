@@ -1,9 +1,11 @@
 //! The vardicts `Sync1` sends: `Status` (anchor age, pending, conflicts, paused, quota) and the
 //! two signals' details.
 
-use super::hub::StatusSnapshot;
+use super::hub::{DatasetName, StatusSnapshot};
 use crate::scheduler::Pausing;
-use porter_dbus::{CONFLICT_KEY_NUMBER, Details, STATUS_KEY_QUOTA, to_vardict, zvariant};
+use porter_dbus::{
+    ACCOUNTS_PATH, CONFLICT_KEY_NUMBER, Details, STATUS_KEY_QUOTA, to_vardict, zvariant,
+};
 use porter_sync::{BaseVersion, MassDelete, Quota, RemoteSide, StoredConflict};
 use serde_json::json;
 use zvariant::{Dict, OwnedValue, Signature, Value};
@@ -20,6 +22,8 @@ pub const KEY_PAUSED: &str = "paused";
 /// held: t}`): the replica's listing lacks `discard` of the `held` items, and nothing has been
 /// discarded.
 pub const KEY_NEEDS_CONFIRMATION: &str = "needs_confirmation";
+/// `NeedsConfirmation` key (`s`): the held dataset's account, as its object path.
+pub const KEY_ACCOUNT: &str = "account";
 
 fn owned(value: Value<'static>) -> Option<OwnedValue> {
     OwnedValue::try_from(value).ok()
@@ -80,9 +84,10 @@ pub fn status_details(status: &StatusSnapshot) -> Details {
     details
 }
 
-/// What `NeedsConfirmation` carries: `{discard: t, held: t}` while held, empty when the hold
-/// ended.
-pub fn held_details(held: Option<&MassDelete>) -> Details {
+/// What `NeedsConfirmation` carries for `dataset`: `{discard: t, held: t, account: s}` while
+/// held (`account` is the account's object path, where Settings opens it), empty when the hold
+/// ended (the signal's dataset argument says which).
+pub fn held_details(dataset: &DatasetName, held: Option<&MassDelete>) -> Details {
     let mut details = Details::new();
     if let Some(held) = held {
         let mut put = |key: &str, count: usize| {
@@ -90,6 +95,8 @@ pub fn held_details(held: Option<&MassDelete>) -> Details {
         };
         put("discard", held.discard);
         put("held", held.held);
+        let account = format!("{ACCOUNTS_PATH}/account/{}", dataset.account);
+        details.extend(owned(Value::from(account)).map(|v| (KEY_ACCOUNT.to_owned(), v)));
     }
     details
 }
@@ -187,14 +194,22 @@ mod tests {
     }
 
     #[test]
-    fn the_hold_signal_carries_the_counts_while_held_and_nothing_when_it_ends() {
-        let held = held_details(Some(&MassDelete {
-            discard: 30,
-            held: 40,
-        }));
+    fn the_hold_signal_carries_the_counts_and_the_account_while_held_and_nothing_when_it_ends() {
+        let dataset = DatasetName::parse("a1/notes").expect("name");
+        let held = held_details(
+            &dataset,
+            Some(&MassDelete {
+                discard: 30,
+                held: 40,
+            }),
+        );
         assert_eq!(u64::try_from(&held["discard"]).ok(), Some(30));
         assert_eq!(u64::try_from(&held["held"]).ok(), Some(40));
-        assert!(held_details(None).is_empty());
+        assert_eq!(
+            text(&held, KEY_ACCOUNT).as_deref(),
+            Some("/org/quire/Accounts1/account/a1")
+        );
+        assert!(held_details(&dataset, None).is_empty());
     }
 
     #[test]

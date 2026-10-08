@@ -69,11 +69,11 @@ impl<C: Callers> Core<C> {
         Ok(())
     }
 
-    /// Sends `event` to each connection that may see its dataset.
+    /// Sends `event` to each connection that is told of it (see [`Hub::hears`]).
     async fn relay(&self, event: &Event) {
         let names: Vec<String> = held(&self.roster)
             .iter()
-            .filter(|(_, caller)| self.hub.sees(caller, event.dataset()))
+            .filter(|(_, caller)| self.hub.hears(caller, event))
             .map(|(name, _)| name.clone())
             .collect();
         for name in names {
@@ -98,7 +98,7 @@ impl<C: Callers> Core<C> {
                 SyncObject::<C>::conflict(&emitter, &dataset.to_string(), details).await
             }
             Event::Held { dataset, held } => {
-                let details = held_details(held.as_ref());
+                let details = held_details(dataset, held.as_ref());
                 SyncObject::<C>::needs_confirmation(&emitter, &dataset.to_string(), details).await
             }
         }
@@ -206,6 +206,27 @@ impl<C: Callers> SyncObject<C> {
             })
     }
 
+    /// Joins the caller to the connections syncd tells, without asking for any data: any
+    /// identified caller may call it. A connection is told only after it has called syncd, so
+    /// the shell calls this once at start. The shell (`CallerRole::SheetHost`) is then told
+    /// `NeedsConfirmation` for every dataset, the holds already on at once, and nothing else of
+    /// a dataset it does not own. Errors: `AccessDenied` for a sender syncd does not know.
+    async fn watch(&self, #[zbus(header)] header: Header<'_>) -> Result<(), RefusedError> {
+        let caller = self.0.identify(&header).await?;
+        let sender = header
+            .sender()
+            .ok_or_else(|| RefusedError::access_denied("no sender"))?;
+        for (dataset, mass) in self.0.hub.holds_for(&caller) {
+            let hold = Event::Held {
+                dataset,
+                held: Some(mass),
+            };
+            // A signal that cannot be sent is a connection that has gone.
+            let _ = self.0.tell(sender.as_str(), &hold).await;
+        }
+        Ok(())
+    }
+
     #[zbus(signal)]
     async fn progress(
         emitter: &SignalEmitter<'_>,
@@ -221,7 +242,8 @@ impl<C: Callers> SyncObject<C> {
     ) -> zbus::Result<()>;
 
     /// A hold started or ended. The details are those of `Status`'s `needs_confirmation` key
-    /// (`discard` and `held`, both `t`) when the dataset is now held, and empty when the hold
+    /// (`discard` and `held`, both `t`) plus `account` (`s`, the account's object path under
+    /// `/org/quire/Accounts1/account/`) when the dataset is now held, and empty when the hold
     /// ended (confirmed and done, or the replica listed its items again).
     #[zbus(signal)]
     async fn needs_confirmation(

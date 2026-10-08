@@ -60,6 +60,13 @@ impl Access {
 }
 
 impl Access {
+    /// Whether `caller` is told when a hold on the dataset starts or ends: whoever sees the
+    /// dataset, and the shell (`SheetHost`) whether or not it owns it, so it can tell the person.
+    /// The shell sees nothing else of a dataset it does not own.
+    pub fn hears_holds(&self, caller: &Caller) -> bool {
+        self.admits(caller) || caller.role == CallerRole::SheetHost
+    }
+
     /// Whether `caller` is an app that owns the dataset (Settings and the porter daemons see it
     /// but do not own it).
     pub fn owned_by(&self, caller: &Caller) -> bool {
@@ -301,6 +308,27 @@ impl Hub {
         self.datasets()
             .get(name)
             .is_some_and(|entry| entry.access.admits(caller))
+    }
+
+    /// Whether `caller` is told of `event`: a hold ([`Event::Held`]) goes to whoever
+    /// [`Access::hears_holds`], every other event to whoever sees its dataset.
+    pub fn hears(&self, caller: &Caller, event: &Event) -> bool {
+        self.datasets()
+            .get(event.dataset())
+            .is_some_and(|entry| match event {
+                Event::Held { .. } => entry.access.hears_holds(caller),
+                Event::Progress { .. } | Event::Conflict { .. } => entry.access.admits(caller),
+            })
+    }
+
+    /// The holds that are on now and `caller` is told of, so a connection that joins late learns
+    /// of them.
+    pub fn holds_for(&self, caller: &Caller) -> Vec<(DatasetName, MassDelete)> {
+        self.datasets()
+            .iter()
+            .filter(|(_, entry)| entry.access.hears_holds(caller))
+            .filter_map(|(name, entry)| Some((name.clone(), entry.status.needs_confirmation?)))
+            .collect()
     }
 
     /// The status of `name` if `caller` may see it.

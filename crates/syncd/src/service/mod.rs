@@ -24,6 +24,11 @@
 //!   when a hold starts (the same `{discard, held}` as `Status`) and when it ends (empty).
 //!   syncd writes no audit events (it has none for pause and resume either), so this is not
 //!   audited.
+//! - The shell (`SheetHost`) is told `NeedsConfirmation` for every dataset (it carries `account`,
+//!   the account's object path, too) but sees nothing else of a dataset it does not own: no
+//!   `Progress`, no `Conflict`, and `Status`, `Pause`, `Resume`, `Resolve` and `ConfirmDiscard`
+//!   answer `NoFittingAccount`. `Watch()` joins any caller to the connections that are told,
+//!   without asking for data, and sends it the holds that are already on.
 //! - `Progress`, `Conflict` and `NeedsConfirmation` go to the connections that called and may see the dataset, never
 //!   broadcast; a connection that leaves the bus is forgotten.
 

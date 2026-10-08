@@ -150,6 +150,64 @@ async fn events_reach_subscribers_and_nobody_listening_is_fine() {
 }
 
 #[test]
+fn the_shell_hears_every_hold_and_nothing_else_of_a_dataset_it_does_not_own() {
+    let hub = Hub::default();
+    let handle = hub.register(name("a1/notes"), owned_by("org.example.Notes"));
+    let shell = caller("org.quire.Sill", CallerRole::SheetHost);
+    let owner = caller("org.example.Notes", CallerRole::App);
+    let stranger = caller("org.example.Other", CallerRole::App);
+    let agent = caller("org.quire.Agent", CallerRole::Agent);
+    let hold = Event::Held {
+        dataset: name("a1/notes"),
+        held: Some(MassDelete {
+            discard: 3,
+            held: 3,
+        }),
+    };
+    let progress = Event::Progress {
+        dataset: name("a1/notes"),
+        fetched: 1,
+        uploaded: 0,
+    };
+    for (who, caller, hold_heard, progress_heard) in [
+        ("the shell", &shell, true, false),
+        ("the owner", &owner, true, true),
+        ("a stranger", &stranger, false, false),
+        ("an agent", &agent, false, false),
+    ] {
+        assert_eq!(hub.hears(caller, &hold), hold_heard, "{who}: hold");
+        assert_eq!(
+            hub.hears(caller, &progress),
+            progress_heard,
+            "{who}: progress"
+        );
+    }
+    assert!(
+        !hub.sees(&shell, &name("a1/notes")),
+        "it still sees no data"
+    );
+    assert_eq!(hub.names_for(&shell), Vec::<String>::new());
+
+    assert!(hub.holds_for(&shell).is_empty(), "nothing held yet");
+    handle.publish(StatusSnapshot {
+        needs_confirmation: Some(MassDelete {
+            discard: 3,
+            held: 3,
+        }),
+        ..StatusSnapshot::default()
+    });
+    let held = vec![(
+        name("a1/notes"),
+        MassDelete {
+            discard: 3,
+            held: 3,
+        },
+    )];
+    assert_eq!(hub.holds_for(&shell), held);
+    assert_eq!(hub.holds_for(&stranger), vec![]);
+}
+
+#[test]
 fn forgetting_one_dataset_stops_it_and_leaves_the_others() {
     let hub = Hub::default();
     let gone = hub.register(name("a1/pim_cal_work"), Access::default());

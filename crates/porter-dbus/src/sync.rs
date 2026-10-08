@@ -39,6 +39,12 @@ pub trait Sync {
     /// `org.quire.Accounts1.Error.NoFittingAccount` when the caller sees no such dataset;
     /// `org.quire.Sync1.Error.NothingHeld` when nothing is held (never, or already confirmed).
     fn confirm_discard(&self, dataset: &str) -> zbus::Result<()>;
+    /// Joins the caller to the connections syncd tells, without asking for any data: any
+    /// identified caller may call it. A connection is told only after it has called syncd, so
+    /// the shell calls this once at start. The shell (`CallerRole::SheetHost`) is then told
+    /// `NeedsConfirmation` for every dataset, the holds already on at once, and nothing else of
+    /// a dataset it does not own. Errors: `AccessDenied` for a sender syncd does not know.
+    fn watch(&self) -> zbus::Result<()>;
     /// Transfer progress.
     #[zbus(signal)]
     fn progress(&self, dataset: &str, progress: Details) -> zbus::Result<()>;
@@ -48,7 +54,8 @@ pub trait Sync {
     #[zbus(signal)]
     fn conflict(&self, dataset: &str, conflict: Details) -> zbus::Result<()>;
     /// A hold started or ended. The details are those of `Status`'s `needs_confirmation` key
-    /// (`discard` and `held`, both `t`) when the dataset is now held, and empty when the hold
+    /// (`discard` and `held`, both `t`) plus `account` (`s`, the account's object path under
+    /// `/org/quire/Accounts1/account/`) when the dataset is now held, and empty when the hold
     /// ended (confirmed and done, or the replica listed its items again).
     #[zbus(signal)]
     fn needs_confirmation(&self, dataset: &str, held: Details) -> zbus::Result<()>;
@@ -106,6 +113,15 @@ impl SyncSkeleton {
         Err(crate::introspect::frozen())
     }
 
+    /// Joins the caller to the connections syncd tells, without asking for any data: any
+    /// identified caller may call it. A connection is told only after it has called syncd, so
+    /// the shell calls this once at start. The shell (`CallerRole::SheetHost`) is then told
+    /// `NeedsConfirmation` for every dataset, the holds already on at once, and nothing else of
+    /// a dataset it does not own. Errors: `AccessDenied` for a sender syncd does not know.
+    fn watch(&self) -> fdo::Result<()> {
+        Err(crate::introspect::frozen())
+    }
+
     #[zbus(signal)]
     async fn progress(
         emitter: &SignalEmitter<'_>,
@@ -121,7 +137,8 @@ impl SyncSkeleton {
     ) -> zbus::Result<()>;
 
     /// A hold started or ended. The details are those of `Status`'s `needs_confirmation` key
-    /// (`discard` and `held`, both `t`) when the dataset is now held, and empty when the hold
+    /// (`discard` and `held`, both `t`) plus `account` (`s`, the account's object path under
+    /// `/org/quire/Accounts1/account/`) when the dataset is now held, and empty when the hold
     /// ended (confirmed and done, or the replica listed its items again).
     #[zbus(signal)]
     async fn needs_confirmation(

@@ -217,6 +217,9 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
             // The listing the person confirmed has been acted on (or the server healed).
             self.confirmed = false;
             if self.held != before {
+                // The status first: a connection that joins right after the signal asks the hub
+                // for the holds that are on, and must find this one.
+                self.publish(now);
                 self.handle.tell(Event::Held {
                     dataset: self.handle.name().clone(),
                     held: self.held,
