@@ -102,23 +102,46 @@ async fn every_way_a_sheet_can_end_is_the_refusal_the_in_process_carrier_gives()
     }
 }
 
+/// Two sheets at once from one connection, of two kinds, each get their own answer. Two of the
+/// same kind at once are one sheet and a refusal (rel-11: one open sheet per app and kind).
 #[tokio::test(flavor = "multi_thread")]
 async fn two_sheets_at_once_from_one_connection_each_get_their_own_answer() {
-    let daemon = Daemon::start([Scripted::AllowFirst(GrantScope::Always), Scripted::Deny]).await;
+    let daemon = Daemon::start([Scripted::AllowFirst(GrantScope::Always)]).await;
     let photos_app = app(&daemon).await;
     let offer = offer_for(&photos_app, Delta::Poll).await;
     let window = ParentWindow::Unparented;
-    let (one, two) = tokio::join!(
+    let (chosen, added) = tokio::join!(
         photos_app.request_grant(&offer, &window),
-        photos_app.request_grant(&offer, &window)
+        photos_app.add_account(ProviderHint::Any, &window)
     );
-    let mut answers = [
-        one.map(|c| c.account.to_string()),
-        two.map(|c| c.account.to_string()),
-    ];
-    answers.sort_by_key(|answer| answer.is_ok());
-    assert_eq!(answers[0], Err(ClientError::Refused(Refusal::Denied)));
-    assert_eq!(answers[1], Ok("fake-storage".to_owned()));
+    assert_eq!(
+        chosen.map(|c| c.account.to_string()),
+        Ok("fake-storage".to_owned())
+    );
+    // No family signs in here: the add sheet's own answer.
+    assert_eq!(added, Err(ClientError::Refused(Refusal::Unavailable)));
+
+    let daemon = Daemon::start([Scripted::Hang]).await;
+    let photos_app = app(&daemon).await;
+    let offer = offer_for(&photos_app, Delta::Poll).await;
+    let first = photos_app.request_grant(&offer, &window);
+    let second = async {
+        eventually("the first sheet to be shown", || {
+            daemon.asked.asked().len() == 1
+        })
+        .await;
+        photos_app.request_grant(&offer, &window).await
+    };
+    tokio::pin!(first);
+    let busy = tokio::select! {
+        busy = second => busy,
+        _ = &mut first => panic!("the first sheet hangs"),
+    };
+    assert!(
+        matches!(&busy, Err(ClientError::Transport(TransportError::Malformed(why))) if why.contains("LimitsExceeded")),
+        "{busy:?}"
+    );
+    assert_eq!(daemon.asked.asked().len(), 1, "no second sheet");
 }
 
 #[tokio::test(flavor = "multi_thread")]
