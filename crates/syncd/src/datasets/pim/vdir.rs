@@ -67,9 +67,11 @@ fn keep(dir: &Path, file: &str, value: Option<&str>) -> std::io::Result<()> {
     }
 }
 
-/// Writes the collection's `displayname` and `color` files.
+/// Writes the collection's `displayname` and `color` files into `dir`, which must be there
+/// (`PimMirror::open` makes it). A collection whose directory is gone is never made again here:
+/// the supervisor writes these on every look, outside the engine's cycle, and an account removed
+/// meanwhile had its mirror deleted, which this must not bring back (`NotFound`).
 pub fn write_meta(dir: &Path, meta: &Meta) -> std::io::Result<()> {
-    std::fs::create_dir_all(dir)?;
     keep(dir, DISPLAYNAME, meta.displayname.as_deref())?;
     keep(dir, COLOR, meta.color.as_deref())
 }
@@ -299,6 +301,23 @@ mod tests {
         );
         assert!(!dir.join(COLOR).exists(), "no colour, no file");
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn metadata_never_makes_a_collection_whose_directory_is_gone() {
+        // The account was removed and its mirror deleted between the supervisor's look at the
+        // collections and its write of their names: nothing comes back (rel-13 follow-up, the
+        // pim_bus removal test that found the account's directory again).
+        let root = scratch("meta-gone");
+        let dir = root.join("account").join("personal");
+        let meta = Meta {
+            displayname: Some("Work".into()),
+            color: Some("#0082c9FF".into()),
+        };
+        let refused = write_meta(&dir, &meta).expect_err("no directory");
+        assert_eq!(refused.kind(), std::io::ErrorKind::NotFound);
+        assert!(!root.join("account").exists());
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
