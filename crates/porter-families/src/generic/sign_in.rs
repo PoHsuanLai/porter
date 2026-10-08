@@ -2,6 +2,7 @@
 //! finds the servers from the address (the server too, when none is published); a DAV account
 //! asks for the server, a user name and a password.
 
+use super::login::SharedLogin;
 use super::mail::{self, Looked};
 use super::{dav, jmap};
 use crate::io::{Io, SharedDns};
@@ -53,6 +54,7 @@ pub struct GenericSignIn {
     io: Io,
     dns: SharedDns,
     providers: ProviderSet,
+    login: SharedLogin,
     spec: ProviderSpec,
     flavor: Flavor,
     mode: SignInMode,
@@ -64,6 +66,7 @@ impl GenericSignIn {
         io: Io,
         dns: SharedDns,
         providers: ProviderSet,
+        login: SharedLogin,
         spec: ProviderSpec,
         flavor: Flavor,
         mode: SignInMode,
@@ -72,6 +75,7 @@ impl GenericSignIn {
             io,
             dns,
             providers,
+            login,
             spec,
             flavor,
             mode,
@@ -95,14 +99,19 @@ impl GenericSignIn {
         SignInStep::Failed(fault)
     }
 
-    /// The account is known: review it (a new account) or finish (a sign-in again).
-    fn found(
+    /// The account is known: the password is tried at its mail server (a wrong one, or a server
+    /// that does not answer, ends the sign-in here), then it is reviewed (a new account) or
+    /// finished (a sign-in again).
+    async fn found(
         &mut self,
         credential: Credential,
         label: String,
         endpoints: Vec<ServiceEndpoint>,
         claims: Vec<Claim>,
     ) -> SignInStep {
+        if let Err(fault) = self.login.check(&credential, &endpoints).await {
+            return self.failed(fault);
+        }
         let signed = Signed {
             label: AccountLabel(label),
             credentials: vec![(SecretPurpose::Password, credential)],
@@ -132,11 +141,11 @@ impl GenericSignIn {
         match self.flavor {
             Flavor::Mail => self.submitted_mail(answers).await,
             Flavor::Dav => self.submitted_dav(answers).await,
-            Flavor::Fixed => self.submitted_fixed(answers),
+            Flavor::Fixed => self.submitted_fixed(answers).await,
         }
     }
 
-    fn submitted_fixed(&mut self, answers: Vec<FieldAnswer>) -> SignInStep {
+    async fn submitted_fixed(&mut self, answers: Vec<FieldAnswer>) -> SignInStep {
         let (Some(address), Some(password)) = (
             text_of(&answers, FieldKind::Address),
             secret_of(&answers, FieldKind::Password),
@@ -149,6 +158,7 @@ impl GenericSignIn {
         match mail::fixed(&address, &self.spec) {
             Ok((endpoints, claims)) => {
                 self.found(Credential::Password(password), address, endpoints, claims)
+                    .await
             }
             Err(fault) => self.failed(fault),
         }
@@ -168,6 +178,7 @@ impl GenericSignIn {
             Looked::Found(endpoints, claims) => {
                 let label = address;
                 self.found(Credential::Password(password), label, endpoints, claims)
+                    .await
             }
             Looked::Ask => {
                 let domain = mail::domain_of(&address).map(|d| d.as_str().to_owned());
@@ -199,6 +210,7 @@ impl GenericSignIn {
                     found.endpoints,
                     found.claims,
                 )
+                .await
             }
             Err(fault) => self.failed(fault),
         }
@@ -227,7 +239,7 @@ impl GenericSignIn {
         match built {
             Ok((endpoints, claims)) => {
                 let label = typed.login.clone();
-                self.found(credential, label, endpoints, claims)
+                self.found(credential, label, endpoints, claims).await
             }
             Err(fault) => self.failed(fault),
         }

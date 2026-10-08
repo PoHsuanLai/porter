@@ -342,13 +342,24 @@ async fn a_typed_pop3_server_is_added_through_the_sheet_and_found_by_a_mail_need
     use porter_core::sheet::{FieldAnswer, FieldKind, FieldValue, ServiceChoice, SheetInput};
     use porter_core::{Family, ProviderId, SecretText, Toggle};
     use porter_fake::{FixedClock, NOW};
-    use porter_fake_servers::FakeDns;
+    use porter_fake_servers::net::{Bind, port_of};
+    use porter_fake_servers::{Accounts as MailAccounts, FakeDns, FakePop3, mailbox};
     use porter_families::{FamilyProvider, GenericProvider};
     use porter_http::SharedHttp;
     use porter_provider::parse_provider;
     use porter_secrets::MemorySecrets;
     use porter_service::{AccountService, Registry};
 
+    // The password is tried at the POP3 server before the review, so one is running.
+    let pop3 = FakePop3::start(
+        &Bind::Loopback,
+        porter_core::Tls::Plain,
+        MailAccounts::password("ada.login", "s3cret"),
+        mailbox(1),
+    )
+    .await
+    .expect("pop3");
+    let pop3_port = port_of(pop3.address());
     let plain = |kind, text: &str| FieldAnswer {
         kind,
         value: FieldValue::Plain(text.to_owned()),
@@ -369,8 +380,9 @@ async fn a_typed_pop3_server_is_added_through_the_sheet_and_found_by_a_mail_need
     ]);
     let manual = SheetInput::Submit(vec![
         plain(FieldKind::Protocol, "pop3"),
-        plain(FieldKind::Server, "pop.old-isp.example"),
-        plain(FieldKind::Security, "starttls"),
+        plain(FieldKind::Server, "127.0.0.1"),
+        plain(FieldKind::Security, "plain"),
+        plain(FieldKind::Port, &pop3_port.to_string()),
         plain(FieldKind::OutgoingServer, "smtp.old-isp.example"),
         plain(FieldKind::OutgoingSecurity, "starttls"),
         plain(FieldKind::OutgoingPort, "2525"),
@@ -428,7 +440,7 @@ async fn a_typed_pop3_server_is_added_through_the_sheet_and_found_by_a_mail_need
         [
             (
                 Family::Pop3,
-                "pop3://pop.old-isp.example:110".to_owned(),
+                format!("pop3://127.0.0.1:{pop3_port}"),
                 "ada.login".to_owned()
             ),
             (

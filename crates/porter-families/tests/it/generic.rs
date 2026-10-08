@@ -5,6 +5,7 @@
 
 use crate::common;
 
+use common::mail::{MailWorld, Wire};
 use common::{Fakes, Place, all_on, drive, plain, secret};
 use porter_core::capability::CapabilityKind;
 use porter_core::sheet::{FieldAnswer, FieldKind, SignInFault, SignInInput};
@@ -51,9 +52,19 @@ fn port_of(base: &str) -> u16 {
 struct Mail {
     autoconfig: Running<AutoconfigHandle>,
     provider: GenericProvider,
+    _servers: MailWorld,
 }
 
+/// The password the fake mail servers have planted.
+const PASSWORD: &str = "s3cret";
+
 async fn mail_with(dns: FakeDns) -> Mail {
+    mail_as("ada@fake.test", dns).await
+}
+
+/// A mail world whose servers let `user` in with [`PASSWORD`].
+async fn mail_as(user: &str, dns: FakeDns) -> Mail {
+    let servers = MailWorld::start(user, PASSWORD).await;
     let autoconfig = FakeAutoconfig::start().await.expect("fake");
     let port = port_of(autoconfig.base_url());
     let places = ["autoconfig.fake.test", "fake.test"]
@@ -66,7 +77,9 @@ async fn mail_with(dns: FakeDns) -> Mail {
         .collect();
     Mail {
         autoconfig,
-        provider: GenericProvider::new(imap_spec(), SharedHttp::new(Fakes::new(places)), dns),
+        provider: GenericProvider::new(imap_spec(), SharedHttp::new(Fakes::new(places)), dns)
+            .with_connect(servers.wire()),
+        _servers: servers,
     }
 }
 
@@ -183,7 +196,7 @@ async fn srv_records_find_the_servers_when_no_document_is_published() {
         );
     let mail = mail_with(dns).await;
     let mut signin = mail.provider.sign_in(add()).expect("sign-in");
-    let steps = drive(&mut signin, mail_person("ada@fake.test", "pw", "")).await;
+    let steps = drive(&mut signin, mail_person("ada@fake.test", PASSWORD, "")).await;
     let signed = done(&steps);
     assert_eq!(signed.endpoints.len(), 2, "{:?}", signed.endpoints);
     assert_eq!(
@@ -205,7 +218,7 @@ async fn a_domain_that_publishes_nothing_gets_a_question_for_the_server() {
     let mut signin = mail.provider.sign_in(add()).expect("sign-in");
     let steps = drive(
         &mut signin,
-        mail_person("ada@fake.test", "pw", "mail.fake.test"),
+        mail_person("ada@fake.test", PASSWORD, "mail.fake.test"),
     )
     .await;
 
@@ -274,7 +287,7 @@ fn shown(signed: &Signed) -> Vec<(Family, String, Tls, String)> {
 
 #[tokio::test]
 async fn typed_imap_and_smtp_on_other_ports_with_starttls_and_a_login_name() {
-    let mail = nothing_published().await;
+    let mail = mail_as("ada.login", FakeDns::new()).await;
     let mut signin = mail.provider.sign_in(add()).expect("sign-in");
     let typed = vec![
         plain(FieldKind::Protocol, "imap"),
@@ -566,7 +579,7 @@ async fn typed_jmap_with_an_api_token_presents_a_bearer_and_stores_the_token() {
 
 #[tokio::test]
 async fn typed_pop3_builds_pop3_and_smtp_endpoints_with_the_login_name() {
-    let mail = nothing_published().await;
+    let mail = mail_as("ada.login", FakeDns::new()).await;
     let mut signin = mail.provider.sign_in(add()).expect("sign-in");
     let typed = vec![
         plain(FieldKind::Protocol, "pop3"),
@@ -696,11 +709,11 @@ async fn signing_in_again_to_a_mail_account_asks_the_form_and_finishes_without_a
         },
     };
     let mut signin = mail.provider.sign_in(start).expect("sign-in");
-    let steps = drive(&mut signin, mail_person("ada@fake.test", "new", "")).await;
+    let steps = drive(&mut signin, mail_person("ada@fake.test", PASSWORD, "")).await;
     assert_eq!(steps.len(), 2, "{steps:?}");
     assert!(matches!(steps[0], SignInStep::AskFields(_)));
     let signed = done(&steps);
-    assert!(matches!(&signed.credentials[0].1, Credential::Password(p) if p.expose() == "new"));
+    assert!(matches!(&signed.credentials[0].1, Credential::Password(p) if p.expose() == PASSWORD));
 }
 
 struct Dav {
@@ -991,12 +1004,16 @@ fn brand(id: &str) -> ProviderSpec {
     spec(&text)
 }
 
-fn fixed_provider(spec: ProviderSpec) -> GenericProvider {
+fn fixed_provider(
+    spec: ProviderSpec,
+    connect: impl porter_proxy::Connect + 'static,
+) -> GenericProvider {
     GenericProvider::new(
         spec,
         SharedHttp::new(Fakes::loopback()),
         FakeDns::new().unreachable(),
     )
+    .with_connect(connect)
 }
 
 /// Answers the first form with `address` and `password`, and the review with everything on.
@@ -1054,7 +1071,7 @@ async fn a_fixed_file_signs_in_to_the_servers_it_names_and_the_password_logs_in(
         Running::spawn(smtp, smtp_handle.clone()),
     );
 
-    let provider = fixed_provider(file);
+    let provider = fixed_provider(file, porter_proxy::RustlsConnect::trusting([]));
     let mut signin = provider.sign_in(add()).expect("sign-in");
     let steps = drive(&mut signin, fixed_person("ada@fastmail.com", "app-pw")).await;
     let asked: Vec<FieldKind> = match &steps[0] {
@@ -1106,18 +1123,24 @@ async fn a_fixed_file_signs_in_to_the_servers_it_names_and_the_password_logs_in(
     say(&mut stream, &format!("AUTH PLAIN {plain}\r\n")).await;
     assert!(line(&mut stream).await.starts_with("235"));
 
-    for (who, handle) in [("imap", &imap_handle), ("smtp", &smtp_handle)] {
-        let attempts = handle.attempts();
-        assert!(
-            matches!(attempts.as_slice(), [a] if a.accepted && a.user == "ada@fastmail.com"),
-            "{who}: {attempts:?}"
-        );
-    }
+    // The IMAP server saw the sign-in's own login before the review, then the one above.
+    let attempts = imap_handle.attempts();
+    assert!(
+        matches!(attempts.as_slice(), [first, second]
+            if first.accepted && second.accepted && first.user == "ada@fastmail.com" && second.user == first.user),
+        "imap: {attempts:?}"
+    );
+    let attempts = smtp_handle.attempts();
+    assert!(
+        matches!(attempts.as_slice(), [a] if a.accepted && a.user == "ada@fastmail.com"),
+        "smtp: {attempts:?}"
+    );
 }
 
 #[tokio::test]
 async fn the_review_of_a_fixed_file_shows_the_files_endpoints_and_claims() {
-    let provider = fixed_provider(brand("icloud"));
+    let servers = MailWorld::start("ada@icloud.com", "app-pw").await;
+    let provider = fixed_provider(brand("icloud"), servers.wire());
     let mut signin = provider.sign_in(add()).expect("sign-in");
     let steps = drive(&mut signin, fixed_person("ada@icloud.com", "app-pw")).await;
     let SignInStep::Review {
@@ -1178,7 +1201,8 @@ async fn the_review_of_a_fixed_file_shows_the_files_endpoints_and_claims() {
 
 #[tokio::test]
 async fn a_fixed_file_refuses_a_bad_form_and_signs_in_again_without_a_review() {
-    let provider = fixed_provider(brand("gmx"));
+    let servers = MailWorld::start("ada@gmx.de", "new").await;
+    let provider = fixed_provider(brand("gmx"), servers.wire());
     for (address, password) in [("not-an-address", "pw"), ("ada@gmx.de", ""), ("", "pw")] {
         let mut signin = provider.sign_in(add()).expect("sign-in");
         let steps = drive(&mut signin, fixed_person(address, password)).await;
@@ -1215,4 +1239,137 @@ async fn a_fastmail_address_through_generic_imap_still_reports_the_fastmail_prov
             other => panic!("{address}: {other:?}"),
         }
     }
+}
+
+// ---- the password is tried at the mail server before the review ----
+
+/// A mail account published by autoconfig, with the fakes behind it.
+async fn published() -> Mail {
+    let mail = mail_with(FakeDns::new()).await;
+    mail.autoconfig.serve_autoconfig(&autoconfig_xml(
+        "fake.test",
+        ("imap.fake.test", 993),
+        ("smtp.fake.test", 587),
+    ));
+    mail
+}
+
+fn has_review(steps: &[SignInStep]) -> bool {
+    steps.iter().any(|s| matches!(s, SignInStep::Review { .. }))
+}
+
+#[tokio::test]
+async fn a_wrong_mail_password_is_refused_before_the_review() {
+    let mail = published().await;
+    let mut signin = mail.provider.sign_in(add()).expect("sign-in");
+    let steps = drive(&mut signin, mail_person("ada@fake.test", "wrong", "")).await;
+    assert_eq!(
+        steps.last(),
+        Some(&SignInStep::Failed(SignInFault::Refused)),
+        "{steps:?}"
+    );
+    assert!(!has_review(&steps), "{steps:?}");
+}
+
+#[tokio::test]
+async fn a_mail_server_that_cannot_be_reached_is_unreachable_before_the_review() {
+    let mail = published().await;
+    let provider = mail.provider.clone().with_connect(Wire::nowhere());
+    let mut signin = provider.sign_in(add()).expect("sign-in");
+    let steps = drive(&mut signin, mail_person("ada@fake.test", PASSWORD, "")).await;
+    assert_eq!(
+        steps.last(),
+        Some(&SignInStep::Failed(SignInFault::Unreachable)),
+        "{steps:?}"
+    );
+    assert!(!has_review(&steps), "{steps:?}");
+}
+
+#[tokio::test]
+async fn the_right_mail_password_goes_on_to_the_review() {
+    let mail = published().await;
+    let mut signin = mail.provider.sign_in(add()).expect("sign-in");
+    let steps = drive(&mut signin, mail_person("ada@fake.test", PASSWORD, "")).await;
+    assert!(has_review(&steps), "{steps:?}");
+    done(&steps);
+}
+
+#[tokio::test]
+async fn a_wrong_pop3_password_is_refused_and_a_right_one_goes_on() {
+    let mail = nothing_published().await;
+    let typed = |_: ()| {
+        vec![
+            plain(FieldKind::Protocol, "pop3"),
+            plain(FieldKind::Server, "pop.fake.test"),
+            plain(FieldKind::Security, "starttls"),
+            plain(FieldKind::OutgoingServer, "smtp.fake.test"),
+            plain(FieldKind::OutgoingSecurity, "starttls"),
+        ]
+    };
+    let person = |password: &'static str| {
+        let mut asked = manual_person(typed(()));
+        move |step: &SignInStep| match step {
+            SignInStep::AskFields(fields)
+                if fields.iter().any(|f| f.kind == FieldKind::Address) =>
+            {
+                SignInInput::Fields(vec![
+                    plain(FieldKind::Address, "ada@fake.test"),
+                    secret(FieldKind::Password, password),
+                ])
+            }
+            other => asked(other),
+        }
+    };
+    let mut signin = mail.provider.sign_in(add()).expect("sign-in");
+    let steps = drive(&mut signin, person("wrong")).await;
+    assert_eq!(
+        steps.last(),
+        Some(&SignInStep::Failed(SignInFault::Refused)),
+        "{steps:?}"
+    );
+    assert!(!has_review(&steps), "{steps:?}");
+    let mut signin = mail.provider.sign_in(add()).expect("sign-in");
+    let steps = drive(&mut signin, person(PASSWORD)).await;
+    assert!(has_review(&steps), "{steps:?}");
+}
+
+#[tokio::test]
+async fn signing_in_again_with_a_wrong_mail_password_is_refused() {
+    let mail = published().await;
+    let start = SignInStart {
+        mode: SignInMode::Reauthenticate {
+            account: AccountId::parse("generic-imap-ada").expect("id"),
+            endpoints: vec![],
+        },
+    };
+    let mut signin = mail.provider.sign_in(start).expect("sign-in");
+    let steps = drive(&mut signin, mail_person("ada@fake.test", "wrong", "")).await;
+    assert_eq!(
+        steps.last(),
+        Some(&SignInStep::Failed(SignInFault::Refused)),
+        "{steps:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_fixed_file_checks_the_password_too() {
+    let servers = MailWorld::start("ada@gmx.de", "app-pw").await;
+    let provider = fixed_provider(brand("gmx"), servers.wire());
+    let mut signin = provider.sign_in(add()).expect("sign-in");
+    let steps = drive(&mut signin, fixed_person("ada@gmx.de", "wrong")).await;
+    assert_eq!(
+        steps.last(),
+        Some(&SignInStep::Failed(SignInFault::Refused)),
+        "{steps:?}"
+    );
+    assert!(!has_review(&steps), "{steps:?}");
+
+    let provider = fixed_provider(brand("gmx"), Wire::nowhere());
+    let mut signin = provider.sign_in(add()).expect("sign-in");
+    let steps = drive(&mut signin, fixed_person("ada@gmx.de", "app-pw")).await;
+    assert_eq!(
+        steps.last(),
+        Some(&SignInStep::Failed(SignInFault::Unreachable)),
+        "{steps:?}"
+    );
 }

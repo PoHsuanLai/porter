@@ -2,6 +2,9 @@
 //! answers sheets.
 #![allow(dead_code)]
 
+#[cfg(feature = "generic")]
+pub mod mail;
+
 use porter_core::sheet::{
     FieldAnswer, FieldKind, FieldValue, ServiceChoice, SheetInput, SheetView,
 };

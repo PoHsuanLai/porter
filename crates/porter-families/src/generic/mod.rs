@@ -10,6 +10,7 @@
 
 mod dav;
 mod jmap;
+mod login;
 mod mail;
 mod sign_in;
 
@@ -32,6 +33,7 @@ pub struct GenericProvider {
     io: Io,
     dns: SharedDns,
     providers: ProviderSet,
+    login: login::SharedLogin,
 }
 
 impl GenericProvider {
@@ -43,6 +45,17 @@ impl GenericProvider {
             io: Io::new(http, NoSleep),
             dns: SharedDns::new(dns),
             providers: ProviderSet::default(),
+            login: login::SharedLogin::platform(),
+        }
+    }
+
+    /// The same provider that tries a typed password at the mail server through `connect`
+    /// (default: TCP and TLS over the platform's roots). A test's is a connector that trusts a
+    /// scratch CA.
+    pub fn with_connect(self, connect: impl porter_proxy::Connect + 'static) -> Self {
+        Self {
+            login: login::SharedLogin::new(connect),
+            ..self
         }
     }
 
@@ -104,6 +117,7 @@ impl Provider for GenericProvider {
             self.io.clone(),
             self.dns.clone(),
             self.providers.clone(),
+            self.login.clone(),
             self.spec.clone(),
             flavor,
             start.mode,
