@@ -26,7 +26,7 @@ use porter_core::{
 use porter_dbus::{
     CallerRole, Details, LauncherFault, SheetKind, is_handle_token, request_path, response_of,
 };
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::Ordering;
@@ -42,6 +42,53 @@ use zbus::{Connection, ObjectServer};
 
 /// The slot the sheet's task puts its abort handle in, for `Close`.
 type AbortSlot = Arc<Mutex<Option<AbortHandle>>>;
+
+/// The sheets open now, by the app that asked and the kind of sheet: an app has one of each
+/// kind at a time, so it cannot stack sheets on the person (rel-11). Keyed by the app, not the
+/// connection, so a second connection of the same app is the same asker.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct OpenSheets(Arc<Mutex<HashSet<(AppId, SheetKind)>>>);
+
+/// One open sheet, held by its task; dropping it (the sheet answered, was closed, or its caller
+/// left) frees the app to ask again.
+#[derive(Debug)]
+pub(crate) struct SheetClaim {
+    open: OpenSheets,
+    key: (AppId, SheetKind),
+}
+
+impl OpenSheets {
+    /// A claim on a `kind` sheet for `app`, or `LimitsExceeded` while it has one open: no
+    /// `Refusal` says "you have one open already" (each is about the account or the person), so
+    /// the method answers the bus's own error and no sheet or Request object is made.
+    pub(crate) fn claim(&self, app: &AppId, kind: SheetKind) -> Result<SheetClaim, RefusedError> {
+        let key = (app.clone(), kind);
+        match self
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(key.clone())
+        {
+            true => Ok(SheetClaim {
+                open: self.clone(),
+                key,
+            }),
+            false => Err(RefusedError::busy(
+                "this app already has a sheet of this kind open",
+            )),
+        }
+    }
+}
+
+impl Drop for SheetClaim {
+    fn drop(&mut self) {
+        self.open
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&self.key);
+    }
+}
 
 /// One sheet shown, as an object.
 #[derive(Debug)]
@@ -99,8 +146,11 @@ impl<H: Host, C: Callers> Core<H, C> {
             .ok_or_else(|| RefusedError::access_denied("no sender"))?
             .to_owned();
         let path = self.request_object_path(&sender, options)?;
+        let claim = self.open_sheets.claim(&app, kind)?;
         let core = Arc::clone(self);
         let run = async move {
+            // Held until the sheet ends, however it ends (answered, closed, its caller gone).
+            let _claim = claim;
             let reply = match request {
                 // An agent signs itself in: the sheet waits for its launcher's report.
                 AccountsRequest::Reauthenticate { account, window } if core.is_agent(&account) => {
@@ -198,8 +248,10 @@ impl<H: Host, C: Callers> Core<H, C> {
                 .map_err(RefusedError::invalid)?,
             isolation: Isolation::Unsandboxed,
         };
+        let claim = self.open_sheets.claim(&agent, SheetKind::Choose)?;
         let core = Arc::clone(self);
         let run = async move {
+            let _claim = claim;
             let reply = core
                 .host
                 .choose_for_agent(
@@ -352,5 +404,40 @@ async fn departed(mut owners: NameOwnerChangedStream) {
             }
             None => return,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn app(name: &str) -> AppId {
+        AppId {
+            name: AppName::parse(name).expect("app name"),
+            isolation: Isolation::Flatpak,
+        }
+    }
+
+    #[test]
+    fn an_app_has_one_open_sheet_of_each_kind_until_it_ends() {
+        let open = OpenSheets::default();
+        let mail = app("org.quire.Mail");
+        let first = open.claim(&mail, SheetKind::AddAccount).expect("first");
+        let again = open
+            .claim(&mail, SheetKind::AddAccount)
+            .expect_err("a second while the first is open");
+        assert_eq!(
+            again.error_name(),
+            "org.freedesktop.DBus.Error.LimitsExceeded"
+        );
+        // Another kind, or another app, is its own.
+        let _choose = open.claim(&mail, SheetKind::Choose).expect("another kind");
+        let _other = open
+            .claim(&app("org.quire.Photos"), SheetKind::AddAccount)
+            .expect("another app");
+        drop(first);
+        let _next = open
+            .claim(&mail, SheetKind::AddAccount)
+            .expect("free once the first ended");
     }
 }

@@ -264,3 +264,61 @@ async fn add_account_on_the_alert_opens_the_add_sheet_and_cancelling_it_grants_n
     assert_eq!(code, 1, "{results:?}");
     assert!(rig.service.registry().grants.is_empty());
 }
+
+/// rel-11: an app has one sheet of a kind open at a time. A second ask while the first is open
+/// is refused at once (`LimitsExceeded`, no sheet, no Request object), from another connection of
+/// the same app too; once the first is closed the app may ask again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_second_sheet_of_a_kind_while_one_is_open_is_refused_until_it_ends() {
+    let rig = Rig::start_with(Default::default(), SheetHost::quiet()).await;
+    let (client, sheet, path, _handle) = choosing(&rig).await;
+    let ask = |connection: zbus::Connection| async move {
+        let options = Sheet::subscribe(&connection)
+            .await
+            .expect("subscribe")
+            .options();
+        ManagerProxy::new(&connection)
+            .await
+            .expect("proxy")
+            .choose(
+                &storage_need(),
+                "photos",
+                "interactive",
+                "wayland:abc",
+                &options,
+            )
+            .await
+    };
+    let again = ask(client.clone()).await.expect_err("one is open");
+    assert_eq!(
+        error_name(&again),
+        "org.freedesktop.DBus.Error.LimitsExceeded"
+    );
+    let other_connection = rig.client("org.quire.Photos").await;
+    let again = ask(other_connection).await.expect_err("the same app");
+    assert_eq!(
+        error_name(&again),
+        "org.freedesktop.DBus.Error.LimitsExceeded"
+    );
+    assert_eq!(rig.host_log.calls().opened.len(), 1, "no second sheet");
+    // Another app is not held up.
+    ask(rig.client("org.quire.Mail").await)
+        .await
+        .expect("another app's sheet");
+
+    sheet.closer(Some(path)).expect("closer").close().await;
+    let mut asked = None;
+    for _ in 0..200 {
+        match ask(client.clone()).await {
+            Ok(path) => {
+                asked = Some(path);
+                break;
+            }
+            Err(_) => tokio::time::sleep(Duration::from_millis(10)).await,
+        }
+    }
+    assert!(
+        asked.is_some(),
+        "the app may ask again once its sheet ended"
+    );
+}

@@ -394,6 +394,8 @@ pub(crate) struct Core<H, C> {
     /// The served settings module, which announces an account's new state as `Changed`; set
     /// once the module is served.
     pub(crate) settings: OnceLock<ds_settings::live::Served>,
+    /// The sheets open now, one per app and kind (rel-11).
+    pub(crate) open_sheets: crate::request::OpenSheets,
 }
 
 fn held<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -697,6 +699,7 @@ pub async fn serve_with<H: Host, C: Callers>(
         launchers: Launchers::new(connection.clone(), options.login),
         credentials: Credentials::new(options.runtime_dir.as_deref()),
         settings: OnceLock::new(),
+        open_sheets: crate::request::OpenSheets::default(),
     });
     core.host.use_launcher_roster(core.launchers.roster());
     let server: &ObjectServer = connection.object_server();

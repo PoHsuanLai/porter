@@ -129,11 +129,23 @@ async fn a_token_that_is_not_a_path_segment_or_is_in_use_is_refused() {
         first.as_str(),
         request_path(&unique(&client), "mine").expect("path")
     );
-    let again = choose(&client, &token("mine")).await;
+    // Another sheet of another kind with the same token: the token is in use.
+    let again = ManagerProxy::new(&client)
+        .await
+        .expect("proxy")
+        .add_account("", "", &token("mine"))
+        .await;
     assert_eq!(
         again.map_err(|e| error_name(&e)),
         Err("org.freedesktop.DBus.Error.InvalidArgs".to_owned()),
         "the token is in use while its sheet is open"
+    );
+    // A second sheet of the same kind is refused before its token is looked at (rel-11).
+    let again = choose(&client, &token("other")).await;
+    assert_eq!(
+        again.map_err(|e| error_name(&e)),
+        Err("org.freedesktop.DBus.Error.LimitsExceeded".to_owned()),
+        "one sheet of a kind at a time"
     );
     // Closing the sheet frees it.
     let proxy = RequestProxy::builder(&client)

@@ -65,6 +65,12 @@ impl RefusedError {
         }
     }
 
+    /// A caller that already has what it asks for under way (a sheet of that kind open):
+    /// `org.freedesktop.DBus.Error.LimitsExceeded`.
+    pub(crate) fn busy(why: impl ToString) -> Self {
+        Self::bus(fdo::Error::LimitsExceeded(why.to_string()))
+    }
+
     /// Something the daemon could not do.
     pub(crate) fn failed(why: impl ToString) -> Self {
         Self::bus(fdo::Error::Failed(why.to_string()))
