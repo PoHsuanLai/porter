@@ -5,18 +5,20 @@
 //! mode: it is created `0600` and refused, on open and on every later use, when any group or
 //! other bit is set. Items are addressed as the keyring backends address them (`service`
 //! `porter`, the account, the purpose in its serde form). Every use takes an advisory lock on a
-//! sibling `<file>.lock`, reads the file and, for a change, writes `<file>.tmp` and renames it
-//! over the file, so a crash leaves the old file whole and writers in this or any other process
+//! sibling `<file>.lock`, reads the file and, for a change, writes it through `porter_core`'s
+//! atomic writer (a staging file, synced, renamed over the file), so a crash leaves the old file
+//! whole and writers in this or any other process
 //! (a daemon and `accountd add`) are serialised. The I/O is synchronous: the files are tiny and
 //! nothing awaits while the lock is held.
 
 use crate::attributes::{SERVICE, attributes};
 use crate::error::SecretsError;
 use crate::secrets::{PutOutcome, Secrets};
+use porter_core::atomic::AtomicWrite;
 use porter_core::{AccountId, Credential, SecretKey};
 use serde_json::{Value, json};
 use std::fs::{File, OpenOptions};
-use std::io::{ErrorKind, Read, Write};
+use std::io::{ErrorKind, Read};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 
@@ -173,7 +175,7 @@ impl FileSecrets {
         let mut items = self.read()?;
         let (out, changed) = change(&mut items);
         if changed == Change::Changed {
-            self.commit(&self.stage(&render(&items))?)?;
+            self.write(&render(&items))?;
         }
         Ok(out)
     }
@@ -183,7 +185,7 @@ impl FileSecrets {
         let mut file = match File::open(&self.path) {
             Ok(file) => file,
             Err(error) if error.kind() == ErrorKind::NotFound => {
-                self.commit(&self.stage(&render(&[]))?)?;
+                self.write(&render(&[]))?;
                 File::open(&self.path)?
             }
             Err(error) => return Err(error.into()),
@@ -203,22 +205,12 @@ impl FileSecrets {
         parse(&text)
     }
 
-    /// Writes `bytes` to `<file>.tmp` (a stale one from a crash is replaced), mode `0600`.
-    fn stage(&self, bytes: &[u8]) -> Result<PathBuf, FileSecretsError> {
-        let temp = self.sibling(".tmp");
-        match std::fs::remove_file(&temp) {
-            Err(error) if error.kind() != ErrorKind::NotFound => return Err(error.into()),
-            _ => {}
-        }
-        let mut file = private_options().create_new(true).open(&temp)?;
-        file.write_all(bytes)?;
-        file.sync_all()?;
-        Ok(temp)
-    }
-
-    /// Renames the staged file over the store's file: the one step that changes it.
-    fn commit(&self, temp: &Path) -> Result<(), FileSecretsError> {
-        std::fs::rename(temp, &self.path).map_err(Into::into)
+    /// Replaces the store's file with `bytes`, mode `0600`, through the shared atomic writer: a
+    /// staging file of its own name (a stale one from a crash is left alone), synced, renamed.
+    fn write(&self, bytes: &[u8]) -> Result<(), FileSecretsError> {
+        AtomicWrite::PRIVATE
+            .write(&self.path, bytes)
+            .map_err(Into::into)
     }
 }
 

@@ -145,7 +145,7 @@ async fn a_crash_between_the_temp_file_and_the_rename_leaves_the_original_whole(
 
     // The state a crash leaves: the temp file written (here with a different, half-written
     // content and a loose mode), the rename never done.
-    let temp = PathBuf::from(format!("{}.tmp", path.display()));
+    let temp = path.with_file_name(".tmp-1-1.tmp");
     std::fs::write(&temp, br#"{"version":1,"items":[{"half"#).expect("temp");
     std::fs::set_permissions(&temp, std::fs::Permissions::from_mode(0o644)).expect("chmod");
     assert_eq!(
@@ -156,12 +156,19 @@ async fn a_crash_between_the_temp_file_and_the_rename_leaves_the_original_whole(
     let reopened = FileSecrets::open(&path).expect("a stale temp does not stop a reopen");
     assert_eq!(reopened.get(&key("cloud")).await, Ok(api_key("sk-1")));
 
-    // The next write replaces the stale temp, commits, and leaves no temp (nor its loose mode).
+    // The next write stages under a name of its own, commits, and leaves the stale temp alone
+    // (its own staging file is gone: it was renamed over the file).
     reopened
         .put(&key("more"), &api_key("sk-2"))
         .await
         .expect("put");
-    assert!(!temp.exists(), "the temp was renamed over the file");
+    assert!(temp.exists(), "the stale temp is not touched");
+    let staged = std::fs::read_dir(path.parent().expect("dir"))
+        .expect("dir")
+        .filter_map(Result::ok)
+        .filter(|e| e.file_name().to_string_lossy().ends_with(".tmp"))
+        .count();
+    assert_eq!(staged, 1, "only the stale one is left");
     assert_eq!(mode(&path), 0o600);
     assert_eq!(reopened.get(&key("cloud")).await, Ok(api_key("sk-1")));
     assert_eq!(reopened.get(&key("more")).await, Ok(api_key("sk-2")));

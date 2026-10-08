@@ -4,6 +4,7 @@
 use super::resolve::resolve;
 use crate::config::InferdConfig;
 use crate::engines::Engines;
+use porter_core::atomic::AtomicWrite;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
@@ -60,12 +61,9 @@ impl ConfigFile {
         let text = toml::to_string(&table).map_err(|e| FileError::Toml(e.to_string()))?;
         InferdConfig::from_toml(&text).map_err(|e| FileError::Toml(e.to_string()))?;
         let io = |e: std::io::Error| FileError::Io(format!("{}: {e}", self.path.display()));
-        if let Some(dir) = self.path.parent() {
-            std::fs::create_dir_all(dir).map_err(io)?;
-        }
-        let temp = self.path.with_extension("toml.new");
-        write_synced(&temp, text.as_bytes()).map_err(io)?;
-        std::fs::rename(&temp, &self.path).map_err(io)
+        AtomicWrite::SHARED
+            .write(&self.path, text.as_bytes())
+            .map_err(io)
     }
 
     /// The file's modification time and length, `None` while it is missing: what the watch
@@ -74,15 +72,6 @@ impl ConfigFile {
         let meta = std::fs::metadata(&self.path).ok()?;
         Some((meta.modified().ok()?, meta.len()))
     }
-}
-
-/// Writes `bytes` to `path` and has them on disk before returning, so that the rename that
-/// follows never publishes a file whose contents a power cut could still lose.
-fn write_synced(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    use std::io::Write;
-    let mut out = std::fs::File::create(path)?;
-    out.write_all(bytes)?;
-    out.sync_all()
 }
 
 /// Sets `table` at the dotted `path`, making the tables on the way.

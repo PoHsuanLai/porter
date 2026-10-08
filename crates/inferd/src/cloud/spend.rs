@@ -9,11 +9,11 @@
 //! prompt.
 
 use crate::settings::SpendLine;
+use porter_core::atomic::AtomicWrite;
 use porter_core::{AccountId, AppId, MicroUsd, Tokens, UnixSeconds};
 use porter_infer::{Period, SpendScope, SpendVerdict, TokenUsage, spend_verdict};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::PathBuf;
 use std::sync::{Mutex, PoisonError};
 
@@ -237,23 +237,10 @@ impl Ledger {
                 .collect(),
             unknown: self.unknown,
         };
+        // On disk before it replaces the old file, or a power cut leaves an empty ledger.
         let write = || -> std::io::Result<()> {
-            use std::io::Write;
-            if let Some(dir) = file.parent() {
-                std::fs::create_dir_all(dir)?;
-            }
-            let temp = file.with_extension("json.new");
             let text = serde_json::to_string(&document).map_err(std::io::Error::other)?;
-            let mut out = std::fs::OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .mode(0o600)
-                .open(&temp)?;
-            out.write_all(text.as_bytes())?;
-            // On disk before it replaces the old file, or a power cut leaves an empty ledger.
-            out.sync_all()?;
-            std::fs::rename(&temp, file)
+            AtomicWrite::PRIVATE.write(file, text.as_bytes())
         };
         if let Err(why) = write() {
             eprintln!("inferd: spend: {}: {why}", file.display());

@@ -2,11 +2,11 @@
 //! the same photo are one file, locally and on the replica, and a name can be checked against
 //! the bytes it holds. Also the atomic file writes every part of the library uses.
 
+use porter_core::atomic::AtomicWrite;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::io::{self, Read, Write};
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::io::{self, Read};
+use std::path::Path;
 
 /// A photo's identity: the SHA-256 of its bytes, 64 lowercase hex digits.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -85,50 +85,16 @@ pub fn hash_file(path: &Path) -> io::Result<(ContentId, u64)> {
     Ok((ContentId::from_digest(hasher.finalize().as_slice()), size))
 }
 
-static NEXT: AtomicU64 = AtomicU64::new(0);
-
-/// The temporary name beside `target`: a dot file, so no scan lists it.
-fn temp_beside(target: &Path) -> PathBuf {
-    let name = format!(
-        ".tmp-{}-{}",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    );
-    target.with_file_name(name)
-}
-
-/// Writes `bytes` to `target` so that a reader sees the old file or the whole new one: a temp
-/// file beside it, synced, renamed over it. Missing directories are made.
+/// Writes `bytes` to `target` so that a reader sees the old file or the whole new one, through
+/// porter's one atomic writer: a staging file (a dot file named `.tmp-*`, which no scan lists)
+/// beside it, synced, renamed over it. Missing directories are made.
 pub fn write_atomic(target: &Path, bytes: &[u8]) -> io::Result<()> {
-    publish(target, |file| file.write_all(bytes))
+    AtomicWrite::SHARED.write(target, bytes)
 }
 
 /// Copies `source` to `target` the same way.
 pub fn copy_atomic(source: &Path, target: &Path) -> io::Result<()> {
-    publish(target, |file| {
-        io::copy(&mut std::fs::File::open(source)?, file).map(|_| ())
-    })
-}
-
-fn publish(
-    target: &Path,
-    fill: impl FnOnce(&mut std::fs::File) -> io::Result<()>,
-) -> io::Result<()> {
-    if let Some(parent) = target.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let temp = temp_beside(target);
-    let done = std::fs::File::create(&temp).and_then(|mut file| {
-        fill(&mut file)?;
-        file.sync_all()
-    });
-    match done.and_then(|()| std::fs::rename(&temp, target)) {
-        Ok(()) => Ok(()),
-        Err(error) => {
-            let _ = std::fs::remove_file(&temp);
-            Err(error)
-        }
-    }
+    AtomicWrite::SHARED.copy(source, target)
 }
 
 #[cfg(test)]

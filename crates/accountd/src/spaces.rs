@@ -12,7 +12,7 @@
 //! - A `spaces.json` that cannot be read is never written over: the list is served empty and
 //!   every change is refused until the person mends or moves the file.
 
-use crate::store::file::AtomicFile;
+use porter_core::atomic::AtomicFile;
 use porter_core::consent::Grant;
 use porter_core::{
     AppName, DesktopSpace, DesktopSpaceRecord, SpaceKind, SpaceLook, SpaceName, SpaceScope,
@@ -235,11 +235,13 @@ impl SpaceBook {
             return Err(SpaceFault::TooMany);
         }
         let mut doc = self.doc.clone();
-        let (n, id) = (doc.next..)
+        // `next` comes from a file: one at the top of the range is a full counter (refused), not
+        // an overflow.
+        let (n, id) = (doc.next..=u64::MAX)
             .filter_map(|n| Some((n, DesktopSpace::parse(&format!("space-{n}")).ok()?)))
             .find(|(_, id)| !doc.spaces.iter().any(|s| s.id == *id))
             .ok_or(SpaceFault::Unsaved)?;
-        doc.next = n + 1;
+        doc.next = n.checked_add(1).ok_or(SpaceFault::Unsaved)?;
         doc.spaces.push(DesktopSpaceRecord {
             id: id.clone(),
             name,

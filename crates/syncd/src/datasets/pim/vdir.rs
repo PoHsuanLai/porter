@@ -7,16 +7,13 @@
 //! dot and end in `.tmp`, matching neither `*.ics` nor `*.vcf`.
 
 use super::PimKind;
-use std::io::Write;
+use porter_core::atomic::AtomicWrite;
 use std::path::Path;
-use std::sync::atomic::{AtomicU32, Ordering};
 
 /// The file of a collection's name.
 pub const DISPLAYNAME: &str = "displayname";
 /// The file of a collection's colour.
 pub const COLOR: &str = "color";
-
-static NEXT: AtomicU32 = AtomicU32::new(0);
 
 /// What a collection says about itself.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -27,24 +24,13 @@ pub struct Meta {
     pub color: Option<String>,
 }
 
-/// Writes `bytes` to `dir/name` atomically: a temporary file in the same directory, renamed
-/// into place. Not flushed to disk: the mirror is the server's copy, and a file a crash left
-/// short fails the hash check the mirror runs at open and is fetched again.
+/// Writes `bytes` to `dir/name` atomically, through porter's one atomic writer: a temporary file
+/// in the same directory, synced, renamed into place, the directory synced. The directory is
+/// never made: a collection whose directory is gone stays gone (`NotFound`).
 pub fn write_atomic(dir: &Path, name: &str, bytes: &[u8]) -> std::io::Result<()> {
-    let temp = dir.join(format!(
-        ".{name}.{}.{}.tmp",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    ));
-    let written = (|| {
-        let mut file = std::fs::File::create(&temp)?;
-        file.write_all(bytes)?;
-        std::fs::rename(&temp, dir.join(name))
-    })();
-    if written.is_err() {
-        let _ = std::fs::remove_file(&temp);
-    }
-    written
+    AtomicWrite::SHARED
+        .in_existing_dir()
+        .write(&dir.join(name), bytes)
 }
 
 /// Removes `dir/name`; a file already gone is not an error.
@@ -257,7 +243,10 @@ mod tests {
             .map(|e| e.expect("e").file_name().into_string().expect("utf8"))
             .collect();
         assert_eq!(names, ["a.ics"]);
-        assert!(write_atomic(&dir.join("missing"), "a.ics", b"x").is_err());
+        // A directory that is gone is not made again (the supervisor's removal race).
+        let gone = write_atomic(&dir.join("missing"), "a.ics", b"x").expect_err("no directory");
+        assert_eq!(gone.kind(), std::io::ErrorKind::NotFound);
+        assert!(!dir.join("missing").exists());
         let _ = std::fs::remove_dir_all(dir);
     }
 

@@ -7,13 +7,11 @@
 //! synced. A crash before the rename leaves the old file whole. Each commit first keeps the file
 //! it replaces as `registry.json.bak`, the last file that loaded. A file that cannot be read as a
 //! registry is refused with a typed error and is never written over; neither is the `.bak`.
-//! The file handling is [`file::AtomicFile`], which `spaces.json` shares.
+//! The file handling is [`AtomicFile`], which `spaces.json` shares.
 //!
 //! Only blocking file calls live here; the seam is async, so each runs on tokio's blocking pool.
 
-pub(crate) mod file;
-
-use file::AtomicFile;
+use porter_core::atomic::AtomicFile;
 use porter_core::store::{Persisted, StoreFault};
 use porter_service::{RegistryStore, StoreError};
 use std::io;
