@@ -6,12 +6,14 @@
 //! agent-settable (`ds-settings` refuses a schema that says otherwise).
 
 use crate::app_names::AppNames;
+use crate::provider_names::ProviderNames;
 use ds_settings::live::LiveSchema;
 use ds_settings::schema::{
     ActionLabel, ActionWeight, AgentSetting, Exposure, Help, KeyKind, KeyPath, KeySpec, Label,
-    LiveAction, Page, Section,
+    LiveAction, Page, Section, WordLabels,
 };
 use porter_core::consent::{Decision, Grant, GrantScope};
+use porter_core::sheet::ProviderGroup;
 use porter_core::{Account, AccountId, AccountState, AuthKind, CapabilityKind, GrantId, Offer};
 use porter_provider::Issuer;
 use porter_service::{Registry, SyncClass, sync_offers};
@@ -40,8 +42,20 @@ pub(crate) enum Key {
     /// `accounts.<id>.sign_in`: read-only, how the account is signed in again (porter-core's
     /// `SignInWay` slug: `browser`, `password`, `key`, `agent`, `outside`, `nothing`).
     SignIn(AccountId),
+    /// `accounts.<id>.provider`: read-only, the provider the account was made from (the value is
+    /// the provider's id, the row's labels give its name).
+    Provider(AccountId),
+    /// `accounts.<id>.group`: read-only, the part of the Accounts page the account is listed
+    /// under (`internet`, `intelligence`, `agent`).
+    Group(AccountId),
     /// `accounts.<id>.grant.<grant>`.
     Grant(AccountId, GrantId),
+    /// `accounts.<id>.grant.<grant>.since`: read-only, the UTC day (`YYYY-MM-DD`) the grant was
+    /// given.
+    Since(AccountId, GrantId),
+    /// `accounts.<id>.grant.<grant>.scope`: read-only, how long the grant holds (`once`,
+    /// `always`, `session`).
+    Scope(AccountId, GrantId),
     /// `accounts.<id>.reauth`.
     Reauth(AccountId),
     /// `accounts.<id>.sign_out`: for an agent that signs itself in, forgets that it was signed in.
@@ -83,6 +97,8 @@ pub(crate) fn parse(path: &str, registry: &Registry) -> Option<Key> {
             "expires" => Some(Key::Expires(id)),
             "place" => Some(Key::Place(id)),
             "sign_in" => Some(Key::SignIn(id)),
+            "provider" => Some(Key::Provider(id)),
+            "group" => Some(Key::Group(id)),
             "reauth" => Some(Key::Reauth(id)),
             "sign_out" => Some(Key::SignOut(id)),
             "remove" => Some(Key::Remove(id)),
@@ -97,6 +113,20 @@ pub(crate) fn parse(path: &str, registry: &Registry) -> Option<Key> {
                         .map(|c| Key::Sync(id, c));
                 }
                 let grant = tail.strip_prefix("grant.")?;
+                // A grant's own rows end `.since` and `.scope`; a grant id may hold dots, so
+                // the suffix counts only when what is left names a grant the registry has.
+                for (suffix, make) in [
+                    (".since", Key::Since as fn(AccountId, GrantId) -> Key),
+                    (".scope", Key::Scope),
+                ] {
+                    let held = grant
+                        .strip_suffix(suffix)
+                        .and_then(|g| GrantId::parse(g).ok())
+                        .filter(|g| registry.grants.iter().any(|held| held.id == *g));
+                    if let Some(held) = held {
+                        return Some(make(id, held));
+                    }
+                }
                 GrantId::parse(grant).ok().map(|g| Key::Grant(id, g))
             }
         }
@@ -113,7 +143,11 @@ pub(crate) fn path(key: &Key) -> String {
         Key::Expires(id) => format!("accounts.{id}.expires"),
         Key::Place(id) => format!("accounts.{id}.place"),
         Key::SignIn(id) => format!("accounts.{id}.sign_in"),
+        Key::Provider(id) => format!("accounts.{id}.provider"),
+        Key::Group(id) => format!("accounts.{id}.group"),
         Key::Grant(id, grant) => format!("accounts.{id}.grant.{grant}"),
+        Key::Since(id, grant) => format!("accounts.{id}.grant.{grant}.since"),
+        Key::Scope(id, grant) => format!("accounts.{id}.grant.{grant}.scope"),
         Key::Reauth(id) => format!("accounts.{id}.reauth"),
         Key::SignOut(id) => format!("accounts.{id}.sign_out"),
         Key::Remove(id) => format!("accounts.{id}.remove"),
@@ -195,6 +229,11 @@ pub(crate) fn expiry_text(account: &Account) -> Option<String> {
     })
 }
 
+/// What the `since` row of `grant` says: the UTC day it was given, `YYYY-MM-DD`.
+pub(crate) fn since_text(grant: &Grant) -> String {
+    civil_date(grant.at)
+}
+
 /// `YYYY-MM-DD` of the UTC day `at` falls in (Howard Hinnant's civil-from-days).
 fn civil_date(at: porter_core::UnixSeconds) -> String {
     let z = at.0.div_euclid(86_400) + 719_468;
@@ -209,9 +248,56 @@ fn civil_date(at: porter_core::UnixSeconds) -> String {
     format!("{year:04}-{month:02}-{day:02}")
 }
 
-fn account_keys(account: &Account, grants: &[Grant], names: &AppNames) -> Vec<KeySpec> {
+/// `spec` with the words of its enum key labelled for a person.
+fn labelled(mut spec: KeySpec, words: &[(&str, &str)]) -> KeySpec {
+    spec.labels = WordLabels(
+        words
+            .iter()
+            .map(|(word, label)| ((*word).to_owned(), (*label).to_owned()))
+            .collect(),
+    );
+    spec
+}
+
+/// A read-out row whose one value is `word`, as a person reads it by `labels`.
+fn readout(key: &Key, section: &str, label: &str, word: &str, labels: &[(&str, &str)]) -> KeySpec {
+    labelled(
+        spec(
+            key,
+            section,
+            label.to_owned(),
+            "",
+            KeyKind::Fixed {
+                variant: word.to_owned(),
+            },
+            toml::Value::String(word.to_owned()),
+        ),
+        labels,
+    )
+}
+
+/// What the `scope` row of a grant says: how long the answer holds.
+const SCOPE_WORDS: [(&str, &str); 3] = [
+    ("once", "Once"),
+    ("always", "Always"),
+    ("session", "This session only"),
+];
+
+fn account_keys(
+    account: &Account,
+    grants: &[Grant],
+    names: &AppNames,
+    providers: &ProviderNames,
+) -> Vec<KeySpec> {
     let section = account.label.0.as_str();
     let id = &account.id;
+    let provider_label = providers
+        .label_of(&account.provider)
+        .unwrap_or_else(|| account.provider.as_str());
+    let group_words: Vec<(&str, &str)> = ProviderGroup::ALL
+        .iter()
+        .map(|group| (group.slug(), group.display_name()))
+        .collect();
     let mut keys = vec![
         spec(
             &Key::Label(id.clone()),
@@ -252,6 +338,20 @@ fn account_keys(account: &Account, grants: &[Grant], names: &AppNames) -> Vec<Ke
                 variant: account.auth.sign_in_way().slug().to_owned(),
             },
             toml::Value::String(account.auth.sign_in_way().slug().to_owned()),
+        ),
+        readout(
+            &Key::Provider(id.clone()),
+            section,
+            "Account type",
+            account.provider.as_str(),
+            &[(account.provider.as_str(), provider_label)],
+        ),
+        readout(
+            &Key::Group(id.clone()),
+            section,
+            "Listed under",
+            providers.group_of(account).slug(),
+            &group_words,
         ),
     ];
     if let Some(text) = expiry_text(account) {
@@ -340,6 +440,20 @@ fn account_keys(account: &Account, grants: &[Grant], names: &AppNames) -> Vec<Ke
             action("Revoke", ActionWeight::Plain),
             off(),
         ));
+        keys.push(readout(
+            &Key::Since(id.clone(), grant.id.clone()),
+            section,
+            "Since",
+            &since_text(grant),
+            &[],
+        ));
+        keys.push(readout(
+            &Key::Scope(id.clone(), grant.id.clone()),
+            section,
+            "Lasts",
+            grant.scope.word(),
+            &SCOPE_WORDS,
+        ));
     }
     keys.push(match account.auth {
         // An agent signs itself in, inside the agent: porter holds only whether it said so, and
@@ -383,11 +497,15 @@ pub(crate) fn place_slug(account: &Account) -> &'static str {
 }
 
 /// The schema of the module for `registry`.
-pub(crate) fn schema(registry: &Registry, names: &AppNames) -> LiveSchema {
+pub(crate) fn schema(
+    registry: &Registry,
+    names: &AppNames,
+    providers: &ProviderNames,
+) -> LiveSchema {
     let mut key: Vec<KeySpec> = registry
         .accounts
         .iter()
-        .flat_map(|account| account_keys(account, &registry.grants, names))
+        .flat_map(|account| account_keys(account, &registry.grants, names, providers))
         .collect();
     key.extend(ISSUERS.iter().map(|issuer| {
         spec(
@@ -469,7 +587,7 @@ mod tests {
 
     #[test]
     fn only_an_account_syncd_can_mirror_has_the_sync_rows_plainly_worded_and_off_by_default() {
-        let schema = schema(&registry(), &AppNames::default());
+        let schema = schema(&registry(), &AppNames::default(), &ProviderNames::default());
         let sync: Vec<_> = schema
             .key
             .iter()
@@ -521,11 +639,16 @@ mod tests {
             provenance: Provenance::Declared,
         }];
         let row = |account: &Account| {
-            account_keys(account, &[], &AppNames::default())
-                .into_iter()
-                .find(|k| k.path.0.ends_with(".sync.photos"))
-                .map(|k| (k.label.0, k.help.0))
-                .expect("a photos row")
+            account_keys(
+                account,
+                &[],
+                &AppNames::default(),
+                &ProviderNames::default(),
+            )
+            .into_iter()
+            .find(|k| k.path.0.ends_with(".sync.photos"))
+            .map(|k| (k.label.0, k.help.0))
+            .expect("a photos row")
         };
         let (label, help) = row(&google);
         assert_eq!(
@@ -544,7 +667,12 @@ mod tests {
         grants[0].decision = decision;
         grants[0].key.app.name = AppName::parse(app).expect("name");
         grants[0].key.kind = kind;
-        let rows = account_keys(&storage_account(), &grants, names);
+        let rows = account_keys(
+            &storage_account(),
+            &grants,
+            names,
+            &ProviderNames::default(),
+        );
         let row = rows
             .iter()
             .find(|k| k.path.0 == "accounts.fake-storage.grant.g1")
@@ -599,7 +727,12 @@ mod tests {
 
     #[test]
     fn the_service_switch_and_the_grant_row_call_a_service_the_same_thing() {
-        let rows = account_keys(&storage_account(), &[], &AppNames::default());
+        let rows = account_keys(
+            &storage_account(),
+            &[],
+            &AppNames::default(),
+            &ProviderNames::default(),
+        );
         let switch = rows
             .iter()
             .find(|k| k.path.0 == "accounts.fake-storage.service.storage")
@@ -637,7 +770,7 @@ mod tests {
 
     #[test]
     fn every_key_is_under_accounts_and_hands_off_and_the_schema_checks() {
-        let schema = schema(&registry(), &AppNames::default());
+        let schema = schema(&registry(), &AppNames::default(), &ProviderNames::default());
         assert!(schema.check().is_ok());
         assert!(schema.key.iter().all(|k| k.path.0.starts_with("accounts.")));
         assert!(schema.key.iter().all(|k| k.agent == AgentSetting::HandsOff));
@@ -660,7 +793,12 @@ mod tests {
     fn a_service_claimed_once_per_model_is_one_switch() {
         let mut runtime = storage_account();
         runtime.capabilities.push(runtime.capabilities[0].clone());
-        let rows = account_keys(&runtime, &[], &AppNames::default());
+        let rows = account_keys(
+            &runtime,
+            &[],
+            &AppNames::default(),
+            &ProviderNames::default(),
+        );
         let paths: Vec<&str> = rows.iter().map(|k| k.path.0.as_str()).collect();
         let mut unique = paths.clone();
         unique.sort_unstable();
@@ -671,7 +809,12 @@ mod tests {
     #[test]
     fn every_account_says_how_it_signs_in_again_on_a_read_only_row() {
         let way_of = |account: &Account| {
-            let rows = account_keys(account, &[], &AppNames::default());
+            let rows = account_keys(
+                account,
+                &[],
+                &AppNames::default(),
+                &ProviderNames::default(),
+            );
             let row = rows
                 .iter()
                 .find(|k| k.path.0 == format!("accounts.{}.sign_in", account.id))
@@ -698,6 +841,111 @@ mod tests {
         );
     }
 
+    /// The `Fixed` value and the labels map of the row at `path`.
+    fn fixed_row(rows: &[KeySpec], path: &str) -> (String, Vec<(String, String)>) {
+        let row = rows
+            .iter()
+            .find(|k| k.path.0 == path)
+            .unwrap_or_else(|| panic!("{path}"));
+        let variant = match &row.kind {
+            KeyKind::Fixed { variant } => variant.clone(),
+            other => panic!("{other:?}"),
+        };
+        let mut labels: Vec<(String, String)> = row
+            .labels
+            .0
+            .iter()
+            .map(|(word, label)| (word.clone(), label.clone()))
+            .collect();
+        labels.sort();
+        (variant, labels)
+    }
+
+    #[test]
+    fn an_account_says_its_provider_and_its_group_on_two_read_only_rows() {
+        let mut account = storage_account();
+        account.provider = porter_core::ProviderId::parse("fastmail").expect("id");
+        let text = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../providers/fastmail.toml"
+        ))
+        .expect("fastmail ships");
+        let known =
+            ProviderNames::from_specs(&[porter_provider::parse_provider(&text).expect("spec")]);
+        let rows = account_keys(&account, &[], &AppNames::default(), &known);
+        let id = &account.id;
+        assert_eq!(
+            fixed_row(&rows, &format!("accounts.{id}.provider")),
+            (
+                "fastmail".to_owned(),
+                vec![("fastmail".to_owned(), "Fastmail".to_owned())]
+            )
+        );
+        let (group, labels) = fixed_row(&rows, &format!("accounts.{id}.group"));
+        assert_eq!(group, "internet");
+        let mut want: Vec<(String, String)> = [
+            ("internet", "Internet Accounts"),
+            ("intelligence", "Intelligence"),
+            ("agent", "Assistants"),
+        ]
+        .iter()
+        .map(|(a, b)| ((*a).to_owned(), (*b).to_owned()))
+        .collect();
+        want.sort();
+        assert_eq!(labels, want);
+        // No provider file: the id stands for the label and the sign-in decides the group.
+        let mut agent = storage_account();
+        agent.auth = AuthKind::AgentLogin;
+        let rows = account_keys(&agent, &[], &AppNames::default(), &ProviderNames::default());
+        let id = &agent.id;
+        let (group, _) = fixed_row(&rows, &format!("accounts.{id}.group"));
+        assert_eq!(group, "agent");
+        let (provider, labels) = fixed_row(&rows, &format!("accounts.{id}.provider"));
+        assert_eq!(labels, vec![(provider.clone(), provider)]);
+    }
+
+    #[test]
+    fn a_grant_says_the_day_it_was_given_and_how_long_it_holds_on_two_read_only_rows() {
+        let registry = registry();
+        let account = &registry.accounts[0];
+        let mut grants = registry.grants.clone();
+        grants[0].at = UnixSeconds(951_782_400);
+        let rows = account_keys(
+            account,
+            &grants,
+            &AppNames::default(),
+            &ProviderNames::default(),
+        );
+        let base = format!("accounts.{}.grant.g1", account.id);
+        assert_eq!(
+            fixed_row(&rows, &format!("{base}.since")),
+            ("2000-02-29".to_owned(), vec![])
+        );
+        let (scope, labels) = fixed_row(&rows, &format!("{base}.scope"));
+        assert_eq!(scope, "always");
+        assert_eq!(
+            labels,
+            vec![
+                ("always".to_owned(), "Always".to_owned()),
+                ("once".to_owned(), "Once".to_owned()),
+                ("session".to_owned(), "This session only".to_owned()),
+            ]
+        );
+        // The grant's own row is unchanged and the new rows parse and print both ways.
+        assert!(rows.iter().any(|k| k.path.0 == base));
+        let id = account.id.clone();
+        let g1 = GrantId::parse("g1").expect("id");
+        for (suffix, key) in [
+            ("since", Key::Since(id.clone(), g1.clone())),
+            ("scope", Key::Scope(id.clone(), g1.clone())),
+        ] {
+            let text = format!("{base}.{suffix}");
+            assert_eq!(parse(&text, &registry), Some(key.clone()));
+            assert_eq!(path(&key), text);
+        }
+        assert_eq!(parse(&base, &registry), Some(Key::Grant(id, g1)));
+    }
+
     #[test]
     fn a_probed_runtime_is_on_this_computer_and_every_other_account_is_elsewhere() {
         let mut runtime = storage_account();
@@ -708,7 +956,7 @@ mod tests {
 
     #[test]
     fn a_destructive_action_is_marked_so() {
-        let schema = schema(&registry(), &AppNames::default());
+        let schema = schema(&registry(), &AppNames::default(), &ProviderNames::default());
         let remove = schema
             .key
             .iter()
@@ -723,7 +971,7 @@ mod tests {
     #[test]
     fn paths_parse_back_to_their_keys() {
         let registry = registry();
-        for key in &schema(&registry, &AppNames::default()).key {
+        for key in &schema(&registry, &AppNames::default(), &ProviderNames::default()).key {
             let parsed = parse(&key.path.0, &registry).unwrap_or_else(|| panic!("{}", key.path.0));
             assert_eq!(path(&parsed), key.path.0);
         }

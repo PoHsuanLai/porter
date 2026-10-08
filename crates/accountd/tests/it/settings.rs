@@ -160,6 +160,22 @@ async fn read_outs_and_unknown_keys_are_not_settable() {
             .await,
         Err(LiveError::NotPermitted(_))
     ));
+    for row in ["provider", "group", "sign_in"] {
+        let path = format!("accounts.fake-mail.{row}");
+        assert!(matches!(
+            settings.get(&key(&path)).await,
+            Ok(toml::Value::String(_))
+        ));
+        assert!(
+            matches!(
+                settings
+                    .set(&key(&path), &toml::Value::String("x".into()))
+                    .await,
+                Err(LiveError::NotPermitted(_))
+            ),
+            "{path}"
+        );
+    }
     assert!(matches!(
         settings.get(&key("accounts.nobody.state")).await,
         Err(LiveError::UnknownKey(_))

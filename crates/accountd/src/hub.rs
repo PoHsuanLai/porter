@@ -4,7 +4,7 @@
 //! (the roster of connections, the signals sent).
 
 use crate::account::state_slug;
-use crate::settings_keys::{Key, path};
+use crate::settings_keys::{Key, path, since_text};
 use ds_settings::schema::KeyPath;
 use porter_core::consent::{Decision, Grant};
 use porter_core::{AccountId, AppId, GrantId};
@@ -125,7 +125,11 @@ fn grant_in<'a>(registry: &'a Registry, id: &GrantId) -> Option<&'a Grant> {
 ///
 /// - a new state, or an account that appeared: `accounts.<id>.state` with the state slug;
 /// - an account that went: the same key with `removed` (the row is gone from the schema);
-/// - a new label: `accounts.<id>.label` with the label.
+/// - a new label: `accounts.<id>.label` with the label;
+/// - a grant given again under its id with another scope or day: its `.scope` and `.since`
+///   rows with the new value. A grant that came or went makes the pane read the schema again
+///   only when it is a session grant, as its `Revoke` row always did, and the two rows come
+///   and go with it; the account's `provider` and `group` rows never change for an account.
 pub(crate) fn settings_news(
     list: &[Event],
     before: &Registry,
@@ -152,6 +156,23 @@ pub(crate) fn settings_news(
                 if let Some(grant) = now.or(was).filter(|g| g.scope.session().is_some()) {
                     let row = row(Key::Grant(grant.key.account.clone(), grant.id.clone()));
                     news.push((row, text(if now.is_some() { "added" } else { "removed" })));
+                }
+                // A grant given again under its id keeps its rows but may say a new scope or a
+                // new day: those two read-outs are told with their new value.
+                if let (Some(was), Some(now)) = (was, now) {
+                    let (account, grant) = (&now.key.account, &now.id);
+                    if was.scope.word() != now.scope.word() {
+                        news.push((
+                            row(Key::Scope(account.clone(), grant.clone())),
+                            text(now.scope.word()),
+                        ));
+                    }
+                    if since_text(was) != since_text(now) {
+                        news.push((
+                            row(Key::Since(account.clone(), grant.clone())),
+                            text(&since_text(now)),
+                        ));
+                    }
                 }
             }
             _ => {}
@@ -283,6 +304,39 @@ mod tests {
         assert_eq!(
             settings_news(&events(&after, &before), &after, &before),
             vec![(key(row), said("removed"))]
+        );
+    }
+
+    #[test]
+    fn a_grant_given_again_under_its_id_tells_its_new_scope_and_day() {
+        let storage = storage_account();
+        let once = {
+            let mut g = grant("g1", "org.example.Holder", &storage.id);
+            g.scope = GrantScope::Once;
+            g.at = porter_core::UnixSeconds(0);
+            g
+        };
+        let always = {
+            let mut g = once.clone();
+            g.scope = GrantScope::Always;
+            g.at = porter_core::UnixSeconds(86_400);
+            g
+        };
+        let (before, after) = (
+            registry(vec![storage.clone()], vec![once]),
+            registry(vec![storage.clone()], vec![always]),
+        );
+        let key = |text: &str| KeyPath(text.to_owned());
+        let said = |value: &str| toml::Value::String(value.to_owned());
+        assert_eq!(
+            settings_news(&events(&before, &after), &before, &after),
+            vec![
+                (key("accounts.fake-storage.grant.g1.scope"), said("always")),
+                (
+                    key("accounts.fake-storage.grant.g1.since"),
+                    said("1970-01-02")
+                ),
+            ]
         );
     }
 

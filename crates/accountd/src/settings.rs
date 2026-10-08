@@ -75,7 +75,11 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
     }
 
     async fn describe(&self) -> LiveSchema {
-        schema(&self.0.host.registry(), &self.0.app_names)
+        schema(
+            &self.0.host.registry(),
+            &self.0.app_names,
+            &self.0.provider_names,
+        )
     }
 
     async fn get(&self, key: &KeyPath) -> Result<toml::Value, LiveError> {
@@ -117,6 +121,28 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
             Key::SignIn(id) => Ok(toml::Value::String(
                 account(&id)?.auth.sign_in_way().slug().to_owned(),
             )),
+            Key::Provider(id) => Ok(toml::Value::String(
+                account(&id)?.provider.as_str().to_owned(),
+            )),
+            Key::Group(id) => Ok(toml::Value::String(
+                self.0
+                    .provider_names
+                    .group_of(account(&id)?)
+                    .slug()
+                    .to_owned(),
+            )),
+            Key::Since(_, grant) => registry
+                .grants
+                .iter()
+                .find(|g| g.id == grant)
+                .map(|g| toml::Value::String(crate::settings_keys::since_text(g)))
+                .ok_or_else(unknown),
+            Key::Scope(_, grant) => registry
+                .grants
+                .iter()
+                .find(|g| g.id == grant)
+                .map(|g| toml::Value::String(g.scope.word().to_owned()))
+                .ok_or_else(unknown),
             Key::Grant(..) | Key::Reauth(_) | Key::SignOut(_) | Key::Remove(_) => {
                 Ok(toml::Value::Boolean(false))
             }
@@ -185,7 +211,15 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
                 };
                 self.write_client(issuer, &text)?;
             }
-            Key::State(_) | Key::Label(_) | Key::Place(_) | Key::SignIn(_) | Key::Expires(_) => {
+            Key::State(_)
+            | Key::Label(_)
+            | Key::Place(_)
+            | Key::SignIn(_)
+            | Key::Expires(_)
+            | Key::Provider(_)
+            | Key::Group(_)
+            | Key::Since(..)
+            | Key::Scope(..) => {
                 return Err(LiveError::NotPermitted("this row is a read-out".into()));
             }
         }

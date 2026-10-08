@@ -11,6 +11,7 @@ use crate::hub::{Event, audience, events, settings_news, shell_hears};
 use crate::keys::KeyDesk;
 use crate::launchers::{Launchers, LoginTiming, SignOutNews};
 use crate::manager::Manager;
+use crate::provider_names::ProviderNames;
 use crate::relay::{RelayRoots, Relays};
 use porter_core::consent::Usage;
 use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
@@ -374,6 +375,8 @@ pub(crate) struct Core<H, C> {
     pub(crate) keys: Option<Arc<dyn KeyDesk>>,
     /// What the settings module calls an app.
     pub(crate) app_names: AppNames,
+    /// What the settings module calls a provider and which part of the page it is listed under.
+    pub(crate) provider_names: ProviderNames,
     /// The agent launchers and the requests they carry.
     pub(crate) launchers: Launchers,
     /// The credentials handed to processes the launcher spawned (`Tokens.IssueProcessCredential`).
@@ -628,6 +631,9 @@ pub struct Options {
     /// Where the settings module gets an app's display name; the default names no app, so every
     /// app shows its id.
     pub app_names: AppNames,
+    /// Where the settings module gets a provider's label and group; the default knows no
+    /// provider, so an account shows its provider's id and is placed by how it signs in.
+    pub provider_names: ProviderNames,
     /// The clock and bound of a request to an agent launcher; the default is the system clock
     /// and ten minutes.
     pub login: LoginTiming,
@@ -670,6 +676,7 @@ pub async fn serve_with<H: Host, C: Callers>(
         relays: Relays::new(options.relay_roots),
         keys: options.keys,
         app_names: options.app_names,
+        provider_names: options.provider_names,
         launchers: Launchers::new(connection.clone(), options.login),
         credentials: Credentials::new(options.runtime_dir.as_deref()),
         settings: OnceLock::new(),

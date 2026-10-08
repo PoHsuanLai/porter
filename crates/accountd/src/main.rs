@@ -13,8 +13,8 @@ use accountd::add::{AddArgs, StdTerminal, TerminalSheets};
 use accountd::keysel::{AnyKeys, Chosen};
 use accountd::paths::{BUILD, Paths, proc_root};
 use accountd::{
-    AppNames, BusSheets, FileAudit, FileStore, Options, RelayRoots, SecretsDesk, load_callers,
-    serve_with,
+    AppNames, BusSheets, FileAudit, FileStore, Options, ProviderNames, RelayRoots, SecretsDesk,
+    load_callers, serve_with,
 };
 use clap::{Parser, Subcommand};
 use clock::SystemClock;
@@ -107,6 +107,7 @@ async fn main() -> ExitCode {
     }
     let app_names =
         AppNames::new(table.clone(), paths.applications.clone()).with_agents(&loaded.specs);
+    let provider_names = ProviderNames::from_specs(&loaded.specs);
     let io = accountd::providers::FamilyIo::system(porter_provider::ProviderSet::layered(
         loaded.specs.clone(),
         Vec::new(),
@@ -153,6 +154,7 @@ async fn main() -> ExitCode {
         relay_roots: RelayRoots::Platform,
         keys: Some(Arc::new(keys)),
         app_names,
+        provider_names,
         login: accountd::LoginTiming {
             audit: Some(Arc::new(FileAudit::new(paths.audit.clone()))),
             ..accountd::LoginTiming::default()
