@@ -12,6 +12,8 @@ mod account;
 mod agents;
 mod args;
 mod callers;
+#[cfg(feature = "callers-file")]
+mod callers_file;
 mod codec;
 mod codec_grants;
 mod failure;
@@ -43,6 +45,8 @@ pub use args::{AppArg, CandidateArg, Details, NeedArg, TokenArg, VerdictArg};
 pub use callers::{
     AppTitle, Caller, CallerRole, CallerRow, CallerTable, Callers, MainPids, ProcCallers,
 };
+#[cfg(feature = "callers-file")]
+pub use callers_file::{CallerFileError, load_callers, table_from_file, table_from_toml};
 pub use codec::{candidate_from_dbus, candidate_to_dbus, need_from_dbus, need_to_dbus};
 pub use codec_grants::{grant_from_dbus, grant_to_dbus, token_from_dbus, token_to_dbus};
 pub use failure::{

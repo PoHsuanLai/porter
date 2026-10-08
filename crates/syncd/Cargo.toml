@@ -12,7 +12,7 @@ publish.workspace = true
 porter-core = { workspace = true }
 porter-client = { workspace = true, features = ["dbus"] }
 porter-dav = { workspace = true }
-porter-dbus = { workspace = true }
+porter-dbus = { workspace = true, features = ["callers-file"] }
 porter-http = { workspace = true }
 porter-sync = { workspace = true }
 storage-gdrive = { workspace = true }
@@ -25,10 +25,10 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-toml = { workspace = true }
 zbus = { workspace = true }
 
 [dev-dependencies]
+toml = { workspace = true }
 syncd = { path = ".", features = ["testing"] }
 accountd = { path = "../accountd" }
 base64 = { workspace = true }

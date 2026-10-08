@@ -21,7 +21,7 @@ use syncd::datasets::storage::{ClientStorageGrants, StorageConfig, StorageSuperv
 use syncd::paths::{BUILD, Paths, proc_root, rescan};
 use syncd::scheduler::{Network, Settings};
 use syncd::service::{Access, Hub};
-use syncd::{callers_file, removal, service};
+use syncd::{removal, service};
 
 /// porter's sync service (`org.quire.Sync1`).
 #[derive(Debug, Parser)]
@@ -41,7 +41,7 @@ async fn main() -> ExitCode {
         Ok(paths) => paths,
         Err(why) => return fail(why),
     };
-    let table = match callers_file::load_callers(&paths.callers_system, &paths.callers_user) {
+    let table = match porter_dbus::load_callers(&paths.callers_system, &paths.callers_user) {
         Ok(table) => table,
         Err(why) => return fail(why),
     };

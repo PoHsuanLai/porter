@@ -62,6 +62,33 @@ fn the_directories_follow_xdg_and_fall_back_under_home() {
     assert_eq!(explicit.hf_cache, PathBuf::from("/hf/hub"));
 }
 
+/// The XDG rule, as accountd and syncd read it: a variable that is not an absolute path is
+/// ignored. (inferd used to take a relative or empty one as it was, and keep files under the
+/// working directory.)
+#[test]
+fn a_relative_or_empty_xdg_variable_is_ignored() {
+    let dirs = Dirs::from_vars(vars(&[
+        ("HOME", "/home/u"),
+        ("XDG_CONFIG_HOME", "cfg"),
+        ("XDG_STATE_HOME", ""),
+        ("XDG_RUNTIME_DIR", "/run"),
+    ]))
+    .expect("dirs");
+    assert_eq!(
+        dirs.config,
+        PathBuf::from("/home/u/.config/quire/inferd.toml")
+    );
+    assert_eq!(
+        dirs.audit,
+        PathBuf::from("/home/u/.local/state/quire/inferd/audit.jsonl")
+    );
+    assert_eq!(
+        Dirs::from_vars(vars(&[("HOME", "/home/u"), ("XDG_RUNTIME_DIR", "run")])),
+        Err(ConfigError::NoDirs),
+        "a relative runtime directory is no directory"
+    );
+}
+
 #[test]
 fn without_a_runtime_directory_or_a_home_there_is_nowhere_to_put_the_sockets() {
     assert_eq!(

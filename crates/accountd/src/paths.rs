@@ -2,6 +2,8 @@
 //! place the daemon names a path, so a test can give it scratch directories.
 
 use crate::providers::Layer;
+pub use porter_core::xdg::PathError;
+use porter_core::xdg::{Xdg, absolute};
 use std::path::{Path, PathBuf};
 
 /// Every path the daemon uses.
@@ -27,26 +29,6 @@ pub struct Paths {
     pub applications: Vec<PathBuf>,
 }
 
-/// Why paths could not be resolved.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PathError {
-    /// Neither `HOME` nor the XDG variable of a directory is set.
-    NoHome,
-}
-
-impl std::fmt::Display for PathError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("HOME is not set and no XDG directory names where to keep state")
-    }
-}
-
-impl std::error::Error for PathError {}
-
-fn absolute(value: Option<String>) -> Option<PathBuf> {
-    // The XDG rule: a relative path in these variables is invalid and ignored.
-    value.map(PathBuf::from).filter(|p| p.is_absolute())
-}
-
 impl Paths {
     /// The paths for the environment `var` reads, with `extra_providers` laid over the system's
     /// and the user's provider directories.
@@ -54,21 +36,17 @@ impl Paths {
         var: impl Fn(&str) -> Option<String>,
         extra_providers: &[PathBuf],
     ) -> Result<Self, PathError> {
-        let home = absolute(var("HOME"));
-        let under = |name: &str, tail: &str| match (absolute(var(name)), &home) {
-            (Some(dir), _) => Ok(dir),
-            (None, Some(home)) => Ok(home.join(tail)),
-            (None, None) => Err(PathError::NoHome),
-        };
-        let state = under("XDG_STATE_HOME", ".local/state")?;
-        let config = under("XDG_CONFIG_HOME", ".config")?;
-        let data = under("XDG_DATA_HOME", ".local/share")?;
+        let data_dirs = var("XDG_DATA_DIRS");
+        let xdg = Xdg::new(var);
+        let state = xdg.dir("XDG_STATE_HOME", ".local/state")?;
+        let config = xdg.dir("XDG_CONFIG_HOME", ".config")?;
+        let data = xdg.dir("XDG_DATA_HOME", ".local/share")?;
         let mut provider_dirs = vec![
             Path::new("/usr/share/porter/providers").to_owned(),
             data.join("porter/providers"),
         ];
         provider_dirs.extend_from_slice(extra_providers);
-        let data_dirs = var("XDG_DATA_DIRS")
+        let data_dirs = data_dirs
             .filter(|dirs| !dirs.is_empty())
             .unwrap_or_else(|| "/usr/local/share:/usr/share".to_owned());
         let applications = std::iter::once(data.clone())

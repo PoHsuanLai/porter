@@ -7,6 +7,7 @@ use crate::local::EngineConfig;
 use crate::peers::CallerTable;
 use crate::probe::ProbeConfig;
 use crate::structured::AiConfig;
+use porter_core::xdg::{PathError, Xdg};
 use porter_infer::{Policy, TierMap};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -89,23 +90,19 @@ impl Dirs {
     /// The directories for the variables `var` answers (`HOME`, `XDG_CONFIG_HOME`,
     /// `XDG_DATA_HOME`, `XDG_STATE_HOME`, `XDG_RUNTIME_DIR`, `HF_HOME`).
     pub fn from_vars(var: impl Fn(&str) -> Option<String>) -> Result<Self, ConfigError> {
-        let home = var("HOME").map(PathBuf::from);
-        let under_home = |dir: &str| home.as_ref().map(|home| home.join(dir));
-        let xdg = |name: &str, fallback: &str| {
-            var(name)
-                .map(PathBuf::from)
-                .or_else(|| under_home(fallback))
-                .ok_or(ConfigError::NoDirs)
+        let xdg = Xdg::new(var);
+        let dir = |name: &str, fallback: &str| {
+            xdg.dir(name, fallback)
+                .map_err(|PathError::NoHome| ConfigError::NoDirs)
         };
-        let config = xdg("XDG_CONFIG_HOME", ".config")?;
-        let data = xdg("XDG_DATA_HOME", ".local/share")?;
-        let state = xdg("XDG_STATE_HOME", ".local/state")?;
-        let runtime = var("XDG_RUNTIME_DIR")
-            .map(PathBuf::from)
-            .ok_or(ConfigError::NoDirs)?;
-        let hf_cache = var("HF_HOME")
+        let config = dir("XDG_CONFIG_HOME", ".config")?;
+        let data = dir("XDG_DATA_HOME", ".local/share")?;
+        let state = dir("XDG_STATE_HOME", ".local/state")?;
+        let runtime = xdg.var_dir("XDG_RUNTIME_DIR").ok_or(ConfigError::NoDirs)?;
+        let hf_cache = xdg
+            .raw("HF_HOME")
             .map(|hf| PathBuf::from(hf).join("hub"))
-            .or_else(|| under_home(".cache/huggingface/hub"))
+            .or_else(|| xdg.home().map(|home| home.join(".cache/huggingface/hub")))
             .ok_or(ConfigError::NoDirs)?;
         Ok(Self {
             config: config.join("quire").join("inferd.toml"),

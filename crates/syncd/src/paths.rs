@@ -3,6 +3,8 @@
 //! by its object-path segment (`porter_core::object_segment`), the form `AccountRemoved`
 //! carries, so a wipe needs no map back to the id.
 
+pub use porter_core::xdg::PathError;
+use porter_core::xdg::Xdg;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -19,38 +21,13 @@ pub struct Paths {
     pub callers_user: PathBuf,
 }
 
-/// Why paths could not be resolved.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PathError {
-    /// Neither `HOME` nor the XDG variable of a directory is set.
-    NoHome,
-}
-
-impl std::fmt::Display for PathError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("HOME is not set and no XDG directory names where to keep state")
-    }
-}
-
-impl std::error::Error for PathError {}
-
-fn absolute(value: Option<String>) -> Option<PathBuf> {
-    // The XDG rule: a relative path in these variables is invalid and ignored.
-    value.map(PathBuf::from).filter(|p| p.is_absolute())
-}
-
 impl Paths {
     /// The paths for the environment `var` reads.
     pub fn resolve(var: impl Fn(&str) -> Option<String>) -> Result<Self, PathError> {
-        let home = absolute(var("HOME"));
-        let under = |name: &str, tail: &str| match (absolute(var(name)), &home) {
-            (Some(dir), _) => Ok(dir),
-            (None, Some(home)) => Ok(home.join(tail)),
-            (None, None) => Err(PathError::NoHome),
-        };
-        let state = under("XDG_STATE_HOME", ".local/state")?;
-        let config = under("XDG_CONFIG_HOME", ".config")?;
-        let data = under("XDG_DATA_HOME", ".local/share")?;
+        let xdg = Xdg::new(var);
+        let state = xdg.dir("XDG_STATE_HOME", ".local/state")?;
+        let config = xdg.dir("XDG_CONFIG_HOME", ".config")?;
+        let data = xdg.dir("XDG_DATA_HOME", ".local/share")?;
         Ok(Self {
             journals: state.join("porter/sync"),
             mirrors: data.join("porter/vdir"),

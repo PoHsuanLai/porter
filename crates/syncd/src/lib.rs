@@ -3,7 +3,6 @@
 //!
 //! - `journal`: the SQLite journal of one dataset of one account (items, anchor, tombstones,
 //!   conflicts), every change one transaction.
-pub mod callers_file;
 pub mod clock;
 pub mod dataset;
 pub mod datasets;

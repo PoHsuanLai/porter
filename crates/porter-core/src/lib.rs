@@ -1,10 +1,12 @@
 //! porter's pure vocabulary: accounts, the capability vocabulary and how a need meets an offer,
-//! consent, credentials' filing, and the wire protocol. No I/O, no runtime, portable.
+//! consent, credentials' filing, and the wire protocol. No runtime, portable, and no I/O beyond
+//! [`atomic`], the one blocking file writer every crate that saves a file shares.
 
 mod account;
 mod agent_login;
 mod ai_props;
 mod app_id;
+pub mod atomic;
 pub mod audit;
 mod auth_kind;
 mod candidate;
@@ -35,6 +37,7 @@ mod token;
 mod units;
 mod weburl;
 pub mod wire;
+pub mod xdg;
 
 pub use account::{Account, AccountLabel, AccountState, AgentState};
 pub use agent_login::{LoginFault, LoginOutcome, LoginRequestId};
