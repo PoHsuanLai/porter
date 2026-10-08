@@ -62,7 +62,7 @@ pub use restriction::{
     Verification,
 };
 pub use secret::{Credential, SecretKey, SecretPurpose, SecretText};
-pub use space::{SpaceId, SpaceScope};
+pub use space::{DesktopSpace, LocalSpace, SpaceId, SpaceKind, SpaceScope};
 pub use token::{Audience, IssuedToken, TokenKind};
 pub use units::{Bytes, Count, Dims, MicroUsd, Permille, Px, Tokens, UnixSeconds};
 pub use weburl::WebUrl;
