@@ -1,6 +1,6 @@
 [package]
 name = "syncd"
-description = "porter's sync daemon: org.quire.Sync1 over porter-sync replicas. The library holds the SQLite journal, the engine over a Replica and a Dataset, the pure scheduler and the bus objects; the binary resolves its paths and serves. No replica and no dataset yet (W6b-f)."
+description = "porter's sync daemon: org.quire.Sync1 over porter-sync replicas. The library holds the SQLite journal, the engine over a Replica and a Dataset, the pure scheduler and the bus objects; the binary resolves its paths and serves. Datasets: the calendar, contacts and tasks mirror (CalDAV, CardDAV, Microsoft Graph and Google), the storage folder (WebDAV, OneDrive and Google Drive app folders) and, behind SYNCD_PHOTOS=on, Photos."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

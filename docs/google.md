@@ -124,12 +124,14 @@ domain whose mail Google hosts, and choose Google). The browser opens Google's s
 test user, click through the warning screen, tick every box (porter works with fewer: an unticked
 service shows as off), and return. The review lists what the account can do.
 
-## What does not exist yet
+## What has not been tried against Google
 
-Porter signs in and holds the account. Reading and writing the data is separate work: the Google
-Calendar source for the calendar mirror, the Drive app folder replica, and Photos upload and
-import follow the lanes that need them (see FINDINGS). Signing in now is useful because the grant,
-the 7 day reminder and Gmail through the mail app all work today.
+Everything below is built: the sign-in and the grant, the calendar, contacts and tasks mirror,
+the Drive app folder, Photos upload and the picker, and Gmail. All of it has so far run only
+against porter's own stand-in for Google, never against Google itself, because no client of yours
+existed to try it with. Expect to find a detail or two that Google answers differently: the first
+sign-in with your client is the first real test. Photos stays off until the sync service is
+started with `SYNCD_PHOTOS=on`.
 
 ## What porter does with each Google service
 
