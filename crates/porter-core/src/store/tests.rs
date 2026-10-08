@@ -287,12 +287,25 @@ const AT_TEN: &str = r#"{
   "toggles": []
 }"#;
 
+/// 11 added the provider's group, which lives on the sheet's wire and not in the registry: the
+/// document is the 10 one under its new number.
+const AT_ELEVEN: &str = r#"{
+  "vocab": 11,
+  "accounts": [
+    {"id": "claude-code", "provider": "claude-code", "label": "Claude Code", "state": "ok", "auth": "agent_login", "capabilities": [], "restriction": {"verification": {"kind": "not_needed"}, "token_lifetime": "standard", "consent": "user", "limits": []}, "endpoints": []}
+  ],
+  "grants": [
+    {"id": "g-session", "key": {"app": {"name": "org.quire.Agent.claude-code", "isolation": "unsandboxed"}, "account": "claude-code", "kind": "llm", "class": "prompt", "usage": "background", "space": {"kind": "any"}}, "decision": "allow", "scope": {"session": "sess-1"}, "at": 1790000003}
+  ],
+  "toggles": []
+}"#;
+
 /// Every frozen document reads, whatever version wrote it, as the current vocabulary, with what
 /// that version could hold: the rows say what each is expected to come out as.
 #[test]
 fn a_document_frozen_at_each_vocabulary_since_the_first_stored_one_reads() {
     // (version, text, account ids, grant ids)
-    let table: [(u16, &str, &[&str], &[&str]); 8] = [
+    let table: [(u16, &str, &[&str], &[&str]); 9] = [
         (3, AT_THREE, &["cloud", "mail"], &["g-once"]),
         (4, AT_FOUR, &["cloud", "mail"], &["g-once"]),
         (5, AT_FIVE, &["cloud", "claude-code"], &["g-once"]),
@@ -301,6 +314,7 @@ fn a_document_frozen_at_each_vocabulary_since_the_first_stored_one_reads() {
         (8, AT_EIGHT, &["claude-code"], &["g-session"]),
         (9, AT_NINE, &["claude-code"], &["g-session"]),
         (10, AT_TEN, &["claude-code"], &["g-session"]),
+        (11, AT_ELEVEN, &["claude-code"], &["g-session"]),
     ];
     // One row per version since the first stored, none missing and none repeated.
     let versions: Vec<u16> = table.iter().map(|row| row.0).collect();
