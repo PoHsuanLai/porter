@@ -104,13 +104,18 @@ impl<C: Callers> BusSheets<C> {
             ParentWindow::Unparented => "",
             ParentWindow::Handle(handle) => handle.as_str(),
         };
-        proxy
-            .open(&handle, window, &json(&labelled(open.view, &self.names))?)
+        let view = json(&labelled(open.view, &self.names))?;
+        // Taken down if this is dropped from here on, `Open`'s answer come or not: the host shows
+        // the sheet once it has the call, and a caller that closes its Request then (the flow is
+        // dropped while `Open` is on its way back) must not leave it up.
+        let shown = Shown { proxy, handle };
+        shown
+            .proxy
+            .open(&shown.handle, window, &view)
             .await
             .map_err(|_| SheetFault::Closed)?;
         Ok(BusLink {
-            proxy,
-            handle,
+            shown,
             owner,
             inputs,
             leaving,
@@ -145,15 +150,23 @@ pub(crate) fn labelled(view: SheetView, names: &AppNames) -> SheetView {
 /// One open handle on the host. Dropping it takes the sheet down.
 #[derive(Debug)]
 pub struct BusLink {
-    proxy: AccountsSheetProxy<'static>,
-    handle: String,
+    shown: Shown,
     owner: UniqueName<'static>,
     inputs: zbus::MessageStream,
     leaving: NameOwnerChangedStream,
     names: AppNames,
 }
 
-impl Drop for BusLink {
+/// A handle the host may be showing, from the moment `Open` is sent: dropping it tells the host
+/// to take the sheet down. After an `Open` the host refused that `Close` names a handle it may not
+/// have; its answer is not read.
+#[derive(Debug)]
+struct Shown {
+    proxy: AccountsSheetProxy<'static>,
+    handle: String,
+}
+
+impl Drop for Shown {
     fn drop(&mut self) {
         let (proxy, handle) = (self.proxy.clone(), self.handle.clone());
         if let Ok(runtime) = tokio::runtime::Handle::try_current() {
@@ -183,8 +196,9 @@ async fn departed(owners: &mut NameOwnerChangedStream) {
 
 impl SheetLink for BusLink {
     async fn update(&mut self, view: SheetView) -> Result<(), SheetFault> {
-        self.proxy
-            .update(&self.handle, &json(&labelled(view, &self.names))?)
+        self.shown
+            .proxy
+            .update(&self.shown.handle, &json(&labelled(view, &self.names))?)
             .await
             .map_err(|_| SheetFault::Closed)
     }
@@ -198,7 +212,7 @@ impl SheetLink for BusLink {
                     let Ok((handle, input)) = message.body().deserialize::<(String, String)>() else {
                         continue;
                     };
-                    if !from_owner || handle != self.handle {
+                    if !from_owner || handle != self.shown.handle {
                         continue;
                     }
                     if let Ok(input) = serde_json::from_str::<SheetInput>(&input) {

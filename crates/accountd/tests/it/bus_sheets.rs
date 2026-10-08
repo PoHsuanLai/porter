@@ -176,6 +176,22 @@ async fn a_caller_that_closes_the_request_takes_the_host_sheet_down() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_caller_that_closes_the_request_while_open_is_on_its_way_back_takes_the_sheet_down() {
+    // The host shows the sheet when it has `Open`, and accountd hears its answer a moment later.
+    // A Close in that moment dropped the flow before the link existed, so nothing told the host
+    // and the sheet stayed up (the flake of the test above, made certain by a host whose `Open`
+    // returns late).
+    let host = SheetHost::quiet().slow_to_return(Duration::from_secs(2));
+    let rig = Rig::start_with(Default::default(), host).await;
+    let (_client, sheet, path, handle) = choosing(&rig).await;
+    sheet.closer(Some(path)).expect("closer").close().await;
+    eventually("the host to be told to close", || {
+        rig.host_log.calls().closed == vec![handle.clone()]
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_conversation_carries_views_out_and_typed_secrets_in() {
     let rig = Rig::start().await;
     let sheets = BusSheets::new(rig.connection.clone(), Arc::clone(&rig.callers));

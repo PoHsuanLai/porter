@@ -3,6 +3,7 @@
 
 use porter_core::sheet::SheetInput;
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
 use zbus::Connection;
 use zbus::object_server::SignalEmitter;
 
@@ -36,6 +37,8 @@ pub enum Reply {
 pub struct SheetHost {
     log: HostLog,
     reply: Reply,
+    /// How long `Open` takes to return once the sheet is shown (logged).
+    open_returns_after: Duration,
 }
 
 impl SheetHost {
@@ -43,13 +46,23 @@ impl SheetHost {
         Self {
             log: HostLog::default(),
             reply: Reply::Nothing,
+            open_returns_after: Duration::ZERO,
         }
     }
 
     pub fn answering(input: SheetInput) -> Self {
         Self {
-            log: HostLog::default(),
             reply: Reply::With(input),
+            ..Self::quiet()
+        }
+    }
+
+    /// The same host, whose `Open` returns `after` this long once the sheet is shown: the window
+    /// in which accountd has sent `Open` and the person already sees the sheet.
+    pub fn slow_to_return(self, after: Duration) -> Self {
+        Self {
+            open_returns_after: after,
+            ..self
         }
     }
 
@@ -89,6 +102,7 @@ impl SheetHost {
             let connection = connection.clone();
             tokio::spawn(async move { send_input(&connection, &handle, &input).await });
         }
+        tokio::time::sleep(self.open_returns_after).await;
     }
 
     async fn update(&self, handle: String, view: String) {
