@@ -26,19 +26,26 @@ use zbus::fdo::DBusProxy;
 /// mirrors; how many directories existed. A directory already gone is not an error.
 pub async fn wipe(paths: &Paths, hub: &Hub, account: &AccountDir) -> std::io::Result<usize> {
     hub.stop_account(account).await;
-    let mut removed = 0;
-    for dir in paths
+    let dirs: Vec<_> = paths
         .account_dirs(account)
         .into_iter()
         .chain([paths.photos_dir(account), paths.storage_dir(account)])
-    {
-        match std::fs::remove_dir_all(&dir) {
-            Ok(()) => removed += 1,
-            Err(e) if e.kind() == ErrorKind::NotFound => {}
-            Err(e) => return Err(e),
+        .collect();
+    // Mirrors and libraries hold many files: removing them blocks, so it runs off the async
+    // threads (the daemon's other accounts keep being served meanwhile).
+    tokio::task::spawn_blocking(move || {
+        let mut removed = 0;
+        for dir in dirs {
+            match std::fs::remove_dir_all(&dir) {
+                Ok(()) => removed += 1,
+                Err(e) if e.kind() == ErrorKind::NotFound => {}
+                Err(e) => return Err(e),
+            }
         }
-    }
-    Ok(removed)
+        Ok(removed)
+    })
+    .await
+    .map_err(std::io::Error::other)?
 }
 
 /// Listens for `AccountRemoved` on `connection` and wipes. A directory that cannot be removed

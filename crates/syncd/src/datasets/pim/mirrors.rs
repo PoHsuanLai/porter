@@ -5,7 +5,7 @@
 //! longer has.
 
 use super::discover::DiscoverError;
-use super::mirror::PimMirror;
+use super::mirror::{PimMirror, blocking};
 use super::plan::{Planned, plan};
 use super::source::{
     Chosen, DavSource, FeedReplica, GoogleCalendarSource, GooglePeopleSource, GoogleTasksSource,
@@ -246,8 +246,17 @@ impl AccountMirrors {
             })
             .await;
         held.task.abort();
-        let _ = std::fs::remove_dir_all(held.mirror.root());
-        let _ = std::fs::remove_file(wiring.paths.journal(&self.account, id.as_str()));
+        // A mirror holds many files: removing it blocks, so it runs off the async threads.
+        let (root, journal) = (
+            held.mirror.root().to_path_buf(),
+            wiring.paths.journal(&self.account, id.as_str()),
+        );
+        let _ = blocking(move || {
+            let _ = std::fs::remove_dir_all(root);
+            let _ = std::fs::remove_file(journal);
+            Ok(())
+        })
+        .await;
     }
 
     /// Stops every collection and deletes what they kept (the grant is gone).

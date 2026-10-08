@@ -236,7 +236,8 @@ impl Inner {
     }
 }
 
-async fn blocking<T: Send + 'static>(
+/// Runs blocking file work off the async threads.
+pub(super) async fn blocking<T: Send + 'static>(
     work: impl FnOnce() -> Result<T, DatasetError> + Send + 'static,
 ) -> Result<T, DatasetError> {
     tokio::task::spawn_blocking(work)
