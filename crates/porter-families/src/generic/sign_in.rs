@@ -3,7 +3,7 @@
 //! asks for the server, a user name and a password.
 
 use super::login::SharedLogin;
-use super::mail::{self, Looked};
+use super::mail::{self, Looked, Vouched};
 use super::{dav, jmap};
 use crate::io::{Io, SharedDns};
 use crate::password::{parse_server, password, plain, secret_of, text_of};
@@ -45,7 +45,23 @@ enum State {
     AskedServer(Typed),
     /// Discovery is on screen, waiting for the person's confirmation.
     Reviewing(Box<Signed>),
+    /// Servers only unsigned DNS named are on screen; the password is tried once confirmed.
+    ReviewingUnchecked(Box<Signed>),
     Ended,
+}
+
+/// Whether `found` are at the hosts the account `held` already (each found host is one of
+/// them), so a sign-in again may use them.
+fn same_hosts(found: &[ServiceEndpoint], held: &[ServiceEndpoint]) -> bool {
+    !held.is_empty()
+        && found.iter().all(|f| {
+            held.iter().any(|h| {
+                h.url
+                    .origin()
+                    .host
+                    .eq_ignore_ascii_case(&f.url.origin().host)
+            })
+        })
 }
 
 /// The sign-in conversation of a generic account.
@@ -112,29 +128,87 @@ impl GenericSignIn {
         if let Err(fault) = self.login.check(&credential, &endpoints).await {
             return self.failed(fault);
         }
-        let signed = Signed {
-            label: AccountLabel(label),
-            credentials: vec![(SecretPurpose::Password, credential)],
-            claims,
-            endpoints,
-            restriction: Restriction::none(),
-        };
+        let signed = Self::signed(credential, label, endpoints, claims);
         match self.mode {
-            SignInMode::Add => {
-                let step = SignInStep::Review {
-                    claims: signed.claims.clone(),
-                    endpoints: signed.endpoints.clone(),
-                    restriction: signed.restriction.clone(),
-                    label: signed.label.clone(),
-                };
-                self.state = State::Reviewing(Box::new(signed));
-                step
-            }
+            SignInMode::Add => Self::review(&mut self.state, signed, State::Reviewing),
             SignInMode::Reauthenticate { .. } => {
                 self.state = State::Ended;
                 SignInStep::Done(signed)
             }
         }
+    }
+
+    /// Servers that only unsigned DNS names, outside the address's domain: the password goes
+    /// nowhere until the person has seen them. A new account is reviewed first and the password
+    /// tried on `Confirm`. Signing in again shows no review (the sheet confirms it unseen), so
+    /// the servers are used only when they are the ones the account already has, which the
+    /// person confirmed when it was added; otherwise the person is asked for the server.
+    async fn found_unconfirmed(
+        &mut self,
+        typed: Typed,
+        endpoints: Vec<ServiceEndpoint>,
+        claims: Vec<Claim>,
+    ) -> SignInStep {
+        let credential = Credential::Password(typed.password.clone());
+        match &self.mode {
+            SignInMode::Add => {
+                let signed = Self::signed(credential, typed.login, endpoints, claims);
+                Self::review(&mut self.state, signed, State::ReviewingUnchecked)
+            }
+            SignInMode::Reauthenticate {
+                endpoints: held, ..
+            } if same_hosts(&endpoints, held) => {
+                self.found(credential, typed.login, endpoints, claims).await
+            }
+            SignInMode::Reauthenticate { .. } => self.ask_server(typed),
+        }
+    }
+
+    fn signed(
+        credential: Credential,
+        label: String,
+        endpoints: Vec<ServiceEndpoint>,
+        claims: Vec<Claim>,
+    ) -> Signed {
+        Signed {
+            label: AccountLabel(label),
+            credentials: vec![(SecretPurpose::Password, credential)],
+            claims,
+            endpoints,
+            restriction: Restriction::none(),
+        }
+    }
+
+    /// Shows `signed` for review and waits in the state `waiting` makes of it.
+    fn review(state: &mut State, signed: Signed, waiting: fn(Box<Signed>) -> State) -> SignInStep {
+        let step = SignInStep::Review {
+            claims: signed.claims.clone(),
+            endpoints: signed.endpoints.clone(),
+            restriction: signed.restriction.clone(),
+            label: signed.label.clone(),
+        };
+        *state = waiting(Box::new(signed));
+        step
+    }
+
+    /// The person confirmed servers whose password was not tried yet: it is tried now, and a
+    /// wrong one, or a server that does not answer, ends the sign-in.
+    async fn confirmed_unchecked(&mut self, signed: Signed) -> SignInStep {
+        let tried = match signed.credentials.first() {
+            Some((_, credential)) => self.login.check(credential, &signed.endpoints).await,
+            None => Err(SignInFault::Unreadable),
+        };
+        match tried {
+            Ok(()) => SignInStep::Done(signed),
+            Err(fault) => self.failed(fault),
+        }
+    }
+
+    /// Asks for the mail server, keeping what was typed.
+    fn ask_server(&mut self, typed: Typed) -> SignInStep {
+        let domain = mail::domain_of(&typed.login).map(|d| d.as_str().to_owned());
+        self.state = State::AskedServer(typed);
+        SignInStep::AskFields(manual_form(Protocol::Imap, domain.as_deref()))
     }
 
     async fn submitted(&mut self, answers: Vec<FieldAnswer>) -> SignInStep {
@@ -175,19 +249,22 @@ impl GenericSignIn {
             return self.failed(SignInFault::Unreadable);
         }
         match mail::look(&self.io, &self.dns, &self.providers, &address).await {
-            Looked::Found(endpoints, claims) => {
+            Looked::Found(endpoints, claims, Vouched::ByTheDomain) => {
                 let label = address;
                 self.found(Credential::Password(password), label, endpoints, claims)
                     .await
             }
-            Looked::Ask => {
-                let domain = mail::domain_of(&address).map(|d| d.as_str().to_owned());
-                self.state = State::AskedServer(Typed {
+            Looked::Found(endpoints, claims, Vouched::Unconfirmed) => {
+                let typed = Typed {
                     login: address,
                     password,
-                });
-                SignInStep::AskFields(manual_form(Protocol::Imap, domain.as_deref()))
+                };
+                self.found_unconfirmed(typed, endpoints, claims).await
             }
+            Looked::Ask => self.ask_server(Typed {
+                login: address,
+                password,
+            }),
             Looked::Offline => self.failed(SignInFault::Unreachable),
         }
     }
@@ -261,6 +338,9 @@ impl SignIn for GenericSignIn {
                 self.typed_server(typed, &answers).await
             }
             (State::Reviewing(signed), SignInInput::Confirm(_)) => SignInStep::Done(*signed),
+            (State::ReviewingUnchecked(signed), SignInInput::Confirm(_)) => {
+                self.confirmed_unchecked(*signed).await
+            }
             _ => self.failed(SignInFault::Unreadable),
         }
     }

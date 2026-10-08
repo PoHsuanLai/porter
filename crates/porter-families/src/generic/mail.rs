@@ -6,18 +6,43 @@ use crate::password::declared;
 use porter_core::capability::{Capability, MailCap, MailTransport};
 use porter_core::sheet::{Hop, MailServers, Security, SignInFault};
 use porter_core::{Claim, EndpointUrl, Family, LoginName, Offer, ServiceEndpoint, Tls, UrlScheme};
-use porter_discover::{Outcome, discover_mail};
+use porter_discover::{Found, Outcome, Source, discover_mail};
 use porter_provider::{DomainName, ProviderSet, ProviderSpec};
 
 /// What looking for a mail server came to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Looked {
-    /// Servers, and what the account can do there.
-    Found(Vec<ServiceEndpoint>, Vec<Claim>),
+    /// Servers, what the account can do there, and whether the password may be tried there
+    /// before the person has seen them.
+    Found(Vec<ServiceEndpoint>, Vec<Claim>, Vouched),
     /// Nothing usable is published: ask the person for the server.
     Ask,
     /// Nothing could be reached to ask.
     Offline,
+}
+
+/// Who vouches for the servers a search found, which decides when the password is first sent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Vouched {
+    /// The address's own domain or a database of documents (a provider file, the domain's
+    /// autoconfig over HTTPS, the ISPDB), or SRV records naming hosts within the domain: the
+    /// password is tried before the review.
+    ByTheDomain,
+    /// DNS SRV records naming a host outside the address's domain. Unsigned DNS can be answered
+    /// by anyone on the path, so the password is sent only after the person has seen the
+    /// servers on the review and confirmed them.
+    Unconfirmed,
+}
+
+/// Who vouches for `found`, the finding for an address in `domain`.
+fn vouched(found: &Found, domain: &DomainName) -> Vouched {
+    let within = |endpoint: &ServiceEndpoint| {
+        DomainName::parse(&endpoint.url.origin().host).is_ok_and(|host| host.is_within(domain))
+    };
+    match found.source {
+        Source::Srv if !found.endpoints.iter().all(within) => Vouched::Unconfirmed,
+        _ => Vouched::ByTheDomain,
+    }
 }
 
 /// The domain of an address, when it is one.
@@ -34,7 +59,13 @@ pub(super) async fn look(
     address: &str,
 ) -> Looked {
     match discover_mail(&io.http, dns, providers, address).await {
-        Ok(Outcome::Servers(found)) => Looked::Found(found.endpoints, found.claims),
+        Ok(Outcome::Servers(found)) => match domain_of(address) {
+            Some(domain) => {
+                let vouched = vouched(&found, &domain);
+                Looked::Found(found.endpoints, found.claims, vouched)
+            }
+            None => Looked::Ask,
+        },
         // Another provider describes this address; this family cannot sign in to it, so the
         // person may still name the servers.
         Ok(Outcome::Provider(_)) => Looked::Ask,

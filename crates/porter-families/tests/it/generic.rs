@@ -1373,3 +1373,208 @@ async fn a_fixed_file_checks_the_password_too() {
         "{steps:?}"
     );
 }
+
+// ---- servers only unsigned DNS names, outside the address's domain (sec-2) ----
+
+/// A connector that counts the connections the sign-in opens, then reaches the fakes.
+#[derive(Debug, Clone)]
+struct Counted {
+    wire: Wire,
+    dials: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl Counted {
+    fn dials(&self) -> usize {
+        self.dials.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl porter_proxy::Connect for Counted {
+    type Stream = porter_proxy::NetStream;
+
+    async fn dial(
+        &self,
+        origin: &porter_core::Origin,
+        tls: Tls,
+    ) -> Result<porter_proxy::NetStream, porter_proxy::ConnectFault> {
+        self.dials.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.wire.dial(origin, tls).await
+    }
+
+    async fn upgrade(
+        &self,
+        stream: porter_proxy::NetStream,
+        host: &str,
+    ) -> Result<porter_proxy::NetStream, porter_proxy::ConnectFault> {
+        self.wire.upgrade(stream, host).await
+    }
+}
+
+fn srv(name: &str, port: u16, target: &str) -> (String, Vec<SrvRecord>) {
+    let record = SrvRecord {
+        priority: 0,
+        weight: 1,
+        port,
+        target: porter_provider::DomainName::parse(target).expect("name"),
+    };
+    (name.to_owned(), vec![record])
+}
+
+/// DNS that answers `fake.test`'s SRV names with servers at `host`, and nothing else.
+fn srv_at(imap: &str, smtp: &str) -> FakeDns {
+    let (imaps, imaps_at) = srv("_imaps._tcp.fake.test", 993, imap);
+    let (submission, submission_at) = srv("_submission._tcp.fake.test", 587, smtp);
+    FakeDns::new()
+        .with_srv(&imaps, imaps_at)
+        .with_srv(&submission, submission_at)
+}
+
+/// A provider over `dns` whose connections are counted.
+async fn counted(dns: FakeDns) -> (Mail, GenericProvider, Counted) {
+    let mail = mail_with(dns).await;
+    let counted = Counted {
+        wire: mail._servers.wire(),
+        dials: Default::default(),
+    };
+    let provider = mail.provider.clone().with_connect(counted.clone());
+    (mail, provider, counted)
+}
+
+/// Answers as [`mail_person`] does, noting how many connections were open when the review came.
+fn noting_person<'a>(
+    password: &'a str,
+    counted: &'a Counted,
+    at_review: &'a std::cell::Cell<Option<usize>>,
+    confirm: bool,
+) -> impl FnMut(&SignInStep) -> SignInInput + 'a {
+    let mut person = mail_person("ada@fake.test", password, "mail.fake.test");
+    move |step| match step {
+        SignInStep::Review { .. } => {
+            at_review.set(Some(counted.dials()));
+            match confirm {
+                true => person(step),
+                false => SignInInput::Cancel,
+            }
+        }
+        other => person(other),
+    }
+}
+
+#[tokio::test]
+async fn srv_servers_outside_the_domain_are_shown_before_the_password_is_sent_anywhere() {
+    let (_mail, provider, counted) =
+        counted(srv_at("imap.elsewhere.test", "smtp.elsewhere.test")).await;
+    let at_review = std::cell::Cell::new(None);
+
+    // The person sees the servers and closes the sheet: nothing was ever dialled.
+    let mut signin = provider.sign_in(add()).expect("sign-in");
+    let steps = drive(
+        &mut signin,
+        noting_person(PASSWORD, &counted, &at_review, false),
+    )
+    .await;
+    let SignInStep::Review { endpoints, .. } = &steps[1] else {
+        panic!("the review second: {steps:?}");
+    };
+    assert_eq!(
+        endpoints[0].url.to_string(),
+        "imaps://imap.elsewhere.test:993"
+    );
+    assert_eq!(at_review.get(), Some(0), "{steps:?}");
+    assert_eq!(counted.dials(), 0);
+
+    // Confirmed with a wrong password: the password is tried then, and refused.
+    let mut signin = provider.sign_in(add()).expect("sign-in");
+    let steps = drive(
+        &mut signin,
+        noting_person("wrong", &counted, &at_review, true),
+    )
+    .await;
+    assert_eq!(at_review.get(), Some(0), "{steps:?}");
+    assert!(counted.dials() > 0);
+    assert_eq!(
+        steps.last(),
+        Some(&SignInStep::Failed(SignInFault::Refused)),
+        "{steps:?}"
+    );
+
+    // Confirmed with the right one: done.
+    let mut signin = provider.sign_in(add()).expect("sign-in");
+    let steps = drive(
+        &mut signin,
+        noting_person(PASSWORD, &counted, &at_review, true),
+    )
+    .await;
+    assert!(has_review(&steps), "{steps:?}");
+    assert_eq!(
+        done(&steps).endpoints[1].url.to_string(),
+        "smtp://smtp.elsewhere.test:587"
+    );
+}
+
+#[tokio::test]
+async fn srv_servers_within_the_domain_still_have_the_password_tried_before_the_review() {
+    let (_mail, provider, counted) = counted(srv_at("imap.fake.test", "smtp.fake.test")).await;
+    let at_review = std::cell::Cell::new(None);
+    let mut signin = provider.sign_in(add()).expect("sign-in");
+    let steps = drive(
+        &mut signin,
+        noting_person("wrong", &counted, &at_review, true),
+    )
+    .await;
+    assert_eq!(
+        steps.last(),
+        Some(&SignInStep::Failed(SignInFault::Refused)),
+        "{steps:?}"
+    );
+    assert!(!has_review(&steps), "{steps:?}");
+}
+
+#[tokio::test]
+async fn signing_in_again_uses_srv_servers_outside_the_domain_only_when_the_account_has_them() {
+    let (_mail, provider, counted) =
+        counted(srv_at("imap.elsewhere.test", "smtp.elsewhere.test")).await;
+    let again = |endpoints| SignInStart {
+        mode: SignInMode::Reauthenticate {
+            account: AccountId::parse("generic-imap-ada").expect("id"),
+            endpoints,
+        },
+    };
+    let at_review = std::cell::Cell::new(None);
+
+    // Servers the account never had: the person is asked for the server, nothing is dialled
+    // before the answer.
+    use porter_provider::SignIn as _;
+    let mut signin = provider.sign_in(again(Vec::new())).expect("sign-in");
+    let first = signin.next(SignInInput::Start).await;
+    assert!(matches!(first, SignInStep::AskFields(_)), "{first:?}");
+    let asked = signin
+        .next(SignInInput::Fields(vec![
+            plain(FieldKind::Address, "ada@fake.test"),
+            secret(FieldKind::Password, PASSWORD),
+        ]))
+        .await;
+    let SignInStep::AskFields(fields) = &asked else {
+        panic!("the question for a server: {asked:?}");
+    };
+    assert!(
+        fields.iter().any(|f| f.kind == FieldKind::Server),
+        "{fields:?}"
+    );
+    assert_eq!(counted.dials(), 0);
+
+    // The servers the account has: tried, and done.
+    let held = {
+        let mut signin = provider.sign_in(add()).expect("sign-in");
+        let steps = drive(
+            &mut signin,
+            noting_person(PASSWORD, &counted, &at_review, true),
+        )
+        .await;
+        done(&steps).endpoints.clone()
+    };
+    let mut signin = provider.sign_in(again(held)).expect("sign-in");
+    let steps = drive(&mut signin, mail_person("ada@fake.test", PASSWORD, "")).await;
+    assert!(!has_review(&steps), "{steps:?}");
+    done(&steps);
+}
