@@ -37,6 +37,9 @@ pub(crate) enum Key {
     Expires(AccountId),
     /// `accounts.<id>.place`.
     Place(AccountId),
+    /// `accounts.<id>.sign_in`: read-only, how the account is signed in again (porter-core's
+    /// `SignInWay` slug: `browser`, `password`, `key`, `agent`, `outside`, `nothing`).
+    SignIn(AccountId),
     /// `accounts.<id>.grant.<grant>`.
     Grant(AccountId, GrantId),
     /// `accounts.<id>.reauth`.
@@ -79,6 +82,7 @@ pub(crate) fn parse(path: &str, registry: &Registry) -> Option<Key> {
             "label" => Some(Key::Label(id)),
             "expires" => Some(Key::Expires(id)),
             "place" => Some(Key::Place(id)),
+            "sign_in" => Some(Key::SignIn(id)),
             "reauth" => Some(Key::Reauth(id)),
             "sign_out" => Some(Key::SignOut(id)),
             "remove" => Some(Key::Remove(id)),
@@ -108,6 +112,7 @@ pub(crate) fn path(key: &Key) -> String {
         Key::Label(id) => format!("accounts.{id}.label"),
         Key::Expires(id) => format!("accounts.{id}.expires"),
         Key::Place(id) => format!("accounts.{id}.place"),
+        Key::SignIn(id) => format!("accounts.{id}.sign_in"),
         Key::Grant(id, grant) => format!("accounts.{id}.grant.{grant}"),
         Key::Reauth(id) => format!("accounts.{id}.reauth"),
         Key::SignOut(id) => format!("accounts.{id}.sign_out"),
@@ -237,6 +242,16 @@ fn account_keys(account: &Account, grants: &[Grant], names: &AppNames) -> Vec<Ke
                 variant: crate::account::state_slug(account.state).to_owned(),
             },
             toml::Value::String(crate::account::state_slug(account.state).to_owned()),
+        ),
+        spec(
+            &Key::SignIn(id.clone()),
+            section,
+            "Signs in".to_owned(),
+            "",
+            KeyKind::Fixed {
+                variant: account.auth.sign_in_way().slug().to_owned(),
+            },
+            toml::Value::String(account.auth.sign_in_way().slug().to_owned()),
         ),
     ];
     if let Some(text) = expiry_text(account) {
@@ -651,6 +666,36 @@ mod tests {
         unique.sort_unstable();
         unique.dedup();
         assert_eq!(paths.len(), unique.len(), "{paths:?}");
+    }
+
+    #[test]
+    fn every_account_says_how_it_signs_in_again_on_a_read_only_row() {
+        let way_of = |account: &Account| {
+            let rows = account_keys(account, &[], &AppNames::default());
+            let row = rows
+                .iter()
+                .find(|k| k.path.0 == format!("accounts.{}.sign_in", account.id))
+                .expect("sign_in row");
+            match &row.kind {
+                KeyKind::Fixed { variant } => variant.clone(),
+                other => panic!("{other:?}"),
+            }
+        };
+        let mut password = mail_account();
+        password.auth = AuthKind::Password;
+        assert_eq!(way_of(&password), "password");
+        let mut oauth = mail_account();
+        oauth.auth = AuthKind::OAuthPkce;
+        assert_eq!(way_of(&oauth), "browser");
+        let mut agent = storage_account();
+        agent.auth = AuthKind::AgentLogin;
+        assert_eq!(way_of(&agent), "agent");
+        let registry = registry();
+        let id = &registry.accounts[1].id;
+        assert_eq!(
+            parse(&format!("accounts.{id}.sign_in"), &registry),
+            Some(Key::SignIn(id.clone()))
+        );
     }
 
     #[test]

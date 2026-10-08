@@ -114,6 +114,9 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
             Key::Place(id) => Ok(toml::Value::String(
                 crate::settings_keys::place_slug(account(&id)?).to_owned(),
             )),
+            Key::SignIn(id) => Ok(toml::Value::String(
+                account(&id)?.auth.sign_in_way().slug().to_owned(),
+            )),
             Key::Grant(..) | Key::Reauth(_) | Key::SignOut(_) | Key::Remove(_) => {
                 Ok(toml::Value::Boolean(false))
             }
@@ -182,7 +185,7 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
                 };
                 self.write_client(issuer, &text)?;
             }
-            Key::State(_) | Key::Label(_) | Key::Place(_) | Key::Expires(_) => {
+            Key::State(_) | Key::Label(_) | Key::Place(_) | Key::SignIn(_) | Key::Expires(_) => {
                 return Err(LiveError::NotPermitted("this row is a read-out".into()));
             }
         }

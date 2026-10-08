@@ -1055,3 +1055,26 @@ fn a_provider_row_and_views_written_before_the_kind_and_name_still_read() {
         (ProviderKind::AgentLogin, "Claude Code")
     );
 }
+
+#[test]
+fn every_auth_kind_has_one_way_to_sign_in_again_and_its_slug_is_its_serde_form() {
+    let table = [
+        (AuthKind::OAuthPkce, SignInWay::Browser),
+        (AuthKind::OAuthMintsKey, SignInWay::Browser),
+        (AuthKind::OAuthPlan, SignInWay::Browser),
+        (AuthKind::LoginFlowV2, SignInWay::Browser),
+        (AuthKind::Password, SignInWay::Password),
+        (AuthKind::AppPassword, SignInWay::Password),
+        (AuthKind::LocalBridge, SignInWay::Password),
+        (AuthKind::ApiKey, SignInWay::Key),
+        (AuthKind::KeyPair, SignInWay::Key),
+        (AuthKind::AgentLogin, SignInWay::Agent),
+        (AuthKind::CloudIdentity, SignInWay::Outside),
+        (AuthKind::None, SignInWay::Nothing),
+        (AuthKind::LocalRuntime, SignInWay::Nothing),
+    ];
+    for (kind, way) in table {
+        assert_eq!(kind.sign_in_way(), way, "{kind:?}");
+        assert_eq!(json(&way), format!("\"{}\"", way.slug()), "{way:?}");
+    }
+}

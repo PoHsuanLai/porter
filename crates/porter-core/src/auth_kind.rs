@@ -38,3 +38,55 @@ pub enum AuthKind {
     /// in (design/31 R7, R8).
     AgentLogin,
 }
+
+/// How a person signs an account in again, in the few ways a screen words differently ("in your
+/// browser", "enter the password again"). Settings publishes it on each account's `sign_in` row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SignInWay {
+    /// In the browser: OAuth, or Nextcloud's Login Flow.
+    Browser,
+    /// By typing a password: the account's own, an app password, a bridge's.
+    Password,
+    /// By pasting a key: an API key or an access key pair.
+    Key,
+    /// Inside the agent program, which signs itself in.
+    Agent,
+    /// Outside porter: a cloud identity a command-line tool holds.
+    Outside,
+    /// Not at all: no credential (a probed runtime, an open endpoint).
+    Nothing,
+}
+
+impl SignInWay {
+    /// The stable slug, as the row's value says it.
+    pub fn slug(self) -> &'static str {
+        match self {
+            SignInWay::Browser => "browser",
+            SignInWay::Password => "password",
+            SignInWay::Key => "key",
+            SignInWay::Agent => "agent",
+            SignInWay::Outside => "outside",
+            SignInWay::Nothing => "nothing",
+        }
+    }
+}
+
+impl AuthKind {
+    /// How an account of this kind is signed in again. No wildcard arm: a new kind is placed here.
+    pub fn sign_in_way(self) -> SignInWay {
+        match self {
+            AuthKind::OAuthPkce
+            | AuthKind::OAuthMintsKey
+            | AuthKind::OAuthPlan
+            | AuthKind::LoginFlowV2 => SignInWay::Browser,
+            AuthKind::Password | AuthKind::AppPassword | AuthKind::LocalBridge => {
+                SignInWay::Password
+            }
+            AuthKind::ApiKey | AuthKind::KeyPair => SignInWay::Key,
+            AuthKind::AgentLogin => SignInWay::Agent,
+            AuthKind::CloudIdentity => SignInWay::Outside,
+            AuthKind::None | AuthKind::LocalRuntime => SignInWay::Nothing,
+        }
+    }
+}

@@ -39,7 +39,7 @@ pub use account::{Account, AccountLabel, AccountState, AgentState};
 pub use agent_login::{LoginFault, LoginOutcome, LoginRequestId};
 pub use ai_props::{Billing, Locality, PriceTable, Region, Tier};
 pub use app_id::{AppId, AppLabel, AppName, Isolation};
-pub use auth_kind::AuthKind;
+pub use auth_kind::{AuthKind, SignInWay};
 pub use candidate::Candidate;
 pub use capability::{Capability, CapabilityKind};
 pub use data_class::DataClass;
