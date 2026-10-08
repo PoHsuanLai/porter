@@ -214,6 +214,7 @@ impl Sheet {
                 row: row(provider),
                 review: review.clone(),
                 allow,
+                allow_label: None,
             }),
             Stage::Added => SheetView::Done,
             Stage::Failed { provider, fault } => SheetView::Failed {

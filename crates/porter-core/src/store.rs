@@ -68,6 +68,7 @@ const MIGRATIONS: &[(VocabVersion, Migration)] = &[
     (VocabVersion(5), from_five),
     (VocabVersion(6), from_six),
     (VocabVersion(7), from_seven),
+    (VocabVersion(8), from_eight),
 ];
 
 /// 3 to 4 added the `sieve` family and changed the sheet's wire types; the stored document is
@@ -100,6 +101,13 @@ fn from_six(document: Value) -> Result<Value, StoreFault> {
 /// new variant: a document written at 7 holds only the two old words and reads as it was, so
 /// only its version moves.
 fn from_seven(document: Value) -> Result<Value, StoreFault> {
+    Ok(document)
+}
+
+/// 8 to 9 added `SignInFault::AlreadyAdded` and the defaulted `app_label` of `ConsentAsk` and
+/// `allow_label` of `ReviewView`, all of the sheet's wire and none of the document: a document
+/// written at 8 reads as it was, so only its version moves.
+fn from_eight(document: Value) -> Result<Value, StoreFault> {
     Ok(document)
 }
 

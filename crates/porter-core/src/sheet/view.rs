@@ -3,7 +3,7 @@
 
 use super::fields::{FieldKind, FieldSpec};
 use super::progress::{Review, SignInFault, UserCode};
-use crate::app_id::AppId;
+use crate::app_id::{AppId, AppLabel};
 use crate::consent::ConsentAsk;
 use crate::endpoint::EndpointUrl;
 use crate::id::ProviderId;
@@ -101,6 +101,10 @@ pub struct ReviewView {
     /// The app whose chooser started this: the final button reads "Add, and allow <app> to use
     /// it", one grant and not a second prompt. Absent when the sheet was opened from Settings.
     pub allow: Option<AppId>,
+    /// What a person calls `allow`'s app, as accountd resolves it (see [`ConsentAsk::app_label`]).
+    /// Absent when `allow` is, or when accountd has no name for the app.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_label: Option<AppLabel>,
 }
 
 /// What the host shows now.

@@ -388,6 +388,7 @@ fn consent_values_round_trip() {
             provider: ProviderId::parse("nextcloud").expect("provider"),
         }],
         session: None,
+        app_label: None,
     });
     round_trip(&ConsentAnswer::Allow {
         account: account_id("cloud"),
@@ -460,6 +461,7 @@ fn a_consent_ask_names_its_session_only_when_it_has_one() {
             provider: ProviderId::parse("anthropic").expect("provider"),
         }],
         session: None,
+        app_label: None,
     };
     assert!(!json(&ask).contains("session"), "{}", json(&ask));
     // An ask an earlier build wrote has no `session` and reads as one without.
@@ -635,8 +637,45 @@ fn json<T: Serialize>(value: &T) -> String {
 }
 
 #[test]
-fn the_vocabulary_is_version_eight() {
-    assert_eq!(VocabVersion::CURRENT, VocabVersion(8));
+fn the_vocabulary_is_version_nine() {
+    assert_eq!(VocabVersion::CURRENT, VocabVersion(9));
+}
+
+#[test]
+fn an_app_label_is_named_only_when_accountd_has_one_and_an_earlier_ask_reads_without_it() {
+    let mut ask = ConsentAsk {
+        app: app(),
+        kind: CapabilityKind::Llm,
+        class: DataClass::Prompt,
+        usage: Usage::Interactive,
+        accounts: vec![AccountChoice {
+            account: account_id("anthropic"),
+            label: AccountLabel("Anthropic".into()),
+            provider: ProviderId::parse("anthropic").expect("provider"),
+        }],
+        session: None,
+        app_label: None,
+    };
+    assert!(!json(&ask).contains("app_label"), "{}", json(&ask));
+    assert_eq!(
+        serde_json::from_str::<ConsentAsk>(&json(&ask)).expect("ask"),
+        ask
+    );
+    ask.app_label = Some(AppLabel("Claude Code".into()));
+    assert!(
+        json(&ask).contains(r#""app_label":"Claude Code""#),
+        "{}",
+        json(&ask)
+    );
+    assert_eq!(
+        serde_json::from_str::<ConsentAsk>(&json(&ask)).expect("ask"),
+        ask
+    );
+}
+
+#[test]
+fn a_sign_in_fault_keeps_the_slug_of_an_account_already_there() {
+    assert_eq!(json(&SignInFault::AlreadyAdded), r#""already_added""#);
 }
 
 #[test]
@@ -845,6 +884,7 @@ fn every_sheet_view_round_trips() {
                 provider: nextcloud.clone(),
             }],
             session: Some(LauncherSession::parse("sess-1").expect("session")),
+            app_label: Some(AppLabel("Photos".into())),
         }),
         SheetView::Providers(vec![ProviderRow {
             id: nextcloud.clone(),
@@ -881,6 +921,7 @@ fn every_sheet_view_round_trips() {
             row: row.clone(),
             review: review(),
             allow: Some(app()),
+            allow_label: Some(AppLabel("Photos".into())),
         }),
         SheetView::Working {
             provider: nextcloud.clone(),

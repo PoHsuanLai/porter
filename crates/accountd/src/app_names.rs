@@ -12,7 +12,7 @@
 //! the unlocalised `Name=` is read; `Name[xx]=` is not (FINDINGS).
 
 use porter_core::capability::AgentProgram;
-use porter_core::{AppName, AuthKind, Capability};
+use porter_core::{AppLabel, AppName, AuthKind, Capability};
 use porter_dbus::{AppTitle, CallerTable};
 use porter_provider::ProviderSpec;
 use std::collections::BTreeMap;
@@ -51,12 +51,22 @@ impl AppNames {
 
     /// What a person reads for `app`.
     pub fn title_of(&self, app: &AppName) -> AppTitle {
+        self.named(app)
+            .unwrap_or_else(|| AppTitle(app.as_str().to_owned()))
+    }
+
+    /// The name accountd has for `app`, if it has one: the id itself is not a name, so an app
+    /// nothing names is `None` and the sheet host keeps naming it as it can.
+    pub fn label_of(&self, app: &AppName) -> Option<AppLabel> {
+        self.named(app).map(|title| AppLabel(title.0))
+    }
+
+    fn named(&self, app: &AppName) -> Option<AppTitle> {
         self.table
             .title_of(app)
             .cloned()
             .or_else(|| self.entry_title(app))
             .or_else(|| self.agent_title(app))
-            .unwrap_or_else(|| AppTitle(app.as_str().to_owned()))
     }
 
     fn agent_title(&self, app: &AppName) -> Option<AppTitle> {

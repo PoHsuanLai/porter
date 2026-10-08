@@ -2,7 +2,7 @@
 
 use super::grant::{GrantScope, Usage};
 use crate::account::AccountLabel;
-use crate::app_id::AppId;
+use crate::app_id::{AppId, AppLabel};
 use crate::capability::CapabilityKind;
 use crate::data_class::DataClass;
 use crate::id::{AccountId, ProviderId};
@@ -31,6 +31,11 @@ pub struct ConsentAsk {
     /// which the sheet titles itself with.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session: Option<LauncherSession>,
+    /// What a person calls `app` ("Claude Code" for `org.quire.Agent.claude-code`), as accountd
+    /// resolves it. Absent when accountd has no name for it: the host then names the app as it
+    /// can from the id. Filled by accountd on the way to the sheet host, never by the service.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_label: Option<AppLabel>,
 }
 
 /// One account row in the chooser.

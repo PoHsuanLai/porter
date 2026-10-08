@@ -239,6 +239,18 @@ fn a_document_stored_at_vocabulary_seven_is_read_unchanged_and_its_scopes_still_
 }
 
 #[test]
+fn a_document_stored_at_vocabulary_eight_is_read_unchanged() {
+    // The fixture is what the build before `SignInFault::AlreadyAdded` and the app labels wrote.
+    let at_eight = filled().to_json().expect("json").replacen(
+        &format!("\"vocab\": {}", VocabVersion::CURRENT.0),
+        "\"vocab\": 8",
+        1,
+    );
+    assert!(at_eight.contains("\"vocab\": 8"));
+    assert_eq!(Persisted::from_json(&at_eight), Ok(filled()));
+}
+
+#[test]
 fn a_session_grant_survives_the_document_and_keeps_its_form() {
     let mut registry = filled();
     registry.grants[0].scope = GrantScope::Session(LauncherSession::parse("sess-1").expect("id"));

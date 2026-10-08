@@ -149,6 +149,7 @@ fn every_stage_has_its_view() {
                 row: row.clone(),
                 review: review(),
                 allow: None,
+                allow_label: None,
             }),
         ),
         ("added", Stage::Added, SheetView::Done),

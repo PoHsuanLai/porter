@@ -13,9 +13,10 @@
 //! - the owner leaving the bus, or dropping the link, ends the sheet (`Closed`; the host is told
 //!   to take it down).
 
+use crate::app_names::AppNames;
 use crate::callers::Callers;
 use porter_core::consent::{ConsentAnswer, ConsentAsk};
-use porter_core::sheet::{SheetInput, SheetView};
+use porter_core::sheet::{ReviewView, SheetInput, SheetView};
 use porter_core::wire::ParentWindow;
 use porter_dbus::{AccountsSheetProxy, CallerRole, SHEET_BUS};
 use porter_service::{SheetFault, SheetLink, SheetOpen, Sheets};
@@ -33,16 +34,27 @@ pub struct BusSheets<C> {
     connection: Connection,
     callers: Arc<C>,
     next: AtomicU64,
+    names: AppNames,
 }
 
 impl<C: Callers> BusSheets<C> {
-    /// Sheets on `connection`, the host checked through `callers`.
+    /// Sheets on `connection`, the host checked through `callers`. Apps are named by their ids
+    /// alone until [`BusSheets::with_names`] says better.
     pub fn new(connection: Connection, callers: Arc<C>) -> Self {
         Self {
             connection,
             callers,
             next: AtomicU64::new(0),
+            names: AppNames::default(),
         }
+    }
+
+    /// The same sheets naming the apps they show from `names` (the ones Settings reads): the
+    /// consent sheet and the review's "Add, and allow ..." carry the resolved name beside the
+    /// app id, so the host does not guess one from the id.
+    #[must_use]
+    pub fn with_names(self, names: AppNames) -> Self {
+        Self { names, ..self }
     }
 
     /// The unique name of the verified host.
@@ -93,7 +105,7 @@ impl<C: Callers> BusSheets<C> {
             ParentWindow::Handle(handle) => handle.as_str(),
         };
         proxy
-            .open(&handle, window, &json(&open.view)?)
+            .open(&handle, window, &json(&labelled(open.view, &self.names))?)
             .await
             .map_err(|_| SheetFault::Closed)?;
         Ok(BusLink {
@@ -102,12 +114,32 @@ impl<C: Callers> BusSheets<C> {
             owner,
             inputs,
             leaving,
+            names: self.names.clone(),
         })
     }
 }
 
 fn json(view: &SheetView) -> Result<String, SheetFault> {
     serde_json::to_string(view).map_err(|_| SheetFault::Unavailable)
+}
+
+/// `view` with the names of the apps it shows beside their ids: the consent ask's app, and the
+/// app a review adds the account for. An app `names` has no name for stays without one.
+pub(crate) fn labelled(view: SheetView, names: &AppNames) -> SheetView {
+    match view {
+        SheetView::Consent(ask) => SheetView::Consent(ConsentAsk {
+            app_label: names.label_of(&ask.app.name),
+            ..ask
+        }),
+        SheetView::Review(review) => SheetView::Review(ReviewView {
+            allow_label: review
+                .allow
+                .as_ref()
+                .and_then(|app| names.label_of(&app.name)),
+            ..review
+        }),
+        other => other,
+    }
 }
 
 /// One open handle on the host. Dropping it takes the sheet down.
@@ -118,6 +150,7 @@ pub struct BusLink {
     owner: UniqueName<'static>,
     inputs: zbus::MessageStream,
     leaving: NameOwnerChangedStream,
+    names: AppNames,
 }
 
 impl Drop for BusLink {
@@ -151,7 +184,7 @@ async fn departed(owners: &mut NameOwnerChangedStream) {
 impl SheetLink for BusLink {
     async fn update(&mut self, view: SheetView) -> Result<(), SheetFault> {
         self.proxy
-            .update(&self.handle, &json(&view)?)
+            .update(&self.handle, &json(&labelled(view, &self.names))?)
             .await
             .map_err(|_| SheetFault::Closed)
     }
@@ -200,5 +233,107 @@ impl<C: Callers> Sheets for BusSheets<C> {
 
     async fn conversation(&self, open: SheetOpen) -> Result<BusLink, SheetFault> {
         self.open_link(open).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use porter_core::consent::{AccountChoice, Usage};
+    use porter_core::{
+        AccountLabel, AppId, AppLabel, AppName, CapabilityKind, DataClass, Isolation, ProviderId,
+    };
+    use porter_dbus::{AppTitle, CallerRole, CallerRow, CallerTable};
+
+    fn app(name: &str) -> AppId {
+        AppId {
+            name: AppName::parse(name).expect("name"),
+            isolation: Isolation::Flatpak,
+        }
+    }
+
+    fn ask(app: AppId) -> ConsentAsk {
+        ConsentAsk {
+            app,
+            kind: CapabilityKind::Llm,
+            class: DataClass::Prompt,
+            usage: Usage::Interactive,
+            accounts: vec![AccountChoice {
+                account: porter_core::AccountId::parse("anthropic").expect("id"),
+                label: AccountLabel("Anthropic".into()),
+                provider: ProviderId::parse("anthropic").expect("id"),
+            }],
+            session: None,
+            app_label: None,
+        }
+    }
+
+    fn names() -> AppNames {
+        let table = CallerTable {
+            callers: vec![CallerRow {
+                app: AppName::parse("org.quire.Mail").expect("name"),
+                unit: None,
+                role: CallerRole::App,
+                name: Some(AppTitle("Mail".to_owned())),
+            }],
+        };
+        AppNames::new(table, Vec::new()).with_agents(&porter_provider::shipped_specs())
+    }
+
+    fn label_of(view: SheetView) -> Option<AppLabel> {
+        match labelled(view, &names()) {
+            SheetView::Consent(ask) => ask.app_label,
+            other => panic!("a consent: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_consent_for_an_agent_app_carries_the_agents_provider_label() {
+        let view = SheetView::Consent(ask(app("org.quire.Agent.claude-code")));
+        assert_eq!(label_of(view), Some(AppLabel("Claude Code".into())));
+    }
+
+    #[test]
+    fn a_consent_for_a_plain_app_carries_its_table_name_and_an_unnamed_app_none() {
+        assert_eq!(
+            label_of(SheetView::Consent(ask(app("org.quire.Mail")))),
+            Some(AppLabel("Mail".into()))
+        );
+        assert_eq!(
+            label_of(SheetView::Consent(ask(app("org.example.Ghost")))),
+            None,
+            "the id is not a name: the host keeps its own guess"
+        );
+        // An ask without a label leaves it out of the JSON the host reads.
+        let json = serde_json::to_string(&SheetView::Consent(ask(app("org.example.Ghost"))))
+            .expect("json");
+        assert!(!json.contains("app_label"), "{json}");
+    }
+
+    #[test]
+    fn a_review_that_adds_and_allows_an_app_carries_that_apps_name() {
+        let review = |allow: Option<AppId>| ReviewView {
+            provider: ProviderId::parse("anthropic").expect("id"),
+            row: None,
+            review: porter_core::sheet::Review {
+                label: AccountLabel("x".into()),
+                services: Vec::new(),
+                endpoints: Vec::new(),
+            },
+            allow,
+            allow_label: None,
+        };
+        let names = names();
+        let SheetView::Review(with) = labelled(
+            SheetView::Review(review(Some(app("org.quire.Agent.claude-code")))),
+            &names,
+        ) else {
+            panic!("a review");
+        };
+        assert_eq!(with.allow_label, Some(AppLabel("Claude Code".into())));
+        let SheetView::Review(without) = labelled(SheetView::Review(review(None)), &names) else {
+            panic!("a review");
+        };
+        assert_eq!(without.allow_label, None);
     }
 }

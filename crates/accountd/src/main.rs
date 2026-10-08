@@ -139,7 +139,8 @@ async fn main() -> ExitCode {
             None => ProcCallers::new(connection.clone(), table),
         },
     );
-    let sheets = BusSheets::new(connection.clone(), Arc::clone(&callers));
+    let sheets =
+        BusSheets::new(connection.clone(), Arc::clone(&callers)).with_names(app_names.clone());
     let service = Arc::new(
         AccountService::new(families, registry, secrets.clone(), sheets, SystemClock)
             .with_local_runtimes(local)

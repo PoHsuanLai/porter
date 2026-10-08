@@ -56,6 +56,14 @@ impl fmt::Display for AppName {
     }
 }
 
+/// What a person reads for an app ("Claude Code"), as accountd resolves it (its caller table, the
+/// app's desktop entry, the agent's provider file): free text, never the bus id. A sheet that
+/// carries an [`AppId`] carries this beside it when accountd has one, so the host does not
+/// guess a name from the id.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct AppLabel(pub String);
+
 /// How far the daemon can trust the name, which Settings shows beside every grant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
