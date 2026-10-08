@@ -18,10 +18,13 @@ use porter_core::{Account, AccountId, AccountState, AuthKind, CapabilityKind, Gr
 use porter_provider::Issuer;
 use porter_service::{Registry, SyncClass, sync_offers};
 
-/// The issuers a bring-your-own client id may be set for. Google is not here on purpose: its row
-/// carries an application secret and the `testing` and `byo` flags, which this writer would drop,
-/// so the owner edits it by hand (docs/google.md).
-pub(crate) const ISSUERS: &[Issuer] = &[Issuer::Microsoft];
+/// The issuers a bring-your-own client id may be set for. The writer changes only the id (and the
+/// secret) of a row, so a hand-written row's other lines (Google's `testing`, `byo`) are kept.
+pub(crate) const ISSUERS: &[Issuer] = &[Issuer::Microsoft, Issuer::Google];
+
+/// The issuers whose client also needs its application secret (Google's desktop clients): they
+/// get a second row, `accounts.clients.<issuer>.secret`.
+pub(crate) const SECRET_ISSUERS: &[Issuer] = &[Issuer::Google];
 
 /// What a key names.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,6 +67,9 @@ pub(crate) enum Key {
     Remove(AccountId),
     /// `accounts.clients.<issuer>`.
     Client(Issuer),
+    /// `accounts.clients.<issuer>.secret`: the application secret of the client, for the
+    /// issuers that need one ([`SECRET_ISSUERS`]).
+    ClientSecret(Issuer),
 }
 
 fn slug<T: serde::Serialize>(value: &T) -> String {
@@ -91,9 +97,14 @@ fn from_slug<T: serde::de::DeserializeOwned>(text: &str) -> Option<T> {
 pub(crate) fn parse(path: &str, registry: &Registry) -> Option<Key> {
     let rest = path.strip_prefix("accounts.")?;
     if let Some(issuer) = rest.strip_prefix("clients.") {
-        return from_slug(issuer)
-            .filter(|i| ISSUERS.contains(i))
-            .map(Key::Client);
+        return match issuer.strip_suffix(".secret") {
+            Some(issuer) => from_slug(issuer)
+                .filter(|i| SECRET_ISSUERS.contains(i))
+                .map(Key::ClientSecret),
+            None => from_slug(issuer)
+                .filter(|i| ISSUERS.contains(i))
+                .map(Key::Client),
+        };
     }
     let mut ids: Vec<&AccountId> = registry.accounts.iter().map(|a| &a.id).collect();
     ids.sort_by_key(|id| std::cmp::Reverse(id.as_str().len()));
@@ -161,6 +172,7 @@ pub(crate) fn path(key: &Key) -> String {
         Key::SignOut(id) => format!("accounts.{id}.sign_out"),
         Key::Remove(id) => format!("accounts.{id}.remove"),
         Key::Client(issuer) => format!("accounts.clients.{}", slug(issuer)),
+        Key::ClientSecret(issuer) => format!("accounts.clients.{}.secret", slug(issuer)),
     }
 }
 
@@ -181,7 +193,7 @@ fn spec(
         page: Page::Accounts,
         section: Section(section.to_owned()),
         exposure: match key {
-            Key::Client(_) => Exposure::Advanced,
+            Key::Client(_) | Key::ClientSecret(_) => Exposure::Advanced,
             _ => Exposure::Basic,
         },
         labels: Default::default(),
@@ -516,17 +528,44 @@ pub(crate) fn schema(
         .iter()
         .flat_map(|account| account_keys(account, &registry.grants, names, providers))
         .collect();
-    key.extend(ISSUERS.iter().map(|issuer| {
-        spec(
+    key.extend(ISSUERS.iter().flat_map(|issuer| {
+        let name = sentence_case(&slug(issuer));
+        let text = || KeyKind::Text;
+        let empty = || toml::Value::String(String::new());
+        let id = spec(
             &Key::Client(*issuer),
             "Sign-in clients",
-            format!("{} sign-in key", sentence_case(&slug(issuer))),
-            "A sign-in key from your own Google or Microsoft developer account. Leave it empty to use the one built in.",
-            KeyKind::Text,
-            toml::Value::String(String::new()),
-        )
+            format!("{name} sign-in key"),
+            client_help(*issuer),
+            text(),
+            empty(),
+        );
+        let secret = SECRET_ISSUERS.contains(issuer).then(|| {
+            spec(
+                &Key::ClientSecret(*issuer),
+                "Sign-in clients",
+                format!("{name} sign-in secret"),
+                "The secret Google shows beside the sign-in key. Google asks for it even from an app on your computer; it is not your password.",
+                text(),
+                empty(),
+            )
+        });
+        std::iter::once(id).chain(secret)
     }));
     LiveSchema { version: 1, key }
+}
+
+/// What a sign-in key row says, by issuer: Microsoft's has one built in; Google's is the
+/// person's own or nothing, and Google accounts cannot be added without it.
+fn client_help(issuer: Issuer) -> &'static str {
+    match issuer {
+        Issuer::Google => {
+            "Google accounts can be added once you paste a sign-in key here: make one for a desktop app in your own Google Cloud project, and paste its secret below. Leave it empty to remove it."
+        }
+        _ => {
+            "A sign-in key from your own Google or Microsoft developer account. Leave it empty to use the one built in."
+        }
+    }
 }
 
 #[cfg(test)]
@@ -988,6 +1027,35 @@ mod tests {
         );
     }
 
+    /// ux-3: Settings has a Google sign-in key row and its secret, plainly worded, and the
+    /// secret row is Google's only.
+    #[test]
+    fn google_has_a_sign_in_key_row_and_a_secret_row() {
+        let schema = schema(&registry(), &AppNames::default(), &ProviderNames::default());
+        let row = |path: &str| {
+            schema
+                .key
+                .iter()
+                .find(|k| k.path.0 == path)
+                .map(|k| (k.label.0.clone(), k.help.0.clone(), k.exposure))
+        };
+        let (label, help, exposure) = row("accounts.clients.google").expect("google key row");
+        assert_eq!(label, "Google sign-in key");
+        assert!(
+            help.starts_with("Google accounts can be added once"),
+            "{help}"
+        );
+        assert_eq!(exposure, Exposure::Advanced);
+        let (label, help, _) = row("accounts.clients.google.secret").expect("google secret row");
+        assert_eq!(label, "Google sign-in secret");
+        assert!(help.contains("not your password"), "{help}");
+        assert_eq!(row("accounts.clients.microsoft.secret"), None);
+        assert_eq!(
+            parse("accounts.clients.google.secret", &registry()),
+            Some(Key::ClientSecret(Issuer::Google))
+        );
+    }
+
     #[test]
     fn a_probed_runtime_is_on_this_computer_and_every_other_account_is_elsewhere() {
         let mut runtime = storage_account();
@@ -1020,7 +1088,8 @@ mod tests {
         for bad in [
             "accounts.nobody.remove",
             "accounts.fake-mail.service.teleport",
-            "accounts.clients.google",
+            "accounts.clients.openrouter",
+            "accounts.clients.microsoft.secret",
             "dock.size",
             "accounts.fake-mail.nonsense",
         ] {

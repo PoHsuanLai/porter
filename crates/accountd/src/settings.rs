@@ -4,6 +4,7 @@
 //! `settings_keys`; this file applies them.
 
 use crate::callers::Callers;
+use crate::client_rows::{RowEdit, RowRefused, edited};
 use crate::core::{Core, Host};
 use crate::launchers::SignOutNews;
 use crate::settings_keys::{Key, parse, schema};
@@ -13,7 +14,7 @@ use porter_core::audit::{AuditEvent, ClientIdChange, IssuerSlug};
 use porter_core::wire::ParentWindow;
 use porter_core::{AccountsReply, AppId, AppName, Isolation, Toggle};
 use porter_dbus::{ACCOUNTS_SETTINGS_PATH, CallerRole};
-use porter_provider::{ClientChannel, ClientEntry, ClientId, ClientsFile, Issuer, parse_clients};
+use porter_provider::{ClientChannel, ClientsFile, Issuer, parse_clients};
 use porter_service::Launchers as _;
 use std::sync::Arc;
 use zbus::Connection;
@@ -155,6 +156,17 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
                     .map(|c| c.client_id.0.clone())
                     .unwrap_or_default(),
             )),
+            // The application secret is the same for every user of the client and is no
+            // person's credential (Google says so of desktop clients): Settings shows it back.
+            Key::ClientSecret(issuer) => Ok(toml::Value::String(
+                self.clients()
+                    .clients
+                    .iter()
+                    .find(|c| c.issuer == issuer && c.channel == channel())
+                    .and_then(|c| c.client_secret.as_ref())
+                    .map(|s| s.expose().to_owned())
+                    .unwrap_or_default(),
+            )),
         }
     }
 
@@ -213,7 +225,7 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
                     toml::Value::String(text) => text.trim().to_owned(),
                     _ => return Err(LiveError::BadValue("a sign-in key is text".into())),
                 };
-                self.write_client(issuer, &text)?;
+                self.write_client(issuer, RowEdit::Id(&text))?;
                 let slug = serde_json::to_value(issuer)
                     .ok()
                     .and_then(|v| v.as_str().map(str::to_owned))
@@ -225,6 +237,13 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
                         false => ClientIdChange::Set,
                     },
                 });
+            }
+            Key::ClientSecret(issuer) => {
+                let text = match &value {
+                    toml::Value::String(text) => text.trim().to_owned(),
+                    _ => return Err(LiveError::BadValue("a sign-in secret is text".into())),
+                };
+                self.write_client(issuer, RowEdit::Secret(&text))?;
             }
             Key::State(_)
             | Key::Label(_)
@@ -287,27 +306,22 @@ impl<H: Host, C: Callers> AccountsSettings<H, C> {
 }
 
 impl<H, C> AccountsSettings<H, C> {
-    /// Writes `issuer`'s bring-your-own client id (empty removes it) to the user's clients file,
-    /// atomically; Settings is the only writer (PLAN §2.6).
-    fn write_client(&self, issuer: Issuer, client_id: &str) -> Result<(), LiveError> {
+    /// Writes `issuer`'s bring-your-own client id (empty removes the row) or its secret to the
+    /// user's clients file, atomically; Settings is the only writer (PLAN §2.6). The row's other
+    /// lines (Google's `testing`, `byo`) and every other row are kept as they were.
+    fn write_client(&self, issuer: Issuer, edit: RowEdit<'_>) -> Result<(), LiveError> {
         let path = self
             .0
             .clients
             .as_deref()
             .ok_or_else(|| failed("no clients file is configured"))?;
-        let mut file = self.clients();
-        file.clients
-            .retain(|c| !(c.issuer == issuer && c.channel == channel()));
-        if !client_id.is_empty() {
-            file.clients.push(ClientEntry {
-                issuer,
-                channel: channel(),
-                client_id: ClientId(client_id.to_owned()),
-                client_secret: None,
-                endpoints: None,
-            });
-        }
-        let text = toml::to_string(&file).map_err(failed)?;
+        let before = std::fs::read_to_string(path).unwrap_or_default();
+        let text = edited(&before, issuer, channel(), edit).map_err(|refused| match refused {
+            RowRefused::NoKey => {
+                LiveError::BadValue("Set the sign-in key first, then its secret.".into())
+            }
+            RowRefused::Unwritable(why) => failed(why),
+        })?;
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir).map_err(failed)?;
         }

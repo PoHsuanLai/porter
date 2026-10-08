@@ -54,6 +54,7 @@ mod app_names;
 mod audit;
 mod callers;
 mod callers_file;
+mod client_rows;
 mod core;
 mod credentials;
 mod errors;

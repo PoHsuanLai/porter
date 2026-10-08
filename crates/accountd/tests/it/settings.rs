@@ -375,6 +375,69 @@ async fn a_client_id_is_written_to_the_users_file_only_by_settings() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+/// ux-3: Settings sets a Google sign-in key and its secret; the families, which read the same
+/// file at every sign-in (ux-2), then have a Google client with both.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_google_key_and_its_secret_set_in_settings_are_the_families_google_client() {
+    let dir = std::env::temp_dir().join(format!("accountd-google-client-{}", std::process::id()));
+    let file = dir.join("porter/clients.toml");
+    let options = accountd::Options {
+        clients: Some(file.clone()),
+        ..Default::default()
+    };
+    let rig = Rig::start_with(options, SheetHost::quiet()).await;
+    let settings = settings(&rig).await;
+    let (id_row, secret_row) = (
+        KeyPath("accounts.clients.google".into()),
+        KeyPath("accounts.clients.google.secret".into()),
+    );
+    let schema = settings.describe().await.expect("schema");
+    for row in [&id_row, &secret_row] {
+        assert!(schema.key.iter().any(|k| k.path == *row), "{}", row.0);
+    }
+    // A secret alone has no row to go in.
+    assert!(matches!(
+        settings
+            .set(&secret_row, &toml::Value::String("GOCSPX-early".into()))
+            .await,
+        Err(LiveError::BadValue(_))
+    ));
+    settings
+        .set(
+            &id_row,
+            &toml::Value::String("mine.apps.googleusercontent.com".into()),
+        )
+        .await
+        .expect("key");
+    settings
+        .set(&secret_row, &toml::Value::String("GOCSPX-mine".into()))
+        .await
+        .expect("secret");
+    assert_eq!(
+        settings.get(&secret_row).await.expect("get"),
+        toml::Value::String("GOCSPX-mine".into())
+    );
+    let families = porter_families::ClientFiles {
+        shipped: dir.join("none.toml"),
+        own: file.clone(),
+    }
+    .read();
+    // The channel is the build's (development in a debug build).
+    let client = [
+        porter_provider::ClientChannel::Development,
+        porter_provider::ClientChannel::Stable,
+    ]
+    .into_iter()
+    .find_map(|channel| families.lookup(porter_provider::Issuer::Google, channel))
+    .expect("a google client");
+    assert_eq!(client.client_id.0, "mine.apps.googleusercontent.com");
+    assert_eq!(
+        client.client_secret.as_ref().map(|s| s.expose().to_owned()),
+        Some("GOCSPX-mine".to_owned())
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn the_state_row_is_announced_when_an_account_needs_sign_in_and_when_it_recovers() {
     use zbus::export::futures_core::Stream;
