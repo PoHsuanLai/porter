@@ -59,6 +59,26 @@ struct World {
     _connection: zbus::Connection,
     /// How many opened and updated views the person has already answered.
     cursor: std::sync::Mutex<(usize, usize)>,
+    /// accountd's own clock: the system's, until a test moves it.
+    sky: Arc<Sky>,
+}
+
+/// accountd's clock, movable: 0 is the system clock.
+#[derive(Default)]
+struct Sky(std::sync::atomic::AtomicI64);
+
+impl porter_service::Clock for Sky {
+    fn now(&self) -> porter_core::UnixSeconds {
+        match self.0.load(std::sync::atomic::Ordering::SeqCst) {
+            0 => {
+                let since = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default();
+                porter_core::UnixSeconds(i64::try_from(since.as_secs()).unwrap_or(i64::MAX))
+            }
+            at => porter_core::UnixSeconds(at),
+        }
+    }
 }
 
 fn client_with(google: &Google, traits: ClientTraits) -> ClientRegistry {
@@ -140,12 +160,17 @@ impl World {
             .with_store(MemoryStore::default())
             .with_audit(audit.clone()),
         );
+        let sky = Arc::new(Sky::default());
         serve_with(
             &connection,
             Arc::clone(&service),
             Arc::clone(&callers),
             Options {
                 relay_roots: roots,
+                login: accountd::LoginTiming {
+                    clock: Some(sky.clone()),
+                    ..Default::default()
+                },
                 ..Options::default()
             },
         )
@@ -162,6 +187,7 @@ impl World {
             host_log,
             _connection: connection,
             cursor: std::sync::Mutex::new((0, 0)),
+            sky,
         }
     }
 
@@ -305,6 +331,122 @@ impl World {
         };
         refresh.expose().to_owned()
     }
+}
+
+/// Signs the account in again from Settings, as the person would, and waits for `ok`.
+async fn sign_in_again(world: &World, id: &AccountId) {
+    let settings = world.settings().await;
+    settings
+        .invoke(&common::key(&format!("accounts.{id}.reauth")))
+        .await
+        .expect("the action is accepted");
+    world
+        .person(async {
+            for _ in 0..400 {
+                if world.account().state == AccountState::Ok {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+            panic!("not signed in again: {:?}", world.account().state);
+        })
+        .await;
+}
+
+async fn reauth_reason_of(app: &zbus::Connection, id: &AccountId) -> String {
+    porter_dbus::AccountProxy::builder(app)
+        .path(zbus::zvariant::ObjectPath::try_from(porter_dbus::account_path(id)).expect("path"))
+        .expect("path")
+        .build()
+        .await
+        .expect("proxy")
+        .reauth_reason()
+        .await
+        .expect("reauth_reason")
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_client_in_testing_shows_when_google_signs_it_out_and_says_why_once_it_did() {
+    use std::sync::atomic::Ordering::SeqCst;
+    const DAY: i64 = 86_400;
+    let world = World::start(TESTING, (vec![], vec![]), RelayRoots::default()).await;
+    let calendar = world.app("org.quire.Calendar").await;
+    world.google.issuer.set_token_lifetime(1);
+    let id = world.add(&calendar).await;
+    let (_, results) = world.choose(&calendar, "calendar").await;
+    let grant = common::grant_in(&results);
+    let signed_in = world
+        .account()
+        .restriction
+        .signed_in
+        .expect("sign-in date")
+        .0;
+    assert_eq!(
+        world.account().restriction.expires_at().map(|e| e.0),
+        Some(signed_in + 7 * DAY)
+    );
+
+    // Settings: a read-only row with the date; the app is told nothing but the closed word.
+    let settings = world.settings().await;
+    let row = common::key(&format!("accounts.{id}.expires"));
+    let words = settings.get(&row).await.expect("the row");
+    let words = words.as_str().expect("text").to_owned();
+    assert!(
+        words.starts_with("Google signs this account out on 20"),
+        "{words}"
+    );
+    assert_eq!(words.len(), "Google signs this account out on ".len() + 10);
+    assert!(
+        settings
+            .set(&row, &toml::Value::String("x".into()))
+            .await
+            .is_err()
+    );
+    assert_eq!(reauth_reason_of(&calendar, &id).await, "");
+
+    // A refusal a day after signing in is not blamed on the seven days.
+    world.sky.0.store(signed_in + DAY, SeqCst);
+    world.google.issuer.refuse_refreshes(1);
+    let refused = tokens(&calendar)
+        .await
+        .issue_token(grant.as_str(), "google_calendar")
+        .await;
+    assert_eq!(
+        error_name(&refused.expect_err("refused")),
+        refusal_name(Refusal::NeedsReauth)
+    );
+    assert_eq!(world.account().state, AccountState::NeedsReauth);
+    assert_eq!(reauth_reason_of(&calendar, &id).await, "");
+    sign_in_again(&world, &id).await;
+    assert_eq!(reauth_reason_of(&calendar, &id).await, "");
+
+    // A refusal after the seven days is Google's: the word, and the row says it happened.
+    let again = world.account().restriction.signed_in.expect("renewed").0;
+    world.sky.0.store(again + 8 * DAY, SeqCst);
+    world.google.issuer.refuse_refreshes(1);
+    let refused = tokens(&calendar)
+        .await
+        .issue_token(grant.as_str(), "google_calendar")
+        .await;
+    assert_eq!(
+        error_name(&refused.expect_err("refused")),
+        refusal_name(Refusal::NeedsReauth)
+    );
+    assert_eq!(
+        reauth_reason_of(&calendar, &id).await,
+        "testing_app_expired"
+    );
+    let words = settings.get(&row).await.expect("the row");
+    assert!(
+        words
+            .as_str()
+            .expect("text")
+            .starts_with("Signed out by Google on 20"),
+        "{words}"
+    );
+    // Signing in again clears the reason.
+    sign_in_again(&world, &id).await;
+    assert_eq!(reauth_reason_of(&calendar, &id).await, "");
 }
 
 async fn tokens(app: &zbus::Connection) -> TokensProxy<'_> {

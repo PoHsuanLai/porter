@@ -472,7 +472,7 @@ fn kinds(views: &Arc<Mutex<Vec<SheetView>>>) -> Vec<&'static str> {
             SheetView::BrowserWait { .. } => "browser",
             SheetView::ShowCode { .. } => "code",
             SheetView::Review(_) => "review",
-            SheetView::Working(_) => "working",
+            SheetView::Working { .. } => "working",
             SheetView::Failed { .. } => "failed",
             SheetView::Done => "done",
         })

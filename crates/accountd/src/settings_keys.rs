@@ -12,7 +12,7 @@ use ds_settings::schema::{
     LiveAction, Page, Section,
 };
 use porter_core::consent::{Decision, Grant};
-use porter_core::{Account, AccountId, AuthKind, CapabilityKind, GrantId, Offer};
+use porter_core::{Account, AccountId, AccountState, AuthKind, CapabilityKind, GrantId, Offer};
 use porter_provider::Issuer;
 use porter_service::{Registry, SyncClass, sync_offers};
 
@@ -32,6 +32,9 @@ pub(crate) enum Key {
     State(AccountId),
     /// `accounts.<id>.label`.
     Label(AccountId),
+    /// `accounts.<id>.expires`: read-only, only for a sign-in that expires (Google, a client in
+    /// testing).
+    Expires(AccountId),
     /// `accounts.<id>.place`.
     Place(AccountId),
     /// `accounts.<id>.grant.<grant>`.
@@ -74,6 +77,7 @@ pub(crate) fn parse(path: &str, registry: &Registry) -> Option<Key> {
         match tail {
             "state" => Some(Key::State(id)),
             "label" => Some(Key::Label(id)),
+            "expires" => Some(Key::Expires(id)),
             "place" => Some(Key::Place(id)),
             "reauth" => Some(Key::Reauth(id)),
             "sign_out" => Some(Key::SignOut(id)),
@@ -102,6 +106,7 @@ pub(crate) fn path(key: &Key) -> String {
         Key::Sync(id, class) => format!("accounts.{id}.sync.{}", class.slug()),
         Key::State(id) => format!("accounts.{id}.state"),
         Key::Label(id) => format!("accounts.{id}.label"),
+        Key::Expires(id) => format!("accounts.{id}.expires"),
         Key::Place(id) => format!("accounts.{id}.place"),
         Key::Grant(id, grant) => format!("accounts.{id}.grant.{grant}"),
         Key::Reauth(id) => format!("accounts.{id}.reauth"),
@@ -174,6 +179,30 @@ fn grant_label(grant: &Grant, names: &AppNames) -> String {
     )
 }
 
+/// What the `expires` row says: when Google signs the account out, or that it did. Only for an
+/// account whose sign-in expires and whose sign-in date is known. The date is the UTC day.
+pub(crate) fn expiry_text(account: &Account) -> Option<String> {
+    let day = civil_date(account.restriction.expires_at()?);
+    Some(match account.state {
+        AccountState::NeedsReauth => format!("Signed out by Google on {day}"),
+        _ => format!("Google signs this account out on {day}"),
+    })
+}
+
+/// `YYYY-MM-DD` of the UTC day `at` falls in (Howard Hinnant's civil-from-days).
+fn civil_date(at: porter_core::UnixSeconds) -> String {
+    let z = at.0.div_euclid(86_400) + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
 fn account_keys(account: &Account, grants: &[Grant], names: &AppNames) -> Vec<KeySpec> {
     let section = account.label.0.as_str();
     let id = &account.id;
@@ -209,6 +238,18 @@ fn account_keys(account: &Account, grants: &[Grant], names: &AppNames) -> Vec<Ke
             toml::Value::String(crate::account::state_slug(account.state).to_owned()),
         ),
     ];
+    if let Some(text) = expiry_text(account) {
+        keys.push(spec(
+            &Key::Expires(id.clone()),
+            section,
+            "Sign-in".to_owned(),
+            "Google ends the sign-ins of an app that is not verified yet after 7 days; signing in again starts another 7.",
+            KeyKind::Fixed {
+                variant: text.clone(),
+            },
+            toml::Value::String(text),
+        ));
+    }
     // An account with several models holds one claim per model of the same kind: one switch.
     let mut toggles: Vec<CapabilityKind> = Vec::new();
     for kind in account
@@ -335,6 +376,21 @@ pub(crate) fn schema(registry: &Registry, names: &AppNames) -> LiveSchema {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_utc_day_of_a_unix_time() {
+        let cases = [
+            (0, "1970-01-01"),
+            (86_399, "1970-01-01"),
+            (86_400, "1970-01-02"),
+            (951_782_400, "2000-02-29"),
+            (1_790_000_000, "2026-09-21"),
+            (-86_400, "1969-12-31"),
+        ];
+        for (at, want) in cases {
+            assert_eq!(civil_date(porter_core::UnixSeconds(at)), want, "{at}");
+        }
+    }
     use porter_core::consent::{GrantKey, GrantScope, Usage};
     use porter_core::{AppId, AppName, DataClass, Isolation, SpaceScope, UnixSeconds};
     use porter_fake::{mail_account, storage_account};

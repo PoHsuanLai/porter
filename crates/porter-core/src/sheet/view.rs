@@ -22,6 +22,22 @@ pub struct ProviderRow {
     /// Whether this is a provider or the generic "Other…" row.
     #[serde(default)]
     pub kind: RowKind,
+    /// Whether signing in is porter's or the agent's own, from the provider file's auth kind.
+    /// The row's `label` is the display name ("Claude Code").
+    #[serde(default)]
+    pub auth: ProviderKind,
+}
+
+/// Who signs a provider's account in.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderKind {
+    /// A service porter signs the person in to (every provider whose auth kind is not
+    /// `agent_login`).
+    #[default]
+    Service,
+    /// An agent program that signs itself in (`agent_login`); porter asks its launcher.
+    AgentLogin,
 }
 
 /// What a row of the provider list stands for.
@@ -62,6 +78,10 @@ pub struct FieldProblem {
 pub struct SignInView {
     /// The provider being signed in to.
     pub provider: ProviderId,
+    /// The provider's row: display name and kind. `None` only in a view written before
+    /// vocabulary 6.
+    #[serde(default)]
+    pub row: Option<ProviderRow>,
     /// The fields, in order.
     pub fields: Vec<FieldSpec>,
     /// A field to mark after a refusal or an empty submit.
@@ -73,6 +93,9 @@ pub struct SignInView {
 pub struct ReviewView {
     /// The provider.
     pub provider: ProviderId,
+    /// The provider's row (see [`SignInView::row`]).
+    #[serde(default)]
+    pub row: Option<ProviderRow>,
     /// What was found.
     pub review: Review,
     /// The app whose chooser started this: the final button reads "Add, and allow <app> to use
@@ -94,6 +117,9 @@ pub enum SheetView {
     BrowserWait {
         /// The provider.
         provider: ProviderId,
+        /// The provider's row (see [`SignInView::row`]).
+        #[serde(default)]
+        row: Option<ProviderRow>,
         /// The page that was opened.
         url: WebUrl,
     },
@@ -101,6 +127,9 @@ pub enum SheetView {
     ShowCode {
         /// The provider.
         provider: ProviderId,
+        /// The provider's row (see [`SignInView::row`]).
+        #[serde(default)]
+        row: Option<ProviderRow>,
         /// The code.
         user_code: UserCode,
         /// The page.
@@ -109,11 +138,20 @@ pub enum SheetView {
     /// The services found, before anything is stored.
     Review(ReviewView),
     /// Something is running and nothing can be pressed.
-    Working(ProviderId),
+    Working {
+        /// The provider.
+        provider: ProviderId,
+        /// The provider's row (see [`SignInView::row`]).
+        #[serde(default)]
+        row: Option<ProviderRow>,
+    },
     /// It ended without an account.
     Failed {
         /// The provider.
         provider: ProviderId,
+        /// The provider's row (see [`SignInView::row`]).
+        #[serde(default)]
+        row: Option<ProviderRow>,
         /// Why.
         fault: SignInFault,
     },

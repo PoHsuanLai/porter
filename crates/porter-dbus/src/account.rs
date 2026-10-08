@@ -23,6 +23,11 @@ pub trait Account {
     /// `ok`, `needs_reauth`, `offline` or `limited`.
     #[zbus(property)]
     fn state(&self) -> zbus::Result<String>;
+    /// Why the account needs signing in again, as a word of a closed set
+    /// (`porter_core::ReauthReason::slug`), or the empty string when the state is not
+    /// `needs_reauth` or porter knows no more than that the provider refused.
+    #[zbus(property)]
+    fn reauth_reason(&self) -> zbus::Result<String>;
     /// The effective capabilities the caller holds grants for: kind slug and fields.
     #[zbus(property)]
     fn capabilities(&self) -> zbus::Result<Vec<(String, Details)>>;
@@ -57,6 +62,11 @@ impl AccountSkeleton {
 
     #[zbus(property)]
     fn state(&self) -> fdo::Result<String> {
+        Err(crate::introspect::frozen())
+    }
+
+    #[zbus(property)]
+    fn reauth_reason(&self) -> fdo::Result<String> {
         Err(crate::introspect::frozen())
     }
 

@@ -166,8 +166,14 @@ impl Sheet {
         }
     }
 
+    /// The row of `provider` among the providers this sheet lists.
+    pub fn row_of(&self, provider: &ProviderId) -> Option<ProviderRow> {
+        self.providers.iter().find(|r| r.id == *provider).cloned()
+    }
+
     /// What the host draws for this state.
     pub fn view(&self) -> SheetView {
+        let row = |provider: &ProviderId| self.row_of(provider);
         let allow = match &self.purpose {
             Purpose::Add { allow, .. } => allow.clone(),
             Purpose::Reauthenticate { .. } => None,
@@ -180,14 +186,17 @@ impl Sheet {
                 problem,
             } => SheetView::SignIn(SignInView {
                 provider: provider.clone(),
+                row: row(provider),
                 fields: fields.clone(),
                 problem: *problem,
             }),
-            Stage::Working(provider) | Stage::Confirming { provider, .. } => {
-                SheetView::Working(provider.clone())
-            }
+            Stage::Working(provider) | Stage::Confirming { provider, .. } => SheetView::Working {
+                provider: provider.clone(),
+                row: row(provider),
+            },
             Stage::Browser { provider, url } => SheetView::BrowserWait {
                 provider: provider.clone(),
+                row: row(provider),
                 url: url.clone(),
             },
             Stage::Code {
@@ -196,17 +205,20 @@ impl Sheet {
                 url,
             } => SheetView::ShowCode {
                 provider: provider.clone(),
+                row: row(provider),
                 user_code: user_code.clone(),
                 url: url.clone(),
             },
             Stage::Reviewing { provider, review } => SheetView::Review(ReviewView {
                 provider: provider.clone(),
+                row: row(provider),
                 review: review.clone(),
                 allow,
             }),
             Stage::Added => SheetView::Done,
             Stage::Failed { provider, fault } => SheetView::Failed {
                 provider: provider.clone(),
+                row: row(provider),
                 fault: *fault,
             },
         }

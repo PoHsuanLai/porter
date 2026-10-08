@@ -151,7 +151,8 @@ impl Launchers {
         }
     }
 
-    fn clock(&self) -> Arc<dyn Clock> {
+    /// The clock accountd measures time on: the injected one, or the system's.
+    pub(crate) fn clock(&self) -> Arc<dyn Clock> {
         self.timing
             .clock
             .clone()

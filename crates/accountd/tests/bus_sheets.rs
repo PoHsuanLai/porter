@@ -187,9 +187,10 @@ async fn a_conversation_carries_views_out_and_typed_secrets_in() {
         .await
         .expect("open");
     let handle = rig.host_log.calls().opened[0].0.clone();
-    link.update(SheetView::Working(
-        porter_core::ProviderId::parse("fake-cloud").expect("id"),
-    ))
+    link.update(SheetView::Working {
+        provider: porter_core::ProviderId::parse("fake-cloud").expect("id"),
+        row: None,
+    })
     .await
     .expect("update");
     assert_eq!(rig.host_log.calls().updated.len(), 1);

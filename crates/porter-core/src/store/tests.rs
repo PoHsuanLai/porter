@@ -3,7 +3,7 @@ use crate::app_id::{AppName, Isolation};
 use crate::consent::{Decision, GrantKey, GrantScope, Usage};
 use crate::endpoint::{LoginName, ServiceEndpoint, Tls};
 use crate::offer::{Claim, Offer, Provenance, Subject};
-use crate::restriction::Restriction;
+use crate::restriction::{Restriction, TokenLifetime};
 use crate::space::SpaceScope;
 use crate::units::UnixSeconds;
 use crate::{
@@ -184,6 +184,44 @@ fn a_document_stored_at_vocabulary_four_is_read_unchanged() {
     );
     assert!(at_four.contains("\"vocab\": 4"));
     assert_eq!(Persisted::from_json(&at_four), Ok(filled()));
+}
+
+#[test]
+fn a_document_stored_at_vocabulary_five_is_read_unchanged_with_the_sign_in_age_unknown() {
+    // The fixture is what the build before `Restriction::signed_in` wrote: a Google account in
+    // testing, whose restriction has no `signed_in`.
+    let mut registry = filled();
+    registry.accounts[0].restriction.token_lifetime = TokenLifetime::SevenDays;
+    let at_five = registry.to_json().expect("json").replacen(
+        &format!("\"vocab\": {}", VocabVersion::CURRENT.0),
+        "\"vocab\": 5",
+        1,
+    );
+    assert!(at_five.contains("\"vocab\": 5") && !at_five.contains("signed_in"));
+    assert!(at_five.contains("\"seven_days\""));
+    assert_eq!(Persisted::from_json(&at_five), Ok(registry));
+}
+
+#[test]
+fn a_document_stored_at_vocabulary_six_is_read_unchanged() {
+    // The fixture is what the build before `Restriction::signed_in` and the sheet rows wrote.
+    let at_six = filled().to_json().expect("json").replacen(
+        &format!("\"vocab\": {}", VocabVersion::CURRENT.0),
+        "\"vocab\": 6",
+        1,
+    );
+    assert!(at_six.contains("\"vocab\": 6"));
+    assert_eq!(Persisted::from_json(&at_six), Ok(filled()));
+}
+
+#[test]
+fn a_sign_in_date_survives_the_document() {
+    let mut registry = filled();
+    registry.accounts[0].restriction.token_lifetime = TokenLifetime::SevenDays;
+    registry.accounts[0].restriction.signed_in = Some(UnixSeconds(1_700_000_000));
+    let json = registry.to_json().expect("json");
+    assert!(json.contains("\"signed_in\": 1700000000"));
+    assert_eq!(Persisted::from_json(&json), Ok(registry));
 }
 
 #[test]

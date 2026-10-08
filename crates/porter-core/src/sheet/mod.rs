@@ -26,5 +26,6 @@ pub use progress::{
 };
 pub use stage::{Purpose, Sheet, SheetEffect, SheetEnd, SheetEvent, Stage, step};
 pub use view::{
-    FieldProblem, ProblemKind, ProviderRow, ReviewView, RowKind, SheetView, SignInView,
+    FieldProblem, ProblemKind, ProviderKind, ProviderRow, ReviewView, RowKind, SheetView,
+    SignInView,
 };

@@ -66,6 +66,7 @@ const MIGRATIONS: &[(VocabVersion, Migration)] = &[
     (VocabVersion(3), from_three),
     (VocabVersion(4), from_four),
     (VocabVersion(5), from_five),
+    (VocabVersion(6), from_six),
 ];
 
 /// 3 to 4 added the `sieve` family and changed the sheet's wire types; the stored document is
@@ -84,6 +85,13 @@ fn from_four(document: Value) -> Result<Value, StoreFault> {
 /// 5 to 6 added the `tasks` data class (a grant for Task lists): a new variant, so a document
 /// written at 5 has none and reads as it was, and only its version moves.
 fn from_five(document: Value) -> Result<Value, StoreFault> {
+    Ok(document)
+}
+
+/// 6 to 7 added `Restriction::signed_in` (defaulted, absent when unknown), `ReauthReason`,
+/// `ProviderKind` and the `row` of the sheet's views, all defaulted: a document written at 6
+/// has none and reads as it was, with the sign-in's age unknown, so only its version moves.
+fn from_six(document: Value) -> Result<Value, StoreFault> {
     Ok(document)
 }
 

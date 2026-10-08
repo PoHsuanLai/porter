@@ -15,6 +15,7 @@ fn rows() -> Vec<ProviderRow> {
         label: "Nextcloud".into(),
         mark: "nextcloud".into(),
         kind: crate::sheet::view::RowKind::Provider,
+        auth: crate::sheet::view::ProviderKind::Service,
     }]
 }
 
@@ -82,6 +83,7 @@ fn every_stage_has_its_view() {
         stage,
         providers: rows(),
     };
+    let row = rows().first().cloned();
     let cases: Vec<(&str, Stage, SheetView)> = vec![
         (
             "list",
@@ -97,6 +99,7 @@ fn every_stage_has_its_view() {
             },
             SheetView::SignIn(SignInView {
                 provider: nextcloud.clone(),
+                row: row.clone(),
                 fields: vec![field],
                 problem: None,
             }),
@@ -104,7 +107,10 @@ fn every_stage_has_its_view() {
         (
             "working",
             Stage::Working(nextcloud.clone()),
-            SheetView::Working(nextcloud.clone()),
+            SheetView::Working {
+                provider: nextcloud.clone(),
+                row: row.clone(),
+            },
         ),
         (
             "browser",
@@ -114,6 +120,7 @@ fn every_stage_has_its_view() {
             },
             SheetView::BrowserWait {
                 provider: nextcloud.clone(),
+                row: row.clone(),
                 url: page.clone(),
             },
         ),
@@ -126,6 +133,7 @@ fn every_stage_has_its_view() {
             },
             SheetView::ShowCode {
                 provider: nextcloud.clone(),
+                row: row.clone(),
                 user_code: UserCode("ABCD-EFGH".into()),
                 url,
             },
@@ -138,6 +146,7 @@ fn every_stage_has_its_view() {
             },
             SheetView::Review(ReviewView {
                 provider: nextcloud.clone(),
+                row: row.clone(),
                 review: review(),
                 allow: None,
             }),
@@ -151,6 +160,7 @@ fn every_stage_has_its_view() {
             },
             SheetView::Failed {
                 provider: nextcloud,
+                row,
                 fault: SignInFault::Refused,
             },
         ),
@@ -194,4 +204,30 @@ fn the_machine_closes_on_dismiss() {
     );
     let (_, effects) = step(sheet, SheetEvent::Input(SheetInput::Dismiss));
     assert_eq!(effects, vec![SheetEffect::Close(SheetEnd::Dismissed)]);
+}
+
+#[test]
+fn every_view_of_an_agent_provider_carries_its_display_name_and_kind() {
+    let agent = ProviderRow {
+        id: provider("claude-code"),
+        label: "Claude Code".into(),
+        mark: "claude-code".into(),
+        kind: crate::sheet::view::RowKind::Provider,
+        auth: crate::sheet::view::ProviderKind::AgentLogin,
+    };
+    let sheet = Sheet {
+        purpose: Purpose::Reauthenticate {
+            account: crate::AccountId::parse("claude-code").expect("id"),
+            provider: agent.id.clone(),
+        },
+        stage: Stage::Working(agent.id.clone()),
+        providers: vec![agent.clone()],
+    };
+    assert_eq!(
+        sheet.view(),
+        SheetView::Working {
+            provider: agent.id.clone(),
+            row: Some(agent),
+        }
+    );
 }

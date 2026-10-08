@@ -477,8 +477,10 @@ fn an_old_sign_in_view_still_reads() {
     );
     assert_eq!(view.problem.map(|p| p.problem), Some(ProblemKind::Refused));
     // And a new view reads back.
+    assert_eq!(view.row, None);
     let new = SignInView {
         provider: view.provider.clone(),
+        row: None,
         fields: manual_form(Protocol::Jmap, None),
         problem: Some(FieldProblem {
             field: FieldKind::SessionUrl,

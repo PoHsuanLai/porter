@@ -236,6 +236,7 @@ fn candidates() -> Vec<Candidate> {
                     kind: CapabilityKind::Llm,
                     reason: LimitReason::PickerOnly,
                 }],
+                signed_in: None,
             },
             grant: GrantId::parse("g2").expect("grant"),
             endpoints: vec![],

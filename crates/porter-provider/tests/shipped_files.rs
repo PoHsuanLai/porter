@@ -458,3 +458,30 @@ fn a_key_provider_names_the_agent_programs_that_may_use_its_key() {
         assert_eq!(agent_cap(key_file), agent_cap(agent_file), "{key_file}");
     }
 }
+
+#[test]
+fn the_four_agent_files_make_agent_login_rows_named_by_their_labels() {
+    use porter_core::sheet::ProviderKind;
+    let rows: Vec<_> = shipped().iter().map(|(_, spec)| spec.sheet_row()).collect();
+    let mut agents: Vec<_> = rows
+        .iter()
+        .filter(|r| r.auth == ProviderKind::AgentLogin)
+        .map(|r| (r.id.as_str().to_owned(), r.label.clone()))
+        .collect();
+    agents.sort();
+    assert_eq!(
+        agents,
+        [
+            ("acp-agent", "Other ACP agent"),
+            ("claude-code", "Claude Code"),
+            ("codex", "Codex"),
+            ("gemini-cli", "Gemini CLI"),
+        ]
+        .map(|(id, label)| (id.to_owned(), label.to_owned()))
+    );
+    assert!(
+        rows.iter()
+            .filter(|r| r.auth == ProviderKind::Service)
+            .all(|r| !["claude-code", "codex", "gemini-cli", "acp-agent"].contains(&r.id.as_str()))
+    );
+}

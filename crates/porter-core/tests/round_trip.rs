@@ -19,8 +19,8 @@ use porter_core::need::{
 };
 use porter_core::sheet::{
     Entry, FieldAnswer, FieldKind, FieldProblem, FieldSpec, FieldValue, Presence, ProblemKind,
-    Progress, ProviderRow, Review, ReviewView, RowKind, ServiceChoice, ServiceRow, ServiceState,
-    SheetInput, SheetView, SignInFault, SignInView, UserCode,
+    Progress, ProviderKind, ProviderRow, Review, ReviewView, RowKind, ServiceChoice, ServiceRow,
+    ServiceState, SheetInput, SheetView, SignInFault, SignInView, UserCode,
 };
 use porter_core::store::{AccountToggle, Persisted};
 use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
@@ -268,6 +268,7 @@ fn restriction() -> Restriction {
             kind: CapabilityKind::Photos,
             reason: LimitReason::PickerOnly,
         }],
+        signed_in: Some(UnixSeconds(1_700_000_000)),
     }
 }
 
@@ -562,8 +563,8 @@ fn json<T: Serialize>(value: &T) -> String {
 }
 
 #[test]
-fn the_vocabulary_is_version_six() {
-    assert_eq!(VocabVersion::CURRENT, VocabVersion(6));
+fn the_vocabulary_is_version_seven() {
+    assert_eq!(VocabVersion::CURRENT, VocabVersion(7));
 }
 
 #[test]
@@ -753,6 +754,13 @@ fn review() -> Review {
 fn every_sheet_view_round_trips() {
     let nextcloud = ProviderId::parse("nextcloud").expect("provider");
     let url = EndpointUrl::parse("https://cloud.example.org/login/v2/flow/abc").expect("url");
+    let row = Some(ProviderRow {
+        id: nextcloud.clone(),
+        label: "Nextcloud".into(),
+        mark: "nextcloud".into(),
+        kind: RowKind::Provider,
+        auth: ProviderKind::Service,
+    });
     let views = vec![
         SheetView::Consent(ConsentAsk {
             app: app(),
@@ -770,9 +778,11 @@ fn every_sheet_view_round_trips() {
             label: "Nextcloud".into(),
             mark: "nextcloud".into(),
             kind: RowKind::Provider,
+            auth: ProviderKind::AgentLogin,
         }]),
         SheetView::SignIn(SignInView {
             provider: nextcloud.clone(),
+            row: row.clone(),
             fields: vec![
                 field(FieldKind::Address, Entry::Plain),
                 field(FieldKind::Password, Entry::Secret),
@@ -784,21 +794,32 @@ fn every_sheet_view_round_trips() {
         }),
         SheetView::BrowserWait {
             provider: nextcloud.clone(),
+            row: row.clone(),
             url: WebUrl::parse("https://login.example.org/authorize?state=abc").expect("url"),
         },
         SheetView::ShowCode {
             provider: nextcloud.clone(),
+            row: row.clone(),
             user_code: UserCode("ABCD-EFGH".into()),
             url,
         },
         SheetView::Review(ReviewView {
             provider: nextcloud.clone(),
+            row: row.clone(),
             review: review(),
             allow: Some(app()),
         }),
-        SheetView::Working(nextcloud.clone()),
+        SheetView::Working {
+            provider: nextcloud.clone(),
+            row: row.clone(),
+        },
+        SheetView::Working {
+            provider: nextcloud.clone(),
+            row: None,
+        },
         SheetView::Failed {
             provider: nextcloud,
+            row,
             fault: SignInFault::NeedsClientId,
         },
         SheetView::Done,
@@ -900,5 +921,23 @@ fn new_wire_requests_keep_their_slugs() {
     assert_eq!(
         json(&AccountsReply::Refused(Refusal::EndpointNotGranted)),
         r#"{"kind":"refused","v":"endpoint_not_granted"}"#
+    );
+}
+
+#[test]
+fn a_provider_row_and_views_written_before_the_kind_and_name_still_read() {
+    let old_row = r#"{"id":"claude-code","label":"Claude Code","mark":"claude","kind":"provider"}"#;
+    let row: ProviderRow = serde_json::from_str(old_row).expect("old row");
+    assert_eq!(row.auth, ProviderKind::Service);
+    let old_view = r#"{"kind":"browser_wait","v":{"provider":"nextcloud","url":"https://login.example.org/a"}}"#;
+    match serde_json::from_str::<SheetView>(old_view).expect("old view") {
+        SheetView::BrowserWait { row, .. } => assert_eq!(row, None),
+        other => panic!("{other:?}"),
+    }
+    let agent = r#"{"id":"claude-code","label":"Claude Code","mark":"c","auth":"agent_login"}"#;
+    let row: ProviderRow = serde_json::from_str(agent).expect("row");
+    assert_eq!(
+        (row.auth, row.label.as_str()),
+        (ProviderKind::AgentLogin, "Claude Code")
     );
 }

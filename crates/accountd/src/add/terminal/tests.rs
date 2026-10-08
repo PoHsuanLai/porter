@@ -40,6 +40,7 @@ fn link(answers: &[&str]) -> TerminalLink<Script> {
 
 fn form() -> SignInView {
     SignInView {
+        row: None,
         provider: ProviderId::parse("generic-imap").expect("id"),
         fields: manual_form(Protocol::Imap, Some("example.org")),
         problem: None,

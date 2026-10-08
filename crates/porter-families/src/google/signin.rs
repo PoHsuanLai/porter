@@ -15,7 +15,7 @@ use porter_core::sheet::{SignInFault, SignInInput};
 use porter_core::{
     AccountLabel, Claim, Count, Credential, EndpointUrl, Family, Limit, LimitReason, LoginName,
     Offer, Restriction, SecretPurpose, ServiceEndpoint, TenantConsent, Tls, TokenLifetime,
-    UrlScheme, Verification, WebUrl,
+    UnixSeconds, UrlScheme, Verification, WebUrl,
 };
 use porter_http::Http;
 use porter_oauth::{
@@ -203,7 +203,7 @@ impl<H: Http + 'static> GoogleSignIn<H> {
                 },
             )],
             endpoints: endpoints_for(&self.spec, &apis, &claims, &address),
-            restriction: restriction_for(traits.review, &claims),
+            restriction: restriction_for(traits.review, &claims, now),
             claims,
         };
         // Signing in again does not ask what to use again: the account keeps its services.
@@ -238,7 +238,7 @@ fn review_of(signed: &Signed) -> SignInStep {
 
 /// What limits the account: a client in testing is unverified (100 users, and a sign-in that
 /// lasts seven days), and the Drive and Photos scopes are narrow by design (R3, R4).
-fn restriction_for(review: AppReview, claims: &[Claim]) -> Restriction {
+fn restriction_for(review: AppReview, claims: &[Claim], now: UnixSeconds) -> Restriction {
     let present = |kind| {
         claims
             .iter()
@@ -271,6 +271,8 @@ fn restriction_for(review: AppReview, claims: &[Claim]) -> Restriction {
         token_lifetime,
         consent: TenantConsent::User,
         limits,
+        // Only a sign-in that expires needs its date.
+        signed_in: (token_lifetime == TokenLifetime::SevenDays).then_some(now),
     }
 }
 
@@ -381,7 +383,7 @@ mod tests {
 
     #[test]
     fn a_client_in_testing_is_unverified_for_a_hundred_users_and_seven_days() {
-        let testing = restriction_for(AppReview::Testing, &[]);
+        let testing = restriction_for(AppReview::Testing, &[], UnixSeconds(1_000));
         assert_eq!(
             testing.verification,
             Verification::Unverified {
@@ -389,9 +391,11 @@ mod tests {
             }
         );
         assert_eq!(testing.token_lifetime, TokenLifetime::SevenDays);
-        let verified = restriction_for(AppReview::Verified, &[]);
+        assert_eq!(testing.signed_in, Some(UnixSeconds(1_000)));
+        let verified = restriction_for(AppReview::Verified, &[], UnixSeconds(1_000));
         assert_eq!(verified.verification, Verification::Verified);
         assert_eq!(verified.token_lifetime, TokenLifetime::Standard);
+        assert_eq!(verified.signed_in, None);
     }
 
     #[test]

@@ -40,6 +40,17 @@ pub(crate) fn state_slug(state: AccountState) -> &'static str {
     }
 }
 
+/// The closed word for why `account` needs signing in again, or empty.
+pub(crate) fn reauth_reason_word(account: &Account, now: porter_core::UnixSeconds) -> &'static str {
+    match account.state {
+        AccountState::NeedsReauth => account
+            .restriction
+            .reauth_reason(now)
+            .map_or("", porter_core::ReauthReason::slug),
+        _ => "",
+    }
+}
+
 /// What a property read needs: the account at this path, for a caller that holds a grant on it.
 async fn visible<H: Host, C: Callers>(
     core: &Core<H, C>,
@@ -104,6 +115,18 @@ impl<H: Host, C: Callers> AccountObject<H, C> {
     #[zbus(property)]
     async fn state(&self, #[zbus(header)] header: Option<Header<'_>>) -> fdo::Result<String> {
         Ok(state_slug(visible(&self.0, header.as_ref()).await?.0.state).to_owned())
+    }
+
+    /// Why the account has to be signed in again, when porter knows: a word of
+    /// `ReauthReason`, else empty.
+    #[zbus(property)]
+    async fn reauth_reason(
+        &self,
+        #[zbus(header)] header: Option<Header<'_>>,
+    ) -> fdo::Result<String> {
+        let account = visible(&self.0, header.as_ref()).await?.0;
+        let now = self.0.launchers.clock().now();
+        Ok(reauth_reason_word(&account, now).to_owned())
     }
 
     /// The effective capabilities of the kinds the caller holds an allowing grant for: the kind's

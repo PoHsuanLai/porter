@@ -14,7 +14,7 @@ use crate::sheets::{SheetLink, SheetOpen, Sheets};
 use crate::store::RegistryStore;
 use porter_core::capability::AgentProgram;
 use porter_core::consent::Decision;
-use porter_core::sheet::{SheetInput, SheetView, SignInFault};
+use porter_core::sheet::{ProviderRow, SheetInput, SheetView, SignInFault};
 use porter_core::wire::{ParentWindow, Refusal};
 use porter_core::{
     Account, AccountId, AccountsReply, AppId, AuthKind, Capability, LoginFault, LoginOutcome,
@@ -157,11 +157,15 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                 _ => return AccountsReply::Refused(Refusal::UnknownGrant),
             }
         };
+        let row = self.catalog.get(&provider).map(|spec| spec.sheet_row());
         let Ok(mut link) = self
             .sheets
             .conversation(SheetOpen {
                 window,
-                view: SheetView::Working(provider.clone()),
+                view: SheetView::Working {
+                    provider: provider.clone(),
+                    row: row.clone(),
+                },
             })
             .await
         else {
@@ -182,7 +186,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                     let _ = link.update(SheetView::Done).await;
                     return AccountsReply::Reauthenticated;
                 }
-                Err(fault) => match failed(&mut link, &provider, fault).await {
+                Err(fault) => match failed(&mut link, (&provider, &row), fault).await {
                     Next::Retry => continue,
                     Next::Close => return AccountsReply::Refused(refusal_of(fault)),
                 },
@@ -215,10 +219,15 @@ enum Next {
 }
 
 /// Shows why it failed and waits for the person.
-async fn failed<L: SheetLink>(link: &mut L, provider: &ProviderId, fault: SignInFault) -> Next {
+async fn failed<L: SheetLink>(
+    link: &mut L,
+    (provider, row): (&ProviderId, &Option<ProviderRow>),
+    fault: SignInFault,
+) -> Next {
     let shown = link
         .update(SheetView::Failed {
             provider: provider.clone(),
+            row: row.clone(),
             fault,
         })
         .await;

@@ -108,6 +108,9 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
                 crate::account::state_slug(account(&id)?.state).to_owned(),
             )),
             Key::Label(id) => Ok(toml::Value::String(account(&id)?.label.0.clone())),
+            Key::Expires(id) => crate::settings_keys::expiry_text(account(&id)?)
+                .map(toml::Value::String)
+                .ok_or_else(unknown),
             Key::Place(id) => Ok(toml::Value::String(
                 crate::settings_keys::place_slug(account(&id)?).to_owned(),
             )),
@@ -179,7 +182,7 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
                 };
                 self.write_client(issuer, &text)?;
             }
-            Key::State(_) | Key::Label(_) | Key::Place(_) => {
+            Key::State(_) | Key::Label(_) | Key::Place(_) | Key::Expires(_) => {
                 return Err(LiveError::NotPermitted("this row is a read-out".into()));
             }
         }

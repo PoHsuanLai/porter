@@ -225,6 +225,10 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                 AuthKind::AgentLogin => row.state,
                 _ => AccountState::Ok,
             };
+            // The date of this sign-in starts the next seven days.
+            if signed.restriction.signed_in.is_some() {
+                row.restriction.signed_in = signed.restriction.signed_in;
+            }
             std::mem::replace(&mut row.state, next)
         };
         if self.persist().await.is_err() {

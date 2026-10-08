@@ -54,7 +54,8 @@ pub use matching::{Match, Shortfall, matches};
 pub use need::Need;
 pub use offer::{AbsentReason, Claim, Offer, Provenance, Subject};
 pub use restriction::{
-    Limit, LimitReason, Restriction, TenantConsent, TokenLifetime, Verification,
+    Limit, LimitReason, ReauthReason, Restriction, SEVEN_DAYS, TenantConsent, TokenLifetime,
+    Verification,
 };
 pub use secret::{Credential, SecretKey, SecretPurpose, SecretText};
 pub use space::{SpaceId, SpaceScope};

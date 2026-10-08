@@ -135,6 +135,9 @@ pub(crate) fn settings_news(
             Event::Added(id) | Event::StateChanged(id) => {
                 if let Some(account) = after.accounts.iter().find(|a| a.id == *id) {
                     news.push((row(Key::State(id.clone())), text(state_slug(account.state))));
+                    if let Some(words) = crate::settings_keys::expiry_text(account) {
+                        news.push((row(Key::Expires(id.clone())), text(&words)));
+                    }
                 }
             }
             _ => {}

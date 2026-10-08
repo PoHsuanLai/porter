@@ -13,7 +13,9 @@ use crate::sheet::input::SheetInput;
 use crate::sheet::progress::{
     Progress, Review, ServiceChoice, ServiceRow, ServiceState, SignInFault, SignInInput, UserCode,
 };
-use crate::sheet::view::{FieldProblem, ProblemKind, ProviderRow, RowKind, SheetView};
+use crate::sheet::view::{
+    FieldProblem, ProblemKind, ProviderKind, ProviderRow, RowKind, SheetView,
+};
 use crate::wire::ProviderHint;
 use proptest::prelude::*;
 
@@ -38,6 +40,7 @@ fn rows() -> Vec<ProviderRow> {
                 true => RowKind::Generic,
                 false => RowKind::Provider,
             },
+            auth: ProviderKind::Service,
         })
         .collect()
 }
@@ -203,7 +206,10 @@ fn a_pick_starts_the_sign_in_once() {
     assert_eq!(
         effects,
         vec![
-            SheetEffect::Show(SheetView::Working(nc())),
+            SheetEffect::Show(SheetView::Working {
+                provider: nc(),
+                row: Some(rows()[0].clone()),
+            }),
             SheetEffect::Feed(SignInInput::Start)
         ]
     );
@@ -288,12 +294,18 @@ fn a_review_offered_to_a_sign_in_again_is_confirmed_unchanged_not_shown() {
         (
             "browser",
             browser(),
-            vec![SheetEffect::Show(SheetView::Working(nc()))],
+            vec![SheetEffect::Show(SheetView::Working {
+                provider: nc(),
+                row: Some(rows()[0].clone()),
+            })],
         ),
         (
             "code",
             code(),
-            vec![SheetEffect::Show(SheetView::Working(nc()))],
+            vec![SheetEffect::Show(SheetView::Working {
+                provider: nc(),
+                row: Some(rows()[0].clone()),
+            })],
         ),
     ] {
         let (after, effects) = run(
@@ -384,7 +396,10 @@ fn a_whole_form_goes_to_the_sign_in_trimmed_and_only_what_was_asked() {
     assert_eq!(
         effects,
         vec![
-            SheetEffect::Show(SheetView::Working(nc())),
+            SheetEffect::Show(SheetView::Working {
+                provider: nc(),
+                row: Some(rows()[0].clone()),
+            }),
             SheetEffect::Feed(SignInInput::Fields(vec![
                 plain(FieldKind::Address, "ada@cloud.example.org"),
                 secret(FieldKind::Password, SECRET),
@@ -417,7 +432,10 @@ fn confirm_stores_nothing_and_done_stores_the_choices() {
     assert_eq!(
         effects,
         vec![
-            SheetEffect::Show(SheetView::Working(nc())),
+            SheetEffect::Show(SheetView::Working {
+                provider: nc(),
+                row: Some(rows()[0].clone()),
+            }),
             SheetEffect::Feed(SignInInput::Confirm(choices())),
         ],
         "no Store before Done"
@@ -758,6 +776,7 @@ fn the_device_code_flow_from_start_to_stored() {
     assert!(all.contains(&SheetEffect::Feed(SignInInput::Poll)));
     assert!(all.contains(&SheetEffect::Show(SheetView::ShowCode {
         provider: ms,
+        row: None,
         user_code: UserCode("ABCD-EFGH".into()),
         url: url()
     })));

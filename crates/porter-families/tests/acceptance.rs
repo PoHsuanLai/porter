@@ -244,7 +244,7 @@ async fn a_hint_skips_the_list_and_the_sheet_walks_the_sign_in() {
         .iter()
         .map(|v| match v {
             SheetView::Providers(_) => "providers",
-            SheetView::Working(_) => "working",
+            SheetView::Working { .. } => "working",
             SheetView::SignIn(_) => "form",
             SheetView::BrowserWait { .. } => "browser",
             SheetView::Review(_) => "review",

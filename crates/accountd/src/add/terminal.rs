@@ -333,7 +333,9 @@ impl<T: Terminal> SheetLink for TerminalLink<T> {
         let waiting = matches!(
             self.view,
             Some(
-                SheetView::BrowserWait { .. } | SheetView::ShowCode { .. } | SheetView::Working(_)
+                SheetView::BrowserWait { .. }
+                    | SheetView::ShowCode { .. }
+                    | SheetView::Working { .. }
             )
         );
         if waiting {

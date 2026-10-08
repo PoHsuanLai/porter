@@ -11,7 +11,8 @@ pub use discovery::{Discovery, Port};
 pub use linked::LinkedOrigin;
 pub use matching::{DomainMatch, DomainName, Matching};
 
-use porter_core::sheet::{ProviderRow, RowKind};
+use porter_core::AuthKind;
+use porter_core::sheet::{ProviderKind, ProviderRow, RowKind};
 use porter_core::{Billing, Capability, Family, Locality, ProviderId};
 use serde::{Deserialize, Serialize};
 
@@ -90,6 +91,10 @@ impl ProviderSpec {
             kind: match self.id.as_str().starts_with("generic-") {
                 true => RowKind::Generic,
                 false => RowKind::Provider,
+            },
+            auth: match self.auth.kind {
+                AuthKind::AgentLogin => ProviderKind::AgentLogin,
+                _ => ProviderKind::Service,
             },
         }
     }
