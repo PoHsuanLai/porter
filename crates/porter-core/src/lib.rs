@@ -28,6 +28,7 @@ mod restriction;
 mod secret;
 pub mod sheet;
 mod space;
+mod space_record;
 pub mod store;
 pub mod stream;
 mod token;
@@ -63,6 +64,10 @@ pub use restriction::{
 };
 pub use secret::{Credential, SecretKey, SecretPurpose, SecretText};
 pub use space::{DesktopSpace, LocalSpace, SpaceId, SpaceKind, SpaceScope};
+pub use space_record::{
+    DesktopSpaceRecord, SPACE_LOOK_MAX_BYTES, SPACE_NAME_MAX_CHARS, SpaceChange, SpaceLook,
+    SpaceName,
+};
 pub use token::{Audience, IssuedToken, TokenKind};
 pub use units::{Bytes, Count, Dims, MicroUsd, Permille, Px, Tokens, UnixSeconds};
 pub use weburl::WebUrl;

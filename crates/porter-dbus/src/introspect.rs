@@ -10,6 +10,7 @@ use crate::peer::PeerSkeleton;
 use crate::photos_picker::PickerSkeleton;
 use crate::request::RequestSkeleton;
 use crate::sheet_backend::AccountsSheetSkeleton;
+use crate::spaces::SpacesSkeleton;
 use crate::sync::SyncSkeleton;
 use crate::tokens::TokensSkeleton;
 use zbus::fdo;
@@ -28,6 +29,8 @@ pub enum Bus {
     Inference,
     /// `org.quire.Inference1.Agents` (inferd's agent endpoints), on inferd's bus name.
     InferenceAgents,
+    /// `org.quire.Spaces1` (the desktop-wide Spaces), on accountd's bus name.
+    Spaces,
 }
 
 impl Bus {
@@ -39,6 +42,7 @@ impl Bus {
             Bus::Sync => "org.quire.Sync1.xml",
             Bus::Inference => "org.quire.Inference1.xml",
             Bus::InferenceAgents => "org.quire.Inference1.Agents.xml",
+            Bus::Spaces => "org.quire.Spaces1.xml",
         }
     }
 }
@@ -58,6 +62,7 @@ pub fn introspection(bus: Bus) -> String {
         Bus::Sync => vec![&SyncSkeleton, &PickerSkeleton],
         Bus::Inference => vec![&InferenceSkeleton],
         Bus::InferenceAgents => vec![&AgentsSkeleton],
+        Bus::Spaces => vec![&SpacesSkeleton],
     };
     let mut xml = String::from(
         "<!DOCTYPE node PUBLIC \"-//freedesktop//DTD D-BUS Object Introspection 1.0//EN\"\n \"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\">\n<node>\n",

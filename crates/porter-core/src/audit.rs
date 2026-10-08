@@ -10,6 +10,7 @@ use crate::effective::Toggle;
 use crate::endpoint::EndpointUrl;
 use crate::id::{AccountId, GrantId};
 use crate::launcher_session::LauncherSession;
+use crate::space::DesktopSpace;
 use crate::token::Audience;
 use crate::units::UnixSeconds;
 use serde::{Deserialize, Serialize};
@@ -155,6 +156,23 @@ pub enum AuditEvent {
         issuer: IssuerSlug,
         /// Set or cleared.
         change: ClientIdChange,
+    },
+    /// A desktop-wide Space was made (`Spaces1.Create`). The entry's `app` is the app that made
+    /// it. Never the name.
+    SpaceCreated {
+        /// The new Space.
+        space: DesktopSpace,
+    },
+    /// A desktop-wide Space was renamed (`Spaces1.Rename`, Settings or the shell). Never the name.
+    SpaceRenamed {
+        /// The Space.
+        space: DesktopSpace,
+    },
+    /// A desktop-wide Space was removed (`Spaces1.Remove`); each grant scoped to it ended and has
+    /// its own `revoked` entry.
+    SpaceRemoved {
+        /// The Space.
+        space: DesktopSpace,
     },
 }
 
@@ -426,6 +444,21 @@ mod tests {
             }),
             r#"{"at":1,"app":null,"account":null,"event":{"kind":"client_id_changed","v":{"issuer":"microsoft","change":"set"}}}"#
         );
+        let space = || DesktopSpace::parse("space-1").expect("space");
+        for (event, kind) in [
+            (AuditEvent::SpaceCreated { space: space() }, "space_created"),
+            (AuditEvent::SpaceRenamed { space: space() }, "space_renamed"),
+            (AuditEvent::SpaceRemoved { space: space() }, "space_removed"),
+        ] {
+            let line = at(event.clone());
+            assert_eq!(
+                line,
+                format!(
+                    r#"{{"at":1,"app":null,"account":null,"event":{{"kind":"{kind}","v":{{"space":"space-1"}}}}}}"#
+                )
+            );
+            assert_eq!(AuditEntry::read_all(&line)[0].event, event);
+        }
     }
 
     #[test]

@@ -12,8 +12,8 @@ use porter_core::audit::AuditEvent;
 use porter_core::store::AccountToggle;
 use porter_core::wire::Refusal;
 use porter_core::{
-    AbsentReason, AccountId, AccountState, CapabilityKind, Claim, GrantId, Offer, Provenance,
-    SecretKey, Subject, Toggle, effective,
+    AbsentReason, AccountId, AccountState, AppId, CapabilityKind, Claim, GrantId, Offer,
+    Provenance, SecretKey, Subject, Toggle, effective,
 };
 use porter_provider::{Presented, Provider, ProviderSession, RevokeOutcome};
 use porter_secrets::{Secrets, SecretsError};
@@ -232,6 +232,12 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
     /// in the service's audit sink.
     pub fn audit_settings(&self, event: AuditEvent) {
         self.note(None, None, event);
+    }
+
+    /// Records `event`, which `app` caused and which concerns no account (a desktop-wide Space
+    /// made, renamed or removed), in the service's audit sink.
+    pub fn audit_app(&self, app: AppId, event: AuditEvent) {
+        self.note(Some(app), None, event);
     }
 
     /// Withdraws any grant, whoever holds it (Settings' "Revoke"). `UnknownGrant` when none has

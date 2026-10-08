@@ -23,4 +23,5 @@ mod session_scope;
 mod settings;
 mod shell;
 mod signals;
+mod spaces;
 mod start;

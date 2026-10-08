@@ -139,6 +139,12 @@ pub trait Host: Send + Sync + 'static {
         let _ = event;
     }
 
+    /// Records what `app` did that concerns no account (a desktop-wide Space made, renamed or
+    /// removed). A host with no audit records nothing.
+    fn audit_app(&self, app: &AppId, event: porter_core::audit::AuditEvent) {
+        let _ = (app, event);
+    }
+
     /// Withdraws any grant, whoever holds it.
     fn revoke_grant(&self, grant: &GrantId) -> impl Future<Output = Result<(), Refusal>> + Send {
         let _ = grant;
@@ -299,6 +305,10 @@ where
         AccountService::audit_settings(self, event);
     }
 
+    fn audit_app(&self, app: &AppId, event: porter_core::audit::AuditEvent) {
+        AccountService::audit_app(self, app.clone(), event);
+    }
+
     fn revoke_grant(&self, grant: &GrantId) -> impl Future<Output = Result<(), Refusal>> + Send {
         AccountService::revoke_grant(self, grant)
     }
@@ -396,6 +406,8 @@ pub(crate) struct Core<H, C> {
     pub(crate) settings: OnceLock<ds_settings::live::Served>,
     /// The sheets open now, one per app and kind (rel-11).
     pub(crate) open_sheets: crate::request::OpenSheets,
+    /// The desktop-wide Spaces (`org.quire.Spaces1`).
+    pub(crate) spaces: tokio::sync::Mutex<crate::spaces::SpaceBook>,
 }
 
 fn held<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -430,6 +442,11 @@ impl<H: Host, C: Callers> Core<H, C> {
         }
         held(&self.roster).insert(sender.to_string(), caller.clone());
         Ok(caller)
+    }
+
+    /// The unique names of the connections that have called, which a broadcast reaches.
+    pub(crate) fn known(&self) -> Vec<String> {
+        held(&self.roster).keys().cloned().collect()
     }
 
     /// The app behind the sender of a call an `Agent` may not make.
@@ -660,6 +677,9 @@ pub struct Options {
     /// (`<dir>/porter/agent/<id>/key`, cleared when accountd starts). None refuses that way as
     /// unavailable; the `memfd` way needs no directory.
     pub runtime_dir: Option<std::path::PathBuf>,
+    /// Where the desktop-wide Spaces are kept (`spaces.json` in the registry's directory); the
+    /// default keeps them in memory only.
+    pub spaces: crate::spaces::SpacesStore,
 }
 
 /// Serves `org.quire.Accounts1` on `connection` over `host`, answering for the apps `callers`
@@ -684,6 +704,15 @@ pub async fn serve_with<H: Host, C: Callers>(
     // (accountd died with a session open) is one nobody can end.
     host.end_session_grants(None).await;
     let published = host.registry();
+    let (spaces, said) = crate::spaces::SpaceBook::open(
+        &options.spaces,
+        &published.grants,
+        crate::spaces::unix_now(),
+    )
+    .await;
+    if let Some(said) = said {
+        eprintln!("accountd: {said}");
+    }
     let core = Arc::new(Core {
         host,
         callers,
@@ -700,6 +729,7 @@ pub async fn serve_with<H: Host, C: Callers>(
         credentials: Credentials::new(options.runtime_dir.as_deref()),
         settings: OnceLock::new(),
         open_sheets: crate::request::OpenSheets::default(),
+        spaces: tokio::sync::Mutex::new(spaces),
     });
     core.host.use_launcher_roster(core.launchers.roster());
     let server: &ObjectServer = connection.object_server();
@@ -714,6 +744,12 @@ pub async fn serve_with<H: Host, C: Callers>(
         .await?;
     server
         .at(ACCOUNTS_PATH, crate::peer::Peer::new(Arc::clone(&core)))
+        .await?;
+    server
+        .at(
+            porter_dbus::SPACES_PATH,
+            crate::spaces_object::SpacesObject::new(Arc::clone(&core)),
+        )
         .await?;
     publish_accounts(server, &core).await?;
     crate::settings::serve_settings(connection, &core).await?;

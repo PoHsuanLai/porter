@@ -6,6 +6,14 @@ use porter_core::{AccountId, object_segment};
 pub const ACCOUNTS_BUS: &str = "org.quire.Accounts1";
 /// accountd's root object (Manager, Grants, Tokens).
 pub const ACCOUNTS_PATH: &str = "/org/quire/Accounts1";
+/// The desktop-wide Spaces (`org.quire.Spaces1`), served on accountd's bus name.
+pub const SPACES_PATH: &str = "/org/quire/Spaces1";
+/// `Spaces1.List`'s key of a Space's name (`s`).
+pub const SPACE_KEY_NAME: &str = "name";
+/// `Spaces1.List`'s key of a Space's look (`s`, opaque).
+pub const SPACE_KEY_LOOK: &str = "look";
+/// `Spaces1.List`'s key of when a Space was made (`x`, Unix seconds).
+pub const SPACE_KEY_CREATED: &str = "created";
 /// syncd's bus name.
 pub const SYNC_BUS: &str = "org.quire.Sync1";
 /// syncd's object.

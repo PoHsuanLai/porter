@@ -27,6 +27,7 @@ mod refusal;
 mod request;
 mod sheet;
 mod sheet_backend;
+mod spaces;
 mod sync;
 mod tokens;
 
@@ -41,7 +42,9 @@ pub use callers::{
 };
 pub use codec::{candidate_from_dbus, candidate_to_dbus, need_from_dbus, need_to_dbus};
 pub use codec_grants::{grant_from_dbus, grant_to_dbus, token_from_dbus, token_to_dbus};
-pub use failure::{BusFailure, classify, is_invalid_args, launcher_fault_of, refusal_of};
+pub use failure::{
+    BusFailure, classify, is_invalid_args, is_limits_exceeded, launcher_fault_of, refusal_of,
+};
 pub use grants::{GrantsProxy, GrantsSkeleton};
 pub use inference::{InferenceProxy, InferenceSkeleton};
 pub use introspect::{Bus, introspection};
@@ -51,9 +54,9 @@ pub use manager::{ManagerProxy, ManagerSkeleton};
 pub use names::{
     ACCOUNTS_BUS, ACCOUNTS_PATH, ACCOUNTS_SETTINGS_PATH, CONFLICT_KEY_NUMBER, INFERENCE_BUS,
     INFERENCE_PATH, INFERENCE_SETTINGS_PATH, OPTION_TRACEPARENT, OPTION_USAGE, RESOLVE_KEEP_LOCAL,
-    RESOLVE_KEEP_REMOTE, SHEET_BUS, SHEET_PATH, STATUS_KEY_QUOTA, SYNC_BUS,
-    SYNC_ERROR_NO_SUCH_CONFLICT, SYNC_ERROR_NOTHING_HELD, SYNC_ERROR_PREFIX, SYNC_PATH,
-    account_path,
+    RESOLVE_KEEP_REMOTE, SHEET_BUS, SHEET_PATH, SPACE_KEY_CREATED, SPACE_KEY_LOOK, SPACE_KEY_NAME,
+    SPACES_PATH, STATUS_KEY_QUOTA, SYNC_BUS, SYNC_ERROR_NO_SUCH_CONFLICT, SYNC_ERROR_NOTHING_HELD,
+    SYNC_ERROR_PREFIX, SYNC_PATH, account_path,
 };
 pub use peer::{
     AgentLoginRequested, AgentLoginRequestedStream, AgentLogoutRequested,
@@ -71,6 +74,9 @@ pub use sheet::{
     is_handle_token, reply_of, request_namespace, request_path, response_of, sender_segment,
 };
 pub use sheet_backend::{AccountsSheetProxy, AccountsSheetSkeleton};
+pub use spaces::{
+    Changed as SpaceChanged, ChangedStream as SpaceChangedStream, SpacesProxy, SpacesSkeleton,
+};
 pub use sync::{SyncProxy, SyncSkeleton};
 pub use tokens::{
     ProcessCredentialRevoked, ProcessCredentialRevokedStream, TokensProxy, TokensSkeleton,

@@ -187,6 +187,8 @@ async fn main() -> ExitCode {
             .ok()
             .map(PathBuf::from)
             .filter(|dir| dir.is_absolute()),
+        // `spaces.json` beside `registry.json`.
+        spaces: accountd::SpacesStore::File(paths.registry_dir.clone()),
     };
     if let Err(why) = serve_with(&connection, service, callers, options).await {
         return fail(format!("cannot serve {}: {why}", porter_dbus::ACCOUNTS_BUS));

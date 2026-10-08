@@ -47,6 +47,11 @@
 //! - `Peer.ReportLocal`: a probed local runtime (Ollama, llama.cpp, LM Studio) as an account of its
 //!   provider file, its models as claims, `offline` when it stops (`peer`); a porter daemon only.
 //!
+//! - `org.quire.Spaces1` at `/org/quire/Spaces1`: the registry of desktop-wide Spaces, kept in
+//!   `spaces.json` (`spaces`, `spaces_object`). Any identified app lists and creates (at most
+//!   `CREATES_PER_WINDOW` a minute each); Settings and the shell rename, restyle and remove, and
+//!   a removal ends the grants scoped to that Space.
+//!
 
 mod account;
 pub mod add;
@@ -75,6 +80,8 @@ mod roster;
 mod settings;
 mod settings_keys;
 mod sheets;
+mod spaces;
+mod spaces_object;
 mod store;
 
 pub use app_names::AppNames;
@@ -89,4 +96,5 @@ pub use provider_names::ProviderNames;
 pub use relay::RelayRoots;
 pub use settings::settings_path;
 pub use sheets::{BusLink, BusSheets};
+pub use spaces::{CREATE_WINDOW, CREATES_PER_WINDOW, SpacesStore};
 pub use store::{EXIT_REGISTRY_REFUSED, FileStore};

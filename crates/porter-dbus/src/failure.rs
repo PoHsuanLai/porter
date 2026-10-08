@@ -60,6 +60,17 @@ pub fn is_invalid_args(error: &zbus::Error) -> bool {
     }
 }
 
+/// Whether the daemon held the caller back for asking too often (`LimitsExceeded`).
+pub fn is_limits_exceeded(error: &zbus::Error) -> bool {
+    match error {
+        zbus::Error::MethodError(name, _, _) => {
+            name.as_str() == "org.freedesktop.DBus.Error.LimitsExceeded"
+        }
+        zbus::Error::FDO(inner) => matches!(inner.as_ref(), fdo::Error::LimitsExceeded(_)),
+        _ => false,
+    }
+}
+
 /// A bus error as a [`BusFailure`].
 pub fn classify(error: &zbus::Error) -> BusFailure {
     let text = error.to_string();
