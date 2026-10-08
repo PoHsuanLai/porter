@@ -67,4 +67,29 @@ impl CapabilityKind {
                 | CapabilityKind::ComputerUse
         )
     }
+
+    /// The kind as a person reads it: the one source for the account sheet's service names,
+    /// Settings' Services switches and the noun in a grant's row ("Sync can use Files"). No
+    /// wildcard arm, so a new kind must be named here.
+    pub fn display_name(self) -> &'static str {
+        match self {
+            CapabilityKind::Identity => "Account details",
+            CapabilityKind::Mail => "Mail",
+            CapabilityKind::Calendar => "Calendar",
+            CapabilityKind::Contacts => "Contacts",
+            CapabilityKind::Tasks => "Tasks",
+            CapabilityKind::Notes => "Notes",
+            CapabilityKind::Storage => "Files",
+            CapabilityKind::Photos => "Photos",
+            CapabilityKind::Llm => "Language model",
+            CapabilityKind::Embeddings => "Search by meaning",
+            CapabilityKind::Speech => "Speech",
+            CapabilityKind::ImageGen => "Image generation",
+            CapabilityKind::Rerank => "Result ranking",
+            CapabilityKind::ComputerUse => "Operating windows",
+            CapabilityKind::KeyValue => "Small synced items",
+            CapabilityKind::Push => "Notifications",
+            CapabilityKind::Agent => "Coding agent",
+        }
+    }
 }

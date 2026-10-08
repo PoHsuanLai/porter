@@ -156,30 +156,10 @@ fn off() -> toml::Value {
     toml::Value::Boolean(false)
 }
 
-/// A service as a person reads it: the Services switch's label, and the noun in a grant's row.
-///
-/// The words are those of sill's account sheet (`accounts_sheet/words.rs`, `service_name`). The
-/// match has no wildcard arm, so a new kind must be named here.
+/// A service as a person reads it: the Services switch's label, and the noun in a grant's row
+/// (porter-core's `CapabilityKind::display_name`, which sill's account sheet reads too).
 pub(crate) fn service_label(kind: &CapabilityKind) -> &'static str {
-    match kind {
-        CapabilityKind::Identity => "Account details",
-        CapabilityKind::Mail => "Mail",
-        CapabilityKind::Calendar => "Calendar",
-        CapabilityKind::Contacts => "Contacts",
-        CapabilityKind::Tasks => "Tasks",
-        CapabilityKind::Notes => "Notes",
-        CapabilityKind::Storage => "Files",
-        CapabilityKind::Photos => "Photos",
-        CapabilityKind::Llm => "Language model",
-        CapabilityKind::Embeddings => "Search by meaning",
-        CapabilityKind::Speech => "Speech",
-        CapabilityKind::ImageGen => "Image generation",
-        CapabilityKind::Rerank => "Result ranking",
-        CapabilityKind::ComputerUse => "Operating windows",
-        CapabilityKind::KeyValue => "Small synced items",
-        CapabilityKind::Push => "Notifications",
-        CapabilityKind::Agent => "Coding agent",
-    }
+    kind.display_name()
 }
 
 /// A grant's row: "Sync can use Files" (allowed) or "Mail can't use Contacts" (refused), and
