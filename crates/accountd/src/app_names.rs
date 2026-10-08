@@ -11,15 +11,22 @@
 //! nothing is cached and an app installed or renamed shows its new name on the next read. Only
 //! the unlocalised `Name=` is read; `Name[xx]=` is not (FINDINGS).
 
-use porter_core::AppName;
+use porter_core::capability::AgentProgram;
+use porter_core::{AppName, AuthKind, Capability};
 use porter_dbus::{AppTitle, CallerTable};
+use porter_provider::ProviderSpec;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
+
+/// The bus-id prefix of the app an agent program's grants are held under.
+const AGENT_APP_PREFIX: &str = "org.quire.Agent.";
 
 /// Where an app's display name comes from.
 #[derive(Debug, Clone, Default)]
 pub struct AppNames {
     table: CallerTable,
     applications: Vec<PathBuf>,
+    agents: BTreeMap<AgentProgram, String>,
 }
 
 impl AppNames {
@@ -29,7 +36,17 @@ impl AppNames {
         Self {
             table,
             applications,
+            agents: BTreeMap::new(),
         }
+    }
+
+    /// Also name the agent apps `org.quire.Agent.<program>` after the label of the provider file
+    /// that runs `<program>` and signs in itself (`agent_login`): "Claude Code" for
+    /// `claude-code.toml`. A key provider that merely names the program (anthropic.toml) does
+    /// not name the app. A program with no such file stays its id.
+    pub fn with_agents(mut self, specs: &[ProviderSpec]) -> Self {
+        self.agents = agent_labels(specs);
+        self
     }
 
     /// What a person reads for `app`.
@@ -38,7 +55,13 @@ impl AppNames {
             .title_of(app)
             .cloned()
             .or_else(|| self.entry_title(app))
+            .or_else(|| self.agent_title(app))
             .unwrap_or_else(|| AppTitle(app.as_str().to_owned()))
+    }
+
+    fn agent_title(&self, app: &AppName) -> Option<AppTitle> {
+        let program = AgentProgram::parse(app.as_str().strip_prefix(AGENT_APP_PREFIX)?).ok()?;
+        self.agents.get(&program).cloned().map(AppTitle)
     }
 
     fn entry_title(&self, app: &AppName) -> Option<AppTitle> {
@@ -48,6 +71,22 @@ impl AppNames {
             .find_map(|dir| std::fs::read_to_string(dir.join(&file)).ok())
             .and_then(|text| entry_name(&text))
     }
+}
+
+/// Each agent program the specs run under an `agent_login` provider, with that provider's label.
+fn agent_labels(specs: &[ProviderSpec]) -> BTreeMap<AgentProgram, String> {
+    specs
+        .iter()
+        .filter(|spec| spec.auth.kind == AuthKind::AgentLogin)
+        .flat_map(|spec| {
+            spec.capabilities
+                .iter()
+                .filter_map(|row| match &row.capability {
+                    Capability::Agent(agent) => Some((agent.program.clone(), spec.label.clone())),
+                    _ => None,
+                })
+        })
+        .collect()
 }
 
 /// `Name=` of the `[Desktop Entry]` group of `text`, if it is there and not empty.
@@ -159,6 +198,37 @@ mod tests {
         assert_eq!(names.title_of(&app("org.example.B")).0, "Only theirs");
         let _ = std::fs::remove_dir_all(home);
         let _ = std::fs::remove_dir_all(system);
+    }
+
+    #[test]
+    fn an_agent_app_is_named_by_its_agent_provider_file() {
+        let names = AppNames::default().with_agents(&porter_provider::shipped_specs());
+        assert_eq!(
+            names.title_of(&app("org.quire.Agent.claude-code")).0,
+            "Claude Code"
+        );
+    }
+
+    #[test]
+    fn an_agent_with_no_provider_file_stays_its_id_and_a_table_name_still_wins() {
+        let names = AppNames::new(
+            table("org.quire.Agent.claude-code", "Mine"),
+            vec![scratch("agents")],
+        )
+        .with_agents(&porter_provider::shipped_specs());
+        assert_eq!(
+            names.title_of(&app("org.quire.Agent.claude-code")).0,
+            "Mine"
+        );
+        assert_eq!(
+            names.title_of(&app("org.quire.Agent.nobody")).0,
+            "org.quire.Agent.nobody"
+        );
+        let none = AppNames::default().with_agents(&[]);
+        assert_eq!(
+            none.title_of(&app("org.quire.Agent.claude-code")).0,
+            "org.quire.Agent.claude-code"
+        );
     }
 
     #[test]

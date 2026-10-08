@@ -105,6 +105,8 @@ async fn main() -> ExitCode {
     for (file, why) in &loaded.skipped {
         eprintln!("accountd: skipped provider file {}: {why}", file.display());
     }
+    let app_names =
+        AppNames::new(table.clone(), paths.applications.clone()).with_agents(&loaded.specs);
     let io = accountd::providers::FamilyIo::system(porter_provider::ProviderSet::layered(
         loaded.specs.clone(),
         Vec::new(),
@@ -125,7 +127,6 @@ async fn main() -> ExitCode {
         Ok(connection) => connection,
         Err(why) => return fail(format!("no session bus: {why}")),
     };
-    let app_names = AppNames::new(table.clone(), paths.applications.clone());
     let callers = Arc::new(
         match proc_root(BUILD, std::env::var("ACCOUNTD_PROC_ROOT").ok()) {
             Some(root) => {

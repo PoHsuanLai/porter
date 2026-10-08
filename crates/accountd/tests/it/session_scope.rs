@@ -5,7 +5,7 @@
 
 use crate::common;
 
-use accountd::Options;
+use accountd::{AppNames, Options};
 use common::host::send_input;
 use common::*;
 use porter_core::audit::{AuditEntry, AuditEvent, CredentialEnd, Handoff};
@@ -98,6 +98,7 @@ fn keyed() -> AccountId {
 async fn rig(runtime: Option<&Runtime>, grants: Vec<Grant>) -> Rig {
     let options = Options {
         runtime_dir: runtime.map(|r| r.0.clone()),
+        app_names: AppNames::default().with_agents(&porter_provider::shipped_specs()),
         ..Options::default()
     };
     let accounts = vec![
@@ -691,7 +692,7 @@ async fn settings_shows_a_session_grant_for_this_session_and_the_row_goes_with_i
     };
     assert_eq!(
         label(&rig).await.as_deref(),
-        Some("org.quire.Agent.claude-code can use Llm (this session)")
+        Some("Claude Code can use Language model (this session)")
     );
     launcher.peer.end_session("sess-1").await.expect("ended");
     assert_eq!(label(&rig).await, None);

@@ -157,17 +157,33 @@ fn off() -> toml::Value {
 }
 
 /// A service as a person reads it: the Services switch's label, and the noun in a grant's row.
-fn service_label(kind: &CapabilityKind) -> String {
-    let slug = slug(kind);
-    let mut letters = slug.chars();
-    letters
-        .next()
-        .map(|first| first.to_uppercase().chain(letters).collect())
-        .unwrap_or_default()
+///
+/// The words are those of sill's account sheet (`accounts_sheet/words.rs`, `service_name`). The
+/// match has no wildcard arm, so a new kind must be named here.
+pub(crate) fn service_label(kind: &CapabilityKind) -> &'static str {
+    match kind {
+        CapabilityKind::Identity => "Account details",
+        CapabilityKind::Mail => "Mail",
+        CapabilityKind::Calendar => "Calendar",
+        CapabilityKind::Contacts => "Contacts",
+        CapabilityKind::Tasks => "Tasks",
+        CapabilityKind::Notes => "Notes",
+        CapabilityKind::Storage => "Files",
+        CapabilityKind::Photos => "Photos",
+        CapabilityKind::Llm => "Language model",
+        CapabilityKind::Embeddings => "Search by meaning",
+        CapabilityKind::Speech => "Speech",
+        CapabilityKind::ImageGen => "Image generation",
+        CapabilityKind::Rerank => "Result ranking",
+        CapabilityKind::ComputerUse => "Operating windows",
+        CapabilityKind::KeyValue => "Small synced items",
+        CapabilityKind::Push => "Notifications",
+        CapabilityKind::Agent => "Coding agent",
+    }
 }
 
-/// A grant's row: "Sync can use Storage" (allowed) or "Mail can't use Contacts" (refused), and
-/// "Claude Code can use Llm (this session)" for a grant that lasts one launcher session.
+/// A grant's row: "Sync can use Files" (allowed) or "Mail can't use Contacts" (refused), and
+/// "Claude Code can use Language model (this session)" for a grant that lasts one launcher session.
 fn grant_label(grant: &Grant, names: &AppNames) -> String {
     let can = match grant.decision {
         Decision::Allow => "can",
@@ -277,7 +293,7 @@ fn account_keys(account: &Account, grants: &[Grant], names: &AppNames) -> Vec<Ke
         keys.push(spec(
             &Key::Service(id.clone(), kind),
             section,
-            service_label(&kind),
+            service_label(&kind).to_owned(),
             "Whether apps may use this service of the account.",
             KeyKind::Toggle {
                 variants: ["on".to_owned(), "off".to_owned()],
@@ -568,7 +584,7 @@ mod tests {
         let storage = CapabilityKind::Storage;
         assert_eq!(
             grant_row(Decision::Allow, "org.quire.Sync", storage, &names),
-            "Sync can use Storage"
+            "Sync can use Files"
         );
         assert_eq!(
             grant_row(
@@ -581,7 +597,7 @@ mod tests {
         );
         assert_eq!(
             grant_row(Decision::Allow, "org.example.Ghost", storage, &names),
-            "org.example.Ghost can use Storage"
+            "org.example.Ghost can use Files"
         );
         let _ = std::fs::remove_dir_all(dirs);
     }
@@ -594,7 +610,34 @@ mod tests {
             .find(|k| k.path.0 == "accounts.fake-storage.service.storage")
             .expect("switch");
         assert_eq!(switch.label.0, service_label(&CapabilityKind::Storage));
-        assert_eq!(switch.label.0, "Storage");
+        assert_eq!(switch.label.0, "Files");
+    }
+
+    #[test]
+    fn every_kind_of_service_is_called_by_the_words_sills_account_sheet_uses() {
+        use CapabilityKind::*;
+        let table = [
+            (Identity, "Account details"),
+            (Mail, "Mail"),
+            (Calendar, "Calendar"),
+            (Contacts, "Contacts"),
+            (Tasks, "Tasks"),
+            (Notes, "Notes"),
+            (Storage, "Files"),
+            (Photos, "Photos"),
+            (Llm, "Language model"),
+            (Embeddings, "Search by meaning"),
+            (Speech, "Speech"),
+            (ImageGen, "Image generation"),
+            (Rerank, "Result ranking"),
+            (ComputerUse, "Operating windows"),
+            (KeyValue, "Small synced items"),
+            (Push, "Notifications"),
+            (Agent, "Coding agent"),
+        ];
+        for (kind, words) in table {
+            assert_eq!(service_label(&kind), words, "{kind:?}");
+        }
     }
 
     #[test]
