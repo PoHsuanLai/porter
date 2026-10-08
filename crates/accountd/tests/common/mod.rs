@@ -171,6 +171,10 @@ impl Rig {
                 FixedClock(porter_fake::NOW),
             )));
         }
+        options
+            .login
+            .audit
+            .get_or_insert_with(|| Arc::new(audit.clone()));
         let sheets = BusSheets::new(connection.clone(), Arc::clone(&callers));
         let service = Arc::new(
             AccountService::new(

@@ -41,6 +41,7 @@ async fn rig(state: AccountState) -> (Rig, Arc<TestClock>) {
             clock: Some(clock.clone()),
             bound: Duration::from_secs(BOUND),
             tick: Duration::from_millis(20),
+            audit: None,
         },
         ..Options::default()
     };
@@ -894,4 +895,88 @@ async fn the_bus_carries_the_outcome_and_nothing_of_the_login() {
             "no secret was filed for an agent that signs itself in ({purpose:?})"
         );
     }
+}
+
+/// The agent events in the audit, as (event name, account, state or program, request) words.
+fn agent_audit(rig: &Rig) -> Vec<String> {
+    use porter_core::audit::AuditEvent;
+    rig.audit
+        .entries()
+        .into_iter()
+        .filter_map(|e| {
+            let account = e.account.map(|a| a.as_str().to_owned()).unwrap_or_default();
+            match e.event {
+                AuditEvent::AgentLoginAsked { request, program } => Some(format!(
+                    "login_asked {account} {} {}",
+                    program.as_str(),
+                    request.as_str()
+                )),
+                AuditEvent::AgentLogoutAsked { request, program } => Some(format!(
+                    "logout_asked {account} {} {}",
+                    program.as_str(),
+                    request.as_str()
+                )),
+                AuditEvent::AgentStateSet { state } => Some(format!(
+                    "state {account} {}",
+                    serde_json::to_string(&state)
+                        .expect("json")
+                        .trim_matches('"')
+                )),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn login_and_logout_requests_and_their_state_changes_are_audited_without_the_login() {
+    let (rig, _) = rig(AccountState::NeedsLogin).await;
+    let mut launcher = Launcher::registered(&rig, "org.example.Launcher", &["claude-code"]).await;
+    let mut shell = Shell::new(&rig, &claude_code()).await;
+    let request = shell.ask().await;
+    let (id, _, _) = launcher.login_request().await;
+    assert_eq!(
+        agent_audit(&rig),
+        [format!("login_asked claude-code claude-code {id}")]
+    );
+    launcher
+        .peer
+        .report_agent_login(&id, "ready", "")
+        .await
+        .expect("reported");
+    assert_eq!(shell.answer(&request).await, AccountsReply::Reauthenticated);
+    assert_eq!(
+        agent_audit(&rig).last().map(String::as_str),
+        Some("state claude-code ready")
+    );
+
+    // A sign out: asked, then a failed report changes nothing, a done report sets needs_login.
+    let client = settings(&rig).await;
+    let sign_out = key("accounts.claude-code.sign_out");
+    client.invoke(&sign_out).await.expect("asked");
+    let (out, _, _) = launcher.logout_request().await;
+    launcher
+        .peer
+        .report_agent_logout(&out, "failed", "other")
+        .await
+        .expect("reported");
+    let before = agent_audit(&rig);
+    assert_eq!(before.len(), 3, "{before:?}");
+    assert_eq!(
+        before[2],
+        format!("logout_asked claude-code claude-code {out}")
+    );
+    client.invoke(&sign_out).await.expect("asked");
+    let (out, _, _) = launcher.logout_request().await;
+    launcher
+        .peer
+        .report_agent_logout(&out, "ready", "")
+        .await
+        .expect("reported");
+    eventually("the state line", || agent_audit(&rig).len() == 5).await;
+    assert_eq!(agent_audit(&rig)[4], "state claude-code needs_login");
+
+    // Nothing of the login: the file holds ids and words only.
+    let text = serde_json::to_string(&rig.audit.entries()).expect("json");
+    assert!(!text.contains("other"), "{text}");
 }

@@ -15,10 +15,11 @@
 //!   withdraw it).
 
 use crate::errors::RefusedError;
+use porter_core::audit::{AuditEntry, AuditEvent};
 use porter_core::capability::AgentProgram;
 use porter_core::{AccountId, LoginRequestId, UnixSeconds};
 use porter_dbus::{ACCOUNTS_PATH, LauncherFault};
-use porter_service::{Clock, Launchers as LaunchersSeam, LoginEnd, NoLauncher, Waiting};
+use porter_service::{AuditSink, Clock, Launchers as LaunchersSeam, LoginEnd, NoLauncher, Waiting};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -64,6 +65,9 @@ pub struct LoginTiming {
     pub bound: Duration,
     /// How often a pending request is checked against the bound.
     pub tick: Duration,
+    /// Where a request sent to a launcher is recorded (`AgentLoginAsked`, `AgentLogoutAsked`);
+    /// none records nothing.
+    pub audit: Option<Arc<dyn AuditSink>>,
 }
 
 impl Default for LoginTiming {
@@ -72,6 +76,7 @@ impl Default for LoginTiming {
             clock: None,
             bound: DEFAULT_BOUND,
             tick: DEFAULT_TICK,
+            audit: None,
         }
     }
 }
@@ -82,6 +87,7 @@ impl std::fmt::Debug for LoginTiming {
             .field("clock", &self.clock.as_ref().map(|_| "<injected>"))
             .field("bound", &self.bound)
             .field("tick", &self.tick)
+            .field("audit", &self.audit.as_ref().map(|_| "<injected>"))
             .finish()
     }
 }
@@ -279,6 +285,18 @@ impl Launchers {
         if !sent {
             held(&self.state).pending.remove(&request);
             return Err(NoLauncher);
+        }
+        if let Some(audit) = &self.timing.audit {
+            let (request, program) = (request.clone(), program.clone());
+            audit.record(AuditEntry {
+                at: self.clock().now(),
+                app: None,
+                account: Some(account.clone()),
+                event: match kind {
+                    Ask::Login => AuditEvent::AgentLoginAsked { request, program },
+                    Ask::Logout => AuditEvent::AgentLogoutAsked { request, program },
+                },
+            });
         }
         Ok(Box::pin(async move {
             waiting.await.unwrap_or(LoginEnd::LauncherGone)

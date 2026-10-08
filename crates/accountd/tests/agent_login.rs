@@ -540,3 +540,37 @@ fn each_program_is_run_by_its_own_account_and_a_key_account_only_by_the_programs
         Match::Short(Shortfall::BaseUrl)
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn set_agent_state_audits_a_change_once_and_a_repeat_not_at_all() {
+    use porter_core::AgentState;
+    use porter_core::audit::AuditEvent;
+    let rig = rig_with_an_agent(AccountState::NeedsLogin).await;
+    let peer = peer_as(&rig, CallerRole::AgentLauncher).await;
+    let states = || {
+        rig.audit
+            .entries()
+            .into_iter()
+            .filter_map(|e| match e.event {
+                AuditEvent::AgentStateSet { state } => Some((e.account, state)),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    peer.set_agent_state("claude-code", "ready")
+        .await
+        .expect("ok");
+    peer.set_agent_state("claude-code", "ready")
+        .await
+        .expect("again");
+    assert_eq!(states(), [(Some(claude_code()), AgentState::Ready)]);
+    peer.set_agent_state("claude-code", "needs_login")
+        .await
+        .expect("ok");
+    assert_eq!(states().len(), 2);
+    // A refused or invalid report writes nothing.
+    let _ = peer.set_agent_state("claude-code", "bogus").await;
+    let other = peer_as(&rig, CallerRole::PorterDaemon).await;
+    let _ = other.set_agent_state("claude-code", "ready").await;
+    assert_eq!(states().len(), 2);
+}

@@ -5,12 +5,13 @@
 mod common;
 
 use common::*;
+use porter_core::audit::AuditEvent;
 use porter_core::capability::LlmFeature;
 use porter_core::consent::{ConsentAnswer, GrantScope};
 use porter_core::need::LlmNeed;
 use porter_core::sheet::SheetInput;
 use porter_core::{
-    AccountState, Credential, GrantId, Need, SecretKey, SecretPurpose, SecretText, Tokens,
+    AccountState, Audience, Credential, GrantId, Need, SecretKey, SecretPurpose, SecretText, Tokens,
 };
 use porter_dbus::{CallerRole, GrantsProxy, ManagerProxy, PeerProxy, need_to_dbus};
 use porter_secrets::Secrets;
@@ -101,23 +102,42 @@ async fn a_porter_daemon_gets_the_key_on_a_sealed_memfd_and_the_release_is_audit
     file.read_to_string(&mut again).expect("read");
     assert_eq!(again, KEY);
 
-    // One audit line for the release: who asked, which account, which grant; never the key.
-    let released: Vec<_> = rig
-        .audit
-        .entries()
-        .into_iter()
-        .filter(|e| {
-            matches!(&e.event, porter_core::audit::AuditEvent::TokenIssued { audience, .. }
-                if audience.0 == accountd::RESOLVE_AUDIENCE)
-        })
-        .collect();
-    assert_eq!(released.len(), 1, "{:?}", rig.audit.entries());
-    let entry = &released[0];
+    // One audit line for the release: the app the grant is for, which account, which grant;
+    // never the key. A second release is a second line.
+    let released = || {
+        rig.audit
+            .entries()
+            .into_iter()
+            .filter(|e| matches!(&e.event, AuditEvent::KeyResolved { .. }))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(released().len(), 1, "{:?}", rig.audit.entries());
+    let entry = released().remove(0);
     assert_eq!(
         entry.app.as_ref().map(|a| a.name.as_str()),
-        Some("org.quire.Inference")
+        Some("org.quire.Companion")
     );
     assert_eq!(entry.account, Some(porter_fake::llm_account().id));
+    assert_eq!(
+        entry.event,
+        AuditEvent::KeyResolved {
+            grant: grant.clone(),
+            audience: Audience("org.quire.Companion".into()),
+        }
+    );
+    peer_of(&daemon)
+        .await
+        .resolve_key(grant.as_str())
+        .await
+        .expect("resolve again");
+    assert_eq!(released().len(), 2);
+    // No other event stands in for it any more.
+    assert!(
+        rig.audit
+            .entries()
+            .iter()
+            .all(|e| !matches!(&e.event, AuditEvent::TokenIssued { .. }))
+    );
     let everything = serde_json::to_string(&rig.audit.entries()).expect("json");
     assert!(!everything.contains(KEY), "{everything}");
 }
@@ -148,7 +168,7 @@ async fn only_a_porter_daemon_may_ask_even_with_a_valid_grant() {
         rig.audit
             .entries()
             .iter()
-            .all(|e| !matches!(&e.event, porter_core::audit::AuditEvent::TokenIssued { .. }))
+            .all(|e| !matches!(&e.event, AuditEvent::KeyResolved { .. }))
     );
 }
 
@@ -297,4 +317,8 @@ async fn acceptance_7_no_key_is_in_any_message_on_the_bus() {
         seen.iter().any(|m| contains(m, grant.as_str())),
         "positive control: the scan sees values that do cross"
     );
+    // The same release in the audit: recorded, and the key is not in it.
+    let audited = serde_json::to_string(&rig.audit.entries()).expect("json");
+    assert!(audited.contains("key_resolved"), "{audited}");
+    assert!(!audited.contains(KEY), "{audited}");
 }

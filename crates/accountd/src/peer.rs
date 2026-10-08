@@ -153,7 +153,7 @@ impl<H: Host, C: Callers> Peer<H, C> {
         }
         let key = desk.read(&account.id).await.map_err(RefusedError::of)?;
         let fd = sealed_key(key.expose()).map_err(|_| RefusedError::of(Refusal::Unavailable))?;
-        desk.note(&caller.app, &account.id, &grant);
+        desk.note(&held.key.app, &account.id, &grant);
         Ok(OwnedFd::from(fd))
     }
 

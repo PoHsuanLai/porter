@@ -151,3 +151,60 @@ async fn the_file_a_service_writes_holds_none_of_the_fake_secrets() {
         assert!(!text.contains(secret), "{secret} in the audit file");
     }
 }
+
+#[tokio::test]
+async fn the_file_a_key_release_writes_names_the_grant_and_audience_and_never_the_key() {
+    use crate::keys::{KeyDesk, SecretsDesk};
+    use porter_core::{Credential, GrantId, SecretKey, SecretPurpose, SecretText};
+    use porter_secrets::{MemorySecrets, Secrets};
+
+    #[derive(Debug)]
+    struct Noon;
+    impl porter_service::Clock for Noon {
+        fn now(&self) -> UnixSeconds {
+            UnixSeconds(1_790_000_000)
+        }
+    }
+
+    const KEY: &str = "sk-ant-api03-NEVER-IN-THE-LOG";
+    let scratch = Scratch::new();
+    let path = scratch.0.join("audit.jsonl");
+    let account = porter_core::AccountId::parse("anthropic").expect("id");
+    let secrets = MemorySecrets::default();
+    secrets
+        .put(
+            &SecretKey {
+                account: account.clone(),
+                purpose: SecretPurpose::ApiKey,
+            },
+            &Credential::ApiKey(SecretText::new(KEY)),
+        )
+        .await
+        .expect("filed");
+    let desk = SecretsDesk::new(secrets, FileAudit::new(path.clone()), Noon);
+    let key = desk.read(&account).await.expect("read");
+    assert_eq!(key.expose(), KEY);
+    let audience = AppId {
+        name: AppName::parse("org.quire.Agent.claude-code").expect("name"),
+        isolation: Isolation::Unsandboxed,
+    };
+    let grant = GrantId::parse("g7").expect("id");
+    desk.note(&audience, &account, &grant);
+    desk.note(&audience, &account, &grant);
+
+    let text = std::fs::read_to_string(&path).expect("read");
+    assert!(!text.contains(KEY), "{text}");
+    let written = lines(&path);
+    assert_eq!(written.len(), 2);
+    for entry in written {
+        assert_eq!(entry.account, Some(account.clone()));
+        assert_eq!(entry.app, Some(audience.clone()));
+        assert_eq!(
+            entry.event,
+            AuditEvent::KeyResolved {
+                grant: grant.clone(),
+                audience: Audience("org.quire.Agent.claude-code".into()),
+            }
+        );
+    }
+}

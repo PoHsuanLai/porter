@@ -26,8 +26,9 @@ pub trait KeyDesk: std::fmt::Debug + Send + Sync + 'static {
     /// The API key filed for `account`. A key that is gone or unreadable means signing in again.
     fn read<'a>(&'a self, account: &'a AccountId) -> Boxed<'a, Result<SecretText, Refusal>>;
 
-    /// Records that `caller` (a porter daemon) was given the key of `account` under `grant`.
-    fn note(&self, caller: &AppId, account: &AccountId, grant: &GrantId);
+    /// Records that the key of `account` was released under `grant`, resolved for `audience`
+    /// (the app the grant is for: `org.quire.Agent.<program>` on an agent route).
+    fn note(&self, audience: &AppId, account: &AccountId, grant: &GrantId);
 }
 
 /// The desk over the secret store, an audit sink and a clock.
@@ -76,23 +77,18 @@ where
         })
     }
 
-    fn note(&self, caller: &AppId, account: &AccountId, grant: &GrantId) {
-        // There is no `KeyResolved` event in the audit vocabulary (an interface ask); a release is
-        // a token issued under the grant to the audience `resolve_key`.
+    fn note(&self, audience: &AppId, account: &AccountId, grant: &GrantId) {
         self.audit.record(AuditEntry {
             at: self.clock.now(),
-            app: Some(caller.clone()),
+            app: Some(audience.clone()),
             account: Some(account.clone()),
-            event: AuditEvent::TokenIssued {
+            event: AuditEvent::KeyResolved {
                 grant: grant.clone(),
-                audience: Audience(RESOLVE_AUDIENCE.to_owned()),
+                audience: Audience(audience.name.as_str().to_owned()),
             },
         });
     }
 }
-
-/// The audience of the audit line a release writes.
-pub const RESOLVE_AUDIENCE: &str = "resolve_key";
 
 /// `key` on an anonymous file, read position at the start, sealed against every change: no write,
 /// no growing, no shrinking, and no seal added or removed. A reader gets the key and cannot alter

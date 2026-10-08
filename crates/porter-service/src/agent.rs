@@ -8,6 +8,7 @@ use crate::clock::Clock;
 use crate::service::AccountService;
 use crate::sheets::Sheets;
 use crate::store::RegistryStore;
+use porter_core::audit::AuditEvent;
 use porter_core::{AccountId, AgentState, AuthKind};
 use porter_provider::Provider;
 use porter_secrets::Secrets;
@@ -47,6 +48,11 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         };
         if changed {
             self.persist().await.map_err(|_| AgentFault::Unavailable)?;
+            self.note(
+                None,
+                Some(account.clone()),
+                AuditEvent::AgentStateSet { state },
+            );
         }
         Ok(changed)
     }

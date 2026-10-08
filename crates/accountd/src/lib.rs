@@ -73,7 +73,7 @@ pub use callers::{Callers, TableCallers};
 pub use callers_file::{CallerFileError, load_callers, table_from_file, table_from_toml};
 pub use core::{Host, Options, serve, serve_with};
 pub use errors::RefusedError;
-pub use keys::{KeyDesk, RESOLVE_AUDIENCE, SecretsDesk, sealed_key};
+pub use keys::{KeyDesk, SecretsDesk, sealed_key};
 pub use launchers::{DEFAULT_BOUND, DEFAULT_TICK, LoginTiming};
 pub use relay::RelayRoots;
 pub use settings::settings_path;

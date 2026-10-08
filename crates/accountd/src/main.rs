@@ -151,7 +151,10 @@ async fn main() -> ExitCode {
         relay_roots: RelayRoots::Platform,
         keys: Some(Arc::new(keys)),
         app_names,
-        login: accountd::LoginTiming::default(),
+        login: accountd::LoginTiming {
+            audit: Some(Arc::new(FileAudit::new(paths.audit.clone()))),
+            ..accountd::LoginTiming::default()
+        },
     };
     if let Err(why) = serve_with(&connection, service, callers, options).await {
         return fail(format!("cannot serve {}: {why}", porter_dbus::ACCOUNTS_BUS));
