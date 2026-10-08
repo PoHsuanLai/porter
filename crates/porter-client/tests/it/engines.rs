@@ -351,10 +351,14 @@ async fn a_request_of_another_class_than_the_session_opened_with_is_refused() {
 
 #[tokio::test]
 async fn an_engine_that_is_not_running_is_a_failed_turn_not_a_hang() {
-    // A port nobody listens on: bind and drop.
-    let free = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
-    let port = free.local_addr().expect("addr").port();
-    drop(free);
+    // A port nobody listens on and nothing else can take: a socket bound to it and not
+    // listening, so a connect is refused. (A port freed by dropping a listener can be handed to
+    // another test's fake before the connect.)
+    let reserved = tokio::net::TcpSocket::new_v4().expect("socket");
+    reserved
+        .bind(std::net::SocketAddr::from(([127, 0, 0, 1], 0)))
+        .expect("bind an ephemeral port");
+    let port = reserved.local_addr().expect("addr").port();
     let local = engine(
         "ollama",
         &format!("http://127.0.0.1:{port}"),

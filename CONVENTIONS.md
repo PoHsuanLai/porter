@@ -28,6 +28,6 @@ What porter adds or decides differently, each with its reason:
    `crate::common`); fixtures stay in `tests/fixtures/`. A separate `tests/<name>.rs` with a
    `[[test]]` entry in the crate's `Cargo.toml` and a one-line reason is for a test that cannot
    share a process: it starts its own test executable again as a fake child by test name
-   (inferd `attached`, `engine_group`, `engine_start`, `shutdown`; porter-client `connect`;
+   (inferd `attached`, `engine_group`, `engine_start`, `shutdown`; porter-client `connect` and `socket_accounts`;
    porter-rig `secrets`), sets process-wide state, or needs a `required-features` the rest must
    not. Dependencies build without debug info (`[profile.dev.package."*"]`).
