@@ -104,9 +104,7 @@ struct Item {
 fn refused(response: &HttpResponse) -> ApiError {
     ApiError::Refused {
         status: response.status.0,
-        retry_after: response
-            .header("retry-after")
-            .and_then(|v| v.trim().parse().ok()),
+        retry_after: response.retry_after_seconds(),
     }
 }
 

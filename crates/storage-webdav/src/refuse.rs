@@ -9,10 +9,7 @@ const RETRY: RetryAfter = RetryAfter(30);
 
 /// The wait a `Retry-After` of whole seconds asks for.
 fn retry_after(response: &HttpResponse) -> RetryAfter {
-    response
-        .header("retry-after")
-        .and_then(|v| v.trim().parse::<u32>().ok())
-        .map_or(RETRY, RetryAfter)
+    response.retry_after_seconds().map_or(RETRY, RetryAfter)
 }
 
 /// A read answered with `response`, which was not what it needed.

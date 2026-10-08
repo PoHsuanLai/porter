@@ -79,12 +79,9 @@ impl sp::Sleeper for TokioSleep {
     }
 }
 
-/// Three attempts, a quarter of a second doubling to four seconds.
-pub(crate) const RETRY: sp::RetryPolicy = sp::RetryPolicy {
-    attempts: sp::Attempt(3),
-    base: sp::WaitMs(250),
-    cap: sp::WaitMs(4000),
-};
+/// Three attempts, a quarter of a second doubling to four seconds (porter-bridge's, shared with
+/// porter-client's in-process engines).
+pub(crate) const RETRY: sp::RetryPolicy = porter_bridge::ENGINE_RETRY;
 
 /// An engine on a local socket answers its first byte after the prompt is read, which for an
 /// image prompt on a cold cache takes a while; between chunks it should not stall.

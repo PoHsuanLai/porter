@@ -129,11 +129,43 @@ impl HttpResponse {
             .find(|h| h.name == wanted)
             .map(|h| h.value.0.as_str())
     }
+
+    /// The wait a `Retry-After` header of whole seconds asks for; `None` when there is no such
+    /// header or it is not a number of seconds (an HTTP date is not read). The one parser the
+    /// storage replicas and syncd's Graph source share.
+    pub fn retry_after_seconds(&self) -> Option<u32> {
+        self.header("retry-after")?.trim().parse().ok()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retry_after_is_whole_seconds_or_nothing() {
+        let with = |value: Option<&str>| HttpResponse {
+            status: Status(429),
+            headers: value
+                .map(|v| Header::new("Retry-After", v))
+                .into_iter()
+                .collect(),
+            body: Vec::new(),
+        };
+        let cases = [
+            (Some("120"), Some(120)),
+            (Some(" 7 "), Some(7)),
+            (Some("0"), Some(0)),
+            (Some("Wed, 21 Oct 2026 07:28:00 GMT"), None),
+            (Some("-3"), None),
+            (Some("4294967296"), None),
+            (Some(""), None),
+            (None, None),
+        ];
+        for (header, want) in cases {
+            assert_eq!(with(header).retry_after_seconds(), want, "{header:?}");
+        }
+    }
 
     #[test]
     fn a_request_is_built_up_and_a_response_is_read_without_case() {

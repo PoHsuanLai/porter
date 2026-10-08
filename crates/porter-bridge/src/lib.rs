@@ -16,7 +16,16 @@ pub use request::{
     extras, image_input, task_turn_for,
 };
 
+use model_provider::{Attempt, RetryPolicy, WaitMs};
 use porter_core::{CoreError, ModelId};
+
+/// How a request to an engine is retried, by the daemon and by an app that hosts the engines
+/// itself alike: three attempts, a quarter of a second doubling to four seconds.
+pub const ENGINE_RETRY: RetryPolicy = RetryPolicy {
+    attempts: Attempt(3),
+    base: WaitMs(250),
+    cap: WaitMs(4000),
+};
 
 /// The porter `ModelId` for the name an engine serves a model under (`Hcompany/Holo-3.1-4B`
 /// becomes `hcompany-holo-3.1-4b`): lower case, every character outside the id grammar becomes
@@ -44,6 +53,14 @@ pub fn model_id_of(served_name: &str) -> Result<ModelId, CoreError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// inferd and porter-client's engines both retry with this one policy.
+    #[test]
+    fn the_engine_retry_is_three_tries_from_a_quarter_second_to_four() {
+        assert_eq!(ENGINE_RETRY.attempts, Attempt(3));
+        assert_eq!(ENGINE_RETRY.base, WaitMs(250));
+        assert_eq!(ENGINE_RETRY.cap, WaitMs(4000));
+    }
 
     #[test]
     fn served_names_become_model_ids() {

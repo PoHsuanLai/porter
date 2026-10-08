@@ -14,7 +14,7 @@ use model_http::{
 };
 use model_openai_compat::OpenAiCodec;
 use model_provider as sp;
-use model_provider::{Attempt, RetryPolicy, Retrying, Sleeper};
+use model_provider::{RetryPolicy, Retrying, Sleeper};
 use model_wire::Driver;
 use porter_core::SecretText;
 use serde_json::Value;
@@ -29,12 +29,9 @@ const TIMEOUTS: Timeouts = Timeouts {
     idle: WaitMs(90_000),
 };
 
-/// Three attempts, a quarter of a second doubling to four seconds (inferd's own).
-const RETRY: RetryPolicy = RetryPolicy {
-    attempts: Attempt(3),
-    base: sp::WaitMs(250),
-    cap: sp::WaitMs(4000),
-};
+/// Three attempts, a quarter of a second doubling to four seconds (porter-bridge's, shared with
+/// inferd).
+const RETRY: RetryPolicy = porter_bridge::ENGINE_RETRY;
 
 /// Waits with the clock of the runtime, so a test with paused time does not wait.
 #[derive(Debug, Clone, Copy)]

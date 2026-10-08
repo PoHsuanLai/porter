@@ -160,8 +160,7 @@ fn color_of(calendar: &Calendar) -> Option<String> {
 
 pub(super) fn retry_after(response: &HttpResponse) -> RetryAfter {
     response
-        .header("retry-after")
-        .and_then(|v| v.trim().parse::<u32>().ok())
+        .retry_after_seconds()
         .map_or(RetryAfter(30), RetryAfter)
 }
 
