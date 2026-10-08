@@ -6,7 +6,7 @@ use porter_core::Bytes;
 use porter_core::capability::{Delta, HashKind, QuotaReport};
 use porter_sync::{
     Acknowledgement, BaseVersion, Blob, ConflictRule, ItemPath, ItemState, LocalId, PutRefused,
-    RemoteSide, ReplicaError, Resolution, RetryAfter, Scanned,
+    RemoteId, RemoteSide, ReplicaError, Resolution, RetryAfter, Scanned,
 };
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -287,6 +287,71 @@ async fn an_expired_anchor_is_a_full_listing_reconciled_by_content_with_no_reupl
     );
     let later = settle(&engine, 3).await;
     assert_eq!((later.fetched, later.uploaded), (0, 0));
+}
+
+/// Three synced files, then the server forgets its history and lists nothing.
+async fn after_an_empty_listing(name: &str) -> (World, TestEngine, Vec<RemoteId>) {
+    let world = World::new(name, sha(), 10);
+    let mut ids = Vec::new();
+    for file in ["a.txt", "b.txt", "c.txt"] {
+        ids.push(world.remote_put(file, file.as_bytes()).await);
+    }
+    let engine = world.engine();
+    settle(&engine, 4).await;
+    assert_eq!(world.dataset.snapshot().len(), 3);
+    for id in &ids {
+        world.remote_remove(id).await;
+    }
+    world.replica.inner.compact();
+    (world, engine, ids)
+}
+
+#[tokio::test]
+async fn an_empty_listing_after_a_full_one_discards_nothing_until_the_person_confirms() {
+    let (world, engine, _) = after_an_empty_listing("mass").await;
+    let held = porter_sync::MassDelete {
+        discard: 3,
+        held: 3,
+    };
+    for _ in 0..2 {
+        let report = engine.sync_once().await.expect("cycle");
+        assert_eq!(report.outcome, Outcome::NeedsConfirmation(held));
+        assert_eq!(report.discarded, 0);
+        assert_eq!(world.dataset.snapshot().len(), 3, "the local files are kept");
+        assert!(
+            states(&engine).iter().all(|(_, s)| *s == ItemState::Synced),
+            "the journal is untouched"
+        );
+        assert!(
+            engine.journal().anchor().expect("anchor").is_none(),
+            "so the listing is asked for again next cycle"
+        );
+    }
+    engine.confirm_mass_delete();
+    let report = engine.sync_once().await.expect("cycle");
+    assert_eq!((report.outcome, report.discarded), (Outcome::Done, 3));
+    assert!(world.dataset.snapshot().is_empty());
+    // The confirmation was for that listing only.
+    assert_eq!(settle(&engine, 3).await.outcome, Outcome::Done);
+}
+
+#[tokio::test]
+async fn a_server_that_lists_its_items_again_is_not_held_and_loses_nothing() {
+    let (world, engine, _) = after_an_empty_listing("mass-recovers").await;
+    assert!(matches!(
+        engine.sync_once().await.expect("cycle").outcome,
+        Outcome::NeedsConfirmation(_)
+    ));
+    // The server was in trouble, not emptied: the same files are there again (new ids).
+    let fetches = world.fetches();
+    for file in ["a.txt", "b.txt", "c.txt"] {
+        world.remote_put(file, file.as_bytes()).await;
+    }
+    let report = engine.sync_once().await.expect("cycle");
+    assert_eq!(report.outcome, Outcome::Done);
+    assert_eq!((report.discarded, report.fetched), (0, 0));
+    assert_eq!(world.fetches(), fetches, "nothing came down again");
+    assert_eq!(world.dataset.snapshot().len(), 3);
 }
 
 #[tokio::test]

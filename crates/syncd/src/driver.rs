@@ -9,7 +9,7 @@ use crate::dataset::Dataset;
 use crate::engine::{Engine, Outcome, Report, SyncError};
 use crate::scheduler::{Inputs, Jitter, Last, Network, PushSignal, Settings, Wake, next_wake};
 use crate::service::{Event, Handle, Nudge, Settle, SettleError, StatusSnapshot};
-use porter_sync::{Quota, Replica, StoredConflict};
+use porter_sync::{MassDelete, Quota, Replica, StoredConflict};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{Notify, watch};
@@ -26,6 +26,8 @@ pub struct Driver<R, D, K> {
     last: Last,
     waiting: PushSignal,
     quota: Option<Quota>,
+    /// What the last cycle held back for the person's confirmation, if it did.
+    held: Option<MassDelete>,
 }
 
 impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
@@ -49,6 +51,7 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
             last: Last::Never,
             waiting: PushSignal::Quiet,
             quota: None,
+            held: None,
         }
     }
 
@@ -138,6 +141,10 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
         self.last = self.next_last(&result, now);
         if let Ok(report) = &result {
             self.quota = report.quota.or(self.quota);
+            self.held = match report.outcome {
+                Outcome::NeedsConfirmation(held) => Some(held),
+                _ => None,
+            };
             self.announce(report);
         }
         self.publish(now);
@@ -160,7 +167,11 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
                 Outcome::Retry(after) => failed(after.0),
                 // The account must sign in again, or the folder is gone: no point before the
                 // slowest poll; the scheduler's backoff keeps asking.
-                Outcome::Unauthorized | Outcome::Gone => failed(self.settings.poll_max),
+                // Held for the person: asking again at the slowest poll lets a server that was in
+                // trouble show its items again, and nothing is discarded meanwhile.
+                Outcome::Unauthorized | Outcome::Gone | Outcome::NeedsConfirmation(_) => {
+                    failed(self.settings.poll_max)
+                }
                 Outcome::Done | Outcome::QuotaFull => {
                     let quiet = report.fetched
                         + report.uploaded
@@ -215,6 +226,7 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
             conflicts: conflicts as u64,
             pausing: self.handle.pausing(),
             quota: self.quota,
+            needs_confirmation: self.held,
         });
     }
 }

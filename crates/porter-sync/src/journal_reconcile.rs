@@ -42,6 +42,43 @@ pub fn reconcile(known: &[JournalItem], listing: &[RemoteItem], now: UnixSeconds
     changes
 }
 
+/// More than this many discards, and more than half of what is held, is too many to do without
+/// the person saying so (the other bound is every item held, however few).
+pub const MASS_DELETE_FLOOR: usize = 20;
+
+/// A full listing that would discard a great deal of what the journal holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MassDelete {
+    /// Items the listing would discard locally.
+    pub discard: usize,
+    /// Items the journal holds that the replica has (or had) a copy of.
+    pub held: usize,
+}
+
+/// Whether `changes` (what a full listing implies) would discard all of a non-empty journal, or
+/// more than [`MASS_DELETE_FLOOR`] items and more than half of it. An empty or failed listing
+/// from a server that is in trouble looks exactly like that, and acting on it would wipe the
+/// local mirror, so the caller halts for confirmation instead.
+pub fn mass_delete(known: &[JournalItem], changes: &[Change]) -> Option<MassDelete> {
+    // Only settled items are discarded by a deletion; a pending one becomes a conflict instead.
+    let settled = |row: &&JournalItem| matches!(row.state, ItemState::Synced | ItemState::Fetching);
+    let held: BTreeSet<_> = known
+        .iter()
+        .filter(settled)
+        .filter_map(|row| row.remote.as_ref())
+        .collect();
+    let discard = changes
+        .iter()
+        .filter(|change| matches!(change, Change::Tombstone(t) if held.contains(&t.id)))
+        .count();
+    let all = discard > 0 && discard == held.len();
+    let most = discard > MASS_DELETE_FLOOR && discard * 2 > held.len();
+    (all || most).then_some(MassDelete {
+        discard,
+        held: held.len(),
+    })
+}
+
 /// What the local side holds now, one item.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Scanned {
@@ -165,6 +202,80 @@ mod tests {
         let known = [row("a", Some("ra"), Some("v1"), "h", ItemState::Synced)];
         assert!(reconcile(&known, &[listed("ra", "v1")], UnixSeconds(0)).is_empty());
         assert!(reconcile(&[], &[], UnixSeconds(0)).is_empty());
+    }
+
+    fn synced_rows(count: usize) -> Vec<JournalItem> {
+        (0..count)
+            .map(|n| row(&format!("l{n}"), Some(&format!("r{n}")), Some("v1"), "h", ItemState::Synced))
+            .collect()
+    }
+
+    /// What listing only the first `kept` of `count` synced items implies.
+    fn after_listing(count: usize, kept: usize) -> (Vec<JournalItem>, Vec<Change>) {
+        let known = synced_rows(count);
+        let listing: Vec<RemoteItem> = (0..kept).map(|n| listed(&format!("r{n}"), "v1")).collect();
+        let changes = reconcile(&known, &listing, UnixSeconds(0));
+        (known, changes)
+    }
+
+    #[test]
+    fn a_listing_that_discards_everything_held_needs_confirmation_however_few_there_are() {
+        for count in [1, 2, 5, 40] {
+            let (known, changes) = after_listing(count, 0);
+            assert_eq!(
+                mass_delete(&known, &changes),
+                Some(MassDelete { discard: count, held: count }),
+                "{count}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_listing_that_discards_most_of_a_large_journal_needs_confirmation_and_less_does_not() {
+        // (held, kept, needs confirmation)
+        const CASES: &[(usize, usize, bool)] = &[
+            // 21 of 40 is more than the floor and more than half.
+            (40, 19, true),
+            // Exactly the floor discarded (20 of 40): not more than the floor.
+            (40, 20, false),
+            // More than the floor but not more than half of a large journal.
+            (100, 79, false),
+            (100, 50, false),
+            (100, 49, true),
+            // Exactly half of a small one: not more than half.
+            (42, 21, false),
+            // A few of a small journal.
+            (10, 7, false),
+            (10, 1, false),
+            // Nothing discarded.
+            (50, 50, false),
+            (0, 0, false),
+        ];
+        for (held, kept, want) in CASES {
+            let (known, changes) = after_listing(*held, *kept);
+            assert_eq!(
+                mass_delete(&known, &changes).is_some(),
+                *want,
+                "{held} held, {kept} listed"
+            );
+        }
+    }
+
+    #[test]
+    fn only_settled_items_count_towards_a_mass_delete() {
+        let mut known = synced_rows(3);
+        // Pending items the listing lacks become conflicts, not discards.
+        known.push(row("p", Some("rp"), Some("v1"), "h", ItemState::PendingUpload));
+        known.push(row("n", None, None, "h", ItemState::PendingUpload));
+        let changes = reconcile(&known, &[], UnixSeconds(0));
+        assert_eq!(
+            mass_delete(&known, &changes),
+            Some(MassDelete { discard: 3, held: 3 })
+        );
+        // A journal of only pending items has nothing to discard.
+        let pending = [row("p", Some("rp"), Some("v1"), "h", ItemState::PendingUpload)];
+        let changes = reconcile(&pending, &[], UnixSeconds(0));
+        assert_eq!(mass_delete(&pending, &changes), None);
     }
 
     #[test]

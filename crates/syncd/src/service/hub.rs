@@ -8,7 +8,7 @@ use crate::paths::AccountDir;
 use crate::scheduler::Pausing;
 use porter_core::AppName;
 use porter_dbus::{Caller, CallerRole};
-use porter_sync::{Quota, StoredConflict};
+use porter_sync::{MassDelete, Quota, StoredConflict};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
@@ -87,6 +87,9 @@ pub struct StatusSnapshot {
     pub pausing: Pausing,
     /// The replica's quota, when it reports one.
     pub quota: Option<Quota>,
+    /// Set while the dataset waits for the person: the replica's listing lacks all, or most, of
+    /// what is held, and nothing has been discarded.
+    pub needs_confirmation: Option<MassDelete>,
 }
 
 /// What a running dataset tells watchers: transfer progress, or a conflict stored.

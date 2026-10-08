@@ -4,7 +4,7 @@
 use super::hub::StatusSnapshot;
 use crate::scheduler::Pausing;
 use porter_dbus::{CONFLICT_KEY_NUMBER, Details, STATUS_KEY_QUOTA, to_vardict, zvariant};
-use porter_sync::{BaseVersion, Quota, RemoteSide, StoredConflict};
+use porter_sync::{BaseVersion, MassDelete, Quota, RemoteSide, StoredConflict};
 use serde_json::json;
 use zvariant::{Dict, OwnedValue, Signature, Value};
 
@@ -16,26 +16,38 @@ pub const KEY_PENDING: &str = "pending";
 pub const KEY_CONFLICTS: &str = "conflicts";
 /// `Status` key: whether the user paused it (`b`).
 pub const KEY_PAUSED: &str = "paused";
+/// `Status` key, present only while the dataset waits for the person (`a{sv}` `{discard: t,
+/// held: t}`): the replica's listing lacks `discard` of the `held` items, and nothing has been
+/// discarded.
+pub const KEY_NEEDS_CONFIRMATION: &str = "needs_confirmation";
 
 fn owned(value: Value<'static>) -> Option<OwnedValue> {
     OwnedValue::try_from(value).ok()
 }
 
-/// A quota as the nested vardict `{used: t, total: t}` (`total` only when there is a limit).
-fn quota_value(quota: &Quota) -> Option<OwnedValue> {
+/// A nested vardict of counts, `{key: t, ...}`.
+fn counts_value(counts: &[(&str, u64)]) -> Option<OwnedValue> {
     let mut dict = Dict::new(&Signature::Str, &Signature::Variant);
-    let mut put = |key: &str, bytes: u64| {
+    for (key, count) in counts {
         // The dict's own signatures, so this cannot fail.
         let _ = dict.append(
-            Value::from(key.to_owned()),
-            Value::Value(Box::new(Value::U64(bytes))),
+            Value::from((*key).to_owned()),
+            Value::Value(Box::new(Value::U64(*count))),
         );
-    };
-    put("used", quota.used.0);
-    if let Some(total) = quota.total {
-        put("total", total.0);
     }
     owned(Value::Dict(dict))
+}
+
+/// A quota as the nested vardict `{used: t, total: t}` (`total` only when there is a limit).
+fn quota_value(quota: &Quota) -> Option<OwnedValue> {
+    let mut counts = vec![("used", quota.used.0)];
+    counts.extend(quota.total.map(|total| ("total", total.0)));
+    counts_value(&counts)
+}
+
+/// What is held back as the nested vardict `{discard: t, held: t}`.
+fn confirmation_value(held: &MassDelete) -> Option<OwnedValue> {
+    counts_value(&[("discard", held.discard as u64), ("held", held.held as u64)])
 }
 
 /// What `Status` answers for a dataset.
@@ -57,6 +69,10 @@ pub fn status_details(status: &StatusSnapshot) -> Details {
     put(
         STATUS_KEY_QUOTA,
         status.quota.as_ref().and_then(quota_value),
+    );
+    put(
+        KEY_NEEDS_CONFIRMATION,
+        status.needs_confirmation.as_ref().and_then(confirmation_value),
     );
     details
 }
@@ -115,6 +131,7 @@ mod tests {
                 used: Bytes(10),
                 total: Some(Bytes(100)),
             }),
+            needs_confirmation: None,
         };
         let details = status_details(&status);
         let get = |key: &str| details.get(key).map(|v| (**v).try_clone().expect("clone"));
@@ -128,6 +145,25 @@ mod tests {
             quota.try_clone().expect("clone").try_into().expect("a{sv}");
         assert_eq!(u64::try_from(&nested["used"]).ok(), Some(10));
         assert_eq!(u64::try_from(&nested["total"]).ok(), Some(100));
+        assert!(!details.contains_key(KEY_NEEDS_CONFIRMATION), "only while held");
+    }
+
+    #[test]
+    fn a_dataset_held_for_confirmation_says_how_many_of_how_many_would_go() {
+        let status = StatusSnapshot {
+            needs_confirmation: Some(MassDelete {
+                discard: 30,
+                held: 40,
+            }),
+            ..StatusSnapshot::default()
+        };
+        let details = status_details(&status);
+        let held = details.get(KEY_NEEDS_CONFIRMATION).expect("the key");
+        assert_eq!(held.value_signature().to_string(), "a{sv}");
+        let nested: std::collections::HashMap<String, OwnedValue> =
+            held.try_clone().expect("clone").try_into().expect("a{sv}");
+        assert_eq!(u64::try_from(&nested["discard"]).ok(), Some(30));
+        assert_eq!(u64::try_from(&nested["held"]).ok(), Some(40));
     }
 
     #[test]

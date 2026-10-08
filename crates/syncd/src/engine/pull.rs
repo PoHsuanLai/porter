@@ -1,15 +1,16 @@
 //! The replica's side coming in: finishing interrupted fetches and discards, then the feed.
 
-use super::{Compared, Engine, Halt, Report, conflict_of, halt, provisional};
+use super::{Compared, Engine, Halt, Outcome, Report, conflict_of, halt, provisional};
 use crate::clock::Clock;
 use crate::dataset::{Dataset, Direction, fingerprint};
 use crate::journal::Op;
 use porter_sync::{
     Acknowledgement, Anchor, BaseVersion, Blob, ByteRange, Change, Cursor, ItemState, JournalItem,
     More, RemoteId, RemoteItem, RemoteSide, Replica, ReplicaError, StoredAnchor, Tombstone,
-    TombstoneOrigin, reconcile,
+    TombstoneOrigin, mass_delete, reconcile,
 };
 use std::collections::BTreeSet;
+use std::sync::atomic::Ordering;
 
 impl<R: Replica, D: Dataset, K: Clock> Engine<R, D, K> {
     /// Finishes what a crash (or a transient stop) left half done.
@@ -93,6 +94,15 @@ impl<R: Replica, D: Dataset, K: Clock> Engine<R, D, K> {
                 .filter(|change| matches!(change, Change::Tombstone(_))),
         );
         let changes = self.rebind(&rows, changes).await?;
+        // A listing that lacks all, or most, of what is held is more likely a server in trouble
+        // (an empty answer, a half-built folder) than the person's wish: nothing is discarded
+        // until they say so, and the next listing may show the items again. The anchor stays
+        // cleared, so every cycle asks for the listing afresh.
+        if let Some(mass) = mass_delete(&rows, &changes)
+            && !self.mass_delete_confirmed.swap(false, Ordering::SeqCst)
+        {
+            return Err(Halt::Stop(Outcome::NeedsConfirmation(mass)));
+        }
         for change in changes {
             self.apply_change(change, report).await?;
         }

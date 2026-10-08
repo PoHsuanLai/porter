@@ -21,9 +21,10 @@ use porter_core::UnixSeconds;
 use porter_core::capability::QuotaReport;
 use porter_sync::{
     Acknowledgement, BaseVersion, Blob, ByteRange, Conflict, ItemState, JournalItem, LocalId,
-    Quota, RemoteId, RemoteSide, RemoteVersion, Replica, ReplicaError, RetryAfter, StoredConflict,
-    StoredTombstone, Tombstone, TombstoneOrigin,
+    MassDelete, Quota, RemoteId, RemoteSide, RemoteVersion, Replica, ReplicaError, RetryAfter,
+    StoredConflict, StoredTombstone, Tombstone, TombstoneOrigin,
 };
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Why a cycle stopped without finishing; the next cycle starts over from the journal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -39,6 +40,11 @@ pub enum Outcome {
     QuotaFull,
     /// The dataset's folder is gone from the replica.
     Gone,
+    /// A full listing would discard all, or most, of what the journal holds (a server that
+    /// answers empty when it is in trouble looks the same). Nothing was discarded; the dataset
+    /// waits until [`Engine::confirm_mass_delete`], and the next listing may show the items
+    /// again.
+    NeedsConfirmation(MassDelete),
 }
 
 /// What one cycle did.
@@ -115,6 +121,8 @@ pub struct Engine<R, D, K> {
     dataset: D,
     journal: Journal,
     clock: K,
+    /// The person allowed the next full listing to discard what it lacks (consumed by it).
+    mass_delete_confirmed: AtomicBool,
 }
 
 impl<R: Replica, D: Dataset, K: Clock> Engine<R, D, K> {
@@ -125,7 +133,14 @@ impl<R: Replica, D: Dataset, K: Clock> Engine<R, D, K> {
             dataset,
             journal,
             clock,
+            mass_delete_confirmed: AtomicBool::new(false),
         }
+    }
+
+    /// Lets the next full listing discard what it lacks, once, after a cycle ended
+    /// [`Outcome::NeedsConfirmation`]. Without it such a listing is never acted on.
+    pub fn confirm_mass_delete(&self) {
+        self.mass_delete_confirmed.store(true, Ordering::SeqCst);
     }
 
     /// The journal, for status and tests.

@@ -24,7 +24,9 @@ pub use journal::{
     Acknowledgement, ItemState, JournalItem, LocalId, Resolution, StoredAnchor, StoredConflict,
     StoredTombstone, TombstoneOrigin,
 };
-pub use journal_reconcile::{LocalChange, Scanned, local_changes, reconcile};
+pub use journal_reconcile::{
+    LocalChange, MASS_DELETE_FLOOR, MassDelete, Scanned, local_changes, mass_delete, reconcile,
+};
 #[cfg(feature = "testing")]
 pub use memory::MemoryReplica;
 pub use quota::Quota;
