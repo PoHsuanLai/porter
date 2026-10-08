@@ -295,29 +295,28 @@ async fn a_memfd_credential_is_the_key_on_a_sealed_descriptor_and_the_key_is_now
     // A memfd leaves no file, and no directory is made for it.
     assert!(!runtime.agent_dir().exists());
 
-    // The positive control: the scan finds the key when it is sent as an argument on the bus.
-    let _ = launcher.issue(KEY, PROGRAM, "memfd").await;
+    // Nothing on the bus so far carries the key.
     let seen = tap.drain().await;
     assert!(
         seen.len() > 3,
         "the monitor saw the traffic: {}",
         seen.len()
     );
-    let carrying: Vec<_> = seen.iter().filter(|m| contains(m, KEY)).collect();
-    assert_eq!(
-        carrying.len(),
-        1,
-        "only the deliberate control carries the key"
-    );
     assert!(
-        carrying[0]
-            .windows(20)
-            .any(|w| w == b"IssueProcessCredenti"),
-        "and it is the control's call"
+        seen.iter().all(|m| !contains(m, KEY)),
+        "the key is on the bus"
     );
     assert!(
         seen.iter().any(|m| contains(m, "g-always")),
         "positive control: the scan sees values that do cross"
+    );
+    // The positive control: the scan does find the key when it is sent as an argument on the bus
+    // (the call, and the error that names the argument), so a miss above means absent, not blind.
+    let _ = launcher.issue(KEY, PROGRAM, "memfd").await;
+    let control = tap.drain().await;
+    assert!(
+        control.iter().any(|m| contains(m, KEY)),
+        "the scan finds a key that does cross"
     );
     // Neither the audit, the sheet host's log, nor the other account's key.
     let audited = serde_json::to_string(&rig.audit.entries()).expect("json");
@@ -627,7 +626,12 @@ async fn revoking_the_grant_ends_the_credentials_under_it_and_tells_their_launch
     let (file_path, kept_path) = (file.path(), kept.path());
 
     // The person revokes it as the app holding it would (or from Settings).
-    let holder = rig.client("org.quire.Agent.claude-code").await;
+    let holder = rig
+        .client_as(porter_dbus::Caller {
+            app: agent_app(PROGRAM),
+            role: CallerRole::App,
+        })
+        .await;
     GrantsProxy::new(&holder)
         .await
         .expect("proxy")
