@@ -22,6 +22,7 @@ mod manager;
 mod names;
 mod peer;
 mod pending;
+mod photos_picker;
 mod refusal;
 mod request;
 mod sheet;
@@ -56,6 +57,10 @@ pub use peer::{
     AgentLogoutRequestedStream, PeerProxy, PeerSkeleton,
 };
 pub use pending::{Closer, Sheet, SheetError};
+pub use photos_picker::{
+    PICKER_ERROR_NO_SUCH_SESSION, PICKER_ERROR_NOT_YET, PICKER_ERROR_PREFIX, PICKER_PICKED,
+    PICKER_WAITING, PhotosPickerProxy, PickerSkeleton,
+};
 pub use refusal::{REFUSAL_ERROR_PREFIX, refusal_error_name, refusal_from_error_name};
 pub use request::{RequestProxy, RequestSkeleton};
 pub use sheet::{

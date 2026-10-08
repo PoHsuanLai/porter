@@ -130,6 +130,8 @@ pub enum Media {
 }
 
 pub struct Rig {
+    /// The connection syncd's `Sync1` is served on.
+    pub server: zbus::Connection,
     pub media: Option<Running<MediaOrigin>>,
     pub bus: PrivateBus,
     pub known: Known,
@@ -341,6 +343,7 @@ async fn build(photos: PhotosSwitch, media: Media, picker_only: bool) -> Rig {
     .expect("paths");
     let (network_keeps, network) = watch::channel(Network::Unmetered);
     let mut rig = Rig {
+        server: server.clone(),
         media: origin,
         bus,
         known,
@@ -394,4 +397,20 @@ pub async fn client_of(rig: &Rig, name: &str) -> zbus::Connection {
 
 pub fn local(rig: &Rig, rel: &str) -> std::path::PathBuf {
     rig.paths.storage_dir(&rig.account).join(rel)
+}
+
+/// Serves `org.quire.Photos1.Picker` beside `Sync1`, for the Photos app, over this rig's
+/// supervisor (the pickers it starts at each tick).
+pub async fn serve_picker(rig: &Rig) {
+    let owners = syncd::service::Access {
+        owners: [AppName::parse(syncd::datasets::storage::PHOTOS_APP).expect("app")].into(),
+    };
+    syncd::service::serve_picker(
+        &rig.server,
+        rig.supervisor.pickers(),
+        owners,
+        rig.known.clone(),
+    )
+    .await
+    .expect("picker object");
 }

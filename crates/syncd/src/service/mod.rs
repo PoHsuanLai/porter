@@ -22,11 +22,13 @@
 mod errors;
 mod hub;
 mod object;
+mod picker;
 mod resolve;
 mod status;
 
 pub use errors::RefusedError;
 pub use hub::{Access, DatasetName, Event, Handle, Hub, Nudge, StatusSnapshot};
 pub use object::serve;
+pub use picker::{PickerDesk, Pickers, serve_picker};
 pub use resolve::{ConflictNumber, How, Settle, SettleError, UnknownHow};
 pub use status::{conflict_details, progress_details, status_details};

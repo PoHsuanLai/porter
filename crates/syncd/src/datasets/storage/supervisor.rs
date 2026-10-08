@@ -134,6 +134,8 @@ pub struct StorageSupervisor<T: Transport, G> {
     grants: G,
     config: StorageConfig,
     running: BTreeMap<(AccountDir, StorageKind), Running<T>>,
+    /// The Google Photos pickers running now, for the bus object that serves them.
+    pickers: crate::service::Pickers<T>,
     silent: BTreeSet<StorageKind>,
 }
 
@@ -168,8 +170,14 @@ where
             grants,
             config,
             running: BTreeMap::new(),
+            pickers: crate::service::Pickers::default(),
             silent: BTreeSet::new(),
         }
+    }
+
+    /// The pickers as the bus object reads them: kept current by every `tick`.
+    pub fn pickers(&self) -> crate::service::Pickers<T> {
+        self.pickers.clone()
     }
 
     /// The Photos library of `account` while its Photos datasets run: what the Photos app will
@@ -244,6 +252,18 @@ where
                 }
             }
         }
+        self.pickers.set(
+            self.running
+                .iter()
+                .filter_map(|((account, _), running)| match running {
+                    Running::GooglePhotos {
+                        picker: Some(picker),
+                        ..
+                    } => Some((account.clone(), Arc::clone(picker))),
+                    _ => None,
+                })
+                .collect(),
+        );
     }
 
     fn start(

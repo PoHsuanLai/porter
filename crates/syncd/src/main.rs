@@ -92,14 +92,24 @@ async fn main() -> ExitCode {
         photos: PhotosSwitch::from_var(std::env::var("SYNCD_PHOTOS").ok().as_deref()),
         ..StorageConfig::default()
     };
-    let _storage = StorageSupervisor::new(
+    let photos_on = storage.photos == PhotosSwitch::On;
+    let photos_owners = storage.photos_owners.clone();
+    let storage = StorageSupervisor::new(
         wiring(network),
         ClientStorageGrants::new(Arc::clone(&accounts)),
         storage,
-    )
-    .spawn();
+    );
+    let pickers = storage.pickers();
+    let _storage = storage.spawn();
     if let Err(why) = removal::watch(&connection, hub.clone(), paths).await {
         return fail(format!("cannot listen for AccountRemoved: {why}"));
+    }
+    // `org.quire.Photos1.Picker` is there only while Google Photos runs (`SYNCD_PHOTOS=on`).
+    if photos_on
+        && let Err(why) =
+            service::serve_picker(&connection, pickers, photos_owners, Arc::clone(&callers)).await
+    {
+        return fail(format!("cannot serve org.quire.Photos1.Picker: {why}"));
     }
     if let Err(why) = service::serve(&connection, hub, callers).await {
         return fail(format!("cannot serve {}: {why}", porter_dbus::SYNC_BUS));

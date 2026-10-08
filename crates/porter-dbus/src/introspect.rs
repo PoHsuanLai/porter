@@ -7,6 +7,7 @@ use crate::grants::GrantsSkeleton;
 use crate::inference::InferenceSkeleton;
 use crate::manager::ManagerSkeleton;
 use crate::peer::PeerSkeleton;
+use crate::photos_picker::PickerSkeleton;
 use crate::request::RequestSkeleton;
 use crate::sheet_backend::AccountsSheetSkeleton;
 use crate::sync::SyncSkeleton;
@@ -21,7 +22,7 @@ pub enum Bus {
     Accounts,
     /// `org.quire.AccountsSheet1` (the sheet host).
     AccountsSheet,
-    /// `org.quire.Sync1` (syncd).
+    /// `org.quire.Sync1` (syncd), and `org.quire.Photos1.Picker` on the same name and object.
     Sync,
     /// `org.quire.Inference1` (inferd).
     Inference,
@@ -54,7 +55,7 @@ pub fn introspection(bus: Bus) -> String {
             &PeerSkeleton,
         ],
         Bus::AccountsSheet => vec![&AccountsSheetSkeleton],
-        Bus::Sync => vec![&SyncSkeleton],
+        Bus::Sync => vec![&SyncSkeleton, &PickerSkeleton],
         Bus::Inference => vec![&InferenceSkeleton],
         Bus::InferenceAgents => vec![&AgentsSkeleton],
     };

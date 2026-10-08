@@ -150,7 +150,26 @@ fn the_sheet_backend_takes_views_in_and_sends_inputs_out() {
 #[test]
 fn syncd_and_inferd_declare_what_they_did() {
     let sync = introspection(Bus::Sync);
-    assert_eq!(sync.matches("<method ").count(), 5);
+    let (sync1, picker) = sync
+        .split_once("<interface name=\"org.quire.Photos1.Picker\">")
+        .expect("the Picker interface is declared beside Sync1");
+    assert_eq!(sync1.matches("<method ").count(), 5);
+    for member in ["Start", "Poll", "Import", "Cancel"] {
+        assert!(
+            picker.contains(&format!("<method name=\"{member}\">")),
+            "{member}"
+        );
+    }
+    assert_eq!(picker.matches("<method ").count(), 4);
+    assert_eq!(picker.matches("<signal ").count(), 0);
+    assert!(
+        picker.contains("<arg type=\"as\" direction=\"out\"/>"),
+        "Import answers the files' paths"
+    );
+    assert_eq!(
+        porter_dbus::PICKER_ERROR_NOT_YET,
+        format!("{}NotYet", porter_dbus::PICKER_ERROR_PREFIX)
+    );
     assert!(sync.contains("<method name=\"Resolve\">"));
     assert!(sync.contains("<arg name=\"conflict\" type=\"x\" direction=\"in\"/>"));
     assert_eq!(porter_dbus::RESOLVE_KEEP_LOCAL, "keep_local");

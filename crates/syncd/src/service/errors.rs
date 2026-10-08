@@ -5,7 +5,10 @@
 //! `DBusError` derive names every non-refusal `org.freedesktop.zbus.Error`.
 
 use porter_core::wire::Refusal;
-use porter_dbus::{SYNC_ERROR_NO_SUCH_CONFLICT, refusal_error_name};
+use porter_dbus::{
+    PICKER_ERROR_NO_SUCH_SESSION, PICKER_ERROR_NOT_YET, SYNC_ERROR_NO_SUCH_CONFLICT,
+    refusal_error_name,
+};
 use zbus::DBusError;
 use zbus::fdo;
 use zbus::message::{Header, Message};
@@ -48,6 +51,22 @@ impl RefusedError {
         Self {
             name: ErrorName::from_static_str_unchecked(SYNC_ERROR_NO_SUCH_CONFLICT),
             text: "no such conflict, or it is already settled".to_owned(),
+        }
+    }
+
+    /// `Import` before the person has finished picking: `org.quire.Photos1.Error.NotYet`.
+    pub fn picker_not_yet() -> Self {
+        Self {
+            name: ErrorName::from_static_str_unchecked(PICKER_ERROR_NOT_YET),
+            text: "the person has not finished picking".to_owned(),
+        }
+    }
+
+    /// A session Google no longer has: `org.quire.Photos1.Error.NoSuchSession`.
+    pub fn picker_no_such_session() -> Self {
+        Self {
+            name: ErrorName::from_static_str_unchecked(PICKER_ERROR_NO_SUCH_SESSION),
+            text: "no such session".to_owned(),
         }
     }
 
