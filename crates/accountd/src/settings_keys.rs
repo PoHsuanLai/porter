@@ -433,7 +433,7 @@ fn account_keys(
             {
                 (
                     "Upload new photos from a folder on this computer to Google Photos",
-                    "Lets the sync service send each new photo you put in this account's photos upload folder (under porter's photos folder) to an album porter makes in Google Photos. It never reads or deletes anything else in your Google Photos.",
+                    "Sends each new photo you put in this account's upload folder, a folder on this computer, to an album made for it in Google Photos. It never reads or deletes anything else in your Google Photos.",
                 )
             }
             SyncClass::Photos => (
@@ -546,7 +546,7 @@ pub(crate) fn schema(
         let empty = || toml::Value::String(String::new());
         let id = spec(
             &Key::Client(*issuer),
-            "Sign-in clients",
+            "Sign-in keys",
             format!("{name} sign-in key"),
             client_help(*issuer),
             text(),
@@ -555,7 +555,7 @@ pub(crate) fn schema(
         let secret = SECRET_ISSUERS.contains(issuer).then(|| {
             spec(
                 &Key::ClientSecret(*issuer),
-                "Sign-in clients",
+                "Sign-in keys",
                 format!("{name} sign-in secret"),
                 "The secret Google shows beside the sign-in key. Google asks for it even from an app on your computer; it is not your password.",
                 text(),
@@ -1008,9 +1008,10 @@ mod tests {
 
     #[test]
     fn no_label_or_help_a_person_reads_uses_a_developer_word() {
-        const JARGON: [&str; 17] = [
+        const JARGON: [&str; 21] = [
             "acp", "mcp", "oauth", "pkce", "imap", "smtp", "pop", "jmap", "dav", "caldav",
-            "carddav", "api", "cli", "token", "endpoint", "relay", "scope",
+            "carddav", "api", "cli", "token", "endpoint", "relay", "scope", "porter", "accountd",
+            "syncd", "inferd",
         ];
         let mut agent = storage_account();
         agent.auth = AuthKind::AgentLogin;
