@@ -131,6 +131,9 @@ pub enum SheetEnd {
 
 /// What the host must do next.
 #[derive(Debug, Clone, PartialEq, Eq)]
+// `Show` grew past clippy's threshold with `ProviderRow::mark_face`; boxing it would change a
+// variant every host matches, for an effect built once per sheet step.
+#[allow(clippy::large_enum_variant)]
 pub enum SheetEffect {
     /// Draw this.
     Show(SheetView),
