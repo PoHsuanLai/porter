@@ -130,3 +130,23 @@ Porter signs in and holds the account. Reading and writing the data is separate 
 Calendar source for the calendar mirror, the Drive app folder replica, and Photos upload and
 import follow the lanes that need them (see FINDINGS). Signing in now is useful because the grant,
 the 7 day reminder and Gmail through the mail app all work today.
+
+## What porter does with each Google service
+
+| Service | What porter does with it | What it never does |
+| --- | --- | --- |
+| Calendar, Contacts, Tasks | Mirrors them for apps that hold a grant (Calendar, Contacts, Tasks apps read and change them through porter). | Share them with any app that holds no grant. |
+| Drive | Keeps one hidden **app data folder** that only porter can see, and mirrors it to a folder on this computer so apps can keep files there. | Read or list the rest of your Drive: the scope is `drive.appdata` only. |
+| Photos, upload | Sends each **new photo or video you put in this account's upload folder** (`$XDG_DATA_HOME/porter/photos/<account>/upload`) to Google Photos, once, into an album porter makes. Settings > Accounts > the account > *Upload new photos from a folder on this computer to Google Photos* turns it on. | Read your library, delete a photo at Google, or delete a local file when it uploads. |
+| Photos, picker | The Photos app opens Google's own picker in your browser; what you pick is downloaded into `$XDG_DATA_HOME/porter/photos/<account>/picked/<session>/`. | See anything you did not pick. |
+| Mail | With `byo = true` only: IMAP and SMTP to Gmail, signed in with XOAUTH2 (the token never reaches the mail app). | Ask for the mailbox scope otherwise. |
+
+Granting is per service. If you tick only the picker on Google's consent page, porter offers
+the picker alone: no upload row appears in Settings and nothing is sent. If you tick only the
+upload, there is no picker. Picked photos are downloaded from Google's image host
+(`lh3.googleusercontent.com`) with the same sign-in, and porter's account service will connect
+only to that host (the provider file names it), never to a host a response names.
+
+An account for a client in testing is signed out by Google 7 days after it signed in. Settings
+shows the date on the account (*Google signs this account out on ...*, and *Signed out by Google
+on ...* after it happened); signing in again from Settings starts another 7 days.

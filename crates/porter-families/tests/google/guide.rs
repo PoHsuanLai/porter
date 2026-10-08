@@ -83,3 +83,24 @@ fn the_row_in_the_guide_is_a_row_the_registry_reads() {
     );
     std::fs::remove_dir_all(&dir).expect("cleanup");
 }
+
+#[test]
+fn the_guide_says_what_porter_does_with_each_google_service() {
+    let text = guide();
+    let section = text
+        .split("## What porter does with each Google service")
+        .nth(1)
+        .expect("the section is there");
+    for word in [
+        "Calendar, Contacts, Tasks",
+        "Drive",
+        "Photos, upload",
+        "Photos, picker",
+        "Mail",
+        "Upload new photos from a folder on this computer to Google Photos",
+        "lh3.googleusercontent.com",
+        "Google signs this account out on",
+    ] {
+        assert!(section.contains(word), "{word} is not in the section");
+    }
+}

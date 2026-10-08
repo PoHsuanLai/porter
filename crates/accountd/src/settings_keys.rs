@@ -286,6 +286,19 @@ fn account_keys(account: &Account, grants: &[Grant], names: &AppNames) -> Vec<Ke
                 "Keep this account's files on this computer",
                 "Lets the sync service keep a copy of this account's app folder here.",
             ),
+            // Google Photos is not a backup of a library: it is an upload folder, and what the
+            // person picks in Google's own window. The row says so.
+            SyncClass::Photos
+                if account
+                    .endpoints
+                    .iter()
+                    .any(|e| e.family == porter_core::Family::GooglePhotosUpload) =>
+            {
+                (
+                    "Upload new photos from a folder on this computer to Google Photos",
+                    "Lets the sync service send each new photo you put in this account's photos upload folder (under porter's photos folder) to an album porter makes in Google Photos. It never reads or deletes anything else in your Google Photos.",
+                )
+            }
             SyncClass::Photos => (
                 "Back up photos",
                 "Lets the sync service keep this account's photos here and back them up.",
@@ -465,6 +478,49 @@ mod tests {
             assert_eq!(row.default, toml::Value::String("off".into()));
             assert_eq!(row.agent, AgentSetting::HandsOff);
         }
+    }
+
+    #[test]
+    fn a_google_accounts_photos_row_says_it_uploads_a_folder_and_a_microsoft_one_keeps_its_words() {
+        use porter_core::capability::{Albums, LibraryRead, Offered, PhotosCap};
+        use porter_core::{Capability, Claim, EndpointUrl, Family, LoginName, Offer};
+        use porter_core::{Provenance, ServiceEndpoint, Subject, Tls};
+        let mut google = storage_account();
+        google.id = porter_core::AccountId::parse("fake-google").expect("id");
+        google.endpoints = vec![ServiceEndpoint {
+            family: Family::GooglePhotosUpload,
+            url: EndpointUrl::parse("https://photos.invalid/v1").expect("url"),
+            tls: Tls::Implicit,
+            login: LoginName("ada@gmail.invalid".into()),
+        }];
+        google.capabilities = vec![Claim {
+            subject: Subject::Account,
+            offer: Offer::Present(Capability::Photos(PhotosCap {
+                library_read: LibraryRead::PickerOnly,
+                upload: Offered::Present,
+                albums: Albums::AppCreated,
+                video: Offered::Present,
+                delta: porter_core::capability::Delta::None,
+            })),
+            provenance: Provenance::Declared,
+        }];
+        let row = |account: &Account| {
+            account_keys(account, &[], &AppNames::default())
+                .into_iter()
+                .find(|k| k.path.0.ends_with(".sync.photos"))
+                .map(|k| (k.label.0, k.help.0))
+                .expect("a photos row")
+        };
+        let (label, help) = row(&google);
+        assert_eq!(
+            label,
+            "Upload new photos from a folder on this computer to Google Photos"
+        );
+        assert!(
+            help.contains("upload folder") && help.contains("never reads or deletes"),
+            "{help}"
+        );
+        assert_eq!(row(&graph()).0, "Back up photos");
     }
 
     fn grant_row(decision: Decision, app: &str, kind: CapabilityKind, names: &AppNames) -> String {
