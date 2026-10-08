@@ -51,15 +51,71 @@ fn the_unit_is_a_sandbox_that_writes_only_its_own_directories() {
     assert_eq!(value(&unit, "StateDirectory"), Some("porter/sync"));
     assert_eq!(
         value(&unit, "ReadWritePaths"),
-        Some("%h/.local/share/porter/vdir")
+        Some("%h/.local/share/porter")
     );
     assert_eq!(
         value(&unit, "ExecStartPre"),
-        Some("+/usr/bin/mkdir -p %h/.local/share/porter/vdir")
+        Some(
+            "+/usr/bin/mkdir -p %h/.local/share/porter/vdir %h/.local/share/porter/storage \
+             %h/.local/share/porter/photos"
+        )
     );
     // The bus and the replicas' servers (through accountd's relay, syncd itself holds no
     // credential and dials only its own session bus): Unix sockets only.
     assert_eq!(value(&unit, "RestrictAddressFamilies"), Some("AF_UNIX"));
+}
+
+#[test]
+fn every_path_syncd_writes_is_writable_under_the_unit() {
+    use std::path::{Path, PathBuf};
+    use syncd::paths::{AccountDir, Paths};
+
+    let unit = dist("syncd.service");
+    // The unit's specifiers as a person with HOME=/h has them.
+    let expand = |text: &str| text.replace("%h", "/h");
+    let state = Path::new("/h/.local/state").join(value(&unit, "StateDirectory").expect("state"));
+    let writable: Vec<PathBuf> = value(&unit, "ReadWritePaths")
+        .expect("ReadWritePaths")
+        .split_whitespace()
+        .map(|p| PathBuf::from(expand(p)))
+        .collect();
+    let made: Vec<PathBuf> = value(&unit, "ExecStartPre")
+        .expect("ExecStartPre")
+        .strip_prefix("+/usr/bin/mkdir -p ")
+        .expect("the pre-start step makes directories")
+        .split_whitespace()
+        .map(|p| PathBuf::from(expand(p)))
+        .collect();
+
+    let paths = Paths::resolve(|name| (name == "HOME").then(|| "/h".to_owned())).expect("paths");
+    let account = AccountDir::parse("a1").expect("segment");
+    let mut written: Vec<PathBuf> = vec![
+        paths.journal(&account, "storage"),
+        paths.photos_ledger(&account),
+        paths.photos_dir(&account),
+        paths.photos_upload_dir(&account),
+        paths.photos_picked_dir(&account),
+        paths.storage_dir(&account),
+    ];
+    written.extend(paths.account_dirs(&account));
+    for path in &written {
+        let under_state = path.starts_with(&state);
+        let under_writable = writable.iter().any(|root| path.starts_with(root));
+        assert!(
+            under_state || under_writable,
+            "{} is read-only under the unit",
+            path.display()
+        );
+        // Under the data home the unit's pre-start step makes the directory that holds the
+        // account's folder (a missing one is made by syncd, which may write beside it).
+        if !under_state {
+            let root = path
+                .ancestors()
+                .find(|a| made.iter().any(|m| m == a))
+                .unwrap_or_else(|| panic!("{} has no directory made before start", path.display()));
+            assert!(writable.iter().any(|w| root.starts_with(w)));
+        }
+    }
 }
 
 #[test]

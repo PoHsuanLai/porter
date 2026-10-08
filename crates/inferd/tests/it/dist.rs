@@ -30,10 +30,17 @@ fn the_activation_file_and_the_unit_name_the_bus_name_and_each_other() {
 }
 
 #[test]
-fn the_unit_gives_engines_the_gpu_and_the_network_to_nobody() {
+fn the_unit_gives_engines_the_gpu_and_only_this_computers_own_addresses() {
     let unit = dist("inferd.service");
-    assert_eq!(key(&unit, "PrivateNetwork"), Some("yes"));
-    assert_eq!(key(&unit, "RestrictAddressFamilies"), Some("AF_UNIX"));
+    // Loopback is reachable (the local runtimes the probe asks, the agent endpoint's listener):
+    // no private network, the internet families open, and every address but loopback denied.
+    assert_eq!(key(&unit, "PrivateNetwork"), None);
+    assert_eq!(
+        key(&unit, "RestrictAddressFamilies"),
+        Some("AF_UNIX AF_INET AF_INET6")
+    );
+    assert_eq!(key(&unit, "IPAddressDeny"), Some("any"));
+    assert_eq!(key(&unit, "IPAddressAllow"), Some("localhost"));
     assert_eq!(key(&unit, "DevicePolicy"), Some("closed"));
     // Engines' JIT needs writable and executable memory, so the one line cuad's unit has is absent.
     assert_eq!(key(&unit, "MemoryDenyWriteExecute"), None);
@@ -45,19 +52,15 @@ fn the_unit_gives_engines_the_gpu_and_the_network_to_nobody() {
 }
 
 #[test]
-fn the_cloud_drop_in_opens_the_internet_families_and_nothing_else() {
+fn the_cloud_drop_in_opens_every_address_and_nothing_else() {
     let drop_in = dist("inferd-cloud.conf");
-    assert_eq!(key(&drop_in, "PrivateNetwork"), Some("no"));
-    assert_eq!(
-        key(&drop_in, "RestrictAddressFamilies"),
-        Some("AF_UNIX AF_INET AF_INET6")
-    );
-    // Only those two lines: the rest of the sandbox stays as the unit has it.
+    assert_eq!(key(&drop_in, "IPAddressAllow"), Some("any"));
+    // Only that line: the families and the rest of the sandbox stay as the unit has them.
     let settings: Vec<_> = drop_in
         .lines()
         .filter(|line| !line.starts_with('#') && line.contains('='))
         .collect();
-    assert_eq!(settings.len(), 2, "{settings:?}");
+    assert_eq!(settings.len(), 1, "{settings:?}");
 }
 
 #[test]

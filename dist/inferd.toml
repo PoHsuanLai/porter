@@ -40,8 +40,8 @@
 #              is on (below).
 # No TLS: a socket or a loopback address only, and the tunnel's lifetime is yours. The engine is
 # looked at when a session opens (and not otherwise); if it is down or does not list the model the
-# session is told it is not ready and the log says why. inferd.service has PrivateNetwork=yes: a
-# `url` needs a drop-in like inferd-cloud.conf (the loopback of the host, AF_INET); a `socket` does not.
+# session is told it is not ready and the log says why. inferd.service reaches the loopback addresses of
+# this computer (and nothing beyond them), so a loopback `url` works as it ships, and so does a `socket`.
 # [engines.attached."qwen3-32b"]
 # socket = "/run/user/1000/lab-vllm.sock"
 # key_file = "/home/you/.config/lab/vllm.key"
