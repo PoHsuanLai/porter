@@ -133,6 +133,12 @@ pub trait Host: Send + Sync + 'static {
         async { Err(Refusal::Unavailable) }
     }
 
+    /// Records what Settings changed outside the registry (a client id). A host with no audit
+    /// records nothing.
+    fn audit_settings(&self, event: porter_core::audit::AuditEvent) {
+        let _ = event;
+    }
+
     /// Withdraws any grant, whoever holds it.
     fn revoke_grant(&self, grant: &GrantId) -> impl Future<Output = Result<(), Refusal>> + Send {
         let _ = grant;
@@ -287,6 +293,10 @@ where
         toggle: Toggle,
     ) -> impl Future<Output = Result<(), Refusal>> + Send {
         AccountService::set_toggle(self, id, kind, toggle)
+    }
+
+    fn audit_settings(&self, event: porter_core::audit::AuditEvent) {
+        AccountService::audit_settings(self, event);
     }
 
     fn revoke_grant(&self, grant: &GrantId) -> impl Future<Output = Result<(), Refusal>> + Send {

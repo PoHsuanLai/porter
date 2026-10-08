@@ -6,6 +6,7 @@ use crate::account::AgentState;
 use crate::agent_login::LoginRequestId;
 use crate::app_id::AppId;
 use crate::capability::{AgentProgram, CapabilityKind};
+use crate::effective::Toggle;
 use crate::endpoint::EndpointUrl;
 use crate::id::{AccountId, GrantId};
 use crate::launcher_session::LauncherSession;
@@ -139,6 +140,38 @@ pub enum AuditEvent {
         /// The session that closed.
         session: LauncherSession,
     },
+    /// A kind of an account was switched on or off (Settings' service row). The entry's
+    /// `account` is the account; `app` is absent (Settings acts for the person).
+    ServiceToggled {
+        /// The kind.
+        kind: CapabilityKind,
+        /// What it is now.
+        toggle: Toggle,
+    },
+    /// The person's own client id for an issuer was set or cleared (Settings' client row), so
+    /// the next sign-ins with that issuer present another app. Never the id itself.
+    ClientIdChanged {
+        /// The issuer, as its Settings row names it (`microsoft`).
+        issuer: IssuerSlug,
+        /// Set or cleared.
+        change: ClientIdChange,
+    },
+}
+
+/// An OAuth issuer's slug as the clients file and Settings write it (`microsoft`, `google`).
+/// porter-core does not know the issuers (porter-provider's `Issuer` does); this is its word.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct IssuerSlug(pub String);
+
+/// What became of a client id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClientIdChange {
+    /// A client id of the person's own is set (or replaced).
+    Set,
+    /// The person's own client id is removed; the shipped one, if any, is used again.
+    Cleared,
 }
 
 /// How a process credential travels (P2). A closed set: a path or fd number is not recorded.
@@ -303,6 +336,14 @@ mod tests {
                 grant: GrantId::parse("g2").expect("id"),
                 session: LauncherSession::parse("sess-1").expect("session"),
             },
+            AuditEvent::ServiceToggled {
+                kind: CapabilityKind::Contacts,
+                toggle: Toggle::Off,
+            },
+            AuditEvent::ClientIdChanged {
+                issuer: IssuerSlug("microsoft".into()),
+                change: ClientIdChange::Cleared,
+            },
         ];
         for event in events {
             let entry = AuditEntry {
@@ -370,6 +411,20 @@ mod tests {
                 session: LauncherSession::parse("sess-1").expect("session"),
             }),
             r#"{"at":1,"app":null,"account":null,"event":{"kind":"session_grant_ended","v":{"grant":"g2","session":"sess-1"}}}"#
+        );
+        assert_eq!(
+            at(AuditEvent::ServiceToggled {
+                kind: CapabilityKind::Calendar,
+                toggle: Toggle::On,
+            }),
+            r#"{"at":1,"app":null,"account":null,"event":{"kind":"service_toggled","v":{"kind":"calendar","toggle":"on"}}}"#
+        );
+        assert_eq!(
+            at(AuditEvent::ClientIdChanged {
+                issuer: IssuerSlug("microsoft".into()),
+                change: ClientIdChange::Set,
+            }),
+            r#"{"at":1,"app":null,"account":null,"event":{"kind":"client_id_changed","v":{"issuer":"microsoft","change":"set"}}}"#
         );
     }
 

@@ -417,3 +417,33 @@ async fn the_photos_of_a_google_account_are_a_photos_kind_grant_and_files_stay_s
         .collect();
     assert_eq!(kinds, [CapabilityKind::Storage, CapabilityKind::Photos]);
 }
+
+/// Settings' service switch, like its sync switch, is audited (sec-5): once per change, naming
+/// the account, the kind and what it is now; a switch to what it already is records nothing.
+#[tokio::test]
+async fn a_service_switch_is_audited_each_time_it_changes_the_kind() {
+    let account = storage_account();
+    let (service, _store, audit) = service(vec![account.clone()]);
+    for toggle in [Toggle::On, Toggle::Off, Toggle::Off, Toggle::On] {
+        service
+            .set_toggle(&id(&account), CapabilityKind::Storage, toggle)
+            .await
+            .expect("switched");
+    }
+    let switched: Vec<_> = audit
+        .entries()
+        .into_iter()
+        .filter_map(|e| match e.event {
+            AuditEvent::ServiceToggled { kind, toggle } => Some((e.account, e.app, kind, toggle)),
+            _ => None,
+        })
+        .collect();
+    let at = Some(id(&account));
+    assert_eq!(
+        switched,
+        [
+            (at.clone(), None, CapabilityKind::Storage, Toggle::Off),
+            (at, None, CapabilityKind::Storage, Toggle::On),
+        ]
+    );
+}

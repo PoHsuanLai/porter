@@ -118,6 +118,38 @@ async fn a_service_toggle_changes_what_apps_can_find_and_back() {
         settings.set(&storage, &toml::Value::Integer(3)).await,
         Err(LiveError::BadValue(_))
     ));
+    // Each switch is audited (sec-5); switching on what is on records nothing.
+    settings
+        .set(&storage, &toml::Value::String("on".into()))
+        .await
+        .expect("on again");
+    let toggled: Vec<_> = rig
+        .audit
+        .entries()
+        .into_iter()
+        .filter_map(|e| match e.event {
+            AuditEvent::ServiceToggled { kind, toggle } => {
+                Some((e.account.map(|a| a.to_string()), kind, toggle))
+            }
+            _ => None,
+        })
+        .collect();
+    let storage_account = Some("fake-storage".to_owned());
+    assert_eq!(
+        toggled,
+        [
+            (
+                storage_account.clone(),
+                CapabilityKind::Storage,
+                porter_core::Toggle::Off
+            ),
+            (
+                storage_account,
+                CapabilityKind::Storage,
+                porter_core::Toggle::On
+            ),
+        ]
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -313,6 +345,32 @@ async fn a_client_id_is_written_to_the_users_file_only_by_settings() {
     assert_eq!(
         settings.get(&row).await.expect("get"),
         toml::Value::String(String::new())
+    );
+    // Both changes are audited, never with the id (sec-5); the refused one is not.
+    use porter_core::audit::{ClientIdChange, IssuerSlug};
+    let changed: Vec<_> = rig
+        .audit
+        .entries()
+        .into_iter()
+        .filter_map(|e| match e.event {
+            AuditEvent::ClientIdChanged { issuer, change } => Some((issuer, change)),
+            _ => None,
+        })
+        .collect();
+    let microsoft = IssuerSlug("microsoft".into());
+    assert_eq!(
+        changed,
+        [
+            (microsoft.clone(), ClientIdChange::Set),
+            (microsoft, ClientIdChange::Cleared)
+        ]
+    );
+    assert!(
+        rig.audit
+            .entries()
+            .iter()
+            .all(|e| !format!("{e:?}").contains("my-client")),
+        "no entry holds the id"
     );
     let _ = std::fs::remove_dir_all(dir);
 }

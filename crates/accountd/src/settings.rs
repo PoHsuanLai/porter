@@ -9,6 +9,7 @@ use crate::launchers::SignOutNews;
 use crate::settings_keys::{Key, parse, schema};
 use ds_settings::live::{Access, Caller, LiveError, LiveModule, LiveSchema, Verdict, serve};
 use ds_settings::schema::KeyPath;
+use porter_core::audit::{AuditEvent, ClientIdChange, IssuerSlug};
 use porter_core::wire::ParentWindow;
 use porter_core::{AccountsReply, AppId, AppName, Isolation, Toggle};
 use porter_dbus::{ACCOUNTS_SETTINGS_PATH, CallerRole};
@@ -213,6 +214,17 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
                     _ => return Err(LiveError::BadValue("a sign-in key is text".into())),
                 };
                 self.write_client(issuer, &text)?;
+                let slug = serde_json::to_value(issuer)
+                    .ok()
+                    .and_then(|v| v.as_str().map(str::to_owned))
+                    .unwrap_or_default();
+                self.0.host.audit_settings(AuditEvent::ClientIdChanged {
+                    issuer: IssuerSlug(slug),
+                    change: match text.is_empty() {
+                        true => ClientIdChange::Cleared,
+                        false => ClientIdChange::Set,
+                    },
+                });
             }
             Key::State(_)
             | Key::Label(_)

@@ -136,14 +136,24 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
     /// Switches one kind of one account on or off: the toggle row is kept, and the account's
     /// effective capabilities follow (a kind turned off reads `Absent { TurnedOff }`; turned on
     /// again it reads as its provider file declares it until the next discovery refreshes it).
+    /// A switch that changes the kind is audited (`ServiceToggled`).
     pub async fn set_toggle(
         &self,
         id: &AccountId,
         kind: CapabilityKind,
         toggle: Toggle,
     ) -> Result<(), Refusal> {
-        {
+        let changed = {
             let mut registry = self.lock();
+            // Only a kind switched off has a row.
+            let was = match registry
+                .toggles
+                .iter()
+                .any(|t| t.account == *id && t.kind == kind)
+            {
+                true => Toggle::Off,
+                false => Toggle::On,
+            };
             let spec = registry
                 .accounts
                 .iter()
@@ -206,8 +216,22 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                 claims.extend(missing);
                 account.capabilities = effective(&claims, &off);
             }
+            was != toggle
+        };
+        if changed {
+            self.note(
+                None,
+                Some(id.clone()),
+                AuditEvent::ServiceToggled { kind, toggle },
+            );
         }
         self.persist().await
+    }
+
+    /// Records `event`, which the host did on the person's behalf (Settings' client id row),
+    /// in the service's audit sink.
+    pub fn audit_settings(&self, event: AuditEvent) {
+        self.note(None, None, event);
     }
 
     /// Withdraws any grant, whoever holds it (Settings' "Revoke"). `UnknownGrant` when none has

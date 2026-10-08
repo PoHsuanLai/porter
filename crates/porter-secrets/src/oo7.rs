@@ -8,6 +8,20 @@ use crate::secrets::{PutOutcome, Secrets};
 use porter_core::{AccountId, Credential, SecretKey};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use zeroize::Zeroizing;
+
+/// The room an encoded credential is written into, so the buffer never grows (a grown buffer
+/// leaves its old bytes behind in freed memory). A credential is a few kilobytes at most (two
+/// OAuth tokens); a larger one is still written, and only its earlier copies are left unwiped.
+const ENCODE_ROOM: usize = 16 * 1024;
+
+/// The bytes `value` is filed as (its JSON), in a buffer wiped when it is dropped. oo7 copies
+/// them into its own `Secret`, which wipes itself too.
+fn encoded(value: &Credential) -> Result<Zeroizing<Vec<u8>>, SecretsError> {
+    let mut buffer = Zeroizing::new(Vec::with_capacity(ENCODE_ROOM));
+    serde_json::to_writer(&mut *buffer, value).map_err(|_| SecretsError::Unreadable)?;
+    Ok(buffer)
+}
 
 /// The user's Secret Service collection, opened on first use and kept.
 #[derive(Debug, Clone, Copy, Default)]
@@ -72,10 +86,15 @@ fn search(key: &SecretKey) -> HashMap<&'static str, String> {
 
 impl Secrets for Oo7KeyringSecrets {
     async fn put(&self, key: &SecretKey, value: &Credential) -> Result<(), SecretsError> {
-        let encoded = serde_json::to_vec(value).map_err(|_| SecretsError::Unreadable)?;
+        let encoded = encoded(value)?;
         let label = format!("porter {}", key.account);
         self.keyring
-            .create_item(&label, &search(key), oo7::Secret::blob(encoded), true)
+            .create_item(
+                &label,
+                &search(key),
+                oo7::Secret::blob(encoded.as_slice()),
+                true,
+            )
             .await
             .map_err(refused)
     }
@@ -85,7 +104,7 @@ impl Secrets for Oo7KeyringSecrets {
         key: &SecretKey,
         value: &Credential,
     ) -> Result<PutOutcome, SecretsError> {
-        let encoded = serde_json::to_vec(value).map_err(|_| SecretsError::Unreadable)?;
+        let encoded = encoded(value)?;
         let label = format!("porter {}", key.account);
         let at = search(key);
         match &*self.keyring {
@@ -100,7 +119,7 @@ impl Secrets for Oo7KeyringSecrets {
                 match file.lookup_item(&at).await.map_err(|e| refused(e.into()))? {
                     Some(_) => Ok(PutOutcome::AlreadyThere),
                     None => file
-                        .create_item(&label, &at, oo7::Secret::blob(encoded), false)
+                        .create_item(&label, &at, oo7::Secret::blob(encoded.as_slice()), false)
                         .await
                         .map(|_| PutOutcome::Stored)
                         .map_err(|e| refused(e.into())),
@@ -113,7 +132,7 @@ impl Secrets for Oo7KeyringSecrets {
                     false => Ok(PutOutcome::AlreadyThere),
                     true => self
                         .keyring
-                        .create_item(&label, &at, oo7::Secret::blob(encoded), false)
+                        .create_item(&label, &at, oo7::Secret::blob(encoded.as_slice()), false)
                         .await
                         .map(|()| PutOutcome::Stored)
                         .map_err(refused),
@@ -169,5 +188,25 @@ impl Secrets for Oo7Secrets {
 
     async fn delete_account(&self, account: &AccountId) -> Result<(), SecretsError> {
         ambient().await?.delete_account(account).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use porter_core::{SecretText, UnixSeconds};
+
+    #[test]
+    fn a_credential_is_encoded_into_a_wiped_buffer_that_never_grew() {
+        // Two Microsoft-sized tokens: well over a kilobyte each.
+        let credential = Credential::OAuth {
+            access: SecretText::new("a".repeat(3000)),
+            refresh: SecretText::new("r".repeat(3000)),
+            expires_at: UnixSeconds(1),
+        };
+        let buffer: Zeroizing<Vec<u8>> = encoded(&credential).expect("encodes");
+        assert_eq!(buffer.capacity(), ENCODE_ROOM, "the buffer was not regrown");
+        let back: Credential = serde_json::from_slice(&buffer).expect("reads back");
+        assert_eq!(back, credential);
     }
 }

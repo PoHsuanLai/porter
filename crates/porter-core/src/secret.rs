@@ -6,8 +6,12 @@ use crate::id::AccountId;
 use crate::units::UnixSeconds;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
-/// Secret text: its `Debug` never shows it, so it cannot leak into a log, a panic or an error.
+/// Secret text: its `Debug` never shows it, so it cannot leak into a log, a panic or an error,
+/// and its bytes are overwritten when it is dropped, so a freed buffer does not keep it. (A copy
+/// made by growing a `String` before it was wrapped, or by a caller of [`SecretText::expose`],
+/// is that code's to wipe.)
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct SecretText(String);
@@ -23,6 +27,20 @@ impl SecretText {
         &self.0
     }
 }
+
+impl Zeroize for SecretText {
+    fn zeroize(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+impl Drop for SecretText {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
+
+impl ZeroizeOnDrop for SecretText {}
 
 impl fmt::Debug for SecretText {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -127,5 +145,16 @@ mod tests {
         };
         let shown = format!("{credential:?} {:?}", SecretText::new("pw-xyz"));
         assert!(!shown.contains("xyz"), "{shown}");
+    }
+
+    /// `SecretText` wipes itself when dropped: it is `ZeroizeOnDrop`, and `zeroize`, which its
+    /// `Drop` calls, leaves nothing of the secret.
+    #[test]
+    fn a_secret_is_wiped_when_dropped() {
+        fn wiped_on_drop<T: ZeroizeOnDrop>() {}
+        wiped_on_drop::<SecretText>();
+        let mut secret = SecretText::new("pw-xyz");
+        secret.zeroize();
+        assert_eq!(secret.expose(), "");
     }
 }

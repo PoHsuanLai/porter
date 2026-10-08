@@ -2219,6 +2219,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "zeroize",
 ]
 
 [[package]]
@@ -2420,6 +2421,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "windows-native-keyring-store",
+ "zeroize",
 ]
 
 [[package]]

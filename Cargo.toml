@@ -116,6 +116,9 @@ sha2 = "0.10"
 clap = { version = "4", features = ["derive"] }
 proptest = "1"
 oo7 = "0.6"
+# porter-core's `SecretText` and porter-secrets' encode buffer are wiped when dropped (quire's
+# pinned line; Apache-2.0 OR MIT).
+zeroize = "1"
 # porter-secrets `KeyringSecrets` (macOS, Windows); Linux stays on oo7 (accounts D5).
 keyring-core = "1"
 apple-native-keyring-store = { version = "1", features = ["keychain"] }
