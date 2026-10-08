@@ -64,18 +64,59 @@ pub struct ClientRegistry {
     own: Vec<ClientEntry>,
     shipped_traits: Vec<TraitRow>,
     own_traits: Vec<TraitRow>,
+    moved: Vec<MovedEndpoints>,
+}
+
+/// A row of the person's own file whose endpoints left the issuer's servers: its endpoints were
+/// set aside and the issuer's published ones are used ([`ClientRegistry::layered`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct MovedEndpoints {
+    /// The issuer the row is for.
+    pub issuer: Issuer,
+    /// Its channel.
+    pub channel: ClientChannel,
 }
 
 impl ClientRegistry {
     /// The shipped clients with the person's own laid over them. Every row has the default
     /// [`ClientTraits`]; [`ClientRegistry::with_traits`] and [`ClientRegistry::from_paths`] set them.
+    ///
+    /// The person's file is theirs to write, and so any program's of theirs: a row of it may name
+    /// its own client id, never send the sign-in elsewhere. A row whose `endpoints` leave the
+    /// issuer's servers keeps its id with the issuer's published endpoints, and is listed by
+    /// [`ClientRegistry::moved_endpoints`] for the daemon to log. The shipped file is the
+    /// install's, and may point anywhere (a sovereign cloud; a test's fake issuer).
     pub fn layered(shipped: ClientsFile, own: ClientsFile) -> Self {
+        let mut moved = Vec::new();
+        let own = own
+            .clients
+            .into_iter()
+            .map(|row| match row.leaves_the_issuer() {
+                true => {
+                    moved.push(MovedEndpoints {
+                        issuer: row.issuer,
+                        channel: row.channel,
+                    });
+                    ClientEntry {
+                        endpoints: None,
+                        ..row
+                    }
+                }
+                false => row,
+            })
+            .collect();
         Self {
             shipped: shipped.clients,
-            own: own.clients,
+            own,
             shipped_traits: Vec::new(),
             own_traits: Vec::new(),
+            moved,
         }
+    }
+
+    /// The person's rows whose endpoints were set aside, because they left the issuer's servers.
+    pub fn moved_endpoints(&self) -> &[MovedEndpoints] {
+        &self.moved
     }
 
     /// The registry from the two files at the paths the caller names. A file that does not exist
@@ -433,6 +474,84 @@ mod tests {
             .lookup(Issuer::Microsoft, ClientChannel::Stable)
             .expect("client");
         assert_eq!(endpoints_of(client), Issuer::Microsoft.endpoints());
+    }
+
+    /// A Microsoft row with these sign-in and token pages.
+    fn microsoft_row(authorize: &str, token: &str) -> ClientsFile {
+        file(&format!(
+            "[[client]]\nissuer = \"microsoft\"\nchannel = \"stable\"\nclient_id = \"mine\"\n\
+             [client.endpoints]\nauthorize = \"{authorize}\"\ntoken = \"{token}\"\n"
+        ))
+    }
+
+    #[test]
+    fn the_persons_row_may_not_send_a_sign_in_off_the_issuers_servers() {
+        const MS: &str = "https://login.microsoftonline.com";
+        let cases = [
+            (
+                "https://evil.test/authorize",
+                &*format!("{MS}/common/oauth2/v2.0/token"),
+            ),
+            (
+                &*format!("{MS}/common/oauth2/v2.0/authorize"),
+                "https://evil.test/token",
+            ),
+            (
+                &*format!("{MS}/common/oauth2/v2.0/authorize"),
+                "https://login.microsoftonline.com:8443/token",
+            ),
+        ];
+        for (authorize, token) in cases {
+            let registry =
+                ClientRegistry::layered(ClientsFile::default(), microsoft_row(authorize, token));
+            let client = registry
+                .lookup(Issuer::Microsoft, ClientChannel::Stable)
+                .expect("the row is kept");
+            assert_eq!(client.client_id.0, "mine");
+            assert_eq!(
+                endpoints_of(client),
+                Issuer::Microsoft.endpoints(),
+                "{token}"
+            );
+            assert_eq!(
+                registry.moved_endpoints(),
+                [MovedEndpoints {
+                    issuer: Issuer::Microsoft,
+                    channel: ClientChannel::Stable,
+                }]
+            );
+        }
+
+        // Another tenant on the issuer's own servers stays.
+        let tenant = microsoft_row(
+            &format!("{MS}/organizations/oauth2/v2.0/authorize"),
+            &format!("{MS}/organizations/oauth2/v2.0/token"),
+        );
+        let registry = ClientRegistry::layered(ClientsFile::default(), tenant);
+        let client = registry
+            .lookup(Issuer::Microsoft, ClientChannel::Stable)
+            .expect("client");
+        assert!(
+            endpoints_of(client)
+                .token
+                .to_string()
+                .contains("/organizations/")
+        );
+        assert!(registry.moved_endpoints().is_empty());
+
+        // The install's own file may point anywhere (a test's fake issuer).
+        let registry = ClientRegistry::layered(
+            microsoft_row("https://127.0.0.1:9/authorize", "https://127.0.0.1:9/token"),
+            ClientsFile::default(),
+        );
+        let client = registry
+            .lookup(Issuer::Microsoft, ClientChannel::Stable)
+            .expect("client");
+        assert_eq!(
+            endpoints_of(client).token.to_string(),
+            "https://127.0.0.1:9/token"
+        );
+        assert!(registry.moved_endpoints().is_empty());
     }
 
     #[test]

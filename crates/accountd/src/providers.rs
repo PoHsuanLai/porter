@@ -1,11 +1,12 @@
 //! The provider files the daemon serves, and the family that serves each. Files are read from
 //! the directories in order, a later directory's file replacing an earlier one's of the same
 //! id (the user's over the system's); a file that does not parse is skipped and named on
-//! standard error, never fatal. A provider whose sign-in no built family serves (a local runtime,
-//! which inferd reports) is kept out of the served set. Google is served with or without a client
-//! id registered: without one, adding it says it needs one.
+//! standard error, never fatal. The person's own file may not change where a shipped provider
+//! signs in or which servers it reaches ([`Layer::Person`]). A provider whose sign-in no built
+//! family serves (a local runtime, which inferd reports) is kept out of the served set. Google is
+//! served with or without a client id registered: without one, adding it says it needs one.
 
-use porter_core::AuthKind;
+use porter_core::{AuthKind, EndpointUrl};
 use porter_discover::{Dns, DnsFault, HickoryDns, MxRecord, SrvRecord};
 use porter_families::{
     AgentLoginProvider, ApiKeyProvider, FamilyProvider, GenericProvider, GoogleProvider,
@@ -13,6 +14,7 @@ use porter_families::{
 };
 use porter_http::{HyperHttp, SharedHttp, TokioSleep};
 use porter_provider::{DomainName, Issuer, ProviderSet, ProviderSpec, parse_provider};
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 /// What reading the directories found.
@@ -24,10 +26,25 @@ pub struct Loaded {
     pub skipped: Vec<(PathBuf, String)>,
 }
 
+/// Whose a provider directory is, which decides what its files may change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Layer {
+    /// The system's (`/usr/share/porter/providers`): what this install ships.
+    Shipped,
+    /// The person's own (`$XDG_DATA_HOME/porter/providers`), which any program of theirs can
+    /// write: it may add providers and reword a shipped one, but a file for a shipped provider
+    /// that changes its sign-in, or reaches a server, an authenticated origin or a linked origin
+    /// the shipped file does not, is skipped and the shipped one kept.
+    Person,
+    /// A directory named on the command line (`--providers`, a test rig's fakes): as trusted as
+    /// whoever started the daemon.
+    Named,
+}
+
 /// The provider files of `dirs`, later directories winning; a missing directory is empty.
-pub fn load_specs(dirs: &[PathBuf]) -> Loaded {
+pub fn load_specs(dirs: &[(Layer, PathBuf)]) -> Loaded {
     let mut out = Loaded::default();
-    for dir in dirs {
+    for (layer, dir) in dirs {
         let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
             .map(|entries| {
                 entries
@@ -39,7 +56,11 @@ pub fn load_specs(dirs: &[PathBuf]) -> Loaded {
             .unwrap_or_default();
         files.sort();
         for file in files {
-            match read(&file) {
+            let checked = read(&file).and_then(|spec| match layer {
+                Layer::Person => keeps_shipped_trust(&out.specs, spec),
+                Layer::Shipped | Layer::Named => Ok(spec),
+            });
+            match checked {
                 Ok(spec) => {
                     out.specs.retain(|s| s.id != spec.id);
                     out.specs.push(spec);
@@ -49,6 +70,68 @@ pub fn load_specs(dirs: &[PathBuf]) -> Loaded {
         }
     }
     out
+}
+
+/// `spec` when it changes nothing a shipped provider of its id trusts: the one loaded from the
+/// system's directory, else the one compiled in. A provider no one ships is the person's own.
+fn keeps_shipped_trust(
+    loaded: &[ProviderSpec],
+    spec: ProviderSpec,
+) -> Result<ProviderSpec, String> {
+    let shipped = loaded
+        .iter()
+        .find(|s| s.id == spec.id)
+        .cloned()
+        .or_else(|| {
+            porter_provider::shipped_specs()
+                .into_iter()
+                .find(|s| s.id == spec.id)
+        });
+    match shipped.and_then(|shipped| widened(&shipped, &spec)) {
+        Some(what) => Err(format!(
+            "kept the shipped `{}`: this file would change {what}",
+            spec.id
+        )),
+        None => Ok(spec),
+    }
+}
+
+/// What `file` changes of what `shipped` trusts, if anything: its sign-in, or a server, an
+/// authenticated origin or a linked origin it does not name. Naming fewer is allowed.
+fn widened(shipped: &ProviderSpec, file: &ProviderSpec) -> Option<&'static str> {
+    let hosts = |spec: &ProviderSpec| -> BTreeSet<String> {
+        spec.capabilities
+            .iter()
+            .filter_map(|row| row.endpoint.as_ref())
+            .map(|e| EndpointUrl::parse(&e.0).map_or_else(|_| e.0.clone(), |u| u.origin().host))
+            .collect()
+    };
+    let origins = |spec: &ProviderSpec, linked: bool| -> BTreeSet<String> {
+        spec.capabilities
+            .iter()
+            .flat_map(|row| match linked {
+                true => row
+                    .linked_origins
+                    .iter()
+                    .map(|o| o.to_string())
+                    .collect::<Vec<_>>(),
+                false => row.auth_origins.iter().map(|o| o.to_string()).collect(),
+            })
+            .collect()
+    };
+    if file.auth != shipped.auth {
+        return Some("how it signs in");
+    }
+    if !hosts(file).is_subset(&hosts(shipped)) {
+        return Some("the servers it reaches");
+    }
+    if !origins(file, false).is_subset(&origins(shipped, false)) {
+        return Some("the servers that get its sign-in");
+    }
+    if !origins(file, true).is_subset(&origins(shipped, true)) {
+        return Some("the servers its links may reach");
+    }
+    None
 }
 
 fn read(file: &Path) -> Result<ProviderSpec, String> {
@@ -176,7 +259,7 @@ mod tests {
 
     #[test]
     fn the_shipped_files_load_and_each_is_served_or_named_unserved() {
-        let loaded = load_specs(&[shipped()]);
+        let loaded = load_specs(&[(Layer::Shipped, shipped())]);
         assert!(loaded.skipped.is_empty(), "{:?}", loaded.skipped);
         let io = FamilyIo {
             http: SharedHttp::new(HyperHttp::new()),
@@ -215,11 +298,108 @@ mod tests {
         .expect("write");
         std::fs::write(user.join("broken.toml"), "id = ").expect("write");
         std::fs::write(user.join("mismatch.toml"), nextcloud.clone()).expect("write");
-        let loaded = load_specs(&[system.clone(), user.clone(), PathBuf::from("/nonexistent")]);
+        let loaded = load_specs(&[
+            (Layer::Shipped, system.clone()),
+            (Layer::Person, user.clone()),
+            (Layer::Named, PathBuf::from("/nonexistent")),
+        ]);
         assert_eq!(loaded.specs.len(), 1);
         assert_eq!(loaded.specs[0].label, "Mine");
         assert_eq!(loaded.skipped.len(), 2);
         let _ = std::fs::remove_dir_all(system);
         let _ = std::fs::remove_dir_all(user);
+    }
+
+    fn microsoft() -> String {
+        std::fs::read_to_string(shipped().join("microsoft.toml")).expect("file")
+    }
+
+    /// Loads the shipped `microsoft.toml` from a system directory (or none), then `mine` as the
+    /// same id from a directory of `layer`.
+    fn over_microsoft(name: &str, system: bool, layer: Layer, mine: &str) -> Loaded {
+        let (sys, over) = (
+            scratch(&format!("{name}-sys")),
+            scratch(&format!("{name}-over")),
+        );
+        if system {
+            std::fs::write(sys.join("microsoft.toml"), microsoft()).expect("write");
+        }
+        std::fs::write(over.join("microsoft.toml"), mine).expect("write");
+        let loaded = load_specs(&[(Layer::Shipped, sys.clone()), (layer, over.clone())]);
+        let _ = std::fs::remove_dir_all(sys);
+        let _ = std::fs::remove_dir_all(over);
+        loaded
+    }
+
+    fn microsoft_of(loaded: &Loaded) -> &ProviderSpec {
+        loaded
+            .specs
+            .iter()
+            .find(|s| s.id.as_str() == "microsoft")
+            .expect("microsoft")
+    }
+
+    #[test]
+    fn the_persons_file_may_not_move_a_shipped_providers_servers_sign_in_or_origins() {
+        let shipped_file = microsoft();
+        let cases = [
+            (
+                "servers",
+                shipped_file.replace("https://graph.microsoft.com", "https://graph.evil.test"),
+                "the servers it reaches",
+            ),
+            (
+                "sign-in",
+                shipped_file.replace("issuer = \"microsoft\"", "issuer = \"google\""),
+                "how it signs in",
+            ),
+            (
+                "linked",
+                shipped_file.replace("\"*.sharepoint.com\"", "\"*.sharepoint.evil.test\""),
+                "the servers its links may reach",
+            ),
+        ];
+        for (name, mine, what) in cases {
+            assert_ne!(mine, shipped_file, "{name}: the line was found");
+            // Over the system's file (kept), and with none installed (the compiled-in file is
+            // the shipped one; nothing serves the id).
+            for system in [true, false] {
+                let loaded = over_microsoft(name, system, Layer::Person, &mine);
+                match system {
+                    true => assert_eq!(
+                        microsoft_of(&loaded),
+                        &porter_provider::shipped_specs()
+                            .into_iter()
+                            .find(|s| s.id.as_str() == "microsoft")
+                            .expect("shipped"),
+                        "{name}"
+                    ),
+                    false => assert!(loaded.specs.is_empty(), "{name}"),
+                }
+                let [(_, why)] = loaded.skipped.as_slice() else {
+                    panic!("{name} {system}: one skipped: {:?}", loaded.skipped);
+                };
+                assert!(why.contains(what), "{name}: {why}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_persons_file_may_reword_a_shipped_provider_and_a_named_directory_may_move_it() {
+        let reworded = microsoft().replace("label = \"Microsoft\"", "label = \"Work\"");
+        assert_ne!(reworded, microsoft());
+        let loaded = over_microsoft("reword", true, Layer::Person, &reworded);
+        assert!(loaded.skipped.is_empty(), "{:?}", loaded.skipped);
+        assert_eq!(microsoft_of(&loaded).label, "Work");
+
+        let moved = microsoft().replace("https://graph.microsoft.com", "https://127.0.0.1:4443");
+        let loaded = over_microsoft("named", true, Layer::Named, &moved);
+        assert!(loaded.skipped.is_empty(), "{:?}", loaded.skipped);
+        let graph = microsoft_of(&loaded)
+            .capabilities
+            .iter()
+            .filter_map(|row| row.endpoint.as_ref())
+            .any(|e| e.0 == "https://127.0.0.1:4443");
+        assert!(graph);
     }
 }

@@ -38,7 +38,7 @@ pub use loopback_io::{LoopbackServer, RedirectPath};
 pub use mint::mint_key;
 pub use pkce::{CodeChallenge, OAuthState, Pkce};
 pub use registry::{
-    AppReview, ClientRegistry, ClientTraits, MailRights, RegistryError, clients_toml, endpoints_of,
-    from_mailo,
+    AppReview, ClientRegistry, ClientTraits, MailRights, MovedEndpoints, RegistryError,
+    clients_toml, endpoints_of, from_mailo,
 };
 pub use renewal::{RENEW_MARGIN_SECONDS, RenewOutcome, Renewal, renew, renewal};

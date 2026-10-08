@@ -1,6 +1,7 @@
 //! Where accountd reads and writes, resolved from the environment (PLAN §2.3, §2.6): the one
 //! place the daemon names a path, so a test can give it scratch directories.
 
+use crate::providers::Layer;
 use std::path::{Path, PathBuf};
 
 /// Every path the daemon uses.
@@ -89,11 +90,40 @@ impl Paths {
             applications,
         })
     }
+
+    /// [`Paths::provider_dirs`] with whose each is, as `resolve` laid them out: the system's,
+    /// the person's, then the ones named on the command line.
+    pub fn provider_layers(&self) -> Vec<(Layer, PathBuf)> {
+        self.provider_dirs
+            .iter()
+            .enumerate()
+            .map(|(at, dir)| {
+                let layer = match at {
+                    0 => Layer::Shipped,
+                    1 => Layer::Person,
+                    _ => Layer::Named,
+                };
+                (layer, dir.clone())
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_provider_layers_are_the_system_the_person_then_the_named() {
+        let paths =
+            Paths::resolve(env(&[("HOME", "/home/ada")]), &[PathBuf::from("/x")]).expect("paths");
+        let layers: Vec<Layer> = paths
+            .provider_layers()
+            .into_iter()
+            .map(|(l, _)| l)
+            .collect();
+        assert_eq!(layers, [Layer::Shipped, Layer::Person, Layer::Named]);
+    }
 
     fn env<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
         move |name| {

@@ -71,6 +71,30 @@ pub enum ClientsFileError {
     Duplicate(Issuer, ClientChannel),
 }
 
+impl ClientEntry {
+    /// Whether the row's own `endpoints` leave its issuer's servers: some endpoint's origin
+    /// (scheme, host, port) is none of the origins the issuer publishes. A path may differ
+    /// (Microsoft's `organizations` or `consumers` tenant). A row with no endpoints stays.
+    pub fn leaves_the_issuer(&self) -> bool {
+        let origins = |e: &IssuerEndpoints| -> Vec<porter_core::Origin> {
+            [
+                Some(&e.authorize),
+                Some(&e.token),
+                e.revoke.as_ref(),
+                e.device.as_ref(),
+            ]
+            .into_iter()
+            .flatten()
+            .map(porter_core::EndpointUrl::origin)
+            .collect()
+        };
+        let published = origins(&self.issuer.endpoints());
+        self.endpoints
+            .as_ref()
+            .is_some_and(|own| origins(own).iter().any(|o| !published.contains(o)))
+    }
+}
+
 /// The clients one file's text declares, or why it is refused.
 pub fn parse_clients(text: &str) -> Result<ClientsFile, ClientsFileError> {
     let file: ClientsFile =

@@ -101,9 +101,24 @@ async fn main() -> ExitCode {
         Err(why) => return fail(why),
     };
 
-    let loaded = accountd::providers::load_specs(&paths.provider_dirs);
+    let loaded = accountd::providers::load_specs(&paths.provider_layers());
     for (file, why) in &loaded.skipped {
         eprintln!("accountd: skipped provider file {}: {why}", file.display());
+    }
+    // The families read the clients files themselves (porter-oauth's registry); this names a row
+    // of the person's own that tried to send a sign-in elsewhere (sec-4), whose endpoints the
+    // registry sets aside.
+    let own_clients = std::fs::read_to_string(&paths.clients_user)
+        .ok()
+        .and_then(|text| porter_provider::parse_clients(&text).ok())
+        .unwrap_or_default();
+    for row in own_clients.clients.iter().filter(|c| c.leaves_the_issuer()) {
+        eprintln!(
+            "accountd: {}: the {:?} client's own sign-in addresses are not the issuer's; \
+             the issuer's own are used",
+            paths.clients_user.display(),
+            row.issuer
+        );
     }
     let app_names =
         AppNames::new(table.clone(), paths.applications.clone()).with_agents(&loaded.specs);
@@ -186,7 +201,7 @@ async fn add(
         Ok(args) => args,
         Err(why) => return fail(why),
     };
-    let loaded = accountd::providers::load_specs(&paths.provider_dirs);
+    let loaded = accountd::providers::load_specs(&paths.provider_layers());
     for (file, why) in &loaded.skipped {
         eprintln!("accountd: skipped provider file {}: {why}", file.display());
     }
