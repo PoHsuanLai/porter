@@ -26,6 +26,15 @@ pub struct GrantKey {
     pub space: SpaceScope,
 }
 
+impl GrantKey {
+    /// Whether the key's Space may be decided for its app: an app's own Space belongs to that
+    /// app alone, so a key of one app over another's own Space is never granted. Checked against
+    /// the key's `app`, which is the caller's verified identity, never against a request's text.
+    pub fn space_is_open(&self) -> bool {
+        self.space.open_to(&self.app.name)
+    }
+}
+
 /// Whether the app acts for a person at the screen or on its own (indexing, backup).
 /// Background use is a separate grant (design/31 §5.5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]

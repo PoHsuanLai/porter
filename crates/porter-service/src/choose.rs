@@ -90,10 +90,15 @@ fn allow(
     let Some(fit) = fits.iter().find(|fit| fit.account.id == *account) else {
         return AccountsReply::Refused(Refusal::Dismissed);
     };
+    let key = asker.key(fit);
+    // No grant is ever recorded over another app's own Space.
+    if !key.space_is_open() {
+        return AccountsReply::Refused(Refusal::Denied);
+    }
     let chosen = candidate(fit, id.clone());
     let grant = Grant {
         id,
-        key: asker.key(fit),
+        key,
         decision: Decision::Allow,
         scope,
         at,

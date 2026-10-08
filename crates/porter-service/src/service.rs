@@ -504,12 +504,23 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             let registry = self.lock();
             registry.grant_of(caller, grant).and_then(|g| {
                 let account = registry.accounts.iter().find(|a| a.id == g.key.account)?;
-                Some((account.clone(), g.scope.clone(), g.decision, g.key.kind))
+                Some((
+                    account.clone(),
+                    g.scope.clone(),
+                    g.decision,
+                    g.key.kind,
+                    g.key.space_is_open(),
+                ))
             })
         };
-        let Some((account, scope, porter_core::consent::Decision::Allow, kind)) = found else {
+        let Some((account, scope, porter_core::consent::Decision::Allow, kind, open)) = found
+        else {
             return AccountsReply::Refused(Refusal::UnknownGrant);
         };
+        // A grant over another app's own Space is never used, whatever the store holds.
+        if !open {
+            return AccountsReply::Refused(Refusal::Denied);
+        }
         if account.state == AccountState::NeedsReauth {
             return AccountsReply::Refused(Refusal::NeedsReauth);
         }

@@ -16,7 +16,7 @@ use crate::errors::RefusedError;
 use crate::keys::{sealed_key, usable};
 use crate::launchers::Ask;
 use porter_core::capability::AgentProgram;
-use porter_core::consent::{Decision, GrantKey, Verdict, decide};
+use porter_core::consent::{Decision, GrantKey, Verdict, decide_key};
 use porter_core::wire::Refusal;
 use porter_core::{
     AccountId, AccountState, AgentState, CapabilityKind, Claim, GrantId, LauncherSession,
@@ -94,7 +94,7 @@ impl<H: Host, C: Callers> Peer<H, C> {
                 // The provider file the account was made from: inferd reaches a hosted model
                 // through it, so it never guesses from the account id.
                 details.extend(text(account.provider.as_str()).map(|v| ("provider".to_owned(), v)));
-                let word = match decide(&registry.grants, &key) {
+                let word = match decide_key(&registry.grants, &key) {
                     Verdict::Granted { grant, scope } => {
                         details.extend(text(grant.as_str()).map(|v| ("grant".to_owned(), v)));
                         // The scope's word, and beside it the session a `session` scope lasts

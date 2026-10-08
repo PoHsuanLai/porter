@@ -209,6 +209,18 @@ pub enum SpaceScope {
     Only(SpaceId),
 }
 
+impl SpaceScope {
+    /// Whether `app` may hold a decision over this scope: any app for `Any`, `desktop` and a
+    /// desktop-wide Space; only its owner for an app's own Space. `app` is the caller's verified
+    /// name (the bus's, the socket's), never one read from the id's text or a request.
+    pub fn open_to(&self, app: &AppName) -> bool {
+        match self {
+            SpaceScope::Any => true,
+            SpaceScope::Only(space) => space.owner().is_none_or(|owner| owner == *app),
+        }
+    }
+}
+
 impl fmt::Display for SpaceScope {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

@@ -133,6 +133,65 @@ fn decide_reads_the_newest_grant_for_the_exact_key() {
 }
 
 #[test]
+fn another_apps_own_space_is_refused_and_shared_spaces_pass() {
+    use Decision::Allow;
+    use GrantScope::Always;
+    let photos = || key("org.quire.Photos", Usage::Interactive);
+    let files = || key("org.quire.Files", Usage::Interactive);
+    // Photos' own Space 3, and a grant for Files over it slipped into the store.
+    let theirs = || in_space(files(), "app:org.quire.Photos:3");
+    let stored = vec![
+        grant("g1", theirs(), Allow, Always, 1),
+        grant(
+            "g2",
+            in_space(photos(), "app:org.quire.Photos:3"),
+            Allow,
+            Always,
+            1,
+        ),
+        grant("g3", in_space(files(), "work"), Allow, Always, 1),
+        grant("g4", in_space(files(), "desktop"), Allow, Always, 1),
+        grant("g5", files(), Allow, Always, 1),
+    ];
+    let cases: Vec<(&str, GrantKey, Verdict)> = vec![
+        (
+            "another app's own Space is refused, even with a grant stored",
+            theirs(),
+            Verdict::Denied,
+        ),
+        (
+            "and never asked",
+            in_space(
+                key("org.quire.Mail", Usage::Interactive),
+                "app:org.quire.Photos:3",
+            ),
+            Verdict::Denied,
+        ),
+        (
+            "the owner's own Space passes",
+            in_space(photos(), "app:org.quire.Photos:3"),
+            granted("g2", Always),
+        ),
+        (
+            "a desktop-wide Space passes",
+            in_space(files(), "work"),
+            granted("g3", Always),
+        ),
+        (
+            "outside any Space passes",
+            in_space(files(), "desktop"),
+            granted("g4", Always),
+        ),
+        ("any Space passes", files(), granted("g5", Always)),
+    ];
+    for (name, asked, expected) in cases {
+        assert_eq!(decide_key(&stored, &asked), expected, "{name}");
+    }
+    assert!(!theirs().space_is_open());
+    assert!(in_space(files(), "work").space_is_open());
+}
+
+#[test]
 fn decide_is_generic_over_the_key() {
     let grants = vec![Grant {
         id: GrantId::parse("g1").expect("grant id"),

@@ -3,7 +3,7 @@
 
 use porter_core::SpaceScope;
 use porter_core::capability::VocabVersion;
-use porter_core::consent::{Decision, Grant, GrantKey, Usage, Verdict, decide};
+use porter_core::consent::{Decision, Grant, GrantKey, Usage, Verdict, decide_key};
 use porter_core::store::{AccountToggle, Persisted};
 use porter_core::wire::Refusal;
 use porter_core::{
@@ -101,7 +101,7 @@ impl Registry {
     pub(crate) fn verdicts(&self, need: &Need, asker: Asker<'_>) -> Vec<Verdict> {
         self.fitting(need)
             .iter()
-            .map(|fit| decide(&self.grants, &asker.key(fit)))
+            .map(|fit| decide_key(&self.grants, &asker.key(fit)))
             .collect()
     }
 
@@ -109,7 +109,7 @@ impl Registry {
     pub(crate) fn candidates(&self, need: &Need, asker: Asker<'_>) -> Vec<Candidate> {
         self.fitting(need)
             .iter()
-            .filter_map(|fit| match decide(&self.grants, &asker.key(fit)) {
+            .filter_map(|fit| match decide_key(&self.grants, &asker.key(fit)) {
                 Verdict::Granted { grant, .. } => Some(candidate(fit, grant)),
                 Verdict::Denied | Verdict::Ask => None,
             })
@@ -156,6 +156,10 @@ impl Registry {
             .grant_of(app, id)
             .filter(|g| g.decision == Decision::Allow)
             .ok_or(Refusal::UnknownGrant)?;
+        // A grant over another app's own Space is never used, whatever the store holds.
+        if !grant.key.space_is_open() {
+            return Err(Refusal::Denied);
+        }
         let account = self
             .accounts
             .iter()

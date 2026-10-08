@@ -5,4 +5,5 @@ mod grant_kind;
 mod local;
 mod persist;
 mod session_scope;
+mod space_owner;
 mod sync_grant;
