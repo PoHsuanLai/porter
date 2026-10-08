@@ -315,6 +315,83 @@ async fn an_app_adds_an_account_through_a_family_is_granted_it_and_signs_it_in_a
     );
 }
 
+/// The mailo ask: an app adds an account that is already here (the same login at the same
+/// server). The sheet says so at the review and stores nothing, and the app is told which
+/// account it is, so it can go on to ask for a grant of it.
+#[tokio::test]
+async fn adding_an_account_that_is_already_here_tells_the_app_which_one_it_is() {
+    use porter_core::sheet::{FieldAnswer, FieldKind, FieldValue, ServiceChoice, SheetInput};
+    use porter_core::{ProviderId, SecretText, Toggle};
+    use porter_fake::{FixedClock, NOW};
+    use porter_fake_servers::{FakeDav, FakeDns};
+    use porter_families::{FamilyProvider, GenericProvider};
+    use porter_http::{HyperHttp, SharedHttp};
+    use porter_provider::parse_provider;
+    use porter_secrets::MemorySecrets;
+    use porter_service::{AccountService, Registry};
+
+    let dav = FakeDav::start("bob", "hunter2").await.expect("dav");
+    let spec =
+        parse_provider(include_str!("../../../../providers/generic-dav.toml")).expect("file");
+    let provider = FamilyProvider::Generic(GenericProvider::new(
+        spec,
+        SharedHttp::new(HyperHttp::new()),
+        FakeDns::new(),
+    ));
+    let pick = SheetInput::Pick(ProviderId::parse("generic-dav").expect("id"));
+    let form = SheetInput::Submit(vec![
+        FieldAnswer {
+            kind: FieldKind::Server,
+            value: FieldValue::Plain(format!("{}/dav/calendar/", dav.base_url())),
+        },
+        FieldAnswer {
+            kind: FieldKind::Username,
+            value: FieldValue::Plain("bob".into()),
+        },
+        FieldAnswer {
+            kind: FieldKind::Password,
+            value: FieldValue::Secret(SecretText::new("hunter2")),
+        },
+    ]);
+    let review = SheetInput::Confirm(vec![ServiceChoice {
+        kind: porter_core::CapabilityKind::Calendar,
+        toggle: Toggle::On,
+    }]);
+    let sheets = ScriptedSheets::answering([]).conversing([
+        vec![pick.clone(), form.clone(), review],
+        // The same login again: the sheet stops at the review and says it is there already; the
+        // person closes it.
+        vec![pick, form, SheetInput::Dismiss],
+    ]);
+    let service = Arc::new(AccountService::new(
+        vec![provider],
+        Registry::default(),
+        MemorySecrets::default(),
+        sheets,
+        FixedClock(NOW),
+    ));
+    let calendar = app_over(&service, "org.quire.Calendar");
+    let added = calendar
+        .add_account(
+            porter_core::wire::ProviderHint::Any,
+            &ParentWindow::Unparented,
+        )
+        .await
+        .expect("added");
+    let held = service.registry().accounts.clone();
+
+    assert_eq!(
+        calendar
+            .add_account(
+                porter_core::wire::ProviderHint::Any,
+                &ParentWindow::Unparented,
+            )
+            .await,
+        Err(ClientError::AlreadyAdded(added))
+    );
+    assert_eq!(service.registry().accounts, held, "nothing was added");
+}
+
 /// An HTTP client that finds nothing anywhere: every address publishes no server.
 #[derive(Debug, Clone)]
 struct NothingPublished;

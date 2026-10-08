@@ -582,6 +582,7 @@ fn every_request_and_reply_round_trips() {
         AccountsReply::Availability(Availability::Unsupported),
         AccountsReply::Chosen(candidate()),
         AccountsReply::Added(account_id("cloud")),
+        AccountsReply::AlreadyAdded(account_id("cloud")),
         AccountsReply::Reauthenticated,
         AccountsReply::Grants(vec![grant()]),
         AccountsReply::Revoked,

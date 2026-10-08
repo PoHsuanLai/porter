@@ -21,6 +21,10 @@ pub enum AccountsReply {
     Chosen(Candidate),
     /// For `AddAccount`: the account added.
     Added(AccountId),
+    /// For `AddAccount`: the sheet found the account is already here (the same login at the same
+    /// servers, or the same agent), and stored nothing. It is that account's id, so the app can
+    /// go on to ask for a grant of it; nothing is granted by this answer.
+    AlreadyAdded(AccountId),
     /// For `Reauthenticate`: signed in again.
     Reauthenticated,
     /// For `ListGrants`.

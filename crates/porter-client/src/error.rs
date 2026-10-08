@@ -1,5 +1,6 @@
 //! porter-client's errors.
 
+use porter_core::AccountId;
 use porter_core::wire::Refusal;
 #[cfg(feature = "infer")]
 use porter_infer::{InferRefusal, SessionError};
@@ -32,6 +33,10 @@ pub enum ClientError {
     /// accountd refused.
     #[error("refused: {0:?}")]
     Refused(Refusal),
+    /// `add_account`: the person signed in to an account that was already here, so nothing was
+    /// added. It is that account; ask for a grant of it (`find`, then `request_grant`).
+    #[error("that account is already added: {0}")]
+    AlreadyAdded(AccountId),
     /// inferd refused (feature `infer`).
     #[cfg(feature = "infer")]
     #[error(transparent)]

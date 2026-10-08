@@ -61,6 +61,8 @@ pub(crate) enum Job {
 enum Stored {
     Added(AccountId),
     Reauthenticated,
+    /// Nothing stored: the sign-in showed this account, which was already here.
+    AlreadyThere(AccountId),
 }
 
 /// A sign-in that fails before it starts or answers.
@@ -146,6 +148,8 @@ struct Run<S> {
     /// Whether the sign-in is to be polled while the sheet is idle.
     polling: bool,
     stored: Option<Stored>,
+    /// The account the sign-in showed again, when it ended `AlreadyAdded`.
+    already: Option<AccountId>,
 }
 
 /// Who asks for a sign-in again.
@@ -172,6 +176,8 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         let job = Job::Add { hint, allow };
         match self.drive(caller, window, &job).await {
             Ok(Stored::Added(id)) => AccountsReply::Added(id),
+            // The app is told which account it is, and may ask for a grant of it.
+            Ok(Stored::AlreadyThere(id)) => AccountsReply::AlreadyAdded(id),
             Ok(Stored::Reauthenticated) => AccountsReply::Refused(Refusal::Unavailable),
             Err(refusal) => AccountsReply::Refused(refusal),
         }
@@ -207,7 +213,9 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         };
         match self.drive(caller, window, &job).await {
             Ok(Stored::Reauthenticated) => AccountsReply::Reauthenticated,
-            Ok(Stored::Added(_)) => AccountsReply::Refused(Refusal::Unavailable),
+            Ok(Stored::Added(_) | Stored::AlreadyThere(_)) => {
+                AccountsReply::Refused(Refusal::Unavailable)
+            }
             Err(refusal) => AccountsReply::Refused(refusal),
         }
     }
@@ -271,6 +279,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             signed: None,
             polling: false,
             stored: None,
+            already: None,
         };
         let mut queue = VecDeque::new();
         if matches!(sheet.stage, Stage::Working(_)) {
@@ -295,7 +304,9 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                             .map_err(|_| Refusal::Unavailable)?;
                         None
                     }
-                    SheetEffect::Close(end) => return finish(end, run.stored.take()),
+                    SheetEffect::Close(end) => {
+                        return finish(end, run.stored.take(), run.already.take());
+                    }
                 };
                 if let Some(event) = event {
                     let (next, effects) = step(sheet, event);
@@ -400,8 +411,9 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                     Job::Add { .. },
                     Stage::Working(provider) | Stage::Confirming { provider, .. },
                 ) = (job, &sheet.stage)
-                    && self.already_added(provider, &step)
+                    && let Some(held) = self.already_added(provider, &step)
                 {
+                    run.already = Some(held);
                     if let Some(mut signin) = run.signin.take() {
                         let _ = signin.next(SignInInput::Cancel).await;
                     }
@@ -455,12 +467,20 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
 }
 
 /// What a finished sheet answers.
-fn finish(end: SheetEnd, stored: Option<Stored>) -> Result<Stored, Refusal> {
-    match (end, stored) {
-        (SheetEnd::Added, Some(stored)) => Ok(stored),
-        (SheetEnd::Added, None) => Err(Refusal::Unavailable),
-        (SheetEnd::Dismissed, _) => Err(Refusal::Dismissed),
-        (SheetEnd::Failed(fault), _) => Err(refusal_of(fault)),
+fn finish(
+    end: SheetEnd,
+    stored: Option<Stored>,
+    already: Option<AccountId>,
+) -> Result<Stored, Refusal> {
+    match (end, stored, already) {
+        (SheetEnd::Added, Some(stored), _) => Ok(stored),
+        (SheetEnd::Added, None, _) => Err(Refusal::Unavailable),
+        (SheetEnd::Dismissed, _, _) => Err(Refusal::Dismissed),
+        // The account is here already: the app is told which, not that it failed.
+        (SheetEnd::Failed(SignInFault::AlreadyAdded), _, Some(held)) => {
+            Ok(Stored::AlreadyThere(held))
+        }
+        (SheetEnd::Failed(fault), _, _) => Err(refusal_of(fault)),
     }
 }
 
@@ -540,6 +560,8 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                 .map_or(AccountsReply::Refused(Refusal::NoFittingAccount), |c| {
                     AccountsReply::Chosen(c)
                 }),
+            // Not an answer to a chooser: the app asks again and is offered the account.
+            AccountsReply::AlreadyAdded(_) => AccountsReply::Refused(Refusal::Unavailable),
             refused => refused,
         }
     }

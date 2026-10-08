@@ -80,7 +80,13 @@ fn every_answer_survives_the_response_and_keeps_its_code() {
         (
             "added",
             SheetKind::AddAccount,
-            AccountsReply::Added(added),
+            AccountsReply::Added(added.clone()),
+            0,
+        ),
+        (
+            "already here",
+            SheetKind::AddAccount,
+            AccountsReply::AlreadyAdded(added),
             0,
         ),
         (

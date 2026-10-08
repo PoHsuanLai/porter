@@ -750,9 +750,10 @@ async fn the_same_agent_added_twice_is_already_added_whatever_its_sign_in_shows(
         .expect("steps")
         .extend([review("other"), SignInStep::Done(signed("other"))]);
     kept.shown.lock().expect("shown").clear();
+    // The app is told which account it already is (the mailo ask), not that adding failed.
     assert_eq!(
         added(&service, &caller).await,
-        AccountsReply::Refused(Refusal::Unavailable)
+        AccountsReply::AlreadyAdded(held[0].id.clone())
     );
     assert_eq!(kinds(&kept.shown).last(), Some(&"failed"));
     assert_eq!(service.registry().accounts, held);
@@ -768,7 +769,7 @@ async fn the_same_login_added_twice_ends_at_the_review_and_stores_nothing_more()
     };
     let held = service.registry().accounts.clone();
     let key = SecretKey {
-        account: first,
+        account: first.clone(),
         purpose: SecretPurpose::IncomingPassword,
     };
     let secret = kept.secrets.get(&key).await;
@@ -781,7 +782,7 @@ async fn the_same_login_added_twice_ends_at_the_review_and_stores_nothing_more()
     kept.shown.lock().expect("shown").clear();
     assert_eq!(
         added(&service, &caller).await,
-        AccountsReply::Refused(Refusal::Unavailable)
+        AccountsReply::AlreadyAdded(first)
     );
     // The sheet got as far as the review and said it was already there: no confirmation was
     // sent, and the account that was there is as it was.

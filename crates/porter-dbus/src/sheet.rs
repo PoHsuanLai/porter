@@ -15,7 +15,10 @@
 //!   other `Refusal`, among them `denied` for "Don't Allow").
 //! - **Results.** `Choose` (code 0): the chosen candidate as `candidate_to_dbus` gives it, its
 //!   fields by name plus `path` (`o`) and `label` (`s`). `AddAccount` (code 0): `account` (the
-//!   exact id) and `path`. `Reauthenticate` (code 0): empty. Code 1: empty. Code 2: `refusal`.
+//!   exact id) and `path`, and `already_added` (`b`, true) when the sheet found the account was
+//!   already here and stored nothing (`AccountsReply::AlreadyAdded`; a reader that does not
+//!   know the key reads it as the account added). `Reauthenticate` (code 0): empty. Code 1:
+//!   empty. Code 2: `refusal`.
 
 use crate::args::Details;
 use crate::codec::{candidate_from_dbus, candidate_to_dbus};
@@ -91,6 +94,7 @@ const REFUSAL_KEY: &str = "refusal";
 const PATH_KEY: &str = "path";
 const LABEL_KEY: &str = "label";
 const ACCOUNT_KEY: &str = "account";
+const ALREADY_KEY: &str = "already_added";
 
 fn text_value(text: &str) -> Option<OwnedValue> {
     OwnedValue::try_from(Value::from(text.to_owned())).ok()
@@ -139,13 +143,18 @@ pub fn response_of(kind: SheetKind, reply: &AccountsReply) -> Response {
         }
         (SheetKind::AddAccount, AccountsReply::Added(account)) => Response {
             code: ResponseCode::Done,
-            results: [
-                path_value(&account_path(account)).map(|v| (PATH_KEY.to_owned(), v)),
-                text_value(account.as_str()).map(|v| (ACCOUNT_KEY.to_owned(), v)),
-            ]
-            .into_iter()
-            .flatten()
-            .collect(),
+            results: account_results(account),
+        },
+        (SheetKind::AddAccount, AccountsReply::AlreadyAdded(account)) => Response {
+            code: ResponseCode::Done,
+            results: account_results(account)
+                .into_iter()
+                .chain(
+                    OwnedValue::try_from(Value::from(true))
+                        .ok()
+                        .map(|v| (ALREADY_KEY.to_owned(), v)),
+                )
+                .collect(),
         },
         (SheetKind::Reauthenticate, AccountsReply::Reauthenticated) => Response {
             code: ResponseCode::Done,
@@ -153,6 +162,17 @@ pub fn response_of(kind: SheetKind, reply: &AccountsReply) -> Response {
         },
         _ => other(Refusal::Unavailable),
     }
+}
+
+/// An account's `path` and `account` results.
+fn account_results(account: &AccountId) -> Details {
+    [
+        path_value(&account_path(account)).map(|v| (PATH_KEY.to_owned(), v)),
+        text_value(account.as_str()).map(|v| (ACCOUNT_KEY.to_owned(), v)),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 fn take_text(results: &mut Details, key: &str) -> Result<String, CoreError> {
@@ -178,9 +198,14 @@ fn chosen(mut results: Details) -> Result<AccountsReply, CoreError> {
 fn added(mut results: Details) -> Result<AccountsReply, CoreError> {
     let path = take_path(&mut results, PATH_KEY)?;
     let id = AccountId::parse(&take_text(&mut results, ACCOUNT_KEY)?)?;
-    match account_path(&id) == path.as_str() {
-        true => Ok(AccountsReply::Added(id)),
-        false => Err(bad("added: the path is not the account's")),
+    let already = match results.remove(ALREADY_KEY) {
+        None => false,
+        Some(value) => bool::try_from(value).map_err(|_| bad("`already_added` is not a bool"))?,
+    };
+    match (account_path(&id) == path.as_str(), already) {
+        (true, false) => Ok(AccountsReply::Added(id)),
+        (true, true) => Ok(AccountsReply::AlreadyAdded(id)),
+        (false, _) => Err(bad("added: the path is not the account's")),
     }
 }
 

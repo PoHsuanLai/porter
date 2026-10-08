@@ -121,7 +121,9 @@ impl<T: Transport> Accounts<T> {
         }
     }
 
-    /// Opens the add-account sheet; the account added.
+    /// Opens the add-account sheet; the account added. An account the person signs in to that
+    /// was already here is `ClientError::AlreadyAdded` with its id: nothing was added, and the app
+    /// may ask for a grant of it.
     pub async fn add_account(
         &self,
         hint: ProviderHint,
@@ -133,6 +135,7 @@ impl<T: Transport> Accounts<T> {
         };
         match self.transport.call(request).await? {
             AccountsReply::Added(account) => Ok(account),
+            AccountsReply::AlreadyAdded(account) => Err(ClientError::AlreadyAdded(account)),
             other => Err(unexpected(other)),
         }
     }

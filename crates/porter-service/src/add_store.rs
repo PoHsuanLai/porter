@@ -131,18 +131,24 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    /// Whether the sign-in's `step` shows an account that `provider` already has: the same login at
-    /// the same servers, or the same agent. Only the review and the finished sign-in show one.
-    pub(crate) fn already_added(&self, provider: &ProviderId, step: &SignInStep) -> bool {
+    /// The account `provider` already has that the sign-in's `step` shows again, if any: the same
+    /// login at the same servers, or the same agent. Only the review and the finished sign-in
+    /// show one.
+    pub(crate) fn already_added(
+        &self,
+        provider: &ProviderId,
+        step: &SignInStep,
+    ) -> Option<AccountId> {
         let endpoints = match step {
             SignInStep::Review { endpoints, .. } => endpoints,
             SignInStep::Done(signed) => &signed.endpoints,
-            _ => return false,
+            _ => return None,
         };
         self.lock()
             .accounts
             .iter()
-            .any(|a| duplicate(a, provider, endpoints))
+            .find(|a| duplicate(a, provider, endpoints))
+            .map(|a| a.id.clone())
     }
 
     /// Stores the account `signed` describes, with the person's service `choices`, and the
