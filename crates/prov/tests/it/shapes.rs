@@ -57,6 +57,7 @@ fn every_actor() -> Vec<Actor> {
         },
         Actor::Acp {
             program: AgentProgram::parse("claude-code").expect("program"),
+            label: Some(AgentLabel("Claude Code".into())),
         },
         Actor::Cli,
         Actor::App {
@@ -179,16 +180,41 @@ fn records_written_before_execute_and_acp_still_read() {
     assert_eq!(kinds.len(), 9);
 }
 
+/// An ACP actor as the build before `label` wrote it reads with no label and writes back the same.
+#[test]
+fn an_acp_actor_written_before_its_label_still_reads() {
+    const UNLABELLED: &str = r#"{"kind":"acp","v":{"program":"claude-code"}}"#;
+    let actor: Actor = serde_json::from_str(UNLABELLED).expect("unlabelled acp actor reads");
+    assert_eq!(
+        actor,
+        Actor::Acp {
+            program: AgentProgram::parse("claude-code").expect("program"),
+            label: None,
+        }
+    );
+    assert_eq!(round_trip(&actor), UNLABELLED);
+}
+
 #[test]
 fn an_acp_actor_pins_its_json_and_is_its_own_kind() {
     let actor = Actor::Acp {
         program: AgentProgram::parse("claude-code").expect("program"),
+        label: None,
     };
     assert_eq!(
         round_trip(&actor),
         r#"{"kind":"acp","v":{"program":"claude-code"}}"#
     );
     assert_eq!(actor.kind(), ActorKind::Acp);
+    let labelled = Actor::Acp {
+        program: AgentProgram::parse("claude-code").expect("program"),
+        label: Some(AgentLabel("Claude Code".into())),
+    };
+    assert_eq!(
+        round_trip(&labelled),
+        r#"{"kind":"acp","v":{"program":"claude-code","label":"Claude Code"}}"#
+    );
+    assert_eq!(labelled.kind(), ActorKind::Acp);
     assert_eq!(ActorKind::Acp.slug(), "acp");
     assert!(
         serde_json::from_str::<Actor>(r#"{"kind":"acp","v":{"program":"Claude Code"}}"#).is_err(),

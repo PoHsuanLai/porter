@@ -32,6 +32,11 @@ pub enum Actor {
     Acp {
         /// The agent's program, in porter-core's grammar (`claude-code`).
         program: AgentProgram,
+        /// The name the person gave it in agents.toml (`label = "Claude Code"`), passed on by the
+        /// host. Never the agent's own handshake title: an agent could call itself "System".
+        /// Absent in records written before the field, and left out of the JSON when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        label: Option<AgentLabel>,
     },
     /// A process running `quire-do`: a terminal cannot tell the person from an agent typing in it.
     Cli,
@@ -55,6 +60,12 @@ pub enum Actor {
     /// A change nobody explained (a file that changed behind our back).
     Unknown,
 }
+
+/// What the person calls an external agent, as they wrote it in agents.toml. Free text: it is
+/// shown, never parsed or matched.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct AgentLabel(pub String);
 
 /// Which companion agent acted.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]

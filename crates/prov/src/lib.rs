@@ -22,7 +22,7 @@ mod message;
 mod scope;
 pub mod trace;
 
-pub use actor::{Actor, ActorKind, AgentRole, Channel, SystemPart};
+pub use actor::{Actor, ActorKind, AgentLabel, AgentRole, Channel, SystemPart};
 pub use agent::{Address, AgentRef, Crossing};
 pub use consent::{
     BeyondReceipt, ConfirmId, ConfirmReceipt, InputProof, Witness, declassify, endorse,
