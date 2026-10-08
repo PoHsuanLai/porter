@@ -1,7 +1,10 @@
 # The caller table accountd and syncd read (`[[caller]]` rows of `app`, optional `unit`, `role`).
 # Install to /etc/porter/callers.toml; a person's own rows go in
-# $XDG_CONFIG_HOME/porter/callers.toml and win over these. A caller is found by its cgroup: an app
-# scope (`app-…-<app id>-N.scope`) by its app id, a daemon by the unit named in its row. Roles:
+# $XDG_CONFIG_HOME/porter/callers.toml and win over these. A caller is found by its process: a
+# Flatpak app by its sandbox's own metadata, a native app scope (`app-…-<app id>-N.scope`) by its
+# app id, a daemon by the unit named in its row (a service only as the unit's main process, as the
+# systemd manager says; a scope, which has none, as any process in it). A row with a unit gives
+# its role to that unit alone, never to an app scope of the same id. Roles:
 # `settings` (the Settings app), `sheet_host` (draws the accounts sheets), `porter_daemon` (inferd
 # and syncd: the Peer methods, ResolveKey), `agent`, `cua`, `agent_launcher`; anything unlisted is an `app`.
 # `agent_launcher` (the launcher that runs external coding agents, docket-acp) may call
@@ -18,13 +21,16 @@
 # can use Storage", not "org.quire.Sync can use storage"); an app without one is named by its
 # desktop entry (`<app id>.desktop`, its `Name=`), else by its id.
 
-# The Settings app (detent).
+# The Settings app (detent), as the unit the desktop runs it in: any program may start an app
+# scope called `app-org.quire.Settings-N.scope`, so the role is not given by the app's name.
 [[caller]]
 app = "org.quire.Settings"
+unit = "org.quire.Settings.service"
 role = "settings"
 name = "Settings"
 
-# The shell that draws the accounts sheets.
+# The shell that draws the accounts sheets. A scope has no main process: while the shell is not
+# running, another program of the person's could start a scope of this name.
 [[caller]]
 app = "org.quire.Shell"
 unit = "sill-shell.scope"

@@ -36,7 +36,9 @@ pub use agents::{
     ROUTE_ACCOUNT, ROUTE_MODEL, RouteArg,
 };
 pub use args::{AppArg, CandidateArg, Details, NeedArg, TokenArg, VerdictArg};
-pub use callers::{AppTitle, Caller, CallerRole, CallerRow, CallerTable, Callers, ProcCallers};
+pub use callers::{
+    AppTitle, Caller, CallerRole, CallerRow, CallerTable, Callers, MainPids, ProcCallers,
+};
 pub use codec::{candidate_from_dbus, candidate_to_dbus, need_from_dbus, need_to_dbus};
 pub use codec_grants::{grant_from_dbus, grant_to_dbus, token_from_dbus, token_to_dbus};
 pub use failure::{BusFailure, classify, is_invalid_args, launcher_fault_of, refusal_of};

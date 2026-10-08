@@ -78,11 +78,10 @@ fn the_sample_caller_table_gives_settings_the_sheet_host_and_both_daemons_their_
     use porter_dbus::CallerRole;
     let table = accountd::table_from_toml(&dist("callers.toml")).expect("the sample reads");
     let app = |name: &str| AppName::parse(name).expect("name");
-    assert_eq!(
-        table.role_of(&app("org.quire.Settings")),
-        CallerRole::Settings
-    );
+    // Settings is its unit (sec-3 a): an app scope named `org.quire.Settings` is only an app.
+    assert_eq!(table.role_of(&app("org.quire.Settings")), CallerRole::App);
     for (unit, role) in [
+        ("org.quire.Settings.service", CallerRole::Settings),
         ("sill-shell.scope", CallerRole::SheetHost),
         ("inferd.service", CallerRole::PorterDaemon),
         ("syncd.service", CallerRole::PorterDaemon),

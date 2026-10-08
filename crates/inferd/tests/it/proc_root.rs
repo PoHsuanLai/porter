@@ -77,18 +77,33 @@ fn fake_proc(root: &Path, pid: u32, cgroup: Option<&str>) {
     }
 }
 
+/// The fixture's word that `pid` is the main process of companiond's unit.
+#[cfg(feature = "test-proc-root")]
+fn main_of_companiond(root: &Path, pid: u32) {
+    std::fs::create_dir_all(root.join("units")).expect("units");
+    std::fs::write(root.join("units/companiond.service"), pid.to_string()).expect("main pid");
+}
+
 #[cfg(feature = "test-proc-root")]
 #[tokio::test(flavor = "multi_thread")]
 async fn a_caller_in_the_fake_proc_root_is_named_and_one_outside_it_is_not() {
     let named = bus::PrivateBus::start();
     let root = named.scratch().join("proc");
     fake_proc(&root, std::process::id(), Some(CGROUP));
+    main_of_companiond(&root, std::process::id());
     assert!(answered(&named, &root).await);
 
     let nobody = bus::PrivateBus::start();
     let root = nobody.scratch().join("proc");
     fake_proc(&root, std::process::id(), None);
     assert!(!answered(&nobody, &root).await);
+
+    // In the unit's cgroup but not its main process (it moved itself in): nobody.
+    let moved = bus::PrivateBus::start();
+    let root = moved.scratch().join("proc");
+    fake_proc(&root, std::process::id(), Some(CGROUP));
+    main_of_companiond(&root, std::process::id() + 1);
+    assert!(!answered(&moved, &root).await);
 }
 
 #[cfg(not(feature = "test-proc-root"))]

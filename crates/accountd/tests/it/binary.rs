@@ -99,6 +99,13 @@ fn proc_tree(dir: &Path) -> PathBuf {
         "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-org.example.Probe-1.scope\n",
     )
     .expect("cgroup");
+    // A Flatpak app is known by its sandbox's metadata, not its scope's name.
+    std::fs::create_dir_all(pid.join("root")).expect("root");
+    std::fs::write(
+        pid.join("root/.flatpak-info"),
+        "[Application]\nname=org.example.Probe\n",
+    )
+    .expect("flatpak-info");
     root
 }
 

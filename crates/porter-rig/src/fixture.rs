@@ -1,15 +1,20 @@
 //! The identity of the rig's client, as the daemons read it.
 //!
-//! accountd, syncd and inferd name the process behind a bus connection from
-//! `<proc root>/<pid>/cgroup` (the bus gives the pid). A build with the `test-proc-root` feature
-//! reads `<proc root>` from `ACCOUNTD_PROC_ROOT`, `SYNCD_PROC_ROOT` or `INFERD_PROC_ROOT`
-//! instead of `/proc`, and a release build ignores the variable. A scenario therefore:
+//! accountd, syncd and inferd name the process behind a bus connection from `<proc root>/<pid>`
+//! (the bus gives the pid): its `cgroup`, and for a Flatpak app its sandbox's metadata,
+//! `root/.flatpak-info` (a Flatpak scope's name alone proves nothing). A service unit's role goes
+//! only to the unit's main process, which a fixture tree states in `<proc root>/units/<unit>`
+//! (the decimal pid) where the real daemons ask the systemd manager. A build with the
+//! `test-proc-root` feature reads `<proc root>` from `ACCOUNTD_PROC_ROOT`, `SYNCD_PROC_ROOT` or
+//! `INFERD_PROC_ROOT` instead of `/proc`, and a release build ignores the variable. A scenario
+//! therefore:
 //!
 //! 1. makes a directory, `proc`, and starts each daemon (a `test-proc-root` build) with
 //!    `ACCOUNTD_PROC_ROOT=<dir>/proc` (and the other two);
 //! 2. runs `porter-rig-client --app-id org.example.App --proc-root <dir>/proc <command>`, which
-//!    writes `<dir>/proc/<its pid>/cgroup` naming it a Flatpak app `org.example.App` before it
-//!    connects and removes it when it ends; or, for an app that is some other process, runs
+//!    writes `<dir>/proc/<its pid>/cgroup` and `root/.flatpak-info` naming it a Flatpak app
+//!    `org.example.App` before it connects and removes them when it ends; or, for an app that is
+//!    some other process, runs
 //!    `porter-rig-client --app-id org.example.App --proc-root <dir>/proc write-identity --pid N`.
 //!
 //! The role of the app (App, Settings, SheetHost, PorterDaemon, ...) is the daemons' own table
@@ -37,6 +42,11 @@ pub fn cgroup_text(app: &str, pid: u32) -> String {
     )
 }
 
+/// The text of `<pid>/root/.flatpak-info` for Flatpak app `app`.
+pub fn flatpak_info_text(app: &str, pid: u32) -> String {
+    format!("[Application]\nname={app}\n\n[Instance]\ninstance-id={pid}\n")
+}
+
 /// A written identity. Dropping it removes it.
 #[derive(Debug)]
 pub struct Identity {
@@ -44,11 +54,16 @@ pub struct Identity {
 }
 
 impl Identity {
-    /// Names process `pid` Flatpak app `app` under `proc_root`.
+    /// Names process `pid` Flatpak app `app` under `proc_root`: its scope and its sandbox's
+    /// metadata.
     pub fn write(proc_root: &Path, app: &str, pid: u32) -> io::Result<Self> {
         let dir = proc_root.join(pid.to_string());
-        std::fs::create_dir_all(&dir)?;
+        std::fs::create_dir_all(dir.join("root"))?;
         std::fs::write(dir.join("cgroup"), cgroup_text(app, pid))?;
+        std::fs::write(
+            dir.join("root").join(".flatpak-info"),
+            flatpak_info_text(app, pid),
+        )?;
         Ok(Self { dir })
     }
 

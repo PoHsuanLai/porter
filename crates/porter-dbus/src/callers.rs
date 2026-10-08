@@ -1,10 +1,19 @@
 //! Who is calling: a bus connection's unique name to a [`Caller`] (an app and a role), for both
-//! daemons (porter PLAN §2.1). The process behind the connection is found through the bus
-//! (pid) and `/proc/<pid>/cgroup` alone, which no ptrace check guards, so the same code runs
-//! inside a Landlock domain: `app-flatpak-<id>-<n>.scope` is a Flatpak app, `app-<id>-<n>.scope`
-//! a native app (named by `identity_of`), `<name>.service` a daemon's unit. The role comes from a
-//! table keyed by app id and unit name (`callers.toml`, a user file wins; the daemons read the
-//! files). An unidentified sender is refused by the daemon (`AccessDenied`), never given a role.
+//! daemons (porter PLAN §2.1). The process behind the connection is found through the bus (pid),
+//! then `/proc/<pid>`: a Flatpak app by its sandbox's own metadata (`root/.flatpak-info`, never
+//! by its scope's name), `app-<id>-<n>.scope` a native app (named by `identity_of`),
+//! `<name>.service` a daemon's unit when the process is that unit's main process (the systemd
+//! manager's `MainPID`), `<name>.scope` outside `app-` a scope the table names. The role comes
+//! from a table keyed by app id and unit name (`callers.toml`, a user file wins; the daemons read
+//! the files). An unidentified sender is refused by the daemon (`AccessDenied`), never given a
+//! role.
+//!
+//! What this cannot prove: every process of the person's runs as the same user, so a scope row
+//! (`sill-shell.scope`, which has no main process) is as strong as "the scope was there first"
+//! (any program of theirs may start a scope of that name while the shell is not running, or move
+//! itself into it), and a service row as strong as the manager's word on its main process. A
+//! Flatpak app's metadata is read through its root, which a reader inside a Landlock domain is
+//! refused: there no caller is a Flatpak app.
 
 use crate::BusConnection;
 use zbus::fdo::DBusProxy;
@@ -151,23 +160,44 @@ impl<T: Callers> Callers for std::sync::Arc<T> {
     }
 }
 
-/// Callers by process: the bus names the connection's pid, its cgroup names the app or unit, the
-/// table names the role. The `/proc` root is the caller's to give, so a test reads a
-/// fixture tree.
+/// Where a service unit's main process is learnt.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MainPids {
+    /// The systemd manager on the connection's bus (`org.freedesktop.systemd1`, the person's
+    /// user manager on the session bus): `GetUnit`, then the unit's `Service.MainPID`.
+    Manager,
+    /// A fixture tree: `<dir>/units/<unit>` holds the main process's pid (a test's stand-in for
+    /// the manager).
+    Fixture(PathBuf),
+}
+
+/// The systemd manager's bus name and object.
+const SYSTEMD: &str = "org.freedesktop.systemd1";
+const SYSTEMD_PATH: &str = "/org/freedesktop/systemd1";
+
+/// Callers by process: the bus names the connection's pid, `/proc/<pid>` names the app or unit,
+/// the table names the role, and a service unit's role goes only to its main process. The
+/// `/proc` root is the caller's to give, so a test reads a fixture tree.
 #[derive(Debug)]
 pub struct ProcCallers {
     connection: BusConnection,
     table: CallerTable,
     proc_root: PathBuf,
+    main_pids: MainPids,
 }
 
 impl ProcCallers {
-    /// Resolves senders on `connection` through `table`, reading the system's `/proc`.
+    /// Resolves senders on `connection` through `table`, reading the system's `/proc` and asking
+    /// the systemd manager for a service's main process.
     pub fn new(connection: BusConnection, table: CallerTable) -> Self {
-        Self::with_proc_root(connection, table, PathBuf::from("/proc"))
+        Self {
+            main_pids: MainPids::Manager,
+            ..Self::with_proc_root(connection, table, PathBuf::from("/proc"))
+        }
     }
 
-    /// As [`ProcCallers::new`], reading `proc_root` instead of `/proc`.
+    /// As [`ProcCallers::new`], reading the fixture tree `proc_root` instead of `/proc`, with a
+    /// service's main process from the same tree ([`MainPids::Fixture`]).
     pub fn with_proc_root(
         connection: BusConnection,
         table: CallerTable,
@@ -176,14 +206,64 @@ impl ProcCallers {
         Self {
             connection,
             table,
+            main_pids: MainPids::Fixture(proc_root.clone()),
             proc_root,
         }
     }
 
+    /// The same, learning a service's main process from `main_pids`.
+    pub fn with_main_pids(self, main_pids: MainPids) -> Self {
+        Self { main_pids, ..self }
+    }
+
     /// The caller that is process `pid` of the `/proc` tree at `proc_root`, as [`ProcCallers`]
-    /// reads it once the bus has named the pid.
+    /// reads it once the bus has named the pid, with a service's main process from the same
+    /// tree ([`MainPids::Fixture`]). Read on the real `/proc`, which states no main process, a
+    /// service unit's row names nobody: [`ProcCallers`] asks the manager.
     pub fn caller_of_pid(proc_root: &Path, pid: u32, table: &CallerTable) -> Option<Caller> {
-        procfs::caller_of_pid(proc_root, pid, table)
+        match procfs::found_of_pid(proc_root, pid, table)? {
+            procfs::Found::App(caller) | procfs::Found::Scope(caller) => Some(caller),
+            procfs::Found::Service { unit, caller } => {
+                (procfs::fixture_main_pid(proc_root, &unit) == Some(pid)).then_some(caller)
+            }
+        }
+    }
+
+    /// The main process of the service `unit`, as `main_pids` learns it.
+    async fn main_pid(&self, unit: &str) -> Option<u32> {
+        match &self.main_pids {
+            MainPids::Fixture(dir) => procfs::fixture_main_pid(dir, unit),
+            MainPids::Manager => self.manager_main_pid(unit).await,
+        }
+    }
+
+    /// `MainPID` of the loaded unit `unit` from the systemd manager on the connection's bus;
+    /// `None` when the manager is not there, the unit is not loaded or it has no main process.
+    async fn manager_main_pid(&self, unit: &str) -> Option<u32> {
+        let reply = self
+            .connection
+            .call_method(
+                Some(SYSTEMD),
+                SYSTEMD_PATH,
+                Some("org.freedesktop.systemd1.Manager"),
+                "GetUnit",
+                &(unit,),
+            )
+            .await
+            .ok()?;
+        let path: zbus::zvariant::OwnedObjectPath = reply.body().deserialize().ok()?;
+        let properties = zbus::fdo::PropertiesProxy::builder(&self.connection)
+            .destination(SYSTEMD)
+            .ok()?
+            .path(path)
+            .ok()?
+            .build()
+            .await
+            .ok()?;
+        let service =
+            zbus::names::InterfaceName::try_from("org.freedesktop.systemd1.Service").ok()?;
+        let value = properties.get(service, "MainPID").await.ok()?;
+        u32::try_from(value).ok().filter(|pid| *pid != 0)
     }
 
     /// The pid of the process behind `sender`, as the bus knows it.
@@ -200,7 +280,12 @@ impl ProcCallers {
 impl Callers for ProcCallers {
     async fn caller_of(&self, sender: &str) -> Option<Caller> {
         let pid = self.pid_of(sender).await?;
-        Self::caller_of_pid(&self.proc_root, pid, &self.table)
+        match procfs::found_of_pid(&self.proc_root, pid, &self.table)? {
+            procfs::Found::App(caller) | procfs::Found::Scope(caller) => Some(caller),
+            procfs::Found::Service { unit, caller } => {
+                (self.main_pid(&unit).await == Some(pid)).then_some(caller)
+            }
+        }
     }
 }
 
