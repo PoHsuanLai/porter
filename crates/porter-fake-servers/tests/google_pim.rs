@@ -258,14 +258,19 @@ async fn task_lists_list_and_tasks_filter_by_updated_min_and_show_deleted() {
 }
 
 #[tokio::test]
-async fn with_no_content_set_the_probe_paths_stay_the_issuers_to_admit() {
+async fn with_no_content_set_the_probe_paths_admit_a_planted_bearer_as_every_route_does() {
     let rig = rig().await;
     for path in [
         "/calendar/v3/users/me/calendarList",
         "/tasks/v1/users/@me/lists",
     ] {
-        let response = get_as(&rig, path, Some(TOKEN)).await;
-        // The probe answers a token the issuer minted; a bare fixed token is no issuer's.
-        assert_eq!(response.status, 401, "{path}");
+        // A bearer planted with `accept_bearer` is let in on every route (Drive, Photos and the
+        // probes alike); with no PIM content set the probe's own answer is the one given.
+        assert_eq!(get_as(&rig, path, Some(TOKEN)).await.status, 200, "{path}");
+        assert_eq!(
+            get_as(&rig, path, Some("not-planted")).await.status,
+            401,
+            "{path}"
+        );
     }
 }
