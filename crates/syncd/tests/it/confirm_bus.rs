@@ -45,11 +45,20 @@ macro_rules! parts {
 }
 
 /// The replica the engine and the test both hold: the test is "someone else" writing to it.
+/// The lock is held by the test while it makes changes a server would show at once: the engine's
+/// listing waits for it.
 #[derive(Debug, Clone)]
-struct Shared(Arc<MemoryReplica>);
+struct Shared(Arc<MemoryReplica>, Arc<tokio::sync::RwLock<()>>);
+
+impl Shared {
+    fn new(replica: MemoryReplica) -> Self {
+        Self(Arc::new(replica), Arc::default())
+    }
+}
 
 impl Replica for Shared {
     async fn changes(&self, from: Cursor) -> Result<ChangePage, ReplicaError> {
+        let _still = self.1.read().await;
         self.0.changes(from).await
     }
     async fn fetch(&self, item: &RemoteId, range: ByteRange) -> Result<Blob, ReplicaError> {
@@ -122,7 +131,7 @@ async fn rig() -> Rig {
     serve(&server, hub.clone(), known.clone())
         .await
         .expect("serve");
-    let replica = Shared(Arc::new(MemoryReplica::new(storage(), 10, UnixSeconds(1))));
+    let replica = Shared::new(MemoryReplica::new(storage(), 10, UnixSeconds(1)));
     let dataset = Arc::new(MemoryDataset::new("notes", ConflictRule::ShowInApp));
     let journal = bus.scratch().join("journal");
     let engine = Engine::new(
@@ -187,6 +196,10 @@ async fn emptied(rig: &Rig) {
         FILES.iter().all(|file| rig.dataset.get(file).is_some())
     })
     .await;
+    // The engine lists between none of these: the removals and the lost history are one change
+    // to it. A listing between two removals took them as plain deletions, so no hold came, or a
+    // smaller one (rel-13 follow-up: the shell test waited 120 s for a hold that never came).
+    let _still = rig.replica.1.write().await;
     for (id, version) in put {
         rig.replica
             .remove(&id, BaseVersion::At(version))
@@ -440,11 +453,11 @@ where
     S: Stream<Item = T> + Unpin,
 {
     let signal = tokio::time::timeout(
-        Duration::from_secs(120),
+        Duration::from_secs(60),
         std::future::poll_fn(|cx| Pin::new(&mut *holds).poll_next(cx)),
     )
     .await
-    .expect("a NeedsConfirmation signal in time")
+    .expect("a NeedsConfirmation signal within 60 s")
     .expect("open stream");
     let (dataset, held) = read(&signal);
     assert_eq!(dataset, DATASET);
