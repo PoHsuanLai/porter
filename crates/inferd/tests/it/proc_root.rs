@@ -7,7 +7,7 @@ use crate::hosting::bus;
 use porter_core::Need;
 use porter_core::need::LlmNeed;
 use porter_dbus::{Details, INFERENCE_BUS, InferenceProxy, need_to_dbus};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
 /// The probe table names no port: this daemon must not ask a port of this computer what it is
@@ -18,6 +18,38 @@ const CGROUP: &str =
 
 struct Daemon {
     child: Child,
+    /// Where its standard error goes, to be read into a failure.
+    log: PathBuf,
+}
+
+impl Daemon {
+    /// What the daemon said on standard error so far.
+    fn said(&self) -> String {
+        std::fs::read_to_string(&self.log).unwrap_or_default()
+    }
+
+    /// Waits until the daemon owns `org.quire.Inference1`; a daemon that exits first, or one that
+    /// does not own it within the deadline, fails the test with what it said.
+    async fn owns_its_name(&mut self, dbus: &zbus::fdo::DBusProxy<'_>) {
+        let name = zbus::names::BusName::try_from(INFERENCE_BUS).expect("bus name");
+        let deadline = tokio::time::Instant::now() + bus::DEADLINE;
+        // The daemon's claim is the event; asking again is the only way to see it without a stream.
+        while !dbus.name_has_owner(name.clone()).await.expect("ask") {
+            if let Ok(Some(status)) = self.child.try_wait() {
+                panic!(
+                    "inferd exited ({status}) before owning {INFERENCE_BUS}: {}",
+                    self.said()
+                );
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "waited {} s for inferd to own {INFERENCE_BUS}: {}",
+                bus::DEADLINE.as_secs(),
+                self.said()
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    }
 }
 
 impl Drop for Daemon {
@@ -31,6 +63,8 @@ fn start(bus: &bus::PrivateBus, proc_root: &Path) -> Daemon {
     let scratch = bus.scratch();
     let config = scratch.join("inferd.toml");
     std::fs::write(&config, CONFIG).expect("config");
+    let log = scratch.join("inferd.stderr");
+    let stderr = std::fs::File::create(&log).expect("the daemon's log file");
     let child = Command::new(env!("CARGO_BIN_EXE_inferd"))
         .env_clear()
         .env("HOME", scratch)
@@ -42,31 +76,40 @@ fn start(bus: &bus::PrivateBus, proc_root: &Path) -> Daemon {
         .env("INFERD_PROC_ROOT", proc_root)
         .arg("--config")
         .arg(&config)
-        .stderr(Stdio::null())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(stderr)
         .spawn()
         .expect("inferd binary");
-    Daemon { child }
+    Daemon { child, log }
 }
 
-/// Whether `availability` from this process is answered (a named caller) or refused.
+/// Whether `availability` from this process is answered (a named caller) or refused as nobody
+/// (`AccessDenied`). Any other end, a timeout among them, fails the test with what inferd said.
 async fn answered(bus: &bus::PrivateBus, proc_root: &Path) -> bool {
     let client = bus.connect().await;
     let dbus = zbus::fdo::DBusProxy::new(&client).await.expect("dbus");
-    let name = zbus::names::BusName::try_from(INFERENCE_BUS).expect("bus name");
-    let _daemon = start(bus, proc_root);
-    // The daemon's claim is the event; asking again is the only way to see it without a stream.
-    while !dbus.name_has_owner(name.clone()).await.expect("ask") {
-        tokio::task::yield_now().await;
-    }
+    let mut daemon = start(bus, proc_root);
+    daemon.owns_its_name(&dbus).await;
     let proxy = InferenceProxy::new(&client).await.expect("proxy");
     let need = need_to_dbus(&Need::Llm(LlmNeed {
         features: Default::default(),
         context: porter_core::Tokens(1),
     }));
-    proxy
-        .availability(&need, "notes", &Details::new())
-        .await
-        .is_ok()
+    let reply = bus::within(
+        "inferd's answer to Availability",
+        proxy.availability(&need, "notes", &Details::new()),
+    )
+    .await;
+    match reply {
+        Ok(_) => true,
+        Err(zbus::Error::MethodError(name, _, _))
+            if name.as_str() == "org.freedesktop.DBus.Error.AccessDenied" =>
+        {
+            false
+        }
+        Err(other) => panic!("Availability ended in {other:?}: {}", daemon.said()),
+    }
 }
 
 fn fake_proc(root: &Path, pid: u32, cgroup: Option<&str>) {

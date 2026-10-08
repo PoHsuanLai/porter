@@ -1,11 +1,28 @@
 //! A private session bus for one test: its own `dbus-daemon` on an abstract socket, with a
 //! scratch HOME and runtime directory and no environment of the real session. Dropping it
 //! stops the daemon. Tests never reach the real bus.
+//!
+//! Every wait of a test has a deadline ([`within`], [`DEADLINE`]): a wait that does not end is a
+//! failure that names what it waited for, not a hang until the harness ends the test.
 
+use std::future::Future;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::Duration;
+
+/// How long any one wait of a test may take. A wait ends in milliseconds, in seconds on a loaded
+/// machine; the harness ends a whole test after ten minutes.
+pub const DEADLINE: Duration = Duration::from_secs(60);
+
+/// What `future` gives, or a panic naming `what` once [`DEADLINE`] has passed.
+pub async fn within<T>(what: &str, future: impl Future<Output = T>) -> T {
+    match tokio::time::timeout(DEADLINE, future).await {
+        Ok(out) => out,
+        Err(_) => panic!("waited {} s for {what}", DEADLINE.as_secs()),
+    }
+}
 
 fn config_text(dir: &std::path::Path) -> String {
     format!(
@@ -57,10 +74,28 @@ impl PrivateBus {
             .spawn()
             .expect("dbus-daemon must be on PATH for the bus tests");
         let stdout = child.stdout.take().expect("piped stdout");
-        let mut address = String::new();
-        BufReader::new(stdout)
-            .read_line(&mut address)
-            .expect("the daemon prints its address");
+        // The read blocks, so it runs on a thread of its own and the wait for it is bounded.
+        let (said, heard) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut address = String::new();
+            let read = BufReader::new(stdout).read_line(&mut address);
+            let _ = said.send(read.map(|_| address));
+        });
+        let address = match heard.recv_timeout(DEADLINE) {
+            Ok(read) => read.expect("the daemon prints its address"),
+            Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!(
+                    "waited {} s for dbus-daemon to print its address",
+                    DEADLINE.as_secs()
+                );
+            }
+        };
+        assert!(
+            !address.trim().is_empty(),
+            "dbus-daemon ended without printing its address"
+        );
         Self {
             child,
             address: address.trim().to_owned(),
@@ -78,11 +113,13 @@ impl PrivateBus {
         &self.scratch
     }
 
-    /// A new connection to this bus.
+    /// A new connection to this bus. A method call on it that is not answered within
+    /// [`DEADLINE`] is an error (`TimedOut`), not a wait without end.
     pub async fn connect(&self) -> zbus::Connection {
-        zbus::connection::Builder::address(self.address.as_str())
+        let builder = zbus::connection::Builder::address(self.address.as_str())
             .expect("address")
-            .build()
+            .method_timeout(DEADLINE);
+        within("a connection to the private bus", builder.build())
             .await
             .expect("connect to the private bus")
     }

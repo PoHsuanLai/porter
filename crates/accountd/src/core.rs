@@ -718,6 +718,44 @@ pub async fn serve_with<H: Host, C: Callers>(
     publish_accounts(server, &core).await?;
     crate::settings::serve_settings(connection, &core).await?;
     crate::roster::watch(connection, Arc::clone(&core)).await?;
+    // The name is the promise that calls are taken: claim it only once they are.
+    dispatching(connection).await?;
     connection.request_name(ACCOUNTS_BUS).await?;
     Ok(())
+}
+
+/// How long one look at whether the connection takes calls may go unanswered before the next.
+const DISPATCH_LOOK: std::time::Duration = std::time::Duration::from_millis(50);
+
+/// How long the connection may take to start taking calls.
+const DISPATCH_BOUND: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Waits until `connection` takes method calls. zbus starts a connection's object server on a task
+/// of its own the first time it is used, and a call that arrives before that task listens is
+/// dropped: no answer, no error, and the caller waits for ever. The look is
+/// `org.freedesktop.DBus.Peer.Ping` to the connection itself, through the bus, until it is
+/// answered. (inferd's `service::dispatching` is the same.)
+async fn dispatching(connection: &Connection) -> zbus::Result<()> {
+    let me = connection
+        .unique_name()
+        .ok_or_else(|| zbus::Error::Failure("the connection has no unique name".into()))?
+        .as_str()
+        .to_owned();
+    let deadline = tokio::time::Instant::now() + DISPATCH_BOUND;
+    while tokio::time::Instant::now() < deadline {
+        let ping = connection.call_method(
+            Some(me.as_str()),
+            "/",
+            Some("org.freedesktop.DBus.Peer"),
+            "Ping",
+            &(),
+        );
+        if let Ok(answer) = tokio::time::timeout(DISPATCH_LOOK, ping).await {
+            return answer.map(|_| ());
+        }
+    }
+    Err(zbus::Error::InputOutput(Arc::new(std::io::Error::new(
+        std::io::ErrorKind::TimedOut,
+        "accountd's connection took no calls",
+    ))))
 }

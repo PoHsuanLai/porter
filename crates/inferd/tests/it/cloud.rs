@@ -7,6 +7,7 @@
 use crate::hosting;
 
 use hosting::accountd::{FakeAccount, Standing};
+use hosting::bus::within;
 use hosting::engine::{Chat, Script};
 use hosting::entries;
 use hosting::rig::{Hosted, Plan, Trust, World};
@@ -70,7 +71,12 @@ fn chat_request(text: &str, class: DataClass) -> InferRequest {
 async fn until_finished(session: &mut impl InferSession) -> Vec<InferEvent> {
     let mut events = Vec::new();
     loop {
-        let event = session.next().await.expect("an event");
+        let event = within(
+            &format!("the session's next event after {events:?}"),
+            session.next(),
+        )
+        .await
+        .expect("an event");
         let done = matches!(event, InferEvent::Finished(_));
         events.push(event);
         if done {
@@ -81,16 +87,21 @@ async fn until_finished(session: &mut impl InferSession) -> Vec<InferEvent> {
 
 /// One chat turn of the world's app, the events it produced.
 async fn turn(world: &World, text: &str) -> Vec<InferEvent> {
-    let mut session = world
-        .accounts
-        .session(&llm(), DataClass::Prompt, Tier::Balanced)
-        .await
-        .expect("open");
+    let mut session = within(
+        "inferd's answer to Open",
+        world
+            .accounts
+            .session(&llm(), DataClass::Prompt, Tier::Balanced),
+    )
+    .await
+    .expect("open");
     // A refused session closes by itself: the send may find it already gone, and its one event
     // is still waiting to be read.
-    let _ = session
-        .send(ClientFrame::Request(chat_request(text, DataClass::Prompt)))
-        .await;
+    let _ = within(
+        "the session to take the request",
+        session.send(ClientFrame::Request(chat_request(text, DataClass::Prompt))),
+    )
+    .await;
     until_finished(&mut session).await
 }
 

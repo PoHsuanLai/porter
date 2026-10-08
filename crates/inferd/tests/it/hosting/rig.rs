@@ -1,7 +1,7 @@
 //! The world of one test.
 
 use super::accountd::{FakeAccount, FakeAccountd};
-use super::bus::PrivateBus;
+use super::bus::{PrivateBus, within};
 use super::cloud::FakeCloud;
 use super::engine::{FakeEngine, Script};
 use super::speech_host::SpeechEngines;
@@ -201,6 +201,10 @@ pub struct Plan {
     pub attached: Vec<Attached>,
     /// The agent endpoints (`org.quire.Inference1.Agents`): served when present.
     pub agents: Option<AgentsPlan>,
+    /// The runtime the daemon connection's object server is started on, when a test holds it
+    /// back (zbus starts it on a task of its own, on the runtime of its first use); none starts
+    /// it on the test's own.
+    pub dispatcher_on: Option<tokio::runtime::Handle>,
 }
 
 /// The agent endpoints of a world: the setting, and who the launcher is.
@@ -238,6 +242,7 @@ impl Default for Plan {
             processes: None,
             attached: Vec::new(),
             agents: None,
+            dispatcher_on: None,
         }
     }
 }
@@ -462,7 +467,7 @@ impl World {
         if let Some(hosted) = plan.hosted {
             let fake = FakeAccountd::new(hosted.accounts);
             let held = bus.connect().await;
-            fake.serve(&held).await;
+            within("the fake accountd on the bus", fake.serve(&held)).await;
             accountd_bus = Some(held);
             let api = FakeCloud::start(hosted.chat).await;
             let door = |base: &str| Door {
@@ -527,7 +532,11 @@ impl World {
                 Arc::new(FixedClock(UnixSeconds(1_700_000_000))),
             ));
         }
-        serve_on(&daemon, inference)
+        if let Some(runtime) = &plan.dispatcher_on {
+            let _on = runtime.enter();
+            daemon.object_server();
+        }
+        within("Inference1 on the bus", serve_on(&daemon, inference))
             .await
             .expect("serve Inference1");
         World {

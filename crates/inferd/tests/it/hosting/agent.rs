@@ -2,6 +2,7 @@
 //! launcher's calls over the bus, and a plain HTTP client that plays the agent.
 
 use super::accountd::{FakeAccount, Standing};
+use super::bus::{DEADLINE, within};
 use super::engine::{Chat, Script};
 use super::entries;
 use super::rig::{AgentsPlan, Hosted, Plan, Trust, World};
@@ -117,10 +118,12 @@ pub async fn open_with(
     class: &str,
     protocols: &[&str],
 ) -> zbus::Result<EndpointArg> {
-    AgentsProxy::new(&world.client)
-        .await?
-        .open_endpoint(PROGRAM, route, class, protocols, &Details::new())
-        .await
+    let proxy = AgentsProxy::new(&world.client).await?;
+    within(
+        "inferd's answer to OpenEndpoint",
+        proxy.open_endpoint(PROGRAM, route, class, protocols, &Details::new()),
+    )
+    .await
 }
 
 pub async fn open(world: &World, route: &Route, protocol: &str) -> Endpoint {
@@ -241,18 +244,34 @@ pub async fn send(
     headers: &[(&str, &str)],
     body: &str,
 ) -> Reply {
-    let mut stream = TcpStream::connect(("127.0.0.1", port))
-        .await
-        .expect("connect");
+    let mut stream = within(
+        "a connection to the agent endpoint",
+        TcpStream::connect(("127.0.0.1", port)),
+    )
+    .await
+    .expect("connect");
     let mut request =
         format!("{method} {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n");
     for (name, value) in headers {
         request.push_str(&format!("{name}: {value}\r\n"));
     }
     request.push_str(&format!("Content-Length: {}\r\n\r\n{body}", body.len()));
-    stream.write_all(request.as_bytes()).await.expect("write");
+    within(
+        &format!("the agent endpoint to take {method} {path}"),
+        stream.write_all(request.as_bytes()),
+    )
+    .await
+    .expect("write");
     let mut raw = Vec::new();
-    stream.read_to_end(&mut raw).await.expect("read");
+    let read = tokio::time::timeout(DEADLINE, stream.read_to_end(&mut raw)).await;
+    match read {
+        Ok(read) => read.map(|_| ()).expect("read"),
+        Err(_) => panic!(
+            "waited {} s for the agent endpoint's whole reply to {method} {path}; it sent: {}",
+            DEADLINE.as_secs(),
+            String::from_utf8_lossy(&raw)
+        ),
+    }
     parse_reply(raw)
 }
 

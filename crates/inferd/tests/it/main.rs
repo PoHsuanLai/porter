@@ -15,5 +15,6 @@ mod replayed;
 mod serve;
 mod settings_module;
 mod speech;
+mod start;
 mod support;
 mod voice_chat;
