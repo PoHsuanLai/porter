@@ -1,8 +1,10 @@
 //! One family's frozen shape: its provider, session and sign-in types over the `Provider`
-//! seam, every body waiting for the lane that builds the family.
+//! seam, every body waiting for the lane that builds the family. A body that is not built
+//! refuses (`Forbidden`, `Failed(Forbidden)`, `Unsupported`) and the provider is never ready, so
+//! nothing that reaches it by mistake panics and the add list never shows it.
 
-/// Declares `$provider`, `$session` and `$signin` for one family, each method `todo!()` naming
-/// `$what`.
+/// Declares `$provider`, `$session` and `$signin` for one family, each method refusing in the
+/// plain way: the family named `$what` is not built.
 macro_rules! family_skeleton {
     ($provider:ident, $session:ident, $signin:ident, $what:literal) => {
         #[doc = concat!("The ", $what, " family's provider.")]
@@ -43,7 +45,7 @@ macro_rules! family_skeleton {
                 _account: &porter_core::Account,
                 _presented: &porter_provider::Presented,
             ) -> Result<Vec<porter_core::Claim>, porter_provider::ProviderError> {
-                todo!(concat!("discover what a ", $what, " account can do"))
+                Err(porter_provider::ProviderError::Forbidden)
             }
 
             async fn open(
@@ -52,7 +54,7 @@ macro_rules! family_skeleton {
                 _presented: porter_provider::Presented,
             ) -> Result<$session, porter_provider::ProviderError> {
                 let _ = account;
-                todo!(concat!("open a ", $what, " account from its credential"))
+                Err(porter_provider::ProviderError::Forbidden)
             }
 
             fn sign_in(
@@ -60,7 +62,13 @@ macro_rules! family_skeleton {
                 start: porter_provider::SignInStart,
             ) -> Result<$signin, porter_provider::ProviderError> {
                 let _ = start;
-                todo!(concat!("begin the ", $what, " sign-in"))
+                Err(porter_provider::ProviderError::Forbidden)
+            }
+
+            /// Never ready: a family that is not built has nothing to sign in to, so the add
+            /// list does not show it.
+            fn readiness(&self) -> porter_provider::Readiness {
+                porter_provider::Readiness::NeedsClient
             }
 
             async fn revoke(
@@ -68,7 +76,7 @@ macro_rules! family_skeleton {
                 _account: &porter_core::Account,
                 _presented: &porter_provider::Presented,
             ) -> Result<porter_provider::RevokeOutcome, porter_provider::ProviderError> {
-                todo!(concat!("revoke a ", $what, " account at its provider"))
+                Ok(porter_provider::RevokeOutcome::Unsupported)
             }
         }
 
@@ -78,15 +86,11 @@ macro_rules! family_skeleton {
                 _audience: &porter_core::Audience,
             ) -> Result<porter_core::IssuedToken, porter_provider::ProviderError> {
                 let _ = &self.account;
-                todo!(concat!("a short-lived token for a ", $what, " account"))
+                Err(porter_provider::ProviderError::Forbidden)
             }
 
             fn renewed(&self) -> Option<porter_core::Credential> {
-                todo!(concat!(
-                    "the ",
-                    $what,
-                    " credential, when renewal changed it"
-                ))
+                None
             }
         }
 
@@ -96,7 +100,7 @@ macro_rules! family_skeleton {
                 _input: porter_core::sheet::SignInInput,
             ) -> porter_provider::SignInStep {
                 let _ = &self.start;
-                todo!(concat!("the ", $what, " sign-in steps"))
+                porter_provider::SignInStep::Failed(porter_core::sheet::SignInFault::Forbidden)
             }
         }
     };

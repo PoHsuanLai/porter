@@ -314,6 +314,53 @@ async fn nothing_is_stored_for_a_refused_key_a_declined_review_or_an_unknown_pro
     assert!(setup.stored().await.accounts.is_empty());
 }
 
+/// A person's own provider file asking for a family that is not built is not served, so adding
+/// it by id is refused as an unknown provider: nothing is asked, nothing is stored, no panic.
+#[tokio::test]
+async fn adding_a_persons_provider_of_an_unbuilt_family_is_refused() {
+    use accountd::providers::{FamilyIo, Layer, NoResolver, load_specs, served};
+    use porter_families::{ClientFiles, SharedDns};
+    use porter_http::SharedHttp;
+    use porter_provider::ProviderSet;
+
+    let setup = Setup::new("unbuilt", &[KEY]).await;
+    let own = setup.dir.join("own-providers");
+    std::fs::create_dir_all(&own).expect("dir");
+    let file = std::fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../providers/openrouter.toml"),
+    )
+    .expect("file")
+    .replace("id = \"openrouter\"", "id = \"my-router\"")
+    .replace(
+        "kind = \"api_key\"",
+        "kind = \"oauth_mints_key\"\nissuer = \"openrouter\"",
+    );
+    std::fs::write(own.join("my-router.toml"), file).expect("write");
+    let loaded = load_specs(&[(Layer::Person, own)]);
+    assert!(loaded.skipped.is_empty(), "{:?}", loaded.skipped);
+    let io = FamilyIo {
+        http: SharedHttp::new(HyperHttp::new()),
+        dns: SharedDns::new(NoResolver),
+        providers: ProviderSet::layered(loaded.specs.clone(), Vec::new()),
+        clients: ClientFiles {
+            shipped: PathBuf::from("/nonexistent/clients.toml"),
+            own: PathBuf::from("/nonexistent/own-clients.toml"),
+        },
+    };
+    let (families, _unserved) = served(loaded.specs, &io);
+    let ids: Vec<_> = families.iter().map(|f| f.spec().id.clone()).collect();
+    assert!(ids.is_empty(), "{ids:?}");
+
+    let service = setup.service().await;
+    let args = AddArgs::parse("my-router", &[], &[]).expect("arguments");
+    let err = run(&service, &setup.sheets, &ids, &args)
+        .await
+        .expect_err("refused");
+    assert!(matches!(err, AddError::UnknownProvider(_)), "{err:?}");
+    assert!(setup.sheets.terminal().asked().is_empty());
+    assert!(setup.stored().await.accounts.is_empty());
+}
+
 #[test]
 fn the_arguments_are_parsed_as_typed() {
     let own = |list: &[&str]| list.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();

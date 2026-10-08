@@ -10,8 +10,7 @@ use porter_core::{AuthKind, EndpointUrl};
 use porter_discover::{Dns, DnsFault, HickoryDns, MxRecord, SrvRecord};
 use porter_families::{
     AgentLoginProvider, ApiKeyProvider, ClientFiles, FamilyProvider, GenericProvider, GoogleEnv,
-    GoogleProvider, MicrosoftEnv, MicrosoftProvider, NextcloudProvider, OpenRouterProvider,
-    SharedDns,
+    GoogleProvider, MicrosoftEnv, MicrosoftProvider, NextcloudProvider, SharedDns,
 };
 use porter_http::{HyperHttp, SharedHttp, TokioSleep};
 use porter_provider::{DomainName, Issuer, ProviderSet, ProviderSpec, parse_provider};
@@ -215,9 +214,8 @@ pub fn family_of(spec: ProviderSpec, io: &FamilyIo) -> Result<FamilyProvider, Bo
         )),
         (AuthKind::ApiKey, _) => Ok(FamilyProvider::ApiKey(ApiKeyProvider::new(spec))),
         (AuthKind::AgentLogin, _) => Ok(FamilyProvider::AgentLogin(AgentLoginProvider::new(spec))),
-        (AuthKind::OAuthMintsKey, Some(Issuer::OpenRouter)) => {
-            Ok(FamilyProvider::OpenRouter(OpenRouterProvider::new(spec)))
-        }
+        // `OAuthMintsKey` (OpenRouter's browser sign-in) has a skeleton family but no body, so
+        // it is not mapped: a file asking for it lands in `unserved` with its logged reason.
         _ => Err(Box::new(spec)),
     }
 }
@@ -317,6 +315,43 @@ mod tests {
         assert_eq!(loaded.skipped.len(), 2);
         let _ = std::fs::remove_dir_all(system);
         let _ = std::fs::remove_dir_all(user);
+    }
+
+    /// A provider file in the person's own folder that asks for OpenRouter's browser sign-in
+    /// (`oauth_mints_key`), a family that has no body, under a new id.
+    #[test]
+    fn a_persons_file_asking_for_an_unbuilt_family_is_not_served_and_names_why() {
+        let own = scratch("unbuilt");
+        let text = std::fs::read_to_string(shipped().join("openrouter.toml"))
+            .expect("file")
+            .replace("id = \"openrouter\"", "id = \"my-router\"")
+            .replace(
+                "kind = \"api_key\"",
+                "kind = \"oauth_mints_key\"\nissuer = \"openrouter\"",
+            );
+        assert!(text.contains("oauth_mints_key"), "{text}");
+        std::fs::write(own.join("my-router.toml"), text).expect("write");
+        let loaded = load_specs(&[(Layer::Person, own.clone())]);
+        assert!(loaded.skipped.is_empty(), "{:?}", loaded.skipped);
+        assert_eq!(loaded.specs.len(), 1);
+        let io = FamilyIo {
+            http: SharedHttp::new(HyperHttp::new()),
+            dns: SharedDns::new(NoResolver),
+            providers: ProviderSet::layered(loaded.specs.clone(), Vec::new()),
+            clients: ClientFiles {
+                shipped: PathBuf::from("/nonexistent/clients.toml"),
+                own: PathBuf::from("/nonexistent/own-clients.toml"),
+            },
+        };
+        let (families, unserved) = served(loaded.specs, &io);
+        assert!(families.is_empty(), "not served");
+        let ids: Vec<String> = unserved.iter().map(|s| s.id.to_string()).collect();
+        assert_eq!(ids, ["my-router"]);
+        assert!(
+            local_runtimes(&unserved).is_empty(),
+            "and not a local runtime"
+        );
+        let _ = std::fs::remove_dir_all(own);
     }
 
     fn microsoft() -> String {
