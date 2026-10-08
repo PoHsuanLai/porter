@@ -153,6 +153,39 @@ async fn any_identified_app_lists_and_creates_and_a_stranger_is_denied() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn an_assistant_computer_use_or_a_launcher_never_makes_a_space() {
+    let rig = start(Options::default(), vec![]).await;
+    // A launcher may only report an agent's state, so it is refused a list as well.
+    for role in [
+        CallerRole::Agent,
+        CallerRole::Cua,
+        CallerRole::AgentLauncher,
+    ] {
+        let them = spaces(&rig.client_as(caller("org.quire.Companion", role)).await).await;
+        let refused = them
+            .create("Theirs", "")
+            .await
+            .map(|_| ())
+            .expect_err("create");
+        assert_eq!(error_name(&refused), ACCESS_DENIED, "{role:?}");
+    }
+    let assistant = spaces(
+        &rig.client_as(caller("org.quire.Companion", CallerRole::Agent))
+            .await,
+    )
+    .await;
+    assert!(listed(&assistant).await.is_empty(), "an assistant may list");
+    let app = spaces(&rig.client("org.quire.Photos").await).await;
+    assert!(listed(&app).await.is_empty(), "nothing was made");
+    assert!(
+        !rig.audit
+            .entries()
+            .iter()
+            .any(|e| matches!(e.event, AuditEvent::SpaceCreated { .. }))
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn only_settings_and_the_shell_rename_restyle_and_remove() {
     let rig = start(Options::default(), vec![]).await;
     let app = spaces(&rig.client("org.quire.Photos").await).await;

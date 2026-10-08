@@ -1,7 +1,8 @@
 //! `org.quire.Spaces1` at `/org/quire/Spaces1`: the desktop-wide Spaces (`spaces`), on accountd's
 //! connection.
 //!
-//! - Any identified caller may `List` and `Create`; `Rename`, `SetLook` and `Remove` only the
+//! - Any identified caller may `List`; `Create` an app, Settings or the shell (never an assistant,
+//!   computer use, an agent launcher or a porter daemon); `Rename`, `SetLook` and `Remove` only the
 //!   Settings and sheet-host roles (the Settings app and the shell). Anyone else, and a sender
 //!   accountd does not know, is `AccessDenied`, as `Accounts1`'s roles are checked.
 //! - `Changed(id, what)` goes to each connection accountd knows (one that has called it), one by
@@ -74,6 +75,22 @@ impl<H: Host, C: Callers> SpacesObject<H, C> {
         }
     }
 
+    /// The caller, which must be an app, Settings or the shell: a Space is how the person
+    /// arranges the desktop and consent hangs off it, so an assistant, computer use or an agent
+    /// launcher never makes one on its own (an assistant asks the person through an app).
+    async fn maker(&self, header: &Header<'_>) -> Result<porter_dbus::Caller, RefusedError> {
+        let caller = self.0.identify(header, Standing::Any).await?;
+        match caller.role {
+            CallerRole::App | CallerRole::Settings | CallerRole::SheetHost => Ok(caller),
+            CallerRole::Agent
+            | CallerRole::Cua
+            | CallerRole::AgentLauncher
+            | CallerRole::PorterDaemon => Err(RefusedError::access_denied(
+                "only an app the person uses may make a Space",
+            )),
+        }
+    }
+
     /// Tells every connection accountd knows that `id` changed.
     async fn tell(&self, id: &DesktopSpace, change: SpaceChange) {
         for name in self.0.known() {
@@ -121,7 +138,7 @@ impl<H: Host, C: Callers> SpacesObject<H, C> {
         name: String,
         look: String,
     ) -> Result<String, RefusedError> {
-        let caller = self.0.identify(&header, Standing::Any).await?;
+        let caller = self.maker(&header).await?;
         let (name, look) = (name_arg(&name)?, look_arg(&look)?);
         let made = self
             .0

@@ -1,7 +1,8 @@
 //! `org.quire.Spaces1` at `/org/quire/Spaces1`, on accountd's connection: the registry of
 //! desktop-wide Spaces, the ones an app's own Space can link to (porter-core `space`).
 //!
-//! Who may call: any identified app may `List` and `Create`; `Rename`, `SetLook` and `Remove`
+//! Who may call: any identified app may `List`; `Create` an app, Settings or the shell (never an
+//! assistant, computer use or an agent launcher); `Rename`, `SetLook` and `Remove`
 //! only Settings and the shell (`CallerRole::Settings`, `CallerRole::SheetHost`), and anyone else
 //! is `AccessDenied`, as is a sender accountd does not know.
 
