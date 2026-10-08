@@ -22,8 +22,8 @@ use inferd::local::build;
 use inferd::peers::{ProcGate, ProcPeers, ProcRoot};
 use inferd::replay::Replays;
 use inferd::report::PeerReports;
-use inferd::service::{Inference, serve_on};
-use inferd::settings::{ConfigFile, InferdSettings, Reload, resolve, serve_settings};
+use inferd::service::{Inference, serve_with_settings};
+use inferd::settings::{ConfigFile, InferdSettings, Reload, resolve};
 use inferd::shutdown::{self, Ended, Signals};
 use inferd::supervise::{Ports, Supervised};
 use inferd::watch::Watch;
@@ -214,10 +214,8 @@ async fn run(args: Args) -> Result<(), String> {
     .limited(structured.limits)
     .reloading(reload.clone())
     .probing(probing);
-    serve_on(&connection, daemon)
-        .await
-        .map_err(|e| e.to_string())?;
-    serve_settings(&connection, InferdSettings::new(peers, reload))
+    // Every object, the settings module among them, is served before the name is claimed.
+    serve_with_settings(&connection, daemon, InferdSettings::new(peers, reload))
         .await
         .map_err(|e| e.to_string())?;
     let release = async {

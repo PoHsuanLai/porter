@@ -50,6 +50,10 @@ async fn fake_accountd(bus: &PrivateBus) -> (zbus::Connection, FakeGrants) {
         .at(ACCOUNTS_PATH, grants.clone())
         .await
         .expect("serve Grants");
+    // As a daemon does: the name only once the connection answers calls.
+    porter_dbus::serve_ready(&connection)
+        .await
+        .expect("the fake takes calls");
     connection
         .request_name(ACCOUNTS_BUS)
         .await

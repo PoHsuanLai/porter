@@ -133,6 +133,9 @@ impl World {
             .at(porter_dbus::SHEET_PATH, host)
             .await
             .expect("host object");
+        porter_dbus::serve_ready(&host_connection)
+            .await
+            .expect("the host takes calls");
         host_connection
             .request_name(porter_dbus::SHEET_BUS)
             .await

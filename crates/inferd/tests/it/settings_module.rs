@@ -6,13 +6,13 @@ use crate::hosting;
 
 use ds_settings::live::{LiveClient, LiveError, LiveSchema};
 use ds_settings::schema::{AgentSetting, ChoiceWord, KeyKind, KeyPath, Page};
-use hosting::bus::PrivateBus;
+use hosting::bus::{PrivateBus, within};
 use inferd::audit::Memory;
 use inferd::clock::FixedClock;
 use inferd::engines::Engines;
 use inferd::peers::{Caller, Role, TablePeers};
-use inferd::service::{Inference, serve_on};
-use inferd::settings::{ConfigFile, InferdSettings, Reload, serve_settings};
+use inferd::service::{Inference, serve_with_settings};
+use inferd::settings::{ConfigFile, InferdSettings, Reload};
 use inferd::supervise::Supervised;
 use porter_core::capability::{Capability, LlmCap, LlmFeature, LlmWire};
 use porter_core::{
@@ -23,6 +23,7 @@ use porter_infer::{Pick, Policy, Slot, TierMap};
 use std::path::PathBuf;
 use std::sync::Arc;
 use zbus::Connection;
+use zbus::export::futures_core::Stream;
 
 struct Rig {
     bus: PrivateBus,
@@ -72,24 +73,11 @@ impl Rig {
             TierMap::default(),
         )
         .with_remote(cards);
-        let reload = Reload::new(ConfigFile::new(file.clone()), engines.clone());
         let daemon = bus.connect().await;
         let peers = Arc::new(TablePeers::new());
-        serve_on(
-            &daemon,
-            Inference::new(
-                engines.clone(),
-                Arc::clone(&peers),
-                Memory::default(),
-                FixedClock(UnixSeconds(1_700_000_000)),
-            )
-            .reloading(reload.clone()),
-        )
-        .await
-        .expect("serve Inference1");
-        serve_settings(&daemon, InferdSettings::new(Arc::clone(&peers), reload))
+        serving(&daemon, &engines, &peers, &file)
             .await
-            .expect("serve the settings module");
+            .expect("serve Inference1 and its settings module");
         Rig {
             bus,
             _daemon: daemon,
@@ -116,8 +104,77 @@ impl Rig {
     }
 }
 
+/// inferd as its `main` serves it: `Inference1` and the settings module over `engines`, the
+/// settings written to `file`.
+fn serving(
+    daemon: &Connection,
+    engines: &Engines,
+    peers: &Arc<TablePeers>,
+    file: &std::path::Path,
+) -> impl std::future::Future<Output = zbus::Result<()>> + Send + 'static {
+    let reload = Reload::new(ConfigFile::new(file.to_owned()), engines.clone());
+    let inference = Inference::new(
+        engines.clone(),
+        Arc::clone(peers),
+        Memory::default(),
+        FixedClock(UnixSeconds(1_700_000_000)),
+    )
+    .reloading(reload.clone());
+    let settings = InferdSettings::new(Arc::clone(peers), reload);
+    let daemon = daemon.clone();
+    async move { serve_with_settings(&daemon, inference, settings).await }
+}
+
 fn key(path: &str) -> KeyPath {
     KeyPath(path.to_owned())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_settings_module_answers_a_call_made_as_soon_as_the_name_is_owned() {
+    // Whoever sees `org.quire.Inference1` owned calls the module at once; an inferd that served
+    // the module after claiming the name answered such a call `UnknownObject`.
+    let bus = PrivateBus::start();
+    let file = bus.scratch().join("inferd.toml");
+    let engines = Engines::new(
+        Vec::new(),
+        Supervised::idle(),
+        Policy::proposed(),
+        TierMap::default(),
+    )
+    .with_remote(vec![sonnet()]);
+    let peers = Arc::new(TablePeers::new());
+    let client = bus.connect().await;
+    peers.introduce(
+        client.unique_name().expect("name").as_str(),
+        who("org.quire.Settings", Role::Settings),
+    );
+    let mut owned = zbus::fdo::DBusProxy::new(&client)
+        .await
+        .expect("proxy")
+        .receive_name_owner_changed_with_args(&[(0, INFERENCE_BUS)])
+        .await
+        .expect("subscribe");
+    let daemon = bus.connect().await;
+    let served = tokio::spawn(serving(&daemon, &engines, &peers, &file));
+    within(
+        "org.quire.Inference1 to be owned",
+        std::future::poll_fn(|cx| std::pin::Pin::new(&mut owned).poll_next(cx)),
+    )
+    .await
+    .expect("the owner change");
+    // At once: no wait between seeing the name and calling the module.
+    let describe = async {
+        LiveClient::new(&client, INFERENCE_BUS, INFERENCE_SETTINGS_PATH)
+            .await?
+            .describe()
+            .await
+    };
+    let schema = within("the settings module to answer", describe).await;
+    assert!(schema.is_ok(), "{schema:?}");
+    within("inferd to serve", served)
+        .await
+        .expect("the serving task")
+        .expect("inferd serves");
 }
 
 fn text(value: &str) -> toml::Value {

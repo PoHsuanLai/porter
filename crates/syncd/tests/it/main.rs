@@ -15,6 +15,7 @@ mod pim_bus;
 mod resolve_bus;
 mod settings_grant_bus;
 mod stalled;
+mod start;
 mod storage_bus;
 mod sync_bus;
 mod webdav_bus;

@@ -5,6 +5,8 @@
 //! The skeletons are signatures only (every method answers `NotSupported`); accountd serves the
 //! real objects. `sheet` and `pending` are the portal shape of a sheet's answer, shared by both
 //! sides: the request path, the response codes and results, and the caller's listener.
+//! [`serve_ready`] is the daemons' start: the wait between registering their objects and
+//! claiming their name.
 
 mod account;
 mod agents;
@@ -23,6 +25,7 @@ mod names;
 mod peer;
 mod pending;
 mod photos_picker;
+mod ready;
 mod refusal;
 mod request;
 mod sheet;
@@ -67,6 +70,7 @@ pub use photos_picker::{
     PICKER_ERROR_NO_SUCH_SESSION, PICKER_ERROR_NOT_YET, PICKER_ERROR_PREFIX, PICKER_PICKED,
     PICKER_WAITING, PhotosPickerProxy, PickerSkeleton,
 };
+pub use ready::serve_ready;
 pub use refusal::{REFUSAL_ERROR_PREFIX, refusal_error_name, refusal_from_error_name};
 pub use request::{RequestProxy, RequestSkeleton};
 pub use sheet::{
