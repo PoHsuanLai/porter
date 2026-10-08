@@ -13,8 +13,13 @@ pub enum FieldKind {
     Server,
     /// A user name that is not the address.
     Username,
-    /// A password or app password.
+    /// A password.
     Password,
+    /// An app password: one the person makes in their account's settings for this computer,
+    /// because the service does not take the account's own password from a mail app (iCloud,
+    /// Fastmail, Yahoo: the providers whose sign-in is `app_password`). The UI words it "App
+    /// password" and says where the provider makes one (the sheet's provider id says which).
+    AppPassword,
     /// An API key.
     ApiKey,
     /// An API token (a JMAP bearer token).

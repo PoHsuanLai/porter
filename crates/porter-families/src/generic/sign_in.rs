@@ -6,7 +6,7 @@ use super::login::SharedLogin;
 use super::mail::{self, Looked, Vouched};
 use super::{dav, jmap};
 use crate::io::{Io, SharedDns};
-use crate::password::{parse_server, password, plain, secret_of, text_of};
+use crate::password::{parse_server, password_for, plain, text_of, typed_password};
 use porter_core::sheet::{
     FieldAnswer, FieldKind, FieldSpec, Manual, Protocol, SignInFault, SignInInput, manual_form,
     parse_manual,
@@ -99,13 +99,17 @@ impl GenericSignIn {
         }
     }
 
-    fn form(flavor: Flavor) -> Vec<FieldSpec> {
-        match flavor {
-            Flavor::Mail | Flavor::Fixed => vec![plain(FieldKind::Address), password()],
+    /// The first form: the password field is an app password for a provider that takes only one
+    /// (ship-5).
+    fn form(&self) -> Vec<FieldSpec> {
+        match self.flavor {
+            Flavor::Mail | Flavor::Fixed => {
+                vec![plain(FieldKind::Address), password_for(&self.spec)]
+            }
             Flavor::Dav => vec![
                 plain(FieldKind::Server),
                 plain(FieldKind::Username),
-                password(),
+                password_for(&self.spec),
             ],
         }
     }
@@ -222,7 +226,7 @@ impl GenericSignIn {
     async fn submitted_fixed(&mut self, answers: Vec<FieldAnswer>) -> SignInStep {
         let (Some(address), Some(password)) = (
             text_of(&answers, FieldKind::Address),
-            secret_of(&answers, FieldKind::Password),
+            typed_password(&answers),
         ) else {
             return self.failed(SignInFault::Unreadable);
         };
@@ -241,7 +245,7 @@ impl GenericSignIn {
     async fn submitted_mail(&mut self, answers: Vec<FieldAnswer>) -> SignInStep {
         let (Some(address), Some(password)) = (
             text_of(&answers, FieldKind::Address),
-            secret_of(&answers, FieldKind::Password),
+            typed_password(&answers),
         ) else {
             return self.failed(SignInFault::Unreadable);
         };
@@ -273,7 +277,7 @@ impl GenericSignIn {
         let (Some(server), Some(user), Some(password)) = (
             text_of(&answers, FieldKind::Server).and_then(|t| parse_server(&t)),
             text_of(&answers, FieldKind::Username),
-            secret_of(&answers, FieldKind::Password),
+            typed_password(&answers),
         ) else {
             return self.failed(SignInFault::Unreadable);
         };
@@ -331,7 +335,7 @@ impl SignIn for GenericSignIn {
             // Begin, and begin again after a step back.
             (_, SignInInput::Start) => {
                 self.state = State::Asked;
-                SignInStep::AskFields(Self::form(self.flavor))
+                SignInStep::AskFields(self.form())
             }
             (State::Asked, SignInInput::Fields(answers)) => self.submitted(answers).await,
             (State::AskedServer(typed), SignInInput::Fields(answers)) => {

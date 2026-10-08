@@ -1016,15 +1016,23 @@ fn fixed_provider(
     .with_connect(connect)
 }
 
-/// Answers the first form with `address` and `password`, and the review with everything on.
+/// Answers the first form with `address` and `password` (in the password field the form shows:
+/// an app password for the providers that take only one), and the review with everything on.
 fn fixed_person<'a>(
     address: &'a str,
     password: &'a str,
 ) -> impl FnMut(&SignInStep) -> SignInInput + 'a {
     move |step| match step {
-        SignInStep::AskFields(_) => SignInInput::Fields(vec![
+        SignInStep::AskFields(fields) => SignInInput::Fields(vec![
             plain(FieldKind::Address, address),
-            secret(FieldKind::Password, password),
+            secret(
+                fields
+                    .iter()
+                    .map(|f| f.kind)
+                    .find(|k| matches!(k, FieldKind::Password | FieldKind::AppPassword))
+                    .unwrap_or(FieldKind::Password),
+                password,
+            ),
         ]),
         SignInStep::Review { claims, .. } => {
             SignInInput::Confirm(all_on(claims.iter().map(|c| c.offer.kind())))
@@ -1078,7 +1086,8 @@ async fn a_fixed_file_signs_in_to_the_servers_it_names_and_the_password_logs_in(
         SignInStep::AskFields(form) => form.iter().map(|f| f.kind).collect(),
         other => panic!("a form first: {other:?}"),
     };
-    assert_eq!(asked, [FieldKind::Address, FieldKind::Password]);
+    // Fastmail takes only an app password from a mail app: the form says so (ship-5).
+    assert_eq!(asked, [FieldKind::Address, FieldKind::AppPassword]);
     let signed = done(&steps);
     assert_eq!(signed.label.0, "ada@fastmail.com");
     let [(SecretPurpose::Password, Credential::Password(password))] = signed.credentials.as_slice()
@@ -1135,6 +1144,28 @@ async fn a_fixed_file_signs_in_to_the_servers_it_names_and_the_password_logs_in(
         matches!(attempts.as_slice(), [a] if a.accepted && a.user == "ada@fastmail.com"),
         "smtp: {attempts:?}"
     );
+}
+
+/// ship-5: the providers whose service takes only an app password from a mail app ask for an
+/// "App password"; one that takes the account's password asks for a password.
+#[tokio::test]
+async fn the_providers_that_take_only_an_app_password_ask_for_one() {
+    for (file, want) in [
+        ("icloud", FieldKind::AppPassword),
+        ("fastmail", FieldKind::AppPassword),
+        ("yahoo", FieldKind::AppPassword),
+        ("gmx", FieldKind::Password),
+    ] {
+        let provider = fixed_provider(brand(file), porter_proxy::RustlsConnect::trusting([]));
+        let mut signin = provider.sign_in(add()).expect("sign-in");
+        let SignInStep::AskFields(form) =
+            porter_provider::SignIn::next(&mut signin, SignInInput::Start).await
+        else {
+            panic!("{file}: a form first");
+        };
+        let kinds: Vec<FieldKind> = form.iter().map(|f| f.kind).collect();
+        assert_eq!(kinds, [FieldKind::Address, want], "{file}");
+    }
 }
 
 #[tokio::test]

@@ -195,6 +195,7 @@ fn label_of(kind: FieldKind) -> &'static str {
         FieldKind::Server => "Server",
         FieldKind::Username => "User name",
         FieldKind::Password => "Password",
+        FieldKind::AppPassword => "App password",
         FieldKind::ApiKey => "API key (hidden)",
         FieldKind::Token => "API token (hidden)",
         FieldKind::Protocol => "Mail protocol",

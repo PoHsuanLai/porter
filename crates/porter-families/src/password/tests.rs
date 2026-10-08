@@ -135,3 +135,32 @@ fn what_was_typed_is_read_by_field_and_a_password_keeps_its_spaces() {
     );
     assert_eq!(text_of(&answers, FieldKind::Username), None);
 }
+
+/// ship-5: the password is read from the app password field, or from a password field (a host
+/// may answer an app password form with either kind).
+#[cfg(feature = "generic")]
+#[test]
+fn the_typed_password_is_the_app_password_else_the_password() {
+    let answer = |kind, text: &str| FieldAnswer {
+        kind,
+        value: FieldValue::Secret(SecretText::new(text)),
+    };
+    let read = |answers: &[FieldAnswer]| typed_password(answers).map(|s| s.expose().to_owned());
+    assert_eq!(
+        read(&[answer(FieldKind::AppPassword, "app")]).as_deref(),
+        Some("app")
+    );
+    assert_eq!(
+        read(&[answer(FieldKind::Password, "pw")]).as_deref(),
+        Some("pw")
+    );
+    assert_eq!(
+        read(&[
+            answer(FieldKind::Password, "pw"),
+            answer(FieldKind::AppPassword, "app")
+        ])
+        .as_deref(),
+        Some("app")
+    );
+    assert_eq!(read(&[answer(FieldKind::AppPassword, "")]), None);
+}

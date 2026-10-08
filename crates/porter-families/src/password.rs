@@ -36,6 +36,26 @@ pub(crate) fn password() -> FieldSpec {
     field(FieldKind::Password, Entry::Secret, Presence::Required)
 }
 
+/// The password field a provider asks for: an app password when its sign-in is `app_password`
+/// (iCloud, Fastmail, Yahoo: the service takes no account password from a mail app), else a
+/// password.
+#[cfg(feature = "generic")]
+pub(crate) fn password_for(spec: &ProviderSpec) -> FieldSpec {
+    match spec.auth.kind {
+        porter_core::AuthKind::AppPassword => {
+            field(FieldKind::AppPassword, Entry::Secret, Presence::Required)
+        }
+        _ => password(),
+    }
+}
+
+/// The password typed, in either field: an app password, else a password (a host may send
+/// either kind for the field it was shown).
+#[cfg(feature = "generic")]
+pub(crate) fn typed_password(answers: &[FieldAnswer]) -> Option<SecretText> {
+    secret_of(answers, FieldKind::AppPassword).or_else(|| secret_of(answers, FieldKind::Password))
+}
+
 /// What a request that went nowhere says about the sign-in.
 pub(crate) fn fault_of(error: HttpError) -> SignInFault {
     match error {
