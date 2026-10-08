@@ -258,7 +258,13 @@ async fn the_changes_cursor_survives_a_restart_and_an_expired_one_reconciles_wit
     assert_eq!(
         count(&rig, "POST", "/upload/drive/v3/"),
         uploads,
-        "nothing was uploaded again"
+        "nothing was uploaded again; the drive holds {:?}; the requests were {:?}",
+        rig.google.drive_files(),
+        rig.google
+            .hits()
+            .iter()
+            .map(|h| format!("{} {} {}", h.method, h.target, h.status))
+            .collect::<Vec<_>>()
     );
 }
 
