@@ -32,6 +32,19 @@ fn remote_is(rig: &Rig, path: &str, bytes: &[u8]) -> bool {
     rig.google.drive_file(path).as_deref() == Some(bytes)
 }
 
+/// Puts `bytes` at `path` in the local folder in one step, as an editor saving a file does: a
+/// scan never sees it half written. (A scan of a file being written records the hash of what it
+/// read, the upload sends what is there by then, and the next scan sends it once more: the
+/// tests that count uploads saw that second upload now and then.)
+fn write_whole(rig: &Rig, path: &str, bytes: &[u8]) {
+    let staged = rig
+        .bus
+        .scratch()
+        .join(format!("staged-{}", path.replace('/', "-")));
+    std::fs::write(&staged, bytes).expect("stage");
+    std::fs::rename(&staged, local(rig, path)).expect("put in place");
+}
+
 fn local_is(rig: &Rig, path: &str, bytes: &[u8]) -> bool {
     std::fs::read(local(rig, path)).ok().as_deref() == Some(bytes)
 }
@@ -180,8 +193,8 @@ async fn a_large_file_goes_up_in_a_resumable_session_and_a_small_one_does_not() 
 
     // Past the 4 000 000 byte threshold of one multipart request.
     let big: Vec<u8> = (0..4_300_000u32).map(|i| (i % 251) as u8).collect();
-    std::fs::write(local(&rig, "big.bin"), &big).expect("big");
-    std::fs::write(local(&rig, "small.txt"), b"small").expect("small");
+    write_whole(&rig, "big.bin", &big);
+    write_whole(&rig, "small.txt", b"small");
     eventually("both files are on the drive", || {
         remote_is(&rig, "big.bin", &big) && remote_is(&rig, "small.txt", b"small")
     })
@@ -209,7 +222,7 @@ async fn the_changes_cursor_survives_a_restart_and_an_expired_one_reconciles_wit
     let files = client_of(&rig, FILES_APP).await;
     let sync = SyncProxy::new(&files).await.expect("proxy");
     rig.supervisor.tick().await;
-    std::fs::write(local(&rig, "mine.txt"), b"mine").expect("write");
+    write_whole(&rig, "mine.txt", b"mine");
     rig.google.drive_put_file("theirs.txt", b"theirs");
     eventually("both directions settle", || {
         remote_is(&rig, "mine.txt", b"mine") && local_is(&rig, "theirs.txt", b"theirs")
