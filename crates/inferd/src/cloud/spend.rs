@@ -72,6 +72,35 @@ struct Row {
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct Document {
     rows: Vec<Row>,
+    /// Set when the ledger's file could not be read: the day and month it was found in, whose
+    /// spend is not known (kept in the file so a restart does not forget it).
+    #[serde(default)]
+    unknown: Option<Unknown>,
+}
+
+/// The day and the month in which the ledger lost what had been spent. A cap of that period
+/// stops everything until the period ends, since what was spent cannot be told.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+struct Unknown {
+    day: i64,
+    month: i64,
+}
+
+impl Unknown {
+    fn at(now: UnixSeconds) -> Self {
+        Self {
+            day: day_of(now),
+            month: month_of(now),
+        }
+    }
+
+    /// Whether the period `now` is in is the one that was lost.
+    fn covers(self, period: Period, now: UnixSeconds) -> bool {
+        match period {
+            Period::Daily => self.day == day_of(now),
+            Period::Monthly => self.month == month_of(now),
+        }
+    }
 }
 
 /// Every scope's spend this day and month.
@@ -79,6 +108,7 @@ struct Document {
 pub struct Ledger {
     rows: Mutex<HashMap<Key, Spent>>,
     file: Option<PathBuf>,
+    unknown: Option<Unknown>,
 }
 
 impl Ledger {
@@ -87,24 +117,64 @@ impl Ledger {
         Self::default()
     }
 
-    /// A ledger kept in `file`: what it holds is read now (a file that is missing or does not
-    /// read starts it empty) and every record is written back.
+    /// A ledger kept in `file`, opened at the present time: see [`Ledger::open_at`].
     pub fn open(file: PathBuf) -> Self {
-        let rows = std::fs::read_to_string(&file)
-            .ok()
-            .and_then(|text| serde_json::from_str::<Document>(&text).ok())
-            .map(|document| {
-                document
-                    .rows
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| {
+                i64::try_from(since.as_secs()).unwrap_or(i64::MAX)
+            });
+        Self::open_at(file, UnixSeconds(now))
+    }
+
+    /// A ledger kept in `file`: what it holds is read now and every record is written back. A
+    /// file that is missing starts it empty. A file that is there and cannot be read is not
+    /// quietly forgotten (that would reset every cap to nothing spent): it is moved aside as
+    /// `<name>.corrupt-<seconds>`, and the day and month `now` is in count as unknown, so a cap
+    /// of either stops requests until that period ends.
+    pub fn open_at(file: PathBuf, now: UnixSeconds) -> Self {
+        let read = match std::fs::read_to_string(&file) {
+            Ok(text) => serde_json::from_str::<Document>(&text).map_err(|_| ()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Document::default()),
+            Err(_) => Err(()),
+        };
+        let (document, lost) = match read {
+            Ok(document) => (document, false),
+            Err(()) => {
+                set_aside(&file, now);
+                (Document::default(), true)
+            }
+        };
+        // A loss from an earlier run counts while its period lasts.
+        let unknown = match lost {
+            true => Some(Unknown::at(now)),
+            false => document.unknown.filter(|u| {
+                [Period::Daily, Period::Monthly]
                     .into_iter()
-                    .map(|r| (r.key, r.spent))
-                    .collect()
-            })
-            .unwrap_or_default();
-        Self {
+                    .any(|period| u.covers(period, now))
+            }),
+        };
+        let rows = document
+            .rows
+            .into_iter()
+            .map(|r| (r.key, r.spent))
+            .collect();
+        let ledger = Self {
             rows: Mutex::new(rows),
             file: Some(file),
+            unknown,
+        };
+        if lost {
+            // Keep the loss in the file at once: a restart before the first record must not
+            // forget it.
+            ledger.save(&ledger.rows.lock().unwrap_or_else(PoisonError::into_inner));
         }
+        ledger
+    }
+
+    /// Whether what was spent in the period `now` is in is lost.
+    fn is_unknown(&self, period: Period, now: UnixSeconds) -> bool {
+        self.unknown.is_some_and(|u| u.covers(period, now))
     }
 
     /// What `scope` has spent in the period `now` is in.
@@ -165,6 +235,7 @@ impl Ledger {
                     spent: *spent,
                 })
                 .collect(),
+            unknown: self.unknown,
         };
         let write = || -> std::io::Result<()> {
             use std::io::Write;
@@ -180,6 +251,8 @@ impl Ledger {
                 .mode(0o600)
                 .open(&temp)?;
             out.write_all(text.as_bytes())?;
+            // On disk before it replaces the old file, or a power cut leaves an empty ledger.
+            out.sync_all()?;
             std::fs::rename(&temp, file)
         };
         if let Err(why) = write() {
@@ -199,9 +272,13 @@ impl Ledger {
     ) -> SpendVerdict {
         line.caps_for(app, account)
             .iter()
-            .map(|cap| {
-                let spent = self.spent(&cap.scope, cap.period, now).micro_usd;
-                spend_verdict(cap, MicroUsd(spent), estimate)
+            .map(|cap| match self.is_unknown(cap.period, now) {
+                // What was spent this period is lost: a cap cannot be told to hold, so it stops.
+                true => SpendVerdict::Stop,
+                false => {
+                    let spent = self.spent(&cap.scope, cap.period, now).micro_usd;
+                    spend_verdict(cap, MicroUsd(spent), estimate)
+                }
             })
             .fold(SpendVerdict::Within, strictest)
     }
@@ -228,6 +305,25 @@ impl Ledger {
             .filter_map(|(name, limit)| Some((name.to_owned(), limit?.0))),
         );
         rows
+    }
+}
+
+/// Moves a ledger file that could not be read out of the way, to `<name>.corrupt-<seconds>`, so
+/// it can be looked at and the next save does not write over it.
+fn set_aside(file: &std::path::Path, now: UnixSeconds) {
+    let name = file.file_name().map_or_else(
+        || "spend.json".into(),
+        |name| name.to_string_lossy().into_owned(),
+    );
+    let aside = file.with_file_name(format!("{name}.corrupt-{}", now.0));
+    match std::fs::rename(file, &aside) {
+        Ok(()) => eprintln!(
+            "inferd: spend: {} could not be read; moved to {}. Spending limits stop requests \
+             until the day and the month end.",
+            file.display(),
+            aside.display()
+        ),
+        Err(why) => eprintln!("inferd: spend: {}: {why}", file.display()),
     }
 }
 
