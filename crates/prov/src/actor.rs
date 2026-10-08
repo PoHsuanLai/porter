@@ -2,6 +2,7 @@
 
 use crate::ids::{ClientName, RunId, SessionId, TaskId};
 use porter_core::AppName;
+use porter_core::capability::AgentProgram;
 use serde::{Deserialize, Serialize};
 
 /// The party that did something: one type for the undo journal, the eventlog and the audit.
@@ -24,6 +25,13 @@ pub enum Actor {
     Mcp {
         /// How it named itself.
         client: ClientName,
+    },
+    /// An external coding agent that talks ACP (Claude Code, Codex), named by its program. It
+    /// was audited as `Mcp { client: "acp:<program>" }` before this variant; those records still
+    /// read as `Mcp`.
+    Acp {
+        /// The agent's program, in porter-core's grammar (`claude-code`).
+        program: AgentProgram,
     },
     /// A process running `quire-do`: a terminal cannot tell the person from an agent typing in it.
     Cli,
@@ -115,6 +123,8 @@ pub enum ActorKind {
     Cua,
     /// [`Actor::Mcp`].
     Mcp,
+    /// [`Actor::Acp`].
+    Acp,
     /// [`Actor::Cli`].
     Cli,
     /// [`Actor::App`].
@@ -137,6 +147,7 @@ impl ActorKind {
             ActorKind::Companion => "companion",
             ActorKind::Cua => "cua",
             ActorKind::Mcp => "mcp",
+            ActorKind::Acp => "acp",
             ActorKind::Cli => "cli",
             ActorKind::App => "app",
             ActorKind::ThirdParty => "third_party",
@@ -157,6 +168,7 @@ impl Actor {
             } => ActorKind::Cua,
             Actor::Companion { .. } => ActorKind::Companion,
             Actor::Mcp { .. } => ActorKind::Mcp,
+            Actor::Acp { .. } => ActorKind::Acp,
             Actor::Cli => ActorKind::Cli,
             Actor::App { .. } => ActorKind::App,
             Actor::ThirdParty { .. } => ActorKind::ThirdParty,

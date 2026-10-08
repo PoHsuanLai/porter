@@ -55,6 +55,9 @@ fn every_actor() -> Vec<Actor> {
         Actor::Mcp {
             client: ClientName::parse("Claude Desktop").expect("client"),
         },
+        Actor::Acp {
+            program: AgentProgram::parse("claude-code").expect("program"),
+        },
         Actor::Cli,
         Actor::App {
             app: app("org.quire.Mail"),
@@ -110,6 +113,7 @@ fn every_actor_has_a_kind() {
             ActorKind::Cua,
             ActorKind::Companion,
             ActorKind::Mcp,
+            ActorKind::Acp,
             ActorKind::Cli,
             ActorKind::App,
             ActorKind::ThirdParty,
@@ -126,6 +130,7 @@ fn effects_are_ordered_by_severity_and_keep_their_slugs() {
         Effect::UndoableWrite,
         Effect::Outbound,
         Effect::Destructive,
+        Effect::Execute,
     ];
     assert!(ordered.windows(2).all(|pair| pair[0] < pair[1]));
     let slugs: Vec<String> = ordered.iter().map(round_trip).collect();
@@ -135,8 +140,59 @@ fn effects_are_ordered_by_severity_and_keep_their_slugs() {
             "\"read\"",
             "\"undoable_write\"",
             "\"outbound\"",
-            "\"destructive\""
+            "\"destructive\"",
+            "\"execute\""
         ]
+    );
+}
+
+#[test]
+fn execute_ranks_at_least_as_high_as_outbound_and_destructive() {
+    assert!(Effect::Execute >= Effect::Outbound);
+    assert!(Effect::Execute >= Effect::Destructive);
+    assert_eq!(Effect::Execute.slug(), "execute");
+}
+
+/// The four effects and the actors as the build before `Execute` and `Acp` wrote them: frozen
+/// literal JSON, read by this build unchanged. An ACP agent's calls were audited as `Mcp` with a
+/// client named `acp:<program>`; those records stay `Mcp`.
+#[test]
+fn records_written_before_execute_and_acp_still_read() {
+    const EFFECTS: &str = r#"["read","undoable_write","outbound","destructive"]"#;
+    let effects: Vec<Effect> = serde_json::from_str(EFFECTS).expect("old effects read");
+    assert_eq!(
+        effects,
+        [
+            Effect::Read,
+            Effect::UndoableWrite,
+            Effect::Outbound,
+            Effect::Destructive
+        ]
+    );
+    const OLD_ACP: &str = r#"{"kind":"mcp","v":{"client":"acp:claude-code"}}"#;
+    let old: Actor = serde_json::from_str(OLD_ACP).expect("old agent actor reads");
+    assert_eq!(old.kind(), ActorKind::Mcp);
+    assert_eq!(round_trip(&old), OLD_ACP);
+    const OLD_KINDS: &str =
+        r#"["user","companion","cua","mcp","cli","app","third_party","system","unknown"]"#;
+    let kinds: Vec<ActorKind> = serde_json::from_str(OLD_KINDS).expect("old kinds read");
+    assert_eq!(kinds.len(), 9);
+}
+
+#[test]
+fn an_acp_actor_pins_its_json_and_is_its_own_kind() {
+    let actor = Actor::Acp {
+        program: AgentProgram::parse("claude-code").expect("program"),
+    };
+    assert_eq!(
+        round_trip(&actor),
+        r#"{"kind":"acp","v":{"program":"claude-code"}}"#
+    );
+    assert_eq!(actor.kind(), ActorKind::Acp);
+    assert_eq!(ActorKind::Acp.slug(), "acp");
+    assert!(
+        serde_json::from_str::<Actor>(r#"{"kind":"acp","v":{"program":"Claude Code"}}"#).is_err(),
+        "a program outside porter-core's grammar is refused"
     );
 }
 
@@ -280,6 +336,7 @@ fn slugs_equal_the_serde_forms() {
         ActorKind::Companion,
         ActorKind::Cua,
         ActorKind::Mcp,
+        ActorKind::Acp,
         ActorKind::Cli,
         ActorKind::App,
         ActorKind::ThirdParty,
@@ -296,6 +353,7 @@ fn slugs_equal_the_serde_forms() {
         Effect::UndoableWrite,
         Effect::Outbound,
         Effect::Destructive,
+        Effect::Execute,
     ] {
         assert_eq!(
             serde_json::to_string(&effect).unwrap(),
