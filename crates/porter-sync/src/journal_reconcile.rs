@@ -206,7 +206,15 @@ mod tests {
 
     fn synced_rows(count: usize) -> Vec<JournalItem> {
         (0..count)
-            .map(|n| row(&format!("l{n}"), Some(&format!("r{n}")), Some("v1"), "h", ItemState::Synced))
+            .map(|n| {
+                row(
+                    &format!("l{n}"),
+                    Some(&format!("r{n}")),
+                    Some("v1"),
+                    "h",
+                    ItemState::Synced,
+                )
+            })
             .collect()
     }
 
@@ -224,7 +232,10 @@ mod tests {
             let (known, changes) = after_listing(count, 0);
             assert_eq!(
                 mass_delete(&known, &changes),
-                Some(MassDelete { discard: count, held: count }),
+                Some(MassDelete {
+                    discard: count,
+                    held: count
+                }),
                 "{count}"
             );
         }
@@ -265,15 +276,30 @@ mod tests {
     fn only_settled_items_count_towards_a_mass_delete() {
         let mut known = synced_rows(3);
         // Pending items the listing lacks become conflicts, not discards.
-        known.push(row("p", Some("rp"), Some("v1"), "h", ItemState::PendingUpload));
+        known.push(row(
+            "p",
+            Some("rp"),
+            Some("v1"),
+            "h",
+            ItemState::PendingUpload,
+        ));
         known.push(row("n", None, None, "h", ItemState::PendingUpload));
         let changes = reconcile(&known, &[], UnixSeconds(0));
         assert_eq!(
             mass_delete(&known, &changes),
-            Some(MassDelete { discard: 3, held: 3 })
+            Some(MassDelete {
+                discard: 3,
+                held: 3
+            })
         );
         // A journal of only pending items has nothing to discard.
-        let pending = [row("p", Some("rp"), Some("v1"), "h", ItemState::PendingUpload)];
+        let pending = [row(
+            "p",
+            Some("rp"),
+            Some("v1"),
+            "h",
+            ItemState::PendingUpload,
+        )];
         let changes = reconcile(&pending, &[], UnixSeconds(0));
         assert_eq!(mass_delete(&pending, &changes), None);
     }

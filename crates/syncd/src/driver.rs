@@ -14,6 +14,21 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{Notify, watch};
 
+/// How a wait ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Slept {
+    /// The time it was given passed.
+    Through,
+    /// An input changed first (a nudge, the network, a push signal).
+    Woken,
+}
+
+/// One step of a sleep that has `remaining` seconds to go: never longer than the poll interval
+/// `poll` (at least a second), so the wall clock is looked at again at least that often.
+pub(crate) fn step(remaining: u64, poll: u32) -> Duration {
+    Duration::from_secs(remaining.min(u64::from(poll).max(1)))
+}
+
 /// One engine, its scheduler state and its ends of the daemon's seams.
 #[derive(Debug)]
 pub struct Driver<R, D, K> {
@@ -70,7 +85,16 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
                 network: *self.network.borrow(),
                 settings: self.settings,
             };
-            match next_wake(&inputs, now, &mut self.jitter) {
+            let wake = match next_wake(&inputs, now, &mut self.jitter) {
+                // The time chosen (jitter included) is kept until it arrives, then the cycle
+                // runs: planning again would draw a new jitter and could push it out.
+                Wake::At(at) => match self.sleep_until(at).await {
+                    Slept::Through => Wake::Now,
+                    Slept::Woken => continue,
+                },
+                other => other,
+            };
+            match wake {
                 Wake::Now => {
                     // Under the dataset's cycle lock: a removal waits for it, so no file is
                     // written once the account's mirror is deleted.
@@ -79,11 +103,27 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
                     };
                     self.cycle().await;
                 }
-                Wake::At(at) => {
-                    let wait = u64::try_from(at.0.saturating_sub(now.0)).unwrap_or(0);
-                    self.wait(Some(Duration::from_secs(wait))).await;
+                Wake::At(_) => {}
+                Wake::Hold(_) => {
+                    self.wait(None).await;
                 }
-                Wake::Hold(_) => self.wait(None).await,
+            }
+        }
+    }
+
+    /// Sleeps until `at` on the engine's clock, in steps of at most the poll interval: the timer counts
+    /// time the computer was awake and the clock does not, so after a suspend a single long
+    /// sleep would run late by as long as the computer slept; each step ends by looking at the
+    /// clock again. Ends early, `Woken`, when something the scheduler reads changed.
+    async fn sleep_until(&mut self, at: porter_core::UnixSeconds) -> Slept {
+        loop {
+            let remaining = u64::try_from(at.0.saturating_sub(self.engine_now().0)).unwrap_or(0);
+            if remaining == 0 {
+                return Slept::Through;
+            }
+            let pause = step(remaining, self.settings.poll_base);
+            if self.wait(Some(pause)).await == Slept::Woken {
+                return Slept::Woken;
             }
         }
     }
@@ -93,8 +133,9 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
         self.engine.now()
     }
 
-    /// Sleeps for `timeout` (forever when `None`) or until something the scheduler reads changes.
-    async fn wait(&mut self, timeout: Option<Duration>) {
+    /// Sleeps for `timeout` (forever when `None`) or until something the scheduler reads changes;
+    /// which of the two ended it.
+    async fn wait(&mut self, timeout: Option<Duration>) -> Slept {
         let sleep = async {
             match timeout {
                 Some(after) => tokio::time::sleep(after).await,
@@ -102,7 +143,7 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
             }
         };
         tokio::select! {
-            () = sleep => {}
+            () = sleep => return Slept::Through,
             nudge = self.handle.nudged() => {
                 if let Nudge::Settle(request) = nudge {
                     self.settle(request);
@@ -115,6 +156,7 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
                 }
             }
         }
+        Slept::Woken
     }
 
     /// Settles one conflict between cycles (the engine is this driver's alone), answers the

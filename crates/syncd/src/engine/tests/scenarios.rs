@@ -317,7 +317,11 @@ async fn an_empty_listing_after_a_full_one_discards_nothing_until_the_person_con
         let report = engine.sync_once().await.expect("cycle");
         assert_eq!(report.outcome, Outcome::NeedsConfirmation(held));
         assert_eq!(report.discarded, 0);
-        assert_eq!(world.dataset.snapshot().len(), 3, "the local files are kept");
+        assert_eq!(
+            world.dataset.snapshot().len(),
+            3,
+            "the local files are kept"
+        );
         assert!(
             states(&engine).iter().all(|(_, s)| *s == ItemState::Synced),
             "the journal is untouched"

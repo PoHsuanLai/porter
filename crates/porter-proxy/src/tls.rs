@@ -196,7 +196,8 @@ mod tests {
             std::future::pending::<()>().await;
             drop(held);
         });
-        let connect = RustlsConnect::trusting([]).with_handshake_timeout(Duration::from_millis(150));
+        let connect =
+            RustlsConnect::trusting([]).with_handshake_timeout(Duration::from_millis(150));
         let origin = Origin {
             scheme: UrlScheme::Imaps,
             host: "127.0.0.1".to_owned(),

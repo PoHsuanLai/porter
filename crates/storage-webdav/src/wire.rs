@@ -400,16 +400,32 @@ mod tests {
             let got = read_response(&mut stream, Method::Get, 100)
                 .await
                 .expect_err("a stall");
-            assert_eq!(got, HttpError::TimedOut, "{}", String::from_utf8_lossy(bytes));
+            assert_eq!(
+                got,
+                HttpError::TimedOut,
+                "{}",
+                String::from_utf8_lossy(bytes)
+            );
         }
     }
 
     #[test]
     fn only_a_timed_out_stream_is_a_timeout() {
         use std::io::{Error, ErrorKind};
-        assert_eq!(io_fault(&Error::from(ErrorKind::TimedOut)), HttpError::TimedOut);
-        for kind in [ErrorKind::BrokenPipe, ErrorKind::ConnectionReset, ErrorKind::UnexpectedEof] {
-            assert_eq!(io_fault(&Error::from(kind)), HttpError::Unreachable, "{kind:?}");
+        assert_eq!(
+            io_fault(&Error::from(ErrorKind::TimedOut)),
+            HttpError::TimedOut
+        );
+        for kind in [
+            ErrorKind::BrokenPipe,
+            ErrorKind::ConnectionReset,
+            ErrorKind::UnexpectedEof,
+        ] {
+            assert_eq!(
+                io_fault(&Error::from(kind)),
+                HttpError::Unreachable,
+                "{kind:?}"
+            );
         }
     }
 }

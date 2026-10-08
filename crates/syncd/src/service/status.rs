@@ -72,7 +72,10 @@ pub fn status_details(status: &StatusSnapshot) -> Details {
     );
     put(
         KEY_NEEDS_CONFIRMATION,
-        status.needs_confirmation.as_ref().and_then(confirmation_value),
+        status
+            .needs_confirmation
+            .as_ref()
+            .and_then(confirmation_value),
     );
     details
 }
@@ -145,7 +148,10 @@ mod tests {
             quota.try_clone().expect("clone").try_into().expect("a{sv}");
         assert_eq!(u64::try_from(&nested["used"]).ok(), Some(10));
         assert_eq!(u64::try_from(&nested["total"]).ok(), Some(100));
-        assert!(!details.contains_key(KEY_NEEDS_CONFIRMATION), "only while held");
+        assert!(
+            !details.contains_key(KEY_NEEDS_CONFIRMATION),
+            "only while held"
+        );
     }
 
     #[test]
