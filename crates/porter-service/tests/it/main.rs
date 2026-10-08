@@ -3,5 +3,6 @@
 mod add_flow;
 mod grant_kind;
 mod local;
+mod persist;
 mod session_scope;
 mod sync_grant;

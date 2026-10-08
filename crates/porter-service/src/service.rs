@@ -35,6 +35,8 @@ pub struct AccountService<P, S, U, K, R = NoStore, A = NoAudit> {
     pub(crate) store: R,
     pub(crate) audit: A,
     pub(crate) registry: Mutex<Registry>,
+    /// Held across a save's snapshot and write, so saves do not overlap.
+    pub(crate) persist_gate: tokio::sync::Mutex<()>,
     /// Account ids an add has chosen and is still filing secrets for: not in the registry yet
     /// (the row is added only once its secrets are stored), and taken all the same.
     pub(crate) reserved: Mutex<HashSet<AccountId>>,
@@ -56,6 +58,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock> AccountService<P, S, U, K> {
             store: NoStore,
             audit: NoAudit,
             registry: Mutex::new(registry),
+            persist_gate: tokio::sync::Mutex::new(()),
             reserved: Mutex::new(HashSet::new()),
             roster: OnceLock::new(),
         }
@@ -74,6 +77,7 @@ impl<P, S, U, K, R, A> AccountService<P, S, U, K, R, A> {
             store,
             audit: self.audit,
             registry: self.registry,
+            persist_gate: self.persist_gate,
             reserved: self.reserved,
             roster: self.roster,
         }
@@ -90,6 +94,7 @@ impl<P, S, U, K, R, A> AccountService<P, S, U, K, R, A> {
             store: self.store,
             audit,
             registry: self.registry,
+            persist_gate: self.persist_gate,
             reserved: self.reserved,
             roster: self.roster,
         }
@@ -296,7 +301,12 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
 
     /// Saves the registry; `Unavailable` when the store cannot be written. The change stays in
     /// memory, and the next save writes it.
+    ///
+    /// One save runs at a time, and its snapshot is taken only once it holds the gate: a save
+    /// that waited writes the registry as it is then, so the last save to finish always carries
+    /// the last state (a snapshot taken before the wait could land after a newer one).
     pub(crate) async fn persist(&self) -> Result<(), Refusal> {
+        let _one_at_a_time = self.persist_gate.lock().await;
         let snapshot = self.lock().persisted();
         self.store
             .save(&snapshot)

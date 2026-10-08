@@ -75,13 +75,47 @@ async fn a_crash_between_write_and_rename_leaves_the_old_file() {
     let before = std::fs::read(store.path()).expect("read");
     // The new document is staged and synced, and the process dies before the rename.
     let next = Persisted::empty().to_json().expect("json");
-    store.stage(&next).expect("staged");
+    let stale = store.stage(&next).expect("staged");
     assert_eq!(std::fs::read(store.path()).expect("read"), before);
     assert_eq!(store.load().await, Ok(registry()));
-    // The next run saves over the stale staging file.
+    // The next run saves under a staging name of its own and leaves the stale file alone.
     store.save(&Persisted::empty()).await.expect("saved");
     assert_eq!(store.load().await, Ok(Persisted::empty()));
-    assert!(!store.staging().exists());
+    assert!(stale.exists());
+}
+
+/// rel-1: saves that overlap (the service now serialises them, but the file must not depend on
+/// it) each stage under a name of their own, so every one lands whole and the registry file is
+/// always one complete document. Before, all shared `registry.json.tmp`: two writers truncated
+/// and interleaved one file, and a rename could publish half of each.
+#[tokio::test]
+async fn overlapping_saves_never_share_a_staging_file() {
+    let scratch = Scratch::new();
+    let store = store_in(&scratch);
+    let names: std::collections::HashSet<PathBuf> = (0..64).map(|_| store.staging()).collect();
+    assert_eq!(names.len(), 64);
+    let tasks: Vec<_> = (0..16)
+        .map(|n| {
+            let store = store.clone();
+            let state = match n % 2 {
+                0 => registry(),
+                _ => Persisted::empty(),
+            };
+            tokio::spawn(async move { store.save(&state).await })
+        })
+        .collect();
+    for task in tasks {
+        task.await.expect("joined").expect("saved");
+    }
+    let loaded = store.load().await.expect("a whole document");
+    assert!(loaded == registry() || loaded == Persisted::empty());
+    // Nothing is left staged: every save renamed its own file.
+    let left: Vec<_> = std::fs::read_dir(scratch.path().join("porter"))
+        .expect("dir")
+        .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
+        .filter(|name| name.contains(".tmp"))
+        .collect();
+    assert!(left.is_empty(), "{left:?}");
 }
 
 #[tokio::test]

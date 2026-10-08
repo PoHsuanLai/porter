@@ -2,10 +2,10 @@
 //! caller names, the serde form of [`Persisted`]. The directory is an argument, never read from
 //! the environment here; the binary resolves `$XDG_STATE_HOME/porter` once.
 //!
-//! A save is atomic: the document goes to a temporary file in the same directory, is synced,
-//! renamed over the old one, and the directory is synced. A crash before the rename leaves the
-//! old file whole. A file that cannot be read as a registry is refused with a typed error and
-//! is never written over.
+//! A save is atomic: the document goes to a temporary file in the same directory (a name of its
+//! own, so two saves never share one), is synced, renamed over the old one, and the directory is
+//! synced. A crash before the rename leaves the old file whole. A file that cannot be read as a
+//! registry is refused with a typed error and is never written over.
 //!
 //! Only blocking file calls live here; the seam is async, so each runs on tokio's blocking pool.
 
@@ -13,11 +13,15 @@ use porter_core::store::{Persisted, StoreFault};
 use porter_service::{RegistryStore, StoreError};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// The registry file's name inside the state directory.
 const FILE: &str = "registry.json";
-/// Where a save is staged before the rename.
+/// What a save's staging file name starts with; the process and a number follow.
 const STAGING: &str = "registry.json.tmp";
+
+/// Numbers the staging files of this process.
+static STAGED: AtomicU64 = AtomicU64::new(0);
 
 /// The registry kept as one JSON file, mode 0600 where the platform has modes.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,23 +40,39 @@ impl FileStore {
         self.dir.join(FILE)
     }
 
+    /// A staging name no other save, in this process or another, is using.
     fn staging(&self) -> PathBuf {
-        self.dir.join(STAGING)
+        let n = STAGED.fetch_add(1, Ordering::Relaxed);
+        self.dir
+            .join(format!("{STAGING}-{}-{n}", std::process::id()))
     }
 
-    /// The first half of a save: the whole document on disk and synced, under the staging name.
-    /// Until [`FileStore::commit`] the registry file is untouched.
-    fn stage(&self, text: &str) -> io::Result<()> {
+    /// The first half of a save: the whole document on disk and synced, under a staging name of
+    /// its own, which it returns. Until [`FileStore::commit`] the registry file is untouched.
+    fn stage(&self, text: &str) -> io::Result<PathBuf> {
         std::fs::create_dir_all(&self.dir)?;
-        let mut file = private_options().open(self.staging())?;
-        file.write_all(text.as_bytes())?;
-        file.sync_all()
+        let staged = self.staging();
+        let written = private_options().open(&staged).and_then(|mut file| {
+            file.write_all(text.as_bytes())
+                .and_then(|()| file.sync_all())
+        });
+        match written {
+            Ok(()) => Ok(staged),
+            Err(e) => {
+                let _ = std::fs::remove_file(&staged);
+                Err(e)
+            }
+        }
     }
 
     /// The second half: the staged document replaces the registry file, and the directory entry
     /// is made durable.
-    fn commit(&self) -> io::Result<()> {
-        std::fs::rename(self.staging(), self.path())?;
+    fn commit(&self, staged: &Path) -> io::Result<()> {
+        let done = std::fs::rename(staged, self.path());
+        if done.is_err() {
+            let _ = std::fs::remove_file(staged);
+        }
+        done?;
         sync_dir(&self.dir)
     }
 
@@ -76,7 +96,7 @@ impl FileStore {
             return Err(StoreError::Fault(fault));
         }
         self.stage(&text)
-            .and_then(|()| self.commit())
+            .and_then(|staged| self.commit(&staged))
             .map_err(|_| StoreError::Unavailable)
     }
 }
@@ -98,10 +118,10 @@ impl RegistryStore for FileStore {
     }
 }
 
-/// Create-and-truncate, readable by the owner alone.
+/// Create a file that is not there yet, readable by the owner alone.
 fn private_options() -> std::fs::OpenOptions {
     let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
+    options.write(true).create_new(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
