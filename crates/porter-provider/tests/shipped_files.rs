@@ -485,3 +485,31 @@ fn the_four_agent_files_make_agent_login_rows_named_by_their_labels() {
             .all(|r| !["claude-code", "codex", "gemini-cli", "acp-agent"].contains(&r.id.as_str()))
     );
 }
+
+#[test]
+fn only_googles_picker_row_lists_an_authenticated_origin_and_it_is_one_exact_host() {
+    let listed: Vec<(String, String, Vec<String>)> = shipped()
+        .iter()
+        .flat_map(|(_, spec)| {
+            spec.capabilities
+                .iter()
+                .filter(|row| !row.auth_origins.is_empty())
+                .map(|row| {
+                    (
+                        spec.id.as_str().to_owned(),
+                        row.family.slug().to_owned(),
+                        row.auth_origins.iter().map(ToString::to_string).collect(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    assert_eq!(
+        listed,
+        [(
+            "google".to_owned(),
+            "google_photos_picker".to_owned(),
+            vec!["lh3.googleusercontent.com".to_owned()]
+        )]
+    );
+}

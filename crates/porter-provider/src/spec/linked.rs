@@ -101,6 +101,52 @@ impl From<LinkedOrigin> for String {
     }
 }
 
+/// One origin a service hands out links to that DO need the account's bearer (Google Photos'
+/// picked items on `lh3.googleusercontent.com`), as the file writes it: an exact `host` or
+/// `host:port`. Never a wildcard: the daemon adds the account's credential to what it dials, so
+/// every host is named. The scheme is the home endpoint's (a relay never goes to a less secure
+/// scheme than the service it belongs to; for a real service that is `https`).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct AuthOrigin(LinkedOrigin);
+
+impl AuthOrigin {
+    /// The origin written as `text`, or why it is not one (a wildcard is not).
+    pub fn parse(text: &str) -> Result<Self, CoreError> {
+        if text.contains('*') {
+            return Err(CoreError::MalformedId {
+                what: "authenticated origin",
+                text: text.to_owned(),
+            });
+        }
+        LinkedOrigin::parse(text).map(Self)
+    }
+
+    /// Whether `origin` is exactly this one (the scheme is the caller's to check).
+    pub fn allows(&self, origin: &Origin) -> bool {
+        self.0.allows(origin)
+    }
+}
+
+impl fmt::Display for AuthOrigin {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl TryFrom<String> for AuthOrigin {
+    type Error = CoreError;
+    fn try_from(text: String) -> Result<Self, CoreError> {
+        Self::parse(&text)
+    }
+}
+
+impl From<AuthOrigin> for String {
+    fn from(origin: AuthOrigin) -> String {
+        origin.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -129,6 +175,19 @@ mod tests {
             let pattern = LinkedOrigin::parse(pattern).expect("pattern");
             assert_eq!(pattern.allows(&origin(url)), *want, "{pattern} vs {url}");
         }
+    }
+
+    #[test]
+    fn an_authenticated_origin_is_one_exact_host_and_never_a_wildcard() {
+        let lh3 = AuthOrigin::parse("lh3.googleusercontent.com").expect("origin");
+        assert!(lh3.allows(&origin("https://lh3.googleusercontent.com")));
+        assert!(!lh3.allows(&origin("https://lh4.googleusercontent.com")));
+        assert!(!lh3.allows(&origin("https://a.lh3.googleusercontent.com")));
+        assert!(!lh3.allows(&origin("https://lh3.googleusercontent.com:8443")));
+        for text in ["*.googleusercontent.com", "*", "lh*.example.org", "", "a b"] {
+            assert!(AuthOrigin::parse(text).is_err(), "{text:?}");
+        }
+        assert_eq!(lh3.to_string(), "lh3.googleusercontent.com");
     }
 
     #[test]

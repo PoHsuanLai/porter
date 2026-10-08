@@ -21,6 +21,6 @@ pub use set::ProviderSet;
 pub use shipped::{SHIPPED_FILES, shipped, shipped_specs};
 pub use sign_in::{RevokeOutcome, SignIn, SignInMode, SignInStart, SignInStep, Signed};
 pub use spec::{
-    AiSpec, AuthSpec, CapabilityRow, Discovery, DomainMatch, DomainName, Endpoint, Issuer,
-    IssuerEndpoints, LinkedOrigin, Matching, Port, ProviderSpec,
+    AiSpec, AuthOrigin, AuthSpec, CapabilityRow, Discovery, DomainMatch, DomainName, Endpoint,
+    Issuer, IssuerEndpoints, LinkedOrigin, Matching, Port, ProviderSpec,
 };

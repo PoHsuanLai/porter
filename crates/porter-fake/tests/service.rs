@@ -350,6 +350,69 @@ async fn a_linked_relay_dials_only_an_origin_the_provider_file_declares_and_pres
 }
 
 #[tokio::test]
+async fn an_authenticated_relay_reaches_an_origin_the_file_lists_with_the_credential_and_no_other()
+{
+    use porter_core::RelayAuth;
+
+    let audit = RecordingAudit::default();
+    let sheets = ScriptedSheets::answering([
+        Scripted::AllowFirst(GrantScope::Always),
+        Scripted::AllowFirst(GrantScope::Always),
+    ]);
+    let service = fake_service(sheets).await.with_audit(audit.clone());
+    let me = app("org.quire.Photos");
+    let storage = granted(choose(&service, &me, files(), DataClass::Files).await);
+    let mailer = granted(choose(&service, &me, mail(), DataClass::Mail).await);
+
+    let plan = service
+        .open_authenticated(&me, &storage.grant, &url("https://media.cloud.invalid"))
+        .await
+        .expect("a listed origin");
+    assert_eq!(plan.endpoint.url, url("https://media.cloud.invalid:443"));
+    assert_eq!(plan.endpoint.family, Family::WebDav);
+    match &plan.auth {
+        RelayAuth::Password(password) => assert_eq!(password.expose(), "app-pw"),
+        other => panic!("the credential goes with it, got {other:?}"),
+    }
+
+    const REFUSED: &[(&str, &str)] = &[
+        ("an origin the file does not list", "https://evil.invalid"),
+        (
+            "a host under the listed one",
+            "https://a.media.cloud.invalid",
+        ),
+        (
+            "a listed host on another port",
+            "https://media.cloud.invalid:8443",
+        ),
+        ("a downgrade to plain http", "http://media.cloud.invalid"),
+        ("a path on a listed host", "https://media.cloud.invalid/x"),
+        (
+            "a linked origin, which is credential-free",
+            "https://a.cdn.cloud.invalid",
+        ),
+    ];
+    for (name, origin) in REFUSED {
+        assert_eq!(
+            service
+                .open_authenticated(&me, &storage.grant, &url(origin))
+                .await
+                .err(),
+            Some(Refusal::EndpointNotGranted),
+            "{name}"
+        );
+    }
+    assert_eq!(
+        service
+            .open_authenticated(&me, &mailer.grant, &url("https://media.cloud.invalid"))
+            .await
+            .err(),
+        Some(Refusal::EndpointNotGranted),
+        "a mail grant has none"
+    );
+}
+
+#[tokio::test]
 async fn a_password_account_plans_its_password_and_an_oauth_account_a_minted_token() {
     use porter_core::RelayAuth;
 

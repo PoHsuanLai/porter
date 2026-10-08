@@ -20,6 +20,7 @@ use porter_core::{
 };
 use porter_dbus::{Caller, CallerRole};
 use porter_fake::{FakeProvider, FixedClock, MemoryStore, RecordingAudit};
+use porter_fake_servers::google::MediaOrigin;
 use porter_fake_servers::{FakeGoogle, GoogleHandle, Running};
 use porter_provider::Provider;
 use porter_secrets::{MemorySecrets, Secrets};
@@ -117,7 +118,19 @@ impl StorageGrants for Gate {
     }
 }
 
+/// Where the picked photos' bytes are served.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Media {
+    /// On the Picker API's own origin.
+    Same,
+    /// On a second origin that wants the bearer, which the provider file lists in `auth_origins`.
+    Listed,
+    /// On a second origin that wants the bearer and that the provider file does not list.
+    Unlisted,
+}
+
 pub struct Rig {
+    pub media: Option<Running<MediaOrigin>>,
     pub bus: PrivateBus,
     pub known: Known,
     pub hub: Hub,
@@ -188,12 +201,34 @@ impl Rig {
 
 /// The rig, with Google Photos behind `photos`.
 pub async fn rig(photos: PhotosSwitch) -> Rig {
+    rig_with(photos, Media::Same).await
+}
+
+/// [`rig`], with the picked photos' bytes where `media` says.
+pub async fn rig_with(photos: PhotosSwitch, media: Media) -> Rig {
     let google = FakeGoogle::start_fixed(DRIVE_BEARER).await.expect("google");
     google.accept_bearer(UPLOAD_BEARER);
     google.accept_bearer(PICKER_BEARER);
     google.drive_set_limit(1_000_000_000);
     let base = google.base_url().to_owned();
-    let provider = FakeProvider::from_file(PROVIDER);
+    let origin = match media {
+        Media::Same => None,
+        Media::Listed | Media::Unlisted => Some(google.serve_media().await.expect("media origin")),
+    };
+    let listed = match (media, &origin) {
+        (Media::Listed, Some(origin)) => Some(origin.base_url().replacen("http://", "", 1)),
+        (Media::Unlisted, _) => Some("photos.elsewhere.invalid".to_owned()),
+        _ => None,
+    };
+    let text = match listed {
+        Some(host) => PROVIDER.replacen(
+            "endpoint = \"https://photospicker.googleapis.com/v1\"\n",
+            &format!("endpoint = \"https://photospicker.googleapis.com/v1\"\nauth_origins = [\"{host}\"]\n"),
+            1,
+        ),
+        None => PROVIDER.to_owned(),
+    };
+    let provider = FakeProvider::from_file(&text);
     let spec = provider.spec();
     let account = Account {
         id: AccountId::parse(ACCOUNT).expect("id"),
@@ -286,6 +321,7 @@ pub async fn rig(photos: PhotosSwitch) -> Rig {
     .expect("paths");
     let (network_keeps, network) = watch::channel(Network::Unmetered);
     let mut rig = Rig {
+        media: origin,
         bus,
         known,
         hub,

@@ -8,7 +8,7 @@ mod matching;
 
 pub use auth::{AuthSpec, Issuer, IssuerEndpoints};
 pub use discovery::{Discovery, Port};
-pub use linked::LinkedOrigin;
+pub use linked::{AuthOrigin, LinkedOrigin};
 pub use matching::{DomainMatch, DomainName, Matching};
 
 use porter_core::AuthKind;
@@ -65,6 +65,12 @@ pub struct CapabilityRow {
     /// kind with no credential added. Empty for a service with no such links.
     #[serde(default)]
     pub linked_origins: Vec<LinkedOrigin>,
+    /// The other origins this row's service hands out links to that want the account's bearer
+    /// (Google Photos' `baseUrl` on `lh3.googleusercontent.com`): `OpenAuthenticated` accepts
+    /// each as an endpoint of the grant's kind and relays to it WITH the bearer of this row's
+    /// family. Exact hosts, no wildcard, same scheme as the row's endpoint.
+    #[serde(default)]
+    pub auth_origins: Vec<AuthOrigin>,
 }
 
 /// A service URL written in a provider file.

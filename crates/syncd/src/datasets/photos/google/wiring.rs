@@ -4,15 +4,14 @@
 //! the provider file on two origins (`photoslibrary.googleapis.com`,
 //! `photospicker.googleapis.com`).
 //!
-//! A picked item's `baseUrl` is on a third host. The picker's `Http` sends the Picker API's
-//! origin through the authenticated relay and any other origin through `OpenLinked`, which adds
-//! no credential and which accountd opens only for an origin the provider file declares. Google
-//! wants the bearer on those downloads, so against the real service they fail until accountd can
-//! open an *authenticated* relay to an extra origin of a row (FINDINGS: interface ask); against
-//! the fake, whose items are on the Picker origin, they work.
+//! A picked item's `baseUrl` is on a third host (`lh3.googleusercontent.com`) that wants the
+//! bearer. The picker's `Http` sends every origin through `OpenAuthenticated`: the Picker API's
+//! own, and any other as an origin of the grant. accountd relays WITH the bearer only to an
+//! origin the provider file names in the picker row's `auth_origins` (exact hosts, the row's
+//! scheme) and refuses every other, so a `baseUrl` on an unlisted host fails to dial.
 
 use super::picker::PhotosPicker;
-use crate::graph::{LinkedDial, bare_url};
+use crate::graph::bare_url;
 use crate::webdav::{BuildError, RelayDial};
 use porter_client::{Accounts, Transport};
 use porter_core::{EndpointUrl, GrantId, Origin, WebUrl};
@@ -23,11 +22,11 @@ use storage_webdav::{StreamHttp, StreamLimits};
 /// What the upload API sends through.
 pub type LibraryHttp<T> = StreamHttp<RelayDial<T>>;
 
-type MakeLinked<T> = Box<dyn Fn(&Origin) -> StreamHttp<LinkedDial<T>> + Send + Sync>;
+type MakeAuth<T> = Box<dyn Fn(&Origin) -> StreamHttp<RelayDial<T>> + Send + Sync>;
 
-/// What the Picker sends through: its origin over the authenticated relay, any other over a
-/// linked one.
-pub type PickerHttp<T> = Routed<StreamHttp<RelayDial<T>>, StreamHttp<LinkedDial<T>>, MakeLinked<T>>;
+/// What the Picker sends through: every origin over an authenticated relay, the Picker's own
+/// and any other the provider file names.
+pub type PickerHttp<T> = Routed<StreamHttp<RelayDial<T>>, StreamHttp<RelayDial<T>>, MakeAuth<T>>;
 
 /// The Picker API as syncd holds it for an account.
 pub type GooglePicker<T> = PhotosPicker<PickerHttp<T>>;
@@ -51,13 +50,18 @@ pub fn picker_http<T: Transport + 'static>(
     endpoint: EndpointUrl,
 ) -> Result<PickerHttp<T>, BuildError> {
     let base = WebUrl::try_from(&endpoint).map_err(|_| BuildError::NotWeb)?;
+    let fallback = endpoint.clone();
     let home = StreamHttp::new(
         RelayDial::new(Arc::clone(&accounts), grant.clone(), endpoint),
         StreamLimits::default(),
     );
-    let linked: MakeLinked<T> = Box::new(move |origin| {
+    let linked: MakeAuth<T> = Box::new(move |origin| {
         StreamHttp::new(
-            LinkedDial::new(Arc::clone(&accounts), grant.clone(), bare_url(origin)),
+            RelayDial::new(
+                Arc::clone(&accounts),
+                grant.clone(),
+                bare_url(origin).unwrap_or_else(|| fallback.clone()),
+            ),
             StreamLimits::default(),
         )
     });

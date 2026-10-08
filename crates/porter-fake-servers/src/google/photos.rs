@@ -69,9 +69,19 @@ pub struct Photos {
     pub sessions: Vec<Session>,
     picks: BTreeMap<String, Pick>,
     next: u64,
+    /// Where the picked items' `baseUrl`s point instead of this server (another origin that
+    /// wants the bearer, as `lh3.googleusercontent.com` does).
+    pub(super) media_base: Option<String>,
 }
 
 impl Photos {
+    /// A picked item's type and bytes.
+    pub(super) fn picked(&self, id: &str) -> Option<(String, Vec<u8>)> {
+        self.picks
+            .get(id)
+            .map(|pick| (pick.mime.clone(), pick.bytes.clone()))
+    }
+
     fn fresh(&mut self, prefix: &str) -> String {
         self.next += 1;
         format!("{prefix}{:05}", self.next)
@@ -198,7 +208,7 @@ fn picked_list(photos: &Photos, base: &str, request: &Request) -> Response {
                 "createTime": "2026-01-01T00:00:00Z",
                 "type": if pick.mime.starts_with("video/") { "VIDEO" } else { "PHOTO" },
                 "mediaFile": {
-                    "baseUrl": format!("{base}/dl/{id}"),
+                    "baseUrl": format!("{}/dl/{id}", photos.media_base.as_deref().unwrap_or(base)),
                     "mimeType": pick.mime,
                     "filename": pick.filename,
                 },

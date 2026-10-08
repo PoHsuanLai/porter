@@ -66,5 +66,6 @@ v = { library_read = "picker_only", upload = "present", albums = "app_created", 
 [[capability]]
 family = "google_photos_picker"
 endpoint = "https://photospicker.googleapis.com/v1"
+auth_origins = ["lh3.googleusercontent.com"]
 kind = "photos"
 v = { library_read = "picker_only", upload = "present", albums = "app_created", video = "present", delta = "none" }

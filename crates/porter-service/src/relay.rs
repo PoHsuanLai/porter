@@ -67,6 +67,46 @@ where
         })
     }
 
+    /// The account, endpoint and kind for an `OpenAuthenticated` to `origin`, an origin that is
+    /// not one of the account's endpoints but that a row of the grant's kind names in
+    /// `auth_origins`. The endpoint is the row's own endpoint with the origin's address, so the
+    /// bearer is the row family's and nothing else changes. Bare origins only, and only the home
+    /// endpoint's scheme; `EndpointNotGranted` for anything else.
+    pub(crate) fn auth_origin_target(
+        &self,
+        registry: &crate::registry::Registry,
+        caller: &AppId,
+        grant: &GrantId,
+        origin: &EndpointUrl,
+    ) -> Result<(Account, ServiceEndpoint, CapabilityKind), Refusal> {
+        let (account, kind) = registry.grant_account(caller, grant)?;
+        let spec = self
+            .catalog
+            .get(&account.provider)
+            .ok_or(Refusal::EndpointNotGranted)?;
+        let dialled = origin.origin();
+        let bare = origin.path() == "/" && !origin.as_str().ends_with('/');
+        let declared = |endpoint: &ServiceEndpoint| {
+            spec.capabilities
+                .iter()
+                .filter(|row| row.family == endpoint.family && row.capability.kind() == kind)
+                .any(|row| row.auth_origins.iter().any(|o| o.allows(&dialled)))
+        };
+        let home = account
+            .endpoints
+            .iter()
+            .filter(|e| serves(e, kind))
+            .find(|e| bare && e.url.origin().scheme == dialled.scheme && declared(e))
+            .ok_or(Refusal::EndpointNotGranted)?;
+        let endpoint = ServiceEndpoint {
+            url: EndpointUrl::parse(&dialled.to_string())
+                .map_err(|_| Refusal::EndpointNotGranted)?,
+            ..home.clone()
+        };
+        endpoint.check().map_err(|_| Refusal::EndpointNotGranted)?;
+        Ok((account.clone(), endpoint, kind))
+    }
+
     /// The plan of a relay to `origin`, an origin the account's provider file declares for a
     /// kind of the grant (`linked_origins`) and that is as secure as the endpoint it belongs to
     /// (never `http` for an `https` service). It presents nothing; the origin is all it may dial.

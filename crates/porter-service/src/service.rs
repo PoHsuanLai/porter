@@ -179,8 +179,15 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
     ) -> Result<RelayPlan, Refusal> {
         let (account, endpoint, kind) = {
             let registry = self.lock();
-            let target = registry.relay_target(caller, grant, endpoint)?;
-            (target.account.clone(), target.endpoint.clone(), target.kind)
+            match registry.relay_target(caller, grant, endpoint) {
+                Ok(target) => (target.account.clone(), target.endpoint.clone(), target.kind),
+                // Not one of the account's endpoints: perhaps an origin its provider file names
+                // as one that wants the bearer (picked photos' bytes).
+                Err(Refusal::EndpointNotGranted) => {
+                    self.auth_origin_target(&registry, caller, grant, endpoint)?
+                }
+                Err(other) => return Err(other),
+            }
         };
         if account.state == AccountState::NeedsReauth {
             return Err(Refusal::NeedsReauth);

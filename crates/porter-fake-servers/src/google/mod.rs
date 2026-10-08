@@ -24,11 +24,13 @@ mod drive;
 mod drive_routes;
 mod levers;
 mod md5;
+mod media;
 mod photos;
 
 pub use drive::{ALIAS, CHUNK_UNIT, FOLDER};
 pub use drive_routes::DriveKnobs;
 pub use md5::md5_hex;
+pub use media::MediaOrigin;
 pub use photos::{Album, MediaItem, Pick, Session};
 
 use crate::http::{Hit, Request, Response, serve};

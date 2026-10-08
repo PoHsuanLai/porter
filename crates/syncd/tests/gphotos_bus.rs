@@ -10,8 +10,8 @@ mod google_rig;
 
 use common::eventually;
 use google_rig::{
-    FILES_DATASET, PICKER_BEARER, Rig, SECRET_ACCESS, SECRET_REFRESH, UPLOAD_BEARER,
-    UPLOAD_DATASET, client_of, rig,
+    FILES_DATASET, Media, PICKER_BEARER, Rig, SECRET_ACCESS, SECRET_REFRESH, UPLOAD_BEARER,
+    UPLOAD_DATASET, client_of, rig, rig_with,
 };
 use porter_dbus::SyncProxy;
 use porter_fake_servers::google::Pick;
@@ -289,6 +289,75 @@ async fn the_picker_starts_a_session_polls_it_imports_what_was_picked_and_delete
 
     // A session id that would climb out of the folder is never made into a path.
     assert!(SessionId::parse("../x").is_none());
+}
+
+/// The person picks one photo and one video in `session`.
+fn pick_two(rig: &Rig, session: &str) {
+    assert!(rig.google.picker_pick(
+        session,
+        vec![
+            Pick {
+                filename: "IMG_1.jpg".into(),
+                bytes: photo(1),
+                mime: "image/jpeg".into()
+            },
+            Pick {
+                filename: "clip.mp4".into(),
+                bytes: vec![9; 3000],
+                mime: "video/mp4".into()
+            },
+        ],
+    ));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn picked_bytes_on_a_second_origin_come_with_the_bearer_when_the_provider_file_lists_it() {
+    let mut rig = rig_with(PhotosSwitch::On, Media::Listed).await;
+    rig.supervisor.tick().await;
+    let picker = rig.supervisor.google_picker(&rig.account).expect("picker");
+    let session = picker.start().await.expect("session");
+    pick_two(&rig, session.id.as_str());
+    let imported = picker.import(&session.id).await.expect("import");
+    let got: Vec<Vec<u8>> = imported
+        .files
+        .iter()
+        .map(|f| std::fs::read(f).expect("file"))
+        .collect();
+    assert_eq!(got, [photo(1), vec![9; 3000]]);
+
+    // The bytes came from the second origin, each request with the picker audience's bearer,
+    // and never from the Picker's own.
+    let media = rig.media.as_ref().expect("media origin");
+    let hits = media.hits();
+    assert_eq!(hits.len(), 2, "{hits:?}");
+    let want = format!("Bearer {PICKER_BEARER}");
+    assert!(
+        hits.iter()
+            .all(|h| h.status == 200 && h.authorization.as_deref() == Some(want.as_str()))
+    );
+    assert_eq!(count(&rig, "GET", "/dl/"), 0);
+    // No linked (credential-free) relay was used for them, and the secret is nowhere.
+    let printed = format!("{hits:?} {:?}", rig.google.hits());
+    assert!(!printed.contains(SECRET_ACCESS) && !printed.contains(SECRET_REFRESH));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn picked_bytes_on_an_origin_the_provider_file_does_not_list_are_refused_and_get_no_bearer() {
+    let mut rig = rig_with(PhotosSwitch::On, Media::Unlisted).await;
+    rig.supervisor.tick().await;
+    let picker = rig.supervisor.google_picker(&rig.account).expect("picker");
+    let session = picker.start().await.expect("session");
+    pick_two(&rig, session.id.as_str());
+    let refused = picker.import(&session.id).await.expect_err("refused");
+    assert_eq!(refused, PickerError::Unreached);
+    // Nothing reached the unlisted origin; nothing of the person's library was written.
+    assert!(rig.media.as_ref().expect("media origin").hits().is_empty());
+    let dir = rig
+        .paths
+        .photos_picked_dir(&rig.account)
+        .join(session.id.as_str());
+    let kept = std::fs::read_dir(&dir).map_or(0, |entries| entries.count());
+    assert_eq!(kept, 0);
 }
 
 #[tokio::test(flavor = "multi_thread")]
