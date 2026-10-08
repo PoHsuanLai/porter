@@ -11,7 +11,7 @@ mod google_rig;
 use common::eventually;
 use google_rig::{
     FILES_DATASET, Media, PICKER_BEARER, Rig, SECRET_ACCESS, SECRET_REFRESH, UPLOAD_BEARER,
-    UPLOAD_DATASET, client_of, rig, rig_with,
+    UPLOAD_DATASET, client_of, rig, rig_picker_only, rig_with,
 };
 use porter_dbus::SyncProxy;
 use porter_fake_servers::google::Pick;
@@ -339,6 +339,27 @@ async fn picked_bytes_on_a_second_origin_come_with_the_bearer_when_the_provider_
     // No linked (credential-free) relay was used for them, and the secret is nowhere.
     let printed = format!("{hits:?} {:?}", rig.google.hits());
     assert!(!printed.contains(SECRET_ACCESS) && !printed.contains(SECRET_REFRESH));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_person_who_granted_only_the_picker_gets_the_picker_and_no_upload_dataset() {
+    let mut rig = rig_picker_only(PhotosSwitch::On).await;
+    rig.supervisor.tick().await;
+    // No upload dataset, no upload folder, no call to the upload API (no 403 later).
+    let photos = client_of(&rig, PHOTOS_APP).await;
+    assert_eq!(
+        names(&SyncProxy::new(&photos).await.expect("proxy")).await,
+        Vec::<String>::new()
+    );
+    assert!(!upload_dir(&rig).exists());
+    // The picker stands alone and imports.
+    let picker = rig.supervisor.google_picker(&rig.account).expect("picker");
+    let session = picker.start().await.expect("session");
+    pick_two(&rig, session.id.as_str());
+    let imported = picker.import(&session.id).await.expect("import");
+    assert_eq!(imported.files.len(), 2);
+    assert_eq!(count(&rig, "POST", "/v1/uploads"), 0);
+    assert_eq!(count(&rig, "POST", "/v1/albums"), 0);
 }
 
 #[tokio::test(flavor = "multi_thread")]

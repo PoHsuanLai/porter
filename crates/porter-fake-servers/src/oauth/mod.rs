@@ -137,6 +137,8 @@ struct State {
     /// When set, a token request must present this `client_secret`.
     client_secret: Option<String>,
     refuse_refreshes: u32,
+    /// Scopes the person unticks on the consent page: asked, not granted.
+    unticked: Vec<String>,
     /// The `expires_in` of every access token issued from now on, in seconds.
     lifetime_s: u64,
     codes: HashMap<String, Code>,
@@ -180,6 +182,7 @@ impl FakeIssuer {
             style: Style::default(),
             client_secret: None,
             refuse_refreshes: 0,
+            unticked: Vec::new(),
             lifetime_s: routes::DEFAULT_LIFETIME_S,
             codes: HashMap::new(),
             refresh: HashMap::new(),
@@ -251,6 +254,12 @@ impl IssuerHandle {
     /// The query of every authorize request, decoded, oldest first.
     pub fn authorize_queries(&self) -> Vec<Vec<(String, String)>> {
         self.shared.queries.all()
+    }
+
+    /// From now on the person unticks these scopes on the consent page: the code's grant (and
+    /// the token answers' `scope`) leaves them out, as Google's granular consent does.
+    pub fn untick(&self, scopes: &[&str]) {
+        lock(&self.shared.state).unticked = scopes.iter().map(|s| (*s).to_owned()).collect();
     }
 
     /// The next `count` refresh requests get `invalid_grant`, as for a revoked or expired grant.

@@ -206,6 +206,16 @@ pub async fn rig(photos: PhotosSwitch) -> Rig {
 
 /// [`rig`], with the picked photos' bytes where `media` says.
 pub async fn rig_with(photos: PhotosSwitch, media: Media) -> Rig {
+    build(photos, media, false).await
+}
+
+/// [`rig`] for an account where the person granted the picker scope alone: no upload endpoint,
+/// no upload capability (what the Google family leaves of Photos then).
+pub async fn rig_picker_only(photos: PhotosSwitch) -> Rig {
+    build(photos, Media::Same, true).await
+}
+
+async fn build(photos: PhotosSwitch, media: Media, picker_only: bool) -> Rig {
     let google = FakeGoogle::start_fixed(DRIVE_BEARER).await.expect("google");
     google.accept_bearer(UPLOAD_BEARER);
     google.accept_bearer(PICKER_BEARER);
@@ -230,7 +240,7 @@ pub async fn rig_with(photos: PhotosSwitch, media: Media) -> Rig {
     };
     let provider = FakeProvider::from_file(&text);
     let spec = provider.spec();
-    let account = Account {
+    let mut account = Account {
         id: AccountId::parse(ACCOUNT).expect("id"),
         provider: spec.id.clone(),
         label: AccountLabel("ada@gmail.test".into()),
@@ -255,6 +265,16 @@ pub async fn rig_with(photos: PhotosSwitch, media: Media) -> Rig {
             endpoint(Family::GooglePhotosPicker, format!("{base}/v1/picker")),
         ],
     };
+    if picker_only {
+        account
+            .endpoints
+            .retain(|e| e.family != Family::GooglePhotosUpload);
+        for claim in &mut account.capabilities {
+            if let Offer::Present(porter_core::Capability::Photos(cap)) = &mut claim.offer {
+                cap.upload = porter_core::capability::Offered::Absent;
+            }
+        }
+    }
     let secrets = MemorySecrets::default();
     secrets
         .put(

@@ -101,10 +101,10 @@ enum Running<T: Transport> {
         // Dropping it ends both engines.
         run: PhotosRun,
     },
-    /// Google Photos: the upload engine, and the picker when the account has one.
+    /// Google Photos: the upload engine when the account granted the append-only scope, and the
+    /// picker when it granted the picker scope (each stands alone).
     GooglePhotos {
-        name: DatasetName,
-        task: JoinHandle<()>,
+        upload: Option<(DatasetName, JoinHandle<()>)>,
         picker: Option<Arc<GooglePicker<T>>>,
     },
 }
@@ -118,8 +118,9 @@ impl<T: Transport> std::fmt::Debug for Running<T> {
 impl<T: Transport> Running<T> {
     fn names(&self) -> Vec<DatasetName> {
         match self {
-            Running::Folder { name, .. } | Running::GooglePhotos { name, .. } => {
-                vec![name.clone()]
+            Running::Folder { name, .. } => vec![name.clone()],
+            Running::GooglePhotos { upload, .. } => {
+                upload.iter().map(|(name, _)| name.clone()).collect()
             }
             Running::Photos { names, .. } => names.clone(),
         }
@@ -333,6 +334,35 @@ where
         let (upload, picker) =
             google_photos_endpoints(candidate).ok_or("no Google Photos endpoint")?;
         let base = |url: &EndpointUrl| WebUrl::try_from(url).map_err(|_| "not a web endpoint");
+        let upload = match upload {
+            Some(endpoint) => Some(self.start_google_upload(account, candidate, endpoint)?),
+            None => None,
+        };
+        let picker = match picker {
+            Some(endpoint) => Some(Arc::new(PhotosPicker::new(
+                picker_http(
+                    Arc::clone(&wiring.accounts),
+                    candidate.grant.clone(),
+                    endpoint.url.clone(),
+                )
+                .map_err(|e| e.to_string())?,
+                &base(&endpoint.url)?,
+                wiring.paths.photos_picked_dir(account),
+            ))),
+            None => None,
+        };
+        Ok(Running::GooglePhotos { upload, picker })
+    }
+
+    /// The upload folder of a Google account as a dataset: new files are sent once.
+    fn start_google_upload(
+        &self,
+        account: &AccountDir,
+        candidate: &Candidate,
+        upload: &porter_core::ServiceEndpoint,
+    ) -> Result<(DatasetName, JoinHandle<()>), String> {
+        let wiring = &self.wiring;
+        let base = |url: &EndpointUrl| WebUrl::try_from(url).map_err(|_| "not a web endpoint");
         let api = PhotosApi::new(
             library_http(
                 Arc::clone(&wiring.accounts),
@@ -369,24 +399,7 @@ where
             Arc::new(Notify::new()),
             seed_of(&format!("{account}/{UPLOAD_SLUG}")),
         );
-        let picker = match picker {
-            Some(endpoint) => Some(Arc::new(PhotosPicker::new(
-                picker_http(
-                    Arc::clone(&wiring.accounts),
-                    candidate.grant.clone(),
-                    endpoint.url.clone(),
-                )
-                .map_err(|e| e.to_string())?,
-                &base(&endpoint.url)?,
-                wiring.paths.photos_picked_dir(account),
-            ))),
-            None => None,
-        };
-        Ok(Running::GooglePhotos {
-            name,
-            task: tokio::spawn(driver.run()),
-            picker,
-        })
+        Ok((name, tokio::spawn(driver.run())))
     }
 
     fn start_photos(
@@ -449,8 +462,13 @@ where
         for name in running.names() {
             self.wiring.hub.stop(&name).await;
         }
-        if let Running::Folder { task, .. } | Running::GooglePhotos { task, .. } = running {
-            task.abort();
+        match running {
+            Running::Folder { task, .. } => task.abort(),
+            Running::GooglePhotos {
+                upload: Some((_, task)),
+                ..
+            } => task.abort(),
+            _ => {}
         }
     }
 
@@ -474,8 +492,13 @@ enum Either<A, B> {
 impl<T: Transport, G> Drop for StorageSupervisor<T, G> {
     fn drop(&mut self) {
         for running in self.running.values() {
-            if let Running::Folder { task, .. } | Running::GooglePhotos { task, .. } = running {
-                task.abort();
+            match running {
+                Running::Folder { task, .. } => task.abort(),
+                Running::GooglePhotos {
+                    upload: Some((_, task)),
+                    ..
+                } => task.abort(),
+                _ => {}
             }
         }
     }

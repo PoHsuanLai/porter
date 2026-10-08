@@ -202,7 +202,7 @@ impl<H: Http + 'static> GoogleSignIn<H> {
                     refresh,
                 },
             )],
-            endpoints: endpoints_for(&self.spec, &apis, &claims, &address),
+            endpoints: endpoints_for(&self.spec, &apis, (&claims, &granted), &address),
             restriction: restriction_for(traits.review, &claims, now),
             claims,
         };
@@ -281,7 +281,7 @@ fn restriction_for(review: AppReview, claims: &[Claim], now: UnixSeconds) -> Res
 fn endpoints_for(
     spec: &ProviderSpec,
     apis: &Apis,
-    claims: &[Claim],
+    (claims, granted): (&[Claim], &Granted),
     address: &str,
 ) -> Vec<ServiceEndpoint> {
     let login = LoginName(address.to_owned());
@@ -315,7 +315,11 @@ fn endpoints_for(
     }
     for row in &spec.capabilities {
         let api = !matches!(row.family, Family::Imap | Family::Smtp);
-        if api && present(row.capability.kind()).is_some() && row.endpoint.is_some() {
+        if api
+            && present(row.capability.kind()).is_some()
+            && row.endpoint.is_some()
+            && granted.allows(row.family)
+        {
             out.push(endpoint(row.family, apis.base(row.family)));
         }
     }

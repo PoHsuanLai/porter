@@ -75,6 +75,18 @@ pub fn photos_need() -> Need {
     })
 }
 
+/// The need of an account where the person granted the picker scope alone: the picker import,
+/// no upload.
+pub fn picker_need() -> Need {
+    Need::Photos(PhotosNeed {
+        library_read: LibraryRead::PickerOnly,
+        upload: Offered::Absent,
+        albums: Albums::None,
+        video: Offered::Absent,
+        delta: Delta::None,
+    })
+}
+
 /// Whether the candidate is reached over Graph (OneDrive): the endpoint to dial.
 pub fn graph_endpoint(candidate: &Candidate) -> Option<&ServiceEndpoint> {
     candidate
@@ -100,16 +112,18 @@ pub fn app_folder_store(candidate: &Candidate) -> Option<AppFolderStore<'_>> {
         .or_else(|| by(Family::GoogleDrive).map(AppFolderStore::Drive))
 }
 
-/// The two Google Photos endpoints of a candidate: the upload API (required) and the picker
-/// (without it only uploads run).
+/// The two Google Photos endpoints of a candidate, upload API and picker. Each stands alone: an
+/// account where the person granted only the picker scope has no upload endpoint (accountd's
+/// family leaves it out), and the other way round. `None` when it has neither.
 pub fn google_photos_endpoints(
     candidate: &Candidate,
-) -> Option<(&ServiceEndpoint, Option<&ServiceEndpoint>)> {
+) -> Option<(Option<&ServiceEndpoint>, Option<&ServiceEndpoint>)> {
     let by = |family: Family| candidate.endpoints.iter().find(|e| e.family == family);
-    Some((
-        by(Family::GooglePhotosUpload)?,
+    let (upload, picker) = (
+        by(Family::GooglePhotosUpload),
         by(Family::GooglePhotosPicker),
-    ))
+    );
+    (upload.is_some() || picker.is_some()).then_some((upload, picker))
 }
 
 /// Whether a candidate is one `kind` can run over.
@@ -148,20 +162,25 @@ impl<T> ClientStorageGrants<T> {
 
 impl<T: Transport> StorageGrants for ClientStorageGrants<T> {
     async fn granted(&self, kind: StorageKind) -> Result<Vec<Candidate>, AccountdUnavailable> {
-        let need = match kind {
-            StorageKind::GooglePhotos => photos_need(),
-            StorageKind::AppFolder | StorageKind::Photos => storage_need(),
+        // Google Photos: an account that uploads, or one that only picks (each scope stands
+        // alone); the same grant answers both, and `seen` keeps one candidate per account.
+        let needs = match kind {
+            StorageKind::GooglePhotos => vec![photos_need(), picker_need()],
+            StorageKind::AppFolder | StorageKind::Photos => vec![storage_need()],
         };
-        let found = self
-            .accounts
-            .find(&need, kind.class(), Usage::Background)
-            .await
-            .map_err(|_| AccountdUnavailable)?;
-        let mut candidates = match found {
-            Found::One(one) => vec![one],
-            Found::Several(several) => several,
-            Found::NeedsConsent(_) | Found::None(_) => Vec::new(),
-        };
+        let mut candidates = Vec::new();
+        for need in needs {
+            let found = self
+                .accounts
+                .find(&need, kind.class(), Usage::Background)
+                .await
+                .map_err(|_| AccountdUnavailable)?;
+            match found {
+                Found::One(one) => candidates.push(one),
+                Found::Several(several) => candidates.extend(several),
+                Found::NeedsConsent(_) | Found::None(_) => {}
+            }
+        }
         let mut seen = std::collections::BTreeSet::new();
         candidates.retain(|c| runs_over(kind, c) && seen.insert(c.account.clone()));
         Ok(candidates)

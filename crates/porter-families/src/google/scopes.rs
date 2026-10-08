@@ -5,7 +5,8 @@
 //! unverified (FINDINGS), and docs/google.md, which tells the owner what to put on the consent
 //! screen, is checked against this table by a test.
 
-use porter_core::capability::CapabilityKind;
+use porter_core::Family;
+use porter_core::capability::{Albums, Capability, CapabilityKind, LibraryRead, Offered};
 use porter_oauth::MailRights;
 
 /// Gmail over IMAP and SMTP (XOAUTH2). Restricted.
@@ -94,6 +95,44 @@ impl Granted {
                     _ => needs.iter().all(held),
                 }
             }
+        }
+    }
+}
+
+impl Granted {
+    fn holds(&self, scope: &str) -> bool {
+        self.0
+            .as_ref()
+            .is_none_or(|granted| granted.iter().any(|g| g == scope))
+    }
+
+    /// Whether the scope the API of `family` needs was granted. Only the two Photos APIs differ
+    /// by scope within a kind: a person who ticks the picker alone has no upload API, and the
+    /// other way round.
+    pub(super) fn allows(&self, family: Family) -> bool {
+        match family {
+            Family::GooglePhotosUpload => self.holds(PHOTOS_UPLOAD),
+            Family::GooglePhotosPicker => self.holds(PHOTOS_PICKER),
+            _ => true,
+        }
+    }
+
+    /// `cap` as far as the granted scopes reach: Photos without the append-only scope does not
+    /// upload (nor make albums), without the picker scope reads nothing.
+    pub(super) fn narrow(&self, cap: &Capability) -> Capability {
+        match cap {
+            Capability::Photos(photos) => {
+                let mut photos = photos.clone();
+                if !self.allows(Family::GooglePhotosUpload) {
+                    photos.upload = Offered::Absent;
+                    photos.albums = Albums::None;
+                }
+                if !self.allows(Family::GooglePhotosPicker) {
+                    photos.library_read = LibraryRead::None;
+                }
+                Capability::Photos(photos)
+            }
+            other => other.clone(),
         }
     }
 }

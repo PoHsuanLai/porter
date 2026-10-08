@@ -109,7 +109,7 @@ async fn claim_for<H: Http>(
         provenance,
     };
     let absent = |reason| Offer::Absent { kind, reason };
-    let present = || Offer::Present(declared.clone());
+    let present = || Offer::Present(granted.narrow(declared));
     if kind == CapabilityKind::Mail && mail != MailRights::Byo {
         // The restricted scope was never asked: this build cannot read mail (R2).
         return Ok(claim(

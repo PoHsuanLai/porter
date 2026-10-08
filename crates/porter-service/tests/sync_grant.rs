@@ -141,6 +141,34 @@ fn syncd_is_the_native_daemon_org_quire_sync_and_its_key_is_background_storage()
 }
 
 #[test]
+fn a_google_account_where_only_the_picker_was_granted_offers_no_photos_backup() {
+    // What the Google family leaves of Photos when the person ticked the picker scope alone: no
+    // upload, no albums, and no upload endpoint. The picker stands alone; Drive is unaffected.
+    let mut account = google_account(true, true);
+    account
+        .endpoints
+        .retain(|e| e.family != Family::GooglePhotosUpload);
+    for claim in &mut account.capabilities {
+        if let Offer::Present(Capability::Photos(cap)) = &mut claim.offer {
+            cap.upload = Offered::Absent;
+            cap.albums = Albums::None;
+        }
+    }
+    assert_eq!(sync_offers(&account), vec![SyncClass::Files]);
+    let mut photos_only = account.clone();
+    photos_only
+        .endpoints
+        .retain(|e| e.family == Family::GooglePhotosPicker);
+    assert_eq!(sync_offers(&photos_only), vec![]);
+    assert!(
+        photos_only
+            .endpoints
+            .iter()
+            .any(|e| e.family == Family::GooglePhotosPicker)
+    );
+}
+
+#[test]
 fn an_account_offers_files_over_graph_and_photos_when_uploads_resume() {
     let cases = [
         (

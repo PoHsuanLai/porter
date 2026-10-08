@@ -72,7 +72,13 @@ fn authorize(shared: &Shared, request: &Request) -> Response {
                 client_id,
                 redirect_uri: redirect_uri.clone(),
                 challenge: q("code_challenge").unwrap_or_default(),
-                scope: q("scope").unwrap_or_default(),
+                // Granular consent: what the person unticked is not granted.
+                scope: q("scope")
+                    .unwrap_or_default()
+                    .split_whitespace()
+                    .filter(|s| !state.unticked.iter().any(|u| u == s))
+                    .collect::<Vec<_>>()
+                    .join(" "),
             };
             state.codes.insert(code.clone(), grant);
             back(format!("code={code}"))

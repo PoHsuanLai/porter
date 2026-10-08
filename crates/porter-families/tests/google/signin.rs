@@ -347,3 +347,68 @@ async fn a_person_who_says_no_cancels_and_cancel_frees_the_listener() {
         SignInStep::Failed(SignInFault::Cancelled)
     );
 }
+
+const UPLOAD_SCOPE: &str = "https://www.googleapis.com/auth/photoslibrary.appendonly";
+const PICKER_SCOPE: &str = "https://www.googleapis.com/auth/photospicker.mediaitems.readonly";
+
+/// What a sign-in where the person unticked `unticked` offers of Photos: whether it uploads,
+/// what it reads, and the Photos endpoints it holds.
+async fn photos_after_unticking(
+    unticked: &[&str],
+) -> (porter_core::capability::PhotosCap, Vec<Family>) {
+    let rig = Rig::new(PLAIN).await;
+    rig.google.issuer.untick(unticked);
+    let (_, step) = to_review(&rig).await;
+    let (claims, endpoints) = review(step);
+    let Offer::Present(porter_core::capability::Capability::Photos(photos)) =
+        offer_of(&claims, K::Photos).clone()
+    else {
+        panic!("Photos should be present")
+    };
+    let families = endpoints
+        .iter()
+        .map(|e| e.family)
+        .filter(|f| matches!(f, Family::GooglePhotosUpload | Family::GooglePhotosPicker))
+        .collect();
+    (photos, families)
+}
+
+#[tokio::test]
+async fn a_person_who_grants_only_the_picker_gets_no_upload_to_offer() {
+    use porter_core::capability::{Albums, LibraryRead, Offered};
+    let (photos, families) = photos_after_unticking(&[UPLOAD_SCOPE]).await;
+    assert_eq!(photos.upload, Offered::Absent);
+    assert_eq!(photos.albums, Albums::None);
+    assert_eq!(photos.library_read, LibraryRead::PickerOnly);
+    assert_eq!(families, [Family::GooglePhotosPicker]);
+}
+
+#[tokio::test]
+async fn a_person_who_grants_only_the_upload_gets_no_picker_to_offer() {
+    use porter_core::capability::{Albums, LibraryRead, Offered};
+    let (photos, families) = photos_after_unticking(&[PICKER_SCOPE]).await;
+    assert_eq!(photos.upload, Offered::Present);
+    assert_eq!(photos.albums, Albums::AppCreated);
+    assert_eq!(photos.library_read, LibraryRead::None);
+    assert_eq!(families, [Family::GooglePhotosUpload]);
+}
+
+#[tokio::test]
+async fn both_photos_scopes_offer_both_and_neither_turns_photos_off() {
+    use porter_core::capability::Offered;
+    let (photos, families) = photos_after_unticking(&[]).await;
+    assert_eq!(photos.upload, Offered::Present);
+    assert_eq!(
+        families,
+        [Family::GooglePhotosUpload, Family::GooglePhotosPicker]
+    );
+    let rig = Rig::new(PLAIN).await;
+    rig.google.issuer.untick(&[UPLOAD_SCOPE, PICKER_SCOPE]);
+    let (_, step) = to_review(&rig).await;
+    let (claims, endpoints) = review(step);
+    assert!(matches!(offer_of(&claims, K::Photos), Offer::Absent { .. }));
+    assert!(!endpoints.iter().any(|e| matches!(
+        e.family,
+        Family::GooglePhotosUpload | Family::GooglePhotosPicker
+    )));
+}
