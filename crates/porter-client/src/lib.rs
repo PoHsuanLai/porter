@@ -35,6 +35,8 @@ mod found;
 #[cfg(feature = "dbus")]
 mod launcher;
 mod relays;
+#[cfg(feature = "dbus")]
+mod spaces;
 mod transport;
 
 pub use accounts::Accounts;
@@ -56,6 +58,8 @@ pub use porter_infer::{InferRefusal, Policy, Slot};
 #[cfg(feature = "infer")]
 pub use porter_infer::{InferSession, OpenOptions, SessionError, Traceparent};
 pub use relays::{NoRelays, RelayHost};
+#[cfg(feature = "dbus")]
+pub use spaces::{SpaceChanges, Spaces, SpacesError};
 #[cfg(feature = "dbus")]
 pub use transport::DbusTransport;
 #[cfg(feature = "infer")]

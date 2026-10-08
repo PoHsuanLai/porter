@@ -41,6 +41,11 @@ impl DbusTransport {
     pub(super) fn connection(&self) -> &BusConnection {
         &self.connection
     }
+
+    /// accountd's registry of desktop-wide Spaces (`org.quire.Spaces1`), over this connection.
+    pub async fn spaces(&self) -> Result<crate::Spaces, crate::SpacesError> {
+        crate::Spaces::connect(&self.connection).await
+    }
 }
 
 /// A closed set's serde form is its slug on the bus too.
