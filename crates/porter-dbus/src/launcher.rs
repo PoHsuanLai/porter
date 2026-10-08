@@ -25,17 +25,24 @@ pub enum LauncherFault {
     /// `RevokeProcessCredential` for a credential this connection was not issued: never made,
     /// ended already, or another connection's.
     UnknownCredential,
+    /// `BeginSession` for a session id another live connection holds (first wins).
+    SessionTaken,
+    /// `EndSession`, `RequestAgentGrant` or `IssueProcessCredential` for a session that is not
+    /// open for this connection: never begun, ended already, or another connection's.
+    UnknownSession,
 }
 
 impl LauncherFault {
     /// Every fault, so the table is total by construction.
-    pub const ALL: [LauncherFault; 6] = [
+    pub const ALL: [LauncherFault; 8] = [
         LauncherFault::AlreadyRegistered,
         LauncherFault::UnknownRequest,
         LauncherFault::NotRegistered,
         LauncherFault::OnceGrant,
         LauncherFault::NotAKeyAccount,
         LauncherFault::UnknownCredential,
+        LauncherFault::SessionTaken,
+        LauncherFault::UnknownSession,
     ];
 
     /// The error name a daemon replies with.
@@ -47,6 +54,8 @@ impl LauncherFault {
             LauncherFault::OnceGrant => "OnceGrant",
             LauncherFault::NotAKeyAccount => "NotAKeyAccount",
             LauncherFault::UnknownCredential => "UnknownCredential",
+            LauncherFault::SessionTaken => "SessionTaken",
+            LauncherFault::UnknownSession => "UnknownSession",
         };
         format!("{REFUSAL_ERROR_PREFIX}{name}")
     }

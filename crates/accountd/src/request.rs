@@ -13,11 +13,20 @@
 //! answers `Refusal::Unavailable`: the caller is never left waiting on a task that is gone.
 
 use crate::callers::Callers;
-use crate::core::{Core, Host, Standing, handle_token};
+use crate::core::{Core, Host, Standing, handle_token, slug};
 use crate::errors::RefusedError;
-use porter_core::wire::Refusal;
-use porter_core::{AccountsReply, AccountsRequest};
-use porter_dbus::{CallerRole, Details, SheetKind, is_handle_token, request_path, response_of};
+use porter_core::capability::{AgentProgram, LlmFeature};
+use porter_core::consent::Usage;
+use porter_core::need::LlmNeed;
+use porter_core::wire::{ParentWindow, Refusal};
+use porter_core::{
+    AccountsReply, AccountsRequest, AppId, AppName, CapabilityKind, DataClass, Isolation,
+    LauncherSession, Need, Tokens,
+};
+use porter_dbus::{
+    CallerRole, Details, LauncherFault, SheetKind, is_handle_token, request_path, response_of,
+};
+use std::collections::BTreeSet;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::Ordering;
@@ -89,19 +98,7 @@ impl<H: Host, C: Callers> Core<H, C> {
             .sender()
             .ok_or_else(|| RefusedError::access_denied("no sender"))?
             .to_owned();
-        let token = match handle_token(options) {
-            Some(token) if is_handle_token(&token) => token,
-            Some(token) => {
-                return Err(RefusedError::invalid(format!(
-                    "handle_token `{token}` is not a path segment"
-                )));
-            }
-            None => format!("accountd_{}", self.minted.fetch_add(1, Ordering::Relaxed)),
-        };
-        let path = request_path(sender.as_str(), &token)
-            .and_then(|path| ObjectPath::try_from(path).ok())
-            .map(OwnedObjectPath::from)
-            .ok_or_else(|| RefusedError::invalid("no request path for this sender"))?;
+        let path = self.request_object_path(&sender, options)?;
         let core = Arc::clone(self);
         let run = async move {
             let reply = match request {
@@ -122,6 +119,133 @@ impl<H: Host, C: Callers> Core<H, C> {
         };
         start(connection, sender, path, kind, run).await
     }
+
+    /// The path of the Request object for a sheet `sender` starts: its `handle_token` if the
+    /// options name one, else one minted here.
+    fn request_object_path(
+        &self,
+        sender: &UniqueName<'_>,
+        options: &Details,
+    ) -> Result<OwnedObjectPath, RefusedError> {
+        let token = match handle_token(options) {
+            Some(token) if is_handle_token(&token) => token,
+            Some(token) => {
+                return Err(RefusedError::invalid(format!(
+                    "handle_token `{token}` is not a path segment"
+                )));
+            }
+            None => format!("accountd_{}", self.minted.fetch_add(1, Ordering::Relaxed)),
+        };
+        request_path(sender.as_str(), &token)
+            .and_then(|path| ObjectPath::try_from(path).ok())
+            .map(OwnedObjectPath::from)
+            .ok_or_else(|| RefusedError::invalid("no request path for this sender"))
+    }
+
+    /// `Peer.RequestAgentGrant`: the consent sheet for the key of the agent program `program`,
+    /// for the launcher that registered it. The grant is held by the app
+    /// `org.quire.Agent.<program>` (the audience P4 and P2 look for), for the Llm kind
+    /// (`kind` must say so) and interactive use. `session` is empty, or a session this
+    /// connection holds open, which lets the sheet offer "This session only". A session grant
+    /// the sheet makes for a session that closed while it was open is removed, and the request
+    /// ends dismissed.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn agent_grant_sheet(
+        self: &Arc<Self>,
+        header: &Header<'_>,
+        connection: &Connection,
+        program: &str,
+        kind: &str,
+        class: &str,
+        session: &str,
+        window: ParentWindow,
+        options: &Details,
+    ) -> Result<OwnedObjectPath, RefusedError> {
+        let owner = self.launcher_of(header).await?;
+        let program = AgentProgram::parse(program).map_err(RefusedError::invalid)?;
+        if slug::<CapabilityKind>(kind)? != CapabilityKind::Llm {
+            return Err(RefusedError::invalid(
+                "an agent's grant is for the llm kind (its key)",
+            ));
+        }
+        let class: DataClass = slug(class)?;
+        let session = match session.is_empty() {
+            true => None,
+            false => {
+                let session = LauncherSession::parse(session).map_err(RefusedError::invalid)?;
+                if !self.launchers.session_open(&owner, &session) {
+                    return Err(RefusedError::launcher(
+                        LauncherFault::UnknownSession,
+                        "this connection holds no such session open",
+                    ));
+                }
+                Some(session)
+            }
+        };
+        if !self.launchers.holds(&owner, &program) {
+            return Err(RefusedError::launcher(
+                LauncherFault::NotRegistered,
+                "this connection has not registered that program",
+            ));
+        }
+        let sender = header
+            .sender()
+            .ok_or_else(|| RefusedError::access_denied("no sender"))?
+            .to_owned();
+        let path = self.request_object_path(&sender, options)?;
+        let agent = AppId {
+            name: AppName::parse(&format!("org.quire.Agent.{program}"))
+                .map_err(RefusedError::invalid)?,
+            isolation: Isolation::Unsandboxed,
+        };
+        let core = Arc::clone(self);
+        let run = async move {
+            let reply = core
+                .host
+                .choose_for_agent(
+                    &agent,
+                    llm_need(),
+                    (class, Usage::Interactive),
+                    &window,
+                    session.as_ref(),
+                )
+                .await;
+            let reply = core.settle_session(&owner, session.as_ref(), reply).await;
+            core.publish().await;
+            reply
+        };
+        start(connection, sender, path, SheetKind::Choose, run).await
+    }
+
+    /// A session grant the sheet made while its session closed must not stay: the closing
+    /// removed the grants then, and this one came after.
+    async fn settle_session(
+        &self,
+        owner: &str,
+        session: Option<&LauncherSession>,
+        reply: AccountsReply,
+    ) -> AccountsReply {
+        match (&reply, session) {
+            (AccountsReply::Chosen(chosen), Some(session))
+                if !self.launchers.session_open(owner, session) =>
+            {
+                let removed = self.host.end_session_grants(Some(session)).await;
+                match removed.contains(&chosen.grant) {
+                    true => AccountsReply::Refused(Refusal::Dismissed),
+                    false => reply,
+                }
+            }
+            _ => reply,
+        }
+    }
+}
+
+/// What an agent program's key is: a language model, chat, any context.
+fn llm_need() -> Need {
+    Need::Llm(LlmNeed {
+        features: BTreeSet::from([LlmFeature::Chat]),
+        context: Tokens(0),
+    })
 }
 
 /// Registers the object, then runs `run` in a task that answers it.

@@ -167,7 +167,14 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             account: account.clone(),
             scope: GrantScope::Always,
         };
-        let reply = settle(&mut self.lock(), &ask.need, asker, answer, self.clock.now());
+        let reply = settle(
+            &mut self.lock(),
+            &ask.need,
+            asker,
+            None,
+            answer,
+            self.clock.now(),
+        );
         matches!(reply, AccountsReply::Chosen(_)).then_some(reply)
     }
 

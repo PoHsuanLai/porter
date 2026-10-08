@@ -17,7 +17,7 @@
 use crate::errors::RefusedError;
 use porter_core::audit::{AuditEntry, AuditEvent};
 use porter_core::capability::AgentProgram;
-use porter_core::{AccountId, LoginRequestId, UnixSeconds};
+use porter_core::{AccountId, LauncherSession, LoginRequestId, UnixSeconds};
 use porter_dbus::{ACCOUNTS_PATH, LauncherFault};
 use porter_service::{AuditSink, Clock, Launchers as LaunchersSeam, LoginEnd, NoLauncher, Waiting};
 use std::collections::BTreeMap;
@@ -115,6 +115,9 @@ struct State {
     /// The connection (unique name) that launches each program.
     programs: BTreeMap<AgentProgram, String>,
     pending: BTreeMap<LoginRequestId, Pending>,
+    /// The open launcher sessions and the connection (unique name) that began each: only that
+    /// connection can end it, ask for a grant in it or issue a credential under it.
+    sessions: BTreeMap<LauncherSession, String>,
 }
 
 /// The registered launchers and their pending requests.
@@ -217,24 +220,84 @@ impl Launchers {
             .is_some_and(|holder| holder == owner)
     }
 
-    /// A connection left the bus: its programs are free and its pending requests end.
-    pub(crate) fn left(&self, name: &str) {
-        let ended: Vec<Pending> = {
+    /// Opens `session` for `owner`, a connection that registered a program (`NotRegistered`
+    /// otherwise). First wins: a session another connection holds is `SessionTaken` until that
+    /// connection's departure is seen; beginning one `owner` holds is a no-op.
+    pub(crate) fn begin_session(
+        &self,
+        owner: &str,
+        session: LauncherSession,
+    ) -> Result<(), LauncherFault> {
+        let mut state = held(&self.state);
+        if !state.programs.values().any(|holder| holder == owner) {
+            return Err(LauncherFault::NotRegistered);
+        }
+        match state.sessions.get(&session) {
+            Some(holder) if holder != owner => Err(LauncherFault::SessionTaken),
+            Some(_) => Ok(()),
+            None => {
+                state.sessions.insert(session, owner.to_owned());
+                Ok(())
+            }
+        }
+    }
+
+    /// Closes `session`, which must be open and `owner`'s; any other is `UnknownSession`. The
+    /// grants and credentials under it are the caller's to end.
+    pub(crate) fn end_session(
+        &self,
+        owner: &str,
+        session: &LauncherSession,
+    ) -> Result<(), LauncherFault> {
+        let mut state = held(&self.state);
+        match state.sessions.get(session) {
+            Some(holder) if holder == owner => {
+                state.sessions.remove(session);
+                Ok(())
+            }
+            _ => Err(LauncherFault::UnknownSession),
+        }
+    }
+
+    /// Whether `session` is open and `owner`'s.
+    pub(crate) fn session_open(&self, owner: &str, session: &LauncherSession) -> bool {
+        held(&self.state)
+            .sessions
+            .get(session)
+            .is_some_and(|holder| holder == owner)
+    }
+
+    /// A connection left the bus: its programs are free, its sessions close (returned, for the
+    /// caller to end what is under them) and its pending requests end.
+    pub(crate) fn left(&self, name: &str) -> Vec<LauncherSession> {
+        let (ended, closed): (Vec<Pending>, Vec<LauncherSession>) = {
             let mut state = held(&self.state);
             state.programs.retain(|_, holder| holder != name);
+            let closed: Vec<LauncherSession> = state
+                .sessions
+                .iter()
+                .filter(|(_, holder)| holder.as_str() == name)
+                .map(|(session, _)| session.clone())
+                .collect();
+            for session in &closed {
+                state.sessions.remove(session);
+            }
             let ids: Vec<LoginRequestId> = state
                 .pending
                 .iter()
                 .filter(|(_, pending)| pending.owner == name)
                 .map(|(id, _)| id.clone())
                 .collect();
-            ids.iter()
+            let ended = ids
+                .iter()
                 .filter_map(|id| state.pending.remove(id))
-                .collect()
+                .collect();
+            (ended, closed)
         };
         for pending in ended {
             pending.end(LoginEnd::LauncherGone);
         }
+        closed
     }
 
     /// Takes the request `request` of `kind` away, for the connection `owner` that was sent it:

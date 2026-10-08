@@ -8,6 +8,7 @@ use crate::app_id::AppId;
 use crate::capability::{AgentProgram, CapabilityKind};
 use crate::endpoint::EndpointUrl;
 use crate::id::{AccountId, GrantId};
+use crate::launcher_session::LauncherSession;
 use crate::token::Audience;
 use crate::units::UnixSeconds;
 use serde::{Deserialize, Serialize};
@@ -130,6 +131,14 @@ pub enum AuditEvent {
         /// Why it ended.
         reason: CredentialEnd,
     },
+    /// A grant scoped to a launcher session ended with the session (`Peer.EndSession`, or the
+    /// launcher leaving the bus). The entry's `app` is the app the grant was for.
+    SessionGrantEnded {
+        /// The grant that was removed.
+        grant: GrantId,
+        /// The session that closed.
+        session: LauncherSession,
+    },
 }
 
 /// How a process credential travels (P2). A closed set: a path or fd number is not recorded.
@@ -157,6 +166,8 @@ pub enum CredentialEnd {
     AccountRemoved,
     /// Its lifetime ran out. Not written yet: a credential lives until one of the ends above.
     Expired,
+    /// The launcher session its grant was scoped to closed (`GrantScope::Session`).
+    SessionClosed,
 }
 
 impl Handoff {
@@ -179,12 +190,13 @@ impl Handoff {
 
 impl CredentialEnd {
     /// Every end, so a table over them is total.
-    pub const ALL: [CredentialEnd; 5] = [
+    pub const ALL: [CredentialEnd; 6] = [
         CredentialEnd::ProcessExited,
         CredentialEnd::LauncherGone,
         CredentialEnd::GrantRevoked,
         CredentialEnd::AccountRemoved,
         CredentialEnd::Expired,
+        CredentialEnd::SessionClosed,
     ];
 
     /// The word on the bus (`ProcessCredentialRevoked`'s `reason`) and in `audit.jsonl`.
@@ -195,6 +207,7 @@ impl CredentialEnd {
             CredentialEnd::GrantRevoked => "grant_revoked",
             CredentialEnd::AccountRemoved => "account_removed",
             CredentialEnd::Expired => "expired",
+            CredentialEnd::SessionClosed => "session_closed",
         }
     }
 
@@ -282,6 +295,14 @@ mod tests {
                 audience: Audience("org.quire.Agent.codex".into()),
                 reason: CredentialEnd::ProcessExited,
             },
+            AuditEvent::ProcessCredentialRevoked {
+                audience: Audience("org.quire.Agent.codex".into()),
+                reason: CredentialEnd::SessionClosed,
+            },
+            AuditEvent::SessionGrantEnded {
+                grant: GrantId::parse("g2").expect("id"),
+                session: LauncherSession::parse("sess-1").expect("session"),
+            },
         ];
         for event in events {
             let entry = AuditEntry {
@@ -335,6 +356,20 @@ mod tests {
                 reason: CredentialEnd::LauncherGone
             }),
             r#"{"at":1,"app":null,"account":null,"event":{"kind":"process_credential_revoked","v":{"audience":"a","reason":"launcher_gone"}}}"#
+        );
+        assert_eq!(
+            at(AuditEvent::ProcessCredentialRevoked {
+                audience: Audience("a".into()),
+                reason: CredentialEnd::SessionClosed
+            }),
+            r#"{"at":1,"app":null,"account":null,"event":{"kind":"process_credential_revoked","v":{"audience":"a","reason":"session_closed"}}}"#
+        );
+        assert_eq!(
+            at(AuditEvent::SessionGrantEnded {
+                grant: GrantId::parse("g2").expect("id"),
+                session: LauncherSession::parse("sess-1").expect("session"),
+            }),
+            r#"{"at":1,"app":null,"account":null,"event":{"kind":"session_grant_ended","v":{"grant":"g2","session":"sess-1"}}}"#
         );
     }
 

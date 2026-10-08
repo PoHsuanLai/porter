@@ -219,7 +219,7 @@ async fn on_makes_one_always_allow_background_grant_and_off_takes_it_back() {
     let grant = &registry.grants[0];
     assert_eq!(grant.key, key);
     assert_eq!(
-        (grant.decision, grant.scope),
+        (grant.decision, grant.scope.clone()),
         (Decision::Allow, GrantScope::Always)
     );
     assert!(sync_allowed(

@@ -132,6 +132,21 @@
    <method name="RegisterLauncher">
      <arg name="programs" type="as" direction="in"/>
    </method>
+   <method name="BeginSession">
+     <arg name="session" type="s" direction="in"/>
+   </method>
+   <method name="EndSession">
+     <arg name="session" type="s" direction="in"/>
+   </method>
+   <method name="RequestAgentGrant">
+     <arg name="program" type="s" direction="in"/>
+     <arg name="kind" type="s" direction="in"/>
+     <arg name="class" type="s" direction="in"/>
+     <arg name="session" type="s" direction="in"/>
+     <arg name="parent_window" type="s" direction="in"/>
+     <arg name="options" type="a{sv}" direction="in"/>
+     <arg type="o" direction="out"/>
+   </method>
    <method name="ReportAgentLogin">
      <arg name="request" type="s" direction="in"/>
      <arg name="outcome" type="s" direction="in"/>

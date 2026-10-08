@@ -13,7 +13,7 @@ use porter_core::consent::{ConsentAnswer, GrantScope, Usage, availability};
 use porter_core::wire::{ParentWindow, Refusal};
 use porter_core::{
     AccountId, AccountState, AccountsReply, AccountsRequest, AppId, Audience, AuthKind, DataClass,
-    EndpointUrl, GrantId, Need, ProviderId, RelayPlan, SecretKey,
+    EndpointUrl, GrantId, LauncherSession, Need, ProviderId, RelayPlan, SecretKey,
 };
 use porter_provider::{
     Presented, Provider, ProviderError, ProviderSession, ProviderSet, ProviderSpec,
@@ -141,7 +141,10 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                 class,
                 usage,
                 window,
-            } => self.choose(caller, need, (class, usage), &window).await,
+            } => {
+                self.choose(caller, need, (class, usage), &window, None)
+                    .await
+            }
             AccountsRequest::AddAccount { hint, window } => {
                 self.add_account(caller, hint, window).await
             }
@@ -271,26 +274,97 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         });
     }
 
+    /// The consent sheet for an agent program's key (`Peer.RequestAgentGrant`): `agent` is the
+    /// app `org.quire.Agent.<program>`, the grant is recorded under it, and `session`, which the
+    /// caller has checked is open and the launcher's, lets the sheet offer "This session only".
+    /// With a session "Add Account…" is not offered a second route: it ends the request
+    /// dismissed, since the account it would add and allow gets an `Always` grant, not the
+    /// session one.
+    pub async fn choose_for_agent(
+        &self,
+        agent: &AppId,
+        need: Need,
+        (class, usage): (DataClass, Usage),
+        window: &ParentWindow,
+        session: Option<&LauncherSession>,
+    ) -> AccountsReply {
+        self.choose(agent, need, (class, usage), window, session)
+            .await
+    }
+
+    /// Removes the grants scoped to `session`, or every session grant when none is named (a
+    /// starting accountd has no open session, so a session grant a file holds is one nobody can
+    /// end). Audits each as `SessionGrantEnded`, saves, and returns the grants removed.
+    pub async fn end_session_grants(&self, session: Option<&LauncherSession>) -> Vec<GrantId> {
+        let ended: Vec<(GrantId, AppId, AccountId, LauncherSession)> = {
+            let mut registry = self.lock();
+            let ended = registry
+                .grants
+                .iter()
+                .filter_map(|g| match &g.scope {
+                    GrantScope::Session(own) if session.is_none_or(|only| only == own) => Some((
+                        g.id.clone(),
+                        g.key.app.clone(),
+                        g.key.account.clone(),
+                        own.clone(),
+                    )),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            registry
+                .grants
+                .retain(|g| !ended.iter().any(|(id, ..)| *id == g.id));
+            ended
+        };
+        for (grant, app, account, session) in &ended {
+            self.note(
+                Some(app.clone()),
+                Some(account.clone()),
+                AuditEvent::SessionGrantEnded {
+                    grant: grant.clone(),
+                    session: session.clone(),
+                },
+            );
+        }
+        if !ended.is_empty() {
+            // The grants are gone from memory whether or not the file could be written; the
+            // next save writes them out.
+            let _ = self.persist().await;
+        }
+        ended.into_iter().map(|(grant, ..)| grant).collect()
+    }
+
     async fn choose(
         &self,
         caller: &AppId,
         need: Need,
         (class, usage): (DataClass, Usage),
         window: &ParentWindow,
+        session: Option<&LauncherSession>,
     ) -> AccountsReply {
         let asker = Asker {
             app: caller,
             class,
             usage,
         };
-        let Some(ask) = ask_for(&self.lock(), &need, asker) else {
+        let Some(ask) = ask_for(&self.lock(), &need, asker, session) else {
             return AccountsReply::Refused(Refusal::NoFittingAccount);
         };
         let answer = self.sheets.consent(ask, window).await;
         if answer == ConsentAnswer::AddAccount {
-            return self.add_and_allow_for(caller, need, asker, window).await;
+            return match session {
+                None => self.add_and_allow_for(caller, need, asker, window).await,
+                Some(_) => AccountsReply::Refused(Refusal::Dismissed),
+            };
         }
-        let reply = settle(&mut self.lock(), &need, asker, answer, self.clock.now());
+        let reply = settle(
+            &mut self.lock(),
+            &need,
+            asker,
+            session,
+            answer,
+            self.clock.now(),
+        );
         match &reply {
             AccountsReply::Chosen(candidate) => self.note(
                 Some(caller.clone()),
@@ -379,7 +453,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             let registry = self.lock();
             registry.grant_of(caller, grant).and_then(|g| {
                 let account = registry.accounts.iter().find(|a| a.id == g.key.account)?;
-                Some((account.clone(), g.scope, g.decision, g.key.kind))
+                Some((account.clone(), g.scope.clone(), g.decision, g.key.kind))
             })
         };
         let Some((account, scope, porter_core::consent::Decision::Allow, kind)) = found else {

@@ -12,10 +12,12 @@ use crate::keys::KeyDesk;
 use crate::launchers::{Launchers, LoginTiming, SignOutNews};
 use crate::manager::Manager;
 use crate::relay::{RelayRoots, Relays};
+use porter_core::consent::Usage;
 use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
 use porter_core::{
     AccountId, AccountState, AccountsReply, AccountsRequest, AgentState, AppId, AuthKind,
-    CapabilityKind, Claim, EndpointUrl, GrantId, ProviderId, RelayPlan, Toggle,
+    CapabilityKind, Claim, DataClass, EndpointUrl, GrantId, LauncherSession, Need, ProviderId,
+    RelayPlan, Toggle,
 };
 use porter_dbus::{ACCOUNTS_BUS, ACCOUNTS_PATH, Caller, CallerRole, Details, account_path};
 use porter_provider::Provider;
@@ -128,6 +130,32 @@ pub trait Host: Send + Sync + 'static {
     fn revoke_grant(&self, grant: &GrantId) -> impl Future<Output = Result<(), Refusal>> + Send {
         let _ = grant;
         async { Err(Refusal::Unavailable) }
+    }
+
+    /// The consent sheet for an agent program's key (`Peer.RequestAgentGrant`): `agent` is the
+    /// app `org.quire.Agent.<program>` the grant is held under, and `session` an open launcher
+    /// session of the caller, which lets the sheet offer "This session only". A host with no
+    /// sheets says unavailable.
+    fn choose_for_agent(
+        &self,
+        agent: &AppId,
+        need: Need,
+        class: (DataClass, Usage),
+        window: &ParentWindow,
+        session: Option<&LauncherSession>,
+    ) -> impl Future<Output = AccountsReply> + Send {
+        let _ = (agent, need, class, window, session);
+        async { AccountsReply::Refused(Refusal::Unavailable) }
+    }
+
+    /// Removes the grants scoped to `session` (every session grant when none is named) and
+    /// returns them. A host that keeps no grants ends none.
+    fn end_session_grants(
+        &self,
+        session: Option<&LauncherSession>,
+    ) -> impl Future<Output = Vec<GrantId>> + Send {
+        let _ = session;
+        async { Vec::new() }
     }
 
     /// Lets syncd keep `class` of an account on this computer, or takes that back (Settings'
@@ -252,6 +280,24 @@ where
 
     fn revoke_grant(&self, grant: &GrantId) -> impl Future<Output = Result<(), Refusal>> + Send {
         AccountService::revoke_grant(self, grant)
+    }
+
+    fn choose_for_agent(
+        &self,
+        agent: &AppId,
+        need: Need,
+        class: (DataClass, Usage),
+        window: &ParentWindow,
+        session: Option<&LauncherSession>,
+    ) -> impl Future<Output = AccountsReply> + Send {
+        AccountService::choose_for_agent(self, agent, need, class, window, session)
+    }
+
+    fn end_session_grants(
+        &self,
+        session: Option<&LauncherSession>,
+    ) -> impl Future<Output = Vec<GrantId>> + Send {
+        AccountService::end_session_grants(self, session)
     }
 
     fn set_sync(
@@ -516,10 +562,14 @@ impl<H: Host, C: Callers> Core<H, C> {
         }
     }
 
-    /// Forgets a connection that left the bus.
-    pub(crate) fn left(&self, name: &str) {
+    /// Forgets a connection that left the bus. Its launcher sessions close first (their grants
+    /// are removed and the credentials under them end `session_closed`, with nobody left to
+    /// tell), then what is left of its credentials ends `launcher_gone`.
+    pub(crate) async fn left(self: &Arc<Self>, name: &str) {
         held(&self.roster).remove(name);
-        self.launchers.left(name);
+        for session in self.launchers.left(name) {
+            self.close_session(&session, false).await;
+        }
         self.credentials_left(name);
     }
 }
@@ -595,6 +645,9 @@ pub async fn serve_with<H: Host, C: Callers>(
     callers: C,
     options: Options,
 ) -> zbus::Result<()> {
+    // No launcher session is open in a starting accountd, so a session grant the store holds
+    // (accountd died with a session open) is one nobody can end.
+    host.end_session_grants(None).await;
     let published = host.registry();
     let core = Arc::new(Core {
         host,

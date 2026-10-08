@@ -2,15 +2,16 @@
 //! Only a connection whose caller role is `PorterDaemon` may call; every other sender is
 //! `AccessDenied`. The app is named by the daemon from its own connection, never by the app.
 //!
-//! `SetAgentState`, `RegisterLauncher`, `ReportAgentLogin` and `ReportAgentLogout` are the methods
-//! the agent launcher (role `AgentLauncher`) may call, and the only ones it may call; the
-//! signals `AgentLoginRequested` and `AgentLogoutRequested` are sent to it alone (`launchers`).
+//! `SetAgentState`, `RegisterLauncher`, `ReportAgentLogin`, `ReportAgentLogout`, `BeginSession`,
+//! `EndSession` and `RequestAgentGrant` are the methods the agent launcher (role `AgentLauncher`)
+//! may call, and the only ones it may call; the signals `AgentLoginRequested` and
+//! `AgentLogoutRequested` are sent to it alone (`launchers`).
 //!
 //! `Verdicts`, `ResolveKey` (a sealed memfd of an API key) and `ReportLocal` (a probed local
 //! runtime becoming an account, or going offline) are served.
 
 use crate::callers::Callers;
-use crate::core::{Core, Host, Standing, slug};
+use crate::core::{Core, Host, Standing, slug, window};
 use crate::errors::RefusedError;
 use crate::keys::{sealed_key, usable};
 use crate::launchers::Ask;
@@ -18,16 +19,17 @@ use porter_core::capability::AgentProgram;
 use porter_core::consent::{Decision, GrantKey, Verdict, decide};
 use porter_core::wire::Refusal;
 use porter_core::{
-    AccountId, AccountState, AgentState, CapabilityKind, Claim, GrantId, LoginOutcome,
-    LoginRequestId, ProviderId,
+    AccountId, AccountState, AgentState, CapabilityKind, Claim, GrantId, LauncherSession,
+    LoginOutcome, LoginRequestId, ProviderId,
 };
 use porter_core::{AppId, AppName, Isolation, Match, Offer, SpaceScope, matches};
 use porter_dbus::{AppArg, CallerRole, Details, NeedArg, VerdictArg, need_from_dbus};
 use porter_service::{AgentFault, LocalFault, LoginEnd};
 use std::sync::Arc;
+use zbus::Connection;
 use zbus::message::Header;
 use zbus::object_server::SignalEmitter;
-use zbus::zvariant::{OwnedFd, OwnedValue, Value};
+use zbus::zvariant::{OwnedFd, OwnedObjectPath, OwnedValue, Value};
 
 /// The peer object at the accountd path.
 #[derive(Debug)]
@@ -95,8 +97,15 @@ impl<H: Host, C: Callers> Peer<H, C> {
                 let word = match decide(&registry.grants, &key) {
                     Verdict::Granted { grant, scope } => {
                         details.extend(text(grant.as_str()).map(|v| ("grant".to_owned(), v)));
-                        let scope = serde_json::to_value(scope).ok()?;
-                        details.extend(text(scope.as_str()?).map(|v| ("scope".to_owned(), v)));
+                        // The scope's word, and beside it the session a `session` scope lasts
+                        // for (`GrantScope::from_words` puts them back together).
+                        details.extend(text(scope.word()).map(|v| ("scope".to_owned(), v)));
+                        details.extend(
+                            scope
+                                .session()
+                                .and_then(|session| text(session.as_str()))
+                                .map(|v| ("session".to_owned(), v)),
+                        );
                         "granted"
                     }
                     Verdict::Denied => "denied",
@@ -232,6 +241,73 @@ impl<H: Host, C: Callers> Peer<H, C> {
             .register(&sender, &programs)
             .await
             .map_err(|fault| RefusedError::launcher(fault, "a launcher holds that program"))
+    }
+
+    /// Opens a launcher session for the caller (`AgentLauncher` that registered a program): the
+    /// span a grant made "for this session only" lasts. It belongs to this connection; it ends
+    /// at `EndSession` or when the connection leaves the bus. A session another connection
+    /// holds is `SessionTaken`; one this connection holds is a no-op.
+    async fn begin_session(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        session: String,
+    ) -> Result<(), RefusedError> {
+        let owner = self.launcher(&header).await?;
+        let session = LauncherSession::parse(&session).map_err(RefusedError::invalid)?;
+        self.0
+            .launchers
+            .begin_session(&owner, session)
+            .map_err(|fault| RefusedError::launcher(fault, "cannot open that session"))
+    }
+
+    /// Ends a session the caller began: its session grants are removed, the process credentials
+    /// under them end `session_closed` (and the caller is told, in the unicast signal) and the
+    /// audit records each. A session that is not open, or is another connection's, is
+    /// `UnknownSession` and nothing is ended.
+    async fn end_session(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        session: String,
+    ) -> Result<(), RefusedError> {
+        let owner = self.launcher(&header).await?;
+        let session = LauncherSession::parse(&session).map_err(RefusedError::invalid)?;
+        self.0
+            .launchers
+            .end_session(&owner, &session)
+            .map_err(|fault| {
+                RefusedError::launcher(fault, "no such session for this connection")
+            })?;
+        self.0.close_session(&session, true).await;
+        Ok(())
+    }
+
+    /// The consent sheet for an agent program's key (`kind` is `llm`): a Request object answered
+    /// as `Manager.Choose`'s is. With `session`, an open session of this connection, the sheet
+    /// also offers "This session only". See `request::agent_grant_sheet`.
+    #[allow(clippy::too_many_arguments)]
+    async fn request_agent_grant(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        #[zbus(connection)] connection: &Connection,
+        program: String,
+        kind: String,
+        class: String,
+        session: String,
+        parent_window: String,
+        options: Details,
+    ) -> Result<OwnedObjectPath, RefusedError> {
+        self.0
+            .agent_grant_sheet(
+                &header,
+                connection,
+                &program,
+                &kind,
+                &class,
+                &session,
+                window(&parent_window),
+                &options,
+            )
+            .await
     }
 
     /// What the launcher reports of an `AgentLoginRequested`. `ready` sets the account's state

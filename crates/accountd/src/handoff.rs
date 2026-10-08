@@ -12,13 +12,16 @@
 //! - Never `Once`: a `Once` grant is spent by its first use, so a second turn of the agent, which
 //!   holds the key for its whole life, would find the grant gone and the key still in the child:
 //!   a consent that says "once" must not hand over a key that works until the process ends
-//!   (`OnceGrant`). `Always` is the only scope that is not `Once`; a per-session scope would
-//!   join it (the match below has no catch-all arm, so adding one is a compile error here).
+//!   (`OnceGrant`). `Always` is accepted, and so is `Session`: a grant "for this session only"
+//!   made for a session the same connection holds open (`UnknownSession` otherwise), since the
+//!   credential then ends with the session (the match below has no catch-all arm).
 //! - It ends at `RevokeProcessCredential`, when the launcher's connection leaves the bus, when
-//!   the grant is withdrawn, or when the account is removed (checked after every change to the
-//!   registry). accountd unlinks a tmpfs file; it cannot reach a memfd the child has, so it
-//!   tells the launcher in the unicast signal `ProcessCredentialRevoked(id, reason)` and the
-//!   launcher must end the process. Each end is audited.
+//!   the grant is withdrawn, when the account is removed (checked after every change to the
+//!   registry), or when its grant's launcher session closes (`close_session`: `session_closed`,
+//!   told to the launcher only when it is still connected). accountd unlinks a tmpfs file; it
+//!   cannot reach a memfd the child has, so it tells the launcher in the unicast signal
+//!   `ProcessCredentialRevoked(id, reason)` and the launcher must end the process. Each end is
+//!   audited.
 
 use crate::callers::Callers;
 use crate::core::{Core, Host, Standing};
@@ -29,9 +32,12 @@ use porter_core::audit::{CredentialEnd, Handoff};
 use porter_core::capability::AgentProgram;
 use porter_core::consent::{Decision, GrantScope};
 use porter_core::wire::Refusal;
-use porter_core::{AccountId, AppId, AuthKind, CapabilityKind, GrantId, ProcessCredentialId};
+use porter_core::{
+    AccountId, AppId, AuthKind, CapabilityKind, GrantId, LauncherSession, ProcessCredentialId,
+};
 use porter_dbus::{ACCOUNTS_PATH, LauncherFault};
 use porter_service::Registry;
+use std::sync::Arc;
 use zbus::message::Header;
 use zbus::names::BusName;
 use zbus::object_server::SignalEmitter;
@@ -112,13 +118,21 @@ impl<H: Host, C: Callers> Core<H, C> {
         {
             return Err(RefusedError::of(Refusal::AudienceNotGranted));
         }
-        match held.scope {
+        match &held.scope {
             GrantScope::Always => {}
             GrantScope::Once => {
                 return Err(RefusedError::launcher(
                     LauncherFault::OnceGrant,
                     "a once grant is spent by its first use; a process holds its key for its life",
                 ));
+            }
+            GrantScope::Session(session) => {
+                if !self.launchers.session_open(&owner, session) {
+                    return Err(RefusedError::launcher(
+                        LauncherFault::UnknownSession,
+                        "the grant is for a session this connection does not hold open",
+                    ));
+                }
             }
         }
         let account = registry
@@ -145,13 +159,15 @@ impl<H: Host, C: Callers> Core<H, C> {
                 handoff,
             })
             .map_err(RefusedError::of)?;
-        // The grant may have gone while the key was read: a credential must not outlive it.
-        let still = self
-            .host
-            .registry()
-            .grants
-            .iter()
-            .any(|g| g.id == grant && g.decision == Decision::Allow);
+        // The grant may have gone while the key was read, and its session may have closed: a
+        // credential must not outlive either (`close_session` ends the ones already made).
+        let still = self.host.registry().grants.iter().any(|g| {
+            g.id == grant
+                && g.decision == Decision::Allow
+                && g.scope
+                    .session()
+                    .is_none_or(|session| self.launchers.session_open(&owner, session))
+        });
         if !still {
             self.credentials.take(&owner, &id);
             return Err(RefusedError::of(Refusal::UnknownGrant));
@@ -199,6 +215,35 @@ impl<H: Host, C: Callers> Core<H, C> {
             self.note_end(&held.audience, &held.account, reason);
             self.tell_revoked(&held.owner, &id, reason).await;
         }
+    }
+
+    /// A launcher session is over (`EndSession`, or the connection that held it left; the table
+    /// no longer lists it): the process credentials issued under its grants end
+    /// `session_closed` and the grants are removed, audited. `tell` says the launcher is still
+    /// connected to hear `ProcessCredentialRevoked`. The credentials end before the grants go,
+    /// so none is ever reported as `grant_revoked`.
+    pub(crate) async fn close_session(self: &Arc<Self>, session: &LauncherSession, tell: bool) {
+        let grants: Vec<GrantId> = self
+            .host
+            .registry()
+            .grants
+            .iter()
+            .filter(|g| g.scope.session() == Some(session))
+            .map(|g| g.id.clone())
+            .collect();
+        let ended = self.credentials.end_where(|held| {
+            grants
+                .contains(&held.grant)
+                .then_some(CredentialEnd::SessionClosed)
+        });
+        for (id, held, reason) in ended {
+            self.note_end(&held.audience, &held.account, reason);
+            if tell {
+                self.tell_revoked(&held.owner, &id, reason).await;
+            }
+        }
+        self.host.end_session_grants(Some(session)).await;
+        self.publish().await;
     }
 
     /// A launcher's connection left the bus: its credentials end; nobody is left to tell.

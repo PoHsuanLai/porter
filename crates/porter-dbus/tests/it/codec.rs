@@ -358,6 +358,15 @@ fn grants() -> Vec<porter_core::consent::Grant> {
             scope: GrantScope::Once,
             at: UnixSeconds(1),
         },
+        Grant {
+            id: GrantId::parse("g3").expect("id"),
+            key: key(SpaceScope::Any),
+            decision: Decision::Allow,
+            scope: GrantScope::Session(
+                porter_core::LauncherSession::parse("sess-1").expect("session"),
+            ),
+            at: UnixSeconds(2),
+        },
     ]
 }
 

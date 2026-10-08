@@ -49,7 +49,47 @@ fn a_row_is_a_verdict_and_a_malformed_one_grants_nothing() {
             ..
         }
     ));
+    let session = verdict_of(row(
+        "a",
+        "granted",
+        &[
+            ("grant", "g-3"),
+            ("scope", "session"),
+            ("session", "sess-1"),
+        ],
+    ))
+    .expect("session");
+    assert_eq!(
+        session.verdict,
+        Verdict::Granted {
+            grant: GrantId::parse("g-3").expect("id"),
+            scope: GrantScope::Session(LauncherSession::parse("sess-1").expect("session"))
+        }
+    );
     let cases = [
+        (
+            "a session scope without its session",
+            row("a", "granted", &[("grant", "g"), ("scope", "session")]),
+            None,
+        ),
+        (
+            "a session beside a scope that has none",
+            row(
+                "a",
+                "granted",
+                &[("grant", "g"), ("scope", "always"), ("session", "sess-1")],
+            ),
+            None,
+        ),
+        (
+            "a session that is no id",
+            row(
+                "a",
+                "granted",
+                &[("grant", "g"), ("scope", "session"), ("session", "A B")],
+            ),
+            None,
+        ),
         ("ask", row("a", "ask", &[]), Some(Verdict::Ask)),
         ("denied", row("a", "denied", &[]), Some(Verdict::Denied)),
         (

@@ -8,7 +8,9 @@
 use porter_core::capability::LlmFeature;
 use porter_core::consent::{GrantScope, Usage, Verdict};
 use porter_core::need::LlmNeed;
-use porter_core::{AccountId, AppId, DataClass, GrantId, Need, SecretText, Tokens};
+use porter_core::{
+    AccountId, AppId, DataClass, GrantId, LauncherSession, Need, SecretText, Tokens,
+};
 use porter_dbus::{Details, PeerProxy, need_to_dbus};
 use rustix::fs::{SealFlags, fcntl_get_seals};
 use serde::Serialize;
@@ -82,7 +84,12 @@ fn verdict_of(row: (String, String, Details)) -> Option<AccountVerdict> {
     let verdict = match word.as_str() {
         "granted" => {
             let grant = GrantId::parse(&text_of(&details, "grant")?).ok()?;
-            let scope: GrantScope = crate::settings::from_slug(&text_of(&details, "scope")?)?;
+            // The scope's word, and for a session grant the session beside it.
+            let session = match text_of(&details, "session") {
+                Some(text) => Some(LauncherSession::parse(&text).ok()?),
+                None => None,
+            };
+            let scope = GrantScope::from_words(&text_of(&details, "scope")?, session.as_ref())?;
             Verdict::Granted { grant, scope }
         }
         "denied" => Verdict::Denied,

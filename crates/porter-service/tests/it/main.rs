@@ -2,4 +2,5 @@
 
 mod add_flow;
 mod local;
+mod session_scope;
 mod sync_grant;

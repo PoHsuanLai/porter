@@ -3,10 +3,16 @@
 use crate::registry::{Asker, Registry, candidate};
 use porter_core::consent::{AccountChoice, ConsentAnswer, ConsentAsk, Decision, Grant, GrantScope};
 use porter_core::wire::Refusal;
-use porter_core::{AccountId, AccountsReply, GrantId, Need, UnixSeconds};
+use porter_core::{AccountId, AccountsReply, GrantId, LauncherSession, Need, UnixSeconds};
 
-/// The sheet to show for `need`, or `None` when no account fits.
-pub(crate) fn ask_for(registry: &Registry, need: &Need, asker: Asker<'_>) -> Option<ConsentAsk> {
+/// The sheet to show for `need`, or `None` when no account fits. `session` is the open launcher
+/// session the request was made in, which lets the sheet offer "This session only".
+pub(crate) fn ask_for(
+    registry: &Registry,
+    need: &Need,
+    asker: Asker<'_>,
+    session: Option<&LauncherSession>,
+) -> Option<ConsentAsk> {
     let accounts: Vec<AccountChoice> = registry
         .fitting(need)
         .iter()
@@ -22,19 +28,26 @@ pub(crate) fn ask_for(registry: &Registry, need: &Need, asker: Asker<'_>) -> Opt
         class: asker.class,
         usage: asker.usage,
         accounts,
+        session: session.cloned(),
     })
 }
 
 /// Records `answer` in `registry` and gives the reply. An `Allow` for an account that was not
-/// offered is treated as dismissed.
+/// offered is treated as dismissed, and so is one whose scope is a session other than the one
+/// the ask carried (`session`): a sheet cannot make a session scope the ask did not offer.
 pub(crate) fn settle(
     registry: &mut Registry,
     need: &Need,
     asker: Asker<'_>,
+    session: Option<&LauncherSession>,
     answer: ConsentAnswer,
     at: UnixSeconds,
 ) -> AccountsReply {
     match answer {
+        ConsentAnswer::Allow {
+            scope: GrantScope::Session(chosen),
+            ..
+        } if session != Some(&chosen) => AccountsReply::Refused(Refusal::Dismissed),
         ConsentAnswer::Dismissed => AccountsReply::Refused(Refusal::Dismissed),
         ConsentAnswer::Deny => {
             let keys: Vec<_> = registry

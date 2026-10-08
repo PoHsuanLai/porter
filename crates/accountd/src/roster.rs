@@ -27,7 +27,7 @@ pub(crate) async fn watch<H: Host, C: Callers>(
             if let Ok(args) = signal.args()
                 && args.new_owner().is_none()
             {
-                core.left(args.name().as_str());
+                core.left(args.name().as_str()).await;
             }
         }
     });

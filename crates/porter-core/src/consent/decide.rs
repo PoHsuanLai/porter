@@ -13,7 +13,7 @@ pub enum Verdict {
     Granted {
         /// The grant that allows it.
         grant: GrantId,
-        /// Once (spent by this use) or always.
+        /// Once (spent by this use), always, or for a launcher session.
         scope: GrantScope,
     },
     /// Refused; the app is not prompted again.
@@ -33,7 +33,7 @@ pub fn decide<K: Eq>(grants: &[Grant<K>], key: &K) -> Verdict {
         Some(grant) if grant.decision == Decision::Deny => Verdict::Denied,
         Some(grant) => Verdict::Granted {
             grant: grant.id.clone(),
-            scope: grant.scope,
+            scope: grant.scope.clone(),
         },
     }
 }

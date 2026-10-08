@@ -16,10 +16,10 @@ use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::wire::Refusal;
 use porter_core::{
     Account, AccountId, AppId, AppName, AuthKind, CapabilityKind, Credential, DataClass, GrantId,
-    Isolation, SecretKey, SecretPurpose, SecretText, SpaceScope, UnixSeconds,
+    Isolation, LauncherSession, SecretKey, SecretPurpose, SecretText, SpaceScope, UnixSeconds,
 };
 use porter_dbus::{BusStream, Caller, CallerRole, GrantsProxy};
-use porter_fake::{FixedClock, NOW, RecordingAudit, ScriptedSheets, llm_account};
+use porter_fake::{FixedClock, NOW, RecordingAudit, Scripted, ScriptedSheets, llm_account};
 use porter_secrets::{MemorySecrets, Secrets, SecretsError};
 use porter_service::{AccountService, Registry};
 use std::io::Read;
@@ -103,6 +103,11 @@ struct Rig {
 
 impl Rig {
     async fn start() -> Self {
+        Self::start_scripted([]).await
+    }
+
+    /// As `start`, with a person who answers the consent sheet as `script` says.
+    async fn start_scripted(script: impl IntoIterator<Item = Scripted>) -> Self {
         let bus = PrivateBus::start();
         let runtime = bus.scratch().join("runtime");
         std::fs::create_dir_all(&runtime).expect("runtime dir");
@@ -144,7 +149,7 @@ impl Rig {
                 Vec::new(),
                 registry,
                 secrets.clone(),
-                ScriptedSheets::answering([]),
+                ScriptedSheets::answering(script),
                 FixedClock(NOW),
             )
             .with_store(porter_fake::MemoryStore::default())
@@ -401,6 +406,94 @@ async fn a_refusal_is_a_typed_error_and_a_key_is_never_part_of_it() {
     ));
     let audited = serde_json::to_string(&rig.audit.entries()).expect("json");
     assert!(!audited.contains("process_credential"), "{audited}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_session_grant_backs_a_credential_and_ending_the_session_ends_both() {
+    let session = LauncherSession::parse("sess-1").expect("session");
+    let rig =
+        Rig::start_scripted([Scripted::AllowFirst(GrantScope::Session(session.clone()))]).await;
+    let (launcher, _connection) = rig.launcher().await;
+    let mut revocations = launcher.revocations().await.expect("stream");
+
+    // Nothing to ask in before the session is begun, and none to ask for a program not held.
+    assert_eq!(
+        launcher
+            .request_agent_grant(&program(), DataClass::Prompt, Some(&session))
+            .await,
+        Err(LauncherError::UnknownSession)
+    );
+    assert_eq!(
+        launcher
+            .request_agent_grant(
+                &AgentProgram::parse("codex").expect("program"),
+                DataClass::Prompt,
+                None
+            )
+            .await,
+        Err(LauncherError::NotRegistered)
+    );
+    launcher.begin_session(&session).await.expect("begun");
+    launcher.begin_session(&session).await.expect("again");
+
+    let chosen = launcher
+        .request_agent_grant(&program(), DataClass::Prompt, Some(&session))
+        .await
+        .expect("granted");
+    assert_eq!(chosen.account.as_str(), "anthropic");
+    let credential = launcher
+        .issue_credential(&chosen.grant, &program(), Handoff::TmpfsFile)
+        .await
+        .expect("issued under the session grant");
+    let CredentialHandle::TmpfsFile(path) = credential.handle() else {
+        panic!("a path");
+    };
+    let path = path.clone();
+    assert!(path.exists());
+
+    // A second launcher cannot take the session or end it.
+    let other_connection = rig
+        .as_role("org.example.Codex", CallerRole::AgentLauncher)
+        .await;
+    let other = Launcher::connect(&other_connection)
+        .await
+        .expect("launcher");
+    other
+        .register(&[AgentProgram::parse("codex").expect("program")])
+        .await
+        .expect("registered");
+    assert_eq!(
+        other.begin_session(&session).await,
+        Err(LauncherError::SessionTaken)
+    );
+    assert_eq!(
+        other.end_session(&session).await,
+        Err(LauncherError::UnknownSession)
+    );
+
+    launcher.end_session(&session).await.expect("ended");
+    let told = tokio::time::timeout(
+        Duration::from_secs(5),
+        std::future::poll_fn(|cx| std::pin::Pin::new(&mut revocations).poll_next(cx)),
+    )
+    .await
+    .expect("in time")
+    .expect("open")
+    .expect("well formed");
+    assert_eq!(&told.id, credential.id());
+    assert_eq!(told.reason, CredentialEnd::SessionClosed);
+    eventually("the file to go", || !path.exists()).await;
+    assert_eq!(
+        launcher.end_session(&session).await,
+        Err(LauncherError::UnknownSession)
+    );
+    // The grant went with the session: the same grant id issues nothing now.
+    assert!(matches!(
+        launcher
+            .issue_credential(&chosen.grant, &program(), Handoff::Memfd)
+            .await,
+        Err(LauncherError::Refused(Refusal::UnknownGrant))
+    ));
 }
 
 #[test]

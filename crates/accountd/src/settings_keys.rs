@@ -11,7 +11,7 @@ use ds_settings::schema::{
     ActionLabel, ActionWeight, AgentSetting, Exposure, Help, KeyKind, KeyPath, KeySpec, Label,
     LiveAction, Page, Section,
 };
-use porter_core::consent::{Decision, Grant};
+use porter_core::consent::{Decision, Grant, GrantScope};
 use porter_core::{Account, AccountId, AccountState, AuthKind, CapabilityKind, GrantId, Offer};
 use porter_provider::Issuer;
 use porter_service::{Registry, SyncClass, sync_offers};
@@ -166,14 +166,19 @@ fn service_label(kind: &CapabilityKind) -> String {
         .unwrap_or_default()
 }
 
-/// A grant's row: "Sync can use Storage" (allowed) or "Mail can't use Contacts" (refused).
+/// A grant's row: "Sync can use Storage" (allowed) or "Mail can't use Contacts" (refused), and
+/// "Claude Code can use Llm (this session)" for a grant that lasts one launcher session.
 fn grant_label(grant: &Grant, names: &AppNames) -> String {
     let can = match grant.decision {
         Decision::Allow => "can",
         Decision::Deny => "can't",
     };
+    let lasting = match grant.scope {
+        GrantScope::Session(_) => " (this session)",
+        GrantScope::Once | GrantScope::Always => "",
+    };
     format!(
-        "{} {can} use {}",
+        "{} {can} use {}{lasting}",
         names.title_of(&grant.key.app.name).0,
         service_label(&grant.key.kind)
     )

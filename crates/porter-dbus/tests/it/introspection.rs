@@ -115,6 +115,9 @@ fn the_peer_interface_is_the_daemon_members_and_the_launchers() {
         "<method name=\"ReportLocal\">",
         "<method name=\"SetAgentState\">",
         "<method name=\"RegisterLauncher\">",
+        "<method name=\"BeginSession\">",
+        "<method name=\"EndSession\">",
+        "<method name=\"RequestAgentGrant\">",
         "<method name=\"ReportAgentLogin\">",
         "<method name=\"ReportAgentLogout\">",
         "<signal name=\"AgentLoginRequested\">",
@@ -122,7 +125,7 @@ fn the_peer_interface_is_the_daemon_members_and_the_launchers() {
     ] {
         assert!(peer.contains(member), "missing {member}");
     }
-    assert_eq!(peer.matches("<method ").count(), 7);
+    assert_eq!(peer.matches("<method ").count(), 10);
     assert_eq!(peer.matches("<signal ").count(), 2);
     assert!(
         !peer.contains("OpenCredential"),

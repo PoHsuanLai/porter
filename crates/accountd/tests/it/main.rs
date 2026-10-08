@@ -18,6 +18,7 @@ mod report_local;
 mod resolve_key;
 mod roles;
 mod scenario_fixes;
+mod session_scope;
 mod settings;
 mod shell;
 mod signals;

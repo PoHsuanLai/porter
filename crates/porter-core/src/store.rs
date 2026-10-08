@@ -67,6 +67,7 @@ const MIGRATIONS: &[(VocabVersion, Migration)] = &[
     (VocabVersion(4), from_four),
     (VocabVersion(5), from_five),
     (VocabVersion(6), from_six),
+    (VocabVersion(7), from_seven),
 ];
 
 /// 3 to 4 added the `sieve` family and changed the sheet's wire types; the stored document is
@@ -92,6 +93,13 @@ fn from_five(document: Value) -> Result<Value, StoreFault> {
 /// `ProviderKind` and the `row` of the sheet's views, all defaulted: a document written at 6
 /// has none and reads as it was, with the sign-in's age unknown, so only its version moves.
 fn from_six(document: Value) -> Result<Value, StoreFault> {
+    Ok(document)
+}
+
+/// 7 to 8 added `GrantScope::Session` (`{"session": "<id>"}` beside `"once"` and `"always"`), a
+/// new variant: a document written at 7 holds only the two old words and reads as it was, so
+/// only its version moves.
+fn from_seven(document: Value) -> Result<Value, StoreFault> {
     Ok(document)
 }
 

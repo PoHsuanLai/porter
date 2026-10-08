@@ -6,7 +6,7 @@
 use crate::account::state_slug;
 use crate::settings_keys::{Key, path};
 use ds_settings::schema::KeyPath;
-use porter_core::consent::Decision;
+use porter_core::consent::{Decision, Grant};
 use porter_core::{AccountId, AppId, GrantId};
 use porter_service::{Registry, SyncClass, sync_allowed};
 
@@ -113,6 +113,11 @@ pub(crate) fn audience(event: &Event, before: &Registry, after: &Registry) -> Ve
     }
 }
 
+/// The grant `id` in `registry`, if it holds it.
+fn grant_in<'a>(registry: &'a Registry, id: &GrantId) -> Option<&'a Grant> {
+    registry.grants.iter().find(|g| g.id == *id)
+}
+
 /// What the settings module's listeners are told as `Changed(key, value)`, in order. The module
 /// has no signal for "the key set changed"; a pane reads the schema again on any `Changed`
 /// (detent's `Followed::Changed`), so an account that appeared or went, and a new label, are
@@ -138,6 +143,15 @@ pub(crate) fn settings_news(
                     if let Some(words) = crate::settings_keys::expiry_text(account) {
                         news.push((row(Key::Expires(id.clone())), text(&words)));
                     }
+                }
+            }
+            // A grant for one launcher session comes and goes with the session: its row is said
+            // to appear and to go (the other grants' rows are read when the pane is opened).
+            Event::GrantChanged(id) => {
+                let (was, now) = (grant_in(before, id), grant_in(after, id));
+                if let Some(grant) = now.or(was).filter(|g| g.scope.session().is_some()) {
+                    let row = row(Key::Grant(grant.key.account.clone(), grant.id.clone()));
+                    news.push((row, text(if now.is_some() { "added" } else { "removed" })));
                 }
             }
             _ => {}
@@ -245,6 +259,30 @@ mod tests {
         assert_eq!(
             audience(&Event::GrantChanged(held.id), &before, &gone),
             vec![app("org.example.Holder")]
+        );
+    }
+
+    #[test]
+    fn a_session_grants_row_is_said_to_come_and_go_and_another_grants_is_not() {
+        let storage = storage_account();
+        let always = grant("g-always", "org.example.Holder", &storage.id);
+        let mut session = grant("g-session", "org.quire.Agent.claude-code", &storage.id);
+        session.scope =
+            GrantScope::Session(porter_core::LauncherSession::parse("sess-1").expect("session"));
+        let (before, after) = (
+            registry(vec![storage.clone()], vec![always.clone()]),
+            registry(vec![storage.clone()], vec![always, session]),
+        );
+        let key = |text: &str| KeyPath(text.to_owned());
+        let said = |value: &str| toml::Value::String(value.to_owned());
+        let row = "accounts.fake-storage.grant.g-session";
+        assert_eq!(
+            settings_news(&events(&before, &after), &before, &after),
+            vec![(key(row), said("added"))]
+        );
+        assert_eq!(
+            settings_news(&events(&after, &before), &after, &before),
+            vec![(key(row), said("removed"))]
         );
     }
 

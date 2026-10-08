@@ -387,6 +387,7 @@ fn consent_values_round_trip() {
             label: AccountLabel("Nextcloud".into()),
             provider: ProviderId::parse("nextcloud").expect("provider"),
         }],
+        session: None,
     });
     round_trip(&ConsentAnswer::Allow {
         account: account_id("cloud"),
@@ -398,6 +399,77 @@ fn consent_values_round_trip() {
         serde_json::to_string(&ConsentAnswer::AddAccount).expect("json"),
         r#"{"kind":"add_account"}"#
     );
+}
+
+#[test]
+fn a_session_scope_round_trips_with_its_session_and_the_old_scopes_keep_their_words() {
+    let session = LauncherSession::parse("sess-1").expect("session");
+    let scope = GrantScope::Session(session.clone());
+    round_trip(&scope);
+    round_trip(&Verdict::Granted {
+        grant: grant_id("g1"),
+        scope: scope.clone(),
+    });
+    round_trip(&ConsentAnswer::Allow {
+        account: account_id("cloud"),
+        scope: scope.clone(),
+    });
+    round_trip(&Grant {
+        scope: scope.clone(),
+        ..grant()
+    });
+    assert_eq!(json(&scope), r#"{"session":"sess-1"}"#);
+    assert_eq!(json(&GrantScope::Once), r#""once""#);
+    assert_eq!(json(&GrantScope::Always), r#""always""#);
+    for old in [r#""once""#, r#""always""#] {
+        assert!(serde_json::from_str::<GrantScope>(old).is_ok(), "{old}");
+    }
+    // A bare `"session"` has no session to last for, and a session that is no id is refused.
+    for bad in [
+        r#""session""#,
+        r#"{"session":"Sess 1"}"#,
+        r#"{"session":""}"#,
+    ] {
+        assert!(serde_json::from_str::<GrantScope>(bad).is_err(), "{bad}");
+    }
+    // The words `Peer.Verdicts` carries beside the session.
+    for (scope, word, with) in [
+        (GrantScope::Once, "once", None),
+        (GrantScope::Always, "always", None),
+        (scope.clone(), "session", Some(&session)),
+    ] {
+        assert_eq!(scope.word(), word);
+        assert_eq!(scope.session(), with);
+        assert_eq!(GrantScope::from_words(word, with), Some(scope));
+    }
+    assert_eq!(GrantScope::from_words("session", None), None);
+    assert_eq!(GrantScope::from_words("always", Some(&session)), None);
+    assert_eq!(GrantScope::from_words("forever", None), None);
+}
+
+#[test]
+fn a_consent_ask_names_its_session_only_when_it_has_one() {
+    let mut ask = ConsentAsk {
+        app: app(),
+        kind: CapabilityKind::Llm,
+        class: DataClass::Prompt,
+        usage: Usage::Interactive,
+        accounts: vec![AccountChoice {
+            account: account_id("anthropic"),
+            label: AccountLabel("Anthropic".into()),
+            provider: ProviderId::parse("anthropic").expect("provider"),
+        }],
+        session: None,
+    };
+    assert!(!json(&ask).contains("session"), "{}", json(&ask));
+    // An ask an earlier build wrote has no `session` and reads as one without.
+    assert_eq!(
+        serde_json::from_str::<ConsentAsk>(&json(&ask)).expect("ask"),
+        ask
+    );
+    ask.session = Some(LauncherSession::parse("sess-1").expect("session"));
+    assert!(json(&ask).contains(r#""session":"sess-1""#));
+    round_trip(&ask);
 }
 
 #[test]
@@ -563,8 +635,8 @@ fn json<T: Serialize>(value: &T) -> String {
 }
 
 #[test]
-fn the_vocabulary_is_version_seven() {
-    assert_eq!(VocabVersion::CURRENT, VocabVersion(7));
+fn the_vocabulary_is_version_eight() {
+    assert_eq!(VocabVersion::CURRENT, VocabVersion(8));
 }
 
 #[test]
@@ -772,6 +844,7 @@ fn every_sheet_view_round_trips() {
                 label: AccountLabel("Nextcloud".into()),
                 provider: nextcloud.clone(),
             }],
+            session: Some(LauncherSession::parse("sess-1").expect("session")),
         }),
         SheetView::Providers(vec![ProviderRow {
             id: nextcloud.clone(),
