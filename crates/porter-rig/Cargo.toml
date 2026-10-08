@@ -46,3 +46,7 @@ tokio = { workspace = true }
 
 [lints]
 workspace = true
+
+# Its own test executable: it starts that executable again as a fake child, by test name.
+[[test]]
+name = "secrets"

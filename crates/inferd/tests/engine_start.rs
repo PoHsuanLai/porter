@@ -4,6 +4,7 @@
 //! binds its socket and dies, binds and answers `/health`, or never answers. No model, no GPU, no
 //! network, nothing outside the scratch directories.
 
+#[path = "it/hosting/mod.rs"]
 mod hosting;
 
 use hosting::entries;

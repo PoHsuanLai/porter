@@ -3,6 +3,7 @@
 //! environment names a private bus; this process never edits its own.
 #![cfg(all(feature = "dbus", feature = "infer"))]
 
+#[path = "it/common/mod.rs"]
 mod common;
 
 use common::bus::PrivateBus;

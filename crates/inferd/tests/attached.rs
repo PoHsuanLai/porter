@@ -4,6 +4,7 @@
 //! lab engine that is a process of its own. Nothing outside the scratch directories and loopback
 //! ports the tests bind is touched; the only pids signalled are ones these tests started.
 
+#[path = "it/hosting/mod.rs"]
 mod hosting;
 
 use hosting::lab::Lab;

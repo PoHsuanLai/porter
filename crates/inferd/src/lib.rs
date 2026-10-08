@@ -46,18 +46,18 @@ pub use adapters::AdapterModel;
 
 /// The catalog entries the hosted tests use, shared with the unit tests.
 #[cfg(test)]
-#[path = "../tests/hosting/entries.rs"]
+#[path = "../tests/it/hosting/entries.rs"]
 mod entries;
 
 /// The lab engine (an OpenAI-compatible server on a socket) the attached-engine tests share.
 #[cfg(test)]
 #[allow(dead_code)]
-#[path = "../tests/hosting/lab.rs"]
+#[path = "../tests/it/hosting/lab.rs"]
 mod lab;
 
 /// The fake speech host the speech tests share with the hosted ones.
 #[cfg(test)]
-#[path = "../tests/hosting/speech_host.rs"]
+#[path = "../tests/it/hosting/speech_host.rs"]
 mod speech_host;
 
 #[cfg(test)]

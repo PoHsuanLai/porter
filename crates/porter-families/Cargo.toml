@@ -47,19 +47,3 @@ openrouter = ["dep:porter-oauth"]
 
 [lints]
 workspace = true
-
-[[test]]
-name = "microsoft"
-required-features = ["microsoft"]
-
-[[test]]
-name = "google"
-required-features = ["google"]
-
-[[test]]
-name = "agent_login"
-required-features = ["agent_login"]
-
-[[test]]
-name = "api_key"
-required-features = ["api_key"]

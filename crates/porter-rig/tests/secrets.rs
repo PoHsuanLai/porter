@@ -3,6 +3,7 @@
 //! refusing to overwrite, reading back and deleting through it, from a child process whose
 //! only bus is the private one. The service ends cleanly on SIGTERM sent to its PID.
 
+#[path = "it/common/mod.rs"]
 mod common;
 
 use common::bus::PrivateBus;

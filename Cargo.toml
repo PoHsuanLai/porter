@@ -132,3 +132,8 @@ rustix = { version = "1.1", default-features = false, features = ["std", "event"
 [workspace.lints.rust]
 unsafe_code = "deny"
 missing_debug_implementations = "warn"
+
+# Dependencies keep no debug info (porter's own crates keep line tables, `.cargo/config.toml`):
+# it is most of what a test link carries.
+[profile.dev.package."*"]
+debug = false

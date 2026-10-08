@@ -23,3 +23,11 @@ What porter adds or decides differently, each with its reason:
 4. **Nothing ambient below the daemons.** The clock (`porter_service::Clock`), the secret store,
    the consent prompter, providers and transports are passed in; only `accountd`, `syncd` and
    `inferd` read the system clock, the environment or the bus.
+5. **One integration-test executable per crate.** A crate's integration tests are modules of
+   `crates/<crate>/tests/it/main.rs` (`mod <topic>;`, one `mod common;` there, helpers used as
+   `crate::common`); fixtures stay in `tests/fixtures/`. A separate `tests/<name>.rs` with a
+   `[[test]]` entry in the crate's `Cargo.toml` and a one-line reason is for a test that cannot
+   share a process: it starts its own test executable again as a fake child by test name
+   (inferd `attached`, `engine_group`, `engine_start`, `shutdown`; porter-client `connect`;
+   porter-rig `secrets`), sets process-wide state, or needs a `required-features` the rest must
+   not. Dependencies build without debug info (`[profile.dev.package."*"]`).

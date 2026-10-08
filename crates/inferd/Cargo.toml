@@ -59,3 +59,17 @@ tokio = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true
+
+# Each of these starts its own test executable again as a fake child (an engine, a lab, inferd),
+# by test name, which a shared executable would change.
+[[test]]
+name = "attached"
+
+[[test]]
+name = "engine_group"
+
+[[test]]
+name = "engine_start"
+
+[[test]]
+name = "shutdown"

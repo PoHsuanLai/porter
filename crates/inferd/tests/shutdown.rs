@@ -8,7 +8,7 @@
 //! real engine needs a caller the real binary only names in a `test-proc-root` build, and no model
 //! is ever run here. Only pids these tests started are signalled.
 
-#[path = "hosting/bus.rs"]
+#[path = "it/hosting/bus.rs"]
 mod bus;
 
 use engine_supervisor::{EngineHost, EngineId, GpuAccess, Network, ProgramPath, Sandbox, UnitSpec};

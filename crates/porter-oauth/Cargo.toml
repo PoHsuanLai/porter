@@ -32,7 +32,3 @@ io = ["dep:tokio"]
 
 [lints]
 workspace = true
-
-[[test]]
-name = "fake_issuer"
-required-features = ["io"]
