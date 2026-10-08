@@ -312,7 +312,14 @@ impl<H, C> AccountsSettings<H, C> {
             std::fs::create_dir_all(dir).map_err(failed)?;
         }
         let temp = path.with_extension("toml.new");
-        std::fs::write(&temp, text).map_err(failed)?;
+        // On disk before the rename publishes it, or a power cut leaves an empty clients file.
+        std::fs::File::create(&temp)
+            .and_then(|mut out| {
+                use std::io::Write;
+                out.write_all(text.as_bytes())?;
+                out.sync_all()
+            })
+            .map_err(failed)?;
         std::fs::rename(&temp, path).map_err(failed)
     }
 }

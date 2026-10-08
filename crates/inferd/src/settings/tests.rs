@@ -552,6 +552,9 @@ fn set_writes_one_row_at_its_path_and_keeps_the_rest() {
     assert_eq!(read.ai.model["llm"]["fast"], "auto");
     assert_eq!(read.ai.model["llm"]["best"], "local/beta");
     assert_eq!(read.ai.auto.allow_evict.as_deref(), Some("never"));
+    // rel-8: the write is synced and renamed, and nothing is left staged. (A crash that loses an
+    // unsynced file cannot be made in a test; this keeps the synced path working.)
+    assert!(!file.path().with_extension("toml.new").exists());
     // A file that does not parse is left as it was.
     std::fs::write(file.path(), "[ai\n").expect("write");
     assert!(file.set("ai.local_only", "off".into()).is_err());

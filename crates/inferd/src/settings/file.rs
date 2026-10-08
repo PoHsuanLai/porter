@@ -64,7 +64,7 @@ impl ConfigFile {
             std::fs::create_dir_all(dir).map_err(io)?;
         }
         let temp = self.path.with_extension("toml.new");
-        std::fs::write(&temp, text).map_err(io)?;
+        write_synced(&temp, text.as_bytes()).map_err(io)?;
         std::fs::rename(&temp, &self.path).map_err(io)
     }
 
@@ -74,6 +74,15 @@ impl ConfigFile {
         let meta = std::fs::metadata(&self.path).ok()?;
         Some((meta.modified().ok()?, meta.len()))
     }
+}
+
+/// Writes `bytes` to `path` and has them on disk before returning, so that the rename that
+/// follows never publishes a file whose contents a power cut could still lose.
+fn write_synced(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut out = std::fs::File::create(path)?;
+    out.write_all(bytes)?;
+    out.sync_all()
 }
 
 /// Sets `table` at the dotted `path`, making the tables on the way.
