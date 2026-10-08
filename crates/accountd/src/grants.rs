@@ -8,6 +8,8 @@ use porter_core::{AccountsReply, AccountsRequest, Audience, EndpointUrl, GrantId
 use porter_dbus::{Details, TokenArg, grant_to_dbus, token_to_dbus};
 use std::sync::Arc;
 use zbus::message::Header;
+use zbus::object_server::SignalEmitter;
+use zbus::zvariant::OwnedValue;
 
 /// `org.quire.Accounts1.Grants`.
 #[derive(Debug)]
@@ -140,4 +142,38 @@ impl<H: Host, C: Callers> Tokens<H, C> {
         let plan = planned.map_err(RefusedError::of)?;
         self.0.relays.open(plan).await.map_err(RefusedError::of)
     }
+
+    /// An API key for a process the agent launcher spawns (P2), on a sealed memfd or in a 0600
+    /// file: the credential's id and the handle in a variant (`h` or `s`). `AgentLauncher` only,
+    /// for a program it registered, under an `Always` grant of `org.quire.Agent.<program>`. See
+    /// `handoff`.
+    async fn issue_process_credential(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        grant: String,
+        program: String,
+        target: String,
+    ) -> Result<(String, OwnedValue), RefusedError> {
+        self.0
+            .issue_process_credential(&header, &grant, &program, &target)
+            .await
+    }
+
+    /// The launcher says the process is over; accountd unlinks the file and forgets the
+    /// credential.
+    async fn revoke_process_credential(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        id: String,
+    ) -> Result<(), RefusedError> {
+        self.0.revoke_process_credential(&header, &id).await
+    }
+
+    /// Sent to the launcher that was issued the credential, alone, when accountd ended it.
+    #[zbus(signal)]
+    async fn process_credential_revoked(
+        emitter: &SignalEmitter<'_>,
+        id: &str,
+        reason: &str,
+    ) -> zbus::Result<()>;
 }

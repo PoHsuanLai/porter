@@ -25,6 +25,8 @@
 
 mod accounts;
 mod authenticated;
+#[cfg(feature = "dbus")]
+pub mod credential;
 #[cfg(feature = "engines")]
 pub mod engines;
 mod env;
@@ -37,6 +39,11 @@ mod transport;
 
 pub use accounts::Accounts;
 pub use authenticated::{AuthenticatedStream, Relayed};
+#[cfg(feature = "dbus")]
+pub use credential::{
+    ChildKey, ChildKeyError, CredentialHandle, Delivery, Inherit, ProcessCredential, Revocations,
+    Revoked,
+};
 pub use env::{ClientEnv, LinkChoice, Place, START_WAIT, SocketAgent, StartAgent};
 pub use error::{ClientError, TransportError};
 pub use found::{ConsentOffer, Found, NoAccount, found};

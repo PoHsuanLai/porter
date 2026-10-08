@@ -69,7 +69,9 @@ pub use sheet::{
 };
 pub use sheet_backend::{AccountsSheetProxy, AccountsSheetSkeleton};
 pub use sync::{SyncProxy, SyncSkeleton};
-pub use tokens::{TokensProxy, TokensSkeleton};
+pub use tokens::{
+    ProcessCredentialRevoked, ProcessCredentialRevokedStream, TokensProxy, TokensSkeleton,
+};
 /// The session-bus connection transports and daemons hold.
 pub use zbus::Connection as BusConnection;
 /// The bus library's error, which [`classify`] reads.

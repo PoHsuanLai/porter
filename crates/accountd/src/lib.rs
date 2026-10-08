@@ -38,6 +38,12 @@
 //!   outcome. The login itself never reaches accountd: no token, no URL, no code. `AgentLauncher`
 //!   only.
 //!
+//! - `Tokens.IssueProcessCredential` and `Tokens.RevokeProcessCredential`, with the unicast signal
+//!   `ProcessCredentialRevoked` (`handoff`, `credentials`): an API key for one process the agent
+//!   launcher spawns, on a sealed memfd or in a 0600 tmpfs file, for an agent that cannot take a
+//!   base URL. `AgentLauncher` only, for a program it registered; it ends with the launcher's
+//!   connection, the grant or the account. Outside porter's meter (P4 is the metered route).
+//!
 //! - `Peer.ReportLocal`: a probed local runtime (Ollama, llama.cpp, LM Studio) as an account of its
 //!   provider file, its models as claims, `offline` when it stops (`peer`); a porter daemon only.
 //!
@@ -49,8 +55,10 @@ mod audit;
 mod callers;
 mod callers_file;
 mod core;
+mod credentials;
 mod errors;
 mod grants;
+mod handoff;
 mod hub;
 mod keys;
 pub mod keysel;

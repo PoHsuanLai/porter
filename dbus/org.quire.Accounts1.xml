@@ -84,6 +84,20 @@
      <arg name="origin" type="s" direction="in"/>
      <arg type="h" direction="out"/>
    </method>
+   <method name="IssueProcessCredential">
+     <arg name="grant" type="s" direction="in"/>
+     <arg name="program" type="s" direction="in"/>
+     <arg name="target" type="s" direction="in"/>
+     <arg type="s" direction="out"/>
+     <arg type="v" direction="out"/>
+   </method>
+   <method name="RevokeProcessCredential">
+     <arg name="id" type="s" direction="in"/>
+   </method>
+   <signal name="ProcessCredentialRevoked">
+     <arg name="id" type="s"/>
+     <arg name="reason" type="s"/>
+   </signal>
  </interface>
  <interface name="org.quire.Accounts1.Request">
    <method name="Close">

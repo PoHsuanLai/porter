@@ -3,6 +3,10 @@
 //! agent in or out, has the agent do it, and reports only a coarse [`LoginOutcome`]. Nothing of
 //! the login itself (a token, a URL, a code) crosses to porter: there is no way to send one.
 //!
+//! For an agent that cannot be pointed at inferd the launcher can also be handed an API key for
+//! the process it spawns ([`Launcher::issue_credential`], lane p2-handoff; the duties and the
+//! residual risk are in [`crate::credential`]).
+//!
 //! The caller must be known to accountd as the agent launcher (`CallerRole::AgentLauncher`, a row
 //! of `callers.toml` a machine writes); any other caller is [`LauncherError::Denied`].
 //!
@@ -20,13 +24,20 @@
 //! }
 //! ```
 
+use crate::credential::{CredentialHandle, ProcessCredential, Revocations};
+use porter_core::audit::Handoff;
 use porter_core::capability::AgentProgram;
-use porter_core::{AccountId, CoreError, LoginOutcome, LoginRequestId};
+use porter_core::wire::Refusal;
+use porter_core::{
+    AccountId, CoreError, GrantId, LoginOutcome, LoginRequestId, ProcessCredentialId,
+};
 use porter_dbus::{
     AgentLoginRequested, AgentLoginRequestedStream, AgentLogoutRequested,
     AgentLogoutRequestedStream, BusConnection, BusError, BusFailure, BusStream, LauncherFault,
-    PeerProxy, classify, is_invalid_args, launcher_fault_of,
+    PeerProxy, TokensProxy, classify, is_invalid_args, launcher_fault_of, refusal_of,
+    zvariant::Value,
 };
+use std::os::fd::AsFd;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -40,6 +51,26 @@ pub enum LauncherError {
     /// was sent to another connection.
     #[error("no such request for this connection")]
     UnknownRequest,
+    /// `issue_credential` for a program this connection has not registered.
+    #[error("this connection has not registered that program")]
+    NotRegistered,
+    /// `issue_credential` under a `Once` grant: it is spent by its first use, so it cannot back a
+    /// key a process holds for its life. Ask the person for an always grant.
+    #[error("a once grant cannot back a process credential")]
+    OnceGrant,
+    /// `issue_credential` for an account that holds no API key (an OAuth account, an agent that
+    /// signs itself in, a local runtime).
+    #[error("the account holds no API key to hand over")]
+    NotAKeyAccount,
+    /// `revoke_credential` for a credential this connection was not issued: never made, ended
+    /// already (accountd may have ended it: see [`crate::Revocations`]), or another's.
+    #[error("no such credential for this connection")]
+    UnknownCredential,
+    /// accountd refused the grant or the account for a reason an app also meets: `UnknownGrant`,
+    /// `AudienceNotGranted` (the grant is not for `org.quire.Agent.<program>` or not the Llm
+    /// kind), `NeedsReauth`, `Denied` (the person turned the account off), `Unavailable`.
+    #[error("refused: {0:?}")]
+    Refused(Refusal),
     /// accountd does not know this caller as the agent launcher.
     #[error("refused by accountd: {0}")]
     Denied(String),
@@ -56,11 +87,16 @@ pub enum LauncherError {
 
 impl From<BusError> for LauncherError {
     fn from(error: BusError) -> Self {
-        match launcher_fault_of(&error) {
-            Some(LauncherFault::AlreadyRegistered) => LauncherError::AlreadyRegistered,
-            Some(LauncherFault::UnknownRequest) => LauncherError::UnknownRequest,
-            None if is_invalid_args(&error) => LauncherError::Invalid(error.to_string()),
-            None => match classify(&error) {
+        match (launcher_fault_of(&error), refusal_of(&error)) {
+            (Some(LauncherFault::AlreadyRegistered), _) => LauncherError::AlreadyRegistered,
+            (Some(LauncherFault::UnknownRequest), _) => LauncherError::UnknownRequest,
+            (Some(LauncherFault::NotRegistered), _) => LauncherError::NotRegistered,
+            (Some(LauncherFault::OnceGrant), _) => LauncherError::OnceGrant,
+            (Some(LauncherFault::NotAKeyAccount), _) => LauncherError::NotAKeyAccount,
+            (Some(LauncherFault::UnknownCredential), _) => LauncherError::UnknownCredential,
+            (None, Some(refusal)) => LauncherError::Refused(refusal),
+            (None, None) if is_invalid_args(&error) => LauncherError::Invalid(error.to_string()),
+            (None, None) => match classify(&error) {
                 BusFailure::NoDaemon => LauncherError::Unreachable,
                 BusFailure::Denied(why) => LauncherError::Denied(why),
                 BusFailure::Other(why) => LauncherError::Malformed(why),
@@ -101,6 +137,7 @@ pub struct LauncherRequest {
 #[derive(Debug, Clone)]
 pub struct Launcher {
     peer: PeerProxy<'static>,
+    tokens: TokensProxy<'static>,
 }
 
 impl Launcher {
@@ -108,7 +145,61 @@ impl Launcher {
     pub async fn connect(connection: &BusConnection) -> Result<Self, LauncherError> {
         Ok(Self {
             peer: PeerProxy::new(connection).await?,
+            tokens: TokensProxy::new(connection).await?,
         })
+    }
+
+    /// An API key for a process this launcher is about to spawn for `program`, under `grant`
+    /// (the person's grant of an account to the app `org.quire.Agent.<program>`, kind Llm, scope
+    /// always), handed over by `target`: a sealed memfd to pass to the child, or a 0600 file
+    /// under `$XDG_RUNTIME_DIR`. The program must be one this connection registered.
+    ///
+    /// For an agent that cannot be pointed at inferd (P4, the metered route, needs none of this).
+    /// The key is outside porter's meter and the child can read its own key: see the module
+    /// documentation of [`crate::credential`] for the launcher's duties.
+    pub async fn issue_credential(
+        &self,
+        grant: &GrantId,
+        program: &AgentProgram,
+        target: Handoff,
+    ) -> Result<ProcessCredential, LauncherError> {
+        let (id, handle) = self
+            .tokens
+            .issue_process_credential(grant.as_str(), program.as_str(), target.word())
+            .await?;
+        let id = ProcessCredentialId::parse(&id)?;
+        let handle = match (target, &*handle) {
+            (Handoff::Memfd, Value::Fd(fd)) => CredentialHandle::Memfd(
+                fd.as_fd()
+                    .try_clone_to_owned()
+                    .map_err(|why| LauncherError::Malformed(why.to_string()))?,
+            ),
+            (Handoff::TmpfsFile, Value::Str(path)) => {
+                CredentialHandle::TmpfsFile(path.as_str().into())
+            }
+            _ => {
+                return Err(LauncherError::Malformed(
+                    "the handle is not the kind asked for".to_owned(),
+                ));
+            }
+        };
+        Ok(ProcessCredential::new(id, handle))
+    }
+
+    /// Ends a credential this connection was issued, because the process that held it exited or
+    /// was killed: a tmpfs file is unlinked and accountd forgets it. Not for a credential
+    /// accountd ended itself (that is [`LauncherError::UnknownCredential`]).
+    pub async fn revoke_credential(&self, id: &ProcessCredentialId) -> Result<(), LauncherError> {
+        Ok(self.tokens.revoke_process_credential(id.as_str()).await?)
+    }
+
+    /// What accountd tells this connection when it ends a credential itself (the grant was
+    /// revoked, the account removed): the launcher must end that process. Subscribe before
+    /// issuing, so none is missed.
+    pub async fn revocations(&self) -> Result<Revocations, LauncherError> {
+        Ok(Revocations::new(
+            self.tokens.receive_process_credential_revoked().await?,
+        ))
     }
 
     /// Registers the programs this connection launches, for as long as it lives. A program

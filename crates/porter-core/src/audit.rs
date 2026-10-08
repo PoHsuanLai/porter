@@ -114,15 +114,16 @@ pub enum AuditEvent {
         /// The agent program asked to sign out.
         program: AgentProgram,
     },
-    /// RESERVED for P2 (process credential handoff): no writer yet. A credential was handed to a
-    /// process for `audience`, by `handoff`. Never the credential.
+    /// `Tokens.IssueProcessCredential` (P2, lane p2-handoff): an API key was handed to a process
+    /// the launcher spawns for `audience` (`org.quire.Agent.<program>`), by `handoff`. The entry's
+    /// `app` is the app the grant is for and `account` the account. Never the credential.
     ProcessCredentialIssued {
         /// Who it was handed to.
         audience: Audience,
         /// How it travelled.
         handoff: Handoff,
     },
-    /// RESERVED for P2: a credential handed to a process is no longer valid.
+    /// A credential handed to a process is no longer valid (`reason` says why).
     ProcessCredentialRevoked {
         /// Who held it.
         audience: Audience,
@@ -145,14 +146,62 @@ pub enum Handoff {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CredentialEnd {
-    /// The process it was handed to exited.
+    /// The launcher ended it: the process it was handed to exited or was killed
+    /// (`Tokens.RevokeProcessCredential`).
     ProcessExited,
+    /// The launcher's connection left the bus, so nobody is left to end the process.
+    LauncherGone,
     /// The grant it was issued under was withdrawn.
     GrantRevoked,
     /// The account was removed.
     AccountRemoved,
-    /// Its lifetime ran out.
+    /// Its lifetime ran out. Not written yet: a credential lives until one of the ends above.
     Expired,
+}
+
+impl Handoff {
+    /// Every way, so a table over them is total.
+    pub const ALL: [Handoff; 2] = [Handoff::Memfd, Handoff::TmpfsFile];
+
+    /// The word on the bus (`Tokens.IssueProcessCredential`'s `target`) and in `audit.jsonl`.
+    pub fn word(self) -> &'static str {
+        match self {
+            Handoff::Memfd => "memfd",
+            Handoff::TmpfsFile => "tmpfs_file",
+        }
+    }
+
+    /// The way a word names, if it is one.
+    pub fn from_word(word: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|way| way.word() == word)
+    }
+}
+
+impl CredentialEnd {
+    /// Every end, so a table over them is total.
+    pub const ALL: [CredentialEnd; 5] = [
+        CredentialEnd::ProcessExited,
+        CredentialEnd::LauncherGone,
+        CredentialEnd::GrantRevoked,
+        CredentialEnd::AccountRemoved,
+        CredentialEnd::Expired,
+    ];
+
+    /// The word on the bus (`ProcessCredentialRevoked`'s `reason`) and in `audit.jsonl`.
+    pub fn word(self) -> &'static str {
+        match self {
+            CredentialEnd::ProcessExited => "process_exited",
+            CredentialEnd::LauncherGone => "launcher_gone",
+            CredentialEnd::GrantRevoked => "grant_revoked",
+            CredentialEnd::AccountRemoved => "account_removed",
+            CredentialEnd::Expired => "expired",
+        }
+    }
+
+    /// The end a word names, if it is one.
+    pub fn from_word(word: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|end| end.word() == word)
+    }
 }
 
 #[cfg(test)]
@@ -280,6 +329,29 @@ mod tests {
             }),
             r#"{"at":1,"app":null,"account":null,"event":{"kind":"process_credential_issued","v":{"audience":"a","handoff":"memfd"}}}"#
         );
+        assert_eq!(
+            at(AuditEvent::ProcessCredentialRevoked {
+                audience: Audience("a".into()),
+                reason: CredentialEnd::LauncherGone
+            }),
+            r#"{"at":1,"app":null,"account":null,"event":{"kind":"process_credential_revoked","v":{"audience":"a","reason":"launcher_gone"}}}"#
+        );
+    }
+
+    #[test]
+    fn the_bus_words_of_a_handoff_and_an_end_are_their_audit_words() {
+        for way in Handoff::ALL {
+            let json = serde_json::to_string(&way).expect("json");
+            assert_eq!(json, format!("\"{}\"", way.word()));
+            assert_eq!(Handoff::from_word(way.word()), Some(way));
+        }
+        for end in CredentialEnd::ALL {
+            let json = serde_json::to_string(&end).expect("json");
+            assert_eq!(json, format!("\"{}\"", end.word()));
+            assert_eq!(CredentialEnd::from_word(end.word()), Some(end));
+        }
+        assert_eq!(Handoff::from_word("env"), None);
+        assert_eq!(CredentialEnd::from_word("Memfd"), None);
     }
 
     #[test]

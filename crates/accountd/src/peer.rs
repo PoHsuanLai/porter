@@ -12,14 +12,14 @@
 use crate::callers::Callers;
 use crate::core::{Core, Host, Standing, slug};
 use crate::errors::RefusedError;
-use crate::keys::sealed_key;
+use crate::keys::{sealed_key, usable};
 use crate::launchers::Ask;
 use porter_core::capability::AgentProgram;
 use porter_core::consent::{Decision, GrantKey, Verdict, decide};
 use porter_core::wire::Refusal;
 use porter_core::{
     AccountId, AccountState, AgentState, CapabilityKind, Claim, GrantId, LoginOutcome,
-    LoginRequestId, ProviderId, Toggle,
+    LoginRequestId, ProviderId,
 };
 use porter_core::{AppId, AppName, Isolation, Match, Offer, SpaceScope, matches};
 use porter_dbus::{AppArg, CallerRole, Details, NeedArg, VerdictArg, need_from_dbus};
@@ -142,15 +142,7 @@ impl<H: Host, C: Callers> Peer<H, C> {
             .iter()
             .find(|a| a.id == held.key.account)
             .ok_or_else(|| RefusedError::of(Refusal::UnknownGrant))?;
-        let off = registry.toggles.iter().any(|t| {
-            t.account == account.id && t.kind == CapabilityKind::Llm && t.toggle == Toggle::Off
-        });
-        if off {
-            return Err(RefusedError::of(Refusal::Denied));
-        }
-        if account.state == AccountState::NeedsReauth {
-            return Err(RefusedError::of(Refusal::NeedsReauth));
-        }
+        usable(&registry, account).map_err(RefusedError::of)?;
         let key = desk.read(&account.id).await.map_err(RefusedError::of)?;
         let fd = sealed_key(key.expose()).map_err(|_| RefusedError::of(Refusal::Unavailable))?;
         desk.note(&held.key.app, &account.id, &grant);
@@ -291,16 +283,7 @@ impl<H: Host, C: Callers> Peer<H, C> {
 impl<H: Host, C: Callers> Peer<H, C> {
     /// The unique name of a caller that is the agent launcher; anyone else is `AccessDenied`.
     async fn launcher(&self, header: &Header<'_>) -> Result<String, RefusedError> {
-        let caller = self.0.identify(header, Standing::Launching).await?;
-        if caller.role != CallerRole::AgentLauncher {
-            return Err(RefusedError::access_denied(
-                "only the agent launcher may register or answer for a launcher",
-            ));
-        }
-        header
-            .sender()
-            .map(|sender| sender.to_string())
-            .ok_or_else(|| RefusedError::access_denied("no sender"))
+        self.0.launcher_of(header).await
     }
 
     async fn report(

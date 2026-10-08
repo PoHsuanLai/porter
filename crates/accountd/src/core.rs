@@ -4,6 +4,7 @@
 use crate::account::{AccountObject, publish_accounts};
 use crate::app_names::AppNames;
 use crate::callers::Callers;
+use crate::credentials::Credentials;
 use crate::errors::RefusedError;
 use crate::grants::{Grants, Tokens};
 use crate::hub::{Event, audience, events, settings_news, shell_hears};
@@ -319,6 +320,8 @@ pub(crate) struct Core<H, C> {
     pub(crate) app_names: AppNames,
     /// The agent launchers and the requests they carry.
     pub(crate) launchers: Launchers,
+    /// The credentials handed to processes the launcher spawned (`Tokens.IssueProcessCredential`).
+    pub(crate) credentials: Credentials,
     /// The served settings module, which announces an account's new state as `Changed`; set
     /// once the module is served.
     pub(crate) settings: OnceLock<ds_settings::live::Served>,
@@ -413,6 +416,8 @@ impl<H: Host, C: Callers> Core<H, C> {
     /// `Account` objects, and sends each signal to the connections of the apps it concerns.
     pub(crate) async fn publish(self: &Arc<Self>) {
         let after = self.host.registry();
+        // A credential handed to a process does not outlive its grant or its account.
+        self.end_credentials(&after).await;
         let before = std::mem::replace(&mut *held(&self.published), after.clone());
         let list = events(&before, &after);
         let server = self.connection.object_server();
@@ -515,6 +520,7 @@ impl<H: Host, C: Callers> Core<H, C> {
     pub(crate) fn left(&self, name: &str) {
         held(&self.roster).remove(name);
         self.launchers.left(name);
+        self.credentials_left(name);
     }
 }
 
@@ -565,6 +571,10 @@ pub struct Options {
     /// The clock and bound of a request to an agent launcher; the default is the system clock
     /// and ten minutes.
     pub login: LoginTiming,
+    /// `$XDG_RUNTIME_DIR`: where a `tmpfs_file` process credential is written
+    /// (`<dir>/porter/agent/<id>/key`, cleared when accountd starts). None refuses that way as
+    /// unavailable; the `memfd` way needs no directory.
+    pub runtime_dir: Option<std::path::PathBuf>,
 }
 
 /// Serves `org.quire.Accounts1` on `connection` over `host`, answering for the apps `callers`
@@ -598,6 +608,7 @@ pub async fn serve_with<H: Host, C: Callers>(
         keys: options.keys,
         app_names: options.app_names,
         launchers: Launchers::new(connection.clone(), options.login),
+        credentials: Credentials::new(options.runtime_dir.as_deref()),
         settings: OnceLock::new(),
     });
     let server: &ObjectServer = connection.object_server();

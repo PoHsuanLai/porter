@@ -22,6 +22,7 @@ mod identity;
 mod matching;
 pub mod need;
 mod offer;
+mod process_credential;
 mod restriction;
 mod secret;
 pub mod sheet;
@@ -53,6 +54,7 @@ pub use identity::{CgroupPath, ClaimedId, PeerFacts, PeerIdentity, SandboxFacts,
 pub use matching::{Match, Shortfall, matches};
 pub use need::Need;
 pub use offer::{AbsentReason, Claim, Offer, Provenance, Subject};
+pub use process_credential::ProcessCredentialId;
 pub use restriction::{
     Limit, LimitReason, ReauthReason, Restriction, SEVEN_DAYS, TenantConsent, TokenLifetime,
     Verification,

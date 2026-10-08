@@ -1,17 +1,19 @@
 //! `Peer.ResolveKey`'s two parts: the desk that reads an account's API key and notes that one was
-//! released, and the sealed memfd the key travels on.
+//! released (or handed to a spawned process, `Tokens.IssueProcessCredential`), and the sealed
+//! memfd the key travels on.
 //!
 //! The desk is a seam of accountd's own rather than a method of the service, because the key is
 //! read with the same `Secrets` the service files it with and only a porter daemon may ask. An
 //! entry of the audit file says which grant a key was released under and to whom, never the key.
 
-use porter_core::audit::{AuditEntry, AuditEvent};
+use porter_core::audit::{AuditEntry, AuditEvent, CredentialEnd, Handoff};
 use porter_core::wire::Refusal;
 use porter_core::{
-    AccountId, AppId, Audience, Credential, GrantId, SecretKey, SecretPurpose, SecretText,
+    Account, AccountId, AccountState, AppId, Audience, CapabilityKind, Credential, GrantId,
+    SecretKey, SecretPurpose, SecretText, Toggle,
 };
 use porter_secrets::{Secrets, SecretsError};
-use porter_service::{AuditSink, Clock};
+use porter_service::{AuditSink, Clock, Registry};
 use rustix::fs::{MemfdFlags, SealFlags, fcntl_add_seals, memfd_create};
 use std::future::Future;
 use std::io::{self, Seek, Write};
@@ -29,6 +31,13 @@ pub trait KeyDesk: std::fmt::Debug + Send + Sync + 'static {
     /// Records that the key of `account` was released under `grant`, resolved for `audience`
     /// (the app the grant is for: `org.quire.Agent.<program>` on an agent route).
     fn note(&self, audience: &AppId, account: &AccountId, grant: &GrantId);
+
+    /// Records that the key of `account` was handed to a process for `audience` (the app the grant
+    /// is for), by `handoff` (`Tokens.IssueProcessCredential`).
+    fn note_handoff(&self, audience: &AppId, account: &AccountId, handoff: Handoff);
+
+    /// Records that a credential handed to a process for `audience` ended, and why.
+    fn note_handoff_end(&self, audience: &AppId, account: &AccountId, reason: CredentialEnd);
 }
 
 /// The desk over the secret store, an audit sink and a clock.
@@ -87,6 +96,44 @@ where
                 audience: Audience(audience.name.as_str().to_owned()),
             },
         });
+    }
+
+    fn note_handoff(&self, audience: &AppId, account: &AccountId, handoff: Handoff) {
+        self.audit.record(AuditEntry {
+            at: self.clock.now(),
+            app: Some(audience.clone()),
+            account: Some(account.clone()),
+            event: AuditEvent::ProcessCredentialIssued {
+                audience: Audience(audience.name.as_str().to_owned()),
+                handoff,
+            },
+        });
+    }
+
+    fn note_handoff_end(&self, audience: &AppId, account: &AccountId, reason: CredentialEnd) {
+        self.audit.record(AuditEntry {
+            at: self.clock.now(),
+            app: Some(audience.clone()),
+            account: Some(account.clone()),
+            event: AuditEvent::ProcessCredentialRevoked {
+                audience: Audience(audience.name.as_str().to_owned()),
+                reason,
+            },
+        });
+    }
+}
+
+/// Whether the key of `account` may leave now: not when the person turned the account off for Llm
+/// (`Denied`) nor while it waits to be signed in again (`NeedsReauth`). Shared by
+/// `Peer.ResolveKey` and `Tokens.IssueProcessCredential`.
+pub(crate) fn usable(registry: &Registry, account: &Account) -> Result<(), Refusal> {
+    let off = registry.toggles.iter().any(|t| {
+        t.account == account.id && t.kind == CapabilityKind::Llm && t.toggle == Toggle::Off
+    });
+    match (off, account.state) {
+        (true, _) => Err(Refusal::Denied),
+        (false, AccountState::NeedsReauth) => Err(Refusal::NeedsReauth),
+        (false, _) => Ok(()),
     }
 }
 

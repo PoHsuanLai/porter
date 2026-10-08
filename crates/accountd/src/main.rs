@@ -155,6 +155,11 @@ async fn main() -> ExitCode {
             audit: Some(Arc::new(FileAudit::new(paths.audit.clone()))),
             ..accountd::LoginTiming::default()
         },
+        // The XDG rule: a relative path is invalid and ignored.
+        runtime_dir: std::env::var("XDG_RUNTIME_DIR")
+            .ok()
+            .map(PathBuf::from)
+            .filter(|dir| dir.is_absolute()),
     };
     if let Err(why) = serve_with(&connection, service, callers, options).await {
         return fail(format!("cannot serve {}: {why}", porter_dbus::ACCOUNTS_BUS));

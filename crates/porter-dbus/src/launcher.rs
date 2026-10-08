@@ -1,6 +1,7 @@
-//! The typed errors of the launcher's three `Peer` methods (lane agent-login), beside the
-//! refusals of `refusal`: `org.quire.Accounts1.Error.<Name>`. `NoLauncher` is a `Refusal` (the
-//! sheet's answer to a login nobody can do); these two are the launcher's own.
+//! The typed errors of the launcher's `Peer` methods (lane agent-login) and of its two `Tokens`
+//! methods (lane p2-handoff), beside the refusals of `refusal`: `org.quire.Accounts1.Error.<Name>`.
+//! `NoLauncher` is a `Refusal` (the sheet's answer to a login nobody can do); these are the
+//! launcher's own.
 
 use crate::refusal::REFUSAL_ERROR_PREFIX;
 
@@ -12,13 +13,29 @@ pub enum LauncherFault {
     /// No such request for this connection: never made, answered already, expired, or another
     /// connection's.
     UnknownRequest,
+    /// `IssueProcessCredential` for a program this connection has no live registration for
+    /// (`RegisterLauncher`): another connection's, or nobody's.
+    NotRegistered,
+    /// `IssueProcessCredential` under a `Once` grant: it is spent by its first use, and a second
+    /// turn of the agent would find the key gone.
+    OnceGrant,
+    /// `IssueProcessCredential` under a grant of an account that holds no API key to hand over
+    /// (an OAuth account, an agent that signs itself in, a local runtime).
+    NotAKeyAccount,
+    /// `RevokeProcessCredential` for a credential this connection was not issued: never made,
+    /// ended already, or another connection's.
+    UnknownCredential,
 }
 
 impl LauncherFault {
     /// Every fault, so the table is total by construction.
-    pub const ALL: [LauncherFault; 2] = [
+    pub const ALL: [LauncherFault; 6] = [
         LauncherFault::AlreadyRegistered,
         LauncherFault::UnknownRequest,
+        LauncherFault::NotRegistered,
+        LauncherFault::OnceGrant,
+        LauncherFault::NotAKeyAccount,
+        LauncherFault::UnknownCredential,
     ];
 
     /// The error name a daemon replies with.
@@ -26,6 +43,10 @@ impl LauncherFault {
         let name = match self {
             LauncherFault::AlreadyRegistered => "AlreadyRegistered",
             LauncherFault::UnknownRequest => "UnknownRequest",
+            LauncherFault::NotRegistered => "NotRegistered",
+            LauncherFault::OnceGrant => "OnceGrant",
+            LauncherFault::NotAKeyAccount => "NotAKeyAccount",
+            LauncherFault::UnknownCredential => "UnknownCredential",
         };
         format!("{REFUSAL_ERROR_PREFIX}{name}")
     }

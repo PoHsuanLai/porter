@@ -111,10 +111,22 @@ impl Rig {
 
     /// As `start_over`, with `accounts` in the registry in place of the fake three.
     pub async fn start_holding(
+        options: Options,
+        host: SheetHost,
+        providers: Vec<FakeProvider>,
+        accounts: Vec<porter_core::Account>,
+    ) -> Self {
+        Self::start_granted(options, host, providers, accounts, Vec::new()).await
+    }
+
+    /// As `start_holding`, with `grants` already in the consent store (the person said so
+    /// earlier), so a test need not walk a sheet for each scope and app it wants.
+    pub async fn start_granted(
         mut options: Options,
         host: SheetHost,
         providers: Vec<FakeProvider>,
         accounts: Vec<porter_core::Account>,
+        grants: Vec<porter_core::consent::Grant>,
     ) -> Self {
         let bus = PrivateBus::start();
         let callers = Arc::new(TableCallers::new());
@@ -159,7 +171,7 @@ impl Rig {
         }
         let registry = Registry {
             accounts,
-            grants: vec![],
+            grants,
             toggles: vec![],
         };
         let store = MemoryStore::default();

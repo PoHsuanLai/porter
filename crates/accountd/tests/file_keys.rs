@@ -102,10 +102,22 @@ mod test_build {
         providers: &Path,
         typed: &str,
     ) -> (bool, String, String) {
+        add_for(bus, home, keys, providers, typed, "org.example.Companion")
+    }
+
+    /// As `add`, allowing the app `allow` to use the account.
+    fn add_for(
+        bus: &PrivateBus,
+        home: &Path,
+        keys: &str,
+        providers: &Path,
+        typed: &str,
+        allow: &str,
+    ) -> (bool, String, String) {
         let mut child = accountd(bus, home, Some(keys))
             .arg("--providers")
             .arg(providers)
-            .args(["add", "openrouter", "--allow", "org.example.Companion"])
+            .args(["add", "openrouter", "--allow", allow])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -247,6 +259,118 @@ mod test_build {
         assert!(!daemon.stderr().contains(KEY));
         // Reading never loosened the file.
         assert_eq!(mode(&keys), 0o600);
+    }
+
+    /// The real daemon, its own `$XDG_RUNTIME_DIR`: the launcher (the Probe, by the callers
+    /// table) is handed the key by memfd and by file; the key is on no bus message, in no line of
+    /// standard error, in no audit line and not in the registry, and the file is where the
+    /// daemon's environment says and goes when the launcher ends the credential.
+    #[cfg(feature = "test-proc-root")]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_real_daemon_hands_the_launcher_a_key_by_memfd_and_by_file_and_logs_none_of_it() {
+        use porter_fake_servers::{Auth, FakeLlmApi};
+        use std::io::Read;
+
+        let bus = PrivateBus::start();
+        let home = scratch(&bus, "home");
+        let keys = home.join("keys/keys.json");
+        let keys_var = format!("file:{}", keys.display());
+        let fake = FakeLlmApi::start(Auth::BearerKey)
+            .await
+            .expect("fake company");
+        fake.seed_key(KEY);
+        let providers = provider_dir(&home, &fake.api_url());
+        let (ok, stdout, stderr) = add_for(
+            &bus,
+            &home,
+            &keys_var,
+            &providers,
+            &format!("{KEY}\ny\n"),
+            "org.quire.Agent.claude-code",
+        );
+        assert!(ok, "{stdout}\n{stderr}");
+        let registry_path = home.join("state/porter/registry.json");
+        let registry = std::fs::read_to_string(&registry_path).expect("registry");
+        let parsed: serde_json::Value = serde_json::from_str(&registry).expect("json");
+        let grant = parsed["grants"][0]["id"]
+            .as_str()
+            .expect("a grant")
+            .to_owned();
+
+        let config = home.join("config/porter");
+        std::fs::create_dir_all(&config).expect("config dir");
+        std::fs::write(
+            config.join("callers.toml"),
+            "[[caller]]\napp = \"org.example.Probe\"\nrole = \"agent_launcher\"\n",
+        )
+        .expect("callers");
+        let root = proc_tree(&home);
+        let mut daemon = spawn(&bus, &home, Some(&keys_var), Some(&root));
+        assert!(serving(&bus, &mut daemon).await, "{}", daemon.stderr());
+
+        let mut tap = common::Tap::start(&bus).await;
+        let client = bus.connect().await;
+        porter_dbus::PeerProxy::new(&client)
+            .await
+            .expect("proxy")
+            .register_launcher(&["claude-code"])
+            .await
+            .unwrap_or_else(|e| panic!("register: {e} {}", daemon.stderr()));
+        let tokens = porter_dbus::TokensProxy::new(&client).await.expect("proxy");
+
+        let (_, handle) = tokens
+            .issue_process_credential(&grant, "claude-code", "memfd")
+            .await
+            .unwrap_or_else(|e| panic!("memfd: {e} {}", daemon.stderr()));
+        let porter_dbus::zvariant::Value::Fd(fd) = &*handle else {
+            panic!("a descriptor: {handle:?}");
+        };
+        let mut text = String::new();
+        {
+            use std::os::fd::AsFd;
+            std::fs::File::from(fd.as_fd().try_clone_to_owned().expect("dup"))
+                .read_to_string(&mut text)
+                .expect("readable");
+        }
+        assert_eq!(text, KEY);
+
+        let (id, handle) = tokens
+            .issue_process_credential(&grant, "claude-code", "tmpfs_file")
+            .await
+            .unwrap_or_else(|e| panic!("file: {e} {}", daemon.stderr()));
+        let porter_dbus::zvariant::Value::Str(path) = &*handle else {
+            panic!("a path: {handle:?}");
+        };
+        let path = PathBuf::from(path.as_str());
+        assert_eq!(
+            path,
+            bus.scratch().join("porter/agent").join(&id).join("key"),
+            "under the daemon's XDG_RUNTIME_DIR"
+        );
+        assert_eq!(std::fs::read_to_string(&path).expect("file"), KEY);
+        assert_eq!(mode(&path), 0o600);
+        assert_eq!(mode(path.parent().expect("dir")), 0o700);
+        tokens
+            .revoke_process_credential(&id)
+            .await
+            .expect("revoked");
+        assert!(!path.exists());
+
+        // No bus message, line of standard error, audit line, registry or key file but the one
+        // that holds the key by design carries it.
+        let seen = tap.drain().await;
+        assert!(!seen.is_empty(), "the tap saw the exchange");
+        assert!(seen.iter().all(|m| !common::contains(m, KEY)));
+        assert!(!daemon.stderr().contains(KEY));
+        let audit = std::fs::read_to_string(home.join("state/quire/accountd/audit.jsonl"))
+            .expect("audit file");
+        assert!(!audit.contains(KEY), "{audit}");
+        assert_eq!(audit.matches("process_credential_issued").count(), 2);
+        assert!(audit.contains(r#""handoff":"memfd""#), "{audit}");
+        assert!(audit.contains(r#""handoff":"tmpfs_file""#), "{audit}");
+        assert_eq!(audit.matches("process_credential_revoked").count(), 1);
+        assert!(audit.contains(r#""reason":"process_exited""#), "{audit}");
+        assert!(!registry.contains(KEY));
     }
 
     #[tokio::test(flavor = "multi_thread")]

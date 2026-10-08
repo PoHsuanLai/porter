@@ -209,6 +209,14 @@ impl Launchers {
         Ok(())
     }
 
+    /// Whether `owner` holds a registration of `program` (a connection that left holds none).
+    pub(crate) fn holds(&self, owner: &str, program: &AgentProgram) -> bool {
+        held(&self.state)
+            .programs
+            .get(program)
+            .is_some_and(|holder| holder == owner)
+    }
+
     /// A connection left the bus: its programs are free and its pending requests end.
     pub(crate) fn left(&self, name: &str) {
         let ended: Vec<Pending> = {
