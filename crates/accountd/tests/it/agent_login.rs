@@ -194,13 +194,16 @@ async fn the_state_shows_in_the_settings_schema_and_signing_out_forgets_it() {
         "accounts.claude-code.label",
         "accounts.claude-code.state",
         "accounts.claude-code.service.agent",
-        "accounts.claude-code.sign_out",
+        "accounts.claude-code.reauth",
         "accounts.claude-code.remove",
     ] {
         assert!(paths.contains(&want), "missing {want} in {paths:?}");
     }
-    // Signing in is the agent's, so the row that signs in again is not there; the others have it.
-    assert!(!paths.contains(&"accounts.claude-code.reauth"), "{paths:?}");
+    // Not signed in: "Sign in" (which asks the agent's launcher), not "Sign out" (ux-9).
+    assert!(
+        !paths.contains(&"accounts.claude-code.sign_out"),
+        "{paths:?}"
+    );
     assert!(paths.contains(&"accounts.fake-storage.reauth"), "{paths:?}");
     assert_eq!(
         client
@@ -233,6 +236,14 @@ async fn the_state_shows_in_the_settings_schema_and_signing_out_forgets_it() {
             .expect("state"),
         toml::Value::String("ok".into())
     );
+    // Signed in: the schema now offers "Sign out" and not "Sign in".
+    let schema = client.describe().await.expect("schema");
+    let paths: Vec<&str> = schema.key.iter().map(|k| k.path.0.as_str()).collect();
+    assert!(
+        paths.contains(&"accounts.claude-code.sign_out"),
+        "{paths:?}"
+    );
+    assert!(!paths.contains(&"accounts.claude-code.reauth"), "{paths:?}");
 
     // Sign out forgets that, and only that: no secret is touched, the account stays.
     client

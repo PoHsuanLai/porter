@@ -980,3 +980,55 @@ async fn login_and_logout_requests_and_their_state_changes_are_audited_without_t
     let text = serde_json::to_string(&rig.audit.entries()).expect("json");
     assert!(!text.contains("other"), "{text}");
 }
+
+/// ux-9: an assistant that needs a login is offered "Sign in" in Settings (no "Sign out"); it
+/// asks the launcher, the agent's report signs it in, and the row says `done`.
+#[tokio::test(flavor = "multi_thread")]
+async fn settings_offers_sign_in_to_an_assistant_that_needs_one_and_it_asks_the_launcher() {
+    let (rig, _) = rig(AccountState::NeedsLogin).await;
+    let mut launcher = Launcher::registered(&rig, "org.example.Launcher", &["claude-code"]).await;
+    let client = settings(&rig).await;
+    let schema = client.describe().await.expect("schema");
+    let row = |path: &str| {
+        schema
+            .key
+            .iter()
+            .find(|k| k.path.0 == path)
+            .map(|k| k.label.0.clone())
+    };
+    assert_eq!(
+        row("accounts.claude-code.reauth").as_deref(),
+        Some("Sign in")
+    );
+    assert_eq!(row("accounts.claude-code.sign_out"), None);
+
+    let mut changes = client.changes().await.expect("changes");
+    let sign_in = key("accounts.claude-code.reauth");
+    client.invoke(&sign_in).await.expect("asked");
+    let (id, _, _) = launcher.login_request().await;
+    launcher
+        .peer
+        .report_agent_login(&id, "ready", "")
+        .await
+        .expect("reported");
+    let word = loop {
+        let change = tokio::time::timeout(Duration::from_secs(5), next(&mut changes))
+            .await
+            .expect("a Changed in time")
+            .expect("open stream")
+            .expect("a change");
+        if change.key == sign_in && change.value.is_str() {
+            break change.value.as_str().unwrap_or_default().to_owned();
+        }
+    };
+    assert_eq!(word, "done");
+    assert_eq!(state_of(&rig, &claude_code()), AccountState::Ok);
+    // Signed in, it is offered "Sign out" and no longer "Sign in".
+    let schema = client.describe().await.expect("schema");
+    let paths: Vec<&str> = schema.key.iter().map(|k| k.path.0.as_str()).collect();
+    assert!(
+        paths.contains(&"accounts.claude-code.sign_out"),
+        "{paths:?}"
+    );
+    assert!(!paths.contains(&"accounts.claude-code.reauth"), "{paths:?}");
+}

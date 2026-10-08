@@ -257,10 +257,26 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
                 }
                 let core = Arc::clone(&self.0);
                 tokio::spawn(async move {
-                    let reply = core
-                        .host
-                        .reauthenticate_any(&settings_app(), &id, ParentWindow::Unparented)
-                        .await;
+                    // An agent signs itself in: its launcher is asked, as for an app's
+                    // Reauthenticate (the sheet shows the wait).
+                    let reply = match core.is_agent(&id) {
+                        true => {
+                            core.host
+                                .login_agent(
+                                    &settings_app(),
+                                    &id,
+                                    ParentWindow::Unparented,
+                                    true,
+                                    &core.launchers,
+                                )
+                                .await
+                        }
+                        false => {
+                            core.host
+                                .reauthenticate_any(&settings_app(), &id, ParentWindow::Unparented)
+                                .await
+                        }
+                    };
                     if let AccountsReply::Refused(why) = &reply {
                         eprintln!("accountd: reauthenticate from Settings refused: {why:?}");
                     }

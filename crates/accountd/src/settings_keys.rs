@@ -477,6 +477,16 @@ fn account_keys(
         ));
     }
     keys.extend(match account.auth {
+        // An agent that is not signed in is offered "Sign in": its launcher asks the agent to
+        // sign itself in, as an app's Reauthenticate does.
+        AuthKind::AgentLogin if account.state == AccountState::NeedsLogin => Some(spec(
+            &Key::Reauth(id.clone()),
+            section,
+            "Sign in".to_owned(),
+            "Asks the assistant to sign itself in, which needs its app to be running.",
+            action("Sign in", ActionWeight::Plain),
+            off(),
+        )),
         // An agent signs itself in, inside the agent: porter holds only whether it said so, and
         // signing out forgets that. The agent's own login files are the agent's.
         AuthKind::AgentLogin => Some(spec(
@@ -1055,6 +1065,42 @@ mod tests {
         assert_eq!(
             parse("accounts.clients.google.secret", &registry()),
             Some(Key::ClientSecret(Issuer::Google))
+        );
+    }
+
+    /// ux-9: an assistant that is not signed in is offered "Sign in" (the reauth row), not
+    /// "Sign out"; a signed-in one is offered "Sign out" only.
+    #[test]
+    fn an_assistant_is_offered_sign_in_when_it_needs_one_and_sign_out_when_signed_in() {
+        let rows = |state: AccountState| {
+            let mut agent = storage_account();
+            agent.auth = AuthKind::AgentLogin;
+            agent.state = state;
+            let registry = Registry {
+                accounts: vec![agent],
+                ..registry()
+            };
+            schema(&registry, &AppNames::default(), &ProviderNames::default())
+                .key
+                .into_iter()
+                .filter(|k| matches!(k.kind, KeyKind::Live { .. }))
+                .map(|k| (k.path.0, k.label.0))
+                .filter(|(path, _)| path.ends_with(".reauth") || path.ends_with(".sign_out"))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            rows(AccountState::NeedsLogin),
+            [(
+                "accounts.fake-storage.reauth".to_owned(),
+                "Sign in".to_owned()
+            )]
+        );
+        assert_eq!(
+            rows(AccountState::Ok),
+            [(
+                "accounts.fake-storage.sign_out".to_owned(),
+                "Sign out".to_owned()
+            )]
         );
     }
 
