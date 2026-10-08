@@ -4,8 +4,9 @@
 //!
 //! A save is atomic: the document goes to a temporary file in the same directory (a name of its
 //! own, so two saves never share one), is synced, renamed over the old one, and the directory is
-//! synced. A crash before the rename leaves the old file whole. A file that cannot be read as a
-//! registry is refused with a typed error and is never written over.
+//! synced. A crash before the rename leaves the old file whole. Each commit first keeps the file
+//! it replaces as `registry.json.bak`, the last file that loaded. A file that cannot be read as a
+//! registry is refused with a typed error and is never written over; neither is the `.bak`.
 //!
 //! Only blocking file calls live here; the seam is async, so each runs on tokio's blocking pool.
 
@@ -17,8 +18,14 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 /// The registry file's name inside the state directory.
 const FILE: &str = "registry.json";
+/// The previous good registry file, kept at each commit.
+const BACKUP: &str = "registry.json.bak";
 /// What a save's staging file name starts with; the process and a number follow.
 const STAGING: &str = "registry.json.tmp";
+
+/// The exit status of a daemon that refused the registry file (EX_CONFIG). `accountd.service`
+/// names it in `RestartPreventExitStatus=`, so the unit stops instead of restarting.
+pub const EXIT_REGISTRY_REFUSED: u8 = 78;
 
 /// Numbers the staging files of this process.
 static STAGED: AtomicU64 = AtomicU64::new(0);
@@ -38,6 +45,31 @@ impl FileStore {
     /// The registry file.
     pub fn path(&self) -> PathBuf {
         self.dir.join(FILE)
+    }
+
+    /// The copy of the registry file from before its last change.
+    pub fn backup_path(&self) -> PathBuf {
+        self.dir.join(BACKUP)
+    }
+
+    /// What to tell the person when the registry file is refused at start: both files by name,
+    /// and that nothing was changed. The daemon stops (it never starts empty over a file it could
+    /// not read) and nothing is restored on its own.
+    pub fn refusal(&self, why: &impl std::fmt::Display) -> String {
+        let (file, backup) = (self.path(), self.backup_path());
+        let spare = match backup.exists() {
+            true => format!(
+                "The copy from before the last change is {}. To go back to it, stop the accounts \
+                 service, put that copy in place of the first file, and start it again.",
+                backup.display()
+            ),
+            false => "There is no earlier copy.".to_string(),
+        };
+        format!(
+            "the accounts file {} cannot be read ({why}). Nothing was changed and the accounts \
+             service did not start, so no account is lost. {spare}",
+            file.display()
+        )
     }
 
     /// A staging name no other save, in this process or another, is using.
@@ -65,15 +97,36 @@ impl FileStore {
         }
     }
 
-    /// The second half: the staged document replaces the registry file, and the directory entry
-    /// is made durable.
+    /// The second half: the file being replaced is kept as the backup, the staged document
+    /// replaces the registry file, and the directory entry is made durable.
     fn commit(&self, staged: &Path) -> io::Result<()> {
-        let done = std::fs::rename(staged, self.path());
+        let done = self
+            .keep_previous()
+            .and_then(|()| std::fs::rename(staged, self.path()));
         if done.is_err() {
             let _ = std::fs::remove_file(staged);
         }
         done?;
         sync_dir(&self.dir)
+    }
+
+    /// Makes `registry.json.bak` the registry file as it is now (which `save_blocking` has just
+    /// read as good), atomically: a copy under a staging name, synced, then renamed. Nothing to
+    /// keep on the first save.
+    fn keep_previous(&self) -> io::Result<()> {
+        let copy = self.staging();
+        let kept = match std::fs::read(self.path()) {
+            Ok(bytes) => private_options()
+                .open(&copy)
+                .and_then(|mut file| file.write_all(&bytes).and_then(|()| file.sync_all()))
+                .and_then(|()| std::fs::rename(&copy, self.backup_path())),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => Err(e),
+        };
+        if kept.is_err() {
+            let _ = std::fs::remove_file(&copy);
+        }
+        kept
     }
 
     fn load_blocking(&self) -> Result<Persisted, StoreError> {

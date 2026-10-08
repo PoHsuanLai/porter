@@ -14,6 +14,10 @@ BusName=org.quire.Accounts1
 ExecStart=/usr/libexec/quire/accountd
 Restart=on-failure
 RestartSec=2
+# 78: accountd found a registry file it cannot read and stopped on purpose (it says which files
+# in the journal). Restarting would only repeat that every two seconds, so the unit stays
+# stopped until the person has looked at it.
+RestartPreventExitStatus=78
 KillMode=control-group
 TimeoutStopSec=20
 

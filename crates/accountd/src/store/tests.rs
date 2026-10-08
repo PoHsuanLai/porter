@@ -118,6 +118,60 @@ async fn overlapping_saves_never_share_a_staging_file() {
     assert!(left.is_empty(), "{left:?}");
 }
 
+/// rel-5: each commit keeps the file it replaces as `registry.json.bak`; the first save has
+/// nothing to keep; a refused file is not copied over the backup.
+#[tokio::test]
+async fn each_commit_keeps_the_previous_good_file_as_the_backup() {
+    let scratch = Scratch::new();
+    let store = store_in(&scratch);
+    store.save(&registry()).await.expect("first");
+    assert!(!store.backup_path().exists());
+    let first = std::fs::read(store.path()).expect("read");
+    store.save(&Persisted::empty()).await.expect("second");
+    assert_eq!(std::fs::read(store.backup_path()).expect("bak"), first);
+    let second = std::fs::read(store.path()).expect("read");
+    store.save(&registry()).await.expect("third");
+    assert_eq!(std::fs::read(store.backup_path()).expect("bak"), second);
+    // The backup is itself a registry that loads.
+    let bak = String::from_utf8(std::fs::read(store.backup_path()).expect("bak")).expect("text");
+    assert_eq!(Persisted::from_json(&bak), Ok(Persisted::empty()));
+    // A file that is refused is never saved over, so the backup keeps the last good one.
+    std::fs::write(store.path(), b"{oops").expect("write");
+    assert!(store.save(&registry()).await.is_err());
+    assert_eq!(std::fs::read(store.backup_path()).expect("bak"), second);
+    assert_eq!(std::fs::read(store.path()).expect("read"), b"{oops");
+}
+
+/// rel-5: the refusal at start names both files in plain words, says nothing was changed, and
+/// loading leaves both exactly as they were.
+#[tokio::test]
+async fn a_refused_registry_is_explained_with_both_files_and_touched_by_nobody() {
+    let scratch = Scratch::new();
+    let store = store_in(&scratch);
+    store.save(&registry()).await.expect("first");
+    store.save(&Persisted::empty()).await.expect("second");
+    std::fs::write(store.path(), b"{oops").expect("write");
+    let bak = std::fs::read(store.backup_path()).expect("bak");
+    let Err(StoreError::Fault(fault)) = store.load().await else {
+        panic!("the file is refused");
+    };
+    let said = store.refusal(&fault);
+    assert!(said.contains(&store.path().display().to_string()), "{said}");
+    assert!(
+        said.contains(&store.backup_path().display().to_string()),
+        "{said}"
+    );
+    assert!(said.contains("Nothing was changed"), "{said}");
+    assert_eq!(std::fs::read(store.path()).expect("read"), b"{oops");
+    assert_eq!(std::fs::read(store.backup_path()).expect("bak"), bak);
+    // With no backup the message says so rather than naming a file that is not there.
+    let alone = Scratch::new();
+    let none = store_in(&alone);
+    std::fs::create_dir_all(alone.path().join("porter")).expect("dir");
+    std::fs::write(none.path(), b"{oops").expect("write");
+    assert!(none.refusal(&fault).contains("no earlier copy"));
+}
+
 #[tokio::test]
 async fn a_corrupt_file_is_refused_and_never_overwritten() {
     let scratch = Scratch::new();

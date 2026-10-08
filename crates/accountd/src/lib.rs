@@ -88,4 +88,4 @@ pub use provider_names::ProviderNames;
 pub use relay::RelayRoots;
 pub use settings::settings_path;
 pub use sheets::{BusLink, BusSheets};
-pub use store::FileStore;
+pub use store::{EXIT_REGISTRY_REFUSED, FileStore};

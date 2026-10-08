@@ -34,6 +34,16 @@ fn the_unit_and_the_activation_file_name_the_same_service() {
 }
 
 #[test]
+fn the_unit_does_not_restart_over_a_registry_the_daemon_refused() {
+    let unit = dist("accountd.service");
+    assert_eq!(value(&unit, "Restart"), Some("on-failure"));
+    assert_eq!(
+        value(&unit, "RestartPreventExitStatus"),
+        Some(accountd::EXIT_REGISTRY_REFUSED.to_string().as_str())
+    );
+}
+
+#[test]
 fn the_unit_does_not_hide_the_processes_it_must_identify() {
     let unit = dist("accountd.service");
     for hiding in ["ProtectProc", "PrivatePIDs", "ProcSubset"] {

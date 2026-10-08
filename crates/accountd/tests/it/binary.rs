@@ -219,18 +219,25 @@ async fn a_registry_it_cannot_read_is_never_overwritten_and_the_daemon_does_not_
     let dir = home.join("state/porter");
     std::fs::create_dir_all(&dir).expect("state dir");
     std::fs::write(dir.join("registry.json"), "{ this is not a registry").expect("registry");
+    std::fs::write(dir.join("registry.json.bak"), "the earlier copy").expect("backup");
     let mut daemon = spawn(&bus, &home, None);
     assert!(!serving(&bus, &mut daemon).await);
     let status = daemon.child.wait().expect("exits");
-    assert!(!status.success());
-    assert!(
-        daemon.stderr().contains("registry.json"),
-        "{}",
-        daemon.stderr()
+    // rel-5: the status the unit does not restart on, and both files named.
+    assert_eq!(
+        status.code(),
+        Some(i32::from(accountd::EXIT_REGISTRY_REFUSED))
     );
+    let said = daemon.stderr();
+    assert!(said.contains("registry.json.bak"), "{said}");
+    assert!(said.contains("Nothing was changed"), "{said}");
     assert_eq!(
         std::fs::read_to_string(dir.join("registry.json")).expect("still there"),
         "{ this is not a registry"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.join("registry.json.bak")).expect("still there"),
+        "the earlier copy"
     );
 }
 

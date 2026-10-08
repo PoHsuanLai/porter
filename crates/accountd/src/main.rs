@@ -74,6 +74,14 @@ fn fail(why: impl std::fmt::Display) -> ExitCode {
     ExitCode::FAILURE
 }
 
+/// The registry file was refused. Say so in plain words (both files, nothing changed) and stop
+/// with the exit status `accountd.service` does not restart on: a restart would only say it
+/// again every two seconds.
+fn refuse_registry(store: &FileStore, why: &impl std::fmt::Display) -> ExitCode {
+    eprintln!("accountd: {}", store.refusal(why));
+    ExitCode::from(accountd::EXIT_REGISTRY_REFUSED)
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
     let args = Args::parse();
@@ -136,7 +144,7 @@ async fn main() -> ExitCode {
     let store = FileStore::new(paths.registry_dir.clone());
     let registry = match store.load().await {
         Ok(stored) => Registry::from_persisted(stored),
-        Err(why) => return fail(format!("{}: {why}", store.path().display())),
+        Err(why) => return refuse_registry(&store, &why),
     };
 
     let connection = match zbus::Connection::session().await {
@@ -229,7 +237,7 @@ async fn add(
     let store = FileStore::new(paths.registry_dir.clone());
     let registry = match store.load().await {
         Ok(stored) => Registry::from_persisted(stored),
-        Err(why) => return fail(format!("{}: {why}", store.path().display())),
+        Err(why) => return refuse_registry(&store, &why),
     };
     let sheets = TerminalSheets::new(StdTerminal);
     let service = AccountService::new(families, registry, secrets, sheets.clone(), SystemClock)
