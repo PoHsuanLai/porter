@@ -239,6 +239,11 @@ async fn a_client_id_written_after_start_is_used_by_the_next_sign_in() {
     .with_files(files.clone());
     let provider = porter_families::MicrosoftProvider::with_env(spec(), env);
 
+    // ux-1: the add list leaves it out until then.
+    assert_eq!(
+        provider.readiness(),
+        porter_provider::Readiness::NeedsClient
+    );
     let mut before = provider.sign_in(start()).expect("sign in");
     assert_eq!(
         before.next(SignInInput::Start).await,
@@ -249,6 +254,7 @@ async fn a_client_id_written_after_start_is_used_by_the_next_sign_in() {
         "[[client]]\nissuer = \"microsoft\"\nchannel = \"development\"\nclient_id = \"set-in-settings\"\n",
     )
     .expect("write");
+    assert_eq!(provider.readiness(), porter_provider::Readiness::Ready);
     let mut after = provider.sign_in(start()).expect("sign in");
     let SignInStep::OpenBrowser { url } = after.next(SignInInput::Start).await else {
         panic!("expected the browser once a client id is set")

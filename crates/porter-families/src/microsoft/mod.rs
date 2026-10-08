@@ -22,7 +22,8 @@ use porter_core::capability::CapabilityKind;
 use porter_core::{Account, AccountId, Claim, Credential, EndpointUrl, Family, SecretText};
 use porter_http::{Http, HyperHttp};
 use porter_provider::{
-    Presented, Provider, ProviderError, ProviderSession, ProviderSpec, RevokeOutcome, SignInStart,
+    Presented, Provider, ProviderError, ProviderSession, ProviderSpec, Readiness, RevokeOutcome,
+    SignInStart,
 };
 use std::collections::HashMap;
 
@@ -177,6 +178,19 @@ impl<H: Http + 'static> Provider for MicrosoftProvider<H> {
             self.env.clone(),
             start,
         ))
+    }
+
+    /// Ready while a Microsoft client is registered for this build's channel (shipped, or set
+    /// in Settings: the files are read now).
+    fn readiness(&self) -> Readiness {
+        match self
+            .env
+            .clients()
+            .lookup(porter_provider::Issuer::Microsoft, self.env.channel)
+        {
+            Some(_) => Readiness::Ready,
+            None => Readiness::NeedsClient,
+        }
     }
 
     async fn revoke(

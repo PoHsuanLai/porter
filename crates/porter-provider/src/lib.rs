@@ -16,7 +16,7 @@ pub use clients::{
 };
 pub use error::{ProviderError, ProviderFileError};
 pub use parse::parse_provider;
-pub use provider::{Presented, Provider, ProviderSession};
+pub use provider::{Presented, Provider, ProviderSession, Readiness};
 pub use set::ProviderSet;
 pub use shipped::{SHIPPED_FILES, shipped, shipped_specs};
 pub use sign_in::{RevokeOutcome, SignIn, SignInMode, SignInStart, SignInStep, Signed};

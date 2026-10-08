@@ -23,7 +23,8 @@ use porter_core::{
     AccountId, AccountsReply, AppId, AuthKind, DataClass, Need, ProviderId, ServiceEndpoint,
 };
 use porter_provider::{
-    Provider, ProviderError, ProviderSpec, SignIn, SignInMode, SignInStart, SignInStep, Signed,
+    Provider, ProviderError, ProviderSpec, Readiness, SignIn, SignInMode, SignInStart, SignInStep,
+    Signed,
 };
 use porter_secrets::Secrets;
 use std::collections::VecDeque;
@@ -107,6 +108,13 @@ pub(crate) fn ordered(mut rows: Vec<ProviderRow>) -> Vec<ProviderRow> {
 /// Providers a person can sign in to: not the ones with nothing to sign in.
 fn signable(spec: &ProviderSpec) -> bool {
     !matches!(spec.auth.kind, AuthKind::None | AuthKind::LocalRuntime) && !unlisted(spec)
+}
+
+/// Whether the add list shows `provider` now: one a person can sign in to, and whose sign-in
+/// can start (an OAuth issuer with a client for this build). Asked each time a sheet opens, so a
+/// client set in Settings shows its row at the next one.
+fn listed<P: Provider>(provider: &P) -> bool {
+    signable(provider.spec()) && provider.readiness() == Readiness::Ready
 }
 
 /// Providers whose file stays loaded (an account made from it still signs in again) but that the
@@ -202,9 +210,8 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         let rows = ordered(
             self.providers
                 .iter()
-                .map(Provider::spec)
-                .filter(|spec| signable(spec))
-                .map(ProviderSpec::sheet_row)
+                .filter(|provider| listed(*provider))
+                .map(|provider| provider.spec().sheet_row())
                 .collect(),
         );
         let purpose = match job {

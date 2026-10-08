@@ -72,6 +72,8 @@ struct Script {
     revoked: Arc<Mutex<Vec<Account>>>,
     /// Whether the provider fails when asked to revoke.
     revoke_fails: Arc<Mutex<bool>>,
+    /// What the provider answers `readiness` with (`None`: ready).
+    readiness: Arc<Mutex<Option<porter_provider::Readiness>>>,
 }
 
 impl Script {
@@ -149,6 +151,14 @@ impl Provider for ScriptedProvider {
             true => Err(ProviderError::Forbidden),
             false => Ok(ScriptedSignIn(self.script.clone())),
         }
+    }
+
+    fn readiness(&self) -> porter_provider::Readiness {
+        self.script
+            .readiness
+            .lock()
+            .expect("readiness")
+            .unwrap_or(porter_provider::Readiness::Ready)
     }
 
     async fn revoke(
@@ -970,6 +980,76 @@ async fn providers_with_nothing_to_sign_in_are_not_listed() {
     assert_eq!(
         service.handle(&app("org.quire.Mail"), add_request()).await,
         AccountsReply::Refused(Refusal::Dismissed)
+    );
+}
+
+/// ux-1, ux-3: a provider whose issuer has no client for this build is left off the add list,
+/// and its row is there at the next sheet once a client is set, with nothing restarted.
+#[tokio::test]
+async fn a_provider_with_no_client_is_not_listed_until_one_is_set() {
+    let script = Script::default();
+    let oauth_script = Script::default();
+    *oauth_script.readiness.lock().expect("readiness") =
+        Some(porter_provider::Readiness::NeedsClient);
+    let oauth = ScriptedProvider {
+        spec: parse_provider(
+            &SPEC
+                .replace("id = \"scripted\"", "id = \"needs-client\"")
+                .replace("label = \"Scripted\"", "label = \"Needs client\""),
+        )
+        .expect("spec"),
+        script: oauth_script.clone(),
+        refuses_to_start: false,
+    };
+    let lists = Arc::new(Mutex::new(Vec::<Vec<String>>::new()));
+    let seen = |lists: &Arc<Mutex<Vec<Vec<String>>>>| -> Reactor {
+        let lists = Arc::clone(lists);
+        Arc::new(move |view| match view {
+            SheetView::Providers(rows) => {
+                lists
+                    .lock()
+                    .expect("lists")
+                    .push(rows.iter().map(|r| r.id.as_str().to_owned()).collect());
+                Some(SheetInput::Dismiss)
+            }
+            _ => None,
+        })
+    };
+    let (service, _kept) = service_over(
+        vec![oauth, provider(&script)],
+        Registry::default(),
+        Shared::default(),
+        vec![seen(&lists), seen(&lists)],
+    );
+    let caller = app("org.quire.Mail");
+    assert_eq!(
+        service.handle(&caller, add_request()).await,
+        AccountsReply::Refused(Refusal::Dismissed)
+    );
+    // Asked for by name while it has no client: there is nothing to show.
+    assert_eq!(
+        service
+            .handle(
+                &caller,
+                AccountsRequest::AddAccount {
+                    hint: ProviderHint::Provider(ProviderId::parse("needs-client").expect("id")),
+                    window: ParentWindow::Unparented,
+                },
+            )
+            .await,
+        AccountsReply::Refused(Refusal::Unavailable)
+    );
+    *oauth_script.readiness.lock().expect("readiness") = None;
+    assert_eq!(
+        service.handle(&caller, add_request()).await,
+        AccountsReply::Refused(Refusal::Dismissed)
+    );
+    assert_eq!(
+        *lists.lock().expect("lists"),
+        [
+            vec!["scripted".to_owned()],
+            vec!["needs-client".to_owned(), "scripted".to_owned()],
+        ]
     );
 }
 

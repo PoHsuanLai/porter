@@ -161,4 +161,46 @@ mod tests {
         let moved = env.with_userinfo(userinfo_endpoint("http://127.0.0.1:1/v1/userinfo"));
         assert!(moved.userinfo.as_str().starts_with("http://127.0.0.1"));
     }
+
+    /// ux-3: Google is on the add list only once a Google client is registered.
+    #[test]
+    fn google_is_ready_only_with_a_client_of_its_own_channel() {
+        use porter_provider::{
+            ClientEntry, ClientId, ClientsFile, Issuer, Provider, Readiness, shipped_specs,
+        };
+        let spec = shipped_specs()
+            .into_iter()
+            .find(|s| s.id.as_str() == "google")
+            .expect("google");
+        let with = |channel| {
+            ClientRegistry::layered(
+                ClientsFile {
+                    clients: vec![ClientEntry {
+                        issuer: Issuer::Google,
+                        channel,
+                        client_id: ClientId("mine.apps.googleusercontent.com".into()),
+                        client_secret: None,
+                        endpoints: None,
+                    }],
+                },
+                ClientsFile::default(),
+            )
+        };
+        let cases = [
+            ("none", ClientRegistry::default(), Readiness::NeedsClient),
+            (
+                "another channel",
+                with(ClientChannel::Development),
+                Readiness::NeedsClient,
+            ),
+            ("its own", with(ClientChannel::Stable), Readiness::Ready),
+        ];
+        for (name, registry, want) in cases {
+            let provider = super::super::GoogleProvider::with_env(
+                spec.clone(),
+                GoogleEnv::new(Nowhere, registry),
+            );
+            assert_eq!(provider.readiness(), want, "{name}");
+        }
+    }
 }

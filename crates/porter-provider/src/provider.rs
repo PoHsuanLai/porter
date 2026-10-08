@@ -17,6 +17,17 @@ pub enum Presented {
     Credential(Credential),
 }
 
+/// Whether a new account of a provider can be signed in now, which decides whether the add list
+/// shows it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Readiness {
+    /// It can.
+    Ready,
+    /// The issuer has no client for this build (no shipped row, none set in Settings): a sign-in
+    /// could only say so.
+    NeedsClient,
+}
+
 /// A provider as code: one family (or a fake) serving the accounts made from one
 /// [`ProviderSpec`].
 pub trait Provider: Send + Sync {
@@ -53,6 +64,13 @@ pub trait Provider: Send + Sync {
     /// Begins signing an account in (a new one, or an existing one again). The host drives the
     /// returned conversation; nothing is stored until it ends in `Done`.
     fn sign_in(&self, start: SignInStart) -> Result<Self::SignIn, ProviderError>;
+
+    /// Whether a new account can be signed in now. Asked each time the add list is drawn, so a
+    /// client set while the host runs shows the provider at once. The default is `Ready`; the
+    /// OAuth families answer `NeedsClient` while their issuer has no client.
+    fn readiness(&self) -> Readiness {
+        Readiness::Ready
+    }
 
     /// Asks the provider to stop honouring `presented` (Google's revoke endpoint, Nextcloud's
     /// app-password delete), best effort, when an account is removed. The account names the

@@ -4,8 +4,8 @@
 use porter_core::sheet::SignInInput;
 use porter_core::{Account, AccountId, Audience, CapabilityKind, Claim, Credential, IssuedToken};
 use porter_provider::{
-    Presented, Provider, ProviderError, ProviderSession, ProviderSpec, RevokeOutcome, SignIn,
-    SignInStart, SignInStep,
+    Presented, Provider, ProviderError, ProviderSession, ProviderSpec, Readiness, RevokeOutcome,
+    SignIn, SignInStart, SignInStep,
 };
 
 /// Expands `$body` once per built family, binding the variant's payload to `$p`.
@@ -189,6 +189,10 @@ impl Provider for FamilyProvider {
                 unreachable!("no family is built")
             }
         }
+    }
+
+    fn readiness(&self) -> Readiness {
+        each_family!(self, p => p.readiness())
     }
 
     async fn revoke(

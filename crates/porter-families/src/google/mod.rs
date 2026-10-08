@@ -31,7 +31,7 @@ use porter_core::{Account, AccountId, Claim, Credential, EndpointUrl, Family};
 use porter_http::{Http, HyperHttp};
 use porter_oauth::{ExchangeFault, endpoints_of, revoke};
 use porter_provider::{
-    Issuer, Presented, Provider, ProviderError, ProviderSpec, RevokeOutcome, SignInStart,
+    Issuer, Presented, Provider, ProviderError, ProviderSpec, Readiness, RevokeOutcome, SignInStart,
 };
 
 /// The Google family's provider, over the HTTP seam `H` (hyper's client in a daemon).
@@ -165,6 +165,15 @@ impl<H: Http + 'static> Provider for GoogleProvider<H> {
             self.env.clone(),
             start,
         ))
+    }
+
+    /// Ready while a Google client is registered for this build's channel (none is shipped: the
+    /// person sets one in Settings, and the files are read now).
+    fn readiness(&self) -> Readiness {
+        match self.env.clients().lookup(Issuer::Google, self.env.channel) {
+            Some(_) => Readiness::Ready,
+            None => Readiness::NeedsClient,
+        }
     }
 
     /// Revokes the refresh token at Google's revoke endpoint, which ends the access tokens made
