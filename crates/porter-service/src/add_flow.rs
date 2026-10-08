@@ -83,6 +83,7 @@ pub(crate) fn refusal_of(fault: SignInFault) -> Refusal {
         | SignInFault::TimedOut
         | SignInFault::Expired
         | SignInFault::NotInstalled
+        | SignInFault::AlreadyAdded
         | SignInFault::StoreFailed => Refusal::Unavailable,
     }
 }
@@ -331,6 +332,21 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             other => {
                 let signin = run.signin.as_mut()?;
                 let step = signin.next(other).await;
+                // The same login twice is not a second account: the sign-in ends here, at the
+                // review, and what is stored stays as it is.
+                if let (
+                    Job::Add { .. },
+                    Stage::Working(provider) | Stage::Confirming { provider, .. },
+                ) = (job, &sheet.stage)
+                    && self.already_added(provider, &step)
+                {
+                    if let Some(mut signin) = run.signin.take() {
+                        let _ = signin.next(SignInInput::Cancel).await;
+                    }
+                    return Some(SheetEvent::SignIn(Progress::Failed(
+                        SignInFault::AlreadyAdded,
+                    )));
+                }
                 Some(said(run, step))
             }
         }

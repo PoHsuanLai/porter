@@ -42,6 +42,9 @@ pub enum SignInFault {
     Expired,
     /// The agent program is not installed (the launcher's word).
     NotInstalled,
+    /// An account of this provider and login is already there; nothing was stored and the
+    /// account that is there is as it was.
+    AlreadyAdded,
 }
 
 /// One service row of the review step.

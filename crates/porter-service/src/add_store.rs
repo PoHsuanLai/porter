@@ -18,7 +18,7 @@ use porter_core::{
     Account, AccountId, AccountState, AccountsReply, AppId, AuthKind, KindToggle, LoginName,
     ProviderId, SecretKey, Toggle, effective,
 };
-use porter_provider::{Provider, ProviderSpec, Signed};
+use porter_provider::{Provider, ProviderSpec, SignInStep, Signed};
 use porter_secrets::Secrets;
 use std::collections::HashSet;
 
@@ -72,9 +72,35 @@ fn logins(endpoints: &[porter_core::ServiceEndpoint]) -> HashSet<&LoginName> {
     endpoints.iter().map(|e| &e.login).collect()
 }
 
+/// The servers an account's endpoints are at.
+fn hosts(endpoints: &[porter_core::ServiceEndpoint]) -> HashSet<String> {
+    endpoints.iter().map(|e| e.url.origin().host).collect()
+}
+
+/// Whether `held` and `new` are the same login at the same servers. An account with no login
+/// (an API key, an agent) is never the same as another: two keys of one provider are two accounts.
+fn same_login(held: &[porter_core::ServiceEndpoint], new: &[porter_core::ServiceEndpoint]) -> bool {
+    let (held_logins, new_logins) = (logins(held), logins(new));
+    !new_logins.is_empty() && held_logins == new_logins && hosts(held) == hosts(new)
+}
+
 impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSink>
     AccountService<P, S, U, K, R, A>
 {
+    /// Whether the sign-in's `step` shows an account that `provider` already has: the same login at
+    /// the same servers. Only the review and the finished sign-in show one.
+    pub(crate) fn already_added(&self, provider: &ProviderId, step: &SignInStep) -> bool {
+        let endpoints = match step {
+            SignInStep::Review { endpoints, .. } => endpoints,
+            SignInStep::Done(signed) => &signed.endpoints,
+            _ => return false,
+        };
+        self.lock()
+            .accounts
+            .iter()
+            .any(|a| a.provider == *provider && same_login(&a.endpoints, endpoints))
+    }
+
     /// Stores the account `signed` describes, with the person's service `choices`, and the
     /// grant for `allow` when the new account meets its need.
     pub(crate) async fn store_new(
@@ -98,6 +124,15 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             .collect();
         let account = {
             let mut registry = self.lock();
+            // The sheet stops a second add of one login at the review; a second sheet that got
+            // here first is the same thing, caught where the registry is written.
+            if registry
+                .accounts
+                .iter()
+                .any(|a| a.provider == spec.id && same_login(&a.endpoints, &signed.endpoints))
+            {
+                return Err(());
+            }
             let id = fresh_id(&registry, &spec.id, &signed.label.0);
             let account = Account {
                 id,

@@ -607,6 +607,55 @@ async fn a_failed_sign_in_ends_with_the_refusal_the_fault_means() {
 }
 
 #[tokio::test]
+async fn the_same_login_added_twice_ends_at_the_review_and_stores_nothing_more() {
+    let script = Script::answering(vec![ask(), review("ada"), SignInStep::Done(signed("ada"))]);
+    let (service, kept) = service(&script, vec![typist(), typist(), typist()]);
+    let caller = app("org.quire.Mail");
+    let AccountsReply::Added(first) = added(&service, &caller).await else {
+        panic!("the first add");
+    };
+    let held = service.registry().accounts.clone();
+    let key = SecretKey {
+        account: first,
+        purpose: SecretPurpose::IncomingPassword,
+    };
+    let secret = kept.secrets.get(&key).await;
+
+    script.steps.lock().expect("steps").extend([
+        ask(),
+        review("ada"),
+        SignInStep::Done(signed("ada")),
+    ]);
+    kept.shown.lock().expect("shown").clear();
+    assert_eq!(
+        added(&service, &caller).await,
+        AccountsReply::Refused(Refusal::Unavailable)
+    );
+    // The sheet got as far as the review and said it was already there: no confirmation was
+    // sent, and the account that was there is as it was.
+    assert_eq!(
+        kinds(&kept.shown),
+        ["providers", "working", "form", "working", "failed"]
+    );
+    assert_eq!(script.told().last(), Some(&"cancel"));
+    assert_eq!(service.registry().accounts, held);
+    assert_eq!(kept.audit.entries().len(), 1);
+    assert_eq!(kept.secrets.get(&key).await, secret);
+
+    // Another login is another account.
+    script.steps.lock().expect("steps").extend([
+        ask(),
+        review("bob"),
+        SignInStep::Done(signed("bob")),
+    ]);
+    assert!(matches!(
+        added(&service, &caller).await,
+        AccountsReply::Added(_)
+    ));
+    assert_eq!(service.registry().accounts.len(), 2);
+}
+
+#[tokio::test]
 async fn a_provider_that_will_not_start_a_sign_in_fails_the_sheet() {
     let script = Script::default();
     let mut refusing = provider(&script);
