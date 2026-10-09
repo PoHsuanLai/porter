@@ -47,10 +47,13 @@ impl Dial for TcpDial {
     type Stream = Tcp;
 
     async fn dial(&self) -> Result<Tcp, HttpError> {
-        TcpStream::connect(("127.0.0.1", self.0))
+        let stream = TcpStream::connect(("127.0.0.1", self.0))
             .await
-            .map(Tcp)
-            .map_err(|_| HttpError::Unreachable)
+            .map_err(|_| HttpError::Unreachable)?;
+        // A request written in two parts must not wait for the server's delayed
+        // acknowledgement: that is 40 ms a request on loopback.
+        let _ = stream.set_nodelay(true);
+        Ok(Tcp(stream))
     }
 }
 
@@ -145,8 +148,11 @@ impl Machine {
             millis.clone(),
         )
         .expect("library");
-        let journal =
-            |slug: &str| Journal::open(&dir.join(format!("state/{slug}.sqlite"))).expect("journal");
+        // Not flushed on each commit: a thousand photos make thousands of them, and these tests
+        // prove what the engine does, not what the disk does.
+        let journal = |slug: &str| {
+            Journal::open_unflushed(&dir.join(format!("state/{slug}.sqlite"))).expect("journal")
+        };
         let originals = Engine::new(
             server.replica("originals"),
             PhotoOriginals::new(library.clone()),

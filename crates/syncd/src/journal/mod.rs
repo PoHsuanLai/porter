@@ -81,11 +81,27 @@ impl Journal {
     }
 
     pub(crate) fn open_with(path: &Path, migrations: &[&str]) -> Result<Self, JournalError> {
+        Self::open_synchronous(path, migrations, "FULL")
+    }
+
+    /// A journal whose commits are not flushed to the disk: for the tests that make thousands of
+    /// commits (the thousand photos), which prove the engine, not the disk. The crash tests keep
+    /// `open` (`cut_at` stops a write before it commits, whatever the flush).
+    #[cfg(test)]
+    pub(crate) fn open_unflushed(path: &Path) -> Result<Self, JournalError> {
+        Self::open_synchronous(path, schema::MIGRATIONS, "OFF")
+    }
+
+    fn open_synchronous(
+        path: &Path,
+        migrations: &[&str],
+        synchronous: &str,
+    ) -> Result<Self, JournalError> {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
         let mut connection = Connection::open(path)?;
-        connection.execute_batch("PRAGMA synchronous = FULL;")?;
+        connection.execute_batch(&format!("PRAGMA synchronous = {synchronous};"))?;
         schema::migrate(&mut connection, migrations)?;
         Ok(Self {
             connection: Mutex::new(connection),

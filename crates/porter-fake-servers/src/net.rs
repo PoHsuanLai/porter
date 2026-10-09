@@ -92,6 +92,9 @@ impl Listener {
         match &self.kind {
             Kind::Tcp(l) => {
                 let (stream, peer) = l.accept().await?;
+                // A reply written in two parts (head, then body) must not wait for the peer's
+                // delayed acknowledgement: that is 40 ms a request on loopback.
+                let _ = stream.set_nodelay(true);
                 Ok((Conn::Tcp(stream), Peer::Tcp(peer)))
             }
             Kind::Unix(l) => {
@@ -106,7 +109,9 @@ impl Listener {
 pub async fn dial(address: &FakeAddress) -> io::Result<Conn> {
     match address {
         FakeAddress::Loopback(port) => {
-            Ok(Conn::Tcp(TcpStream::connect(("127.0.0.1", *port)).await?))
+            let stream = TcpStream::connect(("127.0.0.1", *port)).await?;
+            let _ = stream.set_nodelay(true);
+            Ok(Conn::Tcp(stream))
         }
         FakeAddress::Socket(path) => Ok(Conn::Unix(UnixStream::connect(path).await?)),
     }
