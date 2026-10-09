@@ -64,7 +64,7 @@ fn logprobs_json(reply: &ChatReply, top: u32) -> Value {
         .filter(|one| one.share.0 > 0)
         .collect();
     // Stable, so options of equal share keep the order they were declared in.
-    ranked.sort_by(|a, b| b.share.cmp(&a.share));
+    ranked.sort_by_key(|one| std::cmp::Reverse(one.share));
     let best = ranked
         .into_iter()
         .take(usize::try_from(top).unwrap_or(usize::MAX))

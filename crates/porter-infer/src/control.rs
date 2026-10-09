@@ -11,10 +11,11 @@ use serde::{Deserialize, Serialize};
 
 /// A setting that is either left to the model's catalog default or set to a value. Written out in
 /// full (an `Option` would be a field an app can leave out unnoticed).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "v", rename_all = "snake_case")]
 pub enum Knob<T> {
     /// The model's own default (the catalog entry's, for local models).
+    #[default]
     Off,
     /// This value.
     Set(T),
@@ -24,12 +25,6 @@ impl<T> Knob<T> {
     /// Whether the knob is left to the default.
     pub fn is_off(&self) -> bool {
         matches!(self, Knob::Off)
-    }
-}
-
-impl<T> Default for Knob<T> {
-    fn default() -> Self {
-        Knob::Off
     }
 }
 
