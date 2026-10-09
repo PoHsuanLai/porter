@@ -67,6 +67,15 @@ impl RelayStream {
         self
     }
 
+    /// A stream over an in-memory end the caller holds (a test's end of
+    /// [`porter_core::stream::duplex`]: no kernel I/O, so a paused clock is safe with it).
+    pub fn from_memory(end: DuplexEnd) -> Self {
+        Self {
+            end: End::Memory(end),
+            idle: RELAY_IDLE,
+        }
+    }
+
     /// A stream over a Unix socket the caller holds (a test's end of a socket pair).
     pub fn from_unix(stream: UnixStream) -> Self {
         Self {
