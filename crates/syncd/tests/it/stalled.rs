@@ -1,10 +1,12 @@
 //! A server that stops answering ends the exchange (reliability finding rel-3): the relay stream
 //! gives up after its idle time and the HTTP client reports a timeout, instead of the dataset
 //! waiting on a half-open connection forever. No bus: a socket pair stands for the relay. The
-//! tests that count time run on the paused clock (the idle time and the pieces' spacing are
-//! virtual seconds), so a loaded machine cannot make a gap longer than the idle time.
+//! tests that count time run on the paused clock over an in-memory stream (the idle time and
+//! the pieces' spacing are virtual; with no kernel I/O the clock can only advance when every
+//! task waits on a timer), so a loaded machine cannot make a gap longer than the idle time.
 
 use porter_core::WebUrl;
+use porter_core::stream::{ByteStream, duplex};
 use porter_http::{Http, HttpError, HttpRequest, Method};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -50,9 +52,9 @@ const IDLE: Duration = Duration::from_millis(200);
 
 #[tokio::test(start_paused = true)]
 async fn a_server_that_never_answers_ends_the_request_as_timed_out() {
-    let (ours, mut theirs) = UnixStream::pair().expect("pair");
+    let (ours, mut theirs) = duplex(64 * 1024);
     let http = StreamHttp::new(
-        Once::new(RelayStream::from_unix(ours).with_idle(IDLE)),
+        Once::new(RelayStream::from_memory(ours).with_idle(IDLE)),
         StreamLimits::default(),
     );
     // The server reads the request and then says nothing, holding the connection open.
@@ -92,9 +94,9 @@ async fn a_body_that_stalls_part_way_ends_the_request_as_timed_out() {
 
 #[tokio::test(start_paused = true)]
 async fn a_slow_server_that_keeps_sending_is_not_cut_off_by_the_idle_time() {
-    let (ours, mut theirs) = UnixStream::pair().expect("pair");
+    let (ours, mut theirs) = duplex(64 * 1024);
     let http = StreamHttp::new(
-        Once::new(RelayStream::from_unix(ours).with_idle(IDLE)),
+        Once::new(RelayStream::from_memory(ours).with_idle(IDLE)),
         StreamLimits::default(),
     );
     // Four pieces, 120 ms apart: 480 ms in all, more than the idle time, but never silent for it.
