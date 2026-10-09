@@ -51,6 +51,7 @@ mod entries;
 
 /// The lab engine (an OpenAI-compatible server on a socket) the attached-engine tests share.
 #[cfg(test)]
+// `say` and `chats` (tests/it/hosting/lab.rs) are used by no test yet; the allow stays for them.
 #[allow(dead_code)]
 #[path = "../tests/it/hosting/lab.rs"]
 mod lab;

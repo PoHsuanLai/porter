@@ -1,12 +1,8 @@
 //! The rows of audio, model events, cancel and the end of a session.
 
-#![allow(unused_imports)]
 use super::helpers::*;
-use porter_core::consent::Usage;
-use porter_core::{DataClass, Permille};
-use porter_infer::{
-    ClientFrame, InferEvent, InferRefusal, InferReply, ModelError, Readiness, RequestKind,
-};
+use porter_core::DataClass;
+use porter_infer::{ClientFrame, InferEvent, InferReply, ModelError, RequestKind};
 
 pub(super) fn rows() -> Vec<Row> {
     let text = || SessionOut::Emit(InferEvent::TextDelta("hi".into()));

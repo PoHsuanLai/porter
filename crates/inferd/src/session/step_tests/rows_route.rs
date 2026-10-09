@@ -1,8 +1,6 @@
 //! The rows of the route, the wait for the engine and the first request of an idle session.
 
-#![allow(unused_imports)]
 use super::helpers::*;
-use porter_core::consent::Usage;
 use porter_core::{DataClass, Permille};
 use porter_infer::{
     ClientFrame, Declined, DeclinedBecause, InferEvent, InferRefusal, InferReply, ModelError,

@@ -1,12 +1,8 @@
 //! The rows of a computer-use run: a step needs a begin.
 
-#![allow(unused_imports)]
 use super::helpers::*;
-use porter_core::consent::Usage;
-use porter_core::{DataClass, Permille};
-use porter_infer::{
-    ClientFrame, InferEvent, InferRefusal, InferReply, ModelError, Readiness, RequestKind,
-};
+use porter_core::DataClass;
+use porter_infer::{ClientFrame, InferReply, RequestKind};
 
 pub(super) fn rows() -> Vec<Row> {
     vec![

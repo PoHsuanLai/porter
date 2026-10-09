@@ -1,12 +1,8 @@
 //! The rows of the one request that may queue behind a running turn.
 
-#![allow(unused_imports)]
 use super::helpers::*;
-use porter_core::consent::Usage;
-use porter_core::{DataClass, Permille};
-use porter_infer::{
-    ClientFrame, InferEvent, InferRefusal, InferReply, ModelError, Readiness, RequestKind,
-};
+use porter_core::DataClass;
+use porter_infer::{ClientFrame, InferReply, ModelError, RequestKind};
 
 pub(super) fn rows() -> Vec<Row> {
     let failed = |e| done(InferReply::Failed(e));
