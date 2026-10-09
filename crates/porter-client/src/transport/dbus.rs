@@ -12,7 +12,7 @@ use porter_core::{AccountsReply, AccountsRequest, EndpointUrl, GrantId};
 use porter_core::{DataClass, Need, Tier};
 use porter_dbus::{BusConnection, BusError, BusFailure, TokensProxy, classify, refusal_of};
 #[cfg(feature = "infer")]
-use porter_infer::{OpenOptions, Readiness};
+use porter_infer::{OpenOptions, PlaceRow, Readiness};
 use serde::Serialize;
 
 /// accountd and inferd on the session bus.
@@ -132,5 +132,10 @@ impl Transport for DbusTransport {
         options: &OpenOptions,
     ) -> Result<Readiness, TransportError> {
         self.prepare_engine(need, class, tier, options).await
+    }
+
+    #[cfg(feature = "infer")]
+    async fn places(&self) -> Result<Vec<PlaceRow>, TransportError> {
+        self.list_places().await
     }
 }

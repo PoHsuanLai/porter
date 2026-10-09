@@ -12,6 +12,7 @@ fn attached(id: &str, place: Place) -> Attached {
         reach: Reach::Socket("/run/user/1000/lab.sock".into()),
         key_file: None,
         place,
+        computer: None,
     }
 }
 

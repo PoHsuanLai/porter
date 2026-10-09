@@ -27,6 +27,9 @@
    </method>
    <method name="Rescan">
    </method>
+   <method name="Places">
+     <arg type="a(sa{sv})" direction="out"/>
+   </method>
    <signal name="EnginesChanged">
    </signal>
    <property name="Gpu" type="s" access="read"/>

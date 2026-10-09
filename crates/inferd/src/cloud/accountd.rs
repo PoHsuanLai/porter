@@ -9,7 +9,7 @@ use porter_core::capability::LlmFeature;
 use porter_core::consent::{GrantScope, Usage, Verdict};
 use porter_core::need::LlmNeed;
 use porter_core::{
-    AccountId, AppId, DataClass, GrantId, LauncherSession, Need, SecretText, Tokens,
+    AccountId, AccountState, AppId, DataClass, GrantId, LauncherSession, Need, SecretText, Tokens,
 };
 use porter_dbus::{Details, PeerProxy, need_to_dbus};
 use rustix::fs::{SealFlags, fcntl_get_seals};
@@ -31,6 +31,13 @@ pub struct AccountVerdict {
     /// The provider file the account was made from, when accountd says (`provider` in the
     /// answer's details); otherwise the account id's own stem names it (`models::provider_of`).
     pub provider: Option<String>,
+    /// What a person reads for the account (`label` in the answer's details), when accountd says.
+    pub label: Option<String>,
+    /// What a person reads for its provider (`provider_label`), when accountd knows the file.
+    pub provider_label: Option<String>,
+    /// Whether it works now (`state`), when accountd says; an account that must be signed in
+    /// again is not a place that can serve.
+    pub state: Option<AccountState>,
     /// The app's grant on it.
     pub verdict: Verdict,
 }
@@ -66,7 +73,7 @@ fn slug<T: Serialize>(value: &T) -> String {
 }
 
 /// What a language need is, for `Verdicts`: chat, any context.
-fn llm_need() -> Need {
+pub(crate) fn llm_need() -> Need {
     Need::Llm(LlmNeed {
         features: [LlmFeature::Chat].into(),
         context: Tokens(0),
@@ -99,6 +106,10 @@ fn verdict_of(row: (String, String, Details)) -> Option<AccountVerdict> {
     Some(AccountVerdict {
         account: AccountId::parse(&account).ok()?,
         provider: text_of(&details, "provider"),
+        label: text_of(&details, "label"),
+        provider_label: text_of(&details, "provider_label"),
+        state: text_of(&details, "state")
+            .and_then(|word| serde_json::from_value(serde_json::Value::String(word)).ok()),
         verdict,
     })
 }

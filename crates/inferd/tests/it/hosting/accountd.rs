@@ -60,6 +60,15 @@ pub struct Calls {
 pub struct FakeAccountd {
     accounts: Arc<Mutex<Vec<FakeAccount>>>,
     calls: Arc<Mutex<Calls>>,
+    looks: Arc<Mutex<std::collections::BTreeMap<String, Look>>>,
+}
+
+/// How the fake describes an account beyond its standing.
+#[derive(Debug, Clone)]
+struct Look {
+    label: String,
+    provider_label: Option<String>,
+    state: String,
 }
 
 fn text(value: &str) -> Option<OwnedValue> {
@@ -86,12 +95,26 @@ impl FakeAccountd {
         Self {
             accounts: Arc::new(Mutex::new(accounts)),
             calls: Arc::default(),
+            looks: Arc::default(),
         }
     }
 
     /// What it was asked so far.
     pub fn calls(&self) -> Calls {
         self.calls.lock().expect("lock").clone()
+    }
+
+    /// Makes `Verdicts` say how a person reads account `id` and whether it works: its label, its
+    /// provider's name (when accountd knows the file) and its state slug (`ok`, `needs_reauth`).
+    pub fn describe(&self, id: &str, label: &str, provider_label: Option<&str>, state: &str) {
+        self.looks.lock().expect("lock").insert(
+            id.to_owned(),
+            Look {
+                label: label.to_owned(),
+                provider_label: provider_label.map(str::to_owned),
+                state: state.to_owned(),
+            },
+        );
     }
 
     /// Changes what the person's account says of the apps, as a person does in Settings.
@@ -128,10 +151,13 @@ impl FakePeer {
         class: String,
         usage: String,
     ) -> fdo::Result<Vec<VerdictArg>> {
-        let mut calls = self.0.calls.lock().expect("lock");
-        calls.verdicts.push((app.0.clone(), class));
-        calls.usages.push(usage.clone());
-        drop(calls);
+        // inferd's own call to join accountd's news (`account_news`) is not a call a test made.
+        if app.0 != "org.quire.Inference" {
+            let mut calls = self.0.calls.lock().expect("lock");
+            calls.verdicts.push((app.0.clone(), class));
+            calls.usages.push(usage.clone());
+        }
+        let looks = self.0.looks.lock().expect("lock").clone();
         let usage_asked = usage;
         let accounts = self.0.accounts.lock().expect("lock").clone();
         Ok(accounts
@@ -157,6 +183,16 @@ impl FakePeer {
                     Standing::Granted { .. } | Standing::GrantedFor { .. } | Standing::Ask => "ask",
                     Standing::Denied => "denied",
                 };
+                if let Some(look) = looks.get(account.id) {
+                    details.extend(text(&look.label).map(|v| ("label".to_owned(), v)));
+                    details.extend(text(&look.state).map(|v| ("state".to_owned(), v)));
+                    details.extend(
+                        look.provider_label
+                            .as_deref()
+                            .and_then(text)
+                            .map(|v| ("provider_label".to_owned(), v)),
+                    );
+                }
                 (account.id.to_owned(), word.to_owned(), details)
             })
             .collect())

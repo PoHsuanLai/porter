@@ -43,8 +43,17 @@ pub trait Inference {
     fn usage(&self) -> zbus::Result<Details>;
     /// Probes local runtimes again.
     fn rescan(&self) -> zbus::Result<()>;
-    /// Engine state changed. Broadcast: engine state is not personal. Listeners re-read
-    /// readiness with `Prepare` (callers) or the settings module (detent).
+    /// The places the assistant could run, one row per place known now: this computer, each of
+    /// the person's own computers, each signed-in cloud AI account. A row is the place's id
+    /// (`this-computer`, `computer:<name>`, `account:<account id>`) and a vardict with `kind`,
+    /// `name`, `provider` (cloud accounts only), `models` (`a(ss)`: model id and display name,
+    /// the models the place can serve now) and `ready` (`b`, data only); the key names are
+    /// `PLACE_KEY_*`. Only Settings, the shell and the companion may ask; anyone else is
+    /// `AccessDenied`.
+    fn places(&self) -> zbus::Result<Vec<(String, Details)>>;
+    /// Engine state changed, or a cloud AI account appeared, went or changed state. Broadcast:
+    /// engine state is not personal. Listeners re-read readiness with `Prepare` (callers) or the
+    /// settings module (detent), and the places with `Places`.
     #[zbus(signal)]
     fn engines_changed(&self) -> zbus::Result<()>;
     /// The GPU's use: `idle`, `busy` or `loading`.
@@ -90,6 +99,10 @@ impl InferenceSkeleton {
     }
 
     fn rescan(&self) -> fdo::Result<()> {
+        Err(crate::introspect::frozen())
+    }
+
+    fn places(&self) -> fdo::Result<Vec<(String, Details)>> {
         Err(crate::introspect::frozen())
     }
 

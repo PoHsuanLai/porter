@@ -240,6 +240,7 @@ async fn an_attached_my_network_engine_follows_the_floor_and_the_my_network_sett
             reach: Reach::Socket(lab.socket()),
             key_file: None,
             place: Place::MyNetwork,
+            computer: None,
         }],
         role: Role::AgentLauncher,
         agents: Some(AgentsPlan {

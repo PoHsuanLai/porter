@@ -43,7 +43,9 @@ use porter_core::{AccountsReply, AccountsRequest, EndpointUrl, GrantId};
 #[cfg(feature = "infer")]
 use porter_core::{DataClass, Need, Tier};
 #[cfg(feature = "infer")]
-use porter_infer::{ClientFrame, InferEvent, InferSession, OpenOptions, Readiness, SessionError};
+use porter_infer::{
+    ClientFrame, InferEvent, InferSession, OpenOptions, PlaceRow, Readiness, SessionError,
+};
 use std::future::Future;
 
 /// Carries requests to accountd and inferd.
@@ -113,6 +115,15 @@ pub trait Transport: Send + Sync {
         options: &OpenOptions,
     ) -> impl Future<Output = Result<Readiness, TransportError>> + Send {
         let _ = (need, class, tier, options);
+        async { Err(TransportError::Unreachable) }
+    }
+
+    /// The places the assistant could run, one row each (`Inference1.Places`). Only Settings, the
+    /// shell and the companion may ask; anyone else is `Denied`.
+    ///
+    /// The default is `Unreachable`, as `prepare`'s is.
+    #[cfg(feature = "infer")]
+    fn places(&self) -> impl Future<Output = Result<Vec<PlaceRow>, TransportError>> + Send {
         async { Err(TransportError::Unreachable) }
     }
 
@@ -253,6 +264,15 @@ impl Transport for AnyTransport {
             #[cfg(feature = "dbus")]
             AnyTransport::Dbus(link) => link.prepare(need, class, tier, options).await,
             AnyTransport::Socket(link) => link.prepare(need, class, tier, options).await,
+        }
+    }
+
+    #[cfg(feature = "infer")]
+    async fn places(&self) -> Result<Vec<PlaceRow>, TransportError> {
+        match self {
+            #[cfg(feature = "dbus")]
+            AnyTransport::Dbus(link) => link.places().await,
+            AnyTransport::Socket(link) => link.places().await,
         }
     }
 }

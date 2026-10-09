@@ -861,5 +861,7 @@ pub(crate) fn through_grants(tiers: &TierMap, offered: &Offered) -> TierMap {
     }
 }
 
+mod places;
+
 #[cfg(test)]
 mod tests;

@@ -3,10 +3,13 @@
 use super::dbus::{DbusTransport, bus_error, slug};
 use super::dbus_session::DbusSession;
 use crate::error::TransportError;
-use porter_core::{DataClass, Need, Permille, Tier};
+use porter_core::{DataClass, ModelId, Need, Permille, Tier};
 use porter_dbus::zvariant::{OwnedValue, Value};
-use porter_dbus::{Details, InferenceProxy, OPTION_TRACEPARENT, OPTION_USAGE, need_to_dbus};
-use porter_infer::{OpenOptions, Readiness};
+use porter_dbus::{
+    Details, InferenceProxy, OPTION_TRACEPARENT, OPTION_USAGE, PLACE_KEY_KIND, PLACE_KEY_MODELS,
+    PLACE_KEY_NAME, PLACE_KEY_PROVIDER, PLACE_KEY_READY, need_to_dbus,
+};
+use porter_infer::{OpenOptions, PlaceId, PlaceKind, PlaceModel, PlaceRow, PlaceState, Readiness};
 
 /// The `options` dictionary of `Open`: the reserved `traceparent` and `usage` when the caller has
 /// them (`usage` as its slug).
@@ -72,6 +75,59 @@ impl DbusTransport {
             .map_err(|e| bus_error(&e))?;
         readiness_of(&text)
     }
+}
+
+impl DbusTransport {
+    pub(super) async fn list_places(&self) -> Result<Vec<PlaceRow>, TransportError> {
+        let proxy = InferenceProxy::new(self.connection())
+            .await
+            .map_err(|e| bus_error(&e))?;
+        let rows = proxy.places().await.map_err(|e| bus_error(&e))?;
+        rows.into_iter().map(place_row).collect()
+    }
+}
+
+/// One row of `Places` as a [`PlaceRow`]; a row that does not say what the interface promises is
+/// malformed.
+fn place_row((id, details): (String, Details)) -> Result<PlaceRow, TransportError> {
+    let bad = |what: &str| TransportError::Malformed(format!("Places row {id:?}: {what}"));
+    let text = |key: &str| -> Option<String> {
+        String::try_from(details.get(key)?.try_clone().ok()?).ok()
+    };
+    let place = PlaceId::parse(&id).map_err(|_| bad("not a place id"))?;
+    let kind = text(PLACE_KEY_KIND)
+        .and_then(|slug| PlaceKind::from_slug(&slug))
+        .ok_or_else(|| bad("no kind"))?;
+    let models: Vec<(String, String)> = details
+        .get(PLACE_KEY_MODELS)
+        .and_then(|value| value.try_clone().ok())
+        .and_then(|value| Vec::<(String, String)>::try_from(value).ok())
+        .ok_or_else(|| bad("no models"))?;
+    let models = models
+        .into_iter()
+        .map(|(model, name)| {
+            Ok(PlaceModel {
+                id: ModelId::parse(&model).map_err(|_| bad("a model id"))?,
+                name,
+            })
+        })
+        .collect::<Result<Vec<_>, TransportError>>()?;
+    let ready = details
+        .get(PLACE_KEY_READY)
+        .and_then(|value| bool::try_from(value).ok())
+        .ok_or_else(|| bad("no ready"))?;
+    Ok(PlaceRow {
+        kind,
+        name: text(PLACE_KEY_NAME).ok_or_else(|| bad("no name"))?,
+        provider: text(PLACE_KEY_PROVIDER),
+        models,
+        state: if ready {
+            PlaceState::Ready
+        } else {
+            PlaceState::NotReady
+        },
+        id: place,
+    })
 }
 
 /// The readiness a `Prepare` slug names. `downloading` carries no progress on the bus (the slug

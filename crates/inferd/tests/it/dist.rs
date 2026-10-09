@@ -50,6 +50,35 @@ fn the_shipped_table_names_settings_by_its_unit() {
     );
 }
 
+/// The shipped table lets the companion, reader and intents daemons choose where the assistant
+/// runs (by unit, as placers), gives the shell its scope, and leaves the other apps plain.
+#[test]
+fn the_shipped_table_names_the_placers_by_unit_and_the_shell_by_its_scope() {
+    use inferd::peers::Role;
+    let config = InferdConfig::from_toml(&dist("inferd.toml")).expect("the sample reads");
+    let role = |unit: &str| {
+        config
+            .callers
+            .resolve(unit)
+            .map(|c| (c.app.name.to_string(), c.role))
+    };
+    for (unit, app) in [
+        ("companiond.service", "org.quire.Companion"),
+        ("readerd.service", "org.quire.Reader"),
+        ("intentd.service", "org.quire.Intents"),
+    ] {
+        assert_eq!(role(unit), Some((app.to_owned(), Role::Placer)), "{unit}");
+    }
+    assert_eq!(
+        role("sill-shell.scope"),
+        Some(("org.quire.Shell".to_owned(), Role::Shell))
+    );
+    assert_eq!(
+        role("memoryd.service"),
+        Some(("org.quire.Memory".to_owned(), Role::App))
+    );
+}
+
 #[test]
 fn the_unit_gives_engines_the_gpu_and_only_this_computers_own_addresses() {
     let unit = dist("inferd.service");

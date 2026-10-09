@@ -108,10 +108,18 @@ fn inference1_xml_unchanged_members() {
     for member in members {
         assert!(xml.contains(member), "missing {member}");
     }
+    // `Places` was added after the freeze: an additive method (no existing member, argument or
+    // error changes), as `Sync1.ConfirmDiscard` was.
+    assert!(xml.contains("<method name=\"Places\">"));
+    assert!(xml.contains("<arg type=\"a(sa{sv})\" direction=\"out\"/>"));
     let declared = xml.matches("<method ").count()
         + xml.matches("<signal ").count()
         + xml.matches("<property ").count();
-    assert_eq!(declared, members.len(), "no member beyond the frozen seven");
+    assert_eq!(
+        declared,
+        members.len() + 1,
+        "no member beyond the frozen seven and Places"
+    );
 }
 
 #[test]

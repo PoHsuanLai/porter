@@ -23,6 +23,9 @@ fn account(id: &str, verdict: Verdict) -> AccountVerdict {
     AccountVerdict {
         account: AccountId::parse(id).expect("id"),
         provider: None,
+        label: None,
+        provider_label: None,
+        state: None,
         verdict,
     }
 }

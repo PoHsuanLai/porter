@@ -268,6 +268,13 @@ impl<T: Transport> Accounts<T> {
         Ok(self.transport.prepare(need, class, tier, options).await?)
     }
 
+    /// The places the assistant could run, one row each ([`Transport::places`]). Only Settings,
+    /// the shell and the companion may ask.
+    #[cfg(feature = "infer")]
+    pub async fn places(&self) -> Result<Vec<porter_infer::PlaceRow>, ClientError> {
+        Ok(self.transport.places().await?)
+    }
+
     /// Runs one AI request to its end on a fresh session and returns the reply, dropping the
     /// deltas; a refusal is an error the app shows.
     #[cfg(feature = "infer")]

@@ -89,6 +89,64 @@ fn a_refused_table_says_which_way_it_was_refused_and_keeps_the_parser_error() {
     ));
 }
 
+fn placed_table() -> CallerTable {
+    CallerTable::from_toml_text(
+        r#"
+shell = ["sill-shell.scope"]
+places = ["companiond.service", "readerd.service"]
+[apps]
+"org.quire.Companion" = ["companiond.service"]
+"org.quire.Reader" = ["readerd.service"]
+"org.quire.Memory" = ["memoryd.service"]
+"#,
+    )
+    .expect("table")
+}
+
+#[test]
+fn the_places_rows_make_placers_the_shell_row_makes_the_shell_and_the_rest_stay_apps() {
+    let table = placed_table();
+    let role = |unit: &str| table.resolve(unit).map(|c| c.role);
+    assert_eq!(role("companiond.service"), Some(Role::Placer));
+    assert_eq!(role("readerd.service"), Some(Role::Placer));
+    assert_eq!(role("memoryd.service"), Some(Role::App));
+    assert_eq!(role("sill-shell.scope"), Some(Role::Shell));
+    assert_eq!(role("intentd.service"), None);
+}
+
+#[test]
+fn only_settings_the_shell_and_the_companion_list_places_and_only_placers_choose_them() {
+    let table = placed_table().with_settings(["org.quire.Settings.service".to_owned()].into());
+    let who = |unit: &str| table.resolve(unit).expect(unit);
+    let list = |unit: &str| who(unit).may_list_places();
+    let choose = |unit: &str| who(unit).may_choose_places();
+    assert!(list("org.quire.Settings.service"));
+    assert!(list("sill-shell.scope"));
+    assert!(list("companiond.service"));
+    assert!(!list("readerd.service"));
+    assert!(!list("memoryd.service"));
+    assert!(choose("companiond.service") && choose("readerd.service"));
+    for unit in [
+        "memoryd.service",
+        "sill-shell.scope",
+        "org.quire.Settings.service",
+    ] {
+        assert!(!choose(unit), "{unit}");
+    }
+}
+
+#[test]
+fn a_places_unit_that_is_no_app_and_a_shell_entry_that_is_no_unit_are_refused() {
+    assert!(matches!(
+        CallerTable::from_toml_text("places = [\"x.service\"]\n[apps]\n\"org.quire.A\" = [\"y.service\"]\n"),
+        Err(TableError::PlacesNotAnApp(unit)) if unit == "x.service"
+    ));
+    assert!(matches!(
+        CallerTable::from_toml_text("shell = [\"sill-shell\"]\n"),
+        Err(TableError::BadShellEntry(bad)) if bad == "sill-shell"
+    ));
+}
+
 #[tokio::test]
 async fn introduced_connections_are_known_and_others_are_not() {
     let peers = TablePeers::new();

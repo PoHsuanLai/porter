@@ -76,6 +76,19 @@ pub(crate) fn events(before: &Registry, after: &Registry) -> Vec<Event> {
     out
 }
 
+/// Whether a porter daemon (`CallerRole::PorterDaemon`, one that has called accountd) is told of
+/// `event` whatever grants it holds: an account appearing, going, changing what it offers or how
+/// it stands. inferd lists the cloud AI accounts as places and tells its own listeners when that
+/// list may have changed; a daemon already reads every account's id, label and state through
+/// `Peer.Verdicts`, so these signals tell it nothing it cannot ask. Grants are not told: they are
+/// per app.
+pub(crate) fn daemon_hears(event: &Event) -> bool {
+    matches!(
+        event,
+        Event::Added(_) | Event::Removed(_) | Event::CapabilityChanged(_) | Event::StateChanged(_)
+    )
+}
+
 /// The apps that hold an allowing grant for `account` in either registry.
 fn holders(account: &AccountId, before: &Registry, after: &Registry) -> Vec<AppId> {
     let mut apps: Vec<AppId> = Vec::new();
@@ -268,6 +281,11 @@ mod tests {
         );
         assert!(audience(&list[2], &before, &after).is_empty());
         assert!(shell_hears(&list[0]) && shell_hears(&list[1]) && !shell_hears(&list[2]));
+        // A porter daemon hears an account come, go or change state, but not a reauth notice
+        // (the shell's) or a grant (per app).
+        assert!(daemon_hears(&list[0]) && !daemon_hears(&list[1]) && daemon_hears(&list[2]));
+        assert!(!daemon_hears(&Event::GrantChanged(held.id.clone())));
+        assert!(daemon_hears(&Event::Removed(storage.id.clone())));
 
         let gone = registry(vec![mail], vec![]);
         let list = events(&before, &gone);

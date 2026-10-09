@@ -74,6 +74,12 @@ impl ComputerName {
         }
     }
 
+    /// The computer an engine on another machine of the person's belongs to when nothing names
+    /// the machine (`other-computer`).
+    pub fn other() -> Self {
+        Self("other-computer".to_owned())
+    }
+
     /// The name's text.
     pub fn as_str(&self) -> &str {
         &self.0
@@ -207,6 +213,43 @@ impl fmt::Display for PlaceId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
     }
+}
+
+/// Whether a place can answer now. On the bus it is the row's boolean `ready`, data only: it is
+/// never put into a sentence a person reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlaceState {
+    /// It can serve now.
+    Ready,
+    /// It cannot serve now (an engine down, an account to sign in again).
+    NotReady,
+}
+
+/// One model a place can serve now.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct PlaceModel {
+    /// The model's id.
+    pub id: porter_core::ModelId,
+    /// The name a person reads for it.
+    pub name: String,
+}
+
+/// One row of `Inference1.Places`: a place known now.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct PlaceRow {
+    /// The place's id.
+    pub id: PlaceId,
+    /// What kind of place it is (the id says it too).
+    pub kind: PlaceKind,
+    /// The computer's name, or the account's label.
+    pub name: String,
+    /// The provider's display name; a cloud account only.
+    pub provider: Option<String>,
+    /// The models the place can serve now, in the order inferd lists them.
+    pub models: Vec<PlaceModel>,
+    /// Whether the place can serve now.
+    pub state: PlaceState,
 }
 
 #[cfg(test)]

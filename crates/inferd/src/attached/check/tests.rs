@@ -15,6 +15,7 @@ fn socket_target(path: PathBuf, key: Option<KeyFile>) -> Target {
         reach: Reach::Socket(path),
         key,
         place: Place::MyNetwork,
+        computer: None,
     }
 }
 
@@ -26,6 +27,7 @@ fn port_target(port: u16, key: Option<KeyFile>) -> Target {
         },
         key,
         place: Place::ThisDevice,
+        computer: None,
     }
 }
 

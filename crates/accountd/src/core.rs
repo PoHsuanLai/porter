@@ -7,7 +7,7 @@ use crate::callers::Callers;
 use crate::credentials::Credentials;
 use crate::errors::RefusedError;
 use crate::grants::{Grants, Tokens};
-use crate::hub::{Event, audience, events, settings_news, shell_hears};
+use crate::hub::{Event, audience, daemon_hears, events, settings_news, shell_hears};
 use crate::keys::KeyDesk;
 use crate::launchers::{Launchers, LoginTiming, SignOutNews};
 use crate::manager::Manager;
@@ -532,6 +532,7 @@ impl<H: Host, C: Callers> Core<H, C> {
                 .filter(|(_, who)| {
                     apps.contains(&who.app)
                         || (who.role == CallerRole::SheetHost && shell_hears(&event))
+                        || (who.role == CallerRole::PorterDaemon && daemon_hears(&event))
                 })
                 .map(|(name, _)| name.clone())
                 .collect();

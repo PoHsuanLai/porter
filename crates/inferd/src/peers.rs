@@ -29,7 +29,16 @@ pub enum Role {
     /// The agent launcher (docket-acp): the one caller of `org.quire.Inference1.Agents`, and of
     /// nothing else here.
     AgentLauncher,
+    /// An app that may choose where the assistant runs (`places` in the options of `Open`,
+    /// `Prepare` and `Availability`): docket's companion, reader and intents daemons. It asks
+    /// for models as an `App` does.
+    Placer,
+    /// The shell: it may list the places (`Inference1.Places`) and ask for nothing else.
+    Shell,
 }
+
+/// The app docket's companion daemon is: with Settings and the shell, the callers of `Places`.
+const COMPANION_APP: &str = "org.quire.Companion";
 
 /// Why a caller table's text was refused.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -40,6 +49,12 @@ pub enum TableError {
     /// A `settings` entry that is neither a `.service` unit nor an app name.
     #[error("settings: `{0}` is neither a .service unit nor an app name")]
     BadSettingsEntry(String),
+    /// A `shell` entry that is neither a `.scope` nor a `.service` unit.
+    #[error("shell: `{0}` is neither a .scope nor a .service unit")]
+    BadShellEntry(String),
+    /// A `places` entry that is not a unit of an app in `[callers.apps]`.
+    #[error("places: `{0}` is not a unit listed under [callers.apps]")]
+    PlacesNotAnApp(String),
 }
 
 /// Who a connection is.
@@ -49,6 +64,22 @@ pub struct Caller {
     pub app: AppId,
     /// What it may ask for.
     pub role: Role,
+}
+
+impl Caller {
+    /// Whether it may list the places: Settings, the shell and the companion.
+    pub fn may_list_places(&self) -> bool {
+        match self.role {
+            Role::Settings | Role::Shell => true,
+            Role::Placer => self.app.name.as_str() == COMPANION_APP,
+            Role::App | Role::Cua | Role::AgentLauncher => false,
+        }
+    }
+
+    /// Whether it may choose where the assistant runs.
+    pub fn may_choose_places(&self) -> bool {
+        self.role == Role::Placer
+    }
 }
 
 /// Which systemd unit is which caller.
@@ -75,6 +106,15 @@ pub struct CallerTable {
     /// start.
     #[serde(default)]
     settings: BTreeSet<String>,
+    /// The shell's units (`sill-shell.scope`): the shell may list the places and ask for
+    /// nothing else. A scope has no main process, so while the shell is not running another
+    /// program of the person's could start a scope of that name (as in accountd's table).
+    #[serde(default)]
+    shell: BTreeSet<String>,
+    /// The units, each already an app under `apps`, that may choose where the assistant runs
+    /// (`places` in the options of `Open`, `Prepare` and `Availability`).
+    #[serde(default)]
+    places: BTreeSet<String>,
 }
 
 /// The unit and the app a `settings` entry stands for: a `.service` unit is the Settings app's;
@@ -99,6 +139,25 @@ impl CallerTable {
             agent_launcher: BTreeSet::new(),
             apps,
             settings: BTreeSet::new(),
+            shell: BTreeSet::new(),
+            places: BTreeSet::new(),
+        }
+    }
+
+    /// The same table, naming `units` as the shell's.
+    pub fn with_shell(self, units: BTreeSet<String>) -> Self {
+        Self {
+            shell: units,
+            ..self
+        }
+    }
+
+    /// The same table, naming `units` (each also an app's unit under `apps`) as callers that
+    /// may choose where the assistant runs.
+    pub fn with_places(self, units: BTreeSet<String>) -> Self {
+        Self {
+            places: units,
+            ..self
         }
     }
 
@@ -123,8 +182,16 @@ impl CallerTable {
     /// name is refused.
     pub fn from_toml_text(text: &str) -> Result<Self, TableError> {
         let table: Self = toml::from_str(text)?;
-        match table.settings.iter().find(|e| settings_unit(e).is_none()) {
-            Some(bad) => Err(TableError::BadSettingsEntry(bad.clone())),
+        if let Some(bad) = table.settings.iter().find(|e| settings_unit(e).is_none()) {
+            return Err(TableError::BadSettingsEntry(bad.clone()));
+        }
+        let unit_like = |e: &&String| e.ends_with(".scope") || e.ends_with(".service");
+        if let Some(bad) = table.shell.iter().find(|e| !unit_like(e)) {
+            return Err(TableError::BadShellEntry(bad.clone()));
+        }
+        let listed = |unit: &&String| table.apps.values().any(|units| units.contains(*unit));
+        match table.places.iter().find(|unit| !listed(unit)) {
+            Some(bad) => Err(TableError::PlacesNotAnApp(bad.clone())),
             None => Ok(table),
         }
     }
@@ -162,16 +229,37 @@ impl CallerTable {
                 role: CallerRole::Settings,
                 name: None,
             });
+        // The shell by its scope; the shared role is the one accountd gives it.
+        let shell_app = AppName::parse(SHELL_APP).ok();
+        let shell = shell_app.into_iter().flat_map(|app| {
+            self.shell.iter().map(move |unit| CallerRow {
+                unit: Some(unit.clone()),
+                app: app.clone(),
+                role: CallerRole::SheetHost,
+                name: None,
+            })
+        });
+        // An app whose unit is under `places` is a `Placer`, carried by the shared role `Agent`
+        // (companiond, readerd and intentd are the ones accountd calls so).
         let apps = self.apps.iter().flat_map(|(app, units)| {
             units.iter().map(move |unit| CallerRow {
                 unit: Some(unit.clone()),
                 app: app.clone(),
-                role: CallerRole::App,
+                role: if self.places.contains(unit) {
+                    CallerRole::Agent
+                } else {
+                    CallerRole::App
+                },
                 name: None,
             })
         });
         porter_dbus::CallerTable {
-            callers: cua.chain(launcher).chain(settings).chain(apps).collect(),
+            callers: cua
+                .chain(launcher)
+                .chain(settings)
+                .chain(shell)
+                .chain(apps)
+                .collect(),
         }
     }
 
@@ -190,6 +278,9 @@ const LAUNCHER_APP: &str = "org.quire.AgentLauncher";
 /// The Settings app, which a `settings` entry that is a unit runs.
 const SETTINGS_APP: &str = "org.quire.Settings";
 
+/// The shell, which a `shell` entry runs.
+const SHELL_APP: &str = "org.quire.Shell";
+
 impl Caller {
     /// A shared caller as inferd knows roles: `Cua` and `Settings`, and `App` for every other.
     pub fn from_shared(caller: porter_dbus::Caller) -> Self {
@@ -199,6 +290,8 @@ impl Caller {
                 CallerRole::Cua => Role::Cua,
                 CallerRole::Settings => Role::Settings,
                 CallerRole::AgentLauncher => Role::AgentLauncher,
+                CallerRole::Agent => Role::Placer,
+                CallerRole::SheetHost => Role::Shell,
                 _ => Role::App,
             },
         }

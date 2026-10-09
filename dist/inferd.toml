@@ -121,6 +121,14 @@ cua = ["cuad.service"]
 # here (the old form, "org.quire.Settings") stands for "<app>.service", never for an app scope of
 # that name, which any program can start.
 settings = ["org.quire.Settings.service"]
+# The shell (sill): it may list the places the assistant can run (Inference1.Places) and ask for
+# nothing else. A scope has no main process, so while the shell is not running another program of
+# yours could start a scope of that name.
+shell = ["sill-shell.scope"]
+# The units that may choose where the assistant runs (the `places` and `place_models` options of
+# Open, Prepare and Availability). Each must also be an app under [callers.apps]. Of these the
+# companion alone may also list the places, as Settings and the shell may.
+places = ["companiond.service", "readerd.service", "intentd.service"]
 # The agent launcher (docket-acp): the only caller of org.quire.Inference1.Agents, which opens a
 # loopback model endpoint for an external coding agent, and of nothing else. Never listed by
 # default: a machine that runs the launcher writes its unit here, and turns on ai.agents.endpoint.

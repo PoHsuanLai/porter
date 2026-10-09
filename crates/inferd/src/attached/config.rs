@@ -6,6 +6,7 @@
 use crate::startup::SUN_PATH;
 use model_http::Port;
 use porter_core::{Locality, ModelId};
+use porter_infer::ComputerName;
 use serde::{Deserialize, Serialize};
 use std::net::Ipv4Addr;
 use std::os::unix::ffi::OsStrExt;
@@ -49,6 +50,11 @@ pub struct AttachedEntry {
     /// Where the data goes.
     #[serde(default, rename = "where", skip_serializing_if = "Option::is_none")]
     pub place: Option<Place>,
+    /// The name of the machine the engine runs on, so that several engines on one machine are one
+    /// place (`computer:<name>`). Optional; an engine on another machine of yours that names none
+    /// belongs to the computer called `other-computer` ([`ComputerName::other`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub computer: Option<String>,
 }
 
 /// How an attached engine is reached.
@@ -76,6 +82,8 @@ pub struct Attached {
     pub key_file: Option<PathBuf>,
     /// Where the data goes.
     pub place: Place,
+    /// The machine it runs on, when the entry names one.
+    pub computer: Option<ComputerName>,
 }
 
 /// Why an attached engine is refused when the configuration loads.
@@ -152,6 +160,14 @@ pub enum AttachedError {
         /// The host as written.
         host: String,
     },
+    /// A `computer` that is not a name (lowercase letters, digits, dots, dashes and underscores).
+    #[error("engines.attached.{id}: `computer` must be a short lowercase name; got {name:?}")]
+    BadComputer {
+        /// The entry.
+        id: String,
+        /// The name as written.
+        name: String,
+    },
     /// An id the catalogue does not hold.
     #[error("engines.attached.{id}: no model of that id in the catalogue")]
     NotInCatalogue {
@@ -203,11 +219,23 @@ impl AttachedEntry {
                 path: key.display().to_string(),
             });
         }
+        let computer = match &self.computer {
+            None => None,
+            Some(text) => {
+                Some(
+                    ComputerName::parse(text).map_err(|_| AttachedError::BadComputer {
+                        id: here(),
+                        name: text.clone(),
+                    })?,
+                )
+            }
+        };
         Ok(Attached {
             id,
             reach,
             key_file: self.key_file.clone(),
             place,
+            computer,
         })
     }
 }

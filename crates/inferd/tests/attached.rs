@@ -167,6 +167,7 @@ fn attach(reach: Reach, place: Place, key_file: Option<PathBuf>) -> Attached {
         reach,
         key_file,
         place,
+        computer: None,
     }
 }
 
@@ -668,6 +669,7 @@ async fn sigterm_to_the_real_inferd_leaves_the_attached_engines_process_alive() 
         reach: Reach::Socket(dir.socket()),
         key: None,
         place: Place::MyNetwork,
+        computer: None,
     };
     assert_eq!(
         inferd::attached::probe(&target, entries::SERVED).await,

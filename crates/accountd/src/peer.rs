@@ -94,6 +94,21 @@ impl<H: Host, C: Callers> Peer<H, C> {
                 // The provider file the account was made from: inferd reaches a hosted model
                 // through it, so it never guesses from the account id.
                 details.extend(text(account.provider.as_str()).map(|v| ("provider".to_owned(), v)));
+                // What inferd's `Places` lists the account as: its label, its provider's name as
+                // a person reads it (left out when the provider file is gone), and whether it
+                // works now (the state slug).
+                details.extend(text(&account.label.0).map(|v| ("label".to_owned(), v)));
+                details.extend(
+                    self.0
+                        .provider_names
+                        .label_of(&account.provider)
+                        .and_then(text)
+                        .map(|v| ("provider_label".to_owned(), v)),
+                );
+                details.extend(
+                    text(crate::account::state_slug(account.state))
+                        .map(|v| ("state".to_owned(), v)),
+                );
                 let word = match decide_key(&registry.grants, &key) {
                     Verdict::Granted { grant, scope } => {
                         details.extend(text(grant.as_str()).map(|v| ("grant".to_owned(), v)));

@@ -19,8 +19,11 @@ use crate::settings::Reload;
 use crate::structured::Limits;
 use crate::watch::Probing;
 use porter_core::{DataClass, Tier};
-use porter_dbus::{Details, INFERENCE_BUS, INFERENCE_PATH, NeedArg, need_from_dbus};
-use porter_infer::InferRefusal;
+use porter_dbus::{
+    Details, INFERENCE_BUS, INFERENCE_PATH, NeedArg, PLACE_KEY_KIND, PLACE_KEY_MODELS,
+    PLACE_KEY_NAME, PLACE_KEY_PROVIDER, PLACE_KEY_READY, need_from_dbus,
+};
+use porter_infer::{InferRefusal, PlaceRow, PlaceState};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::os::unix::net::UnixStream as StdStream;
@@ -140,19 +143,38 @@ fn failed(why: impl ToString) -> fdo::Error {
 }
 
 impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O, C> {
-    async fn caller(&self, header: &Header<'_>) -> fdo::Result<Caller> {
+    async fn identified(&self, header: &Header<'_>) -> fdo::Result<Caller> {
         let sender = header.sender().ok_or_else(unknown_caller)?;
-        let caller = self
-            .peers
+        self.peers
             .caller_of(sender.as_str())
             .await
-            .ok_or_else(unknown_caller)?;
-        // The agent launcher has the endpoint interface and nothing else here.
+            .ok_or_else(unknown_caller)
+    }
+
+    async fn caller(&self, header: &Header<'_>) -> fdo::Result<Caller> {
+        let caller = self.identified(header).await?;
         match caller.role {
+            // The agent launcher has the endpoint interface and nothing else here.
             Role::AgentLauncher => Err(fdo::Error::AccessDenied(
                 "inferd: the agent launcher may only open agent endpoints".into(),
             )),
+            // The shell lists the places and asks for no model.
+            Role::Shell => Err(fdo::Error::AccessDenied(
+                "inferd: the shell may only list the places".into(),
+            )),
             _ => Ok(caller),
+        }
+    }
+
+    /// The caller of `Places`: Settings, the shell or the companion.
+    async fn place_lister(&self, header: &Header<'_>) -> fdo::Result<Caller> {
+        let caller = self.identified(header).await?;
+        if caller.may_list_places() {
+            Ok(caller)
+        } else {
+            Err(fdo::Error::AccessDenied(
+                "inferd: this caller may not list the places".into(),
+            ))
         }
     }
 
@@ -282,6 +304,22 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         Self::engines_changed(&emitter).await.map_err(failed)
     }
 
+    // The places the assistant could run, one row each (a plain comment: a doc comment on a
+    // member would change the introspection XML).
+    async fn places(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+    ) -> fdo::Result<Vec<(String, Details)>> {
+        let caller = self.place_lister(&header).await?;
+        Ok(self
+            .engines
+            .places(&caller)
+            .await
+            .into_iter()
+            .map(place_row)
+            .collect())
+    }
+
     #[zbus(signal)]
     async fn engines_changed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
 
@@ -289,6 +327,36 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
     async fn gpu(&self) -> String {
         self.engines.gpu().slug().to_owned()
     }
+}
+
+/// A place as a row of `Places`: its id and the vardict of `PLACE_KEY_*`.
+fn place_row(row: PlaceRow) -> (String, Details) {
+    use porter_dbus::zvariant::{OwnedValue, Value};
+    let text = |text: String| OwnedValue::try_from(Value::from(text)).ok();
+    let models: Vec<(String, String)> = row
+        .models
+        .into_iter()
+        .map(|model| (model.id.to_string(), model.name))
+        .collect();
+    let ready = row.state == PlaceState::Ready;
+    let entries = [
+        (PLACE_KEY_KIND, text(row.kind.slug().to_owned())),
+        (PLACE_KEY_NAME, text(row.name)),
+        (PLACE_KEY_PROVIDER, row.provider.and_then(text)),
+        (
+            PLACE_KEY_MODELS,
+            OwnedValue::try_from(Value::new(models)).ok(),
+        ),
+        (
+            PLACE_KEY_READY,
+            OwnedValue::try_from(Value::Bool(ready)).ok(),
+        ),
+    ];
+    let details = entries
+        .into_iter()
+        .filter_map(|(key, value)| Some((key.to_owned(), value?)))
+        .collect();
+    (row.id.to_string(), details)
 }
 
 /// The slug of a refusal (`requires_cloud`, `unavailable`, ...).
@@ -343,6 +411,7 @@ where
 {
     let supervised = daemon.engines.supervised().clone();
     let probed = daemon.engines.probed().clone();
+    let hosts_cloud = daemon.engines.cloud().is_some();
     let agents = daemon.agents.clone().map(|agents| AgentsService {
         peers: Arc::clone(&daemon.peers),
         agents,
@@ -382,6 +451,20 @@ where
             let _ = Inference::<P, O, C>::engines_changed(iface.signal_emitter()).await;
         }
     });
+    // A cloud AI account appeared, went or changed state (accountd tells a joined porter daemon):
+    // a listener re-reads `Places`. Only a daemon that serves hosted models has accounts to hear.
+    if hosts_cloud {
+        let news = Arc::new(tokio::sync::Notify::new());
+        crate::account_news::spawn(connection.clone(), Arc::clone(&news));
+        let iface: zbus::object_server::InterfaceRef<Inference<P, O, C>> =
+            connection.object_server().interface(INFERENCE_PATH).await?;
+        tokio::spawn(async move {
+            loop {
+                news.notified().await;
+                let _ = Inference::<P, O, C>::engines_changed(iface.signal_emitter()).await;
+            }
+        });
+    }
     Ok(())
 }
 

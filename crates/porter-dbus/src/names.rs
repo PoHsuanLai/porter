@@ -72,6 +72,22 @@ pub const OPTION_TRACEPARENT: &str = "traceparent";
 /// invalid args.
 pub const OPTION_USAGE: &str = "usage";
 
+/// The keys of a row of `Inference1.Places` (`a(sa{sv})`: the place's id, then these). `kind`
+/// is `this_computer`, `own_computer` or `cloud_account` (`s`); `name` is the computer's name or
+/// the account's label (`s`); `provider` is the provider's display name, on a cloud account only
+/// (`s`); `models` lists the models the place can serve now, as `a(ss)` of model id and display
+/// name; `ready` says whether the place can serve now (`b`), for a program to read and never to
+/// put into a sentence a person sees.
+pub const PLACE_KEY_KIND: &str = "kind";
+/// See [`PLACE_KEY_KIND`].
+pub const PLACE_KEY_NAME: &str = "name";
+/// See [`PLACE_KEY_KIND`].
+pub const PLACE_KEY_PROVIDER: &str = "provider";
+/// See [`PLACE_KEY_KIND`].
+pub const PLACE_KEY_MODELS: &str = "models";
+/// See [`PLACE_KEY_KIND`].
+pub const PLACE_KEY_READY: &str = "ready";
+
 /// The object path of one account (`org.quire.Accounts1.Account`).
 pub fn account_path(id: &AccountId) -> String {
     format!("{ACCOUNTS_PATH}/account/{}", object_segment(id))

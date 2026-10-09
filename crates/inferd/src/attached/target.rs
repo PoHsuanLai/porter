@@ -3,6 +3,7 @@
 use super::config::{Attached, Place, Reach};
 use super::key::{KeyFile, KeyFileProblem};
 use model_http::{AuthHeader, HostName, HttpEndpoint, HttpTarget, Proxy, Timeouts, UrlPath};
+use porter_infer::ComputerName;
 use std::path::PathBuf;
 
 /// An attached engine as a connection is made to it.
@@ -14,6 +15,8 @@ pub struct Target {
     pub key: Option<KeyFile>,
     /// Where the data goes.
     pub place: Place,
+    /// The machine it runs on, when the entry names one.
+    pub computer: Option<ComputerName>,
 }
 
 impl Target {
@@ -23,6 +26,7 @@ impl Target {
             reach: attached.reach.clone(),
             key: attached.key_file.clone().map(KeyFile::at),
             place: attached.place,
+            computer: attached.computer.clone(),
         }
     }
 

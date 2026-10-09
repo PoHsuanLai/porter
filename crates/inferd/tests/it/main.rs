@@ -9,6 +9,7 @@ mod cloud;
 mod dist;
 mod hosted;
 mod hosting;
+mod places;
 mod probed;
 mod proc_root;
 mod replayed;

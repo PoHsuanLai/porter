@@ -16,6 +16,7 @@ fn model_on(reach: Reach, place: Place, scratch: &Scratch) -> LocalModel {
         reach,
         key_file: None,
         place,
+        computer: None,
     };
     let entry = parse_entry_text(&entries::attached()).expect("entry");
     local_model(&attached, &[entry], scratch.path()).expect("model")

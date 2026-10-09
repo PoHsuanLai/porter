@@ -6,6 +6,7 @@
 //! is calling. Stubs behind frozen interfaces (`speech`, `adapters`) are listed in
 //! `FINDINGS.md`.
 
+mod account_news;
 mod adapters;
 pub mod agent;
 pub mod attached;
