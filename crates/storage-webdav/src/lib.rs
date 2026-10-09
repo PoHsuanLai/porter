@@ -8,11 +8,12 @@
 //! - **Writes** carry their base as `If-Match` (an existing item) or `If-None-Match: *` (a new
 //!   one), so a stale base is a `Conflict` read back from the server and never an overwrite.
 //! - **Quota** is RFC 4331's two properties.
-//! - **The connection** is whatever [`porter_http::Http`] the replica is handed. [`StreamHttp`]
-//!   is one over authenticated byte streams: in syncd each is the descriptor of accountd's
-//!   `Tokens.OpenAuthenticated`, whose relay adds the credential, so syncd never holds one.
+//! - **The connection** is whatever [`porter_http::Http`] the replica is handed.
+//!   [`porter_http::stream::StreamHttp`] is one over authenticated byte streams: in syncd each is
+//!   the descriptor of accountd's `Tokens.OpenAuthenticated`, whose relay adds the credential, so
+//!   syncd never holds one.
 //!
-//! The crate is pure: no runtime and no socket (a [`Dial`] is the host's).
+//! The crate is pure: no runtime and no socket (a [`porter_http::stream::Dial`] is the host's).
 
 mod clock;
 mod entry;
@@ -21,10 +22,14 @@ mod path;
 mod refuse;
 mod replica;
 mod requests;
-mod stream_http;
-mod wire;
 mod write;
 
 pub use clock::Clock;
 pub use replica::{DELETED, WebDavReplica};
-pub use stream_http::{Dial, StreamHttp, StreamLimits};
+
+/// Moved to `porter_http::stream::Dial`; kept for one batch.
+pub use porter_http::stream::Dial;
+/// Moved to `porter_http::stream::StreamHttp`; kept for one batch.
+pub use porter_http::stream::StreamHttp;
+/// Moved to `porter_http::stream::StreamLimits`; kept for one batch.
+pub use porter_http::stream::StreamLimits;

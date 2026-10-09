@@ -2,8 +2,8 @@
 //! `Content-Length`, chunks or the end of the stream. Only what a WebDAV exchange needs: no
 //! redirects, no upgrade, no compression (the requests say `Accept-Encoding: identity`).
 
+use crate::{Header, HttpError, HttpRequest, HttpResponse, Method, Status};
 use porter_core::stream::ByteStream;
-use porter_http::{Header, HttpError, HttpRequest, HttpResponse, Method, Status};
 
 /// The most a response head may take.
 const MAX_HEAD: usize = 64 * 1024;

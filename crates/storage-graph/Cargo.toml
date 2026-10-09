@@ -11,7 +11,7 @@ publish.workspace = true
 [dependencies]
 base64 = { workspace = true }
 porter-core = { workspace = true }
-porter-http = { workspace = true }
+porter-http = { workspace = true, features = ["stream"] }
 porter-sync = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
