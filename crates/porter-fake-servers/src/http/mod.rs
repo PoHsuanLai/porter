@@ -277,7 +277,7 @@ async fn read_body<S: AsyncRead + Unpin>(
     Ok(body)
 }
 
-async fn read_request<S: AsyncRead + Unpin>(
+pub(crate) async fn read_request<S: AsyncRead + Unpin>(
     reader: &mut BufReader<S>,
 ) -> io::Result<Option<Request>> {
     let Some((first, headers)) = read_head(reader).await? else {
@@ -323,7 +323,7 @@ fn reason(status: u16) -> &'static str {
     }
 }
 
-async fn write_response<S: AsyncWrite + Unpin>(
+pub(crate) async fn write_response<S: AsyncWrite + Unpin>(
     stream: &mut S,
     response: &Response,
     close: bool,

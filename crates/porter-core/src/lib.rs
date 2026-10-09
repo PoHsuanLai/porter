@@ -33,6 +33,7 @@ mod space;
 mod space_record;
 pub mod store;
 pub mod stream;
+mod tailnet;
 mod token;
 mod units;
 mod weburl;
@@ -71,6 +72,7 @@ pub use space_record::{
     DesktopSpaceRecord, SPACE_LOOK_MAX_BYTES, SPACE_NAME_MAX_CHARS, SpaceChange, SpaceLook,
     SpaceName,
 };
+pub use tailnet::{Machine, MachineOwner, NodeId};
 pub use token::{Audience, IssuedToken, TokenKind};
 pub use units::{Bytes, Count, Dims, MicroUsd, Permille, Px, Tokens, UnixSeconds};
 pub use weburl::WebUrl;

@@ -2452,6 +2452,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "porter-tailscale"
+version = "0.1.0"
+dependencies = [
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "porter-core",
+ "porter-fake-servers",
+ "porter-tailscale",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "potential_utf"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"

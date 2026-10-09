@@ -19,6 +19,7 @@ members = [
   "crates/porter-discover",
   "crates/porter-dav",
   "crates/porter-families",
+  "crates/porter-tailscale",
   "crates/accountd",
   "crates/syncd",
   "crates/inferd",
@@ -56,6 +57,7 @@ porter-oauth    = { path = "crates/porter-oauth" }
 porter-discover = { path = "crates/porter-discover" }
 porter-dav      = { path = "crates/porter-dav" }
 porter-families = { path = "crates/porter-families" }
+porter-tailscale = { path = "crates/porter-tailscale" }
 storage-webdav  = { path = "crates/storage-webdav" }
 storage-graph   = { path = "crates/storage-graph" }
 storage-gdrive  = { path = "crates/storage-gdrive" }
