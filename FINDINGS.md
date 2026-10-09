@@ -1866,3 +1866,35 @@ A computer lends the models that run on it to the person's other computers over 
 **Boundary.** porter-fs reaches none of the effect crates; porter-core reaches none (unchanged). The EDGES table has a `porter-fs:` row (no deps) and the five users list it. `Cargo.lock` gains only the `porter-fs` entry and the new `porter-fs` dependency lines.
 
 **Tests.** `cargo nextest run -p porter-fs -p porter-core`: 175 of 175 pass (the moved tests keep their names under `porter-fs atomic::tests::*`). `cargo check --workspace --all-features --tests`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo fmt --all --check` and `scripts/check-boundary.sh` all pass.
+
+## Lane layers-clock (the time seam in porter-core; base `eb29bd3`, 2026-10-10)
+
+**What moved.** `porter_core::clock` (pure, std time only): the `Clock` trait (`fn now(&self) -> UnixSeconds`, `Send + Sync`, the same method as every copy), `SystemClock` (a unit struct, `Debug, Clone, Copy, Default`), `FixedClock(pub UnixSeconds)` with `new` and `set(&mut self, _)`, and `impl Clock for Arc<T>` (the blanket syncd had; it can only live in porter-core, since `Arc` is foreign to every other crate). `check-boundary.sh` checks `porter-core/src/clock.rs` for std fs, io, env, process and net names, like `identity.rs`.
+
+| Old copy | Now | Old path |
+| --- | --- | --- |
+| `porter_service::Clock` (`porter-service/src/clock.rs`) | `pub use porter_core::clock::Clock` | kept: `porter_service::Clock` |
+| syncd `clock.rs` (`Clock`, `SystemClock`, the `Arc` blanket) | `pub use` of `Clock, SystemClock`; the `Arc` impl is gone from syncd (core has it) | kept: `syncd::clock::{Clock, SystemClock}` |
+| syncd `ManualClock` | stays in syncd (see below) | kept |
+| inferd `clock.rs` (`Clock`, `SystemClock`, `FixedClock`) | `pub use` of all three | kept: `inferd::clock::*` |
+| porter-fake `FixedClock` | `pub use porter_core::clock::FixedClock` | kept: `porter_fake::FixedClock` |
+| accountd `clock.rs` (`pub(crate) SystemClock`) | `pub(crate) use porter_core::clock::SystemClock` | kept (crate-private) |
+| accountd `launchers.rs` (private `SystemClock`, the `LoginTiming` fallback) | `use porter_core::clock::SystemClock`; the struct is deleted | not a public path |
+| storage_webdav `Clock` (a struct: `Clock::fixed`, `Clock::system`, `now`, Debug) | thin adapter: `Clock(Arc<dyn porter_core::clock::Clock>)` with the same three functions | kept: `storage_webdav::Clock` (and the `storage_graph` and `storage_gdrive` re-exports) |
+
+Every old `Clock` and `FixedClock` path still compiles with the same behaviour. The one difference is `SystemClock` reading the time in one place (`porter-core`) instead of five (syncd, inferd, accountd's two and storage_webdav's `system()`), with identical arithmetic: `i64::try_from(secs).unwrap_or(i64::MAX)`, and 0 before the epoch.
+
+**What stayed, and why.**
+- syncd `ManualClock`: a test shares it through an `Arc` and sets it with `&self` (an `AtomicI64`). `porter_core::clock::FixedClock` is `pub UnixSeconds` (tuple syntax `FixedClock(NOW)` is used by about 50 test sites) and sets with `&mut self`, so it cannot be shared and mutated the same way without changing those tests' behaviour. Left in place; it still implements the core trait.
+- storage_webdav's `Clock` keeps its struct shape (a value the replicas hold and clone, with `fixed` and `system` constructors). Making it the core trait would change every `Clock::fixed(...)` call; the adapter avoids that.
+- The trait stays a plain `fn now(&self)`, dyn-compatible, because accountd holds `Arc<dyn Clock>` (`LoginTiming::clock`). CONVENTIONS 2's "never dyn" rule covers async seams, and this one is synchronous.
+- Nothing else changed: no test except its imports (none needed, the paths are kept), no Cargo.toml, no new dependency edge (every crate that re-exports already depends on porter-core).
+
+**Docs.** porter-core's lib doc names `clock` and says `SystemClock` reads the wall clock only when a daemon calls it. ARCHITECTURE section 1's porter-core row lists the clock module; "one home per concept" now says the system clock is `porter-core::clock::SystemClock`, called only by the daemons. CONVENTIONS 4 ("only accountd, syncd and inferd read the system clock") still holds.
+
+**Consumer grep** (`git grep`, origin/master for docket, almanac, cua, mailo, sill, detent and casement; origin/main for anyview; these are the refs as last fetched locally, not re-fetched). Pattern: `porter_service::Clock`, `porter_service::{... Clock ...}`, `porter_fake::{FixedClock}`, `porter_fake::FixedClock`, `storage_webdav::Clock`, `inferd::clock`, `syncd::clock`, `porter_fake::clock`, `porter_service::clock`.
+- Zero hits in docket, almanac, cua, sill, detent, casement and anyview.
+- mailo: one hit, `crates/mail-app/src/ui/add_account/host.rs:19`, `use porter_service::{AccountService, Clock, ...}`, which still resolves. Its own `SystemClock` (host.rs:148-150, `pub(super) struct SystemClock` implementing `porter_service::Clock`) is the duplicate that can become `porter_core::clock::SystemClock` in a later batch. mailo's two `porter_fake`/`porter_service` files (host.rs, provider.rs) import no fake clock.
+- Other repos' own `FixedClock`/`SystemClock` types (docket-fake, almanac-fake, cua-fake, memoryd, cuad, sill-services) are their own traits (`docket_router::Clock`, `almanac`'s `Clock`, `cua`'s `Clock`, sill's `WallClock`), not porter's, and are untouched.
+
+**Verification.** `cargo check --workspace --all-features --tests` passes; `cargo nextest run -p porter-core -p porter-service -p porter-fake -p storage-webdav`: 312 of 312 pass; `cargo clippy --workspace --all-targets --all-features -- -D warnings` is clean; `cargo fmt --all --check` is clean; `scripts/check-boundary.sh` holds (porter-core and porter-core/src/clock.rs reach no std effects); `cargo metadata --locked` succeeds and Cargo.lock is unchanged.
