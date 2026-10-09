@@ -273,10 +273,8 @@ mod tests {
     use std::io::Write;
 
     fn scratch_file(name: &str, text: &str) -> PathBuf {
-        let path = std::env::temp_dir().join(format!(
-            "porter-client-key-{name}-{}",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("porter-client-key-{name}-{}", std::process::id()));
         let mut file = std::fs::File::create(&path).expect("create");
         file.write_all(text.as_bytes()).expect("write");
         path
@@ -348,12 +346,12 @@ mod tests {
             Err(ChildKeyError::Unreadable(io::ErrorKind::InvalidData))
         ));
         std::fs::write(&path, "k".repeat(KEY_LIMIT)).expect("write");
-        assert_eq!(credential.read_key().expect("read").expose().len(), KEY_LIMIT);
+        assert_eq!(
+            credential.read_key().expect("read").expose().len(),
+            KEY_LIMIT
+        );
         std::fs::write(&path, [0xff, 0xfe]).expect("write");
-        assert!(matches!(
-            credential.read_key(),
-            Err(ChildKeyError::NotText)
-        ));
+        assert!(matches!(credential.read_key(), Err(ChildKeyError::NotText)));
         let _ = std::fs::remove_file(path);
     }
 }
