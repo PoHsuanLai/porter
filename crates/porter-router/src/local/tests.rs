@@ -1,6 +1,6 @@
 use super::*;
 use crate::catalog::parse_entry_text;
-use crate::entries;
+use crate::testkit::entries;
 use crate::testkit::{Scratch, models};
 use porter_core::capability::LlmFeature;
 

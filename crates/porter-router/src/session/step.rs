@@ -4,7 +4,7 @@ use super::{
     AudioCursor, CuaProgress, EngineNow, HeardAudio, MAX_HEARD_MS, Phase, RoutedNote, Routing,
     SessionIn, SessionOut, SessionSpec, fits, model_of,
 };
-use crate::speech::{audio_ms, check_audio};
+use crate::audio::{audio_ms, check_audio};
 use porter_core::Need;
 use porter_infer::{
     AudioRate, ClientFrame, Declined, InferEvent, InferRefusal, InferReply, InferRequest,
@@ -208,7 +208,7 @@ fn admits(spec: &SessionSpec, cua: CuaProgress, request: &InferRequest) -> bool 
     };
     let kind = request.kind();
     let cua_session = matches!(kind, RequestKind::CuaBegin | RequestKind::CuaStep);
-    let cua_ok = !cua_session || crate::cua_run::check_class(spec.class).is_ok();
+    let cua_ok = !cua_session || crate::router::check_class(spec.class).is_ok();
     let begun = kind != RequestKind::CuaStep || cua == CuaProgress::Begun;
     cua_ok && begun && carried.is_none_or(|class| class == spec.class) && fits(&spec.need, kind)
 }

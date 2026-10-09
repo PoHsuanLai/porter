@@ -1,8 +1,8 @@
 use super::*;
 use crate::attached::config::{Place, Reach};
 use crate::catalog::{CatalogDirs, local_claims, parse_entry_text, read_catalog};
-use crate::entries;
 use crate::testkit::Scratch;
+use crate::testkit::entries;
 use model_openai_compat::Flavor;
 use porter_core::{Locality, ModelId, Subject};
 

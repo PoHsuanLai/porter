@@ -9,8 +9,8 @@ use model_provider::{
 };
 use porter_core::capability::CuaEnv;
 use porter_infer::{
-    AttachIndex, FrameImage, FrameLayout, InferEvent, MaskedRegions, MediaKind, StepIndex,
-    TreeText, WindowGeometry,
+    AttachIndex, FrameImage, FrameLayout, InferEvent, InferRefusal, MaskedRegions, MediaKind,
+    StepIndex, TreeText, WindowGeometry,
 };
 use std::io::Write;
 use std::os::fd::OwnedFd;

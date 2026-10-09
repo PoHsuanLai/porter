@@ -8,11 +8,13 @@ use crate::cua_step::{self, Failed};
 use crate::local::LocalModel;
 use cua_session::CuaSession;
 use model_provider::{Flow as ProviderFlow, Provider};
-use porter_core::DataClass;
 use porter_infer::{
-    ChatSink, CuaBegin, CuaStepFailure, CuaStepReply, CuaStepRequest, Flow, InferRefusal,
-    ModelError,
+    ChatSink, CuaBegin, CuaStepFailure, CuaStepReply, CuaStepRequest, Flow, ModelError,
 };
+
+/// Only `Screen` data may enter a computer-use session; the rule moved to
+/// `porter_router::router`, which the route and the session machine apply too.
+pub use porter_router::router::check_class;
 
 /// One run's state on one session: its goal, and the stoker session once the first step has
 /// chosen the model's profile (the model is the session's pin, known to the step and not to the
@@ -47,14 +49,6 @@ pub struct StepJob<'a, P> {
     pub frames: &'a Frames,
     /// The step.
     pub request: &'a CuaStepRequest,
-}
-
-/// Only `Screen` data may enter a computer-use session: the frames are the screen.
-pub fn check_class(class: DataClass) -> Result<(), InferRefusal> {
-    match class {
-        DataClass::Screen => Ok(()),
-        _ => Err(InferRefusal::Unsupported),
-    }
 }
 
 /// The provider's flow control for the session's.

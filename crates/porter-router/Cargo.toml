@@ -1,0 +1,36 @@
+[package]
+name = "porter-router"
+description = "Who answers an inference session and what runs on this computer: the router over a list of models, what loading a model would cost, the catalogue and the local model book, the attached engines the person runs, the session machine and the seams a session server leans on. A library: no bus, no runtime, no daemon."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[features]
+# The helpers inferd's tests and this crate's own share (`testkit`): a scratch directory, the test
+# catalog entries and the local models they make. For dev-dependencies only.
+testing = []
+
+[dependencies]
+porter-core = { workspace = true }
+porter-infer = { workspace = true }
+cua-action = { workspace = true }
+engine-supervisor = { workspace = true }
+model-catalog = { workspace = true }
+# The types of an engine's address and token only: no `hyper`, no `tls`, so no runtime.
+model-http = { workspace = true }
+model-openai-compat = { workspace = true }
+model-provider = { workspace = true }
+speech-provider = { workspace = true }
+vision-prep = { workspace = true }
+rustix = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+toml = { workspace = true }
+
+[lints]
+workspace = true

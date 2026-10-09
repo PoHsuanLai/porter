@@ -15,6 +15,9 @@
 //! [`model`] (the [`crate::local::LocalModel`] the catalogue's entry makes) and [`book`] (the
 //! engines and what the last look found, looked at when a session opens and at no other time).
 //!
+//! The values (`config`, `key`, `model`, `target`, `NotReady`) moved to `porter_router::attached`
+//! and stay importable from here; the connection (`check`, `book`, `computers`) is inferd's.
+//!
 //! Routing is the catalogue's: its codec and tool and reasoning parser go through the same bridge
 //! as an engine inferd starts, and no accountd grant is asked and no spend is counted. Where the
 //! data goes is the person's word (`where`): `this-device` is on this computer, `my-network` is
@@ -25,30 +28,25 @@
 pub mod book;
 pub mod check;
 pub mod computers;
-pub mod config;
-pub mod key;
-pub mod model;
-pub mod target;
+#[cfg(test)]
+mod config_file_tests;
+
+/// The table and its checks, moved to `porter_router::attached::config`.
+pub use porter_router::attached::config;
+/// The token's file, moved to `porter_router::attached::key`.
+pub use porter_router::attached::key;
+/// The catalogue's model of an attached engine, moved to `porter_router::attached::model`.
+pub use porter_router::attached::model;
+/// How a connect is made, moved to `porter_router::attached::target`.
+pub use porter_router::attached::target;
 
 pub use book::AttachedBook;
-pub use check::{NotReady, probe};
+pub use check::probe;
 pub use computers::{
     AddedComputer, AddedFile, AddedModel, AddedProblem, ComputerError, Computers, NewComputer,
     NewModel, NewReach, NewTailnetComputer, relay_socket,
 };
-pub use config::{Attached, AttachedEntry, AttachedError, Place, Reach};
-pub use key::{KeyFile, KeyFileProblem};
-pub use model::{engine_id, local_model};
-pub use target::Target;
-
-/// The models of the attached engines `attached` names, over the catalogue's `entries`.
-pub fn models(
-    attached: &[Attached],
-    entries: &[model_catalog::ModelEntry],
-    sockets: &std::path::Path,
-) -> Result<Vec<crate::local::LocalModel>, AttachedError> {
-    attached
-        .iter()
-        .map(|one| local_model(one, entries, sockets))
-        .collect()
-}
+pub use porter_router::attached::{
+    Attached, AttachedEntry, AttachedError, KeyFile, KeyFileProblem, NotReady, Place, Reach,
+    Target, engine_id, local_model, models,
+};

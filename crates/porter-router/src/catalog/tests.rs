@@ -1,6 +1,6 @@
 use super::*;
-use crate::entries;
 use crate::testkit::Scratch;
+use crate::testkit::entries;
 use porter_core::capability::{CuaBatching, Offered};
 use std::path::PathBuf;
 

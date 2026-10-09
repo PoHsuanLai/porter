@@ -8,7 +8,6 @@
 
 use crate::attached::{Attached, AttachedEntry, AttachedError, Target};
 use crate::catalog::claims_of;
-use crate::replay::NamedEngine;
 use engine_supervisor::{
     EnginePaths, EngineSpec, EnvPair, ProgramPath, SocketPath, UnitSpec, command,
 };
@@ -24,6 +23,19 @@ use std::path::{Path, PathBuf};
 
 /// The account every local model is served under.
 pub const LOCAL_ACCOUNT: &str = "local";
+
+/// What `[engines.<name>]` says of a replay engine (an engine that plays a cassette instead of
+/// running a program: inferd's `replay` module reads it).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NamedEngine {
+    /// The cassette's file.
+    pub replay: PathBuf,
+    /// A file that gets every request body this engine receives, one JSON line each. This
+    /// writes prompts to disk; it exists for acceptance runs and is accepted only here, on a
+    /// replay engine (a table with `record` and no `replay` does not parse).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub record: Option<PathBuf>,
+}
 
 /// Where the engine programs and the weights are (settings `ai.engine.*`): a kind with no
 /// program is not offered. The weights cache is the Hugging Face hub directory.

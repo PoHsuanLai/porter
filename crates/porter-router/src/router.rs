@@ -11,9 +11,9 @@
 
 pub mod placed;
 
-use crate::cua_run::check_class;
+use porter_core::capability::LlmFeature;
 use porter_core::consent::{GrantScope, Verdict};
-use porter_core::{DataClass, GrantId, Locality, Need, Tier};
+use porter_core::{Capability, DataClass, GrantId, Locality, Need, Tier};
 use porter_core::{Match, matches};
 use porter_core::{Offer as CoreOffer, capability::SpeechMode};
 use porter_infer::{
@@ -88,6 +88,52 @@ pub fn slot_of_need(need: &Need) -> Option<Slot> {
     }
 }
 
+/// The slots a model serves, from its capabilities: a language model is in `text`, and in
+/// `image_in` when it takes images and `voice_in` when it takes audio; a computer-use model reads
+/// images too.
+pub fn slots_of(card: &ModelCard) -> Vec<Slot> {
+    let mut slots: Vec<Slot> = card
+        .capabilities
+        .iter()
+        .flat_map(|capability| match capability {
+            Capability::Llm(llm) => {
+                let extra = [
+                    (LlmFeature::Vision, Slot::ImageIn),
+                    (LlmFeature::AudioIn, Slot::VoiceIn),
+                ]
+                .into_iter()
+                .filter(|(feature, _)| llm.features.contains(feature))
+                .map(|(_, slot)| slot);
+                std::iter::once(Slot::Text).chain(extra).collect()
+            }
+            Capability::ComputerUse(_) => vec![Slot::ComputerUse, Slot::ImageIn],
+            Capability::Embeddings(_) => vec![Slot::Embeddings],
+            Capability::ImageGen(_) => vec![Slot::ImageGen],
+            Capability::Rerank(_) => vec![Slot::Rerank],
+            Capability::Speech(speech) => [
+                (SpeechMode::Stt, Slot::VoiceIn),
+                (SpeechMode::Tts, Slot::VoiceOut),
+            ]
+            .into_iter()
+            .filter(|(mode, _)| speech.modes.contains(mode))
+            .map(|(_, slot)| slot)
+            .collect(),
+            _ => Vec::new(),
+        })
+        .collect();
+    slots.sort();
+    slots.dedup();
+    slots
+}
+
+/// Only `Screen` data may enter a computer-use session: the frames are the screen.
+pub fn check_class(class: DataClass) -> Result<(), InferRefusal> {
+    match class {
+        DataClass::Screen => Ok(()),
+        _ => Err(InferRefusal::Unsupported),
+    }
+}
+
 /// The grant the on-device models carry: one name for all of them.
 fn local_grant() -> Option<GrantId> {
     GrantId::parse("on-this-computer").ok()
@@ -105,7 +151,8 @@ pub(crate) fn consent_of(card: &ModelCard) -> Verdict {
     }
 }
 
-pub(crate) fn fits(need: &Need, card: &ModelCard) -> bool {
+/// Whether any capability of `card` meets `need`.
+pub fn fits(need: &Need, card: &ModelCard) -> bool {
     card.capabilities
         .iter()
         .any(|capability| matches(need, &CoreOffer::Present(capability.clone())) == Match::Fits)

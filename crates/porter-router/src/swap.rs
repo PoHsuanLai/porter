@@ -27,6 +27,19 @@ pub struct Budget {
     pub probe_every: Duration,
 }
 
+impl Budget {
+    /// The budget at supervisor time `now`: `gpu` as last observed, `headroom` kept free beside
+    /// an engine, and an engine used within `probe_every` counting as in a turn.
+    pub fn new(gpu: Option<GpuMemory>, headroom: MiB, now: MonoMs, probe_every: Duration) -> Self {
+        Self {
+            gpu,
+            headroom,
+            now,
+            probe_every,
+        }
+    }
+}
+
 /// The engines of `states` that are ready, with the memory `spec_of` says each holds.
 pub fn running_of<'a>(
     states: impl IntoIterator<Item = (&'a EngineId, &'a EngineState)>,

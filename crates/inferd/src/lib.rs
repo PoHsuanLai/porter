@@ -1,10 +1,15 @@
 //! inferd's parts, as a library so the daemon's modules are tested without a bus: the adapters,
-//! the bridge to stoker's provider types, the session machine, the fd session server (`serve`)
-//! and the real seams it is hosted over: the router (`router`, `engines`), the engine host
-//! (`engines`, `supervise`, `hosts`, `local`, `catalog`), the model turns (`runner`, `cua_run` over `cua_step`)
-//! and the audit trail (`audit`); `service` is the `Inference1` object on the bus and `peers` who
-//! is calling. Stubs behind frozen interfaces (`speech`, `adapters`) are listed in
-//! `FINDINGS.md`.
+//! the bridge to stoker's provider types, the fd session server (`serve`) and the real seams it
+//! is hosted over: the router (`engines`), the engine host (`engines`, `supervise`, `hosts`), the
+//! model turns (`runner`, `cua_run` over `cua_step`) and the audit trail (`audit`); `service` is
+//! the `Inference1` object on the bus and `peers` who is calling. Stubs behind frozen interfaces
+//! (`speech`, `adapters`) are listed in `FINDINGS.md`.
+//!
+//! The logic of routing and the session machine is not here: it is the library `porter-router`
+//! (the router, the plan, the catalogue, the local model book, the attached engines as values, the
+//! session machine and the seams). `router`, `swap`, `catalog`, `local`, `session` and `startup`
+//! below are those modules, re-exported at their old paths; inferd keeps the bus objects, the
+//! process hosts, the settings wiring and the start-up.
 //!
 //! The daemon as one call is `daemon`: [`Config`] (typed; [`Config::from_env`] is the one place
 //! the environment is read), [`Daemon::build`] and [`Daemon::run`]. The binary only parses its
@@ -17,7 +22,6 @@ pub mod attached;
 pub mod audit;
 pub mod auto;
 pub mod bridge;
-pub mod catalog;
 pub mod clock;
 pub mod cloud;
 pub mod config;
@@ -26,25 +30,20 @@ pub mod cua_step;
 pub mod daemon;
 pub mod engines;
 pub mod hosts;
-pub mod local;
 pub mod peers;
 pub mod pipeline;
 pub mod probe;
 pub mod probed;
 pub mod replay;
 pub mod report;
-pub mod router;
 pub mod runner;
 pub mod serve;
 pub mod service;
-pub mod session;
 pub mod settings;
 pub mod shutdown;
 pub mod speech;
-pub mod startup;
 pub mod structured;
 pub mod supervise;
-pub mod swap;
 pub mod tailnet;
 pub mod tee;
 pub mod watch;
@@ -52,10 +51,22 @@ pub mod watch;
 pub use adapters::AdapterModel;
 pub use daemon::{Config, Daemon, StartError, StopError};
 
+/// The catalogue, moved to `porter_router::catalog`.
+pub use porter_router::catalog;
+/// The local model book, moved to `porter_router::local`.
+pub use porter_router::local;
+/// The router, moved to `porter_router::router`.
+pub use porter_router::router;
+/// The session machine, moved to `porter_router::session`.
+pub use porter_router::session;
+/// Why an engine did not start, moved to `porter_router::startup`.
+pub use porter_router::startup;
+/// What loading a model would take, moved to `porter_router::swap`.
+pub use porter_router::swap;
+
 /// The catalog entries the hosted tests use, shared with the unit tests.
 #[cfg(test)]
-#[path = "../tests/it/hosting/entries.rs"]
-mod entries;
+use porter_router::testkit::entries;
 
 /// The lab engine (an OpenAI-compatible server on a socket) the attached-engine tests share.
 #[cfg(test)]

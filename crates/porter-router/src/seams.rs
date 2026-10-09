@@ -2,7 +2,7 @@
 //! engines behind it, the model turn itself and the audit trail. Async seams return
 //! `impl Future + Send`, as everywhere in porter; none needs `dyn`.
 
-use super::carried::Carried;
+use crate::carried::Carried;
 use crate::session::{HeardAudio, RouteDecision, Routing, SessionSpec};
 use porter_infer::{
     AudioFrame, ChatRequest, InferEvent, InferRefusal, InferReply, InferRequest, ModelRef,
@@ -44,6 +44,11 @@ pub struct EngineFailed {
 }
 
 impl EngineFailed {
+    /// A failure with this cause.
+    pub fn new(cause: crate::startup::Cause) -> Self {
+        Self { cause }
+    }
+
     /// A failure nothing more is known about.
     pub fn unknown() -> Self {
         Self {
@@ -137,4 +142,16 @@ pub struct Seams<R, E, T, A> {
     pub runner: T,
     /// The audit trail.
     pub audit: A,
+}
+
+impl<R, E, T, A> Seams<R, E, T, A> {
+    /// The seams of one session server.
+    pub fn new(router: R, engines: E, runner: T, audit: A) -> Self {
+        Self {
+            router,
+            engines,
+            runner,
+            audit,
+        }
+    }
 }

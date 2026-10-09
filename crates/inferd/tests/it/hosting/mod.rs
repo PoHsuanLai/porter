@@ -10,7 +10,7 @@ pub mod agent;
 pub mod bus;
 pub mod cloud;
 pub mod engine;
-pub mod entries;
+pub use porter_router::testkit::entries;
 pub mod lab;
 pub mod rig;
 pub mod speech_host;

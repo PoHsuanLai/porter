@@ -3,7 +3,7 @@
 //! never the frame, the audio or its text), so the loop keeps a [`Tally`] of the turn in flight
 //! and hands the sink a [`Carried`] when the turn ends, however it ends.
 
-use crate::speech::audio_ms;
+use crate::audio::audio_ms;
 use porter_core::Count;
 use porter_infer::{AudioFrame, AudioRate, InferReply, InferRequest, MessagePart, ToolResultPart};
 
@@ -22,7 +22,7 @@ const V1_RATE: AudioRate = AudioRate(16_000);
 
 /// The running count of the turn in flight.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct Tally {
+pub struct Tally {
     images: u32,
     rate: AudioRate,
     samples: u64,
@@ -55,7 +55,7 @@ impl Tally {
     }
 
     /// The tally of a turn that starts with `request`.
-    pub(super) fn begin(request: &InferRequest) -> Self {
+    pub fn begin(request: &InferRequest) -> Self {
         let (images, rate) = match request {
             InferRequest::Chat(chat) => (
                 chat.messages.iter().map(|m| images_in(&m.parts)).sum(),
@@ -76,14 +76,14 @@ impl Tally {
     }
 
     /// An accepted audio frame went to the engine.
-    pub(super) fn heard(&mut self, frame: &AudioFrame) {
+    pub fn heard(&mut self, frame: &AudioFrame) {
         let samples = (frame.pcm.0.len() / 2) as u64;
         self.samples = self.samples.saturating_add(samples);
     }
 
     /// What the turn carried, given how it ended: the audio the reply says it produced adds to
     /// the audio that was sent.
-    pub(super) fn closing(&self, reply: &InferReply) -> Carried {
+    pub fn closing(&self, reply: &InferReply) -> Carried {
         let produced = match reply {
             InferReply::Spoke(spoke) => spoke.audio_ms,
             _ => 0,
