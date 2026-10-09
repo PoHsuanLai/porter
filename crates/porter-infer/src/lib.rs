@@ -15,6 +15,7 @@ mod model;
 mod open;
 mod pick;
 mod pipeline;
+mod place;
 mod policy;
 mod readiness;
 mod reply;
@@ -56,6 +57,7 @@ pub use pipeline::{
     Answer, CatalogueModel, ClassSet, DescribeImages, Modality, Pipeline, PlanRules, ProviderId,
     Refusal, RequestShape, SlotPicks, Stage, StageRole, default_choice, picks_for, plan_pipeline,
 };
+pub use place::{ComputerName, PlaceId, PlaceKind, PlaceTarget};
 pub use policy::{ClassFloor, Floor, LocalOnly, Policy};
 pub use readiness::Readiness;
 pub use reply::{
