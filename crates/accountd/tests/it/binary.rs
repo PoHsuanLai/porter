@@ -58,6 +58,11 @@ fn spawn_over(
         .env("XDG_DATA_HOME", home.join("data"))
         .env("XDG_RUNTIME_DIR", bus.scratch())
         .env("DBUS_SESSION_BUS_ADDRESS", bus.address())
+        // Never the real Tailscale: a socket in the scratch directory that nobody serves.
+        .env(
+            accountd::paths::TAILSCALE_SOCKET_VAR,
+            home.join("no-tailscale.sock"),
+        )
         .args(args)
         .stdout(Stdio::null())
         .stderr(std::fs::File::create(&stderr).expect("stderr file"));
@@ -277,6 +282,10 @@ fn add(bus: &PrivateBus, home: &Path, args: &[&str]) -> (bool, String, String) {
         .env("XDG_DATA_HOME", home.join("data"))
         .env("XDG_RUNTIME_DIR", bus.scratch())
         .env("DBUS_SESSION_BUS_ADDRESS", bus.address())
+        .env(
+            accountd::paths::TAILSCALE_SOCKET_VAR,
+            home.join("no-tailscale.sock"),
+        )
         .arg("--providers")
         .arg(providers)
         .arg("add")

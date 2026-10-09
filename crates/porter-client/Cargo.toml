@@ -38,6 +38,7 @@ porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }
 porter-families = { workspace = true, features = ["generic"] }
 porter-http = { workspace = true, features = ["hyper"] }
+porter-tailscale = { workspace = true, features = ["io"] }
 tokio = { workspace = true }
 zbus = { workspace = true }
 

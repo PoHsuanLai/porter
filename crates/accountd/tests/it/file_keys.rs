@@ -45,7 +45,12 @@ fn accountd(bus: &PrivateBus, home: &Path, keys: Option<&str>) -> Command {
         .env("XDG_CONFIG_HOME", home.join("config"))
         .env("XDG_DATA_HOME", home.join("data"))
         .env("XDG_RUNTIME_DIR", bus.scratch())
-        .env("DBUS_SESSION_BUS_ADDRESS", bus.address());
+        .env("DBUS_SESSION_BUS_ADDRESS", bus.address())
+        // Never the real Tailscale: a socket in the scratch directory that nobody serves.
+        .env(
+            accountd::paths::TAILSCALE_SOCKET_VAR,
+            home.join("no-tailscale.sock"),
+        );
     if let Some(keys) = keys {
         command.env("ACCOUNTD_KEYS", keys);
     }

@@ -25,3 +25,4 @@ mod shell;
 mod signals;
 mod spaces;
 mod start;
+mod tailnet;
