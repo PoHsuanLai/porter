@@ -2076,3 +2076,26 @@ The test count is +1 net because the cuts (-8) and merges (-17) are matched by t
 - detent: passes with `--offline`, not `--locked`: its `Cargo.lock` still lists `porter-provider`, `porter-secrets` and `porter-service` under porter-client, and loses them (the `in-process` feature, lane layers-client-feature, not this one); detent's owner re-locks. client, core, dbus, infer, provider, prov from the worktree.
 
 **Open.** None for this lane. `GuestChanges` is a D-Bus stream; a socket carrier has no guests, so its `watch_guests` stays `Unsupported` until inferd has a socket.
+
+## Lane layers-http-stream (the HTTP/1.1 stream client and framing, into porter-http; base `80ad4a1`, 2026-10-10)
+
+**What moved.** From storage-webdav to `porter_http::stream` (feature `stream`): `StreamHttp`, `Dial`, `StreamLimits` (`stream/client.rs`, from `stream_http.rs`) and the HTTP/1.1 framing (`stream/wire.rs`, from `wire.rs`, with its tests), with the module doc in `stream.rs`. Code is byte for byte the same apart from its imports. `DELETED` stays in storage-webdav: it is the version a removed WebDAV item has (`"deleted"`), replica vocabulary, so it is not HTTP-generic. The `Clock` stays too.
+
+**Why the feature is `stream` and not `hyper`.** The framing reads porter-core's `ByteStream`, which has no runtime, so the module needs no dependency at all: `stream = []`. Putting it behind `hyper` would have pulled tokio into the stream client for no reason. check-boundary has a rule for it (porter-http with `--no-default-features --features stream` reaches none of the effect crates), and ARCHITECTURE section 1 says so.
+
+**Old paths and re-exports.** storage-webdav re-exports `Dial`, `StreamHttp` and `StreamLimits` from `porter_http::stream`, each with a `#[doc]` line, for one batch. storage-graph and storage-gdrive re-export the same three from `porter_http::stream` (so `storage_graph::StreamHttp` still resolves) and keep `Clock` and `DELETED` from storage-webdav. Only those three crates enable `porter-http/stream`.
+
+**syncd.** Unchanged, since every import goes through an old path. `datasets/pim/source/google/calendar.rs` imports only `Clock` and `DELETED`, which do not move, so it has no edit. The import rewrite (ten files: `datasets/pim/relay.rs`, `webdav.rs`, `graph.rs`, `gdrive.rs`, `datasets/photos/google/wiring.rs`, `datasets/pim/source/google/mod.rs`, `datasets/pim/source/graph/mod.rs`, `datasets/pim/source/dav.rs`, `datasets/photos/tests/rig.rs`, `tests/it/stalled.rs`) is for a later batch, once the old paths go.
+
+**The other HTTP/1.1 framers** (named and read, none changed):
+- inferd `agent/http.rs`: the server side (reads one request, with `Content-Length` or chunks and `Expect: 100-continue`, over tokio's `AsyncRead`/`AsyncWrite`; writes JSON or a chunked event stream). It duplicates `find`, `fill`, `parse_head` and `read_chunked` from `wire.rs`. A request-side framer in porter-http would let it share them. Later.
+- porter-proxy `http1.rs`, `http1/head.rs`, `http1/chunked.rs`: the relay. It rewrites request heads and passes bodies through unchanged, so it needs where a chunked body ends (`ChunkParser`), not a response reader. Keep it; share the chunk-end rule only if a second caller appears.
+- porter-fake-servers `http/mod.rs` and `http/client.rs`: the fakes' server, and a test client whose `exchange` writes its own head and reads a response. The client is the one that could become a `StreamHttp` over a tokio stream adapter. Test-only, later.
+- porter-rig `client.rs`: `talk` (writes one request to a descriptor and reads until `complete`). A client reader over a descriptor, so a `Dial` over `OwnedFd` could serve it. Later, and it needs a `ByteStream` for a descriptor first.
+- inferd `replay/engine.rs` and `replay/render.rs`: the replay server on a Unix socket (reads one request with `Content-Length`, writes responses). Server side, test tooling; no fit.
+- porter-oauth `loopback_io.rs`: reads one loopback `GET` head and answers a short page with `Connection: close`. Not a body framer; no fit.
+- Writers of fixed canned answers, not framers, so no fit: porter-tailnet `relay.rs` (a 503) and `lend.rs`, inferd `attached/check` tests, and porter-fake-servers `tailscale.rs` (chunked fixture bytes). porter-tailscale `client.rs` uses hyper.
+
+**Tests.** The nine unit tests that moved keep their names under `stream::client::tests::*` and `stream::wire::tests::*`. Nothing was added, and the storage-webdav, storage-graph and storage-gdrive integration tests are unchanged apart from the imports they already had.
+
+**Found on the way.** The sibling checkouts that sill, detent and casement path-depend on (quire, blitz-kit, shell-host, casement-protocols) were not at their origin/master, so their check worktrees link origin/master copies of quire, blitz-kit and shell-host instead. Resolving sill's graph with the sibling checkouts changes its origin/master `Cargo.lock` (the blitz rev, the `ds-desktop` package), and `--locked` refuses that, so the check uses `--offline`. Whether the base has the same drift was not checked. sill also takes porter-client, porter-provider, porter-secrets and porter-service from git through shell-host, so its check patches those four, as it already did the other porter crates.
