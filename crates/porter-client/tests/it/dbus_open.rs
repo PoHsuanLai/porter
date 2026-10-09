@@ -12,13 +12,14 @@ use porter_client::{
 };
 use porter_core::consent::Usage;
 use porter_core::need::{DimsNeed, EmbedNeed, LlmNeed};
-use porter_core::{AccountId, DataClass, Dims, ModelId, Need, Tier, Tokens};
+use porter_core::{AccountId, DataClass, Dims, ModelId, Need, Permille, Tier, Tokens};
 use porter_fake::{Script, ScriptStep};
 use porter_infer::{
     AttachIndex, ChatControl, ChatMessage, ChatReply, ChatRequest, ClientFrame, EmbedReply,
     EmbedRequest, EmbedRole, EmbedVector, ImagePart, ImageSource, InferEvent, InferRefusal,
-    InferReply, InferRequest, Knob, MessagePart, OpenOptions, Reasoning, ReplyShape, RequestKind,
-    Role, ServedBy, StopReason, TokenUsage, ToolChoice, ToolParallelism, Traceparent,
+    InferReply, InferRequest, Knob, MessagePart, OpenOptions, OptionScore, OptionScores, Reasoning,
+    ReplyShape, RequestKind, Role, ScoreOptions, ServedBy, StopReason, TokenUsage, ToolChoice,
+    ToolParallelism, Traceparent,
 };
 use std::os::fd::OwnedFd;
 use std::sync::{Arc, Mutex};
@@ -165,6 +166,53 @@ async fn open_carries_the_need_class_and_tier_and_a_chat_turn_streams() {
     assert_eq!((&seen.opens[0].class, &seen.opens[0].tier), (&class, &tier));
     assert_eq!(seen.opens[0].traceparent, None);
     assert_eq!(seen.frames, vec![ClientFrame::Request(chat())]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_choice_that_asks_for_scores_crosses_the_bus_and_its_scores_come_back_typed() {
+    let options = ["allow", "deny"];
+    let mut request = chat();
+    if let InferRequest::Chat(chat) = &mut request {
+        chat.shape = ReplyShape::Choice(options.iter().map(|one| (*one).to_owned()).collect());
+        chat.control.scores = Knob::Set(ScoreOptions::default());
+    }
+    let scores = OptionScores::new(vec![
+        OptionScore {
+            option: "allow".into(),
+            share: Permille(778),
+        },
+        OptionScore {
+            option: "deny".into(),
+            share: Permille(222),
+        },
+    ])
+    .expect("a whole");
+    let reply = InferReply::Chat(ChatReply {
+        scores: Some(scores.clone()),
+        ..match chat_reply("allow") {
+            InferReply::Chat(reply) => reply,
+            other => panic!("a chat reply, got {other:?}"),
+        }
+    });
+    let rig = rig(Behaviour::Scripted(vec![Script {
+        kind: RequestKind::Chat,
+        steps: vec![ScriptStep::Emit(InferEvent::Finished(reply))],
+    }]))
+    .await;
+    let got = rig
+        .accounts
+        .infer(&llm(), DataClass::Public, Tier::Fast, request.clone())
+        .await;
+    let Ok(InferReply::Chat(got)) = got else {
+        panic!("a chat reply, got {got:?}");
+    };
+    assert_eq!(got.scores, Some(scores));
+    let seen = rig.seen.lock().expect("lock");
+    assert_eq!(
+        seen.frames,
+        vec![ClientFrame::Request(request)],
+        "the knob reached the daemon"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

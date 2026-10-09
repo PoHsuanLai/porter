@@ -103,7 +103,7 @@ pub(crate) async fn reply(
     drop(key);
     let mut sink = Forward {
         events,
-        gathered: porter_bridge::Gathered::default(),
+        gathered: porter_bridge::Gathered::for_turn(&turn),
     };
     match provider.turn(&turn, &mut sink).await {
         Ok(end) => InferReply::Chat(sink.gathered.chat_reply(&end, pinned.served.clone())),
