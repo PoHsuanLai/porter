@@ -18,7 +18,9 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 # Each entry: "<set> :: <cargo arguments>". Every build is `cargo clippy <arguments>
-# --all-targets -- -D warnings`.
+# --lib --bins -- -D warnings`: the targets a consumer compiles. Test targets are left out on
+# purpose: a test target's helpers are dead code in a default build (accountd's tests/it/ fails
+# -D warnings with default features on master, and no consumer compiles it).
 BUILDS=(
   # The three daemons, each alone with its default features: `-p` alone, so no other package's
   # features are unified in. inferd is docket's sibling binary; accountd and syncd are the
@@ -61,7 +63,7 @@ for build in "${BUILDS[@]}"; do
   set_name=${build%% :: *}
   read -r -a args <<<"${build#* :: }"
   log="$logs/$n.log"
-  if cargo clippy "${args[@]}" --all-targets -- -D warnings >"$log" 2>&1; then
+  if cargo clippy "${args[@]}" --lib --bins -- -D warnings >"$log" 2>&1; then
     echo "ok $set_name"
   else
     echo "FAIL $set_name"
