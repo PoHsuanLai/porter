@@ -1,25 +1,12 @@
 //! What time it is, as a seam: the engine dates tombstones, anchors and conflicts by it.
+//!
+//! `Clock` and `SystemClock` moved to `porter_core::clock` (lane layers-clock); these paths stay
+//! for existing imports. `ManualClock` stays here: a test shares it through an `Arc` and sets it
+//! with `&self`, which porter_core's `FixedClock` (set with `&mut self`) cannot do.
 
-use porter_core::UnixSeconds;
-
-/// A source of the current time.
-pub trait Clock: Send + Sync {
-    /// Now.
-    fn now(&self) -> UnixSeconds;
-}
-
-/// The system clock.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct SystemClock;
-
-impl Clock for SystemClock {
-    fn now(&self) -> UnixSeconds {
-        let seconds = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs());
-        UnixSeconds(i64::try_from(seconds).unwrap_or(i64::MAX))
-    }
-}
+/// A source of the current time, moved to `porter_core::clock::Clock`.
+/// The system clock, moved to `porter_core::clock::SystemClock`.
+pub use porter_core::clock::{Clock, SystemClock};
 
 /// A clock a test sets.
 #[derive(Debug, Default)]
@@ -38,13 +25,7 @@ impl ManualClock {
 }
 
 impl Clock for ManualClock {
-    fn now(&self) -> UnixSeconds {
-        UnixSeconds(self.0.load(std::sync::atomic::Ordering::Relaxed))
-    }
-}
-
-impl<T: Clock + ?Sized> Clock for std::sync::Arc<T> {
-    fn now(&self) -> UnixSeconds {
-        (**self).now()
+    fn now(&self) -> porter_core::UnixSeconds {
+        porter_core::UnixSeconds(self.0.load(std::sync::atomic::Ordering::Relaxed))
     }
 }

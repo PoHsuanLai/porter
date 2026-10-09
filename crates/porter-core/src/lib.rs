@@ -1,6 +1,7 @@
 //! porter's pure vocabulary: accounts, the capability vocabulary and how a need meets an offer,
 //! consent, credentials' filing, and the wire protocol. No runtime, no file system, no I/O: the
-//! file writer lives in `porter-fs`.
+//! file writer lives in `porter-fs`. The time is one seam, [`clock`]: its [`clock::SystemClock`]
+//! reads the wall clock only when a daemon calls it.
 
 mod account;
 mod agent_login;
@@ -10,6 +11,7 @@ pub mod audit;
 mod auth_kind;
 mod candidate;
 pub mod capability;
+pub mod clock;
 pub mod consent;
 mod data_class;
 mod effective;

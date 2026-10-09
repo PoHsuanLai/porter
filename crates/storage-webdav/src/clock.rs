@@ -1,32 +1,31 @@
 //! The replica's clock: it dates the tombstones it reports, since a WebDAV server does not.
+//!
+//! A thin adapter over `porter_core::clock` (lane layers-clock): this type keeps its own shape
+//! (a value its replicas hold and clone) and its constructors, and delegates to the shared clocks.
 
 use porter_core::UnixSeconds;
+use porter_core::clock::{Clock as CoreClock, FixedClock, SystemClock};
 use std::fmt;
 use std::sync::Arc;
 
 /// Reads the time.
 #[derive(Clone)]
-pub struct Clock(Arc<dyn Fn() -> UnixSeconds + Send + Sync>);
+pub struct Clock(Arc<dyn CoreClock>);
 
 impl Clock {
     /// A clock that always says `at`.
     pub fn fixed(at: UnixSeconds) -> Self {
-        Self(Arc::new(move || at))
+        Self(Arc::new(FixedClock(at)))
     }
 
     /// The system clock.
     pub fn system() -> Self {
-        Self(Arc::new(|| {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |since| since.as_secs());
-            UnixSeconds(i64::try_from(now).unwrap_or(i64::MAX))
-        }))
+        Self(Arc::new(SystemClock))
     }
 
     /// Now.
     pub fn now(&self) -> UnixSeconds {
-        (self.0)()
+        self.0.now()
     }
 }
 

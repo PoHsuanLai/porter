@@ -17,6 +17,7 @@
 use crate::errors::RefusedError;
 use porter_core::audit::{AuditEntry, AuditEvent};
 use porter_core::capability::AgentProgram;
+use porter_core::clock::SystemClock;
 use porter_core::{AccountId, LauncherSession, LoginRequestId, UnixSeconds};
 use porter_dbus::{ACCOUNTS_PATH, LauncherFault};
 use porter_service::{
@@ -133,18 +134,6 @@ pub(crate) struct Launchers {
 fn held(state: &Mutex<State>) -> std::sync::MutexGuard<'_, State> {
     // Every critical section is a plain data update.
     state.lock().unwrap_or_else(PoisonError::into_inner)
-}
-
-/// The system clock, for a `LoginTiming` that names none.
-struct SystemClock;
-
-impl Clock for SystemClock {
-    fn now(&self) -> UnixSeconds {
-        let since = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default();
-        UnixSeconds(i64::try_from(since.as_secs()).unwrap_or(i64::MAX))
-    }
 }
 
 impl Launchers {

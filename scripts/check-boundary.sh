@@ -69,6 +69,7 @@ done
 STD_EFFECTS='std::(fs|io|env|process|net|os)\b|\b(File|Command|TcpStream|UnixStream)::'
 PURE_FILES=(
   "crates/porter-core/src/identity.rs"
+  "crates/porter-core/src/clock.rs"
 )
 for file in "${PURE_FILES[@]}"; do
   if [ ! -f "$file" ]; then
