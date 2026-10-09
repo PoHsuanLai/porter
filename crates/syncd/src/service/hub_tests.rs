@@ -217,3 +217,23 @@ fn forgetting_one_dataset_stops_it_and_leaves_the_others() {
     assert!(!gone.is_registered());
     assert!(kept.is_registered());
 }
+
+#[tokio::test(start_paused = true)]
+async fn a_stop_waits_for_a_cycle_that_runs_for_minutes_on_a_starved_machine() {
+    // A cycle that takes two minutes: a stop that gave up at 30 s would go on, and its caller
+    // delete the files the cycle is still writing.
+    let cycling = Cycling::default();
+    let held = cycling.0.clone().lock_owned().await;
+    let waiting = tokio::spawn({
+        let cycling = cycling.clone();
+        async move { cycling.finished().await }
+    });
+    tokio::time::sleep(std::time::Duration::from_secs(120)).await;
+    drop(held);
+    assert!(waiting.await.expect("task"), "the stop saw the cycle end");
+
+    // One that never ends is given up on, after the long wait.
+    let stuck = Cycling::default();
+    let _held = stuck.0.clone().lock_owned().await;
+    assert!(!stuck.finished().await);
+}

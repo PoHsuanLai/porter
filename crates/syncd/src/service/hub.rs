@@ -170,8 +170,10 @@ pub enum Nudge {
 pub struct Cycling(Arc<tokio::sync::Mutex<()>>);
 
 /// How long a stop waits for a cycle in flight (a fetch that hangs on the network) before it
-/// goes on without it.
-const STOP_WITHIN: std::time::Duration = std::time::Duration::from_secs(30);
+/// goes on without it. Going on means the caller deletes the files the cycle is writing, so it
+/// is long: a cycle on a starved machine (swap full, a big build) runs for minutes, and a
+/// network request alone may be idle for a minute (`RELAY_IDLE`) before it fails.
+const STOP_WITHIN: std::time::Duration = std::time::Duration::from_secs(300);
 
 impl Cycling {
     /// Waits until no cycle holds it, at most [`STOP_WITHIN`]; whether it was free in time.

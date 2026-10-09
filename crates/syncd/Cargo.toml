@@ -40,7 +40,8 @@ porter-provider = { workspace = true }
 porter-secrets = { workspace = true }
 porter-service = { workspace = true }
 porter-sync = { workspace = true, features = ["testing"] }
-tokio = { workspace = true }
+# A paused clock for the stop wait's timing test.
+tokio = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true
