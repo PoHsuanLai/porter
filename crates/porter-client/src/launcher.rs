@@ -42,8 +42,9 @@ use std::os::fd::AsFd;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-/// Why a launcher call failed.
+/// Why a launcher call failed. More reasons may be added: match with a wildcard.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum LauncherError {
     /// A live connection already launches one of the programs (first wins).
     #[error("another launcher already holds a program")]

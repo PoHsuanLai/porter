@@ -24,8 +24,9 @@ use porter_dbus::{
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-/// Why a Spaces call failed.
+/// Why a Spaces call failed. More reasons may be added: match with a wildcard.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum SpacesError {
     /// The app made too many Spaces within the last minute; try again later.
     #[error("too many new Spaces at once")]
