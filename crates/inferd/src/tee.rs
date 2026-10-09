@@ -84,6 +84,7 @@ mod tests {
             stop: StopReason::EndTurn,
             usage: TurnUsage::default(),
             served: ModelName("m".into()),
+            first_token: None,
         }
     }
 

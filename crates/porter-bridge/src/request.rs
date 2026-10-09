@@ -324,6 +324,7 @@ pub fn chat_turn_for(
         },
         sampling,
         reasoning,
+        choice_scores: sp::ChoiceScores::Off,
         engine: extras(target.flavor),
     })
 }

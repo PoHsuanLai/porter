@@ -73,6 +73,7 @@ fn turn_end() -> TurnEnd {
         stop: StopReason::ToolUse,
         usage: TurnUsage::default(),
         served: ModelName("tiny-cua".into()),
+        first_token: None,
     }
 }
 

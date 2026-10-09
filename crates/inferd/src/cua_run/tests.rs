@@ -65,6 +65,7 @@ fn script(events: Vec<TurnEvent>) -> Script {
             stop: StopReason::ToolUse,
             usage: TurnUsage::default(),
             served: ModelName("tiny-cua".into()),
+            first_token: None,
         }),
     }
 }

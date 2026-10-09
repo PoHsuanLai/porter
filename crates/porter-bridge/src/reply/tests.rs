@@ -27,6 +27,7 @@ fn end(stop: sp::StopReason) -> sp::TurnEnd {
             images: sp::ImageCount(1),
         },
         served: sp::ModelName("m".into()),
+        first_token: None,
     }
 }
 

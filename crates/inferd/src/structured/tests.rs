@@ -97,6 +97,7 @@ fn end(stop: StopReason, output: u32) -> TurnEnd {
             ..TurnUsage::default()
         },
         served: ModelName("tiny-chat".into()),
+        first_token: None,
     }
 }
 
