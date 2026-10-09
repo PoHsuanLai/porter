@@ -60,8 +60,6 @@ pub enum EngineError {
 pub enum Dialect {
     /// llama.cpp's server, and the runtimes inferd probes the same way (Ollama, LM Studio).
     LlamaServer,
-    /// vLLM.
-    Vllm,
     /// OpenAI's own and the companies that follow it (a usage chunk asked for,
     /// `reasoning_effort`).
     OpenAi,
@@ -73,7 +71,6 @@ impl Dialect {
     pub(crate) fn flavor(self) -> Flavor {
         match self {
             Dialect::LlamaServer => Flavor::LlamaServer,
-            Dialect::Vllm => Flavor::Vllm,
             Dialect::OpenAi => Flavor::LiteLlm,
             Dialect::OpenRouter => Flavor::OpenRouter,
         }
