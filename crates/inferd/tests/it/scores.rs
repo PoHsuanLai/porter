@@ -7,6 +7,7 @@
 use crate::hosting;
 
 use hosting::agent::{completions, model_route, open, plan, say};
+use hosting::bus::within;
 use hosting::engine::{Chat, Script};
 use hosting::entries;
 use hosting::rig::{Plan, World};
@@ -77,22 +78,30 @@ fn pick_one(options: &[&str], scores: Knob<ScoreOptions>) -> InferRequest {
 }
 
 async fn ask(world: &World, request: InferRequest) -> ChatReply {
-    let mut session = world
-        .accounts
-        .session(&llm(), DataClass::Notes, Tier::Balanced)
-        .await
-        .expect("open");
-    session
-        .send(ClientFrame::Request(request))
-        .await
-        .expect("send");
-    loop {
-        match session.next().await.expect("an event") {
-            InferEvent::Finished(InferReply::Chat(reply)) => return reply,
-            InferEvent::Finished(other) => panic!("a chat reply, got {other:?}"),
-            _ => {}
+    let mut session = within(
+        "the session to open",
+        world
+            .accounts
+            .session(&llm(), DataClass::Notes, Tier::Balanced),
+    )
+    .await
+    .expect("open");
+    within(
+        "the request to be sent",
+        session.send(ClientFrame::Request(request)),
+    )
+    .await
+    .expect("send");
+    within("the chat reply to finish", async {
+        loop {
+            match session.next().await.expect("an event") {
+                InferEvent::Finished(InferReply::Chat(reply)) => return reply,
+                InferEvent::Finished(other) => panic!("a chat reply, got {other:?}"),
+                _ => {}
+            }
         }
-    }
+    })
+    .await
 }
 
 fn shares(reply: &ChatReply) -> Vec<(&str, u32)> {
