@@ -44,7 +44,7 @@ pub use generic::{GenericProvider, GenericSession, GenericSignIn};
 #[cfg(feature = "google")]
 pub use google::{
     GoogleEnv, GoogleProvider, GoogleSession, GoogleSignIn, ReauthReason, Sensitivity,
-    TESTING_SIGN_IN_SECONDS, scope_sensitivity, scopes_of, testing_expires,
+    TESTING_SIGN_IN_SECONDS, scope_sensitivity, scopes_of, testing_expiry_seam,
 };
 #[cfg(any(feature = "nextcloud", feature = "generic"))]
 pub use io::{Pacing, SharedDns};

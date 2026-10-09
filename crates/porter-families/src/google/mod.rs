@@ -21,7 +21,7 @@ mod session;
 mod signin;
 
 pub use env::GoogleEnv;
-pub use reauth::{ReauthReason, TESTING_SIGN_IN_SECONDS, testing_expires};
+pub use reauth::{ReauthReason, TESTING_SIGN_IN_SECONDS, testing_expiry_seam};
 pub use scopes::{Sensitivity, scope_sensitivity, scopes_of};
 pub use session::GoogleSession;
 pub use signin::GoogleSignIn;

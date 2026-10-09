@@ -52,9 +52,9 @@ impl ReauthReason {
     }
 }
 
-/// When a sign-in made at `signed_in` through a client in testing stops working: what Settings
-/// shows as its expiry.
-pub fn testing_expires(signed_in: UnixSeconds) -> UnixSeconds {
+/// Test seam: the day a sign-in made at `signed_in` through a client in testing stops working.
+/// The product reads the reason ([`ReauthReason`]), not this date; the tests pin the figure.
+pub fn testing_expiry_seam(signed_in: UnixSeconds) -> UnixSeconds {
     UnixSeconds(signed_in.0 + TESTING_SIGN_IN_SECONDS)
 }
 
@@ -99,7 +99,7 @@ mod tests {
         );
         assert!(!ReauthReason::Revoked.plain().is_empty());
         assert_eq!(
-            testing_expires(UnixSeconds(1_000)),
+            testing_expiry_seam(UnixSeconds(1_000)),
             UnixSeconds(1_000 + 7 * 86_400)
         );
     }
