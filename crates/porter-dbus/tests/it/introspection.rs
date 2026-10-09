@@ -18,12 +18,24 @@ fn checked_in_introspection_matches_the_interfaces() {
         let path = dir.join(bus.file_name());
         let expected =
             std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-        let actual = introspection(bus);
+        let actual = match bus {
+            Bus::Sync => without_picker(&introspection(bus)),
+            _ => introspection(bus),
+        };
         assert!(
             actual == expected,
             "{} differs from the interfaces; it should read:\n{actual}",
             path.display()
         );
+    }
+}
+
+/// The Sync1 document without the Photos Picker, which is outside the default surface (the
+/// `photos-picker` feature adds it, and the test below it checks it then).
+fn without_picker(xml: &str) -> String {
+    match xml.split_once("<interface name=\"org.quire.Photos1.Picker\">") {
+        Some((sync1, _)) => format!("{}</node>\n", sync1.trim_end_matches(' ')),
+        None => xml.to_owned(),
     }
 }
 
@@ -180,9 +192,7 @@ fn the_sheet_backend_takes_views_in_and_sends_inputs_out() {
 #[test]
 fn syncd_and_inferd_declare_what_they_did() {
     let sync = introspection(Bus::Sync);
-    let (sync1, picker) = sync
-        .split_once("<interface name=\"org.quire.Photos1.Picker\">")
-        .expect("the Picker interface is declared beside Sync1");
+    let sync1 = without_picker(&sync);
     assert_eq!(sync1.matches("<method ").count(), 7);
     assert_eq!(sync1.matches("<signal ").count(), 3);
     assert!(sync1.contains("<method name=\"ConfirmDiscard\">"));
@@ -192,21 +202,32 @@ fn syncd_and_inferd_declare_what_they_did() {
         porter_dbus::SYNC_ERROR_NOTHING_HELD,
         format!("{}NothingHeld", porter_dbus::SYNC_ERROR_PREFIX)
     );
-    for member in ["Start", "Poll", "Import", "Cancel"] {
+    #[cfg(feature = "photos-picker")]
+    {
+        let (_, picker) = sync
+            .split_once("<interface name=\"org.quire.Photos1.Picker\">")
+            .expect("the Picker interface is declared beside Sync1");
+        for member in ["Start", "Poll", "Import", "Cancel"] {
+            assert!(
+                picker.contains(&format!("<method name=\"{member}\">")),
+                "{member}"
+            );
+        }
+        assert_eq!(picker.matches("<method ").count(), 4);
+        assert_eq!(picker.matches("<signal ").count(), 0);
         assert!(
-            picker.contains(&format!("<method name=\"{member}\">")),
-            "{member}"
+            picker.contains("<arg type=\"as\" direction=\"out\"/>"),
+            "Import answers the files' paths"
+        );
+        assert_eq!(
+            porter_dbus::PICKER_ERROR_NOT_YET,
+            format!("{}NotYet", porter_dbus::PICKER_ERROR_PREFIX)
         );
     }
-    assert_eq!(picker.matches("<method ").count(), 4);
-    assert_eq!(picker.matches("<signal ").count(), 0);
+    #[cfg(not(feature = "photos-picker"))]
     assert!(
-        picker.contains("<arg type=\"as\" direction=\"out\"/>"),
-        "Import answers the files' paths"
-    );
-    assert_eq!(
-        porter_dbus::PICKER_ERROR_NOT_YET,
-        format!("{}NotYet", porter_dbus::PICKER_ERROR_PREFIX)
+        !sync.contains("org.quire.Photos1"),
+        "the Picker is not declared by default"
     );
     assert!(sync.contains("<method name=\"Resolve\">"));
     assert!(sync.contains("<arg name=\"conflict\" type=\"x\" direction=\"in\"/>"));

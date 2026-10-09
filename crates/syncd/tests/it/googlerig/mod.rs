@@ -398,6 +398,7 @@ pub fn local(rig: &Rig, rel: &str) -> std::path::PathBuf {
 
 /// Serves `org.quire.Photos1.Picker` beside `Sync1`, for the Photos app, over this rig's
 /// supervisor (the pickers it starts at each tick).
+#[cfg(feature = "photos-picker")]
 pub async fn serve_picker(rig: &Rig) {
     let owners = syncd::service::Access {
         owners: [AppName::parse(syncd::datasets::storage::PHOTOS_APP).expect("app")].into(),

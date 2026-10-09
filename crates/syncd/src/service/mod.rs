@@ -42,6 +42,8 @@ mod status;
 pub use errors::RefusedError;
 pub use hub::{Access, DatasetName, Event, Handle, Hub, Nudge, StatusSnapshot};
 pub use object::serve;
-pub use picker::{PickerDesk, Pickers, serve_picker};
+#[cfg(feature = "photos-picker")]
+pub use picker::serve_picker;
+pub use picker::{PickerDesk, Pickers};
 pub use resolve::{Confirm, ConfirmError, ConflictNumber, How, Settle, SettleError, UnknownHow};
 pub use status::{conflict_details, held_details, progress_details, status_details};

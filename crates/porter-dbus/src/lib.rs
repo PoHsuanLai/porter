@@ -26,6 +26,7 @@ mod manager;
 mod names;
 mod peer;
 mod pending;
+#[cfg(feature = "photos-picker")]
 mod photos_picker;
 mod ready;
 mod refusal;
@@ -70,6 +71,7 @@ pub use peer::{
     AgentLogoutRequestedStream, PeerProxy, PeerSkeleton,
 };
 pub use pending::{Closer, Sheet, SheetError};
+#[cfg(feature = "photos-picker")]
 pub use photos_picker::{
     PICKER_ERROR_NO_SUCH_SESSION, PICKER_ERROR_NOT_YET, PICKER_ERROR_PREFIX, PICKER_PICKED,
     PICKER_WAITING, PhotosPickerProxy, PickerSkeleton,

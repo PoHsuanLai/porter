@@ -53,3 +53,6 @@ workspace = true
 test-proc-root = []
 # `MemoryDataset`, the in-memory local side the engine's tests (and daemon tests) drive.
 testing = []
+# Serves `org.quire.Photos1.Picker` beside Sync1 when `SYNCD_PHOTOS=on` (porter-dbus's feature of
+# the same name declares it). Off by default: no Photos app ships in v1.
+photos-picker = ["porter-dbus/photos-picker"]

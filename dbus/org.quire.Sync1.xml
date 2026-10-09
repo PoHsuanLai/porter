@@ -72,26 +72,4 @@
      <arg name="held" type="a{sv}"/>
    </signal>
  </interface>
- <interface name="org.quire.Photos1.Picker">
-   <method name="Start">
-     <arg name="account" type="s" direction="in"/>
-     <arg type="s" direction="out"/>
-     <arg type="s" direction="out"/>
-     <arg type="u" direction="out"/>
-   </method>
-   <method name="Poll">
-     <arg name="account" type="s" direction="in"/>
-     <arg name="session" type="s" direction="in"/>
-     <arg type="s" direction="out"/>
-   </method>
-   <method name="Import">
-     <arg name="account" type="s" direction="in"/>
-     <arg name="session" type="s" direction="in"/>
-     <arg type="as" direction="out"/>
-   </method>
-   <method name="Cancel">
-     <arg name="account" type="s" direction="in"/>
-     <arg name="session" type="s" direction="in"/>
-   </method>
- </interface>
 </node>

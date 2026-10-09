@@ -27,3 +27,9 @@ workspace = true
 
 [dev-dependencies]
 proptest = { workspace = true }
+
+[features]
+# The Photos Picker's proxy and interface (`org.quire.Photos1.Picker`). Off by default: no Photos
+# app ships in v1, so the default bus surface does not declare it. syncd's feature of the same
+# name turns it on for the object it serves.
+photos-picker = []

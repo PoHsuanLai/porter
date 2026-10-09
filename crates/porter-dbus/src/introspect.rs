@@ -7,6 +7,7 @@ use crate::grants::GrantsSkeleton;
 use crate::inference::InferenceSkeleton;
 use crate::manager::ManagerSkeleton;
 use crate::peer::PeerSkeleton;
+#[cfg(feature = "photos-picker")]
 use crate::photos_picker::PickerSkeleton;
 use crate::request::RequestSkeleton;
 use crate::sheet_backend::AccountsSheetSkeleton;
@@ -23,7 +24,8 @@ pub enum Bus {
     Accounts,
     /// `org.quire.AccountsSheet1` (the sheet host).
     AccountsSheet,
-    /// `org.quire.Sync1` (syncd), and `org.quire.Photos1.Picker` on the same name and object.
+    /// `org.quire.Sync1` (syncd), and `org.quire.Photos1.Picker` on the same name and object when
+    /// the `photos-picker` feature is on (it is not part of the default surface).
     Sync,
     /// `org.quire.Inference1` (inferd).
     Inference,
@@ -59,7 +61,7 @@ pub fn introspection(bus: Bus) -> String {
             &PeerSkeleton,
         ],
         Bus::AccountsSheet => vec![&AccountsSheetSkeleton],
-        Bus::Sync => vec![&SyncSkeleton, &PickerSkeleton],
+        Bus::Sync => sync_interfaces(),
         Bus::Inference => vec![&InferenceSkeleton],
         Bus::InferenceAgents => vec![&AgentsSkeleton],
         Bus::Spaces => vec![&SpacesSkeleton],
@@ -72,6 +74,17 @@ pub fn introspection(bus: Bus) -> String {
     }
     xml.push_str("</node>\n");
     xml
+}
+
+/// Sync1, and the Photos Picker beside it only with the `photos-picker` feature.
+#[cfg(feature = "photos-picker")]
+fn sync_interfaces() -> Vec<&'static dyn Interface> {
+    vec![&SyncSkeleton, &PickerSkeleton]
+}
+
+#[cfg(not(feature = "photos-picker"))]
+fn sync_interfaces() -> Vec<&'static dyn Interface> {
+    vec![&SyncSkeleton]
 }
 
 /// The answer of every skeleton method: the interface is frozen, its behaviour not built.

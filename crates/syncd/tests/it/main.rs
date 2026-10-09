@@ -10,6 +10,7 @@ mod googlerig;
 mod gphotos_bus;
 mod graph_bus;
 mod graph_calendar_bus;
+#[cfg(feature = "photos-picker")]
 mod photos_picker_bus;
 mod pim_bus;
 mod resolve_bus;

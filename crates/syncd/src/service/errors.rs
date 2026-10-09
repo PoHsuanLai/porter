@@ -5,10 +5,9 @@
 //! `DBusError` derive names every non-refusal `org.freedesktop.zbus.Error`.
 
 use porter_core::wire::Refusal;
-use porter_dbus::{
-    PICKER_ERROR_NO_SUCH_SESSION, PICKER_ERROR_NOT_YET, SYNC_ERROR_NO_SUCH_CONFLICT,
-    SYNC_ERROR_NOTHING_HELD, refusal_error_name,
-};
+#[cfg(feature = "photos-picker")]
+use porter_dbus::{PICKER_ERROR_NO_SUCH_SESSION, PICKER_ERROR_NOT_YET};
+use porter_dbus::{SYNC_ERROR_NO_SUCH_CONFLICT, SYNC_ERROR_NOTHING_HELD, refusal_error_name};
 use zbus::DBusError;
 use zbus::fdo;
 use zbus::message::{Header, Message};
@@ -63,6 +62,7 @@ impl RefusedError {
     }
 
     /// `Import` before the person has finished picking: `org.quire.Photos1.Error.NotYet`.
+    #[cfg(feature = "photos-picker")]
     pub fn picker_not_yet() -> Self {
         Self {
             name: ErrorName::from_static_str_unchecked(PICKER_ERROR_NOT_YET),
@@ -71,6 +71,7 @@ impl RefusedError {
     }
 
     /// A session Google no longer has: `org.quire.Photos1.Error.NoSuchSession`.
+    #[cfg(feature = "photos-picker")]
     pub fn picker_no_such_session() -> Self {
         Self {
             name: ErrorName::from_static_str_unchecked(PICKER_ERROR_NO_SUCH_SESSION),

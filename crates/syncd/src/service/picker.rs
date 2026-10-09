@@ -13,17 +13,23 @@
 //!   `Unavailable`; anything else `Failed`.
 //! - Nothing but ids, the page to open, a state word and the files' paths crosses the bus.
 
+#[cfg(feature = "photos-picker")]
 use super::errors::RefusedError;
+#[cfg(feature = "photos-picker")]
 use super::hub::Access;
 use crate::datasets::photos::google::{GooglePicker, PickerError, PickerState, SessionId};
 use crate::paths::AccountDir;
 use porter_client::Transport;
+#[cfg(feature = "photos-picker")]
 use porter_core::wire::Refusal;
+#[cfg(feature = "photos-picker")]
 use porter_dbus::{Callers, PICKER_PICKED, PICKER_WAITING, SYNC_PATH};
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex, PoisonError};
+#[cfg(feature = "photos-picker")]
 use zbus::Connection;
+#[cfg(feature = "photos-picker")]
 use zbus::message::Header;
 
 /// The Pickers of the accounts syncd runs Google Photos for, shared between the supervisor
@@ -154,12 +160,14 @@ impl<T: Transport + 'static> PickerDesk for Pickers<T> {
     }
 }
 
+#[cfg(feature = "photos-picker")]
 struct Core<C, D> {
     callers: C,
     desk: D,
     owners: Access,
 }
 
+#[cfg(feature = "photos-picker")]
 impl<C: Callers, D: PickerDesk> Core<C, D> {
     /// Checks the caller is the Photos app, and the words.
     async fn admit(
@@ -191,6 +199,7 @@ impl<C: Callers, D: PickerDesk> Core<C, D> {
     }
 }
 
+#[cfg(feature = "photos-picker")]
 fn refused(error: PickerError) -> RefusedError {
     match error {
         PickerError::NotYet => RefusedError::picker_not_yet(),
@@ -201,12 +210,15 @@ fn refused(error: PickerError) -> RefusedError {
     }
 }
 
+#[cfg(feature = "photos-picker")]
 fn none_here() -> RefusedError {
     RefusedError::of(Refusal::NoFittingAccount)
 }
 
+#[cfg(feature = "photos-picker")]
 struct PickerObject<C, D>(Arc<Core<C, D>>);
 
+#[cfg(feature = "photos-picker")]
 #[zbus::interface(name = "org.quire.Photos1.Picker")]
 impl<C: Callers, D: PickerDesk> PickerObject<C, D> {
     async fn start(
@@ -280,6 +292,7 @@ impl<C: Callers, D: PickerDesk> PickerObject<C, D> {
 
 /// Serves `org.quire.Photos1.Picker` beside `Sync1` on `connection`: `desk` has the Pickers,
 /// `owners` is who may call (the Photos app), `callers` says who the senders are.
+#[cfg(feature = "photos-picker")]
 pub async fn serve_picker<C: Callers, D: PickerDesk>(
     connection: &Connection,
     desk: D,
