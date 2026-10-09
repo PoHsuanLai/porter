@@ -10,6 +10,7 @@
 
 use super::{PipelineInput, VecAudio, plan, run_pipeline};
 use crate::engines::{Engines, Offered, through_grants};
+use crate::router::placed::Allowed;
 use crate::runner::{Turn, Turns};
 use crate::serve::{RunningTurn, TurnRunner, TurnStep};
 use crate::session::{HeardAudio, SessionSpec};
@@ -32,6 +33,9 @@ pub struct Hearing {
     pub app: Option<AppId>,
     /// What the session was opened for.
     pub spec: SessionSpec,
+    /// The places the session may run, when the caller named them: the stages of a voice chat
+    /// stay in the place the session's route chose, which is inside the set.
+    pub allowed: Option<Allowed>,
 }
 
 impl Hearing {
@@ -57,11 +61,28 @@ impl Hearing {
             inputs: BTreeSet::from([Modality::Text, Modality::Audio]),
             answer: Answer::Text,
         };
+        let listed = self.engines.listed_with(&offered);
+        let listed = match &self.allowed {
+            None => listed,
+            Some(_) => {
+                let Some(pinned) = turns.pinned_to_now() else {
+                    return InferReply::Refused(porter_infer::InferRefusal::Unavailable);
+                };
+                let served = &pinned.served;
+                let place =
+                    self.engines
+                        .place_for(&served.locality, &served.account, &served.model);
+                listed
+                    .into_iter()
+                    .filter(|one| self.engines.place_of(&one.card) == place)
+                    .collect()
+            }
+        };
         let planned = match plan(
             &shape,
             &spec.need,
             spec.tier,
-            &self.engines.listed_with(&offered),
+            &listed,
             &settings.routing_policy(),
             &through_grants(&settings.tiers, &offered),
             settings.auto,

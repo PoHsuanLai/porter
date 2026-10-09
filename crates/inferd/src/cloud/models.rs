@@ -11,7 +11,9 @@
 use super::accountd::AccountVerdict;
 use model_catalog::{Locality, ModelEntry, ProviderId, Reach, Wire, reachable};
 use porter_core::consent::Verdict;
-use porter_core::{AccountId, Billing, GrantId, Locality as Where, MicroUsd, ModelId, PriceTable};
+use porter_core::{
+    AccountId, AccountState, Billing, GrantId, Locality as Where, MicroUsd, ModelId, PriceTable,
+};
 use porter_infer::{ModelCard, ModelRef};
 use std::collections::BTreeSet;
 
@@ -30,6 +32,8 @@ pub struct RemoteModel {
     pub reach: Reach,
     /// What the app's grant on the account says.
     pub verdict: Verdict,
+    /// Whether the account works now, when accountd says (an account to sign in again does not).
+    pub state: Option<AccountState>,
 }
 
 impl RemoteModel {
@@ -176,6 +180,7 @@ pub fn remote_models(entries: &[ModelEntry], accounts: &[AccountVerdict]) -> Vec
                     entry: entry.clone(),
                     reach: reach.clone(),
                     verdict: account.verdict.clone(),
+                    state: account.state,
                 })
             })
         })

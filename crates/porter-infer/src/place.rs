@@ -252,6 +252,71 @@ pub struct PlaceRow {
     pub state: PlaceState,
 }
 
+/// Why nothing in the allowed set can serve a request. One reason is named; when several hold,
+/// the first of this order: `NotReady`, `FloorRefused`, `ModelNotOffered`, `NoneCapable`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NoPlaceReason {
+    /// An allowed place could serve it, but is not ready now (an engine down, an account to sign
+    /// in again, weights not on the computer yet).
+    NotReady,
+    /// The data class's floor, or the local-only switch, refused every allowed place that could
+    /// serve it.
+    FloorRefused,
+    /// A model pinned for an allowed place (or picked by the person for this kind of work) is not
+    /// offered there.
+    ModelNotOffered,
+    /// No allowed place can do this kind of work at all.
+    NoneCapable,
+}
+
+impl NoPlaceReason {
+    /// Every reason, in the order they win.
+    pub const ALL: [NoPlaceReason; 4] = [
+        NoPlaceReason::NotReady,
+        NoPlaceReason::FloorRefused,
+        NoPlaceReason::ModelNotOffered,
+        NoPlaceReason::NoneCapable,
+    ];
+
+    /// The reason's slug (its serde form).
+    pub fn slug(self) -> &'static str {
+        match self {
+            NoPlaceReason::NotReady => "not_ready",
+            NoPlaceReason::FloorRefused => "floor_refused",
+            NoPlaceReason::ModelNotOffered => "model_not_offered",
+            NoPlaceReason::NoneCapable => "none_capable",
+        }
+    }
+
+    /// The reason's name in Pascal case, the last segment of its D-Bus error name
+    /// (`org.quire.Inference1.Error.NoAllowedPlace.NotReady`).
+    pub fn name(self) -> &'static str {
+        match self {
+            NoPlaceReason::NotReady => "NotReady",
+            NoPlaceReason::FloorRefused => "FloorRefused",
+            NoPlaceReason::ModelNotOffered => "ModelNotOffered",
+            NoPlaceReason::NoneCapable => "NoneCapable",
+        }
+    }
+
+    /// The reason a Pascal-case name stands for.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|reason| reason.name() == name)
+    }
+}
+
+/// What inferd answers when a request named the places it may run and none of them can serve it:
+/// the reason, and the kind of place outside the set that could have served it, if there is one
+/// (so the app can say "turn on a cloud account", not only "it cannot").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct PlaceRefusal {
+    /// Why nothing allowed can serve.
+    pub reason: NoPlaceReason,
+    /// The kind of place that could, outside the allowed set. Absent when no place could.
+    pub would_need: Option<PlaceKind>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -319,5 +384,59 @@ mod tests {
         }
         let long = format!("computer:{}", "x".repeat(65));
         assert!(PlaceId::parse(&long).is_err());
+    }
+
+    #[test]
+    fn the_reasons_have_names_that_read_back_and_slugs_that_are_their_serde_form() {
+        let mut names = std::collections::BTreeSet::new();
+        for reason in NoPlaceReason::ALL {
+            assert!(names.insert(reason.name()), "{reason:?}");
+            assert_eq!(NoPlaceReason::from_name(reason.name()), Some(reason));
+            assert_eq!(
+                serde_json::to_string(&reason).expect("json"),
+                format!("\"{}\"", reason.slug())
+            );
+        }
+        assert_eq!(NoPlaceReason::from_name("Nope"), None);
+        // The order is the order the reasons win in.
+        let mut sorted = NoPlaceReason::ALL;
+        sorted.sort();
+        assert_eq!(sorted, NoPlaceReason::ALL);
+    }
+
+    #[test]
+    fn open_options_carry_places_and_pins_and_a_default_adds_nothing_to_the_json() {
+        use crate::OpenOptions;
+        let plain = serde_json::to_string(&OpenOptions::default()).expect("json");
+        assert_eq!(plain, r#"{"traceparent":null}"#);
+        let options = OpenOptions::default()
+            .with_places(vec![
+                PlaceId::parse("account:work").expect("id"),
+                PlaceId::this_computer(),
+            ])
+            .with_place_model(
+                PlaceId::this_computer(),
+                porter_core::ModelId::parse("qwen").expect("id"),
+            );
+        let json = serde_json::to_string(&options).expect("json");
+        assert!(
+            json.contains(r#""places":["account:work","this-computer"]"#),
+            "{json}"
+        );
+        assert!(
+            json.contains(r#""place_models":{"this-computer":"qwen"}"#),
+            "{json}"
+        );
+        assert_eq!(
+            serde_json::from_str::<OpenOptions>(&json).expect("back"),
+            options
+        );
+        // An older client's options read as no places at all, which is not an empty set.
+        let old = serde_json::from_str::<OpenOptions>(&plain).expect("old");
+        assert_eq!(old.places, None);
+        assert_ne!(
+            OpenOptions::default().with_places(vec![]).places,
+            old.places
+        );
     }
 }

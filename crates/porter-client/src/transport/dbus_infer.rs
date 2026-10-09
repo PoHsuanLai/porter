@@ -6,8 +6,9 @@ use crate::error::TransportError;
 use porter_core::{DataClass, ModelId, Need, Permille, Tier};
 use porter_dbus::zvariant::{OwnedValue, Value};
 use porter_dbus::{
-    Details, InferenceProxy, OPTION_TRACEPARENT, OPTION_USAGE, PLACE_KEY_KIND, PLACE_KEY_MODELS,
-    PLACE_KEY_NAME, PLACE_KEY_PROVIDER, PLACE_KEY_READY, need_to_dbus,
+    Details, InferenceProxy, OPTION_PLACE_MODELS, OPTION_PLACES, OPTION_TRACEPARENT, OPTION_USAGE,
+    PLACE_KEY_KIND, PLACE_KEY_MODELS, PLACE_KEY_NAME, PLACE_KEY_PROVIDER, PLACE_KEY_READY,
+    need_to_dbus,
 };
 use porter_infer::{OpenOptions, PlaceId, PlaceKind, PlaceModel, PlaceRow, PlaceState, Readiness};
 
@@ -22,13 +23,35 @@ fn details(options: &OpenOptions) -> Details {
         .usage
         .iter()
         .filter_map(|usage| Some((OPTION_USAGE, slug(usage).ok()?)));
-    trace
+    let mut details: Details = trace
         .chain(usage)
         .filter_map(|(key, text)| {
             let value = OwnedValue::try_from(Value::from(text)).ok()?;
             Some((key.to_owned(), value))
         })
-        .collect()
+        .collect();
+    // The places the call may run, in order, and the model to use at some of them.
+    if let Some(places) = &options.places {
+        let texts: Vec<String> = places.iter().map(|place| place.to_string()).collect();
+        details.extend(
+            OwnedValue::try_from(Value::new(texts))
+                .ok()
+                .map(|value| (OPTION_PLACES.to_owned(), value)),
+        );
+    }
+    if !options.place_models.is_empty() {
+        let pins: std::collections::HashMap<String, String> = options
+            .place_models
+            .iter()
+            .map(|(place, model)| (place.to_string(), model.to_string()))
+            .collect();
+        details.extend(
+            OwnedValue::try_from(Value::new(pins))
+                .ok()
+                .map(|value| (OPTION_PLACE_MODELS.to_owned(), value)),
+        );
+    }
+    details
 }
 
 impl DbusTransport {

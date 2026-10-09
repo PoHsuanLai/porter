@@ -12,18 +12,19 @@ use crate::clock::Clock;
 use crate::engines::Engines;
 use crate::peers::{Caller, Peers, Role};
 use crate::pipeline::Hearing;
+use crate::router::placed::Allowed;
 use crate::runner::{Pin, Turns};
 use crate::serve::{Seams, serve_session};
 use crate::session::SessionSpec;
 use crate::settings::Reload;
 use crate::structured::Limits;
 use crate::watch::Probing;
-use porter_core::{DataClass, Tier};
+use porter_core::{DataClass, ModelId, Tier};
 use porter_dbus::{
     Details, INFERENCE_BUS, INFERENCE_PATH, NeedArg, PLACE_KEY_KIND, PLACE_KEY_MODELS,
     PLACE_KEY_NAME, PLACE_KEY_PROVIDER, PLACE_KEY_READY, need_from_dbus,
 };
-use porter_infer::{InferRefusal, PlaceRow, PlaceState};
+use porter_infer::{InferRefusal, PlaceId, PlaceRow, PlaceState};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::os::unix::net::UnixStream as StdStream;
@@ -142,6 +143,55 @@ fn failed(why: impl ToString) -> fdo::Error {
     fdo::Error::Failed(why.to_string())
 }
 
+/// The places a call may run (`places` and `place_models` in the options), when it names them.
+/// Only a caller that may choose places (`Role::Placer`) may send either key: from anyone else
+/// the call is refused, not ignored. `place_models` without `places`, or naming a place outside
+/// it, is invalid args, as is a value that is not what the interface says.
+fn allowed_of(caller: &Caller, options: &Details) -> fdo::Result<Option<Allowed>> {
+    let (places, pins) = (
+        options.get(porter_dbus::OPTION_PLACES),
+        options.get(porter_dbus::OPTION_PLACE_MODELS),
+    );
+    if places.is_none() && pins.is_none() {
+        return Ok(None);
+    }
+    if !caller.may_choose_places() {
+        return Err(fdo::Error::AccessDenied(
+            "inferd: this caller may not choose where the assistant runs".into(),
+        ));
+    }
+    let invalid = |what: &str| fdo::Error::InvalidArgs(what.to_owned());
+    let places = places.ok_or_else(|| invalid("place_models needs places"))?;
+    let texts = places
+        .try_clone()
+        .ok()
+        .and_then(|value| Vec::<String>::try_from(value).ok())
+        .ok_or_else(|| invalid("places is not a list of text"))?;
+    let order = texts
+        .iter()
+        .map(|text| PlaceId::parse(text).map_err(|e| fdo::Error::InvalidArgs(e.to_string())))
+        .collect::<fdo::Result<Vec<_>>>()?;
+    let mut pinned = std::collections::BTreeMap::new();
+    if let Some(value) = pins {
+        let rows = value
+            .try_clone()
+            .ok()
+            .and_then(|value| std::collections::HashMap::<String, String>::try_from(value).ok())
+            .ok_or_else(|| invalid("place_models is not a dictionary of text to text"))?;
+        for (place, model) in rows {
+            let place =
+                PlaceId::parse(&place).map_err(|e| fdo::Error::InvalidArgs(e.to_string()))?;
+            let model =
+                ModelId::parse(&model).map_err(|e| fdo::Error::InvalidArgs(e.to_string()))?;
+            if !order.contains(&place) {
+                return Err(invalid("place_models names a place that is not in places"));
+            }
+            pinned.insert(place, model);
+        }
+    }
+    Ok(Some(Allowed::new(order, pinned)))
+}
+
 impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O, C> {
     async fn identified(&self, header: &Header<'_>) -> fdo::Result<Caller> {
         let sender = header.sender().ok_or_else(unknown_caller)?;
@@ -188,7 +238,12 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
     }
 
     /// Serves one session on a fresh socketpair and returns the client's end.
-    fn open_session(&self, caller: Caller, spec: SessionSpec) -> fdo::Result<OwnedFd> {
+    fn open_session(
+        &self,
+        caller: Caller,
+        spec: SessionSpec,
+        allowed: Option<Allowed>,
+    ) -> fdo::Result<OwnedFd> {
         let (ours, theirs) = StdStream::pair().map_err(failed)?;
         ours.set_nonblocking(true).map_err(failed)?;
         let stream = UnixStream::from_std(ours).map_err(failed)?;
@@ -199,9 +254,10 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
                 engines: self.engines.clone(),
                 app: Some(caller.app.clone()),
                 spec: spec.clone(),
+                allowed: allowed.clone(),
             });
         let seams = Seams {
-            router: self.engines.router_for(pin, &caller),
+            router: self.engines.router_for_in(pin, &caller, allowed),
             engines: self.engines.clone(),
             runner: match self.engines.cloud() {
                 Some(cloud) => turns.hosted(cloud.clone()),
@@ -226,10 +282,18 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         let caller = self.caller(&header).await?;
         let _trace = trace_of(&options);
         let spec = Self::spec(need, &class, "balanced", &options)?;
+        let allowed = allowed_of(&caller, &options)?;
         let availability = self
             .engines
-            .availability_for(&spec.need, spec.class, spec.usage, &caller)
-            .await;
+            .availability_in(
+                &spec.need,
+                spec.class,
+                spec.usage,
+                &caller,
+                allowed.as_ref(),
+            )
+            .await
+            .unwrap_or(porter_core::consent::Availability::NeedsAccount);
         Ok(slug(&availability, "kind"))
     }
 
@@ -244,7 +308,8 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         let caller = self.caller(&header).await?;
         let _trace = trace_of(&options);
         let spec = Self::spec(need, &class, &tier, &options)?;
-        self.open_session(caller, spec)
+        let allowed = allowed_of(&caller, &options)?;
+        self.open_session(caller, spec, allowed)
     }
 
     async fn prepare(
@@ -258,14 +323,22 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         let caller = self.caller(&header).await?;
         let _trace = trace_of(&options);
         let spec = Self::spec(need, &class, &tier, &options)?;
+        let allowed = allowed_of(&caller, &options)?;
         Ok(
             match self
                 .engines
-                .prepare_for(&spec.need, spec.class, spec.tier, spec.usage, &caller)
+                .prepare_in(
+                    &spec.need,
+                    spec.class,
+                    spec.tier,
+                    spec.usage,
+                    &caller,
+                    allowed.as_ref(),
+                )
                 .await
             {
                 Ok(readiness) => readiness.slug().to_owned(),
-                Err(refusal) => refusal_slug(&refusal),
+                Err(refusal) => refusal_slug(&refusal.into_pick().refusal),
             },
         )
     }

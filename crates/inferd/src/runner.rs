@@ -154,6 +154,11 @@ impl Turns {
         }
     }
 
+    /// What the session's route pinned these turns to, once it has decided.
+    pub(crate) fn pinned_to_now(&self) -> Option<&Pinned> {
+        self.pin.get()
+    }
+
     /// These turns pinned to another model (the answering stage of a pipeline): a fresh cell,
     /// the same engines, limits and hosted reach.
     pub(crate) fn pinned_to(&self, pinned: Pinned) -> Self {

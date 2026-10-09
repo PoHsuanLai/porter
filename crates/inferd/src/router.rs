@@ -6,6 +6,10 @@
 //! the class's floor already decides which classes may be sent where). A hosted model carries the
 //! verdict accountd gave the app for its account (`Listed::permission`, from `cloud::models`); a
 //! model of an account inferd knows nothing of is `Ask` (`NeedsGrant`).
+//!
+//! [`placed`] routes inside a set of places a caller named.
+
+pub mod placed;
 
 use crate::cua_run::check_class;
 use porter_core::consent::{GrantScope, Verdict};

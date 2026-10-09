@@ -251,3 +251,350 @@ async fn within_secs(secs: u64, work: impl std::future::Future<Output = ()>) -> 
         .await
         .is_ok()
 }
+
+// ---- routing inside the allowed set -------------------------------------------------------
+
+mod routing {
+    use super::*;
+    use hosting::bus::within;
+    use inferd::router::placed::Allowed;
+    use inferd::session::SessionSpec;
+    use porter_client::InferSession;
+    use porter_core::capability::LlmFeature;
+    use porter_core::consent::Usage;
+    use porter_core::need::LlmNeed;
+    use porter_core::{Need, Tokens};
+    use porter_dbus::InferenceProxy;
+    use porter_infer::{
+        ChatControl, ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRequest, Knob,
+        LocalOnly, MessagePart, NoPlaceReason, OpenOptions, PlaceId, Policy, Reasoning, ReplyShape,
+        Role as ChatRole, ToolChoice, ToolParallelism,
+    };
+    use std::collections::BTreeMap;
+
+    const COMPANION: &str = "org.quire.Companion";
+
+    fn llm() -> Need {
+        Need::Llm(LlmNeed {
+            features: [LlmFeature::Chat].into(),
+            context: Tokens(1000),
+        })
+    }
+
+    fn chat_request() -> InferRequest {
+        InferRequest::Chat(ChatRequest {
+            messages: vec![ChatMessage {
+                role: ChatRole::User,
+                parts: vec![MessagePart::Text("hello".into())],
+            }],
+            shape: ReplyShape::Text,
+            tier: Tier::Balanced,
+            class: DataClass::Public,
+            usage: Usage::Interactive,
+            tools: vec![],
+            control: ChatControl {
+                tool_choice: ToolChoice::Auto,
+                tool_calls: ToolParallelism::One,
+                max_output: Knob::Off,
+                reasoning: Reasoning::EngineDefault,
+                sampling: Knob::Off,
+                stop: vec![],
+            },
+        })
+    }
+
+    fn place(text: &str) -> PlaceId {
+        PlaceId::parse(text).expect("place")
+    }
+
+    /// A local chat model, a lab machine called `lab` with one model, and OpenRouter granted to
+    /// the companion; the caller is the companion (a placer) unless the test says otherwise.
+    pub async fn placed_world(dir: &str, role: Role, who: &str) -> (World, Lab) {
+        placed_world_with(dir, role, who, true).await
+    }
+
+    /// `placed_world`, with the local chat model only when `local` says so.
+    pub async fn placed_world_with(dir: &str, role: Role, who: &str, local: bool) -> (World, Lab) {
+        let scratch = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+            .join(format!("pr-{}-{dir}", std::process::id()));
+        std::fs::create_dir_all(&scratch).expect("scratch");
+        let lab = Lab::start(&Bind::Socket(scratch), "lab", &[entries::SERVED], None).await;
+        let mut catalog = vec![
+            ("a-attached.toml", entries::attached()),
+            ("c-claude.toml", entries::claude()),
+        ];
+        let mut scripts = Vec::new();
+        if local {
+            catalog.push(("b-chat.toml", entries::chat()));
+            scripts.push((
+                "tiny-chat",
+                Script {
+                    chat: vec![Chat::Say(vec!["local"])],
+                    dims: 0,
+                },
+            ));
+        }
+        let plan = Plan {
+            catalog,
+            scripts,
+            attached: vec![Attached {
+                id: ModelId::parse(entries::ATTACHED).expect("id"),
+                reach: Reach::Socket(lab.socket()),
+                key_file: None,
+                place: Place::MyNetwork,
+                computer: Some(ComputerName::parse("lab").expect("name")),
+            }],
+            policy: Policy {
+                local_only: LocalOnly::Off,
+                floors: Vec::new(),
+            },
+            role,
+            app: Some(app(who)),
+            hosted: Some(Hosted {
+                accounts: vec![FakeAccount {
+                    id: "openrouter",
+                    standing: Standing::Granted {
+                        to: vec![COMPANION, "org.quire.Memory"],
+                        grant: "grant-openrouter",
+                        key: Some("sk-or-test-key"),
+                    },
+                }],
+                chat: Script {
+                    chat: vec![Chat::Say(vec!["cloud"])],
+                    dims: 0,
+                },
+                trust: Trust::ScratchCa,
+            }),
+            ..Plan::default()
+        };
+        (World::start(plan).await, lab)
+    }
+
+    /// The account the session was routed to, for a first turn opened with `options`.
+    async fn served_by(world: &World, options: &OpenOptions) -> String {
+        let mut session = within(
+            "Open",
+            world
+                .accounts
+                .session_with(&llm(), DataClass::Public, Tier::Balanced, options),
+        )
+        .await
+        .expect("open");
+        let _ = session.send(ClientFrame::Request(chat_request())).await;
+        loop {
+            match within("the next event", session.next())
+                .await
+                .expect("event")
+            {
+                InferEvent::Routed(served) => return served.account.to_string(),
+                InferEvent::Finished(reply) => panic!("no route: {reply:?}"),
+                _ => {}
+            }
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn without_places_routing_is_as_it_always_was_and_with_them_it_is_the_callers() {
+        let (world, _lab) = placed_world("order", Role::Placer, COMPANION).await;
+        // Today: this computer before the cloud.
+        assert_eq!(served_by(&world, &OpenOptions::default()).await, "local");
+        // The caller's order decides inside the set.
+        let cloud_first = OpenOptions::default()
+            .with_places(vec![place("account:openrouter"), place("this-computer")]);
+        assert_eq!(served_by(&world, &cloud_first).await, "openrouter");
+        let local_first = OpenOptions::default()
+            .with_places(vec![place("this-computer"), place("account:openrouter")]);
+        assert_eq!(served_by(&world, &local_first).await, "local");
+        // A pin names the model at a place.
+        let pinned = OpenOptions::default()
+            .with_places(vec![place("computer:lab")])
+            .with_place_model(
+                place("computer:lab"),
+                ModelId::parse(entries::ATTACHED).expect("id"),
+            );
+        assert_eq!(served_by(&world, &pinned).await, "local");
+    }
+
+    fn spec() -> SessionSpec {
+        SessionSpec {
+            need: llm(),
+            class: DataClass::Public,
+            tier: Tier::Balanced,
+            usage: Usage::Interactive,
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_cloud_account_outside_the_set_is_never_used_even_when_it_is_the_only_one_able() {
+        // No model on this computer: the account is the only place able to serve, and it is not
+        // in the set.
+        let (world, lab) = placed_world_with("outside", Role::Placer, COMPANION, false).await;
+        drop(lab);
+        let caller = inferd::peers::Caller {
+            app: app(COMPANION),
+            role: Role::Placer,
+        };
+        let allowed = Allowed::new(vec![place("computer:lab")], BTreeMap::new());
+        let spec = spec();
+        let offered = world
+            .served
+            .offer(&caller.app, spec.class, spec.usage)
+            .await;
+        let refused = world
+            .served
+            .route_in(&spec, caller.role, &offered, Some(&allowed))
+            .expect_err("nothing in the set can serve");
+        assert_eq!(
+            refused,
+            inferd::router::placed::Unplaced::NoPlace(porter_infer::PlaceRefusal {
+                reason: NoPlaceReason::NotReady,
+                would_need: Some(porter_infer::PlaceKind::CloudAccount),
+            })
+        );
+        // Whatever the answer for the session, nothing was sent to the provider.
+        assert!(
+            world
+                .provider
+                .as_ref()
+                .expect("provider")
+                .requests()
+                .is_empty()
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn callers_that_may_not_choose_places_are_refused_not_ignored() {
+        let (world, _lab) = placed_world("refused", Role::Settings, "org.quire.Settings").await;
+        let me = world.client.unique_name().expect("unique name").to_string();
+        let options = OpenOptions::default().with_places(vec![place("this-computer")]);
+        for (role, name) in [
+            (Role::Settings, "org.quire.Settings"),
+            (Role::App, "org.quire.Memory"),
+            (Role::Cua, "org.quire.Cua"),
+        ] {
+            world.peers.introduce(
+                &me,
+                inferd::peers::Caller {
+                    app: app(name),
+                    role,
+                },
+            );
+            let denied = |what: &str, got: Result<(), ClientError>| {
+                assert!(
+                    matches!(got, Err(ClientError::Transport(TransportError::Denied(_)))),
+                    "{name} {what}: {got:?}"
+                );
+            };
+            denied(
+                "open",
+                world
+                    .accounts
+                    .session_with(&llm(), DataClass::Public, Tier::Balanced, &options)
+                    .await
+                    .map(|_| ()),
+            );
+            denied(
+                "prepare",
+                world
+                    .accounts
+                    .prepare(&llm(), DataClass::Public, Tier::Balanced, &options)
+                    .await
+                    .map(|_| ()),
+            );
+            // The same call without the key is served.
+            assert!(
+                world
+                    .accounts
+                    .prepare(
+                        &llm(),
+                        DataClass::Public,
+                        Tier::Balanced,
+                        &OpenOptions::default()
+                    )
+                    .await
+                    .is_ok(),
+                "{name}"
+            );
+        }
+        // A placer is let through.
+        world.peers.introduce(
+            &me,
+            inferd::peers::Caller {
+                app: app(COMPANION),
+                role: Role::Placer,
+            },
+        );
+        assert!(
+            world
+                .accounts
+                .prepare(&llm(), DataClass::Public, Tier::Balanced, &options)
+                .await
+                .is_ok()
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_places_option_that_is_not_what_the_interface_says_is_invalid_args() {
+        let (world, _lab) = placed_world("invalid", Role::Placer, COMPANION).await;
+        let proxy = InferenceProxy::new(&world.client).await.expect("proxy");
+        let need = porter_dbus::need_to_dbus(&llm());
+        let text = |value: &str| {
+            porter_dbus::zvariant::OwnedValue::try_from(porter_dbus::zvariant::Value::from(
+                value.to_owned(),
+            ))
+            .expect("value")
+        };
+        let list = |values: &[&str]| {
+            porter_dbus::zvariant::OwnedValue::try_from(porter_dbus::zvariant::Value::new(
+                values.iter().map(|v| (*v).to_owned()).collect::<Vec<_>>(),
+            ))
+            .expect("value")
+        };
+        let pins = |place: &str, model: &str| {
+            porter_dbus::zvariant::OwnedValue::try_from(porter_dbus::zvariant::Value::new(
+                std::collections::HashMap::from([(place.to_owned(), model.to_owned())]),
+            ))
+            .expect("value")
+        };
+        let cases: Vec<(&str, porter_dbus::Details)> = vec![
+            (
+                "a bad place id",
+                [("places".to_owned(), list(&["somewhere"]))].into(),
+            ),
+            (
+                "places as text",
+                [("places".to_owned(), text("this-computer"))].into(),
+            ),
+            (
+                "pins without places",
+                [("place_models".to_owned(), pins("this-computer", "m"))].into(),
+            ),
+            (
+                "a pin outside the set",
+                [
+                    ("places".to_owned(), list(&["this-computer"])),
+                    ("place_models".to_owned(), pins("account:x", "m")),
+                ]
+                .into(),
+            ),
+            (
+                "a pin to a bad model",
+                [
+                    ("places".to_owned(), list(&["this-computer"])),
+                    (
+                        "place_models".to_owned(),
+                        pins("this-computer", "Not A Model"),
+                    ),
+                ]
+                .into(),
+            ),
+        ];
+        for (what, options) in cases {
+            let got = proxy
+                .availability(&need, "public", &options)
+                .await
+                .expect_err(what);
+            assert!(porter_dbus::is_invalid_args(&got), "{what}: {got:?}");
+        }
+    }
+}

@@ -357,6 +357,7 @@ async fn open(
     let options = OpenOptions {
         traceparent: None,
         usage: Some(ask.usage),
+        ..OpenOptions::default()
     };
     let mut session = match accounts.session_with(need, ask.class, tier, &options).await {
         Ok(session) => session,

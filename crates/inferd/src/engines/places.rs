@@ -37,7 +37,7 @@ fn state_of(serving: bool) -> PlaceState {
 }
 
 /// An account in these states can be used; the rest are waiting for the person.
-fn usable(state: Option<AccountState>) -> bool {
+pub(crate) fn usable(state: Option<AccountState>) -> bool {
     matches!(state, None | Some(AccountState::Ok | AccountState::Limited))
 }
 
@@ -53,13 +53,23 @@ impl Engines {
 
     /// The place a model is served from.
     pub(crate) fn place_of(&self, card: &ModelCard) -> PlaceId {
-        match &card.locality {
+        self.place_for(&card.locality, &card.account, &card.model)
+    }
+
+    /// The place a model at `locality` under `account` is served from.
+    pub(crate) fn place_for(
+        &self,
+        locality: &Locality,
+        account: &porter_core::AccountId,
+        model: &ModelId,
+    ) -> PlaceId {
+        match locality {
             Locality::OnDevice => PlaceId::this_computer(),
             Locality::LocalNetwork => PlaceId::computer(&self.computer_of(&ModelRef {
-                account: card.account.clone(),
-                model: card.model.clone(),
+                account: account.clone(),
+                model: model.clone(),
             })),
-            Locality::Cloud { .. } => PlaceId::account(&card.account),
+            Locality::Cloud { .. } => PlaceId::account(account),
         }
     }
 

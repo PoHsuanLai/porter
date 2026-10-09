@@ -72,6 +72,7 @@ async fn prepare_sends_need_class_tier_and_trace_context() {
     let options = OpenOptions {
         traceparent: Some(parent.clone()),
         usage: Some(Usage::Background),
+        ..OpenOptions::default()
     };
     accounts
         .prepare(&stt(), DataClass::Voice, Tier::Fast, &options)

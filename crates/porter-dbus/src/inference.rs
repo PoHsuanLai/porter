@@ -16,8 +16,11 @@ use zbus::zvariant::OwnedFd;
 )]
 pub trait Inference {
     /// Whether an AI need can be met for this class, revealing no identity. `options` is the
-    /// call's vardict; the reserved keys are `traceparent` (`OPTION_TRACEPARENT`) and `usage`
-    /// (`OPTION_USAGE`).
+    /// call's vardict; the reserved keys are `traceparent` (`OPTION_TRACEPARENT`), `usage`
+    /// (`OPTION_USAGE`) and, for docket's daemons only, `places` and `place_models`
+    /// (`OPTION_PLACES`, `OPTION_PLACE_MODELS`). With `places`, when no allowed place can serve,
+    /// the call fails with `org.quire.Inference1.Error.NoAllowedPlace.<Reason>` (see
+    /// `place_error_name`).
     fn availability(&self, need: &NeedArg, class: &str, options: &Details) -> zbus::Result<String>;
     /// A framed request/stream session for `need`, `class` and `tier`, pinned to one model.
     /// `options` carries `traceparent` when the caller has a trace and `usage` when the session

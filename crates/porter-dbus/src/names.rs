@@ -72,6 +72,17 @@ pub const OPTION_TRACEPARENT: &str = "traceparent";
 /// invalid args.
 pub const OPTION_USAGE: &str = "usage";
 
+/// The key, in the same `options` vardict, of the places a call may run: an `as` of place ids
+/// (`this-computer`, `computer:<name>`, `account:<account id>`) in the caller's order of
+/// preference. Only docket's companion, reader and intents daemons may send it (by unit); any
+/// other caller is refused `AccessDenied`, not ignored. With it inferd routes inside the set and
+/// never outside it; the data class's floor and the local-only switch still apply.
+pub const OPTION_PLACES: &str = "places";
+
+/// The key of the model to use at a place of the set: an `a{ss}` of place id to model id. A place
+/// with no entry uses the usual choice. Sent only with [`OPTION_PLACES`].
+pub const OPTION_PLACE_MODELS: &str = "place_models";
+
 /// The keys of a row of `Inference1.Places` (`a(sa{sv})`: the place's id, then these). `kind`
 /// is `this_computer`, `own_computer` or `cloud_account` (`s`); `name` is the computer's name or
 /// the account's label (`s`); `provider` is the provider's display name, on a cloud account only

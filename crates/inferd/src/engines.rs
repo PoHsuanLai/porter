@@ -11,6 +11,7 @@ use crate::cloud::turn::CloudPin;
 use crate::local::{LocalModel, Weights};
 use crate::peers::{Caller, Role};
 use crate::probed::{ProbedBook, Standing};
+use crate::router::placed::{Allowed, Placed, Rules, Serving, Unplaced, choose_in};
 use crate::router::{Listed, choose};
 use crate::runner::{Pin, Pinned};
 use crate::serve::{EngineFailed, EngineHost};
@@ -25,8 +26,8 @@ use porter_core::capability::SpeechMode;
 use porter_core::consent::{Availability, Usage};
 use porter_core::{AccountId, AppId, DataClass, Locality, Need, Tier};
 use porter_infer::{
-    InferRefusal, LicenceClass, ModelCard, ModelRef, PickRefusal, Policy, Readiness, ServedBy,
-    SpendVerdict, SwapCost, TierMap, Why,
+    InferRefusal, LicenceClass, ModelCard, ModelRef, PickRefusal, PlaceRefusal, Policy, Readiness,
+    ServedBy, SpendVerdict, SwapCost, TierMap, Why,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -432,20 +433,53 @@ impl Engines {
         role: Role,
         offered: &Offered,
     ) -> Result<(Routing, Pinned), PickRefusal> {
+        self.route_in(spec, role, offered, None)
+            .map_err(Unplaced::into_pick)
+    }
+
+    /// `route_with`, inside the places `allowed` names when it does: the models of other places
+    /// are not candidates, the places are tried in the caller's order, and a request nothing in
+    /// the set can serve is refused with the reason ([`Unplaced::NoPlace`]).
+    pub fn route_in(
+        &self,
+        spec: &SessionSpec,
+        role: Role,
+        offered: &Offered,
+        allowed: Option<&Allowed>,
+    ) -> Result<(Routing, Pinned), Unplaced> {
         if matches!(spec.need, Need::ComputerUse(_)) && role != Role::Cua {
-            return Err(InferRefusal::Denied.into());
+            return Err(Unplaced::Other(InferRefusal::Denied.into()));
         }
         let settings = self.settings();
         let tiers = through_grants(&settings.tiers, offered);
-        let decided = choose(
-            &spec.need,
-            spec.class,
-            spec.tier,
-            &self.listed_for(&spec.need, offered),
-            &settings.routing_policy(),
-            &tiers,
-            settings.auto,
-        )?;
+        let policy = settings.routing_policy();
+        let decided = match allowed {
+            None => choose(
+                &spec.need,
+                spec.class,
+                spec.tier,
+                &self.listed_for(&spec.need, offered),
+                &policy,
+                &tiers,
+                settings.auto,
+            )
+            .map_err(Unplaced::Other)?,
+            Some(allowed) => {
+                choose_in(
+                    &spec.need,
+                    spec.class,
+                    spec.tier,
+                    &self.placed(&spec.need, offered),
+                    allowed,
+                    Rules {
+                        policy: &policy,
+                        tiers: &tiers,
+                        auto: settings.auto,
+                    },
+                )?
+                .0
+            }
+        };
         let (chosen, readiness) = (decided.chosen, decided.readiness);
         let chosen_ref = ModelRef {
             account: chosen.account.clone(),
@@ -453,7 +487,7 @@ impl Engines {
         };
         let (locality, model, cloud) = self
             .backing(&chosen_ref, offered, &settings)
-            .ok_or_else(|| PickRefusal::from(InferRefusal::Unavailable))?;
+            .ok_or_else(|| Unplaced::Other(InferRefusal::Unavailable.into()))?;
         let name = self.label_of(&chosen_ref, offered);
         let served = ServedBy {
             account: chosen.account,
@@ -475,6 +509,35 @@ impl Engines {
                 cloud,
             },
         ))
+    }
+
+    /// The models a request of `need` may be routed to, each with the place it is at and whether
+    /// it can serve now.
+    pub(crate) fn placed(&self, need: &Need, offered: &Offered) -> Vec<Placed> {
+        self.listed_for(need, offered)
+            .into_iter()
+            .map(|listed| Placed {
+                place: self.place_of(&listed.card),
+                serving: self.serving(&listed, offered),
+                listed,
+            })
+            .collect()
+    }
+
+    /// Whether `listed` can take a request now: a model of this computer or a machine of the
+    /// person's by its readiness, a hosted one while its account works.
+    fn serving(&self, listed: &Listed, offered: &Offered) -> Serving {
+        let model = ModelRef {
+            account: listed.card.account.clone(),
+            model: listed.card.model.clone(),
+        };
+        let fine = match listed.card.locality {
+            Locality::Cloud { .. } => offered
+                .find(&model)
+                .is_some_and(|hosted| places::usable(hosted.state)),
+            Locality::OnDevice | Locality::LocalNetwork => places::serves_now(listed.readiness),
+        };
+        if fine { Serving::Now } else { Serving::NotNow }
     }
 
     /// What runs `model` for a session: where it is (`Locality`), the local model behind it, or the
@@ -563,8 +626,10 @@ impl Engines {
             Usage::Interactive,
             role,
             &Offered::default(),
+            None,
         )
         .await
+        .map_err(|refusal| refusal.into_pick().refusal)
     }
 
     /// `prepare` for this caller: the hosted models its grants reach are among the candidates (a
@@ -577,11 +642,27 @@ impl Engines {
         usage: Usage,
         caller: &Caller,
     ) -> Result<Readiness, InferRefusal> {
+        self.prepare_in(need, class, tier, usage, caller, None)
+            .await
+            .map_err(|refusal| refusal.into_pick().refusal)
+    }
+
+    /// `prepare_for`, inside the places `allowed` names when it does.
+    pub async fn prepare_in(
+        &self,
+        need: &Need,
+        class: DataClass,
+        tier: Tier,
+        usage: Usage,
+        caller: &Caller,
+        allowed: Option<&Allowed>,
+    ) -> Result<Readiness, Unplaced> {
         let offered = self.offer(&caller.app, class, usage).await;
-        self.prepare_with(need, class, tier, usage, caller.role, &offered)
+        self.prepare_with(need, class, tier, usage, caller.role, &offered, allowed)
             .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn prepare_with(
         &self,
         need: &Need,
@@ -590,7 +671,8 @@ impl Engines {
         usage: Usage,
         role: Role,
         offered: &Offered,
-    ) -> Result<Readiness, InferRefusal> {
+        allowed: Option<&Allowed>,
+    ) -> Result<Readiness, Unplaced> {
         let spec = SessionSpec {
             need: need.clone(),
             class,
@@ -598,9 +680,8 @@ impl Engines {
             usage,
         };
         let (decision, pinned) = self
-            .route_with(&spec, role, offered)
-            .map(|(routing, pinned)| (routing.decision(), pinned))
-            .map_err(|r| r.refusal)?;
+            .route_in(&spec, role, offered, allowed)
+            .map(|(routing, pinned)| (routing.decision(), pinned))?;
         match (decision.readiness, pinned.model) {
             (Readiness::Loadable, Some(model)) => {
                 self.supervised.warm(&model.spec.id);
@@ -619,7 +700,15 @@ impl Engines {
     /// What an app is told about a need without a session (`Inference1.Availability`): whether
     /// the route would run, without revealing which account or model.
     pub fn availability(&self, need: &Need, class: DataClass, role: Role) -> Availability {
-        self.availability_with(need, class, Usage::Interactive, role, &Offered::default())
+        self.availability_with(
+            need,
+            class,
+            Usage::Interactive,
+            role,
+            &Offered::default(),
+            None,
+        )
+        .unwrap_or(Availability::NeedsAccount)
     }
 
     /// `availability` for this caller: the hosted models its grants reach are among the candidates.
@@ -630,8 +719,39 @@ impl Engines {
         usage: Usage,
         caller: &Caller,
     ) -> Availability {
+        self.availability_in(need, class, usage, caller, None)
+            .await
+            .unwrap_or(Availability::NeedsAccount)
+    }
+
+    /// `availability_for`, inside the places `allowed` names when it does; nothing in the set
+    /// able to serve is the refusal with its reason.
+    pub async fn availability_in(
+        &self,
+        need: &Need,
+        class: DataClass,
+        usage: Usage,
+        caller: &Caller,
+        allowed: Option<&Allowed>,
+    ) -> Result<Availability, PlaceRefusal> {
         let offered = self.offer(&caller.app, class, usage).await;
-        self.availability_with(need, class, usage, caller.role, &offered)
+        self.availability_with(need, class, usage, caller.role, &offered, allowed)
+    }
+
+    /// Whether a session for `spec` can be routed inside `allowed`: the refusal with its reason
+    /// when no place of the set can serve. Any other refusal (consent, spend) is the session's
+    /// to tell, as it always was.
+    pub async fn placement(
+        &self,
+        spec: &SessionSpec,
+        caller: &Caller,
+        allowed: &Allowed,
+    ) -> Result<(), PlaceRefusal> {
+        let offered = self.offer(&caller.app, spec.class, spec.usage).await;
+        match self.route_in(spec, caller.role, &offered, Some(allowed)) {
+            Err(Unplaced::NoPlace(refusal)) => Err(refusal),
+            Ok(_) | Err(Unplaced::Other(_)) => Ok(()),
+        }
     }
 
     fn availability_with(
@@ -641,21 +761,25 @@ impl Engines {
         usage: Usage,
         role: Role,
         offered: &Offered,
-    ) -> Availability {
+        allowed: Option<&Allowed>,
+    ) -> Result<Availability, PlaceRefusal> {
         let spec = SessionSpec {
             need: need.clone(),
             class,
             tier: Tier::Balanced,
             usage,
         };
-        match self.route_with(&spec, role, offered).map_err(|r| r.refusal) {
-            Ok(_) => Availability::Granted,
-            Err(InferRefusal::NeedsGrant) => Availability::AvailableNeedsConsent,
-            Err(InferRefusal::Denied | InferRefusal::OverBudget) => Availability::Denied,
-            Err(InferRefusal::Unsupported) => Availability::Unsupported,
-            Err(InferRefusal::RequiresCloud(_) | InferRefusal::Unavailable) => {
-                Availability::NeedsAccount
-            }
+        match self.route_in(&spec, role, offered, allowed) {
+            Ok(_) => Ok(Availability::Granted),
+            Err(Unplaced::NoPlace(refusal)) => Err(refusal),
+            Err(Unplaced::Other(pick)) => Ok(match pick.refusal {
+                InferRefusal::NeedsGrant => Availability::AvailableNeedsConsent,
+                InferRefusal::Denied | InferRefusal::OverBudget => Availability::Denied,
+                InferRefusal::Unsupported => Availability::Unsupported,
+                InferRefusal::RequiresCloud(_) | InferRefusal::Unavailable => {
+                    Availability::NeedsAccount
+                }
+            }),
         }
     }
 
@@ -667,14 +791,26 @@ impl Engines {
             pin,
             role,
             app: None,
+            allowed: None,
         }
     }
 
     /// The router for one session of `caller`: as `router`, and the hosted models its grants reach
     /// are among the candidates. (A router made by `router` knows no app and serves none.)
     pub fn router_for(&self, pin: Pin, caller: &Caller) -> SessionRouter {
+        self.router_for_in(pin, caller, None)
+    }
+
+    /// `router_for`, routing inside the places `allowed` names when it does.
+    pub fn router_for_in(
+        &self,
+        pin: Pin,
+        caller: &Caller,
+        allowed: Option<Allowed>,
+    ) -> SessionRouter {
         SessionRouter {
             app: Some(caller.app.clone()),
+            allowed,
             ..self.router(pin, caller.role)
         }
     }
@@ -806,6 +942,7 @@ pub struct SessionRouter {
     pin: Pin,
     role: Role,
     app: Option<AppId>,
+    allowed: Option<Allowed>,
 }
 
 impl SessionRouter {
@@ -831,7 +968,10 @@ impl crate::serve::Router for SessionRouter {
 
     async fn route_why(&self, spec: &SessionSpec) -> Result<Routing, PickRefusal> {
         let offered = self.offered(spec).await;
-        let (routing, pinned) = self.engines.route_with(spec, self.role, &offered)?;
+        let (routing, pinned) = self
+            .engines
+            .route_in(spec, self.role, &offered, self.allowed.as_ref())
+            .map_err(Unplaced::into_pick)?;
         self.pin.set(pinned);
         Ok(routing)
     }
