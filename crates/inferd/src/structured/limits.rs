@@ -106,6 +106,9 @@ pub struct AiConfig {
     /// `ai.agents.*`.
     #[serde(default)]
     pub agents: crate::settings::AgentsConfig,
+    /// `ai.tailnet.*`.
+    #[serde(default)]
+    pub tailnet: crate::settings::TailnetConfig,
 }
 
 /// What a structured turn runs under.

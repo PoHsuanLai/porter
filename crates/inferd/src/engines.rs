@@ -158,6 +158,11 @@ impl Engines {
         self.book.live.get()
     }
 
+    /// Follows the settings in force: the receiver changes whenever they are put in force.
+    pub fn watch_settings(&self) -> tokio::sync::watch::Receiver<Arc<Settings>> {
+        self.book.live.subscribe()
+    }
+
     /// Puts new settings in force for every clone of these engines: the next session is routed
     /// by them, a session already open keeps the decision it was given.
     pub fn apply(&self, settings: Settings) {

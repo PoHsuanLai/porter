@@ -7,7 +7,8 @@ use super::target::Target;
 use crate::catalog::claims_of;
 use crate::local::{LOCAL_ACCOUNT, LocalModel, flavor_of};
 use engine_supervisor::{EngineId, EnginePaths, EngineSpec, ProgramPath, SocketPath, command};
-use model_catalog::{EngineProfile, MiB, ModelEntry, Serving, WeightFiles};
+use model_catalog::{EngineKind, EngineProfile, MiB, ModelEntry, Serving, WeightFiles};
+use model_openai_compat::Flavor;
 use model_provider::ModelName;
 use porter_core::{AccountId, Billing, Capability, Offer};
 use porter_infer::ModelCard;
@@ -48,17 +49,35 @@ pub fn local_model(
         id: name.to_owned(),
     };
     // Only an entry the catalogue says is served by an engine somebody else started can be
-    // attached; one inferd launches itself cannot.
-    let Serving::Attached(served) = &entry.serving else {
-        return Err(AttachedError::NotAttachable {
-            id: name.to_owned(),
-        });
+    // attached; one inferd launches itself cannot. A computer on the Tailscale network is the
+    // exception: what it lends is whatever its own inferd serves, which is any language model of
+    // the catalogue, started by that inferd whichever way the catalogue says. It speaks
+    // OpenAI-compatible chat under the catalogue id, and the plain flavor of that wire.
+    let (flavor, kind, served_name) = match (&entry.serving, attached.reach.is_tailnet()) {
+        (Serving::Attached(served), false) => (
+            flavor_of(served.engine).ok_or_else(no_chat)?,
+            served.engine,
+            served.served_name.0.clone(),
+        ),
+        (Serving::Launched, false) => {
+            return Err(AttachedError::NotAttachable {
+                id: name.to_owned(),
+            });
+        }
+        (_, true) => {
+            if !capabilities
+                .iter()
+                .any(|capability| matches!(capability, Capability::Llm(_)))
+            {
+                return Err(no_chat());
+            }
+            (Flavor::LiteLlm, EngineKind::Vllm, entry.id.0.clone())
+        }
     };
-    let flavor = flavor_of(served.engine).ok_or_else(no_chat)?;
     // An attached entry has no engine profile (nothing is launched): the one made here names the
     // wire and is never run.
     let profile = EngineProfile {
-        kind: served.engine,
+        kind,
         args: Vec::new(),
         weights: WeightFiles::HfSnapshot,
         inputs: None,
@@ -86,7 +105,7 @@ pub fn local_model(
         },
         // The name the catalogue says the engine serves the model under, which a request names and
         // `/v1/models` must list.
-        name: ModelName(served.served_name.0.clone()),
+        name: ModelName(served_name),
         spec: EngineSpec {
             id: engine_id(name),
             need: MiB(0),

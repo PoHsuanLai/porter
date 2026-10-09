@@ -115,7 +115,7 @@ fn a_computer_is_added_to_the_file_the_keys_and_the_book_and_reads_back_as_the_s
 
     // At the next start the file gives the same engine, and nothing is refused.
     let file = AddedFile::read(&rig.file()).expect("reads");
-    let (engines, refused) = file.attached();
+    let (engines, refused) = file.attached(std::path::Path::new("/run/inferd"));
     assert_eq!(refused, Vec::<String>::new());
     assert_eq!(engines.len(), 1);
     assert_eq!(engines[0].computer, target.computer);
@@ -279,7 +279,7 @@ fn a_computer_that_was_added_is_removed_with_its_models_and_its_keys_and_one_by_
         .keys()
         .join(format!("studio-pc--{}.key", entries::ATTACHED));
     assert!(key_path.exists());
-    assert_eq!(computers_free.remove("computer:studio-pc"), Ok(()));
+    assert_eq!(computers_free.remove("computer:studio-pc"), Ok(None));
     assert!(free.book.is_empty());
     assert!(!key_path.exists());
     assert_eq!(
@@ -291,7 +291,7 @@ fn a_computer_that_was_added_is_removed_with_its_models_and_its_keys_and_one_by_
     assert_eq!(file, AddedFile::default());
     // And it can be added again, by the name alone this time.
     assert!(computers_free.add(studio(None)).is_ok());
-    assert_eq!(computers_free.remove("studio-pc"), Ok(()));
+    assert_eq!(computers_free.remove("studio-pc"), Ok(None));
 
     assert_eq!(computers.remove("lab"), Err(ComputerError::AddedByHand));
     assert_eq!(
@@ -338,12 +338,14 @@ fn the_settings_file_wins_a_clash_when_the_two_are_merged() {
                     ..AddedModel::default()
                 },
             )]),
+            ..AddedComputer::default()
         },
     );
-    let (kept, said) = merged(&hand, &added);
+    let sockets = std::path::Path::new("/run/inferd");
+    let (kept, said) = merged(&hand, &added, sockets);
     assert_eq!(kept, vec![]);
     assert_eq!(said.len(), 1, "{said:?}");
-    let (kept, said) = merged(&[], &added);
+    let (kept, said) = merged(&[], &added, sockets);
     assert_eq!(kept.len(), 1);
     assert_eq!(said, Vec::<String>::new());
 }
@@ -371,9 +373,10 @@ fn a_file_that_is_not_a_list_of_computers_is_kept_aside_and_the_list_starts_empt
         AddedComputer {
             label: "Fine".into(),
             models: BTreeMap::from([("Not A Model".into(), AddedModel::default())]),
+            ..AddedComputer::default()
         },
     );
-    let (engines, refused) = file.attached();
+    let (engines, refused) = file.attached(std::path::Path::new("/run/inferd"));
     assert_eq!(engines, vec![]);
     assert_eq!(refused.len(), 2, "{refused:?}");
 }
@@ -404,6 +407,204 @@ fn the_key_is_in_no_debug_output_no_error_and_no_file_but_its_own() {
     };
     let refused = rig.computers(&[]).add(bad).expect_err("bad address");
     assert!(!format!("{refused:?} {refused}").contains(KEY));
+}
+
+fn tailnet_rig(name: &str) -> Rig {
+    let rig = Rig::new(name);
+    // The catalogue holds a model inferd starts itself: a computer on the network lends such a
+    // model, which an engine the person attached cannot.
+    let launched = parse_entry_text(&entries::chat()).expect("entry");
+    let attached = parse_entry_text(&entries::attached()).expect("entry");
+    let book = AttachedBook::default()
+        .with_catalogue(vec![attached, launched], rig.scratch.path().join("sockets"));
+    Rig { book, ..rig }
+}
+
+fn node(text: &str) -> NodeId {
+    NodeId::parse(text).expect("a node id")
+}
+
+fn pi() -> NewTailnetComputer {
+    NewTailnetComputer {
+        label: "Raspberry Pi".to_owned(),
+        node: node("nPI"),
+        models: vec!["tiny-chat".to_owned(), entries::ATTACHED.to_owned()],
+    }
+}
+
+#[test]
+fn a_computer_on_the_network_is_kept_by_its_node_with_no_address_and_no_key() {
+    let rig = tailnet_rig("tailnet-add");
+    let computers = rig.computers(&[]);
+    assert_eq!(
+        computers.add_tailnet(pi()),
+        Ok(place("computer:raspberry-pi"))
+    );
+
+    // The file holds the node and the models, and nothing to reach them by.
+    let text = std::fs::read_to_string(rig.file()).expect("file");
+    assert!(text.contains("node = \"nPI\""), "{text}");
+    for word in ["socket", "port", "key_file"] {
+        assert!(!text.contains(word), "{word}: {text}");
+    }
+    assert_eq!(
+        std::fs::metadata(rig.file())
+            .expect("file")
+            .permissions()
+            .mode()
+            & 0o777,
+        0o600
+    );
+    assert!(!rig.keys().exists(), "no key was written");
+
+    // Both models are engines of the computer, reached through the relay's socket, and say they
+    // are on another computer of the person's.
+    let relay = relay_socket(rig.book.sockets(), &node("nPI")).expect("path");
+    for id in ["tiny-chat", entries::ATTACHED] {
+        let found = rig
+            .book
+            .models()
+            .into_iter()
+            .find(|one| one.card.model.as_str() == id)
+            .unwrap_or_else(|| panic!("{id}"));
+        let target = found.attached.as_ref().expect("an attached engine");
+        assert_eq!(
+            target.reach,
+            Reach::Tailnet {
+                node: node("nPI"),
+                socket: relay.clone()
+            }
+        );
+        assert!(target.is_relayed());
+        assert_eq!(target.place, Place::MyNetwork);
+        assert_eq!(found.card.locality, porter_core::Locality::LocalNetwork);
+        assert_eq!(found.name.0, id, "asked for by the catalogue's id");
+    }
+    assert_eq!(
+        rig.book
+            .label_of(&ComputerName::parse("raspberry-pi").unwrap())
+            .as_deref(),
+        Some("Raspberry Pi")
+    );
+
+    // At the next start the file gives the same engines.
+    let file = AddedFile::read(&rig.file()).expect("reads");
+    let (engines, refused) = file.attached(rig.book.sockets());
+    assert_eq!(refused, Vec::<String>::new());
+    assert_eq!(engines.len(), 2);
+    assert!(engines.iter().all(|one| one.reach
+        == Reach::Tailnet {
+            node: node("nPI"),
+            socket: relay.clone()
+        }));
+    assert_eq!(
+        computers
+            .tailnet_nodes()
+            .get(&node("nPI"))
+            .map(ComputerName::as_str),
+        Some("raspberry-pi")
+    );
+}
+
+#[test]
+fn a_computer_on_the_network_is_added_once_whatever_it_is_called() {
+    let rig = tailnet_rig("tailnet-twice");
+    let computers = rig.computers(&[]);
+    computers.add_tailnet(pi()).expect("added");
+    let renamed = NewTailnetComputer {
+        label: "Kitchen".to_owned(),
+        models: vec!["tiny-chat".to_owned()],
+        ..pi()
+    };
+    assert_eq!(
+        computers.add_tailnet(renamed),
+        Err(ComputerError::AlreadyThere)
+    );
+    // Another computer lending a model that is already taken is refused too.
+    let other = NewTailnetComputer {
+        label: "Laptop".to_owned(),
+        node: node("nLAPTOP"),
+        models: vec!["tiny-chat".to_owned()],
+    };
+    assert_eq!(
+        computers.add_tailnet(other),
+        Err(ComputerError::ModelTaken("tiny-chat".into()))
+    );
+    let nothing = NewTailnetComputer {
+        models: vec![],
+        ..pi()
+    };
+    assert_eq!(
+        rig.computers(&[]).add_tailnet(nothing),
+        Err(ComputerError::NoModels)
+    );
+    let unknown = NewTailnetComputer {
+        label: "Other".to_owned(),
+        node: node("nOTHER"),
+        models: vec!["no-such-model".to_owned()],
+    };
+    assert_eq!(
+        computers.add_tailnet(unknown),
+        Err(ComputerError::UnknownModel("no-such-model".into()))
+    );
+}
+
+#[test]
+fn removing_a_computer_on_the_network_says_which_one_so_its_relay_can_stop() {
+    let rig = tailnet_rig("tailnet-remove");
+    let computers = rig.computers(&[]);
+    computers.add_tailnet(pi()).expect("added");
+    assert_eq!(
+        computers.remove("computer:raspberry-pi"),
+        Ok(Some(node("nPI")))
+    );
+    assert!(rig.book.models().is_empty());
+    assert!(computers.tailnet_nodes().is_empty());
+    assert_eq!(
+        computers.remove("raspberry-pi"),
+        Err(ComputerError::NotThere)
+    );
+}
+
+#[test]
+fn the_name_people_read_follows_tailscale_and_the_place_does_not_move() {
+    let rig = tailnet_rig("tailnet-relabel");
+    let computers = rig.computers(&[]);
+    computers.add_tailnet(pi()).expect("added");
+    let name = ComputerName::parse("raspberry-pi").unwrap();
+    let same = BTreeMap::from([(node("nPI"), "Raspberry Pi".to_owned())]);
+    assert!(!computers.relabel(&same), "nothing changed");
+    let renamed = BTreeMap::from([
+        (node("nPI"), "kitchen-pi".to_owned()),
+        (node("nOTHER"), "x".to_owned()),
+    ]);
+    assert!(computers.relabel(&renamed));
+    assert_eq!(rig.book.label_of(&name).as_deref(), Some("kitchen-pi"));
+    let text = std::fs::read_to_string(rig.file()).expect("file");
+    assert!(
+        text.contains("[computers.raspberry-pi]") && text.contains("kitchen-pi"),
+        "{text}"
+    );
+}
+
+#[test]
+fn what_a_person_reads_of_the_network_is_plain_words() {
+    for error in [
+        ComputerError::NotOnTailscale,
+        ComputerError::NotAnswering,
+        ComputerError::NotAsking,
+        ComputerError::TooManyAsking,
+    ] {
+        let text = error.to_string();
+        assert!(text.ends_with('.'), "{text}");
+        let lower = text.to_lowercase();
+        for word in [
+            "porter", "inferd", "socket", "port ", "node", "tailnet", "daemon", "api",
+        ] {
+            assert!(!lower.contains(word), "{text:?} says {word:?}");
+        }
+        assert!(!error.name().is_empty());
+    }
 }
 
 fn walk(dir: &Path) -> Vec<PathBuf> {

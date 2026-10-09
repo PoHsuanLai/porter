@@ -2,9 +2,11 @@
 //! computers on their Tailscale network, for the shell, Settings and temor. temor never asks
 //! Tailscale itself: accountd does, once, through the account the person added.
 //!
-//! Who may call: the shell (`CallerRole::SheetHost`), Settings (`CallerRole::Settings`) and the
+//! Who may call: the shell (`CallerRole::SheetHost`), Settings (`CallerRole::Settings`), the
 //! terminal (`CallerRole::Terminal`, temor, by its unit as the systemd manager says its main
-//! process is). Anyone else, and a sender accountd does not know, is `AccessDenied`.
+//! process is) and the AI broker (`CallerRole::PorterDaemon`, inferd, which looks for the
+//! computers that lend their models). Anyone else, and a sender accountd does not know, is
+//! `AccessDenied`.
 
 use crate::args::Details;
 use zbus::fdo;

@@ -608,6 +608,8 @@ fn real_inferd(bus: &bus::PrivateBus, config: &str, catalog: &[(&str, String)]) 
             .env("XDG_DATA_HOME", scratch.join("data"))
             .env("XDG_STATE_HOME", scratch.join("state"))
             .env("DBUS_SESSION_BUS_ADDRESS", bus.address())
+            // A Tailscale nobody serves: this computer's real one is never asked.
+            .env("INFERD_TAILSCALE_SOCKET", scratch.join("no-tailscale.sock"))
             .arg("--config")
             .arg(&file)
             .stdin(Stdio::null())

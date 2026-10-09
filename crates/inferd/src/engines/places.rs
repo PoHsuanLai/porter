@@ -51,6 +51,41 @@ impl Engines {
             .unwrap_or_else(ComputerName::other)
     }
 
+    /// The language models this computer lends to the person's other computers: the ones that
+    /// run on this computer (an engine inferd runs, a runtime the person runs here, an engine
+    /// they attached that is here) and can answer now. Never a cloud account's model, never a
+    /// model on another computer, whether the person added it or attached it: a computer that
+    /// asks is not sent onward, and this is not a setting. Engines attached here are looked at
+    /// first (and only those: looking at the others would ask the computers that may be asking
+    /// us). Model id and the name a person reads.
+    pub async fn lendable(&self) -> Vec<(ModelId, String)> {
+        for local in self.book.attached.models() {
+            if local.card.locality == Locality::OnDevice {
+                let _ = self.book.attached.reprobe(&local.model_ref()).await;
+            }
+        }
+        let none = Offered::default();
+        let chat = chat_need();
+        self.listed_with(&none)
+            .into_iter()
+            .filter(|one| {
+                one.card.locality == Locality::OnDevice
+                    && fits(&chat, &one.card)
+                    && serves_now(one.readiness)
+            })
+            .map(|one| {
+                let model = ModelRef {
+                    account: one.card.account.clone(),
+                    model: one.card.model.clone(),
+                };
+                let name = self
+                    .label_of(&model, &none)
+                    .map_or_else(|| one.card.model.to_string(), |label| label.0);
+                (one.card.model, name)
+            })
+            .collect()
+    }
+
     /// The place a model is served from.
     pub(crate) fn place_of(&self, card: &ModelCard) -> PlaceId {
         self.place_for(&card.locality, &card.account, &card.model)

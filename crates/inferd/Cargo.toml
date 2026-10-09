@@ -21,6 +21,8 @@ porter-dbus = { workspace = true }
 porter-discover = { workspace = true }
 porter-http = { workspace = true, features = ["hyper"] }
 porter-provider = { workspace = true }
+porter-tailnet = { workspace = true, features = ["io"] }
+porter-tailscale = { workspace = true, features = ["io"] }
 porter-infer = { workspace = true }
 porter-bridge = { workspace = true }
 ds-settings = { workspace = true }

@@ -139,13 +139,29 @@ fn inference1_xml_unchanged_members() {
     assert!(xml.contains("<method name=\"AddComputer\">"));
     assert!(xml.contains("<method name=\"RemoveComputer\">"));
     assert!(xml.contains("<arg name=\"models\" type=\"a(sa{sv})\" direction=\"in\"/>"));
+    // And these, for lending models to the person's other computers over their Tailscale
+    // network (all additive): the computers that could be added, adding one, and the computers
+    // that ask to use this one (who is asking, the answer, taking an answer back).
+    for member in [
+        "<method name=\"Candidates\">",
+        "<method name=\"AddTailnetComputer\">",
+        "<method name=\"Guests\">",
+        "<method name=\"AnswerGuest\">",
+        "<method name=\"ForgetGuest\">",
+        "<signal name=\"GuestAsks\">",
+        "<signal name=\"GuestsChanged\">",
+        "<arg name=\"allow\" type=\"b\" direction=\"in\"/>",
+    ] {
+        assert!(xml.contains(member), "missing {member}");
+    }
     let declared = xml.matches("<method ").count()
         + xml.matches("<signal ").count()
         + xml.matches("<property ").count();
     assert_eq!(
         declared,
-        members.len() + 3,
-        "no member beyond the frozen seven, Places, AddComputer and RemoveComputer"
+        members.len() + 3 + 7,
+        "no member beyond the frozen seven, Places, AddComputer, RemoveComputer, and the five \
+         methods and two signals of lending models across the person's network"
     );
     assert_eq!(
         porter_dbus::COMPUTER_ERROR_PREFIX,

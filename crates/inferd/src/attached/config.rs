@@ -5,7 +5,7 @@
 
 use crate::startup::SUN_PATH;
 use model_http::Port;
-use porter_core::{Locality, ModelId};
+use porter_core::{Locality, ModelId, NodeId};
 use porter_infer::ComputerName;
 use serde::{Deserialize, Serialize};
 use std::net::Ipv4Addr;
@@ -69,6 +69,24 @@ pub enum Reach {
         /// The port.
         port: Port,
     },
+    /// One of the person's own computers on their Tailscale network, reached through a relay:
+    /// a Unix socket of inferd's own that carries each connection to that computer, after
+    /// Tailscale has said who is at its address (`porter_tailnet::Relay`). The computer lends
+    /// the models its own inferd runs, so unlike an engine the person attached it serves any
+    /// language model of the catalogue, whichever way the catalogue says it is started.
+    Tailnet {
+        /// The computer's stable Tailscale id.
+        node: NodeId,
+        /// The socket of the relay that leads to it.
+        socket: PathBuf,
+    },
+}
+
+impl Reach {
+    /// Whether the engine is a computer on the Tailscale network.
+    pub fn is_tailnet(&self) -> bool {
+        matches!(self, Reach::Tailnet { .. })
+    }
 }
 
 /// An entry that passed the checks of the file alone.

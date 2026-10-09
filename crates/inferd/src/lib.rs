@@ -40,6 +40,7 @@ pub mod startup;
 pub mod structured;
 pub mod supervise;
 pub mod swap;
+pub mod tailnet;
 pub mod tee;
 pub mod watch;
 

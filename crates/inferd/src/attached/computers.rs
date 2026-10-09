@@ -13,16 +13,23 @@
 //! or `Debug` output holds it. The file of the computers holds the path of the key file, not the
 //! key.
 //!
+//! A computer on the person's Tailscale network (`Inference1.AddTailnetComputer`) is kept in the
+//! same file, with its node id and the models it lends, and no address and no key: it is reached
+//! through a relay at a socket of inferd's own ([`relay_socket`]), which asks Tailscale who is at
+//! the address on every connection.
+//!
 //! The words of every refusal are plain: the person reads them in Settings.
 
 use super::book::AttachedBook;
-use super::config::{Attached, AttachedEntry, AttachedError, Place};
+use super::config::{Attached, AttachedEntry, AttachedError, Place, Reach};
 use super::model::local_model;
+use crate::startup::SUN_PATH;
 use porter_core::atomic::AtomicWrite;
-use porter_core::{ModelId, SecretText};
+use porter_core::{ModelId, NodeId, SecretText};
 use porter_infer::{ComputerName, PlaceId};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
@@ -69,9 +76,20 @@ impl AddedModel {
 pub struct AddedComputer {
     /// The name the person gave it.
     pub label: String,
+    /// Its Tailscale node id, for a computer on the person's Tailscale network (its models then
+    /// name no socket, port or key).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node: Option<String>,
     /// Its models, by catalogue id.
     #[serde(default)]
     pub models: BTreeMap<String, AddedModel>,
+}
+
+/// The socket of the relay that leads to the computer `node`, in `sockets`: the one place a
+/// computer on the network is reached from. None when the path would be too long to connect to.
+pub fn relay_socket(sockets: &Path, node: &NodeId) -> Option<PathBuf> {
+    let path = sockets.join(format!("tailnet-{node}.sock"));
+    (path.as_os_str().as_bytes().len() < SUN_PATH).then_some(path)
 }
 
 /// `computers.toml`: the computers Settings added, by name.
@@ -136,12 +154,19 @@ impl AddedFile {
 
     /// The attached engines the file names, each past the checks the file alone allows, and a
     /// line for each that is refused (never the key).
-    pub fn attached(&self) -> (Vec<Attached>, Vec<String>) {
+    pub fn attached(&self, sockets: &Path) -> (Vec<Attached>, Vec<String>) {
         let mut engines = Vec::new();
         let mut refused = Vec::new();
         for (name, computer) in &self.computers {
-            if ComputerName::parse(name).is_err() {
+            let Ok(computer_name) = ComputerName::parse(name) else {
                 refused.push(format!("computers.{name}: not a computer name"));
+                continue;
+            };
+            if let Some(node) = &computer.node {
+                match tailnet_engines(&computer_name, node, computer, sockets) {
+                    Ok(found) => engines.extend(found),
+                    Err(why) => refused.push(format!("computers.{name}: {why}")),
+                }
                 continue;
             }
             for (model, added) in &computer.models {
@@ -165,6 +190,33 @@ impl AddedFile {
     }
 }
 
+/// The engines of a computer on the Tailscale network: one per model it lends, each reached
+/// through the relay at [`relay_socket`].
+fn tailnet_engines(
+    name: &ComputerName,
+    node: &str,
+    computer: &AddedComputer,
+    sockets: &Path,
+) -> Result<Vec<Attached>, &'static str> {
+    let node = NodeId::parse(node).map_err(|_| "not a computer on Tailscale")?;
+    let socket = relay_socket(sockets, &node).ok_or("the way to it is too long")?;
+    Ok(computer
+        .models
+        .keys()
+        .filter_map(|model| ModelId::parse(model).ok())
+        .map(|id| Attached {
+            id,
+            reach: Reach::Tailnet {
+                node: node.clone(),
+                socket: socket.clone(),
+            },
+            key_file: None,
+            place: Place::MyNetwork,
+            computer: Some(name.clone()),
+        })
+        .collect())
+}
+
 /// The computers of the hand-written file: the names their engines carry (`other-computer` for an
 /// engine on another machine that names none).
 pub fn hand_written(engines: &[Attached]) -> BTreeSet<ComputerName> {
@@ -178,8 +230,12 @@ pub fn hand_written(engines: &[Attached]) -> BTreeSet<ComputerName> {
 /// What the file of added computers contributes next to the hand-written engines: its engines
 /// without those whose computer or model the hand-written file already has (the hand-written
 /// file wins, and each one left out is said).
-pub fn merged(hand: &[Attached], added: &AddedFile) -> (Vec<Attached>, Vec<String>) {
-    let (engines, mut said) = added.attached();
+pub fn merged(
+    hand: &[Attached],
+    added: &AddedFile,
+    sockets: &Path,
+) -> (Vec<Attached>, Vec<String>) {
+    let (engines, mut said) = added.attached(sockets);
     let names = hand_written(hand);
     let models: BTreeSet<&ModelId> = hand.iter().map(|engine| &engine.id).collect();
     let kept = engines
@@ -231,6 +287,17 @@ pub struct NewComputer {
     pub models: Vec<NewModel>,
 }
 
+/// A computer on the person's Tailscale network being added.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewTailnetComputer {
+    /// The name people call it by, which the place's name is made from.
+    pub label: String,
+    /// Its stable Tailscale id.
+    pub node: NodeId,
+    /// The catalogue ids of the models it lends.
+    pub models: Vec<String>,
+}
+
 /// Why a computer was not added or removed. `Display` is the plain sentence Settings shows.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ComputerError {
@@ -277,6 +344,32 @@ pub enum ComputerError {
     /// Adding computers is not set up in this daemon.
     #[error("Adding computers is not available here.")]
     Unavailable,
+    /// The computer is not one of the person's own on their Tailscale network.
+    #[error("That is not one of your computers on Tailscale.")]
+    NotOnTailscale,
+    /// The computer does not lend its models right now.
+    #[error(
+        "That computer isn't lending its models right now. Check that it is on, and that it is set to let your other computers use its models."
+    )]
+    NotAnswering,
+    /// The computer is not asking to use this computer's models.
+    #[error("That computer is not asking to use this computer's models.")]
+    NotAsking,
+    /// Too many computers are asking at once.
+    #[error("Too many computers are asking at once. Answer some of them first.")]
+    TooManyAsking,
+}
+
+impl From<porter_tailnet::GuestError> for ComputerError {
+    fn from(error: porter_tailnet::GuestError) -> Self {
+        use porter_tailnet::GuestError;
+        match error {
+            GuestError::NotAsking => ComputerError::NotAsking,
+            GuestError::TooManyAsking => ComputerError::TooManyAsking,
+            GuestError::TooMany => ComputerError::TooMany,
+            _ => ComputerError::NotSaved,
+        }
+    }
 }
 
 impl ComputerError {
@@ -296,6 +389,10 @@ impl ComputerError {
             ComputerError::NotThere => "NotThere",
             ComputerError::AddedByHand => "AddedByHand",
             ComputerError::Unavailable => "Unavailable",
+            ComputerError::NotOnTailscale => "NotOnTailscale",
+            ComputerError::NotAnswering => "NotAnswering",
+            ComputerError::NotAsking => "NotAsking",
+            ComputerError::TooManyAsking => "TooManyAsking",
         }
     }
 }
@@ -438,6 +535,7 @@ impl Computers {
             .collect();
         let mut added = AddedComputer {
             label: label.clone(),
+            node: None,
             models: BTreeMap::new(),
         };
         let mut keys: Vec<(PathBuf, &SecretText)> = Vec::new();
@@ -497,10 +595,137 @@ impl Computers {
         Ok(PlaceId::computer(&name))
     }
 
+    /// Adds a computer on the person's Tailscale network and the models it lends. Nothing else
+    /// is asked of the caller: no address and no key, since the relay at [`relay_socket`] leads
+    /// to it. A refusal changes nothing. The place it is now.
+    pub fn add_tailnet(&self, new: NewTailnetComputer) -> Result<PlaceId, ComputerError> {
+        let label = clean_label(&new.label).ok_or(ComputerError::BadName)?;
+        let name = slug_of(&label).ok_or(ComputerError::BadName)?;
+        if new.models.is_empty() {
+            return Err(ComputerError::NoModels);
+        }
+        if new.models.len() > MOST_MODELS {
+            return Err(ComputerError::TooMany);
+        }
+        let socket = relay_socket(self.book.sockets(), &new.node)
+            .ok_or_else(|| ComputerError::BadAddress(new.node.to_string()))?;
+        let mut state = self.state();
+        let node_text = new.node.to_string();
+        let known_node = state
+            .file
+            .computers
+            .values()
+            .any(|computer| computer.node.as_deref() == Some(node_text.as_str()));
+        if known_node
+            || state.by_hand.contains(&name)
+            || state.file.computers.contains_key(name.as_str())
+        {
+            return Err(ComputerError::AlreadyThere);
+        }
+        let mut taken: BTreeSet<String> = state
+            .hand_models
+            .iter()
+            .map(ToString::to_string)
+            .chain(
+                state
+                    .file
+                    .computers
+                    .values()
+                    .flat_map(|computer| computer.models.keys().cloned()),
+            )
+            .collect();
+        let mut added = AddedComputer {
+            label: label.clone(),
+            node: Some(node_text),
+            models: BTreeMap::new(),
+        };
+        let mut engines = Vec::new();
+        for model in &new.models {
+            let id =
+                ModelId::parse(model).map_err(|_| ComputerError::UnknownModel(model.clone()))?;
+            if !taken.insert(id.to_string()) {
+                return Err(ComputerError::ModelTaken(model.clone()));
+            }
+            let attached = Attached {
+                id: id.clone(),
+                reach: Reach::Tailnet {
+                    node: new.node.clone(),
+                    socket: socket.clone(),
+                },
+                key_file: None,
+                place: Place::MyNetwork,
+                computer: Some(name.clone()),
+            };
+            let local = local_model(&attached, self.book.catalogue(), self.book.sockets())
+                .map_err(|why| refusal_of(&why, model))?;
+            added.models.insert(id.to_string(), AddedModel::default());
+            engines.push(local);
+        }
+        let mut next = state.file.clone();
+        next.computers.insert(name.to_string(), added);
+        self.save(&next)?;
+        state.file = next;
+        self.book.add(name.clone(), label, engines);
+        Ok(PlaceId::computer(&name))
+    }
+
+    /// The computers on the Tailscale network that were added, by node id, with the name their
+    /// place id carries.
+    pub fn tailnet_nodes(&self) -> BTreeMap<NodeId, ComputerName> {
+        self.state()
+            .file
+            .computers
+            .iter()
+            .filter_map(|(name, computer)| {
+                Some((
+                    NodeId::parse(computer.node.as_deref()?).ok()?,
+                    ComputerName::parse(name).ok()?,
+                ))
+            })
+            .collect()
+    }
+
+    /// Makes the names people read follow the names Tailscale knows the computers by (`names`,
+    /// by node id): the place id stays, so what was saved of it keeps working. Whether any name
+    /// changed.
+    pub fn relabel(&self, names: &BTreeMap<NodeId, String>) -> bool {
+        let mut state = self.state();
+        let mut next = state.file.clone();
+        let mut changed = Vec::new();
+        for (name, computer) in &mut next.computers {
+            let Some(fresh) = computer
+                .node
+                .as_deref()
+                .and_then(|node| NodeId::parse(node).ok())
+                .and_then(|node| names.get(&node))
+                .and_then(|text| clean_label(text))
+            else {
+                continue;
+            };
+            if fresh != computer.label {
+                computer.label.clone_from(&fresh);
+                if let Ok(computer_name) = ComputerName::parse(name) {
+                    changed.push((computer_name, fresh));
+                }
+            }
+        }
+        if changed.is_empty() {
+            return false;
+        }
+        // The names shown change even if the file could not be written; the next change retries.
+        let _ = self.save(&next);
+        state.file = next;
+        for (name, label) in changed {
+            self.book.set_label(name, label);
+        }
+        true
+    }
+
     /// Removes a computer that was added here: its models, its keys, its place in the file. The
     /// name is the computer's name or its place id (`computer:<name>`). One written by hand in the
-    /// settings file is refused.
-    pub fn remove(&self, name: &str) -> Result<(), ComputerError> {
+    /// settings file is refused. The node id of a computer on the Tailscale network, which the
+    /// caller stops the relay of.
+    pub fn remove(&self, name: &str) -> Result<Option<NodeId>, ComputerError> {
         let text = name.strip_prefix("computer:").unwrap_or(name);
         let name = ComputerName::parse(text).map_err(|_| ComputerError::NotThere)?;
         let mut state = self.state();
@@ -522,7 +747,10 @@ impl Computers {
             .filter_map(|model| model.key_file.clone())
             .collect();
         forget(&keys.iter().map(PathBuf::as_path).collect::<Vec<_>>());
-        Ok(())
+        Ok(gone
+            .node
+            .as_deref()
+            .and_then(|node| NodeId::parse(node).ok()))
     }
 }
 

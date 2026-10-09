@@ -1432,6 +1432,8 @@ dependencies = [
  "porter-http",
  "porter-infer",
  "porter-provider",
+ "porter-tailnet",
+ "porter-tailscale",
  "rustix",
  "serde",
  "serde_json",
@@ -2452,6 +2454,25 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
+]
+
+[[package]]
+name = "porter-tailnet"
+version = "0.1.0"
+dependencies = [
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "porter-core",
+ "porter-fake",
+ "porter-fake-servers",
+ "porter-tailnet",
+ "porter-tailscale",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "toml",
 ]
 
 [[package]]

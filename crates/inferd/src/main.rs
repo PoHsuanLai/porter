@@ -26,10 +26,13 @@ use inferd::service::{Inference, serve_with_settings};
 use inferd::settings::{ConfigFile, InferdSettings, Reload, resolve};
 use inferd::shutdown::{self, Ended, Signals};
 use inferd::supervise::{Ports, Supervised};
+use inferd::tailnet::{BusMachines, Parts, Tailnet};
 use inferd::watch::Watch;
 use model_catalog::EngineKind;
 use porter_dbus::INFERENCE_BUS;
 use porter_http::{HyperHttp, Limits};
+use porter_tailnet::{Config as TailnetConfig, Guests, Timing};
+use porter_tailscale::LocalApi;
 use std::os::unix::fs::DirBuilderExt;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -101,6 +104,16 @@ enum RunError {
     Hurried,
 }
 
+/// This computer's Tailscale: the socket `INFERD_TAILSCALE_SOCKET` names (an absolute path; a
+/// relative one is ignored), else the path Tailscale uses. Every test that starts the daemon
+/// names a socket of its own.
+fn tailscale_api() -> LocalApi {
+    match std::env::var_os("INFERD_TAILSCALE_SOCKET").map(PathBuf::from) {
+        Some(path) if path.is_absolute() => LocalApi::new(path),
+        _ => LocalApi::system(),
+    }
+}
+
 /// The configuration: a missing file is the default (no engines, no callers), an unreadable one
 /// is an error.
 fn read_config(path: &std::path::Path) -> Result<InferdConfig, RunError> {
@@ -129,7 +142,7 @@ fn attached_models(
     dirs: &Dirs,
 ) -> Result<Vec<inferd::local::LocalModel>, RunError> {
     // The computers Settings added are attached engines too; the settings file wins a clash.
-    let (extra, said) = inferd::attached::computers::merged(named, added);
+    let (extra, said) = inferd::attached::computers::merged(named, added, &dirs.sockets);
     for line in said {
         eprintln!("inferd: {line}");
     }
@@ -173,10 +186,30 @@ async fn run(args: Args) -> Result<(), RunError> {
             AddedFile::default()
         }
     };
-    let attached = attached_models(&named, &added, &catalog.entries, &dirs)?;
+    let mut attached = attached_models(&named, &added, &catalog.entries, &dirs)?;
+    let relayed = |one: &inferd::local::LocalModel| {
+        one.attached
+            .as_ref()
+            .is_some_and(|target| target.is_relayed())
+    };
+    // A model another computer lends is not also one this computer runs: the one here stays.
+    attached.retain(|one| {
+        let clash = relayed(one)
+            && models
+                .iter()
+                .any(|model| model.entry.id.0 == one.entry.id.0);
+        if clash {
+            eprintln!(
+                "inferd: {} is also run on this computer; the one here is used",
+                one.entry.id.0
+            );
+        }
+        !clash
+    });
     models.retain(|model| {
         attached
             .iter()
+            .filter(|one| !relayed(one))
             .all(|one| one.entry.id.0 != model.entry.id.0)
     });
     std::fs::DirBuilder::new()
@@ -245,6 +278,31 @@ async fn run(args: Args) -> Result<(), RunError> {
     .with_settings(settings.settings)
     .with_cloud(cloud)
     .with_attached(book);
+    // The person's other computers on their Tailscale network: lent to while `ai.tailnet.serve`
+    // is on, looked for when Settings asks, and reached through a relay each. Nothing asks
+    // Tailscale until one of those happens.
+    let (guests, said) = Guests::open(&dirs.guests);
+    if let Some(line) = said {
+        eprintln!("inferd: {line}");
+    }
+    let tailnet = Tailnet::start(
+        Parts {
+            api: tailscale_api(),
+            machines: Arc::new(BusMachines::new(connection.clone())),
+            guests: Arc::new(guests),
+            sockets: dirs.sockets.clone(),
+            config: TailnetConfig::product(),
+            timing: Timing::usual(),
+        },
+        engines.clone(),
+        Arc::new(JsonLines::new(dirs.audit.clone())),
+        Arc::new(SystemClock),
+    );
+    for node in computers.tailnet_nodes().keys() {
+        if let Err(why) = tailnet.ensure_relay(node) {
+            eprintln!("inferd: the way to computer {node}: {why}");
+        }
+    }
     // The runtimes the person runs themselves: looked for now, on `Rescan` and on a timer, and
     // reported to accountd as accounts.
     let probing = Watch::new(
@@ -289,7 +347,8 @@ async fn run(args: Args) -> Result<(), RunError> {
     .limited(structured.limits)
     .reloading(reload.clone())
     .probing(probing)
-    .computers(computers);
+    .computers(computers)
+    .tailnet(tailnet);
     // Every object, the settings module among them, is served before the name is claimed.
     serve_with_settings(&connection, daemon, InferdSettings::new(peers, reload)).await?;
     let release = async {

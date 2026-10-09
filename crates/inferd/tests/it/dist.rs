@@ -114,6 +114,43 @@ fn the_cloud_drop_in_opens_every_address_and_nothing_else() {
 }
 
 #[test]
+fn the_tailnet_drop_in_opens_the_networks_own_addresses_and_nothing_else() {
+    let drop_in = dist("inferd-tailnet.conf");
+    // The two blocks Tailscale gives a computer an address from, which are the ones
+    // `porter_tailnet::is_network_address` accepts: the unit lets exactly those through.
+    assert_eq!(
+        key(&drop_in, "IPAddressAllow"),
+        Some("100.64.0.0/10 fd7a:115c:a1e0::/48")
+    );
+    assert!(porter_tailnet::is_network_address(
+        "100.64.0.1".parse().unwrap()
+    ));
+    assert!(porter_tailnet::is_network_address(
+        "100.127.255.254".parse().unwrap()
+    ));
+    assert!(porter_tailnet::is_network_address(
+        "fd7a:115c:a1e0::1".parse().unwrap()
+    ));
+    assert!(!porter_tailnet::is_network_address(
+        "100.128.0.1".parse().unwrap()
+    ));
+    // Only that line, and not the internet: the base unit is untouched.
+    let settings: Vec<_> = drop_in
+        .lines()
+        .filter(|line| !line.starts_with('#') && line.contains('='))
+        .collect();
+    assert_eq!(settings.len(), 1, "{settings:?}");
+    assert!(
+        settings.iter().all(|line| !line.contains("any")),
+        "the internet stays out of reach"
+    );
+    assert_eq!(
+        key(&dist("inferd.service"), "IPAddressAllow"),
+        Some("localhost")
+    );
+}
+
+#[test]
 fn the_sample_configuration_reads_and_names_the_callers_the_design_calls_for() {
     let config = InferdConfig::from_toml(&dist("inferd.toml")).expect("the sample reads");
     let cua = config.callers.resolve("cuad.service").expect("cuad");
@@ -189,14 +226,15 @@ fn effect(text: &str) -> (String, Vec<String>) {
     rejected.extend(config.ai.resolve().rejected.iter().map(|p| (*p).to_owned()));
     (
         format!(
-            "{:?} {floors:?} {:?} {:?} {:?} {:?} {:?} {:?} {limits:?}",
+            "{:?} {floors:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {limits:?}",
             s.policy.local_only,
             s.tiers,
             s.auto,
             s.spend,
             s.describe_images,
             s.my_network,
-            s.agent_endpoint
+            s.agent_endpoint,
+            s.tailnet_serve
         ),
         rejected,
     )
@@ -224,6 +262,7 @@ fn the_schema_holds_the_rows_the_design_names_and_each_is_a_page_row_of_intellig
     let mut want: Vec<String> = [
         "ai.local_only",
         "ai.attached.my_network",
+        "ai.tailnet.serve",
         "ai.agents.endpoint",
     ]
     .map(String::from)

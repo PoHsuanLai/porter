@@ -14,6 +14,12 @@ use std::path::PathBuf;
 /// hangs is not ready.
 const WAIT: WaitMs = WaitMs(3_000);
 
+/// How long the probe waits at each stage for a computer on the Tailscale network: its relay
+/// asks Tailscale who is at the address, twice, and the computer's own answer waits for the same
+/// on its side, so a computer that is up but busy takes far longer than a tunnel the person
+/// holds open. Not a short deadline a loaded computer would trip over.
+const RELAYED_WAIT: WaitMs = WaitMs(60_000);
+
 /// The most of the model list read, in bytes.
 const MOST_BODY: usize = 1024 * 1024;
 
@@ -127,10 +133,15 @@ pub async fn probe(target: &Target, served: &str) -> Result<(), NotReady> {
     {
         return Err(NotReady::SocketMissing { path: path.clone() });
     }
+    let wait = if target.is_relayed() {
+        RELAYED_WAIT
+    } else {
+        WAIT
+    };
     let timeouts = Timeouts {
-        connect: WAIT,
-        first_byte: WAIT,
-        idle: WAIT,
+        connect: wait,
+        first_byte: wait,
+        idle: wait,
     };
     let endpoint = target.endpoint("", timeouts).map_err(NotReady::KeyFile)?;
     let exchange = Exchange {

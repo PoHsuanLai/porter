@@ -8,7 +8,9 @@
 use self::error::InferError;
 use crate::agent::Agents;
 use crate::agent::service::AgentsService;
-use crate::attached::{ComputerError, Computers, NewComputer, NewModel, NewReach};
+use crate::attached::{
+    ComputerError, Computers, NewComputer, NewModel, NewReach, NewTailnetComputer,
+};
 use crate::audit::{AuditOut, SessionAudit};
 use crate::clock::Clock;
 use crate::engines::Engines;
@@ -20,11 +22,14 @@ use crate::serve::{Seams, serve_session};
 use crate::session::SessionSpec;
 use crate::settings::Reload;
 use crate::structured::Limits;
+use crate::tailnet::{Candidate, Tailnet};
 use crate::watch::Probing;
-use porter_core::{DataClass, ModelId, SecretText, Tier};
+use porter_core::{DataClass, ModelId, NodeId, SecretText, Tier};
 use porter_dbus::{
-    Details, INFERENCE_BUS, INFERENCE_PATH, NeedArg, PLACE_KEY_KIND, PLACE_KEY_MODELS,
-    PLACE_KEY_NAME, PLACE_KEY_PROVIDER, PLACE_KEY_READY, need_from_dbus,
+    CANDIDATE_KEY_MODELS, CANDIDATE_KEY_NAME, CANDIDATE_KEY_NEEDS_APPROVAL, Details,
+    GUEST_KEY_NAME, GUEST_KEY_SINCE, GUEST_KEY_STATE, INFERENCE_BUS, INFERENCE_PATH, NeedArg,
+    PLACE_KEY_KIND, PLACE_KEY_MODELS, PLACE_KEY_NAME, PLACE_KEY_PROVIDER, PLACE_KEY_READY,
+    need_from_dbus,
 };
 use porter_infer::{InferRefusal, PlaceId, PlaceRow, PlaceState};
 use serde::Serialize;
@@ -49,6 +54,7 @@ pub struct Inference<P, O, C> {
     probing: Option<Probing>,
     agents: Option<Agents>,
     computers: Option<Arc<Computers>>,
+    tailnet: Option<Tailnet>,
 }
 
 impl<P, O, C> Inference<P, O, C> {
@@ -64,6 +70,17 @@ impl<P, O, C> Inference<P, O, C> {
             probing: None,
             agents: None,
             computers: None,
+            tailnet: None,
+        }
+    }
+
+    /// The same object, whose `Candidates`, `AddTailnetComputer` and guest methods work over the
+    /// person's Tailscale network through `tailnet`. Without it the lists are empty and an
+    /// addition answers that it is not available here.
+    pub fn tailnet(self, tailnet: Tailnet) -> Self {
+        Self {
+            tailnet: Some(tailnet),
+            ..self
         }
     }
 
@@ -229,16 +246,49 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         }
     }
 
-    /// The caller of `AddComputer` and `RemoveComputer`: Settings, by its unit, and no one else.
+    /// The caller of `AddComputer`, `RemoveComputer`, `Candidates`, `AddTailnetComputer` and
+    /// `ForgetGuest`: Settings, by its unit, and no one else.
     async fn settings_caller(&self, header: &Header<'_>) -> fdo::Result<Caller> {
         let caller = self.identified(header).await?;
         if caller.role == Role::Settings {
             Ok(caller)
         } else {
             Err(fdo::Error::AccessDenied(
-                "inferd: only Settings may add or remove a computer".into(),
+                "inferd: only Settings may do this".into(),
             ))
         }
+    }
+
+    /// The caller of `Guests` and `AnswerGuest`: Settings or the shell.
+    async fn guest_caller(&self, header: &Header<'_>) -> fdo::Result<Caller> {
+        let caller = self.identified(header).await?;
+        if caller.may_answer_guests() {
+            Ok(caller)
+        } else {
+            Err(fdo::Error::AccessDenied(
+                "inferd: only Settings and the shell may see or answer the computers that ask"
+                    .into(),
+            ))
+        }
+    }
+
+    /// Makes the names of the computers added over Tailscale follow the names Tailscale knows
+    /// them by.
+    async fn follow_names(&self) {
+        let (Some(computers), Some(tailnet)) = (&self.computers, &self.tailnet) else {
+            return;
+        };
+        if computers.tailnet_nodes().is_empty() {
+            return;
+        }
+        let names = tailnet
+            .machines()
+            .machines()
+            .await
+            .into_iter()
+            .map(|machine| (machine.node, machine.name))
+            .collect();
+        computers.relabel(&names);
     }
 
     /// The caller of `Places`: Settings, the shell or the companion.
@@ -417,6 +467,7 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         #[zbus(header)] header: Header<'_>,
     ) -> fdo::Result<Vec<(String, Details)>> {
         let caller = self.place_lister(&header).await?;
+        self.follow_names().await;
         Ok(self
             .engines
             .places(&caller)
@@ -452,9 +503,174 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
     ) -> Result<(), InferError> {
         self.settings_caller(&header).await?;
         let computers = self.computers.as_ref().ok_or(ComputerError::Unavailable)?;
-        computers.remove(&name)?;
+        if let (Some(node), Some(tailnet)) = (computers.remove(&name)?, &self.tailnet) {
+            tailnet.drop_relay(&node);
+        }
         Ok(Self::engines_changed(&emitter).await.map_err(failed)?)
     }
+
+    // The person's own computers on their Tailscale network that lend their models and are not
+    // added yet (Settings only). Looking is done now for the computers whose look is due, and
+    // never while Tailscale is not an account (accountd lists none then).
+    async fn candidates(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+    ) -> fdo::Result<Vec<(String, Details)>> {
+        self.settings_caller(&header).await?;
+        let Some(tailnet) = &self.tailnet else {
+            return Ok(Vec::new());
+        };
+        let added = self
+            .computers
+            .as_ref()
+            .map(|computers| computers.tailnet_nodes())
+            .unwrap_or_default();
+        Ok(tailnet
+            .candidates()
+            .await
+            .into_iter()
+            .filter(|candidate| !added.contains_key(&candidate.node))
+            .map(candidate_row)
+            .collect())
+    }
+
+    // Adds one of those computers (Settings only): the models it lends that the assistant knows
+    // and this computer does not run itself, reached through a relay that asks Tailscale who is
+    // there on every connection. Answers its place id.
+    async fn add_tailnet_computer(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+        node: String,
+    ) -> Result<String, InferError> {
+        self.settings_caller(&header).await?;
+        let node = NodeId::parse(&node).map_err(|e| fdo::Error::InvalidArgs(e.to_string()))?;
+        let (Some(computers), Some(tailnet)) = (&self.computers, &self.tailnet) else {
+            return Err(ComputerError::Unavailable.into());
+        };
+        let Some(found) = tailnet
+            .candidates()
+            .await
+            .into_iter()
+            .find(|candidate| candidate.node == node)
+        else {
+            let mine = tailnet
+                .machines()
+                .machines()
+                .await
+                .into_iter()
+                .any(|machine| {
+                    machine.node == node && machine.owner == porter_core::MachineOwner::Mine
+                });
+            return Err(if mine {
+                ComputerError::NotAnswering
+            } else {
+                ComputerError::NotOnTailscale
+            }
+            .into());
+        };
+        // A model this computer runs itself stays what it is; one the assistant has no entry
+        // for cannot be used.
+        let mine: std::collections::BTreeSet<String> = self
+            .engines
+            .listed()
+            .into_iter()
+            .filter(|one| one.card.locality == porter_core::Locality::OnDevice)
+            .map(|one| one.card.model.to_string())
+            .collect();
+        let catalogue = self.engines.attached().catalogue();
+        let models: Vec<String> = found
+            .models
+            .iter()
+            .map(|model| model.id.clone())
+            .filter(|id| !mine.contains(id) && catalogue.iter().any(|entry| entry.id.0 == *id))
+            .collect();
+        let placed = computers.add_tailnet(NewTailnetComputer {
+            label: found.name,
+            node: node.clone(),
+            models,
+        })?;
+        if tailnet.ensure_relay(&node).is_err() {
+            let _ = computers.remove(placed.as_str());
+            return Err(ComputerError::Unavailable.into());
+        }
+        Self::engines_changed(&emitter).await.map_err(failed)?;
+        Ok(placed.to_string())
+    }
+
+    // The computers that asked to use this one and were answered, and those asking now (Settings
+    // and the shell).
+    async fn guests(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+    ) -> fdo::Result<Vec<(String, Details)>> {
+        self.guest_caller(&header).await?;
+        Ok(self
+            .tailnet
+            .as_ref()
+            .map(|tailnet| tailnet.guests().rows())
+            .unwrap_or_default()
+            .into_iter()
+            .map(guest_row)
+            .collect())
+    }
+
+    // The person's answer about a computer: the shell answers one that is asking, Settings any
+    // computer of the person's network (also one that is never asked about, a server or another
+    // person's), and a yes can be taken back by a no.
+    async fn answer_guest(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        node: String,
+        allow: bool,
+    ) -> Result<(), InferError> {
+        let caller = self.guest_caller(&header).await?;
+        let node = NodeId::parse(&node).map_err(|e| fdo::Error::InvalidArgs(e.to_string()))?;
+        let tailnet = self.tailnet.as_ref().ok_or(ComputerError::Unavailable)?;
+        let now = self.clock.now();
+        match tailnet.guests().answer(&node, allow, now) {
+            Err(porter_tailnet::GuestError::NotAsking) if caller.role == Role::Settings => {
+                let machines = tailnet.machines().machines().await;
+                let machine = machines
+                    .iter()
+                    .find(|machine| machine.node == node)
+                    .ok_or(ComputerError::NotOnTailscale)?;
+                tailnet
+                    .guests()
+                    .set(&node, &machine.name, allow, now)
+                    .map_err(ComputerError::from)?;
+            }
+            other => other.map_err(ComputerError::from)?,
+        }
+        Ok(())
+    }
+
+    // Forgets the answer about a computer, and any question it has waiting (Settings only): it
+    // is asked about again the next time it wants a model.
+    async fn forget_guest(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        node: String,
+    ) -> Result<(), InferError> {
+        self.settings_caller(&header).await?;
+        let node = NodeId::parse(&node).map_err(|e| fdo::Error::InvalidArgs(e.to_string()))?;
+        let tailnet = self.tailnet.as_ref().ok_or(ComputerError::Unavailable)?;
+        tailnet
+            .guests()
+            .forget(&node)
+            .map_err(ComputerError::from)?;
+        Ok(())
+    }
+
+    #[zbus(signal)]
+    async fn guest_asks(
+        emitter: &SignalEmitter<'_>,
+        node: &str,
+        details: Details,
+    ) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    async fn guests_changed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
 
     #[zbus(signal)]
     async fn engines_changed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
@@ -507,6 +723,71 @@ fn new_computer(name: String, models: Vec<(String, Details)>) -> Result<NewCompu
         label: name,
         models: parsed,
     })
+}
+
+fn text_value(text: String) -> Option<porter_dbus::zvariant::OwnedValue> {
+    use porter_dbus::zvariant::{OwnedValue, Value};
+    OwnedValue::try_from(Value::from(text)).ok()
+}
+
+/// A computer that could be added, as a row of `Candidates`: its node id and the vardict of
+/// `CANDIDATE_KEY_*`.
+fn candidate_row(candidate: Candidate) -> (String, Details) {
+    use porter_dbus::zvariant::{OwnedValue, Value};
+    let models: Vec<(String, String)> = candidate
+        .models
+        .into_iter()
+        .map(|model| (model.id, model.name))
+        .collect();
+    let entries = [
+        (CANDIDATE_KEY_NAME, text_value(candidate.name)),
+        (
+            CANDIDATE_KEY_MODELS,
+            OwnedValue::try_from(Value::new(models)).ok(),
+        ),
+        (
+            CANDIDATE_KEY_NEEDS_APPROVAL,
+            OwnedValue::try_from(Value::Bool(candidate.needs_approval)).ok(),
+        ),
+    ];
+    let details = entries
+        .into_iter()
+        .filter_map(|(key, value)| Some((key.to_owned(), value?)))
+        .collect();
+    (candidate.node.to_string(), details)
+}
+
+/// A computer that asked, as a row of `Guests`: its node id and the vardict of `GUEST_KEY_*`.
+fn guest_row(row: porter_tailnet::GuestRow) -> (String, Details) {
+    use porter_dbus::zvariant::{OwnedValue, Value};
+    let entries = [
+        (GUEST_KEY_NAME, text_value(row.name)),
+        (GUEST_KEY_STATE, text_value(row.state.slug().to_owned())),
+        (
+            GUEST_KEY_SINCE,
+            OwnedValue::try_from(Value::I64(row.since.0)).ok(),
+        ),
+    ];
+    let details = entries
+        .into_iter()
+        .filter_map(|(key, value)| Some((key.to_owned(), value?)))
+        .collect();
+    (row.node.to_string(), details)
+}
+
+/// What the `GuestAsks` signal carries of a question: the name and when it began.
+fn ask_details(ask: &porter_tailnet::Ask) -> Details {
+    use porter_dbus::zvariant::{OwnedValue, Value};
+    [
+        (GUEST_KEY_NAME, text_value(ask.name.clone())),
+        (
+            GUEST_KEY_SINCE,
+            OwnedValue::try_from(Value::I64(ask.since.0)).ok(),
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(key, value)| Some((key.to_owned(), value?)))
+    .collect()
 }
 
 /// A place as a row of `Places`: its id and the vardict of `PLACE_KEY_*`.
@@ -592,6 +873,7 @@ where
     let supervised = daemon.engines.supervised().clone();
     let probed = daemon.engines.probed().clone();
     let hosts_cloud = daemon.engines.cloud().is_some();
+    let asking = daemon.tailnet.as_ref().map(Tailnet::subscribe);
     let agents = daemon.agents.clone().map(|agents| AgentsService {
         peers: Arc::clone(&daemon.peers),
         agents,
@@ -621,6 +903,32 @@ where
             let _ = guard.gpu_changed(emitter).await;
         }
     });
+    // A computer of the person's asks to use this one, or an answer changed: the shell and
+    // Settings are told.
+    if let Some(mut asking) = asking {
+        let iface: zbus::object_server::InterfaceRef<Inference<P, O, C>> =
+            connection.object_server().interface(INFERENCE_PATH).await?;
+        tokio::spawn(async move {
+            loop {
+                match asking.recv().await {
+                    Ok(porter_tailnet::GuestEvent::Asked(ask)) => {
+                        let _ = Inference::<P, O, C>::guest_asks(
+                            iface.signal_emitter(),
+                            ask.node.as_str(),
+                            ask_details(&ask),
+                        )
+                        .await;
+                    }
+                    // Missed some news: say the answers changed so a listener reads them all.
+                    Ok(porter_tailnet::GuestEvent::Changed)
+                    | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        let _ = Inference::<P, O, C>::guests_changed(iface.signal_emitter()).await;
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+                }
+            }
+        });
+    }
     // A runtime the person runs came up, went away or changed its models.
     let probed = probed.changed();
     let iface: zbus::object_server::InterfaceRef<Inference<P, O, C>> =

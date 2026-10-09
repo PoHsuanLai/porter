@@ -80,6 +80,12 @@ impl Caller {
     pub fn may_choose_places(&self) -> bool {
         self.role == Role::Placer
     }
+
+    /// Whether it may list the computers that ask to use this one and answer one that is
+    /// asking: Settings and the shell.
+    pub fn may_answer_guests(&self) -> bool {
+        matches!(self.role, Role::Settings | Role::Shell)
+    }
 }
 
 /// Which systemd unit is which caller.

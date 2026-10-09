@@ -88,6 +88,9 @@ pub struct Dirs {
     /// `$XDG_STATE_HOME/quire/inferd/computer-keys`: the keys of those computers, one file each,
     /// readable by their owner alone.
     pub computer_keys: PathBuf,
+    /// `$XDG_STATE_HOME/quire/inferd/guests.toml`: the answers the person gave about the
+    /// computers that ask to use this one's models.
+    pub guests: PathBuf,
     /// `$HF_HOME/hub`, else `~/.cache/huggingface/hub`: the weights, when the file names none.
     pub hf_cache: PathBuf,
 }
@@ -121,6 +124,7 @@ impl Dirs {
             spend: state.join("quire").join("inferd").join("spend.json"),
             computers: state.join("quire").join("inferd").join("computers.toml"),
             computer_keys: state.join("quire").join("inferd").join("computer-keys"),
+            guests: state.join("quire").join("inferd").join("guests.toml"),
             hf_cache,
         })
     }

@@ -29,7 +29,8 @@ use porter_infer::{
     AutoPolicy, ClassFloor, DescribeImages, Floor, Period, Policy, SpendCap, SpendScope, TierMap,
 };
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, PoisonError, RwLock};
+use std::sync::Arc;
+use tokio::sync::watch;
 
 /// `ai.attached.my_network`.
 pub const MY_NETWORK: &str = "ai.attached.my_network";
@@ -76,6 +77,31 @@ pub struct AgentsConfig {
     /// `ai.agents.endpoint`: `off` or `on`.
     #[serde(default)]
     pub endpoint: Option<String>,
+}
+
+/// `ai.tailnet.serve`.
+pub const TAILNET_SERVE: &str = "ai.tailnet.serve";
+
+/// `ai.tailnet.serve`: whether this computer lends its own models to the person's other
+/// computers over their Tailscale network. Off by default; while on, inferd listens on this
+/// computer's network addresses (never on every address), and a computer is let in only when
+/// Tailscale says it is the person's own and the person said yes to it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TailnetServe {
+    /// Nothing is listened on.
+    #[default]
+    Off,
+    /// The person's other computers may ask to use the models that run on this one.
+    On,
+}
+
+/// The `[ai.tailnet]` table, as written.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TailnetConfig {
+    /// `ai.tailnet.serve`: `off` or `on`.
+    #[serde(default)]
+    pub serve: Option<String>,
 }
 
 /// `ai.pipeline.describe_images`.
@@ -231,6 +257,8 @@ pub struct Settings {
     pub my_network: MyNetwork,
     /// `ai.agents.endpoint`.
     pub agent_endpoint: AgentEndpoint,
+    /// `ai.tailnet.serve`.
+    pub tailnet_serve: TailnetServe,
 }
 
 impl Settings {
@@ -266,28 +294,42 @@ impl Default for Settings {
             describe_images: DescribeImages::default(),
             my_network: MyNetwork::default(),
             agent_endpoint: AgentEndpoint::default(),
+            tailnet_serve: TailnetServe::default(),
         }
     }
 }
 
-/// The settings in force: replaced whole, read as a snapshot.
-#[derive(Debug, Clone, Default)]
-pub struct Live(Arc<RwLock<Arc<Settings>>>);
+/// The settings in force: replaced whole, read as a snapshot, and followed by whoever
+/// [`Live::subscribe`]s.
+#[derive(Debug, Clone)]
+pub struct Live(Arc<watch::Sender<Arc<Settings>>>);
+
+impl Default for Live {
+    fn default() -> Self {
+        Self::new(Settings::default())
+    }
+}
 
 impl Live {
     /// A holder of `settings`.
     pub fn new(settings: Settings) -> Self {
-        Self(Arc::new(RwLock::new(Arc::new(settings))))
+        Self(Arc::new(watch::Sender::new(Arc::new(settings))))
     }
 
     /// What is in force.
     pub fn get(&self) -> Arc<Settings> {
-        Arc::clone(&self.0.read().unwrap_or_else(PoisonError::into_inner))
+        Arc::clone(&self.0.borrow())
     }
 
     /// Puts `settings` in force.
     pub fn set(&self, settings: Settings) {
-        *self.0.write().unwrap_or_else(PoisonError::into_inner) = Arc::new(settings);
+        self.0.send_replace(Arc::new(settings));
+    }
+
+    /// Follows the settings: the receiver changes whenever they are put in force again (also
+    /// when nothing differs).
+    pub fn subscribe(&self) -> watch::Receiver<Arc<Settings>> {
+        self.0.subscribe()
     }
 }
 

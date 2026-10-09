@@ -736,7 +736,6 @@ async fn only_the_shell_settings_and_the_terminal_may_read_the_computers() {
         CallerRole::Agent,
         CallerRole::Cua,
         CallerRole::AgentLauncher,
-        CallerRole::PorterDaemon,
     ] {
         let denied = world.machines_as(role).await.expect_err("refused");
         assert_eq!(
@@ -749,6 +748,24 @@ async fn only_the_shell_settings_and_the_terminal_may_read_the_computers() {
     let stranger = world.bus.connect().await;
     let denied = read(&stranger).await.expect_err("refused");
     assert_eq!(error_name(&denied), common::ACCESS_DENIED);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_ai_broker_reads_the_computers_to_find_the_ones_that_lend_its_models() {
+    // inferd (`PorterDaemon`) gets the same list as the shell, which is empty with no working
+    // Tailscale account.
+    let scene = Scene::with(
+        "broker",
+        Daemon::Running(network()),
+        vec![tailscale_account(AccountState::Ok)],
+    )
+    .await;
+    let world = World::start(scene, true).await;
+    let rows = world
+        .machines_as(CallerRole::PorterDaemon)
+        .await
+        .expect("the broker reads the computers");
+    assert_eq!(rows.len(), 4);
 }
 
 #[tokio::test(flavor = "multi_thread")]

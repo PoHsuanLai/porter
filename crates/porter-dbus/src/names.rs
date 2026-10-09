@@ -103,12 +103,33 @@ pub const COMPUTER_KEY_PORT: &str = "port";
 /// See [`COMPUTER_KEY_SOCKET`].
 pub const COMPUTER_KEY_KEY: &str = "key";
 
-/// The prefix of the errors `AddComputer` and `RemoveComputer` answer with:
-/// `org.quire.Inference1.Error.Computer.<Name>`, the name one of `BadName`, `NoModels`,
-/// `TooMany`, `AlreadyThere`, `UnknownModel`, `ModelNotUsable`, `ModelTaken`, `BadAddress`,
-/// `BadKey`, `NotSaved`, `NotThere`, `AddedByHand`, `Unavailable`. The reply's text is a plain
-/// sentence for the person.
+/// The prefix of the errors `AddComputer`, `RemoveComputer`, `AddTailnetComputer`, `AnswerGuest`
+/// and `ForgetGuest` answer with: `org.quire.Inference1.Error.Computer.<Name>`, the name one of
+/// `BadName`, `NoModels`, `TooMany`, `AlreadyThere`, `UnknownModel`, `ModelNotUsable`,
+/// `ModelTaken`, `BadAddress`, `BadKey`, `NotSaved`, `NotThere`, `AddedByHand`, `Unavailable`,
+/// and, since `AddTailnetComputer` and the guests: `NotOnTailscale`, `NotAnswering`,
+/// `NotAsking`, `TooManyAsking`. The reply's text is a plain sentence for the person.
 pub const COMPUTER_ERROR_PREFIX: &str = "org.quire.Inference1.Error.Computer.";
+
+/// The keys of a row of `Inference1.Candidates` (`a(sa{sv})`: the computer's Tailscale node id,
+/// then these). `name` is the name people call the computer by (`s`); `models` lists the models
+/// it lends, as `a(ss)` of model id and display name; `needs_approval` says whether the person
+/// still has to say yes on that computer (`b`).
+pub const CANDIDATE_KEY_NAME: &str = "name";
+/// See [`CANDIDATE_KEY_NAME`].
+pub const CANDIDATE_KEY_MODELS: &str = "models";
+/// See [`CANDIDATE_KEY_NAME`].
+pub const CANDIDATE_KEY_NEEDS_APPROVAL: &str = "needs_approval";
+
+/// The keys of a row of `Inference1.Guests` (`a(sa{sv})`: the computer's node id, then these)
+/// and of the details of the `GuestAsks` signal (`name` and `since` only). `name` is the name
+/// people call the computer by (`s`); `state` is `approved`, `denied` or `asking` (`s`); `since`
+/// is when the person answered, or when it began asking (`x`, Unix seconds).
+pub const GUEST_KEY_NAME: &str = "name";
+/// See [`GUEST_KEY_NAME`].
+pub const GUEST_KEY_STATE: &str = "state";
+/// See [`GUEST_KEY_NAME`].
+pub const GUEST_KEY_SINCE: &str = "since";
 /// See [`PLACE_KEY_KIND`].
 pub const PLACE_KEY_NAME: &str = "name";
 /// See [`PLACE_KEY_KIND`].

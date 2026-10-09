@@ -1,0 +1,43 @@
+[package]
+name = "porter-tailnet"
+description = "Lending a computer's models to the person's other computers over their Tailscale network, and calling those of another: who may ask (judged from Tailscale's own answer about the caller), the computers the person said yes or no to, the hello a lending computer answers, and with the `io` feature the listeners that follow this computer's addresses, the dial that checks who it reaches, and the relay that gives a local engine a way to a computer on the network."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+porter-core = { workspace = true }
+porter-tailscale = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+toml = { workspace = true }
+hyper = { workspace = true, optional = true, features = ["client", "http1"] }
+hyper-util = { workspace = true, optional = true, features = ["tokio"] }
+http-body-util = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true, features = ["rt", "net", "time", "io-util", "sync", "macros"] }
+
+[dev-dependencies]
+# The integration tests use the listeners, the dial and the relay, which the `io` feature builds.
+porter-tailnet = { workspace = true, features = ["io"] }
+porter-tailscale = { workspace = true, features = ["io"] }
+porter-fake = { workspace = true }
+porter-fake-servers = { workspace = true }
+tokio = { workspace = true, features = ["rt", "macros", "net", "time", "io-util", "sync"] }
+
+[features]
+# The listeners, the dial, the relay and the hello client: sockets, tokio and hyper. Off by
+# default, so the judgement of who may ask and the lists of guests reach none of them.
+io = [
+  "dep:hyper",
+  "dep:hyper-util",
+  "dep:http-body-util",
+  "dep:tokio",
+  "porter-tailscale/io",
+]
+
+[lints]
+workspace = true

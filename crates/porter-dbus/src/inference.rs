@@ -66,6 +66,41 @@ pub trait Inference {
     /// Removes a computer that `AddComputer` added: `name` is its name or its place id. One
     /// written by hand in the settings file is refused (`AddedByHand`). Only Settings may call.
     fn remove_computer(&self, name: &str) -> zbus::Result<()>;
+    /// The person's own computers on their Tailscale network that lend their models and are not
+    /// added yet, one row each: the computer's node id first, then `name`, `models` (`a(ss)`,
+    /// model id and display name) and `needs_approval` (`b`, whether the person still has to say
+    /// yes on that computer); the key names are `CANDIDATE_KEY_*`. Only computers of the same
+    /// user that are online, not tagged and not shared in are looked at, each at most once a
+    /// minute, and only when Tailscale is an account (an empty list otherwise). Only Settings
+    /// may ask.
+    fn candidates(&self) -> zbus::Result<Vec<(String, Details)>>;
+    /// Adds the computer `node` (a Tailscale node id from `Candidates`) as one of the person's
+    /// own computers, reached over their Tailscale network, with the models it lends, and answers
+    /// its place id (`computer:<name>`, the name made from the one Tailscale knows it by). Only
+    /// Settings may call; a refusal is `org.quire.Inference1.Error.Computer.<Name>`.
+    fn add_tailnet_computer(&self, node: &str) -> zbus::Result<String>;
+    /// The computers that asked to use this computer's models or were answered, one row each:
+    /// the node id first, then `name`, `state` (`approved`, `denied` or `asking`) and `since`
+    /// (`x`); the key names are `GUEST_KEY_*`. Only Settings and the shell may ask.
+    fn guests(&self) -> zbus::Result<Vec<(String, Details)>>;
+    /// The person's answer about the computer `node`: yes (`allow`) or no. The shell may answer
+    /// a computer that is asking; Settings may answer any computer of the person's network
+    /// (also a server or another person's, which is never asked about), or take back a yes
+    /// (a no keeps it out, and it is not asked about again).
+    fn answer_guest(&self, node: &str, allow: bool) -> zbus::Result<()>;
+    /// Forgets the answer about `node` (and any question it has waiting): it is asked about
+    /// again the next time it wants a model, if it is one of the person's own. Only Settings
+    /// may call.
+    fn forget_guest(&self, node: &str) -> zbus::Result<()>;
+    /// A computer began asking to use this computer's models: the person is to be asked "Let
+    /// <name> use this computer's models?". The details are `name` and `since`. Broadcast: a
+    /// computer's name is not secret, and only the shell and Settings can answer. A shell that
+    /// was not running reads the questions waiting from `Guests` (state `asking`).
+    #[zbus(signal)]
+    fn guest_asks(&self, node: &str, details: Details) -> zbus::Result<()>;
+    /// The answers or the questions waiting changed: a listener reads `Guests` again.
+    #[zbus(signal)]
+    fn guests_changed(&self) -> zbus::Result<()>;
     /// Engine state changed, or a cloud AI account appeared, went or changed state. Broadcast:
     /// engine state is not personal. Listeners re-read readiness with `Prepare` (callers) or the
     /// settings module (detent), and the places with `Places`.
@@ -130,6 +165,39 @@ impl InferenceSkeleton {
         let _ = name;
         Err(crate::introspect::frozen())
     }
+
+    fn candidates(&self) -> fdo::Result<Vec<(String, Details)>> {
+        Err(crate::introspect::frozen())
+    }
+
+    fn add_tailnet_computer(&self, node: String) -> fdo::Result<String> {
+        let _ = node;
+        Err(crate::introspect::frozen())
+    }
+
+    fn guests(&self) -> fdo::Result<Vec<(String, Details)>> {
+        Err(crate::introspect::frozen())
+    }
+
+    fn answer_guest(&self, node: String, allow: bool) -> fdo::Result<()> {
+        let _ = (node, allow);
+        Err(crate::introspect::frozen())
+    }
+
+    fn forget_guest(&self, node: String) -> fdo::Result<()> {
+        let _ = node;
+        Err(crate::introspect::frozen())
+    }
+
+    #[zbus(signal)]
+    async fn guest_asks(
+        emitter: &SignalEmitter<'_>,
+        node: &str,
+        details: Details,
+    ) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    async fn guests_changed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
 
     #[zbus(signal)]
     async fn engines_changed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;

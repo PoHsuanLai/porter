@@ -135,6 +135,11 @@ impl AttachedBook {
         read(&self.0.labels).get(name).cloned()
     }
 
+    /// Shows computer `name` under `label` from now on.
+    pub fn set_label(&self, name: ComputerName, label: String) {
+        write(&self.0.labels).insert(name, label);
+    }
+
     /// The names people gave their computers, for those added in Settings.
     pub fn set_labels(&self, labels: BTreeMap<ComputerName, String>) {
         *write(&self.0.labels) = labels;

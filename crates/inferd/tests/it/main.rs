@@ -19,4 +19,5 @@ mod settings_module;
 mod speech;
 mod start;
 mod support;
+mod tailnet;
 mod voice_chat;

@@ -60,6 +60,27 @@ on = "On"
 kind = "intelligence"
 
 [[key]]
+path = "ai.tailnet.serve"
+default = "off"
+label = "Let my other computers use this computer's models"
+help = "While on, your other computers on your Tailscale network may ask to use the AI models that run on this computer. The first time each one asks, you are asked whether to let it. Only your own computers are asked about: a server, or a computer that belongs to someone else, is never let in unless you allow it in Settings. Your AI accounts and the models you have set up on other computers are never lent. While off, this computer does not answer them."
+section = "Models"
+exposure = "basic"
+
+[key.kind]
+kind = "toggle"
+
+[key.kind.v]
+variants = ["off", "on"]
+
+[key.labels]
+off = "Off"
+on = "On"
+
+[key.page]
+kind = "intelligence"
+
+[[key]]
 path = "ai.agents.endpoint"
 default = "off"
 label = "Let coding agents use my AI models"

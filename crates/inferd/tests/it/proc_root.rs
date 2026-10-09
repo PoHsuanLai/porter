@@ -74,6 +74,8 @@ fn start(bus: &bus::PrivateBus, proc_root: &Path) -> Daemon {
         .env("XDG_STATE_HOME", scratch.join("state"))
         .env("DBUS_SESSION_BUS_ADDRESS", bus.address())
         .env("INFERD_PROC_ROOT", proc_root)
+        // A Tailscale nobody serves: this computer's real one is never asked.
+        .env("INFERD_TAILSCALE_SOCKET", scratch.join("no-tailscale.sock"))
         .arg("--config")
         .arg(&config)
         .stdin(Stdio::null())

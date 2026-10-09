@@ -38,6 +38,29 @@
    <method name="RemoveComputer">
      <arg name="name" type="s" direction="in"/>
    </method>
+   <method name="Candidates">
+     <arg type="a(sa{sv})" direction="out"/>
+   </method>
+   <method name="AddTailnetComputer">
+     <arg name="node" type="s" direction="in"/>
+     <arg type="s" direction="out"/>
+   </method>
+   <method name="Guests">
+     <arg type="a(sa{sv})" direction="out"/>
+   </method>
+   <method name="AnswerGuest">
+     <arg name="node" type="s" direction="in"/>
+     <arg name="allow" type="b" direction="in"/>
+   </method>
+   <method name="ForgetGuest">
+     <arg name="node" type="s" direction="in"/>
+   </method>
+   <signal name="GuestAsks">
+     <arg name="node" type="s"/>
+     <arg name="details" type="a{sv}"/>
+   </signal>
+   <signal name="GuestsChanged">
+   </signal>
    <signal name="EnginesChanged">
    </signal>
    <property name="Gpu" type="s" access="read"/>

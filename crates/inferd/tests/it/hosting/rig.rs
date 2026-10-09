@@ -5,6 +5,7 @@ use super::bus::{PrivateBus, within};
 use super::cloud::FakeCloud;
 use super::engine::{FakeEngine, Script};
 use super::speech_host::SpeechEngines;
+use super::tailnet::{FakeTailscale, TailnetPlan};
 use engine_supervisor::{
     EngineHost, EngineId, ExitCode, FakeGpu, GpuMemory, HostError, Probe, ReadyProbe,
     SupervisorConfig, UnitSpec,
@@ -25,9 +26,10 @@ use inferd::probe::ProbeConfig;
 use inferd::replay::{NamedEngine, Replays};
 use inferd::report::PeerReports;
 use inferd::service::{Inference, serve_on};
-use inferd::settings::{Settings, SpendLine};
+use inferd::settings::{Settings, SpendLine, TailnetServe};
 use inferd::startup::{Level, Log};
 use inferd::supervise::{Ports, Supervised};
+use inferd::tailnet::{BusMachines, Parts, Tailnet};
 use inferd::watch::{Probing, Watch};
 use model_catalog::MiB;
 use model_http::{DerCertificate, TlsRoots};
@@ -205,6 +207,11 @@ pub struct Plan {
     /// back (zbus starts it on a task of its own, on the runtime of its first use); none starts
     /// it on the test's own.
     pub dispatcher_on: Option<tokio::runtime::Handle>,
+    /// Whether this computer has the programs that run engines (llama-server, vLLM): a computer
+    /// without them builds no model of the catalogue, and can only borrow.
+    pub engine_programs: bool,
+    /// This computer on a fake Tailscale network; none keeps inferd off the network altogether.
+    pub tailnet: Option<TailnetPlan>,
 }
 
 /// The agent endpoints of a world: the setting, and who the launcher is.
@@ -243,6 +250,8 @@ impl Default for Plan {
             attached: Vec::new(),
             agents: None,
             dispatcher_on: None,
+            engine_programs: true,
+            tailnet: None,
         }
     }
 }
@@ -277,6 +286,12 @@ pub struct World {
     pub log: LogLines,
     /// Where the computers Settings adds are kept (`computers.toml`, `computer-keys/`).
     pub state: PathBuf,
+    /// This computer's side of the fake Tailscale network, when the plan has one.
+    pub tailscale: Option<FakeTailscale>,
+    /// inferd's side of that network.
+    pub tailnet: Option<Tailnet>,
+    /// The connection the fake `Tailnet1` is served on (it is gone with this).
+    pub tailnet_bus: Option<zbus::Connection>,
 }
 
 static NEXT: AtomicU32 = AtomicU32::new(0);
@@ -307,11 +322,15 @@ impl World {
         });
         assert_eq!(catalog.skipped, vec![], "every test entry parses");
         let engines_config = EngineConfig {
-            vllm_python: Some(PathBuf::from("/nonexistent/python")),
-            llama_server: Some(plan.processes.as_ref().map_or_else(
-                || PathBuf::from("/nonexistent/llama-server"),
-                |p| p.program.clone(),
-            )),
+            vllm_python: plan
+                .engine_programs
+                .then(|| PathBuf::from("/nonexistent/python")),
+            llama_server: plan.engine_programs.then(|| {
+                plan.processes.as_ref().map_or_else(
+                    || PathBuf::from("/nonexistent/llama-server"),
+                    |p| p.program.clone(),
+                )
+            }),
             speech_host: plan
                 .speech
                 .as_ref()
@@ -453,6 +472,10 @@ impl World {
             agent_endpoint: plan
                 .agents
                 .map_or_else(Default::default, |agents| agents.endpoint),
+            tailnet_serve: match plan.tailnet.as_ref().is_some_and(|plan| plan.serving) {
+                true => TailnetServe::On,
+                false => TailnetServe::Off,
+            },
             ..Settings::default()
         })
         .with_remote(plan.remote)
@@ -546,6 +569,57 @@ impl World {
                 Arc::new(FixedClock(UnixSeconds(1_700_000_000))),
             ));
         }
+        // This computer on a fake Tailscale network: its Tailscale, accountd's list of the
+        // computers (on the connection accountd's fake is on, else on one that owns the name),
+        // the answers it keeps, and inferd's side.
+        let (tailscale, tailnet, tailnet_bus) = match plan.tailnet {
+            None => (None, None, None),
+            Some(tp) => {
+                let tailscale = FakeTailscale::start(&scratch.join("ts"), tp.network).await;
+                let held = match &accountd_bus {
+                    Some(held) => held.clone(),
+                    None => {
+                        let held = bus.connect().await;
+                        held.request_name("org.quire.Accounts1")
+                            .await
+                            .expect("own org.quire.Accounts1");
+                        held
+                    }
+                };
+                held.object_server()
+                    .at(porter_dbus::TAILNET_PATH, tailscale.object())
+                    .await
+                    .expect("serve the fake Tailnet1");
+                let (guests, said) = porter_tailnet::Guests::open(&state.join("guests.toml"));
+                assert_eq!(said, None);
+                let tailnet = Tailnet::start(
+                    Parts {
+                        api: tailscale.api.clone(),
+                        machines: Arc::new(BusMachines::new(daemon.clone())),
+                        guests: Arc::new(guests),
+                        sockets: sockets.clone(),
+                        config: porter_tailnet::Config {
+                            port: tp.port,
+                            allowed: |ip| {
+                                ip.is_loopback() && ip != std::net::IpAddr::from([127, 0, 0, 1])
+                            },
+                            limits: porter_tailnet::Limits::default(),
+                            first_pause: std::time::Duration::from_millis(50),
+                            longest_pause: std::time::Duration::from_millis(200),
+                        },
+                        timing: porter_tailnet::Timing {
+                            backstop: std::time::Duration::from_millis(300),
+                            retry: std::time::Duration::from_millis(100),
+                        },
+                    },
+                    served.clone(),
+                    Arc::new(audit.clone()),
+                    Arc::new(FixedClock(UnixSeconds(1_700_000_000))),
+                );
+                inference = inference.tailnet(tailnet.clone());
+                (Some(tailscale), Some(tailnet), Some(held))
+            }
+        };
         if let Some(runtime) = &plan.dispatcher_on {
             let _on = runtime.enter();
             daemon.object_server();
@@ -573,7 +647,26 @@ impl World {
             speech,
             log,
             state,
+            tailscale,
+            tailnet,
+            tailnet_bus,
         }
+    }
+
+    /// A second connection to the daemon, who it is as far as the daemon knows: a test that
+    /// needs the shell and Settings at once, or an app, in one world.
+    pub async fn connect_as(
+        &self,
+        role: Role,
+        app: AppId,
+    ) -> (zbus::Connection, Accounts<DbusTransport>) {
+        let connection = self.bus.connect().await;
+        self.peers.introduce(
+            connection.unique_name().expect("unique name").as_str(),
+            Caller { app, role },
+        );
+        let accounts = Accounts::over(DbusTransport::over(connection.clone()));
+        (connection, accounts)
     }
 }
 

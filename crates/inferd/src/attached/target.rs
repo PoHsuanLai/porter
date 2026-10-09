@@ -33,9 +33,16 @@ impl Target {
     /// The socket, when the engine is reached over one.
     pub fn socket(&self) -> Option<&PathBuf> {
         match &self.reach {
-            Reach::Socket(path) => Some(path),
+            Reach::Socket(path) | Reach::Tailnet { socket: path, .. } => Some(path),
             Reach::Loopback { .. } => None,
         }
+    }
+
+    /// Whether the engine is a computer on the Tailscale network, reached through a relay that
+    /// asks Tailscale and the computer before it answers: slower to answer than a socket the
+    /// person's own tunnel holds open.
+    pub fn is_relayed(&self) -> bool {
+        self.reach.is_tailnet()
     }
 
     /// The endpoint of one connect: the key file is read now (so a token that was rotated is the
@@ -56,7 +63,9 @@ impl Target {
 
     fn endpoint_with(&self, auth: AuthHeader, base: &str, timeouts: Timeouts) -> HttpEndpoint {
         let target = match &self.reach {
-            Reach::Socket(path) => HttpTarget::Unix(path.clone()),
+            Reach::Socket(path) | Reach::Tailnet { socket: path, .. } => {
+                HttpTarget::Unix(path.clone())
+            }
             Reach::Loopback { host, port } => HttpTarget::Tcp {
                 host: HostName(host.to_string()),
                 port: *port,

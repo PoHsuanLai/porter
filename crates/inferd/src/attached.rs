@@ -34,7 +34,7 @@ pub use book::AttachedBook;
 pub use check::{NotReady, probe};
 pub use computers::{
     AddedComputer, AddedFile, AddedModel, AddedProblem, ComputerError, Computers, NewComputer,
-    NewModel, NewReach,
+    NewModel, NewReach, NewTailnetComputer, relay_socket,
 };
 pub use config::{Attached, AttachedEntry, AttachedError, Place, Reach};
 pub use key::{KeyFile, KeyFileProblem};
