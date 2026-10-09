@@ -7,6 +7,28 @@
 //!
 //! Feature `stream` adds [`stream`]: HTTP/1.1 framed over a byte stream a host dials (an
 //! authenticated relay's descriptor, say), for a replica that streams file content.
+//!
+//! Requests and responses are plain values (no feature needed):
+//!
+//! ```
+//! use porter_core::WebUrl;
+//! use porter_http::{Header, HttpRequest, HttpResponse, Method, Status};
+//!
+//! let url = WebUrl::parse("https://cloud.example.org/remote.php/dav/").expect("a web url");
+//! let request = HttpRequest::new(Method::Propfind, url)
+//!     .with_header("Depth", "1")
+//!     .with_body("<propfind/>");
+//! assert_eq!(request.method.token(), "PROPFIND");
+//! assert_eq!(request.headers.len(), 1);
+//!
+//! let response = HttpResponse {
+//!     status: Status(429),
+//!     headers: vec![Header::new("Retry-After", "30")],
+//!     body: Vec::new(),
+//! };
+//! assert!(!response.status.is_success());
+//! assert_eq!(response.retry_after_seconds(), Some(30));
+//! ```
 
 mod error;
 mod headers;

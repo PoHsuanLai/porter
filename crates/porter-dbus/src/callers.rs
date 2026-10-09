@@ -16,6 +16,11 @@
 //! refused: there no caller is a Flatpak app.
 
 use crate::BusConnection;
+#[cfg(feature = "callers-file")]
+#[doc = "The caller table as files, from feature `callers-file`."]
+pub use crate::callers_file::{
+    CallerFileError, CallerTomlError, load_callers, table_from_file, table_from_toml,
+};
 use zbus::fdo::DBusProxy;
 use zbus::names::BusName;
 
@@ -175,9 +180,12 @@ pub enum MainPids {
     Fixture(PathBuf),
 }
 
-/// The systemd manager's bus name and object.
-const SYSTEMD: &str = "org.freedesktop.systemd1";
-const SYSTEMD_PATH: &str = "/org/freedesktop/systemd1";
+/// The systemd manager's bus name.
+pub const SYSTEMD: &str = "org.freedesktop.systemd1";
+/// The systemd manager's object.
+pub const SYSTEMD_PATH: &str = "/org/freedesktop/systemd1";
+/// The interface of the systemd manager's object.
+pub const SYSTEMD_MANAGER: &str = "org.freedesktop.systemd1.Manager";
 
 /// Callers by process: the bus names the connection's pid, `/proc/<pid>` names the app or unit,
 /// the table names the role, and a service unit's role goes only to its main process. The
@@ -249,7 +257,7 @@ impl ProcCallers {
             .call_method(
                 Some(SYSTEMD),
                 SYSTEMD_PATH,
-                Some("org.freedesktop.systemd1.Manager"),
+                Some(SYSTEMD_MANAGER),
                 "GetUnit",
                 &(unit,),
             )

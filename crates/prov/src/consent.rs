@@ -93,19 +93,12 @@ pub fn endorse<T>(value: Labelled<T>, witness: &Witness) -> Labelled<T> {
 }
 
 /// Why [`declassify`] refused: the label asked for is more open than the receipt covers.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("the receipt covers {covers:?} and no more openly")]
 pub struct BeyondReceipt {
     /// What the receipt covers.
     pub covers: Confidentiality,
 }
-
-impl fmt::Display for BeyondReceipt {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "the receipt covers {:?} and no more openly", self.covers)
-    }
-}
-
-impl std::error::Error for BeyondReceipt {}
 
 /// Lowers confidentiality to `to`, which must be at least as restrictive as what the receipt
 /// covers: a person who confirmed a release to one Space has not confirmed `Public`.

@@ -8,7 +8,8 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 /// A table file that exists and cannot be used.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{}: {}", .path.display(), .message)]
 pub struct CallerFileError {
     /// The file.
     pub path: PathBuf,
@@ -16,29 +17,14 @@ pub struct CallerFileError {
     pub message: String,
 }
 
-impl std::fmt::Display for CallerFileError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: {}", self.path.display(), self.message)
-    }
-}
-
-impl std::error::Error for CallerFileError {}
-
 /// Text that is not a caller table: not TOML, or a row that names no valid app, role or unit.
 /// `message` is the reader's own account of it, with the line and column.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{message}")]
 pub struct CallerTomlError {
     /// What is wrong with the text.
     pub message: String,
 }
-
-impl std::fmt::Display for CallerTomlError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.message)
-    }
-}
-
-impl std::error::Error for CallerTomlError {}
 
 impl CallerTomlError {
     /// The same error as the failure of the file at `path`.

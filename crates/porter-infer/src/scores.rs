@@ -42,6 +42,7 @@ pub struct OptionScore {
 
 /// Why a set of shares is not one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
+#[non_exhaustive]
 pub enum ScoresError {
     /// A single option has nothing to be compared with.
     #[error("fewer than two options")]

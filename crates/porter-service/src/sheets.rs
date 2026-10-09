@@ -6,7 +6,6 @@
 use porter_core::consent::{ConsentAnswer, ConsentAsk};
 use porter_core::sheet::{SheetInput, SheetView};
 use porter_core::wire::ParentWindow;
-use std::fmt;
 use std::future::Future;
 
 /// What a conversation opens with.
@@ -19,24 +18,16 @@ pub struct SheetOpen {
 }
 
 /// Why a conversation could not go on.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum SheetFault {
     /// No sheet host is reachable (sill is not running, no app draws).
+    #[error("no sheet host reachable")]
     Unavailable,
     /// The host closed the sheet or left.
+    #[error("sheet closed")]
     Closed,
 }
-
-impl fmt::Display for SheetFault {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            SheetFault::Unavailable => "no sheet host reachable",
-            SheetFault::Closed => "sheet closed",
-        })
-    }
-}
-
-impl std::error::Error for SheetFault {}
 
 /// Shows sheets for accountd and returns what the person did.
 pub trait Sheets: Send + Sync {

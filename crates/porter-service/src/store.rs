@@ -3,34 +3,19 @@
 //! in memory.
 
 use porter_core::store::{Persisted, StoreFault};
-use std::fmt;
 use std::future::Future;
 
 /// Why the registry could not be read or written.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum StoreError {
     /// The stored document was refused (corrupt, from a newer build); the daemon must not start
     /// empty over it.
-    Fault(StoreFault),
+    #[error(transparent)]
+    Fault(#[from] StoreFault),
     /// The medium failed (a full disk, a read-only state directory).
+    #[error("registry store unavailable")]
     Unavailable,
-}
-
-impl fmt::Display for StoreError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            StoreError::Fault(fault) => fault.fmt(f),
-            StoreError::Unavailable => f.write_str("registry store unavailable"),
-        }
-    }
-}
-
-impl std::error::Error for StoreError {}
-
-impl From<StoreFault> for StoreError {
-    fn from(fault: StoreFault) -> Self {
-        StoreError::Fault(fault)
-    }
 }
 
 /// Loads and saves the registry as one document.

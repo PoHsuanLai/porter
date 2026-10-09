@@ -3,6 +3,21 @@
 //! [`Sheets`] (the host that draws consent and sign-in), a [`Clock`], a [`RegistryStore`]
 //! (where the registry lives between runs) and an [`AuditSink`]. Transport-free: accountd hosts
 //! it behind D-Bus and the socket, and an app may host it in process.
+//!
+//! The seams' failures are small values with plain sentences, and what syncd may keep of an
+//! account is read from the grants (none held, none allowed):
+//!
+//! ```
+//! use porter_core::AccountId;
+//! use porter_service::{SheetFault, StoreError, SyncClass, sync_allowed};
+//!
+//! let account = AccountId::parse("cloud").expect("an id");
+//! for class in SyncClass::ALL {
+//!     assert!(!sync_allowed(&[], &account, class));
+//! }
+//! assert_eq!(SheetFault::Closed.to_string(), "sheet closed");
+//! assert_eq!(StoreError::Unavailable.to_string(), "registry store unavailable");
+//! ```
 
 mod add;
 mod add_flow;

@@ -11,6 +11,7 @@ publish.workspace = true
 [dependencies]
 porter-core = { workspace = true }
 serde = { workspace = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 # Only for the include guard of tests/it (`porter_fake::guard`).

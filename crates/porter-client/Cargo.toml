@@ -20,6 +20,7 @@ porter-provider = { workspace = true, optional = true }
 porter-secrets = { workspace = true, optional = true }
 porter-service = { workspace = true, optional = true }
 porter-dbus = { workspace = true, optional = true }
+porter-fs = { workspace = true, optional = true }
 latchkey = { workspace = true, optional = true }
 rustix = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
@@ -69,6 +70,11 @@ engines = [
   "infer", "dep:tokio", "dep:serde_json", "dep:porter-bridge", "dep:model-http",
   "dep:model-openai-compat", "dep:model-provider", "dep:model-wire",
 ]
+# `TailnetLending`: installs and takes away the drop-in that lets the person's other computers
+# reach inferd (the Settings switch "Let my other computers use this computer's models"), with the
+# manager of the person's units injected. Off by default: it brings porter-fs (std only). With
+# `dbus` it also has `SessionUnits`, the real manager over the session bus.
+lending = ["dep:porter-fs"]
 # Frames over a Unix stream socket with descriptors riding on them (what both carriers below
 # share). Pulls in the runtime, so it is off by default: the pure build reaches none.
 framed = ["dep:rustix", "dep:serde", "dep:tokio"]
@@ -91,3 +97,8 @@ name = "socket_accounts"
 [[example]]
 name = "guests"
 required-features = ["dbus"]
+
+# Shows, installs and takes away the tailnet drop-in, for Settings' switch to copy.
+[[example]]
+name = "lending"
+required-features = ["lending", "dbus"]

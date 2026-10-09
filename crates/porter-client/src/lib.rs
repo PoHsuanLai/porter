@@ -1,13 +1,24 @@
 //! The app-facing API (design/31 §5.1). An app asks for a capability, never a brand:
 //!
-//! ```ignore
-//! let accounts = Accounts::connect(&env).await?;
-//! let need = Need::Storage(StorageNeed { access: ReadWrite, delta: Poll, scope: AppFolder, quota: Unreported });
-//! match accounts.find(&need, DataClass::Photos, Usage::Interactive).await? {
-//!     Found::One(candidate) => use_it(candidate),
-//!     Found::Several(list) => pick_among(list),              // quire's AccountPicker
-//!     Found::NeedsConsent(offer) => accounts.request_grant(&offer, &window).await?,
-//!     Found::None(why) => show_no_account(why),               // EmptyState + "Add Account…"
+//! ```no_run
+//! use porter_client::{Accounts, ClientError, Found, Transport};
+//! use porter_core::consent::Usage;
+//! use porter_core::wire::ParentWindow;
+//! use porter_core::{Candidate, DataClass, Need};
+//!
+//! // `accounts` is `Accounts::connect(&env)` (D-Bus or the socket) or `Accounts::over(transport)`.
+//! async fn photos_account<T: Transport>(
+//!     accounts: &Accounts<T>,
+//!     need: &Need,
+//!     window: &ParentWindow,
+//! ) -> Result<Option<Candidate>, ClientError> {
+//!     let found = accounts.find(need, DataClass::Photos, Usage::Interactive).await?;
+//!     Ok(match found {
+//!         Found::One(candidate) => Some(candidate),
+//!         Found::Several(list) => list.into_iter().next(), // quire's AccountPicker lets the person pick
+//!         Found::NeedsConsent(offer) => Some(accounts.request_grant(&offer, window).await?),
+//!         Found::None(_why) => None, // EmptyState + "Add Account…"
+//!     })
 //! }
 //! ```
 //!
@@ -22,6 +33,29 @@
 //! hosts (porter-service, porter-secrets, porter-provider) are the default feature `in-process`;
 //! a bus-only consumer says `default-features = false, features = ["dbus"]` and reaches none of
 //! them.
+//!
+//! Settings' switch "Let my other computers use this computer's models" has a file to install
+//! besides the setting: feature `lending` has `TailnetLending` (`enable`, `disable`, `state`),
+//! which puts porter's shipped drop-in into the person's systemd user files and restarts inferd,
+//! through a `UnitManager` the caller gives (`SessionUnits` with `dbus`). It never sets
+//! `ai.tailnet.serve`; the caller does, after `enable` answers `Ok`. For detent's switch:
+//!
+//! ```ignore
+//! // Features `lending` and `dbus`.
+//! let config = LendingConfig::from_env().ok_or("no home folder")?;
+//! let lending = TailnetLending::new(config, SessionUnits::session().await?);
+//! match lending.state() {
+//!     LendingState::Installed => { /* the switch shows "on" */ }
+//!     LendingState::NotInstalled | LendingState::Differs => { /* the switch shows "off" */ }
+//!     _ => {}
+//! }
+//! // The person turned the switch on and agreed:
+//! match lending.enable().await {
+//!     Ok(()) => { /* now set ai.tailnet.serve to "on" */ }
+//!     Err(error) => show(error.to_string()), // plain words, ready to show
+//! }
+//! lending.disable().await?; // the switch turned off; the same again changes nothing more
+//! ```
 //!
 //! A porter daemon (inferd, syncd) is also a client: [`peer::PeerAccounts`] (feature `dbus`) is
 //! the typed way into accountd's daemon-only `Peer` surface (grant verdicts, the API key of a
@@ -55,6 +89,8 @@ mod removals;
 mod spaces;
 #[cfg(feature = "dbus")]
 mod tailnet;
+#[cfg(feature = "lending")]
+mod tailnet_lending;
 mod transport;
 
 pub use accounts::Accounts;
@@ -98,6 +134,13 @@ pub use removals::{Removals, RemovedAccount};
 pub use spaces::{SpaceChanges, Spaces, SpacesError};
 #[cfg(feature = "dbus")]
 pub use tailnet::{MachineChanges, Tailnet, TailnetError};
+#[cfg(all(feature = "lending", feature = "dbus"))]
+pub use tailnet_lending::SessionUnits;
+#[cfg(feature = "lending")]
+pub use tailnet_lending::{
+    INFERD_UNIT, LendingConfig, LendingError, LendingState, SHIPPED_NAME, TailnetLending,
+    UnitFailure, UnitManager, UnitName,
+};
 #[cfg(feature = "dbus")]
 pub use transport::DbusTransport;
 #[cfg(feature = "in-process")]

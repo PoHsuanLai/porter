@@ -22,7 +22,9 @@ use porter_secrets::Secrets;
 use porter_service::{AccountService, Registry};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+#[cfg(feature = "test-proc-root")]
 use zbus::export::futures_core::Stream;
+#[cfg(feature = "test-proc-root")]
 use zbus::fdo::MonitoringProxy;
 
 const USER: &str = "alice@fake.test";
@@ -391,9 +393,12 @@ fn proc_tree(dir: &std::path::Path) -> std::path::PathBuf {
     root
 }
 
-/// Every message on the bus, from the moment the monitor is set.
+/// Every message on the bus, from the moment the monitor is set. Only the acceptance test that
+/// needs the fake `/proc` uses it, so it has that test's feature.
+#[cfg(feature = "test-proc-root")]
 struct Tap(zbus::MessageStream);
 
+#[cfg(feature = "test-proc-root")]
 impl Tap {
     async fn start(bus: &PrivateBus) -> Self {
         let monitor = bus.connect().await;
@@ -422,6 +427,7 @@ impl Tap {
     }
 }
 
+#[cfg(feature = "test-proc-root")]
 fn contains(haystack: &[u8], needle: &str) -> bool {
     haystack
         .windows(needle.len())
