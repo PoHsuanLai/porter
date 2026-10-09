@@ -316,4 +316,8 @@ fi
 # reaches no inference either (quire design/36).
 ./scripts/check-portable.sh || fail=1
 
+# The feature sets the consumers build porter in, each with -D warnings (the header of
+# check-features.sh says why the workspace gate cannot see them).
+./scripts/check-features.sh || fail=1
+
 exit "$fail"
