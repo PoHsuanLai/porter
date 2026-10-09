@@ -15,6 +15,7 @@ fn base() -> Inputs {
             push_window: 2,
             batch_window: 30,
             metered: MeteredPolicy::Pause,
+            time_scale: 1,
         },
     }
 }

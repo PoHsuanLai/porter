@@ -34,13 +34,13 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::Duration;
 use storage_graph::{CHUNK_UNIT, Clock, Uploads};
-use syncd::clock::SystemClock;
+use syncd::clock::Wall;
 use syncd::dataset::MemoryDataset;
 use syncd::driver::Driver;
 use syncd::engine::Engine;
 use syncd::graph::graph_replica;
 use syncd::journal::Journal;
-use syncd::scheduler::{MeteredPolicy, Network, Settings};
+use syncd::scheduler::{Network, Settings};
 use syncd::service::{Access as Visible, DatasetName, Hub, serve};
 use syncd::webdav::RelayStream;
 use tokio::sync::{Notify, watch};
@@ -86,13 +86,7 @@ fn app(name: &str) -> AppId {
 }
 
 fn quick() -> Settings {
-    Settings {
-        poll_base: 1,
-        poll_max: 1,
-        push_window: 0,
-        batch_window: 0,
-        metered: MeteredPolicy::Pause,
-    }
+    Settings::quick()
 }
 
 async fn status_quota(sync: &SyncProxy<'_>, dataset: &str) -> Option<(u64, Option<u64>)> {
@@ -271,7 +265,7 @@ async fn a_folder_syncs_against_graph_through_the_relay_and_status_shows_the_quo
         replica,
         Arc::clone(&dataset),
         Journal::open(&journal.join("photos_originals.sqlite")).expect("journal"),
-        SystemClock,
+        Wall::scaled(quick().time_scale),
     );
     let name = DatasetName::parse("a1/photos_originals").expect("name");
     let handle = rig.hub.register(

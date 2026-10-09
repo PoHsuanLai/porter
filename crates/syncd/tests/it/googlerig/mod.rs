@@ -30,7 +30,7 @@ use syncd::datasets::storage::{
     ClientStorageGrants, StorageConfig, StorageGrants, StorageKind, StorageSupervisor,
 };
 use syncd::paths::{AccountDir, Paths};
-use syncd::scheduler::{MeteredPolicy, Network, Settings};
+use syncd::scheduler::{Network, Settings};
 use syncd::service::{Access, Hub, serve};
 use tokio::sync::watch;
 
@@ -85,13 +85,7 @@ pub fn app(name: &str) -> AppId {
 }
 
 pub fn quick() -> Settings {
-    Settings {
-        poll_base: 1,
-        poll_max: 1,
-        push_window: 0,
-        batch_window: 0,
-        metered: MeteredPolicy::Pause,
-    }
+    Settings::quick()
 }
 
 /// The real grants, until the test hides them (a revoked grant, a removed account), by kind.

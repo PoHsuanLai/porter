@@ -19,12 +19,12 @@ use std::collections::BTreeSet;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
-use syncd::clock::SystemClock;
+use syncd::clock::Wall;
 use syncd::dataset::MemoryDataset;
 use syncd::driver::Driver;
 use syncd::engine::Engine;
 use syncd::journal::Journal;
-use syncd::scheduler::{MeteredPolicy, Network, Settings};
+use syncd::scheduler::{Network, Settings};
 use syncd::service::{Access as Visible, DatasetName, Event, Hub, StatusSnapshot, serve};
 use tokio::sync::{Notify, watch};
 use zbus::export::futures_core::Stream;
@@ -309,13 +309,7 @@ fn storage() -> StorageCap {
 }
 
 fn quick() -> Settings {
-    Settings {
-        poll_base: 1,
-        poll_max: 1,
-        push_window: 0,
-        batch_window: 0,
-        metered: MeteredPolicy::Pause,
-    }
+    Settings::quick()
 }
 
 async fn used(sync: &SyncProxy<'_>, dataset: &str) -> Option<u64> {
@@ -356,7 +350,7 @@ async fn a_running_engine_syncs_to_its_replica_and_the_bus_shows_it_until_it_is_
         MemoryReplica::new(storage(), 10, UnixSeconds(1)),
         Arc::clone(&dataset),
         Journal::open(&dir.join("photos_originals.sqlite")).expect("journal"),
-        SystemClock,
+        Wall::scaled(quick().time_scale),
     );
     let handle = rig
         .hub

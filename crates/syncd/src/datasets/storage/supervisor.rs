@@ -24,7 +24,7 @@ use super::folder::{FolderDataset, SLUG};
 use super::grants::{
     AppFolderStore, StorageGrants, StorageKind, app_folder_store, google_photos_endpoints,
 };
-use crate::clock::SystemClock;
+use crate::clock::Wall;
 use crate::dataset::{Dataset, DatasetId};
 use crate::datasets::photos::google::{
     GooglePicker, PhotosApi, PhotosPicker, SLUG as UPLOAD_SLUG, UploadReplica, library_http,
@@ -338,7 +338,12 @@ where
             account: account.clone(),
             dataset: dataset.id(),
         };
-        let engine = Engine::new(replica, dataset, journal, SystemClock);
+        let engine = Engine::new(
+            replica,
+            dataset,
+            journal,
+            Wall::scaled(wiring.settings.time_scale),
+        );
         let handle = wiring
             .hub
             .register(name.clone(), self.config.files_owners.clone());
@@ -419,7 +424,12 @@ where
             account: account.clone(),
             dataset: dataset.id(),
         };
-        let engine = Engine::new(replica, dataset, journal, SystemClock);
+        let engine = Engine::new(
+            replica,
+            dataset,
+            journal,
+            Wall::scaled(wiring.settings.time_scale),
+        );
         let handle = wiring
             .hub
             .register(name.clone(), self.config.photos_owners.clone());

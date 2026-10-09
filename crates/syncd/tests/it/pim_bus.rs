@@ -35,7 +35,7 @@ use syncd::datasets::pim::{
 };
 use syncd::paths::Paths;
 use syncd::removal;
-use syncd::scheduler::{MeteredPolicy, Network, Settings};
+use syncd::scheduler::{Network, Settings};
 use syncd::service::{Access, Hub};
 use tokio::sync::watch;
 
@@ -305,13 +305,7 @@ async fn rig(with_grants: bool) -> Rig {
         accounts: Arc::clone(&accounts),
         hub: hub.clone(),
         paths: paths.clone(),
-        settings: Settings {
-            poll_base: 1,
-            poll_max: 1,
-            push_window: 0,
-            batch_window: 0,
-            metered: MeteredPolicy::Pause,
-        },
+        settings: Settings::quick(),
         network,
         owners: Access::default(),
     };

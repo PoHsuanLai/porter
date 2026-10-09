@@ -22,12 +22,12 @@ use std::collections::BTreeSet;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
-use syncd::clock::SystemClock;
+use syncd::clock::Wall;
 use syncd::dataset::{MemoryDataset, replica_hash};
 use syncd::driver::Driver;
 use syncd::engine::Engine;
 use syncd::journal::Journal;
-use syncd::scheduler::{MeteredPolicy, Network, Settings};
+use syncd::scheduler::{Network, Settings};
 use syncd::service::{Access as Visible, DatasetName, Hub, serve};
 use tokio::sync::{Notify, watch};
 use zbus::export::futures_core::Stream;
@@ -82,13 +82,7 @@ fn storage() -> StorageCap {
 }
 
 fn quick() -> Settings {
-    Settings {
-        poll_base: 1,
-        poll_max: 1,
-        push_window: 0,
-        batch_window: 0,
-        metered: MeteredPolicy::Pause,
-    }
+    Settings::quick()
 }
 
 /// A running dataset owned by `OWNER`, and the callers around it.
@@ -122,7 +116,7 @@ async fn rig() -> Rig {
         replica.clone(),
         Arc::clone(&dataset),
         Journal::open(&journal.join("notes.sqlite")).expect("journal"),
-        SystemClock,
+        Wall::scaled(quick().time_scale),
     );
     let owners = BTreeSet::from([AppName::parse(OWNER).expect("name")]);
     let handle = hub.register(

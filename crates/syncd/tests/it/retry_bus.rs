@@ -11,7 +11,7 @@ use syncd::datasets::pim::{
     AccountdUnavailable, PimConfig, PimGrants, PimKind, PimSupervisor, Wiring,
 };
 use syncd::paths::Paths;
-use syncd::scheduler::{MeteredPolicy, Network, Settings};
+use syncd::scheduler::{Network, Settings};
 use syncd::service::{Access, Hub};
 use tokio::sync::watch;
 
@@ -45,13 +45,7 @@ async fn a_look_that_could_not_ask_accountd_says_it_was_not_whole_and_the_next_o
         accounts: Arc::new(Accounts::over(DbusTransport::over(connection))),
         hub: Hub::default(),
         paths,
-        settings: Settings {
-            poll_base: 1,
-            poll_max: 1,
-            push_window: 0,
-            batch_window: 0,
-            metered: MeteredPolicy::Pause,
-        },
+        settings: Settings::quick(),
         network,
         owners: Access::default(),
     };

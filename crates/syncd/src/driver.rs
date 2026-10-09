@@ -26,9 +26,10 @@ enum Slept {
 }
 
 /// One step of a sleep that has `remaining` seconds to go: never longer than the poll interval
-/// `poll` (at least a second), so the wall clock is looked at again at least that often.
-pub(crate) fn step(remaining: u64, poll: u32) -> Duration {
-    Duration::from_secs(remaining.min(u64::from(poll).max(1)))
+/// `poll` (at least a second), so the wall clock is looked at again at least that often. The
+/// seconds are the scheduler's: `scale` of them pass in a real second (`Settings::time_scale`).
+pub(crate) fn step(remaining: u64, poll: u32, scale: u32) -> Duration {
+    Duration::from_secs(remaining.min(u64::from(poll).max(1))) / scale.max(1)
 }
 
 /// One engine, its scheduler state and its ends of the daemon's seams.
@@ -129,7 +130,7 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
             if remaining == 0 {
                 return Slept::Through;
             }
-            let pause = step(remaining, self.settings.poll_base);
+            let pause = step(remaining, self.settings.poll_base, self.settings.time_scale);
             if self.wait(Some(pause)).await == Slept::Woken {
                 return Slept::Woken;
             }

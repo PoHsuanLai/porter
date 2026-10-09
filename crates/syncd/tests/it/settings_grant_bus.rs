@@ -31,7 +31,7 @@ use syncd::datasets::storage::{
     ClientStorageGrants, FILES_APP, PHOTOS_APP, StorageConfig, StorageSupervisor,
 };
 use syncd::paths::{AccountDir, Paths};
-use syncd::scheduler::{MeteredPolicy, Network, Settings};
+use syncd::scheduler::{Network, Settings};
 use syncd::service::{Access, Hub, serve};
 use tokio::sync::watch;
 
@@ -85,13 +85,7 @@ struct Rig {
 }
 
 fn quick() -> Settings {
-    Settings {
-        poll_base: 1,
-        poll_max: 1,
-        push_window: 0,
-        batch_window: 0,
-        metered: MeteredPolicy::Pause,
-    }
+    Settings::quick()
 }
 
 async fn rig(photos: PhotosSwitch) -> Rig {

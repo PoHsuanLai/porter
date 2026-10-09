@@ -12,7 +12,7 @@ use super::source::{
     GraphCalendarSource, NoSource, PimSource, choose, endpoint_of,
 };
 use super::{Meta, PimKind};
-use crate::clock::SystemClock;
+use crate::clock::Wall;
 use crate::dataset::{DatasetError, DatasetId};
 use crate::driver::Driver;
 use crate::engine::Engine;
@@ -235,7 +235,12 @@ impl AccountMirrors {
             PimMirror::open(next.dataset.clone(), self.kind, root, &journal).map_err(opened)?;
         mirror.write_meta(meta).map_err(opened)?;
         let replica = FeedReplica::new(source.feed(&next.found));
-        let engine = Engine::new(replica, mirror.clone(), journal, SystemClock);
+        let engine = Engine::new(
+            replica,
+            mirror.clone(),
+            journal,
+            Wall::scaled(wiring.settings.time_scale),
+        );
         let name = DatasetName {
             account: self.account.clone(),
             dataset: next.dataset.clone(),

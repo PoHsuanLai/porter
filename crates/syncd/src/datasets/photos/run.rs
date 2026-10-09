@@ -11,7 +11,7 @@
 use super::library::{PhotoLibrary, PhotosError};
 use super::metadata::PhotoMetadata;
 use super::originals::PhotoOriginals;
-use crate::clock::SystemClock;
+use crate::clock::Wall;
 use crate::dataset::Dataset;
 use crate::driver::Driver;
 use crate::engine::Engine;
@@ -106,7 +106,7 @@ fn run_one<R: Replica + 'static, D: Dataset + 'static>(
     account: &AccountDir,
     wake: &Arc<Notify>,
     seed: u64,
-    engine: Engine<R, D, SystemClock>,
+    engine: Engine<R, D, Wall>,
 ) -> JoinHandle<()> {
     let handle = wiring.hub.register(
         DatasetName {
@@ -161,7 +161,7 @@ where
                 originals,
                 PhotoOriginals::new(library.clone()),
                 originals_journal,
-                SystemClock,
+                Wall::scaled(wiring.settings.time_scale),
             ),
         ),
         run_one(
@@ -173,7 +173,7 @@ where
                 metadata,
                 PhotoMetadata::new(library.clone()),
                 metadata_journal,
-                SystemClock,
+                Wall::scaled(wiring.settings.time_scale),
             ),
         ),
     ];

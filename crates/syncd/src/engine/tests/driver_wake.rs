@@ -13,22 +13,25 @@ use tokio::sync::{Notify, watch};
 
 #[test]
 fn a_sleep_never_runs_longer_than_the_poll_interval_and_never_less_than_a_second_apart() {
-    // (seconds to go, poll interval, the step)
-    const CASES: &[(u64, u32, u64)] = &[
-        (10, 60, 10),
-        (60, 60, 60),
-        (61, 60, 60),
-        (21_600, 60, 60),
-        (21_600, 1, 1),
+    // (seconds to go, poll interval, scheduler seconds per real second, the step in ms)
+    const CASES: &[(u64, u32, u32, u64)] = &[
+        (10, 60, 1, 10_000),
+        (60, 60, 1, 60_000),
+        (61, 60, 1, 60_000),
+        (21_600, 60, 1, 60_000),
+        (21_600, 1, 1, 1_000),
         // A zero interval would spin: at least a second.
-        (30, 0, 1),
-        (0, 60, 0),
+        (30, 0, 1, 1_000),
+        (0, 60, 1, 0),
+        // A test's faster scheduler clock: ten of its seconds to the real second.
+        (21_600, 1, 10, 100),
+        (5, 60, 10, 500),
     ];
-    for (remaining, poll, want) in CASES {
+    for (remaining, poll, scale, want) in CASES {
         assert_eq!(
-            step(*remaining, *poll),
-            Duration::from_secs(*want),
-            "{remaining} s to go, polling every {poll} s"
+            step(*remaining, *poll, *scale),
+            Duration::from_millis(*want),
+            "{remaining} s to go, polling every {poll} s, {scale} to the second"
         );
     }
 }
@@ -57,6 +60,7 @@ async fn a_clock_that_jumped_while_the_computer_slept_runs_the_next_cycle_within
         push_window: 0,
         batch_window: 0,
         metered: MeteredPolicy::Pause,
+        time_scale: 1,
     };
     let (_net, network) = watch::channel(Network::Unmetered);
     let driver = Driver::new(

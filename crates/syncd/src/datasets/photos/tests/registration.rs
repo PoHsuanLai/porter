@@ -3,7 +3,7 @@
 use super::super::{DeviceId, ManualMillis, PhotoLibrary, PhotosSwitch, PhotosWiring, start};
 use crate::paths::{AccountDir, Paths};
 use crate::removal::wipe;
-use crate::scheduler::{MeteredPolicy, Network, Settings};
+use crate::scheduler::{Network, Settings};
 use crate::service::{Access, DatasetName, Hub};
 use crate::testing::scratch;
 use porter_core::capability::{
@@ -43,13 +43,7 @@ fn wiring(root: &Path) -> PhotosWiring {
             callers_system: root.join("none"),
             callers_user: root.join("none"),
         },
-        settings: Settings {
-            poll_base: 1,
-            poll_max: 1,
-            push_window: 0,
-            batch_window: 0,
-            metered: MeteredPolicy::Pause,
-        },
+        settings: Settings::quick(),
         network,
         owners: Access::default(),
     }

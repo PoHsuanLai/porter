@@ -60,6 +60,10 @@ pub struct Settings {
     pub batch_window: u32,
     /// What a metered network does.
     pub metered: MeteredPolicy,
+    /// How many of the scheduler's seconds pass in one real second: 1 in the daemon. A test that
+    /// would wait whole seconds for each poll sets it higher; [`crate::clock::Wall`] and the
+    /// driver's sleeps both follow it, so a poll of one "second" takes a fraction of one.
+    pub time_scale: u32,
 }
 
 impl Default for Settings {
@@ -70,6 +74,23 @@ impl Default for Settings {
             push_window: 2,
             batch_window: 30,
             metered: MeteredPolicy::Pause,
+            time_scale: 1,
+        }
+    }
+}
+
+#[cfg(any(test, feature = "testing"))]
+impl Settings {
+    /// What every test rig polls with: every second, never batched, and the scheduler's clock
+    /// ten times the real one, so a poll takes a tenth of a second.
+    pub fn quick() -> Self {
+        Self {
+            poll_base: 1,
+            poll_max: 1,
+            push_window: 0,
+            batch_window: 0,
+            metered: MeteredPolicy::Pause,
+            time_scale: 10,
         }
     }
 }
