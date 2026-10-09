@@ -23,6 +23,12 @@
 //! a bus-only consumer says `default-features = false, features = ["dbus"]` and reaches none of
 //! them.
 //!
+//! Settings' switch "Let my other computers use this computer's models" has a file to install
+//! besides the setting: feature `lending` has [`TailnetLending`] (`enable`, `disable`, `state`),
+//! which puts porter's shipped drop-in into the person's systemd user files and restarts inferd,
+//! through a [`UnitManager`] the caller gives ([`SessionUnits`] with `dbus`). See its module for
+//! an example.
+//!
 //! A porter daemon (inferd, syncd) is also a client: [`peer::PeerAccounts`] (feature `dbus`) is
 //! the typed way into accountd's daemon-only `Peer` surface (grant verdicts, the API key of a
 //! granted account, a local runtime's report, the account news), and
@@ -55,6 +61,8 @@ mod removals;
 mod spaces;
 #[cfg(feature = "dbus")]
 mod tailnet;
+#[cfg(feature = "lending")]
+mod tailnet_lending;
 mod transport;
 
 pub use accounts::Accounts;
@@ -98,6 +106,13 @@ pub use removals::{Removals, RemovedAccount};
 pub use spaces::{SpaceChanges, Spaces, SpacesError};
 #[cfg(feature = "dbus")]
 pub use tailnet::{MachineChanges, Tailnet, TailnetError};
+#[cfg(all(feature = "lending", feature = "dbus"))]
+pub use tailnet_lending::SessionUnits;
+#[cfg(feature = "lending")]
+pub use tailnet_lending::{
+    INFERD_UNIT, LendingConfig, LendingError, LendingState, SHIPPED_NAME, TailnetLending,
+    UnitFailure, UnitManager, UnitName,
+};
 #[cfg(feature = "dbus")]
 pub use transport::DbusTransport;
 #[cfg(feature = "in-process")]

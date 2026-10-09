@@ -47,7 +47,8 @@ pub use agents::{
 };
 pub use args::{AppArg, CandidateArg, Details, NeedArg, TokenArg, VerdictArg};
 pub use callers::{
-    AppTitle, Caller, CallerRole, CallerRow, CallerTable, Callers, MainPids, ProcCallers,
+    AppTitle, Caller, CallerRole, CallerRow, CallerTable, Callers, MainPids, ProcCallers, SYSTEMD,
+    SYSTEMD_MANAGER, SYSTEMD_PATH,
 };
 #[cfg(feature = "callers-file")]
 pub use callers_file::{

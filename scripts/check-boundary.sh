@@ -143,6 +143,15 @@ if [ "$in_process_leaked" -eq 0 ]; then
   echo "boundary holds: porter-client[dbus] without in-process reaches none of porter-service, porter-secrets, porter-provider"
 fi
 
+# LENDING FEATURE: porter-client reaches porter-fs (the writer of the tailnet drop-in) only
+# through `lending` or `in-process` (porter-secrets uses it); a bus-only consumer reaches it not.
+if cargo tree -p porter-client --no-default-features --features dbus -i porter-fs -e normal,build 2>/dev/null | grep -q .; then
+  echo "LEAK: porter-client[dbus] without lending or in-process depends on porter-fs"
+  fail=1
+else
+  echo "boundary holds: porter-client[dbus] without lending or in-process reaches no porter-fs"
+fi
+
 # PURE FILES: source that parses what an edge read and never reads it itself. A dependency rule
 # cannot see std, so these are checked by name: no file, process, socket or environment access.
 STD_EFFECTS='std::(fs|io|env|process|net|os)\b|\b(File|Command|TcpStream|UnixStream)::'
@@ -210,7 +219,7 @@ EDGES=(
   "porter-service: porter-core porter-provider porter-secrets"
   "porter-dbus: porter-core"
   "porter-bridge: porter-core porter-infer model-catalog model-openai-compat model-provider vision-prep"
-  "porter-client: porter-bridge porter-core porter-dbus porter-infer porter-provider porter-secrets porter-service model-http model-openai-compat model-provider model-wire"
+  "porter-client: porter-bridge porter-core porter-dbus porter-fs porter-infer porter-provider porter-secrets porter-service model-http model-openai-compat model-provider model-wire"
   "porter-fake: porter-core porter-infer porter-provider porter-secrets porter-service"
   "porter-fake-servers: porter-core porter-discover porter-fake porter-provider"
   "porter-http: porter-core"
