@@ -2076,3 +2076,27 @@ The test count is +1 net because the cuts (-8) and merges (-17) are matched by t
 - detent: passes with `--offline`, not `--locked`: its `Cargo.lock` still lists `porter-provider`, `porter-secrets` and `porter-service` under porter-client, and loses them (the `in-process` feature, lane layers-client-feature, not this one); detent's owner re-locks. client, core, dbus, infer, provider, prov from the worktree.
 
 **Open.** None for this lane. `GuestChanges` is a D-Bus stream; a socket carrier has no guests, so its `watch_guests` stays `Unsupported` until inferd has a socket.
+
+## Lane install-tailnet (the tailnet drop-in as data and the Settings switch's installer; base `a1a07f5`, 2026-10-10)
+
+Owner's choice (c): `dist/inferd-tailnet.conf` stays opt-in. porter ships it as data; the Settings switch "Let my other computers use this computer's models" installs it, with the person's consent, through porter-client; detent only asks the question and calls the API. Why opt-in: the engines share inferd's sandbox and `IPAddressAllow` covers the whole unit, so an always-on drop-in would let engines reach the tailnet while `ai.tailnet.serve` is off.
+
+**install.sh.** `put 644 dist/inferd-tailnet.conf $prefix/share/porter/inferd-tailnet.conf` (honours DESTDIR); the header, the drop-in's own comment and the Sandbox paragraph above say so. Test `the_tailnet_drop_in_is_installed_as_data_and_never_as_a_live_drop_in` (accountd `tests/it/install.rs`): same bytes, mode 0644, nothing under the home folder, no `*.service.d` directory, no `/etc/systemd`.
+
+**API for detent and Whopper** (`porter-client`, feature `lending`; `SessionUnits` also needs `dbus`; `lending` brings only porter-fs, std only):
+- `LendingConfig::new(shipped, systemd_user_dir)`, `::under_prefix(prefix, systemd_user_dir)`, `::from_env() -> Option<Self>` (HOME, XDG_CONFIG_HOME, XDG_DATA_HOME, XDG_DATA_DIRS; `None` with no home folder), `::from_lookup(var)` (the same over a closure), `.shipped()`, `.drop_in()`.
+- `TailnetLending::new(config, manager)`; `state() -> LendingState`; `async enable() -> Result<(), LendingError>`; `async disable() -> Result<(), LendingError>`.
+  - `enable` reads the shipped file, writes `inferd.service.d/tailnet.conf` atomically with mode 0644 (porter-fs), then `Reload`, then `RestartUnit("inferd.service", "replace")` and waits for that job's `JobRemoved`. Twice leaves the same file and still reloads and restarts, so a try that stopped after the write is finished.
+  - `disable` removes the drop-in if present (and its folder if empty), then reloads and restarts. Idempotent. Neither touches `ai.tailnet.serve`; detent sets it (on after `enable` is `Ok`, off before or after `disable`).
+- `LendingState` (`#[non_exhaustive]`): `NotInstalled`, `Installed` (byte-equal to the shipped file), `Differs` (present but different, or the shipped file cannot be read; the switch shows off and turning it on replaces it).
+- `LendingError` (`#[non_exhaustive]`, `Display` is plain words to show as they are): `ShippedFileMissing`, `CouldNotWrite(io::Error)`, `ReloadFailed(UnitFailure)`, `RestartFailed(UnitFailure)`. Causes are `source()`, for a log.
+- `UnitManager` (trait: `reload()`, `restart(UnitName)`, both `Send` futures of `Result<(), UnitFailure>`), `UnitFailure(pub String)`, `UnitName`, `INFERD_UNIT`, `SHIPPED_NAME`.
+- `SessionUnits::new(connection)` / `::session().await`: the real manager over the session bus (`org.freedesktop.systemd1` `Manager`; a restart that does not finish in 60 seconds fails).
+- porter-dbus now exports `SYSTEMD`, `SYSTEMD_PATH`, `SYSTEMD_MANAGER` (they were private in `callers.rs`).
+- Example: `cargo run -p porter-client --example lending --features lending,dbus [-- enable|disable]`, and the lib docs of porter-client.
+
+**Tests** (`porter-client` `tests/it/tailnet_lending.rs`, no real systemd, `~/.config` or `/etc`): a fake manager that records calls and fails on request, over a scratch directory: exact bytes, mode (also over a 0600 file), call order, enable twice, Differs and the newer shipped file, disable (also with nothing there and with the person's other files beside), the failure rows (missing shipped file, a folder in the way, reload fails, restart fails, disable then restart fails), the plain-words table, the environment table; and `SessionUnits` on a private bus against a scripted manager (waits for its own job, ignores another job's end, a failed job, no manager).
+
+**Boundary.** check-boundary.sh: `porter-client[dbus]` without `lending` or `in-process` reaches no porter-fs, and the `porter-client` edge list names porter-fs. Cargo.toml: `lending = ["dep:porter-fs"]`; Cargo.lock gains porter-fs under porter-client.
+
+**Not compiled by the lane** (no-build rules): the coordinator's gate is the first compile of this lane.

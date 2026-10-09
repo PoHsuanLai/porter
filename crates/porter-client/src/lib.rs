@@ -24,10 +24,27 @@
 //! them.
 //!
 //! Settings' switch "Let my other computers use this computer's models" has a file to install
-//! besides the setting: feature `lending` has [`TailnetLending`] (`enable`, `disable`, `state`),
+//! besides the setting: feature `lending` has `TailnetLending` (`enable`, `disable`, `state`),
 //! which puts porter's shipped drop-in into the person's systemd user files and restarts inferd,
-//! through a [`UnitManager`] the caller gives ([`SessionUnits`] with `dbus`). See its module for
-//! an example.
+//! through a `UnitManager` the caller gives (`SessionUnits` with `dbus`). It never sets
+//! `ai.tailnet.serve`; the caller does, after `enable` answers `Ok`. For detent's switch:
+//!
+//! ```ignore
+//! // Features `lending` and `dbus`.
+//! let config = LendingConfig::from_env().ok_or("no home folder")?;
+//! let lending = TailnetLending::new(config, SessionUnits::session().await?);
+//! match lending.state() {
+//!     LendingState::Installed => { /* the switch shows "on" */ }
+//!     LendingState::NotInstalled | LendingState::Differs => { /* the switch shows "off" */ }
+//!     _ => {}
+//! }
+//! // The person turned the switch on and agreed:
+//! match lending.enable().await {
+//!     Ok(()) => { /* now set ai.tailnet.serve to "on" */ }
+//!     Err(error) => show(error.to_string()), // plain words, ready to show
+//! }
+//! lending.disable().await?; // the switch turned off; the same again changes nothing more
+//! ```
 //!
 //! A porter daemon (inferd, syncd) is also a client: [`peer::PeerAccounts`] (feature `dbus`) is
 //! the typed way into accountd's daemon-only `Peer` surface (grant verdicts, the API key of a
