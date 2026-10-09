@@ -409,6 +409,23 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         Self::engines_changed(&emitter).await.map_err(failed)
     }
 
+    // The places the assistant could run, one row each (a plain comment: a doc comment on a
+    // member would change the introspection XML). The members follow the order of the checked-in
+    // XML: Places, then AddComputer and RemoveComputer.
+    async fn places(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+    ) -> fdo::Result<Vec<(String, Details)>> {
+        let caller = self.place_lister(&header).await?;
+        Ok(self
+            .engines
+            .places(&caller)
+            .await
+            .into_iter()
+            .map(place_row)
+            .collect())
+    }
+
     // Adds a computer of the person's own (Settings only) and answers its place id; the models
     // arrive with how each is reached and, if it has one, its key, which is kept in a file only
     // the owner reads and never comes back.
@@ -437,22 +454,6 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         let computers = self.computers.as_ref().ok_or(ComputerError::Unavailable)?;
         computers.remove(&name)?;
         Ok(Self::engines_changed(&emitter).await.map_err(failed)?)
-    }
-
-    // The places the assistant could run, one row each (a plain comment: a doc comment on a
-    // member would change the introspection XML).
-    async fn places(
-        &self,
-        #[zbus(header)] header: Header<'_>,
-    ) -> fdo::Result<Vec<(String, Details)>> {
-        let caller = self.place_lister(&header).await?;
-        Ok(self
-            .engines
-            .places(&caller)
-            .await
-            .into_iter()
-            .map(place_row)
-            .collect())
     }
 
     #[zbus(signal)]
