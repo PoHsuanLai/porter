@@ -18,8 +18,9 @@ pub(super) struct Started {
     pub(super) login: WebUrl,
     /// Where to poll.
     pub(super) poll: EndpointUrl,
-    /// What to post there.
-    pub(super) token: String,
+    /// What to post there. Whoever holds it can collect the app password once the person
+    /// approves, so it prints as `<redacted>` and is wiped when dropped.
+    pub(super) token: SecretText,
 }
 
 /// What the person approved: the server, who they are there, and the app password.
@@ -64,7 +65,7 @@ fn started(body: &[u8]) -> Option<Started> {
     Some(Started {
         login: WebUrl::parse(text("/login")?).ok()?,
         poll: parse_server(text("/poll/endpoint")?)?,
-        token: text("/poll/token").filter(|t| !t.is_empty())?.to_owned(),
+        token: SecretText::new(text("/poll/token").filter(|t| !t.is_empty())?),
     })
 }
 
@@ -76,7 +77,7 @@ pub(super) async fn poll(io: &Io, started: &Started) -> Polled {
     }
     .with_header("User-Agent", "Porter")
     .with_header("Content-Type", "application/x-www-form-urlencoded")
-    .with_body(format!("token={}", started.token));
+    .with_body(format!("token={}", started.token.expose()));
     let response = match io.http.send(request).await {
         Ok(response) => response,
         Err(error) => {

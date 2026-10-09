@@ -34,6 +34,7 @@ use std::os::unix::fs::FileExt;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use zeroize::Zeroizing;
 
 /// Where the key is, for the launcher to pass on.
 #[derive(Debug)]
@@ -104,12 +105,14 @@ pub struct Inherit {
     pub number: RawFd,
 }
 
-/// Why a child could not be set up.
+/// Why a child could not be set up. More reasons may be added: match with a wildcard.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum ChildKeyError {
-    /// The key could not be read back from the descriptor or the file.
+    /// The key could not be read back from the descriptor or the file (what the system said;
+    /// `InvalidData` is a file longer than any key).
     #[error("the key could not be read: {0}")]
-    Unreadable(String),
+    Unreadable(io::ErrorKind),
     /// The key is not text.
     #[error("the key is not text")]
     NotText,
@@ -143,12 +146,14 @@ impl ProcessCredential {
 
     /// The key's text, read without moving a shared position.
     pub fn read_key(&self) -> Result<SecretText, ChildKeyError> {
-        let bytes = match &self.handle {
-            CredentialHandle::Memfd(fd) => read_all_at(fd),
-            CredentialHandle::TmpfsFile(path) => std::fs::read(path),
+        let file = match &self.handle {
+            CredentialHandle::Memfd(fd) => fd.as_fd().try_clone_to_owned().map(std::fs::File::from),
+            CredentialHandle::TmpfsFile(path) => std::fs::File::open(path),
         }
-        .map_err(|why| ChildKeyError::Unreadable(why.kind().to_string()))?;
-        String::from_utf8(bytes)
+        .map_err(|why| ChildKeyError::Unreadable(why.kind()))?;
+        let bytes = read_all_at(&file).map_err(|why| ChildKeyError::Unreadable(why.kind()))?;
+        // `SecretText` wipes its own copy; the buffer is wiped when `bytes` drops.
+        std::str::from_utf8(&bytes)
             .map(SecretText::new)
             .map_err(|_| ChildKeyError::NotText)
     }
@@ -172,7 +177,7 @@ impl ProcessCredential {
                         let copy = fd
                             .as_fd()
                             .try_clone_to_owned()
-                            .map_err(|why| ChildKeyError::Unreadable(why.kind().to_string()))?;
+                            .map_err(|why| ChildKeyError::Unreadable(why.kind()))?;
                         Ok(ChildKey::File {
                             var,
                             path: format!("/proc/self/fd/{child_fd}"),
@@ -197,18 +202,27 @@ fn path_text(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
-/// Every byte of `fd`, by `pread` from offset zero.
-fn read_all_at(fd: &OwnedFd) -> io::Result<Vec<u8>> {
-    let file = std::fs::File::from(fd.as_fd().try_clone_to_owned()?);
-    let mut bytes = Vec::new();
-    let mut chunk = [0u8; 512];
-    loop {
-        let offset = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
-        match file.read_at(&mut chunk, offset)? {
-            0 => return Ok(bytes),
-            n => bytes.extend_from_slice(&chunk[..n]),
+/// The most a key file may hold. The buffer is this big (plus one byte, to see a longer file)
+/// from the start, so it never grows, and growing is what would leave a stale copy behind.
+const KEY_LIMIT: usize = 16 * 1024;
+
+/// Every byte of `file`, by `pread` from offset zero, straight into one buffer that is wiped
+/// when it drops: no plain `Vec`, no copy on the stack. A file over [`KEY_LIMIT`] is
+/// `InvalidData`.
+fn read_all_at(file: &std::fs::File) -> io::Result<Zeroizing<Vec<u8>>> {
+    let mut buffer = Zeroizing::new(vec![0u8; KEY_LIMIT + 1]);
+    let mut filled = 0;
+    while filled < buffer.len() {
+        let offset = u64::try_from(filled).unwrap_or(u64::MAX);
+        match file.read_at(&mut buffer[filled..], offset)? {
+            0 => {
+                buffer.truncate(filled);
+                return Ok(buffer);
+            }
+            n => filled += n,
         }
     }
+    Err(io::ErrorKind::InvalidData.into())
 }
 
 /// accountd ended a credential: the launcher must end the process that holds the key.
@@ -258,8 +272,11 @@ mod tests {
     use super::*;
     use std::io::Write;
 
-    fn scratch_file(text: &str) -> PathBuf {
-        let path = std::env::temp_dir().join(format!("porter-client-key-{}", std::process::id()));
+    fn scratch_file(name: &str, text: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "porter-client-key-{name}-{}",
+            std::process::id()
+        ));
         let mut file = std::fs::File::create(&path).expect("create");
         file.write_all(text.as_bytes()).expect("write");
         path
@@ -271,7 +288,7 @@ mod tests {
 
     #[test]
     fn a_file_credential_gives_its_text_or_a_path_variable_and_never_an_inherited_descriptor() {
-        let path = scratch_file("sk-test-0123");
+        let path = scratch_file("text", "sk-test-0123");
         let credential = credential(CredentialHandle::TmpfsFile(path.clone()));
         assert_eq!(credential.handoff(), Handoff::TmpfsFile);
         let var = EnvName::parse("ANTHROPIC_API_KEY").expect("var");
@@ -318,7 +335,25 @@ mod tests {
         )));
         assert!(matches!(
             credential.read_key(),
-            Err(ChildKeyError::Unreadable(_))
+            Err(ChildKeyError::Unreadable(io::ErrorKind::NotFound))
         ));
+    }
+
+    #[test]
+    fn a_key_file_over_the_limit_is_unreadable_and_one_at_the_limit_is_read() {
+        let path = scratch_file("limit", &"k".repeat(KEY_LIMIT + 1));
+        let credential = credential(CredentialHandle::TmpfsFile(path.clone()));
+        assert!(matches!(
+            credential.read_key(),
+            Err(ChildKeyError::Unreadable(io::ErrorKind::InvalidData))
+        ));
+        std::fs::write(&path, "k".repeat(KEY_LIMIT)).expect("write");
+        assert_eq!(credential.read_key().expect("read").expose().len(), KEY_LIMIT);
+        std::fs::write(&path, [0xff, 0xfe]).expect("write");
+        assert!(matches!(
+            credential.read_key(),
+            Err(ChildKeyError::NotText)
+        ));
+        let _ = std::fs::remove_file(path);
     }
 }

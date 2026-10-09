@@ -4,7 +4,9 @@ use super::*;
 fn a_started_flow_names_the_page_the_poll_endpoint_and_the_token() {
     let body = br#"{"poll":{"token":"t0k","endpoint":"https://cloud.example.org/index.php/login/v2/poll"},"login":"https://cloud.example.org/index.php/login/v2/flow/abc"}"#;
     let got = started(body).expect("a flow");
-    assert_eq!(got.token, "t0k");
+    assert_eq!(got.token.expose(), "t0k");
+    // The token is a secret: Debug of the flow does not show it.
+    assert!(!format!("{got:?}").contains("t0k"), "{got:?}");
     assert_eq!(
         got.poll.as_str(),
         "https://cloud.example.org/index.php/login/v2/poll"

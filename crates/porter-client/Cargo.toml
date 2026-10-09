@@ -26,6 +26,7 @@ serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, optional = true }
+zeroize = { workspace = true }
 
 [dev-dependencies]
 ds-settings = { workspace = true }
