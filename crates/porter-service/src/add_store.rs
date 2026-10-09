@@ -72,7 +72,9 @@ pub(crate) fn fresh_id(
 }
 
 /// The state a new account starts in: working, except an agent that signs itself in, which is
-/// waiting for the agent to say it is (`Peer.SetAgentState`); porter has no way to know.
+/// waiting for the agent to say it is (`Peer.SetAgentState`); porter has no way to know. (A
+/// Tailscale account is added only after Tailscale answered signed in, so it starts working;
+/// accountd's watch of Tailscale moves it from there.)
 fn first_state(auth: AuthKind) -> AccountState {
     match auth {
         AuthKind::AgentLogin => AccountState::NeedsLogin,
@@ -99,10 +101,12 @@ fn same_login(held: &[porter_core::ServiceEndpoint], new: &[porter_core::Service
 
 /// Whether `held` is the account that adding `new` through `provider` would make again. An agent
 /// program signs itself in to the one plan its own login holds, so a second account of the same
-/// agent provider is the same account; any other is the same login at the same servers.
+/// agent provider is the same account, and so is a second Tailscale (one program serves this
+/// computer); any other is the same login at the same servers.
 fn duplicate(held: &Account, provider: &ProviderId, new: &[porter_core::ServiceEndpoint]) -> bool {
     held.provider == *provider
-        && (held.auth == AuthKind::AgentLogin || same_login(&held.endpoints, new))
+        && (matches!(held.auth, AuthKind::AgentLogin | AuthKind::OwnProgram)
+            || same_login(&held.endpoints, new))
 }
 
 /// An account id an add has chosen and is filing secrets under. Dropping it (the add finished,

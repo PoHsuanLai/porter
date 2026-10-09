@@ -71,6 +71,7 @@ const MIGRATIONS: &[(VocabVersion, Migration)] = &[
     (VocabVersion(8), from_eight),
     (VocabVersion(9), from_nine),
     (VocabVersion(10), from_ten),
+    (VocabVersion(11), from_eleven),
 ];
 
 /// 3 to 4 added the `sieve` family and changed the sheet's wire types; the stored document is
@@ -123,6 +124,14 @@ fn from_nine(document: Value) -> Result<Value, StoreFault> {
 /// 10 to 11 added the defaulted `group` of `ProviderRow` (`ProviderGroup`), the sheet's wire and
 /// none of the document: a document written at 10 reads as it was, so only its version moves.
 fn from_ten(document: Value) -> Result<Value, StoreFault> {
+    Ok(document)
+}
+
+/// 11 to 12 added `AuthKind::OwnProgram` (`own_program`, Tailscale's sign-in), three
+/// `SignInFault`s (`not_running`, `signed_out`, `not_allowed`) and `Machine`, `MachineOwner` and
+/// `NodeId`, all new variants or types of the wire: a document written at 11 has none of them and
+/// reads as it was, so only its version moves.
+fn from_eleven(document: Value) -> Result<Value, StoreFault> {
     Ok(document)
 }
 

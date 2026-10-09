@@ -67,6 +67,10 @@ pub const SHIPPED_FILES: &[(&str, &str)] = &[
         "openrouter",
         include_str!("../../../providers/openrouter.toml"),
     ),
+    (
+        "tailscale",
+        include_str!("../../../providers/tailscale.toml"),
+    ),
     ("yahoo", include_str!("../../../providers/yahoo.toml")),
 ];
 

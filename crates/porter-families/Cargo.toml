@@ -16,6 +16,7 @@ porter-proxy = { workspace = true, optional = true }
 porter-dav = { workspace = true, optional = true }
 porter-discover = { workspace = true, optional = true }
 porter-oauth = { workspace = true, optional = true }
+porter-tailscale = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true, features = ["rt", "time", "net", "io-util"] }
@@ -46,6 +47,8 @@ api_key = ["porter-http/hyper"]
 agent_login = []
 # OpenRouter: OAuth PKCE that mints a key.
 openrouter = ["dep:porter-oauth"]
+# Tailscale on this computer: asked over its unix socket, no credential held.
+tailnet = ["dep:porter-tailscale", "porter-tailscale/io"]
 
 [lints]
 workspace = true

@@ -87,6 +87,9 @@ pub(crate) fn refusal_of(fault: SignInFault) -> Refusal {
         | SignInFault::TimedOut
         | SignInFault::Expired
         | SignInFault::NotInstalled
+        | SignInFault::NotRunning
+        | SignInFault::SignedOut
+        | SignInFault::NotAllowed
         | SignInFault::AlreadyAdded
         | SignInFault::StoreFailed => Refusal::Unavailable,
     }

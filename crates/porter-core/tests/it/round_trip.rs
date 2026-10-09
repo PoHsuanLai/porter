@@ -639,8 +639,8 @@ fn json<T: Serialize>(value: &T) -> String {
 }
 
 #[test]
-fn the_vocabulary_is_version_eleven() {
-    assert_eq!(VocabVersion::CURRENT, VocabVersion(11));
+fn the_vocabulary_is_version_twelve() {
+    assert_eq!(VocabVersion::CURRENT, VocabVersion(12));
 }
 
 #[test]
@@ -757,6 +757,20 @@ fn an_app_label_is_named_only_when_accountd_has_one_and_an_earlier_ask_reads_wit
 #[test]
 fn a_sign_in_fault_keeps_the_slug_of_an_account_already_there() {
     assert_eq!(json(&SignInFault::AlreadyAdded), r#""already_added""#);
+}
+
+#[test]
+fn the_tailscale_values_keep_their_slugs() {
+    // Vocabulary 12: the sign-in a program on this computer holds, and the three faults a
+    // sheet words for it.
+    assert_eq!(json(&AuthKind::OwnProgram), r#""own_program""#);
+    assert_eq!(json(&SignInFault::NotRunning), r#""not_running""#);
+    assert_eq!(json(&SignInFault::SignedOut), r#""signed_out""#);
+    assert_eq!(json(&SignInFault::NotAllowed), r#""not_allowed""#);
+    assert_eq!(
+        serde_json::from_str::<AuthKind>(r#""own_program""#).expect("kind"),
+        AuthKind::OwnProgram
+    );
 }
 
 #[test]
@@ -1158,6 +1172,7 @@ fn every_auth_kind_has_one_way_to_sign_in_again_and_its_slug_is_its_serde_form()
         (AuthKind::KeyPair, SignInWay::Key),
         (AuthKind::AgentLogin, SignInWay::Agent),
         (AuthKind::CloudIdentity, SignInWay::Outside),
+        (AuthKind::OwnProgram, SignInWay::Outside),
         (AuthKind::None, SignInWay::Nothing),
         (AuthKind::LocalRuntime, SignInWay::Nothing),
     ];

@@ -140,6 +140,12 @@ issuer = "microsoft""#;
             Err(ProviderFileError::NoCapabilities(id())),
         ),
         (
+            "a program that holds its own sign-in may list no capability",
+            file(r#"kind = "own_program""#, r#"kind = "fixed""#, &[])
+                .replace("mark = \"example\"", "mark = \"example\"\ncapability = []"),
+            Ok(()),
+        ),
+        (
             "an llm row without [ai]",
             file(r#"kind = "api_key""#, r#"kind = "model_list""#, &[LLM_ROW]),
             Err(ProviderFileError::AiSpecMismatch(id())),

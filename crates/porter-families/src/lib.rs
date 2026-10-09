@@ -31,6 +31,8 @@ mod openrouter;
 mod password;
 #[cfg(feature = "openrouter")]
 mod skeleton;
+#[cfg(feature = "tailnet")]
+mod tailnet;
 
 #[cfg(feature = "agent_login")]
 pub use agent_login::{AgentLoginProvider, AgentLoginSession, AgentLoginSignIn};
@@ -57,3 +59,5 @@ pub use microsoft::{
 pub use nextcloud::{NextcloudProvider, NextcloudSession, NextcloudSignIn};
 #[cfg(feature = "openrouter")]
 pub use openrouter::{OpenRouterProvider, OpenRouterSession, OpenRouterSignIn};
+#[cfg(feature = "tailnet")]
+pub use tailnet::{TailnetProvider, TailnetSession, TailnetSignIn};

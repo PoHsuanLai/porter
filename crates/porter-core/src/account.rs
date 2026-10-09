@@ -46,8 +46,9 @@ pub enum AccountState {
     Offline,
     /// Working, with a restriction the UI explains.
     Limited,
-    /// An agent program has not signed in (or says it is signed out); the person signs in
-    /// inside the agent, never through porter. Only `AgentLogin` accounts are ever here.
+    /// A program that holds its own sign-in has not signed in (or says it is signed out): an
+    /// agent, or Tailscale. The person signs in inside that program, never by giving porter a
+    /// password. Only `AgentLogin` and `OwnProgram` accounts are ever here.
     NeedsLogin,
 }
 

@@ -12,12 +12,13 @@ publish.workspace = true
 porter-core = { workspace = true }
 porter-dbus = { workspace = true, features = ["callers-file"] }
 porter-discover = { workspace = true, features = ["io"] }
-porter-families = { workspace = true, features = ["nextcloud", "generic", "microsoft", "google", "api_key", "openrouter", "agent_login"] }
+porter-families = { workspace = true, features = ["nextcloud", "generic", "microsoft", "google", "api_key", "openrouter", "agent_login", "tailnet"] }
 porter-http = { workspace = true, features = ["hyper"] }
 porter-provider = { workspace = true }
 porter-proxy = { workspace = true, features = ["tls"] }
 porter-secrets = { workspace = true, features = ["oo7"] }
 porter-service = { workspace = true }
+porter-tailscale = { workspace = true, features = ["io"] }
 ds-settings = { workspace = true }
 clap = { workspace = true }
 oo7 = { workspace = true }

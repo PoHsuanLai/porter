@@ -124,6 +124,7 @@ mod tests {
                 ProviderGroup::Internet,
             ),
             (AuthKind::Password, vec![Mail], ProviderGroup::Internet),
+            (AuthKind::OwnProgram, vec![], ProviderGroup::Internet),
             (
                 AuthKind::LoginFlowV2,
                 vec![Storage],

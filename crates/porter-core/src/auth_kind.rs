@@ -37,6 +37,10 @@ pub enum AuthKind {
     /// the account holds no credential of any kind, only whether the agent says it is signed
     /// in (design/31 R7, R8).
     AgentLogin,
+    /// A program on this computer that holds the sign-in itself and answers porter when asked
+    /// (Tailscale): the account holds no credential of any kind, and its state is what the
+    /// program says it is. Signing in again is done in the program, never through porter.
+    OwnProgram,
 }
 
 /// How a person signs an account in again, in the few ways a screen words differently ("in your
@@ -85,7 +89,7 @@ impl AuthKind {
             }
             AuthKind::ApiKey | AuthKind::KeyPair => SignInWay::Key,
             AuthKind::AgentLogin => SignInWay::Agent,
-            AuthKind::CloudIdentity => SignInWay::Outside,
+            AuthKind::CloudIdentity | AuthKind::OwnProgram => SignInWay::Outside,
             AuthKind::None | AuthKind::LocalRuntime => SignInWay::Nothing,
         }
     }

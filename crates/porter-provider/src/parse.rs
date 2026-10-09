@@ -17,7 +17,9 @@ fn check(spec: ProviderSpec) -> Result<ProviderSpec, ProviderFileError> {
     if spec.auth.needs_issuer() != spec.auth.issuer.is_some() {
         return Err(ProviderFileError::IssuerMismatch(spec.id));
     }
-    if spec.capabilities.is_empty() {
+    // A program that holds its own sign-in (Tailscale) offers apps nothing through
+    // `Accounts1`: its service is its own bus object, so its file may list no capability.
+    if spec.capabilities.is_empty() && spec.auth.kind != AuthKind::OwnProgram {
         return Err(ProviderFileError::NoCapabilities(spec.id));
     }
     let has_ai_kind = spec

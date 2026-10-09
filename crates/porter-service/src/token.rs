@@ -8,8 +8,11 @@ use porter_secrets::SecretsError;
 /// The secret an account of `auth` presents to its provider, or `None` for kinds with none.
 pub fn secret_purpose(auth: AuthKind) -> Option<SecretPurpose> {
     match auth {
-        // An agent that signs itself in holds its login itself; porter files nothing.
-        AuthKind::None | AuthKind::LocalRuntime | AuthKind::AgentLogin => None,
+        // An agent that signs itself in holds its login itself, and so does Tailscale; porter
+        // files nothing.
+        AuthKind::None | AuthKind::LocalRuntime | AuthKind::AgentLogin | AuthKind::OwnProgram => {
+            None
+        }
         AuthKind::Password
         | AuthKind::AppPassword
         | AuthKind::LoginFlowV2
@@ -47,6 +50,7 @@ mod tests {
         let cases = [
             (AuthKind::LocalRuntime, None),
             (AuthKind::AgentLogin, None),
+            (AuthKind::OwnProgram, None),
             (AuthKind::None, None),
             (AuthKind::AppPassword, Some(SecretPurpose::Password)),
             (AuthKind::LoginFlowV2, Some(SecretPurpose::Password)),

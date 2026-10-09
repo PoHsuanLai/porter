@@ -300,12 +300,26 @@ const AT_ELEVEN: &str = r#"{
   "toggles": []
 }"#;
 
+/// 12 added Tailscale's sign-in: an `own_program` account holds no credential, and `needs_login`
+/// is the state it takes when Tailscale is signed out.
+const AT_TWELVE: &str = r#"{
+  "vocab": 12,
+  "accounts": [
+    {"id": "claude-code", "provider": "claude-code", "label": "Claude Code", "state": "ok", "auth": "agent_login", "capabilities": [], "restriction": {"verification": {"kind": "not_needed"}, "token_lifetime": "standard", "consent": "user", "limits": []}, "endpoints": []},
+    {"id": "tailscale", "provider": "tailscale", "label": "ada@example.org on example.org", "state": "needs_login", "auth": "own_program", "capabilities": [], "restriction": {"verification": {"kind": "not_needed"}, "token_lifetime": "standard", "consent": "user", "limits": []}, "endpoints": []}
+  ],
+  "grants": [
+    {"id": "g-session", "key": {"app": {"name": "org.quire.Agent.claude-code", "isolation": "unsandboxed"}, "account": "claude-code", "kind": "llm", "class": "prompt", "usage": "background", "space": {"kind": "any"}}, "decision": "allow", "scope": {"session": "sess-1"}, "at": 1790000003}
+  ],
+  "toggles": []
+}"#;
+
 /// Every frozen document reads, whatever version wrote it, as the current vocabulary, with what
 /// that version could hold: the rows say what each is expected to come out as.
 #[test]
 fn a_document_frozen_at_each_vocabulary_since_the_first_stored_one_reads() {
     // (version, text, account ids, grant ids)
-    let table: [(u16, &str, &[&str], &[&str]); 9] = [
+    let table: [(u16, &str, &[&str], &[&str]); 10] = [
         (3, AT_THREE, &["cloud", "mail"], &["g-once"]),
         (4, AT_FOUR, &["cloud", "mail"], &["g-once"]),
         (5, AT_FIVE, &["cloud", "claude-code"], &["g-once"]),
@@ -315,6 +329,7 @@ fn a_document_frozen_at_each_vocabulary_since_the_first_stored_one_reads() {
         (9, AT_NINE, &["claude-code"], &["g-session"]),
         (10, AT_TEN, &["claude-code"], &["g-session"]),
         (11, AT_ELEVEN, &["claude-code"], &["g-session"]),
+        (12, AT_TWELVE, &["claude-code", "tailscale"], &["g-session"]),
     ];
     // One row per version since the first stored, none missing and none repeated.
     let versions: Vec<u16> = table.iter().map(|row| row.0).collect();
@@ -367,6 +382,9 @@ fn what_a_version_added_reads_as_what_it_was() {
         Some(UnixSeconds(1_700_000_000))
     );
     assert_eq!(seven.accounts[0].state, AccountState::NeedsReauth);
+    let twelve = Persisted::from_json(AT_TWELVE).expect("twelve");
+    assert_eq!(twelve.accounts[1].auth, AuthKind::OwnProgram);
+    assert_eq!(twelve.accounts[1].state, AccountState::NeedsLogin);
     let eight = Persisted::from_json(AT_EIGHT).expect("eight");
     assert_eq!(
         eight.grants[0].scope,

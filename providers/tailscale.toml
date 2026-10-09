@@ -1,0 +1,23 @@
+# Tailscale on this computer: the person's own computers on their Tailscale network. Tailscale's
+# program signs itself in and keeps the login, so this account holds NO credential of any kind;
+# porter only asks the program (over the socket it serves for that) whether it is running and
+# signed in, and reads the computers on the network from it. The account's state follows the
+# program: working while it is running and signed in, "sign in again" while it is signed out,
+# off while it is stopped. Removing the account here does not sign Tailscale out. Its service is
+# `org.quire.Tailnet1` (the person's computers), not a capability of `Accounts1`, so the file
+# lists no capability.
+id = "tailscale"
+label = "Tailscale"
+mark = "tailscale"
+group = "internet"
+capability = []
+
+[mark_face]
+letter = "T"
+colour = "#4B5563"
+
+[auth]
+kind = "own_program"
+
+[discovery]
+kind = "fixed"

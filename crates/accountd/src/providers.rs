@@ -10,12 +10,13 @@ use porter_core::{AuthKind, EndpointUrl};
 use porter_discover::{Dns, DnsFault, HickoryDns, MxRecord, SrvRecord};
 use porter_families::{
     AgentLoginProvider, ApiKeyProvider, ClientFiles, FamilyProvider, GenericProvider, GoogleEnv,
-    GoogleProvider, MicrosoftEnv, MicrosoftProvider, NextcloudProvider, SharedDns,
+    GoogleProvider, MicrosoftEnv, MicrosoftProvider, NextcloudProvider, SharedDns, TailnetProvider,
 };
-use porter_http::{HyperHttp, SharedHttp, TokioSleep};
+use porter_http::{HyperHttp, SharedHttp, SharedSleep, TokioSleep};
 use porter_provider::{
     DomainName, Issuer, ProviderFileError, ProviderSet, ProviderSpec, parse_provider,
 };
+use porter_tailscale::LocalApi;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -184,6 +185,8 @@ pub struct FamilyIo {
     /// The clients files the OAuth families read at every sign-in and token: the person's own
     /// is the one Settings writes, so a client id set there is used without a restart.
     pub clients: ClientFiles,
+    /// Tailscale on this computer: the socket its program serves.
+    pub tailscale: LocalApi,
 }
 
 impl FamilyIo {
@@ -200,7 +203,13 @@ impl FamilyIo {
             dns,
             providers,
             clients,
+            tailscale: LocalApi::system(),
         }
+    }
+
+    /// The same, asking Tailscale through `tailscale` (a test names its own socket).
+    pub fn with_tailscale(self, tailscale: LocalApi) -> Self {
+        Self { tailscale, ..self }
     }
 }
 
@@ -238,6 +247,11 @@ pub fn family_of(spec: ProviderSpec, io: &FamilyIo) -> Result<FamilyProvider, Bo
         )),
         (AuthKind::ApiKey, _) => Ok(FamilyProvider::ApiKey(ApiKeyProvider::new(spec))),
         (AuthKind::AgentLogin, _) => Ok(FamilyProvider::AgentLogin(AgentLoginProvider::new(spec))),
+        (AuthKind::OwnProgram, _) => Ok(FamilyProvider::Tailnet(TailnetProvider::new(
+            spec,
+            io.tailscale.clone(),
+            SharedSleep::new(TokioSleep),
+        ))),
         // `OAuthMintsKey` (OpenRouter's browser sign-in) has a skeleton family but no body, so
         // it is not mapped: a file asking for it lands in `unserved` with its logged reason.
         _ => Err(Box::new(spec)),
@@ -296,6 +310,7 @@ mod tests {
                 shipped: PathBuf::from("/nonexistent/clients.toml"),
                 own: PathBuf::from("/nonexistent/own-clients.toml"),
             },
+            tailscale: LocalApi::new("/nonexistent/tailscaled.sock"),
         };
         let (families, unserved) = served(loaded.specs, &io);
         let ids: Vec<String> = unserved.iter().map(|s| s.id.to_string()).collect();
@@ -380,6 +395,7 @@ mod tests {
                 shipped: PathBuf::from("/nonexistent/clients.toml"),
                 own: PathBuf::from("/nonexistent/own-clients.toml"),
             },
+            tailscale: LocalApi::new("/nonexistent/tailscaled.sock"),
         };
         let (families, unserved) = served(loaded.specs, &io);
         assert!(families.is_empty(), "not served");

@@ -25,11 +25,21 @@ fn shipped() -> Vec<(PathBuf, ProviderSpec)> {
 #[test]
 fn every_shipped_provider_file_parses_and_is_named_by_its_id() {
     let files = shipped();
-    assert_eq!(files.len(), 23);
+    assert_eq!(files.len(), 24);
     for (path, spec) in files {
         let stem = path.file_stem().and_then(|s| s.to_str()).expect("stem");
         assert_eq!(spec.id.as_str(), stem, "{}", path.display());
     }
+}
+
+#[test]
+fn the_tailscale_file_holds_no_credential_and_offers_apps_no_capability() {
+    use porter_core::AuthKind;
+    let spec = shipped_spec("tailscale");
+    assert_eq!(spec.auth.kind, AuthKind::OwnProgram);
+    assert_eq!(spec.auth.issuer, None);
+    assert!(spec.capabilities.is_empty());
+    assert_eq!(spec.label, "Tailscale");
 }
 
 #[test]
@@ -512,6 +522,7 @@ fn the_shipped_files_carry_the_agreed_faces_and_the_named_mark_providers_carry_n
         ("lm-studio", "LM", "#4B3CC9"),
         ("llama-cpp", "L", "#8A5A44"),
         ("acp-agent", "A", "#5D6660"),
+        ("tailscale", "T", "#4B5563"),
     ];
     for (id, letter, colour) in given {
         assert_eq!(
@@ -563,6 +574,7 @@ fn every_shipped_file_names_its_group_and_it_is_the_expected_one() {
         ("icloud", Internet),
         ("microsoft", Internet),
         ("nextcloud", Internet),
+        ("tailscale", Internet),
         ("yahoo", Internet),
     ];
     let files = shipped();
@@ -630,7 +642,7 @@ fn the_sheet_rows_of_the_shipped_files_carry_their_face() {
     );
     assert_eq!(row("codex").mark, "openai");
     assert_eq!(row("google").mark_face, None);
-    assert_eq!(rows.iter().filter(|r| r.mark_face.is_some()).count(), 14);
+    assert_eq!(rows.iter().filter(|r| r.mark_face.is_some()).count(), 15);
 }
 
 #[test]

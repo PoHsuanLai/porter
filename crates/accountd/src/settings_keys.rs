@@ -497,6 +497,18 @@ fn account_keys(
             action("Sign out", ActionWeight::Plain),
             off(),
         )),
+        // Tailscale signed out: "Sign in" hands the person Tailscale's own page; porter takes no
+        // password or key of Tailscale's.
+        AuthKind::OwnProgram if account.state == AccountState::NeedsLogin => Some(spec(
+            &Key::Reauth(id.clone()),
+            section,
+            "Sign in".to_owned(),
+            "Opens Tailscale's own sign-in page. porter never sees your Tailscale password.",
+            action("Sign in", ActionWeight::Plain),
+            off(),
+        )),
+        // Tailscale keeps its own sign-in, and so is not signed out from here.
+        AuthKind::OwnProgram => None,
         // A program on this computer signs in with nothing: there is nothing to sign in to.
         AuthKind::LocalRuntime | AuthKind::None => None,
         _ => Some(spec(
@@ -508,11 +520,18 @@ fn account_keys(
             off(),
         )),
     });
+    let remove_help = match account.auth {
+        // Nothing of Tailscale's is stored here, and nothing of Tailscale's is touched.
+        AuthKind::OwnProgram => {
+            "Takes this account out of this computer's accounts. It does not sign Tailscale out."
+        }
+        _ => "Deletes the account's stored credentials and every permission given for it.",
+    };
     keys.push(spec(
         &Key::Remove(id.clone()),
         section,
         "Remove account".to_owned(),
-        "Deletes the account's stored credentials and every permission given for it.",
+        remove_help,
         action("Remove account", ActionWeight::Destructive),
         off(),
     ));

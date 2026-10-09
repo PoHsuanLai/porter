@@ -26,6 +26,8 @@ macro_rules! each_family {
             Self::OpenRouter($p) => $body,
             #[cfg(feature = "agent_login")]
             Self::AgentLogin($p) => $body,
+            #[cfg(feature = "tailnet")]
+            Self::Tailnet($p) => $body,
             // Present for the build with no family, where the enum has no variant to match.
             #[allow(unreachable_patterns)]
             _ => unreachable!("no family is built"),
@@ -57,6 +59,9 @@ pub enum FamilyProvider {
     /// An agent program that signs itself in.
     #[cfg(feature = "agent_login")]
     AgentLogin(crate::AgentLoginProvider),
+    /// Tailscale on this computer, which holds its own sign-in.
+    #[cfg(feature = "tailnet")]
+    Tailnet(crate::TailnetProvider),
 }
 
 /// An open account of a built family.
@@ -83,6 +88,9 @@ pub enum FamilySession {
     /// An agent program that signs itself in.
     #[cfg(feature = "agent_login")]
     AgentLogin(crate::AgentLoginSession),
+    /// Tailscale on this computer.
+    #[cfg(feature = "tailnet")]
+    Tailnet(crate::TailnetSession),
 }
 
 /// A sign-in conversation of a built family.
@@ -109,6 +117,9 @@ pub enum FamilySignIn {
     /// An agent program that signs itself in.
     #[cfg(feature = "agent_login")]
     AgentLogin(crate::AgentLoginSignIn),
+    /// Tailscale on this computer.
+    #[cfg(feature = "tailnet")]
+    Tailnet(crate::TailnetSignIn),
 }
 
 impl Provider for FamilyProvider {
@@ -159,6 +170,8 @@ impl Provider for FamilyProvider {
                 .open(account, presented)
                 .await
                 .map(FamilySession::AgentLogin),
+            #[cfg(feature = "tailnet")]
+            Self::Tailnet(p) => p.open(account, presented).await.map(FamilySession::Tailnet),
             #[allow(unreachable_patterns)]
             _ => {
                 let _ = (account, presented);
@@ -183,6 +196,8 @@ impl Provider for FamilyProvider {
             Self::OpenRouter(p) => p.sign_in(start).map(FamilySignIn::OpenRouter),
             #[cfg(feature = "agent_login")]
             Self::AgentLogin(p) => p.sign_in(start).map(FamilySignIn::AgentLogin),
+            #[cfg(feature = "tailnet")]
+            Self::Tailnet(p) => p.sign_in(start).map(FamilySignIn::Tailnet),
             #[allow(unreachable_patterns)]
             _ => {
                 let _ = start;

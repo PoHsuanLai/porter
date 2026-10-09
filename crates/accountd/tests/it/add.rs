@@ -346,6 +346,7 @@ async fn adding_a_persons_provider_of_an_unbuilt_family_is_refused() {
             shipped: PathBuf::from("/nonexistent/clients.toml"),
             own: PathBuf::from("/nonexistent/own-clients.toml"),
         },
+        tailscale: porter_tailscale::LocalApi::new("/nonexistent/tailscaled.sock"),
     };
     let (families, _unserved) = served(loaded.specs, &io);
     let ids: Vec<_> = families.iter().map(|f| f.spec().id.clone()).collect();
