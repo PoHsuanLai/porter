@@ -49,7 +49,7 @@ Allowed direct edges (checked by `scripts/check-boundary.sh`; dev-dependencies a
 | `porter-oauth`, `porter-discover` | `porter-core`, `porter-http`, `porter-provider` |
 | `porter-tailscale` | `porter-core` (its `NodeId`, `Machine`, `MachineOwner`); with feature `io`, hyper, hyper-util, http-body-util and tokio for the socket |
 | `porter-tailnet` | `porter-core`, `porter-tailscale` (with feature `io`: hyper, hyper-util, http-body-util and tokio for the sockets) |
-| `porter-families` | `porter-core`, `porter-provider`, `porter-http`, `porter-dav`, `porter-discover`, `porter-oauth`, `porter-proxy` (feature `generic` only: the relay's own login tries a typed mail password before the account is added), `porter-tailscale` (feature `tailnet` only: asks Tailscale who is signed in) |
+| `porter-families` | `porter-core`, `porter-provider`, `porter-http`, `porter-dav`, `porter-discover`, `porter-oauth` (its `io` with `microsoft` and `google` only), `porter-proxy` (its `tls` feature, which implies `io`, with `generic` only: the relay's own login tries a typed mail password before the account is added), `porter-tailscale` (its `io` with `tailnet` only: asks Tailscale who is signed in); the `hyper` feature of `porter-http` with `api_key`, `microsoft` and `google` |
 | `storage-graph` | `porter-core`, `porter-http`, `porter-sync`, `storage-webdav` (its `StreamHttp`, `Dial`, `Clock`), serde, serde_json, base64 (used by syncd only; no consumer repo) |
 | `storage-gdrive` | `porter-core`, `porter-http`, `porter-sync`, `storage-webdav` (its `StreamHttp`, `Dial`, `Clock`), serde, serde_json (used by syncd only; no consumer repo) |
 | `storage-webdav` | `porter-core`, `porter-dav`, `porter-http`, `porter-sync` (used by syncd only; no consumer repo) |
@@ -85,8 +85,14 @@ External boundaries: every crate but `porter-dbus` and the daemons never reaches
 `zvariant`, `tokio`, `reqwest`, `hyper`, `ureq`, `oo7`, `keyring`, `secret-service`,
 `interprocess` or `latchkey` (default features); `porter-core` also never reaches `toml`.
 `porter-http` reaches `hyper` and `tokio` only through its feature `hyper`, `porter-proxy` and
-`porter-oauth` reach `tokio` only through their feature `io`, and `porter-families` through none;
-a daemon or an app hosting porter turns those features on.
+`porter-oauth` reach `tokio` only through their feature `io`. `porter-families` reaches none with
+default features; through its family features it reaches exactly this (measured with
+`cargo tree --no-default-features --features <f>`, and enforced per feature by check-boundary):
+`generic` reaches `tokio` (porter-proxy's `io`, for the relay's own login); `microsoft` and
+`google` reach `tokio` and `hyper` (porter-oauth's `io` and porter-http's `hyper`); `api_key`
+reaches `hyper` and `tokio` (porter-http's `hyper`); `tailnet` reaches `hyper` and `tokio`
+(porter-tailscale's `io`); `nextcloud`, `agent_login` and `openrouter` reach none (`openrouter`
+takes porter-oauth without its `io`). A daemon or an app hosting porter turns those features on.
 `porter-dbus` reaches `tokio` only through zbus's `tokio` feature (the pinned block's zbus line).
 `tokio` is a direct dependency of the daemons only, and a dev-dependency of async tests.
 
@@ -108,7 +114,7 @@ a daemon or an app hosting porter turns those features on.
 | `storage-webdav` | `path`, `clock`, `refuse`, `entry`, `requests`, `wire` < `stream_http`; `replica` < `feed`, `write` |
 | `storage-graph` | `addr`, `json`, `refuse` < `replica` < `feed`, `write` < `upload` |
 | `storage-gdrive` | `addr`, `json`, `refuse` < `replica` < `feed`, `write` < `upload` |
-| `porter-families` | `skeleton` (the families not built yet) < `key` (what the cloud-AI key check shares) < one module per family (`nextcloud`, `generic`, `microsoft`, `google`, `api_key`, `openrouter`) < `dispatch` (`env_common`: the clock, randomness and clients-file paths the two OAuth families share) |
+| `porter-families` | `skeleton` (the families not built yet) < `key` (what the cloud-AI key check shares) < one module per family (`nextcloud`, `generic`, `microsoft`, `google`, `api_key`, `openrouter`) < `dispatch` (`env_common`: the clock the caller passes in, randomness, and the clients files the two OAuth families share; no environment or system clock is read here) |
 | `porter-infer` | `ids`, `control`, `open`, `request`, `cua`, `speech`, `reply`, `error`, `readiness` < `event`, `session`, `choice` < `policy`, `spend`, `audit` < `route` < `pick`, `model` < `broker` |
 | `porter-service` | `clock`, `sheets`, `store`, `audit` < `registry` < `choose`, `token`, `audience` < `service` < `add` |
 | `porter-client` | `error`, `env`, `found`, `authenticated`, `relays` < `transport` (`framed`, `in_process`, `socket`, `dbus`; each with its session) < `accounts` ; `peer` (`verdict`, `news` under `PeerAccounts`) and `removals` (feature `dbus`) over `porter-dbus` |
