@@ -1,5 +1,4 @@
 use super::*;
-use crate::testkit::{Scratch, models};
 use cua_action::{
     Button, ClickCount, Coord, CuaAction, Point, Scale120, Size, Target, WindowSpace,
 };
@@ -12,6 +11,7 @@ use porter_infer::{
     AttachIndex, FrameImage, FrameLayout, InferEvent, InferRefusal, MaskedRegions, MediaKind,
     StepIndex, TreeText, WindowGeometry,
 };
+use porter_router::testkit::{Scratch, models};
 use std::io::Write;
 use std::os::fd::OwnedFd;
 

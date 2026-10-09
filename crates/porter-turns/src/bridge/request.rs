@@ -2,12 +2,12 @@
 //! `LocalModel` (its catalog entry's default sampling and output limit, its engine's flavor), and
 //! the embedding limits of its entry. The mapping is `porter_bridge`'s.
 
-use crate::local::LocalModel;
 use model_provider as sp;
 use porter_bridge::{
     BridgeError, DefaultSampling, Frames, Target, chat_turn_for, embed_turns_for, task_turn_for,
 };
 use porter_infer as pi;
+use porter_router::local::LocalModel;
 
 /// The turn target of a model on this computer.
 pub fn local_target(model: &LocalModel) -> Target {

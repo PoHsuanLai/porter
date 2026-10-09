@@ -4,18 +4,18 @@
 //! The transcript joins the request as text, so the answer stage sees what the person said as
 //! words and nothing else about the audio.
 
-use crate::serve::{RunningTurn, TurnRunner, TurnStep};
-use crate::speech::{AudioIn, AudioPull};
 use porter_infer::{
     AudioFrame, ChatMessage, ChatRequest, ChatSink, Flow, InferEvent, InferReply, InferRequest,
     MessagePart, ModelError, ModelLabel, ModelRef, Pipeline, Refusal, Role, ShowReason, Stage,
     StageNote, StageRole, TranscribeBegin, TranscribeReply, Why,
 };
+use porter_router::audio::{AudioIn, AudioPull};
+use porter_router::seams::{RunningTurn, TurnRunner, TurnStep};
 use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
 
 /// What a speech-to-text stage runs on (stoker's `SpeechToText` behind the engine the stage's
-/// model names; a scripted one in tests). It is [`crate::speech::SpeechRunner::transcribe`]'s shape.
+/// model names; a scripted one in tests). It is inferd's `SpeechRunner::transcribe`'s shape.
 pub trait Transcriber: Send + Sync {
     /// Reads `audio` until it ends, sends `Heard` events to `sink`, and gives the transcript.
     fn transcribe<A: AudioIn, S: ChatSink>(

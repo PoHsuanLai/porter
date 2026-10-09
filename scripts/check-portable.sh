@@ -57,5 +57,6 @@ check "porter-secrets --no-default-features" porter-secrets "$BUS" --no-default-
 check "porter-oauth --no-default-features" porter-oauth "$BUS" --no-default-features
 check "porter-families --no-default-features" porter-families "$BUS" --no-default-features
 check "porter-router" porter-router "$BUS"
+check "porter-turns" porter-turns "$BUS"
 
 exit "$fail"

@@ -12,7 +12,7 @@ use engine_supervisor::{
     EnginePaths, EngineSpec, EnvPair, ProgramPath, SocketPath, UnitSpec, command,
 };
 use model_catalog::{EngineKind, EngineProfile, ModelEntry};
-use model_http::Port;
+use model_http::{AuthHeader, HostName, HttpEndpoint, HttpTarget, Port, Proxy, Timeouts, UrlPath};
 use model_openai_compat::Flavor;
 use model_provider::{Caps, EmbedCaps, ModelName, Tokens};
 use porter_core::{AccountId, Billing, Capability, Locality, ModelId, Offer};
@@ -172,6 +172,50 @@ impl LocalModel {
     /// The embedding capabilities of the entry (width, limits, prefixes), when it embeds.
     pub fn embed(&self) -> Option<&EmbedCaps> {
         self.entry.embed.as_ref()
+    }
+}
+
+/// An endpoint on a Unix socket with no auth, under the path `base` (`/v1` for a chat engine).
+pub fn unix_endpoint(socket: PathBuf, base: &str, timeouts: Timeouts) -> HttpEndpoint {
+    HttpEndpoint {
+        target: HttpTarget::Unix(socket),
+        proxy: Proxy::Direct,
+        base: UrlPath(base.to_owned()),
+        auth: AuthHeader::None,
+        headers: Vec::new(),
+        timeouts,
+    }
+}
+
+/// An endpoint on `127.0.0.1` at `port` over plain HTTP, with no auth: a runtime the person runs.
+pub fn loopback_endpoint(port: Port, base: &str, timeouts: Timeouts) -> HttpEndpoint {
+    HttpEndpoint {
+        target: HttpTarget::Tcp {
+            host: HostName("127.0.0.1".to_owned()),
+            port,
+        },
+        proxy: Proxy::Direct,
+        base: UrlPath(base.to_owned()),
+        auth: AuthHeader::None,
+        headers: Vec::new(),
+        timeouts,
+    }
+}
+
+impl LocalModel {
+    /// Where this model's engine is reached, under the path `base`: the target the person
+    /// attached (with its token read now, or none when the key file is refused, so the engine
+    /// answers 401), the loopback port of a runtime they run, or the engine's own socket.
+    pub fn endpoint(&self, base: &str, timeouts: Timeouts) -> HttpEndpoint {
+        if let Some(target) = &self.attached {
+            return target
+                .endpoint(base, timeouts)
+                .unwrap_or_else(|_| target.unsigned(base, timeouts));
+        }
+        match self.loopback {
+            Some(port) => loopback_endpoint(port, base, timeouts),
+            None => unix_endpoint(self.socket.0.clone(), base, timeouts),
+        }
     }
 }
 

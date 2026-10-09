@@ -1,8 +1,8 @@
 use super::*;
-use crate::clock::FixedClock;
-use crate::testkit::Scratch;
+use porter_core::clock::FixedClock;
 use porter_core::{AccountId, AppName, Count, Isolation, Locality, ModelId, UnixSeconds};
 use porter_infer::{ChatReply, EmbedReply, InferRefusal, ModelError, StopReason, Why};
+use porter_router::testkit::Scratch;
 
 fn app() -> AppId {
     AppId {

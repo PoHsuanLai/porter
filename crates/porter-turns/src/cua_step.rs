@@ -13,7 +13,6 @@
 //! `StepNote` is one line of text.
 
 use crate::bridge::{self, BridgeError, Frames};
-use crate::local::LocalModel;
 use crate::tee::{Echo, Tee};
 use cua_action::CuaDialect;
 use cua_session::{
@@ -30,6 +29,7 @@ use porter_infer::{
     CuaBegin, CuaStepFailure, CuaStepReply, CuaStepRequest, DropReason, DroppedAction, FrameLayout,
     InferEvent, MediaKind, ModelError, NoteFrom, PrevResult, SafetyHint, StepNote, TreeText,
 };
+use porter_router::local::LocalModel;
 use vision_prep::{Encoding, FrameMap, MediaType, RawFrame, prepare};
 
 /// A step that gave no actions: why the app is told. A reply that never parsed is a step the model

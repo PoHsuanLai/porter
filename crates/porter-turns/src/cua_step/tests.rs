@@ -1,5 +1,4 @@
 use super::*;
-use crate::testkit::{Scratch, models};
 use cua_action::{
     Button, ClickCount, Coord, CuaAction, DeviceSize, PixelFormat, Point, Scale120, Size, Target,
     WindowSpace,
@@ -11,6 +10,7 @@ use model_provider::{
 use model_provider::{Part, Role, TurnRequest};
 use porter_core::capability::CuaEnv;
 use porter_infer::{AttachIndex, ImageSource, MaskedRegions as Masked, StepIndex as Index};
+use porter_router::testkit::{Scratch, models};
 use std::io::Write;
 use std::os::fd::OwnedFd;
 

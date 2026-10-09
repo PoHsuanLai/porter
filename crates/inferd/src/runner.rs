@@ -1,7 +1,9 @@
-//! The model turns of one session: stoker's `OpenAiCompat` (`Driver<OpenAiCodec, HttpClient>`)
-//! against the pinned model's engine socket, wrapped in `Retrying` (inferd owns retry,
-//! ARCHITECTURE section 7). A turn is a task that pushes `TurnStep`s down a channel; dropping the
-//! turn aborts the task, which drops the HTTP future and closes the engine's stream.
+//! The model turns of one session. A turn is a task that pushes `TurnStep`s down a channel;
+//! dropping the turn aborts the task, which drops the HTTP future and closes the engine's stream.
+//! The turns on a model of this computer (stoker's `OpenAiCompat` against the pinned model's
+//! engine, wrapped in `Retrying`: inferd owns retry, ARCHITECTURE section 7) are
+//! `porter_turns::local::LocalTurns`; what stays here is the daemon's half: what a session is
+//! pinned to, a hosted model's turn, and a speech turn.
 //!
 //! What a session is pinned to is decided by its router and read here through a [`Pin`] cell:
 //! `serve_session` calls the router once and the runner never sees the decision otherwise.
@@ -12,31 +14,28 @@
 use crate::bridge::{self, Frames};
 use crate::cloud::Cloud;
 use crate::cloud::turn::{self as hosted, CloudPin};
-use crate::cua_run::{CuaRun, StepJob};
-use crate::hosts::{loopback_endpoint, unix_endpoint};
 use crate::local::LocalModel;
 use crate::pipeline::Hearing;
-use crate::serve::{RunningTurn, TurnRunner, TurnStep};
+use crate::serve::{TurnRunner, TurnStep};
 use crate::session::HeardAudio;
 use crate::speech::{ChannelAudio, SpeechRunner};
 use crate::structured::{self, Limits, Shaping};
 use crate::supervise::Supervised;
-use model_http::{HttpClient, Timeouts, WaitMs as HttpWaitMs};
-use model_openai_compat::{Flavor, OpenAiCodec, OpenAiCompat};
-use model_provider as sp;
-use model_provider::{Embedder, Provider, Retrying};
 use porter_core::Tier;
 use porter_infer::{
-    AudioFrame, ChatRequest, ChatSink, CuaStepFailure, CuaStepReply, EmbedReply, Flow, InferEvent,
-    InferRefusal, InferReply, InferRequest, ModelError, ServedBy, TokenUsage, TranscribeBegin,
+    AudioFrame, ChatRequest, InferRefusal, InferReply, InferRequest, ModelError, ServedBy,
+    TranscribeBegin,
 };
-use std::future::Future;
+use porter_turns::cua_run::CuaRun;
+use porter_turns::local::{LocalTurns, ToSession};
 use std::os::fd::OwnedFd;
-use std::sync::{Arc, Mutex, OnceLock, PoisonError};
-use std::time::Duration;
+use std::sync::{Arc, Mutex, OnceLock};
 use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
-use tokio::time::Instant;
+
+/// Retry, the engine wait and the turn in flight moved to `porter_turns`; these paths stay for
+/// the code that names them here.
+pub use porter_turns::Turn;
+pub use porter_turns::local::{RETRY, TokioSleep, note_no_scores};
 
 /// What the router decided for one session.
 #[derive(Debug, Clone)]
@@ -67,57 +66,6 @@ impl Pin {
     pub(crate) fn get(&self) -> Option<&Pinned> {
         self.0.get()
     }
-}
-
-/// Waits with the clock of the runtime, so a test with paused time does not wait.
-#[derive(Debug, Clone, Copy)]
-pub struct TokioSleep;
-
-impl sp::Sleeper for TokioSleep {
-    fn sleep(&self, wait: sp::WaitMs) -> impl Future<Output = ()> + Send {
-        tokio::time::sleep(Duration::from_millis(u64::from(wait.0)))
-    }
-}
-
-/// Three attempts, a quarter of a second doubling to four seconds (porter-bridge's, shared with
-/// porter-client's in-process engines).
-pub(crate) const RETRY: sp::RetryPolicy = porter_bridge::ENGINE_RETRY;
-
-/// An engine on a local socket answers its first byte after the prompt is read, which for an
-/// image prompt on a cold cache takes a while; between chunks it should not stall.
-const TIMEOUTS: Timeouts = Timeouts {
-    connect: HttpWaitMs(2_000),
-    first_byte: HttpWaitMs(120_000),
-    idle: HttpWaitMs(60_000),
-};
-
-/// How often a running turn tells the supervisor its engine is in use.
-const TOUCH_EVERY: Duration = Duration::from_millis(250);
-
-fn client(model: &LocalModel) -> HttpClient {
-    if let Some(target) = &model.attached {
-        // An engine the person attached: its token is read now (so a rotated one is the one
-        // sent). A key file that is refused sends no token at all: the engine answers 401.
-        return HttpClient::new(
-            target
-                .endpoint("/v1", TIMEOUTS)
-                .unwrap_or_else(|_| target.unsigned("/v1", TIMEOUTS)),
-        );
-    }
-    HttpClient::new(match model.loopback {
-        // A runtime the person runs: plain HTTP to loopback, nothing else.
-        Some(port) => loopback_endpoint(port, "/v1", TIMEOUTS),
-        None => unix_endpoint(model.socket.0.clone(), "/v1", TIMEOUTS),
-    })
-}
-
-fn chat_provider(model: &LocalModel) -> Option<Retrying<OpenAiCompat, TokioSleep>> {
-    let flavor: Flavor = model.flavor?;
-    Some(Retrying::new(
-        OpenAiCodec::new(flavor).provider(client(model)),
-        RETRY,
-        TokioSleep,
-    ))
 }
 
 /// Starts the turns of one session.
@@ -185,52 +133,6 @@ impl Turns {
     }
 }
 
-/// A turn in flight.
-#[derive(Debug)]
-pub struct Turn {
-    steps: mpsc::UnboundedReceiver<TurnStep>,
-    task: JoinHandle<()>,
-    /// Where a `Transcribe` turn's audio goes; none once the person stopped talking.
-    audio: Option<mpsc::UnboundedSender<AudioFrame>>,
-}
-
-impl Turn {
-    /// A turn that is the task `task`, whose steps arrive on `steps`; it takes no audio.
-    pub(crate) fn running(steps: mpsc::UnboundedReceiver<TurnStep>, task: JoinHandle<()>) -> Self {
-        Self {
-            steps,
-            task,
-            audio: None,
-        }
-    }
-}
-
-impl Drop for Turn {
-    fn drop(&mut self) {
-        self.task.abort();
-    }
-}
-
-impl RunningTurn for Turn {
-    fn audio(&mut self, frame: AudioFrame) {
-        if let Some(audio) = &self.audio {
-            let _ = audio.send(frame);
-        }
-    }
-
-    fn end_audio(&mut self) {
-        self.audio = None;
-    }
-
-    async fn next(&mut self) -> TurnStep {
-        match self.steps.recv().await {
-            Some(step) => step,
-            // The task ended without an answer: it was aborted or it panicked.
-            None => TurnStep::Done(InferReply::Failed(ModelError::Unreachable)),
-        }
-    }
-}
-
 impl TurnRunner for Turns {
     type Turn = Turn;
 
@@ -250,20 +152,14 @@ impl TurnRunner for Turns {
             let reply = job.reply(request, attachments, frames).await;
             let _ = job.steps.send(TurnStep::Done(reply));
         });
-        Turn {
-            steps: inbox,
-            task,
-            audio: Some(audio),
-        }
+        Turn::listening(inbox, task, audio)
     }
 
     fn start_heard(&self, chat: ChatRequest, heard: HeardAudio) -> Turn {
         let (steps, inbox) = mpsc::unbounded_channel();
         let turns = self.clone();
         let task = tokio::spawn(async move {
-            let mut sink = ToSession {
-                steps: steps.clone(),
-            };
+            let mut sink = ToSession::new(steps.clone());
             let reply = match &turns.hearing {
                 Some(hearing) => hearing.run(&turns, chat, heard, &mut sink).await,
                 None => refused(InferRefusal::Unsupported),
@@ -284,63 +180,20 @@ struct Job {
     steps: mpsc::UnboundedSender<TurnStep>,
 }
 
-/// Where a computer-use step's events go: to the session.
-struct ToSession {
-    steps: mpsc::UnboundedSender<TurnStep>,
-}
-
-impl ChatSink for ToSession {
-    fn event(&mut self, event: InferEvent) -> Flow {
-        match self.steps.send(TurnStep::Event(event)) {
-            Ok(()) => Flow::Continue,
-            Err(_) => Flow::Stop,
-        }
-    }
-}
-
-/// Where a turn's events go: to the session, and into the reply being gathered.
-struct Forward {
-    steps: mpsc::UnboundedSender<TurnStep>,
-    engines: Supervised,
-    engine: engine_supervisor::EngineId,
-    last_touch: Instant,
-    gathered: bridge::Gathered,
-}
-
-impl sp::TurnSink for Forward {
-    fn event(&mut self, event: sp::TurnEvent) -> sp::Flow {
-        self.gathered.take(&event);
-        if self.last_touch.elapsed() >= TOUCH_EVERY {
-            self.last_touch = Instant::now();
-            self.engines.used(&self.engine);
-        }
-        match bridge::event(&event) {
-            Some(out) => send(&self.steps, out),
-            None => sp::Flow::Continue,
-        }
-    }
-}
-
-/// Says in the daemon's log why a reply that asked for option shares has none: the reply is the
-/// same without them and the app is not told (a Choice's answer never depends on its scores).
-pub(crate) fn note_no_scores(why: Option<bridge::NoScores>) {
-    if let Some(why) = why {
-        eprintln!("inferd: choice scores: none: {why}");
-    }
-}
-
-fn send(steps: &mpsc::UnboundedSender<TurnStep>, event: InferEvent) -> sp::Flow {
-    match steps.send(TurnStep::Event(event)) {
-        Ok(()) => sp::Flow::Continue,
-        Err(_) => sp::Flow::Stop,
-    }
-}
-
 fn refused(refusal: InferRefusal) -> InferReply {
     InferReply::Refused(refusal)
 }
 
 impl Job {
+    /// The turns on a local model: this session's engines, events and computer-use run.
+    fn local(&self) -> LocalTurns<Supervised> {
+        LocalTurns::new(
+            self.engines.clone(),
+            self.steps.clone(),
+            Arc::clone(&self.run),
+        )
+    }
+
     async fn reply(
         &self,
         request: InferRequest,
@@ -380,30 +233,22 @@ impl Job {
             Ok(frames) => frames,
             Err(_) => return InferReply::Failed(ModelError::Unreadable),
         };
+        let local = self.local();
         match request {
             InferRequest::Chat(chat) => match bridge::chat_turn(model, &chat, &frames) {
                 Ok(turn) => {
                     let shaping = structured::shaping(model, &chat, self.limits);
-                    self.chat(model, served, &turn, shaping).await
+                    local.chat(model, served, &turn, shaping).await
                 }
                 Err(_) => refused(InferRefusal::Unsupported),
             },
             InferRequest::Task(task) => match bridge::task_turn(model, &task, self.tier) {
-                Ok(turn) => self.chat(model, served, &turn, Shaping::Unchecked).await,
+                Ok(turn) => local.chat(model, served, &turn, Shaping::Unchecked).await,
                 Err(_) => refused(InferRefusal::Unsupported),
             },
-            InferRequest::Embed(embed) => self.embed(model, served, &embed).await,
-            InferRequest::CuaBegin(begin) => {
-                *self.run.lock().unwrap_or_else(PoisonError::into_inner) =
-                    Some(CuaRun::begin(begin));
-                InferReply::CuaStep(CuaStepReply {
-                    thought: None,
-                    actions: Vec::new(),
-                    dropped: Vec::new(),
-                    safety: Vec::new(),
-                })
-            }
-            InferRequest::CuaStep(step) => self.cua(model, &step, &frames).await,
+            InferRequest::Embed(embed) => local.embed(model, served, &embed).await,
+            InferRequest::CuaBegin(begin) => local.begin_cua(begin),
+            InferRequest::CuaStep(step) => local.cua(model, &step, &frames).await,
             InferRequest::Transcribe(begin) => {
                 self.transcribe(model, served, &begin, ChannelAudio(audio))
                     .await
@@ -424,148 +269,10 @@ impl Job {
         else {
             return refused(InferRefusal::Unsupported);
         };
-        let mut sink = ToSession {
-            steps: self.steps.clone(),
-        };
+        let mut sink = ToSession::new(self.steps.clone());
         match runner.transcribe(begin, &mut audio, &mut sink).await {
             Ok(reply) => InferReply::Transcribed(reply),
             Err(error) => InferReply::Failed(error),
-        }
-    }
-
-    async fn chat(
-        &self,
-        model: &LocalModel,
-        served: &ServedBy,
-        turn: &sp::TurnRequest,
-        shaping: Shaping,
-    ) -> InferReply {
-        let Some(provider) = chat_provider(model) else {
-            return refused(InferRefusal::Unsupported);
-        };
-        if let Shaping::Checked(checked) = shaping {
-            return self.checked(&provider, model, served, *checked, turn).await;
-        }
-        let mut sink = Forward {
-            steps: self.steps.clone(),
-            engines: self.engines.clone(),
-            engine: model.spec.id.clone(),
-            last_touch: Instant::now(),
-            gathered: bridge::Gathered::for_turn(turn),
-        };
-        match provider.turn(turn, &mut sink).await {
-            Ok(end) => {
-                let (reply, why) = sink.gathered.chat_reply_noted(&end, served.clone());
-                note_no_scores(why);
-                InferReply::Chat(reply)
-            }
-            Err(error) => InferReply::Failed(bridge::model_error(&error)),
-        }
-    }
-
-    /// A turn whose reply is validated, and repaired once, before the app is told it.
-    async fn checked(
-        &self,
-        provider: &impl sp::Provider,
-        model: &LocalModel,
-        served: &ServedBy,
-        checked: structured::Checked,
-        turn: &sp::TurnRequest,
-    ) -> InferReply {
-        let steps = &self.steps;
-        let mut forward = |event| send(steps, event);
-        let touch = || self.engines.used(&model.spec.id);
-        match structured::run(provider, checked, turn, &mut forward, touch).await {
-            Ok(valid) => {
-                let _ = send(steps, InferEvent::TextDelta(valid.text.clone()));
-                let scores = match bridge::turn_scores(turn, valid.first_token.as_ref()) {
-                    Some(Ok(scores)) => Some(scores),
-                    Some(Err(why)) => {
-                        note_no_scores(Some(why));
-                        None
-                    }
-                    None => None,
-                };
-                InferReply::Chat(porter_infer::ChatReply {
-                    text: valid.text,
-                    tool_calls: Vec::new(),
-                    stop: porter_infer::StopReason::EndTurn,
-                    thought: valid.thought,
-                    usage: valid.usage,
-                    served: served.clone(),
-                    scores,
-                })
-            }
-            Err(error) => InferReply::Failed(error),
-        }
-    }
-
-    async fn embed(
-        &self,
-        model: &LocalModel,
-        served: &ServedBy,
-        request: &porter_infer::EmbedRequest,
-    ) -> InferReply {
-        let Some(flavor) = model.flavor else {
-            return refused(InferRefusal::Unsupported);
-        };
-        let Ok(turns) = bridge::embed_turns(model, request) else {
-            return refused(InferRefusal::Unsupported);
-        };
-        let provider = OpenAiCodec::new(flavor).provider(client(model));
-        let mut vectors = Vec::new();
-        let mut input = sp::Tokens(0);
-        for turn in &turns {
-            match provider.embed(turn).await {
-                Ok(end) => {
-                    input = sp::Tokens(input.0.saturating_add(end.usage.input.0));
-                    vectors.extend(bridge::vectors(end.vectors));
-                }
-                Err(error) => return InferReply::Failed(bridge::model_error(&error)),
-            }
-            self.engines.used(&model.spec.id);
-        }
-        InferReply::Embed(EmbedReply {
-            vectors,
-            usage: TokenUsage {
-                input: porter_core::Tokens(input.0),
-                output: porter_core::Tokens(0),
-                cached: porter_core::Tokens(0),
-            },
-            served: served.clone(),
-        })
-    }
-
-    async fn cua(
-        &self,
-        model: &LocalModel,
-        request: &porter_infer::CuaStepRequest,
-        frames: &Frames,
-    ) -> InferReply {
-        let run = self
-            .run
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone();
-        let (Some(mut run), Some(provider)) = (run, chat_provider(model)) else {
-            return refused(InferRefusal::Unsupported);
-        };
-        let mut sink = ToSession {
-            steps: self.steps.clone(),
-        };
-        let job = StepJob {
-            model,
-            provider: &provider,
-            frames,
-            request,
-        };
-        match run.step(job, &mut sink).await {
-            Ok(reply) => {
-                *self.run.lock().unwrap_or_else(PoisonError::into_inner) = Some(run);
-                InferReply::CuaStep(reply)
-            }
-            Err(CuaStepFailure::Unparseable) => InferReply::Failed(ModelError::Unparseable),
-            Err(CuaStepFailure::ModelFailed(error)) => InferReply::Failed(error),
         }
     }
 }

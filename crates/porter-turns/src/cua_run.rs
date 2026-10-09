@@ -1,16 +1,16 @@
-//! Computer-use steps inside inferd, as one run on one session: its goal and what it did so
+//! Computer-use steps as one run on one session: its goal and what it did so
 //! far. A step runs one model turn through the pinned engine; the prompt, the parse (with one
 //! repair) and the mapping into window space are stoker's `CuaSession`, which `cua_step` drives.
 //! The history lives in the session value the run holds, so the run is pinned to one model.
 
 use crate::bridge::Frames;
 use crate::cua_step::{self, Failed};
-use crate::local::LocalModel;
 use cua_session::CuaSession;
 use model_provider::{Flow as ProviderFlow, Provider};
 use porter_infer::{
     ChatSink, CuaBegin, CuaStepFailure, CuaStepReply, CuaStepRequest, Flow, ModelError,
 };
+use porter_router::local::LocalModel;
 
 /// Only `Screen` data may enter a computer-use session; the rule moved to
 /// `porter_router::router`, which the route and the session machine apply too.
