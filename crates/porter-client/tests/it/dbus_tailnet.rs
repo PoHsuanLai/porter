@@ -151,8 +151,9 @@ async fn the_terminal_reads_typed_machines_and_hears_of_changes() {
     assert_eq!(pi.dns, "pi.tail1234.ts.net");
 
     world.fake.edit(|net| net.peers[0].online = false);
+    // A signal that should come is waited for as long as a starved machine needs.
     let told = tokio::time::timeout(
-        Duration::from_secs(4),
+        porter_fake::GENEROUS,
         std::future::poll_fn(|cx| std::pin::Pin::new(&mut changes).poll_next(cx)),
     )
     .await

@@ -1,10 +1,12 @@
 use crate::common::{LOGIN_PAGE, network, start};
+use porter_fake::{Deadline, GENEROUS};
 use porter_fake_servers::Daemon;
 use porter_tailscale::{Backend, Notice, TailscaleError, Watch};
 use std::time::Duration;
 
 async fn next(watch: &mut Watch) -> Notice {
-    tokio::time::timeout(Duration::from_secs(5), watch.next())
+    // A notice that should come is waited for as long as a starved machine needs.
+    tokio::time::timeout(GENEROUS, watch.next())
         .await
         .expect("a notice in time")
         .expect("a notice")
@@ -54,7 +56,7 @@ async fn the_watch_ends_when_tailscale_stops() {
     next(&mut watch).await;
     next(&mut watch).await;
     fake.stop();
-    let end = tokio::time::timeout(Duration::from_secs(5), watch.next())
+    let end = tokio::time::timeout(GENEROUS, watch.next())
         .await
         .expect("it ends");
     // Closed cleanly, or cut: either way the caller is told and goes to ask again.
@@ -71,11 +73,11 @@ async fn dropping_the_watch_closes_the_stream() {
     next(&mut watch).await;
     assert_eq!(fake.watchers(), 1);
     drop(watch);
-    for _ in 0..100 {
-        if fake.watchers() == 0 {
-            return;
+    let deadline = Deadline::generous();
+    while fake.watchers() != 0 {
+        if deadline.passed() {
+            deadline.fail("the stream to close");
         }
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        tokio::time::sleep(Duration::from_millis(10)).await;
     }
-    panic!("the stream stayed open");
 }

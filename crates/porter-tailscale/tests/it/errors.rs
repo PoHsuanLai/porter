@@ -30,8 +30,14 @@ async fn a_socket_nobody_listens_on_is_not_running() {
     let (fake, api) = start("errors-stopped", Daemon::Running(network())).await;
     assert!(api.status().await.is_ok());
     fake.stop();
-    // Let the aborted server go before dialling its leftover socket.
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    // Wait until the aborted server has gone, then ask over its leftover socket.
+    let deadline = porter_fake::Deadline::generous();
+    while api.status().await.is_ok() {
+        if deadline.passed() {
+            deadline.fail("the stopped fake to refuse connections");
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
     assert_eq!(api.status().await, Err(TailscaleError::NotRunning));
     assert_eq!(api.start_login().await, Err(TailscaleError::NotRunning));
     // And it comes back where it was.
@@ -105,6 +111,8 @@ async fn a_daemon_that_never_answers_times_out() {
             open.push(stream);
         }
     });
+    // The 200 ms is the client's own timeout, the thing under test, not a wait for the fake: the
+    // fake never answers, so the test ends when the client gives up, however loaded the machine.
     let api = LocalApi::new(&path)
         .with_program_dirs(Vec::new())
         .with_timeout(std::time::Duration::from_millis(200));

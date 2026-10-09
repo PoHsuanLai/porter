@@ -18,7 +18,7 @@ use porter_core::{
 use porter_dbus::{
     BusStream, CallerRole, ManagerProxy, Sheet, SpacesProxy, TailnetProxy, machine_from_dbus,
 };
-use porter_fake::{FixedClock, MemoryStore, RecordingAudit};
+use porter_fake::{Deadline, FixedClock, MemoryStore, RecordingAudit};
 use porter_fake_servers::{Daemon, FakeLocalApi, FakePeer, Network};
 use porter_families::{FamilyProvider, TailnetProvider};
 use porter_http::{SharedSleep, Sleep};
@@ -311,14 +311,40 @@ async fn read(connection: &zbus::Connection) -> Result<Vec<Machine>, zbus::Error
         .collect())
 }
 
-/// Waits up to `within` for the next `Changed`.
-async fn changed_within(stream: &mut porter_dbus::TailnetChangedStream, within: Duration) -> bool {
+/// Waits for the next `Changed`, as long as a starved machine needs (`Deadline::generous`): a
+/// signal that should come is waited for, never raced against a short timer.
+async fn told(stream: &mut porter_dbus::TailnetChangedStream, what: &str) {
+    let deadline = Deadline::generous();
+    let next = std::future::poll_fn(|cx| std::pin::Pin::new(&mut *stream).poll_next(cx));
+    match tokio::time::timeout(porter_fake::GENEROUS, next).await {
+        Ok(Some(_)) => {}
+        _ => deadline.fail(what),
+    }
+}
+
+/// Whether NO `Changed` arrives in `window`. This is the one short wait here, and it is for
+/// something that must not happen: it can only miss a signal that is late, and so passes when it
+/// should fail on a starved machine, never fails when it should pass. The windows used are
+/// several times the coalescing window of the tests (300 ms), the time a second signal for the
+/// same burst would come in.
+async fn quiet_for(stream: &mut porter_dbus::TailnetChangedStream, window: Duration) -> bool {
     tokio::time::timeout(
-        within,
+        window,
         std::future::poll_fn(|cx| std::pin::Pin::new(&mut *stream).poll_next(cx)),
     )
     .await
-    .is_ok_and(|signal| signal.is_some())
+    .is_err()
+}
+
+/// Waits until nothing listens on the fake's socket any more (its server was stopped).
+async fn until_stopped(api: &LocalApi) {
+    let deadline = Deadline::generous();
+    while api.status().await != Err(porter_tailscale::TailscaleError::NotRunning) {
+        if deadline.passed() {
+            deadline.fail("the stopped fake to refuse connections");
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
 }
 
 // ---- adding it ----
@@ -415,7 +441,7 @@ async fn adding_tailscale_says_in_closed_words_why_it_could_not() {
     // Stopped: the socket is left behind and nobody answers on it.
     let scene = Scene::with("refuse-stopped", Daemon::Running(network()), vec![]).await;
     scene.fake().stop();
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    until_stopped(&scene.api).await;
     let world = World::start(scene, false).await;
     let (_, faults) = world.add(&|_| {}).await;
     assert_eq!(faults, [SignInFault::NotRunning]);
@@ -474,7 +500,9 @@ async fn the_account_follows_tailscale_while_it_is_added() {
         world.state() == Some(AccountState::Ok)
     })
     .await;
-    // In the middle of starting, nothing is concluded.
+    // In the middle of starting, nothing is concluded. This is a check that something does NOT
+    // happen, so it is a short window: the 700 ms is longer than the look behind the stream
+    // (400 ms here) plus the retry (100 ms), so a wrong conclusion would have been drawn by then.
     fake.set(Daemon::Changing);
     tokio::time::sleep(Duration::from_millis(700)).await;
     assert_eq!(world.state(), Some(AccountState::Ok));
@@ -527,10 +555,7 @@ async fn a_change_the_watch_did_not_announce_is_found_by_the_look_behind_it() {
         .scene
         .fake()
         .edit_quietly(|net| net.peers[0].online = false);
-    assert!(
-        changed_within(&mut changes, Duration::from_secs(4)).await,
-        "told of a change the stream missed"
-    );
+    told(&mut changes, "a Changed for a change the stream missed").await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -681,9 +706,9 @@ async fn changed_fires_once_for_a_burst_and_again_for_the_next_change() {
             .fake()
             .edit(|net| net.peers[1].name = format!("laptop-{round}"));
     }
-    assert!(changed_within(&mut changes, Duration::from_secs(4)).await);
+    told(&mut changes, "a Changed for the burst").await;
     assert!(
-        !changed_within(&mut changes, Duration::from_millis(900)).await,
+        quiet_for(&mut changes, Duration::from_millis(900)).await,
         "a second signal for the same burst"
     );
     // The list is what the burst left.
@@ -691,8 +716,9 @@ async fn changed_fires_once_for_a_burst_and_again_for_the_next_change() {
     assert!(machines.iter().any(|m| m.name == "laptop-9"));
     // A later change is a later signal.
     world.scene.fake().edit(|net| net.peers[0].online = false);
-    assert!(changed_within(&mut changes, Duration::from_secs(4)).await);
-    assert!(!changed_within(&mut app_changes, Duration::from_millis(300)).await);
+    told(&mut changes, "a Changed for the later change").await;
+    // The app was never told: it has heard nothing by the time the terminal has.
+    assert!(quiet_for(&mut app_changes, Duration::from_millis(300)).await);
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -21,8 +21,9 @@ tokio = { workspace = true, optional = true, features = ["rt", "net", "time", "i
 [dev-dependencies]
 # The integration tests use the client, which the `io` feature builds.
 porter-tailscale = { workspace = true, features = ["io"] }
+porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }
-tokio = { workspace = true, features = ["rt", "macros", "net", "time", "io-util", "sync"] }
+tokio ={ workspace = true, features = ["rt", "macros", "net", "time", "io-util", "sync"] }
 
 [features]
 # `LocalApi`: the requests over tailscaled's unix socket, spoken with hyper's own HTTP/1 client
