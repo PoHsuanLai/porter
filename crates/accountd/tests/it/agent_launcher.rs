@@ -109,7 +109,7 @@ impl Launcher {
     }
 
     async fn login_request(&mut self) -> Told {
-        let signal = tokio::time::timeout(Duration::from_secs(5), next(&mut self.logins))
+        let signal = tokio::time::timeout(porter_fake::GENEROUS, next(&mut self.logins))
             .await
             .expect("a login request in time")
             .expect("open stream");
@@ -122,7 +122,7 @@ impl Launcher {
     }
 
     async fn logout_request(&mut self) -> Told {
-        let signal = tokio::time::timeout(Duration::from_secs(5), next(&mut self.logouts))
+        let signal = tokio::time::timeout(porter_fake::GENEROUS, next(&mut self.logouts))
             .await
             .expect("a logout request in time")
             .expect("open stream");
@@ -183,7 +183,7 @@ impl Shell {
 
     async fn answer(&mut self, request: &zbus::zvariant::OwnedObjectPath) -> AccountsReply {
         let (code, results) =
-            tokio::time::timeout(Duration::from_secs(5), self.sheet.response(request))
+            tokio::time::timeout(porter_fake::GENEROUS, self.sheet.response(request))
                 .await
                 .expect("a response in time")
                 .expect("response");
@@ -438,7 +438,7 @@ async fn a_login_goes_to_the_registrant_alone_and_ready_sets_the_account_ok() {
             .iter()
             .any(|a| a.id == claude_code() && a.state == AccountState::Ok)
     );
-    let change = tokio::time::timeout(Duration::from_secs(5), next(&mut changes))
+    let change = tokio::time::timeout(porter_fake::GENEROUS, next(&mut changes))
         .await
         .expect("a Changed in time")
         .expect("open stream")
@@ -750,7 +750,7 @@ async fn sign_out_asks_the_launcher_and_only_a_done_report_forgets_the_sign_in()
 /// The next word said on the sign out row.
 async fn sign_out_news(changes: &mut ds_settings::live::Changes) -> String {
     loop {
-        let change = tokio::time::timeout(Duration::from_secs(5), next(changes))
+        let change = tokio::time::timeout(porter_fake::GENEROUS, next(changes))
             .await
             .expect("a Changed in time")
             .expect("open stream")
@@ -1013,7 +1013,7 @@ async fn settings_offers_sign_in_to_an_assistant_that_needs_one_and_it_asks_the_
         .await
         .expect("reported");
     let word = loop {
-        let change = tokio::time::timeout(Duration::from_secs(5), next(&mut changes))
+        let change = tokio::time::timeout(porter_fake::GENEROUS, next(&mut changes))
             .await
             .expect("a Changed in time")
             .expect("open stream")

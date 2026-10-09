@@ -50,7 +50,8 @@ async fn availability_prepare_and_the_gpu_answer_over_the_bus() {
         "loading"
     );
     let mut answer = String::new();
-    for _ in 0..100 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         answer = inference
             .prepare(&need, "notes", "fast", &Details::new())
             .await
@@ -165,15 +166,12 @@ async fn cancel_ends_the_running_turn_and_closes_the_engines_stream() {
         .await
         .expect("send");
     // Wait until the engine has the request, then change our mind.
-    for _ in 0..200 {
-        if !world.engines["tiny-chat"]
+    crate::support::eventually("the engine has the request", || {
+        !world.engines["tiny-chat"]
             .bodies("/v1/chat/completions")
             .is_empty()
-        {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-    }
+    })
+    .await;
     session.send(ClientFrame::Cancel).await.expect("cancel");
     let events = until_finished(&mut session).await;
     assert_eq!(

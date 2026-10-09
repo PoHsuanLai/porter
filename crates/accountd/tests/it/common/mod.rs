@@ -373,11 +373,24 @@ pub async fn listen(connection: &zbus::Connection) -> zbus::MessageStream {
         .expect("stream")
 }
 
-/// The member names received within `wait`.
+/// The member names received within `wait`. For proving that something does NOT arrive (a short
+/// `wait` is right there) and for collecting what follows a signal already heard; a signal that
+/// SHOULD arrive is waited for with [`heard_names`], which does not depend on the machine's speed.
 pub async fn heard(stream: &mut zbus::MessageStream, wait: std::time::Duration) -> Vec<String> {
-    use zbus::export::futures_core::Stream;
     let mut names = Vec::new();
     let deadline = tokio::time::Instant::now() + wait;
+    while let Some(name) = next_member(stream, deadline).await {
+        names.push(name);
+    }
+    names
+}
+
+/// The next signal's member name before `deadline`; `None` when time is up or the stream ends.
+async fn next_member(
+    stream: &mut zbus::MessageStream,
+    deadline: tokio::time::Instant,
+) -> Option<String> {
+    use zbus::export::futures_core::Stream;
     loop {
         let next = tokio::time::timeout_at(
             deadline,
@@ -387,12 +400,34 @@ pub async fn heard(stream: &mut zbus::MessageStream, wait: std::time::Duration) 
         match next {
             Ok(Some(Ok(message))) => {
                 if let Some(member) = message.header().member() {
-                    names.push(member.to_string());
+                    return Some(member.to_string());
                 }
             }
-            _ => return names,
+            _ => return None,
         }
     }
+}
+
+/// Every member name received until each of `expected` has arrived (waited for by the clock,
+/// [`porter_fake::Deadline`]: a signal that should come is not given up on because the machine
+/// is slow), and then whatever else follows within a short settling window, so that a test can
+/// still assert there was no extra or repeated signal. Fails the test naming the missing signals.
+pub async fn heard_names(stream: &mut zbus::MessageStream, expected: &[&str]) -> Vec<String> {
+    /// The window after the last expected signal in which extras are collected: a published
+    /// change tells its listeners in one burst, so this proves "no more" and never decides
+    /// whether a signal that should come does.
+    const SETTLE: std::time::Duration = std::time::Duration::from_millis(300);
+    let limit = porter_fake::Deadline::generous();
+    let mut names: Vec<String> = Vec::new();
+    while !expected.iter().all(|want| names.iter().any(|n| n == want)) {
+        let left = porter_fake::GENEROUS.saturating_sub(limit.waited());
+        match next_member(stream, tokio::time::Instant::now() + left).await {
+            Some(name) => names.push(name),
+            None => limit.fail(&format!("the signals {expected:?} (heard {names:?})")),
+        }
+    }
+    names.extend(heard(stream, SETTLE).await);
+    names
 }
 
 /// Every message on the bus, from the moment the tap is set: the bytes of each, as a monitor sees

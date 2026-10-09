@@ -1035,7 +1035,7 @@ mod computers {
         assert_eq!(placed, "computer:studio-pc");
         let told = std::future::poll_fn(|cx| std::pin::Pin::new(&mut changed).poll_next(cx));
         assert!(
-            tokio::time::timeout(std::time::Duration::from_secs(5), told)
+            tokio::time::timeout(porter_fake::GENEROUS, told)
                 .await
                 .is_ok(),
             "EnginesChanged after an addition"
@@ -1128,7 +1128,7 @@ mod computers {
             .expect("removed");
         let told = std::future::poll_fn(|cx| std::pin::Pin::new(&mut changed).poll_next(cx));
         assert!(
-            tokio::time::timeout(std::time::Duration::from_secs(5), told)
+            tokio::time::timeout(porter_fake::GENEROUS, told)
                 .await
                 .is_ok(),
             "EnginesChanged after a removal"

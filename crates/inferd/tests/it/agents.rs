@@ -289,12 +289,10 @@ async fn a_closed_session_refuses_and_cancels_what_is_in_flight() {
         let mut raw = Vec::new();
         stream.read_to_end(&mut raw).await.map(|_| raw.len())
     });
-    for _ in 0..50 {
-        if !provider_requests(&world).is_empty() {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    }
+    crate::support::eventually("the request reaches the provider", || {
+        !provider_requests(&world).is_empty()
+    })
+    .await;
     assert_eq!(
         provider_requests(&world).len(),
         1,
@@ -306,7 +304,7 @@ async fn a_closed_session_refuses_and_cancels_what_is_in_flight() {
         .close_endpoint(&endpoint.session)
         .await
         .expect("closed");
-    let ended = tokio::time::timeout(std::time::Duration::from_secs(5), waiting)
+    let ended = tokio::time::timeout(porter_fake::GENEROUS, waiting)
         .await
         .expect("the in-flight request ends with the session")
         .expect("task");

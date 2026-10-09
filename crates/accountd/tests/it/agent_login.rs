@@ -220,7 +220,7 @@ async fn the_state_shows_in_the_settings_schema_and_signing_out_forgets_it() {
         .await
         .expect("accepted");
     let change = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
+        porter_fake::GENEROUS,
         std::future::poll_fn(|cx| std::pin::Pin::new(&mut changes).poll_next(cx)),
     )
     .await
@@ -275,7 +275,7 @@ async fn an_agent_going_to_needs_login_is_told_to_the_shell_as_a_refused_account
     peer.set_agent_state("claude-code", "needs_login")
         .await
         .expect("accepted");
-    let heard_by_shell = heard(&mut told, std::time::Duration::from_secs(2)).await;
+    let heard_by_shell = heard_names(&mut told, &["NeedsReauth"]).await;
     assert!(
         heard_by_shell.contains(&"NeedsReauth".to_owned()),
         "{heard_by_shell:?}"

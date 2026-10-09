@@ -458,7 +458,7 @@ async fn the_state_row_is_announced_when_an_account_needs_sign_in_and_when_it_re
             .query(&storage_need(), "photos", "interactive")
             .await;
         let change = tokio::time::timeout(
-            std::time::Duration::from_secs(5),
+            porter_fake::GENEROUS,
             std::future::poll_fn(|cx| std::pin::Pin::new(&mut changes).poll_next(cx)),
         )
         .await
@@ -506,7 +506,7 @@ async fn word_on(changes: &mut ds_settings::live::Changes, row: &KeyPath) -> Str
     use zbus::export::futures_core::Stream;
     loop {
         let change = tokio::time::timeout(
-            std::time::Duration::from_secs(5),
+            porter_fake::GENEROUS,
             std::future::poll_fn(|cx| std::pin::Pin::new(&mut *changes).poll_next(cx)),
         )
         .await

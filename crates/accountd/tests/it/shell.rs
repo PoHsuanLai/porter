@@ -56,18 +56,19 @@ async fn the_shell_is_told_of_a_refusal_and_a_recovery_and_reads_the_account() {
     let _ = other_manager
         .query(&storage_need(), "photos", "interactive")
         .await;
-    let heard_by_shell = heard(&mut shell_hears, Duration::from_millis(800)).await;
+    let heard_by_shell = heard_names(&mut shell_hears, &["NeedsReauth"]).await;
     assert!(
         heard_by_shell.contains(&"NeedsReauth".to_owned()),
         "{heard_by_shell:?}"
     );
+    // An absence, proved in a short window by design: a slow machine can only make it pass.
     assert!(
         heard(&mut other_hears, Duration::from_millis(300))
             .await
             .is_empty()
     );
     assert_eq!(
-        heard(&mut shell_changes, Duration::from_millis(300)).await,
+        heard_names(&mut shell_changes, &["PropertiesChanged"]).await,
         ["PropertiesChanged"],
         "the shell is told `State` changed"
     );
@@ -112,7 +113,7 @@ async fn the_shell_is_told_of_a_refusal_and_a_recovery_and_reads_the_account() {
         .query(&storage_need(), "photos", "interactive")
         .await;
     assert_eq!(
-        heard(&mut shell_changes, Duration::from_millis(800)).await,
+        heard_names(&mut shell_changes, &["PropertiesChanged"]).await,
         ["PropertiesChanged"],
         "the shell is told the account is well again"
     );

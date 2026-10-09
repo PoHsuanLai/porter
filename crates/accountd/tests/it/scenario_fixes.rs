@@ -90,7 +90,7 @@ async fn a_refused_refresh_on_issue_token_leaves_the_account_needing_a_sign_in_a
         .find(|a| a.id == storage_account().id)
         .map(|a| a.state);
     assert_eq!(state, Some(AccountState::NeedsReauth));
-    let told = heard(&mut shell_hears, Duration::from_millis(800)).await;
+    let told = heard_names(&mut shell_hears, &["NeedsReauth"]).await;
     assert_eq!(
         told.iter().filter(|name| *name == "NeedsReauth").count(),
         1,
@@ -147,7 +147,7 @@ async fn a_refused_refresh_on_open_authenticated_leaves_the_account_needing_a_si
         .find(|a| a.id == mail_account().id)
         .map(|a| a.state);
     assert_eq!(state, Some(AccountState::NeedsReauth));
-    let told = heard(&mut shell_hears, Duration::from_millis(800)).await;
+    let told = heard_names(&mut shell_hears, &["NeedsReauth"]).await;
     assert!(told.contains(&"NeedsReauth".to_owned()), "{told:?}");
 }
 

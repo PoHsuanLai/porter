@@ -412,7 +412,8 @@ pub fn files_holding(dir: &Path, needle: &str) -> Vec<std::path::PathBuf> {
 }
 
 pub async fn refused_to_connect(port: u16) -> bool {
-    for _ in 0..50 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         if TcpStream::connect(("127.0.0.1", port)).await.is_err() {
             return true;
         }

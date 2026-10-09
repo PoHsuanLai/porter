@@ -182,7 +182,8 @@ impl Launcher {
         Ok(Issued { id, handle })
     }
 
-    /// The next signal within `wait`: the credential and the reason.
+    /// The next signal within `wait`: the credential and the reason. A signal that should come is
+    /// waited for with `porter_fake::GENEROUS`; a short `wait` proves that none comes.
     async fn told(&mut self, wait: Duration) -> Option<(String, String)> {
         let next = tokio::time::timeout(
             wait,
@@ -643,8 +644,8 @@ async fn revoking_the_grant_ends_the_credentials_under_it_and_tells_their_launch
     assert!(kept_path.exists());
     // The launcher is told of each, with the reason; the memfd's copy is the launcher's to end.
     let mut told = vec![
-        launcher.told(Duration::from_secs(5)).await.expect("one"),
-        launcher.told(Duration::from_secs(5)).await.expect("two"),
+        launcher.told(porter_fake::GENEROUS).await.expect("one"),
+        launcher.told(porter_fake::GENEROUS).await.expect("two"),
     ];
     told.sort();
     let mut expected = vec![
@@ -702,7 +703,7 @@ async fn removing_the_account_ends_its_credentials_with_that_reason() {
 
     assert!(!path.exists());
     assert_eq!(
-        launcher.told(Duration::from_secs(5)).await,
+        launcher.told(porter_fake::GENEROUS).await,
         Some((issued.id.clone(), "account_removed".to_owned()))
     );
     let ends: Vec<_> = handoffs(&rig)
@@ -730,7 +731,7 @@ async fn revoking_the_grant_from_settings_ends_it_too() {
         .await
         .expect("revoked");
     assert_eq!(
-        launcher.told(Duration::from_secs(5)).await,
+        launcher.told(porter_fake::GENEROUS).await,
         Some((issued.id, "grant_revoked".to_owned()))
     );
 }

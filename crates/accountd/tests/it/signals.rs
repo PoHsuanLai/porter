@@ -28,9 +28,11 @@ async fn removing_an_account_tells_its_grant_holders_and_nobody_else() {
         .await
         .expect("removed");
 
-    let photos = heard(&mut photos_hears, Duration::from_millis(800)).await;
+    let photos = heard_names(&mut photos_hears, &["AccountRemoved", "GrantChanged"]).await;
     assert!(photos.contains(&"AccountRemoved".to_owned()), "{photos:?}");
     assert!(photos.contains(&"GrantChanged".to_owned()), "{photos:?}");
+    // The holder has heard; that nobody else does is a short window by design (it proves an
+    // absence, so a slow machine can only make it pass, never fail).
     let mail = heard(&mut mail_hears, Duration::from_millis(300)).await;
     assert!(mail.is_empty(), "{mail:?}");
 }
@@ -58,7 +60,7 @@ async fn a_service_toggle_is_a_capability_change_for_holders_only() {
         .await
         .expect("toggled");
 
-    let photos = heard(&mut photos_hears, Duration::from_millis(800)).await;
+    let photos = heard_names(&mut photos_hears, &["CapabilityChanged"]).await;
     assert_eq!(photos, vec!["CapabilityChanged".to_owned()]);
     assert!(
         heard(&mut mail_hears, Duration::from_millis(300))
@@ -82,7 +84,7 @@ async fn a_new_grant_is_announced_to_its_holder_alone() {
     let mut mail_hears = listen(&mail_app).await;
     let (code, _) = choose(&photos_conn).await;
     assert_eq!(code, 0);
-    let photos = heard(&mut photos_hears, Duration::from_millis(800)).await;
+    let photos = heard_names(&mut photos_hears, &["GrantChanged"]).await;
     assert_eq!(photos, vec!["GrantChanged".to_owned()]);
     assert!(
         heard(&mut mail_hears, Duration::from_millis(300))

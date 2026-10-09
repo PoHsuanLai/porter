@@ -242,7 +242,7 @@ async fn acceptance_8_removal_leaves_nothing_and_the_holder_is_told() {
         refusal_name(porter_core::wire::Refusal::UnknownGrant)
     );
     // The holder was told, once each.
-    let told = heard(&mut hears, std::time::Duration::from_millis(500)).await;
+    let told = heard_names(&mut hears, &["AccountRemoved"]).await;
     assert_eq!(
         told.iter().filter(|n| *n == "AccountRemoved").count(),
         1,
