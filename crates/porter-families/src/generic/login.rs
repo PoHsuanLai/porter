@@ -23,8 +23,10 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-/// How long the dial, the TLS handshake and the login may take in all.
-const WITHIN: Duration = Duration::from_secs(15);
+/// How long the dial, the TLS handshake and the login may take in all. A person's sign-in on a
+/// loaded computer or a slow network must not fail at 15 s for want of time; a server that never
+/// answers is still reported after a minute.
+const WITHIN: Duration = Duration::from_secs(60);
 
 type Answer<'a> = Pin<Box<dyn Future<Output = Result<(), SignInFault>> + Send + 'a>>;
 

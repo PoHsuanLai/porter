@@ -4,8 +4,12 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 /// How long a client waits for an agent it just started (process startup, not the agent's first
-/// piece of work: the agent takes its lock and opens its door first).
-pub const START_WAIT: Duration = Duration::from_secs(5);
+/// piece of work: the agent takes its lock and opens its door first). Thirty seconds: an idle
+/// computer starts the agent in well under a second, but a loaded one (a big build, swap in use)
+/// can take several seconds to exec and load it, and a client that gives up first fails a person
+/// for the machine's sake. A client that gets its answer returns at once, so the wait costs only
+/// a start that really failed.
+pub const START_WAIT: Duration = Duration::from_secs(30);
 
 /// Whether, and how, a client starts the agent when nobody answers.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

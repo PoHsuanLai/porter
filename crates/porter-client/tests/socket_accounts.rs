@@ -9,8 +9,8 @@
 
 use latchkey::{Agent, Environment, Stream, here};
 use porter_client::{
-    Accounts, ClientEnv, ClientError, LinkChoice, SocketAgent, SocketTransport, StartAgent,
-    TransportError,
+    Accounts, ClientEnv, ClientError, LinkChoice, START_WAIT, SocketAgent, SocketTransport,
+    StartAgent, TransportError,
 };
 use porter_core::wire::{FrameRead, decode_frame, encode_frame};
 use porter_core::{AccountsReply, AccountsRequest};
@@ -149,7 +149,8 @@ async fn a_spawning_client_starts_the_agent_and_then_talks_to_it() {
                 "--nocapture".to_owned(),
                 dir.display().to_string(),
             ],
-            wait: porter_fake::GENEROUS,
+            // The default a consumer passes (START_WAIT), so the spawn path runs with the real wait.
+            wait: START_WAIT,
         });
     let env = ClientEnv {
         links: vec![LinkChoice::Socket(agent)],
