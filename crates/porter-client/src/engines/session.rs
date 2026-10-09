@@ -30,13 +30,19 @@ enum Phase {
     Running(Pinned, Turn),
 }
 
-/// A running turn: ended with the session, or when it is cancelled.
+/// A running turn, with the channel that is its own: ended with the session, or when it is
+/// cancelled. Dropping it aborts the task and drops the receiver, so whatever the task still
+/// sends (the abort lands at its next await, and on another thread it may be mid-send) goes
+/// nowhere and can never reach the next turn.
 #[derive(Debug)]
-struct Turn(JoinHandle<()>);
+struct Turn {
+    task: JoinHandle<()>,
+    inbox: UnboundedReceiver<InferEvent>,
+}
 
 impl Drop for Turn {
     fn drop(&mut self) {
-        self.0.abort();
+        self.task.abort();
     }
 }
 
@@ -54,6 +60,8 @@ pub struct EngineSession<K> {
     class: DataClass,
     phase: Phase,
     routed: RoutedNote,
+    /// The session's own events (`Routed`, a refusal of a request, `Cancelled`); a turn's are on
+    /// its own channel.
     events: UnboundedSender<InferEvent>,
     inbox: UnboundedReceiver<InferEvent>,
 }
@@ -117,12 +125,13 @@ impl<K: KeySource + 'static> EngineSession<K> {
             let _ = self.events.send(InferEvent::Finished(refusal));
             return Phase::Idle(pinned);
         }
-        let (keys, events, on) = (Arc::clone(&self.keys), self.events.clone(), pinned.clone());
+        let (events, inbox) = unbounded_channel();
+        let (keys, on) = (Arc::clone(&self.keys), pinned.clone());
         let task = tokio::spawn(async move {
             let answer = reply(&on, &*keys, &request, &frames, &events).await;
             let _ = events.send(InferEvent::Finished(answer));
         });
-        Phase::Running(pinned, Turn(task))
+        Phase::Running(pinned, Turn { task, inbox })
     }
 
     /// Ends the running turn, if any, and says so.
@@ -131,7 +140,6 @@ impl<K: KeySource + 'static> EngineSession<K> {
         self.phase = match phase {
             Phase::Running(pinned, turn) => {
                 drop(turn);
-                while self.inbox.try_recv().is_ok() {}
                 let _ = self
                     .events
                     .send(InferEvent::Finished(InferReply::Cancelled));
@@ -188,8 +196,18 @@ impl<K: KeySource + 'static> InferSession for EngineSession<K> {
                 .map(|why| InferEvent::Finished(InferReply::Refused(why)))
                 .ok_or(SessionError::Closed);
         }
-        let event = self.inbox.recv().await.ok_or(SessionError::Closed)?;
-        if matches!(event, InferEvent::Finished(_)) {
+        // The session's own events first (a `Cancelled` comes before the next turn's events),
+        // then the running turn's; only the turn's `Finished` ends the turn.
+        let (event, of_turn) = match &mut self.phase {
+            Phase::Running(_, turn) => tokio::select! {
+                biased;
+                event = self.inbox.recv() => (event, false),
+                event = turn.inbox.recv() => (event, true),
+            },
+            _ => (self.inbox.recv().await, false),
+        };
+        let event = event.ok_or(SessionError::Closed)?;
+        if of_turn && matches!(event, InferEvent::Finished(_)) {
             let phase = std::mem::replace(&mut self.phase, Phase::Refused(None));
             self.phase = match phase {
                 Phase::Running(pinned, _) => Phase::Idle(pinned),

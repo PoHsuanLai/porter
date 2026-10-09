@@ -392,3 +392,56 @@ async fn prepare_says_what_routing_says() {
         Ok(porter_infer::Readiness::Unavailable)
     );
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_cancelled_turn_never_reaches_the_next_one() {
+    let server = fake(None).await;
+    let local = engine("ollama", server.base_url(), Locality::OnDevice);
+    let host =
+        EngineHost::new(vec![local], vec![row(&["ollama"])], open_policy(), NoKeys).expect("host");
+    let mut session = open(&host, DataClass::Public).await;
+    let old = vec!["old"; 400];
+    // The race is a cancelled task still sending as the next turn starts, so it is tried many
+    // times, on several threads. Without a channel per turn, an "old" delta (or the old turn's
+    // Finished) lands among the new turn's events.
+    for round in 0..60 {
+        server.say(&old);
+        session
+            .send(ClientFrame::Request(chat(DataClass::Public)))
+            .await
+            .expect("send");
+        loop {
+            match session.next().await.expect("event") {
+                InferEvent::TextDelta(_) => break,
+                InferEvent::Routed(_) => {}
+                other => panic!("round {round}: {other:?}"),
+            }
+        }
+        session.send(ClientFrame::Cancel).await.expect("cancel");
+        server.say(&["new"]);
+        session
+            .send(ClientFrame::Request(chat(DataClass::Public)))
+            .await
+            .expect("send");
+
+        let mut cancelled = 0;
+        let last = loop {
+            match session.next().await.expect("event") {
+                InferEvent::TextDelta(text) => {
+                    assert_eq!(text, "new", "round {round}: the old turn leaked");
+                }
+                InferEvent::Finished(InferReply::Cancelled) => cancelled += 1,
+                InferEvent::Finished(reply) => break reply,
+                other => panic!("round {round}: {other:?}"),
+            }
+        };
+        assert_eq!(cancelled, 1, "round {round}");
+        match last {
+            InferReply::Chat(reply) => assert_eq!(reply.text, "new", "round {round}"),
+            other => panic!("round {round}: {other:?}"),
+        }
+        // Nothing else follows: the session waits for a request.
+        let more = tokio::time::timeout(std::time::Duration::from_millis(5), session.next()).await;
+        assert!(more.is_err(), "round {round}: a stray event {more:?}");
+    }
+}
