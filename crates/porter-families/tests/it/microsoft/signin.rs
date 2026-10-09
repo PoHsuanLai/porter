@@ -233,6 +233,7 @@ async fn a_client_id_written_after_start_is_used_by_the_next_sign_in() {
             graph: std::sync::Arc::clone(&rig.graph),
         },
         porter_oauth::ClientRegistry::default(),
+        porter_core::clock::SystemClock,
     )
     .with_channel(porter_provider::ClientChannel::Development)
     .with_files(files.clone());

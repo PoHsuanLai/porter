@@ -58,13 +58,6 @@ impl<H> std::fmt::Debug for GoogleProvider<H> {
     }
 }
 
-impl<H: Http + Default> GoogleProvider<H> {
-    /// The provider serving the accounts of `spec`, in the system's environment.
-    pub fn new(spec: ProviderSpec) -> Self {
-        Self::with_env(spec, GoogleEnv::system())
-    }
-}
-
 impl<H> GoogleProvider<H> {
     /// The provider serving the accounts of `spec` in `env`.
     pub fn with_env(spec: ProviderSpec, env: GoogleEnv<H>) -> Self {

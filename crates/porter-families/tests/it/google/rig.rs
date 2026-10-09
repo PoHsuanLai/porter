@@ -122,8 +122,13 @@ impl Rig {
         let ticking = Arc::clone(&clock);
         let counter = Arc::new(AtomicI64::new(0));
         let wire = Wire::default();
-        let env = GoogleEnv::new(wire.clone(), registry)
-            .with_channel(ClientChannel::Development)
+        // The clock is replaced below by the counting one.
+        let env = GoogleEnv::new(
+            wire.clone(),
+            registry,
+            porter_core::clock::FixedClock::new(UnixSeconds(0)),
+        )
+        .with_channel(ClientChannel::Development)
             .with_poll_slice(Duration::from_millis(20))
             .with_userinfo(
                 porter_core::EndpointUrl::parse(&handle.userinfo_url()).expect("userinfo url"),

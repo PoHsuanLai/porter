@@ -175,6 +175,8 @@ impl Rig {
                 graph: Arc::clone(&graph),
             },
             ClientRegistry::layered(ClientsFile { clients }, ClientsFile::default()),
+            // The clock is replaced below by the counting one.
+            porter_core::clock::FixedClock::new(UnixSeconds(0)),
         )
         .with_channel(ClientChannel::Development)
         .with_poll_slice(Duration::from_millis(20))

@@ -1,20 +1,26 @@
-//! What the OAuth families (Microsoft, Google) take from the machine rather than from a caller:
-//! the time, randomness for PKCE, and where the clients files are. Each family's environment
-//! holds these as arguments, so a test hands in a counting clock and fixed bytes.
+//! What the OAuth families (Microsoft, Google) take from their surroundings: the time, randomness
+//! for PKCE, and the clients files. The caller hands in the clock (a `porter_core::clock::Clock`)
+//! and the clients files' paths; the families read neither the environment nor the system clock.
+//! Randomness is still read from the operating system. Each family's environment holds these as
+//! arguments, so a test hands in a counting clock and fixed bytes.
 
 use porter_core::UnixSeconds;
+use porter_core::clock::Clock as ClockSource;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-/// A source of the current time.
+/// A source of the current time, as a closure: what a family reads the time through. A caller
+/// with a `porter_core::clock::Clock` converts it with [`clock_of`].
 pub type Clock = Arc<dyn Fn() -> UnixSeconds + Send + Sync>;
+
+/// The closure a family reads the time through, over a caller's clock.
+pub(crate) fn clock_of<C: ClockSource + 'static>(clock: C) -> Clock {
+    Arc::new(move || clock.now())
+}
 
 /// A source of the PKCE verifier's 32 bytes and the state's 16, or `None` when the system has
 /// no randomness to give (the sign-in then fails; it never falls back to something guessable).
 pub type Random = Arc<dyn Fn() -> Option<([u8; 32], [u8; 16])> + Send + Sync>;
-
-/// Where packaging ships the clients file.
-pub(crate) const SHIPPED_CLIENTS: &str = "/usr/share/porter/clients.toml";
 
 /// The two clients files a daemon's families read: the shipped one and the person's own, which
 /// Settings writes while the daemon runs. They are read again for every sign-in and every token,
@@ -28,18 +34,6 @@ pub struct ClientFiles {
 }
 
 impl ClientFiles {
-    /// The system's: the shipped file and the person's own, found from `XDG_CONFIG_HOME` and
-    /// `HOME`.
-    pub fn system() -> Self {
-        Self {
-            shipped: PathBuf::from(SHIPPED_CLIENTS),
-            own: own_clients_path(
-                std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from),
-                std::env::var_os("HOME").map(PathBuf::from),
-            ),
-        }
-    }
-
     /// The clients the files name now. A damaged file leaves the registry empty, so a sign-in
     /// says it needs a client id rather than guessing one.
     pub fn read(&self) -> porter_oauth::ClientRegistry {
@@ -59,23 +53,6 @@ pub(crate) fn clients_now<'a>(
     }
 }
 
-/// The person's own clients file: under `XDG_CONFIG_HOME` when it is an absolute path, else under
-/// `HOME/.config`.
-pub(crate) fn own_clients_path(xdg: Option<PathBuf>, home: Option<PathBuf>) -> PathBuf {
-    let base = xdg
-        .filter(|p| p.is_absolute())
-        .or_else(|| home.map(|h| h.join(".config")))
-        .unwrap_or_else(|| PathBuf::from("/nonexistent"));
-    base.join("porter").join("clients.toml")
-}
-
-pub(crate) fn system_now() -> UnixSeconds {
-    let seconds = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs());
-    UnixSeconds(i64::try_from(seconds).unwrap_or(i64::MAX))
-}
-
 /// 48 bytes from the operating system's `/dev/urandom`.
 pub(crate) fn system_random() -> Option<([u8; 32], [u8; 16])> {
     use std::io::Read;
@@ -90,35 +67,6 @@ pub(crate) fn system_random() -> Option<([u8; 32], [u8; 16])> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_own_clients_file_follows_xdg_then_home() {
-        const CASES: &[(&str, Option<&str>, Option<&str>, &str)] = &[
-            (
-                "xdg wins",
-                Some("/x/cfg"),
-                Some("/home/a"),
-                "/x/cfg/porter/clients.toml",
-            ),
-            (
-                "home when no xdg",
-                None,
-                Some("/home/a"),
-                "/home/a/.config/porter/clients.toml",
-            ),
-            (
-                "relative xdg is ignored",
-                Some("cfg"),
-                Some("/home/a"),
-                "/home/a/.config/porter/clients.toml",
-            ),
-            ("neither", None, None, "/nonexistent/porter/clients.toml"),
-        ];
-        for (name, xdg, home, want) in CASES {
-            let got = own_clients_path(xdg.map(PathBuf::from), home.map(PathBuf::from));
-            assert_eq!(got, PathBuf::from(want), "{name}");
-        }
-    }
 
     #[test]
     fn the_files_are_read_again_each_time_so_a_row_written_later_is_seen() {

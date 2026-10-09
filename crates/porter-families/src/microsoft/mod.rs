@@ -65,13 +65,6 @@ impl<H> std::fmt::Debug for MicrosoftProvider<H> {
     }
 }
 
-impl<H: Http + Default> MicrosoftProvider<H> {
-    /// The provider serving the accounts of `spec`, in the system's environment.
-    pub fn new(spec: ProviderSpec) -> Self {
-        Self::with_env(spec, MicrosoftEnv::system())
-    }
-}
-
 impl<H> MicrosoftProvider<H> {
     /// The provider serving the accounts of `spec` in `env`.
     pub fn with_env(spec: ProviderSpec, env: MicrosoftEnv<H>) -> Self {

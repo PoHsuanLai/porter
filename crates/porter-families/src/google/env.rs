@@ -1,12 +1,13 @@
 //! What a Google provider needs from its surroundings, handed in rather than read where it is
 //! used: the HTTP seam, the client registry, the build channel, the clock, randomness and where
-//! the account's identity is read. Tests hand in a fake Google's seam and a counting clock;
-//! [`GoogleEnv::system`] is what accountd and an app hosting porter in process use.
+//! the account's identity is read. Tests hand in a fake Google's seam and a counting clock; the
+//! caller hands in its clock and the clients files, and [`GoogleEnv::with_client_files`] is what
+//! accountd uses.
 //!
 //! Google's installed-app flow is the loopback redirect only: its device flow serves a short
 //! list of scopes that has none of Calendar, People or Tasks, so there is no device-code path.
 
-use crate::env_common::{ClientFiles, Clock, Random, clients_now, system_now, system_random};
+use crate::env_common::{ClientFiles, Clock, Random, clock_of, clients_now, system_random};
 use porter_core::EndpointUrl;
 use porter_http::Http;
 use porter_oauth::ClientRegistry;
@@ -65,15 +66,20 @@ impl<H> std::fmt::Debug for GoogleEnv<H> {
 }
 
 impl<H: Http> GoogleEnv<H> {
-    /// An environment over `http` with the system's clock and randomness, `registry` for the
-    /// clients, the stable channel, Google's userinfo endpoint and a two-second poll.
-    pub fn new(http: H, registry: ClientRegistry) -> Self {
+    /// An environment over `http` with `clock` for the time and the system's randomness,
+    /// `registry` for the clients, the stable channel, Google's userinfo endpoint and a two-second
+    /// poll.
+    pub fn new<C: porter_core::clock::Clock + 'static>(
+        http: H,
+        registry: ClientRegistry,
+        clock: C,
+    ) -> Self {
         Self {
             http: Arc::new(http),
             registry,
             files: None,
             channel: ClientChannel::Stable,
-            clock: Arc::new(system_now),
+            clock: clock_of(clock),
             random: Arc::new(system_random),
             userinfo: userinfo_endpoint(USERINFO),
             poll_slice: Duration::from_secs(2),
@@ -122,16 +128,14 @@ impl<H> GoogleEnv<H> {
 }
 
 impl<H: Http + Default> GoogleEnv<H> {
-    /// The environment of a daemon: the shipped clients file and the person's own, found from
-    /// `XDG_CONFIG_HOME` and `HOME`, read again at every use. A damaged clients file reads as
-    /// empty, so the sign-in says it needs a client id rather than guessing one.
-    pub fn system() -> Self {
-        Self::with_client_files(ClientFiles::system())
-    }
-
-    /// The environment of a daemon reading its clients from `files`.
-    pub fn with_client_files(files: ClientFiles) -> Self {
-        Self::new(H::default(), ClientRegistry::default()).with_files(files)
+    /// The environment of a daemon reading its clients from `files` (the shipped clients file
+    /// and the person's own, read again at every use: a damaged file reads as empty, so the
+    /// sign-in says it needs a client id rather than guessing one) and the time from `clock`.
+    pub fn with_client_files<C: porter_core::clock::Clock + 'static>(
+        files: ClientFiles,
+        clock: C,
+    ) -> Self {
+        Self::new(H::default(), ClientRegistry::default(), clock).with_files(files)
     }
 }
 
@@ -155,7 +159,11 @@ mod tests {
 
     #[test]
     fn the_defaults_are_googles_and_the_stable_channel() {
-        let env = GoogleEnv::new(Nowhere, ClientRegistry::default());
+        let env = GoogleEnv::new(
+            Nowhere,
+            ClientRegistry::default(),
+            porter_core::clock::FixedClock::new(porter_core::UnixSeconds(0)),
+        );
         assert_eq!(env.userinfo.as_str(), USERINFO);
         assert_eq!(env.channel, ClientChannel::Stable);
         let moved = env.with_userinfo(userinfo_endpoint("http://127.0.0.1:1/v1/userinfo"));
@@ -198,7 +206,11 @@ mod tests {
         for (name, registry, want) in cases {
             let provider = super::super::GoogleProvider::with_env(
                 spec.clone(),
-                GoogleEnv::new(Nowhere, registry),
+                GoogleEnv::new(
+                    Nowhere,
+                    registry,
+                    porter_core::clock::FixedClock::new(porter_core::UnixSeconds(0)),
+                ),
             );
             assert_eq!(provider.readiness(), want, "{name}");
         }

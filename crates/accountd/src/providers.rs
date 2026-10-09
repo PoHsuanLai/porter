@@ -6,6 +6,7 @@
 //! family serves (a local runtime, which inferd reports) is kept out of the served set. Google is
 //! served with or without a client id registered: without one, adding it says it needs one.
 
+use porter_core::clock::SystemClock;
 use porter_core::{AuthKind, EndpointUrl};
 use porter_discover::{Dns, DnsFault, HickoryDns, MxRecord, SrvRecord};
 use porter_families::{
@@ -240,10 +241,16 @@ pub fn family_of(spec: ProviderSpec, io: &FamilyIo) -> Result<FamilyProvider, Bo
                 .with_providers(io.providers.clone()),
         )),
         (AuthKind::OAuthPkce, Some(Issuer::Microsoft)) => Ok(FamilyProvider::Microsoft(
-            MicrosoftProvider::with_env(spec, MicrosoftEnv::with_client_files(io.clients.clone())),
+            MicrosoftProvider::with_env(
+                spec,
+                MicrosoftEnv::with_client_files(io.clients.clone(), SystemClock),
+            ),
         )),
         (AuthKind::OAuthPkce, Some(Issuer::Google)) => Ok(FamilyProvider::Google(
-            GoogleProvider::with_env(spec, GoogleEnv::with_client_files(io.clients.clone())),
+            GoogleProvider::with_env(
+                spec,
+                GoogleEnv::with_client_files(io.clients.clone(), SystemClock),
+            ),
         )),
         (AuthKind::ApiKey, _) => Ok(FamilyProvider::ApiKey(ApiKeyProvider::new(spec))),
         (AuthKind::AgentLogin, _) => Ok(FamilyProvider::AgentLogin(AgentLoginProvider::new(spec))),
