@@ -15,7 +15,7 @@ use engine_supervisor::EngineId;
 use model_http::{HttpClient, Timeouts, WaitMs as HttpWaitMs};
 use model_openai_compat::{Flavor, OpenAiCodec, OpenAiCompat};
 use model_provider as sp;
-use model_provider::{Embedder, Provider, Retrying};
+use model_provider::{Embedder, Retrying};
 use porter_infer::{
     ChatSink, CuaBegin, CuaStepFailure, CuaStepReply, EmbedReply, Flow, InferEvent, InferRefusal,
     InferReply, ModelError, ServedBy, TokenUsage,
