@@ -1,0 +1,147 @@
+  Extracting 12 binaries (including 1 non-test binary) and 2 linked paths to /mnt/data/cargo/tailnet-serve/extract
+   Extracted 55 files to /mnt/data/cargo/tailnet-serve/extract in 0.77s
+────────────
+ Nextest run ID ace1b693-eee4-4f97-9b4b-801594cc34f7 with nextest profile: default
+    Starting 140 tests across 11 binaries (590 tests skipped)
+        PASS [   0.004s] (  1/140) porter-dbus json_value::tests::a_value_porter_does_not_use_is_refused
+        PASS [   0.004s] (  2/140) porter-dbus callers::tests::an_apps_role_is_its_row_s_and_app_for_an_unlisted_app
+        PASS [   0.004s] (  3/140) porter-dbus codec::tests::an_unknown_kind_is_refused
+        PASS [   0.004s] (  4/140) porter-dbus callers::procfs::tests::a_fixture_main_pid_is_read_from_its_units_file_and_nothing_else
+        PASS [   0.004s] (  5/140) porter-dbus failure::tests::an_address_error_is_no_daemon
+        PASS [   0.004s] (  6/140) porter-dbus failure::tests::the_names_that_mean_no_daemon_and_refused_are_told_apart
+        PASS [   0.004s] (  7/140) porter-dbus callers_file::tests::the_user_file_wins_over_the_system_file
+        PASS [   0.004s] (  8/140) porter-dbus callers::procfs::tests::a_flatpak_info_names_its_app_and_instance_and_one_without_a_name_names_nothing
+        PASS [   0.004s] (  9/140) porter-dbus callers_file::tests::a_row_may_carry_the_name_a_person_reads
+        PASS [   0.005s] ( 10/140) porter-dbus callers::tests::a_scope_named_after_a_units_app_gets_no_role_of_the_unit
+        PASS [   0.004s] ( 11/140) porter-dbus codec::tests::a_need_with_no_fields_is_an_empty_vardict
+        PASS [   0.005s] ( 12/140) porter-dbus callers_file::tests::a_missing_file_is_empty_and_a_broken_one_is_an_error
+        PASS [   0.007s] ( 13/140) inferd::it dist::the_tailnet_drop_in_opens_the_networks_own_addresses_and_nothing_else
+        PASS [   0.004s] ( 14/140) porter-dbus machines::tests::the_lists_are_string_arrays_and_last_seen_is_absent_while_online
+        PASS [   0.004s] ( 15/140) porter-dbus machines::tests::a_machine_survives_the_bus_shape
+        PASS [   0.004s] ( 16/140) porter-dbus launcher::tests::every_fault_has_a_distinct_valid_name_that_reads_back
+        PASS [   0.004s] ( 17/140) porter-dbus names::tests::account_paths_are_valid_object_paths
+        PASS [   0.004s] ( 18/140) porter-dbus json_value::tests::null_has_no_value_and_a_null_field_is_left_out
+        PASS [   0.004s] ( 19/140) porter-dbus refusal::tests::every_refusal_has_a_distinct_valid_error_name_that_reads_back
+        PASS [   0.004s] ( 20/140) porter-dbus ready::tests::an_answer_slower_than_the_gap_between_looks_is_still_taken
+        PASS [   0.004s] ( 21/140) porter-dbus machines::tests::a_row_missing_what_a_machine_needs_is_refused
+        PASS [   0.004s] ( 22/140) porter-dbus refusal::tests::the_table_lists_every_refusal
+        PASS [   0.005s] ( 23/140) porter-dbus ready::tests::a_start_that_takes_a_minute_is_waited_for_and_one_that_never_comes_ends
+        PASS [   0.004s] ( 24/140) porter-dbus::it codec::a_candidate_round_trips_through_its_shape
+        PASS [   0.004s] ( 25/140) porter-dbus::it codec::a_candidate_carries_its_endpoints_in_the_endpoints_key
+        PASS [   0.003s] ( 26/140) porter-dbus::it codec::a_candidate_whose_path_is_another_account_is_refused
+        PASS [   0.005s] ( 27/140) porter-dbus::it codec::a_candidate_survives_the_bus_signature
+        PASS [   0.003s] ( 28/140) porter-dbus::it codec::a_grant_is_its_id_and_the_rest_by_name_and_survives_the_signature
+        PASS [   0.003s] ( 29/140) porter-dbus::it codec::a_malformed_need_is_refused_not_guessed
+        PASS [   0.003s] ( 30/140) porter-dbus::it codec::a_needs_fields_are_entries_by_name
+        PASS [   0.004s] ( 31/140) porter-dbus::it codec::a_need_survives_the_bus_signature
+        PASS [   0.012s] ( 32/140) porter-dbus::it callers::a_process_is_named_by_its_scope_or_unit
+        PASS [   0.010s] ( 33/140) porter-dbus::it callers::a_service_role_goes_only_to_the_units_main_process
+        PASS [   0.010s] ( 34/140) porter-dbus::it callers::a_scope_named_after_a_daemons_app_is_an_app
+        PASS [   0.012s] ( 35/140) porter-dbus::it callers::a_process_nothing_names_is_nobody
+        PASS [   0.010s] ( 36/140) porter-dbus::it callers::an_unreadable_root_is_no_sandbox_and_a_flatpak_scope_then_proves_nothing
+        PASS [   0.014s] ( 37/140) porter-dbus::it callers::a_flatpak_app_is_named_by_its_metadata_and_never_by_its_scope
+        PASS [   0.010s] ( 38/140) porter-dbus::it callers::a_scope_a_row_names_as_its_unit_is_that_unit_exactly
+        PASS [   0.003s] ( 39/140) porter-dbus::it codec::a_token_round_trips_and_an_unknown_kind_is_refused
+        PASS [   0.004s] ( 40/140) porter-dbus::it codec::an_agent_candidate_with_no_variable_to_set_round_trips
+        PASS [   0.004s] ( 41/140) porter-dbus::it codec::every_need_round_trips_under_its_kind_slug
+        PASS [   0.003s] ( 42/140) porter-dbus::it codec::the_kind_slug_is_the_capability_kind_slug
+        PASS [   0.012s] ( 43/140) porter-dbus::it callers::on_a_private_bus_an_unidentified_sender_is_refused_and_an_identified_one_is_named
+        PASS [   0.004s] ( 44/140) porter-dbus::it introspection::checked_in_introspection_matches_the_interfaces
+        PASS [   0.003s] ( 45/140) porter-dbus::it introspection::inference1_xml_unchanged_members
+        PASS [   0.004s] ( 46/140) porter-dbus::it introspection::every_accounts_member_is_declared
+        PASS [   0.004s] ( 47/140) porter-dbus::it introspection::the_sheet_backend_takes_views_in_and_sends_inputs_out
+        PASS [   0.004s] ( 48/140) porter-dbus::it introspection::syncd_and_inferd_declare_what_they_did
+        PASS [   0.004s] ( 49/140) porter-dbus::it introspection::speech_and_computer_use_are_fd_only
+        PASS [   0.003s] ( 50/140) porter-dbus::it introspection::the_tailnet_object_declares_machines_and_changed_and_nothing_else
+        PASS [   0.005s] ( 51/140) porter-dbus::it introspection::inference_calls_carry_an_options_dict_for_the_reserved_traceparent
+        PASS [   0.005s] ( 52/140) porter-dbus::it introspection::the_peer_interface_is_the_daemon_members_and_the_launchers
+        PASS [   0.004s] ( 53/140) porter-dbus::it introspection::the_spaces_registry_declares_its_five_methods_and_one_signal
+        PASS [   0.003s] ( 54/140) porter-dbus::it sheet::a_chosen_account_carries_its_path_and_label_beside_its_fields
+        PASS [   0.003s] ( 55/140) porter-dbus::it sheet::a_handle_token_is_a_path_segment_or_it_is_not_one
+        PASS [   0.003s] ( 56/140) porter-dbus::it sheet::a_response_that_breaks_its_promise_is_refused_not_guessed
+        PASS [   0.003s] ( 57/140) porter-dbus::it sheet::every_refusal_has_a_distinct_response
+        PASS [   0.003s] ( 58/140) porter-tailnet dial::tests::only_the_same_computer_of_the_same_person_is_the_one
+        PASS [   0.004s] ( 59/140) porter-dbus::it sheet::dont_allow_is_other_with_its_reason_and_closing_the_sheet_is_cancelled
+        PASS [   0.005s] ( 60/140) porter-dbus::it sheet::a_reply_that_does_not_answer_the_sheet_is_other_unavailable
+        PASS [   0.003s] ( 61/140) porter-tailnet guests::tests::an_answer_is_kept_by_the_id_and_a_no_is_not_asked_again
+        PASS [   0.003s] ( 62/140) porter-tailnet guests::tests::a_record_that_names_no_computer_is_dropped
+        PASS [   0.018s] ( 63/140) porter-dbus::it callers::on_a_private_bus_a_service_is_its_unit_only_as_the_managers_main_process
+        PASS [   0.004s] ( 64/140) porter-tailnet dial::tests::the_sentences_are_plain
+        PASS [   0.004s] ( 65/140) porter-dbus::it sheet::every_answer_survives_the_response_and_keeps_its_code
+        PASS [   0.004s] ( 66/140) porter-tailnet guests::tests::a_file_that_is_not_a_list_is_put_aside_and_the_list_starts_empty
+        PASS [   0.004s] ( 67/140) porter-dbus::it sheet::sender_names_become_path_segments_as_portals_write_them
+        PASS [   0.003s] ( 68/140) porter-tailnet guests::tests::an_answer_that_cannot_be_saved_changes_nothing
+        PASS [   0.003s] ( 69/140) porter-tailnet guests::tests::every_sentence_is_plain
+        PASS [   0.003s] ( 70/140) porter-tailnet guests::tests::the_answers_have_words_that_read_back_and_no_other_word_is_one
+        PASS [   0.003s] ( 71/140) porter-tailnet guests::tests::only_a_computer_that_is_waiting_can_be_answered
+        PASS [   0.003s] ( 72/140) porter-tailnet guests::tests::forgetting_a_record_makes_the_computer_a_stranger_again
+        PASS [   0.003s] ( 73/140) porter-tailnet guests::tests::forgetting_also_withdraws_a_question
+        PASS [   0.003s] ( 74/140) porter-tailnet guests::tests::the_list_shows_answers_and_questions_by_name
+        PASS [   0.003s] ( 75/140) porter-tailnet guests::tests::the_person_may_allow_a_computer_that_never_asked
+        PASS [   0.004s] ( 76/140) porter-tailnet guests::tests::answers_survive_a_restart_in_a_file_only_the_owner_reads
+        PASS [   0.003s] ( 77/140) porter-tailnet hello::tests::a_hello_reads_back_as_it_was_written
+        PASS [   0.003s] ( 78/140) porter-tailnet guests::tests::the_first_ask_is_raised_and_the_next_is_only_pending
+        PASS [   0.003s] ( 79/140) porter-tailnet guests::tests::the_questions_waiting_at_once_are_limited
+        PASS [   0.004s] ( 80/140) porter-tailnet hello::tests::a_hello_says_the_service_the_models_and_the_approval_and_nothing_else
+        PASS [   0.003s] ( 81/140) porter-tailnet hello::tests::what_is_not_this_programs_hello_is_not_read
+        PASS [   0.003s] ( 82/140) porter-tailnet judge::tests::a_computer_of_the_same_user_that_nobody_answered_about_is_let_through_as_new
+        PASS [   0.032s] ( 83/140) porter-dbus callers::tests::a_table_round_trips_through_its_serde_form
+        PASS [   0.003s] ( 84/140) porter-tailnet judge::tests::a_new_computer_is_asked_about_once_and_refused_until_the_person_answers
+        PASS [   0.004s] ( 85/140) porter-tailnet judge::tests::a_no_beats_everything_and_a_yes_is_by_id_not_by_name
+        PASS [   0.003s] ( 86/140) porter-tailnet judge::tests::a_request_from_this_computers_own_address_is_refused_whoever_tailscale_says_it_is
+        PASS [   0.003s] ( 87/140) porter-tailnet judge::tests::an_address_tailscale_does_not_know_or_cannot_be_asked_about_is_refused
+        PASS [   0.003s] ( 88/140) porter-tailnet judge::tests::a_yes_taken_back_is_taken_back_for_the_next_request
+        PASS [   0.003s] ( 89/140) porter-tailnet judge::tests::a_tagged_server_another_persons_and_a_shared_computer_are_refused
+        PASS [   0.003s] ( 90/140) porter-tailnet judge::tests::someone_elses_computer_is_never_asked_about
+        PASS [   0.003s] ( 91/140) porter-tailnet judge::tests::the_persons_word_ahead_of_time_lets_in_a_computer_that_would_be_refused
+        PASS [   0.003s] ( 92/140) porter-tailnet judge::tests::the_same_computer_through_another_address_is_still_this_computer
+        PASS [   0.004s] ( 93/140) porter-tailnet judge::tests::an_answer_that_does_not_list_the_address_is_not_believed
+        PASS [   0.004s] ( 94/140) porter-tailnet refusal::tests::what_is_waiting_or_busy_is_not_a_forbidden
+        PASS [   0.005s] ( 95/140) porter-tailnet refusal::tests::every_refusal_reads_as_plain_words
+        PASS [   0.005s] ( 96/140) porter-tailnet judge::tests::too_many_waiting_is_a_refusal_with_words
+        PASS [   0.005s] ( 97/140) porter-dbus callers::tests::a_user_row_replaces_the_system_row_of_the_same_unit_or_app
+        PASS [   0.005s] ( 98/140) porter-dbus callers::tests::a_unit_resolves_to_its_app_and_role
+        PASS [   0.038s] ( 99/140) porter-dbus callers::tests::a_row_without_a_unit_deserializes
+        PASS [   0.038s] (100/140) porter-dbus callers::tests::the_last_row_with_a_name_names_the_app_whatever_its_unit
+        PASS [   0.006s] (101/140) porter-tailnet tests::only_the_networks_own_addresses_are_its_addresses
+        PASS [   0.005s] (102/140) porter-tailnet::it greet::a_connection_that_breaks_is_told_so
+        PASS [   0.005s] (103/140) porter-tailnet::it greet::something_else_on_the_port_is_not_a_computer_that_lends
+        PASS [   0.005s] (104/140) porter-tailnet::it greet::a_refusal_is_read_as_the_computers_own_words
+        PASS [   0.040s] (105/140) inferd::it tailnet::a_request_from_pis_own_address_is_refused_and_raises_no_question
+        PASS [   0.008s] (106/140) porter-tailnet::it dial::nothing_answering_and_tailscale_away_are_told_in_their_own_words
+        PASS [   0.008s] (107/140) porter-tailnet::it dial::a_connection_to_one_of_the_persons_computers_leaves_from_this_computers_address
+        PASS [   0.007s] (108/140) porter-tailnet::it lend::dropping_the_listeners_closes_every_one_of_them_and_the_connections_on_them
+        PASS [   0.004s] (109/140) porter-tailnet::it lend::the_products_configuration_listens_on_the_networks_own_addresses_alone
+        PASS [   0.010s] (110/140) porter-tailnet::it dial::a_computer_that_is_not_the_persons_own_or_not_there_is_not_dialled
+        PASS [   0.009s] (111/140) porter-tailnet::it lend::a_no_from_the_person_is_a_refusal_and_a_yes_lets_a_shared_computer_in
+        PASS [   0.009s] (112/140) porter-tailnet::it lend::a_request_from_this_computers_own_address_is_refused
+        PASS [   0.009s] (113/140) porter-tailnet::it greet::a_hello_is_read_with_its_models_and_whether_approval_is_needed
+        PASS [   0.010s] (114/140) porter-tailnet::it lend::a_computer_has_a_few_connections_at_once_and_no_more
+        PASS [   0.008s] (115/140) porter-tailnet::it lend::a_tagged_server_another_persons_computer_and_a_stranger_are_refused_with_words
+        PASS [   0.006s] (116/140) porter-tailnet::it lend::never_on_every_address_whatever_tailscale_reports_and_the_config_allows
+        PASS [   0.006s] (117/140) porter-tailnet::it lend::when_tailscale_cannot_say_who_asks_nobody_is_let_in
+        PASS [   0.007s] (118/140) porter-tailnet::it lend::it_listens_on_the_networks_addresses_only_and_follows_a_change
+        PASS [   0.007s] (119/140) porter-tailnet::it observe::a_change_the_stream_did_not_announce_is_found_by_the_look_behind_it
+        PASS [   0.009s] (120/140) porter-tailnet::it lend::nothing_is_listened_on_until_it_is_switched_on_and_it_stops_when_switched_off
+        PASS [   0.006s] (121/140) porter-tailnet::it relay::a_path_left_by_an_earlier_run_is_replaced
+        PASS [   0.009s] (122/140) porter-tailnet::it lend::one_of_the_persons_own_computers_gets_through_as_new_and_a_yes_makes_it_approved
+        PASS [   0.005s] (123/140) porter-tailnet::it relay::bytes_go_both_ways_and_each_connection_asks_tailscale_again
+        PASS [   0.008s] (124/140) porter-tailnet::it observe::this_computer_is_seen_while_tailscale_is_running_and_signed_in
+        PASS [   0.054s] (125/140) porter-dbus json_value::tests::a_json_tree_survives_the_bus_value
+        PASS [   0.061s] (126/140) inferd::it tailnet::the_listener_follows_the_address_tailscale_gives_the_computer
+        PASS [   0.062s] (127/140) inferd::it tailnet::lending_is_off_by_default_nothing_listens_and_tailscale_is_not_even_asked
+        PASS [   0.059s] (128/140) porter-tailnet::it lend::an_address_that_cannot_be_listened_on_yet_is_tried_again
+        PASS [   0.110s] (129/140) porter-tailnet::it lend::tailscale_going_away_closes_the_listeners_and_coming_back_opens_them
+        PASS [   0.204s] (130/140) inferd::it tailnet::a_cloud_account_is_never_reached_from_a_peer_even_when_it_is_the_only_engine
+        PASS [   0.206s] (131/140) inferd::it tailnet::a_computer_attached_over_the_network_is_never_lent_onward
+        PASS [   0.211s] (132/140) inferd::it tailnet::the_name_follows_tailscale_and_the_place_stays
+        PASS [   0.212s] (133/140) inferd::it tailnet::adding_a_computer_that_is_not_there_or_twice_is_refused_in_plain_words
+        PASS [   0.213s] (134/140) inferd::it tailnet::only_settings_may_add_or_look_and_only_settings_and_the_shell_may_answer
+        PASS [   0.227s] (135/140) inferd::it tailnet::a_yes_can_be_taken_back_and_forgotten_so_the_computer_is_asked_again
+        PASS [   0.251s] (136/140) inferd::it tailnet::another_user_a_server_and_a_shared_computer_are_refused_unless_the_person_allows_it
+        PASS [   0.357s] (137/140) inferd::it tailnet::candidates_are_looked_at_only_when_read_at_most_once_a_minute_and_only_with_an_account
+        PASS [   0.523s] (138/140) inferd::it tailnet::a_no_keeps_a_computer_out_and_it_is_not_asked_again
+        PASS [   0.530s] (139/140) inferd::it tailnet::a_new_computer_is_asked_about_once_and_after_a_yes_its_models_answer
+        PASS [   0.806s] (140/140) porter-tailnet::it observe::a_tailscale_that_is_starting_changes_nothing
+────────────
+     Summary [   0.847s] 140 tests run: 140 passed, 590 skipped

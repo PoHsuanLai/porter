@@ -1,5 +1,5 @@
 use super::*;
-use crate::guests::{AskOutcome, GuestEvent};
+use crate::guests::{AskOutcome, GuestAnswer, GuestEvent};
 use porter_core::UnixSeconds;
 use porter_tailscale::{User, UserId, WhoIsNode};
 use std::sync::{Arc, Mutex};
@@ -69,7 +69,9 @@ fn a_request_from_this_computers_own_address_is_refused_whoever_tailscale_says_i
     // Rule (c): a program of another account on this computer reaches the listener through the
     // network address, and Tailscale then calls that "this computer", of the same user.
     let guests = Guests::in_memory();
-    guests.set(&node("nSELF"), "desk", true, NOW).unwrap();
+    guests
+        .set(&node("nSELF"), "desk", GuestAnswer::Allow, NOW)
+        .unwrap();
     for own in ["100.64.0.1", "fd7a:115c:a1e0::1"] {
         for answer in [
             Ok(who("nSELF", "desk.tail1234.ts.net", 1, own)),
@@ -154,9 +156,11 @@ fn a_tagged_server_another_persons_and_a_shared_computer_are_refused() {
 fn the_persons_word_ahead_of_time_lets_in_a_computer_that_would_be_refused() {
     let guests = Guests::in_memory();
     guests
-        .set(&node("nFRIEND"), "friends-pc", true, NOW)
+        .set(&node("nFRIEND"), "friends-pc", GuestAnswer::Allow, NOW)
         .unwrap();
-    guests.set(&node("nBUILD"), "build-box", true, NOW).unwrap();
+    guests
+        .set(&node("nBUILD"), "build-box", GuestAnswer::Allow, NOW)
+        .unwrap();
     let friend = who("nFRIEND", "friends-pc.tail1234.ts.net", 2, "100.64.0.5");
     let welcome = judged("100.64.0.5", Ok(friend), &guests).expect("welcome");
     assert_eq!(welcome.footing(), Footing::Approved);
@@ -174,12 +178,16 @@ fn the_persons_word_ahead_of_time_lets_in_a_computer_that_would_be_refused() {
 #[test]
 fn a_no_beats_everything_and_a_yes_is_by_id_not_by_name() {
     let guests = Guests::in_memory();
-    guests.set(&node("nPI"), "pi", false, NOW).unwrap();
+    guests
+        .set(&node("nPI"), "pi", GuestAnswer::Deny, NOW)
+        .unwrap();
     assert_eq!(
         judged("100.64.0.2", Ok(pi()), &guests).unwrap_err(),
         Refusal::Denied
     );
-    guests.set(&node("nPI"), "pi", true, NOW).unwrap();
+    guests
+        .set(&node("nPI"), "pi", GuestAnswer::Allow, NOW)
+        .unwrap();
     // Renamed on the network: still the one the person said yes to.
     let renamed = who("nPI", "kitchen-pi.tail1234.ts.net", 1, "100.64.0.2");
     assert_eq!(
@@ -214,17 +222,23 @@ fn a_new_computer_is_asked_about_once_and_refused_until_the_person_answers() {
         .filter(|event| matches!(event, GuestEvent::Asked(_)))
         .count();
     assert_eq!(asked, 1, "the person is asked once");
-    guests.answer(&node("nPI"), true, NOW).unwrap();
+    guests
+        .answer(&node("nPI"), GuestAnswer::Allow, NOW)
+        .unwrap();
     assert_eq!(welcome.admit(&guests, NOW), Ok(()));
 }
 
 #[test]
 fn a_yes_taken_back_is_taken_back_for_the_next_request() {
     let guests = Guests::in_memory();
-    guests.set(&node("nPI"), "pi", true, NOW).unwrap();
+    guests
+        .set(&node("nPI"), "pi", GuestAnswer::Allow, NOW)
+        .unwrap();
     let welcome = judged("100.64.0.2", Ok(pi()), &guests).expect("welcome");
     assert_eq!(welcome.admit(&guests, NOW), Ok(()));
-    guests.set(&node("nPI"), "pi", false, NOW).unwrap();
+    guests
+        .set(&node("nPI"), "pi", GuestAnswer::Deny, NOW)
+        .unwrap();
     assert_eq!(welcome.admit(&guests, NOW), Err(Refusal::Denied));
     guests.forget(&node("nPI")).unwrap();
     assert_eq!(welcome.admit(&guests, NOW), Err(Refusal::Waiting));
@@ -234,7 +248,7 @@ fn a_yes_taken_back_is_taken_back_for_the_next_request() {
 fn someone_elses_computer_is_never_asked_about() {
     let guests = Guests::in_memory();
     guests
-        .set(&node("nFRIEND"), "friends-pc", true, NOW)
+        .set(&node("nFRIEND"), "friends-pc", GuestAnswer::Allow, NOW)
         .unwrap();
     let friend = who("nFRIEND", "friends-pc.tail1234.ts.net", 2, "100.64.0.5");
     let welcome = judged("100.64.0.5", Ok(friend), &guests).expect("welcome");

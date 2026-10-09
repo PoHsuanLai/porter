@@ -1,6 +1,6 @@
 //! Reading a hello from a computer that answers one.
 
-use porter_tailnet::{GreetError, Hello, LentModel, greet};
+use porter_tailnet::{Approval, GreetError, Hello, LentModel, greet};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
@@ -32,7 +32,7 @@ async fn a_hello_is_read_with_its_models_and_whether_approval_is_needed() {
             id: "qwen3-32b".into(),
             name: "Qwen3 32B".into(),
         }],
-        true,
+        Approval::Needed,
     );
     let stream = answering(json("200 OK", &hello.to_json())).await;
     let got = greet(stream, "pi").await.expect("a hello");

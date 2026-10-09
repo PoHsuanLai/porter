@@ -46,9 +46,9 @@ mod observe;
 mod relay;
 
 pub use guests::{
-    Ask, AskOutcome, Guest, GuestError, GuestEvent, GuestRow, Guests, RowState, State,
+    Ask, AskOutcome, Guest, GuestAnswer, GuestError, GuestEvent, GuestRow, Guests, RowState, State,
 };
-pub use hello::{HELLO_PATH, Hello, LentModel};
+pub use hello::{Approval, HELLO_PATH, Hello, LentModel};
 pub use identity::Identity;
 pub use judge::{Footing, Peer, Welcome, judge};
 pub use refusal::Refusal;

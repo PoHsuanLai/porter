@@ -426,7 +426,7 @@ async fn a_new_computer_is_asked_about_once_and_after_a_yes_its_models_answer() 
 
     // The person at pi says yes (the shell may answer a question that is waiting).
     pi_proxy
-        .answer_guest("nDESK", true)
+        .answer_guest("nDESK", porter_dbus::GUEST_ANSWER_ALLOW)
         .await
         .expect("answered");
     let places = p.desk.accounts.places().await.expect("places");
@@ -465,7 +465,7 @@ async fn a_no_keeps_a_computer_out_and_it_is_not_asked_again() {
         .await
         .expect("a signal");
     pi_proxy
-        .answer_guest("nDESK", false)
+        .answer_guest("nDESK", porter_dbus::GUEST_ANSWER_DENY)
         .await
         .expect("answered");
     for _ in 0..2 {
@@ -518,7 +518,10 @@ async fn a_yes_can_be_taken_back_and_forgotten_so_the_computer_is_asked_again() 
     within("the question", next_of(&mut asks))
         .await
         .expect("a signal");
-    pi_proxy.answer_guest("nDESK", true).await.expect("yes");
+    pi_proxy
+        .answer_guest("nDESK", porter_dbus::GUEST_ANSWER_ALLOW)
+        .await
+        .expect("yes");
     assert_eq!(ready(&p.desk).await, Some(PlaceState::Ready));
 
     // Settings at pi takes it back.
@@ -526,7 +529,10 @@ async fn a_yes_can_be_taken_back_and_forgotten_so_the_computer_is_asked_again() 
         p.pi.connect_as(Role::Settings, app("org.quire.Settings"))
             .await;
     let settings = proxy(&settings).await;
-    settings.answer_guest("nDESK", false).await.expect("no");
+    settings
+        .answer_guest("nDESK", porter_dbus::GUEST_ANSWER_DENY)
+        .await
+        .expect("no");
     assert_eq!(ready(&p.desk).await, Some(PlaceState::NotReady));
     // Forgotten, it is a stranger again and is asked again.
     settings.forget_guest("nDESK").await.expect("forgotten");
@@ -586,7 +592,7 @@ async fn another_user_a_server_and_a_shared_computer_are_refused_unless_the_pers
                 .await;
         proxy(&pi_settings)
             .await
-            .answer_guest("nDESK", true)
+            .answer_guest("nDESK", porter_dbus::GUEST_ANSWER_ALLOW)
             .await
             .expect("allowed");
         let hello = http(p.a.desk, at, HELLO).await;
@@ -667,7 +673,7 @@ async fn a_cloud_account_is_never_reached_from_a_peer_even_when_it_is_the_only_e
         .await;
     proxy(&settings)
         .await
-        .answer_guest("nDESK", true)
+        .answer_guest("nDESK", porter_dbus::GUEST_ANSWER_ALLOW)
         .await
         .expect("yes");
     let hello = http(a.desk, at, HELLO).await;
@@ -729,7 +735,7 @@ async fn a_computer_attached_over_the_network_is_never_lent_onward() {
         .await;
     proxy(&settings)
         .await
-        .answer_guest("nDESK", true)
+        .answer_guest("nDESK", porter_dbus::GUEST_ANSWER_ALLOW)
         .await
         .expect("yes");
     let hello = http(a.desk, at, HELLO).await;
@@ -910,7 +916,7 @@ async fn only_settings_may_add_or_look_and_only_settings_and_the_shell_may_answe
         let e = inference.guests().await.expect_err("refused");
         assert_eq!(error_name(&e), denied, "{who}");
         let e = inference
-            .answer_guest("nDESK", true)
+            .answer_guest("nDESK", porter_dbus::GUEST_ANSWER_ALLOW)
             .await
             .expect_err("refused");
         assert_eq!(error_name(&e), denied, "{who}");
@@ -918,7 +924,7 @@ async fn only_settings_may_add_or_look_and_only_settings_and_the_shell_may_answe
     // The shell may answer only a computer that is asking.
     let shell = proxy(&p.pi.client).await;
     let e = shell
-        .answer_guest("nDESK", true)
+        .answer_guest("nDESK", porter_dbus::GUEST_ANSWER_ALLOW)
         .await
         .expect_err("nobody asked");
     assert_eq!(error_name(&e), computer_error("NotAsking"));
@@ -929,10 +935,34 @@ async fn only_settings_may_add_or_look_and_only_settings_and_the_shell_may_answe
         p.pi.connect_as(Role::Settings, app("org.quire.Settings"))
             .await;
     let settings = proxy(&settings).await;
-    settings.answer_guest("nDESK", true).await.expect("allowed");
+    settings
+        .answer_guest("nDESK", porter_dbus::GUEST_ANSWER_ALLOW)
+        .await
+        .expect("allowed");
     let e = settings
-        .answer_guest("nNOBODY", true)
+        .answer_guest("nNOBODY", porter_dbus::GUEST_ANSWER_ALLOW)
         .await
         .expect_err("not there");
     assert_eq!(error_name(&e), computer_error("NotOnTailscale"));
+    // The answer is a word: any other is invalid args, and nothing changes.
+    for word in ["", "yes", "true", "Allow", "allow ", "maybe"] {
+        let e = settings
+            .answer_guest("nDESK", word)
+            .await
+            .expect_err("not an answer");
+        assert_eq!(
+            error_name(&e),
+            "org.freedesktop.DBus.Error.InvalidArgs",
+            "{word:?}"
+        );
+    }
+    settings
+        .answer_guest("nDESK", porter_dbus::GUEST_ANSWER_DENY)
+        .await
+        .expect("denied");
+    let rows = settings.guests().await.expect("guests");
+    assert_eq!(
+        text_of(&rows[0].1, GUEST_KEY_STATE).as_deref(),
+        Some("denied")
+    );
 }

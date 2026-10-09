@@ -7,7 +7,9 @@ use super::common::{
 use porter_core::{NodeId, UnixSeconds};
 use porter_fake::GENEROUS;
 use porter_fake_servers::Daemon;
-use porter_tailnet::{Config, Footing, Guests, Lending, Limits, Refusal, Visit, Visits, lend};
+use porter_tailnet::{
+    Config, Footing, GuestAnswer, Guests, Lending, Limits, Refusal, Visit, Visits, lend,
+};
 use std::future::Future;
 use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
@@ -310,7 +312,12 @@ async fn one_of_the_persons_own_computers_gets_through_as_new_and_a_yes_makes_it
     assert_eq!(came[0].1, Footing::New);
     assert_eq!(came[0].2, a.pi);
     l.guests
-        .set(&NodeId::parse("nPI").unwrap(), "pi", true, UnixSeconds(1))
+        .set(
+            &NodeId::parse("nPI").unwrap(),
+            "pi",
+            GuestAnswer::Allow,
+            UnixSeconds(1),
+        )
         .unwrap();
     let again = connect_from(a.pi, at(a.me, l.port)).await.expect("connect");
     drop(again);
@@ -361,10 +368,15 @@ async fn a_no_from_the_person_is_a_refusal_and_a_yes_lets_a_shared_computer_in()
     let l = listening_lender("answers", &a).await;
     let now = UnixSeconds(1);
     l.guests
-        .set(&NodeId::parse("nPI").unwrap(), "pi", false, now)
+        .set(&NodeId::parse("nPI").unwrap(), "pi", GuestAnswer::Deny, now)
         .unwrap();
     l.guests
-        .set(&NodeId::parse("nFRIEND").unwrap(), "friends-pc", true, now)
+        .set(
+            &NodeId::parse("nFRIEND").unwrap(),
+            "friends-pc",
+            GuestAnswer::Allow,
+            now,
+        )
         .unwrap();
     let denied = answer_to(&l, &a, a.pi).await;
     assert!(denied.contains(&Refusal::Denied.to_string()), "{denied}");

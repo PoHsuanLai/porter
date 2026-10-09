@@ -622,13 +622,20 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         &self,
         #[zbus(header)] header: Header<'_>,
         node: String,
-        allow: bool,
+        answer: String,
     ) -> Result<(), InferError> {
         let caller = self.guest_caller(&header).await?;
+        let answer = porter_tailnet::GuestAnswer::from_slug(&answer).ok_or_else(|| {
+            fdo::Error::InvalidArgs(format!(
+                "the answer is {} or {}",
+                porter_dbus::GUEST_ANSWER_ALLOW,
+                porter_dbus::GUEST_ANSWER_DENY
+            ))
+        })?;
         let node = NodeId::parse(&node).map_err(|e| fdo::Error::InvalidArgs(e.to_string()))?;
         let tailnet = self.tailnet.as_ref().ok_or(ComputerError::Unavailable)?;
         let now = self.clock.now();
-        match tailnet.guests().answer(&node, allow, now) {
+        match tailnet.guests().answer(&node, answer, now) {
             Err(porter_tailnet::GuestError::NotAsking) if caller.role == Role::Settings => {
                 let machines = tailnet.machines().machines().await;
                 let machine = machines
@@ -637,7 +644,7 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
                     .ok_or(ComputerError::NotOnTailscale)?;
                 tailnet
                     .guests()
-                    .set(&node, &machine.name, allow, now)
+                    .set(&node, &machine.name, answer, now)
                     .map_err(ComputerError::from)?;
             }
             other => other.map_err(ComputerError::from)?,

@@ -83,11 +83,12 @@ pub trait Inference {
     /// the node id first, then `name`, `state` (`approved`, `denied` or `asking`) and `since`
     /// (`x`); the key names are `GUEST_KEY_*`. Only Settings and the shell may ask.
     fn guests(&self) -> zbus::Result<Vec<(String, Details)>>;
-    /// The person's answer about the computer `node`: yes (`allow`) or no. The shell may answer
-    /// a computer that is asking; Settings may answer any computer of the person's network
-    /// (also a server or another person's, which is never asked about), or take back a yes
-    /// (a no keeps it out, and it is not asked about again).
-    fn answer_guest(&self, node: &str, allow: bool) -> zbus::Result<()>;
+    /// The person's answer about the computer `node`, a word: `allow` or `deny`
+    /// (`GUEST_ANSWER_ALLOW`, `GUEST_ANSWER_DENY`; any other word is `InvalidArgs`). The shell
+    /// may answer a computer that is asking; Settings may answer any computer of the person's
+    /// network (also a server or another person's, which is never asked about), or take back a
+    /// yes (a `deny` keeps it out, and it is not asked about again).
+    fn answer_guest(&self, node: &str, answer: &str) -> zbus::Result<()>;
     /// Forgets the answer about `node` (and any question it has waiting): it is asked about
     /// again the next time it wants a model, if it is one of the person's own. Only Settings
     /// may call.
@@ -179,8 +180,8 @@ impl InferenceSkeleton {
         Err(crate::introspect::frozen())
     }
 
-    fn answer_guest(&self, node: String, allow: bool) -> fdo::Result<()> {
-        let _ = (node, allow);
+    fn answer_guest(&self, node: String, answer: String) -> fdo::Result<()> {
+        let _ = (node, answer);
         Err(crate::introspect::frozen())
     }
 

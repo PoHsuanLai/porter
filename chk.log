@@ -1,0 +1,39 @@
+agent-shim: waiting for a build slot (held by: pid 3656644 in /home/pohsuanlai/rs-wt/wh-pins9/docket: cargo check --workspace --all-targets --all-features --message-format short;pid 3507750 in /home/pohsuanlai/av-wt/export/anyview: cargo test --workspace --no-fail-fast;pid 3661020 in /home/pohsuanlai/av-wt/bayonet/bayonet: cargo test -q --all-features;)
+agent-shim: waiting for a build slot (held by: pid 3656644 in /home/pohsuanlai/rs-wt/wh-pins9/docket: cargo check --workspace --all-targets --all-features --message-format short;pid 3507750 in /home/pohsuanlai/av-wt/export/anyview: cargo test --workspace --no-fail-fast;pid 3664810 in /home/pohsuanlai/av-wt/bayonet/bayonet: cargo test -q --no-default-features;)
+agent-shim: waiting for a build slot (held by: pid 3656644 in /home/pohsuanlai/rs-wt/wh-pins9/docket: cargo check --workspace --all-targets --all-features --message-format short;pid 3507750 in /home/pohsuanlai/av-wt/export/anyview: cargo test --workspace --no-fail-fast;pid 3664810 in /home/pohsuanlai/av-wt/bayonet/bayonet: cargo test -q --no-default-features;)
+agent-shim: waiting for a build slot (held by: pid 3656644 in /home/pohsuanlai/rs-wt/wh-pins9/docket: cargo check --workspace --all-targets --all-features --message-format short;pid 3507750 in /home/pohsuanlai/av-wt/export/anyview: cargo test --workspace --no-fail-fast;)
+    Checking async-io v2.6.0
+    Checking porter-tailnet v0.1.0 (/home/pohsuanlai/rs-wt/tailnet-serve/porter/crates/porter-tailnet)
+    Checking wait-timeout v0.2.1
+    Checking getrandom v0.3.4
+    Checking getrandom v0.4.3
+    Checking async-signal v0.2.14
+    Checking tempfile v3.27.0
+    Checking rand_core v0.9.5
+    Checking async-process v2.5.0
+    Checking rusty-fork v0.3.1
+    Checking rand_chacha v0.9.0
+    Checking rand_xorshift v0.4.0
+    Checking rand v0.9.5
+    Checking zbus v5.19.0
+    Checking proptest v1.11.0
+    Checking porter-dbus v0.1.0 (/home/pohsuanlai/rs-wt/tailnet-serve/porter/crates/porter-dbus)
+    Checking ds-settings v0.1.0 (https://github.com/PoHsuanLai/quire.git?rev=267451763728522f04e23e8fa8564c9f83ffda27#26745176)
+    Checking porter-client v0.1.0 (/home/pohsuanlai/rs-wt/tailnet-serve/porter/crates/porter-client)
+    Checking inferd v0.1.0 (/home/pohsuanlai/rs-wt/tailnet-serve/porter/crates/inferd)
+warning: methods `write_body` and `read_body_with_fds` are never used
+  --> crates/porter-client/src/transport/framed.rs:60:25
+   |
+39 | impl FramedSession {
+   | ------------------ methods in this implementation
+...
+60 |     pub(crate) async fn write_body<T: serde::Serialize>(
+   |                         ^^^^^^^^^^
+...
+94 |     pub(crate) async fn read_body_with_fds<T: serde::de::DeserializeOwned>(
+   |                         ^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `porter-client` (lib) generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 15.14s

@@ -46,6 +46,33 @@ impl State {
     }
 }
 
+/// The person's answer to a computer: what `AnswerGuest` takes, as a word.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum GuestAnswer {
+    /// Let it use this computer's models.
+    Allow,
+    /// Keep it out.
+    Deny,
+}
+
+impl GuestAnswer {
+    /// Both answers, for tables.
+    pub const ALL: [GuestAnswer; 2] = [GuestAnswer::Allow, GuestAnswer::Deny];
+
+    /// The word on the bus.
+    pub fn slug(self) -> &'static str {
+        match self {
+            GuestAnswer::Allow => "allow",
+            GuestAnswer::Deny => "deny",
+        }
+    }
+
+    /// The answer a word names; none for any other word.
+    pub fn from_slug(slug: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|answer| answer.slug() == slug)
+    }
+}
+
 /// One record, as the file holds it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Guest {
@@ -327,7 +354,12 @@ impl Guests {
     }
 
     /// The person's answer to a computer that is waiting: yes (`allow`) or no.
-    pub fn answer(&self, node: &NodeId, allow: bool, now: UnixSeconds) -> Result<(), GuestError> {
+    pub fn answer(
+        &self,
+        node: &NodeId,
+        answer: GuestAnswer,
+        now: UnixSeconds,
+    ) -> Result<(), GuestError> {
         {
             let mut inner = held(&self.inner);
             let ask = inner.asking.get(node).ok_or(GuestError::NotAsking)?.clone();
@@ -336,7 +368,7 @@ impl Guests {
                 return Err(GuestError::TooMany);
             }
             next.guests
-                .insert(node.to_string(), record(&ask.name, allow, now));
+                .insert(node.to_string(), record(&ask.name, answer, now));
             self.save(&next)?;
             inner.file = next;
             inner.asking.remove(node);
@@ -351,7 +383,7 @@ impl Guests {
         &self,
         node: &NodeId,
         name: &str,
-        allow: bool,
+        answer: GuestAnswer,
         now: UnixSeconds,
     ) -> Result<(), GuestError> {
         {
@@ -366,7 +398,7 @@ impl Guests {
                 .or_else(|| inner.asking.get(node).map(|ask| ask.name.clone()))
                 .unwrap_or_else(|| node.to_string());
             next.guests
-                .insert(node.to_string(), record(&name, allow, now));
+                .insert(node.to_string(), record(&name, answer, now));
             self.save(&next)?;
             inner.file = next;
             inner.asking.remove(node);
@@ -432,13 +464,12 @@ impl Guests {
     }
 }
 
-fn record(name: &str, allow: bool, now: UnixSeconds) -> Guest {
+fn record(name: &str, answer: GuestAnswer, now: UnixSeconds) -> Guest {
     Guest {
         name: name.to_owned(),
-        state: if allow {
-            State::Approved
-        } else {
-            State::Denied
+        state: match answer {
+            GuestAnswer::Allow => State::Approved,
+            GuestAnswer::Deny => State::Denied,
         },
         since: now,
     }

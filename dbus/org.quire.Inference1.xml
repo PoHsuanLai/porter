@@ -50,7 +50,7 @@
    </method>
    <method name="AnswerGuest">
      <arg name="node" type="s" direction="in"/>
-     <arg name="allow" type="b" direction="in"/>
+     <arg name="answer" type="s" direction="in"/>
    </method>
    <method name="ForgetGuest">
      <arg name="node" type="s" direction="in"/>

@@ -35,15 +35,23 @@ pub struct Hello {
     needs_approval: bool,
 }
 
+/// Where the asking computer stands with the person on the lending one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Approval {
+    /// The person has yet to say yes to it.
+    Needed,
+    /// The person said yes.
+    Given,
+}
+
 impl Hello {
-    /// A hello offering `models` to a computer that still needs to be allowed (`true`) or
-    /// already is.
-    pub fn new(models: Vec<LentModel>, needs_approval: bool) -> Self {
+    /// A hello offering `models` to a computer with this `approval`.
+    pub fn new(models: Vec<LentModel>, approval: Approval) -> Self {
         Self {
             service: SERVICE.to_owned(),
             version: VERSION,
             models,
-            needs_approval,
+            needs_approval: approval == Approval::Needed,
         }
     }
 
@@ -86,14 +94,15 @@ mod tests {
 
     #[test]
     fn a_hello_reads_back_as_it_was_written() {
-        let hello = Hello::new(vec![model("qwen"), model("gemma")], true);
+        let hello = Hello::new(vec![model("qwen"), model("gemma")], Approval::Needed);
         assert_eq!(Hello::parse(hello.to_json().as_bytes()), Some(hello));
     }
 
     #[test]
     fn a_hello_says_the_service_the_models_and_the_approval_and_nothing_else() {
         let value: serde_json::Value =
-            serde_json::from_str(&Hello::new(vec![model("qwen")], false).to_json()).unwrap();
+            serde_json::from_str(&Hello::new(vec![model("qwen")], Approval::Given).to_json())
+                .unwrap();
         let mut keys: Vec<&str> = value
             .as_object()
             .unwrap()
@@ -113,7 +122,7 @@ mod tests {
         }
         let many = Hello::new(
             (0..=MOST_MODELS).map(|n| model(&format!("m{n}"))).collect(),
-            false,
+            Approval::Given,
         );
         assert_eq!(Hello::parse(many.to_json().as_bytes()), None);
     }

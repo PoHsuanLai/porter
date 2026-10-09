@@ -52,8 +52,12 @@ fn an_answer_is_kept_by_the_id_and_a_no_is_not_asked_again() {
     let guests = Guests::in_memory();
     guests.ask(&node("nPI"), "pi", NOW).unwrap();
     guests.ask(&node("nOLD"), "old-laptop", NOW).unwrap();
-    guests.answer(&node("nPI"), true, NOW).unwrap();
-    guests.answer(&node("nOLD"), false, NOW).unwrap();
+    guests
+        .answer(&node("nPI"), GuestAnswer::Allow, NOW)
+        .unwrap();
+    guests
+        .answer(&node("nOLD"), GuestAnswer::Deny, NOW)
+        .unwrap();
     assert_eq!(guests.state_of(&node("nPI")), Some(State::Approved));
     assert_eq!(guests.state_of(&node("nOLD")), Some(State::Denied));
     assert!(guests.asking().is_empty());
@@ -65,7 +69,7 @@ fn an_answer_is_kept_by_the_id_and_a_no_is_not_asked_again() {
 fn only_a_computer_that_is_waiting_can_be_answered() {
     let guests = Guests::in_memory();
     assert_eq!(
-        guests.answer(&node("nPI"), true, NOW),
+        guests.answer(&node("nPI"), GuestAnswer::Allow, NOW),
         Err(GuestError::NotAsking)
     );
     assert_eq!(guests.state_of(&node("nPI")), None);
@@ -74,7 +78,9 @@ fn only_a_computer_that_is_waiting_can_be_answered() {
 #[test]
 fn forgetting_a_record_makes_the_computer_a_stranger_again() {
     let guests = Guests::in_memory();
-    guests.set(&node("nPI"), "pi", true, NOW).unwrap();
+    guests
+        .set(&node("nPI"), "pi", GuestAnswer::Allow, NOW)
+        .unwrap();
     assert_eq!(guests.forget(&node("nPI")), Ok(true));
     assert_eq!(guests.state_of(&node("nPI")), None);
     assert_eq!(
@@ -105,7 +111,7 @@ fn the_questions_waiting_at_once_are_limited() {
     );
     // One that already waits is not a new question.
     assert_eq!(guests.ask(&node("n0"), "x", NOW), Ok(AskOutcome::Pending));
-    guests.answer(&node("n0"), false, NOW).unwrap();
+    guests.answer(&node("n0"), GuestAnswer::Deny, NOW).unwrap();
     assert_eq!(guests.ask(&node("nLAST"), "x", NOW), Ok(AskOutcome::Raised));
 }
 
@@ -113,13 +119,15 @@ fn the_questions_waiting_at_once_are_limited() {
 fn the_person_may_allow_a_computer_that_never_asked() {
     let guests = Guests::in_memory();
     guests
-        .set(&node("nFRIEND"), "  friends-pc ", true, NOW)
+        .set(&node("nFRIEND"), "  friends-pc ", GuestAnswer::Allow, NOW)
         .unwrap();
     let rows = guests.rows();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].name, "friends-pc");
     assert_eq!(rows[0].state, RowState::Approved);
-    guests.set(&node("nNAMELESS"), "   ", false, NOW).unwrap();
+    guests
+        .set(&node("nNAMELESS"), "   ", GuestAnswer::Deny, NOW)
+        .unwrap();
     assert!(
         guests.rows().iter().any(|r| r.name == "nNAMELESS"),
         "a computer given no name is shown by its id"
@@ -129,8 +137,12 @@ fn the_person_may_allow_a_computer_that_never_asked() {
 #[test]
 fn the_list_shows_answers_and_questions_by_name() {
     let guests = Guests::in_memory();
-    guests.set(&node("nB"), "bravo", true, NOW).unwrap();
-    guests.set(&node("nA"), "alpha", false, NOW).unwrap();
+    guests
+        .set(&node("nB"), "bravo", GuestAnswer::Allow, NOW)
+        .unwrap();
+    guests
+        .set(&node("nA"), "alpha", GuestAnswer::Deny, NOW)
+        .unwrap();
     guests.ask(&node("nC"), "charlie", UnixSeconds(5)).unwrap();
     let rows: Vec<(String, RowState)> = guests
         .rows()
@@ -153,7 +165,9 @@ fn answers_survive_a_restart_in_a_file_only_the_owner_reads() {
     let path = dir.join("state").join("guests.toml");
     let (guests, said) = Guests::open(&path);
     assert_eq!(said, None);
-    guests.set(&node("nPI"), "pi", true, NOW).unwrap();
+    guests
+        .set(&node("nPI"), "pi", GuestAnswer::Allow, NOW)
+        .unwrap();
     guests.ask(&node("nOLD"), "old", NOW).unwrap();
     let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode, 0o600);
@@ -205,7 +219,7 @@ fn an_answer_that_cannot_be_saved_changes_nothing() {
         count.fetch_add(1, Ordering::SeqCst);
     });
     assert_eq!(
-        guests.set(&node("nPI"), "pi", true, NOW),
+        guests.set(&node("nPI"), "pi", GuestAnswer::Allow, NOW),
         Err(GuestError::NotSaved)
     );
     assert_eq!(guests.state_of(&node("nPI")), None);
@@ -218,11 +232,23 @@ fn an_answer_that_cannot_be_saved_changes_nothing() {
     guests.ask(&node("nOLD"), "old", NOW).unwrap();
     let before = told.load(Ordering::SeqCst);
     assert_eq!(
-        guests.answer(&node("nOLD"), true, NOW),
+        guests.answer(&node("nOLD"), GuestAnswer::Allow, NOW),
         Err(GuestError::NotSaved)
     );
     assert_eq!(guests.asking().len(), 1);
     assert_eq!(told.load(Ordering::SeqCst), before);
+}
+
+#[test]
+fn the_answers_have_words_that_read_back_and_no_other_word_is_one() {
+    for answer in GuestAnswer::ALL {
+        assert_eq!(GuestAnswer::from_slug(answer.slug()), Some(answer));
+    }
+    assert_eq!(GuestAnswer::Allow.slug(), "allow");
+    assert_eq!(GuestAnswer::Deny.slug(), "deny");
+    for word in ["", "yes", "true", "Allow", " allow", "allow ", "deny\n"] {
+        assert_eq!(GuestAnswer::from_slug(word), None, "{word:?}");
+    }
 }
 
 #[test]

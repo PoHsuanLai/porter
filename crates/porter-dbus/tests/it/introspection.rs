@@ -150,7 +150,7 @@ fn inference1_xml_unchanged_members() {
         "<method name=\"ForgetGuest\">",
         "<signal name=\"GuestAsks\">",
         "<signal name=\"GuestsChanged\">",
-        "<arg name=\"allow\" type=\"b\" direction=\"in\"/>",
+        "<arg name=\"answer\" type=\"s\" direction=\"in\"/>",
     ] {
         assert!(xml.contains(member), "missing {member}");
     }

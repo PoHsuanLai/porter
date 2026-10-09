@@ -130,6 +130,12 @@ pub const GUEST_KEY_NAME: &str = "name";
 pub const GUEST_KEY_STATE: &str = "state";
 /// See [`GUEST_KEY_NAME`].
 pub const GUEST_KEY_SINCE: &str = "since";
+
+/// The words `Inference1.AnswerGuest` takes as its `answer` (`s`): let the computer use this
+/// computer's models, or keep it out. Any other word is invalid args.
+pub const GUEST_ANSWER_ALLOW: &str = "allow";
+/// See [`GUEST_ANSWER_ALLOW`].
+pub const GUEST_ANSWER_DENY: &str = "deny";
 /// See [`PLACE_KEY_KIND`].
 pub const PLACE_KEY_NAME: &str = "name";
 /// See [`PLACE_KEY_KIND`].

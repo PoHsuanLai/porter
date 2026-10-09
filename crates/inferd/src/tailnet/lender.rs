@@ -29,7 +29,7 @@ use crate::clock::Clock;
 use crate::engines::Engines;
 use porter_core::capability::AgentProgram;
 use porter_core::{AppId, AppName, DataClass, Isolation, NodeId};
-use porter_tailnet::{Guests, Hello, LentModel, Refusal, State, Visit, Visits};
+use porter_tailnet::{Approval, Guests, Hello, LentModel, Refusal, State, Visit, Visits};
 use serde_json::json;
 use std::future::Future;
 use std::pin::Pin;
@@ -203,8 +203,11 @@ impl Lender {
                 name,
             })
             .collect();
-        let needs_approval = self.guests.state_of(node) != Some(State::Approved);
-        let hello = Hello::new(models, needs_approval);
+        let approval = match self.guests.state_of(node) {
+            Some(State::Approved) => Approval::Given,
+            Some(State::Denied) | None => Approval::Needed,
+        };
+        let hello = Hello::new(models, approval);
         http::write_json(out, 200, &[], &hello.to_json())
             .await
             .map_err(|_| Failure::new(Cause::Upstream, "the computer went away"))
