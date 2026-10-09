@@ -453,11 +453,11 @@ where
     S: Stream<Item = T> + Unpin,
 {
     let signal = tokio::time::timeout(
-        Duration::from_secs(60),
+        porter_fake::GENEROUS,
         std::future::poll_fn(|cx| Pin::new(&mut *holds).poll_next(cx)),
     )
     .await
-    .expect("a NeedsConfirmation signal within 60 s")
+    .expect("a NeedsConfirmation signal within the generous wait")
     .expect("open stream");
     let (dataset, held) = read(&signal);
     assert_eq!(dataset, DATASET);
@@ -465,11 +465,12 @@ where
 }
 
 async fn until<F: Future<Output = bool>>(what: &str, mut check: impl FnMut() -> F) {
-    for _ in 0..3000 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         if check().await {
             return;
         }
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-    panic!("never happened: {what}");
+    deadline.fail(what);
 }

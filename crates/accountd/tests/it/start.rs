@@ -59,7 +59,7 @@ async fn a_call_made_as_soon_as_the_name_is_owned_is_answered() {
         .with_audit(RecordingAudit::default()),
     );
     let served = tokio::time::timeout(
-        Duration::from_secs(30),
+        porter_fake::GENEROUS,
         serve_with(
             &connection,
             service,

@@ -241,9 +241,9 @@ impl Client {
 
     /// The next event, or `None` when the daemon closed the socket.
     pub async fn event(&mut self) -> Option<InferEvent> {
-        tokio::time::timeout(Duration::from_secs(5), self.event_inner())
+        tokio::time::timeout(porter_fake::GENEROUS, self.event_inner())
             .await
-            .expect("an event or a close within five seconds")
+            .expect("an event or a close within the generous wait")
     }
 
     async fn event_inner(&mut self) -> Option<InferEvent> {
@@ -275,13 +275,15 @@ impl Client {
     }
 }
 
-/// Waits (briefly) until `check` holds; panics after five seconds.
+/// Waits until `check` holds (at once when it does); panics once the generous wait has passed
+/// by the clock.
 pub async fn eventually(what: &str, mut check: impl FnMut() -> bool) {
-    for _ in 0..500 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         if check() {
             return;
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
-    panic!("never: {what}");
+    deadline.fail(what);
 }

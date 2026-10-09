@@ -299,7 +299,8 @@ async fn a_folder_syncs_against_graph_through_the_relay_and_status_shows_the_quo
     .await;
     let used = 6 + large.len() as u64;
     let mut quota = None;
-    for _ in 0..3000 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         quota = status_quota(&sync, "a1/photos_originals").await;
         if quota == Some((used, Some(1_000_000))) {
             break;

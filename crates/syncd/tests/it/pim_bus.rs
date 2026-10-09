@@ -78,23 +78,23 @@ fn card(uid: &str, name: &str) -> String {
     format!("BEGIN:VCARD\r\nVERSION:3.0\r\nUID:{uid}\r\nFN:{name}\r\nEND:VCARD\r\n")
 }
 
-/// Polls every 20 ms for up to a minute (a poll cycle is a second here; a loaded machine needs
-/// the margin, a passing check returns at once).
+/// Polls every 20 ms for up to [`porter_fake::GENEROUS`] (a poll cycle is a second here; a
+/// loaded machine needs the margin, a passing check returns at once).
 async fn eventually(what: &str, check: impl FnMut() -> bool) {
-    eventually_within(Duration::from_secs(60), what, check).await;
+    eventually_within(porter_fake::GENEROUS, what, check).await;
 }
 
 /// Polls every 20 ms for up to `limit`: for waits whose work grows with a loaded machine (twenty
 /// large items a round), which ten seconds does not cover when every core is busy.
 async fn eventually_within(limit: Duration, what: &str, mut check: impl FnMut() -> bool) {
-    let tries = limit.as_millis() / 20;
-    for _ in 0..tries {
+    let deadline = porter_fake::Deadline::after(limit);
+    while !deadline.passed() {
         if check() {
             return;
         }
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-    panic!("never happened within {limit:?}: {what}");
+    deadline.fail(what);
 }
 
 /// Tells a blocking helper to stop when the test ends, by success or by panic: the runtime waits

@@ -333,7 +333,8 @@ async fn used(sync: &SyncProxy<'_>, dataset: &str) -> Option<u64> {
 /// syncs to disk on every write, and a loaded machine is slow); the last reading.
 async fn used_reaches(sync: &SyncProxy<'_>, dataset: &str, want: u64) -> Option<u64> {
     let mut seen = None;
-    for _ in 0..3000 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         seen = used(sync, dataset).await;
         if seen == Some(want) {
             break;

@@ -60,7 +60,8 @@ fn spawn(bus: &PrivateBus, home: &Path, proc_root: Option<&Path>) -> Daemon {
 async fn serving(bus: &PrivateBus, daemon: &mut Daemon) -> bool {
     let probe = bus.connect().await;
     let dbus = zbus::fdo::DBusProxy::new(&probe).await.expect("proxy");
-    for _ in 0..3000 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         if dbus
             .name_has_owner(SYNC_BUS.try_into().expect("name"))
             .await
@@ -162,7 +163,8 @@ async fn the_binary_wipes_an_account_when_accountd_says_it_is_gone() {
     };
     // The daemon listens from its start; broadcast until it has acted (the match rule may be
     // added a moment after the name appears).
-    for _ in 0..3000 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         emit("a1").await;
         if !journal.exists() && !home.join("data/porter/vdir/a1").exists() {
             break;

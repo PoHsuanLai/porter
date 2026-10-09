@@ -70,7 +70,8 @@ fn spawn(bus: &PrivateBus, home: &Path, keys: Option<&str>, proc_root: Option<&P
 async fn serving(bus: &PrivateBus, daemon: &mut Daemon) -> bool {
     let probe = bus.connect().await;
     let dbus = zbus::fdo::DBusProxy::new(&probe).await.expect("proxy");
-    for _ in 0..250 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         if dbus
             .name_has_owner(porter_dbus::ACCOUNTS_BUS.try_into().expect("name"))
             .await

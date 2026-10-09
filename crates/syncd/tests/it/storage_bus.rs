@@ -257,15 +257,17 @@ async fn rig(photos: PhotosSwitch) -> Rig {
     }
 }
 
-/// Polls every 20 ms for up to thirty seconds (a loaded machine runs a cycle slowly).
+/// Polls every 20 ms for up to [`porter_fake::GENEROUS`] by the clock (a loaded machine runs a
+/// cycle slowly).
 async fn eventually(what: &str, mut check: impl FnMut() -> bool) {
-    for _ in 0..1500 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         if check() {
             return;
         }
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-    panic!("never happened: {what}");
+    deadline.fail(what);
 }
 
 async fn names(sync: &SyncProxy<'_>) -> Vec<String> {

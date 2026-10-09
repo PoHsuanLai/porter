@@ -298,7 +298,8 @@ async fn a_program_has_one_launcher_first_wins_and_a_dropped_connection_frees_it
     // The registration lives as long as the connection.
     first.leave();
     let mut freed = false;
-    for _ in 0..250 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         if second
             .peer
             .register_launcher(&["claude-code", "codex"])

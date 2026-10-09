@@ -13,8 +13,9 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 /// How long any one wait of a test may take. A wait ends in milliseconds, in seconds on a loaded
-/// machine; the harness ends a whole test after ten minutes.
-pub const DEADLINE: Duration = Duration::from_secs(60);
+/// machine, in tens of seconds on one with its swap full; the harness ends a whole test after
+/// ten minutes.
+pub const DEADLINE: Duration = porter_fake::GENEROUS;
 
 /// What `future` gives, or a panic naming `what` once [`DEADLINE`] has passed.
 pub async fn within<T>(what: &str, future: impl Future<Output = T>) -> T {

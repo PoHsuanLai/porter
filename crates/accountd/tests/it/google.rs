@@ -345,7 +345,8 @@ async fn sign_in_again(world: &World, id: &AccountId) {
         .expect("the action is accepted");
     world
         .person(async {
-            for _ in 0..400 {
+            let deadline = porter_fake::Deadline::generous();
+            while !deadline.passed() {
                 if world.account().state == AccountState::Ok {
                     return;
                 }
@@ -574,7 +575,8 @@ async fn a_refreshed_token_a_refused_refresh_and_signing_in_again_end_at_done() 
     // The action returns once it is under way; the person follows the browser step meanwhile.
     world
         .person(async {
-            for _ in 0..400 {
+            let deadline = porter_fake::Deadline::generous();
+            while !deadline.passed() {
                 if world.account().state == AccountState::Ok {
                     return;
                 }

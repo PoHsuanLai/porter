@@ -146,13 +146,14 @@ async fn proxy(connection: &zbus::Connection) -> SyncProxy<'_> {
 }
 
 async fn until<F: Future<Output = bool>>(what: &str, mut check: impl FnMut() -> F) {
-    for _ in 0..3000 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         if check().await {
             return;
         }
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-    panic!("never happened: {what}");
+    deadline.fail(what);
 }
 
 async fn remote_text(replica: &Shared, id: &RemoteId) -> Option<String> {

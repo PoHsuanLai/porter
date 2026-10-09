@@ -244,15 +244,16 @@ impl Rig {
     }
 }
 
-/// Polls `condition` until it holds, up to five seconds.
+/// Polls `condition` until it holds, up to [`porter_fake::GENEROUS`] by the clock.
 pub async fn eventually(what: &str, mut condition: impl FnMut() -> bool) {
-    for _ in 0..250 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         if condition() {
             return;
         }
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
-    panic!("timed out waiting for {what}");
+    deadline.fail(what);
 }
 
 use porter_core::Need;

@@ -245,13 +245,14 @@ fn word(on: bool) -> toml::Value {
 }
 
 async fn eventually(what: &str, mut check: impl FnMut() -> bool) {
-    for _ in 0..1500 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         if check() {
             return;
         }
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-    panic!("never happened: {what}");
+    deadline.fail(what);
 }
 
 async fn names(rig: &Rig, app: &str) -> Vec<String> {

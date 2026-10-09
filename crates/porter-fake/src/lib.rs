@@ -6,6 +6,7 @@
 
 mod accounts;
 mod clock;
+mod deadline;
 mod model;
 mod provider;
 mod recorders;
@@ -16,6 +17,7 @@ mod world;
 
 pub use accounts::{llm_account, mail_account, storage_account};
 pub use clock::FixedClock;
+pub use deadline::{Deadline, GENEROUS};
 pub use model::FakeModel;
 pub use provider::{
     FakeProvider, FakeSession, FakeSignIn, cloud_provider, llm_provider, mail_provider,

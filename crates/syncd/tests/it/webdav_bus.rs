@@ -219,7 +219,8 @@ async fn a_folder_syncs_against_nextcloud_through_the_relay_and_status_shows_the
     dataset.put("2026/IMG_1.HEIC", b"abcdef");
     eventually("the file is on the server", || puts(&rig.nextcloud) == 1).await;
     let mut quota = None;
-    for _ in 0..3000 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         quota = status_quota(&sync, "a1/photos_originals").await;
         if quota == Some((6, Some(1_000_000))) {
             break;

@@ -66,15 +66,17 @@ fn syncd_app() -> AppId {
     }
 }
 
-/// Polls every 20 ms for up to ninety seconds (a poll cycle is a second here).
+/// Polls every 20 ms for up to [`porter_fake::GENEROUS`] by the clock (a poll cycle is a second
+/// here).
 async fn eventually(what: &str, mut check: impl FnMut() -> bool) {
-    for _ in 0..4500 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         if check() {
             return;
         }
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-    panic!("never happened: {what}");
+    deadline.fail(what);
 }
 
 /// Tells a blocking helper to stop when the test ends, by success or by panic.

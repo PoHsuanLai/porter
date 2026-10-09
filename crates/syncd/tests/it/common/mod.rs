@@ -76,14 +76,17 @@ pub async fn client(
     connection
 }
 
-/// Polls `check` every 20 ms for up to a minute: a passing check returns at once, and a loaded
-/// machine (a load average over a hundred) needs far more than the few seconds an idle one does.
+/// Polls `check` every 20 ms for up to [`porter_fake::GENEROUS`] by the clock (not by counting
+/// sleeps, which a loaded machine stretches several times over): a passing check returns at
+/// once, and a loaded machine (a load average over a hundred) needs far more than the few
+/// seconds an idle one does.
 pub async fn eventually(what: &str, mut check: impl FnMut() -> bool) {
-    for _ in 0..3000 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         if check() {
             return;
         }
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
-    panic!("never happened: {what}");
+    deadline.fail(what);
 }

@@ -395,7 +395,8 @@ async fn the_bus_name_is_the_lock_between_the_command_and_the_daemon() {
     assert_eq!(take_the_name(&second).await, Err(AddError::DaemonRunning));
     drop(first);
     let mut taken = false;
-    for _ in 0..100 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         if take_the_name(&second).await.is_ok() {
             taken = true;
             break;
@@ -444,7 +445,8 @@ async fn a_daemon_started_after_the_add_sees_the_account_and_resolves_its_key_an
         porter_fake::FixedClock(porter_fake::NOW),
     );
     let mut started = Err(zbus::Error::Failure("never tried".into()));
-    for _ in 0..100 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         started = serve_with(
             &daemon_conn,
             Arc::new(setup.service().await),
