@@ -7,6 +7,7 @@ mod accountd_requests;
 mod common;
 mod dbus_accounts;
 mod dbus_open;
+mod dbus_peer;
 mod dbus_served;
 mod dbus_sheets;
 mod dbus_spaces;

@@ -28,6 +28,8 @@ mod socket;
 
 #[cfg(feature = "dbus")]
 pub use dbus::DbusTransport;
+#[cfg(feature = "dbus")]
+pub(crate) use dbus::bus_error;
 #[cfg(all(feature = "dbus", feature = "infer"))]
 pub use dbus_session::{DbusSession, MAX_ATTACHMENTS};
 pub use in_process::{InProcess, NoBroker};

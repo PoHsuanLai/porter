@@ -41,6 +41,17 @@ impl Accounts<AnyTransport> {
     }
 }
 
+#[cfg(feature = "dbus")]
+impl Accounts<crate::transport::DbusTransport> {
+    /// The accounts accountd removes, from now on: subscribes, then introduces this connection to
+    /// accountd (and again whenever accountd gets a new owner on the bus), because accountd tells
+    /// only the connections that have called it. An app that keeps something of an account (a
+    /// daemon with its mirrors) forgets it on each [`crate::RemovedAccount`].
+    pub async fn watch_removals(&self) -> Result<crate::Removals, ClientError> {
+        Ok(crate::Removals::watch(self.transport.connection()).await?)
+    }
+}
+
 /// The transport for one link, if it is reachable.
 async fn reach(link: &LinkChoice) -> Option<AnyTransport> {
     match link {

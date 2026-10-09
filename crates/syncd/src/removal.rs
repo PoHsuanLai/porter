@@ -4,23 +4,18 @@
 //! (`<data>/porter/storage/<account>`) (PLAN §2.9: "syncd | journal rows, anchors and
 //! mirrors of that account").
 //!
-//! The signal is accountd's, unicast to the apps that hold a grant for the account; the proxy
-//! matches the sender against the owner of `org.quire.Accounts1`, so a signal another connection
-//! sends does not wipe anything. The account arrives as its object path, whose last segment is
-//! the directory name (`AccountDir`); anything that is not such a path is ignored.
-//!
-//! accountd tells only the connections that have called it, so syncd calls it once at start and
-//! again whenever accountd gets a new owner on the bus (`Grants.List`, the caller's own grants):
-//! without that a restarted accountd would not know there is a syncd to tell.
+//! The signal is accountd's, unicast to the apps that hold a grant for the account;
+//! porter-client's [`Accounts::watch_removals`] matches the sender against the owner of
+//! `org.quire.Accounts1`, so a signal another connection sends does not wipe anything, and
+//! introduces syncd to accountd at the start and at every new owner (accountd tells only the
+//! connections that have called it). The account arrives as its object path's last segment,
+//! which is the directory name (`AccountDir`); anything that is not such a name is ignored.
 
 use crate::paths::{AccountDir, Paths};
 use crate::service::Hub;
-use porter_dbus::{ACCOUNTS_BUS, GrantsProxy, ManagerProxy};
+use porter_client::{Accounts, ClientError, DbusTransport};
 use std::io::ErrorKind;
-use std::pin::Pin;
 use zbus::Connection;
-use zbus::export::futures_core::Stream;
-use zbus::fdo::DBusProxy;
 
 /// Stops the account's datasets, waits until none is in a cycle, and deletes its journals and
 /// mirrors; how many directories existed. A directory already gone is not an error.
@@ -48,34 +43,15 @@ pub async fn wipe(paths: &Paths, hub: &Hub, account: &AccountDir) -> std::io::Re
     .map_err(std::io::Error::other)?
 }
 
-/// Listens for `AccountRemoved` on `connection` and wipes. A directory that cannot be removed
-/// is reported on standard error (the daemon's one log path) and the next signal is awaited.
-pub async fn watch(connection: &Connection, hub: Hub, paths: Paths) -> zbus::Result<()> {
-    let mut removals = ManagerProxy::new(connection)
-        .await?
-        .receive_account_removed()
+/// Listens for the accounts accountd removes and wipes them. A directory that cannot be removed
+/// is reported on standard error (the daemon's one log path) and the next removal is awaited.
+pub async fn watch(connection: &Connection, hub: Hub, paths: Paths) -> Result<(), ClientError> {
+    let mut removals = Accounts::over(DbusTransport::over(connection.clone()))
+        .watch_removals()
         .await?;
-    let mut owners = DBusProxy::new(connection)
-        .await?
-        .receive_name_owner_changed_with_args(&[(0, ACCOUNTS_BUS)])
-        .await?;
-    let announce = connection.clone();
     tokio::spawn(async move {
-        introduce(&announce).await;
-        while let Some(signal) =
-            std::future::poll_fn(|cx| Pin::new(&mut owners).poll_next(cx)).await
-        {
-            if signal.args().is_ok_and(|args| args.new_owner().is_some()) {
-                introduce(&announce).await;
-            }
-        }
-    });
-    tokio::spawn(async move {
-        while let Some(signal) =
-            std::future::poll_fn(|cx| Pin::new(&mut removals).poll_next(cx)).await
-        {
-            let Ok(args) = signal.args() else { continue };
-            let Some(account) = AccountDir::of_object_path(args.account().as_str()) else {
+        while let Some(removed) = removals.next().await {
+            let Some(account) = AccountDir::parse(removed.segment()) else {
                 continue;
             };
             if let Err(why) = wipe(&paths, &hub, &account).await {
@@ -84,14 +60,6 @@ pub async fn watch(connection: &Connection, hub: Hub, paths: Paths) -> zbus::Res
         }
     });
     Ok(())
-}
-
-/// Makes accountd know this connection: the call itself is the introduction, and a failure (no
-/// accountd yet) is fine, the next owner change tries again.
-async fn introduce(connection: &Connection) {
-    if let Ok(grants) = GrantsProxy::new(connection).await {
-        let _ = grants.list().await;
-    }
 }
 
 #[cfg(test)]

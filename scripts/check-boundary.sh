@@ -123,7 +123,7 @@ EDGES=(
   "storage-gdrive: porter-core porter-http porter-sync storage-webdav"
   "syncd: porter-client porter-core porter-dav porter-dbus porter-fs porter-http porter-sync storage-gdrive storage-graph storage-webdav"
   "porter-rig: porter-client porter-core porter-dbus porter-fake porter-fake-servers porter-infer"
-  "inferd: ds-settings porter-bridge porter-core porter-dbus porter-discover porter-fs porter-http porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
+  "inferd: ds-settings porter-bridge porter-client porter-core porter-dbus porter-discover porter-fs porter-http porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
 )
 for edge in "${EDGES[@]}"; do
   crate="${edge%%:*}"

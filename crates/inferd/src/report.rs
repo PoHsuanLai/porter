@@ -8,8 +8,9 @@
 use crate::cloud::accountd::Boxed;
 use crate::probe::Runtime;
 use crate::probed::Standing;
+pub use porter_client::peer::claim_to_dbus;
+use porter_client::peer::{LocalState, PeerAccounts, PeerError};
 use porter_core::{AccountId, Claim};
-use porter_dbus::{Details, PeerProxy, to_vardict};
 use std::fmt::Debug;
 
 /// Why accountd did not take a report.
@@ -34,51 +35,49 @@ pub trait Reports: Debug + Send + Sync + 'static {
     ) -> Boxed<'a, Result<AccountId, ReportFault>>;
 }
 
-/// The state's slug on the bus.
-pub fn state_slug(standing: Standing) -> &'static str {
+/// The state porter-client tells accountd for a standing.
+fn local_state(standing: Standing) -> LocalState {
     match standing {
-        Standing::Online => "ok",
-        Standing::Offline => "offline",
+        Standing::Online => LocalState::Ok,
+        Standing::Offline => LocalState::Offline,
     }
 }
 
-/// A claim as the bus carries it: the kind's slug and the claim's fields by name, as
-/// `Account.Capabilities` has them.
-pub fn claim_to_dbus(claim: &Claim) -> Option<(String, Details)> {
-    let kind = serde_json::to_value(claim.offer.kind()).ok()?;
-    let fields = match serde_json::to_value(claim).ok()? {
-        serde_json::Value::Object(fields) => fields,
-        _ => return None,
-    };
-    Some((kind.as_str()?.to_owned(), to_vardict(&fields)))
+/// The state's slug on the bus.
+pub fn state_slug(standing: Standing) -> &'static str {
+    local_state(standing).slug()
 }
 
-fn fault_of(error: &zbus::Error) -> ReportFault {
-    match error {
-        zbus::Error::MethodError(name, _, _) => match name.as_str() {
-            "org.freedesktop.DBus.Error.AccessDenied" => ReportFault::Refused,
-            "org.freedesktop.DBus.Error.InvalidArgs" => ReportFault::Rejected,
+impl From<&PeerError> for ReportFault {
+    /// What inferd does about it: a refusal and a rejection are accountd's answer, and any other
+    /// failure is "ask again at the next look".
+    fn from(error: &PeerError) -> Self {
+        match error {
+            PeerError::Denied(_) => ReportFault::Refused,
+            PeerError::Rejected(_) | PeerError::Malformed(_) => ReportFault::Rejected,
             _ => ReportFault::Unreachable,
-        },
-        zbus::Error::FDO(fdo) => match **fdo {
-            zbus::fdo::Error::AccessDenied(_) => ReportFault::Refused,
-            zbus::fdo::Error::InvalidArgs(_) => ReportFault::Rejected,
-            _ => ReportFault::Unreachable,
-        },
-        _ => ReportFault::Unreachable,
+        }
+    }
+}
+
+impl From<PeerError> for ReportFault {
+    fn from(error: PeerError) -> Self {
+        ReportFault::from(&error)
     }
 }
 
 /// accountd over the session bus: `org.quire.Accounts1.Peer.ReportLocal`.
 #[derive(Debug, Clone)]
 pub struct PeerReports {
-    connection: zbus::Connection,
+    peer: PeerAccounts,
 }
 
 impl PeerReports {
     /// Reports over `connection`.
     pub fn new(connection: zbus::Connection) -> Self {
-        Self { connection }
+        Self {
+            peer: PeerAccounts::over(&connection),
+        }
     }
 }
 
@@ -90,15 +89,10 @@ impl Reports for PeerReports {
         standing: Standing,
     ) -> Boxed<'a, Result<AccountId, ReportFault>> {
         Box::pin(async move {
-            let peer = PeerProxy::new(&self.connection)
-                .await
-                .map_err(|e| fault_of(&e))?;
-            let claims: Vec<_> = claims.iter().filter_map(claim_to_dbus).collect();
-            let id = peer
-                .report_local(runtime.provider(), claims, state_slug(standing))
-                .await
-                .map_err(|e| fault_of(&e))?;
-            AccountId::parse(&id).map_err(|_| ReportFault::Rejected)
+            Ok(self
+                .peer
+                .report_local(runtime.provider(), claims, local_state(standing))
+                .await?)
         })
     }
 }

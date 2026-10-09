@@ -20,6 +20,11 @@
 //! paths) is the default feature `infer`; an accounts-only consumer says
 //! `default-features = false, features = ["socket"]`.
 //!
+//! A porter daemon (inferd, syncd) is also a client: [`peer::PeerAccounts`] (feature `dbus`) is
+//! the typed way into accountd's daemon-only `Peer` surface (grant verdicts, the API key of a
+//! granted account, a local runtime's report, the account news), and
+//! [`Accounts::watch_removals`] hears that an account is gone.
+//!
 //! An app with no inferd turns on `engines` for [`engines::EngineHost`]: inference routed in the
 //! app and sent to the OpenAI-compatible engines it points at (a local runtime, a company's API).
 
@@ -34,7 +39,11 @@ mod error;
 mod found;
 #[cfg(feature = "dbus")]
 mod launcher;
+#[cfg(feature = "dbus")]
+pub mod peer;
 mod relays;
+#[cfg(feature = "dbus")]
+mod removals;
 #[cfg(feature = "dbus")]
 mod spaces;
 #[cfg(feature = "dbus")]
@@ -63,6 +72,8 @@ pub use porter_infer::{InferRefusal, Policy, Slot};
 #[cfg(feature = "infer")]
 pub use porter_infer::{InferSession, OpenOptions, SessionError, Traceparent};
 pub use relays::{NoRelays, RelayHost};
+#[cfg(feature = "dbus")]
+pub use removals::{Removals, RemovedAccount};
 #[cfg(feature = "dbus")]
 pub use spaces::{SpaceChanges, Spaces, SpacesError};
 #[cfg(feature = "dbus")]

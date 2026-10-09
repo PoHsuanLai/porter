@@ -26,6 +26,7 @@ serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, optional = true }
+zbus = { workspace = true, optional = true }
 zeroize = { workspace = true }
 
 [dev-dependencies]
@@ -61,7 +62,7 @@ engines = [
 # share). Pulls in the runtime, so it is off by default: the pure build reaches none.
 framed = ["dep:rustix", "dep:serde", "dep:tokio"]
 # The D-Bus transport (Linux, the desktop's accountd and inferd).
-dbus = ["framed", "dep:porter-dbus", "dep:serde_json"]
+dbus = ["framed", "dep:porter-dbus", "dep:serde_json", "dep:zbus"]
 # The latchkey socket carrier (other desktops, macOS; a named pipe on Windows is not built):
 # the agent's address, lock and start come from latchkey. Without it `SocketTransport` finds
 # nobody.

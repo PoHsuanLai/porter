@@ -18,6 +18,10 @@ test-proc-root = []
 porter-core = { workspace = true }
 porter-fs = { workspace = true }
 cua-action = { workspace = true }
+# `peer::PeerAccounts`: the typed way into accountd's daemon-only surface (verdicts, the API key,
+# the local-runtime report, the account news). Its default feature `infer` is porter-infer, which
+# inferd already has.
+porter-client = { workspace = true, features = ["dbus"] }
 porter-dbus = { workspace = true }
 porter-discover = { workspace = true }
 porter-http = { workspace = true, features = ["hyper"] }
@@ -55,7 +59,6 @@ zbus = { workspace = true }
 [dev-dependencies]
 engine-supervisor = { workspace = true, features = ["testing"] }
 model-provider = { workspace = true, features = ["testing"] }
-porter-client = { workspace = true, features = ["dbus"] }
 porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }

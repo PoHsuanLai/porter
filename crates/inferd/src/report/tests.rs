@@ -48,6 +48,12 @@ fn an_error_name_says_whether_to_ask_again() {
     );
 }
 
+/// What a bus error comes to: the one classification (porter-client's `PeerError`), then what
+/// inferd does about it.
+fn fault_of(error: &zbus::Error) -> ReportFault {
+    ReportFault::from(PeerError::from(error))
+}
+
 #[tokio::test]
 async fn with_no_accountd_every_report_is_unreachable() {
     let claims = chat("m", "m", 2048, &[LlmFeature::Chat]).claims;

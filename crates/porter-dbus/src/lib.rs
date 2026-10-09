@@ -66,7 +66,7 @@ pub use machines::{
     MACHINE_KEY_NODE, MACHINE_KEY_ONLINE, MACHINE_KEY_OS, MACHINE_KEY_OWNER, MACHINE_KEY_SSH,
     MACHINE_KEY_SSH_HOST_KEYS, machine_from_dbus, machine_to_dbus,
 };
-pub use manager::{ManagerProxy, ManagerSkeleton};
+pub use manager::{AccountRemoved, AccountRemovedStream, ManagerProxy, ManagerSkeleton};
 pub use names::{
     ACCOUNTS_BUS, ACCOUNTS_PATH, ACCOUNTS_SETTINGS_PATH, CANDIDATE_KEY_MODELS, CANDIDATE_KEY_NAME,
     CANDIDATE_KEY_NEEDS_APPROVAL, COMPUTER_ERROR_PREFIX, COMPUTER_KEY_KEY, COMPUTER_KEY_PORT,

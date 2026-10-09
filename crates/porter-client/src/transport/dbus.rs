@@ -36,9 +36,8 @@ impl DbusTransport {
             .map_err(|e| bus_error(&e))
     }
 
-    /// The connection, for the inference calls.
-    #[cfg(feature = "infer")]
-    pub(super) fn connection(&self) -> &BusConnection {
+    /// The connection, for the inference calls and the removals watch.
+    pub(crate) fn connection(&self) -> &BusConnection {
         &self.connection
     }
 
@@ -65,7 +64,7 @@ pub(super) fn slug<T: Serialize + ?Sized>(value: &T) -> Result<String, Transport
 /// A bus error as the transport's: no daemon on the name or no bus is `Unreachable`; the bus's
 /// `AccessDenied` (a caller the daemon does not know, or one without the grant) is `Denied` with
 /// the daemon's text; anything else is the other side not speaking porter's protocol.
-pub(super) fn bus_error(error: &BusError) -> TransportError {
+pub(crate) fn bus_error(error: &BusError) -> TransportError {
     // inferd's answer to a call that named its places and has none to run in.
     #[cfg(feature = "infer")]
     if let Some((reason, kind)) = porter_dbus::place_refusal_of(error)
