@@ -104,7 +104,11 @@ async fn the_request_object_is_where_the_token_says_and_the_answer_goes_to_the_c
 async fn a_call_with_no_token_gets_a_path_under_its_callers_namespace() {
     let daemon = Daemon::start([Scripted::Dismiss, Scripted::Dismiss]).await;
     let client = daemon.client().await;
+    let mut sheet = Sheet::subscribe(&client).await.expect("subscribe");
     let one = choose(&client, &Details::new()).await.expect("path");
+    // One sheet of a kind per app: the second is asked only once the first has closed.
+    let (code, _) = sheet.response(&one).await.expect("the first sheet closes");
+    assert_eq!(code, 1, "dismissed");
     let two = choose(&client, &Details::new()).await.expect("path");
     let namespace = request_namespace(&unique(&client));
     assert!(one.as_str().starts_with(&namespace), "{one}");
