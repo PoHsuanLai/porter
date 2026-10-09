@@ -5,6 +5,10 @@
 //! and the audit trail (`audit`); `service` is the `Inference1` object on the bus and `peers` who
 //! is calling. Stubs behind frozen interfaces (`speech`, `adapters`) are listed in
 //! `FINDINGS.md`.
+//!
+//! The daemon as one call is `daemon`: [`Config`] (typed; [`Config::from_env`] is the one place
+//! the environment is read), [`Daemon::build`] and [`Daemon::run`]. The binary only parses its
+//! arguments, listens for signals and calls these.
 
 mod account_news;
 mod adapters;
@@ -19,6 +23,7 @@ pub mod cloud;
 pub mod config;
 pub mod cua_run;
 pub mod cua_step;
+pub mod daemon;
 pub mod engines;
 pub mod hosts;
 pub mod local;
@@ -45,6 +50,7 @@ pub mod tee;
 pub mod watch;
 
 pub use adapters::AdapterModel;
+pub use daemon::{Config, Daemon, StartError, StopError};
 
 /// The catalog entries the hosted tests use, shared with the unit tests.
 #[cfg(test)]

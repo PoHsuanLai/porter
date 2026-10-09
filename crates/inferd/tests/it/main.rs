@@ -6,6 +6,7 @@
 mod agents;
 mod agents_local;
 mod cloud;
+mod daemon;
 mod dist;
 mod hosted;
 mod hosting;

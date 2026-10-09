@@ -53,15 +53,40 @@ impl Signals {
     }
 }
 
-/// Waits for the first signal, then runs `wind_down` (stop taking work), ends every engine of
-/// `engines`, all within `bound`; a second signal, or the bound, kills every group and returns.
-pub async fn on_signal<F: Future<Output = ()>>(
-    signals: &mut Signals,
+/// Where a request to stop comes from: the signals in the binary, a channel in a program that
+/// runs the daemon inside it. Asked twice, the second request hurries the stop.
+pub trait Shutdown {
+    /// Completes when a stop is asked for. Called again after a stop began, it completes at the
+    /// next request; a source that will never ask again never completes.
+    fn requested(&mut self) -> impl Future<Output = ()> + Send;
+}
+
+impl Shutdown for Signals {
+    async fn requested(&mut self) {
+        self.next().await;
+    }
+}
+
+/// A request is a `()` sent on the channel. Every sender dropped is no request, never a
+/// completion.
+impl Shutdown for tokio::sync::mpsc::UnboundedReceiver<()> {
+    async fn requested(&mut self) {
+        if self.recv().await.is_none() {
+            std::future::pending::<()>().await;
+        }
+    }
+}
+
+/// Waits for the first request (a signal, in the binary), then runs `wind_down` (stop taking
+/// work), ends every engine of `engines`, all within `bound`; a second request, or the bound,
+/// kills every group and returns.
+pub async fn on_signal<S: Shutdown, F: Future<Output = ()>>(
+    signals: &mut S,
     engines: &HostCloser,
     wind_down: F,
     bound: Duration,
 ) -> Ended {
-    signals.next().await;
+    signals.requested().await;
     let orderly = async {
         wind_down.await;
         engines.end_all().await;
@@ -75,7 +100,7 @@ pub async fn on_signal<F: Future<Output = ()>>(
                 Ended::TimedOut
             }
         }
-        _ = signals.next() => {
+        () = signals.requested() => {
             engines.kill_all();
             Ended::Hurried
         }
