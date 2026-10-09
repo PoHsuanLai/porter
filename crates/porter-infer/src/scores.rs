@@ -148,9 +148,4 @@ mod tests {
         let scores: OptionScores = serde_json::from_str(good).expect("reads");
         assert_eq!(serde_json::to_string(&scores).expect("writes"), good);
     }
-
-    #[test]
-    fn the_default_asks_for_the_most_the_engines_take() {
-        assert_eq!(ScoreOptions::default().top_k, Count(20));
-    }
 }

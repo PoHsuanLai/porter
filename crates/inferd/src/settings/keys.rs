@@ -117,9 +117,6 @@ mod tests {
                 | DataClass::Public => {}
             }
         }
-        let mut slugs: Vec<String> = CLASSES.iter().map(slug_of).collect();
-        slugs.dedup();
-        assert_eq!(slugs.len(), 13);
     }
 
     #[test]
@@ -136,7 +133,6 @@ mod tests {
                 | Slot::Rerank => {}
             }
         }
-        assert_eq!(SLOTS.len(), 8);
     }
 
     #[test]

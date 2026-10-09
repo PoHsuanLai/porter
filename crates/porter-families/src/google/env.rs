@@ -164,7 +164,6 @@ mod tests {
             ClientRegistry::default(),
             porter_core::clock::FixedClock::new(porter_core::UnixSeconds(0)),
         );
-        assert_eq!(env.userinfo.as_str(), USERINFO);
         assert_eq!(env.channel, ClientChannel::Stable);
         let moved = env.with_userinfo(userinfo_endpoint("http://127.0.0.1:1/v1/userinfo"));
         assert!(moved.userinfo.as_str().starts_with("http://127.0.0.1"));

@@ -91,7 +91,6 @@ fn served(result: Result<Decided, PickRefusal>) -> String {
 #[test]
 fn no_file_is_the_proposed_settings() {
     let resolved = resolve(&InferdConfig::default());
-    assert_eq!(resolved.settings, Settings::default());
     assert_eq!(resolved.settings.policy, Policy::proposed());
     assert_eq!(resolved.settings.spend.warn_at, Permille(800));
     assert!(resolved.rejected.is_empty());

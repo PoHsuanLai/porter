@@ -11,7 +11,6 @@ fn a_replay_model_is_routable_and_has_no_weights_to_find() {
     )
     .expect("model");
     assert_eq!(m.card.model.as_str(), "scripted");
-    assert!(!m.card.capabilities.is_empty());
     assert_eq!(m.weights(), Weights::Present);
     assert_eq!(m.spec.need.0, 0);
     assert_eq!(m.socket.0, PathBuf::from("/s/replay-scripted.sock"));

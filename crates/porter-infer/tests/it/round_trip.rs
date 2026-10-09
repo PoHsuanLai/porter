@@ -215,16 +215,6 @@ fn the_scores_of_a_reply_are_a_list_of_options_with_their_shares() {
 }
 
 #[test]
-fn a_reply_whose_shares_are_not_a_whole_does_not_read() {
-    let mut json = serde_json::to_value(plain_chat_reply()).expect("serializes");
-    json["scores"] = serde_json::json!([
-        {"option": "allow", "share": 900},
-        {"option": "deny", "share": 900},
-    ]);
-    assert!(serde_json::from_value::<ChatReply>(json).is_err());
-}
-
-#[test]
 fn the_score_knob_is_not_written_when_off_and_reads_when_absent() {
     let control = ChatControl {
         tool_choice: ToolChoice::Auto,

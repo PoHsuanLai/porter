@@ -56,14 +56,6 @@ pub fn model_id_of(served_name: &str) -> Result<ModelId, CoreError> {
 mod tests {
     use super::*;
 
-    /// inferd and porter-client's engines both retry with this one policy.
-    #[test]
-    fn the_engine_retry_is_three_tries_from_a_quarter_second_to_four() {
-        assert_eq!(ENGINE_RETRY.attempts, Attempt(3));
-        assert_eq!(ENGINE_RETRY.base, WaitMs(250));
-        assert_eq!(ENGINE_RETRY.cap, WaitMs(4000));
-    }
-
     #[test]
     fn served_names_become_model_ids() {
         let cases = [

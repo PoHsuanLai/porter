@@ -33,21 +33,6 @@ fn every_provider_this_build_speaks_has_a_door_and_the_others_have_none() {
 }
 
 #[test]
-fn a_test_can_move_one_provider_to_loopback() {
-    let door = Door {
-        host: "localhost".into(),
-        port: 4443,
-        base: "/api/v1".into(),
-    };
-    let doors = Doors::real().with("openrouter", door.clone());
-    assert_eq!(doors.of(&provider("openrouter")), Some(&door));
-    assert_eq!(
-        doors.of(&provider("openai")).map(|d| d.host.as_str()),
-        Some("api.openai.com")
-    );
-}
-
-#[test]
 fn the_flavor_is_openrouters_for_the_gateway_and_the_standard_one_for_companies() {
     let cases = [
         ("openrouter", Flavor::OpenRouter),

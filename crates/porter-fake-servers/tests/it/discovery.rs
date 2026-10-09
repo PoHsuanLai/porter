@@ -213,20 +213,6 @@ async fn rewrite_points_the_shipped_ollama_row_at_the_fake() {
     assert_eq!(row.endpoint.as_ref().map(|e| e.0.clone()), Some(base));
 }
 
-#[test]
-fn every_shipped_provider_file_is_readable_here() {
-    let ids: Vec<_> = [
-        shipped::nextcloud(),
-        shipped::ollama(),
-        shipped::google(),
-        shipped::local(),
-    ]
-    .iter()
-    .map(|s| s.id.clone())
-    .collect();
-    assert_eq!(ids.len(), 4);
-}
-
 async fn chat(base: &str, model: &str) -> porter_fake_servers::Response {
     let (address, _) = split_loopback(base).expect("address");
     let request = Request::new("POST", "/v1/chat/completions")

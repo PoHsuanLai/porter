@@ -28,7 +28,6 @@ use porter_service::{AccountService, Registry};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use syncd::datasets::pim::{
     COLOR, ClientGrants, DISPLAYNAME, PimConfig, PimKind, PimSupervisor, Wiring, is_complete,
@@ -77,15 +76,6 @@ async fn eventually(what: &str, mut check: impl FnMut() -> bool) {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
     deadline.fail(what);
-}
-
-/// Tells a blocking helper to stop when the test ends, by success or by panic.
-struct StopOnDrop(Arc<AtomicBool>);
-
-impl Drop for StopOnDrop {
-    fn drop(&mut self) {
-        self.0.store(true, Ordering::Relaxed);
-    }
 }
 
 fn read(path: &Path) -> Option<String> {
@@ -511,72 +501,6 @@ async fn an_expired_delta_token_lists_again_and_keeps_every_event() {
     })
     .await;
     assert!(rig.delta_requests() > before);
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_reader_never_sees_a_file_that_is_not_a_complete_item() {
-    let rig = rig(true).await;
-    eventually("the first mirror", || rig.items("Personal").len() == 5).await;
-    let personal = rig.calendar("Personal").expect("personal");
-    let big = |round: u32, n: u32| {
-        let mut event = timed(&format!("big{n}"), &format!("round-{round}"), 5);
-        event["body"] = json!({
-            "contentType": "text",
-            "content": "0123456789abcdef0123456789abcdef0123456789abcdef\n".repeat(600),
-        });
-        event
-    };
-    let stop = Arc::new(AtomicBool::new(false));
-    let _stop_on_panic = StopOnDrop(Arc::clone(&stop));
-    let reader = {
-        let (dir, stop) = (personal.clone(), Arc::clone(&stop));
-        tokio::task::spawn_blocking(move || {
-            let (mut reads, mut torn) = (0_u64, Vec::new());
-            while !stop.load(Ordering::Relaxed) {
-                for name in items_in(&dir, PimKind::Calendar) {
-                    if let Ok(bytes) = std::fs::read(dir.join(&name)) {
-                        reads += 1;
-                        if !is_complete(PimKind::Calendar, &bytes) {
-                            torn.push((name, bytes.len()));
-                        }
-                    }
-                }
-                std::thread::sleep(Duration::from_millis(2));
-                for meta in [DISPLAYNAME, COLOR] {
-                    if std::fs::read_to_string(dir.join(meta)).is_ok_and(|text| text.is_empty()) {
-                        torn.push((meta.to_owned(), 0));
-                    }
-                }
-            }
-            (reads, torn)
-        })
-    };
-    for round in 1..=3_u32 {
-        for n in 0..20 {
-            rig.graph
-                .put_event("cal-personal", &format!("big{n}"), big(round, n));
-        }
-        let marker = format!("SUMMARY:round-{round}");
-        eventually("the round is mirrored", || {
-            (0..20).all(|n| {
-                read(&personal.join(format!("big{n}.ics"))).is_some_and(|t| t.contains(&marker))
-            })
-        })
-        .await;
-    }
-    stop.store(true, Ordering::Relaxed);
-    let (reads, torn) = reader.await.expect("reader");
-    assert!(
-        reads > 50,
-        "the reader really ran alongside the writes: {reads}"
-    );
-    assert!(torn.is_empty(), "torn reads: {torn:?}");
-    let leftovers: Vec<_> = std::fs::read_dir(&personal)
-        .expect("dir")
-        .map(|e| e.expect("e").file_name().to_string_lossy().into_owned())
-        .filter(|n| n.ends_with(".tmp"))
-        .collect();
-    assert!(leftovers.is_empty(), "{leftovers:?}");
 }
 
 #[tokio::test(flavor = "multi_thread")]

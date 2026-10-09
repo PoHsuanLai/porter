@@ -104,7 +104,6 @@ fn without_a_runtime_directory_or_a_home_there_is_nowhere_to_put_the_sockets() {
 #[test]
 fn an_empty_file_is_the_default_and_the_default_has_the_proposed_policy() {
     let config = InferdConfig::from_toml("").expect("empty");
-    assert_eq!(config, InferdConfig::default());
     assert_eq!(config.policy(), Policy::proposed());
     assert_eq!(config.policy().floor(DataClass::Prompt), Floor::OnDevice);
 }

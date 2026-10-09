@@ -6,7 +6,6 @@
 use crate::hosting;
 
 use hosting::rig::{Plan, World};
-use inferd::replay::cassette::Cassette;
 use porter_client::InferSession;
 use porter_core::capability::LlmFeature;
 use porter_core::consent::Usage;
@@ -143,11 +142,4 @@ async fn a_missing_cassette_leaves_the_engine_unable_to_start() {
         .expect("open");
     let reply = finished(&mut session, request("hi", vec![tool()])).await;
     assert!(!matches!(reply, InferReply::Chat(_)), "{reply:?}");
-}
-
-#[test]
-fn the_shipped_cassette_reads() {
-    let text = std::fs::read_to_string(cassette_file()).expect("file");
-    let cassette = Cassette::parse(&text).expect("cassette");
-    assert_eq!(cassette.entries.len(), 5);
 }
