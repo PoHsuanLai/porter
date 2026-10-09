@@ -309,7 +309,7 @@ async fn the_dataset_follows_the_grant_and_an_account_removal_wipes_the_mirror()
 
     // The engine is stopped: a remote change no longer arrives.
     rig.google.drive_put_file("late.txt", b"late");
-    tokio::time::sleep(Duration::from_millis(2500)).await;
+    tokio::time::sleep(common::poll_time(2500)).await;
     assert!(!local(&rig, "late.txt").exists());
 
     // The grant comes back: the folder is picked up again where it was.

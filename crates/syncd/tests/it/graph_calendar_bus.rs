@@ -438,7 +438,7 @@ async fn a_local_edit_a_deletion_and_a_new_file_are_never_sent_and_a_remote_chan
     )
     .expect("new file");
     // Three poll cycles pass.
-    tokio::time::sleep(Duration::from_millis(3500)).await;
+    tokio::time::sleep(common::poll_time(3500)).await;
     let writes: Vec<_> = rig
         .graph
         .hits()
@@ -478,7 +478,7 @@ async fn a_local_edit_a_deletion_and_a_new_file_are_never_sent_and_a_remote_chan
 async fn an_expired_delta_token_lists_again_and_keeps_every_event() {
     let rig = rig(true).await;
     eventually("the first mirror", || rig.items("Personal").len() == 5).await;
-    tokio::time::sleep(Duration::from_millis(1500)).await;
+    tokio::time::sleep(common::poll_time(1500)).await;
     let before = rig.delta_requests();
     rig.graph
         .put_event("cal-personal", "ev-extra", timed("uid-extra", "Extra", 6));
@@ -500,7 +500,7 @@ async fn an_expired_delta_token_lists_again_and_keeps_every_event() {
 #[tokio::test(flavor = "multi_thread")]
 async fn an_account_with_no_calendars_mirrors_nothing_and_says_nothing_is_wrong() {
     let rig = rig(false).await;
-    tokio::time::sleep(Duration::from_millis(1500)).await;
+    tokio::time::sleep(common::poll_time(1500)).await;
     assert!(
         rig.account_dir()
             .read_dir()

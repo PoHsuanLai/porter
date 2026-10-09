@@ -150,7 +150,10 @@ fn slow_health(dir: &Scratch, name: &str, delay: Duration) -> PathBuf {
     path
 }
 
-#[tokio::test]
+/// The clock is paused, so the 1.5 s the engine takes and the probe's own bound are both on the
+/// test runtime's timer and cost no real time: the value stays 1.5 s and the probe's timeout is
+/// still the one under test.
+#[tokio::test(start_paused = true)]
 async fn an_engine_that_answers_health_after_a_second_and_a_half_is_ready() {
     let dir = Scratch::new("hosts-slow-health");
     let slow = slow_health(&dir, "slow.sock", Duration::from_millis(1500));

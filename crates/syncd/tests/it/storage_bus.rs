@@ -402,7 +402,7 @@ async fn a_revoked_grant_drops_the_dataset_keeps_the_files_and_a_removed_account
 
     // The engine is stopped: a remote change no longer arrives.
     rig.graph.put_file("late.txt", b"late");
-    tokio::time::sleep(Duration::from_millis(2500)).await;
+    tokio::time::sleep(common::poll_time(2500)).await;
     assert!(!local(&rig, "late.txt").exists());
 
     // The grant comes back: the folder is picked up again where it was.

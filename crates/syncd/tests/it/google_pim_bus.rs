@@ -618,7 +618,7 @@ async fn local_edits_deletions_and_new_files_are_never_sent_and_a_remote_change_
     // version must not undo a local edit.
     std::fs::write(errands.join("t-report.ics"), "locally edited").expect("edit task");
     // Three poll cycles pass.
-    tokio::time::sleep(Duration::from_millis(3500)).await;
+    tokio::time::sleep(common::poll_time(3500)).await;
     let writes: Vec<_> = rig
         .google
         .hits()
@@ -676,7 +676,7 @@ async fn local_edits_deletions_and_new_files_are_never_sent_and_a_remote_change_
 async fn expired_sync_tokens_list_again_and_keep_every_item() {
     let rig = rig(&ALL).await;
     eventually("the first mirror", || everything_mirrored(&rig)).await;
-    tokio::time::sleep(Duration::from_millis(1500)).await;
+    tokio::time::sleep(common::poll_time(1500)).await;
     let before = rig.google.hits().len();
     rig.google.put_event(
         "cal-personal",
@@ -735,7 +735,7 @@ async fn a_tasks_grant_without_a_calendar_grant_mirrors_only_tasks() {
             && rig.items("Errands", PimKind::Tasks).len() == 1
     })
     .await;
-    tokio::time::sleep(Duration::from_millis(1500)).await;
+    tokio::time::sleep(common::poll_time(1500)).await;
     assert_eq!(rig.dirs().len(), 2, "{:?}", rig.dirs());
     assert!(
         rig.dirs()

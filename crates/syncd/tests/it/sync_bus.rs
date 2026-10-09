@@ -375,7 +375,7 @@ async fn a_running_engine_syncs_to_its_replica_and_the_bus_shows_it_until_it_is_
     sync.pause("a1/photos_originals").await.expect("pause");
     tokio::time::sleep(Duration::from_millis(100)).await;
     dataset.put("IMG_2.HEIC", b"defg");
-    tokio::time::sleep(Duration::from_millis(1500)).await;
+    tokio::time::sleep(common::poll_time(1500)).await;
     assert_eq!(
         used(&sync, "a1/photos_originals").await,
         Some(3),

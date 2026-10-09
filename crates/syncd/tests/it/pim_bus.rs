@@ -487,7 +487,7 @@ async fn an_expired_sync_token_lists_again_and_downloads_nothing_it_already_has(
     })
     .await;
     // Let the cycles that follow the first settle, then count what was downloaded so far.
-    tokio::time::sleep(Duration::from_millis(1500)).await;
+    tokio::time::sleep(common::poll_time(1500)).await;
     let gets = rig.requests("GET");
     assert_eq!(gets, 3, "each calendar item exactly once");
 
@@ -498,7 +498,7 @@ async fn an_expired_sync_token_lists_again_and_downloads_nothing_it_already_has(
     rig.nextcloud.expire_sync_tokens();
     eventually("the new item arrives", || personal.join("ev3.ics").exists()).await;
     // Every collection was listed again (a REPORT with no token), and only the new item came.
-    tokio::time::sleep(Duration::from_millis(1500)).await;
+    tokio::time::sleep(common::poll_time(1500)).await;
     assert_eq!(
         rig.requests("GET"),
         gets + 1,
@@ -525,7 +525,7 @@ async fn a_local_edit_a_deletion_and_a_new_file_are_never_sent_to_the_server() {
     std::fs::remove_file(personal.join("ev2.ics")).expect("delete");
     std::fs::write(personal.join("mine.ics"), event("mine", "Local only")).expect("new file");
     // Three poll cycles pass.
-    tokio::time::sleep(Duration::from_millis(3500)).await;
+    tokio::time::sleep(common::poll_time(3500)).await;
     let writes: Vec<_> = rig
         .nextcloud
         .hits()
@@ -557,7 +557,9 @@ async fn a_reader_never_sees_a_file_that_is_not_a_complete_item() {
     let rig = rig(true).await;
     let personal = rig.calendar("personal");
     let big = |round: u32, n: u32| {
-        let pad = "X-PAD:0123456789abcdef0123456789abcdef0123456789abcdef\r\n".repeat(4000);
+        // Large enough to cross many pages (a plain write of it can be seen half done), no
+        // larger: the other two providers' versions of this proof use about 30 KB.
+        let pad = "X-PAD:0123456789abcdef0123456789abcdef0123456789abcdef\r\n".repeat(1000);
         format!(
             "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:big{n}\r\nSUMMARY:round-{round}\r\n{pad}END:VEVENT\r\nEND:VCALENDAR\r\n"
         )

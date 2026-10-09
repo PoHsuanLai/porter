@@ -76,6 +76,14 @@ pub async fn client(
     connection
 }
 
+/// How long the rigs take for what a daemon would take `ms` for: their scheduler seconds are
+/// `Settings::quick().time_scale` to the real one. Only for waits that "nothing happens" in: a
+/// loaded machine runs fewer polls in that time, which makes the proof thinner, never the test
+/// flaky. A wait for something to happen is [`eventually`].
+pub fn poll_time(ms: u64) -> std::time::Duration {
+    std::time::Duration::from_millis(ms) / syncd::scheduler::Settings::quick().time_scale
+}
+
 /// Polls `check` every 20 ms for up to [`porter_fake::GENEROUS`] by the clock (not by counting
 /// sleeps, which a loaded machine stretches several times over): a passing check returns at
 /// once, and a loaded machine (a load average over a hundred) needs far more than the few

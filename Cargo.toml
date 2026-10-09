@@ -146,3 +146,29 @@ missing_debug_implementations = "warn"
 # it is most of what a test link carries.
 [profile.dev.package."*"]
 debug = false
+
+# The crypto crates run optimised in the tests: oo7's file keyring derives its key with 100 000
+# rounds of PBKDF2, and the contract test of that store took 1.5 s of it unoptimised. They are
+# small, so the build cost is a few seconds, once.
+[profile.dev.package.pbkdf2]
+opt-level = 3
+[profile.dev.package.hmac]
+opt-level = 3
+[profile.dev.package.sha2]
+opt-level = 3
+[profile.dev.package.digest]
+opt-level = 3
+[profile.dev.package.aes]
+opt-level = 3
+[profile.dev.package.cbc]
+opt-level = 3
+[profile.dev.package.cipher]
+opt-level = 3
+[profile.dev.package.block-buffer]
+opt-level = 3
+[profile.dev.package.crypto-common]
+opt-level = 3
+[profile.dev.package.generic-array]
+opt-level = 3
+[profile.dev.package.inout]
+opt-level = 3
