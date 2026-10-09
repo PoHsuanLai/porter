@@ -37,6 +37,7 @@ mod sheet_backend;
 mod spaces;
 mod sync;
 mod tailnet;
+mod target;
 mod tokens;
 
 pub use account::{AccountProxy, AccountSkeleton};
@@ -92,6 +93,7 @@ pub use photos_picker::{
     PICKER_WAITING, PhotosPickerProxy, PickerSkeleton,
 };
 pub use ready::serve_ready;
+pub use target::BusTarget;
 pub use refusal::{REFUSAL_ERROR_PREFIX, refusal_error_name, refusal_from_error_name};
 pub use request::{RequestProxy, RequestSkeleton};
 pub use sheet::{

@@ -58,6 +58,10 @@
 //!   `CREATES_PER_WINDOW` a minute each); Settings and the shell rename, restyle and remove, and
 //!   a removal ends the grants scoped to that Space.
 //!
+//! - The daemon as one call (`daemon`): [`Config`] (typed; [`Config::from_env`] is the one place
+//!   the environment is read), [`Daemon::build`] and [`Daemon::run`], and [`add_account`] for
+//!   `accountd add`. The binary only parses its arguments and calls these.
+//!
 
 mod account;
 pub mod add;
@@ -65,8 +69,10 @@ mod app_names;
 mod audit;
 mod callers;
 mod client_rows;
+mod clock;
 mod core;
 mod credentials;
+pub mod daemon;
 mod errors;
 mod grants;
 mod handoff;
@@ -95,6 +101,7 @@ pub use app_names::AppNames;
 pub use audit::FileAudit;
 pub use callers::{Callers, TableCallers};
 pub use core::{Host, Options, serve, serve_with};
+pub use daemon::{AddCommandError, Config, Daemon, StartError, add_account};
 pub use errors::RefusedError;
 pub use keys::{KeyDesk, SecretsDesk, sealed_key};
 pub use launchers::{DEFAULT_BOUND, DEFAULT_TICK, LoginTiming};

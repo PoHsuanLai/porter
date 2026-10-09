@@ -8,6 +8,7 @@ mod agent_login;
 mod binary;
 mod bus_sheets;
 mod common;
+mod daemon;
 mod dist;
 mod file_keys;
 mod google;
