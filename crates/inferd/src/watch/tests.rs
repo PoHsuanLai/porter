@@ -385,14 +385,10 @@ fn a_runtime_lost_to_timeouts_is_down_only_on_the_third_look_in_a_row() {
     confirm(&mut misses, vec![], std::slice::from_ref(&ollama), false);
     assert!(misses.is_empty());
     // Changes that are not a stop pass untouched.
+    let up_now = vec![Change::Up(ollama.clone())];
     assert_eq!(
-        confirm(
-            &mut misses,
-            vec![Change::Up(ollama.clone())],
-            &[ollama.clone()],
-            true
-        ),
-        (vec![Change::Up(ollama)], false)
+        confirm(&mut misses, up_now.clone(), &[ollama], true),
+        (up_now, false)
     );
 }
 
