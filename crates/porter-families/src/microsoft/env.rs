@@ -3,7 +3,7 @@
 //! hand in a fake issuer's seam and a counting clock; the caller hands in its clock and the
 //! clients files, and [`MicrosoftEnv::with_client_files`] is what accountd uses.
 
-use crate::env_common::{ClientFiles, clock_of, clients_now, system_random};
+use crate::env_common::{ClientFiles, clients_now, clock_of, system_random};
 pub use crate::env_common::{Clock, Random};
 use porter_http::Http;
 use porter_oauth::ClientRegistry;

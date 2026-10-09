@@ -120,10 +120,8 @@ impl World {
             porter_core::clock::SystemClock,
         )
         .with_channel(ClientChannel::Development)
-            .with_poll_slice(Duration::from_millis(50))
-            .with_userinfo(
-                porter_core::EndpointUrl::parse(&google.api.userinfo_url()).expect("url"),
-            );
+        .with_poll_slice(Duration::from_millis(50))
+        .with_userinfo(porter_core::EndpointUrl::parse(&google.api.userinfo_url()).expect("url"));
         let providers = vec![FamilyProvider::Google(GoogleProvider::with_env(spec, env))];
 
         let bus = PrivateBus::start();

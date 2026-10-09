@@ -129,17 +129,17 @@ impl Rig {
             porter_core::clock::FixedClock::new(UnixSeconds(0)),
         )
         .with_channel(ClientChannel::Development)
-            .with_poll_slice(Duration::from_millis(20))
-            .with_userinfo(
-                porter_core::EndpointUrl::parse(&handle.userinfo_url()).expect("userinfo url"),
-            )
-            .with_clock(Arc::new(move || {
-                UnixSeconds(ticking.load(Ordering::SeqCst))
-            }))
-            .with_random(Arc::new(move || {
-                let n = u8::try_from(counter.fetch_add(1, Ordering::SeqCst) % 200).unwrap_or(0);
-                Some(([n; 32], [n.wrapping_add(1); 16]))
-            }));
+        .with_poll_slice(Duration::from_millis(20))
+        .with_userinfo(
+            porter_core::EndpointUrl::parse(&handle.userinfo_url()).expect("userinfo url"),
+        )
+        .with_clock(Arc::new(move || {
+            UnixSeconds(ticking.load(Ordering::SeqCst))
+        }))
+        .with_random(Arc::new(move || {
+            let n = u8::try_from(counter.fetch_add(1, Ordering::SeqCst) % 200).unwrap_or(0);
+            Some(([n; 32], [n.wrapping_add(1); 16]))
+        }));
         let provider = GoogleProvider::with_env(spec.clone(), env);
         Self {
             google,

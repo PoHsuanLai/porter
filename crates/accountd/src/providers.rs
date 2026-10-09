@@ -240,18 +240,18 @@ pub fn family_of(spec: ProviderSpec, io: &FamilyIo) -> Result<FamilyProvider, Bo
             GenericProvider::new(spec, io.http.clone(), io.dns.clone())
                 .with_providers(io.providers.clone()),
         )),
-        (AuthKind::OAuthPkce, Some(Issuer::Microsoft)) => Ok(FamilyProvider::Microsoft(
-            MicrosoftProvider::with_env(
+        (AuthKind::OAuthPkce, Some(Issuer::Microsoft)) => {
+            Ok(FamilyProvider::Microsoft(MicrosoftProvider::with_env(
                 spec,
                 MicrosoftEnv::with_client_files(io.clients.clone(), SystemClock),
-            ),
-        )),
-        (AuthKind::OAuthPkce, Some(Issuer::Google)) => Ok(FamilyProvider::Google(
-            GoogleProvider::with_env(
+            )))
+        }
+        (AuthKind::OAuthPkce, Some(Issuer::Google)) => {
+            Ok(FamilyProvider::Google(GoogleProvider::with_env(
                 spec,
                 GoogleEnv::with_client_files(io.clients.clone(), SystemClock),
-            ),
-        )),
+            )))
+        }
         (AuthKind::ApiKey, _) => Ok(FamilyProvider::ApiKey(ApiKeyProvider::new(spec))),
         (AuthKind::AgentLogin, _) => Ok(FamilyProvider::AgentLogin(AgentLoginProvider::new(spec))),
         (AuthKind::OwnProgram, _) => Ok(FamilyProvider::Tailnet(TailnetProvider::new(

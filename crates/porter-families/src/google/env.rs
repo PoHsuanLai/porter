@@ -7,7 +7,7 @@
 //! Google's installed-app flow is the loopback redirect only: its device flow serves a short
 //! list of scopes that has none of Calendar, People or Tasks, so there is no device-code path.
 
-use crate::env_common::{ClientFiles, Clock, Random, clock_of, clients_now, system_random};
+use crate::env_common::{ClientFiles, Clock, Random, clients_now, clock_of, system_random};
 use porter_core::EndpointUrl;
 use porter_http::Http;
 use porter_oauth::ClientRegistry;
