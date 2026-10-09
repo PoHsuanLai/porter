@@ -1434,8 +1434,10 @@ dependencies = [
  "porter-http",
  "porter-infer",
  "porter-provider",
+ "porter-router",
  "porter-tailnet",
  "porter-tailscale",
+ "porter-turns",
  "rustix",
  "serde",
  "serde_json",
@@ -2212,6 +2214,7 @@ dependencies = [
  "porter-secrets",
  "porter-service",
  "porter-tailscale",
+ "porter-turns",
  "rustix",
  "serde",
  "serde_json",
@@ -2432,6 +2435,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "porter-router"
+version = "0.1.0"
+dependencies = [
+ "cua-action",
+ "engine-supervisor",
+ "model-catalog",
+ "model-http",
+ "model-openai-compat",
+ "model-provider",
+ "porter-core",
+ "porter-infer",
+ "rustix",
+ "serde",
+ "speech-provider",
+ "thiserror",
+ "toml",
+ "vision-prep",
+]
+
+[[package]]
 name = "porter-secrets"
 version = "0.1.0"
 dependencies = [
@@ -2509,6 +2532,30 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
+]
+
+[[package]]
+name = "porter-turns"
+version = "0.1.0"
+dependencies = [
+ "cua-action",
+ "cua-parse",
+ "cua-session",
+ "cua-vendors",
+ "engine-supervisor",
+ "model-extract",
+ "model-http",
+ "model-openai-compat",
+ "model-provider",
+ "porter-bridge",
+ "porter-core",
+ "porter-infer",
+ "porter-router",
+ "rustix",
+ "serde",
+ "serde_json",
+ "tokio",
+ "vision-prep",
 ]
 
 [[package]]
