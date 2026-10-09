@@ -41,6 +41,23 @@ jobs:
       - name: crate boundaries
         run: scripts/check-boundary.sh
 
+  # The feature sets the consumers build porter in, each with clippy and -D warnings
+  # (scripts/check-features.sh). Kept out of the lint job so every gate does not pay for it.
+  features:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: private dependencies
+        env:
+          DEPS_TOKEN: ${{ secrets.DEPS_TOKEN }}
+        run: git config --global url."https://x-access-token:${DEPS_TOKEN}@github.com/".insteadOf "https://github.com/"
+      - name: linker
+        run: sudo apt-get update && sudo apt-get install -y clang mold
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: consumer feature sets
+        run: scripts/check-features.sh
+
   # Everything that does not start a session bus. The packages left out here are the ones whose
   # tests do (see the next job).
   test:
