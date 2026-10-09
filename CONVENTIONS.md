@@ -25,9 +25,12 @@ What porter adds or decides differently, each with its reason:
    `inferd` read the system clock, the environment or the bus.
 5. **One integration-test executable per crate.** A crate's integration tests are modules of
    `crates/<crate>/tests/it/main.rs` (`mod <topic>;`, one `mod common;` there, helpers used as
-   `crate::common`); fixtures stay in `tests/fixtures/`. A separate `tests/<name>.rs` with a
-   `[[test]]` entry in the crate's `Cargo.toml` and a one-line reason is for a test that cannot
-   share a process: it starts its own test executable again as a fake child by test name
-   (inferd `attached`, `engine_group`, `engine_start`, `shutdown`; porter-client `connect` and `socket_accounts`;
-   porter-rig `secrets`), sets process-wide state, or needs a `required-features` the rest must
-   not. Dependencies build without debug info (`[profile.dev.package."*"]`).
+   `crate::common`); fixtures stay in `tests/fixtures/`. A test that starts its own test
+   executable again as a fake child does so by module path (`shutdown::fake_inferd`), so it is a
+   module too. Every `tests/it/main.rs` carries the one-line guard test
+   `porter_fake::guard::every_module_is_declared(env!("CARGO_MANIFEST_DIR"), "tests/it",
+   include_str!("main.rs"))`, which fails when a file or module directory there is not declared.
+   A separate `tests/<name>.rs` with a `[[test]]` entry in the crate's `Cargo.toml` and a one-line
+   reason is for a test that sets process-wide state or needs a `required-features` (or a
+   feature-less build) the rest must not: porter-client `socket_accounts` builds without
+   porter-infer. Dependencies build without debug info (`[profile.dev.package."*"]`).

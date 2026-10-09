@@ -1985,3 +1985,33 @@ Every other forbidden effect (`zbus`, `zvariant`, `reqwest`, `ureq`, `oo7`, `key
 **Open.**
 - `dbus,infer` without `socket` warns that `FramedSession::write_body` and `read_body_with_fds` are never used (`transport/framed.rs:60`). It predates this lane (the methods serve only the socket carrier), and the gate builds with `--all-features`, so it does not fail there. Owner: the next lane that touches `framed.rs`.
 - Turning `in-process` off by default (a later batch): no consumer needs a change, as above. The consumers that depend on the service in process (mailo's `mail-app` uses `porter-service` directly) name it themselves.
+
+## Lane test-cut-porter (cuts, merges, binaries and speed-ups; base `326564f`, 2026-10-10)
+
+Plan `~/rs-wt/test-cut/porter.md`, rule `~/rs-wt/test-cut/RUBRIC.md`. Every row was re-grepped at the base first.
+
+| | before (`326564f`) | after |
+|---|---|---|
+| tests (nextest, jailed gate) | 2608 (+1 skipped) | 2609 (+1 skipped) |
+| test binaries | 66 (32 integration) | 60 (26 integration) |
+| gate test run, wall | 47.1 s | 5.5 s (11.1 s and 13.8 s at the two steps before; the machine is shared) |
+| slowest test | photos 1000, 42.6 s | 3.4 s (inferd engine_start) |
+
+The test count is +1 net because the cuts (-8) and merges (-17) are matched by the 26 guard tests and the guard's own unit test (+26).
+
+**Cuts** (commit 1): eight tests, six assertions. Each cut's covering test was opened and named in the commit message. Plan rows not applied: `the_system_random_gives_fresh_bytes` stays (K4: the only test that the PKCE/state random is not a constant); the google and microsoft signin tables stay apart (each has its own copy of `refusal` and `loopback_fault`, so there is no shared mapper to table); google_pim_bus and graph_calendar_bus "local edits are never sent" stay (their never-send assertion is per provider fake; only the shared mirror half is the same as pim_bus's). The accountd/syncd `paths.rs` shared names are two separate codes, a layers note only.
+
+**Merges** (commit 2): seventeen tests into six tables or a scenario; every case is a named row or a numbered step. porter-proxy now has `login.rs` with one table per login behaviour and one row per protocol (imap, pop3, smtp); sieve stays apart (its fake records logins in another shape). The new smtp rows (untrusted certificate, nothing listening) are cases the old tests did not have.
+
+**Binaries** (commit 3): 32 to 26. inferd's four loose files, porter-client `connect` and porter-rig `secrets` are modules of their `tests/it`; the fake-child names are module paths. `socket_accounts` stays its own binary and says why. `porter_fake::guard::every_module_is_declared` (with its own unit test) is called by a one-line test in every `tests/it/main.rs`; twelve crates gained `porter-fake` as a dev-dependency for it (a dev-dependency cycle is fine for cargo; the boundary script only reads normal and build edges). CONVENTIONS item 5 says so.
+
+**Speed-ups.**
+- Item 1, the thousand photos: 42.6 s to 0.8 s in the gate (1.7 s alone), still 1000. The cause was not the disk, the build profile or the listing: B's download made 44 ms a request, which is Nagle's algorithm against the peer's delayed acknowledgement on loopback (the fake servers answered in two writes and the rig dialled without `TCP_NODELAY`). Fixed in porter-fake-servers `net.rs` (every accepted and dialled connection) and the photos rig's dial. (a) dependencies at opt-level 2 and the /dev/shm half of (b) changed nothing and are not applied; `synchronous=OFF` through `Journal::open_unflushed` (cfg(test)) took 1.5 s more off and is applied. (d) 520 photos was not needed and not done.
+- Item 2, polls in tenths of a second: not a millisecond `Settings` (the scheduler dates in `UnixSeconds`) but `Settings::time_scale` (scheduler seconds per real second, 1 in the daemon), `clock::Wall` (the engine clock that follows it; scale 1 is exactly `SystemClock`) and `driver::step` dividing by it. The three supervisors and the photos run build their engine clock from `settings.time_scale`. `Settings::quick()` replaces thirteen copies of the same literal and sets 10.
+- Item 5, the fixed "nothing happens" sleeps: they became `common::poll_time(ms)`, the same number of scheduler seconds. I did not add a cycle counter: the status is a wire dictionary, and a counter in it would be a vocabulary change. The cost: on a loaded machine these waits cover fewer polls, so the proof is thinner, never flaky. **Left for the owner**: a cycle counter in the hub (not in the wire status) would let these wait for N cycles instead.
+- Item 3, the torn-read payload (pim_bus, K1): 4000 padding lines a file to 1000 (58 KB, the other two providers use 30 KB); three rounds of twenty and `reads > 200` unchanged. Not batched.
+- Item 9, the hosts 1.5 s health test: `start_paused`; the 1.5 s and the probe's own timeout stay in play. 1.5 s to 0.004 s.
+- Item 10: oo7 has no setting for fewer PBKDF2 rounds (it refuses fewer than its minimum), so the crypto crates (pbkdf2, hmac, sha2, digest, aes, cbc, cipher and their blocks) build at opt-level 3 in dev instead: `oo7_file_backend_keeps_the_contract` 1.46 s to 0.28 s.
+- **Not done, with why.** Item 6 (the 400 ms after `Pause`): the pause shows in Status at once, so Status cannot tell that an in-flight cycle has ended; the sleep is a settle for a cycle, and a shorter one would add a race that appears only under load. Item 7 (engine_start 3.1 s to 0.45 s): the same test asserts that three requests inside the pause start nothing, which a 400 ms pause would turn into a race under load. Item 8 (HELD 2 s to 500 ms): HELD is the daemon's artificial start-up delay, and the test must make its call before it ends: proxy and a 300 ms sleep take about 0.6 s on a quiet machine, so 500 ms would let the held runtime go first and the K1 proof pass without proving anything. All three tests stay as they are; the three `a_call_made_as_soon_as_the_name_is_owned_is_answered` at 2.87 s and engine_start at 3.4 s now set the wall.
+
+**Found on the way.** `cargo clippy --workspace --all-targets -- -D warnings` (no `--all-features`) fails at the base on porter-client (`write_body` and `read_body_with_fds` never used without the dbus feature); the gate uses `--all-features` and is clean. Another lane (layers-client-feature) is on it.
