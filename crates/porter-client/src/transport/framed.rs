@@ -7,6 +7,7 @@
 
 use crate::error::TransportError;
 use porter_core::wire::{FrameRead, decode_frame, encode_frame};
+#[cfg(feature = "socket")]
 use rustix::net::{RecvAncillaryBuffer, RecvAncillaryMessage, RecvFlags, recvmsg};
 use std::mem::MaybeUninit;
 use std::os::fd::OwnedFd;
@@ -56,7 +57,9 @@ impl FramedSession {
         }
     }
 
-    /// Writes one frame of any body (the hello, or an accountd call).
+    /// Writes one frame of any body (the hello, or an accountd call). Only the socket link writes
+    /// a bare body; the bus session's frames go through `InferSession::send`.
+    #[cfg(feature = "socket")]
     pub(crate) async fn write_body<T: serde::Serialize>(
         &mut self,
         body: &T,
@@ -90,7 +93,9 @@ impl FramedSession {
 
     /// Reads one frame of any body with the descriptors that rode on the bytes of it (a relay's
     /// end, on `AccountsReply::Authenticated`). Every descriptor received is returned, in
-    /// order, so the caller can refuse a reply that brings too many or too few.
+    /// order, so the caller can refuse a reply that brings too many or too few. Only the socket
+    /// link's accountd replies carry descriptors this way.
+    #[cfg(feature = "socket")]
     pub(crate) async fn read_body_with_fds<T: serde::de::DeserializeOwned>(
         &mut self,
     ) -> Result<(T, Vec<OwnedFd>), TransportError> {
