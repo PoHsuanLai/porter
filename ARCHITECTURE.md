@@ -280,7 +280,7 @@ pub trait ChatSink: Send { fn event(&mut self, event: InferEvent) -> Flow; }
 Closed sets stay enums: `Capability`/`CapabilityKind`/`Need` (versioned by `VocabVersion`),
 `AuthKind`, `Family`, `EndpointProtocol`, `Issuer`, `Discovery`, `DataClass`, `Provenance`, `AbsentReason`,
 `Locality`, `SecretPurpose`, `AccountsRequest`/`AccountsReply`/`Refusal`,
-`InferRequest`/`ClientFrame`/`InferEvent`/`InferReply`/`InferRefusal`, `Slot` (and its deprecated alias `AiKind`), `Readiness`, `DatasetKind`, `Found`.
+`InferRequest`/`ClientFrame`/`InferEvent`/`InferReply`/`InferRefusal`, `Slot`, `Readiness`, `DatasetKind`, `Found`.
 
 ## 5. What is frozen, what is built, what is stubbed
 

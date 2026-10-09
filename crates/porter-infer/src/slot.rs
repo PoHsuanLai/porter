@@ -2,10 +2,8 @@
 //! signature; any catalogue entry that satisfies it is listed there, so one model may sit in
 //! several slots. The settings key is `ai.model.<slot>.<tier>`.
 //!
-//! `Slot` replaces `AiKind`. Old settings files and wire frames name the old kinds (`llm`,
-//! `speech_in`, `speech_out`); they still read, as serde aliases, and map to their slot. The
-//! deprecated [`AiKind`] alias and its variant-named constants stay until docket, almanac and cua
-//! have moved.
+//! `Slot` replaces the old `AiKind`. Old settings files and wire frames name the old kinds (`llm`,
+//! `speech_in`, `speech_out`); they still read, as serde aliases, and map to their slot.
 
 use porter_core::Tier;
 use serde::{Deserialize, Serialize};
@@ -33,23 +31,6 @@ pub enum Slot {
     ImageGen,
     /// Rerankers.
     Rerank,
-}
-
-/// The old name of [`Slot`].
-#[deprecated(
-    note = "use `Slot`; `AiKind::Llm` is `Slot::Text`, `SpeechIn` is `VoiceIn`, `SpeechOut` is `VoiceOut`"
-)]
-pub type AiKind = Slot;
-
-/// The old variant names, so `AiKind::Llm` keeps compiling through the alias period.
-#[allow(non_upper_case_globals)]
-impl Slot {
-    /// `Slot::Text`.
-    pub const Llm: Slot = Slot::Text;
-    /// `Slot::VoiceIn`.
-    pub const SpeechIn: Slot = Slot::VoiceIn;
-    /// `Slot::VoiceOut`.
-    pub const SpeechOut: Slot = Slot::VoiceOut;
 }
 
 impl Slot {
@@ -162,14 +143,5 @@ mod tests {
             Slot::VoiceIn.setting_key(Tier::Fast),
             "ai.model.voice_in.fast"
         );
-    }
-
-    #[test]
-    #[allow(deprecated)]
-    fn the_old_names_still_compile() {
-        assert_eq!(AiKind::Llm, Slot::Text);
-        assert_eq!(AiKind::SpeechIn, Slot::VoiceIn);
-        assert_eq!(AiKind::SpeechOut, Slot::VoiceOut);
-        assert_eq!(AiKind::Rerank, Slot::Rerank);
     }
 }

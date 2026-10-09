@@ -69,8 +69,6 @@ pub use request::{
 };
 pub use route::{Chosen, RouteAsk, RouteCandidate, TierChoice, admit, route};
 pub use session::{InferSession, SessionError};
-#[allow(deprecated)]
-pub use slot::AiKind;
 pub use slot::Slot;
 pub use speech::{
     AudioFrame, AudioFrameOut, AudioRate, HeardDelta, LangPick, SpeakRequest, TranscribeBegin,
