@@ -22,6 +22,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 use syncd::datasets::photos::PhotosSwitch;
 use syncd::datasets::storage::FILES_APP;
+use syncd::service::DatasetName;
 use zbus::export::futures_core::Stream;
 
 async fn names(sync: &SyncProxy<'_>) -> Vec<String> {
@@ -145,15 +146,22 @@ async fn a_two_sided_edit_is_a_conflict_signal_and_keep_remote_or_keep_local_set
         rig.google.drive_put_file(file, b"one");
         eventually("the file arrives", || local_is(&rig, file, b"one")).await;
 
-        // Both sides edit within one pause, so no cycle sees one edit alone.
+        // Both sides edit while no cycle runs, so no cycle sees one edit alone: the cycle lock is
+        // held until both are made (a pause and a sleep would leave a slow cycle that was
+        // already running to fetch the remote edit before the local one is made).
         sync.pause(FILES_DATASET).await.expect("pause");
-        tokio::time::sleep(Duration::from_millis(400)).await;
+        let between = rig
+            .hub
+            .hold_cycles(&DatasetName::parse(FILES_DATASET).expect("name"))
+            .await
+            .expect("the dataset is running");
         rig.google.drive_put_file(file, b"theirs");
         std::fs::write(local(&rig, file), b"mine").expect("local edit");
+        drop(between);
         sync.resume(FILES_DATASET).await.expect("resume");
 
         let signal = tokio::time::timeout(
-            Duration::from_secs(120),
+            porter_fake::GENEROUS,
             std::future::poll_fn(|cx| Pin::new(&mut conflicts).poll_next(cx)),
         )
         .await

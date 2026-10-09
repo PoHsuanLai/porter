@@ -89,6 +89,7 @@ fn quick() -> Settings {
 struct Rig {
     bus: PrivateBus,
     known: Known,
+    hub: Hub,
     replica: Shared,
     dataset: Arc<MemoryDataset>,
     _server: zbus::Connection,
@@ -128,6 +129,7 @@ async fn rig() -> Rig {
     Rig {
         bus,
         known,
+        hub,
         replica,
         dataset,
         _server: server,
@@ -185,9 +187,16 @@ async fn conflicted(rig: &Rig) -> (zbus::Connection, i64, RemoteId) {
     })
     .await;
 
-    // Both sides edit within one pause, so no cycle sees one edit alone.
+    // Both sides edit while no cycle runs, so no cycle sees one edit alone: the cycle lock is
+    // held until both are made (a pause and a sleep would leave a slow cycle that was already
+    // running to fetch the remote edit before the local one is made; on a loaded machine that
+    // cycle outlasts any fixed sleep, and then no conflict ever exists).
     sync.pause(DATASET).await.expect("pause");
-    tokio::time::sleep(Duration::from_millis(400)).await;
+    let between = rig
+        .hub
+        .hold_cycles(&DatasetName::parse(DATASET).expect("name"))
+        .await
+        .expect("the dataset is running");
     let theirs = PutItem {
         target: PutTarget::Existing(id.clone()),
         content: Blob(b"theirs".to_vec()),
@@ -198,10 +207,11 @@ async fn conflicted(rig: &Rig) -> (zbus::Connection, i64, RemoteId) {
         .await
         .expect("remote edit");
     rig.dataset.put("a.txt", b"mine");
+    drop(between);
     sync.resume(DATASET).await.expect("resume");
 
     let signal = tokio::time::timeout(
-        Duration::from_secs(120),
+        porter_fake::GENEROUS,
         std::future::poll_fn(|cx| Pin::new(&mut conflicts).poll_next(cx)),
     )
     .await

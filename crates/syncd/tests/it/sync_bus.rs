@@ -373,7 +373,14 @@ async fn a_running_engine_syncs_to_its_replica_and_the_bus_shows_it_until_it_is_
     assert!(status.contains_key("anchor_age"));
 
     sync.pause("a1/photos_originals").await.expect("pause");
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    // A cycle that began before the pause finishes (the pause is read between cycles): wait for
+    // it to end, not for a time. One that was only waiting to begin sees the pause and skips.
+    drop(
+        rig.hub
+            .hold_cycles(&name("a1/photos_originals"))
+            .await
+            .expect("the dataset is running"),
+    );
     dataset.put("IMG_2.HEIC", b"defg");
     tokio::time::sleep(common::poll_time(1500)).await;
     assert_eq!(

@@ -193,6 +193,31 @@ async fn an_answer_that_is_not_a_model_list_is_unanswered() {
     task.abort();
 }
 
+#[tokio::test]
+async fn an_engine_that_is_slow_to_answer_is_still_ready() {
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    let task = tokio::spawn(async move {
+        while let Ok((mut stream, _)) = listener.accept().await {
+            let mut buf = [0u8; 2048];
+            let _ = stream.read(&mut buf).await;
+            // Longer than the three seconds the look once gave a stage: a loaded computer's
+            // engine answers late, and is not therefore away.
+            tokio::time::sleep(std::time::Duration::from_secs(4)).await;
+            let body = format!(r#"{{"data":[{{"id":"{SERVED}"}}]}}"#);
+            let reply = format!(
+                "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = stream.write_all(reply.as_bytes()).await;
+        }
+    });
+    assert_eq!(probe(&port_target(port, None), SERVED).await, Ok(()));
+    task.abort();
+}
+
 #[test]
 fn what_is_wrong_is_said_in_a_sentence_and_the_setup_causes_are_the_persons_to_mend() {
     let causes = [

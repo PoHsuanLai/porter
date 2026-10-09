@@ -7,7 +7,9 @@
 use crate::clock::Clock;
 use crate::dataset::Dataset;
 use crate::engine::{Engine, Outcome, Report, SyncError};
-use crate::scheduler::{Inputs, Jitter, Last, Network, PushSignal, Settings, Wake, next_wake};
+use crate::scheduler::{
+    Inputs, Jitter, Last, Network, Pausing, PushSignal, Settings, Wake, next_wake,
+};
 use crate::service::{
     Confirm, ConfirmError, Event, Handle, Nudge, Settle, SettleError, StatusSnapshot,
 };
@@ -110,6 +112,12 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
                     let Some(_cycle) = self.handle.begin_cycle().await else {
                         break;
                     };
+                    // The person may have paused while this waited for the lock (a cycle of
+                    // the last look was still running, or the machine is slow): a pause that
+                    // was made before the cycle began is not a pause that lets one more through.
+                    if self.handle.pausing() == Pausing::Paused {
+                        continue;
+                    }
                     self.cycle().await;
                 }
                 Wake::At(_) => {}

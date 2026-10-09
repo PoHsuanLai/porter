@@ -1,15 +1,18 @@
 //! A server that stops answering ends the exchange (reliability finding rel-3): the relay stream
 //! gives up after its idle time and the HTTP client reports a timeout, instead of the dataset
-//! waiting on a half-open connection forever. No bus: a socket pair stands for the relay.
+//! waiting on a half-open connection forever. No bus: a socket pair stands for the relay. The
+//! tests that count time run on the paused clock (the idle time and the pieces' spacing are
+//! virtual seconds), so a loaded machine cannot make a gap longer than the idle time.
 
 use porter_core::WebUrl;
 use porter_http::{Http, HttpError, HttpRequest, Method};
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use storage_webdav::{Dial, StreamHttp, StreamLimits};
 use syncd::webdav::RelayStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
+use tokio::time::Instant;
 
 /// Hands out the one stream it was given; a second dial finds none and is unreachable.
 struct Once {
@@ -45,7 +48,7 @@ fn get() -> HttpRequest {
 
 const IDLE: Duration = Duration::from_millis(200);
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_server_that_never_answers_ends_the_request_as_timed_out() {
     let (ours, mut theirs) = UnixStream::pair().expect("pair");
     let http = StreamHttp::new(
@@ -87,7 +90,7 @@ async fn a_body_that_stalls_part_way_ends_the_request_as_timed_out() {
     stalls.abort();
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_slow_server_that_keeps_sending_is_not_cut_off_by_the_idle_time() {
     let (ours, mut theirs) = UnixStream::pair().expect("pair");
     let http = StreamHttp::new(
