@@ -325,41 +325,35 @@ async fn one_of_the_persons_own_computers_gets_through_as_new_and_a_yes_makes_it
 }
 
 #[tokio::test]
-async fn a_tagged_server_another_persons_computer_and_a_stranger_are_refused_with_words() {
+async fn computers_that_are_not_the_persons_own_are_refused_with_words() {
     let a = addresses();
     let l = listening_lender("refused", &a).await;
-    // Tagged (build-box at `other`), shared in (friends-pc at `spare`).
-    let tagged = answer_to(&l, &a, a.other).await;
-    let shared = answer_to(&l, &a, a.spare).await;
-    // An address Tailscale has no computer for.
-    let stranger = answer_to(&l, &a, "127.200.200.200".parse().unwrap()).await;
-    for (answer, refusal) in [
-        (tagged, Refusal::Tagged),
-        (shared, Refusal::Shared),
-        (stranger, Refusal::Unknown),
-    ] {
-        assert!(answer.starts_with("HTTP/1.1 403 Forbidden"), "{answer}");
-        assert!(answer.contains(&refusal.to_string()), "{answer}");
+    // Tagged (build-box at `other`), shared in (friends-pc at `spare`), an address Tailscale
+    // has no computer for, and this computer's own address: a program of another account on
+    // this computer reaches the listener through the network address, and it must not pass as
+    // one of the person's other computers.
+    let cases = [
+        ("tagged", a.other, Refusal::Tagged),
+        ("shared in", a.spare, Refusal::Shared),
+        (
+            "a stranger",
+            "127.200.200.200".parse().unwrap(),
+            Refusal::Unknown,
+        ),
+        ("this computer", a.me, Refusal::ThisComputer),
+    ];
+    for (who, from, refusal) in cases {
+        let answer = answer_to(&l, &a, from).await;
+        assert!(
+            answer.starts_with("HTTP/1.1 403 Forbidden"),
+            "{who}: {answer}"
+        );
+        assert!(answer.contains(&refusal.to_string()), "{who}: {answer}");
     }
     assert!(
         l.recorder.came.lock().unwrap().is_empty(),
         "none of them reached the handler"
     );
-}
-
-#[tokio::test]
-async fn a_request_from_this_computers_own_address_is_refused() {
-    // A program of another account on this computer reaches the listener through the network
-    // address; it must not pass as one of the person's other computers.
-    let a = addresses();
-    let l = listening_lender("own-address", &a).await;
-    let answer = answer_to(&l, &a, a.me).await;
-    assert!(answer.starts_with("HTTP/1.1 403 Forbidden"), "{answer}");
-    assert!(
-        answer.contains(&Refusal::ThisComputer.to_string()),
-        "{answer}"
-    );
-    assert!(l.recorder.came.lock().unwrap().is_empty());
 }
 
 #[tokio::test]

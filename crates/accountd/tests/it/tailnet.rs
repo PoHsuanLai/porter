@@ -722,15 +722,16 @@ async fn changed_fires_once_for_a_burst_and_again_for_the_next_change() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn only_the_shell_settings_and_the_terminal_may_read_the_computers() {
+async fn who_may_read_the_computers() {
     let scene = Scene::with(
-        "denied",
+        "who-may-read",
         Daemon::Running(network()),
         vec![tailscale_account(AccountState::Ok)],
     )
     .await;
     let world = World::start(scene, true).await;
-    // An app is refused, and so are the roles that are not a person's own windows.
+    // Step 1, the refused: an app is refused, and so are the roles that are not a person's own
+    // windows.
     for role in [
         CallerRole::App,
         CallerRole::Agent,
@@ -744,44 +745,35 @@ async fn only_the_shell_settings_and_the_terminal_may_read_the_computers() {
             "{role:?} may not read the computers"
         );
     }
-    // A sender accountd does not know.
+    // Step 2, a sender accountd does not know.
     let stranger = world.bus.connect().await;
     let denied = read(&stranger).await.expect_err("refused");
-    assert_eq!(error_name(&denied), common::ACCESS_DENIED);
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn the_ai_broker_reads_the_computers_to_find_the_ones_that_lend_its_models() {
-    // inferd (`PorterDaemon`) gets the same list as the shell, which is empty with no working
-    // Tailscale account.
-    let scene = Scene::with(
-        "broker",
-        Daemon::Running(network()),
-        vec![tailscale_account(AccountState::Ok)],
-    )
-    .await;
-    let world = World::start(scene, true).await;
+    assert_eq!(
+        error_name(&denied),
+        common::ACCESS_DENIED,
+        "step 2: a stranger"
+    );
+    // Step 3, the AI broker: inferd (`PorterDaemon`) gets the same list as the shell, to find
+    // the computers that lend its models.
     let rows = world
         .machines_as(CallerRole::PorterDaemon)
         .await
-        .expect("the broker reads the computers");
-    assert_eq!(rows.len(), 4);
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn the_terminal_reads_the_computers_and_is_refused_everything_else() {
-    let scene = Scene::with(
-        "terminal",
-        Daemon::Running(network()),
-        vec![tailscale_account(AccountState::Ok)],
-    )
-    .await;
-    let world = World::start(scene, true).await;
+        .expect("step 3: the broker reads the computers");
+    assert_eq!(rows.len(), 4, "step 3: the broker's list");
+    // Step 4, the terminal reads the computers and is refused everything else.
     let terminal = world.client("org.quire.Temor", CallerRole::Terminal).await;
-    assert_eq!(read(&terminal).await.expect("machines").len(), 4);
+    assert_eq!(
+        read(&terminal).await.expect("step 4: machines").len(),
+        4,
+        "step 4: the terminal's list"
+    );
     let spaces = SpacesProxy::new(&terminal).await.expect("proxy");
     let denied = spaces.list().await.expect_err("refused");
-    assert_eq!(error_name(&denied), common::ACCESS_DENIED);
+    assert_eq!(
+        error_name(&denied),
+        common::ACCESS_DENIED,
+        "step 4: the terminal may read nothing else"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

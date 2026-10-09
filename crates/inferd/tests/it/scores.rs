@@ -138,66 +138,92 @@ async fn a_choice_that_asks_gets_each_options_share_and_the_engine_was_asked_for
     assert_eq!(bodies[0]["top_logprobs"], json!(20), "{}", bodies[0]);
 }
 
+/// M1: nothing asked, nothing returned. Each row has its own world.
 #[tokio::test(flavor = "multi_thread")]
-async fn the_same_choice_without_the_knob_asks_for_nothing_and_has_no_scores() {
-    let world = World::start(choice_world(Chat::Choose {
-        text: "allow",
-        top: vec![("allow", 0.7), ("deny", 0.2)],
-    }))
-    .await;
-    let reply = ask(&world, pick_one(&["allow", "deny"], Knob::Off)).await;
-    assert_eq!(reply.text, "allow");
-    assert_eq!(reply.scores, None);
-    let bodies = world.engines["tiny-chat"].bodies("/v1/chat/completions");
-    assert!(bodies[0].get("logprobs").is_none(), "{}", bodies[0]);
-    assert!(bodies[0].get("top_logprobs").is_none(), "{}", bodies[0]);
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn an_engine_without_log_probabilities_gives_the_same_reply_without_scores() {
-    let world = World::start(choice_world(Chat::Say(vec!["deny"]))).await;
-    let asked = ask(&world, pick_one(&["allow", "deny"], on())).await;
-    let plain = ask(&world, pick_one(&["allow", "deny"], Knob::Off)).await;
-    assert_eq!(asked.text, "deny");
-    assert_eq!(asked.scores, None);
-    assert_eq!(asked, plain, "asking changed nothing else in the reply");
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_garbled_log_probability_answer_does_not_fail_the_turn() {
-    let world = World::start(choice_world(Chat::ChooseGarbled("deny"))).await;
-    let reply = ask(&world, pick_one(&["allow", "deny"], on())).await;
-    assert_eq!(reply.text, "deny");
-    assert_eq!(reply.scores, None);
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn options_that_share_a_first_token_give_no_scores_and_the_same_reply() {
-    let world = World::start(choice_world(Chat::Choose {
-        text: "Allow",
-        top: vec![("Al", 0.7), ("Deny", 0.2)],
-    }))
-    .await;
-    let reply = ask(&world, pick_one(&["Allow", "Always", "Deny"], on())).await;
-    assert_eq!(reply.text, "Allow");
-    assert_eq!(reply.scores, None);
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_reply_that_is_not_a_choice_never_carries_scores() {
-    let world = World::start(choice_world(Chat::Choose {
-        text: "allow",
-        top: vec![("allow", 0.7), ("deny", 0.2)],
-    }))
-    .await;
-    let mut request = pick_one(&["allow", "deny"], on());
-    if let InferRequest::Chat(chat) = &mut request {
-        chat.shape = ReplyShape::Text;
+async fn when_no_scores_are_asked_for_the_engine_is_asked_for_none_and_the_reply_has_none() {
+    // (why, the knob, whether the reply is plain text instead of a choice, the text expected)
+    let rows = [
+        (
+            "the same choice without the knob",
+            false,
+            false,
+            Some("allow"),
+        ),
+        ("a reply that is not a choice", true, true, None),
+    ];
+    for (why, asked, as_text, text) in rows {
+        let world = World::start(choice_world(Chat::Choose {
+            text: "allow",
+            top: vec![("allow", 0.7), ("deny", 0.2)],
+        }))
+        .await;
+        let knob = if asked { on() } else { Knob::Off };
+        let mut request = pick_one(&["allow", "deny"], knob);
+        if let InferRequest::Chat(chat) = &mut request
+            && as_text
+        {
+            chat.shape = ReplyShape::Text;
+        }
+        let reply = ask(&world, request).await;
+        if let Some(text) = text {
+            assert_eq!(reply.text, text, "{why}");
+        }
+        assert_eq!(reply.scores, None, "{why}");
+        let bodies = world.engines["tiny-chat"].bodies("/v1/chat/completions");
+        assert!(bodies[0].get("logprobs").is_none(), "{why}: {}", bodies[0]);
+        assert!(
+            bodies[0].get("top_logprobs").is_none(),
+            "{why}: {}",
+            bodies[0]
+        );
     }
-    let reply = ask(&world, request).await;
-    assert_eq!(reply.scores, None);
-    let bodies = world.engines["tiny-chat"].bodies("/v1/chat/completions");
-    assert!(bodies[0].get("logprobs").is_none(), "{}", bodies[0]);
+}
+
+/// M1: scores asked for and none usable come back: the same reply without them, never a failed
+/// turn. Each row has its own world.
+#[tokio::test(flavor = "multi_thread")]
+async fn scores_asked_for_and_none_usable_give_the_same_reply_without_them() {
+    // (why, what the engine says, the options, the text expected, whether asking must change
+    // nothing else in the reply)
+    let rows = [
+        (
+            "an engine without log probabilities",
+            Chat::Say(vec!["deny"]),
+            vec!["allow", "deny"],
+            "deny",
+            true,
+        ),
+        (
+            "a garbled log probability answer",
+            Chat::ChooseGarbled("deny"),
+            vec!["allow", "deny"],
+            "deny",
+            false,
+        ),
+        (
+            "options that share a first token",
+            Chat::Choose {
+                text: "Allow",
+                top: vec![("Al", 0.7), ("Deny", 0.2)],
+            },
+            vec!["Allow", "Always", "Deny"],
+            "Allow",
+            false,
+        ),
+    ];
+    for (why, engine, options, text, same_as_plain) in rows {
+        let world = World::start(choice_world(engine)).await;
+        let asked = ask(&world, pick_one(&options, on())).await;
+        assert_eq!(asked.text, text, "{why}");
+        assert_eq!(asked.scores, None, "{why}");
+        if same_as_plain {
+            let plain = ask(&world, pick_one(&options, Knob::Off)).await;
+            assert_eq!(
+                asked, plain,
+                "{why}: asking changed nothing else in the reply"
+            );
+        }
+    }
 }
 
 // ---- the OpenAI-compatible front --------------------------------------------------------------

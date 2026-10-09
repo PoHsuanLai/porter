@@ -64,47 +64,79 @@ fn a_computer_of_the_same_user_that_nobody_answered_about_is_let_through_as_new(
     assert_eq!(welcome.peer().owner, MachineOwner::Mine);
 }
 
-#[test]
-fn a_request_from_this_computers_own_address_is_refused_whoever_tailscale_says_it_is() {
-    // Rule (c): a program of another account on this computer reaches the listener through the
-    // network address, and Tailscale then calls that "this computer", of the same user.
-    let guests = Guests::in_memory();
-    guests
-        .set(&node("nSELF"), "desk", GuestAnswer::Allow, NOW)
-        .unwrap();
-    for own in ["100.64.0.1", "fd7a:115c:a1e0::1"] {
-        for answer in [
-            Ok(who("nSELF", "desk.tail1234.ts.net", 1, own)),
-            // Even if Tailscale were to name another computer for the address.
-            Ok(who("nPI", "pi.tail1234.ts.net", 1, own)),
-            Err(TailscaleError::NoSuchPeer),
-            Err(TailscaleError::NotRunning),
-        ] {
-            assert_eq!(
-                judged(own, answer, &guests).unwrap_err(),
-                Refusal::ThisComputer,
-                "{own}"
-            );
-        }
+/// M1: every refusal the judge gives before the person is asked anything. Each row is a request
+/// (`from`, and what Tailscale says of it) and the one refusal it gets. `self_allowed` first
+/// writes a yes for this computer into the guest book: a yes must not undo rule (c).
+struct Refused {
+    why: String,
+    from: &'static str,
+    answer: Result<WhoIs, TailscaleError>,
+    self_allowed: bool,
+    refusal: Refusal,
+}
+
+fn refused(
+    why: impl Into<String>,
+    from: &'static str,
+    answer: Result<WhoIs, TailscaleError>,
+    refusal: Refusal,
+) -> Refused {
+    Refused {
+        why: why.into(),
+        from,
+        answer,
+        self_allowed: false,
+        refusal,
     }
 }
 
 #[test]
-fn the_same_computer_through_another_address_is_still_this_computer() {
-    let answer = Ok(who("nSELF", "desk.tail1234.ts.net", 1, "100.64.0.9"));
-    assert_eq!(
-        judged("100.64.0.9", answer, &Guests::in_memory()).unwrap_err(),
-        Refusal::ThisComputer
-    );
-}
-
-#[test]
-fn an_address_tailscale_does_not_know_or_cannot_be_asked_about_is_refused() {
-    let guests = Guests::in_memory();
-    assert_eq!(
-        judged("100.64.0.2", Err(TailscaleError::NoSuchPeer), &guests).unwrap_err(),
-        Refusal::Unknown
-    );
+fn the_judge_refuses_this_computer_the_unknown_the_unaskable_and_the_not_the_persons() {
+    let mut tagged = who("nBUILD", "build-box.tail1234.ts.net", 1, "100.64.0.4");
+    tagged.node.tags.push("tag:ci".into());
+    let mut shared_in = who("nSHARED", "shared.tail1234.ts.net", 1, "100.64.0.6");
+    shared_in.node.sharer = Some(UserId(2));
+    let mut rows = Vec::new();
+    // Rule (c): a program of another account on this computer reaches the listener through the
+    // network address, and Tailscale then calls that "this computer", of the same user.
+    for own in ["100.64.0.1", "fd7a:115c:a1e0::1"] {
+        for (why, answer) in [
+            (
+                "this computer by its own address",
+                Ok(who("nSELF", "desk.tail1234.ts.net", 1, own)),
+            ),
+            // Even if Tailscale were to name another computer for the address.
+            (
+                "another computer named for this address",
+                Ok(who("nPI", "pi.tail1234.ts.net", 1, own)),
+            ),
+            ("no peer for this address", Err(TailscaleError::NoSuchPeer)),
+            ("tailscale not running", Err(TailscaleError::NotRunning)),
+        ] {
+            rows.push(Refused {
+                self_allowed: true,
+                ..refused(why, own, answer, Refusal::ThisComputer)
+            });
+        }
+    }
+    rows.push(refused(
+        "this computer through another address",
+        "100.64.0.9",
+        Ok(who("nSELF", "desk.tail1234.ts.net", 1, "100.64.0.9")),
+        Refusal::ThisComputer,
+    ));
+    rows.push(refused(
+        "an address tailscale does not know",
+        "100.64.0.2",
+        Err(TailscaleError::NoSuchPeer),
+        Refusal::Unknown,
+    ));
+    rows.push(refused(
+        "an answer that does not list the address",
+        "100.64.0.2",
+        Ok(who("nPI", "pi.tail1234.ts.net", 1, "100.64.0.77")),
+        Refusal::Unknown,
+    ));
     for failure in [
         TailscaleError::NotRunning,
         TailscaleError::NotInstalled,
@@ -113,43 +145,51 @@ fn an_address_tailscale_does_not_know_or_cannot_be_asked_about_is_refused() {
         TailscaleError::Malformed,
         TailscaleError::TimedOut,
     ] {
-        assert_eq!(
-            judged("100.64.0.2", Err(failure), &guests).unwrap_err(),
+        rows.push(refused(
+            format!("tailscale cannot be asked: {failure}"),
+            "100.64.0.2",
+            Err(failure),
             Refusal::CouldNotCheck,
-            "{failure}"
+        ));
+    }
+    rows.push(refused(
+        "a tagged server",
+        "100.64.0.4",
+        Ok(tagged),
+        Refusal::Tagged,
+    ));
+    rows.push(refused(
+        "another person's computer",
+        "100.64.0.5",
+        Ok(who(
+            "nFRIEND",
+            "friends-pc.tail1234.ts.net",
+            2,
+            "100.64.0.5",
+        )),
+        Refusal::Shared,
+    ));
+    rows.push(refused(
+        "a computer shared in",
+        "100.64.0.6",
+        Ok(shared_in),
+        Refusal::Shared,
+    ));
+    for row in rows {
+        let guests = Guests::in_memory();
+        if row.self_allowed {
+            guests
+                .set(&node("nSELF"), "desk", GuestAnswer::Allow, NOW)
+                .unwrap();
+        }
+        assert_eq!(
+            judged(row.from, row.answer, &guests).unwrap_err(),
+            row.refusal,
+            "{} (from {})",
+            row.why,
+            row.from
         );
     }
-}
-
-#[test]
-fn an_answer_that_does_not_list_the_address_is_not_believed() {
-    let other = who("nPI", "pi.tail1234.ts.net", 1, "100.64.0.77");
-    assert_eq!(
-        judged("100.64.0.2", Ok(other), &Guests::in_memory()).unwrap_err(),
-        Refusal::Unknown
-    );
-}
-
-#[test]
-fn a_tagged_server_another_persons_and_a_shared_computer_are_refused() {
-    let guests = Guests::in_memory();
-    let mut tagged = who("nBUILD", "build-box.tail1234.ts.net", 1, "100.64.0.4");
-    tagged.node.tags.push("tag:ci".into());
-    assert_eq!(
-        judged("100.64.0.4", Ok(tagged), &guests).unwrap_err(),
-        Refusal::Tagged
-    );
-    let friend = who("nFRIEND", "friends-pc.tail1234.ts.net", 2, "100.64.0.5");
-    assert_eq!(
-        judged("100.64.0.5", Ok(friend), &guests).unwrap_err(),
-        Refusal::Shared
-    );
-    let mut shared_in = who("nSHARED", "shared.tail1234.ts.net", 1, "100.64.0.6");
-    shared_in.node.sharer = Some(UserId(2));
-    assert_eq!(
-        judged("100.64.0.6", Ok(shared_in), &guests).unwrap_err(),
-        Refusal::Shared
-    );
 }
 
 #[test]

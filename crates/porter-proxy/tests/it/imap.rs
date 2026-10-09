@@ -7,7 +7,7 @@ use common::*;
 use porter_core::{Family, Tls};
 use porter_fake_servers::net::Bind;
 use porter_fake_servers::{Accounts, FakeImap, MailEvent, Mechanism, Secret, mailbox};
-use porter_proxy::{RelayEnd, RelayFault, RustlsConnect};
+use porter_proxy::RelayEnd;
 
 fn accounts() -> Accounts {
     Accounts::password(USER, PASSWORD).with_bearer(TOKEN)
@@ -86,73 +86,10 @@ async fn session_works(tls: Tls) {
     assert!(!all.contains(PASSWORD));
 }
 
+/// M1: the same session over a STARTTLS server and an implicit TLS one. The logins are in login.rs.
 #[tokio::test]
-async fn a_starttls_server_gives_the_app_a_preauth_session() {
-    session_works(Tls::StartTls).await;
-}
-
-#[tokio::test]
-async fn an_implicit_tls_server_gives_the_app_a_preauth_session() {
-    session_works(Tls::Implicit).await;
-}
-
-#[tokio::test]
-async fn a_wrong_password_is_a_typed_refusal_and_no_session() {
-    let (fake, port) = imap(Tls::StartTls).await;
-    let wrong = porter_core::RelayAuth::Password(porter_core::SecretText::new("not-it"));
-    let mut app = start(imap_plan(Tls::StartTls, port, wrong), trusting_fakes());
-    let seen = app.read_to_end().await;
-    assert_eq!(seen, "", "the app is told nothing: no greeting, no session");
-    assert_eq!(app.ended().await, RelayEnd::Failed(RelayFault::Refused));
-    let attempts = fake.attempts();
-    assert_eq!(attempts.len(), 1);
-    assert!(!attempts[0].accepted);
-}
-
-#[tokio::test]
-async fn an_access_token_authenticates_with_xoauth2() {
-    let (fake, port) = imap(Tls::Implicit).await;
-    let mut app = start(imap_plan(Tls::Implicit, port, token()), trusting_fakes());
-    let greeting = app.read_until("\r\n").await;
-    assert!(greeting.starts_with("* PREAUTH"), "{greeting}");
-    assert!(!app.everything().contains(TOKEN));
-    assert_eq!(fake.attempts()[0].mechanism, Mechanism::Xoauth2);
-    assert_eq!(fake.attempts()[0].secret, Secret::Bearer(TOKEN.into()));
-    app.finish().await;
-}
-
-#[tokio::test]
-async fn a_certificate_the_connector_does_not_trust_ends_the_relay_before_any_login() {
-    let (fake, port) = imap(Tls::Implicit).await;
-    let nobody = RustlsConnect::trusting([]);
-    let mut app = start(imap_plan(Tls::Implicit, port, password()), nobody);
-    assert_eq!(app.read_to_end().await, "");
-    assert_eq!(app.ended().await, RelayEnd::Failed(RelayFault::Tls));
-    assert!(fake.attempts().is_empty(), "no credential went anywhere");
-
-    // The same through a STARTTLS upgrade.
-    let (fake, port) = imap(Tls::StartTls).await;
-    let app = start(
-        imap_plan(Tls::StartTls, port, password()),
-        RustlsConnect::trusting([]),
-    );
-    assert_eq!(app.ended().await, RelayEnd::Failed(RelayFault::Tls));
-    assert!(fake.attempts().is_empty());
-}
-
-#[tokio::test]
-async fn nothing_listening_is_unreachable() {
-    let (fake, port) = imap(Tls::StartTls).await;
-    drop(fake);
-    // The fake's task is aborted, but its listener may linger: use a port nobody holds.
-    let closed = {
-        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("bind");
-        listener.local_addr().expect("addr").port()
-    };
-    let _ = port;
-    let app = start(
-        imap_plan(Tls::StartTls, closed, password()),
-        trusting_fakes(),
-    );
-    assert_eq!(app.ended().await, RelayEnd::Failed(RelayFault::Unreachable));
+async fn a_server_with_either_kind_of_tls_gives_the_app_a_preauth_session() {
+    for tls in [Tls::StartTls, Tls::Implicit] {
+        session_works(tls).await;
+    }
 }

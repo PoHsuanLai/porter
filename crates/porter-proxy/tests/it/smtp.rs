@@ -6,7 +6,7 @@ use common::*;
 use porter_core::{Family, Tls};
 use porter_fake_servers::net::Bind;
 use porter_fake_servers::{Accounts, FakeSmtp, MailEvent, Mechanism, Secret};
-use porter_proxy::{RelayEnd, RelayFault};
+use porter_proxy::RelayEnd;
 
 fn accounts() -> Accounts {
     Accounts::password(USER, PASSWORD).with_bearer(TOKEN)
@@ -84,29 +84,10 @@ async fn send_mail(tls: Tls) {
     }
 }
 
+/// M1: mail goes out over a STARTTLS relay and an implicit TLS one. The logins are in login.rs.
 #[tokio::test]
-async fn mail_goes_out_through_a_starttls_relay() {
-    send_mail(Tls::StartTls).await;
-}
-
-#[tokio::test]
-async fn mail_goes_out_through_an_implicit_tls_relay() {
-    send_mail(Tls::Implicit).await;
-}
-
-#[tokio::test]
-async fn a_token_authenticates_with_xoauth2_and_a_wrong_password_is_refused() {
-    let fake = FakeSmtp::start(&Bind::Loopback, Tls::StartTls, accounts())
-        .await
-        .expect("smtp");
-    let port = port(fake.address());
-    let mut app = start(smtp_plan(Tls::StartTls, port, token()), trusting_fakes());
-    app.read_until("220").await;
-    assert_eq!(fake.attempts()[0].mechanism, Mechanism::Xoauth2);
-    app.finish().await;
-
-    let wrong = porter_core::RelayAuth::Password(porter_core::SecretText::new("nope"));
-    let mut app = start(smtp_plan(Tls::StartTls, port, wrong), trusting_fakes());
-    assert_eq!(app.read_to_end().await, "");
-    assert_eq!(app.ended().await, RelayEnd::Failed(RelayFault::Refused));
+async fn mail_goes_out_through_a_relay_with_either_kind_of_tls() {
+    for tls in [Tls::StartTls, Tls::Implicit] {
+        send_mail(tls).await;
+    }
 }
