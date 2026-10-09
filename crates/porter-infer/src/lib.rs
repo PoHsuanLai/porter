@@ -2,6 +2,40 @@
 //! streaming sessions, routing that prefers this computer, per-class floors, a local-only
 //! switch, spend caps and an audit record without content. inferd runs it; wire adapters
 //! implement [`Model`].
+//!
+//! A request is plain data that crosses the wire as JSON and comes back equal:
+//!
+//! ```
+//! use porter_core::consent::Usage;
+//! use porter_core::{DataClass, Tier};
+//! use porter_infer::{
+//!     ChatControl, ChatMessage, ChatRequest, Knob, MessagePart, Reasoning, ReplyShape, Role,
+//!     ToolChoice, ToolParallelism,
+//! };
+//!
+//! let request = ChatRequest {
+//!     messages: vec![ChatMessage {
+//!         role: Role::User,
+//!         parts: vec![MessagePart::Text("Summarise this thread.".into())],
+//!     }],
+//!     shape: ReplyShape::Text,
+//!     tier: Tier::Fast,
+//!     class: DataClass::Mail,
+//!     usage: Usage::Interactive,
+//!     tools: vec![],
+//!     control: ChatControl {
+//!         tool_choice: ToolChoice::Never,
+//!         tool_calls: ToolParallelism::One,
+//!         max_output: Knob::Off,
+//!         reasoning: Reasoning::EngineDefault,
+//!         sampling: Knob::Off,
+//!         stop: vec![],
+//!         scores: Knob::Off,
+//!     },
+//! };
+//! let json = serde_json::to_string(&request).expect("serializes");
+//! assert_eq!(serde_json::from_str::<ChatRequest>(&json).expect("deserializes"), request);
+//! ```
 
 mod audit;
 mod broker;

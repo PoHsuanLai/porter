@@ -4,6 +4,7 @@ use porter_core::ProviderId;
 
 /// Why a provider file was refused. accountd logs it and skips the file; the rest load.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum ProviderFileError {
     /// Not valid TOML, or not the provider schema.
     #[error("provider file: {0}")]

@@ -2115,3 +2115,24 @@ Owner's choice (c): `dist/inferd-tailnet.conf` stays opt-in. porter ships it as 
    Nothing in the six repos uses an item of `sheet` by name today.
 
 Not compiled by the lane. Things to look at first if the gate fails: `crates/porter-dbus/src/callers.rs` (the `pub use crate::callers_file::{...}` under `#[cfg(feature = "callers-file")]`), and the `#[doc = ...]` attributes on the `pub use` groups in `lib.rs`.
+
+## Lane layers-errors-examples (L9: thiserror for the hand-written errors, compiled lib-doc examples, `#[non_exhaustive]` on six error enums; base `a1a07f5`, 2026-10-10)
+
+1. **thiserror.** The hand-written `Display` and `Error` impls became derives, with the same text byte for byte (the format strings are the old `write!` strings):
+   - porter-service: `StoreError` (the `Fault` variant is `#[error(transparent)]` with `#[from]`, which also replaces the hand-written `From<StoreFault>`; its text is the fault's own) and `SheetFault`. That is 2, not the 4 the brief counted: no other hand-written `Display` is in the crate.
+   - prov: `BeyondReceipt` (`the receipt covers {covers:?} and no more openly`). The other `Display` impls in prov (`ConfirmId` and the id macro) are not errors and stay. That is 1 error, not 4.
+   - porter-dbus: `CallerFileError` (`{path}: {message}`, the path with `.display()`) and `CallerTomlError` (`{message}`). That is 2, as counted.
+   - porter-proxy, porter-sync, storage-webdav, storage-graph and storage-gdrive have no hand-written `Display` any more (grep for `Display for` and `Error for` in each: none), so nothing was changed there.
+   - Cargo.toml: `thiserror = { workspace = true }` added to porter-service, prov and porter-dbus. **Cargo.lock needs the re-lock** (three dependency lines).
+2. **Compiled doc examples** (plain code blocks, so `cargo test --doc` runs them; each mirrors calls that an existing test makes): porter-core (`AccountId::parse`, `object_segment`), porter-infer (a `ChatRequest` through JSON and back, the way `tests/it/round_trip.rs` builds one), porter-http (`HttpRequest::new(..).with_header(..).with_body(..)`, `HttpResponse::retry_after_seconds`; no feature needed), porter-provider (`shipped()` and `ProviderSet::get`), porter-sync (`DatasetKind::conflict_rule`, `mass_delete(&[], &[])`), porter-secrets (`attributes` of a `SecretKey`, as its unit test does; the store itself needs a feature or a platform keyring, so it is not in the example), porter-service (`sync_allowed` over no grants, and the two error sentences). porter-client's `ignore` block is now `no_run`: a function generic over `Transport` that calls `find`, then `request_grant`, with the imports shown. Not shown, on purpose: `AccountService` (building one needs every seam), `Broker`, and a `Replica`. If a doc test fails, look first at porter-infer (the `ChatRequest` field list) and porter-client (`no_run` still compiles it).
+3. **`#[non_exhaustive]`** on the public error enums that will grow and that no other crate matches exhaustively: `porter_service::{StoreError, SheetFault}`, `porter_provider::{ProviderFileError, ClientsFileError}`, `porter_infer::{TextError, ScoresError}`. Grep of the six consumers at origin/master (docket 1b905ed, almanac 7af8f0b, cua bf1a40f, mailo e958659, detent f1b57a1, sill 9fed7387) and of this workspace: every outside use is a construction (`Err(SheetFault::Closed)`), a `#[from]` field or a pattern with one variant. The only exhaustive match is `add_flow.rs:494` inside porter-service itself, which the attribute does not touch. mailo's `host.rs` builds `SheetFault::Closed` and `Unavailable`, and its own `StoreError` is another type.
+   Left for L5's coordinated batch, because a match elsewhere would need a `_` arm (file:line):
+   - `AgentFault`, `LocalFault`: accountd `src/peer.rs:414-418` and `:440`.
+   - `SecretsError`: accountd `src/keys.rs:65-66`.
+   - `ProviderError`: porter-bridge `src/reply.rs:149-157`, cua `cua-eval-cloud/src/provider.rs`.
+   - `HttpError`: inferd `src/attached/check.rs:160`, and mailo's lookups.
+   - `SessionError`: porter-client `src/error.rs:201-202` and `src/transport/pipe.rs:75-89`.
+   - `ModelError`, `InferRefusal`, `ReplicaError`, `PutRefused`, `CoreError`, `StoreFault` and the other core and infer enums were not examined deeper than that: they are matched across crates.
+   Consumers needing a `_` arm for the six enums: none.
+
+Not compiled by the lane. First places to look if the gate fails: `#[error("{}: {}", .path.display(), .message)]` in porter-dbus `callers_file.rs`; `#[error(transparent)]` with `#[from]` in porter-service `store.rs`; the four doc examples with struct literals (porter-infer, porter-secrets) and `mass_delete(&[], &[])` in porter-sync.

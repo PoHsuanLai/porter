@@ -10,6 +10,7 @@ use std::fmt;
 
 /// Why wire text was refused.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum TextError {
     /// The text is not JSON.
     #[error("not valid JSON: {0}")]

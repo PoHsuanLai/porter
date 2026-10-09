@@ -2,6 +2,17 @@
 //! opaque anchors, a base version on every write, conflicts and tombstones as values. Pure;
 //! the SQLite journal and the scheduler are syncd's; the journal's rows and pure rules
 //! (`journal`, `journal_reconcile`) are here.
+//!
+//! The rules are plain functions over values. Each dataset settles a conflict its own way, and a
+//! listing that would not discard anything is not a mass delete:
+//!
+//! ```
+//! use porter_sync::{ConflictRule, DatasetKind, mass_delete};
+//!
+//! assert_eq!(DatasetKind::Files.conflict_rule(), ConflictRule::KeepBoth);
+//! assert_eq!(DatasetKind::Keychain.conflict_rule(), ConflictRule::ShowInApp);
+//! assert_eq!(mass_delete(&[], &[]), None);
+//! ```
 
 mod anchor;
 mod change;

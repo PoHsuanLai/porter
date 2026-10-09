@@ -62,6 +62,7 @@ pub struct ClientsFile {
 
 /// Why a clients file was refused.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum ClientsFileError {
     /// Not valid TOML, or not the clients schema.
     #[error("clients file: {0}")]

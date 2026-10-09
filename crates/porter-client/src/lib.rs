@@ -1,13 +1,24 @@
 //! The app-facing API (design/31 §5.1). An app asks for a capability, never a brand:
 //!
-//! ```ignore
-//! let accounts = Accounts::connect(&env).await?;
-//! let need = Need::Storage(StorageNeed { access: ReadWrite, delta: Poll, scope: AppFolder, quota: Unreported });
-//! match accounts.find(&need, DataClass::Photos, Usage::Interactive).await? {
-//!     Found::One(candidate) => use_it(candidate),
-//!     Found::Several(list) => pick_among(list),              // quire's AccountPicker
-//!     Found::NeedsConsent(offer) => accounts.request_grant(&offer, &window).await?,
-//!     Found::None(why) => show_no_account(why),               // EmptyState + "Add Account…"
+//! ```no_run
+//! use porter_client::{Accounts, ClientError, Found, Transport};
+//! use porter_core::consent::Usage;
+//! use porter_core::wire::ParentWindow;
+//! use porter_core::{Candidate, DataClass, Need};
+//!
+//! // `accounts` is `Accounts::connect(&env)` (D-Bus or the socket) or `Accounts::over(transport)`.
+//! async fn photos_account<T: Transport>(
+//!     accounts: &Accounts<T>,
+//!     need: &Need,
+//!     window: &ParentWindow,
+//! ) -> Result<Option<Candidate>, ClientError> {
+//!     let found = accounts.find(need, DataClass::Photos, Usage::Interactive).await?;
+//!     Ok(match found {
+//!         Found::One(candidate) => Some(candidate),
+//!         Found::Several(list) => list.into_iter().next(), // quire's AccountPicker lets the person pick
+//!         Found::NeedsConsent(offer) => Some(accounts.request_grant(&offer, window).await?),
+//!         Found::None(_why) => None, // EmptyState + "Add Account…"
+//!     })
 //! }
 //! ```
 //!

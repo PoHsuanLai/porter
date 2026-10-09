@@ -13,6 +13,7 @@ porter-core = { workspace = true }
 zbus = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+thiserror = { workspace = true }
 # `serve_ready`'s deadline; zbus already runs on tokio here.
 tokio = { workspace = true }
 # `callers_file`'s reader, behind the feature that only the daemons turn on.
