@@ -50,6 +50,10 @@ pub enum CallerRole {
     /// default: `dist/callers.toml`
     /// has no row for it, so a machine lists the launcher by its own row.
     AgentLauncher,
+    /// The terminal (temor): may read the person's computers from `org.quire.Tailnet1`
+    /// (`Machines`) and nothing else of accountd. Given by the unit that is the terminal, as the
+    /// systemd manager says its main process is, never by an app scope's name.
+    Terminal,
 }
 
 /// Who a connection is.

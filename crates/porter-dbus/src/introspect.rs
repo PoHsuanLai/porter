@@ -13,6 +13,7 @@ use crate::request::RequestSkeleton;
 use crate::sheet_backend::AccountsSheetSkeleton;
 use crate::spaces::SpacesSkeleton;
 use crate::sync::SyncSkeleton;
+use crate::tailnet::TailnetSkeleton;
 use crate::tokens::TokensSkeleton;
 use zbus::fdo;
 use zbus::object_server::Interface;
@@ -33,6 +34,9 @@ pub enum Bus {
     InferenceAgents,
     /// `org.quire.Spaces1` (the desktop-wide Spaces), on accountd's bus name.
     Spaces,
+    /// `org.quire.Tailnet1` (the person's computers on their Tailscale network), on accountd's
+    /// bus name.
+    Tailnet,
 }
 
 impl Bus {
@@ -45,6 +49,7 @@ impl Bus {
             Bus::Inference => "org.quire.Inference1.xml",
             Bus::InferenceAgents => "org.quire.Inference1.Agents.xml",
             Bus::Spaces => "org.quire.Spaces1.xml",
+            Bus::Tailnet => "org.quire.Tailnet1.xml",
         }
     }
 }
@@ -65,6 +70,7 @@ pub fn introspection(bus: Bus) -> String {
         Bus::Inference => vec![&InferenceSkeleton],
         Bus::InferenceAgents => vec![&AgentsSkeleton],
         Bus::Spaces => vec![&SpacesSkeleton],
+        Bus::Tailnet => vec![&TailnetSkeleton],
     };
     let mut xml = String::from(
         "<!DOCTYPE node PUBLIC \"-//freedesktop//DTD D-BUS Object Introspection 1.0//EN\"\n \"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\">\n<node>\n",

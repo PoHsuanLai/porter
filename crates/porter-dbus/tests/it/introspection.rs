@@ -14,6 +14,7 @@ fn checked_in_introspection_matches_the_interfaces() {
         Bus::Inference,
         Bus::InferenceAgents,
         Bus::Spaces,
+        Bus::Tailnet,
     ] {
         let path = dir.join(bus.file_name());
         let expected =
@@ -60,6 +61,28 @@ fn the_spaces_registry_declares_its_five_methods_and_one_signal() {
         !introspection(Bus::Accounts).contains("org.quire.Spaces1"),
         "its own file, beside Accounts1's"
     );
+}
+
+#[test]
+fn the_tailnet_object_declares_machines_and_changed_and_nothing_else() {
+    let xml = introspection(Bus::Tailnet);
+    for member in [
+        "<interface name=\"org.quire.Tailnet1\">",
+        "<method name=\"Machines\">",
+        "<arg type=\"a(sa{sv})\" direction=\"out\"/>",
+        "<signal name=\"Changed\">",
+    ] {
+        assert!(xml.contains(member), "missing {member}");
+    }
+    assert_eq!(xml.matches("<method ").count(), 1);
+    assert_eq!(xml.matches("<signal ").count(), 1);
+    assert_eq!(xml.matches("<property ").count(), 0);
+    // The signal carries nothing: a listener calls Machines again.
+    assert!(xml.contains("<signal name=\"Changed\">\n   </signal>"));
+    assert_eq!(porter_dbus::TAILNET_PATH, "/org/quire/Tailnet1");
+    // Additive: its own file, and Accounts1's and Spaces1's are as they were.
+    assert!(!introspection(Bus::Accounts).contains("Tailnet1"));
+    assert!(!introspection(Bus::Spaces).contains("Tailnet1"));
 }
 
 #[test]

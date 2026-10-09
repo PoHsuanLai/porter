@@ -54,7 +54,10 @@ impl Access {
         match caller.role {
             CallerRole::Settings | CallerRole::PorterDaemon => true,
             CallerRole::App | CallerRole::SheetHost => self.owners.contains(&caller.app.name),
-            CallerRole::Agent | CallerRole::Cua | CallerRole::AgentLauncher => false,
+            CallerRole::Agent
+            | CallerRole::Cua
+            | CallerRole::AgentLauncher
+            | CallerRole::Terminal => false,
         }
     }
 }
@@ -76,7 +79,8 @@ impl Access {
             | CallerRole::PorterDaemon
             | CallerRole::Agent
             | CallerRole::Cua
-            | CallerRole::AgentLauncher => false,
+            | CallerRole::AgentLauncher
+            | CallerRole::Terminal => false,
         }
     }
 }

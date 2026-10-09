@@ -46,6 +46,12 @@ impl DbusTransport {
     pub async fn spaces(&self) -> Result<crate::Spaces, crate::SpacesError> {
         crate::Spaces::connect(&self.connection).await
     }
+
+    /// The person's computers on their Tailscale network (`org.quire.Tailnet1`), over this
+    /// connection: for the shell, Settings and the terminal.
+    pub async fn tailnet(&self) -> Result<crate::Tailnet, crate::TailnetError> {
+        crate::Tailnet::connect(&self.connection).await
+    }
 }
 
 /// A closed set's serde form is its slug on the bus too.

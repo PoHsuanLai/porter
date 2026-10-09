@@ -37,6 +37,8 @@ mod launcher;
 mod relays;
 #[cfg(feature = "dbus")]
 mod spaces;
+#[cfg(feature = "dbus")]
+mod tailnet;
 mod transport;
 
 pub use accounts::Accounts;
@@ -51,6 +53,9 @@ pub use error::{ClientError, TransportError};
 pub use found::{ConsentOffer, Found, NoAccount, found};
 #[cfg(feature = "dbus")]
 pub use launcher::{AskKind, Launcher, LauncherError, LauncherRequest, Requests};
+/// A computer on the person's Tailscale network, whose it is, and its stable id, from
+/// porter-core: what `Tailnet::machines` returns, so a terminal or Settings parses no vardict.
+pub use porter_core::{Machine, MachineOwner, NodeId};
 /// What an [`engines::EngineHost`] is built from, from porter-infer.
 #[cfg(feature = "engines")]
 pub use porter_infer::{InferRefusal, Policy, Slot};
@@ -60,6 +65,8 @@ pub use porter_infer::{InferSession, OpenOptions, SessionError, Traceparent};
 pub use relays::{NoRelays, RelayHost};
 #[cfg(feature = "dbus")]
 pub use spaces::{SpaceChanges, Spaces, SpacesError};
+#[cfg(feature = "dbus")]
+pub use tailnet::{MachineChanges, Tailnet, TailnetError};
 #[cfg(feature = "dbus")]
 pub use transport::DbusTransport;
 #[cfg(feature = "infer")]

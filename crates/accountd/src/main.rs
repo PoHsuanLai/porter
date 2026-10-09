@@ -134,7 +134,8 @@ async fn main() -> ExitCode {
     let io = accountd::providers::FamilyIo::system(
         porter_provider::ProviderSet::layered(loaded.specs.clone(), Vec::new()),
         paths.client_files(),
-    );
+    )
+    .with_tailscale(porter_tailscale::LocalApi::new(&paths.tailscale_socket));
     let (families, unserved) = accountd::providers::served(loaded.specs, &io);
     let local = accountd::providers::local_runtimes(&unserved);
     for spec in unserved.iter().filter(|s| !local.contains(s)) {
@@ -189,6 +190,10 @@ async fn main() -> ExitCode {
             .filter(|dir| dir.is_absolute()),
         // `spaces.json` beside `registry.json`.
         spaces: accountd::SpacesStore::File(paths.registry_dir.clone()),
+        // Tailscale's own socket, `/var/run/tailscale/tailscaled.sock` unless `paths` names another.
+        tailnet: Some(accountd::TailnetWatch::new(
+            porter_tailscale::LocalApi::new(&paths.tailscale_socket),
+        )),
     };
     if let Err(why) = serve_with(&connection, service, callers, options).await {
         return fail(format!("cannot serve {}: {why}", porter_dbus::ACCOUNTS_BUS));
@@ -218,7 +223,8 @@ async fn add(
     let io = accountd::providers::FamilyIo::system(
         porter_provider::ProviderSet::layered(loaded.specs.clone(), Vec::new()),
         paths.client_files(),
-    );
+    )
+    .with_tailscale(porter_tailscale::LocalApi::new(&paths.tailscale_socket));
     let (families, _unserved) = accountd::providers::served(loaded.specs, &io);
     let served: Vec<_> = families
         .iter()

@@ -85,6 +85,7 @@ impl<H: Host, C: Callers> SpacesObject<H, C> {
             CallerRole::Agent
             | CallerRole::Cua
             | CallerRole::AgentLauncher
+            | CallerRole::Terminal
             | CallerRole::PorterDaemon => Err(RefusedError::access_denied(
                 "only an app the person uses may make a Space",
             )),

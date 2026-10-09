@@ -27,7 +27,14 @@ pub struct Paths {
     /// `$XDG_DATA_HOME/applications`, then each absolute `$XDG_DATA_DIRS` entry's (default
     /// `/usr/local/share:/usr/share`).
     pub applications: Vec<PathBuf>,
+    /// Tailscale's socket: `/var/run/tailscale/tailscaled.sock`, or the absolute path in
+    /// `ACCOUNTD_TAILSCALE_SOCKET` (a Tailscale kept elsewhere, and every test of the binary,
+    /// which names a scratch path so that none ever reaches the real Tailscale).
+    pub tailscale_socket: PathBuf,
 }
+
+/// The variable that names Tailscale's socket.
+pub const TAILSCALE_SOCKET_VAR: &str = "ACCOUNTD_TAILSCALE_SOCKET";
 
 impl Paths {
     /// The paths for the environment `var` reads, with `extra_providers` laid over the system's
@@ -37,6 +44,9 @@ impl Paths {
         extra_providers: &[PathBuf],
     ) -> Result<Self, PathError> {
         let data_dirs = var("XDG_DATA_DIRS");
+        // Like the XDG rule: a relative path is invalid and ignored.
+        let tailscale_socket = absolute(var(TAILSCALE_SOCKET_VAR))
+            .unwrap_or_else(|| PathBuf::from(porter_tailscale::DEFAULT_SOCKET));
         let xdg = Xdg::new(var);
         let state = xdg.dir("XDG_STATE_HOME", ".local/state")?;
         let config = xdg.dir("XDG_CONFIG_HOME", ".config")?;
@@ -66,6 +76,7 @@ impl Paths {
             clients_user: config.join("porter/clients.toml"),
             provider_dirs,
             applications,
+            tailscale_socket,
         })
     }
 
@@ -118,6 +129,29 @@ mod tests {
                 .find(|(k, _)| *k == name)
                 .map(|(_, v)| (*v).to_owned())
         }
+    }
+
+    #[test]
+    fn tailscales_socket_is_its_own_path_unless_an_absolute_one_is_named() {
+        let socket = |pairs: &[(&str, &str)]| {
+            Paths::resolve(env(pairs), &[])
+                .expect("paths")
+                .tailscale_socket
+        };
+        let home = ("HOME", "/home/ada");
+        assert_eq!(
+            socket(&[home]),
+            Path::new("/var/run/tailscale/tailscaled.sock")
+        );
+        assert_eq!(
+            socket(&[home, (TAILSCALE_SOCKET_VAR, "/run/ts/other.sock")]),
+            Path::new("/run/ts/other.sock")
+        );
+        // A relative path is ignored, as an XDG one is.
+        assert_eq!(
+            socket(&[home, (TAILSCALE_SOCKET_VAR, "ts.sock")]),
+            Path::new("/var/run/tailscale/tailscaled.sock")
+        );
     }
 
     #[test]

@@ -47,6 +47,12 @@
 //! - `Peer.ReportLocal`: a probed local runtime (Ollama, llama.cpp, LM Studio) as an account of its
 //!   provider file, its models as claims, `offline` when it stops (`peer`); a porter daemon only.
 //!
+//! - Tailscale (`tailnet`, `tailnet_object`): the Tailscale account's state follows what
+//!   Tailscale says (running and signed in `ok`, signed out `needs_login`, off or not running
+//!   `offline`), read from its watch stream with a look every half minute behind it; and
+//!   `org.quire.Tailnet1` at `/org/quire/Tailnet1` lists the person's other computers
+//!   (`Machines`) with a `Changed` signal, for the shell, Settings and the terminal.
+//!
 //! - `org.quire.Spaces1` at `/org/quire/Spaces1`: the registry of desktop-wide Spaces, kept in
 //!   `spaces.json` (`spaces`, `spaces_object`). Any identified app lists and creates (at most
 //!   `CREATES_PER_WINDOW` a minute each); Settings and the shell rename, restyle and remove, and
@@ -82,6 +88,8 @@ mod sheets;
 mod spaces;
 mod spaces_object;
 mod store;
+mod tailnet;
+mod tailnet_object;
 
 pub use app_names::AppNames;
 pub use audit::FileAudit;
@@ -97,3 +105,4 @@ pub use settings::settings_path;
 pub use sheets::{BusLink, BusSheets};
 pub use spaces::{CREATE_WINDOW, CREATES_PER_WINDOW, SpacesStore};
 pub use store::{EXIT_REGISTRY_REFUSED, FileStore};
+pub use tailnet::TailnetWatch;

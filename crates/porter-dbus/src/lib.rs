@@ -22,6 +22,7 @@ mod inference;
 mod introspect;
 mod json_value;
 mod launcher;
+mod machines;
 mod manager;
 mod names;
 mod peer;
@@ -35,6 +36,7 @@ mod sheet;
 mod sheet_backend;
 mod spaces;
 mod sync;
+mod tailnet;
 mod tokens;
 
 pub use account::{AccountProxy, AccountSkeleton};
@@ -59,6 +61,11 @@ pub use inference::{InferenceProxy, InferenceSkeleton};
 pub use introspect::{Bus, introspection};
 pub use json_value::{from_vardict, to_vardict};
 pub use launcher::LauncherFault;
+pub use machines::{
+    MACHINE_KEY_ADDRESSES, MACHINE_KEY_DNS, MACHINE_KEY_LAST_SEEN, MACHINE_KEY_NAME,
+    MACHINE_KEY_NODE, MACHINE_KEY_ONLINE, MACHINE_KEY_OS, MACHINE_KEY_OWNER, MACHINE_KEY_SSH,
+    MACHINE_KEY_SSH_HOST_KEYS, machine_from_dbus, machine_to_dbus,
+};
 pub use manager::{ManagerProxy, ManagerSkeleton};
 pub use names::{
     ACCOUNTS_BUS, ACCOUNTS_PATH, ACCOUNTS_SETTINGS_PATH, COMPUTER_ERROR_PREFIX, COMPUTER_KEY_KEY,
@@ -68,7 +75,7 @@ pub use names::{
     RESOLVE_KEEP_LOCAL, RESOLVE_KEEP_REMOTE, SHEET_BUS, SHEET_PATH, SPACE_KEY_CREATED,
     SPACE_KEY_LOOK, SPACE_KEY_NAME, SPACES_PATH, STATUS_KEY_QUOTA, SYNC_BUS,
     SYNC_ERROR_NO_SUCH_CONFLICT, SYNC_ERROR_NOTHING_HELD, SYNC_ERROR_PREFIX, SYNC_PATH,
-    account_path,
+    TAILNET_PATH, account_path,
 };
 pub use peer::{
     AgentLoginRequested, AgentLoginRequestedStream, AgentLogoutRequested,
@@ -92,6 +99,9 @@ pub use spaces::{
     Changed as SpaceChanged, ChangedStream as SpaceChangedStream, SpacesProxy, SpacesSkeleton,
 };
 pub use sync::{SyncProxy, SyncSkeleton};
+pub use tailnet::{
+    Changed as TailnetChanged, ChangedStream as TailnetChangedStream, TailnetProxy, TailnetSkeleton,
+};
 pub use tokens::{
     ProcessCredentialRevoked, ProcessCredentialRevokedStream, TokensProxy, TokensSkeleton,
 };

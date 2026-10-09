@@ -14,6 +14,9 @@ pub const SPACE_KEY_NAME: &str = "name";
 pub const SPACE_KEY_LOOK: &str = "look";
 /// `Spaces1.List`'s key of when a Space was made (`x`, Unix seconds).
 pub const SPACE_KEY_CREATED: &str = "created";
+/// The person's computers on their Tailscale network (`org.quire.Tailnet1`), served on
+/// accountd's bus name.
+pub const TAILNET_PATH: &str = "/org/quire/Tailnet1";
 /// syncd's bus name.
 pub const SYNC_BUS: &str = "org.quire.Sync1";
 /// syncd's object.

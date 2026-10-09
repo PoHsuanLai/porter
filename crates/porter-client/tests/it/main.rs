@@ -10,6 +10,7 @@ mod dbus_open;
 mod dbus_served;
 mod dbus_sheets;
 mod dbus_spaces;
+mod dbus_tailnet;
 mod end_to_end;
 #[cfg(feature = "engines")]
 mod engines;

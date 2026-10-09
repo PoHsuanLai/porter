@@ -369,6 +369,9 @@ pub(crate) enum Standing {
     Any,
     /// A caller that may act for the person: an `Agent` is refused (`Denied`).
     Acting,
+    /// A caller reading the person's computers (`Tailnet1`): the only standing a `Terminal` has,
+    /// and the method that asks for it checks the role itself.
+    Machines,
     /// A caller reporting an agent's state: the only standing an `AgentLauncher` has, and the
     /// method that asks for it checks the role itself.
     Launching,
@@ -408,6 +411,8 @@ pub(crate) struct Core<H, C> {
     pub(crate) open_sheets: crate::request::OpenSheets,
     /// The desktop-wide Spaces (`org.quire.Spaces1`).
     pub(crate) spaces: tokio::sync::Mutex<crate::spaces::SpaceBook>,
+    /// How Tailscale is followed (`org.quire.Tailnet1`); none lists no computers.
+    pub(crate) tailnet: Option<crate::tailnet::TailnetWatch>,
 }
 
 fn held<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -440,8 +445,24 @@ impl<H: Host, C: Callers> Core<H, C> {
                 "the agent launcher may only report an agent's state",
             ));
         }
+        // The terminal is narrower still: it reads the person's computers and is nothing else.
+        if standing != Standing::Machines && caller.role == CallerRole::Terminal {
+            return Err(RefusedError::access_denied(
+                "the terminal may only read the person's computers",
+            ));
+        }
         held(&self.roster).insert(sender.to_string(), caller.clone());
         Ok(caller)
+    }
+
+    /// The unique names of the connections that have called and whose caller `wanted` admits:
+    /// who a signal meant for some roles reaches.
+    pub(crate) fn known_where(&self, wanted: impl Fn(&Caller) -> bool) -> Vec<String> {
+        held(&self.roster)
+            .iter()
+            .filter(|(_, caller)| wanted(caller))
+            .map(|(name, _)| name.clone())
+            .collect()
     }
 
     /// The unique names of the connections that have called, which a broadcast reaches.
@@ -681,6 +702,9 @@ pub struct Options {
     /// Where the desktop-wide Spaces are kept (`spaces.json` in the registry's directory); the
     /// default keeps them in memory only.
     pub spaces: crate::spaces::SpacesStore,
+    /// Tailscale, and how it is followed: the account's state, and `org.quire.Tailnet1`'s
+    /// computers and signal. The default follows nothing: no computers are listed.
+    pub tailnet: Option<crate::tailnet::TailnetWatch>,
 }
 
 /// Serves `org.quire.Accounts1` on `connection` over `host`, answering for the apps `callers`
@@ -731,6 +755,7 @@ pub async fn serve_with<H: Host, C: Callers>(
         settings: OnceLock::new(),
         open_sheets: crate::request::OpenSheets::default(),
         spaces: tokio::sync::Mutex::new(spaces),
+        tailnet: options.tailnet,
     });
     core.host.use_launcher_roster(core.launchers.roster());
     let server: &ObjectServer = connection.object_server();
@@ -752,9 +777,18 @@ pub async fn serve_with<H: Host, C: Callers>(
             crate::spaces_object::SpacesObject::new(Arc::clone(&core)),
         )
         .await?;
+    server
+        .at(
+            porter_dbus::TAILNET_PATH,
+            crate::tailnet_object::TailnetObject::new(Arc::clone(&core)),
+        )
+        .await?;
     publish_accounts(server, &core).await?;
     crate::settings::serve_settings(connection, &core).await?;
     crate::roster::watch(connection, Arc::clone(&core)).await?;
+    if let Some(watch) = core.tailnet.clone() {
+        tokio::spawn(crate::tailnet::follow(Arc::clone(&core), watch));
+    }
     // Every object is registered; the name is the promise that calls are taken: claim it only
     // once they are.
     porter_dbus::serve_ready(connection).await?;

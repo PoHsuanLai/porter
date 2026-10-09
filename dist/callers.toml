@@ -6,7 +6,8 @@
 # systemd manager says; a scope, which has none, as any process in it). A row with a unit gives
 # its role to that unit alone, never to an app scope of the same id. Roles:
 # `settings` (the Settings app), `sheet_host` (draws the accounts sheets), `porter_daemon` (inferd
-# and syncd: the Peer methods, ResolveKey), `agent`, `cua`, `agent_launcher`; anything unlisted is an `app`.
+# and syncd: the Peer methods, ResolveKey), `agent`, `cua`, `agent_launcher`, `terminal` (temor:
+# reads the person's computers from `org.quire.Tailnet1` and nothing else); anything unlisted is an `app`.
 # `agent_launcher` (the launcher that runs external coding agents, docket-acp) may call
 # `Peer.SetAgentState`, `RegisterLauncher`, `ReportAgentLogin` and `ReportAgentLogout` and nothing
 # else; it is never granted here. A machine that runs the launcher
@@ -50,3 +51,13 @@ app = "org.quire.Sync"
 unit = "syncd.service"
 role = "porter_daemon"
 name = "Sync"
+
+# temor, the terminal: reads the person's computers (`Tailnet1.Machines`) and nothing else.
+# temor's unit is `org.quire.Temor.service` (`Type=dbus`, as detent's `org.quire.Settings.service`).
+# It is checked against the manager's main process like every unit row, so it matches only the
+# service temor runs in.
+[[caller]]
+app = "org.quire.Temor"
+unit = "org.quire.Temor.service"
+role = "terminal"
+name = "Terminal"
