@@ -8,6 +8,7 @@
 //! the cfg'd items break nobody, and only an implementor outside this crate that builds with
 //! `infer` has to give a `Session`, as it did before.
 
+mod broker;
 #[cfg(feature = "dbus")]
 mod dbus;
 #[cfg(feature = "dbus")]
@@ -21,20 +22,23 @@ mod dbus_session;
     any(feature = "socket", all(feature = "dbus", feature = "infer"))
 ))]
 mod framed;
+#[cfg(feature = "in-process")]
 mod in_process;
 #[cfg(all(windows, feature = "socket"))]
 mod pipe;
 mod socket;
 
+pub use broker::NoBroker;
+#[cfg(feature = "infer")]
+pub use broker::{InProcessSession, SessionHost};
 #[cfg(feature = "dbus")]
 pub use dbus::DbusTransport;
 #[cfg(feature = "dbus")]
 pub(crate) use dbus::bus_error;
 #[cfg(all(feature = "dbus", feature = "infer"))]
 pub use dbus_session::{DbusSession, MAX_ATTACHMENTS};
-pub use in_process::{InProcess, NoBroker};
-#[cfg(feature = "infer")]
-pub use in_process::{InProcessSession, SessionHost};
+#[cfg(feature = "in-process")]
+pub use in_process::InProcess;
 #[cfg(feature = "infer")]
 pub use socket::SocketSession;
 pub use socket::SocketTransport;

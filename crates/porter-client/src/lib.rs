@@ -13,12 +13,15 @@
 //!
 //! Transport-agnostic behind [`Transport`]: D-Bus to accountd (feature `dbus`), the latchkey
 //! socket where D-Bus is absent (feature `socket`), or [`InProcess`] where the app hosts the core
-//! itself.
+//! itself (feature `in-process`).
 //!
 //! Features (design/36 §1): the accounts core builds with `--no-default-features`, which reaches
 //! no zbus, no porter-infer and no stoker. Inference (sessions, `prepare`, `infer`, `Need::Llm`
 //! paths) is the default feature `infer`; an accounts-only consumer says
-//! `default-features = false, features = ["socket"]`.
+//! `default-features = false, features = ["socket"]`. `InProcess` and the account service it
+//! hosts (porter-service, porter-secrets, porter-provider) are the default feature `in-process`;
+//! a bus-only consumer says `default-features = false, features = ["dbus"]` and reaches none of
+//! them.
 //!
 //! A porter daemon (inferd, syncd) is also a client: [`peer::PeerAccounts`] (feature `dbus`) is
 //! the typed way into accountd's daemon-only `Peer` surface (grant verdicts, the API key of a
@@ -80,8 +83,10 @@ pub use spaces::{SpaceChanges, Spaces, SpacesError};
 pub use tailnet::{MachineChanges, Tailnet, TailnetError};
 #[cfg(feature = "dbus")]
 pub use transport::DbusTransport;
+#[cfg(feature = "in-process")]
+pub use transport::InProcess;
 #[cfg(feature = "infer")]
 pub use transport::{AnySession, InProcessSession, SessionHost, SocketSession};
-pub use transport::{AnyTransport, InProcess, NoBroker, SocketTransport, Transport};
+pub use transport::{AnyTransport, NoBroker, SocketTransport, Transport};
 #[cfg(all(feature = "dbus", feature = "infer"))]
 pub use transport::{DbusSession, MAX_ATTACHMENTS};

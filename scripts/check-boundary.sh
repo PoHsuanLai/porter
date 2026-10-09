@@ -127,6 +127,22 @@ for feature in $family_features; do
   fi
 done
 
+# IN-PROCESS FEATURE: porter-client's feature `in-process` is the only way the crate reaches the
+# account service, its secrets and the provider catalogue. A bus-only consumer (`dbus` with no
+# default features) reaches none of them.
+in_process_leaked=0
+for dep in porter-service porter-secrets porter-provider; do
+  if cargo tree -p porter-client --no-default-features --features dbus -i "$dep" -e normal,build 2>/dev/null | grep -q .; then
+    echo "LEAK: porter-client[dbus] without in-process depends on $dep"
+    cargo tree -p porter-client --no-default-features --features dbus -i "$dep" -e normal,build 2>/dev/null | head -20
+    in_process_leaked=1
+    fail=1
+  fi
+done
+if [ "$in_process_leaked" -eq 0 ]; then
+  echo "boundary holds: porter-client[dbus] without in-process reaches none of porter-service, porter-secrets, porter-provider"
+fi
+
 # PURE FILES: source that parses what an edge read and never reads it itself. A dependency rule
 # cannot see std, so these are checked by name: no file, process, socket or environment access.
 STD_EFFECTS='std::(fs|io|env|process|net|os)\b|\b(File|Command|TcpStream|UnixStream)::'

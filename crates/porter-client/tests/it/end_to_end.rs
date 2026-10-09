@@ -1,5 +1,6 @@
 //! An app on the in-process transport, over the fake providers: it finds an account by
 //! capability, is asked for consent, and gets a token; a refusal sticks; a once-grant is spent.
+#![cfg(feature = "in-process")]
 
 use porter_client::{Accounts, ClientError, ConsentOffer, Found, InProcess, NoAccount};
 use porter_core::capability::{Access, Delta, QuotaReport, StorageScope};

@@ -16,9 +16,9 @@ model-http = { workspace = true, optional = true, features = ["hyper", "tls"] }
 model-openai-compat = { workspace = true, optional = true }
 model-provider = { workspace = true, optional = true }
 model-wire = { workspace = true, optional = true }
-porter-provider = { workspace = true }
-porter-secrets = { workspace = true }
-porter-service = { workspace = true }
+porter-provider = { workspace = true, optional = true }
+porter-secrets = { workspace = true, optional = true }
+porter-service = { workspace = true, optional = true }
 porter-dbus = { workspace = true, optional = true }
 latchkey = { workspace = true, optional = true }
 rustix = { workspace = true, optional = true }
@@ -30,6 +30,11 @@ zbus = { workspace = true, optional = true }
 zeroize = { workspace = true }
 
 [dev-dependencies]
+# The tests name the service, the secrets and the provider catalogue whether or not `in-process`
+# is on; the feature gates only the crate's own `InProcess` and its dependencies.
+porter-provider = { workspace = true }
+porter-secrets = { workspace = true }
+porter-service = { workspace = true }
 ds-settings = { workspace = true }
 latchkey = { workspace = true }
 accountd = { path = "../accountd" }
@@ -47,8 +52,14 @@ zbus = { workspace = true }
 # Inference: sessions with inferd, `Need::Llm` paths, `prepare`. Default on so every existing
 # consumer builds as before; an accounts-only consumer says `default-features = false` (plus
 # `socket` or `dbus`) and builds no porter-infer, so no stoker.
-default = ["infer"]
+default = ["infer", "in-process"]
 infer = ["dep:porter-infer"]
+# `InProcess`: the app hosts the account service itself (porter-service, its secrets and the
+# provider catalogue). On by default so every existing consumer builds as before; a consumer
+# that only talks to accountd over a bus says `default-features = false` and builds none of
+# them: `cargo tree -p porter-client --no-default-features --features dbus` reaches none
+# (scripts/check-boundary.sh).
+in-process = ["dep:porter-provider", "dep:porter-secrets", "dep:porter-service"]
 # Inference with no inferd: `EngineHost`, a `SessionHost` that routes need -> engine over a table
 # the app gives and drives the OpenAI-compatible engines it points at (Ollama, llama.cpp, LM
 # Studio, vLLM, a company's API), with keys from a `KeySource` the app implements. Off by

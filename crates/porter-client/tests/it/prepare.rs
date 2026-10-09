@@ -1,7 +1,7 @@
 //! `Transport::prepare`: over the bus it is `Inference1.Prepare` (the need, class, tier and trace
 //! context cross as arguments, the slug that comes back is a `Readiness`), in process it asks
 //! the host, and a transport that has no inferd says so.
-#![cfg(all(feature = "dbus", feature = "infer"))]
+#![cfg(all(feature = "dbus", feature = "infer", feature = "in-process"))]
 
 use crate::common;
 

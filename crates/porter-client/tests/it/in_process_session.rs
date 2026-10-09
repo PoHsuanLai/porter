@@ -1,7 +1,7 @@
 //! `InProcess` and inference: an app that hosts accounts alone has no inferd (a session is
 //! `Unreachable`, as on a bus with no daemon, so a caller degrades); one that hands in a broker
 //! gets the broker's sessions, opened for the app the host names.
-#![cfg(feature = "infer")]
+#![cfg(all(feature = "infer", feature = "in-process"))]
 
 use porter_client::{
     Accounts, ClientError, InProcess, InferSession, NoBroker, SessionHost, TransportError,

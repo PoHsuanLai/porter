@@ -22,7 +22,7 @@ path = "src/bin/porter-rig-secrets.rs"
 
 [dependencies]
 porter-core = { workspace = true }
-porter-client = { workspace = true, features = ["dbus"] }
+porter-client = { workspace = true, features = ["dbus", "in-process"] }
 porter-dbus = { workspace = true }
 porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }
