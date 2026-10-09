@@ -49,7 +49,7 @@ async fn a_daemon_that_answers_forbidden_is_refused_for_every_question() {
     assert_eq!(api.watch().await.err(), Some(TailscaleError::Refused));
     assert_eq!(
         TailscaleError::Refused.to_string(),
-        "This computer's Tailscale doesn't let porter ask it yet."
+        "This computer's Tailscale doesn't let your accounts ask it yet."
     );
 }
 

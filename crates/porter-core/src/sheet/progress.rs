@@ -49,8 +49,8 @@ pub enum SignInFault {
     /// A program on this computer that holds its own sign-in answers, and nobody is signed in to
     /// it, and it gave no page to sign in at ("Tailscale is signed out.").
     SignedOut,
-    /// A program on this computer that holds its own sign-in will not talk to porter ("This
-    /// computer's Tailscale doesn't let porter ask it yet.").
+    /// A program on this computer that holds its own sign-in will not talk to the accounts
+    /// service ("This computer's Tailscale doesn't let your accounts ask it yet.").
     NotAllowed,
     /// An account of this provider and login is already there; nothing was stored and the
     /// account that is there is as it was.

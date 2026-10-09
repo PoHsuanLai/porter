@@ -503,7 +503,7 @@ fn account_keys(
             &Key::Reauth(id.clone()),
             section,
             "Sign in".to_owned(),
-            "Opens Tailscale's own sign-in page. porter never sees your Tailscale password.",
+            "Opens Tailscale's own sign-in page. Your Tailscale password is never seen here.",
             action("Sign in", ActionWeight::Plain),
             off(),
         )),
@@ -1027,15 +1027,26 @@ mod tests {
 
     #[test]
     fn no_label_or_help_a_person_reads_uses_a_developer_word() {
-        const JARGON: [&str; 21] = [
+        const JARGON: [&str; 25] = [
             "acp", "mcp", "oauth", "pkce", "imap", "smtp", "pop", "jmap", "dav", "caldav",
             "carddav", "api", "cli", "token", "endpoint", "relay", "scope", "porter", "accountd",
-            "syncd", "inferd",
+            "syncd", "inferd", "socket", "localapi", "daemon", "node",
         ];
         let mut agent = storage_account();
         agent.auth = AuthKind::AgentLogin;
         let mut registry = registry();
         registry.accounts.push(agent);
+        // Tailscale, signed out (it offers "Sign in") and working, with ids of their own.
+        for (id, state) in [
+            ("tailscale", AccountState::NeedsLogin),
+            ("tailscale-2", AccountState::Ok),
+        ] {
+            let mut tailscale = storage_account();
+            tailscale.id = porter_core::AccountId::parse(id).expect("id");
+            tailscale.auth = AuthKind::OwnProgram;
+            tailscale.state = state;
+            registry.accounts.push(tailscale);
+        }
         let schema = schema(&registry, &AppNames::default(), &ProviderNames::default());
         for key in &schema.key {
             let mut texts = vec![key.label.0.clone(), key.help.0.clone()];
