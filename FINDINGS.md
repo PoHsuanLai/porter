@@ -2136,3 +2136,7 @@ Not compiled by the lane. Things to look at first if the gate fails: `crates/por
    Consumers needing a `_` arm for the six enums: none.
 
 Not compiled by the lane. First places to look if the gate fails: `#[error("{}: {}", .path.display(), .message)]` in porter-dbus `callers_file.rs`; `#[error(transparent)]` with `#[from]` in porter-service `store.rs`; the four doc examples with struct literals (porter-infer, porter-secrets) and `mass_delete(&[], &[])` in porter-sync.
+
+## Lane relay-test-cfg (follow-up of lane feature-builds; base `a1a07f5`, 2026-10-10)
+
+`crates/accountd/tests/it/relay.rs`: `Tap` (with `start` and `drain`), `contains` and the two imports only they use (`zbus::export::futures_core::Stream`, `zbus::fdo::MonitoringProxy`) now carry `#[cfg(feature = "test-proc-root")]`, the feature of their only user, `acceptance_9_a_flatpak_app_reads_mail_and_no_bus_message_holds_the_password` (and of `proc_tree`, which already had it). A default-features build of the test target no longer has dead code there. Not compiled by the lane: the coordinator should build `-p accountd --tests` with default features and with `test-proc-root`.
