@@ -161,16 +161,6 @@ impl<P, S, U, K, B, R, A, H> InProcess<P, S, U, K, B, R, A, H> {
             relays: self.relays,
         }
     }
-
-    /// The same link with `relays` running the relays of its authenticated streams.
-    pub fn with_relays<N: RelayHost>(self, relays: N) -> InProcess<P, S, U, K, B, R, A, N> {
-        InProcess {
-            service: self.service,
-            app: self.app,
-            broker: self.broker,
-            relays,
-        }
-    }
 }
 
 /// The accounts half, the same with and without inference.

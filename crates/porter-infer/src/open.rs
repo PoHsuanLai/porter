@@ -29,14 +29,6 @@ impl OpenOptions {
         }
     }
 
-    /// These options with the caller's trace.
-    pub fn with_traceparent(self, traceparent: Traceparent) -> Self {
-        Self {
-            traceparent: Some(traceparent),
-            ..self
-        }
-    }
-
     /// The usage the session is for: the one named, else `Interactive`.
     pub fn usage_or_default(&self) -> Usage {
         self.usage.unwrap_or(Usage::Interactive)

@@ -168,14 +168,6 @@ impl ProcessHost {
         }
     }
 
-    /// The same, writing what it learns to `diagnostics` (the one the supervisor is given).
-    pub fn with_diagnostics(self, diagnostics: Diagnostics) -> Self {
-        Self {
-            diagnostics,
-            ..self
-        }
-    }
-
     /// The same, giving a stopped engine `grace` to go before its group is killed.
     pub fn with_grace(self, grace: Duration) -> Self {
         Self { grace, ..self }

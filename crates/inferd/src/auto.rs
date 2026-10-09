@@ -1,6 +1,7 @@
 //! The `ai.auto.*` settings rows (design/22 section 3.26): what Automatic does, whether it may
-//! unload an idle model, whether it says why. The daemon reads `[ai.auto]` of `inferd.toml` and
-//! passes the result to `Engines::with_auto`; nothing here reads a file or the environment. A
+//! unload an idle model, whether it says why. The daemon reads `[ai.auto]` of `inferd.toml`;
+//! `settings::resolve` calls [`AutoConfig::resolve`] and puts the policy into the settings the
+//! engines run under (`Engines::with_settings`). Nothing here reads a file or the environment. A
 //! value a row does not know falls back to the row's default, for that field only, and is named
 //! in [`ResolvedAuto::rejected`] so the daemon can log it once (as `[ai.structured]` does).
 

@@ -7,8 +7,6 @@ pub const GETETAG: &str = "DAV:getetag";
 pub const DISPLAYNAME: &str = "DAV:displayname";
 /// `DAV:resourcetype`.
 pub const RESOURCETYPE: &str = "DAV:resourcetype";
-/// `DAV:sync-token`.
-pub const SYNC_TOKEN: &str = "DAV:sync-token";
 /// `DAV:current-user-principal` (RFC 5397).
 pub const CURRENT_USER_PRINCIPAL: &str = "DAV:current-user-principal";
 /// `DAV:quota-used-bytes` (RFC 4331).

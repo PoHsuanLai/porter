@@ -1,9 +1,9 @@
 //! The test's side of the fake Google's Drive and Photos: another device writing, moving or
 //! deleting a file, a person picking photos, and what the fake holds now.
 
+use super::GoogleHandle;
 use super::drive::Node;
 use super::photos::{Album, MediaItem, Pick, Session};
-use super::{DriveKnobs, GoogleHandle};
 use crate::seen::lock;
 
 fn names_of(path: &str) -> Vec<String> {
@@ -33,11 +33,6 @@ impl GoogleHandle {
     /// The next `count` requests with a good bearer are answered `429` with this `Retry-After`.
     pub fn throttle(&self, count: u32, retry_after: u32) {
         lock(&self.shared.state).throttle = Some((count, retry_after));
-    }
-
-    /// Changes how the Drive answers.
-    pub fn set_drive_knobs(&self, knobs: DriveKnobs) {
-        lock(&self.shared.state).drive_knobs = knobs;
     }
 
     /// Creates or replaces the file at `path` below the app data folder (folders on the way are

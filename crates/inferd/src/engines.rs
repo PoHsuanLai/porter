@@ -25,8 +25,8 @@ use porter_core::capability::SpeechMode;
 use porter_core::consent::{Availability, Usage};
 use porter_core::{AccountId, AppId, DataClass, Locality, Need, Tier};
 use porter_infer::{
-    AutoPolicy, InferRefusal, LicenceClass, ModelCard, ModelRef, PickRefusal, Policy, Readiness,
-    ServedBy, SpendVerdict, SwapCost, TierMap, Why,
+    InferRefusal, LicenceClass, ModelCard, ModelRef, PickRefusal, Policy, Readiness, ServedBy,
+    SpendVerdict, SwapCost, TierMap, Why,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -134,15 +134,6 @@ impl Engines {
             }),
             supervised,
         }
-    }
-
-    /// The same, with the `ai.auto.*` rows the daemon read (the default rows otherwise).
-    pub fn with_auto(self, auto: AutoPolicy) -> Self {
-        let settings = Settings {
-            auto,
-            ..(*self.settings()).clone()
-        };
-        self.with_settings(settings)
     }
 
     /// The same, starting from these settings (a new holder: the old one's clones keep theirs).
