@@ -1917,3 +1917,35 @@ Every old `Clock` and `FixedClock` path still compiles with the same behaviour. 
 **Public changes.** Added: `porter_client::{peer::*, Removals, RemovedAccount}`, `Accounts<DbusTransport>::watch_removals`, `ClientError::no_allowed_place`, `porter_dbus::{AccountRemoved, AccountRemovedStream, CallerTomlError}`, `accountd::CallerTomlError`. Changed: `porter_dbus::table_from_toml`'s error type (no consumer). Removed: `ClientError::NoAllowedPlace`, `From<TransportError> for ClientError` by hand (now derived, same conversion except the place refusal). inferd: `cloud::accountd::AccountVerdict` is a re-export, `PeerAccountd::new` and `PeerReports::new` keep their signatures. Wire and VocabVersion: unchanged.
 
 **Consumers** (built with every porter crate from this worktree, `cargo check --workspace --all-targets --offline`): docket, almanac, cua and mailo: all four build clean. sill, detent and casement: grep at origin/master finds no use of anything changed here (detent uses `ClientError::{AlreadyAdded, Refused, Transport}` and `TransportError::Malformed(why)`, both unchanged).
+
+## Lane layers-families (porter-families reads no environment and no system clock; base `5abe1d2`, rebased on `84242b5`, 2026-10-10)
+
+**1. The clock and the paths come from the caller.**
+- `MicrosoftEnv::new(http, registry, clock)` and `GoogleEnv::new(http, registry, clock)` take a `porter_core::clock::Clock` (any clock; the family's `Clock` closure is built from it by `clock_of`). `with_clock(closure)` is unchanged, so the rigs' counting clocks still work.
+- `MicrosoftEnv::with_client_files(files, clock)` and `GoogleEnv::with_client_files(files, clock)` are the daemon constructors. Removed: `MicrosoftEnv::system()`, `GoogleEnv::system()`, `MicrosoftProvider::new(spec)`, `GoogleProvider::new(spec)` (each read the environment and the clock), `ClientFiles::system()`, and the private `own_clients_path`, `system_now` and `SHIPPED_CLIENTS`. `ClientFiles` is a struct of two public paths, so the caller passes them in directly.
+- Behaviour: the same paths and the same times. accountd passes `porter_core::clock::SystemClock` (providers.rs `family_of`) and the `Paths` it already resolved (`Paths::client_files`). accountd's `Paths::resolve` (paths.rs) is the one closure-based environment reader (it is `Xdg`-based like `porter_core::xdg`), so no separate `families_from_env` helper was needed.
+- Still read by the families: `/dev/urandom` for PKCE (`system_random`, the `Random` default). It is randomness, not the environment or the clock; the brief did not list it. Left as is.
+- The removed `own_clients_path` test covered the XDG-then-HOME rule; accountd's `paths.rs` tests cover the same rule through `Paths::resolve` (`xdg_variables_win_and_relative_ones_are_ignored`, `the_families_read_the_clients_file_settings_writes`).
+- Tests: the constructors gained a clock argument, so the call sites changed beyond their imports: `tests/it/google/rig.rs` and `tests/it/microsoft/rig.rs` pass a `FixedClock` that their own `with_clock` replaces; `tests/it/microsoft/signin.rs` and accountd's `tests/it/google.rs` pass `SystemClock` (what they used before); the two in-module tests of `google/env.rs` pass a `FixedClock`. No assertion changed.
+- Deprecated wrappers: none. Grep at origin/master (docket, almanac, cua, mailo, detent, sill, casement; anyview at origin/main) for `porter_families`, `MicrosoftEnv`, `GoogleEnv`, `MicrosoftProvider::new`, `GoogleProvider::new`, `ClientFiles::system` and `own_clients_path` finds no hit. mailo mentions porter-families only in a comment (`mail-app/src/ui/add_account/provider.rs:13`) and does not depend on it.
+
+**2. check-boundary checks porter-families per family feature.** Default features are empty, so the old rule only proved the empty set. Each feature listed under `[features]` in `crates/porter-families/Cargo.toml` now has a row in `FAMILY_FORBIDS` (what it may not reach) and `FAMILY_EDGES` (its exact direct porter-* dependencies). A feature with no row fails the check. Measured with `cargo tree -p porter-families --no-default-features --features <f> -e normal,build --offline`:
+
+| feature | reaches | direct porter-* edges |
+| --- | --- | --- |
+| `nextcloud` | none | porter-core, porter-dav, porter-discover, porter-http, porter-provider |
+| `generic` | tokio (through porter-proxy's `tls`, which implies `io`) | the above, plus porter-proxy |
+| `microsoft` | tokio, hyper (porter-oauth `io`, porter-http `hyper`) | porter-core, porter-discover, porter-http, porter-oauth, porter-provider |
+| `google` | tokio, hyper | porter-core, porter-http, porter-oauth, porter-provider |
+| `api_key` | tokio, hyper (porter-http `hyper`) | porter-core, porter-http, porter-provider |
+| `agent_login` | none | porter-core, porter-http, porter-provider |
+| `openrouter` | none (porter-oauth without `io`) | porter-core, porter-http, porter-oauth, porter-provider |
+| `tailnet` | tokio, hyper (porter-tailscale `io`) | porter-core, porter-http, porter-provider, porter-tailscale |
+
+Every other forbidden effect (`zbus`, `zvariant`, `reqwest`, `ureq`, `oo7`, `keyring`, `secret-service`, `interprocess`, `latchkey`, `ds-settings`) is forbidden for every feature. The default-feature rule is unchanged. No other rule changed. `check-boundary.sh` passes, with no LEAK, ERROR or EDGE line.
+
+**3. ARCHITECTURE.md.** The sentence that said `porter-families` reaches tokio "through none" now lists what each family feature reaches (the table above, in words), and the boundary table's `porter-families` row names the features that switch on `porter-oauth`'s `io`, `porter-http`'s `hyper`, `porter-proxy`'s `tls` and `porter-tailscale`'s `io`. The `dispatch` row says the clock is the caller's.
+
+**Verification.** `cargo check --workspace --all-features --tests` passes with no warnings; `cargo nextest run -p porter-families --all-features`: 164 of 164 pass; `cargo clippy --workspace --all-targets --all-features -- -D warnings` is clean; `cargo fmt --all --check` is clean after `cargo fmt --all` (line breaks in the lines this lane touched); `scripts/check-boundary.sh` holds (exit 0); `cargo metadata --locked` succeeds.
+
+**Consumers.** mailo at origin/master (detached worktree; its `.cargo/config.toml` patches its ten porter git crates to this worktree). `cargo check --workspace --offline -v` passes. Ten porter crates compiled from this worktree (`porter-core`, `porter-provider`, `porter-secrets`, `porter-discover`, `porter-oauth`, `porter-http`, `porter-fs`, `porter-service`, `porter-client`, `porter-dbus`, `porter-proxy`). `porter-families` did not compile there: cargo reports its patch "was not used in the crate graph", because mailo does not depend on it. mailo's `map.rs` `fault_of` needed three `SignInFault` arms (`NotRunning`, `SignedOut`, `NotAllowed`) that the pinned quire rev's `ShellFault` lacks; they were added to the check worktree only, as stand-ins (`Unreachable`, `Refused`, `Forbidden`). Not committed to mailo.
