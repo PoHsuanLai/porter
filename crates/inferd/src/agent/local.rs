@@ -159,12 +159,15 @@ pub async fn run<S: AsyncWrite + Unpin + Send>(
             Shape::Anthropic => {
                 Box::new(anthropic::Stream::new(&parsed.model, &format!("msg_{tag}")))
             }
-            Shape::OpenAi => Box::new(openai::Stream::new(
-                &parsed.model,
-                &format!("chatcmpl-{tag}"),
-                created,
-                parsed.include_usage,
-            )),
+            Shape::OpenAi => Box::new(
+                openai::Stream::new(
+                    &parsed.model,
+                    &format!("chatcmpl-{tag}"),
+                    created,
+                    parsed.include_usage,
+                )
+                .with_logprobs(parsed.top_logprobs),
+            ),
         };
         let mut writing = Writing {
             out,
@@ -224,9 +227,13 @@ pub async fn run<S: AsyncWrite + Unpin + Send>(
     let chat = outcome(reply)?;
     let body = match shape {
         Shape::Anthropic => anthropic::message_json(&parsed.model, &format!("msg_{tag}"), &chat),
-        Shape::OpenAi => {
-            openai::completion_json(&parsed.model, &format!("chatcmpl-{tag}"), created, &chat)
-        }
+        Shape::OpenAi => openai::completion_json_with(
+            &parsed.model,
+            &format!("chatcmpl-{tag}"),
+            created,
+            &chat,
+            parsed.top_logprobs,
+        ),
     };
     http::write_json(out, 200, &[], &body.to_string())
         .await

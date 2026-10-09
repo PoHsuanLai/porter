@@ -58,6 +58,16 @@ pub(crate) fn asked_options(turn: &sp::TurnRequest) -> Option<Vec<String>> {
     }
 }
 
+/// The shares a turn asked for, from the first token its engine reported: `None` when the turn
+/// did not ask, else the shares or why there are none.
+pub fn turn_scores(
+    turn: &sp::TurnRequest,
+    first_token: Option<&FirstTokenLogprobs>,
+) -> Option<Result<pi::OptionScores, NoScores>> {
+    let options = asked_options(turn)?;
+    Some(option_scores(&options, first_token))
+}
+
 /// The share of each of `options` in the order given, adding up to 1000, or why there is none.
 pub fn option_scores(
     options: &[String],

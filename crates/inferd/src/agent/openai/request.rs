@@ -5,8 +5,9 @@ use porter_core::DataClass;
 use porter_core::consent::Usage;
 use porter_infer::{
     Base64Bytes, ChatControl, ChatMessage, ChatRequest, Effort, ImagePart, ImageSource,
-    JsonSchemaText, JsonText, Knob, MessagePart, Reasoning, ReplyShape, Role, ToolCallId,
-    ToolCallPart, ToolChoice, ToolDecl, ToolName, ToolParallelism, ToolResultPart, ToolStatus,
+    JsonSchemaText, JsonText, Knob, MessagePart, Reasoning, ReplyShape, Role, ScoreOptions,
+    ToolCallId, ToolCallPart, ToolChoice, ToolDecl, ToolName, ToolParallelism, ToolResultPart,
+    ToolStatus,
 };
 use serde_json::Value;
 
@@ -218,7 +219,36 @@ fn shape(value: Option<&Value>) -> Result<ReplyShape, Unmapped> {
     }
 }
 
+/// The strings a reply must be one of, when the request says so the way vLLM's OpenAI-compatible
+/// server does (`guided_choice`, or `structured_outputs.choice`): the only way this front can
+/// express a `Choice`. A list that is not a list of strings is refused rather than ignored.
+fn guided_choice(root: &Value) -> Result<Option<Vec<String>>, Unmapped> {
+    let Some(given) = root.get("guided_choice").or_else(|| {
+        root.get("structured_outputs")
+            .and_then(|outputs| outputs.get("choice"))
+    }) else {
+        return Ok(None);
+    };
+    let options = given
+        .as_array()
+        .and_then(|all| {
+            all.iter()
+                .map(|one| one.as_str().map(str::to_owned))
+                .collect::<Option<Vec<String>>>()
+        })
+        .filter(|options| !options.is_empty())
+        .ok_or_else(|| Unmapped::of("a guided_choice that is not a list of strings"))?;
+    Ok(Some(options))
+}
+
+/// The most `top_logprobs` OpenAI allows.
+const MOST_TOP_LOGPROBS: u64 = 20;
+
 /// Reads the body of a `POST /v1/chat/completions`.
+///
+/// `logprobs` is carried for a `Choice` (a request with `guided_choice`): the options' shares
+/// come back as log-probabilities (see [`super::reply`]). On any other request it is dropped
+/// without a word, as before, and the reply has no `logprobs`.
 pub fn parse(body: &[u8], class: DataClass) -> Result<Parsed, Unmapped> {
     let root: Value =
         serde_json::from_slice(body).map_err(|_| Unmapped::of("a body that is not JSON"))?;
@@ -240,7 +270,23 @@ pub fn parse(body: &[u8], class: DataClass) -> Result<Parsed, Unmapped> {
         _ => Vec::new(),
     };
     let parallel = root.get("parallel_tool_calls").and_then(Value::as_bool);
+    let choice_options = guided_choice(&root)?;
+    let wants_logprobs = root.get("logprobs").and_then(Value::as_bool) == Some(true);
+    let scored = choice_options.is_some() && wants_logprobs;
+    let shape = match choice_options {
+        Some(options) => ReplyShape::Choice(options),
+        None => shape(root.get("response_format"))?,
+    };
     Ok(Parsed {
+        top_logprobs: scored.then(|| {
+            u32::try_from(
+                root.get("top_logprobs")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0)
+                    .min(MOST_TOP_LOGPROBS),
+            )
+            .unwrap_or(0)
+        }),
         model,
         stream: root.get("stream").and_then(Value::as_bool) == Some(true),
         include_usage: root
@@ -254,7 +300,7 @@ pub fn parse(body: &[u8], class: DataClass) -> Result<Parsed, Unmapped> {
                     .and_then(Value::as_array)
                     .ok_or_else(|| Unmapped::of("a request with no messages"))?,
             )?,
-            shape: shape(root.get("response_format"))?,
+            shape,
             tier: porter_core::Tier::Balanced,
             class,
             usage: Usage::Interactive,
@@ -279,7 +325,11 @@ pub fn parse(body: &[u8], class: DataClass) -> Result<Parsed, Unmapped> {
                     DEFAULT_TEMPERATURE,
                 ),
                 stop,
-                scores: Knob::Off,
+                scores: if scored {
+                    Knob::Set(ScoreOptions::default())
+                } else {
+                    Knob::Off
+                },
             },
         },
     })

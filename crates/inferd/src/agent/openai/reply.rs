@@ -3,6 +3,7 @@
 
 use crate::agent::fail::{Failure, Shape};
 use crate::agent::wire::{SseOut, counted};
+use porter_core::Permille;
 use porter_infer::{ChatReply, StopReason, ToolCallPart};
 use serde_json::{Value, json};
 
@@ -37,8 +38,60 @@ fn call_json(index: usize, call: &ToolCallPart) -> Value {
     })
 }
 
+/// One option as OpenAI lists a token: the text, its log-probability and its bytes. A share of
+/// nothing is OpenAI's own `-9999.0` ("not among the likely"), as JSON has no `-inf`.
+fn token_json(option: &str, share: Permille) -> Value {
+    let logprob = if share.0 == 0 {
+        -9999.0
+    } else {
+        (f64::from(share.0) / 1000.0).ln()
+    };
+    json!({ "token": option, "logprob": logprob, "bytes": option.as_bytes() })
+}
+
+/// The `logprobs` of a `Choice` reply: the chosen option as the one token, with the declared
+/// options that have a share, likeliest first, as its `top_logprobs` (at most `top` of them).
+/// The numbers are the options' shares as natural logarithms (so rounded to thousandths and
+/// renormalised over the declared options), not the engine's own token probabilities. `null`
+/// when the engine gave no shares: the reply is the same without them.
+fn logprobs_json(reply: &ChatReply, top: u32) -> Value {
+    let Some(scores) = &reply.scores else {
+        return Value::Null;
+    };
+    let mut ranked: Vec<_> = scores
+        .as_slice()
+        .iter()
+        .filter(|one| one.share.0 > 0)
+        .collect();
+    // Stable, so options of equal share keep the order they were declared in.
+    ranked.sort_by(|a, b| b.share.cmp(&a.share));
+    let best = ranked
+        .into_iter()
+        .take(usize::try_from(top).unwrap_or(usize::MAX))
+        .map(|one| token_json(&one.option, one.share))
+        .collect::<Vec<_>>();
+    let mut chosen = token_json(
+        &reply.text,
+        scores.share_of(&reply.text).unwrap_or(Permille(0)),
+    );
+    chosen["top_logprobs"] = Value::Array(best);
+    json!({ "content": [chosen], "refusal": null })
+}
+
 /// The whole completion for a non-streaming request.
 pub fn completion_json(model: &str, id: &str, created: i64, reply: &ChatReply) -> Value {
+    completion_json_with(model, id, created, reply, None)
+}
+
+/// As [`completion_json`], and with `logprobs` on the choice when the request asked for them of
+/// a `Choice` (`top_logprobs` is how many options to list beside the chosen one).
+pub fn completion_json_with(
+    model: &str,
+    id: &str,
+    created: i64,
+    reply: &ChatReply,
+    top_logprobs: Option<u32>,
+) -> Value {
     let mut message = json!({
         "role": "assistant",
         "content": if reply.text.is_empty() && !reply.tool_calls.is_empty() {
@@ -66,16 +119,20 @@ pub fn completion_json(model: &str, id: &str, created: i64, reply: &ChatReply) -
                 .collect(),
         );
     }
+    let mut choice = json!({
+        "index": 0,
+        "message": message,
+        "finish_reason": finish_word(reply.stop),
+    });
+    if let Some(top) = top_logprobs {
+        choice["logprobs"] = logprobs_json(reply, top);
+    }
     json!({
         "id": id,
         "object": "chat.completion",
         "created": created,
         "model": model,
-        "choices": [{
-            "index": 0,
-            "message": message,
-            "finish_reason": finish_word(reply.stop),
-        }],
+        "choices": [choice],
         "usage": usage_json(reply),
     })
 }
@@ -99,6 +156,8 @@ pub struct Stream {
     created: i64,
     include_usage: bool,
     calls: usize,
+    /// How many options to list in the `logprobs` of a `Choice` reply; none writes no `logprobs`.
+    top_logprobs: Option<u32>,
 }
 
 impl Stream {
@@ -111,7 +170,15 @@ impl Stream {
             created,
             include_usage,
             calls: 0,
+            top_logprobs: None,
         }
+    }
+
+    /// This stream with the `logprobs` of a `Choice` reply (one chunk before the last, because
+    /// the checked reply arrives whole), listing `top` options beside the chosen one.
+    pub fn with_logprobs(mut self, top: Option<u32>) -> Self {
+        self.top_logprobs = top;
+        self
     }
 
     fn chunk(&self, choices: Value, usage: Option<Value>) -> String {
@@ -156,10 +223,22 @@ impl SseOut for Stream {
     }
 
     fn finish(&mut self, reply: &ChatReply) -> String {
-        let mut out = self.chunk(
+        let mut out = String::new();
+        if let Some(top) = self.top_logprobs {
+            out.push_str(&self.chunk(
+                json!([{
+                    "index": 0,
+                    "delta": {},
+                    "logprobs": logprobs_json(reply, top),
+                    "finish_reason": null,
+                }]),
+                None,
+            ));
+        }
+        out.push_str(&self.chunk(
             json!([{ "index": 0, "delta": {}, "finish_reason": finish_word(reply.stop) }]),
             None,
-        );
+        ));
         if self.include_usage {
             out.push_str(&self.chunk(json!([]), Some(usage_json(reply))));
         }

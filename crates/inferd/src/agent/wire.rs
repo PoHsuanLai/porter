@@ -18,6 +18,10 @@ pub struct Parsed {
     pub include_usage: bool,
     /// The request, as inferd's own chat request.
     pub chat: ChatRequest,
+    /// For OpenAI's `logprobs` on a `Choice`: how many of the options' log-probabilities the
+    /// reply lists beside the chosen one (`top_logprobs`, 0 to 20). `None` when the request did
+    /// not ask, or is not a `Choice`: the reply then has no `logprobs`.
+    pub top_logprobs: Option<u32>,
 }
 
 /// A request that cannot be expressed to the model, and what in it could not be. The text names

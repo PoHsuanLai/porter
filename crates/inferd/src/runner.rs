@@ -321,6 +321,14 @@ impl sp::TurnSink for Forward {
     }
 }
 
+/// Says in the daemon's log why a reply that asked for option shares has none: the reply is the
+/// same without them and the app is not told (a Choice's answer never depends on its scores).
+pub(crate) fn note_no_scores(why: Option<bridge::NoScores>) {
+    if let Some(why) = why {
+        eprintln!("inferd: choice scores: none: {why}");
+    }
+}
+
 fn send(steps: &mpsc::UnboundedSender<TurnStep>, event: InferEvent) -> sp::Flow {
     match steps.send(TurnStep::Event(event)) {
         Ok(()) => sp::Flow::Continue,
@@ -443,10 +451,14 @@ impl Job {
             engines: self.engines.clone(),
             engine: model.spec.id.clone(),
             last_touch: Instant::now(),
-            gathered: bridge::Gathered::default(),
+            gathered: bridge::Gathered::for_turn(turn),
         };
         match provider.turn(turn, &mut sink).await {
-            Ok(end) => InferReply::Chat(sink.gathered.chat_reply(&end, served.clone())),
+            Ok(end) => {
+                let (reply, why) = sink.gathered.chat_reply_noted(&end, served.clone());
+                note_no_scores(why);
+                InferReply::Chat(reply)
+            }
             Err(error) => InferReply::Failed(bridge::model_error(&error)),
         }
     }
@@ -466,6 +478,14 @@ impl Job {
         match structured::run(provider, checked, turn, &mut forward, touch).await {
             Ok(valid) => {
                 let _ = send(steps, InferEvent::TextDelta(valid.text.clone()));
+                let scores = match bridge::turn_scores(turn, valid.first_token.as_ref()) {
+                    Some(Ok(scores)) => Some(scores),
+                    Some(Err(why)) => {
+                        note_no_scores(Some(why));
+                        None
+                    }
+                    None => None,
+                };
                 InferReply::Chat(porter_infer::ChatReply {
                     text: valid.text,
                     tool_calls: Vec::new(),
@@ -473,7 +493,7 @@ impl Job {
                     thought: valid.thought,
                     usage: valid.usage,
                     served: served.clone(),
-                    scores: None,
+                    scores,
                 })
             }
             Err(error) => InferReply::Failed(error),

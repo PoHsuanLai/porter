@@ -151,11 +151,12 @@ pub async fn reply(
     let provider = provider_over(transport, &reach.provider);
     let mut sink = Forward {
         steps,
-        gathered: bridge::Gathered::default(),
+        gathered: bridge::Gathered::for_turn(&turn),
     };
     match provider.turn(&turn, &mut sink).await {
         Ok(end) => {
-            let chat = sink.gathered.chat_reply(&end, served.clone());
+            let (chat, why) = sink.gathered.chat_reply_noted(&end, served.clone());
+            crate::runner::note_no_scores(why);
             cloud.ledger().record(
                 &pin.app,
                 &pin.model.card.account,

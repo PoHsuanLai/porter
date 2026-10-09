@@ -253,6 +253,7 @@ pub fn parse(body: &[u8], class: DataClass) -> Result<Parsed, Unmapped> {
         })
         .unwrap_or_default();
     Ok(Parsed {
+        top_logprobs: None,
         model,
         stream: root.get("stream").and_then(Value::as_bool) == Some(true),
         include_usage: true,

@@ -21,6 +21,16 @@ pub enum Chat {
         name: &'static str,
         arguments: String,
     },
+    /// The answer of a constrained choice in one piece, with the first token's log-probabilities
+    /// as vLLM and llama-server send them (`choices[0].logprobs.content[0].top_logprobs`): the
+    /// candidates are (token, probability), likeliest first.
+    Choose {
+        text: &'static str,
+        top: Vec<(&'static str, f64)>,
+    },
+    /// The answer of a constrained choice in one piece, with a `logprobs` that is not what the
+    /// API sends (a list where numbers go, a token that is a number).
+    ChooseGarbled(&'static str),
     /// Reasoning only (`reasoning_content` deltas), then a stop: no text, no call.
     Think(Vec<&'static str>),
     /// Reasoning, then text.
@@ -160,6 +170,13 @@ fn frame(delta: Value, finish: Value) -> String {
     format!("data: {body}\n\n")
 }
 
+/// A chunk whose choice also carries `logprobs`.
+fn frame_with_logprobs(delta: Value, logprobs: Value) -> String {
+    let body = json!({"id": "c1", "object": "chat.completion.chunk", "model": "m",
+        "choices": [{"index": 0, "delta": delta, "logprobs": logprobs, "finish_reason": null}]});
+    format!("data: {body}\n\n")
+}
+
 fn stream_for(answer: &Chat) -> Vec<Vec<u8>> {
     let head = b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n".to_vec();
     let usage = "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":2}}\n\ndata: [DONE]\n\n";
@@ -171,6 +188,26 @@ fn stream_for(answer: &Chat) -> Vec<Vec<u8>> {
                     .iter()
                     .map(|text| chunk(&frame(json!({"content": text}), Value::Null))),
             );
+            pieces.push(chunk(&frame(json!({}), json!("stop"))));
+        }
+        Chat::Choose { text, top } => {
+            let entry = |(token, probability): &(&str, f64)| json!({"token": token, "logprob": probability.ln(), "bytes": null});
+            let mut first = top.first().map(entry).unwrap_or_else(|| json!({}));
+            first["top_logprobs"] = top.iter().map(entry).collect();
+            let logprobs = json!({"content": [first], "refusal": null});
+            pieces.push(chunk(&frame_with_logprobs(
+                json!({"content": text}),
+                logprobs,
+            )));
+            pieces.push(chunk(&frame(json!({}), json!("stop"))));
+        }
+        Chat::ChooseGarbled(text) => {
+            let logprobs =
+                json!({"content": [{"token": 7, "logprob": "high", "top_logprobs": "none"}]});
+            pieces.push(chunk(&frame_with_logprobs(
+                json!({"content": text}),
+                logprobs,
+            )));
             pieces.push(chunk(&frame(json!({}), json!("stop"))));
         }
         Chat::Call { name, arguments } => {

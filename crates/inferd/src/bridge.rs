@@ -8,8 +8,8 @@
 mod request;
 
 pub use porter_bridge::{
-    BridgeError, DefaultSampling, Frames, Gathered, MAX_ATTACHMENT, Target, chat_turn_for,
-    embed_turns_for, event, extras, image_input, model_error, model_id_of, stop, stop_back,
-    task_turn_for, usage, vectors, width,
+    BridgeError, DefaultSampling, Frames, Gathered, MAX_ATTACHMENT, NoScores, Target,
+    chat_turn_for, embed_turns_for, event, extras, image_input, model_error, model_id_of, stop,
+    stop_back, task_turn_for, turn_scores, usage, vectors, width,
 };
 pub use request::{chat_turn, embed_turns, local_target, task_turn};

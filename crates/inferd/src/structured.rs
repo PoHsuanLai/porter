@@ -100,6 +100,9 @@ pub struct Validated {
     pub thought: Option<String>,
     /// What every attempt used.
     pub usage: pi::TokenUsage,
+    /// The first answer token's candidates, from the attempt whose reply passed (a repaired
+    /// attempt's are not the answer's), when the turn asked and the engine gave them.
+    pub first_token: Option<model_provider::FirstTokenLogprobs>,
 }
 
 fn add(a: Tokens, b: Tokens) -> Tokens {
@@ -163,6 +166,7 @@ pub async fn run<P: Provider>(
                     text,
                     thought: (!thought.trim().is_empty()).then_some(thought),
                     usage,
+                    first_token: said.end.first_token.clone(),
                 });
             }
             Extracted::Repair(next) => request = *next,

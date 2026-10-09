@@ -13,6 +13,7 @@ mod places;
 mod probed;
 mod proc_root;
 mod replayed;
+mod scores;
 mod serve;
 mod settings_module;
 mod speech;
