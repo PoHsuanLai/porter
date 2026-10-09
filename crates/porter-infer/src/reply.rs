@@ -3,6 +3,7 @@
 use crate::control::StopReason;
 use crate::cua::CuaStepReply;
 use crate::error::{InferRefusal, ModelError};
+use crate::scores::OptionScores;
 use porter_core::{AccountId, Locality, ModelId, Tokens};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -44,6 +45,11 @@ pub struct ChatReply {
     pub usage: TokenUsage,
     /// Who answered: the "sent to <provider>" indicator reads it.
     pub served: ServedBy,
+    /// How likely each declared option was, when the request asked (`ChatControl::scores`) for
+    /// a `Choice` and the engine could tell. Absent otherwise, and never a reason for the call to
+    /// fail: an engine that reports nothing usable leaves it out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scores: Option<OptionScores>,
 }
 
 /// Embeddings, one per input.

@@ -29,6 +29,7 @@ fn chat(parts: Vec<pi::MessagePart>) -> pi::ChatRequest {
             reasoning: pi::Reasoning::EngineDefault,
             sampling: pi::Knob::Off,
             stop: vec![],
+            scores: pi::Knob::Off,
         },
     }
 }

@@ -33,6 +33,7 @@ fn chat(usage: TokenUsage) -> InferReply {
         tool_calls: vec![],
         stop: StopReason::EndTurn,
         thought: None,
+        scores: None,
         usage,
         served: served(),
     })

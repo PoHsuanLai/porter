@@ -49,6 +49,7 @@ fn chat(class: DataClass) -> InferRequest {
             reasoning: Reasoning::EngineDefault,
             sampling: Knob::Off,
             stop: vec![],
+            scores: Knob::Off,
         },
     })
 }

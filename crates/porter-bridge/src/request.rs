@@ -376,6 +376,7 @@ pub fn task_turn_for(
             reasoning: pi::Reasoning::Off,
             sampling: pi::Knob::Off,
             stop: Vec::new(),
+            scores: pi::Knob::Off,
         },
     };
     chat_turn_for(target, &chat, &Frames::default())

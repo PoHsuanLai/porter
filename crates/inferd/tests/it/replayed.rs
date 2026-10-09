@@ -48,6 +48,7 @@ fn request(text: &str, tools: Vec<ToolDecl>) -> InferRequest {
             reasoning: Reasoning::EngineDefault,
             sampling: Knob::Off,
             stop: vec![],
+            scores: Knob::Off,
         },
     })
 }

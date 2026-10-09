@@ -21,6 +21,7 @@ mod readiness;
 mod reply;
 mod request;
 mod route;
+mod scores;
 mod session;
 mod slot;
 mod speech;
@@ -73,6 +74,7 @@ pub use request::{
     ToolDecl, ToolResultPart, ToolStatus,
 };
 pub use route::{Chosen, RouteAsk, RouteCandidate, TierChoice, admit, route};
+pub use scores::{MOST_CANDIDATES, OptionScore, OptionScores, ScoreOptions, ScoresError};
 pub use session::{InferSession, SessionError};
 pub use slot::Slot;
 pub use speech::{

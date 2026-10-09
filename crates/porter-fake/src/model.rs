@@ -71,6 +71,7 @@ impl Model for FakeModel {
             tool_calls: Vec::new(),
             stop: StopReason::EndTurn,
             thought: None,
+            scores: None,
             usage,
             served: self.served(),
         })

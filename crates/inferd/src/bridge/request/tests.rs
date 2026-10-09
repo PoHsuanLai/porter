@@ -20,6 +20,7 @@ fn control() -> pi::ChatControl {
         reasoning: pi::Reasoning::EngineDefault,
         sampling: pi::Knob::Off,
         stop: vec![],
+        scores: pi::Knob::Off,
     }
 }
 

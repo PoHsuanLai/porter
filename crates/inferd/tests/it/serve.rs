@@ -78,6 +78,7 @@ fn answer(text: &str) -> InferReply {
         tool_calls: vec![],
         stop: StopReason::EndTurn,
         thought: None,
+        scores: None,
         usage: usage(),
         served: served(),
     })
@@ -101,6 +102,7 @@ fn chat_with(parts: Vec<MessagePart>) -> InferRequest {
             reasoning: Reasoning::EngineDefault,
             sampling: Knob::Off,
             stop: vec![],
+            scores: Knob::Off,
         },
     })
 }

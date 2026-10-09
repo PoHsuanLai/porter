@@ -59,6 +59,7 @@ impl Gathered {
             thought: (!self.thought.is_empty()).then_some(self.thought),
             usage: usage(end.usage),
             served,
+            scores: None,
         }
     }
 }

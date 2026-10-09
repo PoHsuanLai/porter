@@ -5,6 +5,7 @@
 //! converts).
 
 use crate::ids::{OpaqueText, SignatureText, ToolName};
+use crate::scores::ScoreOptions;
 use porter_core::{Count, Permille, Tokens};
 use serde::{Deserialize, Serialize};
 
@@ -17,6 +18,19 @@ pub enum Knob<T> {
     Off,
     /// This value.
     Set(T),
+}
+
+impl<T> Knob<T> {
+    /// Whether the knob is left to the default.
+    pub fn is_off(&self) -> bool {
+        matches!(self, Knob::Off)
+    }
+}
+
+impl<T> Default for Knob<T> {
+    fn default() -> Self {
+        Knob::Off
+    }
 }
 
 /// A random seed. 32 bits.
@@ -104,6 +118,11 @@ pub struct ChatControl {
     pub sampling: Knob<Sampling>,
     /// Strings that end the reply.
     pub stop: Vec<String>,
+    /// For a `Choice` reply: also report how likely each option was (`ChatReply::scores`). `Off`
+    /// asks for nothing and is not written on the wire, so a client that never heard of the knob
+    /// and a daemon that has not either read each other's frames. Ignored for any other shape.
+    #[serde(default, skip_serializing_if = "Knob::is_off")]
+    pub scores: Knob<ScoreOptions>,
 }
 
 /// Why a reply ended. Without it a planner cannot tell a turn cut by `max_output` from a

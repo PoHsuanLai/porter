@@ -28,6 +28,7 @@ fn request(shape: pi::ReplyShape, tools: Vec<pi::ToolDecl>) -> pi::ChatRequest {
             reasoning: pi::Reasoning::Off,
             sampling: pi::Knob::Off,
             stop: Vec::new(),
+            scores: pi::Knob::Off,
         },
     }
 }

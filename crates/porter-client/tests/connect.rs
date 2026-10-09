@@ -35,6 +35,7 @@ fn reply() -> InferReply {
         tool_calls: vec![],
         stop: StopReason::EndTurn,
         thought: None,
+        scores: None,
         usage: TokenUsage {
             input: Tokens(1),
             output: Tokens(1),
@@ -63,6 +64,7 @@ fn request() -> InferRequest {
             reasoning: Reasoning::EngineDefault,
             sampling: Knob::Off,
             stop: vec![],
+            scores: Knob::Off,
         },
     })
 }

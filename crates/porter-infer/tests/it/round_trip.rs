@@ -79,6 +79,7 @@ fn requests_round_trip() {
                 seed: Knob::Set(Seed(7)),
             }),
             stop: vec!["\n\n".into()],
+            scores: Knob::Set(ScoreOptions { top_k: Count(5) }),
         },
         tools: vec![ToolDecl {
             name: ToolName::parse("mail.thread.archive").expect("name"),
@@ -114,6 +115,19 @@ fn replies_and_records_round_trip() {
         tool_calls: vec![],
         stop: StopReason::MaxTokens,
         thought: Some("hm".into()),
+        scores: Some(
+            OptionScores::new(vec![
+                OptionScore {
+                    option: "allow".into(),
+                    share: Permille(750),
+                },
+                OptionScore {
+                    option: "deny".into(),
+                    share: Permille(250),
+                },
+            ])
+            .expect("a whole"),
+        ),
         usage,
         served: served(),
     }));
@@ -148,4 +162,92 @@ fn replies_and_records_round_trip() {
         why: Some(porter_infer::Why::Warm),
         cost: Some(MicroUsd(42)),
     });
+}
+
+fn plain_chat_reply() -> ChatReply {
+    ChatReply {
+        text: "ok".into(),
+        tool_calls: vec![],
+        stop: StopReason::EndTurn,
+        thought: None,
+        scores: None,
+        usage: TokenUsage {
+            input: Tokens(1),
+            output: Tokens(1),
+            cached: Tokens(0),
+        },
+        served: served(),
+    }
+}
+
+#[test]
+fn a_reply_without_scores_writes_no_key_and_a_frame_from_before_them_reads() {
+    let json = serde_json::to_value(plain_chat_reply()).expect("serializes");
+    assert!(json.get("scores").is_none(), "{json}");
+    let back: ChatReply = serde_json::from_value(json).expect("an older frame reads");
+    assert_eq!(back.scores, None);
+}
+
+#[test]
+fn the_scores_of_a_reply_are_a_list_of_options_with_their_shares() {
+    let mut reply = plain_chat_reply();
+    reply.scores = Some(
+        OptionScores::new(vec![
+            OptionScore {
+                option: "allow".into(),
+                share: Permille(750),
+            },
+            OptionScore {
+                option: "deny".into(),
+                share: Permille(250),
+            },
+        ])
+        .expect("a whole"),
+    );
+    let json = serde_json::to_value(&reply).expect("serializes");
+    assert_eq!(
+        json["scores"],
+        serde_json::json!([
+            {"option": "allow", "share": 750},
+            {"option": "deny", "share": 250},
+        ])
+    );
+}
+
+#[test]
+fn a_reply_whose_shares_are_not_a_whole_does_not_read() {
+    let mut json = serde_json::to_value(plain_chat_reply()).expect("serializes");
+    json["scores"] = serde_json::json!([
+        {"option": "allow", "share": 900},
+        {"option": "deny", "share": 900},
+    ]);
+    assert!(serde_json::from_value::<ChatReply>(json).is_err());
+}
+
+#[test]
+fn the_score_knob_is_not_written_when_off_and_reads_when_absent() {
+    let control = ChatControl {
+        tool_choice: ToolChoice::Auto,
+        tool_calls: ToolParallelism::One,
+        max_output: Knob::Off,
+        reasoning: Reasoning::EngineDefault,
+        sampling: Knob::Off,
+        stop: vec![],
+        scores: Knob::Off,
+    };
+    let json = serde_json::to_value(&control).expect("serializes");
+    assert!(json.get("scores").is_none(), "{json}");
+    let back: ChatControl = serde_json::from_value(json).expect("reads");
+    assert_eq!(back, control);
+
+    let asked = ChatControl {
+        scores: Knob::Set(ScoreOptions::default()),
+        ..control
+    };
+    let json = serde_json::to_value(&asked).expect("serializes");
+    assert_eq!(
+        json["scores"],
+        serde_json::json!({"kind": "set", "v": {"top_k": 20}})
+    );
+    round_trip(&asked);
 }

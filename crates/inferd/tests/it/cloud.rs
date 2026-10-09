@@ -64,6 +64,7 @@ fn chat_request(text: &str, class: DataClass) -> InferRequest {
             reasoning: Reasoning::EngineDefault,
             sampling: Knob::Off,
             stop: vec![],
+            scores: Knob::Off,
         },
     })
 }

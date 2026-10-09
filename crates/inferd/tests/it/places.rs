@@ -299,6 +299,7 @@ mod routing {
                 reasoning: Reasoning::EngineDefault,
                 sampling: Knob::Off,
                 stop: vec![],
+                scores: Knob::Off,
             },
         })
     }
@@ -993,6 +994,7 @@ mod computers {
                 reasoning: Reasoning::EngineDefault,
                 sampling: Knob::Off,
                 stop: vec![],
+                scores: Knob::Off,
             },
         })
     }

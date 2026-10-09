@@ -473,6 +473,7 @@ impl Job {
                     thought: valid.thought,
                     usage: valid.usage,
                     served: served.clone(),
+                    scores: None,
                 })
             }
             Err(error) => InferReply::Failed(error),

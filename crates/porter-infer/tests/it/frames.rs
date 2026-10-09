@@ -524,6 +524,7 @@ fn a_frame_names_how_many_descriptors_ride_with_it() {
                 reasoning: Reasoning::EngineDefault,
                 sampling: Knob::Off,
                 stop: vec![],
+                scores: Knob::Off,
             },
         }))
     };

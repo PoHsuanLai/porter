@@ -20,6 +20,7 @@ fn reply(
             .collect(),
         stop,
         thought: thought.map(str::to_owned),
+        scores: None,
         usage: TokenUsage {
             input: Tokens(12),
             output: Tokens(7),

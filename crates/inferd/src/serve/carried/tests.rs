@@ -45,6 +45,7 @@ fn chat(messages: Vec<ChatMessage>) -> InferRequest {
             reasoning: porter_infer::Reasoning::EngineDefault,
             sampling: Knob::Off,
             stop: vec![],
+            scores: Knob::Off,
         },
     })
 }

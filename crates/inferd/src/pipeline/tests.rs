@@ -288,6 +288,7 @@ fn chat() -> porter_infer::ChatRequest {
             reasoning: Reasoning::EngineDefault,
             sampling: Knob::Off,
             stop: vec![],
+            scores: Knob::Off,
         },
     }
 }

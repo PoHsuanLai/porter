@@ -216,6 +216,7 @@ fn ask(class: DataClass, text: &str) -> InferRequest {
             reasoning: Reasoning::EngineDefault,
             sampling: Knob::Off,
             stop: vec![],
+            scores: Knob::Off,
         },
     })
 }

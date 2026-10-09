@@ -98,6 +98,7 @@ fn chat() -> ChatRequest {
             reasoning: Reasoning::EngineDefault,
             sampling: Knob::Off,
             stop: vec![],
+            scores: Knob::Off,
         },
     }
 }

@@ -5,7 +5,7 @@ use porter_core::DataClass;
 use porter_core::consent::Usage;
 use porter_infer::{
     Base64Bytes, ChatControl, ChatMessage, ChatRequest, ImagePart, ImageSource, JsonSchemaText,
-    JsonText, MessagePart, OpaqueText, Reasoning, ReplyShape, Role, SignatureText, ThoughtPart,
+    JsonText, Knob, MessagePart, OpaqueText, Reasoning, ReplyShape, Role, SignatureText, ThoughtPart,
     ThoughtSeal, ToolCallId, ToolCallPart, ToolChoice, ToolDecl, ToolName, ToolParallelism,
     ToolResultPart, ToolStatus,
 };
@@ -275,6 +275,7 @@ pub fn parse(body: &[u8], class: DataClass) -> Result<Parsed, Unmapped> {
                     DEFAULT_TEMPERATURE,
                 ),
                 stop,
+                scores: Knob::Off,
             },
         },
     })

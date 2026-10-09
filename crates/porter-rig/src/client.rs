@@ -342,6 +342,7 @@ fn chat(prompt: &str, ask: &Ask, tier: Tier) -> InferRequest {
             reasoning: Reasoning::EngineDefault,
             sampling: Knob::Off,
             stop: vec![],
+            scores: Knob::Off,
         },
     })
 }

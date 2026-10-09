@@ -36,6 +36,7 @@ fn chat_with(parts: Vec<MessagePart>) -> InferRequest {
             reasoning: Reasoning::EngineDefault,
             sampling: Knob::Off,
             stop: vec![],
+            scores: Knob::Off,
         },
     })
 }

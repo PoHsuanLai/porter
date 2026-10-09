@@ -68,6 +68,7 @@ async fn the_fake_model_echoes_the_last_text() {
             reasoning: Reasoning::EngineDefault,
             sampling: Knob::Off,
             stop: vec![],
+            scores: Knob::Off,
         },
     };
     let mut events = Collect::default();
@@ -107,6 +108,7 @@ async fn the_unbuilt_broker_refuses_instead_of_panicking() {
             reasoning: Reasoning::EngineDefault,
             sampling: Knob::Off,
             stop: vec![],
+            scores: Knob::Off,
         },
     });
     let mut events = Collect::default();

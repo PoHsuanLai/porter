@@ -131,6 +131,7 @@ mod tests {
                 .collect(),
             stop: StopReason::EndTurn,
             thought: thought.map(str::to_owned),
+            scores: None,
             usage: TokenUsage {
                 input: Tokens(10),
                 output: Tokens(3),

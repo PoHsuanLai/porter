@@ -35,6 +35,7 @@ fn chat_control_has_pinned_json() {
             seed: Knob::Set(Seed(7)),
         }),
         stop: vec!["END".into()],
+        scores: Knob::Off,
     };
     pinned(
         &control,

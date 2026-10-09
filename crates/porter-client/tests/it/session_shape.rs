@@ -68,6 +68,7 @@ fn chat() -> InferRequest {
             reasoning: Reasoning::EngineDefault,
             sampling: Knob::Off,
             stop: vec![],
+            scores: Knob::Off,
         },
     })
 }
@@ -90,6 +91,7 @@ async fn infer_reads_to_the_finished_event() {
         tool_calls: vec![],
         stop: StopReason::EndTurn,
         thought: None,
+        scores: None,
         usage,
         served: served(),
     });
