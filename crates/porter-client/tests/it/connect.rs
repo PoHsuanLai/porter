@@ -1,10 +1,9 @@
 //! `Accounts::connect`: the first reachable link wins. The session bus is found through the
 //! environment, so the D-Bus case runs the connecting half in a child process whose
-//! environment names a private bus; this process never edits its own.
-#![cfg(all(feature = "dbus", feature = "infer"))]
+//! environment names a private bus; this process never edits its own. The child is this test
+//! executable run again, by test path (`connect::child_finds_no_bus`).
 
-#[path = "it/common/mod.rs"]
-mod common;
+use crate::common;
 
 use common::bus::PrivateBus;
 use common::inferd::{Behaviour, FakeInferd};
@@ -20,7 +19,7 @@ use porter_infer::{
 use std::path::PathBuf;
 
 const CHILD_MARKER: &str = "PORTER_CLIENT_CONNECT_CHILD";
-const CHILD_TEST: &str = "child_connects_over_the_session_bus_it_is_given";
+const CHILD_TEST: &str = "connect::child_connects_over_the_session_bus_it_is_given";
 
 fn need() -> Need {
     Need::Llm(LlmNeed {
@@ -143,7 +142,7 @@ async fn without_a_session_bus_the_dbus_link_is_unreachable() {
     let status = tokio::process::Command::new(std::env::current_exe().expect("test binary"))
         .args([
             "--exact",
-            "child_finds_no_bus",
+            "connect::child_finds_no_bus",
             "--nocapture",
             "--test-threads=1",
         ])

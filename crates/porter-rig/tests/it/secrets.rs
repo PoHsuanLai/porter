@@ -1,10 +1,10 @@
 //! `porter-rig-secrets` as a process: a fake `org.freedesktop.secrets` on a private bus, and
 //! accountd's own `Oo7Secrets` (the real client, session negotiation and all) storing,
 //! refusing to overwrite, reading back and deleting through it, from a child process whose
-//! only bus is the private one. The service ends cleanly on SIGTERM sent to its PID.
+//! only bus is the private one (this test executable run again, `secrets::oo7_child`). The
+//! service ends cleanly on SIGTERM sent to its PID.
 
-#[path = "it/common/mod.rs"]
-mod common;
+use crate::common;
 
 use common::bus::PrivateBus;
 use common::{Proc, scratch};
@@ -121,7 +121,12 @@ async fn accountds_oo7_secrets_stores_and_reads_back_through_the_fake_and_it_end
                 .env("DBUS_SESSION_BUS_ADDRESS", address)
                 .env("HOME", &home)
                 .env("XDG_RUNTIME_DIR", &home)
-                .args(["--exact", "oo7_child", "--nocapture", "--test-threads=1"])
+                .args([
+                    "--exact",
+                    "secrets::oo7_child",
+                    "--nocapture",
+                    "--test-threads=1",
+                ])
                 .stdin(Stdio::null())
                 .output()
                 .expect("the child test runs")

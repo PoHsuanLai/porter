@@ -1,7 +1,7 @@
 //! What becomes of an engine's processes when inferd itself ends. A helper process stands in for
-//! inferd: this test binary run again (`fake_inferd`), starting an engine through the real
-//! `ProcessHost`. The engine is a shell that forks a grandchild ignoring `SIGTERM` and records
-//! both pids in a scratch directory. Only pids this test started are signalled.
+//! inferd: this test binary run again (`engine_group::fake_inferd`), starting an engine through
+//! the real `ProcessHost`. The engine is a shell that forks a grandchild ignoring `SIGTERM` and
+//! records both pids in a scratch directory. Only pids this test started are signalled.
 
 use engine_supervisor::{EngineHost, EngineId, GpuAccess, Network, ProgramPath, Sandbox, UnitSpec};
 use inferd::hosts::ProcessHost;
@@ -85,7 +85,7 @@ impl Drop for Scratch {
 
 fn helper(mode: &str, dir: &Path) -> std::process::Child {
     std::process::Command::new(std::env::current_exe().expect("this test binary"))
-        .args(["--exact", "fake_inferd", "--nocapture"])
+        .args(["--exact", "engine_group::fake_inferd", "--nocapture"])
         .env("FAKE_INFERD", mode)
         .env("FAKE_DIR", dir)
         .stdin(Stdio::null())

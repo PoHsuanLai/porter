@@ -21,6 +21,7 @@ rustls-pki-types = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true, features = ["net", "time", "io-util", "rt"] }
 
 [dev-dependencies]
+porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }
 tokio = { workspace = true }
 

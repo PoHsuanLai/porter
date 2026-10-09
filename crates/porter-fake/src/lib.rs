@@ -7,6 +7,7 @@
 mod accounts;
 mod clock;
 mod deadline;
+pub mod guard;
 mod model;
 mod provider;
 mod recorders;

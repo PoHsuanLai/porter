@@ -15,5 +15,9 @@ porter-http = { workspace = true }
 thiserror = { workspace = true }
 roxmltree = { workspace = true }
 
+[dev-dependencies]
+# Only for the include guard of tests/it (`porter_fake::guard`).
+porter-fake = { workspace = true }
+
 [lints]
 workspace = true

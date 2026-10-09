@@ -3,13 +3,12 @@
 //!
 //! Two kinds of test. The real `inferd` binary on a private bus with a scratch XDG, no engines:
 //! the signals are handled, the bus name is released, the exit is 0. And a stand-in for inferd
-//! (this test binary run again, `fake_inferd`) that runs the same `inferd::shutdown` over a real
-//! `ProcessHost` whose engine is a shell forking a grandchild that ignores `SIGTERM`: starting a
-//! real engine needs a caller the real binary only names in a `test-proc-root` build, and no model
-//! is ever run here. Only pids these tests started are signalled.
+//! (this test binary run again, `shutdown::fake_inferd`) that runs the same `inferd::shutdown`
+//! over a real `ProcessHost` whose engine is a shell forking a grandchild that ignores `SIGTERM`:
+//! starting a real engine needs a caller the real binary only names in a `test-proc-root` build,
+//! and no model is ever run here. Only pids these tests started are signalled.
 
-#[path = "it/hosting/bus.rs"]
-mod bus;
+use crate::hosting::bus;
 
 use engine_supervisor::{EngineHost, EngineId, GpuAccess, Network, ProgramPath, Sandbox, UnitSpec};
 use inferd::hosts::ProcessHost;
@@ -127,7 +126,7 @@ impl Drop for Started {
 fn stand_in(dir: &Path, grace_ms: u32, bound_ms: u32) -> Started {
     Started(
         Command::new(std::env::current_exe().expect("this test binary"))
-            .args(["--exact", "fake_inferd", "--nocapture"])
+            .args(["--exact", "shutdown::fake_inferd", "--nocapture"])
             .env("FAKE_DIR", dir)
             .env("FAKE_GRACE_MS", grace_ms.to_string())
             .env("FAKE_BOUND_MS", bound_ms.to_string())

@@ -14,5 +14,9 @@ serde = { workspace = true }
 thiserror = { workspace = true }
 toml = { workspace = true }
 
+[dev-dependencies]
+# Only for the include guard of tests/it (`porter_fake::guard`).
+porter-fake = { workspace = true }
+
 [lints]
 workspace = true

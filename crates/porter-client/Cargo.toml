@@ -82,9 +82,7 @@ socket = ["framed", "dep:latchkey"]
 [lints]
 workspace = true
 
-# Each is its own test executable: it starts that executable again as a fake child, by test name.
-[[test]]
-name = "connect"
-
+# Its own test executable: it builds without porter-infer (`--no-default-features --features
+# socket`) and starts that executable again as a fake child, by test name.
 [[test]]
 name = "socket_accounts"

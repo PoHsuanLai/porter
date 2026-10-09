@@ -1,11 +1,11 @@
 //! A failed engine start is a typed failure, not `NotReady` until a client gives up. The daemon
 //! runs on a private bus with real child processes for engines: a script (written by the test,
-//! in a scratch directory) runs this test binary again as the fake engine, which exits at start,
-//! binds its socket and dies, binds and answers `/health`, or never answers. No model, no GPU, no
-//! network, nothing outside the scratch directories.
+//! in a scratch directory) runs this test binary again as the fake engine
+//! (`engine_start::fake_engine`), which exits at start, binds its socket and dies, binds and
+//! answers `/health`, or never answers. No model, no GPU, no network, nothing outside the scratch
+//! directories.
 
-#[path = "it/hosting/mod.rs"]
-mod hosting;
+use crate::hosting;
 
 use hosting::entries;
 use hosting::rig::{Plan, Processes, World};
@@ -112,7 +112,7 @@ impl Engine {
         let script = format!(
             "#!/bin/sh\necho run >> '{dir}/runs'\nprev=\"\"\nfor a in \"$@\"; do\n  \
              if [ \"$prev\" = \"--host\" ]; then sock=\"$a\"; fi\n  prev=\"$a\"\ndone\n\
-             FAKE_ENGINE='{mode}' FAKE_SOCK=\"$sock\" FAKE_DIR='{dir}' exec '{exe}' --exact fake_engine --nocapture\n",
+             FAKE_ENGINE='{mode}' FAKE_SOCK=\"$sock\" FAKE_DIR='{dir}' exec '{exe}' --exact engine_start::fake_engine --nocapture\n",
             dir = dir.display(),
             exe = exe.display(),
         );

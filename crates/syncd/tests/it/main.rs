@@ -23,3 +23,12 @@ mod storage_bus;
 mod sync_bus;
 mod webdav_bus;
 mod wipe_bus;
+
+#[test]
+fn every_module_is_declared() {
+    porter_fake::guard::every_module_is_declared(
+        env!("CARGO_MANIFEST_DIR"),
+        "tests/it",
+        include_str!("main.rs"),
+    );
+}

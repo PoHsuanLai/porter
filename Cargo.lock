@@ -2224,6 +2224,7 @@ dependencies = [
 name = "porter-core"
 version = "0.1.0"
 dependencies = [
+ "porter-fake",
  "proptest",
  "serde",
  "serde_json",
@@ -2236,6 +2237,7 @@ name = "porter-dav"
 version = "0.1.0"
 dependencies = [
  "porter-core",
+ "porter-fake",
  "porter-http",
  "roxmltree",
  "thiserror",
@@ -2246,6 +2248,7 @@ name = "porter-dbus"
 version = "0.1.0"
 dependencies = [
  "porter-core",
+ "porter-fake",
  "proptest",
  "serde",
  "serde_json",
@@ -2334,6 +2337,7 @@ dependencies = [
  "hyper-rustls",
  "hyper-util",
  "porter-core",
+ "porter-fake",
  "porter-fake-servers",
  "rustls",
  "rustls-native-certs",
@@ -2349,6 +2353,7 @@ dependencies = [
  "base64",
  "cua-action",
  "porter-core",
+ "porter-fake",
  "proptest",
  "serde",
  "serde_json",
@@ -2378,6 +2383,7 @@ name = "porter-provider"
 version = "0.1.0"
 dependencies = [
  "porter-core",
+ "porter-fake",
  "serde",
  "thiserror",
  "toml",
@@ -2431,6 +2437,7 @@ dependencies = [
  "keyring-core",
  "oo7",
  "porter-core",
+ "porter-fake",
  "porter-fs",
  "porter-secrets",
  "serde_json",
@@ -2456,6 +2463,7 @@ name = "porter-sync"
 version = "0.1.0"
 dependencies = [
  "porter-core",
+ "porter-fake",
  "porter-sync",
  "serde",
  "serde_json",
@@ -2571,6 +2579,7 @@ name = "prov"
 version = "0.1.0"
 dependencies = [
  "porter-core",
+ "porter-fake",
  "proptest",
  "serde",
  "serde_json",
@@ -3093,6 +3102,7 @@ name = "storage-gdrive"
 version = "0.1.0"
 dependencies = [
  "porter-core",
+ "porter-fake",
  "porter-fake-servers",
  "porter-http",
  "porter-sync",
@@ -3108,6 +3118,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "porter-core",
+ "porter-fake",
  "porter-fake-servers",
  "porter-http",
  "porter-sync",
@@ -3124,6 +3135,7 @@ dependencies = [
  "base64",
  "porter-core",
  "porter-dav",
+ "porter-fake",
  "porter-fake-servers",
  "porter-http",
  "porter-sync",

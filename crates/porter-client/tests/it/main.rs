@@ -1,10 +1,13 @@
 //! The crate's integration tests: one executable, one module per topic (CONVENTIONS.md, Tests).
-//! Modules that need a feature carry it here. `connect` and `socket_accounts` are separate
-//! targets (Cargo.toml): each starts its own test executable again as a fake child by test name.
+//! Modules that need a feature carry it here. `socket_accounts` is a separate target
+//! (Cargo.toml): it builds without porter-infer. `connect` starts this executable again as a
+//! fake child, by test path.
 
 mod accountd_requests;
 #[cfg(any(feature = "dbus", feature = "socket"))]
 mod common;
+#[cfg(all(feature = "dbus", feature = "infer"))]
+mod connect;
 mod dbus_accounts;
 mod dbus_open;
 mod dbus_peer;
@@ -22,3 +25,12 @@ mod prepare;
 mod process_credential;
 mod session_shape;
 mod socket;
+
+#[test]
+fn every_module_is_declared() {
+    porter_fake::guard::every_module_is_declared(
+        env!("CARGO_MANIFEST_DIR"),
+        "tests/it",
+        include_str!("main.rs"),
+    );
+}

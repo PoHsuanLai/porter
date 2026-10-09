@@ -17,6 +17,8 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+# Only for the include guard of tests/it (`porter_fake::guard`).
+porter-fake = { workspace = true }
 proptest = { workspace = true }
 
 [lints]

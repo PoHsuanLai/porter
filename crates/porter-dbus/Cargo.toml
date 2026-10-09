@@ -30,6 +30,8 @@ photos-picker = []
 workspace = true
 
 [dev-dependencies]
+# Only for the include guard of tests/it (`porter_fake::guard`).
+porter-fake = { workspace = true }
 proptest = { workspace = true }
 # A paused clock for `serve_ready`'s timing tests.
 tokio = { workspace = true, features = ["test-util"] }

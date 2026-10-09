@@ -4,3 +4,12 @@ mod common;
 mod contract;
 mod fixtures;
 mod webdav;
+
+#[test]
+fn every_module_is_declared() {
+    porter_fake::guard::every_module_is_declared(
+        env!("CARGO_MANIFEST_DIR"),
+        "tests/it",
+        include_str!("main.rs"),
+    );
+}

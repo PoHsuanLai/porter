@@ -4,8 +4,7 @@
 //! lab engine that is a process of its own. Nothing outside the scratch directories and loopback
 //! ports the tests bind is touched; the only pids signalled are ones these tests started.
 
-#[path = "it/hosting/mod.rs"]
-mod hosting;
+use crate::hosting;
 
 use hosting::lab::Lab;
 use hosting::rig::{Plan, World};
@@ -39,8 +38,8 @@ const KEY: &str = "sk-lab-1234-NOT-A-REAL-KEY";
 static NEXT: AtomicU32 = AtomicU32::new(0);
 
 /// The lab engine as a process of its own. Run as a test it does nothing; run by the tests below
-/// with `FAKE_LAB_DIR` set, it serves the attached entry on `<dir>/lab.sock` (wanting `FAKE_LAB_KEY`
-/// when that is set) until it is killed.
+/// with `FAKE_LAB_DIR` set (as `attached::fake_lab_process`), it serves the attached entry on
+/// `<dir>/lab.sock` (wanting `FAKE_LAB_KEY` when that is set) until it is killed.
 #[test]
 fn fake_lab_process() {
     let Ok(dir) = std::env::var("FAKE_LAB_DIR") else {
@@ -127,7 +126,7 @@ impl Drop for Started {
 fn lab_process(dir: &Dir, key: Option<&str>) -> Started {
     let mut command = Command::new(std::env::current_exe().expect("this test binary"));
     command
-        .args(["--exact", "fake_lab_process", "--nocapture"])
+        .args(["--exact", "attached::fake_lab_process", "--nocapture"])
         .env("FAKE_LAB_DIR", &dir.0)
         .stdin(Stdio::null())
         .stdout(Stdio::null())

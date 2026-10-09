@@ -13,6 +13,8 @@ porter-core = { workspace = true }
 serde = { workspace = true }
 
 [dev-dependencies]
+# Only for the include guard of tests/it (`porter_fake::guard`).
+porter-fake = { workspace = true }
 serde_json = { workspace = true }
 proptest = { workspace = true }
 

@@ -2,6 +2,9 @@
 //! with `--no-default-features --features socket`). The agent end is latchkey's own
 //! (`Agent::listen`, the single-instance lock and the address rule), in a scratch runtime
 //! directory; no real agent and no real session is touched.
+//!
+//! Its own test binary, not a module of `tests/it`: builds without porter-infer. It also starts
+//! itself again as a fake child, by test name.
 #![cfg(all(unix, feature = "socket"))]
 
 use latchkey::{Agent, Environment, Stream, here};
