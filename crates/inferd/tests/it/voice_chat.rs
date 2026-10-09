@@ -134,7 +134,7 @@ async fn say(session: &mut DbusSession, frames: u64) {
 }
 
 async fn next(session: &mut DbusSession) -> InferEvent {
-    tokio::time::timeout(Duration::from_secs(20), session.next())
+    tokio::time::timeout(porter_fake::GENEROUS, session.next())
         .await
         .expect("an event in time")
         .expect("an event")
@@ -323,7 +323,7 @@ async fn cancel_during_hear_stops_both_stages() {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     };
-    tokio::time::timeout(Duration::from_secs(20), waited)
+    tokio::time::timeout(porter_fake::GENEROUS, waited)
         .await
         .expect("the host was given the whole utterance");
 

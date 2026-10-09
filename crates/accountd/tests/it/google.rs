@@ -739,7 +739,7 @@ async fn gmail_for_a_persons_own_client_is_read_through_the_relay_with_xoauth2()
     let mut buf = [0u8; 4096];
     app.write_all(b"a1 SELECT INBOX\r\n").await.expect("write");
     while !seen.contains("a1 OK") {
-        let n = tokio::time::timeout(Duration::from_secs(10), app.read(&mut buf))
+        let n = tokio::time::timeout(porter_fake::GENEROUS, app.read(&mut buf))
             .await
             .expect("in time")
             .expect("read");

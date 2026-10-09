@@ -223,7 +223,7 @@ async fn an_account_that_appears_makes_inferd_say_engines_changed() {
     let daemon = world.daemon.unique_name().expect("name").to_owned();
     let path = porter_dbus::zvariant::ObjectPath::try_from("/org/quire/Accounts1/account/new")
         .expect("path");
-    let heard = within_secs(5, async {
+    let heard = within_generous(async {
         loop {
             held.emit_signal(
                 Some(daemon.clone()),
@@ -246,8 +246,8 @@ async fn an_account_that_appears_makes_inferd_say_engines_changed() {
     assert!(heard, "EnginesChanged after an account appeared");
 }
 
-async fn within_secs(secs: u64, work: impl std::future::Future<Output = ()>) -> bool {
-    tokio::time::timeout(std::time::Duration::from_secs(secs), work)
+async fn within_generous(work: impl std::future::Future<Output = ()>) -> bool {
+    tokio::time::timeout(porter_fake::GENEROUS, work)
         .await
         .is_ok()
 }

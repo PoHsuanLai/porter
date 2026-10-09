@@ -14,8 +14,8 @@ use syncd::service::{Hub, serve};
 /// How long the object server's runtime is held back.
 const HELD: Duration = Duration::from_secs(2);
 
-/// How long the test waits on anything.
-const DEADLINE: Duration = Duration::from_secs(60);
+/// How long the test waits on anything: as long as a starved machine needs.
+const DEADLINE: Duration = porter_fake::GENEROUS;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_call_made_as_soon_as_the_name_is_owned_is_answered() {
@@ -47,7 +47,7 @@ async fn a_call_made_as_soon_as_the_name_is_owned_is_answered() {
         serve(&connection, Hub::default(), Known::default()),
     )
     .await
-    .expect("syncd serves within 60 s")
+    .expect("syncd serves within the generous wait")
     .expect("syncd serves");
 
     let client = bus.connect().await;

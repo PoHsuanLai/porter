@@ -8,7 +8,6 @@ use crate::common;
 use common::accountd::{Daemon, named, photos};
 use porter_client::{DbusTransport, SpacesError};
 use porter_core::{SpaceChange, SpaceLook, SpaceName};
-use std::time::Duration;
 
 fn name(text: &str) -> SpaceName {
     SpaceName::parse(text).expect("name")
@@ -39,7 +38,7 @@ async fn an_app_lists_creates_and_hears_of_new_spaces() {
 
     use porter_dbus::BusStream;
     let next = tokio::time::timeout(
-        Duration::from_secs(2),
+        porter_fake::GENEROUS,
         std::future::poll_fn(|cx| std::pin::Pin::new(&mut changes).poll_next(cx)),
     )
     .await

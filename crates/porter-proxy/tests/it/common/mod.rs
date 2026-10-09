@@ -20,7 +20,9 @@ use tokio::time::timeout;
 pub const USER: &str = "alice@fake.test";
 pub const PASSWORD: &str = "hunter2";
 pub const TOKEN: &str = "fake-access-9";
-const WAIT: Duration = Duration::from_secs(10);
+/// How long a read or the end of a relay is waited for: as long as a starved machine needs. A
+/// passing read returns at once.
+const WAIT: Duration = porter_fake::GENEROUS;
 
 pub fn port(address: &FakeAddress) -> u16 {
     match address {

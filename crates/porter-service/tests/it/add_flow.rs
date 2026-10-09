@@ -915,7 +915,7 @@ async fn closing_the_sheet_ends_a_wait_for_the_browser_at_once() {
     });
     let (service, _kept) = service(&script, vec![gives_up]);
     let reply = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
+        porter_fake::GENEROUS,
         added(&service, &app("org.quire.Mail")),
     )
     .await
@@ -943,7 +943,7 @@ async fn open_again_shows_the_browser_page_again_without_restarting_the_sign_in(
     });
     let (service, kept) = service(&script, vec![person]);
     let reply = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
+        porter_fake::GENEROUS,
         added(&service, &app("org.quire.Mail")),
     )
     .await

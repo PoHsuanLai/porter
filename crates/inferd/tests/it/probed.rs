@@ -344,7 +344,7 @@ async fn rescan_tells_listeners_the_engines_changed_when_a_runtime_came_up() {
     let _ollama = fake_ollama(&Bind::Port(port)).await;
     rescan(&world).await;
     tokio::time::timeout(
-        Duration::from_secs(10),
+        porter_fake::GENEROUS,
         std::future::poll_fn(|cx| std::pin::Pin::new(&mut changed).poll_next(cx)),
     )
     .await

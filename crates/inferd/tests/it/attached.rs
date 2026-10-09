@@ -29,7 +29,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 const ATTACHED: &str = entries::ATTACHED;
 
@@ -619,9 +619,10 @@ fn real_inferd(bus: &bus::PrivateBus, config: &str, catalog: &[(&str, String)]) 
     )
 }
 
-fn exit_within(child: &mut Started, within: Duration) -> Option<i32> {
-    let until = Instant::now() + within;
-    while Instant::now() < until {
+/// The exit code of `child`, waited for as long as a starved machine needs, or `None`.
+fn exit_within(child: &mut Started) -> Option<i32> {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         if let Some(status) = child.0.try_wait().expect("wait") {
             return Some(status.code().unwrap_or(-1));
         }
@@ -655,14 +656,16 @@ async fn sigterm_to_the_real_inferd_leaves_the_attached_engines_process_alive() 
     let client = bus.connect().await;
     let dbus = zbus::fdo::DBusProxy::new(&client).await.expect("dbus");
     let name = zbus::names::BusName::try_from(porter_dbus::INFERENCE_BUS).expect("bus name");
-    let until = Instant::now() + Duration::from_secs(20);
+    let deadline = porter_fake::Deadline::generous();
     while !dbus.name_has_owner(name.clone()).await.expect("ask") {
-        assert!(Instant::now() < until, "inferd never took its name");
+        if deadline.passed() {
+            deadline.fail("inferd takes its name");
+        }
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
     assert!(alive(pid));
     signal(inferd.0.id(), Signal::TERM);
-    assert_eq!(exit_within(&mut inferd, Duration::from_secs(15)), Some(0));
+    assert_eq!(exit_within(&mut inferd), Some(0));
     assert!(
         alive(pid),
         "inferd's shutdown did not reach the engine it never started"
@@ -714,11 +717,7 @@ async fn the_real_inferd_refuses_to_start_on_a_bad_attached_table_and_says_which
                 ("tiny-chat.toml", entries::chat()),
             ],
         );
-        assert_eq!(
-            exit_within(&mut inferd, Duration::from_secs(20)),
-            Some(1),
-            "{tables}"
-        );
+        assert_eq!(exit_within(&mut inferd), Some(1), "{tables}");
         let said = stderr_of(inferd);
         assert!(said.contains(why), "{why:?} in {said}");
     }

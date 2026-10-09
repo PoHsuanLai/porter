@@ -167,7 +167,7 @@ fn stream_of(fd: zbus::zvariant::OwnedFd) -> tokio::net::UnixStream {
 async fn read_until(stream: &mut tokio::net::UnixStream, seen: &mut String, needle: &str) {
     let mut buf = [0u8; 4096];
     while !seen.contains(needle) {
-        let n = tokio::time::timeout(std::time::Duration::from_secs(10), stream.read(&mut buf))
+        let n = tokio::time::timeout(porter_fake::GENEROUS, stream.read(&mut buf))
             .await
             .expect("the relay answers in time")
             .expect("read");

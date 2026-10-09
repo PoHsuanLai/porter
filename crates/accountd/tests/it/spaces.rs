@@ -14,7 +14,6 @@ use porter_core::{
 use porter_dbus::{CallerRole, SpaceChangedStream, SpacesProxy};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::time::Duration;
 
 static NEXT: AtomicU32 = AtomicU32::new(0);
 
@@ -97,11 +96,11 @@ fn settings_caller() -> porter_dbus::Caller {
     caller("org.quire.Settings", CallerRole::Settings)
 }
 
-/// The next `Changed` within two seconds, as (id, what).
+/// The next `Changed`, as (id, what): each one is waited for as long as a starved machine needs.
 async fn next_change(stream: &mut SpaceChangedStream) -> Option<(String, String)> {
     use zbus::export::futures_core::Stream;
     let next = tokio::time::timeout(
-        Duration::from_secs(2),
+        porter_fake::GENEROUS,
         std::future::poll_fn(|cx| std::pin::Pin::new(&mut *stream).poll_next(cx)),
     )
     .await

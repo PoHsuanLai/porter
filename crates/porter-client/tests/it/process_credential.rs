@@ -27,7 +27,6 @@ use std::os::fd::AsFd;
 use std::os::unix::fs::{FileExt, PermissionsExt};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 
 const KEY: &str = "sk-ant-api03-S3CRET-CLIENT-KEY-0123456789";
 const PROGRAM: &str = "claude-code";
@@ -341,7 +340,7 @@ async fn accountd_ending_a_credential_reaches_the_launcher_as_a_revocation() {
         .expect("revoked");
 
     let told = tokio::time::timeout(
-        Duration::from_secs(5),
+        porter_fake::GENEROUS,
         std::future::poll_fn(|cx| std::pin::Pin::new(&mut revocations).poll_next(cx)),
     )
     .await
@@ -473,7 +472,7 @@ async fn a_session_grant_backs_a_credential_and_ending_the_session_ends_both() {
 
     launcher.end_session(&session).await.expect("ended");
     let told = tokio::time::timeout(
-        Duration::from_secs(5),
+        porter_fake::GENEROUS,
         std::future::poll_fn(|cx| std::pin::Pin::new(&mut revocations).poll_next(cx)),
     )
     .await

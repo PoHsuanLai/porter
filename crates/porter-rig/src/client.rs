@@ -495,7 +495,7 @@ async fn talk(fd: OwnedFd, http: bool, host: &str, path: &str) -> std::io::Resul
     }
     let mut seen = Vec::new();
     let mut buf = [0u8; 4096];
-    let wait = Duration::from_secs(10);
+    let wait = porter_fake::GENEROUS;
     while !complete(&seen, http) && seen.len() < 64 * 1024 {
         match tokio::time::timeout(wait, stream.read(&mut buf)).await {
             Ok(Ok(0)) | Err(_) => break,

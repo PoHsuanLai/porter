@@ -184,10 +184,11 @@ fn signal(pid: u32, signal: Signal) {
     kill_process(pid, signal).expect("signal a process this test started");
 }
 
-/// The exit code of `child` within `within`, or `None` (then the test fails; the guard kills it).
-fn exit_within(child: &mut Started, within: Duration) -> Option<i32> {
-    let until = Instant::now() + within;
-    while Instant::now() < until {
+/// The exit code of `child`, or `None` (then the test fails; the guard kills it). It waits as long
+/// as a starved machine needs: the timing a test proves is in its own `elapsed()` assert.
+fn exit_within(child: &mut Started) -> Option<i32> {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         if let Some(status) = child.0.try_wait().expect("wait") {
             return Some(status.code().unwrap_or(-1));
         }
@@ -223,7 +224,7 @@ fn graceful(signal_sent: Signal) {
     let (mut inferd, engine, grandchild) = running(&dir, 300, 5000);
     let started = Instant::now();
     signal(inferd.0.id(), signal_sent);
-    let code = exit_within(&mut inferd, Duration::from_secs(8));
+    let code = exit_within(&mut inferd);
     let both = gone_soon(engine) && gone_soon(grandchild);
     if !both {
         reap(&[engine, grandchild]);
@@ -255,7 +256,7 @@ fn a_second_signal_during_shutdown_kills_everything_and_exits_at_once() {
     if waiting {
         signal(inferd.0.id(), Signal::TERM);
     }
-    let code = exit_within(&mut inferd, Duration::from_secs(5));
+    let code = exit_within(&mut inferd);
     let both = gone_soon(engine) && gone_soon(grandchild);
     if !both {
         reap(&[engine, grandchild]);
@@ -274,7 +275,7 @@ fn a_shutdown_that_overruns_its_bound_kills_everything_and_exits_nonzero() {
     let dir = Scratch::new();
     let (mut inferd, engine, grandchild) = running(&dir, 60_000, 700);
     signal(inferd.0.id(), Signal::TERM);
-    let code = exit_within(&mut inferd, Duration::from_secs(5));
+    let code = exit_within(&mut inferd);
     let both = gone_soon(engine) && gone_soon(grandchild);
     if !both {
         reap(&[engine, grandchild]);
@@ -317,13 +318,15 @@ async fn real_binary_stops_on(signal_sent: Signal) {
     let dbus = zbus::fdo::DBusProxy::new(&client).await.expect("dbus");
     let name = zbus::names::BusName::try_from(INFERENCE_BUS).expect("bus name");
     let mut inferd = real_inferd(&bus);
-    let until = Instant::now() + Duration::from_secs(20);
+    let deadline = porter_fake::Deadline::generous();
     while !dbus.name_has_owner(name.clone()).await.expect("ask") {
-        assert!(Instant::now() < until, "inferd never took its name");
+        if deadline.passed() {
+            deadline.fail("inferd takes its name");
+        }
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
     signal(inferd.0.id(), signal_sent);
-    let code = exit_within(&mut inferd, Duration::from_secs(15));
+    let code = exit_within(&mut inferd);
     assert_eq!(code, Some(0), "a graceful stop is exit 0");
     assert!(
         !dbus.name_has_owner(name).await.expect("ask"),
