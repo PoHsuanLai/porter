@@ -93,7 +93,6 @@ pub use photos_picker::{
     PICKER_WAITING, PhotosPickerProxy, PickerSkeleton,
 };
 pub use ready::serve_ready;
-pub use target::BusTarget;
 pub use refusal::{REFUSAL_ERROR_PREFIX, refusal_error_name, refusal_from_error_name};
 pub use request::{RequestProxy, RequestSkeleton};
 pub use sheet::{
@@ -108,6 +107,7 @@ pub use sync::{SyncProxy, SyncSkeleton};
 pub use tailnet::{
     Changed as TailnetChanged, ChangedStream as TailnetChangedStream, TailnetProxy, TailnetSkeleton,
 };
+pub use target::BusTarget;
 pub use tokens::{
     ProcessCredentialRevoked, ProcessCredentialRevokedStream, TokensProxy, TokensSkeleton,
 };

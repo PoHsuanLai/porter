@@ -39,7 +39,10 @@ fn paths(home: &Path) -> Paths {
     // Nothing of this computer's own: not its caller table, its shipped clients or its providers.
     paths.callers_system = home.join("no-callers.toml");
     paths.clients_shipped = home.join("no-clients.toml");
-    paths.provider_dirs = vec![home.join("providers-shipped"), home.join("providers-person")];
+    paths.provider_dirs = vec![
+        home.join("providers-shipped"),
+        home.join("providers-person"),
+    ];
     paths
 }
 

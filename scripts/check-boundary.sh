@@ -155,6 +155,31 @@ else
   echo "pure: porter-core's source names no std::fs, std::process or std::env"
 fi
 
+# The three daemons' libraries read the environment in no function but `from_env` (the daemon's
+# `Config::from_env` and the directory helpers it calls), so a program that runs a daemon inside
+# itself gives it a `Config` and nothing else. The binaries (main.rs) and the test-only files are
+# outside the rule; `std::env::temp_dir` is a scratch name in tests, not a read of a variable.
+# The awk remembers the last `fn` it saw, which is the function the next line is in.
+env_reads=$(find crates/accountd/src crates/syncd/src crates/inferd/src -name '*.rs' \
+  ! -name main.rs ! -name tests.rs ! -name testing.rs ! -name testkit.rs ! -path '*/tests/*' -print0 \
+  | xargs -0 awk '
+    FNR == 1 { current = "" }
+    /^[[:space:]]*(pub(\([a-z]+\))? )?(async )?(unsafe )?fn [A-Za-z_0-9]+/ {
+      match($0, /fn [A-Za-z_0-9]+/)
+      current = substr($0, RSTART + 3, RLENGTH - 3)
+    }
+    /env::(var|var_os|vars|vars_os|args|args_os|current_dir|home_dir)\>/ \
+      && current != "from_env" && $0 !~ /^[[:space:]]*\/\// {
+      print FILENAME ":" FNR ": " $0
+    }')
+if [ -n "$env_reads" ]; then
+  echo "$env_reads"
+  echo "LEAK: a daemon library reads the environment outside a from_env function"
+  fail=1
+else
+  echo "pure: accountd, syncd and inferd read the environment only in from_env functions"
+fi
+
 # The allowed edges between our own crates: each crate's DIRECT normal and build path
 # dependencies (all features), and nothing else. A dependency not listed is a leak; so is one
 # the crate no longer has, so the table stays exact. Dev dependencies are outside it.
