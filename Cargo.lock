@@ -25,6 +25,7 @@ dependencies = [
  "rustls-pki-types",
  "serde",
  "serde_json",
+ "thiserror",
  "tokio",
  "toml",
  "zbus",

@@ -31,6 +31,17 @@ pub enum Role {
     AgentLauncher,
 }
 
+/// Why a caller table's text was refused.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum TableError {
+    /// Not valid TOML of the table's shape.
+    #[error("{0}")]
+    Toml(#[from] toml::de::Error),
+    /// A `settings` entry that is neither a `.service` unit nor an app name.
+    #[error("settings: `{0}` is neither a .service unit nor an app name")]
+    BadSettingsEntry(String),
+}
+
 /// Who a connection is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Caller {
@@ -110,12 +121,10 @@ impl CallerTable {
 
     /// The table in TOML text. A `settings` entry that is neither a `.service` unit nor an app
     /// name is refused.
-    pub fn from_toml_text(text: &str) -> Result<Self, String> {
-        let table: Self = toml::from_str(text).map_err(|e| e.to_string())?;
+    pub fn from_toml_text(text: &str) -> Result<Self, TableError> {
+        let table: Self = toml::from_str(text)?;
         match table.settings.iter().find(|e| settings_unit(e).is_none()) {
-            Some(bad) => Err(format!(
-                "settings: `{bad}` is neither a .service unit nor an app name"
-            )),
+            Some(bad) => Err(TableError::BadSettingsEntry(bad.clone())),
             None => Ok(table),
         }
     }

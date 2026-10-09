@@ -13,7 +13,9 @@ use porter_families::{
     GoogleProvider, MicrosoftEnv, MicrosoftProvider, NextcloudProvider, SharedDns,
 };
 use porter_http::{HyperHttp, SharedHttp, TokioSleep};
-use porter_provider::{DomainName, Issuer, ProviderSet, ProviderSpec, parse_provider};
+use porter_provider::{
+    DomainName, Issuer, ProviderFileError, ProviderSet, ProviderSpec, parse_provider,
+};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -23,7 +25,29 @@ pub struct Loaded {
     /// The providers, one per id.
     pub specs: Vec<ProviderSpec>,
     /// Files skipped, each with why.
-    pub skipped: Vec<(PathBuf, String)>,
+    pub skipped: Vec<(PathBuf, SkipReason)>,
+}
+
+/// Why a provider file was skipped; each keeps what failed, and its text is what is logged.
+#[derive(Debug, thiserror::Error)]
+pub enum SkipReason {
+    /// The file could not be read.
+    #[error(transparent)]
+    Unreadable(#[from] std::io::Error),
+    /// The file is not a provider file.
+    #[error(transparent)]
+    Malformed(#[from] ProviderFileError),
+    /// The file's name is not its provider's id.
+    #[error("the id `{0}` is not the file name")]
+    NameIsNotId(String),
+    /// The person's file would change what a shipped provider trusts.
+    #[error("kept the shipped `{id}`: this file would change {what}")]
+    WouldWiden {
+        /// The provider.
+        id: String,
+        /// What it would change, in words.
+        what: &'static str,
+    },
 }
 
 /// Whose a provider directory is, which decides what its files may change.
@@ -77,7 +101,7 @@ pub fn load_specs(dirs: &[(Layer, PathBuf)]) -> Loaded {
 fn keeps_shipped_trust(
     loaded: &[ProviderSpec],
     spec: ProviderSpec,
-) -> Result<ProviderSpec, String> {
+) -> Result<ProviderSpec, SkipReason> {
     let shipped = loaded
         .iter()
         .find(|s| s.id == spec.id)
@@ -88,10 +112,10 @@ fn keeps_shipped_trust(
                 .find(|s| s.id == spec.id)
         });
     match shipped.and_then(|shipped| widened(&shipped, &spec)) {
-        Some(what) => Err(format!(
-            "kept the shipped `{}`: this file would change {what}",
-            spec.id
-        )),
+        Some(what) => Err(SkipReason::WouldWiden {
+            id: spec.id.to_string(),
+            what,
+        }),
         None => Ok(spec),
     }
 }
@@ -134,16 +158,16 @@ fn widened(shipped: &ProviderSpec, file: &ProviderSpec) -> Option<&'static str> 
     None
 }
 
-fn read(file: &Path) -> Result<ProviderSpec, String> {
-    let text = std::fs::read_to_string(file).map_err(|e| e.to_string())?;
-    let spec = parse_provider(&text).map_err(|e| e.to_string())?;
+fn read(file: &Path) -> Result<ProviderSpec, SkipReason> {
+    let text = std::fs::read_to_string(file)?;
+    let spec = parse_provider(&text)?;
     let stem = file
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or_default();
     match spec.id.as_str() == stem {
         true => Ok(spec),
-        false => Err(format!("the id `{}` is not the file name", spec.id)),
+        false => Err(SkipReason::NameIsNotId(spec.id.to_string())),
     }
 }
 
@@ -313,6 +337,20 @@ mod tests {
         assert_eq!(loaded.specs.len(), 1);
         assert_eq!(loaded.specs[0].label, "Mine");
         assert_eq!(loaded.skipped.len(), 2);
+        // Each reason keeps what failed, not its text.
+        let reasons: Vec<&SkipReason> = loaded.skipped.iter().map(|(_, why)| why).collect();
+        assert!(
+            reasons
+                .iter()
+                .any(|why| matches!(why, SkipReason::Malformed(_))),
+            "{reasons:?}"
+        );
+        assert!(
+            reasons
+                .iter()
+                .any(|why| matches!(why, SkipReason::NameIsNotId(id) if id == "nextcloud")),
+            "{reasons:?}"
+        );
         let _ = std::fs::remove_dir_all(system);
         let _ = std::fs::remove_dir_all(user);
     }
@@ -423,7 +461,10 @@ mod tests {
                 let [(_, why)] = loaded.skipped.as_slice() else {
                     panic!("{name} {system}: one skipped: {:?}", loaded.skipped);
                 };
-                assert!(why.contains(what), "{name}: {why}");
+                assert!(
+                    matches!(why, SkipReason::WouldWiden { what: got, .. } if *got == what),
+                    "{name}: {why}"
+                );
             }
         }
     }

@@ -54,16 +54,67 @@ struct Args {
     config: Option<PathBuf>,
 }
 
+/// Why the daemon did not start or did not stop cleanly. Each keeps what failed; its text is
+/// the line `main` logs.
+#[derive(Debug, thiserror::Error)]
+enum RunError {
+    /// The signal handlers could not be set up.
+    #[error("signal handlers: {0}")]
+    Signals(#[source] std::io::Error),
+    /// There is nowhere to put the sockets and files.
+    #[error(transparent)]
+    Dirs(#[from] inferd::config::ConfigError),
+    /// The configuration file could not be read.
+    #[error("{}: {source}", path.display())]
+    ConfigUnreadable {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    /// The configuration file is not acceptable.
+    #[error("{}: {source}", path.display())]
+    ConfigRefused {
+        path: PathBuf,
+        #[source]
+        source: inferd::config::ConfigError,
+    },
+    /// The attached engines the file names are refused.
+    #[error(transparent)]
+    Attached(#[from] inferd::attached::AttachedError),
+    /// The sockets' directory could not be made.
+    #[error("{}: {source}", path.display())]
+    SocketDir {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    /// The session bus.
+    #[error(transparent)]
+    Bus(#[from] zbus::Error),
+    /// Shutdown took longer than its bound.
+    #[error("shutdown took longer than {} s; every engine killed", .0.as_secs())]
+    ShutdownTimedOut(Duration),
+    /// A second signal came during shutdown.
+    #[error("second signal during shutdown; every engine killed")]
+    Hurried,
+}
+
 /// The configuration: a missing file is the default (no engines, no callers), an unreadable one
 /// is an error.
-fn read_config(path: &std::path::Path) -> Result<InferdConfig, String> {
+fn read_config(path: &std::path::Path) -> Result<InferdConfig, RunError> {
     match std::fs::read_to_string(path) {
-        Ok(text) => InferdConfig::from_toml(&text).map_err(|e| format!("{}: {e}", path.display())),
+        Ok(text) => InferdConfig::from_toml(&text).map_err(|source| RunError::ConfigRefused {
+            path: path.to_owned(),
+            source,
+        }),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             eprintln!("inferd: no {}; no engines, no callers", path.display());
             Ok(InferdConfig::default())
         }
-        Err(e) => Err(format!("{}: {e}", path.display())),
+        Err(source) => Err(RunError::ConfigUnreadable {
+            path: path.to_owned(),
+            source,
+        }),
     }
 }
 
@@ -73,10 +124,9 @@ fn attached_models(
     config: &InferdConfig,
     entries: &[model_catalog::ModelEntry],
     dirs: &Dirs,
-) -> Result<Vec<inferd::local::LocalModel>, String> {
-    let named = config.engines.attached().map_err(|e| e.to_string())?;
-    let models =
-        inferd::attached::models(&named, entries, &dirs.sockets).map_err(|e| e.to_string())?;
+) -> Result<Vec<inferd::local::LocalModel>, RunError> {
+    let named = config.engines.attached()?;
+    let models = inferd::attached::models(&named, entries, &dirs.sockets)?;
     for model in &models {
         let key = model
             .attached
@@ -89,10 +139,10 @@ fn attached_models(
     Ok(models)
 }
 
-async fn run(args: Args) -> Result<(), String> {
+async fn run(args: Args) -> Result<(), RunError> {
     // Listening starts before anything else: a signal during start-up is kept, not fatal.
-    let mut signals = Signals::listen().map_err(|e| format!("signal handlers: {e}"))?;
-    let dirs = Dirs::from_env().map_err(|e| e.to_string())?;
+    let mut signals = Signals::listen().map_err(RunError::Signals)?;
+    let dirs = Dirs::from_env()?;
     let config_path = args.config.clone().unwrap_or_else(|| dirs.config.clone());
     let config = read_config(&config_path)?;
     let catalog = read_catalog(&dirs.catalog);
@@ -117,7 +167,10 @@ async fn run(args: Args) -> Result<(), String> {
         .recursive(true)
         .mode(0o700)
         .create(&dirs.sockets)
-        .map_err(|e| format!("{}: {e}", dirs.sockets.display()))?;
+        .map_err(|source| RunError::SocketDir {
+            path: dirs.sockets.clone(),
+            source,
+        })?;
     let specs = models.iter().map(|model| model.spec.clone()).collect();
     let speech_hosts: Vec<EngineId> = models
         .iter()
@@ -149,11 +202,7 @@ async fn run(args: Args) -> Result<(), String> {
     for path in &settings.rejected {
         eprintln!("inferd: {path}: not accepted; using its default");
     }
-    let connection = zbus::connection::Builder::session()
-        .map_err(|e| e.to_string())?
-        .build()
-        .await
-        .map_err(|e| e.to_string())?;
+    let connection = zbus::connection::Builder::session()?.build().await?;
     // The hosted models of the catalogue, reached through accounts accountd holds the keys of.
     let cloud = Cloud::new(
         Arc::new(PeerAccountd::new(connection.clone())),
@@ -215,9 +264,7 @@ async fn run(args: Args) -> Result<(), String> {
     .reloading(reload.clone())
     .probing(probing);
     // Every object, the settings module among them, is served before the name is claimed.
-    serve_with_settings(&connection, daemon, InferdSettings::new(peers, reload))
-        .await
-        .map_err(|e| e.to_string())?;
+    serve_with_settings(&connection, daemon, InferdSettings::new(peers, reload)).await?;
     let release = async {
         // No new caller finds the daemon; a failure to release is no reason not to stop engines.
         if let Err(e) = connection.release_name(INFERENCE_BUS).await {
@@ -226,11 +273,8 @@ async fn run(args: Args) -> Result<(), String> {
     };
     match shutdown::on_signal(&mut signals, &closer, release, shutdown::BOUND).await {
         Ended::Done => Ok(()),
-        Ended::TimedOut => Err(format!(
-            "shutdown took longer than {} s; every engine killed",
-            shutdown::BOUND.as_secs()
-        )),
-        Ended::Hurried => Err("second signal during shutdown; every engine killed".to_owned()),
+        Ended::TimedOut => Err(RunError::ShutdownTimedOut(shutdown::BOUND)),
+        Ended::Hurried => Err(RunError::Hurried),
     }
 }
 

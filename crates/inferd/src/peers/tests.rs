@@ -77,6 +77,18 @@ fn a_table_with_a_malformed_app_name_does_not_parse() {
     assert!(CallerTable::from_toml_text("cua = 3").is_err());
 }
 
+#[test]
+fn a_refused_table_says_which_way_it_was_refused_and_keeps_the_parser_error() {
+    assert!(matches!(
+        CallerTable::from_toml_text("cua = 3"),
+        Err(TableError::Toml(_))
+    ));
+    assert!(matches!(
+        CallerTable::from_toml_text("settings = [\"not a name\"]\n"),
+        Err(TableError::BadSettingsEntry(bad)) if bad == "not a name"
+    ));
+}
+
 #[tokio::test]
 async fn introduced_connections_are_known_and_others_are_not() {
     let peers = TablePeers::new();

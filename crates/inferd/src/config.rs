@@ -17,7 +17,7 @@ use std::path::PathBuf;
 pub enum ConfigError {
     /// The file is not valid TOML of the expected shape.
     #[error("{0}")]
-    Toml(String),
+    Toml(#[source] toml::de::Error),
     /// An `[engines.attached."<id>"]` table the checks of the file refuse.
     #[error("{0}")]
     Attached(#[from] crate::attached::AttachedError),
@@ -57,7 +57,7 @@ impl InferdConfig {
     /// The configuration in `text`. An attached engine that is named wrongly (no `where`, a
     /// `url` that is not loopback, both a socket and a url) refuses the whole file.
     pub fn from_toml(text: &str) -> Result<Self, ConfigError> {
-        let config: Self = toml::from_str(text).map_err(|e| ConfigError::Toml(e.to_string()))?;
+        let config: Self = toml::from_str(text).map_err(ConfigError::Toml)?;
         config.engines.attached()?;
         Ok(config)
     }

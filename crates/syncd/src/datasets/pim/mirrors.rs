@@ -13,10 +13,10 @@ use super::source::{
 };
 use super::{Meta, PimKind};
 use crate::clock::SystemClock;
-use crate::dataset::DatasetId;
+use crate::dataset::{DatasetError, DatasetId};
 use crate::driver::Driver;
 use crate::engine::Engine;
-use crate::journal::Journal;
+use crate::journal::{Journal, JournalError};
 use crate::paths::{AccountDir, Paths};
 use crate::scheduler::{Network, Settings};
 use crate::service::{Access, DatasetName, Hub};
@@ -59,8 +59,37 @@ pub enum RefreshError {
     #[error(transparent)]
     Discover(#[from] DiscoverError),
     /// A collection could not be opened.
-    #[error("{0}")]
-    Open(String),
+    #[error(transparent)]
+    Open(#[from] OpenError),
+}
+
+/// Why one collection could not be opened; each keeps what failed, for the log.
+#[derive(Debug, thiserror::Error)]
+pub enum OpenError {
+    /// The collection's journal could not be opened.
+    #[error("{dir}: {source}")]
+    Journal {
+        /// The collection's directory name.
+        dir: String,
+        /// What the journal said.
+        #[source]
+        source: JournalError,
+    },
+    /// The collection's directory could not be opened or written.
+    #[error("{dir}: {}", .source.0)]
+    Mirror {
+        /// The collection's directory name.
+        dir: String,
+        /// What the mirror said.
+        #[source]
+        source: DatasetError,
+    },
+    /// A running collection's name or colour could not be rewritten.
+    #[error("{}", .0.0)]
+    Rewrite(#[source] DatasetError),
+    /// Two collections of the server planned the same name.
+    #[error("two collections want one name")]
+    NameTaken,
 }
 
 #[derive(Debug)]
@@ -162,12 +191,10 @@ impl AccountMirrors {
                     if held.planned.dir == next.dir && held.planned.found.url == next.found.url =>
                 {
                     held.planned = next.clone();
-                    held.mirror.write_meta(&meta).map_err(|e| e.0)
+                    held.mirror.write_meta(&meta).map_err(OpenError::Rewrite)
                 }
-                Some(_) => Err("two collections want one name".to_owned()),
-                None => self
-                    .start(wiring, &source, next, &meta)
-                    .map_err(|e| format!("{}: {e}", next.dir)),
+                Some(_) => Err(OpenError::NameTaken),
+                None => self.start(wiring, &source, next, &meta),
             };
             failure = failure.or(kept.err());
         }
@@ -189,17 +216,24 @@ impl AccountMirrors {
         source: &S,
         next: &Planned,
         meta: &Meta,
-    ) -> Result<(), String> {
+    ) -> Result<(), OpenError> {
         let journal = Journal::open(&wiring.paths.journal(&self.account, next.dataset.as_str()))
-            .map_err(|e| e.to_string())?;
+            .map_err(|source| OpenError::Journal {
+                dir: next.dir.to_string(),
+                source,
+            })?;
         let root = wiring
             .paths
             .mirrors
             .join(self.account.as_str())
             .join(&next.dir);
+        let opened = |source| OpenError::Mirror {
+            dir: next.dir.to_string(),
+            source,
+        };
         let mirror =
-            PimMirror::open(next.dataset.clone(), self.kind, root, &journal).map_err(|e| e.0)?;
-        mirror.write_meta(meta).map_err(|e| e.0)?;
+            PimMirror::open(next.dataset.clone(), self.kind, root, &journal).map_err(opened)?;
+        mirror.write_meta(meta).map_err(opened)?;
         let replica = FeedReplica::new(source.feed(&next.found));
         let engine = Engine::new(replica, mirror.clone(), journal, SystemClock);
         let name = DatasetName {
