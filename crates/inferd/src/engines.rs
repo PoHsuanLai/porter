@@ -350,7 +350,7 @@ impl Engines {
                 licence_of(&model.entry.licence),
             )
         });
-        let attached = self.book.attached.models().iter().map(|model| Listed {
+        let attached = self.book.attached.models().into_iter().map(|model| Listed {
             permission: attached_grant(),
             ..Listed::new(
                 model.card.clone(),

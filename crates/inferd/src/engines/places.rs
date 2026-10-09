@@ -126,7 +126,11 @@ impl Engines {
             let models = models_of(&members);
             rows.push(PlaceRow {
                 name: match id.target() {
-                    PlaceTarget::OwnComputer(name) => name.to_string(),
+                    PlaceTarget::OwnComputer(name) => self
+                        .book
+                        .attached
+                        .label_of(&name)
+                        .unwrap_or_else(|| name.to_string()),
                     PlaceTarget::ThisComputer | PlaceTarget::CloudAccount(_) => id.to_string(),
                 },
                 id,

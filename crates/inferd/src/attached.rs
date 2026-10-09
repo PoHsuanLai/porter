@@ -24,6 +24,7 @@
 
 pub mod book;
 pub mod check;
+pub mod computers;
 pub mod config;
 pub mod key;
 pub mod model;
@@ -31,6 +32,10 @@ pub mod target;
 
 pub use book::AttachedBook;
 pub use check::{NotReady, probe};
+pub use computers::{
+    AddedComputer, AddedFile, AddedModel, AddedProblem, ComputerError, Computers, NewComputer,
+    NewModel, NewReach,
+};
 pub use config::{Attached, AttachedEntry, AttachedError, Place, Reach};
 pub use key::{KeyFile, KeyFileProblem};
 pub use model::{engine_id, local_model};

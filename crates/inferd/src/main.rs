@@ -8,7 +8,7 @@
 use clap::Parser;
 use engine_supervisor::EngineId;
 use inferd::agent::Agents;
-use inferd::attached::AttachedBook;
+use inferd::attached::{AddedFile, AttachedBook};
 use inferd::audit::JsonLines;
 use inferd::catalog::read_catalog;
 use inferd::clock::SystemClock;
@@ -121,12 +121,18 @@ fn read_config(path: &std::path::Path) -> Result<InferdConfig, RunError> {
 /// The engines the file attaches, as models; a key file that is refused is said now (and again, as
 /// the reason, whenever a session asks for the engine). The token is never read into the line.
 fn attached_models(
-    config: &InferdConfig,
+    named: &[inferd::attached::Attached],
+    added: &AddedFile,
     entries: &[model_catalog::ModelEntry],
     dirs: &Dirs,
 ) -> Result<Vec<inferd::local::LocalModel>, RunError> {
-    let named = config.engines.attached()?;
-    let models = inferd::attached::models(&named, entries, &dirs.sockets)?;
+    // The computers Settings added are attached engines too; the settings file wins a clash.
+    let (extra, said) = inferd::attached::computers::merged(named, added);
+    for line in said {
+        eprintln!("inferd: {line}");
+    }
+    let all: Vec<_> = named.iter().chain(&extra).cloned().collect();
+    let models = inferd::attached::models(&all, entries, &dirs.sockets)?;
     for model in &models {
         let key = model
             .attached
@@ -157,7 +163,15 @@ async fn run(args: Args) -> Result<(), RunError> {
     models.extend(replays.models.iter().cloned());
     // An engine the person already runs is used and never started: an id they attached is not
     // also one inferd starts, and none of the attached is given to the supervisor.
-    let attached = attached_models(&config, &catalog.entries, &dirs)?;
+    let named = config.engines.attached()?;
+    let added = match AddedFile::read(&dirs.computers) {
+        Ok(file) => file,
+        Err(why) => {
+            eprintln!("inferd: {why}");
+            AddedFile::default()
+        }
+    };
+    let attached = attached_models(&named, &added, &catalog.entries, &dirs)?;
     models.retain(|model| {
         attached
             .iter()
@@ -210,6 +224,9 @@ async fn run(args: Args) -> Result<(), RunError> {
         Ledger::open(dirs.spend.clone()),
         Arc::new(SystemClock),
     );
+    let book =
+        AttachedBook::new(attached).with_catalogue(catalog.entries.clone(), dirs.sockets.clone());
+    book.set_labels(added.labels());
     let engines = Engines::new(
         models,
         supervised,
@@ -218,7 +235,7 @@ async fn run(args: Args) -> Result<(), RunError> {
     )
     .with_settings(settings.settings)
     .with_cloud(cloud)
-    .with_attached(AttachedBook::new(attached));
+    .with_attached(book);
     // The runtimes the person runs themselves: looked for now, on `Rescan` and on a timer, and
     // reported to accountd as accounts.
     let probing = Watch::new(
