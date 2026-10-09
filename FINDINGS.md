@@ -2076,3 +2076,32 @@ The test count is +1 net because the cuts (-8) and merges (-17) are matched by t
 - detent: passes with `--offline`, not `--locked`: its `Cargo.lock` still lists `porter-provider`, `porter-secrets` and `porter-service` under porter-client, and loses them (the `in-process` feature, lane layers-client-feature, not this one); detent's owner re-locks. client, core, dbus, infer, provider, prov from the worktree.
 
 **Open.** None for this lane. `GuestChanges` is a D-Bus stream; a socket carrier has no guests, so its `watch_guests` stays `Unsupported` until inferd has a socket.
+## Lane feature-builds (the consumers' feature sets; base `df1b8c5`, 2026-10-10)
+
+**Why.** Porter 5bdda62 broke docket's batch-9 gate. docket builds inferd on its own (`cargo install --git porter`, `-D warnings`) with porter-client on `dbus` and `infer` and no `socket`. Two `framed.rs` methods were then unused. The workspace gate builds `--workspace --all-features`, which unifies every feature, so it never saw that build. b12886e fixed the code. This lane closes the gap.
+
+**What changed.**
+- `scripts/check-features.sh` (`548d7d4`, `343c24f`): clippy with `-D warnings` for each set below, one line per set (`ok <set>` or `FAIL <set>`), exit status is the verdict. Logs go to `$CARGO_TARGET_DIR/check-features/`. Builds `--lib --bins`, the targets a consumer compiles. Test targets are left out on purpose; see the follow-up below.
+- CI: a `features` job in `.github/workflows/ci.yml` runs the script. It is not in `check-boundary.sh`, so each gate does not pay for it (the hook added in `e843636` was undone in the next commit).
+- The coordinator runs the script before each push.
+
+**The 19 sets and their consumers** (from each consumer's manifest at origin/master):
+- `inferd`, `accountd`, `syncd` (default features, each with `-p` alone). inferd is docket's sibling binary; accountd and syncd are the desktop's.
+- porter-client, no features (mailo's pure client). `dbus` (detent's Settings). `dbus,infer` with no default features (inferd's build as docket makes it). `dbus` with the defaults (inferd, syncd, docket, almanac, cua). `socket` and `socket,infer` (the socket carrier for other desktops and macOS; no consumer found in origin/master manifests). Defaults (docket, almanac, cua). `engines` (no consumer found; kept so it cannot break unseen).
+- porter-secrets: `testing` (mailo mail-core, mail-app); `oo7` (mail-runtime, Linux); `keyring` (mail-runtime, macOS and Windows).
+- porter-discover and porter-http, no features (mailo mail-core, mail-runtime).
+- porter-oauth, no features (mailo); `io` (mail-runtime).
+- porter-proxy, `io` (mail-runtime, its link tests).
+
+**Proof that it catches the docket break.** On a scratch branch (`feature-builds-proof`, not committed), I reverted b12886e's three `cfg(feature = "socket")` lines with Edit and ran the script. Output in `~/rs-wt/feature-builds/check-features-proof-revert.out`:
+- `FAIL porter-client (dbus,infer: inferd's build as docket makes it)`: "methods `write_body` and `read_body_with_fds` are never used", with `-D warnings`.
+- `FAIL porter-client (dbus with defaults ...)`, `FAIL inferd (default)` and `FAIL syncd (default)` with the same error.
+- The socket sets and the no-features set stayed `ok`, as expected. The file was then restored (`git checkout`), and the scratch branch was left in place.
+
+**Master.** The script passes on master: `exit=0`, all 19 `ok` (`~/rs-wt/feature-builds/check-features-master2.out`).
+
+**Wall time.** About 6 minutes of clippy at load 70 to 110 (`6m03s`; the earlier all-targets run took 4m46s at load about 74). That is why it is not in the boundary check.
+
+**Deviation from the brief.** The brief said `--all-targets`. With it, master failed on `accountd` (default features): dead code in `accountd`'s `tests/it/relay.rs` (`Tap`, `start`, `drain`, `contains`) under `-D warnings`. Those helpers are dead in a default build, and no consumer compiles that test target. The script builds `--lib --bins`.
+
+**Follow-up (not fixed here).** The `accountd` `tests/it/relay.rs` helpers (`Tap`, `start`, `drain`, `contains`) are dead under default features. A fix would `cfg` them to the features the tests need, or move them into a module those tests use. The lint job's `--all-targets --all-features` clippy does not catch this, because all features are on there.
