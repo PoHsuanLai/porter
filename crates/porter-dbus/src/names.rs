@@ -90,6 +90,22 @@ pub const OPTION_PLACE_MODELS: &str = "place_models";
 /// name; `ready` says whether the place can serve now (`b`), for a program to read and never to
 /// put into a sentence a person sees.
 pub const PLACE_KEY_KIND: &str = "kind";
+
+/// The keys of one model's vardict in `Inference1.AddComputer`: `socket` (`s`) is the full path of
+/// the connection on this computer that leads to the engine, `port` (`q`) the port on this
+/// computer that does (give one of the two), and `key` (`s`) the engine's key when it wants one.
+pub const COMPUTER_KEY_SOCKET: &str = "socket";
+/// See [`COMPUTER_KEY_SOCKET`].
+pub const COMPUTER_KEY_PORT: &str = "port";
+/// See [`COMPUTER_KEY_SOCKET`].
+pub const COMPUTER_KEY_KEY: &str = "key";
+
+/// The prefix of the errors `AddComputer` and `RemoveComputer` answer with:
+/// `org.quire.Inference1.Error.Computer.<Name>`, the name one of `BadName`, `NoModels`,
+/// `TooMany`, `AlreadyThere`, `UnknownModel`, `ModelNotUsable`, `ModelTaken`, `BadAddress`,
+/// `BadKey`, `NotSaved`, `NotThere`, `AddedByHand`, `Unavailable`. The reply's text is a plain
+/// sentence for the person.
+pub const COMPUTER_ERROR_PREFIX: &str = "org.quire.Inference1.Error.Computer.";
 /// See [`PLACE_KEY_KIND`].
 pub const PLACE_KEY_NAME: &str = "name";
 /// See [`PLACE_KEY_KIND`].

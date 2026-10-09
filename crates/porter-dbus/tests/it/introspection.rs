@@ -112,13 +112,21 @@ fn inference1_xml_unchanged_members() {
     // error changes), as `Sync1.ConfirmDiscard` was.
     assert!(xml.contains("<method name=\"Places\">"));
     assert!(xml.contains("<arg type=\"a(sa{sv})\" direction=\"out\"/>"));
+    // So were `AddComputer` and `RemoveComputer`, for Settings.
+    assert!(xml.contains("<method name=\"AddComputer\">"));
+    assert!(xml.contains("<method name=\"RemoveComputer\">"));
+    assert!(xml.contains("<arg name=\"models\" type=\"a(sa{sv})\" direction=\"in\"/>"));
     let declared = xml.matches("<method ").count()
         + xml.matches("<signal ").count()
         + xml.matches("<property ").count();
     assert_eq!(
         declared,
-        members.len() + 1,
-        "no member beyond the frozen seven and Places"
+        members.len() + 3,
+        "no member beyond the frozen seven, Places, AddComputer and RemoveComputer"
+    );
+    assert_eq!(
+        porter_dbus::COMPUTER_ERROR_PREFIX,
+        "org.quire.Inference1.Error.Computer."
     );
 }
 

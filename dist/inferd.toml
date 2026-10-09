@@ -38,6 +38,14 @@
 #              "this-device" is on this computer. "my-network" is another machine of yours: the data
 #              leaves this computer, so data set to stay on it is refused unless ai.attached.my_network
 #              is on (below).
+#   computer = "<name>"            optional: the machine the engine runs on, lowercase letters,
+#              digits, dots, dashes (`lab`). Engines that share a name are one place,
+#              `computer:<name>`, that the person can allow or not; an engine on another machine
+#              that names none belongs to `other-computer`.
+# Computers added in Settings are not written here: inferd keeps them in its own file,
+# $XDG_STATE_HOME/quire/inferd/computers.toml, with their keys beside it, and reads both at
+# start. This file is never written by inferd; a computer written here cannot be removed from
+# Settings, and a name or model written here wins over one added there.
 # No TLS: a socket or a loopback address only, and the tunnel's lifetime is yours. The engine is
 # looked at when a session opens (and not otherwise); if it is down or does not list the model the
 # session is told it is not ready and the log says why. inferd.service reaches the loopback addresses of

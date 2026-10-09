@@ -8,7 +8,7 @@
 use clap::Parser;
 use engine_supervisor::EngineId;
 use inferd::agent::Agents;
-use inferd::attached::{AddedFile, AttachedBook};
+use inferd::attached::{AddedFile, AttachedBook, Computers};
 use inferd::audit::JsonLines;
 use inferd::catalog::read_catalog;
 use inferd::clock::SystemClock;
@@ -227,6 +227,13 @@ async fn run(args: Args) -> Result<(), RunError> {
     let book =
         AttachedBook::new(attached).with_catalogue(catalog.entries.clone(), dirs.sockets.clone());
     book.set_labels(added.labels());
+    let computers = Computers::new(
+        dirs.computers.clone(),
+        dirs.computer_keys.clone(),
+        book.clone(),
+        added,
+        &named,
+    );
     let engines = Engines::new(
         models,
         supervised,
@@ -279,7 +286,8 @@ async fn run(args: Args) -> Result<(), RunError> {
     .agents(agents)
     .limited(structured.limits)
     .reloading(reload.clone())
-    .probing(probing);
+    .probing(probing)
+    .computers(computers);
     // Every object, the settings module among them, is served before the name is claimed.
     serve_with_settings(&connection, daemon, InferdSettings::new(peers, reload)).await?;
     let release = async {

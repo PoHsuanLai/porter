@@ -54,6 +54,18 @@ pub trait Inference {
     /// `PLACE_KEY_*`. Only Settings, the shell and the companion may ask; anyone else is
     /// `AccessDenied`.
     fn places(&self) -> zbus::Result<Vec<(String, Details)>>;
+    /// Adds a computer of the person's own, with the models it serves, and answers its place id
+    /// (`computer:<name>`). `name` is what the person calls it (the id's name is made from it);
+    /// each of `models` is a catalogue model id and a vardict: `socket` (`s`, the full path of
+    /// the connection on this computer that leads to the engine) or `port` (`q`, the port on this
+    /// computer that does), and `key` (`s`, optional; kept in a file only the owner can read, and
+    /// never given back). Only Settings may call; a refusal is
+    /// `org.quire.Inference1.Error.Computer.<Name>` with a plain sentence (`COMPUTER_ERROR_PREFIX`).
+    /// `EnginesChanged` follows a change.
+    fn add_computer(&self, name: &str, models: Vec<(String, Details)>) -> zbus::Result<String>;
+    /// Removes a computer that `AddComputer` added: `name` is its name or its place id. One
+    /// written by hand in the settings file is refused (`AddedByHand`). Only Settings may call.
+    fn remove_computer(&self, name: &str) -> zbus::Result<()>;
     /// Engine state changed, or a cloud AI account appeared, went or changed state. Broadcast:
     /// engine state is not personal. Listeners re-read readiness with `Prepare` (callers) or the
     /// settings module (detent), and the places with `Places`.
@@ -106,6 +118,16 @@ impl InferenceSkeleton {
     }
 
     fn places(&self) -> fdo::Result<Vec<(String, Details)>> {
+        Err(crate::introspect::frozen())
+    }
+
+    fn add_computer(&self, name: String, models: Vec<(String, Details)>) -> fdo::Result<String> {
+        let _ = (name, models);
+        Err(crate::introspect::frozen())
+    }
+
+    fn remove_computer(&self, name: String) -> fdo::Result<()> {
+        let _ = name;
         Err(crate::introspect::frozen())
     }
 

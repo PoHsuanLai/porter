@@ -275,6 +275,8 @@ pub struct World {
     pub speech: Option<SpeechEngines>,
     /// What inferd logged (kept only in a real-process world).
     pub log: LogLines,
+    /// Where the computers Settings adds are kept (`computers.toml`, `computer-keys/`).
+    pub state: PathBuf,
 }
 
 static NEXT: AtomicU32 = AtomicU32::new(0);
@@ -456,10 +458,21 @@ impl World {
         .with_remote(plan.remote)
         .with_attached({
             let sink = Arc::clone(&log);
-            AttachedBook::new(attached).logging_to(Log::to(move |level, text| {
-                sink.lock().expect("lock").push((level, text.to_owned()));
-            }))
+            AttachedBook::new(attached)
+                .logging_to(Log::to(move |level, text| {
+                    sink.lock().expect("lock").push((level, text.to_owned()));
+                }))
+                .with_catalogue(catalog.entries.clone(), sockets.clone())
         });
+        // The computers Settings adds live in the world's own state directory.
+        let state = scratch.join("state");
+        let computers = inferd::attached::Computers::new(
+            state.join("computers.toml"),
+            state.join("computer-keys"),
+            served.attached().clone(),
+            inferd::attached::AddedFile::default(),
+            &plan.attached,
+        );
         let bus = PrivateBus::start();
         let daemon = bus.connect().await;
         let client = bus.connect().await;
@@ -522,6 +535,7 @@ impl World {
             audit.clone(),
             FixedClock(UnixSeconds(1_700_000_000)),
         );
+        inference = inference.computers(computers);
         if let Some(probing) = &probing {
             inference = inference.probing(probing.clone());
         }
@@ -558,6 +572,7 @@ impl World {
             probing,
             speech,
             log,
+            state,
         }
     }
 }

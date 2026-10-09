@@ -8,6 +8,7 @@
 use self::error::InferError;
 use crate::agent::Agents;
 use crate::agent::service::AgentsService;
+use crate::attached::{ComputerError, Computers, NewComputer, NewModel, NewReach};
 use crate::audit::{AuditOut, SessionAudit};
 use crate::clock::Clock;
 use crate::engines::Engines;
@@ -20,7 +21,7 @@ use crate::session::SessionSpec;
 use crate::settings::Reload;
 use crate::structured::Limits;
 use crate::watch::Probing;
-use porter_core::{DataClass, ModelId, Tier};
+use porter_core::{DataClass, ModelId, SecretText, Tier};
 use porter_dbus::{
     Details, INFERENCE_BUS, INFERENCE_PATH, NeedArg, PLACE_KEY_KIND, PLACE_KEY_MODELS,
     PLACE_KEY_NAME, PLACE_KEY_PROVIDER, PLACE_KEY_READY, need_from_dbus,
@@ -47,6 +48,7 @@ pub struct Inference<P, O, C> {
     reload: Option<Reload>,
     probing: Option<Probing>,
     agents: Option<Agents>,
+    computers: Option<Arc<Computers>>,
 }
 
 impl<P, O, C> Inference<P, O, C> {
@@ -61,6 +63,16 @@ impl<P, O, C> Inference<P, O, C> {
             reload: None,
             probing: None,
             agents: None,
+            computers: None,
+        }
+    }
+
+    /// The same object, whose `AddComputer` and `RemoveComputer` change the computers Settings
+    /// added. Without it both answer that adding computers is not available.
+    pub fn computers(self, computers: Computers) -> Self {
+        Self {
+            computers: Some(Arc::new(computers)),
+            ..self
         }
     }
 
@@ -214,6 +226,18 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
                 "inferd: the shell may only list the places".into(),
             )),
             _ => Ok(caller),
+        }
+    }
+
+    /// The caller of `AddComputer` and `RemoveComputer`: Settings, by its unit, and no one else.
+    async fn settings_caller(&self, header: &Header<'_>) -> fdo::Result<Caller> {
+        let caller = self.identified(header).await?;
+        if caller.role == Role::Settings {
+            Ok(caller)
+        } else {
+            Err(fdo::Error::AccessDenied(
+                "inferd: only Settings may add or remove a computer".into(),
+            ))
         }
     }
 
@@ -385,6 +409,36 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         Self::engines_changed(&emitter).await.map_err(failed)
     }
 
+    // Adds a computer of the person's own (Settings only) and answers its place id; the models
+    // arrive with how each is reached and, if it has one, its key, which is kept in a file only
+    // the owner reads and never comes back.
+    async fn add_computer(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+        name: String,
+        models: Vec<(String, Details)>,
+    ) -> Result<String, InferError> {
+        self.settings_caller(&header).await?;
+        let computers = self.computers.as_ref().ok_or(ComputerError::Unavailable)?;
+        let placed = computers.add(new_computer(name, models)?)?;
+        Self::engines_changed(&emitter).await.map_err(failed)?;
+        Ok(placed.to_string())
+    }
+
+    // Removes a computer Settings added (Settings only).
+    async fn remove_computer(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+        name: String,
+    ) -> Result<(), InferError> {
+        self.settings_caller(&header).await?;
+        let computers = self.computers.as_ref().ok_or(ComputerError::Unavailable)?;
+        computers.remove(&name)?;
+        Ok(Self::engines_changed(&emitter).await.map_err(failed)?)
+    }
+
     // The places the assistant could run, one row each (a plain comment: a doc comment on a
     // member would change the introspection XML).
     async fn places(
@@ -408,6 +462,50 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
     async fn gpu(&self) -> String {
         self.engines.gpu().slug().to_owned()
     }
+}
+
+/// The computer `AddComputer` was asked for: each model is its id and a vardict naming how it is
+/// reached (`socket` or `port`, one of them) and its `key`, if any. A value of another type is
+/// invalid args; two ways to reach it, or none, is a refusal in plain words.
+fn new_computer(name: String, models: Vec<(String, Details)>) -> Result<NewComputer, InferError> {
+    let invalid = |what: &str| InferError::Bus(fdo::Error::InvalidArgs(what.to_owned()));
+    let mut parsed = Vec::new();
+    for (id, details) in models {
+        let text = |key: &str| -> Result<Option<String>, InferError> {
+            details
+                .get(key)
+                .map(|value| {
+                    value
+                        .try_clone()
+                        .ok()
+                        .and_then(|value| String::try_from(value).ok())
+                        .ok_or_else(|| invalid("a model's socket and key are text"))
+                })
+                .transpose()
+        };
+        let socket = text(porter_dbus::COMPUTER_KEY_SOCKET)?;
+        let key = text(porter_dbus::COMPUTER_KEY_KEY)?.map(SecretText::new);
+        let port = details
+            .get(porter_dbus::COMPUTER_KEY_PORT)
+            .map(|value| {
+                value
+                    .try_clone()
+                    .ok()
+                    .and_then(|value| u16::try_from(value).ok())
+                    .ok_or_else(|| invalid("a model's port is a number from 0 to 65535"))
+            })
+            .transpose()?;
+        let reach = match (socket, port) {
+            (Some(path), None) => NewReach::Socket(path.into()),
+            (None, Some(port)) => NewReach::Port(port),
+            (Some(_), Some(_)) | (None, None) => return Err(ComputerError::BadAddress(id).into()),
+        };
+        parsed.push(NewModel { id, reach, key });
+    }
+    Ok(NewComputer {
+        label: name,
+        models: parsed,
+    })
 }
 
 /// A place as a row of `Places`: its id and the vardict of `PLACE_KEY_*`.

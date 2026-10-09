@@ -884,3 +884,474 @@ mod refusals {
         assert_eq!(opened, Ok(()));
     }
 }
+
+// ---- computers added in Settings -----------------------------------------------------------
+
+mod computers {
+    use super::routing::placed_world_with;
+    use super::*;
+    use hosting::bus::within;
+    use inferd::peers::Caller;
+    use porter_client::InferSession;
+    use porter_dbus::zvariant::{OwnedValue, Value};
+    use porter_dbus::{BusStream, COMPUTER_ERROR_PREFIX, Details, InferenceProxy};
+    use porter_infer::{
+        ChatControl, ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRequest, Knob,
+        LocalOnly, MessagePart, OpenOptions, PlaceId, Policy, Reasoning, ReplyShape,
+        Role as ChatRole, ToolChoice, ToolParallelism,
+    };
+    use std::path::Path;
+
+    const KEY: &str = "sk-lab-S3CRET-0123456789";
+    const COMPANION: &str = "org.quire.Companion";
+
+    fn text(value: &str) -> OwnedValue {
+        OwnedValue::try_from(Value::from(value.to_owned())).expect("value")
+    }
+
+    /// One model of `AddComputer`: its id, and how it is reached and its key.
+    fn model(
+        id: &str,
+        socket: Option<&Path>,
+        port: Option<u16>,
+        key: Option<&str>,
+    ) -> (String, Details) {
+        let mut details = Details::new();
+        if let Some(socket) = socket {
+            details.insert("socket".to_owned(), text(&socket.display().to_string()));
+        }
+        if let Some(port) = port {
+            details.insert(
+                "port".to_owned(),
+                OwnedValue::try_from(Value::U16(port)).expect("value"),
+            );
+        }
+        if let Some(key) = key {
+            details.insert("key".to_owned(), text(key));
+        }
+        (id.to_owned(), details)
+    }
+
+    /// A world with no engine written by hand, and a lab machine that wants `KEY`.
+    async fn world(name: &str) -> (World, Lab) {
+        let dir = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+            .join(format!("cp-{}-{name}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("scratch");
+        let lab = Lab::start(&Bind::Socket(dir), "lab", &[entries::SERVED], Some(KEY)).await;
+        let plan = Plan {
+            catalog: vec![("a-attached.toml", entries::attached())],
+            policy: Policy {
+                local_only: LocalOnly::Off,
+                floors: Vec::new(),
+            },
+            role: Role::Settings,
+            app: Some(app("org.quire.Settings")),
+            ..Plan::default()
+        };
+        (World::start(plan).await, lab)
+    }
+
+    fn as_caller(world: &World, role: Role, who: &str) {
+        let me = world.client.unique_name().expect("unique name").to_string();
+        world.peers.introduce(
+            &me,
+            Caller {
+                app: app(who),
+                role,
+            },
+        );
+    }
+
+    async fn proxy(world: &World) -> InferenceProxy<'static> {
+        InferenceProxy::new(&world.client).await.expect("proxy")
+    }
+
+    fn name_and_words(error: &zbus::Error) -> (String, String) {
+        match error {
+            zbus::Error::MethodError(name, words, _) => {
+                (name.to_string(), words.clone().unwrap_or_default())
+            }
+            other => panic!("a method error, got {other:?}"),
+        }
+    }
+
+    fn chat_request() -> InferRequest {
+        InferRequest::Chat(ChatRequest {
+            messages: vec![ChatMessage {
+                role: ChatRole::User,
+                parts: vec![MessagePart::Text("hello".into())],
+            }],
+            shape: ReplyShape::Text,
+            tier: Tier::Balanced,
+            class: DataClass::Public,
+            usage: porter_core::consent::Usage::Interactive,
+            tools: vec![],
+            control: ChatControl {
+                tool_choice: ToolChoice::Auto,
+                tool_calls: ToolParallelism::One,
+                max_output: Knob::Off,
+                reasoning: Reasoning::EngineDefault,
+                sampling: Knob::Off,
+                stop: vec![],
+            },
+        })
+    }
+
+    fn files_holding(dir: &Path, needle: &str) -> Vec<std::path::PathBuf> {
+        let mut found = Vec::new();
+        for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                found.extend(files_holding(&path, needle));
+            } else if std::fs::read_to_string(&path).is_ok_and(|text| text.contains(needle)) {
+                found.push(path);
+            }
+        }
+        found
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn settings_adds_a_computer_that_places_lists_and_the_assistant_uses_with_its_key() {
+        let (world, lab) = world("add").await;
+        lab.say(&["from the studio"]);
+        let proxy = proxy(&world).await;
+        let mut changed = proxy.receive_engines_changed().await.expect("stream");
+        let placed = within(
+            "AddComputer",
+            proxy.add_computer(
+                "Studio PC",
+                vec![model(
+                    entries::ATTACHED,
+                    Some(&lab.socket()),
+                    None,
+                    Some(KEY),
+                )],
+            ),
+        )
+        .await
+        .expect("added");
+        assert_eq!(placed, "computer:studio-pc");
+        let told = std::future::poll_fn(|cx| std::pin::Pin::new(&mut changed).poll_next(cx));
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_secs(5), told)
+                .await
+                .is_ok(),
+            "EnginesChanged after an addition"
+        );
+
+        // Places shows it, under the name the person gave, ready, with its model.
+        let rows = world.accounts.places().await.expect("places");
+        let row = rows
+            .iter()
+            .find(|row| row.id.as_str() == "computer:studio-pc")
+            .unwrap_or_else(|| panic!("the new computer in {rows:?}"));
+        assert_eq!(row.name, "Studio PC");
+        assert_eq!(row.state, porter_infer::PlaceState::Ready);
+        assert_eq!(
+            row.models.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(),
+            vec![entries::ATTACHED]
+        );
+
+        // A companion that names the place is answered by it, and the lab saw the key.
+        as_caller(&world, Role::Placer, COMPANION);
+        let options = OpenOptions::default()
+            .with_places(vec![PlaceId::parse("computer:studio-pc").expect("place")]);
+        let need = porter_core::Need::Llm(porter_core::need::LlmNeed {
+            features: [porter_core::capability::LlmFeature::Chat].into(),
+            context: porter_core::Tokens(1000),
+        });
+        let mut session = within(
+            "Open",
+            world
+                .accounts
+                .session_with(&need, DataClass::Public, Tier::Balanced, &options),
+        )
+        .await
+        .expect("open");
+        let _ = session.send(ClientFrame::Request(chat_request())).await;
+        loop {
+            let event = within("an event", session.next()).await.expect("event");
+            if matches!(event, InferEvent::Finished(_)) {
+                break;
+            }
+        }
+        assert_eq!(lab.chats().len(), 1);
+        let bearer = format!("Bearer {KEY}");
+        assert!(
+            lab.seen()
+                .iter()
+                .any(|seen| seen.authorization.as_deref() == Some(bearer.as_str())),
+            "the lab was sent the key"
+        );
+
+        // The key is in one file, readable by its owner alone, and nowhere else: not in the
+        // list of computers, not in what inferd logged, not in any reply.
+        let key_file = world
+            .state
+            .join("computer-keys")
+            .join(format!("studio-pc--{}.key", entries::ATTACHED));
+        assert_eq!(std::fs::read_to_string(&key_file).expect("key file"), KEY);
+        let mode = std::os::unix::fs::PermissionsExt::mode(
+            &std::fs::metadata(&key_file).expect("meta").permissions(),
+        ) & 0o777;
+        assert_eq!(mode, 0o600);
+        assert_eq!(files_holding(&world.scratch, KEY), vec![key_file]);
+        let lines = format!("{:?}", world.log.lock().expect("lock"));
+        assert!(!lines.contains(KEY), "{lines}");
+        assert!(!format!("{rows:?} {placed}").contains(KEY));
+        let list = std::fs::read_to_string(world.state.join("computers.toml")).expect("list");
+        assert!(list.contains("Studio PC") && !list.contains(KEY), "{list}");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn removing_a_computer_takes_it_and_its_key_away_and_says_engines_changed() {
+        let (world, lab) = world("remove").await;
+        let proxy = proxy(&world).await;
+        proxy
+            .add_computer(
+                "Studio PC",
+                vec![model(
+                    entries::ATTACHED,
+                    Some(&lab.socket()),
+                    None,
+                    Some(KEY),
+                )],
+            )
+            .await
+            .expect("added");
+        let mut changed = proxy.receive_engines_changed().await.expect("stream");
+        proxy
+            .remove_computer("computer:studio-pc")
+            .await
+            .expect("removed");
+        let told = std::future::poll_fn(|cx| std::pin::Pin::new(&mut changed).poll_next(cx));
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_secs(5), told)
+                .await
+                .is_ok(),
+            "EnginesChanged after a removal"
+        );
+        let rows = world.accounts.places().await.expect("places");
+        assert!(
+            rows.iter()
+                .all(|row| row.id.as_str() != "computer:studio-pc")
+        );
+        assert!(
+            !world
+                .state
+                .join("computer-keys")
+                .join(format!("studio-pc--{}.key", entries::ATTACHED))
+                .exists()
+        );
+        // Gone is gone.
+        let again = proxy
+            .remove_computer("studio-pc")
+            .await
+            .expect_err("not there");
+        assert_eq!(
+            name_and_words(&again),
+            (
+                format!("{COMPUTER_ERROR_PREFIX}NotThere"),
+                "There is no computer with that name.".to_owned()
+            )
+        );
+        // And the same name can be used again.
+        assert!(
+            proxy
+                .add_computer(
+                    "Studio PC",
+                    vec![model(entries::ATTACHED, Some(&lab.socket()), None, None)]
+                )
+                .await
+                .is_ok()
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn what_is_refused_reaches_settings_as_a_named_error_with_a_plain_sentence() {
+        let (world, lab) = world("refuse").await;
+        let proxy = proxy(&world).await;
+        let socket = lab.socket();
+        let studio = |models: Vec<(String, Details)>| {
+            let proxy = proxy.clone();
+            async move { proxy.add_computer("Studio PC", models).await }
+        };
+        let unreachable = format!(
+            "\u{201c}{}\u{201d} cannot be reached that way. Give the full path of a connection on this computer, or a port on this computer.",
+            entries::ATTACHED
+        );
+        let bad_key = format!(
+            "The key for \u{201c}{}\u{201d} cannot be used.",
+            entries::ATTACHED
+        );
+        type Case<'a> = (&'a str, Vec<(String, Details)>, &'a str, &'a str);
+        let cases: Vec<Case<'_>> = vec![
+            (
+                "no models",
+                vec![],
+                "NoModels",
+                "Add at least one model for this computer.",
+            ),
+            (
+                "an unknown model",
+                vec![model("no-such-model", Some(&socket), None, None)],
+                "UnknownModel",
+                "The assistant does not know a model called \u{201c}no-such-model\u{201d}.",
+            ),
+            (
+                "no way to reach it",
+                vec![model(entries::ATTACHED, None, None, None)],
+                "BadAddress",
+                &unreachable,
+            ),
+            (
+                "two ways to reach it",
+                vec![model(entries::ATTACHED, Some(&socket), Some(8000), None)],
+                "BadAddress",
+                &unreachable,
+            ),
+            (
+                "a relative path",
+                vec![model(
+                    entries::ATTACHED,
+                    Some(Path::new("lab.sock")),
+                    None,
+                    None,
+                )],
+                "BadAddress",
+                &unreachable,
+            ),
+            (
+                "an empty key",
+                vec![model(entries::ATTACHED, Some(&socket), None, Some(" "))],
+                "BadKey",
+                &bad_key,
+            ),
+        ];
+        for (what, models, name, words) in cases {
+            let error = studio(models).await.expect_err(what);
+            assert_eq!(
+                name_and_words(&error),
+                (format!("{COMPUTER_ERROR_PREFIX}{name}"), words.to_owned()),
+                "{what}"
+            );
+            for jargon in ["socket", "loopback", "TOML", "key_file", "API"] {
+                assert!(!words.contains(jargon), "{what}: {words}");
+            }
+        }
+        // A blank name, and a name taken.
+        let blank = proxy
+            .add_computer(
+                "  ",
+                vec![model(entries::ATTACHED, Some(&socket), None, None)],
+            )
+            .await
+            .expect_err("blank");
+        assert_eq!(
+            name_and_words(&blank),
+            (
+                format!("{COMPUTER_ERROR_PREFIX}BadName"),
+                "Give the computer a name that has some letters or numbers in it.".to_owned()
+            )
+        );
+        studio(vec![model(entries::ATTACHED, Some(&socket), None, None)])
+            .await
+            .expect("added");
+        let taken = proxy
+            .add_computer(
+                "studio pc",
+                vec![model(entries::ATTACHED, Some(&socket), None, None)],
+            )
+            .await
+            .expect_err("taken");
+        assert_eq!(
+            name_and_words(&taken),
+            (
+                format!("{COMPUTER_ERROR_PREFIX}AlreadyThere"),
+                "A computer with that name is already there.".to_owned()
+            )
+        );
+        // Nothing refused left anything behind: one computer, one key file or none.
+        let rows = world.accounts.places().await.expect("places");
+        assert_eq!(
+            rows.iter()
+                .filter(|row| row.kind == PlaceKind::OwnComputer)
+                .count(),
+            1
+        );
+        // A value of the wrong type is invalid args, not one of ours.
+        let mut wrong = model(entries::ATTACHED, None, None, None);
+        wrong.1.insert("port".to_owned(), text("eight thousand"));
+        let invalid = proxy
+            .add_computer("Other", vec![wrong])
+            .await
+            .expect_err("invalid");
+        assert!(porter_dbus::is_invalid_args(&invalid), "{invalid:?}");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_computer_written_by_hand_is_listed_but_cannot_be_removed_or_added_again() {
+        let (world, _lab) =
+            placed_world_with("hand", Role::Settings, "org.quire.Settings", false).await;
+        let proxy = proxy(&world).await;
+        let rows = world.accounts.places().await.expect("places");
+        assert!(rows.iter().any(|row| row.id.as_str() == "computer:lab"));
+        for name in ["lab", "computer:lab"] {
+            let error = proxy.remove_computer(name).await.expect_err("by hand");
+            assert_eq!(
+                name_and_words(&error),
+                (
+                    format!("{COMPUTER_ERROR_PREFIX}AddedByHand"),
+                    "That computer was added by hand in the settings file, so it can only be removed there."
+                        .to_owned()
+                ),
+                "{name}"
+            );
+        }
+        let again = proxy
+            .add_computer("Lab", vec![model("other-model", None, Some(1), None)])
+            .await
+            .expect_err("taken");
+        assert_eq!(
+            name_and_words(&again).0,
+            format!("{COMPUTER_ERROR_PREFIX}AlreadyThere")
+        );
+        let model_taken = proxy
+            .add_computer("Bench", vec![model(entries::ATTACHED, None, Some(1), None)])
+            .await
+            .expect_err("model taken");
+        assert_eq!(
+            name_and_words(&model_taken).0,
+            format!("{COMPUTER_ERROR_PREFIX}ModelTaken")
+        );
+        assert!(world.accounts.places().await.is_ok());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn only_settings_may_add_or_remove_a_computer() {
+        let (world, lab) = world("callers").await;
+        let proxy = proxy(&world).await;
+        let denied = "org.freedesktop.DBus.Error.AccessDenied";
+        for (role, who) in [
+            (Role::Placer, COMPANION),
+            (Role::Shell, "org.quire.Shell"),
+            (Role::App, "org.quire.Memory"),
+            (Role::AgentLauncher, "org.quire.AgentLauncher"),
+        ] {
+            as_caller(&world, role, who);
+            let add = proxy
+                .add_computer(
+                    "Studio PC",
+                    vec![model(entries::ATTACHED, Some(&lab.socket()), None, None)],
+                )
+                .await
+                .expect_err(who);
+            assert_eq!(name_and_words(&add).0, denied, "{who} add");
+            let remove = proxy.remove_computer("studio-pc").await.expect_err(who);
+            assert_eq!(name_and_words(&remove).0, denied, "{who} remove");
+        }
+        as_caller(&world, Role::Settings, "org.quire.Settings");
+        let rows = world.accounts.places().await.expect("places");
+        assert!(rows.iter().all(|row| row.kind != PlaceKind::OwnComputer));
+    }
+}
