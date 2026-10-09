@@ -31,3 +31,5 @@ workspace = true
 
 [dev-dependencies]
 proptest = { workspace = true }
+# A paused clock for `serve_ready`'s timing tests.
+tokio = { workspace = true, features = ["test-util"] }
