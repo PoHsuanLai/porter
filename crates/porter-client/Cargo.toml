@@ -12,6 +12,8 @@ publish.workspace = true
 porter-core = { workspace = true }
 porter-infer = { workspace = true, optional = true }
 porter-bridge = { workspace = true, optional = true }
+# `engines`: the turn the daemon runs (`run_chat`) and the clock its retries wait on.
+porter-turns = { workspace = true, optional = true }
 model-http = { workspace = true, optional = true, features = ["hyper", "tls"] }
 model-openai-compat = { workspace = true, optional = true }
 model-provider = { workspace = true, optional = true }
@@ -66,7 +68,7 @@ in-process = ["dep:porter-provider", "dep:porter-secrets", "dep:porter-service"]
 # default: it brings stoker's HTTP client with TLS (hyper, rustls) and a runtime, which neither
 # an accounts-only app nor one that talks to inferd needs.
 engines = [
-  "infer", "dep:tokio", "dep:serde_json", "dep:porter-bridge", "dep:model-http",
+  "infer", "dep:tokio", "dep:serde_json", "dep:porter-bridge", "dep:porter-turns", "dep:model-http",
   "dep:model-openai-compat", "dep:model-provider", "dep:model-wire",
 ]
 # Frames over a Unix stream socket with descriptors riding on them (what both carriers below

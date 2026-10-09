@@ -6,12 +6,12 @@ use super::engine::{Engine, KeyUse};
 use super::keys::KeySource;
 use super::wire::{Temperature, provider};
 use model_provider as sp;
-use model_provider::Provider;
 use porter_bridge::{DefaultSampling, Frames, Target, chat_turn_for, task_turn_for};
 use porter_core::Tier;
 use porter_infer::{
     InferEvent, InferRefusal, InferReply, InferRequest, Knob, ModelError, ServedBy,
 };
+use porter_turns::local::run_chat;
 use tokio::sync::mpsc::UnboundedSender;
 
 /// What a session is pinned to when it opens: the engine its route chose.
@@ -29,25 +29,6 @@ impl Pinned {
             sampling: DefaultSampling::Provider,
             max_output: sp::Tokens(self.engine.max_output.0),
             flavor: Some(self.engine.dialect.flavor()),
-        }
-    }
-}
-
-/// Where a turn's events go: to the session, and into the reply being gathered.
-struct Forward<'a> {
-    events: &'a UnboundedSender<InferEvent>,
-    gathered: porter_bridge::Gathered,
-}
-
-impl sp::TurnSink for Forward<'_> {
-    fn event(&mut self, event: sp::TurnEvent) -> sp::Flow {
-        self.gathered.take(&event);
-        match porter_bridge::event(&event) {
-            Some(out) => match self.events.send(out) {
-                Ok(()) => sp::Flow::Continue,
-                Err(_) => sp::Flow::Stop,
-            },
-            None => sp::Flow::Continue,
         }
     }
 }
@@ -101,12 +82,12 @@ pub(crate) async fn reply(
     };
     let provider = provider(&pinned.engine, key.as_ref(), temperature);
     drop(key);
-    let mut sink = Forward {
-        events,
-        gathered: porter_bridge::Gathered::for_turn(&turn),
+    // The same turn the daemon runs: events streamed as they come, the reply gathered. A host
+    // with no engine of its own to tell has nothing to touch, and says nothing of option shares.
+    let send = |event| match events.send(event) {
+        Ok(()) => sp::Flow::Continue,
+        Err(_) => sp::Flow::Stop,
     };
-    match provider.turn(&turn, &mut sink).await {
-        Ok(end) => InferReply::Chat(sink.gathered.chat_reply(&end, pinned.served.clone())),
-        Err(error) => InferReply::Failed(porter_bridge::model_error(&error)),
-    }
+    let (reply, _) = run_chat(&provider, &turn, &pinned.served, send, || {}).await;
+    reply
 }

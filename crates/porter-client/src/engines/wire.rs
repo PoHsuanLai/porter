@@ -13,13 +13,12 @@ use model_http::{
     HttpTarget, JsonBody, Port, Proxy, Secret, Timeouts, Transport, UrlPath, WaitMs,
 };
 use model_openai_compat::OpenAiCodec;
-use model_provider as sp;
-use model_provider::{RetryPolicy, Retrying, Sleeper};
+use model_provider::Retrying;
 use model_wire::Driver;
 use porter_core::SecretText;
+use porter_turns::local::{RETRY, TokioSleep};
 use serde_json::Value;
 use std::future::Future;
-use std::time::Duration;
 
 /// Waits for an engine: the connection, the first byte (a long prompt, a model that loads
 /// first, one that thinks first), and between chunks.
@@ -28,20 +27,6 @@ const TIMEOUTS: Timeouts = Timeouts {
     first_byte: WaitMs(180_000),
     idle: WaitMs(90_000),
 };
-
-/// Three attempts, a quarter of a second doubling to four seconds (porter-bridge's, shared with
-/// inferd).
-const RETRY: RetryPolicy = porter_bridge::ENGINE_RETRY;
-
-/// Waits with the clock of the runtime, so a test with paused time does not wait.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct TokioSleep;
-
-impl Sleeper for TokioSleep {
-    fn sleep(&self, wait: sp::WaitMs) -> impl Future<Output = ()> + Send {
-        tokio::time::sleep(Duration::from_millis(u64::from(wait.0)))
-    }
-}
 
 /// Whether the body keeps the `temperature` the codec writes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
