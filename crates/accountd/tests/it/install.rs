@@ -215,6 +215,31 @@ fn a_second_run_changes_nothing_and_a_home_directory_is_never_written() {
 }
 
 #[test]
+fn the_tailnet_drop_in_is_installed_as_data_and_never_as_a_live_drop_in() {
+    let run = Run::new("tailnet");
+    run.install(&["--prefix", "/opt/porter"]);
+    let installed = run.at("/opt/porter/share/porter/inferd-tailnet.conf");
+    assert_eq!(
+        fs::read(&installed).expect("the drop-in is installed as data"),
+        fs::read(repo().join("dist/inferd-tailnet.conf")).expect("shipped")
+    );
+    assert_eq!(
+        fs::metadata(&installed).expect("meta").permissions().mode() & 0o777,
+        0o644
+    );
+    // Nothing is written under the home folder, and no unit has a drop-in directory: the
+    // Settings switch makes that, with the person's consent.
+    assert!(files_under(&run.home).is_empty());
+    for path in files_under(&run.destdir) {
+        let live = path
+            .components()
+            .any(|part| part.as_os_str().to_string_lossy().ends_with(".service.d"));
+        assert!(!live, "{path:?}");
+    }
+    assert!(!run.at("/etc/systemd").exists());
+}
+
+#[test]
 fn a_caller_table_the_person_changed_is_kept_and_the_shipped_one_is_put_beside_it() {
     let run = Run::new("kept");
     run.install(&[]);

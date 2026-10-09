@@ -17,6 +17,8 @@
 #   PREFIX/share/dbus-1/services/org.quire.*.service         D-Bus activation
 #   PREFIX/share/porter/providers/*.toml                     the provider files
 #   PREFIX/share/porter/clients.toml                         only when dist/clients.toml exists
+#   PREFIX/share/porter/inferd-tailnet.conf                  the tailnet drop-in, as data: the Settings switch
+#                                                            installs it for the person; never installed live
 #   PREFIX/share/quire/settings/inferd.settings.toml         the AI settings page schema
 #   PREFIX/share/doc/porter/examples/                        inferd.toml and inferd-cloud.conf: samples
 #                                                            for the person to copy; never installed live
@@ -137,6 +139,9 @@ if [ -f "$dist/clients.toml" ]; then
     put 644 "$dist/clients.toml" "$prefix/share/porter/clients.toml"
 fi
 put 644 "$dist/inferd.settings.toml" "$prefix/share/quire/settings/inferd.settings.toml"
+# The tailnet drop-in is data, never live: the Settings switch "Let my other computers use this
+# computer's models" copies it into the person's own systemd user configuration, with their consent.
+put 644 "$dist/inferd-tailnet.conf" "$prefix/share/porter/inferd-tailnet.conf"
 put 644 "$dist/inferd.toml" "$prefix/share/doc/porter/examples/inferd.toml"
 put 644 "$dist/inferd-cloud.conf" "$prefix/share/doc/porter/examples/inferd-cloud.conf"
 
