@@ -285,6 +285,8 @@ pub fn chat_turn_for(
         pi::Knob::Set(tokens) => sp::Tokens(tokens.0),
         pi::Knob::Off => target.max_output,
     };
+    let output = shape(&request.shape)?;
+    let choice_scores = crate::scores::choice_scores(control, &output);
     Ok(sp::TurnRequest {
         model: target.name.clone(),
         messages: request
@@ -317,14 +319,14 @@ pub fn chat_turn_for(
             pi::ToolParallelism::One => sp::ToolParallelism::One,
             pi::ToolParallelism::Many => sp::ToolParallelism::Many,
         },
-        output: shape(&request.shape)?,
+        output,
         limits: sp::Limits {
             max_output,
             stop: control.stop.clone(),
         },
         sampling,
         reasoning,
-        choice_scores: sp::ChoiceScores::Off,
+        choice_scores,
         engine: extras(target.flavor),
     })
 }

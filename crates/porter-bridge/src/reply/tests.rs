@@ -161,3 +161,62 @@ fn vectors_keep_their_numbers_and_widths_are_counted() {
     assert_eq!(mapped[0], pi::EmbedVector(vec![0.5, 0.25]));
     assert_eq!(width(&mapped[1]), Dims(2));
 }
+
+fn asking(options: &[&str]) -> Gathered {
+    Gathered {
+        options: Some(options.iter().map(|one| (*one).to_owned()).collect()),
+        ..Gathered::default()
+    }
+}
+
+fn end_with(first_token: Option<sp::FirstTokenLogprobs>) -> sp::TurnEnd {
+    sp::TurnEnd {
+        first_token,
+        ..end(sp::StopReason::EndTurn)
+    }
+}
+
+fn likely(token: &str, probability: f64) -> sp::TokenLogprob {
+    sp::TokenLogprob {
+        token: token.into(),
+        logprob: sp::Logprob::from_nats(probability.ln()).expect("a number"),
+    }
+}
+
+#[test]
+fn a_turn_that_asked_gets_the_shares_of_its_options_on_the_reply() {
+    let end = end_with(Some(sp::FirstTokenLogprobs {
+        top: vec![likely("yes", 0.75), likely("no", 0.25)],
+    }));
+    let (reply, why) = asking(&["yes", "no"]).chat_reply_noted(&end, served());
+    assert_eq!(why, None);
+    let scores = reply.scores.expect("scores");
+    assert_eq!(scores.share_of("yes"), Some(porter_core::Permille(750)));
+    assert_eq!(scores.share_of("no"), Some(porter_core::Permille(250)));
+}
+
+#[test]
+fn a_turn_that_asked_and_got_nothing_usable_has_the_same_reply_without_scores() {
+    let plain = Gathered::default().chat_reply(&end_with(None), served());
+    let none = end_with(None);
+    let (reply, why) = asking(&["yes", "no"]).chat_reply_noted(&none, served());
+    assert_eq!(reply, plain);
+    assert_eq!(why, Some(NoScores::EngineGaveNone));
+
+    let junk = end_with(Some(sp::FirstTokenLogprobs {
+        top: vec![likely("Maybe", 0.9)],
+    }));
+    let (reply, why) = asking(&["yes", "no"]).chat_reply_noted(&junk, served());
+    assert_eq!(reply, plain);
+    assert_eq!(why, Some(NoScores::Unusable));
+}
+
+#[test]
+fn a_turn_that_did_not_ask_never_gets_scores_whatever_the_engine_sent() {
+    let end = end_with(Some(sp::FirstTokenLogprobs {
+        top: vec![likely("yes", 0.75), likely("no", 0.25)],
+    }));
+    let (reply, why) = Gathered::default().chat_reply_noted(&end, served());
+    assert_eq!(reply.scores, None);
+    assert_eq!(why, None);
+}

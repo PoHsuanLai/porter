@@ -61,6 +61,32 @@ fn a_target_names_the_model_the_limit_and_the_dialect_extras() {
 }
 
 #[test]
+fn a_choice_that_asks_for_scores_asks_the_engine_for_its_first_tokens_and_nothing_else_does() {
+    let ask = |shape: pi::ReplyShape, scores: pi::Knob<pi::ScoreOptions>| {
+        let mut request = chat(vec![pi::MessagePart::Text("hi".into())]);
+        request.shape = shape;
+        request.control.scores = scores;
+        chat_turn_for(
+            &target(DefaultSampling::Provider),
+            &request,
+            &Frames::default(),
+        )
+        .expect("turn")
+        .choice_scores
+    };
+    let choice = || pi::ReplyShape::Choice(vec!["allow".into(), "deny".into()]);
+    let on = pi::Knob::Set(pi::ScoreOptions::default());
+    assert_eq!(
+        ask(choice(), on),
+        sp::ChoiceScores::FirstToken {
+            top_k: sp::Count(20)
+        }
+    );
+    assert_eq!(ask(choice(), pi::Knob::Off), sp::ChoiceScores::Off);
+    assert_eq!(ask(pi::ReplyShape::Text, on), sp::ChoiceScores::Off);
+}
+
+#[test]
 fn an_entry_that_writes_no_sampling_cannot_express_an_open_one() {
     assert_eq!(
         chat_turn_for(

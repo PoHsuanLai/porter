@@ -6,12 +6,16 @@ use model_provider as sp;
 use porter_core::{Dims, Tokens};
 use porter_infer as pi;
 
+use crate::scores::{NoScores, option_scores};
+
 /// What a turn has produced so far, folded into the reply it ends with.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Gathered {
     text: String,
     thought: String,
     calls: Vec<pi::ToolCallPart>,
+    /// The options whose shares the turn asked for; none when it did not ask.
+    options: Option<Vec<String>>,
 }
 
 /// The event a stoker event is, if the client sees it: deltas, finished tool calls and usage
@@ -50,17 +54,45 @@ impl Gathered {
         }
     }
 
-    /// The reply the turn ended with.
+    /// What gathers the reply to `turn`: the same as `default()`, and it remembers the options
+    /// of a `Choice` whose shares the turn asked for, so the reply can carry them.
+    pub fn for_turn(turn: &sp::TurnRequest) -> Self {
+        Self {
+            options: crate::scores::asked_options(turn),
+            ..Self::default()
+        }
+    }
+
+    /// The reply the turn ended with. A turn that asked for option shares gets them when the
+    /// engine's first-token probabilities allow, and `scores: None` otherwise, never an error.
     pub fn chat_reply(self, end: &sp::TurnEnd, served: pi::ServedBy) -> pi::ChatReply {
-        pi::ChatReply {
+        self.chat_reply_noted(end, served).0
+    }
+
+    /// As [`Gathered::chat_reply`], and why there are no scores when the turn asked for them
+    /// (for the caller to note; the reply is the same reply either way).
+    pub fn chat_reply_noted(
+        self,
+        end: &sp::TurnEnd,
+        served: pi::ServedBy,
+    ) -> (pi::ChatReply, Option<NoScores>) {
+        let (scores, why) = match &self.options {
+            None => (None, None),
+            Some(options) => match option_scores(options, end.first_token.as_ref()) {
+                Ok(scores) => (Some(scores), None),
+                Err(why) => (None, Some(why)),
+            },
+        };
+        let reply = pi::ChatReply {
             text: self.text,
             tool_calls: self.calls,
             stop: stop(end.stop),
             thought: (!self.thought.is_empty()).then_some(self.thought),
             usage: usage(end.usage),
             served,
-            scores: None,
-        }
+            scores,
+        };
+        (reply, why)
     }
 }
 

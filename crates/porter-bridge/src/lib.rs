@@ -9,12 +9,14 @@
 
 mod reply;
 mod request;
+mod scores;
 
 pub use reply::{Gathered, event, model_error, stop, stop_back, usage, vectors, width};
 pub use request::{
     BridgeError, DefaultSampling, Frames, MAX_ATTACHMENT, Target, chat_turn_for, embed_turns_for,
     extras, image_input, task_turn_for,
 };
+pub use scores::{NoScores, choice_scores, option_scores};
 
 use model_provider::{Attempt, RetryPolicy, WaitMs};
 use porter_core::{CoreError, ModelId};
