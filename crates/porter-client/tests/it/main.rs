@@ -26,6 +26,8 @@ mod prepare;
 mod process_credential;
 mod session_shape;
 mod socket;
+#[cfg(feature = "lending")]
+mod tailnet_lending;
 
 #[test]
 fn every_module_is_declared() {
