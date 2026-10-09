@@ -15,6 +15,7 @@ dependencies = [
  "porter-fake",
  "porter-fake-servers",
  "porter-families",
+ "porter-fs",
  "porter-http",
  "porter-oauth",
  "porter-provider",
@@ -1429,6 +1430,7 @@ dependencies = [
  "porter-discover",
  "porter-fake",
  "porter-fake-servers",
+ "porter-fs",
  "porter-http",
  "porter-infer",
  "porter-provider",
@@ -2320,6 +2322,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "porter-fs"
+version = "0.1.0"
+
+[[package]]
 name = "porter-http"
 version = "0.1.0"
 dependencies = [
@@ -2425,6 +2431,7 @@ dependencies = [
  "keyring-core",
  "oo7",
  "porter-core",
+ "porter-fs",
  "porter-secrets",
  "serde_json",
  "thiserror",
@@ -2466,6 +2473,7 @@ dependencies = [
  "porter-core",
  "porter-fake",
  "porter-fake-servers",
+ "porter-fs",
  "porter-tailnet",
  "porter-tailscale",
  "serde",
@@ -3171,6 +3179,7 @@ dependencies = [
  "porter-dbus",
  "porter-fake",
  "porter-fake-servers",
+ "porter-fs",
  "porter-http",
  "porter-provider",
  "porter-secrets",

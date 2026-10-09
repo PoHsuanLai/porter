@@ -1,12 +1,11 @@
 //! porter's pure vocabulary: accounts, the capability vocabulary and how a need meets an offer,
-//! consent, credentials' filing, and the wire protocol. No runtime, portable, and no I/O beyond
-//! [`atomic`], the one blocking file writer every crate that saves a file shares.
+//! consent, credentials' filing, and the wire protocol. No runtime, no file system, no I/O: the
+//! file writer lives in `porter-fs`.
 
 mod account;
 mod agent_login;
 mod ai_props;
 mod app_id;
-pub mod atomic;
 pub mod audit;
 mod auth_kind;
 mod candidate;

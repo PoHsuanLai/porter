@@ -11,8 +11,8 @@
 //!
 //! Only blocking file calls live here; the seam is async, so each runs on tokio's blocking pool.
 
-use porter_core::atomic::AtomicFile;
 use porter_core::store::{Persisted, StoreFault};
+use porter_fs::atomic::AtomicFile;
 use porter_service::{RegistryStore, StoreError};
 use std::io;
 use std::path::PathBuf;

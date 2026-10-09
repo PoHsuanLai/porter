@@ -16,6 +16,7 @@ test-proc-root = []
 
 [dependencies]
 porter-core = { workspace = true }
+porter-fs = { workspace = true }
 cua-action = { workspace = true }
 porter-dbus = { workspace = true }
 porter-discover = { workspace = true }

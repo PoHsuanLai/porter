@@ -7,7 +7,7 @@
 //! dot and end in `.tmp`, matching neither `*.ics` nor `*.vcf`.
 
 use super::PimKind;
-use porter_core::atomic::AtomicWrite;
+use porter_fs::atomic::AtomicWrite;
 use std::path::Path;
 
 /// The file of a collection's name.

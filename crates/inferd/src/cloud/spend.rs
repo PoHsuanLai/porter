@@ -9,8 +9,8 @@
 //! prompt.
 
 use crate::settings::SpendLine;
-use porter_core::atomic::AtomicWrite;
 use porter_core::{AccountId, AppId, MicroUsd, Tokens, UnixSeconds};
+use porter_fs::atomic::AtomicWrite;
 use porter_infer::{Period, SpendScope, SpendVerdict, TokenUsage, spend_verdict};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

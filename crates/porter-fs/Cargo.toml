@@ -1,0 +1,12 @@
+[package]
+name = "porter-fs"
+description = "porter's file writer: atomic saves (a staging file, synced, renamed over the target, the directory synced) and the one-file backup. Std only; the one place porter's blocking file writes live."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

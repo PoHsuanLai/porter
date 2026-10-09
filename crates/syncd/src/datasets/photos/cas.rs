@@ -2,7 +2,7 @@
 //! the same photo are one file, locally and on the replica, and a name can be checked against
 //! the bytes it holds. Also the atomic file writes every part of the library uses.
 
-use porter_core::atomic::AtomicWrite;
+use porter_fs::atomic::AtomicWrite;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::io::{self, Read};

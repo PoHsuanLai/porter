@@ -16,6 +16,7 @@ cd "$(dirname "$0")/.."
 EFFECTS="zbus zvariant tokio reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
 RULES=(
   "porter-core: $EFFECTS toml"
+  "porter-fs: $EFFECTS"
   "prov: $EFFECTS"
   "porter-provider: $EFFECTS"
   "porter-secrets: $EFFECTS"
@@ -81,14 +82,24 @@ for file in "${PURE_FILES[@]}"; do
   fi
 done
 
+# porter-core's source is pure: its file writer is porter-fs, so no file, process or environment
+# access is named anywhere in the crate (a dependency rule cannot see std's own modules).
+if grep -rnE 'std::(fs|process|env)\b' crates/porter-core/src; then
+  echo "LEAK: porter-core's source reaches std's file, process or environment access"
+  fail=1
+else
+  echo "pure: porter-core's source names no std::fs, std::process or std::env"
+fi
+
 # The allowed edges between our own crates: each crate's DIRECT normal and build path
 # dependencies (all features), and nothing else. A dependency not listed is a leak; so is one
 # the crate no longer has, so the table stays exact. Dev dependencies are outside it.
 EDGES=(
   "porter-core:"
+  "porter-fs:"
   "prov: porter-core"
   "porter-provider: porter-core"
-  "porter-secrets: porter-core"
+  "porter-secrets: porter-core porter-fs"
   "porter-sync: porter-core"
   "porter-infer: porter-core cua-action"
   "porter-service: porter-core porter-provider porter-secrets"
@@ -102,16 +113,16 @@ EDGES=(
   "porter-oauth: porter-core porter-http porter-provider"
   "porter-discover: porter-core porter-http porter-provider"
   "porter-tailscale: porter-core"
-  "porter-tailnet: porter-core porter-tailscale"
+  "porter-tailnet: porter-core porter-fs porter-tailscale"
   "porter-dav: porter-core porter-http"
   "porter-families: porter-core porter-dav porter-discover porter-http porter-oauth porter-provider porter-proxy porter-tailscale"
-  "accountd: ds-settings porter-core porter-dbus porter-discover porter-families porter-http porter-provider porter-proxy porter-secrets porter-service porter-tailscale"
+  "accountd: ds-settings porter-core porter-dbus porter-discover porter-families porter-fs porter-http porter-provider porter-proxy porter-secrets porter-service porter-tailscale"
   "storage-webdav: porter-core porter-dav porter-http porter-sync"
   "storage-graph: porter-core porter-http porter-sync storage-webdav"
   "storage-gdrive: porter-core porter-http porter-sync storage-webdav"
-  "syncd: porter-client porter-core porter-dav porter-dbus porter-http porter-sync storage-gdrive storage-graph storage-webdav"
+  "syncd: porter-client porter-core porter-dav porter-dbus porter-fs porter-http porter-sync storage-gdrive storage-graph storage-webdav"
   "porter-rig: porter-client porter-core porter-dbus porter-fake porter-fake-servers porter-infer"
-  "inferd: ds-settings porter-bridge porter-core porter-dbus porter-discover porter-http porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
+  "inferd: ds-settings porter-bridge porter-core porter-dbus porter-discover porter-fs porter-http porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
 )
 for edge in "${EDGES[@]}"; do
   crate="${edge%%:*}"

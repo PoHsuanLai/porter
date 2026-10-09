@@ -4,7 +4,7 @@
 use super::resolve::resolve;
 use crate::config::InferdConfig;
 use crate::engines::Engines;
-use porter_core::atomic::AtomicWrite;
+use porter_fs::atomic::AtomicWrite;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 

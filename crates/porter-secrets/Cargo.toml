@@ -10,6 +10,7 @@ publish.workspace = true
 
 [dependencies]
 porter-core = { workspace = true }
+porter-fs = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 oo7 = { workspace = true, optional = true }

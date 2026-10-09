@@ -14,8 +14,8 @@
 use crate::attributes::{SERVICE, attributes};
 use crate::error::SecretsError;
 use crate::secrets::{PutOutcome, Secrets};
-use porter_core::atomic::AtomicWrite;
 use porter_core::{AccountId, Credential, SecretKey};
+use porter_fs::atomic::AtomicWrite;
 use serde_json::{Value, json};
 use std::fs::{File, OpenOptions};
 use std::io::{ErrorKind, Read};
