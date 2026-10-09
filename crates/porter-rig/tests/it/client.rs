@@ -28,7 +28,6 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use syncd::service::{Access, DatasetName, Event, Hub, Nudge, serve};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
@@ -307,7 +306,7 @@ async fn the_client_lists_datasets_watches_conflicts_and_settles_one() {
         .expect("spawns");
     let stdout = watching.stdout.take().expect("piped");
     let mut lines = BufReader::new(stdout).lines();
-    let first = tokio::time::timeout(Duration::from_secs(60), lines.next_line())
+    let first = tokio::time::timeout(porter_fake::GENEROUS, lines.next_line())
         .await
         .expect("a line in time")
         .expect("read")
@@ -340,7 +339,7 @@ async fn the_client_lists_datasets_watches_conflicts_and_settles_one() {
         dataset: name,
         conflict: Box::new(stored),
     });
-    let second = tokio::time::timeout(Duration::from_secs(60), lines.next_line())
+    let second = tokio::time::timeout(porter_fake::GENEROUS, lines.next_line())
         .await
         .expect("a line in time")
         .expect("read")

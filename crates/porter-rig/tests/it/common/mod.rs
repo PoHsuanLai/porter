@@ -61,13 +61,14 @@ impl Drop for Proc {
     }
 }
 
-/// Polls `check` every 20 ms for up to thirty seconds.
+/// Polls `check` every 20 ms until `porter_fake::GENEROUS` has passed by the clock.
 pub async fn eventually<T>(what: &str, mut check: impl FnMut() -> Option<T>) -> T {
-    for _ in 0..1500 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         if let Some(found) = check() {
             return found;
         }
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-    panic!("never happened: {what}");
+    deadline.fail(what);
 }

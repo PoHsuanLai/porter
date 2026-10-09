@@ -101,7 +101,8 @@ async fn accountds_oo7_secrets_stores_and_reads_back_through_the_fake_and_it_end
     let dbus = zbus::fdo::DBusProxy::new(&probe).await.expect("proxy");
     let name: zbus::names::BusName<'_> = "org.freedesktop.secrets".try_into().expect("name");
     let mut taken = false;
-    for _ in 0..1500 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         if dbus.name_has_owner(name.clone()).await.unwrap_or(false) {
             taken = true;
             break;

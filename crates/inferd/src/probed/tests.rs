@@ -262,7 +262,7 @@ async fn every_look_wakes_whoever_tells_listeners() {
     let book = ProbedBook::default();
     let woken = book.changed();
     book.set(Runtime::Ollama, Standing::Online, None);
-    tokio::time::timeout(std::time::Duration::from_secs(5), woken.notified())
+    tokio::time::timeout(porter_fake::GENEROUS, woken.notified())
         .await
         .expect("woken by the look that was recorded before anyone waited");
 }

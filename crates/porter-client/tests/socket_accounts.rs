@@ -114,7 +114,7 @@ async fn a_name_that_cannot_be_a_directory_is_malformed_not_unreachable() {
 
 /// The agent a spawning client starts: this same test binary, run by libtest with `--ignored` and
 /// the runtime directory as a trailing filter (libtest ignores a filter that names no test).
-/// Serves clients until it has answered one call, or gives up after twenty seconds.
+/// Serves clients until it has answered one call, or gives up well after the spawning test's wait.
 #[test]
 #[ignore = "the agent the spawn test starts; run only as that child"]
 fn child_agent() {
@@ -122,7 +122,7 @@ fn child_agent() {
         return;
     };
     std::thread::spawn(|| {
-        std::thread::sleep(Duration::from_secs(20));
+        std::thread::sleep(porter_fake::GENEROUS + Duration::from_secs(30));
         std::process::exit(0);
     });
     let door = agent_in(&dir).listen().expect("listen");
@@ -146,7 +146,7 @@ async fn a_spawning_client_starts_the_agent_and_then_talks_to_it() {
                 "--nocapture".to_owned(),
                 dir.display().to_string(),
             ],
-            wait: Duration::from_secs(15),
+            wait: porter_fake::GENEROUS,
         });
     let env = ClientEnv {
         links: vec![LinkChoice::Socket(agent)],

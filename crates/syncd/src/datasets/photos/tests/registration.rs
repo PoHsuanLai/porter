@@ -123,7 +123,8 @@ async fn photos_is_off_by_default_and_registers_both_datasets_when_switched_on()
     run.changed();
     let originals = DatasetName::parse("a1/photos_originals").expect("name");
     let mut synced = false;
-    for _ in 0..250 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         let status = wiring.hub.status_for(&settings_caller(), &originals);
         synced = status.is_some_and(|s| s.anchor_age.is_some());
         if synced {

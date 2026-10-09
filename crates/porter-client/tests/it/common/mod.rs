@@ -16,13 +16,15 @@ pub mod racing;
 #[cfg(feature = "infer")]
 pub mod served;
 
-/// Waits until `condition` holds (a daemon's task has run); fails the test after five seconds.
+/// Waits until `condition` holds (a daemon's task has run); fails the test, naming `what`, when
+/// `porter_fake::GENEROUS` has passed by the clock.
 pub async fn eventually(what: &str, mut condition: impl FnMut() -> bool) {
-    for _ in 0..500 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         if condition() {
             return;
         }
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
-    panic!("timed out waiting for {what}");
+    deadline.fail(what);
 }

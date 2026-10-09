@@ -70,7 +70,8 @@ async fn a_clock_that_jumped_while_the_computer_slept_runs_the_next_cycle_within
     let running = tokio::spawn(driver.run());
 
     let has = |path: &str| world.dataset.snapshot().contains_key(path);
-    for _ in 0..500 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         if has("a.txt") {
             break;
         }
@@ -83,7 +84,8 @@ async fn a_clock_that_jumped_while_the_computer_slept_runs_the_next_cycle_within
     // must notice within a step.
     world.remote_put("b.txt", b"second").await;
     world.clock.set(5_000 + 7_200);
-    for _ in 0..500 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         if has("b.txt") {
             break;
         }
@@ -92,6 +94,6 @@ async fn a_clock_that_jumped_while_the_computer_slept_runs_the_next_cycle_within
     running.abort();
     assert!(
         has("b.txt"),
-        "no cycle within ten seconds of the clock jumping"
+        "no cycle after the clock jumped (the driver notices within a step, not an hour)"
     );
 }

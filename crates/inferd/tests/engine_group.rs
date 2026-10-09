@@ -104,13 +104,14 @@ fn pid_in(file: &Path) -> i32 {
 }
 
 fn wait_for(file: &Path) {
-    for _ in 0..400 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         if file.exists() {
             return;
         }
         std::thread::sleep(Duration::from_millis(25));
     }
-    panic!("no {}", file.display());
+    deadline.fail(&format!("{} to appear", file.display()));
 }
 
 /// Gone: no such process, or a zombie nobody has collected yet.
@@ -125,7 +126,8 @@ fn gone(pid: i32) -> bool {
 }
 
 fn gone_soon(pid: i32) -> bool {
-    for _ in 0..200 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         if gone(pid) {
             return true;
         }

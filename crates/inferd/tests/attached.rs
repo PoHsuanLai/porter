@@ -50,7 +50,7 @@ fn fake_lab_process() {
     let key = std::env::var("FAKE_LAB_KEY").ok();
     // However it goes, no fake lab outlives a test by long.
     std::thread::spawn(|| {
-        std::thread::sleep(Duration::from_secs(120));
+        std::thread::sleep(porter_fake::GENEROUS * 3);
         std::process::exit(9);
     });
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -136,13 +136,14 @@ fn lab_process(dir: &Dir, key: Option<&str>) -> Started {
         command.env("FAKE_LAB_KEY", key);
     }
     let child = Started(command.spawn().expect("start the lab"));
-    for _ in 0..400 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         if dir.0.join("ready").exists() {
             return child;
         }
         std::thread::sleep(Duration::from_millis(25));
     }
-    panic!("the lab never listened");
+    deadline.fail("the lab to listen");
 }
 
 /// Gone: no such process, or a zombie nobody has collected yet.
@@ -545,11 +546,11 @@ async fn an_eviction_pass_leaves_the_attached_engines_process_alive_and_still_re
         "an attached id is not also one inferd runs"
     );
 
-    let first = tokio::time::timeout(Duration::from_secs(20), world.supervised.want(&a)).await;
+    let first = tokio::time::timeout(porter_fake::GENEROUS, world.supervised.want(&a)).await;
     assert_eq!(first, Ok(Ok(())), "the first engine starts");
     // The first engine goes idle: a turn in the last probe window is never a victim.
     tokio::time::sleep(Duration::from_millis(900)).await;
-    let second = tokio::time::timeout(Duration::from_secs(20), world.supervised.want(&b)).await;
+    let second = tokio::time::timeout(porter_fake::GENEROUS, world.supervised.want(&b)).await;
     assert_eq!(second, Ok(Ok(())), "the second engine starts");
     let states = world.supervised.snapshot().states;
     assert!(matches!(

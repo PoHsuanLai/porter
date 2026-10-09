@@ -16,7 +16,6 @@ use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
 use porter_core::{AccountId, Audience, DataClass, Need};
 use porter_fake::Scripted;
 use std::sync::Arc;
-use std::time::Duration;
 
 fn storage(delta: Delta) -> Need {
     Need::Storage(StorageNeed {
@@ -256,7 +255,7 @@ async fn a_daemon_that_leaves_mid_sheet_ends_the_wait_with_closed() {
 
     daemon.connection.close().await.expect("the daemon leaves");
 
-    let ended = tokio::time::timeout(Duration::from_secs(5), waiting)
+    let ended = tokio::time::timeout(porter_fake::GENEROUS, waiting)
         .await
         .expect("the wait ends")
         .expect("task");

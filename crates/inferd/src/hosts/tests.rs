@@ -362,7 +362,8 @@ fn forking(pidfile: &Path) -> UnitSpec {
 
 /// The pid in `pidfile`, once the engine has written it.
 async fn pid_in(pidfile: &Path) -> i32 {
-    for _ in 0..200 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         if let Some(pid) = std::fs::read_to_string(pidfile)
             .ok()
             .and_then(|text| text.trim().parse().ok())
@@ -371,7 +372,7 @@ async fn pid_in(pidfile: &Path) -> i32 {
         }
         tokio::time::sleep(Duration::from_millis(25)).await;
     }
-    panic!("no pid in {}", pidfile.display());
+    deadline.fail(&format!("a pid in {}", pidfile.display()));
 }
 
 /// Whether the process is gone (a zombie that nobody has collected yet is gone too).
@@ -386,7 +387,8 @@ fn gone(pid: i32) -> bool {
 }
 
 async fn gone_soon(pid: i32) -> bool {
-    for _ in 0..160 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         if gone(pid) {
             return true;
         }

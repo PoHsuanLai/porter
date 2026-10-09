@@ -171,7 +171,7 @@ async fn dropping_a_running_turn_closes_the_engines_connection() {
     assert!(engine.read(&mut buf).await.expect("read") > 0);
     drop(turn);
     // Dropping the turn aborts its task and closes the socket: the engine sees the end.
-    let end = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+    let end = tokio::time::timeout(porter_fake::GENEROUS, async {
         loop {
             match engine.read(&mut buf).await {
                 Ok(0) | Err(_) => return,

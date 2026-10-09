@@ -25,7 +25,6 @@ use porter_fake::{FixedClock, NOW, ScriptedSheets};
 use porter_secrets::MemorySecrets;
 use porter_service::{AccountService, Registry};
 use std::sync::Arc;
-use std::time::Duration;
 
 type Service = AccountService<porter_fake::FakeProvider, MemorySecrets, ScriptedSheets, FixedClock>;
 
@@ -148,7 +147,7 @@ async fn the_launcher_registers_hears_a_login_and_reports_it() {
         .await
         .expect("a request");
 
-    let ask = tokio::time::timeout(Duration::from_secs(5), next(&mut requests))
+    let ask = tokio::time::timeout(porter_fake::GENEROUS, next(&mut requests))
         .await
         .expect("a request in time")
         .expect("open stream")
@@ -264,7 +263,7 @@ async fn a_logout_request_reaches_the_launcher_and_its_report_signs_the_agent_ou
         .await
         .expect("asked");
 
-    let ask = tokio::time::timeout(Duration::from_secs(5), next(&mut requests))
+    let ask = tokio::time::timeout(porter_fake::GENEROUS, next(&mut requests))
         .await
         .expect("a request in time")
         .expect("open stream")
@@ -288,7 +287,7 @@ async fn a_logout_request_reaches_the_launcher_and_its_report_signs_the_agent_ou
         .invoke(&KeyPath("accounts.claude-code.sign_out".to_owned()))
         .await
         .expect("asked again");
-    let ask = tokio::time::timeout(Duration::from_secs(5), next(&mut requests))
+    let ask = tokio::time::timeout(porter_fake::GENEROUS, next(&mut requests))
         .await
         .expect("a request in time")
         .expect("open stream")

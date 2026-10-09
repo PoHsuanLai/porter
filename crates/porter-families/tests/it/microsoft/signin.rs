@@ -287,7 +287,8 @@ async fn cancelling_closes_the_listeners_and_ends_the_sign_in() {
     );
     drop(signin);
     // The listener's task is aborted with the sign-in; give the runtime a turn to close it.
-    for _ in 0..50 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         if tokio::net::TcpStream::connect(("127.0.0.1", port))
             .await
             .is_err()
@@ -296,7 +297,7 @@ async fn cancelling_closes_the_listeners_and_ends_the_sign_in() {
         }
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
-    panic!("the loopback listener is still listening");
+    deadline.fail("the loopback listener to close");
 }
 
 fn again() -> SignInStart {

@@ -27,6 +27,12 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
+/// What "at once" means for a failure the daemon already knows (an exit, a taken socket path, a
+/// pause after giving up): well under the readiness timeouts (30 s and up) and the 30 s pause
+/// that a request which waited for them would take, whatever the load. The tests that use it
+/// prove the daemon did not wait for those; they do not time the daemon.
+const FAST: Duration = Duration::from_secs(25);
+
 /// The fake engine. Run as a test it does nothing; run by the script below, with `FAKE_ENGINE`
 /// set, it plays the engine named there on the socket `FAKE_SOCK`.
 #[test]
@@ -36,9 +42,10 @@ fn fake_engine() {
     };
     let socket = PathBuf::from(std::env::var("FAKE_SOCK").expect("FAKE_SOCK"));
     let dir = PathBuf::from(std::env::var("FAKE_DIR").expect("FAKE_DIR"));
-    // However it goes, no fake engine outlives a test by long.
+    // However it goes, no fake engine outlives a test by long (the longest wait of a test is
+    // `porter_fake::GENEROUS`).
     std::thread::spawn(|| {
-        std::thread::sleep(Duration::from_secs(60));
+        std::thread::sleep(porter_fake::GENEROUS * 3);
         std::process::exit(9);
     });
     match mode.as_str() {
@@ -238,13 +245,14 @@ fn the_failure(world: &World) -> inferd::supervise::Failure {
 }
 
 async fn until(what: &str, mut done: impl FnMut() -> bool) {
-    for _ in 0..200 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         if done() {
             return;
         }
         tokio::time::sleep(Duration::from_millis(25)).await;
     }
-    panic!("never: {what}");
+    deadline.fail(what);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -254,9 +262,9 @@ async fn an_engine_that_exits_at_start_fails_prepare_and_open_with_its_cause() {
     let world = world(&engine, Duration::from_secs(180)).await;
 
     assert_eq!(prepare(&world).await, "loading");
-    let (events, took) = open_and_ask(&world, Duration::from_secs(5)).await;
+    let (events, took) = open_and_ask(&world, porter_fake::GENEROUS).await;
     assert!(not_ready(&events), "{events:?}");
-    assert!(took < Duration::from_secs(3), "{took:?}");
+    assert!(took < FAST, "{took:?}");
 
     // The cause carries the exit status and the engine's last line.
     let failure = the_failure(&world);
@@ -293,7 +301,7 @@ async fn an_engine_that_exits_at_start_fails_prepare_and_open_with_its_cause() {
     .await;
     assert_eq!(prepare(&world).await, "unavailable");
     for _ in 0..3 {
-        let (events, took) = open_and_ask(&world, Duration::from_secs(5)).await;
+        let (events, took) = open_and_ask(&world, porter_fake::GENEROUS).await;
         assert!(
             not_ready(&events)
                 || matches!(
@@ -302,13 +310,13 @@ async fn an_engine_that_exits_at_start_fails_prepare_and_open_with_its_cause() {
                 ),
             "{events:?}"
         );
-        assert!(took < Duration::from_secs(1), "{took:?}");
+        assert!(took < FAST, "{took:?}");
     }
     assert_eq!(engine.runs(), 3, "no request started it inside the pause");
 
     // The pause is over: the next request tries once more, and fails the same way.
     tokio::time::sleep(Duration::from_millis(3100)).await;
-    let (events, _) = open_and_ask(&world, Duration::from_secs(5)).await;
+    let (events, _) = open_and_ask(&world, porter_fake::GENEROUS).await;
     assert!(not_ready(&events), "{events:?}");
     assert!(engine.runs() >= 4, "{}", engine.runs());
 }
@@ -320,9 +328,9 @@ async fn a_stale_socket_is_removed_and_the_restart_comes_up() {
     let socket = world.models[0].socket.0.clone();
 
     // The first run binds the socket and dies; the waiter is told at once, with that exit.
-    let (events, took) = open_and_ask(&world, Duration::from_secs(5)).await;
+    let (events, took) = open_and_ask(&world, porter_fake::GENEROUS).await;
     assert!(not_ready(&events), "{events:?}");
-    assert!(took < Duration::from_secs(3), "{took:?}");
+    assert!(took < FAST, "{took:?}");
     let failure = the_failure(&world);
     let Cause::Exited { code, tail } = &failure.cause else {
         panic!("{:?}", failure.cause);
@@ -354,10 +362,10 @@ async fn a_stale_socket_is_removed_and_the_restart_comes_up() {
 async fn an_engine_that_never_answers_fails_when_its_time_is_up_not_when_the_client_is() {
     let engine = Engine::new("hang");
     let world = world(&engine, Duration::from_millis(600)).await;
-    let (events, took) = open_and_ask(&world, Duration::from_secs(10)).await;
+    let (events, took) = open_and_ask(&world, porter_fake::GENEROUS).await;
     assert!(not_ready(&events), "{events:?}");
     assert!(took >= Duration::from_millis(500), "{took:?}");
-    assert!(took < Duration::from_secs(5), "{took:?}");
+    assert!(took < porter_fake::GENEROUS, "{took:?}");
     let failure = the_failure(&world);
     assert!(
         matches!(failure.cause, Cause::NeverReady { .. }),
@@ -381,9 +389,9 @@ async fn a_file_at_the_socket_path_is_kept_and_the_engine_is_not_started() {
     let socket = world.models[0].socket.0.clone();
     std::fs::write(&socket, b"not a socket").expect("write");
 
-    let (events, took) = open_and_ask(&world, Duration::from_secs(5)).await;
+    let (events, took) = open_and_ask(&world, porter_fake::GENEROUS).await;
     assert!(not_ready(&events), "{events:?}");
-    assert!(took < Duration::from_secs(3), "{took:?}");
+    assert!(took < FAST, "{took:?}");
     let failure = the_failure(&world);
     assert_eq!(
         failure.cause,

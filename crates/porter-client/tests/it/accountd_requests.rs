@@ -157,7 +157,8 @@ async fn a_token_that_is_not_a_path_segment_or_is_in_use_is_refused() {
     proxy.close().await.expect("close");
     eventually("the object to go", || daemon.asked.abandoned() == 1).await;
     let mut free = false;
-    for _ in 0..200 {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
         if choose(&client, &token("mine")).await.is_ok() {
             free = true;
             break;
