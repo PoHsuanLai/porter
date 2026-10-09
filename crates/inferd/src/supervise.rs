@@ -95,6 +95,13 @@ pub struct Supervised {
     headroom: MiB,
 }
 
+/// The turns of `porter-turns` tell the supervisor which engine they use (the inherent `used`).
+impl porter_turns::local::EngineUse for Supervised {
+    fn used(&self, engine: &EngineId) {
+        Supervised::used(self, engine);
+    }
+}
+
 impl Supervised {
     /// A supervisor of no engines: every `want` fails. For daemons with nothing to run.
     pub fn idle() -> Self {

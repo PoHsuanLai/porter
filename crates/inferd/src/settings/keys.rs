@@ -1,11 +1,13 @@
 //! The vocabulary of the rows: slugs, the classes, slots and tiers they range over, and the
 //! `ai.model.<slot>.<tier>` paths (the old `<kind>` segments still read).
 
-use porter_core::capability::{LlmFeature, SpeechMode};
-use porter_core::{Capability, DataClass, Tier};
-use porter_infer::{ModelCard, Slot};
+use porter_core::{DataClass, Tier};
+use porter_infer::Slot;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+
+/// The slots a model serves, from its capabilities: moved to `porter_router::router`.
+pub use porter_router::router::slots_of;
 
 /// Every data class, one `ai.floor.<class>` row each. `class_is_listed` keeps this complete.
 pub const CLASSES: [DataClass; 13] = [
@@ -53,44 +55,6 @@ pub fn model_path(slot: Slot, tier: Tier) -> String {
 pub fn parse_model_path(path: &str) -> Option<(Slot, Tier)> {
     let (slot, tier) = path.strip_prefix("ai.model.")?.split_once('.')?;
     Some((Slot::from_slug(slot)?, from_slug(tier)?))
-}
-
-/// The slots a model serves, from its capabilities: a language model is in `text`, and in
-/// `image_in` when it takes images and `voice_in` when it takes audio; a computer-use model reads
-/// images too.
-pub fn slots_of(card: &ModelCard) -> Vec<Slot> {
-    let mut slots: Vec<Slot> = card
-        .capabilities
-        .iter()
-        .flat_map(|capability| match capability {
-            Capability::Llm(llm) => {
-                let extra = [
-                    (LlmFeature::Vision, Slot::ImageIn),
-                    (LlmFeature::AudioIn, Slot::VoiceIn),
-                ]
-                .into_iter()
-                .filter(|(feature, _)| llm.features.contains(feature))
-                .map(|(_, slot)| slot);
-                std::iter::once(Slot::Text).chain(extra).collect()
-            }
-            Capability::ComputerUse(_) => vec![Slot::ComputerUse, Slot::ImageIn],
-            Capability::Embeddings(_) => vec![Slot::Embeddings],
-            Capability::ImageGen(_) => vec![Slot::ImageGen],
-            Capability::Rerank(_) => vec![Slot::Rerank],
-            Capability::Speech(speech) => [
-                (SpeechMode::Stt, Slot::VoiceIn),
-                (SpeechMode::Tts, Slot::VoiceOut),
-            ]
-            .into_iter()
-            .filter(|(mode, _)| speech.modes.contains(mode))
-            .map(|(_, slot)| slot)
-            .collect(),
-            _ => Vec::new(),
-        })
-        .collect();
-    slots.sort();
-    slots.dedup();
-    slots
 }
 
 #[cfg(test)]

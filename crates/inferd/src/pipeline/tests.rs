@@ -11,16 +11,20 @@ use crate::router::Listed;
 use crate::runner::{Pin, Pinned, Turns};
 use crate::supervise::Supervised;
 use crate::testkit::Scratch;
-use porter_core::capability::{LanguageSet, LlmCap, LlmFeature, LlmWire, SpeechCap};
+use porter_core::capability::{LanguageSet, LlmCap, LlmFeature, LlmWire, SpeechCap, SpeechMode};
 use porter_core::consent::Usage;
 use porter_core::need::LlmNeed;
-use porter_core::{AccountId, Billing, Locality, ModelId, Tokens};
+use porter_core::{
+    AccountId, Billing, Capability, DataClass, Locality, ModelId, Need, Tier, Tokens,
+};
 use porter_infer::{
-    AudioFrame, AudioRate, Base64Bytes, ChatControl, ChatMessage, ChatReply, InferEvent,
-    InferRefusal, InferReply, Knob, LangPick, LicenceClass, ModelCard, ModelError, ModelLabel,
-    ModelRef, Reasoning, ReplyShape, Role, ShowReason, Slot, StageRole, SwapCost, ToolChoice,
+    Answer, AudioFrame, AudioRate, AutoPolicy, Base64Bytes, ChatControl, ChatMessage, ChatReply,
+    DescribeImages, InferEvent, InferRefusal, InferReply, Knob, LangPick, LicenceClass, Modality,
+    ModelCard, ModelError, ModelLabel, ModelRef, Pipeline, Policy, Reasoning, Refusal, ReplyShape,
+    RequestShape, Role, ShowReason, Slot, StageRole, SwapCost, TierMap, ToolChoice,
     ToolParallelism, TranscribeBegin, TranscribeMode, TranscribeReply,
 };
+use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 use tokio::net::UnixListener;
 

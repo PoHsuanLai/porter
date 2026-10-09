@@ -29,6 +29,12 @@ porter-provider = { workspace = true }
 porter-tailnet = { workspace = true, features = ["io"] }
 porter-tailscale = { workspace = true, features = ["io"] }
 porter-infer = { workspace = true }
+# Routing and the session machine: the router, the plan, the catalogue, the local model book, the
+# attached engines as values, the seams. inferd re-exports them at their old paths.
+porter-router = { workspace = true }
+# Running turns: a local model's chat, embedding and computer-use turns, the structured-reply
+# check, the audit trail and the stages of a pipeline.
+porter-turns = { workspace = true }
 porter-bridge = { workspace = true }
 ds-settings = { workspace = true }
 model-provider = { workspace = true }
@@ -61,6 +67,8 @@ engine-supervisor = { workspace = true, features = ["testing"] }
 model-provider = { workspace = true, features = ["testing"] }
 porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }
+# The scratch directory, the test catalog entries and the models they make.
+porter-router = { workspace = true, features = ["testing"] }
 tokio = { workspace = true, features = ["test-util"] }
 
 [lints]

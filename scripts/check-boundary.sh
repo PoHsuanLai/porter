@@ -24,6 +24,8 @@ RULES=(
   "porter-sync: $EFFECTS"
   "porter-infer: $EFFECTS"
   "porter-bridge: $EFFECTS"
+  "porter-router: $EFFECTS inferd"
+  "porter-turns: zbus zvariant reqwest ureq oo7 keyring secret-service interprocess latchkey ds-settings inferd"
   "porter-service: $EFFECTS"
   "porter-client: $EFFECTS"
   "porter-fake: $EFFECTS"
@@ -220,6 +222,19 @@ else
   echo "pure: accountd, syncd and inferd read the environment only in from_env functions"
 fi
 
+# The inference libraries (porter-router, and porter-turns once it is there) read no environment
+# variable at all: what a daemon or an app knows is passed in. Their test helpers are outside the
+# rule, as above.
+lib_env_reads=$(find crates/porter-router/src crates/porter-turns/src -name '*.rs' ! -name tests.rs ! -name testkit.rs ! -path '*/testkit/*' -print0 \
+  | xargs -0 grep -nE 'env::(var|var_os|vars|vars_os|args|args_os|current_dir|home_dir)\b' | grep -vE '^[^:]*:[0-9]+:[[:space:]]*//' || true)
+if [ -n "$lib_env_reads" ]; then
+  echo "$lib_env_reads"
+  echo "LEAK: an inference library reads the environment"
+  fail=1
+else
+  echo "pure: the inference libraries read no environment variable"
+fi
+
 # The allowed edges between our own crates: each crate's DIRECT normal and build path
 # dependencies (all features), and nothing else. A dependency not listed is a leak; so is one
 # the crate no longer has, so the table stays exact. Dev dependencies are outside it.
@@ -232,9 +247,11 @@ EDGES=(
   "porter-sync: porter-core"
   "porter-infer: porter-core cua-action"
   "porter-service: porter-core porter-provider porter-secrets"
+  "porter-router: porter-core porter-infer cua-action engine-supervisor model-catalog model-http model-openai-compat model-provider speech-provider vision-prep"
+  "porter-turns: porter-core porter-infer porter-bridge porter-router cua-action cua-parse cua-session cua-vendors engine-supervisor model-extract model-http model-openai-compat model-provider vision-prep"
   "porter-dbus: porter-core"
   "porter-bridge: porter-core porter-infer model-catalog model-openai-compat model-provider vision-prep"
-  "porter-client: porter-bridge porter-core porter-dbus porter-fs porter-infer porter-provider porter-secrets porter-service model-http model-openai-compat model-provider model-wire"
+  "porter-client: porter-bridge porter-core porter-dbus porter-fs porter-infer porter-provider porter-secrets porter-service porter-turns model-http model-openai-compat model-provider model-wire"
   "porter-fake: porter-core porter-infer porter-provider porter-secrets porter-service"
   "porter-fake-servers: porter-core porter-discover porter-fake porter-provider"
   "porter-http: porter-core"
@@ -251,7 +268,7 @@ EDGES=(
   "storage-gdrive: porter-core porter-http porter-sync storage-webdav"
   "syncd: porter-client porter-core porter-dav porter-dbus porter-fs porter-http porter-sync storage-gdrive storage-graph storage-webdav"
   "porter-rig: porter-client porter-core porter-dbus porter-fake porter-fake-servers porter-infer"
-  "inferd: ds-settings porter-bridge porter-client porter-core porter-dbus porter-discover porter-fs porter-http porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
+  "inferd: ds-settings porter-bridge porter-client porter-router porter-turns porter-core porter-dbus porter-discover porter-fs porter-http porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
 )
 for edge in "${EDGES[@]}"; do
   crate="${edge%%:*}"

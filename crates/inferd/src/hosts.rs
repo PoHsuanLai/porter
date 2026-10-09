@@ -14,8 +14,8 @@ use engine_supervisor::{
 };
 use model_catalog::MiB;
 use model_http::{
-    AuthHeader, BodySink, ChunkFlow, Exchange, Framing, HttpClient, HttpEndpoint, HttpTarget,
-    ResponseHead, RouteRoot, Timeouts, Transport, UrlPath, Verb, WaitMs,
+    BodySink, ChunkFlow, Exchange, Framing, HttpClient, ResponseHead, RouteRoot, Timeouts,
+    Transport, UrlPath, Verb, WaitMs,
 };
 use rustix::process::Pid;
 use speech_host_client::{HostSocket, SpeechHostClient};
@@ -382,32 +382,9 @@ impl BodySink for StatusOnly {
 /// delays only the next ask of an engine that does not answer at all.
 const PROBE_TIMEOUT: WaitMs = WaitMs(10_000);
 
-/// An endpoint on a Unix socket with no auth and no `/v1` base.
-pub fn unix_endpoint(socket: PathBuf, base: &str, timeouts: Timeouts) -> HttpEndpoint {
-    HttpEndpoint {
-        target: HttpTarget::Unix(socket),
-        proxy: model_http::Proxy::Direct,
-        base: UrlPath(base.to_owned()),
-        auth: AuthHeader::None,
-        headers: Vec::new(),
-        timeouts,
-    }
-}
-
-/// An endpoint on `127.0.0.1` at `port` over plain HTTP, with no auth: a runtime the person runs.
-pub fn loopback_endpoint(port: model_http::Port, base: &str, timeouts: Timeouts) -> HttpEndpoint {
-    HttpEndpoint {
-        target: HttpTarget::Tcp {
-            host: model_http::HostName("127.0.0.1".to_owned()),
-            port,
-        },
-        proxy: model_http::Proxy::Direct,
-        base: UrlPath(base.to_owned()),
-        auth: AuthHeader::None,
-        headers: Vec::new(),
-        timeouts,
-    }
-}
+/// The endpoints of an engine on a Unix socket and of a runtime on loopback moved to
+/// `porter_router::local`.
+pub use porter_router::local::{loopback_endpoint, unix_endpoint};
 
 impl ReadyProbe for HealthProbe {
     async fn probe(&self, id: &EngineId) -> Probe {

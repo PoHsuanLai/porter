@@ -1,0 +1,39 @@
+[package]
+name = "porter-turns"
+description = "Running model turns: a routed session on a model of this computer (chat, embeddings, computer-use steps), structured replies validated and repaired, the audit trail of finished turns, and a pipeline's stages. A library over porter-router: no bus, no daemon."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+porter-core = { workspace = true }
+porter-infer = { workspace = true }
+porter-bridge = { workspace = true }
+porter-router = { workspace = true }
+cua-action = { workspace = true }
+cua-parse = { workspace = true }
+cua-session = { workspace = true }
+cua-vendors = { workspace = true }
+engine-supervisor = { workspace = true }
+model-extract = { workspace = true }
+# The HTTP client to a local engine (`hyper`); a plain Unix socket or loopback, so no `tls`.
+model-http = { workspace = true, features = ["hyper"] }
+model-openai-compat = { workspace = true }
+model-provider = { workspace = true }
+# `pixels`: the frame resize of a computer-use step.
+vision-prep = { workspace = true, features = ["pixels"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+model-provider = { workspace = true, features = ["testing"] }
+porter-router = { workspace = true, features = ["testing"] }
+rustix = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true

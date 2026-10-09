@@ -29,9 +29,10 @@
 //!   refusal inferd answers).
 //! - [`KeySource`]: the app's access to its keys. porter-client stores none.
 //!
-//! The wire mapping is `porter-bridge` (what inferd uses); retry is inferd's too (three
-//! attempts, a quarter of a second doubling to four). Spend caps, the model picker and the audit
-//! trail are inferd's and are not here.
+//! The wire mapping is `porter-bridge` (what inferd uses); the turn itself (events streamed as
+//! they come, the reply gathered) and the retry (three attempts, a quarter of a second doubling to
+//! four) are `porter-turns`' (`local::run_chat`, `local::RETRY`), the same code the daemon runs.
+//! Spend caps, the model picker and the audit trail are inferd's and are not here.
 
 mod engine;
 mod host;

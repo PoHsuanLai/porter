@@ -31,22 +31,12 @@ use host::{ReplayHost, Replaying};
 use model_catalog::MiB;
 use model_provider::Tokens;
 use replayer::Replayer;
-use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
-/// What `[engines.<name>]` says of a replay engine.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct NamedEngine {
-    /// The cassette's file.
-    pub replay: PathBuf,
-    /// A file that gets every request body this engine receives, one JSON line each. This
-    /// writes prompts to disk; it exists for acceptance runs and is accepted only here, on a
-    /// replay engine (a table with `record` and no `replay` does not parse).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub record: Option<PathBuf>,
-}
+/// What `[engines.<name>]` says of a replay engine: it moved to `porter_router::local`.
+pub use porter_router::local::NamedEngine;
 
 /// The context a replay model claims when its cassette cannot be read.
 const FALLBACK_CONTEXT: Tokens = Tokens(8192);
