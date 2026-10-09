@@ -16,7 +16,6 @@ porter-sync = { workspace = true }
 
 [dev-dependencies]
 base64 = { workspace = true }
-porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }
 porter-sync = { workspace = true, features = ["testing"] }
 roxmltree = { workspace = true }

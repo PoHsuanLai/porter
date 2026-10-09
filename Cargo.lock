@@ -3041,7 +3041,6 @@ name = "storage-gdrive"
 version = "0.1.0"
 dependencies = [
  "porter-core",
- "porter-fake",
  "porter-fake-servers",
  "porter-http",
  "porter-sync",
@@ -3057,7 +3056,6 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "porter-core",
- "porter-fake",
  "porter-fake-servers",
  "porter-http",
  "porter-sync",
@@ -3074,7 +3072,6 @@ dependencies = [
  "base64",
  "porter-core",
  "porter-dav",
- "porter-fake",
  "porter-fake-servers",
  "porter-http",
  "porter-sync",
