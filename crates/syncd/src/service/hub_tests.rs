@@ -237,3 +237,27 @@ async fn a_stop_waits_for_a_cycle_that_runs_for_minutes_on_a_starved_machine() {
     let _held = stuck.0.clone().lock_owned().await;
     assert!(!stuck.finished().await);
 }
+
+#[tokio::test(start_paused = true)]
+async fn holding_the_cycles_waits_for_the_one_running_and_starts_no_other() {
+    let hub = Hub::default();
+    let engine = hub.register(name("a1/pim"), Access::default());
+    assert!(hub.hold_cycles(&name("a1/nothing")).await.is_none());
+
+    // A cycle in flight: the hold comes only when it ends, however long that is.
+    let running = engine.begin_cycle().await.expect("registered");
+    let holding = tokio::spawn({
+        let hub = hub.clone();
+        async move { hub.hold_cycles(&name("a1/pim")).await }
+    });
+    tokio::time::sleep(std::time::Duration::from_secs(120)).await;
+    assert!(!holding.is_finished(), "the cycle still runs");
+    drop(running);
+    let held = holding.await.expect("task").expect("the dataset is there");
+
+    // While it is held, no cycle starts; once it is dropped, one can.
+    let next = tokio::time::timeout(std::time::Duration::from_secs(60), engine.begin_cycle()).await;
+    assert!(next.is_err(), "no cycle starts under the hold");
+    drop(held);
+    assert!(engine.begin_cycle().await.is_some());
+}

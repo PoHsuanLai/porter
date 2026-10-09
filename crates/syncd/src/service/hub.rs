@@ -396,6 +396,19 @@ impl Hub {
         }
     }
 
+    /// Waits until `name`'s engine is between cycles and keeps it there while the guard lives: no
+    /// cycle starts, so a caller that changes both sides of the dataset together is sure that no
+    /// cycle sees one of the two edits alone. `None` when there is no such dataset. A pause does
+    /// not do this: it takes effect at the next look, and a cycle already running (or about to
+    /// start) finishes. The wait is as long as that cycle, which on a loaded machine is minutes.
+    pub async fn hold_cycles(
+        &self,
+        name: &DatasetName,
+    ) -> Option<tokio::sync::OwnedMutexGuard<()>> {
+        let cycling = self.datasets().get(name)?.cycling.clone();
+        Some(Arc::clone(&cycling.0).lock_owned().await)
+    }
+
     /// [`Hub::forget_account`], then waits until none of the account's engines is in a cycle:
     /// once it returns, nothing writes the account's journals or mirrors again.
     pub async fn stop_account(&self, account: &AccountDir) -> Vec<DatasetName> {

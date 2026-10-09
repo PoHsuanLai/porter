@@ -39,7 +39,7 @@ use syncd::datasets::storage::{
 };
 use syncd::paths::{AccountDir, Paths};
 use syncd::scheduler::{Network, Settings};
-use syncd::service::{Access, Hub, serve};
+use syncd::service::{Access, DatasetName, Hub, serve};
 use tokio::sync::watch;
 use zbus::export::futures_core::Stream;
 
@@ -334,15 +334,22 @@ async fn a_two_sided_edit_is_a_conflict_signal_with_a_number_and_keep_remote_set
     })
     .await;
 
-    // Both sides edit within one pause, so no cycle sees one edit alone.
+    // Both sides edit while no cycle runs, so no cycle sees one edit alone: the cycle lock is
+    // held until both are made (a pause and a sleep would leave a slow cycle that was already
+    // running to fetch the remote edit before the local one is made).
     sync.pause(DATASET).await.expect("pause");
-    tokio::time::sleep(Duration::from_millis(400)).await;
+    let between = rig
+        .hub
+        .hold_cycles(&DatasetName::parse(DATASET).expect("name"))
+        .await
+        .expect("the dataset is running");
     rig.graph.put_file("doc.txt", b"theirs");
     std::fs::write(local(&rig, "doc.txt"), b"mine").expect("local edit");
+    drop(between);
     sync.resume(DATASET).await.expect("resume");
 
     let signal = tokio::time::timeout(
-        Duration::from_secs(120),
+        porter_fake::GENEROUS,
         std::future::poll_fn(|cx| Pin::new(&mut conflicts).poll_next(cx)),
     )
     .await
