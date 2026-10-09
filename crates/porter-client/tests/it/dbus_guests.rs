@@ -19,13 +19,16 @@ use zbus::fdo;
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{OwnedValue, Value};
 
+/// One model of an added computer as the daemon saw it: its id and the (key, shown value) pairs.
+type SeenModel = (String, Vec<(String, String)>);
+
 /// What the scripted inferd was asked.
 #[derive(Debug, Default)]
 struct Asked {
     answers: Vec<(String, String)>,
     forgets: Vec<String>,
     added_nodes: Vec<String>,
-    added: Vec<(String, Vec<(String, Vec<(String, String)>)>)>,
+    added: Vec<(String, Vec<SeenModel>)>,
     removed: Vec<String>,
 }
 
