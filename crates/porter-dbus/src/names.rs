@@ -1,4 +1,6 @@
-//! Bus names and object paths.
+//! Bus names and object paths: the well-known names and paths of accountd, inferd and syncd, the
+//! option and result keys their methods take and give, and the error-name prefixes their
+//! refusals use. Every item is also re-exported at the crate root for one more batch.
 
 use porter_core::{AccountId, object_segment};
 

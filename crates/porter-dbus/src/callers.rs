@@ -16,6 +16,11 @@
 //! refused: there no caller is a Flatpak app.
 
 use crate::BusConnection;
+#[cfg(feature = "callers-file")]
+#[doc = "The caller table as files, from feature `callers-file`."]
+pub use crate::callers_file::{
+    CallerFileError, CallerTomlError, load_callers, table_from_file, table_from_toml,
+};
 use zbus::fdo::DBusProxy;
 use zbus::names::BusName;
 
