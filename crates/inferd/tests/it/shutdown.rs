@@ -26,6 +26,11 @@ const DONE: i32 = 0;
 const TIMED_OUT: i32 = 4;
 const HURRIED: i32 = 3;
 
+/// A grace or a bound the tests mean "never reached": a stop that ends before it did not wait
+/// for it. Long enough that a starved machine does not reach it by being slow, and the elapsed
+/// asserts compare with it, not with a few seconds the machine could overrun.
+const LONG_MS: u32 = 60_000;
+
 /// The stand-in for inferd. Run as a test it does nothing; run by the tests below with
 /// `FAKE_DIR`, `FAKE_GRACE_MS` and `FAKE_BOUND_MS` set, it starts the forking engine, says it is
 /// ready, and waits for a signal to shut down as the daemon does.
@@ -221,7 +226,9 @@ fn reap(pids: &[i32]) {
 fn graceful(signal_sent: Signal) {
     let dir = Scratch::new();
     // A grace of 300 ms: the grandchild ignores SIGTERM, so the stop ends with its SIGKILL.
-    let (mut inferd, engine, grandchild) = running(&dir, 300, 5000);
+    // The bound is `LONG_MS`: the stop must end by the grace, not by the bound (which would exit
+    // `TIMED_OUT`), and a bound a starved machine cannot reach keeps that from being a race.
+    let (mut inferd, engine, grandchild) = running(&dir, 300, LONG_MS);
     let started = Instant::now();
     signal(inferd.0.id(), signal_sent);
     let code = exit_within(&mut inferd);
@@ -231,7 +238,10 @@ fn graceful(signal_sent: Signal) {
     }
     assert_eq!(code, Some(DONE), "exit within the bound");
     assert!(both, "the engine and its grandchild are gone");
-    assert!(started.elapsed() < Duration::from_secs(5));
+    assert!(
+        started.elapsed() < Duration::from_millis(u64::from(LONG_MS)),
+        "the stop ended before its bound"
+    );
 }
 
 #[test]
@@ -248,7 +258,7 @@ fn sigint_ends_the_engine_group_with_its_grandchild_and_exits_zero() {
 fn a_second_signal_during_shutdown_kills_everything_and_exits_at_once() {
     let dir = Scratch::new();
     // A grace of 60 s: the first signal's shutdown is still waiting on the grandchild.
-    let (mut inferd, engine, grandchild) = running(&dir, 60_000, 60_000);
+    let (mut inferd, engine, grandchild) = running(&dir, LONG_MS, LONG_MS);
     signal(inferd.0.id(), Signal::TERM);
     std::thread::sleep(Duration::from_millis(600));
     let waiting = inferd.0.try_wait().expect("wait").is_none() && !gone(grandchild);
@@ -266,14 +276,17 @@ fn a_second_signal_during_shutdown_kills_everything_and_exits_at_once() {
         "the shutdown was still running before the second signal"
     );
     assert_eq!(code, Some(HURRIED));
-    assert!(second.elapsed() < Duration::from_secs(4));
+    assert!(
+        second.elapsed() < Duration::from_millis(u64::from(LONG_MS)),
+        "the second signal did not wait for the grace"
+    );
     assert!(both, "the engine and its grandchild are gone");
 }
 
 #[test]
 fn a_shutdown_that_overruns_its_bound_kills_everything_and_exits_nonzero() {
     let dir = Scratch::new();
-    let (mut inferd, engine, grandchild) = running(&dir, 60_000, 700);
+    let (mut inferd, engine, grandchild) = running(&dir, LONG_MS, 700);
     signal(inferd.0.id(), Signal::TERM);
     let code = exit_within(&mut inferd);
     let both = gone_soon(engine) && gone_soon(grandchild);

@@ -20,10 +20,10 @@ use std::time::Duration;
 use zbus::export::futures_core::Stream;
 use zbus::zvariant::ObjectPath;
 
-/// The settings module's next `Changed`, or none within a second.
-async fn next_change(changes: &mut Changes) -> Option<(String, toml::Value)> {
+/// The settings module's next `Changed`, or none within `within`.
+async fn next_change(changes: &mut Changes, within: Duration) -> Option<(String, toml::Value)> {
     tokio::time::timeout(
-        Duration::from_secs(1),
+        within,
         std::future::poll_fn(|cx| std::pin::Pin::new(&mut *changes).poll_next(cx)),
     )
     .await
@@ -33,11 +33,39 @@ async fn next_change(changes: &mut Changes) -> Option<(String, toml::Value)> {
     .map(|change| (change.key.0, change.value))
 }
 
-/// Every `Changed` the module sends until a second passes quietly.
-async fn all_changes(changes: &mut Changes) -> Vec<(String, toml::Value)> {
+/// The `expected` changes the module has to send, each waited for as long as a loaded machine
+/// needs, then whatever else it sends in a quiet second. The second proves that nothing more
+/// comes (the expected ones no longer depend on it); the exact list is the caller's assert.
+async fn changes_counting(changes: &mut Changes, expected: usize) -> Vec<(String, toml::Value)> {
     let mut seen = Vec::new();
-    while let Some(change) = next_change(changes).await {
+    while seen.len() < expected {
+        match next_change(changes, porter_fake::GENEROUS).await {
+            Some(change) => seen.push(change),
+            None => panic!(
+                "never happened: change {} of {expected}: {seen:?}",
+                seen.len() + 1
+            ),
+        }
+    }
+    while let Some(change) = next_change(changes, Duration::from_secs(1)).await {
         seen.push(change);
+    }
+    seen
+}
+
+/// Every `Changed` the module sends until it has sent `wanted` (a caller that asserts only that
+/// one came does not need to know how many others come with it).
+async fn changes_until(
+    changes: &mut Changes,
+    wanted: (&str, toml::Value),
+) -> Vec<(String, toml::Value)> {
+    let wanted = (wanted.0.to_owned(), wanted.1);
+    let mut seen = Vec::new();
+    while !seen.contains(&wanted) {
+        match next_change(changes, porter_fake::GENEROUS).await {
+            Some(change) => seen.push(change),
+            None => panic!("never happened: the change {wanted:?}: {seen:?}"),
+        }
     }
     seen
 }
@@ -97,7 +125,7 @@ async fn a_refused_refresh_on_issue_token_leaves_the_account_needing_a_sign_in_a
         "{told:?}"
     );
     assert_eq!(
-        all_changes(&mut changes).await,
+        changes_counting(&mut changes, 1).await,
         [(
             "accounts.fake-storage.state".to_owned(),
             said("needs_reauth")
@@ -224,7 +252,7 @@ async fn a_settings_listener_hears_an_account_come_and_go() {
         .invoke(&key("accounts.fake-llm.remove"))
         .await
         .expect("removed");
-    let told = all_changes(&mut changes).await;
+    let told = changes_until(&mut changes, ("accounts.fake-llm.state", said("removed"))).await;
     assert!(
         told.contains(&("accounts.fake-llm.state".to_owned(), said("removed"))),
         "{told:?}"
@@ -250,7 +278,7 @@ async fn a_settings_listener_hears_an_account_come_and_go() {
         .report_local("fake-llm", Vec::new(), "ok")
         .await
         .expect("reported");
-    let told = all_changes(&mut changes).await;
+    let told = changes_until(&mut changes, ("accounts.fake-llm.state", said("ok"))).await;
     assert!(
         told.contains(&("accounts.fake-llm.state".to_owned(), said("ok"))),
         "{told:?}"
