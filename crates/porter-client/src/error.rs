@@ -40,20 +40,12 @@ pub enum TransportError {
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum ClientError {
-    /// The request did not arrive or the reply did not come back.
+    /// The request did not arrive or the reply did not come back. This also carries inferd's
+    /// answer that none of the places a call allowed can serve it
+    /// ([`TransportError::NoAllowedPlace`], feature `infer`); [`ClientError::no_allowed_place`]
+    /// reads it.
     #[error(transparent)]
-    Transport(TransportError),
-    /// The call named the places it may run (`OpenOptions::places`) and none of them can serve
-    /// it (feature `infer`). `reason` says why; `would_need` is the kind of place outside the set
-    /// that could have served it, if there is one, so an app can offer to turn it on.
-    #[cfg(feature = "infer")]
-    #[error("none of the allowed places can serve this ({})", .reason.slug())]
-    NoAllowedPlace {
-        /// Why nothing allowed can serve.
-        reason: NoPlaceReason,
-        /// The kind of place outside the set that could have served it, if there is one.
-        would_need: Option<PlaceKind>,
-    },
+    Transport(#[from] TransportError),
     /// accountd refused.
     #[error("refused: {}", why(*.0))]
     Refused(Refusal),
@@ -70,16 +62,17 @@ pub enum ClientError {
     Mismatched,
 }
 
-impl From<TransportError> for ClientError {
-    /// A transport error is `Transport`, except the one that is inferd's answer about places,
-    /// which is `NoAllowedPlace` here.
-    fn from(error: TransportError) -> Self {
-        match error {
-            #[cfg(feature = "infer")]
-            TransportError::NoAllowedPlace { reason, would_need } => {
-                ClientError::NoAllowedPlace { reason, would_need }
+impl ClientError {
+    /// The call named the places it may run (`OpenOptions::places`) and none of them can serve
+    /// it: why, and the kind of place outside the set that could have served it, if there is one,
+    /// so an app can offer to turn it on (feature `infer`).
+    #[cfg(feature = "infer")]
+    pub fn no_allowed_place(&self) -> Option<(NoPlaceReason, Option<PlaceKind>)> {
+        match self {
+            ClientError::Transport(TransportError::NoAllowedPlace { reason, would_need }) => {
+                Some((*reason, *would_need))
             }
-            other => ClientError::Transport(other),
+            _ => None,
         }
     }
 }
@@ -107,5 +100,33 @@ impl From<SessionError> for TransportError {
             SessionError::Closed => TransportError::Closed,
             SessionError::Malformed(why) => TransportError::Malformed(why),
         }
+    }
+}
+
+#[cfg(all(test, feature = "infer"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_place_refusal_is_one_variant_and_the_client_error_carries_it() {
+        let refusal = TransportError::NoAllowedPlace {
+            reason: NoPlaceReason::NotReady,
+            would_need: Some(PlaceKind::CloudAccount),
+        };
+        let error = ClientError::from(refusal.clone());
+        assert_eq!(error, ClientError::Transport(refusal));
+        assert_eq!(
+            error.no_allowed_place(),
+            Some((NoPlaceReason::NotReady, Some(PlaceKind::CloudAccount)))
+        );
+        assert_eq!(ClientError::Mismatched.no_allowed_place(), None);
+        assert_eq!(
+            ClientError::from(TransportError::Closed).no_allowed_place(),
+            None
+        );
+        assert_eq!(
+            error.to_string(),
+            "none of the allowed places can serve this (not_ready)"
+        );
     }
 }

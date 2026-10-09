@@ -638,7 +638,7 @@ mod refusals {
     }
 
     fn refused(reason: NoPlaceReason, would_need: Option<PlaceKind>) -> ClientError {
-        ClientError::NoAllowedPlace { reason, would_need }
+        ClientError::Transport(TransportError::NoAllowedPlace { reason, would_need })
     }
 
     /// The same refusal from `Prepare` and from `Open`, through porter-client.
