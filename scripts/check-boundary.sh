@@ -12,7 +12,8 @@ cd "$(dirname "$0")/.."
 # never reach a bus, a runtime, an HTTP client or a keyring; porter-client reaches zbus only
 # through its `dbus` feature; porter-dbus reaches tokio only through zbus's `tokio` feature.
 # porter-http, porter-proxy and porter-oauth reach tokio (and porter-http hyper) only through
-# their named I/O feature (`hyper`, `io`), and porter-families through no feature of its own.
+# their named I/O feature (`hyper`, `io`). porter-families reaches none with default features;
+# each of its family features is checked on its own in FAMILY_FORBIDS below.
 EFFECTS="zbus zvariant tokio reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
 RULES=(
   "porter-core: $EFFECTS toml"
@@ -61,6 +62,68 @@ for rule in "${RULES[@]}"; do
   done
   if [ "$leaked" -eq 0 ]; then
     echo "boundary holds: $crate reaches none of ${forbidden[*]}"
+  fi
+done
+
+# FAMILY FEATURES: porter-families with each of its family features on, one at a time, and no
+# other. Its default build is checked by RULES above (it reaches none of EFFECTS). A family
+# reaches only what it really uses, so each feature forbids EFFECTS minus what it uses today:
+#   generic:            tokio (porter-proxy's `io`, for the relay's login)
+#   microsoft, google:  tokio, hyper (porter-oauth's `io`, porter-http's `hyper`)
+#   api_key:            hyper, tokio (porter-http's `hyper`)
+#   tailnet:            hyper, tokio (porter-tailscale's `io`)
+#   nextcloud, agent_login, openrouter: none
+# Every feature in porter-families' Cargo.toml must have a row, so a new family cannot slip in
+# unchecked; the direct porter-* edges of each feature are exact too (FAMILY_EDGES).
+MS_FORBIDS="zbus zvariant reqwest ureq oo7 keyring secret-service interprocess latchkey ds-settings"
+declare -A FAMILY_FORBIDS=(
+  [nextcloud]="$EFFECTS"
+  [generic]="zbus zvariant hyper reqwest ureq oo7 keyring secret-service interprocess latchkey ds-settings"
+  [microsoft]="$MS_FORBIDS"
+  [google]="$MS_FORBIDS"
+  [api_key]="$MS_FORBIDS"
+  [agent_login]="$EFFECTS"
+  [openrouter]="$EFFECTS"
+  [tailnet]="$MS_FORBIDS"
+)
+declare -A FAMILY_EDGES=(
+  [nextcloud]="porter-core porter-dav porter-discover porter-http porter-provider"
+  [generic]="porter-core porter-dav porter-discover porter-http porter-provider porter-proxy"
+  [microsoft]="porter-core porter-discover porter-http porter-oauth porter-provider"
+  [google]="porter-core porter-http porter-oauth porter-provider"
+  [api_key]="porter-core porter-http porter-provider"
+  [agent_login]="porter-core porter-http porter-provider"
+  [openrouter]="porter-core porter-http porter-oauth porter-provider"
+  [tailnet]="porter-core porter-http porter-provider porter-tailscale"
+)
+family_features=$(awk '/^\[features\]/{f=1;next} /^\[/{f=0} f && /^[A-Za-z0-9_-]+ *=/{sub(/ *=.*/,""); if ($0!="default") print}' crates/porter-families/Cargo.toml)
+for feature in $family_features; do
+  if [ -z "${FAMILY_FORBIDS[$feature]+set}" ] || [ -z "${FAMILY_EDGES[$feature]+set}" ]; then
+    echo "ERROR: porter-families feature $feature has no row in FAMILY_FORBIDS or FAMILY_EDGES; its boundary was not checked"
+    fail=1
+    continue
+  fi
+  read -r -a forbidden <<<"${FAMILY_FORBIDS[$feature]}"
+  leaked=0
+  for dep in "${forbidden[@]}"; do
+    if cargo tree -p porter-families --no-default-features --features "$feature" -i "$dep" -e normal,build 2>/dev/null | grep -q .; then
+      echo "LEAK: porter-families[$feature] depends on $dep"
+      cargo tree -p porter-families --no-default-features --features "$feature" -i "$dep" -e normal,build 2>/dev/null | head -20
+      leaked=1
+      fail=1
+    fi
+  done
+  if [ "$leaked" -eq 0 ]; then
+    echo "boundary holds: porter-families[$feature] reaches none of ${forbidden[*]}"
+  fi
+  found=$(cargo tree -p porter-families --no-default-features --features "$feature" --depth 1 -e normal,build --prefix none 2>/dev/null \
+    | grep -E '\((/|https://github.com/PoHsuanLai/(stoker|quire))' | awk '{print $1}' | grep -vx porter-families | sort -u | tr '\n' ' ')
+  want=$(printf '%s\n' ${FAMILY_EDGES[$feature]} | sort -u | tr '\n' ' ')
+  if [ "$found" != "$want" ]; then
+    echo "EDGE: porter-families[$feature] depends on [${found% }], the table allows [${want% }]"
+    fail=1
+  else
+    echo "edges hold: porter-families[$feature] depends on [${found% }]"
   fi
 done
 
