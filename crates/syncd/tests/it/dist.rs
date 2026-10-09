@@ -175,10 +175,10 @@ fn the_shipped_rescan_is_ten_minutes_and_only_a_test_build_can_change_it() {
         syncd::datasets::pim::PimConfig::default().rescan,
         ten_minutes
     );
-    let main = include_str!("../../src/main.rs");
+    let daemon = include_str!("../../src/daemon.rs");
     // The variable goes through `paths::rescan`, which ignores it outside a test build.
     assert!(
-        main.contains("rescan(BUILD, rescan_var"),
-        "main reads it by build"
+        daemon.contains("rescan(BUILD, rescan_var"),
+        "Config::from_env reads it by build"
     );
 }
