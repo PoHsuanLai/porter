@@ -10,9 +10,11 @@ use model_http::{
 };
 use std::path::PathBuf;
 
-/// How long the probe waits at each stage: a tunnel that is up answers at once, and one that
-/// hangs is not ready.
-const WAIT: WaitMs = WaitMs(3_000);
+/// How long the probe waits at each stage: a tunnel that is up answers at once on a quiet
+/// computer and in seconds on a loaded one (a connection made in 20 ms idle took seconds), and
+/// one that hangs is not ready. Only an engine that hangs makes anyone wait this long; a missing
+/// socket or a refusal ends the look at once.
+const WAIT: WaitMs = WaitMs(30_000);
 
 /// How long the probe waits at each stage for a computer on the Tailscale network: its relay
 /// asks Tailscale who is at the address, twice, and the computer's own answer waits for the same
