@@ -333,3 +333,112 @@ async fn rescan_looks_now_and_answers_when_the_look_is_done() {
         [Standing::Online, Standing::Offline]
     );
 }
+
+/// The real client, except that while `slow` is set every request waits and then times out, as a
+/// starved computer's answers do.
+struct Slowed {
+    inner: HyperHttp,
+    slow: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Http for Slowed {
+    async fn send(
+        &self,
+        request: porter_http::HttpRequest,
+    ) -> Result<porter_http::HttpResponse, porter_http::HttpError> {
+        match self.slow.load(std::sync::atomic::Ordering::Relaxed) {
+            true => {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+                Err(porter_http::HttpError::TimedOut)
+            }
+            false => self.inner.send(request).await,
+        }
+    }
+}
+
+#[test]
+fn a_runtime_lost_to_timeouts_is_down_only_on_the_third_look_in_a_row() {
+    let ollama = up(Runtime::Ollama, 11_434);
+    let down = || vec![Change::Down(Runtime::Ollama)];
+    let mut misses = BTreeMap::new();
+    // Timeouts: held twice, then down (and the count starts over).
+    assert_eq!(
+        confirm(&mut misses, down(), &[], true),
+        (vec![], true),
+        "first"
+    );
+    assert_eq!(
+        confirm(&mut misses, down(), &[], true),
+        (vec![], true),
+        "second"
+    );
+    assert_eq!(
+        confirm(&mut misses, down(), &[], true),
+        (down(), false),
+        "third"
+    );
+    assert!(misses.is_empty());
+    // A refusal is a stop at once.
+    assert_eq!(confirm(&mut misses, down(), &[], false), (down(), false));
+    // An answer between two timeouts starts the count over.
+    confirm(&mut misses, down(), &[], true);
+    confirm(&mut misses, vec![], std::slice::from_ref(&ollama), false);
+    assert!(misses.is_empty());
+    // Changes that are not a stop pass untouched.
+    assert_eq!(
+        confirm(
+            &mut misses,
+            vec![Change::Up(ollama.clone())],
+            &[ollama.clone()],
+            true
+        ),
+        (vec![Change::Up(ollama)], false)
+    );
+}
+
+#[tokio::test]
+async fn a_slow_look_does_not_end_a_runtimes_models_but_a_stop_still_does() {
+    let fake = fake_on(&Bind::Loopback).await;
+    let slow = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (engines, recorder) = (Engines::default(), Arc::new(Recorder::default()));
+    let mut watch = Watch::new(
+        Slowed {
+            inner: http(),
+            slow: Arc::clone(&slow),
+        },
+        only_ollama(port_of(&fake)),
+        engines.clone(),
+        Arc::new(Arc::clone(&recorder)),
+        PathBuf::from("/nonexistent"),
+    );
+    assert!(watch.look().await);
+    assert_eq!(recorder.told(), [(Runtime::Ollama, Standing::Online, 1)]);
+
+    // Two looks in a row that time out: the models are still served, nothing is reported.
+    slow.store(true, std::sync::atomic::Ordering::Relaxed);
+    for _ in 0..(MISSES_TO_DOWN - 1) {
+        assert!(!watch.look().await);
+        assert!(watch.doubtful, "the next look is soon");
+        assert_eq!(
+            engines.listed()[0].readiness,
+            porter_infer::Readiness::Ready
+        );
+        assert_eq!(recorder.told().len(), 1);
+    }
+    // The runtime answers again: the count starts over, and nothing changed.
+    slow.store(false, std::sync::atomic::Ordering::Relaxed);
+    assert!(!watch.look().await);
+    assert!(!watch.doubtful);
+    slow.store(true, std::sync::atomic::Ordering::Relaxed);
+    assert!(!watch.look().await, "one miss again, not three");
+
+    // Timeouts that go on are a stop.
+    for _ in 1..MISSES_TO_DOWN {
+        watch.look().await;
+    }
+    assert_eq!(recorder.told()[1], (Runtime::Ollama, Standing::Offline, 0));
+    assert_eq!(
+        engines.listed()[0].readiness,
+        porter_infer::Readiness::Unavailable
+    );
+}

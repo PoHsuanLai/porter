@@ -126,6 +126,39 @@ async fn the_health_probe_reads_the_status_off_the_engines_socket() {
     assert_eq!(probe.probe(&id("unknown")).await, Probe::Down);
 }
 
+/// A socket that waits `delay` before it answers 200, as a starved
+/// computer's engine does.
+fn slow_health(dir: &Scratch, name: &str, delay: Duration) -> PathBuf {
+    let path = dir.path().join(name);
+    let listener = UnixListener::bind(&path).expect("bind");
+    tokio::spawn(async move {
+        loop {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                return;
+            };
+            tokio::spawn(async move {
+                let mut buf = [0_u8; 1024];
+                let _ = stream.read(&mut buf).await;
+                tokio::time::sleep(delay).await;
+                let _ = stream
+                    .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}")
+                    .await;
+                let _ = stream.shutdown().await;
+            });
+        }
+    });
+    path
+}
+
+#[tokio::test]
+async fn an_engine_that_answers_health_after_a_second_and_a_half_is_ready() {
+    let dir = Scratch::new("hosts-slow-health");
+    let slow = slow_health(&dir, "slow.sock", Duration::from_millis(1500));
+    let probe = HealthProbe::new([(id("slow"), slow)]);
+    // A starved computer's answer, not a dead engine (the probe once gave up at one second).
+    assert_eq!(probe.probe(&id("slow")).await, Probe::Ready);
+}
+
 #[tokio::test]
 async fn a_speech_host_is_probed_with_hello_not_with_http() {
     use crate::speech_host::{FakeSpeechHost, Words};

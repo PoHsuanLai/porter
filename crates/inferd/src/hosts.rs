@@ -376,9 +376,11 @@ impl BodySink for StatusOnly {
     }
 }
 
-/// How long a probe waits at each stage: an engine that does not answer in a second is not
-/// ready yet.
-const PROBE_TIMEOUT: WaitMs = WaitMs(1000);
+/// How long a probe waits at each stage. The supervisor asks again every half second until the
+/// engine's start timeout, so a probe that gives up early only wastes a start on a loaded
+/// computer, where the answer of an engine that is up can take seconds; a probe that waits ten
+/// delays only the next ask of an engine that does not answer at all.
+const PROBE_TIMEOUT: WaitMs = WaitMs(10_000);
 
 /// An endpoint on a Unix socket with no auth and no `/v1` base.
 pub fn unix_endpoint(socket: PathBuf, base: &str, timeouts: Timeouts) -> HttpEndpoint {
@@ -441,7 +443,7 @@ impl ReadyProbe for HealthProbe {
     }
 }
 
-/// A speech host is ready when it answers `Hello` (checked, within a second); not yet listening,
+/// A speech host is ready when it answers `Hello` (checked, within `PROBE_TIMEOUT`); not yet listening,
 /// or not answering, is down.
 async fn hello(socket: &std::path::Path) -> Probe {
     let client = SpeechHostClient::new(HostSocket(socket.to_path_buf()));

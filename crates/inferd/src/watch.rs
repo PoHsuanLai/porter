@@ -8,15 +8,21 @@
 //! one that stops is `Offline` and reported `offline`, and its models stay listed with nothing to
 //! serve them. A report accountd did not take is asked again at the next look; the models are
 //! served either way (a local model needs no grant), under the account id the provider's id makes.
+//!
+//! A runtime that is slow is not a runtime that stopped. When a look finds an online runtime gone
+//! and some request of that look timed out (a loaded computer answers late), the runtime is kept
+//! as it was and looked at again soon; only [`MISSES_TO_DOWN`] such looks in a row mark it
+//! offline. A refused connection (nothing listens) is a stop at once.
 
 use crate::engines::Engines;
 use crate::probe::{Found, ProbeConfig, Runtime, probe};
 use crate::probed::Standing;
 use crate::report::{ReportFault, Reports};
-use porter_http::Http;
+use porter_http::{Http, HttpError, HttpRequest, HttpResponse};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -71,6 +77,62 @@ pub fn plan(installed: &BTreeMap<Runtime, Installed>, now: &[Found]) -> Vec<Chan
         .collect()
 }
 
+/// How many looks in a row must lose a runtime to a timeout before it is marked offline.
+pub const MISSES_TO_DOWN: u32 = 3;
+
+/// The wait before looking again at a runtime a slow look could not find (never over `base`).
+const DOUBT_WAIT: Duration = Duration::from_secs(2);
+
+/// Holds back the `Down` changes of a look in which a request timed out, until a runtime has
+/// been lost to timeouts [`MISSES_TO_DOWN`] looks in a row. `misses` is each runtime's count so
+/// far; the runtimes that answered start over. Whether any change was held back.
+pub fn confirm(
+    misses: &mut BTreeMap<Runtime, u32>,
+    changes: Vec<Change>,
+    answered: &[Found],
+    timed_out: bool,
+) -> (Vec<Change>, bool) {
+    misses.retain(|runtime, _| answered.iter().all(|found| found.runtime != *runtime));
+    let mut held = false;
+    let kept = changes
+        .into_iter()
+        .filter(|change| match change {
+            Change::Up(_) => true,
+            Change::Down(runtime) if !timed_out => {
+                misses.remove(runtime);
+                true
+            }
+            Change::Down(runtime) => {
+                let count = misses.entry(*runtime).or_insert(0);
+                *count += 1;
+                let down = *count >= MISSES_TO_DOWN;
+                if down {
+                    misses.remove(runtime);
+                }
+                held |= !down;
+                down
+            }
+        })
+        .collect();
+    (kept, held)
+}
+
+/// An [`Http`] that notes whether any request through it timed out.
+struct Noting<'a, H> {
+    inner: &'a H,
+    timed_out: AtomicBool,
+}
+
+impl<H: Http> Http for Noting<'_, H> {
+    async fn send(&self, request: HttpRequest) -> Result<HttpResponse, HttpError> {
+        let sent = self.inner.send(request).await;
+        if matches!(sent, Err(HttpError::TimedOut)) {
+            self.timed_out.store(true, Ordering::Relaxed);
+        }
+        sent
+    }
+}
+
 /// The wait after a look: `base` when something changed, else double `current`, up to `longest`.
 pub fn next_wait(current: Duration, changed: bool, base: Duration, longest: Duration) -> Duration {
     match changed {
@@ -88,6 +150,8 @@ pub struct Watch<H> {
     reports: Arc<dyn Reports>,
     sockets: PathBuf,
     installed: BTreeMap<Runtime, Installed>,
+    misses: BTreeMap<Runtime, u32>,
+    doubtful: bool,
 }
 
 impl<H: Http + 'static> Watch<H> {
@@ -107,14 +171,27 @@ impl<H: Http + 'static> Watch<H> {
             reports,
             sockets,
             installed: BTreeMap::new(),
+            misses: BTreeMap::new(),
+            doubtful: false,
         }
     }
 
     /// One look: probe, install the changes, report what accountd has not been told. Whether
     /// anything changed.
     pub async fn look(&mut self) -> bool {
-        let found = probe(&self.http, &self.config).await;
-        let changes = plan(&self.installed, &found);
+        let noting = Noting {
+            inner: &self.http,
+            timed_out: AtomicBool::new(false),
+        };
+        let found = probe(&noting, &self.config).await;
+        let timed_out = noting.timed_out.load(Ordering::Relaxed);
+        let (changes, held) = confirm(
+            &mut self.misses,
+            plan(&self.installed, &found),
+            &found,
+            timed_out,
+        );
+        self.doubtful = held;
         let changed = !changes.is_empty();
         for change in changes {
             match change {
@@ -191,9 +268,10 @@ impl<H: Http + 'static> Watch<H> {
                 if let Some(ask) = asked {
                     let _ = ask.send(());
                 }
-                wait = match wait.is_zero() {
-                    true => base,
-                    false => next_wait(wait, changed, base, longest),
+                wait = match (self.doubtful, wait.is_zero()) {
+                    (true, _) => DOUBT_WAIT.min(base),
+                    (false, true) => base,
+                    (false, false) => next_wait(wait, changed, base, longest),
                 };
             }
         });

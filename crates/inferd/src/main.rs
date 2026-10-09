@@ -39,8 +39,10 @@ use std::time::Duration;
 /// How often the daemon looks at its file for a change by someone else.
 const RELOAD_EVERY: Duration = Duration::from_secs(2);
 
-/// How long a runtime may take to answer a probe: one that does not is not running.
-const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
+/// How long a runtime may take to answer one probe request. One that does not is not marked
+/// offline for it alone: `watch::confirm` waits for several such looks in a row, so a loaded
+/// computer's slow answer does not end a runtime's models.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// The most a runtime's model list may hold, in bytes.
 const PROBE_MAX_BODY: usize = 1024 * 1024;
