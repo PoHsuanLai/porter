@@ -14,6 +14,7 @@ mod graph_calendar_bus;
 mod photos_picker_bus;
 mod pim_bus;
 mod resolve_bus;
+mod retry_bus;
 mod settings_grant_bus;
 mod stalled;
 mod start;

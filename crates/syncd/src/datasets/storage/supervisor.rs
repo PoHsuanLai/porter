@@ -40,6 +40,7 @@ use crate::gdrive::gdrive_replica;
 use crate::graph::graph_replica;
 use crate::journal::Journal;
 use crate::paths::AccountDir;
+use crate::scheduler::next_look;
 use crate::service::{Access, DatasetName};
 use porter_client::Transport;
 use porter_core::{AppName, Candidate, EndpointUrl, WebUrl};
@@ -207,13 +208,18 @@ where
         self.running.values().flat_map(Running::names).collect()
     }
 
-    /// One look: grants, what to start and what to stop.
-    pub async fn tick(&mut self) {
+    /// One look: grants, what to start and what to stop. `true` when every step went through;
+    /// `false` when accountd could not be asked or a mirror could not be started (the next
+    /// look is then soon, see [`next_look`]).
+    pub async fn tick(&mut self) -> bool {
+        let mut whole = true;
         for kind in StorageKind::ALL {
             if kind.is_photos() && self.config.photos == PhotosSwitch::Off {
                 continue;
             }
             let Ok(candidates) = self.grants.granted(kind).await else {
+                eprintln!("syncd: cannot ask for the {kind:?} grants; asking again soon");
+                whole = false;
                 continue;
             };
             if candidates.is_empty() && self.silent.insert(kind) {
@@ -237,7 +243,12 @@ where
                     Ok(running) => {
                         self.running.insert(key, running);
                     }
-                    Err(why) => eprintln!("syncd: cannot mirror {kind:?} of {account}: {why}"),
+                    Err(why) => {
+                        eprintln!(
+                            "syncd: cannot mirror {kind:?} of {account}: {why}; trying again soon"
+                        );
+                        whole = false;
+                    }
                 }
             }
             let stale: Vec<(AccountDir, StorageKind)> = self
@@ -264,6 +275,7 @@ where
                 })
                 .collect(),
         );
+        whole
     }
 
     fn start(
@@ -492,12 +504,19 @@ where
         }
     }
 
-    /// Runs `tick` every `rescan`, for as long as the task lives.
+    /// Runs `tick` every `rescan`, for as long as the task lives; after a look that could not
+    /// do all it meant to, again soon and then less often (a passing error is never a stop
+    /// until the next rescan).
     pub fn spawn(mut self) -> JoinHandle<()> {
         tokio::spawn(async move {
+            let mut failures = 0u32;
             loop {
-                self.tick().await;
-                tokio::time::sleep(self.config.rescan).await;
+                failures = if self.tick().await {
+                    0
+                } else {
+                    failures.saturating_add(1)
+                };
+                tokio::time::sleep(next_look(self.config.rescan, failures)).await;
             }
         })
     }

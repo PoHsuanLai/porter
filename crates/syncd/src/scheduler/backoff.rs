@@ -36,6 +36,20 @@ pub fn exponential(base: u32, steps: u32, cap: u32) -> u32 {
     u32::try_from(delay.min(u64::from(cap))).unwrap_or(cap)
 }
 
+/// How long a supervisor waits before it looks again: the `rescan` interval when its last look
+/// went well (`failures` is 0), else a backoff from 5 s (doubling per failed look in a row) that
+/// never passes `rescan`. A grant that could not be mirrored for a passing reason (a slow
+/// machine, a full disk for a moment, accountd not yet up) is tried again in seconds, not at
+/// the next ten-minute rescan.
+pub fn next_look(rescan: std::time::Duration, failures: u32) -> std::time::Duration {
+    if failures == 0 {
+        return rescan;
+    }
+    let cap = u32::try_from(rescan.as_secs()).unwrap_or(u32::MAX).max(1);
+    let seconds = exponential(5, failures - 1, cap);
+    std::time::Duration::from_secs(u64::from(seconds)).min(rescan)
+}
+
 /// `delay` seconds with "equal jitter": half of it fixed, the other half random, so retries of
 /// many datasets spread out but none comes before half its delay.
 pub fn jittered(delay: u32, source: &mut Jitter) -> u32 {
@@ -46,6 +60,20 @@ pub fn jittered(delay: u32, source: &mut Jitter) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_failed_look_is_repeated_in_seconds_and_backs_off_to_the_rescan() {
+        use std::time::Duration;
+        let ten_minutes = Duration::from_secs(600);
+        assert_eq!(next_look(ten_minutes, 0), ten_minutes);
+        let waits: Vec<u64> = (1..=9)
+            .map(|n| next_look(ten_minutes, n).as_secs())
+            .collect();
+        assert_eq!(waits, [5, 10, 20, 40, 80, 160, 320, 600, 600]);
+        assert_eq!(next_look(ten_minutes, u32::MAX), ten_minutes);
+        // A short rescan (a test build's) is never exceeded.
+        assert_eq!(next_look(Duration::from_secs(2), 3), Duration::from_secs(2));
+    }
 
     #[test]
     fn the_same_seed_gives_the_same_stream_and_a_range_is_respected() {
