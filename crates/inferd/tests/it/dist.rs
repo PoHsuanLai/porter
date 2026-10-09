@@ -123,7 +123,12 @@ fn the_sample_configuration_reads_and_names_the_callers_the_design_calls_for() {
             .callers
             .resolve(&format!("{exe}.service"))
             .unwrap_or_else(|| panic!("{exe}"));
-        assert_eq!(caller.role, inferd::peers::Role::App);
+        // The three that docket's places reach through are placers: they open as an app does.
+        let want = match exe {
+            "companiond" | "readerd" | "intentd" => inferd::peers::Role::Placer,
+            _ => inferd::peers::Role::App,
+        };
+        assert_eq!(caller.role, want, "{exe}");
     }
 }
 
