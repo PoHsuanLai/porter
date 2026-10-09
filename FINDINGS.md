@@ -1964,3 +1964,24 @@ Every other forbidden effect (`zbus`, `zvariant`, `reqwest`, `ureq`, `oo7`, `key
 **Tests** (private bus, no env var read, in the jail): `accountd::daemon::a_daemon_built_from_a_config_serves_its_name_and_stops_when_told`, and the same name in `syncd` and `inferd` (tests/it/daemon.rs). Each builds from a `Config` over scratch paths, checks the name is owned and answers a Ping, runs, stops, and waits (porter_fake::Deadline) for the name to go. The syncd dist test that grepped main.rs for `rescan(BUILD, rescan_var` now greps daemon.rs.
 
 **Behaviour differences.** The order of start-up steps is unchanged. accountd opens its secret store at the top of `build` (it did in main, right after the paths); a `test-keys` file that cannot be opened is now reported by `build`, not by `from_env`. inferd closes its connection after a clean stop (the process used to exit). Consumers: none of docket, almanac, cua, mailo, sill, detent, casement (origin/master) or anyview (origin/main) depends on accountd, syncd or inferd (grep of Cargo.toml and `use` lines).
+
+## Lane layers-client-feature (Whopper F2: porter-client's `in-process` feature; base `326564f`, 2026-10-10)
+
+**The feature.** `porter-client` feature `in-process` gates `InProcess` (`transport/in_process.rs`) and its dependencies `porter-service`, `porter-secrets` and `porter-provider`, which are now optional and listed again as dev-dependencies so the tests keep them. `default = ["infer", "in-process"]`, so nothing changes for a default consumer. `SessionHost`, `InProcessSession` and `NoBroker` moved to `transport/broker.rs`, which needs no service, so `engines` and `infer` without `in-process` still build. `porter-rig` names `in-process` explicitly (it does not use `InProcess` itself). The tests that use `InProcess` (`end_to_end`, `in_process_session`, `prepare`) carry the feature in their file-level `cfg`. `check-boundary.sh` has a new block: `cargo tree -p porter-client --no-default-features --features dbus` reaches none of porter-service, porter-secrets or porter-provider (checked non-vacuous: with `in-process` added, porter-service appears).
+
+**Package counts** (`cargo tree -p porter-client -e normal,build`, unique packages):
+- default (`infer`, `in-process`): 32; `--no-default-features --features infer` (no in-process): 22;
+- `--features dbus,infer`: 71 without `in-process`, 78 with it (+7);
+- `--features dbus` alone: 66.
+
+**Consumers** (check worktrees detached at origin/master in `~/rs-wt/layers-client-feature/<repo>`; docket, mailo, cua by git pin with a `[patch."https://github.com/PoHsuanLai/porter"]` over every porter crate in its lock; almanac and cua also use `../porter` paths, which resolve to this worktree):
+- Does any consumer use `porter_client::InProcess`? No. docket, almanac and cua have their own `InProcess` types (docket-client, almanac-client); mailo's `porter-client` is `default-features = false`, and its only `InProcess` mentions are in comments. So the follow-up to turn `in-process` off by default needs no consumer change; mailo already builds without it.
+- docket: `cargo check --workspace --all-targets --offline` passes; every porter crate compiled from the worktree (the first run's log). The docket-accept build script runs `cargo install --git`, which needs the network, so the check set `ACCEPT_PORTER_DIR` and `ACCEPT_ALMANAC_DIR` to the local checkouts.
+- almanac: passes; porter-client, -core, -dbus, -fs, -infer, -provider, -secrets, -service and prov compiled from the worktree.
+- cua: passes; the same nine crates compiled from the worktree.
+- mailo: FAILS, and not because of this lane. `porter-core`'s `SignInFault` gained `NotRunning`, `SignedOut` and `NotAllowed` in `fd823ec` (tailnet-account), and mailo's `crates/mail-app/src/ui/add_account/map.rs:842` (`fault_of`) matches it exhaustively. porter-core is byte-identical between `326564f` and this lane's tip, so the same error occurs on the base. Mailo needs three arms (or `_`) before it can take porter master. Not fixed here: it is mailo's repo.
+- Not checked: sill, detent, casement, anyview (the lane brief asks for all eight; the lead's instruction named these four).
+
+**Open.**
+- `dbus,infer` without `socket` warns that `FramedSession::write_body` and `read_body_with_fds` are never used (`transport/framed.rs:60`). It predates this lane (the methods serve only the socket carrier), and the gate builds with `--all-features`, so it does not fail there. Owner: the next lane that touches `framed.rs`.
+- Turning `in-process` off by default (a later batch): no consumer needs a change, as above. The consumers that depend on the service in process (mailo's `mail-app` uses `porter-service` directly) name it themselves.
