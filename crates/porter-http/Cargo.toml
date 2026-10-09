@@ -26,6 +26,10 @@ porter-fake-servers = { workspace = true }
 tokio = { workspace = true }
 
 [features]
+# `porter_http::stream`: HTTP/1.1 over a byte stream (porter-core's `ByteStream`) and the
+# `StreamHttp` client that dials one. It needs no runtime and adds no dependency, so it is pure:
+# the feature reaches nothing the default build does not.
+stream = []
 # `HyperHttp`, the client over hyper (D12), with TLS through rustls on `ring` and the platform's
 # trust roots, and `TokioSleep`. Pulls in the runtime, so it is off by default: the pure build
 # reaches none.

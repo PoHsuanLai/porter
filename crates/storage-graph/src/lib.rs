@@ -11,13 +11,14 @@
 //!   upload session, in chunks of a multiple of [`CHUNK_UNIT`] (320 KiB).
 //! - **Quota** is the drive's `quota` (`used`, `total`).
 //! - **The connection** is whatever [`porter_http::Http`] the replica is handed. In syncd it is a
-//!   [`Routed`]: `storage_webdav::StreamHttp` over the descriptors of accountd's
+//!   [`Routed`]: `porter_http::stream::StreamHttp` over the descriptors of accountd's
 //!   `Tokens.OpenAuthenticated` (whose relay adds the bearer, so syncd never holds a token) for
 //!   the Graph host, and over those of `Tokens.OpenLinked` (no credential) for the hosts of an
 //!   `uploadUrl` and of the redirect a download answers with.
 //!
-//! The crate is pure: no runtime and no socket. It reuses storage-webdav's `StreamHttp`, `Dial`
-//! and `Clock` (nothing of it changed) and keeps its own error classes and wire reading.
+//! The crate is pure: no runtime and no socket. It reuses porter-http's stream client (`StreamHttp`,
+//! `Dial`) and storage-webdav's `Clock` (nothing of it changed) and keeps its own error classes
+//! and wire reading.
 
 mod addr;
 mod feed;
@@ -28,6 +29,7 @@ mod route;
 mod upload;
 mod write;
 
+pub use porter_http::stream::{Dial, StreamHttp, StreamLimits};
 pub use replica::{CHUNK_UNIT, GraphReplica, SIMPLE_MAX, Uploads};
 pub use route::Routed;
-pub use storage_webdav::{Clock, DELETED, Dial, StreamHttp, StreamLimits};
+pub use storage_webdav::{Clock, DELETED};

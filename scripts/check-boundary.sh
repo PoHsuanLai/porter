@@ -143,6 +143,21 @@ if [ "$in_process_leaked" -eq 0 ]; then
   echo "boundary holds: porter-client[dbus] without in-process reaches none of porter-service, porter-secrets, porter-provider"
 fi
 
+# STREAM FEATURE: porter-http's `stream` (HTTP/1.1 over a byte stream, porter-core's ByteStream)
+# adds no dependency, so the crate with that feature alone reaches none of EFFECTS.
+stream_leaked=0
+for dep in $EFFECTS; do
+  if cargo tree -p porter-http --no-default-features --features stream -i "$dep" -e normal,build 2>/dev/null | grep -q .; then
+    echo "LEAK: porter-http[stream] depends on $dep"
+    cargo tree -p porter-http --no-default-features --features stream -i "$dep" -e normal,build 2>/dev/null | head -20
+    stream_leaked=1
+    fail=1
+  fi
+done
+if [ "$stream_leaked" -eq 0 ]; then
+  echo "boundary holds: porter-http[stream] reaches none of $EFFECTS"
+fi
+
 # PURE FILES: source that parses what an edge read and never reads it itself. A dependency rule
 # cannot see std, so these are checked by name: no file, process, socket or environment access.
 STD_EFFECTS='std::(fs|io|env|process|net|os)\b|\b(File|Command|TcpStream|UnixStream)::'

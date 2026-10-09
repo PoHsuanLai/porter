@@ -4,6 +4,9 @@
 //! whole byte vectors: what porter sends and reads over HTTP (sign-in exchanges, PROPFIND
 //! replies, model lists) is small, and a transfer of file content belongs to the replica that
 //! streams it.
+//!
+//! Feature `stream` adds [`stream`]: HTTP/1.1 framed over a byte stream a host dials (an
+//! authenticated relay's descriptor, say), for a replica that streams file content.
 
 mod error;
 mod headers;
@@ -13,6 +16,8 @@ mod hyper_client;
 mod message;
 mod shared;
 mod sleep;
+#[cfg(feature = "stream")]
+pub mod stream;
 
 pub use error::HttpError;
 pub use headers::{Header, HeaderName, HeaderValue};

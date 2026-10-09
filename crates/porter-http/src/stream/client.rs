@@ -3,9 +3,9 @@
 //! and speaks TLS, so this client writes plain HTTP/1.1 and never holds a password. In a test a
 //! dial is a loopback socket to the fake server.
 
-use crate::wire::{Exchange, encode, io_fault, read_response};
+use super::wire::{Exchange, encode, io_fault, read_response};
+use crate::{Http, HttpError, HttpRequest, HttpResponse};
 use porter_core::stream::ByteStream;
-use porter_http::{Http, HttpError, HttpRequest, HttpResponse};
 use std::future::Future;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
@@ -118,8 +118,8 @@ fn authority_of(request: &HttpRequest) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Method;
     use porter_core::WebUrl;
-    use porter_http::Method;
 
     #[test]
     fn the_host_is_the_authority_the_url_named() {
