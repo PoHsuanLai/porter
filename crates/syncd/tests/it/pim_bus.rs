@@ -80,14 +80,8 @@ fn card(uid: &str, name: &str) -> String {
 
 /// Polls every 20 ms for up to [`porter_fake::GENEROUS`] (a poll cycle is a second here; a
 /// loaded machine needs the margin, a passing check returns at once).
-async fn eventually(what: &str, check: impl FnMut() -> bool) {
-    eventually_within(porter_fake::GENEROUS, what, check).await;
-}
-
-/// Polls every 20 ms for up to `limit`: for waits whose work grows with a loaded machine (twenty
-/// large items a round), which ten seconds does not cover when every core is busy.
-async fn eventually_within(limit: Duration, what: &str, mut check: impl FnMut() -> bool) {
-    let deadline = porter_fake::Deadline::after(limit);
+async fn eventually(what: &str, mut check: impl FnMut() -> bool) {
+    let deadline = porter_fake::Deadline::generous();
     while !deadline.passed() {
         if check() {
             return;
@@ -95,6 +89,29 @@ async fn eventually_within(limit: Duration, what: &str, mut check: impl FnMut() 
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
     deadline.fail(what);
+}
+
+/// Polls every 20 ms until `done` items of `total` are finished. The wait is idle time, not
+/// wall-clock time: a round of twenty large items takes minutes on a loaded machine, and a
+/// daemon that keeps mirroring is working, so the wait fails only when the count has not grown
+/// for [`porter_fake::GENEROUS`].
+async fn eventually_progressing(what: &str, mut done: impl FnMut() -> usize, total: usize) {
+    let mut deadline = porter_fake::Deadline::idle(porter_fake::GENEROUS);
+    let mut best = 0;
+    loop {
+        let now = done();
+        if now == total {
+            return;
+        }
+        if now > best {
+            best = now;
+            deadline.progress();
+        }
+        if deadline.passed() {
+            deadline.fail(what);
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
 }
 
 /// Tells a blocking helper to stop when the test ends, by success or by panic: the runtime waits
@@ -595,11 +612,18 @@ async fn a_reader_never_sees_a_file_that_is_not_a_complete_item() {
                 .put_item("personal", &format!("big{n}.ics"), &big(round, n));
         }
         let marker = format!("round-{round}");
-        eventually_within(Duration::from_secs(90), "the round is mirrored", || {
-            (0..20).all(|n| {
-                read(&personal.join(format!("big{n}.ics"))).is_some_and(|t| t.contains(&marker))
-            })
-        })
+        eventually_progressing(
+            "the round is mirrored",
+            || {
+                (0..20)
+                    .filter(|n| {
+                        read(&personal.join(format!("big{n}.ics")))
+                            .is_some_and(|t| t.contains(&marker))
+                    })
+                    .count()
+            },
+            20,
+        )
         .await;
     }
     stop.store(true, Ordering::Relaxed);
