@@ -5,6 +5,7 @@
 //! turns and its audit sink. The introspection of this object is the checked-in
 //! `dbus/org.quire.Inference1.xml` (`tests/introspection.rs`).
 
+use self::error::InferError;
 use crate::agent::Agents;
 use crate::agent::service::AgentsService;
 use crate::audit::{AuditOut, SessionAudit};
@@ -12,7 +13,7 @@ use crate::clock::Clock;
 use crate::engines::Engines;
 use crate::peers::{Caller, Peers, Role};
 use crate::pipeline::Hearing;
-use crate::router::placed::Allowed;
+use crate::router::placed::{Allowed, Unplaced};
 use crate::runner::{Pin, Turns};
 use crate::serve::{Seams, serve_session};
 use crate::session::SessionSpec;
@@ -278,7 +279,7 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         need: NeedArg,
         class: String,
         options: Details,
-    ) -> fdo::Result<String> {
+    ) -> Result<String, InferError> {
         let caller = self.caller(&header).await?;
         let _trace = trace_of(&options);
         let spec = Self::spec(need, &class, "balanced", &options)?;
@@ -293,7 +294,7 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
                 allowed.as_ref(),
             )
             .await
-            .unwrap_or(porter_core::consent::Availability::NeedsAccount);
+            .map_err(InferError::no_place)?;
         Ok(slug(&availability, "kind"))
     }
 
@@ -304,12 +305,20 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         class: String,
         tier: String,
         options: Details,
-    ) -> fdo::Result<OwnedFd> {
+    ) -> Result<OwnedFd, InferError> {
         let caller = self.caller(&header).await?;
         let _trace = trace_of(&options);
         let spec = Self::spec(need, &class, &tier, &options)?;
         let allowed = allowed_of(&caller, &options)?;
-        self.open_session(caller, spec, allowed)
+        // A call that named its places and has none to run in is told so here, as an error with
+        // its reason, and no session is opened. (Any other refusal is the session's to tell.)
+        if let Some(allowed) = &allowed {
+            self.engines
+                .placement(&spec, &caller, allowed)
+                .await
+                .map_err(InferError::no_place)?;
+        }
+        Ok(self.open_session(caller, spec, allowed)?)
     }
 
     async fn prepare(
@@ -319,28 +328,27 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         class: String,
         tier: String,
         options: Details,
-    ) -> fdo::Result<String> {
+    ) -> Result<String, InferError> {
         let caller = self.caller(&header).await?;
         let _trace = trace_of(&options);
         let spec = Self::spec(need, &class, &tier, &options)?;
         let allowed = allowed_of(&caller, &options)?;
-        Ok(
-            match self
-                .engines
-                .prepare_in(
-                    &spec.need,
-                    spec.class,
-                    spec.tier,
-                    spec.usage,
-                    &caller,
-                    allowed.as_ref(),
-                )
-                .await
-            {
-                Ok(readiness) => readiness.slug().to_owned(),
-                Err(refusal) => refusal_slug(&refusal.into_pick().refusal),
-            },
-        )
+        let prepared = self
+            .engines
+            .prepare_in(
+                &spec.need,
+                spec.class,
+                spec.tier,
+                spec.usage,
+                &caller,
+                allowed.as_ref(),
+            )
+            .await;
+        match prepared {
+            Ok(readiness) => Ok(readiness.slug().to_owned()),
+            Err(Unplaced::NoPlace(refusal)) => Err(InferError::no_place(refusal)),
+            Err(Unplaced::Other(refusal)) => Ok(refusal_slug(&refusal.refusal)),
+        }
     }
 
     // What the caller used this period, by name: tokens and micro-dollars of today, micro-dollars of
@@ -540,6 +548,8 @@ where
     }
     Ok(())
 }
+
+mod error;
 
 #[cfg(test)]
 mod tests;

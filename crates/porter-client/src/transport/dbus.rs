@@ -60,6 +60,16 @@ pub(super) fn slug<T: Serialize + ?Sized>(value: &T) -> Result<String, Transport
 /// `AccessDenied` (a caller the daemon does not know, or one without the grant) is `Denied` with
 /// the daemon's text; anything else is the other side not speaking porter's protocol.
 pub(super) fn bus_error(error: &BusError) -> TransportError {
+    // inferd's answer to a call that named its places and has none to run in.
+    #[cfg(feature = "infer")]
+    if let Some((reason, kind)) = porter_dbus::place_refusal_of(error)
+        && let Some(reason) = porter_infer::NoPlaceReason::from_name(&reason)
+    {
+        return TransportError::NoAllowedPlace {
+            reason,
+            would_need: kind.and_then(|slug| porter_infer::PlaceKind::from_slug(&slug)),
+        };
+    }
     match classify(error) {
         BusFailure::NoDaemon => TransportError::Unreachable,
         BusFailure::Denied(why) => TransportError::Denied(why),

@@ -38,6 +38,30 @@ pub fn refusal_of(error: &zbus::Error) -> Option<porter_core::wire::Refusal> {
     crate::refusal::refusal_from_error_name(&name)
 }
 
+/// The prefix of the error inferd answers a call that named its `places` with when none of them
+/// can serve it: `org.quire.Inference1.Error.NoAllowedPlace.<Reason>`, with `NotReady`,
+/// `FloorRefused`, `ModelNotOffered` or `NoneCapable` as the reason. The reply's body is two
+/// strings: the words for a person, and the kind of place outside the set that could have served
+/// (`this_computer`, `own_computer`, `cloud_account`; empty when none could).
+pub const PLACE_ERROR_PREFIX: &str = "org.quire.Inference1.Error.NoAllowedPlace.";
+
+/// What a no-allowed-place reply says, as the text the daemon wrote: the reason's name (the error
+/// name's last segment) and, when a place outside the set could have served, its kind's slug.
+/// `None` for any other error.
+pub fn place_refusal_of(error: &zbus::Error) -> Option<(String, Option<String>)> {
+    let zbus::Error::MethodError(name, _, message) = error else {
+        return None;
+    };
+    let reason = name.as_str().strip_prefix(PLACE_ERROR_PREFIX)?;
+    let would_need = message
+        .body()
+        .deserialize::<(String, String)>()
+        .ok()
+        .map(|(_, kind)| kind)
+        .filter(|kind| !kind.is_empty());
+    Some((reason.to_owned(), would_need))
+}
+
 /// The launcher fault a daemon's error reply stands for (`org.quire.Accounts1.Error.*`), if it is
 /// one.
 pub fn launcher_fault_of(error: &zbus::Error) -> Option<crate::LauncherFault> {

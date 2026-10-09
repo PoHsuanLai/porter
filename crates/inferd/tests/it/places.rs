@@ -598,3 +598,289 @@ mod routing {
         }
     }
 }
+
+// ---- the typed refusal ---------------------------------------------------------------------
+
+mod refusals {
+    use super::routing::placed_world_with;
+    use super::*;
+    use hosting::rig::World;
+    use porter_core::capability::{LlmFeature, Modality};
+    use porter_core::need::{DimsNeed, EmbedNeed, LlmNeed};
+    use porter_core::{Need, Tokens};
+    use porter_dbus::{InferenceProxy, PLACE_ERROR_PREFIX, place_refusal_of};
+    use porter_infer::{LocalOnly, NoPlaceReason, OpenOptions, PlaceId, Policy};
+
+    const COMPANION: &str = "org.quire.Companion";
+
+    fn llm() -> Need {
+        Need::Llm(LlmNeed {
+            features: [LlmFeature::Chat].into(),
+            context: Tokens(1000),
+        })
+    }
+
+    fn embeddings() -> Need {
+        Need::Embeddings(EmbedNeed {
+            dims: DimsNeed::Any,
+            modalities: [Modality::Text].into(),
+        })
+    }
+
+    fn only(places: &[&str]) -> OpenOptions {
+        OpenOptions::default().with_places(
+            places
+                .iter()
+                .map(|text| PlaceId::parse(text).expect("place"))
+                .collect(),
+        )
+    }
+
+    fn refused(reason: NoPlaceReason, would_need: Option<PlaceKind>) -> ClientError {
+        ClientError::NoAllowedPlace { reason, would_need }
+    }
+
+    /// The same refusal from `Prepare` and from `Open`, through porter-client.
+    async fn both_ways(
+        world: &World,
+        need: &Need,
+        class: DataClass,
+        options: &OpenOptions,
+        want: ClientError,
+    ) {
+        let prepared = world
+            .accounts
+            .prepare(need, class, Tier::Balanced, options)
+            .await;
+        assert_eq!(prepared, Err(want.clone()), "Prepare");
+        let opened = world
+            .accounts
+            .session_with(need, class, Tier::Balanced, options)
+            .await
+            .map(|_| ());
+        assert_eq!(opened, Err(want), "Open");
+    }
+
+    /// Floors as shipped, with the switch that keeps everything on this computer off.
+    fn floors_on(world: &World) {
+        let mut settings = (*world.served.settings()).clone();
+        settings.policy = Policy {
+            local_only: LocalOnly::Off,
+            ..Policy::proposed()
+        };
+        world.served.apply(settings);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn not_ready_names_the_cloud_account_that_could_have_served_and_it_is_not_used() {
+        let (world, lab) = placed_world_with("r-notready", Role::Placer, COMPANION, false).await;
+        drop(lab);
+        both_ways(
+            &world,
+            &llm(),
+            DataClass::Public,
+            &only(&["computer:lab"]),
+            refused(NoPlaceReason::NotReady, Some(PlaceKind::CloudAccount)),
+        )
+        .await;
+        assert!(
+            world
+                .provider
+                .as_ref()
+                .expect("provider")
+                .requests()
+                .is_empty()
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn not_ready_without_a_place_outside_that_could_serve_has_no_would_need() {
+        // The reader holds no grant on the account, so the account could not have served either.
+        let (world, lab) =
+            placed_world_with("r-nowould", Role::Placer, "org.quire.Reader", false).await;
+        drop(lab);
+        both_ways(
+            &world,
+            &llm(),
+            DataClass::Public,
+            &only(&["computer:lab"]),
+            refused(NoPlaceReason::NotReady, None),
+        )
+        .await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn floor_refused_when_the_class_may_not_leave_and_would_need_follows_the_floor() {
+        let (world, _lab) = placed_world_with("r-floor", Role::Placer, COMPANION, true).await;
+        floors_on(&world);
+        // The prompt may not leave this computer, and the only allowed place is the account.
+        both_ways(
+            &world,
+            &llm(),
+            DataClass::Prompt,
+            &only(&["account:openrouter"]),
+            refused(NoPlaceReason::FloorRefused, Some(PlaceKind::ThisComputer)),
+        )
+        .await;
+        // Local-only on is the same reason.
+        let mut settings = (*world.served.settings()).clone();
+        settings.policy = Policy::proposed();
+        world.served.apply(settings);
+        both_ways(
+            &world,
+            &llm(),
+            DataClass::Public,
+            &only(&["account:openrouter"]),
+            refused(NoPlaceReason::FloorRefused, Some(PlaceKind::ThisComputer)),
+        )
+        .await;
+        assert!(
+            world
+                .provider
+                .as_ref()
+                .expect("provider")
+                .requests()
+                .is_empty()
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn floor_refused_has_no_would_need_when_nothing_outside_could_serve() {
+        let (world, _lab) = placed_world_with("r-floor2", Role::Placer, COMPANION, false).await;
+        floors_on(&world);
+        both_ways(
+            &world,
+            &llm(),
+            DataClass::Prompt,
+            &only(&["account:openrouter"]),
+            refused(NoPlaceReason::FloorRefused, None),
+        )
+        .await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn model_not_offered_when_the_pinned_model_is_not_at_the_place() {
+        let (world, _lab) = placed_world_with("r-pin", Role::Placer, COMPANION, true).await;
+        let options = only(&["this-computer"]).with_place_model(
+            PlaceId::this_computer(),
+            porter_core::ModelId::parse("no-such-model").expect("id"),
+        );
+        // The lab machine and the account, outside the set, could have served.
+        both_ways(
+            &world,
+            &llm(),
+            DataClass::Public,
+            &options,
+            refused(NoPlaceReason::ModelNotOffered, Some(PlaceKind::OwnComputer)),
+        )
+        .await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn none_capable_when_no_allowed_place_does_this_kind_of_work() {
+        let (world, _lab) = placed_world_with("r-none", Role::Placer, COMPANION, true).await;
+        // A place nothing is known of: it can do nothing, and this computer, outside, could.
+        both_ways(
+            &world,
+            &llm(),
+            DataClass::Public,
+            &only(&["computer:ghost"]),
+            refused(NoPlaceReason::NoneCapable, Some(PlaceKind::ThisComputer)),
+        )
+        .await;
+        // Embeddings: the account has none, and nothing outside has either.
+        both_ways(
+            &world,
+            &embeddings(),
+            DataClass::Public,
+            &only(&["account:openrouter"]),
+            refused(NoPlaceReason::NoneCapable, None),
+        )
+        .await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_empty_set_serves_nothing() {
+        let (world, _lab) = placed_world_with("r-empty", Role::Placer, COMPANION, true).await;
+        both_ways(
+            &world,
+            &llm(),
+            DataClass::Public,
+            &only(&[]),
+            refused(NoPlaceReason::NoneCapable, Some(PlaceKind::ThisComputer)),
+        )
+        .await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_reply_is_an_error_named_for_the_reason_with_plain_words_and_the_kind_in_its_body()
+    {
+        let (world, lab) = placed_world_with("r-wire", Role::Placer, COMPANION, false).await;
+        drop(lab);
+        let proxy = InferenceProxy::new(&world.client).await.expect("proxy");
+        let options = match porter_dbus::zvariant::OwnedValue::try_from(
+            porter_dbus::zvariant::Value::new(vec!["computer:lab".to_owned()]),
+        ) {
+            Ok(value) => [("places".to_owned(), value)].into(),
+            Err(e) => panic!("{e}"),
+        };
+        let need = porter_dbus::need_to_dbus(&llm());
+        let error = proxy
+            .availability(&need, "public", &options)
+            .await
+            .expect_err("no allowed place");
+        let zbus::Error::MethodError(name, text, _) = &error else {
+            panic!("a method error, got {error:?}");
+        };
+        assert_eq!(
+            name.as_str(),
+            format!("{PLACE_ERROR_PREFIX}NotReady"),
+            "reason-specific name"
+        );
+        assert_eq!(
+            name.as_str(),
+            "org.quire.Inference1.Error.NoAllowedPlace.NotReady"
+        );
+        let words = text.as_deref().expect("words");
+        assert_eq!(
+            words,
+            "None of the places you allowed is ready to do this right now."
+        );
+        for jargon in ["would_need", "cloud_account", "NoAllowedPlace", "="] {
+            assert!(!words.contains(jargon), "{words}");
+        }
+        assert_eq!(
+            place_refusal_of(&error),
+            Some(("NotReady".to_owned(), Some("cloud_account".to_owned())))
+        );
+        // And the body is exactly two strings: the words, then the kind.
+        let zbus::Error::MethodError(_, _, message) = &error else {
+            unreachable!()
+        };
+        let body: (String, String) = message.body().deserialize().expect("two strings");
+        assert_eq!(body.1, "cloud_account");
+        // Another error of the same interface is not mistaken for one.
+        let denied = proxy
+            .availability(&need, "no-such-class", &porter_dbus::Details::new())
+            .await
+            .expect_err("invalid");
+        assert_eq!(place_refusal_of(&denied), None);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_set_that_can_serve_is_not_refused() {
+        let (world, _lab) = placed_world_with("r-ok", Role::Placer, COMPANION, true).await;
+        let options = only(&["this-computer"]);
+        let prepared = world
+            .accounts
+            .prepare(&llm(), DataClass::Public, Tier::Balanced, &options)
+            .await;
+        assert!(prepared.is_ok(), "{prepared:?}");
+        let opened = world
+            .accounts
+            .session_with(&llm(), DataClass::Public, Tier::Balanced, &options)
+            .await
+            .map(|_| ());
+        assert_eq!(opened, Ok(()));
+    }
+}

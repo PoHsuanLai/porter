@@ -51,7 +51,8 @@ pub use callers_file::{CallerFileError, load_callers, table_from_file, table_fro
 pub use codec::{candidate_from_dbus, candidate_to_dbus, need_from_dbus, need_to_dbus};
 pub use codec_grants::{grant_from_dbus, grant_to_dbus, token_from_dbus, token_to_dbus};
 pub use failure::{
-    BusFailure, classify, is_invalid_args, is_limits_exceeded, launcher_fault_of, refusal_of,
+    BusFailure, PLACE_ERROR_PREFIX, classify, is_invalid_args, is_limits_exceeded,
+    launcher_fault_of, place_refusal_of, refusal_of,
 };
 pub use grants::{GrantsProxy, GrantsSkeleton};
 pub use inference::{InferenceProxy, InferenceSkeleton};

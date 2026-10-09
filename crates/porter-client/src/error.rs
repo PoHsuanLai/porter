@@ -3,7 +3,7 @@
 use porter_core::AccountId;
 use porter_core::wire::Refusal;
 #[cfg(feature = "infer")]
-use porter_infer::{InferRefusal, SessionError};
+use porter_infer::{InferRefusal, NoPlaceReason, PlaceKind, SessionError};
 
 /// Why a transport could not carry a request. More reasons may be added: match with a wildcard.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -23,6 +23,16 @@ pub enum TransportError {
     /// The other side sent something that is not porter's protocol.
     #[error("malformed reply: {0}")]
     Malformed(String),
+    /// The call named the places it may run (`OpenOptions::places`) and none of them can serve
+    /// it: the reason, and the kind of place outside the set that could have (feature `infer`).
+    #[cfg(feature = "infer")]
+    #[error("none of the allowed places can serve this ({})", .reason.slug())]
+    NoAllowedPlace {
+        /// Why nothing allowed can serve.
+        reason: NoPlaceReason,
+        /// The kind of place outside the set that could have served it, if there is one.
+        would_need: Option<PlaceKind>,
+    },
 }
 
 /// Why a client call failed; each variant is something an app can show or act on. More reasons
@@ -32,7 +42,18 @@ pub enum TransportError {
 pub enum ClientError {
     /// The request did not arrive or the reply did not come back.
     #[error(transparent)]
-    Transport(#[from] TransportError),
+    Transport(TransportError),
+    /// The call named the places it may run (`OpenOptions::places`) and none of them can serve
+    /// it (feature `infer`). `reason` says why; `would_need` is the kind of place outside the set
+    /// that could have served it, if there is one, so an app can offer to turn it on.
+    #[cfg(feature = "infer")]
+    #[error("none of the allowed places can serve this ({})", .reason.slug())]
+    NoAllowedPlace {
+        /// Why nothing allowed can serve.
+        reason: NoPlaceReason,
+        /// The kind of place outside the set that could have served it, if there is one.
+        would_need: Option<PlaceKind>,
+    },
     /// accountd refused.
     #[error("refused: {}", why(*.0))]
     Refused(Refusal),
@@ -47,6 +68,20 @@ pub enum ClientError {
     /// The reply does not answer the request (a daemon of another version).
     #[error("reply does not answer the request")]
     Mismatched,
+}
+
+impl From<TransportError> for ClientError {
+    /// A transport error is `Transport`, except the one that is inferd's answer about places,
+    /// which is `NoAllowedPlace` here.
+    fn from(error: TransportError) -> Self {
+        match error {
+            #[cfg(feature = "infer")]
+            TransportError::NoAllowedPlace { reason, would_need } => {
+                ClientError::NoAllowedPlace { reason, would_need }
+            }
+            other => ClientError::Transport(other),
+        }
+    }
 }
 
 /// What a refusal says in words (the enum has no `Display` of its own; the match names every
