@@ -86,3 +86,8 @@ workspace = true
 # socket`) and starts that executable again as a fake child, by test name.
 [[test]]
 name = "socket_accounts"
+
+# Lists the guests and answers one, for Settings and the shell to copy.
+[[example]]
+name = "guests"
+required-features = ["dbus"]

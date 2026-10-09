@@ -23,6 +23,7 @@ mod fixtures;
 mod id;
 mod identity;
 mod launcher_session;
+pub mod lending;
 mod matching;
 pub mod need;
 mod offer;

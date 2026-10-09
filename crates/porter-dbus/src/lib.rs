@@ -56,11 +56,14 @@ pub use callers_file::{
 pub use codec::{candidate_from_dbus, candidate_to_dbus, need_from_dbus, need_to_dbus};
 pub use codec_grants::{grant_from_dbus, grant_to_dbus, token_from_dbus, token_to_dbus};
 pub use failure::{
-    BusFailure, PLACE_ERROR_PREFIX, classify, is_invalid_args, is_limits_exceeded,
-    launcher_fault_of, place_refusal_of, refusal_of,
+    BusFailure, PLACE_ERROR_PREFIX, classify, computer_refusal_of, is_invalid_args,
+    is_limits_exceeded, launcher_fault_of, place_refusal_of, refusal_of,
 };
 pub use grants::{GrantsProxy, GrantsSkeleton};
-pub use inference::{InferenceProxy, InferenceSkeleton};
+pub use inference::{
+    GuestAsks, GuestAsksStream, GuestsChanged, GuestsChangedStream, InferenceProxy,
+    InferenceSkeleton,
+};
 pub use introspect::{Bus, introspection};
 pub use json_value::{from_vardict, to_vardict};
 pub use launcher::LauncherFault;

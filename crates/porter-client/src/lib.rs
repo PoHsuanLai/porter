@@ -33,6 +33,8 @@
 
 mod accounts;
 mod authenticated;
+#[cfg(feature = "infer")]
+mod computers;
 #[cfg(feature = "dbus")]
 pub mod credential;
 #[cfg(feature = "engines")]
@@ -40,6 +42,8 @@ pub mod engines;
 mod env;
 mod error;
 mod found;
+#[cfg(feature = "dbus")]
+mod guests;
 #[cfg(feature = "dbus")]
 mod launcher;
 #[cfg(feature = "dbus")]
@@ -55,25 +59,38 @@ mod transport;
 
 pub use accounts::Accounts;
 pub use authenticated::{AuthenticatedStream, Relayed};
+#[cfg(feature = "infer")]
+pub use computers::{ComputerReach, NewComputer, NewComputerModel};
 #[cfg(feature = "dbus")]
 pub use credential::{
     ChildKey, ChildKeyError, CredentialHandle, Delivery, Inherit, ProcessCredential, Revocations,
     Revoked,
 };
 pub use env::{ClientEnv, LinkChoice, Place, START_WAIT, SocketAgent, StartAgent};
-pub use error::{ClientError, TransportError};
+pub use error::{ClientError, ComputerReason, TransportError};
 pub use found::{ConsentOffer, Found, NoAccount, found};
 #[cfg(feature = "dbus")]
+pub use guests::{GuestChange, GuestChanges};
+#[cfg(feature = "dbus")]
 pub use launcher::{AskKind, Launcher, LauncherError, LauncherRequest, Requests};
+pub use porter_core::lending;
+/// The computers that ask to use this one's models, and the ones that could be added, from
+/// porter-core: what `Accounts::guests` and `Accounts::candidates` return and
+/// `Accounts::answer_guest` takes, so Settings and the shell parse no vardict. The module
+/// (`porter_client::lending`) also holds `Approval`, `RowState`, `GuestAsk` and
+/// `CandidateModel`.
+pub use porter_core::lending::{ComputerCandidate, GuestAnswer, GuestRow};
 /// A computer on the person's Tailscale network, whose it is, and its stable id, from
 /// porter-core: what `Tailnet::machines` returns, so a terminal or Settings parses no vardict.
 pub use porter_core::{Machine, MachineOwner, NodeId};
+/// The client's side of one `Open` fd, from porter-infer.
+#[cfg(feature = "infer")]
+pub use porter_infer::{
+    ComputerName, InferSession, OpenOptions, PlaceId, SessionError, Traceparent,
+};
 /// What an [`engines::EngineHost`] is built from, from porter-infer.
 #[cfg(feature = "engines")]
 pub use porter_infer::{InferRefusal, Policy, Slot};
-/// The client's side of one `Open` fd, from porter-infer.
-#[cfg(feature = "infer")]
-pub use porter_infer::{InferSession, OpenOptions, SessionError, Traceparent};
 pub use relays::{NoRelays, RelayHost};
 #[cfg(feature = "dbus")]
 pub use removals::{Removals, RemovedAccount};

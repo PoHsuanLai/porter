@@ -13,6 +13,8 @@ mod broker;
 mod dbus;
 #[cfg(feature = "dbus")]
 mod dbus_accounts;
+#[cfg(feature = "dbus")]
+mod dbus_computers;
 #[cfg(all(feature = "dbus", feature = "infer"))]
 mod dbus_infer;
 #[cfg(all(feature = "dbus", feature = "infer"))]
@@ -44,13 +46,17 @@ pub use socket::SocketSession;
 pub use socket::SocketTransport;
 
 use crate::authenticated::Relayed;
+#[cfg(feature = "infer")]
+use crate::computers::NewComputer;
 use crate::error::TransportError;
-use porter_core::{AccountsReply, AccountsRequest, EndpointUrl, GrantId};
+use porter_core::lending::{ComputerCandidate, GuestAnswer, GuestRow};
+use porter_core::{AccountsReply, AccountsRequest, EndpointUrl, GrantId, NodeId};
 #[cfg(feature = "infer")]
 use porter_core::{DataClass, Need, Tier};
 #[cfg(feature = "infer")]
 use porter_infer::{
-    ClientFrame, InferEvent, InferSession, OpenOptions, PlaceRow, Readiness, SessionError,
+    ClientFrame, ComputerName, InferEvent, InferSession, OpenOptions, PlaceId, PlaceRow, Readiness,
+    SessionError,
 };
 use std::future::Future;
 
@@ -131,6 +137,78 @@ pub trait Transport: Send + Sync {
     #[cfg(feature = "infer")]
     fn places(&self) -> impl Future<Output = Result<Vec<PlaceRow>, TransportError>> + Send {
         async { Err(TransportError::Unreachable) }
+    }
+
+    /// The computers that asked to use this computer's models, or were answered, one row each
+    /// (`Inference1.Guests`). Only Settings and the shell may ask.
+    ///
+    /// The default (and the answer of a link with no inferd on a bus: the socket, the app
+    /// hosting the core itself) is [`TransportError::Unsupported`].
+    fn guests(&self) -> impl Future<Output = Result<Vec<GuestRow>, TransportError>> + Send {
+        async { Err(TransportError::Unsupported) }
+    }
+
+    /// The person's answer about the computer `node` (`Inference1.AnswerGuest`; on the bus the
+    /// answer is the word `allow` or `deny`). The default is `Unsupported`.
+    fn answer_guest(
+        &self,
+        node: &NodeId,
+        answer: GuestAnswer,
+    ) -> impl Future<Output = Result<(), TransportError>> + Send {
+        let _ = (node, answer);
+        async { Err(TransportError::Unsupported) }
+    }
+
+    /// Forgets the answer about `node`, and any question it has waiting
+    /// (`Inference1.ForgetGuest`; Settings only). The default is `Unsupported`.
+    fn forget_guest(
+        &self,
+        node: &NodeId,
+    ) -> impl Future<Output = Result<(), TransportError>> + Send {
+        let _ = node;
+        async { Err(TransportError::Unsupported) }
+    }
+
+    /// The person's own computers on their Tailscale network that lend their models and are not
+    /// added yet (`Inference1.Candidates`; Settings only). The default is `Unsupported`.
+    fn candidates(
+        &self,
+    ) -> impl Future<Output = Result<Vec<ComputerCandidate>, TransportError>> + Send {
+        async { Err(TransportError::Unsupported) }
+    }
+
+    /// Adds the candidate `node` as one of the person's own computers and answers its place
+    /// (`Inference1.AddTailnetComputer`; Settings only). A refusal is
+    /// [`TransportError::Computer`]. The default is `Unsupported`.
+    #[cfg(feature = "infer")]
+    fn add_tailnet_computer(
+        &self,
+        node: &NodeId,
+    ) -> impl Future<Output = Result<PlaceId, TransportError>> + Send {
+        let _ = node;
+        async { Err(TransportError::Unsupported) }
+    }
+
+    /// Adds a computer of the person's own by hand and answers its place
+    /// (`Inference1.AddComputer`; Settings only). The default is `Unsupported`.
+    #[cfg(feature = "infer")]
+    fn add_computer(
+        &self,
+        computer: &NewComputer,
+    ) -> impl Future<Output = Result<PlaceId, TransportError>> + Send {
+        let _ = computer;
+        async { Err(TransportError::Unsupported) }
+    }
+
+    /// Removes a computer that `add_computer` or `add_tailnet_computer` added
+    /// (`Inference1.RemoveComputer`; Settings only). The default is `Unsupported`.
+    #[cfg(feature = "infer")]
+    fn remove_computer(
+        &self,
+        name: &ComputerName,
+    ) -> impl Future<Output = Result<(), TransportError>> + Send {
+        let _ = name;
+        async { Err(TransportError::Unsupported) }
     }
 
     /// [`Transport::open_with`] with no trace context: inferd starts its own root.
@@ -279,6 +357,65 @@ impl Transport for AnyTransport {
             #[cfg(feature = "dbus")]
             AnyTransport::Dbus(link) => link.places().await,
             AnyTransport::Socket(link) => link.places().await,
+        }
+    }
+
+    async fn guests(&self) -> Result<Vec<GuestRow>, TransportError> {
+        match self {
+            #[cfg(feature = "dbus")]
+            AnyTransport::Dbus(link) => link.guests().await,
+            AnyTransport::Socket(link) => link.guests().await,
+        }
+    }
+
+    async fn answer_guest(&self, node: &NodeId, answer: GuestAnswer) -> Result<(), TransportError> {
+        match self {
+            #[cfg(feature = "dbus")]
+            AnyTransport::Dbus(link) => link.answer_guest(node, answer).await,
+            AnyTransport::Socket(link) => link.answer_guest(node, answer).await,
+        }
+    }
+
+    async fn forget_guest(&self, node: &NodeId) -> Result<(), TransportError> {
+        match self {
+            #[cfg(feature = "dbus")]
+            AnyTransport::Dbus(link) => link.forget_guest(node).await,
+            AnyTransport::Socket(link) => link.forget_guest(node).await,
+        }
+    }
+
+    async fn candidates(&self) -> Result<Vec<ComputerCandidate>, TransportError> {
+        match self {
+            #[cfg(feature = "dbus")]
+            AnyTransport::Dbus(link) => link.candidates().await,
+            AnyTransport::Socket(link) => link.candidates().await,
+        }
+    }
+
+    #[cfg(feature = "infer")]
+    async fn add_tailnet_computer(&self, node: &NodeId) -> Result<PlaceId, TransportError> {
+        match self {
+            #[cfg(feature = "dbus")]
+            AnyTransport::Dbus(link) => link.add_tailnet_computer(node).await,
+            AnyTransport::Socket(link) => link.add_tailnet_computer(node).await,
+        }
+    }
+
+    #[cfg(feature = "infer")]
+    async fn add_computer(&self, computer: &NewComputer) -> Result<PlaceId, TransportError> {
+        match self {
+            #[cfg(feature = "dbus")]
+            AnyTransport::Dbus(link) => link.add_computer(computer).await,
+            AnyTransport::Socket(link) => link.add_computer(computer).await,
+        }
+    }
+
+    #[cfg(feature = "infer")]
+    async fn remove_computer(&self, name: &ComputerName) -> Result<(), TransportError> {
+        match self {
+            #[cfg(feature = "dbus")]
+            AnyTransport::Dbus(link) => link.remove_computer(name).await,
+            AnyTransport::Socket(link) => link.remove_computer(name).await,
         }
     }
 }

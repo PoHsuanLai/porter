@@ -35,14 +35,10 @@ pub struct Hello {
     needs_approval: bool,
 }
 
-/// Where the asking computer stands with the person on the lending one.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Approval {
-    /// The person has yet to say yes to it.
-    Needed,
-    /// The person said yes.
-    Given,
-}
+/// Where the asking computer stands with the person on the lending one. It lives in
+/// `porter_core::lending` (a client of the bus reads it without this crate's files); the old
+/// path stays.
+pub use porter_core::lending::Approval;
 
 impl Hello {
     /// A hello offering `models` to a computer with this `approval`.

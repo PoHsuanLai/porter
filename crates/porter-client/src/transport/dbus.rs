@@ -2,17 +2,20 @@
 //! the bus says about the connection. `Inference1.Open` is built (a socket fd, framed with
 //! `porter_core::wire`), and so are accountd's immediate calls; the sheet calls wait for accountd.
 
+#[cfg(feature = "infer")]
+use super::NewComputer;
 use super::Transport;
 #[cfg(feature = "infer")]
 use super::dbus_session::DbusSession;
 use crate::authenticated::{AuthenticatedStream, Relayed};
 use crate::error::TransportError;
-use porter_core::{AccountsReply, AccountsRequest, EndpointUrl, GrantId};
+use porter_core::lending::{ComputerCandidate, GuestAnswer, GuestRow};
+use porter_core::{AccountsReply, AccountsRequest, EndpointUrl, GrantId, NodeId};
 #[cfg(feature = "infer")]
 use porter_core::{DataClass, Need, Tier};
 use porter_dbus::{BusConnection, BusError, BusFailure, TokensProxy, classify, refusal_of};
 #[cfg(feature = "infer")]
-use porter_infer::{OpenOptions, PlaceRow, Readiness};
+use porter_infer::{ComputerName, OpenOptions, PlaceId, PlaceRow, Readiness};
 use serde::Serialize;
 
 /// accountd and inferd on the session bus.
@@ -73,6 +76,13 @@ pub(crate) fn bus_error(error: &BusError) -> TransportError {
         return TransportError::NoAllowedPlace {
             reason,
             would_need: kind.and_then(|slug| porter_infer::PlaceKind::from_slug(&slug)),
+        };
+    }
+    // inferd's plain refusal of a call about computers or guests.
+    if let Some((name, words)) = porter_dbus::computer_refusal_of(error) {
+        return TransportError::Computer {
+            reason: crate::error::ComputerReason::from_name(&name),
+            words,
         };
     }
     match classify(error) {
@@ -136,6 +146,37 @@ impl Transport for DbusTransport {
         options: &OpenOptions,
     ) -> Result<DbusSession, TransportError> {
         self.open_session(need, class, tier, options).await
+    }
+
+    async fn guests(&self) -> Result<Vec<GuestRow>, TransportError> {
+        self.list_guests().await
+    }
+
+    async fn answer_guest(&self, node: &NodeId, answer: GuestAnswer) -> Result<(), TransportError> {
+        self.send_guest_answer(node, answer).await
+    }
+
+    async fn forget_guest(&self, node: &NodeId) -> Result<(), TransportError> {
+        self.send_forget_guest(node).await
+    }
+
+    async fn candidates(&self) -> Result<Vec<ComputerCandidate>, TransportError> {
+        self.list_candidates().await
+    }
+
+    #[cfg(feature = "infer")]
+    async fn add_tailnet_computer(&self, node: &NodeId) -> Result<PlaceId, TransportError> {
+        self.send_add_tailnet_computer(node).await
+    }
+
+    #[cfg(feature = "infer")]
+    async fn add_computer(&self, computer: &NewComputer) -> Result<PlaceId, TransportError> {
+        self.send_add_computer(computer).await
+    }
+
+    #[cfg(feature = "infer")]
+    async fn remove_computer(&self, name: &ComputerName) -> Result<(), TransportError> {
+        self.send_remove_computer(name).await
     }
 
     #[cfg(feature = "infer")]

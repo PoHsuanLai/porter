@@ -23,6 +23,20 @@ pub enum TransportError {
     /// The other side sent something that is not porter's protocol.
     #[error("malformed reply: {0}")]
     Malformed(String),
+    /// This link does not carry that call: the computers and the guests are inferd's, over the
+    /// session bus, and a link with no inferd (the socket, the app hosting the core itself) has
+    /// neither.
+    #[error("this link does not carry that call")]
+    Unsupported,
+    /// inferd refused a call about computers or guests, with the plain sentence it wrote for the
+    /// person.
+    #[error("{words}")]
+    Computer {
+        /// Why, as a word an app can act on.
+        reason: ComputerReason,
+        /// The sentence to show.
+        words: String,
+    },
     /// The call named the places it may run (`OpenOptions::places`) and none of them can serve
     /// it: the reason, and the kind of place outside the set that could have (feature `infer`).
     #[cfg(feature = "infer")]
@@ -33,6 +47,93 @@ pub enum TransportError {
         /// The kind of place outside the set that could have served it, if there is one.
         would_need: Option<PlaceKind>,
     },
+}
+
+/// Why inferd refused a call about computers or guests. More reasons may be added: match with a
+/// wildcard.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum ComputerReason {
+    /// The name has nothing to name it by.
+    #[error("bad name")]
+    BadName,
+    /// No model was given.
+    #[error("no models")]
+    NoModels,
+    /// More models, or more computers, than may be kept.
+    #[error("too many")]
+    TooMany,
+    /// A computer of that name is already there.
+    #[error("already there")]
+    AlreadyThere,
+    /// The assistant does not know a model that was named.
+    #[error("unknown model")]
+    UnknownModel,
+    /// A model that cannot be used from another computer.
+    #[error("model not usable")]
+    ModelNotUsable,
+    /// A model that is already set up.
+    #[error("model taken")]
+    ModelTaken,
+    /// How to reach a model cannot be used.
+    #[error("bad address")]
+    BadAddress,
+    /// A key that cannot be used.
+    #[error("bad key")]
+    BadKey,
+    /// The change could not be saved.
+    #[error("not saved")]
+    NotSaved,
+    /// There is no computer of that name.
+    #[error("not there")]
+    NotThere,
+    /// The computer was written in the settings file by hand.
+    #[error("added by hand")]
+    AddedByHand,
+    /// Adding computers is not set up in this daemon.
+    #[error("unavailable")]
+    Unavailable,
+    /// The computer is not one of the person's own on Tailscale.
+    #[error("not on Tailscale")]
+    NotOnTailscale,
+    /// The computer does not lend its models right now.
+    #[error("not answering")]
+    NotAnswering,
+    /// The computer is not asking to use this computer's models.
+    #[error("not asking")]
+    NotAsking,
+    /// Too many computers are asking at once.
+    #[error("too many asking")]
+    TooManyAsking,
+    /// A reason this client does not know yet, as the daemon named it.
+    #[error("{0}")]
+    Other(String),
+}
+
+impl ComputerReason {
+    /// The reason a daemon's error name stands for (the part after the `Computer.` prefix).
+    pub fn from_name(name: &str) -> Self {
+        match name {
+            "BadName" => Self::BadName,
+            "NoModels" => Self::NoModels,
+            "TooMany" => Self::TooMany,
+            "AlreadyThere" => Self::AlreadyThere,
+            "UnknownModel" => Self::UnknownModel,
+            "ModelNotUsable" => Self::ModelNotUsable,
+            "ModelTaken" => Self::ModelTaken,
+            "BadAddress" => Self::BadAddress,
+            "BadKey" => Self::BadKey,
+            "NotSaved" => Self::NotSaved,
+            "NotThere" => Self::NotThere,
+            "AddedByHand" => Self::AddedByHand,
+            "Unavailable" => Self::Unavailable,
+            "NotOnTailscale" => Self::NotOnTailscale,
+            "NotAnswering" => Self::NotAnswering,
+            "NotAsking" => Self::NotAsking,
+            "TooManyAsking" => Self::TooManyAsking,
+            other => Self::Other(other.to_owned()),
+        }
+    }
 }
 
 /// Why a client call failed; each variant is something an app can show or act on. More reasons

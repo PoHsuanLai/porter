@@ -8,10 +8,11 @@ use crate::transport::{AnyTransport, Transport};
 #[cfg(feature = "infer")]
 use porter_core::Tier;
 use porter_core::consent::{Grant, Usage};
+use porter_core::lending::{ComputerCandidate, GuestAnswer, GuestRow};
 use porter_core::wire::{ParentWindow, ProviderHint};
 use porter_core::{
     AccountId, AccountsReply, AccountsRequest, Audience, Candidate, DataClass, EndpointUrl,
-    GrantId, IssuedToken, Need,
+    GrantId, IssuedToken, Need, NodeId,
 };
 #[cfg(feature = "infer")]
 use porter_infer::{
@@ -49,6 +50,25 @@ impl Accounts<crate::transport::DbusTransport> {
     /// daemon with its mirrors) forgets it on each [`crate::RemovedAccount`].
     pub async fn watch_removals(&self) -> Result<crate::Removals, ClientError> {
         Ok(crate::Removals::watch(self.transport.connection()).await?)
+    }
+
+    /// The computers that ask to use this computer's models, from now on: a question the person
+    /// is to answer, and every change to the answers. Subscribe before reading
+    /// [`Accounts::guests`], so no change falls between the two.
+    pub async fn watch_guests(&self) -> Result<crate::GuestChanges, ClientError> {
+        Ok(crate::GuestChanges::watch(self.transport.connection()).await?)
+    }
+}
+
+#[cfg(feature = "dbus")]
+impl Accounts<AnyTransport> {
+    /// [`Accounts::watch_guests`] over whichever link was found: a link that is not the session
+    /// bus has no guests to watch, so it is `TransportError::Unsupported`.
+    pub async fn watch_guests(&self) -> Result<crate::GuestChanges, ClientError> {
+        match &self.transport {
+            AnyTransport::Dbus(link) => Ok(crate::GuestChanges::watch(link.connection()).await?),
+            _ => Err(TransportError::Unsupported.into()),
+        }
     }
 }
 
@@ -284,6 +304,65 @@ impl<T: Transport> Accounts<T> {
     #[cfg(feature = "infer")]
     pub async fn places(&self) -> Result<Vec<porter_infer::PlaceRow>, ClientError> {
         Ok(self.transport.places().await?)
+    }
+
+    /// The computers that asked to use this computer's models, or were answered, one row each
+    /// ([`Transport::guests`]). Only Settings and the shell may ask; a link with no inferd on a
+    /// bus is `TransportError::Unsupported`.
+    pub async fn guests(&self) -> Result<Vec<GuestRow>, ClientError> {
+        Ok(self.transport.guests().await?)
+    }
+
+    /// The person's answer about the computer `node`: let it use this computer's models, or keep
+    /// it out ([`Transport::answer_guest`]). The shell may answer a computer that is asking;
+    /// Settings may answer any computer of the person's.
+    pub async fn answer_guest(
+        &self,
+        node: &NodeId,
+        answer: GuestAnswer,
+    ) -> Result<(), ClientError> {
+        Ok(self.transport.answer_guest(node, answer).await?)
+    }
+
+    /// Forgets the answer about `node` and any question it has waiting, so it is asked about
+    /// again ([`Transport::forget_guest`]). Settings only.
+    pub async fn forget_guest(&self, node: &NodeId) -> Result<(), ClientError> {
+        Ok(self.transport.forget_guest(node).await?)
+    }
+
+    /// The person's own computers on their Tailscale network that lend their models and are not
+    /// added yet ([`Transport::candidates`]). Settings only.
+    pub async fn candidates(&self) -> Result<Vec<ComputerCandidate>, ClientError> {
+        Ok(self.transport.candidates().await?)
+    }
+
+    /// Adds the candidate `node` as one of the person's own computers and answers its place
+    /// ([`Transport::add_tailnet_computer`]). Settings only.
+    #[cfg(feature = "infer")]
+    pub async fn add_tailnet_computer(
+        &self,
+        node: &NodeId,
+    ) -> Result<porter_infer::PlaceId, ClientError> {
+        Ok(self.transport.add_tailnet_computer(node).await?)
+    }
+
+    /// Adds a computer of the person's own by hand and answers its place
+    /// ([`Transport::add_computer`]). Settings only.
+    #[cfg(feature = "infer")]
+    pub async fn add_computer(
+        &self,
+        computer: &crate::NewComputer,
+    ) -> Result<porter_infer::PlaceId, ClientError> {
+        Ok(self.transport.add_computer(computer).await?)
+    }
+
+    /// Removes a computer that was added ([`Transport::remove_computer`]). Settings only.
+    #[cfg(feature = "infer")]
+    pub async fn remove_computer(
+        &self,
+        name: &porter_infer::ComputerName,
+    ) -> Result<(), ClientError> {
+        Ok(self.transport.remove_computer(name).await?)
     }
 
     /// Runs one AI request to its end on a fresh session and returns the reply, dropping the

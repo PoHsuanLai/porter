@@ -62,6 +62,19 @@ pub fn place_refusal_of(error: &zbus::Error) -> Option<(String, Option<String>)>
     Some((reason.to_owned(), would_need))
 }
 
+/// What a refusal of a computer call says (`org.quire.Inference1.Error.Computer.<Name>`): the
+/// error's name after the prefix and the plain sentence the daemon wrote for the person (empty
+/// when it sent none). `None` for any other error.
+pub fn computer_refusal_of(error: &zbus::Error) -> Option<(String, String)> {
+    let zbus::Error::MethodError(name, words, _) = error else {
+        return None;
+    };
+    let reason = name
+        .as_str()
+        .strip_prefix(crate::names::COMPUTER_ERROR_PREFIX)?;
+    Some((reason.to_owned(), words.clone().unwrap_or_default()))
+}
+
 /// The launcher fault a daemon's error reply stands for (`org.quire.Accounts1.Error.*`), if it is
 /// one.
 pub fn launcher_fault_of(error: &zbus::Error) -> Option<crate::LauncherFault> {

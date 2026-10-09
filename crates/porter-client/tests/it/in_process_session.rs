@@ -98,6 +98,27 @@ async fn with_no_broker_a_session_is_unreachable_and_accounts_still_answer() {
     let _ = NoBroker;
 }
 
+#[tokio::test]
+async fn the_guest_and_computer_calls_are_unsupported_in_process() {
+    let accounts = Accounts::over(InProcess::new(service().await, app()));
+    let node = porter_core::NodeId::parse("nPI").expect("node");
+    let unsupported = Some(ClientError::Transport(TransportError::Unsupported));
+    assert_eq!(accounts.guests().await.err(), unsupported);
+    assert_eq!(accounts.candidates().await.err(), unsupported);
+    assert_eq!(
+        accounts
+            .answer_guest(&node, porter_client::GuestAnswer::Allow)
+            .await
+            .err(),
+        unsupported
+    );
+    assert_eq!(accounts.forget_guest(&node).await.err(), unsupported);
+    assert_eq!(
+        accounts.add_tailnet_computer(&node).await.err(),
+        unsupported
+    );
+}
+
 /// What the host was asked to open.
 type Opened = Vec<(AppId, DataClass, Tier, OpenOptions)>;
 

@@ -46,32 +46,10 @@ impl State {
     }
 }
 
-/// The person's answer to a computer: what `AnswerGuest` takes, as a word.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum GuestAnswer {
-    /// Let it use this computer's models.
-    Allow,
-    /// Keep it out.
-    Deny,
-}
-
-impl GuestAnswer {
-    /// Both answers, for tables.
-    pub const ALL: [GuestAnswer; 2] = [GuestAnswer::Allow, GuestAnswer::Deny];
-
-    /// The word on the bus.
-    pub fn slug(self) -> &'static str {
-        match self {
-            GuestAnswer::Allow => "allow",
-            GuestAnswer::Deny => "deny",
-        }
-    }
-
-    /// The answer a word names; none for any other word.
-    pub fn from_slug(slug: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|answer| answer.slug() == slug)
-    }
-}
+/// The person's answer to a computer: what `AnswerGuest` takes, as a word. It lives in
+/// `porter_core::lending` (a client of the bus names it without this crate's files); the old
+/// path stays.
+pub use porter_core::lending::GuestAnswer;
 
 /// One record, as the file holds it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -139,40 +117,9 @@ pub enum GuestError {
     NotSaved,
 }
 
-/// How one computer stands, as the list shows it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RowState {
-    /// The person said yes.
-    Approved,
-    /// The person said no.
-    Denied,
-    /// It is waiting for an answer.
-    Asking,
-}
-
-impl RowState {
-    /// The word on the bus.
-    pub fn slug(self) -> &'static str {
-        match self {
-            RowState::Approved => "approved",
-            RowState::Denied => "denied",
-            RowState::Asking => "asking",
-        }
-    }
-}
-
-/// One line of the list.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GuestRow {
-    /// The computer's stable id.
-    pub node: NodeId,
-    /// Its name.
-    pub name: String,
-    /// How it stands.
-    pub state: RowState,
-    /// When it was answered, or began asking.
-    pub since: UnixSeconds,
-}
+/// How one computer stands and one line of the list. They live in `porter_core::lending` (a
+/// client of the bus reads them without this crate's files); the old paths stay.
+pub use porter_core::lending::{GuestRow, RowState};
 
 #[derive(Debug, Default)]
 struct Inner {
