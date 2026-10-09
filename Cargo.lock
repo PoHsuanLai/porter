@@ -2253,6 +2253,7 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
+ "thiserror",
  "tokio",
  "toml",
  "zbus",
@@ -2456,6 +2457,7 @@ dependencies = [
  "porter-fake",
  "porter-provider",
  "porter-secrets",
+ "thiserror",
  "tokio",
 ]
 
@@ -2584,6 +2586,7 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
+ "thiserror",
 ]
 
 [[package]]
