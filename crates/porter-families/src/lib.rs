@@ -51,7 +51,7 @@ pub use io::{Pacing, SharedDns};
 #[cfg(feature = "microsoft")]
 pub use microsoft::{
     AccountClass, Clock, MicrosoftEnv, MicrosoftProvider, MicrosoftSession, MicrosoftSignIn,
-    Random, SignInFlow, classify,
+    Random, classify,
 };
 #[cfg(feature = "nextcloud")]
 pub use nextcloud::{NextcloudProvider, NextcloudSession, NextcloudSignIn};

@@ -1,7 +1,7 @@
 //! What a Microsoft provider needs from its surroundings, handed in rather than read where it is
-//! used: the HTTP seam, the client registry, the build channel, the clock, randomness and how a
-//! sign-in is asked to proceed. Tests hand in a fake issuer's seam and a counting clock;
-//! [`MicrosoftEnv::system`] is what accountd and an app hosting porter in process use.
+//! used: the HTTP seam, the client registry, the build channel, the clock and randomness. Tests
+//! hand in a fake issuer's seam and a counting clock; [`MicrosoftEnv::system`] is what accountd
+//! and an app hosting porter in process use.
 
 use crate::env_common::{ClientFiles, clients_now, system_now, system_random};
 pub use crate::env_common::{Clock, Random};
@@ -11,16 +11,6 @@ use porter_provider::ClientChannel;
 use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::Duration;
-
-/// How the person is asked to sign in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum SignInFlow {
-    /// The browser on this computer, redirecting to a loopback listener (PKCE, S256).
-    #[default]
-    Loopback,
-    /// A code typed on another device (headless and SSH sessions).
-    DeviceCode,
-}
 
 /// The surroundings of one Microsoft provider.
 pub struct MicrosoftEnv<H> {
@@ -37,8 +27,6 @@ pub struct MicrosoftEnv<H> {
     pub clock: Clock,
     /// Randomness for PKCE.
     pub random: Random,
-    /// The sign-in flow to start.
-    pub flow: SignInFlow,
     /// How long one `Poll` waits before answering `Waiting`.
     pub poll_slice: Duration,
 }
@@ -52,7 +40,6 @@ impl<H> Clone for MicrosoftEnv<H> {
             channel: self.channel,
             clock: Arc::clone(&self.clock),
             random: Arc::clone(&self.random),
-            flow: self.flow,
             poll_slice: self.poll_slice,
         }
     }
@@ -62,7 +49,6 @@ impl<H> std::fmt::Debug for MicrosoftEnv<H> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MicrosoftEnv")
             .field("channel", &self.channel)
-            .field("flow", &self.flow)
             .field("poll_slice", &self.poll_slice)
             .finish_non_exhaustive()
     }
@@ -70,7 +56,7 @@ impl<H> std::fmt::Debug for MicrosoftEnv<H> {
 
 impl<H: Http> MicrosoftEnv<H> {
     /// An environment over `http` with the system's clock and randomness, `registry` for the
-    /// clients, the stable channel, the loopback flow and a two-second poll.
+    /// clients, the stable channel and a two-second poll.
     pub fn new(http: H, registry: ClientRegistry) -> Self {
         Self {
             http: Arc::new(http),
@@ -79,7 +65,6 @@ impl<H: Http> MicrosoftEnv<H> {
             channel: ClientChannel::Stable,
             clock: Arc::new(system_now),
             random: Arc::new(system_random),
-            flow: SignInFlow::default(),
             poll_slice: Duration::from_secs(2),
         }
     }
@@ -95,11 +80,6 @@ impl<H: Http> MicrosoftEnv<H> {
     /// With this build channel.
     pub fn with_channel(self, channel: ClientChannel) -> Self {
         Self { channel, ..self }
-    }
-
-    /// With this sign-in flow.
-    pub fn with_flow(self, flow: SignInFlow) -> Self {
-        Self { flow, ..self }
     }
 
     /// With this clock.

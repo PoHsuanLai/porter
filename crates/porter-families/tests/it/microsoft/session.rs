@@ -3,7 +3,6 @@ use porter_core::capability::CapabilityKind as K;
 use porter_core::{
     AbsentReason, AccountId, Credential, Offer, Provenance, SecretText, TokenKind, UnixSeconds,
 };
-use porter_families::SignInFlow;
 use porter_provider::{Presented, Provider, ProviderError, ProviderSession, RevokeOutcome};
 
 fn account() -> AccountId {
@@ -41,7 +40,7 @@ async fn open(rig: &Rig) -> porter_families::MicrosoftSession<Wire> {
 
 #[tokio::test]
 async fn tokens_come_per_audience_in_the_form_the_protocol_takes() {
-    let rig = Rig::new(SignInFlow::Loopback, true).await;
+    let rig = Rig::new(true).await;
     let session = open(&rig).await;
     for (audience, kind) in [
         ("imap", TokenKind::Xoauth2),
@@ -81,7 +80,7 @@ async fn tokens_come_per_audience_in_the_form_the_protocol_takes() {
 #[tokio::test]
 async fn a_calendar_grants_token_request_names_only_the_calendar_scope() {
     const CALENDARS: &str = "https://graph.microsoft.com/Calendars.ReadWrite";
-    let rig = Rig::new(SignInFlow::Loopback, true).await;
+    let rig = Rig::new(true).await;
     let session = open(&rig).await;
     for audience in ["graph", GRAPH] {
         let token = session
@@ -155,7 +154,7 @@ fn audience_of(text: &str) -> porter_core::Audience {
 
 #[tokio::test]
 async fn a_token_is_reused_until_it_is_due_and_then_renewed_with_the_rotated_refresh() {
-    let rig = Rig::new(SignInFlow::Loopback, true).await;
+    let rig = Rig::new(true).await;
     let session = open(&rig).await;
     let first = session
         .access_token(&audience_of("imap"))
@@ -202,7 +201,7 @@ async fn a_token_is_reused_until_it_is_due_and_then_renewed_with_the_rotated_ref
 
 #[tokio::test]
 async fn a_refused_grant_needs_reauthentication_and_a_down_network_does_not() {
-    let rig = Rig::new(SignInFlow::Loopback, true).await;
+    let rig = Rig::new(true).await;
     let session = open(&rig).await;
     rig.issuer.refuse_refreshes(1);
     assert_eq!(
@@ -218,7 +217,7 @@ async fn a_refused_grant_needs_reauthentication_and_a_down_network_does_not() {
 
 #[tokio::test]
 async fn opening_needs_an_oauth_credential_and_a_registered_client_to_renew() {
-    let rig = Rig::new(SignInFlow::Loopback, true).await;
+    let rig = Rig::new(true).await;
     for presented in [
         Presented::Anonymous,
         Presented::Credential(Credential::Password(SecretText::new("pw"))),
@@ -228,7 +227,7 @@ async fn opening_needs_an_oauth_credential_and_a_registered_client_to_renew() {
             Err(ProviderError::Unauthorized)
         ));
     }
-    let bare = Rig::new(SignInFlow::Loopback, false).await;
+    let bare = Rig::new(false).await;
     let session = open(&bare).await;
     assert_eq!(
         session.access_token(&audience_of("imap")).await,
@@ -238,7 +237,7 @@ async fn opening_needs_an_oauth_credential_and_a_registered_client_to_renew() {
 
 #[tokio::test]
 async fn discover_probes_graph_again_and_shows_a_tenant_change() {
-    let rig = Rig::new(SignInFlow::Loopback, true).await;
+    let rig = Rig::new(true).await;
     let before = rig
         .provider
         .discover(&held_account(), &seeded(&rig))
@@ -266,7 +265,7 @@ async fn discover_probes_graph_again_and_shows_a_tenant_change() {
 
 #[tokio::test]
 async fn revoking_sends_the_person_to_their_microsoft_account_page() {
-    let rig = Rig::new(SignInFlow::Loopback, true).await;
+    let rig = Rig::new(true).await;
     let outcome = rig
         .provider
         .revoke(&held_account(), &seeded(&rig))
@@ -332,7 +331,7 @@ mod service {
 
     #[tokio::test]
     async fn rediscovering_stores_the_refresh_token_the_issuer_rotated() {
-        let rig = Rig::new(SignInFlow::Loopback, true).await;
+        let rig = Rig::new(true).await;
         let Presented::Credential(old) = seeded(&rig) else {
             panic!("a credential")
         };
@@ -374,7 +373,7 @@ mod service {
 
     #[tokio::test]
     async fn a_refused_refresh_token_is_a_sign_in_again_and_nothing_is_stored() {
-        let rig = Rig::new(SignInFlow::Loopback, true).await;
+        let rig = Rig::new(true).await;
         let key = SecretKey {
             account: account(),
             purpose: SecretPurpose::OAuthRefresh,

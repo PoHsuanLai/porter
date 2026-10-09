@@ -35,7 +35,7 @@ nextcloud = ["dep:porter-dav", "dep:porter-discover", "dep:base64", "dep:serde_j
 # Generic IMAP/SMTP and DAV with a password or app password, found by autoconfig.
 # The password is tried at the incoming mail server before the account is added (the relay's own login).
 generic = ["dep:porter-dav", "dep:porter-discover", "dep:base64", "dep:porter-proxy", "porter-proxy/tls", "dep:tokio"]
-# Microsoft: OAuth PKCE and device code, IMAP/SMTP XOAUTH2, Graph.
+# Microsoft: OAuth PKCE through a loopback redirect, IMAP/SMTP XOAUTH2, Graph.
 microsoft = ["dep:porter-oauth", "dep:porter-discover", "porter-oauth/io", "porter-http/hyper", "dep:serde", "dep:serde_json", "dep:tokio"]
 # Google: OAuth PKCE through a loopback redirect with the owner's own client, Calendar, People,
 # Tasks, the Drive app folder, Photos, and Gmail IMAP/SMTP XOAUTH2 for a client of one's own.

@@ -1,5 +1,5 @@
 //! The Microsoft family (lane W5b): personal and work or school accounts through one
-//! multi-tenant public client. Sign-in is PKCE through a loopback redirect, or a device code;
+//! multi-tenant public client. Sign-in is PKCE through a loopback redirect;
 //! mail is IMAP and SMTP with XOAUTH2 (tokens for Exchange Online); calendar, contacts, tasks,
 //! OneNote and OneDrive are Graph, probed at add time so a tenant that forbids one shows it as
 //! absent for consent (R13). Revoking has no API: the person is sent to account.microsoft.com.
@@ -13,7 +13,7 @@ mod scopes;
 mod session;
 mod signin;
 
-pub use env::{Clock, MicrosoftEnv, Random, SignInFlow};
+pub use env::{Clock, MicrosoftEnv, Random};
 pub use scopes::{AccountClass, classify};
 pub use session::MicrosoftSession;
 pub use signin::MicrosoftSignIn;

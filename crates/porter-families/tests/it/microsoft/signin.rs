@@ -6,7 +6,6 @@ use porter_core::{
     Toggle,
 };
 use porter_fake_servers::{Consent, IssuerEvent, TokenResult};
-use porter_families::SignInFlow;
 use porter_provider::{Provider, SignIn, SignInMode, SignInStart, SignInStep};
 
 fn grant_types(rig: &Rig) -> Vec<String> {
@@ -39,7 +38,7 @@ async fn to_review(rig: &Rig) -> (porter_families::MicrosoftSignIn<Wire>, SignIn
 
 #[tokio::test]
 async fn a_loopback_sign_in_reviews_what_graph_allows_then_hands_over_the_credential() {
-    let rig = Rig::new(SignInFlow::Loopback, true).await;
+    let rig = Rig::new(true).await;
     let (mut signin, step) = to_review(&rig).await;
     let SignInStep::Review {
         claims,
@@ -121,7 +120,7 @@ async fn a_loopback_sign_in_reviews_what_graph_allows_then_hands_over_the_creden
 
 #[tokio::test]
 async fn a_tenant_that_forbids_onenote_shows_notes_absent_for_consent() {
-    let rig = Rig::new(SignInFlow::Loopback, true).await;
+    let rig = Rig::new(true).await;
     rig.graph.refuse("/v1.0/me/onenote/notebooks", 403);
     let (_, step) = to_review(&rig).await;
     let SignInStep::Review {
@@ -157,7 +156,7 @@ async fn a_tenant_that_forbids_onenote_shows_notes_absent_for_consent() {
 
 #[tokio::test]
 async fn a_personal_account_that_is_refused_has_no_tenant_to_blame() {
-    let rig = Rig::new(SignInFlow::Loopback, true).await;
+    let rig = Rig::new(true).await;
     *rig.graph.address.lock().unwrap() = "ada@outlook.com".into();
     rig.graph.refuse("/v1.0/me/onenote/notebooks", 403);
     rig.graph.refuse("/v1.0/me/todo/lists", 404);
@@ -183,7 +182,7 @@ async fn a_personal_account_that_is_refused_has_no_tenant_to_blame() {
 
 #[tokio::test]
 async fn onedrive_reports_its_quota() {
-    let rig = Rig::new(SignInFlow::Loopback, true).await;
+    let rig = Rig::new(true).await;
     let (_, step) = to_review(&rig).await;
     let SignInStep::Review { claims, .. } = step else {
         panic!("expected a review")
@@ -200,7 +199,7 @@ async fn onedrive_reports_its_quota() {
 
 #[tokio::test]
 async fn declining_the_consent_page_cancels_and_nothing_is_exchanged() {
-    let rig = Rig::new(SignInFlow::Loopback, true).await;
+    let rig = Rig::new(true).await;
     rig.issuer.set_consent(Consent::Deny);
     let (_, step) = to_review(&rig).await;
     assert_eq!(step, SignInStep::Failed(SignInFault::Cancelled));
@@ -209,7 +208,7 @@ async fn declining_the_consent_page_cancels_and_nothing_is_exchanged() {
 
 #[tokio::test]
 async fn a_build_with_no_client_id_says_so_before_opening_anything() {
-    let rig = Rig::new(SignInFlow::Loopback, false).await;
+    let rig = Rig::new(false).await;
     let mut signin = rig.provider.sign_in(start()).expect("sign in");
     assert_eq!(
         signin.next(SignInInput::Start).await,
@@ -222,7 +221,7 @@ async fn a_build_with_no_client_id_says_so_before_opening_anything() {
 /// Settings does) is used by the next sign-in, with no new provider and no restart.
 #[tokio::test]
 async fn a_client_id_written_after_start_is_used_by_the_next_sign_in() {
-    let rig = Rig::new(SignInFlow::Loopback, false).await;
+    let rig = Rig::new(false).await;
     let dir = std::env::temp_dir().join(format!("families-ux2-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("scratch");
     let files = porter_families::ClientFiles {
@@ -270,7 +269,7 @@ async fn a_client_id_written_after_start_is_used_by_the_next_sign_in() {
 
 #[tokio::test]
 async fn cancelling_closes_the_listeners_and_ends_the_sign_in() {
-    let rig = Rig::new(SignInFlow::Loopback, true).await;
+    let rig = Rig::new(true).await;
     let mut signin = rig.provider.sign_in(start()).expect("sign in");
     let SignInStep::OpenBrowser { url } = signin.next(SignInInput::Start).await else {
         panic!("expected the browser")
@@ -300,26 +299,6 @@ async fn cancelling_closes_the_listeners_and_ends_the_sign_in() {
     panic!("the loopback listener is still listening");
 }
 
-#[tokio::test]
-async fn a_device_code_sign_in_shows_the_code_then_reviews_once_it_is_approved() {
-    let rig = Rig::new(SignInFlow::DeviceCode, true).await;
-    let mut signin = rig.provider.sign_in(start()).expect("sign in");
-    let SignInStep::ShowCode { user_code, url } = signin.next(SignInInput::Start).await else {
-        panic!("expected a code")
-    };
-    assert!(url.as_str().ends_with("/activate"));
-    // Not approved yet: the poll interval (a second on the issuer's clock) has to pass first.
-    assert_eq!(signin.next(SignInInput::Poll).await, SignInStep::Waiting);
-    rig.advance(2);
-    assert_eq!(signin.next(SignInInput::Poll).await, SignInStep::Waiting);
-    rig.issuer.approve_device(&user_code.0);
-    rig.advance(2);
-    let step = until_settled(&mut signin, 5).await;
-    assert!(matches!(step, SignInStep::Review { .. }), "{step:?}");
-    let done = signin.next(SignInInput::Confirm(Vec::new())).await;
-    assert!(matches!(done, SignInStep::Done(_)));
-}
-
 fn again() -> SignInStart {
     SignInStart {
         mode: SignInMode::Reauthenticate {
@@ -331,7 +310,7 @@ fn again() -> SignInStart {
 
 #[tokio::test]
 async fn a_loopback_sign_in_again_ends_done_without_a_review() {
-    let rig = Rig::new(SignInFlow::Loopback, true).await;
+    let rig = Rig::new(true).await;
     let mut signin = rig.provider.sign_in(again()).expect("sign in");
     let SignInStep::OpenBrowser { url } = signin.next(SignInInput::Start).await else {
         panic!("expected the browser")
@@ -351,47 +330,8 @@ async fn a_loopback_sign_in_again_ends_done_without_a_review() {
 }
 
 #[tokio::test]
-async fn a_device_code_sign_in_again_ends_done_without_a_review() {
-    let rig = Rig::new(SignInFlow::DeviceCode, true).await;
-    let mut signin = rig.provider.sign_in(again()).expect("sign in");
-    let SignInStep::ShowCode { user_code, .. } = signin.next(SignInInput::Start).await else {
-        panic!("expected a code")
-    };
-    rig.issuer.approve_device(&user_code.0);
-    rig.advance(2);
-    let step = until_settled(&mut signin, 5).await;
-    assert!(matches!(step, SignInStep::Done(_)), "{step:?}");
-}
-
-#[tokio::test]
-async fn a_denied_device_code_cancels_and_an_expired_one_times_out() {
-    let rig = Rig::new(SignInFlow::DeviceCode, true).await;
-    let mut signin = rig.provider.sign_in(start()).expect("sign in");
-    let SignInStep::ShowCode { user_code, .. } = signin.next(SignInInput::Start).await else {
-        panic!("expected a code")
-    };
-    rig.issuer.deny_device(&user_code.0);
-    rig.advance(2);
-    assert_eq!(
-        until_settled(&mut signin, 5).await,
-        SignInStep::Failed(SignInFault::Cancelled)
-    );
-
-    let mut late = rig.provider.sign_in(start()).expect("sign in");
-    assert!(matches!(
-        late.next(SignInInput::Start).await,
-        SignInStep::ShowCode { .. }
-    ));
-    rig.advance(10_000);
-    assert_eq!(
-        late.next(SignInInput::Poll).await,
-        SignInStep::Failed(SignInFault::TimedOut)
-    );
-}
-
-#[tokio::test]
 async fn a_graph_that_answers_5xx_ends_the_sign_in_unreachable_and_it_stays_over() {
-    let rig = Rig::new(SignInFlow::Loopback, true).await;
+    let rig = Rig::new(true).await;
     let mut signin = rig.provider.sign_in(start()).expect("sign in");
     let SignInStep::OpenBrowser { url } = signin.next(SignInInput::Start).await else {
         panic!("expected the browser")

@@ -6,7 +6,7 @@ use porter_core::{Audience, UnixSeconds};
 use porter_fake_servers::browser::split_loopback;
 use porter_fake_servers::http::{Request, Scheme, send};
 use porter_fake_servers::{FakeIssuer, IssuerHandle, Running, shipped};
-use porter_families::{MicrosoftEnv, MicrosoftProvider, SignInFlow};
+use porter_families::{MicrosoftEnv, MicrosoftProvider};
 use porter_http::{Header, Http, HttpError, HttpRequest, HttpResponse, Status};
 use porter_oauth::ClientRegistry;
 use porter_provider::{
@@ -153,7 +153,7 @@ pub fn client(issuer: &IssuerHandle) -> ClientEntry {
 }
 
 impl Rig {
-    pub async fn new(flow: SignInFlow, with_client: bool) -> Self {
+    pub async fn new(with_client: bool) -> Self {
         let issuer = FakeIssuer::start().await.expect("issuer");
         let graph = Arc::new(Graph {
             issuer: (*issuer).clone(),
@@ -177,7 +177,6 @@ impl Rig {
             ClientRegistry::layered(ClientsFile { clients }, ClientsFile::default()),
         )
         .with_channel(ClientChannel::Development)
-        .with_flow(flow)
         .with_poll_slice(Duration::from_millis(20))
         .with_clock(Arc::new(move || {
             UnixSeconds(ticking.load(Ordering::SeqCst))

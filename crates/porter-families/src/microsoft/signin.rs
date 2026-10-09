@@ -1,25 +1,26 @@
-//! The Microsoft sign-in conversation: PKCE through a loopback redirect, or a device code, then
-//! one Graph read to learn the address and what the tenant allows, then a review.
+//! The Microsoft sign-in conversation: PKCE through a loopback redirect in the person's browser,
+//! then one Graph read to learn the address and what the tenant allows, then a review. (There
+//! is no device-code path: nothing here can tell that no browser is available, because the host
+//! opens the page and a failure to open it is not reported back.)
 //!
-//! The host feeds `Start`, then `Poll` until the browser (or the other device) has answered,
-//! then `Confirm`. `Cancel` ends it at any step and frees the listeners. Signing in again
-//! (`SignInMode::Reauthenticate`) has no review: it is `Done` after the Graph read.
+//! The host feeds `Start`, then `Poll` until the browser has answered, then `Confirm`. `Cancel`
+//! ends it at any step and frees the listeners. Signing in again (`SignInMode::Reauthenticate`)
+//! has no review: it is `Done` after the Graph read.
 
-use super::env::{MicrosoftEnv, SignInFlow};
+use super::env::MicrosoftEnv;
 use super::graph::{Found, probe};
 use super::scopes::{GRAPH_DEFAULT, graph_only, scopes_for};
 use super::{declared_kinds, graph_origin, imap_origin};
 use porter_core::capability::{Capability, CapabilityKind, Offered};
-use porter_core::sheet::{SignInFault, SignInInput, UserCode};
+use porter_core::sheet::{SignInFault, SignInInput};
 use porter_core::{
     AccountLabel, Credential, EndpointUrl, Family, LoginName, Offer, Restriction, SecretPurpose,
-    ServiceEndpoint, TenantConsent, Tls, UnixSeconds, WebUrl,
+    ServiceEndpoint, TenantConsent, Tls, WebUrl,
 };
 use porter_http::Http;
 use porter_oauth::{
-    AuthCode, DeviceCodeResponse, DeviceFault, DevicePoll, ExchangeFault, LoopbackFault,
-    LoopbackServer, OAuthState, Pkce, TokenResponse, authorize_url, endpoints_of,
-    exchange_code_scoped, poll_device, redeem_scope, refresh_scoped, request_device_code,
+    AuthCode, ExchangeFault, LoopbackFault, LoopbackServer, OAuthState, Pkce, TokenResponse,
+    authorize_url, endpoints_of, exchange_code_scoped, redeem_scope, refresh_scoped,
 };
 use porter_provider::{
     ClientEntry, Issuer, IssuerEndpoints, ProviderSpec, SignIn, SignInMode, SignInStart,
@@ -27,8 +28,6 @@ use porter_provider::{
 };
 use tokio::task::JoinHandle;
 
-/// Seconds a device flow is slowed by a `slow_down` answer (RFC 8628 section 3.5).
-const SLOW_DOWN_SECONDS: i64 = 5;
 /// Exchange Online's SMTP submission server, which the file has no row for.
 const SMTP_ORIGIN: &str = "smtp://smtp.office365.com:587";
 
@@ -55,8 +54,6 @@ enum Phase {
     Fresh,
     /// The browser is on its way back to the loopback listener.
     Browser(Box<Browser>),
-    /// The person is typing a code on another device.
-    Device(Box<Device>),
     /// Everything is found; the person reviews it.
     Review(Box<Signed>),
     /// Done, failed or cancelled.
@@ -88,15 +85,6 @@ struct Browser {
     wait: Task<Result<AuthCode, LoopbackFault>>,
 }
 
-#[derive(Debug)]
-struct Device {
-    grant: Grant,
-    code: DeviceCodeResponse,
-    interval: i64,
-    due: UnixSeconds,
-    expires: UnixSeconds,
-}
-
 impl<H> MicrosoftSignIn<H> {
     pub(super) fn new(spec: ProviderSpec, env: MicrosoftEnv<H>, start: SignInStart) -> Self {
         Self {
@@ -117,7 +105,6 @@ impl<H: Http + 'static> SignIn for MicrosoftSignIn<H> {
         let step = match phase {
             Phase::Fresh => self.begin().await,
             Phase::Browser(browser) => self.await_browser(*browser).await,
-            Phase::Device(device) => self.await_device(*device).await,
             Phase::Review(signed) => self.review_or_done(*signed, input),
             Phase::Over => Err(SignInFault::Cancelled),
         };
@@ -145,10 +132,7 @@ impl<H: Http + 'static> MicrosoftSignIn<H> {
             scopes: scopes_for(&declared_kinds(&self.spec)),
             client,
         };
-        match self.env.flow {
-            SignInFlow::Loopback => self.begin_loopback(grant).await,
-            SignInFlow::DeviceCode => self.begin_device(grant).await,
-        }
+        self.begin_loopback(grant).await
     }
 
     async fn begin_loopback(&mut self, grant: Grant) -> Step {
@@ -177,32 +161,6 @@ impl<H: Http + 'static> MicrosoftSignIn<H> {
         Ok(SignInStep::OpenBrowser { url })
     }
 
-    async fn begin_device(&mut self, grant: Grant) -> Step {
-        let code = request_device_code(
-            &*self.env.http,
-            &grant.endpoints,
-            &grant.client,
-            &grant.scopes.join(" "),
-        )
-        .await
-        .map_err(device_fault)?;
-        let url =
-            EndpointUrl::parse(&code.verification_uri).map_err(|_| SignInFault::Unreadable)?;
-        let now = (self.env.clock)();
-        let step = SignInStep::ShowCode {
-            user_code: UserCode(code.user_code.clone()),
-            url,
-        };
-        self.phase = Phase::Device(Box::new(Device {
-            interval: i64::from(code.interval.max(1)),
-            due: UnixSeconds(now.0 + i64::from(code.interval.max(1))),
-            expires: UnixSeconds(now.0 + i64::from(code.expires_in)),
-            grant,
-            code,
-        }));
-        Ok(step)
-    }
-
     async fn await_browser(&mut self, mut browser: Browser) -> Step {
         let arrived = tokio::time::timeout(self.env.poll_slice, &mut browser.wait.0).await;
         let code = match arrived {
@@ -228,39 +186,6 @@ impl<H: Http + 'static> MicrosoftSignIn<H> {
         .await
         .map_err(exchange_fault)?;
         self.conclude(grant, tokens).await
-    }
-
-    async fn await_device(&mut self, mut device: Device) -> Step {
-        tokio::time::sleep(self.env.poll_slice).await;
-        let now = (self.env.clock)();
-        if now >= device.expires {
-            return Err(SignInFault::TimedOut);
-        }
-        if now < device.due {
-            return self.waiting(Phase::Device(Box::new(device)));
-        }
-        let polled = poll_device(
-            &*self.env.http,
-            &device.grant.endpoints,
-            &device.grant.client,
-            &device.code,
-        )
-        .await;
-        device.due = UnixSeconds(now.0 + device.interval);
-        match polled {
-            Ok(DevicePoll::Pending) | Err(ExchangeFault::Unreachable) => {
-                self.waiting(Phase::Device(Box::new(device)))
-            }
-            Ok(DevicePoll::SlowDown) => {
-                device.interval += SLOW_DOWN_SECONDS;
-                device.due = UnixSeconds(now.0 + device.interval);
-                self.waiting(Phase::Device(Box::new(device)))
-            }
-            Ok(DevicePoll::Approved(tokens)) => self.conclude(device.grant, tokens).await,
-            Ok(DevicePoll::Denied) => Err(SignInFault::Cancelled),
-            Ok(DevicePoll::Expired) => Err(SignInFault::TimedOut),
-            Err(fault) => Err(exchange_fault(fault)),
-        }
     }
 
     /// The tokens are in: read the account, and offer the review.
@@ -397,15 +322,6 @@ fn exchange_fault(fault: ExchangeFault) -> SignInFault {
         ExchangeFault::Refused => SignInFault::Refused,
         ExchangeFault::Unreachable => SignInFault::Unreachable,
         ExchangeFault::Unreadable => SignInFault::Unreadable,
-    }
-}
-
-fn device_fault(fault: DeviceFault) -> SignInFault {
-    match fault {
-        DeviceFault::Unsupported => SignInFault::Unreadable,
-        DeviceFault::Denied => SignInFault::Cancelled,
-        DeviceFault::Expired => SignInFault::TimedOut,
-        DeviceFault::Exchange(inner) => exchange_fault(inner),
     }
 }
 

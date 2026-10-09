@@ -4,7 +4,7 @@
 //! [`GoogleEnv::system`] is what accountd and an app hosting porter in process use.
 //!
 //! Google's installed-app flow is the loopback redirect only: its device flow serves a short
-//! list of scopes that has none of Calendar, People or Tasks, so there is no `SignInFlow`.
+//! list of scopes that has none of Calendar, People or Tasks, so there is no device-code path.
 
 use crate::env_common::{ClientFiles, Clock, Random, clients_now, system_now, system_random};
 use porter_core::EndpointUrl;
