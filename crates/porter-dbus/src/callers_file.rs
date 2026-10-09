@@ -24,9 +24,37 @@ impl std::fmt::Display for CallerFileError {
 
 impl std::error::Error for CallerFileError {}
 
+/// Text that is not a caller table: not TOML, or a row that names no valid app, role or unit.
+/// `message` is the reader's own account of it, with the line and column.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CallerTomlError {
+    /// What is wrong with the text.
+    pub message: String,
+}
+
+impl std::fmt::Display for CallerTomlError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for CallerTomlError {}
+
+impl CallerTomlError {
+    /// The same error as the failure of the file at `path`.
+    pub fn in_file(self, path: &Path) -> CallerFileError {
+        CallerFileError {
+            path: path.to_owned(),
+            message: self.message,
+        }
+    }
+}
+
 /// The table in TOML text: `[[caller]]` rows of `app`, optional `unit` and `role`.
-pub fn table_from_toml(text: &str) -> Result<CallerTable, String> {
-    toml::from_str(text).map_err(|e| e.to_string())
+pub fn table_from_toml(text: &str) -> Result<CallerTable, CallerTomlError> {
+    toml::from_str(text).map_err(|e| CallerTomlError {
+        message: e.to_string(),
+    })
 }
 
 /// The table in the file `path`; a file that is not there is an empty table.
@@ -36,7 +64,7 @@ pub fn table_from_file(path: &Path) -> Result<CallerTable, CallerFileError> {
         message,
     };
     match std::fs::read_to_string(path) {
-        Ok(text) => table_from_toml(&text).map_err(failed),
+        Ok(text) => table_from_toml(&text).map_err(|e| e.in_file(path)),
         Err(e) if e.kind() == ErrorKind::NotFound => Ok(CallerTable::default()),
         Err(e) => Err(failed(e.to_string())),
     }
@@ -111,6 +139,18 @@ mod tests {
         assert!(load_callers(&bad, &dir.join("nope.toml")).is_err());
         assert!(table_from_toml("[[caller]]\napp = \"not a name\"\nrole = \"app\"\n").is_err());
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn text_that_is_no_table_is_a_typed_error_that_names_a_file_when_it_came_from_one() {
+        let error = table_from_toml("[[caller]]\napp = \"not a name\"\nrole = \"app\"\n")
+            .expect_err("a bad app name");
+        assert!(!error.message.is_empty());
+        assert_eq!(error.to_string(), error.message);
+        let path = PathBuf::from("/x/callers.toml");
+        let in_file = error.clone().in_file(&path);
+        assert_eq!(in_file.path, path);
+        assert_eq!(in_file.message, error.message);
     }
 
     #[test]

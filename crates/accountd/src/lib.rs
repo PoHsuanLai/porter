@@ -98,7 +98,9 @@ pub use core::{Host, Options, serve, serve_with};
 pub use errors::RefusedError;
 pub use keys::{KeyDesk, SecretsDesk, sealed_key};
 pub use launchers::{DEFAULT_BOUND, DEFAULT_TICK, LoginTiming};
-pub use porter_dbus::{CallerFileError, load_callers, table_from_file, table_from_toml};
+pub use porter_dbus::{
+    CallerFileError, CallerTomlError, load_callers, table_from_file, table_from_toml,
+};
 pub use provider_names::ProviderNames;
 pub use relay::RelayRoots;
 pub use settings::settings_path;
