@@ -2280,3 +2280,30 @@ Not compiled by the lane. First places to look if the gate fails: `#[error("{}: 
 **Look here first if it does not compile.** `crates/porter-turns/src/local.rs` (`run_chat`'s `Send` bounds on the two closures; `TurnSink: Send`), `crates/inferd/src/runner.rs` (`Job::local()` builds a `LocalTurns<Supervised>`; `Supervised: Sync` for the borrow across the await), `crates/inferd/src/structured.rs` and `structured/ai.rs` (the `limits` module re-exports), `crates/porter-client/src/engines/turn.rs` (the `send` closure's parameter type is inferred from `UnboundedSender::send`), the new manifests (re-lock: `porter-router`, `porter-turns`, and `porter-turns` under porter-client).
 
 **Open.** (1) `runner::Turns` could become `porter_turns::Turns<H>` over a trait for the hosted and speech turns once `Cloud` has a seam; not done, it is a redesign. (2) `cloud::wire`'s body shaping and `porter-client`'s `Shaped` are the same code twice; both could use one in porter-turns. (3) L5 (constructors and `#[non_exhaustive]`) for the types listed under layers-router.
+
+## Lane stoker-repin (stoker 916da297 to 0c5f956e5848112c70262f5f95d9257edca18271, base `08995e4`, 2026-10-10)
+
+**Not compiled.** No-build lane: only `cargo fmt --all` was run. Cargo.lock is the coordinator's (every stoker git source changes rev; `model-provider` gains no new dependency this lane knows of, check the lock diff).
+
+**Stoker revs.** From `916da297d564e35cee9302d2d1e6607ae45962a7` to `0c5f956e5848112c70262f5f95d9257edca18271`: all 16 stoker entries of the root `Cargo.toml`. Older FINDINGS lines that record the old pin (lane choice-scores) are history and stay.
+
+**What changed in stoker that porter sees (read at the sha).**
+- `ProviderError::{PaymentRequired(ProviderDetail), AuthRejected(ProviderDetail)}`; a bare 401 is still `Unauthorized`; `retry_class` is `Never` for both. `ProviderDetail { status, message }` is redacted and cut to 240 characters.
+- `Constraint::JsonObject` and `OutputShape::JsonObject` (`model-extract` picks it after `JsonSchema` and `Gbnf`, only for an object-shaped reply, puts the schema in the system prompt and still validates). `enforceable(flavor)` lists it for every flavor.
+- `cua_parse::SCROLL_PIXELS_RULE`; catalogue entries `holo-3.1-9b`, `holo4-35b-a3b-fp8` (both `json_schema`), `deepseek-v4-pro` (`json_object`), `muse-spark-1.3-contributor`.
+- `speech-vad-silero`: `SileroConfig.runtime: OnnxRuntimePath`, `OrtInfer::load(dylib, model)`, no env read. **Porter does not depend on this crate** (grep for silero, speech-vad and ORT_DYLIB_PATH finds nothing in code), so there is nothing to pass and no `Config::from_env` change; the person's `ORT_DYLIB_PATH` is unaffected. (inferd's speech host takes its libraries from `speech_host_libs`, a different path.)
+- Internal only, no porter change: `cua-parse` tools take a `ToolDialect` instead of a `holo` bool, Holo's `finish` reads `text` when there is no `summary`, `cua-vendors` `AnthropicTool`, tests moved to `tests/it`.
+
+**Changes.**
+- `ModelError` (porter-infer, serde `kind`) gains `PaymentRequired` ("the account needs payment") and `SignInRefused` ("the company refused the sign-in"), wire slugs `payment_required` and `sign_in_refused`. The provider's own message stays out of the error (it is in the logs of stoker's side only). **Consumer break:** docket's exhaustive match on `ModelError` needs the two arms (as for `OnlyThought` before). I did not mark the enum `#[non_exhaustive]` because inferd's exhaustive `Failure::of_model` would then need a wildcard; say if you want it.
+- `porter_bridge::reply::model_error`: `PaymentRequired(_)` to `PaymentRequired`, `AuthRejected(_)` to `SignInRefused`. Row each in `every_provider_error_is_a_model_error_the_app_can_act_on`; slug rows in `porter-infer` `frames.rs`.
+- inferd `agent::fail::Failure::of_model`: both are `Cause::Upstream` with the same plain sentences (like `Unauthorized`).
+- porter-router `catalog::llm_cap`: `StructuredOutput` is claimed for `JsonSchema` or `JsonObject`, since a JSON-object model answers a shape through `model-extract`.
+- porter-turns `structured` tests: `ran` split into `ran` and `ran_on(model, ...)`; new test `a_model_that_takes_only_a_json_object_gets_the_schema_in_the_prompt_and_is_still_checked` (first reply invalid, repaired; request output is `JsonObject`, schema text in a leading system message).
+- porter-router `catalog` tests: the shipped list also names `holo-3.1-9b` and `holo4-35b-a3b-fp8`.
+
+**Exhaustive matches touched:** `porter_bridge::reply::model_error` (ProviderError), `inferd::agent::fail::Failure::of_model` (ModelError). No exhaustive match on `Constraint` or `OutputShape` exists in porter (only `contains`, and `scores.rs` matches `Choice` with a fallthrough).
+
+**Open.** The unchecked path (`porter_bridge::request::chat_turn_for`, used when a request has tools, the schema is not one the vocabulary can say, or the model has no caps) still sends `OutputShape::JsonSchema` for a `ReplyShape::Json`; `Target` carries no capabilities, so it cannot know a model takes only a JSON object. A `deepseek-v4-pro`-like model with tools plus a JSON shape would be sent a schema it cannot take. Fixing it means a `Target` field for the output constraints.
+
+**Look here first if it does not compile.** `crates/porter-turns/src/structured/tests.rs` (`caps.output` is a `BTreeSet`, collected from `std::iter::once`; `LocalModel` comes from `use super::*`), `crates/porter-bridge/src/reply/tests.rs` (`sp::ProviderDetail::new(status: u16, &str)`).
