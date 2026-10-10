@@ -307,7 +307,7 @@ fn the_cycle_counts_say_which_cycle_began_after_a_moment() {
     let dataset = name("a1/pim");
     let handle = hub.register(dataset.clone(), Access::default());
     assert_eq!(hub.cycles(&name("a1/none")), None);
-    assert_eq!(hub.names(), [dataset.clone()]);
+    assert_eq!(hub.names(), std::slice::from_ref(&dataset));
     let counts = |hub: &Hub| hub.cycles(&dataset).map(|c| (c.begun, c.ended));
     assert_eq!(counts(&hub), Some((0, 0)));
     handle.cycle_begun();

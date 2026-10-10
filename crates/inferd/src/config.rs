@@ -102,7 +102,7 @@ impl Dirs {
         let xdg = Xdg::new(var);
         let dir = |name: &str, fallback: &str| {
             xdg.dir(name, fallback)
-                .map_err(|PathError::NoHome| ConfigError::NoDirs)
+                .map_err(|_: PathError| ConfigError::NoDirs)
         };
         let config = dir("XDG_CONFIG_HOME", ".config")?;
         let data = dir("XDG_DATA_HOME", ".local/share")?;

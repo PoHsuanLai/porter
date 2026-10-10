@@ -34,7 +34,8 @@ BUILDS=(
   # with the defaults on (docket, almanac, cua and their daemons too). The dbus-plus-infer set
   # without socket is the one docket's inferd build broke (see the header).
   "porter-client (no features: mailo) :: -p porter-client --no-default-features"
-  "porter-client (dbus: detent) :: -p porter-client --no-default-features --features dbus"
+  "porter-client (dbus only) :: -p porter-client --no-default-features --features dbus"
+  "porter-client (dbus,infer,lending: detent's Settings) :: -p porter-client --no-default-features --features dbus,infer,lending"
   "porter-client (dbus,infer: inferd's build as docket makes it) :: -p porter-client --no-default-features --features dbus,infer"
   "porter-client (dbus with defaults: inferd, syncd, docket, almanac, cua) :: -p porter-client --features dbus"
   "porter-client (socket: the other desktops and macOS) :: -p porter-client --no-default-features --features socket"

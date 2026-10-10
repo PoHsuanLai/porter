@@ -341,6 +341,8 @@ fn provider_fault(error: porter_provider::ProviderError) -> SignInFault {
         E::Forbidden => SignInFault::Forbidden,
         E::Unreachable => SignInFault::Unreachable,
         E::Unreadable => SignInFault::Unreadable,
+        // A fault this family does not know yet is read as an answer it cannot read.
+        _ => SignInFault::Unreadable,
     }
 }
 
