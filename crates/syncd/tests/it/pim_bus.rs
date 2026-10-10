@@ -27,7 +27,7 @@ use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 use syncd::datasets::pim::{
     AccountdUnavailable, COLOR, ClientGrants, DISPLAYNAME, PimConfig, PimGrants, PimKind,
@@ -129,10 +129,12 @@ fn read(path: &std::path::Path) -> Option<String> {
     std::fs::read_to_string(path).ok()
 }
 
-/// `accounts.grants` as the supervisor sees accountd, which a test can make unreachable.
+/// `accounts.grants` as the supervisor sees accountd, which a test can make unreachable, and
+/// which counts the questions it is asked (a look asks once per kind).
 struct Switch {
     inner: ClientGrants<DbusTransport>,
     up: Arc<AtomicBool>,
+    asked: Arc<AtomicUsize>,
 }
 
 impl PimGrants for Switch {
@@ -140,6 +142,7 @@ impl PimGrants for Switch {
         &self,
         kind: PimKind,
     ) -> Result<Vec<porter_core::Candidate>, AccountdUnavailable> {
+        self.asked.fetch_add(1, Ordering::SeqCst);
         match self.up.load(Ordering::Relaxed) {
             true => self.inner.granted(kind).await,
             false => Err(AccountdUnavailable),
@@ -157,6 +160,7 @@ struct Rig {
     accounts: Arc<Accounts<DbusTransport>>,
     remove_account: Remove,
     accountd_up: Arc<AtomicBool>,
+    asked: Arc<AtomicUsize>,
     grants: Vec<GrantId>,
     supervisor: tokio::task::JoinHandle<()>,
     _network: watch::Sender<Network>,
@@ -164,6 +168,18 @@ struct Rig {
 }
 
 impl Rig {
+    /// Waits until the supervisor has made two whole looks that began after this call: a look
+    /// asks once per kind, so the look in flight may have asked some already, the next is whole,
+    /// and one more question shows it has ended. It waits for looks, not for a time, so a
+    /// loaded machine that looks late is waited for, and an idle one is not kept waiting.
+    async fn after_two_looks(&self) {
+        let wanted = self.asked.load(Ordering::SeqCst) + 2 * PimKind::ALL.len() + 1;
+        eventually("the supervisor looks twice", || {
+            self.asked.load(Ordering::SeqCst) >= wanted
+        })
+        .await;
+    }
+
     fn account_dir(&self) -> PathBuf {
         self.mirrors.join(SEGMENT)
     }
@@ -327,11 +343,13 @@ async fn rig(with_grants: bool) -> Rig {
         owners: Access::default(),
     };
     let accountd_up = Arc::new(AtomicBool::new(true));
+    let asked = Arc::new(AtomicUsize::new(0));
     let supervisor = PimSupervisor::new(
         wiring,
         Switch {
             inner: ClientGrants::new(Arc::clone(&accounts)),
             up: Arc::clone(&accountd_up),
+            asked: Arc::clone(&asked),
         },
         PimConfig {
             rescan: Duration::from_millis(300),
@@ -346,6 +364,7 @@ async fn rig(with_grants: bool) -> Rig {
         accounts,
         remove_account,
         accountd_up,
+        asked,
         grants,
         supervisor,
         _network: network_up,
@@ -662,7 +681,7 @@ async fn account_removed_removes_the_mirror_and_it_does_not_come_back() {
     .await;
     assert!(names(&rig).is_empty(), "{:?}", names(&rig));
     // The supervisor sees no grant any more and starts nothing again.
-    tokio::time::sleep(Duration::from_millis(1200)).await;
+    rig.after_two_looks().await;
     assert!(!rig.account_dir().exists());
     assert!(names(&rig).is_empty());
     let journals = rig
@@ -686,7 +705,7 @@ async fn a_revoked_grant_stops_and_removes_the_mirror_but_an_unreachable_account
 
     // accountd cannot be asked: nothing is stopped or removed, and mirroring goes on.
     rig.accountd_up.store(false, Ordering::Relaxed);
-    tokio::time::sleep(Duration::from_millis(900)).await;
+    rig.after_two_looks().await;
     assert_eq!(names(&rig).len(), 3);
     rig.nextcloud
         .put_item("contacts", "c3.vcf", &card("c3", "Alan Turing"));
@@ -710,7 +729,7 @@ async fn a_revoked_grant_stops_and_removes_the_mirror_but_an_unreachable_account
 #[tokio::test(flavor = "multi_thread")]
 async fn with_no_grant_nothing_is_mirrored_and_the_server_is_not_even_asked() {
     let rig = rig(false).await;
-    tokio::time::sleep(Duration::from_millis(1000)).await;
+    rig.after_two_looks().await;
     assert!(!rig.account_dir().exists());
     assert!(names(&rig).is_empty());
     assert_eq!(rig.requests("REPORT") + rig.requests("PROPFIND"), 0);
