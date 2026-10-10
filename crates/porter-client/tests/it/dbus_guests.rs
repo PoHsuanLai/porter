@@ -37,6 +37,7 @@ struct Asked {
 struct Script {
     guests: Vec<(String, Details)>,
     candidates: Vec<(String, Details)>,
+    places: Vec<(String, Details)>,
     /// A refusal for `AnswerGuest`: the error's name after the prefix, and the sentence.
     refuse_answer: Option<(&'static str, &'static str)>,
     /// A caller the daemon does not let ask: the bus's `AccessDenied` with this text.
@@ -139,6 +140,10 @@ impl FakeInferd {
         self.script.candidates.clone()
     }
 
+    async fn places(&self) -> Vec<(String, Details)> {
+        self.script.places.clone()
+    }
+
     async fn add_tailnet_computer(&self, node: String) -> String {
         self.asked.lock().expect("lock").added_nodes.push(node);
         "computer:studio".to_owned()
@@ -187,6 +192,8 @@ struct World {
     daemon: zbus::Connection,
     asked: Arc<Mutex<Asked>>,
     accounts: Accounts<DbusTransport>,
+    /// A second link, for the calls that also say which rows were left out.
+    transport: DbusTransport,
 }
 
 impl World {
@@ -210,11 +217,13 @@ impl World {
             .await
             .expect("own the name");
         let accounts = Accounts::over(DbusTransport::over(bus.connect().await));
+        let transport = DbusTransport::over(bus.connect().await);
         Self {
             _bus: bus,
             daemon,
             asked,
             accounts,
+            transport,
         }
     }
 
@@ -268,26 +277,66 @@ async fn guests_decode_into_typed_rows() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_guest_row_that_says_less_than_promised_is_malformed_not_a_panic() {
+async fn a_guest_row_that_says_less_than_promised_is_dropped_and_the_rest_come_back() {
     for bad in [
         guest_row("nPI", "pi", "sulking", 1),
         ("not a node".to_owned(), guest_row("x", "pi", "asking", 1).1),
         ("nPI".to_owned(), details(vec![("name", text("pi"))])),
     ] {
         let world = World::start(Script {
-            guests: vec![bad],
+            guests: vec![
+                guest_row("nBOX", "box", "denied", 5),
+                bad,
+                guest_row("nOLD", "old-laptop", "approved", 7),
+            ],
             ..Script::default()
         })
         .await;
+        let names: Vec<_> = world
+            .accounts
+            .guests()
+            .await
+            .expect("guests")
+            .into_iter()
+            .map(|row| row.name)
+            .collect();
+        assert_eq!(names, ["box", "old-laptop"]);
+        let listed = world.transport.list_guests().await.expect("listed");
+        assert_eq!(listed.rows.len(), 2);
         assert!(
-            matches!(
-                world.accounts.guests().await,
-                Err(ClientError::Transport(TransportError::Malformed(_)))
-            ),
+            matches!(listed.skipped.as_slice(), [TransportError::Malformed(_)]),
             "{:?}",
-            world.accounts.guests().await
+            listed.skipped
         );
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_candidate_row_that_says_less_than_promised_is_dropped_and_the_rest_come_back() {
+    let world = World::start(Script {
+        candidates: vec![
+            candidate_row("nPI", "pi", true),
+            ("nBAD".to_owned(), details(vec![("name", text("bad"))])),
+            candidate_row("nBOX", "box", false),
+        ],
+        ..Script::default()
+    })
+    .await;
+    let names: Vec<_> = world
+        .accounts
+        .candidates()
+        .await
+        .expect("candidates")
+        .into_iter()
+        .map(|row| row.name)
+        .collect();
+    assert_eq!(names, ["pi", "box"]);
+    let listed = world.transport.list_candidates().await.expect("listed");
+    assert!(
+        matches!(listed.skipped.as_slice(), [TransportError::Malformed(_)]),
+        "{:?}",
+        listed.skipped
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -401,6 +450,66 @@ mod computers {
     use super::*;
     use porter_client::{ComputerName, ComputerReach, NewComputer, NewComputerModel};
     use porter_core::{ModelId, SecretText};
+
+    fn place_row(id: &str, kind: &str, name: &str) -> (String, Details) {
+        (
+            id.to_owned(),
+            details(vec![
+                ("kind", text(kind)),
+                ("name", text(name)),
+                (
+                    "models",
+                    OwnedValue::try_from(Value::new(vec![(
+                        "qwen3-8b".to_owned(),
+                        "Qwen3 8B".to_owned(),
+                    )]))
+                    .expect("models"),
+                ),
+                (
+                    "ready",
+                    OwnedValue::try_from(Value::Bool(true)).expect("bool"),
+                ),
+            ]),
+        )
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_place_row_that_says_less_than_promised_is_dropped_and_the_rest_come_back() {
+        // "computer:lab server" is no computer name (a name is a slug); "computer:kit" has no
+        // kind. Neither takes the good places with it.
+        let world = World::start(Script {
+            places: vec![
+                place_row("this-computer", "this_computer", "This computer"),
+                place_row("computer:lab server", "own_computer", "Lab server"),
+                (
+                    "computer:kit".to_owned(),
+                    details(vec![("name", text("Kit"))]),
+                ),
+                place_row("computer:lab", "own_computer", "Lab"),
+            ],
+            ..Script::default()
+        })
+        .await;
+        let ids: Vec<_> = world
+            .accounts
+            .places()
+            .await
+            .expect("places")
+            .iter()
+            .map(|row| row.id.as_str().to_owned())
+            .collect();
+        assert_eq!(ids, ["this-computer", "computer:lab"]);
+        let listed = world.transport.list_places().await.expect("listed");
+        assert_eq!(listed.rows.len(), 2);
+        assert!(
+            matches!(
+                listed.skipped.as_slice(),
+                [TransportError::Malformed(_), TransportError::Malformed(_)]
+            ),
+            "{:?}",
+            listed.skipped
+        );
+    }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn a_tailnet_computer_is_added_by_node_and_answers_its_place() {

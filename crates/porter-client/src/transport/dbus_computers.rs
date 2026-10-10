@@ -1,9 +1,9 @@
 //! The computers and guests of inferd on the session bus (`Inference1.Guests`, `AnswerGuest`,
 //! `ForgetGuest`, `Candidates`, `AddTailnetComputer`, `AddComputer`, `RemoveComputer`): each
-//! row decoded into a typed one, and a row that does not say what the interface promises is
-//! `Malformed`, never a panic.
+//! row decoded into a typed one. A row that does not say what the interface promises is left out
+//! of the list and named in [`Rows::skipped`], never a panic and never the whole call failing.
 
-use super::dbus::{DbusTransport, bus_error};
+use super::dbus::{DbusTransport, Rows, bus_error};
 use crate::error::TransportError;
 use porter_core::lending::{
     Approval, CandidateModel, ComputerCandidate, GuestAnswer, GuestRow, RowState,
@@ -21,14 +21,16 @@ impl DbusTransport {
             .map_err(|e| bus_error(&e))
     }
 
-    pub(super) async fn list_guests(&self) -> Result<Vec<GuestRow>, TransportError> {
+    /// `Inference1.Guests` row by row: a row that is malformed is in `skipped`, the rest are
+    /// `rows` (`Transport::guests` gives the rows alone).
+    pub async fn list_guests(&self) -> Result<Rows<GuestRow>, TransportError> {
         let rows = self
             .inference()
             .await?
             .guests()
             .await
             .map_err(|e| bus_error(&e))?;
-        rows.into_iter().map(guest_row).collect()
+        Ok(Rows::decode(rows, guest_row))
     }
 
     pub(super) async fn send_guest_answer(
@@ -51,14 +53,16 @@ impl DbusTransport {
             .map_err(|e| bus_error(&e))
     }
 
-    pub(super) async fn list_candidates(&self) -> Result<Vec<ComputerCandidate>, TransportError> {
+    /// `Inference1.Candidates` row by row: a row that is malformed is in `skipped`, the rest are
+    /// `rows` (`Transport::candidates` gives the rows alone).
+    pub async fn list_candidates(&self) -> Result<Rows<ComputerCandidate>, TransportError> {
         let rows = self
             .inference()
             .await?
             .candidates()
             .await
             .map_err(|e| bus_error(&e))?;
-        rows.into_iter().map(candidate_row).collect()
+        Ok(Rows::decode(rows, candidate_row))
     }
 }
 

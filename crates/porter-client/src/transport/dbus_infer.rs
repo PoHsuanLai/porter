@@ -1,6 +1,6 @@
 //! inferd on the session bus (feature `infer`): `Inference1.Open` and `Prepare`.
 
-use super::dbus::{DbusTransport, bus_error, slug};
+use super::dbus::{DbusTransport, Rows, bus_error, slug};
 use super::dbus_session::DbusSession;
 use crate::error::TransportError;
 use porter_core::{DataClass, ModelId, Need, Permille, Tier};
@@ -101,12 +101,14 @@ impl DbusTransport {
 }
 
 impl DbusTransport {
-    pub(super) async fn list_places(&self) -> Result<Vec<PlaceRow>, TransportError> {
+    /// `Inference1.Places` row by row: a row that is malformed is in `skipped`, the rest are
+    /// `rows` (`Transport::places` gives the rows alone).
+    pub async fn list_places(&self) -> Result<Rows<PlaceRow>, TransportError> {
         let proxy = InferenceProxy::new(self.connection())
             .await
             .map_err(|e| bus_error(&e))?;
         let rows = proxy.places().await.map_err(|e| bus_error(&e))?;
-        rows.into_iter().map(place_row).collect()
+        Ok(Rows::decode(rows, place_row))
     }
 }
 
