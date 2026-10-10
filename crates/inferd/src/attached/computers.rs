@@ -501,11 +501,38 @@ fn usable_key(key: &SecretText) -> bool {
     !text.trim().is_empty() && text.len() <= LONGEST_KEY && !text.contains(['\n', '\r', '\0'])
 }
 
+/// `base` if nothing is `taken` by that name, else `base-2`, `base-3`, ... the first free: the
+/// names go in the order the computers were added, and the one chosen is stored, so it never
+/// changes.
+fn free_name(base: ComputerName, taken: impl Fn(&str) -> bool) -> ComputerName {
+    let mut candidate = base.clone();
+    let mut n = 1_u32;
+    while taken(candidate.as_str()) {
+        n += 1;
+        let suffix = format!("-{n}");
+        let stem = &base.as_str()[..base.as_str().len().min(LONGEST_LABEL - suffix.len())];
+        candidate =
+            ComputerName::parse(&format!("{stem}{suffix}")).unwrap_or_else(|_| base.clone());
+        if candidate == base {
+            break;
+        }
+    }
+    candidate
+}
+
 #[derive(Debug)]
 struct State {
     file: AddedFile,
     by_hand: BTreeSet<ComputerName>,
     hand_models: BTreeSet<ModelId>,
+}
+
+impl State {
+    /// Whether a computer already has the name `text`, written by hand or added.
+    fn is_taken(&self, text: &str) -> bool {
+        self.file.computers.contains_key(text)
+            || self.by_hand.iter().any(|name| name.as_str() == text)
+    }
 }
 
 /// The computers Settings adds and removes: the file, the keys beside it and the engines live in
@@ -568,9 +595,15 @@ impl Computers {
             return Err(ComputerError::TooMany);
         }
         let mut state = self.state();
-        if state.by_hand.contains(&name) || state.file.computers.contains_key(name.as_str()) {
+        let identity = identity_of(&label);
+        let same_label =
+            state.file.computers.values().any(|computer| {
+                computer.node.is_none() && identity_of(&computer.label) == identity
+            });
+        if same_label || state.by_hand.contains(&name) {
             return Err(ComputerError::AlreadyThere);
         }
+        let name = free_name(name, |text| state.is_taken(text));
         let mut taken: BTreeSet<String> = state
             .hand_models
             .iter()
@@ -666,12 +699,10 @@ impl Computers {
             .computers
             .values()
             .any(|computer| computer.node.as_deref() == Some(node_text.as_str()));
-        if known_node
-            || state.by_hand.contains(&name)
-            || state.file.computers.contains_key(name.as_str())
-        {
+        if known_node {
             return Err(ComputerError::AlreadyThere);
         }
+        let name = free_name(name, |text| state.is_taken(text));
         let mut taken: BTreeSet<String> = state
             .hand_models
             .iter()
