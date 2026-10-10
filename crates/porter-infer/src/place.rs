@@ -366,6 +366,7 @@ mod tests {
             "computer:",
             "computer:Lab",
             "computer:a b",
+            "computer:lab server",
             "computer:a/b",
             "account:",
             "account:Work",
