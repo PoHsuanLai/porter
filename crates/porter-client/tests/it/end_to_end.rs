@@ -11,14 +11,7 @@ use porter_core::{AccountId, AppId, AppName, Audience, DataClass, Isolation, Nee
 use porter_fake::{FakeService, Scripted, ScriptedSheets, fake_service};
 use std::sync::Arc;
 
-type App = Accounts<
-    InProcess<
-        porter_fake::FakeProvider,
-        porter_secrets::MemorySecrets,
-        ScriptedSheets,
-        porter_fake::FixedClock,
-    >,
->;
+type App = Accounts<InProcess<FakeService>>;
 
 fn app(service: &Arc<FakeService>, name: &str) -> App {
     let id = AppId {
@@ -530,26 +523,16 @@ async fn a_typed_pop3_server_is_added_through_the_sheet_and_found_by_a_mail_need
     );
 }
 
-type FamilyApp = Accounts<
-    InProcess<
-        porter_families::FamilyProvider,
-        porter_secrets::MemorySecrets,
-        ScriptedSheets,
-        porter_fake::FixedClock,
-    >,
+type FamilyService = porter_service::AccountService<
+    porter_families::FamilyProvider,
+    porter_secrets::MemorySecrets,
+    ScriptedSheets,
+    porter_fake::FixedClock,
 >;
 
-fn app_over(
-    service: &Arc<
-        porter_service::AccountService<
-            porter_families::FamilyProvider,
-            porter_secrets::MemorySecrets,
-            ScriptedSheets,
-            porter_fake::FixedClock,
-        >,
-    >,
-    name: &str,
-) -> FamilyApp {
+type FamilyApp = Accounts<InProcess<FamilyService>>;
+
+fn app_over(service: &Arc<FamilyService>, name: &str) -> FamilyApp {
     let id = AppId {
         name: AppName::parse(name).expect("app name"),
         isolation: Isolation::Flatpak,

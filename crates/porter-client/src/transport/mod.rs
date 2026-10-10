@@ -40,7 +40,7 @@ pub use dbus::{DbusTransport, Rows};
 #[cfg(all(feature = "dbus", feature = "infer"))]
 pub use dbus_session::{DbusSession, MAX_ATTACHMENTS};
 #[cfg(feature = "in-process")]
-pub use in_process::InProcess;
+pub use in_process::{HostedCore, InProcess};
 #[cfg(feature = "infer")]
 pub use socket::SocketSession;
 pub use socket::SocketTransport;

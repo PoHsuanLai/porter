@@ -146,7 +146,7 @@ pub use tailnet_lending::{
     UnitFailure, UnitManager, UnitName,
 };
 #[cfg(feature = "in-process")]
-pub use transport::InProcess;
+pub use transport::{HostedCore, InProcess};
 #[cfg(feature = "infer")]
 pub use transport::{AnySession, InProcessSession, SessionHost, SocketSession};
 pub use transport::{AnyTransport, NoBroker, SocketTransport, Transport};
