@@ -134,8 +134,8 @@ async fn ran_on(
 ) -> Ran {
     let chat = request(shape, Vec::new());
     let base =
-        crate::bridge::chat_turn(&model, &chat, &crate::bridge::Frames::default()).expect("a turn");
-    let Shaping::Checked(checked) = shaping(&model, &chat, Limits::default()) else {
+        crate::bridge::chat_turn(model, &chat, &crate::bridge::Frames::default()).expect("a turn");
+    let Shaping::Checked(checked) = shaping(model, &chat, Limits::default()) else {
         panic!("a checked shape");
     };
     let provider = ScriptedProvider::new(vec![], scripts);
