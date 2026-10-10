@@ -2372,3 +2372,86 @@ Not compiled by the lane. First places to look if the gate fails: `#[error("{}: 
 **Open.** The names are stable per label, but a hand-added computer renamed in the file by the person is theirs to keep consistent. Settings still holds no rename for a hand-added computer.
 
 **Look here first if it does not compile.** `computers.rs`: `slug_of` (digest indexing `digest[0]` on the `GenericArray`, `Sha256::digest(&[u8])`), `free_name` (the `impl Fn(&str) -> bool` closure borrows `state`, a `MutexGuard`, shared while `state` is later mutated; the closure is dropped at once), `State::is_taken`. Tests: `restarted` in `computers/tests.rs`, `file.computers[slug]` indexing a `BTreeMap<String, _>` with `&str`.
+
+## Lane porter-daemon (the proc-root choice and the settings-file watch in one crate, base `6eff57c`, 2026-10-10)
+
+**What.** New crate `porter-daemon` (no zbus, no tokio, no environment read; deps `notify` 8 and `thiserror`): `ProcGate` (`Honour`, `Ignore`), `ProcRoot` (`System`, `Fake(dir)`, `Ignored(dir)`; `choose(gate, var_name, lookup)`, `path`, `fixture`, `into_fixture`, `notice(daemon, var)`) and `Watch::start(dir, file_name, on_change)` with `WatchError` (`CreateDir`, `Notify`). accountd, syncd and inferd choose their proc root through it.
+
+**Which gate, and why it is the strictest.** All six copies (accountd, syncd, inferd here; docket intentd and companiond; almanac memoryd) gate on the same thing: a compile-time `cfg!(feature = "test-proc-root")` of the daemon's own crate. No copy checks the path, and no copy honours the variable in a test binary that was built without the feature. The library cannot see the daemon's features, so the daemon passes `ProcGate::Honour` or `ProcGate::Ignore` from its own `cfg!`, as a `const`. Three behaviours any copy has are kept: an empty value is no value; a gated-out build reads the system's `/proc` (never the variable's path); and the gated-out build says so on standard error where it said so before (`notice` gives the line; accountd and syncd stay silent as before). No path check was added, since none of the copies had one. One difference: the lookup returns `OsString`, so a non-UTF-8 value is now honoured in a test build (before, accountd, syncd and inferd read `env::var(..).ok()`, which dropped it).
+
+**Moved, with the old paths kept for a batch.**
+- inferd: `peers::{ProcGate, ProcRoot}` is `pub use porter_daemon::{ProcGate, ProcRoot}`. Gone: `ProcGate::BUILT` (now `peers::PROC_GATE`), `ProcRoot::select(gate, Option<&str>)` (now `choose`), `ProcRoot::notice()` (now `notice("inferd", PROC_ROOT_VAR)`, the same words). `ProcRoot` is `#[non_exhaustive]`, so a match outside the crate needs `fixture()` or a wildcard.
+- accountd, syncd: `paths::proc_root(Build, Option<String>)`, `Build` and `BUILD` stay (syncd's `rescan` still takes `Build`); `proc_root` now calls `porter_daemon::ProcRoot`. New `paths::PROC_GATE`. `Config::from_env` calls `ProcRoot::choose(PROC_GATE, PROC_ROOT_VAR, |name| std::env::var_os(name)).into_fixture()`.
+- Tests: the three tables of the same rows (accountd and syncd `only_a_test_build_honours_the_proc_root_variable`, inferd's rows in `peers/tests.rs`) are one table in `porter-daemon` (`proc_root.rs`), plus the notice words. inferd keeps a one-line check that `PROC_GATE` follows the feature. The acceptance tests (`binary.rs`, `tests/it/proc_root.rs`, `dist.rs`) are untouched.
+
+**Switch-over for the other repos** (each bumps its porter `rev` to a commit with `porter-daemon`, adds `porter-daemon = { git = ".../porter", rev = ".." }` to the root `[workspace.dependencies]` and `porter-daemon = { workspace = true }` to the crate; `notify` stays in the root only if something else names it, `thiserror` is no longer needed by the file if that was its only use). The two pure files below are then deleted. No edits were made in those repos.
+
+*Proc root.* The same shape in each (intentd, memoryd): `crates/{intentd,memoryd}/src/procroot.rs` is deleted whole (the `ProcRoot`, `TestProcRoot`, `proc_root_choice`, `PROC_ROOT_VAR` and their three tests), and `PROC_ROOT_VAR` moves to the daemon file. Each daemon keeps a `const PROC_GATE` of its own feature.
+
+- docket `crates/intentd/src/lib.rs:60`
+  - before: `pub use procroot::{PROC_ROOT_VAR, ProcRoot, TestProcRoot, proc_root_choice};` (and `mod procroot;`)
+  - after: `pub use porter_daemon::{ProcGate, ProcRoot};` and, in `daemon.rs`, `pub const PROC_ROOT_VAR: &str = "INTENTD_PROC_ROOT";` and `pub const PROC_GATE: ProcGate = if cfg!(feature = "test-proc-root") { ProcGate::Honour } else { ProcGate::Ignore };`
+- docket `crates/intentd/src/daemon.rs:14`
+  - before: `use crate::procroot::{PROC_ROOT_VAR, ProcRoot, TestProcRoot, proc_root_choice};`
+  - after: `use porter_daemon::{ProcGate, ProcRoot};`
+- docket `crates/intentd/src/daemon.rs:130-133`
+  - before: `let proc_root = proc_root_choice(env(PROC_ROOT_VAR).as_deref(), TestProcRoot::THIS_BUILD);` then `if let Some(line) = proc_root.said() { eprintln!("intentd: {line}"); }`
+  - after: `let proc_root = ProcRoot::choose(PROC_GATE, PROC_ROOT_VAR, |name| env(name).map(OsString::from));` then `if let Some(line) = proc_root.notice("intentd", PROC_ROOT_VAR) { eprintln!("{line}"); }` (`env` returns `Option<String>` there, so the lookup converts; `OsString` is already imported in that file). The words of the two lines change (`intentd: INTENTD_PROC_ROOT=/x ignored: not a test-proc-root build`, `intentd: test proc root /x: callers are read from it, not /proc`); a test or doc that quotes the old `TEST BUILD: reading callers ...` or `... ignoring it and reading /proc` line must be changed.
+  - where `proc_root` is used as a path: `proc_root.path()` returned a `PathBuf`; it returns `&Path` now, so `.path().to_path_buf()` where an owned path is needed.
+- almanac `crates/memoryd/src/lib.rs:36`
+  - before: `pub use procroot::{PROC_ROOT_VAR, ProcRoot, TestProcRoot, proc_root_choice};` (and `mod procroot;`)
+  - after: `pub use porter_daemon::{ProcGate, ProcRoot};` and in `run.rs`: `pub const PROC_ROOT_VAR: &str = "MEMORYD_PROC_ROOT";` and the same `PROC_GATE` const.
+- almanac `crates/memoryd/src/run.rs:8-10`
+  - before: `PROC_ROOT_VAR, ProcPeers, ProcRoot, ...TestProcRoot, ... proc_root_choice` in the `use memoryd::{..}` list
+  - after: drop `TestProcRoot` and `proc_root_choice`; add `use porter_daemon::ProcRoot;` (`PROC_ROOT_VAR` and `PROC_GATE` from the crate).
+- almanac `crates/memoryd/src/run.rs:188-191`
+  - before: `let proc_root = proc_root_choice(env(PROC_ROOT_VAR).as_deref(), TestProcRoot::THIS_BUILD);` then `if let Some(line) = proc_root.said() { eprintln!("memoryd: {line}"); }`
+  - after: `let proc_root = ProcRoot::choose(PROC_GATE, PROC_ROOT_VAR, |name| env(name).map(OsString::from));` then `if let Some(line) = proc_root.notice("memoryd", PROC_ROOT_VAR) { eprintln!("{line}"); }`
+- almanac `crates/memoryd/src/run.rs:195`
+  - before: `if let ProcRoot::Fixture(dir) = &proc_root { policy.read_files.push(dir.clone()); }`
+  - after: `if let Some(dir) = proc_root.fixture() { policy.read_files.push(dir.to_path_buf()); }`
+  - `run.rs:123` `proc_root.path()` becomes `proc_root.path().to_path_buf()`.
+- almanac `crates/memoryd/tests/it/peers.rs:358-377`
+  - before: a table over `proc_root_choice(var, build)` with `memoryd::{ProcRoot, TestProcRoot, proc_root_choice}`
+  - after: delete it (the table is `porter-daemon`'s); keep the check that `PROC_GATE == ProcGate::Honour` follows `cfg!(feature = "test-proc-root")`.
+- docket `crates/companiond/src/speaker.rs:21-41`
+  - before: `pub fn proc_root_from(var: Option<&str>) -> PathBuf` (a `match (var.filter(..), cfg!(feature = "test-proc-root"))` that prints and returns `/proc`), and its test `the_proc_root_is_the_system_unless_a_test_build_says_otherwise` (lines 207-218)
+  - after: `pub const PROC_ROOT_VAR: &str = "COMPANIOND_PROC_ROOT";`, `pub const PROC_GATE: ProcGate = if cfg!(feature = "test-proc-root") { ProcGate::Honour } else { ProcGate::Ignore };` and delete `proc_root_from` and its test.
+- docket `crates/companiond/src/lib.rs:38`
+  - before: `pub use speaker::{Call, PROC_ROOT_VAR, Speaker, permits, proc_root_from};`
+  - after: `pub use speaker::{Call, PROC_GATE, PROC_ROOT_VAR, Speaker, permits};`
+- docket `crates/companiond/src/serve.rs:362`
+  - before: `let proc_root = speaker::proc_root_from(std::env::var(speaker::PROC_ROOT_VAR).ok().as_deref());`
+  - after: `let choice = porter_daemon::ProcRoot::choose(speaker::PROC_GATE, speaker::PROC_ROOT_VAR, |name| std::env::var_os(name));` then `if let Some(line) = choice.notice("companiond", speaker::PROC_ROOT_VAR) { eprintln!("{line}"); }` then `let proc_root = choice.path().to_path_buf();`. companiond's `PathBuf` field and `serve_on_rooted` do not change. companiond's `from_env`-style rule (if it has one) applies to this line: it is the one environment read.
+
+*Settings-file watch.* In each of `crates/intentd/src/settings_watch.rs`, `crates/memoryd/src/settings_watch.rs` and `crates/cuad/src/watch.rs` the pieces that stay are `DEBOUNCE`, `WatchState`, `SettingsWatch`, `settle`, `apply` and `apply_next`. What goes: `touches`, `start_watcher`, the private error enum (`WatchError` in memoryd, `StartError` in cuad; intentd has `String`), and the `notify` imports.
+- the `use` line (intentd 8, memoryd 7, cuad 7)
+  - before: `use notify::{RecommendedWatcher, RecursiveMode, Watcher};` and `use std::ffi::OsStr;`
+  - after: `use porter_daemon::Watch;` (cuad also drops `use std::path::PathBuf;`)
+- the field
+  - before: `_watcher: Option<RecommendedWatcher>,`
+  - after: `_watcher: Option<Watch>,`
+- the watcher start (intentd's `start_watcher` at 46-65, memoryd's 64-85, cuad's 62-83): delete the function and call `Watch` from `start`. The three functions are the same body: `locator.watch_dir()` (a missing directory is the first error), `create_dir_all`, the file name of the settings constant (`docket_settings::SETTINGS_FILE`, `SETTINGS_FILE` of almanac_service, `SETTINGS_FILE` of cua_host), `notify::recommended_watcher` with the `touches` filter sending `()`, `watch(&dir, NonRecursive)`.
+  - before (in `start`): `match start_watcher(&locator, signal) { Ok(watcher) => { ... _watcher: Some(watcher) ... } Err(reason) => Self { ..., state: WatchState::Blind { reason }, ... } }` (memoryd and cuad: `reason: reason.to_string()` / `error.to_string()`)
+  - after (in `start`), one shape for all three:
+    ```rust
+    let started = locator
+        .watch_dir()
+        .ok_or_else(|| "no configuration directory".to_owned())
+        .and_then(|dir| {
+            let file = std::path::Path::new(SETTINGS_FILE).file_name().map(ToOwned::to_owned)
+                .ok_or_else(|| "no settings file name".to_owned())?;
+            Watch::start(dir, file, move || { let _ = signal.send(()); }).map_err(|e| e.to_string())
+        });
+    match started { Ok(watch) => { /* spawn settle as before */ Self { changes, state: WatchState::Live, _watcher: Some(watch) } }
+                    Err(reason) => Self { changes, state: WatchState::Blind { reason }, _watcher: None } }
+    ```
+    (`signal` is the `mpsc::UnboundedSender<()>` that `start_watcher` took as `events`; `UnboundedSender::send` is `&self`, so the callback is `Fn`.) The words of the `Blind` reasons are the same as before.
+- their tests: the `touches` rows, if any, are `porter-daemon`'s (`watch.rs` unit tests); the end-to-end settings-change tests of each daemon stay.
+
+**Cargo.toml changes (the coordinator re-locks).**
+- root `Cargo.toml`: `members` + `"crates/porter-daemon"`; `[workspace.dependencies]` + `porter-daemon = { path = "crates/porter-daemon" }` and `notify = "8"` (Cargo.lock already has `notify` 8.2.0 and `notify-types` 2.1.0, licence CC0-1.0 which `deny.toml` allows).
+- new `crates/porter-daemon/Cargo.toml`: deps `notify` and `thiserror` (workspace).
+- `crates/accountd/Cargo.toml`, `crates/syncd/Cargo.toml`, `crates/inferd/Cargo.toml`: + `porter-daemon = { workspace = true }`.
+
+**Look here first if it does not compile.** `porter-daemon/src/watch.rs`: the closure given to `notify::recommended_watcher` moves `on_change` (an `impl Fn() + Send + 'static`) and `file` and is `FnMut + Send`; `#[must_use = "..."]` on a struct; the unit test's `notify::Event::new(kind).add_path(..)` and `notify::event::{AccessKind, CreateKind, ModifyKind, RenameMode}`. `porter-daemon/src/proc_root.rs`: the test closure that asserts inside an `Fn`. `accountd/src/paths.rs` and `syncd/src/paths.rs`: `proc_root` borrows `value` in a `|_|` closure (`value.as_deref().map(OsString::from)`), and `crate::daemon::PROC_ROOT_VAR`. `inferd/src/peers.rs` `with_root` (`root.fixture()` then `dir.to_path_buf()`).
