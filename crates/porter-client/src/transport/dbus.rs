@@ -56,6 +56,38 @@ impl DbusTransport {
     }
 }
 
+/// The rows of a list the daemon sent that could be read, and why each of the others could not.
+/// One row that does not say what the interface promises is left out; it never fails the list.
+/// Only a reply that is not a list at all is an error.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Rows<T> {
+    /// The rows that were read, in the order the daemon sent them.
+    pub rows: Vec<T>,
+    /// One [`TransportError::Malformed`] for each row that was left out, naming the row.
+    pub skipped: Vec<TransportError>,
+}
+
+impl<T> Rows<T> {
+    /// Reads `rows` one by one with `decode`: a row that fails is put in `skipped`.
+    pub(super) fn decode<R>(
+        rows: impl IntoIterator<Item = R>,
+        decode: impl Fn(R) -> Result<T, TransportError>,
+    ) -> Self {
+        let mut read = Vec::new();
+        let mut skipped = Vec::new();
+        for row in rows {
+            match decode(row) {
+                Ok(row) => read.push(row),
+                Err(error) => skipped.push(error),
+            }
+        }
+        Self {
+            rows: read,
+            skipped,
+        }
+    }
+}
+
 /// A closed set's serde form is its slug on the bus too.
 pub(super) fn slug<T: Serialize + ?Sized>(value: &T) -> Result<String, TransportError> {
     match serde_json::to_value(value) {
@@ -149,7 +181,7 @@ impl Transport for DbusTransport {
     }
 
     async fn guests(&self) -> Result<Vec<GuestRow>, TransportError> {
-        self.list_guests().await
+        Ok(self.list_guests().await?.rows)
     }
 
     async fn answer_guest(&self, node: &NodeId, answer: GuestAnswer) -> Result<(), TransportError> {
@@ -161,7 +193,7 @@ impl Transport for DbusTransport {
     }
 
     async fn candidates(&self) -> Result<Vec<ComputerCandidate>, TransportError> {
-        self.list_candidates().await
+        Ok(self.list_candidates().await?.rows)
     }
 
     #[cfg(feature = "infer")]
@@ -192,6 +224,6 @@ impl Transport for DbusTransport {
 
     #[cfg(feature = "infer")]
     async fn places(&self) -> Result<Vec<PlaceRow>, TransportError> {
-        self.list_places().await
+        Ok(self.list_places().await?.rows)
     }
 }

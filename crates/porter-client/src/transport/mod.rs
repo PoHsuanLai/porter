@@ -34,9 +34,9 @@ pub use broker::NoBroker;
 #[cfg(feature = "infer")]
 pub use broker::{InProcessSession, SessionHost};
 #[cfg(feature = "dbus")]
-pub use dbus::DbusTransport;
-#[cfg(feature = "dbus")]
 pub(crate) use dbus::bus_error;
+#[cfg(feature = "dbus")]
+pub use dbus::{DbusTransport, Rows};
 #[cfg(all(feature = "dbus", feature = "infer"))]
 pub use dbus_session::{DbusSession, MAX_ATTACHMENTS};
 #[cfg(feature = "in-process")]

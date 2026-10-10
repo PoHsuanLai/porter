@@ -141,8 +141,6 @@ pub use tailnet_lending::{
     INFERD_UNIT, LendingConfig, LendingError, LendingState, SHIPPED_NAME, TailnetLending,
     UnitFailure, UnitManager, UnitName,
 };
-#[cfg(feature = "dbus")]
-pub use transport::DbusTransport;
 #[cfg(feature = "in-process")]
 pub use transport::InProcess;
 #[cfg(feature = "infer")]
@@ -150,3 +148,5 @@ pub use transport::{AnySession, InProcessSession, SessionHost, SocketSession};
 pub use transport::{AnyTransport, NoBroker, SocketTransport, Transport};
 #[cfg(all(feature = "dbus", feature = "infer"))]
 pub use transport::{DbusSession, MAX_ATTACHMENTS};
+#[cfg(feature = "dbus")]
+pub use transport::{DbusTransport, Rows};
