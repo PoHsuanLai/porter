@@ -41,12 +41,13 @@ fn without_picker(xml: &str) -> String {
 }
 
 #[test]
-fn the_spaces_registry_declares_its_five_methods_and_one_signal() {
+fn the_spaces_registry_declares_its_six_methods_and_one_signal() {
     let xml = introspection(Bus::Spaces);
     for member in [
         "<method name=\"List\">",
         "<arg type=\"a(sa{sv})\" direction=\"out\"/>",
         "<method name=\"Create\">",
+        "<method name=\"Register\">",
         "<method name=\"Rename\">",
         "<method name=\"SetLook\">",
         "<method name=\"Remove\">",
@@ -54,7 +55,7 @@ fn the_spaces_registry_declares_its_five_methods_and_one_signal() {
     ] {
         assert!(xml.contains(member), "missing {member}");
     }
-    assert_eq!(xml.matches("<method ").count(), 5);
+    assert_eq!(xml.matches("<method ").count(), 6);
     assert_eq!(xml.matches("<signal ").count(), 1);
     assert_eq!(porter_dbus::SPACES_PATH, "/org/quire/Spaces1");
     assert!(

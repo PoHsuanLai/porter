@@ -2,7 +2,8 @@
 //! desktop-wide Spaces, the ones an app's own Space can link to (porter-core `space`).
 //!
 //! Who may call: any identified app may `List`; `Create` an app, Settings or the shell (never an
-//! assistant, computer use or an agent launcher); `Rename`, `SetLook` and `Remove`
+//! assistant, computer use or an agent launcher); `Register` the compositor, Settings or the shell
+//! (`CallerRole::Compositor`, which may `List` and `Register` and nothing else); `Rename`, `SetLook` and `Remove`
 //! only Settings and the shell (`CallerRole::Settings`, `CallerRole::SheetHost`), and anyone else
 //! is `AccessDenied`, as is a sender accountd does not know.
 
@@ -26,6 +27,16 @@ pub trait Spaces {
     /// or look out of bounds; `LimitsExceeded` when the caller made too many Spaces within the
     /// last minute.
     fn create(&self, name: &str, look: &str) -> zbus::Result<String>;
+    /// Registers a desktop-wide Space whose id the caller minted: on casement the compositor
+    /// mints one per workspace (`s-` and 32 lowercase hex digits, the ext-workspace id) and
+    /// registers it, named `name` and looking like `look` (as for `Create`). An id that is
+    /// registered already is left as it is, name and look included, and answers success, so the
+    /// compositor registers every workspace again at each start; `Changed(id, "created")` goes out
+    /// only for a new one. Only the compositor, Settings and the shell may call it. Errors:
+    /// `InvalidArgs` for an id outside the id grammar (or `desktop`), or a name or look out of
+    /// bounds; `LimitsExceeded` when the caller registered too many new Spaces within the last
+    /// minute.
+    fn register(&self, id: &str, name: &str, look: &str) -> zbus::Result<()>;
     /// Renames one. Errors: `InvalidArgs` for a bad name or a Space that is not there.
     fn rename(&self, id: &str, name: &str) -> zbus::Result<()>;
     /// Gives one a new look. Errors: `InvalidArgs` for a look too long or a Space that is not
@@ -52,6 +63,11 @@ impl SpacesSkeleton {
 
     fn create(&self, name: String, look: String) -> fdo::Result<String> {
         let _ = (name, look);
+        Err(crate::introspect::frozen())
+    }
+
+    fn register(&self, id: String, name: String, look: String) -> fdo::Result<()> {
+        let _ = (id, name, look);
         Err(crate::introspect::frozen())
     }
 

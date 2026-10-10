@@ -59,7 +59,10 @@ impl Access {
             CallerRole::Agent
             | CallerRole::Cua
             | CallerRole::AgentLauncher
-            | CallerRole::Terminal => false,
+            | CallerRole::Terminal
+            | CallerRole::Compositor => false,
+            // A role porter does not know yet sees no dataset.
+            _ => false,
         }
     }
 }
@@ -82,7 +85,10 @@ impl Access {
             | CallerRole::Agent
             | CallerRole::Cua
             | CallerRole::AgentLauncher
-            | CallerRole::Terminal => false,
+            | CallerRole::Terminal
+            | CallerRole::Compositor => false,
+            // A role porter does not know yet owns nothing.
+            _ => false,
         }
     }
 }

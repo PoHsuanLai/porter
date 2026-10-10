@@ -7,7 +7,9 @@
 # its role to that unit alone, never to an app scope of the same id. Roles:
 # `settings` (the Settings app), `sheet_host` (draws the accounts sheets), `porter_daemon` (inferd
 # and syncd: the Peer methods, ResolveKey), `agent`, `cua`, `agent_launcher`, `terminal` (temor:
-# reads the person's computers from `org.quire.Tailnet1` and nothing else); anything unlisted is an `app`.
+# reads the person's computers from `org.quire.Tailnet1` and nothing else), `compositor` (casement:
+# lists the desktop-wide Spaces and registers the ids it mints for its workspaces through
+# `org.quire.Spaces1.Register`, and nothing else); anything unlisted is an `app`.
 # `agent_launcher` (the launcher that runs external coding agents, docket-acp) may call
 # `Peer.SetAgentState`, `RegisterLauncher`, `ReportAgentLogin` and `ReportAgentLogout` and nothing
 # else; it is never granted here. A machine that runs the launcher
@@ -61,3 +63,14 @@ app = "org.quire.Temor"
 unit = "org.quire.Temor.service"
 role = "terminal"
 name = "Terminal"
+
+# casement, the compositor: mints a desktop-wide Space id for each workspace and registers it
+# (`Spaces1.Register`); it may list the Spaces and nothing else. The row goes live once casement
+# runs as its own unit (today desktop-session starts it as a plain child process, which proves no
+# role). Until then casement is an `app`, and `Register` refuses it.
+#
+#   [[caller]]
+#   app = "org.quire.Casement"
+#   unit = "casement.service"
+#   role = "compositor"
+#   name = "Desktop"

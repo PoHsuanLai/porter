@@ -375,6 +375,10 @@ pub(crate) enum Standing {
     /// A caller reporting an agent's state: the only standing an `AgentLauncher` has, and the
     /// method that asks for it checks the role itself.
     Launching,
+    /// A caller listing or registering desktop-wide Spaces (`Spaces1.List`, `Register`): the only
+    /// standing a `Compositor` has; anyone else is as with `Any`, and `Register` checks the role
+    /// itself.
+    Spaces,
 }
 
 /// The shared state of every object accountd serves.
@@ -449,6 +453,12 @@ impl<H: Host, C: Callers> Core<H, C> {
         if standing != Standing::Machines && caller.role == CallerRole::Terminal {
             return Err(RefusedError::access_denied(
                 "the terminal may only read the person's computers",
+            ));
+        }
+        // The compositor registers the Spaces it mints and is nothing else to accountd.
+        if standing != Standing::Spaces && caller.role == CallerRole::Compositor {
+            return Err(RefusedError::access_denied(
+                "the compositor may only list and register Spaces",
             ));
         }
         held(&self.roster).insert(sender.to_string(), caller.clone());

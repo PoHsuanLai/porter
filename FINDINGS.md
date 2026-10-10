@@ -2521,4 +2521,12 @@ No build was run; the coordinator compiles and gates. Consumer list: `~/rs-wt/la
 
 Decision D8 (compositor-scope/20-FREEZE-PLAN C16, landed in casement P1-M2): on casement the compositor mints a desktop-wide Space id per workspace (`s-` and 32 lowercase hex), sends it as the ext-workspace id and keeps it in its spaces.toml across restarts. accountd stays the registry, and mints only where the compositor gives no stable id (Beta 0 on cosmic-comp). The `DesktopSpace` doc says so.
 
-**Open (porter side).** `org.quire.Spaces1` has no way to register an id accountd did not mint: `Create(name, look)` always mints. casement needs a `Register(id, name, look)` (or a `Create` that takes an optional id) with `Create`'s caller rule, refusing an id already registered to another Space.
+**Closed by `Spaces1.Register` (below).** Before it, `org.quire.Spaces1` had no way to register an id accountd did not mint: `Create(name, look)` always mints. casement needs a `Register(id, name, look)` (or a `Create` that takes an optional id) with `Create`'s caller rule, refusing an id already registered to another Space.
+
+## Spaces1.Register and the compositor role (2026-10-11)
+
+- `org.quire.Spaces1.Register(id, name, look)`: the compositor registers the id it minted for a workspace. A known id is left as it is (name and look included: the person may have renamed it) and answers success, so casement registers every workspace at each start; `Changed(id, "created")` and the audit's `SpaceCreated` only for a new one. A new id counts toward the per-app limit of `Create`; the counter of `Create` skips a registered id.
+- Who: the compositor, Settings and the shell. An app may not: it could take an id the compositor mints later.
+- `CallerRole::Compositor` (`compositor` in the caller table): may `List` and `Register` and nothing else of accountd (`Standing::Spaces`); syncd shows it no dataset; inferd treats it as an app.
+- `CallerRole` is now `#[non_exhaustive]` (it grows): almanac `memoryd/src/callers.rs` needs a `_` arm.
+- casement is not a systemd service yet (desktop-session starts it as a child process), so `dist/callers.toml` carries its row commented out (`org.quire.Casement`, `casement.service`). Until it runs as its own unit it is an `app` and `Register` refuses it. Proving a role needs a unit's main process; a session leader's child would prove nothing (anything the session starts is one), so the follow-up is a `casement.service` (Type=notify under `desktop-session.target`).

@@ -10,6 +10,11 @@
      <arg name="look" type="s" direction="in"/>
      <arg type="s" direction="out"/>
    </method>
+   <method name="Register">
+     <arg name="id" type="s" direction="in"/>
+     <arg name="name" type="s" direction="in"/>
+     <arg name="look" type="s" direction="in"/>
+   </method>
    <method name="Rename">
      <arg name="id" type="s" direction="in"/>
      <arg name="name" type="s" direction="in"/>

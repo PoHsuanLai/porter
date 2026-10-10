@@ -2,9 +2,11 @@
 //! connection.
 //!
 //! - Any identified caller may `List`; `Create` an app, Settings or the shell (never an assistant,
-//!   computer use, an agent launcher or a porter daemon); `Rename`, `SetLook` and `Remove` only the
+//!   computer use, an agent launcher or a porter daemon); `Register` (an id the caller minted)
+//!   only the compositor, Settings and the shell; `Rename`, `SetLook` and `Remove` only the
 //!   Settings and sheet-host roles (the Settings app and the shell). Anyone else, and a sender
-//!   accountd does not know, is `AccessDenied`, as `Accounts1`'s roles are checked.
+//!   accountd does not know, is `AccessDenied`, as `Accounts1`'s roles are checked. The
+//!   compositor may `List` and `Register` and nothing else.
 //! - `Changed(id, what)` goes to each connection accountd knows (one that has called it), one by
 //!   one, as the manager's signals do; a client calls `List` once to be told.
 //! - `Remove` ends every grant whose scope is that Space alone, each as a Settings revoke does
@@ -15,7 +17,7 @@
 use crate::callers::Callers;
 use crate::core::{Core, Host, Standing};
 use crate::errors::RefusedError;
-use crate::spaces::{CREATES_PER_WINDOW, SpaceFault, unix_now};
+use crate::spaces::{CREATES_PER_WINDOW, Registered, SpaceFault, unix_now};
 use porter_core::audit::AuditEvent;
 use porter_core::{DesktopSpace, SpaceChange, SpaceId, SpaceLook, SpaceName, SpaceScope};
 use porter_dbus::{CallerRole, Details, SPACES_PATH};
@@ -86,8 +88,26 @@ impl<H: Host, C: Callers> SpacesObject<H, C> {
             | CallerRole::Cua
             | CallerRole::AgentLauncher
             | CallerRole::Terminal
+            | CallerRole::Compositor
             | CallerRole::PorterDaemon => Err(RefusedError::access_denied(
                 "only an app the person uses may make a Space",
+            )),
+            // A role porter does not know yet makes nothing.
+            _ => Err(RefusedError::access_denied(
+                "only an app the person uses may make a Space",
+            )),
+        }
+    }
+
+    /// The caller, which must be the compositor, Settings or the shell: an id minted elsewhere is
+    /// taken only from the processes that draw the workspaces, never from an app (which could
+    /// take an id the compositor mints later).
+    async fn registrar(&self, header: &Header<'_>) -> Result<porter_dbus::Caller, RefusedError> {
+        let caller = self.0.identify(header, Standing::Spaces).await?;
+        match caller.role {
+            CallerRole::Compositor | CallerRole::Settings | CallerRole::SheetHost => Ok(caller),
+            _ => Err(RefusedError::access_denied(
+                "only the compositor, Settings and the shell may register a Space",
             )),
         }
     }
@@ -113,7 +133,7 @@ impl<H: Host, C: Callers> SpacesObject<H, C> {
         &self,
         #[zbus(header)] header: Header<'_>,
     ) -> Result<Vec<(String, Details)>, RefusedError> {
-        self.0.identify(&header, Standing::Any).await?;
+        self.0.identify(&header, Standing::Spaces).await?;
         let book = self.0.spaces.lock().await;
         Ok(book
             .list()
@@ -157,6 +177,47 @@ impl<H: Host, C: Callers> SpacesObject<H, C> {
         );
         self.tell(&made, SpaceChange::Created).await;
         Ok(made.to_string())
+    }
+
+    async fn register(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        id: String,
+        name: String,
+        look: String,
+    ) -> Result<(), RefusedError> {
+        let caller = self.registrar(&header).await?;
+        let id = DesktopSpace::parse(&id).map_err(|_| {
+            RefusedError::invalid(
+                "A Space's id must be 1 to 64 lowercase letters, digits, '.', '_' or '-', \
+                 starting with a letter or digit, and not \"desktop\".",
+            )
+        })?;
+        let (name, look) = (name_arg(&name)?, look_arg(&look)?);
+        let done = self
+            .0
+            .spaces
+            .lock()
+            .await
+            .register(
+                &caller.app.name,
+                id.clone(),
+                name,
+                look,
+                (Instant::now(), unix_now()),
+            )
+            .await
+            .map_err(fault)?;
+        match done {
+            Registered::New => {
+                self.0
+                    .host
+                    .audit_app(&caller.app, AuditEvent::SpaceCreated { space: id.clone() });
+                self.tell(&id, SpaceChange::Created).await;
+            }
+            Registered::Known => {}
+        }
+        Ok(())
     }
 
     async fn rename(

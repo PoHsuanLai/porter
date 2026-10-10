@@ -383,3 +383,90 @@ async fn an_app_making_too_many_spaces_at_once_is_held_back() {
         .count();
     assert_eq!(made, CREATES_PER_WINDOW + 1);
 }
+
+/// D8: the compositor registers the id it minted for a workspace; registering it again (each
+/// start) answers success, tells no one and keeps the person's name. Only the compositor,
+/// Settings and the shell may register, and the compositor may do nothing else but list.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_compositor_registers_its_workspace_ids_and_nothing_else() {
+    let rig = start(Options::default(), vec![]).await;
+    let watcher = spaces(&rig.client("org.quire.Mail").await).await;
+    let mut changes = watcher.receive_changed().await.expect("subscribe");
+    watcher
+        .list()
+        .await
+        .expect("list joins the connections told");
+    let compositor = spaces(
+        &rig.client_as(caller("org.quire.Casement", CallerRole::Compositor))
+            .await,
+    )
+    .await;
+    let id = "s-0123456789abcdef0123456789abcdef";
+    compositor.register(id, "One", "").await.expect("register");
+    assert_eq!(
+        next_change(&mut changes).await,
+        Some((id.to_owned(), "created".to_owned()))
+    );
+    let settings = spaces(&rig.client_as(settings_caller()).await).await;
+    settings.rename(id, "Mine").await.expect("rename");
+    assert_eq!(
+        next_change(&mut changes).await,
+        Some((id.to_owned(), "renamed".to_owned()))
+    );
+    compositor
+        .register(id, "One", "")
+        .await
+        .expect("registering again is no error");
+    settings
+        .register("s-ffffffffffffffffffffffffffffffff", "Two", "")
+        .await
+        .expect("Settings may register");
+    // The next signal is Settings' new Space: registering the known id again told no one.
+    assert_eq!(
+        next_change(&mut changes).await,
+        Some((
+            "s-ffffffffffffffffffffffffffffffff".to_owned(),
+            "created".to_owned()
+        ))
+    );
+    assert_eq!(
+        listed(&compositor).await,
+        [
+            (id.to_owned(), "Mine".to_owned()),
+            (
+                "s-ffffffffffffffffffffffffffffffff".to_owned(),
+                "Two".to_owned()
+            ),
+        ],
+        "the compositor may list, and the person's name stays"
+    );
+    assert!(rig.audit.entries().iter().any(|e| {
+        e.event
+            == AuditEvent::SpaceCreated {
+                space: DesktopSpace::parse(id).expect("id"),
+            }
+    }));
+
+    let bad = compositor
+        .register("Not An Id", "x", "")
+        .await
+        .expect_err("bad id");
+    assert_eq!(error_name(&bad), "org.freedesktop.DBus.Error.InvalidArgs");
+    for error in [
+        compositor
+            .create("Theirs", "")
+            .await
+            .map(|_| ())
+            .expect_err("create"),
+        compositor.rename(id, "x").await.expect_err("rename"),
+    ] {
+        assert_eq!(error_name(&error), ACCESS_DENIED);
+    }
+    // An app may not register: it could take an id the compositor mints later.
+    let app = spaces(&rig.client("org.quire.Photos").await).await;
+    let refused = app
+        .register("s-00000000000000000000000000000000", "x", "")
+        .await
+        .expect_err("an app registers nothing");
+    assert_eq!(error_name(&refused), ACCESS_DENIED);
+}

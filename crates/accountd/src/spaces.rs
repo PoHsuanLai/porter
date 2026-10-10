@@ -2,7 +2,10 @@
 //! `spaces.json` beside `registry.json` with the same atomic save and `.bak` ([`AtomicFile`]).
 //!
 //! - Ids are minted here from a counter (`space-<n>`), never from the name, so a rename keeps
-//!   the id. An id that is taken (an adopted one) is skipped.
+//!   the id. An id that is taken (an adopted or a registered one) is skipped.
+//! - On casement the compositor mints the id of each workspace's Space itself and `Register`s it
+//!   (decision D8); registering an id that is there already changes nothing, so it registers
+//!   every workspace again at each start.
 //! - First start (no `spaces.json` yet): every desktop-wide Space a stored grant is scoped to
 //!   (`Only(<slug>)`, ids from before Spaces were per app) is adopted as a Space of that id,
 //!   named by its slug, with the default look; the file is written then, so a later start adopts
@@ -76,6 +79,15 @@ pub(crate) enum SpaceFault {
     TooMany,
     /// The file could not be written, or was refused at start.
     Unsaved,
+}
+
+/// What a `register` did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Registered {
+    /// The Space was added.
+    New,
+    /// A Space of that id was there already; nothing changed.
+    Known,
 }
 
 /// Whether changes may be saved.
@@ -249,6 +261,37 @@ impl SpaceBook {
             created: now.1,
         });
         self.commit(doc).await.map(|()| id)
+    }
+
+    /// Registers a Space whose id `app` minted (the compositor, per workspace). An id already
+    /// registered is left as it is, name and look included (the person may have renamed it), so
+    /// a compositor registers every workspace again at each start; only a new one counts toward
+    /// the per-app limit.
+    pub(crate) async fn register(
+        &mut self,
+        app: &AppName,
+        id: DesktopSpace,
+        name: SpaceName,
+        look: SpaceLook,
+        now: (Instant, UnixSeconds),
+    ) -> Result<Registered, SpaceFault> {
+        if self.writable == Writable::Refused {
+            return Err(SpaceFault::Unsaved);
+        }
+        if self.doc.spaces.iter().any(|s| s.id == id) {
+            return Ok(Registered::Known);
+        }
+        if !self.admit(app, now.0) {
+            return Err(SpaceFault::TooMany);
+        }
+        let mut doc = self.doc.clone();
+        doc.spaces.push(DesktopSpaceRecord {
+            id,
+            name,
+            look,
+            created: now.1,
+        });
+        self.commit(doc).await.map(|()| Registered::New)
     }
 
     /// Renames a Space.

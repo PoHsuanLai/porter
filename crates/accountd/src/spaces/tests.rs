@@ -256,3 +256,61 @@ async fn an_unreadable_file_is_left_alone_and_nothing_changes() {
         "{ not the spaces"
     );
 }
+
+/// D8: on casement the compositor mints each workspace's id and registers it. Registering it
+/// again (every start) changes nothing, not even a name the person gave it since; the counter
+/// skips a registered id; only a new id counts toward the per-app limit; a restart keeps it.
+#[tokio::test]
+async fn a_registered_id_is_kept_as_minted_and_registering_it_again_changes_nothing() {
+    let scratch = Scratch::new();
+    let (mut book, _) = SpaceBook::open(&scratch.store(), &[], NOW).await;
+    let casement = app("org.quire.Casement");
+    let at = (Instant::now(), NOW);
+    let workspace = DesktopSpace::parse("s-0123456789abcdef0123456789abcdef").expect("id");
+    let taken = DesktopSpace::parse("space-1").expect("id");
+    for id in [&workspace, &taken] {
+        assert_eq!(
+            book.register(&casement, id.clone(), name("One"), SpaceLook::default(), at)
+                .await,
+            Ok(Registered::New)
+        );
+    }
+    book.rename(&workspace, name("Mine"))
+        .await
+        .expect("renamed");
+    // A whole window of starts registers the same workspaces again: all known, none counted.
+    for _ in 0..=CREATES_PER_WINDOW {
+        assert_eq!(
+            book.register(
+                &casement,
+                workspace.clone(),
+                name("One"),
+                SpaceLook::default(),
+                at
+            )
+            .await,
+            Ok(Registered::Known)
+        );
+    }
+    assert_eq!(
+        book.list()[0].name.as_str(),
+        "Mine",
+        "the person's name stays"
+    );
+    let made = book
+        .create(&casement, name("Two"), SpaceLook::default(), at)
+        .await
+        .expect("made");
+    assert_eq!(
+        made.as_str(),
+        "space-2",
+        "the counter skips a registered id"
+    );
+
+    let (after, said) = SpaceBook::open(&scratch.store(), &[], NOW).await;
+    assert_eq!(said, None);
+    assert_eq!(
+        ids(&after),
+        ["s-0123456789abcdef0123456789abcdef", "space-1", "space-2"]
+    );
+}

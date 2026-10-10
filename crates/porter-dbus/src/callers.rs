@@ -31,9 +31,12 @@ use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::path::{Path, PathBuf};
 
-/// What a caller may ask for, beyond what its consent allows.
+/// What a caller may ask for, beyond what its consent allows. It grows as the desktop gains
+/// processes with a standing of their own, so a match outside porter needs a `_` arm (an
+/// unknown role is best treated as a plain app).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum CallerRole {
     /// Any identified app.
     App,
@@ -59,6 +62,10 @@ pub enum CallerRole {
     /// (`Machines`) and nothing else of accountd. Given by the unit that is the terminal, as the
     /// systemd manager says its main process is, never by an app scope's name.
     Terminal,
+    /// The compositor (casement): mints a desktop-wide Space id for each workspace and
+    /// registers it with `org.quire.Spaces1` (`Register`); it may `List` the Spaces and nothing
+    /// else of accountd. Given by the compositor's unit, never by an app scope's name.
+    Compositor,
 }
 
 /// Who a connection is.
