@@ -2305,11 +2305,11 @@ Not compiled by the lane. First places to look if the gate fails: `#[error("{}: 
 
 **Open.** (1) `runner::Turns` could become `porter_turns::Turns<H>` over a trait for the hosted and speech turns once `Cloud` has a seam; not done, it is a redesign. (2) `cloud::wire`'s body shaping and `porter-client`'s `Shaped` are the same code twice; both could use one in porter-turns. (3) L5 (constructors and `#[non_exhaustive]`) for the types listed under layers-router.
 
-## Lane stoker-repin (stoker 916da297 to 0c5f956e5848112c70262f5f95d9257edca18271, base `08995e4`, 2026-10-10)
+## Lane stoker-repin (stoker 916da297 to 9e4ba527e368a57c40b73c59da2de0cd867e5e03, base `08995e4`, 2026-10-10)
 
 **Not compiled.** No-build lane: only `cargo fmt --all` was run. Cargo.lock is the coordinator's (every stoker git source changes rev; `model-provider` gains no new dependency this lane knows of, check the lock diff).
 
-**Stoker revs.** From `916da297d564e35cee9302d2d1e6607ae45962a7` to `0c5f956e5848112c70262f5f95d9257edca18271`: all 16 stoker entries of the root `Cargo.toml`. Older FINDINGS lines that record the old pin (lane choice-scores) are history and stay.
+**Stoker revs.** From `916da297d564e35cee9302d2d1e6607ae45962a7` to `9e4ba527e368a57c40b73c59da2de0cd867e5e03`: all 16 stoker entries of the root `Cargo.toml`. Older FINDINGS lines that record the old pin (lane choice-scores) are history and stay.
 
 **What changed in stoker that porter sees (read at the sha).**
 - `ProviderError::{PaymentRequired(ProviderDetail), AuthRejected(ProviderDetail)}`; a bare 401 is still `Unauthorized`; `retry_class` is `Never` for both. `ProviderDetail { status, message }` is redacted and cut to 240 characters.
