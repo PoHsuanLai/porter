@@ -6,7 +6,7 @@ use super::engine::{Engine, KeyUse};
 use super::keys::KeySource;
 use super::wire::{Temperature, provider};
 use model_provider as sp;
-use porter_bridge::{DefaultSampling, Frames, Target, chat_turn_for, task_turn_for};
+use porter_bridge::{DefaultSampling, Frames, JsonReply, Target, chat_turn_for, task_turn_for};
 use porter_core::Tier;
 use porter_infer::{
     InferEvent, InferRefusal, InferReply, InferRequest, Knob, ModelError, ServedBy,
@@ -29,6 +29,8 @@ impl Pinned {
             sampling: DefaultSampling::Provider,
             max_output: sp::Tokens(self.engine.max_output.0),
             flavor: Some(self.engine.dialect.flavor()),
+            // The app's engine states no output constraints: it is sent the schema.
+            json: JsonReply::Schema,
         }
     }
 }

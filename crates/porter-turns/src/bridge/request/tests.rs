@@ -184,6 +184,18 @@ fn tools_shapes_and_tool_choices_map_one_to_one() {
             .output,
         sp::OutputShape::JsonSchema(_)
     ));
+    // A model that takes only a JSON object is never sent the schema as the shape: the schema is
+    // the first system text, ahead of the user's message.
+    let mut object_only = local_target(&model);
+    object_only.json = JsonReply::ObjectOnly;
+    let turn = chat_turn_for(&object_only, &json, &Frames::default()).expect("turn");
+    assert_eq!(turn.output, sp::OutputShape::JsonObject);
+    assert_eq!(turn.messages[0].role, sp::Role::System);
+    assert!(matches!(
+        &turn.messages[0].parts[..],
+        [sp::Part::Text(text)] if text.contains(r#"{"type":"object"}"#)
+    ));
+    assert_eq!(turn.messages.len(), json.messages.len() + 1);
     json.shape = pi::ReplyShape::Json("{not json".into());
     assert_eq!(
         chat_turn(&model, &json, &Frames::default()),

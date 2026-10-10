@@ -8,6 +8,7 @@ fn target(sampling: DefaultSampling) -> Target {
         sampling,
         max_output: sp::Tokens(512),
         flavor: Some(Flavor::LlamaServer),
+        json: JsonReply::Schema,
     }
 }
 

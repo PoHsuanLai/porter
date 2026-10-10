@@ -12,7 +12,7 @@ use super::accountd::AccountdFault;
 use super::models::RemoteModel;
 use super::transport::ShapedTransport;
 use super::wire::{BodyShape, Temperature, flavor_of};
-use crate::bridge::{self, DefaultSampling, Frames, Target};
+use crate::bridge::{self, DefaultSampling, Frames, JsonReply, Target};
 use crate::runner::{RETRY, TokioSleep};
 use crate::serve::TurnStep;
 use crate::settings::SpendLine;
@@ -59,6 +59,13 @@ pub fn remote_target(model: &RemoteModel) -> Target {
         sampling: DefaultSampling::Provider,
         max_output: sp::Tokens(limit),
         flavor: Some(flavor_of(&model.reach.provider)),
+        json: model
+            .entry
+            .capabilities
+            .text_out
+            .as_ref()
+            .map(|text| JsonReply::of(&text.structured))
+            .unwrap_or_default(),
     }
 }
 

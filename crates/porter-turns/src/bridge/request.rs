@@ -4,7 +4,8 @@
 
 use model_provider as sp;
 use porter_bridge::{
-    BridgeError, DefaultSampling, Frames, Target, chat_turn_for, embed_turns_for, task_turn_for,
+    BridgeError, DefaultSampling, Frames, JsonReply, Target, chat_turn_for, embed_turns_for,
+    task_turn_for,
 };
 use porter_infer as pi;
 use porter_router::local::LocalModel;
@@ -16,6 +17,10 @@ pub fn local_target(model: &LocalModel) -> Target {
         sampling: DefaultSampling::Entry(model.entry.sampling),
         max_output: model.caps().map(|caps| caps.max_output).unwrap_or_default(),
         flavor: model.flavor,
+        json: model
+            .caps()
+            .map(|caps| JsonReply::of(&caps.output))
+            .unwrap_or_default(),
     }
 }
 

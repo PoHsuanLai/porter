@@ -152,12 +152,17 @@ fn role(role: pi::Role) -> sp::Role {
     }
 }
 
-fn shape(shape: &pi::ReplyShape) -> Result<sp::OutputShape, BridgeError> {
+fn shape(shape: &pi::ReplyShape, json: JsonReply) -> Result<sp::OutputShape, BridgeError> {
     Ok(match shape {
         pi::ReplyShape::Text => sp::OutputShape::Free,
-        pi::ReplyShape::Json(schema) => sp::OutputShape::JsonSchema(sp::SchemaText(
-            sp::JsonText::new(schema.as_str()).map_err(|_| BridgeError::Unsupported)?,
-        )),
+        pi::ReplyShape::Json(schema) => {
+            let schema =
+                sp::JsonText::new(schema.as_str()).map_err(|_| BridgeError::Unsupported)?;
+            match json {
+                JsonReply::Schema => sp::OutputShape::JsonSchema(sp::SchemaText(schema)),
+                JsonReply::ObjectOnly => sp::OutputShape::JsonObject,
+            }
+        }
         pi::ReplyShape::Choice(choices) => sp::OutputShape::Choice(choices.clone()),
     })
 }
@@ -235,6 +240,33 @@ pub struct Target {
     pub max_output: sp::Tokens,
     /// The engine's flavor, when it has one.
     pub flavor: Option<Flavor>,
+    /// How the model takes a reply of a JSON shape (from its entry's output constraints).
+    pub json: JsonReply,
+}
+
+/// How a model takes a reply of a JSON shape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum JsonReply {
+    /// The engine takes the schema (also what a model whose constraints are not known gets).
+    #[default]
+    Schema,
+    /// The engine takes only "one JSON object": the schema travels in the prompt instead, and
+    /// whoever reads the reply checks it.
+    ObjectOnly,
+}
+
+impl JsonReply {
+    /// What a model's output constraints say: `ObjectOnly` when it takes a JSON object and no
+    /// schema.
+    pub fn of(output: &std::collections::BTreeSet<sp::Constraint>) -> Self {
+        if output.contains(&sp::Constraint::JsonObject)
+            && !output.contains(&sp::Constraint::JsonSchema)
+        {
+            Self::ObjectOnly
+        } else {
+            Self::Schema
+        }
+    }
 }
 
 /// Where a sampling the request leaves open comes from.
@@ -285,24 +317,28 @@ pub fn chat_turn_for(
         pi::Knob::Set(tokens) => sp::Tokens(tokens.0),
         pi::Knob::Off => target.max_output,
     };
-    let output = shape(&request.shape)?;
+    let output = shape(&request.shape, target.json)?;
     let choice_scores = crate::scores::choice_scores(control, &output);
+    let mut messages: Vec<sp::Message> = request
+        .messages
+        .iter()
+        .map(|message| {
+            Ok(sp::Message {
+                role: role(message.role),
+                parts: message
+                    .parts
+                    .iter()
+                    .map(|one| part(one, frames))
+                    .collect::<Result<_, BridgeError>>()?,
+            })
+        })
+        .collect::<Result<_, BridgeError>>()?;
+    if let (sp::OutputShape::JsonObject, pi::ReplyShape::Json(schema)) = (&output, &request.shape) {
+        schema_in_prompt(&mut messages, schema);
+    }
     Ok(sp::TurnRequest {
         model: target.name.clone(),
-        messages: request
-            .messages
-            .iter()
-            .map(|message| {
-                Ok(sp::Message {
-                    role: role(message.role),
-                    parts: message
-                        .parts
-                        .iter()
-                        .map(|one| part(one, frames))
-                        .collect::<Result<_, BridgeError>>()?,
-                })
-            })
-            .collect::<Result<_, BridgeError>>()?,
+        messages,
         tools: request
             .tools
             .iter()
@@ -329,6 +365,24 @@ pub fn chat_turn_for(
         choice_scores,
         engine: extras(target.flavor),
     })
+}
+
+/// The schema as system text, for a model that takes only a JSON object: appended to the first
+/// system message, or a new one in front.
+fn schema_in_prompt(messages: &mut Vec<sp::Message>, schema: &str) {
+    let text = sp::Part::Text(format!(
+        "Reply with one JSON object that matches this JSON schema, and nothing else:\n{schema}"
+    ));
+    match messages.first_mut() {
+        Some(first) if first.role == sp::Role::System => first.parts.push(text),
+        _ => messages.insert(
+            0,
+            sp::Message {
+                role: sp::Role::System,
+                parts: vec![text],
+            },
+        ),
+    }
 }
 
 /// The instruction a task kind is carried out under.
