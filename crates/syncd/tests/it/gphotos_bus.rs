@@ -401,7 +401,7 @@ async fn the_google_photos_follow_the_photos_grant_and_leave_what_is_on_disk() {
 
     // While the grant is off a new file waits; with it back, it goes.
     std::fs::write(upload_dir(&rig).join("b.jpg"), photo(2)).expect("photo");
-    tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
+    tokio::time::sleep(common::poll_time(2500)).await;
     assert_eq!(rig.google.photos_items().len(), 1);
     rig.photos_shown.store(true, Ordering::SeqCst);
     rig.supervisor.tick().await;

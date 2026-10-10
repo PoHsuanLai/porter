@@ -8,45 +8,39 @@ use crate::hosting;
 
 use hosting::rig::{Plan, World};
 use porter_dbus::InferenceProxy;
+use porter_fake_servers::HeldRuntime;
 use std::time::Duration;
 
-/// How long the object server's runtime is held back.
-const HELD: Duration = Duration::from_secs(2);
+/// How long the start may show it is waiting for the held runtime, and how long a call has to
+/// leave before the runtime runs (see `HeldRuntime`). The start here includes making the world
+/// (a private bus, the fake engines), so the pause is longer than the other two daemons'.
+const PAUSE: Duration = Duration::from_millis(600);
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_call_made_as_soon_as_the_name_is_owned_is_answered() {
-    // The object server starts on a runtime that runs nothing until the test lets it, or until
-    // `HELD` has passed: a daemon that claims its name only once its calls are taken is still
-    // starting then; one that claims it first is serving, with nobody listening for its calls.
-    let held = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .expect("a runtime");
-    let handle = held.handle().clone();
-    let (release, released) = std::sync::mpsc::channel::<()>();
-    let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
-    let runner = std::thread::spawn(move || {
-        let _ = released.recv_timeout(HELD);
-        held.block_on(async {
-            let _ = stopped.await;
-        });
-    });
-    let world = World::start(Plan {
-        dispatcher_on: Some(handle),
-        ..Plan::default()
-    })
-    .await;
+    // The object server starts on a runtime that runs nothing until the test lets it: a daemon
+    // that claims its name only once its calls are taken cannot finish starting before then; one
+    // that claims it first is serving, with nobody listening for its calls.
+    let mut held = HeldRuntime::new();
+    let dispatcher = held.handle().clone();
+    let world = held
+        .start(
+            World::start(Plan {
+                dispatcher_on: Some(dispatcher),
+                ..Plan::default()
+            }),
+            PAUSE,
+        )
+        .await;
     let proxy = InferenceProxy::new(&world.client).await.expect("proxy");
     let call = tokio::spawn(async move { proxy.rescan().await });
     // The call is on its way (or answered) before the object server's runtime runs.
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    let _ = release.send(());
+    held.release_once_sent(PAUSE).await;
     let answer = tokio::time::timeout(porter_fake::GENEROUS, call)
         .await
         .expect("the first call is answered")
         .expect("the call's task");
     assert!(answer.is_ok(), "{answer:?}");
-    let _ = stop.send(());
     drop(world);
-    runner.join().expect("the held runtime's thread");
+    held.finish();
 }
