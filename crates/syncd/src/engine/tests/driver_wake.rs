@@ -143,3 +143,100 @@ async fn a_pause_made_while_a_cycle_waits_for_its_turn_lets_no_cycle_through() {
         "a cycle began after the person paused"
     );
 }
+
+/// Polls every second at first and an hour once a push replica is quiet: after the first cycle
+/// the next look is an hour away, so only a wake-up starts another.
+fn far_polls() -> Settings {
+    Settings {
+        poll_base: 1,
+        poll_max: 3600,
+        push_window: 0,
+        batch_window: 0,
+        metered: MeteredPolicy::Pause,
+        time_scale: 1,
+    }
+}
+
+async fn cycles_ended(hub: &Hub, name: &DatasetName, want: u64) {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
+        if hub.cycles(name).is_some_and(|cycles| cycles.ended >= want) {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    deadline.fail("the cycles end");
+}
+
+#[tokio::test]
+async fn sync_now_starts_a_cycle_at_once_though_the_next_look_is_an_hour_away() {
+    let world = World::new(
+        "sync_now",
+        StorageCap {
+            delta: Delta::Push,
+            ..sha()
+        },
+        10,
+    );
+    world.remote_put("a.txt", b"first").await;
+    let hub = Hub::default();
+    let name = DatasetName::parse("acct_1/files").expect("name");
+    let handle = hub.register(name.clone(), Access::default());
+    let (_net, network) = watch::channel(Network::Unmetered);
+    let driver = Driver::new(
+        world.engine(),
+        handle,
+        far_polls(),
+        network,
+        Arc::new(Notify::new()),
+        1,
+    );
+    let running = tokio::spawn(driver.run());
+    cycles_ended(&hub, &name, 1).await;
+    assert!(world.dataset.snapshot().contains_key("a.txt"));
+
+    world.remote_put("b.txt", b"second").await;
+    let begun = hub.cycles(&name).expect("registered").begun;
+    hub.sync_now(&name).expect("not paused");
+    cycles_ended(&hub, &name, begun + 1).await;
+    running.abort();
+    assert!(
+        world.dataset.snapshot().contains_key("b.txt"),
+        "the cycle Sync now asked for saw the change"
+    );
+}
+
+#[tokio::test]
+async fn a_sync_now_asked_while_the_driver_is_busy_is_followed_by_one_more_cycle() {
+    let world = World::new(
+        "sync_busy",
+        StorageCap {
+            delta: Delta::Push,
+            ..sha()
+        },
+        10,
+    );
+    world.remote_put("a.txt", b"first").await;
+    let hub = Hub::default();
+    let name = DatasetName::parse("acct_1/files").expect("name");
+    let handle = hub.register(name.clone(), Access::default());
+    // A cycle of the last look still runs: the driver's first cycle waits for the lock.
+    let busy = hub.hold_cycles(&name).await.expect("registered");
+    let (_net, network) = watch::channel(Network::Unmetered);
+    let driver = Driver::new(
+        world.engine(),
+        handle,
+        far_polls(),
+        network,
+        Arc::new(Notify::new()),
+        1,
+    );
+    let running = tokio::spawn(driver.run());
+    // The driver (this runtime's only other task) reaches the lock and waits there.
+    tokio::task::yield_now().await;
+    hub.sync_now(&name).expect("not paused");
+    drop(busy);
+    // The first cycle, and the one Sync now asked for after it; the next look is an hour away.
+    cycles_ended(&hub, &name, 2).await;
+    running.abort();
+}

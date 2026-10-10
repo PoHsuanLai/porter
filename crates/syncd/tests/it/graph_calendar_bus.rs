@@ -437,8 +437,8 @@ async fn a_local_edit_a_deletion_and_a_new_file_are_never_sent_and_a_remote_chan
         "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n",
     )
     .expect("new file");
-    // Three poll cycles pass.
-    tokio::time::sleep(common::poll_time(3500)).await;
+    // A cycle that saw the edits has passed.
+    common::a_cycle_of_each(&rig.hub).await;
     let writes: Vec<_> = rig
         .graph
         .hits()
@@ -478,7 +478,7 @@ async fn a_local_edit_a_deletion_and_a_new_file_are_never_sent_and_a_remote_chan
 async fn an_expired_delta_token_lists_again_and_keeps_every_event() {
     let rig = rig(true).await;
     eventually("the first mirror", || rig.items("Personal").len() == 5).await;
-    tokio::time::sleep(common::poll_time(1500)).await;
+    common::a_cycle_of_each(&rig.hub).await;
     let before = rig.delta_requests();
     rig.graph
         .put_event("cal-personal", "ev-extra", timed("uid-extra", "Extra", 6));
