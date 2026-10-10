@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0-beta.1 (not yet tagged)
+## 0.1.0-beta.1 (2026-10-11)
 
 The first release: the accounts work. Nothing here has yet run against the real services; it is
 tested against stand-ins for them (FINDINGS.md says, per piece, what is still unchecked).
