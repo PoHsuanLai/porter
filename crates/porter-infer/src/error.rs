@@ -44,6 +44,13 @@ pub enum ModelError {
     /// The key or token was refused.
     #[error("unauthorized")]
     Unauthorized,
+    /// The account has no credit left; retrying cannot help until the person tops it up or picks
+    /// another model.
+    #[error("the account needs payment")]
+    PaymentRequired,
+    /// The company refused the sign-in and said why (the reason stays in the logs, never here).
+    #[error("the company refused the sign-in")]
+    SignInRefused,
     /// The provider refused the content.
     #[error("refused by the provider")]
     Refused,

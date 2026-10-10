@@ -258,6 +258,11 @@ fn model_errors_and_refusals_keep_their_slugs() {
             r#"{"kind":"rate_limited","v":3}"#,
         ),
         (ModelError::Unauthorized, r#"{"kind":"unauthorized"}"#),
+        (
+            ModelError::PaymentRequired,
+            r#"{"kind":"payment_required"}"#,
+        ),
+        (ModelError::SignInRefused, r#"{"kind":"sign_in_refused"}"#),
         (ModelError::Refused, r#"{"kind":"refused"}"#),
         (ModelError::Unreadable, r#"{"kind":"unreadable"}"#),
         (ModelError::NotReady, r#"{"kind":"not_ready"}"#),

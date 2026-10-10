@@ -74,6 +74,10 @@ impl Failure {
                 Cause::Upstream,
                 "the model refused the account's credentials",
             ),
+            ModelError::PaymentRequired => Self::new(Cause::Upstream, "the account needs payment"),
+            ModelError::SignInRefused => {
+                Self::new(Cause::Upstream, "the company refused the sign-in")
+            }
             ModelError::Refused => Self::new(Cause::Invalid, "the model refused the request"),
             ModelError::Unreadable | ModelError::Unparseable => {
                 Self::new(Cause::Upstream, "the model's reply could not be read")

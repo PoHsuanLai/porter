@@ -152,6 +152,8 @@ pub fn model_error(error: &sp::ProviderError) -> pi::ModelError {
         sp::ProviderError::NotReady => pi::ModelError::NotReady,
         sp::ProviderError::RateLimited(seconds) => pi::ModelError::RateLimited(seconds.0),
         sp::ProviderError::Unauthorized => pi::ModelError::Unauthorized,
+        sp::ProviderError::PaymentRequired(_) => pi::ModelError::PaymentRequired,
+        sp::ProviderError::AuthRejected(_) => pi::ModelError::SignInRefused,
         sp::ProviderError::ContextOverflow { .. } => pi::ModelError::ContextOverflow,
         sp::ProviderError::BadRequest(_) | sp::ProviderError::Refused(_) => pi::ModelError::Refused,
         sp::ProviderError::Unreadable(_) => pi::ModelError::Unreadable,

@@ -138,6 +138,14 @@ fn every_provider_error_is_a_model_error_the_app_can_act_on() {
         (P::RateLimited(sp::RetrySeconds(7)), M::RateLimited(7)),
         (P::Unauthorized, M::Unauthorized),
         (
+            P::PaymentRequired(sp::ProviderDetail::new(402, "out of credit")),
+            M::PaymentRequired,
+        ),
+        (
+            P::AuthRejected(sp::ProviderDetail::new(403, "organization disabled")),
+            M::SignInRefused,
+        ),
+        (
             P::ContextOverflow {
                 limit: sp::Tokens(10),
             },
