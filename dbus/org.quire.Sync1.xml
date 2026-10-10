@@ -45,6 +45,19 @@
      <arg name="dataset" type="s" direction="in"/>
    </method>
    <!--
+    "Sync now": has `dataset` (`<account>/<dataset>`) sync at once instead of at its next
+    scheduled look. A cycle already running finishes and one more starts right after it. The
+    call answers when the request is taken, not when the cycle ends (`Progress` and `Status`
+    tell how it went); a dataset waiting for the network (offline, or metered when the
+    setting says to wait) starts when the network allows. Anyone who may pause the dataset
+    may call it (its owning app, Settings, the porter daemons). Errors:
+    `org.quire.Accounts1.Error.NoFittingAccount` when the caller sees no such dataset;
+    `org.quire.Sync1.Error.Paused` when the person paused it (`Resume` first).
+    -->
+   <method name="SyncNow">
+     <arg name="dataset" type="s" direction="in"/>
+   </method>
+   <!--
     Joins the caller to the connections syncd tells, without asking for any data: any
     identified caller may call it. A connection is told only after it has called syncd, so
     the shell calls this once at start. The shell (`CallerRole::SheetHost`) is then told

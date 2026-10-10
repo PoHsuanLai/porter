@@ -10,7 +10,9 @@ use porter_core::capability::{
     Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
 };
 use porter_core::{Bytes, UnixSeconds};
-use porter_dbus::{CallerRole, STATUS_KEY_QUOTA, SYNC_BUS, SYNC_PATH, SyncProxy};
+use porter_dbus::{
+    CallerRole, STATUS_KEY_QUOTA, SYNC_BUS, SYNC_ERROR_PAUSED, SYNC_PATH, SyncProxy,
+};
 use porter_sync::{
     BaseVersion, Conflict, ConflictRule, LocalId, MemoryReplica, Quota, RemoteId, RemoteSide,
     RemoteVersion, StoredConflict,
@@ -128,6 +130,7 @@ async fn with_no_dataset_every_name_answers_the_refusal_and_a_bad_name_is_invali
             sync.status(dataset).await.map(drop).expect_err("status"),
             sync.pause(dataset).await.expect_err("pause"),
             sync.resume(dataset).await.expect_err("resume"),
+            sync.sync_now(dataset).await.expect_err("sync now"),
         ] {
             assert_eq!(error_name(&err), NO_FITTING, "{dataset}");
         }
@@ -206,12 +209,40 @@ async fn a_caller_sees_what_it_owns_settings_sees_all_and_status_carries_quota_a
         .await
         .expect_err("not theirs");
     assert_eq!(error_name(&err), NO_FITTING);
+    let err = proxy(&app)
+        .await
+        .sync_now("a1/pim")
+        .await
+        .expect_err("not theirs");
+    assert_eq!(error_name(&err), NO_FITTING);
+    // Its owner and Settings may ask for it to sync now; a bad name is the caller's to fix.
+    for who in [&app, &settings] {
+        proxy(who)
+            .await
+            .sync_now("a1/photos_originals")
+            .await
+            .expect("sync now");
+    }
+    let err = proxy(&app)
+        .await
+        .sync_now("photos")
+        .await
+        .expect_err("a bad name");
+    assert_eq!(error_name(&err), INVALID_ARGS);
 
     proxy(&app)
         .await
         .pause("a1/photos_originals")
         .await
         .expect("pause");
+    for who in [&app, &settings] {
+        let err = proxy(who)
+            .await
+            .sync_now("a1/photos_originals")
+            .await
+            .expect_err("paused");
+        assert_eq!(error_name(&err), SYNC_ERROR_PAUSED);
+    }
     assert_eq!(photos.pausing(), syncd::scheduler::Pausing::Paused);
     let status = proxy(&settings)
         .await
@@ -362,6 +393,9 @@ async fn a_running_engine_syncs_to_its_replica_and_the_bus_shows_it_until_it_is_
     let app = client(&rig.bus, &rig.known, "org.quire.Photos", CallerRole::App).await;
     let sync = proxy(&app).await;
     dataset.put("IMG_1.HEIC", b"abc");
+    sync.sync_now("a1/photos_originals")
+        .await
+        .expect("sync now");
     let seen = used_reaches(&sync, "a1/photos_originals", 3).await;
     assert_eq!(
         seen,
@@ -382,6 +416,12 @@ async fn a_running_engine_syncs_to_its_replica_and_the_bus_shows_it_until_it_is_
             .expect("the dataset is running"),
     );
     dataset.put("IMG_2.HEIC", b"defg");
+    // Sync now does not get past the pause; it says so.
+    let err = sync
+        .sync_now("a1/photos_originals")
+        .await
+        .expect_err("paused");
+    assert_eq!(error_name(&err), SYNC_ERROR_PAUSED);
     tokio::time::sleep(common::poll_time(1500)).await;
     assert_eq!(
         used(&sync, "a1/photos_originals").await,
@@ -389,6 +429,10 @@ async fn a_running_engine_syncs_to_its_replica_and_the_bus_shows_it_until_it_is_
         "paused: nothing went up"
     );
     sync.resume("a1/photos_originals").await.expect("resume");
+    // Sync now starts the cycle that sends the second photo without waiting for a look.
+    sync.sync_now("a1/photos_originals")
+        .await
+        .expect("sync now");
     assert_eq!(used_reaches(&sync, "a1/photos_originals", 7).await, Some(7));
 
     // Removing the account's datasets from the hub ends the driver.

@@ -261,3 +261,59 @@ async fn holding_the_cycles_waits_for_the_one_running_and_starts_no_other() {
     drop(held);
     assert!(engine.begin_cycle().await.is_some());
 }
+
+#[tokio::test(start_paused = true)]
+async fn sync_now_wakes_the_driver_once_whenever_it_is_asked_and_a_paused_dataset_refuses() {
+    let hub = Hub::default();
+    let dataset = name("a1/pim");
+    let mut handle = hub.register(dataset.clone(), Access::default());
+    async fn nothing_waits(handle: &mut Handle) -> bool {
+        let waiting = handle.nudged();
+        tokio::time::timeout(std::time::Duration::from_secs(60), waiting)
+            .await
+            .is_err()
+    }
+    assert_eq!(
+        hub.sync_now(&name("a1/none")),
+        Err(SyncNowError::NoSuchDataset)
+    );
+
+    // Asked while a cycle runs: kept, so the look after the cycle starts the next at once.
+    let running = handle.begin_cycle().await.expect("registered");
+    assert_eq!(hub.sync_now(&dataset), Ok(()));
+    drop(running);
+    assert!(matches!(handle.nudged().await, Nudge::SyncNow));
+    assert!(nothing_waits(&mut handle).await, "one request, one wake-up");
+
+    // Asked twice before the driver looks: one cycle follows, not two.
+    assert_eq!(hub.sync_now(&dataset), Ok(()));
+    assert_eq!(hub.sync_now(&dataset), Ok(()));
+    assert!(matches!(handle.nudged().await, Nudge::SyncNow));
+    assert!(nothing_waits(&mut handle).await);
+
+    // Paused: refused, and the driver is told of the pause only.
+    let settings = caller("org.quire.Settings", CallerRole::Settings);
+    assert!(hub.set_pausing(&settings, &dataset, Pausing::Paused));
+    assert_eq!(hub.sync_now(&dataset), Err(SyncNowError::Paused));
+    assert!(matches!(handle.nudged().await, Nudge::Pause));
+    assert!(nothing_waits(&mut handle).await);
+    assert!(hub.set_pausing(&settings, &dataset, Pausing::Running));
+    assert_eq!(hub.sync_now(&dataset), Ok(()));
+}
+
+#[test]
+fn the_cycle_counts_say_which_cycle_began_after_a_moment() {
+    let hub = Hub::default();
+    let dataset = name("a1/pim");
+    let handle = hub.register(dataset.clone(), Access::default());
+    assert_eq!(hub.cycles(&name("a1/none")), None);
+    assert_eq!(hub.names(), [dataset.clone()]);
+    let counts = |hub: &Hub| hub.cycles(&dataset).map(|c| (c.begun, c.ended));
+    assert_eq!(counts(&hub), Some((0, 0)));
+    handle.cycle_begun();
+    assert_eq!(counts(&hub), Some((1, 0)), "running");
+    handle.cycle_ended();
+    handle.cycle_begun();
+    handle.cycle_ended();
+    assert_eq!(counts(&hub), Some((2, 2)));
+}

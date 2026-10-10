@@ -50,6 +50,9 @@ pub const SYNC_ERROR_NO_SUCH_CONFLICT: &str = "org.quire.Sync1.Error.NoSuchConfl
 /// `Sync1.ConfirmDiscard` on a dataset that is not held for confirmation: it never was, or the
 /// discard was already confirmed (`org.quire.Sync1.Error.NothingHeld`).
 pub const SYNC_ERROR_NOTHING_HELD: &str = "org.quire.Sync1.Error.NothingHeld";
+/// `Sync1.SyncNow` on a dataset the person paused: it does not sync until it is resumed
+/// (`org.quire.Sync1.Error.Paused`).
+pub const SYNC_ERROR_PAUSED: &str = "org.quire.Sync1.Error.Paused";
 
 /// inferd's bus name.
 pub const INFERENCE_BUS: &str = "org.quire.Inference1";

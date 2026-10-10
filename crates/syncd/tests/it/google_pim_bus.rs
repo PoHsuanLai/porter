@@ -617,8 +617,8 @@ async fn local_edits_deletions_and_new_files_are_never_sent_and_a_remote_change_
     // The newest task is listed again by every poll (`updatedMin` is inclusive): its unchanged
     // version must not undo a local edit.
     std::fs::write(errands.join("t-report.ics"), "locally edited").expect("edit task");
-    // Three poll cycles pass.
-    tokio::time::sleep(common::poll_time(3500)).await;
+    // A cycle that saw the edits has passed.
+    common::a_cycle_of_each(&rig.hub).await;
     let writes: Vec<_> = rig
         .google
         .hits()
@@ -676,7 +676,7 @@ async fn local_edits_deletions_and_new_files_are_never_sent_and_a_remote_change_
 async fn expired_sync_tokens_list_again_and_keep_every_item() {
     let rig = rig(&ALL).await;
     eventually("the first mirror", || everything_mirrored(&rig)).await;
-    tokio::time::sleep(common::poll_time(1500)).await;
+    common::a_cycle_of_each(&rig.hub).await;
     let before = rig.google.hits().len();
     rig.google.put_event(
         "cal-personal",

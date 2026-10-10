@@ -24,6 +24,11 @@
 //!   when a hold starts (the same `{discard, held}` as `Status`) and when it ends (empty).
 //!   syncd writes no audit events (it has none for pause and resume either), so this is not
 //!   audited.
+//! - `SyncNow(dataset)` ("Sync now") has a dataset sync at once instead of at its next scheduled
+//!   look: [`Hub::sync_now`] wakes its driver, which runs a cycle right away, or right after the
+//!   one running. Whoever may pause the dataset may call it; a dataset the caller cannot see
+//!   answers `NoFittingAccount`, a paused one `org.quire.Sync1.Error.Paused`. The reply comes
+//!   when the request is taken, not when the cycle ends.
 //! - The shell (`SheetHost`) is told `NeedsConfirmation` for every dataset (it carries `account`,
 //!   the account's object path, too) but sees nothing else of a dataset it does not own: no
 //!   `Progress`, no `Conflict`, and `Status`, `Pause`, `Resume`, `Resolve` and `ConfirmDiscard`
@@ -40,10 +45,12 @@ mod resolve;
 mod status;
 
 pub use errors::RefusedError;
-pub use hub::{Access, DatasetName, Event, Handle, Hub, Nudge, StatusSnapshot};
+pub use hub::{Access, Cycles, DatasetName, Event, Handle, Hub, Nudge, StatusSnapshot};
 pub use object::serve;
 #[cfg(feature = "photos-picker")]
 pub use picker::serve_picker;
 pub use picker::{PickerDesk, Pickers};
-pub use resolve::{Confirm, ConfirmError, ConflictNumber, How, Settle, SettleError, UnknownHow};
+pub use resolve::{
+    Confirm, ConfirmError, ConflictNumber, How, Settle, SettleError, SyncNowError, UnknownHow,
+};
 pub use status::{conflict_details, held_details, progress_details, status_details};

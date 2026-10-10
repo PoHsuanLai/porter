@@ -522,8 +522,8 @@ async fn an_expired_sync_token_lists_again_and_downloads_nothing_it_already_has(
             && items_in(&rig.calendar("contacts-contacts"), PimKind::Contacts).len() == 2
     })
     .await;
-    // Let the cycles that follow the first settle, then count what was downloaded so far.
-    tokio::time::sleep(common::poll_time(1500)).await;
+    // Let a cycle after the first settle, then count what was downloaded so far.
+    common::a_cycle_of_each(&rig.hub).await;
     let gets = rig.requests("GET");
     assert_eq!(gets, 3, "each calendar item exactly once");
 
@@ -533,8 +533,9 @@ async fn an_expired_sync_token_lists_again_and_downloads_nothing_it_already_has(
         .put_item("personal", "ev3.ics", &event("ev3", "Gym"));
     rig.nextcloud.expire_sync_tokens();
     eventually("the new item arrives", || personal.join("ev3.ics").exists()).await;
-    // Every collection was listed again (a REPORT with no token), and only the new item came.
-    tokio::time::sleep(common::poll_time(1500)).await;
+    // Every collection was listed again (a REPORT with no token), and only the new item came: a
+    // cycle of each after the item arrived has passed.
+    common::a_cycle_of_each(&rig.hub).await;
     assert_eq!(
         rig.requests("GET"),
         gets + 1,
@@ -560,8 +561,8 @@ async fn a_local_edit_a_deletion_and_a_new_file_are_never_sent_to_the_server() {
     std::fs::write(personal.join("ev1.ics"), "locally edited").expect("edit");
     std::fs::remove_file(personal.join("ev2.ics")).expect("delete");
     std::fs::write(personal.join("mine.ics"), event("mine", "Local only")).expect("new file");
-    // Three poll cycles pass.
-    tokio::time::sleep(common::poll_time(3500)).await;
+    // A cycle that saw the edits has passed.
+    common::a_cycle_of_each(&rig.hub).await;
     let writes: Vec<_> = rig
         .nextcloud
         .hits()

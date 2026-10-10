@@ -248,9 +248,14 @@ fn the_sheet_backend_takes_views_in_and_sends_inputs_out() {
 fn syncd_and_inferd_declare_what_they_did() {
     let sync = introspection(Bus::Sync);
     let sync1 = without_picker(&sync);
-    assert_eq!(sync1.matches("<method ").count(), 7);
+    assert_eq!(sync1.matches("<method ").count(), 8);
     assert_eq!(sync1.matches("<signal ").count(), 3);
     assert!(sync1.contains("<method name=\"ConfirmDiscard\">"));
+    assert!(sync1.contains("<method name=\"SyncNow\">"));
+    assert_eq!(
+        porter_dbus::SYNC_ERROR_PAUSED,
+        format!("{}Paused", porter_dbus::SYNC_ERROR_PREFIX)
+    );
     assert!(sync1.contains("<method name=\"Watch\">"));
     assert!(sync1.contains("<signal name=\"NeedsConfirmation\">"));
     assert_eq!(

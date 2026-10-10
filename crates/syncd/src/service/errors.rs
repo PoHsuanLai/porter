@@ -7,7 +7,9 @@
 use porter_core::wire::Refusal;
 #[cfg(feature = "photos-picker")]
 use porter_dbus::{PICKER_ERROR_NO_SUCH_SESSION, PICKER_ERROR_NOT_YET};
-use porter_dbus::{SYNC_ERROR_NO_SUCH_CONFLICT, SYNC_ERROR_NOTHING_HELD, refusal_error_name};
+use porter_dbus::{
+    SYNC_ERROR_NO_SUCH_CONFLICT, SYNC_ERROR_NOTHING_HELD, SYNC_ERROR_PAUSED, refusal_error_name,
+};
 use zbus::DBusError;
 use zbus::fdo;
 use zbus::message::{Header, Message};
@@ -58,6 +60,14 @@ impl RefusedError {
         Self {
             name: ErrorName::from_static_str_unchecked(SYNC_ERROR_NOTHING_HELD),
             text: "nothing is held for confirmation".to_owned(),
+        }
+    }
+
+    /// `SyncNow` on a dataset the person paused: `org.quire.Sync1.Error.Paused`.
+    pub fn paused() -> Self {
+        Self {
+            name: ErrorName::from_static_str_unchecked(SYNC_ERROR_PAUSED),
+            text: "the dataset is paused; resume it first".to_owned(),
         }
     }
 

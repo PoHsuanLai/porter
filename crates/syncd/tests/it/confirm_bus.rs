@@ -105,6 +105,7 @@ fn quick() -> Settings {
 struct Rig {
     bus: PrivateBus,
     known: Known,
+    hub: Hub,
     replica: Shared,
     dataset: Arc<MemoryDataset>,
     _server: zbus::Connection,
@@ -144,6 +145,7 @@ async fn rig() -> Rig {
     Rig {
         bus,
         known,
+        hub,
         replica,
         dataset,
         _server: server,
@@ -225,8 +227,9 @@ async fn a_held_discard_is_signalled_stays_until_confirmed_and_then_the_files_go
         held_on_status(&sync).await == Some((3, 3))
     })
     .await;
-    // It stays held, with every file in place, for as long as nobody says.
-    tokio::time::sleep(common::poll_time(2500)).await;
+    // It stays held, with every file in place, for as long as nobody says: a cycle that asks the
+    // replica again has passed, and it is still held.
+    common::a_cycle_of_each(&rig.hub).await;
     assert_eq!(held_on_status(&sync).await, Some((3, 3)));
     assert!(FILES.iter().all(|file| rig.dataset.get(file).is_some()));
 

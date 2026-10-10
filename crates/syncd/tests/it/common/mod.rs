@@ -76,10 +76,34 @@ pub async fn client(
     connection
 }
 
+/// Has every running, not paused dataset of `hub` sync now ("Sync now") and waits until each has
+/// finished a cycle that began after this call, so a cycle that saw everything done before it
+/// (an edit, a remote change) has happened, however loaded the machine is. A dataset that is
+/// paused, or not running, is not waited for. This is the wait for "a cycle passed"; no poll
+/// interval, no sleep.
+pub async fn a_cycle_of_each(hub: &syncd::service::Hub) {
+    let mut asked = Vec::new();
+    for name in hub.names() {
+        let Some(cycles) = hub.cycles(&name) else {
+            continue;
+        };
+        if hub.sync_now(&name).is_ok() {
+            asked.push((name, cycles.begun));
+        }
+    }
+    for (name, begun) in asked {
+        eventually("a cycle that began after the call ends", || {
+            hub.cycles(&name).is_none_or(|cycles| cycles.ended > begun)
+        })
+        .await;
+    }
+}
+
 /// How long the rigs take for what a daemon would take `ms` for: their scheduler seconds are
-/// `Settings::quick().time_scale` to the real one. Only for waits that "nothing happens" in: a
-/// loaded machine runs fewer polls in that time, which makes the proof thinner, never the test
-/// flaky. A wait for something to happen is [`eventually`].
+/// `Settings::quick().time_scale` to the real one. Only for waits that "nothing happens" in, and
+/// nothing is running to ask (use [`a_cycle_of_each`] where a dataset runs): a loaded machine
+/// runs fewer polls in that time, which makes the proof thinner, never the test flaky. A wait
+/// for something to happen is [`eventually`].
 pub fn poll_time(ms: u64) -> std::time::Duration {
     std::time::Duration::from_millis(ms) / syncd::scheduler::Settings::quick().time_scale
 }
