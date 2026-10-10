@@ -134,23 +134,37 @@ impl Drop for Engine {
 }
 
 /// Supervisor timing for a test: probes every 50 ms, three attempts 100 ms and 200 ms apart, a
-/// pause of 3 s after the last, and `start_timeout` to be ready.
-fn timing(start_timeout: Duration) -> engine_supervisor::SupervisorConfig {
+/// pause of `pause` after the last, and `start_timeout` to be ready.
+fn timing(start_timeout: Duration, pause: Duration) -> engine_supervisor::SupervisorConfig {
     engine_supervisor::SupervisorConfig {
         start_timeout,
         probe_every: Duration::from_millis(50),
-        backoff: (Duration::from_millis(100), Duration::from_millis(3000)),
+        backoff: (Duration::from_millis(100), pause),
         ..engine_supervisor::SupervisorConfig::default()
     }
 }
 
+/// The pause after the last attempt in the tests that do not look at it.
+const PAUSE: Duration = Duration::from_millis(3000);
+
+/// A pause longer than any request waits (`FAST`): a request inside it is failed at once or it
+/// waited the pause out, and the test cannot be late enough to be outside it.
+const LONG_PAUSE: Duration = Duration::from_secs(60);
+
+/// A pause a test waits out.
+const SHORT_PAUSE: Duration = Duration::from_millis(300);
+
 async fn world(engine: &Engine, start_timeout: Duration) -> World {
+    paused_world(engine, start_timeout, PAUSE).await
+}
+
+async fn paused_world(engine: &Engine, start_timeout: Duration, pause: Duration) -> World {
     World::start(Plan {
         catalog: vec![("tiny-chat.toml", entries::chat())],
         processes: Some(Processes {
             program: engine.program.clone(),
         }),
-        supervisor: Some(timing(start_timeout)),
+        supervisor: Some(timing(start_timeout, pause)),
         ..Plan::default()
     })
     .await
@@ -259,7 +273,9 @@ async fn until(what: &str, mut done: impl FnMut() -> bool) {
 async fn an_engine_that_exits_at_start_fails_prepare_and_open_with_its_cause() {
     let engine = Engine::new("exit3");
     // The readiness timeout is the default 180 s: the failure must not wait for it.
-    let world = world(&engine, Duration::from_secs(180)).await;
+    // The pause after giving up is longer than the test can be late, so every request below is
+    // inside it; the test of the pause's end is the next one.
+    let world = paused_world(&engine, Duration::from_secs(180), LONG_PAUSE).await;
 
     assert_eq!(prepare(&world).await, "loading");
     let (events, took) = open_and_ask(&world, porter_fake::GENEROUS).await;
@@ -313,9 +329,33 @@ async fn an_engine_that_exits_at_start_fails_prepare_and_open_with_its_cause() {
         assert!(took < FAST, "{took:?}");
     }
     assert_eq!(engine.runs(), 3, "no request started it inside the pause");
+}
 
+#[tokio::test(flavor = "multi_thread")]
+async fn once_the_pause_after_giving_up_is_over_the_next_request_tries_again() {
+    let engine = Engine::new("exit3");
+    let world = paused_world(&engine, Duration::from_secs(180), SHORT_PAUSE).await;
+    assert_eq!(prepare(&world).await, "loading");
+    until("the third attempt failed", || engine.runs() == 3).await;
+    until("given up", || {
+        matches!(
+            world.supervised.snapshot().states.values().next(),
+            Some(engine_supervisor::EngineState::Failed(_))
+        )
+    })
+    .await;
+    // The supervisor's own clock says the pause is over (it ticks when the pause ends); no
+    // wall-clock sleep stands in for it, and nothing here asserts what happened inside it.
+    until("the pause is over", || {
+        let snapshot = world.supervised.snapshot();
+        snapshot
+            .failures
+            .values()
+            .next()
+            .is_some_and(|failure| snapshot.now >= Some(failure.retry_at))
+    })
+    .await;
     // The pause is over: the next request tries once more, and fails the same way.
-    tokio::time::sleep(Duration::from_millis(3100)).await;
     let (events, _) = open_and_ask(&world, porter_fake::GENEROUS).await;
     assert!(not_ready(&events), "{events:?}");
     assert!(engine.runs() >= 4, "{}", engine.runs());
