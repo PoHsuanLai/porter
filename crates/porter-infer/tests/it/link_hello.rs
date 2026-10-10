@@ -6,15 +6,12 @@ use porter_core::{AccountsRequest, DataClass, Need, Tier, Tokens};
 use porter_infer::{LinkHello, OpenFrame, OpenOptions};
 
 fn hello() -> LinkHello {
-    LinkHello::Open(OpenFrame {
-        need: Need::Llm(LlmNeed {
-            features: Default::default(),
-            context: Tokens(8),
-        }),
-        class: DataClass::Notes,
-        tier: Tier::Fast,
-        options: OpenOptions::default(),
-    })
+    LinkHello::Open(OpenFrame::new(
+        Need::Llm(LlmNeed::new(Default::default(), Tokens(8))),
+        DataClass::Notes,
+        Tier::Fast,
+        OpenOptions::default(),
+    ))
 }
 
 #[test]

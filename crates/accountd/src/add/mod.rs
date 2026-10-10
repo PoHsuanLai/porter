@@ -181,10 +181,7 @@ fn person() -> AppId {
 
 /// The need every Llm account of the providers meets: chat, any context.
 fn llm_need() -> Need {
-    Need::Llm(LlmNeed {
-        features: BTreeSet::from([LlmFeature::Chat]),
-        context: Tokens(0),
-    })
+    Need::Llm(LlmNeed::new(BTreeSet::from([LlmFeature::Chat]), Tokens(0)))
 }
 
 /// Takes `org.quire.Accounts1` on `connection` so no daemon runs beside the command. A name that

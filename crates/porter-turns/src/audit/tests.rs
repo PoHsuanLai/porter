@@ -28,15 +28,12 @@ fn usage(input: u32, output: u32) -> TokenUsage {
 }
 
 fn chat(usage: TokenUsage) -> InferReply {
-    InferReply::Chat(ChatReply {
-        text: "secret words".into(),
-        tool_calls: vec![],
-        stop: StopReason::EndTurn,
-        thought: None,
-        scores: None,
+    InferReply::Chat(ChatReply::new(
+        "secret words".into(),
+        StopReason::EndTurn,
         usage,
-        served: served(),
-    })
+        served(),
+    ))
 }
 
 fn nothing() -> Carried {
@@ -48,10 +45,10 @@ fn nothing() -> Carried {
 
 fn spec() -> SessionSpec {
     SessionSpec {
-        need: porter_core::Need::Llm(porter_core::need::LlmNeed {
-            features: Default::default(),
-            context: Tokens(1),
-        }),
+        need: porter_core::Need::Llm(porter_core::need::LlmNeed::new(
+            Default::default(),
+            Tokens(1),
+        )),
         class: porter_core::DataClass::Notes,
         tier: porter_core::Tier::Fast,
         usage: porter_core::consent::Usage::Interactive,
@@ -100,11 +97,7 @@ fn what_a_reply_spent_depends_on_what_it_is() {
         (zero.input, zero.output, zero.cached),
         (Tokens(0), Tokens(0), Tokens(0))
     );
-    let embed = InferReply::Embed(EmbedReply {
-        vectors: vec![],
-        usage: usage(9, 0),
-        served: served(),
-    });
+    let embed = InferReply::Embed(EmbedReply::new(vec![], usage(9, 0), served()));
     let cases = [
         (chat(usage(3, 4)), usage(3, 4)),
         (embed, usage(9, 0)),

@@ -94,10 +94,10 @@ async fn answered(bus: &bus::PrivateBus, proc_root: &Path) -> bool {
     let mut daemon = start(bus, proc_root);
     daemon.owns_its_name(&dbus).await;
     let proxy = InferenceProxy::new(&client).await.expect("proxy");
-    let need = need_to_dbus(&Need::Llm(LlmNeed {
-        features: Default::default(),
-        context: porter_core::Tokens(1),
-    }));
+    let need = need_to_dbus(&Need::Llm(LlmNeed::new(
+        Default::default(),
+        porter_core::Tokens(1),
+    )));
     let reply = bus::within(
         "inferd's answer to Availability",
         proxy.availability(&need, "notes", &Details::new()),

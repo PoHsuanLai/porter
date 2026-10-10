@@ -20,9 +20,8 @@ use porter_core::need::LlmNeed;
 use porter_core::{DataClass, Locality, ModelId, Need, Tier, Tokens};
 use porter_fake_servers::net::Bind;
 use porter_infer::{
-    ChatControl, ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRefusal, InferReply,
-    InferRequest, Knob, MessagePart, ModelRef, Reasoning, ReplyShape, Role as ChatRole, ToolChoice,
-    ToolParallelism,
+    ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRefusal, InferReply, InferRequest,
+    MessagePart, ModelRef, Role as ChatRole,
 };
 use rustix::process::{Pid, Signal, kill_process};
 use std::os::unix::fs::PermissionsExt;
@@ -192,33 +191,19 @@ fn model() -> ModelRef {
 }
 
 fn llm() -> Need {
-    Need::Llm(LlmNeed {
-        features: [LlmFeature::Chat].into(),
-        context: Tokens(1000),
-    })
+    Need::Llm(LlmNeed::new([LlmFeature::Chat].into(), Tokens(1000)))
 }
 
 fn ask(class: DataClass, text: &str) -> InferRequest {
-    InferRequest::Chat(ChatRequest {
-        messages: vec![ChatMessage {
+    InferRequest::Chat(ChatRequest::new(
+        vec![ChatMessage {
             role: ChatRole::User,
             parts: vec![MessagePart::Text(text.into())],
         }],
-        shape: ReplyShape::Text,
-        tier: Tier::Balanced,
+        Tier::Balanced,
         class,
-        usage: Usage::Interactive,
-        tools: vec![],
-        control: ChatControl {
-            tool_choice: ToolChoice::Auto,
-            tool_calls: ToolParallelism::One,
-            max_output: Knob::Off,
-            reasoning: Reasoning::EngineDefault,
-            sampling: Knob::Off,
-            stop: vec![],
-            scores: Knob::Off,
-        },
-    })
+        Usage::Interactive,
+    ))
 }
 
 /// One turn of class `class`, the events it produced.

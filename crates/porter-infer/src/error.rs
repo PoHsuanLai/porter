@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 /// Why a request was not run; each tells the app what to show.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, thiserror::Error)]
 #[serde(tag = "kind", content = "v", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum InferRefusal {
     /// Only cloud models fit, and this class may not leave the machine: the app says so and
     /// may offer Settings.
@@ -34,6 +35,7 @@ pub enum InferRefusal {
 /// Why one model call failed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, thiserror::Error)]
 #[serde(tag = "kind", content = "v", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum ModelError {
     /// The runtime or provider could not be reached.
     #[error("unreachable")]

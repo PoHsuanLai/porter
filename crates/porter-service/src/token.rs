@@ -30,6 +30,8 @@ pub(crate) fn provider_refusal(error: ProviderError) -> Refusal {
         ProviderError::Unauthorized => Refusal::NeedsReauth,
         ProviderError::Forbidden => Refusal::Denied,
         ProviderError::Unreachable | ProviderError::Unreadable => Refusal::Unavailable,
+        // a variant a newer porter adds: the app is told it is unavailable
+        _ => Refusal::Unavailable,
     }
 }
 

@@ -33,10 +33,7 @@ fn settings(text: &str) -> Settings {
 }
 
 fn need() -> Need {
-    Need::Llm(LlmNeed {
-        features: [LlmFeature::Chat].into(),
-        context: Tokens(1000),
-    })
+    Need::Llm(LlmNeed::new([LlmFeature::Chat].into(), Tokens(1000)))
 }
 
 fn card(account: &str, model: &str, locality: Locality) -> ModelCard {

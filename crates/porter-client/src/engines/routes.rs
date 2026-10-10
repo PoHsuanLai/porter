@@ -106,7 +106,7 @@ impl Table {
                 spend: SpendVerdict::Within,
             });
         }
-        let admitted = admit(RouteAsk { class }, &candidates, policy)?;
+        let admitted = admit(RouteAsk::new(class), &candidates, policy)?;
         admitted
             .first()
             .and_then(|first| {

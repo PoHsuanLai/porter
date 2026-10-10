@@ -33,12 +33,12 @@ fn app(name: &str) -> AppId {
 }
 
 fn storage() -> Need {
-    Need::Storage(StorageNeed {
-        access: Access::ReadWrite,
-        delta: Delta::Poll,
-        scope: StorageScope::Full,
-        quota: QuotaReport::Reported,
-    })
+    Need::Storage(StorageNeed::new(
+        Access::ReadWrite,
+        Delta::Poll,
+        StorageScope::Full,
+        QuotaReport::Reported,
+    ))
 }
 
 fn query() -> AccountsRequest {
@@ -525,11 +525,11 @@ async fn add_and_allow_grants_nothing_when_the_new_account_does_not_meet_the_nee
         vec![provider()],
         TestSheets::new(vec![adding(nextcloud.base_url())], consent(vec![])),
     );
-    let mail = Need::Mail(porter_core::need::MailNeed {
-        access: Access::ReadWrite,
-        send: porter_core::capability::Offered::Present,
-        delta: Delta::Poll,
-    });
+    let mail = Need::Mail(porter_core::need::MailNeed::new(
+        Access::ReadWrite,
+        porter_core::capability::Offered::Present,
+        Delta::Poll,
+    ));
     let reply = service
         .add_and_allow(
             &app("org.quire.Mail"),

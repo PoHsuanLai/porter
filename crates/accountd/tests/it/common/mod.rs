@@ -265,12 +265,12 @@ use porter_core::wire::Refusal;
 use porter_dbus::{Details, ManagerProxy, NeedArg, Sheet, need_to_dbus, refusal_error_name};
 
 pub fn storage_need() -> NeedArg {
-    need_to_dbus(&Need::Storage(StorageNeed {
-        access: Access::ReadWrite,
-        delta: Delta::Poll,
-        scope: StorageScope::AppFolder,
-        quota: QuotaReport::Unreported,
-    }))
+    need_to_dbus(&Need::Storage(StorageNeed::new(
+        Access::ReadWrite,
+        Delta::Poll,
+        StorageScope::AppFolder,
+        QuotaReport::Unreported,
+    )))
 }
 
 /// A host that allows `fake-storage` always, whatever it is asked.

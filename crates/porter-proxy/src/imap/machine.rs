@@ -94,7 +94,8 @@ impl ImapRelay {
             }
             (ImapAuth::Plain, _) => format!("{AUTH} AUTHENTICATE PLAIN"),
             (ImapAuth::Xoauth2, _) => format!("{AUTH} AUTHENTICATE XOAUTH2"),
-            (ImapAuth::Login, RelayAuth::AccessToken(_) | RelayAuth::Anonymous) => {
+            // A token or no credential cannot log in, and neither can a way a newer porter adds.
+            (ImapAuth::Login, _) => {
                 return fail(RelayFault::Protocol);
             }
         };

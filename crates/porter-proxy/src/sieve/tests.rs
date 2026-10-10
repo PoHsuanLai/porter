@@ -8,16 +8,16 @@ fn password() -> RelayAuth {
 }
 
 fn relay(tls: Tls, auth: RelayAuth) -> SieveRelay {
-    SieveRelay::new(RelayPlan {
-        endpoint: ServiceEndpoint {
+    SieveRelay::new(RelayPlan::new(
+        ServiceEndpoint {
             family: Family::Imap,
             url: EndpointUrl::parse("sieve://mail.example.org").expect("url"),
             tls,
             login: LoginName("ada".into()),
         },
-        kind: CapabilityKind::Mail,
+        CapabilityKind::Mail,
         auth,
-    })
+    ))
 }
 
 fn lines(text: &str) -> Vec<String> {

@@ -16,20 +16,26 @@ pub(crate) fn ask_for(
     let accounts: Vec<AccountChoice> = registry
         .fitting(need)
         .iter()
-        .map(|fit| AccountChoice {
-            account: fit.account.id.clone(),
-            label: fit.account.label.clone(),
-            provider: fit.account.provider.clone(),
+        .map(|fit| {
+            AccountChoice::new(
+                fit.account.id.clone(),
+                fit.account.label.clone(),
+                fit.account.provider.clone(),
+            )
         })
         .collect();
-    (!accounts.is_empty()).then(|| ConsentAsk {
-        app: asker.app.clone(),
-        kind: need.kind(),
-        class: asker.class,
-        usage: asker.usage,
-        accounts,
-        session: session.cloned(),
-        app_label: None,
+    (!accounts.is_empty()).then(|| {
+        let ask = ConsentAsk::new(
+            asker.app.clone(),
+            need.kind(),
+            asker.class,
+            asker.usage,
+            accounts,
+        );
+        match session {
+            Some(session) => ask.with_session(session.clone()),
+            None => ask,
+        }
     })
 }
 
@@ -74,6 +80,8 @@ pub(crate) fn settle(
         ConsentAnswer::Allow { account, scope } => {
             allow(registry, need, asker, &account, scope, at)
         }
+        // a variant a newer porter adds: it records nothing and the ask is dismissed
+        _ => AccountsReply::Refused(Refusal::Dismissed),
     }
 }
 

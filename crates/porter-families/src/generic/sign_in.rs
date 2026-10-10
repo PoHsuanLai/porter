@@ -139,6 +139,8 @@ impl GenericSignIn {
                 self.state = State::Ended;
                 SignInStep::Done(signed)
             }
+            // a variant a newer porter adds: the sign-in ends as unreadable
+            _ => self.failed(SignInFault::Unreadable),
         }
     }
 
@@ -165,6 +167,8 @@ impl GenericSignIn {
                 self.found(credential, typed.login, endpoints, claims).await
             }
             SignInMode::Reauthenticate { .. } => self.ask_server(typed),
+            // a variant a newer porter adds: the sign-in ends as unreadable
+            _ => self.failed(SignInFault::Unreadable),
         }
     }
 
@@ -174,13 +178,13 @@ impl GenericSignIn {
         endpoints: Vec<ServiceEndpoint>,
         claims: Vec<Claim>,
     ) -> Signed {
-        Signed {
-            label: AccountLabel(label),
-            credentials: vec![(SecretPurpose::Password, credential)],
+        Signed::new(
+            AccountLabel(label),
+            vec![(SecretPurpose::Password, credential)],
             claims,
             endpoints,
-            restriction: Restriction::none(),
-        }
+            Restriction::none(),
+        )
     }
 
     /// Shows `signed` for review and waits in the state `waiting` makes of it.

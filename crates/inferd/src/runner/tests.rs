@@ -4,9 +4,8 @@ use crate::testkit::{Scratch, models};
 use porter_core::consent::Usage;
 use porter_core::{AccountId, DataClass, Locality, ModelId};
 use porter_infer::{
-    ChatControl, ChatMessage, ChatRequest, ImagePart, ImageSource, Knob, MessagePart, Reasoning,
-    ReplyShape, Role, SpeakRequest, ToolChoice, ToolParallelism, TranscribeBegin, TranscribeMode,
-    VoiceName,
+    ChatMessage, ChatRequest, ImagePart, ImageSource, MessagePart, Role, SpeakRequest,
+    TranscribeBegin, TranscribeMode, VoiceName,
 };
 use tokio::io::AsyncReadExt;
 use tokio::net::UnixListener;
@@ -20,26 +19,15 @@ fn served() -> ServedBy {
 }
 
 fn chat_with(parts: Vec<MessagePart>) -> InferRequest {
-    InferRequest::Chat(ChatRequest {
-        messages: vec![ChatMessage {
+    InferRequest::Chat(ChatRequest::new(
+        vec![ChatMessage {
             role: Role::User,
             parts,
         }],
-        shape: ReplyShape::Text,
-        tier: Tier::Fast,
-        class: DataClass::Notes,
-        usage: Usage::Interactive,
-        tools: vec![],
-        control: ChatControl {
-            tool_choice: ToolChoice::Auto,
-            tool_calls: ToolParallelism::One,
-            max_output: Knob::Off,
-            reasoning: Reasoning::EngineDefault,
-            sampling: Knob::Off,
-            stop: vec![],
-            scores: Knob::Off,
-        },
-    })
+        Tier::Fast,
+        DataClass::Notes,
+        Usage::Interactive,
+    ))
 }
 
 fn chat() -> InferRequest {
@@ -111,19 +99,21 @@ async fn kinds_the_runner_cannot_serve_are_refused_unsupported_and_so_is_a_step_
     let scratch = Scratch::new("run-unsupported");
     let (turns, _) = turns(&scratch, 2);
     let cases = [
-        InferRequest::Transcribe(TranscribeBegin {
-            mode: TranscribeMode::Batch,
-            lang: porter_infer::LangPick::Auto,
-            rate: porter_infer::AudioRate(16_000),
-            usage: Usage::Interactive,
-        }),
-        InferRequest::Speak(SpeakRequest {
-            text: "hi".into(),
-            voice: Some(VoiceName("af_heart".into())),
-            lang: porter_core::capability::LanguageTag::parse("en").expect("tag"),
-            class: DataClass::Voice,
-            usage: Usage::Interactive,
-        }),
+        InferRequest::Transcribe(TranscribeBegin::new(
+            TranscribeMode::Batch,
+            porter_infer::LangPick::Auto,
+            porter_infer::AudioRate(16_000),
+            Usage::Interactive,
+        )),
+        InferRequest::Speak(
+            SpeakRequest::new(
+                "hi".into(),
+                porter_core::capability::LanguageTag::parse("en").expect("tag"),
+                DataClass::Voice,
+                Usage::Interactive,
+            )
+            .with_voice(VoiceName("af_heart".into())),
+        ),
     ];
     for request in cases {
         assert_eq!(
@@ -146,13 +136,13 @@ async fn kinds_the_runner_cannot_serve_are_refused_unsupported_and_so_is_a_step_
 async fn a_model_with_no_embedding_details_refuses_to_embed() {
     let scratch = Scratch::new("run-embed");
     let (turns, _) = turns(&scratch, 0);
-    let request = InferRequest::Embed(porter_infer::EmbedRequest {
-        inputs: vec!["a".into()],
-        role: porter_infer::EmbedRole::Query,
-        dims: porter_core::need::DimsNeed::Any,
-        class: DataClass::Notes,
-        usage: Usage::Background,
-    });
+    let request = InferRequest::Embed(porter_infer::EmbedRequest::new(
+        vec!["a".into()],
+        porter_infer::EmbedRole::Query,
+        porter_core::need::DimsNeed::Any,
+        DataClass::Notes,
+        Usage::Background,
+    ));
     assert_eq!(
         finish(&turns, request).await,
         InferReply::Refused(InferRefusal::Unsupported)

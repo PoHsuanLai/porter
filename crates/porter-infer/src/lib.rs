@@ -8,31 +8,18 @@
 //! ```
 //! use porter_core::consent::Usage;
 //! use porter_core::{DataClass, Tier};
-//! use porter_infer::{
-//!     ChatControl, ChatMessage, ChatRequest, Knob, MessagePart, Reasoning, ReplyShape, Role,
-//!     ToolChoice, ToolParallelism,
-//! };
+//! use porter_infer::{ChatControl, ChatMessage, ChatRequest, MessagePart, Role, ToolChoice};
 //!
-//! let request = ChatRequest {
-//!     messages: vec![ChatMessage {
+//! let request = ChatRequest::new(
+//!     vec![ChatMessage {
 //!         role: Role::User,
 //!         parts: vec![MessagePart::Text("Summarise this thread.".into())],
 //!     }],
-//!     shape: ReplyShape::Text,
-//!     tier: Tier::Fast,
-//!     class: DataClass::Mail,
-//!     usage: Usage::Interactive,
-//!     tools: vec![],
-//!     control: ChatControl {
-//!         tool_choice: ToolChoice::Never,
-//!         tool_calls: ToolParallelism::One,
-//!         max_output: Knob::Off,
-//!         reasoning: Reasoning::EngineDefault,
-//!         sampling: Knob::Off,
-//!         stop: vec![],
-//!         scores: Knob::Off,
-//!     },
-//! };
+//!     Tier::Fast,
+//!     DataClass::Mail,
+//!     Usage::Interactive,
+//! )
+//! .with_control(ChatControl::new().with_tool_choice(ToolChoice::Never));
 //! let json = serde_json::to_string(&request).expect("serializes");
 //! assert_eq!(serde_json::from_str::<ChatRequest>(&json).expect("deserializes"), request);
 //! ```

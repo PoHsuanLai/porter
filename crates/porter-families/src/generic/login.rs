@@ -66,11 +66,11 @@ impl SharedLogin {
         else {
             return Ok(());
         };
-        let plan = RelayPlan {
-            endpoint: endpoint.clone(),
-            kind: CapabilityKind::Mail,
-            auth: RelayAuth::Password(password.clone()),
-        };
+        let plan = RelayPlan::new(
+            endpoint.clone(),
+            CapabilityKind::Mail,
+            RelayAuth::Password(password.clone()),
+        );
         self.0.check_boxed(plan).await
     }
 }

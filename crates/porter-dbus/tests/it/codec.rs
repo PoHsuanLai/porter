@@ -21,116 +21,88 @@ use porter_dbus::{
 use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
 
 fn every_need() -> Vec<(&'static str, Need)> {
-    let pim = PimNeed {
-        access: Access::Read,
-        delta: Delta::Poll,
-    };
+    let pim = PimNeed::new(Access::Read, Delta::Poll);
     vec![
         (
             "identity",
-            Need::Identity(IdentityNeed {
-                profile: Offered::Present,
-                verified_address: Offered::Absent,
-            }),
+            Need::Identity(IdentityNeed::new(Offered::Present, Offered::Absent)),
         ),
         (
             "mail",
-            Need::Mail(MailNeed {
-                access: Access::Read,
-                send: Offered::Present,
-                delta: Delta::Push,
-            }),
+            Need::Mail(MailNeed::new(Access::Read, Offered::Present, Delta::Push)),
         ),
         ("calendar", Need::Calendar(pim.clone())),
         ("contacts", Need::Contacts(pim.clone())),
         ("tasks", Need::Tasks(pim)),
         (
             "notes",
-            Need::Notes(NotesNeed {
-                access: Access::ReadWrite,
-                delta: Delta::None,
-            }),
+            Need::Notes(NotesNeed::new(Access::ReadWrite, Delta::None)),
         ),
         (
             "storage",
-            Need::Storage(StorageNeed {
-                access: Access::ReadWrite,
-                delta: Delta::Poll,
-                scope: StorageScope::AppFolder,
-                quota: QuotaReport::Unreported,
-            }),
+            Need::Storage(StorageNeed::new(
+                Access::ReadWrite,
+                Delta::Poll,
+                StorageScope::AppFolder,
+                QuotaReport::Unreported,
+            )),
         ),
         (
             "photos",
-            Need::Photos(PhotosNeed {
-                library_read: LibraryRead::None,
-                upload: Offered::Present,
-                albums: Albums::None,
-                video: Offered::Absent,
-                delta: Delta::None,
-            }),
+            Need::Photos(PhotosNeed::new(
+                LibraryRead::None,
+                Offered::Present,
+                Albums::None,
+                Offered::Absent,
+                Delta::None,
+            )),
         ),
         (
             "llm",
-            Need::Llm(LlmNeed {
-                features: [LlmFeature::Vision, LlmFeature::Tools].into(),
-                context: Tokens(32_000),
-            }),
+            Need::Llm(LlmNeed::new(
+                [LlmFeature::Vision, LlmFeature::Tools].into(),
+                Tokens(32_000),
+            )),
         ),
         (
             "embeddings",
-            Need::Embeddings(EmbedNeed {
-                dims: DimsNeed::Exactly(Dims(768)),
-                modalities: [Modality::Text, Modality::Image].into(),
-            }),
+            Need::Embeddings(EmbedNeed::new(
+                DimsNeed::Exactly(Dims(768)),
+                [Modality::Text, Modality::Image].into(),
+            )),
         ),
         (
             "embeddings",
-            Need::Embeddings(EmbedNeed {
-                dims: DimsNeed::Any,
-                modalities: [Modality::Text].into(),
-            }),
+            Need::Embeddings(EmbedNeed::new(DimsNeed::Any, [Modality::Text].into())),
         ),
         (
             "speech",
-            Need::Speech(SpeechNeed {
-                modes: [SpeechMode::Stt, SpeechMode::Tts].into(),
-            }),
+            Need::Speech(SpeechNeed::new([SpeechMode::Stt, SpeechMode::Tts].into())),
         ),
         (
             "image_gen",
-            Need::ImageGen(ImageGenNeed {
-                modes: [porter_core::capability::ImageMode::Inpaint].into(),
-                max_side: Px(512),
-            }),
+            Need::ImageGen(ImageGenNeed::new(
+                [porter_core::capability::ImageMode::Inpaint].into(),
+                Px(512),
+            )),
         ),
-        (
-            "rerank",
-            Need::Rerank(RerankNeed {
-                max_docs: Count(10),
-            }),
-        ),
+        ("rerank", Need::Rerank(RerankNeed::new(Count(10)))),
         (
             "computer_use",
-            Need::ComputerUse(CuaNeed {
-                environments: [CuaEnv::Desktop, CuaEnv::Browser].into(),
-            }),
+            Need::ComputerUse(CuaNeed::new([CuaEnv::Desktop, CuaEnv::Browser].into())),
         ),
         (
             "key_value",
-            Need::KeyValue(KeyValueNeed {
-                delta: Delta::Poll,
-                max_item: Bytes(1024),
-            }),
+            Need::KeyValue(KeyValueNeed::new(Delta::Poll, Bytes(1024))),
         ),
-        ("push", Need::Push(PushNeed {})),
+        ("push", Need::Push(PushNeed::new())),
         (
             "agent",
-            Need::Agent(AgentNeed {
-                program: AgentProgram::parse("claude-code").expect("program"),
-                protocols: [AgentProtocol::AnthropicMessages].into(),
-                base_url: Offered::Present,
-            }),
+            Need::Agent(AgentNeed::new(
+                AgentProgram::parse("claude-code").expect("program"),
+                [AgentProtocol::AnthropicMessages].into(),
+                Offered::Present,
+            )),
         ),
     ]
 }
@@ -150,10 +122,7 @@ fn every_need_round_trips_under_its_kind_slug() {
 
 #[test]
 fn a_needs_fields_are_entries_by_name() {
-    let need = Need::Llm(LlmNeed {
-        features: [LlmFeature::Vision].into(),
-        context: Tokens(32_000),
-    });
+    let need = Need::Llm(LlmNeed::new([LlmFeature::Vision].into(), Tokens(32_000)));
     let (_, details) = need_to_dbus(&need);
     let mut names: Vec<&str> = details.keys().map(String::as_str).collect();
     names.sort_unstable();
@@ -203,65 +172,61 @@ fn candidates() -> Vec<Candidate> {
         wire: LlmWire::Messages,
     });
     vec![
-        Candidate {
-            account: AccountId::parse("67e55044-10b1.x").expect("id"),
-            label: porter_core::AccountLabel("ada@example.org".into()),
-            provider: "nextcloud".parse_provider(),
-            subject: Subject::Account,
-            capability: storage,
-            restriction: Restriction::none(),
-            grant: GrantId::parse("g1").expect("grant"),
-            endpoints: vec![
-                endpoint(
-                    Family::WebDav,
-                    "https://cloud.example.org/remote.php/dav/",
-                    Tls::Implicit,
-                ),
-                endpoint(Family::Imap, "imap://imap.example.org:143", Tls::StartTls),
-            ],
-        },
-        Candidate {
-            account: AccountId::parse("local-ollama").expect("id"),
-            label: porter_core::AccountLabel("Ollama on this computer".into()),
-            provider: "ollama".parse_provider(),
-            subject: Subject::Model(ModelId::parse("llama3.2").expect("model")),
-            capability: llm,
-            restriction: Restriction {
-                verification: Verification::Unverified {
+        Candidate::new(
+            AccountId::parse("67e55044-10b1.x").expect("id"),
+            porter_core::AccountLabel("ada@example.org".into()),
+            "nextcloud".parse_provider(),
+            Subject::Account,
+            storage,
+            Restriction::none(),
+            GrantId::parse("g1").expect("grant"),
+        )
+        .with_endpoints(vec![
+            endpoint(
+                Family::WebDav,
+                "https://cloud.example.org/remote.php/dav/",
+                Tls::Implicit,
+            ),
+            endpoint(Family::Imap, "imap://imap.example.org:143", Tls::StartTls),
+        ]),
+        Candidate::new(
+            AccountId::parse("local-ollama").expect("id"),
+            porter_core::AccountLabel("Ollama on this computer".into()),
+            "ollama".parse_provider(),
+            Subject::Model(ModelId::parse("llama3.2").expect("model")),
+            llm,
+            Restriction::none()
+                .with_verification(Verification::Unverified {
                     user_cap: Count(100),
-                },
-                token_lifetime: TokenLifetime::SevenDays,
-                consent: TenantConsent::AdminRequired,
-                limits: vec![Limit {
-                    kind: CapabilityKind::Llm,
-                    reason: LimitReason::PickerOnly,
-                }],
-                signed_in: None,
-            },
-            grant: GrantId::parse("g2").expect("grant"),
-            endpoints: vec![],
-        },
+                })
+                .with_token_lifetime(TokenLifetime::SevenDays)
+                .with_consent(TenantConsent::AdminRequired)
+                .with_limits(vec![Limit::new(
+                    CapabilityKind::Llm,
+                    LimitReason::PickerOnly,
+                )]),
+            GrantId::parse("g2").expect("grant"),
+        ),
     ]
 }
 
 #[test]
 fn an_agent_candidate_with_no_variable_to_set_round_trips() {
     // An absent variable is an absent entry, not a null: the vardict has no null.
-    let candidate = Candidate {
-        account: AccountId::parse("gemini-cli").expect("id"),
-        label: porter_core::AccountLabel("Gemini CLI".into()),
-        provider: "gemini-cli".parse_provider(),
-        subject: Subject::Agent(AgentProgram::parse("gemini-cli").expect("program")),
-        capability: Capability::Agent(Box::new(AgentCap {
+    let candidate = Candidate::new(
+        AccountId::parse("gemini-cli").expect("id"),
+        porter_core::AccountLabel("Gemini CLI".into()),
+        "gemini-cli".parse_provider(),
+        Subject::Agent(AgentProgram::parse("gemini-cli").expect("program")),
+        Capability::Agent(Box::new(AgentCap {
             program: AgentProgram::parse("gemini-cli").expect("program"),
             key_env: Some(porter_core::capability::EnvName::parse("GEMINI_API_KEY").expect("env")),
             base_url_env: None,
             protocols: [AgentProtocol::GenerateContent].into(),
         })),
-        restriction: Restriction::none(),
-        grant: GrantId::parse("g3").expect("grant"),
-        endpoints: vec![],
-    };
+        Restriction::none(),
+        GrantId::parse("g3").expect("grant"),
+    );
     let ctxt = zbus::zvariant::serialized::Context::new_dbus(zbus::zvariant::LE, 0);
     let arg = candidate_to_dbus(&candidate);
     let bytes = zbus::zvariant::to_bytes(ctxt, &arg).expect("encodes");
@@ -392,11 +357,7 @@ fn a_token_round_trips_and_an_unknown_kind_is_refused() {
         TokenKind::Xoauth2,
         TokenKind::ApiKeyHandle,
     ] {
-        let token = IssuedToken {
-            kind,
-            value: SecretText::new("abc"),
-            expires: UnixSeconds(1_790_000_000),
-        };
+        let token = IssuedToken::new(kind, SecretText::new("abc"), UnixSeconds(1_790_000_000));
         let arg = porter_dbus::token_to_dbus(&token);
         assert_eq!(arg.2, 1_790_000_000);
         assert_eq!(porter_dbus::token_from_dbus(arg), Ok(token));

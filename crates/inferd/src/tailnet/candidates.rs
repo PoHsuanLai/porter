@@ -84,7 +84,7 @@ impl Candidates {
         let machines = self.machines.machines().await;
         let mine: Vec<_> = machines
             .into_iter()
-            .filter(|machine| machine.owner == MachineOwner::Mine && machine.online)
+            .filter(|machine| machine.owner == MachineOwner::Mine && machine.link.is_online())
             .collect();
         let mut looks = self.looks.lock().await;
         looks.retain(|node, _| mine.iter().any(|machine| machine.node == *node));

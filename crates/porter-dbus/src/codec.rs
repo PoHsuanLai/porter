@@ -88,7 +88,7 @@ mod tests {
 
     #[test]
     fn a_need_with_no_fields_is_an_empty_vardict() {
-        let need = Need::Push(porter_core::need::PushNeed {});
+        let need = Need::Push(porter_core::need::PushNeed::new());
         let (kind, details) = need_to_dbus(&need);
         assert_eq!(kind, "push");
         assert!(details.is_empty());

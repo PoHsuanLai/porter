@@ -306,16 +306,11 @@ mod tests {
     use porter_core::need::{CuaNeed, DimsNeed, EmbedNeed, LlmNeed, SpeechNeed};
 
     fn llm() -> Need {
-        Need::Llm(LlmNeed {
-            features: Default::default(),
-            context: Tokens(1),
-        })
+        Need::Llm(LlmNeed::new(Default::default(), Tokens(1)))
     }
 
     fn speech(modes: &[SpeechMode]) -> Need {
-        Need::Speech(SpeechNeed {
-            modes: modes.iter().copied().collect(),
-        })
+        Need::Speech(SpeechNeed::new(modes.iter().copied().collect()))
     }
 
     #[test]
@@ -326,17 +321,12 @@ mod tests {
             ("llm", llm(), vec![Chat, Task]),
             (
                 "embeddings",
-                Need::Embeddings(EmbedNeed {
-                    dims: DimsNeed::Any,
-                    modalities: Default::default(),
-                }),
+                Need::Embeddings(EmbedNeed::new(DimsNeed::Any, Default::default())),
                 vec![Embed],
             ),
             (
                 "computer use",
-                Need::ComputerUse(CuaNeed {
-                    environments: [CuaEnv::Desktop].into(),
-                }),
+                Need::ComputerUse(CuaNeed::new([CuaEnv::Desktop].into())),
                 vec![CuaBegin, CuaStep],
             ),
             ("speech in", speech(&[SpeechMode::Stt]), vec![Transcribe]),

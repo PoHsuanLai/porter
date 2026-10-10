@@ -19,11 +19,10 @@ use porter_core::consent::Usage;
 use porter_core::need::SpeechNeed;
 use porter_core::{DataClass, Need, Tier};
 use porter_infer::{
-    Answer, AudioFrame, AudioRate, AutoPolicy, Base64Bytes, ChatControl, ChatMessage, ChatReply,
-    ChatRequest, ClientFrame, DescribeImages, Flow, HeardDelta, InferEvent, InferReply,
-    InferRequest, Knob, LangPick, Modality, ModelError, ModelLabel, ModelRef, OpenOptions,
-    Readiness, Reasoning, ReplyShape, RequestShape, Role, ShowReason, StageRole, TierMap,
-    ToolChoice, ToolParallelism, TranscribeBegin, TranscribeMode,
+    Answer, AudioFrame, AudioRate, AutoPolicy, Base64Bytes, ChatMessage, ChatReply, ChatRequest,
+    ClientFrame, DescribeImages, Flow, HeardDelta, InferEvent, InferReply, InferRequest, LangPick,
+    Modality, ModelError, ModelLabel, ModelRef, OpenOptions, Readiness, RequestShape, Role,
+    ShowReason, StageRole, TierMap, TranscribeBegin, TranscribeMode,
 };
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -32,9 +31,7 @@ use std::time::Duration;
 const WORDS: [&str; 4] = ["turn", "the", "lights", "off"];
 
 fn stt() -> Need {
-    Need::Speech(SpeechNeed {
-        modes: [SpeechMode::Stt].into(),
-    })
+    Need::Speech(SpeechNeed::new([SpeechMode::Stt].into()))
 }
 
 fn quick() -> SupervisorConfig {
@@ -58,12 +55,12 @@ fn plan_with_ears() -> Plan {
 }
 
 fn begin() -> TranscribeBegin {
-    TranscribeBegin {
-        mode: TranscribeMode::Streaming,
-        lang: LangPick::Auto,
-        rate: AudioRate(16_000),
-        usage: Usage::Interactive,
-    }
+    TranscribeBegin::new(
+        TranscribeMode::Streaming,
+        LangPick::Auto,
+        AudioRate(16_000),
+        Usage::Interactive,
+    )
 }
 
 fn frame(n: u64) -> AudioFrame {
@@ -362,26 +359,15 @@ async fn a_speech_session_with_no_host_is_refused_not_hung() {
 }
 
 fn chat() -> ChatRequest {
-    ChatRequest {
-        messages: vec![ChatMessage {
+    ChatRequest::new(
+        vec![ChatMessage {
             role: Role::User,
             parts: vec![porter_infer::MessagePart::Text("Please do this:".into())],
         }],
-        shape: ReplyShape::Text,
-        tier: Tier::Balanced,
-        class: DataClass::Voice,
-        usage: Usage::Interactive,
-        tools: vec![],
-        control: ChatControl {
-            tool_choice: ToolChoice::Auto,
-            tool_calls: ToolParallelism::One,
-            max_output: Knob::Off,
-            reasoning: Reasoning::EngineDefault,
-            sampling: Knob::Off,
-            stop: vec![],
-            scores: Knob::Off,
-        },
-    }
+        Tier::Balanced,
+        DataClass::Voice,
+        Usage::Interactive,
+    )
 }
 
 #[derive(Default)]
@@ -415,10 +401,10 @@ async fn a_hear_then_answer_pipeline_hears_on_the_speech_host_and_answers_on_a_t
         inputs: BTreeSet::from([Modality::Audio]),
         answer: Answer::Text,
     };
-    let need = Need::Llm(porter_core::need::LlmNeed {
-        features: [porter_core::capability::LlmFeature::Chat].into(),
-        context: porter_core::Tokens(1000),
-    });
+    let need = Need::Llm(porter_core::need::LlmNeed::new(
+        [porter_core::capability::LlmFeature::Chat].into(),
+        porter_core::Tokens(1000),
+    ));
     let planned = plan(
         &shape,
         &need,

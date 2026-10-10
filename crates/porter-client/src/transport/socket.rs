@@ -130,12 +130,7 @@ impl Transport for SocketTransport {
         tier: Tier,
         options: &OpenOptions,
     ) -> Result<SocketSession, TransportError> {
-        let hello = LinkHello::Open(OpenFrame {
-            need: need.clone(),
-            class,
-            tier,
-            options: options.clone(),
-        });
+        let hello = LinkHello::Open(OpenFrame::new(need.clone(), class, tier, options.clone()));
         link::open(&self.door, &self.agent.start, hello)
             .await
             .map(|link| SocketSession { link })

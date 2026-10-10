@@ -88,7 +88,7 @@ pub use space_record::{
     DesktopSpaceRecord, SPACE_LOOK_MAX_BYTES, SPACE_NAME_MAX_CHARS, SpaceChange, SpaceLook,
     SpaceName,
 };
-pub use tailnet::{Machine, MachineOwner, NodeId};
+pub use tailnet::{Machine, MachineLink, MachineOwner, MachineSsh, NodeId};
 pub use token::{Audience, IssuedToken, TokenKind};
 pub use units::{Bytes, Count, Dims, MicroUsd, Permille, Px, Tokens, UnixSeconds};
 pub use weburl::WebUrl;

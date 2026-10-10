@@ -7,7 +7,7 @@
 
 use crate::error::TailscaleError;
 use crate::time::unix_seconds;
-use porter_core::{Machine, MachineOwner, NodeId, UnixSeconds};
+use porter_core::{Machine, MachineLink, MachineOwner, NodeId, UnixSeconds};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::net::IpAddr;
@@ -154,18 +154,18 @@ impl Node {
 
     /// The row `Tailnet1.Machines` lists for it, as seen by the user `me`.
     pub fn machine(&self, me: UserId) -> Machine {
-        Machine {
-            node: self.id.clone(),
-            name: self.name().to_owned(),
-            dns: self.dns.clone(),
-            addresses: self.addresses.clone(),
-            os: self.os.clone(),
-            online: self.online,
-            last_seen: self.last_seen.filter(|_| !self.online),
-            ssh: !self.ssh_host_keys.is_empty(),
-            ssh_host_keys: self.ssh_host_keys.clone(),
-            owner: self.owner(me),
-        }
+        let mut machine = Machine::new(
+            self.id.clone(),
+            self.name().to_owned(),
+            self.dns.clone(),
+            self.owner(me),
+        )
+        .with_addresses(self.addresses.clone())
+        .with_os(self.os.clone())
+        .with_link(MachineLink::of(self.online))
+        .with_ssh_host_keys(self.ssh_host_keys.clone());
+        machine.last_seen = self.last_seen.filter(|_| !self.online);
+        machine
     }
 }
 
@@ -435,9 +435,9 @@ mod tests {
         assert_eq!(by("pi").dns, "pi.tail1234.ts.net", "no dot at the end");
         assert_eq!(by("pi").addresses.len(), 2);
         assert_eq!(by("pi").owner, MachineOwner::Mine);
-        assert!(by("pi").ssh);
+        assert!(by("pi").ssh.is_on());
         assert_eq!(by("pi").ssh_host_keys, ["ssh-ed25519 AAAA"]);
-        assert!(!by("old-laptop").ssh);
+        assert!(!by("old-laptop").ssh.is_on());
         assert_eq!(by("build-box").owner, MachineOwner::Tagged);
         assert_eq!(by("friends-pc").owner, MachineOwner::Shared);
         // Another user's node on the same network is shared, not mine.
@@ -451,7 +451,7 @@ mod tests {
             .iter()
             .find(|m| m.name == "old-laptop")
             .expect("old");
-        assert!(!old.online);
+        assert!(!old.link.is_online());
         assert_eq!(old.last_seen, Some(UnixSeconds(1_790_000_000)));
         let pi = machines.iter().find(|m| m.name == "pi").expect("pi");
         assert_eq!(pi.last_seen, None, "online, and Go's zero time is never");

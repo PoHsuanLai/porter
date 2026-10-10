@@ -254,6 +254,8 @@ impl Job {
                     .await
             }
             InferRequest::Speak(_) => refused(InferRefusal::Unsupported),
+            // a variant a newer porter adds: refused as unsupported
+            _ => refused(InferRefusal::Unsupported),
         }
     }
 

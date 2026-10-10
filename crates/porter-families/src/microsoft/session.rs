@@ -147,11 +147,7 @@ impl<H: Http> MicrosoftSession<H> {
             ExchangeFault::Unreachable => ProviderError::Unreachable,
             ExchangeFault::Unreadable => ProviderError::Unreadable,
         })?;
-        let issued = IssuedToken {
-            kind,
-            expires: tokens.expires_at(now),
-            value: tokens.access_token.clone(),
-        };
+        let issued = IssuedToken::new(kind, tokens.access_token.clone(), tokens.expires_at(now));
         let mut state = self.state();
         if let Some(rotated) = tokens.refresh_token.filter(|r| *r != refresh) {
             let credential = Credential::OAuth {
@@ -175,13 +171,14 @@ impl<H: Http> MicrosoftSession<H> {
         match kind {
             TokenKind::Xoauth2 => {
                 let user = self.address().await?;
-                Ok(IssuedToken {
-                    value: SecretText::new(format!(
+                Ok(IssuedToken::new(
+                    token.kind,
+                    SecretText::new(format!(
                         "user={user}\u{1}auth=Bearer {}\u{1}\u{1}",
                         token.value.expose()
                     )),
-                    ..token
-                })
+                    token.expires,
+                ))
             }
             _ => Ok(token),
         }

@@ -478,10 +478,10 @@ async fn a_daemon_started_after_the_add_sees_the_account_and_resolves_its_key_an
         },
     );
     let peer = PeerProxy::new(&inferd).await.expect("proxy");
-    let need = porter_dbus::need_to_dbus(&porter_core::Need::Llm(porter_core::need::LlmNeed {
-        features: std::collections::BTreeSet::from([porter_core::capability::LlmFeature::Chat]),
-        context: porter_core::Tokens(0),
-    }));
+    let need = porter_dbus::need_to_dbus(&porter_core::Need::Llm(porter_core::need::LlmNeed::new(
+        std::collections::BTreeSet::from([porter_core::capability::LlmFeature::Chat]),
+        porter_core::Tokens(0),
+    )));
     let verdicts = peer
         .verdicts(
             &("org.quire.Companion".to_owned(), "unsandboxed".to_owned()),

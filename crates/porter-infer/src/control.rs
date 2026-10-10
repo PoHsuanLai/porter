@@ -51,6 +51,7 @@ pub struct Sampling {
 /// Which function the model may call.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "v", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum ToolChoice {
     /// The model decides.
     Auto,
@@ -75,6 +76,7 @@ pub enum ToolParallelism {
 /// Whether the model reasons before it replies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "v", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Reasoning {
     /// Whatever the engine does.
     EngineDefault,
@@ -98,6 +100,7 @@ pub enum Effort {
 
 /// Everything a chat turn asks beyond its messages and shape.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct ChatControl {
     /// Which function it may call.
     pub tool_choice: ToolChoice,
@@ -120,10 +123,76 @@ pub struct ChatControl {
     pub scores: Knob<ScoreOptions>,
 }
 
+impl ChatControl {
+    /// The plain controls: the model decides about functions, one call at a time, no output
+    /// limit, whatever the engine does about reasoning, the model's own sampling, no stop
+    /// strings, and no scores.
+    pub fn new() -> Self {
+        Self {
+            tool_choice: ToolChoice::Auto,
+            tool_calls: ToolParallelism::One,
+            max_output: Knob::Off,
+            reasoning: Reasoning::EngineDefault,
+            sampling: Knob::Off,
+            stop: Vec::new(),
+            scores: Knob::Off,
+        }
+    }
+
+    /// The same controls with this tool choice.
+    pub fn with_tool_choice(mut self, tool_choice: ToolChoice) -> Self {
+        self.tool_choice = tool_choice;
+        self
+    }
+
+    /// The same controls with this tool parallelism.
+    pub fn with_tool_calls(mut self, tool_calls: ToolParallelism) -> Self {
+        self.tool_calls = tool_calls;
+        self
+    }
+
+    /// The same controls with this output limit.
+    pub fn with_max_output(mut self, max_output: Knob<Tokens>) -> Self {
+        self.max_output = max_output;
+        self
+    }
+
+    /// The same controls with this reasoning.
+    pub fn with_reasoning(mut self, reasoning: Reasoning) -> Self {
+        self.reasoning = reasoning;
+        self
+    }
+
+    /// The same controls with this sampling.
+    pub fn with_sampling(mut self, sampling: Knob<Sampling>) -> Self {
+        self.sampling = sampling;
+        self
+    }
+
+    /// The same controls with these stop strings.
+    pub fn with_stop(mut self, stop: Vec<String>) -> Self {
+        self.stop = stop;
+        self
+    }
+
+    /// The same controls asking for these option scores.
+    pub fn with_scores(mut self, scores: Knob<ScoreOptions>) -> Self {
+        self.scores = scores;
+        self
+    }
+}
+
+impl Default for ChatControl {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Why a reply ended. Without it a planner cannot tell a turn cut by `max_output` from a
 /// finished one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum StopReason {
     /// The model finished.
     EndTurn,

@@ -150,18 +150,18 @@ fn text(details: &Details, key: &str) -> Option<String> {
 /// One row of `Guests` as a [`GuestRow`].
 fn guest_row((id, details): (String, Details)) -> Result<GuestRow, TransportError> {
     let bad = |what: &str| TransportError::Malformed(format!("Guests row {id:?}: {what}"));
-    Ok(GuestRow {
-        node: NodeId::parse(&id).map_err(|_| bad("not a node id"))?,
-        name: text(&details, GUEST_KEY_NAME).ok_or_else(|| bad("no name"))?,
-        state: text(&details, GUEST_KEY_STATE)
+    Ok(GuestRow::new(
+        NodeId::parse(&id).map_err(|_| bad("not a node id"))?,
+        text(&details, GUEST_KEY_NAME).ok_or_else(|| bad("no name"))?,
+        text(&details, GUEST_KEY_STATE)
             .and_then(|slug| RowState::from_slug(&slug))
             .ok_or_else(|| bad("no state"))?,
-        since: details
+        details
             .get(GUEST_KEY_SINCE)
             .and_then(|value| i64::try_from(value).ok())
             .map(UnixSeconds)
             .ok_or_else(|| bad("no since"))?,
-    })
+    ))
 }
 
 /// One row of `Candidates` as a [`ComputerCandidate`].

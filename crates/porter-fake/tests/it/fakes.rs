@@ -3,9 +3,9 @@
 use porter_core::consent::Usage;
 use porter_core::{AccountId, DataClass, ModelId, Provenance, Tier};
 use porter_fake::{FakeModel, cloud_provider, llm_account, storage_account};
-use porter_infer::{ChatControl, Knob, Reasoning, ToolChoice, ToolParallelism};
+use porter_infer::{ChatControl, ToolParallelism};
 use porter_infer::{
-    ChatMessage, ChatRequest, ChatSink, Flow, InferEvent, MessagePart, Model, ReplyShape, Role,
+    ChatMessage, ChatRequest, ChatSink, Flow, InferEvent, MessagePart, Model, Role,
 };
 use porter_provider::{Presented, Provider, ProviderError};
 
@@ -45,8 +45,8 @@ async fn the_fake_model_echoes_the_last_text() {
         ModelId::parse("echo").expect("id"),
         vec![],
     );
-    let request = ChatRequest {
-        messages: vec![
+    let request = ChatRequest::new(
+        vec![
             ChatMessage {
                 role: Role::System,
                 parts: vec![MessagePart::Text("be brief".into())],
@@ -56,21 +56,11 @@ async fn the_fake_model_echoes_the_last_text() {
                 parts: vec![MessagePart::Text("hello".into())],
             },
         ],
-        shape: ReplyShape::Text,
-        tier: Tier::Fast,
-        class: DataClass::Public,
-        usage: Usage::Interactive,
-        tools: vec![],
-        control: ChatControl {
-            tool_choice: ToolChoice::Auto,
-            tool_calls: ToolParallelism::Many,
-            max_output: Knob::Off,
-            reasoning: Reasoning::EngineDefault,
-            sampling: Knob::Off,
-            stop: vec![],
-            scores: Knob::Off,
-        },
-    };
+        Tier::Fast,
+        DataClass::Public,
+        Usage::Interactive,
+    )
+    .with_control(ChatControl::new().with_tool_calls(ToolParallelism::Many));
     let mut events = Collect::default();
     let reply = model.chat(&request, &mut events).await.expect("chat");
     assert_eq!(reply.text, "hello");
@@ -91,26 +81,18 @@ async fn the_unbuilt_broker_refuses_instead_of_panicking() {
         name: AppName::parse("org.quire.Mail").expect("name"),
         isolation: Isolation::Unsandboxed,
     };
-    let request = InferRequest::Chat(ChatRequest {
-        messages: vec![ChatMessage {
-            role: Role::User,
-            parts: vec![MessagePart::Text("hi".into())],
-        }],
-        shape: ReplyShape::Text,
-        tier: Tier::Fast,
-        class: DataClass::Public,
-        usage: Usage::Interactive,
-        tools: vec![],
-        control: ChatControl {
-            tool_choice: ToolChoice::Auto,
-            tool_calls: ToolParallelism::Many,
-            max_output: Knob::Off,
-            reasoning: Reasoning::EngineDefault,
-            sampling: Knob::Off,
-            stop: vec![],
-            scores: Knob::Off,
-        },
-    });
+    let request = InferRequest::Chat(
+        ChatRequest::new(
+            vec![ChatMessage {
+                role: Role::User,
+                parts: vec![MessagePart::Text("hi".into())],
+            }],
+            Tier::Fast,
+            DataClass::Public,
+            Usage::Interactive,
+        )
+        .with_control(ChatControl::new().with_tool_calls(ToolParallelism::Many)),
+    );
     let mut events = Collect::default();
     let reply = broker.infer(&app, request, &mut events).await;
     assert_eq!(reply, InferReply::Refused(InferRefusal::Unavailable));
@@ -168,9 +150,7 @@ async fn the_fake_provider_signs_in_at_once_and_revokes() {
     use porter_provider::{RevokeOutcome, SignIn, SignInMode, SignInStart, SignInStep};
     let provider = cloud_provider();
     let mut sign_in = provider
-        .sign_in(SignInStart {
-            mode: SignInMode::Add,
-        })
+        .sign_in(SignInStart::new(SignInMode::Add))
         .expect("starts");
     let SignInStep::Done(signed) = sign_in.next(SignInInput::Start).await else {
         panic!("not done");

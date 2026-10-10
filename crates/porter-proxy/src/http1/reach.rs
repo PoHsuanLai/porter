@@ -166,16 +166,16 @@ mod tests {
     };
 
     fn plan(family: Family, url: &str) -> RelayPlan {
-        RelayPlan {
-            endpoint: ServiceEndpoint {
+        RelayPlan::new(
+            ServiceEndpoint {
                 family,
                 url: EndpointUrl::parse(url).expect("url"),
                 tls: Tls::Implicit,
                 login: LoginName("ada".into()),
             },
-            kind: CapabilityKind::Contacts,
-            auth: RelayAuth::Password(SecretText::new("app-password")),
-        }
+            CapabilityKind::Contacts,
+            RelayAuth::Password(SecretText::new("app-password")),
+        )
     }
 
     const BOOKS: &str = "https://cloud.example.org/remote.php/dav/addressbooks/users/ada/";

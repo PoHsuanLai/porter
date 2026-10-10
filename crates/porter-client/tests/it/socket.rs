@@ -69,12 +69,12 @@ fn accounts(agent: &Agent) -> Accounts<SocketTransport> {
 }
 
 fn storage(delta: Delta) -> Need {
-    Need::Storage(StorageNeed {
-        access: Access::ReadWrite,
+    Need::Storage(StorageNeed::new(
+        Access::ReadWrite,
         delta,
-        scope: StorageScope::AppFolder,
-        quota: QuotaReport::Unreported,
-    })
+        StorageScope::AppFolder,
+        QuotaReport::Unreported,
+    ))
 }
 
 async fn offer(accounts: &Accounts<SocketTransport>) -> porter_client::ConsentOffer {
@@ -186,32 +186,32 @@ async fn connect_reaches_an_agent_and_the_link_answers() {
 }
 
 fn embeddings() -> Need {
-    Need::Embeddings(EmbedNeed {
-        dims: DimsNeed::Exactly(Dims(2)),
-        modalities: [porter_core::capability::Modality::Text].into(),
-    })
+    Need::Embeddings(EmbedNeed::new(
+        DimsNeed::Exactly(Dims(2)),
+        [porter_core::capability::Modality::Text].into(),
+    ))
 }
 
 fn embed_request() -> InferRequest {
-    InferRequest::Embed(EmbedRequest {
-        inputs: vec!["a note".into()],
-        role: EmbedRole::Document,
-        dims: DimsNeed::Exactly(Dims(2)),
-        class: DataClass::Notes,
-        usage: Usage::Background,
-    })
+    InferRequest::Embed(EmbedRequest::new(
+        vec!["a note".into()],
+        EmbedRole::Document,
+        DimsNeed::Exactly(Dims(2)),
+        DataClass::Notes,
+        Usage::Background,
+    ))
 }
 
 fn embed_reply() -> InferReply {
-    InferReply::Embed(EmbedReply {
-        vectors: vec![EmbedVector(vec![0.5, 0.25])],
-        usage: TokenUsage {
+    InferReply::Embed(EmbedReply::new(
+        vec![EmbedVector(vec![0.5, 0.25])],
+        TokenUsage {
             input: Tokens(1),
             output: Tokens(0),
             cached: Tokens(0),
         },
-        served: served_by(),
-    })
+        served_by(),
+    ))
 }
 
 fn embed_script() -> Script {
@@ -227,10 +227,7 @@ async fn a_session_opens_with_a_hello_and_streams_what_the_machine_says() {
     let photos = accounts(&agent);
     let parent = Traceparent::parse("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
         .expect("traceparent");
-    let options = OpenOptions {
-        traceparent: Some(parent),
-        ..OpenOptions::default()
-    };
+    let options = OpenOptions::default().with_traceparent(parent);
     let mut session = photos
         .session_with(&embeddings(), DataClass::Notes, Tier::Fast, &options)
         .await
@@ -279,18 +276,10 @@ async fn the_one_call_form_and_a_refused_route_work_over_the_socket() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_frame_rides_the_socket_as_a_memfd() {
-    let ack = InferReply::CuaStep(CuaStepReply {
-        thought: None,
-        actions: vec![],
-        dropped: vec![],
-        safety: vec![],
-    });
-    let done = InferReply::CuaStep(CuaStepReply {
-        thought: Some("done".into()),
-        actions: vec![cua_action::CuaAction::Observe],
-        dropped: vec![],
-        safety: vec![],
-    });
+    let ack = InferReply::CuaStep(CuaStepReply::new(vec![]));
+    let done = InferReply::CuaStep(
+        CuaStepReply::new(vec![cua_action::CuaAction::Observe]).with_thought("done".into()),
+    );
     let scripts = vec![
         Script {
             kind: RequestKind::CuaBegin,
@@ -302,41 +291,34 @@ async fn a_frame_rides_the_socket_as_a_memfd() {
         },
     ];
     let agent = agent("memfd", vec![], ready(), scripts).await;
-    let need = Need::ComputerUse(CuaNeed {
-        environments: [CuaEnv::Desktop].into(),
-    });
+    let need = Need::ComputerUse(CuaNeed::new([CuaEnv::Desktop].into()));
     let mut session = accounts(&agent)
         .session(&need, DataClass::Screen, Tier::Best)
         .await
         .expect("open");
     session
-        .send(ClientFrame::Request(InferRequest::CuaBegin(CuaBegin {
-            goal: "rename".into(),
-            hints: vec![],
-            env: CuaEnv::Desktop,
-        })))
+        .send(ClientFrame::Request(InferRequest::CuaBegin(CuaBegin::new(
+            "rename".into(),
+            CuaEnv::Desktop,
+        ))))
         .await
         .expect("send");
     assert_eq!(session.next().await, Ok(InferEvent::Routed(served_by())));
     assert_eq!(session.next().await, Ok(InferEvent::Finished(ack)));
 
     let frame = rustix::fs::memfd_create("frame", rustix::fs::MemfdFlags::CLOEXEC).expect("memfd");
-    let step = ClientFrame::Request(InferRequest::CuaStep(porter_infer::CuaStepRequest {
-        step: porter_infer::StepIndex(0),
-        window: porter_infer::WindowGeometry {
+    let step = ClientFrame::Request(InferRequest::CuaStep(porter_infer::CuaStepRequest::new(
+        porter_infer::StepIndex(0),
+        porter_infer::WindowGeometry {
             logical: cua_action::Size::new(cua_action::Coord(1), cua_action::Coord(1)),
             scale: cua_action::Scale120(120),
         },
-        frame: porter_infer::FrameImage {
+        porter_infer::FrameImage {
             source: ImageSource::Attached(AttachIndex(0)),
             layout: porter_infer::FrameLayout::Encoded(porter_infer::MediaKind::Png),
         },
-        cursor: None,
-        prev: vec![],
-        masked: porter_infer::MaskedRegions(0),
-        tree: porter_infer::TreeText::Absent,
-        notes: vec![],
-    }));
+        porter_infer::TreeText::Absent,
+    )));
     session
         .send_attached(step, vec![frame])
         .await

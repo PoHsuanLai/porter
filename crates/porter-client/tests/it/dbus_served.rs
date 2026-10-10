@@ -73,28 +73,28 @@ async fn rig(route: Route, gate: Gate, scripts: Vec<Script>) -> Rig {
 }
 
 fn embeddings() -> Need {
-    Need::Embeddings(EmbedNeed {
-        dims: DimsNeed::Exactly(Dims(2)),
-        modalities: [porter_core::capability::Modality::Text].into(),
-    })
+    Need::Embeddings(EmbedNeed::new(
+        DimsNeed::Exactly(Dims(2)),
+        [porter_core::capability::Modality::Text].into(),
+    ))
 }
 
 fn embed_request() -> InferRequest {
-    InferRequest::Embed(EmbedRequest {
-        inputs: vec!["a note".into()],
-        role: EmbedRole::Document,
-        dims: DimsNeed::Exactly(Dims(2)),
-        class: DataClass::Notes,
-        usage: Usage::Background,
-    })
+    InferRequest::Embed(EmbedRequest::new(
+        vec!["a note".into()],
+        EmbedRole::Document,
+        DimsNeed::Exactly(Dims(2)),
+        DataClass::Notes,
+        Usage::Background,
+    ))
 }
 
 fn embed_reply() -> InferReply {
-    InferReply::Embed(EmbedReply {
-        vectors: vec![EmbedVector(vec![0.5, 0.25])],
-        usage: usage(),
-        served: served_by(),
-    })
+    InferReply::Embed(EmbedReply::new(
+        vec![EmbedVector(vec![0.5, 0.25])],
+        usage(),
+        served_by(),
+    ))
 }
 
 fn embed_script() -> Script {
@@ -213,18 +213,10 @@ async fn a_route_refusal_is_what_infer_returns() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_computer_use_run_needs_its_begin_and_its_frame_rides_as_a_memfd() {
-    let ack = InferReply::CuaStep(CuaStepReply {
-        thought: None,
-        actions: vec![],
-        dropped: vec![],
-        safety: vec![],
-    });
-    let step_reply = InferReply::CuaStep(CuaStepReply {
-        thought: Some("done".into()),
-        actions: vec![cua_action::CuaAction::Observe],
-        dropped: vec![],
-        safety: vec![],
-    });
+    let ack = InferReply::CuaStep(CuaStepReply::new(vec![]));
+    let step_reply = InferReply::CuaStep(
+        CuaStepReply::new(vec![cua_action::CuaAction::Observe]).with_thought("done".into()),
+    );
     let scripts = vec![
         Script {
             kind: RequestKind::CuaBegin,
@@ -236,9 +228,7 @@ async fn a_computer_use_run_needs_its_begin_and_its_frame_rides_as_a_memfd() {
         },
     ];
     let rig = rig_again(scripts).await;
-    let need = Need::ComputerUse(CuaNeed {
-        environments: [CuaEnv::Desktop].into(),
-    });
+    let need = Need::ComputerUse(CuaNeed::new([CuaEnv::Desktop].into()));
     let mut session = rig
         .accounts
         .session(&need, DataClass::Screen, Tier::Best)
@@ -261,11 +251,10 @@ async fn a_computer_use_run_needs_its_begin_and_its_frame_rides_as_a_memfd() {
     );
 
     session
-        .send(ClientFrame::Request(InferRequest::CuaBegin(CuaBegin {
-            goal: "rename".into(),
-            hints: vec![],
-            env: CuaEnv::Desktop,
-        })))
+        .send(ClientFrame::Request(InferRequest::CuaBegin(CuaBegin::new(
+            "rename".into(),
+            CuaEnv::Desktop,
+        ))))
         .await
         .expect("send");
     assert_eq!(session.next().await, Ok(InferEvent::Routed(served_by())));
@@ -286,20 +275,16 @@ async fn a_computer_use_run_needs_its_begin_and_its_frame_rides_as_a_memfd() {
 }
 
 fn step_request() -> porter_infer::CuaStepRequest {
-    porter_infer::CuaStepRequest {
-        step: porter_infer::StepIndex(0),
-        window: porter_infer::WindowGeometry {
+    porter_infer::CuaStepRequest::new(
+        porter_infer::StepIndex(0),
+        porter_infer::WindowGeometry {
             logical: cua_action::Size::new(cua_action::Coord(1), cua_action::Coord(1)),
             scale: cua_action::Scale120(120),
         },
-        frame: porter_infer::FrameImage {
+        porter_infer::FrameImage {
             source: ImageSource::Attached(AttachIndex(0)),
             layout: porter_infer::FrameLayout::Encoded(porter_infer::MediaKind::Png),
         },
-        cursor: None,
-        prev: vec![],
-        masked: porter_infer::MaskedRegions(0),
-        tree: porter_infer::TreeText::Absent,
-        notes: vec![],
-    }
+        porter_infer::TreeText::Absent,
+    )
 }

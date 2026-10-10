@@ -45,13 +45,13 @@ fn click() -> CuaAction<WindowSpace> {
 }
 
 fn step_request() -> CuaStepRequest {
-    CuaStepRequest {
-        step: StepIndex(3),
-        window: WindowGeometry {
+    CuaStepRequest::new(
+        StepIndex(3),
+        WindowGeometry {
             logical: Size::new(Coord(1280), Coord(800)),
             scale: Scale120(180),
         },
-        frame: FrameImage {
+        FrameImage {
             source: ImageSource::Attached(AttachIndex(0)),
             layout: FrameLayout::Raw {
                 format: PixelFormat::Xrgb8888,
@@ -59,28 +59,28 @@ fn step_request() -> CuaStepRequest {
                 stride: 7680,
             },
         },
-        cursor: Some(window_point(5, 6)),
-        prev: vec![
-            PrevResult::Done,
-            PrevResult::Refused("outside the lease".into()),
-            PrevResult::NotRun,
-            PrevResult::Failed("no such button".into()),
-            PrevResult::UserDeclined,
-            PrevResult::UserActed,
-        ],
-        masked: MaskedRegions(2),
-        tree: TreeText::Present("button \"Save\" [12]".into()),
-        notes: vec![
-            StepNote {
-                from: NoteFrom::Person,
-                text: "also check the footer".into(),
-            },
-            StepNote {
-                from: NoteFrom::Agent,
-                text: "the file is in Downloads".into(),
-            },
-        ],
-    }
+        TreeText::Present("button \"Save\" [12]".into()),
+    )
+    .with_cursor(window_point(5, 6))
+    .with_prev(vec![
+        PrevResult::Done,
+        PrevResult::Refused("outside the lease".into()),
+        PrevResult::NotRun,
+        PrevResult::Failed("no such button".into()),
+        PrevResult::UserDeclined,
+        PrevResult::UserActed,
+    ])
+    .with_masked(MaskedRegions(2))
+    .with_notes(vec![
+        StepNote {
+            from: NoteFrom::Person,
+            text: "also check the footer".into(),
+        },
+        StepNote {
+            from: NoteFrom::Agent,
+            text: "the file is in Downloads".into(),
+        },
+    ])
 }
 
 fn usage() -> TokenUsage {
@@ -94,31 +94,32 @@ fn usage() -> TokenUsage {
 #[test]
 fn every_infer_request_round_trips() {
     let requests = vec![
-        InferRequest::CuaBegin(CuaBegin {
-            goal: "rename the file".into(),
-            hints: vec!["use the context menu".into()],
-            env: CuaEnv::Desktop,
-        }),
+        InferRequest::CuaBegin(
+            CuaBegin::new("rename the file".into(), CuaEnv::Desktop)
+                .with_hints(vec!["use the context menu".into()]),
+        ),
         InferRequest::CuaStep(step_request()),
-        InferRequest::Transcribe(TranscribeBegin {
-            mode: TranscribeMode::Streaming,
-            lang: LangPick::Prefer(vec![LanguageTag::parse("zh-Hant-TW").expect("tag")]),
-            rate: AudioRate(16_000),
-            usage: Usage::Interactive,
-        }),
-        InferRequest::Transcribe(TranscribeBegin {
-            mode: TranscribeMode::Batch,
-            lang: LangPick::Auto,
-            rate: AudioRate(16_000),
-            usage: Usage::Background,
-        }),
-        InferRequest::Speak(SpeakRequest {
-            text: "Two new messages".into(),
-            voice: Some(VoiceName("af_heart".into())),
-            lang: LanguageTag::parse("en").expect("tag"),
-            class: DataClass::Mail,
-            usage: Usage::Interactive,
-        }),
+        InferRequest::Transcribe(TranscribeBegin::new(
+            TranscribeMode::Streaming,
+            LangPick::Prefer(vec![LanguageTag::parse("zh-Hant-TW").expect("tag")]),
+            AudioRate(16_000),
+            Usage::Interactive,
+        )),
+        InferRequest::Transcribe(TranscribeBegin::new(
+            TranscribeMode::Batch,
+            LangPick::Auto,
+            AudioRate(16_000),
+            Usage::Background,
+        )),
+        InferRequest::Speak(
+            SpeakRequest::new(
+                "Two new messages".into(),
+                LanguageTag::parse("en").expect("tag"),
+                DataClass::Mail,
+                Usage::Interactive,
+            )
+            .with_voice(VoiceName("af_heart".into())),
+        ),
     ];
     for request in &requests {
         round_trip(request);
@@ -138,12 +139,12 @@ fn every_infer_request_round_trips() {
 
 #[test]
 fn infer_request_speech_round_trip_pins_its_json() {
-    let begin = InferRequest::Transcribe(TranscribeBegin {
-        mode: TranscribeMode::Streaming,
-        lang: LangPick::Auto,
-        rate: AudioRate(16_000),
-        usage: Usage::Interactive,
-    });
+    let begin = InferRequest::Transcribe(TranscribeBegin::new(
+        TranscribeMode::Streaming,
+        LangPick::Auto,
+        AudioRate(16_000),
+        Usage::Interactive,
+    ));
     assert_eq!(
         round_trip(&begin),
         r#"{"kind":"transcribe","v":{"mode":"streaming","lang":{"kind":"auto"},"rate":16000,"usage":"interactive"}}"#
@@ -216,24 +217,17 @@ fn infer_frames_round_trip() {
         round_trip(e);
     });
     let replies = [
-        InferReply::CuaStep(CuaStepReply {
-            thought: Some("click save".into()),
-            actions: vec![click(), CuaAction::Observe],
-            dropped: vec![DroppedAction {
-                verb: "open_app".into(),
-                reason: DropReason::UnsupportedVerb,
-            }],
-            safety: vec![SafetyHint::RequireConfirmation("sends money".into())],
-        }),
-        InferReply::Transcribed(TranscribeReply {
-            text: "hello".into(),
-            audio_ms: 1_000,
-            served: served(),
-        }),
-        InferReply::Spoke(SpeakReply {
-            audio_ms: 2_000,
-            served: served(),
-        }),
+        InferReply::CuaStep(
+            CuaStepReply::new(vec![click(), CuaAction::Observe])
+                .with_thought("click save".into())
+                .with_dropped(vec![DroppedAction {
+                    verb: "open_app".into(),
+                    reason: DropReason::UnsupportedVerb,
+                }])
+                .with_safety(vec![SafetyHint::RequireConfirmation("sends money".into())]),
+        ),
+        InferReply::Transcribed(TranscribeReply::new("hello".into(), 1_000, served())),
+        InferReply::Spoke(SpeakReply::new(2_000, served())),
         InferReply::Refused(InferRefusal::Unsupported),
         InferReply::Failed(ModelError::RateLimited(7)),
         InferReply::Cancelled,
@@ -364,22 +358,17 @@ fn debug_never_shows_what_the_person_said_or_saw() {
     let shown = [
         format!(
             "{:?}",
-            CuaBegin {
-                goal: "pay the plumber".into(),
-                hints: vec![],
-                env: CuaEnv::Desktop
-            }
+            CuaBegin::new("pay the plumber".into(), CuaEnv::Desktop)
         ),
         format!("{:?}", TreeText::Present("password: hunter2".into())),
         format!(
             "{:?}",
-            SpeakRequest {
-                text: "the plumber's number".into(),
-                voice: None,
-                lang: LanguageTag::parse("en").expect("tag"),
-                class: DataClass::Contacts,
-                usage: Usage::Interactive,
-            }
+            SpeakRequest::new(
+                "the plumber's number".into(),
+                LanguageTag::parse("en").expect("tag"),
+                DataClass::Contacts,
+                Usage::Interactive,
+            )
         ),
         format!(
             "{:?}",
@@ -391,11 +380,7 @@ fn debug_never_shows_what_the_person_said_or_saw() {
         ),
         format!(
             "{:?}",
-            TranscribeReply {
-                text: "pay the plumber".into(),
-                audio_ms: 1,
-                served: served()
-            }
+            TranscribeReply::new("pay the plumber".into(), 1, served())
         ),
         format!(
             "{:?}",
@@ -475,15 +460,10 @@ fn a_scroll_with_no_coordinate_and_a_bad_argument_cross_the_wire() {
         dir: cua_action::ScrollDir::Down,
         by: cua_action::ScrollBy::Notches(cua_action::Notches(3)),
     };
-    let reply = CuaStepReply {
-        thought: None,
-        actions: vec![scroll],
-        dropped: vec![DroppedAction {
-            verb: "key".into(),
-            reason: DropReason::BadArgument,
-        }],
-        safety: vec![],
-    };
+    let reply = CuaStepReply::new(vec![scroll]).with_dropped(vec![DroppedAction {
+        verb: "key".into(),
+        reason: DropReason::BadArgument,
+    }]);
     let json = round_trip(&InferReply::CuaStep(reply));
     assert!(json.contains(r#""kind":"centre""#), "{json}");
     assert!(json.contains(r#""reason":"bad_argument""#), "{json}");
@@ -512,26 +492,18 @@ fn a_frame_names_how_many_descriptors_ride_with_it() {
         })
     };
     let chat = |parts| {
-        ClientFrame::Request(InferRequest::Chat(ChatRequest {
-            messages: vec![ChatMessage {
-                role: Role::User,
-                parts,
-            }],
-            shape: ReplyShape::Text,
-            tier: porter_core::Tier::Fast,
-            class: DataClass::Public,
-            usage: Usage::Interactive,
-            tools: vec![],
-            control: ChatControl {
-                tool_choice: ToolChoice::Auto,
-                tool_calls: ToolParallelism::Many,
-                max_output: Knob::Off,
-                reasoning: Reasoning::EngineDefault,
-                sampling: Knob::Off,
-                stop: vec![],
-                scores: Knob::Off,
-            },
-        }))
+        ClientFrame::Request(InferRequest::Chat(
+            ChatRequest::new(
+                vec![ChatMessage {
+                    role: Role::User,
+                    parts,
+                }],
+                porter_core::Tier::Fast,
+                DataClass::Public,
+                Usage::Interactive,
+            )
+            .with_control(ChatControl::new().with_tool_calls(ToolParallelism::Many)),
+        ))
     };
     let inline = || ImageSource::Inline(Base64Bytes(vec![1]));
     let at = |n| ImageSource::Attached(AttachIndex(n));

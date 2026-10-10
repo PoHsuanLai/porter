@@ -91,6 +91,8 @@ impl Failure {
                 Cause::OnlyThought { stop, thought_len },
                 format!("the model produced only reasoning ({thought_len} bytes) and no answer"),
             ),
+            // a variant a newer porter adds: told to the agent as an upstream failure
+            _ => Self::new(Cause::Upstream, "the model failed"),
         }
     }
 

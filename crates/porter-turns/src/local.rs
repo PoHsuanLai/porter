@@ -213,12 +213,7 @@ impl<U: EngineUse> LocalTurns<U> {
     /// A `CuaBegin`: the session's run starts afresh with this goal; the reply is an empty step.
     pub fn begin_cua(&self, begin: CuaBegin) -> InferReply {
         *self.run.lock().unwrap_or_else(PoisonError::into_inner) = Some(CuaRun::begin(begin));
-        InferReply::CuaStep(CuaStepReply {
-            thought: None,
-            actions: Vec::new(),
-            dropped: Vec::new(),
-            safety: Vec::new(),
-        })
+        InferReply::CuaStep(CuaStepReply::new(Vec::new()))
     }
 
     /// One chat turn on `model`, `shaping` saying whether its reply is validated and repaired.
@@ -271,15 +266,19 @@ impl<U: EngineUse> LocalTurns<U> {
                     }
                     None => None,
                 };
-                InferReply::Chat(porter_infer::ChatReply {
-                    text: valid.text,
-                    tool_calls: Vec::new(),
-                    stop: porter_infer::StopReason::EndTurn,
-                    thought: valid.thought,
-                    usage: valid.usage,
-                    served: served.clone(),
-                    scores,
-                })
+                let mut reply = porter_infer::ChatReply::new(
+                    valid.text,
+                    porter_infer::StopReason::EndTurn,
+                    valid.usage,
+                    served.clone(),
+                );
+                if let Some(thought) = valid.thought {
+                    reply = reply.with_thought(thought);
+                }
+                if let Some(scores) = scores {
+                    reply = reply.with_scores(scores);
+                }
+                InferReply::Chat(reply)
             }
             Err(error) => InferReply::Failed(error),
         }
@@ -311,15 +310,15 @@ impl<U: EngineUse> LocalTurns<U> {
             }
             self.engines.used(&model.spec.id);
         }
-        InferReply::Embed(EmbedReply {
+        InferReply::Embed(EmbedReply::new(
             vectors,
-            usage: TokenUsage {
+            TokenUsage {
                 input: porter_core::Tokens(input.0),
                 output: porter_core::Tokens(0),
                 cached: porter_core::Tokens(0),
             },
-            served: served.clone(),
-        })
+            served.clone(),
+        ))
     }
 
     /// One computer-use step of the session's run on `model`; refused `Unsupported` when no run
@@ -354,6 +353,8 @@ impl<U: EngineUse> LocalTurns<U> {
             }
             Err(CuaStepFailure::Unparseable) => InferReply::Failed(ModelError::Unparseable),
             Err(CuaStepFailure::ModelFailed(error)) => InferReply::Failed(error),
+            // a variant a newer porter adds: the step failed as unparseable, no actions
+            Err(_) => InferReply::Failed(ModelError::Unparseable),
         }
     }
 }

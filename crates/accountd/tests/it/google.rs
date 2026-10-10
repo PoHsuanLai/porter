@@ -282,14 +282,8 @@ impl World {
 
     async fn choose(&self, app: &zbus::Connection, kind: &str) -> (u32, porter_dbus::Details) {
         let need = match kind {
-            "calendar" => Need::Calendar(PimNeed {
-                access: Access::ReadWrite,
-                delta: Delta::Poll,
-            }),
-            _ => Need::Tasks(PimNeed {
-                access: Access::ReadWrite,
-                delta: Delta::None,
-            }),
+            "calendar" => Need::Calendar(PimNeed::new(Access::ReadWrite, Delta::Poll)),
+            _ => Need::Tasks(PimNeed::new(Access::ReadWrite, Delta::None)),
         };
         let mut sheet = Sheet::subscribe(app).await.expect("subscribe");
         let path = ManagerProxy::new(app)

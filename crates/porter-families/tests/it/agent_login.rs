@@ -37,9 +37,7 @@ fn account(id: &str) -> Account {
 }
 
 fn add() -> SignInStart {
-    SignInStart {
-        mode: SignInMode::Add,
-    }
+    SignInStart::new(SignInMode::Add)
 }
 
 const AGENTS: &[&str] = &["claude-code", "gemini-cli", "codex", "acp-agent"];
@@ -85,12 +83,10 @@ async fn adding_is_a_review_then_done_with_no_credential_whatever_the_agent() {
 
 #[tokio::test]
 async fn signing_in_again_is_the_same_two_steps_and_still_holds_nothing() {
-    let again = SignInStart {
-        mode: SignInMode::Reauthenticate {
-            account: AccountId::parse("claude-code").expect("id"),
-            endpoints: Vec::new(),
-        },
-    };
+    let again = SignInStart::new(SignInMode::Reauthenticate {
+        account: AccountId::parse("claude-code").expect("id"),
+        endpoints: Vec::new(),
+    });
     let mut sign_in = provider("claude-code").sign_in(again).expect("starts");
     assert!(matches!(
         sign_in.next(SignInInput::Start).await,

@@ -101,10 +101,7 @@ impl LocalState {
 
 /// What a language need is, for `Verdicts`: chat, any context.
 pub fn chat_need() -> Need {
-    Need::Llm(LlmNeed {
-        features: [LlmFeature::Chat].into(),
-        context: Tokens(0),
-    })
+    Need::Llm(LlmNeed::new([LlmFeature::Chat].into(), Tokens(0)))
 }
 
 /// A claim as the bus carries it: the kind's slug and the claim's fields by name, as

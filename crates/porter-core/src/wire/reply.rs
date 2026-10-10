@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 // every consumer matches, for a reply that is built once per request.
 #[allow(clippy::large_enum_variant)]
 #[serde(tag = "kind", content = "v", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum AccountsReply {
     /// For `Query`: the granted accounts that fit, best first.
     Candidates(Vec<Candidate>),
@@ -44,6 +45,7 @@ pub enum AccountsReply {
 /// Why accountd refused a request; each is something the app can act on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Refusal {
     /// The user closed the sheet.
     Dismissed,

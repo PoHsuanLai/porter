@@ -79,10 +79,7 @@ pub(super) fn routed() -> SessionOut {
 
 pub(super) fn llm_spec(class: DataClass) -> SessionSpec {
     SessionSpec {
-        need: Need::Llm(LlmNeed {
-            features: Default::default(),
-            context: Tokens(1),
-        }),
+        need: Need::Llm(LlmNeed::new(Default::default(), Tokens(1))),
         class,
         tier: Tier::Balanced,
         usage: porter_core::consent::Usage::Interactive,
@@ -91,9 +88,7 @@ pub(super) fn llm_spec(class: DataClass) -> SessionSpec {
 
 pub(super) fn speech_spec(class: DataClass) -> SessionSpec {
     SessionSpec {
-        need: Need::Speech(SpeechNeed {
-            modes: [SpeechMode::Stt, SpeechMode::Tts].into(),
-        }),
+        need: Need::Speech(SpeechNeed::new([SpeechMode::Stt, SpeechMode::Tts].into())),
         class,
         tier: Tier::Fast,
         usage: porter_core::consent::Usage::Interactive,
@@ -102,9 +97,7 @@ pub(super) fn speech_spec(class: DataClass) -> SessionSpec {
 
 pub(super) fn cua_spec(class: DataClass) -> SessionSpec {
     SessionSpec {
-        need: Need::ComputerUse(CuaNeed {
-            environments: [CuaEnv::Desktop].into(),
-        }),
+        need: Need::ComputerUse(CuaNeed::new([CuaEnv::Desktop].into())),
         class,
         tier: Tier::Best,
         usage: porter_core::consent::Usage::Interactive,
@@ -112,39 +105,34 @@ pub(super) fn cua_spec(class: DataClass) -> SessionSpec {
 }
 
 pub(super) fn task(class: DataClass) -> InferRequest {
-    InferRequest::Task(TaskRequest {
-        task: Task::Summarise,
-        input: "text".into(),
+    InferRequest::Task(TaskRequest::new(
+        Task::Summarise,
+        "text".into(),
         class,
-        usage: Usage::Interactive,
-    })
+        Usage::Interactive,
+    ))
 }
 
 pub(super) fn transcribe() -> InferRequest {
-    InferRequest::Transcribe(TranscribeBegin {
-        mode: TranscribeMode::Streaming,
-        lang: LangPick::Auto,
-        rate: AudioRate(16_000),
-        usage: Usage::Interactive,
-    })
+    InferRequest::Transcribe(TranscribeBegin::new(
+        TranscribeMode::Streaming,
+        LangPick::Auto,
+        AudioRate(16_000),
+        Usage::Interactive,
+    ))
 }
 
 pub(super) fn speak(class: DataClass) -> InferRequest {
-    InferRequest::Speak(SpeakRequest {
-        text: "hi".into(),
-        voice: None,
-        lang: LanguageTag::parse("en").expect("tag"),
+    InferRequest::Speak(SpeakRequest::new(
+        "hi".into(),
+        LanguageTag::parse("en").expect("tag"),
         class,
-        usage: Usage::Interactive,
-    })
+        Usage::Interactive,
+    ))
 }
 
 pub(super) fn cua_begin() -> InferRequest {
-    InferRequest::CuaBegin(CuaBegin {
-        goal: "rename".into(),
-        hints: vec![],
-        env: CuaEnv::Desktop,
-    })
+    InferRequest::CuaBegin(CuaBegin::new("rename".into(), CuaEnv::Desktop))
 }
 
 pub(super) fn audio(at: u64, samples: usize) -> ClientFrame {
@@ -214,31 +202,22 @@ pub(super) fn lost_reply() -> InferReply {
 }
 
 pub(super) fn begun_ack() -> InferReply {
-    InferReply::CuaStep(CuaStepReply {
-        thought: None,
-        actions: vec![],
-        dropped: vec![],
-        safety: vec![],
-    })
+    InferReply::CuaStep(CuaStepReply::new(vec![]))
 }
 
 pub(super) fn cua_step() -> InferRequest {
-    InferRequest::CuaStep(porter_infer::CuaStepRequest {
-        step: porter_infer::StepIndex(0),
-        window: porter_infer::WindowGeometry {
+    InferRequest::CuaStep(porter_infer::CuaStepRequest::new(
+        porter_infer::StepIndex(0),
+        porter_infer::WindowGeometry {
             logical: cua_action::Size::new(cua_action::Coord(1), cua_action::Coord(1)),
             scale: cua_action::Scale120(120),
         },
-        frame: porter_infer::FrameImage {
+        porter_infer::FrameImage {
             source: porter_infer::ImageSource::Attached(porter_infer::AttachIndex(0)),
             layout: porter_infer::FrameLayout::Encoded(porter_infer::MediaKind::Png),
         },
-        cursor: None,
-        prev: vec![],
-        masked: porter_infer::MaskedRegions(0),
-        tree: porter_infer::TreeText::Absent,
-        notes: vec![],
-    })
+        porter_infer::TreeText::Absent,
+    ))
 }
 
 pub(super) fn expecting(next: u64) -> AudioCursor {

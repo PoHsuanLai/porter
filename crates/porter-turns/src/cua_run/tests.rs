@@ -8,8 +8,8 @@ use model_provider::{
 };
 use porter_core::capability::CuaEnv;
 use porter_infer::{
-    AttachIndex, FrameImage, FrameLayout, InferEvent, InferRefusal, MaskedRegions, MediaKind,
-    StepIndex, TreeText, WindowGeometry,
+    AttachIndex, FrameImage, FrameLayout, InferEvent, InferRefusal, MediaKind, StepIndex, TreeText,
+    WindowGeometry,
 };
 use porter_router::testkit::{Scratch, models};
 use std::io::Write;
@@ -24,30 +24,22 @@ fn memfd(bytes: &[u8]) -> OwnedFd {
 }
 
 fn begin() -> CuaBegin {
-    CuaBegin {
-        goal: "open settings".into(),
-        hints: vec![],
-        env: CuaEnv::Desktop,
-    }
+    CuaBegin::new("open settings".into(), CuaEnv::Desktop)
 }
 
 fn request(step: u32) -> CuaStepRequest {
-    CuaStepRequest {
-        step: StepIndex(step),
-        window: WindowGeometry {
+    CuaStepRequest::new(
+        StepIndex(step),
+        WindowGeometry {
             logical: Size::new(Coord(200), Coord(100)),
             scale: Scale120(120),
         },
-        frame: FrameImage {
+        FrameImage {
             source: porter_infer::ImageSource::Attached(AttachIndex(0)),
             layout: FrameLayout::Encoded(MediaKind::Png),
         },
-        cursor: None,
-        prev: vec![],
-        masked: MaskedRegions(0),
-        tree: TreeText::Absent,
-        notes: vec![],
-    }
+        TreeText::Absent,
+    )
 }
 
 fn click(arguments: &str) -> TurnEvent {

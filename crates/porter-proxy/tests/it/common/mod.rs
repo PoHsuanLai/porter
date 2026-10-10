@@ -32,16 +32,16 @@ pub fn port(address: &FakeAddress) -> u16 {
 }
 
 pub fn plan(family: Family, url: &str, tls: Tls, auth: RelayAuth) -> RelayPlan {
-    RelayPlan {
-        endpoint: ServiceEndpoint {
+    RelayPlan::new(
+        ServiceEndpoint {
             family,
             url: EndpointUrl::parse(url).expect("url"),
             tls,
             login: LoginName(USER.into()),
         },
-        kind: CapabilityKind::Mail,
+        CapabilityKind::Mail,
         auth,
-    }
+    )
 }
 
 pub fn password() -> RelayAuth {

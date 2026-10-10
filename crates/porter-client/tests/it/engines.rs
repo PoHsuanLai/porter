@@ -12,8 +12,8 @@ use porter_core::{
 };
 use porter_fake_servers::{FakeModels, ModelDef, ModelsHandle, Running, Wire};
 use porter_infer::{
-    ChatControl, ChatMessage, ChatRequest, ClientFrame, InferEvent, InferReply, InferRequest, Knob,
-    MessagePart, ModelError, Reasoning, ReplyShape, Role, ToolChoice, ToolParallelism,
+    ChatControl, ChatMessage, ChatRequest, ClientFrame, InferEvent, InferReply, InferRequest,
+    MessagePart, ModelError, Role, ToolParallelism,
 };
 use std::sync::{Arc, Mutex};
 
@@ -25,33 +25,22 @@ fn app() -> AppId {
 }
 
 fn need() -> Need {
-    Need::Llm(LlmNeed {
-        features: Default::default(),
-        context: Tokens(1),
-    })
+    Need::Llm(LlmNeed::new(Default::default(), Tokens(1)))
 }
 
 fn chat(class: DataClass) -> InferRequest {
-    InferRequest::Chat(ChatRequest {
-        messages: vec![ChatMessage {
-            role: Role::User,
-            parts: vec![MessagePart::Text("hello".into())],
-        }],
-        shape: ReplyShape::Text,
-        tier: Tier::Balanced,
-        class,
-        usage: porter_core::consent::Usage::Interactive,
-        tools: vec![],
-        control: ChatControl {
-            tool_choice: ToolChoice::Auto,
-            tool_calls: ToolParallelism::Many,
-            max_output: Knob::Off,
-            reasoning: Reasoning::EngineDefault,
-            sampling: Knob::Off,
-            stop: vec![],
-            scores: Knob::Off,
-        },
-    })
+    InferRequest::Chat(
+        ChatRequest::new(
+            vec![ChatMessage {
+                role: Role::User,
+                parts: vec![MessagePart::Text("hello".into())],
+            }],
+            Tier::Balanced,
+            class,
+            porter_core::consent::Usage::Interactive,
+        )
+        .with_control(ChatControl::new().with_tool_calls(ToolParallelism::Many)),
+    )
 }
 
 fn id(text: &str) -> EngineId {
@@ -313,10 +302,7 @@ async fn needs_without_a_row_and_kinds_of_need_not_served_are_refused() {
     );
     assert_eq!(fast.next().await, Err(porter_client::SessionError::Closed));
 
-    let embeddings = Need::Embeddings(EmbedNeed {
-        dims: DimsNeed::Any,
-        modalities: Default::default(),
-    });
+    let embeddings = Need::Embeddings(EmbedNeed::new(DimsNeed::Any, Default::default()));
     let mut other = host
         .open(
             &app(),

@@ -261,20 +261,17 @@ fn review_of(signed: &Signed) -> SignInStep {
 
 fn signed_from(spec: &ProviderSpec, found: Found, credential: Credential) -> Signed {
     let endpoints = endpoints_for(spec, &found);
-    let restriction = Restriction {
-        consent: match found.tenant_refused() {
-            true => TenantConsent::AdminRequired,
-            false => TenantConsent::User,
-        },
-        ..Restriction::none()
-    };
-    Signed {
-        label: AccountLabel(found.address),
-        credentials: vec![(SecretPurpose::OAuthRefresh, credential)],
-        claims: found.claims,
+    let restriction = Restriction::none().with_consent(match found.tenant_refused() {
+        true => TenantConsent::AdminRequired,
+        false => TenantConsent::User,
+    });
+    Signed::new(
+        AccountLabel(found.address),
+        vec![(SecretPurpose::OAuthRefresh, credential)],
+        found.claims,
         endpoints,
         restriction,
-    }
+    )
 }
 
 /// The servers of the account: Exchange's IMAP and SMTP when mail is there, Graph when any of

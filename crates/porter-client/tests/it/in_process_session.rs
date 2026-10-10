@@ -11,9 +11,8 @@ use porter_core::{AppId, AppName, DataClass, Isolation, Need, Tier, Tokens};
 use porter_fake::fake_service;
 use porter_fake::{FakeInferSession, FakeService, Script, ScriptStep, ScriptedSheets};
 use porter_infer::{
-    ChatControl, ChatReply, ClientFrame, InferEvent, InferReply, InferRequest, Knob, OpenOptions,
-    Reasoning, ReplyShape, RequestKind, ServedBy, StopReason, TokenUsage, ToolChoice,
-    ToolParallelism, Traceparent,
+    ChatControl, ChatReply, ClientFrame, InferEvent, InferReply, InferRequest, OpenOptions,
+    RequestKind, ServedBy, StopReason, TokenUsage, ToolParallelism, Traceparent,
 };
 use std::sync::{Arc, Mutex};
 
@@ -25,10 +24,7 @@ fn app() -> AppId {
 }
 
 fn need() -> Need {
-    Need::Llm(LlmNeed {
-        features: Default::default(),
-        context: Tokens(1),
-    })
+    Need::Llm(LlmNeed::new(Default::default(), Tokens(1)))
 }
 
 fn served() -> ServedBy {
@@ -40,39 +36,28 @@ fn served() -> ServedBy {
 }
 
 fn chat() -> InferRequest {
-    InferRequest::Chat(porter_infer::ChatRequest {
-        messages: vec![],
-        shape: ReplyShape::Text,
-        tier: Tier::Fast,
-        class: DataClass::Public,
-        usage: porter_core::consent::Usage::Interactive,
-        tools: vec![],
-        control: ChatControl {
-            tool_choice: ToolChoice::Auto,
-            tool_calls: ToolParallelism::Many,
-            max_output: Knob::Off,
-            reasoning: Reasoning::EngineDefault,
-            sampling: Knob::Off,
-            stop: vec![],
-            scores: Knob::Off,
-        },
-    })
+    InferRequest::Chat(
+        porter_infer::ChatRequest::new(
+            vec![],
+            Tier::Fast,
+            DataClass::Public,
+            porter_core::consent::Usage::Interactive,
+        )
+        .with_control(ChatControl::new().with_tool_calls(ToolParallelism::Many)),
+    )
 }
 
 fn reply() -> InferReply {
-    InferReply::Chat(ChatReply {
-        text: "hello".into(),
-        tool_calls: vec![],
-        stop: StopReason::EndTurn,
-        thought: None,
-        scores: None,
-        usage: TokenUsage {
+    InferReply::Chat(ChatReply::new(
+        "hello".into(),
+        StopReason::EndTurn,
+        TokenUsage {
             input: Tokens(1),
             output: Tokens(1),
             cached: Tokens(0),
         },
-        served: served(),
-    })
+        served(),
+    ))
 }
 
 async fn service() -> Arc<FakeService> {
@@ -159,10 +144,7 @@ async fn a_hosted_broker_serves_the_sessions_for_the_app_the_host_names() {
         Accounts::over(InProcess::new(service().await, app()).with_broker(Arc::clone(&broker)));
     let parent = Traceparent::parse("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
         .expect("traceparent");
-    let options = OpenOptions {
-        traceparent: Some(parent),
-        ..OpenOptions::default()
-    };
+    let options = OpenOptions::default().with_traceparent(parent);
     let mut session = accounts
         .session_with(&need(), DataClass::Public, Tier::Fast, &options)
         .await

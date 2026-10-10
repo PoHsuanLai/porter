@@ -15,21 +15,21 @@ fn cap(transport: PimTransport) -> PimCap {
 }
 
 fn candidate(provider: &str, capability: Capability) -> Candidate {
-    Candidate {
-        account: AccountId::parse("a1").expect("account"),
-        label: AccountLabel("a@b.test".into()),
-        provider: ProviderId::parse(provider).expect("provider"),
-        subject: Subject::Account,
+    Candidate::new(
+        AccountId::parse("a1").expect("account"),
+        AccountLabel("a@b.test".into()),
+        ProviderId::parse(provider).expect("provider"),
+        Subject::Account,
         capability,
-        restriction: Restriction::none(),
-        grant: GrantId::parse("g1").expect("grant"),
-        endpoints: vec![ServiceEndpoint {
-            family: Family::Graph,
-            url: EndpointUrl::parse("https://graph.example.test").expect("url"),
-            tls: Tls::Plain,
-            login: LoginName("a".into()),
-        }],
-    }
+        Restriction::none(),
+        GrantId::parse("g1").expect("grant"),
+    )
+    .with_endpoints(vec![ServiceEndpoint {
+        family: Family::Graph,
+        url: EndpointUrl::parse("https://graph.example.test").expect("url"),
+        tls: Tls::Plain,
+        login: LoginName("a".into()),
+    }])
 }
 
 #[test]

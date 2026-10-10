@@ -12,12 +12,12 @@ use porter_infer::{
 };
 
 fn transcribe() -> InferRequest {
-    InferRequest::Transcribe(TranscribeBegin {
-        mode: TranscribeMode::Streaming,
-        lang: LangPick::Auto,
-        rate: AudioRate(16_000),
-        usage: Usage::Interactive,
-    })
+    InferRequest::Transcribe(TranscribeBegin::new(
+        TranscribeMode::Streaming,
+        LangPick::Auto,
+        AudioRate(16_000),
+        Usage::Interactive,
+    ))
 }
 
 fn audio(samples: usize, at: u64) -> ClientFrame {
@@ -73,13 +73,12 @@ async fn a_transcript_arrives_as_the_audio_passes_its_index() {
 
 #[tokio::test]
 async fn a_request_without_a_script_is_refused_and_cancel_ends_a_turn() {
-    let speak = InferRequest::Speak(SpeakRequest {
-        text: "hi".into(),
-        voice: None,
-        lang: LanguageTag::parse("en").expect("tag"),
-        class: DataClass::Public,
-        usage: Usage::Interactive,
-    });
+    let speak = InferRequest::Speak(SpeakRequest::new(
+        "hi".into(),
+        LanguageTag::parse("en").expect("tag"),
+        DataClass::Public,
+        Usage::Interactive,
+    ));
     let script = Script {
         kind: RequestKind::Chat,
         steps: vec![ScriptStep::Emit(InferEvent::Usage(TokenUsage {

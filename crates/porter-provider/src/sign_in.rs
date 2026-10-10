@@ -14,6 +14,7 @@ use std::future::Future;
 
 /// Why the sign-in was started.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum SignInMode {
     /// A new account.
     Add,
@@ -29,13 +30,22 @@ pub enum SignInMode {
 
 /// What a sign-in begins with.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct SignInStart {
     /// Why.
     pub mode: SignInMode,
 }
 
+impl SignInStart {
+    /// A sign-in begun for this reason.
+    pub fn new(mode: SignInMode) -> Self {
+        Self { mode }
+    }
+}
+
 /// What a signed-in account hands the host to store. `Debug` redacts every credential.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Signed {
     /// The name the account will have.
     pub label: AccountLabel,
@@ -50,8 +60,29 @@ pub struct Signed {
     pub restriction: Restriction,
 }
 
+impl Signed {
+    /// A signed-in account called `label`, with the secrets to file, what it can do, its servers
+    /// and what limits it.
+    pub fn new(
+        label: AccountLabel,
+        credentials: Vec<(SecretPurpose, Credential)>,
+        claims: Vec<Claim>,
+        endpoints: Vec<ServiceEndpoint>,
+        restriction: Restriction,
+    ) -> Self {
+        Self {
+            label,
+            credentials,
+            claims,
+            endpoints,
+            restriction,
+        }
+    }
+}
+
 /// What a sign-in asks the host to do next.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum SignInStep {
     /// Show a form with these fields and feed the answers back.
     AskFields(Vec<FieldSpec>),
@@ -137,6 +168,7 @@ pub trait SignIn: Send {
 
 /// What revoking an account at its provider came to.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RevokeOutcome {
     /// The provider no longer honours the credential.
     Revoked,

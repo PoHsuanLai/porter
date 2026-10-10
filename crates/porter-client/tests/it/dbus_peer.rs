@@ -18,12 +18,12 @@ use porter_dbus::{Caller, CallerRole};
 use porter_fake::Scripted;
 
 fn storage() -> Need {
-    Need::Storage(StorageNeed {
-        access: Access::ReadWrite,
-        delta: Delta::Poll,
-        scope: StorageScope::AppFolder,
-        quota: QuotaReport::Unreported,
-    })
+    Need::Storage(StorageNeed::new(
+        Access::ReadWrite,
+        Delta::Poll,
+        StorageScope::AppFolder,
+        QuotaReport::Unreported,
+    ))
 }
 
 fn caller(name: &str, role: CallerRole) -> Caller {

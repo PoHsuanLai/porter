@@ -17,12 +17,12 @@ use porter_core::{Audience, DataClass, GrantId, Need};
 use porter_fake::Scripted;
 
 fn storage(delta: Delta) -> Need {
-    Need::Storage(StorageNeed {
-        access: Access::ReadWrite,
+    Need::Storage(StorageNeed::new(
+        Access::ReadWrite,
         delta,
-        scope: StorageScope::AppFolder,
-        quota: QuotaReport::Unreported,
-    })
+        StorageScope::AppFolder,
+        QuotaReport::Unreported,
+    ))
 }
 
 struct Rig {

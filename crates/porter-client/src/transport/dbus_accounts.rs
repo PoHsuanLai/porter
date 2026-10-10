@@ -173,6 +173,10 @@ pub(super) async fn call(
             )
             .await
         }
+        // a variant a newer porter adds: the bus has no call for it, so it is malformed
+        _ => Err(TransportError::Malformed(
+            "a request this client has no bus call for".to_owned(),
+        )),
     }
 }
 

@@ -41,9 +41,9 @@ pub fn token_from_dbus(arg: TokenArg) -> Result<IssuedToken, CoreError> {
     let (kind, value, expires) = arg;
     let kind: TokenKind =
         serde_json::from_value(Json::String(kind)).map_err(|e| bad(&format!("token kind: {e}")))?;
-    Ok(IssuedToken {
+    Ok(IssuedToken::new(
         kind,
-        value: SecretText::new(value),
-        expires: UnixSeconds(expires),
-    })
+        SecretText::new(value),
+        UnixSeconds(expires),
+    ))
 }

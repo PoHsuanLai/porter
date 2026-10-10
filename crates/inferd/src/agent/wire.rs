@@ -124,28 +124,32 @@ mod tests {
     use porter_infer::ServedBy;
 
     fn reply(text: &str, thought: Option<&str>, calls: usize) -> ChatReply {
-        ChatReply {
-            text: text.into(),
-            tool_calls: (0..calls)
+        let made = ChatReply::new(
+            text.into(),
+            StopReason::EndTurn,
+            TokenUsage {
+                input: Tokens(10),
+                output: Tokens(3),
+                cached: Tokens(4),
+            },
+            ServedBy {
+                account: porter_core::AccountId::parse("local").expect("id"),
+                model: porter_core::ModelId::parse("m").expect("id"),
+                locality: porter_core::Locality::OnDevice,
+            },
+        )
+        .with_tool_calls(
+            (0..calls)
                 .map(|n| ToolCallPart {
                     id: porter_infer::ToolCallId(format!("c{n}")),
                     name: porter_infer::ToolName::parse("t").expect("name"),
                     args: porter_infer::JsonText::parse("{}").expect("json"),
                 })
                 .collect(),
-            stop: StopReason::EndTurn,
-            thought: thought.map(str::to_owned),
-            scores: None,
-            usage: TokenUsage {
-                input: Tokens(10),
-                output: Tokens(3),
-                cached: Tokens(4),
-            },
-            served: ServedBy {
-                account: porter_core::AccountId::parse("local").expect("id"),
-                model: porter_core::ModelId::parse("m").expect("id"),
-                locality: porter_core::Locality::OnDevice,
-            },
+        );
+        match thought {
+            Some(t) => made.with_thought(t.to_owned()),
+            None => made,
         }
     }
 

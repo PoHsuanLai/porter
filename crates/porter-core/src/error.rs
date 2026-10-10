@@ -2,6 +2,7 @@
 
 /// Why a value from outside (a file, the bus, a socket) was refused.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum CoreError {
     /// Text that should have been an identifier of the named kind is not one.
     #[error("malformed {what}: {text:?}")]

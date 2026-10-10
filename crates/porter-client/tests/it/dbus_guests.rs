@@ -254,24 +254,24 @@ async fn guests_decode_into_typed_rows() {
     assert_eq!(
         world.accounts.guests().await.expect("guests"),
         vec![
-            GuestRow {
-                node: node("nPI"),
-                name: "pi".to_owned(),
-                state: RowState::Asking,
-                since: UnixSeconds(1_700_000_000),
-            },
-            GuestRow {
-                node: node("nOLD"),
-                name: "old-laptop".to_owned(),
-                state: RowState::Approved,
-                since: UnixSeconds(1_600_000_000),
-            },
-            GuestRow {
-                node: node("nBOX"),
-                name: "box".to_owned(),
-                state: RowState::Denied,
-                since: UnixSeconds(5),
-            },
+            GuestRow::new(
+                node("nPI"),
+                "pi".to_owned(),
+                RowState::Asking,
+                UnixSeconds(1_700_000_000),
+            ),
+            GuestRow::new(
+                node("nOLD"),
+                "old-laptop".to_owned(),
+                RowState::Approved,
+                UnixSeconds(1_600_000_000),
+            ),
+            GuestRow::new(
+                node("nBOX"),
+                "box".to_owned(),
+                RowState::Denied,
+                UnixSeconds(5),
+            ),
         ]
     );
 }

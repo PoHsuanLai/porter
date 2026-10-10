@@ -56,6 +56,7 @@ impl fmt::Display for LoginRequestId {
 /// says nothing of how the agent failed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum LoginFault {
     /// The agent or its provider refused the login.
     Refused,
@@ -95,6 +96,7 @@ impl LoginFault {
 /// means done.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(tag = "outcome", content = "reason", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum LoginOutcome {
     /// The agent says it is now signed in (or out).
     Ready,

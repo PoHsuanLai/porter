@@ -15,12 +15,12 @@ use porter_dbus::{
 use zbus::zvariant::{OwnedValue, Value};
 
 fn candidate() -> Candidate {
-    Candidate {
-        account: AccountId::parse("67e55044-10b1.x").expect("id"),
-        label: AccountLabel("ada@example.org".into()),
-        provider: ProviderId::parse("nextcloud").expect("provider"),
-        subject: Subject::Account,
-        capability: Capability::Storage(StorageCap {
+    Candidate::new(
+        AccountId::parse("67e55044-10b1.x").expect("id"),
+        AccountLabel("ada@example.org".into()),
+        ProviderId::parse("nextcloud").expect("provider"),
+        Subject::Account,
+        Capability::Storage(StorageCap {
             access: Access::ReadWrite,
             delta: Delta::Poll,
             quota: QuotaReport::Reported,
@@ -29,15 +29,15 @@ fn candidate() -> Candidate {
             ranges: Offered::Present,
             chunked_upload: Offered::Present,
         }),
-        restriction: Restriction::none(),
-        grant: GrantId::parse("grant-1").expect("grant"),
-        endpoints: vec![ServiceEndpoint {
-            family: Family::WebDav,
-            url: EndpointUrl::parse("https://cloud.example.org/dav/").expect("url"),
-            tls: Tls::Implicit,
-            login: LoginName("ada".into()),
-        }],
-    }
+        Restriction::none(),
+        GrantId::parse("grant-1").expect("grant"),
+    )
+    .with_endpoints(vec![ServiceEndpoint {
+        family: Family::WebDav,
+        url: EndpointUrl::parse("https://cloud.example.org/dav/").expect("url"),
+        tls: Tls::Implicit,
+        login: LoginName("ada".into()),
+    }])
 }
 
 const REFUSALS: [Refusal; 7] = [

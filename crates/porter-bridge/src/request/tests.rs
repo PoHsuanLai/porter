@@ -13,26 +13,16 @@ fn target(sampling: DefaultSampling) -> Target {
 }
 
 fn chat(parts: Vec<pi::MessagePart>) -> pi::ChatRequest {
-    pi::ChatRequest {
-        messages: vec![pi::ChatMessage {
+    pi::ChatRequest::new(
+        vec![pi::ChatMessage {
             role: pi::Role::User,
             parts,
         }],
-        shape: pi::ReplyShape::Text,
-        tier: Tier::Balanced,
-        class: DataClass::Notes,
-        usage: Usage::Interactive,
-        tools: vec![],
-        control: pi::ChatControl {
-            tool_choice: pi::ToolChoice::Auto,
-            tool_calls: pi::ToolParallelism::Many,
-            max_output: pi::Knob::Off,
-            reasoning: pi::Reasoning::EngineDefault,
-            sampling: pi::Knob::Off,
-            stop: vec![],
-            scores: pi::Knob::Off,
-        },
-    }
+        Tier::Balanced,
+        DataClass::Notes,
+        Usage::Interactive,
+    )
+    .with_control(pi::ChatControl::new().with_tool_calls(pi::ToolParallelism::Many))
 }
 
 #[test]
@@ -133,12 +123,12 @@ fn an_inline_image_of_a_type_with_no_encoder_is_unsupported() {
 
 #[test]
 fn a_task_is_its_instruction_then_the_text() {
-    let task = pi::TaskRequest {
-        task: pi::Task::Summarise,
-        input: "the long text".into(),
-        class: DataClass::Notes,
-        usage: Usage::Interactive,
-    };
+    let task = pi::TaskRequest::new(
+        pi::Task::Summarise,
+        "the long text".into(),
+        DataClass::Notes,
+        Usage::Interactive,
+    );
     let turn = task_turn_for(&target(DefaultSampling::Provider), &task, Tier::Fast).expect("turn");
     assert_eq!(turn.messages.len(), 2);
     assert_eq!(turn.messages[0].role, sp::Role::System);

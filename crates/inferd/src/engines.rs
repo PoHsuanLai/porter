@@ -756,6 +756,11 @@ impl Engines {
         match self.route_in(spec, caller.role, &offered, Some(allowed)) {
             Err(Unplaced::NoPlace(refusal)) => Err(refusal),
             Ok(_) | Err(Unplaced::Other(_)) => Ok(()),
+            // a variant a newer porter adds: refused as a place that is not ready
+            Err(_) => Err(PlaceRefusal::new(
+                porter_infer::NoPlaceReason::NotReady,
+                None,
+            )),
         }
     }
 
@@ -784,7 +789,14 @@ impl Engines {
                 InferRefusal::RequiresCloud(_) | InferRefusal::Unavailable => {
                     Availability::NeedsAccount
                 }
+                // a variant a newer porter adds: not available to the app
+                _ => Availability::Denied,
             }),
+            // a variant a newer porter adds: refused as a place that is not ready
+            Err(_) => Err(PlaceRefusal::new(
+                porter_infer::NoPlaceReason::NotReady,
+                None,
+            )),
         }
     }
 

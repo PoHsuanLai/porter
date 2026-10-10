@@ -40,10 +40,7 @@ fn agent() -> AppId {
 }
 
 fn llm() -> Need {
-    Need::Llm(LlmNeed {
-        features: BTreeSet::from([LlmFeature::Chat]),
-        context: Tokens(0),
-    })
+    Need::Llm(LlmNeed::new(BTreeSet::from([LlmFeature::Chat]), Tokens(0)))
 }
 
 fn service(script: impl IntoIterator<Item = Scripted>) -> (Svc, AskLog, RecordingAudit) {

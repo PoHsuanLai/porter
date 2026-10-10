@@ -104,14 +104,17 @@ fn target_for(target: &str, origin: &Origin) -> Result<String, RelayFault> {
 }
 
 /// The `Authorization` header line the relay adds, or none for a relay that adds no credential.
-fn credential(auth: &RelayAuth, login: &str) -> Option<String> {
+/// A way of authenticating this relay does not know is `Protocol`, never an anonymous request.
+fn credential(auth: &RelayAuth, login: &str) -> Result<Option<String>, RelayFault> {
     match auth {
-        RelayAuth::Password(password) => Some(format!(
+        RelayAuth::Password(password) => Ok(Some(format!(
             "Basic {}",
             STANDARD.encode(format!("{login}:{}", password.expose()))
-        )),
-        RelayAuth::AccessToken(token) => Some(format!("Bearer {}", token.expose())),
-        RelayAuth::Anonymous => None,
+        ))),
+        RelayAuth::AccessToken(token) => Ok(Some(format!("Bearer {}", token.expose()))),
+        RelayAuth::Anonymous => Ok(None),
+        // a variant a newer porter adds: the relay refuses it, never sends it as anonymous
+        _ => Err(RelayFault::Protocol),
     }
 }
 
@@ -210,7 +213,7 @@ pub fn rewrite(head: &[u8], plan: &RelayPlan) -> Result<Rewritten, RelayFault> {
         out.push_str(line);
         out.push_str("\r\n");
     }
-    if let Some(value) = credential(&plan.auth, &plan.endpoint.login.0) {
+    if let Some(value) = credential(&plan.auth, &plan.endpoint.login.0)? {
         out.push_str(&format!("Authorization: {value}\r\n"));
     }
     out.push_str("\r\n");

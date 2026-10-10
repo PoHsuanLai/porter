@@ -19,15 +19,11 @@ use porter_core::{DataClass, Need, Tier, Tokens};
 use porter_infer::{
     ChatControl, ChatMessage, ChatReply, ChatRequest, ClientFrame, InferEvent, InferReply,
     InferRequest, Knob, MessagePart, Reasoning, ReplyShape, Role as ChatRole, ScoreOptions,
-    ToolChoice, ToolParallelism,
 };
 use serde_json::json;
 
 fn llm() -> Need {
-    Need::Llm(LlmNeed {
-        features: [LlmFeature::Chat].into(),
-        context: Tokens(1000),
-    })
+    Need::Llm(LlmNeed::new([LlmFeature::Chat].into(), Tokens(1000)))
 }
 
 /// The chat entry, whose engine also constrains a reply to a list of strings (`choice`), so a
@@ -55,26 +51,25 @@ fn choice_world(answer: Chat) -> Plan {
 }
 
 fn pick_one(options: &[&str], scores: Knob<ScoreOptions>) -> InferRequest {
-    InferRequest::Chat(ChatRequest {
-        messages: vec![ChatMessage {
-            role: ChatRole::User,
-            parts: vec![MessagePart::Text("may it run?".into())],
-        }],
-        shape: ReplyShape::Choice(options.iter().map(|one| (*one).to_owned()).collect()),
-        tier: Tier::Balanced,
-        class: DataClass::Notes,
-        usage: Usage::Interactive,
-        tools: vec![],
-        control: ChatControl {
-            tool_choice: ToolChoice::Auto,
-            tool_calls: ToolParallelism::One,
-            max_output: Knob::Off,
-            reasoning: Reasoning::Off,
-            sampling: Knob::Off,
-            stop: vec![],
-            scores,
-        },
-    })
+    InferRequest::Chat(
+        ChatRequest::new(
+            vec![ChatMessage {
+                role: ChatRole::User,
+                parts: vec![MessagePart::Text("may it run?".into())],
+            }],
+            Tier::Balanced,
+            DataClass::Notes,
+            Usage::Interactive,
+        )
+        .with_shape(ReplyShape::Choice(
+            options.iter().map(|one| (*one).to_owned()).collect(),
+        ))
+        .with_control(
+            ChatControl::new()
+                .with_reasoning(Reasoning::Off)
+                .with_scores(scores),
+        ),
+    )
 }
 
 async fn ask(world: &World, request: InferRequest) -> ChatReply {

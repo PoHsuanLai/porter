@@ -19,9 +19,7 @@ use porter_infer::{OpenOptions, Readiness, Traceparent};
 use std::sync::{Arc, Mutex};
 
 fn stt() -> Need {
-    Need::Speech(SpeechNeed {
-        modes: [SpeechMode::Stt].into(),
-    })
+    Need::Speech(SpeechNeed::new([SpeechMode::Stt].into()))
 }
 
 async fn bus_rig(
@@ -69,11 +67,9 @@ async fn prepare_sends_need_class_tier_and_trace_context() {
     let (_bus, _daemon, seen, accounts) = bus_rig("ready").await;
     let parent = Traceparent::parse("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
         .expect("traceparent");
-    let options = OpenOptions {
-        traceparent: Some(parent.clone()),
-        usage: Some(Usage::Background),
-        ..OpenOptions::default()
-    };
+    let options = OpenOptions::default()
+        .with_traceparent(parent.clone())
+        .with_usage(Usage::Background);
     accounts
         .prepare(&stt(), DataClass::Voice, Tier::Fast, &options)
         .await

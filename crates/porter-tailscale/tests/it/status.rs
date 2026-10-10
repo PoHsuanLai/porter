@@ -26,13 +26,13 @@ async fn a_running_tailscale_lists_the_other_computers() {
         ]
     );
     let pi = machines.iter().find(|m| m.name == "pi").expect("pi");
-    assert!(pi.ssh && pi.online && pi.last_seen.is_none());
+    assert!(pi.ssh.is_on() && pi.link.is_online() && pi.last_seen.is_none());
     assert_eq!(pi.dns, "pi.tail1234.ts.net");
     let old = machines
         .iter()
         .find(|m| m.name == "old-laptop")
         .expect("old");
-    assert!(!old.online && !old.ssh);
+    assert!(!old.link.is_online() && !old.ssh.is_on());
     assert_eq!(old.last_seen.map(|t| t.0), Some(1_790_000_000));
 }
 

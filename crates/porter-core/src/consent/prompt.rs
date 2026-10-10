@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 /// One consent question: "Photos wants to keep its library in your files", with the fitting
 /// accounts to choose from (design/31 §4.5: by capability, not by provider).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct ConsentAsk {
     /// Who asks.
     pub app: AppId,
@@ -38,8 +39,43 @@ pub struct ConsentAsk {
     pub app_label: Option<AppLabel>,
 }
 
+impl ConsentAsk {
+    /// A question from `app` for this kind and data class, with the accounts that fit; it asks
+    /// outside any launcher session and names the app by its id until accountd fills the label.
+    pub fn new(
+        app: AppId,
+        kind: CapabilityKind,
+        class: DataClass,
+        usage: Usage,
+        accounts: Vec<AccountChoice>,
+    ) -> Self {
+        Self {
+            app,
+            kind,
+            class,
+            usage,
+            accounts,
+            session: None,
+            app_label: None,
+        }
+    }
+
+    /// The same question, asked inside this launcher session.
+    pub fn with_session(mut self, session: LauncherSession) -> Self {
+        self.session = Some(session);
+        self
+    }
+
+    /// The same question, with what a person calls the app.
+    pub fn with_app_label(mut self, label: AppLabel) -> Self {
+        self.app_label = Some(label);
+        self
+    }
+}
+
 /// One account row in the chooser.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct AccountChoice {
     /// The account.
     pub account: AccountId,
@@ -49,9 +85,21 @@ pub struct AccountChoice {
     pub provider: ProviderId,
 }
 
+impl AccountChoice {
+    /// A row for this account, with its label and provider.
+    pub fn new(account: AccountId, label: AccountLabel, provider: ProviderId) -> Self {
+        Self {
+            account,
+            label,
+            provider,
+        }
+    }
+}
+
 /// What the user answered.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "v", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum ConsentAnswer {
     /// "Allow", with the account picked.
     Allow {

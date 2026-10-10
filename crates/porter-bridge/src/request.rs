@@ -73,6 +73,8 @@ impl Frames {
                 .get(usize::from(*index))
                 .cloned()
                 .ok_or(BridgeError::Attachment),
+            // a variant a newer porter adds: refused, as a source this build cannot read
+            _ => Err(BridgeError::Unsupported),
         }
     }
 }
@@ -141,6 +143,8 @@ fn part(one: &pi::MessagePart, frames: &Frames) -> Result<sp::Part, BridgeError>
                 .map(|inner| part(inner, frames))
                 .collect::<Result<_, _>>()?,
         }),
+        // a variant a newer porter adds: the request is refused as one that cannot be expressed
+        _ => return Err(BridgeError::Unsupported),
     })
 }
 
@@ -164,6 +168,8 @@ fn shape(shape: &pi::ReplyShape, json: JsonReply) -> Result<sp::OutputShape, Bri
             }
         }
         pi::ReplyShape::Choice(choices) => sp::OutputShape::Choice(choices.clone()),
+        // a variant a newer porter adds: the request is refused as one that cannot be expressed
+        _ => return Err(BridgeError::Unsupported),
     })
 }
 
@@ -173,6 +179,8 @@ fn tool_choice(choice: &pi::ToolChoice) -> Result<sp::ToolChoice, BridgeError> {
         pi::ToolChoice::Never => sp::ToolChoice::Never,
         pi::ToolChoice::Required => sp::ToolChoice::Required,
         pi::ToolChoice::Named(name) => sp::ToolChoice::Named(tool_name(name)?),
+        // a variant a newer porter adds: the request is refused as one that cannot be expressed
+        _ => return Err(BridgeError::Unsupported),
     })
 }
 
@@ -209,12 +217,14 @@ fn effort(effort: pi::Effort) -> sp::Effort {
 /// Reasoning as the app asked: `EngineDefault` stays `EngineDefault` (the codec then sends no
 /// reasoning field, and the catalog's `reasoning_default` names the sampling that goes with the
 /// engine's own choice).
-fn reasoning(reasoning: pi::Reasoning) -> sp::Reasoning {
-    match reasoning {
+fn reasoning(reasoning: pi::Reasoning) -> Result<sp::Reasoning, BridgeError> {
+    Ok(match reasoning {
         pi::Reasoning::EngineDefault => sp::Reasoning::EngineDefault,
         pi::Reasoning::Off => sp::Reasoning::Off,
         pi::Reasoning::On(level) => sp::Reasoning::On(effort(level)),
-    }
+        // a variant a newer porter adds: the request is refused as one that cannot be expressed
+        _ => return Err(BridgeError::Unsupported),
+    })
 }
 
 /// What the engine's flavor understands beyond the shared fields.
@@ -307,7 +317,7 @@ pub fn chat_turn_for(
     frames: &Frames,
 ) -> Result<sp::TurnRequest, BridgeError> {
     let control = &request.control;
-    let reasoning = reasoning(control.reasoning);
+    let reasoning = reasoning(control.reasoning)?;
     let sampling = match control.sampling {
         pi::Knob::Set(own) => Some(sampling(own)),
         pi::Knob::Off => default_sampling(target, reasoning),
@@ -386,8 +396,8 @@ fn schema_in_prompt(messages: &mut Vec<sp::Message>, schema: &str) {
 }
 
 /// The instruction a task kind is carried out under.
-fn task_instruction(task: pi::Task) -> &'static str {
-    match task {
+fn task_instruction(task: pi::Task) -> Result<&'static str, BridgeError> {
+    Ok(match task {
         pi::Task::Summarise => {
             "Summarise the text the user gives you. Reply with the summary only."
         }
@@ -400,7 +410,9 @@ fn task_instruction(task: pi::Task) -> &'static str {
         pi::Task::Classify => {
             "Classify the text the user gives you in one or two words. Reply with the label only."
         }
-    }
+        // a variant a newer porter adds: the task is refused as one that cannot be expressed
+        _ => return Err(BridgeError::Unsupported),
+    })
 }
 
 /// A task as a chat turn on `target`: its instruction, then the text.
@@ -409,32 +421,28 @@ pub fn task_turn_for(
     request: &pi::TaskRequest,
     tier: porter_core::Tier,
 ) -> Result<sp::TurnRequest, BridgeError> {
-    let chat = pi::ChatRequest {
-        messages: vec![
+    let chat = pi::ChatRequest::new(
+        vec![
             pi::ChatMessage {
                 role: pi::Role::System,
-                parts: vec![pi::MessagePart::Text(task_instruction(request.task).into())],
+                parts: vec![pi::MessagePart::Text(
+                    task_instruction(request.task)?.into(),
+                )],
             },
             pi::ChatMessage {
                 role: pi::Role::User,
                 parts: vec![pi::MessagePart::Text(request.input.clone())],
             },
         ],
-        shape: pi::ReplyShape::Text,
         tier,
-        class: request.class,
-        usage: request.usage,
-        tools: Vec::new(),
-        control: pi::ChatControl {
-            tool_choice: pi::ToolChoice::Never,
-            tool_calls: pi::ToolParallelism::One,
-            max_output: pi::Knob::Off,
-            reasoning: pi::Reasoning::Off,
-            sampling: pi::Knob::Off,
-            stop: Vec::new(),
-            scores: pi::Knob::Off,
-        },
-    };
+        request.class,
+        request.usage,
+    )
+    .with_control(
+        pi::ChatControl::new()
+            .with_tool_choice(pi::ToolChoice::Never)
+            .with_reasoning(pi::Reasoning::Off),
+    );
     chat_turn_for(target, &chat, &Frames::default())
 }
 

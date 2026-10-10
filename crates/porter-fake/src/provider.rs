@@ -68,16 +68,16 @@ pub struct FakeSignIn {
 impl SignIn for FakeSignIn {
     async fn next(&mut self, input: SignInInput) -> SignInStep {
         match input {
-            SignInInput::Start => SignInStep::Done(Signed {
-                label: self.label.clone(),
-                credentials: vec![(
+            SignInInput::Start => SignInStep::Done(Signed::new(
+                self.label.clone(),
+                vec![(
                     SecretPurpose::Password,
                     Credential::Password(SecretText::new("fake-signed-in")),
                 )],
-                claims: self.claims.clone(),
-                endpoints: Vec::new(),
-                restriction: Restriction::none(),
-            }),
+                self.claims.clone(),
+                Vec::new(),
+                Restriction::none(),
+            )),
             _ => SignInStep::Failed(SignInFault::Cancelled),
         }
     }
@@ -152,11 +152,11 @@ impl Provider for FakeProvider {
 
 impl ProviderSession for FakeSession {
     async fn access_token(&self, audience: &Audience) -> Result<IssuedToken, ProviderError> {
-        Ok(IssuedToken {
-            kind: TokenKind::Bearer,
-            value: SecretText::new(format!("fake:{}:{}", self.account, audience.0)),
-            expires: UnixSeconds(crate::world::NOW.0 + 3600),
-        })
+        Ok(IssuedToken::new(
+            TokenKind::Bearer,
+            SecretText::new(format!("fake:{}:{}", self.account, audience.0)),
+            UnixSeconds(crate::world::NOW.0 + 3600),
+        ))
     }
 
     fn renewed(&self) -> Option<porter_core::Credential> {

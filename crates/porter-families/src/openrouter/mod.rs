@@ -30,9 +30,7 @@ mod tests {
         assert_eq!(session.renewed(), None);
 
         let mut sign_in = OpenRouterSignIn {
-            start: SignInStart {
-                mode: SignInMode::Add,
-            },
+            start: SignInStart::new(SignInMode::Add),
         };
         assert_eq!(
             sign_in.next(SignInInput::Start).await,

@@ -6,16 +6,16 @@ use porter_core::{
 };
 
 fn plan(url: &str, tls: Tls, auth: RelayAuth) -> RelayPlan {
-    RelayPlan {
-        endpoint: ServiceEndpoint {
+    RelayPlan::new(
+        ServiceEndpoint {
             family: Family::WebDav,
             url: EndpointUrl::parse(url).expect("url"),
             tls,
             login: LoginName("ada".into()),
         },
-        kind: CapabilityKind::Storage,
+        CapabilityKind::Storage,
         auth,
-    }
+    )
 }
 
 /// A WebDAV server at the origin's root, so every path is the endpoint's: these tests are about

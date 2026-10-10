@@ -294,44 +294,45 @@ pub fn parse(body: &[u8], class: DataClass) -> Result<Parsed, Unmapped> {
             .and_then(|o| o.get("include_usage"))
             .and_then(Value::as_bool)
             == Some(true),
-        chat: ChatRequest {
-            messages: messages(
+        chat: ChatRequest::new(
+            messages(
                 root.get("messages")
                     .and_then(Value::as_array)
                     .ok_or_else(|| Unmapped::of("a request with no messages"))?,
             )?,
-            shape,
-            tier: porter_core::Tier::Balanced,
+            porter_core::Tier::Balanced,
             class,
-            usage: Usage::Interactive,
-            tools: tools(root.get("tools"))?,
-            control: ChatControl {
-                tool_choice: choice(root.get("tool_choice"))?,
-                tool_calls: if parallel == Some(false) {
+            Usage::Interactive,
+        )
+        .with_shape(shape)
+        .with_tools(tools(root.get("tools"))?)
+        .with_control(
+            ChatControl::new()
+                .with_tool_choice(choice(root.get("tool_choice"))?)
+                .with_tool_calls(if parallel == Some(false) {
                     ToolParallelism::One
                 } else {
                     ToolParallelism::Many
-                },
-                max_output: limit_of(
+                })
+                .with_max_output(limit_of(
                     root.get("max_completion_tokens")
                         .or_else(|| root.get("max_tokens"))
                         .and_then(Value::as_u64),
-                ),
-                reasoning: reasoning(root.get("reasoning_effort")),
-                sampling: sampling_of(
+                ))
+                .with_reasoning(reasoning(root.get("reasoning_effort")))
+                .with_sampling(sampling_of(
                     root.get("temperature").and_then(Value::as_f64),
                     root.get("top_p").and_then(Value::as_f64),
                     None,
                     DEFAULT_TEMPERATURE,
-                ),
-                stop,
-                scores: if scored {
+                ))
+                .with_stop(stop)
+                .with_scores(if scored {
                     Knob::Set(ScoreOptions::default())
                 } else {
                     Knob::Off
-                },
-            },
-        },
+                }),
+        ),
     })
 }
 

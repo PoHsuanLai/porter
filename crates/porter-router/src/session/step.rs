@@ -205,6 +205,8 @@ fn admits(spec: &SessionSpec, cua: CuaProgress, request: &InferRequest) -> bool 
         InferRequest::Task(r) => Some(r.class),
         InferRequest::Speak(r) => Some(r.class),
         InferRequest::CuaBegin(_) | InferRequest::CuaStep(_) | InferRequest::Transcribe(_) => None,
+        // a variant a newer porter adds: the session does not admit it
+        _ => return false,
     };
     let kind = request.kind();
     let cua_session = matches!(kind, RequestKind::CuaBegin | RequestKind::CuaStep);
@@ -554,6 +556,11 @@ fn in_turn(spec: &SessionSpec, phase: Phase, input: SessionIn) -> (Phase, Vec<Se
         SessionIn::Frame(ClientFrame::EndOfAudio) => (
             same(AudioCursor::NoAudio, queued),
             vec![SessionOut::EndAudio],
+        ),
+        // a variant a newer porter adds: refused, and the turn goes on unchanged
+        SessionIn::Frame(_) => (
+            same(audio, queued),
+            vec![refused(InferRefusal::Unsupported)],
         ),
         SessionIn::EngineFailed => {
             // The queued request never ran; it is told, as the running one is.

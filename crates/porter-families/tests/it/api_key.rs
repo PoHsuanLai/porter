@@ -66,7 +66,7 @@ fn account(provider: &str) -> Account {
 }
 
 fn start(mode: SignInMode) -> SignInStart {
-    SignInStart { mode }
+    SignInStart::new(mode)
 }
 
 fn reauth() -> SignInMode {

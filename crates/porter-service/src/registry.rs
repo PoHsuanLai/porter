@@ -185,20 +185,21 @@ pub(crate) fn serves(endpoint: &ServiceEndpoint, kind: CapabilityKind) -> bool {
 /// The candidate for one fitting account under `grant`.
 pub(crate) fn candidate(fit: &Fit<'_>, grant: GrantId) -> Candidate {
     let kind = fit.capability.kind();
-    Candidate {
-        account: fit.account.id.clone(),
-        label: fit.account.label.clone(),
-        provider: fit.account.provider.clone(),
-        subject: fit.claim.subject.clone(),
-        capability: fit.capability.clone(),
-        restriction: fit.account.restriction.clone(),
+    Candidate::new(
+        fit.account.id.clone(),
+        fit.account.label.clone(),
+        fit.account.provider.clone(),
+        fit.claim.subject.clone(),
+        fit.capability.clone(),
+        fit.account.restriction.clone(),
         grant,
-        endpoints: fit
-            .account
+    )
+    .with_endpoints(
+        fit.account
             .endpoints
             .iter()
             .filter(|e| e.family.serves(kind))
             .cloned()
             .collect(),
-    }
+    )
 }

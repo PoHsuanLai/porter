@@ -66,6 +66,8 @@ impl SieveAuth {
             RelayAuth::Password(_) | RelayAuth::AccessToken(_) | RelayAuth::Anonymous => {
                 Err(RelayFault::Protocol)
             }
+            // a variant a newer porter adds: refused, never sent as anonymous
+            _ => Err(RelayFault::Protocol),
         }
     }
 }

@@ -310,12 +310,10 @@ async fn signing_in_again_is_done_without_a_review() {
     let rig = Rig::new(PLAIN).await;
     let mut signin = rig
         .provider
-        .sign_in(SignInStart {
-            mode: SignInMode::Reauthenticate {
-                account: porter_core::AccountId::parse("ada").expect("id"),
-                endpoints: Vec::new(),
-            },
-        })
+        .sign_in(SignInStart::new(SignInMode::Reauthenticate {
+            account: porter_core::AccountId::parse("ada").expect("id"),
+            endpoints: Vec::new(),
+        }))
         .expect("sign in");
     let SignInStep::OpenBrowser { url } = signin.next(SignInInput::Start).await else {
         panic!("expected the browser")

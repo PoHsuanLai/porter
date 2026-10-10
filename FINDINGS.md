@@ -2455,3 +2455,51 @@ Not compiled by the lane. First places to look if the gate fails: `#[error("{}: 
 - `crates/accountd/Cargo.toml`, `crates/syncd/Cargo.toml`, `crates/inferd/Cargo.toml`: + `porter-daemon = { workspace = true }`.
 
 **Look here first if it does not compile.** `porter-daemon/src/watch.rs`: the closure given to `notify::recommended_watcher` moves `on_change` (an `impl Fn() + Send + 'static`) and `file` and is `FnMut + Send`; `#[must_use = "..."]` on a struct; the unit test's `notify::Event::new(kind).add_path(..)` and `notify::event::{AccessKind, CreateKind, ModifyKind, RenameMode}`. `porter-daemon/src/proc_root.rs`: the test closure that asserts inside an `Fn`. `accountd/src/paths.rs` and `syncd/src/paths.rs`: `proc_root` borrows `value` in a `|_|` closure (`value.as_deref().map(OsString::from)`), and `crate::daemon::PROC_ROOT_VAR`. `inferd/src/peers.rs` `with_root` (`root.fixture()` then `dir.to_path_buf()`).
+
+## Lane l5-porter (public API shape before beta.1: `#[non_exhaustive]`, constructors, idiom-4/6/9; base `3356848`, 2026-10-10)
+
+No build was run; the coordinator compiles and gates. Consumer list: `~/rs-wt/layering-audit/L5-porter.md`.
+
+- **Marked enums** (a `match` outside the crate needs a wildcard that fails closed): porter-core `AccountsRequest`,
+  `AccountsReply`, `wire::Refusal`, `ConsentAnswer`, `CoreError`, `StoreFault`, `PathError`, `EndpointFault`,
+  `MarkFaceError`, `SignInFault`, `LoginFault`, `LoginOutcome`, `AuditEvent`, `Need`, `RelayAuth`; porter-infer
+  `InferRequest`, `RequestKind`, `InferReply`, `InferEvent`, `ClientFrame`, `InferRefusal`, `ModelError`, `SessionError`,
+  `pipeline::Refusal`, `DeclinedBecause`, `CuaStepFailure`, `MessagePart`, `ImageSource`, `ReplyShape`, `Task`,
+  `ToolChoice`, `Reasoning`, `StopReason`; porter-provider `ProviderError`, `SignInMode`, `SignInStep`, `RevokeOutcome`;
+  porter-service `AgentFault`, `LocalFault`, `LoginEnd`; porter-router `AttachedError`, `KeyFileProblem`, `Unplaced`;
+  porter-tailnet `GuestEvent`.
+- **Marked structs, each with `new` (+ `with_*` for defaulted fields), fields still `pub`**: porter-core `ConsentAsk`,
+  `AccountChoice`, `IssuedToken`, `Restriction` (`none()` + `with_*`), `Limit`, `Candidate`, `Machine`, `GuestRow`,
+  `RelayPlan`, `AuditEntry`, and the 15 need structs; porter-infer `ChatRequest`, `ChatControl` (now also `Default`),
+  `EmbedRequest`, `TaskRequest`, `SpeakRequest`, `TranscribeBegin`, `CuaBegin`, `CuaStepRequest`, `CuaStepReply`,
+  `OpenOptions` (`with_traceparent` re-added), `OpenFrame`, `ChatReply`, `EmbedReply`, `TranscribeReply`, `SpeakReply`,
+  `PlaceRow`, `PlaceRefusal`, `RouteAsk`; porter-provider `SignInStart`, `Signed`.
+- **Kept exhaustive on purpose**: `Found`/`NoAccount` (the doc says a closed set the app renders arm by arm), `Flow`,
+  `Readiness`, `SpendVerdict`, `PlaceKind`/`PlaceTarget`/`PlaceState`, `NoPlaceReason` (an ordered vocabulary with `ALL`),
+  `Knob`, `Effort`, `ToolParallelism`, `ThoughtSeal`, `EmbedRole`, `DropReason`, `SafetyHint`, `GuestAnswer`, the sheet
+  and capability vocabularies. **Not marked, deferred** (many literal sites, small stable value types): `ChatMessage`,
+  `ToolDecl`, `TokenUsage`, `ServedBy`, `ModelRef`, `Sampling`, `Account`, `Claim`, `ServiceEndpoint`, `SecretKey`,
+  `AppId`, `Grant`, `GrantKey`, `Registry`, the sheet view structs, and the porter-router/tailnet/turns records.
+- **idiom-6**: the client error enums were already `#[non_exhaustive]`; `ClientError::InferRefused` now exists in every
+  build (without `infer` its payload is an uninhabited `InferRefusal` in porter-client).
+- **idiom-4**: `InProcess<P,S,U,K,B,R,A,H>` is `InProcess<C, B, H>` over one `HostedCore` (implemented for
+  `AccountService`); `new` and `with_broker` are unchanged; no consumer names the old parameters, so no deprecated path.
+- **idiom-9**: `Machine.online`/`.ssh` became `MachineLink`/`MachineSsh` (field `link`; the JSON shape of `Machine`
+  changes); porter-core `manual.rs` `outgoing: bool` became a private `Direction`. Still bool, outside the lane's
+  crates or private: porter-tailscale `Peer.online`/`.shared` and `Notice` flags, porter-http `reusable`,
+  `stream.rs finished`, sheet machine `cancel`, `add_flow polling`, `gate held`, tailnet `needs_approval`, families
+  tailnet `review`.
+- **Wildcards** (all `// a variant a newer porter adds: ...`): bus encoding of an unknown request is `Malformed`;
+  an unknown `RelayAuth` is `RelayFault::Protocol` (never anonymous); an unknown `ConsentAnswer` is `Dismissed`;
+  an unknown `AccountsRequest` is `Refused(Unavailable)`; an unknown `StopReason` is content-filter (`"refusal"`
+  for anthropic); bridge conversions refuse with `BridgeError::Unsupported`; router `admits` is false.
+  Two are not refusals: `porter-turns structured.rs read` (`ReplyShape` unknown is "not checked", the bridge
+  refuses it earlier) and inferd's `GuestEvent` loop (an unknown event re-reads the guests).
+- **Look here first if it does not compile**: `porter-client/src/transport/in_process.rs` (the `HostedCore` impl with
+  `async fn` against `-> impl Future + Send`), `porter-client/src/error.rs` (the empty `InferRefusal`, `match *self {}`),
+  `porter-dbus/src/machines.rs`, `porter-tailscale/src/status.rs` (`Machine::new(..).with_*`),
+  `porter-families/src/google/signin.rs` (`Restriction` builder), `porter-proxy/src/http1/head.rs` (`credential`
+  now returns `Result`), `porter-bridge/src/request.rs` (`reasoning`/`task_instruction` now return `Result`),
+  `inferd/src/engines/places.rs` (`PlaceRow::new` after `id` moves), `porter-turns/src/cua_step.rs:~241`,
+  `LlmNeed::new(Default::default(), ..)` inference in inferd tests.
+- No Cargo.toml changes.

@@ -103,11 +103,11 @@ pub use credential::{
     Revoked,
 };
 pub use env::{ClientEnv, LinkChoice, Place, START_WAIT, SocketAgent, StartAgent};
-pub use error::{ClientError, ComputerReason, TransportError};
 /// The refusal [`ClientError::InferRefused`] carries when there is no `infer` feature: a type with
 /// no values (with the feature it is porter-infer's own).
 #[cfg(not(feature = "infer"))]
 pub use error::InferRefusal;
+pub use error::{ClientError, ComputerReason, TransportError};
 pub use found::{ConsentOffer, Found, NoAccount, found};
 #[cfg(feature = "dbus")]
 pub use guests::{GuestChange, GuestChanges};
@@ -122,7 +122,7 @@ pub use porter_core::lending;
 pub use porter_core::lending::{ComputerCandidate, GuestAnswer, GuestRow};
 /// A computer on the person's Tailscale network, whose it is, and its stable id, from
 /// porter-core: what `Tailnet::machines` returns, so a terminal or Settings parses no vardict.
-pub use porter_core::{Machine, MachineOwner, NodeId};
+pub use porter_core::{Machine, MachineLink, MachineOwner, MachineSsh, NodeId};
 /// The client's side of one `Open` fd, from porter-infer.
 #[cfg(feature = "infer")]
 pub use porter_infer::{
@@ -145,8 +145,6 @@ pub use tailnet_lending::{
     INFERD_UNIT, LendingConfig, LendingError, LendingState, SHIPPED_NAME, TailnetLending,
     UnitFailure, UnitManager, UnitName,
 };
-#[cfg(feature = "in-process")]
-pub use transport::{HostedCore, InProcess};
 #[cfg(feature = "infer")]
 pub use transport::{AnySession, InProcessSession, SessionHost, SocketSession};
 pub use transport::{AnyTransport, NoBroker, SocketTransport, Transport};
@@ -154,3 +152,5 @@ pub use transport::{AnyTransport, NoBroker, SocketTransport, Transport};
 pub use transport::{DbusSession, MAX_ATTACHMENTS};
 #[cfg(feature = "dbus")]
 pub use transport::{DbusTransport, Rows};
+#[cfg(feature = "in-process")]
+pub use transport::{HostedCore, InProcess};

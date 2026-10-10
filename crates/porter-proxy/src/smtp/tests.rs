@@ -87,16 +87,16 @@ mod scripted {
     };
 
     fn relay(tls: Tls) -> SmtpRelay {
-        SmtpRelay::new(RelayPlan {
-            endpoint: ServiceEndpoint {
+        SmtpRelay::new(RelayPlan::new(
+            ServiceEndpoint {
                 family: Family::Smtp,
                 url: EndpointUrl::parse("smtps://smtp.example.org").expect("url"),
                 tls,
                 login: LoginName("ada".into()),
             },
-            kind: CapabilityKind::Mail,
-            auth: RelayAuth::Password(SecretText::new("hunter2")),
-        })
+            CapabilityKind::Mail,
+            RelayAuth::Password(SecretText::new("hunter2")),
+        ))
     }
 
     /// A relay that has authenticated and been greeted, waiting for the app's `EHLO`.

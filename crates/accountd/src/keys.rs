@@ -87,39 +87,39 @@ where
     }
 
     fn note(&self, audience: &AppId, account: &AccountId, grant: &GrantId) {
-        self.audit.record(AuditEntry {
-            at: self.clock.now(),
-            app: Some(audience.clone()),
-            account: Some(account.clone()),
-            event: AuditEvent::KeyResolved {
+        self.audit.record(AuditEntry::new(
+            self.clock.now(),
+            Some(audience.clone()),
+            Some(account.clone()),
+            AuditEvent::KeyResolved {
                 grant: grant.clone(),
                 audience: Audience(audience.name.as_str().to_owned()),
             },
-        });
+        ));
     }
 
     fn note_handoff(&self, audience: &AppId, account: &AccountId, handoff: Handoff) {
-        self.audit.record(AuditEntry {
-            at: self.clock.now(),
-            app: Some(audience.clone()),
-            account: Some(account.clone()),
-            event: AuditEvent::ProcessCredentialIssued {
+        self.audit.record(AuditEntry::new(
+            self.clock.now(),
+            Some(audience.clone()),
+            Some(account.clone()),
+            AuditEvent::ProcessCredentialIssued {
                 audience: Audience(audience.name.as_str().to_owned()),
                 handoff,
             },
-        });
+        ));
     }
 
     fn note_handoff_end(&self, audience: &AppId, account: &AccountId, reason: CredentialEnd) {
-        self.audit.record(AuditEntry {
-            at: self.clock.now(),
-            app: Some(audience.clone()),
-            account: Some(account.clone()),
-            event: AuditEvent::ProcessCredentialRevoked {
+        self.audit.record(AuditEntry::new(
+            self.clock.now(),
+            Some(audience.clone()),
+            Some(account.clone()),
+            AuditEvent::ProcessCredentialRevoked {
                 audience: Audience(audience.name.as_str().to_owned()),
                 reason,
             },
-        });
+        ));
     }
 }
 

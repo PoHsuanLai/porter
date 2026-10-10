@@ -6,32 +6,20 @@ use crate::session::{EngineNow, HeardAudio, MAX_HEARD_MS};
 use porter_core::DataClass;
 use porter_core::consent::Usage;
 use porter_infer::{
-    AudioFrame, Base64Bytes, ChatControl, ChatMessage, ChatRequest, ClientFrame, InferEvent,
-    InferReply, InferRequest, Knob, ModelError, Reasoning, ReplyShape, RequestKind, Role,
-    ToolChoice, ToolParallelism, TranscribeBegin,
+    AudioFrame, Base64Bytes, ChatMessage, ChatRequest, ClientFrame, InferEvent, InferReply,
+    InferRequest, ModelError, RequestKind, Role, TranscribeBegin,
 };
 
 fn chat() -> InferRequest {
-    InferRequest::Chat(ChatRequest {
-        messages: vec![ChatMessage {
+    InferRequest::Chat(ChatRequest::new(
+        vec![ChatMessage {
             role: Role::User,
             parts: vec![porter_infer::MessagePart::Text("Please do this:".into())],
         }],
-        shape: ReplyShape::Text,
-        tier: porter_core::Tier::Balanced,
-        class: DataClass::Voice,
-        usage: Usage::Interactive,
-        tools: vec![],
-        control: ChatControl {
-            tool_choice: ToolChoice::Auto,
-            tool_calls: ToolParallelism::One,
-            max_output: Knob::Off,
-            reasoning: Reasoning::EngineDefault,
-            sampling: Knob::Off,
-            stop: vec![],
-            scores: Knob::Off,
-        },
-    })
+        porter_core::Tier::Balanced,
+        DataClass::Voice,
+        Usage::Interactive,
+    ))
 }
 
 fn begin() -> TranscribeBegin {

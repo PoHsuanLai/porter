@@ -2,10 +2,10 @@ use super::*;
 use porter_core::consent::Usage;
 use porter_core::{AccountId, DataClass, Locality, ModelId, Tier};
 use porter_infer::{
-    AttachIndex, Base64Bytes, ChatControl, ChatMessage, ChatRequest, CuaBegin, CuaStepRequest,
-    FrameImage, FrameLayout, ImagePart, ImageSource, Knob, LangPick, MediaKind, ReplyShape, Role,
-    ServedBy, SpeakReply, SpeakRequest, StepIndex, ToolCallId, ToolResultPart, ToolStatus,
-    TranscribeBegin, TranscribeMode, TranscribeReply, TreeText, WindowGeometry,
+    AttachIndex, Base64Bytes, ChatMessage, ChatRequest, CuaBegin, CuaStepRequest, FrameImage,
+    FrameLayout, ImagePart, ImageSource, LangPick, MediaKind, Role, ServedBy, SpeakReply,
+    SpeakRequest, StepIndex, ToolCallId, ToolResultPart, ToolStatus, TranscribeBegin,
+    TranscribeMode, TranscribeReply, TreeText, WindowGeometry,
 };
 
 fn served() -> ServedBy {
@@ -31,23 +31,12 @@ fn message(parts: Vec<MessagePart>) -> ChatMessage {
 }
 
 fn chat(messages: Vec<ChatMessage>) -> InferRequest {
-    InferRequest::Chat(ChatRequest {
+    InferRequest::Chat(ChatRequest::new(
         messages,
-        shape: ReplyShape::Text,
-        tier: Tier::Fast,
-        class: DataClass::Notes,
-        usage: Usage::Interactive,
-        tools: vec![],
-        control: ChatControl {
-            tool_choice: porter_infer::ToolChoice::Auto,
-            tool_calls: porter_infer::ToolParallelism::One,
-            max_output: Knob::Off,
-            reasoning: porter_infer::Reasoning::EngineDefault,
-            sampling: Knob::Off,
-            stop: vec![],
-            scores: Knob::Off,
-        },
-    })
+        Tier::Fast,
+        DataClass::Notes,
+        Usage::Interactive,
+    ))
 }
 
 fn tool_result(parts: Vec<MessagePart>) -> MessagePart {
@@ -59,31 +48,27 @@ fn tool_result(parts: Vec<MessagePart>) -> MessagePart {
 }
 
 fn step() -> InferRequest {
-    InferRequest::CuaStep(CuaStepRequest {
-        step: StepIndex(0),
-        window: WindowGeometry {
+    InferRequest::CuaStep(CuaStepRequest::new(
+        StepIndex(0),
+        WindowGeometry {
             logical: cua_action::Size::new(cua_action::Coord(1), cua_action::Coord(1)),
             scale: cua_action::Scale120(120),
         },
-        frame: FrameImage {
+        FrameImage {
             source: ImageSource::Attached(AttachIndex(0)),
             layout: FrameLayout::Encoded(MediaKind::Png),
         },
-        cursor: None,
-        prev: vec![],
-        masked: porter_infer::MaskedRegions(0),
-        tree: TreeText::Absent,
-        notes: vec![],
-    })
+        TreeText::Absent,
+    ))
 }
 
 fn transcribe(rate: u32) -> InferRequest {
-    InferRequest::Transcribe(TranscribeBegin {
-        mode: TranscribeMode::Batch,
-        lang: LangPick::Auto,
-        rate: AudioRate(rate),
-        usage: Usage::Interactive,
-    })
+    InferRequest::Transcribe(TranscribeBegin::new(
+        TranscribeMode::Batch,
+        LangPick::Auto,
+        AudioRate(rate),
+        Usage::Interactive,
+    ))
 }
 
 fn frame(at: u64, samples: usize) -> AudioFrame {
@@ -115,11 +100,10 @@ fn the_images_a_request_carries_are_counted_wherever_they_sit() {
         ("a computer-use step is one frame", step(), 1),
         (
             "a begin carries none",
-            InferRequest::CuaBegin(CuaBegin {
-                goal: "g".into(),
-                hints: vec![],
-                env: porter_core::capability::CuaEnv::Desktop,
-            }),
+            InferRequest::CuaBegin(CuaBegin::new(
+                "g".into(),
+                porter_core::capability::CuaEnv::Desktop,
+            )),
             0,
         ),
         ("a transcription carries none", transcribe(16_000), 0),
@@ -156,24 +140,17 @@ fn audio_sent_is_milliseconds_at_the_turns_own_rate_and_adds_up_across_frames() 
 
 #[test]
 fn audio_produced_is_added_from_the_reply_and_a_transcript_is_not_counted_twice() {
-    let spoke = InferReply::Spoke(SpeakReply {
-        audio_ms: 1_200,
-        served: served(),
-    });
-    let speak = InferRequest::Speak(SpeakRequest {
-        text: "hi".into(),
-        voice: None,
-        lang: porter_core::capability::LanguageTag::parse("en").expect("tag"),
-        class: DataClass::Voice,
-        usage: Usage::Interactive,
-    });
+    let spoke = InferReply::Spoke(SpeakReply::new(1_200, served()));
+    let speak = InferRequest::Speak(SpeakRequest::new(
+        "hi".into(),
+        porter_core::capability::LanguageTag::parse("en").expect("tag"),
+        DataClass::Voice,
+        Usage::Interactive,
+    ));
     assert_eq!(Tally::begin(&speak).closing(&spoke).audio_ms, Count(1_200));
 
-    let transcribed = InferReply::Transcribed(TranscribeReply {
-        text: "words".into(),
-        audio_ms: 1_000,
-        served: served(),
-    });
+    let transcribed =
+        InferReply::Transcribed(TranscribeReply::new("words".into(), 1_000, served()));
     let mut tally = Tally::begin(&transcribe(16_000));
     tally.heard(&frame(0, 16_000));
     assert_eq!(tally.closing(&transcribed).audio_ms, Count(1_000));

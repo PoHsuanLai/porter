@@ -462,11 +462,11 @@ async fn allow_on_an_agent_account_adds_it_and_makes_no_grant() {
 // Which account runs which agent.
 
 fn need(program: &str, base_url: Offered) -> Need {
-    Need::Agent(AgentNeed {
-        program: AgentProgram::parse(program).expect("program"),
-        protocols: Default::default(),
+    Need::Agent(AgentNeed::new(
+        AgentProgram::parse(program).expect("program"),
+        Default::default(),
         base_url,
-    })
+    ))
 }
 
 /// How an account's claims answer a need: the first claim of the kind that fits, else the first

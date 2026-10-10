@@ -37,6 +37,8 @@ impl ImapAuth {
             RelayAuth::Password(_) if has("AUTH=PLAIN") => Ok(ImapAuth::Plain),
             RelayAuth::Password(_) if !has("LOGINDISABLED") => Ok(ImapAuth::Login),
             RelayAuth::Password(_) | RelayAuth::Anonymous => Err(RelayFault::Protocol),
+            // a variant a newer porter adds: refused, never sent as anonymous
+            _ => Err(RelayFault::Protocol),
         }
     }
 }

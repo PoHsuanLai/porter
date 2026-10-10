@@ -191,9 +191,11 @@ impl<H: Http + 'static> GoogleSignIn<H> {
         .await
         .map_err(provider_fault)?;
         let apis = apis_of(&self.spec);
-        let signed = Signed {
-            label: AccountLabel(address.clone()),
-            credentials: vec![(
+        let endpoints = endpoints_for(&self.spec, &apis, (&claims, &granted), &address);
+        let restriction = restriction_for(traits.review, &claims, now);
+        let signed = Signed::new(
+            AccountLabel(address.clone()),
+            vec![(
                 SecretPurpose::OAuthRefresh,
                 Credential::OAuth {
                     expires_at: tokens.expires_at(now),
@@ -201,10 +203,10 @@ impl<H: Http + 'static> GoogleSignIn<H> {
                     refresh,
                 },
             )],
-            endpoints: endpoints_for(&self.spec, &apis, (&claims, &granted), &address),
-            restriction: restriction_for(traits.review, &claims, now),
             claims,
-        };
+            endpoints,
+            restriction,
+        );
         // Signing in again does not ask what to use again: the account keeps its services.
         if matches!(self.start.mode, SignInMode::Reauthenticate { .. }) {
             return Ok(SignInStep::Done(signed));
@@ -245,16 +247,13 @@ fn restriction_for(review: AppReview, claims: &[Claim], now: UnixSeconds) -> Res
     };
     let mut limits = Vec::new();
     if present(CapabilityKind::Storage) {
-        limits.push(Limit {
-            kind: CapabilityKind::Storage,
-            reason: LimitReason::AppFolderOnly,
-        });
+        limits.push(Limit::new(
+            CapabilityKind::Storage,
+            LimitReason::AppFolderOnly,
+        ));
     }
     if present(CapabilityKind::Photos) {
-        limits.push(Limit {
-            kind: CapabilityKind::Photos,
-            reason: LimitReason::PickerOnly,
-        });
+        limits.push(Limit::new(CapabilityKind::Photos, LimitReason::PickerOnly));
     }
     let (verification, token_lifetime) = match review {
         AppReview::Testing => (
@@ -265,13 +264,15 @@ fn restriction_for(review: AppReview, claims: &[Claim], now: UnixSeconds) -> Res
         ),
         AppReview::Verified => (Verification::Verified, TokenLifetime::Standard),
     };
-    Restriction {
-        verification,
-        token_lifetime,
-        consent: TenantConsent::User,
-        limits,
-        // Only a sign-in that expires needs its date.
-        signed_in: (token_lifetime == TokenLifetime::SevenDays).then_some(now),
+    let restriction = Restriction::none()
+        .with_verification(verification)
+        .with_token_lifetime(token_lifetime)
+        .with_consent(TenantConsent::User)
+        .with_limits(limits);
+    // Only a sign-in that expires needs its date.
+    match token_lifetime == TokenLifetime::SevenDays {
+        true => restriction.with_signed_in(now),
+        false => restriction,
     }
 }
 

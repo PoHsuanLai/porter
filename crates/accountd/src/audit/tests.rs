@@ -35,12 +35,7 @@ impl Drop for Scratch {
 }
 
 fn entry(event: AuditEvent) -> AuditEntry {
-    AuditEntry {
-        at: UnixSeconds(1_790_000_000),
-        app: None,
-        account: None,
-        event,
-    }
+    AuditEntry::new(UnixSeconds(1_790_000_000), None, None, event)
 }
 
 fn lines(path: &PathBuf) -> Vec<AuditEntry> {
@@ -103,12 +98,12 @@ async fn the_file_a_service_writes_holds_none_of_the_fake_secrets() {
         name: AppName::parse("org.quire.Photos").expect("name"),
         isolation: Isolation::Flatpak,
     };
-    let need = Need::Storage(StorageNeed {
-        access: Access::ReadWrite,
-        delta: Delta::Poll,
-        scope: StorageScope::AppFolder,
-        quota: QuotaReport::Unreported,
-    });
+    let need = Need::Storage(StorageNeed::new(
+        Access::ReadWrite,
+        Delta::Poll,
+        StorageScope::AppFolder,
+        QuotaReport::Unreported,
+    ));
     let chosen = service
         .handle(
             &me,

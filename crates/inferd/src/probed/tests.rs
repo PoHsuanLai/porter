@@ -10,10 +10,7 @@ use porter_infer::{AutoMode, AutoRow, InferRefusal, LocalOnly, Policy, Slot, Tie
 use std::path::Path;
 
 fn llm() -> Need {
-    Need::Llm(LlmNeed {
-        features: [LlmFeature::Chat].into(),
-        context: Tokens(1000),
-    })
+    Need::Llm(LlmNeed::new([LlmFeature::Chat].into(), Tokens(1000)))
 }
 
 fn spec(class: DataClass) -> SessionSpec {

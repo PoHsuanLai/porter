@@ -19,10 +19,7 @@ use std::sync::Arc;
 /// for no more than a full listing can give (`Delta::None`), because Google Tasks has no change
 /// token and its feed polls by update time; a list that does better fits too.
 pub fn need_of(kind: PimKind) -> Need {
-    let need = |delta| PimNeed {
-        access: Access::Read,
-        delta,
-    };
+    let need = |delta| PimNeed::new(Access::Read, delta);
     match kind {
         PimKind::Calendar => Need::Calendar(need(Delta::Poll)),
         PimKind::Contacts => Need::Contacts(need(Delta::Poll)),

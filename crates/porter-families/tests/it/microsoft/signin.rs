@@ -302,12 +302,10 @@ async fn cancelling_closes_the_listeners_and_ends_the_sign_in() {
 }
 
 fn again() -> SignInStart {
-    SignInStart {
-        mode: SignInMode::Reauthenticate {
-            account: AccountId::parse("ada").expect("id"),
-            endpoints: Vec::new(),
-        },
-    }
+    SignInStart::new(SignInMode::Reauthenticate {
+        account: AccountId::parse("ada").expect("id"),
+        endpoints: Vec::new(),
+    })
 }
 
 #[tokio::test]

@@ -13,8 +13,8 @@ use porter_core::need::LlmNeed;
 use porter_core::{AccountId, DataClass, ModelId, Need, Tier, Tokens};
 use porter_fake::{Script, ScriptStep};
 use porter_infer::{
-    ChatControl, ChatReply, ChatRequest, InferEvent, InferReply, InferRequest, Knob, Reasoning,
-    ReplyShape, RequestKind, ServedBy, StopReason, TokenUsage, ToolChoice, ToolParallelism,
+    ChatControl, ChatReply, ChatRequest, InferEvent, InferReply, InferRequest, RequestKind,
+    ServedBy, StopReason, TokenUsage, ToolParallelism,
 };
 use std::path::PathBuf;
 
@@ -22,50 +22,31 @@ const CHILD_MARKER: &str = "PORTER_CLIENT_CONNECT_CHILD";
 const CHILD_TEST: &str = "connect::child_connects_over_the_session_bus_it_is_given";
 
 fn need() -> Need {
-    Need::Llm(LlmNeed {
-        features: Default::default(),
-        context: Tokens(1),
-    })
+    Need::Llm(LlmNeed::new(Default::default(), Tokens(1)))
 }
 
 fn reply() -> InferReply {
-    InferReply::Chat(ChatReply {
-        text: "connected".into(),
-        tool_calls: vec![],
-        stop: StopReason::EndTurn,
-        thought: None,
-        scores: None,
-        usage: TokenUsage {
+    InferReply::Chat(ChatReply::new(
+        "connected".into(),
+        StopReason::EndTurn,
+        TokenUsage {
             input: Tokens(1),
             output: Tokens(1),
             cached: Tokens(0),
         },
-        served: ServedBy {
+        ServedBy {
             account: AccountId::parse("local").expect("id"),
             model: ModelId::parse("echo").expect("id"),
             locality: porter_core::Locality::OnDevice,
         },
-    })
+    ))
 }
 
 fn request() -> InferRequest {
-    InferRequest::Chat(ChatRequest {
-        messages: vec![],
-        shape: ReplyShape::Text,
-        tier: Tier::Fast,
-        class: DataClass::Public,
-        usage: Usage::Interactive,
-        tools: vec![],
-        control: ChatControl {
-            tool_choice: ToolChoice::Auto,
-            tool_calls: ToolParallelism::Many,
-            max_output: Knob::Off,
-            reasoning: Reasoning::EngineDefault,
-            sampling: Knob::Off,
-            stop: vec![],
-            scores: Knob::Off,
-        },
-    })
+    InferRequest::Chat(
+        ChatRequest::new(vec![], Tier::Fast, DataClass::Public, Usage::Interactive)
+            .with_control(ChatControl::new().with_tool_calls(ToolParallelism::Many)),
+    )
 }
 
 fn socket_link() -> LinkChoice {

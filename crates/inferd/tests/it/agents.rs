@@ -424,10 +424,10 @@ async fn only_the_agent_launcher_may_open_an_endpoint() {
     let refused = world
         .accounts
         .session(
-            &porter_core::Need::Llm(porter_core::need::LlmNeed {
-                features: [porter_core::capability::LlmFeature::Chat].into(),
-                context: porter_core::Tokens(10),
-            }),
+            &porter_core::Need::Llm(porter_core::need::LlmNeed::new(
+                [porter_core::capability::LlmFeature::Chat].into(),
+                porter_core::Tokens(10),
+            )),
             porter_core::DataClass::Prompt,
             porter_core::Tier::Balanced,
         )

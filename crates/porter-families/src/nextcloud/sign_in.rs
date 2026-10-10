@@ -64,6 +64,8 @@ impl NextcloudSignIn {
         let held = match &self.mode {
             SignInMode::Reauthenticate { endpoints, .. } => server_of(endpoints).map(|(s, _)| s),
             SignInMode::Add => None,
+            // a variant a newer porter adds: no held server, so the person is asked for one
+            _ => None,
         };
         held.or_else(|| self.fixed.clone())
     }
@@ -151,21 +153,23 @@ impl NextcloudSignIn {
                 self.state = State::Ended;
                 SignInStep::Done(signed)
             }
+            // a variant a newer porter adds: the sign-in ends as unreadable
+            _ => self.failed(SignInFault::Unreadable),
         }
     }
 }
 
 fn signed(who: &Who, found: Found) -> Signed {
-    Signed {
-        label: AccountLabel(format!("{}@{}", who.login.0, host_of(&who.server))),
-        credentials: vec![(
+    Signed::new(
+        AccountLabel(format!("{}@{}", who.login.0, host_of(&who.server))),
+        vec![(
             SecretPurpose::Password,
             Credential::Password(who.password.clone()),
         )],
-        claims: found.claims,
-        endpoints: found.endpoints,
-        restriction: Restriction::none(),
-    }
+        found.claims,
+        found.endpoints,
+        Restriction::none(),
+    )
 }
 
 /// The host (and a port that is not the scheme's own) the account is shown by.

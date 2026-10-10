@@ -17,17 +17,14 @@ fn llm_cap() -> Capability {
 }
 
 fn need() -> Need {
-    Need::Llm(LlmNeed {
-        features: [LlmFeature::Chat].into(),
-        context: Tokens(1000),
-    })
+    Need::Llm(LlmNeed::new([LlmFeature::Chat].into(), Tokens(1000)))
 }
 
 fn embeddings() -> Need {
-    Need::Embeddings(EmbedNeed {
-        dims: DimsNeed::Any,
-        modalities: [porter_core::capability::Modality::Text].into(),
-    })
+    Need::Embeddings(EmbedNeed::new(
+        DimsNeed::Any,
+        [porter_core::capability::Modality::Text].into(),
+    ))
 }
 
 fn place(text: &str) -> PlaceId {
@@ -125,7 +122,7 @@ fn refusal(got: Got) -> PlaceRefusal {
 }
 
 fn refused(reason: NoPlaceReason, would_need: Option<PlaceKind>) -> PlaceRefusal {
-    PlaceRefusal { reason, would_need }
+    PlaceRefusal::new(reason, would_need)
 }
 
 #[test]

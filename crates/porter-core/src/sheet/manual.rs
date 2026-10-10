@@ -146,15 +146,24 @@ impl Manual {
     }
 }
 
+/// Which of an account's two servers a form row is about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Direction {
+    /// Where mail is read from.
+    Incoming,
+    /// Where mail is sent through.
+    Outgoing,
+}
+
 /// The port a server of this kind usually listens on for `security`.
-fn usual_port(protocol: Protocol, outgoing: bool, security: Security) -> u16 {
-    match (outgoing, protocol, security) {
-        (true, _, Security::Tls) => 465,
-        (true, _, _) => 587,
-        (false, Protocol::Pop3, Security::Tls) => 995,
-        (false, Protocol::Pop3, _) => 110,
-        (false, _, Security::Tls) => 993,
-        (false, _, _) => 143,
+fn usual_port(protocol: Protocol, direction: Direction, security: Security) -> u16 {
+    match (direction, protocol, security) {
+        (Direction::Outgoing, _, Security::Tls) => 465,
+        (Direction::Outgoing, _, _) => 587,
+        (Direction::Incoming, Protocol::Pop3, Security::Tls) => 995,
+        (Direction::Incoming, Protocol::Pop3, _) => 110,
+        (Direction::Incoming, _, Security::Tls) => 993,
+        (Direction::Incoming, _, _) => 143,
     }
 }
 
@@ -191,7 +200,7 @@ pub fn manual_form(protocol: Protocol, domain: Option<&str>) -> Vec<FieldSpec> {
         Presence::Required,
         Some(protocol.slug().to_owned()),
     )];
-    let port = |outgoing| Some(usual_port(protocol, outgoing, Security::Tls).to_string());
+    let port = |direction| Some(usual_port(protocol, direction, Security::Tls).to_string());
     match protocol {
         Protocol::Jmap => fields.extend([
             spec(
@@ -213,14 +222,22 @@ pub fn manual_form(protocol: Protocol, domain: Option<&str>) -> Vec<FieldSpec> {
                 Presence::Required,
                 Some(Security::Tls.slug().to_owned()),
             ),
-            spec(FieldKind::Port, Presence::Optional, port(false)),
+            spec(
+                FieldKind::Port,
+                Presence::Optional,
+                port(Direction::Incoming),
+            ),
             spec(FieldKind::OutgoingServer, Presence::Required, guess("smtp")),
             spec(
                 FieldKind::OutgoingSecurity,
                 Presence::Required,
                 Some(Security::Tls.slug().to_owned()),
             ),
-            spec(FieldKind::OutgoingPort, Presence::Optional, port(true)),
+            spec(
+                FieldKind::OutgoingPort,
+                Presence::Optional,
+                port(Direction::Outgoing),
+            ),
         ]),
     }
     fields.push(spec(FieldKind::Username, Presence::Optional, None));
@@ -332,12 +349,15 @@ fn refit_in(fields: &[FieldSpec], answers: &[FieldAnswer], choices: &[&str]) -> 
                     Some(security(field.kind).slug().to_owned())
                 }
                 FieldKind::Port | FieldKind::OutgoingPort => {
-                    let outgoing = field.kind == FieldKind::OutgoingPort;
-                    let kind = match outgoing {
-                        true => FieldKind::OutgoingSecurity,
-                        false => FieldKind::Security,
+                    let direction = match field.kind == FieldKind::OutgoingPort {
+                        true => Direction::Outgoing,
+                        false => Direction::Incoming,
                     };
-                    let usual = usual_port(protocol, outgoing, security(kind)).to_string();
+                    let kind = match direction {
+                        Direction::Outgoing => FieldKind::OutgoingSecurity,
+                        Direction::Incoming => FieldKind::Security,
+                    };
+                    let usual = usual_port(protocol, direction, security(kind)).to_string();
                     let typed = text(answers, field.kind);
                     let own = typed
                         .filter(|t| t.parse::<u16>().map_or(true, |p| !USUAL_PORTS.contains(&p)));
@@ -385,10 +405,14 @@ fn is_loopback(host: &str) -> bool {
             .is_ok_and(|ip| ip.is_loopback())
 }
 
-fn hop(answers: &[FieldAnswer], protocol: Protocol, outgoing: bool) -> Result<Hop, FieldProblem> {
-    let (host_kind, security_kind, port_kind) = match outgoing {
-        false => (FieldKind::Server, FieldKind::Security, FieldKind::Port),
-        true => (
+fn hop(
+    answers: &[FieldAnswer],
+    protocol: Protocol,
+    direction: Direction,
+) -> Result<Hop, FieldProblem> {
+    let (host_kind, security_kind, port_kind) = match direction {
+        Direction::Incoming => (FieldKind::Server, FieldKind::Security, FieldKind::Port),
+        Direction::Outgoing => (
             FieldKind::OutgoingServer,
             FieldKind::OutgoingSecurity,
             FieldKind::OutgoingPort,
@@ -405,7 +429,7 @@ fn hop(answers: &[FieldAnswer], protocol: Protocol, outgoing: bool) -> Result<Ho
         return Err(invalid(security_kind));
     }
     let port = match text(answers, port_kind) {
-        None => usual_port(protocol, outgoing, security),
+        None => usual_port(protocol, direction, security),
         Some(t) => t
             .bytes()
             .all(|b| b.is_ascii_digit())
@@ -460,8 +484,8 @@ fn parse_in(answers: &[FieldAnswer], choices: &[&str]) -> Result<Manual, FieldPr
             }))
         }
         _ => {
-            let incoming = hop(answers, protocol, false)?;
-            let outgoing = hop(answers, protocol, true)?;
+            let incoming = hop(answers, protocol, Direction::Incoming)?;
+            let outgoing = hop(answers, protocol, Direction::Outgoing)?;
             let login = login(answers)?;
             let servers = MailServers {
                 incoming,

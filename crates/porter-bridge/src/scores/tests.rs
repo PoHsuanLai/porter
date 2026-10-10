@@ -137,15 +137,9 @@ fn a_single_option_has_nothing_to_be_compared_with() {
 }
 
 fn control(scores: pi::Knob<pi::ScoreOptions>) -> pi::ChatControl {
-    pi::ChatControl {
-        tool_choice: pi::ToolChoice::Auto,
-        tool_calls: pi::ToolParallelism::One,
-        max_output: pi::Knob::Off,
-        reasoning: pi::Reasoning::Off,
-        sampling: pi::Knob::Off,
-        stop: vec![],
-        scores,
-    }
+    pi::ChatControl::new()
+        .with_reasoning(pi::Reasoning::Off)
+        .with_scores(scores)
 }
 
 #[test]

@@ -132,10 +132,10 @@ fn json(view: &SheetView) -> Result<String, SheetFault> {
 /// app a review adds the account for. An app `names` has no name for stays without one.
 pub(crate) fn labelled(view: SheetView, names: &AppNames) -> SheetView {
     match view {
-        SheetView::Consent(ask) => SheetView::Consent(ConsentAsk {
-            app_label: names.label_of(&ask.app.name),
-            ..ask
-        }),
+        SheetView::Consent(mut ask) => {
+            ask.app_label = names.label_of(&ask.app.name);
+            SheetView::Consent(ask)
+        }
         SheetView::Review(review) => SheetView::Review(ReviewView {
             allow_label: review
                 .allow
@@ -267,19 +267,17 @@ mod tests {
     }
 
     fn ask(app: AppId) -> ConsentAsk {
-        ConsentAsk {
+        ConsentAsk::new(
             app,
-            kind: CapabilityKind::Llm,
-            class: DataClass::Prompt,
-            usage: Usage::Interactive,
-            accounts: vec![AccountChoice {
-                account: porter_core::AccountId::parse("anthropic").expect("id"),
-                label: AccountLabel("Anthropic".into()),
-                provider: ProviderId::parse("anthropic").expect("id"),
-            }],
-            session: None,
-            app_label: None,
-        }
+            CapabilityKind::Llm,
+            DataClass::Prompt,
+            Usage::Interactive,
+            vec![AccountChoice::new(
+                porter_core::AccountId::parse("anthropic").expect("id"),
+                AccountLabel("Anthropic".into()),
+                ProviderId::parse("anthropic").expect("id"),
+            )],
+        )
     }
 
     fn names() -> AppNames {

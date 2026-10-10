@@ -27,7 +27,7 @@ use model_provider::{
 };
 use porter_infer::{
     CuaBegin, CuaStepFailure, CuaStepReply, CuaStepRequest, DropReason, DroppedAction, FrameLayout,
-    InferEvent, MediaKind, ModelError, NoteFrom, PrevResult, SafetyHint, StepNote, TreeText,
+    InferEvent, MediaKind, ModelError, NoteFrom, PrevResult, StepNote, TreeText,
 };
 use porter_router::local::LocalModel;
 use vision_prep::{Encoding, FrameMap, MediaType, RawFrame, prepare};
@@ -238,18 +238,18 @@ pub async fn step<P: Provider>(
                         break;
                     }
                 }
-                let reply = CuaStepReply {
-                    thought,
-                    actions,
-                    dropped: dropped
+                let mut reply = CuaStepReply::new(actions).with_dropped(
+                    dropped
                         .iter()
                         .map(|d| DroppedAction {
                             verb: d.verb.as_str().to_owned(),
                             reason: dropped_reason(d.reason),
                         })
                         .collect(),
-                    safety: Vec::<SafetyHint>::new(),
-                };
+                );
+                if let Some(thought) = thought {
+                    reply = reply.with_thought(thought);
+                }
                 return Ok(reply);
             }
             StepOutcome::Repair(next) => sent = next,

@@ -14,9 +14,8 @@ use porter_core::{Count, DataClass, Need, Tier, Tokens};
 use porter_infer::{
     AttachIndex, AudioFrame, AudioRate, Base64Bytes, ChatControl, ChatMessage, ChatReply,
     ChatRequest, ClientFrame, CuaBegin, CuaStepReply, ImagePart, ImageSource, InferEvent,
-    InferRefusal, InferReply, InferRequest, Knob, MessagePart, ModelError, Reasoning, ReplyShape,
-    Role, StopReason, TokenUsage, ToolChoice, ToolParallelism, TranscribeBegin, TranscribeMode,
-    TranscribeReply,
+    InferRefusal, InferReply, InferRequest, MessagePart, ModelError, Role, StopReason, TokenUsage,
+    ToolParallelism, TranscribeBegin, TranscribeMode, TranscribeReply,
 };
 use std::os::fd::OwnedFd;
 
@@ -73,38 +72,27 @@ fn usage() -> TokenUsage {
 }
 
 fn answer(text: &str) -> InferReply {
-    InferReply::Chat(ChatReply {
-        text: text.into(),
-        tool_calls: vec![],
-        stop: StopReason::EndTurn,
-        thought: None,
-        scores: None,
-        usage: usage(),
-        served: served(),
-    })
+    InferReply::Chat(ChatReply::new(
+        text.into(),
+        StopReason::EndTurn,
+        usage(),
+        served(),
+    ))
 }
 
 fn chat_with(parts: Vec<MessagePart>) -> InferRequest {
-    InferRequest::Chat(ChatRequest {
-        messages: vec![ChatMessage {
-            role: Role::User,
-            parts,
-        }],
-        shape: ReplyShape::Text,
-        tier: Tier::Fast,
-        class: DataClass::Mail,
-        usage: Usage::Interactive,
-        tools: vec![],
-        control: ChatControl {
-            tool_choice: ToolChoice::Auto,
-            tool_calls: ToolParallelism::Many,
-            max_output: Knob::Off,
-            reasoning: Reasoning::EngineDefault,
-            sampling: Knob::Off,
-            stop: vec![],
-            scores: Knob::Off,
-        },
-    })
+    InferRequest::Chat(
+        ChatRequest::new(
+            vec![ChatMessage {
+                role: Role::User,
+                parts,
+            }],
+            Tier::Fast,
+            DataClass::Mail,
+            Usage::Interactive,
+        )
+        .with_control(ChatControl::new().with_tool_calls(ToolParallelism::Many)),
+    )
 }
 
 fn chat() -> ClientFrame {
@@ -365,9 +353,7 @@ async fn a_client_that_hangs_up_mid_turn_drops_the_turn_and_gives_the_engine_bac
 
 fn voice() -> SessionSpec {
     spec(
-        Need::Speech(SpeechNeed {
-            modes: [SpeechMode::Stt].into(),
-        }),
+        Need::Speech(SpeechNeed::new([SpeechMode::Stt].into())),
         DataClass::Voice,
     )
 }
@@ -384,12 +370,12 @@ async fn audio_reaches_the_engine_through_the_machine_and_end_of_audio_too() {
     let mut rig = start(FixedRouter::ready(), Engines::default(), voice());
     rig.client
         .send(
-            &ClientFrame::Request(InferRequest::Transcribe(TranscribeBegin {
-                mode: TranscribeMode::Streaming,
-                lang: porter_infer::LangPick::Auto,
-                rate: AudioRate(16_000),
-                usage: Usage::Interactive,
-            })),
+            &ClientFrame::Request(InferRequest::Transcribe(TranscribeBegin::new(
+                TranscribeMode::Streaming,
+                porter_infer::LangPick::Auto,
+                AudioRate(16_000),
+                Usage::Interactive,
+            ))),
             &[],
         )
         .await;
@@ -408,11 +394,7 @@ async fn audio_reaches_the_engine_through_the_machine_and_end_of_audio_too() {
         *ended.lock().expect("lock") == 1
     })
     .await;
-    let reply = InferReply::Transcribed(TranscribeReply {
-        text: "hello".into(),
-        audio_ms: 20,
-        served: served(),
-    });
+    let reply = InferReply::Transcribed(TranscribeReply::new("hello".into(), 20, served()));
     push(&rig, 0, TurnStep::Done(reply.clone()));
     assert_eq!(
         rig.client.until_finished().await,
@@ -466,9 +448,7 @@ async fn the_audit_is_told_what_each_request_carried() {
 
 fn cua() -> SessionSpec {
     spec(
-        Need::ComputerUse(CuaNeed {
-            environments: [CuaEnv::Desktop].into(),
-        }),
+        Need::ComputerUse(CuaNeed::new([CuaEnv::Desktop].into())),
         DataClass::Screen,
     )
 }
@@ -477,22 +457,18 @@ fn cua() -> SessionSpec {
 async fn a_computer_use_step_before_a_begin_is_refused_and_after_one_it_runs() {
     let mut rig = start(FixedRouter::ready(), Engines::default(), cua());
     let step = |n: u32| {
-        ClientFrame::Request(InferRequest::CuaStep(porter_infer::CuaStepRequest {
-            step: porter_infer::StepIndex(n),
-            window: porter_infer::WindowGeometry {
+        ClientFrame::Request(InferRequest::CuaStep(porter_infer::CuaStepRequest::new(
+            porter_infer::StepIndex(n),
+            porter_infer::WindowGeometry {
                 logical: cua_action::Size::new(cua_action::Coord(1), cua_action::Coord(1)),
                 scale: cua_action::Scale120(120),
             },
-            frame: porter_infer::FrameImage {
+            porter_infer::FrameImage {
                 source: ImageSource::Attached(AttachIndex(0)),
                 layout: porter_infer::FrameLayout::Encoded(porter_infer::MediaKind::Png),
             },
-            cursor: None,
-            prev: vec![],
-            masked: porter_infer::MaskedRegions(0),
-            tree: porter_infer::TreeText::Absent,
-            notes: vec![],
-        }))
+            porter_infer::TreeText::Absent,
+        )))
     };
     rig.client.send(&step(0), &[memfd(b"frame 0")]).await;
     assert_eq!(
@@ -504,21 +480,15 @@ async fn a_computer_use_step_before_a_begin_is_refused_and_after_one_it_runs() {
 
     rig.client
         .send(
-            &ClientFrame::Request(InferRequest::CuaBegin(CuaBegin {
-                goal: "rename".into(),
-                hints: vec![],
-                env: CuaEnv::Desktop,
-            })),
+            &ClientFrame::Request(InferRequest::CuaBegin(CuaBegin::new(
+                "rename".into(),
+                CuaEnv::Desktop,
+            ))),
             &[],
         )
         .await;
     started(&rig, 1).await;
-    let ack = InferReply::CuaStep(CuaStepReply {
-        thought: None,
-        actions: vec![],
-        dropped: vec![],
-        safety: vec![],
-    });
+    let ack = InferReply::CuaStep(CuaStepReply::new(vec![]));
     push(&rig, 0, TurnStep::Done(ack.clone()));
     assert_eq!(
         rig.client.until_finished().await,

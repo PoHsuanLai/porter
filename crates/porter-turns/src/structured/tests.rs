@@ -11,26 +11,18 @@ const SCORE: &str = r#"{"type":"object","additionalProperties":false,
     "required":["score"]}"#;
 
 fn request(shape: pi::ReplyShape, tools: Vec<pi::ToolDecl>) -> pi::ChatRequest {
-    pi::ChatRequest {
-        messages: vec![pi::ChatMessage {
+    pi::ChatRequest::new(
+        vec![pi::ChatMessage {
             role: pi::Role::User,
             parts: vec![pi::MessagePart::Text("rate it".into())],
         }],
-        shape,
-        tier: Tier::Fast,
-        class: DataClass::Notes,
-        usage: Usage::Interactive,
-        tools,
-        control: pi::ChatControl {
-            tool_choice: pi::ToolChoice::Auto,
-            tool_calls: pi::ToolParallelism::One,
-            max_output: pi::Knob::Off,
-            reasoning: pi::Reasoning::Off,
-            sampling: pi::Knob::Off,
-            stop: Vec::new(),
-            scores: pi::Knob::Off,
-        },
-    }
+        Tier::Fast,
+        DataClass::Notes,
+        Usage::Interactive,
+    )
+    .with_shape(shape)
+    .with_tools(tools)
+    .with_control(pi::ChatControl::new().with_reasoning(pi::Reasoning::Off))
 }
 
 fn json(schema: &str) -> pi::ReplyShape {

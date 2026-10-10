@@ -132,13 +132,13 @@ pub(crate) fn claims(spec: &ProviderSpec) -> Vec<Claim> {
 
 /// The finished sign-in of a live key.
 pub(crate) fn signed(spec: &ProviderSpec, key: SecretText) -> Signed {
-    Signed {
-        label: AccountLabel(spec.label.clone()),
-        credentials: vec![(SecretPurpose::ApiKey, Credential::ApiKey(key))],
-        claims: claims(spec),
-        endpoints: Vec::new(),
-        restriction: Restriction::none(),
-    }
+    Signed::new(
+        AccountLabel(spec.label.clone()),
+        vec![(SecretPurpose::ApiKey, Credential::ApiKey(key))],
+        claims(spec),
+        Vec::new(),
+        Restriction::none(),
+    )
 }
 
 /// The review of `signed`.
@@ -158,6 +158,8 @@ pub(crate) fn fault_of(error: ProviderError) -> SignInFault {
         ProviderError::Forbidden => SignInFault::Forbidden,
         ProviderError::Unreachable => SignInFault::Unreachable,
         ProviderError::Unreadable => SignInFault::Unreadable,
+        // a variant a newer porter adds: the sign-in ends as unreadable
+        _ => SignInFault::Unreadable,
     }
 }
 

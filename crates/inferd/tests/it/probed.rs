@@ -24,9 +24,8 @@ use porter_dbus::InferenceProxy;
 use porter_fake_servers::net::Bind;
 use porter_fake_servers::{FakeModels, ModelDef, ModelsHandle, Running, Wire};
 use porter_infer::{
-    ChatControl, ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRefusal, InferReply,
-    InferRequest, Knob, LocalOnly, MessagePart, Policy, Reasoning, ReplyShape, Role as ChatRole,
-    ToolChoice, ToolParallelism,
+    ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRefusal, InferReply, InferRequest,
+    LocalOnly, MessagePart, Policy, Role as ChatRole,
 };
 use std::time::Duration;
 
@@ -41,33 +40,19 @@ fn mail() -> AppId {
 }
 
 fn llm() -> Need {
-    Need::Llm(LlmNeed {
-        features: [LlmFeature::Chat].into(),
-        context: Tokens(1000),
-    })
+    Need::Llm(LlmNeed::new([LlmFeature::Chat].into(), Tokens(1000)))
 }
 
 fn summarise(text: &str) -> InferRequest {
-    InferRequest::Chat(ChatRequest {
-        messages: vec![ChatMessage {
+    InferRequest::Chat(ChatRequest::new(
+        vec![ChatMessage {
             role: ChatRole::User,
             parts: vec![MessagePart::Text(text.into())],
         }],
-        shape: ReplyShape::Text,
-        tier: Tier::Balanced,
-        class: DataClass::Mail,
-        usage: Usage::Interactive,
-        tools: vec![],
-        control: ChatControl {
-            tool_choice: ToolChoice::Auto,
-            tool_calls: ToolParallelism::One,
-            max_output: Knob::Off,
-            reasoning: Reasoning::EngineDefault,
-            sampling: Knob::Off,
-            stop: vec![],
-            scores: Knob::Off,
-        },
-    })
+        Tier::Balanced,
+        DataClass::Mail,
+        Usage::Interactive,
+    ))
 }
 
 /// One Mail-class summary of the world's app, the events it produced.

@@ -42,6 +42,7 @@ pub struct AccountToggle {
 /// Why a stored document was refused. accountd refuses to start over a file it cannot read
 /// rather than start empty and overwrite it.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum StoreFault {
     /// Not valid JSON, or not the stored schema.
     #[error("registry file unreadable: {0}")]

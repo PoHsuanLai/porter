@@ -180,10 +180,10 @@ async fn a_reported_model_is_in_the_verdicts_the_daemon_asks_for() {
     )
     .await
     .expect("reported");
-    let need = porter_dbus::need_to_dbus(&porter_core::Need::Llm(porter_core::need::LlmNeed {
-        features: [LlmFeature::Chat].into(),
-        context: Tokens(1000),
-    }));
+    let need = porter_dbus::need_to_dbus(&porter_core::Need::Llm(porter_core::need::LlmNeed::new(
+        [LlmFeature::Chat].into(),
+        Tokens(1000),
+    )));
     let rows = peer
         .verdicts(
             &("org.quire.Mail".to_owned(), "flatpak".to_owned()),

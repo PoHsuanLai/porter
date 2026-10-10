@@ -416,6 +416,8 @@ fn agent_fault(fault: AgentFault) -> RefusedError {
             RefusedError::invalid("not an account of an agent that signs itself in")
         }
         AgentFault::Unavailable => RefusedError::of(Refusal::Unavailable),
+        // a variant a newer porter adds: refused as unavailable
+        _ => RefusedError::of(Refusal::Unavailable),
     }
 }
 

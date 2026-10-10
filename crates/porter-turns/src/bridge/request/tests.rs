@@ -13,27 +13,17 @@ fn chat_model() -> (Scratch, LocalModel) {
 }
 
 fn control() -> pi::ChatControl {
-    pi::ChatControl {
-        tool_choice: pi::ToolChoice::Auto,
-        tool_calls: pi::ToolParallelism::Many,
-        max_output: pi::Knob::Off,
-        reasoning: pi::Reasoning::EngineDefault,
-        sampling: pi::Knob::Off,
-        stop: vec![],
-        scores: pi::Knob::Off,
-    }
+    pi::ChatControl::new().with_tool_calls(pi::ToolParallelism::Many)
 }
 
 fn request(messages: Vec<pi::ChatMessage>) -> pi::ChatRequest {
-    pi::ChatRequest {
+    pi::ChatRequest::new(
         messages,
-        shape: pi::ReplyShape::Text,
-        tier: Tier::Balanced,
-        class: DataClass::Notes,
-        usage: Usage::Interactive,
-        tools: vec![],
-        control: control(),
-    }
+        Tier::Balanced,
+        DataClass::Notes,
+        Usage::Interactive,
+    )
+    .with_control(control())
 }
 
 fn user(parts: Vec<pi::MessagePart>) -> pi::ChatMessage {
@@ -334,12 +324,7 @@ fn a_task_is_its_instruction_then_the_text_with_no_tools() {
     ] {
         let turn = task_turn(
             &model,
-            &pi::TaskRequest {
-                task,
-                input: "the text".into(),
-                class: DataClass::Notes,
-                usage: Usage::Background,
-            },
+            &pi::TaskRequest::new(task, "the text".into(), DataClass::Notes, Usage::Background),
             Tier::Fast,
         )
         .expect("turn");
@@ -363,13 +348,13 @@ fn embed_model() -> (Scratch, LocalModel) {
 }
 
 fn embed(inputs: &[&str], role: pi::EmbedRole, dims: DimsNeed) -> pi::EmbedRequest {
-    pi::EmbedRequest {
-        inputs: inputs.iter().map(|s| (*s).into()).collect(),
+    pi::EmbedRequest::new(
+        inputs.iter().map(|s| (*s).into()).collect(),
         role,
         dims,
-        class: DataClass::Notes,
-        usage: Usage::Background,
-    }
+        DataClass::Notes,
+        Usage::Background,
+    )
 }
 
 #[test]

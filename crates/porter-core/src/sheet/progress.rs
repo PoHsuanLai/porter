@@ -19,6 +19,7 @@ pub struct UserCode(pub String);
 /// Why a sign-in ended without an account.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum SignInFault {
     /// The provider refused the credential.
     Refused,

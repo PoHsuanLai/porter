@@ -72,6 +72,8 @@ fn fault_of(error: ProviderError) -> SignInFault {
         ProviderError::Forbidden => SignInFault::Forbidden,
         ProviderError::Unreachable => SignInFault::Unreachable,
         ProviderError::Unreadable => SignInFault::Unreadable,
+        // a variant a newer porter adds: the sign-in ends as unreadable
+        _ => SignInFault::Unreadable,
     }
 }
 
@@ -92,6 +94,8 @@ pub(crate) fn refusal_of(fault: SignInFault) -> Refusal {
         | SignInFault::NotAllowed
         | SignInFault::AlreadyAdded
         | SignInFault::StoreFailed => Refusal::Unavailable,
+        // a variant a newer porter adds: the app is told it is unavailable
+        _ => Refusal::Unavailable,
     }
 }
 
@@ -378,17 +382,15 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                     )));
                 }
                 let started = self.provider_of(id).map(|provider| {
-                    provider.sign_in(SignInStart {
-                        mode: match job {
-                            Job::Add { .. } => SignInMode::Add,
-                            Job::Reauthenticate {
-                                account, endpoints, ..
-                            } => SignInMode::Reauthenticate {
-                                account: account.clone(),
-                                endpoints: endpoints.clone(),
-                            },
+                    provider.sign_in(SignInStart::new(match job {
+                        Job::Add { .. } => SignInMode::Add,
+                        Job::Reauthenticate {
+                            account, endpoints, ..
+                        } => SignInMode::Reauthenticate {
+                            account: account.clone(),
+                            endpoints: endpoints.clone(),
                         },
-                    })
+                    }))
                 });
                 let mut signin = match started {
                     Some(Ok(signin)) => signin,

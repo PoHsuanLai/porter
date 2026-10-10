@@ -85,15 +85,14 @@ impl Gathered {
                 Err(why) => (None, Some(why)),
             },
         };
-        let reply = pi::ChatReply {
-            text: self.text,
-            tool_calls: self.calls,
-            stop: stop(end.stop),
-            thought: (!self.thought.is_empty()).then_some(self.thought),
-            usage: usage(end.usage),
-            served,
-            scores,
-        };
+        let mut reply = pi::ChatReply::new(self.text, stop(end.stop), usage(end.usage), served)
+            .with_tool_calls(self.calls);
+        if !self.thought.is_empty() {
+            reply = reply.with_thought(self.thought);
+        }
+        if let Some(scores) = scores {
+            reply = reply.with_scores(scores);
+        }
         (reply, why)
     }
 }
@@ -119,6 +118,8 @@ pub fn stop_back(stop: pi::StopReason) -> sp::StopReason {
         pi::StopReason::MaxTokens => sp::StopReason::MaxTokens,
         pi::StopReason::StopSequence => sp::StopReason::StopSequence,
         pi::StopReason::ContentFilter => sp::StopReason::ContentFilter,
+        // a variant a newer porter adds: the most conservative stop, never a clean end
+        _ => sp::StopReason::ContentFilter,
     }
 }
 

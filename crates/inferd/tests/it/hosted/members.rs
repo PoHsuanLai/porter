@@ -29,9 +29,9 @@ async fn availability_prepare_and_the_gpu_answer_over_the_bus() {
         "granted"
     );
     // A class nobody has a model for under the floor, and a need nothing here can serve.
-    let speech = need_to_dbus(&Need::Speech(porter_core::need::SpeechNeed {
-        modes: [porter_core::capability::SpeechMode::Stt].into(),
-    }));
+    let speech = need_to_dbus(&Need::Speech(porter_core::need::SpeechNeed::new(
+        [porter_core::capability::SpeechMode::Stt].into(),
+    )));
     assert_eq!(
         inference
             .availability(&speech, "voice", &Details::new())
@@ -206,13 +206,15 @@ async fn a_request_of_the_wrong_kind_for_the_session_is_refused_and_the_session_
         .await
         .expect("open");
     session
-        .send(ClientFrame::Request(InferRequest::Embed(EmbedRequest {
-            inputs: vec!["a".into()],
-            role: EmbedRole::Query,
-            dims: DimsNeed::Any,
-            class: DataClass::Notes,
-            usage: Usage::Interactive,
-        })))
+        .send(ClientFrame::Request(InferRequest::Embed(
+            EmbedRequest::new(
+                vec!["a".into()],
+                EmbedRole::Query,
+                DimsNeed::Any,
+                DataClass::Notes,
+                Usage::Interactive,
+            ),
+        )))
         .await
         .expect("send");
     let events = until_finished(&mut session).await;

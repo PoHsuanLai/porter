@@ -18,12 +18,12 @@ use porter_fake::Scripted;
 use std::sync::Arc;
 
 fn storage(delta: Delta) -> Need {
-    Need::Storage(StorageNeed {
-        access: Access::ReadWrite,
+    Need::Storage(StorageNeed::new(
+        Access::ReadWrite,
         delta,
-        scope: StorageScope::AppFolder,
-        quota: QuotaReport::Unreported,
-    })
+        StorageScope::AppFolder,
+        QuotaReport::Unreported,
+    ))
 }
 
 async fn offer_for(

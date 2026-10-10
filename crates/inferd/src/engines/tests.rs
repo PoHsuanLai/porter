@@ -13,16 +13,11 @@ use porter_core::{AccountId, Billing, Locality, ModelId, Tokens};
 use porter_infer::LocalOnly;
 
 fn llm() -> Need {
-    Need::Llm(LlmNeed {
-        features: [LlmFeature::Chat].into(),
-        context: Tokens(1000),
-    })
+    Need::Llm(LlmNeed::new([LlmFeature::Chat].into(), Tokens(1000)))
 }
 
 fn cua() -> Need {
-    Need::ComputerUse(CuaNeed {
-        environments: [CuaEnv::Desktop].into(),
-    })
+    Need::ComputerUse(CuaNeed::new([CuaEnv::Desktop].into()))
 }
 
 fn spec(need: Need, class: DataClass) -> SessionSpec {
@@ -327,9 +322,7 @@ async fn only_cuad_is_routed_a_computer_use_need() {
 async fn what_an_app_is_told_without_a_session_reveals_no_identity() {
     let scratch = Scratch::new("eng-avail");
     let engines = start(&scratch, Recorder::default());
-    let speech = Need::Speech(SpeechNeed {
-        modes: [SpeechMode::Stt].into(),
-    });
+    let speech = Need::Speech(SpeechNeed::new([SpeechMode::Stt].into()));
     let cases = [
         (
             "a model here",

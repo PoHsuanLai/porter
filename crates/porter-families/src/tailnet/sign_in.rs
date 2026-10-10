@@ -89,13 +89,13 @@ impl TailnetSignIn {
     }
 
     fn signed(label: String) -> Signed {
-        Signed {
-            label: AccountLabel(label),
-            credentials: Vec::new(),
-            claims: Vec::new(),
-            endpoints: Vec::new(),
-            restriction: Restriction::none(),
-        }
+        Signed::new(
+            AccountLabel(label),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Restriction::none(),
+        )
     }
 
     /// Somebody is signed in: review the account (adding) or finish (signing in again).

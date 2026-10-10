@@ -60,11 +60,7 @@ where
             // An API key or a key pair has no password protocol to present it to.
             _ => return Err(Refusal::Unavailable),
         };
-        Ok(RelayPlan {
-            endpoint: endpoint.clone(),
-            kind,
-            auth,
-        })
+        Ok(RelayPlan::new(endpoint.clone(), kind, auth))
     }
 
     /// The account, endpoint and kind for an `OpenAuthenticated` to `origin`, an origin that is
@@ -143,11 +139,7 @@ where
             ..home.clone()
         };
         endpoint.check().map_err(|_| Refusal::EndpointNotGranted)?;
-        let plan = RelayPlan {
-            endpoint,
-            kind,
-            auth: RelayAuth::Anonymous,
-        };
+        let plan = RelayPlan::new(endpoint, kind, RelayAuth::Anonymous);
         Ok((plan, account.clone()))
     }
 

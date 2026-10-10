@@ -77,16 +77,16 @@ fn the_app_is_told_the_capabilities_without_the_ways_to_authenticate() {
 
 #[test]
 fn a_new_relay_waits_for_the_servers_greeting_and_never_shows_its_credential() {
-    let plan = RelayPlan {
-        endpoint: ServiceEndpoint {
+    let plan = RelayPlan::new(
+        ServiceEndpoint {
             family: Family::Imap,
             url: EndpointUrl::parse("imaps://imap.example.org").expect("url"),
             tls: Tls::Implicit,
             login: LoginName("ada".into()),
         },
-        kind: CapabilityKind::Mail,
-        auth: password(),
-    };
+        CapabilityKind::Mail,
+        password(),
+    );
     let relay = ImapRelay::new(plan);
     assert_eq!(relay.phase, ImapPhase::Greeting);
     assert!(!format!("{relay:?}").contains("hunter2"));
@@ -98,16 +98,16 @@ mod scripted {
     use crate::testing::{bytewise, sent, whole};
 
     fn relay(tls: Tls, auth: RelayAuth) -> ImapRelay {
-        ImapRelay::new(RelayPlan {
-            endpoint: ServiceEndpoint {
+        ImapRelay::new(RelayPlan::new(
+            ServiceEndpoint {
                 family: Family::Imap,
                 url: EndpointUrl::parse("imaps://imap.example.org").expect("url"),
                 tls,
                 login: LoginName("ada".into()),
             },
-            kind: CapabilityKind::Mail,
+            CapabilityKind::Mail,
             auth,
-        })
+        ))
     }
 
     fn closed_with(effects: &[Effect]) -> Option<RelayEnd> {

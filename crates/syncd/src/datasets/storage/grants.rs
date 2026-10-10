@@ -56,35 +56,35 @@ impl StorageKind {
 
 /// The need syncd asks accounts to meet: read and write the app folder and poll it.
 pub fn storage_need() -> Need {
-    Need::Storage(StorageNeed {
-        access: Access::ReadWrite,
-        delta: Delta::Poll,
-        scope: StorageScope::AppFolder,
-        quota: QuotaReport::Unreported,
-    })
+    Need::Storage(StorageNeed::new(
+        Access::ReadWrite,
+        Delta::Poll,
+        StorageScope::AppFolder,
+        QuotaReport::Unreported,
+    ))
 }
 
 /// The need syncd asks Google Photos to meet: upload into albums the app made, and the picker.
 pub fn photos_need() -> Need {
-    Need::Photos(PhotosNeed {
-        library_read: LibraryRead::PickerOnly,
-        upload: Offered::Present,
-        albums: Albums::AppCreated,
-        video: Offered::Absent,
-        delta: Delta::None,
-    })
+    Need::Photos(PhotosNeed::new(
+        LibraryRead::PickerOnly,
+        Offered::Present,
+        Albums::AppCreated,
+        Offered::Absent,
+        Delta::None,
+    ))
 }
 
 /// The need of an account where the person granted the picker scope alone: the picker import,
 /// no upload.
 pub fn picker_need() -> Need {
-    Need::Photos(PhotosNeed {
-        library_read: LibraryRead::PickerOnly,
-        upload: Offered::Absent,
-        albums: Albums::None,
-        video: Offered::Absent,
-        delta: Delta::None,
-    })
+    Need::Photos(PhotosNeed::new(
+        LibraryRead::PickerOnly,
+        Offered::Absent,
+        Albums::None,
+        Offered::Absent,
+        Delta::None,
+    ))
 }
 
 /// Whether the candidate is reached over Graph (OneDrive): the endpoint to dial.

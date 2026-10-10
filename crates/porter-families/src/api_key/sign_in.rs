@@ -84,6 +84,8 @@ impl<H: Http + 'static> ApiKeySignIn<H> {
                 self.state = State::Ended;
                 SignInStep::Done(signed)
             }
+            // a variant a newer porter adds: the sign-in ends as unreadable
+            _ => self.failed(SignInFault::Unreadable),
         }
     }
 }

@@ -30,13 +30,13 @@ impl AgentLoginSignIn {
     }
 
     fn signed(&self) -> Signed {
-        Signed {
-            label: AccountLabel(self.spec.label.clone()),
-            credentials: Vec::new(),
-            claims: super::claims(&self.spec),
-            endpoints: Vec::new(),
-            restriction: Restriction::none(),
-        }
+        Signed::new(
+            AccountLabel(self.spec.label.clone()),
+            Vec::new(),
+            super::claims(&self.spec),
+            Vec::new(),
+            Restriction::none(),
+        )
     }
 }
 

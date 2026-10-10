@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 
 /// One audited event, as a line of `audit.jsonl`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct AuditEntry {
     /// When it happened.
     pub at: UnixSeconds,
@@ -30,6 +31,22 @@ pub struct AuditEntry {
 }
 
 impl AuditEntry {
+    /// An entry for `event` at `at`, caused by `app` and concerning `account` where there are
+    /// any.
+    pub fn new(
+        at: UnixSeconds,
+        app: Option<AppId>,
+        account: Option<AccountId>,
+        event: AuditEvent,
+    ) -> Self {
+        Self {
+            at,
+            app,
+            account,
+            event,
+        }
+    }
+
     /// The entries of an `audit.jsonl` text. The file has no version of its own: a variant is
     /// added when it is needed and an old line keeps reading. A line this build cannot read (a
     /// kind a newer daemon wrote, or a damaged line) is skipped, so the lines around it are kept;
@@ -44,6 +61,7 @@ impl AuditEntry {
 /// What happened.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "v", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum AuditEvent {
     /// A grant was given.
     Granted {

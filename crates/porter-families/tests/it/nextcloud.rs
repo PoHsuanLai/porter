@@ -81,9 +81,7 @@ fn held(world: &World) -> Account {
 }
 
 fn add() -> SignInStart {
-    SignInStart {
-        mode: SignInMode::Add,
-    }
+    SignInStart::new(SignInMode::Add)
 }
 
 /// The person opens the page the sign-in sent them to.
@@ -357,12 +355,10 @@ async fn cancelling_ends_the_sign_in_and_a_new_start_begins_a_new_flow() {
 async fn signing_in_again_replaces_the_password_without_a_review() {
     let world = world().await;
     world.nextcloud.set_login_policy(LoginPolicy::Approve);
-    let start = SignInStart {
-        mode: SignInMode::Reauthenticate {
-            account: AccountId::parse("nextcloud-alice").expect("id"),
-            endpoints: held(&world).endpoints,
-        },
-    };
+    let start = SignInStart::new(SignInMode::Reauthenticate {
+        account: AccountId::parse("nextcloud-alice").expect("id"),
+        endpoints: held(&world).endpoints,
+    });
     let steps = sign_in(&world.fixed, start, "").await;
     assert!(
         !steps.iter().any(|s| matches!(s, SignInStep::Review { .. })),
@@ -379,12 +375,10 @@ async fn signing_in_again_starts_at_the_accounts_own_server_without_asking_for_i
     world.nextcloud.set_login_policy(LoginPolicy::Approve);
     // The shipped file names no server, so an Add asks; a sign-in again reads it off the
     // account's endpoints.
-    let start = SignInStart {
-        mode: SignInMode::Reauthenticate {
-            account: AccountId::parse("nextcloud-alice").expect("id"),
-            endpoints: held(&world).endpoints,
-        },
-    };
+    let start = SignInStart::new(SignInMode::Reauthenticate {
+        account: AccountId::parse("nextcloud-alice").expect("id"),
+        endpoints: held(&world).endpoints,
+    });
     let steps = sign_in(&world.open, start, "").await;
     assert!(
         !steps
@@ -399,12 +393,10 @@ async fn signing_in_again_starts_at_the_accounts_own_server_without_asking_for_i
     assert_eq!(signed(&steps).endpoints.len(), 4);
 
     // An account with no Nextcloud endpoint to read a server from asks like an Add.
-    let start = SignInStart {
-        mode: SignInMode::Reauthenticate {
-            account: AccountId::parse("nextcloud-alice").expect("id"),
-            endpoints: vec![],
-        },
-    };
+    let start = SignInStart::new(SignInMode::Reauthenticate {
+        account: AccountId::parse("nextcloud-alice").expect("id"),
+        endpoints: vec![],
+    });
     let typed = world.nextcloud.base_url().to_owned();
     let steps = sign_in(&world.open, start, &typed).await;
     assert!(matches!(steps[0], SignInStep::AskFields(_)), "{steps:?}");

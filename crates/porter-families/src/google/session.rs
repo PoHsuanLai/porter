@@ -184,11 +184,11 @@ impl<H: Http> GoogleSession<H> {
             ExchangeFault::Unreachable => ProviderError::Unreachable,
             ExchangeFault::Unreadable => ProviderError::Unreadable,
         })?;
-        let issued = IssuedToken {
-            kind: TokenKind::Bearer,
-            expires: tokens.expires_at(now),
-            value: tokens.access_token.clone(),
-        };
+        let issued = IssuedToken::new(
+            TokenKind::Bearer,
+            tokens.access_token.clone(),
+            tokens.expires_at(now),
+        );
         let mut state = self.state();
         state.reauth = None;
         // Only the whole grant's answer says what was granted; a narrowed one names its own.
@@ -251,14 +251,14 @@ impl<H: Http> GoogleSession<H> {
         match form {
             TokenKind::Xoauth2 => {
                 let user = self.address().await?;
-                Ok(IssuedToken {
-                    kind: form,
-                    value: SecretText::new(format!(
+                Ok(IssuedToken::new(
+                    form,
+                    SecretText::new(format!(
                         "user={user}\u{1}auth=Bearer {}\u{1}\u{1}",
                         token.value.expose()
                     )),
-                    ..token
-                })
+                    token.expires,
+                ))
             }
             _ => Ok(token),
         }

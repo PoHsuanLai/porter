@@ -8,9 +8,22 @@ fn reply(
     calls: &[(&str, &str, &str)],
     stop: StopReason,
 ) -> ChatReply {
-    ChatReply {
-        text: text.into(),
-        tool_calls: calls
+    let made = ChatReply::new(
+        text.into(),
+        stop,
+        TokenUsage {
+            input: Tokens(12),
+            output: Tokens(7),
+            cached: Tokens(2),
+        },
+        ServedBy {
+            account: AccountId::parse("local").expect("id"),
+            model: ModelId::parse("m").expect("id"),
+            locality: Locality::OnDevice,
+        },
+    )
+    .with_tool_calls(
+        calls
             .iter()
             .map(|(id, name, args)| ToolCallPart {
                 id: ToolCallId((*id).into()),
@@ -18,19 +31,10 @@ fn reply(
                 args: JsonText::parse(args).expect("json"),
             })
             .collect(),
-        stop,
-        thought: thought.map(str::to_owned),
-        scores: None,
-        usage: TokenUsage {
-            input: Tokens(12),
-            output: Tokens(7),
-            cached: Tokens(2),
-        },
-        served: ServedBy {
-            account: AccountId::parse("local").expect("id"),
-            model: ModelId::parse("m").expect("id"),
-            locality: Locality::OnDevice,
-        },
+    );
+    match thought {
+        Some(t) => made.with_thought(t.to_owned()),
+        None => made,
     }
 }
 

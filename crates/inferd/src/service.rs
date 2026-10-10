@@ -422,6 +422,8 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
             Ok(readiness) => Ok(readiness.slug().to_owned()),
             Err(Unplaced::NoPlace(refusal)) => Err(InferError::no_place(refusal)),
             Err(Unplaced::Other(refusal)) => Ok(refusal_slug(&refusal.refusal)),
+            // a variant a newer porter adds: told as the usual refusal for it
+            Err(other) => Ok(refusal_slug(&other.into_pick().refusal)),
         }
     }
 
@@ -927,8 +929,8 @@ where
                         .await;
                     }
                     // Missed some news: say the answers changed so a listener reads them all.
-                    Ok(porter_tailnet::GuestEvent::Changed)
-                    | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                    // Also a kind of news a newer porter adds: a listener re-reads them all.
+                    Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
                         let _ = Inference::<P, O, C>::guests_changed(iface.signal_emitter()).await;
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => return,

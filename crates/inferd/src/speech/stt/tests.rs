@@ -32,12 +32,12 @@ fn served() -> ServedBy {
 }
 
 fn begin(mode: TranscribeMode, lang: LangPick) -> TranscribeBegin {
-    TranscribeBegin {
+    TranscribeBegin::new(
         mode,
         lang,
-        rate: porter_infer::AudioRate(16_000),
-        usage: Usage::Interactive,
-    }
+        porter_infer::AudioRate(16_000),
+        Usage::Interactive,
+    )
 }
 
 fn frames(count: usize) -> VecAudio {

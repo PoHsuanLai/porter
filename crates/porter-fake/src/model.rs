@@ -55,6 +55,8 @@ impl Model for FakeModel {
                 | MessagePart::ToolCall(_)
                 | MessagePart::ToolResult(_)
                 | MessagePart::Thought(_) => None,
+                // a variant a newer porter adds: it carries no text to echo
+                _ => None,
             })
             .next_back()
             .unwrap_or_default()
@@ -66,15 +68,12 @@ impl Model for FakeModel {
         };
         let _ = sink.event(InferEvent::TextDelta(text.clone()));
         let _ = sink.event(InferEvent::Usage(usage));
-        Ok(ChatReply {
+        Ok(ChatReply::new(
             text,
-            tool_calls: Vec::new(),
-            stop: StopReason::EndTurn,
-            thought: None,
-            scores: None,
+            StopReason::EndTurn,
             usage,
-            served: self.served(),
-        })
+            self.served(),
+        ))
     }
 
     async fn embed(&self, request: &EmbedRequest) -> Result<EmbedReply, ModelError> {
@@ -88,10 +87,6 @@ impl Model for FakeModel {
             output: Tokens(0),
             cached: Tokens(0),
         };
-        Ok(EmbedReply {
-            vectors,
-            usage,
-            served: self.served(),
-        })
+        Ok(EmbedReply::new(vectors, usage, self.served()))
     }
 }

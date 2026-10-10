@@ -10,9 +10,17 @@ use porter_core::{AccountId, Billing, DataClass, Locality, ModelId};
 
 /// What routing needs to know about the request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct RouteAsk {
     /// The class of data it carries.
     pub class: DataClass,
+}
+
+impl RouteAsk {
+    /// A request carrying data of `class`.
+    pub fn new(class: DataClass) -> Self {
+        Self { class }
+    }
 }
 
 /// Whether the user mapped this model to the tier the request asks for.

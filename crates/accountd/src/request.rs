@@ -294,10 +294,7 @@ impl<H: Host, C: Callers> Core<H, C> {
 
 /// What an agent program's key is: a language model, chat, any context.
 fn llm_need() -> Need {
-    Need::Llm(LlmNeed {
-        features: BTreeSet::from([LlmFeature::Chat]),
-        context: Tokens(0),
-    })
+    Need::Llm(LlmNeed::new(BTreeSet::from([LlmFeature::Chat]), Tokens(0)))
 }
 
 /// Registers the object, then runs `run` in a task that answers it.

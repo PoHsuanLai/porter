@@ -12,9 +12,8 @@ use porter_core::consent::Usage;
 use porter_core::need::LlmNeed;
 use porter_core::{DataClass, Need, Tier, Tokens};
 use porter_infer::{
-    ChatControl, ChatMessage, ChatRequest, ClientFrame, InferEvent, InferReply, InferRequest,
-    JsonSchemaText, JsonText, Knob, MessagePart, Reasoning, ReplyShape, Role as ChatRole,
-    StopReason, ToolChoice, ToolDecl, ToolName, ToolParallelism,
+    ChatMessage, ChatRequest, ClientFrame, InferEvent, InferReply, InferRequest, JsonSchemaText,
+    JsonText, MessagePart, Role as ChatRole, StopReason, ToolDecl, ToolName,
 };
 use std::path::PathBuf;
 
@@ -23,33 +22,25 @@ fn cassette_file() -> PathBuf {
 }
 
 fn planner_need() -> Need {
-    Need::Llm(LlmNeed {
-        features: [LlmFeature::Chat, LlmFeature::Tools].into(),
-        context: Tokens(1000),
-    })
+    Need::Llm(LlmNeed::new(
+        [LlmFeature::Chat, LlmFeature::Tools].into(),
+        Tokens(1000),
+    ))
 }
 
 fn request(text: &str, tools: Vec<ToolDecl>) -> InferRequest {
-    InferRequest::Chat(ChatRequest {
-        messages: vec![ChatMessage {
-            role: ChatRole::User,
-            parts: vec![MessagePart::Text(text.into())],
-        }],
-        shape: ReplyShape::Text,
-        tier: Tier::Balanced,
-        class: DataClass::Mail,
-        usage: Usage::Interactive,
-        tools,
-        control: ChatControl {
-            tool_choice: ToolChoice::Auto,
-            tool_calls: ToolParallelism::One,
-            max_output: Knob::Off,
-            reasoning: Reasoning::EngineDefault,
-            sampling: Knob::Off,
-            stop: vec![],
-            scores: Knob::Off,
-        },
-    })
+    InferRequest::Chat(
+        ChatRequest::new(
+            vec![ChatMessage {
+                role: ChatRole::User,
+                parts: vec![MessagePart::Text(text.into())],
+            }],
+            Tier::Balanced,
+            DataClass::Mail,
+            Usage::Interactive,
+        )
+        .with_tools(tools),
+    )
 }
 
 fn tool() -> ToolDecl {

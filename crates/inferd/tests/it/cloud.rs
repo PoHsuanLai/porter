@@ -19,9 +19,8 @@ use porter_core::need::LlmNeed;
 use porter_core::{AppId, AppName, DataClass, Isolation, MicroUsd, Need, Tier, Tokens};
 use porter_dbus::PeerProxy;
 use porter_infer::{
-    ChatControl, ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRefusal, InferReply,
-    InferRequest, Knob, LocalOnly, MessagePart, ModelError, OpenOptions, Policy, Reasoning,
-    ReplyShape, Role as ChatRole, StopReason, ToolChoice, ToolParallelism,
+    ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRefusal, InferReply, InferRequest,
+    LocalOnly, MessagePart, ModelError, OpenOptions, Policy, Role as ChatRole, StopReason,
 };
 use std::path::Path;
 
@@ -40,33 +39,19 @@ fn app(name: &str) -> AppId {
 }
 
 fn llm() -> Need {
-    Need::Llm(LlmNeed {
-        features: [LlmFeature::Chat].into(),
-        context: Tokens(1000),
-    })
+    Need::Llm(LlmNeed::new([LlmFeature::Chat].into(), Tokens(1000)))
 }
 
 fn chat_request(text: &str, class: DataClass) -> InferRequest {
-    InferRequest::Chat(ChatRequest {
-        messages: vec![ChatMessage {
+    InferRequest::Chat(ChatRequest::new(
+        vec![ChatMessage {
             role: ChatRole::User,
             parts: vec![MessagePart::Text(text.into())],
         }],
-        shape: ReplyShape::Text,
-        tier: Tier::Balanced,
+        Tier::Balanced,
         class,
-        usage: Usage::Interactive,
-        tools: vec![],
-        control: ChatControl {
-            tool_choice: ToolChoice::Auto,
-            tool_calls: ToolParallelism::One,
-            max_output: Knob::Off,
-            reasoning: Reasoning::EngineDefault,
-            sampling: Knob::Off,
-            stop: vec![],
-            scores: Knob::Off,
-        },
-    })
+        Usage::Interactive,
+    ))
 }
 
 async fn until_finished(session: &mut impl InferSession) -> Vec<InferEvent> {
@@ -620,17 +605,13 @@ fn tools_request() -> InferRequest {
     let InferRequest::Chat(chat) = chat_request("look it up", DataClass::Prompt) else {
         unreachable!("a chat request");
     };
-    InferRequest::Chat(ChatRequest {
-        tools: vec![porter_infer::ToolDecl {
-            name: porter_infer::ToolName::parse("lookup").expect("name"),
-            description: "look something up".into(),
-            params: porter_infer::JsonSchemaText(
-                porter_infer::JsonText::parse(r#"{"type":"object","properties":{}}"#)
-                    .expect("json"),
-            ),
-        }],
-        ..chat
-    })
+    InferRequest::Chat(chat.with_tools(vec![porter_infer::ToolDecl {
+        name: porter_infer::ToolName::parse("lookup").expect("name"),
+        description: "look something up".into(),
+        params: porter_infer::JsonSchemaText(
+            porter_infer::JsonText::parse(r#"{"type":"object","properties":{}}"#).expect("json"),
+        ),
+    }]))
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 /// One granted account that meets a need: what an app renders and then uses.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Candidate {
     /// The account.
     pub account: AccountId,
@@ -29,4 +30,34 @@ pub struct Candidate {
     /// WebDAV root for files), so a granted app learns where to connect. Empty for an account
     /// with none (a local runtime). On the bus this is the vardict key `endpoints`.
     pub endpoints: Vec<ServiceEndpoint>,
+}
+
+impl Candidate {
+    /// An account that meets a need, with the grant the app holds for it and no servers named.
+    pub fn new(
+        account: AccountId,
+        label: AccountLabel,
+        provider: ProviderId,
+        subject: Subject,
+        capability: Capability,
+        restriction: Restriction,
+        grant: GrantId,
+    ) -> Self {
+        Self {
+            account,
+            label,
+            provider,
+            subject,
+            capability,
+            restriction,
+            grant,
+            endpoints: Vec::new(),
+        }
+    }
+
+    /// The same candidate, naming the account's servers for the kind that fits.
+    pub fn with_endpoints(mut self, endpoints: Vec<ServiceEndpoint>) -> Self {
+        self.endpoints = endpoints;
+        self
+    }
 }

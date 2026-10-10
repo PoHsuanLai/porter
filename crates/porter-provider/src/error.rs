@@ -26,6 +26,7 @@ pub enum ProviderFileError {
 
 /// Why a call to a provider failed, in terms the account's state can take.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum ProviderError {
     /// The credential was refused: the account needs signing in again.
     #[error("credential refused")]

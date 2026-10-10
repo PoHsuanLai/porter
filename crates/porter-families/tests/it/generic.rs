@@ -37,9 +37,7 @@ fn dav_spec() -> ProviderSpec {
 }
 
 fn add() -> SignInStart {
-    SignInStart {
-        mode: SignInMode::Add,
-    }
+    SignInStart::new(SignInMode::Add)
 }
 
 fn port_of(base: &str) -> u16 {
@@ -702,12 +700,10 @@ async fn signing_in_again_to_a_mail_account_asks_the_form_and_finishes_without_a
         ("imap.fake.test", 993),
         ("smtp.fake.test", 587),
     ));
-    let start = SignInStart {
-        mode: SignInMode::Reauthenticate {
-            account: AccountId::parse("generic-imap-ada").expect("id"),
-            endpoints: vec![],
-        },
-    };
+    let start = SignInStart::new(SignInMode::Reauthenticate {
+        account: AccountId::parse("generic-imap-ada").expect("id"),
+        endpoints: vec![],
+    });
     let mut signin = mail.provider.sign_in(start).expect("sign-in");
     let steps = drive(&mut signin, mail_person("ada@fake.test", PASSWORD, "")).await;
     assert_eq!(steps.len(), 2, "{steps:?}");
@@ -1243,12 +1239,10 @@ async fn a_fixed_file_refuses_a_bad_form_and_signs_in_again_without_a_review() {
             "{address:?}"
         );
     }
-    let start = SignInStart {
-        mode: SignInMode::Reauthenticate {
-            account: AccountId::parse("gmx-ada").expect("id"),
-            endpoints: vec![],
-        },
-    };
+    let start = SignInStart::new(SignInMode::Reauthenticate {
+        account: AccountId::parse("gmx-ada").expect("id"),
+        endpoints: vec![],
+    });
     let mut signin = provider.sign_in(start).expect("sign-in");
     let steps = drive(&mut signin, fixed_person("ada@gmx.de", "new")).await;
     assert_eq!(steps.len(), 2, "{steps:?}");
@@ -1367,12 +1361,10 @@ async fn a_wrong_pop3_password_is_refused_and_a_right_one_goes_on() {
 #[tokio::test]
 async fn signing_in_again_with_a_wrong_mail_password_is_refused() {
     let mail = published().await;
-    let start = SignInStart {
-        mode: SignInMode::Reauthenticate {
-            account: AccountId::parse("generic-imap-ada").expect("id"),
-            endpoints: vec![],
-        },
-    };
+    let start = SignInStart::new(SignInMode::Reauthenticate {
+        account: AccountId::parse("generic-imap-ada").expect("id"),
+        endpoints: vec![],
+    });
     let mut signin = mail.provider.sign_in(start).expect("sign-in");
     let steps = drive(&mut signin, mail_person("ada@fake.test", "wrong", "")).await;
     assert_eq!(
@@ -1565,11 +1557,11 @@ async fn srv_servers_within_the_domain_still_have_the_password_tried_before_the_
 async fn signing_in_again_uses_srv_servers_outside_the_domain_only_when_the_account_has_them() {
     let (_mail, provider, counted) =
         counted(srv_at("imap.elsewhere.test", "smtp.elsewhere.test")).await;
-    let again = |endpoints| SignInStart {
-        mode: SignInMode::Reauthenticate {
+    let again = |endpoints| {
+        SignInStart::new(SignInMode::Reauthenticate {
             account: AccountId::parse("generic-imap-ada").expect("id"),
             endpoints,
-        },
+        })
     };
     let at_review = std::cell::Cell::new(None);
 

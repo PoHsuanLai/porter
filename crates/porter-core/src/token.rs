@@ -25,6 +25,7 @@ pub enum TokenKind {
 
 /// A short-lived token issued to a granted app.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct IssuedToken {
     /// Its form.
     pub kind: TokenKind,
@@ -32,4 +33,15 @@ pub struct IssuedToken {
     pub value: SecretText,
     /// When it stops working; ask again then, or on a 401.
     pub expires: UnixSeconds,
+}
+
+impl IssuedToken {
+    /// A token of this form that stops working at `expires`.
+    pub fn new(kind: TokenKind, value: SecretText, expires: UnixSeconds) -> Self {
+        Self {
+            kind,
+            value,
+            expires,
+        }
+    }
 }

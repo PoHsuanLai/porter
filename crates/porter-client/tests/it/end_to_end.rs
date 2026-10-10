@@ -22,12 +22,12 @@ fn app(service: &Arc<FakeService>, name: &str) -> App {
 }
 
 fn storage(delta: Delta) -> Need {
-    Need::Storage(StorageNeed {
-        access: Access::ReadWrite,
+    Need::Storage(StorageNeed::new(
+        Access::ReadWrite,
         delta,
-        scope: StorageScope::AppFolder,
-        quota: QuotaReport::Unreported,
-    })
+        StorageScope::AppFolder,
+        QuotaReport::Unreported,
+    ))
 }
 
 fn needs_consent(found: Found) -> ConsentOffer {
@@ -267,10 +267,7 @@ async fn an_app_adds_an_account_through_a_family_is_granted_it_and_signs_it_in_a
         .expect("added");
     assert_eq!(added.as_str(), "generic-dav-bob-127.0.0.1");
 
-    let need = Need::Calendar(PimNeed {
-        access: Access::ReadWrite,
-        delta: Delta::Poll,
-    });
+    let need = Need::Calendar(PimNeed::new(Access::ReadWrite, Delta::Poll));
     let offer = needs_consent(
         calendar
             .find(&need, DataClass::Calendar, Usage::Interactive)
@@ -486,11 +483,7 @@ async fn a_typed_pop3_server_is_added_through_the_sheet_and_found_by_a_mail_need
         .await
         .expect("added");
 
-    let need = Need::Mail(MailNeed {
-        access: Access::Read,
-        send: Offered::Present,
-        delta: Delta::Poll,
-    });
+    let need = Need::Mail(MailNeed::new(Access::Read, Offered::Present, Delta::Poll));
     let offer = needs_consent(
         mail.find(&need, DataClass::Mail, Usage::Interactive)
             .await

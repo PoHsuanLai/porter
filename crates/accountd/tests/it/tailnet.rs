@@ -612,14 +612,14 @@ async fn machines_lists_every_kind_of_computer_and_not_this_one() {
     assert_eq!(by("build-box").owner, MachineOwner::Tagged);
     // Online with SSH, and no last seen; offline with a last seen and no SSH.
     let pi = by("pi");
-    assert!(pi.online && pi.ssh && pi.last_seen.is_none());
+    assert!(pi.link.is_online() && pi.ssh.is_on() && pi.last_seen.is_none());
     assert_eq!(pi.ssh_host_keys, ["ssh-ed25519 AAAApi"]);
     assert_eq!(pi.node.as_str(), "nPI");
     assert_eq!(pi.dns, "pi.tail1234.ts.net");
     assert_eq!(pi.addresses[0].to_string(), "100.64.0.2");
     assert_eq!(pi.os, "linux");
     let old = by("old-laptop");
-    assert!(!old.online && !old.ssh && old.ssh_host_keys.is_empty());
+    assert!(!old.link.is_online() && !old.ssh.is_on() && old.ssh_host_keys.is_empty());
     assert_eq!(old.last_seen.map(|t| t.0), Some(1_790_000_000));
     // The shell and Settings read the same list.
     for role in [CallerRole::SheetHost, CallerRole::Settings] {

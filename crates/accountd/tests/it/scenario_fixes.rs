@@ -137,11 +137,11 @@ async fn a_refused_refresh_on_issue_token_leaves_the_account_needing_a_sign_in_a
 async fn a_refused_refresh_on_open_authenticated_leaves_the_account_needing_a_sign_in() {
     let rig = refusing_rig(mail_account().id).await;
     let mail = rig.client("org.quire.Mail").await;
-    let need = need_to_dbus(&Need::Mail(MailNeed {
-        access: Access::Read,
-        send: Offered::Present,
-        delta: Delta::Poll,
-    }));
+    let need = need_to_dbus(&Need::Mail(MailNeed::new(
+        Access::Read,
+        Offered::Present,
+        Delta::Poll,
+    )));
     let mut sheet = Sheet::subscribe(&mail).await.expect("subscribe");
     let path = ManagerProxy::new(&mail)
         .await

@@ -156,9 +156,7 @@ impl Rig {
 }
 
 pub fn start() -> SignInStart {
-    SignInStart {
-        mode: SignInMode::Add,
-    }
+    SignInStart::new(SignInMode::Add)
 }
 
 pub fn audience(text: &str) -> Audience {

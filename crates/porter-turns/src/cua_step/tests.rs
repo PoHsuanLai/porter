@@ -9,7 +9,7 @@ use model_provider::{
 };
 use model_provider::{Part, Role, TurnRequest};
 use porter_core::capability::CuaEnv;
-use porter_infer::{AttachIndex, ImageSource, MaskedRegions as Masked, StepIndex as Index};
+use porter_infer::{AttachIndex, ImageSource, StepIndex as Index};
 use porter_router::testkit::{Scratch, models};
 use std::io::Write;
 use std::os::fd::OwnedFd;
@@ -27,33 +27,28 @@ fn memfd(bytes: &[u8]) -> OwnedFd {
 }
 
 fn begin() -> CuaBegin {
-    CuaBegin {
-        goal: "open settings".into(),
-        hints: vec!["it is in the menu".into()],
-        env: CuaEnv::Desktop,
-    }
+    CuaBegin::new("open settings".into(), CuaEnv::Desktop)
+        .with_hints(vec!["it is in the menu".into()])
 }
 
 fn request(layout: FrameLayout) -> CuaStepRequest {
-    CuaStepRequest {
-        step: Index(3),
-        window: porter_infer::WindowGeometry {
+    CuaStepRequest::new(
+        Index(3),
+        porter_infer::WindowGeometry {
             logical: Size::new(Coord(200), Coord(100)),
             scale: Scale120(120),
         },
-        frame: porter_infer::FrameImage {
+        porter_infer::FrameImage {
             source: ImageSource::Attached(AttachIndex(0)),
             layout,
         },
-        cursor: None,
-        prev: vec![PrevResult::Done, PrevResult::Refused("no".into())],
-        masked: Masked(0),
-        tree: TreeText::Present("Button: OK".into()),
-        notes: vec![StepNote {
-            from: NoteFrom::Person,
-            text: "careful with the red one".into(),
-        }],
-    }
+        TreeText::Present("Button: OK".into()),
+    )
+    .with_prev(vec![PrevResult::Done, PrevResult::Refused("no".into())])
+    .with_notes(vec![StepNote {
+        from: NoteFrom::Person,
+        text: "careful with the red one".into(),
+    }])
 }
 
 fn png_request() -> CuaStepRequest {
@@ -543,14 +538,12 @@ fn the_observation_carries_the_window_contents_and_the_notes_with_who_said_them(
         seen.notes,
         vec![NoteLine("The person says: careful with the red one".into())]
     );
-    let helper = CuaStepRequest {
-        notes: vec![StepNote {
-            from: NoteFrom::Agent,
-            text: "a dialog opened".into(),
-        }],
-        tree: TreeText::Absent,
-        ..png_request()
-    };
+    let mut helper = png_request();
+    helper.notes = vec![StepNote {
+        from: NoteFrom::Agent,
+        text: "a dialog opened".into(),
+    }];
+    helper.tree = TreeText::Absent;
     let seen = observation(&helper);
     assert_eq!(seen.tree, None);
     assert_eq!(

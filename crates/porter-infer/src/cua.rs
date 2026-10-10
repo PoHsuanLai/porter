@@ -12,6 +12,7 @@ use std::fmt;
 /// Opens a computer-use run: the goal and the planner's hints. Later `CuaStep` requests on the
 /// same session continue it; the session is pinned to one model so its history stays valid.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct CuaBegin {
     /// What the person asked for.
     pub goal: String,
@@ -19,6 +20,23 @@ pub struct CuaBegin {
     pub hints: Vec<String>,
     /// What is operated.
     pub env: CuaEnv,
+}
+
+impl CuaBegin {
+    /// A run toward `goal` in `env`, with no hints.
+    pub fn new(goal: String, env: CuaEnv) -> Self {
+        Self {
+            goal,
+            hints: Vec::new(),
+            env,
+        }
+    }
+
+    /// The same run with these hints from the planner.
+    pub fn with_hints(mut self, hints: Vec<String>) -> Self {
+        self.hints = hints;
+        self
+    }
 }
 
 // The goal is what the person asked for: Debug shows sizes only.
@@ -41,6 +59,7 @@ pub struct StepIndex(pub u32);
 
 /// One step: what the window shows now and what happened to the last actions.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct CuaStepRequest {
     /// Which step.
     pub step: StepIndex,
@@ -59,6 +78,48 @@ pub struct CuaStepRequest {
     /// What was said to the run since the last step, oldest first (a message that arrived
     /// while it was acting); empty when nothing was.
     pub notes: Vec<StepNote>,
+}
+
+impl CuaStepRequest {
+    /// Step `step`: what the window shows (`frame`, in `window`) and its accessibility text. No
+    /// pointer position, no earlier results, no masked regions and no notes until the `with_*`
+    /// methods say so.
+    pub fn new(step: StepIndex, window: WindowGeometry, frame: FrameImage, tree: TreeText) -> Self {
+        Self {
+            step,
+            window,
+            frame,
+            cursor: None,
+            prev: Vec::new(),
+            masked: MaskedRegions(0),
+            tree,
+            notes: Vec::new(),
+        }
+    }
+
+    /// The same step with the pointer at `cursor`.
+    pub fn with_cursor(mut self, cursor: Point<WindowSpace>) -> Self {
+        self.cursor = Some(cursor);
+        self
+    }
+
+    /// The same step with what became of the previous step's actions.
+    pub fn with_prev(mut self, prev: Vec<PrevResult>) -> Self {
+        self.prev = prev;
+        self
+    }
+
+    /// The same step with this many regions blacked out of the frame.
+    pub fn with_masked(mut self, masked: MaskedRegions) -> Self {
+        self.masked = masked;
+        self
+    }
+
+    /// The same step with what was said to the run since the last one.
+    pub fn with_notes(mut self, notes: Vec<StepNote>) -> Self {
+        self.notes = notes;
+        self
+    }
 }
 
 /// One message that reached a running computer-use task mid-run. A note is input, never
@@ -178,6 +239,7 @@ pub struct MaskedRegions(pub u16);
 
 /// The model's answer to one step.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct CuaStepReply {
     /// Its reasoning, when it gave any.
     pub thought: Option<String>,
@@ -187,6 +249,37 @@ pub struct CuaStepReply {
     pub dropped: Vec<DroppedAction>,
     /// Vendor hints. They only ever add asks.
     pub safety: Vec<SafetyHint>,
+}
+
+impl CuaStepReply {
+    /// A reply proposing these actions: no reasoning, nothing dropped and no vendor hints until
+    /// the `with_*` methods say so.
+    pub fn new(actions: Vec<CuaAction<WindowSpace>>) -> Self {
+        Self {
+            thought: None,
+            actions,
+            dropped: Vec::new(),
+            safety: Vec::new(),
+        }
+    }
+
+    /// The same reply with the model's reasoning.
+    pub fn with_thought(mut self, thought: String) -> Self {
+        self.thought = Some(thought);
+        self
+    }
+
+    /// The same reply with what was read but not usable.
+    pub fn with_dropped(mut self, dropped: Vec<DroppedAction>) -> Self {
+        self.dropped = dropped;
+        self
+    }
+
+    /// The same reply with these vendor hints.
+    pub fn with_safety(mut self, safety: Vec<SafetyHint>) -> Self {
+        self.safety = safety;
+        self
+    }
 }
 
 /// Something the model said that became no action.
@@ -232,6 +325,7 @@ pub enum SafetyHint {
 /// Why a step produced no reply.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "v", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum CuaStepFailure {
     /// The reply could not be parsed, even after the repair attempt.
     Unparseable,

@@ -51,9 +51,7 @@ async fn every_method_of_an_unbuilt_family_refuses_and_none_panics() {
             .err(),
         refused
     );
-    let add = SignInStart {
-        mode: SignInMode::Add,
-    };
+    let add = SignInStart::new(SignInMode::Add);
     assert_eq!(provider.sign_in(add).err(), refused);
     assert_eq!(
         provider

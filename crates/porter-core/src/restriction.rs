@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 /// Everything that limits an account beyond its capabilities.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Restriction {
     /// The OAuth client's verification state for this account's scopes.
     pub verification: Verification,
@@ -39,6 +40,36 @@ impl Restriction {
             limits: Vec::new(),
             signed_in: None,
         }
+    }
+
+    /// The same restriction with this verification state.
+    pub fn with_verification(mut self, verification: Verification) -> Self {
+        self.verification = verification;
+        self
+    }
+
+    /// The same restriction with this sign-in lifetime.
+    pub fn with_token_lifetime(mut self, token_lifetime: TokenLifetime) -> Self {
+        self.token_lifetime = token_lifetime;
+        self
+    }
+
+    /// The same restriction with this organisation consent.
+    pub fn with_consent(mut self, consent: TenantConsent) -> Self {
+        self.consent = consent;
+        self
+    }
+
+    /// The same restriction with these per-kind limits.
+    pub fn with_limits(mut self, limits: Vec<Limit>) -> Self {
+        self.limits = limits;
+        self
+    }
+
+    /// The same restriction, signed in at `at`.
+    pub fn with_signed_in(mut self, at: UnixSeconds) -> Self {
+        self.signed_in = Some(at);
+        self
     }
 
     /// When a sign-in that lasts seven days stops working: what Settings shows. `None` for any
@@ -130,11 +161,19 @@ pub enum TenantConsent {
 
 /// One kind's limit and its reason.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Limit {
     /// The kind limited.
     pub kind: CapabilityKind,
     /// Why.
     pub reason: LimitReason,
+}
+
+impl Limit {
+    /// A limit on `kind`, for this reason.
+    pub fn new(kind: CapabilityKind, reason: LimitReason) -> Self {
+        Self { kind, reason }
+    }
 }
 
 /// Why a present kind is less than the provider's full product.

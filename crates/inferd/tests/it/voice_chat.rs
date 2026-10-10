@@ -16,9 +16,8 @@ use porter_core::consent::Usage;
 use porter_core::need::LlmNeed;
 use porter_core::{DataClass, Need, Tier, Tokens};
 use porter_infer::{
-    AudioFrame, AudioRate, Base64Bytes, ChatControl, ChatMessage, ChatRequest, ClientFrame,
-    InferEvent, InferReply, InferRequest, Knob, LangPick, Reasoning, ReplyShape, Role, StageRole,
-    ToolChoice, ToolParallelism, TranscribeBegin, TranscribeMode,
+    AudioFrame, AudioRate, Base64Bytes, ChatMessage, ChatRequest, ClientFrame, InferEvent,
+    InferReply, InferRequest, LangPick, Role, StageRole, TranscribeBegin, TranscribeMode,
 };
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
@@ -27,10 +26,7 @@ use std::time::Duration;
 const WORDS: [&str; 4] = ["turn", "the", "lights", "off"];
 
 fn llm() -> Need {
-    Need::Llm(LlmNeed {
-        features: [LlmFeature::Chat].into(),
-        context: Tokens(1000),
-    })
+    Need::Llm(LlmNeed::new([LlmFeature::Chat].into(), Tokens(1000)))
 }
 
 fn quick() -> SupervisorConfig {
@@ -65,12 +61,12 @@ fn plan() -> Plan {
 }
 
 fn begin() -> TranscribeBegin {
-    TranscribeBegin {
-        mode: TranscribeMode::Streaming,
-        lang: LangPick::Auto,
-        rate: AudioRate(16_000),
-        usage: Usage::Interactive,
-    }
+    TranscribeBegin::new(
+        TranscribeMode::Streaming,
+        LangPick::Auto,
+        AudioRate(16_000),
+        Usage::Interactive,
+    )
 }
 
 fn frame(n: u64) -> AudioFrame {
@@ -81,26 +77,15 @@ fn frame(n: u64) -> AudioFrame {
 }
 
 fn chat() -> ChatRequest {
-    ChatRequest {
-        messages: vec![ChatMessage {
+    ChatRequest::new(
+        vec![ChatMessage {
             role: Role::User,
             parts: vec![porter_infer::MessagePart::Text("Please do this:".into())],
         }],
-        shape: ReplyShape::Text,
-        tier: Tier::Balanced,
-        class: DataClass::Voice,
-        usage: Usage::Interactive,
-        tools: vec![],
-        control: ChatControl {
-            tool_choice: ToolChoice::Auto,
-            tool_calls: ToolParallelism::One,
-            max_output: Knob::Off,
-            reasoning: Reasoning::EngineDefault,
-            sampling: Knob::Off,
-            stop: vec![],
-            scores: Knob::Off,
-        },
-    }
+        Tier::Balanced,
+        DataClass::Voice,
+        Usage::Interactive,
+    )
 }
 
 async fn open(world: &World) -> DbusSession {

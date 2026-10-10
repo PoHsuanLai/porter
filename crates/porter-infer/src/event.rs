@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 /// A frame from the client to inferd. Audio frames follow a `Transcribe` request.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "v", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum ClientFrame {
     /// Starts a turn. One turn at a time; a second request queues (depth one).
     Request(InferRequest),
@@ -36,6 +37,7 @@ impl ClientFrame {
 /// An event from inferd to the client. Exactly one `Finished` ends each turn.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "v", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum InferEvent {
     /// Who will answer: the "sent to <provider>" indicator and the orb read it.
     Routed(ServedBy),

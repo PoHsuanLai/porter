@@ -21,6 +21,7 @@ pub const MAX_LOCAL_CLAIMS: usize = 256;
 
 /// Why a report was not taken.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum LocalFault {
     /// No provider file has this id.
     UnknownProvider,

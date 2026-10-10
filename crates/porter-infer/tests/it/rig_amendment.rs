@@ -22,21 +22,20 @@ fn knobs_are_written_in_full() {
 
 #[test]
 fn chat_control_has_pinned_json() {
-    let control = ChatControl {
-        tool_choice: ToolChoice::Named(ToolName::parse("mail.search").expect("name")),
-        tool_calls: ToolParallelism::One,
-        max_output: Knob::Set(Tokens(1)),
-        reasoning: Reasoning::On(Effort::Low),
-        sampling: Knob::Set(Sampling {
+    let control = ChatControl::new()
+        .with_tool_choice(ToolChoice::Named(
+            ToolName::parse("mail.search").expect("name"),
+        ))
+        .with_max_output(Knob::Set(Tokens(1)))
+        .with_reasoning(Reasoning::On(Effort::Low))
+        .with_sampling(Knob::Set(Sampling {
             temperature: Permille(700),
             top_p: Knob::Off,
             top_k: Knob::Set(Count(20)),
             min_p: Knob::Off,
             seed: Knob::Set(Seed(7)),
-        }),
-        stop: vec!["END".into()],
-        scores: Knob::Off,
-    };
+        }))
+        .with_stop(vec!["END".into()]);
     pinned(
         &control,
         r#"{"tool_choice":{"kind":"named","v":"mail.search"},"tool_calls":"one","max_output":{"kind":"set","v":1},"reasoning":{"kind":"on","v":"low"},"sampling":{"kind":"set","v":{"temperature":700,"top_p":{"kind":"off"},"top_k":{"kind":"set","v":20},"min_p":{"kind":"off"},"seed":{"kind":"set","v":7}}},"stop":["END"]}"#,
@@ -109,10 +108,7 @@ fn open_options_reserve_the_traceparent() {
     let parent =
         Traceparent::parse("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01").expect("ok");
     pinned(
-        &OpenOptions {
-            traceparent: Some(parent),
-            ..OpenOptions::default()
-        },
+        &OpenOptions::default().with_traceparent(parent),
         r#"{"traceparent":"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"}"#,
     );
     pinned(&OpenOptions::default(), r#"{"traceparent":null}"#);

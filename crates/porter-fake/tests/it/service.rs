@@ -23,20 +23,16 @@ fn app(name: &str) -> AppId {
 }
 
 fn files() -> Need {
-    Need::Storage(StorageNeed {
-        access: Access::ReadWrite,
-        delta: Delta::Poll,
-        scope: StorageScope::AppFolder,
-        quota: QuotaReport::Unreported,
-    })
+    Need::Storage(StorageNeed::new(
+        Access::ReadWrite,
+        Delta::Poll,
+        StorageScope::AppFolder,
+        QuotaReport::Unreported,
+    ))
 }
 
 fn mail() -> Need {
-    Need::Mail(MailNeed {
-        access: Access::Read,
-        send: Offered::Present,
-        delta: Delta::Poll,
-    })
+    Need::Mail(MailNeed::new(Access::Read, Offered::Present, Delta::Poll))
 }
 
 fn url(text: &str) -> EndpointUrl {

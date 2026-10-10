@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 /// bus, the first frame's options on the socket). Today one key is reserved; an unknown key is
 /// ignored by inferd, so a newer client works with an older daemon.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct OpenOptions {
     /// The caller's trace, so a span started in companiond continues in inferd and one task is
     /// one trace. When absent, inferd starts its own root.
@@ -33,6 +34,14 @@ pub struct OpenOptions {
 }
 
 impl OpenOptions {
+    /// These options carrying the caller's trace, so the daemon's spans continue it.
+    pub fn with_traceparent(self, traceparent: Traceparent) -> Self {
+        Self {
+            traceparent: Some(traceparent),
+            ..self
+        }
+    }
+
     /// These options limited to `places`, in this order of preference.
     pub fn with_places(self, places: Vec<PlaceId>) -> Self {
         Self {
@@ -64,6 +73,7 @@ impl OpenOptions {
 /// What `Inference1.Open` takes, as a frame: the session a connection on the latchkey socket
 /// asks for. On the bus these are the method's arguments.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct OpenFrame {
     /// The need the session is for.
     pub need: Need,
@@ -73,6 +83,18 @@ pub struct OpenFrame {
     pub tier: Tier,
     /// The options of the call.
     pub options: OpenOptions,
+}
+
+impl OpenFrame {
+    /// A session for `need`, carrying data of `class`, at `tier`, with these options.
+    pub fn new(need: Need, class: DataClass, tier: Tier, options: OpenOptions) -> Self {
+        Self {
+            need,
+            class,
+            tier,
+            options,
+        }
+    }
 }
 
 /// The first frame of a connection on the latchkey socket that is a session rather than one

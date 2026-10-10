@@ -6,10 +6,10 @@ use porter_core::need::LlmNeed;
 use porter_core::{AccountsReply, AccountsRequest, DataClass, Need, Tier, Tokens};
 use porter_fake::{FakeInferSession, Script, ScriptStep};
 use porter_infer::OpenOptions;
-use porter_infer::{ChatControl, Knob, Reasoning, ToolChoice, ToolParallelism};
+use porter_infer::{ChatControl, ToolParallelism};
 use porter_infer::{
-    ChatReply, ClientFrame, InferEvent, InferRefusal, InferReply, InferRequest, ReplyShape,
-    RequestKind, ServedBy, StopReason, TokenUsage,
+    ChatReply, ClientFrame, InferEvent, InferRefusal, InferReply, InferRequest, RequestKind,
+    ServedBy, StopReason, TokenUsage,
 };
 use std::sync::Mutex;
 
@@ -39,10 +39,7 @@ impl Transport for Scripted {
 }
 
 fn need() -> Need {
-    Need::Llm(LlmNeed {
-        features: Default::default(),
-        context: Tokens(1),
-    })
+    Need::Llm(LlmNeed::new(Default::default(), Tokens(1)))
 }
 
 fn served() -> ServedBy {
@@ -54,23 +51,15 @@ fn served() -> ServedBy {
 }
 
 fn chat() -> InferRequest {
-    InferRequest::Chat(porter_infer::ChatRequest {
-        messages: vec![],
-        shape: ReplyShape::Text,
-        tier: Tier::Fast,
-        class: DataClass::Public,
-        usage: porter_core::consent::Usage::Interactive,
-        tools: vec![],
-        control: ChatControl {
-            tool_choice: ToolChoice::Auto,
-            tool_calls: ToolParallelism::Many,
-            max_output: Knob::Off,
-            reasoning: Reasoning::EngineDefault,
-            sampling: Knob::Off,
-            stop: vec![],
-            scores: Knob::Off,
-        },
-    })
+    InferRequest::Chat(
+        porter_infer::ChatRequest::new(
+            vec![],
+            Tier::Fast,
+            DataClass::Public,
+            porter_core::consent::Usage::Interactive,
+        )
+        .with_control(ChatControl::new().with_tool_calls(ToolParallelism::Many)),
+    )
 }
 
 fn accounts(script: Script) -> Accounts<Scripted> {
@@ -86,15 +75,12 @@ async fn infer_reads_to_the_finished_event() {
         output: Tokens(1),
         cached: Tokens(0),
     };
-    let reply = InferReply::Chat(ChatReply {
-        text: "hi".into(),
-        tool_calls: vec![],
-        stop: StopReason::EndTurn,
-        thought: None,
-        scores: None,
+    let reply = InferReply::Chat(ChatReply::new(
+        "hi".into(),
+        StopReason::EndTurn,
         usage,
-        served: served(),
-    });
+        served(),
+    ));
     let script = Script {
         kind: RequestKind::Chat,
         steps: vec![

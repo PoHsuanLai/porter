@@ -418,6 +418,8 @@ fn refusal_of(why: &AttachedError, id: &str) -> ComputerError {
         | AttachedError::BadUrl { .. }
         | AttachedError::NotPlainHttp { .. }
         | AttachedError::NotLoopback { .. } => ComputerError::BadAddress(id),
+        // a variant a newer porter adds: the model cannot be used
+        _ => ComputerError::ModelNotUsable(id),
     }
 }
 

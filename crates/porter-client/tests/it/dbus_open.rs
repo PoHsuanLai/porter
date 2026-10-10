@@ -17,26 +17,23 @@ use porter_fake::{Script, ScriptStep};
 use porter_infer::{
     AttachIndex, ChatControl, ChatMessage, ChatReply, ChatRequest, ClientFrame, EmbedReply,
     EmbedRequest, EmbedRole, EmbedVector, ImagePart, ImageSource, InferEvent, InferRefusal,
-    InferReply, InferRequest, Knob, MessagePart, OpenOptions, OptionScore, OptionScores, Reasoning,
-    ReplyShape, RequestKind, Role, ScoreOptions, ServedBy, StopReason, TokenUsage, ToolChoice,
-    ToolParallelism, Traceparent,
+    InferReply, InferRequest, Knob, MessagePart, OpenOptions, OptionScore, OptionScores,
+    ReplyShape, RequestKind, Role, ScoreOptions, ServedBy, StopReason, TokenUsage, ToolParallelism,
+    Traceparent,
 };
 use std::os::fd::OwnedFd;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 fn llm() -> Need {
-    Need::Llm(LlmNeed {
-        features: Default::default(),
-        context: Tokens(8_000),
-    })
+    Need::Llm(LlmNeed::new(Default::default(), Tokens(8_000)))
 }
 
 fn embeddings() -> Need {
-    Need::Embeddings(EmbedNeed {
-        dims: DimsNeed::Exactly(Dims(3)),
-        modalities: [porter_core::capability::Modality::Text].into(),
-    })
+    Need::Embeddings(EmbedNeed::new(
+        DimsNeed::Exactly(Dims(3)),
+        [porter_core::capability::Modality::Text].into(),
+    ))
 }
 
 fn served() -> ServedBy {
@@ -56,26 +53,18 @@ fn usage() -> TokenUsage {
 }
 
 fn chat_with(parts: Vec<MessagePart>) -> InferRequest {
-    InferRequest::Chat(ChatRequest {
-        messages: vec![ChatMessage {
-            role: Role::User,
-            parts,
-        }],
-        shape: ReplyShape::Text,
-        tier: Tier::Fast,
-        class: DataClass::Public,
-        usage: Usage::Interactive,
-        tools: vec![],
-        control: ChatControl {
-            tool_choice: ToolChoice::Auto,
-            tool_calls: ToolParallelism::Many,
-            max_output: Knob::Off,
-            reasoning: Reasoning::EngineDefault,
-            sampling: Knob::Off,
-            stop: vec![],
-            scores: Knob::Off,
-        },
-    })
+    InferRequest::Chat(
+        ChatRequest::new(
+            vec![ChatMessage {
+                role: Role::User,
+                parts,
+            }],
+            Tier::Fast,
+            DataClass::Public,
+            Usage::Interactive,
+        )
+        .with_control(ChatControl::new().with_tool_calls(ToolParallelism::Many)),
+    )
 }
 
 fn chat() -> InferRequest {
@@ -83,15 +72,12 @@ fn chat() -> InferRequest {
 }
 
 fn chat_reply(text: &str) -> InferReply {
-    InferReply::Chat(ChatReply {
-        text: text.into(),
-        tool_calls: vec![],
-        stop: StopReason::EndTurn,
-        thought: None,
-        scores: None,
-        usage: usage(),
-        served: served(),
-    })
+    InferReply::Chat(ChatReply::new(
+        text.into(),
+        StopReason::EndTurn,
+        usage(),
+        served(),
+    ))
 }
 
 fn chat_script(text: &str) -> Script {
@@ -187,13 +173,13 @@ async fn a_choice_that_asks_for_scores_crosses_the_bus_and_its_scores_come_back_
         },
     ])
     .expect("a whole");
-    let reply = InferReply::Chat(ChatReply {
-        scores: Some(scores.clone()),
-        ..match chat_reply("allow") {
+    let reply = InferReply::Chat(
+        match chat_reply("allow") {
             InferReply::Chat(reply) => reply,
             other => panic!("a chat reply, got {other:?}"),
         }
-    });
+        .with_scores(scores.clone()),
+    );
     let rig = rig(Behaviour::Scripted(vec![Script {
         kind: RequestKind::Chat,
         steps: vec![ScriptStep::Emit(InferEvent::Finished(reply))],
@@ -217,23 +203,23 @@ async fn a_choice_that_asks_for_scores_crosses_the_bus_and_its_scores_come_back_
 
 #[tokio::test(flavor = "multi_thread")]
 async fn infer_runs_an_embedding_to_its_reply_as_memoryd_does() {
-    let reply = InferReply::Embed(EmbedReply {
-        vectors: vec![EmbedVector(vec![0.5, 0.25, 0.125])],
-        usage: usage(),
-        served: served(),
-    });
+    let reply = InferReply::Embed(EmbedReply::new(
+        vec![EmbedVector(vec![0.5, 0.25, 0.125])],
+        usage(),
+        served(),
+    ));
     let rig = rig(Behaviour::Scripted(vec![Script {
         kind: RequestKind::Embed,
         steps: vec![ScriptStep::Emit(InferEvent::Finished(reply.clone()))],
     }]))
     .await;
-    let request = InferRequest::Embed(EmbedRequest {
-        inputs: vec!["a note".into()],
-        role: EmbedRole::Document,
-        dims: DimsNeed::Exactly(Dims(3)),
-        class: DataClass::Notes,
-        usage: Usage::Background,
-    });
+    let request = InferRequest::Embed(EmbedRequest::new(
+        vec!["a note".into()],
+        EmbedRole::Document,
+        DimsNeed::Exactly(Dims(3)),
+        DataClass::Notes,
+        Usage::Background,
+    ));
     let got = rig
         .accounts
         .infer(&embeddings(), DataClass::Notes, Tier::Fast, request)
@@ -248,10 +234,8 @@ async fn infer_runs_an_embedding_to_its_reply_as_memoryd_does() {
 async fn the_traceparent_rides_in_the_options() {
     let rig = rig(Behaviour::Scripted(vec![])).await;
     let text = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
-    let options = OpenOptions {
-        traceparent: Some(Traceparent::parse(text).expect("traceparent")),
-        ..OpenOptions::default()
-    };
+    let options =
+        OpenOptions::default().with_traceparent(Traceparent::parse(text).expect("traceparent"));
     rig.accounts
         .session_with(&llm(), DataClass::Public, Tier::Best, &options)
         .await

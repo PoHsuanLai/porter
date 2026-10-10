@@ -141,17 +141,16 @@ fn place_row((id, details): (String, Details)) -> Result<PlaceRow, TransportErro
         .get(PLACE_KEY_READY)
         .and_then(|value| bool::try_from(value).ok())
         .ok_or_else(|| bad("no ready"))?;
-    Ok(PlaceRow {
-        kind,
-        name: text(PLACE_KEY_NAME).ok_or_else(|| bad("no name"))?,
-        provider: text(PLACE_KEY_PROVIDER),
-        models,
-        state: if ready {
-            PlaceState::Ready
-        } else {
-            PlaceState::NotReady
-        },
-        id: place,
+    let name = text(PLACE_KEY_NAME).ok_or_else(|| bad("no name"))?;
+    let state = if ready {
+        PlaceState::Ready
+    } else {
+        PlaceState::NotReady
+    };
+    let row = PlaceRow::new(place, kind, name, state).with_models(models);
+    Ok(match text(PLACE_KEY_PROVIDER) {
+        Some(provider) => row.with_provider(provider),
+        None => row,
     })
 }
 

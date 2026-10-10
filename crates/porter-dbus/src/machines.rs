@@ -4,7 +4,7 @@
 
 use crate::args::Details;
 use crate::json_value::bad;
-use porter_core::{CoreError, Machine, MachineOwner, NodeId, UnixSeconds};
+use porter_core::{CoreError, Machine, MachineLink, MachineOwner, MachineSsh, NodeId, UnixSeconds};
 use std::net::IpAddr;
 use zbus::zvariant::{OwnedValue, Value};
 
@@ -52,8 +52,11 @@ pub fn machine_to_dbus(machine: &Machine) -> (String, Details) {
             owned(strings(machine.addresses.iter().map(IpAddr::to_string))),
         ),
         (MACHINE_KEY_OS, owned(Value::from(machine.os.clone()))),
-        (MACHINE_KEY_ONLINE, owned(Value::from(machine.online))),
-        (MACHINE_KEY_SSH, owned(Value::from(machine.ssh))),
+        (
+            MACHINE_KEY_ONLINE,
+            owned(Value::from(machine.link.is_online())),
+        ),
+        (MACHINE_KEY_SSH, owned(Value::from(machine.ssh.is_on()))),
         (
             MACHINE_KEY_SSH_HOST_KEYS,
             owned(strings(machine.ssh_host_keys.iter().cloned())),
@@ -86,21 +89,26 @@ pub fn machine_from_dbus(row: &(String, Details)) -> Result<Machine, CoreError> 
     let owner = text(MACHINE_KEY_OWNER)
         .and_then(|slug| MachineOwner::from_slug(&slug))
         .ok_or_else(|| bad("machine: no owner"))?;
-    Ok(Machine {
-        node: NodeId::parse(node)?,
-        name: text(MACHINE_KEY_NAME).ok_or_else(|| bad("machine: no name"))?,
-        dns: text(MACHINE_KEY_DNS).ok_or_else(|| bad("machine: no network name"))?,
-        addresses: list(MACHINE_KEY_ADDRESSES)
-            .iter()
-            .filter_map(|address| address.parse().ok())
-            .collect(),
-        os: text(MACHINE_KEY_OS).unwrap_or_default(),
-        online: get::<bool>(details, MACHINE_KEY_ONLINE).unwrap_or(false),
-        last_seen: get::<i64>(details, MACHINE_KEY_LAST_SEEN).map(UnixSeconds),
-        ssh: get::<bool>(details, MACHINE_KEY_SSH).unwrap_or(false),
-        ssh_host_keys: list(MACHINE_KEY_SSH_HOST_KEYS),
-        owner,
-    })
+    let node = NodeId::parse(node)?;
+    let name = text(MACHINE_KEY_NAME).ok_or_else(|| bad("machine: no name"))?;
+    let dns = text(MACHINE_KEY_DNS).ok_or_else(|| bad("machine: no network name"))?;
+    let mut machine = Machine::new(node, name, dns, owner)
+        .with_addresses(
+            list(MACHINE_KEY_ADDRESSES)
+                .iter()
+                .filter_map(|address| address.parse().ok())
+                .collect(),
+        )
+        .with_os(text(MACHINE_KEY_OS).unwrap_or_default())
+        .with_link(MachineLink::of(
+            get::<bool>(details, MACHINE_KEY_ONLINE).unwrap_or(false),
+        ))
+        .with_ssh_host_keys(list(MACHINE_KEY_SSH_HOST_KEYS))
+        .with_ssh(MachineSsh::of(
+            get::<bool>(details, MACHINE_KEY_SSH).unwrap_or(false),
+        ));
+    machine.last_seen = get::<i64>(details, MACHINE_KEY_LAST_SEEN).map(UnixSeconds);
+    Ok(machine)
 }
 
 #[cfg(test)]
@@ -108,21 +116,19 @@ mod tests {
     use super::*;
 
     fn machine() -> Machine {
-        Machine {
-            node: NodeId::parse("nPXS7a2CNTRL").expect("id"),
-            name: "pi".into(),
-            dns: "pi.tail1234.ts.net".into(),
-            addresses: vec![
-                "100.64.0.2".parse().expect("ip"),
-                "fd7a:115c:a1e0::2".parse().expect("ip"),
-            ],
-            os: "linux".into(),
-            online: false,
-            last_seen: Some(UnixSeconds(1_790_000_000)),
-            ssh: true,
-            ssh_host_keys: vec!["ssh-ed25519 AAAA".into()],
-            owner: MachineOwner::Tagged,
-        }
+        Machine::new(
+            NodeId::parse("nPXS7a2CNTRL").expect("id"),
+            "pi".into(),
+            "pi.tail1234.ts.net".into(),
+            MachineOwner::Tagged,
+        )
+        .with_addresses(vec![
+            "100.64.0.2".parse().expect("ip"),
+            "fd7a:115c:a1e0::2".parse().expect("ip"),
+        ])
+        .with_os("linux".into())
+        .with_last_seen(UnixSeconds(1_790_000_000))
+        .with_ssh_host_keys(vec!["ssh-ed25519 AAAA".into()])
     }
 
     #[test]
@@ -135,7 +141,7 @@ mod tests {
     #[test]
     fn the_lists_are_string_arrays_and_last_seen_is_absent_while_online() {
         let mut online = machine();
-        online.online = true;
+        online.link = MachineLink::Online;
         online.last_seen = None;
         let (_, details) = machine_to_dbus(&online);
         assert!(!details.contains_key(MACHINE_KEY_LAST_SEEN));

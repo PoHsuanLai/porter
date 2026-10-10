@@ -353,15 +353,15 @@ impl Launchers {
         // that fails (accountd's own connection is gone) leaves the line and answers NoLauncher.
         if let Some(audit) = &self.timing.audit {
             let (request, program) = (request.clone(), program.clone());
-            audit.record(AuditEntry {
-                at: self.clock().now(),
-                app: None,
-                account: Some(account.clone()),
-                event: match kind {
+            audit.record(AuditEntry::new(
+                self.clock().now(),
+                None,
+                Some(account.clone()),
+                match kind {
                     Ask::Login => AuditEvent::AgentLoginAsked { request, program },
                     Ask::Logout => AuditEvent::AgentLogoutAsked { request, program },
                 },
-            });
+            ));
         }
         let sent = self
             .send(kind, &owner, &request, account, program)
@@ -488,8 +488,12 @@ impl SignOutNews {
             LoginEnd::Reported(LoginOutcome::Ready) => SignOutNews::Done,
             LoginEnd::Reported(LoginOutcome::Failed(_)) => SignOutNews::Failed,
             LoginEnd::Reported(LoginOutcome::Cancelled) => SignOutNews::Cancelled,
+            // a variant a newer porter adds: the logout is reported to the pane as failed
+            LoginEnd::Reported(_) => SignOutNews::Failed,
             LoginEnd::Expired => SignOutNews::Expired,
             LoginEnd::LauncherGone => SignOutNews::LauncherGone,
+            // a variant a newer porter adds: the logout is reported to the pane as failed
+            _ => SignOutNews::Failed,
         }
     }
 }

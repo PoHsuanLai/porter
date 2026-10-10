@@ -179,10 +179,10 @@ async fn only_settings_the_shell_and_the_companion_may_list_the_places() {
 async fn the_shell_may_list_the_places_and_ask_for_no_model() {
     let (world, _lab) = world("shell", Role::Shell, "org.quire.Shell").await;
     assert!(world.accounts.places().await.is_ok());
-    let need = porter_core::Need::Llm(porter_core::need::LlmNeed {
-        features: [porter_core::capability::LlmFeature::Chat].into(),
-        context: porter_core::Tokens(1000),
-    });
+    let need = porter_core::Need::Llm(porter_core::need::LlmNeed::new(
+        [porter_core::capability::LlmFeature::Chat].into(),
+        porter_core::Tokens(1000),
+    ));
     let opened = world
         .accounts
         .session(&need, DataClass::Public, Tier::Balanced)
@@ -266,42 +266,27 @@ mod routing {
     use porter_core::{Need, Tokens};
     use porter_dbus::InferenceProxy;
     use porter_infer::{
-        ChatControl, ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRequest, Knob,
-        LocalOnly, MessagePart, NoPlaceReason, OpenOptions, PlaceId, Policy, Reasoning, ReplyShape,
-        Role as ChatRole, ToolChoice, ToolParallelism,
+        ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRequest, LocalOnly, MessagePart,
+        NoPlaceReason, OpenOptions, PlaceId, Policy, Role as ChatRole,
     };
     use std::collections::BTreeMap;
 
     const COMPANION: &str = "org.quire.Companion";
 
     fn llm() -> Need {
-        Need::Llm(LlmNeed {
-            features: [LlmFeature::Chat].into(),
-            context: Tokens(1000),
-        })
+        Need::Llm(LlmNeed::new([LlmFeature::Chat].into(), Tokens(1000)))
     }
 
     fn chat_request() -> InferRequest {
-        InferRequest::Chat(ChatRequest {
-            messages: vec![ChatMessage {
+        InferRequest::Chat(ChatRequest::new(
+            vec![ChatMessage {
                 role: ChatRole::User,
                 parts: vec![MessagePart::Text("hello".into())],
             }],
-            shape: ReplyShape::Text,
-            tier: Tier::Balanced,
-            class: DataClass::Public,
-            usage: Usage::Interactive,
-            tools: vec![],
-            control: ChatControl {
-                tool_choice: ToolChoice::Auto,
-                tool_calls: ToolParallelism::One,
-                max_output: Knob::Off,
-                reasoning: Reasoning::EngineDefault,
-                sampling: Knob::Off,
-                stop: vec![],
-                scores: Knob::Off,
-            },
-        })
+            Tier::Balanced,
+            DataClass::Public,
+            Usage::Interactive,
+        ))
     }
 
     fn place(text: &str) -> PlaceId {
@@ -447,10 +432,10 @@ mod routing {
             .expect_err("nothing in the set can serve");
         assert_eq!(
             refused,
-            inferd::router::placed::Unplaced::NoPlace(porter_infer::PlaceRefusal {
-                reason: NoPlaceReason::NotReady,
-                would_need: Some(porter_infer::PlaceKind::CloudAccount),
-            })
+            inferd::router::placed::Unplaced::NoPlace(porter_infer::PlaceRefusal::new(
+                NoPlaceReason::NotReady,
+                Some(porter_infer::PlaceKind::CloudAccount),
+            ))
         );
         // Whatever the answer for the session, nothing was sent to the provider.
         assert!(
@@ -615,17 +600,11 @@ mod refusals {
     const COMPANION: &str = "org.quire.Companion";
 
     fn llm() -> Need {
-        Need::Llm(LlmNeed {
-            features: [LlmFeature::Chat].into(),
-            context: Tokens(1000),
-        })
+        Need::Llm(LlmNeed::new([LlmFeature::Chat].into(), Tokens(1000)))
     }
 
     fn embeddings() -> Need {
-        Need::Embeddings(EmbedNeed {
-            dims: DimsNeed::Any,
-            modalities: [Modality::Text].into(),
-        })
+        Need::Embeddings(EmbedNeed::new(DimsNeed::Any, [Modality::Text].into()))
     }
 
     fn only(places: &[&str]) -> OpenOptions {
@@ -897,9 +876,8 @@ mod computers {
     use porter_dbus::zvariant::{OwnedValue, Value};
     use porter_dbus::{BusStream, COMPUTER_ERROR_PREFIX, Details, InferenceProxy};
     use porter_infer::{
-        ChatControl, ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRequest, Knob,
-        LocalOnly, MessagePart, OpenOptions, PlaceId, Policy, Reasoning, ReplyShape,
-        Role as ChatRole, ToolChoice, ToolParallelism,
+        ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRequest, LocalOnly, MessagePart,
+        OpenOptions, PlaceId, Policy, Role as ChatRole,
     };
     use std::path::Path;
 
@@ -977,26 +955,15 @@ mod computers {
     }
 
     fn chat_request() -> InferRequest {
-        InferRequest::Chat(ChatRequest {
-            messages: vec![ChatMessage {
+        InferRequest::Chat(ChatRequest::new(
+            vec![ChatMessage {
                 role: ChatRole::User,
                 parts: vec![MessagePart::Text("hello".into())],
             }],
-            shape: ReplyShape::Text,
-            tier: Tier::Balanced,
-            class: DataClass::Public,
-            usage: porter_core::consent::Usage::Interactive,
-            tools: vec![],
-            control: ChatControl {
-                tool_choice: ToolChoice::Auto,
-                tool_calls: ToolParallelism::One,
-                max_output: Knob::Off,
-                reasoning: Reasoning::EngineDefault,
-                sampling: Knob::Off,
-                stop: vec![],
-                scores: Knob::Off,
-            },
-        })
+            Tier::Balanced,
+            DataClass::Public,
+            porter_core::consent::Usage::Interactive,
+        ))
     }
 
     fn files_holding(dir: &Path, needle: &str) -> Vec<std::path::PathBuf> {
@@ -1058,10 +1025,10 @@ mod computers {
         as_caller(&world, Role::Placer, COMPANION);
         let options = OpenOptions::default()
             .with_places(vec![PlaceId::parse("computer:studio-pc").expect("place")]);
-        let need = porter_core::Need::Llm(porter_core::need::LlmNeed {
-            features: [porter_core::capability::LlmFeature::Chat].into(),
-            context: porter_core::Tokens(1000),
-        });
+        let need = porter_core::Need::Llm(porter_core::need::LlmNeed::new(
+            [porter_core::capability::LlmFeature::Chat].into(),
+            porter_core::Tokens(1000),
+        ));
         let mut session = within(
             "Open",
             world

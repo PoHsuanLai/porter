@@ -25,12 +25,12 @@ use std::time::Duration;
 use zbus::Connection;
 
 fn need() -> porter_dbus::NeedArg {
-    need_to_dbus(&Need::Storage(StorageNeed {
-        access: Access::ReadWrite,
-        delta: Delta::Poll,
-        scope: StorageScope::AppFolder,
-        quota: QuotaReport::Unreported,
-    }))
+    need_to_dbus(&Need::Storage(StorageNeed::new(
+        Access::ReadWrite,
+        Delta::Poll,
+        StorageScope::AppFolder,
+        QuotaReport::Unreported,
+    )))
 }
 
 fn token(text: &str) -> Details {

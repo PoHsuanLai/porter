@@ -210,7 +210,7 @@ pub fn choose(
             catalogue_index: u32::try_from(index).unwrap_or(u32::MAX),
         })
         .collect();
-    let ask = RouteAsk { class };
+    let ask = RouteAsk::new(class);
     let picked = match tiers.pick(kind, tier) {
         Some(chosen_pick) => {
             let rules = PickPolicy { policy, auto };

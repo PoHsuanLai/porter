@@ -253,6 +253,7 @@ pub struct Picked {
 /// Why a named model could not serve.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum DeclinedBecause {
     /// No account offers it for this request.
     NotListed,

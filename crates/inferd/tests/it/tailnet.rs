@@ -204,39 +204,24 @@ mod chat {
     use porter_core::need::LlmNeed;
     use porter_core::{Need, Tokens};
     use porter_infer::{
-        ChatControl, ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRequest, Knob,
-        MessagePart, OpenOptions, Reasoning, ReplyShape, Role as ChatRole, ToolChoice,
-        ToolParallelism,
+        ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRequest, MessagePart, OpenOptions,
+        Role as ChatRole,
     };
 
     fn llm() -> Need {
-        Need::Llm(LlmNeed {
-            features: [LlmFeature::Chat].into(),
-            context: Tokens(1000),
-        })
+        Need::Llm(LlmNeed::new([LlmFeature::Chat].into(), Tokens(1000)))
     }
 
     fn request() -> InferRequest {
-        InferRequest::Chat(ChatRequest {
-            messages: vec![ChatMessage {
+        InferRequest::Chat(ChatRequest::new(
+            vec![ChatMessage {
                 role: ChatRole::User,
                 parts: vec![MessagePart::Text("hello".into())],
             }],
-            shape: ReplyShape::Text,
-            tier: Tier::Balanced,
-            class: DataClass::Public,
-            usage: Usage::Interactive,
-            tools: vec![],
-            control: ChatControl {
-                tool_choice: ToolChoice::Auto,
-                tool_calls: ToolParallelism::One,
-                max_output: Knob::Off,
-                reasoning: Reasoning::EngineDefault,
-                sampling: Knob::Off,
-                stop: vec![],
-                scores: Knob::Off,
-            },
-        })
+            Tier::Balanced,
+            DataClass::Public,
+            Usage::Interactive,
+        ))
     }
 
     /// What `world` answers to a chat placed at `computer:pi` with `tiny-chat`: the text, or the

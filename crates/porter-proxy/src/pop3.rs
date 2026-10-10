@@ -47,6 +47,8 @@ impl Pop3Auth {
             RelayAuth::AccessToken(_) | RelayAuth::Anonymous => Err(RelayFault::Protocol),
             RelayAuth::Password(_) if !user && sasl(capabilities, "PLAIN") => Ok(Pop3Auth::Plain),
             RelayAuth::Password(_) => Ok(Pop3Auth::User),
+            // a variant a newer porter adds: refused, never sent as anonymous
+            _ => Err(RelayFault::Protocol),
         }
     }
 }

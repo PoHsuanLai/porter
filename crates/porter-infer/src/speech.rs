@@ -37,6 +37,7 @@ pub struct AudioRate(pub u32);
 /// Opens a speech-to-text turn. The session class must be `Voice` or the caller's own class
 /// (an app transcribing its own files).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct TranscribeBegin {
     /// Streaming or batch.
     pub mode: TranscribeMode,
@@ -48,6 +49,18 @@ pub struct TranscribeBegin {
     pub usage: Usage,
 }
 
+impl TranscribeBegin {
+    /// A speech-to-text turn in this mode, listening for `lang`, over audio at `rate`.
+    pub fn new(mode: TranscribeMode, lang: LangPick, rate: AudioRate, usage: Usage) -> Self {
+        Self {
+            mode,
+            lang,
+            rate,
+            usage,
+        }
+    }
+}
+
 /// A voice an engine offers (`af_heart`).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -55,6 +68,7 @@ pub struct VoiceName(pub String);
 
 /// Text to speak.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct SpeakRequest {
     /// What to say (at most 4 KiB).
     pub text: String,
@@ -67,6 +81,25 @@ pub struct SpeakRequest {
     pub class: DataClass,
     /// Interactive or background.
     pub usage: Usage,
+}
+
+impl SpeakRequest {
+    /// `text` in `lang`, spoken in the engine's default voice; `class` is the text's class.
+    pub fn new(text: String, lang: LanguageTag, class: DataClass, usage: Usage) -> Self {
+        Self {
+            text,
+            voice: None,
+            lang,
+            class,
+            usage,
+        }
+    }
+
+    /// The same request spoken in this voice.
+    pub fn with_voice(mut self, voice: VoiceName) -> Self {
+        self.voice = Some(voice);
+        self
+    }
 }
 
 // The text is the person's data: Debug shows its length only.

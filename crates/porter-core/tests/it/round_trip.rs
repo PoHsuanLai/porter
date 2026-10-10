@@ -160,71 +160,43 @@ fn claude_code() -> AgentCap {
 }
 
 fn every_need() -> Vec<Need> {
-    let pim = PimNeed {
-        access: Access::Read,
-        delta: Delta::Poll,
-    };
+    let pim = PimNeed::new(Access::Read, Delta::Poll);
     vec![
-        Need::Identity(IdentityNeed {
-            profile: Offered::Present,
-            verified_address: Offered::Absent,
-        }),
-        Need::Mail(MailNeed {
-            access: Access::Read,
-            send: Offered::Present,
-            delta: Delta::Push,
-        }),
+        Need::Identity(IdentityNeed::new(Offered::Present, Offered::Absent)),
+        Need::Mail(MailNeed::new(Access::Read, Offered::Present, Delta::Push)),
         Need::Calendar(pim.clone()),
         Need::Contacts(pim.clone()),
         Need::Tasks(pim),
-        Need::Notes(NotesNeed {
-            access: Access::ReadWrite,
-            delta: Delta::None,
-        }),
-        Need::Storage(StorageNeed {
-            access: Access::ReadWrite,
-            delta: Delta::Poll,
-            scope: StorageScope::AppFolder,
-            quota: QuotaReport::Unreported,
-        }),
-        Need::Photos(PhotosNeed {
-            library_read: LibraryRead::None,
-            upload: Offered::Present,
-            albums: Albums::None,
-            video: Offered::Absent,
-            delta: Delta::None,
-        }),
-        Need::Llm(LlmNeed {
-            features: [LlmFeature::Vision].into(),
-            context: Tokens(32_000),
-        }),
-        Need::Embeddings(EmbedNeed {
-            dims: DimsNeed::Exactly(Dims(768)),
-            modalities: [Modality::Image].into(),
-        }),
-        Need::Speech(SpeechNeed {
-            modes: [SpeechMode::Realtime].into(),
-        }),
-        Need::ImageGen(ImageGenNeed {
-            modes: [ImageMode::Inpaint].into(),
-            max_side: Px(512),
-        }),
-        Need::Rerank(RerankNeed {
-            max_docs: Count(10),
-        }),
-        Need::ComputerUse(CuaNeed {
-            environments: [CuaEnv::Desktop].into(),
-        }),
-        Need::KeyValue(KeyValueNeed {
-            delta: Delta::Poll,
-            max_item: Bytes(1024),
-        }),
-        Need::Push(PushNeed {}),
-        Need::Agent(AgentNeed {
-            program: AgentProgram::parse("claude-code").expect("program"),
-            protocols: [AgentProtocol::AnthropicMessages].into(),
-            base_url: Offered::Present,
-        }),
+        Need::Notes(NotesNeed::new(Access::ReadWrite, Delta::None)),
+        Need::Storage(StorageNeed::new(
+            Access::ReadWrite,
+            Delta::Poll,
+            StorageScope::AppFolder,
+            QuotaReport::Unreported,
+        )),
+        Need::Photos(PhotosNeed::new(
+            LibraryRead::None,
+            Offered::Present,
+            Albums::None,
+            Offered::Absent,
+            Delta::None,
+        )),
+        Need::Llm(LlmNeed::new([LlmFeature::Vision].into(), Tokens(32_000))),
+        Need::Embeddings(EmbedNeed::new(
+            DimsNeed::Exactly(Dims(768)),
+            [Modality::Image].into(),
+        )),
+        Need::Speech(SpeechNeed::new([SpeechMode::Realtime].into())),
+        Need::ImageGen(ImageGenNeed::new([ImageMode::Inpaint].into(), Px(512))),
+        Need::Rerank(RerankNeed::new(Count(10))),
+        Need::ComputerUse(CuaNeed::new([CuaEnv::Desktop].into())),
+        Need::KeyValue(KeyValueNeed::new(Delta::Poll, Bytes(1024))),
+        Need::Push(PushNeed::new()),
+        Need::Agent(AgentNeed::new(
+            AgentProgram::parse("claude-code").expect("program"),
+            [AgentProtocol::AnthropicMessages].into(),
+            Offered::Present,
+        )),
     ]
 }
 
@@ -259,31 +231,30 @@ fn endpoints() -> Vec<ServiceEndpoint> {
 }
 
 fn restriction() -> Restriction {
-    Restriction {
-        verification: Verification::Unverified {
+    Restriction::none()
+        .with_verification(Verification::Unverified {
             user_cap: Count(100),
-        },
-        token_lifetime: TokenLifetime::SevenDays,
-        consent: TenantConsent::AdminRequired,
-        limits: vec![Limit {
-            kind: CapabilityKind::Photos,
-            reason: LimitReason::PickerOnly,
-        }],
-        signed_in: Some(UnixSeconds(1_700_000_000)),
-    }
+        })
+        .with_token_lifetime(TokenLifetime::SevenDays)
+        .with_consent(TenantConsent::AdminRequired)
+        .with_limits(vec![Limit::new(
+            CapabilityKind::Photos,
+            LimitReason::PickerOnly,
+        )])
+        .with_signed_in(UnixSeconds(1_700_000_000))
 }
 
 fn candidate() -> Candidate {
-    Candidate {
-        account: account_id("cloud"),
-        label: AccountLabel("ada@example.org".into()),
-        provider: ProviderId::parse("nextcloud").expect("provider"),
-        subject: Subject::Account,
-        capability: every_capability()[6].clone(),
-        restriction: restriction(),
-        grant: grant_id("g1"),
-        endpoints: endpoints(),
-    }
+    Candidate::new(
+        account_id("cloud"),
+        AccountLabel("ada@example.org".into()),
+        ProviderId::parse("nextcloud").expect("provider"),
+        Subject::Account,
+        every_capability()[6].clone(),
+        restriction(),
+        grant_id("g1"),
+    )
+    .with_endpoints(endpoints())
 }
 
 fn grant() -> Grant {
@@ -378,19 +349,17 @@ fn consent_values_round_trip() {
         scope: GrantScope::Once,
     });
     round_trip(&Availability::AvailableNeedsConsent);
-    round_trip(&ConsentAsk {
-        app: app(),
-        kind: CapabilityKind::Storage,
-        class: DataClass::Photos,
-        usage: Usage::Interactive,
-        accounts: vec![AccountChoice {
-            account: account_id("cloud"),
-            label: AccountLabel("Nextcloud".into()),
-            provider: ProviderId::parse("nextcloud").expect("provider"),
-        }],
-        session: None,
-        app_label: None,
-    });
+    round_trip(&ConsentAsk::new(
+        app(),
+        CapabilityKind::Storage,
+        DataClass::Photos,
+        Usage::Interactive,
+        vec![AccountChoice::new(
+            account_id("cloud"),
+            AccountLabel("Nextcloud".into()),
+            ProviderId::parse("nextcloud").expect("provider"),
+        )],
+    ));
     round_trip(&ConsentAnswer::Allow {
         account: account_id("cloud"),
         scope: GrantScope::Always,
@@ -451,19 +420,17 @@ fn a_session_scope_round_trips_with_its_session_and_the_old_scopes_keep_their_wo
 
 #[test]
 fn a_consent_ask_names_its_session_only_when_it_has_one() {
-    let mut ask = ConsentAsk {
-        app: app(),
-        kind: CapabilityKind::Llm,
-        class: DataClass::Prompt,
-        usage: Usage::Interactive,
-        accounts: vec![AccountChoice {
-            account: account_id("anthropic"),
-            label: AccountLabel("Anthropic".into()),
-            provider: ProviderId::parse("anthropic").expect("provider"),
-        }],
-        session: None,
-        app_label: None,
-    };
+    let mut ask = ConsentAsk::new(
+        app(),
+        CapabilityKind::Llm,
+        DataClass::Prompt,
+        Usage::Interactive,
+        vec![AccountChoice::new(
+            account_id("anthropic"),
+            AccountLabel("Anthropic".into()),
+            ProviderId::parse("anthropic").expect("provider"),
+        )],
+    );
     assert!(!json(&ask).contains("session"), "{}", json(&ask));
     // An ask an earlier build wrote has no `session` and reads as one without.
     assert_eq!(
@@ -519,11 +486,11 @@ fn secrets_and_tokens_round_trip() {
         serde_json::from_str::<Credential>(r#"{"kind":"password","v":"pw"}"#).expect("old"),
         Credential::Password(SecretText::new("pw"))
     );
-    round_trip(&IssuedToken {
-        kind: TokenKind::Xoauth2,
-        value: SecretText::new("t"),
-        expires: UnixSeconds(9),
-    });
+    round_trip(&IssuedToken::new(
+        TokenKind::Xoauth2,
+        SecretText::new("t"),
+        UnixSeconds(9),
+    ));
 }
 
 #[test]
@@ -586,11 +553,11 @@ fn every_request_and_reply_round_trips() {
         AccountsReply::Reauthenticated,
         AccountsReply::Grants(vec![grant()]),
         AccountsReply::Revoked,
-        AccountsReply::Token(IssuedToken {
-            kind: TokenKind::Bearer,
-            value: SecretText::new("t"),
-            expires: UnixSeconds(1),
-        }),
+        AccountsReply::Token(IssuedToken::new(
+            TokenKind::Bearer,
+            SecretText::new("t"),
+            UnixSeconds(1),
+        )),
         AccountsReply::Authenticated,
         AccountsReply::Refused(Refusal::AudienceNotGranted),
         AccountsReply::Refused(Refusal::EndpointNotGranted),
@@ -724,19 +691,17 @@ fn a_provider_row_names_its_face_only_when_it_has_one_and_an_old_row_reads_as_no
 
 #[test]
 fn an_app_label_is_named_only_when_accountd_has_one_and_an_earlier_ask_reads_without_it() {
-    let mut ask = ConsentAsk {
-        app: app(),
-        kind: CapabilityKind::Llm,
-        class: DataClass::Prompt,
-        usage: Usage::Interactive,
-        accounts: vec![AccountChoice {
-            account: account_id("anthropic"),
-            label: AccountLabel("Anthropic".into()),
-            provider: ProviderId::parse("anthropic").expect("provider"),
-        }],
-        session: None,
-        app_label: None,
-    };
+    let mut ask = ConsentAsk::new(
+        app(),
+        CapabilityKind::Llm,
+        DataClass::Prompt,
+        Usage::Interactive,
+        vec![AccountChoice::new(
+            account_id("anthropic"),
+            AccountLabel("Anthropic".into()),
+            ProviderId::parse("anthropic").expect("provider"),
+        )],
+    );
     assert!(!json(&ask).contains("app_label"), "{}", json(&ask));
     assert_eq!(
         serde_json::from_str::<ConsentAsk>(&json(&ask)).expect("ask"),
@@ -970,19 +935,21 @@ fn every_sheet_view_round_trips() {
         group: Some(ProviderGroup::Internet),
     });
     let views = vec![
-        SheetView::Consent(ConsentAsk {
-            app: app(),
-            kind: CapabilityKind::Storage,
-            class: DataClass::Photos,
-            usage: Usage::Interactive,
-            accounts: vec![AccountChoice {
-                account: account_id("cloud"),
-                label: AccountLabel("Nextcloud".into()),
-                provider: nextcloud.clone(),
-            }],
-            session: Some(LauncherSession::parse("sess-1").expect("session")),
-            app_label: Some(AppLabel("Photos".into())),
-        }),
+        SheetView::Consent(
+            ConsentAsk::new(
+                app(),
+                CapabilityKind::Storage,
+                DataClass::Photos,
+                Usage::Interactive,
+                vec![AccountChoice::new(
+                    account_id("cloud"),
+                    AccountLabel("Nextcloud".into()),
+                    nextcloud.clone(),
+                )],
+            )
+            .with_session(LauncherSession::parse("sess-1").expect("session"))
+            .with_app_label(AppLabel("Photos".into())),
+        ),
         SheetView::Providers(vec![ProviderRow {
             id: nextcloud.clone(),
             label: "Nextcloud".into(),

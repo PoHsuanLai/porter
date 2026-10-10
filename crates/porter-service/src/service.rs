@@ -195,6 +195,8 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             AccountsRequest::OpenAuthenticated { .. } | AccountsRequest::OpenLinked { .. } => {
                 AccountsReply::Refused(Refusal::Unavailable)
             }
+            // a variant a newer porter adds: refused as unavailable
+            _ => AccountsReply::Refused(Refusal::Unavailable),
         }
     }
 
@@ -317,12 +319,8 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
 
     /// Records one audited event, dated now.
     pub(crate) fn note(&self, app: Option<AppId>, account: Option<AccountId>, event: AuditEvent) {
-        self.audit.record(AuditEntry {
-            at: self.clock.now(),
-            app,
-            account,
-            event,
-        });
+        self.audit
+            .record(AuditEntry::new(self.clock.now(), app, account, event));
     }
 
     /// The consent sheet for an agent program's key (`Peer.RequestAgentGrant`): `agent` is the

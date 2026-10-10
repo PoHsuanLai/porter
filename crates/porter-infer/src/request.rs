@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 /// One request to inferd.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "v", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum InferRequest {
     /// A chat turn.
     Chat(ChatRequest),
@@ -33,6 +34,7 @@ pub enum InferRequest {
 /// Which kind of request a session carries, as the session machine tells them apart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum RequestKind {
     /// [`InferRequest::Chat`].
     Chat,
@@ -104,6 +106,7 @@ impl MessagePart {
 
 /// A chat turn.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct ChatRequest {
     /// The conversation so far, oldest first.
     pub messages: Vec<ChatMessage>,
@@ -119,6 +122,40 @@ pub struct ChatRequest {
     pub tools: Vec<ToolDecl>,
     /// Tool choice, parallelism, the output limit, reasoning, sampling and stop strings.
     pub control: ChatControl,
+}
+
+impl ChatRequest {
+    /// A chat turn over `messages` at `tier`, for data of `class`: a plain text reply, no
+    /// functions, and the default controls ([`ChatControl::new`]).
+    pub fn new(messages: Vec<ChatMessage>, tier: Tier, class: DataClass, usage: Usage) -> Self {
+        Self {
+            messages,
+            shape: ReplyShape::Text,
+            tier,
+            class,
+            usage,
+            tools: Vec::new(),
+            control: ChatControl::new(),
+        }
+    }
+
+    /// The same turn asking for this form of reply.
+    pub fn with_shape(mut self, shape: ReplyShape) -> Self {
+        self.shape = shape;
+        self
+    }
+
+    /// The same turn offering these functions.
+    pub fn with_tools(mut self, tools: Vec<ToolDecl>) -> Self {
+        self.tools = tools;
+        self
+    }
+
+    /// The same turn with these controls.
+    pub fn with_control(mut self, control: ChatControl) -> Self {
+        self.control = control;
+        self
+    }
 }
 
 /// One function a model may call.
@@ -156,6 +193,7 @@ pub enum Role {
 /// One piece of a message.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "v", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum MessagePart {
     /// Text.
     Text(String),
@@ -223,6 +261,7 @@ pub struct ImagePart {
 /// Where an image's bytes are.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "v", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum ImageSource {
     /// In the frame, as base64 text (small images; about a third larger than raw).
     Inline(Base64Bytes),
@@ -233,6 +272,7 @@ pub enum ImageSource {
 /// The form of the reply.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "v", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum ReplyShape {
     /// Free text.
     Text,
@@ -244,6 +284,7 @@ pub enum ReplyShape {
 
 /// Embeddings for some texts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct EmbedRequest {
     /// The texts.
     pub inputs: Vec<String>,
@@ -256,6 +297,26 @@ pub struct EmbedRequest {
     pub class: DataClass,
     /// Interactive or background (indexing).
     pub usage: Usage,
+}
+
+impl EmbedRequest {
+    /// Embeddings for `inputs`, as queries or passages (`role`), of this vector length, for data
+    /// of `class`.
+    pub fn new(
+        inputs: Vec<String>,
+        role: EmbedRole,
+        dims: DimsNeed,
+        class: DataClass,
+        usage: Usage,
+    ) -> Self {
+        Self {
+            inputs,
+            role,
+            dims,
+            class,
+            usage,
+        }
+    }
 }
 
 /// What an embedded text is for.
@@ -276,6 +337,7 @@ pub enum EmbedRole {
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Task {
     /// Shorten.
     Summarise,
@@ -289,6 +351,7 @@ pub enum Task {
 
 /// One task.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct TaskRequest {
     /// The task.
     pub task: Task,
@@ -298,4 +361,16 @@ pub struct TaskRequest {
     pub class: DataClass,
     /// Interactive or background.
     pub usage: Usage,
+}
+
+impl TaskRequest {
+    /// `task` over `input`, which carries data of `class`.
+    pub fn new(task: Task, input: String, class: DataClass, usage: Usage) -> Self {
+        Self {
+            task,
+            input,
+            class,
+            usage,
+        }
+    }
 }

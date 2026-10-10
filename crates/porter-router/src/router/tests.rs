@@ -43,16 +43,11 @@ fn cloud(model: &str) -> ModelCard {
 }
 
 fn need() -> Need {
-    Need::Llm(LlmNeed {
-        features: [LlmFeature::Chat].into(),
-        context: Tokens(1000),
-    })
+    Need::Llm(LlmNeed::new([LlmFeature::Chat].into(), Tokens(1000)))
 }
 
 fn cua_need() -> Need {
-    Need::ComputerUse(CuaNeed {
-        environments: [CuaEnv::Desktop].into(),
-    })
+    Need::ComputerUse(CuaNeed::new([CuaEnv::Desktop].into()))
 }
 
 fn cua_cap() -> Capability {
@@ -66,10 +61,10 @@ fn cua_cap() -> Capability {
 }
 
 fn identity() -> Need {
-    Need::Identity(porter_core::need::IdentityNeed {
-        profile: Offered::Absent,
-        verified_address: Offered::Absent,
-    })
+    Need::Identity(porter_core::need::IdentityNeed::new(
+        Offered::Absent,
+        Offered::Absent,
+    ))
 }
 
 fn off() -> Policy {
@@ -200,10 +195,7 @@ fn the_route_table() {
         ),
         (
             "a need no model meets",
-            Need::Llm(LlmNeed {
-                features: [LlmFeature::Vision].into(),
-                context: Tokens(1000),
-            }),
+            Need::Llm(LlmNeed::new([LlmFeature::Vision].into(), Tokens(1000))),
             DataClass::Notes,
             vec![listed(local("a"), ready)],
             Policy::proposed(),
@@ -286,19 +278,13 @@ fn the_users_tier_choice_decides_between_models_that_fit() {
 fn needs_map_to_the_picker_kinds() {
     use porter_core::capability::SpeechMode;
     use porter_core::need::{DimsNeed, EmbedNeed, SpeechNeed};
-    let speech = |modes: &[SpeechMode]| {
-        Need::Speech(SpeechNeed {
-            modes: modes.iter().copied().collect(),
-        })
-    };
+    let speech =
+        |modes: &[SpeechMode]| Need::Speech(SpeechNeed::new(modes.iter().copied().collect()));
     let cases = [
         (need(), Some(Slot::Text)),
         (cua_need(), Some(Slot::ComputerUse)),
         (
-            Need::Embeddings(EmbedNeed {
-                dims: DimsNeed::Any,
-                modalities: Default::default(),
-            }),
+            Need::Embeddings(EmbedNeed::new(DimsNeed::Any, Default::default())),
             Some(Slot::Embeddings),
         ),
         (speech(&[SpeechMode::Stt]), Some(Slot::VoiceIn)),

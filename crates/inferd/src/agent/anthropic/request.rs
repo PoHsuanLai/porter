@@ -5,9 +5,9 @@ use porter_core::DataClass;
 use porter_core::consent::Usage;
 use porter_infer::{
     Base64Bytes, ChatControl, ChatMessage, ChatRequest, ImagePart, ImageSource, JsonSchemaText,
-    JsonText, Knob, MessagePart, OpaqueText, Reasoning, ReplyShape, Role, SignatureText,
-    ThoughtPart, ThoughtSeal, ToolCallId, ToolCallPart, ToolChoice, ToolDecl, ToolName,
-    ToolParallelism, ToolResultPart, ToolStatus,
+    JsonText, MessagePart, OpaqueText, Reasoning, ReplyShape, Role, SignatureText, ThoughtPart,
+    ThoughtSeal, ToolCallId, ToolCallPart, ToolChoice, ToolDecl, ToolName, ToolParallelism,
+    ToolResultPart, ToolStatus,
 };
 use serde_json::Value;
 
@@ -257,28 +257,28 @@ pub fn parse(body: &[u8], class: DataClass) -> Result<Parsed, Unmapped> {
         model,
         stream: root.get("stream").and_then(Value::as_bool) == Some(true),
         include_usage: true,
-        chat: ChatRequest {
+        chat: ChatRequest::new(
             messages,
-            shape: ReplyShape::Text,
-            tier: porter_core::Tier::Balanced,
+            porter_core::Tier::Balanced,
             class,
-            usage: Usage::Interactive,
-            tools: tools(root.get("tools"))?,
-            control: ChatControl {
-                tool_choice,
-                tool_calls,
-                max_output: limit_of(root.get("max_tokens").and_then(Value::as_u64)),
-                reasoning: reasoning(root.get("thinking")),
-                sampling: sampling_of(
+            Usage::Interactive,
+        )
+        .with_shape(ReplyShape::Text)
+        .with_tools(tools(root.get("tools"))?)
+        .with_control(
+            ChatControl::new()
+                .with_tool_choice(tool_choice)
+                .with_tool_calls(tool_calls)
+                .with_max_output(limit_of(root.get("max_tokens").and_then(Value::as_u64)))
+                .with_reasoning(reasoning(root.get("thinking")))
+                .with_sampling(sampling_of(
                     root.get("temperature").and_then(Value::as_f64),
                     root.get("top_p").and_then(Value::as_f64),
                     root.get("top_k").and_then(Value::as_u64),
                     DEFAULT_TEMPERATURE,
-                ),
-                stop,
-                scores: Knob::Off,
-            },
-        },
+                ))
+                .with_stop(stop),
+        ),
     })
 }
 

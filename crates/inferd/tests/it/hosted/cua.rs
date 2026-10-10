@@ -6,8 +6,8 @@ use cua_action::{
     WindowSpace,
 };
 use porter_infer::{
-    AttachIndex, CuaBegin, CuaStepRequest, FrameImage, FrameLayout, ImageSource, MaskedRegions,
-    StepIndex, TreeText, WindowGeometry,
+    AttachIndex, CuaBegin, CuaStepRequest, FrameImage, FrameLayout, ImageSource, StepIndex,
+    TreeText, WindowGeometry,
 };
 use std::io::Write;
 use std::os::fd::OwnedFd;
@@ -22,13 +22,13 @@ fn memfd(bytes: &[u8]) -> OwnedFd {
 
 /// A window of 200 by 100 logical pixels at scale 1, whose frame is a flat grey.
 fn step_request(step: u32) -> CuaStepRequest {
-    CuaStepRequest {
-        step: StepIndex(step),
-        window: WindowGeometry {
+    CuaStepRequest::new(
+        StepIndex(step),
+        WindowGeometry {
             logical: Size::new(Coord(200), Coord(100)),
             scale: Scale120(120),
         },
-        frame: FrameImage {
+        FrameImage {
             source: ImageSource::Attached(AttachIndex(0)),
             layout: FrameLayout::Raw {
                 format: PixelFormat::Argb8888,
@@ -36,20 +36,12 @@ fn step_request(step: u32) -> CuaStepRequest {
                 stride: 800,
             },
         },
-        cursor: None,
-        prev: vec![],
-        masked: MaskedRegions(0),
-        tree: TreeText::Absent,
-        notes: vec![],
-    }
+        TreeText::Absent,
+    )
 }
 
 fn begin() -> CuaBegin {
-    CuaBegin {
-        goal: "press the big button".into(),
-        hints: vec![],
-        env: CuaEnv::Desktop,
-    }
+    CuaBegin::new("press the big button".into(), CuaEnv::Desktop)
 }
 
 #[tokio::test(flavor = "multi_thread")]

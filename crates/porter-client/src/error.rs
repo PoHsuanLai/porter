@@ -210,6 +210,8 @@ fn why(refusal: Refusal) -> &'static str {
         Refusal::Unavailable => "the account or the saved secrets cannot be reached",
         Refusal::EndpointNotGranted => "that address is not one of the account's",
         Refusal::NoLauncher => "nothing is there to sign the agent in",
+        // a variant a newer porter adds: a generic sentence
+        _ => "the request was refused",
     }
 }
 
@@ -219,6 +221,8 @@ impl From<SessionError> for TransportError {
         match error {
             SessionError::Closed => TransportError::Closed,
             SessionError::Malformed(why) => TransportError::Malformed(why),
+            // a variant a newer porter adds: the session is treated as closed
+            _ => TransportError::Closed,
         }
     }
 }

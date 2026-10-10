@@ -14,6 +14,8 @@ fn stop_word(stop: StopReason) -> &'static str {
         StopReason::MaxTokens => "max_tokens",
         StopReason::StopSequence => "stop_sequence",
         StopReason::ContentFilter => "refusal",
+        // a variant a newer porter adds: told as a refusal
+        _ => "refusal",
     }
 }
 

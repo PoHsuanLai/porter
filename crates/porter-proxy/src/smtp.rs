@@ -113,6 +113,8 @@ impl SmtpAuth {
             RelayAuth::AccessToken(_) | RelayAuth::Password(_) | RelayAuth::Anonymous => {
                 Err(RelayFault::Protocol)
             }
+            // a variant a newer porter adds: refused, never sent as anonymous
+            _ => Err(RelayFault::Protocol),
         }
     }
 }

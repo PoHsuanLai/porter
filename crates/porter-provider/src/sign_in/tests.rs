@@ -34,13 +34,10 @@ fn notes_missing() -> Claim {
 
 #[test]
 fn a_review_step_tells_the_sheet_each_service_and_its_limit() {
-    let restriction = Restriction {
-        limits: vec![Limit {
-            kind: CapabilityKind::Storage,
-            reason: LimitReason::AppFolderOnly,
-        }],
-        ..Restriction::none()
-    };
+    let restriction = Restriction::none().with_limits(vec![Limit::new(
+        CapabilityKind::Storage,
+        LimitReason::AppFolderOnly,
+    )]);
     let step = SignInStep::Review {
         claims: vec![storage_claim(), notes_missing()],
         endpoints: vec![],

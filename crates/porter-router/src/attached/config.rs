@@ -106,6 +106,7 @@ pub struct Attached {
 
 /// Why an attached engine is refused when the configuration loads.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum AttachedError {
     /// The table's name is not a model id.
     #[error("engines.attached.{id}: not a model id")]

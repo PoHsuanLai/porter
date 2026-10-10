@@ -155,11 +155,11 @@ impl SpeechRunner {
             .transcribe(&request, &mut source, &mut heard)
             .await
         {
-            Ok(end) => Ok(TranscribeReply {
-                text: end.text.0,
-                audio_ms: end.audio.0,
-                served: self.served.clone(),
-            }),
+            Ok(end) => Ok(TranscribeReply::new(
+                end.text.0,
+                end.audio.0,
+                self.served.clone(),
+            )),
             Err(error) => Err(bridge::model_error(&error)),
         }
     }

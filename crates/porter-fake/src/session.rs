@@ -110,6 +110,12 @@ impl InferSession for FakeInferSession {
                 self.release(false);
             }
             ClientFrame::EndOfAudio => self.release(true),
+            // a variant a newer porter adds: the fake refuses it
+            _ => {
+                return Err(SessionError::Malformed(
+                    "the fake does not take that frame".to_owned(),
+                ));
+            }
         }
         Ok(())
     }

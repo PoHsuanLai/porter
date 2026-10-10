@@ -100,6 +100,12 @@ impl<K: KeySource + 'static> EngineSession<K> {
                     "this host serves no audio".to_owned(),
                 ));
             }
+            // a variant a newer porter adds: this host does not serve it
+            _ => {
+                return Err(SessionError::Malformed(
+                    "this host does not serve that frame".to_owned(),
+                ));
+            }
         };
         let phase = std::mem::replace(&mut self.phase, Phase::Refused(None));
         self.phase = match phase {

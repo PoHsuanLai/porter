@@ -14,8 +14,8 @@ use porter_core::wire::{ParentWindow, ProviderHint};
 use porter_core::{AccountId, Candidate, DataClass, Need, ProviderId, Tier, Tokens};
 use porter_dbus::{SyncProxy, from_vardict};
 use porter_infer::{
-    ChatControl, ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRequest, Knob,
-    MessagePart, Reasoning, ReplyShape, Role, ToolChoice, ToolParallelism,
+    ChatControl, ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRequest, MessagePart,
+    Role, ToolParallelism,
 };
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -47,32 +47,19 @@ pub fn parse_need(text: &str) -> Result<Need, String> {
     if text.trim_start().starts_with('{') {
         return serde_json::from_str(text).map_err(|e| format!("not a Need: {e}"));
     }
-    let pim = || PimNeed {
-        access: Access::Read,
-        delta: Delta::None,
-    };
+    let pim = || PimNeed::new(Access::Read, Delta::None);
     Ok(match text {
-        "mail" => Need::Mail(MailNeed {
-            access: Access::Read,
-            send: Offered::Absent,
-            delta: Delta::None,
-        }),
-        "storage" => Need::Storage(StorageNeed {
-            access: Access::ReadWrite,
-            delta: Delta::Poll,
-            scope: StorageScope::AppFolder,
-            quota: QuotaReport::Unreported,
-        }),
+        "mail" => Need::Mail(MailNeed::new(Access::Read, Offered::Absent, Delta::None)),
+        "storage" => Need::Storage(StorageNeed::new(
+            Access::ReadWrite,
+            Delta::Poll,
+            StorageScope::AppFolder,
+            QuotaReport::Unreported,
+        )),
         "calendar" => Need::Calendar(pim()),
         "contacts" => Need::Contacts(pim()),
-        "notes" => Need::Notes(NotesNeed {
-            access: Access::Read,
-            delta: Delta::None,
-        }),
-        "llm" => Need::Llm(LlmNeed {
-            features: Default::default(),
-            context: Tokens(1_000),
-        }),
+        "notes" => Need::Notes(NotesNeed::new(Access::Read, Delta::None)),
+        "llm" => Need::Llm(LlmNeed::new(Default::default(), Tokens(1_000))),
         other => {
             return Err(format!(
                 "`{other}` is not a need (mail, storage, calendar, contacts, notes, llm, or JSON)"
@@ -325,26 +312,18 @@ async fn request_grant(
 }
 
 fn chat(prompt: &str, ask: &Ask, tier: Tier) -> InferRequest {
-    InferRequest::Chat(ChatRequest {
-        messages: vec![ChatMessage {
-            role: Role::User,
-            parts: vec![MessagePart::Text(prompt.to_owned())],
-        }],
-        shape: ReplyShape::Text,
-        tier,
-        class: ask.class,
-        usage: ask.usage,
-        tools: vec![],
-        control: ChatControl {
-            tool_choice: ToolChoice::Auto,
-            tool_calls: ToolParallelism::Many,
-            max_output: Knob::Off,
-            reasoning: Reasoning::EngineDefault,
-            sampling: Knob::Off,
-            stop: vec![],
-            scores: Knob::Off,
-        },
-    })
+    InferRequest::Chat(
+        ChatRequest::new(
+            vec![ChatMessage {
+                role: Role::User,
+                parts: vec![MessagePart::Text(prompt.to_owned())],
+            }],
+            tier,
+            ask.class,
+            ask.usage,
+        )
+        .with_control(ChatControl::new().with_tool_calls(ToolParallelism::Many)),
+    )
 }
 
 async fn open(
@@ -355,11 +334,7 @@ async fn open(
     prompt: Option<String>,
     emit: &mut impl FnMut(Value),
 ) -> bool {
-    let options = OpenOptions {
-        traceparent: None,
-        usage: Some(ask.usage),
-        ..OpenOptions::default()
-    };
+    let options = OpenOptions::default().with_usage(ask.usage);
     let mut session = match accounts.session_with(need, ask.class, tier, &options).await {
         Ok(session) => session,
         Err(why) => {

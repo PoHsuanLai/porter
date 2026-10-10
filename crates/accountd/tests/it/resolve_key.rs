@@ -22,10 +22,10 @@ use std::io::{Read, Seek, Write};
 const KEY: &str = "sk-or-v1-S3CRET-CLOUD-KEY-0123456789";
 
 fn llm_need() -> porter_dbus::NeedArg {
-    need_to_dbus(&Need::Llm(LlmNeed {
-        features: BTreeSet::from([LlmFeature::Chat]),
-        context: Tokens(0),
-    }))
+    need_to_dbus(&Need::Llm(LlmNeed::new(
+        BTreeSet::from([LlmFeature::Chat]),
+        Tokens(0),
+    )))
 }
 
 fn allowing_llm() -> SheetHost {

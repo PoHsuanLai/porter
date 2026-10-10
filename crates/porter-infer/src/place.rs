@@ -237,6 +237,7 @@ pub struct PlaceModel {
 
 /// One row of `Inference1.Places`: a place known now.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct PlaceRow {
     /// The place's id.
     pub id: PlaceId,
@@ -250,6 +251,33 @@ pub struct PlaceRow {
     pub models: Vec<PlaceModel>,
     /// Whether the place can serve now.
     pub state: PlaceState,
+}
+
+impl PlaceRow {
+    /// A row for the place `id`, of this kind, called `name`, in this state: no provider name and
+    /// no models until the `with_*` methods say so.
+    pub fn new(id: PlaceId, kind: PlaceKind, name: String, state: PlaceState) -> Self {
+        Self {
+            id,
+            kind,
+            name,
+            provider: None,
+            models: Vec::new(),
+            state,
+        }
+    }
+
+    /// The same row with the provider's display name (a cloud account).
+    pub fn with_provider(mut self, provider: String) -> Self {
+        self.provider = Some(provider);
+        self
+    }
+
+    /// The same row with the models the place can serve now.
+    pub fn with_models(mut self, models: Vec<PlaceModel>) -> Self {
+        self.models = models;
+        self
+    }
 }
 
 /// Why nothing in the allowed set can serve a request. One reason is named; when several hold,
@@ -310,11 +338,20 @@ impl NoPlaceReason {
 /// the reason, and the kind of place outside the set that could have served it, if there is one
 /// (so the app can say "turn on a cloud account", not only "it cannot").
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct PlaceRefusal {
     /// Why nothing allowed can serve.
     pub reason: NoPlaceReason,
     /// The kind of place that could, outside the allowed set. Absent when no place could.
     pub would_need: Option<PlaceKind>,
+}
+
+impl PlaceRefusal {
+    /// Nothing allowed can serve, for this reason; `would_need` is the kind of place outside the
+    /// set that could, if there is one.
+    pub fn new(reason: NoPlaceReason, would_need: Option<PlaceKind>) -> Self {
+        Self { reason, would_need }
+    }
 }
 
 #[cfg(test)]

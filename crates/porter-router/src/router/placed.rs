@@ -72,6 +72,7 @@ pub struct Placed {
 
 /// Why a request could not be routed inside the set.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Unplaced {
     /// A place could serve but a rule the person set refuses it (consent, spend, ...): the
     /// refusal is the usual one.
@@ -152,7 +153,7 @@ fn attempt(
         return Outcome::Nothing(NoPlaceReason::NotReady);
     }
     let routes: Vec<RouteCandidate> = servable.iter().map(|one| route_of(one)).collect();
-    if let Err(refusal) = admit(RouteAsk { class }, routes.iter(), rules.policy) {
+    if let Err(refusal) = admit(RouteAsk::new(class), routes.iter(), rules.policy) {
         return match refusal {
             // The floor or the local-only switch removed every model of the place.
             InferRefusal::Unavailable | InferRefusal::RequiresCloud(_) => {
@@ -211,13 +212,13 @@ pub fn choose_in(
     if let Some(refusal) = other {
         return Err(Unplaced::Other(refusal));
     }
-    Err(Unplaced::NoPlace(PlaceRefusal {
-        reason: reasons
+    Err(Unplaced::NoPlace(PlaceRefusal::new(
+        reasons
             .into_iter()
             .min()
             .unwrap_or(NoPlaceReason::NoneCapable),
-        would_need: would_need(need, class, tier, candidates, allowed, rules),
-    }))
+        would_need(need, class, tier, candidates, allowed, rules),
+    )))
 }
 
 /// The kind of place outside the set that would have served the request by the usual rules.

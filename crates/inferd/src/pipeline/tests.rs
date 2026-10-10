@@ -18,21 +18,17 @@ use porter_core::{
     AccountId, Billing, Capability, DataClass, Locality, ModelId, Need, Tier, Tokens,
 };
 use porter_infer::{
-    Answer, AudioFrame, AudioRate, AutoPolicy, Base64Bytes, ChatControl, ChatMessage, ChatReply,
-    DescribeImages, InferEvent, InferRefusal, InferReply, Knob, LangPick, LicenceClass, Modality,
-    ModelCard, ModelError, ModelLabel, ModelRef, Pipeline, Policy, Reasoning, Refusal, ReplyShape,
-    RequestShape, Role, ShowReason, Slot, StageRole, SwapCost, TierMap, ToolChoice,
-    ToolParallelism, TranscribeBegin, TranscribeMode, TranscribeReply,
+    Answer, AudioFrame, AudioRate, AutoPolicy, Base64Bytes, ChatMessage, ChatReply, DescribeImages,
+    InferEvent, InferRefusal, InferReply, LangPick, LicenceClass, Modality, ModelCard, ModelError,
+    ModelLabel, ModelRef, Pipeline, Policy, Refusal, RequestShape, Role, ShowReason, Slot,
+    StageRole, SwapCost, TierMap, TranscribeBegin, TranscribeMode, TranscribeReply,
 };
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 use tokio::net::UnixListener;
 
 fn need() -> Need {
-    Need::Llm(LlmNeed {
-        features: [LlmFeature::Chat].into(),
-        context: Tokens(1000),
-    })
+    Need::Llm(LlmNeed::new([LlmFeature::Chat].into(), Tokens(1000)))
 }
 
 fn card(account: &str, name: &str, capability: Capability) -> ModelCard {
@@ -147,10 +143,10 @@ fn the_catalogue_puts_each_model_in_the_slots_its_capabilities_say() {
 #[test]
 fn a_model_that_does_not_meet_the_language_need_is_not_in_the_text_slot() {
     let models = [listed(card("local", "gemma", llm_cap(&[LlmFeature::Chat])))];
-    let wants_tools = Need::Llm(LlmNeed {
-        features: [LlmFeature::Chat, LlmFeature::Tools].into(),
-        context: Tokens(1000),
-    });
+    let wants_tools = Need::Llm(LlmNeed::new(
+        [LlmFeature::Chat, LlmFeature::Tools].into(),
+        Tokens(1000),
+    ));
     let catalogue = catalogue_of(&models, &wants_tools);
     assert!(catalogue[0].slots.is_empty());
 }
@@ -254,11 +250,7 @@ impl Transcriber for FakeEars {
             from: 0,
             to: 320,
         }));
-        Ok(TranscribeReply {
-            text: text.into(),
-            audio_ms: 20,
-            served: stage.served(),
-        })
+        Ok(TranscribeReply::new(text.into(), 20, stage.served()))
     }
 }
 
@@ -275,26 +267,15 @@ impl ChatSink for Events {
 }
 
 fn chat() -> porter_infer::ChatRequest {
-    porter_infer::ChatRequest {
-        messages: vec![ChatMessage {
+    porter_infer::ChatRequest::new(
+        vec![ChatMessage {
             role: Role::User,
             parts: vec![porter_infer::MessagePart::Text("Please do this:".into())],
         }],
-        shape: ReplyShape::Text,
-        tier: Tier::Balanced,
-        class: DataClass::Prompt,
-        usage: Usage::Interactive,
-        tools: vec![],
-        control: ChatControl {
-            tool_choice: ToolChoice::Auto,
-            tool_calls: ToolParallelism::One,
-            max_output: Knob::Off,
-            reasoning: Reasoning::EngineDefault,
-            sampling: Knob::Off,
-            stop: vec![],
-            scores: Knob::Off,
-        },
-    }
+        Tier::Balanced,
+        DataClass::Prompt,
+        Usage::Interactive,
+    )
 }
 
 fn pcm() -> AudioFrame {
@@ -357,12 +338,12 @@ async fn a_voice_request_is_heard_by_one_model_and_answered_by_another_over_the_
     );
     let input = PipelineInput {
         audio: Some((
-            TranscribeBegin {
-                mode: TranscribeMode::Batch,
-                lang: LangPick::Auto,
-                rate: AudioRate(16_000),
-                usage: Usage::Interactive,
-            },
+            TranscribeBegin::new(
+                TranscribeMode::Batch,
+                LangPick::Auto,
+                AudioRate(16_000),
+                Usage::Interactive,
+            ),
             VecAudio([pcm(), pcm()].into()),
         )),
         chat: chat(),
@@ -442,12 +423,12 @@ async fn show_reason_off_keeps_the_stage_notes_and_drops_the_whys() {
     .expect("a plan");
     let input = PipelineInput {
         audio: Some((
-            TranscribeBegin {
-                mode: TranscribeMode::Batch,
-                lang: LangPick::Auto,
-                rate: AudioRate(16_000),
-                usage: Usage::Interactive,
-            },
+            TranscribeBegin::new(
+                TranscribeMode::Batch,
+                LangPick::Auto,
+                AudioRate(16_000),
+                Usage::Interactive,
+            ),
             VecAudio([pcm()].into()),
         )),
         chat: chat(),

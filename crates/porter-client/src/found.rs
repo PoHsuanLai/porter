@@ -65,12 +65,12 @@ mod tests {
     use porter_core::{AccountLabel, Capability, GrantId, ProviderId, Restriction, Subject};
 
     fn offer() -> ConsentOffer {
-        let need = Need::Storage(StorageNeed {
-            access: Access::Read,
-            delta: Delta::None,
-            scope: StorageScope::AppFolder,
-            quota: QuotaReport::Unreported,
-        });
+        let need = Need::Storage(StorageNeed::new(
+            Access::Read,
+            Delta::None,
+            StorageScope::AppFolder,
+            QuotaReport::Unreported,
+        ));
         ConsentOffer {
             need,
             class: DataClass::Files,
@@ -79,18 +79,17 @@ mod tests {
     }
 
     fn candidate(grant: &str) -> Candidate {
-        Candidate {
-            account: porter_core::AccountId::parse("cloud").expect("id"),
-            label: AccountLabel("Cloud".into()),
-            provider: ProviderId::parse("nextcloud").expect("id"),
-            subject: Subject::Account,
-            capability: Capability::Push(porter_core::capability::PushCap {
+        Candidate::new(
+            porter_core::AccountId::parse("cloud").expect("id"),
+            AccountLabel("Cloud".into()),
+            ProviderId::parse("nextcloud").expect("id"),
+            Subject::Account,
+            Capability::Push(porter_core::capability::PushCap {
                 channel: porter_core::capability::PushChannel::LongPoll,
             }),
-            restriction: Restriction::none(),
-            grant: GrantId::parse(grant).expect("id"),
-            endpoints: Vec::new(),
-        }
+            Restriction::none(),
+            GrantId::parse(grant).expect("id"),
+        )
     }
 
     #[test]

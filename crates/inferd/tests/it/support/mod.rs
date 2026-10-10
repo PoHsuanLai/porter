@@ -46,10 +46,10 @@ pub fn spec(need: Need, class: DataClass) -> SessionSpec {
 }
 
 pub fn llm() -> Need {
-    Need::Llm(porter_core::need::LlmNeed {
-        features: Default::default(),
-        context: Tokens(1),
-    })
+    Need::Llm(porter_core::need::LlmNeed::new(
+        Default::default(),
+        Tokens(1),
+    ))
 }
 
 /// A router with one fixed answer.

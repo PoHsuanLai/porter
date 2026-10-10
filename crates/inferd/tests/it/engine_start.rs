@@ -17,8 +17,8 @@ use porter_core::need::LlmNeed;
 use porter_core::{DataClass, Need, Tier, Tokens};
 use porter_dbus::{Details, InferenceProxy, need_to_dbus};
 use porter_infer::{
-    ChatControl, ChatMessage, ChatRequest, ClientFrame, InferEvent, InferReply, InferRequest, Knob,
-    MessagePart, ModelError, Reasoning, ReplyShape, Role as ChatRole, ToolChoice, ToolParallelism,
+    ChatMessage, ChatRequest, ClientFrame, InferEvent, InferReply, InferRequest, MessagePart,
+    ModelError, Role as ChatRole,
 };
 use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
@@ -171,33 +171,19 @@ async fn paused_world(engine: &Engine, start_timeout: Duration, pause: Duration)
 }
 
 fn llm() -> Need {
-    Need::Llm(LlmNeed {
-        features: [LlmFeature::Chat].into(),
-        context: Tokens(1000),
-    })
+    Need::Llm(LlmNeed::new([LlmFeature::Chat].into(), Tokens(1000)))
 }
 
 fn chat_request() -> InferRequest {
-    InferRequest::Chat(ChatRequest {
-        messages: vec![ChatMessage {
+    InferRequest::Chat(ChatRequest::new(
+        vec![ChatMessage {
             role: ChatRole::User,
             parts: vec![MessagePart::Text("hello".into())],
         }],
-        shape: ReplyShape::Text,
-        tier: Tier::Balanced,
-        class: DataClass::Notes,
-        usage: Usage::Interactive,
-        tools: vec![],
-        control: ChatControl {
-            tool_choice: ToolChoice::Auto,
-            tool_calls: ToolParallelism::One,
-            max_output: Knob::Off,
-            reasoning: Reasoning::EngineDefault,
-            sampling: Knob::Off,
-            stop: vec![],
-            scores: Knob::Off,
-        },
-    })
+        Tier::Balanced,
+        DataClass::Notes,
+        Usage::Interactive,
+    ))
 }
 
 /// Opens a session and asks for a turn; the events up to `Finished`, and how long it took. Fails

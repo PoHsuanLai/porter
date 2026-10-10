@@ -19,12 +19,12 @@ pub struct Racing {
 }
 
 pub fn candidate() -> Candidate {
-    Candidate {
-        account: AccountId::parse("fake-storage").expect("id"),
-        label: AccountLabel("ada@cloud.invalid".into()),
-        provider: ProviderId::parse("fake-cloud").expect("provider"),
-        subject: Subject::Account,
-        capability: porter_fake::storage_account()
+    Candidate::new(
+        AccountId::parse("fake-storage").expect("id"),
+        AccountLabel("ada@cloud.invalid".into()),
+        ProviderId::parse("fake-cloud").expect("provider"),
+        Subject::Account,
+        porter_fake::storage_account()
             .capabilities
             .iter()
             .find_map(|claim| match &claim.offer {
@@ -32,10 +32,10 @@ pub fn candidate() -> Candidate {
                 _ => None,
             })
             .expect("a capability"),
-        restriction: Restriction::none(),
-        grant: GrantId::parse("grant-1").expect("grant"),
-        endpoints: porter_fake::storage_account().endpoints,
-    }
+        Restriction::none(),
+        GrantId::parse("grant-1").expect("grant"),
+    )
+    .with_endpoints(porter_fake::storage_account().endpoints)
 }
 
 #[zbus::interface(name = "org.quire.Accounts1.Manager")]

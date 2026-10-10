@@ -28,6 +28,7 @@ use std::sync::Arc;
 
 /// How a request to a launcher ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum LoginEnd {
     /// The launcher reported this.
     Reported(LoginOutcome),
@@ -49,7 +50,11 @@ impl LoginEnd {
                 LoginFault::NotInstalled => SignInFault::NotInstalled,
                 LoginFault::TimedOut => SignInFault::TimedOut,
                 LoginFault::Other => SignInFault::Unreadable,
+                // a variant a newer porter adds: the sign-in ends as unreadable
+                _ => SignInFault::Unreadable,
             },
+            // a variant a newer porter adds: the sign-in ends as unreadable
+            LoginEnd::Reported(_) => SignInFault::Unreadable,
             LoginEnd::Expired => SignInFault::Expired,
             LoginEnd::LauncherGone => SignInFault::NoLauncher,
         }

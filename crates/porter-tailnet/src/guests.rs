@@ -91,6 +91,7 @@ pub enum AskOutcome {
 
 /// What changed, for whoever tells the person.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum GuestEvent {
     /// A computer began waiting for an answer.
     Asked(Ask),
@@ -389,22 +390,24 @@ impl Guests {
             .guests
             .iter()
             .filter_map(|(node, guest)| {
-                Some(GuestRow {
-                    node: NodeId::parse(node).ok()?,
-                    name: guest.name.clone(),
-                    state: match guest.state {
+                Some(GuestRow::new(
+                    NodeId::parse(node).ok()?,
+                    guest.name.clone(),
+                    match guest.state {
                         State::Approved => RowState::Approved,
                         State::Denied => RowState::Denied,
                     },
-                    since: guest.since,
-                })
+                    guest.since,
+                ))
             })
             .collect();
-        rows.extend(inner.asking.values().map(|ask| GuestRow {
-            node: ask.node.clone(),
-            name: ask.name.clone(),
-            state: RowState::Asking,
-            since: ask.since,
+        rows.extend(inner.asking.values().map(|ask| {
+            GuestRow::new(
+                ask.node.clone(),
+                ask.name.clone(),
+                RowState::Asking,
+                ask.since,
+            )
         }));
         rows.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.node.cmp(&b.node)));
         rows

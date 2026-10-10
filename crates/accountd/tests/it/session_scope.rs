@@ -629,10 +629,10 @@ async fn inferds_verdict_reads_a_session_grant_as_allowed_while_it_is_open_and_n
         .client_as(caller("org.quire.Inference", CallerRole::PorterDaemon))
         .await;
     let peer = PeerProxy::new(&daemon).await.expect("proxy");
-    let need = porter_dbus::need_to_dbus(&porter_core::Need::Llm(porter_core::need::LlmNeed {
-        features: std::collections::BTreeSet::from([porter_core::capability::LlmFeature::Chat]),
-        context: porter_core::Tokens(0),
-    }));
+    let need = porter_dbus::need_to_dbus(&porter_core::Need::Llm(porter_core::need::LlmNeed::new(
+        std::collections::BTreeSet::from([porter_core::capability::LlmFeature::Chat]),
+        porter_core::Tokens(0),
+    )));
     let app = (
         "org.quire.Agent.claude-code".to_owned(),
         "unsandboxed".to_owned(),

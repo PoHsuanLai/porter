@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 /// Why a directory could not be resolved.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum PathError {
     /// Neither `HOME` nor the XDG variable of a directory is set to an absolute path.
     #[error("HOME is not set and no XDG directory names where to keep state")]

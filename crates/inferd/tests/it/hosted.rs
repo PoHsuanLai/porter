@@ -15,40 +15,25 @@ use porter_core::consent::Usage;
 use porter_core::need::{CuaNeed, DimsNeed, EmbedNeed, LlmNeed};
 use porter_core::{DataClass, Dims, Need, Tier, Tokens};
 use porter_infer::{
-    ChatControl, ChatMessage, ChatRequest, ClientFrame, EmbedRequest, EmbedRole, InferEvent,
-    InferReply, InferRequest, Knob, MessagePart, Readiness, Reasoning, ReplyShape,
-    Role as ChatRole, StopReason, ToolChoice, ToolParallelism,
+    ChatMessage, ChatRequest, ClientFrame, EmbedRequest, EmbedRole, InferEvent, InferReply,
+    InferRequest, MessagePart, Readiness, ReplyShape, Role as ChatRole, StopReason,
 };
 use serde_json::Value;
 
 fn llm() -> Need {
-    Need::Llm(LlmNeed {
-        features: [LlmFeature::Chat].into(),
-        context: Tokens(1000),
-    })
+    Need::Llm(LlmNeed::new([LlmFeature::Chat].into(), Tokens(1000)))
 }
 
 fn chat_request(text: &str, class: DataClass) -> InferRequest {
-    InferRequest::Chat(ChatRequest {
-        messages: vec![ChatMessage {
+    InferRequest::Chat(ChatRequest::new(
+        vec![ChatMessage {
             role: ChatRole::User,
             parts: vec![MessagePart::Text(text.into())],
         }],
-        shape: ReplyShape::Text,
-        tier: Tier::Balanced,
+        Tier::Balanced,
         class,
-        usage: Usage::Interactive,
-        tools: vec![],
-        control: ChatControl {
-            tool_choice: ToolChoice::Auto,
-            tool_calls: ToolParallelism::One,
-            max_output: Knob::Off,
-            reasoning: Reasoning::EngineDefault,
-            sampling: Knob::Off,
-            stop: vec![],
-            scores: Knob::Off,
-        },
-    })
+        Usage::Interactive,
+    ))
 }
 
 /// Every event up to and including `Finished`.
@@ -146,7 +131,7 @@ fn shaped_request(shape: ReplyShape) -> InferRequest {
     let InferRequest::Chat(chat) = chat_request("rate it", DataClass::Notes) else {
         unreachable!("a chat request");
     };
-    InferRequest::Chat(ChatRequest { shape, ..chat })
+    InferRequest::Chat(chat.with_shape(shape))
 }
 
 const SCORE: &str = r#"{"type":"object","additionalProperties":false,"properties":{"score":{"type":"integer","minimum":0,"maximum":10}},"required":["score"]}"#;
@@ -282,10 +267,10 @@ fn embed_world() -> Plan {
 }
 
 fn embed_need() -> Need {
-    Need::Embeddings(EmbedNeed {
-        dims: DimsNeed::Exactly(Dims(4)),
-        modalities: [Modality::Text].into(),
-    })
+    Need::Embeddings(EmbedNeed::new(
+        DimsNeed::Exactly(Dims(4)),
+        [Modality::Text].into(),
+    ))
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -298,13 +283,13 @@ async fn an_embedding_request_returns_a_vector_per_text_in_order_with_the_models
             &embed_need(),
             DataClass::Notes,
             Tier::Fast,
-            InferRequest::Embed(EmbedRequest {
-                inputs: texts.clone(),
-                role: EmbedRole::Document,
-                dims: DimsNeed::Exactly(Dims(4)),
-                class: DataClass::Notes,
-                usage: Usage::Background,
-            }),
+            InferRequest::Embed(EmbedRequest::new(
+                texts.clone(),
+                EmbedRole::Document,
+                DimsNeed::Exactly(Dims(4)),
+                DataClass::Notes,
+                Usage::Background,
+            )),
         )
         .await
         .expect("a reply");
@@ -416,9 +401,7 @@ fn cua_world(role: Role) -> Plan {
 }
 
 fn cua_need() -> Need {
-    Need::ComputerUse(CuaNeed {
-        environments: [CuaEnv::Desktop].into(),
-    })
+    Need::ComputerUse(CuaNeed::new([CuaEnv::Desktop].into()))
 }
 
 #[path = "hosted/cua.rs"]

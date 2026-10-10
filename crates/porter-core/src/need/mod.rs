@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 /// A capability query: "an account that can do at least this".
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "v", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Need {
     /// Who the account is.
     Identity(IdentityNeed),

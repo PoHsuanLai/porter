@@ -14,6 +14,7 @@ const LONGEST: u64 = 4096;
 
 /// Why a key file was not used.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum KeyFileProblem {
     /// There is no file there.
     #[error("the key file is missing")]

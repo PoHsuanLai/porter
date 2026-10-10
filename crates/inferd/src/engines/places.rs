@@ -22,10 +22,7 @@ pub(crate) fn serves_now(readiness: Readiness) -> bool {
 
 /// What the assistant asks of a place: to chat.
 fn chat_need() -> Need {
-    Need::Llm(LlmNeed {
-        features: [LlmFeature::Chat].into(),
-        context: Tokens(0),
-    })
+    Need::Llm(LlmNeed::new([LlmFeature::Chat].into(), Tokens(0)))
 }
 
 fn state_of(serving: bool) -> PlaceState {
@@ -139,14 +136,15 @@ impl Engines {
             .iter()
             .filter(|one| one.card.locality == Locality::OnDevice)
             .collect();
-        let mut rows = vec![PlaceRow {
-            id: PlaceId::this_computer(),
-            kind: porter_infer::PlaceKind::ThisComputer,
-            name: "This computer".to_owned(),
-            provider: None,
-            models: models_of(&here),
-            state: PlaceState::Ready,
-        }];
+        let mut rows = vec![
+            PlaceRow::new(
+                PlaceId::this_computer(),
+                porter_infer::PlaceKind::ThisComputer,
+                "This computer".to_owned(),
+                PlaceState::Ready,
+            )
+            .with_models(models_of(&here)),
+        ];
         let mut computers: BTreeMap<PlaceId, Vec<&Listed>> = BTreeMap::new();
         for one in listed
             .iter()
@@ -159,21 +157,19 @@ impl Engines {
         }
         for (id, members) in computers {
             let models = models_of(&members);
-            rows.push(PlaceRow {
-                name: match id.target() {
-                    PlaceTarget::OwnComputer(name) => self
-                        .book
-                        .attached
-                        .label_of(&name)
-                        .unwrap_or_else(|| name.to_string()),
-                    PlaceTarget::ThisComputer | PlaceTarget::CloudAccount(_) => id.to_string(),
-                },
-                id,
-                kind: porter_infer::PlaceKind::OwnComputer,
-                provider: None,
-                state: state_of(!models.is_empty()),
-                models,
-            });
+            let name = match id.target() {
+                PlaceTarget::OwnComputer(name) => self
+                    .book
+                    .attached
+                    .label_of(&name)
+                    .unwrap_or_else(|| name.to_string()),
+                PlaceTarget::ThisComputer | PlaceTarget::CloudAccount(_) => id.to_string(),
+            };
+            let state = state_of(!models.is_empty());
+            rows.push(
+                PlaceRow::new(id, porter_infer::PlaceKind::OwnComputer, name, state)
+                    .with_models(models),
+            );
         }
         rows.extend(self.account_rows(caller, &chat).await);
         rows
@@ -208,22 +204,24 @@ impl Engines {
                 } else {
                     Vec::new()
                 };
-                Some(PlaceRow {
-                    id: PlaceId::account(&account.account),
-                    kind: porter_infer::PlaceKind::CloudAccount,
-                    name: account
-                        .label
-                        .clone()
-                        .unwrap_or_else(|| account.account.to_string()),
-                    provider: Some(
+                Some(
+                    PlaceRow::new(
+                        PlaceId::account(&account.account),
+                        porter_infer::PlaceKind::CloudAccount,
+                        account
+                            .label
+                            .clone()
+                            .unwrap_or_else(|| account.account.to_string()),
+                        state_of(working),
+                    )
+                    .with_provider(
                         account
                             .provider_label
                             .clone()
                             .unwrap_or_else(|| provider.0.clone()),
-                    ),
-                    models,
-                    state: state_of(working),
-                })
+                    )
+                    .with_models(models),
+                )
             })
             .collect()
     }

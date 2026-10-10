@@ -433,9 +433,9 @@ fn imap(login: &str) -> ServiceEndpoint {
 }
 
 fn signed(login: &str) -> Signed {
-    Signed {
-        label: AccountLabel(format!("{login}@example.org")),
-        credentials: vec![
+    Signed::new(
+        AccountLabel(format!("{login}@example.org")),
+        vec![
             (
                 SecretPurpose::IncomingPassword,
                 Credential::Password(SecretText::new("in-pw")),
@@ -445,10 +445,10 @@ fn signed(login: &str) -> Signed {
                 Credential::Password(SecretText::new("out-pw")),
             ),
         ],
-        claims: vec![imap_claim()],
-        endpoints: vec![imap(login)],
-        restriction: Restriction::none(),
-    }
+        vec![imap_claim()],
+        vec![imap(login)],
+        Restriction::none(),
+    )
 }
 
 fn ask() -> SignInStep {

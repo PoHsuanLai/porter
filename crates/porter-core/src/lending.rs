@@ -67,6 +67,7 @@ impl RowState {
 
 /// One line of the list of computers that asked.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct GuestRow {
     /// The computer's stable id.
     pub node: NodeId,
@@ -76,6 +77,18 @@ pub struct GuestRow {
     pub state: RowState,
     /// When it was answered, or began asking.
     pub since: UnixSeconds,
+}
+
+impl GuestRow {
+    /// A line for the computer `node`, called `name`, standing as `state` since `since`.
+    pub fn new(node: NodeId, name: String, state: RowState, since: UnixSeconds) -> Self {
+        Self {
+            node,
+            name,
+            state,
+            since,
+        }
+    }
 }
 
 /// Where the asking computer stands with the person on the lending one.

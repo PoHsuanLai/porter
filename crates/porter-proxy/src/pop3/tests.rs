@@ -74,16 +74,16 @@ fn relay(tls: Tls, auth: RelayAuth) -> Pop3Relay {
         Tls::Implicit => "pop3s",
         _ => "pop3",
     };
-    Pop3Relay::new(RelayPlan {
-        endpoint: ServiceEndpoint {
+    Pop3Relay::new(RelayPlan::new(
+        ServiceEndpoint {
             family: Family::Pop3,
             url: EndpointUrl::parse(&format!("{scheme}://pop.example.org")).expect("url"),
             tls,
             login: LoginName("ada".into()),
         },
-        kind: CapabilityKind::Mail,
+        CapabilityKind::Mail,
         auth,
-    })
+    ))
 }
 
 const CAPA: &[u8] = b"+OK capabilities follow\r\nUSER\r\nTOP\r\nSASL PLAIN XOAUTH2\r\n.\r\n";
