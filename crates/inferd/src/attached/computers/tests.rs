@@ -557,6 +557,153 @@ fn a_computer_on_the_network_is_added_once_whatever_it_is_called() {
     );
 }
 
+/// A restart: the computers as the file holds them.
+fn restarted(rig: &Rig, hand: &[Attached]) -> Computers {
+    Computers::new(
+        rig.file(),
+        rig.keys(),
+        rig.book.clone(),
+        AddedFile::read(&rig.file()).expect("reads"),
+        hand,
+    )
+}
+
+#[test]
+fn a_name_in_any_script_is_never_refused_and_its_place_is_the_same_every_time() {
+    let cases = [
+        ("Chinese", "實驗室", "computer:computer-f8f71416"),
+        (
+            "Chinese, spaced",
+            "  研究室的電腦 ",
+            "computer:computer-788f9335",
+        ),
+        (
+            "Chinese, punctuation",
+            "實驗室!",
+            "computer:computer-f8f71416",
+        ),
+        ("an emoji", "🖥", "computer:computer-debff278"),
+        ("mixed with ASCII", "Lab 實驗室", "computer:lab"),
+        ("spaces and case", "Lab Server", "computer:lab-server"),
+        ("punctuation", "lab-server!", "computer:lab-server"),
+    ];
+    for (what, label, want) in cases {
+        let rig = Rig::new("script");
+        let computers = rig.computers(&[]);
+        let new = NewComputer {
+            label: label.to_owned(),
+            ..studio(None)
+        };
+        assert_eq!(computers.add(new.clone()), Ok(place(want)), "{what}");
+        // The label is what Settings shows; the name is the key of the file.
+        let file = AddedFile::read(&rig.file()).expect("reads");
+        let slug = want.trim_start_matches("computer:");
+        assert_eq!(file.computers[slug].label, label.trim(), "{what}");
+        // After a restart the same label is the same computer, not a new one.
+        assert_eq!(
+            restarted(&rig, &[]).add(new),
+            Err(ComputerError::AlreadyThere),
+            "{what}"
+        );
+    }
+}
+
+#[test]
+fn two_computers_with_the_same_name_in_ascii_are_told_apart_by_a_suffix_that_a_restart_keeps() {
+    let rig = tailnet_rig("suffix");
+    let computers = rig.computers(&[]);
+    let lab = NewTailnetComputer {
+        label: "Lab".to_owned(),
+        node: node("nLAB"),
+        models: vec!["tiny-chat".to_owned()],
+    };
+    assert_eq!(computers.add_tailnet(lab), Ok(place("computer:lab")));
+    // Another computer whose name is "lab" in ASCII and Chinese: the same name, then `-2`.
+    let by_hand = NewComputer {
+        label: "Lab 實驗室".to_owned(),
+        ..studio(None)
+    };
+    assert_eq!(computers.add(by_hand), Ok(place("computer:lab-2")));
+
+    // The file holds both names as stored keys.
+    let file = AddedFile::read(&rig.file()).expect("reads");
+    assert_eq!(
+        file.computers
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        ["lab", "lab-2"]
+    );
+    // After a restart each keeps its name, and the node still leads to its own.
+    let again = restarted(&rig, &[]);
+    assert_eq!(
+        again.tailnet_nodes(),
+        BTreeMap::from([(node("nLAB"), ComputerName::parse("lab").expect("name"))])
+    );
+    assert_eq!(
+        AddedFile::read(&rig.file()).expect("reads").computers.len(),
+        2
+    );
+    // Taking the first away frees nothing for the second: its name stays `lab-2`.
+    assert_eq!(again.remove("lab"), Ok(Some(node("nLAB"))));
+    let file = AddedFile::read(&rig.file()).expect("reads");
+    assert_eq!(
+        file.computers
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        ["lab-2"]
+    );
+}
+
+#[test]
+fn a_computer_on_the_network_named_in_another_script_is_named_by_its_node() {
+    let rig = tailnet_rig("tailnet-script");
+    let computers = rig.computers(&[]);
+    let chinese = NewTailnetComputer {
+        label: "樹莓派".to_owned(),
+        node: node("nCHEN"),
+        models: vec!["tiny-chat".to_owned()],
+    };
+    assert_eq!(
+        computers.add_tailnet(chinese.clone()),
+        Ok(place("computer:tailnet-nchen"))
+    );
+    // The same node again, called anything, is refused and keeps its name through a restart.
+    let renamed = NewTailnetComputer {
+        label: "Pi".to_owned(),
+        ..chinese
+    };
+    assert_eq!(
+        restarted(&rig, &[]).add_tailnet(renamed),
+        Err(ComputerError::AlreadyThere)
+    );
+    assert_eq!(
+        restarted(&rig, &[]).tailnet_nodes(),
+        BTreeMap::from([(
+            node("nCHEN"),
+            ComputerName::parse("tailnet-nchen").expect("name")
+        )])
+    );
+    // The label is what Settings shows.
+    assert_eq!(
+        AddedFile::read(&rig.file()).expect("reads").computers["tailnet-nchen"].label,
+        "樹莓派"
+    );
+}
+
+#[test]
+fn a_computer_on_the_network_that_has_the_name_of_one_written_by_hand_gets_a_suffix() {
+    let rig = tailnet_rig("tailnet-hand-name");
+    let computers = rig.computers(&[by_hand(Some("lab"))]);
+    let lab = NewTailnetComputer {
+        label: "Lab".to_owned(),
+        node: node("nLAB"),
+        models: vec!["tiny-chat".to_owned()],
+    };
+    assert_eq!(computers.add_tailnet(lab), Ok(place("computer:lab-2")));
+}
+
 #[test]
 fn removing_a_computer_on_the_network_says_which_one_so_its_relay_can_stop() {
     let rig = tailnet_rig("tailnet-remove");
