@@ -24,6 +24,7 @@ members = [
   "crates/porter-tailnet",
   "crates/porter-router",
   "crates/porter-turns",
+  "crates/porter-daemon",
   "crates/accountd",
   "crates/syncd",
   "crates/inferd",
@@ -66,6 +67,7 @@ porter-tailscale = { path = "crates/porter-tailscale" }
 porter-tailnet  = { path = "crates/porter-tailnet" }
 porter-router   = { path = "crates/porter-router" }
 porter-turns    = { path = "crates/porter-turns" }
+porter-daemon   = { path = "crates/porter-daemon" }
 storage-webdav  = { path = "crates/storage-webdav" }
 storage-graph   = { path = "crates/storage-graph" }
 storage-gdrive  = { path = "crates/storage-gdrive" }
@@ -103,6 +105,8 @@ model-wire          = { git = "https://github.com/PoHsuanLai/stoker", rev = "9e4
 # names itself, as mailo does.
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "net", "io-util", "process"] }
 thiserror = "2"
+# porter-daemon's settings-file watch (CC0-1.0, already in Cargo.lock at 8.2.0 through quire).
+notify = "8"
 roxmltree = "0.21"
 # porter-http's client, as stoker's model-http takes it.
 hyper = "1"

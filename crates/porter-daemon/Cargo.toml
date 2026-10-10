@@ -1,0 +1,16 @@
+[package]
+name = "porter-daemon"
+description = "What every desktop daemon shares and has no bus for: the choice of the /proc a daemon reads its callers from, and a watch on a settings file."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+notify = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

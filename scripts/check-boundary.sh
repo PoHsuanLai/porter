@@ -33,6 +33,7 @@ RULES=(
   "porter-proxy: $EFFECTS"
   "porter-oauth: $EFFECTS"
   "porter-discover: $EFFECTS"
+  "porter-daemon: $EFFECTS"
   "porter-tailscale: $EFFECTS"
   "porter-tailnet: $EFFECTS"
   "porter-dav: $EFFECTS"
@@ -222,17 +223,17 @@ else
   echo "pure: accountd, syncd and inferd read the environment only in from_env functions"
 fi
 
-# The inference libraries (porter-router, and porter-turns once it is there) read no environment
-# variable at all: what a daemon or an app knows is passed in. Their test helpers are outside the
+# The inference libraries (porter-router, porter-turns) and porter-daemon read no environment
+# variable at all: what a daemon or an app knows is passed in (porter-daemon takes the lookup). Their test helpers are outside the
 # rule, as above.
-lib_env_reads=$(find crates/porter-router/src crates/porter-turns/src -name '*.rs' ! -name tests.rs ! -name testkit.rs ! -path '*/testkit/*' -print0 \
+lib_env_reads=$(find crates/porter-router/src crates/porter-turns/src crates/porter-daemon/src -name '*.rs' ! -name tests.rs ! -name testkit.rs ! -path '*/testkit/*' -print0 \
   | xargs -0 grep -nE 'env::(var|var_os|vars|vars_os|args|args_os|current_dir|home_dir)\b' | grep -vE '^[^:]*:[0-9]+:[[:space:]]*//' || true)
 if [ -n "$lib_env_reads" ]; then
   echo "$lib_env_reads"
   echo "LEAK: an inference library reads the environment"
   fail=1
 else
-  echo "pure: the inference libraries read no environment variable"
+  echo "pure: the inference libraries and porter-daemon read no environment variable"
 fi
 
 # The allowed edges between our own crates: each crate's DIRECT normal and build path
@@ -240,6 +241,7 @@ fi
 # the crate no longer has, so the table stays exact. Dev dependencies are outside it.
 EDGES=(
   "porter-core:"
+  "porter-daemon:"
   "porter-fs:"
   "prov: porter-core"
   "porter-provider: porter-core"
