@@ -104,6 +104,10 @@ pub use credential::{
 };
 pub use env::{ClientEnv, LinkChoice, Place, START_WAIT, SocketAgent, StartAgent};
 pub use error::{ClientError, ComputerReason, TransportError};
+/// The refusal [`ClientError::InferRefused`] carries when there is no `infer` feature: a type with
+/// no values (with the feature it is porter-infer's own).
+#[cfg(not(feature = "infer"))]
+pub use error::InferRefusal;
 pub use found::{ConsentOffer, Found, NoAccount, found};
 #[cfg(feature = "dbus")]
 pub use guests::{GuestChange, GuestChanges};

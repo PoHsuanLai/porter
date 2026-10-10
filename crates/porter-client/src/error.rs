@@ -5,6 +5,24 @@ use porter_core::wire::Refusal;
 #[cfg(feature = "infer")]
 use porter_infer::{InferRefusal, NoPlaceReason, PlaceKind, SessionError};
 
+/// What inferd refuses with, in a build with no `infer` feature: it has no values, because such a
+/// build never talks to inferd. It stands where porter-infer's `InferRefusal` stands with the
+/// feature, so [`ClientError::InferRefused`] is the same variant in both.
+#[cfg(not(feature = "infer"))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum InferRefusal {}
+
+#[cfg(not(feature = "infer"))]
+impl std::fmt::Display for InferRefusal {
+    fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {}
+    }
+}
+
+#[cfg(not(feature = "infer"))]
+impl std::error::Error for InferRefusal {}
+
 /// Why a transport could not carry a request. More reasons may be added: match with a wildcard.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
@@ -137,7 +155,7 @@ impl ComputerReason {
 }
 
 /// Why a client call failed; each variant is something an app can show or act on. More reasons
-/// may be added (and `InferRefused` exists only with the `infer` feature): match with a wildcard.
+/// may be added: match with a wildcard. Every variant exists in every build.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum ClientError {
@@ -154,8 +172,9 @@ pub enum ClientError {
     /// added. It is that account; ask for a grant of it (`find`, then `request_grant`).
     #[error("that account is already added: {0}")]
     AlreadyAdded(AccountId),
-    /// inferd refused (feature `infer`).
-    #[cfg(feature = "infer")]
+    /// inferd refused. The variant exists in every build, so a consumer's `match` does not depend
+    /// on features; without the `infer` feature the refusal is [`InferRefusal`], a type with no
+    /// values, so the arm can be written and never runs.
     #[error(transparent)]
     InferRefused(#[from] InferRefusal),
     /// The reply does not answer the request (a daemon of another version).
