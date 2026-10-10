@@ -10,6 +10,7 @@ dependencies = [
  "ds-settings",
  "oo7",
  "porter-core",
+ "porter-daemon",
  "porter-dbus",
  "porter-discover",
  "porter-fake",
@@ -1426,6 +1427,7 @@ dependencies = [
  "porter-bridge",
  "porter-client",
  "porter-core",
+ "porter-daemon",
  "porter-dbus",
  "porter-discover",
  "porter-fake",
@@ -2235,6 +2237,14 @@ dependencies = [
  "serde_json",
  "thiserror",
  "zeroize",
+]
+
+[[package]]
+name = "porter-daemon"
+version = "0.1.0"
+dependencies = [
+ "notify",
+ "thiserror",
 ]
 
 [[package]]
@@ -3239,6 +3249,7 @@ dependencies = [
  "ds-settings",
  "porter-client",
  "porter-core",
+ "porter-daemon",
  "porter-dav",
  "porter-dbus",
  "porter-fake",
