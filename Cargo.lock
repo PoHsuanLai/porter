@@ -1441,6 +1441,7 @@ dependencies = [
  "rustix",
  "serde",
  "serde_json",
+ "sha2",
  "speech-host-client",
  "speech-provider",
  "thiserror",
