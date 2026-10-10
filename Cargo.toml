@@ -143,7 +143,7 @@ hickory-resolver = "0.26"
 rusqlite = { version = "0.40", features = ["bundled-sqlcipher-vendored-openssl"] }
 # The per-user agent's address, lock and start (the `socket` carrier of porter-client). The standalone
 # repo at the rev mailo pins; quire's block still names the old copy inside mailo (see FINDINGS).
-latchkey = { git = "https://github.com/PoHsuanLai/latchkey", rev = "335d7a7c65bc7d196d5f19dfb305896ff3a55958" }
+latchkey = { git = "https://github.com/PoHsuanLai/latchkey", rev = "ef0117ada46854702057c79515516da43b271455" }
 rustix = { version = "1.1", default-features = false, features = ["std", "event", "fs", "net", "time", "process"] }
 
 [workspace.lints.rust]
