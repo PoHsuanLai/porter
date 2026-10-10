@@ -56,9 +56,12 @@ pub enum SpaceKind {
 #[serde(transparent)]
 pub struct LocalSpace(pub u64);
 
-/// A desktop-wide Space's id: a slug of the id grammar, never `desktop`. Minted by accountd
-/// when the Space is made (never from its name, so a rename keeps it), or an id stored before
-/// Spaces were per app.
+/// A desktop-wide Space's id: a slug of the id grammar, never `desktop`. On casement the
+/// compositor mints it for each workspace (`s-` and 32 lowercase hex digits), sends it as the
+/// ext-workspace id, keeps it across restarts and registers it with accountd's
+/// `org.quire.Spaces1`; sill and apps read it from the workspace protocol. On a compositor
+/// without stable workspace ids, accountd mints it when the Space is made. Never derived from
+/// the name, so a rename keeps it; an id stored before Spaces were per app is kept as it is.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct DesktopSpace(String);

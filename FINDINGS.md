@@ -2516,3 +2516,9 @@ No build was run; the coordinator compiles and gates. Consumer list: `~/rs-wt/la
 **Look here first if it does not compile.** `syncd/src/service/hub.rs`: `entry.pausing.borrow()` compared to `Pausing::Paused` inside `sync_now` while the hub's guard is held; `Handle::nudged`'s `() = self.syncing.notified() => Nudge::SyncNow` arm in the `select!`. `syncd/src/engine/tests/driver_wake.rs`: `World::new(.., StorageCap { delta: Delta::Push, ..sha() }, 10)` and `world.remote_put(..).await` as the first test uses them; `Deadline::fail`'s return type in `cycles_ended`. `syncd/src/service/hub_tests.rs`: the local `async fn nothing_waits(handle: &mut Handle)`. `syncd/tests/it/common/mod.rs`: `Option::is_none_or` inside the `eventually` closure.
 
 **Cargo.toml changes.** None.
+
+## Batch 17: who mints a Space id (2026-10-11)
+
+Decision D8 (compositor-scope/20-FREEZE-PLAN C16, landed in casement P1-M2): on casement the compositor mints a desktop-wide Space id per workspace (`s-` and 32 lowercase hex), sends it as the ext-workspace id and keeps it in its spaces.toml across restarts. accountd stays the registry, and mints only where the compositor gives no stable id (Beta 0 on cosmic-comp). The `DesktopSpace` doc says so.
+
+**Open (porter side).** `org.quire.Spaces1` has no way to register an id accountd did not mint: `Create(name, look)` always mints. casement needs a `Register(id, name, look)` (or a `Create` that takes an optional id) with `Create`'s caller rule, refusing an id already registered to another Space.
