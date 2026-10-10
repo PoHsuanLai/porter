@@ -2349,3 +2349,26 @@ Not compiled by the lane. First places to look if the gate fails: `#[error("{}: 
 - Settings should show a place's `name` (the label), never its id.
 
 **Look here first if it does not compile.** `transport/dbus.rs` `Rows::decode` (a `pub(super)` generic taking a `Fn(R) -> Result<T, TransportError>`; called with the fn items `guest_row`, `candidate_row`, `place_row`); `tests/it/dbus_guests.rs` (`place_row` helper in `mod computers`, `world.transport`).
+
+## Lane computer-names (a computer named in any script, base `45071ad`, 2026-10-10)
+
+**Not compiled.** No-build lane: only `cargo fmt --all` was run. Cargo.lock is the coordinator's: `inferd` gains `sha2 = { workspace = true }` (already in the lock for porter-oauth, syncd and porter-fake-servers; only inferd's dependency list changes).
+
+**What Settings shows.** The row's `name`, the label the person typed (or Tailscale's machine name, followed by `relabel`). The name in `computer:<name>`, the key in `computers.toml` and the remove argument is never shown.
+
+**The name (`computers.rs`, `slug_of`).**
+- A label with an ASCII letter or digit: lowercase letters and digits, each other run one dash, no dash at either end, cut at 64. Unchanged (`Lab Server` is `lab-server`).
+- Nothing usable (Chinese, an emoji, only punctuation), by hand: `computer-` and the first 4 bytes of SHA-256 of the label's identity in 8 hex digits (`實驗室` is `computer-f8f71416`). The identity is the label lowercased, runs of non-letters and non-digits (any script) as one dash, trimmed; a label with no letter or digit is its trimmed lowercase self. So `實驗室!` is the same computer as `實驗室`. SHA-256, not std's hasher, so it is the same in every Rust version.
+- Nothing usable, on Tailscale: `tailnet-` and the node id lowercased (`nCHEN` is `tailnet-nchen`), cut at 64. A node id is already letters, digits, `-` and `_`.
+- `BadName` is only for a label that is empty, too long (over 64 characters) or has control characters; its words are now "Give the computer a name of one short line."
+- A name with an ASCII part and another script (`Lab 實驗室`) keeps the ASCII part (`lab`).
+
+**Collisions (`free_name`).**
+- A hand-added computer whose label has the same identity as one already added by hand is `AlreadyThere` (as before: `Studio PC`, `studio pc`, `STUDIO-pc`). The same Tailscale node again is `AlreadyThere` and keeps its stored name.
+- Otherwise, if the derived name is taken by another computer (file or hand-written), the new one is `name-2`, `name-3`, ... the first free, in order of addition. The name is the key in the file, so a restart reads it and never derives it again; removing an earlier computer does not rename a later one.
+- Exception kept: a hand-added label whose name is a computer written by hand in `inferd.toml` is still `AlreadyThere` (the file has no label to compare). A Tailscale computer in that case gets the suffix.
+- Re-adding a Tailscale node after removing it gives the same name only if its label gives the same ASCII name or its label has none (the fallback is the node); a new Latin label gives a new name.
+
+**Open.** The names are stable per label, but a hand-added computer renamed in the file by the person is theirs to keep consistent. Settings still holds no rename for a hand-added computer.
+
+**Look here first if it does not compile.** `computers.rs`: `slug_of` (digest indexing `digest[0]` on the `GenericArray`, `Sha256::digest(&[u8])`), `free_name` (the `impl Fn(&str) -> bool` closure borrows `state`, a `MutexGuard`, shared while `state` is later mutated; the closure is dropped at once), `State::is_taken`. Tests: `restarted` in `computers/tests.rs`, `file.computers[slug]` indexing a `BTreeMap<String, _>` with `&str`.
