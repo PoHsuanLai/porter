@@ -13,12 +13,13 @@
 use crate::add::{AddArgs, AddError, AddReport, StdTerminal, TerminalSheets};
 use crate::clock::SystemClock;
 use crate::keysel::{AnyKeys, Chosen, KEYS_VAR, KeysRefusal, Selection, TestKeys, select};
-use crate::paths::{BUILD, Paths, proc_root};
+use crate::paths::{PROC_GATE, Paths};
 use crate::{
     AppNames, BusSheets, FileAudit, FileStore, Options, ProviderNames, RelayRoots, SecretsDesk,
     load_callers, serve_with,
 };
 use porter_core::xdg::PathError;
+use porter_daemon::ProcRoot;
 use porter_dbus::{BusTarget, CallerFileError, ProcCallers};
 use porter_service::{AccountService, Registry, RegistryStore};
 use std::future::Future;
@@ -93,7 +94,8 @@ impl Config {
         let paths = Paths::resolve(|name| std::env::var(name).ok(), provider_dirs)?;
         let keys_var = std::env::var(KEYS_VAR).ok();
         let keys = select(keys_var.as_deref(), TestKeys::THIS_BUILD)?;
-        let proc = proc_root(BUILD, std::env::var(PROC_ROOT_VAR).ok());
+        let proc = ProcRoot::choose(PROC_GATE, PROC_ROOT_VAR, |name| std::env::var_os(name))
+            .into_fixture();
         // The XDG rule: a relative path is invalid and ignored.
         let runtime_dir = std::env::var("XDG_RUNTIME_DIR")
             .ok()

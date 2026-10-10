@@ -10,6 +10,7 @@ publish.workspace = true
 
 [dependencies]
 porter-core = { workspace = true }
+porter-daemon = { workspace = true }
 porter-fs = { workspace = true }
 porter-dbus = { workspace = true, features = ["callers-file"] }
 porter-discover = { workspace = true, features = ["io"] }

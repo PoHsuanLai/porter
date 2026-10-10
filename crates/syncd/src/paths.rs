@@ -142,13 +142,28 @@ pub const BUILD: Build = if cfg!(feature = "test-proc-root") {
     Build::Release
 };
 
+/// Whether this binary honours `SYNCD_PROC_ROOT`: only with the `test-proc-root` feature. A
+/// release build ignores the variable.
+pub const PROC_GATE: porter_daemon::ProcGate = if cfg!(feature = "test-proc-root") {
+    porter_daemon::ProcGate::Honour
+} else {
+    porter_daemon::ProcGate::Ignore
+};
+
 /// The directory callers are read from in place of `/proc` (`SYNCD_PROC_ROOT`), for a test
 /// build only. A release build ignores the variable.
+///
+/// Kept for one batch at its old path; the choice itself is [`porter_daemon::ProcRoot`], which
+/// `Config::from_env` now calls with [`PROC_GATE`].
 pub fn proc_root(build: Build, value: Option<String>) -> Option<PathBuf> {
-    match build {
-        Build::Test => value.filter(|v| !v.is_empty()).map(PathBuf::from),
-        Build::Release => None,
-    }
+    let gate = match build {
+        Build::Test => porter_daemon::ProcGate::Honour,
+        Build::Release => porter_daemon::ProcGate::Ignore,
+    };
+    porter_daemon::ProcRoot::choose(gate, crate::daemon::PROC_ROOT_VAR, |_| {
+        value.as_deref().map(std::ffi::OsString::from)
+    })
+    .into_fixture()
 }
 
 /// How often the supervisors read grants again (`SYNCD_RESCAN_S`, whole seconds, at least 1),
@@ -286,18 +301,6 @@ mod tests {
             None
         );
         assert_eq!(AccountDir::of_object_path("/other/abc"), None);
-    }
-
-    #[test]
-    fn only_a_test_build_honours_the_proc_root_variable() {
-        let set = Some("/fixture/proc".to_owned());
-        assert_eq!(
-            proc_root(Build::Test, set.clone()),
-            Some(PathBuf::from("/fixture/proc"))
-        );
-        assert_eq!(proc_root(Build::Test, Some(String::new())), None);
-        assert_eq!(proc_root(Build::Test, None), None);
-        assert_eq!(proc_root(Build::Release, set), None);
     }
 
     #[test]

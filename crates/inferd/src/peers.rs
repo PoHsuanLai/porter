@@ -14,7 +14,6 @@ use porter_dbus::{BusConnection, CallerRole, CallerRow, ProcCallers};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
-use std::path::PathBuf;
 use std::sync::{Mutex, PoisonError};
 
 /// What a caller may ask for, beyond what its data class and consent allow.
@@ -332,68 +331,25 @@ impl ProcPeers {
     /// As [`ProcPeers::new`], reading the process tree `root` names.
     pub fn with_root(connection: BusConnection, table: CallerTable, root: &ProcRoot) -> Self {
         let rows = table.rows();
-        let callers = match root {
-            ProcRoot::Fake(dir) => ProcCallers::with_proc_root(connection, rows, dir.clone()),
-            ProcRoot::System | ProcRoot::Ignored(_) => ProcCallers::new(connection, rows),
+        let callers = match root.fixture() {
+            Some(dir) => ProcCallers::with_proc_root(connection, rows, dir.to_path_buf()),
+            None => ProcCallers::new(connection, rows),
         };
         Self { callers }
     }
 }
 
+/// Where the caller lookup reads processes, and whether this build honours `INFERD_PROC_ROOT`.
+/// They live in `porter_daemon` now; the old paths stay for one batch.
+pub use porter_daemon::{ProcGate, ProcRoot};
+
 /// Whether this build honours `INFERD_PROC_ROOT`: only with the `test-proc-root` feature.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProcGate {
-    /// The variable names the process tree.
-    Honour,
-    /// The variable is ignored.
-    Ignore,
-}
-
-impl ProcGate {
-    /// What this build does.
-    pub const BUILT: Self = if cfg!(feature = "test-proc-root") {
-        Self::Honour
-    } else {
-        Self::Ignore
-    };
-}
-
-/// Where the caller lookup reads processes.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ProcRoot {
-    /// The system's `/proc`.
-    System,
-    /// A fixture tree: `<dir>/<pid>/cgroup`.
-    Fake(PathBuf),
-    /// The variable was set but this build ignores it.
-    Ignored(PathBuf),
-}
-
-impl ProcRoot {
-    /// The root for `INFERD_PROC_ROOT`'s value `var` under `gate`.
-    pub fn select(gate: ProcGate, var: Option<&str>) -> Self {
-        match (gate, var.filter(|dir| !dir.is_empty())) {
-            (_, None) => Self::System,
-            (ProcGate::Honour, Some(dir)) => Self::Fake(PathBuf::from(dir)),
-            (ProcGate::Ignore, Some(dir)) => Self::Ignored(PathBuf::from(dir)),
-        }
-    }
-
-    /// The line for standard error at start, when the variable was set.
-    pub fn notice(&self) -> Option<String> {
-        match self {
-            Self::System => None,
-            Self::Fake(dir) => Some(format!(
-                "inferd: test proc root {}: callers are read from it, not /proc",
-                dir.display()
-            )),
-            Self::Ignored(dir) => Some(format!(
-                "inferd: INFERD_PROC_ROOT={} ignored: not a test-proc-root build",
-                dir.display()
-            )),
-        }
-    }
-}
+/// (Was `ProcGate::BUILT`; the type is `porter_daemon`'s now.)
+pub const PROC_GATE: ProcGate = if cfg!(feature = "test-proc-root") {
+    ProcGate::Honour
+} else {
+    ProcGate::Ignore
+};
 
 impl Peers for ProcPeers {
     async fn caller_of(&self, sender: &str) -> Option<Caller> {

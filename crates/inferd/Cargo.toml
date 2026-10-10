@@ -16,6 +16,7 @@ test-proc-root = []
 
 [dependencies]
 porter-core = { workspace = true }
+porter-daemon = { workspace = true }
 porter-fs = { workspace = true }
 cua-action = { workspace = true }
 # `peer::PeerAccounts`: the typed way into accountd's daemon-only surface (verdicts, the API key,

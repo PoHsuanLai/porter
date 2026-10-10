@@ -278,32 +278,33 @@ pub const BUILD: Build = if cfg!(feature = "test-proc-root") {
     Build::Release
 };
 
+/// Whether this binary honours `ACCOUNTD_PROC_ROOT`: only with the `test-proc-root` feature (the
+/// jailed and acceptance tests run processes outside service cgroups). A release build ignores
+/// the variable.
+pub const PROC_GATE: porter_daemon::ProcGate = if cfg!(feature = "test-proc-root") {
+    porter_daemon::ProcGate::Honour
+} else {
+    porter_daemon::ProcGate::Ignore
+};
+
 /// The directory callers are read from in place of `/proc` (`ACCOUNTD_PROC_ROOT`), for a test
-/// build only: the jailed and acceptance tests run processes outside service cgroups. A release
-/// build ignores the variable.
+/// build only. A release build ignores the variable.
+///
+/// Kept for one batch at its old path; the choice itself is [`porter_daemon::ProcRoot`], which
+/// `Config::from_env` now calls with [`PROC_GATE`].
 pub fn proc_root(build: Build, value: Option<String>) -> Option<PathBuf> {
-    match build {
-        Build::Test => value.filter(|v| !v.is_empty()).map(PathBuf::from),
-        Build::Release => None,
-    }
+    let gate = match build {
+        Build::Test => porter_daemon::ProcGate::Honour,
+        Build::Release => porter_daemon::ProcGate::Ignore,
+    };
+    porter_daemon::ProcRoot::choose(gate, crate::daemon::PROC_ROOT_VAR, |_| {
+        value.as_deref().map(std::ffi::OsString::from)
+    })
+    .into_fixture()
 }
 
 #[cfg(test)]
 mod proc_root_tests {
-    use super::*;
-
-    #[test]
-    fn only_a_test_build_honours_the_proc_root_variable() {
-        let set = Some("/fixture/proc".to_owned());
-        assert_eq!(
-            proc_root(Build::Test, set.clone()),
-            Some(PathBuf::from("/fixture/proc"))
-        );
-        assert_eq!(proc_root(Build::Test, Some(String::new())), None);
-        assert_eq!(proc_root(Build::Test, None), None);
-        assert_eq!(proc_root(Build::Release, set), None);
-    }
-
     #[test]
     fn a_shipped_build_is_a_release_build() {
         let manifest = include_str!("../Cargo.toml");

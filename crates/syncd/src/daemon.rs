@@ -10,12 +10,13 @@
 use crate::datasets::photos::PhotosSwitch;
 use crate::datasets::pim::{ClientGrants, PimConfig, PimSupervisor, Wiring};
 use crate::datasets::storage::{ClientStorageGrants, StorageConfig, StorageSupervisor};
-use crate::paths::{BUILD, Paths, proc_root, rescan};
+use crate::paths::{BUILD, PROC_GATE, Paths, rescan};
 use crate::scheduler::{Network, Settings};
 use crate::service::{Access, Hub};
 use crate::{removal, service};
 use porter_client::{Accounts, ClientError, DbusTransport};
 use porter_core::xdg::PathError;
+use porter_daemon::ProcRoot;
 use porter_dbus::{BusTarget, CallerFileError, ProcCallers};
 use std::future::Future;
 use std::path::PathBuf;
@@ -86,7 +87,8 @@ impl Config {
     /// There is no home to keep state in.
     pub fn from_env() -> Result<Self, StartError> {
         let paths = Paths::resolve(|name| std::env::var(name).ok())?;
-        let proc = proc_root(BUILD, std::env::var(PROC_ROOT_VAR).ok());
+        let proc = ProcRoot::choose(PROC_GATE, PROC_ROOT_VAR, |name| std::env::var_os(name))
+            .into_fixture();
         // `SYNCD_RESCAN_S` shortens how often grants are read again, in a test build only.
         let rescan_var = std::env::var(RESCAN_VAR).ok();
         let pim = PimConfig::default();

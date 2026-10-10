@@ -254,28 +254,9 @@ fn only_the_settings_units_main_process_is_settings() {
 
 #[test]
 fn the_proc_root_variable_is_honoured_only_by_a_test_build() {
-    use std::path::PathBuf;
-    let dir = || PathBuf::from("/fake");
-    let cases = [
-        (ProcGate::Honour, None, ProcRoot::System),
-        (ProcGate::Honour, Some(""), ProcRoot::System),
-        (ProcGate::Honour, Some("/fake"), ProcRoot::Fake(dir())),
-        (ProcGate::Ignore, None, ProcRoot::System),
-        (ProcGate::Ignore, Some("/fake"), ProcRoot::Ignored(dir())),
-    ];
-    for (gate, var, expected) in cases {
-        let got = ProcRoot::select(gate, var);
-        assert_eq!(got, expected, "{gate:?} {var:?}");
-        assert_eq!(got.notice().is_some(), var.is_some_and(|v| !v.is_empty()));
-    }
-    assert!(
-        ProcRoot::Ignored(dir())
-            .notice()
-            .expect("line")
-            .contains("ignored")
-    );
+    // The choice itself is tested in porter-daemon; what is inferd's is which build it is.
     assert_eq!(
-        ProcGate::BUILT == ProcGate::Honour,
+        PROC_GATE == ProcGate::Honour,
         cfg!(feature = "test-proc-root")
     );
 }

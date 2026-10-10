@@ -19,7 +19,7 @@ use crate::config::{ConfigError, Dirs, InferdConfig};
 use crate::engines::Engines;
 use crate::hosts::{HealthProbe, HostCloser, NvidiaSmi, ProcessHost};
 use crate::local::{LocalModel, build};
-use crate::peers::{ProcGate, ProcPeers, ProcRoot};
+use crate::peers::{PROC_GATE, ProcPeers, ProcRoot};
 use crate::replay::Replays;
 use crate::report::PeerReports;
 use crate::service::{Inference, serve_with_settings};
@@ -120,10 +120,7 @@ impl Config {
         let tailscale_socket = std::env::var_os(TAILSCALE_SOCKET_VAR)
             .map(PathBuf::from)
             .filter(|path| path.is_absolute());
-        let proc_root = ProcRoot::select(
-            ProcGate::BUILT,
-            std::env::var(PROC_ROOT_VAR).ok().as_deref(),
-        );
+        let proc_root = ProcRoot::choose(PROC_GATE, PROC_ROOT_VAR, |name| std::env::var_os(name));
         let mut config = Self::new(dirs, BusTarget::Session);
         if let Some(path) = config_file {
             config = config.with_config_file(path);
@@ -407,7 +404,7 @@ impl Daemon {
         .spawn();
         let reload = Reload::new(ConfigFile::new(config_file), engines.clone());
         reload.clone().watch(RELOAD_EVERY);
-        if let Some(line) = proc_root.notice() {
+        if let Some(line) = proc_root.notice("inferd", PROC_ROOT_VAR) {
             eprintln!("{line}");
         }
         let peers = Arc::new(ProcPeers::with_root(
