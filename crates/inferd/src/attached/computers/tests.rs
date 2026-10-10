@@ -143,9 +143,17 @@ fn what_is_refused_changes_nothing_and_says_so_in_plain_words() {
             ComputerError::BadName,
         ),
         (
-            "a name with nothing to name it by",
+            "a name with a control character",
             NewComputer {
-                label: "!!!".into(),
+                label: "Be\u{7}nch".into(),
+                ..one(entries::ATTACHED, ok.clone(), None)
+            },
+            ComputerError::BadName,
+        ),
+        (
+            "a name that is too long",
+            NewComputer {
+                label: "x".repeat(65),
                 ..one(entries::ATTACHED, ok.clone(), None)
             },
             ComputerError::BadName,

@@ -1253,7 +1253,7 @@ mod computers {
             name_and_words(&blank),
             (
                 format!("{COMPUTER_ERROR_PREFIX}BadName"),
-                "Give the computer a name that has some letters or numbers in it.".to_owned()
+                "Give the computer a name of one short line.".to_owned()
             )
         );
         studio(vec![model(entries::ATTACHED, Some(&socket), None, None)])
