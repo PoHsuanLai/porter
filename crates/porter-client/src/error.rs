@@ -54,7 +54,7 @@ pub enum TransportError {
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum ComputerReason {
-    /// The name has nothing to name it by.
+    /// The name is empty, too long or has control characters.
     #[error("bad name")]
     BadName,
     /// No model was given.

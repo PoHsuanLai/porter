@@ -28,6 +28,7 @@ use porter_core::{ModelId, NodeId, SecretText};
 use porter_fs::atomic::AtomicWrite;
 use porter_infer::{ComputerName, PlaceId};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
@@ -301,8 +302,8 @@ pub struct NewTailnetComputer {
 /// Why a computer was not added or removed. `Display` is the plain sentence Settings shows.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ComputerError {
-    /// The name has nothing to name it by.
-    #[error("Give the computer a name that has some letters or numbers in it.")]
+    /// The name is empty, too long or has control characters.
+    #[error("Give the computer a name of one short line.")]
     BadName,
     /// No model was given.
     #[error("Add at least one model for this computer.")]
@@ -420,9 +421,21 @@ fn refusal_of(why: &AttachedError, id: &str) -> ComputerError {
     }
 }
 
+/// What names a computer whose label has no ASCII letter or digit (a name in Chinese, an emoji).
+enum Fallback<'a> {
+    /// A computer added by hand: `computer-` and eight hex digits of a SHA-256 of the label's
+    /// identity ([`identity_of`]), so the same label gives the same name in every run and
+    /// version of Rust.
+    Label,
+    /// A computer on the Tailscale network: `tailnet-` and its node id in lowercase.
+    Node(&'a NodeId),
+}
+
 /// The name a place id carries for what the person typed: lowercase letters and digits, other
-/// runs of characters one dash, no dash at either end.
-fn slug_of(label: &str) -> Option<ComputerName> {
+/// runs of characters one dash, no dash at either end. A label with none of those (a name in
+/// another script) is named by `fallback` instead, so no script is refused. The name is never
+/// shown (Settings shows the label); it only has to be stable and unique.
+fn slug_of(label: &str, fallback: Fallback<'_>) -> ComputerName {
     let mut slug = String::new();
     for c in label.chars() {
         if c.is_ascii_alphanumeric() {
@@ -431,8 +444,45 @@ fn slug_of(label: &str) -> Option<ComputerName> {
             slug.push('-');
         }
     }
+    slug.truncate(LONGEST_LABEL);
     let slug = slug.trim_end_matches('-');
-    ComputerName::parse(slug.get(..slug.len().min(LONGEST_LABEL))?).ok()
+    let text = if slug.is_empty() {
+        match fallback {
+            Fallback::Label => {
+                let digest = Sha256::digest(identity_of(label).as_bytes());
+                let head = u32::from_be_bytes([digest[0], digest[1], digest[2], digest[3]]);
+                format!("computer-{head:08x}")
+            }
+            Fallback::Node(node) => {
+                let mut text = format!("tailnet-{}", node.as_str().to_ascii_lowercase());
+                text.truncate(LONGEST_LABEL);
+                text
+            }
+        }
+    } else {
+        slug.to_owned()
+    };
+    ComputerName::parse(&text).unwrap_or_else(|_| ComputerName::other())
+}
+
+/// What makes two labels the same computer: lowercase, every run of characters that are not
+/// letters or digits (of any script) one dash, no dash at either end. A label with no letter or
+/// digit at all is its trimmed lowercase self.
+fn identity_of(label: &str) -> String {
+    let mut key = String::new();
+    for c in label.chars().flat_map(char::to_lowercase) {
+        if c.is_alphanumeric() {
+            key.push(c);
+        } else if !key.is_empty() && !key.ends_with('-') {
+            key.push('-');
+        }
+    }
+    let key = key.trim_end_matches('-');
+    if key.is_empty() {
+        label.trim().to_lowercase()
+    } else {
+        key.to_owned()
+    }
 }
 
 /// What the person typed for a name, trimmed; none if it is empty, too long or has control
@@ -451,11 +501,38 @@ fn usable_key(key: &SecretText) -> bool {
     !text.trim().is_empty() && text.len() <= LONGEST_KEY && !text.contains(['\n', '\r', '\0'])
 }
 
+/// `base` if nothing is `taken` by that name, else `base-2`, `base-3`, ... the first free: the
+/// names go in the order the computers were added, and the one chosen is stored, so it never
+/// changes.
+fn free_name(base: ComputerName, taken: impl Fn(&str) -> bool) -> ComputerName {
+    let mut candidate = base.clone();
+    let mut n = 1_u32;
+    while taken(candidate.as_str()) {
+        n += 1;
+        let suffix = format!("-{n}");
+        let stem = &base.as_str()[..base.as_str().len().min(LONGEST_LABEL - suffix.len())];
+        candidate =
+            ComputerName::parse(&format!("{stem}{suffix}")).unwrap_or_else(|_| base.clone());
+        if candidate == base {
+            break;
+        }
+    }
+    candidate
+}
+
 #[derive(Debug)]
 struct State {
     file: AddedFile,
     by_hand: BTreeSet<ComputerName>,
     hand_models: BTreeSet<ModelId>,
+}
+
+impl State {
+    /// Whether a computer already has the name `text`, written by hand or added.
+    fn is_taken(&self, text: &str) -> bool {
+        self.file.computers.contains_key(text)
+            || self.by_hand.iter().any(|name| name.as_str() == text)
+    }
 }
 
 /// The computers Settings adds and removes: the file, the keys beside it and the engines live in
@@ -510,7 +587,7 @@ impl Computers {
     /// file, and last the engines (so a refusal changes nothing). The place it is now.
     pub fn add(&self, new: NewComputer) -> Result<PlaceId, ComputerError> {
         let label = clean_label(&new.label).ok_or(ComputerError::BadName)?;
-        let name = slug_of(&label).ok_or(ComputerError::BadName)?;
+        let name = slug_of(&label, Fallback::Label);
         if new.models.is_empty() {
             return Err(ComputerError::NoModels);
         }
@@ -518,9 +595,15 @@ impl Computers {
             return Err(ComputerError::TooMany);
         }
         let mut state = self.state();
-        if state.by_hand.contains(&name) || state.file.computers.contains_key(name.as_str()) {
+        let identity = identity_of(&label);
+        let same_label =
+            state.file.computers.values().any(|computer| {
+                computer.node.is_none() && identity_of(&computer.label) == identity
+            });
+        if same_label || state.by_hand.contains(&name) {
             return Err(ComputerError::AlreadyThere);
         }
+        let name = free_name(name, |text| state.is_taken(text));
         let mut taken: BTreeSet<String> = state
             .hand_models
             .iter()
@@ -600,7 +683,7 @@ impl Computers {
     /// to it. A refusal changes nothing. The place it is now.
     pub fn add_tailnet(&self, new: NewTailnetComputer) -> Result<PlaceId, ComputerError> {
         let label = clean_label(&new.label).ok_or(ComputerError::BadName)?;
-        let name = slug_of(&label).ok_or(ComputerError::BadName)?;
+        let name = slug_of(&label, Fallback::Node(&new.node));
         if new.models.is_empty() {
             return Err(ComputerError::NoModels);
         }
@@ -616,12 +699,10 @@ impl Computers {
             .computers
             .values()
             .any(|computer| computer.node.as_deref() == Some(node_text.as_str()));
-        if known_node
-            || state.by_hand.contains(&name)
-            || state.file.computers.contains_key(name.as_str())
-        {
+        if known_node {
             return Err(ComputerError::AlreadyThere);
         }
+        let name = free_name(name, |text| state.is_taken(text));
         let mut taken: BTreeSet<String> = state
             .hand_models
             .iter()
