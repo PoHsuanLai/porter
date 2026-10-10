@@ -153,6 +153,12 @@ pub fn model_error(error: &sp::ProviderError) -> pi::ModelError {
         sp::ProviderError::RateLimited(seconds) => pi::ModelError::RateLimited(seconds.0),
         sp::ProviderError::Unauthorized => pi::ModelError::Unauthorized,
         sp::ProviderError::PaymentRequired(_) => pi::ModelError::PaymentRequired,
+        // A 401 with a message is still the key being refused: the person signs in again, as for a
+        // bare 401. Only a refusal of an accepted key (a 403: the account or organisation is
+        // turned off) is the company refusing the sign-in.
+        sp::ProviderError::AuthRejected(detail) if detail.status.0 == 401 => {
+            pi::ModelError::Unauthorized
+        }
         sp::ProviderError::AuthRejected(_) => pi::ModelError::SignInRefused,
         sp::ProviderError::ContextOverflow { .. } => pi::ModelError::ContextOverflow,
         sp::ProviderError::BadRequest(_) | sp::ProviderError::Refused(_) => pi::ModelError::Refused,

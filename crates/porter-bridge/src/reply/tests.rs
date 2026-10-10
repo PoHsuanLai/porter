@@ -142,6 +142,10 @@ fn every_provider_error_is_a_model_error_the_app_can_act_on() {
             M::PaymentRequired,
         ),
         (
+            P::AuthRejected(sp::ProviderDetail::new(401, "invalid api key")),
+            M::Unauthorized,
+        ),
+        (
             P::AuthRejected(sp::ProviderDetail::new(403, "organization disabled")),
             M::SignInRefused,
         ),
