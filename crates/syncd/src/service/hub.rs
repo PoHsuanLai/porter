@@ -2,7 +2,9 @@
 //! it, its latest status and its pause switch. An engine's driver holds a [`Handle`] and
 //! publishes; the `Sync1` object reads. Nothing here is async or does I/O.
 
-use super::resolve::{Confirm, ConfirmError, ConflictNumber, How, Settle, SettleError};
+use super::resolve::{
+    Confirm, ConfirmError, ConflictNumber, How, Settle, SettleError, SyncNowError,
+};
 use crate::dataset::DatasetId;
 use crate::paths::AccountDir;
 use crate::scheduler::Pausing;
@@ -11,7 +13,7 @@ use porter_dbus::{Caller, CallerRole};
 use porter_sync::{MassDelete, Quota, StoredConflict};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use tokio::sync::{broadcast, mpsc, oneshot, watch};
+use tokio::sync::{Notify, broadcast, mpsc, oneshot, watch};
 
 /// A dataset of an account as `Sync1` names it: `<account>/<dataset>`, the account's object
 /// path segment and the dataset slug.
@@ -149,7 +151,23 @@ struct Entry {
     pausing: watch::Sender<Pausing>,
     settling: mpsc::Sender<Settle>,
     confirming: mpsc::Sender<Confirm>,
+    /// Woken by "Sync now"; a wake-up that comes while a cycle runs is kept for the next look.
+    syncing: Arc<Notify>,
     cycling: Cycling,
+    cycles: Cycles,
+}
+
+/// How many cycles a dataset's driver has begun and finished since it was registered. A cycle
+/// that began after a moment is one that saw everything done before it: read `begun` at that
+/// moment, and wait for `ended` to pass it (cycles run one at a time, so the cycle that ends
+/// next after those that had begun is the first to begin later).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub struct Cycles {
+    /// Cycles begun.
+    pub begun: u64,
+    /// Cycles finished (its status published).
+    pub ended: u64,
 }
 
 /// Requests waiting for a driver at most (a driver answers between cycles).
@@ -164,6 +182,8 @@ pub enum Nudge {
     Settle(Settle),
     /// A caller asked to let the held discard through.
     Confirm(Confirm),
+    /// A caller asked for a cycle at once ("Sync now").
+    SyncNow,
     /// The dataset was dropped from the hub.
     Dropped,
 }
@@ -222,6 +242,7 @@ impl Hub {
         let cycling = Cycling::default();
         let (settling, settles) = mpsc::channel(SETTLES_QUEUED);
         let (confirming, confirms) = mpsc::channel(SETTLES_QUEUED);
+        let syncing = Arc::new(Notify::new());
         self.datasets().insert(
             name.clone(),
             Entry {
@@ -230,7 +251,9 @@ impl Hub {
                 pausing,
                 settling,
                 confirming,
+                syncing: Arc::clone(&syncing),
                 cycling: cycling.clone(),
+                cycles: Cycles::default(),
             },
         );
         Handle {
@@ -239,8 +262,35 @@ impl Hub {
             pausing: watching,
             settles,
             confirms,
+            syncing,
             cycling,
         }
+    }
+
+    /// "Sync now": has `name`'s driver start a cycle at once instead of at its next look. A cycle
+    /// that is running finishes and one more follows it; the call returns when the request is
+    /// taken, not when the cycle ends (see [`Hub::cycles`]). A dataset waiting for the network
+    /// starts when the network allows. A paused dataset does not cycle: [`SyncNowError::Paused`].
+    /// Who may ask is the caller's to check (the `Sync1` object does, as for a pause).
+    pub fn sync_now(&self, name: &DatasetName) -> Result<(), SyncNowError> {
+        let datasets = self.datasets();
+        let entry = datasets.get(name).ok_or(SyncNowError::NoSuchDataset)?;
+        if *entry.pausing.borrow() == Pausing::Paused {
+            return Err(SyncNowError::Paused);
+        }
+        entry.syncing.notify_one();
+        Ok(())
+    }
+
+    /// How many cycles `name`'s driver has begun and finished; `None` when there is no such
+    /// dataset.
+    pub fn cycles(&self, name: &DatasetName) -> Option<Cycles> {
+        self.datasets().get(name).map(|entry| entry.cycles)
+    }
+
+    /// The names of every running dataset.
+    pub fn names(&self) -> Vec<DatasetName> {
+        self.datasets().keys().cloned().collect()
     }
 
     /// Lets the discard held for `name` through, for `caller` (whoever may pause it, as
@@ -449,6 +499,7 @@ pub struct Handle {
     pausing: watch::Receiver<Pausing>,
     settles: mpsc::Receiver<Settle>,
     confirms: mpsc::Receiver<Confirm>,
+    syncing: Arc<Notify>,
     cycling: Cycling,
 }
 
@@ -497,6 +548,21 @@ impl Handle {
                 Some(request) => Nudge::Confirm(request),
                 None => Nudge::Dropped,
             },
+            () = self.syncing.notified() => Nudge::SyncNow,
+        }
+    }
+
+    /// Counts a cycle begun (the driver calls it when a cycle starts to run).
+    pub fn cycle_begun(&self) {
+        if let Some(entry) = self.hub.datasets().get_mut(&self.name) {
+            entry.cycles.begun += 1;
+        }
+    }
+
+    /// Counts a cycle finished (the driver calls it once the cycle's status is published).
+    pub fn cycle_ended(&self) {
+        if let Some(entry) = self.hub.datasets().get_mut(&self.name) {
+            entry.cycles.ended += 1;
         }
     }
 

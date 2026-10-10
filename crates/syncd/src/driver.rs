@@ -165,6 +165,8 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
                 match nudge {
                     Nudge::Settle(request) => self.settle(request),
                     Nudge::Confirm(request) => self.confirm(request),
+                    // As after a settle: the last cycle counts for nothing, so the next is due.
+                    Nudge::SyncNow => self.last = Last::Never,
                     Nudge::Pause | Nudge::Dropped => {}
                 }
             }
@@ -212,6 +214,7 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
     }
 
     async fn cycle(&mut self) {
+        self.handle.cycle_begun();
         let result = self.engine.sync_once().await;
         let now = self.engine_now();
         self.waiting = PushSignal::Quiet;
@@ -237,6 +240,7 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
             self.announce(report);
         }
         self.publish(now);
+        self.handle.cycle_ended();
     }
 
     fn next_last(&self, result: &Result<Report, SyncError>, now: porter_core::UnixSeconds) -> Last {

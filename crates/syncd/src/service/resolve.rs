@@ -75,6 +75,16 @@ pub struct Confirm {
     pub reply: oneshot::Sender<Result<(), ConfirmError>>,
 }
 
+/// Why "Sync now" did not start a cycle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SyncNowError {
+    /// There is no such dataset (never registered, or gone).
+    NoSuchDataset,
+    /// The person paused the dataset: it does not cycle until it is resumed.
+    Paused,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -2,7 +2,7 @@
 
 use super::errors::RefusedError;
 use super::hub::{DatasetName, Event, Hub};
-use super::resolve::{ConfirmError, ConflictNumber, How, SettleError};
+use super::resolve::{ConfirmError, ConflictNumber, How, SettleError, SyncNowError};
 use super::status::{conflict_details, held_details, progress_details, status_details};
 use crate::scheduler::Pausing;
 use porter_core::wire::Refusal;
@@ -204,6 +204,27 @@ impl<C: Callers> SyncObject<C> {
                 ConfirmError::NoSuchDataset => RefusedError::of(Refusal::NoFittingAccount),
                 ConfirmError::NothingHeld => RefusedError::nothing_held(),
             })
+    }
+
+    /// "Sync now": has `dataset` (`<account>/<dataset>`) sync at once instead of at its next
+    /// scheduled look. A cycle already running finishes and one more starts right after it. The
+    /// call answers when the request is taken, not when the cycle ends (`Progress` and `Status`
+    /// tell how it went); a dataset waiting for the network (offline, or metered when the
+    /// setting says to wait) starts when the network allows. Anyone who may pause the dataset
+    /// may call it (its owning app, Settings, the porter daemons). Errors:
+    /// `org.quire.Accounts1.Error.NoFittingAccount` when the caller sees no such dataset;
+    /// `org.quire.Sync1.Error.Paused` when the person paused it (`Resume` first).
+    async fn sync_now(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        dataset: String,
+    ) -> Result<(), RefusedError> {
+        let caller = self.0.identify(&header).await?;
+        let name = self.0.visible(&caller, &dataset)?;
+        self.0.hub.sync_now(&name).map_err(|error| match error {
+            SyncNowError::NoSuchDataset => RefusedError::of(Refusal::NoFittingAccount),
+            SyncNowError::Paused => RefusedError::paused(),
+        })
     }
 
     /// Joins the caller to the connections syncd tells, without asking for any data: any
