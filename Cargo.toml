@@ -74,7 +74,7 @@ storage-gdrive  = { path = "crates/storage-gdrive" }
 
 # quire's live settings modules (`org.quire.SettingsModule1`), for accountd only: the one porter -> quire
 # edge (ARCHITECTURE section 1). By git at quire's pinned rev (a local checkout overrides it: ARCHITECTURE section 1); `live` is the module, `tokio` drives its zbus.
-ds-settings     = { git = "https://github.com/PoHsuanLai/quire.git", rev = "b9b9c03bf166f0e2be834518b2dd1ee76b4de7f5", features = ["live", "tokio"] }
+ds-settings     = { git = "https://github.com/PoHsuanLai/quire.git", rev = "a72cba869f6fc088ebfad700dd0372d0d9386474", features = ["live", "tokio"] }
 
 # stoker's computer-use vocabulary, by git at stoker's pinned rev (quire
 # CONSUMING.md section 1; a local checkout overrides it, ARCHITECTURE section 1). stoker has no porter dependency, so there is no cycle.
