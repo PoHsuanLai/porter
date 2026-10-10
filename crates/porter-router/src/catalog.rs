@@ -153,7 +153,10 @@ fn llm_cap(caps: &Caps, entry: &ModelEntry) -> LlmCap {
         (caps.tools != ToolSupport::Absent, LlmFeature::Tools),
         (caps.inputs.contains(&InputKind::Image), LlmFeature::Vision),
         (
-            caps.output.contains(&Constraint::JsonSchema),
+            // A model that takes only a JSON object still answers a shape: the schema goes in the
+            // prompt and the reply is checked (model-extract).
+            caps.output.contains(&Constraint::JsonSchema)
+                || caps.output.contains(&Constraint::JsonObject),
             LlmFeature::StructuredOutput,
         ),
         (caps.reasoning == Support::Present, LlmFeature::Reasoning),

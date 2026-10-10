@@ -122,6 +122,16 @@ struct Ran {
 async fn ran(shape: pi::ReplyShape, scripts: Vec<Script>, stop_after: usize) -> Ran {
     let scratch = Scratch::new("structured");
     let model = models(&scratch).remove(0);
+    ran_on(&model, shape, scripts, stop_after).await
+}
+
+/// `ran` on a model the caller has shaped (its output constraints, say).
+async fn ran_on(
+    model: &LocalModel,
+    shape: pi::ReplyShape,
+    scripts: Vec<Script>,
+    stop_after: usize,
+) -> Ran {
     let chat = request(shape, Vec::new());
     let base =
         crate::bridge::chat_turn(&model, &chat, &crate::bridge::Frames::default()).expect("a turn");
@@ -174,6 +184,35 @@ async fn a_reply_that_fits_is_returned_as_the_model_wrote_it_and_only_the_though
         got.provider.requests()[0].output,
         OutputShape::JsonSchema(_)
     ));
+}
+
+#[tokio::test]
+async fn a_model_that_takes_only_a_json_object_gets_the_schema_in_the_prompt_and_is_still_checked()
+{
+    let scratch = Scratch::new("structured-object");
+    let mut model = models(&scratch).remove(0);
+    let caps = model.entry.caps.as_mut().expect("a chat entry");
+    caps.output = std::iter::once(model_provider::Constraint::JsonObject).collect();
+    let got = ran_on(
+        &model,
+        json(SCORE),
+        vec![says(r#"{"score":"high"}"#), says(r#"{"score":4}"#)],
+        usize::MAX,
+    )
+    .await;
+    assert_eq!(got.result.expect("repaired").text, r#"{"score":4}"#);
+    let requests = got.provider.requests();
+    assert_eq!(requests.len(), 2, "the reply was validated, not trusted");
+    assert_eq!(requests[0].output, OutputShape::JsonObject);
+    let first = &requests[0].messages[0];
+    assert_eq!(first.role, Role::System);
+    assert!(
+        first
+            .parts
+            .iter()
+            .any(|part| matches!(part, Part::Text(text) if text.contains("score"))),
+        "the schema travels in the prompt"
+    );
 }
 
 #[tokio::test]

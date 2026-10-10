@@ -29,6 +29,9 @@ fn the_shipped_catalog_reads_without_a_skipped_file() {
     ids.sort_unstable();
     assert!(ids.contains(&"holo-3.1-4b"), "{ids:?}");
     assert!(ids.contains(&"kokoro-82m"), "{ids:?}");
+    for id in ["holo-3.1-9b", "holo4-35b-a3b-fp8"] {
+        assert!(ids.contains(&id), "{id} in {ids:?}");
+    }
 }
 
 #[test]
