@@ -264,11 +264,11 @@ EDGES=(
   "porter-tailnet: porter-core porter-fs porter-tailscale"
   "porter-dav: porter-core porter-http"
   "porter-families: porter-core porter-dav porter-discover porter-http porter-oauth porter-provider porter-proxy porter-tailscale"
-  "accountd: ds-settings porter-core porter-daemon porter-dbusporter-discover porter-families porter-fs porter-http porter-provider porter-proxy porter-secrets porter-service porter-tailscale"
+  "accountd: ds-settings porter-core porter-daemon porter-dbus porter-discover porter-families porter-fs porter-http porter-provider porter-proxy porter-secrets porter-service porter-tailscale"
   "storage-webdav: porter-core porter-dav porter-http porter-sync"
   "storage-graph: porter-core porter-http porter-sync storage-webdav"
   "storage-gdrive: porter-core porter-http porter-sync storage-webdav"
-  "syncd: porter-client porter-core porter-daemon porter-dav porter-dbusporter-fs porter-http porter-sync storage-gdrive storage-graph storage-webdav"
+  "syncd: porter-client porter-core porter-daemon porter-dav porter-dbus porter-fs porter-http porter-sync storage-gdrive storage-graph storage-webdav"
   "porter-rig: porter-client porter-core porter-dbus porter-fake porter-fake-servers porter-infer"
   "inferd: ds-settings porter-bridge porter-client porter-router porter-turns porter-core porter-daemon porter-dbus porter-discover porter-fs porter-http porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
 )
