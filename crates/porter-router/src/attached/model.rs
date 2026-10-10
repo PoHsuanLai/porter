@@ -59,7 +59,9 @@ pub fn local_model(
             served.engine,
             served.served_name.0.clone(),
         ),
-        (Serving::Launched, false) => {
+        // A launched entry, or a way of serving a later catalogue adds, is not attachable: fail
+        // closed rather than guess how to reach it.
+        (_, false) => {
             return Err(AttachedError::NotAttachable {
                 id: name.to_owned(),
             });

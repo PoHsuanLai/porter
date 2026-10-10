@@ -97,7 +97,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -108,7 +108,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -611,7 +611,7 @@ dependencies = [
 [[package]]
 name = "cua-action"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=9e4ba527e368a57c40b73c59da2de0cd867e5e03#9e4ba527e368a57c40b73c59da2de0cd867e5e03"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=5c24634c15448e077d3c8233fef4dffbc38ba6cb#5c24634c15448e077d3c8233fef4dffbc38ba6cb"
 dependencies = [
  "keyboard-types",
  "serde",
@@ -621,7 +621,7 @@ dependencies = [
 [[package]]
 name = "cua-parse"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=9e4ba527e368a57c40b73c59da2de0cd867e5e03#9e4ba527e368a57c40b73c59da2de0cd867e5e03"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=5c24634c15448e077d3c8233fef4dffbc38ba6cb#5c24634c15448e077d3c8233fef4dffbc38ba6cb"
 dependencies = [
  "cua-action",
  "keyboard-types",
@@ -634,7 +634,7 @@ dependencies = [
 [[package]]
 name = "cua-session"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=9e4ba527e368a57c40b73c59da2de0cd867e5e03#9e4ba527e368a57c40b73c59da2de0cd867e5e03"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=5c24634c15448e077d3c8233fef4dffbc38ba6cb#5c24634c15448e077d3c8233fef4dffbc38ba6cb"
 dependencies = [
  "cua-action",
  "cua-parse",
@@ -646,7 +646,7 @@ dependencies = [
 [[package]]
 name = "cua-vendors"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=9e4ba527e368a57c40b73c59da2de0cd867e5e03#9e4ba527e368a57c40b73c59da2de0cd867e5e03"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=5c24634c15448e077d3c8233fef4dffbc38ba6cb#5c24634c15448e077d3c8233fef4dffbc38ba6cb"
 dependencies = [
  "cua-action",
  "cua-parse",
@@ -702,7 +702,7 @@ dependencies = [
 [[package]]
 name = "ds-behaviour"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=8ce6d4b1a026247e286336a51c51d66e3ec7124b#8ce6d4b1a026247e286336a51c51d66e3ec7124b"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=a3403cb8bd5740b5c8637db21dbc27253e259656#4289e369cb62066d3ce9b80058f659a8c0f98b03"
 dependencies = [
  "ds-core",
 ]
@@ -710,7 +710,7 @@ dependencies = [
 [[package]]
 name = "ds-core"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=8ce6d4b1a026247e286336a51c51d66e3ec7124b#8ce6d4b1a026247e286336a51c51d66e3ec7124b"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=a3403cb8bd5740b5c8637db21dbc27253e259656#4289e369cb62066d3ce9b80058f659a8c0f98b03"
 dependencies = [
  "chordkit",
  "ds-core-derive",
@@ -723,7 +723,7 @@ dependencies = [
 [[package]]
 name = "ds-core-derive"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=8ce6d4b1a026247e286336a51c51d66e3ec7124b#8ce6d4b1a026247e286336a51c51d66e3ec7124b"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=a3403cb8bd5740b5c8637db21dbc27253e259656#4289e369cb62066d3ce9b80058f659a8c0f98b03"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -734,7 +734,7 @@ dependencies = [
 [[package]]
 name = "ds-settings"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=8ce6d4b1a026247e286336a51c51d66e3ec7124b#8ce6d4b1a026247e286336a51c51d66e3ec7124b"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=a3403cb8bd5740b5c8637db21dbc27253e259656#4289e369cb62066d3ce9b80058f659a8c0f98b03"
 dependencies = [
  "ds-behaviour",
  "ds-core",
@@ -752,7 +752,7 @@ dependencies = [
 [[package]]
 name = "ds-settings-derive"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=8ce6d4b1a026247e286336a51c51d66e3ec7124b#8ce6d4b1a026247e286336a51c51d66e3ec7124b"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=a3403cb8bd5740b5c8637db21dbc27253e259656#4289e369cb62066d3ce9b80058f659a8c0f98b03"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -762,7 +762,7 @@ dependencies = [
 [[package]]
 name = "ds-style"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=8ce6d4b1a026247e286336a51c51d66e3ec7124b#8ce6d4b1a026247e286336a51c51d66e3ec7124b"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=a3403cb8bd5740b5c8637db21dbc27253e259656#4289e369cb62066d3ce9b80058f659a8c0f98b03"
 dependencies = [
  "ds-core",
  "ds-core-derive",
@@ -786,7 +786,7 @@ checksum = "66b7e2430c6dff6a955451e2cfc438f09cea1965a9d6f87f7e3b90decc014099"
 [[package]]
 name = "engine-supervisor"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=9e4ba527e368a57c40b73c59da2de0cd867e5e03#9e4ba527e368a57c40b73c59da2de0cd867e5e03"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=5c24634c15448e077d3c8233fef4dffbc38ba6cb#5c24634c15448e077d3c8233fef4dffbc38ba6cb"
 dependencies = [
  "model-catalog",
  "serde",
@@ -1009,7 +1009,7 @@ dependencies = [
 [[package]]
 name = "genai-names"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=9e4ba527e368a57c40b73c59da2de0cd867e5e03#9e4ba527e368a57c40b73c59da2de0cd867e5e03"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=5c24634c15448e077d3c8233fef4dffbc38ba6cb#5c24634c15448e077d3c8233fef4dffbc38ba6cb"
 
 [[package]]
 name = "generic-array"
@@ -1764,7 +1764,7 @@ dependencies = [
 [[package]]
 name = "model-catalog"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=9e4ba527e368a57c40b73c59da2de0cd867e5e03#9e4ba527e368a57c40b73c59da2de0cd867e5e03"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=5c24634c15448e077d3c8233fef4dffbc38ba6cb#5c24634c15448e077d3c8233fef4dffbc38ba6cb"
 dependencies = [
  "model-provider",
  "serde",
@@ -1776,7 +1776,7 @@ dependencies = [
 [[package]]
 name = "model-extract"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=9e4ba527e368a57c40b73c59da2de0cd867e5e03#9e4ba527e368a57c40b73c59da2de0cd867e5e03"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=5c24634c15448e077d3c8233fef4dffbc38ba6cb#5c24634c15448e077d3c8233fef4dffbc38ba6cb"
 dependencies = [
  "model-provider",
  "serde_json",
@@ -1785,7 +1785,7 @@ dependencies = [
 [[package]]
 name = "model-http"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=9e4ba527e368a57c40b73c59da2de0cd867e5e03#9e4ba527e368a57c40b73c59da2de0cd867e5e03"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=5c24634c15448e077d3c8233fef4dffbc38ba6cb#5c24634c15448e077d3c8233fef4dffbc38ba6cb"
 dependencies = [
  "http-body-util",
  "hyper",
@@ -1801,7 +1801,7 @@ dependencies = [
 [[package]]
 name = "model-openai-compat"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=9e4ba527e368a57c40b73c59da2de0cd867e5e03#9e4ba527e368a57c40b73c59da2de0cd867e5e03"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=5c24634c15448e077d3c8233fef4dffbc38ba6cb#5c24634c15448e077d3c8233fef4dffbc38ba6cb"
 dependencies = [
  "log",
  "model-http",
@@ -1816,7 +1816,7 @@ dependencies = [
 [[package]]
 name = "model-provider"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=9e4ba527e368a57c40b73c59da2de0cd867e5e03#9e4ba527e368a57c40b73c59da2de0cd867e5e03"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=5c24634c15448e077d3c8233fef4dffbc38ba6cb#5c24634c15448e077d3c8233fef4dffbc38ba6cb"
 dependencies = [
  "base64",
  "cua-action",
@@ -1830,7 +1830,7 @@ dependencies = [
 [[package]]
 name = "model-replay"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=9e4ba527e368a57c40b73c59da2de0cd867e5e03#9e4ba527e368a57c40b73c59da2de0cd867e5e03"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=5c24634c15448e077d3c8233fef4dffbc38ba6cb#5c24634c15448e077d3c8233fef4dffbc38ba6cb"
 dependencies = [
  "blake3",
  "model-http",
@@ -1845,7 +1845,7 @@ dependencies = [
 [[package]]
 name = "model-wire"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=9e4ba527e368a57c40b73c59da2de0cd867e5e03#9e4ba527e368a57c40b73c59da2de0cd867e5e03"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=5c24634c15448e077d3c8233fef4dffbc38ba6cb#5c24634c15448e077d3c8233fef4dffbc38ba6cb"
 dependencies = [
  "model-http",
  "model-provider",
@@ -3123,13 +3123,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
 name = "speech-host-client"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=9e4ba527e368a57c40b73c59da2de0cd867e5e03#9e4ba527e368a57c40b73c59da2de0cd867e5e03"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=5c24634c15448e077d3c8233fef4dffbc38ba6cb#5c24634c15448e077d3c8233fef4dffbc38ba6cb"
 dependencies = [
  "model-provider",
  "serde",
@@ -3140,7 +3140,7 @@ dependencies = [
 [[package]]
 name = "speech-provider"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=9e4ba527e368a57c40b73c59da2de0cd867e5e03#9e4ba527e368a57c40b73c59da2de0cd867e5e03"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=5c24634c15448e077d3c8233fef4dffbc38ba6cb#5c24634c15448e077d3c8233fef4dffbc38ba6cb"
 dependencies = [
  "base64",
  "model-provider",
@@ -3328,7 +3328,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.52.0",
@@ -3516,7 +3516,7 @@ checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
 dependencies = [
  "memoffset",
  "tempfile",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3594,7 +3594,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "vision-prep"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=9e4ba527e368a57c40b73c59da2de0cd867e5e03#9e4ba527e368a57c40b73c59da2de0cd867e5e03"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=5c24634c15448e077d3c8233fef4dffbc38ba6cb#5c24634c15448e077d3c8233fef4dffbc38ba6cb"
 dependencies = [
  "cua-action",
  "fast_image_resize",

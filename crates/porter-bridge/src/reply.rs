@@ -30,6 +30,8 @@ pub fn event(event: &sp::TurnEvent) -> Option<pi::InferEvent> {
         | sp::TurnEvent::ToolCallDelta { .. }
         | sp::TurnEvent::Safety(_)
         | sp::TurnEvent::Usage(_) => None,
+        // An event a later stoker adds is not shown until porter knows what it means.
+        _ => None,
     }
 }
 
@@ -104,6 +106,8 @@ pub fn stop(stop: sp::StopReason) -> pi::StopReason {
         sp::StopReason::MaxTokens => pi::StopReason::MaxTokens,
         sp::StopReason::StopSequence => pi::StopReason::StopSequence,
         sp::StopReason::ContentFilter => pi::StopReason::ContentFilter,
+        // A reason a later stoker adds is not trusted as a clean end (the stoker L5 audit).
+        _ => pi::StopReason::ContentFilter,
     }
 }
 
@@ -163,6 +167,8 @@ pub fn model_error(error: &sp::ProviderError) -> pi::ModelError {
         sp::ProviderError::ContextOverflow { .. } => pi::ModelError::ContextOverflow,
         sp::ProviderError::BadRequest(_) | sp::ProviderError::Refused(_) => pi::ModelError::Refused,
         sp::ProviderError::Unreadable(_) => pi::ModelError::Unreadable,
+        // A failure a later stoker adds fails closed as a reply porter cannot read (the stoker L5 audit).
+        _ => pi::ModelError::Unreadable,
     }
 }
 

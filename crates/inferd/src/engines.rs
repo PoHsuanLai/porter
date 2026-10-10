@@ -869,7 +869,8 @@ fn readiness_in(snapshot: &Snapshot, model: &LocalModel) -> Readiness {
             }
             _ => Readiness::Unavailable,
         },
-        None => Readiness::Unavailable,
+        // No engine, or a state a later supervisor adds: not offered until porter knows it.
+        _ => Readiness::Unavailable,
     }
 }
 
