@@ -220,16 +220,18 @@ fn every_shipped_hosted_entry_is_reached_through_openrouter_and_through_its_comp
         [
             "claude-haiku-4.5",
             "claude-opus-5.5",
+            "deepseek-v4-pro",
             "gemini-3.1-pro",
             "gemini-3.8-flash",
             "gpt-6-astra",
             "gpt-6-luna",
             "kimi-k2.6",
-            "kimi-k3"
+            "kimi-k3",
+            "muse-spark-1.3-contributor"
         ]
     );
     let via_gateway = remote_models(&hosted, &[account("openrouter", granted("g"))]);
-    assert_eq!(via_gateway.len(), 8);
+    assert_eq!(via_gateway.len(), 10);
     assert!(via_gateway.iter().all(|m| m.reach.is_via_gateway()));
     let companies = [
         account("openai", granted("g1")),
