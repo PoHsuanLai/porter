@@ -222,15 +222,15 @@ async fn two_concurrent_refreshes_make_one_call_to_the_issuer() {
     assert_eq!(seen.refreshes(), ["refresh"]);
 }
 
-/// The rotated refresh token is stored before the access token is handed out: the next refresh,
-/// for a service the first token does not cover, presents the new one, and a repeat of the first
-/// service is still answered from the first token.
+/// The rotated refresh token is stored before the access token is handed out: each refresh that
+/// follows presents the one the refresh before it stored. A later call is never answered from an
+/// earlier token: only calls that waited behind a refresh share it.
 #[tokio::test]
 async fn the_rotated_refresh_token_is_stored_before_the_next_refresh_presents_it() {
     let (service, seen, candidate) = service().await;
     assert_eq!(bearer(token(&service, &candidate, "imap").await), "token-1");
     assert_eq!(bearer(token(&service, &candidate, "smtp").await), "token-2");
-    assert_eq!(bearer(token(&service, &candidate, "imap").await), "token-1");
-    assert_eq!(seen.minted(), 2);
-    assert_eq!(seen.refreshes(), ["refresh", "refresh-2"]);
+    assert_eq!(bearer(token(&service, &candidate, "imap").await), "token-3");
+    assert_eq!(seen.minted(), 3);
+    assert_eq!(seen.refreshes(), ["refresh", "refresh-2", "refresh-3"]);
 }
