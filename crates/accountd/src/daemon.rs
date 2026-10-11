@@ -231,7 +231,19 @@ impl Daemon {
                 .with_store(store)
                 .with_audit(FileAudit::new(paths.audit.clone())),
         );
-        let desk = SecretsDesk::new(secrets, FileAudit::new(paths.audit.clone()), SystemClock);
+        let desk = SecretsDesk::new(
+            secrets.clone(),
+            FileAudit::new(paths.audit.clone()),
+            SystemClock,
+        );
+        // The picker of `Identities1.Offer` is the sheet host `Choose` draws on, and the password
+        // of `TakePassword` is read from the same store.
+        let identity_desk = crate::SheetsDesk::new(
+            BusSheets::new(connection.clone(), Arc::clone(&callers)).with_names(app_names.clone()),
+            secrets,
+            FileAudit::new(paths.audit.clone()),
+            SystemClock,
+        );
         let options = Options {
             clients: Some(paths.clients_user.clone()),
             relay_roots: RelayRoots::Platform,
@@ -250,6 +262,9 @@ impl Daemon {
             tailnet: Some(crate::TailnetWatch::new(porter_tailscale::LocalApi::new(
                 &paths.tailscale_socket,
             ))),
+            // `identity-uses.json` beside `registry.json`.
+            uses: crate::UsesStore::File(paths.registry_dir.clone()),
+            identities: Some(Arc::new(identity_desk)),
         };
         serve_with(&connection, service, callers, options)
             .await

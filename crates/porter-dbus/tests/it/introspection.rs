@@ -14,6 +14,7 @@ fn checked_in_introspection_matches_the_interfaces() {
         Bus::Inference,
         Bus::InferenceAgents,
         Bus::Spaces,
+        Bus::Identities,
         Bus::Tailnet,
     ] {
         let path = dir.join(bus.file_name());
@@ -62,6 +63,37 @@ fn the_spaces_registry_declares_its_six_methods_and_one_signal() {
         !introspection(Bus::Accounts).contains("org.quire.Spaces1"),
         "its own file, beside Accounts1's"
     );
+}
+
+#[test]
+fn the_identities_object_declares_five_methods_and_one_signal_and_no_token() {
+    let xml = introspection(Bus::Identities);
+    for member in [
+        "<interface name=\"org.quire.Identities1\">",
+        "<method name=\"List\">",
+        "<arg type=\"a(sa{sv})\" direction=\"out\"/>",
+        "<method name=\"Offer\">",
+        "<arg name=\"provider_hint\" type=\"s\" direction=\"in\"/>",
+        "<method name=\"TakePassword\">",
+        // The secret travels on a descriptor, never in a string.
+        "<arg type=\"h\" direction=\"out\"/>",
+        "<method name=\"RegisterUse\">",
+        "<method name=\"Uses\">",
+        "<arg type=\"as\" direction=\"out\"/>",
+        "<signal name=\"IdentityRemoved\">",
+    ] {
+        assert!(xml.contains(member), "missing {member}");
+    }
+    assert_eq!(xml.matches("<method ").count(), 5);
+    assert_eq!(xml.matches("<signal ").count(), 1);
+    assert_eq!(xml.matches("<property ").count(), 0);
+    // `Offer` answers its identity's id, address and provider, and nothing that is a token.
+    assert_eq!(xml.matches("direction=\"out\"").count(), 6);
+    assert_eq!(porter_dbus::IDENTITIES_PATH, "/org/quire/Identities1");
+    // Additive: its own file, and the others are as they were.
+    assert!(!introspection(Bus::Accounts).contains("Identities1"));
+    assert!(!introspection(Bus::Spaces).contains("Identities1"));
+    assert!(!introspection(Bus::Tailnet).contains("Identities1"));
 }
 
 #[test]

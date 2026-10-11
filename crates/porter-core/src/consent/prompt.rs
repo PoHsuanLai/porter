@@ -37,6 +37,31 @@ pub struct ConsentAsk {
     /// can from the id. Filled by accountd on the way to the sheet host, never by the service.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app_label: Option<AppLabel>,
+    /// What the answer is for. [`AskPurpose::Use`] (the default, and left out of the JSON) is a
+    /// consent: the answer becomes a grant. [`AskPurpose::ContinueAs`] is `Identities1.Offer`:
+    /// the person picks which identity the app continues as, and nothing is granted. A host that
+    /// does not know the field draws the ordinary chooser, and its `Allow` is read the same way.
+    #[serde(default, skip_serializing_if = "AskPurpose::is_use")]
+    pub purpose: AskPurpose,
+}
+
+/// What a [`ConsentAsk`]'s answer is for.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum AskPurpose {
+    /// The app wants to use an account: the answer is stored as a grant.
+    #[default]
+    Use,
+    /// The app offers "Continue as": the answer only names the identity, and no grant is made.
+    ContinueAs,
+}
+
+impl AskPurpose {
+    /// Whether this is the ordinary consent (so the JSON leaves it out).
+    pub fn is_use(&self) -> bool {
+        matches!(self, AskPurpose::Use)
+    }
 }
 
 impl ConsentAsk {
@@ -57,7 +82,15 @@ impl ConsentAsk {
             accounts,
             session: None,
             app_label: None,
+            purpose: AskPurpose::Use,
         }
+    }
+
+    /// The same question, for this purpose.
+    #[must_use]
+    pub fn with_purpose(mut self, purpose: AskPurpose) -> Self {
+        self.purpose = purpose;
+        self
     }
 
     /// The same question, asked inside this launcher session.

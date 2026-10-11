@@ -58,6 +58,17 @@
 //!   `CREATES_PER_WINDOW` a minute each); Settings and the shell rename, restyle and remove, and
 //!   a removal ends the grants scoped to that Space.
 //!
+//! - `org.quire.Identities1` at `/org/quire/Identities1`: the identities signed in on this
+//!   machine, which are the registry's accounts of a sign-in kind (OAuth, a password, an app
+//!   password; `identities_object`). Any app lists them, `Offer`s "Continue as" (the picker is the
+//!   sheet `Choose` draws, `AskPurpose::ContinueAs`, through an [`IdentityDesk`]; the answer is the
+//!   pick, never a token) and says it signed in with one (`RegisterUse`, kept in
+//!   `identity-uses.json` beside `registry.json`: `identities`); Settings and the shell read
+//!   `Uses`. `TakePassword` hands a `password` identity's password on a sealed descriptor, once, to
+//!   the app the person just picked it for, and is audited. `IdentityRemoved` goes out when
+//!   the registry loses an identity. The agent, computer use, the agent launcher, the terminal and
+//!   the compositor are refused.
+//!
 //! - The daemon as one call (`daemon`): [`Config`] (typed; [`Config::from_env`] is the one place
 //!   the environment is read), [`Daemon::build`] and [`Daemon::run`], and [`add_account`] for
 //!   `accountd add`. The binary only parses its arguments and calls these.
@@ -77,6 +88,9 @@ mod errors;
 mod grants;
 mod handoff;
 mod hub;
+mod identities;
+mod identities_object;
+mod identity_desk;
 mod keys;
 pub mod keysel;
 mod launchers;
@@ -103,6 +117,8 @@ pub use callers::{Callers, TableCallers};
 pub use core::{Host, Options, serve, serve_with};
 pub use daemon::{AddCommandError, Config, Daemon, StartError, add_account};
 pub use errors::RefusedError;
+pub use identities::UsesStore;
+pub use identity_desk::{IdentityDesk, SheetsDesk};
 pub use keys::{KeyDesk, SecretsDesk, sealed_key};
 pub use launchers::{DEFAULT_BOUND, DEFAULT_TICK, LoginTiming};
 pub use porter_dbus::{

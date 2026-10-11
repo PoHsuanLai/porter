@@ -386,7 +386,7 @@ async fn send(
 }
 
 /// Resolves when the caller's connection leaves the bus.
-async fn departed(mut owners: NameOwnerChangedStream) {
+pub(crate) async fn departed(mut owners: NameOwnerChangedStream) {
     loop {
         let next = std::future::poll_fn(|cx| Pin::new(&mut owners).poll_next(cx)).await;
         match next {

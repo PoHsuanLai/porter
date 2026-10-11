@@ -10,8 +10,8 @@ use porter_core::capability::{
     SpeechMode, StorageCap, StorageScope, VocabVersion,
 };
 use porter_core::consent::{
-    AccountChoice, Availability, ConsentAnswer, ConsentAsk, Decision, Grant, GrantKey, GrantScope,
-    Usage, Verdict,
+    AccountChoice, AskPurpose, Availability, ConsentAnswer, ConsentAsk, Decision, Grant, GrantKey,
+    GrantScope, Usage, Verdict,
 };
 use porter_core::need::{
     AgentNeed, CuaNeed, DimsNeed, EmbedNeed, IdentityNeed, ImageGenNeed, KeyValueNeed, LlmNeed,
@@ -440,6 +440,21 @@ fn a_consent_ask_names_its_session_only_when_it_has_one() {
     ask.session = Some(LauncherSession::parse("sess-1").expect("session"));
     assert!(json(&ask).contains(r#""session":"sess-1""#));
     round_trip(&ask);
+    // The ordinary consent leaves its purpose out; "Continue as" says so, and an identity (what
+    // its answer names) reads back as it was written.
+    assert!(!json(&ask).contains("purpose"), "{}", json(&ask));
+    ask.purpose = AskPurpose::ContinueAs;
+    assert!(json(&ask).contains(r#""purpose":"continue_as""#));
+    round_trip(&ask);
+    for kind in IdentityKind::ALL {
+        round_trip(&Identity::new(
+            IdentityId::parse("ada.example").expect("id"),
+            IdentityAddress("ada@example.org".into()),
+            ProviderId::parse("google").expect("provider"),
+            IdentityName("Google".into()),
+            kind,
+        ));
+    }
 }
 
 #[test]

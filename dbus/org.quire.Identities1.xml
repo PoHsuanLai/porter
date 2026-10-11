@@ -1,0 +1,29 @@
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+<node>
+ <interface name="org.quire.Identities1">
+   <method name="List">
+     <arg type="a(sa{sv})" direction="out"/>
+   </method>
+   <method name="Offer">
+     <arg name="provider_hint" type="s" direction="in"/>
+     <arg type="s" direction="out"/>
+     <arg type="s" direction="out"/>
+     <arg type="s" direction="out"/>
+   </method>
+   <method name="TakePassword">
+     <arg name="identity_id" type="s" direction="in"/>
+     <arg type="h" direction="out"/>
+   </method>
+   <method name="RegisterUse">
+     <arg name="identity_id" type="s" direction="in"/>
+   </method>
+   <method name="Uses">
+     <arg name="identity_id" type="s" direction="in"/>
+     <arg type="as" direction="out"/>
+   </method>
+   <signal name="IdentityRemoved">
+     <arg name="identity_id" type="s"/>
+   </signal>
+ </interface>
+</node>

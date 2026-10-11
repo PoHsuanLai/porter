@@ -35,6 +35,7 @@ mod family;
 #[cfg(test)]
 mod fixtures;
 mod id;
+mod identities;
 mod identity;
 mod launcher_session;
 pub mod lending;
@@ -72,6 +73,7 @@ pub use endpoint::{
 pub use error::CoreError;
 pub use family::Family;
 pub use id::{AccountId, GrantId, ModelId, ProviderId, is_id, object_segment};
+pub use identities::{Identity, IdentityAddress, IdentityId, IdentityKind, IdentityName};
 pub use identity::{CgroupPath, ClaimedId, PeerFacts, PeerIdentity, SandboxFacts, identity_of};
 pub use launcher_session::LauncherSession;
 pub use matching::{Match, Shortfall, matches};

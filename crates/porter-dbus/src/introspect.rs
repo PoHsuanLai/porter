@@ -4,6 +4,7 @@
 use crate::account::AccountSkeleton;
 use crate::agents::AgentsSkeleton;
 use crate::grants::GrantsSkeleton;
+use crate::identities::IdentitiesSkeleton;
 use crate::inference::InferenceSkeleton;
 use crate::manager::ManagerSkeleton;
 use crate::peer::PeerSkeleton;
@@ -34,6 +35,9 @@ pub enum Bus {
     InferenceAgents,
     /// `org.quire.Spaces1` (the desktop-wide Spaces), on accountd's bus name.
     Spaces,
+    /// `org.quire.Identities1` (the identities signed in on this machine), on accountd's bus
+    /// name.
+    Identities,
     /// `org.quire.Tailnet1` (the person's computers on their Tailscale network), on accountd's
     /// bus name.
     Tailnet,
@@ -49,6 +53,7 @@ impl Bus {
             Bus::Inference => "org.quire.Inference1.xml",
             Bus::InferenceAgents => "org.quire.Inference1.Agents.xml",
             Bus::Spaces => "org.quire.Spaces1.xml",
+            Bus::Identities => "org.quire.Identities1.xml",
             Bus::Tailnet => "org.quire.Tailnet1.xml",
         }
     }
@@ -70,6 +75,7 @@ pub fn introspection(bus: Bus) -> String {
         Bus::Inference => vec![&InferenceSkeleton],
         Bus::InferenceAgents => vec![&AgentsSkeleton],
         Bus::Spaces => vec![&SpacesSkeleton],
+        Bus::Identities => vec![&IdentitiesSkeleton],
         Bus::Tailnet => vec![&TailnetSkeleton],
     };
     let mut xml = String::from(

@@ -192,6 +192,10 @@ pub enum AuditEvent {
         /// The Space.
         space: DesktopSpace,
     },
+    /// `Identities1.TakePassword`: the password (or app password) of an identity the person
+    /// picked was handed to the app that offered "Continue as", on a sealed descriptor. The
+    /// entry's `app` is that app and `account` the identity's account. Never the password.
+    PasswordHandedOver,
 }
 
 /// An OAuth issuer's slug as the clients file and Settings write it (`microsoft`, `google`).
@@ -380,6 +384,7 @@ mod tests {
                 issuer: IssuerSlug("microsoft".into()),
                 change: ClientIdChange::Cleared,
             },
+            AuditEvent::PasswordHandedOver,
         ];
         for event in events {
             let entry = AuditEntry {
@@ -461,6 +466,10 @@ mod tests {
                 change: ClientIdChange::Set,
             }),
             r#"{"at":1,"app":null,"account":null,"event":{"kind":"client_id_changed","v":{"issuer":"microsoft","change":"set"}}}"#
+        );
+        assert_eq!(
+            at(AuditEvent::PasswordHandedOver),
+            r#"{"at":1,"app":null,"account":null,"event":{"kind":"password_handed_over"}}"#
         );
         let space = || DesktopSpace::parse("space-1").expect("space");
         for (event, kind) in [

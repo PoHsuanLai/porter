@@ -79,6 +79,8 @@ mod found;
 #[cfg(feature = "dbus")]
 mod guests;
 #[cfg(feature = "dbus")]
+mod identities;
+#[cfg(feature = "dbus")]
 mod launcher;
 #[cfg(feature = "dbus")]
 pub mod peer;
@@ -111,6 +113,8 @@ pub use error::{ClientError, ComputerReason, TransportError};
 pub use found::{ConsentOffer, Found, NoAccount, found};
 #[cfg(feature = "dbus")]
 pub use guests::{GuestChange, GuestChanges};
+#[cfg(feature = "dbus")]
+pub use identities::{Identities, IdentitiesError, IdentityRemovals, Picked};
 #[cfg(feature = "dbus")]
 pub use launcher::{AskKind, Launcher, LauncherError, LauncherRequest, Requests};
 pub use porter_core::lending;
