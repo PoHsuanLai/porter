@@ -44,19 +44,23 @@ pub enum CallerRole {
     Settings,
     /// sill, or a standalone sheet host: may serve `AccountsSheet1`.
     SheetHost,
-    /// inferd and syncd: may use `Accounts1.Peer`.
+    /// inferd and syncd, as the peers of one another and of the desktop's daemons. accountd no
+    /// longer has an interface for them: it keeps identities, and nothing a daemon asks for on
+    /// an app's behalf.
     PorterDaemon,
-    /// intentd, companiond, readerd, cuad, quire-do, actions-mcp: refused `Choose`,
-    /// `AddAccount`, `Reauthenticate`, `IssueToken`, `OpenAuthenticated` and `OpenLinked`; they keep inferd.
+    /// intentd, companiond, readerd, cuad, quire-do, actions-mcp: refused inferd's `Keys`
+    /// (`RequestKey`, `AddAccount`) and accountd's `AddAccount` and `Reauthenticate`; they keep
+    /// inferd's own inference calls.
     Agent,
     /// cuad, for inferd: the only role that may open a computer-use session.
     Cua,
-    /// The agent launcher (docket-acp), which runs external coding agents: may call
-    /// `Peer.SetAgentState`, `RegisterLauncher`, `ReportAgentLogin` and `ReportAgentLogout`, and
-    /// `Tokens.IssueProcessCredential` and `RevokeProcessCredential` (P2: an API key for a
-    /// process it spawns, only for a program it registered), and nothing else. Never granted by
-    /// default: `dist/callers.toml`
-    /// has no row for it, so a machine lists the launcher by its own row.
+    /// The agent launcher (docket-acp), which runs external coding agents: may call inferd's
+    /// `Launcher` interface (`SetAgentState`, `RegisterLauncher`, `BeginSession`, `EndSession`,
+    /// `RequestAgentKey`, `ReportAgentLogin`, `ReportAgentLogout`, `IssueProcessCredential` and
+    /// `RevokeProcessCredential`: an API key for a process it spawns, only for a program it
+    /// registered), and nothing else. Read from inferd's caller table, not accountd's. Never
+    /// granted by default: `dist/inferd.toml` has no row for it, so a machine lists the launcher
+    /// by its own row.
     AgentLauncher,
     /// The terminal (temor): may read the person's computers from `org.quire.Tailnet1`
     /// (`Machines`) and nothing else of accountd. Given by the unit that is the terminal, as the

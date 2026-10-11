@@ -1,10 +1,15 @@
-//! porter's D-Bus API (design/31 §4.4): three buses, portal-shaped (a method that shows UI
-//! returns a Request object whose `Response` signal carries the answer). Each interface is
-//! declared twice from one table: a proxy trait for callers and a skeleton for the daemons,
+//! porter's D-Bus API (design/31 §4.4): the buses of accountd (identities, Spaces, Tailnet),
+//! inferd (inference, agents, the agent launcher, AI keys) and syncd, portal-shaped (a method
+//! that shows UI returns a Request object whose `Response` signal carries the answer). Whoever
+//! uses a credential holds it, so no bus carries a token or a grant: the app that wants an
+//! identity asks `Identities1`, the one that wants an AI key asks inferd's `Keys`. Each interface
+//! is declared twice from one table: a proxy trait for callers and a skeleton for the daemons,
 //! whose introspection is the checked-in `dbus/*.xml` (see `tests/introspection.rs`).
-//! The skeletons are signatures only (every method answers `NotSupported`); accountd serves the
+//! The skeletons are signatures only (every method answers `NotSupported`); the daemons serve the
 //! real objects. `sheet` and `pending` are the portal shape of a sheet's answer, shared by both
-//! sides: the request path, the response codes and results, and the caller's listener.
+//! sides: the request path, the response codes and results, and the caller's listener. The
+//! Request interface is one shape for the three services that show sheets; [`ServiceRoot`] says
+//! which service's bus name, request path root and error prefix a call is under.
 //! [`serve_ready`] is the daemons' start: the wait between registering their objects and
 //! claiming their name.
 //!
@@ -23,18 +28,17 @@ pub mod callers;
 #[cfg(feature = "callers-file")]
 mod callers_file;
 mod codec;
-mod codec_grants;
 mod failure;
-mod grants;
 mod identities;
 mod inference;
 mod introspect;
 mod json_value;
+mod keys;
 mod launcher;
+mod launcher_iface;
 mod machines;
 mod manager;
 pub mod names;
-mod peer;
 mod pending;
 #[cfg(feature = "photos-picker")]
 mod photos_picker;
@@ -48,14 +52,13 @@ mod spaces;
 mod sync;
 mod tailnet;
 mod target;
-mod tokens;
 
 pub use account::{AccountProxy, AccountSkeleton};
 pub use agents::{
     AGENT_ERROR_PREFIX, AgentsProxy, AgentsSkeleton, EndpointArg, MODELS_ANY, MODELS_LISTED,
     ROUTE_ACCOUNT, ROUTE_MODEL, RouteArg,
 };
-pub use args::{AppArg, CandidateArg, Details, NeedArg, TokenArg, VerdictArg};
+pub use args::{CandidateArg, Details, NeedArg};
 #[doc = "These live in [`callers`] now; this path stays for one more batch."]
 pub use callers::{
     AppTitle, Caller, CallerRole, CallerRow, CallerTable, Callers, MainPids, ProcCallers, SYSTEMD,
@@ -67,12 +70,10 @@ pub use callers_file::{
     CallerFileError, CallerTomlError, load_callers, table_from_file, table_from_toml,
 };
 pub use codec::{candidate_from_dbus, candidate_to_dbus, need_from_dbus, need_to_dbus};
-pub use codec_grants::{grant_from_dbus, grant_to_dbus, token_from_dbus, token_to_dbus};
 pub use failure::{
     BusFailure, PLACE_ERROR_PREFIX, classify, computer_refusal_of, is_invalid_args,
     is_limits_exceeded, launcher_fault_of, place_refusal_of, refusal_of,
 };
-pub use grants::{GrantsProxy, GrantsSkeleton};
 pub use identities::{
     IDENTITY_KEY_ADDRESS, IDENTITY_KEY_KIND, IDENTITY_KEY_NAME, IDENTITY_KEY_PROVIDER,
     IdentitiesProxy, IdentitiesSkeleton, IdentityRemoved, IdentityRemovedStream,
@@ -84,7 +85,13 @@ pub use inference::{
 };
 pub use introspect::{Bus, introspection};
 pub use json_value::{from_vardict, to_vardict};
+pub use keys::{KeysProxy, KeysSkeleton};
 pub use launcher::LauncherFault;
+pub use launcher_iface::{
+    AgentLoginRequested, AgentLoginRequestedStream, AgentLogoutRequested,
+    AgentLogoutRequestedStream, LauncherProxy, LauncherSkeleton, ProcessCredentialRevoked,
+    ProcessCredentialRevokedStream,
+};
 pub use machines::{
     MACHINE_KEY_ADDRESSES, MACHINE_KEY_DNS, MACHINE_KEY_LAST_SEEN, MACHINE_KEY_NAME,
     MACHINE_KEY_NODE, MACHINE_KEY_ONLINE, MACHINE_KEY_OS, MACHINE_KEY_OWNER, MACHINE_KEY_SSH,
@@ -103,10 +110,6 @@ pub use names::{
     SHEET_PATH, SPACE_KEY_CREATED, SPACE_KEY_LOOK, SPACE_KEY_NAME, SPACES_PATH, STATUS_KEY_QUOTA,
     SYNC_BUS, SYNC_ERROR_NO_SUCH_CONFLICT, SYNC_ERROR_NOTHING_HELD, SYNC_ERROR_PAUSED,
     SYNC_ERROR_PREFIX, SYNC_PATH, TAILNET_PATH, account_path,
-};
-pub use peer::{
-    AgentLoginRequested, AgentLoginRequestedStream, AgentLogoutRequested,
-    AgentLogoutRequestedStream, PeerProxy, PeerSkeleton,
 };
 pub use pending::{Closer, Sheet, SheetError};
 #[cfg(feature = "photos-picker")]
@@ -135,9 +138,6 @@ pub use tailnet::{
     Changed as TailnetChanged, ChangedStream as TailnetChangedStream, TailnetProxy, TailnetSkeleton,
 };
 pub use target::BusTarget;
-pub use tokens::{
-    ProcessCredentialRevoked, ProcessCredentialRevokedStream, TokensProxy, TokensSkeleton,
-};
 /// The session-bus connection transports and daemons hold.
 pub use zbus::Connection as BusConnection;
 /// The bus library's error, which [`classify`] reads.

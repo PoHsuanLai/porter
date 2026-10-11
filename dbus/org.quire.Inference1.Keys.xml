@@ -1,0 +1,19 @@
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+<node>
+ <interface name="org.quire.Inference1.Keys">
+   <method name="RequestKey">
+     <arg name="class" type="s" direction="in"/>
+     <arg name="usage" type="s" direction="in"/>
+     <arg name="parent_window" type="s" direction="in"/>
+     <arg name="options" type="a{sv}" direction="in"/>
+     <arg type="o" direction="out"/>
+   </method>
+   <method name="AddAccount">
+     <arg name="provider_hint" type="s" direction="in"/>
+     <arg name="parent_window" type="s" direction="in"/>
+     <arg name="options" type="a{sv}" direction="in"/>
+     <arg type="o" direction="out"/>
+   </method>
+ </interface>
+</node>

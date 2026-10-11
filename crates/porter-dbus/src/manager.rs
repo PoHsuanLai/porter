@@ -1,7 +1,9 @@
-//! `org.quire.Accounts1.Manager` at `/org/quire/Accounts1`: find, choose and add accounts.
-//! Signals go only to holders of a relevant grant (unicast).
+//! `org.quire.Accounts1.Manager` at `/org/quire/Accounts1`: adding an identity through the sheet
+//! and the signals about the identities signed in. accountd keeps identities and nothing
+//! grant-keyed, so there is no finding, choosing or granting here: an app that wants an identity
+//! asks `Identities1.Offer`, and one that wants an AI key asks inferd's `Keys`.
 
-use crate::args::{CandidateArg, Details, NeedArg};
+use crate::args::Details;
 use zbus::fdo;
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{ObjectPath, OwnedObjectPath};
@@ -13,19 +15,6 @@ use zbus::zvariant::{ObjectPath, OwnedObjectPath};
     default_path = "/org/quire/Accounts1"
 )]
 pub trait Manager {
-    /// The granted accounts meeting `need` (no bulk enumeration).
-    fn query(&self, need: &NeedArg, class: &str, usage: &str) -> zbus::Result<Vec<CandidateArg>>;
-    /// `granted`, `available_needs_consent`, `denied`, `needs_account` or `unsupported`.
-    fn availability(&self, need: &NeedArg, class: &str, usage: &str) -> zbus::Result<String>;
-    /// Shows the chooser and consent sheet; returns a Request object.
-    fn choose(
-        &self,
-        need: &NeedArg,
-        class: &str,
-        usage: &str,
-        parent_window: &str,
-        options: &Details,
-    ) -> zbus::Result<OwnedObjectPath>;
     /// Shows the add-account sheet; returns a Request object.
     fn add_account(
         &self,
@@ -43,15 +32,9 @@ pub trait Manager {
     /// An account was removed.
     #[zbus(signal)]
     fn account_removed(&self, account: ObjectPath<'_>) -> zbus::Result<()>;
-    /// An account's effective capabilities changed.
-    #[zbus(signal)]
-    fn capability_changed(&self, account: ObjectPath<'_>) -> zbus::Result<()>;
     /// An account must be signed in again.
     #[zbus(signal)]
     fn needs_reauth(&self, account: ObjectPath<'_>) -> zbus::Result<()>;
-    /// One of the receiver's grants changed or was revoked.
-    #[zbus(signal)]
-    fn grant_changed(&self, grant: &str) -> zbus::Result<()>;
 }
 
 /// The daemon's side: the interface's shape, every method answering `NotSupported`.
@@ -60,28 +43,6 @@ pub struct ManagerSkeleton;
 
 #[zbus::interface(name = "org.quire.Accounts1.Manager")]
 impl ManagerSkeleton {
-    fn query(&self, need: NeedArg, class: String, usage: String) -> fdo::Result<Vec<CandidateArg>> {
-        let _ = (need, class, usage);
-        Err(crate::introspect::frozen())
-    }
-
-    fn availability(&self, need: NeedArg, class: String, usage: String) -> fdo::Result<String> {
-        let _ = (need, class, usage);
-        Err(crate::introspect::frozen())
-    }
-
-    fn choose(
-        &self,
-        need: NeedArg,
-        class: String,
-        usage: String,
-        parent_window: String,
-        options: Details,
-    ) -> fdo::Result<OwnedObjectPath> {
-        let _ = (need, class, usage, parent_window, options);
-        Err(crate::introspect::frozen())
-    }
-
     fn add_account(
         &self,
         provider_hint: String,
@@ -109,15 +70,6 @@ impl ManagerSkeleton {
     ) -> zbus::Result<()>;
 
     #[zbus(signal)]
-    async fn capability_changed(
-        emitter: &SignalEmitter<'_>,
-        account: ObjectPath<'_>,
-    ) -> zbus::Result<()>;
-
-    #[zbus(signal)]
     async fn needs_reauth(emitter: &SignalEmitter<'_>, account: ObjectPath<'_>)
     -> zbus::Result<()>;
-
-    #[zbus(signal)]
-    async fn grant_changed(emitter: &SignalEmitter<'_>, grant: &str) -> zbus::Result<()>;
 }

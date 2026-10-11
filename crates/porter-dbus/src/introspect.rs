@@ -3,11 +3,11 @@
 
 use crate::account::AccountSkeleton;
 use crate::agents::AgentsSkeleton;
-use crate::grants::GrantsSkeleton;
 use crate::identities::IdentitiesSkeleton;
 use crate::inference::InferenceSkeleton;
+use crate::keys::KeysSkeleton;
+use crate::launcher_iface::LauncherSkeleton;
 use crate::manager::ManagerSkeleton;
-use crate::peer::PeerSkeleton;
 #[cfg(feature = "photos-picker")]
 use crate::photos_picker::PickerSkeleton;
 use crate::request::RequestSkeleton;
@@ -15,14 +15,15 @@ use crate::sheet_backend::AccountsSheetSkeleton;
 use crate::spaces::SpacesSkeleton;
 use crate::sync::SyncSkeleton;
 use crate::tailnet::TailnetSkeleton;
-use crate::tokens::TokensSkeleton;
 use zbus::fdo;
 use zbus::object_server::Interface;
 
 /// One of porter's buses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Bus {
-    /// `org.quire.Accounts1` (accountd).
+    /// `org.quire.Accounts1` (accountd): adding an identity and the identities' accounts, and
+    /// the Request object every sheet method returns.
     Accounts,
     /// `org.quire.AccountsSheet1` (the sheet host).
     AccountsSheet,
@@ -33,6 +34,12 @@ pub enum Bus {
     Inference,
     /// `org.quire.Inference1.Agents` (inferd's agent endpoints), on inferd's bus name.
     InferenceAgents,
+    /// `org.quire.Inference1.Launcher` (the agent launcher's calls: sessions, agent sign-in,
+    /// an agent's key and its process credentials), on inferd's bus name.
+    InferenceLauncher,
+    /// `org.quire.Inference1.Keys` (an app asking for a permit to use the person's AI keys, and
+    /// adding a key), on inferd's bus name.
+    InferenceKeys,
     /// `org.quire.Spaces1` (the desktop-wide Spaces), on accountd's bus name.
     Spaces,
     /// `org.quire.Identities1` (the identities signed in on this machine), on accountd's bus
@@ -52,6 +59,8 @@ impl Bus {
             Bus::Sync => "org.quire.Sync1.xml",
             Bus::Inference => "org.quire.Inference1.xml",
             Bus::InferenceAgents => "org.quire.Inference1.Agents.xml",
+            Bus::InferenceLauncher => "org.quire.Inference1.Launcher.xml",
+            Bus::InferenceKeys => "org.quire.Inference1.Keys.xml",
             Bus::Spaces => "org.quire.Spaces1.xml",
             Bus::Identities => "org.quire.Identities1.xml",
             Bus::Tailnet => "org.quire.Tailnet1.xml",
@@ -62,18 +71,13 @@ impl Bus {
 /// The introspection document of `bus`: every interface it serves, in one `<node>`.
 pub fn introspection(bus: Bus) -> String {
     let interfaces: Vec<&dyn Interface> = match bus {
-        Bus::Accounts => vec![
-            &ManagerSkeleton,
-            &AccountSkeleton,
-            &GrantsSkeleton,
-            &TokensSkeleton,
-            &RequestSkeleton,
-            &PeerSkeleton,
-        ],
+        Bus::Accounts => vec![&ManagerSkeleton, &AccountSkeleton, &RequestSkeleton],
         Bus::AccountsSheet => vec![&AccountsSheetSkeleton],
         Bus::Sync => sync_interfaces(),
         Bus::Inference => vec![&InferenceSkeleton],
         Bus::InferenceAgents => vec![&AgentsSkeleton],
+        Bus::InferenceLauncher => vec![&LauncherSkeleton],
+        Bus::InferenceKeys => vec![&KeysSkeleton],
         Bus::Spaces => vec![&SpacesSkeleton],
         Bus::Identities => vec![&IdentitiesSkeleton],
         Bus::Tailnet => vec![&TailnetSkeleton],

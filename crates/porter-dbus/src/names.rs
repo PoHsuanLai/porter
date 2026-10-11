@@ -6,7 +6,7 @@ use porter_core::{AccountId, object_segment};
 
 /// accountd's bus name.
 pub const ACCOUNTS_BUS: &str = "org.quire.Accounts1";
-/// accountd's root object (Manager, Grants, Tokens).
+/// accountd's root object (Manager, the add-account sheet).
 pub const ACCOUNTS_PATH: &str = "/org/quire/Accounts1";
 /// The desktop-wide Spaces (`org.quire.Spaces1`), served on accountd's bus name.
 pub const SPACES_PATH: &str = "/org/quire/Spaces1";

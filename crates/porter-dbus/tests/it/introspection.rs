@@ -13,6 +13,8 @@ fn checked_in_introspection_matches_the_interfaces() {
         Bus::Sync,
         Bus::Inference,
         Bus::InferenceAgents,
+        Bus::InferenceLauncher,
+        Bus::InferenceKeys,
         Bus::Spaces,
         Bus::Identities,
         Bus::Tailnet,
@@ -119,33 +121,39 @@ fn the_tailnet_object_declares_machines_and_changed_and_nothing_else() {
 }
 
 #[test]
-fn every_accounts_member_is_declared() {
+fn accountd_declares_identities_and_no_grant_keyed_member() {
     let xml = introspection(Bus::Accounts);
     let members = [
-        "<method name=\"Query\">",
-        "<method name=\"Availability\">",
-        "<method name=\"Choose\">",
         "<method name=\"AddAccount\">",
+        "<method name=\"NeedingReauth\">",
         "<method name=\"Reauthenticate\">",
-        "<method name=\"List\">",
-        "<method name=\"Revoke\">",
-        "<method name=\"IssueToken\">",
-        "<method name=\"OpenAuthenticated\">",
-        "<method name=\"OpenLinked\">",
-        "<method name=\"IssueProcessCredential\">",
-        "<method name=\"RevokeProcessCredential\">",
-        "<signal name=\"ProcessCredentialRevoked\">",
         "<method name=\"Close\">",
         "<signal name=\"AccountAdded\">",
         "<signal name=\"AccountRemoved\">",
-        "<signal name=\"CapabilityChanged\">",
         "<signal name=\"NeedsReauth\">",
-        "<signal name=\"GrantChanged\">",
         "<signal name=\"Response\">",
         "<property name=\"Capabilities\" type=\"a(sa{sv})\" access=\"read\"/>",
     ];
     for member in members {
         assert!(xml.contains(member), "missing {member}");
+    }
+    // Whoever uses a credential holds it: nothing here finds, grants, relays or issues one.
+    for gone in [
+        "Query",
+        "Availability",
+        "Choose",
+        "Revoke",
+        "IssueToken",
+        "OpenAuthenticated",
+        "OpenLinked",
+        "IssueProcessCredential",
+        "CapabilityChanged",
+        "GrantChanged",
+        "Accounts1.Grants",
+        "Accounts1.Tokens",
+        "Accounts1.Peer",
+    ] {
+        assert!(!xml.contains(gone), "{gone} is not accountd's any more");
     }
 }
 
@@ -226,38 +234,53 @@ fn inference_calls_carry_an_options_dict_for_the_reserved_traceparent() {
 }
 
 #[test]
-fn the_peer_interface_is_the_daemon_members_and_the_launchers() {
-    let xml = introspection(Bus::Accounts);
-    let peer = xml
-        .split("<interface name=\"org.quire.Accounts1.Peer\">")
-        .nth(1)
-        .and_then(|rest| rest.split("</interface>").next())
-        .expect("the Peer interface is declared");
+fn the_launcher_interface_is_the_agent_launchers_nine_methods_and_three_signals() {
+    let xml = introspection(Bus::InferenceLauncher);
     for member in [
-        "<method name=\"Verdicts\">",
-        "<method name=\"ResolveKey\">",
-        "<method name=\"ReportLocal\">",
+        "<interface name=\"org.quire.Inference1.Launcher\">",
         "<method name=\"SetAgentState\">",
         "<method name=\"RegisterLauncher\">",
         "<method name=\"BeginSession\">",
         "<method name=\"EndSession\">",
-        "<method name=\"RequestAgentGrant\">",
+        "<method name=\"RequestAgentKey\">",
         "<method name=\"ReportAgentLogin\">",
         "<method name=\"ReportAgentLogout\">",
+        "<method name=\"IssueProcessCredential\">",
+        "<method name=\"RevokeProcessCredential\">",
         "<signal name=\"AgentLoginRequested\">",
         "<signal name=\"AgentLogoutRequested\">",
+        "<signal name=\"ProcessCredentialRevoked\">",
+        // The permit, not a grant, at the bus edge; and no `kind`: a key is always an AI key.
+        "<arg name=\"permit\" type=\"s\" direction=\"in\"/>",
     ] {
-        assert!(peer.contains(member), "missing {member}");
+        assert!(xml.contains(member), "missing {member}");
     }
-    assert_eq!(peer.matches("<method ").count(), 10);
-    assert_eq!(peer.matches("<signal ").count(), 2);
+    assert_eq!(xml.matches("<method ").count(), 9);
+    assert_eq!(xml.matches("<signal ").count(), 3);
     assert!(
-        !peer.contains("OpenCredential"),
-        "syncd opens an authenticated stream like any app"
+        !xml.contains("name=\"kind\""),
+        "RequestAgentKey has no kind"
     );
-    assert!(
-        peer.contains("<arg type=\"h\" direction=\"out\"/>"),
-        "a key travels on a descriptor, never a string"
+    assert!(!xml.contains("grant"), "the launcher speaks of permits");
+}
+
+#[test]
+fn the_keys_interface_is_a_request_for_a_permit_and_adding_a_key_and_nothing_else() {
+    let xml = introspection(Bus::InferenceKeys);
+    for member in [
+        "<interface name=\"org.quire.Inference1.Keys\">",
+        "<method name=\"RequestKey\">",
+        "<method name=\"AddAccount\">",
+    ] {
+        assert!(xml.contains(member), "missing {member}");
+    }
+    // Both return a Request object; no listing and no revoking (Settings does those through
+    // inferd's settings rows).
+    assert_eq!(xml.matches("<method ").count(), 2);
+    assert_eq!(xml.matches("<signal ").count(), 0);
+    assert_eq!(
+        xml.matches("<arg type=\"o\" direction=\"out\"/>").count(),
+        2
     );
 }
 
