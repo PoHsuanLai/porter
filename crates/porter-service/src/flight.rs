@@ -5,8 +5,10 @@
 //! together would each present the same token and the second would be refused, or would store a
 //! token the first has already replaced. So each account has one [`Flight`]: a caller takes its
 //! gate, reads the stored credential again (the caller ahead of it may have rotated it), and, if
-//! that caller has just issued a token for the same audience and kind that is still good, uses it
-//! instead of asking the issuer again. The rotated credential is written back before the new
+//! a caller ahead of it refreshed while it waited and issued a token for the same audience and
+//! kind that is still good, uses it instead of asking the issuer again. A caller that did not
+//! wait behind a refresh always asks the issuer: this is no cache, only the merging of refreshes
+//! that ran together. The rotated credential is written back before the new
 //! access token is handed out, and before the gate is let go.
 
 use crate::audit::AuditSink;
@@ -24,6 +26,7 @@ use porter_core::{
 use porter_provider::{Presented, Provider, ProviderSession};
 use porter_secrets::Secrets;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 /// How long before a token expires it is no longer reused: the same margin porter-oauth renews
@@ -53,6 +56,9 @@ struct Issuing {
 pub(crate) struct Flight {
     pub(crate) gate: Gate,
     issuing: Mutex<Issuing>,
+    /// How many refreshes this flight has made: a caller notes it before taking the gate, and
+    /// may reuse a token only when a refresh happened while it waited.
+    refreshes: AtomicU64,
 }
 
 impl Flight {
@@ -61,6 +67,11 @@ impl Flight {
         self.issuing
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// How many refreshes have been made so far, noted before taking the gate.
+    pub(crate) fn refreshes(&self) -> u64 {
+        self.refreshes.load(Ordering::Acquire)
     }
 
     /// The token the caller ahead of us issued for this audience and kind, when the store still
@@ -97,6 +108,7 @@ impl Flight {
         token: IssuedToken,
     ) {
         let mut issuing = self.issuing();
+        self.refreshes.fetch_add(1, Ordering::AcqRel);
         if issuing.left.as_ref() != Some(presented) {
             issuing.issued.clear();
         }
@@ -179,10 +191,14 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             return Ok(token);
         }
         let flight = self.flights.of(&account.id);
+        let seen = flight.refreshes();
         let _turn = flight.gate.lock().await;
         // Read again under the gate: the caller ahead of us may have rotated the credential.
         let stored = self.secrets.get(&key).await.map_err(secrets_refusal)?;
-        if let Some(token) = flight.reusable(&stored, audience, kind, self.clock.now()) {
+        // Only a refresh made while we waited is shared; otherwise this caller asks the issuer.
+        if flight.refreshes() != seen
+            && let Some(token) = flight.reusable(&stored, audience, kind, self.clock.now())
+        {
             return Ok(token);
         }
         let (token, renewed) = self
