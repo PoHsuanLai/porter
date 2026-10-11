@@ -6,20 +6,98 @@
 
 use crate::form::encode;
 use crate::pkce::Pkce;
-use porter_provider::{ClientEntry, Issuer, IssuerEndpoints};
+use porter_provider::{
+    ClientEntry, ConsentHistory, Issuer, IssuerEndpoints, LoginHint, SignInStart,
+};
 
-/// The authorize URL for `client` at `endpoints`, redirecting to `redirect`.
-///
-/// Google gets `access_type=offline` and `prompt=consent`: without them a repeat authorization
-/// returns no refresh token and the account stops working an hour later. It also gets
-/// `include_granted_scopes=true`, so asking for one more service later (incremental
-/// authorization) keeps what was granted before.
+/// What Google's `prompt` asks for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum GooglePrompt {
+    /// Show the consent page again (`prompt=consent`): the only way to be sure of a refresh token.
+    Consent,
+    /// Show the account chooser (`prompt=select_account`).
+    SelectAccount,
+    /// Send no `prompt`: with a `login_hint` Google signs in as that account without a second
+    /// screen, and shows consent only if the person has not agreed before.
+    Unspecified,
+}
+
+impl GooglePrompt {
+    /// The prompt for a sign-in: consent on a client's first sign-in for the identity; after
+    /// that none when the address is known (one click), and the account chooser when it is not.
+    pub fn choose(consent: ConsentHistory, hint: Option<&LoginHint>) -> Self {
+        match (consent, hint) {
+            (ConsentHistory::SignedInBefore, Some(_)) => Self::Unspecified,
+            (ConsentHistory::SignedInBefore, None) => Self::SelectAccount,
+            // `ConsentHistory` grows: a history this code does not know is read as a first one.
+            _ => Self::Consent,
+        }
+    }
+
+    fn value(self) -> Option<&'static str> {
+        match self {
+            Self::Consent => Some("consent"),
+            Self::SelectAccount => Some("select_account"),
+            Self::Unspecified => None,
+        }
+    }
+}
+
+/// What a sign-in tells the issuer about the person, besides the scopes.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AuthorizeAsk {
+    /// The address to open the page on (`login_hint`), when known.
+    pub login_hint: Option<LoginHint>,
+    /// Whether the person agreed to this client before.
+    pub consent: ConsentHistory,
+}
+
+impl AuthorizeAsk {
+    /// What `start` says: its address and its consent history.
+    pub fn of(start: &SignInStart) -> Self {
+        Self {
+            login_hint: start.login_hint.clone(),
+            consent: start.consent,
+        }
+    }
+}
+
+/// The authorize URL for `client` at `endpoints`, redirecting to `redirect`, for a first sign-in
+/// with no address named. [`authorize_url_for`] is the same with an [`AuthorizeAsk`].
 pub fn authorize_url(
     endpoints: &IssuerEndpoints,
     client: &ClientEntry,
     pkce: &Pkce,
     redirect: &str,
     scopes: &[String],
+) -> String {
+    authorize_url_for(
+        endpoints,
+        client,
+        pkce,
+        redirect,
+        scopes,
+        &AuthorizeAsk::default(),
+    )
+}
+
+/// The authorize URL for `client` at `endpoints`, redirecting to `redirect`.
+///
+/// Google gets `access_type=offline` and, on a client's first sign-in for the identity,
+/// `prompt=consent`: without them a first authorization returns no refresh token and the account
+/// stops working an hour later. After that the consent is not forced again ([`GooglePrompt`]).
+/// It also gets `include_granted_scopes=true`, so asking for one more service later
+/// (incremental authorization) keeps what was granted before. Any issuer gets `login_hint=` when
+/// `ask` has an address.
+pub fn authorize_url_for(
+    endpoints: &IssuerEndpoints,
+    client: &ClientEntry,
+    pkce: &Pkce,
+    redirect: &str,
+    scopes: &[String],
+    ask: &AuthorizeAsk,
 ) -> String {
     let scope = scopes.join(" ");
     let mut pairs = vec![
@@ -34,12 +112,15 @@ pub fn authorize_url(
         ("code_challenge", challenge.0.as_str()),
         ("code_challenge_method", "S256"),
     ]);
+    if let Some(hint) = &ask.login_hint {
+        pairs.push(("login_hint", hint.as_str()));
+    }
     if client.issuer == Issuer::Google {
-        pairs.extend([
-            ("access_type", "offline"),
-            ("prompt", "consent"),
-            ("include_granted_scopes", "true"),
-        ]);
+        pairs.push(("access_type", "offline"));
+        if let Some(prompt) = GooglePrompt::choose(ask.consent, ask.login_hint.as_ref()).value() {
+            pairs.push(("prompt", prompt));
+        }
+        pairs.push(("include_granted_scopes", "true"));
     }
     with_query(endpoints.authorize.as_str(), &pairs)
 }
@@ -156,6 +237,68 @@ mod tests {
             &[],
         );
         assert!(!microsoft.contains("include_granted_scopes"));
+    }
+
+    #[test]
+    fn the_address_and_the_consent_history_choose_the_prompt_and_the_hint() {
+        let pkce = Pkce::from_random([5; 32], [6; 16]);
+        let ada = LoginHint::parse("ada+tag@gmail.com").expect("an address");
+        let cases = [
+            // (issuer, consent, hint, prompt, login_hint)
+            (
+                Issuer::Google,
+                ConsentHistory::FirstSignIn,
+                None,
+                Some("consent"),
+                None,
+            ),
+            (
+                Issuer::Google,
+                ConsentHistory::FirstSignIn,
+                Some(&ada),
+                Some("consent"),
+                Some("ada+tag@gmail.com"),
+            ),
+            (
+                Issuer::Google,
+                ConsentHistory::SignedInBefore,
+                Some(&ada),
+                None,
+                Some("ada+tag@gmail.com"),
+            ),
+            (
+                Issuer::Google,
+                ConsentHistory::SignedInBefore,
+                None,
+                Some("select_account"),
+                None,
+            ),
+            (
+                Issuer::Microsoft,
+                ConsentHistory::SignedInBefore,
+                Some(&ada),
+                None,
+                Some("ada+tag@gmail.com"),
+            ),
+        ];
+        for (issuer, consent, hint, prompt, login_hint) in cases {
+            let ask = AuthorizeAsk {
+                login_hint: hint.cloned(),
+                consent,
+            };
+            let url = authorize_url_for(
+                &issuer.endpoints(),
+                &client(issuer),
+                &pkce,
+                "http://127.0.0.1:4000",
+                &[],
+                &ask,
+            );
+            let q = query(&url);
+            let get = |k: &str| q.iter().find(|(n, _)| n == k).map(|(_, v)| v.as_str());
+            assert_eq!(get("prompt"), prompt, "{issuer:?} {consent:?} {hint:?}");
+            assert_eq!(get("login_hint"), login_hint, "{issuer:?} {consent:?}");
+        }
     }
 
     #[test]

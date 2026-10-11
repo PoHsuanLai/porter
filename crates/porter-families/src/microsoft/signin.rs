@@ -19,8 +19,9 @@ use porter_core::{
 };
 use porter_http::Http;
 use porter_oauth::{
-    AuthCode, ExchangeFault, LoopbackFault, LoopbackServer, OAuthState, Pkce, TokenResponse,
-    authorize_url, endpoints_of, exchange_code_scoped, redeem_scope, refresh_scoped,
+    AuthCode, AuthorizeAsk, ExchangeFault, LoopbackFault, LoopbackServer, OAuthState, Pkce,
+    TokenResponse, authorize_url_for, endpoints_of, exchange_code_scoped, redeem_scope,
+    refresh_scoped,
 };
 use porter_provider::{
     ClientEntry, Issuer, IssuerEndpoints, ProviderSpec, SignIn, SignInMode, SignInStart,
@@ -142,12 +143,13 @@ impl<H: Http + 'static> MicrosoftSignIn<H> {
             .await
             .map_err(|_| SignInFault::Unreachable)?;
         let redirect = server.redirect_uri();
-        let target = authorize_url(
+        let target = authorize_url_for(
             &grant.endpoints,
             &grant.client,
             &pkce,
             &redirect,
             &grant.scopes,
+            &AuthorizeAsk::of(&self.start),
         );
         let url = WebUrl::parse(&target).map_err(|_| SignInFault::Unreadable)?;
         let expected: OAuthState = pkce.state.clone();

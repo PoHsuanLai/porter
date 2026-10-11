@@ -112,3 +112,42 @@ fn the_other_steps_pass_through() {
         assert_eq!(step.progress(), expected);
     }
 }
+
+#[test]
+fn a_login_hint_is_one_address_or_a_fault() {
+    let cases = [
+        ("ada@gmail.com", Ok("ada@gmail.com")),
+        ("  ada@gmail.com ", Ok("ada@gmail.com")),
+        ("", Err(LoginHintFault::Empty)),
+        ("   ", Err(LoginHintFault::Empty)),
+        ("ada", Err(LoginHintFault::NotAnAddress)),
+        ("@gmail.com", Err(LoginHintFault::NotAnAddress)),
+        ("ada@", Err(LoginHintFault::NotAnAddress)),
+        ("ada lovelace@gmail.com", Err(LoginHintFault::NotAnAddress)),
+        (
+            "ada@gmail.com\n&prompt=none",
+            Err(LoginHintFault::NotAnAddress),
+        ),
+    ];
+    for (text, want) in cases {
+        let got = LoginHint::parse(text);
+        assert_eq!(
+            got.as_ref().map(LoginHint::as_str),
+            want.as_ref().map(|s| *s),
+            "{text:?}"
+        );
+    }
+}
+
+#[test]
+fn a_sign_in_starts_without_a_hint_and_with_a_first_consent() {
+    let start = SignInStart::new(SignInMode::Add);
+    assert_eq!(start.login_hint, None);
+    assert_eq!(start.consent, ConsentHistory::FirstSignIn);
+    let hint = LoginHint::parse("ada@gmail.com").expect("an address");
+    let again = start
+        .with_login_hint(hint.clone())
+        .with_consent(ConsentHistory::SignedInBefore);
+    assert_eq!(again.login_hint, Some(hint));
+    assert_eq!(again.consent, ConsentHistory::SignedInBefore);
+}

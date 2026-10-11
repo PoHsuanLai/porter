@@ -6,7 +6,7 @@ use porter_core::{
     Toggle,
 };
 use porter_fake_servers::{Consent, IssuerEvent, TokenResult};
-use porter_provider::{Provider, SignIn, SignInMode, SignInStart, SignInStep};
+use porter_provider::{LoginHint, Provider, SignIn, SignInMode, SignInStart, SignInStep};
 
 fn grant_types(rig: &Rig) -> Vec<String> {
     rig.issuer
@@ -25,7 +25,15 @@ fn grant_types(rig: &Rig) -> Vec<String> {
 
 /// Signs in by loopback up to the review, with the browser answering.
 async fn to_review(rig: &Rig) -> (porter_families::MicrosoftSignIn<Wire>, SignInStep) {
-    let mut signin = rig.provider.sign_in(start()).expect("sign in");
+    to_review_from(rig, start()).await
+}
+
+/// The same for a sign-in begun like `begun`.
+async fn to_review_from(
+    rig: &Rig,
+    begun: SignInStart,
+) -> (porter_families::MicrosoftSignIn<Wire>, SignInStep) {
+    let mut signin = rig.provider.sign_in(begun).expect("sign in");
     let SignInStep::OpenBrowser { url } = signin.next(SignInInput::Start).await else {
         panic!("expected the browser")
     };
@@ -34,6 +42,33 @@ async fn to_review(rig: &Rig) -> (porter_families::MicrosoftSignIn<Wire>, SignIn
     let step = until_settled(&mut signin, 200).await;
     browser.await.expect("task").expect("browser");
     (signin, step)
+}
+
+#[tokio::test]
+async fn a_known_address_is_sent_as_the_hint_and_microsoft_gets_no_prompt() {
+    let ada = LoginHint::parse("ada@outlook.com").expect("an address");
+    for hint in [Some(&ada), None] {
+        let rig = Rig::new(true).await;
+        let mut begun = start();
+        if let Some(hint) = hint {
+            begun = begun.with_login_hint(hint.clone());
+        }
+        let (_signin, step) = to_review_from(&rig, begun).await;
+        assert!(matches!(step, SignInStep::Review { .. }), "{step:?}");
+        let query = rig
+            .issuer
+            .authorize_queries()
+            .pop()
+            .expect("an authorize request");
+        let get = |name: &str| {
+            query
+                .iter()
+                .find(|(n, _)| n == name)
+                .map(|(_, v)| v.as_str())
+        };
+        assert_eq!(get("login_hint"), hint.map(LoginHint::as_str), "{hint:?}");
+        assert_eq!(get("prompt"), None, "{hint:?}");
+    }
 }
 
 #[tokio::test]
