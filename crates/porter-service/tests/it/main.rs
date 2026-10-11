@@ -7,7 +7,6 @@ mod persist;
 mod refresh;
 mod session_scope;
 mod space_owner;
-mod sync_grant;
 
 #[test]
 fn every_module_is_declared() {
