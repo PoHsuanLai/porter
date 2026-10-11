@@ -7,7 +7,7 @@
 //!
 //! ```
 //! use porter_core::{AccountId, SecretKey, SecretPurpose};
-//! use porter_secrets::{SERVICE, attributes};
+//! use porter_secrets::{Namespace, SERVICE, attributes, attributes_in};
 //!
 //! let key = SecretKey {
 //!     account: AccountId::parse("cloud").expect("an id"),
@@ -15,10 +15,20 @@
 //! };
 //! let filed = attributes(&key);
 //! assert_eq!(
-//!     (filed.service, filed.account.as_str(), filed.purpose.as_str()),
+//!     (filed.service.as_str(), filed.account.as_str(), filed.purpose.as_str()),
 //!     (SERVICE, "cloud", r#"{"kind":"password"}"#)
 //! );
+//!
+//! // A host that keeps its own credentials names its own namespace; porter's daemons keep
+//! // `Namespace::PORTER`, which is what every constructor without a namespace uses.
+//! let mailo = Namespace::parse("mailo/work").expect("a namespace");
+//! assert_eq!(attributes_in(&mailo, &key).service, "mailo/work");
+//! assert_eq!(attributes_in(&Namespace::PORTER, &key), filed);
 //! ```
+//!
+//! The namespace is the `service` attribute (and the keyring-core service). `Oo7Secrets`,
+//! `KeyringSecrets` and `FileSecrets` file under `Namespace::PORTER`; `Oo7Secrets::in_namespace`,
+//! `KeyringSecrets::in_namespace` and `FileSecrets::open_in` take another.
 
 mod attributes;
 mod error;
@@ -28,18 +38,20 @@ mod file;
 mod keyring;
 #[cfg(feature = "testing")]
 mod memory;
+mod namespace;
 #[cfg(feature = "oo7")]
 mod oo7;
 mod secrets;
 
-pub use attributes::{SERVICE, SecretAttributes, attributes};
+pub use attributes::{SERVICE, SecretAttributes, attributes, attributes_in};
 pub use error::SecretsError;
 #[cfg(all(feature = "test-keys", unix))]
 pub use file::{FileSecrets, FileSecretsError};
 #[cfg(feature = "keyring")]
-pub use keyring::{KeyringSecrets, StoreSecrets};
+pub use keyring::{KeyringNamedSecrets, KeyringSecrets, StoreSecrets};
 #[cfg(feature = "testing")]
 pub use memory::MemorySecrets;
+pub use namespace::{Namespace, NamespaceError};
 #[cfg(feature = "oo7")]
-pub use oo7::{Oo7KeyringSecrets, Oo7Secrets};
+pub use oo7::{Oo7KeyringSecrets, Oo7NamedSecrets, Oo7Secrets};
 pub use secrets::{PutOutcome, Secrets};

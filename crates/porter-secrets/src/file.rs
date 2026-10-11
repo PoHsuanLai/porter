@@ -3,16 +3,18 @@
 //!
 //! One JSON file holds every credential as plain text, so it protects nothing but the file's
 //! mode: it is created `0600` and refused, on open and on every later use, when any group or
-//! other bit is set. Items are addressed as the keyring backends address them (`service`
-//! `porter`, the account, the purpose in its serde form). Every use takes an advisory lock on a
+//! other bit is set. Items are addressed as the keyring backends address them (`service` the
+//! store's namespace, `porter` unless the host names another; the account; the purpose in its
+//! serde form). Every use takes an advisory lock on a
 //! sibling `<file>.lock`, reads the file and, for a change, writes it through `porter_core`'s
 //! atomic writer (a staging file, synced, renamed over the file), so a crash leaves the old file
 //! whole and writers in this or any other process
 //! (a daemon and `accountd add`) are serialised. The I/O is synchronous: the files are tiny and
 //! nothing awaits while the lock is held.
 
-use crate::attributes::{SERVICE, attributes};
+use crate::attributes::attributes_in;
 use crate::error::SecretsError;
+use crate::namespace::Namespace;
 use crate::secrets::{PutOutcome, Secrets};
 use porter_core::{AccountId, Credential, SecretKey};
 use porter_fs::atomic::AtomicWrite;
@@ -76,20 +78,32 @@ enum Change {
 /// One filed item.
 #[derive(Debug, Clone, PartialEq)]
 struct Item {
+    service: String,
     account: String,
     purpose: String,
     credential: Value,
 }
 
 impl Item {
-    fn is(&self, key: &SecretKey) -> bool {
-        let at = attributes(key);
-        self.account == at.account && self.purpose == at.purpose
+    /// The item `key` is filed as in `namespace`.
+    fn new(namespace: &Namespace, key: &SecretKey, credential: Value) -> Self {
+        let at = attributes_in(namespace, key);
+        Self {
+            service: at.service,
+            account: at.account,
+            purpose: at.purpose,
+            credential,
+        }
+    }
+
+    fn is(&self, namespace: &Namespace, key: &SecretKey) -> bool {
+        let at = attributes_in(namespace, key);
+        self.service == at.service && self.account == at.account && self.purpose == at.purpose
     }
 
     fn to_json(&self) -> Value {
         json!({
-            "service": SERVICE,
+            "service": self.service,
             "account": self.account,
             "purpose": self.purpose,
             "credential": self.credential,
@@ -98,7 +112,8 @@ impl Item {
 
     fn from_json(value: &Value) -> Option<Self> {
         let text = |name: &str| value.get(name)?.as_str().map(str::to_owned);
-        (text("service")? == SERVICE).then_some(Self {
+        Some(Self {
+            service: text("service")?,
             account: text("account")?,
             purpose: text("purpose")?,
             credential: value.get("credential")?.clone(),
@@ -132,19 +147,38 @@ fn render(items: &[Item]) -> Vec<u8> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileSecrets {
     path: PathBuf,
+    namespace: Namespace,
 }
 
 impl FileSecrets {
-    /// The store in the file at `path` (absolute): created empty with mode `0600` (and its
-    /// directories) if missing, refused if it is not a regular file, has a group or other
-    /// permission bit set, or does not parse.
+    /// The store in the file at `path` (absolute), filing under [`Namespace::PORTER`]: created
+    /// empty with mode `0600` (and its directories) if missing, refused if it is not a regular
+    /// file, has a group or other permission bit set, or does not parse.
     pub fn open(path: impl Into<PathBuf>) -> Result<Self, FileSecretsError> {
-        let store = Self { path: path.into() };
+        Self::open_in(path, Namespace::PORTER)
+    }
+
+    /// The store in the file at `path`, filing under `namespace`: [`FileSecrets::open`] for a
+    /// host with a namespace of its own. Items of other namespaces in the same file are kept
+    /// and never read.
+    pub fn open_in(
+        path: impl Into<PathBuf>,
+        namespace: Namespace,
+    ) -> Result<Self, FileSecretsError> {
+        let store = Self {
+            path: path.into(),
+            namespace,
+        };
         if !store.path.is_absolute() {
             return Err(FileSecretsError::NotAbsolute);
         }
         store.update(|_| ((), Change::Kept))?;
         Ok(store)
+    }
+
+    /// The namespace items are filed under.
+    pub fn namespace(&self) -> &Namespace {
+        &self.namespace
     }
 
     /// The file this store keeps its items in.
@@ -223,14 +257,10 @@ fn private_options() -> OpenOptions {
 impl Secrets for FileSecrets {
     async fn put(&self, key: &SecretKey, value: &Credential) -> Result<(), SecretsError> {
         let credential = serde_json::to_value(value).map_err(|_| SecretsError::Unreadable)?;
-        let at = attributes(key);
+        let namespace = &self.namespace;
         Ok(self.update(|items| {
-            items.retain(|item| !item.is(key));
-            items.push(Item {
-                account: at.account,
-                purpose: at.purpose,
-                credential,
-            });
+            items.retain(|item| !item.is(namespace, key));
+            items.push(Item::new(namespace, key, credential));
             ((), Change::Changed)
         })?)
     }
@@ -241,24 +271,21 @@ impl Secrets for FileSecrets {
         value: &Credential,
     ) -> Result<PutOutcome, SecretsError> {
         let credential = serde_json::to_value(value).map_err(|_| SecretsError::Unreadable)?;
-        let at = attributes(key);
+        let namespace = &self.namespace;
         Ok(self.update(|items| {
-            if items.iter().any(|item| item.is(key)) {
+            if items.iter().any(|item| item.is(namespace, key)) {
                 return (PutOutcome::AlreadyThere, Change::Kept);
             }
-            items.push(Item {
-                account: at.account,
-                purpose: at.purpose,
-                credential,
-            });
+            items.push(Item::new(namespace, key, credential));
             (PutOutcome::Stored, Change::Changed)
         })?)
     }
 
     async fn get(&self, key: &SecretKey) -> Result<Credential, SecretsError> {
+        let namespace = &self.namespace;
         let found = self.update(|items| {
             (
-                items.iter().find(|item| item.is(key)).cloned(),
+                items.iter().find(|item| item.is(namespace, key)).cloned(),
                 Change::Kept,
             )
         })?;
@@ -267,18 +294,20 @@ impl Secrets for FileSecrets {
     }
 
     async fn delete(&self, key: &SecretKey) -> Result<(), SecretsError> {
+        let namespace = &self.namespace;
         Ok(self.update(|items| {
             let before = items.len();
-            items.retain(|item| !item.is(key));
+            items.retain(|item| !item.is(namespace, key));
             ((), changed_if(items.len() != before))
         })?)
     }
 
     async fn delete_account(&self, account: &AccountId) -> Result<(), SecretsError> {
         let account = account.to_string();
+        let service = self.namespace.as_str();
         Ok(self.update(|items| {
             let before = items.len();
-            items.retain(|item| item.account != account);
+            items.retain(|item| !(item.service == service && item.account == account));
             ((), changed_if(items.len() != before))
         })?)
     }

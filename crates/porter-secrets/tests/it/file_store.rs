@@ -3,7 +3,7 @@
 #![cfg(unix)]
 
 use porter_core::{AccountId, Credential, SecretKey, SecretPurpose, SecretText};
-use porter_secrets::{FileSecrets, FileSecretsError, PutOutcome, Secrets, SecretsError};
+use porter_secrets::{FileSecrets, FileSecretsError, Namespace, PutOutcome, Secrets, SecretsError};
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -210,6 +210,42 @@ async fn concurrent_writers_are_serialised_and_none_loses_an_update() {
         );
     }
     assert!(store.get(&key("shared")).await.is_ok());
+}
+
+/// Two namespaces in one file: each reads and wipes its own items, the other's stay in the file
+/// (named by their own service), and the file still opens.
+#[tokio::test]
+async fn namespaces_share_a_file_without_reading_each_other() {
+    let path = scratch("namespaces").join("keys.json");
+    let porter = FileSecrets::open(&path).expect("created");
+    let mailo = FileSecrets::open_in(&path, Namespace::parse("mailo/work").expect("a namespace"))
+        .expect("another namespace over the same file");
+    porter
+        .put(&key("cloud"), &api_key("one"))
+        .await
+        .expect("put");
+    assert_eq!(mailo.get(&key("cloud")).await, Err(SecretsError::Missing));
+    mailo
+        .put(&key("cloud"), &api_key("two"))
+        .await
+        .expect("put");
+    assert_eq!(porter.get(&key("cloud")).await, Ok(api_key("one")));
+    assert_eq!(mailo.get(&key("cloud")).await, Ok(api_key("two")));
+    let text = std::fs::read_to_string(&path).expect("read");
+    let document: serde_json::Value = serde_json::from_str(&text).expect("json");
+    let services: Vec<_> = document["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .map(|item| item["service"].as_str().expect("service").to_owned())
+        .collect();
+    assert_eq!(services, ["porter", "mailo/work"]);
+    mailo
+        .delete_account(&key("cloud").account)
+        .await
+        .expect("wipe");
+    assert_eq!(mailo.get(&key("cloud")).await, Err(SecretsError::Missing));
+    assert_eq!(porter.get(&key("cloud")).await, Ok(api_key("one")));
 }
 
 #[tokio::test]

@@ -3,7 +3,7 @@
 //! keyring: the Secret Service is never opened.
 
 use porter_core::{AccountId, CapabilityKind, Credential, SecretKey, SecretPurpose, SecretText};
-use porter_secrets::{MemorySecrets, PutOutcome, Secrets, SecretsError, StoreSecrets};
+use porter_secrets::{MemorySecrets, Namespace, PutOutcome, Secrets, SecretsError, StoreSecrets};
 use std::sync::Arc;
 
 fn key(account: &str, purpose: SecretPurpose) -> SecretKey {
@@ -265,6 +265,35 @@ async fn keyring_without_chunking_keeps_the_contract_too() {
     .await;
 }
 
+/// Two namespaces on one keyring never see each other's items: the same key is two items, each
+/// filed under its own service, and wiping an account in one leaves the other.
+#[tokio::test]
+async fn namespaces_keep_their_items_apart() {
+    let mock = keyring_core::mock::Store::new().expect("mock");
+    let porter = StoreSecrets::new(mock.clone());
+    let mailo = StoreSecrets::new(mock.clone())
+        .in_namespace(Namespace::parse("mailo/work").expect("a namespace"));
+    let filed = key("cloud", SecretPurpose::Password);
+    porter.put(&filed, &password("a")).await.expect("put");
+    assert_eq!(mailo.get(&filed).await, Err(SecretsError::Missing));
+    assert_eq!(
+        mailo.put_if_absent(&filed, &password("b")).await,
+        Ok(PutOutcome::Stored)
+    );
+    assert_eq!(porter.get(&filed).await, Ok(password("a")));
+    assert_eq!(mailo.get(&filed).await, Ok(password("b")));
+    let entry = |service: &str| {
+        mock.build(service, r#"cloud:{"kind":"password"}"#, None)
+            .expect("entry")
+            .get_password()
+    };
+    assert!(entry("porter").is_ok());
+    assert!(entry("mailo/work").is_ok());
+    mailo.delete_account(&filed.account).await.expect("wipe");
+    assert_eq!(mailo.get(&filed).await, Err(SecretsError::Missing));
+    assert_eq!(porter.get(&filed).await, Ok(password("a")));
+}
+
 #[tokio::test]
 async fn the_platform_store_is_the_default_store_once_one_is_set() {
     use porter_secrets::KeyringSecrets;
@@ -346,6 +375,24 @@ mod oo7_file {
     #[tokio::test]
     async fn oo7_file_backend_keeps_the_contract() {
         contract(scratch("contract").await).await;
+    }
+
+    #[tokio::test]
+    async fn oo7_namespaces_keep_their_items_apart() {
+        let porter = scratch("namespaces").await;
+        let mailo = porter
+            .store
+            .clone()
+            .in_namespace(Namespace::parse("mailo/work").expect("a namespace"));
+        let filed = key("cloud", SecretPurpose::Password);
+        porter.store.put(&filed, &password("a")).await.expect("put");
+        assert_eq!(mailo.get(&filed).await, Err(SecretsError::Missing));
+        mailo.put(&filed, &password("b")).await.expect("put");
+        assert_eq!(porter.store.get(&filed).await, Ok(password("a")));
+        assert_eq!(mailo.get(&filed).await, Ok(password("b")));
+        mailo.delete_account(&filed.account).await.expect("wipe");
+        assert_eq!(mailo.get(&filed).await, Err(SecretsError::Missing));
+        assert_eq!(porter.store.get(&filed).await, Ok(password("a")));
     }
 }
 

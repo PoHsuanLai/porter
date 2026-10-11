@@ -10,16 +10,18 @@
 //! Blocking keyring calls run on a dedicated thread and resolve a oneshot, because this crate
 //! may not reach a runtime and a blocking call on an async executor once panicked mailo.
 //!
-//! Each credential is one entry `{account}:{purpose}` under the service `porter`, where the
-//! purpose is its serde form, as in [`attributes`]. keyring-core stores cannot be searched the
+//! Each credential is one entry `{account}:{purpose}` under the service of its namespace
+//! (`porter` unless the host names another), where the purpose is its serde form, as in
+//! [`attributes`]. keyring-core stores cannot be searched the
 //! same way on every platform, so each account also has an index entry `{account}:index` that
 //! lists its purposes, and removing an account reads it.
 
 mod chunks;
 mod thread;
 
-use crate::attributes::{SERVICE, attributes};
+use crate::attributes::attributes;
 use crate::error::SecretsError;
+use crate::namespace::Namespace;
 use crate::secrets::{PutOutcome, Secrets};
 use chunks::{Limit, Slots};
 use keyring_core::{CredentialStore, Error};
@@ -34,9 +36,36 @@ const LIMIT: Limit = Limit::Utf16Units(1280);
 #[cfg(not(windows))]
 const LIMIT: Limit = Limit::None;
 
-/// The user's platform keyring.
+/// The user's platform keyring, filing under [`Namespace::PORTER`].
+/// [`KeyringSecrets::in_namespace`] files under another.
 #[derive(Debug, Default)]
 pub struct KeyringSecrets;
+
+impl KeyringSecrets {
+    /// The user's platform keyring, filing under `namespace` (the same keyring
+    /// [`KeyringSecrets`] opens; only the service differs).
+    pub fn in_namespace(namespace: Namespace) -> KeyringNamedSecrets {
+        KeyringNamedSecrets::new(namespace)
+    }
+}
+
+/// The user's platform keyring, filing under a namespace the host chose.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeyringNamedSecrets {
+    namespace: Namespace,
+}
+
+impl KeyringNamedSecrets {
+    /// The user's platform keyring, filing under `namespace`.
+    pub fn new(namespace: Namespace) -> Self {
+        Self { namespace }
+    }
+
+    /// The namespace items are filed under.
+    pub fn namespace(&self) -> &Namespace {
+        &self.namespace
+    }
+}
 
 /// Secrets over one given keyring-core store: what [`KeyringSecrets`] does once it has opened
 /// the platform's, and what the tests do over keyring-core's mock.
@@ -44,24 +73,41 @@ pub struct KeyringSecrets;
 pub struct StoreSecrets {
     store: Arc<CredentialStore>,
     limit: Limit,
+    namespace: Namespace,
 }
 
 impl StoreSecrets {
-    /// Files secrets in `store`, with this platform's entry size limit.
+    /// Files secrets in `store` under [`Namespace::PORTER`], with this platform's entry size
+    /// limit.
     pub fn new(store: Arc<CredentialStore>) -> Self {
         Self {
             store,
             limit: LIMIT,
+            namespace: Namespace::PORTER,
         }
     }
 
-    /// Files secrets in `store`, splitting any value over `units` UTF-16 code units, as the
-    /// Windows credential manager needs. For tests of the splitting on any platform.
+    /// Files secrets in `store` under [`Namespace::PORTER`], splitting any value over `units`
+    /// UTF-16 code units, as the Windows credential manager needs. For tests of the splitting on
+    /// any platform.
     pub fn chunked(store: Arc<CredentialStore>, units: usize) -> Self {
         Self {
             store,
             limit: Limit::Utf16Units(units),
+            namespace: Namespace::PORTER,
         }
+    }
+
+    /// The same store, filing under `namespace`.
+    #[must_use]
+    pub fn in_namespace(mut self, namespace: Namespace) -> Self {
+        self.namespace = namespace;
+        self
+    }
+
+    /// The namespace items are filed under.
+    pub fn namespace(&self) -> &Namespace {
+        &self.namespace
     }
 }
 
@@ -86,7 +132,7 @@ fn native() -> Result<Arc<CredentialStore>, SecretsError> {
 
 /// The default store, or the platform's, which is then made the default. A store that could not
 /// be opened is tried again on the next use, not remembered as missing.
-fn resolve() -> Result<StoreSecrets, SecretsError> {
+fn resolve(namespace: &Namespace) -> Result<StoreSecrets, SecretsError> {
     let store = match keyring_core::get_default_store() {
         Some(store) => store,
         None => {
@@ -95,7 +141,7 @@ fn resolve() -> Result<StoreSecrets, SecretsError> {
             store
         }
     };
-    Ok(StoreSecrets::new(store))
+    Ok(StoreSecrets::new(store).in_namespace(namespace.clone()))
 }
 
 fn refused(error: Error) -> SecretsError {
@@ -120,7 +166,10 @@ fn index_name(account: &AccountId) -> String {
 
 impl Slots for StoreSecrets {
     fn read(&self, name: &str) -> Result<Option<String>, SecretsError> {
-        let entry = self.store.build(SERVICE, name, None).map_err(refused)?;
+        let entry = self
+            .store
+            .build(self.namespace.as_str(), name, None)
+            .map_err(refused)?;
         match entry.get_password() {
             Ok(value) => Ok(Some(value)),
             Err(Error::NoEntry) => Ok(None),
@@ -129,12 +178,18 @@ impl Slots for StoreSecrets {
     }
 
     fn write(&self, name: &str, value: &str) -> Result<(), SecretsError> {
-        let entry = self.store.build(SERVICE, name, None).map_err(refused)?;
+        let entry = self
+            .store
+            .build(self.namespace.as_str(), name, None)
+            .map_err(refused)?;
         entry.set_password(value).map_err(refused)
     }
 
     fn remove(&self, name: &str) -> Result<(), SecretsError> {
-        let entry = self.store.build(SERVICE, name, None).map_err(refused)?;
+        let entry = self
+            .store
+            .build(self.namespace.as_str(), name, None)
+            .map_err(refused)?;
         match entry.delete_credential() {
             // Already gone is the state we wanted.
             Ok(()) | Err(Error::NoEntry) => Ok(()),
@@ -254,11 +309,11 @@ impl Secrets for StoreSecrets {
 
 impl Secrets for KeyringSecrets {
     async fn put(&self, key: &SecretKey, value: &Credential) -> Result<(), SecretsError> {
-        resolve()?.put(key, value).await
+        resolve(&Namespace::PORTER)?.put(key, value).await
     }
 
     async fn get(&self, key: &SecretKey) -> Result<Credential, SecretsError> {
-        resolve()?.get(key).await
+        resolve(&Namespace::PORTER)?.get(key).await
     }
 
     async fn put_if_absent(
@@ -266,14 +321,40 @@ impl Secrets for KeyringSecrets {
         key: &SecretKey,
         value: &Credential,
     ) -> Result<PutOutcome, SecretsError> {
-        resolve()?.put_if_absent(key, value).await
+        resolve(&Namespace::PORTER)?.put_if_absent(key, value).await
     }
 
     async fn delete(&self, key: &SecretKey) -> Result<(), SecretsError> {
-        resolve()?.delete(key).await
+        resolve(&Namespace::PORTER)?.delete(key).await
     }
 
     async fn delete_account(&self, account: &AccountId) -> Result<(), SecretsError> {
-        resolve()?.delete_account(account).await
+        resolve(&Namespace::PORTER)?.delete_account(account).await
+    }
+}
+
+impl Secrets for KeyringNamedSecrets {
+    async fn put(&self, key: &SecretKey, value: &Credential) -> Result<(), SecretsError> {
+        resolve(&self.namespace)?.put(key, value).await
+    }
+
+    async fn get(&self, key: &SecretKey) -> Result<Credential, SecretsError> {
+        resolve(&self.namespace)?.get(key).await
+    }
+
+    async fn put_if_absent(
+        &self,
+        key: &SecretKey,
+        value: &Credential,
+    ) -> Result<PutOutcome, SecretsError> {
+        resolve(&self.namespace)?.put_if_absent(key, value).await
+    }
+
+    async fn delete(&self, key: &SecretKey) -> Result<(), SecretsError> {
+        resolve(&self.namespace)?.delete(key).await
+    }
+
+    async fn delete_account(&self, account: &AccountId) -> Result<(), SecretsError> {
+        resolve(&self.namespace)?.delete_account(account).await
     }
 }

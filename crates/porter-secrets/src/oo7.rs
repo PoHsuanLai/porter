@@ -2,8 +2,9 @@
 //! keyed by the Secret portal, inside a sandbox, and the user's default Secret Service
 //! collection everywhere else. Where neither answers the store is [`SecretsError::Unavailable`].
 
-use crate::attributes::{SERVICE, attributes};
+use crate::attributes::attributes_in;
 use crate::error::SecretsError;
+use crate::namespace::Namespace;
 use crate::secrets::{PutOutcome, Secrets};
 use porter_core::{AccountId, Credential, SecretKey};
 use std::collections::HashMap;
@@ -23,44 +24,91 @@ fn encoded(value: &Credential) -> Result<Zeroizing<Vec<u8>>, SecretsError> {
     Ok(buffer)
 }
 
-/// The user's Secret Service collection, opened on first use and kept.
+/// The user's Secret Service collection, opened on first use and kept, filing under
+/// [`Namespace::PORTER`]. [`Oo7Secrets::in_namespace`] files under another.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Oo7Secrets;
+
+impl Oo7Secrets {
+    /// The user's Secret Service collection, filing under `namespace` (the same collection
+    /// [`Oo7Secrets`] opens; only the `service` attribute differs).
+    pub fn in_namespace(namespace: Namespace) -> Oo7NamedSecrets {
+        Oo7NamedSecrets::new(namespace)
+    }
+}
+
+/// The user's Secret Service collection, filing under a namespace the host chose.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Oo7NamedSecrets {
+    namespace: Namespace,
+}
+
+impl Oo7NamedSecrets {
+    /// The user's Secret Service collection, filing under `namespace`.
+    pub fn new(namespace: Namespace) -> Self {
+        Self { namespace }
+    }
+
+    /// The namespace items are filed under.
+    pub fn namespace(&self) -> &Namespace {
+        &self.namespace
+    }
+}
 
 /// Secrets over one given oo7 keyring: what [`Oo7Secrets`] does once it has opened its own, and
 /// what the tests do over oo7's file backend in a scratch directory.
 #[derive(Debug, Clone)]
 pub struct Oo7KeyringSecrets {
     keyring: Arc<oo7::Keyring>,
+    namespace: Namespace,
 }
 
 impl Oo7KeyringSecrets {
-    /// Files secrets in `keyring`.
+    /// Files secrets in `keyring`, under [`Namespace::PORTER`].
     pub fn new(keyring: oo7::Keyring) -> Self {
         Self {
             keyring: Arc::new(keyring),
+            namespace: Namespace::PORTER,
         }
+    }
+
+    /// The same keyring, filing under `namespace`.
+    #[must_use]
+    pub fn in_namespace(mut self, namespace: Namespace) -> Self {
+        self.namespace = namespace;
+        self
+    }
+
+    /// The namespace items are filed under.
+    pub fn namespace(&self) -> &Namespace {
+        &self.namespace
     }
 }
 
 /// The opened keyring. A keyring that could not be opened is tried again on the next call: a
 /// Secret Service that was not up at the first call (a session whose keyring daemon starts
-/// late) is up for the second.
-static OPENED: Mutex<Option<Oo7KeyringSecrets>> = Mutex::new(None);
+/// late) is up for the second. One keyring serves every namespace.
+static OPENED: Mutex<Option<Arc<oo7::Keyring>>> = Mutex::new(None);
 
-async fn ambient() -> Result<Oo7KeyringSecrets, SecretsError> {
+async fn ambient(namespace: &Namespace) -> Result<Oo7KeyringSecrets, SecretsError> {
     let held = OPENED
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .clone();
-    if let Some(store) = held {
-        return Ok(store);
-    }
-    let store = Oo7KeyringSecrets::new(oo7::Keyring::new().await.map_err(refused)?);
-    *OPENED
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(store.clone());
-    Ok(store)
+    let keyring = match held {
+        Some(keyring) => keyring,
+        None => {
+            let keyring = Arc::new(oo7::Keyring::new().await.map_err(refused)?);
+            *OPENED
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(keyring.clone());
+            keyring
+        }
+    };
+    Ok(Oo7KeyringSecrets {
+        keyring,
+        namespace: namespace.clone(),
+    })
 }
 
 fn refused(error: oo7::Error) -> SecretsError {
@@ -75,10 +123,10 @@ fn refused(error: oo7::Error) -> SecretsError {
     }
 }
 
-fn search(key: &SecretKey) -> HashMap<&'static str, String> {
-    let at = attributes(key);
+fn search(namespace: &Namespace, key: &SecretKey) -> HashMap<&'static str, String> {
+    let at = attributes_in(namespace, key);
     HashMap::from([
-        ("service", at.service.to_owned()),
+        ("service", at.service),
         ("account", at.account),
         ("purpose", at.purpose),
     ])
@@ -87,11 +135,11 @@ fn search(key: &SecretKey) -> HashMap<&'static str, String> {
 impl Secrets for Oo7KeyringSecrets {
     async fn put(&self, key: &SecretKey, value: &Credential) -> Result<(), SecretsError> {
         let encoded = encoded(value)?;
-        let label = format!("porter {}", key.account);
+        let label = format!("{} {}", self.namespace, key.account);
         self.keyring
             .create_item(
                 &label,
-                &search(key),
+                &search(&self.namespace, key),
                 oo7::Secret::blob(encoded.as_slice()),
                 true,
             )
@@ -105,8 +153,8 @@ impl Secrets for Oo7KeyringSecrets {
         value: &Credential,
     ) -> Result<PutOutcome, SecretsError> {
         let encoded = encoded(value)?;
-        let label = format!("porter {}", key.account);
-        let at = search(key);
+        let label = format!("{} {}", self.namespace, key.account);
+        let at = search(&self.namespace, key);
         match &*self.keyring {
             // The file backend: the keyring's own write lock is held across the look and the
             // create, which excludes every other user of this open keyring. The inner calls
@@ -144,7 +192,7 @@ impl Secrets for Oo7KeyringSecrets {
     async fn get(&self, key: &SecretKey) -> Result<Credential, SecretsError> {
         let items = self
             .keyring
-            .search_items(&search(key))
+            .search_items(&search(&self.namespace, key))
             .await
             .map_err(refused)?;
         let item = items.first().ok_or(SecretsError::Missing)?;
@@ -153,12 +201,15 @@ impl Secrets for Oo7KeyringSecrets {
     }
 
     async fn delete(&self, key: &SecretKey) -> Result<(), SecretsError> {
-        self.keyring.delete(&search(key)).await.map_err(refused)
+        self.keyring
+            .delete(&search(&self.namespace, key))
+            .await
+            .map_err(refused)
     }
 
     async fn delete_account(&self, account: &AccountId) -> Result<(), SecretsError> {
         let account = HashMap::from([
-            ("service", SERVICE.to_owned()),
+            ("service", self.namespace.as_str().to_owned()),
             ("account", account.to_string()),
         ]);
         self.keyring.delete(&account).await.map_err(refused)
@@ -167,11 +218,11 @@ impl Secrets for Oo7KeyringSecrets {
 
 impl Secrets for Oo7Secrets {
     async fn put(&self, key: &SecretKey, value: &Credential) -> Result<(), SecretsError> {
-        ambient().await?.put(key, value).await
+        ambient(&Namespace::PORTER).await?.put(key, value).await
     }
 
     async fn get(&self, key: &SecretKey) -> Result<Credential, SecretsError> {
-        ambient().await?.get(key).await
+        ambient(&Namespace::PORTER).await?.get(key).await
     }
 
     async fn put_if_absent(
@@ -179,15 +230,53 @@ impl Secrets for Oo7Secrets {
         key: &SecretKey,
         value: &Credential,
     ) -> Result<PutOutcome, SecretsError> {
-        ambient().await?.put_if_absent(key, value).await
+        ambient(&Namespace::PORTER)
+            .await?
+            .put_if_absent(key, value)
+            .await
     }
 
     async fn delete(&self, key: &SecretKey) -> Result<(), SecretsError> {
-        ambient().await?.delete(key).await
+        ambient(&Namespace::PORTER).await?.delete(key).await
     }
 
     async fn delete_account(&self, account: &AccountId) -> Result<(), SecretsError> {
-        ambient().await?.delete_account(account).await
+        ambient(&Namespace::PORTER)
+            .await?
+            .delete_account(account)
+            .await
+    }
+}
+
+impl Secrets for Oo7NamedSecrets {
+    async fn put(&self, key: &SecretKey, value: &Credential) -> Result<(), SecretsError> {
+        ambient(&self.namespace).await?.put(key, value).await
+    }
+
+    async fn get(&self, key: &SecretKey) -> Result<Credential, SecretsError> {
+        ambient(&self.namespace).await?.get(key).await
+    }
+
+    async fn put_if_absent(
+        &self,
+        key: &SecretKey,
+        value: &Credential,
+    ) -> Result<PutOutcome, SecretsError> {
+        ambient(&self.namespace)
+            .await?
+            .put_if_absent(key, value)
+            .await
+    }
+
+    async fn delete(&self, key: &SecretKey) -> Result<(), SecretsError> {
+        ambient(&self.namespace).await?.delete(key).await
+    }
+
+    async fn delete_account(&self, account: &AccountId) -> Result<(), SecretsError> {
+        ambient(&self.namespace)
+            .await?
+            .delete_account(account)
+            .await
     }
 }
 
