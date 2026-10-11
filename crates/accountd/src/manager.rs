@@ -1,15 +1,13 @@
-//! `org.quire.Accounts1.Manager`: find, choose and add accounts.
+//! `org.quire.Accounts1.Manager`: add an identity through the sheet, and tell the shell which
+//! accounts need signing in again. Apps no longer find, choose or are granted accounts here: they
+//! ask `Identities1` for "Continue as" and keep their own sign-ins.
 
 use crate::callers::Callers;
-use crate::core::{Core, Host, Standing, hint, slug, window};
+use crate::core::{Core, Host, Standing, hint, window};
 use crate::errors::RefusedError;
-use porter_core::consent::Availability;
+use porter_core::AccountsRequest;
 use porter_core::wire::Refusal;
-use porter_core::{AccountsReply, AccountsRequest};
-use porter_dbus::{
-    CallerRole, CandidateArg, Details, NeedArg, SheetKind, account_path, candidate_to_dbus,
-    need_from_dbus,
-};
+use porter_dbus::{CallerRole, Details, SheetKind, account_path};
 use std::sync::Arc;
 use zbus::Connection;
 use zbus::message::Header;
@@ -27,78 +25,8 @@ impl<H, C> Manager<H, C> {
     }
 }
 
-fn mismatched(reply: AccountsReply) -> RefusedError {
-    RefusedError::failed(format!("the service answered another request: {reply:?}"))
-}
-
-fn availability_slug(availability: Availability) -> Result<String, RefusedError> {
-    match serde_json::to_value(availability) {
-        Ok(serde_json::Value::String(slug)) => Ok(slug),
-        _ => Err(RefusedError::failed("an availability with no slug")),
-    }
-}
-
 #[zbus::interface(name = "org.quire.Accounts1.Manager")]
 impl<H: Host, C: Callers> Manager<H, C> {
-    async fn query(
-        &self,
-        #[zbus(header)] header: Header<'_>,
-        need: NeedArg,
-        class: String,
-        usage: String,
-    ) -> Result<Vec<CandidateArg>, RefusedError> {
-        let request = AccountsRequest::Query {
-            need: need_from_dbus(need).map_err(RefusedError::invalid)?,
-            class: slug(&class)?,
-            usage: slug(&usage)?,
-        };
-        match self.0.answer(&header, Standing::Any, request).await? {
-            AccountsReply::Candidates(list) => Ok(list.iter().map(candidate_to_dbus).collect()),
-            other => Err(mismatched(other)),
-        }
-    }
-
-    async fn availability(
-        &self,
-        #[zbus(header)] header: Header<'_>,
-        need: NeedArg,
-        class: String,
-        usage: String,
-    ) -> Result<String, RefusedError> {
-        let request = AccountsRequest::Availability {
-            need: need_from_dbus(need).map_err(RefusedError::invalid)?,
-            class: slug(&class)?,
-            usage: slug(&usage)?,
-        };
-        match self.0.answer(&header, Standing::Any, request).await? {
-            AccountsReply::Availability(availability) => availability_slug(availability),
-            other => Err(mismatched(other)),
-        }
-    }
-
-    // The signature is the interface's: five arguments, and the caller's header and connection.
-    #[allow(clippy::too_many_arguments)]
-    async fn choose(
-        &self,
-        #[zbus(header)] header: Header<'_>,
-        #[zbus(connection)] connection: &Connection,
-        need: NeedArg,
-        class: String,
-        usage: String,
-        parent_window: String,
-        options: Details,
-    ) -> Result<OwnedObjectPath, RefusedError> {
-        let request = AccountsRequest::Choose {
-            need: need_from_dbus(need).map_err(RefusedError::invalid)?,
-            class: slug(&class)?,
-            usage: slug(&usage)?,
-            window: window(&parent_window),
-        };
-        self.0
-            .sheet(&header, connection, SheetKind::Choose, &options, request)
-            .await
-    }
-
     async fn add_account(
         &self,
         #[zbus(header)] header: Header<'_>,
@@ -160,18 +88,8 @@ impl<H: Host, C: Callers> Manager<H, C> {
     ) -> zbus::Result<()>;
 
     #[zbus(signal)]
-    pub(crate) async fn capability_changed(
-        emitter: &SignalEmitter<'_>,
-        account: ObjectPath<'_>,
-    ) -> zbus::Result<()>;
-
-    #[zbus(signal)]
     pub(crate) async fn needs_reauth(
         emitter: &SignalEmitter<'_>,
         account: ObjectPath<'_>,
     ) -> zbus::Result<()>;
-
-    #[zbus(signal)]
-    pub(crate) async fn grant_changed(emitter: &SignalEmitter<'_>, grant: &str)
-    -> zbus::Result<()>;
 }

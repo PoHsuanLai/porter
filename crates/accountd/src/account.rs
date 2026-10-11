@@ -1,15 +1,16 @@
 //! `org.quire.Accounts1.Account`: one object per account, at `porter_dbus::account_path`.
-//! `Reauthenticate` and the properties (`Id`, `Provider`, `Label`, `State`, `Capabilities`) are
-//! served; every one answers only a caller that holds a grant for the account.
+//! `Reauthenticate` and the properties (`Id`, `Provider`, `Label`, `State`, `ReauthReason`,
+//! `Capabilities`) are served; every one answers only the shell (`SheetHost`) and Settings, the two
+//! roles that read an account. No app holds a grant for an account any more: an app learns of an
+//! identity through `Identities1`.
 //!
-//! An account the caller holds no grant for does not exist for it (`UnknownObject`): there is no
-//! bulk enumeration (design/31 §4.4).
+//! For any other caller an account does not exist (`UnknownObject`): there is no bulk
+//! enumeration (design/31 §4.4).
 
 use crate::callers::Callers;
 use crate::core::{Core, Host, Standing, window};
 use crate::errors::RefusedError;
-use porter_core::consent::Decision;
-use porter_core::{Account, AccountId, AccountState, AccountsRequest, AppId, object_segment};
+use porter_core::{Account, AccountState, AccountsRequest, object_segment};
 use porter_dbus::{
     ACCOUNTS_PATH, Caller, CallerRole, Details, SheetKind, account_path, to_vardict,
 };
@@ -51,11 +52,11 @@ pub(crate) fn reauth_reason_word(account: &Account, now: porter_core::UnixSecond
     }
 }
 
-/// What a property read needs: the account at this path, for a caller that holds a grant on it.
+/// What a property read needs: the account at this path, for the shell or Settings.
 async fn visible<H: Host, C: Callers>(
     core: &Core<H, C>,
     header: Option<&Header<'_>>,
-) -> fdo::Result<(Account, AppId)> {
+) -> fdo::Result<Account> {
     let header = header.ok_or_else(|| fdo::Error::AccessDenied("no caller".into()))?;
     let caller = core
         .identify(header, Standing::Any)
@@ -64,8 +65,8 @@ async fn visible<H: Host, C: Callers>(
     let registry = core.host.registry();
     let path = header.path().map(|p| p.as_str()).unwrap_or_default();
     account_at(&registry.accounts, path)
-        .filter(|account| sees(core.host.as_ref(), &caller, &account.id))
-        .map(|account| (account.clone(), caller.app))
+        .filter(|_| sees(&caller))
+        .cloned()
         .ok_or_else(|| fdo::Error::UnknownObject("no such account for this caller".into()))
 }
 
@@ -77,44 +78,32 @@ fn account_at<'a>(accounts: &'a [Account], path: &str) -> Option<&'a Account> {
         .find(|account| object_segment(&account.id) == segment)
 }
 
-/// Whether `caller` may see `account`: it holds an allowing grant for it, or it is the shell,
-/// which tells the person when an account must be signed in again.
-fn sees(host: &impl Host, caller: &Caller, account: &AccountId) -> bool {
-    caller.role == CallerRole::SheetHost || holds_grant(host, &caller.app, account)
-}
-
-/// Whether `app` holds an allowing grant for `account`.
-fn holds_grant(host: &impl Host, app: &AppId, account: &AccountId) -> bool {
-    host.registry()
-        .grants
-        .iter()
-        .any(|g| g.key.app == *app && g.key.account == *account && g.decision == Decision::Allow)
+/// Whether `caller` may see accounts: only the shell, which tells the person when an account
+/// must be signed in again, and Settings, which lists them.
+fn sees(caller: &Caller) -> bool {
+    matches!(caller.role, CallerRole::SheetHost | CallerRole::Settings)
 }
 
 #[zbus::interface(name = "org.quire.Accounts1.Account")]
 impl<H: Host, C: Callers> AccountObject<H, C> {
     #[zbus(property)]
     async fn id(&self, #[zbus(header)] header: Option<Header<'_>>) -> fdo::Result<String> {
-        Ok(visible(&self.0, header.as_ref()).await?.0.id.to_string())
+        Ok(visible(&self.0, header.as_ref()).await?.id.to_string())
     }
 
     #[zbus(property)]
     async fn provider(&self, #[zbus(header)] header: Option<Header<'_>>) -> fdo::Result<String> {
-        Ok(visible(&self.0, header.as_ref())
-            .await?
-            .0
-            .provider
-            .to_string())
+        Ok(visible(&self.0, header.as_ref()).await?.provider.to_string())
     }
 
     #[zbus(property)]
     async fn label(&self, #[zbus(header)] header: Option<Header<'_>>) -> fdo::Result<String> {
-        Ok(visible(&self.0, header.as_ref()).await?.0.label.0)
+        Ok(visible(&self.0, header.as_ref()).await?.label.0)
     }
 
     #[zbus(property)]
     async fn state(&self, #[zbus(header)] header: Option<Header<'_>>) -> fdo::Result<String> {
-        Ok(state_slug(visible(&self.0, header.as_ref()).await?.0.state).to_owned())
+        Ok(state_slug(visible(&self.0, header.as_ref()).await?.state).to_owned())
     }
 
     /// Why the account has to be signed in again, when porter knows: a word of
@@ -124,32 +113,21 @@ impl<H: Host, C: Callers> AccountObject<H, C> {
         &self,
         #[zbus(header)] header: Option<Header<'_>>,
     ) -> fdo::Result<String> {
-        let account = visible(&self.0, header.as_ref()).await?.0;
-        let now = self.0.launchers.clock().now();
+        let account = visible(&self.0, header.as_ref()).await?;
+        let now = self.0.clock.now();
         Ok(reauth_reason_word(&account, now).to_owned())
     }
 
-    /// The effective capabilities of the kinds the caller holds an allowing grant for: the kind's
-    /// slug and the claim's fields by name.
+    /// The account's effective capabilities: each kind's slug and the claim's fields by name.
     #[zbus(property)]
     async fn capabilities(
         &self,
         #[zbus(header)] header: Option<Header<'_>>,
     ) -> fdo::Result<Vec<(String, Details)>> {
-        let (account, app) = visible(&self.0, header.as_ref()).await?;
-        let registry = self.0.host.registry();
-        let granted = |kind| {
-            registry.grants.iter().any(|g| {
-                g.key.app == app
-                    && g.key.account == account.id
-                    && g.key.kind == kind
-                    && g.decision == Decision::Allow
-            })
-        };
+        let account = visible(&self.0, header.as_ref()).await?;
         Ok(account
             .capabilities
             .iter()
-            .filter(|claim| granted(claim.offer.kind()))
             .filter_map(|claim| {
                 let slug = serde_json::to_value(claim.offer.kind()).ok()?;
                 let fields = match serde_json::to_value(claim).ok()? {
@@ -172,10 +150,7 @@ impl<H: Host, C: Callers> AccountObject<H, C> {
         let registry = self.0.host.registry();
         let path = header.path().map(|p| p.as_str()).unwrap_or_default();
         let account = account_at(&registry.accounts, path)
-            .filter(|account| {
-                caller.role == CallerRole::Settings
-                    || sees(self.0.host.as_ref(), &caller, &account.id)
-            })
+            .filter(|_| sees(&caller))
             .map(|account| account.id.clone())
             .ok_or_else(|| RefusedError::unknown_object("no such account for this caller"))?;
         let request = AccountsRequest::Reauthenticate {
