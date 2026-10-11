@@ -247,11 +247,21 @@ pub fn is_handle_token(token: &str) -> bool {
 /// The path under which every Request object of `sender` lives: a caller subscribes to
 /// `Response` here before it calls.
 pub fn request_namespace(sender: &str) -> String {
-    format!("{REQUEST_PATH_ROOT}/{}", sender_segment(sender))
+    request_namespace_in(crate::ServiceRoot::Accounts, sender)
 }
 
 /// The Request object of `sender`'s call that carried `token`, or `None` for a token that is
 /// not one.
 pub fn request_path(sender: &str, token: &str) -> Option<String> {
-    is_handle_token(token).then(|| format!("{}/{token}", request_namespace(sender)))
+    request_path_in(crate::ServiceRoot::Accounts, sender, token)
+}
+
+/// [`request_namespace`] under `service`'s root.
+pub fn request_namespace_in(service: crate::ServiceRoot, sender: &str) -> String {
+    format!("{}/{}", service.request_root(), sender_segment(sender))
+}
+
+/// [`request_path`] under `service`'s root.
+pub fn request_path_in(service: crate::ServiceRoot, sender: &str, token: &str) -> Option<String> {
+    is_handle_token(token).then(|| format!("{}/{token}", request_namespace_in(service, sender)))
 }

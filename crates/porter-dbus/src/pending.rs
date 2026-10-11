@@ -8,16 +8,19 @@
 //! 3. [`Sheet::response`] with that path: signals that came in meanwhile are already queued; it
 //!    gives the raw `(response, results)`, which `reply_of` reads.
 //!
-//! A signal counts only when it comes from the connection that owns `org.quire.Accounts1` and
-//! from the returned path, so another process on the bus cannot answer for the person. If that
+//! A signal counts only when it comes from the connection that owns the service's name
+//! (`org.quire.Accounts1`, or with [`Sheet::subscribe_on`] inferd's or syncd's, see
+//! [`ServiceRoot`]) and from the returned path, so another process on the bus cannot answer for the person. If that
 //! owner leaves the bus before it answered, the wait ends in [`SheetError::Gone`] instead of
 //! never. [`Closer`] is the caller giving up (`Request.Close`): the task that waits for a sheet is
 //! dropped when the app's own call is, and the sheet should not stay on the screen.
 
 use crate::args::Details;
-use crate::names::ACCOUNTS_BUS;
 use crate::request::RequestProxy;
-use crate::sheet::{OPTION_HANDLE_TOKEN, REQUEST_INTERFACE, request_namespace, request_path};
+use crate::service_root::ServiceRoot;
+use crate::sheet::{
+    OPTION_HANDLE_TOKEN, REQUEST_INTERFACE, request_namespace_in, request_path_in,
+};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::task::Poll;
@@ -52,6 +55,7 @@ impl From<BusError> for SheetError {
 #[derive(Debug)]
 pub struct Sheet {
     connection: BusConnection,
+    service: ServiceRoot,
     token: String,
     responses: MessageStream,
     owners: NameOwnerChangedStream,
@@ -73,8 +77,18 @@ fn failure(why: &str) -> BusError {
 }
 
 impl Sheet {
-    /// Starts listening, under a token of its own. Call this before the sheet method.
+    /// Starts listening for accountd's sheets, under a token of its own. Call this before the
+    /// sheet method. The same as [`Sheet::subscribe_on`] with [`ServiceRoot::Accounts`].
     pub async fn subscribe(connection: &BusConnection) -> Result<Self, BusError> {
+        Self::subscribe_on(connection, ServiceRoot::Accounts).await
+    }
+
+    /// Starts listening for the sheets of `service` (inferd's and syncd's show their own), under
+    /// a token of its own. Call this before the sheet method.
+    pub async fn subscribe_on(
+        connection: &BusConnection,
+        service: ServiceRoot,
+    ) -> Result<Self, BusError> {
         let unique = connection
             .unique_name()
             .ok_or_else(|| failure("the connection has no unique name"))?;
@@ -82,15 +96,16 @@ impl Sheet {
             .msg_type(Type::Signal)
             .interface(REQUEST_INTERFACE)?
             .member("Response")?
-            .path_namespace(request_namespace(unique.as_str()))?
+            .path_namespace(request_namespace_in(service, unique.as_str()))?
             .build();
         let responses = MessageStream::for_match_rule(rule, connection, None).await?;
         let owners = DBusProxy::new(connection)
             .await?
-            .receive_name_owner_changed_with_args(&[(0, ACCOUNTS_BUS)])
+            .receive_name_owner_changed_with_args(&[(0, service.bus_name())])
             .await?;
         Ok(Self {
             connection: connection.clone(),
+            service,
             token: fresh_token(),
             responses,
             owners,
@@ -108,7 +123,7 @@ impl Sheet {
     /// call that was dropped before it returned its path.
     pub fn expected_path(&self) -> Option<OwnedObjectPath> {
         let unique = self.connection.unique_name()?;
-        let path = request_path(unique.as_str(), &self.token)?;
+        let path = request_path_in(self.service, unique.as_str(), &self.token)?;
         ObjectPath::try_from(path).ok().map(OwnedObjectPath::from)
     }
 
@@ -116,6 +131,7 @@ impl Sheet {
     pub fn closer(&self, path: Option<OwnedObjectPath>) -> Option<Closer> {
         path.or_else(|| self.expected_path()).map(|path| Closer {
             connection: self.connection.clone(),
+            service: self.service,
             path,
         })
     }
@@ -144,7 +160,8 @@ impl Sheet {
     /// if it was not running.
     async fn owner(&self) -> Result<String, SheetError> {
         let proxy = DBusProxy::new(&self.connection).await?;
-        let name = zbus::names::BusName::try_from(ACCOUNTS_BUS).map_err(BusError::from)?;
+        let name =
+            zbus::names::BusName::try_from(self.service.bus_name()).map_err(BusError::from)?;
         let owner = proxy.get_name_owner(name).await.map_err(BusError::from)?;
         Ok(owner.as_str().to_owned())
     }
@@ -199,13 +216,17 @@ fn response_in(message: &Message) -> Option<(u32, Details)> {
 #[derive(Debug)]
 pub struct Closer {
     connection: BusConnection,
+    service: ServiceRoot,
     path: OwnedObjectPath,
 }
 
 impl Closer {
     /// Closes the sheet. A sheet already gone (answered, or never started) is not an error.
     pub async fn close(self) {
-        let Ok(builder) = RequestProxy::builder(&self.connection).path(self.path) else {
+        let Ok(builder) = RequestProxy::builder(&self.connection)
+            .destination(self.service.bus_name())
+            .and_then(|builder| builder.path(self.path))
+        else {
             return;
         };
         if let Ok(proxy) = builder.build().await {
