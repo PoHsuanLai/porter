@@ -10,7 +10,7 @@ pub mod host;
 pub use host::SheetHost;
 pub use porter_fake::{mail_account, storage_account};
 
-use accountd::{BusSheets, Options, SecretsDesk, TableCallers, serve_with};
+use accountd::{BusSheets, Options, SecretsDesk, SheetsDesk, TableCallers, serve_with};
 use bus::PrivateBus;
 use host::HostLog;
 use porter_core::{
@@ -183,6 +183,14 @@ impl Rig {
         let audit = RecordingAudit::default();
         if options.keys.is_none() {
             options.keys = Some(Arc::new(SecretsDesk::new(
+                secrets.clone(),
+                audit.clone(),
+                FixedClock(porter_fake::NOW),
+            )));
+        }
+        if options.identities.is_none() {
+            options.identities = Some(Arc::new(SheetsDesk::new(
+                BusSheets::new(connection.clone(), Arc::clone(&callers)),
                 secrets.clone(),
                 audit.clone(),
                 FixedClock(porter_fake::NOW),

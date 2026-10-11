@@ -417,6 +417,13 @@ pub(crate) struct Core<H, C> {
     pub(crate) spaces: tokio::sync::Mutex<crate::spaces::SpaceBook>,
     /// How Tailscale is followed (`org.quire.Tailnet1`); none lists no computers.
     pub(crate) tailnet: Option<crate::tailnet::TailnetWatch>,
+    /// The identity picker and the passwords it may hand over (`org.quire.Identities1`); none
+    /// refuses `Offer` and `TakePassword` as unavailable.
+    pub(crate) identity_desk: Option<Arc<dyn crate::identity_desk::IdentityDesk>>,
+    /// The apps that use each identity (`Identities1.RegisterUse`).
+    pub(crate) uses: tokio::sync::Mutex<crate::identities::UseBook>,
+    /// What each connection just picked in `Identities1.Offer`.
+    pub(crate) picks: crate::identities::Picks,
 }
 
 fn held<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -556,6 +563,7 @@ impl<H: Host, C: Callers> Core<H, C> {
             }
         }
         self.announce_states(&list, &before, &after).await;
+        self.announce_identities_removed(&before, &after).await;
         for event in list {
             let apps = audience(&event, &before, &after);
             let names: Vec<String> = held(&self.roster)
@@ -648,6 +656,7 @@ impl<H: Host, C: Callers> Core<H, C> {
     /// tell), then what is left of its credentials ends `launcher_gone`.
     pub(crate) async fn left(self: &Arc<Self>, name: &str) {
         held(&self.roster).remove(name);
+        self.picks.clear(name);
         for session in self.launchers.left(name) {
             self.close_session(&session, false).await;
         }
@@ -715,6 +724,12 @@ pub struct Options {
     /// Tailscale, and how it is followed: the account's state, and `org.quire.Tailnet1`'s
     /// computers and signal. The default follows nothing: no computers are listed.
     pub tailnet: Option<crate::tailnet::TailnetWatch>,
+    /// Where the apps that use each identity are kept (`identity-uses.json` in the registry's
+    /// directory); the default keeps them in memory only.
+    pub uses: crate::identities::UsesStore,
+    /// The picker and the passwords behind `org.quire.Identities1`'s `Offer` and `TakePassword`;
+    /// none refuses both as unavailable (`List`, `RegisterUse` and `Uses` need no desk).
+    pub identities: Option<Arc<dyn crate::identity_desk::IdentityDesk>>,
 }
 
 /// Serves `org.quire.Accounts1` on `connection` over `host`, answering for the apps `callers`
@@ -748,6 +763,10 @@ pub async fn serve_with<H: Host, C: Callers>(
     if let Some(said) = said {
         eprintln!("accountd: {said}");
     }
+    let (uses, said) = crate::identities::UseBook::open(&options.uses).await;
+    if let Some(said) = said {
+        eprintln!("accountd: {said}");
+    }
     let core = Arc::new(Core {
         host,
         callers,
@@ -766,6 +785,9 @@ pub async fn serve_with<H: Host, C: Callers>(
         open_sheets: crate::request::OpenSheets::default(),
         spaces: tokio::sync::Mutex::new(spaces),
         tailnet: options.tailnet,
+        identity_desk: options.identities,
+        uses: tokio::sync::Mutex::new(uses),
+        picks: crate::identities::Picks::default(),
     });
     core.host.use_launcher_roster(core.launchers.roster());
     let server: &ObjectServer = connection.object_server();
@@ -785,6 +807,12 @@ pub async fn serve_with<H: Host, C: Callers>(
         .at(
             porter_dbus::SPACES_PATH,
             crate::spaces_object::SpacesObject::new(Arc::clone(&core)),
+        )
+        .await?;
+    server
+        .at(
+            porter_dbus::IDENTITIES_PATH,
+            crate::identities_object::IdentitiesObject::new(Arc::clone(&core)),
         )
         .await?;
     server

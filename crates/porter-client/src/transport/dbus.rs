@@ -49,6 +49,12 @@ impl DbusTransport {
         crate::Spaces::connect(&self.connection).await
     }
 
+    /// The identities signed in on this machine (`org.quire.Identities1`), over this connection:
+    /// "Continue as" for an app that keeps its own sign-in.
+    pub async fn identities(&self) -> Result<crate::Identities, crate::IdentitiesError> {
+        crate::Identities::connect(&self.connection).await
+    }
+
     /// The person's computers on their Tailscale network (`org.quire.Tailnet1`), over this
     /// connection: for the shell, Settings and the terminal.
     pub async fn tailnet(&self) -> Result<crate::Tailnet, crate::TailnetError> {

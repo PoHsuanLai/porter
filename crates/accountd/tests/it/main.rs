@@ -12,6 +12,7 @@ mod daemon;
 mod dist;
 mod file_keys;
 mod google;
+mod identities;
 mod install;
 mod peer;
 mod process_credential;
