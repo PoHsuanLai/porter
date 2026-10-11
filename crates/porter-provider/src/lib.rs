@@ -31,7 +31,10 @@ pub use parse::parse_provider;
 pub use provider::{Presented, Provider, ProviderSession, Readiness};
 pub use set::ProviderSet;
 pub use shipped::{SHIPPED_FILES, shipped, shipped_specs};
-pub use sign_in::{RevokeOutcome, SignIn, SignInMode, SignInStart, SignInStep, Signed};
+pub use sign_in::{
+    ConsentHistory, LoginHint, LoginHintFault, RevokeOutcome, SignIn, SignInMode, SignInStart,
+    SignInStep, Signed,
+};
 pub use spec::{
     AiSpec, AuthOrigin, AuthSpec, CapabilityRow, Discovery, DomainMatch, DomainName, Endpoint,
     Issuer, IssuerEndpoints, LinkedOrigin, Matching, Port, ProviderSpec,

@@ -6,11 +6,21 @@ use porter_core::{
     TokenLifetime, Verification,
 };
 use porter_fake_servers::{Consent, IssuerEvent, TokenResult};
-use porter_provider::{Provider, SignIn, SignInMode, SignInStart, SignInStep};
+use porter_provider::{
+    ConsentHistory, LoginHint, Provider, SignIn, SignInMode, SignInStart, SignInStep,
+};
 
 /// Signs in by loopback up to the review, with the browser answering.
 async fn to_review(rig: &Rig) -> (porter_families::GoogleSignIn<Wire>, SignInStep) {
-    let mut signin = rig.provider.sign_in(start()).expect("sign in");
+    to_review_from(rig, start()).await
+}
+
+/// The same for a sign-in begun like `begun`.
+async fn to_review_from(
+    rig: &Rig,
+    begun: SignInStart,
+) -> (porter_families::GoogleSignIn<Wire>, SignInStep) {
+    let mut signin = rig.provider.sign_in(begun).expect("sign in");
     let SignInStep::OpenBrowser { url } = signin.next(SignInInput::Start).await else {
         panic!("expected the browser")
     };
@@ -164,6 +174,31 @@ async fn a_loopback_sign_in_reviews_what_google_allows_then_hands_over_the_crede
     let hits = rig.google.api.hits();
     assert!(hits.len() >= 5, "{hits:?}");
     assert!(hits.iter().all(|h| h.status == 200), "{hits:?}");
+}
+
+#[tokio::test]
+async fn a_known_address_is_sent_as_the_hint_and_consent_is_asked_only_the_first_time() {
+    let ada = LoginHint::parse("ada@gmail.com").expect("an address");
+    let cases = [
+        (Some(&ada), ConsentHistory::FirstSignIn, Some("consent")),
+        (Some(&ada), ConsentHistory::SignedInBefore, None),
+        (None, ConsentHistory::SignedInBefore, Some("select_account")),
+        (None, ConsentHistory::FirstSignIn, Some("consent")),
+    ];
+    for (hint, consent, prompt) in cases {
+        let rig = Rig::new(PLAIN).await;
+        let mut begun = start().with_consent(consent);
+        if let Some(hint) = hint {
+            begun = begun.with_login_hint(hint.clone());
+        }
+        let (_signin, step) = to_review_from(&rig, begun).await;
+        assert!(matches!(step, SignInStep::Review { .. }), "{step:?}");
+        let q = query_of(&rig);
+        let want_hint = hint.map(LoginHint::as_str);
+        assert_eq!(get(&q, "login_hint"), want_hint, "{hint:?} {consent:?}");
+        assert_eq!(get(&q, "prompt"), prompt, "{hint:?} {consent:?}");
+        assert_eq!(get(&q, "access_type"), Some("offline"), "{consent:?}");
+    }
 }
 
 #[tokio::test]

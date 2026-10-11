@@ -19,8 +19,8 @@ use porter_core::{
 };
 use porter_http::Http;
 use porter_oauth::{
-    AppReview, AuthCode, ClientTraits, ExchangeFault, LoopbackFault, LoopbackServer, OAuthState,
-    Pkce, TokenResponse, authorize_url, endpoints_of, exchange_code,
+    AppReview, AuthCode, AuthorizeAsk, ClientTraits, ExchangeFault, LoopbackFault, LoopbackServer,
+    OAuthState, Pkce, TokenResponse, authorize_url_for, endpoints_of, exchange_code,
 };
 use porter_provider::{
     ClientEntry, Issuer, IssuerEndpoints, ProviderSpec, SignIn, SignInMode, SignInStart,
@@ -132,7 +132,14 @@ impl<H: Http + 'static> GoogleSignIn<H> {
             .map_err(|_| SignInFault::Unreachable)?;
         let redirect = server.redirect_uri();
         let endpoints = endpoints_of(&client);
-        let target = authorize_url(&endpoints, &client, &pkce, &redirect, &scopes);
+        let target = authorize_url_for(
+            &endpoints,
+            &client,
+            &pkce,
+            &redirect,
+            &scopes,
+            &AuthorizeAsk::of(&self.start),
+        );
         let url = WebUrl::parse(&target).map_err(|_| SignInFault::Unreadable)?;
         let expected: OAuthState = pkce.state.clone();
         let wait = Task(tokio::spawn(async move { server.wait(&expected).await }));
@@ -170,8 +177,11 @@ impl<H: Http + 'static> GoogleSignIn<H> {
     /// The tokens are in: read the account, and offer the review.
     async fn conclude(&mut self, traits: ClientTraits, tokens: TokenResponse) -> Step {
         let now = (self.env.clock)();
-        // `prompt=consent` and `access_type=offline` make Google send one; without it the
-        // account would stop working in an hour.
+        // `access_type=offline` with `prompt=consent` (a client's first sign-in for this
+        // identity) makes Google send one; without it the account would stop working in an hour.
+        // After a first sign-in the host keeps the refresh token it has (`SignedInBefore`), but
+        // Google may still send none, which is read as unreadable here: the host then signs in
+        // again as a first one.
         let refresh = tokens
             .refresh_token
             .clone()

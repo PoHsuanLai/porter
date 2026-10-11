@@ -20,7 +20,9 @@ mod renewal;
 #[cfg(test)]
 mod scripted;
 
-pub use authorize::{authorize_url, openrouter_auth_url, redeem_scope};
+pub use authorize::{
+    AuthorizeAsk, GooglePrompt, authorize_url, authorize_url_for, openrouter_auth_url, redeem_scope,
+};
 pub use device::{
     DeviceCodeResponse, DeviceFault, DevicePoll, await_device, poll_device, request_device_code,
 };

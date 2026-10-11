@@ -28,18 +28,101 @@ pub enum SignInMode {
     },
 }
 
+/// The address a sign-in is for, sent to the provider so its page opens on that person and asks
+/// nothing more than it must ("Continue as"). A hint, not a promise: the person may still pick
+/// another account.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct LoginHint(String);
+
+/// Why a [`LoginHint`] was refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum LoginHintFault {
+    /// Nothing, or only blanks.
+    Empty,
+    /// Not an address: no `@`, or blanks or control characters inside.
+    NotAnAddress,
+}
+
+impl LoginHint {
+    /// The longest address mail allows.
+    const MAX_CHARS: usize = 254;
+
+    /// The hint for this address.
+    ///
+    /// # Errors
+    /// [`LoginHintFault`] when it is empty or does not look like an address.
+    pub fn parse(address: &str) -> Result<Self, LoginHintFault> {
+        let address = address.trim();
+        if address.is_empty() {
+            return Err(LoginHintFault::Empty);
+        }
+        let plain = address
+            .chars()
+            .all(|c| !c.is_whitespace() && !c.is_control());
+        let at = address
+            .find('@')
+            .is_some_and(|i| i > 0 && i + 1 < address.len());
+        match plain && at && address.chars().count() <= Self::MAX_CHARS {
+            true => Ok(Self(address.to_owned())),
+            false => Err(LoginHintFault::NotAnAddress),
+        }
+    }
+
+    /// The address.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Whether the person already agreed to what this client asks, for this identity.
+///
+/// Google shows its consent page, and sends a refresh token, only for a first authorization
+/// unless it is forced to; forcing it on every sign-in is the extra screen "Continue as" avoids.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum ConsentHistory {
+    /// The first sign-in of this client for this identity, or not known: ask for consent.
+    #[default]
+    FirstSignIn,
+    /// This client was signed in for this identity before: do not ask for consent again.
+    SignedInBefore,
+}
+
 /// What a sign-in begins with.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct SignInStart {
     /// Why.
     pub mode: SignInMode,
+    /// The address to open the provider's page on, when the host knows it.
+    pub login_hint: Option<LoginHint>,
+    /// Whether the person agreed to this client before, for this identity.
+    pub consent: ConsentHistory,
 }
 
 impl SignInStart {
-    /// A sign-in begun for this reason.
+    /// A sign-in begun for this reason, with no address named and a first consent.
     pub fn new(mode: SignInMode) -> Self {
-        Self { mode }
+        Self {
+            mode,
+            login_hint: None,
+            consent: ConsentHistory::default(),
+        }
+    }
+
+    /// Opens the provider's page on this address.
+    #[must_use]
+    pub fn with_login_hint(mut self, hint: LoginHint) -> Self {
+        self.login_hint = Some(hint);
+        self
+    }
+
+    /// Says whether this client was signed in for this identity before.
+    #[must_use]
+    pub fn with_consent(mut self, consent: ConsentHistory) -> Self {
+        self.consent = consent;
+        self
     }
 }
 
