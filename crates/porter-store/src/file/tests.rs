@@ -13,7 +13,7 @@ struct Scratch(PathBuf);
 impl Scratch {
     fn new() -> Self {
         let dir = std::env::temp_dir().join(format!(
-            "accountd-store-{}-{}",
+            "porter-store-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
@@ -44,6 +44,22 @@ fn registry() -> Persisted {
 fn store_in(scratch: &Scratch) -> FileStore {
     // A directory that does not exist yet: the first save makes it.
     FileStore::new(scratch.path().join("porter"))
+}
+
+/// The host names the directory: a store at a location keeps both files there and nowhere else,
+/// and `new` is the same store as `at` the same directory.
+#[tokio::test]
+async fn a_store_keeps_its_files_in_the_location_the_host_names() {
+    let scratch = Scratch::new();
+    let dir = scratch.path().join("an-app");
+    let store = FileStore::at(StoreLocation::new(&dir));
+    assert_eq!(store, FileStore::new(dir.clone()));
+    assert_eq!(store.location().dir(), dir);
+    assert_eq!(store.path(), dir.join("registry.json"));
+    assert_eq!(store.backup_path(), dir.join("registry.json.bak"));
+    store.save(&registry()).await.expect("saved");
+    store.save(&Persisted::empty()).await.expect("saved again");
+    assert!(store.path().exists() && store.backup_path().exists());
 }
 
 #[tokio::test]

@@ -20,6 +20,7 @@ porter-provider = { workspace = true }
 porter-proxy = { workspace = true, features = ["tls"] }
 porter-secrets = { workspace = true, features = ["oo7"] }
 porter-service = { workspace = true }
+porter-store = { workspace = true }
 porter-tailscale = { workspace = true, features = ["io"] }
 ds-settings = { workspace = true }
 clap = { workspace = true }

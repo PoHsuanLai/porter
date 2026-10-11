@@ -2,6 +2,12 @@
 //! caller is the app the host names. Feature `in-process`: it is the one carrier that reaches
 //! porter-service, porter-secrets and porter-provider.
 //!
+//! The app keeps its own registry and its own credentials: the service it builds is given a
+//! `RegistryStore` (`porter_store::FileStore` over a directory of its own, or nothing) and a
+//! `Secrets` store filed under a namespace of its own (`porter_secrets::Namespace`, such as
+//! `mailo/<profile>`). This crate builds neither; the host names them where it builds the
+//! service.
+//!
 //! Accounts are hosted: the service answers every call. Inference is hosted only if the app
 //! hands in a broker ([`SessionHost`], through [`InProcess::with_broker`]): porter's own `Broker`
 //! is not built, and an app that hosts accounts alone has no inferd, which a session says as it
