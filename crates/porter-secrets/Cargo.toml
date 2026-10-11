@@ -17,6 +17,9 @@ oo7 = { workspace = true, optional = true }
 zeroize = { workspace = true, optional = true }
 keyring-core = { workspace = true, optional = true }
 
+[target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies]
+rustix = { workspace = true }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 apple-native-keyring-store = { workspace = true, optional = true }
 
@@ -36,8 +39,9 @@ porter-secrets = { path = ".", features = ["oo7"] }
 # `MemorySecrets`, for tests and porter-fake.
 testing = []
 # `FileSecrets`, one 0600 JSON file of plain-text credentials, for private-bus and scratch runs.
-# TEST ONLY: never default, never in a release or dist build (accountd's `test-keys` turns it on;
-# check-boundary.sh and accountd's tests/dist.rs fail if a default build gets it).
+# TEST ONLY: never default, never in a release or dist build (a daemon's `test-keys` turns it on;
+# check-boundary.sh and the daemons' tests/dist.rs fail if a default build gets it). `keysel`
+# (with the `oo7` feature) is how a daemon chooses between this file and the Secret Service.
 test-keys = []
 # `Oo7Secrets`, the Secret Service store (oo7's file backend inside a sandbox).
 oo7 = ["dep:oo7", "dep:zeroize"]

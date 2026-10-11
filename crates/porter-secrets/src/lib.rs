@@ -36,11 +36,15 @@ mod error;
 mod file;
 #[cfg(feature = "keyring")]
 mod keyring;
+#[cfg(feature = "oo7")]
+pub mod keysel;
 #[cfg(feature = "testing")]
 mod memory;
 mod namespace;
 #[cfg(feature = "oo7")]
 mod oo7;
+#[cfg(any(target_os = "linux", target_os = "android"))]
+mod sealed;
 mod secrets;
 
 pub use attributes::{SERVICE, SecretAttributes, attributes, attributes_in};
@@ -54,4 +58,6 @@ pub use memory::MemorySecrets;
 pub use namespace::{Namespace, NamespaceError};
 #[cfg(feature = "oo7")]
 pub use oo7::{Oo7KeyringSecrets, Oo7NamedSecrets, Oo7Secrets};
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub use sealed::sealed_key;
 pub use secrets::{PutOutcome, Secrets};
