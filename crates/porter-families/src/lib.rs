@@ -3,6 +3,9 @@
 //! built. accountd and an app hosting porter in process (mailo) both build it, so a family is
 //! written once. With no feature on, the set is empty and uninhabited.
 //!
+//! The `set` feature (every family a daemon maps) adds `set`: which provider files a daemon
+//! serves and the family of each, shared by accountd, inferd and syncd.
+//!
 //! Google is the `google` feature: the owner's own Google Cloud client, a sign-in that says it
 //! needs a client id until one is registered (docs/google.md).
 
@@ -29,6 +32,8 @@ mod nextcloud;
 mod openrouter;
 #[cfg(any(feature = "nextcloud", feature = "generic"))]
 mod password;
+#[cfg(feature = "set")]
+pub mod set;
 #[cfg(feature = "openrouter")]
 mod skeleton;
 #[cfg(feature = "tailnet")]

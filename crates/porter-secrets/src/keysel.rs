@@ -142,8 +142,8 @@ impl Chosen {
             }),
             #[cfg(all(feature = "test-keys", unix))]
             Selection::File(path) => {
-                let store = crate::FileSecrets::open_in(&path, namespace)
-                    .map_err(KeysRefusal::File)?;
+                let store =
+                    crate::FileSecrets::open_in(&path, namespace).map_err(KeysRefusal::File)?;
                 Ok(Self {
                     said: format!(
                         "{said_prefix}: TEST BUILD: credentials are in the file {}, not the Secret Service",
@@ -260,8 +260,7 @@ mod tests {
 
     #[test]
     fn unset_opens_the_secret_service_in_the_daemons_namespace_without_touching_it() {
-        let chosen =
-            Chosen::open(Selection::SecretService, namespace(), "inferd").expect("chosen");
+        let chosen = Chosen::open(Selection::SecretService, namespace(), "inferd").expect("chosen");
         let AnyKeys::Oo7(keys) = &chosen.keys else {
             panic!("the Secret Service");
         };
@@ -296,8 +295,8 @@ mod tests {
             chosen.said
         );
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).expect("chmod");
-        let refused = Chosen::open(Selection::File(path), namespace(), "syncd")
-            .expect_err("loose mode");
+        let refused =
+            Chosen::open(Selection::File(path), namespace(), "syncd").expect_err("loose mode");
         assert!(matches!(refused, KeysRefusal::File(_)), "{refused}");
         assert!(refused.to_string().contains("0600"), "{refused}");
         let _ = std::fs::remove_dir_all(dir);
