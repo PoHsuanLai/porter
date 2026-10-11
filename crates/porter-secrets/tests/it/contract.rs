@@ -283,9 +283,14 @@ async fn namespaces_keep_their_items_apart() {
     assert_eq!(porter.get(&filed).await, Ok(password("a")));
     assert_eq!(mailo.get(&filed).await, Ok(password("b")));
     let entry = |service: &str| {
-        mock.build(service, r#"cloud:{"kind":"password"}"#, None)
-            .expect("entry")
-            .get_password()
+        keyring_core::api::CredentialStoreApi::build(
+            mock.as_ref(),
+            service,
+            r#"cloud:{"kind":"password"}"#,
+            None,
+        )
+        .expect("entry")
+        .get_password()
     };
     assert!(entry("porter").is_ok());
     assert!(entry("mailo/work").is_ok());

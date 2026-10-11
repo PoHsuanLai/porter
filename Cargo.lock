@@ -23,6 +23,7 @@ dependencies = [
  "porter-proxy",
  "porter-secrets",
  "porter-service",
+ "porter-store",
  "porter-tailscale",
  "rustix",
  "rustls-pki-types",
@@ -2501,6 +2502,17 @@ dependencies = [
  "porter-provider",
  "porter-secrets",
  "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "porter-store"
+version = "0.1.0"
+dependencies = [
+ "porter-core",
+ "porter-fake",
+ "porter-fs",
+ "porter-service",
  "tokio",
 ]
 

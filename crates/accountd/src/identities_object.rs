@@ -28,7 +28,7 @@ use crate::identities::UseFault;
 use crate::keys::sealed_key;
 use crate::request::departed;
 use porter_core::consent::{AccountChoice, AskPurpose, ConsentAnswer, ConsentAsk, Usage};
-use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
+use porter_core::wire::{ProviderHint, Refusal};
 use porter_core::{
     AccountId, AccountLabel, CapabilityKind, DataClass, Identity, IdentityId, IdentityKind,
 };
@@ -150,6 +150,7 @@ impl<H: Host, C: Callers> IdentitiesObject<H, C> {
         &self,
         #[zbus(header)] header: Header<'_>,
         provider_hint: String,
+        parent_window: String,
     ) -> Result<(String, String, String), RefusedError> {
         let caller = self.user(&header).await?;
         let hint = hint(&provider_hint)?;
@@ -201,7 +202,7 @@ impl<H: Host, C: Callers> IdentitiesObject<H, C> {
             .receive_name_owner_changed_with_args(&[(0, sender.as_str())])
             .await
             .map_err(RefusedError::failed)?;
-        let window = ParentWindow::Unparented;
+        let window = crate::core::window(&parent_window);
         let answer = tokio::select! {
             answer = desk.pick(ask, &window) => answer,
             // The app left: the sheet is taken down with the dropped pick, and nobody is told.

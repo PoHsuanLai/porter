@@ -4,7 +4,7 @@
 //!
 //! ```ignore
 //! let identities = transport.identities().await?;
-//! match identities.offer(&ProviderHint::Any).await {            // the person picks in a sheet
+//! match identities.offer(&ProviderHint::Any, &window).await {   // the person picks in a sheet
 //!     Ok(picked) => {
 //!         // Sign in to your own service as `picked.address`, then say so:
 //!         identities.register_use(&picked.id).await?;
@@ -19,7 +19,7 @@
 //! while let Some(id) = removed.next().await { /* forget your own copies of it */ }
 //! ```
 
-use porter_core::wire::{ProviderHint, Refusal};
+use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
 use porter_core::{
     AppName, CoreError, Identity, IdentityAddress, IdentityId, ProviderId, SecretText,
 };
@@ -135,14 +135,22 @@ impl Identities {
     }
 
     /// "Continue as": shows the person the identity picker and waits for the pick. `hint` limits
-    /// it to one provider's identities, or [`ProviderHint::Any`]. The app has one picker open at a
+    /// it to one provider's identities, or [`ProviderHint::Any`]; the sheet sits over `window`. The app has one picker open at a
     /// time ([`IdentitiesError::Busy`]); the person closing it is [`IdentitiesError::Cancelled`].
-    pub async fn offer(&self, hint: &ProviderHint) -> Result<Picked, IdentitiesError> {
+    pub async fn offer(
+        &self,
+        hint: &ProviderHint,
+        window: &ParentWindow,
+    ) -> Result<Picked, IdentitiesError> {
         let word = match hint {
             ProviderHint::Provider(provider) => provider.as_str(),
             _ => "",
         };
-        let (id, address, provider) = self.proxy.offer(word).await?;
+        let parent = match window {
+            ParentWindow::Handle(handle) => handle.as_str(),
+            _ => "",
+        };
+        let (id, address, provider) = self.proxy.offer(word, parent).await?;
         Ok(Picked {
             id: IdentityId::parse(&id)?,
             address: IdentityAddress(address),

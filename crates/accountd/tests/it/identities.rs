@@ -134,7 +134,7 @@ async fn apps_and_porter_daemons_use_identities_and_everything_else_is_refused()
         let who = caller(&format!("org.example.Asker{n}"), role);
         let proxy = identities(&rig.client_as(who).await).await;
         assert_eq!(listed(&proxy).await.len(), 2, "{role:?} lists");
-        let (picked, ..) = proxy.offer("").await.expect("offer");
+        let (picked, ..) = proxy.offer("", "").await.expect("offer");
         assert_eq!(picked, id, "{role:?} offers");
         proxy.register_use(id).await.expect("register");
         match reads_uses {
@@ -164,7 +164,7 @@ async fn apps_and_porter_daemons_use_identities_and_everything_else_is_refused()
         let proxy = identities(&connection).await;
         let errors = [
             proxy.list().await.map(|_| ()).expect_err("list"),
-            proxy.offer("").await.map(|_| ()).expect_err("offer"),
+            proxy.offer("", "").await.map(|_| ()).expect_err("offer"),
             proxy
                 .take_password(id)
                 .await
@@ -188,7 +188,7 @@ fn storage_identity_account() -> AccountId {
 async fn offer_shows_the_picker_answers_the_pick_and_grants_nothing() {
     let rig = Rig::start_with(Default::default(), picking(storage_identity_account())).await;
     let app = identities(&rig.client("org.quire.Photos").await).await;
-    let (id, address, provider) = app.offer("").await.expect("offer");
+    let (id, address, provider) = app.offer("", "").await.expect("offer");
     assert_eq!(
         (id.as_str(), address.as_str(), provider.as_str()),
         ("fake-storage", "ada@cloud.invalid", "fake-cloud")
@@ -222,7 +222,7 @@ async fn offer_shows_the_picker_answers_the_pick_and_grants_nothing() {
 async fn a_hint_lists_only_that_providers_identities() {
     let rig = Rig::start_with(Default::default(), picking(porter_fake::mail_account().id)).await;
     let app = identities(&rig.client("org.quire.Photos").await).await;
-    let (id, ..) = app.offer("fake-mail").await.expect("offer");
+    let (id, ..) = app.offer("fake-mail", "").await.expect("offer");
     assert_eq!(id, "fake-mail");
     let calls = rig.host_log.calls();
     let SheetView::Consent(ask) = serde_json::from_str(&calls.opened[0].2).expect("a view") else {
@@ -248,7 +248,7 @@ async fn an_offer_the_person_does_not_answer_with_a_pick_is_dismissed() {
     for input in inputs {
         let rig = Rig::start_with(Default::default(), SheetHost::answering(input.clone())).await;
         let app = identities(&rig.client("org.quire.Photos").await).await;
-        let refused = app.offer("").await.expect_err("no pick");
+        let refused = app.offer("", "").await.expect_err("no pick");
         assert_eq!(error_name(&refused), dismissed, "{input:?}");
         // No pick, so no password.
         let taken = app.take_password("fake-storage").await.expect_err("take");
@@ -260,15 +260,21 @@ async fn an_offer_the_person_does_not_answer_with_a_pick_is_dismissed() {
 async fn a_hint_that_fits_no_identity_or_is_no_provider_shows_nothing() {
     let rig = Rig::start().await;
     let app = identities(&rig.client("org.quire.Photos").await).await;
-    let none = app.offer("no-such-provider").await.expect_err("none fit");
+    let none = app
+        .offer("no-such-provider", "")
+        .await
+        .expect_err("none fit");
     assert_eq!(error_name(&none), refusal_name(Refusal::NoFittingAccount));
     // The local runtime's provider has an account but no identity.
-    let runtime = app.offer("fake-llm").await.expect_err("not an identity");
+    let runtime = app
+        .offer("fake-llm", "")
+        .await
+        .expect_err("not an identity");
     assert_eq!(
         error_name(&runtime),
         refusal_name(Refusal::NoFittingAccount)
     );
-    let bad = app.offer("Not A Provider").await.expect_err("bad hint");
+    let bad = app.offer("Not A Provider", "").await.expect_err("bad hint");
     assert_eq!(error_name(&bad), INVALID_ARGS);
     assert!(rig.host_log.calls().opened.is_empty());
 }
@@ -288,7 +294,7 @@ async fn the_password_goes_on_a_descriptor_to_the_app_the_person_picked_it_for_o
             .expect_err("early");
         assert_eq!(error_name(&early), ACCESS_DENIED);
     }
-    app.offer("").await.expect("offer");
+    app.offer("", "").await.expect("offer");
     // Another connection of the same app did not get the pick; neither did another identity.
     let stolen = other
         .take_password("fake-storage")
@@ -332,7 +338,7 @@ async fn an_identity_that_signs_in_with_oauth_has_no_password_to_hand_over() {
     let rig = Rig::start_with(Default::default(), picking(porter_fake::mail_account().id)).await;
     let mut tap = Tap::start(&rig.bus).await;
     let app = identities(&rig.client("org.quire.Mail").await).await;
-    let (id, ..) = app.offer("").await.expect("offer");
+    let (id, ..) = app.offer("", "").await.expect("offer");
     assert_eq!(id, "fake-mail");
     // Picked, and still nothing goes: there is no password, and the refresh token never leaves.
     let refused = app.take_password("fake-mail").await.expect_err("oauth");
@@ -359,7 +365,7 @@ async fn an_app_has_one_picker_open_at_a_time_and_leaving_takes_it_down() {
     let first = rig.client("org.quire.Photos").await;
     let waiting = {
         let proxy = identities(&first).await;
-        tokio::spawn(async move { proxy.offer("").await })
+        tokio::spawn(async move { proxy.offer("", "").await })
     };
     eventually("the picker to be shown", || {
         rig.host_log.calls().opened.len() == 1
@@ -367,7 +373,7 @@ async fn an_app_has_one_picker_open_at_a_time_and_leaving_takes_it_down() {
     .await;
     // The same app, from another connection, cannot stack a second sheet on the person.
     let second = identities(&rig.client("org.quire.Photos").await).await;
-    let busy = second.offer("").await.expect_err("one at a time");
+    let busy = second.offer("", "").await.expect_err("one at a time");
     assert_eq!(error_name(&busy), LIMITS_EXCEEDED);
     // The asker leaves: the sheet is taken down, and nobody is left waiting for an answer.
     first.close().await.expect("close");

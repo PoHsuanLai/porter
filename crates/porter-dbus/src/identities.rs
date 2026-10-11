@@ -93,14 +93,19 @@ pub trait Identities {
     fn list(&self) -> zbus::Result<Vec<(String, Details)>>;
     /// "Continue as": shows the person the identity picker through the sheet host, and answers
     /// the pick as the identity's id, its address and its provider's id. `provider_hint` is a
-    /// provider file's id to list only that provider's identities, or empty for all. It never
-    /// returns a token. The call waits for the person. Errors: `Dismissed` when the person
+    /// provider file's id to list only that provider's identities, or empty for all;
+    /// `parent_window` is the app's window the sheet sits over, as for `Choose` (empty for none).
+    /// It never returns a token. The call waits for the person. Errors: `Dismissed` when the person
     /// closed the sheet, turned every identity down, or no sheet host is reachable (a client
     /// reads it as cancelled, as it reads a `Choose` that was closed);
     /// `NoFittingAccount` when no identity fits (offer to sign one in); `Unavailable` when this
     /// accountd has no way to show the picker; `LimitsExceeded` while this app has a sheet of
     /// this kind open; `InvalidArgs` for a hint that is not a provider id.
-    fn offer(&self, provider_hint: &str) -> zbus::Result<(String, String, String)>;
+    fn offer(
+        &self,
+        provider_hint: &str,
+        parent_window: &str,
+    ) -> zbus::Result<(String, String, String)>;
     /// The password (or app password) of the identity the person just picked in this app's
     /// `Offer`, as a sealed file descriptor (`h`) holding the text, read position at the start.
     /// Once per pick, and only for a `password` identity; audited. Errors: `AccessDenied` for
@@ -132,8 +137,12 @@ impl IdentitiesSkeleton {
         Err(crate::introspect::frozen())
     }
 
-    fn offer(&self, provider_hint: String) -> fdo::Result<(String, String, String)> {
-        let _ = provider_hint;
+    fn offer(
+        &self,
+        provider_hint: String,
+        parent_window: String,
+    ) -> fdo::Result<(String, String, String)> {
+        let _ = (provider_hint, parent_window);
         Err(crate::introspect::frozen())
     }
 

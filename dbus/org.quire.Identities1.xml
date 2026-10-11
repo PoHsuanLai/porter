@@ -7,6 +7,7 @@
    </method>
    <method name="Offer">
      <arg name="provider_hint" type="s" direction="in"/>
+     <arg name="parent_window" type="s" direction="in"/>
      <arg type="s" direction="out"/>
      <arg type="s" direction="out"/>
      <arg type="s" direction="out"/>
