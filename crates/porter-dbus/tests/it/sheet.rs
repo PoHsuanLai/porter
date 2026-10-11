@@ -9,8 +9,9 @@ use porter_core::{
     ProviderId, Restriction, ServiceEndpoint, Subject, Tls,
 };
 use porter_dbus::{
-    Details, ResponseCode, SheetKind, account_path, is_handle_token, reply_of, request_namespace,
-    request_path, response_of, sender_segment,
+    Details, ResponseCode, ServiceRoot, SheetKind, account_path, is_handle_token, reply_of,
+    request_namespace, request_namespace_in, request_path, request_path_in, response_of,
+    sender_segment,
 };
 use zbus::zvariant::{OwnedValue, Value};
 
@@ -256,6 +257,21 @@ fn sender_names_become_path_segments_as_portals_write_them() {
         request_namespace(":1.42"),
         "/org/quire/Accounts1/request/1_42"
     );
+    // The same caller's namespace under each service's own root.
+    for (service, root) in [
+        (ServiceRoot::Accounts, "/org/quire/Accounts1/request"),
+        (ServiceRoot::Inference, "/org/quire/Inference1/request"),
+        (ServiceRoot::Sync, "/org/quire/Sync1/request"),
+    ] {
+        assert_eq!(
+            request_namespace_in(service, ":1.42"),
+            format!("{root}/1_42")
+        );
+        assert_eq!(
+            request_path_in(service, ":1.42", "tok").as_deref(),
+            Some(format!("{root}/1_42/tok").as_str())
+        );
+    }
 }
 
 #[test]

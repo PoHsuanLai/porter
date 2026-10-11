@@ -41,6 +41,7 @@ mod photos_picker;
 mod ready;
 mod refusal;
 mod request;
+mod service_root;
 pub mod sheet;
 mod sheet_backend;
 mod spaces;
@@ -114,12 +115,16 @@ pub use photos_picker::{
     PICKER_WAITING, PhotosPickerProxy, PickerSkeleton,
 };
 pub use ready::serve_ready;
-pub use refusal::{REFUSAL_ERROR_PREFIX, refusal_error_name, refusal_from_error_name};
+pub use refusal::{
+    REFUSAL_ERROR_PREFIX, refusal_error_name, refusal_error_name_in, refusal_from_error_name,
+};
 pub use request::{RequestProxy, RequestSkeleton};
+pub use service_root::ServiceRoot;
 #[doc = "These live in [`sheet`] now; this path stays for one more batch."]
 pub use sheet::{
     OPTION_HANDLE_TOKEN, REQUEST_INTERFACE, REQUEST_PATH_ROOT, Response, ResponseCode, SheetKind,
-    is_handle_token, reply_of, request_namespace, request_path, response_of, sender_segment,
+    is_handle_token, reply_of, request_namespace, request_namespace_in, request_path,
+    request_path_in, response_of, sender_segment,
 };
 pub use sheet_backend::{AccountsSheetProxy, AccountsSheetSkeleton};
 pub use spaces::{

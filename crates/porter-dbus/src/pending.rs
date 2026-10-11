@@ -18,9 +18,7 @@
 use crate::args::Details;
 use crate::request::RequestProxy;
 use crate::service_root::ServiceRoot;
-use crate::sheet::{
-    OPTION_HANDLE_TOKEN, REQUEST_INTERFACE, request_namespace_in, request_path_in,
-};
+use crate::sheet::{OPTION_HANDLE_TOKEN, REQUEST_INTERFACE, request_namespace_in, request_path_in};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::task::Poll;

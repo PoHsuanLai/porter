@@ -1,11 +1,11 @@
-//! The typed errors of the launcher's `Peer` methods (lane agent-login) and of its two `Tokens`
-//! methods (lane p2-handoff), beside the refusals of `refusal`: `org.quire.Accounts1.Error.<Name>`.
-//! `NoLauncher` is a `Refusal` (the sheet's answer to a login nobody can do); these are the
-//! launcher's own.
+//! The typed errors of the launcher interface (`org.quire.Inference1.Launcher`, served by inferd),
+//! beside the refusals of `refusal`: `org.quire.Inference1.Error.<Name>`. `NoLauncher` is a
+//! `Refusal` (the sheet's answer to a login nobody can do); these are the launcher's own. A reader
+//! also takes the same names under accountd's prefix, as an older accountd sent them.
 
-use crate::refusal::REFUSAL_ERROR_PREFIX;
+use crate::service_root::ServiceRoot;
 
-/// Why accountd refused a launcher's call.
+/// Why inferd refused a launcher's call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LauncherFault {
     /// A live connection already launches this program (first wins).
@@ -16,7 +16,7 @@ pub enum LauncherFault {
     /// `IssueProcessCredential` for a program this connection has no live registration for
     /// (`RegisterLauncher`): another connection's, or nobody's.
     NotRegistered,
-    /// `IssueProcessCredential` under a `Once` grant: it is spent by its first use, and a second
+    /// `IssueProcessCredential` under a `Once` permit: it is spent by its first use, and a second
     /// turn of the agent would find the key gone.
     OnceGrant,
     /// `IssueProcessCredential` under a grant of an account that holds no API key to hand over
@@ -27,7 +27,7 @@ pub enum LauncherFault {
     UnknownCredential,
     /// `BeginSession` for a session id another live connection holds (first wins).
     SessionTaken,
-    /// `EndSession`, `RequestAgentGrant` or `IssueProcessCredential` for a session that is not
+    /// `EndSession`, `RequestAgentKey` or `IssueProcessCredential` for a session that is not
     /// open for this connection: never begun, ended already, or another connection's.
     UnknownSession,
 }
@@ -45,8 +45,14 @@ impl LauncherFault {
         LauncherFault::UnknownSession,
     ];
 
-    /// The error name a daemon replies with.
+    /// The error name inferd replies with: the same as [`LauncherFault::error_name_in`] with
+    /// [`ServiceRoot::Inference`].
     pub fn error_name(self) -> String {
+        self.error_name_in(ServiceRoot::Inference)
+    }
+
+    /// The error name the daemon `service` replies with.
+    pub fn error_name_in(self, service: ServiceRoot) -> String {
         let name = match self {
             LauncherFault::AlreadyRegistered => "AlreadyRegistered",
             LauncherFault::UnknownRequest => "UnknownRequest",
@@ -57,14 +63,16 @@ impl LauncherFault {
             LauncherFault::SessionTaken => "SessionTaken",
             LauncherFault::UnknownSession => "UnknownSession",
         };
-        format!("{REFUSAL_ERROR_PREFIX}{name}")
+        format!("{}.{name}", service.error_prefix())
     }
 
-    /// The fault an error name stands for, if it is one of ours.
+    /// The fault an error name stands for, if it is one of ours, under any service's prefix.
     pub fn from_error_name(name: &str) -> Option<Self> {
-        Self::ALL
-            .into_iter()
-            .find(|fault| fault.error_name() == name)
+        Self::ALL.into_iter().find(|fault| {
+            ServiceRoot::ALL
+                .into_iter()
+                .any(|service| fault.error_name_in(service) == name)
+        })
     }
 }
 
