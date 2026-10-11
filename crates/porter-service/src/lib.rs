@@ -48,7 +48,7 @@ mod store;
 mod sync_grant;
 mod token;
 
-pub use add_flow::AllowFor;
+pub use add_flow::{AllowFor, SignInAs};
 pub use agent::AgentFault;
 pub use agent_login::{Launchers, LoginEnd, NoLauncher, Roster, Waiting, program_of};
 pub use audit::{AuditSink, NoAudit};

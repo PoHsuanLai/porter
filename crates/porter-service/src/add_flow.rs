@@ -23,8 +23,8 @@ use porter_core::{
     AccountId, AccountsReply, AppId, AuthKind, DataClass, Need, ProviderId, ServiceEndpoint,
 };
 use porter_provider::{
-    Provider, ProviderError, ProviderSpec, Readiness, SignIn, SignInMode, SignInStart, SignInStep,
-    Signed,
+    ConsentHistory, LoginHint, Provider, ProviderError, ProviderSpec, Readiness, SignIn,
+    SignInMode, SignInStart, SignInStep, Signed,
 };
 use porter_secrets::Secrets;
 use std::collections::VecDeque;
@@ -41,12 +41,32 @@ pub struct AllowFor {
     pub usage: Usage,
 }
 
+/// Who an add is for when the host already knows ("Continue as"): the address the provider's page
+/// opens on, and whether this client was signed in for that identity before.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SignInAs {
+    /// The address to open the provider's page on.
+    pub hint: LoginHint,
+    /// Whether the person agreed to this client for this identity before. `SignedInBefore` asks
+    /// for no consent screen; if the provider then returns nothing to keep, the sign-in is
+    /// started once more as `FirstSignIn`.
+    pub history: ConsentHistory,
+}
+
+impl SignInAs {
+    /// A sign-in as the person at `hint`, with this `history`.
+    pub fn new(hint: LoginHint, history: ConsentHistory) -> Self {
+        Self { hint, history }
+    }
+}
+
 /// What the sheet is for.
 pub(crate) enum Job {
     /// A new account.
     Add {
         hint: ProviderHint,
         allow: Option<AllowFor>,
+        identity: Option<SignInAs>,
     },
     /// The credential of an existing account again.
     Reauthenticate {
@@ -154,6 +174,8 @@ struct Run<S> {
     signed: Option<Signed>,
     /// Whether the sign-in is to be polled while the sheet is idle.
     polling: bool,
+    /// Who the sign-in is for and with which consent history: what a retry changes.
+    identity: Option<SignInAs>,
     stored: Option<Stored>,
     /// The account the sign-in showed again, when it ended `AlreadyAdded`.
     already: Option<AccountId>,
@@ -179,8 +201,13 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         hint: ProviderHint,
         window: ParentWindow,
         allow: Option<AllowFor>,
+        identity: Option<SignInAs>,
     ) -> AccountsReply {
-        let job = Job::Add { hint, allow };
+        let job = Job::Add {
+            hint,
+            allow,
+            identity,
+        };
         match self.drive(caller, window, &job).await {
             Ok(Stored::Added(id)) => AccountsReply::Added(id),
             // The app is told which account it is, and may ask for a grant of it.
@@ -245,7 +272,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                 .collect(),
         );
         let purpose = match job {
-            Job::Add { hint, allow } => {
+            Job::Add { hint, allow, .. } => {
                 if let ProviderHint::Provider(id) = hint
                     && !rows.iter().any(|row| row.id == *id)
                 {
@@ -285,6 +312,10 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             signin: None,
             signed: None,
             polling: false,
+            identity: match job {
+                Job::Add { identity, .. } => identity.clone(),
+                Job::Reauthenticate { .. } => None,
+            },
             stored: None,
             already: None,
         };
@@ -321,7 +352,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                     queue.extend(effects);
                 }
             }
-            let event = self.wait(&mut link, &mut run).await;
+            let event = self.wait(&mut link, &sheet, job, &mut run).await;
             let (next, effects) = step(sheet, event);
             sheet = next;
             queue.extend(effects);
@@ -330,7 +361,13 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
 
     /// The next thing to tell the machine: what the person did or, while the sign-in is being
     /// polled, what the poll found, whichever comes first.
-    async fn wait<L: SheetLink>(&self, link: &mut L, run: &mut Run<P::SignIn>) -> SheetEvent {
+    async fn wait<L: SheetLink>(
+        &self,
+        link: &mut L,
+        sheet: &Sheet,
+        job: &Job,
+        run: &mut Run<P::SignIn>,
+    ) -> SheetEvent {
         let polled = match (run.polling, run.signin.as_mut()) {
             (true, Some(signin)) => {
                 match race(link.input(), signin.next(SignInInput::Poll)).await {
@@ -341,7 +378,72 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             _ => return person(link.input().await),
         };
         run.polling = false;
-        said(run, polled)
+        self.settled(sheet, job, run, polled).await
+    }
+
+    /// What a sign-in's step is to the machine, after the one retry an identity's add owes: a
+    /// sign-in that skipped the consent screen (`SignedInBefore`) and ended `Unreadable` (the
+    /// provider handed back nothing to keep) starts again once as `FirstSignIn`.
+    async fn settled(
+        &self,
+        sheet: &Sheet,
+        job: &Job,
+        run: &mut Run<P::SignIn>,
+        step: SignInStep,
+    ) -> SheetEvent {
+        let retried = match (&step, job, run.identity.take()) {
+            (
+                SignInStep::Failed(SignInFault::Unreadable),
+                Job::Add { .. },
+                Some(SignInAs {
+                    hint,
+                    history: ConsentHistory::SignedInBefore,
+                }),
+            ) => {
+                let again = SignInAs::new(hint, ConsentHistory::FirstSignIn);
+                run.identity = Some(again.clone());
+                match stage_provider(&sheet.stage).and_then(|id| self.begin(id, job, Some(&again)))
+                {
+                    Some(Ok(mut signin)) => {
+                        let first = signin.next(SignInInput::Start).await;
+                        run.signin = Some(signin);
+                        Some(first)
+                    }
+                    Some(Err(_)) | None => None,
+                }
+            }
+            (_, _, identity) => {
+                run.identity = identity;
+                None
+            }
+        };
+        said(run, retried.unwrap_or(step))
+    }
+
+    /// Starts `provider`'s sign-in for `job`, as `identity` when the job is an add for one.
+    fn begin(
+        &self,
+        provider: &ProviderId,
+        job: &Job,
+        identity: Option<&SignInAs>,
+    ) -> Option<Result<P::SignIn, ProviderError>> {
+        self.provider_of(provider).map(|provider| {
+            let start = SignInStart::new(match job {
+                Job::Add { .. } => SignInMode::Add,
+                Job::Reauthenticate {
+                    account, endpoints, ..
+                } => SignInMode::Reauthenticate {
+                    account: account.clone(),
+                    endpoints: endpoints.clone(),
+                },
+            });
+            provider.sign_in(match identity {
+                Some(SignInAs { hint, history }) => {
+                    start.with_login_hint(hint.clone()).with_consent(*history)
+                }
+                None => start,
+            })
+        })
     }
 
     /// Hands the sign-in what the machine asked it to be told.
@@ -381,17 +483,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                         SignInFault::NoLauncher,
                     )));
                 }
-                let started = self.provider_of(id).map(|provider| {
-                    provider.sign_in(SignInStart::new(match job {
-                        Job::Add { .. } => SignInMode::Add,
-                        Job::Reauthenticate {
-                            account, endpoints, ..
-                        } => SignInMode::Reauthenticate {
-                            account: account.clone(),
-                            endpoints: endpoints.clone(),
-                        },
-                    }))
-                });
+                let started = self.begin(id, job, run.identity.as_ref());
                 let mut signin = match started {
                     Some(Ok(signin)) => signin,
                     Some(Err(error)) => {
@@ -405,7 +497,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                 };
                 let first = signin.next(SignInInput::Start).await;
                 run.signin = Some(signin);
-                Some(said(run, first))
+                Some(self.settled(sheet, job, run, first).await)
             }
             other => {
                 let signin = run.signin.as_mut()?;
@@ -426,7 +518,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                         SignInFault::AlreadyAdded,
                     )));
                 }
-                Some(said(run, step))
+                Some(self.settled(sheet, job, run, step).await)
             }
         }
     }
@@ -529,7 +621,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         window: ParentWindow,
         ask: AllowFor,
     ) -> AccountsReply {
-        self.run_add(caller, hint, window, Some(ask)).await
+        self.run_add(caller, hint, window, Some(ask), None).await
     }
 }
 

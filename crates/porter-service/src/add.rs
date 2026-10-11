@@ -3,7 +3,7 @@
 //! need no provider are built (`Registry::relay_target`, the audience rule); these bodies wait
 //! for the first family.
 
-use crate::add_flow::Reauth;
+use crate::add_flow::{Reauth, SignInAs};
 use crate::audit::AuditSink;
 use crate::clock::Clock;
 use crate::service::AccountService;
@@ -27,7 +27,21 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         hint: ProviderHint,
         window: ParentWindow,
     ) -> AccountsReply {
-        self.run_add(caller, hint, window, None).await
+        self.run_add(caller, hint, window, None, None).await
+    }
+
+    /// Opens the add-account sheet for an identity the host already knows ("Continue as"): the
+    /// provider's page opens on `identity.hint`, and a sign-in that skipped the consent screen
+    /// and came back with nothing to keep is started once more as a first sign-in. The person
+    /// picks the provider in the sheet; no grant is recorded.
+    pub async fn sign_in_as(
+        &self,
+        caller: &AppId,
+        identity: SignInAs,
+        window: ParentWindow,
+    ) -> AccountsReply {
+        self.run_add(caller, ProviderHint::Any, window, None, Some(identity))
+            .await
     }
 
     /// Runs the provider's sign-in again for an account the caller holds a grant for and files
