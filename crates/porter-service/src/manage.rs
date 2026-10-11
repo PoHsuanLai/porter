@@ -92,6 +92,11 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             .iter()
             .find(|p| p.spec().id == account.provider)
             .ok_or(Refusal::Unavailable)?;
+        // The credential is read, used and (if it rotated) stored again under the account's
+        // turn at its issuer, so a token being issued at the same time never presents one this
+        // has replaced, nor writes one back over this one.
+        let flight = self.flights.of(&account.id);
+        let _turn = flight.gate.lock().await;
         let presented = self
             .presented(&account)
             .await

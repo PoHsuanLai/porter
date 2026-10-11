@@ -15,7 +15,7 @@ use porter_core::{
     Account, AppId, Audience, CapabilityKind, Credential, EndpointUrl, Family, GrantId, RelayAuth,
     RelayPlan, SecretKey, SecretPurpose, SecretText, ServiceEndpoint, TokenKind,
 };
-use porter_provider::{Presented, Provider, ProviderSession};
+use porter_provider::Provider;
 use porter_secrets::{Secrets, SecretsError};
 
 /// The secrets a password account may file for `endpoint`, most specific first: a server of its
@@ -185,29 +185,17 @@ where
             .iter()
             .find(|p| p.spec().id == account.provider)
             .ok_or(Refusal::Unavailable)?;
-        let key = SecretKey {
-            account: account.id.clone(),
-            purpose: SecretPurpose::OAuthRefresh,
-        };
-        let credential = self.secrets.get(&key).await.map_err(secrets_refusal)?;
-        let session = match provider
-            .open(&account.id, Presented::Credential(credential))
-            .await
-        {
-            Ok(session) => session,
-            Err(error) => return Err(self.refused_refresh(&account.id, error).await),
-        };
-        // The grant's kind, so the bearer reaches that kind's service alone.
-        let issued = match session.access_token_for(&audience, kind).await {
-            Ok(issued) => issued,
-            Err(error) => return Err(self.refused_refresh(&account.id, error).await),
-        };
-        if let Some(renewed) = session.renewed() {
-            self.secrets
-                .put(&key, &renewed)
-                .await
-                .map_err(secrets_refusal)?;
-        }
+        // The grant's kind, so the bearer reaches that kind's service alone. One refresh at a
+        // time per account, shared with `IssueToken`; a rotated token is stored first.
+        let issued = self
+            .issue_for(
+                account,
+                provider,
+                Some(SecretPurpose::OAuthRefresh),
+                &audience,
+                kind,
+            )
+            .await?;
         bearer_of(issued.kind, &issued.value)
             .map(RelayAuth::AccessToken)
             .ok_or(Refusal::Unavailable)

@@ -4,6 +4,13 @@
 //! (where the registry lives between runs) and an [`AuditSink`]. Transport-free: accountd hosts
 //! it behind D-Bus and the socket, and an app may host it in process.
 //!
+//! An OAuth account is refreshed one caller at a time inside a service: a second caller waits and
+//! then uses the token the first one issued (one call to the issuer serves both), and a refresh
+//! token the issuer rotated is stored before the new access token is handed out. A host that
+//! keeps its registry on disk passes `porter_store::FileStore` to
+//! [`AccountService::with_store`]; this crate depends on no executor, so the file store lives in
+//! `porter-store`.
+//!
 //! The seams' failures are small values with plain sentences, and what syncd may keep of an
 //! account is read from the grants (none held, none allowed):
 //!
@@ -28,6 +35,7 @@ mod audience;
 mod audit;
 mod choose;
 mod clock;
+mod flight;
 mod gate;
 mod local;
 mod manage;

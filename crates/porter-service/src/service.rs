@@ -5,21 +5,20 @@ use crate::audience::covers;
 use crate::audit::{AuditSink, NoAudit};
 use crate::choose::{ask_for, settle};
 use crate::clock::Clock;
+use crate::flight::Flights;
 use crate::gate::Gate;
 use crate::registry::{Asker, Registry};
 use crate::sheets::Sheets;
 use crate::store::{NoStore, RegistryStore};
-use crate::token::{provider_refusal, secret_purpose, secrets_refusal};
+use crate::token::{provider_refusal, secret_purpose};
 use porter_core::audit::{AuditEntry, AuditEvent};
 use porter_core::consent::{ConsentAnswer, GrantScope, Usage, availability};
 use porter_core::wire::{ParentWindow, Refusal};
 use porter_core::{
     AccountId, AccountState, AccountsReply, AccountsRequest, AppId, Audience, AuthKind, DataClass,
-    EndpointUrl, GrantId, LauncherSession, Need, ProviderId, RelayPlan, SecretKey,
+    EndpointUrl, GrantId, LauncherSession, Need, ProviderId, RelayPlan,
 };
-use porter_provider::{
-    Presented, Provider, ProviderError, ProviderSession, ProviderSet, ProviderSpec,
-};
+use porter_provider::{Provider, ProviderError, ProviderSet, ProviderSpec};
 use porter_secrets::{Secrets, SecretsError};
 use std::collections::HashSet;
 use std::sync::{Mutex, MutexGuard, OnceLock};
@@ -38,6 +37,8 @@ pub struct AccountService<P, S, U, K, R = NoStore, A = NoAudit> {
     pub(crate) registry: Mutex<Registry>,
     /// Held across a save's snapshot and write, so saves do not overlap.
     pub(crate) persist_gate: Gate,
+    /// Each account's turn at its issuer: one refresh at a time, and the token it issued.
+    pub(crate) flights: Flights,
     /// Account ids an add has chosen and is still filing secrets for: not in the registry yet
     /// (the row is added only once its secrets are stored), and taken all the same.
     pub(crate) reserved: Mutex<HashSet<AccountId>>,
@@ -60,6 +61,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock> AccountService<P, S, U, K> {
             audit: NoAudit,
             registry: Mutex::new(registry),
             persist_gate: Gate::default(),
+            flights: Flights::default(),
             reserved: Mutex::new(HashSet::new()),
             roster: OnceLock::new(),
         }
@@ -79,6 +81,7 @@ impl<P, S, U, K, R, A> AccountService<P, S, U, K, R, A> {
             audit: self.audit,
             registry: self.registry,
             persist_gate: self.persist_gate,
+            flights: self.flights,
             reserved: self.reserved,
             roster: self.roster,
         }
@@ -96,6 +99,7 @@ impl<P, S, U, K, R, A> AccountService<P, S, U, K, R, A> {
             audit,
             registry: self.registry,
             persist_gate: self.persist_gate,
+            flights: self.flights,
             reserved: self.reserved,
             roster: self.roster,
         }
@@ -535,41 +539,21 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         else {
             return AccountsReply::Refused(Refusal::Unavailable);
         };
-        let presented = match secret_purpose(account.auth) {
-            None => Presented::Anonymous,
-            Some(purpose) => {
-                let key = SecretKey {
-                    account: account.id.clone(),
-                    purpose,
-                };
-                match self.secrets.get(&key).await {
-                    Ok(credential) => Presented::Credential(credential),
-                    Err(error) => return AccountsReply::Refused(secrets_refusal(error)),
-                }
-            }
-        };
-        let session = match provider.open(&account.id, presented).await {
-            Ok(session) => session,
-            Err(error) => {
-                return AccountsReply::Refused(self.refused_refresh(&account.id, error).await);
-            }
-        };
-        // The grant's kind, so the token reaches that kind's service alone.
-        let token = match session.access_token_for(audience, kind).await {
+        // The grant's kind, so the token reaches that kind's service alone. One refresh at a
+        // time per account; a rotated credential is stored before the token is returned.
+        let token = match self
+            .issue_for(
+                &account,
+                provider,
+                secret_purpose(account.auth),
+                audience,
+                kind,
+            )
+            .await
+        {
             Ok(token) => token,
-            Err(error) => {
-                return AccountsReply::Refused(self.refused_refresh(&account.id, error).await);
-            }
+            Err(refusal) => return AccountsReply::Refused(refusal),
         };
-        if let (Some(renewed), Some(purpose)) = (session.renewed(), secret_purpose(account.auth)) {
-            let key = SecretKey {
-                account: account.id.clone(),
-                purpose,
-            };
-            if let Err(error) = self.secrets.put(&key, &renewed).await {
-                return AccountsReply::Refused(secrets_refusal(error));
-            }
-        }
         if scope == GrantScope::Once
             && let Err(refusal) = self.spend_once(caller, grant).await
         {
