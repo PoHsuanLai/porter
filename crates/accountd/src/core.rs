@@ -2,36 +2,25 @@
 //! with. [`serve`] puts the objects on a connection.
 
 use crate::account::{AccountObject, publish_accounts};
-use crate::app_names::AppNames;
 use crate::callers::Callers;
-use crate::credentials::Credentials;
 use crate::errors::RefusedError;
-use crate::grants::{Grants, Tokens};
-use crate::hub::{Event, audience, daemon_hears, events, settings_news, shell_hears};
-use crate::keys::KeyDesk;
-use crate::launchers::{Launchers, LoginTiming, SignOutNews};
+use crate::hub::{Event, events, hears, settings_news};
 use crate::manager::Manager;
-use crate::provider_names::ProviderNames;
-use crate::relay::{RelayRoots, Relays};
-use porter_core::consent::Usage;
+use porter_core::clock::SystemClock;
 use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
-use porter_core::{
-    AccountId, AccountState, AccountsReply, AccountsRequest, AgentState, AppId, AuthKind,
-    CapabilityKind, Claim, DataClass, EndpointUrl, GrantId, LauncherSession, Need, ProviderId,
-    RelayPlan, Toggle,
-};
-use porter_dbus::{ACCOUNTS_BUS, ACCOUNTS_PATH, Caller, CallerRole, Details, account_path};
+use porter_core::{AccountId, AccountState, AccountsReply, AccountsRequest, AppId, ProviderId};
+use porter_dbus::{ACCOUNTS_BUS, ACCOUNTS_PATH, Caller, CallerRole, account_path};
+use porter_families::set::ProviderNames;
 use porter_provider::Provider;
 use porter_secrets::{Secrets, SecretsError};
 use porter_service::{
-    AccountService, AgentFault, AuditSink, Clock, Launchers as LaunchersSeam, LocalFault, Registry,
-    RegistryStore, RevokeReport, Roster, Sheets, SyncClass,
+    AccountService, AuditSink, Clock, Registry, RegistryStore, RevokeReport, Sheets,
 };
+use porter_sheets::{AppNames, RequestObjects};
 use serde::de::DeserializeOwned;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
-use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use zbus::fdo::Properties;
 use zbus::message::Header;
@@ -54,37 +43,6 @@ pub trait Host: Send + Sync + 'static {
     /// A copy of the registry, for the objects that mirror accounts.
     fn registry(&self) -> Registry;
 
-    /// Tells the host which agent programs have a launcher, so that adding an agent account
-    /// with none ends in `NoLauncher`. A host that adds no agent accounts ignores it.
-    fn use_launcher_roster(&self, roster: Roster) {
-        let _ = roster;
-    }
-
-    /// What the relay for `endpoint` under `caller`'s `grant` presents, once the grant and the
-    /// endpoint are checked. A host with no relay says unavailable.
-    fn open_relay(
-        &self,
-        caller: &AppId,
-        grant: &GrantId,
-        endpoint: &EndpointUrl,
-    ) -> impl Future<Output = Result<RelayPlan, Refusal>> + Send {
-        let _ = (caller, grant, endpoint);
-        async { Err(Refusal::Unavailable) }
-    }
-
-    /// What the relay for `origin` under `caller`'s `grant` is told: no credential, and only an
-    /// origin the account's provider file declares as one its links point at. A host with no
-    /// relay says unavailable.
-    fn open_linked_relay(
-        &self,
-        caller: &AppId,
-        grant: &GrantId,
-        origin: &EndpointUrl,
-    ) -> impl Future<Output = Result<RelayPlan, Refusal>> + Send {
-        let _ = (caller, grant, origin);
-        async { Err(Refusal::Unavailable) }
-    }
-
     /// Signs any account in again for the sheet host or Settings, which need no grant (accountd
     /// checks the role). A host with no sign-in says unavailable.
     fn reauthenticate_any(
@@ -97,21 +55,6 @@ pub trait Host: Send + Sync + 'static {
         async { AccountsReply::Refused(Refusal::Unavailable) }
     }
 
-    /// Signs an agent account in through its launcher, with a sheet that shows the wait and the
-    /// outcome (`shell` is the sheet host or Settings, which need no grant; an app needs one).
-    /// A host with no sign-in says unavailable.
-    fn login_agent(
-        &self,
-        caller: &AppId,
-        account: &AccountId,
-        window: ParentWindow,
-        shell: bool,
-        launchers: &impl LaunchersSeam,
-    ) -> impl Future<Output = AccountsReply> + Send {
-        let _ = (caller, account, window, shell, launchers);
-        async { AccountsReply::Refused(Refusal::Unavailable) }
-    }
-
     /// Removes an account: revoke at the provider (best effort), then every wipe. A host that
     /// cannot manage accounts says its secret store is unavailable.
     fn remove(
@@ -120,17 +63,6 @@ pub trait Host: Send + Sync + 'static {
     ) -> impl Future<Output = Result<RevokeReport, SecretsError>> + Send {
         let _ = id;
         async { Err(SecretsError::Unavailable) }
-    }
-
-    /// Switches one kind of one account on or off.
-    fn set_toggle(
-        &self,
-        id: &AccountId,
-        kind: CapabilityKind,
-        toggle: Toggle,
-    ) -> impl Future<Output = Result<(), Refusal>> + Send {
-        let _ = (id, kind, toggle);
-        async { Err(Refusal::Unavailable) }
     }
 
     /// Records what Settings changed outside the registry (a client id). A host with no audit
@@ -145,77 +77,10 @@ pub trait Host: Send + Sync + 'static {
         let _ = (app, event);
     }
 
-    /// Withdraws any grant, whoever holds it.
-    fn revoke_grant(&self, grant: &GrantId) -> impl Future<Output = Result<(), Refusal>> + Send {
-        let _ = grant;
-        async { Err(Refusal::Unavailable) }
-    }
-
-    /// The consent sheet for an agent program's key (`Peer.RequestAgentGrant`): `agent` is the
-    /// app `org.quire.Agent.<program>` the grant is held under, and `session` an open launcher
-    /// session of the caller, which lets the sheet offer "This session only". A host with no
-    /// sheets says unavailable.
-    fn choose_for_agent(
-        &self,
-        agent: &AppId,
-        need: Need,
-        class: (DataClass, Usage),
-        window: &ParentWindow,
-        session: Option<&LauncherSession>,
-    ) -> impl Future<Output = AccountsReply> + Send {
-        let _ = (agent, need, class, window, session);
-        async { AccountsReply::Refused(Refusal::Unavailable) }
-    }
-
-    /// Removes the grants scoped to `session` (every session grant when none is named) and
-    /// returns them. A host that keeps no grants ends none.
-    fn end_session_grants(
-        &self,
-        session: Option<&LauncherSession>,
-    ) -> impl Future<Output = Vec<GrantId>> + Send {
-        let _ = session;
-        async { Vec::new() }
-    }
-
-    /// Lets syncd keep `class` of an account on this computer, or takes that back (Settings'
-    /// sync rows).
-    fn set_sync(
-        &self,
-        id: &AccountId,
-        class: SyncClass,
-        toggle: Toggle,
-    ) -> impl Future<Output = Result<(), Refusal>> + Send {
-        let _ = (id, class, toggle);
-        async { Err(Refusal::Unavailable) }
-    }
-
     /// Sets an account's state; whether it changed.
     fn set_state(&self, id: &AccountId, state: AccountState) -> impl Future<Output = bool> + Send {
         let _ = (id, state);
         async { false }
-    }
-
-    /// Records what an agent program says of its own sign-in (`Peer.SetAgentState`); whether
-    /// the account's state changed. A host that keeps no such accounts says unavailable.
-    fn set_agent_state(
-        &self,
-        account: &AccountId,
-        state: AgentState,
-    ) -> impl Future<Output = Result<bool, AgentFault>> + Send {
-        let _ = (account, state);
-        async { Err(AgentFault::Unavailable) }
-    }
-
-    /// Takes a local runtime's report (`Peer.ReportLocal`): the account of `provider`, its
-    /// models as claims, its state. A host that keeps no such accounts says unavailable.
-    fn report_local(
-        &self,
-        provider: &ProviderId,
-        models: Vec<Claim>,
-        state: AccountState,
-    ) -> impl Future<Output = Result<AccountId, LocalFault>> + Send {
-        let _ = (provider, models, state);
-        async { Err(LocalFault::Unavailable) }
     }
 }
 
@@ -240,28 +105,6 @@ where
         AccountService::registry(self)
     }
 
-    fn use_launcher_roster(&self, roster: Roster) {
-        AccountService::set_launcher_roster(self, roster);
-    }
-
-    fn open_relay(
-        &self,
-        caller: &AppId,
-        grant: &GrantId,
-        endpoint: &EndpointUrl,
-    ) -> impl Future<Output = Result<RelayPlan, Refusal>> + Send {
-        AccountService::open_authenticated(self, caller, grant, endpoint)
-    }
-
-    fn open_linked_relay(
-        &self,
-        caller: &AppId,
-        grant: &GrantId,
-        origin: &EndpointUrl,
-    ) -> impl Future<Output = Result<RelayPlan, Refusal>> + Send {
-        AccountService::open_linked(self, caller, grant, origin)
-    }
-
     fn reauthenticate_any(
         &self,
         caller: &AppId,
@@ -271,34 +114,11 @@ where
         AccountService::reauthenticate_any(self, caller, account, window)
     }
 
-    async fn login_agent(
-        &self,
-        caller: &AppId,
-        account: &AccountId,
-        window: ParentWindow,
-        shell: bool,
-        launchers: &impl LaunchersSeam,
-    ) -> AccountsReply {
-        match shell {
-            true => AccountService::login_agent_any(self, caller, account, window, launchers).await,
-            false => AccountService::login_agent(self, caller, account, window, launchers).await,
-        }
-    }
-
     fn remove(
         &self,
         id: &AccountId,
     ) -> impl Future<Output = Result<RevokeReport, SecretsError>> + Send {
         AccountService::remove_with_revoke(self, id)
-    }
-
-    fn set_toggle(
-        &self,
-        id: &AccountId,
-        kind: CapabilityKind,
-        toggle: Toggle,
-    ) -> impl Future<Output = Result<(), Refusal>> + Send {
-        AccountService::set_toggle(self, id, kind, toggle)
     }
 
     fn audit_settings(&self, event: porter_core::audit::AuditEvent) {
@@ -309,56 +129,8 @@ where
         AccountService::audit_app(self, app.clone(), event);
     }
 
-    fn revoke_grant(&self, grant: &GrantId) -> impl Future<Output = Result<(), Refusal>> + Send {
-        AccountService::revoke_grant(self, grant)
-    }
-
-    fn choose_for_agent(
-        &self,
-        agent: &AppId,
-        need: Need,
-        class: (DataClass, Usage),
-        window: &ParentWindow,
-        session: Option<&LauncherSession>,
-    ) -> impl Future<Output = AccountsReply> + Send {
-        AccountService::choose_for_agent(self, agent, need, class, window, session)
-    }
-
-    fn end_session_grants(
-        &self,
-        session: Option<&LauncherSession>,
-    ) -> impl Future<Output = Vec<GrantId>> + Send {
-        AccountService::end_session_grants(self, session)
-    }
-
-    fn set_sync(
-        &self,
-        id: &AccountId,
-        class: SyncClass,
-        toggle: Toggle,
-    ) -> impl Future<Output = Result<(), Refusal>> + Send {
-        AccountService::set_sync(self, id, class, toggle)
-    }
-
     fn set_state(&self, id: &AccountId, state: AccountState) -> impl Future<Output = bool> + Send {
         AccountService::set_state(self, id, state)
-    }
-
-    fn report_local(
-        &self,
-        provider: &ProviderId,
-        models: Vec<Claim>,
-        state: AccountState,
-    ) -> impl Future<Output = Result<AccountId, LocalFault>> + Send {
-        AccountService::report_local(self, provider, models, state)
-    }
-
-    fn set_agent_state(
-        &self,
-        account: &AccountId,
-        state: AgentState,
-    ) -> impl Future<Output = Result<bool, AgentFault>> + Send {
-        AccountService::set_agent_state(self, account, state)
     }
 }
 
@@ -372,9 +144,6 @@ pub(crate) enum Standing {
     /// A caller reading the person's computers (`Tailnet1`): the only standing a `Terminal` has,
     /// and the method that asks for it checks the role itself.
     Machines,
-    /// A caller reporting an agent's state: the only standing an `AgentLauncher` has, and the
-    /// method that asks for it checks the role itself.
-    Launching,
     /// A caller listing or registering desktop-wide Spaces (`Spaces1.List`, `Register`): the only
     /// standing a `Compositor` has; anyone else is as with `Any`, and `Register` checks the role
     /// itself.
@@ -386,8 +155,6 @@ pub(crate) enum Standing {
 pub(crate) struct Core<H, C> {
     pub(crate) host: Arc<H>,
     pub(crate) callers: C,
-    /// Counts the tokens minted for a call that sent none.
-    pub(crate) minted: AtomicU64,
     /// The connection the objects are served on, for the signals.
     pub(crate) connection: Connection,
     /// The connections that have called, by unique name: who a unicast signal can reach.
@@ -396,23 +163,19 @@ pub(crate) struct Core<H, C> {
     pub(crate) published: Mutex<Registry>,
     /// The user's `clients.toml`, which Settings writes.
     pub(crate) clients: Option<std::path::PathBuf>,
-    /// The connector the authenticated relays dial with.
-    pub(crate) relays: Relays,
-    /// Reads the API keys `Peer.ResolveKey` releases; none refuses it `Unavailable`.
-    pub(crate) keys: Option<Arc<dyn KeyDesk>>,
-    /// What the settings module calls an app.
+    /// What the settings module calls an app (the "apps using this identity" rows).
     pub(crate) app_names: AppNames,
     /// What the settings module calls a provider and which part of the page it is listed under.
     pub(crate) provider_names: ProviderNames,
-    /// The agent launchers and the requests they carry.
-    pub(crate) launchers: Launchers,
-    /// The credentials handed to processes the launcher spawned (`Tokens.IssueProcessCredential`).
-    pub(crate) credentials: Credentials,
+    /// The time a property that says when a sign-in ends is read on.
+    pub(crate) clock: Arc<dyn Clock>,
     /// The served settings module, which announces an account's new state as `Changed`; set
     /// once the module is served.
     pub(crate) settings: OnceLock<ds_settings::live::Served>,
     /// The sheets open now, one per app and kind (rel-11).
     pub(crate) open_sheets: crate::request::OpenSheets,
+    /// The Request objects of the sheet methods (porter-sheets), at `Accounts1`'s root.
+    pub(crate) requests: RequestObjects,
     /// The desktop-wide Spaces (`org.quire.Spaces1`).
     pub(crate) spaces: tokio::sync::Mutex<crate::spaces::SpaceBook>,
     /// How Tailscale is followed (`org.quire.Tailnet1`); none lists no computers.
@@ -450,10 +213,10 @@ impl<H: Host, C: Callers> Core<H, C> {
         if standing == Standing::Acting && caller.role == CallerRole::Agent {
             return Err(RefusedError::of(Refusal::Denied));
         }
-        // The launcher is narrow: it reports an agent's state and is nothing else to accountd.
-        if standing != Standing::Launching && caller.role == CallerRole::AgentLauncher {
+        // The agent launcher is inferd's: accountd holds nothing it asks for.
+        if caller.role == CallerRole::AgentLauncher {
             return Err(RefusedError::access_denied(
-                "the agent launcher may only report an agent's state",
+                "accountd serves no agent launcher; the launcher's interface is inferd's",
             ));
         }
         // The terminal is narrower still: it reads the person's computers and is nothing else.
@@ -487,63 +250,11 @@ impl<H: Host, C: Callers> Core<H, C> {
         held(&self.roster).keys().cloned().collect()
     }
 
-    /// The app behind the sender of a call an `Agent` may not make.
-    pub(crate) async fn acting(&self, header: &Header<'_>) -> Result<AppId, RefusedError> {
-        self.identify(header, Standing::Acting).await.map(|c| c.app)
-    }
-
-    /// A request that answers at once: the reply, or the refusal as its error.
-    pub(crate) async fn answer(
-        self: &Arc<Self>,
-        header: &Header<'_>,
-        standing: Standing,
-        request: AccountsRequest,
-    ) -> Result<AccountsReply, RefusedError> {
-        let app = self.identify(header, standing).await?.app;
-        let reply = self.host.handle(&app, request).await;
-        self.publish().await;
-        match reply {
-            AccountsReply::Refused(refusal) => Err(RefusedError::of(refusal)),
-            reply => Ok(reply),
-        }
-    }
-
-    /// The account a grant is for, as the registry holds it now.
-    pub(crate) fn account_of_grant(&self, grant: &GrantId) -> Option<AccountId> {
-        self.host
-            .registry()
-            .grants
-            .iter()
-            .find(|g| g.id == *grant)
-            .map(|g| g.key.account.clone())
-    }
-
-    /// Whether `account` is an agent that signs itself in (`AuthKind::AgentLogin`).
-    pub(crate) fn is_agent(&self, account: &AccountId) -> bool {
-        self.host
-            .registry()
-            .accounts
-            .iter()
-            .any(|a| a.id == *account && a.auth == AuthKind::AgentLogin)
-    }
-
-    /// Marks `account` as needing reauthentication, and tells the clients.
-    pub(crate) async fn needs_reauth(self: &Arc<Self>, account: &AccountId) {
-        if self
-            .host
-            .set_state(account, AccountState::NeedsReauth)
-            .await
-        {
-            self.publish().await;
-        }
-    }
-
     /// Tells the clients what changed since they were last told: registers and removes the
-    /// `Account` objects, and sends each signal to the connections of the apps it concerns.
+    /// `Account` objects, and sends each signal to the connections of the roles it concerns
+    /// (the shell and Settings, the only ones that read an account).
     pub(crate) async fn publish(self: &Arc<Self>) {
         let after = self.host.registry();
-        // A credential handed to a process does not outlive its grant or its account.
-        self.end_credentials(&after).await;
         let before = std::mem::replace(&mut *held(&self.published), after.clone());
         let list = events(&before, &after);
         let server = self.connection.object_server();
@@ -565,16 +276,7 @@ impl<H: Host, C: Callers> Core<H, C> {
         self.announce_states(&list, &before, &after).await;
         self.announce_identities_removed(&before, &after).await;
         for event in list {
-            let apps = audience(&event, &before, &after);
-            let names: Vec<String> = held(&self.roster)
-                .iter()
-                .filter(|(_, who)| {
-                    apps.contains(&who.app)
-                        || (who.role == CallerRole::SheetHost && shell_hears(&event))
-                        || (who.role == CallerRole::PorterDaemon && daemon_hears(&event))
-                })
-                .map(|(name, _)| name.clone())
-                .collect();
+            let names = self.known_where(|who| hears(who.role, &event));
             for name in names {
                 let _ = self.tell(&name, &event).await;
             }
@@ -599,13 +301,6 @@ impl<H: Host, C: Callers> Core<H, C> {
         }
     }
 
-    /// Tells the settings module's listeners how a sign out went: `Changed("accounts.<id>.sign_out",
-    /// <word>)`.
-    pub(crate) async fn announce_sign_out(&self, id: &AccountId, news: SignOutNews) {
-        self.announce_row(&crate::settings_keys::Key::SignOut(id.clone()), news.slug())
-            .await;
-    }
-
     /// Tells the settings module's listeners `Changed(<the key's path>, <word>)`: how an action
     /// row's action went.
     pub(crate) async fn announce_row(&self, key: &crate::settings_keys::Key, word: &str) {
@@ -628,13 +323,10 @@ impl<H: Host, C: Callers> Core<H, C> {
         match event {
             Event::Added(id) => Manager::<H, C>::account_added(&emitter, path(id)?).await,
             Event::Removed(id) => Manager::<H, C>::account_removed(&emitter, path(id)?).await,
-            Event::CapabilityChanged(id) => {
-                Manager::<H, C>::capability_changed(&emitter, path(id)?).await
-            }
             Event::NeedsReauth(id) => Manager::<H, C>::needs_reauth(&emitter, path(id)?).await,
             Event::StateChanged(id) => {
-                // The new value is read by the receiver, which `State` lets only a holder of a
-                // grant, or the shell, do.
+                // The new value is read by the receiver, which `State` lets only the shell and
+                // Settings do.
                 let emitter = SignalEmitter::new(&self.connection, account_path(id))?
                     .set_destination(BusName::try_from(name.to_owned())?);
                 Properties::properties_changed(
@@ -645,22 +337,13 @@ impl<H: Host, C: Callers> Core<H, C> {
                 )
                 .await
             }
-            Event::GrantChanged(grant) => {
-                Manager::<H, C>::grant_changed(&emitter, grant.as_str()).await
-            }
         }
     }
 
-    /// Forgets a connection that left the bus. Its launcher sessions close first (their grants
-    /// are removed and the credentials under them end `session_closed`, with nobody left to
-    /// tell), then what is left of its credentials ends `launcher_gone`.
+    /// Forgets a connection that left the bus.
     pub(crate) async fn left(self: &Arc<Self>, name: &str) {
         held(&self.roster).remove(name);
         self.picks.clear(name);
-        for session in self.launchers.left(name) {
-            self.close_session(&session, false).await;
-        }
-        self.credentials_left(name);
     }
 }
 
@@ -688,36 +371,20 @@ pub(crate) fn hint(text: &str) -> Result<ProviderHint, RefusedError> {
     }
 }
 
-/// The options a sheet method may carry: only `handle_token` is read; an unknown key is ignored.
-pub(crate) fn handle_token(options: &Details) -> Option<String> {
-    let value = options.get(porter_dbus::OPTION_HANDLE_TOKEN)?;
-    String::try_from(value.try_clone().ok()?).ok()
-}
-
 /// What `serve_with` adds to the objects every accountd serves.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct Options {
     /// The user's `clients.toml` (`$XDG_CONFIG_HOME/porter/clients.toml`), which the settings
     /// module writes; none refuses writes.
     pub clients: Option<std::path::PathBuf>,
-    /// The certificates an authenticated relay trusts: the platform's, or (a test seam) a
-    /// scratch CA alone.
-    pub relay_roots: RelayRoots,
-    /// Where `Peer.ResolveKey` reads API keys from; none leaves it refusing `Unavailable`.
-    pub keys: Option<Arc<dyn KeyDesk>>,
     /// Where the settings module gets an app's display name; the default names no app, so every
     /// app shows its id.
     pub app_names: AppNames,
     /// Where the settings module gets a provider's label and group; the default knows no
     /// provider, so an account shows its provider's id and is placed by how it signs in.
     pub provider_names: ProviderNames,
-    /// The clock and bound of a request to an agent launcher; the default is the system clock
-    /// and ten minutes.
-    pub login: LoginTiming,
-    /// `$XDG_RUNTIME_DIR`: where a `tmpfs_file` process credential is written
-    /// (`<dir>/porter/agent/<id>/key`, cleared when accountd starts). None refuses that way as
-    /// unavailable; the `memfd` way needs no directory.
-    pub runtime_dir: Option<std::path::PathBuf>,
+    /// The clock the `ReauthReason` property reads; none is the system's.
+    pub clock: Option<Arc<dyn Clock>>,
     /// Where the desktop-wide Spaces are kept (`spaces.json` in the registry's directory); the
     /// default keeps them in memory only.
     pub spaces: crate::spaces::SpacesStore,
@@ -732,9 +399,24 @@ pub struct Options {
     pub identities: Option<Arc<dyn crate::identity_desk::IdentityDesk>>,
 }
 
+impl std::fmt::Debug for Options {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Options")
+            .field("clients", &self.clients)
+            .field("app_names", &self.app_names)
+            .field("provider_names", &self.provider_names)
+            .field("clock", &self.clock.as_ref().map(|_| "<injected>"))
+            .field("spaces", &self.spaces)
+            .field("tailnet", &self.tailnet)
+            .field("uses", &self.uses)
+            .field("identities", &self.identities)
+            .finish()
+    }
+}
+
 /// Serves `org.quire.Accounts1` on `connection` over `host`, answering for the apps `callers`
 /// names, and takes the name. One `Account` object is registered per account the registry holds
-/// now; the settings module and `Peer` are served.
+/// now; the settings module, `Spaces1`, `Identities1` and `Tailnet1` are served.
 pub async fn serve<H: Host, C: Callers>(
     connection: &Connection,
     host: Arc<H>,
@@ -750,16 +432,9 @@ pub async fn serve_with<H: Host, C: Callers>(
     callers: C,
     options: Options,
 ) -> zbus::Result<()> {
-    // No launcher session is open in a starting accountd, so a session grant the store holds
-    // (accountd died with a session open) is one nobody can end.
-    host.end_session_grants(None).await;
     let published = host.registry();
-    let (spaces, said) = crate::spaces::SpaceBook::open(
-        &options.spaces,
-        &published.grants,
-        crate::spaces::unix_now(),
-    )
-    .await;
+    let (spaces, said) =
+        crate::spaces::SpaceBook::open(&options.spaces, crate::spaces::unix_now()).await;
     if let Some(said) = said {
         eprintln!("accountd: {said}");
     }
@@ -767,41 +442,29 @@ pub async fn serve_with<H: Host, C: Callers>(
     if let Some(said) = said {
         eprintln!("accountd: {said}");
     }
+    let clock: Arc<dyn Clock> = options.clock.unwrap_or_else(|| Arc::new(SystemClock));
     let core = Arc::new(Core {
         host,
         callers,
-        minted: AtomicU64::new(0),
         connection: connection.clone(),
         roster: Mutex::new(BTreeMap::new()),
         published: Mutex::new(published),
         clients: options.clients,
-        relays: Relays::new(options.relay_roots),
-        keys: options.keys,
         app_names: options.app_names,
         provider_names: options.provider_names,
-        launchers: Launchers::new(connection.clone(), options.login),
-        credentials: Credentials::new(options.runtime_dir.as_deref()),
+        clock,
         settings: OnceLock::new(),
         open_sheets: crate::request::OpenSheets::default(),
+        requests: RequestObjects::new(connection.clone(), porter_dbus::ServiceRoot::Accounts),
         spaces: tokio::sync::Mutex::new(spaces),
         tailnet: options.tailnet,
         identity_desk: options.identities,
         uses: tokio::sync::Mutex::new(uses),
         picks: crate::identities::Picks::default(),
     });
-    core.host.use_launcher_roster(core.launchers.roster());
     let server: &ObjectServer = connection.object_server();
     server
         .at(ACCOUNTS_PATH, Manager::new(Arc::clone(&core)))
-        .await?;
-    server
-        .at(ACCOUNTS_PATH, Grants::new(Arc::clone(&core)))
-        .await?;
-    server
-        .at(ACCOUNTS_PATH, Tokens::new(Arc::clone(&core)))
-        .await?;
-    server
-        .at(ACCOUNTS_PATH, crate::peer::Peer::new(Arc::clone(&core)))
         .await?;
     server
         .at(
