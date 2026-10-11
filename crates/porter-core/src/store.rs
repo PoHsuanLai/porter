@@ -3,10 +3,12 @@
 //! reading an older file goes through the migration table, one step per version.
 
 use crate::account::Account;
+use crate::auth_kind::AuthKind;
 use crate::capability::{CapabilityKind, VocabVersion};
 use crate::consent::Grant;
 use crate::effective::Toggle;
 use crate::id::AccountId;
+use crate::identities::IdentityKind;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -73,6 +75,7 @@ const MIGRATIONS: &[(VocabVersion, Migration)] = &[
     (VocabVersion(9), from_nine),
     (VocabVersion(10), from_ten),
     (VocabVersion(11), from_eleven),
+    (VocabVersion(12), from_twelve),
 ];
 
 /// 3 to 4 added the `sieve` family and changed the sheet's wire types; the stored document is
@@ -134,6 +137,27 @@ fn from_ten(document: Value) -> Result<Value, StoreFault> {
 /// reads as it was, so only its version moves.
 fn from_eleven(document: Value) -> Result<Value, StoreFault> {
     Ok(document)
+}
+
+/// 12 to 13 split the registry by who uses a credential (accountd keeps identities, inferd the AI
+/// keys and permits, syncd its own sign-ins). The document is the same shape, so a file reads as
+/// it was and a hosted service's own file loads unchanged; only accountd drops what it no longer
+/// holds, with [`prune_to_identities`], after the migration.
+fn from_twelve(document: Value) -> Result<Value, StoreFault> {
+    Ok(document)
+}
+
+/// Drops from `persisted` what accountd no longer holds: it keeps the identity accounts (OAuth,
+/// password, app password, and Nextcloud's sign-in, which is a password the server minted) and
+/// the Tailscale account, and empties the grants and the toggles. Only accountd applies this,
+/// and it keeps a copy of the old file first.
+pub fn prune_to_identities(persisted: &mut Persisted) {
+    persisted.accounts.retain(|account| {
+        IdentityKind::of(account.auth).is_some()
+            || matches!(account.auth, AuthKind::LoginFlowV2 | AuthKind::OwnProgram)
+    });
+    persisted.grants.clear();
+    persisted.toggles.clear();
 }
 
 impl Persisted {

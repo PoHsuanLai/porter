@@ -314,12 +314,53 @@ const AT_TWELVE: &str = r#"{
   "toggles": []
 }"#;
 
+/// 13 split the registry by who uses a credential: the same document shape, kept by accountd
+/// (identities) or by inferd and syncd (their own), so a file reads as it was.
+const AT_THIRTEEN: &str = r#"{
+  "vocab": 13,
+  "accounts": [
+    {"id": "claude-code", "provider": "claude-code", "label": "Claude Code", "state": "ok", "auth": "agent_login", "capabilities": [], "restriction": {"verification": {"kind": "not_needed"}, "token_lifetime": "standard", "consent": "user", "limits": []}, "endpoints": []},
+    {"id": "tailscale", "provider": "tailscale", "label": "ada@example.org on example.org", "state": "needs_login", "auth": "own_program", "capabilities": [], "restriction": {"verification": {"kind": "not_needed"}, "token_lifetime": "standard", "consent": "user", "limits": []}, "endpoints": []}
+  ],
+  "grants": [
+    {"id": "g-session", "key": {"app": {"name": "org.quire.Agent.claude-code", "isolation": "unsandboxed"}, "account": "claude-code", "kind": "llm", "class": "prompt", "usage": "background", "space": {"kind": "any"}}, "decision": "allow", "scope": {"session": "sess-1"}, "at": 1790000003}
+  ],
+  "toggles": []
+}"#;
+
+/// An old file with an identity, an API key, a Tailscale account, a grant and a toggle: accountd
+/// keeps the identity and Tailscale, and nothing else.
+#[test]
+fn pruning_to_identities_keeps_the_sign_in_accounts_and_tailscale_and_empties_the_rest() {
+    let mut mixed = Persisted::from_json(AT_THIRTEEN).expect("reads");
+    let mut identity = account(Vec::new());
+    identity.id = AccountId::parse("google-ada").expect("id");
+    identity.auth = AuthKind::OAuthPkce;
+    let mut password = account(Vec::new());
+    password.id = AccountId::parse("fastmail-ada").expect("id");
+    password.auth = AuthKind::AppPassword;
+    let mut key = account(Vec::new());
+    key.id = AccountId::parse("anthropic").expect("id");
+    key.auth = AuthKind::ApiKey;
+    mixed.accounts.extend([identity, key, password]);
+    mixed.toggles.push(AccountToggle {
+        account: AccountId::parse("google-ada").expect("id"),
+        kind: CapabilityKind::Storage,
+        toggle: Toggle::Off,
+    });
+    prune_to_identities(&mut mixed);
+    let kept: Vec<_> = mixed.accounts.iter().map(|a| a.id.as_str()).collect();
+    assert_eq!(kept, ["tailscale", "google-ada", "fastmail-ada"]);
+    assert!(mixed.grants.is_empty());
+    assert!(mixed.toggles.is_empty());
+}
+
 /// Every frozen document reads, whatever version wrote it, as the current vocabulary, with what
 /// that version could hold: the rows say what each is expected to come out as.
 #[test]
 fn a_document_frozen_at_each_vocabulary_since_the_first_stored_one_reads() {
     // (version, text, account ids, grant ids)
-    let table: [(u16, &str, &[&str], &[&str]); 10] = [
+    let table: [(u16, &str, &[&str], &[&str]); 11] = [
         (3, AT_THREE, &["cloud", "mail"], &["g-once"]),
         (4, AT_FOUR, &["cloud", "mail"], &["g-once"]),
         (5, AT_FIVE, &["cloud", "claude-code"], &["g-once"]),
@@ -330,6 +371,12 @@ fn a_document_frozen_at_each_vocabulary_since_the_first_stored_one_reads() {
         (10, AT_TEN, &["claude-code"], &["g-session"]),
         (11, AT_ELEVEN, &["claude-code"], &["g-session"]),
         (12, AT_TWELVE, &["claude-code", "tailscale"], &["g-session"]),
+        (
+            13,
+            AT_THIRTEEN,
+            &["claude-code", "tailscale"],
+            &["g-session"],
+        ),
     ];
     // One row per version since the first stored, none missing and none repeated.
     let versions: Vec<u16> = table.iter().map(|row| row.0).collect();
