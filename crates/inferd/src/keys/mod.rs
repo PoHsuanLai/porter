@@ -21,7 +21,10 @@
 //! Layer: this module is wiring over libraries (`porter-service`, `porter-families`,
 //! `porter-store`, `porter-secrets`, `porter-sheets`); it adds only the seams inferd needs.
 
+pub mod add;
 mod audit;
+mod build;
+mod bus;
 mod desk;
 mod host;
 mod local;
@@ -29,6 +32,11 @@ pub mod news;
 mod rows;
 
 pub use audit::KeyAudit;
+pub use build::{
+    Families, KeyService, KeysStartError, NAMESPACE, Opened, load_families, load_registry, open,
+    served_ids,
+};
+pub use bus::{KeysError, KeysObject};
 pub use desk::{KeyDesk, SecretsDesk, usable};
 pub use host::KeyHost;
 pub use local::LocalKeys;

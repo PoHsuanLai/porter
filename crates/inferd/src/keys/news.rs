@@ -111,12 +111,14 @@ pub(crate) fn row_news(before: &Registry, after: &Registry) -> Vec<(KeyPath, tom
 }
 
 /// Watches `host`: each time `saved` fires, tells `engines` and the served settings module what
-/// moved. Ends with the runtime.
+/// moved, and runs `changed` (the launcher's `registry_changed`, so a process credential does not
+/// outlive its permit). Ends with the runtime.
 pub fn watch<H: KeyHost>(
     host: Arc<H>,
     saved: Arc<Notify>,
     served: ServedSlot,
     engines: Arc<Notify>,
+    changed: impl Fn() + Send + 'static,
 ) {
     tokio::spawn(async move {
         let mut told = host.registry();
@@ -128,6 +130,7 @@ pub fn watch<H: KeyHost>(
             }
             let before = std::mem::replace(&mut told, now.clone());
             engines.notify_one();
+            changed();
             if let Some(module) = served.get() {
                 for (row, value) in row_news(&before, &now) {
                     let _ = module.changed(&row, &value).await;

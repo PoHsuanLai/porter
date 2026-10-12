@@ -319,7 +319,7 @@ impl<T: Peers> Peers for std::sync::Arc<T> {
 /// Peers by process: [`ProcCallers`] over the rows of the [`CallerTable`].
 #[derive(Debug)]
 pub struct ProcPeers {
-    callers: ProcCallers,
+    callers: std::sync::Arc<ProcCallers>,
 }
 
 impl ProcPeers {
@@ -335,7 +335,15 @@ impl ProcPeers {
             Some(dir) => ProcCallers::with_proc_root(connection, rows, dir.to_path_buf()),
             None => ProcCallers::new(connection, rows),
         };
-        Self { callers }
+        Self {
+            callers: std::sync::Arc::new(callers),
+        }
+    }
+
+    /// The same lookup in the shared caller type (`porter_dbus::Callers`), for the sheet link
+    /// and the Keys object, which check the shell and the app by the shared roles.
+    pub fn shared(&self) -> std::sync::Arc<ProcCallers> {
+        std::sync::Arc::clone(&self.callers)
     }
 }
 
