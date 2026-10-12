@@ -1,25 +1,25 @@
-//! syncd syncing a folder against a fake Nextcloud through accountd's `Tokens.OpenAuthenticated`,
-//! on one private bus: accountd (the real service over in-memory secrets) holds the app password
-//! and runs the relay; syncd's replica gets only a descriptor and so no credential. `Sync1.Status`
-//! shows the quota the WebDAV server reports, and an expired sync token uploads nothing again.
+//! syncd syncing a folder against a fake Nextcloud through its own account service's authenticated
+//! relay, on one private bus: the service (hosted in process over in-memory secrets) holds the app
+//! password and runs the relay; syncd's replica gets only a stream and so no credential.
+//! `Sync1.Status` shows the quota the WebDAV server reports, and an expired sync token uploads
+//! nothing again.
 
 use crate::common;
 
-use accountd::{BusSheets, Options, TableCallers, serve_with};
 use common::bus::PrivateBus;
+use common::hosted::{Link, host};
 use common::{Known, client, eventually};
-use porter_client::{Accounts, DbusTransport};
+use porter_client::Accounts;
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::{
-    AccountId, AppId, AppName, AuthKind, CapabilityKind, Credential, DataClass, EndpointUrl,
-    Family, GrantId, Isolation, LoginName, SecretKey, SecretPurpose, SecretText, SpaceScope, Tls,
-    UnixSeconds,
+    AccountId, AppName, AuthKind, CapabilityKind, Credential, DataClass, EndpointUrl, Family,
+    GrantId, LoginName, SecretKey, SecretPurpose, SecretText, SpaceScope, Tls, UnixSeconds,
 };
-use porter_dbus::{Caller, CallerRole, STATUS_KEY_QUOTA, SyncProxy};
-use porter_fake::{FixedClock, MemoryStore, RecordingAudit, cloud_provider, storage_account};
+use porter_dbus::{CallerRole, STATUS_KEY_QUOTA, SyncProxy};
+use porter_fake::{cloud_provider, storage_account};
 use porter_fake_servers::{FakeNextcloud, NextcloudHandle, Running};
 use porter_secrets::{MemorySecrets, Secrets};
-use porter_service::{AccountService, Registry};
+use porter_service::Registry;
 use porter_sync::ConflictRule;
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -30,6 +30,7 @@ use syncd::dataset::MemoryDataset;
 use syncd::driver::Driver;
 use syncd::engine::Engine;
 use syncd::journal::Journal;
+use syncd::keep::sync_app;
 use syncd::scheduler::{Network, Settings};
 use syncd::service::{Access as Visible, DatasetName, Hub, serve};
 use syncd::webdav::webdav_replica;
@@ -38,15 +39,7 @@ use zbus::zvariant::OwnedValue;
 
 const PASSWORD: &str = "S3CRET-NEXTCLOUD-APP-PASSWORD";
 const GRANT: &str = "sync-grant";
-const SYNCD: &str = "org.quire.Sync";
 const PHOTOS: &str = "org.quire.Photos";
-
-fn app(name: &str) -> AppId {
-    AppId {
-        name: AppName::parse(name).expect("app"),
-        isolation: Isolation::Flatpak,
-    }
-}
 
 fn quick() -> Settings {
     Settings::quick()
@@ -69,7 +62,7 @@ struct Rig {
     hub: Hub,
     known: Known,
     nextcloud: Running<NextcloudHandle>,
-    accounts: Arc<Accounts<DbusTransport>>,
+    accounts: Arc<Accounts<Link>>,
     grant: GrantId,
     endpoint: EndpointUrl,
     _keep: Vec<zbus::Connection>,
@@ -92,7 +85,7 @@ async fn rig() -> Rig {
     let grant = Grant {
         id: GrantId::parse(GRANT).expect("grant"),
         key: GrantKey {
-            app: app(SYNCD),
+            app: sync_app(),
             account: account.id.clone(),
             kind: CapabilityKind::Storage,
             class: DataClass::Photos,
@@ -116,36 +109,16 @@ async fn rig() -> Rig {
         .expect("secret");
 
     let bus = PrivateBus::start();
-    let table = Arc::new(TableCallers::new());
-    let accountd = bus.connect().await;
-    let sheets = BusSheets::new(accountd.clone(), Arc::clone(&table));
-    let service = Arc::new(
-        AccountService::new(
-            vec![cloud_provider()],
-            Registry {
-                grants: vec![grant],
-                accounts: vec![account],
-                toggles: vec![],
-            },
-            secrets,
-            sheets,
-            FixedClock(porter_fake::NOW),
-        )
-        .with_store(MemoryStore::default())
-        .with_audit(RecordingAudit::default()),
-    );
-    serve_with(&accountd, service, Arc::clone(&table), Options::default())
-        .await
-        .expect("accountd serves");
-    let syncd_side = bus.connect().await;
-    table.introduce_as(
-        syncd_side.unique_name().expect("name").as_str(),
-        Caller {
-            app: app(SYNCD),
-            role: CallerRole::App,
+    let hosted = host(
+        cloud_provider(),
+        Registry {
+            grants: vec![grant],
+            accounts: vec![account],
+            toggles: vec![],
         },
+        secrets,
     );
-    let accounts = Arc::new(Accounts::over(DbusTransport::over(syncd_side.clone())));
+    let accounts = hosted.accounts;
 
     let known = Known::default();
     let hub = Hub::default();
@@ -161,7 +134,7 @@ async fn rig() -> Rig {
         accounts,
         grant: GrantId::parse(GRANT).expect("grant"),
         endpoint,
-        _keep: vec![accountd, syncd_side, server],
+        _keep: vec![server],
     }
 }
 

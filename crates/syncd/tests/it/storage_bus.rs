@@ -1,32 +1,29 @@
-//! syncd's storage supervisor against the real accountd and a fake Graph drive on one private
-//! bus. A Storage grant on a Microsoft account (class Files) becomes a dataset that mirrors the
-//! app folder both ways; a two-sided edit is a `Conflict` signal with its number and `Resolve`
-//! settles it; a grant that goes (or an account that is removed) drops the dataset. Photos runs
-//! only behind its switch. The relay, not syncd, authenticates: the bearer is the fake
-//! provider's, and the credential accountd holds appears nowhere.
+//! syncd's storage supervisor against its own account service (hosted in process) and a fake
+//! Graph drive on one private bus. A Storage grant on a Microsoft account (class Files) becomes a
+//! dataset that mirrors the app folder both ways; a two-sided edit is a `Conflict` signal with its
+//! number and `Resolve` settles it; a grant that goes (or an account that is removed) drops the
+//! dataset. Photos runs only behind its switch. The relay, not syncd, authenticates: the bearer is
+//! the fake provider's, and the credential the service holds appears nowhere.
 
 use crate::common;
 
-use accountd::{BusSheets, Options, TableCallers, serve_with};
 use common::bus::PrivateBus;
+use common::hosted::{Link, host};
 use common::{Known, client};
-use porter_client::{Accounts, DbusTransport};
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::{
-    Account, AccountId, AccountLabel, AccountState, AppId, AppName, AuthKind, Candidate,
-    CapabilityKind, Claim, Credential, DataClass, EndpointUrl, Family, GrantId, Isolation,
-    LoginName, Offer, Provenance, Restriction, SecretKey, SecretPurpose, SecretText,
-    ServiceEndpoint, SpaceScope, Subject, Tls, UnixSeconds,
+    Account, AccountId, AccountLabel, AccountState, AuthKind, Candidate, CapabilityKind, Claim,
+    Credential, DataClass, EndpointUrl, Family, GrantId, LoginName, Offer, Provenance, Restriction,
+    SecretKey, SecretPurpose, SecretText, ServiceEndpoint, SpaceScope, Subject, Tls, UnixSeconds,
 };
 use porter_dbus::{
-    CONFLICT_KEY_NUMBER, Caller, CallerRole, RESOLVE_KEEP_REMOTE, SYNC_ERROR_NO_SUCH_CONFLICT,
-    SyncProxy,
+    CONFLICT_KEY_NUMBER, CallerRole, RESOLVE_KEEP_REMOTE, SYNC_ERROR_NO_SUCH_CONFLICT, SyncProxy,
 };
-use porter_fake::{FakeProvider, FixedClock, MemoryStore, RecordingAudit};
+use porter_fake::FakeProvider;
 use porter_fake_servers::{FakeGraph, GraphHandle, Running};
 use porter_provider::Provider;
 use porter_secrets::{MemorySecrets, Secrets};
-use porter_service::{AccountService, Registry};
+use porter_service::Registry;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -37,6 +34,7 @@ use syncd::datasets::storage::{
     ClientStorageGrants, FILES_APP, PHOTOS_APP, StorageConfig, StorageGrants, StorageKind,
     StorageSupervisor,
 };
+use syncd::keep::sync_app;
 use syncd::paths::{AccountDir, Paths};
 use syncd::scheduler::{Network, Settings};
 use syncd::service::{Access, DatasetName, Hub, serve};
@@ -45,7 +43,6 @@ use zbus::export::futures_core::Stream;
 
 const ACCOUNT: &str = "graph-acct";
 const SEGMENT: &str = "graph_acct";
-const SYNCD: &str = "org.quire.Sync";
 const BEARER: &str = "fake:graph-acct:graph";
 const DATASET: &str = "graph_acct/storage_app_folder";
 
@@ -67,20 +64,13 @@ kind = "storage"
 v = { access = "read_write", delta = "poll", quota = "reported", scope = "app_folder", hashes = "quick_xor", ranges = "present", chunked_upload = "present" }
 "#;
 
-fn app(name: &str) -> AppId {
-    AppId {
-        name: AppName::parse(name).expect("app"),
-        isolation: Isolation::Flatpak,
-    }
-}
-
 fn quick() -> Settings {
     Settings::quick()
 }
 
 /// The real grants, until the test hides them (a revoked grant, a removed account).
 struct Gate {
-    real: ClientStorageGrants<DbusTransport>,
+    real: ClientStorageGrants<Link>,
     shown: Arc<AtomicBool>,
 }
 
@@ -101,7 +91,7 @@ struct Rig {
     paths: Paths,
     account: AccountDir,
     shown: Arc<AtomicBool>,
-    supervisor: StorageSupervisor<DbusTransport, Gate>,
+    supervisor: StorageSupervisor<Link, Gate>,
     _keep: Vec<zbus::Connection>,
     _network: watch::Sender<Network>,
 }
@@ -110,7 +100,7 @@ fn grant(id: &str, class: DataClass) -> Grant {
     Grant {
         id: GrantId::parse(id).expect("grant"),
         key: GrantKey {
-            app: app(SYNCD),
+            app: sync_app(),
             account: AccountId::parse(ACCOUNT).expect("id"),
             kind: CapabilityKind::Storage,
             class,
@@ -169,39 +159,19 @@ async fn rig(photos: PhotosSwitch) -> Rig {
         .expect("secret");
 
     let bus = PrivateBus::start();
-    let table = Arc::new(TableCallers::new());
-    let accountd = bus.connect().await;
-    let sheets = BusSheets::new(accountd.clone(), Arc::clone(&table));
-    let service = Arc::new(
-        AccountService::new(
-            vec![provider],
-            Registry {
-                grants: vec![
-                    grant("files-grant", DataClass::Files),
-                    grant("photos-grant", DataClass::Photos),
-                ],
-                accounts: vec![account],
-                toggles: vec![],
-            },
-            secrets,
-            sheets,
-            FixedClock(porter_fake::NOW),
-        )
-        .with_store(MemoryStore::default())
-        .with_audit(RecordingAudit::default()),
-    );
-    serve_with(&accountd, service, Arc::clone(&table), Options::default())
-        .await
-        .expect("accountd serves");
-    let syncd_side = bus.connect().await;
-    table.introduce_as(
-        syncd_side.unique_name().expect("name").as_str(),
-        Caller {
-            app: app(SYNCD),
-            role: CallerRole::App,
+    let hosted = host(
+        provider,
+        Registry {
+            grants: vec![
+                grant("files-grant", DataClass::Files),
+                grant("photos-grant", DataClass::Photos),
+            ],
+            accounts: vec![account],
+            toggles: vec![],
         },
+        secrets,
     );
-    let accounts = Arc::new(Accounts::over(DbusTransport::over(syncd_side.clone())));
+    let accounts = hosted.accounts;
 
     let known = Known::default();
     let hub = Hub::default();
@@ -246,7 +216,7 @@ async fn rig(photos: PhotosSwitch) -> Rig {
         account: AccountDir::parse(SEGMENT).expect("segment"),
         shown,
         supervisor,
-        _keep: vec![accountd, syncd_side, server],
+        _keep: vec![server],
         _network: network_keeps,
     }
 }

@@ -1,34 +1,33 @@
-//! syncd syncing a folder of OneDrive's app folder against a fake Graph drive through accountd's
-//! `Tokens.OpenAuthenticated`, on one private bus: accountd (the real service over in-memory
-//! secrets, a fake provider that mints a token for the endpoint's audience) holds the OAuth credential
-//! and runs the relay, which adds the bearer; syncd's replica gets only a descriptor and so no
-//! token. The endpoint is a real `graph` one. The fake drive hands out its upload sessions and
-//! redirected downloads on a SECOND loopback origin, which the provider file declares in
-//! `linked_origins`; the replica reaches it through `Tokens.OpenLinked`, whose relay adds no
+//! syncd syncing a folder of OneDrive's app folder against a fake Graph drive through its own
+//! account service's authenticated relay, on one private bus: the service (hosted in process over
+//! in-memory secrets, a fake provider that mints a token for the endpoint's audience) holds the
+//! OAuth credential and runs the relay, which adds the bearer; syncd's replica gets only a stream
+//! and so no token. The endpoint is a real `graph` one. The fake drive hands out its upload
+//! sessions and redirected downloads on a SECOND loopback origin, which the provider file declares
+//! in `linked_origins`; the replica reaches it through the linked relay, which adds no
 //! credential. `Sync1.Status` shows the quota the drive reports, a large file goes up in an upload
 //! session, and an expired delta token uploads nothing again.
 
 use crate::common;
 
-use accountd::{BusSheets, Options, TableCallers, serve_with};
 use common::bus::PrivateBus;
+use common::hosted::{Link, host};
 use common::{Known, client, eventually};
-use porter_client::{Accounts, DbusTransport};
+use porter_client::Accounts;
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::stream::ByteStream;
 use porter_core::{
-    Account, AccountId, AccountLabel, AccountState, AppId, AppName, AuthKind, CapabilityKind,
-    Claim, Credential, DataClass, EndpointUrl, Family, GrantId, Isolation, LoginName, Offer,
-    Provenance, Restriction, SecretKey, SecretPurpose, SecretText, ServiceEndpoint, SpaceScope,
-    Subject, Tls, UnixSeconds,
+    Account, AccountId, AccountLabel, AccountState, AppName, AuthKind, CapabilityKind, Claim,
+    Credential, DataClass, EndpointUrl, Family, GrantId, LoginName, Offer, Provenance, Restriction,
+    SecretKey, SecretPurpose, SecretText, ServiceEndpoint, SpaceScope, Subject, Tls, UnixSeconds,
 };
-use porter_dbus::{Caller, CallerRole, STATUS_KEY_QUOTA, SyncProxy};
-use porter_fake::{FakeProvider, FixedClock, MemoryStore, RecordingAudit};
+use porter_dbus::{CallerRole, STATUS_KEY_QUOTA, SyncProxy};
+use porter_fake::FakeProvider;
 use porter_fake_servers::graph::Knobs;
 use porter_fake_servers::{FakeGraph, GraphHandle, Running};
 use porter_provider::Provider;
 use porter_secrets::{MemorySecrets, Secrets};
-use porter_service::{AccountService, Registry};
+use porter_service::Registry;
 use porter_sync::ConflictRule;
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -40,6 +39,7 @@ use syncd::driver::Driver;
 use syncd::engine::Engine;
 use syncd::graph::graph_replica;
 use syncd::journal::Journal;
+use syncd::keep::sync_app;
 use syncd::scheduler::{Network, Settings};
 use syncd::service::{Access as Visible, DatasetName, Hub, serve};
 use syncd::webdav::RelayStream;
@@ -48,7 +48,6 @@ use zbus::zvariant::OwnedValue;
 
 const GRANT: &str = "sync-grant";
 const ACCOUNT: &str = "graph-acct";
-const SYNCD: &str = "org.quire.Sync";
 const PHOTOS: &str = "org.quire.Photos";
 /// What the fake provider mints for the audience of this account's endpoint (its family's slug).
 const BEARER: &str = "fake:graph-acct:graph";
@@ -78,13 +77,6 @@ v = {{ access = "read_write", delta = "poll", quota = "reported", scope = "app_f
     )
 }
 
-fn app(name: &str) -> AppId {
-    AppId {
-        name: AppName::parse(name).expect("app"),
-        isolation: Isolation::Flatpak,
-    }
-}
-
 fn quick() -> Settings {
     Settings::quick()
 }
@@ -106,7 +98,7 @@ struct Rig {
     hub: Hub,
     known: Known,
     graph: Running<GraphHandle>,
-    accounts: Arc<Accounts<DbusTransport>>,
+    accounts: Arc<Accounts<Link>>,
     grant: GrantId,
     endpoint: EndpointUrl,
     link: EndpointUrl,
@@ -155,7 +147,7 @@ async fn rig() -> Rig {
     let grant = Grant {
         id: GrantId::parse(GRANT).expect("grant"),
         key: GrantKey {
-            app: app(SYNCD),
+            app: sync_app(),
             account: account.id.clone(),
             kind: CapabilityKind::Storage,
             class: DataClass::Photos,
@@ -183,36 +175,16 @@ async fn rig() -> Rig {
         .expect("secret");
 
     let bus = PrivateBus::start();
-    let table = Arc::new(TableCallers::new());
-    let accountd = bus.connect().await;
-    let sheets = BusSheets::new(accountd.clone(), Arc::clone(&table));
-    let service = Arc::new(
-        AccountService::new(
-            vec![provider],
-            Registry {
-                grants: vec![grant],
-                accounts: vec![account],
-                toggles: vec![],
-            },
-            secrets,
-            sheets,
-            FixedClock(porter_fake::NOW),
-        )
-        .with_store(MemoryStore::default())
-        .with_audit(RecordingAudit::default()),
-    );
-    serve_with(&accountd, service, Arc::clone(&table), Options::default())
-        .await
-        .expect("accountd serves");
-    let syncd_side = bus.connect().await;
-    table.introduce_as(
-        syncd_side.unique_name().expect("name").as_str(),
-        Caller {
-            app: app(SYNCD),
-            role: CallerRole::App,
+    let hosted = host(
+        provider,
+        Registry {
+            grants: vec![grant],
+            accounts: vec![account],
+            toggles: vec![],
         },
+        secrets,
     );
-    let accounts = Arc::new(Accounts::over(DbusTransport::over(syncd_side.clone())));
+    let accounts = hosted.accounts;
 
     let known = Known::default();
     let hub = Hub::default();
@@ -229,7 +201,7 @@ async fn rig() -> Rig {
         grant: GrantId::parse(GRANT).expect("grant"),
         endpoint,
         link,
-        _keep: vec![accountd, syncd_side, server],
+        _keep: vec![server],
     }
 }
 

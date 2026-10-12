@@ -1,28 +1,29 @@
-//! The rig of syncd's Google bus tests: the real accountd on a private bus with one Google
-//! account whose Drive, Photos upload and Picker endpoints are the fake Google's, the grants
+//! The rig of syncd's Google bus tests: syncd's own account service, hosted in process, with one
+//! Google account whose Drive, Photos upload and Picker endpoints are the fake Google's, the grants
 //! syncd would hold, and a `StorageSupervisor` over them. The relay, not syncd, authenticates:
-//! the bearer is the fake provider's, and the credential accountd holds appears nowhere.
+//! the bearer is the fake provider's, and the credential the service holds appears nowhere.
 #![allow(dead_code)]
 
 use crate::common::bus::PrivateBus;
+use crate::common::hosted::{Link, host};
 use crate::common::{Known, client};
-use accountd::{BusSheets, Options, TableCallers, serve_with};
-use porter_client::{Accounts, DbusTransport};
+use porter_client::Accounts;
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::{
-    Account, AccountId, AccountLabel, AccountState, AppId, AppName, AuthKind, Candidate,
-    CapabilityKind, Claim, Credential, DataClass, EndpointUrl, Family, GrantId, Isolation,
-    LoginName, Offer, Provenance, Restriction, SecretKey, SecretPurpose, SecretText,
-    ServiceEndpoint, SpaceScope, Subject, Tls, UnixSeconds,
+    Account, AccountId, AccountLabel, AccountState, AppName, AuthKind, Candidate, CapabilityKind,
+    Claim, Credential, DataClass, EndpointUrl, Family, GrantId, LoginName, Offer, Provenance,
+    Restriction, SecretKey, SecretPurpose, SecretText, ServiceEndpoint, SpaceScope, Subject, Tls,
+    UnixSeconds,
 };
-use porter_dbus::{Caller, CallerRole};
-use porter_fake::{FakeProvider, FixedClock, MemoryStore, RecordingAudit};
+use porter_dbus::CallerRole;
+use porter_fake::FakeProvider;
 use porter_fake_servers::google::MediaOrigin;
 use porter_fake_servers::{FakeGoogle, GoogleHandle, Running};
 use porter_provider::Provider;
 use porter_secrets::{MemorySecrets, Secrets};
-use porter_service::{AccountService, Registry};
+use porter_service::Registry;
 use std::sync::Arc;
+use syncd::keep::sync_app;
 use std::sync::atomic::{AtomicBool, Ordering};
 use syncd::datasets::photos::PhotosSwitch;
 use syncd::datasets::pim::{AccountdUnavailable, Wiring};
@@ -77,13 +78,6 @@ kind = "photos"
 v = { library_read = "picker_only", upload = "present", albums = "app_created", video = "present", delta = "none" }
 "#;
 
-pub fn app(name: &str) -> AppId {
-    AppId {
-        name: AppName::parse(name).expect("app"),
-        isolation: Isolation::Flatpak,
-    }
-}
-
 pub fn quick() -> Settings {
     Settings::quick()
 }
@@ -91,7 +85,7 @@ pub fn quick() -> Settings {
 /// The real grants, until the test hides them (a revoked grant, a removed account), by kind.
 #[derive(Debug)]
 pub struct Gate {
-    pub real: ClientStorageGrants<DbusTransport>,
+    pub real: ClientStorageGrants<Link>,
     pub files: Arc<AtomicBool>,
     pub photos: Arc<AtomicBool>,
 }
@@ -132,8 +126,8 @@ pub struct Rig {
     pub account: AccountDir,
     pub files_shown: Arc<AtomicBool>,
     pub photos_shown: Arc<AtomicBool>,
-    pub supervisor: StorageSupervisor<DbusTransport, Gate>,
-    pub accounts: Arc<Accounts<DbusTransport>>,
+    pub supervisor: StorageSupervisor<Link, Gate>,
+    pub accounts: Arc<Accounts<Link>>,
     pub network: watch::Receiver<Network>,
     pub photos: PhotosSwitch,
     pub _keep: Vec<zbus::Connection>,
@@ -144,7 +138,7 @@ fn grant(id: &str, kind: CapabilityKind, class: DataClass) -> Grant {
     Grant {
         id: GrantId::parse(id).expect("grant"),
         key: GrantKey {
-            app: app(SYNCD),
+            app: sync_app(),
             account: AccountId::parse(ACCOUNT).expect("id"),
             kind,
             class,
@@ -168,7 +162,7 @@ fn endpoint(family: Family, url: String) -> ServiceEndpoint {
 
 impl Rig {
     /// A supervisor over this rig's accountd and gates (a daemon restarting).
-    pub fn new_supervisor(&self) -> StorageSupervisor<DbusTransport, Gate> {
+    pub fn new_supervisor(&self) -> StorageSupervisor<Link, Gate> {
         let wiring = Wiring {
             accounts: Arc::clone(&self.accounts),
             hub: self.hub.clone(),
@@ -285,39 +279,19 @@ async fn build(photos: PhotosSwitch, media: Media, picker_only: bool) -> Rig {
         .expect("secret");
 
     let bus = PrivateBus::start();
-    let table = Arc::new(TableCallers::new());
-    let accountd = bus.connect().await;
-    let sheets = BusSheets::new(accountd.clone(), Arc::clone(&table));
-    let service = Arc::new(
-        AccountService::new(
-            vec![provider],
-            Registry {
-                grants: vec![
-                    grant("files-grant", CapabilityKind::Storage, DataClass::Files),
-                    grant("photos-grant", CapabilityKind::Photos, DataClass::Photos),
-                ],
-                accounts: vec![account],
-                toggles: vec![],
-            },
-            secrets,
-            sheets,
-            FixedClock(porter_fake::NOW),
-        )
-        .with_store(MemoryStore::default())
-        .with_audit(RecordingAudit::default()),
-    );
-    serve_with(&accountd, service, Arc::clone(&table), Options::default())
-        .await
-        .expect("accountd serves");
-    let syncd_side = bus.connect().await;
-    table.introduce_as(
-        syncd_side.unique_name().expect("name").as_str(),
-        Caller {
-            app: app(SYNCD),
-            role: CallerRole::App,
+    let hosted = host(
+        provider,
+        Registry {
+            grants: vec![
+                grant("files-grant", CapabilityKind::Storage, DataClass::Files),
+                grant("photos-grant", CapabilityKind::Photos, DataClass::Photos),
+            ],
+            accounts: vec![account],
+            toggles: vec![],
         },
+        secrets,
     );
-    let accounts = Arc::new(Accounts::over(DbusTransport::over(syncd_side.clone())));
+    let accounts = hosted.accounts;
 
     let known = Known::default();
     let hub = Hub::default();
@@ -349,7 +323,7 @@ async fn build(photos: PhotosSwitch, media: Media, picker_only: bool) -> Rig {
         accounts,
         network,
         photos,
-        _keep: vec![accountd, syncd_side, server],
+        _keep: vec![server],
         _network: network_keeps,
     };
     rig.supervisor = rig.new_supervisor();
@@ -358,9 +332,9 @@ async fn build(photos: PhotosSwitch, media: Media, picker_only: bool) -> Rig {
 
 /// A supervisor that is never ticked, to fill the field until the real one can be made.
 fn placeholder(
-    accounts: &Arc<Accounts<DbusTransport>>,
+    accounts: &Arc<Accounts<Link>>,
     network: &watch::Receiver<Network>,
-) -> StorageSupervisor<DbusTransport, Gate> {
+) -> StorageSupervisor<Link, Gate> {
     let hub = Hub::default();
     let paths = Paths::resolve(|_| Some("/nonexistent".into())).expect("paths");
     StorageSupervisor::new(
