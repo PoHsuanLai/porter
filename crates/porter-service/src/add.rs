@@ -11,10 +11,11 @@ use crate::sheets::Sheets;
 use crate::store::RegistryStore;
 use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
 use porter_core::{
-    Account, AccountId, AccountsReply, AppId, CapabilityKind, RelayPlan, ServiceEndpoint,
+    Account, AccountId, AccountsReply, AppId, CapabilityKind, Credential, RelayPlan, SecretKey,
+    SecretPurpose, SecretText, ServiceEndpoint,
 };
 use porter_provider::Provider;
-use porter_secrets::Secrets;
+use porter_secrets::{Secrets, SecretsError};
 
 impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSink>
     AccountService<P, S, U, K, R, A>
@@ -28,6 +29,24 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         window: ParentWindow,
     ) -> AccountsReply {
         self.run_add(caller, hint, window, None, None).await
+    }
+
+    /// The API key filed for `account`: the in-process read for a host that runs the agent
+    /// launcher (inferd). It never crosses a process. A key that is missing or unreadable (or
+    /// filed as another kind of credential) means signing in again (`NeedsReauth`); a store that
+    /// is locked or unreachable is `Unavailable`.
+    pub async fn api_key(&self, account: &AccountId) -> Result<SecretText, Refusal> {
+        let key = SecretKey {
+            account: account.clone(),
+            purpose: SecretPurpose::ApiKey,
+        };
+        match self.secrets.get(&key).await {
+            Ok(Credential::ApiKey(key)) => Ok(key),
+            Ok(_) | Err(SecretsError::Missing | SecretsError::Unreadable) => {
+                Err(Refusal::NeedsReauth)
+            }
+            Err(SecretsError::Locked | SecretsError::Unavailable) => Err(Refusal::Unavailable),
+        }
     }
 
     /// Opens the add-account sheet for an identity the host already knows ("Continue as"): the

@@ -676,6 +676,38 @@ async fn a_sign_in_as_an_identity_passes_the_hint_and_retries_a_repeat_once_as_a
     );
 }
 
+/// The launcher host's in-process read: a stored key reads back; a missing one, or a credential
+/// of another shape, means signing in again.
+#[tokio::test]
+async fn the_api_key_reads_back_and_a_missing_or_misshapen_one_needs_a_sign_in() {
+    let (service, kept) = service(&Script::default(), vec![]);
+    let account = AccountId::parse("scripted-ada").expect("id");
+    let key = |purpose| SecretKey {
+        account: account.clone(),
+        purpose,
+    };
+    assert_eq!(service.api_key(&account).await, Err(Refusal::NeedsReauth));
+    kept.secrets
+        .put(
+            &key(SecretPurpose::ApiKey),
+            &Credential::Password(SecretText::new("pw")),
+        )
+        .await
+        .expect("put");
+    assert_eq!(service.api_key(&account).await, Err(Refusal::NeedsReauth));
+    kept.secrets
+        .put(
+            &key(SecretPurpose::ApiKey),
+            &Credential::ApiKey(SecretText::new("sk-or-v1-abc")),
+        )
+        .await
+        .expect("put");
+    assert_eq!(
+        service.api_key(&account).await,
+        Ok(SecretText::new("sk-or-v1-abc"))
+    );
+}
+
 /// An agent that signs itself in (Claude Code), with a sign-in that would review and finish.
 fn agent_service(script: &Script, launchers: &'static [&'static str]) -> (Service, Kept) {
     agent_service_with(
