@@ -48,7 +48,8 @@ fn the_unit_is_a_sandbox_that_writes_only_its_own_directories() {
     assert_eq!(value(&unit, "ProtectHome"), Some("read-only"));
     // Journals under state, mirrors under data: nothing else is writable, and both exist before
     // the sandbox starts (a missing ReadWritePaths entry fails the unit).
-    assert_eq!(value(&unit, "StateDirectory"), Some("porter/sync"));
+    // Its own accounts (the registry) sit beside the journals' directory.
+    assert_eq!(value(&unit, "StateDirectory"), Some("porter/sync quire/syncd"));
     assert_eq!(
         value(&unit, "ReadWritePaths"),
         Some("%h/.local/share/porter")
@@ -60,20 +61,27 @@ fn the_unit_is_a_sandbox_that_writes_only_its_own_directories() {
              %h/.local/share/porter/photos"
         )
     );
-    // The bus and the replicas' servers (through accountd's relay, syncd itself holds no
-    // credential and dials only its own session bus): Unix sockets only.
-    assert_eq!(value(&unit, "RestrictAddressFamilies"), Some("AF_UNIX"));
+    // The bus, and the servers syncd talks to itself now that it holds its own sign-ins (and the
+    // sign-in's loopback listener): Unix sockets and the internet.
+    assert_eq!(
+        value(&unit, "RestrictAddressFamilies"),
+        Some("AF_UNIX AF_INET AF_INET6")
+    );
 }
 
 #[test]
 fn every_path_syncd_writes_is_writable_under_the_unit() {
     use std::path::{Path, PathBuf};
-    use syncd::paths::{AccountDir, Paths};
+    use syncd::paths::{AccountDir, KeepPaths, Paths};
 
     let unit = dist("syncd.service");
     // The unit's specifiers as a person with HOME=/h has them.
     let expand = |text: &str| text.replace("%h", "/h");
-    let state = Path::new("/h/.local/state").join(value(&unit, "StateDirectory").expect("state"));
+    let states: Vec<PathBuf> = value(&unit, "StateDirectory")
+        .expect("state")
+        .split_whitespace()
+        .map(|dir| Path::new("/h/.local/state").join(dir))
+        .collect();
     let writable: Vec<PathBuf> = value(&unit, "ReadWritePaths")
         .expect("ReadWritePaths")
         .split_whitespace()
@@ -98,8 +106,12 @@ fn every_path_syncd_writes_is_writable_under_the_unit() {
         paths.storage_dir(&account),
     ];
     written.extend(paths.account_dirs(&account));
+    // Its own accounts: the registry (and its backup beside it) and the audit file.
+    let keep = KeepPaths::resolve(|name| (name == "HOME").then(|| "/h".to_owned())).expect("keep");
+    written.push(keep.registry_dir.join("registry.json.bak"));
+    written.push(keep.audit.clone());
     for path in &written {
-        let under_state = path.starts_with(&state);
+        let under_state = states.iter().any(|state| path.starts_with(state));
         let under_writable = writable.iter().any(|root| path.starts_with(root));
         assert!(
             under_state || under_writable,
@@ -122,16 +134,19 @@ fn every_path_syncd_writes_is_writable_under_the_unit() {
 fn the_test_proc_root_feature_is_not_a_default_feature() {
     let manifest: toml::Table = include_str!("../../Cargo.toml").parse().expect("manifest");
     let features = manifest["features"].as_table().expect("features");
-    assert!(features.contains_key("test-proc-root"));
     let default = features
         .get("default")
         .and_then(|d| d.as_array())
         .cloned()
         .unwrap_or_default();
-    assert!(
-        default.iter().all(|f| f.as_str() != Some("test-proc-root")),
-        "{default:?}"
-    );
+    // Both test-only knobs (`SYNCD_PROC_ROOT`, `SYNCD_KEYS`) are features, and neither is default.
+    for feature in ["test-proc-root", "test-keys"] {
+        assert!(features.contains_key(feature), "{feature}");
+        assert!(
+            default.iter().all(|f| f.as_str() != Some(feature)),
+            "{feature}: {default:?}"
+        );
+    }
 }
 
 #[test]
