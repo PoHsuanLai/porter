@@ -1,7 +1,7 @@
 //! Where syncd reads and writes, resolved from the environment (PLAN §2.3): the one place the
 //! daemon names a path, so a test can give it scratch directories. An account is named on disk
-//! by its object-path segment (`porter_core::object_segment`), the form `AccountRemoved`
-//! carries, so a wipe needs no map back to the id.
+//! by its object-path segment (`porter_core::object_segment`), the form the account's
+//! directories are named in, so a wipe needs no map back to the id.
 
 pub use porter_core::xdg::PathError;
 use porter_core::xdg::Xdg;
@@ -180,12 +180,6 @@ impl AccountDir {
                 .bytes()
                 .all(|b| b.is_ascii_alphanumeric() || b == b'_');
         ok.then(|| Self(segment.to_owned()))
-    }
-
-    /// The account the object path `/org/quire/Accounts1/account/<segment>` names.
-    pub fn of_object_path(path: &str) -> Option<Self> {
-        let prefix = format!("{}/account/", porter_dbus::ACCOUNTS_PATH);
-        Self::parse(path.strip_prefix(&prefix)?)
     }
 
     /// The directory name.
@@ -383,16 +377,6 @@ mod tests {
         for (text, ok) in CASES {
             assert_eq!(AccountDir::parse(text).is_some(), *ok, "{text:?}");
         }
-        let path = "/org/quire/Accounts1/account/abc_1";
-        assert_eq!(
-            AccountDir::of_object_path(path).map(|a| a.to_string()),
-            Some("abc_1".into())
-        );
-        assert_eq!(
-            AccountDir::of_object_path("/org/quire/Accounts1/account/../x"),
-            None
-        );
-        assert_eq!(AccountDir::of_object_path("/other/abc"), None);
     }
 
     #[test]

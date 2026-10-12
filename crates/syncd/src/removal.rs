@@ -1,21 +1,15 @@
-//! `AccountRemoved`: when accountd says an account is gone, syncd forgets everything of it:
-//! its running datasets, its journals and anchors (`<state>/porter/sync/<account>`), its
-//! mirrors (`<data>/porter/vdir/<account>`) and its photos library (`<data>/porter/photos/<account>`) and its app folder mirror
-//! (`<data>/porter/storage/<account>`) (PLAN §2.9: "syncd | journal rows, anchors and
-//! mirrors of that account").
+//! Removing an account: syncd forgets everything of it: its running datasets, its journals and
+//! anchors (`<state>/porter/sync/<account>`), its mirrors (`<data>/porter/vdir/<account>`), its
+//! photos library (`<data>/porter/photos/<account>`) and its app folder mirror
+//! (`<data>/porter/storage/<account>`).
 //!
-//! The signal is accountd's, unicast to the apps that hold a grant for the account;
-//! porter-client's [`Accounts::watch_removals`] matches the sender against the owner of
-//! `org.quire.Accounts1`, so a signal another connection sends does not wipe anything, and
-//! introduces syncd to accountd at the start and at every new owner (accountd tells only the
-//! connections that have called it). The account arrives as its object path's last segment,
-//! which is the directory name (`AccountDir`); anything that is not such a name is ignored.
+//! The account is syncd's own, removed in its Settings rows (`crate::keep::Keep::remove` calls
+//! [`wipe`] and then deletes the account's stored sign-in). accountd removing an identity does
+//! not remove syncd's copy: the person removes it in the sync rows.
 
 use crate::paths::{AccountDir, Paths};
 use crate::service::Hub;
-use porter_client::{Accounts, ClientError, DbusTransport};
 use std::io::ErrorKind;
-use zbus::Connection;
 
 /// Stops the account's datasets, waits until none is in a cycle, and deletes its journals and
 /// mirrors; how many directories existed. A directory already gone is not an error.
@@ -41,25 +35,6 @@ pub async fn wipe(paths: &Paths, hub: &Hub, account: &AccountDir) -> std::io::Re
     })
     .await
     .map_err(std::io::Error::other)?
-}
-
-/// Listens for the accounts accountd removes and wipes them. A directory that cannot be removed
-/// is reported on standard error (the daemon's one log path) and the next removal is awaited.
-pub async fn watch(connection: &Connection, hub: Hub, paths: Paths) -> Result<(), ClientError> {
-    let mut removals = Accounts::over(DbusTransport::over(connection.clone()))
-        .watch_removals()
-        .await?;
-    tokio::spawn(async move {
-        while let Some(removed) = removals.next().await {
-            let Some(account) = AccountDir::parse(removed.segment()) else {
-                continue;
-            };
-            if let Err(why) = wipe(&paths, &hub, &account).await {
-                eprintln!("syncd: cannot wipe account {account}: {why}");
-            }
-        }
-    });
-    Ok(())
 }
 
 #[cfg(test)]
