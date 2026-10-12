@@ -1,31 +1,28 @@
-//! The PIM mirror end to end on one private bus: accountd (the real service over in-memory
-//! secrets) holds the app password and runs the relay; syncd's supervisor, holding a Calendar
+//! The PIM mirror end to end on one private bus: syncd's own account service (hosted in process
+//! over in-memory secrets) holds the app password and runs the relay; syncd's supervisor, holding a Calendar
 //! and a Contacts grant, discovers the collections of a fake Nextcloud through the relay and
 //! mirrors each into a vdir under a scratch `$XDG_DATA_HOME`. Nothing here touches the real
 //! session bus, `~/.local` or the network.
 
 use crate::common;
 
-use accountd::{BusSheets, Options, TableCallers, serve_with};
 use common::bus::PrivateBus;
 use common::caller as caller_of;
-use porter_client::{Accounts, DbusTransport};
+use common::hosted::{Link, NoDirectory, Service, host, keep};
+use porter_client::Accounts;
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::{
-    Account, AccountId, AccountLabel, AccountState, AppId, AppName, AuthKind, CapabilityKind,
-    Claim, Credential, DataClass, EndpointUrl, Family, GrantId, Isolation, LoginName, Offer,
-    Provenance, ProviderId, Restriction, SecretKey, SecretPurpose, SecretText, ServiceEndpoint,
-    SpaceScope, Subject, Tls, UnixSeconds,
+    Account, AccountId, AccountLabel, AccountState, AuthKind, CapabilityKind, Claim, Credential,
+    DataClass, EndpointUrl, Family, GrantId, LoginName, Offer, Provenance, ProviderId, Restriction,
+    SecretKey, SecretPurpose, SecretText, ServiceEndpoint, SpaceScope, Subject, Tls, UnixSeconds,
 };
 use porter_dbus::{Caller, CallerRole};
-use porter_fake::{FakeProvider, FixedClock, MemoryStore, RecordingAudit};
+use porter_fake::FakeProvider;
 use porter_fake_servers::{FakeNextcloud, NextcloudHandle, Running};
 use porter_provider::Provider;
 use porter_secrets::{MemorySecrets, Secrets};
-use porter_service::{AccountService, Registry};
-use std::future::Future;
+use porter_service::Registry;
 use std::path::PathBuf;
-use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
@@ -33,14 +30,13 @@ use syncd::datasets::pim::{
     AccountdUnavailable, COLOR, ClientGrants, DISPLAYNAME, PimConfig, PimGrants, PimKind,
     PimSupervisor, Wiring, is_complete, items_in,
 };
+use syncd::keep::{Keep, sync_app as syncd_app};
 use syncd::paths::Paths;
-use syncd::removal;
 use syncd::scheduler::{Network, Settings};
 use syncd::service::{Access, Hub};
 use tokio::sync::watch;
 
 const PASSWORD: &str = "S3CRET-PIM-APP-PASSWORD";
-const SYNCD: &str = "org.quire.Sync";
 const ACCOUNT: &str = "pim-cloud";
 const SEGMENT: &str = "pim_cloud";
 const PROVIDER: &str = r#"
@@ -60,13 +56,6 @@ family = "carddav"
 kind = "contacts"
 v = { access = "read_write", delta = "poll", transport = "carddav", collections = "present" }
 "#;
-
-fn syncd_app() -> AppId {
-    AppId {
-        name: AppName::parse(SYNCD).expect("app"),
-        isolation: Isolation::Flatpak,
-    }
-}
 
 fn event(uid: &str, summary: &str) -> String {
     format!(
@@ -129,10 +118,10 @@ fn read(path: &std::path::Path) -> Option<String> {
     std::fs::read_to_string(path).ok()
 }
 
-/// `accounts.grants` as the supervisor sees accountd, which a test can make unreachable, and
+/// `accounts.grants` as the supervisor sees them, which a test can make unanswering, and
 /// which counts the questions it is asked (a look asks once per kind).
 struct Switch {
-    inner: ClientGrants<DbusTransport>,
+    inner: ClientGrants<Link>,
     up: Arc<AtomicBool>,
     asked: Arc<AtomicUsize>,
 }
@@ -150,21 +139,19 @@ impl PimGrants for Switch {
     }
 }
 
-type Remove = Box<dyn Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
-
 struct Rig {
     bus: PrivateBus,
     nextcloud: Running<NextcloudHandle>,
     hub: Hub,
     mirrors: PathBuf,
-    accounts: Arc<Accounts<DbusTransport>>,
-    remove_account: Remove,
+    accounts: Arc<Accounts<Link>>,
+    /// syncd's accounts, whose `remove` is what the Settings row runs.
+    own: Keep<Service, NoDirectory>,
     accountd_up: Arc<AtomicBool>,
     asked: Arc<AtomicUsize>,
     grants: Vec<GrantId>,
     supervisor: tokio::task::JoinHandle<()>,
     _network: watch::Sender<Network>,
-    _keep: Vec<zbus::Connection>,
 }
 
 impl Rig {
@@ -277,50 +264,20 @@ async fn rig(with_grants: bool) -> Rig {
         .expect("secret");
 
     let bus = PrivateBus::start();
-    let table = Arc::new(TableCallers::new());
-    let accountd = bus.connect().await;
-    let sheets = BusSheets::new(accountd.clone(), Arc::clone(&table));
-    let service = Arc::new(
-        AccountService::new(
-            vec![spec],
-            Registry {
-                grants: if with_grants {
-                    granted.to_vec()
-                } else {
-                    vec![]
-                },
-                accounts: vec![account],
-                toggles: vec![],
+    let hosted = host(
+        spec,
+        Registry {
+            grants: if with_grants {
+                granted.to_vec()
+            } else {
+                vec![]
             },
-            secrets,
-            sheets,
-            FixedClock(porter_fake::NOW),
-        )
-        .with_store(MemoryStore::default())
-        .with_audit(RecordingAudit::default()),
-    );
-    let removing = Arc::clone(&service);
-    let remove_account: Remove = Box::new(move || {
-        let service = Arc::clone(&removing);
-        Box::pin(async move {
-            service
-                .remove_account(&AccountId::parse(ACCOUNT).expect("id"))
-                .await
-                .expect("removed");
-        })
-    });
-    serve_with(&accountd, service, Arc::clone(&table), Options::default())
-        .await
-        .expect("accountd serves");
-    let syncd_side = bus.connect().await;
-    table.introduce_as(
-        syncd_side.unique_name().expect("name").as_str(),
-        Caller {
-            app: syncd_app(),
-            role: CallerRole::App,
+            accounts: vec![account],
+            toggles: vec![],
         },
+        secrets,
     );
-    let accounts = Arc::new(Accounts::over(DbusTransport::over(syncd_side.clone())));
+    let accounts = Arc::clone(&hosted.accounts);
 
     let root = bus.scratch().join("syncd");
     let paths = Paths {
@@ -330,9 +287,7 @@ async fn rig(with_grants: bool) -> Rig {
         callers_user: root.join("none"),
     };
     let hub = Hub::default();
-    removal::watch(&syncd_side, hub.clone(), paths.clone())
-        .await
-        .expect("watch AccountRemoved");
+    let own = keep(&hosted, NoDirectory, paths.clone(), hub.clone());
     let (network_up, network) = watch::channel(Network::Unmetered);
     let wiring = Wiring {
         accounts: Arc::clone(&accounts),
@@ -362,13 +317,12 @@ async fn rig(with_grants: bool) -> Rig {
         hub,
         mirrors: paths.mirrors,
         accounts,
-        remove_account,
+        own,
         accountd_up,
         asked,
         grants,
         supervisor,
         _network: network_up,
-        _keep: vec![accountd, syncd_side],
     }
 }
 
@@ -662,7 +616,7 @@ async fn a_reader_never_sees_a_file_that_is_not_a_complete_item() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn account_removed_removes_the_mirror_and_it_does_not_come_back() {
+async fn removing_the_account_in_syncd_removes_the_mirror_and_it_does_not_come_back() {
     let rig = rig(true).await;
     eventually("mirrored", || {
         items_in(&rig.calendar("personal"), PimKind::Calendar).len() == 2
@@ -672,10 +626,10 @@ async fn account_removed_removes_the_mirror_and_it_does_not_come_back() {
     assert!(rig.account_dir().exists());
     assert_eq!(names(&rig).len(), 3);
 
-    (rig.remove_account)().await;
-    // accountd tells syncd on its next answer (any call publishes what changed).
-    let poke = rig.accounts.grants().await;
-    drop(poke);
+    rig.own
+        .remove(&AccountId::parse(ACCOUNT).expect("id"))
+        .await
+        .expect("removed");
     eventually("the account's mirror is gone", || {
         !rig.account_dir().exists()
     })
@@ -694,7 +648,7 @@ async fn account_removed_removes_the_mirror_and_it_does_not_come_back() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_revoked_grant_stops_and_removes_the_mirror_but_an_unreachable_accountd_changes_nothing()
+async fn a_revoked_grant_stops_and_removes_the_mirror_but_an_unanswering_grant_list_changes_nothing()
 {
     let rig = rig(true).await;
     let contacts = rig.calendar("contacts-contacts");
@@ -704,7 +658,7 @@ async fn a_revoked_grant_stops_and_removes_the_mirror_but_an_unreachable_account
     })
     .await;
 
-    // accountd cannot be asked: nothing is stopped or removed, and mirroring goes on.
+    // The grants cannot be read: nothing is stopped or removed, and mirroring goes on.
     rig.accountd_up.store(false, Ordering::Relaxed);
     rig.after_two_looks().await;
     assert_eq!(names(&rig).len(), 3);

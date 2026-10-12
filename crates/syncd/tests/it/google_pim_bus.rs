@@ -1,6 +1,6 @@
 //! A Google account's Calendar, Contacts and Tasks mirrored into the vdir, on one private bus:
-//! accountd (the real service over in-memory secrets, a fake provider that mints a token for each
-//! endpoint's audience) holds the credential and runs the relay, which adds the bearer; syncd's
+//! syncd's own account service (hosted in process over in-memory secrets, a fake provider that
+//! mints a token for each endpoint's audience) holds the credential, which adds the bearer; syncd's
 //! supervisor, holding a grant per kind whose capability's transport is `google_api`, lists the
 //! calendars, the contacts and the task lists of the rig's `FakeGoogle` and mirrors each as
 //! `.ics` and `.vcf` files under a scratch `$XDG_DATA_HOME`. Nothing here touches the real
@@ -8,24 +8,22 @@
 
 use crate::common;
 
-use accountd::{BusSheets, Options, TableCallers, serve_with};
 use common::bus::PrivateBus;
 use common::caller as caller_of;
 use common::eventually;
-use porter_client::{Accounts, DbusTransport};
+use common::hosted::host;
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::{
-    Account, AccountId, AccountLabel, AccountState, AppId, AppName, AuthKind, CapabilityKind,
-    Claim, Credential, EndpointUrl, Family, GrantId, Isolation, LoginName, Offer, Provenance,
-    Restriction, SecretKey, SecretPurpose, SecretText, ServiceEndpoint, SpaceScope, Subject, Tls,
-    UnixSeconds,
+    Account, AccountId, AccountLabel, AccountState, AuthKind, CapabilityKind, Claim, Credential,
+    EndpointUrl, Family, GrantId, LoginName, Offer, Provenance, Restriction, SecretKey,
+    SecretPurpose, SecretText, ServiceEndpoint, SpaceScope, Subject, Tls, UnixSeconds,
 };
-use porter_dbus::{Caller, CallerRole};
-use porter_fake::{FakeProvider, FixedClock, MemoryStore, RecordingAudit};
+use porter_dbus::CallerRole;
+use porter_fake::FakeProvider;
 use porter_fake_servers::{FakeGoogle, FakeIssuer, GoogleHandle, IssuerHandle, Running};
 use porter_provider::Provider;
 use porter_secrets::{MemorySecrets, Secrets};
-use porter_service::{AccountService, Registry};
+use porter_service::Registry;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -34,12 +32,12 @@ use syncd::datasets::pim::{
     COLOR, ClientGrants, DISPLAYNAME, PimConfig, PimKind, PimSupervisor, Wiring, is_complete,
     items_in,
 };
+use syncd::keep::sync_app as syncd_app;
 use syncd::paths::Paths;
 use syncd::scheduler::{Network, Settings};
 use syncd::service::{Access, Hub};
 use tokio::sync::watch;
 
-const SYNCD: &str = "org.quire.Sync";
 const ACCOUNT: &str = "g-pim";
 const SEGMENT: &str = "g_pim";
 const PROVIDER: &str = r#"
@@ -65,13 +63,6 @@ kind = "tasks"
 v = { access = "read_write", delta = "none", transport = "google_api", collections = "present" }
 "#;
 
-fn syncd_app() -> AppId {
-    AppId {
-        name: AppName::parse(SYNCD).expect("app"),
-        isolation: Isolation::Flatpak,
-    }
-}
-
 /// What the fake provider mints for the audience of this account's endpoint of `family`.
 fn bearer(family: Family) -> String {
     format!("fake:{ACCOUNT}:{}", family.slug())
@@ -89,7 +80,6 @@ struct Rig {
     mirrors: PathBuf,
     supervisor: tokio::task::JoinHandle<()>,
     _network: watch::Sender<Network>,
-    _keep: Vec<zbus::Connection>,
 }
 
 impl Rig {
@@ -232,36 +222,16 @@ async fn rig(kinds: &[PimKind]) -> Rig {
         .expect("secret");
 
     let bus = PrivateBus::start();
-    let table = Arc::new(TableCallers::new());
-    let accountd = bus.connect().await;
-    let sheets = BusSheets::new(accountd.clone(), Arc::clone(&table));
-    let service = Arc::new(
-        AccountService::new(
-            vec![provider],
-            Registry {
-                grants,
-                accounts: vec![account],
-                toggles: vec![],
-            },
-            secrets,
-            sheets,
-            FixedClock(porter_fake::NOW),
-        )
-        .with_store(MemoryStore::default())
-        .with_audit(RecordingAudit::default()),
-    );
-    serve_with(&accountd, service, Arc::clone(&table), Options::default())
-        .await
-        .expect("accountd serves");
-    let syncd_side = bus.connect().await;
-    table.introduce_as(
-        syncd_side.unique_name().expect("name").as_str(),
-        Caller {
-            app: syncd_app(),
-            role: CallerRole::App,
+    let hosted = host(
+        provider,
+        Registry {
+            grants,
+            accounts: vec![account],
+            toggles: vec![],
         },
+        secrets,
     );
-    let accounts = Arc::new(Accounts::over(DbusTransport::over(syncd_side.clone())));
+    let accounts = hosted.accounts;
     let root = bus.scratch().join("syncd");
     let paths = Paths {
         journals: root.join("state/porter/sync"),
@@ -295,7 +265,6 @@ async fn rig(kinds: &[PimKind]) -> Rig {
         mirrors: paths.mirrors,
         supervisor,
         _network: network_up,
-        _keep: vec![accountd, syncd_side],
     }
 }
 
