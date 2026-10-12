@@ -3,17 +3,14 @@
 //! (Cargo.toml): it builds without porter-infer. `connect` starts this executable again as a
 //! fake child, by test path.
 
-mod accountd_requests;
 #[cfg(any(feature = "dbus", feature = "socket"))]
 mod common;
 #[cfg(all(feature = "dbus", feature = "infer"))]
 mod connect;
-mod dbus_accounts;
 mod dbus_guests;
+mod dbus_keys;
 mod dbus_open;
-mod dbus_peer;
 mod dbus_served;
-mod dbus_sheets;
 mod dbus_spaces;
 mod dbus_tailnet;
 mod end_to_end;

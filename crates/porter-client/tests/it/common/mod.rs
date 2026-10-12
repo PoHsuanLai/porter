@@ -9,10 +9,10 @@ pub mod accountd;
 pub mod agent;
 #[cfg(feature = "dbus")]
 pub mod bus;
+#[cfg(feature = "dbus")]
+pub mod fake_inferd;
 #[cfg(all(feature = "dbus", feature = "infer"))]
 pub mod inferd;
-#[cfg(feature = "dbus")]
-pub mod racing;
 #[cfg(feature = "infer")]
 pub mod served;
 
