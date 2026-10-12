@@ -94,7 +94,7 @@ impl Route {
 }
 
 /// The app a program's grants and spend are held under: `org.quire.Agent.<program>`. The person
-/// grants an account to the program with `accountd add <provider> --allow
+/// grants an account to the program with `inferd add <provider> --allow
 /// org.quire.Agent.claude-code`; the launcher is the one that may ask inferd to act for it.
 pub fn agent_app(program: &AgentProgram) -> AppId {
     // A program is a lowercase letter then lowercase letters, digits and `-`: always one element.

@@ -96,7 +96,9 @@ fn the_unit_gives_engines_the_gpu_and_only_this_computers_own_addresses() {
     assert_eq!(key(&unit, "MemoryDenyWriteExecute"), None);
     assert!(unit.lines().any(|line| line.starts_with("DeviceAllow=")));
     // What inferd writes is created by systemd before the sandbox starts.
-    assert_eq!(key(&unit, "RuntimeDirectory"), Some("inferd"));
+    // The sockets' directory and, inside it, the agents' credential files.
+    assert_eq!(key(&unit, "RuntimeDirectory"), Some("inferd inferd/agent"));
+    assert_eq!(key(&unit, "RuntimeDirectoryMode"), Some("0700"));
     assert_eq!(key(&unit, "StateDirectory"), Some("quire/inferd"));
     assert_eq!(key(&unit, "ReadWritePaths"), None);
 }
