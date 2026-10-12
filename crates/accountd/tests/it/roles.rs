@@ -1,33 +1,22 @@
-//! Role checks (PLAN §2.1): an `Agent` is refused what acts for the person, an unknown sender is
-//! `AccessDenied`, and an ordinary app is served.
+//! Role checks (PLAN §2.1): an `Agent` is refused what acts for the person, the agent launcher is
+//! not accountd's to serve, an unknown sender is `AccessDenied`.
 
 use crate::common;
 
 use common::*;
 use porter_core::wire::Refusal;
-use porter_dbus::{AccountProxy, CallerRole, Details, ManagerProxy, TokensProxy, account_path};
+use porter_dbus::{AccountProxy, CallerRole, Details, ManagerProxy, account_path};
 use zbus::zvariant::ObjectPath;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agent_is_refused_every_method_that_acts_for_the_person() {
-    let rig = Rig::start_with(Default::default(), allowing_host()).await;
+    let rig = Rig::start().await;
     let agent = rig
         .client_as(caller("org.quire.Companion", CallerRole::Agent))
         .await;
     let denied = refusal_name(Refusal::Denied);
 
     let manager = ManagerProxy::new(&agent).await.expect("proxy");
-    let choose = manager
-        .choose(
-            &storage_need(),
-            "photos",
-            "interactive",
-            "",
-            &Details::new(),
-        )
-        .await
-        .expect_err("choose");
-    assert_eq!(error_name(&choose), denied);
     let add = manager
         .add_account("", "", &Details::new())
         .await
@@ -46,20 +35,6 @@ async fn an_agent_is_refused_every_method_that_acts_for_the_person() {
         .expect_err("reauthenticate");
     assert_eq!(error_name(&reauth), denied);
 
-    let tokens = TokensProxy::new(&agent).await.expect("proxy");
-    let issue = tokens.issue_token("g1", "webdav").await.expect_err("token");
-    assert_eq!(error_name(&issue), denied);
-    let relay = tokens
-        .open_authenticated("g1", "imaps://imap.mail.invalid")
-        .await
-        .expect_err("relay");
-    assert_eq!(error_name(&relay), denied);
-    let linked = tokens
-        .open_linked("g1", "https://files.example.invalid")
-        .await
-        .expect_err("linked relay");
-    assert_eq!(error_name(&linked), denied);
-
     // Nothing was shown to anyone.
     assert!(rig.host_log.calls().opened.is_empty());
 }
@@ -69,17 +44,17 @@ fn storage_account_id() -> porter_core::AccountId {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn an_agent_may_still_ask_what_it_may_see() {
+async fn the_agent_launcher_is_not_served_here_because_its_interface_is_inferds() {
     let rig = Rig::start().await;
-    let agent = rig
-        .client_as(caller("org.quire.Companion", CallerRole::Agent))
+    let launcher = rig
+        .client_as(caller("org.quire.Docket", CallerRole::AgentLauncher))
         .await;
-    let manager = ManagerProxy::new(&agent).await.expect("proxy");
-    let found = manager
-        .query(&storage_need(), "photos", "interactive")
+    let manager = ManagerProxy::new(&launcher).await.expect("proxy");
+    let add = manager
+        .add_account("", "", &Details::new())
         .await
-        .expect("query");
-    assert!(found.is_empty());
+        .expect_err("add");
+    assert_eq!(error_name(&add), ACCESS_DENIED);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -87,12 +62,11 @@ async fn an_unknown_sender_is_access_denied_everywhere() {
     let rig = Rig::start().await;
     let stranger = rig.stranger().await;
     let manager = ManagerProxy::new(&stranger).await.expect("proxy");
-    let query = manager
-        .query(&storage_need(), "photos", "interactive")
+    let add = manager
+        .add_account("", "", &Details::new())
         .await
-        .expect_err("query");
-    assert_eq!(error_name(&query), ACCESS_DENIED);
-    let tokens = TokensProxy::new(&stranger).await.expect("proxy");
-    let issue = tokens.issue_token("g", "a").await.expect_err("token");
-    assert_eq!(error_name(&issue), ACCESS_DENIED);
+        .expect_err("add");
+    assert_eq!(error_name(&add), ACCESS_DENIED);
+    let needing = manager.needing_reauth().await.expect_err("needing");
+    assert_eq!(error_name(&needing), ACCESS_DENIED);
 }

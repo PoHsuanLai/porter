@@ -1,9 +1,10 @@
-//! The `Account` properties: readable only with a grant for the account.
+//! The `Account` properties: readable only by the shell and Settings. No app holds a grant for an
+//! account any more, so for every other caller an account does not exist.
 
 use crate::common;
 
 use common::*;
-use porter_dbus::{AccountProxy, account_path};
+use porter_dbus::{AccountProxy, CallerRole, account_path};
 use zbus::zvariant::ObjectPath;
 
 async fn proxy_of(
@@ -23,41 +24,48 @@ async fn proxy_of(
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_grant_holder_reads_the_account_and_only_the_kinds_it_was_granted() {
-    let rig = Rig::start_with(Default::default(), allowing_host()).await;
-    let (photos_conn, _grant) = grant_photos(&rig).await;
-    let storage = proxy_of(&photos_conn, &storage_account().id).await;
-    assert_eq!(storage.id().await.expect("id"), "fake-storage");
-    assert_eq!(storage.provider().await.expect("provider"), "fake-cloud");
-    assert_eq!(storage.label().await.expect("label"), "ada@cloud.invalid");
-    assert_eq!(storage.state().await.expect("state"), "ok");
-    let kinds: Vec<String> = storage
-        .capabilities()
-        .await
-        .expect("capabilities")
-        .into_iter()
-        .map(|(kind, _)| kind)
-        .collect();
-    assert_eq!(
-        kinds,
-        vec!["storage".to_owned()],
-        "calendar was not granted"
-    );
+async fn the_shell_and_settings_read_the_account_and_every_kind_it_offers() {
+    let rig = Rig::start().await;
+    for who in [
+        caller("org.example.SheetHost", CallerRole::SheetHost),
+        caller("org.quire.Settings", CallerRole::Settings),
+    ] {
+        let connection = rig.client_as(who).await;
+        let storage = proxy_of(&connection, &storage_account().id).await;
+        assert_eq!(storage.id().await.expect("id"), "fake-storage");
+        assert_eq!(storage.provider().await.expect("provider"), "fake-cloud");
+        assert_eq!(storage.label().await.expect("label"), "ada@cloud.invalid");
+        assert_eq!(storage.state().await.expect("state"), "ok");
+        let mut kinds: Vec<String> = storage
+            .capabilities()
+            .await
+            .expect("capabilities")
+            .into_iter()
+            .map(|(kind, _)| kind)
+            .collect();
+        kinds.sort();
+        kinds.dedup();
+        assert_eq!(kinds, vec!["calendar".to_owned(), "storage".to_owned()]);
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn without_a_grant_the_account_does_not_exist_for_the_caller() {
-    let rig = Rig::start_with(Default::default(), allowing_host()).await;
-    let _ = grant_photos(&rig).await;
-    let mail_app = rig.client("org.quire.Mail").await;
-    let storage = proxy_of(&mail_app, &storage_account().id).await;
-    let id = storage.id().await.expect_err("no grant");
-    assert!(error_name(&id).contains("UnknownObject"), "{id:?}");
-    let capabilities = storage.capabilities().await.expect_err("no grant");
-    assert!(
-        error_name(&capabilities).contains("UnknownObject"),
-        "{capabilities:?}"
-    );
+async fn for_an_app_the_account_does_not_exist_and_a_stranger_is_denied() {
+    let rig = Rig::start().await;
+    for who in [
+        caller("org.quire.Mail", CallerRole::App),
+        caller("org.quire.Inference", CallerRole::PorterDaemon),
+    ] {
+        let app = rig.client_as(who).await;
+        let storage = proxy_of(&app, &storage_account().id).await;
+        let id = storage.id().await.expect_err("an app reads no account");
+        assert!(error_name(&id).contains("UnknownObject"), "{id:?}");
+        let capabilities = storage.capabilities().await.expect_err("no account");
+        assert!(
+            error_name(&capabilities).contains("UnknownObject"),
+            "{capabilities:?}"
+        );
+    }
 
     let stranger = rig.stranger().await;
     let storage = proxy_of(&stranger, &storage_account().id).await;

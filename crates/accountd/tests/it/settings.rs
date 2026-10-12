@@ -1,14 +1,16 @@
-//! `org.quire.SettingsModule1` on accountd: only the Settings role, the rows of PLAN §2.5, and
-//! what each `Set` does to the registry.
+//! `org.quire.SettingsModule1` on accountd: only the Settings role, the rows of PLAN §2.5 (the
+//! identities and Tailscale, the apps using each identity, the client ids), and what each `Set`
+//! does to the registry. The service switches, grant rows and sync switches are gone with the
+//! grants: inferd's and syncd's modules list those.
 
 use crate::common;
 
 use common::*;
-use ds_settings::live::LiveError;
+use ds_settings::live::{LiveClient, LiveError, Snapshot};
 use ds_settings::schema::KeyPath;
 use porter_core::audit::AuditEvent;
-use porter_core::{AccountState, CapabilityKind, SecretKey, SecretPurpose};
-use porter_dbus::{CallerRole, ManagerProxy};
+use porter_core::{AccountState, SecretKey, SecretPurpose};
+use porter_dbus::{CallerRole, IdentitiesProxy};
 use porter_secrets::{Secrets, SecretsError};
 
 #[tokio::test(flavor = "multi_thread")]
@@ -22,6 +24,10 @@ async fn only_the_settings_role_may_read_or_set_anything() {
         let client = settings_as(&rig, who).await;
         assert!(matches!(
             client.describe().await,
+            Err(LiveError::NotPermitted(_))
+        ));
+        assert!(matches!(
+            client.snapshot().await,
             Err(LiveError::NotPermitted(_))
         ));
         assert!(matches!(
@@ -52,124 +58,150 @@ async fn only_the_settings_role_may_read_or_set_anything() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn describe_lists_the_rows_of_every_account_and_checks_clean() {
-    let rig = Rig::start_with(Default::default(), allowing_host()).await;
-    let (_, grant) = grant_photos(&rig).await;
+async fn describe_lists_the_identities_and_their_actions_and_nothing_of_the_old_model() {
+    let rig = Rig::start().await;
     let schema = settings(&rig).await.describe().await.expect("schema");
+    assert!(schema.check().is_ok());
     let paths: Vec<&str> = schema.key.iter().map(|k| k.path.0.as_str()).collect();
     for want in [
-        "accounts.fake-storage.service.storage".to_owned(),
-        "accounts.fake-storage.remove".to_owned(),
-        "accounts.fake-mail.reauth".to_owned(),
-        "accounts.clients.microsoft".to_owned(),
-        format!("accounts.fake-storage.grant.{grant}"),
+        "accounts.fake-storage.remove",
+        "accounts.fake-mail.reauth",
+        "accounts.fake-mail.state",
+        "accounts.clients.microsoft",
     ] {
-        assert!(paths.contains(&want.as_str()), "{want} in {paths:?}");
+        assert!(paths.contains(&want), "{want} in {paths:?}");
+    }
+    // No service switch, grant or sync row, and the AI account is inferd's to list.
+    for gone in [".service.", ".grant.", ".sync.", ".sign_out", "fake-llm"] {
+        assert!(
+            !paths.iter().any(|p| p.contains(gone)),
+            "{gone} in {paths:?}"
+        );
     }
 }
 
-async fn found(manager: &ManagerProxy<'_>) -> usize {
-    manager
-        .query(&storage_need(), "photos", "interactive")
-        .await
-        .expect("query")
-        .len()
-}
-
+/// The apps that signed in with an identity are listed under it by name, read-only.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_service_toggle_changes_what_apps_can_find_and_back() {
-    let rig = Rig::start_with(Default::default(), allowing_host()).await;
+async fn the_apps_using_an_identity_are_listed_under_it_as_read_only_rows() {
+    let rig = Rig::start().await;
+    let photos = rig.client("org.quire.Photos").await;
+    IdentitiesProxy::new(&photos)
+        .await
+        .expect("proxy")
+        .register_use("fake-storage")
+        .await
+        .expect("register");
     let settings = settings(&rig).await;
-    let storage = key("accounts.fake-storage.service.storage");
+    let row = key("accounts.fake-storage.used_by.0");
     assert_eq!(
-        settings.get(&storage).await.expect("get"),
-        toml::Value::String("on".into())
-    );
-    let app_conn = rig.client("org.quire.Photos").await;
-    let manager = ManagerProxy::new(&app_conn).await.expect("proxy");
-    let (code, _) = choose(&app_conn).await;
-    assert_eq!(code, 0);
-    assert_eq!(found(&manager).await, 1);
-
-    settings
-        .set(&storage, &toml::Value::String("off".into()))
-        .await
-        .expect("off");
-    assert_eq!(found(&manager).await, 0);
-    assert_eq!(
-        settings.get(&storage).await.expect("get"),
-        toml::Value::String("off".into())
+        settings.get(&row).await.expect("row"),
+        toml::Value::String("org.quire.Photos".into())
     );
     assert!(
-        rig.service
-            .registry()
-            .toggles
+        settings
+            .describe()
+            .await
+            .expect("schema")
+            .key
             .iter()
-            .any(|t| t.kind == CapabilityKind::Storage)
+            .any(|k| k.path == row)
     );
-
-    settings
-        .set(&storage, &toml::Value::String("on".into()))
-        .await
-        .expect("on");
-    assert_eq!(found(&manager).await, 1);
-    assert!(rig.service.registry().toggles.is_empty());
     assert!(matches!(
-        settings.set(&storage, &toml::Value::Integer(3)).await,
-        Err(LiveError::BadValue(_))
+        settings.set(&row, &toml::Value::String("x".into())).await,
+        Err(LiveError::NotPermitted(_))
     ));
-    // Each switch is audited (sec-5); switching on what is on records nothing.
-    settings
-        .set(&storage, &toml::Value::String("on".into()))
-        .await
-        .expect("on again");
-    let toggled: Vec<_> = rig
-        .audit
-        .entries()
-        .into_iter()
-        .filter_map(|e| match e.event {
-            AuditEvent::ServiceToggled { kind, toggle } => {
-                Some((e.account.map(|a| a.to_string()), kind, toggle))
-            }
-            _ => None,
-        })
-        .collect();
-    let storage_account = Some("fake-storage".to_owned());
-    assert_eq!(
-        toggled,
-        [
-            (
-                storage_account.clone(),
-                CapabilityKind::Storage,
-                porter_core::Toggle::Off
-            ),
-            (
-                storage_account,
-                CapabilityKind::Storage,
-                porter_core::Toggle::On
-            ),
-        ]
-    );
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn revoking_a_grant_from_settings_removes_it() {
-    let rig = Rig::start_with(Default::default(), allowing_host()).await;
-    let (_, grant) = grant_photos(&rig).await;
-    let row = key(&format!("accounts.fake-storage.grant.{grant}"));
-    settings(&rig).await.invoke(&row).await.expect("revoked");
-    assert!(rig.service.registry().grants.is_empty());
-    assert!(
-        rig.audit
-            .entries()
-            .iter()
-            .any(|e| matches!(e.event, AuditEvent::Revoked { .. }))
-    );
-    // The row is gone; revoking again is an unknown key.
     assert!(matches!(
-        settings(&rig).await.invoke(&row).await,
+        settings.get(&key("accounts.fake-storage.used_by.1")).await,
         Err(LiveError::UnknownKey(_))
     ));
+}
+
+/// What a snapshot promises: every row has its value and every value has its row.
+fn agrees(snapshot: &Snapshot) -> bool {
+    snapshot
+        .schema
+        .key
+        .iter()
+        .all(|spec| snapshot.values.contains_key(&spec.path))
+        && snapshot
+            .values
+            .keys()
+            .all(|path| snapshot.schema.key.iter().any(|spec| spec.path == *path))
+}
+
+/// `Snapshot` answers the schema and the values from one read of the registry, so its rows and
+/// its values agree even when an account is removed while it is read, which `Describe` then a
+/// `Get` per key (`snapshot_by_parts`) can get wrong. Whatever the interleaving, every snapshot
+/// taken beside the removal must agree; before or after it, it lists the account whole or not at
+/// all.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_snapshot_agrees_with_itself_while_an_account_is_removed_beside_it() {
+    let rig = Rig::start().await;
+    let reader = settings(&rig).await;
+    let remover = settings(&rig).await;
+    let before = reader.snapshot().await.expect("snapshot");
+    assert!(agrees(&before));
+    assert!(
+        before
+            .schema
+            .key
+            .iter()
+            .any(|k| k.path.0 == "accounts.fake-storage.state")
+    );
+
+    let removal = async {
+        remover
+            .invoke(&key("accounts.fake-storage.remove"))
+            .await
+            .expect("removed");
+    };
+    let reads = async {
+        let mut taken = Vec::new();
+        for _ in 0..20 {
+            taken.push(reader.snapshot().await.expect("snapshot"));
+        }
+        taken
+    };
+    let ((), taken) = tokio::join!(removal, reads);
+    for snapshot in &taken {
+        assert!(agrees(snapshot));
+        // The account's rows are all there or all gone.
+        let rows = snapshot
+            .schema
+            .key
+            .iter()
+            .filter(|k| k.path.0.starts_with("accounts.fake-storage."))
+            .count();
+        assert!(rows == 0 || rows == before_rows(&before), "{rows}");
+    }
+    let after = reader.snapshot().await.expect("snapshot");
+    assert!(agrees(&after));
+    assert!(
+        !after
+            .schema
+            .key
+            .iter()
+            .any(|k| k.path.0.starts_with("accounts.fake-storage."))
+    );
+}
+
+fn before_rows(snapshot: &Snapshot) -> usize {
+    snapshot
+        .schema
+        .key
+        .iter()
+        .filter(|k| k.path.0.starts_with("accounts.fake-storage."))
+        .count()
+}
+
+/// Quiet, the one-read snapshot and the default one read by parts are the same thing.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_snapshot_is_what_describe_and_get_give_when_nothing_changes() {
+    let rig = Rig::start().await;
+    let client: LiveClient = settings(&rig).await;
+    let once = client.snapshot().await.expect("snapshot");
+    let parts = client.snapshot_by_parts().await.expect("by parts");
+    assert_eq!(once, parts);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -208,6 +240,18 @@ async fn read_outs_and_unknown_keys_are_not_settable() {
             "{path}"
         );
     }
+    // The rows of the old model are no keys at all.
+    for gone in [
+        "accounts.fake-storage.service.storage",
+        "accounts.fake-storage.grant.g1",
+        "accounts.fake-storage.sync.files",
+        "accounts.fake-storage.sign_out",
+    ] {
+        assert!(
+            matches!(settings.get(&key(gone)).await, Err(LiveError::UnknownKey(_))),
+            "{gone}"
+        );
+    }
     assert!(matches!(
         settings.get(&key("accounts.nobody.state")).await,
         Err(LiveError::UnknownKey(_))
@@ -219,18 +263,10 @@ async fn read_outs_and_unknown_keys_are_not_settable() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn removing_an_account_wipes_secrets_grants_toggles_and_audits() {
+async fn removing_an_account_wipes_secrets_and_audits() {
     // Acceptance 8: removal leaves nothing.
-    let rig = Rig::start_with(Default::default(), allowing_host()).await;
-    let _ = grant_photos(&rig).await;
+    let rig = Rig::start().await;
     let settings = settings(&rig).await;
-    settings
-        .set(
-            &key("accounts.fake-storage.service.calendar"),
-            &toml::Value::String("off".into()),
-        )
-        .await
-        .expect("off");
     let password = SecretKey {
         account: storage_account().id,
         purpose: SecretPurpose::Password,
@@ -249,12 +285,9 @@ async fn removing_an_account_wipes_secrets_grants_toggles_and_audits() {
             .iter()
             .all(|a| a.id != storage_account().id)
     );
-    assert!(registry.grants.is_empty());
-    assert!(registry.toggles.is_empty());
     assert_eq!(rig.secrets.get(&password).await, Err(SecretsError::Missing));
     let stored = rig.store.stored().expect("saved");
     assert!(stored.accounts.iter().all(|a| a.id != storage_account().id));
-    assert!(stored.grants.is_empty() && stored.toggles.is_empty());
     let removed: Vec<_> = rig
         .audit
         .entries()
@@ -436,69 +469,6 @@ async fn a_google_key_and_its_secret_set_in_settings_are_the_families_google_cli
         Some("GOCSPX-mine".to_owned())
     );
     let _ = std::fs::remove_dir_all(dir);
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn the_state_row_is_announced_when_an_account_needs_sign_in_and_when_it_recovers() {
-    use zbus::export::futures_core::Stream;
-    let rig = Rig::start().await;
-    let mail = mail_account();
-    let client = settings(&rig).await;
-    let mut changes = client.changes().await.expect("changes");
-    let other = rig.client("org.quire.Mail").await;
-    let manager = ManagerProxy::new(&other).await.expect("proxy");
-
-    for (state, slug) in [
-        (AccountState::NeedsReauth, "needs_reauth"),
-        (AccountState::Ok, "ok"),
-    ] {
-        assert!(rig.service.set_state(&mail.id, state).await);
-        // Any call ends in a publish, which tells whoever is to be told.
-        let _ = manager
-            .query(&storage_need(), "photos", "interactive")
-            .await;
-        let change = tokio::time::timeout(
-            porter_fake::GENEROUS,
-            std::future::poll_fn(|cx| std::pin::Pin::new(&mut changes).poll_next(cx)),
-        )
-        .await
-        .expect("a Changed in time")
-        .expect("open stream")
-        .expect("a change");
-        assert_eq!(change.key, key("accounts.fake-mail.state"));
-        assert_eq!(change.value, toml::Value::String(slug.into()));
-    }
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn an_account_syncd_cannot_mirror_has_no_sync_row_and_its_switch_is_refused() {
-    // `fake-storage` is a WebDAV account: syncd mirrors storage over Graph only.
-    let rig = Rig::start().await;
-    let client = settings(&rig).await;
-    let schema = client.describe().await.expect("schema");
-    assert!(schema.key.iter().all(|k| !k.path.0.contains(".sync.")));
-    let row = key("accounts.fake-storage.sync.files");
-    assert_eq!(
-        client.get(&row).await.expect("get"),
-        toml::Value::String("off".into())
-    );
-    assert!(
-        client
-            .set(&row, &toml::Value::String("on".into()))
-            .await
-            .is_err()
-    );
-    assert!(matches!(
-        client.set(&row, &toml::Value::Integer(1)).await,
-        Err(LiveError::BadValue(_))
-    ));
-    assert!(rig.service.registry().grants.is_empty());
-    // The sync rows never belong to anyone but Settings.
-    let app = settings_as(&rig, caller("org.example.App", CallerRole::App)).await;
-    assert!(matches!(
-        app.set(&row, &toml::Value::String("on".into())).await,
-        Err(LiveError::NotPermitted(_))
-    ));
 }
 
 /// The next word said on `row` (the action's own `Set` answers with a button's `false`).
