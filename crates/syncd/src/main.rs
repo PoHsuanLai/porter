@@ -2,10 +2,11 @@
 //!
 //! The binary reads its arguments, asks `Config::from_env` for the environment's answers, then
 //! builds and runs the daemon, all in the library (`syncd::daemon`): it loads the caller tables
-//! (the files accountd reads), serves `org.quire.Sync1` over the hub of running datasets, and
-//! listens for accountd's `AccountRemoved` to wipe an account's journals and mirrors. The PIM
+//! (the files accountd reads), opens its own accounts (it signs in for itself, "Continue as", and
+//! keeps its own tokens under the keyring namespace `porter.syncd`), serves its Settings rows and
+//! `org.quire.Sync1` over the hub of running datasets. The PIM
 //! supervisor (W6e) keeps a calendar or address book mirror running for every Calendar or
-//! Contacts grant syncd holds; with no grant `Datasets` answers an empty list and every name the
+//! Contacts grant syncd holds (its own grants, made by the sync switches); with no grant `Datasets` answers an empty list and every name the
 //! refusal `NoFittingAccount`. The storage supervisor keeps an app folder mirror running for
 //! every Storage grant (class Files) on a Microsoft account and, with `SYNCD_PHOTOS=on`, the
 //! Photos datasets for every one of class Photos. A test build (`test-proc-root`) reads
