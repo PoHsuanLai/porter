@@ -7,21 +7,22 @@
 //! its [`Config`] with [`Config::new`] and the `with_*` methods, naming every path and the bus
 //! itself.
 //!
-//! [`add_account`] is the logic of `accountd add` (the command's arguments and its printing stay
-//! in the binary).
+//! accountd holds identities, Spaces and Tailscale: its provider files are the internet ones, and
+//! its keyring namespace is [`NAMESPACE`]. AI keys, agents and sync belong to inferd and syncd.
 
-use crate::add::{AddArgs, AddError, AddReport, StdTerminal, TerminalSheets};
 use crate::clock::SystemClock;
-use crate::keysel::{AnyKeys, Chosen, KEYS_VAR, KeysRefusal, Selection, TestKeys, select};
 use crate::paths::{PROC_GATE, Paths};
-use crate::{
-    AppNames, BusSheets, FileAudit, FileStore, Options, ProviderNames, RelayRoots, SecretsDesk,
-    load_callers, serve_with,
-};
+use crate::{FileAudit, Options, SheetsDesk, load_callers, serve_with};
+use porter_core::sheet::ProviderGroup;
 use porter_core::xdg::PathError;
 use porter_daemon::ProcRoot;
 use porter_dbus::{BusTarget, CallerFileError, ProcCallers};
-use porter_service::{AccountService, Registry, RegistryStore};
+use porter_families::set::{FamilyIo, ProviderNames, load_specs, served};
+use porter_secrets::Namespace;
+use porter_secrets::keysel::{Chosen, KeysRefusal, Selection, select};
+use porter_service::{AccountService, Registry};
+use porter_sheets::{AppNames, BusSheets};
+use porter_store::FileStore;
 use std::future::Future;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -31,6 +32,17 @@ use zbus::Connection;
 /// The variable that names a directory to read callers from in place of `/proc` (a test build
 /// only).
 pub const PROC_ROOT_VAR: &str = "ACCOUNTD_PROC_ROOT";
+
+/// The variable that names the key file in a `test-keys` build (`file:<absolute path>`).
+pub const KEYS_VAR: &str = "ACCOUNTD_KEYS";
+
+/// accountd's keyring namespace: the `service` its items are filed under.
+pub const NAMESPACE: &str = "porter.accountd";
+
+/// accountd's [`Namespace`].
+fn namespace() -> Namespace {
+    Namespace::parse(NAMESPACE).expect("a literal namespace")
+}
 
 /// Everything accountd needs to start, as typed values.
 #[derive(Debug, Clone)]
@@ -42,22 +54,17 @@ pub struct Config {
     pub keys: Selection,
     /// A directory to read callers from in place of `/proc`; `Some` only in a test build.
     pub proc_root: Option<PathBuf>,
-    /// The person's runtime directory (an absolute path): where a process credential kept in a
-    /// file is written. None refuses that way as unavailable.
-    pub runtime_dir: Option<PathBuf>,
     /// The bus to serve on.
     pub bus: BusTarget,
 }
 
 impl Config {
-    /// A configuration over `paths` on `bus`: the Secret Service, callers read from `/proc`, no
-    /// runtime directory.
+    /// A configuration over `paths` on `bus`: the Secret Service, callers read from `/proc`.
     pub fn new(paths: Paths, bus: BusTarget) -> Self {
         Self {
             paths,
             keys: Selection::SecretService,
             proc_root: None,
-            runtime_dir: None,
             bus,
         }
     }
@@ -76,43 +83,31 @@ impl Config {
         self
     }
 
-    /// With this runtime directory.
-    #[must_use]
-    pub fn with_runtime_dir(mut self, dir: PathBuf) -> Self {
-        self.runtime_dir = Some(dir);
-        self
-    }
-
     /// The configuration the process's environment gives, with `provider_dirs` (the command
     /// line's `--providers`) laid over the system's and the person's provider directories. The
     /// one place accountd reads the environment: `HOME` and the XDG directories,
-    /// `ACCOUNTD_TAILSCALE_SOCKET`, `ACCOUNTD_KEYS`, `ACCOUNTD_PROC_ROOT` and `XDG_RUNTIME_DIR`.
+    /// `ACCOUNTD_TAILSCALE_SOCKET`, `ACCOUNTD_KEYS` and `ACCOUNTD_PROC_ROOT`.
     ///
     /// # Errors
     /// There is no home to keep state in, or the secret store the environment asks for is refused.
     pub fn from_env(provider_dirs: &[PathBuf]) -> Result<Self, StartError> {
         let paths = Paths::resolve(|name| std::env::var(name).ok(), provider_dirs)?;
         let keys_var = std::env::var(KEYS_VAR).ok();
-        let keys = select(keys_var.as_deref(), TestKeys::THIS_BUILD)?;
+        let keys = select(keys_var.as_deref())?;
         let proc = ProcRoot::choose(PROC_GATE, PROC_ROOT_VAR, |name| std::env::var_os(name))
             .into_fixture();
-        // The XDG rule: a relative path is invalid and ignored.
-        let runtime_dir = std::env::var("XDG_RUNTIME_DIR")
-            .ok()
-            .map(PathBuf::from)
-            .filter(|dir| dir.is_absolute());
         Ok(Self {
             paths,
             keys,
             proc_root: proc,
-            runtime_dir,
             bus: BusTarget::Session,
         })
     }
 }
 
-/// Why accountd did not start, or why `accountd add` could not begin.
+/// Why accountd did not start.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum StartError {
     /// There is no home to keep state in.
     #[error("{0}")]
@@ -164,16 +159,15 @@ impl Daemon {
             paths,
             keys,
             proc_root,
-            runtime_dir,
             bus,
         } = config;
         // Which secret store, before anything reads or files a credential: refused here, not later.
-        let chosen = Chosen::open(keys)?;
-        eprintln!("accountd: {}", chosen.said);
+        let chosen = Chosen::open(keys, namespace(), "accountd")?;
+        eprintln!("{}", chosen.said);
         let secrets = chosen.keys;
         let table = load_callers(&paths.callers_system, &paths.callers_user)?;
 
-        let loaded = crate::providers::load_specs(&paths.provider_layers());
+        let loaded = load_specs(&paths.provider_layers());
         for (file, why) in &loaded.skipped {
             eprintln!("accountd: skipped provider file {}: {why}", file.display());
         }
@@ -192,22 +186,28 @@ impl Daemon {
                 row.issuer
             );
         }
-        let app_names =
-            AppNames::new(table.clone(), paths.applications.clone()).with_agents(&loaded.specs);
+        let app_names = AppNames::new(table.clone(), paths.applications.clone());
         let provider_names = ProviderNames::from_specs(&loaded.specs);
-        let io = crate::providers::FamilyIo::system(
+        let io = FamilyIo::system(
             porter_provider::ProviderSet::layered(loaded.specs.clone(), Vec::new()),
             paths.client_files(),
         )
         .with_tailscale(porter_tailscale::LocalApi::new(&paths.tailscale_socket));
-        let (families, unserved) = crate::providers::served(loaded.specs, &io);
-        let local = crate::providers::local_runtimes(&unserved);
-        for spec in unserved.iter().filter(|s| !local.contains(s)) {
+        // accountd serves the internet providers (identities and Tailscale); the AI and agent
+        // ones are inferd's.
+        let ours: Vec<_> = loaded
+            .specs
+            .into_iter()
+            .filter(|spec| spec.group() == ProviderGroup::Internet)
+            .collect();
+        let (families, unserved) = served(ours, &io);
+        for spec in &unserved {
             eprintln!("accountd: no family serves provider `{}` yet", spec.id);
         }
 
         let store = FileStore::new(paths.registry_dir.clone());
-        let registry = match store.load().await {
+        // Only the identities and Tailscale stay; the old file is kept once beside itself.
+        let registry = match crate::presplit::load_identities(&store).await {
             Ok(stored) => Registry::from_persisted(stored),
             Err(why) => return Err(StartError::RegistryRefused(store.refusal(&why))),
         };
@@ -227,18 +227,12 @@ impl Daemon {
             BusSheets::new(connection.clone(), Arc::clone(&callers)).with_names(app_names.clone());
         let service = Arc::new(
             AccountService::new(families, registry, secrets.clone(), sheets, SystemClock)
-                .with_local_runtimes(local)
                 .with_store(store)
                 .with_audit(FileAudit::new(paths.audit.clone())),
         );
-        let desk = SecretsDesk::new(
-            secrets.clone(),
-            FileAudit::new(paths.audit.clone()),
-            SystemClock,
-        );
-        // The picker of `Identities1.Offer` is the sheet host `Choose` draws on, and the password
-        // of `TakePassword` is read from the same store.
-        let identity_desk = crate::SheetsDesk::new(
+        // The picker of `Identities1.Offer` is the sheet host, and the password of
+        // `TakePassword` is read from the same store.
+        let identity_desk = SheetsDesk::new(
             BusSheets::new(connection.clone(), Arc::clone(&callers)).with_names(app_names.clone()),
             secrets,
             FileAudit::new(paths.audit.clone()),
@@ -246,15 +240,9 @@ impl Daemon {
         );
         let options = Options {
             clients: Some(paths.clients_user.clone()),
-            relay_roots: RelayRoots::Platform,
-            keys: Some(Arc::new(desk)),
             app_names,
             provider_names,
-            login: crate::LoginTiming {
-                audit: Some(Arc::new(FileAudit::new(paths.audit.clone()))),
-                ..crate::LoginTiming::default()
-            },
-            runtime_dir,
+            clock: None,
             // `spaces.json` beside `registry.json`.
             spaces: crate::SpacesStore::File(paths.registry_dir.clone()),
             // Tailscale's own socket, `/var/run/tailscale/tailscaled.sock` unless `paths` names
@@ -284,79 +272,4 @@ impl Daemon {
         // A connection already closed by the bus has nothing left to release.
         let _ = self.connection.close().await;
     }
-}
-
-/// Why `accountd add` did not finish.
-#[derive(Debug, thiserror::Error)]
-pub enum AddCommandError {
-    /// It could not begin: the paths, the secret store or the registry.
-    #[error(transparent)]
-    Start(#[from] StartError),
-    /// The command itself: its arguments, the daemon running, the sign-in.
-    #[error(transparent)]
-    Add(#[from] AddError),
-}
-
-impl AddCommandError {
-    /// The exit status for this failure.
-    pub fn exit_code(&self) -> ExitCode {
-        match self {
-            Self::Start(why) => why.exit_code(),
-            Self::Add(_) => ExitCode::FAILURE,
-        }
-    }
-}
-
-/// `accountd add`: the provider files, the registry and the secret store the daemon uses, a
-/// terminal for a sheet, and the bus name as the lock. `provider`, `allow` and `classes` are the
-/// command's arguments as typed.
-///
-/// # Errors
-/// See [`AddCommandError`].
-pub async fn add_account(
-    config: &Config,
-    provider: &str,
-    allow: &[String],
-    classes: &[String],
-) -> Result<AddReport, AddCommandError> {
-    let secrets: AnyKeys = {
-        // Which secret store, before anything reads or files a credential: refused here.
-        let chosen = Chosen::open(config.keys.clone()).map_err(StartError::from)?;
-        eprintln!("accountd: {}", chosen.said);
-        chosen.keys
-    };
-    let paths = &config.paths;
-    let args = AddArgs::parse(provider, allow, classes)?;
-    let loaded = crate::providers::load_specs(&paths.provider_layers());
-    for (file, why) in &loaded.skipped {
-        eprintln!("accountd: skipped provider file {}: {why}", file.display());
-    }
-    let io = crate::providers::FamilyIo::system(
-        porter_provider::ProviderSet::layered(loaded.specs.clone(), Vec::new()),
-        paths.client_files(),
-    )
-    .with_tailscale(porter_tailscale::LocalApi::new(&paths.tailscale_socket));
-    let (families, _unserved) = crate::providers::served(loaded.specs, &io);
-    let served: Vec<_> = families
-        .iter()
-        .map(|family| porter_provider::Provider::spec(family).id.clone())
-        .collect();
-
-    // The lock. With no session bus no daemon can be reached either, so go on and say so.
-    let session = config.bus.connect().await.ok();
-    match &session {
-        Some(connection) => crate::add::take_the_name(connection).await?,
-        None => eprintln!("accountd: no session bus; cannot tell whether the daemon is running"),
-    }
-
-    let store = FileStore::new(paths.registry_dir.clone());
-    let registry = match store.load().await {
-        Ok(stored) => Registry::from_persisted(stored),
-        Err(why) => return Err(StartError::RegistryRefused(store.refusal(&why)).into()),
-    };
-    let sheets = TerminalSheets::new(StdTerminal);
-    let service = AccountService::new(families, registry, secrets, sheets.clone(), SystemClock)
-        .with_store(store)
-        .with_audit(FileAudit::new(paths.audit.clone()));
-    Ok(crate::add::run(&service, &sheets, &served, &args).await?)
 }
