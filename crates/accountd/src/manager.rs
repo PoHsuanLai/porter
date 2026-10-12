@@ -9,7 +9,6 @@ use porter_core::AccountsRequest;
 use porter_core::wire::Refusal;
 use porter_dbus::{CallerRole, Details, SheetKind, account_path};
 use std::sync::Arc;
-use zbus::Connection;
 use zbus::message::Header;
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::ObjectPath;
@@ -30,7 +29,6 @@ impl<H: Host, C: Callers> Manager<H, C> {
     async fn add_account(
         &self,
         #[zbus(header)] header: Header<'_>,
-        #[zbus(connection)] connection: &Connection,
         provider_hint: String,
         parent_window: String,
         options: Details,
@@ -40,13 +38,7 @@ impl<H: Host, C: Callers> Manager<H, C> {
             window: window(&parent_window),
         };
         self.0
-            .sheet(
-                &header,
-                connection,
-                SheetKind::AddAccount,
-                &options,
-                request,
-            )
+            .sheet(&header, SheetKind::AddAccount, &options, request)
             .await
     }
 

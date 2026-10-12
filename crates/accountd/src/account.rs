@@ -18,7 +18,7 @@ use std::sync::Arc;
 use zbus::fdo;
 use zbus::message::Header;
 use zbus::zvariant::OwnedObjectPath;
-use zbus::{Connection, ObjectServer};
+use zbus::ObjectServer;
 
 /// One account's object.
 #[derive(Debug)]
@@ -142,7 +142,6 @@ impl<H: Host, C: Callers> AccountObject<H, C> {
     async fn reauthenticate(
         &self,
         #[zbus(header)] header: Header<'_>,
-        #[zbus(connection)] connection: &Connection,
         parent_window: String,
         options: Details,
     ) -> Result<OwnedObjectPath, RefusedError> {
@@ -158,13 +157,7 @@ impl<H: Host, C: Callers> AccountObject<H, C> {
             window: window(&parent_window),
         };
         self.0
-            .sheet(
-                &header,
-                connection,
-                SheetKind::Reauthenticate,
-                &options,
-                request,
-            )
+            .sheet(&header, SheetKind::Reauthenticate, &options, request)
             .await
     }
 }

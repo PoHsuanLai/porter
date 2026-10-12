@@ -17,7 +17,6 @@ use porter_service::{
     AccountService, AuditSink, Clock, Registry, RegistryStore, RevokeReport, Sheets,
 };
 use porter_sheets::{AppNames, RequestObjects};
-use serde::de::DeserializeOwned;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
@@ -345,12 +344,6 @@ impl<H: Host, C: Callers> Core<H, C> {
         held(&self.roster).remove(name);
         self.picks.clear(name);
     }
-}
-
-/// A closed set's slug argument, parsed at the boundary.
-pub(crate) fn slug<T: DeserializeOwned>(text: &str) -> Result<T, RefusedError> {
-    serde_json::from_value(serde_json::Value::String(text.to_owned()))
-        .map_err(|e| RefusedError::invalid(format!("`{text}`: {e}")))
 }
 
 /// The `parent_window` argument: empty is no parent.
