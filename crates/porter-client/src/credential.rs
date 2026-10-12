@@ -1,17 +1,17 @@
 //! A key handed to a process the launcher spawns (agent-session ask P2, lane p2-handoff): what
 //! `Launcher::issue_credential` returns, how the launcher sets a child up with it, and the
-//! signal that tells the launcher accountd ended it.
+//! signal that tells the launcher inferd ended it.
 //!
-//! **The launcher's duties** (accountd cannot do these for it):
+//! **The launcher's duties** (inferd cannot do these for it):
 //!
 //! - Give the child the key only as [`ChildKey`] says, after `env_clear`: never in the
 //!   environment of the launcher itself, a log line, a command line or a file of its own.
-//! - Watch [`Revocations`]. When accountd ends a credential (the grant was revoked, the account
+//! - Watch [`Revocations`]. When inferd ends a credential (the permit was revoked, the account
 //!   removed) it unlinks a tmpfs file, but it cannot reach the child's copy of a memfd or the
 //!   text it already read, so it tells the launcher in a signal and the launcher must end the
 //!   process: ask it to quit, and kill it after a grace period the launcher chooses.
 //! - Call `Launcher::revoke_credential` when the process exits or is killed, so the credential
-//!   does not outlive it. If the launcher's connection leaves the bus accountd ends all of its
+//!   does not outlive it. If the launcher's connection leaves the bus inferd ends all of its
 //!   credentials, but then nobody is left to kill the children.
 //! - Hand a credential to one child only, and only to the program it was issued for.
 //!
@@ -43,7 +43,7 @@ pub enum CredentialHandle {
     /// inherited descriptor. Read it with `pread` or by opening `/proc/self/fd/<n>`: a plain
     /// `read` moves the position every holder of the descriptor shares.
     Memfd(OwnedFd),
-    /// A 0600 file in a 0700 directory under `$XDG_RUNTIME_DIR`, which accountd unlinks when the
+    /// A 0600 file in a 0700 directory under `$XDG_RUNTIME_DIR`, which inferd unlinks when the
     /// credential ends.
     TmpfsFile(PathBuf),
 }
@@ -225,7 +225,7 @@ fn read_all_at(file: &std::fs::File) -> io::Result<Zeroizing<Vec<u8>>> {
     Err(io::ErrorKind::InvalidData.into())
 }
 
-/// accountd ended a credential: the launcher must end the process that holds the key.
+/// inferd ended a credential: the launcher must end the process that holds the key.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Revoked {
     /// The credential.
@@ -234,7 +234,7 @@ pub struct Revoked {
     pub reason: CredentialEnd,
 }
 
-/// The stream of [`Revoked`], sent to this launcher alone. An item is an error when accountd sent
+/// The stream of [`Revoked`], sent to this launcher alone. An item is an error when inferd sent
 /// one that is not well formed.
 #[derive(Debug)]
 pub struct Revocations {

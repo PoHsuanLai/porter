@@ -1,24 +1,26 @@
 //! The D-Bus carrier: porter-dbus proxies on the session bus; the caller's identity is what
 //! the bus says about the connection. `Inference1.Open` is built (a socket fd, framed with
-//! `porter_core::wire`), and so are accountd's immediate calls; the sheet calls wait for accountd.
+//! `porter_core::wire`), and so are the two sheet calls accountd still serves (adding an identity
+//! and signing it in again). No credential crosses the bus any more, so nothing else of accounts
+//! is carried: finding, choosing, tokens and relays are the library's, for an app that hosts its
+//! own `AccountService` ([`super::InProcess`]), and every other call answers `Unsupported`.
 
 #[cfg(feature = "infer")]
 use super::NewComputer;
 use super::Transport;
 #[cfg(feature = "infer")]
 use super::dbus_session::DbusSession;
-use crate::authenticated::{AuthenticatedStream, Relayed};
 use crate::error::TransportError;
 use porter_core::lending::{ComputerCandidate, GuestAnswer, GuestRow};
-use porter_core::{AccountsReply, AccountsRequest, EndpointUrl, GrantId, NodeId};
+use porter_core::{AccountsReply, AccountsRequest, NodeId};
 #[cfg(feature = "infer")]
 use porter_core::{DataClass, Need, Tier};
-use porter_dbus::{BusConnection, BusError, BusFailure, TokensProxy, classify, refusal_of};
+use porter_dbus::{BusConnection, BusError, BusFailure, classify};
 #[cfg(feature = "infer")]
 use porter_infer::{ComputerName, OpenOptions, PlaceId, PlaceRow, Readiness};
 use serde::Serialize;
 
-/// accountd and inferd on the session bus.
+/// inferd on the session bus, and accountd for the sheets it still shows.
 #[derive(Debug)]
 pub struct DbusTransport {
     connection: BusConnection,
@@ -136,43 +138,6 @@ impl Transport for DbusTransport {
 
     async fn call(&self, request: AccountsRequest) -> Result<AccountsReply, TransportError> {
         super::dbus_accounts::call(&self.connection, request).await
-    }
-
-    async fn open_authenticated(
-        &self,
-        grant: &GrantId,
-        endpoint: &EndpointUrl,
-    ) -> Result<Relayed, TransportError> {
-        let proxy = TokensProxy::new(&self.connection)
-            .await
-            .map_err(|e| bus_error(&e))?;
-        match proxy
-            .open_authenticated(grant.as_str(), endpoint.as_str())
-            .await
-        {
-            Ok(fd) => Ok(Relayed::Stream(AuthenticatedStream::Fd(fd.into()))),
-            Err(error) => match refusal_of(&error) {
-                Some(refusal) => Ok(Relayed::Refused(refusal)),
-                None => Err(bus_error(&error)),
-            },
-        }
-    }
-
-    async fn open_linked(
-        &self,
-        grant: &GrantId,
-        origin: &EndpointUrl,
-    ) -> Result<Relayed, TransportError> {
-        let proxy = TokensProxy::new(&self.connection)
-            .await
-            .map_err(|e| bus_error(&e))?;
-        match proxy.open_linked(grant.as_str(), origin.as_str()).await {
-            Ok(fd) => Ok(Relayed::Stream(AuthenticatedStream::Fd(fd.into()))),
-            Err(error) => match refusal_of(&error) {
-                Some(refusal) => Ok(Relayed::Refused(refusal)),
-                None => Err(bus_error(&error)),
-            },
-        }
     }
 
     #[cfg(feature = "infer")]

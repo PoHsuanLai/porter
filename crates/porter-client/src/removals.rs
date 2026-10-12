@@ -1,25 +1,20 @@
-//! `AccountRemoved`: hearing from accountd that an account is gone, so an app that keeps
-//! something of it (a daemon with the account's mirrors and journals) can forget it.
+//! Hearing from accountd that an identity is gone, so an app that keeps something of it (a copy of
+//! its sign-in, mirrors and journals) can forget it.
 //!
-//! The signal is accountd's, unicast to the apps that hold a grant for the account; the proxy
-//! matches the sender against the owner of `org.quire.Accounts1`, so a signal another connection
-//! sends is not heard. accountd tells only the connections that have called it, so the stream
-//! calls it once at the start and again whenever accountd gets a new owner on the bus
-//! (`Grants.List`, the caller's own grants): without that a restarted accountd would not know
-//! there is an app to tell.
+//! This reads `Identities1`'s `IdentityRemoved` signal ([`crate::Identities::watch_removals`]) and
+//! gives each removal as the account's object-path segment, the spelling that names an app's
+//! directories. The signal is accountd's, and only a connection accountd knows is told.
 
 use crate::error::TransportError;
-use crate::transport::bus_error;
-use porter_dbus::{
-    ACCOUNTS_BUS, ACCOUNTS_PATH, AccountRemovedStream, BusConnection, GrantsProxy, ManagerProxy,
-};
+use crate::identities::{Identities, IdentitiesError, IdentityRemovals};
+use porter_core::{AccountId, object_segment};
+use porter_dbus::{ACCOUNTS_PATH, BusConnection};
 use zbus::export::futures_core::Stream;
-use zbus::fdo::DBusProxy;
 
-/// An account accountd has removed, as the object path it was served at.
+/// An identity accountd has removed, as the object-path segment its account was served at.
 ///
-/// The path's last segment is a lossy spelling of the account id (it is a legal object-path
-/// segment), good as a directory name and not to be turned back into an id.
+/// The segment is a lossy spelling of the id (it is a legal object-path segment), good as a
+/// directory name and not to be turned back into an id.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemovedAccount {
     segment: String,
@@ -42,71 +37,48 @@ impl RemovedAccount {
     }
 }
 
-/// The accounts accountd removes, from now on. Dropping it stops the watch for a new accountd.
+/// The identities accountd removes, from now on.
 #[derive(Debug)]
 pub struct Removals {
-    removals: AccountRemovedStream,
-    introducer: tokio::task::JoinHandle<()>,
+    removals: IdentityRemovals,
+}
+
+fn transport(error: IdentitiesError) -> TransportError {
+    match error {
+        IdentitiesError::Unreachable => TransportError::Unreachable,
+        IdentitiesError::Denied(why) => TransportError::Denied(why),
+        other => TransportError::Malformed(other.to_string()),
+    }
 }
 
 impl Removals {
-    /// Subscribes, then introduces this connection to accountd, now and at each new owner.
+    /// Subscribes to `Identities1`'s removals over `connection`.
     pub(crate) async fn watch(connection: &BusConnection) -> Result<Self, TransportError> {
-        let removals = ManagerProxy::new(connection)
+        let removals = Identities::connect(connection)
             .await
-            .map_err(|e| bus_error(&e))?
-            .receive_account_removed()
+            .map_err(transport)?
+            .watch_removals()
             .await
-            .map_err(|e| bus_error(&e))?;
-        let mut owners = DBusProxy::new(connection)
-            .await
-            .map_err(|e| bus_error(&e))?
-            .receive_name_owner_changed_with_args(&[(0, ACCOUNTS_BUS)])
-            .await
-            .map_err(|e| bus_error(&e))?;
-        let announce = connection.clone();
-        let introducer = tokio::spawn(async move {
-            introduce(&announce).await;
-            while let Some(signal) =
-                std::future::poll_fn(|cx| std::pin::Pin::new(&mut owners).poll_next(cx)).await
-            {
-                if signal.args().is_ok_and(|args| args.new_owner().is_some()) {
-                    introduce(&announce).await;
-                }
-            }
-        });
-        Ok(Self {
-            removals,
-            introducer,
-        })
+            .map_err(transport)?;
+        Ok(Self { removals })
     }
 
-    /// The next removed account, or `None` when the connection has ended. A signal that is not
-    /// well formed, or names no account path, is skipped.
+    /// The next removed identity, or `None` when the connection has ended. A signal that is not
+    /// well formed is skipped.
     pub async fn next(&mut self) -> Option<RemovedAccount> {
         loop {
             let signal =
                 std::future::poll_fn(|cx| std::pin::Pin::new(&mut self.removals).poll_next(cx))
                     .await?;
-            let Ok(args) = signal.args() else { continue };
-            if let Some(account) = RemovedAccount::of_object_path(args.account().as_str()) {
-                return Some(account);
-            }
+            let Ok(id) = signal else { continue };
+            // An identity is the id of the account it is.
+            let Ok(account) = AccountId::parse(id.as_str()) else {
+                continue;
+            };
+            return Some(RemovedAccount {
+                segment: object_segment(&account),
+            });
         }
-    }
-}
-
-impl Drop for Removals {
-    fn drop(&mut self) {
-        self.introducer.abort();
-    }
-}
-
-/// Makes accountd know this connection: the call itself is the introduction, and a failure (no
-/// accountd yet) is fine, the next owner change tries again.
-async fn introduce(connection: &BusConnection) {
-    if let Ok(grants) = GrantsProxy::new(connection).await {
-        let _ = grants.list().await;
     }
 }
 

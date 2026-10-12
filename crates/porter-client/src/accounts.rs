@@ -44,10 +44,9 @@ impl Accounts<AnyTransport> {
 
 #[cfg(feature = "dbus")]
 impl Accounts<crate::transport::DbusTransport> {
-    /// The accounts accountd removes, from now on: subscribes, then introduces this connection to
-    /// accountd (and again whenever accountd gets a new owner on the bus), because accountd tells
-    /// only the connections that have called it. An app that keeps something of an account (a
-    /// daemon with its mirrors) forgets it on each [`crate::RemovedAccount`].
+    /// The identities accountd removes, from now on (`Identities::watch_removals`, as accounts
+    /// by their object-path segment). An app that keeps something of an identity (a copy of its
+    /// sign-in, mirrors) forgets it on each [`crate::RemovedAccount`].
     pub async fn watch_removals(&self) -> Result<crate::Removals, ClientError> {
         Ok(crate::Removals::watch(self.transport.connection()).await?)
     }

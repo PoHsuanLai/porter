@@ -1,14 +1,18 @@
-//! The launcher's side of an agent's login (lane agent-login; design/31 R7-R9, C5, C6). The agent
-//! launcher (docket-acp) registers the programs it runs, hears when accountd asks it to sign an
-//! agent in or out, has the agent do it, and reports only a coarse [`LoginOutcome`]. Nothing of
-//! the login itself (a token, a URL, a code) crosses to porter: there is no way to send one.
+//! The launcher's side of an agent's login (design/31 R7-R9, C5, C6). The agent launcher
+//! (docket-acp) registers the programs it runs, hears when inferd asks it to sign an agent in or
+//! out, has the agent do it, and reports only a coarse [`LoginOutcome`]. Nothing of the login
+//! itself (a token, a URL, a code) crosses to porter: there is no way to send one.
+//!
+//! The launcher talks to inferd (`org.quire.Inference1`), which holds the AI keys: whoever uses a
+//! credential holds it. An agent's yes to use one of the person's keys is a permit
+//! ([`KeyPermitId`]), asked for with [`Launcher::request_agent_key`].
 //!
 //! For an agent that cannot be pointed at inferd the launcher can also be handed an API key for
-//! the process it spawns ([`Launcher::issue_credential`], lane p2-handoff; the duties and the
-//! residual risk are in [`crate::credential`]).
+//! the process it spawns ([`Launcher::issue_credential`]; the duties and the residual risk are in
+//! [`crate::credential`]).
 //!
-//! The caller must be known to accountd as the agent launcher (`CallerRole::AgentLauncher`, a row
-//! of `callers.toml` a machine writes); any other caller is [`LauncherError::Denied`].
+//! The caller must be known to inferd as the agent launcher (`CallerRole::AgentLauncher`, a row
+//! of inferd's caller table a machine writes); any other caller is [`LauncherError::Denied`].
 //!
 //! ```ignore
 //! let launcher = Launcher::connect(&connection).await?;
@@ -24,18 +28,20 @@
 //! }
 //! ```
 
+use crate::abandon::Abandon;
 use crate::credential::{CredentialHandle, ProcessCredential, Revocations};
 use porter_core::audit::Handoff;
 use porter_core::capability::AgentProgram;
 use porter_core::wire::Refusal;
 use porter_core::{
-    AccountId, AccountsReply, Candidate, CoreError, DataClass, GrantId, LauncherSession,
-    LoginOutcome, LoginRequestId, ProcessCredentialId,
+    AccountId, AccountLabel, AccountsReply, Candidate, Capability, CoreError, DataClass,
+    KeyPermitId, LauncherSession, LoginOutcome, LoginRequestId, ProcessCredentialId, ProviderId,
+    Restriction, Subject,
 };
 use porter_dbus::{
     AgentLoginRequested, AgentLoginRequestedStream, AgentLogoutRequested,
-    AgentLogoutRequestedStream, BusConnection, BusError, BusFailure, BusStream, Closer,
-    LauncherFault, PeerProxy, Sheet, SheetError, SheetKind, TokensProxy, classify, is_invalid_args,
+    AgentLogoutRequestedStream, BusConnection, BusError, BusFailure, BusStream, LauncherFault,
+    LauncherProxy, ServiceRoot, Sheet, SheetError, SheetKind, classify, is_invalid_args,
     launcher_fault_of, refusal_of, reply_of, zvariant::Value,
 };
 use std::os::fd::AsFd;
@@ -56,40 +62,40 @@ pub enum LauncherError {
     /// `issue_credential` for a program this connection has not registered.
     #[error("this connection has not registered that program")]
     NotRegistered,
-    /// `issue_credential` under a `Once` grant: it is spent by its first use, so it cannot back a
-    /// key a process holds for its life. Ask the person for an always grant.
-    #[error("a once grant cannot back a process credential")]
+    /// `issue_credential` under a `Once` permit: it is spent by its first use, so it cannot back a
+    /// key a process holds for its life. Ask the person for an always permit.
+    #[error("a once permit cannot back a process credential")]
     OnceGrant,
     /// `issue_credential` for an account that holds no API key (an OAuth account, an agent that
     /// signs itself in, a local runtime).
     #[error("the account holds no API key to hand over")]
     NotAKeyAccount,
     /// `revoke_credential` for a credential this connection was not issued: never made, ended
-    /// already (accountd may have ended it: see [`crate::Revocations`]), or another's.
+    /// already (inferd may have ended it: see [`crate::Revocations`]), or another's.
     #[error("no such credential for this connection")]
     UnknownCredential,
     /// `begin_session` for a session id another live connection holds.
     #[error("another launcher holds that session")]
     SessionTaken,
-    /// `end_session`, `request_agent_grant` or `issue_credential` for a session that is not open
+    /// `end_session`, `request_agent_key` or `issue_credential` for a session that is not open
     /// for this connection: never begun, ended already, or another connection's.
     #[error("no such open session for this connection")]
     UnknownSession,
-    /// accountd refused the grant or the account for a reason an app also meets: `UnknownGrant`,
-    /// `AudienceNotGranted` (the grant is not for `org.quire.Agent.<program>` or not the Llm
-    /// kind), `NeedsReauth`, `Denied` (the person turned the account off), `Unavailable`.
+    /// inferd refused the permit or the account for a reason an app also meets: `UnknownGrant`,
+    /// `AudienceNotGranted` (the permit is not for `org.quire.Agent.<program>`), `NeedsReauth`,
+    /// `Denied` (the person turned the account off), `Unavailable`.
     #[error("refused: {0:?}")]
     Refused(Refusal),
-    /// accountd does not know this caller as the agent launcher.
-    #[error("refused by accountd: {0}")]
+    /// inferd does not know this caller as the agent launcher.
+    #[error("refused by inferd: {0}")]
     Denied(String),
-    /// accountd refused an argument (a program or an id that is not one).
+    /// inferd refused an argument (a program or an id that is not one).
     #[error("invalid argument: {0}")]
     Invalid(String),
-    /// accountd is not there.
-    #[error("no account service reachable")]
+    /// inferd is not there.
+    #[error("no inference service reachable")]
     Unreachable,
-    /// accountd sent something that is not porter's protocol.
+    /// inferd sent something that is not porter's protocol.
     #[error("malformed: {0}")]
     Malformed(String),
 }
@@ -122,7 +128,7 @@ impl From<CoreError> for LauncherError {
     }
 }
 
-/// What accountd asks of the launcher.
+/// What inferd asks of the launcher.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AskKind {
     /// Have the agent sign itself in.
@@ -131,7 +137,7 @@ pub enum AskKind {
     Logout,
 }
 
-/// One request accountd sent to this launcher alone.
+/// One request inferd sent to this launcher alone.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LauncherRequest {
     /// In or out.
@@ -144,12 +150,47 @@ pub struct LauncherRequest {
     pub program: AgentProgram,
 }
 
-/// The launcher's calls to accountd.
+/// The key the person chose for an agent, and the permit that lets the agent use it: what
+/// [`Launcher::request_agent_key`] answers. It is a `Candidate` with the permit where a grant
+/// was.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct KeyCandidate {
+    /// The account that holds the key.
+    pub account: AccountId,
+    /// Its label.
+    pub label: AccountLabel,
+    /// Its provider, for the mark.
+    pub provider: ProviderId,
+    /// The account, or the model of it, that fits.
+    pub subject: Subject,
+    /// The capability that fits.
+    pub capability: Capability,
+    /// What limits it.
+    pub restriction: Restriction,
+    /// The person's yes for this agent to use the key; `issue_credential` is asked by it.
+    pub permit: KeyPermitId,
+}
+
+impl From<Candidate> for KeyCandidate {
+    fn from(candidate: Candidate) -> Self {
+        Self {
+            account: candidate.account,
+            label: candidate.label,
+            provider: candidate.provider,
+            subject: candidate.subject,
+            capability: candidate.capability,
+            restriction: candidate.restriction,
+            permit: candidate.grant.into(),
+        }
+    }
+}
+
+/// The launcher's calls to inferd.
 #[derive(Debug, Clone)]
 pub struct Launcher {
     connection: BusConnection,
-    peer: PeerProxy<'static>,
-    tokens: TokensProxy<'static>,
+    launcher: LauncherProxy<'static>,
 }
 
 /// A data class as its slug, the form the bus takes.
@@ -160,65 +201,52 @@ fn slug(class: DataClass) -> Result<String, LauncherError> {
     }
 }
 
-/// Closes a sheet whose wait was dropped, so an abandoned request leaves none on the screen.
-struct Abandon(Option<Closer>);
-
-impl Drop for Abandon {
-    fn drop(&mut self) {
-        let Some(closer) = self.0.take() else { return };
-        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-            runtime.spawn(closer.close());
-        }
-    }
-}
-
 impl Launcher {
-    /// A launcher over `connection`, which accountd knows as the agent launcher.
+    /// A launcher over `connection`, which inferd (`org.quire.Inference1`) knows as the agent
+    /// launcher.
     pub async fn connect(connection: &BusConnection) -> Result<Self, LauncherError> {
         Ok(Self {
             connection: connection.clone(),
-            peer: PeerProxy::new(connection).await?,
-            tokens: TokensProxy::new(connection).await?,
+            launcher: LauncherProxy::new(connection).await?,
         })
     }
 
-    /// Opens `session`, the span a grant "for this session only" lasts (the launcher names it,
+    /// Opens `session`, the span a permit "for this session only" lasts (the launcher names it,
     /// usually from an ACP session id). It belongs to this connection, which must have
     /// registered a program, and ends at [`Launcher::end_session`] or when the connection
     /// leaves the bus. A session another connection holds is [`LauncherError::SessionTaken`];
     /// beginning one this connection holds is a no-op.
     pub async fn begin_session(&self, session: &LauncherSession) -> Result<(), LauncherError> {
-        Ok(self.peer.begin_session(session.as_str()).await?)
+        Ok(self.launcher.begin_session(session.as_str()).await?)
     }
 
-    /// Ends a session this connection began: accountd removes the grants scoped to it and ends
+    /// Ends a session this connection began: inferd removes the permits scoped to it and ends
     /// the process credentials under them (`CredentialEnd::SessionClosed`), telling this
     /// connection of each in [`Launcher::revocations`] so the launcher can end the processes. A
     /// session that is not open for this connection is [`LauncherError::UnknownSession`].
     pub async fn end_session(&self, session: &LauncherSession) -> Result<(), LauncherError> {
-        Ok(self.peer.end_session(session.as_str()).await?)
+        Ok(self.launcher.end_session(session.as_str()).await?)
     }
 
-    /// Asks the person, on accountd's consent sheet titled for `program`, which of their
-    /// accounts the agent may use for its key (the Llm kind, interactive use). With `session`,
-    /// an open session of this connection, the sheet also offers "This session only", and a
-    /// grant made so is scoped to it. Returns the chosen account and its grant; a person who
-    /// closes the sheet or refuses is [`LauncherError::Refused`] (`Dismissed`, `Denied`). The
-    /// program must be one this connection registered.
-    pub async fn request_agent_grant(
+    /// Asks the person, on inferd's consent sheet titled for `program`, which of their AI keys
+    /// the agent may use (interactive use). With `session`, an open session of this connection,
+    /// the sheet also offers "This session only", and a permit made so is scoped to it. Returns
+    /// the chosen account and its permit; a person who closes the sheet or refuses is
+    /// [`LauncherError::Refused`] (`Dismissed`, `Denied`). The program must be one this
+    /// connection registered.
+    pub async fn request_agent_key(
         &self,
         program: &AgentProgram,
         class: DataClass,
         session: Option<&LauncherSession>,
-    ) -> Result<Candidate, LauncherError> {
-        let mut listener = Sheet::subscribe(&self.connection).await?;
+    ) -> Result<KeyCandidate, LauncherError> {
+        let mut listener = Sheet::subscribe_on(&self.connection, ServiceRoot::Inference).await?;
         // Armed before the call: a dropped call may already have made the sheet.
         let mut abandon = Abandon(listener.closer(None));
         let path = self
-            .peer
-            .request_agent_grant(
+            .launcher
+            .request_agent_key(
                 program.as_str(),
-                "llm",
                 &slug(class)?,
                 session.map_or("", LauncherSession::as_str),
                 "",
@@ -245,7 +273,7 @@ impl Launcher {
             })?;
         abandon.0 = None;
         match reply_of(SheetKind::Choose, code, results)? {
-            AccountsReply::Chosen(candidate) => Ok(candidate),
+            AccountsReply::Chosen(candidate) => Ok(candidate.into()),
             AccountsReply::Refused(refusal) => Err(LauncherError::Refused(refusal)),
             other => Err(LauncherError::Malformed(format!(
                 "a chooser answered with {other:?}"
@@ -253,25 +281,25 @@ impl Launcher {
         }
     }
 
-    /// An API key for a process this launcher is about to spawn for `program`, under `grant`
-    /// (the person's grant of an account to the app `org.quire.Agent.<program>`, kind Llm, scope
-    /// always, or "this session only" for a session this connection holds open), handed over by
-    /// `target`: a sealed memfd to pass to the child, or a 0600 file under `$XDG_RUNTIME_DIR`.
-    /// The program must be one this connection registered. A credential under a session grant
-    /// ends when the session does ([`Launcher::end_session`], or this connection leaving).
+    /// An API key for a process this launcher is about to spawn for `program`, under `permit`
+    /// (the person's yes for the app `org.quire.Agent.<program>` to use a key, scope always, or
+    /// "this session only" for a session this connection holds open), handed over by `target`: a
+    /// sealed memfd to pass to the child, or a 0600 file under `$XDG_RUNTIME_DIR`. The program
+    /// must be one this connection registered. A credential under a session permit ends when
+    /// the session does ([`Launcher::end_session`], or this connection leaving).
     ///
     /// For an agent that cannot be pointed at inferd (P4, the metered route, needs none of this).
     /// The key is outside porter's meter and the child can read its own key: see the module
     /// documentation of [`crate::credential`] for the launcher's duties.
     pub async fn issue_credential(
         &self,
-        grant: &GrantId,
+        permit: &KeyPermitId,
         program: &AgentProgram,
         target: Handoff,
     ) -> Result<ProcessCredential, LauncherError> {
         let (id, handle) = self
-            .tokens
-            .issue_process_credential(grant.as_str(), program.as_str(), target.word())
+            .launcher
+            .issue_process_credential(permit.as_str(), program.as_str(), target.word())
             .await?;
         let id = ProcessCredentialId::parse(&id)?;
         let handle = match (target, &*handle) {
@@ -293,18 +321,18 @@ impl Launcher {
     }
 
     /// Ends a credential this connection was issued, because the process that held it exited or
-    /// was killed: a tmpfs file is unlinked and accountd forgets it. Not for a credential
-    /// accountd ended itself (that is [`LauncherError::UnknownCredential`]).
+    /// was killed: a tmpfs file is unlinked and inferd forgets it. Not for a credential inferd
+    /// ended itself (that is [`LauncherError::UnknownCredential`]).
     pub async fn revoke_credential(&self, id: &ProcessCredentialId) -> Result<(), LauncherError> {
-        Ok(self.tokens.revoke_process_credential(id.as_str()).await?)
+        Ok(self.launcher.revoke_process_credential(id.as_str()).await?)
     }
 
-    /// What accountd tells this connection when it ends a credential itself (the grant was
+    /// What inferd tells this connection when it ends a credential itself (the permit was
     /// revoked, the account removed): the launcher must end that process. Subscribe before
     /// issuing, so none is missed.
     pub async fn revocations(&self) -> Result<Revocations, LauncherError> {
         Ok(Revocations::new(
-            self.tokens.receive_process_credential_revoked().await?,
+            self.launcher.receive_process_credential_revoked().await?,
         ))
     }
 
@@ -314,15 +342,15 @@ impl Launcher {
     /// more.
     pub async fn register(&self, programs: &[AgentProgram]) -> Result<(), LauncherError> {
         let names: Vec<&str> = programs.iter().map(AgentProgram::as_str).collect();
-        Ok(self.peer.register_launcher(&names).await?)
+        Ok(self.launcher.register_launcher(&names).await?)
     }
 
-    /// The requests accountd sends this connection. Subscribe before registering, so none is
+    /// The requests inferd sends this connection. Subscribe before registering, so none is
     /// missed.
     pub async fn requests(&self) -> Result<Requests, LauncherError> {
         Ok(Requests {
-            logins: self.peer.receive_agent_login_requested().await?,
-            logouts: self.peer.receive_agent_logout_requested().await?,
+            logins: self.launcher.receive_agent_login_requested().await?,
+            logouts: self.launcher.receive_agent_logout_requested().await?,
         })
     }
 
@@ -334,7 +362,7 @@ impl Launcher {
     ) -> Result<(), LauncherError> {
         let (word, reason) = outcome.to_wire();
         Ok(self
-            .peer
+            .launcher
             .report_agent_login(request.as_str(), word, reason)
             .await?)
     }
@@ -347,13 +375,13 @@ impl Launcher {
     ) -> Result<(), LauncherError> {
         let (word, reason) = outcome.to_wire();
         Ok(self
-            .peer
+            .launcher
             .report_agent_logout(request.as_str(), word, reason)
             .await?)
     }
 }
 
-/// The stream of [`LauncherRequest`]s; an item is an error when accountd sent one that is not
+/// The stream of [`LauncherRequest`]s; an item is an error when inferd sent one that is not
 /// well formed.
 #[derive(Debug)]
 pub struct Requests {

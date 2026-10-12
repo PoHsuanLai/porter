@@ -1,4 +1,7 @@
-//! The app-facing API (design/31 §5.1). An app asks for a capability, never a brand:
+//! The app-facing API (design/31 §5.1). An app asks for a capability, never a brand. The
+//! account calls below (`find`, `request_grant`, tokens, relays) are answered by a service the
+//! app hosts in process ([`InProcess`]); over the buses accountd and inferd keep what they hold
+//! and the app asks them for an identity or a key permit:
 //!
 //! ```no_run
 //! use porter_client::{Accounts, ClientError, Found, Transport};
@@ -57,15 +60,19 @@
 //! lending.disable().await?; // the switch turned off; the same again changes nothing more
 //! ```
 //!
-//! A porter daemon (inferd, syncd) is also a client: [`peer::PeerAccounts`] (feature `dbus`) is
-//! the typed way into accountd's daemon-only `Peer` surface (grant verdicts, the API key of a
-//! granted account, a local runtime's report, the account news), and
-//! [`Accounts::watch_removals`] hears that an account is gone.
+//! Whoever uses a credential holds it, so no credential crosses a bus. Over D-Bus an app asks
+//! accountd's `Identities1` for "Continue as" ([`Identities`]) and inferd's `Keys` for a permit to
+//! use the person's AI keys ([`AiKeys`]); an app or a daemon that needs tokens and relays hosts
+//! its own `AccountService` and reaches it through [`InProcess`] (with [`PorterRelays`], feature
+//! `relays`, running the relays). [`Accounts::watch_removals`] hears that an identity is gone.
 //!
 //! An app with no inferd turns on `engines` for [`engines::EngineHost`]: inference routed in the
 //! app and sent to the OpenAI-compatible engines it points at (a local runtime, a company's API).
 
+mod abandon;
 mod accounts;
+#[cfg(feature = "dbus")]
+mod ai_keys;
 mod authenticated;
 #[cfg(feature = "infer")]
 mod computers;
@@ -82,8 +89,6 @@ mod guests;
 mod identities;
 #[cfg(feature = "dbus")]
 mod launcher;
-#[cfg(feature = "dbus")]
-pub mod peer;
 mod relays;
 #[cfg(feature = "dbus")]
 mod removals;
@@ -96,6 +101,8 @@ mod tailnet_lending;
 mod transport;
 
 pub use accounts::Accounts;
+#[cfg(feature = "dbus")]
+pub use ai_keys::{AiKeys, AiKeysError};
 pub use authenticated::{AuthenticatedStream, Relayed};
 #[cfg(feature = "infer")]
 pub use computers::{ComputerReach, NewComputer, NewComputerModel};
@@ -116,7 +123,7 @@ pub use guests::{GuestChange, GuestChanges};
 #[cfg(feature = "dbus")]
 pub use identities::{Identities, IdentitiesError, IdentityRemovals, Picked};
 #[cfg(feature = "dbus")]
-pub use launcher::{AskKind, Launcher, LauncherError, LauncherRequest, Requests};
+pub use launcher::{AskKind, KeyCandidate, Launcher, LauncherError, LauncherRequest, Requests};
 pub use porter_core::lending;
 /// The computers that ask to use this one's models, and the ones that could be added, from
 /// porter-core: what `Accounts::guests` and `Accounts::candidates` return and
@@ -135,6 +142,8 @@ pub use porter_infer::{
 /// What an [`engines::EngineHost`] is built from, from porter-infer.
 #[cfg(feature = "engines")]
 pub use porter_infer::{InferRefusal, Policy, Slot};
+#[cfg(feature = "relays")]
+pub use relays::PorterRelays;
 pub use relays::{NoRelays, RelayHost};
 #[cfg(feature = "dbus")]
 pub use removals::{Removals, RemovedAccount};

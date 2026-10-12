@@ -23,6 +23,8 @@ porter-secrets = { workspace = true, optional = true }
 porter-service = { workspace = true, optional = true }
 porter-dbus = { workspace = true, optional = true }
 porter-fs = { workspace = true, optional = true }
+# `relays`: `PorterRelays`, the relay host that runs `porter_proxy::relay` over rustls.
+porter-proxy = { workspace = true, optional = true, features = ["io", "tls"] }
 latchkey = { workspace = true, optional = true }
 rustix = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
@@ -77,6 +79,10 @@ engines = [
 # manager of the person's units injected. Off by default: it brings porter-fs (std only). With
 # `dbus` it also has `SessionUnits`, the real manager over the session bus.
 lending = ["dep:porter-fs"]
+# `PorterRelays`: a `RelayHost` that runs the authenticated relays of an app or daemon hosting its
+# own `AccountService` (`InProcess::with_relays`), on its tokio runtime, over rustls. Off by
+# default: it brings porter-proxy with TLS and a runtime.
+relays = ["dep:porter-proxy", "dep:tokio"]
 # Frames over a Unix stream socket with descriptors riding on them (what both carriers below
 # share). Pulls in the runtime, so it is off by default: the pure build reaches none.
 framed = ["dep:rustix", "dep:serde", "dep:tokio"]

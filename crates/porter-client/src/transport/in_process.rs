@@ -125,6 +125,18 @@ impl<C> InProcess<C, NoBroker, NoRelays> {
 }
 
 impl<C, B, H> InProcess<C, B, H> {
+    /// The same link with `relays` running its authenticated relays (`PorterRelays`, feature
+    /// `relays`, or a host the app writes). Without one, opening an authenticated stream says
+    /// nobody is reachable.
+    pub fn with_relays<N: RelayHost>(self, relays: N) -> InProcess<C, B, N> {
+        InProcess {
+            service: self.service,
+            app: self.app,
+            broker: self.broker,
+            relays,
+        }
+    }
+
     /// The same link with `broker` serving its inference sessions (feature `infer`).
     #[cfg(feature = "infer")]
     pub fn with_broker<N: SessionHost>(self, broker: N) -> InProcess<C, N, H> {
