@@ -93,6 +93,80 @@ impl Paths {
     }
 }
 
+/// Where syncd keeps its own accounts, apart from the datasets' journals and mirrors: its
+/// registry, audit file, provider files and the sign-in keys the families read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct KeepPaths {
+    /// The directory of syncd's `registry.json`: `$XDG_STATE_HOME/quire/syncd/keys`.
+    pub registry_dir: PathBuf,
+    /// `$XDG_STATE_HOME/quire/syncd/audit.jsonl`.
+    pub audit: PathBuf,
+    /// Provider file directories, later ones winning: the system's, then the person's.
+    pub provider_dirs: Vec<PathBuf>,
+    /// The shipped clients, `/usr/share/porter/clients.toml`.
+    pub clients_shipped: PathBuf,
+    /// The person's clients, `$XDG_CONFIG_HOME/porter/clients.toml` (Settings writes it).
+    pub clients_user: PathBuf,
+}
+
+impl KeepPaths {
+    /// The paths for the environment `var` reads.
+    pub fn resolve(var: impl Fn(&str) -> Option<String>) -> Result<Self, PathError> {
+        let xdg = Xdg::new(var);
+        let state = xdg.dir("XDG_STATE_HOME", ".local/state")?;
+        let config = xdg.dir("XDG_CONFIG_HOME", ".config")?;
+        let data = xdg.dir("XDG_DATA_HOME", ".local/share")?;
+        Ok(Self {
+            registry_dir: state.join("quire/syncd/keys"),
+            audit: state.join("quire/syncd/audit.jsonl"),
+            provider_dirs: vec![
+                PathBuf::from("/usr/share/porter/providers"),
+                data.join("porter/providers"),
+            ],
+            clients_shipped: PathBuf::from("/usr/share/porter/clients.toml"),
+            clients_user: config.join("porter/clients.toml"),
+        })
+    }
+
+    /// Everything under `root` (a scratch directory), with no provider files and no clients.
+    pub fn under(root: &std::path::Path) -> Self {
+        Self {
+            registry_dir: root.join("keys"),
+            audit: root.join("audit.jsonl"),
+            provider_dirs: Vec::new(),
+            clients_shipped: root.join("no-clients.toml"),
+            clients_user: root.join("no-clients-own.toml"),
+        }
+    }
+
+    /// [`KeepPaths::provider_dirs`] with whose each is: the system's, the person's, then any
+    /// others (trusted as whoever started the daemon).
+    pub fn provider_layers(&self) -> Vec<(porter_families::set::Layer, PathBuf)> {
+        use porter_families::set::Layer;
+        self.provider_dirs
+            .iter()
+            .enumerate()
+            .map(|(at, dir)| {
+                let layer = match at {
+                    0 => Layer::Shipped,
+                    1 => Layer::Person,
+                    _ => Layer::Named,
+                };
+                (layer, dir.clone())
+            })
+            .collect()
+    }
+
+    /// The clients files the sign-in families read.
+    pub fn client_files(&self) -> porter_families::ClientFiles {
+        porter_families::ClientFiles {
+            shipped: self.clients_shipped.clone(),
+            own: self.clients_user.clone(),
+        }
+    }
+}
+
 /// An account as a directory name: the `[A-Za-z0-9_]+` segment of its object path.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct AccountDir(String);
@@ -247,6 +321,24 @@ mod tests {
             Path::new("/home/ada/.local/share/porter/vdir")
         );
         assert_eq!(Paths::resolve(env(&[])), Err(PathError::NoHome));
+    }
+
+    #[test]
+    fn syncds_own_accounts_live_under_quire_syncd_and_the_provider_layers_run_system_person_named() {
+        let keep = KeepPaths::resolve(env(&[("HOME", "/home/ada")])).expect("paths");
+        assert_eq!(
+            keep.registry_dir,
+            Path::new("/home/ada/.local/state/quire/syncd/keys")
+        );
+        assert_eq!(
+            keep.audit,
+            Path::new("/home/ada/.local/state/quire/syncd/audit.jsonl")
+        );
+        let mut more = keep.clone();
+        more.provider_dirs.push(PathBuf::from("/x"));
+        let layers: Vec<_> = more.provider_layers().into_iter().map(|(l, _)| l).collect();
+        use porter_families::set::Layer;
+        assert_eq!(layers, [Layer::Shipped, Layer::Person, Layer::Named]);
     }
 
     #[test]

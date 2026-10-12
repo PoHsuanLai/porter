@@ -1,6 +1,6 @@
 [package]
 name = "syncd"
-description = "porter's sync daemon: org.quire.Sync1 over porter-sync replicas. The library holds the SQLite journal, the engine over a Replica and a Dataset, the pure scheduler and the bus objects; the binary resolves its paths and serves. Datasets: the calendar, contacts and tasks mirror (CalDAV, CardDAV, Microsoft Graph and Google), the storage folder (WebDAV, OneDrive and Google Drive app folders) and, behind SYNCD_PHOTOS=on, Photos."
+description = "porter's sync daemon: org.quire.Sync1 over porter-sync replicas. The library holds the SQLite journal, the engine over a Replica and a Dataset, the pure scheduler, the bus objects and syncd's own accounts (its own store, \"Continue as\" sign-in and Settings rows); the binary resolves its paths and serves. Datasets: the calendar, contacts and tasks mirror (CalDAV, CardDAV, Microsoft Graph and Google), the storage folder (WebDAV, OneDrive and Google Drive app folders) and, behind SYNCD_PHOTOS=on, Photos."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,14 +12,21 @@ publish.workspace = true
 porter-core = { workspace = true }
 porter-daemon = { workspace = true }
 porter-fs = { workspace = true }
-porter-client = { workspace = true, features = ["dbus"] }
+porter-client = { workspace = true, features = ["dbus", "relays"] }
 porter-dav = { workspace = true }
 porter-dbus = { workspace = true, features = ["callers-file"] }
+porter-families = { workspace = true, features = ["set"] }
 porter-http = { workspace = true }
+porter-provider = { workspace = true }
+porter-secrets = { workspace = true, features = ["oo7"] }
+porter-service = { workspace = true }
+porter-sheets = { workspace = true }
+porter-store = { workspace = true }
 porter-sync = { workspace = true }
 storage-gdrive = { workspace = true }
 storage-graph = { workspace = true }
 storage-webdav = { workspace = true }
+ds-settings = { workspace = true }
 clap = { workspace = true }
 rusqlite = { workspace = true }
 serde = { workspace = true }
@@ -27,20 +34,15 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+toml = { workspace = true }
 zbus = { workspace = true }
 
 [dev-dependencies]
-toml = { workspace = true }
 syncd = { path = ".", features = ["testing"] }
-accountd = { path = "../accountd" }
 base64 = { workspace = true }
-ds-settings = { workspace = true }
-porter-client = { workspace = true, features = ["dbus"] }
 porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }
-porter-provider = { workspace = true }
-porter-secrets = { workspace = true }
-porter-service = { workspace = true }
+porter-secrets = { workspace = true, features = ["testing"] }
 porter-sync = { workspace = true, features = ["testing"] }
 # A paused clock for the stop wait's timing test.
 tokio = { workspace = true, features = ["test-util"] }
@@ -54,6 +56,12 @@ workspace = true
 # processes outside service cgroups. A release build ignores the variable. A test in
 # tests/dist.rs fails if this feature is ever default, and check-boundary.sh checks it too.
 test-proc-root = []
+# Test builds only, never default and never in dist: `SYNCD_KEYS=file:<absolute path>` keeps
+# syncd's own credentials in one 0600 plain-text JSON file (porter-secrets' `FileSecrets`)
+# instead of the Secret Service, for private-bus and scratch runs with no keyring. A release
+# build ignores the variable and says so once. tests/dist.rs and check-boundary.sh fail if this
+# feature is default.
+test-keys = ["porter-secrets/test-keys"]
 # `MemoryDataset`, the in-memory local side the engine's tests (and daemon tests) drive.
 testing = []
 # Serves `org.quire.Photos1.Picker` beside Sync1 when `SYNCD_PHOTOS=on` (porter-dbus's feature of
