@@ -426,8 +426,7 @@ pub async fn serve_with<H: Host, C: Callers>(
     options: Options,
 ) -> zbus::Result<()> {
     let published = host.registry();
-    let (spaces, said) =
-        crate::spaces::SpaceBook::open(&options.spaces, crate::spaces::unix_now()).await;
+    let (spaces, said) = crate::spaces::SpaceBook::open(&options.spaces).await;
     if let Some(said) = said {
         eprintln!("accountd: {said}");
     }

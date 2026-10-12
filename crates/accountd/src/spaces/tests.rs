@@ -1,8 +1,4 @@
 use super::*;
-use porter_core::consent::{Decision, GrantKey, GrantScope, Usage};
-use porter_core::{
-    AccountId, AppId, CapabilityKind, DataClass, GrantId, Isolation, SpaceId, UnixSeconds,
-};
 use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -41,30 +37,6 @@ fn app(name: &str) -> AppName {
     AppName::parse(name).expect("app")
 }
 
-fn grant(id: &str, space: SpaceScope) -> Grant {
-    Grant {
-        id: GrantId::parse(id).expect("id"),
-        key: GrantKey {
-            app: AppId {
-                name: app("org.quire.Photos"),
-                isolation: Isolation::Flatpak,
-            },
-            account: AccountId::parse("cloud").expect("account"),
-            kind: CapabilityKind::Storage,
-            class: DataClass::Files,
-            usage: Usage::Interactive,
-            space,
-        },
-        decision: Decision::Allow,
-        scope: GrantScope::Always,
-        at: UnixSeconds(1),
-    }
-}
-
-fn only(space: &str) -> SpaceScope {
-    SpaceScope::Only(SpaceId::parse(space).expect("space"))
-}
-
 fn name(text: &str) -> SpaceName {
     SpaceName::parse(text).expect("name")
 }
@@ -76,38 +48,25 @@ fn ids(book: &SpaceBook) -> Vec<&str> {
 const NOW: UnixSeconds = UnixSeconds(1_790_000_000);
 
 #[tokio::test]
-async fn a_first_start_adopts_the_slugs_grants_are_scoped_to_once() {
+async fn a_first_start_writes_an_empty_list_once() {
     let scratch = Scratch::new();
-    let grants = vec![
-        grant("g1", only("work")),
-        grant("g2", only("work")),
-        grant("g3", only("home")),
-        grant("g4", only("desktop")),
-        grant("g5", only("app:org.quire.Photos:2")),
-        grant("g6", SpaceScope::Any),
-    ];
-    let (book, said) = SpaceBook::open(&scratch.store(), &grants, NOW).await;
+    let (book, said) = SpaceBook::open(&scratch.store()).await;
     assert_eq!(said, None);
-    assert_eq!(ids(&book), ["home", "work"]);
-    let work = &book.list()[1];
-    assert_eq!(work.name.as_str(), "work");
-    assert_eq!(work.look, SpaceLook::default());
+    assert!(book.list().is_empty());
     assert!(scratch.path().join("porter/spaces.json").exists());
-
-    // A second start reads the file and adopts nothing again, even a new slug.
-    let more = vec![grant("g7", only("garden"))];
-    let (again, _) = SpaceBook::open(&scratch.store(), &more, NOW).await;
-    assert_eq!(ids(&again), ["home", "work"]);
 }
 
 #[tokio::test]
 async fn ids_are_minted_not_named_and_survive_renames_and_restarts() {
     let scratch = Scratch::new();
-    // An adopted Space already holds the id the counter would give first.
-    let (mut book, _) =
-        SpaceBook::open(&scratch.store(), &[grant("g", only("space-1"))], NOW).await;
+    let (mut book, _) = SpaceBook::open(&scratch.store()).await;
     let photos = app("org.quire.Photos");
     let at = (Instant::now(), NOW);
+    // A registered Space already holds the id the counter would give first.
+    let taken = DesktopSpace::parse("space-1").expect("id");
+    book.register(taken, name("Taken"), SpaceLook::default(), at)
+        .await
+        .expect("registered");
     let made = book
         .create(
             &photos,
@@ -132,7 +91,7 @@ async fn ids_are_minted_not_named_and_survive_renames_and_restarts() {
         .await
         .expect("look");
 
-    let (after, said) = SpaceBook::open(&scratch.store(), &[], NOW).await;
+    let (after, said) = SpaceBook::open(&scratch.store()).await;
     assert_eq!(said, None);
     assert_eq!(ids(&after), ["space-1", "space-2", "space-3"]);
     assert_eq!(after.list()[1].name.as_str(), "Office");
@@ -142,7 +101,7 @@ async fn ids_are_minted_not_named_and_survive_renames_and_restarts() {
 
 #[tokio::test]
 async fn changing_or_removing_a_space_that_is_not_there_is_refused() {
-    let (mut book, _) = SpaceBook::open(&SpacesStore::Memory, &[], NOW).await;
+    let (mut book, _) = SpaceBook::open(&SpacesStore::Memory).await;
     let ghost = DesktopSpace::parse("ghost").expect("id");
     assert_eq!(
         book.rename(&ghost, name("x")).await,
@@ -157,7 +116,7 @@ async fn changing_or_removing_a_space_that_is_not_there_is_refused() {
 
 #[tokio::test]
 async fn creates_are_limited_per_app_within_the_window() {
-    let (mut book, _) = SpaceBook::open(&SpacesStore::Memory, &[], NOW).await;
+    let (mut book, _) = SpaceBook::open(&SpacesStore::Memory).await;
     let (flood, calm) = (app("org.example.Flood"), app("org.example.Calm"));
     let start = Instant::now();
     for n in 0..CREATES_PER_WINDOW {
@@ -205,7 +164,7 @@ async fn a_counter_at_the_top_of_its_range_is_refused_and_not_wrapped() {
         u64::MAX - 1
     );
     std::fs::write(&file, &almost).expect("write");
-    let (mut book, said) = SpaceBook::open(&scratch.store(), &[], NOW).await;
+    let (mut book, said) = SpaceBook::open(&scratch.store()).await;
     assert_eq!(said, None);
     let made = book
         .create(&photos, name("Last"), SpaceLook::default(), at)
@@ -222,7 +181,7 @@ async fn a_counter_at_the_top_of_its_range_is_refused_and_not_wrapped() {
     // A file that starts at the top: refused outright.
     let full = format!(r#"{{"version":{VERSION},"next":{},"spaces":[]}}"#, u64::MAX);
     std::fs::write(&file, &full).expect("write");
-    let (mut book, _) = SpaceBook::open(&scratch.store(), &[], NOW).await;
+    let (mut book, _) = SpaceBook::open(&scratch.store()).await;
     assert_eq!(
         book.create(&photos, name("x"), SpaceLook::default(), at)
             .await,
@@ -237,8 +196,7 @@ async fn an_unreadable_file_is_left_alone_and_nothing_changes() {
     let dir = scratch.path().join("porter");
     std::fs::create_dir_all(&dir).expect("dir");
     std::fs::write(dir.join("spaces.json"), "{ not the spaces").expect("write");
-    let (mut book, said) =
-        SpaceBook::open(&scratch.store(), &[grant("g", only("work"))], NOW).await;
+    let (mut book, said) = SpaceBook::open(&scratch.store()).await;
     assert!(said.is_some_and(|s| s.contains("spaces.json")));
     assert!(book.list().is_empty());
     assert_eq!(
@@ -263,7 +221,7 @@ async fn an_unreadable_file_is_left_alone_and_nothing_changes() {
 #[tokio::test]
 async fn a_registered_id_is_kept_as_minted_and_registering_it_again_changes_nothing() {
     let scratch = Scratch::new();
-    let (mut book, _) = SpaceBook::open(&scratch.store(), &[], NOW).await;
+    let (mut book, _) = SpaceBook::open(&scratch.store()).await;
     let casement = app("org.quire.Casement");
     let at = (Instant::now(), NOW);
     let workspace = DesktopSpace::parse("s-0123456789abcdef0123456789abcdef").expect("id");
@@ -307,7 +265,7 @@ async fn a_registered_id_is_kept_as_minted_and_registering_it_again_changes_noth
         "the counter skips a registered id"
     );
 
-    let (after, said) = SpaceBook::open(&scratch.store(), &[], NOW).await;
+    let (after, said) = SpaceBook::open(&scratch.store()).await;
     assert_eq!(said, None);
     assert_eq!(
         ids(&after),
