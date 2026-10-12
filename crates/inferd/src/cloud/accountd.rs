@@ -1,17 +1,17 @@
-//! What inferd asks accountd for a hosted model: which accounts an app holds a grant on
-//! (`Peer.Verdicts`) and, for the one it will call, the account's API key (`Peer.ResolveKey`).
+//! What a hosted model needs of the AI accounts: which accounts an app holds a permit on
+//! ([`Accountd::verdicts`]) and, for the one it will call, the account's API key
+//! ([`Accountd::key`]).
 //!
-//! The key arrives on a sealed memfd, never as text on the bus. It is read once into a
-//! [`SecretText`] (whose `Debug` shows nothing) that the caller drops after building one request.
-//! [`Accountd`] is the seam: the bus peer in the daemon, a scripted fake in the unit tests. The
-//! bus side is porter-client's [`PeerAccounts`], which also reads the answer; this module only
-//! says what inferd does about each way it can fail ([`AccountdFault`]).
+//! inferd holds the keys itself (`keys::LocalKeys` implements this seam over its own store), so a
+//! key is read in this process, into a [`SecretText`] (whose `Debug` shows nothing) that the
+//! caller drops after building one request. The seam stays so the cloud turns are tested over a
+//! scripted fake. The module keeps its old name; it is the "accounts" seam.
 
-use porter_client::peer::PeerError;
-pub(crate) use porter_client::peer::chat_need as llm_need;
-pub use porter_client::peer::{AccountVerdict, PeerAccounts};
-use porter_core::consent::Usage;
-use porter_core::{AppId, DataClass, GrantId, SecretText};
+use porter_core::capability::LlmFeature;
+use porter_core::consent::{Usage, Verdict};
+use porter_core::need::LlmNeed;
+use porter_core::wire::Refusal;
+use porter_core::{AccountId, AccountState, AppId, DataClass, GrantId, Need, SecretText, Tokens};
 use std::fmt::Debug;
 use std::future::Future;
 use std::pin::Pin;
@@ -19,38 +19,55 @@ use std::pin::Pin;
 /// A boxed future, so the seam can be a trait object.
 pub type Boxed<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
-/// Why accountd did not answer.
+/// What a language need is, for the verdicts: chat, any context.
+pub fn llm_need() -> Need {
+    Need::Llm(LlmNeed::new([LlmFeature::Chat].into(), Tokens(0)))
+}
+
+/// What the permits say for an app on one account that could serve a need.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountVerdict {
+    /// The account.
+    pub account: AccountId,
+    /// The provider file the account was made from, when known; otherwise the account id's own
+    /// stem names it.
+    pub provider: Option<String>,
+    /// What a person reads for the account.
+    pub label: Option<String>,
+    /// What a person reads for its provider.
+    pub provider_label: Option<String>,
+    /// Whether it works now; an account that must be signed in again is not a place that can
+    /// serve.
+    pub state: Option<AccountState>,
+    /// The app's permit on it.
+    pub verdict: Verdict,
+}
+
+/// Why the key store did not answer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccountdFault {
-    /// Not on the bus, or the call failed.
+    /// The store could not be reached: ask again at the next look.
     Unreachable,
-    /// accountd refused this caller or this grant.
+    /// The store refused this permit, or the account needs signing in again.
     Refused,
-    /// The answer was not what the interface promises (a key not on a sealed file).
+    /// The key was not readable.
     Unreadable,
 }
 
-impl From<&PeerError> for AccountdFault {
-    /// What inferd does about it: a refusal is final, an unreadable key is its own, and any other
-    /// failure is "ask again at the next look".
-    fn from(error: &PeerError) -> Self {
-        match error {
-            PeerError::Denied(_) => AccountdFault::Refused,
-            PeerError::Unreadable => AccountdFault::Unreadable,
-            _ => AccountdFault::Unreachable,
+impl From<Refusal> for AccountdFault {
+    /// What inferd does about it: a refusal is final, an unavailable store is "ask again".
+    fn from(refusal: Refusal) -> Self {
+        match refusal {
+            Refusal::Unavailable => AccountdFault::Unreachable,
+            _ => AccountdFault::Refused,
         }
     }
 }
 
-impl From<PeerError> for AccountdFault {
-    fn from(error: PeerError) -> Self {
-        AccountdFault::from(&error)
-    }
-}
-
-/// accountd, as inferd uses it.
+/// The AI accounts, as inferd uses them.
 pub trait Accountd: Debug + Send + Sync + 'static {
-    /// The grants `app` holds, for data of `class` used as `usage`, on every account that serves a language need.
+    /// The permits `app` holds, for data of `class` used as `usage`, on every account that serves
+    /// a language need.
     fn verdicts<'a>(
         &'a self,
         app: &'a AppId,
@@ -60,36 +77,6 @@ pub trait Accountd: Debug + Send + Sync + 'static {
 
     /// The API key behind `grant`.
     fn key<'a>(&'a self, grant: &'a GrantId) -> Boxed<'a, Result<SecretText, AccountdFault>>;
-}
-
-/// accountd over the session bus: `org.quire.Accounts1.Peer`, called by a porter daemon.
-#[derive(Debug, Clone)]
-pub struct PeerAccountd {
-    peer: PeerAccounts,
-}
-
-impl PeerAccountd {
-    /// Asks accountd over `connection`.
-    pub fn new(connection: zbus::Connection) -> Self {
-        Self {
-            peer: PeerAccounts::over(&connection),
-        }
-    }
-}
-
-impl Accountd for PeerAccountd {
-    fn verdicts<'a>(
-        &'a self,
-        app: &'a AppId,
-        class: DataClass,
-        usage: Usage,
-    ) -> Boxed<'a, Result<Vec<AccountVerdict>, AccountdFault>> {
-        Box::pin(async move { Ok(self.peer.verdicts(app, &llm_need(), class, usage).await?) })
-    }
-
-    fn key<'a>(&'a self, grant: &'a GrantId) -> Boxed<'a, Result<SecretText, AccountdFault>> {
-        Box::pin(async move { Ok(self.peer.resolve_key(grant).await?) })
-    }
 }
 
 #[cfg(test)]

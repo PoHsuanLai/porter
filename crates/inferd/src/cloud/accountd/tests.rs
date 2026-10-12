@@ -1,22 +1,15 @@
 use super::*;
 
 #[test]
-fn what_inferd_does_about_each_way_accountd_can_fail() {
+fn what_inferd_does_about_each_way_the_key_store_can_refuse() {
     let table = [
-        (PeerError::Unreachable, AccountdFault::Unreachable),
-        (PeerError::Denied("no".into()), AccountdFault::Refused),
-        (PeerError::Unreadable, AccountdFault::Unreadable),
-        (
-            PeerError::Rejected("args".into()),
-            AccountdFault::Unreachable,
-        ),
-        (
-            PeerError::Malformed("id".into()),
-            AccountdFault::Unreachable,
-        ),
-        (PeerError::Failed("busy".into()), AccountdFault::Unreachable),
+        (Refusal::Unavailable, AccountdFault::Unreachable),
+        (Refusal::Denied, AccountdFault::Refused),
+        (Refusal::NeedsReauth, AccountdFault::Refused),
+        (Refusal::UnknownGrant, AccountdFault::Refused),
+        (Refusal::AudienceNotGranted, AccountdFault::Refused),
     ];
-    for (error, want) in table {
-        assert_eq!(AccountdFault::from(&error), want, "{error:?}");
+    for (refusal, want) in table {
+        assert_eq!(AccountdFault::from(refusal), want, "{refusal:?}");
     }
 }

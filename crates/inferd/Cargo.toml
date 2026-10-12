@@ -13,17 +13,24 @@ publish.workspace = true
 # `<dir>/<pid>/cgroup` instead of `/proc`, for acceptance runs whose processes are in no unit.
 # Without this feature the variable is ignored (with a line on standard error).
 test-proc-root = []
+# TEST ONLY, off by default and never in dist: `INFERD_KEYS=file:<absolute path>` keeps the AI keys
+# in one 0600 plain-text file instead of the Secret Service (porter-secrets' `keysel`). Without
+# this feature the variable is ignored (with a line on standard error).
+test-keys = ["porter-secrets/test-keys"]
 
 [dependencies]
 porter-core = { workspace = true }
 porter-daemon = { workspace = true }
 porter-fs = { workspace = true }
 cua-action = { workspace = true }
-# `peer::PeerAccounts`: the typed way into accountd's daemon-only surface (verdicts, the API key,
-# the local-runtime report, the account news). Its default feature `infer` is porter-infer, which
-# inferd already has.
-porter-client = { workspace = true, features = ["dbus"] }
 porter-dbus = { workspace = true }
+# inferd holds the AI keys itself: an `AccountService` hosted in process over its own store
+# (`keys/`), the AI and agent families, its own key namespace and the shared sheet plumbing.
+porter-families = { workspace = true, features = ["set"] }
+porter-secrets = { workspace = true, features = ["oo7"] }
+porter-service = { workspace = true }
+porter-sheets = { workspace = true }
+porter-store = { workspace = true }
 porter-discover = { workspace = true }
 porter-http = { workspace = true, features = ["hyper"] }
 porter-provider = { workspace = true }
@@ -67,6 +74,9 @@ toml = { workspace = true }
 zbus = { workspace = true }
 
 [dev-dependencies]
+# The client side the tests drive inferd through (inferd itself no longer calls accountd).
+porter-client = { workspace = true, features = ["dbus"] }
+porter-secrets = { workspace = true, features = ["testing"] }
 engine-supervisor = { workspace = true, features = ["testing"] }
 model-provider = { workspace = true, features = ["testing"] }
 porter-fake = { workspace = true }
