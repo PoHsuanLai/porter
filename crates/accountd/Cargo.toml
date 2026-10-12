@@ -1,6 +1,6 @@
 [package]
 name = "accountd"
-description = "porter's account and consent daemon: org.quire.Accounts1 over porter-service. The library serves the bus objects (Manager, Grants, Tokens, Account, Peer, the Request objects and the settings module) and the sheet link to the sheet host; the binary resolves its paths, builds the service over its seams and serves."
+description = "porter's identity daemon: org.quire.Accounts1 over porter-service, holding the identities signed in on this computer, Spaces and Tailscale. The library serves the bus objects (Manager, Account, Identities1, Spaces1, Tailnet1, the Request objects and the settings module); the binary resolves its paths, builds the service over its seams and serves."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -13,20 +13,15 @@ porter-core = { workspace = true }
 porter-daemon = { workspace = true }
 porter-fs = { workspace = true }
 porter-dbus = { workspace = true, features = ["callers-file"] }
-porter-discover = { workspace = true, features = ["io"] }
-porter-families = { workspace = true, features = ["nextcloud", "generic", "microsoft", "google", "api_key", "openrouter", "agent_login", "tailnet"] }
-porter-http = { workspace = true, features = ["hyper"] }
+porter-families = { workspace = true, features = ["set"] }
 porter-provider = { workspace = true }
-porter-proxy = { workspace = true, features = ["tls"] }
 porter-secrets = { workspace = true, features = ["oo7"] }
 porter-service = { workspace = true }
+porter-sheets = { workspace = true }
 porter-store = { workspace = true }
 porter-tailscale = { workspace = true, features = ["io"] }
 ds-settings = { workspace = true }
 clap = { workspace = true }
-oo7 = { workspace = true }
-rustix = { workspace = true }
-rustls-pki-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -37,7 +32,9 @@ zbus = { workspace = true }
 [dev-dependencies]
 porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }
+porter-http = { workspace = true, features = ["hyper"] }
 porter-oauth = { workspace = true }
+rustix = { workspace = true }
 tokio = { workspace = true }
 
 [lints]
