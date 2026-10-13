@@ -2579,3 +2579,11 @@ Additive: nothing a consumer uses changes. The rule change (apps own their crede
 **Look here first if it does not compile.** `accountd/src/identities_object.rs`: `tokio::select!` with a `return` arm and the `Boxed` future borrowing `window`; `match caller.role { role if may_use(role) => Ok(caller), ... }`; `IdentitiesObject::<H, C>::identity_removed` called from `Core` (the signal fn the `#[zbus::interface]` macro makes); `header.sender()...to_owned()` as `UniqueName<'static>`. `accountd/src/identity_desk.rs`: the `Boxed` futures and the `Sheets::consent` bound (`U: Sheets + Debug`). `porter-dbus/src/identities.rs`: `OwnedFd` as a skeleton return, and the signal/proxy names `IdentityRemoved` / `IdentityRemovedStream` the proxy macro makes (re-exported from the crate root). `porter-core/src/identities.rs`: `slug_id!` needs `CoreError` and `fmt` in scope. After a merge with split-store, `SecretKey { account, purpose }` in `identity_desk.rs` is the same literal `keys.rs` has: give both the namespace the same way.
 
 **Cargo.toml changes.** None (no new crate or dependency; `Cargo.lock` is unchanged).
+
+## Lane b-syncd
+
+syncd holds its own accounts (Phase B). `syncd::keep`: classes (moved from porter-service sync_grant), `Hosted`/`Directory` seams, `Keep` (continue_as, set_sync, remove). `syncd::settings`: Settings module at /org/quire/Sync1/settings. Daemon hosts `AccountService` in process over `FileStore` (quire/syncd/keys), keyring `porter.syncd`, `InProcess`+`PorterRelays`. Tests host the service in process (`tests/it/common/hosted.rs`); wipe_bus deleted (T5); no dev-dependency on accountd.
+
+**Look here first if it does not compile.** `syncd/src/daemon.rs` (OwnService type, `SyncSheets<BusSheets<ProcCallers>>`, `KeepPaths::under` in `Config::new`); `syncd/src/keep/hosted.rs` (`Hosted` impl for `AccountService`, `SignInAs` fields, `reauthenticate_any`); `syncd/src/settings.rs` (`Served` in OnceLock, `ProviderNames` path, `LiveClient` in tests); tests/it/common/hosted.rs.
+
+**Cargo.toml changes needing re-lock.** syncd: added porter-families (set), porter-provider, porter-secrets (oo7), porter-service, porter-sheets, porter-store, ds-settings, toml to deps; porter-client feature `relays`; feature `test-keys`; removed accountd dev-dependency.
