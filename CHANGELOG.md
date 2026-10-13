@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Whoever uses a credential holds it
+
+- An app no longer asks the account service for tokens, grants or ready-made connections over the
+  bus. To continue as someone who is already signed in, it asks which identity (`Identities1`); to
+  use the person's AI keys it asks the AI service for a permission (`Inference1.Keys`) and never
+  sees a key. An app or service that needs tokens hosts its own account service in its own
+  process.
+- The coding-agent launcher now talks to the AI service, which keeps the AI keys: the same
+  calls, with "grant" now "permit" (`request_agent_key`). Settings lists and withdraws these
+  permissions from the AI service's own rows.
+- The account service forgets, on its first start after the upgrade, the AI keys, permissions and
+  switches it no longer holds. A copy of the old file is kept beside it (`registry.pre-split.json`).
+  AI keys and sync are set up again, once.
+- New: a shared library for the sheets the services show (`porter-sheets`), and a relay host for
+  apps that run their own account service (`PorterRelays`).
+
 ## 0.1.0-beta.1 (2026-10-11)
 
 The first release: the accounts work. Nothing here has yet run against the real services; it is

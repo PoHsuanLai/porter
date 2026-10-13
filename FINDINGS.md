@@ -2579,3 +2579,20 @@ Additive: nothing a consumer uses changes. The rule change (apps own their crede
 **Look here first if it does not compile.** `accountd/src/identities_object.rs`: `tokio::select!` with a `return` arm and the `Boxed` future borrowing `window`; `match caller.role { role if may_use(role) => Ok(caller), ... }`; `IdentitiesObject::<H, C>::identity_removed` called from `Core` (the signal fn the `#[zbus::interface]` macro makes); `header.sender()...to_owned()` as `UniqueName<'static>`. `accountd/src/identity_desk.rs`: the `Boxed` futures and the `Sheets::consent` bound (`U: Sheets + Debug`). `porter-dbus/src/identities.rs`: `OwnedFd` as a skeleton return, and the signal/proxy names `IdentityRemoved` / `IdentityRemovedStream` the proxy macro makes (re-exported from the crate root). `porter-core/src/identities.rs`: `slug_id!` needs `CoreError` and `fmt` in scope. After a merge with split-store, `SecretKey { account, purpose }` in `identity_desk.rs` is the same literal `keys.rs` has: give both the namespace the same way.
 
 **Cargo.toml changes.** None (no new crate or dependency; `Cargo.lock` is unchanged).
+
+## Lane b-bus
+
+Written without a compiler. Look here first if it does not compile:
+
+- `porter-dbus/src/launcher_iface.rs`, `keys.rs`: the new proxies and skeletons (`LauncherProxy`, `KeysProxy`), their signal names (`ProcessCredentialRevoked` moved here from the deleted tokens.rs).
+- `porter-dbus/src/refusal.rs`, `launcher.rs`: `refusal_error_name_in(ServiceRoot, &Refusal)`; `refusal_from_error_name` and `LauncherFault::from_error_name` accept all three prefixes. `LauncherFault::error_name()` now means the inferd prefix.
+- `porter-sheets/src/request.rs`: `RequestObjects` returns `fdo::Error` (no accountd `RefusedError`); the `#[zbus::interface]` on a private struct with an `fdo::Result` return; `tokio::select!` over `&mut inner`.
+- `porter-client/src/relays.rs`: `PorterRelays` uses `OnceCell::new_with(Some(..))` and `get_or_try_init` returning a `JoinError`; `RustlsConnect` must be `Clone` and `Sync` (accountd's relay.rs did the same).
+- `porter-client/src/launcher.rs`, `ai_keys.rs`: `Sheet::subscribe_on(.., ServiceRoot::Inference)`; `KeyCandidate` is built from a `Candidate` (its `grant` is the permit's id).
+- `porter-client/tests/it/common/fake_inferd.rs`: `#[derive(DBusError)]` with `#[zbus(prefix = ...)]` and a `#[zbus(error)] ZBus(zbus::Error)` variant; the fake serves the Request object on the `org.quire.Accounts1.Request` interface under `/org/quire/Inference1/request`; a memfd stand-in is an unlinked file (a real memfd is inferd's).
+
+Decisions: the Request interface stays `org.quire.Accounts1.Request` for all three services (R2). `RequestKey` answers with `Choose`'s results, and the permit is the result's `grant` (so `reply_of(SheetKind::Choose, ..)` reads it and the client calls it `KeyPermitId`). The bus keeps `Bus` `#[non_exhaustive]`. `BusSheets` handles are now `porter-<n>` (was `accountd-<n>`). `Transport::open_authenticated` and the other relay methods stay on the trait with their default.
+
+Not done here: accountd, inferd and syncd still name the old paths (their lanes move them). The `porter-client` tests `socket.rs`, `end_to_end.rs`, and `socket_accounts.rs` use the in-process/socket calls and were not touched; `connect.rs`, `dbus_tailnet.rs` and `dbus_spaces.rs` still use accountd's test host (`common/accountd.rs`), whose `serve`/`TableCallers` names accountd keeps (S10).
+
+**Cargo.toml changes.** New crate `porter-sheets` (members and workspace deps added); `porter-client` gains optional `porter-proxy` and the feature `relays`. `Cargo.lock` needs a re-lock.
