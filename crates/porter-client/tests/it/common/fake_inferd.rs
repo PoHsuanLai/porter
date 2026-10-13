@@ -468,6 +468,8 @@ impl Launcher {
             .open(&path)
             .map_err(io)?;
         std::io::Write::write_all(&mut file, KEY.as_bytes()).map_err(io)?;
+        // Handed over at the start, as inferd hands its memfd: the holders share the position.
+        std::io::Seek::rewind(&mut file).map_err(io)?;
         let handle = if target == "memfd" {
             // Anonymous: nothing is left on disk, as with a memfd.
             std::fs::remove_file(&path).map_err(io)?;
