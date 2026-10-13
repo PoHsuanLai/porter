@@ -226,7 +226,13 @@ async fn refresh_can_be_refused_and_a_seeded_token_works() {
     assert!(issuer.access_is_live(live["access_token"].as_str().expect("access")));
     // An access token past its `expires_in` is no longer live, as a real service sees it.
     issuer.set_token_lifetime(0);
-    let lapsed = token(&address, &pairs).await.json_body().expect("json");
+    let fresh = issuer.seed_refresh("client-1", "mail");
+    let again = [
+        ("grant_type", "refresh_token"),
+        ("refresh_token", fresh.as_str()),
+        ("client_id", "client-1"),
+    ];
+    let lapsed = token(&address, &again).await.json_body().expect("json");
     assert!(!issuer.access_is_live(lapsed["access_token"].as_str().expect("access")));
     // Another client cannot use it.
     let other = issuer.seed_refresh("client-1", "mail");

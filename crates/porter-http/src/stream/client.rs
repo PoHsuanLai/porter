@@ -183,7 +183,12 @@ mod tests {
     async fn a_kept_connection_answered_401_is_dropped_and_the_request_goes_out_on_a_new_one() {
         let dial = Scripted::new(&[&[OK, LAPSED], &[OK, LAPSED], &[LAPSED]]);
         let http = StreamHttp::new(dial, StreamLimits::default());
-        let get = || HttpRequest::new(Method::Get, WebUrl::parse("http://h/x").expect("url"));
+        let get = || {
+            HttpRequest::new(
+                Method::Get,
+                WebUrl::parse("https://h.example.test/x").expect("url"),
+            )
+        };
         let mut seen = Vec::new();
         for _ in 0..3 {
             seen.push(http.send(get()).await.expect("answer").status);
