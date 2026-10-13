@@ -2609,3 +2609,17 @@ Copies and additions only, apart from the one drop; nothing was compiled.
 - **Look here first if it does not compile.** `porter-service/src/add_flow.rs` `settled` (the tuple match that moves `run.identity.take()` and rebuilds it in each arm) and `begin` (the `Option<Result<P::SignIn, _>>`); `porter-families/src/set.rs` (the feature list in Cargo.toml: `porter-discover/io` for `HickoryDns`, `porter-http/hyper` for `HyperHttp`; `thiserror` is now an optional dependency of porter-families); `porter-secrets/src/keysel.rs` (`FileSecrets::open_in`, `Oo7NamedSecrets::namespace`).
 - **Cargo.toml changes (re-lock).** porter-secrets: `rustix` as a Linux and Android target dependency. porter-families: optional `thiserror`, the `set` feature.
 - **Not run:** `cargo fmt --all` was refused by the permission layer after the S7 edit (the lines of the last two commits are hand-formatted).
+## Lane b-inferd-launcher (Phase B: the agent launcher moves to inferd, base `e477888`, no-build)
+
+**What moved.** accountd's launcher (roster, login requests, `LoginTiming`), process credentials, the hand-off rules and the consent sheet for an agent's key are now `inferd::launcher`, served as `org.quire.Inference1.Launcher` at `/org/quire/Inference1`. `serve_launcher(connection, host, callers, config)` returns the clonable `Launchers` (the `porter_service::Launchers` seam and the `Roster`). The permits are the hosted service's grants (R5); `RequestAgentKey` has no `kind` and `IssueProcessCredential` takes a permit id.
+
+**Decisions.**
+- `LauncherHost` is the hosted `AccountService` as the launcher uses it (registry, agent state, key sheet, session permits, key read); it is implemented for the service generically.
+- The caller rule is inferd's own table: only `Role::AgentLauncher`.
+- Credential files live directly under `LauncherConfig::runtime_dir` (`<dir>/<id>/key`); at start only entries named like a credential are cleared, never the whole directory.
+- The launcher cannot see registry changes made elsewhere (Settings revoking a permit, an account removed), so the key host calls `Launchers::registry_changed()` after each; that ends the credentials the registry no longer backs. `LauncherConfig::on_change` is the other way: told after the launcher itself changed the registry.
+- The audit lines for a request and a credential go to the sink in `LoginTiming` (`LauncherConfig::with_audit`).
+
+**Look here first if it does not compile.** `launcher/sheet.rs`: `RequestObjects::start` and `OpenSheets::claim` are written from the S4 description, not from the crate. `launcher/host.rs`: `AccountService::api_key` does not exist yet (see the report). `launcher/shared.rs`: `KeyPermitId::parse`, `GrantId::from(KeyPermitId)`. `launcher/object.rs`: signals declared in a generic `#[zbus::interface]`. `tests/it/launcher_*.rs`: `Sheet::subscribe_on`, `LauncherProxy` method names, `RecordingAudit::entries`.
+
+**Tests.** From accountd's agent_launcher, agent_login, process_credential and session_scope: registration and caller rules, login and logout reports, expiry on an injected clock, credentials (memfd, 0600 file, refusals, ending by permit, session and launcher), sessions and the key sheet. The sign-out Settings rows, the add-sheet cases and the roster-in-the-sheet cases belong to the keys lane's Settings rows.
