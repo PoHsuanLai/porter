@@ -81,8 +81,8 @@ type MakeLinked<T> = Box<dyn Fn(&Origin) -> StreamHttp<LinkedDial<T>> + Send + S
 pub type GraphHttp<T> = Routed<StreamHttp<RelayDial<T>>, StreamHttp<LinkedDial<T>>, MakeLinked<T>>;
 
 /// The replica of `folder` (a path in the app folder, `Photos/Originals`; empty for the app
-/// folder itself) of the account the grant covers, over relays the account service opens to `endpoint` and,
-/// for the links Graph hands out, to the origins of those links.
+/// folder itself) of the account the grant covers, over relays the account service opens to
+/// `endpoint` and, for the links Graph hands out, to the origins of those links.
 pub fn graph_replica<T: Transport + 'static>(
     accounts: Arc<Accounts<T>>,
     grant: GrantId,
