@@ -411,11 +411,9 @@ async fn no_token_or_secret_is_on_the_bus_in_a_journal_or_in_anything_syncd_prin
 
     // The bus: no message carries the credential accountd holds or the bearer it adds.
     let seen = tap.drain().await;
-    assert!(
-        seen.len() > 10,
-        "the monitor saw the traffic: {}",
-        seen.len()
-    );
+    // The accounts service is in process now, so little crosses besides the app's own calls; the
+    // positive control below is what shows the scan reads them.
+    assert!(!seen.is_empty(), "the monitor saw the traffic");
     for secret in [SECRET_ACCESS, SECRET_REFRESH, DRIVE_BEARER, "Bearer "] {
         assert!(
             !seen.iter().any(|m| contains(m, secret)),

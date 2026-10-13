@@ -317,11 +317,7 @@ async fn add_account_and_reauthenticate_drive_accountds_sheets_and_say_how_they_
 
     // No sheet host is on this bus, so accountd cannot show the sheet: the command reached it
     // (the Request object and its Response) and says what the Response was, exit 1.
-    for args in [
-        &["add-account"][..],
-        &["add-account", "fake-graph"][..],
-        &["reauthenticate", ACCOUNT][..],
-    ] {
+    for args in [&["add-account"][..], &["add-account", "fake-graph"][..]] {
         let (lines, ok) = rig.run(args).await;
         assert!(!ok, "{args:?}: {lines:?}");
         assert_eq!(result_of(&lines), "refused", "{args:?}: {lines:?}");
@@ -331,6 +327,18 @@ async fn add_account_and_reauthenticate_drive_accountds_sheets_and_say_how_they_
             "{args:?}"
         );
     }
+
+    // An app holds no account, so it cannot ask for one to be signed in again: to it the account
+    // is not there (only the shell and Settings sign an account in again).
+    let (lines, ok) = rig.run(&["reauthenticate", ACCOUNT]).await;
+    assert!(!ok, "{lines:?}");
+    assert_eq!(result_of(&lines), "error", "{lines:?}");
+    assert!(
+        lines[0]["error"]
+            .as_str()
+            .is_some_and(|e| e.contains("UnknownObject")),
+        "{lines:?}"
+    );
 
     // A word that is no provider or account id never reaches the bus.
     for args in [
