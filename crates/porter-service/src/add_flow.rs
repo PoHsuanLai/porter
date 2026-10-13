@@ -307,7 +307,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                 view: sheet.view(),
             })
             .await
-            .map_err(|_| Refusal::Unavailable)?;
+            .map_err(left)?;
         let mut run = Run {
             signin: None,
             signed: None,
@@ -327,7 +327,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             while let Some(effect) = queue.pop_front() {
                 let event = match effect {
                     SheetEffect::Show(view) => {
-                        link.update(view).await.map_err(|_| Refusal::Unavailable)?;
+                        link.update(view).await.map_err(left)?;
                         None
                     }
                     SheetEffect::Feed(input) => self.feed(&sheet, job, &mut run, input).await,
@@ -337,9 +337,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                     // The host opens a page it is shown; showing the same page again opens it
                     // again, through the host's own portal path.
                     SheetEffect::OpenBrowser(_) => {
-                        link.update(sheet.view())
-                            .await
-                            .map_err(|_| Refusal::Unavailable)?;
+                        link.update(sheet.view()).await.map_err(left)?;
                         None
                     }
                     SheetEffect::Close(end) => {
@@ -578,6 +576,15 @@ fn finish(
             Ok(Stored::AlreadyThere(held))
         }
         (SheetEnd::Failed(fault), _, _) => Err(refusal_of(fault)),
+    }
+}
+
+/// What a sheet that could not go on answers: one its host closed or left with is the person
+/// leaving, as [`person`] reads it; no host at all is nobody to ask.
+fn left(fault: SheetFault) -> Refusal {
+    match fault {
+        SheetFault::Closed => Refusal::Dismissed,
+        _ => Refusal::Unavailable,
     }
 }
 

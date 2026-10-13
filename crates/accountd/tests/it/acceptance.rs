@@ -16,10 +16,13 @@ use porter_dbus::{AccountProxy, CallerRole, IdentitiesProxy, account_path};
 use porter_secrets::{Secrets, SecretsError};
 use zbus::zvariant::ObjectPath;
 
+/// The storage account's object, read live each time: a cached property would outlive the
+/// object, and the tests ask whether the object is still there.
 async fn account_proxy(connection: &zbus::Connection) -> AccountProxy<'_> {
     AccountProxy::builder(connection)
         .path(ObjectPath::try_from(account_path(&storage_account().id)).expect("path"))
         .expect("path")
+        .cache_properties(zbus::proxy::CacheProperties::No)
         .build()
         .await
         .expect("proxy")
