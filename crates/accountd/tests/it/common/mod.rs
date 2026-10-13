@@ -240,6 +240,35 @@ pub async fn eventually(what: &str, mut condition: impl FnMut() -> bool) {
     deadline.fail(what);
 }
 
+/// Options whose clients file is a scratch one, so that [`publish`] has something to write.
+pub fn poking_options() -> Options {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static NEXT: AtomicU32 = AtomicU32::new(0);
+    let dir = std::env::temp_dir().join(format!(
+        "accountd-poke-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    Options {
+        clients: Some(dir.join("clients.toml")),
+        ..Options::default()
+    }
+}
+
+/// Makes accountd tell whoever is to be told what changed in the service since it last told
+/// them: a successful `Set` from Settings ends in a publish. The rig must have been started with
+/// [`poking_options`].
+pub async fn publish(rig: &Rig) {
+    settings(rig)
+        .await
+        .set(
+            &key("accounts.clients.microsoft"),
+            &toml::Value::String("poke".into()),
+        )
+        .await
+        .expect("a poke");
+}
+
 use porter_core::wire::Refusal;
 use porter_dbus::{Details, refusal_error_name};
 

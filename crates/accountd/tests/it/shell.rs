@@ -33,16 +33,21 @@ async fn only_the_shell_may_ask_who_needs_signing_in() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_shell_is_told_of_a_refusal_and_a_recovery_and_reads_the_account() {
-    let rig = Rig::start().await;
+    let rig = Rig::start_with(poking_options(), SheetHost::quiet()).await;
     let mail = mail_account();
     let shell = rig
         .client_as(caller("org.quire.Shell", CallerRole::SheetHost))
         .await;
     let manager = ManagerProxy::new(&shell).await.expect("proxy");
     assert!(manager.needing_reauth().await.expect("list").is_empty());
-    // An app that holds no grant, and another that has called: neither hears.
+    // An app that has called accountd does not hear.
     let other = rig.client("org.quire.Mail").await;
-    let other_manager = ManagerProxy::new(&other).await.expect("proxy");
+    porter_dbus::IdentitiesProxy::new(&other)
+        .await
+        .expect("proxy")
+        .list()
+        .await
+        .expect("list");
     let mut shell_hears = listen(&shell).await;
     let mut other_hears = listen(&other).await;
     let mut shell_changes = property_changes(&shell).await;
@@ -52,10 +57,8 @@ async fn the_shell_is_told_of_a_refusal_and_a_recovery_and_reads_the_account() {
             .set_state(&mail.id, AccountState::NeedsReauth)
             .await
     );
-    // Any call ends in a publish, which tells whoever is to be told.
-    let _ = other_manager
-        .query(&storage_need(), "photos", "interactive")
-        .await;
+    // A publish tells whoever is to be told.
+    publish(&rig).await;
     let heard_by_shell = heard_names(&mut shell_hears, &["NeedsReauth"]).await;
     assert!(
         heard_by_shell.contains(&"NeedsReauth".to_owned()),
@@ -84,7 +87,7 @@ async fn the_shell_is_told_of_a_refusal_and_a_recovery_and_reads_the_account() {
         .expect("account");
     assert_eq!(account.state().await.expect("state"), "needs_reauth");
     assert_eq!(account.label().await.expect("label"), mail.label.0);
-    // The same object does not exist for an app with no grant.
+    // The same object does not exist for an app.
     let hidden = AccountProxy::builder(&other)
         .path(listed[0].0.clone())
         .expect("path")
@@ -109,9 +112,7 @@ async fn the_shell_is_told_of_a_refusal_and_a_recovery_and_reads_the_account() {
             .any(|a| a.id == mail.id && a.state == AccountState::Ok)
     })
     .await;
-    let _ = other_manager
-        .query(&storage_need(), "photos", "interactive")
-        .await;
+    publish(&rig).await;
     assert_eq!(
         heard_names(&mut shell_changes, &["PropertiesChanged"]).await,
         ["PropertiesChanged"],
