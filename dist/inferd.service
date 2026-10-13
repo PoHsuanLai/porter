@@ -40,9 +40,18 @@ IPAddressAllow=localhost
 # runtime directory, %t/inferd) and its state (the audit file and the spend ledger, under
 # $XDG_STATE_HOME/quire/inferd). systemd creates both before the sandbox starts. The weights
 # cache is read through ProtectHome=read-only.
+#
+# inferd also holds the person's AI keys: the registry of the accounts and the permissions given
+# to apps is keys/registry.json in the state directory (the keys themselves are in the Secret
+# Service, under the name porter.inferd, which the session bus reaches), and the credential
+# files it hands to the processes of an agent are under %t/inferd/agent (a directory of its
+# own, private to the person, emptied when inferd starts and when a credential ends).
+# Checking a key when it is added is one call to the company, which needs the network drop-in
+# below; without it the add sheet says the service could not be reached.
 ProtectHome=read-only
 ProtectSystem=strict
-RuntimeDirectory=inferd
+RuntimeDirectory=inferd inferd/agent
+RuntimeDirectoryMode=0700
 StateDirectory=quire/inferd
 # Engines write scratch files (vLLM, torch and Triton caches): private, and gone with the unit.
 PrivateTmp=yes

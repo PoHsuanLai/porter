@@ -13,15 +13,14 @@ use crate::audit::JsonLines;
 use crate::catalog::read_catalog;
 use crate::clock::SystemClock;
 use crate::cloud::Cloud;
-use crate::cloud::accountd::PeerAccountd;
 use crate::cloud::spend::Ledger;
+use crate::keys::{AccountRows, KeyAudit, KeysObject, KeysStartError};
 use crate::config::{ConfigError, Dirs, InferdConfig};
 use crate::engines::Engines;
 use crate::hosts::{HealthProbe, HostCloser, NvidiaSmi, ProcessHost};
 use crate::local::{LocalModel, build};
 use crate::peers::{PROC_GATE, ProcPeers, ProcRoot};
 use crate::replay::Replays;
-use crate::report::PeerReports;
 use crate::service::{Inference, serve_with_settings};
 use crate::settings::{ConfigFile, InferdSettings, Reload, resolve};
 use crate::shutdown::{self, Ended, Shutdown};
@@ -30,7 +29,8 @@ use crate::tailnet::{BusMachines, Parts, Tailnet};
 use crate::watch::Watch;
 use engine_supervisor::EngineId;
 use model_catalog::EngineKind;
-use porter_dbus::{BusTarget, INFERENCE_BUS};
+use porter_dbus::{BusTarget, INFERENCE_BUS, INFERENCE_PATH};
+use porter_secrets::keysel::{Selection, select};
 use porter_http::{HyperHttp, Limits};
 use porter_tailnet::{Config as TailnetConfig, Guests, Timing};
 use porter_tailscale::LocalApi;
@@ -58,6 +58,10 @@ pub const TAILSCALE_SOCKET_VAR: &str = "INFERD_TAILSCALE_SOCKET";
 /// only).
 pub const PROC_ROOT_VAR: &str = "INFERD_PROC_ROOT";
 
+/// The variable that names the key file of a `test-keys` build (`file:<absolute path>`); read
+/// only in [`Config::from_env`].
+pub const KEYS_VAR: &str = "INFERD_KEYS";
+
 /// Everything inferd needs to start, as typed values.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
@@ -72,6 +76,8 @@ pub struct Config {
     pub proc_root: ProcRoot,
     /// The bus to serve on.
     pub bus: BusTarget,
+    /// Which secret store holds the AI keys.
+    pub keys: Selection,
 }
 
 impl Config {
@@ -84,7 +90,15 @@ impl Config {
             tailscale_socket: None,
             proc_root: ProcRoot::System,
             bus,
+            keys: Selection::SecretService,
         }
+    }
+
+    /// With this secret store for the AI keys.
+    #[must_use]
+    pub fn with_keys(mut self, keys: Selection) -> Self {
+        self.keys = keys;
+        self
     }
 
     /// With the configuration file at `path`.
@@ -111,10 +125,10 @@ impl Config {
     /// The configuration the process's environment gives; `config_file` is the command line's
     /// `--config`, else the file under `$XDG_CONFIG_HOME`. The one place inferd reads the
     /// environment: `HOME`, the XDG directories and `HF_HOME` (`Dirs::from_env`),
-    /// `INFERD_TAILSCALE_SOCKET` and `INFERD_PROC_ROOT`.
+    /// `INFERD_TAILSCALE_SOCKET`, `INFERD_PROC_ROOT` and `INFERD_KEYS`.
     ///
     /// # Errors
-    /// There is nowhere to put the sockets and files.
+    /// There is nowhere to put the sockets and files, or the key store asked for is refused.
     pub fn from_env(config_file: Option<PathBuf>) -> Result<Self, StartError> {
         let dirs = Dirs::from_env()?;
         let tailscale_socket = std::env::var_os(TAILSCALE_SOCKET_VAR)
@@ -127,6 +141,8 @@ impl Config {
         }
         config.tailscale_socket = tailscale_socket;
         config.proc_root = proc_root;
+        let keys_var = std::env::var(KEYS_VAR).ok();
+        config.keys = select(keys_var.as_deref()).map_err(KeysStartError::from)?;
         Ok(config)
     }
 }
@@ -170,6 +186,9 @@ pub enum StartError {
     /// The bus.
     #[error(transparent)]
     Bus(#[from] zbus::Error),
+    /// The AI keys' store or registry could not be opened.
+    #[error(transparent)]
+    Keys(#[from] KeysStartError),
 }
 
 /// Why the daemon did not stop cleanly.
@@ -250,6 +269,7 @@ impl Daemon {
             tailscale_socket,
             proc_root,
             bus,
+            keys,
         } = config;
         let config = read_config(&config_file)?;
         let catalog = read_catalog(&dirs.catalog);
@@ -338,9 +358,61 @@ impl Daemon {
             eprintln!("inferd: {path}: not accepted; using its default");
         }
         let connection = bus.connect().await?;
-        // The hosted models of the catalogue, reached through accounts accountd holds the keys of.
+        if let Some(line) = proc_root.notice("inferd", PROC_ROOT_VAR) {
+            eprintln!("{line}");
+        }
+        let peers = Arc::new(ProcPeers::with_root(
+            connection.clone(),
+            config.callers.clone(),
+            &proc_root,
+        ));
+        // The AI keys, held here: the hosted service over inferd's own store, the shell's sheets
+        // for consent and adding, and the agent launcher's seam to it.
+        let opened = crate::keys::open(
+            &dirs,
+            keys,
+            config.callers.rows(),
+            connection.clone(),
+            peers.shared(),
+        )
+        .await?;
+        let engines_news = Arc::new(tokio::sync::Notify::new());
+        let served_rows = crate::keys::ServedSlot::default();
+        let launchers = crate::launcher::serve_launcher(
+            &connection,
+            Arc::clone(&opened.service),
+            Arc::clone(&peers),
+            crate::launcher::LauncherConfig::new(dirs.agent.clone())
+                .with_audit(Arc::new(KeyAudit::new(dirs.keys_audit.clone()))),
+        )
+        .await?;
+        crate::keys::news::watch(
+            Arc::clone(&opened.service),
+            Arc::clone(&opened.saved),
+            Arc::clone(&served_rows),
+            Arc::clone(&engines_news),
+            {
+                let launchers = launchers.clone();
+                move || launchers.registry_changed()
+            },
+        );
+        connection
+            .object_server()
+            .at(
+                INFERENCE_PATH,
+                KeysObject::new(Arc::clone(&opened.service), peers.shared()),
+            )
+            .await?;
+        let rows = AccountRows::new(
+            Arc::clone(&opened.service),
+            launchers,
+            opened.apps.clone(),
+            opened.providers.clone(),
+            served_rows,
+        );
+        // The hosted models of the catalogue, reached through the accounts inferd holds the keys of.
         let cloud = Cloud::new(
-            Arc::new(PeerAccountd::new(connection.clone())),
+            Arc::new(opened.local.clone()),
             &catalog.entries,
             Ledger::open(dirs.spend.clone()),
             Arc::new(SystemClock),
@@ -398,20 +470,12 @@ impl Daemon {
             }),
             config.probe.clone(),
             engines.clone(),
-            Arc::new(PeerReports::new(connection.clone())),
+            Arc::new(opened.local.clone()),
             dirs.sockets.clone(),
         )
         .spawn();
         let reload = Reload::new(ConfigFile::new(config_file), engines.clone());
         reload.clone().watch(RELOAD_EVERY);
-        if let Some(line) = proc_root.notice("inferd", PROC_ROOT_VAR) {
-            eprintln!("{line}");
-        }
-        let peers = Arc::new(ProcPeers::with_root(
-            connection.clone(),
-            config.callers.clone(),
-            &proc_root,
-        ));
         // The agent endpoints are always served; `ai.agents.endpoint` (off by default) decides
         // whether the launcher, who is in no table until a machine lists it, may open one.
         let agents = Agents::new(
@@ -430,9 +494,15 @@ impl Daemon {
         .reloading(reload.clone())
         .probing(probing)
         .computers(computers)
-        .tailnet(tailnet);
+        .tailnet(tailnet)
+        .keys_news(engines_news);
         // Every object, the settings module among them, is served before the name is claimed.
-        serve_with_settings(&connection, daemon, InferdSettings::new(peers, reload)).await?;
+        serve_with_settings(
+            &connection,
+            daemon,
+            InferdSettings::new(peers, reload).with_keys(Arc::new(rows)),
+        )
+        .await?;
         Ok(Self { connection, closer })
     }
 

@@ -19,7 +19,6 @@
 //! the environment is read), [`Daemon::build`] and [`Daemon::run`]. The binary only parses its
 //! arguments, listens for signals and calls these.
 
-mod account_news;
 mod adapters;
 pub mod agent;
 pub mod attached;
@@ -30,6 +29,7 @@ pub mod config;
 pub mod daemon;
 pub mod engines;
 pub mod hosts;
+pub mod keys;
 pub mod peers;
 pub mod pipeline;
 pub mod probe;

@@ -8,6 +8,7 @@ use super::file::Reload;
 use super::keys::{SLOTS, TIERS, model_path, parse_model_path, slots_of};
 use super::resolve::{model_text, parse_model, slot_value};
 use crate::cloud::picker::{Availability, Choice, NEEDS_ACCOUNT, choices};
+use crate::keys::KeyRows;
 use crate::peers::{Peers, Role};
 use ds_settings::live::{Access, Caller, LiveError, LiveModule, LiveSchema, Verdict, serve};
 use ds_settings::schema::{
@@ -39,6 +40,8 @@ pub struct InferdSettings<P> {
     peers: P,
     reload: Reload,
     writing: tokio::sync::Mutex<()>,
+    /// The `accounts.<id>.*` rows of the AI accounts, when this daemon hosts them.
+    keys: Option<std::sync::Arc<dyn KeyRows>>,
 }
 
 impl<P> std::fmt::Debug for InferdSettings<P> {
@@ -56,6 +59,17 @@ impl<P: Peers> InferdSettings<P> {
             peers,
             reload,
             writing: tokio::sync::Mutex::new(()),
+            keys: None,
+        }
+    }
+
+    /// The same module, also listing and changing the AI accounts: their rows, the permits'
+    /// Revoke rows included (`accounts.<id>.*`, the same words accountd's rows had).
+    #[must_use]
+    pub fn with_keys(self, keys: std::sync::Arc<dyn KeyRows>) -> Self {
+        Self {
+            keys: Some(keys),
+            ..self
         }
     }
 
@@ -227,18 +241,29 @@ impl<P: Peers> LiveModule for InferdSettings<P> {
                 key.extend(TIERS.map(|tier| self.spec(kind, tier, &hosted)));
             }
         }
+        if let Some(keys) = &self.keys {
+            key.extend(keys.schema());
+        }
         LiveSchema { version: 1, key }
     }
 
     async fn get(&self, key: &KeyPath) -> Result<toml::Value, LiveError> {
-        let (kind, tier) =
-            parse_model_path(&key.0).ok_or_else(|| LiveError::UnknownKey(key.0.clone()))?;
+        let Some((kind, tier)) = parse_model_path(&key.0) else {
+            return match &self.keys {
+                Some(keys) if keys.handles(&key.0) => keys.get(&key.0).await,
+                _ => Err(LiveError::UnknownKey(key.0.clone())),
+            };
+        };
         Ok(toml::Value::String(self.current(kind, tier)))
     }
 
     async fn set(&self, key: &KeyPath, value: toml::Value) -> Result<(), LiveError> {
-        let (slot, tier) =
-            parse_model_path(&key.0).ok_or_else(|| LiveError::UnknownKey(key.0.clone()))?;
+        let Some((slot, tier)) = parse_model_path(&key.0) else {
+            return match &self.keys {
+                Some(keys) if keys.handles(&key.0) => keys.set(&key.0, value).await,
+                _ => Err(LiveError::UnknownKey(key.0.clone())),
+            };
+        };
         let kind = slot;
         let toml::Value::String(text) = value else {
             return Err(LiveError::BadValue("a model is text".into()));
@@ -275,8 +300,13 @@ pub async fn serve_settings<P: Peers>(
     connection: &zbus::Connection,
     module: InferdSettings<P>,
 ) -> zbus::Result<()> {
-    serve(connection, INFERENCE_SETTINGS_PATH, module)
+    let keys = module.keys.clone();
+    let served = serve(connection, INFERENCE_SETTINGS_PATH, module)
         .await
-        .map(|_| ())
-        .map_err(|e| zbus::Error::Failure(e.to_string()))
+        .map_err(|e| zbus::Error::Failure(e.to_string()))?;
+    // The account rows announce what changed through the served module.
+    if let Some(keys) = keys {
+        keys.bind(served);
+    }
+    Ok(())
 }

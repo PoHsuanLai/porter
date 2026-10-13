@@ -55,6 +55,8 @@ pub struct Inference<P, O, C> {
     agents: Option<Agents>,
     computers: Option<Arc<Computers>>,
     tailnet: Option<Tailnet>,
+    /// Woken when an AI account appeared, went or changed state (the key host fires it).
+    keys_news: Option<Arc<tokio::sync::Notify>>,
 }
 
 impl<P, O, C> Inference<P, O, C> {
@@ -71,6 +73,16 @@ impl<P, O, C> Inference<P, O, C> {
             agents: None,
             computers: None,
             tailnet: None,
+            keys_news: None,
+        }
+    }
+
+    /// The same object, which says `EnginesChanged` each time `news` is woken: an AI account
+    /// appeared, went or changed state, so a listener reads `Places` again.
+    pub fn keys_news(self, news: Arc<tokio::sync::Notify>) -> Self {
+        Self {
+            keys_news: Some(news),
+            ..self
         }
     }
 
@@ -881,7 +893,7 @@ where
 {
     let supervised = daemon.engines.supervised().clone();
     let probed = daemon.engines.probed().clone();
-    let hosts_cloud = daemon.engines.cloud().is_some();
+    let keys_news = daemon.keys_news.clone();
     let asking = daemon.tailnet.as_ref().map(Tailnet::subscribe);
     let agents = daemon.agents.clone().map(|agents| AgentsService {
         peers: Arc::clone(&daemon.peers),
@@ -948,11 +960,9 @@ where
             let _ = Inference::<P, O, C>::engines_changed(iface.signal_emitter()).await;
         }
     });
-    // A cloud AI account appeared, went or changed state (accountd tells a joined porter daemon):
-    // a listener re-reads `Places`. Only a daemon that serves hosted models has accounts to hear.
-    if hosts_cloud {
-        let news = Arc::new(tokio::sync::Notify::new());
-        crate::account_news::spawn(connection.clone(), Arc::clone(&news));
+    // An AI account appeared, went or changed state (the key host says so): a listener re-reads
+    // `Places`. Only a daemon that hosts the keys has accounts to hear.
+    if let Some(news) = keys_news {
         let iface: zbus::object_server::InterfaceRef<Inference<P, O, C>> =
             connection.object_server().interface(INFERENCE_PATH).await?;
         tokio::spawn(async move {

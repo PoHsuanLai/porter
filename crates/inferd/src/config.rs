@@ -7,7 +7,7 @@ use crate::local::EngineConfig;
 use crate::peers::CallerTable;
 use crate::probe::ProbeConfig;
 use crate::structured::AiConfig;
-use porter_core::xdg::{PathError, Xdg};
+use porter_core::xdg::{PathError, Xdg, absolute};
 use porter_infer::{Policy, TierMap};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -93,6 +93,27 @@ pub struct Dirs {
     pub guests: PathBuf,
     /// `$HF_HOME/hub`, else `~/.cache/huggingface/hub`: the weights, when the file names none.
     pub hf_cache: PathBuf,
+    /// `$XDG_STATE_HOME/quire/inferd/keys`: the AI keys' registry (`registry.json`, whose grants
+    /// are the permits). The keys themselves are in the Secret Service, never here. Agents must
+    /// not read it, and it is under the directory `inferd.service` keeps as its state.
+    pub keys: PathBuf,
+    /// `$XDG_STATE_HOME/quire/inferd/keys-audit.jsonl`: what happened to the keys and permits
+    /// (ids and kinds, never a key).
+    pub keys_audit: PathBuf,
+    /// `$XDG_RUNTIME_DIR/inferd/agent`: where the credential files of the agents' processes live
+    /// (the launcher makes it 0700 and clears what a dead inferd left).
+    pub agent: PathBuf,
+    /// `/usr/share/porter/providers`: the provider files this install ships.
+    pub providers_system: PathBuf,
+    /// `$XDG_DATA_HOME/porter/providers`: the person's own provider files.
+    pub providers_own: PathBuf,
+    /// `/usr/share/porter/clients.toml`.
+    pub clients_shipped: PathBuf,
+    /// `$XDG_CONFIG_HOME/porter/clients.toml`.
+    pub clients_own: PathBuf,
+    /// The `applications` directories that hold desktop entries, the person's first: how an app
+    /// is named on a consent sheet.
+    pub applications: Vec<PathBuf>,
 }
 
 impl Dirs {
@@ -113,7 +134,30 @@ impl Dirs {
             .map(|hf| PathBuf::from(hf).join("hub"))
             .or_else(|| xdg.home().map(|home| home.join(".cache/huggingface/hub")))
             .ok_or(ConfigError::NoDirs)?;
+        // The `applications` directories that name an app for a person (the desktop entries):
+        // the person's first, then each absolute `$XDG_DATA_DIRS` entry's.
+        let data_dirs = xdg
+            .raw("XDG_DATA_DIRS")
+            .map(|dirs| dirs.to_string())
+            .filter(|dirs| !dirs.is_empty())
+            .unwrap_or_else(|| "/usr/local/share:/usr/share".to_owned());
+        let applications = std::iter::once(data.clone())
+            .chain(
+                data_dirs
+                    .split(':')
+                    .filter_map(|dir| absolute(Some(dir.to_owned()))),
+            )
+            .map(|dir| dir.join("applications"))
+            .collect();
         Ok(Self {
+            keys: state.join("quire").join("inferd").join("keys"),
+            keys_audit: state.join("quire").join("inferd").join("keys-audit.jsonl"),
+            agent: runtime.join("inferd").join("agent"),
+            providers_system: PathBuf::from("/usr/share/porter/providers"),
+            providers_own: data.join("porter").join("providers"),
+            clients_shipped: PathBuf::from("/usr/share/porter/clients.toml"),
+            clients_own: config.join("porter").join("clients.toml"),
+            applications,
             config: config.join("quire").join("inferd.toml"),
             catalog: CatalogDirs {
                 system: PathBuf::from("/usr/share/stoker/catalog"),
