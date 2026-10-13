@@ -18,6 +18,7 @@ use porter_core::{DataClass, Need, Tier};
 use porter_dbus::{BusConnection, BusError, BusFailure, classify};
 #[cfg(feature = "infer")]
 use porter_infer::{ComputerName, OpenOptions, PlaceId, PlaceRow, Readiness};
+#[cfg(feature = "infer")]
 use serde::Serialize;
 
 /// inferd on the session bus, and accountd for the sheets it still shows.
@@ -96,7 +97,8 @@ impl<T> Rows<T> {
     }
 }
 
-/// A closed set's serde form is its slug on the bus too.
+/// A closed set's serde form is its slug on the bus too. Only inference's calls send one now.
+#[cfg(feature = "infer")]
 pub(super) fn slug<T: Serialize + ?Sized>(value: &T) -> Result<String, TransportError> {
     match serde_json::to_value(value) {
         Ok(serde_json::Value::String(text)) => Ok(text),
