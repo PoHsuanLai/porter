@@ -128,13 +128,11 @@ async fn an_anthropic_chat_with_a_tool_call_and_result_streams_through_with_the_
     );
     assert_eq!(calls.resolved, vec!["grant-anthropic".to_owned()]);
 
-    // No bus message holds the real key; the token is on the bus in the launcher's reply once.
+    // No bus message holds the real key; the token is on the bus in the launcher's reply once,
+    // which is also the scan's positive control (the key store is in process now, so no
+    // verdict asked over the bus carries the app's name).
     let bus = tap.drain().await;
     assert!(bus.iter().all(|m| !contains(m, KEY_ANTHROPIC)));
-    assert!(
-        bus.iter().any(|m| contains(m, APP)),
-        "positive control: the scan reads names"
-    );
     assert_eq!(
         bus.iter().filter(|m| contains(m, &endpoint.token)).count(),
         1,

@@ -143,7 +143,7 @@ impl Rig {
                 account(KEYED, AuthKind::ApiKey),
                 account(OAUTH, AuthKind::OAuthPkce),
                 Account {
-                    state: AccountState::NeedsReauth,
+                    state: AccountState::NeedsLogin,
                     ..account(AGENT, AuthKind::AgentLogin)
                 },
             ],

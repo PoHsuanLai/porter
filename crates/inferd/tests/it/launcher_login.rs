@@ -82,7 +82,7 @@ async fn a_login_goes_to_the_registrant_alone_and_ready_sets_the_account_ok() {
     );
     let request = args.request.to_owned();
 
-    // Another connection cannot answer it.
+    // Another launcher cannot answer it: to that connection there is no such request.
     assert_eq!(
         error_name(
             bystander
@@ -91,7 +91,7 @@ async fn a_login_goes_to_the_registrant_alone_and_ready_sets_the_account_ok() {
                 .await
                 .expect_err("not its request")
         ),
-        "org.freedesktop.DBus.Error.AccessDenied"
+        "org.quire.Inference1.Error.UnknownRequest"
     );
     launcher
         .proxy
@@ -200,7 +200,7 @@ async fn a_failure_and_a_cancel_leave_the_state_and_a_logout_done_needs_a_login(
         within(waiting).await,
         LoginEnd::Reported(LoginOutcome::Ready)
     ));
-    assert_eq!(state_of(&rig), AccountState::NeedsReauth);
+    assert_eq!(state_of(&rig), AccountState::NeedsLogin);
 }
 
 #[tokio::test(flavor = "multi_thread")]

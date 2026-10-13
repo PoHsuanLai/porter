@@ -167,7 +167,7 @@ async fn only_the_launcher_calls_and_bad_words_are_invalid() {
 async fn an_agents_own_word_sets_its_state_and_only_an_agent_account_takes_it() {
     let rig = Rig::start(vec![], vec![], LoginTiming::new()).await;
     let launcher = rig.launcher("org.example.Launcher").await;
-    assert_eq!(state_of(&rig, AGENT), AccountState::NeedsReauth);
+    assert_eq!(state_of(&rig, AGENT), AccountState::NeedsLogin);
     launcher
         .proxy
         .set_agent_state(AGENT, "ready")
@@ -179,7 +179,7 @@ async fn an_agents_own_word_sets_its_state_and_only_an_agent_account_takes_it() 
         .set_agent_state(AGENT, "needs_login")
         .await
         .expect("needs login");
-    assert_eq!(state_of(&rig, AGENT), AccountState::NeedsReauth);
+    assert_eq!(state_of(&rig, AGENT), AccountState::NeedsLogin);
 
     assert_eq!(
         error_name(
