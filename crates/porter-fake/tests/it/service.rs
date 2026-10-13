@@ -453,6 +453,7 @@ async fn every_change_to_the_registry_is_saved_and_audited_without_a_value() {
     let audit = RecordingAudit::default();
     let sheets =
         ScriptedSheets::answering([Scripted::AllowFirst(GrantScope::Always), Scripted::Deny]);
+    let asks = sheets.log();
     let service = fake_service(sheets)
         .await
         .with_store(store.clone())
@@ -465,6 +466,12 @@ async fn every_change_to_the_registry_is_saved_and_audited_without_a_value() {
         choose(&service, &me, mail(), DataClass::Mail).await,
         AccountsReply::Refused(Refusal::Denied)
     );
+    // Don't Allow is remembered: a second Choose is refused with no second sheet.
+    assert_eq!(
+        choose(&service, &me, mail(), DataClass::Mail).await,
+        AccountsReply::Refused(Refusal::Denied)
+    );
+    assert_eq!(asks.asked().len(), 2);
     let token = service
         .handle(
             &me,

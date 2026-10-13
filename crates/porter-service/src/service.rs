@@ -12,7 +12,7 @@ use crate::sheets::Sheets;
 use crate::store::{NoStore, RegistryStore};
 use crate::token::{provider_refusal, secret_purpose};
 use porter_core::audit::{AuditEntry, AuditEvent};
-use porter_core::consent::{ConsentAnswer, GrantScope, Usage, availability};
+use porter_core::consent::{ConsentAnswer, GrantScope, Usage, Verdict, availability};
 use porter_core::wire::{ParentWindow, Refusal};
 use porter_core::{
     AccountId, AccountState, AccountsReply, AccountsRequest, AppId, Audience, AuthKind, DataClass,
@@ -400,7 +400,19 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             class,
             usage,
         };
-        let Some(ask) = ask_for(&self.lock(), &need, asker, session) else {
+        let ask = {
+            let registry = self.lock();
+            // Choose draws the sheet each time, except when the person has already said Don't
+            // Allow for every account that fits: asking again would badger them, and undoing a
+            // Don't Allow is theirs to do, in Settings. This holds for a launcher's session ask
+            // too, which is held under the agent's app.
+            let verdicts = registry.verdicts(&need, asker);
+            if !verdicts.is_empty() && verdicts.iter().all(|v| *v == Verdict::Denied) {
+                return AccountsReply::Refused(Refusal::Denied);
+            }
+            ask_for(&registry, &need, asker, session)
+        };
+        let Some(ask) = ask else {
             return AccountsReply::Refused(Refusal::NoFittingAccount);
         };
         let answer = self.sheets.consent(ask, window).await;

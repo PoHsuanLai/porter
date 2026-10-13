@@ -2652,3 +2652,7 @@ accountd now holds identities, Spaces and Tailscale and nothing grant-keyed.
 - **callers.toml:** the agent launcher row (`app = "org.quire.DocketAcp"`, `unit = "docket-acp.service"`, `role = "agent_launcher"`, `name = "Agents"`) was a commented example; it is removed from accountd's sample and belongs in dist/inferd.toml.
 - **Look here first if it does not compile:** `request.rs` (`self.requests.start(sender, options, kind, run)` is my guess at `RequestObjects`' method, with a `fdo::Error` error: check against porter-sheets), `daemon.rs` (`spec.group()`, `Chosen::open(keys, namespace(), "accountd")`, `select(var)` as b-lib wrote them), `settings.rs` (`Snapshot::from_reads`), `account.rs`, `tests/it/common/mod.rs` (`poking_options`).
 - **Cargo.toml:** accountd drops porter-discover, porter-http (now dev), porter-proxy, oo7, rustix (now dev), rustls-pki-types; adds porter-sheets (workspace dep from b-bus); porter-families feature `set` in place of the family list. The coordinator re-locks.
+
+## Lane grant-gaps
+
+- **Choose after Don't Allow.** `AccountService::choose` (an app's `Choose` and a launcher's `RequestAgentGrant` both) answers `Refused(Denied)` with no sheet when the consent store denies the asker every fitting account. An account the app holds an Allow for, or has not been asked about, still draws the sheet each time: Choose is the explicit chooser. Undoing a Don't Allow is the person's, in Settings (Revoke). Test: a second Choose in `every_change_to_the_registry_is_saved_and_audited_without_a_value` (porter-fake).
