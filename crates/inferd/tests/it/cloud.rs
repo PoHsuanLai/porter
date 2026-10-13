@@ -17,7 +17,7 @@ use porter_core::capability::LlmFeature;
 use porter_core::consent::Usage;
 use porter_core::need::LlmNeed;
 use porter_core::{AppId, AppName, DataClass, Isolation, MicroUsd, Need, Tier, Tokens};
-use porter_dbus::PeerProxy;
+use porter_dbus::InferenceProxy;
 use porter_infer::{
     ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRefusal, InferReply, InferRequest,
     LocalOnly, MessagePart, ModelError, OpenOptions, Policy, Role as ChatRole, StopReason,
@@ -339,16 +339,17 @@ async fn acceptance_7_a_chat_turn_goes_to_a_hosted_model_through_openrouter_and_
     );
 
     // Acceptance 7. The positive control first: a key sent as an argument on the bus is found by
-    // the scan (a stranger asking accountd to resolve the key as if it were a grant id).
+    // the scan (a stranger sending the key as the name of a computer to remove: refused, but the
+    // call crossed the bus). The key itself is read in this process and never leaves it.
     let stranger = world.bus.connect().await;
-    let _ = PeerProxy::new(&stranger)
+    let _ = InferenceProxy::new(&stranger)
         .await
         .expect("proxy")
-        .resolve_key(KEY_OR)
+        .remove_computer(KEY_OR)
         .await;
     let seen = tap.drain().await;
     assert!(
-        seen.len() > 10,
+        seen.len() > 2,
         "the monitor saw the traffic: {}",
         seen.len()
     );
@@ -359,12 +360,8 @@ async fn acceptance_7_a_chat_turn_goes_to_a_hosted_model_through_openrouter_and_
         "only the deliberate control carries the key"
     );
     assert!(
-        carrying[0].windows(10).any(|w| w == b"ResolveKey"),
+        carrying[0].windows(14).any(|w| w == b"RemoveComputer"),
         "and it is the control's call"
-    );
-    assert!(
-        seen.iter().any(|m| contains(m, "grant-openrouter")),
-        "positive control: the scan sees values that do cross"
     );
     // Nor is it in an audit line, a file the daemon's world holds, or the engines' debug text.
     let lines = serde_json::to_string(&audited).expect("json");

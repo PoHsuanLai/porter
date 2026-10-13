@@ -210,30 +210,19 @@ async fn the_shell_may_list_the_places_and_ask_for_no_model() {
     ));
 }
 
-/// An account that appears, goes or changes state is told to inferd by accountd (a joined porter
-/// daemon hears it); inferd says `EnginesChanged`, so a listener re-reads `Places`. The fake
-/// accountd sends the signal accountd's roster would.
+/// An account that appears, goes or changes state is told to inferd by its own key store (the
+/// news it wakes after a save); inferd says `EnginesChanged`, so a listener re-reads `Places`.
+/// The fake key store wakes the same news.
 #[tokio::test(flavor = "multi_thread")]
 async fn an_account_that_appears_makes_inferd_say_engines_changed() {
     use porter_dbus::{BusStream, InferenceProxy};
     let (world, _lab) = world("news", Role::Settings, "org.quire.Settings").await;
     let proxy = InferenceProxy::new(&world.client).await.expect("proxy");
     let mut changed = proxy.receive_engines_changed().await.expect("stream");
-    let held = world.accountd_bus.as_ref().expect("accountd's connection");
-    let daemon = world.daemon.unique_name().expect("name").to_owned();
-    let path = porter_dbus::zvariant::ObjectPath::try_from("/org/quire/Accounts1/account/new")
-        .expect("path");
+    let keys = world.accountd.as_ref().expect("the key store");
     let heard = within_generous(async {
         loop {
-            held.emit_signal(
-                Some(daemon.clone()),
-                "/org/quire/Accounts1",
-                "org.quire.Accounts1.Manager",
-                "AccountAdded",
-                &(&path,),
-            )
-            .await
-            .expect("signal");
+            keys.changed();
             let next = std::future::poll_fn(|cx| std::pin::Pin::new(&mut changed).poll_next(cx));
             if let Ok(Some(_)) =
                 tokio::time::timeout(std::time::Duration::from_millis(150), next).await

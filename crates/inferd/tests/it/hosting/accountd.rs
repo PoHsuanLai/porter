@@ -1,28 +1,32 @@
-//! A fake accountd on the private bus: `org.quire.Accounts1.Peer` at `/org/quire/Accounts1`, with
-//! the two methods inferd calls. `Verdicts` answers by app (an app a grant names is `granted`, any
-//! other `ask`, an account marked denied `denied`), and `ResolveKey` hands the key of a grant on a
-//! sealed memfd, as the real one does. Every call is recorded (the app and class asked about, the
-//! grants resolved), never a key.
+//! A scripted stand-in for the AI accounts inferd holds, behind the two seams the daemon asks
+//! them through (`Accountd`: the verdicts and the key; `Reports`: a probed runtime becoming an
+//! account). It is in process: inferd holds the keys itself, so nothing here is on the bus.
+//! `verdicts` answers by app (an app a grant names is `Granted`, any other `Ask`, an account
+//! marked denied `Denied`), and `key` hands the key of a grant. Every call is recorded (the app
+//! and class asked about, the grants resolved), never a key. The real store is tested in
+//! `keys_local.rs`.
 
-use porter_dbus::{AppArg, Details, NeedArg, VerdictArg};
-use rustix::fs::{MemfdFlags, SealFlags, fcntl_add_seals, memfd_create};
-use std::io::{Seek, Write};
+use inferd::cloud::accountd::{AccountVerdict, Accountd, AccountdFault, Boxed};
+use inferd::probe::Runtime;
+use inferd::probed::Standing as Probed;
+use inferd::report::{ReportFault, Reports};
+use porter_core::consent::{GrantScope, Usage, Verdict};
+use porter_core::{AccountId, AccountState, AppId, Claim, DataClass, GrantId, SecretText};
 use std::sync::{Arc, Mutex};
-use zbus::fdo;
-use zbus::zvariant::{OwnedFd, OwnedValue, Value};
+use tokio::sync::Notify;
 
 /// What the person's account says of the apps.
 #[derive(Debug, Clone)]
 pub enum Standing {
-    /// These apps hold this grant, and the account's key is `key` (`None`: accountd cannot read
+    /// These apps hold this grant, and the account's key is `key` (`None`: the store cannot read
     /// it); any other app is asked.
     Granted {
         to: Vec<&'static str>,
         grant: &'static str,
         key: Option<&'static str>,
     },
-    /// As `Granted`, but the grant is for one usage (`interactive` or `background`, as `Verdicts`
-    /// is asked); for the other the app is asked.
+    /// As `Granted`, but the grant is for one usage (`interactive` or `background`); for the
+    /// other the app is asked.
     GrantedFor {
         usage: &'static str,
         to: Vec<&'static str>,
@@ -45,22 +49,23 @@ pub struct FakeAccount {
 /// What the fake was asked.
 #[derive(Debug, Clone, Default)]
 pub struct Calls {
-    /// (app name, class) of each `Verdicts`.
+    /// (app name, class) of each `verdicts`.
     pub verdicts: Vec<(String, String)>,
-    /// The `usage` of each `Verdicts`, in the same order.
+    /// The `usage` of each `verdicts`, in the same order.
     pub usages: Vec<String>,
-    /// The grant of each `ResolveKey`.
+    /// The grant of each `key`.
     pub resolved: Vec<String>,
-    /// (provider, state, how many claims) of each `ReportLocal`, in order.
+    /// (provider, state, how many claims) of each report, in order.
     pub reported: Vec<(String, String, usize)>,
 }
 
-/// The fake, shared between the bus object and the test.
-#[derive(Debug, Clone)]
+/// The fake, shared between the daemon and the test.
+#[derive(Debug, Clone, Default)]
 pub struct FakeAccountd {
     accounts: Arc<Mutex<Vec<FakeAccount>>>,
     calls: Arc<Mutex<Calls>>,
     looks: Arc<Mutex<std::collections::BTreeMap<String, Look>>>,
+    news: Arc<Notify>,
 }
 
 /// How the fake describes an account beyond its standing.
@@ -71,22 +76,11 @@ struct Look {
     state: String,
 }
 
-fn text(value: &str) -> Option<OwnedValue> {
-    OwnedValue::try_from(Value::from(value.to_owned())).ok()
-}
-
-/// `key` on a memfd, sealed against every change, read position at the start.
-fn sealed(key: &str) -> std::io::Result<std::os::fd::OwnedFd> {
-    let fd = memfd_create("fake-key", MemfdFlags::CLOEXEC | MemfdFlags::ALLOW_SEALING)?;
-    let mut file = std::fs::File::from(fd);
-    file.write_all(key.as_bytes())?;
-    file.rewind()?;
-    let fd = std::os::fd::OwnedFd::from(file);
-    fcntl_add_seals(
-        &fd,
-        SealFlags::WRITE | SealFlags::GROW | SealFlags::SHRINK | SealFlags::SEAL,
-    )?;
-    Ok(fd)
+fn slug<T: serde::Serialize>(value: &T) -> String {
+    serde_json::to_value(value)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_default()
 }
 
 impl FakeAccountd {
@@ -94,8 +88,7 @@ impl FakeAccountd {
     pub fn new(accounts: Vec<FakeAccount>) -> Self {
         Self {
             accounts: Arc::new(Mutex::new(accounts)),
-            calls: Arc::default(),
-            looks: Arc::default(),
+            ..Self::default()
         }
     }
 
@@ -104,8 +97,19 @@ impl FakeAccountd {
         self.calls.lock().expect("lock").clone()
     }
 
-    /// Makes `Verdicts` say how a person reads account `id` and whether it works: its label, its
-    /// provider's name (when accountd knows the file) and its state slug (`ok`, `needs_reauth`).
+    /// What the daemon listens to for "an account appeared, went or changed state"
+    /// (`Inference::keys_news`).
+    pub fn news(&self) -> Arc<Notify> {
+        Arc::clone(&self.news)
+    }
+
+    /// Says that an account appeared, went or changed state, as the key host does after a save.
+    pub fn changed(&self) {
+        self.news.notify_one();
+    }
+
+    /// Makes the verdicts say how a person reads account `id` and whether it works: its label,
+    /// its provider's name and its state slug (`ok`, `needs_reauth`).
     pub fn describe(&self, id: &str, label: &str, provider_label: Option<&str>, state: &str) {
         self.looks.lock().expect("lock").insert(
             id.to_owned(),
@@ -125,121 +129,115 @@ impl FakeAccountd {
             }
         }
     }
+}
 
-    /// Serves `org.quire.Accounts1` on `connection`.
-    pub async fn serve(&self, connection: &zbus::Connection) {
-        connection
-            .object_server()
-            .at("/org/quire/Accounts1", FakePeer(self.clone()))
-            .await
-            .expect("serve the fake peer");
-        connection
-            .request_name("org.quire.Accounts1")
-            .await
-            .expect("own org.quire.Accounts1");
+impl Accountd for FakeAccountd {
+    fn verdicts<'a>(
+        &'a self,
+        app: &'a AppId,
+        class: DataClass,
+        usage: Usage,
+    ) -> Boxed<'a, Result<Vec<AccountVerdict>, AccountdFault>> {
+        Box::pin(async move {
+            let usage_asked = slug(&usage);
+            {
+                let mut calls = self.calls.lock().expect("lock");
+                calls.verdicts.push((app.name.as_str().to_owned(), slug(&class)));
+                calls.usages.push(usage_asked.clone());
+            }
+            let looks = self.looks.lock().expect("lock").clone();
+            let accounts = self.accounts.lock().expect("lock").clone();
+            let name = app.name.as_str();
+            Ok(accounts
+                .into_iter()
+                .filter_map(|account| {
+                    let granted = |grant: &str| {
+                        GrantId::parse(grant).ok().map(|grant| Verdict::Granted {
+                            grant,
+                            scope: GrantScope::Always,
+                        })
+                    };
+                    let verdict: Option<Verdict> = match &account.standing {
+                        Standing::Granted { to, grant, .. } if to.iter().any(|t| *t == name) => {
+                            granted(grant)
+                        }
+                        Standing::GrantedFor {
+                            usage: held,
+                            to,
+                            grant,
+                            ..
+                        } if *held == usage_asked && to.iter().any(|t| *t == name) => {
+                            granted(grant)
+                        }
+                        Standing::Granted { .. }
+                        | Standing::GrantedFor { .. }
+                        | Standing::Ask => Some(Verdict::Ask),
+                        Standing::Denied => Some(Verdict::Denied),
+                    };
+                    let look = looks.get(account.id);
+                    Some(AccountVerdict {
+                        account: AccountId::parse(account.id).ok()?,
+                        provider: None,
+                        label: look.map(|l| l.label.clone()),
+                        provider_label: look.and_then(|l| l.provider_label.clone()),
+                        state: look.and_then(|l| {
+                            serde_json::from_value::<AccountState>(serde_json::Value::String(
+                                l.state.clone(),
+                            ))
+                            .ok()
+                        }),
+                        verdict: verdict?,
+                    })
+                })
+                .collect())
+        })
+    }
+
+    fn key<'a>(&'a self, grant: &'a GrantId) -> Boxed<'a, Result<SecretText, AccountdFault>> {
+        Box::pin(async move {
+            self.calls
+                .lock()
+                .expect("lock")
+                .resolved
+                .push(grant.as_str().to_owned());
+            let accounts = self.accounts.lock().expect("lock").clone();
+            let key = accounts.iter().find_map(|account| match &account.standing {
+                Standing::Granted {
+                    grant: held,
+                    key: Some(key),
+                    ..
+                }
+                | Standing::GrantedFor {
+                    grant: held,
+                    key: Some(key),
+                    ..
+                } if *held == grant.as_str() => Some(*key),
+                _ => None,
+            });
+            key.map(SecretText::new).ok_or(AccountdFault::Refused)
+        })
     }
 }
 
-struct FakePeer(FakeAccountd);
-
-#[zbus::interface(name = "org.quire.Accounts1.Peer")]
-impl FakePeer {
-    fn verdicts(
-        &self,
-        app: AppArg,
-        _need: NeedArg,
-        class: String,
-        usage: String,
-    ) -> fdo::Result<Vec<VerdictArg>> {
-        // inferd's own call to join accountd's news (`account_news`) is not a call a test made.
-        if app.0 != "org.quire.Inference" {
-            let mut calls = self.0.calls.lock().expect("lock");
-            calls.verdicts.push((app.0.clone(), class));
-            calls.usages.push(usage.clone());
-        }
-        let looks = self.0.looks.lock().expect("lock").clone();
-        let usage_asked = usage;
-        let accounts = self.0.accounts.lock().expect("lock").clone();
-        Ok(accounts
-            .into_iter()
-            .map(|account| {
-                let mut details = Details::new();
-                let word = match &account.standing {
-                    Standing::Granted { to, grant, .. } if to.contains(&app.0.as_str()) => {
-                        details.extend(text(grant).map(|v| ("grant".to_owned(), v)));
-                        details.extend(text("always").map(|v| ("scope".to_owned(), v)));
-                        "granted"
-                    }
-                    Standing::GrantedFor {
-                        usage: held,
-                        to,
-                        grant,
-                        ..
-                    } if *held == usage_asked && to.contains(&app.0.as_str()) => {
-                        details.extend(text(grant).map(|v| ("grant".to_owned(), v)));
-                        details.extend(text("always").map(|v| ("scope".to_owned(), v)));
-                        "granted"
-                    }
-                    Standing::Granted { .. } | Standing::GrantedFor { .. } | Standing::Ask => "ask",
-                    Standing::Denied => "denied",
-                };
-                if let Some(look) = looks.get(account.id) {
-                    details.extend(text(&look.label).map(|v| ("label".to_owned(), v)));
-                    details.extend(text(&look.state).map(|v| ("state".to_owned(), v)));
-                    details.extend(
-                        look.provider_label
-                            .as_deref()
-                            .and_then(text)
-                            .map(|v| ("provider_label".to_owned(), v)),
-                    );
-                }
-                (account.id.to_owned(), word.to_owned(), details)
-            })
-            .collect())
-    }
-
-    /// A probed runtime: recorded, and its account is the provider's id, as accountd's is.
-    fn report_local(
-        &self,
-        provider: String,
-        claims: Vec<(String, Details)>,
-        state: String,
-    ) -> fdo::Result<String> {
-        self.0
-            .calls
-            .lock()
-            .expect("lock")
-            .reported
-            .push((provider.clone(), state, claims.len()));
-        Ok(provider)
-    }
-
-    fn resolve_key(&self, grant: String) -> fdo::Result<OwnedFd> {
-        self.0
-            .calls
-            .lock()
-            .expect("lock")
-            .resolved
-            .push(grant.clone());
-        let accounts = self.0.accounts.lock().expect("lock").clone();
-        let key = accounts.iter().find_map(|account| match &account.standing {
-            Standing::Granted {
-                grant: held,
-                key: Some(key),
-                ..
-            }
-            | Standing::GrantedFor {
-                grant: held,
-                key: Some(key),
-                ..
-            } if *held == grant => Some(*key),
-            _ => None,
-        });
-        match key {
-            Some(key) => Ok(OwnedFd::from(
-                sealed(key).map_err(|e| fdo::Error::Failed(e.to_string()))?,
-            )),
-            None => Err(fdo::Error::AccessDenied("no such grant".into())),
-        }
+impl Reports for FakeAccountd {
+    /// A probed runtime: recorded, and its account is the provider's id, as the real one's is.
+    fn report<'a>(
+        &'a self,
+        runtime: Runtime,
+        claims: &'a [Claim],
+        standing: Probed,
+    ) -> Boxed<'a, Result<AccountId, ReportFault>> {
+        Box::pin(async move {
+            let state = match standing {
+                Probed::Online => "ok",
+                Probed::Offline => "offline",
+            };
+            self.calls.lock().expect("lock").reported.push((
+                runtime.provider().to_owned(),
+                state.to_owned(),
+                claims.len(),
+            ));
+            AccountId::parse(runtime.provider()).map_err(|_| ReportFault::Rejected)
+        })
     }
 }

@@ -15,7 +15,6 @@ use inferd::audit::Memory;
 use inferd::catalog::{CatalogDirs, read_catalog};
 use inferd::clock::FixedClock;
 use inferd::cloud::Cloud;
-use inferd::cloud::accountd::PeerAccountd;
 use inferd::cloud::spend::Ledger;
 use inferd::cloud::wire::{Door, Doors};
 use inferd::engines::Engines;
@@ -24,7 +23,7 @@ use inferd::local::{EngineConfig, LocalModel, build};
 use inferd::peers::{Caller, Role, TablePeers};
 use inferd::probe::ProbeConfig;
 use inferd::replay::{NamedEngine, Replays};
-use inferd::report::PeerReports;
+use inferd::report::{NoReports, Reports};
 use inferd::service::{Inference, serve_on};
 use inferd::settings::{Settings, SpendLine, TailnetServe};
 use inferd::startup::{Level, Log};
@@ -276,8 +275,6 @@ pub struct World {
     pub provider: Option<FakeCloud>,
     /// Who the daemon knows the bus connections as; a test introduces more.
     pub peers: Arc<TablePeers>,
-    /// The connection the fake accountd is served on (it is gone with this).
-    pub accountd_bus: Option<zbus::Connection>,
     /// The look for local runtimes, when the plan has one (it stops with this).
     pub probing: Option<Probing>,
     /// The fake speech engines, when the plan has a speech host.
@@ -499,12 +496,9 @@ impl World {
         let bus = PrivateBus::start();
         let daemon = bus.connect().await;
         let client = bus.connect().await;
-        let (mut accountd, mut provider, mut accountd_bus) = (None, None, None);
+        let (mut accountd, mut provider) = (None, None);
         if let Some(hosted) = plan.hosted {
             let fake = FakeAccountd::new(hosted.accounts);
-            let held = bus.connect().await;
-            within("the fake accountd on the bus", fake.serve(&held)).await;
-            accountd_bus = Some(held);
             let api = FakeCloud::start(hosted.chat).await;
             let door = |base: &str| Door {
                 host: "localhost".to_owned(),
@@ -524,7 +518,7 @@ impl World {
                 Trust::NoOne => TlsRoots::Only(Vec::new()),
             };
             let cloud = Cloud::new(
-                Arc::new(PeerAccountd::new(daemon.clone())),
+                Arc::new(fake.clone()),
                 &catalog.entries,
                 Ledger::in_memory(),
                 Arc::new(FixedClock(UnixSeconds(1_700_000_000))),
@@ -542,12 +536,16 @@ impl World {
             },
         );
         let audit = Memory::default();
+        let reports: Arc<dyn Reports> = match &accountd {
+            Some(fake) => Arc::new(fake.clone()),
+            None => Arc::new(NoReports),
+        };
         let probing = plan.probe.map(|config| {
             Watch::new(
                 porter_http::HyperHttp::new(),
                 config,
                 served.clone(),
-                Arc::new(PeerReports::new(daemon.clone())),
+                reports,
                 scratch.join("s"),
             )
             .spawn()
@@ -559,6 +557,9 @@ impl World {
             FixedClock(UnixSeconds(1_700_000_000)),
         );
         inference = inference.computers(computers);
+        if let Some(fake) = &accountd {
+            inference = inference.keys_news(fake.news());
+        }
         if let Some(probing) = &probing {
             inference = inference.probing(probing.clone());
         }
@@ -576,16 +577,11 @@ impl World {
             None => (None, None, None),
             Some(tp) => {
                 let tailscale = FakeTailscale::start(&scratch.join("ts"), tp.network).await;
-                let held = match &accountd_bus {
-                    Some(held) => held.clone(),
-                    None => {
-                        let held = bus.connect().await;
-                        held.request_name("org.quire.Accounts1")
-                            .await
-                            .expect("own org.quire.Accounts1");
-                        held
-                    }
-                };
+                // accountd keeps listing the computers (Tailnet1); this connection is its stand-in.
+                let held = bus.connect().await;
+                held.request_name("org.quire.Accounts1")
+                    .await
+                    .expect("own org.quire.Accounts1");
                 held.object_server()
                     .at(porter_dbus::TAILNET_PATH, tailscale.object())
                     .await
@@ -642,7 +638,6 @@ impl World {
             accountd,
             provider,
             peers,
-            accountd_bus,
             probing,
             speech,
             log,
