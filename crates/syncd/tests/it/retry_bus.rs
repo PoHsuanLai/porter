@@ -1,10 +1,13 @@
 //! A supervisor whose look could not be finished says so, so that its loop looks again in
-//! seconds (`next_look`) and not at the next ten-minute rescan: accountd not yet answering on a
-//! loaded machine must not leave a granted account unmirrored for ten minutes.
+//! seconds (`next_look`) and not at the next ten-minute rescan: a grant list that does not answer
+//! yet on a loaded machine must not leave a granted account unmirrored for ten minutes.
 
 use crate::common::bus::PrivateBus;
-use porter_client::{Accounts, DbusTransport};
+use crate::common::hosted::host;
 use porter_core::Candidate;
+use porter_fake::cloud_provider;
+use porter_secrets::MemorySecrets;
+use porter_service::Registry;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use syncd::datasets::pim::{
@@ -30,9 +33,13 @@ impl PimGrants for Flaky {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_look_that_could_not_ask_accountd_says_it_was_not_whole_and_the_next_one_is() {
+async fn a_look_that_could_not_ask_for_grants_says_it_was_not_whole_and_the_next_one_is() {
     let bus = PrivateBus::start();
-    let connection = bus.connect().await;
+    let hosted = host(
+        cloud_provider(),
+        Registry::default(),
+        MemorySecrets::default(),
+    );
     let root = bus.scratch().join("syncd");
     let paths = Paths {
         journals: root.join("state/porter/sync"),
@@ -42,7 +49,7 @@ async fn a_look_that_could_not_ask_accountd_says_it_was_not_whole_and_the_next_o
     };
     let (_network_up, network) = watch::channel(Network::Unmetered);
     let wiring = Wiring {
-        accounts: Arc::new(Accounts::over(DbusTransport::over(connection))),
+        accounts: hosted.accounts,
         hub: Hub::default(),
         paths,
         settings: Settings::quick(),
@@ -59,7 +66,7 @@ async fn a_look_that_could_not_ask_accountd_says_it_was_not_whole_and_the_next_o
     );
     assert!(
         !supervisor.tick().await,
-        "accountd could not be asked: the look is not whole"
+        "the grants could not be asked: the look is not whole"
     );
     down.store(false, Ordering::SeqCst);
     assert!(supervisor.tick().await, "asked and answered: whole");

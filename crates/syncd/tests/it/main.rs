@@ -22,7 +22,6 @@ mod start;
 mod storage_bus;
 mod sync_bus;
 mod webdav_bus;
-mod wipe_bus;
 
 #[test]
 fn every_module_is_declared() {

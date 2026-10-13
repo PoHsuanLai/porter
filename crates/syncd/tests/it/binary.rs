@@ -1,6 +1,6 @@
 //! The syncd binary on a private bus with scratch HOME and XDG: it serves `Sync1` with no dataset,
-//! finds callers through a /proc root only in a `test-proc-root` build, wipes an account when
-//! accountd says it is gone, and refuses to start over a caller table it cannot read.
+//! finds callers through a /proc root only in a `test-proc-root` build, keeps its copy of an
+//! account accountd says is gone, and refuses to start over a caller table it cannot read.
 
 use crate::common;
 
@@ -121,61 +121,40 @@ async fn a_test_build_reads_callers_from_the_proc_root_and_serves_an_empty_sync1
     assert_eq!(error_name(&err), common::NO_FITTING);
 }
 
-#[cfg(feature = "test-proc-root")]
 #[tokio::test(flavor = "multi_thread")]
-async fn the_binary_wipes_an_account_when_accountd_says_it_is_gone() {
+async fn accountd_saying_an_account_is_gone_does_not_wipe_syncds_copy() {
     let bus = PrivateBus::start();
     let home = scratch(&bus, "home");
     let journal = home.join("state/porter/sync/a1");
-    let mirror = home.join("data/porter/vdir/a1/personal");
-    let other = home.join("state/porter/sync/a2");
-    for dir in [&journal, &mirror, &other] {
-        std::fs::create_dir_all(dir).expect("dir");
-        std::fs::write(dir.join("x"), "data").expect("file");
-    }
+    std::fs::create_dir_all(&journal).expect("dir");
+    std::fs::write(journal.join("x"), "data").expect("file");
     let mut daemon = spawn(&bus, &home, None);
     assert!(serving(&bus, &mut daemon).await, "{}", daemon.stderr());
-    // This connection plays accountd; the daemon found it by name and told it who it is.
+    // This connection plays accountd and says the account is gone, to everyone.
     let accountd = bus.connect().await;
     accountd
         .request_name(porter_dbus::ACCOUNTS_BUS)
         .await
         .expect("name");
-    let emit = |account: &'static str| {
-        let accountd = accountd.clone();
-        async move {
-            let path = zbus::zvariant::ObjectPath::try_from(format!(
-                "{}/account/{account}",
-                porter_dbus::ACCOUNTS_PATH
-            ))
-            .expect("path");
-            accountd
-                .emit_signal(
-                    None::<zbus::names::BusName<'_>>,
-                    porter_dbus::ACCOUNTS_PATH,
-                    "org.quire.Accounts1.Manager",
-                    "AccountRemoved",
-                    &(path,),
-                )
-                .await
-                .expect("emit");
-        }
-    };
-    // The daemon listens from its start; broadcast until it has acted (the match rule may be
-    // added a moment after the name appears).
-    let deadline = porter_fake::Deadline::generous();
-    while !deadline.passed() {
-        emit("a1").await;
-        if !journal.exists() && !home.join("data/porter/vdir/a1").exists() {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-    }
-    common::eventually("a1 gone", || {
-        !journal.exists() && !home.join("data/porter/vdir/a1").exists()
-    })
-    .await;
-    assert!(other.exists(), "a2 is untouched");
+    let path = zbus::zvariant::ObjectPath::try_from(format!(
+        "{}/account/a1",
+        porter_dbus::ACCOUNTS_PATH
+    ))
+    .expect("path");
+    accountd
+        .emit_signal(
+            None::<zbus::names::BusName<'_>>,
+            porter_dbus::ACCOUNTS_PATH,
+            "org.quire.Accounts1.Manager",
+            "AccountRemoved",
+            &(path,),
+        )
+        .await
+        .expect("emit");
+    // A call syncd answers after the signal was sent has been processed after it too.
+    let client = bus.connect().await;
+    let _ = SyncProxy::new(&client).await.expect("proxy").datasets().await;
+    assert!(journal.exists(), "the person removes it in the sync rows");
 }
 
 #[cfg(not(feature = "test-proc-root"))]
