@@ -6,6 +6,13 @@ use porter_dbus::Closer;
 /// once the answer is in. Dropped armed, it closes the sheet on the runtime if there is one.
 pub(crate) struct Abandon(pub(crate) Option<Closer>);
 
+impl Abandon {
+    /// The answer is in: dropping it now closes nothing.
+    pub(crate) fn answered(&mut self) {
+        self.0 = None;
+    }
+}
+
 impl Drop for Abandon {
     fn drop(&mut self) {
         let Some(closer) = self.0.take() else { return };

@@ -69,6 +69,7 @@
 //! An app with no inferd turns on `engines` for [`engines::EngineHost`]: inference routed in the
 //! app and sent to the OpenAI-compatible engines it points at (a local runtime, a company's API).
 
+#[cfg(feature = "dbus")]
 mod abandon;
 mod accounts;
 #[cfg(feature = "dbus")]

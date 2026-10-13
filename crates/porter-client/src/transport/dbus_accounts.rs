@@ -12,13 +12,14 @@
 //! dropped.
 
 use super::dbus::bus_error;
+use crate::abandon::Abandon;
 use crate::error::TransportError;
 use porter_core::wire::{ParentWindow, ProviderHint};
 use porter_core::{AccountsReply, AccountsRequest};
 use porter_dbus::zvariant::OwnedObjectPath;
 use porter_dbus::{
-    AccountProxy, BusConnection, BusError, Closer, Details, ManagerProxy, Sheet, SheetError,
-    SheetKind, account_path, refusal_of, reply_of,
+    AccountProxy, BusConnection, BusError, Details, ManagerProxy, Sheet, SheetError, SheetKind,
+    account_path, refusal_of, reply_of,
 };
 
 /// A failed call: the refusal accountd gave, or a failure of the bus.
@@ -86,26 +87,6 @@ fn hint_text(hint: &ProviderHint) -> String {
     match hint {
         ProviderHint::Any => String::new(),
         ProviderHint::Provider(id) => id.as_str().to_owned(),
-    }
-}
-
-/// Closes the sheet when the call that waits for it is dropped before it was answered, so an
-/// abandoned request does not leave a sheet on the screen. Needs a tokio runtime, as the
-/// transport does.
-struct Abandon(Option<Closer>);
-
-impl Abandon {
-    fn answered(&mut self) {
-        self.0 = None;
-    }
-}
-
-impl Drop for Abandon {
-    fn drop(&mut self) {
-        let Some(closer) = self.0.take() else { return };
-        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-            runtime.spawn(closer.close());
-        }
     }
 }
 
