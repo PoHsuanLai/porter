@@ -6,6 +6,9 @@
 //!
 //! - `RequestKey(class, usage, parent_window, options)`: the consent sheet; the answer carries
 //!   the permit's id. The permit is held by the app the caller is, never by a name it sends.
+//!   An app that already holds a permit (Always, session or not yet spent) is answered with it
+//!   at once and no sheet is drawn ([`KeyHost::answer`]); after a Don't Allow it is refused as
+//!   denied, again with no sheet.
 //! - `AddAccount(provider_hint, parent_window, options)`: the add sheet for an AI key or an
 //!   assistant.
 //!
@@ -167,7 +170,7 @@ impl<H: KeyHost, C: Callers> KeysObject<H, C> {
         let run = async move {
             // Held until the sheet ends, however it ends.
             let _claim = claim;
-            host.handle(&app, request).await
+            host.answer(&app, request).await
         };
         self.objects
             .start(sender, path, kind, run)

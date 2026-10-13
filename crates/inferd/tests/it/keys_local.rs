@@ -5,7 +5,7 @@
 //! `ReportLocal` had at accountd, now with no bus between the caller and the store.
 
 use inferd::cloud::accountd::{Accountd, AccountdFault, llm_need};
-use inferd::keys::{KeyDesk, LocalKeys, SecretsDesk};
+use inferd::keys::{KeyDesk, KeyHost, LocalKeys, SecretsDesk};
 use inferd::probe::Runtime;
 use inferd::probed::Standing;
 use inferd::report::Reports;
@@ -18,7 +18,7 @@ use porter_core::{
     Credential, DataClass, GrantId, Isolation, SecretKey, SecretPurpose, SecretText, Toggle,
 };
 use porter_fake::{
-    MemoryStore, NOW, RecordingAudit, Scripted, ScriptedSheets, llm_account, llm_provider,
+    AskLog, MemoryStore, NOW, RecordingAudit, Scripted, ScriptedSheets, llm_account, llm_provider,
 };
 use porter_families::set::ProviderNames;
 use porter_secrets::{MemorySecrets, PutOutcome, Secrets, SecretsError};
@@ -71,6 +71,7 @@ struct Rig {
     keys: LocalKeys<Service>,
     secrets: Shared,
     audit: RecordingAudit,
+    asks: AskLog,
 }
 
 fn llm_key() -> SecretKey {
@@ -108,6 +109,7 @@ async fn rig_scoped(scope: GrantScope, consents: usize) -> Rig {
     };
     let sheets =
         ScriptedSheets::answering((0..consents).map(|_| Scripted::AllowFirst(scope.clone())));
+    let asks = sheets.log();
     let service = Arc::new(
         AccountService::new(
             vec![llm_provider()],
@@ -130,6 +132,7 @@ async fn rig_scoped(scope: GrantScope, consents: usize) -> Rig {
         keys,
         secrets,
         audit,
+        asks,
     }
 }
 
@@ -172,15 +175,37 @@ async fn an_app_sees_its_permit_and_every_other_app_or_class_is_asked() {
     assert_eq!(
         verdict(companion.clone(), DataClass::Prompt).await,
         Verdict::Granted {
-            grant,
+            grant: grant.clone(),
             scope: GrantScope::Always
         }
     );
-    assert_eq!(verdict(companion, DataClass::Mail).await, Verdict::Ask);
+    assert_eq!(
+        verdict(companion.clone(), DataClass::Mail).await,
+        Verdict::Ask
+    );
     assert_eq!(
         verdict(app("org.quire.Other"), DataClass::Prompt).await,
         Verdict::Ask
     );
+
+    // Asking again over the bus (`RequestKey`) gives the same permit and draws no second sheet.
+    let again = rig
+        .service
+        .answer(
+            &companion,
+            AccountsRequest::Choose {
+                need: llm_need(),
+                class: DataClass::Prompt,
+                usage: Usage::Interactive,
+                window: ParentWindow::Unparented,
+            },
+        )
+        .await;
+    let AccountsReply::Chosen(chosen) = again else {
+        panic!("the permit it holds, got {again:?}");
+    };
+    assert_eq!(chosen.grant, grant);
+    assert_eq!(rig.asks.asked().len(), 1);
 }
 
 #[tokio::test]

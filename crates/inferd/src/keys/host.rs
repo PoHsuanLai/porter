@@ -4,8 +4,8 @@
 
 use porter_core::wire::{ParentWindow, Refusal};
 use porter_core::{
-    AccountId, AccountState, AccountsReply, AccountsRequest, AgentState, AppId, CapabilityKind,
-    Claim, GrantId, ProviderId, Toggle,
+    AccountId, AccountState, AccountsReply, AccountsRequest, AgentState, AppId, Candidate,
+    CapabilityKind, Claim, GrantId, ProviderId, Toggle,
 };
 use porter_provider::Provider;
 use porter_secrets::{Secrets, SecretsError};
@@ -26,6 +26,52 @@ pub trait KeyHost: Send + Sync + 'static {
 
     /// A copy of the registry.
     fn registry(&self) -> Registry;
+
+    /// What an app is told when it asks for AI access over the bus. A `Choose` first looks for
+    /// a permit the app already holds (an Allow that is Always, session or not yet spent) and
+    /// answers it with no sheet, as a system does for an app that has the permission already;
+    /// an app asks for "AI access", never for one key. With several permits the one the
+    /// person gave most recently wins (the later in the registry when given at the same
+    /// second), so the answer does not depend on anything else. With none, and for every other
+    /// request, it is [`KeyHost::handle`]: a `Choose` then draws the sheet, or answers `Denied`
+    /// at once after a Don't Allow.
+    fn answer(
+        &self,
+        caller: &AppId,
+        request: AccountsRequest,
+    ) -> impl Future<Output = AccountsReply> + Send {
+        async move {
+            let (need, class, usage, window) = match request {
+                AccountsRequest::Choose {
+                    need,
+                    class,
+                    usage,
+                    window,
+                } => (need, class, usage, window),
+                other => return self.handle(caller, other).await,
+            };
+            let query = AccountsRequest::Query {
+                need: need.clone(),
+                class,
+                usage,
+            };
+            if let AccountsReply::Candidates(found) = self.handle(caller, query).await {
+                let grants = self.registry().grants;
+                let given =
+                    |held: &Candidate| grants.iter().find(|g| g.id == held.grant).map(|g| g.at);
+                if let Some(best) = found.into_iter().max_by_key(given) {
+                    return AccountsReply::Chosen(best);
+                }
+            }
+            let choose = AccountsRequest::Choose {
+                need,
+                class,
+                usage,
+                window,
+            };
+            self.handle(caller, choose).await
+        }
+    }
 
     /// Spends `caller`'s permit when it is an allow-once one; any other scope is left as it is.
     fn spend_once(
