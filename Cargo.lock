@@ -8,11 +8,9 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "ds-settings",
- "oo7",
  "porter-core",
  "porter-daemon",
  "porter-dbus",
- "porter-discover",
  "porter-fake",
  "porter-fake-servers",
  "porter-families",
@@ -20,13 +18,12 @@ dependencies = [
  "porter-http",
  "porter-oauth",
  "porter-provider",
- "porter-proxy",
  "porter-secrets",
  "porter-service",
+ "porter-sheets",
  "porter-store",
  "porter-tailscale",
  "rustix",
- "rustls-pki-types",
  "serde",
  "serde_json",
  "thiserror",
@@ -703,7 +700,7 @@ dependencies = [
 [[package]]
 name = "ds-behaviour"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=b8292d34706d781eb62b290427465d294e6acc54#b8292d34706d781eb62b290427465d294e6acc54"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=b50e4b80ac8e03ebd2f9506d3aed92770cbeb6cd#b50e4b80ac8e03ebd2f9506d3aed92770cbeb6cd"
 dependencies = [
  "ds-core",
 ]
@@ -711,7 +708,7 @@ dependencies = [
 [[package]]
 name = "ds-core"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=b8292d34706d781eb62b290427465d294e6acc54#b8292d34706d781eb62b290427465d294e6acc54"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=b50e4b80ac8e03ebd2f9506d3aed92770cbeb6cd#b50e4b80ac8e03ebd2f9506d3aed92770cbeb6cd"
 dependencies = [
  "chordkit",
  "ds-core-derive",
@@ -724,7 +721,7 @@ dependencies = [
 [[package]]
 name = "ds-core-derive"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=b8292d34706d781eb62b290427465d294e6acc54#b8292d34706d781eb62b290427465d294e6acc54"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=b50e4b80ac8e03ebd2f9506d3aed92770cbeb6cd#b50e4b80ac8e03ebd2f9506d3aed92770cbeb6cd"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -735,7 +732,7 @@ dependencies = [
 [[package]]
 name = "ds-settings"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=b8292d34706d781eb62b290427465d294e6acc54#b8292d34706d781eb62b290427465d294e6acc54"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=b50e4b80ac8e03ebd2f9506d3aed92770cbeb6cd#b50e4b80ac8e03ebd2f9506d3aed92770cbeb6cd"
 dependencies = [
  "ds-behaviour",
  "ds-core",
@@ -753,7 +750,7 @@ dependencies = [
 [[package]]
 name = "ds-settings-derive"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=b8292d34706d781eb62b290427465d294e6acc54#b8292d34706d781eb62b290427465d294e6acc54"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=b50e4b80ac8e03ebd2f9506d3aed92770cbeb6cd#b50e4b80ac8e03ebd2f9506d3aed92770cbeb6cd"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -763,7 +760,7 @@ dependencies = [
 [[package]]
 name = "ds-style"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=b8292d34706d781eb62b290427465d294e6acc54#b8292d34706d781eb62b290427465d294e6acc54"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=b50e4b80ac8e03ebd2f9506d3aed92770cbeb6cd#b50e4b80ac8e03ebd2f9506d3aed92770cbeb6cd"
 dependencies = [
  "ds-core",
  "ds-core-derive",
@@ -1442,11 +1439,16 @@ dependencies = [
  "porter-discover",
  "porter-fake",
  "porter-fake-servers",
+ "porter-families",
  "porter-fs",
  "porter-http",
  "porter-infer",
  "porter-provider",
  "porter-router",
+ "porter-secrets",
+ "porter-service",
+ "porter-sheets",
+ "porter-store",
  "porter-tailnet",
  "porter-tailscale",
  "porter-turns",
@@ -2224,6 +2226,7 @@ dependencies = [
  "porter-http",
  "porter-infer",
  "porter-provider",
+ "porter-proxy",
  "porter-secrets",
  "porter-service",
  "porter-tailscale",
@@ -2347,6 +2350,7 @@ dependencies = [
  "porter-tailscale",
  "serde",
  "serde_json",
+ "thiserror",
  "tokio",
 ]
 
@@ -2486,6 +2490,7 @@ dependencies = [
  "porter-fake",
  "porter-fs",
  "porter-secrets",
+ "rustix",
  "serde_json",
  "thiserror",
  "tokio",
@@ -2503,6 +2508,19 @@ dependencies = [
  "porter-secrets",
  "thiserror",
  "tokio",
+]
+
+[[package]]
+name = "porter-sheets"
+version = "0.1.0"
+dependencies = [
+ "porter-core",
+ "porter-dbus",
+ "porter-provider",
+ "porter-service",
+ "serde_json",
+ "tokio",
+ "zbus",
 ]
 
 [[package]]
@@ -3264,7 +3282,6 @@ dependencies = [
 name = "syncd"
 version = "0.1.0"
 dependencies = [
- "accountd",
  "base64",
  "clap",
  "ds-settings",
@@ -3275,11 +3292,14 @@ dependencies = [
  "porter-dbus",
  "porter-fake",
  "porter-fake-servers",
+ "porter-families",
  "porter-fs",
  "porter-http",
  "porter-provider",
  "porter-secrets",
  "porter-service",
+ "porter-sheets",
+ "porter-store",
  "porter-sync",
  "rusqlite",
  "serde",

@@ -23,13 +23,13 @@ use porter_provider::Provider;
 use porter_secrets::{MemorySecrets, Secrets};
 use porter_service::Registry;
 use std::sync::Arc;
-use syncd::keep::sync_app;
 use std::sync::atomic::{AtomicBool, Ordering};
 use syncd::datasets::photos::PhotosSwitch;
 use syncd::datasets::pim::{AccountdUnavailable, Wiring};
 use syncd::datasets::storage::{
     ClientStorageGrants, StorageConfig, StorageGrants, StorageKind, StorageSupervisor,
 };
+use syncd::keep::sync_app;
 use syncd::paths::{AccountDir, Paths};
 use syncd::scheduler::{Network, Settings};
 use syncd::service::{Access, Hub, serve};

@@ -72,13 +72,15 @@ fn every_row_path_reads_back_as_its_key_and_a_dotted_permit_id_is_found() {
 #[test]
 fn the_permit_of_an_app_is_a_revoke_row_with_its_day_and_how_long_it_lasts() {
     let registry = registry();
-    let rows = schema(
-        &registry,
-        &AppNames::default(),
-        &ProviderNames::default(),
-    );
+    let rows = schema(&registry, &AppNames::default(), &ProviderNames::default());
     let paths: Vec<&str> = rows.iter().map(|r| r.path.0.as_str()).collect();
-    for suffix in ["grant.g.1", "grant.g.1.since", "grant.g.1.scope", "remove", "label"] {
+    for suffix in [
+        "grant.g.1",
+        "grant.g.1.since",
+        "grant.g.1.scope",
+        "remove",
+        "label",
+    ] {
         let want = format!("accounts.{}.{suffix}", registry.accounts[0].id);
         assert!(paths.contains(&want.as_str()), "{want} in {paths:?}");
     }

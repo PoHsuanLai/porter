@@ -482,7 +482,11 @@ impl Launchers {
         };
         let _ = emitter
             .set_destination(name)
-            .emit(LAUNCHER_INTERFACE, "ProcessCredentialRevoked", &(id, reason))
+            .emit(
+                LAUNCHER_INTERFACE,
+                "ProcessCredentialRevoked",
+                &(id, reason),
+            )
             .await;
     }
 }

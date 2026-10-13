@@ -24,7 +24,9 @@ use porter_provider::{
     RevokeOutcome, SignIn, SignInMode, SignInStart, SignInStep, Signed, parse_provider,
 };
 use porter_secrets::{MemorySecrets, Secrets, SecretsError};
-use porter_service::{AccountService, Registry, SheetFault, SheetLink, SheetOpen, Sheets, SignInAs};
+use porter_service::{
+    AccountService, Registry, SheetFault, SheetLink, SheetOpen, Sheets, SignInAs,
+};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};

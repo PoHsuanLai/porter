@@ -87,7 +87,10 @@ async fn a_program_has_one_launcher_first_wins_and_a_departed_connection_frees_i
                     error_name(error),
                     fault_name(LauncherFault::AlreadyRegistered)
                 );
-                assert!(!deadline.passed(), "the departed launcher's program stays held");
+                assert!(
+                    !deadline.passed(),
+                    "the departed launcher's program stays held"
+                );
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;
             }
         }
@@ -104,7 +107,12 @@ async fn only_the_launcher_calls_and_bad_words_are_invalid() {
             .await
             .expect("proxy");
         assert_eq!(
-            error_name(proxy.register_launcher(&[PROGRAM]).await.expect_err("refused")),
+            error_name(
+                proxy
+                    .register_launcher(&[PROGRAM])
+                    .await
+                    .expect_err("refused")
+            ),
             DENIED
         );
         assert_eq!(

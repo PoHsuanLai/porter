@@ -356,7 +356,10 @@ async fn removing_the_account_in_the_rows_deletes_its_files_and_its_sign_in_here
     eventually("the file arrives", || local(&rig, "note.txt").exists()).await;
 
     rig.settings
-        .set(&row("accounts.graph-acct.remove"), &toml::Value::Boolean(true))
+        .set(
+            &row("accounts.graph-acct.remove"),
+            &toml::Value::Boolean(true),
+        )
         .await
         .expect("remove");
     assert!(!local(&rig, "note.txt").exists(), "its files are gone");

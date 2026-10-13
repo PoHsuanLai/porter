@@ -5,9 +5,7 @@
 
 use super::desk::{KeyDesk, usable};
 use super::host::KeyHost;
-use crate::cloud::accountd::{
-    AccountVerdict, Accountd, AccountdFault, Boxed, llm_need,
-};
+use crate::cloud::accountd::{AccountVerdict, Accountd, AccountdFault, Boxed, llm_need};
 use crate::probe::Runtime;
 use crate::probed::Standing;
 use crate::report::{ReportFault, Reports};
@@ -92,10 +90,7 @@ impl<H: KeyHost> Accountd for LocalKeys<H> {
                         account: account.id.clone(),
                         provider: Some(account.provider.as_str().to_owned()),
                         label: Some(account.label.0.clone()),
-                        provider_label: self
-                            .names
-                            .label_of(&account.provider)
-                            .map(str::to_owned),
+                        provider_label: self.names.label_of(&account.provider).map(str::to_owned),
                         state: Some(account.state),
                         verdict: decide_key(&registry.grants, &key),
                     })
@@ -136,8 +131,8 @@ impl<H: KeyHost> Reports for LocalKeys<H> {
         standing: Standing,
     ) -> Boxed<'a, Result<AccountId, ReportFault>> {
         Box::pin(async move {
-            let provider = ProviderId::parse(runtime.provider())
-                .map_err(|_| ReportFault::Rejected)?;
+            let provider =
+                ProviderId::parse(runtime.provider()).map_err(|_| ReportFault::Rejected)?;
             let state = match standing {
                 Standing::Online => AccountState::Ok,
                 Standing::Offline => AccountState::Offline,

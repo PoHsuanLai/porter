@@ -27,11 +27,7 @@ async fn joined(rig: &Rig, who: porter_dbus::Caller) -> zbus::Connection {
 #[tokio::test(flavor = "multi_thread")]
 async fn removing_an_account_tells_the_shell_and_settings_and_no_app() {
     let rig = Rig::start().await;
-    let shell = joined(
-        &rig,
-        caller("org.example.SheetHost", CallerRole::SheetHost),
-    )
-    .await;
+    let shell = joined(&rig, caller("org.example.SheetHost", CallerRole::SheetHost)).await;
     let settings_conn = joined(&rig, caller("org.quire.Settings", CallerRole::Settings)).await;
     let app = joined(&rig, caller("org.quire.Mail", CallerRole::App)).await;
     let mut shell_hears = listen(&shell).await;
@@ -57,11 +53,7 @@ async fn removing_an_account_tells_the_shell_and_settings_and_no_app() {
 #[tokio::test(flavor = "multi_thread")]
 async fn an_account_that_needs_signing_in_again_is_told_to_the_shell_alone_among_apps() {
     let rig = Rig::start().await;
-    let shell = joined(
-        &rig,
-        caller("org.example.SheetHost", CallerRole::SheetHost),
-    )
-    .await;
+    let shell = joined(&rig, caller("org.example.SheetHost", CallerRole::SheetHost)).await;
     let app = joined(&rig, caller("org.quire.Mail", CallerRole::App)).await;
     let mut shell_hears = listen(&shell).await;
     let mut app_hears = listen(&app).await;

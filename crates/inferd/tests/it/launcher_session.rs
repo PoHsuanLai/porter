@@ -7,10 +7,10 @@ use crate::launcher_register::error_name;
 use crate::launcher_rig::*;
 
 use inferd::launcher::LoginTiming;
-use porter_core::consent::GrantScope;
 use porter_core::audit::CredentialEnd;
+use porter_core::consent::GrantScope;
 use porter_core::{AccountsReply, LauncherSession};
-use porter_dbus::{Details, LauncherFault, Sheet, SheetKind, ServiceRoot, reply_of};
+use porter_dbus::{Details, LauncherFault, ServiceRoot, Sheet, SheetKind, reply_of};
 use porter_fake::Scripted;
 use zbus::export::futures_core::Stream;
 
@@ -41,7 +41,13 @@ async fn sessions_belong_to_the_connection_that_began_them() {
     let first = rig.launcher("org.example.First").await;
     // No program registered yet.
     assert_eq!(
-        error_name(first.proxy.begin_session("s1").await.expect_err("not registered")),
+        error_name(
+            first
+                .proxy
+                .begin_session("s1")
+                .await
+                .expect_err("not registered")
+        ),
         fault(LauncherFault::NotRegistered)
     );
     first
@@ -63,12 +69,24 @@ async fn sessions_belong_to_the_connection_that_began_them() {
         fault(LauncherFault::SessionTaken)
     );
     assert_eq!(
-        error_name(second.proxy.end_session("s1").await.expect_err("not its own")),
+        error_name(
+            second
+                .proxy
+                .end_session("s1")
+                .await
+                .expect_err("not its own")
+        ),
         fault(LauncherFault::UnknownSession)
     );
     first.proxy.end_session("s1").await.expect("ended");
     assert_eq!(
-        error_name(first.proxy.end_session("s1").await.expect_err("ended already")),
+        error_name(
+            first
+                .proxy
+                .end_session("s1")
+                .await
+                .expect_err("ended already")
+        ),
         fault(LauncherFault::UnknownSession)
     );
     // A key asked for in a session the connection does not hold open is refused before a sheet.

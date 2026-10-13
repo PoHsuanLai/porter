@@ -144,11 +144,15 @@ impl<H: Hosted, D: Directory> Keep<H, D> {
     /// "Continue as": the person picks an identity, syncd signs it in (unless it already holds
     /// it) and says it uses the identity.
     pub async fn continue_as(&self, window: &ParentWindow) -> Result<Continued, ContinueError> {
-        let pick = self.directory.offer(window).await.map_err(|why| match why {
-            IdentitiesError::Cancelled => ContinueError::Cancelled,
-            IdentitiesError::NoIdentity => ContinueError::NoIdentity,
-            _ => ContinueError::Directory,
-        })?;
+        let pick = self
+            .directory
+            .offer(window)
+            .await
+            .map_err(|why| match why {
+                IdentitiesError::Cancelled => ContinueError::Cancelled,
+                IdentitiesError::NoIdentity => ContinueError::NoIdentity,
+                _ => ContinueError::Directory,
+            })?;
         let held = self
             .hosted
             .registry()
@@ -277,8 +281,8 @@ impl<H: Hosted, D: Directory> Keep<H, D> {
     /// stored sign-in and grants. A failure to delete the files leaves the account as it was.
     pub async fn remove(&self, account: &AccountId) -> Result<(), RemoveError> {
         account_of(&self.hosted.registry(), account).ok_or(RemoveError::Unknown)?;
-        let dir = AccountDir::parse(&porter_core::object_segment(account))
-            .ok_or(RemoveError::Unknown)?;
+        let dir =
+            AccountDir::parse(&porter_core::object_segment(account)).ok_or(RemoveError::Unknown)?;
         removal::wipe(&self.paths, &self.hub, &dir)
             .await
             .map_err(|why| RemoveError::Files(why.to_string()))?;

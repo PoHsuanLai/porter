@@ -127,7 +127,11 @@ mod test_build {
             let mut daemon = spawn(&bus, &home, Some(value));
             assert!(!serving(&bus, &mut daemon).await, "{value}");
             assert!(!daemon.child.wait().expect("exits").success(), "{value}");
-            assert!(daemon.stderr().contains(says), "{value}: {}", daemon.stderr());
+            assert!(
+                daemon.stderr().contains(says),
+                "{value}: {}",
+                daemon.stderr()
+            );
             assert!(!home.join("relative").exists());
         }
     }
@@ -161,7 +165,9 @@ async fn a_shipped_build_ignores_the_variable_and_says_so_without_repeating_it()
     assert!(serving(&bus, &mut daemon).await, "{}", daemon.stderr());
     let said = daemon.stderr();
     assert!(
-        said.contains("this build has no test-keys feature; ignoring it and using the Secret Service"),
+        said.contains(
+            "this build has no test-keys feature; ignoring it and using the Secret Service"
+        ),
         "{said}"
     );
     assert!(!said.contains("keys.json"));

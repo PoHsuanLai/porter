@@ -125,11 +125,7 @@ pub struct Rig {
 impl Rig {
     /// Serving, with the two Llm accounts and the agent's account, `permits` already given, and
     /// `consent` as the person's answers to the key sheet.
-    pub async fn start(
-        permits: Vec<Grant>,
-        consent: Vec<Scripted>,
-        timing: LoginTiming,
-    ) -> Self {
+    pub async fn start(permits: Vec<Grant>, consent: Vec<Scripted>, timing: LoginTiming) -> Self {
         let bus = PrivateBus::start();
         let connection = bus.connect().await;
         let secrets = Shared::default();

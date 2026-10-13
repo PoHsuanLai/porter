@@ -142,7 +142,9 @@ impl Accountd for FakeAccountd {
             let usage_asked = slug(&usage);
             {
                 let mut calls = self.calls.lock().expect("lock");
-                calls.verdicts.push((app.name.as_str().to_owned(), slug(&class)));
+                calls
+                    .verdicts
+                    .push((app.name.as_str().to_owned(), slug(&class)));
                 calls.usages.push(usage_asked.clone());
             }
             let looks = self.looks.lock().expect("lock").clone();
@@ -169,9 +171,9 @@ impl Accountd for FakeAccountd {
                         } if *held == usage_asked && to.iter().any(|t| *t == name) => {
                             granted(grant)
                         }
-                        Standing::Granted { .. }
-                        | Standing::GrantedFor { .. }
-                        | Standing::Ask => Some(Verdict::Ask),
+                        Standing::Granted { .. } | Standing::GrantedFor { .. } | Standing::Ask => {
+                            Some(Verdict::Ask)
+                        }
                         Standing::Denied => Some(Verdict::Denied),
                     };
                     let look = looks.get(account.id);

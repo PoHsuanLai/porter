@@ -19,17 +19,15 @@ use crate::cloud::accountd::llm_need;
 use porter_core::consent::Usage;
 use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
 use porter_core::{AccountsRequest, DataClass, ProviderId};
-use porter_dbus::{
-    CallerRole, Callers, Details, ServiceRoot, SheetKind, refusal_error_name_in,
-};
+use porter_dbus::{CallerRole, Callers, Details, ServiceRoot, SheetKind, refusal_error_name_in};
 use porter_sheets::RequestObjects;
 use std::sync::Arc;
+use zbus::Connection;
 use zbus::DBusError;
 use zbus::fdo;
 use zbus::message::{Header, Message};
 use zbus::names::ErrorName;
 use zbus::zvariant::OwnedObjectPath;
-use zbus::Connection;
 
 /// An error reply: its name and its text.
 #[derive(Debug, Clone, PartialEq, Eq)]

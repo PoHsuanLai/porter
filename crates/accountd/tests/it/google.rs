@@ -383,10 +383,7 @@ async fn a_client_in_testing_shows_when_google_signs_it_out_and_says_why_once_it
             .set_state(&id, AccountState::NeedsReauth)
             .await
     );
-    assert_eq!(
-        reauth_reason_of(&world, &id).await,
-        "testing_app_expired"
-    );
+    assert_eq!(reauth_reason_of(&world, &id).await, "testing_app_expired");
     let words = settings.get(&row).await.expect("the row");
     assert!(
         words

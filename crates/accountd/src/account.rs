@@ -15,10 +15,10 @@ use porter_dbus::{
     ACCOUNTS_PATH, Caller, CallerRole, Details, SheetKind, account_path, to_vardict,
 };
 use std::sync::Arc;
+use zbus::ObjectServer;
 use zbus::fdo;
 use zbus::message::Header;
 use zbus::zvariant::OwnedObjectPath;
-use zbus::ObjectServer;
 
 /// One account's object.
 #[derive(Debug)]
@@ -93,7 +93,10 @@ impl<H: Host, C: Callers> AccountObject<H, C> {
 
     #[zbus(property)]
     async fn provider(&self, #[zbus(header)] header: Option<Header<'_>>) -> fdo::Result<String> {
-        Ok(visible(&self.0, header.as_ref()).await?.provider.to_string())
+        Ok(visible(&self.0, header.as_ref())
+            .await?
+            .provider
+            .to_string())
     }
 
     #[zbus(property)]

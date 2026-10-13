@@ -525,7 +525,10 @@ mod tests {
         let registry = registry();
         let storage = registry.accounts[0].id.clone();
         let mut used = UsedBy::new();
-        used.insert(storage.clone(), vec![app("org.example.Mail"), app("org.quire.Photos")]);
+        used.insert(
+            storage.clone(),
+            vec![app("org.example.Mail"), app("org.quire.Photos")],
+        );
         let schema = schema(
             &registry,
             &used,
@@ -679,7 +682,10 @@ mod tests {
             registry.accounts.push(tailscale);
         }
         let mut used = UsedBy::new();
-        used.insert(registry.accounts[0].id.clone(), vec![app("org.example.Mail")]);
+        used.insert(
+            registry.accounts[0].id.clone(),
+            vec![app("org.example.Mail")],
+        );
         let schema = schema(
             &registry,
             &used,
@@ -759,13 +765,20 @@ mod tests {
         let rows = rows(&registry);
         let paths: Vec<&str> = rows.iter().map(|k| k.path.0.as_str()).collect();
         assert!(
-            !paths.iter().any(|p| p.contains("a-runtime") || p.contains("an-agent")),
+            !paths
+                .iter()
+                .any(|p| p.contains("a-runtime") || p.contains("an-agent")),
             "{paths:?}"
         );
         assert!(paths.contains(&"accounts.fake-mail.reauth"), "{paths:?}");
         let mut runtime = storage_account();
         runtime.auth = AuthKind::LocalRuntime;
-        let own = account_keys(&runtime, &[], &AppNames::default(), &ProviderNames::default());
+        let own = account_keys(
+            &runtime,
+            &[],
+            &AppNames::default(),
+            &ProviderNames::default(),
+        );
         assert!(!own.iter().any(|k| k.path.0.ends_with(".reauth")));
     }
 

@@ -89,7 +89,10 @@ pub(crate) fn row_news(before: &Registry, after: &Registry) -> Vec<(KeyPath, tom
             .filter(|g| g.scope.session().is_some())
         {
             let key = Key::Grant(grant.key.account.clone(), grant.id.clone());
-            news.push((row(key), text(if now.is_some() { "added" } else { "removed" })));
+            news.push((
+                row(key),
+                text(if now.is_some() { "added" } else { "removed" }),
+            ));
         }
         if let (Some(was), Some(now)) = (was, now) {
             let (account, grant) = (&now.key.account, &now.id);

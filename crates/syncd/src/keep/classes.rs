@@ -151,9 +151,9 @@ pub fn need_for(account: &Account, class: SyncClass) -> Need {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use porter_core::GrantId;
     use porter_core::UnixSeconds;
     use porter_core::consent::GrantScope;
-    use porter_core::GrantId;
 
     fn grant(key: GrantKey, decision: Decision) -> Grant {
         Grant {

@@ -49,7 +49,10 @@ fn the_unit_is_a_sandbox_that_writes_only_its_own_directories() {
     // Journals under state, mirrors under data: nothing else is writable, and both exist before
     // the sandbox starts (a missing ReadWritePaths entry fails the unit).
     // Its own accounts (the registry) sit beside the journals' directory.
-    assert_eq!(value(&unit, "StateDirectory"), Some("porter/sync quire/syncd"));
+    assert_eq!(
+        value(&unit, "StateDirectory"),
+        Some("porter/sync quire/syncd")
+    );
     assert_eq!(
         value(&unit, "ReadWritePaths"),
         Some("%h/.local/share/porter")

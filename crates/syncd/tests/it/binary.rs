@@ -136,11 +136,9 @@ async fn accountd_saying_an_account_is_gone_does_not_wipe_syncds_copy() {
         .request_name(porter_dbus::ACCOUNTS_BUS)
         .await
         .expect("name");
-    let path = zbus::zvariant::ObjectPath::try_from(format!(
-        "{}/account/a1",
-        porter_dbus::ACCOUNTS_PATH
-    ))
-    .expect("path");
+    let path =
+        zbus::zvariant::ObjectPath::try_from(format!("{}/account/a1", porter_dbus::ACCOUNTS_PATH))
+            .expect("path");
     accountd
         .emit_signal(
             None::<zbus::names::BusName<'_>>,
@@ -153,7 +151,11 @@ async fn accountd_saying_an_account_is_gone_does_not_wipe_syncds_copy() {
         .expect("emit");
     // A call syncd answers after the signal was sent has been processed after it too.
     let client = bus.connect().await;
-    let _ = SyncProxy::new(&client).await.expect("proxy").datasets().await;
+    let _ = SyncProxy::new(&client)
+        .await
+        .expect("proxy")
+        .datasets()
+        .await;
     assert!(journal.exists(), "the person removes it in the sync rows");
 }
 

@@ -7,8 +7,8 @@
 //! agent-settable (`ds-settings` refuses a schema that says otherwise).
 
 use super::host::KeyHost;
-use crate::cloud::accountd::Boxed;
 use super::local::state_slug;
+use crate::cloud::accountd::Boxed;
 use ds_settings::live::{LiveError, Served};
 use ds_settings::schema::{
     ActionLabel, ActionWeight, AgentSetting, Exposure, Help, KeyKind, KeyPath, KeySpec, Label,
@@ -416,11 +416,7 @@ pub trait KeyRows: Send + Sync + 'static {
     fn get<'a>(&'a self, path: &'a str) -> Boxed<'a, Result<toml::Value, LiveError>>;
 
     /// Changes a row (an action row is pressed with any value).
-    fn set<'a>(
-        &'a self,
-        path: &'a str,
-        value: toml::Value,
-    ) -> Boxed<'a, Result<(), LiveError>>;
+    fn set<'a>(&'a self, path: &'a str, value: toml::Value) -> Boxed<'a, Result<(), LiveError>>;
 
     /// Gives the rows the served module, which announces what changed.
     fn bind(&self, served: Served);
@@ -614,9 +610,10 @@ impl<H: KeyHost, L: LaunchersSeam + Clone + 'static> AccountRows<H, L> {
         let text = |t: &str| Ok(toml::Value::String(t.to_owned()));
         match parse(path_text, &registry).ok_or_else(unknown)? {
             Key::Service(id, kind) => {
-                let on = account(&id)?.capabilities.iter().any(|c| {
-                    c.offer.kind() == kind && matches!(c.offer, Offer::Present(_))
-                });
+                let on = account(&id)?
+                    .capabilities
+                    .iter()
+                    .any(|c| c.offer.kind() == kind && matches!(c.offer, Offer::Present(_)));
                 text(if on { "on" } else { "off" })
             }
             Key::State(id) => text(state_slug(account(&id)?.state)),

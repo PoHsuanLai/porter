@@ -10,8 +10,8 @@ use porter_core::{
 use porter_provider::Provider;
 use porter_secrets::{Secrets, SecretsError};
 use porter_service::{
-    AccountService, AgentFault, AuditSink, Clock, Launchers as LaunchersSeam, LocalFault,
-    Registry, RegistryStore, RevokeReport, Sheets,
+    AccountService, AgentFault, AuditSink, Clock, Launchers as LaunchersSeam, LocalFault, Registry,
+    RegistryStore, RevokeReport, Sheets,
 };
 use std::future::Future;
 

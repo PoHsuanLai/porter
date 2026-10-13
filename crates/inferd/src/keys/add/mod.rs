@@ -22,8 +22,8 @@ mod terminal;
 
 pub use terminal::{Echo, StdTerminal, Terminal, TerminalLink, TerminalSheets};
 
-use super::build::{KeysStartError, load_families, load_registry, served_ids};
 use super::audit::KeyAudit;
+use super::build::{KeysStartError, load_families, load_registry, served_ids};
 use crate::config::Dirs;
 use porter_core::clock::SystemClock;
 use porter_core::consent::Usage;
@@ -33,11 +33,11 @@ use porter_core::{
     ProviderId,
 };
 use porter_dbus::{BusTarget, INFERENCE_BUS};
+use porter_provider::Provider;
 use porter_secrets::Namespace;
+use porter_secrets::Secrets;
 use porter_secrets::keysel::{Chosen, Selection};
 use porter_service::{AccountService, AuditSink, Clock, RegistryStore};
-use porter_secrets::Secrets;
-use porter_provider::Provider;
 use std::collections::BTreeSet;
 use zbus::fdo::RequestNameReply;
 

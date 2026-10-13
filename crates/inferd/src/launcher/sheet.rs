@@ -7,9 +7,9 @@
 //! session only". A session permit the sheet makes for a session that closed while it was open is
 //! removed, and the request ends dismissed.
 
-use super::shared::{AGENT_APP_PREFIX, Core};
 use super::errors::RefusedError;
 use super::host::LauncherHost;
+use super::shared::{AGENT_APP_PREFIX, Core};
 use crate::peers::Peers;
 use porter_core::capability::{AgentProgram, LlmFeature};
 use porter_core::consent::Usage;

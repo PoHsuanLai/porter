@@ -10,9 +10,7 @@ use porter_core::{
 };
 use porter_provider::Provider;
 use porter_secrets::{Secrets, SecretsError};
-use porter_service::{
-    AccountService, AuditSink, Clock, Registry, RegistryStore, SignInAs, Sheets,
-};
+use porter_service::{AccountService, AuditSink, Clock, Registry, RegistryStore, Sheets, SignInAs};
 use std::future::Future;
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -110,8 +108,10 @@ pub trait Directory: Send + Sync + 'static {
     ) -> impl Future<Output = Result<Pick, IdentitiesError>> + Send;
 
     /// Says that syncd signed in with `id`: it joins the apps Settings lists as using it.
-    fn register_use(&self, id: &IdentityId)
-    -> impl Future<Output = Result<(), IdentitiesError>> + Send;
+    fn register_use(
+        &self,
+        id: &IdentityId,
+    ) -> impl Future<Output = Result<(), IdentitiesError>> + Send;
 }
 
 impl Directory for Identities {

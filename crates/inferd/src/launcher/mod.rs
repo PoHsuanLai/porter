@@ -24,9 +24,9 @@ pub use errors::RefusedError;
 pub use host::LauncherHost;
 pub use roster::{DEFAULT_BOUND, DEFAULT_TICK, Launchers, LoginTiming, SignOutNews};
 
-use self::shared::{Changed, Core};
 use self::credentials::Credentials;
 use self::object::LauncherObject;
+use self::shared::{Changed, Core};
 use crate::peers::Peers;
 use porter_dbus::{INFERENCE_PATH, ServiceRoot};
 use porter_service::AuditSink;

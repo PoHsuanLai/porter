@@ -318,7 +318,8 @@ mod tests {
     }
 
     #[test]
-    fn syncds_own_accounts_live_under_quire_syncd_and_the_provider_layers_run_system_person_named() {
+    fn syncds_own_accounts_live_under_quire_syncd_and_the_provider_layers_run_system_person_named()
+    {
         let keep = KeepPaths::resolve(env(&[("HOME", "/home/ada")])).expect("paths");
         assert_eq!(
             keep.registry_dir,

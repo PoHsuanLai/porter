@@ -6,8 +6,8 @@ use crate::common;
 
 use accountd::{CREATES_PER_WINDOW, Options, SpacesStore};
 use common::*;
-use porter_core::audit::AuditEvent;
 use porter_core::DesktopSpace;
+use porter_core::audit::AuditEvent;
 use porter_dbus::{CallerRole, SpaceChangedStream, SpacesProxy};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -262,10 +262,7 @@ async fn removing_a_space_is_audited_and_leaves_the_others() {
     assert!(events.contains(&AuditEvent::SpaceRemoved {
         space: DesktopSpace::parse(&work).expect("id")
     }));
-    assert_eq!(
-        listed(&settings).await,
-        [(home, "Home".to_owned())]
-    );
+    assert_eq!(listed(&settings).await, [(home, "Home".to_owned())]);
 }
 
 #[tokio::test(flavor = "multi_thread")]

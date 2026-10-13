@@ -12,11 +12,11 @@ use inferd::report::Reports;
 use porter_core::audit::AuditEvent;
 use porter_core::clock::FixedClock;
 use porter_core::consent::{GrantScope, Usage, Verdict};
+use porter_core::wire::ParentWindow;
 use porter_core::{
     AccountId, AccountState, AccountsReply, AccountsRequest, AppId, AppName, CapabilityKind,
     Credential, DataClass, GrantId, Isolation, SecretKey, SecretPurpose, SecretText, Toggle,
 };
-use porter_core::wire::ParentWindow;
 use porter_fake::{
     MemoryStore, NOW, RecordingAudit, Scripted, ScriptedSheets, llm_account, llm_provider,
 };
@@ -172,7 +172,10 @@ async fn an_app_sees_its_permit_and_every_other_app_or_class_is_asked() {
         }
     );
     assert_eq!(verdict(companion, DataClass::Mail).await, Verdict::Ask);
-    assert_eq!(verdict(app("org.quire.Other"), DataClass::Prompt).await, Verdict::Ask);
+    assert_eq!(
+        verdict(app("org.quire.Other"), DataClass::Prompt).await,
+        Verdict::Ask
+    );
 }
 
 #[tokio::test]
@@ -204,14 +207,20 @@ async fn a_permit_that_does_not_open_a_key_is_refused() {
 
     // A permit nobody holds.
     let nobody = GrantId::parse("grant-404").expect("id");
-    assert_eq!(rig.keys.key(&nobody).await.map(drop), Err(AccountdFault::Refused));
+    assert_eq!(
+        rig.keys.key(&nobody).await.map(drop),
+        Err(AccountdFault::Refused)
+    );
 
     // The service turned off for the account, and on again.
     rig.service
         .set_toggle(&account, CapabilityKind::Llm, Toggle::Off)
         .await
         .expect("off");
-    assert_eq!(rig.keys.key(&grant).await.map(drop), Err(AccountdFault::Refused));
+    assert_eq!(
+        rig.keys.key(&grant).await.map(drop),
+        Err(AccountdFault::Refused)
+    );
     rig.service
         .set_toggle(&account, CapabilityKind::Llm, Toggle::On)
         .await
@@ -219,13 +228,23 @@ async fn a_permit_that_does_not_open_a_key_is_refused() {
     rig.keys.key(&grant).await.expect("on again");
 
     // An account that must be signed in again.
-    assert!(rig.service.set_state(&account, AccountState::NeedsReauth).await);
-    assert_eq!(rig.keys.key(&grant).await.map(drop), Err(AccountdFault::Refused));
+    assert!(
+        rig.service
+            .set_state(&account, AccountState::NeedsReauth)
+            .await
+    );
+    assert_eq!(
+        rig.keys.key(&grant).await.map(drop),
+        Err(AccountdFault::Refused)
+    );
     assert!(rig.service.set_state(&account, AccountState::Ok).await);
 
     // A key that is no longer filed.
     rig.secrets.delete(&llm_key()).await.expect("delete");
-    assert_eq!(rig.keys.key(&grant).await.map(drop), Err(AccountdFault::Refused));
+    assert_eq!(
+        rig.keys.key(&grant).await.map(drop),
+        Err(AccountdFault::Refused)
+    );
     rig.secrets
         .put(&llm_key(), &Credential::ApiKey(SecretText::new(KEY)))
         .await
@@ -233,7 +252,10 @@ async fn a_permit_that_does_not_open_a_key_is_refused() {
 
     // A revoked permit opens nothing.
     rig.service.revoke_grant(&grant).await.expect("revoke");
-    assert_eq!(rig.keys.key(&grant).await.map(drop), Err(AccountdFault::Refused));
+    assert_eq!(
+        rig.keys.key(&grant).await.map(drop),
+        Err(AccountdFault::Refused)
+    );
 }
 
 #[tokio::test]

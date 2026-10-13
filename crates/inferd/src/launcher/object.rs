@@ -6,10 +6,10 @@
 //! `AccessDenied`. The signals `AgentLoginRequested`, `AgentLogoutRequested` and
 //! `ProcessCredentialRevoked` are sent to the registering connection alone.
 
-use super::shared::Core;
 use super::errors::RefusedError;
 use super::host::LauncherHost;
 use super::roster::Ask;
+use super::shared::Core;
 use super::sheet::slug;
 use crate::peers::Peers;
 use porter_core::capability::AgentProgram;

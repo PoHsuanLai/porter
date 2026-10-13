@@ -649,7 +649,7 @@ async fn removing_the_account_in_syncd_removes_the_mirror_and_it_does_not_come_b
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_revoked_grant_stops_and_removes_the_mirror_but_an_unanswering_grant_list_changes_nothing()
-{
+ {
     let rig = rig(true).await;
     let contacts = rig.calendar("contacts-contacts");
     eventually("mirrored", || {

@@ -120,7 +120,10 @@ async fn a_process_that_only_claimed_the_name_is_not_the_host() {
         .await
         .expect("add_account");
     let (code, _) = sheet.response(&path).await.expect("response");
-    assert_ne!(code, 0, "the sheet could not be shown, so nothing was added");
+    assert_ne!(
+        code, 0,
+        "the sheet could not be shown, so nothing was added"
+    );
     assert!(
         rig.host_log.calls().opened.is_empty(),
         "the squatter saw nothing"

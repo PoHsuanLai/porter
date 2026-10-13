@@ -38,8 +38,14 @@ pub enum KeysStartError {
 
 /// The service the daemon hosts: AI and agent families, the shell's sheets, the file registry
 /// that says when it was saved.
-pub type KeyService<C> =
-    AccountService<FamilyProvider, AnyKeys, BusSheets<C>, SystemClock, NewsStore<FileStore>, KeyAudit>;
+pub type KeyService<C> = AccountService<
+    FamilyProvider,
+    AnyKeys,
+    BusSheets<C>,
+    SystemClock,
+    NewsStore<FileStore>,
+    KeyAudit,
+>;
 
 /// The provider files inferd serves, and the families of each.
 #[derive(Debug)]
@@ -67,7 +73,12 @@ pub fn load_families(dirs: &Dirs) -> Families {
     let specs: Vec<ProviderSpec> = loaded
         .specs
         .into_iter()
-        .filter(|spec| matches!(spec.group(), ProviderGroup::Intelligence | ProviderGroup::Agent))
+        .filter(|spec| {
+            matches!(
+                spec.group(),
+                ProviderGroup::Intelligence | ProviderGroup::Agent
+            )
+        })
         .collect();
     let io = FamilyIo::system(
         ProviderSet::layered(specs.clone(), Vec::new()),

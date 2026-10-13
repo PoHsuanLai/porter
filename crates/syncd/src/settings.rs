@@ -13,7 +13,9 @@
 use crate::keep::{
     ContinueError, Directory, Hosted, Keep, SyncClass, account_of, sync_allowed, sync_offers,
 };
-use ds_settings::live::{Access, Caller, LiveError, LiveModule, LiveSchema, Served, Verdict, serve};
+use ds_settings::live::{
+    Access, Caller, LiveError, LiveModule, LiveSchema, Served, Verdict, serve,
+};
 use ds_settings::schema::{
     ActionLabel, ActionWeight, AgentSetting, Exposure, Help, KeyKind, KeyPath, KeySpec, Label,
     LiveAction, Page, Section, WordLabels,
@@ -102,7 +104,14 @@ fn state_slug(state: AccountState) -> &'static str {
     }
 }
 
-fn spec(key: &Key, section: &str, label: &str, help: &str, kind: KeyKind, default: toml::Value) -> KeySpec {
+fn spec(
+    key: &Key,
+    section: &str,
+    label: &str,
+    help: &str,
+    kind: KeyKind,
+    default: toml::Value,
+) -> KeySpec {
     KeySpec {
         path: KeyPath(path(key)),
         kind,
@@ -190,7 +199,12 @@ fn account_keys(account: &Account, names: &ProviderNames) -> Vec<KeySpec> {
             .collect(),
     );
     let mut keys = vec![
-        readout(&Key::Label(id.clone()), section, "Account", &account.label.0),
+        readout(
+            &Key::Label(id.clone()),
+            section,
+            "Account",
+            &account.label.0,
+        ),
         provider_row,
         readout(
             &Key::State(id.clone()),
@@ -372,10 +386,13 @@ impl<H: Hosted, D: Directory, C: Callers> LiveModule for SyncSettings<H, D, C> {
             Key::Sync(id, class) => {
                 let toggle = toggle_of(&value)
                     .ok_or_else(|| LiveError::BadValue("a sync row is `on` or `off`".into()))?;
-                self.keep.set_sync(&id, class, toggle).await.map_err(|why| {
-                    eprintln!("syncd: a Settings change was refused: {why}");
-                    failed("That could not be done.")
-                })?;
+                self.keep
+                    .set_sync(&id, class, toggle)
+                    .await
+                    .map_err(|why| {
+                        eprintln!("syncd: a Settings change was refused: {why}");
+                        failed("That could not be done.")
+                    })?;
             }
             Key::Reauth(id) => {
                 let (keep, served) = (Arc::clone(&self.keep), Arc::clone(&self.served));

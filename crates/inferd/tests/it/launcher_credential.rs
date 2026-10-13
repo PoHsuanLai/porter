@@ -9,10 +9,10 @@ use crate::launcher_rig::*;
 
 use inferd::launcher::LoginTiming;
 use inferd::peers::Role;
+use porter_core::GrantId;
 use porter_core::audit::{AuditEvent, CredentialEnd};
 use porter_core::consent::{Decision, GrantScope};
 use porter_core::wire::Refusal;
-use porter_core::GrantId;
 use porter_dbus::{LauncherFault, ServiceRoot, refusal_error_name_in};
 use rustix::fs::{SealFlags, fcntl_get_seals};
 use std::io::Read;
@@ -76,7 +76,8 @@ fn audit_lines(rig: &Rig) -> Vec<String> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_memfd_credential_is_a_sealed_key_and_a_tmpfs_one_a_0600_file_and_the_key_is_in_no_line() {
+async fn a_memfd_credential_is_a_sealed_key_and_a_tmpfs_one_a_0600_file_and_the_key_is_in_no_line()
+{
     let rig = Rig::start(permits(), vec![], LoginTiming::new()).await;
     let launcher = registered(&rig, "org.example.Launcher").await;
 
@@ -105,7 +106,8 @@ async fn a_memfd_credential_is_a_sealed_key_and_a_tmpfs_one_a_0600_file_and_the_
     let path = path_of(handle);
     assert!(path.starts_with(&rig.runtime.0));
     assert_eq!(std::fs::read_to_string(&path).expect("read"), KEY);
-    let mode = |p: &std::path::Path| std::fs::metadata(p).expect("meta").permissions().mode() & 0o777;
+    let mode =
+        |p: &std::path::Path| std::fs::metadata(p).expect("meta").permissions().mode() & 0o777;
     assert_eq!(mode(&path), 0o600);
     assert_eq!(mode(path.parent().expect("dir")), 0o700);
 
@@ -148,14 +150,26 @@ async fn a_credential_is_refused_unless_every_check_holds() {
             )
         }
     };
-    assert_eq!(ask("g-once", PROGRAM, "memfd").await, fault(LauncherFault::OnceGrant));
-    assert_eq!(ask("g-denied", PROGRAM, "memfd").await, refusal(Refusal::UnknownGrant));
-    assert_eq!(ask("g-none", PROGRAM, "memfd").await, refusal(Refusal::UnknownGrant));
+    assert_eq!(
+        ask("g-once", PROGRAM, "memfd").await,
+        fault(LauncherFault::OnceGrant)
+    );
+    assert_eq!(
+        ask("g-denied", PROGRAM, "memfd").await,
+        refusal(Refusal::UnknownGrant)
+    );
+    assert_eq!(
+        ask("g-none", PROGRAM, "memfd").await,
+        refusal(Refusal::UnknownGrant)
+    );
     assert_eq!(
         ask("g-other-program", PROGRAM, "memfd").await,
         refusal(Refusal::AudienceNotGranted)
     );
-    assert_eq!(ask("g-oauth", PROGRAM, "memfd").await, fault(LauncherFault::NotAKeyAccount));
+    assert_eq!(
+        ask("g-oauth", PROGRAM, "memfd").await,
+        fault(LauncherFault::NotAKeyAccount)
+    );
     assert_eq!(
         ask("g-always", "codex", "memfd").await,
         fault(LauncherFault::NotRegistered)

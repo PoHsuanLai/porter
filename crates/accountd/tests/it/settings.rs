@@ -248,7 +248,10 @@ async fn read_outs_and_unknown_keys_are_not_settable() {
         "accounts.fake-storage.sign_out",
     ] {
         assert!(
-            matches!(settings.get(&key(gone)).await, Err(LiveError::UnknownKey(_))),
+            matches!(
+                settings.get(&key(gone)).await,
+                Err(LiveError::UnknownKey(_))
+            ),
             "{gone}"
         );
     }
