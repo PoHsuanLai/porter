@@ -151,7 +151,7 @@ async fn rig(photos: PhotosSwitch) -> Rig {
     let module = SyncSettings::new(
         Arc::new(own),
         Arc::new(known.clone()),
-        ProviderNames::from_specs(&[spec.clone()]),
+        ProviderNames::from_specs(std::slice::from_ref(&spec)),
     );
     serve_settings(&server, module).await.expect("settings");
     let name = server.unique_name().expect("name").to_string();
