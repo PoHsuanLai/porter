@@ -18,7 +18,7 @@ use rustix::fs::{SealFlags, fcntl_get_seals};
 use std::io::Read;
 use std::os::unix::fs::PermissionsExt;
 use zbus::export::futures_core::Stream;
-use zbus::zvariant::{OwnedFd, OwnedValue};
+use zbus::zvariant::OwnedValue;
 
 fn permits() -> Vec<porter_core::consent::Grant> {
     use Decision::{Allow, Deny};
@@ -87,7 +87,12 @@ async fn a_memfd_credential_is_a_sealed_key_and_a_tmpfs_one_a_0600_file_and_the_
         .await
         .expect("issued");
     assert!(!id.is_empty());
-    let fd: std::os::fd::OwnedFd = OwnedFd::try_from(handle).expect("a descriptor").into();
+    let fd = match &*handle {
+        porter_dbus::zvariant::Value::Fd(fd) => std::os::fd::AsFd::as_fd(fd)
+            .try_clone_to_owned()
+            .expect("a descriptor"),
+        other => panic!("not a descriptor: {other:?}"),
+    };
     assert_eq!(
         fcntl_get_seals(&fd).expect("seals"),
         SealFlags::WRITE | SealFlags::GROW | SealFlags::SHRINK | SealFlags::SEAL
@@ -228,7 +233,7 @@ async fn a_permit_withdrawn_or_an_account_removed_ends_the_credential_and_tells_
     let args = signal.args().expect("args");
     assert_eq!(
         (args.id, args.reason),
-        (id.as_str(), CredentialEnd::GrantRevoked.word())
+        (id, CredentialEnd::GrantRevoked.word().to_owned())
     );
     assert_eq!(
         audit_lines(&rig).last().map(String::as_str),

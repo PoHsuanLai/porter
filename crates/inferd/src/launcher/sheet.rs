@@ -99,8 +99,12 @@ impl<H: LauncherHost, P: Peers> Core<H, P> {
             core.settled().await;
             reply
         };
+        let path = self
+            .requests
+            .path(&sender, options)
+            .map_err(RefusedError::failed)?;
         self.requests
-            .start(sender, options, SheetKind::Choose, run)
+            .start(sender, path, SheetKind::Choose, run)
             .await
             .map_err(RefusedError::failed)
     }

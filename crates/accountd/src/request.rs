@@ -101,8 +101,12 @@ impl<H: Host, C: Callers> Core<H, C> {
             core.publish().await;
             reply
         };
+        let path = self
+            .requests
+            .path(&sender, options)
+            .map_err(RefusedError::from_request)?;
         self.requests
-            .start(sender, options, kind, run)
+            .start(sender, path, kind, run)
             .await
             .map_err(RefusedError::from_request)
     }

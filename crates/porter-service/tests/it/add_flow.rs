@@ -64,6 +64,9 @@ kind = "llm"
 v = { features = ["chat"], context = 2048, max_output = 2048, wire = "ollama_native" }
 "#;
 
+/// The address and consent history one sign-in was started with.
+type Start = (Option<LoginHint>, ConsentHistory);
+
 /// What the sign-in was told, by name, and the steps it will answer with, in order.
 #[derive(Debug, Clone, Default)]
 struct Script {
@@ -71,7 +74,7 @@ struct Script {
     told: Arc<Mutex<Vec<&'static str>>>,
     modes: Arc<Mutex<Vec<SignInMode>>>,
     /// The address and consent history each sign-in was started with, in order.
-    starts: Arc<Mutex<Vec<(Option<LoginHint>, ConsentHistory)>>>,
+    starts: Arc<Mutex<Vec<Start>>>,
     /// The accounts the provider was asked to revoke, as it was handed them.
     revoked: Arc<Mutex<Vec<Account>>>,
     /// Whether the provider fails when asked to revoke.

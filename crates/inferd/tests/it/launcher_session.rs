@@ -163,7 +163,7 @@ async fn a_session_permit_and_the_credential_under_it_end_with_the_session() {
     let args = signal.args().expect("args");
     assert_eq!(
         (args.id, args.reason),
-        (id.as_str(), CredentialEnd::SessionClosed.word())
+        (id, CredentialEnd::SessionClosed.word().to_owned())
     );
 }
 

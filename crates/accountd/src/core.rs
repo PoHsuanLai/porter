@@ -150,7 +150,6 @@ pub(crate) enum Standing {
 }
 
 /// The shared state of every object accountd serves.
-#[derive(Debug)]
 pub(crate) struct Core<H, C> {
     pub(crate) host: Arc<H>,
     pub(crate) callers: C,
@@ -390,6 +389,12 @@ pub struct Options {
     /// The picker and the passwords behind `org.quire.Identities1`'s `Offer` and `TakePassword`;
     /// none refuses both as unavailable (`List`, `RegisterUse` and `Uses` need no desk).
     pub identities: Option<Arc<dyn crate::identity_desk::IdentityDesk>>,
+}
+
+impl<H, C> std::fmt::Debug for Core<H, C> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Core").finish_non_exhaustive()
+    }
 }
 
 impl std::fmt::Debug for Options {

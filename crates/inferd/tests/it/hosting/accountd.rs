@@ -160,17 +160,13 @@ impl Accountd for FakeAccountd {
                         })
                     };
                     let verdict: Option<Verdict> = match &account.standing {
-                        Standing::Granted { to, grant, .. } if to.iter().any(|t| *t == name) => {
-                            granted(grant)
-                        }
+                        Standing::Granted { to, grant, .. } if to.contains(&name) => granted(grant),
                         Standing::GrantedFor {
                             usage: held,
                             to,
                             grant,
                             ..
-                        } if *held == usage_asked && to.iter().any(|t| *t == name) => {
-                            granted(grant)
-                        }
+                        } if *held == usage_asked && to.contains(&name) => granted(grant),
                         Standing::Granted { .. } | Standing::GrantedFor { .. } | Standing::Ask => {
                             Some(Verdict::Ask)
                         }

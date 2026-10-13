@@ -525,6 +525,12 @@ pub struct AccountRows<H, L> {
     served: ServedSlot,
 }
 
+impl<H, L> std::fmt::Debug for AccountRows<H, L> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AccountRows").finish_non_exhaustive()
+    }
+}
+
 impl<H, L> AccountRows<H, L> {
     /// The rows of `host`'s accounts; `launchers` sign an agent in and out; `served` is where
     /// the served module is kept (shared with the news watcher).

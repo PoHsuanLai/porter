@@ -64,7 +64,7 @@ async fn ids_are_minted_not_named_and_survive_renames_and_restarts() {
     let at = (Instant::now(), NOW);
     // A registered Space already holds the id the counter would give first.
     let taken = DesktopSpace::parse("space-1").expect("id");
-    book.register(taken, name("Taken"), SpaceLook::default(), at)
+    book.register(&photos, taken, name("Taken"), SpaceLook::default(), at)
         .await
         .expect("registered");
     let made = book

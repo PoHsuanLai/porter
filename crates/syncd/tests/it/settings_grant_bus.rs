@@ -82,7 +82,7 @@ async fn rig(photos: PhotosSwitch) -> Rig {
     let graph = FakeGraph::start(BEARER).await.expect("graph");
     graph.set_limit(1_000_000);
     let provider = FakeProvider::from_file(PROVIDER);
-    let spec = provider.spec();
+    let spec = provider.spec().clone();
     let account = Account {
         id: AccountId::parse(ACCOUNT).expect("id"),
         provider: spec.id.clone(),

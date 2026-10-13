@@ -376,10 +376,10 @@ impl<H: Hosted, D: Directory, C: Callers> LiveModule for SyncSettings<H, D, C> {
                     }
                     announce(&served, &Key::Add, word_of(&outcome)).await;
                     // A new account appears with its state, which a pane reads the schema for.
-                    if keep.registry().accounts.len() != before {
-                        if let Some(account) = keep.registry().accounts.last() {
-                            announce(&served, &Key::State(account.id.clone()), "ok").await;
-                        }
+                    if keep.registry().accounts.len() != before
+                        && let Some(account) = keep.registry().accounts.last()
+                    {
+                        announce(&served, &Key::State(account.id.clone()), "ok").await;
                     }
                 });
             }

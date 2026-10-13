@@ -392,6 +392,7 @@ impl Launcher {
             .retain(|open| *open != session);
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn request_agent_key(
         &self,
         #[zbus(header)] header: Header<'_>,

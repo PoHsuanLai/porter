@@ -128,6 +128,12 @@ pub struct Opened<C> {
     pub saved: Arc<Notify>,
 }
 
+impl<C> std::fmt::Debug for Opened<C> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Opened").finish_non_exhaustive()
+    }
+}
+
 /// Opens the key store: the secret store `selection` names (refused here, not later), the
 /// provider files, the registry, the sheets drawn through `connection` for the shell the table
 /// names.

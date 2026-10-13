@@ -109,12 +109,12 @@ pub struct KeysObject<H, C> {
 }
 
 impl<H, C> KeysObject<H, C> {
-    /// The object over `host`; a sender is identified through `callers`.
-    pub fn new(host: Arc<H>, callers: Arc<C>) -> Self {
+    /// The object over `host`, served on `connection`; a sender is identified through `callers`.
+    pub fn new(host: Arc<H>, callers: Arc<C>, connection: Connection) -> Self {
         Self {
             host,
             callers,
-            objects: RequestObjects::new(ServiceRoot::Inference),
+            objects: RequestObjects::new(connection, ServiceRoot::Inference),
         }
     }
 }
@@ -143,6 +143,37 @@ impl<H: KeyHost, C: Callers> KeysObject<H, C> {
             )),
         }
     }
+
+    /// Starts a `kind` sheet that answers `request` for the app behind the sender of `header`:
+    /// one per app and kind, under the Request object the options name. Returns its path.
+    async fn sheet(
+        &self,
+        header: &Header<'_>,
+        kind: SheetKind,
+        options: &Details,
+        request: AccountsRequest,
+    ) -> Result<OwnedObjectPath, KeysError> {
+        let app = self.asker(header).await?;
+        let sender = header
+            .sender()
+            .ok_or_else(|| KeysError::access_denied("no sender"))?
+            .to_owned();
+        let claim = self.objects.claim(&app, kind).map_err(KeysError::failed)?;
+        let path = self
+            .objects
+            .path(&sender, options)
+            .map_err(KeysError::failed)?;
+        let host = Arc::clone(&self.host);
+        let run = async move {
+            // Held until the sheet ends, however it ends.
+            let _claim = claim;
+            host.handle(&app, request).await
+        };
+        self.objects
+            .start(sender, path, kind, run)
+            .await
+            .map_err(KeysError::failed)
+    }
 }
 
 #[zbus::interface(name = "org.quire.Inference1.Keys")]
@@ -150,13 +181,11 @@ impl<H: KeyHost, C: Callers> KeysObject<H, C> {
     async fn request_key(
         &self,
         #[zbus(header)] header: Header<'_>,
-        #[zbus(connection)] connection: &Connection,
         class: String,
         usage: String,
         parent_window: String,
         options: Details,
     ) -> Result<OwnedObjectPath, KeysError> {
-        let app = self.asker(&header).await?;
         let class: DataClass = slug(&class)?;
         let usage: Usage = slug(&usage)?;
         let request = AccountsRequest::Choose {
@@ -165,30 +194,17 @@ impl<H: KeyHost, C: Callers> KeysObject<H, C> {
             usage,
             window: window(&parent_window),
         };
-        let host = Arc::clone(&self.host);
-        let who = app.clone();
-        self.objects
-            .start(
-                connection,
-                &header,
-                &app,
-                SheetKind::Choose,
-                &options,
-                async move { host.handle(&who, request).await },
-            )
+        self.sheet(&header, SheetKind::Choose, &options, request)
             .await
-            .map_err(KeysError::failed)
     }
 
     async fn add_account(
         &self,
         #[zbus(header)] header: Header<'_>,
-        #[zbus(connection)] connection: &Connection,
         provider_hint: String,
         parent_window: String,
         options: Details,
     ) -> Result<OwnedObjectPath, KeysError> {
-        let app = self.asker(&header).await?;
         let hint = match provider_hint.is_empty() {
             true => ProviderHint::Any,
             false => ProviderId::parse(&provider_hint)
@@ -199,18 +215,7 @@ impl<H: KeyHost, C: Callers> KeysObject<H, C> {
             hint,
             window: window(&parent_window),
         };
-        let host = Arc::clone(&self.host);
-        let who = app.clone();
-        self.objects
-            .start(
-                connection,
-                &header,
-                &app,
-                SheetKind::AddAccount,
-                &options,
-                async move { host.handle(&who, request).await },
-            )
+        self.sheet(&header, SheetKind::AddAccount, &options, request)
             .await
-            .map_err(KeysError::failed)
     }
 }

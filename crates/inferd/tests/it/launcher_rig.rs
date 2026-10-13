@@ -114,7 +114,6 @@ pub struct Rig {
     pub bus: PrivateBus,
     pub peers: Arc<TablePeers>,
     pub service: Arc<Svc>,
-    pub secrets: Shared,
     pub audit: RecordingAudit,
     pub sheets: porter_fake::AskLog,
     pub launchers: Launchers,
@@ -186,7 +185,6 @@ impl Rig {
             bus,
             peers,
             service,
-            secrets,
             audit,
             sheets: log,
             launchers,
@@ -234,17 +232,4 @@ pub struct Launcher {
 /// looked at often.
 pub fn quick_timing() -> LoginTiming {
     LoginTiming::new().with_bound(Duration::from_secs(30), Duration::from_millis(20))
-}
-
-/// Polls `condition` until it holds, for as long as the machine needs (the deadline of the other
-/// tests).
-pub async fn eventually(what: &str, mut condition: impl FnMut() -> bool) {
-    let deadline = porter_fake::Deadline::generous();
-    while !deadline.passed() {
-        if condition() {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    panic!("never: {what}");
 }

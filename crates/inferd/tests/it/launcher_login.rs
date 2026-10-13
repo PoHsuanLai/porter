@@ -76,7 +76,10 @@ async fn a_login_goes_to_the_registrant_alone_and_ready_sets_the_account_ok() {
         .expect("a launcher is registered");
     let signal = within(next(&mut heard)).await.expect("open stream");
     let args = signal.args().expect("args");
-    assert_eq!((args.account, args.program), (AGENT, PROGRAM));
+    assert_eq!(
+        (args.account.as_str(), args.program.as_str()),
+        (AGENT, PROGRAM)
+    );
     let request = args.request.to_owned();
 
     // Another connection cannot answer it.

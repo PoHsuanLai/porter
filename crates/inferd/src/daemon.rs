@@ -393,14 +393,21 @@ impl Daemon {
             Arc::clone(&engines_news),
             {
                 let launchers = launchers.clone();
-                move || launchers.registry_changed()
+                move || {
+                    let launchers = launchers.clone();
+                    tokio::spawn(async move { launchers.registry_changed().await });
+                }
             },
         );
         connection
             .object_server()
             .at(
                 INFERENCE_PATH,
-                KeysObject::new(Arc::clone(&opened.service), peers.shared()),
+                KeysObject::new(
+                    Arc::clone(&opened.service),
+                    peers.shared(),
+                    connection.clone(),
+                ),
             )
             .await?;
         let rows = AccountRows::new(
