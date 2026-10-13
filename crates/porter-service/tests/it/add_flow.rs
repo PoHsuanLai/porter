@@ -654,8 +654,9 @@ async fn a_sign_in_as_an_identity_passes_the_hint_and_retries_a_repeat_once_as_a
     ];
     for (name, history, steps, added, starts) in cases {
         let script = Script::answering(steps);
-        let (service, _kept) = service(&script, vec![typist()]);
-        let identity = SignInAs::new(hint.clone(), history);
+        let (service, kept) = service(&script, vec![typist()]);
+        let provider = ProviderId::parse("scripted").expect("id");
+        let identity = SignInAs::new(provider, hint.clone(), history);
         let reply = service
             .sign_in_as(&app("org.quire.Mail"), identity, ParentWindow::Unparented)
             .await;
@@ -663,6 +664,12 @@ async fn a_sign_in_as_an_identity_passes_the_hint_and_retries_a_repeat_once_as_a
             matches!(reply, AccountsReply::Added(_)),
             added,
             "{name}: {reply:?}"
+        );
+        // The identity's provider is known: the person is never asked to pick one.
+        assert!(
+            !kinds(&kept.shown).contains(&"providers"),
+            "{name}: {:?}",
+            kinds(&kept.shown)
         );
         let started = script.starts.lock().expect("starts").clone();
         let want: Vec<_> = starts

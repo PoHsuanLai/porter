@@ -51,15 +51,16 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
 
     /// Opens the add-account sheet for an identity the host already knows ("Continue as"): the
     /// provider's page opens on `identity.hint`, and a sign-in that skipped the consent screen
-    /// and came back with nothing to keep is started once more as a first sign-in. The person
-    /// picks the provider in the sheet; no grant is recorded.
+    /// and came back with nothing to keep is started once more as a first sign-in. The sheet
+    /// opens on `identity.provider` with no provider list; no grant is recorded.
     pub async fn sign_in_as(
         &self,
         caller: &AppId,
         identity: SignInAs,
         window: ParentWindow,
     ) -> AccountsReply {
-        self.run_add(caller, ProviderHint::Any, window, None, Some(identity))
+        let hint = ProviderHint::Provider(identity.provider.clone());
+        self.run_add(caller, hint, window, None, Some(identity))
             .await
     }
 

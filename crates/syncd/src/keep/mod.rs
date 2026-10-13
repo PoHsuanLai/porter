@@ -165,10 +165,8 @@ impl<H: Hosted, D: Directory> Keep<H, D> {
                 let hint = LoginHint::parse(&pick.address.0).map_err(|_| ContinueError::Address)?;
                 // The identity was signed in to accountd with this same client, so the person
                 // agreed to what it asks before; the service asks again if the issuer says not.
-                let request = SignInAs {
-                    hint,
-                    history: ConsentHistory::SignedInBefore,
-                };
+                let request =
+                    SignInAs::new(pick.provider.clone(), hint, ConsentHistory::SignedInBefore);
                 match self.hosted.sign_in_as(request, window.clone()).await {
                     AccountsReply::Added(id) => Continued::SignedIn(id),
                     AccountsReply::AlreadyAdded(id) => Continued::AlreadyHere(id),

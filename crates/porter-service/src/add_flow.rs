@@ -41,10 +41,13 @@ pub struct AllowFor {
     pub usage: Usage,
 }
 
-/// Who an add is for when the host already knows ("Continue as"): the address the provider's page
-/// opens on, and whether this client was signed in for that identity before.
+/// Who an add is for when the host already knows ("Continue as"): the provider the identity is
+/// with, the address its page opens on, and whether this client was signed in for that identity
+/// before.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SignInAs {
+    /// The provider the identity is with: the sign-in goes straight to it, with no provider list.
+    pub provider: ProviderId,
     /// The address to open the provider's page on.
     pub hint: LoginHint,
     /// Whether the person agreed to this client for this identity before. `SignedInBefore` asks
@@ -54,9 +57,13 @@ pub struct SignInAs {
 }
 
 impl SignInAs {
-    /// A sign-in as the person at `hint`, with this `history`.
-    pub fn new(hint: LoginHint, history: ConsentHistory) -> Self {
-        Self { hint, history }
+    /// A sign-in with `provider` as the person at `hint`, with this `history`.
+    pub fn new(provider: ProviderId, hint: LoginHint, history: ConsentHistory) -> Self {
+        Self {
+            provider,
+            hint,
+            history,
+        }
     }
 }
 
@@ -394,11 +401,12 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                 SignInStep::Failed(SignInFault::Unreadable),
                 Job::Add { .. },
                 Some(SignInAs {
+                    provider,
                     hint,
                     history: ConsentHistory::SignedInBefore,
                 }),
             ) => {
-                let again = SignInAs::new(hint, ConsentHistory::FirstSignIn);
+                let again = SignInAs::new(provider, hint, ConsentHistory::FirstSignIn);
                 run.identity = Some(again.clone());
                 match stage_provider(&sheet.stage).and_then(|id| self.begin(id, job, Some(&again)))
                 {
@@ -436,7 +444,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                 },
             });
             provider.sign_in(match identity {
-                Some(SignInAs { hint, history }) => {
+                Some(SignInAs { hint, history, .. }) => {
                     start.with_login_hint(hint.clone()).with_consent(*history)
                 }
                 None => start,
