@@ -27,6 +27,13 @@ pub trait KeyHost: Send + Sync + 'static {
     /// A copy of the registry.
     fn registry(&self) -> Registry;
 
+    /// Spends `caller`'s permit when it is an allow-once one; any other scope is left as it is.
+    fn spend_once(
+        &self,
+        caller: &AppId,
+        grant: &GrantId,
+    ) -> impl Future<Output = Result<(), Refusal>> + Send;
+
     /// Signs any account in again for Settings, which needs no permit.
     fn reauthenticate_any(
         &self,
@@ -96,6 +103,14 @@ where
 
     fn registry(&self) -> Registry {
         AccountService::registry(self)
+    }
+
+    fn spend_once(
+        &self,
+        caller: &AppId,
+        grant: &GrantId,
+    ) -> impl Future<Output = Result<(), Refusal>> + Send {
+        AccountService::spend_once(self, caller, grant)
     }
 
     fn reauthenticate_any(

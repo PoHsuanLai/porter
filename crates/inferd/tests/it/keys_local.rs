@@ -90,6 +90,11 @@ fn app(name: &str) -> AppId {
 /// A rig whose language-model account holds `KEY`, with `consents` allowing answers scripted for
 /// the consent sheet.
 async fn rig(consents: usize) -> Rig {
+    rig_scoped(GrantScope::Always, consents).await
+}
+
+/// A rig whose scripted answers all allow with `scope`.
+async fn rig_scoped(scope: GrantScope, consents: usize) -> Rig {
     let secrets = Shared::default();
     secrets
         .put(&llm_key(), &Credential::ApiKey(SecretText::new(KEY)))
@@ -102,7 +107,7 @@ async fn rig(consents: usize) -> Rig {
         toggles: vec![],
     };
     let sheets =
-        ScriptedSheets::answering((0..consents).map(|_| Scripted::AllowFirst(GrantScope::Always)));
+        ScriptedSheets::answering((0..consents).map(|_| Scripted::AllowFirst(scope.clone())));
     let service = Arc::new(
         AccountService::new(
             vec![llm_provider()],
@@ -254,6 +259,25 @@ async fn a_permit_that_does_not_open_a_key_is_refused() {
     rig.service.revoke_grant(&grant).await.expect("revoke");
     assert_eq!(
         rig.keys.key(&grant).await.map(drop),
+        Err(AccountdFault::Refused)
+    );
+
+    // An allow-once permit is spent by the first key read that succeeds, not by one that fails.
+    let once = rig_scoped(GrantScope::Once, 1).await;
+    let grant = permit(&once, &app("org.quire.Companion")).await;
+    once.secrets.delete(&llm_key()).await.expect("delete");
+    assert_eq!(
+        once.keys.key(&grant).await.map(drop),
+        Err(AccountdFault::Refused)
+    );
+    once.secrets
+        .put(&llm_key(), &Credential::ApiKey(SecretText::new(KEY)))
+        .await
+        .expect("key filed");
+    let key = once.keys.key(&grant).await.expect("first read");
+    assert_eq!(key.expose(), KEY);
+    assert_eq!(
+        once.keys.key(&grant).await.map(drop),
         Err(AccountdFault::Refused)
     );
 }

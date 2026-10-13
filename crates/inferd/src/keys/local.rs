@@ -118,6 +118,9 @@ impl<H: KeyHost> Accountd for LocalKeys<H> {
             usable(&registry, account)?;
             let key = self.desk.read(&account.id).await?;
             self.desk.note(&held.key.app, &account.id, grant);
+            // An allow-once permit is used up by the first key read that succeeds; a failed
+            // read above returned before this and left it.
+            self.host.spend_once(&held.key.app, grant).await?;
             Ok(key)
         })
     }

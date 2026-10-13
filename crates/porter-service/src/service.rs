@@ -476,8 +476,10 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
     }
 
     /// Spends `caller`'s grant when it is a `Once` one: the first use of any kind (a token
-    /// issued, a relay opened) drops it, so a second use asks again.
-    pub(crate) async fn spend_once(&self, caller: &AppId, grant: &GrantId) -> Result<(), Refusal> {
+    /// issued, a relay opened, a key read by the host that holds the secret) drops it, so a
+    /// second use asks again. A host that reads a key itself, as inferd does, calls this once
+    /// the read has succeeded.
+    pub async fn spend_once(&self, caller: &AppId, grant: &GrantId) -> Result<(), Refusal> {
         let spent = {
             let mut registry = self.lock();
             let once = registry
