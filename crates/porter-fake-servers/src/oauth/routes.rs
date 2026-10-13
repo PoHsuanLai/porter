@@ -250,4 +250,6 @@ fn record_access(state: &mut State, access: &str, client_id: &str, scope: &str) 
     state
         .access_scopes
         .insert(access.to_owned(), scope.to_owned());
+    let lapse = Instant::now() + Duration::from_secs(state.lifetime_s);
+    state.access_lapses.insert(access.to_owned(), lapse);
 }

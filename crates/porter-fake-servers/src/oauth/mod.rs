@@ -18,6 +18,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::io;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 const DEVICE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
 
@@ -146,6 +147,8 @@ struct State {
     access: HashMap<String, String>,
     /// The scopes each issued access token carries (a planted one has none recorded).
     access_scopes: HashMap<String, String>,
+    /// When each issued access token lapses (a planted one never does).
+    access_lapses: HashMap<String, Instant>,
     devices: HashMap<String, Device>,
 }
 
@@ -188,6 +191,7 @@ impl FakeIssuer {
             refresh: HashMap::new(),
             access: HashMap::new(),
             access_scopes: HashMap::new(),
+            access_lapses: HashMap::new(),
             devices: HashMap::new(),
         };
         Ok(Self {
@@ -334,9 +338,15 @@ impl IssuerHandle {
         lock(&self.shared.state).refresh.contains_key(token)
     }
 
-    /// Whether this access token is live.
+    /// Whether this access token is live: issued, not revoked, and not past the `expires_in` it
+    /// was issued with (a real service answers `401` for a lapsed token).
     pub fn access_is_live(&self, token: &str) -> bool {
-        lock(&self.shared.state).access.contains_key(token)
+        let state = lock(&self.shared.state);
+        state.access.contains_key(token)
+            && state
+                .access_lapses
+                .get(token)
+                .is_none_or(|lapse| Instant::now() < *lapse)
     }
 
     /// The scopes this access token was issued for, when the issuer issued it (a token planted
