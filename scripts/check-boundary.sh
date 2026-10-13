@@ -78,6 +78,8 @@ done
 #   api_key:            hyper, tokio (porter-http's `hyper`)
 #   tailnet:            hyper, tokio (porter-tailscale's `io`)
 #   nextcloud, agent_login, openrouter: none
+#   set:                every family a daemon maps (what microsoft, google, generic, api_key and
+#                       tailnet reach together), with the system resolver (porter-discover's `io`)
 # Every feature in porter-families' Cargo.toml must have a row, so a new family cannot slip in
 # unchecked; the direct porter-* edges of each feature are exact too (FAMILY_EDGES).
 MS_FORBIDS="zbus zvariant reqwest ureq oo7 keyring secret-service interprocess latchkey ds-settings"
@@ -90,6 +92,7 @@ declare -A FAMILY_FORBIDS=(
   [agent_login]="$EFFECTS"
   [openrouter]="$EFFECTS"
   [tailnet]="$MS_FORBIDS"
+  [set]="$MS_FORBIDS"
 )
 declare -A FAMILY_EDGES=(
   [nextcloud]="porter-core porter-dav porter-discover porter-http porter-provider"
@@ -100,6 +103,7 @@ declare -A FAMILY_EDGES=(
   [agent_login]="porter-core porter-http porter-provider"
   [openrouter]="porter-core porter-http porter-oauth porter-provider"
   [tailnet]="porter-core porter-http porter-provider porter-tailscale"
+  [set]="porter-core porter-dav porter-discover porter-http porter-oauth porter-provider porter-proxy porter-tailscale"
 )
 family_features=$(awk '/^\[features\]/{f=1;next} /^\[/{f=0} f && /^[A-Za-z0-9_-]+ *=/{sub(/ *=.*/,""); if ($0!="default") print}' crates/porter-families/Cargo.toml)
 for feature in $family_features; do

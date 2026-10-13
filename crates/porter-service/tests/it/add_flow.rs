@@ -20,11 +20,11 @@ use porter_core::{
 };
 use porter_fake::{FixedClock, MemoryStore, RecordingAudit, ScriptedSheets};
 use porter_provider::{
-    Presented, Provider, ProviderError, ProviderSession, ProviderSpec, RevokeOutcome, SignIn,
-    SignInMode, SignInStart, SignInStep, Signed, parse_provider,
+    ConsentHistory, LoginHint, Presented, Provider, ProviderError, ProviderSession, ProviderSpec,
+    RevokeOutcome, SignIn, SignInMode, SignInStart, SignInStep, Signed, parse_provider,
 };
 use porter_secrets::{MemorySecrets, Secrets, SecretsError};
-use porter_service::{AccountService, Registry, SheetFault, SheetLink, SheetOpen, Sheets};
+use porter_service::{AccountService, Registry, SheetFault, SheetLink, SheetOpen, Sheets, SignInAs};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
@@ -68,6 +68,8 @@ struct Script {
     steps: Arc<Mutex<VecDeque<SignInStep>>>,
     told: Arc<Mutex<Vec<&'static str>>>,
     modes: Arc<Mutex<Vec<SignInMode>>>,
+    /// The address and consent history each sign-in was started with, in order.
+    starts: Arc<Mutex<Vec<(Option<LoginHint>, ConsentHistory)>>>,
     /// The accounts the provider was asked to revoke, as it was handed them.
     revoked: Arc<Mutex<Vec<Account>>>,
     /// Whether the provider fails when asked to revoke.
@@ -146,6 +148,8 @@ impl Provider for ScriptedProvider {
     }
 
     fn sign_in(&self, start: SignInStart) -> Result<ScriptedSignIn, ProviderError> {
+        let begun = (start.login_hint.clone(), start.consent);
+        self.script.starts.lock().expect("starts").push(begun);
         self.script.modes.lock().expect("modes").push(start.mode);
         match self.refuses_to_start {
             true => Err(ProviderError::Forbidden),
@@ -614,6 +618,94 @@ async fn a_failed_sign_in_ends_with_the_refusal_the_fault_means() {
         assert!(service.registry().accounts.is_empty());
         assert_eq!(kept.audit.entries(), vec![]);
     }
+}
+
+/// "Continue as": the address and consent history reach the provider's sign-in, and a repeat
+/// sign-in that comes back unreadable (no refresh token to keep) is started once more as a first.
+#[tokio::test]
+async fn a_sign_in_as_an_identity_passes_the_hint_and_retries_a_repeat_once_as_a_first() {
+    use ConsentHistory::{FirstSignIn, SignedInBefore};
+    let hint = LoginHint::parse("ada@example.org").expect("hint");
+    let unreadable = || SignInStep::Failed(SignInFault::Unreadable);
+    let done = || vec![ask(), review("ada"), SignInStep::Done(signed("ada"))];
+    let cases = [
+        // (history, steps, ends added, histories the sign-in was started with)
+        ("first", FirstSignIn, done(), true, vec![FirstSignIn]),
+        ("repeat", SignedInBefore, done(), true, vec![SignedInBefore]),
+        (
+            "repeat, nothing kept",
+            SignedInBefore,
+            [vec![ask(), unreadable()], done()].concat(),
+            true,
+            vec![SignedInBefore, FirstSignIn],
+        ),
+        (
+            "first, unreadable is final",
+            FirstSignIn,
+            vec![ask(), unreadable()],
+            false,
+            vec![FirstSignIn],
+        ),
+    ];
+    for (name, history, steps, added, starts) in cases {
+        let script = Script::answering(steps);
+        let (service, _kept) = service(&script, vec![typist()]);
+        let identity = SignInAs::new(hint.clone(), history);
+        let reply = service
+            .sign_in_as(&app("org.quire.Mail"), identity, ParentWindow::Unparented)
+            .await;
+        assert_eq!(
+            matches!(reply, AccountsReply::Added(_)),
+            added,
+            "{name}: {reply:?}"
+        );
+        let started = script.starts.lock().expect("starts").clone();
+        let want: Vec<_> = starts
+            .into_iter()
+            .map(|h| (Some(hint.clone()), h))
+            .collect();
+        assert_eq!(started, want, "{name}");
+    }
+    // An add that is not for an identity names no address.
+    let script = Script::answering(done());
+    let (service, _kept) = service(&script, vec![typist()]);
+    added(&service, &app("org.quire.Mail")).await;
+    assert_eq!(
+        script.starts.lock().expect("starts").clone(),
+        [(None, FirstSignIn)]
+    );
+}
+
+/// The launcher host's in-process read: a stored key reads back; a missing one, or a credential
+/// of another shape, means signing in again.
+#[tokio::test]
+async fn the_api_key_reads_back_and_a_missing_or_misshapen_one_needs_a_sign_in() {
+    let (service, kept) = service(&Script::default(), vec![]);
+    let account = AccountId::parse("scripted-ada").expect("id");
+    let key = |purpose| SecretKey {
+        account: account.clone(),
+        purpose,
+    };
+    assert_eq!(service.api_key(&account).await, Err(Refusal::NeedsReauth));
+    kept.secrets
+        .put(
+            &key(SecretPurpose::ApiKey),
+            &Credential::Password(SecretText::new("pw")),
+        )
+        .await
+        .expect("put");
+    assert_eq!(service.api_key(&account).await, Err(Refusal::NeedsReauth));
+    kept.secrets
+        .put(
+            &key(SecretPurpose::ApiKey),
+            &Credential::ApiKey(SecretText::new("sk-or-v1-abc")),
+        )
+        .await
+        .expect("put");
+    assert_eq!(
+        service.api_key(&account).await,
+        Ok(SecretText::new("sk-or-v1-abc"))
+    );
 }
 
 /// An agent that signs itself in (Claude Code), with a sign-in that would review and finish.
