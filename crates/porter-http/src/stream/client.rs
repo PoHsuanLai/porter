@@ -4,7 +4,7 @@
 //! dial is a loopback socket to the fake server.
 
 use super::wire::{Exchange, encode, io_fault, read_response};
-use crate::{Http, HttpError, HttpRequest, HttpResponse};
+use crate::{Http, HttpError, HttpRequest, HttpResponse, Status};
 use porter_core::stream::ByteStream;
 use std::future::Future;
 use std::sync::{Mutex, MutexGuard, PoisonError};
@@ -37,7 +37,8 @@ impl Default for StreamLimits {
 }
 
 /// An [`Http`] over a [`Dial`]: connections are reused while the server keeps them open, and a
-/// request that finds a kept connection dead is sent once more on a new one.
+/// request that finds a kept connection dead, or answered `401` (its credential lapsed while it
+/// sat idle), is sent once more on a new one.
 #[derive(Debug)]
 pub struct StreamHttp<D: Dial> {
     dial: D,
@@ -90,6 +91,13 @@ impl<D: Dial> Http for StreamHttp<D> {
             // A connection that is gone is one the server closed while it sat idle; any other
             // failure is the server's answer and is not sent twice.
             match self.exchange(&mut stream, &request, &bytes).await {
+                // A kept connection carries the credential it was opened with, which may have
+                // lapsed while it sat idle. Every kept connection holds the same one, so none is
+                // used again; the request goes out once more on a new connection, whose dial
+                // presents a fresh credential (or is refused, which the dial reports).
+                Ok(exchange) if exchange.response.status == Status(401) => {
+                    self.idle().clear();
+                }
                 Ok(exchange) => {
                     self.keep(stream, &exchange);
                     return Ok(exchange.response);
@@ -120,6 +128,71 @@ mod tests {
     use super::*;
     use crate::Method;
     use porter_core::WebUrl;
+    use porter_core::stream::{DuplexEnd, duplex};
+    use std::collections::VecDeque;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// A dial that opens in-memory connections, each served by a task that answers its requests
+    /// from a script (one answer per request), and counts the dials.
+    struct Scripted {
+        connections: Mutex<VecDeque<&'static [&'static str]>>,
+        dialled: AtomicUsize,
+    }
+
+    impl Scripted {
+        /// One connection per row: the answers its far end gives, in order.
+        fn new(connections: &[&'static [&'static str]]) -> Self {
+            Self {
+                connections: Mutex::new(connections.iter().copied().collect()),
+                dialled: AtomicUsize::new(0),
+            }
+        }
+    }
+
+    impl Dial for Scripted {
+        type Stream = DuplexEnd;
+
+        async fn dial(&self) -> Result<DuplexEnd, HttpError> {
+            self.dialled.fetch_add(1, Ordering::SeqCst);
+            let answers = self
+                .connections
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .pop_front()
+                .ok_or(HttpError::Unreachable)?;
+            let (end, mut peer) = duplex(4096);
+            tokio::spawn(async move {
+                for answer in answers {
+                    let mut request = [0u8; 1024];
+                    if !matches!(peer.read(&mut request).await, Ok(n) if n > 0) {
+                        return;
+                    }
+                    if peer.write_all(answer.as_bytes()).await.is_err() {
+                        return;
+                    }
+                }
+            });
+            Ok(end)
+        }
+    }
+
+    const OK: &str = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
+    const LAPSED: &str = "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n";
+
+    #[tokio::test]
+    async fn a_kept_connection_answered_401_is_dropped_and_the_request_goes_out_on_a_new_one() {
+        let dial = Scripted::new(&[&[OK, LAPSED], &[OK, LAPSED], &[LAPSED]]);
+        let http = StreamHttp::new(dial, StreamLimits::default());
+        let get = || HttpRequest::new(Method::Get, WebUrl::parse("http://h/x").expect("url"));
+        let mut seen = Vec::new();
+        for _ in 0..3 {
+            seen.push(http.send(get()).await.expect("answer").status);
+        }
+        // The second request finds its kept connection lapsed and succeeds on a new one; the
+        // third finds the same and the new connection's 401 is the answer, not tried again.
+        assert_eq!(seen, [Status(200), Status(200), Status(401)]);
+        assert_eq!(http.dial.dialled.load(Ordering::SeqCst), 3);
+    }
 
     #[test]
     fn the_host_is_the_authority_the_url_named() {

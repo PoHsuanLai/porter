@@ -1,15 +1,20 @@
 //! The Graph replica as syncd runs it: the same relays as the WebDAV replica
-//! ([`crate::webdav::RelayDial`]: one authenticated stream per connection from accountd's
-//! `Tokens.OpenAuthenticated`), so syncd never holds the Microsoft token. The relay adds
-//! `Authorization: Bearer` and reaches the endpoint's origin (`https://graph.microsoft.com`).
+//! ([`crate::webdav::RelayDial`]: one authenticated stream per connection, from `OpenAuthenticated`
+//! on the account service syncd hosts itself), so the replica never holds the Microsoft token. The
+//! relay adds `Authorization: Bearer` and reaches the endpoint's origin
+//! (`https://graph.microsoft.com`). Each new connection asks the service for a token, which
+//! refreshes the account's sign-in; a refresh the issuer refuses leaves the account
+//! `NeedsReauth` and the dial fails. A connection kept idle holds the bearer it was opened with:
+//! when that has lapsed the server answers `401`, and `StreamHttp` drops the kept connections and
+//! sends the request again on a new one, which carries a fresh bearer.
 //!
 //! Graph's pre-authenticated links (an upload session's `uploadUrl`, the `downloadUrl` a content
 //! request redirects to) are on other hosts. Requests to them go through [`LinkedDial`]:
-//! accountd's `Tokens.OpenLinked`, a relay that adds no credential and that accountd opens only
-//! for an origin the provider file declares (`linked_origins`). [`graph_replica`] builds the
-//! replica of a dataset's folder in the account's OneDrive app folder over both. Which grant and
-//! endpoint a Storage account on a Microsoft account is reached through is accountd's candidate:
-//! the `graph` endpoint under a Storage grant.
+//! `OpenLinked`, a relay that adds no credential and that the service opens only for an origin
+//! the provider file declares (`linked_origins`). [`graph_replica`] builds the replica of a
+//! dataset's folder in the account's OneDrive app folder over both. Which grant and endpoint a
+//! Storage account on a Microsoft account is reached through is the service's candidate: the
+//! `graph` endpoint under a Storage grant.
 
 use crate::webdav::{BuildError, RelayDial, RelayStream};
 use porter_client::{Accounts, Transport};
@@ -76,7 +81,7 @@ type MakeLinked<T> = Box<dyn Fn(&Origin) -> StreamHttp<LinkedDial<T>> + Send + S
 pub type GraphHttp<T> = Routed<StreamHttp<RelayDial<T>>, StreamHttp<LinkedDial<T>>, MakeLinked<T>>;
 
 /// The replica of `folder` (a path in the app folder, `Photos/Originals`; empty for the app
-/// folder itself) of the account the grant covers, over relays accountd opens to `endpoint` and,
+/// folder itself) of the account the grant covers, over relays the account service opens to `endpoint` and,
 /// for the links Graph hands out, to the origins of those links.
 pub fn graph_replica<T: Transport + 'static>(
     accounts: Arc<Accounts<T>>,
