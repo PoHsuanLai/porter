@@ -29,6 +29,7 @@ RULES=(
   "porter-service: $EFFECTS"
   "porter-store: zbus zvariant reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
   "porter-client: $EFFECTS"
+  "porter-sheets: reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
   "porter-fake: $EFFECTS"
   "porter-http: $EFFECTS"
   "porter-proxy: $EFFECTS"
@@ -255,7 +256,8 @@ EDGES=(
   "porter-turns: porter-core porter-infer porter-bridge porter-router cua-action cua-parse cua-session cua-vendors engine-supervisor model-extract model-http model-openai-compat model-provider vision-prep"
   "porter-dbus: porter-core"
   "porter-bridge: porter-core porter-infer model-catalog model-openai-compat model-provider vision-prep"
-  "porter-client: porter-bridge porter-core porter-dbus porter-fs porter-infer porter-provider porter-secrets porter-service porter-turns model-http model-openai-compat model-provider model-wire"
+  "porter-sheets: porter-core porter-dbus porter-provider porter-service"
+  "porter-client: porter-bridge porter-core porter-dbus porter-fs porter-infer porter-provider porter-proxy porter-secrets porter-service porter-turns model-http model-openai-compat model-provider model-wire"
   "porter-fake: porter-core porter-infer porter-provider porter-secrets porter-service"
   "porter-fake-servers: porter-core porter-discover porter-fake porter-provider"
   "porter-http: porter-core"
@@ -266,13 +268,13 @@ EDGES=(
   "porter-tailnet: porter-core porter-fs porter-tailscale"
   "porter-dav: porter-core porter-http"
   "porter-families: porter-core porter-dav porter-discover porter-http porter-oauth porter-provider porter-proxy porter-tailscale"
-  "accountd: ds-settings porter-core porter-daemon porter-dbus porter-discover porter-families porter-fs porter-http porter-provider porter-proxy porter-secrets porter-service porter-store porter-tailscale"
+  "accountd: ds-settings porter-core porter-daemon porter-dbus porter-discover porter-families porter-fs porter-http porter-provider porter-secrets porter-service porter-sheets porter-store porter-tailscale"
   "storage-webdav: porter-core porter-dav porter-http porter-sync"
   "storage-graph: porter-core porter-http porter-sync storage-webdav"
   "storage-gdrive: porter-core porter-http porter-sync storage-webdav"
-  "syncd: porter-client porter-core porter-daemon porter-dav porter-dbus porter-fs porter-http porter-sync storage-gdrive storage-graph storage-webdav"
+  "syncd: ds-settings porter-client porter-core porter-daemon porter-dav porter-dbus porter-families porter-fs porter-http porter-secrets porter-service porter-sheets porter-store porter-sync storage-gdrive storage-graph storage-webdav"
   "porter-rig: porter-client porter-core porter-dbus porter-fake porter-fake-servers porter-infer"
-  "inferd: ds-settings porter-bridge porter-client porter-router porter-turns porter-core porter-daemon porter-dbus porter-discover porter-fs porter-http porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
+  "inferd: ds-settings porter-bridge porter-client porter-router porter-turns porter-core porter-daemon porter-dbus porter-discover porter-families porter-fs porter-http porter-infer porter-provider porter-secrets porter-service porter-sheets porter-store porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
 )
 for edge in "${EDGES[@]}"; do
   crate="${edge%%:*}"
@@ -300,7 +302,7 @@ fi
 # accountd's file key store (`ACCOUNTD_KEYS=file:`, feature `test-keys`, porter-secrets'
 # `FileSecrets`) keeps credentials as plain text: neither crate's default build, nor accountd's
 # whole normal dependency tree, may have the feature on.
-for crate in accountd porter-secrets; do
+for crate in accountd inferd syncd porter-secrets; do
   if cargo tree -p "$crate" -e normal --prefix none -f '{p} {f}' 2>/dev/null | grep -q 'test-keys'; then
     echo "LEAK: $crate's default build enables test-keys"
     fail=1

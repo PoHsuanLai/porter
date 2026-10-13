@@ -12,6 +12,7 @@ members = [
   "crates/porter-service",
   "crates/porter-store",
   "crates/porter-dbus",
+  "crates/porter-sheets",
   "crates/porter-client",
   "crates/porter-fake",
   "crates/porter-fake-servers",
@@ -56,6 +57,7 @@ porter-bridge   = { path = "crates/porter-bridge" }
 porter-service  = { path = "crates/porter-service" }
 porter-store    = { path = "crates/porter-store" }
 porter-dbus     = { path = "crates/porter-dbus" }
+porter-sheets   = { path = "crates/porter-sheets" }
 porter-client   = { path = "crates/porter-client" }
 porter-fake     = { path = "crates/porter-fake" }
 porter-fake-servers = { path = "crates/porter-fake-servers" }
