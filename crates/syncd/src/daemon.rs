@@ -10,14 +10,26 @@
 use crate::datasets::photos::PhotosSwitch;
 use crate::datasets::pim::{ClientGrants, PimConfig, PimSupervisor, Wiring};
 use crate::datasets::storage::{ClientStorageGrants, StorageConfig, StorageSupervisor};
-use crate::paths::{BUILD, PROC_GATE, Paths, rescan};
+use crate::keep::{FileAudit, Intent, Keep, SyncSheets, sync_app};
+use crate::paths::{BUILD, KeepPaths, PROC_GATE, Paths, rescan};
 use crate::scheduler::{Network, Settings};
+use crate::service;
 use crate::service::{Access, Hub};
-use crate::{removal, service};
-use porter_client::{Accounts, ClientError, DbusTransport};
+use crate::settings::{SyncSettings, serve_settings};
+use porter_client::{Accounts, Identities, IdentitiesError, InProcess, PorterRelays};
+use porter_core::clock::SystemClock;
+use porter_core::sheet::ProviderGroup;
 use porter_core::xdg::PathError;
 use porter_daemon::ProcRoot;
 use porter_dbus::{BusTarget, CallerFileError, ProcCallers};
+use porter_families::FamilyProvider;
+use porter_families::set::{FamilyIo, ProviderNames, load_specs, served};
+use porter_provider::ProviderSet;
+use porter_secrets::Namespace;
+use porter_secrets::keysel::{AnyKeys, Chosen, KeysRefusal, Selection, select};
+use porter_service::{AccountService, Registry, RegistryStore};
+use porter_sheets::BusSheets;
+use porter_store::FileStore;
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -35,12 +47,36 @@ pub const RESCAN_VAR: &str = "SYNCD_RESCAN_S";
 /// The variable that turns the Photos datasets on (`on`).
 pub const PHOTOS_VAR: &str = "SYNCD_PHOTOS";
 
+/// The variable that names a key file in place of the Secret Service (a `test-keys` build only).
+pub const KEYS_VAR: &str = "SYNCD_KEYS";
+
+/// The keyring namespace syncd's own credentials are filed under.
+pub const KEYRING_NAMESPACE: &str = "porter.syncd";
+
+/// The service syncd hosts for its own accounts, over its own store, keys and sheets.
+pub type OwnService = AccountService<
+    FamilyProvider,
+    AnyKeys,
+    SyncSheets<BusSheets<ProcCallers>>,
+    SystemClock,
+    FileStore,
+    FileAudit,
+>;
+
+/// What the supervisors reach accounts through: that service, in this process, with relays that
+/// carry the credential to the servers (it crosses no process).
+pub type OwnLink = InProcess<OwnService, porter_client::NoBroker, PorterRelays>;
+
 /// Everything syncd needs to start, as typed values.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct Config {
     /// Where syncd reads and writes.
     pub paths: Paths,
+    /// Where it keeps its own accounts.
+    pub keep: KeepPaths,
+    /// Which secret store holds its credentials.
+    pub keys: Selection,
     /// A directory to read callers from in place of `/proc`; `Some` only in a test build.
     pub proc_root: Option<PathBuf>,
     /// The calendar and address book supervisor.
@@ -55,13 +91,31 @@ impl Config {
     /// A configuration over `paths` on `bus`: callers read from `/proc`, every supervisor at its
     /// shipped settings (grants read again every ten minutes, no Photos).
     pub fn new(paths: Paths, bus: BusTarget) -> Self {
+        // Its own accounts beside the journals unless `with_keep` says where.
+        let keep = KeepPaths::under(&paths.journals.with_file_name("syncd-own"));
         Self {
             paths,
+            keep,
+            keys: Selection::SecretService,
             proc_root: None,
             pim: PimConfig::default(),
             storage: StorageConfig::default(),
             bus,
         }
+    }
+
+    /// With its own accounts kept at these paths.
+    #[must_use]
+    pub fn with_keep(mut self, keep: KeepPaths) -> Self {
+        self.keep = keep;
+        self
+    }
+
+    /// With this secret store.
+    #[must_use]
+    pub fn with_keys(mut self, keys: Selection) -> Self {
+        self.keys = keys;
+        self
     }
 
     /// With callers read from this directory in place of `/proc`.
@@ -80,13 +134,16 @@ impl Config {
     }
 
     /// The configuration the process's environment gives. The one place syncd reads the
-    /// environment: `HOME` and the XDG directories, `SYNCD_PROC_ROOT` and `SYNCD_RESCAN_S` (a
-    /// test build only) and `SYNCD_PHOTOS`.
+    /// environment: `HOME` and the XDG directories, `SYNCD_PROC_ROOT`, `SYNCD_RESCAN_S` and
+    /// `SYNCD_KEYS` (a test build only) and `SYNCD_PHOTOS`.
     ///
     /// # Errors
-    /// There is no home to keep state in.
+    /// There is no home to keep state in, or the secret store the environment asks for is refused.
     pub fn from_env() -> Result<Self, StartError> {
         let paths = Paths::resolve(|name| std::env::var(name).ok())?;
+        let keep = KeepPaths::resolve(|name| std::env::var(name).ok())?;
+        let keys_var = std::env::var(KEYS_VAR).ok();
+        let keys = select(keys_var.as_deref())?;
         let proc = ProcRoot::choose(PROC_GATE, PROC_ROOT_VAR, |name| std::env::var_os(name))
             .into_fixture();
         // `SYNCD_RESCAN_S` shortens how often grants are read again, in a test build only.
@@ -105,6 +162,8 @@ impl Config {
         };
         Ok(Self {
             paths,
+            keep,
+            keys,
             proc_root: proc,
             pim,
             storage,
@@ -119,15 +178,25 @@ pub enum StartError {
     /// There is no home to keep state in.
     #[error("{0}")]
     Paths(#[from] PathError),
+    /// The secret store asked for is refused.
+    #[error("{0}")]
+    Keys(#[from] KeysRefusal),
     /// A caller table cannot be read.
     #[error("{0}")]
     Callers(#[from] CallerFileError),
+    /// syncd's own registry file was refused. The text says so in plain words: both files,
+    /// nothing changed.
+    #[error("{0}")]
+    RegistryRefused(String),
     /// The bus cannot be reached.
     #[error("no session bus: {0}")]
     Bus(#[source] zbus::Error),
-    /// accountd's `AccountRemoved` cannot be listened for.
-    #[error("cannot listen for AccountRemoved: {0}")]
-    Removals(#[source] ClientError),
+    /// The account service's identities cannot be asked for.
+    #[error("cannot reach the identities: {0}")]
+    Identities(#[source] IdentitiesError),
+    /// The settings module cannot be served.
+    #[error("cannot serve the settings module: {0}")]
+    Settings(#[source] zbus::Error),
     /// `org.quire.Photos1.Picker` cannot be served.
     #[cfg(feature = "photos-picker")]
     #[error("cannot serve org.quire.Photos1.Picker: {0}")]
@@ -146,7 +215,8 @@ pub struct Daemon {
 }
 
 impl Daemon {
-    /// Loads the caller tables, starts the supervisors, listens for `AccountRemoved` and serves
+    /// Loads the caller tables, opens syncd's own accounts (its registry and secrets, hosted in
+    /// process), starts the supervisors, serves the settings module and serves
     /// `org.quire.Sync1` (and, with the `photos-picker` feature and `SYNCD_PHOTOS=on`,
     /// `org.quire.Photos1.Picker`). When this returns the name is owned and calls are answered.
     /// `network` is what the supervisors read the network from.
@@ -159,11 +229,17 @@ impl Daemon {
     ) -> Result<Self, StartError> {
         let Config {
             paths,
+            keep,
+            keys,
             proc_root,
             pim,
             storage,
             bus,
         } = config;
+        // Which secret store, before anything reads or files a credential: refused here, not later.
+        let namespace = Namespace::parse(KEYRING_NAMESPACE).expect("a literal namespace");
+        let chosen = Chosen::open(keys, namespace, "syncd")?;
+        eprintln!("{}", chosen.said);
         let table = porter_dbus::load_callers(&paths.callers_system, &paths.callers_user)?;
         let connection = bus.connect().await.map_err(StartError::Bus)?;
         let callers = Arc::new(match proc_root {
@@ -177,7 +253,42 @@ impl Daemon {
             None => ProcCallers::new(connection.clone(), table),
         });
         let hub = Hub::default();
-        let accounts = Arc::new(Accounts::over(DbusTransport::over(connection.clone())));
+
+        // syncd's own accounts: the identity families only (what the person signs in to on the
+        // internet), over syncd's own registry, secrets and audit file.
+        let loaded = load_specs(&keep.provider_layers());
+        for (file, why) in &loaded.skipped {
+            eprintln!("syncd: skipped provider file {}: {why}", file.display());
+        }
+        let specs: Vec<_> = loaded
+            .specs
+            .into_iter()
+            .filter(|spec| spec.group() == ProviderGroup::Internet)
+            .collect();
+        let names = ProviderNames::from_specs(&specs);
+        let io = FamilyIo::system(
+            ProviderSet::layered(specs.clone(), Vec::new()),
+            keep.client_files(),
+        );
+        let (families, _unserved) = served(specs, &io);
+        let store = FileStore::new(keep.registry_dir.clone());
+        let registry = match store.load().await {
+            Ok(stored) => Registry::from_persisted(stored),
+            Err(why) => return Err(StartError::RegistryRefused(store.refusal(&why))),
+        };
+        let intent = Intent::default();
+        let sheets = SyncSheets::new(
+            BusSheets::new(connection.clone(), Arc::clone(&callers)),
+            intent.clone(),
+        );
+        let service: Arc<OwnService> = Arc::new(
+            AccountService::new(families, registry, chosen.keys, sheets, SystemClock)
+                .with_store(store)
+                .with_audit(FileAudit::new(keep.audit.clone())),
+        );
+        let link: OwnLink =
+            InProcess::new(Arc::clone(&service), sync_app()).with_relays(PorterRelays::new());
+        let accounts = Arc::new(Accounts::over(link));
         let wiring = |network| Wiring {
             accounts: Arc::clone(&accounts),
             hub: hub.clone(),
@@ -210,9 +321,24 @@ impl Daemon {
             storage,
         };
         // On an error below `daemon` drops, which ends both supervisors.
-        removal::watch(&connection, hub.clone(), paths)
+        // The Settings rows: the accounts syncd signed in, "Continue as" for a new one, the sync
+        // switches and removal.
+        let identities = Identities::connect(&connection)
             .await
-            .map_err(StartError::Removals)?;
+            .map_err(StartError::Identities)?;
+        let own = Arc::new(Keep::new(
+            Arc::clone(&service),
+            identities,
+            intent,
+            paths,
+            hub.clone(),
+        ));
+        serve_settings(
+            &connection,
+            SyncSettings::new(own, Arc::clone(&callers), names),
+        )
+        .await
+        .map_err(StartError::Settings)?;
         // `org.quire.Photos1.Picker` is there only while Google Photos runs (`SYNCD_PHOTOS=on`),
         // and only in a build with the `photos-picker` feature.
         #[cfg(feature = "photos-picker")]

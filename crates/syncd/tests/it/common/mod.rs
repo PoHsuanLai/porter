@@ -3,6 +3,7 @@
 #![allow(dead_code)]
 
 pub mod bus;
+pub mod hosted;
 
 use bus::PrivateBus;
 use porter_core::{AppId, AppName, Isolation};

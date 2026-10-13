@@ -1,28 +1,29 @@
-//! Settings lets syncd sync an account, end to end on one private bus: the real accountd's
-//! settings module, a Graph account that holds no grant, syncd's storage supervisor and a fake
-//! Graph drive. Switching "Keep this account's files on this computer" on makes the grant
-//! `org.quire.Sync` is asked for and the mirror starts; off takes it back, the dataset goes and
-//! the files stay. Nothing seeds a grant by hand.
+//! Settings lets syncd sync an account, end to end on one private bus: syncd's own settings module
+//! (`/org/quire/Sync1/settings`) over its own hosted account service, a Graph account that holds
+//! no grant, syncd's storage supervisor and a fake Graph drive. Switching "Keep this account's
+//! files on this computer" on makes the grant `org.quire.Sync` is asked for and the mirror starts;
+//! off takes it back, the dataset goes and the files stay. Nothing seeds a grant by hand. Only the
+//! Settings role may use the module.
 
 use crate::common;
 
-use accountd::{BusSheets, Options, TableCallers, serve_with};
 use common::bus::PrivateBus;
+use common::hosted::{Hosted, Link, NoDirectory, Service, host, keep};
 use common::{Known, client};
 use ds_settings::live::LiveClient;
 use ds_settings::schema::KeyPath;
-use porter_client::{Accounts, DbusTransport};
 use porter_core::{
     Account, AccountId, AccountLabel, AccountState, AuthKind, Claim, Credential, EndpointUrl,
     Family, LoginName, Offer, Provenance, Restriction, SecretKey, SecretPurpose, SecretText,
     ServiceEndpoint, Subject, Tls, UnixSeconds,
 };
-use porter_dbus::{Caller, CallerRole, SyncProxy};
-use porter_fake::{FakeProvider, FixedClock, MemoryStore, RecordingAudit};
+use porter_dbus::{CallerRole, SyncProxy};
+use porter_fake::FakeProvider;
 use porter_fake_servers::{FakeGraph, GraphHandle, Running};
+use porter_families::set::ProviderNames;
 use porter_provider::Provider;
 use porter_secrets::{MemorySecrets, Secrets};
-use porter_service::{AccountService, Registry, SyncClass, sync_allowed, sync_app};
+use porter_service::Registry;
 use std::sync::Arc;
 use std::time::Duration;
 use syncd::datasets::photos::PhotosSwitch;
@@ -30,9 +31,11 @@ use syncd::datasets::pim::Wiring;
 use syncd::datasets::storage::{
     ClientStorageGrants, FILES_APP, PHOTOS_APP, StorageConfig, StorageSupervisor,
 };
+use syncd::keep::{SyncClass, sync_allowed};
 use syncd::paths::{AccountDir, Paths};
 use syncd::scheduler::{Network, Settings};
 use syncd::service::{Access, Hub, serve};
+use syncd::settings::{SETTINGS_PATH, SyncSettings, serve_settings};
 use tokio::sync::watch;
 
 const ACCOUNT: &str = "graph-acct";
@@ -60,32 +63,19 @@ kind = "storage"
 v = { access = "read_write", delta = "poll", quota = "reported", scope = "app_folder", hashes = "quick_xor", ranges = "present", chunked_upload = "present" }
 "#;
 
-type Supervisor = StorageSupervisor<DbusTransport, ClientStorageGrants<DbusTransport>>;
-
 struct Rig {
     bus: PrivateBus,
     known: Known,
     graph: Running<GraphHandle>,
     paths: Paths,
     account: AccountDir,
-    service: Arc<
-        AccountService<
-            FakeProvider,
-            MemorySecrets,
-            BusSheets<TableCallers>,
-            FixedClock,
-            MemoryStore,
-            RecordingAudit,
-        >,
-    >,
+    hosted: Hosted,
     settings: LiveClient,
-    supervisor: Supervisor,
+    /// A connection that is not the Settings role.
+    stranger: LiveClient,
+    supervisor: StorageSupervisor<Link, ClientStorageGrants<Link>>,
     _keep: Vec<zbus::Connection>,
     _network: watch::Sender<Network>,
-}
-
-fn quick() -> Settings {
-    Settings::quick()
 }
 
 async fn rig(photos: PhotosSwitch) -> Rig {
@@ -133,60 +123,16 @@ async fn rig(photos: PhotosSwitch) -> Rig {
         .expect("secret");
 
     let bus = PrivateBus::start();
-    let table = Arc::new(TableCallers::new());
-    let accountd = bus.connect().await;
-    let sheets = BusSheets::new(accountd.clone(), Arc::clone(&table));
     // No grant at all: the person has to switch the sync on.
-    let service = Arc::new(
-        AccountService::new(
-            vec![provider],
-            Registry {
-                grants: vec![],
-                accounts: vec![account],
-                toggles: vec![],
-            },
-            secrets,
-            sheets,
-            FixedClock(porter_fake::NOW),
-        )
-        .with_store(MemoryStore::default())
-        .with_audit(RecordingAudit::default()),
-    );
-    serve_with(
-        &accountd,
-        Arc::clone(&service),
-        Arc::clone(&table),
-        Options::default(),
-    )
-    .await
-    .expect("accountd serves");
-
-    // syncd reaches accountd as the native daemon the caller table names.
-    let syncd_side = bus.connect().await;
-    table.introduce_as(
-        syncd_side.unique_name().expect("name").as_str(),
-        Caller {
-            app: sync_app(),
-            role: CallerRole::App,
+    let hosted = host(
+        provider,
+        Registry {
+            grants: vec![],
+            accounts: vec![account],
+            toggles: vec![],
         },
+        secrets,
     );
-    let accounts = Arc::new(Accounts::over(DbusTransport::over(syncd_side.clone())));
-    let settings_side = bus.connect().await;
-    table.introduce_as(
-        settings_side.unique_name().expect("name").as_str(),
-        Caller {
-            app: common::app("org.quire.Settings"),
-            role: CallerRole::Settings,
-        },
-    );
-    let settings = LiveClient::new(
-        &settings_side,
-        "org.quire.Accounts1",
-        &accountd::settings_path(),
-    )
-    .await
-    .expect("settings client");
-
     let known = Known::default();
     let hub = Hub::default();
     let server = bus.connect().await;
@@ -199,18 +145,37 @@ async fn rig(photos: PhotosSwitch) -> Rig {
         _ => None,
     })
     .expect("paths");
+
+    // The settings module, as the daemon serves it, with the callers the test names.
+    let own = keep(&hosted, NoDirectory, paths.clone(), hub.clone());
+    let module = SyncSettings::new(
+        Arc::new(own),
+        Arc::new(known.clone()),
+        ProviderNames::from_specs(&[spec.clone()]),
+    );
+    serve_settings(&server, module).await.expect("settings");
+    let name = server.unique_name().expect("name").to_string();
+    let settings_side = client(&bus, &known, "org.quire.Settings", CallerRole::Settings).await;
+    let settings = LiveClient::new(&settings_side, &name, SETTINGS_PATH)
+        .await
+        .expect("settings client");
+    let stranger_side = client(&bus, &known, "org.example.Other", CallerRole::App).await;
+    let stranger = LiveClient::new(&stranger_side, &name, SETTINGS_PATH)
+        .await
+        .expect("stranger client");
+
     let (network_keeps, network) = watch::channel(Network::Unmetered);
     let wiring = Wiring {
-        accounts: Arc::clone(&accounts),
+        accounts: Arc::clone(&hosted.accounts),
         hub,
         paths: paths.clone(),
-        settings: quick(),
+        settings: Settings::quick(),
         network,
         owners: Access::default(),
     };
     let supervisor = StorageSupervisor::new(
         wiring,
-        ClientStorageGrants::new(accounts),
+        ClientStorageGrants::new(Arc::clone(&hosted.accounts)),
         StorageConfig {
             photos,
             ..StorageConfig::default()
@@ -222,10 +187,11 @@ async fn rig(photos: PhotosSwitch) -> Rig {
         graph,
         paths,
         account: AccountDir::parse(SEGMENT).expect("segment"),
-        service,
+        hosted,
         settings,
+        stranger,
         supervisor,
-        _keep: vec![accountd, syncd_side, settings_side, server],
+        _keep: vec![server, settings_side, stranger_side],
         _network: network_keeps,
     }
 }
@@ -265,6 +231,11 @@ fn local(rig: &Rig, rel: &str) -> std::path::PathBuf {
     rig.paths.storage_dir(&rig.account).join(rel)
 }
 
+fn grants(rig: &Rig) -> Vec<porter_core::consent::Grant> {
+    let service: &Service = &rig.hosted.service;
+    service.registry().grants
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn switching_files_on_in_settings_starts_the_mirror_and_off_drops_it_but_keeps_the_files() {
     let mut rig = rig(PhotosSwitch::Off).await;
@@ -274,6 +245,7 @@ async fn switching_files_on_in_settings_starts_the_mirror_and_off_drops_it_but_k
         paths.contains(&FILES_ROW) && paths.contains(&PHOTOS_ROW),
         "{paths:?}"
     );
+    assert!(paths.contains(&"accounts.sync.add"), "{paths:?}");
     assert_eq!(
         rig.settings.get(&row(FILES_ROW)).await.expect("get"),
         word(false)
@@ -291,13 +263,13 @@ async fn switching_files_on_in_settings_starts_the_mirror_and_off_drops_it_but_k
         rig.settings.get(&row(FILES_ROW)).await.expect("get"),
         word(true)
     );
-    let grants = rig.service.registry().grants;
+    let held = grants(&rig);
     assert!(sync_allowed(
-        &grants,
+        &held,
         &AccountId::parse(ACCOUNT).expect("id"),
         SyncClass::Files
     ));
-    assert_eq!(grants.len(), 1, "only the files grant");
+    assert_eq!(held.len(), 1, "only the files grant");
 
     rig.supervisor.tick().await;
     assert_eq!(names(&rig, FILES_APP).await, [DATASET]);
@@ -312,7 +284,7 @@ async fn switching_files_on_in_settings_starts_the_mirror_and_off_drops_it_but_k
         rig.settings.get(&row(FILES_ROW)).await.expect("get"),
         word(false)
     );
-    assert!(rig.service.registry().grants.is_empty());
+    assert!(grants(&rig).is_empty());
     rig.supervisor.tick().await;
     assert!(
         names(&rig, FILES_APP).await.is_empty(),
@@ -356,4 +328,39 @@ async fn switching_photos_on_starts_the_photos_datasets_beside_the_files_ones_wh
         .expect("photos off");
     rig.supervisor.tick().await;
     assert!(names(&rig, PHOTOS_APP).await.is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn only_the_settings_role_may_read_or_change_the_rows() {
+    let rig = rig(PhotosSwitch::Off).await;
+    assert!(rig.stranger.describe().await.is_err());
+    assert!(rig.stranger.get(&row(FILES_ROW)).await.is_err());
+    assert!(
+        rig.stranger
+            .set(&row(FILES_ROW), &word(true))
+            .await
+            .is_err()
+    );
+    assert!(grants(&rig).is_empty(), "nothing was granted");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn removing_the_account_in_the_rows_deletes_its_files_and_its_sign_in_here() {
+    let mut rig = rig(PhotosSwitch::Off).await;
+    rig.settings
+        .set(&row(FILES_ROW), &word(true))
+        .await
+        .expect("on");
+    rig.supervisor.tick().await;
+    rig.graph.put_file("note.txt", b"from the drive");
+    eventually("the file arrives", || local(&rig, "note.txt").exists()).await;
+
+    rig.settings
+        .set(&row("accounts.graph-acct.remove"), &toml::Value::Boolean(true))
+        .await
+        .expect("remove");
+    assert!(!local(&rig, "note.txt").exists(), "its files are gone");
+    let service: &Service = &rig.hosted.service;
+    assert!(service.registry().accounts.is_empty());
+    assert!(service.registry().grants.is_empty());
 }

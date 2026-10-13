@@ -1,11 +1,12 @@
 # syncd as a systemd user unit: the sync engine (org.quire.Sync1 on the session bus). It is found,
 # and started, by D-Bus activation (dbus/org.quire.Sync1.service) the first time an app asks for
-# a dataset, or by accountd's introduction when it starts.
+# a dataset.
 #
-# syncd talks to the session bus only: accountd on it (the grants and AccountRemoved; replicas
-# are reached through accountd's authenticated relay, whose descriptor arrives over the bus), and
-# nothing else, so it holds no network family and no credential. It reads /proc to know who is
-# calling, so the unit must not hide other processes' cgroups (no ProtectProc, no PrivatePID).
+# syncd signs in for itself ("Continue as": the person picks one of the accounts accountd lists)
+# and keeps its own tokens: its registry under $XDG_STATE_HOME/quire/syncd and its secrets in the
+# keyring under the namespace porter.syncd. It talks to the servers itself, so it may use the
+# network, and the sign-in's loopback listener needs the inet families. It reads /proc to know who
+# is calling, so the unit must not hide other processes' cgroups (no ProtectProc, no PrivatePID).
 [Unit]
 Description=quire sync engine (org.quire.Sync1)
 
@@ -19,16 +20,17 @@ KillMode=control-group
 TimeoutStopSec=20
 
 # --- Sandbox ---
-# Unix sockets for the bus and the relay descriptors; no internet.
-RestrictAddressFamilies=AF_UNIX
+# Unix sockets for the bus; the internet for the servers it syncs with and the sign-in's loopback.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 # The person's files are out of reach except what syncd keeps: the journals (porter/sync under
-# $XDG_STATE_HOME, which systemd creates) and what it keeps under the data home: the PIM mirrors
+# $XDG_STATE_HOME) and its own accounts (quire/syncd under $XDG_STATE_HOME), which systemd
+# creates, and what it keeps under the data home: the PIM mirrors
 # (porter/vdir), the app folder mirrors (porter/storage) and the photo libraries (porter/photos).
 # systemd has no data-directory setting, so the pre-start step, outside the sandbox, makes the
 # three, and the whole porter directory is writable (a missing ReadWritePaths entry fails the unit).
 ProtectHome=read-only
 ProtectSystem=strict
-StateDirectory=porter/sync
+StateDirectory=porter/sync quire/syncd
 ExecStartPre=+/usr/bin/mkdir -p %h/.local/share/porter/vdir %h/.local/share/porter/storage %h/.local/share/porter/photos
 ReadWritePaths=%h/.local/share/porter
 PrivateTmp=yes
