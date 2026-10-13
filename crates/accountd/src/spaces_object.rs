@@ -9,17 +9,16 @@
 //!   compositor may `List` and `Register` and nothing else.
 //! - `Changed(id, what)` goes to each connection accountd knows (one that has called it), one by
 //!   one, as the manager's signals do; a client calls `List` once to be told.
-//! - `Remove` ends every grant whose scope is that Space alone, each as a Settings revoke does
-//!   (audited `revoked`, `GrantChanged` to its holder). An app whose Space linked to it learns by
-//!   `Changed(id, "removed")` and falls back to its own Space: that is the app's choice, and
-//!   porter moves or deletes no memory (almanac's and docket's).
+//! - `Remove` ends nothing else: no grant is scoped to a Space here any more. An app whose Space
+//!   linked to it learns by `Changed(id, "removed")` and falls back to its own Space: that is the
+//!   app's choice, and porter moves or deletes no memory (almanac's and docket's).
 
 use crate::callers::Callers;
 use crate::core::{Core, Host, Standing};
 use crate::errors::RefusedError;
 use crate::spaces::{CREATES_PER_WINDOW, Registered, SpaceFault, unix_now};
 use porter_core::audit::AuditEvent;
-use porter_core::{DesktopSpace, SpaceChange, SpaceId, SpaceLook, SpaceName, SpaceScope};
+use porter_core::{DesktopSpace, SpaceChange, SpaceLook, SpaceName};
 use porter_dbus::{CallerRole, Details, SPACES_PATH};
 use std::sync::Arc;
 use std::time::Instant;
@@ -275,23 +274,6 @@ impl<H: Host, C: Callers> SpacesObject<H, C> {
             .remove(&id)
             .await
             .map_err(fault)?;
-        // Every grant scoped to this Space alone ends, as a revoke from Settings does.
-        let scope = SpaceScope::Only(SpaceId::linked(&id));
-        let ending: Vec<_> = self
-            .0
-            .host
-            .registry()
-            .grants
-            .into_iter()
-            .filter(|g| g.key.space == scope)
-            .map(|g| g.id)
-            .collect();
-        for grant in &ending {
-            let _ = self.0.host.revoke_grant(grant).await;
-        }
-        if !ending.is_empty() {
-            self.0.publish().await;
-        }
         self.0
             .host
             .audit_app(&caller.app, AuditEvent::SpaceRemoved { space: id.clone() });

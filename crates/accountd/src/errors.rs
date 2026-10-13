@@ -40,6 +40,12 @@ impl RefusedError {
         }
     }
 
+    /// Something the bus refused while a Request object was being made (porter-sheets), under
+    /// the bus's own name.
+    pub(crate) fn from_request(error: fdo::Error) -> Self {
+        Self::bus(error)
+    }
+
     /// An argument that is not what the interface says.
     pub(crate) fn invalid(why: impl ToString) -> Self {
         Self::bus(fdo::Error::InvalidArgs(why.to_string()))
@@ -53,16 +59,6 @@ impl RefusedError {
     /// An object that does not exist for this caller.
     pub(crate) fn unknown_object(why: impl ToString) -> Self {
         Self::bus(fdo::Error::UnknownObject(why.to_string()))
-    }
-
-    /// A launcher's call accountd refuses, under its own typed name.
-    pub(crate) fn launcher(fault: porter_dbus::LauncherFault, why: impl ToString) -> Self {
-        Self {
-            name: ErrorName::try_from(fault.error_name()).unwrap_or_else(|_| {
-                ErrorName::from_static_str_unchecked("org.freedesktop.DBus.Error.Failed")
-            }),
-            text: why.to_string(),
-        }
     }
 
     /// A caller that already has what it asks for under way (a sheet of that kind open):

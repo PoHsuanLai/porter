@@ -1,12 +1,13 @@
-# accountd as a systemd user unit: the account registry, consent store and token broker
-# (org.quire.Accounts1 on the session bus). It is found, and started, by D-Bus activation
-# (dbus/org.quire.Accounts1.service) the first time an app asks for an account.
+# accountd as a systemd user unit: the identities signed in on this computer, Spaces and
+# Tailscale (org.quire.Accounts1 on the session bus). It is found, and started, by D-Bus
+# activation (dbus/org.quire.Accounts1.service) the first time an app asks which identities
+# there are. AI keys are inferd's; sync's sign-ins are syncd's.
 #
-# accountd talks to the session bus, the Secret Service on it, the sheet host (sill) on it, and
-# the network (provider sign-in and revocation). It reads /proc to know who is calling, so the
+# accountd talks to the session bus, the Secret Service on it (items under `porter.accountd`),
+# the sheet host (sill) on it, and the network (provider sign-in and revocation). It reads /proc to know who is calling, so the
 # unit must not hide other processes' cgroups (no ProtectProc, no PrivatePID).
 [Unit]
-Description=quire accounts and consent (org.quire.Accounts1)
+Description=quire identities (org.quire.Accounts1)
 
 [Service]
 Type=dbus

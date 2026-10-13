@@ -5,10 +5,9 @@
 use crate::common;
 
 use common::bus::PrivateBus;
-use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
+use porter_core::AuthKind;
 use porter_core::store::Persisted;
-use porter_core::{DataClass, GrantId, SpaceScope, UnixSeconds};
-use porter_dbus::ManagerProxy;
+use porter_dbus::IdentitiesProxy;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
@@ -117,23 +116,25 @@ fn proc_tree(dir: &Path) -> PathBuf {
     root
 }
 
-fn storage_need() -> porter_dbus::NeedArg {
-    common::storage_need()
-}
-
 fn probe() -> porter_core::AppId {
     common::app("org.example.Probe")
 }
 
-/// A registry file holding the fake storage account and a grant for the probe app.
+/// A registry file as the accounts service wrote it before the split: an identity (a password
+/// account), an AI key, a grant for the probe app and a switch.
 fn seed(home: &Path) {
-    let account = porter_fake::storage_account();
+    use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
+    use porter_core::{DataClass, GrantId, SpaceScope, UnixSeconds};
+    let mut account = porter_fake::storage_account();
+    account.auth = AuthKind::Password;
+    let mut key = porter_fake::llm_account();
+    key.auth = AuthKind::ApiKey;
     let grant = Grant {
         id: GrantId::parse("seeded").expect("id"),
         key: GrantKey {
             app: probe(),
-            account: account.id.clone(),
-            kind: porter_core::CapabilityKind::Storage,
+            account: key.id.clone(),
+            kind: porter_core::CapabilityKind::Llm,
             class: DataClass::Photos,
             usage: Usage::Interactive,
             space: SpaceScope::Any,
@@ -144,6 +145,7 @@ fn seed(home: &Path) {
     };
     let mut stored = Persisted::empty();
     stored.accounts.push(account);
+    stored.accounts.push(key);
     stored.grants.push(grant);
     let dir = home.join("state/porter");
     std::fs::create_dir_all(&dir).expect("state dir");
@@ -165,15 +167,31 @@ async fn a_test_build_reads_callers_from_the_proc_root_and_says_so() {
         daemon.stderr()
     );
 
-    // This process is the Probe app by the fixture, holds the seeded grant, and finds the account.
+    // This process is the Probe app by the fixture: it lists the one identity, and the AI key
+    // and the grant of the old file are not accountd's any more.
     let client = bus.connect().await;
-    let found = ManagerProxy::new(&client)
+    let found = IdentitiesProxy::new(&client)
         .await
         .expect("proxy")
-        .query(&storage_need(), "photos", "interactive")
+        .list()
         .await
-        .expect("query");
-    assert_eq!(found.len(), 1, "the registry on disk was loaded");
+        .expect("list");
+    assert_eq!(found.len(), 1, "only the identity was kept");
+}
+
+/// R4: the old file is kept once, as it was, beside the registry, and accountd's own file holds
+/// the identity alone once it writes.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_old_registry_is_kept_once_beside_the_registry_before_anything_is_dropped() {
+    let bus = PrivateBus::start();
+    let home = scratch(&bus, "home");
+    seed(&home);
+    let dir = home.join("state/porter");
+    let before = std::fs::read_to_string(dir.join("registry.json")).expect("old file");
+    let mut daemon = spawn(&bus, &home, None);
+    assert!(serving(&bus, &mut daemon).await, "{}", daemon.stderr());
+    let copy = dir.join(accountd::presplit::PRE_SPLIT_FILE);
+    assert_eq!(std::fs::read_to_string(&copy).expect("the copy"), before);
 }
 
 #[cfg(not(feature = "test-proc-root"))]
@@ -192,10 +210,10 @@ async fn a_release_build_ignores_the_proc_root_variable() {
     );
     // The real /proc says this process is no app (a test runner's scope): nobody, so refused.
     let client = bus.connect().await;
-    let err = ManagerProxy::new(&client)
+    let err = IdentitiesProxy::new(&client)
         .await
         .expect("proxy")
-        .query(&storage_need(), "photos", "interactive")
+        .list()
         .await
         .expect_err("the fixture was not read");
     assert_eq!(common::error_name(&err), common::ACCESS_DENIED);
@@ -208,10 +226,10 @@ async fn an_unknown_caller_is_refused_by_the_real_binary() {
     let mut daemon = spawn(&bus, &home, None);
     assert!(serving(&bus, &mut daemon).await, "{}", daemon.stderr());
     let client = bus.connect().await;
-    let err = ManagerProxy::new(&client)
+    let err = IdentitiesProxy::new(&client)
         .await
         .expect("proxy")
-        .query(&storage_need(), "photos", "interactive")
+        .list()
         .await;
     // A runner inside a login session may or may not be named by its cgroup; either way the
     // daemon answered on its bus, and a caller it cannot name is AccessDenied.
@@ -270,139 +288,13 @@ async fn a_caller_table_that_does_not_parse_stops_the_daemon_naming_the_file() {
     );
 }
 
-/// `accountd add ...` to the end, with no input, on the private bus with the shipped provider
-/// files: its exit status, standard output and standard error.
-fn add(bus: &PrivateBus, home: &Path, args: &[&str]) -> (bool, String, String) {
-    let providers = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../providers");
-    let output = Command::new(env!("CARGO_BIN_EXE_accountd"))
-        .env_clear()
-        .env("HOME", home)
-        .env("XDG_STATE_HOME", home.join("state"))
-        .env("XDG_CONFIG_HOME", home.join("config"))
-        .env("XDG_DATA_HOME", home.join("data"))
-        .env("XDG_RUNTIME_DIR", bus.scratch())
-        .env("DBUS_SESSION_BUS_ADDRESS", bus.address())
-        .env(
-            accountd::paths::TAILSCALE_SOCKET_VAR,
-            home.join("no-tailscale.sock"),
-        )
-        .arg("--providers")
-        .arg(providers)
-        .arg("add")
-        .args(args)
-        .stdin(Stdio::null())
-        .output()
-        .expect("accountd add runs");
-    (
-        output.status.success(),
-        String::from_utf8_lossy(&output.stdout).into_owned(),
-        String::from_utf8_lossy(&output.stderr).into_owned(),
-    )
-}
-
+/// There is no `add` subcommand any more: adding an AI key is `inferd add`.
 #[test]
-fn add_says_what_it_does_what_the_allow_means_and_what_to_do_with_the_daemon() {
+fn accountd_has_no_add_command() {
     let output = Command::new(env!("CARGO_BIN_EXE_accountd"))
         .args(["add", "--help"])
         .env_clear()
         .output()
-        .expect("help");
-    let help = String::from_utf8_lossy(&output.stdout).into_owned();
-    assert!(output.status.success(), "{help}");
-    for phrase in [
-        "Usage: accountd add [OPTIONS] <PROVIDER>",
-        "--allow <APP-ID>",
-        "--class <CLASS>",
-        "echo off",
-        "You typing this command is the consent",
-        "\"Allow, always\"",
-        "systemctl --user stop accountd.service",
-        "openrouter",
-    ] {
-        assert!(help.contains(phrase), "{phrase}: {help}");
-    }
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn add_stops_while_the_daemon_runs_and_names_how_to_go_on() {
-    let bus = PrivateBus::start();
-    let home = scratch(&bus, "home");
-    let mut daemon = spawn(&bus, &home, None);
-    assert!(serving(&bus, &mut daemon).await, "{}", daemon.stderr());
-    let (ok, _stdout, stderr) = add(&bus, &home, &["anthropic"]);
-    assert!(!ok);
-    assert!(
-        stderr.contains("owns org.quire.Accounts1") && stderr.contains("systemctl --user stop"),
-        "{stderr}"
-    );
-    assert!(!home.join("state/porter/registry.json").exists());
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn add_refuses_what_it_cannot_serve_before_it_asks_for_anything() {
-    let bus = PrivateBus::start();
-    let home = scratch(&bus, "home");
-    let cases: &[(&[&str], &str)] = &[
-        (&["nosuch"], "no provider `nosuch` is served"),
-        (&["Not A Provider"], "not understood"),
-        (&["anthropic", "--allow", "not a name"], "not understood"),
-        (&["anthropic", "--class", "secrets"], "not understood"),
-    ];
-    for (args, want) in cases {
-        let (ok, stdout, stderr) = add(&bus, &home, args);
-        assert!(!ok, "{args:?}");
-        assert!(stderr.contains(want), "{args:?}: {stderr}");
-        assert!(!stdout.contains("Added"), "{args:?}");
-    }
-    assert!(!home.join("state/porter/registry.json").exists());
-}
-
-/// The real binary, with the shipped provider files and this process named a porter daemon by
-/// the callers table and the /proc fixture (inferd's seat), takes `Peer.ReportLocal` for each
-/// local runtime the files declare: the wiring in `main`, not only the service. Before the fix
-/// the binary kept only the providers a family serves, and every report was `UnknownProvider`.
-#[cfg(feature = "test-proc-root")]
-#[tokio::test(flavor = "multi_thread")]
-async fn the_binary_makes_accounts_of_the_local_runtimes_inferd_reports() {
-    let bus = PrivateBus::start();
-    let home = scratch(&bus, "home");
-    let root = proc_tree(&home);
-    let config = home.join("config/porter");
-    std::fs::create_dir_all(&config).expect("config dir");
-    std::fs::write(
-        config.join("callers.toml"),
-        "[[caller]]\napp = \"org.example.Probe\"\nrole = \"porter_daemon\"\n",
-    )
-    .expect("callers");
-    let providers = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../providers");
-    let mut daemon = spawn_over(
-        &bus,
-        &home,
-        Some(&root),
-        &["--providers".as_ref(), providers.as_os_str()],
-    );
-    assert!(serving(&bus, &mut daemon).await, "{}", daemon.stderr());
-    assert!(
-        !daemon
-            .stderr()
-            .contains("no family serves provider `ollama`"),
-        "{}",
-        daemon.stderr()
-    );
-
-    let client = bus.connect().await;
-    let peer = porter_dbus::PeerProxy::new(&client).await.expect("proxy");
-    for runtime in ["ollama", "llama-cpp", "lm-studio"] {
-        let id = peer
-            .report_local(runtime, Vec::new(), "ok")
-            .await
-            .unwrap_or_else(|e| panic!("{runtime}: {e} {}", daemon.stderr()));
-        assert_eq!(id, runtime);
-    }
-    // A provider no family serves and that is no runtime is still not an account.
-    let err = peer
-        .report_local("google", Vec::new(), "ok")
-        .await
-        .expect_err("google is a TODO, not a runtime");
-    let _ = err;
+        .expect("runs");
+    assert!(!output.status.success());
 }

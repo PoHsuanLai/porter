@@ -1,16 +1,13 @@
 //! `org.quire.Spaces1` (lane spaces): the desktop-wide Spaces accountd keeps. Who may call what,
-//! the `Changed` signal, a removal ending the grants scoped to the Space, the legacy ids adopted
-//! once, the per-app limit on new Spaces, and a restart keeping them.
+//! the `Changed` signal, the audit of a removal, the per-app limit on new Spaces, and a restart
+//! keeping them.
 
 use crate::common;
 
 use accountd::{CREATES_PER_WINDOW, Options, SpacesStore};
 use common::*;
 use porter_core::audit::AuditEvent;
-use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
-use porter_core::{
-    CapabilityKind, DataClass, DesktopSpace, GrantId, SpaceId, SpaceScope, UnixSeconds,
-};
+use porter_core::DesktopSpace;
 use porter_dbus::{CallerRole, SpaceChangedStream, SpacesProxy};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -45,34 +42,12 @@ impl Drop for Scratch {
     }
 }
 
-fn grant(id: &str, space: SpaceScope) -> Grant {
-    Grant {
-        id: GrantId::parse(id).expect("id"),
-        key: GrantKey {
-            app: photos(),
-            account: storage_account().id,
-            kind: CapabilityKind::Storage,
-            class: DataClass::Photos,
-            usage: Usage::Interactive,
-            space,
-        },
-        decision: Decision::Allow,
-        scope: GrantScope::Always,
-        at: UnixSeconds(1),
-    }
-}
-
-fn only(space: &str) -> SpaceScope {
-    SpaceScope::Only(SpaceId::parse(space).expect("space"))
-}
-
-async fn start(options: Options, grants: Vec<Grant>) -> Rig {
-    Rig::start_granted(
+async fn start(options: Options) -> Rig {
+    Rig::start_holding(
         options,
         SheetHost::quiet(),
         vec![porter_fake::cloud_provider()],
         vec![storage_account()],
-        grants,
     )
     .await
 }
@@ -111,7 +86,7 @@ async fn next_change(stream: &mut SpaceChangedStream) -> Option<(String, String)
 
 #[tokio::test(flavor = "multi_thread")]
 async fn any_identified_app_lists_and_creates_and_a_stranger_is_denied() {
-    let rig = start(Options::default(), vec![]).await;
+    let rig = start(Options::default()).await;
     let app = spaces(&rig.client("org.quire.Photos").await).await;
     assert!(listed(&app).await.is_empty());
     let id = app
@@ -153,7 +128,7 @@ async fn any_identified_app_lists_and_creates_and_a_stranger_is_denied() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn an_assistant_computer_use_or_a_launcher_never_makes_a_space() {
-    let rig = start(Options::default(), vec![]).await;
+    let rig = start(Options::default()).await;
     // A launcher may only report an agent's state, so it is refused a list as well.
     for role in [
         CallerRole::Agent,
@@ -186,7 +161,7 @@ async fn an_assistant_computer_use_or_a_launcher_never_makes_a_space() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn only_settings_and_the_shell_rename_restyle_and_remove() {
-    let rig = start(Options::default(), vec![]).await;
+    let rig = start(Options::default()).await;
     let app = spaces(&rig.client("org.quire.Photos").await).await;
     let id = app.create("Work", "").await.expect("create");
     for error in [
@@ -222,7 +197,7 @@ async fn only_settings_and_the_shell_rename_restyle_and_remove() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn bad_names_and_looks_are_invalid_args() {
-    let rig = start(Options::default(), vec![]).await;
+    let rig = start(Options::default()).await;
     let app = spaces(&rig.client("org.quire.Photos").await).await;
     let long_look = "x".repeat(1025);
     for (name, look) in [
@@ -244,7 +219,7 @@ async fn bad_names_and_looks_are_invalid_args() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn known_connections_are_told_each_change() {
-    let rig = start(Options::default(), vec![]).await;
+    let rig = start(Options::default()).await;
     let watcher = spaces(&rig.client("org.quire.Mail").await).await;
     let mut changes = watcher.receive_changed().await.expect("subscribe");
     watcher
@@ -276,74 +251,33 @@ async fn known_connections_are_told_each_change() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn removing_a_space_ends_the_grants_scoped_to_it_alone() {
-    let grants = vec![
-        grant("in-work", only("work")),
-        grant("in-home", only("home")),
-        grant("anywhere", SpaceScope::Any),
-    ];
-    let rig = start(Options::default(), grants).await;
+async fn removing_a_space_is_audited_and_leaves_the_others() {
+    let rig = start(Options::default()).await;
     let settings = spaces(&rig.client_as(settings_caller()).await).await;
-    settings.remove("work").await.expect("remove");
-    let left: Vec<String> = rig
-        .service
-        .registry()
-        .grants
-        .iter()
-        .map(|g| g.id.to_string())
-        .collect();
-    assert_eq!(left, ["in-home", "anywhere"]);
+    settings.create("Work", "").await.expect("work");
+    let home = settings.create("Home", "").await.expect("home");
+    let work = listed(&settings).await[0].0.clone();
+    settings.remove(&work).await.expect("remove");
     let events: Vec<AuditEvent> = rig.audit.entries().into_iter().map(|e| e.event).collect();
-    assert!(events.contains(&AuditEvent::Revoked {
-        grant: GrantId::parse("in-work").expect("id")
-    }));
     assert!(events.contains(&AuditEvent::SpaceRemoved {
-        space: DesktopSpace::parse("work").expect("id")
+        space: DesktopSpace::parse(&work).expect("id")
     }));
     assert_eq!(
         listed(&settings).await,
-        [("home".to_owned(), "home".to_owned())]
-    );
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn legacy_slugs_are_adopted_on_the_first_start_only() {
-    let scratch = Scratch::new();
-    let first = start(
-        scratch.options(),
-        vec![grant("g1", only("work")), grant("g2", only("desktop"))],
-    )
-    .await;
-    let app = spaces(&first.client("org.quire.Photos").await).await;
-    assert_eq!(listed(&app).await, [("work".to_owned(), "work".to_owned())]);
-    let settings = spaces(&first.client_as(settings_caller()).await).await;
-    settings.rename("work", "Office").await.expect("rename");
-    drop(first);
-
-    // A second start reads spaces.json: nothing is adopted twice, and a slug a grant names now
-    // is not adopted either.
-    let second = start(
-        scratch.options(),
-        vec![grant("g1", only("work")), grant("g3", only("garden"))],
-    )
-    .await;
-    let app = spaces(&second.client("org.quire.Photos").await).await;
-    assert_eq!(
-        listed(&app).await,
-        [("work".to_owned(), "Office".to_owned())]
+        [(home, "Home".to_owned())]
     );
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_restart_keeps_the_spaces() {
     let scratch = Scratch::new();
-    let first = start(scratch.options(), vec![]).await;
+    let first = start(scratch.options()).await;
     let app = spaces(&first.client("org.quire.Photos").await).await;
     let work = app.create("Work", "teal").await.expect("create");
     let home = app.create("Home", "").await.expect("create");
     drop(first);
 
-    let second = start(scratch.options(), vec![]).await;
+    let second = start(scratch.options()).await;
     let app = spaces(&second.client("org.quire.Photos").await).await;
     assert_eq!(
         listed(&app).await,
@@ -355,7 +289,7 @@ async fn a_restart_keeps_the_spaces() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn an_app_making_too_many_spaces_at_once_is_held_back() {
-    let rig = start(Options::default(), vec![]).await;
+    let rig = start(Options::default()).await;
     let flood = spaces(&rig.client("org.example.Flood").await).await;
     for n in 0..CREATES_PER_WINDOW {
         flood
@@ -389,7 +323,7 @@ async fn an_app_making_too_many_spaces_at_once_is_held_back() {
 /// Settings and the shell may register, and the compositor may do nothing else but list.
 #[tokio::test(flavor = "multi_thread")]
 async fn the_compositor_registers_its_workspace_ids_and_nothing_else() {
-    let rig = start(Options::default(), vec![]).await;
+    let rig = start(Options::default()).await;
     let watcher = spaces(&rig.client("org.quire.Mail").await).await;
     let mut changes = watcher.receive_changed().await.expect("subscribe");
     watcher

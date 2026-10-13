@@ -3,14 +3,13 @@
 //! by unique name. Nothing here reaches the real session, Secret Service or network.
 #![allow(dead_code)]
 
-pub mod agents;
 pub mod bus;
 pub mod host;
 
 pub use host::SheetHost;
 pub use porter_fake::{mail_account, storage_account};
 
-use accountd::{BusSheets, Options, SecretsDesk, SheetsDesk, TableCallers, serve_with};
+use accountd::{BusSheets, Options, SheetsDesk, TableCallers, serve_with};
 use bus::PrivateBus;
 use host::HostLog;
 use porter_core::{
@@ -111,22 +110,10 @@ impl Rig {
 
     /// As `start_over`, with `accounts` in the registry in place of the fake three.
     pub async fn start_holding(
-        options: Options,
-        host: SheetHost,
-        providers: Vec<FakeProvider>,
-        accounts: Vec<porter_core::Account>,
-    ) -> Self {
-        Self::start_granted(options, host, providers, accounts, Vec::new()).await
-    }
-
-    /// As `start_holding`, with `grants` already in the consent store (the person said so
-    /// earlier), so a test need not walk a sheet for each scope and app it wants.
-    pub async fn start_granted(
         mut options: Options,
         host: SheetHost,
         providers: Vec<FakeProvider>,
         accounts: Vec<porter_core::Account>,
-        grants: Vec<porter_core::consent::Grant>,
     ) -> Self {
         let bus = PrivateBus::start();
         let callers = Arc::new(TableCallers::new());
@@ -176,18 +163,11 @@ impl Rig {
         }
         let registry = Registry {
             accounts,
-            grants,
+            grants: vec![],
             toggles: vec![],
         };
         let store = MemoryStore::default();
         let audit = RecordingAudit::default();
-        if options.keys.is_none() {
-            options.keys = Some(Arc::new(SecretsDesk::new(
-                secrets.clone(),
-                audit.clone(),
-                FixedClock(porter_fake::NOW),
-            )));
-        }
         if options.identities.is_none() {
             options.identities = Some(Arc::new(SheetsDesk::new(
                 BusSheets::new(connection.clone(), Arc::clone(&callers)),
@@ -196,10 +176,6 @@ impl Rig {
                 FixedClock(porter_fake::NOW),
             )));
         }
-        options
-            .login
-            .audit
-            .get_or_insert_with(|| Arc::new(audit.clone()));
         let sheets = BusSheets::new(connection.clone(), Arc::clone(&callers));
         let service = Arc::new(
             AccountService::new(
@@ -264,57 +240,42 @@ pub async fn eventually(what: &str, mut condition: impl FnMut() -> bool) {
     deadline.fail(what);
 }
 
-use porter_core::Need;
-use porter_core::capability::{Access, Delta, QuotaReport, StorageScope};
-use porter_core::consent::{ConsentAnswer, GrantScope};
-use porter_core::need::StorageNeed;
-use porter_core::sheet::SheetInput;
-use porter_core::wire::Refusal;
-use porter_dbus::{Details, ManagerProxy, NeedArg, Sheet, need_to_dbus, refusal_error_name};
-
-pub fn storage_need() -> NeedArg {
-    need_to_dbus(&Need::Storage(StorageNeed::new(
-        Access::ReadWrite,
-        Delta::Poll,
-        StorageScope::AppFolder,
-        QuotaReport::Unreported,
-    )))
+/// Options whose clients file is a scratch one, so that [`publish`] has something to write.
+pub fn poking_options() -> Options {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static NEXT: AtomicU32 = AtomicU32::new(0);
+    let dir = std::env::temp_dir().join(format!(
+        "accountd-poke-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    Options {
+        clients: Some(dir.join("clients.toml")),
+        ..Options::default()
+    }
 }
 
-/// A host that allows `fake-storage` always, whatever it is asked.
-pub fn allowing_host() -> SheetHost {
-    SheetHost::answering(SheetInput::Answer(ConsentAnswer::Allow {
-        account: storage_account().id,
-        scope: GrantScope::Always,
-    }))
-}
-
-/// `Manager.Choose` as `connection`, and the Request's response.
-pub async fn choose(connection: &zbus::Connection) -> (u32, Details) {
-    let mut sheet = Sheet::subscribe(connection).await.expect("subscribe");
-    let manager = ManagerProxy::new(connection).await.expect("proxy");
-    let path = manager
-        .choose(
-            &storage_need(),
-            "photos",
-            "interactive",
-            "",
-            &sheet.options(),
+/// Makes accountd tell whoever is to be told what changed in the service since it last told
+/// them: a successful `Set` from Settings ends in a publish. The rig must have been started with
+/// [`poking_options`].
+pub async fn publish(rig: &Rig) {
+    settings(rig)
+        .await
+        .set(
+            &key("accounts.clients.microsoft"),
+            &toml::Value::String("poke".into()),
         )
         .await
-        .expect("choose");
-    sheet.response(&path).await.expect("response")
+        .expect("a poke");
 }
+
+use porter_core::wire::Refusal;
+use porter_dbus::{Details, refusal_error_name};
 
 /// The text of a vardict entry.
 pub fn text_of(details: &Details, key: &str) -> Option<String> {
     let value = details.get(key)?.try_clone().ok()?;
     String::try_from(value).ok()
-}
-
-/// The grant a `Choose` response carries.
-pub fn grant_in(results: &Details) -> porter_core::GrantId {
-    porter_core::GrantId::parse(&text_of(results, "grant").expect("a grant")).expect("grant id")
 }
 
 /// The D-Bus error name of a failed call.
@@ -335,15 +296,6 @@ pub fn refusal_name(refusal: Refusal) -> String {
 
 pub const ACCESS_DENIED: &str = "org.freedesktop.DBus.Error.AccessDenied";
 pub const UNKNOWN_OBJECT: &str = "org.freedesktop.DBus.Error.UnknownObject";
-
-/// Grants `photos` the storage account through the sheet and returns the grant.
-pub async fn grant_photos(rig: &Rig) -> (zbus::Connection, porter_core::GrantId) {
-    let client = rig.client("org.quire.Photos").await;
-    let (code, results) = choose(&client).await;
-    assert_eq!(code, 0, "{results:?}");
-    let grant = grant_in(&results);
-    (client, grant)
-}
 
 use ds_settings::live::LiveClient;
 use ds_settings::schema::KeyPath;

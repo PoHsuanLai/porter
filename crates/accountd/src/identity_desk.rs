@@ -7,13 +7,17 @@
 //! the password is read with the same `Secrets` the service files it with. An entry of the audit
 //! file says which app was handed which identity's password, never the password.
 
-use crate::keys::Boxed;
 use porter_core::audit::{AuditEntry, AuditEvent};
 use porter_core::consent::{ConsentAnswer, ConsentAsk};
 use porter_core::wire::{ParentWindow, Refusal};
 use porter_core::{AccountId, AppId, Credential, SecretKey, SecretPurpose, SecretText};
 use porter_secrets::{Secrets, SecretsError};
 use porter_service::{AuditSink, Clock, Sheets};
+use std::future::Future;
+use std::pin::Pin;
+
+/// A boxed future, so the desk can be used as a trait object.
+pub type Boxed<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// Shows the identity picker and reads a picked identity's password.
 pub trait IdentityDesk: std::fmt::Debug + Send + Sync + 'static {

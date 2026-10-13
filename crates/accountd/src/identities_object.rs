@@ -25,7 +25,6 @@ use crate::callers::Callers;
 use crate::core::{Core, Host, Standing, hint};
 use crate::errors::RefusedError;
 use crate::identities::UseFault;
-use crate::keys::sealed_key;
 use crate::request::departed;
 use porter_core::consent::{AccountChoice, AskPurpose, ConsentAnswer, ConsentAsk, Usage};
 use porter_core::wire::{ProviderHint, Refusal};
@@ -33,6 +32,7 @@ use porter_core::{
     AccountId, AccountLabel, CapabilityKind, DataClass, Identity, IdentityId, IdentityKind,
 };
 use porter_dbus::{CallerRole, Details, IDENTITIES_PATH, SheetKind, identity_to_dbus};
+use porter_secrets::sealed_key;
 use porter_service::Registry;
 use std::sync::Arc;
 use zbus::fdo::DBusProxy;

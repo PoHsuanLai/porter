@@ -6,23 +6,17 @@
 //! - On casement the compositor mints the id of each workspace's Space itself and `Register`s it
 //!   (decision D8); registering an id that is there already changes nothing, so it registers
 //!   every workspace again at each start.
-//! - First start (no `spaces.json` yet): every desktop-wide Space a stored grant is scoped to
-//!   (`Only(<slug>)`, ids from before Spaces were per app) is adopted as a Space of that id,
-//!   named by its slug, with the default look; the file is written then, so a later start adopts
-//!   nothing again.
 //! - `Create` is limited per app to [`CREATES_PER_WINDOW`] within [`CREATE_WINDOW`], so a
 //!   faulty app cannot flood the list.
 //! - A `spaces.json` that cannot be read is never written over: the list is served empty and
 //!   every change is refused until the person mends or moves the file.
 
-use porter_core::consent::Grant;
 use porter_core::{
-    AppName, DesktopSpace, DesktopSpaceRecord, SpaceKind, SpaceLook, SpaceName, SpaceScope,
-    UnixSeconds,
+    AppName, DesktopSpace, DesktopSpaceRecord, SpaceLook, SpaceName, UnixSeconds,
 };
 use porter_fs::atomic::AtomicFile;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -108,39 +102,10 @@ pub(crate) struct SpaceBook {
     creates: BTreeMap<AppName, VecDeque<Instant>>,
 }
 
-/// The desktop-wide Spaces the stored grants are scoped to, in id order.
-fn legacy(grants: &[Grant]) -> BTreeSet<DesktopSpace> {
-    grants
-        .iter()
-        .filter_map(|g| match &g.key.space {
-            SpaceScope::Only(space) => match space.kind() {
-                SpaceKind::Linked(desktop) => Some(desktop),
-                SpaceKind::Outside | SpaceKind::App { .. } => None,
-            },
-            SpaceScope::Any => None,
-        })
-        .collect()
-}
-
-/// A Space adopted from a stored id: named by its slug, the default look.
-fn adopted(id: DesktopSpace, now: UnixSeconds) -> Option<DesktopSpaceRecord> {
-    Some(DesktopSpaceRecord {
-        name: SpaceName::parse(id.as_str()).ok()?,
-        id,
-        look: SpaceLook::default(),
-        created: now,
-    })
-}
-
 impl SpaceBook {
-    /// The Spaces `store` holds; on a first start (no file, or memory) the ones `grants` are
-    /// scoped to are adopted, and a file store writes them at once. A message for the log comes
-    /// back when the file was refused or could not be written.
-    pub(crate) async fn open(
-        store: &SpacesStore,
-        grants: &[Grant],
-        now: UnixSeconds,
-    ) -> (Self, Option<String>) {
+    /// The Spaces `store` holds; a first start (no file) writes an empty one at once. A message
+    /// for the log comes back when the file was refused or could not be written.
+    pub(crate) async fn open(store: &SpacesStore) -> (Self, Option<String>) {
         let file = match store {
             SpacesStore::Memory => None,
             SpacesStore::File(dir) => Some(AtomicFile::new(dir.clone(), FILE)),
@@ -185,12 +150,7 @@ impl SpaceBook {
                 (book, Some(said))
             }
             Ok(None) => {
-                let mut doc = Document::empty();
-                doc.spaces = legacy(grants)
-                    .into_iter()
-                    .filter_map(|id| adopted(id, now))
-                    .collect();
-                let said = book.commit(doc).await.err().map(|_| {
+                let said = book.commit(Document::empty()).await.err().map(|_| {
                     "the Spaces file could not be written; it is tried again on the next change"
                         .to_owned()
                 });
