@@ -30,6 +30,7 @@ pub mod daemon;
 pub mod engines;
 pub mod hosts;
 pub mod keys;
+pub mod launcher;
 pub mod peers;
 pub mod pipeline;
 pub mod probe;
