@@ -2,16 +2,24 @@
 //! lines. Each command emits one or more objects with a `result` or an `event` key; a failure
 //! is `{"result":"error", ...}` and the process exits 1.
 //!
-//! The commands are the app side of the scenarios: ask for a grant, open an AI session, open
-//! an authenticated relay and read what comes through it, settle a sync conflict, watch for
-//! them. The app's identity is the daemons' to find (see `fixture`).
+//! The commands are the app side of the scenarios: list the identities and continue as one,
+//! ask for a permit to use the person's AI keys and add a key, run the agent launcher's calls,
+//! open an AI session, settle a sync conflict, watch for them. No credential crosses a bus, so
+//! there is nothing to ask a grant for or to open a relay to. The app's identity is the
+//! daemons' to find (see `fixture`).
 
-use porter_client::{Accounts, ClientError, DbusTransport, Found, InferSession, OpenOptions};
-use porter_core::capability::{Access, Delta, Offered, QuotaReport, StorageScope};
+use porter_client::{
+    Accounts, AiKeys, AiKeysError, ClientError, DbusTransport, Identities, IdentitiesError,
+    InferSession, Launcher, LauncherError, OpenOptions,
+};
+use porter_core::audit::Handoff;
+use porter_core::capability::{Access, AgentProgram, Delta, Offered, QuotaReport, StorageScope};
 use porter_core::consent::Usage;
 use porter_core::need::{LlmNeed, MailNeed, NotesNeed, PimNeed, StorageNeed};
 use porter_core::wire::{ParentWindow, ProviderHint};
-use porter_core::{AccountId, Candidate, DataClass, Need, ProviderId, Tier, Tokens};
+use porter_core::{
+    AccountId, DataClass, IdentityId, KeyPermitId, LauncherSession, Need, ProviderId, Tier, Tokens,
+};
 use porter_dbus::{SyncProxy, from_vardict};
 use porter_infer::{
     ChatControl, ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRequest, MessagePart,
@@ -19,10 +27,7 @@ use porter_infer::{
 };
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
-use std::os::fd::OwnedFd;
 use std::time::Duration;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::UnixStream;
 use zbus::export::futures_core::Stream;
 
 /// What the commands share: who asks and what for.
@@ -72,19 +77,51 @@ fn failure(why: impl std::fmt::Display) -> Value {
     json!({ "result": "error", "error": why.to_string() })
 }
 
-fn candidate_json(candidate: &Candidate) -> Value {
-    serde_json::to_value(candidate).unwrap_or(Value::Null)
-}
-
 /// The commands.
 #[derive(Debug, Clone)]
 pub enum Command {
-    /// Finds an account for the need, asking for a grant if the app has none.
-    RequestGrant {
-        /// The need.
-        need: Need,
+    /// Lists the identities signed in on this machine (`Identities1.List`).
+    IdentitiesList,
+    /// "Continue as": shows the identity picker (`Identities1.Offer`) and prints the pick, never a
+    /// token.
+    IdentitiesOffer {
+        /// Limits the picker to one provider's identities; none: any.
+        provider: Option<ProviderId>,
+    },
+    /// Says this app signed in with the identity (`Identities1.RegisterUse`).
+    IdentitiesRegisterUse {
+        /// The identity.
+        identity: IdentityId,
+    },
+    /// Shows inferd's add-a-key sheet (`Inference1.Keys.AddAccount`) and waits for the answer.
+    AiKeysAdd {
+        /// The provider whose form opens first; none: the list.
+        provider: Option<ProviderId>,
+    },
+    /// Asks inferd for a permit to use the person's AI keys (`Inference1.Keys.RequestKey`).
+    AiKeysRequest {
         /// Class and usage.
         ask: Ask,
+    },
+    /// As the agent launcher: registers `program`, optionally opens `session`, and asks the person
+    /// which of their AI keys the agent may use (`Launcher.RequestAgentKey`).
+    LauncherRequestKey {
+        /// The agent program.
+        program: AgentProgram,
+        /// The data class.
+        class: DataClass,
+        /// A session to open first, for "this session only".
+        session: Option<LauncherSession>,
+    },
+    /// As the agent launcher: registers `program` and asks for a process credential under
+    /// `permit` (`Launcher.IssueProcessCredential`). Prints its id, never the key.
+    LauncherIssue {
+        /// The permit.
+        permit: KeyPermitId,
+        /// The agent program.
+        program: AgentProgram,
+        /// How the key is handed over.
+        target: Handoff,
     },
     /// Opens an AI session and, with a prompt, runs one chat turn on it.
     Open {
@@ -96,17 +133,6 @@ pub enum Command {
         tier: Tier,
         /// What to say, if anything.
         prompt: Option<String>,
-    },
-    /// Opens an authenticated relay to one of a granted account's servers and reads what comes.
-    OpenAuthenticated {
-        /// The need.
-        need: Need,
-        /// Class and usage.
-        ask: Ask,
-        /// Which server: a family slug (`imap`, `graph`, `web_dav`, ...); the first when absent.
-        family: Option<String>,
-        /// The request path for an HTTP server.
-        path: String,
     },
     /// Settles a stored sync conflict.
     SyncResolve {
@@ -143,8 +169,6 @@ pub enum Command {
         /// `<account>/<dataset>`.
         dataset: String,
     },
-    /// The app's own grants.
-    Grants,
 }
 
 /// Runs `command` as the app on `connection`, handing every JSON line to `emit`; whether it
@@ -156,19 +180,29 @@ pub async fn run(
 ) -> bool {
     let accounts = Accounts::over(DbusTransport::over(connection.clone()));
     match command {
-        Command::RequestGrant { need, ask } => request_grant(&accounts, &need, &ask, emit).await,
+        Command::IdentitiesList => identities_list(connection, emit).await,
+        Command::IdentitiesOffer { provider } => identities_offer(connection, provider, emit).await,
+        Command::IdentitiesRegisterUse { identity } => {
+            identities_register_use(connection, &identity, emit).await
+        }
+        Command::AiKeysAdd { provider } => ai_keys_add(connection, provider, emit).await,
+        Command::AiKeysRequest { ask } => ai_keys_request(connection, &ask, emit).await,
+        Command::LauncherRequestKey {
+            program,
+            class,
+            session,
+        } => launcher_request_key(connection, &program, class, session.as_ref(), emit).await,
+        Command::LauncherIssue {
+            permit,
+            program,
+            target,
+        } => launcher_issue(connection, &permit, &program, target, emit).await,
         Command::Open {
             need,
             ask,
             tier,
             prompt,
         } => open(&accounts, &need, &ask, tier, prompt, emit).await,
-        Command::OpenAuthenticated {
-            need,
-            ask,
-            family,
-            path,
-        } => open_authenticated(&accounts, &need, &ask, family.as_deref(), &path, emit).await,
         Command::SyncResolve {
             dataset,
             number,
@@ -196,16 +230,219 @@ pub async fn run(
             }
         },
         Command::Status { dataset } => status(connection, &dataset, emit).await,
-        Command::Grants => match accounts.grants().await {
-            Ok(grants) => {
-                emit(json!({ "result": "ok", "grants": grants }));
-                true
-            }
-            Err(why) => {
-                emit(failure(why));
-                false
-            }
-        },
+    }
+}
+
+/// A refusal as the rig prints it, `refused` with the word for it.
+fn refused(refusal: porter_core::wire::Refusal, emit: &mut impl FnMut(Value)) -> bool {
+    emit(json!({ "result": "refused", "refusal": format!("{refusal:?}") }));
+    false
+}
+
+async fn identities_list(connection: &zbus::Connection, emit: &mut impl FnMut(Value)) -> bool {
+    let listed = async { Identities::connect(connection).await?.list().await }.await;
+    match listed {
+        Ok(identities) => {
+            let rows: Vec<Value> = identities
+                .iter()
+                .map(|identity| serde_json::to_value(identity).unwrap_or(Value::Null))
+                .collect();
+            emit(json!({ "result": "ok", "identities": rows }));
+            true
+        }
+        Err(why) => {
+            emit(failure(why));
+            false
+        }
+    }
+}
+
+async fn identities_offer(
+    connection: &zbus::Connection,
+    provider: Option<ProviderId>,
+    emit: &mut impl FnMut(Value),
+) -> bool {
+    let hint = provider.map_or(ProviderHint::Any, ProviderHint::Provider);
+    let picked = async {
+        Identities::connect(connection)
+            .await?
+            .offer(&hint, &ParentWindow::Unparented)
+            .await
+    }
+    .await;
+    match picked {
+        Ok(picked) => {
+            emit(json!({
+                "result": "picked",
+                "identity": picked.id.as_str(),
+                "address": picked.address.0,
+                "provider": picked.provider.as_str(),
+            }));
+            true
+        }
+        Err(IdentitiesError::Cancelled) => {
+            emit(json!({ "result": "refused", "refusal": "Cancelled" }));
+            false
+        }
+        Err(IdentitiesError::NoIdentity) => {
+            emit(json!({ "result": "none" }));
+            false
+        }
+        Err(why) => {
+            emit(failure(why));
+            false
+        }
+    }
+}
+
+async fn identities_register_use(
+    connection: &zbus::Connection,
+    identity: &IdentityId,
+    emit: &mut impl FnMut(Value),
+) -> bool {
+    let said = async {
+        Identities::connect(connection)
+            .await?
+            .register_use(identity)
+            .await
+    }
+    .await;
+    match said {
+        Ok(()) => {
+            emit(json!({ "result": "registered", "identity": identity.as_str() }));
+            true
+        }
+        Err(why) => {
+            emit(failure(why));
+            false
+        }
+    }
+}
+
+async fn ai_keys_add(
+    connection: &zbus::Connection,
+    provider: Option<ProviderId>,
+    emit: &mut impl FnMut(Value),
+) -> bool {
+    let hint = provider.map_or(ProviderHint::Any, ProviderHint::Provider);
+    let added = async {
+        AiKeys::connect(connection)
+            .await?
+            .add_account(hint, &ParentWindow::Unparented)
+            .await
+    }
+    .await;
+    match added {
+        Ok(account) => {
+            emit(json!({ "result": "added", "account": account.as_str() }));
+            true
+        }
+        Err(AiKeysError::AlreadyAdded(account)) => {
+            emit(json!({ "result": "already_added", "account": account.as_str() }));
+            false
+        }
+        Err(AiKeysError::Refused(refusal)) => refused(refusal, emit),
+        Err(why) => {
+            emit(failure(why));
+            false
+        }
+    }
+}
+
+async fn ai_keys_request(
+    connection: &zbus::Connection,
+    ask: &Ask,
+    emit: &mut impl FnMut(Value),
+) -> bool {
+    let permit = async {
+        AiKeys::connect(connection)
+            .await?
+            .request_key(ask.class, ask.usage, &ParentWindow::Unparented)
+            .await
+    }
+    .await;
+    match permit {
+        Ok(permit) => {
+            emit(json!({ "result": "granted", "permit": permit.as_str() }));
+            true
+        }
+        Err(AiKeysError::Refused(refusal)) => refused(refusal, emit),
+        Err(why) => {
+            emit(failure(why));
+            false
+        }
+    }
+}
+
+/// The launcher, registered for `program`: only a registered connection may ask for its key.
+async fn launcher_for(
+    connection: &zbus::Connection,
+    program: &AgentProgram,
+) -> Result<Launcher, LauncherError> {
+    let launcher = Launcher::connect(connection).await?;
+    launcher.register(std::slice::from_ref(program)).await?;
+    Ok(launcher)
+}
+
+async fn launcher_request_key(
+    connection: &zbus::Connection,
+    program: &AgentProgram,
+    class: DataClass,
+    session: Option<&LauncherSession>,
+    emit: &mut impl FnMut(Value),
+) -> bool {
+    let key = async {
+        let launcher = launcher_for(connection, program).await?;
+        if let Some(session) = session {
+            launcher.begin_session(session).await?;
+        }
+        launcher.request_agent_key(program, class, session).await
+    }
+    .await;
+    match key {
+        Ok(key) => {
+            emit(json!({
+                "result": "granted",
+                "permit": key.permit.as_str(),
+                "account": key.account.as_str(),
+            }));
+            true
+        }
+        Err(LauncherError::Refused(refusal)) => refused(refusal, emit),
+        Err(why) => {
+            emit(failure(why));
+            false
+        }
+    }
+}
+
+async fn launcher_issue(
+    connection: &zbus::Connection,
+    permit: &KeyPermitId,
+    program: &AgentProgram,
+    target: Handoff,
+    emit: &mut impl FnMut(Value),
+) -> bool {
+    let credential = async {
+        let launcher = launcher_for(connection, program).await?;
+        launcher.issue_credential(permit, program, target).await
+    }
+    .await;
+    match credential {
+        // The id and the way it was handed over; the key itself is never printed.
+        Ok(credential) => {
+            emit(json!({
+                "result": "issued",
+                "id": credential.id().as_str(),
+                "handoff": target.word(),
+            }));
+            true
+        }
+        Err(LauncherError::Refused(refusal)) => refused(refusal, emit),
+        Err(why) => {
+            emit(failure(why));
+            false
+        }
     }
 }
 
@@ -255,59 +492,6 @@ async fn reauthenticate(
             true
         }
         Err(why) => sheet_failure(why, emit),
-    }
-}
-
-async fn request_grant(
-    accounts: &Accounts<DbusTransport>,
-    need: &Need,
-    ask: &Ask,
-    emit: &mut impl FnMut(Value),
-) -> bool {
-    let found = match accounts.find(need, ask.class, ask.usage).await {
-        Ok(found) => found,
-        Err(why) => {
-            emit(failure(why));
-            return false;
-        }
-    };
-    match found {
-        Found::One(candidate) => {
-            emit(
-                json!({ "result": "granted", "already": true, "candidate": candidate_json(&candidate) }),
-            );
-            true
-        }
-        Found::Several(several) => {
-            let all: Vec<Value> = several.iter().map(candidate_json).collect();
-            emit(json!({ "result": "several", "candidates": all }));
-            true
-        }
-        Found::None(why) => {
-            emit(json!({ "result": "none", "why": format!("{why:?}") }));
-            false
-        }
-        Found::NeedsConsent(offer) => {
-            match accounts
-                .request_grant(&offer, &ParentWindow::Unparented)
-                .await
-            {
-                Ok(candidate) => {
-                    emit(
-                        json!({ "result": "granted", "already": false, "candidate": candidate_json(&candidate) }),
-                    );
-                    true
-                }
-                Err(ClientError::Refused(refusal)) => {
-                    emit(json!({ "result": "refused", "refusal": format!("{refusal:?}") }));
-                    false
-                }
-                Err(why) => {
-                    emit(failure(why));
-                    false
-                }
-            }
-        }
     }
 }
 
@@ -366,149 +550,6 @@ async fn open(
                 emit(failure(format!("the session ended: {why}")));
                 return false;
             }
-        }
-    }
-}
-
-async fn open_authenticated(
-    accounts: &Accounts<DbusTransport>,
-    need: &Need,
-    ask: &Ask,
-    family: Option<&str>,
-    path: &str,
-    emit: &mut impl FnMut(Value),
-) -> bool {
-    let candidate = match accounts.find(need, ask.class, ask.usage).await {
-        Ok(Found::One(candidate)) => candidate,
-        Ok(Found::Several(several)) => match several.into_iter().next() {
-            Some(first) => first,
-            None => {
-                emit(failure("no account"));
-                return false;
-            }
-        },
-        Ok(Found::NeedsConsent(_)) => {
-            emit(failure(
-                "the app holds no grant for this need: run request-grant first",
-            ));
-            return false;
-        }
-        Ok(Found::None(why)) => {
-            emit(failure(format!("no account fits: {why:?}")));
-            return false;
-        }
-        Err(why) => {
-            emit(failure(why));
-            return false;
-        }
-    };
-    let endpoint = candidate
-        .endpoints
-        .iter()
-        .find(|e| family.is_none_or(|f| e.family.slug() == f));
-    let Some(endpoint) = endpoint else {
-        emit(failure(format!(
-            "the account lists no such server: {:?}",
-            candidate
-                .endpoints
-                .iter()
-                .map(|e| e.family.slug())
-                .collect::<Vec<_>>()
-        )));
-        return false;
-    };
-    let stream = match accounts
-        .open_authenticated(&candidate.grant, &endpoint.url)
-        .await
-    {
-        Ok(porter_client::AuthenticatedStream::Fd(fd)) => fd,
-        Ok(_) => {
-            emit(failure("the relay is not a descriptor"));
-            return false;
-        }
-        Err(ClientError::Refused(refusal)) => {
-            emit(json!({ "result": "refused", "refusal": format!("{refusal:?}") }));
-            return false;
-        }
-        Err(why) => {
-            emit(failure(why));
-            return false;
-        }
-    };
-    let http = endpoint.family.relay_protocol() == Some(porter_core::EndpointProtocol::Http);
-    let host = endpoint
-        .url
-        .as_str()
-        .split("://")
-        .nth(1)
-        .unwrap_or_default()
-        .trim_end_matches('/')
-        .to_owned();
-    match talk(stream, http, &host, path).await {
-        Ok(said) => {
-            emit(
-                json!({ "result": "ok", "family": endpoint.family.slug(), "endpoint": endpoint.url.as_str(), "said": said }),
-            );
-            true
-        }
-        Err(why) => {
-            emit(failure(why));
-            false
-        }
-    }
-}
-
-/// Reads the greeting of a line protocol, or makes one `GET` of an HTTP server and returns its
-/// status and the start of its answer.
-async fn talk(fd: OwnedFd, http: bool, host: &str, path: &str) -> std::io::Result<Value> {
-    let std_stream = std::os::unix::net::UnixStream::from(fd);
-    std_stream.set_nonblocking(true)?;
-    let mut stream = UnixStream::from_std(std_stream)?;
-    if http {
-        let request = format!("GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n");
-        stream.write_all(request.as_bytes()).await?;
-    }
-    let mut seen = Vec::new();
-    let mut buf = [0u8; 4096];
-    let wait = porter_fake::GENEROUS;
-    while !complete(&seen, http) && seen.len() < 64 * 1024 {
-        match tokio::time::timeout(wait, stream.read(&mut buf)).await {
-            Ok(Ok(0)) | Err(_) => break,
-            Ok(Ok(n)) => seen.extend_from_slice(&buf[..n]),
-            Ok(Err(why)) => return Err(why),
-        }
-    }
-    let text = String::from_utf8_lossy(&seen).into_owned();
-    let first = text.lines().next().unwrap_or_default().to_owned();
-    Ok(match http {
-        true => {
-            let status = first.split(' ').nth(1).and_then(|s| s.parse::<u16>().ok());
-            let body = text.split("\r\n\r\n").nth(1).unwrap_or_default();
-            json!({ "status": status, "line": first, "body": body.chars().take(512).collect::<String>() })
-        }
-        false => json!({ "greeting": first }),
-    })
-}
-
-/// Whether enough has been read: a first line for a line protocol, the whole head and, when
-/// the answer says how long its body is, the body, for HTTP.
-fn complete(seen: &[u8], http: bool) -> bool {
-    match http {
-        false => seen.contains(&b'\n'),
-        true => {
-            let text = String::from_utf8_lossy(seen);
-            let Some((head, body)) = text.split_once("\r\n\r\n") else {
-                return false;
-            };
-            let length = head
-                .lines()
-                .find_map(|l| {
-                    l.to_ascii_lowercase()
-                        .strip_prefix("content-length:")
-                        .map(|v| v.trim().to_owned())
-                })
-                .and_then(|v| v.parse::<usize>().ok());
-            length.is_some_and(|n| body.len() >= n)
         }
     }
 }

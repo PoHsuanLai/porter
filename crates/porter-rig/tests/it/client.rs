@@ -1,24 +1,20 @@
 //! `porter-rig-client` as a process, on a private bus with the real accountd service (a fake
-//! provider with a Graph storage account over the rig's own fake drive) and syncd's `Sync1`
-//! served over a hub. The daemons name the client from the identity fixture the client writes
-//! under a proc root (`fixture`), the way a scenario's `test-proc-root` daemons do: the client
-//! is `org.example.Rig`, a Flatpak app, and nothing else says so.
+//! provider with one signed-in identity) and syncd's `Sync1` served over a hub. The daemons name
+//! the client from the identity fixture the client writes under a proc root (`fixture`), the way
+//! a scenario's `test-proc-root` daemons do: the client is `org.example.Rig`, a Flatpak app, and
+//! nothing else says so.
 
 use crate::common;
 
 use accountd::{BusSheets, Options, serve_with};
 use common::bus::PrivateBus;
 use common::scratch;
-use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::{
-    Account, AccountId, AccountLabel, AccountState, AppId, AppName, AuthKind, CapabilityKind,
-    Claim, Credential, DataClass, EndpointUrl, Family, GrantId, Isolation, LoginName, Offer,
-    Provenance, Restriction, SecretKey, SecretPurpose, SecretText, ServiceEndpoint, SpaceScope,
-    Subject, Tls, UnixSeconds,
+    Account, AccountId, AccountLabel, AccountState, AppName, AuthKind, Claim, Credential, Offer,
+    Provenance, Restriction, SecretKey, SecretPurpose, SecretText, Subject, UnixSeconds,
 };
 use porter_dbus::{CallerTable, ProcCallers};
 use porter_fake::{FakeProvider, FixedClock, MemoryStore, RecordingAudit};
-use porter_fake_servers::{FakeGraph, GraphHandle, Running};
 use porter_provider::Provider;
 use porter_secrets::{MemorySecrets, Secrets};
 use porter_service::{AccountService, Registry};
@@ -34,7 +30,6 @@ use tokio::process::Command;
 
 const ACCOUNT: &str = "graph-acct";
 const APP: &str = "org.example.Rig";
-const BEARER: &str = "fake:graph-acct:graph";
 const DATASET: &str = "a1/notes";
 
 const PROVIDER: &str = r#"
@@ -55,17 +50,9 @@ kind = "storage"
 v = { access = "read_write", delta = "poll", quota = "reported", scope = "app_folder", hashes = "quick_xor", ranges = "present", chunked_upload = "present" }
 "#;
 
-fn app() -> AppId {
-    AppId {
-        name: AppName::parse(APP).expect("app"),
-        isolation: Isolation::Flatpak,
-    }
-}
-
 struct Rig {
     bus: PrivateBus,
     proc_root: PathBuf,
-    graph: Running<GraphHandle>,
     hub: Hub,
     settled: Arc<Mutex<Vec<(i64, String)>>>,
     _keep: Vec<zbus::Connection>,
@@ -100,9 +87,6 @@ impl Rig {
 }
 
 async fn rig() -> Rig {
-    let graph = FakeGraph::start(BEARER).await.expect("graph");
-    graph.put_file("hello.txt", b"hi");
-    let endpoint = EndpointUrl::parse(graph.base_url()).expect("url");
     let provider = FakeProvider::from_file(PROVIDER);
     let spec = provider.spec();
     let account = Account {
@@ -121,26 +105,7 @@ async fn rig() -> Rig {
             })
             .collect(),
         restriction: Restriction::none(),
-        endpoints: vec![ServiceEndpoint {
-            family: Family::Graph,
-            url: endpoint,
-            tls: Tls::Plain,
-            login: LoginName("ada@outlook.test".into()),
-        }],
-    };
-    let grant = Grant {
-        id: GrantId::parse("rig-grant").expect("grant"),
-        key: GrantKey {
-            app: app(),
-            account: account.id.clone(),
-            kind: CapabilityKind::Storage,
-            class: DataClass::Files,
-            usage: Usage::Interactive,
-            space: SpaceScope::Any,
-        },
-        decision: Decision::Allow,
-        scope: GrantScope::Always,
-        at: UnixSeconds(1),
+        endpoints: Vec::new(),
     };
     let secrets = MemorySecrets::default();
     secrets
@@ -172,7 +137,7 @@ async fn rig() -> Rig {
         AccountService::new(
             vec![provider],
             Registry {
-                grants: vec![grant],
+                grants: vec![],
                 accounts: vec![account],
                 toggles: vec![],
             },
@@ -225,7 +190,6 @@ async fn rig() -> Rig {
     Rig {
         bus,
         proc_root,
-        graph,
         hub,
         settled,
         _keep: vec![accountd, server],
@@ -240,52 +204,27 @@ fn result_of(lines: &[Value]) -> &str {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn the_client_asks_for_a_grant_opens_a_relay_and_reads_through_it_as_the_app_the_fixture_names()
- {
+async fn the_client_lists_identities_and_continues_as_one_as_the_app_the_fixture_names() {
     let rig = rig().await;
 
-    let (lines, ok) = rig
-        .run(&["request-grant", "storage", "--class", "files"])
-        .await;
-    assert!(ok, "{lines:?}");
-    assert_eq!(result_of(&lines), "granted");
-    assert_eq!(lines[0]["already"], true);
-    assert_eq!(lines[0]["candidate"]["account"], ACCOUNT);
-
-    let (lines, ok) = rig
-        .run(&[
-            "open-authenticated",
-            "storage",
-            "--family",
-            "graph",
-            "--path",
-            "/v1.0/me/drive/special/approot:/hello.txt",
-        ])
-        .await;
+    let (lines, ok) = rig.run(&["identities", "list"]).await;
     assert!(ok, "{lines:?}");
     assert_eq!(result_of(&lines), "ok");
-    assert_eq!(lines[0]["family"], "graph");
-    assert_eq!(lines[0]["said"]["status"], 200, "{lines:?}");
-    // The relay authenticated: the drive saw the bearer the fake provider minted, from nobody
-    // else, and the client never held it.
-    let want = format!("Bearer {BEARER}");
-    let hits = rig.graph.hits();
-    assert!(!hits.is_empty());
-    assert!(
-        hits.iter()
-            .all(|h| h.authorization.as_deref() == Some(want.as_str()))
-    );
+    assert_eq!(lines[0]["identities"][0]["id"], ACCOUNT);
 
-    // A need no grant covers is not found, and the client says so rather than guessing.
-    let (lines, ok) = rig
-        .run(&["request-grant", "calendar", "--class", "calendar"])
-        .await;
-    assert!(!ok);
-    assert_eq!(result_of(&lines), "none", "{lines:?}");
-
-    let (lines, ok) = rig.run(&["grants"]).await;
+    // Saying it signed in with the identity is the app's, and holds no token.
+    let (lines, ok) = rig.run(&["identities", "register-use", ACCOUNT]).await;
     assert!(ok, "{lines:?}");
-    assert_eq!(lines[0]["grants"][0]["id"], "rig-grant");
+    assert_eq!(result_of(&lines), "registered");
+
+    // No sheet host is on this bus, so the picker cannot be shown: the command reached accountd
+    // and says what it answered, exit 1. An identity id that is none never reaches the bus.
+    let (lines, ok) = rig.run(&["identities", "offer"]).await;
+    assert!(!ok, "{lines:?}");
+    assert_eq!(result_of(&lines), "error", "{lines:?}");
+    let (lines, ok) = rig.run(&["identities", "register-use", "A B"]).await;
+    assert!(!ok);
+    assert_eq!(result_of(&lines), "error", "{lines:?}");
 
     // The fixture is removed when the client ends.
     let left: Vec<_> = std::fs::read_dir(&rig.proc_root).expect("proc").collect();

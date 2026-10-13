@@ -2,21 +2,27 @@
 //! session bus it is given (`DBUS_SESSION_BUS_ADDRESS`) and prints JSON lines.
 //!
 //! Commands:
-//! - `request-grant <need> [--class C] [--usage U]`: finds an account, asks for a grant when
-//!   the app has none; `{"result":"granted"|"several"|"refused"|"none"|"error",..}`.
+//! - `identities list`: the identities signed in on this machine (`{"result":"ok","identities":[..]}`).
+//! - `identities offer [<provider>]`: "Continue as": the person picks in a sheet
+//!   (`{"result":"picked","identity":..,"address":..}`, or `refused` / `none`).
+//! - `identities register-use <identity>`: says this app signed in with it.
+//! - `ai-keys request [--class C] [--usage U]`: asks inferd for a permit to use the person's AI
+//!   keys (`{"result":"granted","permit":..}` or `refused`).
+//! - `ai-keys add [<provider>]`: inferd's add-a-key sheet (`{"result":"added","account":..}`).
+//! - `launcher request-key <program> [--class C] [--session S]`: as the agent launcher, asks which
+//!   key the agent may use (`{"result":"granted","permit":..,"account":..}`).
+//! - `launcher issue <permit> <program> [--target memfd|tmpfs_file]`: as the agent launcher, asks
+//!   for a process credential (`{"result":"issued","id":..}`; the key is never printed).
 //! - `open <need> [--class C] [--tier T] [--usage U] [--prompt TEXT]`: opens an AI session
 //!   (`{"result":"opened"}`) and, with a prompt, runs one chat turn, one `{"event":..}` line
 //!   per event.
-//! - `open-authenticated <need> [--class C] [--usage U] [--family F] [--path P]`: opens the
-//!   relay and prints what comes through it (`said`: the IMAP/SMTP/POP3 greeting, or the HTTP
-//!   status of a `GET P`).
 //! - `sync-resolve <dataset> <number> <keep_local|keep_remote>`.
 //! - `watch-conflicts [--count N] [--timeout-s S]`: `{"event":"conflict",..}` lines.
 //! - `add-account [<provider>]`: opens accountd's add-account sheet (the provider's form when
 //!   named) and waits for the answer: `{"result":"added","account":..}`, or
 //!   `{"result":"refused","refusal":"Cancelled"|"Unavailable"|..}` and exit 1.
 //! - `reauthenticate <account>`: the same for signing an account in again.
-//! - `datasets`, `status <dataset>`, `grants`.
+//! - `datasets`, `status <dataset>`.
 //! - `write-identity --pid N`: only writes the identity fixture for process N (it is kept).
 //!
 //! `<need>` is `mail`, `storage`, `calendar`, `contacts`, `notes`, `llm` or a JSON `Need`;
@@ -27,8 +33,10 @@
 //! Identity: see `porter_rig::fixture`. Test tooling, never installed.
 
 use clap::{Parser, Subcommand};
+use porter_core::audit::Handoff;
+use porter_core::capability::AgentProgram;
 use porter_core::consent::Usage;
-use porter_core::{AccountId, DataClass, ProviderId};
+use porter_core::{AccountId, DataClass, IdentityId, KeyPermitId, LauncherSession, ProviderId};
 use porter_rig::client::{Ask, Command, parse_need, run, word};
 use porter_rig::fixture::Identity;
 use std::path::PathBuf;
@@ -52,13 +60,15 @@ struct Args {
 
 #[derive(Debug, Subcommand)]
 enum Sub {
-    RequestGrant {
-        need: String,
-        #[arg(long, default_value = "files")]
-        class: String,
-        #[arg(long, default_value = "interactive")]
-        usage: String,
-    },
+    /// The identities signed in on this machine, and "Continue as".
+    #[command(subcommand)]
+    Identities(IdentitiesSub),
+    /// The person's AI keys: ask for a permit to use them, or add one.
+    #[command(subcommand)]
+    AiKeys(AiKeysSub),
+    /// The agent launcher's calls to inferd.
+    #[command(subcommand)]
+    Launcher(LauncherSub),
     Open {
         need: String,
         #[arg(long, default_value = "public")]
@@ -69,17 +79,6 @@ enum Sub {
         usage: String,
         #[arg(long)]
         prompt: Option<String>,
-    },
-    OpenAuthenticated {
-        need: String,
-        #[arg(long, default_value = "files")]
-        class: String,
-        #[arg(long, default_value = "interactive")]
-        usage: String,
-        #[arg(long)]
-        family: Option<String>,
-        #[arg(long, default_value = "/")]
-        path: String,
     },
     SyncResolve {
         dataset: String,
@@ -103,11 +102,118 @@ enum Sub {
     Status {
         dataset: String,
     },
-    Grants,
     WriteIdentity {
         #[arg(long)]
         pid: u32,
     },
+}
+
+#[derive(Debug, Subcommand)]
+enum IdentitiesSub {
+    List,
+    Offer {
+        /// The provider's file id; any when absent.
+        provider: Option<String>,
+    },
+    RegisterUse {
+        identity: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum AiKeysSub {
+    Request {
+        #[arg(long, default_value = "files")]
+        class: String,
+        #[arg(long, default_value = "interactive")]
+        usage: String,
+    },
+    Add {
+        /// The provider's file id; the list when absent.
+        provider: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum LauncherSub {
+    RequestKey {
+        program: String,
+        #[arg(long, default_value = "files")]
+        class: String,
+        #[arg(long)]
+        session: Option<String>,
+    },
+    Issue {
+        permit: String,
+        program: String,
+        #[arg(long, default_value = "tmpfs_file")]
+        target: String,
+    },
+}
+
+fn provider(id: &str) -> Result<ProviderId, String> {
+    ProviderId::parse(id).map_err(|e| format!("`{id}` is not a provider: {e}"))
+}
+
+fn program(name: &str) -> Result<AgentProgram, String> {
+    AgentProgram::parse(name).map_err(|e| format!("`{name}` is not an agent program: {e}"))
+}
+
+fn identities(sub: IdentitiesSub) -> Result<Command, String> {
+    Ok(match sub {
+        IdentitiesSub::List => Command::IdentitiesList,
+        IdentitiesSub::Offer { provider: id } => Command::IdentitiesOffer {
+            provider: id.as_deref().map(provider).transpose()?,
+        },
+        IdentitiesSub::RegisterUse { identity } => Command::IdentitiesRegisterUse {
+            identity: IdentityId::parse(&identity)
+                .map_err(|e| format!("`{identity}` is not an identity id: {e}"))?,
+        },
+    })
+}
+
+fn ai_keys(sub: AiKeysSub) -> Result<Command, String> {
+    Ok(match sub {
+        AiKeysSub::Request { class, usage } => Command::AiKeysRequest {
+            ask: ask(&class, &usage)?,
+        },
+        AiKeysSub::Add { provider: id } => Command::AiKeysAdd {
+            provider: id.as_deref().map(provider).transpose()?,
+        },
+    })
+}
+
+fn launcher(sub: LauncherSub) -> Result<Command, String> {
+    Ok(match sub {
+        LauncherSub::RequestKey {
+            program: name,
+            class,
+            session,
+        } => Command::LauncherRequestKey {
+            program: program(&name)?,
+            class: word::<DataClass>(&class)?,
+            session: session
+                .map(|text| {
+                    LauncherSession::parse(&text)
+                        .map_err(|e| format!("`{text}` is not a session: {e}"))
+                })
+                .transpose()?,
+        },
+        LauncherSub::Issue {
+            permit,
+            program: name,
+            target,
+        } => Command::LauncherIssue {
+            permit: KeyPermitId::parse(&permit)
+                .map_err(|e| format!("`{permit}` is not a permit id: {e}"))?,
+            program: program(&name)?,
+            target: match target.as_str() {
+                "memfd" => Handoff::Memfd,
+                "tmpfs_file" => Handoff::TmpfsFile,
+                other => return Err(format!("`{other}` is not memfd or tmpfs_file")),
+            },
+        },
+    })
 }
 
 fn fail(why: impl std::fmt::Display) -> ExitCode {
@@ -127,10 +233,9 @@ fn ask(class: &str, usage: &str) -> Result<Ask, String> {
 
 fn command(sub: Sub) -> Result<Command, String> {
     Ok(match sub {
-        Sub::RequestGrant { need, class, usage } => Command::RequestGrant {
-            need: parse_need(&need)?,
-            ask: ask(&class, &usage)?,
-        },
+        Sub::Identities(sub) => identities(sub)?,
+        Sub::AiKeys(sub) => ai_keys(sub)?,
+        Sub::Launcher(sub) => launcher(sub)?,
         Sub::Open {
             need,
             class,
@@ -142,18 +247,6 @@ fn command(sub: Sub) -> Result<Command, String> {
             ask: ask(&class, &usage)?,
             tier: word(&tier)?,
             prompt,
-        },
-        Sub::OpenAuthenticated {
-            need,
-            class,
-            usage,
-            family,
-            path,
-        } => Command::OpenAuthenticated {
-            need: parse_need(&need)?,
-            ask: ask(&class, &usage)?,
-            family,
-            path,
         },
         Sub::SyncResolve {
             dataset,
@@ -181,7 +274,6 @@ fn command(sub: Sub) -> Result<Command, String> {
         },
         Sub::Datasets => Command::Datasets,
         Sub::Status { dataset } => Command::Status { dataset },
-        Sub::Grants => Command::Grants,
         Sub::WriteIdentity { .. } => return Err("write-identity is not a bus command".to_owned()),
     })
 }
