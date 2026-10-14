@@ -28,7 +28,7 @@ confidence-threshold = 0.9
 # MPL is file-level copyleft: fine to link or depend on, never to paste source from. That
 # position is about the *licence*, so encoding it per-crate would be busywork. Several crates
 # arrive under it by unrelated routes (stylo, app_units, cssparser and selectors in blitz; option-ext
-# through dirs; cosmic-dbus-networkmanager and freedesktop-desktop-entry in the shell), and the
+# through dirs; freedesktop-desktop-entry in the shell), and the
 # versions churn.
 #
 # Depending on them obliges us to make *those files'* source available, which their registries

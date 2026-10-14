@@ -2518,7 +2518,7 @@ No build was run; the coordinator compiles and gates. Consumer list: `~/rs-wt/la
 
 ## Batch 17: who mints a Space id (2026-10-11)
 
-Decision D8 (compositor-scope/20-FREEZE-PLAN C16, landed in casement P1-M2): on casement the compositor mints a desktop-wide Space id per workspace (`s-` and 32 lowercase hex), sends it as the ext-workspace id and keeps it in its spaces.toml across restarts. accountd stays the registry, and mints only where the compositor gives no stable id (Beta 0 on cosmic-comp). The `DesktopSpace` doc says so.
+Decision D8 (compositor-scope/20-FREEZE-PLAN C16, landed in casement P1-M2): on casement the compositor mints a desktop-wide Space id per workspace (`s-` and 32 lowercase hex), sends it as the ext-workspace id and keeps it in its spaces.toml across restarts. accountd stays the registry, and mints only where the compositor gives no stable id. The `DesktopSpace` doc says so.
 
 **Closed by `Spaces1.Register` (below).** Before it, `org.quire.Spaces1` had no way to register an id accountd did not mint: `Create(name, look)` always mints. casement needs a `Register(id, name, look)` (or a `Create` that takes an optional id) with `Create`'s caller rule, refusing an id already registered to another Space.
 
