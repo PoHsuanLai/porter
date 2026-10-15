@@ -7,7 +7,7 @@
 //! Pure over the list of models with the place each is at and whether it can serve now; the
 //! engines build that list.
 
-use super::{Decided, Listed, choose, fits};
+use super::{Decided, Listed, Unchosen, choose, chosen_for, fits};
 use porter_core::{DataClass, ModelId, Need, Tier};
 use porter_infer::{
     AutoPolicy, InferRefusal, NoPlaceReason, PickRefusal, PlaceId, PlaceRefusal, Policy, RouteAsk,
@@ -107,6 +107,8 @@ pub struct Rules<'a> {
     pub tiers: &'a TierMap,
     /// What Automatic may do.
     pub auto: AutoPolicy,
+    /// What an unset text slot does at a place with no pin.
+    pub unchosen: Unchosen,
 }
 
 fn route_of(placed: &Placed) -> RouteCandidate {
@@ -167,6 +169,11 @@ fn attempt(
     // override it.
     let none = TierMap::default();
     let tiers = if pin.is_some() { &none } else { rules.tiers };
+    if pin.is_none()
+        && let Err(refusal) = chosen_for(need, tier, tiers, rules.unchosen)
+    {
+        return Outcome::Other(refusal);
+    }
     match choose(need, class, tier, &listed, rules.policy, tiers, rules.auto) {
         Ok(decided) => Outcome::Chosen(Box::new(decided)),
         // The person's pick for this kind of work is a model this place does not have.

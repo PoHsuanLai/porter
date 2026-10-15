@@ -10,7 +10,7 @@ use model_catalog::MiB;
 use porter_core::capability::{Capability, CuaEnv, LlmCap, LlmFeature, LlmWire, SpeechMode};
 use porter_core::need::{CuaNeed, LlmNeed, SpeechNeed};
 use porter_core::{AccountId, Billing, Locality, ModelId, Tokens};
-use porter_infer::LocalOnly;
+use porter_infer::{LocalOnly, Slot};
 
 fn llm() -> Need {
     Need::Llm(LlmNeed::new([LlmFeature::Chat].into(), Tokens(1000)))
@@ -43,7 +43,12 @@ fn start(scratch: &Scratch, host: Recorder) -> Engines {
             }),
         },
     );
-    Engines::new(models, supervised, Policy::proposed(), TierMap::default())
+    Engines::new(
+        models,
+        supervised,
+        Policy::proposed(),
+        TierMap::automatic(Slot::Text),
+    )
 }
 
 fn cloud() -> ModelCard {
@@ -179,7 +184,7 @@ fn the_gpu_is_loading_while_an_engine_starts_busy_in_a_turn_and_idle_otherwise()
 
 #[tokio::test]
 async fn an_empty_engines_routes_nothing_and_is_idle() {
-    let engines = Engines::default();
+    let engines = nothing_here();
     assert_eq!(
         engines
             .route(&spec(llm(), DataClass::Notes), Role::App)
@@ -260,7 +265,7 @@ async fn the_session_router_writes_the_pin_the_runner_reads() {
     );
     // A refusal leaves the cell empty.
     let empty = Pin::new();
-    let none = Engines::default().router(empty.clone(), Role::App);
+    let none = nothing_here().router(empty.clone(), Role::App);
     assert_eq!(
         none.route(&spec(llm(), DataClass::Notes)).await.err(),
         Some(InferRefusal::Unavailable)
@@ -367,8 +372,13 @@ async fn what_an_app_is_told_without_a_session_reveals_no_identity() {
     // Accounts that are not here: a floor that forbids them, or a grant nobody gave.
     let mut policy = Policy::proposed();
     policy.local_only = LocalOnly::Off;
-    let remote = Engines::new(Vec::new(), Supervised::idle(), policy, TierMap::default())
-        .with_remote(vec![cloud()]);
+    let remote = Engines::new(
+        Vec::new(),
+        Supervised::idle(),
+        policy,
+        TierMap::automatic(Slot::Text),
+    )
+    .with_remote(vec![cloud()]);
     assert_eq!(
         remote.availability(&llm(), DataClass::Prompt, Role::App),
         Availability::NeedsAccount
@@ -409,4 +419,41 @@ async fn a_route_says_why_and_the_snapshot_keeps_the_gpu_the_swap_cost_reads() {
     );
     // Loaded now: nothing to swap.
     assert_eq!(engines.listed()[0].swap, porter_infer::SwapCost::Resident);
+}
+
+/// No models anywhere, with Automatic chosen for text so a refusal is about what is here.
+fn nothing_here() -> Engines {
+    Engines::new(
+        Vec::new(),
+        Supervised::idle(),
+        Policy::proposed(),
+        TierMap::automatic(Slot::Text),
+    )
+}
+
+/// No default planner (owner, 2026-10-16): with the text slot unset a session and Prepare are
+/// refused as nothing chosen, "auto" serves, and the other slots still take the catalogue's.
+#[tokio::test]
+async fn an_unset_text_slot_refuses_as_no_model_chosen_and_auto_serves() {
+    let scratch = Scratch::new("engines-unchosen");
+    let unset = Engines::new(
+        models(&scratch),
+        Supervised::idle(),
+        Policy::proposed(),
+        TierMap::default(),
+    );
+    let chat = spec(llm(), DataClass::Notes);
+    assert_eq!(
+        unset.route(&chat, Role::App).err(),
+        Some(InferRefusal::NoModelChosen)
+    );
+    assert_eq!(
+        unset
+            .prepare(&llm(), DataClass::Notes, Tier::Balanced)
+            .await
+            .err(),
+        Some(InferRefusal::NoModelChosen)
+    );
+    let auto = start(&scratch, Recorder::default());
+    assert!(auto.route(&chat, Role::App).is_ok());
 }

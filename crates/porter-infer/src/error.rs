@@ -30,6 +30,11 @@ pub enum InferRefusal {
     /// outside a `Transcribe` turn).
     #[error("request does not fit this session")]
     Unsupported,
+    /// The person has not chosen the model for this kind of work, and nothing is chosen for
+    /// them (owner, 2026-10-16: no default planner). The app asks the person to choose one in
+    /// Settings; it is not a failure.
+    #[error("no model is chosen for this kind of work")]
+    NoModelChosen,
 }
 
 /// Why one model call failed.

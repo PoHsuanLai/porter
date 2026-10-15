@@ -260,7 +260,7 @@ fn engines(scratch: &Scratch) -> Engines {
         models,
         supervised,
         Policy::proposed(),
-        porter_infer::TierMap::default(),
+        porter_infer::TierMap::automatic(porter_infer::Slot::Text),
     )
 }
 
@@ -287,6 +287,8 @@ async fn show_reason_off_stops_the_answers_saying_why_and_a_reload_applies_it() 
             .show
     };
     assert_eq!(show(), ShowReason::On);
+    file.set("ai.model.text.balanced", "auto".into())
+        .expect("write");
     file.set("ai.auto.show_reason", "off".into())
         .expect("write");
     // Nothing is in force until the file is read again.

@@ -87,7 +87,23 @@ fn run_need(
     class: DataClass,
     policy: &Policy,
 ) -> Got {
-    let tiers = TierMap::default();
+    run_with(
+        need,
+        candidates,
+        allowed,
+        (class, policy),
+        (&TierMap::default(), Unchosen::CatalogueChoice),
+    )
+}
+
+/// As [`run_need`], with the person's picks and what an unset text slot does.
+fn run_with(
+    need: &Need,
+    candidates: &[Placed],
+    allowed: &Allowed,
+    (class, policy): (DataClass, &Policy),
+    (tiers, unchosen): (&TierMap, Unchosen),
+) -> Got {
     choose_in(
         need,
         class,
@@ -96,8 +112,9 @@ fn run_need(
         allowed,
         Rules {
             policy,
-            tiers: &tiers,
+            tiers,
             auto: AutoPolicy::default(),
+            unchosen,
         },
     )
     .map(|(decided, place)| (decided.chosen.model.as_str().to_owned(), place))
@@ -320,4 +337,60 @@ fn a_place_named_twice_stays_where_it_first_was() {
     );
     assert!(set.contains(&place("computer:a")));
     assert!(!set.contains(&place("account:x")));
+}
+
+/// With no default planner, a language request at a place with no pin is refused while the
+/// person's text slot is unset; "auto" is a choice; a pinned place does not consult the picks.
+#[test]
+fn an_unset_text_slot_is_no_model_chosen_unless_the_place_is_pinned() {
+    let candidates = [
+        at("this-computer", "a", Serving::Now),
+        at("this-computer", "b", Serving::Now),
+    ];
+    let open_set = allowed(&["this-computer"]);
+    let pinned = Allowed::new(
+        vec![place("this-computer")],
+        BTreeMap::from([(place("this-computer"), ModelId::parse("b").expect("id"))]),
+    );
+    let auto = TierMap {
+        rows: vec![],
+        autos: vec![porter_infer::AutoRow {
+            kind: porter_infer::Slot::Text,
+            tier: Tier::Balanced,
+            mode: Default::default(),
+        }],
+    };
+    let unset = TierMap::default();
+    let refuse = |allowed: &Allowed, tiers: &TierMap| {
+        run_with(
+            &need(),
+            &candidates,
+            allowed,
+            (DataClass::Public, &open()),
+            (tiers, Unchosen::Refuse),
+        )
+    };
+    match refuse(&open_set, &unset) {
+        Err(Unplaced::Other(refusal)) => {
+            assert_eq!(refusal.refusal, InferRefusal::NoModelChosen);
+        }
+        other => panic!("NoModelChosen, got {other:?}"),
+    }
+    assert!(refuse(&open_set, &auto).is_ok(), "auto is a choice");
+    assert_eq!(
+        refuse(&pinned, &unset),
+        Ok(("b".to_owned(), place("this-computer")))
+    );
+    // An embedding need has no planner to choose.
+    let embed = run_with(
+        &embeddings(),
+        &[at("this-computer", "e", Serving::Now)],
+        &open_set,
+        (DataClass::Public, &open()),
+        (&unset, Unchosen::Refuse),
+    );
+    assert!(
+        !matches!(&embed, Err(Unplaced::Other(r)) if r.refusal == InferRefusal::NoModelChosen),
+        "{embed:?}"
+    );
 }

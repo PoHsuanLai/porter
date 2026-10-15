@@ -417,7 +417,13 @@ mod routing {
             .await;
         let refused = world
             .served
-            .route_in(&spec, caller.role, &offered, Some(&allowed))
+            .route_in(
+                &spec,
+                caller.role,
+                &offered,
+                Some(&allowed),
+                inferd::router::Unchosen::Refuse,
+            )
             .expect_err("nothing in the set can serve");
         assert_eq!(
             refused,

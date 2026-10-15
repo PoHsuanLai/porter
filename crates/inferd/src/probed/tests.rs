@@ -31,7 +31,12 @@ fn models_of(runtime: Runtime, port: u16, names: &[&str]) -> Vec<LocalModel> {
 }
 
 fn engines() -> Engines {
-    Engines::default()
+    Engines::new(
+        Vec::new(),
+        crate::supervise::Supervised::idle(),
+        Policy::proposed(),
+        TierMap::automatic(Slot::Text),
+    )
 }
 
 fn account(text: &str) -> AccountId {
@@ -181,7 +186,7 @@ fn local_only_on_leaves_the_runtime_the_only_answer() {
         Vec::new(),
         crate::supervise::Supervised::idle(),
         policy,
-        TierMap::default(),
+        TierMap::automatic(Slot::Text),
     )
     .with_remote(vec![crate::testkit::cloud_card()]);
     engines.probed().set(
