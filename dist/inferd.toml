@@ -130,9 +130,11 @@ cua = ["cuad.service"]
 # that name, which any program can start.
 settings = ["org.quire.Settings.service"]
 # The shell (sill): it may list the places the assistant can run (Inference1.Places) and ask for
-# nothing else. A scope has no main process, so while the shell is not running another program of
-# yours could start a scope of that name.
-shell = ["sill-shell.scope"]
+# nothing else. `sill.service` is the unit the desktop session starts it in, checked by its main
+# process; `sill-shell.scope` is how it ran before, kept until every session starts the service. A
+# scope has no main process, so while the shell is not running another program of yours could
+# start a scope of that name.
+shell = ["sill.service", "sill-shell.scope"]
 # The units that may choose where the assistant runs (the `places` and `place_models` options of
 # Open, Prepare and Availability). Each must also be an app under [callers.apps]. Of these the
 # companion alone may also list the places, as Settings and the shell may.

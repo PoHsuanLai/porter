@@ -25,8 +25,17 @@ unit = "org.quire.Settings.service"
 role = "settings"
 name = "Settings"
 
-# The shell that draws the accounts sheets. A scope has no main process: while the shell is not
-# running, another program of the person's could start a scope of this name.
+# The shell that draws the accounts sheets, as the service the desktop session starts it in: only
+# that unit's main process.
+[[caller]]
+app = "org.quire.Shell"
+unit = "sill.service"
+role = "sheet_host"
+name = "Shell"
+
+# The shell as it ran before, in a scope, kept until every session starts it as `sill.service`. A
+# scope has no main process: while the shell is not running, another program of the person's could
+# start a scope of this name.
 [[caller]]
 app = "org.quire.Shell"
 unit = "sill-shell.scope"
