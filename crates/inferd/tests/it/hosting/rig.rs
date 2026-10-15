@@ -303,10 +303,8 @@ pub fn test_app() -> AppId {
 
 impl World {
     pub async fn start(plan: Plan) -> World {
-        let scratch = porter_fake::scratch_dir(&format!(
-            "inf-{}",
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
+        let scratch =
+            porter_fake::scratch_dir(&format!("inf-{}", NEXT.fetch_add(1, Ordering::Relaxed)));
         let catalog_dir = scratch.join("cat");
         std::fs::create_dir_all(&catalog_dir).expect("catalog dir");
         for (name, text) in &plan.catalog {
