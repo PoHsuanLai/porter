@@ -17,7 +17,7 @@ use porter_core::{
 };
 use porter_dbus::{Caller, CallerRole, SHEET_BUS, SHEET_PATH};
 use porter_fake::{
-    FakeProvider, FixedClock, MemoryStore, RecordingAudit, cloud_provider, llm_account,
+    FakeProvider, FixedClock, MemoryStore, RecordingAudit, Scratch, cloud_provider, llm_account,
     llm_provider, mail_provider,
 };
 use porter_secrets::{MemorySecrets, Secrets, SecretsError};
@@ -240,19 +240,15 @@ pub async fn eventually(what: &str, mut condition: impl FnMut() -> bool) {
     deadline.fail(what);
 }
 
-/// Options whose clients file is a scratch one, so that [`publish`] has something to write.
-pub fn poking_options() -> Options {
-    use std::sync::atomic::{AtomicU32, Ordering};
-    static NEXT: AtomicU32 = AtomicU32::new(0);
-    let dir = std::env::temp_dir().join(format!(
-        "accountd-poke-{}-{}",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    ));
-    Options {
+/// Options whose clients file is a scratch one, so that [`publish`] has something to write, and
+/// the directory it is in: bind it for as long as the rig runs, declared before the rig.
+pub fn poking_options() -> (Scratch, Options) {
+    let dir = Scratch::new("accountd-poke");
+    let options = Options {
         clients: Some(dir.join("clients.toml")),
         ..Options::default()
-    }
+    };
+    (dir, options)
 }
 
 /// Makes accountd tell whoever is to be told what changed in the service since it last told

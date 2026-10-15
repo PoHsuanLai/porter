@@ -434,8 +434,7 @@ mod tests {
 
     #[test]
     fn paths_are_read_layered_and_a_missing_file_is_empty() {
-        let dir = std::env::temp_dir().join(format!("porter-oauth-reg-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("dir");
+        let dir = porter_fake::Scratch::new("oauth-reg");
         let shipped = dir.join("shipped.toml");
         let own = dir.join("own.toml");
         std::fs::write(
@@ -461,7 +460,6 @@ mod tests {
             ClientRegistry::from_paths(&shipped, &own),
             Err(RegistryError::Invalid { .. })
         ));
-        std::fs::remove_dir_all(&dir).expect("cleanup");
     }
 
     #[test]
@@ -556,8 +554,7 @@ mod tests {
 
     #[test]
     fn a_rows_byo_and_testing_are_read_and_the_persons_row_wins() {
-        let dir = std::env::temp_dir().join(format!("porter-oauth-traits-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("dir");
+        let dir = porter_fake::Scratch::new("oauth-traits");
         let (shipped, own) = (dir.join("shipped.toml"), dir.join("own.toml"));
         std::fs::write(
             &shipped,
@@ -612,6 +609,5 @@ mod tests {
             },
         );
         assert_eq!(at(&held, ClientChannel::Stable).review, AppReview::Testing);
-        std::fs::remove_dir_all(&dir).expect("cleanup");
     }
 }

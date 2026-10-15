@@ -270,14 +270,16 @@ impl BusStream for Revocations {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use porter_fake::Scratch;
     use std::io::Write;
 
-    fn scratch_file(name: &str, text: &str) -> PathBuf {
-        let path =
-            std::env::temp_dir().join(format!("porter-client-key-{name}-{}", std::process::id()));
+    /// A key file holding `text`, and the directory it is in: bind it while the file is read.
+    fn scratch_file(name: &str, text: &str) -> (Scratch, PathBuf) {
+        let dir = Scratch::new(&format!("client-key-{name}"));
+        let path = dir.join("key");
         let mut file = std::fs::File::create(&path).expect("create");
         file.write_all(text.as_bytes()).expect("write");
-        path
+        (dir, path)
     }
 
     fn credential(handle: CredentialHandle) -> ProcessCredential {
@@ -286,7 +288,7 @@ mod tests {
 
     #[test]
     fn a_file_credential_gives_its_text_or_a_path_variable_and_never_an_inherited_descriptor() {
-        let path = scratch_file("text", "sk-test-0123");
+        let (_dir, path) = scratch_file("text", "sk-test-0123");
         let credential = credential(CredentialHandle::TmpfsFile(path.clone()));
         assert_eq!(credential.handoff(), Handoff::TmpfsFile);
         let var = EnvName::parse("ANTHROPIC_API_KEY").expect("var");
@@ -312,7 +314,6 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
-        let _ = std::fs::remove_file(path);
     }
 
     #[test]
@@ -339,7 +340,7 @@ mod tests {
 
     #[test]
     fn a_key_file_over_the_limit_is_unreadable_and_one_at_the_limit_is_read() {
-        let path = scratch_file("limit", &"k".repeat(KEY_LIMIT + 1));
+        let (_dir, path) = scratch_file("limit", &"k".repeat(KEY_LIMIT + 1));
         let credential = credential(CredentialHandle::TmpfsFile(path.clone()));
         assert!(matches!(
             credential.read_key(),
@@ -352,6 +353,5 @@ mod tests {
         );
         std::fs::write(&path, [0xff, 0xfe]).expect("write");
         assert!(matches!(credential.read_key(), Err(ChildKeyError::NotText)));
-        let _ = std::fs::remove_file(path);
     }
 }

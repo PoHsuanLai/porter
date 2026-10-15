@@ -1,11 +1,11 @@
 //! What the tests share: a pair of addresses of their own, a fake Tailscale, and waits.
 
-use porter_fake::GENEROUS;
+use porter_fake::{GENEROUS, Scratch};
 use porter_fake_servers::{Daemon, FakeLocalApi, FakePeer, Network};
 use porter_tailnet::{Config, Limits, Observer, Seen, Timing};
 use porter_tailscale::LocalApi;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::path::PathBuf;
+use std::ops::Deref;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -13,11 +13,8 @@ use tokio::net::{TcpSocket, TcpStream};
 use tokio::sync::watch;
 
 /// A new empty directory for one test, under the test's temporary directory.
-pub fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("porter-tailnet-{}-{name}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).expect("scratch");
-    dir
+pub fn scratch(name: &str) -> Scratch {
+    Scratch::new(&format!("tailnet-{name}"))
 }
 
 static NEXT: AtomicU8 = AtomicU8::new(0);
@@ -80,13 +77,31 @@ pub fn network(a: &Addresses) -> Network {
     ])
 }
 
+/// A fake Tailscale and the directory its socket is in; the directory goes after the fake stops.
+pub struct Fake {
+    api: FakeLocalApi,
+    _dir: Scratch,
+}
+
+impl Deref for Fake {
+    type Target = FakeLocalApi;
+
+    fn deref(&self) -> &FakeLocalApi {
+        &self.api
+    }
+}
+
 /// A fake Tailscale running `daemon`, and a client of it that finds no Tailscale program.
-pub async fn fake(name: &str, daemon: Daemon) -> (FakeLocalApi, LocalApi) {
+pub async fn fake(name: &str, daemon: Daemon) -> (Fake, LocalApi) {
     let dir = scratch(name);
     let fake = FakeLocalApi::start(&dir, daemon).await.expect("fake");
     let api = LocalApi::new(fake.socket())
         .with_program_dirs(Vec::new())
         .with_timeout(Duration::from_secs(30));
+    let fake = Fake {
+        api: fake,
+        _dir: dir,
+    };
     (fake, api)
 }
 

@@ -12,5 +12,8 @@ publish.workspace = true
 notify = { workspace = true }
 thiserror = { workspace = true }
 
+[dev-dependencies]
+porter-fake = { workspace = true }
+
 [lints]
 workspace = true

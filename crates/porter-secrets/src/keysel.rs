@@ -283,10 +283,8 @@ mod tests {
     #[test]
     fn a_key_file_open_to_others_is_a_typed_refusal() {
         use std::os::unix::fs::PermissionsExt;
-        let dir = std::env::temp_dir().join(format!("porter-keysel-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("dir");
+        let dir = porter_fake::Scratch::new("keysel");
         let path = dir.join("keys.json");
-        let _ = std::fs::remove_file(&path);
         let chosen =
             Chosen::open(Selection::File(path.clone()), namespace(), "syncd").expect("created");
         assert!(
@@ -299,6 +297,5 @@ mod tests {
             Chosen::open(Selection::File(path), namespace(), "syncd").expect_err("loose mode");
         assert!(matches!(refused, KeysRefusal::File(_)), "{refused}");
         assert!(refused.to_string().contains("0600"), "{refused}");
-        let _ = std::fs::remove_dir_all(dir);
     }
 }

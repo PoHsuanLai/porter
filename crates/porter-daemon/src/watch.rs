@@ -148,7 +148,7 @@ mod tests {
 
     #[test]
     fn a_rename_over_the_file_is_heard_and_a_missing_directory_is_made() {
-        let root = std::env::temp_dir().join(format!("porter-daemon-watch-{}", std::process::id()));
+        let root = porter_fake::Scratch::new("daemon-watch");
         let dir = root.join("nested");
         let (sender, heard) = mpsc::channel();
         let watch = Watch::start(dir.clone(), "settings.toml", move || {
@@ -162,6 +162,5 @@ mod tests {
         // Waits for the event with no clock: it arrives whenever the machine gets to it.
         heard.recv().expect("an event for the replaced file");
         drop(watch);
-        let _ = std::fs::remove_dir_all(&root);
     }
 }

@@ -1,13 +1,11 @@
+use porter_fake::Scratch;
 use porter_fake_servers::{Daemon, FakeLocalApi, FakePeer, Network};
 use porter_tailscale::LocalApi;
-use std::path::PathBuf;
+use std::ops::Deref;
 
 /// A new empty directory for one test, under the test's temporary directory.
-pub fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("porter-tailscale-{}-{name}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).expect("scratch");
-    dir
+pub fn scratch(name: &str) -> Scratch {
+    Scratch::new(&format!("tailscale-{name}"))
 }
 
 pub const LOGIN_PAGE: &str = "https://login.tailscale.com/a/0123456789abcdef";
@@ -28,10 +26,28 @@ pub fn network() -> Network {
     ])
 }
 
+/// A fake Tailscale and the directory its socket is in; the directory goes after the fake stops.
+pub struct Fake {
+    api: FakeLocalApi,
+    _dir: Scratch,
+}
+
+impl Deref for Fake {
+    type Target = FakeLocalApi;
+
+    fn deref(&self) -> &FakeLocalApi {
+        &self.api
+    }
+}
+
 /// A fake tailscaled, and a client of it that finds no Tailscale program on this machine.
-pub async fn start(name: &str, daemon: Daemon) -> (FakeLocalApi, LocalApi) {
+pub async fn start(name: &str, daemon: Daemon) -> (Fake, LocalApi) {
     let dir = scratch(name);
     let fake = FakeLocalApi::start(&dir, daemon).await.expect("fake");
     let api = LocalApi::new(fake.socket()).with_program_dirs(Vec::new());
+    let fake = Fake {
+        api: fake,
+        _dir: dir,
+    };
     (fake, api)
 }

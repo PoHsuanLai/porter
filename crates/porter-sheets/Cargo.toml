@@ -17,5 +17,8 @@ serde_json = { workspace = true }
 tokio = { workspace = true }
 zbus = { workspace = true }
 
+[dev-dependencies]
+porter-fake = { workspace = true }
+
 [lints]
 workspace = true

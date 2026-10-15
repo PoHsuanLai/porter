@@ -52,7 +52,8 @@ async fn bytes_go_both_ways_and_each_connection_asks_tailscale_again() {
     let port = free_port();
     let (fake, api) = fake("relay", Daemon::Running(network(&a))).await;
     let count = pong_at(SocketAddr::new(a.pi, port)).await;
-    let path = scratch("relay-path").join("pi.sock");
+    let dir = scratch("relay-path");
+    let path = dir.join("pi.sock");
     let faults = Arc::new(Mutex::new(Vec::new()));
     let told = Arc::clone(&faults);
     let on_fault: OnFault = Arc::new(move |fault: &DialError| told.lock().unwrap().push(*fault));
@@ -80,7 +81,8 @@ async fn a_path_left_by_an_earlier_run_is_replaced() {
     let port = free_port();
     let (_fake, api) = fake("relay-stale", Daemon::Running(network(&a))).await;
     let count = pong_at(SocketAddr::new(a.pi, port)).await;
-    let path = scratch("relay-stale-path").join("pi.sock");
+    let dir = scratch("relay-stale-path");
+    let path = dir.join("pi.sock");
     std::fs::write(&path, "left over").unwrap();
     let nothing: OnFault = Arc::new(|_| {});
     let _relay = Relay::start(&path, node("nPI"), Dialer::new(api, port), nothing).expect("relay");

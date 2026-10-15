@@ -12,10 +12,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
-
-static NEXT: AtomicU32 = AtomicU32::new(0);
 
 /// What the shipped file holds in these tests.
 const SHIPPED: &str = "[Service]\nIPAddressAllow=100.64.0.0/10 fd7a:115c:a1e0::/48\n";
@@ -71,16 +68,12 @@ impl UnitManager for FakeUnits {
 
 /// A scratch directory under the test temp dir, with the shipped file in it.
 struct Scratch {
-    root: PathBuf,
+    root: porter_fake::Scratch,
 }
 
 impl Scratch {
     fn new() -> Self {
-        let root = std::env::temp_dir().join(format!(
-            "porter-lending-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
+        let root = porter_fake::Scratch::new("lending");
         fs::create_dir_all(root.join("share")).expect("scratch");
         fs::write(root.join("share/inferd-tailnet.conf"), SHIPPED).expect("shipped");
         Self { root }

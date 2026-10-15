@@ -310,13 +310,11 @@ pub fn local_runtimes(unserved: &[ProviderSpec]) -> Vec<ProviderSpec> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use porter_fake::Scratch;
     use porter_provider::Provider;
 
-    fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("families-set-{}-{name}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).expect("scratch");
-        dir
+    fn scratch(name: &str) -> Scratch {
+        Scratch::new(&format!("families-set-{name}"))
     }
 
     fn shipped() -> PathBuf {
@@ -376,8 +374,8 @@ mod tests {
         std::fs::write(user.join("broken.toml"), "id = ").expect("write");
         std::fs::write(user.join("mismatch.toml"), nextcloud.clone()).expect("write");
         let loaded = load_specs(&[
-            (Layer::Shipped, system.clone()),
-            (Layer::Person, user.clone()),
+            (Layer::Shipped, system.to_path_buf()),
+            (Layer::Person, user.to_path_buf()),
             (Layer::Named, PathBuf::from("/nonexistent")),
         ]);
         assert_eq!(loaded.specs.len(), 1);
@@ -397,8 +395,6 @@ mod tests {
                 .any(|why| matches!(why, SkipReason::NameIsNotId(id) if id == "nextcloud")),
             "{reasons:?}"
         );
-        let _ = std::fs::remove_dir_all(system);
-        let _ = std::fs::remove_dir_all(user);
     }
 
     /// A provider file in the person's own folder that asks for OpenRouter's browser sign-in
@@ -415,7 +411,7 @@ mod tests {
             );
         assert!(text.contains("oauth_mints_key"), "{text}");
         std::fs::write(own.join("my-router.toml"), text).expect("write");
-        let loaded = load_specs(&[(Layer::Person, own.clone())]);
+        let loaded = load_specs(&[(Layer::Person, own.to_path_buf())]);
         assert!(loaded.skipped.is_empty(), "{:?}", loaded.skipped);
         assert_eq!(loaded.specs.len(), 1);
         let io = io_over(&loaded.specs);
@@ -427,7 +423,6 @@ mod tests {
             local_runtimes(&unserved).is_empty(),
             "and not a local runtime"
         );
-        let _ = std::fs::remove_dir_all(own);
     }
 
     fn microsoft() -> String {
@@ -445,9 +440,10 @@ mod tests {
             std::fs::write(sys.join("microsoft.toml"), microsoft()).expect("write");
         }
         std::fs::write(over.join("microsoft.toml"), mine).expect("write");
-        let loaded = load_specs(&[(Layer::Shipped, sys.clone()), (layer, over.clone())]);
-        let _ = std::fs::remove_dir_all(sys);
-        let _ = std::fs::remove_dir_all(over);
+        let loaded = load_specs(&[
+            (Layer::Shipped, sys.to_path_buf()),
+            (layer, over.to_path_buf()),
+        ]);
         loaded
     }
 

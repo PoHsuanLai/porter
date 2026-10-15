@@ -7,7 +7,7 @@ use tokio::net::UnixListener;
 #[tokio::test]
 async fn no_socket_and_no_program_is_not_installed() {
     let dir = scratch("errors-not-installed");
-    let api = LocalApi::new(dir.join("tailscaled.sock")).with_program_dirs(vec![dir.clone()]);
+    let api = LocalApi::new(dir.join("tailscaled.sock")).with_program_dirs(vec![dir.to_path_buf()]);
     assert_eq!(api.status().await, Err(TailscaleError::NotInstalled));
     assert_eq!(
         TailscaleError::NotInstalled.to_string(),
