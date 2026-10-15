@@ -227,16 +227,38 @@ fn the_tailnet_drop_in_is_installed_as_data_and_never_as_a_live_drop_in() {
         fs::metadata(&installed).expect("meta").permissions().mode() & 0o777,
         0o644
     );
-    // Nothing is written under the home folder, and no unit has a drop-in directory: the
-    // Settings switch makes that, with the person's consent.
+    // Nothing is written under the home folder, and no unit has a drop-in but the sandbox one:
+    // the Settings switch makes the others, with the person's consent.
     assert!(files_under(&run.home).is_empty());
     for path in files_under(&run.destdir) {
         let live = path
             .components()
             .any(|part| part.as_os_str().to_string_lossy().ends_with(".service.d"));
-        assert!(!live, "{path:?}");
+        assert!(!live || path.file_name().is_some_and(|name| name == "sandbox.conf"), "{path:?}");
     }
     assert!(!run.at("/etc/systemd").exists());
+}
+
+#[test]
+fn the_sandbox_drop_ins_land_next_to_their_units_without_a_probe_when_staging() {
+    let run = Run::new("sandbox");
+    // With a destdir the script does not ask this computer whether it allows mount namespaces.
+    let out = run.install(&["--prefix", "/opt/porter"]);
+    assert!(!out.contains("without their extra sandbox"), "{out}");
+    for unit in ["accountd", "syncd", "inferd"] {
+        let installed = run.at(&format!(
+            "/opt/porter/lib/systemd/user/{unit}.service.d/sandbox.conf"
+        ));
+        assert_eq!(
+            fs::read(&installed).expect("the drop-in is installed"),
+            fs::read(repo().join(format!("dist/{unit}.service.d/sandbox.conf"))).expect("shipped")
+        );
+        assert_eq!(
+            fs::metadata(&installed).expect("meta").permissions().mode() & 0o777,
+            0o644
+        );
+    }
+    assert!(files_under(&run.home).is_empty());
 }
 
 #[test]

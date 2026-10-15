@@ -21,6 +21,7 @@ KillMode=control-group
 TimeoutStopSec=20
 
 # --- Sandbox ---
+# The keys that need a mount namespace are in the drop-in sandbox.conf (see its header).
 # Unix sockets (the session bus, and the engines' sockets under %t/inferd) and this computer's own
 # loopback addresses only: the local runtimes the probe asks (Ollama, LM Studio, llama.cpp
 # server) and the agent endpoint's listener are on 127.0.0.1 / ::1, which PrivateNetwork would
@@ -36,10 +37,10 @@ TimeoutStopSec=20
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 IPAddressDeny=any
 IPAddressAllow=localhost
-# The person's files are out of reach except what inferd writes: its engines' sockets (the
-# runtime directory, %t/inferd) and its state (the audit file and the spend ledger, under
-# $XDG_STATE_HOME/quire/inferd). systemd creates both before the sandbox starts. The weights
-# cache is read through ProtectHome=read-only.
+# What inferd writes: its engines' sockets (the runtime directory, %t/inferd) and its state (the
+# audit file and the spend ledger, under $XDG_STATE_HOME/quire/inferd). systemd creates both
+# before the sandbox starts. The rest of the person's files are read-only (ProtectHome in
+# sandbox.conf), so the weights cache is read through that.
 #
 # inferd also holds the person's AI keys: the registry of the accounts and the permissions given
 # to apps is keys/registry.json in the state directory (the keys themselves are in the Secret
@@ -48,13 +49,9 @@ IPAddressAllow=localhost
 # own, private to the person, emptied when inferd starts and when a credential ends).
 # Checking a key when it is added is one call to the company, which needs the network drop-in
 # below; without it the add sheet says the service could not be reached.
-ProtectHome=read-only
-ProtectSystem=strict
 RuntimeDirectory=inferd inferd/agent
 RuntimeDirectoryMode=0700
 StateDirectory=quire/inferd
-# Engines write scratch files (vLLM, torch and Triton caches): private, and gone with the unit.
-PrivateTmp=yes
 # No setuid gain. MemoryDenyWriteExecute is NOT set: CUDA and the engines' JIT need writable and
 # executable memory.
 NoNewPrivileges=yes
@@ -62,13 +59,6 @@ LockPersonality=yes
 RestrictRealtime=yes
 RestrictNamespaces=yes
 RestrictSUIDSGID=yes
-# No kernel, module or debug surfaces.
-ProtectKernelTunables=yes
-ProtectKernelModules=yes
-ProtectKernelLogs=yes
-ProtectControlGroups=yes
-ProtectClock=yes
-ProtectHostname=yes
 # No capabilities at all.
 CapabilityBoundingSet=
 AmbientCapabilities=

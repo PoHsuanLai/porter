@@ -63,7 +63,14 @@ fn the_unit_is_a_sandbox_with_the_network_it_needs_and_no_more() {
         value(&unit, "RestrictAddressFamilies"),
         Some("AF_UNIX AF_INET AF_INET6")
     );
-    assert_eq!(value(&unit, "ProtectSystem"), Some("strict"));
+    // The mount-namespace half of the sandbox is the drop-in, which the installer leaves out
+    // where the system refuses a user service its own mount namespace.
+    let sandbox = dist("accountd.service.d/sandbox.conf");
+    assert_eq!(value(&sandbox, "ProtectSystem"), Some("strict"));
+    assert_eq!(value(&sandbox, "PrivateTmp"), Some("yes"));
+    for moved in ["ProtectSystem", "ProtectHome", "PrivateTmp", "PrivateDevices"] {
+        assert_eq!(value(&unit, moved), None, "{moved} belongs in the drop-in");
+    }
 }
 
 #[test]
@@ -125,7 +132,9 @@ fn what_the_unit_writes_is_created_before_the_sandbox_starts() {
     );
     assert_eq!(value(&unit, "ConfigurationDirectory"), Some("porter"));
     assert_eq!(value(&unit, "ReadWritePaths"), None);
-    assert_eq!(value(&unit, "ProtectHome"), Some("read-only"));
+    let sandbox = dist("accountd.service.d/sandbox.conf");
+    assert_eq!(value(&sandbox, "ReadWritePaths"), None);
+    assert_eq!(value(&sandbox, "ProtectHome"), Some("read-only"));
 }
 
 /// What `[features] default` lists in a crate's manifest, and whether `feature` is declared.

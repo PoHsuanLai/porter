@@ -20,33 +20,22 @@ KillMode=control-group
 TimeoutStopSec=20
 
 # --- Sandbox ---
+# The keys that need a mount namespace are in the drop-in sandbox.conf (see its header).
 # Unix sockets for the bus; the internet for the servers it syncs with and the sign-in's loopback.
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-# The person's files are out of reach except what syncd keeps: the journals (porter/sync under
-# $XDG_STATE_HOME) and its own accounts (quire/syncd under $XDG_STATE_HOME), which systemd
-# creates, and what it keeps under the data home: the PIM mirrors
-# (porter/vdir), the app folder mirrors (porter/storage) and the photo libraries (porter/photos).
-# systemd has no data-directory setting, so the pre-start step, outside the sandbox, makes the
-# three, and the whole porter directory is writable (a missing ReadWritePaths entry fails the unit).
-ProtectHome=read-only
-ProtectSystem=strict
+# What syncd keeps: the journals (porter/sync under $XDG_STATE_HOME) and its own accounts
+# (quire/syncd under $XDG_STATE_HOME), which systemd creates, and what it keeps under the data
+# home: the PIM mirrors (porter/vdir), the app folder mirrors (porter/storage) and the photo
+# libraries (porter/photos). systemd has no data-directory setting, so the pre-start step, outside
+# the sandbox, makes the three; sandbox.conf makes the whole porter directory writable.
 StateDirectory=porter/sync quire/syncd
 ExecStartPre=+/usr/bin/mkdir -p %h/.local/share/porter/vdir %h/.local/share/porter/storage %h/.local/share/porter/photos
-ReadWritePaths=%h/.local/share/porter
-PrivateTmp=yes
-PrivateDevices=yes
 NoNewPrivileges=yes
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
 RestrictRealtime=yes
 RestrictNamespaces=yes
 RestrictSUIDSGID=yes
-ProtectKernelTunables=yes
-ProtectKernelModules=yes
-ProtectKernelLogs=yes
-ProtectControlGroups=yes
-ProtectClock=yes
-ProtectHostname=yes
 CapabilityBoundingSet=
 AmbientCapabilities=
 # Files syncd creates are private to it.

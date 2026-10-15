@@ -14,6 +14,12 @@
 # What goes where (DESTDIR, when given, is in front of all of it):
 #   PREFIX/libexec/quire/{accountd,syncd,inferd}             the daemons
 #   PREFIX/lib/systemd/user/{accountd,syncd,inferd}.service  the user units
+#   PREFIX/lib/systemd/user/{accountd,syncd,inferd}.service.d/sandbox.conf
+#                                                            the part of each unit's sandbox that needs a
+#                                                            mount namespace; left out (with one line saying
+#                                                            so) when a probe shows this system refuses a user
+#                                                            service one (Ubuntu 24.04's AppArmor restriction
+#                                                            on user namespaces); always installed with a destdir
 #   PREFIX/share/dbus-1/services/org.quire.*.service         D-Bus activation
 #   PREFIX/share/porter/providers/*.toml                     the provider files
 #   PREFIX/share/porter/clients.toml                         only when dist/clients.toml exists
@@ -104,6 +110,15 @@ mode_of() {
     stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"
 }
 
+# Whether this system lets a user service have its own mount namespace (some refuse it: Ubuntu
+# 24.04 restricts unprivileged user namespaces, and such a unit fails with status 226/NAMESPACE).
+# With a destdir (packaging) nothing is probed: the packager's target is another computer.
+mount_namespace_for_user_units() {
+    [ -n "$destdir" ] && return 0
+    command -v systemd-run >/dev/null 2>&1 || return 1
+    systemd-run --user --quiet --wait -p PrivateTmp=yes -p ProtectSystem=strict true >/dev/null 2>&1
+}
+
 # --- The daemons ---------------------------------------------------------------------------------
 daemons="accountd syncd inferd"
 if [ -n "$bin_dir" ]; then
@@ -127,6 +142,13 @@ for daemon in $daemons; do
     put 755 "$built/$daemon" "$libexec/$daemon"
     put 644 "$dist/$daemon.service" "$prefix/lib/systemd/user/$daemon.service" /usr/libexec/quire "$libexec"
 done
+if mount_namespace_for_user_units; then
+    for daemon in $daemons; do
+        put 644 "$dist/$daemon.service.d/sandbox.conf" "$prefix/lib/systemd/user/$daemon.service.d/sandbox.conf"
+    done
+else
+    echo "The daemons run without their extra sandbox on this system, which does not let a user service have its own mount namespace. On Ubuntu, allow it with the kernel.apparmor_restrict_unprivileged_userns setting or an AppArmor profile, then run this again."
+fi
 for activation in "$dist"/dbus/*.service; do
     put 644 "$activation" "$prefix/share/dbus-1/services/$(basename "$activation")" /usr/libexec/quire "$libexec"
 done

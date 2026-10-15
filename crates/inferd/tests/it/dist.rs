@@ -106,6 +106,15 @@ fn the_unit_gives_engines_the_gpu_and_only_this_computers_own_addresses() {
     assert_eq!(key(&unit, "RuntimeDirectoryMode"), Some("0700"));
     assert_eq!(key(&unit, "StateDirectory"), Some("quire/inferd"));
     assert_eq!(key(&unit, "ReadWritePaths"), None);
+    // The mount-namespace keys are the drop-in's, which the installer leaves out where the system
+    // refuses a user service its own mount namespace.
+    let sandbox = dist("inferd.service.d/sandbox.conf");
+    assert_eq!(key(&sandbox, "ProtectHome"), Some("read-only"));
+    assert_eq!(key(&sandbox, "ProtectSystem"), Some("strict"));
+    assert_eq!(key(&sandbox, "ReadWritePaths"), None);
+    for moved in ["ProtectHome", "ProtectSystem", "PrivateTmp"] {
+        assert_eq!(key(&unit, moved), None, "{moved} belongs in the drop-in");
+    }
 }
 
 #[test]

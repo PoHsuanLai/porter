@@ -44,8 +44,14 @@ fn the_unit_is_a_sandbox_that_writes_only_its_own_directories() {
     let unit = dist("syncd.service");
     assert_eq!(value(&unit, "NoNewPrivileges"), Some("yes"));
     assert_eq!(value(&unit, "CapabilityBoundingSet"), Some(""));
-    assert_eq!(value(&unit, "ProtectSystem"), Some("strict"));
-    assert_eq!(value(&unit, "ProtectHome"), Some("read-only"));
+    // The mount-namespace keys are in the drop-in, which the installer leaves out where the system
+    // refuses a user service its own mount namespace.
+    let sandbox = dist("syncd.service.d/sandbox.conf");
+    assert_eq!(value(&sandbox, "ProtectSystem"), Some("strict"));
+    assert_eq!(value(&sandbox, "ProtectHome"), Some("read-only"));
+    for moved in ["ProtectSystem", "ProtectHome", "ReadWritePaths", "PrivateTmp"] {
+        assert_eq!(value(&unit, moved), None, "{moved} belongs in the drop-in");
+    }
     // Journals under state, mirrors under data: nothing else is writable, and both exist before
     // the sandbox starts (a missing ReadWritePaths entry fails the unit).
     // Its own accounts (the registry) sit beside the journals' directory.
@@ -54,7 +60,7 @@ fn the_unit_is_a_sandbox_that_writes_only_its_own_directories() {
         Some("porter/sync quire/syncd")
     );
     assert_eq!(
-        value(&unit, "ReadWritePaths"),
+        value(&dist("syncd.service.d/sandbox.conf"), "ReadWritePaths"),
         Some("%h/.local/share/porter")
     );
     assert_eq!(
@@ -85,7 +91,8 @@ fn every_path_syncd_writes_is_writable_under_the_unit() {
         .split_whitespace()
         .map(|dir| Path::new("/h/.local/state").join(dir))
         .collect();
-    let writable: Vec<PathBuf> = value(&unit, "ReadWritePaths")
+    let sandbox = dist("syncd.service.d/sandbox.conf");
+    let writable: Vec<PathBuf> = value(&sandbox, "ReadWritePaths")
         .expect("ReadWritePaths")
         .split_whitespace()
         .map(|p| PathBuf::from(expand(p)))

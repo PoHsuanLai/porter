@@ -23,30 +23,22 @@ KillMode=control-group
 TimeoutStopSec=20
 
 # --- Sandbox ---
+# The keys that need a mount namespace are in the drop-in sandbox.conf (see its header).
 # Unix sockets for the bus, and the internet for the providers.
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-# The person's files are out of reach except what accountd writes: the registry (porter/ under
-# $XDG_STATE_HOME), its audit file (quire/accountd/ there) and the user's clients file and caller
-# table (porter/ under $XDG_CONFIG_HOME; Settings writes them through accountd). systemd creates
-# them before the sandbox starts.
-ProtectHome=read-only
-ProtectSystem=strict
+# What accountd writes: the registry (porter/ under $XDG_STATE_HOME), its audit file
+# (quire/accountd/ there) and the user's clients file and caller table (porter/ under
+# $XDG_CONFIG_HOME; Settings writes them through accountd). systemd creates them before the
+# sandbox starts. The rest of the person's files are put out of reach by the mount-namespace keys
+# in sandbox.conf (dist/accountd.service.d).
 StateDirectory=porter quire/accountd
 ConfigurationDirectory=porter
-PrivateTmp=yes
-PrivateDevices=yes
 NoNewPrivileges=yes
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
 RestrictRealtime=yes
 RestrictNamespaces=yes
 RestrictSUIDSGID=yes
-ProtectKernelTunables=yes
-ProtectKernelModules=yes
-ProtectKernelLogs=yes
-ProtectControlGroups=yes
-ProtectClock=yes
-ProtectHostname=yes
 CapabilityBoundingSet=
 AmbientCapabilities=
 # Files accountd creates are private to it.
