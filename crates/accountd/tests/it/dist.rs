@@ -68,7 +68,12 @@ fn the_unit_is_a_sandbox_with_the_network_it_needs_and_no_more() {
     let sandbox = dist("accountd.service.d/sandbox.conf");
     assert_eq!(value(&sandbox, "ProtectSystem"), Some("strict"));
     assert_eq!(value(&sandbox, "PrivateTmp"), Some("yes"));
-    for moved in ["ProtectSystem", "ProtectHome", "PrivateTmp", "PrivateDevices"] {
+    for moved in [
+        "ProtectSystem",
+        "ProtectHome",
+        "PrivateTmp",
+        "PrivateDevices",
+    ] {
         assert_eq!(value(&unit, moved), None, "{moved} belongs in the drop-in");
     }
 }
