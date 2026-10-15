@@ -352,7 +352,10 @@ async fn two_graph_calendars_mirror_into_the_vdir_with_names_colours_and_ics_fil
 #[tokio::test(flavor = "multi_thread")]
 async fn a_remote_change_a_removal_a_new_event_and_a_rename_arrive_at_the_next_poll() {
     let rig = rig(true).await;
-    eventually(&rig, "the first mirror", || rig.items("Personal").len() == 5).await;
+    eventually(&rig, "the first mirror", || {
+        rig.items("Personal").len() == 5
+    })
+    .await;
 
     rig.graph.put_event(
         "cal-personal",
@@ -381,13 +384,17 @@ async fn a_remote_change_a_removal_a_new_event_and_a_rename_arrive_at_the_next_p
     rig.graph
         .put_event("cal-new", "t1", timed("uid-trip", "Lisbon", 9));
     rig.graph.remove_calendar("cal-work");
-    eventually(&rig, "rename, new calendar and calendar removal arrive", || {
-        rig.calendar("Private")
-            .is_some_and(|dir| read(&dir.join(COLOR)).as_deref() == Some("#00ff00"))
-            && rig.items("Trips").len() == 1
-            && rig.calendar("Work").is_none()
-            && rig.calendar("Personal").is_none()
-    })
+    eventually(
+        &rig,
+        "rename, new calendar and calendar removal arrive",
+        || {
+            rig.calendar("Private")
+                .is_some_and(|dir| read(&dir.join(COLOR)).as_deref() == Some("#00ff00"))
+                && rig.items("Trips").len() == 1
+                && rig.calendar("Work").is_none()
+                && rig.calendar("Personal").is_none()
+        },
+    )
     .await;
     let settings = caller_of("org.quire.Settings", CallerRole::Settings);
     assert_eq!(rig.hub.names_for(&settings).len(), 2);
@@ -396,7 +403,10 @@ async fn a_remote_change_a_removal_a_new_event_and_a_rename_arrive_at_the_next_p
 #[tokio::test(flavor = "multi_thread")]
 async fn a_local_edit_a_deletion_and_a_new_file_are_never_sent_and_a_remote_change_overwrites() {
     let rig = rig(true).await;
-    eventually(&rig, "the first mirror", || rig.items("Personal").len() == 5).await;
+    eventually(&rig, "the first mirror", || {
+        rig.items("Personal").len() == 5
+    })
+    .await;
     let personal = rig.calendar("Personal").expect("personal");
     std::fs::write(personal.join("uid-dentist.ics"), "locally edited").expect("edit");
     std::fs::remove_file(personal.join("uid-holiday.ics")).expect("delete");
@@ -445,7 +455,10 @@ async fn a_local_edit_a_deletion_and_a_new_file_are_never_sent_and_a_remote_chan
 #[tokio::test(flavor = "multi_thread")]
 async fn an_expired_delta_token_lists_again_and_keeps_every_event() {
     let rig = rig(true).await;
-    eventually(&rig, "the first mirror", || rig.items("Personal").len() == 5).await;
+    eventually(&rig, "the first mirror", || {
+        rig.items("Personal").len() == 5
+    })
+    .await;
     common::a_cycle_of_each(&rig.hub).await;
     let before = rig.delta_requests();
     rig.graph

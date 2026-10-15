@@ -196,7 +196,10 @@ async fn a_folder_syncs_against_nextcloud_through_the_relay_and_status_shows_the
 
     // Up: a local file reaches the server, and Status carries the quota the server reports.
     dataset.put("2026/IMG_1.HEIC", b"abcdef");
-    eventually(&rig, "the file is on the server", || puts(&rig.nextcloud) == 1).await;
+    eventually(&rig, "the file is on the server", || {
+        puts(&rig.nextcloud) == 1
+    })
+    .await;
     common::until_alive(
         "Status carries the quota",
         || rig.pulse(),
@@ -234,7 +237,10 @@ async fn a_folder_syncs_against_nextcloud_through_the_relay_and_status_shows_the
     let before = puts(&rig.nextcloud);
     rig.nextcloud.expire_sync_tokens();
     rig.nextcloud.put_file("Photos/poke.txt", b"p");
-    eventually(&rig, "the poke arrives", || dataset.get("poke.txt").is_some()).await;
+    eventually(&rig, "the poke arrives", || {
+        dataset.get("poke.txt").is_some()
+    })
+    .await;
     assert_eq!(
         puts(&rig.nextcloud),
         before,

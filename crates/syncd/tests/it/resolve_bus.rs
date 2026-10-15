@@ -174,7 +174,7 @@ async fn conflicted(rig: &Rig) -> (zbus::Connection, i64, RemoteId) {
         .put(one, BaseVersion::Absent)
         .await
         .expect("put");
-    until(&rig, "the file arrives", || async {
+    until(rig, "the file arrives", || async {
         rig.dataset.get("a.txt") == Some(b"one".to_vec())
     })
     .await;

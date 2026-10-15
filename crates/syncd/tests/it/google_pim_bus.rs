@@ -315,7 +315,10 @@ fn everything_mirrored(rig: &Rig) -> bool {
 #[tokio::test(flavor = "multi_thread")]
 async fn two_calendars_the_contacts_and_two_task_lists_mirror_into_the_vdir() {
     let rig = rig(&ALL).await;
-    eventually(&rig, "every collection is mirrored", || everything_mirrored(&rig)).await;
+    eventually(&rig, "every collection is mirrored", || {
+        everything_mirrored(&rig)
+    })
+    .await;
 
     // Names and colours; the directories are told apart by kind.
     let personal = rig
@@ -667,18 +670,26 @@ async fn expired_sync_tokens_list_again_and_keep_every_item() {
         json!({"names": [{"displayName": "Extra Person"}]}),
     );
     rig.google.expire_sync_tokens();
-    eventually(&rig, "the new items arrive after the listings start over", || {
-        rig.items("Personal", PimKind::Calendar).len() == 5
-            && rig.items("Contacts", PimKind::Contacts).len() == 3
-    })
+    eventually(
+        &rig,
+        "the new items arrive after the listings start over",
+        || {
+            rig.items("Personal", PimKind::Calendar).len() == 5
+                && rig.items("Contacts", PimKind::Contacts).len() == 3
+        },
+    )
     .await;
     // The sources meet the two refusals, each at its own next poll: 410 for each calendar, 400
     // for the contacts. The new items can arrive before the other calendar is polled, so the
     // refusals are waited for, not counted once the items are there.
-    eventually(&rig, "both calendars and the contacts met the expiry", || {
-        let (events_gone, contacts_expired) = expiries(&rig, before);
-        events_gone >= 2 && contacts_expired >= 1
-    })
+    eventually(
+        &rig,
+        "both calendars and the contacts met the expiry",
+        || {
+            let (events_gone, contacts_expired) = expiries(&rig, before);
+            events_gone >= 2 && contacts_expired >= 1
+        },
+    )
     .await;
     // Nothing was lost.
     assert!(everything_mirrored_after_extras(&rig));

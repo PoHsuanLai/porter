@@ -107,7 +107,10 @@ struct Rig {
 impl Rig {
     /// What the daemon has done so far, as [`common::pulse`] counts it, with both origins' hits.
     fn pulse(&self) -> u64 {
-        common::pulse(&self.hub, self.graph.hits().len() + self.graph.link_hits().len())
+        common::pulse(
+            &self.hub,
+            self.graph.hits().len() + self.graph.link_hits().len(),
+        )
     }
 }
 
@@ -335,7 +338,10 @@ async fn a_folder_syncs_against_graph_through_the_relay_and_status_shows_the_quo
     let before = uploads(&rig.graph);
     rig.graph.expire_delta_tokens();
     rig.graph.put_file("Photos/poke.txt", b"p");
-    eventually(&rig, "the poke arrives", || dataset.get("poke.txt").is_some()).await;
+    eventually(&rig, "the poke arrives", || {
+        dataset.get("poke.txt").is_some()
+    })
+    .await;
     assert_eq!(uploads(&rig.graph), before, "no re-upload after the expiry");
     assert_eq!(dataset.snapshot().len(), 4);
 

@@ -296,7 +296,10 @@ async fn the_dataset_follows_the_grant_and_an_account_removal_wipes_the_mirror()
     let sync = SyncProxy::new(&files).await.expect("proxy");
     rig.supervisor.tick().await;
     rig.google.drive_put_file("keep.txt", b"kept");
-    eventually(&rig, "the file arrives", || local(&rig, "keep.txt").exists()).await;
+    eventually(&rig, "the file arrives", || {
+        local(&rig, "keep.txt").exists()
+    })
+    .await;
 
     // A tick that finds the grant again changes nothing.
     rig.supervisor.tick().await;

@@ -39,7 +39,10 @@ pub struct PrivateBus {
 impl PrivateBus {
     /// Starts the daemon and waits for its address.
     pub fn start() -> Self {
-        let scratch = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
+        // In the temp directory (a RAM disk on most systems), not the target directory: the
+        // journals commit with a flush, and on a disk busy with builds one flush took a minute,
+        // so a first cycle outlasted every deadline while the machine's CPU sat idle.
+        let scratch = std::env::temp_dir().join(format!(
             "bus-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)

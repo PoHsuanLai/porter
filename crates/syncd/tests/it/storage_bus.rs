@@ -358,7 +358,10 @@ async fn a_revoked_grant_drops_the_dataset_keeps_the_files_and_a_removed_account
     let sync = SyncProxy::new(&files).await.expect("proxy");
     rig.supervisor.tick().await;
     rig.graph.put_file("keep.txt", b"kept");
-    eventually(&rig, "the file arrives", || local(&rig, "keep.txt").exists()).await;
+    eventually(&rig, "the file arrives", || {
+        local(&rig, "keep.txt").exists()
+    })
+    .await;
 
     // A tick that cannot reach accountd, or that finds the grant, changes nothing.
     rig.supervisor.tick().await;

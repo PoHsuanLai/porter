@@ -164,7 +164,10 @@ impl Rig {
     /// What the daemon has done so far, as [`common::pulse`] counts it, with the questions the
     /// supervisor asked of the accounts.
     fn pulse(&self) -> u64 {
-        common::pulse(&self.hub, self.nextcloud.hits().len() + self.asked.load(Ordering::SeqCst))
+        common::pulse(
+            &self.hub,
+            self.nextcloud.hits().len() + self.asked.load(Ordering::SeqCst),
+        )
     }
 
     fn account_dir(&self) -> PathBuf {
@@ -451,13 +454,17 @@ async fn a_server_edit_a_delete_a_new_item_a_rename_and_collection_changes_all_a
         .put_item("holidays", "h1.ics", &event("h1", "Midsummer"));
     rig.nextcloud.delete_collection("work");
     let holidays = rig.calendar("holidays");
-    eventually(&rig, "metadata, new calendar and the removal arrive", || {
-        read(&personal.join(DISPLAYNAME)).as_deref() == Some("Private")
-            && read(&personal.join(COLOR)).as_deref() == Some("#00ff00FF")
-            && items_in(&holidays, PimKind::Calendar) == ["h1.ics"]
-            && read(&holidays.join(DISPLAYNAME)).as_deref() == Some("Holidays")
-            && !rig.calendar("work").exists()
-    })
+    eventually(
+        &rig,
+        "metadata, new calendar and the removal arrive",
+        || {
+            read(&personal.join(DISPLAYNAME)).as_deref() == Some("Private")
+                && read(&personal.join(COLOR)).as_deref() == Some("#00ff00FF")
+                && items_in(&holidays, PimKind::Calendar) == ["h1.ics"]
+                && read(&holidays.join(DISPLAYNAME)).as_deref() == Some("Holidays")
+                && !rig.calendar("work").exists()
+        },
+    )
     .await;
     assert!(
         !names(&rig).iter().any(|n| n.ends_with("pim_cal_work")),
@@ -486,7 +493,10 @@ async fn an_expired_sync_token_lists_again_and_downloads_nothing_it_already_has(
     rig.nextcloud
         .put_item("personal", "ev3.ics", &event("ev3", "Gym"));
     rig.nextcloud.expire_sync_tokens();
-    eventually(&rig, "the new item arrives", || personal.join("ev3.ics").exists()).await;
+    eventually(&rig, "the new item arrives", || {
+        personal.join("ev3.ics").exists()
+    })
+    .await;
     // Every collection was listed again (a REPORT with no token), and only the new item came: a
     // cycle of each after the item arrived has passed.
     common::a_cycle_of_each(&rig.hub).await;
