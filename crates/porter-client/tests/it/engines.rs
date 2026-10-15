@@ -283,7 +283,7 @@ async fn needs_without_a_row_and_kinds_of_need_not_served_are_refused() {
     let host =
         EngineHost::new(vec![local], vec![row(&["ollama"])], open_policy(), NoKeys).expect("host");
 
-    // No row for the Fast tier: nothing is chosen by default.
+    // No row for the Fast tier: nothing is chosen, and there is no default.
     let mut fast = host
         .open(
             &app(),
@@ -297,7 +297,7 @@ async fn needs_without_a_row_and_kinds_of_need_not_served_are_refused() {
     assert_eq!(
         fast.next().await,
         Ok(InferEvent::Finished(InferReply::Refused(
-            InferRefusal::Unavailable
+            InferRefusal::NoModelChosen
         )))
     );
     assert_eq!(fast.next().await, Err(porter_client::SessionError::Closed));
@@ -373,11 +373,12 @@ async fn prepare_says_what_routing_says() {
             .await,
         Ok(porter_infer::Readiness::Ready)
     );
-    assert_eq!(
+    // No row for the Best tier: nothing chosen, said as a refusal naming it.
+    assert!(matches!(
         host.prepare(&app(), &need(), DataClass::Public, Tier::Best, &options)
             .await,
-        Ok(porter_infer::Readiness::Unavailable)
-    );
+        Err(porter_client::TransportError::Denied(why)) if why.contains("no model is chosen")
+    ));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
