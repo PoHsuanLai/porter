@@ -237,7 +237,10 @@ fn the_tailnet_drop_in_is_installed_as_data_and_never_as_a_live_drop_in() {
         let live = path
             .components()
             .any(|part| part.as_os_str().to_string_lossy().ends_with(".service.d"));
-        assert!(!live || path.file_name().is_some_and(|name| name == "sandbox.conf"), "{path:?}");
+        assert!(
+            !live || path.file_name().is_some_and(|name| name == "sandbox.conf"),
+            "{path:?}"
+        );
     }
     assert!(!run.at("/etc/systemd").exists());
 }
