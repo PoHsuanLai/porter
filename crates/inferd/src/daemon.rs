@@ -551,6 +551,8 @@ impl Daemon {
         .spawn();
         let reload = Reload::new(ConfigFile::new(config_file), engines.clone());
         reload.clone().watch(RELOAD_EVERY);
+        // Which engine programs this computer lacks, for the picker's plain-words note.
+        let missing = MissingEngines::of(&config.engines_in(&dirs));
         // The agent endpoints are always served; `ai.agents.endpoint` (off by default) decides
         // whether the launcher, who is in no table until a machine lists it, may open one.
         let agents = Agents::new(
@@ -576,7 +578,7 @@ impl Daemon {
             &connection,
             daemon,
             InferdSettings::new(peers, reload)
-                .with_missing(MissingEngines::of(&config.engines_in(&dirs)))
+                .with_missing(missing)
                 .with_keys(Arc::new(rows)),
         )
         .await?;

@@ -66,14 +66,17 @@ impl MissingEngines {
         )
     }
 
-    /// The sentence for a slot with no model on this computer, when a missing program is why.
+    /// The sentence for a slot with no model on this computer, when a missing program is why:
+    /// every engine that could run the slot is missing (one that is there means it is not).
     pub fn note(&self, slot: Slot) -> Option<String> {
-        let names: Vec<&str> = self
-            .0
-            .iter()
+        let serving: Vec<Engine> = Engine::ALL
+            .into_iter()
             .filter(|engine| engine.serves(slot))
-            .map(|engine| engine.name())
             .collect();
+        if !serving.iter().all(|engine| self.0.contains(engine)) {
+            return None;
+        }
+        let names: Vec<&str> = serving.iter().map(|engine| engine.name()).collect();
         match names.as_slice() {
             [] => None,
             [one] => Some(format!(
@@ -84,5 +87,30 @@ impl MissingEngines {
                 many.join(" or ")
             )),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_slot_is_noted_only_when_every_engine_that_could_run_it_is_missing() {
+        let nothing = MissingEngines(Engine::ALL.to_vec());
+        assert_eq!(
+            nothing.note(Slot::Text).as_deref(),
+            Some(
+                "Running models on this computer needs llama.cpp or vLLM, which are not installed."
+            )
+        );
+        assert_eq!(
+            nothing.note(Slot::VoiceIn).as_deref(),
+            Some(
+                "Running models on this computer needs the speech engine, which is not installed."
+            )
+        );
+        let llama_here = MissingEngines(vec![Engine::Vllm, Engine::Speech, Engine::Kokoro]);
+        assert_eq!(llama_here.note(Slot::Text), None);
+        assert_eq!(MissingEngines::default().note(Slot::VoiceOut), None);
     }
 }
