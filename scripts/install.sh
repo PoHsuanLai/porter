@@ -147,6 +147,10 @@ if mount_namespace_for_user_units; then
         put 644 "$dist/$daemon.service.d/sandbox.conf" "$prefix/lib/systemd/user/$daemon.service.d/sandbox.conf"
     done
 else
+    # One an earlier install left would keep the daemons from starting.
+    for daemon in $daemons; do
+        rm -f "$prefix/lib/systemd/user/$daemon.service.d/sandbox.conf"
+    done
     echo "The daemons run without their extra sandbox on this system, which does not let a user service have its own mount namespace. On Ubuntu, allow it with the kernel.apparmor_restrict_unprivileged_userns setting or an AppArmor profile, then run this again."
 fi
 for activation in "$dist"/dbus/*.service; do
