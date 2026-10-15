@@ -65,9 +65,26 @@ fn a_whole_body_is_read_in_either_shape_and_a_body_with_no_figures_gives_none() 
     let mut none = Reading::of_body(Shape::OpenAi);
     none.finish_body(b"{\"choices\":[]}");
     assert_eq!(none.seen().usage(), None);
+}
+
+/// A whole reply is charged its count, a request no model ran is charged nothing, and a reply
+/// with no count, or one that did not come whole, keeps the hold: a missing figure is never free.
+#[test]
+fn a_request_is_charged_its_count_nothing_when_no_model_ran_and_the_hold_when_unknown() {
+    let mut counted = Reading::of_body(Shape::OpenAi);
+    counted.finish_body(br#"{"usage":{"prompt_tokens":3,"completion_tokens":2}}"#);
+    let counted = counted.seen();
+    let silent = Seen::default();
     assert_eq!(
-        assumed().input,
-        Tokens(1_000),
-        "a missing figure is never free"
+        charge_of(End::Answered, counted).map(|used| (used.input, used.output)),
+        Some((Tokens(3), Tokens(2)))
+    );
+    assert_eq!(charge_of(End::Answered, silent), None);
+    let nothing = charge_of(End::NotRun, silent).expect("a charge");
+    assert_eq!((nothing.input, nothing.output), (Tokens(0), Tokens(0)));
+    assert_eq!(
+        charge_of(End::Unknown, counted),
+        None,
+        "a cut-off count is partial"
     );
 }

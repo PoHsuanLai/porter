@@ -583,7 +583,9 @@ async fn over_the_spend_cap_the_agent_is_told_to_stop_and_nothing_is_sent_or_cou
     // Under the cap: served and counted.
     assert_eq!(messages(&endpoint, &body).await.status, 200);
     let cloud = world.served.cloud().expect("cloud");
-    // The program has spent 40,000 micro-dollars of its 50,000 elsewhere today.
+    // The program has spent 45,000 micro-dollars of its 50,000 elsewhere today: less is left than
+    // the worst this request can cost (its prompt and the 256 tokens of reply it asks for, about
+    // 6,000), so it is refused before it goes out though what it would use fits.
     cloud.ledger().record(
         &agent_app(),
         &porter_core::AccountId::parse("anthropic").expect("id"),
@@ -592,11 +594,11 @@ async fn over_the_spend_cap_the_agent_is_told_to_stop_and_nothing_is_sent_or_cou
             output: porter_core::Tokens(0),
             cached: porter_core::Tokens(0),
         },
-        MicroUsd(39_940),
+        MicroUsd(44_940),
         cloud.now(),
     );
     let before = spent(&world, "anthropic").micro_usd;
-    assert_eq!(before, 40_000);
+    assert_eq!(before, 45_000);
     let reply = messages(&endpoint, &body).await;
     assert_eq!(reply.status, 429, "{}", reply.body);
     assert_eq!(reply.header("x-should-retry"), Some("false"));

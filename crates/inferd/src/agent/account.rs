@@ -2,7 +2,8 @@
 //! real key in the provider's own header. The key is asked of accountd for this request, on a
 //! sealed descriptor, held in the client built for it, and dropped with it; it is in no reply,
 //! error, log line, audit line or bus message. What comes back is relayed as it arrives and
-//! read for its usage figures, which are counted against the account's and the program's caps.
+//! read for its usage figures. The worst the request can cost is held against the account's and the
+//! program's caps before it goes out, and the hold is settled with what the provider counted.
 //!
 //! Nothing of the request is mapped: tool calls and results, thinking, images, server tools and
 //! cache hints pass as the agent wrote them. The one change is OpenAI streaming, which asks for
@@ -12,20 +13,21 @@
 use super::fail::{Cause, Failure, Shape};
 use super::handle::Peek;
 use super::http::{self, Request};
-use super::meter::{Line, Reading, assumed, settle};
+use super::meter::{End, Reading, charge_of, settle};
 use super::open::priced;
 use super::route::admits;
 use super::session::Ctx;
 use crate::cloud::models::{known_providers, price_of, provider_of};
-use crate::cloud::spend::estimate;
+use crate::cloud::spend::worst_case;
+use model_catalog::ModelEntry;
 use model_catalog::{ProviderId, Wire};
 use model_http::{
     BodySink, ChunkFlow, Exchange, Framing, HttpError, JsonBody, ResponseHead, RouteRoot,
     Transport, UrlPath, Verb,
 };
 use porter_core::consent::{Usage, Verdict};
-use porter_core::{AccountId, Locality, ModelId};
-use porter_infer::{ServedBy, SpendVerdict, TokenUsage};
+use porter_core::{AccountId, Locality, ModelId, Tokens};
+use porter_infer::ServedBy;
 use serde_json::Value;
 use tokio::io::AsyncWrite;
 use tokio::sync::mpsc;
@@ -139,6 +141,28 @@ fn anthropic_headers(request: &Request) -> Vec<(String, String)> {
     headers
 }
 
+/// The longest reply a request can bring: what it asks for (`max_tokens`, or OpenAI's
+/// `max_completion_tokens`), never more than the model writes, and the model's most when it asks
+/// for no limit.
+fn reply_bound(body: &[u8], entry: &ModelEntry) -> Tokens {
+    let most = entry
+        .capabilities
+        .text_out
+        .as_ref()
+        .map_or(UNSTATED_MAX_OUTPUT, |text| text.max_output.0);
+    let asked = serde_json::from_slice::<Value>(body).ok().and_then(|root| {
+        ["max_tokens", "max_completion_tokens"]
+            .iter()
+            .find_map(|name| root.get(name).and_then(Value::as_u64))
+    });
+    Tokens(asked.map_or(most, |asked| {
+        u32::try_from(asked).unwrap_or(u32::MAX).min(most)
+    }))
+}
+
+/// The most a model writes when its catalogue entry does not say.
+const UNSTATED_MAX_OUTPUT: u32 = 128_000;
+
 fn wire_of(shape: Shape) -> Wire {
     match shape {
         Shape::Anthropic => Wire::AnthropicMessages,
@@ -232,23 +256,29 @@ pub async fn run<S: AsyncWrite + Unpin + Send>(
         ));
     }
     let price = price_of(reach);
-    let verdict = cloud.ledger().verdict(
-        settings.spend,
-        &ctx.app,
-        account,
-        estimate(&price),
-        cloud.now(),
-    );
-    if verdict == SpendVerdict::Stop {
-        return Err(Failure::new(
-            Cause::SpendCap,
-            "a spend cap for this account or this agent is reached",
-        ));
-    }
     let model_id = ModelId::parse(&entry.id.0)
         .map_err(|_| Failure::new(Cause::Upstream, "the catalogue entry has no usable id"))?;
     let body = body_for(request, shape, named.stream)?;
     let sent = u64::try_from(body.len()).unwrap_or(u64::MAX);
+    // The worst this request can cost is held before it goes out, so requests that run together
+    // see each other's holds and cannot together pass a cap.
+    let worst = worst_case(body.len(), reply_bound(&request.body, entry));
+    let guard = cloud
+        .ledger()
+        .reserve(
+            settings.spend,
+            &ctx.app,
+            account,
+            &price,
+            worst,
+            cloud.now(),
+        )
+        .ok_or_else(|| {
+            Failure::new(
+                Cause::SpendCap,
+                "a spend cap for this account or this agent is reached",
+            )
+        })?;
     let key = cloud
         .key(&grant)
         .await
@@ -312,27 +342,20 @@ pub async fn run<S: AsyncWrite + Unpin + Send>(
     if accepted && !named.stream {
         relay.reading.finish_body(&relay.body);
     }
-    let usage: TokenUsage = relay.reading.seen().usage().unwrap_or_else(assumed);
-    if accepted {
-        settle(ctx, cloud, account, model_id, &price, usage, sent);
-    } else {
-        Line {
-            ctx,
-            served: ServedBy {
-                account: account.clone(),
-                model: model_id,
-                locality: Locality::Cloud { region: None },
-            },
-            usage: TokenUsage {
-                input: porter_core::Tokens(0),
-                output: porter_core::Tokens(0),
-                cached: porter_core::Tokens(0),
-            },
-            cost: None,
-            sent,
-        }
-        .write();
-    }
+    let end = match (&result, relay.head.is_some()) {
+        _ if relay.gone => End::Unknown,
+        (Ok(_), _) if accepted => End::Answered,
+        (_, true) if !accepted => End::NotRun,
+        (Err(HttpError::Connect | HttpError::Tls), false) => End::NotRun,
+        _ => End::Unknown,
+    };
+    let served = ServedBy {
+        account: account.clone(),
+        model: model_id,
+        locality: Locality::Cloud { region: None },
+    };
+    let charge = charge_of(end, relay.reading.seen());
+    settle(ctx, guard, served, &price, worst, charge, sent);
     finish(&relay, result, out, shape).await
 }
 

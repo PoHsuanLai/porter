@@ -1,13 +1,14 @@
 //! What a request cost and who is told: the tokens read from the provider's own usage figures,
-//! the price at the reach, one record against the account's and the program's caps, and one audit
-//! line. The line holds the program (as its app), the route, the tokens, the cost and the class;
+//! the price at the reach, the hold taken against the account's and the program's caps settled
+//! with them, and one audit line. The line holds the program (as its app), the route, the tokens, the cost and the class;
 //! never a prompt, a reply, a key or the token.
 
 use super::fail::Shape;
 use super::session::Ctx;
 use crate::audit::AuditOut;
+use crate::cloud::spend::SpendGuard;
 use model_http::SseDecoder;
-use porter_core::{AccountId, Bytes, Count, Locality, MicroUsd, ModelId, PriceTable, Tokens};
+use porter_core::{Bytes, Count, Locality, MicroUsd, PriceTable, Tokens};
 use porter_infer::{AuditEntry, ServedBy, TokenUsage, Why, cost};
 use serde_json::Value;
 
@@ -140,13 +141,31 @@ impl Reading {
     }
 }
 
-/// What a request used when the provider gave no figures: the figure the check before it
-/// assumed, so a missing figure never makes a request free.
-pub fn assumed() -> TokenUsage {
-    TokenUsage {
-        input: Tokens(1_000),
-        output: Tokens(1_000),
-        cached: Tokens(0),
+/// How a request to the provider ended, as far as its billing goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum End {
+    /// The provider answered with success and the reply came whole.
+    Answered,
+    /// No model ran: the provider answered with an error, or the request never left (no
+    /// connection, no handshake).
+    NotRun,
+    /// The model may have run and the reply did not come whole: cut off, timed out, or the
+    /// agent went away.
+    Unknown,
+}
+
+/// What to charge a request: the provider's own count when the reply came whole with one,
+/// nothing when no model ran, and the hold (`None`) when the model may have run and no count
+/// came, so a missing figure is never free.
+pub fn charge_of(end: End, seen: Seen) -> Option<TokenUsage> {
+    match end {
+        End::Answered => seen.usage(),
+        End::NotRun => Some(TokenUsage {
+            input: Tokens(0),
+            output: Tokens(0),
+            cached: Tokens(0),
+        }),
+        End::Unknown => None,
     }
 }
 
@@ -189,29 +208,24 @@ impl Line<'_> {
     }
 }
 
-/// Counts a request against the account's and the program's caps, and writes its audit line.
+/// Settles a request's hold with its charge (the hold stays when the charge is `None`), and
+/// writes its audit line with what was counted: the charge, or the hold.
 pub fn settle(
     ctx: &Ctx,
-    cloud: &crate::cloud::Cloud,
-    account: &AccountId,
-    model: ModelId,
+    guard: SpendGuard<'_>,
+    served: ServedBy,
     price: &PriceTable,
-    usage: TokenUsage,
+    worst: TokenUsage,
+    charge: Option<TokenUsage>,
     sent: u64,
 ) {
-    let spent = cost(usage, price);
-    cloud
-        .ledger()
-        .record(&ctx.app, account, usage, spent, cloud.now());
+    guard.settle(charge);
+    let usage = charge.unwrap_or(worst);
     Line {
         ctx,
-        served: ServedBy {
-            account: account.clone(),
-            model,
-            locality: Locality::Cloud { region: None },
-        },
+        served,
         usage,
-        cost: Some(spent),
+        cost: Some(cost(usage, price)),
         sent,
     }
     .write();
