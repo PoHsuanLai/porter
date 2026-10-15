@@ -94,7 +94,7 @@ fn an_entry_inferd_launches_or_an_id_the_catalogue_lacks_is_a_typed_error() {
 #[test]
 fn the_catalogue_alone_makes_no_claim_for_an_attached_entry_whatever_its_locality_says() {
     let shipped = CatalogDirs {
-        system: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../stoker/catalog"),
+        system: crate::testkit::pinned_stoker_catalog(),
         user: PathBuf::from("/nonexistent/user/catalog"),
     };
     let catalog = read_catalog(&shipped);

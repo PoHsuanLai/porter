@@ -1,6 +1,6 @@
 //! Helpers for tests of this crate and of the ones built on it (feature `testing`): a scratch
 //! directory that removes itself, the catalog entries the tests use, the local models they make,
-//! and a model of an account that is not on this computer.
+//! a model of an account that is not on this computer, and the catalog stoker ships.
 
 pub mod entries;
 
@@ -78,4 +78,40 @@ pub fn cloud_card() -> porter_infer::ModelCard {
             wire: LlmWire::Messages,
         })],
     }
+}
+
+/// The catalog files stoker ships at the rev the workspace pins, embedded by `build.rs`.
+const SHIPPED_CATALOG: &[(&str, &str)] = include!(concat!(env!("OUT_DIR"), "/stoker_catalog.rs"));
+
+/// The catalog stoker ships, at the rev this workspace pins, as a directory a test can read: the
+/// files the build embedded, written once per rev under the system temp directory. A test reads
+/// what the build fetched, never a checkout that happens to sit beside this one, and needs no
+/// cargo or sources where it runs.
+pub fn pinned_stoker_catalog() -> PathBuf {
+    assert!(
+        !SHIPPED_CATALOG.is_empty(),
+        "this build found no checkout of stoker to take its catalog from (vendored sources?)"
+    );
+    let dir = std::env::temp_dir().join(format!(
+        "porter-stoker-catalog-{}",
+        env!("PORTER_STOKER_CATALOG_REV")
+    ));
+    if dir.is_dir() {
+        return dir;
+    }
+    // Written beside it and renamed into place, so a test running alongside sees all of it or
+    // none of it; the first rename wins and the rest leave theirs.
+    let partial = dir.with_extension(format!(
+        "{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::create_dir_all(&partial).expect("catalog dir");
+    for (name, text) in SHIPPED_CATALOG {
+        std::fs::write(partial.join(name), text).expect("catalog file");
+    }
+    if std::fs::rename(&partial, &dir).is_err() {
+        let _ = std::fs::remove_dir_all(&partial);
+    }
+    dir
 }

@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 fn shipped() -> CatalogDirs {
     CatalogDirs {
-        system: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../stoker/catalog"),
+        system: crate::testkit::pinned_stoker_catalog(),
         user: PathBuf::from("/nonexistent/user/catalog"),
     }
 }
