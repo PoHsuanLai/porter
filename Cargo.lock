@@ -426,7 +426,7 @@ dependencies = [
 [[package]]
 name = "chordkit"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/chordkit.git?rev=ba094c62006c280ac53c4c5df5c0e639c1226c07#ba094c62006c280ac53c4c5df5c0e639c1226c07"
+source = "git+https://github.com/PoHsuanLai/chordkit.git?rev=55a62b2366d6ee1994d95f7cb5a195217807099c#55a62b2366d6ee1994d95f7cb5a195217807099c"
 dependencies = [
  "thiserror",
 ]
@@ -700,7 +700,7 @@ dependencies = [
 [[package]]
 name = "ds-behaviour"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=4c595f3ad5a78753d79a7eeb4d7888903823489d#4c595f3ad5a78753d79a7eeb4d7888903823489d"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=d09b96b70917372893b740f98f369a67eb90e8d4#d09b96b70917372893b740f98f369a67eb90e8d4"
 dependencies = [
  "ds-core",
 ]
@@ -708,7 +708,7 @@ dependencies = [
 [[package]]
 name = "ds-core"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=4c595f3ad5a78753d79a7eeb4d7888903823489d#4c595f3ad5a78753d79a7eeb4d7888903823489d"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=d09b96b70917372893b740f98f369a67eb90e8d4#d09b96b70917372893b740f98f369a67eb90e8d4"
 dependencies = [
  "chordkit",
  "ds-core-derive",
@@ -721,7 +721,7 @@ dependencies = [
 [[package]]
 name = "ds-core-derive"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=4c595f3ad5a78753d79a7eeb4d7888903823489d#4c595f3ad5a78753d79a7eeb4d7888903823489d"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=d09b96b70917372893b740f98f369a67eb90e8d4#d09b96b70917372893b740f98f369a67eb90e8d4"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -732,7 +732,7 @@ dependencies = [
 [[package]]
 name = "ds-settings"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=4c595f3ad5a78753d79a7eeb4d7888903823489d#4c595f3ad5a78753d79a7eeb4d7888903823489d"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=d09b96b70917372893b740f98f369a67eb90e8d4#d09b96b70917372893b740f98f369a67eb90e8d4"
 dependencies = [
  "ds-behaviour",
  "ds-core",
@@ -750,7 +750,7 @@ dependencies = [
 [[package]]
 name = "ds-settings-derive"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=4c595f3ad5a78753d79a7eeb4d7888903823489d#4c595f3ad5a78753d79a7eeb4d7888903823489d"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=d09b96b70917372893b740f98f369a67eb90e8d4#d09b96b70917372893b740f98f369a67eb90e8d4"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -760,7 +760,7 @@ dependencies = [
 [[package]]
 name = "ds-style"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=4c595f3ad5a78753d79a7eeb4d7888903823489d#4c595f3ad5a78753d79a7eeb4d7888903823489d"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=d09b96b70917372893b740f98f369a67eb90e8d4#d09b96b70917372893b740f98f369a67eb90e8d4"
 dependencies = [
  "ds-core",
  "ds-core-derive",
@@ -825,7 +825,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2891,7 +2891,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3360,10 +3360,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3744,7 +3744,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
