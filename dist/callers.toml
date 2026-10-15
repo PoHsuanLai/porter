@@ -57,6 +57,24 @@ unit = "org.quire.Temor.service"
 role = "terminal"
 name = "Terminal"
 
+# The agents: intentd, the companion and the reader. `agent` is refused more than an app is
+# (no keys, no accounts added), but it is also who they are: docket and memoryd answer intentd by
+# this row. A person's own file cannot add a row for an app named here (`CallerTable::layered`).
+[[caller]]
+app = "org.quire.Intents"
+unit = "intentd.service"
+role = "agent"
+
+[[caller]]
+app = "org.quire.Companion"
+unit = "companiond.service"
+role = "agent"
+
+[[caller]]
+app = "org.quire.Reader"
+unit = "readerd.service"
+role = "agent"
+
 # casement, the compositor: mints a desktop-wide Space id for each workspace and registers it
 # (`Spaces1.Register`); it may list the Spaces and nothing else. The row goes live once casement
 # runs as its own unit (today desktop-session starts it as a plain child process, which proves no

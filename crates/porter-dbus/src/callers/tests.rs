@@ -199,3 +199,81 @@ fn a_user_row_can_still_add_a_plain_app_or_an_agent() {
         Some(CallerRole::Agent)
     );
 }
+
+/// An app the system's table names is who its system rows say: a user row cannot give it
+/// another unit or a row without one, though it may still lower one of its own rows.
+#[test]
+fn a_user_row_cannot_name_an_app_the_system_owns() {
+    let system = || {
+        let mut system = table();
+        system.callers.push(row(
+            "org.quire.Intents",
+            Some("intentd.service"),
+            CallerRole::Agent,
+        ));
+        system
+    };
+    // (case, the user's row, what intentd.service and helper.service resolve to after)
+    type Case<'a> = (
+        &'a str,
+        CallerRow,
+        Option<(&'a str, CallerRole)>,
+        Option<(&'a str, CallerRole)>,
+    );
+    let intents = Some(("org.quire.Intents", CallerRole::Agent));
+    let cases: [Case; 4] = [
+        (
+            "another unit as the agent",
+            row(
+                "org.quire.Intents",
+                Some("helper.service"),
+                CallerRole::Agent,
+            ),
+            intents,
+            None,
+        ),
+        (
+            "another unit as an app",
+            row("org.quire.Intents", Some("helper.service"), CallerRole::App),
+            intents,
+            None,
+        ),
+        (
+            "a row without a unit",
+            row("org.quire.Intents", None, CallerRole::Agent),
+            intents,
+            None,
+        ),
+        (
+            "its own unit, lowered",
+            row(
+                "org.quire.Intents",
+                Some("intentd.service"),
+                CallerRole::App,
+            ),
+            Some(("org.quire.Intents", CallerRole::App)),
+            None,
+        ),
+    ];
+    for (case, mine, intentd, helper) in cases {
+        let merged = CallerTable::layered(
+            system(),
+            CallerTable {
+                callers: vec![mine],
+            },
+        );
+        let found = |unit: &str| {
+            merged
+                .resolve_unit(unit)
+                .map(|c| (c.app.name.to_string(), c.role))
+        };
+        let want = |w: Option<(&str, CallerRole)>| w.map(|(n, r)| (n.to_owned(), r));
+        assert_eq!(found("intentd.service"), want(intentd), "{case}");
+        assert_eq!(found("helper.service"), want(helper), "{case}");
+        assert_eq!(
+            merged.role_of(&name("org.quire.Intents")),
+            CallerRole::App,
+            "{case}"
+        );
+    }
+}
