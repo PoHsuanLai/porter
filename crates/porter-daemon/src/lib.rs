@@ -34,6 +34,6 @@ mod watch;
 pub use proc_root::{ProcGate, ProcRoot};
 pub use system_callers::{
     CALLERS, INFERD_CALLERS, SYSTEM_CALLERS, SYSTEM_CALLERS_VAR, SystemCallers, SystemFile,
-    TableChoice, root_held,
+    TABLE_DIRS, TableChoice, root_held,
 };
 pub use watch::{Watch, WatchError};
