@@ -93,7 +93,6 @@ fn the_sample_caller_table_gives_settings_the_sheet_host_and_both_daemons_their_
     for (unit, role) in [
         ("org.quire.Settings.service", CallerRole::Settings),
         ("sill.service", CallerRole::SheetHost),
-        ("sill-shell.scope", CallerRole::SheetHost),
         ("inferd.service", CallerRole::PorterDaemon),
         ("syncd.service", CallerRole::PorterDaemon),
     ] {

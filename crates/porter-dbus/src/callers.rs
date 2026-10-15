@@ -28,8 +28,8 @@
 //!
 //! What this cannot prove: every process of the person's runs as the same user, so a service row
 //! is as strong as the manager's word on its main process, and a scope row as strong as "the
-//! scope was there first". That is why a scope may carry a fixed role only for the names in
-//! [`TRANSITION_SCOPES`], which go once the shell runs as a service. A Flatpak app's metadata is
+//! scope was there first". That is why a scope never carries a fixed role: a row that gives one
+//! to a scope gives it a plain app's. A Flatpak app's metadata is
 //! read through its root, which a reader inside a Landlock domain is refused: there no caller is
 //! a Flatpak app.
 
@@ -99,12 +99,6 @@ impl CallerRole {
         !matches!(self, Self::App | Self::Agent)
     }
 }
-
-/// The scopes that may still carry a fixed role, a stop-gap while the shell runs as a scope
-/// (`systemd-run --scope --unit=sill-shell`). A scope has no main process to check, so any
-/// program of the person's may start one of that name. This goes once the shell runs as
-/// `sill.service`, which is checked against the manager's main process like any service.
-pub const TRANSITION_SCOPES: &[&str] = &["sill-shell.scope"];
 
 /// Who a connection is.
 #[derive(Debug, Clone, PartialEq, Eq)]

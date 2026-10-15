@@ -212,20 +212,17 @@ fn a_scope_named_after_a_daemons_app_is_an_app() {
 }
 
 #[test]
-fn a_scope_a_row_names_as_its_unit_is_that_unit_exactly() {
+fn a_scope_a_row_names_as_its_unit_is_that_unit_exactly_and_no_more_than_an_app() {
     let s = Scratch::new();
     s.process(40, Some(&scope("sill-shell.scope")));
     s.process(41, Some(&scope("sill-shell-2.scope")));
     s.process(42, Some(&scope("xsill-shell.scope")));
     // An app scope never takes a unit row's role, even one naming it exactly.
     s.process(43, Some(&scope("app-org.quire.Trap-1.scope")));
+    // A scope has no main process, so the row's fixed role is a plain app's.
     assert_eq!(
         resolve(&s, 40),
-        got(
-            "org.quire.Shell",
-            Isolation::Unsandboxed,
-            CallerRole::SheetHost
-        )
+        got("org.quire.Shell", Isolation::Unsandboxed, CallerRole::App)
     );
     assert_eq!(resolve(&s, 41), None);
     assert_eq!(resolve(&s, 42), None);

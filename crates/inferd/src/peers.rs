@@ -48,8 +48,8 @@ pub enum TableError {
     /// A `settings` entry that is neither a `.service` unit nor an app name.
     #[error("settings: `{0}` is neither a .service unit nor an app name")]
     BadSettingsEntry(String),
-    /// A `shell` entry that is neither a `.scope` nor a `.service` unit.
-    #[error("shell: `{0}` is neither a .scope nor a .service unit")]
+    /// A `shell` entry that is not a `.service` unit: a scope has no main process to check.
+    #[error("shell: `{0}` is not a .service unit")]
     BadShellEntry(String),
     /// A `places` entry that is not a unit of an app in `[callers.apps]`.
     #[error("places: `{0}` is not a unit listed under [callers.apps]")]
@@ -111,9 +111,8 @@ pub struct CallerTable {
     /// start.
     #[serde(default)]
     settings: BTreeSet<String>,
-    /// The shell's units (`sill-shell.scope`): the shell may list the places and ask for
-    /// nothing else. A scope has no main process, so while the shell is not running another
-    /// program of the person's could start a scope of that name (as in accountd's table).
+    /// The shell's units (`sill.service`): the shell may list the places and ask for nothing
+    /// else. Services only, so the role goes to the unit's main process.
     #[serde(default)]
     shell: BTreeSet<String>,
     /// The units, each already an app under `apps`, that may choose where the assistant runs
@@ -190,8 +189,7 @@ impl CallerTable {
         if let Some(bad) = table.settings.iter().find(|e| settings_unit(e).is_none()) {
             return Err(TableError::BadSettingsEntry(bad.clone()));
         }
-        let unit_like = |e: &&String| e.ends_with(".scope") || e.ends_with(".service");
-        if let Some(bad) = table.shell.iter().find(|e| !unit_like(e)) {
+        if let Some(bad) = table.shell.iter().find(|e| !e.ends_with(".service")) {
             return Err(TableError::BadShellEntry(bad.clone()));
         }
         let listed = |unit: &&String| table.apps.values().any(|units| units.contains(*unit));

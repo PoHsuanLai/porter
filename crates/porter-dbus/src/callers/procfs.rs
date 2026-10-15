@@ -3,7 +3,7 @@
 //! ptrace-gated: a reader inside a Landlock domain is refused it, and then no process is a Flatpak
 //! app (a scope's name proves nothing). The root is a parameter, so the tests read fixture trees.
 
-use super::{Caller, CallerRole, CallerTable, TRANSITION_SCOPES};
+use super::{Caller, CallerRole, CallerTable};
 use porter_core::identity_of;
 use porter_core::{AppId, CgroupPath, PeerFacts, PeerIdentity, SandboxFacts};
 use std::path::Path;
@@ -30,9 +30,8 @@ pub(super) enum Found {
         /// The row's caller.
         caller: Caller,
     },
-    /// A process in a scope outside the `app-` namespace that the table names
-    /// (`sill-shell.scope`). A scope has no main process to check, so its fixed role holds only
-    /// for a transition scope.
+    /// A process in a scope outside the `app-` namespace that the table names. A scope has no
+    /// main process to check, so it is never more than a plain app.
     Scope(Caller),
 }
 
@@ -41,8 +40,8 @@ pub(super) enum Found {
 /// - A sandbox's metadata (`<pid>/root/.flatpak-info`) names a Flatpak app, whatever its cgroup.
 ///   A metadata file that is there and does not read names nobody.
 /// - `<name>.service`: the unit the table names, as that row's caller, to be checked.
-/// - `<name>.scope` that is not an app scope (`sill-shell.scope`, started by
-///   `systemd-run --scope --unit=sill-shell`): the same, matched exactly, never by prefix.
+/// - `<name>.scope` that is not an app scope: the same, matched exactly, never by prefix, and
+///   never with a fixed role.
 /// - `app-[<launcher>-]<id>-<n>.scope`: the native app `<id>`, with the role of its table row.
 ///   Flatpak's own `app-flatpak-…` scopes name nobody: a Flatpak app is known by its metadata.
 /// - Anything else (a terminal's child, a session scope, an unlisted unit, no cgroup): nobody.
@@ -64,9 +63,9 @@ pub(super) fn found_of_pid(proc_root: &Path, pid: u32, table: &CallerTable) -> O
         });
     }
     if native && leaf.ends_with(".scope") && !leaf.starts_with(APP_PREFIX) {
-        // A scope has no main process, so only a transition scope keeps a fixed role.
+        // A scope has no main process, so it never keeps a fixed role.
         let mut caller = table.resolve_unit(leaf)?;
-        if caller.role.is_fixed() && !TRANSITION_SCOPES.contains(&leaf) {
+        if caller.role.is_fixed() {
             caller.role = CallerRole::App;
         }
         return Some(Found::Scope(caller));

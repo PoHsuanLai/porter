@@ -69,13 +69,15 @@ fn the_shipped_table_names_the_placers_and_the_shell_by_unit() {
     ] {
         assert_eq!(role(unit), Some((app.to_owned(), Role::Placer)), "{unit}");
     }
-    for unit in ["sill.service", "sill-shell.scope"] {
-        assert_eq!(
-            role(unit),
-            Some(("org.quire.Shell".to_owned(), Role::Shell)),
-            "{unit}"
-        );
-    }
+    assert_eq!(
+        role("sill.service"),
+        Some(("org.quire.Shell".to_owned(), Role::Shell))
+    );
+    assert_eq!(
+        role("sill-shell.scope"),
+        None,
+        "the old scope is no longer the shell"
+    );
     assert_eq!(
         role("memoryd.service"),
         Some(("org.quire.Memory".to_owned(), Role::App))
