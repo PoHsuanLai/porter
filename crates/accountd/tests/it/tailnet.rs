@@ -85,7 +85,7 @@ struct Scene {
     api: LocalApi,
     accounts: Vec<Account>,
     /// The directory of the fake's socket, kept until the scene is dropped.
-    scratch: Option<Scratch>,
+    _scratch: Option<Scratch>,
 }
 
 impl Scene {
@@ -100,7 +100,7 @@ impl Scene {
             fake: Some(fake),
             api,
             accounts,
-            scratch: Some(scratch),
+            _scratch: Some(scratch),
         }
     }
 
@@ -457,7 +457,7 @@ async fn adding_tailscale_says_in_closed_words_why_it_could_not() {
             fake: None,
             api: LocalApi::new(&missing).with_program_dirs(vec![bin.clone()]),
             accounts: vec![],
-            scratch: None,
+            _scratch: None,
         };
         let world = World::start(scene, false).await;
         let (_, faults) = world.add(&|_| {}).await;

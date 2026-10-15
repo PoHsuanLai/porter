@@ -182,12 +182,9 @@ fn exit_within(child: &mut Started) -> Option<i32> {
 
 /// Starts the stand-in and returns it with its engine's and grandchild's pids, both alive.
 fn running(dir: &Scratch, grace_ms: u32, bound_ms: u32) -> (Started, i32, i32) {
-    let inferd = stand_in(&dir, grace_ms, bound_ms);
+    let inferd = stand_in(dir, grace_ms, bound_ms);
     wait_for(&dir.join("ready"));
-    let (engine, grandchild) = (
-        pid_in(&dir.join("engine")),
-        pid_in(&dir.join("grandchild")),
-    );
+    let (engine, grandchild) = (pid_in(&dir.join("engine")), pid_in(&dir.join("grandchild")));
     assert!(!gone(engine) && !gone(grandchild));
     (inferd, engine, grandchild)
 }
