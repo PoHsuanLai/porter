@@ -43,11 +43,12 @@ fn start(scratch: &Scratch, host: Recorder) -> Engines {
             }),
         },
     );
+    let pool = models.iter().map(|model| model.model_ref()).collect();
     Engines::new(
         models,
         supervised,
         Policy::proposed(),
-        TierMap::automatic(Slot::Text),
+        TierMap::automatic(Slot::Text, pool),
     )
 }
 
@@ -376,7 +377,13 @@ async fn what_an_app_is_told_without_a_session_reveals_no_identity() {
         Vec::new(),
         Supervised::idle(),
         policy,
-        TierMap::automatic(Slot::Text),
+        TierMap::automatic(
+            Slot::Text,
+            vec![ModelRef {
+                account: cloud().account,
+                model: cloud().model,
+            }],
+        ),
     )
     .with_remote(vec![cloud()]);
     assert_eq!(
@@ -421,13 +428,18 @@ async fn a_route_says_why_and_the_snapshot_keeps_the_gpu_the_swap_cost_reads() {
     assert_eq!(engines.listed()[0].swap, porter_infer::SwapCost::Resident);
 }
 
-/// No models anywhere, with Automatic chosen for text so a refusal is about what is here.
+/// No models anywhere, with Automatic chosen for text (over a model that is not here) so a
+/// refusal is about what is here.
 fn nothing_here() -> Engines {
+    let elsewhere = ModelRef {
+        account: AccountId::parse("local").expect("id"),
+        model: ModelId::parse("not-here").expect("id"),
+    };
     Engines::new(
         Vec::new(),
         Supervised::idle(),
         Policy::proposed(),
-        TierMap::automatic(Slot::Text),
+        TierMap::automatic(Slot::Text, vec![elsewhere]),
     )
 }
 

@@ -101,7 +101,16 @@ fn auto_with(
             ..AutoPolicy::default()
         },
     };
-    pick(ASK, &Pick::Auto(AutoMode::WarmFirst), cands, rules)
+    let pool = cands.iter().map(PickCandidate::model_ref).collect();
+    pick(
+        ASK,
+        &Pick::Auto {
+            mode: AutoMode::WarmFirst,
+            pool,
+        },
+        cands,
+        rules,
+    )
 }
 
 fn auto_of(cands: &[PickCandidate]) -> Result<Picked, PickRefusal> {

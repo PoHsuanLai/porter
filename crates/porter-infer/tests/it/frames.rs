@@ -295,6 +295,10 @@ fn picker_data_round_trips_with_plain_slugs() {
             model: model.clone(),
         }],
         autos: vec![],
+        pools: vec![porter_infer::PoolRow {
+            kind: Slot::Text,
+            models: vec![model.clone()],
+        }],
     };
     round_trip(&map);
     let slugs: Vec<String> = [

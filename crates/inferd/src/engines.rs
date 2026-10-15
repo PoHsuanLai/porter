@@ -1013,9 +1013,9 @@ impl crate::serve::Router for SessionRouter {
     }
 }
 
-/// The tier map with every `cloud/<model>` row (a hosted model picked without an account) naming
-/// the account that reaches it for this app; a row nothing reaches stays as it is, and so names a
-/// model no candidate has.
+/// The tier map with every `cloud/<model>` row and pool entry (a hosted model picked without an
+/// account) naming the account that reaches it for this app; a row nothing reaches stays as it
+/// is, and so names a model no candidate has.
 pub(crate) fn through_grants(tiers: &TierMap, offered: &Offered) -> TierMap {
     let virtual_account = AccountId::parse(CLOUD_ACCOUNT).ok();
     let resolve = |model: &ModelRef| match offered.models().find(|one| {
@@ -1034,6 +1034,14 @@ pub(crate) fn through_grants(tiers: &TierMap, offered: &Offered) -> TierMap {
             })
             .collect(),
         autos: tiers.autos.clone(),
+        pools: tiers
+            .pools
+            .iter()
+            .map(|row| porter_infer::PoolRow {
+                kind: row.kind,
+                models: row.models.iter().map(resolve).collect(),
+            })
+            .collect(),
     }
 }
 

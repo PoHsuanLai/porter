@@ -254,6 +254,7 @@ fn the_users_tier_choice_decides_between_models_that_fit() {
             },
         }],
         autos: vec![],
+        pools: vec![],
     };
     let route = |tier: Tier, map: &TierMap| {
         choose(
@@ -326,6 +327,17 @@ fn auto_map() -> TierMap {
             kind: Slot::Text,
             tier: Tier::Balanced,
             mode: AutoMode::WarmFirst,
+        }],
+        pools: vec![porter_infer::PoolRow {
+            kind: Slot::Text,
+            models: ["a", "alpha", "beta"]
+                .map(named)
+                .into_iter()
+                .chain([ModelRef {
+                    account: AccountId::parse("anthropic").expect("id"),
+                    model: ModelId::parse("claude").expect("id"),
+                }])
+                .collect(),
         }],
     }
 }
@@ -429,6 +441,7 @@ fn a_named_model_that_cannot_serve_refuses_naming_it_and_no_other_answers() {
             model: named("beta"),
         }],
         autos: vec![],
+        pools: vec![],
     };
     let err = decide(&models, &tiers, AutoPolicy::default()).expect_err("refuses");
     assert_eq!(err.refusal, InferRefusal::Unavailable);

@@ -193,7 +193,11 @@ fn the_model_row_decides_between_models_and_auto_and_empty_hand_back_to_the_cata
         ("alpha", Why::CatalogueOrder)
     );
     // Auto is `pick`, which says why.
-    let auto = best(&row("auto")).expect("served");
+    let pooled = format!(
+        "{}[ai.auto.pool]\ntext = [\"local/alpha\", \"local/beta\"]\n",
+        row("auto")
+    );
+    let auto = best(&pooled).expect("served");
     assert_eq!((auto.chosen.model.as_str(), auto.why), ("beta", Why::Warm));
     // A named model that is not there is refused, never replaced.
     assert!(best(&row("local/ghost")).is_err());
@@ -218,7 +222,10 @@ fn never_evict_refuses_the_swap_idle_only_makes() {
     let models = [swapping];
     let with = |evict: &str| {
         decide(
-            &format!("[ai.model.llm]\nbalanced = \"auto\"\n[ai.auto]\nallow_evict = \"{evict}\"\n"),
+            &format!(
+                "[ai.model.llm]\nbalanced = \"auto\"\n[ai.auto]\nallow_evict = \"{evict}\"\n\
+                 [ai.auto.pool]\ntext = [\"local/alpha\"]\n"
+            ),
             DataClass::Notes,
             Tier::Balanced,
             &models,
@@ -256,11 +263,12 @@ fn engines(scratch: &Scratch) -> Engines {
             }),
         },
     );
+    let pool = models.iter().map(|model| model.model_ref()).collect();
     Engines::new(
         models,
         supervised,
         Policy::proposed(),
-        porter_infer::TierMap::automatic(porter_infer::Slot::Text),
+        porter_infer::TierMap::automatic(porter_infer::Slot::Text, pool),
     )
 }
 
@@ -288,6 +296,13 @@ async fn show_reason_off_stops_the_answers_saying_why_and_a_reload_applies_it() 
     };
     assert_eq!(show(), ShowReason::On);
     file.set("ai.model.text.balanced", "auto".into())
+        .expect("write");
+    let everything = engines
+        .listed()
+        .iter()
+        .map(|one| toml::Value::String(format!("{}/{}", one.card.account, one.card.model)))
+        .collect();
+    file.set("ai.auto.pool.text", toml::Value::Array(everything))
         .expect("write");
     file.set("ai.auto.show_reason", "off".into())
         .expect("write");
@@ -490,7 +505,7 @@ fn the_old_tables_still_read_and_the_rows_at_their_paths_win_over_them() {
     );
     assert!(matches!(
         s.tiers.pick(Slot::Text, Tier::Fast),
-        Some(Pick::Auto(_))
+        Some(Pick::Auto { .. })
     ));
     assert_eq!(s.tiers.pick(Slot::Text, Tier::Best), None);
     // What the old tables said and the rows did not touch stays.
@@ -596,7 +611,10 @@ fn a_slot_row_and_the_old_kind_row_load_to_the_same_slot() {
     for slug in rows {
         let slot = from_slug::<Slot>(slug).expect(slug);
         let got = settings(&format!("[ai.model.{slug}]\nbalanced = \"auto\"\n"));
-        assert!(matches!(picked(&got, slot), Some(Pick::Auto(_))), "{slug}");
+        assert!(
+            matches!(picked(&got, slot), Some(Pick::Auto { .. })),
+            "{slug}"
+        );
     }
 }
 
@@ -610,7 +628,10 @@ fn when_a_file_says_both_the_slots_own_row_wins_whatever_the_order() {
         Some(Pick::Named(m)) if m.model.as_str() == "new"
     ));
     assert!(
-        matches!(got.tiers.pick(Slot::Text, Tier::Fast), Some(Pick::Auto(_))),
+        matches!(
+            got.tiers.pick(Slot::Text, Tier::Fast),
+            Some(Pick::Auto { .. })
+        ),
         "an old row for another tier still applies"
     );
 }
@@ -643,4 +664,31 @@ fn a_language_model_is_in_the_slots_its_features_put_it_in() {
         keys::slots_of(&card("local", "plain", Locality::OnDevice)),
         vec![Slot::Text]
     );
+}
+
+#[test]
+fn automatics_pool_is_read_per_slot_and_a_row_naming_no_model_is_dropped_and_said() {
+    let got = settings(
+        "[ai.model.text]\nbalanced = \"auto\"\n[ai.auto.pool]\ntext = [\"local/tiny-chat\", \"anthropic/sonnet\"]\n",
+    );
+    let pool: Vec<String> = got
+        .tiers
+        .pool(Slot::Text)
+        .iter()
+        .map(super::resolve::model_text)
+        .collect();
+    assert_eq!(pool, ["local/tiny-chat", "anthropic/sonnet"]);
+    assert!(matches!(
+        picked(&got, Slot::Text),
+        Some(Pick::Auto { pool, .. }) if pool.len() == 2
+    ));
+    assert!(got.tiers.pool(Slot::Embeddings).is_empty());
+    let resolved = resolve(&config(
+        "[ai.auto.pool]\ntext = [\"local/tiny-chat\", \"sonnet\"]\nnot_a_slot = []\n",
+    ));
+    assert_eq!(
+        resolved.rejected,
+        ["ai.auto.pool.not_a_slot", "ai.auto.pool.text"]
+    );
+    assert_eq!(resolved.settings.tiers.pool(Slot::Text).len(), 1);
 }

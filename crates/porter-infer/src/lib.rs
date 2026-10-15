@@ -51,8 +51,8 @@ mod spend;
 pub use audit::AuditEntry;
 pub use broker::Broker;
 pub use choice::{
-    AutoRow, Fit, LicenceClass, ModelRef, PickerInput, PickerRow, TierMap, TierRow, picker_rows,
-    tier_choice, tier_label,
+    AutoRow, Fit, LicenceClass, ModelRef, PickerInput, PickerRow, PoolRow, TierMap, TierRow,
+    picker_rows, tier_choice, tier_label,
 };
 pub use control::{
     ChatControl, Effort, Knob, Reasoning, Sampling, Seed, StopReason, ThoughtSeal, ToolChoice,

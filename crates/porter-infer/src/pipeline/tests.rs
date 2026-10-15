@@ -417,7 +417,10 @@ fn auto_follows_pick_and_names_a_reason() {
     let policy = open();
     let picks = SlotPicks(BTreeMap::from([(
         Slot::Text,
-        Pick::Auto(Default::default()),
+        Pick::Auto {
+            mode: Default::default(),
+            pool: vec![mref("a"), mref("b")],
+        },
     )]));
     let pipeline = plan_pipeline(
         &shape(DataClass::Notes, &[T], Answer::Text),

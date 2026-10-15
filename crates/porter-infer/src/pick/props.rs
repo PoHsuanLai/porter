@@ -141,18 +141,46 @@ fn named_ref(i: usize) -> ModelRef {
     }
 }
 
+/// Automatic with every candidate in its pool.
+fn auto_over(cands: &[PickCandidate]) -> Pick {
+    Pick::Auto {
+        mode: AutoMode::WarmFirst,
+        pool: cands.iter().map(PickCandidate::model_ref).collect(),
+    }
+}
+
 proptest! {
+    #[test]
+    fn automatic_chooses_only_from_its_pool_and_an_empty_pool_is_nothing_chosen(
+        cands in candidates(), policy in policy(), auto in auto_policy(), keep in 0usize..8,
+    ) {
+        let rules = PickPolicy { policy: &policy, auto };
+        let pool: Vec<ModelRef> = cands.iter().map(PickCandidate::model_ref).take(keep).collect();
+        let pooled = Pick::Auto { mode: AutoMode::WarmFirst, pool: pool.clone() };
+        match pick(ASK, &pooled, &cands, rules) {
+            Ok(got) => {
+                let chosen = ModelRef { account: got.chosen.account, model: got.chosen.model };
+                prop_assert!(pool.contains(&chosen));
+            }
+            Err(refusal) if pool.is_empty() => {
+                prop_assert_eq!(refusal.refusal, InferRefusal::NoModelChosen);
+            }
+            Err(_) => {}
+        }
+    }
+
+
     #[test]
     fn a_pick_is_deterministic_and_does_not_depend_on_the_slice_order(
         cands in candidates(), policy in policy(), auto in auto_policy(),
     ) {
         let rules = PickPolicy { policy: &policy, auto };
-        let first = pick(ASK, &Pick::Auto(AutoMode::WarmFirst), &cands, rules);
-        let again = pick(ASK, &Pick::Auto(AutoMode::WarmFirst), &cands, rules);
+        let first = pick(ASK, &auto_over(&cands), &cands, rules);
+        let again = pick(ASK, &auto_over(&cands), &cands, rules);
         prop_assert_eq!(&first, &again);
         let mut reversed = cands.clone();
         reversed.reverse();
-        let other = pick(ASK, &Pick::Auto(AutoMode::WarmFirst), &reversed, rules);
+        let other = pick(ASK, &auto_over(&cands), &reversed, rules);
         prop_assert_eq!(first, other);
     }
 
@@ -161,7 +189,7 @@ proptest! {
         cands in candidates(), policy in policy(), auto in auto_policy(),
     ) {
         let rules = PickPolicy { policy: &policy, auto };
-        if let Ok(got) = pick(ASK, &Pick::Auto(AutoMode::WarmFirst), &cands, rules) {
+        if let Ok(got) = pick(ASK, &auto_over(&cands), &cands, rules) {
             let admitted = admit(ASK, cands.iter().map(|c| &c.route), &policy).expect("admit allows something");
             let found = cands
                 .iter()
@@ -212,7 +240,7 @@ proptest! {
     ) {
         let one = cand("m0", 0, ready, cost.clone());
         let rules = PickPolicy { policy: &open(), auto: AutoPolicy::default() };
-        let got = pick(ASK, &Pick::Auto(AutoMode::WarmFirst), &[one], rules);
+        let got = pick(ASK, &auto_over(std::slice::from_ref(&one)), &[one], rules);
         let answers = matches!(ready, Readiness::Ready | Readiness::Loading | Readiness::Loadable)
             && matches!(&cost, SwapCost::Resident | SwapCost::Fits { .. }
                 | SwapCost::Evicts { load: EngineLoad::Idle, .. });

@@ -56,13 +56,16 @@ fn picks() -> impl Strategy<Value = SlotPicks> {
             proptest::sample::select(names.to_vec()).prop_map(Some)
         ]),
     );
-    proptest::collection::vec(one, 0..4).prop_map(|rows| {
+    proptest::collection::vec(one, 0..4).prop_map(move |rows| {
         SlotPicks(
             rows.into_iter()
                 .filter_map(|(slot, named)| {
                     let pick = match named? {
                         Some(name) => Pick::Named(super::tests::mref(name)),
-                        None => Pick::Auto(Default::default()),
+                        None => Pick::Auto {
+                            mode: Default::default(),
+                            pool: names.iter().map(|name| super::tests::mref(name)).collect(),
+                        },
                     };
                     Some((slot, pick))
                 })

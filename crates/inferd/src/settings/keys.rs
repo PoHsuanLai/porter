@@ -57,6 +57,16 @@ pub fn parse_model_path(path: &str) -> Option<(Slot, Tier)> {
     Some((Slot::from_slug(slot)?, from_slug(tier)?))
 }
 
+/// `ai.auto.pool.<slot>`: the models Automatic chooses among for the slot.
+pub fn pool_path(slot: Slot) -> String {
+    format!("ai.auto.pool.{}", slot.slug())
+}
+
+/// The slot an `ai.auto.pool.<slot>` path names.
+pub fn parse_pool_path(path: &str) -> Option<Slot> {
+    Slot::from_slug(path.strip_prefix("ai.auto.pool.")?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
