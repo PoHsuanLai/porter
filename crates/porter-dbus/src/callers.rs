@@ -4,16 +4,34 @@
 //! by its scope's name), `app-<id>-<n>.scope` a native app (named by `identity_of`),
 //! `<name>.service` a daemon's unit when the process is that unit's main process (the systemd
 //! manager's `MainPID`), `<name>.scope` outside `app-` a scope the table names. The role comes
-//! from a table keyed by app id and unit name (`callers.toml`, a user file wins; the daemons read
-//! the files). An unidentified sender is refused by the daemon (`AccessDenied`), never given a
+//! from a table keyed by app id and unit name (`callers.toml`: the user's file wins, except for
+//! the fixed roles; the daemons read the files). An unidentified sender is refused by the daemon (`AccessDenied`), never given a
 //! role.
 //!
-//! What this cannot prove: every process of the person's runs as the same user, so a scope row
-//! (`sill-shell.scope`, which has no main process) is as strong as "the scope was there first"
-//! (any program of theirs may start a scope of that name while the shell is not running, or move
-//! itself into it), and a service row as strong as the manager's word on its main process. A
-//! Flatpak app's metadata is read through its root, which a reader inside a Landlock domain is
-//! refused: there no caller is a Flatpak app.
+//! The one way to ask "who is this sender" is [`Callers::caller_of`], answered by [`ProcCallers`]:
+//! a daemon builds one from its bus connection and the table, and asks it for every method call.
+//! A daemon does not decide that a name it can see on the bus, or the well-known name it owns,
+//! is a role.
+//!
+//! ```ignore
+//! let callers = ProcCallers::new(connection.clone(), load_callers(&system, &user)?);
+//! // In a method, with `#[zbus(header)] header: Header<'_>`:
+//! let sender = header.sender().ok_or(fdo::Error::AccessDenied("no sender".into()))?;
+//! let caller = callers.caller_of(sender.as_str()).await
+//!     .ok_or(fdo::Error::AccessDenied("unknown caller".into()))?;
+//! if caller.role != CallerRole::SheetHost { return Err(fdo::Error::AccessDenied("not the shell".into())); }
+//! ```
+//!
+//! Some roles are fixed ([`CallerRole::is_fixed`]): only the system's table (`/etc`, the shipped
+//! file) can give them, never the user's file. A user row may add a plain app or lower a role;
+//! [`CallerTable::layered`] drops a user row that claims a fixed role.
+//!
+//! What this cannot prove: every process of the person's runs as the same user, so a service row
+//! is as strong as the manager's word on its main process, and a scope row as strong as "the
+//! scope was there first". That is why a scope may carry a fixed role only for the names in
+//! [`TRANSITION_SCOPES`], which go once the shell runs as a service. A Flatpak app's metadata is
+//! read through its root, which a reader inside a Landlock domain is refused: there no caller is
+//! a Flatpak app.
 
 use crate::BusConnection;
 #[cfg(feature = "callers-file")]
@@ -72,6 +90,22 @@ pub enum CallerRole {
     Compositor,
 }
 
+impl CallerRole {
+    /// Whether the role stands for more than a plain app, so only the system's table may give
+    /// it: `Settings`, `SheetHost`, `PorterDaemon`, `AgentLauncher`, `Cua`, `Terminal` and
+    /// `Compositor`. `App` and `Agent` hold no standing beyond an app (`Agent` is refused more
+    /// than `App` is), so a user's file may name them.
+    pub const fn is_fixed(self) -> bool {
+        !matches!(self, Self::App | Self::Agent)
+    }
+}
+
+/// The scopes that may still carry a fixed role, a stop-gap while the shell runs as a scope
+/// (`systemd-run --scope --unit=sill-shell`). A scope has no main process to check, so any
+/// program of the person's may start one of that name. This goes once the shell runs as
+/// `sill.service`, which is checked against the manager's main process like any service.
+pub const TRANSITION_SCOPES: &[&str] = &["sill-shell.scope"];
+
 /// Who a connection is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Caller {
@@ -113,8 +147,27 @@ pub struct CallerTable {
 
 impl CallerTable {
     /// The system's table with the user's laid over it: a user row replaces the system's row
-    /// for the same unit, or for the same app when neither names a unit.
+    /// for the same unit, or for the same app when neither names a unit. A user row may add a
+    /// plain app or lower a role, never give a fixed role ([`CallerRole::is_fixed`]): such a row
+    /// is left out, with one warning on stderr.
     pub fn layered(system: CallerTable, user: CallerTable) -> Self {
+        let user = CallerTable {
+            callers: user
+                .callers
+                .into_iter()
+                .filter(|row| {
+                    let keep = !row.role.is_fixed();
+                    if !keep {
+                        eprintln!(
+                            "porter: callers: ignoring the user's row for {} ({:?}): only the system's table gives that role",
+                            row.unit.as_deref().unwrap_or(row.app.as_str()),
+                            row.role
+                        );
+                    }
+                    keep
+                })
+                .collect(),
+        };
         let same = |a: &CallerRow, b: &CallerRow| match (&a.unit, &b.unit) {
             (Some(x), Some(y)) => x == y,
             (None, None) => a.app == b.app,

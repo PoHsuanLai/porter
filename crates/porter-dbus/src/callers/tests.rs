@@ -130,3 +130,72 @@ fn the_last_row_with_a_name_names_the_app_whatever_its_unit() {
     assert_eq!(table.title_of(&name("org.quire.Settings")), None);
     assert_eq!(table.title_of(&name("org.quire.Nobody")), None);
 }
+
+#[test]
+fn a_user_row_cannot_claim_a_fixed_role_for_a_new_app_or_a_unit() {
+    let user = CallerTable {
+        callers: vec![
+            row(
+                "org.example.Mine",
+                Some("mine.service"),
+                CallerRole::SheetHost,
+            ),
+            row("org.example.Other", None, CallerRole::Settings),
+            row(
+                "org.example.Fake",
+                Some("sill.service"),
+                CallerRole::SheetHost,
+            ),
+        ],
+    };
+    assert_eq!(CallerTable::layered(table(), user), table());
+}
+
+#[test]
+fn a_user_row_cannot_raise_a_system_app_to_a_fixed_role() {
+    let system = CallerTable {
+        callers: vec![row("org.example.Notes", None, CallerRole::App)],
+    };
+    let user = CallerTable {
+        callers: vec![row("org.example.Notes", None, CallerRole::Cua)],
+    };
+    let merged = CallerTable::layered(system, user);
+    assert_eq!(merged.role_of(&name("org.example.Notes")), CallerRole::App);
+}
+
+#[test]
+fn a_user_row_cannot_replace_a_fixed_system_row_with_another_fixed_role() {
+    let user = CallerTable {
+        callers: vec![row(
+            "org.example.Mine",
+            Some("cuad.service"),
+            CallerRole::PorterDaemon,
+        )],
+    };
+    let merged = CallerTable::layered(table(), user);
+    assert_eq!(
+        merged.resolve_unit("cuad.service").map(|c| c.role),
+        Some(CallerRole::Cua)
+    );
+}
+
+#[test]
+fn a_user_row_can_still_add_a_plain_app_or_an_agent() {
+    let user = CallerTable {
+        callers: vec![
+            row("org.example.Plain", None, CallerRole::App),
+            row(
+                "org.example.Helper",
+                Some("helper.service"),
+                CallerRole::Agent,
+            ),
+        ],
+    };
+    let merged = CallerTable::layered(table(), user);
+    assert_eq!(merged.callers.len(), 5);
+    assert_eq!(merged.role_of(&name("org.example.Plain")), CallerRole::App);
+    assert_eq!(
+        merged.resolve_unit("helper.service").map(|c| c.role),
+        Some(CallerRole::Agent)
+    );
+}

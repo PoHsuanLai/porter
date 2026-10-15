@@ -73,6 +73,8 @@ fn table() -> CallerTable {
         {"app": "org.quire.Inference", "unit": "inferd.service", "role": "porter_daemon"},
         {"app": "org.example.Sheets", "role": "sheet_host"},
         {"app": "org.quire.Shell", "unit": "sill-shell.scope", "role": "sheet_host"},
+        {"app": "org.quire.Shell", "unit": "sill.service", "role": "sheet_host"},
+        {"app": "org.example.Odd", "unit": "odd.scope", "role": "settings"},
         {"app": "org.quire.Trap", "unit": "app-org.quire.Trap-1.scope", "role": "settings"},
     ]}))
     .expect("table")
@@ -230,6 +232,33 @@ fn a_scope_a_row_names_as_its_unit_is_that_unit_exactly() {
     assert_eq!(
         resolve(&s, 43),
         got("org.quire.Trap", Isolation::Unsandboxed, CallerRole::App)
+    );
+}
+
+#[test]
+fn the_shell_as_a_service_counts_only_as_the_units_main_process() {
+    let s = Scratch::new();
+    let unit = "/user.slice/user-1000.slice/user@1000.service/app.slice/sill.service";
+    s.process(60, Some(unit));
+    s.process(61, Some(unit));
+    s.main_of("sill.service", 60);
+    let shell = got(
+        "org.quire.Shell",
+        Isolation::Unsandboxed,
+        CallerRole::SheetHost,
+    );
+    assert_eq!(resolve(&s, 60), shell);
+    // Another process moved into the cgroup is not the main process.
+    assert_eq!(resolve(&s, 61), None);
+}
+
+#[test]
+fn a_scope_row_not_marked_as_a_transition_gives_no_fixed_role() {
+    let s = Scratch::new();
+    s.process(62, Some(&scope("odd.scope")));
+    assert_eq!(
+        resolve(&s, 62),
+        got("org.example.Odd", Isolation::Unsandboxed, CallerRole::App)
     );
 }
 
