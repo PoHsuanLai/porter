@@ -3,9 +3,9 @@
 //! stops the daemon. Tests never reach the real bus.
 
 use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicU32, Ordering};
+
+use porter_fake::Scratch;
 
 fn config_text(dir: &std::path::Path) -> String {
     format!(
@@ -26,27 +26,24 @@ fn config_text(dir: &std::path::Path) -> String {
     )
 }
 
-static NEXT: AtomicU32 = AtomicU32::new(0);
-
 /// A running private bus.
 #[derive(Debug)]
 pub struct PrivateBus {
     child: Child,
     address: String,
-    scratch: PathBuf,
+    scratch: Scratch,
 }
 
 impl PrivateBus {
     /// Starts the daemon and waits for its address.
     pub fn start() -> Self {
-        let scratch =
-            porter_fake::scratch_dir(&format!("bus-{}", NEXT.fetch_add(1, Ordering::Relaxed)));
+        let scratch = Scratch::new("bus");
         let config = scratch.join("bus.conf");
         std::fs::write(&config, config_text(&scratch)).expect("write the bus config");
         let mut child = Command::new("dbus-daemon")
             .env_clear()
-            .env("HOME", &scratch)
-            .env("XDG_RUNTIME_DIR", &scratch)
+            .env("HOME", scratch.path())
+            .env("XDG_RUNTIME_DIR", scratch.path())
             .arg(format!("--config-file={}", config.display()))
             .args(["--nofork", "--print-address=1"])
             .stdout(Stdio::piped())
@@ -78,6 +75,5 @@ impl Drop for PrivateBus {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
-        let _ = std::fs::remove_dir_all(&self.scratch);
     }
 }

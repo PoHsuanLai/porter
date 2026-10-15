@@ -227,9 +227,8 @@ async fn a_reply_of_only_reasoning_is_an_error_with_a_status_in_both_shapes() {
 async fn an_attached_my_network_engine_follows_the_floor_and_the_my_network_setting() {
     use hosting::lab::Lab;
     use inferd::attached::{Attached, Place, Reach};
-    use porter_fake_servers::net::Bind;
-    let dir = porter_fake::scratch_dir("ag");
-    let lab = Lab::start(&Bind::Socket(dir.clone()), "lab", &[entries::SERVED], None).await;
+    let dir = porter_fake::Scratch::new("ag");
+    let lab = Lab::start_in(dir, "lab", &[entries::SERVED], None).await;
     lab.say(&["from the lab"]);
     let mut p = Plan {
         catalog: vec![("attached.toml", entries::attached())],
@@ -286,5 +285,4 @@ async fn an_attached_my_network_engine_follows_the_floor_and_the_my_network_sett
     let reply = completions(&endpoint, &ask).await;
     assert_eq!(reply.status, 403, "{}", reply.body);
     assert_eq!(lab.chats().len(), 1);
-    let _ = std::fs::remove_dir_all(&dir);
 }

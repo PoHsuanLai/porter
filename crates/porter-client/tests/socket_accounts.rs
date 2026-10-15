@@ -14,24 +14,12 @@ use porter_client::{
 };
 use porter_core::wire::{FrameRead, decode_frame, encode_frame};
 use porter_core::{AccountsReply, AccountsRequest};
+use porter_fake::Scratch;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 const NAME: &str = "pt";
-
-/// A runtime directory of this test's own (short: the socket path has 108 bytes).
-fn scratch(label: &str) -> PathBuf {
-    static NEXT: AtomicUsize = AtomicUsize::new(0);
-    let dir = porter_fake::scratch_dir(&format!(
-        "sa-{label}-{}",
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).expect("scratch");
-    dir
-}
 
 /// latchkey's agent under `dir`, as the agent end names it.
 fn agent_in(dir: &Path) -> Agent {
@@ -64,7 +52,7 @@ fn answer(client: &mut Stream) -> bool {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_client_finds_the_agent_latchkey_listens_for() {
-    let dir = scratch("door");
+    let dir = Scratch::new("sa-door");
     let door = agent_in(&dir).listen().expect("listen");
     let served = std::thread::spawn(move || {
         while let Ok(mut client) = door.accept() {
@@ -75,7 +63,7 @@ async fn the_client_finds_the_agent_latchkey_listens_for() {
     });
 
     let accounts = Accounts::over(SocketTransport::at(
-        SocketAgent::named(NAME).in_runtime_dir(dir),
+        SocketAgent::named(NAME).in_runtime_dir(dir.to_path_buf()),
     ));
     assert_eq!(accounts.grants().await.expect("grants"), vec![]);
     served.join().expect("the agent thread");
@@ -83,8 +71,8 @@ async fn the_client_finds_the_agent_latchkey_listens_for() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn nobody_home_is_unreachable_and_nothing_is_started_by_default() {
-    let dir = scratch("none");
-    let agent = SocketAgent::named(NAME).in_runtime_dir(dir.clone());
+    let dir = Scratch::new("sa-none");
+    let agent = SocketAgent::named(NAME).in_runtime_dir(dir.to_path_buf());
     assert_eq!(agent.start, StartAgent::Never);
     let accounts = Accounts::over(SocketTransport::at(agent.clone()));
     assert_eq!(
@@ -99,14 +87,14 @@ async fn nobody_home_is_unreachable_and_nothing_is_started_by_default() {
         Err(ClientError::Transport(TransportError::Unreachable))
     ));
     // A client never creates the agent's directory or its socket: that is the agent's.
-    assert_eq!(std::fs::read_dir(&dir).expect("dir").count(), 0);
+    assert_eq!(std::fs::read_dir(dir.path()).expect("dir").count(), 0);
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_name_that_cannot_be_a_directory_is_malformed_not_unreachable() {
-    let dir = scratch("name");
+    let dir = Scratch::new("sa-name");
     let accounts = Accounts::over(SocketTransport::at(
-        SocketAgent::named("no/slashes").in_runtime_dir(dir),
+        SocketAgent::named("no/slashes").in_runtime_dir(dir.to_path_buf()),
     ));
     assert!(matches!(
         accounts.grants().await,
@@ -137,9 +125,9 @@ fn child_agent() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_spawning_client_starts_the_agent_and_then_talks_to_it() {
-    let dir = scratch("spawn");
+    let dir = Scratch::new("sa-spawn");
     let agent = SocketAgent::named(NAME)
-        .in_runtime_dir(dir.clone())
+        .in_runtime_dir(dir.to_path_buf())
         .starting(StartAgent::Spawn {
             args: vec![
                 "--ignored".to_owned(),

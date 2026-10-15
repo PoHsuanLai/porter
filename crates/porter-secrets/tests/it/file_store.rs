@@ -3,17 +3,10 @@
 #![cfg(unix)]
 
 use porter_core::{AccountId, Credential, SecretKey, SecretPurpose, SecretText};
+use porter_fake::Scratch;
 use porter_secrets::{FileSecrets, FileSecretsError, Namespace, PutOutcome, Secrets, SecretsError};
 use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
 use std::sync::Arc;
-
-fn scratch(name: &str) -> PathBuf {
-    let dir = porter_fake::scratch_dir(&format!("file-store-{name}"));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).expect("scratch");
-    dir
-}
 
 fn key(account: &str) -> SecretKey {
     SecretKey {
@@ -36,7 +29,8 @@ fn mode(path: &std::path::Path) -> u32 {
 
 #[tokio::test]
 async fn items_survive_a_second_store_over_the_same_file_and_the_file_is_0600() {
-    let path = scratch("round-trip").join("deep/er/keys.json");
+    let dir = Scratch::new("file-store-round-trip");
+    let path = dir.join("deep/er/keys.json");
     let one = FileSecrets::open(&path).expect("created with its directories");
     assert_eq!(mode(&path), 0o600);
     one.put(&key("cloud"), &api_key("sk-1")).await.expect("put");
@@ -57,7 +51,8 @@ fn a_relative_path_is_refused() {
 #[tokio::test]
 async fn a_file_open_to_group_or_other_is_refused_on_open_and_on_every_use() {
     for bits in [0o640, 0o604, 0o660, 0o666, 0o644, 0o601] {
-        let path = scratch("mode").join("keys.json");
+        let dir = Scratch::new("file-store-mode");
+        let path = dir.join("keys.json");
         let store = FileSecrets::open(&path).expect("created");
         store
             .put(&key("cloud"), &api_key("sk-1"))
@@ -89,7 +84,8 @@ async fn a_file_open_to_group_or_other_is_refused_on_open_and_on_every_use() {
         assert_eq!(store.get(&key("cloud")).await, Ok(api_key("sk-1")));
     }
     // Owner bits other than 0600 are fine (0400 reads; a write is the file system's refusal).
-    let path = scratch("mode-owner").join("keys.json");
+    let dir = Scratch::new("file-store-mode-owner");
+    let path = dir.join("keys.json");
     let store = FileSecrets::open(&path).expect("created");
     store.put(&key("cloud"), &api_key("k")).await.expect("put");
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o400)).expect("chmod");
@@ -98,7 +94,7 @@ async fn a_file_open_to_group_or_other_is_refused_on_open_and_on_every_use() {
 
 #[test]
 fn a_directory_or_a_file_that_is_not_a_key_file_is_refused() {
-    let dir = scratch("kinds");
+    let dir = Scratch::new("file-store-kinds");
     assert_eq!(
         FileSecrets::open(dir.join("subdir")).map(|_| ()),
         Ok(()),
@@ -134,7 +130,8 @@ fn a_directory_or_a_file_that_is_not_a_key_file_is_refused() {
 
 #[tokio::test]
 async fn a_crash_between_the_temp_file_and_the_rename_leaves_the_original_whole() {
-    let path = scratch("crash").join("keys.json");
+    let dir = Scratch::new("file-store-crash");
+    let path = dir.join("keys.json");
     let store = FileSecrets::open(&path).expect("created");
     store
         .put(&key("cloud"), &api_key("sk-1"))
@@ -178,7 +175,8 @@ async fn a_crash_between_the_temp_file_and_the_rename_leaves_the_original_whole(
 /// update, and a racing `put_if_absent` stores once.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn concurrent_writers_are_serialised_and_none_loses_an_update() {
-    let path = scratch("race").join("keys.json");
+    let dir = Scratch::new("file-store-race");
+    let path = dir.join("keys.json");
     let store = Arc::new(FileSecrets::open(&path).expect("created"));
     let mut tasks = Vec::new();
     for n in 0..24 {
@@ -215,7 +213,8 @@ async fn concurrent_writers_are_serialised_and_none_loses_an_update() {
 /// (named by their own service), and the file still opens.
 #[tokio::test]
 async fn namespaces_share_a_file_without_reading_each_other() {
-    let path = scratch("namespaces").join("keys.json");
+    let dir = Scratch::new("file-store-namespaces");
+    let path = dir.join("keys.json");
     let porter = FileSecrets::open(&path).expect("created");
     let mailo = FileSecrets::open_in(&path, Namespace::parse("mailo/work").expect("a namespace"))
         .expect("another namespace over the same file");
@@ -249,7 +248,8 @@ async fn namespaces_share_a_file_without_reading_each_other() {
 
 #[tokio::test]
 async fn the_file_names_each_item_by_the_keyring_attributes_and_debug_hides_values() {
-    let path = scratch("shape").join("keys.json");
+    let dir = Scratch::new("file-store-shape");
+    let path = dir.join("keys.json");
     let store = FileSecrets::open(&path).expect("created");
     store
         .put(&key("cloud"), &api_key("sk-TOPSECRET"))

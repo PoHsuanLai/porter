@@ -34,10 +34,10 @@ use model_catalog::MiB;
 use model_http::{DerCertificate, TlsRoots};
 use porter_client::{Accounts, DbusTransport};
 use porter_core::{AppId, AppName, Isolation, UnixSeconds};
+use porter_fake::Scratch;
 use porter_infer::{ModelCard, Policy, Slot, TierMap};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// An engine host that starts nothing: it records what it was asked for. An engine never exits by
@@ -258,7 +258,6 @@ impl Default for Plan {
 /// A running daemon and a client connected to it.
 pub struct World {
     pub bus: PrivateBus,
-    pub scratch: PathBuf,
     pub daemon: zbus::Connection,
     pub client: zbus::Connection,
     pub accounts: Accounts<DbusTransport>,
@@ -289,9 +288,9 @@ pub struct World {
     pub tailnet: Option<Tailnet>,
     /// The connection the fake `Tailnet1` is served on (it is gone with this).
     pub tailnet_bus: Option<zbus::Connection>,
+    /// The scratch directory everything above lives in; last, so it goes after them.
+    pub scratch: Scratch,
 }
-
-static NEXT: AtomicU32 = AtomicU32::new(0);
 
 /// The app every test client is.
 pub fn test_app() -> AppId {
@@ -303,8 +302,7 @@ pub fn test_app() -> AppId {
 
 impl World {
     pub async fn start(plan: Plan) -> World {
-        let scratch =
-            porter_fake::scratch_dir(&format!("inf-{}", NEXT.fetch_add(1, Ordering::Relaxed)));
+        let scratch = Scratch::new("inf");
         let catalog_dir = scratch.join("cat");
         std::fs::create_dir_all(&catalog_dir).expect("catalog dir");
         for (name, text) in &plan.catalog {
@@ -661,11 +659,5 @@ impl World {
         );
         let accounts = Accounts::over(DbusTransport::over(connection.clone()));
         (connection, accounts)
-    }
-}
-
-impl Drop for World {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.scratch);
     }
 }

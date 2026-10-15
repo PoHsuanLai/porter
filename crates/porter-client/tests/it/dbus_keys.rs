@@ -27,7 +27,7 @@ struct Rig {
 async fn rig(sheets: Sheets, forged: bool) -> Rig {
     let bus = PrivateBus::start();
     let daemon = bus.connect().await;
-    let mut fake = FakeInferd::new(bus.scratch().clone(), sheets);
+    let mut fake = FakeInferd::new(bus.scratch().to_path_buf(), sheets);
     if forged {
         fake = fake.forged_by(bus.connect().await);
     }

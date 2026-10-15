@@ -142,8 +142,8 @@ async fn a_sheet_waiting_on_the_person_blocks_no_other_call() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn nobody_listening_is_unreachable_and_connect_skips_the_link() {
-    let dir = porter_fake::scratch_dir("s-nobody");
-    let path = SocketAgent::named("none").in_runtime_dir(dir);
+    let dir = porter_fake::Scratch::new("s-nobody");
+    let path = SocketAgent::named("none").in_runtime_dir(dir.to_path_buf());
     let transport = SocketTransport::at(path.clone());
     let accounts = Accounts::over(transport);
     assert_eq!(
@@ -339,9 +339,7 @@ async fn a_frame_rides_the_socket_as_a_memfd() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agent_that_hangs_up_mid_call_is_closed_not_hung() {
-    let dir = porter_fake::scratch_dir("s-hangup");
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).expect("scratch");
+    let dir = porter_fake::Scratch::new("s-hangup");
     let path = common::agent::socket_in(&dir, "hup");
     std::fs::create_dir_all(path.parent().expect("parent")).expect("agent dir");
     let listener = tokio::net::UnixListener::bind(&path).expect("bind");
@@ -351,7 +349,7 @@ async fn an_agent_that_hangs_up_mid_call_is_closed_not_hung() {
         }
     });
     let photos = Accounts::over(SocketTransport::at(
-        SocketAgent::named("hup").in_runtime_dir(dir),
+        SocketAgent::named("hup").in_runtime_dir(dir.to_path_buf()),
     ));
     let got = photos
         .find(&storage(Delta::Poll), DataClass::Photos, Usage::Interactive)

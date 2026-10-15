@@ -15,10 +15,10 @@ use inferd::hosts::ProcessHost;
 use inferd::shutdown::{Ended, Signals, on_signal};
 use model_catalog::{EngineArg, MiB};
 use porter_dbus::INFERENCE_BUS;
+use porter_fake::Scratch;
 use rustix::process::{Pid, Signal, kill_process};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
 /// The stand-in's exit codes by how its shutdown ended.
@@ -94,23 +94,6 @@ fn fake_inferd() {
         Ended::TimedOut => TIMED_OUT,
         Ended::Hurried => HURRIED,
     });
-}
-
-static NEXT: AtomicU32 = AtomicU32::new(0);
-
-struct Scratch(PathBuf);
-
-impl Scratch {
-    fn new() -> Self {
-        let dir = porter_fake::scratch_dir(&format!("sd-{}", NEXT.fetch_add(1, Ordering::Relaxed)));
-        Self(dir)
-    }
-}
-
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
 }
 
 /// A process this test started, killed (by pid) when the test ends however it ends.
@@ -199,11 +182,11 @@ fn exit_within(child: &mut Started) -> Option<i32> {
 
 /// Starts the stand-in and returns it with its engine's and grandchild's pids, both alive.
 fn running(dir: &Scratch, grace_ms: u32, bound_ms: u32) -> (Started, i32, i32) {
-    let inferd = stand_in(&dir.0, grace_ms, bound_ms);
-    wait_for(&dir.0.join("ready"));
+    let inferd = stand_in(&dir, grace_ms, bound_ms);
+    wait_for(&dir.join("ready"));
     let (engine, grandchild) = (
-        pid_in(&dir.0.join("engine")),
-        pid_in(&dir.0.join("grandchild")),
+        pid_in(&dir.join("engine")),
+        pid_in(&dir.join("grandchild")),
     );
     assert!(!gone(engine) && !gone(grandchild));
     (inferd, engine, grandchild)
@@ -219,7 +202,7 @@ fn reap(pids: &[i32]) {
 }
 
 fn graceful(signal_sent: Signal) {
-    let dir = Scratch::new();
+    let dir = Scratch::new("sd");
     // A grace of 300 ms: the grandchild ignores SIGTERM, so the stop ends with its SIGKILL.
     // The bound is `LONG_MS`: the stop must end by the grace, not by the bound (which would exit
     // `TIMED_OUT`), and a bound a starved machine cannot reach keeps that from being a race.
@@ -251,7 +234,7 @@ fn sigint_ends_the_engine_group_with_its_grandchild_and_exits_zero() {
 
 #[test]
 fn a_second_signal_during_shutdown_kills_everything_and_exits_at_once() {
-    let dir = Scratch::new();
+    let dir = Scratch::new("sd");
     // A grace of 60 s: the first signal's shutdown is still waiting on the grandchild.
     let (mut inferd, engine, grandchild) = running(&dir, LONG_MS, LONG_MS);
     signal(inferd.0.id(), Signal::TERM);
@@ -280,7 +263,7 @@ fn a_second_signal_during_shutdown_kills_everything_and_exits_at_once() {
 
 #[test]
 fn a_shutdown_that_overruns_its_bound_kills_everything_and_exits_nonzero() {
-    let dir = Scratch::new();
+    let dir = Scratch::new("sd");
     let (mut inferd, engine, grandchild) = running(&dir, LONG_MS, 700);
     signal(inferd.0.id(), Signal::TERM);
     let code = exit_within(&mut inferd);

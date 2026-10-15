@@ -13,7 +13,6 @@ use inferd::attached::{Attached, Place, Reach};
 use inferd::peers::{Caller, Role};
 use porter_client::{ClientError, TransportError};
 use porter_core::{AppId, AppName, DataClass, Isolation, ModelId, Tier};
-use porter_fake_servers::net::Bind;
 use porter_infer::{ComputerName, PlaceKind, PlaceRow, PlaceState};
 
 fn app(name: &str) -> AppId {
@@ -26,8 +25,8 @@ fn app(name: &str) -> AppId {
 /// A world with one model on this computer, a lab machine called `lab` with one model, and two
 /// cloud accounts: a working one and one that has to be signed in again.
 async fn world(lab_dir: &str, role: Role, who: &str) -> (World, Lab) {
-    let dir = porter_fake::scratch_dir(&format!("pl-{lab_dir}"));
-    let lab = Lab::start(&Bind::Socket(dir), "lab", &[entries::SERVED], None).await;
+    let dir = porter_fake::Scratch::new(&format!("pl-{lab_dir}"));
+    let lab = Lab::start_in(dir, "lab", &[entries::SERVED], None).await;
     let plan = Plan {
         catalog: vec![
             ("a-attached.toml", entries::attached()),
@@ -288,8 +287,8 @@ mod routing {
 
     /// `placed_world`, with the local chat model only when `local` says so.
     pub async fn placed_world_with(dir: &str, role: Role, who: &str, local: bool) -> (World, Lab) {
-        let scratch = porter_fake::scratch_dir(&format!("pr-{dir}"));
-        let lab = Lab::start(&Bind::Socket(scratch), "lab", &[entries::SERVED], None).await;
+        let scratch = porter_fake::Scratch::new(&format!("pr-{dir}"));
+        let lab = Lab::start_in(scratch, "lab", &[entries::SERVED], None).await;
         let mut catalog = vec![
             ("a-attached.toml", entries::attached()),
             ("c-claude.toml", entries::claude()),
@@ -904,8 +903,8 @@ mod computers {
 
     /// A world with no engine written by hand, and a lab machine that wants `KEY`.
     async fn world(name: &str) -> (World, Lab) {
-        let dir = porter_fake::scratch_dir(&format!("cp-{name}"));
-        let lab = Lab::start(&Bind::Socket(dir), "lab", &[entries::SERVED], Some(KEY)).await;
+        let dir = porter_fake::Scratch::new(&format!("cp-{name}"));
+        let lab = Lab::start_in(dir, "lab", &[entries::SERVED], Some(KEY)).await;
         let plan = Plan {
             catalog: vec![("a-attached.toml", entries::attached())],
             policy: Policy {

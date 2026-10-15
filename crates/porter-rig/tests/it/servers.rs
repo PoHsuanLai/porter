@@ -4,7 +4,8 @@
 
 use crate::common;
 
-use common::{Proc, eventually, scratch};
+use common::{Proc, eventually};
+use porter_fake::Scratch;
 use porter_fake_servers::browser::split_loopback;
 use porter_fake_servers::http::{Request, Scheme, post_form, send};
 use porter_rig::control::call;
@@ -29,7 +30,7 @@ async fn graph_status(url: &str, bearer: &str) -> u16 {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_rig_starts_lists_what_it_planted_serves_its_levers_and_ends_on_sigterm() {
-    let dir = scratch("servers");
+    let dir = Scratch::new("rig-servers");
     let mut rig = Proc::spawn(
         env!("CARGO_BIN_EXE_porter-rig-servers"),
         &[
@@ -188,13 +189,12 @@ async fn the_rig_starts_lists_what_it_planted_serves_its_levers_and_ends_on_sigt
     let status = rig.terminate();
     assert!(status.success(), "{status:?}");
     assert!(!RigFile::path(&dir).exists());
-    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_rig_asked_for_nothing_starts_only_its_control_endpoint_and_a_lever_on_a_missing_fake_is_a_conflict()
  {
-    let dir = scratch("servers-bare");
+    let dir = Scratch::new("rig-servers-bare");
     let mut rig = Proc::spawn(
         env!("CARGO_BIN_EXE_porter-rig-servers"),
         &["--dir", dir.to_str().expect("utf-8")],
@@ -218,7 +218,6 @@ async fn a_rig_asked_for_nothing_starts_only_its_control_endpoint_and_a_lever_on
         .await
         .expect("join");
     assert!(status.success(), "POST /stop ends it cleanly");
-    let _ = std::fs::remove_dir_all(dir);
 }
 
 fn imap_line(stream: &mut TcpStream, send: Option<&str>) -> String {
@@ -234,7 +233,7 @@ fn imap_line(stream: &mut TcpStream, send: Option<&str>) -> String {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_rig_starts_a_fake_google_that_wants_the_planted_application_secret() {
-    let dir = scratch("servers-google");
+    let dir = Scratch::new("rig-servers-google");
     let _rig = Proc::spawn(
         env!("CARGO_BIN_EXE_porter-rig-servers"),
         &["--dir", dir.to_str().expect("utf-8"), "--google"],
@@ -281,7 +280,7 @@ async fn the_rig_starts_a_fake_google_that_wants_the_planted_application_secret(
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_rig_serves_me_lists_login_attempts_without_secrets_and_issues_short_tokens() {
-    let dir = scratch("servers-levers");
+    let dir = Scratch::new("rig-servers-levers");
     let mut rig = Proc::spawn(
         env!("CARGO_BIN_EXE_porter-rig-servers"),
         &[
@@ -381,5 +380,4 @@ async fn the_rig_serves_me_lists_login_attempts_without_secrets_and_issues_short
         assert_eq!(json(&none.text())["attempts"], serde_json::json!([]));
     }
     assert!(rig.terminate().success());
-    let _ = std::fs::remove_dir_all(dir);
 }
