@@ -574,28 +574,50 @@ async fn a_server_the_roots_do_not_vouch_for_gets_no_request_and_no_key() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_provider_that_rejects_the_key_is_unauthorized_and_is_not_charged() {
-    let mut world_plan = plan(vec![openrouter(&[COMPANION])], COMPANION);
-    if let Some(hosted) = world_plan.hosted.as_mut() {
-        hosted.chat = Script {
-            chat: vec![Chat::Fail(401)],
-            dims: 0,
-        };
-    }
-    let world = World::start(world_plan).await;
+async fn a_provider_that_rejects_the_key_is_unauthorized_and_charges_nothing() {
+    let world = failing_with(401).await;
     let events = turn(&world, "x").await;
     assert_eq!(
         finished(&events),
         &InferReply::Failed(ModelError::Unauthorized),
         "{events:?}"
     );
+    // Turned away before any work, so the hold is given back.
+    assert_eq!(spent_today(&world).micro_usd, 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_server_error_keeps_the_hold_charged() {
+    let world = failing_with(500).await;
+    let events = turn(&world, "x").await;
+    assert!(
+        matches!(finished(&events), InferReply::Failed(_)),
+        "{events:?}"
+    );
+    // The provider may have billed work before it failed, so the turn's whole hold stays counted.
+    assert!(spent_today(&world).micro_usd > 0);
+}
+
+/// A world whose hosted provider answers every turn with `status`.
+async fn failing_with(status: u16) -> World {
+    let mut world_plan = plan(vec![openrouter(&[COMPANION])], COMPANION);
+    if let Some(hosted) = world_plan.hosted.as_mut() {
+        hosted.chat = Script {
+            chat: vec![Chat::Fail(status); 4],
+            dims: 0,
+        };
+    }
+    World::start(world_plan).await
+}
+
+/// What the companion has spent today.
+fn spent_today(world: &World) -> inferd::cloud::spend::Spent {
     let cloud = world.served.cloud().expect("cloud");
-    let spent = cloud.ledger().spent(
+    cloud.ledger().spent(
         &porter_infer::SpendScope::App(app(COMPANION)),
         porter_infer::Period::Daily,
         cloud.now(),
-    );
-    assert_eq!(spent.micro_usd, 0);
+    )
 }
 
 fn tools_request() -> InferRequest {
@@ -705,7 +727,7 @@ async fn a_cap_the_app_has_reached_refuses_with_the_spend_refusal_and_nothing_is
 #[tokio::test(flavor = "multi_thread")]
 async fn a_warning_line_still_serves_the_turn_and_a_cap_met_mid_session_stops_the_next_one() {
     let mut world_plan = plan(vec![openrouter(&[COMPANION])], COMPANION);
-    world_plan.spend = capped(1);
+    world_plan.spend = capped(100);
     let world = World::start(world_plan).await;
     let cloud = world.served.cloud().expect("cloud").clone();
     let record = |micro_usd| {
@@ -721,8 +743,8 @@ async fn a_warning_line_still_serves_the_turn_and_a_cap_met_mid_session_stops_th
             cloud.now(),
         );
     };
-    // Past the warning line (eight thousand of ten thousand), under the cap: served.
-    record(8_000);
+    // Past the warning line (eight hundred thousand of a million), under the cap: served.
+    record(800_000);
     let mut session = world
         .accounts
         .session(&llm(), DataClass::Prompt, Tier::Balanced)
@@ -735,7 +757,7 @@ async fn a_warning_line_still_serves_the_turn_and_a_cap_met_mid_session_stops_th
     let first = until_finished(&mut session).await;
     assert!(matches!(finished(&first), InferReply::Chat(_)), "{first:?}");
     // The same session, after something else spent the rest: the next turn is refused.
-    record(2_000);
+    record(200_000);
     session
         .send(ClientFrame::Request(chat_request("two", DataClass::Prompt)))
         .await

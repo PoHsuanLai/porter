@@ -1,5 +1,6 @@
 use super::*;
 use crate::settings::{ScopeLimits, SpendLimits};
+use porter_core::PriceTable;
 use porter_core::{AppName, Isolation};
 
 fn app(name: &str) -> AppId {
@@ -402,4 +403,82 @@ fn a_turn_not_yet_run_is_estimated_at_a_thousand_tokens_each_way() {
         output_per_mtok: MicroUsd(20_000_000),
     };
     assert_eq!(estimate(&price), MicroUsd(4_000 + 20_000));
+}
+
+/// A price of one micro-dollar a token each way, so a hold of `n` tokens costs `n`.
+const ONE_EACH: PriceTable = PriceTable {
+    input_per_mtok: MicroUsd(1_000_000),
+    output_per_mtok: MicroUsd(1_000_000),
+};
+
+fn day_spent(ledger: &Ledger, who: &AppId) -> u64 {
+    ledger
+        .spent(&SpendScope::App(who.clone()), Period::Daily, LEAP_NOON)
+        .micro_usd
+}
+
+fn hold<'a>(ledger: &'a Ledger, who: &AppId, worst: TokenUsage) -> Option<SpendGuard<'a>> {
+    // A cap of one cent: ten thousand micro-dollars.
+    ledger.reserve(
+        line(1),
+        who,
+        &account("openai"),
+        &ONE_EACH,
+        worst,
+        LEAP_NOON,
+    )
+}
+
+#[test]
+fn a_turn_that_ends_in_an_error_is_charged_its_hold() {
+    let ledger = Ledger::in_memory();
+    let who = app("org.quire.Companion");
+    let guard = hold(&ledger, &who, used(4_000, 2_000)).expect("within the cap");
+    assert_eq!(day_spent(&ledger, &who), 6_000, "counted while it runs");
+    guard.settle(None);
+    assert_eq!(day_spent(&ledger, &who), 6_000);
+}
+
+#[test]
+fn a_guard_dropped_without_settling_is_charged_its_hold() {
+    let ledger = Ledger::in_memory();
+    let who = app("org.quire.Companion");
+    drop(hold(&ledger, &who, used(4_000, 2_000)));
+    assert_eq!(day_spent(&ledger, &who), 6_000);
+}
+
+#[test]
+fn a_turn_that_reports_its_usage_is_charged_that_and_not_its_hold() {
+    let ledger = Ledger::in_memory();
+    let who = app("org.quire.Companion");
+    let guard = hold(&ledger, &who, used(4_000, 2_000)).expect("within the cap");
+    guard.settle(Some(used(300, 120)));
+    let scope = SpendScope::Account(account("openai"));
+    let month = ledger.spent(&scope, Period::Monthly, LEAP_NOON);
+    assert_eq!(day_spent(&ledger, &who), 420);
+    assert_eq!(
+        month,
+        Spent {
+            micro_usd: 420,
+            tokens_in: 300,
+            tokens_out: 120
+        }
+    );
+}
+
+#[test]
+fn turns_that_start_together_cannot_together_pass_a_cap() {
+    let ledger = Ledger::in_memory();
+    let who = app("org.quire.Companion");
+    let first = hold(&ledger, &who, used(4_000, 2_000));
+    assert!(first.is_some());
+    assert!(
+        hold(&ledger, &who, used(4_000, 2_000)).is_none(),
+        "the second sees the first's hold"
+    );
+    first.expect("held").settle(Some(used(10, 10)));
+    assert!(
+        hold(&ledger, &who, used(4_000, 2_000)).is_some(),
+        "a settled hold gives back what the turn did not use"
+    );
 }
