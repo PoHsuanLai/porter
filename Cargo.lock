@@ -2258,6 +2258,7 @@ name = "porter-daemon"
 version = "0.1.0"
 dependencies = [
  "notify",
+ "porter-fake",
  "thiserror",
 ]
 
@@ -2517,6 +2518,7 @@ version = "0.1.0"
 dependencies = [
  "porter-core",
  "porter-dbus",
+ "porter-fake",
  "porter-provider",
  "porter-service",
  "serde_json",

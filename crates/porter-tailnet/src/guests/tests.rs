@@ -1,4 +1,5 @@
 use super::*;
+use porter_fake::Scratch;
 use std::os::unix::fs::PermissionsExt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -9,14 +10,8 @@ fn node(text: &str) -> NodeId {
 const NOW: UnixSeconds = UnixSeconds(1_790_000_000);
 
 /// A new empty directory for one test.
-fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "porter-tailnet-guests-{}-{name}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).expect("scratch");
-    dir
+fn scratch(name: &str) -> Scratch {
+    Scratch::new(&format!("tailnet-guests-{name}"))
 }
 
 #[test]

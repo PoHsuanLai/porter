@@ -257,8 +257,7 @@ async fn a_build_with_no_client_id_says_so_before_opening_anything() {
 #[tokio::test]
 async fn a_client_id_written_after_start_is_used_by_the_next_sign_in() {
     let rig = Rig::new(false).await;
-    let dir = std::env::temp_dir().join(format!("families-ux2-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("scratch");
+    let dir = porter_fake::Scratch::new("families-ux2");
     let files = porter_families::ClientFiles {
         shipped: dir.join("shipped.toml"),
         own: dir.join("clients.toml"),

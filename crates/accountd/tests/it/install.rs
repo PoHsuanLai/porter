@@ -8,15 +8,10 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use porter_fake::Scratch;
+
 fn repo() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
-}
-
-/// A fresh scratch directory under the test temp dir (`TMPDIR`), named for the test and process.
-fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("porter-install-{name}-{}", std::process::id()));
-    fs::create_dir_all(&dir).expect("scratch");
-    dir
 }
 
 /// Stand-in daemons: the script installs what it is given, it does not need real builds.
@@ -35,17 +30,20 @@ struct Run {
     destdir: PathBuf,
     home: PathBuf,
     bins: PathBuf,
+    /// Removes the staging area when the run ends; last so nothing outlives it.
+    _root: Scratch,
 }
 
 impl Run {
     fn new(name: &str) -> Run {
-        let root = scratch(name);
+        let root = Scratch::new(&format!("install-{name}"));
         let home = root.join("home");
         fs::create_dir_all(&home).expect("home");
         Run {
             destdir: root.join("stage"),
             bins: stand_ins(&root),
             home,
+            _root: root,
         }
     }
 

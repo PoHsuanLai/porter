@@ -72,7 +72,7 @@ struct Lender {
     guests: Arc<Guests>,
     port: u16,
     // Keeps the fake and the observer going.
-    _fake: porter_fake_servers::FakeLocalApi,
+    _fake: super::common::Fake,
     _observer: porter_tailnet::Observer,
 }
 

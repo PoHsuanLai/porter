@@ -70,8 +70,7 @@ mod tests {
 
     #[test]
     fn the_files_are_read_again_each_time_so_a_row_written_later_is_seen() {
-        let dir = std::env::temp_dir().join(format!("families-clients-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("scratch");
+        let dir = porter_fake::Scratch::new("families-clients");
         let files = ClientFiles {
             shipped: dir.join("absent.toml"),
             own: dir.join("clients.toml"),
@@ -96,7 +95,6 @@ mod tests {
         );
         // An environment handed a registry keeps it.
         assert_eq!(lookup(&clients_now(None, &fixed)), None);
-        let _ = std::fs::remove_file(&files.own);
     }
 
     #[test]

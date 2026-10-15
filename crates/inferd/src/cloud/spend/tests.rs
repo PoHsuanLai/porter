@@ -2,6 +2,7 @@ use super::*;
 use crate::settings::{ScopeLimits, SpendLimits};
 use porter_core::PriceTable;
 use porter_core::{AppName, Isolation};
+use porter_fake::Scratch;
 
 fn app(name: &str) -> AppId {
     AppId {
@@ -235,7 +236,7 @@ fn the_strictest_cap_of_the_four_decides() {
 
 #[test]
 fn a_ledger_opened_on_a_file_keeps_what_it_was_told_across_a_restart() {
-    let dir = std::env::temp_dir().join(format!("inferd-spend-{}", std::process::id()));
+    let dir = Scratch::new("inferd-spend");
     let file = dir.join("state").join("spend.json");
     let who = app("org.quire.Companion");
     {
@@ -263,13 +264,10 @@ fn a_ledger_opened_on_a_file_keeps_what_it_was_told_across_a_restart() {
     use std::os::unix::fs::PermissionsExt;
     let mode = std::fs::metadata(&file).expect("meta").permissions().mode();
     assert_eq!(mode & 0o777, 0o600);
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
-fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("inferd-spend-{name}-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("dir");
-    dir
+fn scratch(name: &str) -> Scratch {
+    Scratch::new(&format!("inferd-spend-{name}"))
 }
 
 /// rel-7: before, a file that did not read started the ledger empty, so every cap saw nothing
@@ -316,7 +314,6 @@ fn a_file_that_does_not_read_is_set_aside_and_the_caps_stop_until_the_period_end
     // A restart after the day is over has nothing to remember for the daily cap.
     let later = Ledger::open_at(file, tomorrow);
     assert_eq!(stopped(&later, tomorrow), SpendVerdict::Within);
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
@@ -336,7 +333,8 @@ fn a_monthly_cap_stays_stopped_to_the_end_of_the_month_and_a_missing_file_is_jus
             .exists()
     );
     // A directory where the file should be cannot be read either: lost, not new.
-    let blocked = scratch("monthly-dir").join("spend.json");
+    let blocked_root = scratch("monthly-dir");
+    let blocked = blocked_root.join("spend.json");
     std::fs::create_dir_all(&blocked).expect("dir in the way");
     let monthly = SpendLine {
         limits: SpendLimits {
@@ -370,7 +368,6 @@ fn a_monthly_cap_stays_stopped_to_the_end_of_the_month_and_a_missing_file_is_jus
             "{name}"
         );
     }
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]

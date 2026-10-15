@@ -230,7 +230,7 @@ fn settings_is_a_unit_and_an_app_name_stands_for_its_service() {
 /// do not.
 #[test]
 fn only_the_settings_units_main_process_is_settings() {
-    let root = std::env::temp_dir().join(format!("inferd-settings-unit-{}", std::process::id()));
+    let root = porter_fake::Scratch::new("inferd-settings-unit");
     let slice = "/user.slice/user-1000.slice/user@1000.service/app.slice";
     let process = |pid: u32, unit: &str| {
         let dir = root.join(pid.to_string());
@@ -254,7 +254,6 @@ fn only_the_settings_units_main_process_is_settings() {
         Some(porter_dbus::CallerRole::Settings),
         "an app scope of the app's name"
     );
-    let _ = std::fs::remove_dir_all(&root);
 }
 
 #[test]

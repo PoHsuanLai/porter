@@ -11,6 +11,7 @@ use ds_settings::schema::KeyPath;
 use porter_core::audit::AuditEvent;
 use porter_core::{AccountState, SecretKey, SecretPurpose};
 use porter_dbus::{CallerRole, IdentitiesProxy};
+use porter_fake::Scratch;
 use porter_secrets::{Secrets, SecretsError};
 
 #[tokio::test(flavor = "multi_thread")]
@@ -340,7 +341,7 @@ async fn a_refused_account_is_told_to_sign_in_again_in_its_state_row() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_client_id_is_written_to_the_users_file_only_by_settings() {
-    let dir = std::env::temp_dir().join(format!("accountd-clients-{}", std::process::id()));
+    let dir = Scratch::new("accountd-clients");
     let file = dir.join("porter/clients.toml");
     let options = accountd::Options {
         clients: Some(file.clone()),
@@ -408,14 +409,13 @@ async fn a_client_id_is_written_to_the_users_file_only_by_settings() {
             .all(|e| !format!("{e:?}").contains("my-client")),
         "no entry holds the id"
     );
-    let _ = std::fs::remove_dir_all(dir);
 }
 
 /// ux-3: Settings sets a Google sign-in key and its secret; the families, which read the same
 /// file at every sign-in (ux-2), then have a Google client with both.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_google_key_and_its_secret_set_in_settings_are_the_families_google_client() {
-    let dir = std::env::temp_dir().join(format!("accountd-google-client-{}", std::process::id()));
+    let dir = Scratch::new("accountd-google-client");
     let file = dir.join("porter/clients.toml");
     let options = accountd::Options {
         clients: Some(file.clone()),
@@ -471,7 +471,6 @@ async fn a_google_key_and_its_secret_set_in_settings_are_the_families_google_cli
         client.client_secret.as_ref().map(|s| s.expose().to_owned()),
         Some("GOCSPX-mine".to_owned())
     );
-    let _ = std::fs::remove_dir_all(dir);
 }
 
 /// The next word said on `row` (the action's own `Set` answers with a button's `false`).

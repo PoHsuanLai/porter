@@ -71,6 +71,7 @@ mod tests {
     use super::*;
     use crate::CallerRole;
     use porter_core::AppName;
+    use porter_fake::Scratch;
 
     const SYSTEM: &str = "[[caller]]\napp = \"org.quire.Settings\"\nrole = \"settings\"\n\n\
         [[caller]]\napp = \"org.quire.Inference\"\nunit = \"inferd.service\"\nrole = \"porter_daemon\"\n\n\
@@ -78,10 +79,8 @@ mod tests {
     const USER: &str = "[[caller]]\napp = \"org.quire.Settings\"\nrole = \"app\"\n\n\
         [[caller]]\napp = \"org.example.Mine\"\nunit = \"inferd.service\"\nrole = \"app\"\n";
 
-    fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("callers-file-{}-{name}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("scratch");
-        dir
+    fn scratch(name: &str) -> Scratch {
+        Scratch::new(&format!("callers-file-{name}"))
     }
 
     fn name(text: &str) -> AppName {
@@ -108,7 +107,6 @@ mod tests {
             alone.role_of(&name("org.quire.Settings")),
             CallerRole::Settings
         );
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -124,7 +122,6 @@ mod tests {
         assert_eq!(err.path, bad);
         assert!(load_callers(&bad, &dir.join("nope.toml")).is_err());
         assert!(table_from_toml("[[caller]]\napp = \"not a name\"\nrole = \"app\"\n").is_err());
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

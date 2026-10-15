@@ -33,7 +33,8 @@ async fn only_the_shell_may_ask_who_needs_signing_in() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_shell_is_told_of_a_refusal_and_a_recovery_and_reads_the_account() {
-    let rig = Rig::start_with(poking_options(), SheetHost::quiet()).await;
+    let (_dir, options) = poking_options();
+    let rig = Rig::start_with(options, SheetHost::quiet()).await;
     let mail = mail_account();
     let shell = rig
         .client_as(caller("org.quire.Shell", CallerRole::SheetHost))

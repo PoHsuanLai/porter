@@ -118,17 +118,15 @@ fn entry_name(text: &str) -> Option<AppTitle> {
 mod tests {
     use super::*;
     use porter_dbus::{CallerRole, CallerRow};
+    use porter_fake::Scratch;
     use std::path::Path;
 
     fn app(text: &str) -> AppName {
         AppName::parse(text).expect("name")
     }
 
-    fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("app-names-{}-{name}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).expect("scratch");
-        dir
+    fn scratch(name: &str) -> Scratch {
+        Scratch::new(&format!("app-names-{name}"))
     }
 
     fn entry(dir: &Path, id: &str, text: &str) {
@@ -154,9 +152,8 @@ mod tests {
             "org.quire.Sync",
             "[Desktop Entry]\nName=From the entry\n",
         );
-        let names = AppNames::new(table("org.quire.Sync", "Sync"), vec![dir.clone()]);
+        let names = AppNames::new(table("org.quire.Sync", "Sync"), vec![dir.to_path_buf()]);
         assert_eq!(names.title_of(&app("org.quire.Sync")).0, "Sync");
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -168,9 +165,8 @@ mod tests {
             "# a comment\n[Desktop Entry]\nType=Application\nName[de]=Fotos\nName= Photos \nExec=photos\n\n\
              [Desktop Action new]\nName=New window\n",
         );
-        let names = AppNames::new(table("org.quire.Sync", "Sync"), vec![dir.clone()]);
+        let names = AppNames::new(table("org.quire.Sync", "Sync"), vec![dir.to_path_buf()]);
         assert_eq!(names.title_of(&app("org.example.Photos")).0, "Photos");
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -182,7 +178,7 @@ mod tests {
             "[Desktop Action new]\nName=New window\n[Desktop Entry]\nExec=other\n",
         );
         entry(&dir, "org.example.Empty", "[Desktop Entry]\nName=\n");
-        let names = AppNames::new(CallerTable::default(), vec![dir.clone()]);
+        let names = AppNames::new(CallerTable::default(), vec![dir.to_path_buf()]);
         assert_eq!(
             names.title_of(&app("org.example.Other")).0,
             "org.example.Other"
@@ -191,7 +187,6 @@ mod tests {
             names.title_of(&app("org.example.Empty")).0,
             "org.example.Empty"
         );
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -204,11 +199,9 @@ mod tests {
             "org.example.B",
             "[Desktop Entry]\nName=Only theirs\n",
         );
-        let names = AppNames::new(CallerTable::default(), vec![home.clone(), system.clone()]);
+        let names = AppNames::new(CallerTable::default(), vec![home.to_path_buf(), system.to_path_buf()]);
         assert_eq!(names.title_of(&app("org.example.A")).0, "Mine");
         assert_eq!(names.title_of(&app("org.example.B")).0, "Only theirs");
-        let _ = std::fs::remove_dir_all(home);
-        let _ = std::fs::remove_dir_all(system);
     }
 
     #[test]
@@ -222,9 +215,10 @@ mod tests {
 
     #[test]
     fn an_agent_with_no_provider_file_stays_its_id_and_a_table_name_still_wins() {
+        let agents = scratch("agents");
         let names = AppNames::new(
             table("org.quire.Agent.claude-code", "Mine"),
-            vec![scratch("agents")],
+            vec![agents.to_path_buf()],
         )
         .with_agents(&porter_provider::shipped_specs());
         assert_eq!(
@@ -245,7 +239,7 @@ mod tests {
     #[test]
     fn an_app_nothing_names_is_its_id() {
         let dir = scratch("none");
-        let names = AppNames::new(CallerTable::default(), vec![dir.clone()]);
+        let names = AppNames::new(CallerTable::default(), vec![dir.to_path_buf()]);
         assert_eq!(
             names.title_of(&app("org.example.Ghost")).0,
             "org.example.Ghost"
@@ -254,6 +248,5 @@ mod tests {
             AppNames::default().title_of(&app("org.example.Ghost")).0,
             "org.example.Ghost"
         );
-        let _ = std::fs::remove_dir_all(dir);
     }
 }

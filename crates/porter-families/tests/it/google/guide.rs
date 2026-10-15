@@ -60,8 +60,7 @@ fn the_row_in_the_guide_is_a_row_the_registry_reads() {
         .and_then(|rest| rest.split("```").next())
         .expect("a toml block");
     // The commented `# byo = true` is the owner's to switch on.
-    let dir = std::env::temp_dir().join(format!("porter-guide-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("dir");
+    let dir = porter_fake::Scratch::new("guide");
     let (shipped, own) = (dir.join("shipped.toml"), dir.join("own.toml"));
     std::fs::write(&shipped, "").expect("write");
     std::fs::write(&own, block).expect("write");
@@ -81,7 +80,6 @@ fn the_row_in_the_guide_is_a_row_the_registry_reads() {
         registry.traits(Issuer::Google, ClientChannel::Stable).mail,
         MailRights::Byo
     );
-    std::fs::remove_dir_all(&dir).expect("cleanup");
 }
 
 #[test]

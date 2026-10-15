@@ -52,17 +52,9 @@ fn undeclared(dir: &Path, main_rs: &str) -> Vec<String> {
 mod tests {
     use super::*;
 
-    fn scratch(name: &str) -> std::path::PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("porter-fake-guard-{}-{name}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).expect("scratch");
-        dir
-    }
-
     #[test]
     fn a_module_file_or_directory_main_does_not_declare_is_named() {
-        let dir = scratch("undeclared");
+        let dir = crate::Scratch::new("guard-undeclared");
         for file in ["main.rs", "declared.rs", "forgotten.rs", "data.json"] {
             std::fs::write(dir.join(file), "").expect("file");
         }
@@ -79,6 +71,5 @@ mod tests {
         );
         let all = "mod declared;\nmod dir_declared;\nmod dir_forgotten;\nmod forgotten;\n";
         assert!(undeclared(&dir, all).is_empty());
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

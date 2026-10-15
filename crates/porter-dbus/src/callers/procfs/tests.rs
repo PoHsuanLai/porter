@@ -29,7 +29,7 @@ fn a_flatpak_info_names_its_app_and_instance_and_one_without_a_name_names_nothin
 
 #[test]
 fn a_fixture_main_pid_is_read_from_its_units_file_and_nothing_else() {
-    let root = std::env::temp_dir().join(format!("porter-dbus-units-{}", std::process::id()));
+    let root = porter_fake::Scratch::new("dbus-units");
     std::fs::create_dir_all(root.join("units")).expect("units");
     std::fs::write(root.join("units").join("inferd.service"), "4242\n").expect("pid");
     std::fs::write(root.join("units").join("bad.service"), "not a pid").expect("bad");
@@ -37,5 +37,4 @@ fn a_fixture_main_pid_is_read_from_its_units_file_and_nothing_else() {
     assert_eq!(fixture_main_pid(&root, "bad.service"), None);
     assert_eq!(fixture_main_pid(&root, "syncd.service"), None);
     assert_eq!(fixture_main_pid(&root, "../units/inferd.service"), None);
-    let _ = std::fs::remove_dir_all(root);
 }
