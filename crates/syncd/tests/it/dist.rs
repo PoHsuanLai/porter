@@ -49,7 +49,12 @@ fn the_unit_is_a_sandbox_that_writes_only_its_own_directories() {
     let sandbox = dist("syncd.service.d/sandbox.conf");
     assert_eq!(value(&sandbox, "ProtectSystem"), Some("strict"));
     assert_eq!(value(&sandbox, "ProtectHome"), Some("read-only"));
-    for moved in ["ProtectSystem", "ProtectHome", "ReadWritePaths", "PrivateTmp"] {
+    for moved in [
+        "ProtectSystem",
+        "ProtectHome",
+        "ReadWritePaths",
+        "PrivateTmp",
+    ] {
         assert_eq!(value(&unit, moved), None, "{moved} belongs in the drop-in");
     }
     // Journals under state, mirrors under data: nothing else is writable, and both exist before
