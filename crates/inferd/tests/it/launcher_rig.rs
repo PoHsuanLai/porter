@@ -60,12 +60,10 @@ pub struct Runtime(pub PathBuf);
 impl Runtime {
     pub fn new() -> Self {
         static N: AtomicU32 = AtomicU32::new(0);
-        let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
-            "launcher-runtime-{}-{}",
-            std::process::id(),
+        let dir = porter_fake::scratch_dir(&format!(
+            "launcher-runtime-{}",
             N.fetch_add(1, Ordering::Relaxed)
         ));
-        std::fs::create_dir_all(&dir).expect("runtime dir");
         Self(dir)
     }
 }

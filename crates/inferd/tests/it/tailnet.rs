@@ -72,9 +72,7 @@ fn policy() -> porter_infer::Policy {
 async fn pair(name: &str, seen: Seen, serving: bool) -> Pair {
     let a = addresses();
     let port = free_port();
-    let dir = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("tn-{}-{name}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("scratch");
+    let dir = porter_fake::scratch_dir(&format!("tn-{name}"));
     let lab = Lab::start(&Bind::Socket(dir), "lab", &[entries::SERVED], None).await;
     let pi = World::start(Plan {
         catalog: catalog(),
@@ -689,9 +687,7 @@ async fn a_computer_attached_over_the_network_is_never_lent_onward() {
     // runs on pi itself.
     let a = addresses();
     let port = free_port();
-    let dir = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("tn-{}-onward", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("scratch");
+    let dir = porter_fake::scratch_dir("tn-onward");
     let lab = Lab::start(&Bind::Socket(dir), "lab", &[entries::SERVED], None).await;
     let pi = World::start(Plan {
         catalog: vec![("a-attached.toml", entries::attached())],

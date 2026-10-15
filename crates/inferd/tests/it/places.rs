@@ -26,9 +26,7 @@ fn app(name: &str) -> AppId {
 /// A world with one model on this computer, a lab machine called `lab` with one model, and two
 /// cloud accounts: a working one and one that has to be signed in again.
 async fn world(lab_dir: &str, role: Role, who: &str) -> (World, Lab) {
-    let dir = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("pl-{}-{lab_dir}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("scratch");
+    let dir = porter_fake::scratch_dir(&format!("pl-{lab_dir}"));
     let lab = Lab::start(&Bind::Socket(dir), "lab", &[entries::SERVED], None).await;
     let plan = Plan {
         catalog: vec![
@@ -290,9 +288,7 @@ mod routing {
 
     /// `placed_world`, with the local chat model only when `local` says so.
     pub async fn placed_world_with(dir: &str, role: Role, who: &str, local: bool) -> (World, Lab) {
-        let scratch = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-            .join(format!("pr-{}-{dir}", std::process::id()));
-        std::fs::create_dir_all(&scratch).expect("scratch");
+        let scratch = porter_fake::scratch_dir(&format!("pr-{dir}"));
         let lab = Lab::start(&Bind::Socket(scratch), "lab", &[entries::SERVED], None).await;
         let mut catalog = vec![
             ("a-attached.toml", entries::attached()),
@@ -908,9 +904,7 @@ mod computers {
 
     /// A world with no engine written by hand, and a lab machine that wants `KEY`.
     async fn world(name: &str) -> (World, Lab) {
-        let dir = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-            .join(format!("cp-{}-{name}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("scratch");
+        let dir = porter_fake::scratch_dir(&format!("cp-{name}"));
         let lab = Lab::start(&Bind::Socket(dir), "lab", &[entries::SERVED], Some(KEY)).await;
         let plan = Plan {
             catalog: vec![("a-attached.toml", entries::attached())],

@@ -9,8 +9,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 fn scratch(name: &str) -> PathBuf {
-    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("file-store-{}-{name}", std::process::id()));
+    let dir = porter_fake::scratch_dir(&format!("file-store-{name}"));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("scratch");
     dir

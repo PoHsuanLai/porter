@@ -101,12 +101,7 @@ struct Engine {
 
 impl Engine {
     fn new(mode: &str) -> Self {
-        let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
-            "es-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        std::fs::create_dir_all(&dir).expect("scratch");
+        let dir = porter_fake::scratch_dir(&format!("es-{}", NEXT.fetch_add(1, Ordering::Relaxed)));
         let exe = std::env::current_exe().expect("this test binary");
         let program = dir.join("engine.sh");
         let script = format!(

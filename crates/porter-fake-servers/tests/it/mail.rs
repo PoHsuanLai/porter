@@ -441,9 +441,7 @@ async fn rewrite_points_mail_rows_at_the_fake() {
 
 #[tokio::test]
 async fn a_fake_can_listen_on_a_unix_socket_in_a_scratch_dir() {
-    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("imap-socket-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("scratch dir");
+    let dir = porter_fake::scratch_dir("imap-socket");
     let fake = FakeImap::bind(
         &Bind::Socket(dir.clone()),
         Tls::Plain,
