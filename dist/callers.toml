@@ -33,15 +33,6 @@ unit = "sill.service"
 role = "sheet_host"
 name = "Shell"
 
-# The shell as it ran before, in a scope, kept until every session starts it as `sill.service`. A
-# scope has no main process: while the shell is not running, another program of the person's could
-# start a scope of this name.
-[[caller]]
-app = "org.quire.Shell"
-unit = "sill-shell.scope"
-role = "sheet_host"
-name = "Shell"
-
 # inferd: asks for verdicts and resolves API keys for the models it runs.
 [[caller]]
 app = "org.quire.Inference"
