@@ -22,7 +22,7 @@
 #   PREFIX/share/quire/settings/inferd.settings.toml         the AI settings page schema
 #   PREFIX/share/doc/porter/examples/                        inferd.toml and inferd-cloud.conf: samples
 #                                                            for the person to copy; never installed live
-#   SYSCONFDIR/porter/callers.toml                           the caller table (kept if the person changed it)
+#   SYSCONFDIR/porter/{callers,inferd-callers}.toml          the caller tables (kept if the owner changed them)
 #
 # The script is standalone: it knows nothing of any desktop. Run again, it changes nothing that is
 # already as it should be (a file is replaced only when its content differs). It writes nothing under
@@ -145,16 +145,19 @@ put 644 "$dist/inferd-tailnet.conf" "$prefix/share/porter/inferd-tailnet.conf"
 put 644 "$dist/inferd.toml" "$prefix/share/doc/porter/examples/inferd.toml"
 put 644 "$dist/inferd-cloud.conf" "$prefix/share/doc/porter/examples/inferd-cloud.conf"
 
-# --- The caller table ----------------------------------------------------------------------------
-# It is the person's to edit once installed: a copy that differs is kept, and the shipped one is
-# left beside it as callers.toml.dist for them to compare.
-callers=$sysconfdir/porter/callers.toml
-if [ -f "$destdir$callers" ] && ! cmp -s "$dist/callers.toml" "$destdir$callers"; then
-    echo "kept $callers (it differs from the shipped one; the shipped one is $callers.dist)"
-    put 644 "$dist/callers.toml" "$callers.dist"
-else
-    put 644 "$dist/callers.toml" "$callers"
-fi
+# --- The caller tables ---------------------------------------------------------------------------
+# accountd's and syncd's (callers.toml) and inferd's (inferd-callers.toml). Each is the machine
+# owner's to edit once installed: a copy that differs is kept, and the shipped one is left beside
+# it as <name>.dist for them to compare.
+for table in callers.toml inferd-callers.toml; do
+    callers=$sysconfdir/porter/$table
+    if [ -f "$destdir$callers" ] && ! cmp -s "$dist/$table" "$destdir$callers"; then
+        echo "kept $callers (it differs from the shipped one; the shipped one is $callers.dist)"
+        put 644 "$dist/$table" "$callers.dist"
+    else
+        put 644 "$dist/$table" "$callers"
+    fi
+done
 
 if [ "$changed" -eq 0 ]; then
     echo "nothing to change"

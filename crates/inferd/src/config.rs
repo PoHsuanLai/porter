@@ -4,7 +4,6 @@
 
 use crate::catalog::CatalogDirs;
 use crate::local::EngineConfig;
-use crate::peers::CallerTable;
 use crate::probe::ProbeConfig;
 use crate::structured::AiConfig;
 use porter_core::xdg::{PathError, Xdg, absolute};
@@ -41,9 +40,11 @@ pub struct InferdConfig {
     /// The old shape of the tier map, `[[tiers.rows]]`: read the same way as `policy`.
     #[serde(default)]
     pub tiers: TierMap,
-    /// Which executable is which caller.
-    #[serde(default)]
-    pub callers: CallerTable,
+    /// A `[callers]` table, which this file no longer gives: who is calling comes only from the
+    /// system's table ([`porter_daemon::INFERD_CALLERS`]), which a person cannot write. Kept
+    /// only so that the daemon can say once that it is ignored.
+    #[serde(default, rename = "callers", skip_serializing)]
+    pub ignored_callers: Option<IgnoredTable>,
     /// The `ai.*` settings rows, at their paths.
     #[serde(default)]
     pub ai: AiConfig,
@@ -51,6 +52,16 @@ pub struct InferdConfig {
     /// LM Studio), and how often. Left out of the file while it is the default.
     #[serde(default, skip_serializing_if = "ProbeConfig::is_default")]
     pub probe: ProbeConfig,
+}
+
+/// A table the file had, whatever it held, which is read no further.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IgnoredTable;
+
+impl<'de> Deserialize<'de> for IgnoredTable {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        serde::de::IgnoredAny::deserialize(deserializer).map(|_| Self)
+    }
 }
 
 impl InferdConfig {

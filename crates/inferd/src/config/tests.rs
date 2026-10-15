@@ -142,7 +142,10 @@ cua = ["cuad.service"]
         Floor::Anywhere,
         "a class with no row may go anywhere"
     );
-    assert!(config.callers.resolve("cuad.service").is_some());
+    assert!(
+        config.ignored_callers.is_some(),
+        "an old [callers] table still reads, and is left unread"
+    );
 }
 
 #[test]
@@ -151,13 +154,15 @@ fn a_file_that_does_not_read_says_why() {
         "[engines",
         "engines = 3",
         "[policy]\nlocal_only = \"maybe\"",
-        "callers = 3",
     ] {
         assert!(
             matches!(InferdConfig::from_toml(text), Err(ConfigError::Toml(_))),
             "{text:?}"
         );
     }
+    // A `callers` of any shape is left unread, so it never stops the file.
+    let any = InferdConfig::from_toml("callers = 3").expect("reads");
+    assert!(any.ignored_callers.is_some());
 }
 
 #[test]

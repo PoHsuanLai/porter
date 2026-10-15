@@ -2,8 +2,10 @@
 //!
 //! The caller is derived by the transport, never sent: the bus says which process owns a
 //! connection, and `porter_dbus::ProcCallers` (shared with accountd) names it. inferd's own
-//! `[callers]` table of `inferd.toml` is rows of that shared table, keyed by systemd unit (never
-//! by executable path: the cgroup is all `ProcCallers` reads): cuad's units with the `Cua` role,
+//! caller table, the system file `/etc/porter/inferd-callers.toml`
+//! (`porter_daemon::INFERD_CALLERS`, which a person cannot write; never `inferd.toml`), is rows of
+//! that shared table, keyed by systemd unit (never by executable path: the cgroup is all
+//! `ProcCallers` reads): cuad's units with the `Cua` role,
 //! each app's with `App`. This is advisory for unsandboxed processes (porter R12): a
 //! process that can start an allowed unit or app scope can be that caller. cuad is a fixed unit and
 //! the only caller that may open a computer-use session; an app is whichever unit the table
