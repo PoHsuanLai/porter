@@ -13,7 +13,7 @@ use porter_core::{
     Provenance, Restriction, SecretKey, SecretPurpose, SecretText, Subject, UnixSeconds,
 };
 use porter_dbus::{CallerTable, ProcCallers};
-use porter_fake::{FakeProvider, FixedClock, MemoryStore, RecordingAudit};
+use porter_fake::{FakeProvider, FixedClock, MemoryStore, RecordingAudit, Scratch};
 use porter_provider::Provider;
 use porter_secrets::{MemorySecrets, Secrets};
 use porter_service::{AccountService, Registry};
@@ -226,7 +226,9 @@ async fn the_client_lists_identities_and_continues_as_one_as_the_app_the_fixture
     assert_eq!(result_of(&lines), "error", "{lines:?}");
 
     // The fixture is removed when the client ends.
-    let left: Vec<_> = std::fs::read_dir(rig.proc_root.path()).expect("proc").collect();
+    let left: Vec<_> = std::fs::read_dir(rig.proc_root.path())
+        .expect("proc")
+        .collect();
     assert!(left.is_empty(), "{left:?}");
 }
 

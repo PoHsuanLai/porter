@@ -31,7 +31,8 @@ fn config_text(dir: &std::path::Path) -> String {
 pub struct PrivateBus {
     child: Child,
     address: String,
-    scratch: Scratch,
+    /// Held for its Drop: the directory goes after the daemon.
+    _scratch: Scratch,
 }
 
 impl PrivateBus {
@@ -57,7 +58,7 @@ impl PrivateBus {
         Self {
             child,
             address: address.trim().to_owned(),
-            scratch,
+            _scratch: scratch,
         }
     }
 

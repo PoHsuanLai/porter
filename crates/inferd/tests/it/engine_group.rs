@@ -126,10 +126,7 @@ fn a_killed_inferd_takes_its_direct_engine_with_it_and_leaves_the_grandchild_to_
     let dir = Scratch::new("eg");
     let mut inferd = helper("linger", &dir);
     wait_for(&dir.join("ready"));
-    let (engine, grandchild) = (
-        pid_in(&dir.join("engine")),
-        pid_in(&dir.join("grandchild")),
-    );
+    let (engine, grandchild) = (pid_in(&dir.join("engine")), pid_in(&dir.join("grandchild")));
     assert!(!gone(engine) && !gone(grandchild));
 
     inferd.kill().expect("SIGKILL the stand-in");
@@ -152,10 +149,7 @@ fn an_inferd_that_exits_normally_leaves_no_engine_process() {
     let dir = Scratch::new("eg");
     let mut inferd = helper("exit_normally", &dir);
     wait_for(&dir.join("ready"));
-    let (engine, grandchild) = (
-        pid_in(&dir.join("engine")),
-        pid_in(&dir.join("grandchild")),
-    );
+    let (engine, grandchild) = (pid_in(&dir.join("engine")), pid_in(&dir.join("grandchild")));
     let status = inferd.wait().expect("the stand-in ends");
     assert!(status.success(), "{status:?}");
     let both = gone_soon(engine) && gone_soon(grandchild);
