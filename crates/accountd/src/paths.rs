@@ -4,7 +4,7 @@
 pub use porter_core::xdg::PathError;
 use porter_core::xdg::{Xdg, absolute};
 use porter_families::set::Layer;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Every path the daemon uses.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,11 +18,12 @@ pub struct Paths {
     pub callers_system: PathBuf,
     /// The user's caller table, `$XDG_CONFIG_HOME/porter/callers.toml`; its rows win.
     pub callers_user: PathBuf,
-    /// The shipped clients, `/usr/share/porter/clients.toml`.
+    /// The shipped clients: `porter/clients.toml` under the first data directory that has it.
     pub clients_shipped: PathBuf,
     /// The user's clients, `$XDG_CONFIG_HOME/porter/clients.toml` (Settings writes it).
     pub clients_user: PathBuf,
-    /// Provider file directories, later ones winning: the system's, then the user's.
+    /// Provider file directories, later ones winning: the system's (under the first
+    /// data directory that has `porter/providers`), then the user's.
     pub provider_dirs: Vec<PathBuf>,
     /// The `applications` directories that hold desktop entries, the person's first:
     /// `$XDG_DATA_HOME/applications`, then each absolute `$XDG_DATA_DIRS` entry's (default
@@ -44,7 +45,6 @@ impl Paths {
         var: impl Fn(&str) -> Option<String>,
         extra_providers: &[PathBuf],
     ) -> Result<Self, PathError> {
-        let data_dirs = var("XDG_DATA_DIRS");
         // Like the XDG rule: a relative path is invalid and ignored.
         let tailscale_socket = absolute(var(TAILSCALE_SOCKET_VAR))
             .unwrap_or_else(|| PathBuf::from(porter_tailscale::DEFAULT_SOCKET));
@@ -53,19 +53,12 @@ impl Paths {
         let config = xdg.dir("XDG_CONFIG_HOME", ".config")?;
         let data = xdg.dir("XDG_DATA_HOME", ".local/share")?;
         let mut provider_dirs = vec![
-            Path::new("/usr/share/porter/providers").to_owned(),
+            xdg.shipped("porter/providers"),
             data.join("porter/providers"),
         ];
         provider_dirs.extend_from_slice(extra_providers);
-        let data_dirs = data_dirs
-            .filter(|dirs| !dirs.is_empty())
-            .unwrap_or_else(|| "/usr/local/share:/usr/share".to_owned());
         let applications = std::iter::once(data.clone())
-            .chain(
-                data_dirs
-                    .split(':')
-                    .filter_map(|dir| absolute(Some(dir.to_owned()))),
-            )
+            .chain(xdg.data_dirs())
             .map(|dir| dir.join("applications"))
             .collect();
         Ok(Self {
@@ -73,7 +66,7 @@ impl Paths {
             audit: state.join("quire/accountd/audit.jsonl"),
             callers_system: PathBuf::from(porter_daemon::SYSTEM_CALLERS),
             callers_user: config.join("porter/callers.toml"),
-            clients_shipped: PathBuf::from("/usr/share/porter/clients.toml"),
+            clients_shipped: xdg.shipped("porter/clients.toml"),
             clients_user: config.join("porter/clients.toml"),
             provider_dirs,
             applications,
@@ -110,6 +103,7 @@ impl Paths {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn the_provider_layers_are_the_system_the_person_then_the_named() {

@@ -103,9 +103,10 @@ pub struct KeepPaths {
     pub registry_dir: PathBuf,
     /// `$XDG_STATE_HOME/quire/syncd/audit.jsonl`.
     pub audit: PathBuf,
-    /// Provider file directories, later ones winning: the system's, then the person's.
+    /// Provider file directories, later ones winning: the system's (under the first
+    /// data directory that has `porter/providers`), then the person's.
     pub provider_dirs: Vec<PathBuf>,
-    /// The shipped clients, `/usr/share/porter/clients.toml`.
+    /// The shipped clients: `porter/clients.toml` under the first data directory that has it.
     pub clients_shipped: PathBuf,
     /// The person's clients, `$XDG_CONFIG_HOME/porter/clients.toml` (Settings writes it).
     pub clients_user: PathBuf,
@@ -122,10 +123,10 @@ impl KeepPaths {
             registry_dir: state.join("quire/syncd/keys"),
             audit: state.join("quire/syncd/audit.jsonl"),
             provider_dirs: vec![
-                PathBuf::from("/usr/share/porter/providers"),
+                xdg.shipped("porter/providers"),
                 data.join("porter/providers"),
             ],
-            clients_shipped: PathBuf::from("/usr/share/porter/clients.toml"),
+            clients_shipped: xdg.shipped("porter/clients.toml"),
             clients_user: config.join("porter/clients.toml"),
         })
     }

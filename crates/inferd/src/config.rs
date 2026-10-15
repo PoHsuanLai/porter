@@ -6,7 +6,7 @@ use crate::catalog::CatalogDirs;
 use crate::local::EngineConfig;
 use crate::probe::ProbeConfig;
 use crate::structured::AiConfig;
-use porter_core::xdg::{PathError, Xdg, absolute};
+use porter_core::xdg::{PathError, Xdg};
 use porter_infer::{Policy, TierMap};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -114,11 +114,12 @@ pub struct Dirs {
     /// `$XDG_RUNTIME_DIR/inferd/agent`: where the credential files of the agents' processes live
     /// (the launcher makes it 0700 and clears what a dead inferd left).
     pub agent: PathBuf,
-    /// `/usr/share/porter/providers`: the provider files this install ships.
+    /// `porter/providers` under the first data directory that has it (`/usr/local/share` or
+    /// `/usr/share` by default): the provider files this install ships.
     pub providers_system: PathBuf,
     /// `$XDG_DATA_HOME/porter/providers`: the person's own provider files.
     pub providers_own: PathBuf,
-    /// `/usr/share/porter/clients.toml`.
+    /// `porter/clients.toml` under the first data directory that has it.
     pub clients_shipped: PathBuf,
     /// `$XDG_CONFIG_HOME/porter/clients.toml`.
     pub clients_own: PathBuf,
@@ -147,31 +148,22 @@ impl Dirs {
             .ok_or(ConfigError::NoDirs)?;
         // The `applications` directories that name an app for a person (the desktop entries):
         // the person's first, then each absolute `$XDG_DATA_DIRS` entry's.
-        let data_dirs = xdg
-            .raw("XDG_DATA_DIRS")
-            .map(|dirs| dirs.to_string())
-            .filter(|dirs| !dirs.is_empty())
-            .unwrap_or_else(|| "/usr/local/share:/usr/share".to_owned());
         let applications = std::iter::once(data.clone())
-            .chain(
-                data_dirs
-                    .split(':')
-                    .filter_map(|dir| absolute(Some(dir.to_owned()))),
-            )
+            .chain(xdg.data_dirs())
             .map(|dir| dir.join("applications"))
             .collect();
         Ok(Self {
             keys: state.join("quire").join("inferd").join("keys"),
             keys_audit: state.join("quire").join("inferd").join("keys-audit.jsonl"),
             agent: runtime.join("inferd").join("agent"),
-            providers_system: PathBuf::from("/usr/share/porter/providers"),
+            providers_system: xdg.shipped("porter/providers"),
             providers_own: data.join("porter").join("providers"),
-            clients_shipped: PathBuf::from("/usr/share/porter/clients.toml"),
+            clients_shipped: xdg.shipped("porter/clients.toml"),
             clients_own: config.join("porter").join("clients.toml"),
             applications,
             config: config.join("quire").join("inferd.toml"),
             catalog: CatalogDirs {
-                system: PathBuf::from("/usr/share/stoker/catalog"),
+                system: xdg.shipped("stoker/catalog"),
                 user: data.join("stoker").join("catalog"),
             },
             sockets: runtime.join("inferd"),
