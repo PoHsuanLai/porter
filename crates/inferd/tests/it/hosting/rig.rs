@@ -34,7 +34,7 @@ use model_catalog::MiB;
 use model_http::{DerCertificate, TlsRoots};
 use porter_client::{Accounts, DbusTransport};
 use porter_core::{AppId, AppName, Isolation, UnixSeconds};
-use porter_infer::{ModelCard, Policy, TierMap};
+use porter_infer::{ModelCard, Policy, Slot, TierMap};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -473,6 +473,8 @@ impl World {
                 true => TailnetServe::On,
                 false => TailnetServe::Off,
             },
+            // The person chose Automatic for text: unset, the assistant has no model.
+            tiers: TierMap::automatic(Slot::Text),
             ..Settings::default()
         })
         .with_remote(plan.remote)

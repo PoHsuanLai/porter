@@ -62,8 +62,23 @@ pub struct TierMap {
 }
 
 impl TierMap {
-    /// The person's pick for `kind` and `tier`, or `None` when the row is empty (the catalogue's
-    /// own choice, as before). A row that names a model wins over an "auto" row for the same
+    /// Automatic for `kind` at every tier, and nothing else chosen.
+    pub fn automatic(kind: Slot) -> Self {
+        Self {
+            rows: Vec::new(),
+            autos: [Tier::Fast, Tier::Balanced, Tier::Best]
+                .into_iter()
+                .map(|tier| AutoRow {
+                    kind,
+                    tier,
+                    mode: AutoMode::default(),
+                })
+                .collect(),
+        }
+    }
+
+    /// The person's pick for `kind` and `tier`, or `None` when the row is empty: the catalogue's
+    /// own choice for most kinds, and nothing chosen for the text slot, which has no default. A row that names a model wins over an "auto" row for the same
     /// slot: a named model is never overridden, so a file that says both stays with the name.
     pub fn pick(&self, kind: Slot, tier: Tier) -> Option<Pick> {
         let named = self

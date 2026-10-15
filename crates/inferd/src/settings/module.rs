@@ -142,9 +142,13 @@ impl<P: Peers> InferdSettings<P> {
             variants.push(current);
         }
         let mut labels = WordLabels::default();
-        labels
-            .0
-            .insert(String::new(), "Catalogue default".to_owned());
+        // The text slot has no default: unset, the assistant asks the person to choose
+        // (owner, 2026-10-16). The other slots still take the catalogue's choice.
+        let unset = match kind {
+            Slot::Text => "Not chosen",
+            _ => "Catalogue default",
+        };
+        labels.0.insert(String::new(), unset.to_owned());
         labels.0.insert(AUTO.to_owned(), "Automatic".to_owned());
         for model in variants.iter().skip(2) {
             let name = model

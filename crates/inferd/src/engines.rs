@@ -12,7 +12,7 @@ use crate::local::{LocalModel, Weights};
 use crate::peers::{Caller, Role};
 use crate::probed::{ProbedBook, Standing};
 use crate::router::placed::{Allowed, Placed, Rules, Serving, Unplaced, choose_in};
-use crate::router::{Listed, choose};
+use crate::router::{Listed, Unchosen, choose, chosen_for};
 use crate::runner::{Pin, Pinned};
 use crate::serve::{EngineFailed, EngineHost};
 use crate::session::{RouteDecision, Routing, SessionSpec};
@@ -438,19 +438,21 @@ impl Engines {
         role: Role,
         offered: &Offered,
     ) -> Result<(Routing, Pinned), PickRefusal> {
-        self.route_in(spec, role, offered, None)
+        self.route_in(spec, role, offered, None, Unchosen::Refuse)
             .map_err(Unplaced::into_pick)
     }
 
     /// `route_with`, inside the places `allowed` names when it does: the models of other places
     /// are not candidates, the places are tried in the caller's order, and a request nothing in
-    /// the set can serve is refused with the reason ([`Unplaced::NoPlace`]).
+    /// the set can serve is refused with the reason ([`Unplaced::NoPlace`]). `unchosen` says what
+    /// a language request does when the person left the text slot unset ([`Unchosen`]).
     pub fn route_in(
         &self,
         spec: &SessionSpec,
         role: Role,
         offered: &Offered,
         allowed: Option<&Allowed>,
+        unchosen: Unchosen,
     ) -> Result<(Routing, Pinned), Unplaced> {
         if matches!(spec.need, Need::ComputerUse(_)) && role != Role::Cua {
             return Err(Unplaced::Other(InferRefusal::Denied.into()));
@@ -459,16 +461,19 @@ impl Engines {
         let tiers = through_grants(&settings.tiers, offered);
         let policy = settings.routing_policy();
         let decided = match allowed {
-            None => choose(
-                &spec.need,
-                spec.class,
-                spec.tier,
-                &self.listed_for(&spec.need, offered),
-                &policy,
-                &tiers,
-                settings.auto,
-            )
-            .map_err(Unplaced::Other)?,
+            None => chosen_for(&spec.need, spec.tier, &tiers, unchosen)
+                .and_then(|()| {
+                    choose(
+                        &spec.need,
+                        spec.class,
+                        spec.tier,
+                        &self.listed_for(&spec.need, offered),
+                        &policy,
+                        &tiers,
+                        settings.auto,
+                    )
+                })
+                .map_err(Unplaced::Other)?,
             Some(allowed) => {
                 choose_in(
                     &spec.need,
@@ -480,6 +485,7 @@ impl Engines {
                         policy: &policy,
                         tiers: &tiers,
                         auto: settings.auto,
+                        unchosen,
                     },
                 )?
                 .0
@@ -685,7 +691,7 @@ impl Engines {
             usage,
         };
         let (decision, pinned) = self
-            .route_in(&spec, role, offered, allowed)
+            .route_in(&spec, role, offered, allowed, Unchosen::Refuse)
             .map(|(routing, pinned)| (routing.decision(), pinned))?;
         match (decision.readiness, pinned.model) {
             (Readiness::Loadable, Some(model)) => {
@@ -753,7 +759,13 @@ impl Engines {
         allowed: &Allowed,
     ) -> Result<(), PlaceRefusal> {
         let offered = self.offer(&caller.app, spec.class, spec.usage).await;
-        match self.route_in(spec, caller.role, &offered, Some(allowed)) {
+        match self.route_in(
+            spec,
+            caller.role,
+            &offered,
+            Some(allowed),
+            Unchosen::CatalogueChoice,
+        ) {
             Err(Unplaced::NoPlace(refusal)) => Err(refusal),
             Ok(_) | Err(Unplaced::Other(_)) => Ok(()),
             // a variant a newer porter adds: refused as a place that is not ready
@@ -779,7 +791,7 @@ impl Engines {
             tier: Tier::Balanced,
             usage,
         };
-        match self.route_in(&spec, role, offered, allowed) {
+        match self.route_in(&spec, role, offered, allowed, Unchosen::CatalogueChoice) {
             Ok(_) => Ok(Availability::Granted),
             Err(Unplaced::NoPlace(refusal)) => Err(refusal),
             Err(Unplaced::Other(pick)) => Ok(match pick.refusal {
@@ -988,7 +1000,13 @@ impl crate::serve::Router for SessionRouter {
         let offered = self.offered(spec).await;
         let (routing, pinned) = self
             .engines
-            .route_in(spec, self.role, &offered, self.allowed.as_ref())
+            .route_in(
+                spec,
+                self.role,
+                &offered,
+                self.allowed.as_ref(),
+                Unchosen::Refuse,
+            )
             .map_err(Unplaced::into_pick)?;
         self.pin.set(pinned);
         Ok(routing)

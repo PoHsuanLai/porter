@@ -56,7 +56,7 @@ pub mod testkit;
 
 pub use carried::Carried;
 pub use local::{EngineConfig, LocalModel, Weights, build};
-pub use router::{Decided, Listed, choose};
+pub use router::{Decided, Listed, Unchosen, choose, chosen_for};
 pub use seams::{
     AuditSink, EngineFailed, EngineHost, Router, RunningTurn, Seams, TurnRunner, TurnStep,
 };

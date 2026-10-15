@@ -225,6 +225,35 @@ pub fn choose(
     })
 }
 
+/// What a language request does when the person has left the text slot unset for its tier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unchosen {
+    /// It is refused, `NoModelChosen`: nothing is chosen for the person (owner, 2026-10-16).
+    /// A session and a Prepare ask this way.
+    Refuse,
+    /// The catalogue's own choice, as before: Availability and the placement check answer by
+    /// it, since they ask whether a request could run, not which model would.
+    CatalogueChoice,
+}
+
+/// Whether `need` may be routed at `tier` under the person's `tiers`: a language need whose
+/// text slot is unset at that tier is `NoModelChosen` when `unchosen` is `Refuse`. "auto" is a
+/// choice; only an empty row is not. Every other need, and a pin (which does not consult the
+/// person's picks), is not asked.
+pub fn chosen_for(
+    need: &Need,
+    tier: Tier,
+    tiers: &TierMap,
+    unchosen: Unchosen,
+) -> Result<(), PickRefusal> {
+    match (need, unchosen) {
+        (Need::Llm(_), Unchosen::Refuse) if tiers.pick(Slot::Text, tier).is_none() => {
+            Err(plain(InferRefusal::NoModelChosen))
+        }
+        _ => Ok(()),
+    }
+}
+
 pub(crate) fn plain(refusal: InferRefusal) -> PickRefusal {
     PickRefusal {
         refusal,

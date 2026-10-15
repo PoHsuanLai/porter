@@ -205,7 +205,8 @@ async fn describe_lists_the_picker_rows_of_the_slots_inferd_has_models_for() {
         ]
     );
     for spec in &schema.key {
-        // The choices: the catalogue default, Automatic, and the models inferd knows.
+        // The choices: none (the text slot has no default), Automatic, and the models inferd
+        // knows.
         assert_eq!(
             spec.kind,
             KeyKind::Menu {
@@ -217,7 +218,7 @@ async fn describe_lists_the_picker_rows_of_the_slots_inferd_has_models_for() {
         // A section per slot, the tier as the label (best reads "Demanding").
         assert_eq!(spec.section.0, "Models / Text");
         assert_eq!(spec.agent, AgentSetting::HandsOff);
-        assert_eq!(spec.labels.of(""), Some("Catalogue default"));
+        assert_eq!(spec.labels.of(""), Some("Not chosen"));
         assert_eq!(spec.labels.of("auto"), Some("Automatic"));
         assert_eq!(spec.labels.of("anthropic/sonnet"), Some("sonnet"));
     }
