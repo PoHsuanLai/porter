@@ -6,12 +6,20 @@ pub mod bus;
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-/// A scratch directory under the build's own tmp dir.
+/// A scratch directory under the build's own tmp dir, its own on every call.
+///
+/// The tests of one binary run in parallel in one process, so the process id alone does not tell
+/// two of them apart: two rigs named alike shared one directory, and each emptied it as it
+/// started. The client tests then saw another test's live fixtures in their proc root, or lost
+/// their own to the other's start. A count makes every call's directory its own.
 pub fn scratch(name: &str) -> PathBuf {
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let call = NEXT.fetch_add(1, Ordering::Relaxed);
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("rig-{}-{name}", std::process::id()));
+        .join(format!("rig-{}-{call}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("scratch dir");
     dir
