@@ -39,10 +39,8 @@ pub struct PrivateBus {
 impl PrivateBus {
     /// Starts the daemon and waits for its address.
     pub fn start() -> Self {
-        let scratch = porter_fake::scratch_dir(&format!(
-            "bus-{}",
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
+        let scratch =
+            porter_fake::scratch_dir(&format!("bus-{}", NEXT.fetch_add(1, Ordering::Relaxed)));
         let config = scratch.join("bus.conf");
         std::fs::write(&config, config_text(&scratch)).expect("write the bus config");
         let mut child = Command::new("dbus-daemon")
