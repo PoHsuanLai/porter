@@ -38,7 +38,7 @@ impl<K> Clone for EngineHost<K> {
 
 impl<K: KeySource + 'static> EngineHost<K> {
     /// A host over `engines`, routed by `routes` (a row per kind of need and tier the app
-    /// serves; any other is `Unavailable`), bounded by `policy` (its local-only switch and its
+    /// serves; any other is `NoModelChosen`), bounded by `policy` (its local-only switch and its
     /// per-class floors; [`Policy::proposed`] is porter's proposal, the app's to take or change),
     /// with `keys` for the engines that want one. Refuses a table that is not one: an engine
     /// given twice, a row naming an engine not given, a key that would cross the network in clear
@@ -101,8 +101,9 @@ impl<K: KeySource + 'static> SessionHost for EngineHost<K> {
     }
 
     /// Says what routing says, without touching an engine: `Ready` when an engine is routed (an
-    /// engine this host starts nothing on, and does not probe), `Unavailable` when none is, and
-    /// any other refusal as `Denied` with its reason.
+    /// engine this host starts nothing on, and does not probe), `Unavailable` when none may
+    /// answer, and any other refusal (`NoModelChosen` when the table has no row) as `Denied`
+    /// with its reason.
     async fn prepare(
         &self,
         _app: &AppId,

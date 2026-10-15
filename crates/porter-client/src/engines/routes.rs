@@ -63,18 +63,19 @@ impl Table {
         self.engines.iter().find(|engine| &engine.id == id)
     }
 
-    /// The engines of the row for `slot` and `tier`, in the row's order.
-    fn row(&self, slot: Slot, tier: Tier) -> Vec<&Engine> {
+    /// The engines of the row for `slot` and `tier`, in the row's order; `None` when the table
+    /// has no row naming one, which for a language model is nothing chosen (there is no default
+    /// planner: the person, or the app for them, names the engines).
+    fn row(&self, slot: Slot, tier: Tier) -> Option<Vec<&Engine>> {
         self.rows
             .iter()
-            .find(|row| row.slot == slot && row.tier == tier)
+            .find(|row| row.slot == slot && row.tier == tier && !row.engines.is_empty())
             .map(|row| {
                 row.engines
                     .iter()
                     .filter_map(|id| self.engine(id))
                     .collect()
             })
-            .unwrap_or_default()
     }
 
     /// The engine that answers a session for `need`, `class` and `tier`: the first of the row
@@ -89,7 +90,7 @@ impl Table {
         keys: &impl KeySource,
     ) -> Result<&Engine, InferRefusal> {
         let slot = slot_of(need).ok_or(InferRefusal::Unsupported)?;
-        let row = self.row(slot, tier);
+        let row = self.row(slot, tier).ok_or(InferRefusal::NoModelChosen)?;
         let mut candidates = Vec::with_capacity(row.len());
         for engine in &row {
             let permission = match (engine.key, engine.key_held(keys).await) {

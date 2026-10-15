@@ -21,7 +21,9 @@
 //!   chat-completions wire it speaks, where it runs (`Locality`, which the policy's floors read)
 //!   and whether a key goes with every request ([`KeyUse`]).
 //! - [`Route`]: a row of the table, `(Slot, Tier) -> engines in order of preference`. Nothing is
-//!   chosen by default: a need or tier with no row is `Unavailable`. Only language models
+//!   chosen by default: a tier with no row is `NoModelChosen` (no default planner; the app asks
+//!   the person to choose), and a row none of whose engines may answer is `Unavailable`. Only
+//!   language models
 //!   (`Need::Llm`, `Slot::Text`) are served; any other need is refused `Unsupported`.
 //! - [`Policy`](porter_infer::Policy): the hard rules, applied by `porter_infer::admit` (the one
 //!   place they live): `local_only` on drops every cloud engine, and a class whose floor is this
