@@ -27,7 +27,7 @@ use model_http::{
 };
 use porter_core::consent::{Usage, Verdict};
 use porter_core::{AccountId, Locality, ModelId, Tokens};
-use porter_infer::ServedBy;
+use porter_infer::{ServedBy, TokenUsage};
 use serde_json::Value;
 use tokio::io::AsyncWrite;
 use tokio::sync::mpsc;
@@ -163,6 +163,28 @@ fn reply_bound(body: &[u8], entry: &ModelEntry) -> Tokens {
 /// The most a model writes when its catalogue entry does not say.
 const UNSTATED_MAX_OUTPUT: u32 = 128_000;
 
+/// The most a request can cost: its prompt, never more than the model reads, and its reply
+/// ([`reply_bound`]). The prompt is guessed from its bytes ([`worst_case`]), which an image sent
+/// as base64 inflates far past what the model counts, so the guess stops at the model's context
+/// window.
+fn worst_of(prompt_bytes: usize, body: &[u8], entry: &ModelEntry) -> TokenUsage {
+    let reads = entry
+        .capabilities
+        .text_out
+        .as_ref()
+        .map(|text| text.context.0)
+        .filter(|context| *context > 0)
+        .unwrap_or(UNSTATED_CONTEXT);
+    let worst = worst_case(prompt_bytes, reply_bound(body, entry));
+    TokenUsage {
+        input: Tokens(worst.input.0.min(reads)),
+        ..worst
+    }
+}
+
+/// The most a model reads when its catalogue entry does not say: the largest window offered.
+const UNSTATED_CONTEXT: u32 = 1_000_000;
+
 fn wire_of(shape: Shape) -> Wire {
     match shape {
         Shape::Anthropic => Wire::AnthropicMessages,
@@ -260,9 +282,23 @@ pub async fn run<S: AsyncWrite + Unpin + Send>(
         .map_err(|_| Failure::new(Cause::Upstream, "the catalogue entry has no usable id"))?;
     let body = body_for(request, shape, named.stream)?;
     let sent = u64::try_from(body.len()).unwrap_or(u64::MAX);
+    let key = cloud
+        .key(&grant)
+        .await
+        .map_err(|_| Failure::new(Cause::Upstream, "the account's key could not be read"))?;
+    let extra = match shape {
+        Shape::Anthropic => anthropic_headers(request),
+        Shape::OpenAi => Vec::new(),
+    };
+    let client = cloud
+        .agent_client(&provider, reach.wire, &key, extra)
+        .ok_or_else(|| Failure::new(Cause::Upstream, "no address for the account's provider"))?;
+    drop(key);
     // The worst this request can cost is held before it goes out, so requests that run together
-    // see each other's holds and cannot together pass a cap.
-    let worst = worst_case(body.len(), reply_bound(&request.body, entry));
+    // see each other's holds and cannot together pass a cap. Held only once nothing but the
+    // sending is left to fail: a hold dropped unsettled is counted whole, so one taken before the
+    // key is read would charge for a request that never left.
+    let worst = worst_of(body.len(), &request.body, entry);
     let guard = cloud
         .ledger()
         .reserve(
@@ -279,18 +315,6 @@ pub async fn run<S: AsyncWrite + Unpin + Send>(
                 "a spend cap for this account or this agent is reached",
             )
         })?;
-    let key = cloud
-        .key(&grant)
-        .await
-        .map_err(|_| Failure::new(Cause::Upstream, "the account's key could not be read"))?;
-    let extra = match shape {
-        Shape::Anthropic => anthropic_headers(request),
-        Shape::OpenAi => Vec::new(),
-    };
-    let client = cloud
-        .agent_client(&provider, reach.wire, &key, extra)
-        .ok_or_else(|| Failure::new(Cause::Upstream, "no address for the account's provider"))?;
-    drop(key);
     let exchange = Exchange {
         verb: Verb::PostJson,
         root: RouteRoot::Base,

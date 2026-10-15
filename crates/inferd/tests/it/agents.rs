@@ -637,6 +637,34 @@ async fn over_the_spend_cap_the_agent_is_told_to_stop_and_nothing_is_sent_or_cou
     assert_eq!(provider_requests(&world).len(), 1);
 }
 
+/// A request that fails before it is sent (here the account's key cannot be read) holds nothing:
+/// the ledger stays where it was however often the agent tries.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_request_that_fails_before_it_is_sent_counts_nothing() {
+    let unreadable = FakeAccount {
+        id: "anthropic",
+        standing: Standing::Granted {
+            to: vec![APP],
+            grant: "grant-anthropic",
+            key: None,
+        },
+    };
+    let world = World::start(plan(vec![unreadable], say("x"), say("y"))).await;
+    let endpoint = open(
+        &world,
+        &account_route("anthropic", &["claude-opus-5-5"]),
+        "anthropic_messages",
+    )
+    .await;
+    let body = anthropic_body("claude-opus-5-5", false);
+    for _ in 0..3 {
+        let reply = messages(&endpoint, &body).await;
+        assert_ne!(reply.status, 200, "{}", reply.body);
+    }
+    assert!(provider_requests(&world).is_empty());
+    assert_eq!(spent(&world, "anthropic").micro_usd, 0);
+}
+
 // ---- models --------------------------------------------------------------------------------
 
 #[tokio::test(flavor = "multi_thread")]
