@@ -142,30 +142,46 @@ pub struct CallerTable {
 impl CallerTable {
     /// The system's table with the user's laid over it: a user row replaces the system's row
     /// for the same unit, or for the same app when neither names a unit. A user row may add a
-    /// plain app or lower a role, never give a fixed role ([`CallerRole::is_fixed`]): such a row
-    /// is left out, with one warning on stderr.
+    /// plain app or lower a role, never give a fixed role ([`CallerRole::is_fixed`]). Nor may it
+    /// add a row for an app the system's table names (intentd, the companion, Settings…): such
+    /// an app's identity is its system rows, which docket and memoryd answer by, so a user row
+    /// for it is kept only where it replaces one of them. A row left out gets one warning on
+    /// stderr.
     pub fn layered(system: CallerTable, user: CallerTable) -> Self {
+        let same = |a: &CallerRow, b: &CallerRow| match (&a.unit, &b.unit) {
+            (Some(x), Some(y)) => x == y,
+            (None, None) => a.app == b.app,
+            _ => false,
+        };
+        let owned = |row: &CallerRow| system.callers.iter().any(|mine| mine.app == row.app);
+        let replaces_its_own = |row: &CallerRow| {
+            system
+                .callers
+                .iter()
+                .any(|mine| mine.app == row.app && same(mine, row))
+        };
         let user = CallerTable {
             callers: user
                 .callers
                 .into_iter()
                 .filter(|row| {
-                    let keep = !row.role.is_fixed();
-                    if !keep {
+                    let why = if row.role.is_fixed() {
+                        Some("only the system's table gives that role")
+                    } else if owned(row) && !replaces_its_own(row) {
+                        Some("the system's table owns that app")
+                    } else {
+                        None
+                    };
+                    if let Some(why) = why {
                         eprintln!(
-                            "porter: callers: ignoring the user's row for {} ({:?}): only the system's table gives that role",
+                            "porter: callers: ignoring the user's row for {} ({:?}): {why}",
                             row.unit.as_deref().unwrap_or(row.app.as_str()),
                             row.role
                         );
                     }
-                    keep
+                    why.is_none()
                 })
                 .collect(),
-        };
-        let same = |a: &CallerRow, b: &CallerRow| match (&a.unit, &b.unit) {
-            (Some(x), Some(y)) => x == y,
-            (None, None) => a.app == b.app,
-            _ => false,
         };
         let mut callers: Vec<CallerRow> = system
             .callers
