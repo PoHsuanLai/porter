@@ -20,12 +20,10 @@ struct Scratch(PathBuf);
 
 impl Scratch {
     fn new() -> Self {
-        let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
-            "callers-{}-{}",
-            std::process::id(),
+        let dir = porter_fake::scratch_dir(&format!(
+            "callers-{}",
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
-        std::fs::create_dir_all(&dir).expect("scratch");
         Self(dir)
     }
 

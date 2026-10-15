@@ -71,13 +71,12 @@ pub struct Plan {
 /// A directory of this test's own.
 fn scratch(name: &str) -> PathBuf {
     static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
-        "a-{name}-{}-{}",
-        std::process::id(),
+    let dir = porter_fake::scratch_dir(&format!(
+        "a-{name}-{}",
         NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
     let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).expect("scratch dir");
+    std::fs::create_dir_all(&dir).expect("scratch");
     dir
 }
 

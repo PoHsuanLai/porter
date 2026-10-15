@@ -24,13 +24,12 @@ const NAME: &str = "pt";
 /// A runtime directory of this test's own (short: the socket path has 108 bytes).
 fn scratch(label: &str) -> PathBuf {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
-    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
-        "sa-{label}-{}-{}",
-        std::process::id(),
+    let dir = porter_fake::scratch_dir(&format!(
+        "sa-{label}-{}",
         NEXT.fetch_add(1, Ordering::Relaxed)
     ));
     let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).expect("scratch dir");
+    std::fs::create_dir_all(&dir).expect("scratch");
     dir
 }
 

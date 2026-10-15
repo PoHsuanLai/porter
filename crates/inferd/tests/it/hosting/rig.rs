@@ -303,9 +303,8 @@ pub fn test_app() -> AppId {
 
 impl World {
     pub async fn start(plan: Plan) -> World {
-        let scratch = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
-            "inf-{}-{}",
-            std::process::id(),
+        let scratch = porter_fake::scratch_dir(&format!(
+            "inf-{}",
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         let catalog_dir = scratch.join("cat");

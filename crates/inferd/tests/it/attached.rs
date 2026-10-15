@@ -73,12 +73,7 @@ struct Dir(PathBuf);
 
 impl Dir {
     fn new() -> Self {
-        let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
-            "at-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        std::fs::create_dir_all(&dir).expect("scratch");
+        let dir = porter_fake::scratch_dir(&format!("at-{}", NEXT.fetch_add(1, Ordering::Relaxed)));
         Self(dir)
     }
 

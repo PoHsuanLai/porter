@@ -217,8 +217,7 @@ mod file_store {
 
     #[tokio::test]
     async fn the_test_key_file_keeps_the_contract() {
-        let dir = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-            .join(format!("contract-file-{}", std::process::id()));
+        let dir = porter_fake::scratch_dir("contract-file");
         let _ = std::fs::remove_dir_all(&dir);
         let store = FileSecrets::open(dir.join("keys.json")).expect("opens");
         contract(File(store)).await;
@@ -359,11 +358,10 @@ mod oo7_file {
         }
     }
 
-    /// oo7's file backend at a path in cargo's scratch directory, opened with a test secret.
+    /// oo7's file backend at a path in the temp directory, opened with a test secret.
     async fn scratch(name: &str) -> File {
-        let dir = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("oo7-file");
-        std::fs::create_dir_all(&dir).expect("scratch dir");
-        let path = dir.join(format!("{name}-{}.keyring", std::process::id()));
+        let dir = porter_fake::scratch_dir("oo7-file");
+        let path = dir.join(format!("{name}.keyring"));
         let _ = std::fs::remove_file(&path);
         let unlocked = oo7::file::UnlockedKeyring::load(&path, oo7::Secret::text("test-secret"))
             .await

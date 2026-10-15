@@ -228,9 +228,7 @@ async fn an_attached_my_network_engine_follows_the_floor_and_the_my_network_sett
     use hosting::lab::Lab;
     use inferd::attached::{Attached, Place, Reach};
     use porter_fake_servers::net::Bind;
-    let dir = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("ag-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("scratch");
+    let dir = porter_fake::scratch_dir("ag");
     let lab = Lab::start(&Bind::Socket(dir.clone()), "lab", &[entries::SERVED], None).await;
     lab.say(&["from the lab"]);
     let mut p = Plan {

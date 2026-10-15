@@ -18,10 +18,9 @@ use std::time::Duration;
 pub fn scratch(name: &str) -> PathBuf {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     let call = NEXT.fetch_add(1, Ordering::Relaxed);
-    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("rig-{}-{call}-{name}", std::process::id()));
+    let dir = porter_fake::scratch_dir(&format!("rig-{call}-{name}"));
     let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).expect("scratch dir");
+    std::fs::create_dir_all(&dir).expect("scratch");
     dir
 }
 

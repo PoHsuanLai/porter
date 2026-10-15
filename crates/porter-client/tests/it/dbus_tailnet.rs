@@ -59,8 +59,7 @@ fn tailscale() -> Account {
 
 impl World {
     async fn start(name: &str) -> Self {
-        let dir = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-            .join(format!("client-tailnet-{}-{name}", std::process::id()));
+        let dir = porter_fake::scratch_dir(&format!("client-tailnet-{name}"));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("scratch");
         let fake = FakeLocalApi::start(&dir, Daemon::Running(network()))
