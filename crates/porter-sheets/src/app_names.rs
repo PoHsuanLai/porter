@@ -199,7 +199,10 @@ mod tests {
             "org.example.B",
             "[Desktop Entry]\nName=Only theirs\n",
         );
-        let names = AppNames::new(CallerTable::default(), vec![home.to_path_buf(), system.to_path_buf()]);
+        let names = AppNames::new(
+            CallerTable::default(),
+            vec![home.to_path_buf(), system.to_path_buf()],
+        );
         assert_eq!(names.title_of(&app("org.example.A")).0, "Mine");
         assert_eq!(names.title_of(&app("org.example.B")).0, "Only theirs");
     }
