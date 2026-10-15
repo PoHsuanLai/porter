@@ -164,7 +164,8 @@ pub fn fits(need: &Need, card: &ModelCard) -> bool {
 ///
 /// The person's pick for the kind and tier decides how: a named model is served or refused
 /// (never replaced), "auto" is `porter_infer::pick`, and an empty row is the catalogue's own
-/// choice, as it always was (`route`).
+/// choice (`route`). A session's text slot never reaches here empty: [`chosen_for`] refuses it
+/// first, since there is no default planner.
 pub fn choose(
     need: &Need,
     class: DataClass,
