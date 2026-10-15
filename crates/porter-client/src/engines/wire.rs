@@ -84,8 +84,15 @@ fn endpoint(engine: &Engine, key: Option<&SecretText>) -> HttpEndpoint {
         },
         proxy: Proxy::Direct,
         base: UrlPath(engine.url.base.clone()),
-        auth: match (engine.key, key) {
-            (KeyUse::Bearer, Some(key)) => AuthHeader::Bearer(Secret(key.expose().to_owned())),
+        auth: match (engine.key, key, engine.url.scheme) {
+            // Over plain http a key goes only to this machine's loopback (the client refuses any
+            // other host); over TLS anywhere.
+            (KeyUse::Bearer, Some(key), Scheme::Http) => {
+                AuthHeader::LoopbackBearer(Secret(key.expose().to_owned()))
+            }
+            (KeyUse::Bearer, Some(key), Scheme::Https) => {
+                AuthHeader::Bearer(Secret(key.expose().to_owned()))
+            }
             _ => AuthHeader::None,
         },
         headers: Vec::new(),

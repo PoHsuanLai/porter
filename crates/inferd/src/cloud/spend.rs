@@ -435,10 +435,9 @@ pub struct SpendGuard<'a> {
 }
 
 impl SpendGuard<'_> {
-    /// Replaces the hold with what the turn used. `None` is a turn whose usage is not known (an
-    /// error, an early stop, a reply that did not say): the hold stays as the charge. Unknown
-    /// usage will come from stoker's report of how a stream ended, once that lands; until then a
-    /// reply that says it used nothing is passed as `None` too.
+    /// Replaces the hold with what the turn used. `None` is a turn whose usage is not known (the
+    /// model may have run and no count came, as the provider's report of how the attempt ended
+    /// says): the hold stays as the charge.
     pub fn settle(self, used: Option<TokenUsage>) {
         let Some(used) = used else { return };
         let mut rows = self

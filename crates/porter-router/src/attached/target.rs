@@ -48,9 +48,12 @@ impl Target {
     /// The endpoint of one connect: the key file is read now (so a token that was rotated is the
     /// one sent), and a file that is refused is why there is no endpoint.
     pub fn endpoint(&self, base: &str, timeouts: Timeouts) -> Result<HttpEndpoint, KeyFileProblem> {
-        let auth = match &self.key {
-            Some(key) => AuthHeader::Bearer(key.read()?),
-            None => AuthHeader::None,
+        let auth = match (&self.key, &self.reach) {
+            // Plain http on this machine's loopback: the key goes only because it is opted in, and
+            // the client still refuses any host that is not loopback.
+            (Some(key), Reach::Loopback { .. }) => AuthHeader::LoopbackBearer(key.read()?),
+            (Some(key), _) => AuthHeader::Bearer(key.read()?),
+            (None, _) => AuthHeader::None,
         };
         Ok(self.endpoint_with(auth, base, timeouts))
     }
