@@ -77,6 +77,8 @@ pub fn open(model: &LocalModel, begin: &CuaBegin) -> Option<CuaSession> {
         limits: Limits {
             max_output: caps.max_output,
             stop: Vec::new(),
+            // The session that runs the steps bounds them; a step has no deadline of its own.
+            deadline: None,
         },
         reasoning: Reasoning::Off,
         tool_calls: match batching {

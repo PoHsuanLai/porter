@@ -123,7 +123,8 @@ fn reasoning_picks_the_catalog_sampling_set_and_an_explicit_sampling_wins() {
         turn.limits,
         sp::Limits {
             max_output: sp::Tokens(1),
-            stop: vec!["END".into()]
+            stop: vec!["END".into()],
+            deadline: None,
         }
     );
 }

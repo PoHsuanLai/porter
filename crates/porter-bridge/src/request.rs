@@ -369,6 +369,8 @@ pub fn chat_turn_for(
         limits: sp::Limits {
             max_output,
             stop: control.stop.clone(),
+            // The caller that knows how long a turn may take sets it (inferd, for a hosted turn).
+            deadline: None,
         },
         sampling,
         reasoning,

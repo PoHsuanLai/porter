@@ -120,6 +120,12 @@ fn turn_of(
     }
 }
 
+/// The most a hosted turn may take once its connection is open, however many keep-alive frames
+/// arrive: the per-stage waits bound a silent server, never one that trickles. Three minutes for
+/// a first byte, then the longest reply inferd asks for (16 384 tokens) at a slow twenty a second
+/// is about fourteen more; an overrun is a timeout, which keeps the turn's hold charged.
+const TURN_DEADLINE: sp::WaitMs = sp::WaitMs(900_000);
+
 /// Runs `request` on the hosted model `pin` names, streaming its events to `steps`, and answers
 /// with the reply.
 pub async fn reply(
@@ -138,7 +144,7 @@ pub async fn reply(
     let Ok(frames) = Frames::read(attachments) else {
         return InferReply::Failed(ModelError::Unreadable);
     };
-    let (turn, temperature) = match turn_of(pin, request, &frames, tier) {
+    let (mut turn, temperature) = match turn_of(pin, request, &frames, tier) {
         Some(Ok(built)) => built,
         Some(Err(_)) | None => return refused(InferRefusal::Unsupported),
     };
@@ -155,6 +161,7 @@ pub async fn reply(
         return InferReply::Failed(ModelError::Unreachable);
     };
     drop(key);
+    turn.limits.deadline = Some(TURN_DEADLINE);
     // The worst this turn can cost is held before it goes out, so turns that run together see
     // each other's holds. The prompt's size is read off the request as it will be sent.
     let prompt_bytes = serde_json::to_vec(&turn).map_or(0, |body| body.len());
@@ -204,17 +211,21 @@ struct Billed<'a, P> {
     first: Mutex<Option<SpendGuard<'a>>>,
 }
 
-/// Remembers whether the session ended the turn early, since what an early end used is not known.
+/// Keeps what the provider reports an attempt cost when it ends ([`sp::TurnSink::ended`]), and
+/// passes it on to the session's sink.
 struct Watched<'a, K> {
     inner: &'a mut K,
-    stopped: bool,
+    report: Option<sp::UsageReport>,
 }
 
 impl<K: sp::TurnSink> sp::TurnSink for Watched<'_, K> {
     fn event(&mut self, event: sp::TurnEvent) -> sp::Flow {
-        let flow = self.inner.event(event);
-        self.stopped |= flow == sp::Flow::Stop;
-        flow
+        self.inner.event(event)
+    }
+
+    fn ended(&mut self, report: sp::UsageReport) {
+        self.report = Some(report);
+        self.inner.ended(report);
     }
 }
 
@@ -250,47 +261,57 @@ impl<P: Provider> Provider for Billed<'_, P> {
         };
         let mut watched = Watched {
             inner: sink,
-            stopped: false,
+            report: None,
         };
         // A guard dropped before this returns (the client went away and the task was aborted)
         // leaves its hold counted.
         let result = self.inner.turn(request, &mut watched).await;
-        let used = match &result {
-            Ok(end) if !watched.stopped && end.usage != sp::TurnUsage::default() => {
-                Some(bridge::usage(end.usage))
-            }
-            Err(error) if refused_before_any_work(error) => Some(nothing_used()),
-            _ => None,
-        };
-        guard.settle(used);
+        guard.settle(charge_of(watched.report));
         result
     }
 }
 
-/// Whether the provider turned the request away before it generated anything, so it billed
-/// nothing: it could not be reached, was not ready, was busy, refused the credentials or the
-/// account, or refused the request as written. A timeout, a server error part-way or a reply
-/// that could not be read may have come after work the provider bills, and keep the hold.
-fn refused_before_any_work(error: &sp::ProviderError) -> bool {
-    matches!(
-        error,
-        sp::ProviderError::Unreachable
-            | sp::ProviderError::NotReady
-            | sp::ProviderError::RateLimited(_)
-            | sp::ProviderError::Unauthorized
-            | sp::ProviderError::AuthRejected(_)
-            | sp::ProviderError::PaymentRequired(_)
-            | sp::ProviderError::ContextOverflow { .. }
-            | sp::ProviderError::BadRequest(_)
-            | sp::ProviderError::Refused(_)
-    )
+/// What to charge an attempt, from the provider's report of how it ended: its count when the
+/// server gave one, nothing when no model ran, and the hold (`None`) when the model may have run
+/// and no count came, or no report did.
+fn charge_of(report: Option<sp::UsageReport>) -> Option<TokenUsage> {
+    match report {
+        Some(sp::UsageReport::Known(used)) => Some(bridge::usage(used)),
+        Some(sp::UsageReport::Nothing) => Some(TokenUsage {
+            input: Tokens(0),
+            output: Tokens(0),
+            cached: Tokens(0),
+        }),
+        _ => None,
+    }
 }
 
-/// The usage of a turn the provider turned away.
-fn nothing_used() -> TokenUsage {
-    TokenUsage {
-        input: Tokens(0),
-        output: Tokens(0),
-        cached: Tokens(0),
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A count is charged as given, a request no model ran is charged nothing, and an attempt
+    /// that may have run without a count (or sent no report) keeps the hold.
+    #[test]
+    fn an_attempt_is_charged_from_how_the_provider_says_it_ended() {
+        let used = sp::TurnUsage {
+            input: sp::Tokens(10),
+            output: sp::Tokens(5),
+            ..sp::TurnUsage::default()
+        };
+        assert_eq!(
+            charge_of(Some(sp::UsageReport::Known(used))),
+            Some(bridge::usage(used))
+        );
+        let none = charge_of(Some(sp::UsageReport::Nothing)).expect("a charge");
+        assert_eq!(
+            (none.input, none.output, none.cached),
+            (Tokens(0), Tokens(0), Tokens(0))
+        );
+        let seen = sp::UsageReport::Unknown {
+            seen: sp::TurnUsage::default(),
+        };
+        assert_eq!(charge_of(Some(seen)), None);
+        assert_eq!(charge_of(None), None);
     }
 }

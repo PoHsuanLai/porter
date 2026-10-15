@@ -582,20 +582,21 @@ async fn a_provider_that_rejects_the_key_is_unauthorized_and_charges_nothing() {
         &InferReply::Failed(ModelError::Unauthorized),
         "{events:?}"
     );
-    // Turned away before any work, so the hold is given back.
+    // The provider says no model ran, so the hold is given back.
     assert_eq!(spent_today(&world).micro_usd, 0);
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_server_error_keeps_the_hold_charged() {
+async fn a_server_that_answers_an_error_status_charges_nothing_for_any_attempt() {
     let world = failing_with(500).await;
     let events = turn(&world, "x").await;
     assert!(
         matches!(finished(&events), InferReply::Failed(_)),
         "{events:?}"
     );
-    // The provider may have billed work before it failed, so the turn's whole hold stays counted.
-    assert!(spent_today(&world).micro_usd > 0);
+    // An error status before any reply is a request no model ran, retries included; a stream
+    // that breaks after the model started is the one that keeps its hold (`Unknown`).
+    assert_eq!(spent_today(&world).micro_usd, 0);
 }
 
 /// A world whose hosted provider answers every turn with `status`.
