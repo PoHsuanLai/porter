@@ -8,6 +8,7 @@ use super::file::Reload;
 use super::keys::{
     SLOTS, TIERS, model_path, parse_model_path, parse_pool_path, pool_path, slots_of,
 };
+use super::missing::MissingEngines;
 use super::resolve::{model_text, parse_model, slot_value};
 use crate::cloud::picker::{Availability, Choice, NEEDS_ACCOUNT, choices};
 use crate::keys::KeyRows;
@@ -44,6 +45,8 @@ pub struct InferdSettings<P> {
     writing: tokio::sync::Mutex<()>,
     /// The `accounts.<id>.*` rows of the AI accounts, when this daemon hosts them.
     keys: Option<std::sync::Arc<dyn KeyRows>>,
+    /// The engine programs this computer lacks, named in a slot with no model here.
+    missing: MissingEngines,
 }
 
 impl<P> std::fmt::Debug for InferdSettings<P> {
@@ -62,7 +65,15 @@ impl<P: Peers> InferdSettings<P> {
             reload,
             writing: tokio::sync::Mutex::new(()),
             keys: None,
+            missing: MissingEngines::default(),
         }
+    }
+
+    /// The same module, saying in a slot with no model on this computer which missing program
+    /// would run one.
+    #[must_use]
+    pub fn with_missing(self, missing: MissingEngines) -> Self {
+        Self { missing, ..self }
     }
 
     /// The same module, also listing and changing the AI accounts: their rows, the permits'
@@ -132,6 +143,21 @@ impl<P: Peers> InferdSettings<P> {
 
     fn current(&self, kind: Slot, tier: Tier) -> String {
         slot_value(&self.reload.engines().settings().tiers, kind, tier)
+    }
+
+    /// The picker's help, with why nothing runs on this computer when no model of the slot does
+    /// and a program is missing.
+    fn help(&self, kind: Slot) -> String {
+        let base = "The model used for this slot at this tier. Automatic picks one of the \
+                    models you list for it, one already loaded when it can.";
+        let here = self
+            .known_for(kind)
+            .iter()
+            .any(|(_, locality)| *locality == Locality::OnDevice);
+        match (here, self.missing.note(kind)) {
+            (false, Some(note)) => format!("{base} {note}"),
+            _ => base.to_owned(),
+        }
     }
 
     /// The models the person may choose for `kind`, with their names, groups and the reason
@@ -220,11 +246,7 @@ impl<P: Peers> InferdSettings<P> {
             default: toml::Value::String(String::new()),
             // Grouped by job: a section per slot, the tiers listed under it.
             label: Label(tier_label(tier).to_owned()),
-            help: Help(
-                "The model used for this slot at this tier. Automatic picks one of the \
-                 models you list for it, one already loaded when it can."
-                    .to_owned(),
-            ),
+            help: Help(self.help(kind)),
             page: Page::Intelligence,
             section: Section(format!("Models / {}", slot_label(kind))),
             exposure: Exposure::Basic,

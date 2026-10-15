@@ -22,7 +22,7 @@ use crate::local::{LocalModel, build};
 use crate::peers::{CallerTable, PROC_GATE, ProcPeers, ProcRoot};
 use crate::replay::Replays;
 use crate::service::{Inference, serve_with_settings};
-use crate::settings::{ConfigFile, InferdSettings, Reload, resolve};
+use crate::settings::{ConfigFile, InferdSettings, MissingEngines, Reload, resolve};
 use crate::shutdown::{self, Ended, Shutdown};
 use crate::supervise::{Ports, Supervised};
 use crate::tailnet::{BusMachines, Parts, Tailnet};
@@ -575,7 +575,9 @@ impl Daemon {
         serve_with_settings(
             &connection,
             daemon,
-            InferdSettings::new(peers, reload).with_keys(Arc::new(rows)),
+            InferdSettings::new(peers, reload)
+                .with_missing(MissingEngines::of(&config.engines_in(&dirs)))
+                .with_keys(Arc::new(rows)),
         )
         .await?;
         Ok(Self { connection, closer })

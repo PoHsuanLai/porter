@@ -12,7 +12,7 @@ use inferd::clock::FixedClock;
 use inferd::engines::Engines;
 use inferd::peers::{Caller, Role, TablePeers};
 use inferd::service::{Inference, serve_with_settings};
-use inferd::settings::{ConfigFile, InferdSettings, Reload};
+use inferd::settings::{ConfigFile, InferdSettings, MissingEngines, Reload};
 use inferd::supervise::Supervised;
 use porter_core::capability::{Capability, LlmCap, LlmFeature, LlmWire};
 use porter_core::{
@@ -112,6 +112,17 @@ fn serving(
     peers: &Arc<TablePeers>,
     file: &std::path::Path,
 ) -> impl std::future::Future<Output = zbus::Result<()>> + Send + 'static {
+    serving_missing(daemon, engines, peers, file, MissingEngines::default())
+}
+
+/// `serving`, the settings module also told which engine programs the computer lacks.
+fn serving_missing(
+    daemon: &Connection,
+    engines: &Engines,
+    peers: &Arc<TablePeers>,
+    file: &std::path::Path,
+    missing: MissingEngines,
+) -> impl std::future::Future<Output = zbus::Result<()>> + Send + 'static {
     let reload = Reload::new(ConfigFile::new(file.to_owned()), engines.clone());
     let inference = Inference::new(
         engines.clone(),
@@ -120,7 +131,7 @@ fn serving(
         FixedClock(UnixSeconds(1_700_000_000)),
     )
     .reloading(reload.clone());
-    let settings = InferdSettings::new(Arc::clone(peers), reload);
+    let settings = InferdSettings::new(Arc::clone(peers), reload).with_missing(missing);
     let daemon = daemon.clone();
     async move { serve_with_settings(&daemon, inference, settings).await }
 }
@@ -538,4 +549,45 @@ async fn an_old_kind_row_in_the_file_is_the_slots_row_and_a_set_keeps_the_two_in
             .pick(Slot::Text, porter_core::Tier::Balanced),
         Some(Pick::Auto { .. })
     ));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_slot_with_no_model_here_says_which_missing_program_would_run_one() {
+    let bus = PrivateBus::start();
+    let file = bus.scratch().join("inferd.toml");
+    let engines = Engines::new(
+        Vec::new(),
+        Supervised::idle(),
+        Policy::proposed(),
+        TierMap::default(),
+    )
+    .with_remote(vec![sonnet()]);
+    let peers = Arc::new(TablePeers::new());
+    let daemon = bus.connect().await;
+    // No program is named, so every engine is missing.
+    let missing = MissingEngines::of(&porter_router::local::EngineConfig::default());
+    serving_missing(&daemon, &engines, &peers, &file, missing)
+        .await
+        .expect("serve");
+    let client = bus.connect().await;
+    peers.introduce(
+        client.unique_name().expect("name").as_str(),
+        who("org.quire.Settings", Role::Settings),
+    );
+    let settings = LiveClient::new(&client, INFERENCE_BUS, INFERENCE_SETTINGS_PATH)
+        .await
+        .expect("client");
+    let schema = settings.describe().await.expect("schema");
+    let row = schema
+        .key
+        .iter()
+        .find(|k| k.path.0 == "ai.model.text.best")
+        .expect("the text row");
+    assert!(
+        row.help.0.ends_with(
+            "Running models on this computer needs llama.cpp or vLLM, which are not installed."
+        ),
+        "{}",
+        row.help.0
+    );
 }
