@@ -12,7 +12,20 @@ use std::process::{Child, Command, Stdio};
 
 /// The probe table names no port: this daemon must not ask a port of this computer what it is
 /// (a real Ollama may be on one).
-const CONFIG: &str = "[callers.apps]\n\"org.quire.Companion\" = [\"companiond.service\"]\n\n[probe]\nollama = []\nllama_cpp = []\nlm_studio = []\n";
+const CONFIG: &str = "[probe]\nollama = []\nllama_cpp = []\nlm_studio = []\n";
+/// The caller table naming companiond's unit, in the system file's shape.
+const CALLERS: &str = "[apps]\n\"org.quire.Companion\" = [\"companiond.service\"]\n";
+
+/// Where the test writes the caller table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Table {
+    /// The system's file, named by `PORTER_INFERD_CALLERS`.
+    System,
+    /// A `[callers]` table in the person's `inferd.toml`, which is ignored; the system file the
+    /// variable names does not exist.
+    #[cfg(feature = "test-proc-root")]
+    InTheConfig,
+}
 const CGROUP: &str =
     "0::/user.slice/user-1000.slice/user@1000.service/app.slice/companiond.service\n";
 
@@ -59,10 +72,21 @@ impl Drop for Daemon {
     }
 }
 
-fn start(bus: &bus::PrivateBus, proc_root: &Path) -> Daemon {
+fn start(bus: &bus::PrivateBus, proc_root: &Path, table: Table) -> Daemon {
     let scratch = bus.scratch();
     let config = scratch.join("inferd.toml");
-    std::fs::write(&config, CONFIG).expect("config");
+    let system = scratch.join("inferd-callers.toml");
+    match table {
+        Table::System => {
+            std::fs::write(&config, CONFIG).expect("config");
+            std::fs::write(&system, CALLERS).expect("callers");
+        }
+        #[cfg(feature = "test-proc-root")]
+        Table::InTheConfig => {
+            let mine = CALLERS.replace("[apps]", "[callers.apps]");
+            std::fs::write(&config, format!("{CONFIG}\n{mine}")).expect("config");
+        }
+    }
     let log = scratch.join("inferd.stderr");
     let stderr = std::fs::File::create(&log).expect("the daemon's log file");
     let child = Command::new(env!("CARGO_BIN_EXE_inferd"))
@@ -74,6 +98,7 @@ fn start(bus: &bus::PrivateBus, proc_root: &Path) -> Daemon {
         .env("XDG_STATE_HOME", scratch.join("state"))
         .env("DBUS_SESSION_BUS_ADDRESS", bus.address())
         .env("INFERD_PROC_ROOT", proc_root)
+        .env("PORTER_INFERD_CALLERS", &system)
         // A Tailscale nobody serves: this computer's real one is never asked.
         .env("INFERD_TAILSCALE_SOCKET", scratch.join("no-tailscale.sock"))
         .arg("--config")
@@ -88,10 +113,10 @@ fn start(bus: &bus::PrivateBus, proc_root: &Path) -> Daemon {
 
 /// Whether `availability` from this process is answered (a named caller) or refused as nobody
 /// (`AccessDenied`). Any other end, a timeout among them, fails the test with what inferd said.
-async fn answered(bus: &bus::PrivateBus, proc_root: &Path) -> bool {
+async fn answered(bus: &bus::PrivateBus, proc_root: &Path, table: Table) -> (bool, String) {
     let client = bus.connect().await;
     let dbus = zbus::fdo::DBusProxy::new(&client).await.expect("dbus");
-    let mut daemon = start(bus, proc_root);
+    let mut daemon = start(bus, proc_root, table);
     daemon.owns_its_name(&dbus).await;
     let proxy = InferenceProxy::new(&client).await.expect("proxy");
     let need = need_to_dbus(&Need::Llm(LlmNeed::new(
@@ -103,7 +128,7 @@ async fn answered(bus: &bus::PrivateBus, proc_root: &Path) -> bool {
         proxy.availability(&need, "notes", &Details::new()),
     )
     .await;
-    match reply {
+    let answered = match reply {
         Ok(_) => true,
         Err(zbus::Error::MethodError(name, _, _))
             if name.as_str() == "org.freedesktop.DBus.Error.AccessDenied" =>
@@ -111,7 +136,8 @@ async fn answered(bus: &bus::PrivateBus, proc_root: &Path) -> bool {
             false
         }
         Err(other) => panic!("Availability ended in {other:?}: {}", daemon.said()),
-    }
+    };
+    (answered, daemon.said())
 }
 
 fn fake_proc(root: &Path, pid: u32, cgroup: Option<&str>) {
@@ -136,19 +162,38 @@ async fn a_caller_in_the_fake_proc_root_is_named_and_one_outside_it_is_not() {
     let root = named.scratch().join("proc");
     fake_proc(&root, std::process::id(), Some(CGROUP));
     main_of_companiond(&root, std::process::id());
-    assert!(answered(&named, &root).await);
+    let (yes, said) = answered(&named, &root, Table::System).await;
+    assert!(yes, "{said}");
+    assert!(said.contains("test system callers"), "{said}");
 
     let nobody = bus::PrivateBus::start();
     let root = nobody.scratch().join("proc");
     fake_proc(&root, std::process::id(), None);
-    assert!(!answered(&nobody, &root).await);
+    assert!(!answered(&nobody, &root, Table::System).await.0);
 
     // In the unit's cgroup but not its main process (it moved itself in): nobody.
     let moved = bus::PrivateBus::start();
     let root = moved.scratch().join("proc");
     fake_proc(&root, std::process::id(), Some(CGROUP));
     main_of_companiond(&root, std::process::id() + 1);
-    assert!(!answered(&moved, &root).await);
+    assert!(!answered(&moved, &root, Table::System).await.0);
+}
+
+/// The person's own `inferd.toml` names nobody: companiond's main process, which the system's
+/// table would name, is nobody when only that file names it, and the daemon says it ignored it.
+#[cfg(feature = "test-proc-root")]
+#[tokio::test(flavor = "multi_thread")]
+async fn a_callers_table_in_the_persons_file_names_nobody() {
+    let bus = bus::PrivateBus::start();
+    let root = bus.scratch().join("proc");
+    fake_proc(&root, std::process::id(), Some(CGROUP));
+    main_of_companiond(&root, std::process::id());
+    let (yes, said) = answered(&bus, &root, Table::InTheConfig).await;
+    assert!(!yes, "{said}");
+    assert!(
+        said.contains("[callers] in the configuration file ignored"),
+        "{said}"
+    );
 }
 
 #[cfg(not(feature = "test-proc-root"))]
@@ -157,5 +202,10 @@ async fn without_the_feature_the_variable_is_ignored() {
     let bus = bus::PrivateBus::start();
     let root = bus.scratch().join("proc");
     fake_proc(&root, std::process::id(), Some(CGROUP));
-    assert!(!answered(&bus, &root).await);
+    let (yes, said) = answered(&bus, &root, Table::System).await;
+    assert!(!yes, "{said}");
+    assert!(
+        said.contains("PORTER_INFERD_CALLERS=") && said.contains("ignored"),
+        "{said}"
+    );
 }

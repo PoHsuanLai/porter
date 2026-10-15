@@ -262,7 +262,9 @@ and the speech runner's two); 22 in the workspace before, 18 after (the other 15
 Decisions, where the specs were silent:
 
 - **Caller identity** is the executable behind the bus connection, through a caller table in
-  `inferd.toml` (`[callers]`, the shape of memoryd's `callers.toml`). The role is `Cua` for cuad's
+  the system file `/etc/porter/inferd-callers.toml` (CALLER-INFERD: once `[callers]` of the
+  person's `inferd.toml`, which let a person's file give a program cua, Settings or the agent
+  launcher; a `[callers]` there is now ignored with one line at start). The role is `Cua` for cuad's
   executable and `App` for every other named one; only `Cua` is routed a computer-use need (`Denied`
   otherwise). A sender nobody names gets `AccessDenied` from the bus, which the client reports as
   `TransportError::Denied` with that text (`Malformed` before "Fill W5: porter").

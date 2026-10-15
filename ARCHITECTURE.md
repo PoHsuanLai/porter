@@ -164,7 +164,7 @@ takes porter-oauth without its `io`). A daemon or an app hosting porter turns th
 | the speech turn on the wire | `porter-infer::speech` |
 | the model picker's data and the tier map | `porter-infer::choice` |
 | which request kinds a session's need admits | `porter_router::session::fits` (inferd re-exports it) |
-| who is calling inferd (connection, pid, executable, caller) | `inferd::peers` (`CallerTable` from `inferd.toml`) |
+| who is calling inferd (connection, pid, executable, caller) | `inferd::peers` (`CallerTable` from the system file `/etc/porter/inferd-callers.toml`, `porter_daemon::INFERD_CALLERS`; never from `inferd.toml`) |
 | which model answers a session, and what it is pinned to | `porter_router::router::choose` (and `pipeline::decide_text`) over `inferd::engines::Engines::route` (the only caller of `porter_infer::pick` and `porter_infer::route`) |
 | the models this computer can run, from the stoker catalog | `porter_router::catalog` (claims) and `porter_router::local` (the book); inferd re-exports both |
 | starting, probing and unloading an engine | `inferd::supervise` (the driver of stoker's `step`) over `inferd::hosts` |

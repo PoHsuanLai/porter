@@ -19,7 +19,7 @@ use crate::engines::Engines;
 use crate::hosts::{HealthProbe, HostCloser, NvidiaSmi, ProcessHost};
 use crate::keys::{AccountRows, KeyAudit, KeysObject, KeysStartError};
 use crate::local::{LocalModel, build};
-use crate::peers::{PROC_GATE, ProcPeers, ProcRoot};
+use crate::peers::{CallerTable, PROC_GATE, ProcPeers, ProcRoot};
 use crate::replay::Replays;
 use crate::service::{Inference, serve_with_settings};
 use crate::settings::{ConfigFile, InferdSettings, Reload, resolve};
@@ -74,6 +74,9 @@ pub struct Config {
     pub tailscale_socket: Option<PathBuf>,
     /// Where the caller lookup reads processes.
     pub proc_root: ProcRoot,
+    /// The system's caller table ([`porter_daemon::INFERD_CALLERS`], another file in a test
+    /// build).
+    pub callers_file: PathBuf,
     /// The bus to serve on.
     pub bus: BusTarget,
     /// Which secret store holds the AI keys.
@@ -89,6 +92,7 @@ impl Config {
             dirs,
             tailscale_socket: None,
             proc_root: ProcRoot::System,
+            callers_file: PathBuf::from(porter_daemon::INFERD_CALLERS.path),
             bus,
             keys: Selection::SecretService,
         }
@@ -122,10 +126,17 @@ impl Config {
         self
     }
 
+    /// With the system's caller table read from `path`.
+    #[must_use]
+    pub fn with_callers_file(mut self, path: PathBuf) -> Self {
+        self.callers_file = path;
+        self
+    }
+
     /// The configuration the process's environment gives; `config_file` is the command line's
     /// `--config`, else the file under `$XDG_CONFIG_HOME`. The one place inferd reads the
     /// environment: `HOME`, the XDG directories and `HF_HOME` (`Dirs::from_env`),
-    /// `INFERD_TAILSCALE_SOCKET`, `INFERD_PROC_ROOT` and `INFERD_KEYS`.
+    /// `INFERD_TAILSCALE_SOCKET`, `INFERD_PROC_ROOT`, `PORTER_INFERD_CALLERS` and `INFERD_KEYS`.
     ///
     /// # Errors
     /// There is nowhere to put the sockets and files, or the key store asked for is refused.
@@ -141,6 +152,16 @@ impl Config {
         }
         config.tailscale_socket = tailscale_socket;
         config.proc_root = proc_root;
+        // A test build may read another system caller table (a jail cannot write /etc).
+        let callers = porter_daemon::SystemCallers::choose_file(
+            porter_daemon::INFERD_CALLERS,
+            PROC_GATE,
+            |name| std::env::var_os(name),
+        );
+        if let Some(line) = callers.notice("inferd") {
+            eprintln!("{line}");
+        }
+        config.callers_file = callers.path().to_owned();
         let keys_var = std::env::var(KEYS_VAR).ok();
         config.keys = select(keys_var.as_deref()).map_err(KeysStartError::from)?;
         Ok(config)
@@ -170,6 +191,24 @@ pub enum StartError {
         /// Why.
         #[source]
         source: ConfigError,
+    },
+    /// The system's caller table could not be read.
+    #[error("{}: {source}", path.display())]
+    CallersUnreadable {
+        /// The file.
+        path: PathBuf,
+        /// Why.
+        #[source]
+        source: std::io::Error,
+    },
+    /// The system's caller table is not acceptable.
+    #[error("{}: {source}", path.display())]
+    CallersRefused {
+        /// The file.
+        path: PathBuf,
+        /// Why.
+        #[source]
+        source: crate::peers::TableError,
     },
     /// The attached engines the file names are refused.
     #[error(transparent)]
@@ -202,7 +241,7 @@ pub enum StopError {
     Hurried,
 }
 
-/// The configuration: a missing file is the default (no engines, no callers), an unreadable one
+/// The configuration: a missing file is the default (no engines), an unreadable one
 /// is an error.
 fn read_config(path: &Path) -> Result<InferdConfig, StartError> {
     match std::fs::read_to_string(path) {
@@ -211,10 +250,37 @@ fn read_config(path: &Path) -> Result<InferdConfig, StartError> {
             source,
         }),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            eprintln!("inferd: no {}; no engines, no callers", path.display());
+            eprintln!("inferd: no {}; no engines", path.display());
             Ok(InferdConfig::default())
         }
         Err(source) => Err(StartError::ConfigUnreadable {
+            path: path.to_owned(),
+            source,
+        }),
+    }
+}
+
+/// The system's caller table: a missing file is no callers, an unreadable or refused one is an
+/// error. A `[callers]` table in the configuration file is said once to be ignored.
+fn read_callers(path: &Path, config: &InferdConfig) -> Result<CallerTable, StartError> {
+    if config.ignored_callers.is_some() {
+        eprintln!(
+            "inferd: [callers] in the configuration file ignored: callers come from {} only",
+            path.display()
+        );
+    }
+    match std::fs::read_to_string(path) {
+        Ok(text) => {
+            CallerTable::from_toml_text(&text).map_err(|source| StartError::CallersRefused {
+                path: path.to_owned(),
+                source,
+            })
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            eprintln!("inferd: no {}; no callers", path.display());
+            Ok(CallerTable::default())
+        }
+        Err(source) => Err(StartError::CallersUnreadable {
             path: path.to_owned(),
             source,
         }),
@@ -268,10 +334,12 @@ impl Daemon {
             config_file,
             tailscale_socket,
             proc_root,
+            callers_file,
             bus,
             keys,
         } = config;
         let config = read_config(&config_file)?;
+        let callers = read_callers(&callers_file, &config)?;
         let catalog = read_catalog(&dirs.catalog);
         for skipped in &catalog.skipped {
             eprintln!("inferd: catalog: {}: {}", skipped.what, skipped.why);
@@ -363,7 +431,7 @@ impl Daemon {
         }
         let peers = Arc::new(ProcPeers::with_root(
             connection.clone(),
-            config.callers.clone(),
+            callers.clone(),
             &proc_root,
         ));
         // The AI keys, held here: the hosted service over inferd's own store, the shell's sheets
@@ -371,7 +439,7 @@ impl Daemon {
         let opened = crate::keys::open(
             &dirs,
             keys,
-            config.callers.rows(),
+            callers.rows(),
             connection.clone(),
             peers.shared(),
         )

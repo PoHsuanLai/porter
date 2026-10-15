@@ -3,6 +3,7 @@
 
 use ds_settings::schema::{AgentSetting, Exposure, ForeignTables, KeyKind, KeySpec, Page, Schema};
 use inferd::config::InferdConfig;
+use inferd::peers::CallerTable;
 use inferd::settings::{self, CLASSES, slug_of};
 use std::path::PathBuf;
 
@@ -11,6 +12,11 @@ fn dist(file: &str) -> String {
         .join("../../dist")
         .join(file);
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+}
+
+/// The shipped caller table, `dist/inferd-callers.toml`.
+fn shipped_callers() -> CallerTable {
+    CallerTable::from_toml_text(&dist("inferd-callers.toml")).expect("the shipped table reads")
 }
 
 fn key<'a>(text: &'a str, name: &str) -> Option<&'a str> {
@@ -33,8 +39,7 @@ fn the_activation_file_and_the_unit_name_the_bus_name_and_each_other() {
 /// (`org.quire.Settings.service`, as accountd's callers.toml), never by the app's name alone.
 #[test]
 fn the_shipped_table_names_settings_by_its_unit() {
-    let config = InferdConfig::from_toml(&dist("inferd.toml")).expect("the sample reads");
-    let rows = config.callers.rows();
+    let rows = shipped_callers().rows();
     let settings: Vec<_> = rows
         .callers
         .iter()
@@ -55,10 +60,9 @@ fn the_shipped_table_names_settings_by_its_unit() {
 #[test]
 fn the_shipped_table_names_the_placers_and_the_shell_by_unit() {
     use inferd::peers::Role;
-    let config = InferdConfig::from_toml(&dist("inferd.toml")).expect("the sample reads");
+    let callers = shipped_callers();
     let role = |unit: &str| {
-        config
-            .callers
+        callers
             .resolve(unit)
             .map(|c| (c.app.name.to_string(), c.role))
     };
@@ -158,13 +162,12 @@ fn the_tailnet_drop_in_opens_the_networks_own_addresses_and_nothing_else() {
 }
 
 #[test]
-fn the_sample_configuration_reads_and_names_the_callers_the_design_calls_for() {
-    let config = InferdConfig::from_toml(&dist("inferd.toml")).expect("the sample reads");
-    let cua = config.callers.resolve("cuad.service").expect("cuad");
+fn the_shipped_table_names_the_callers_the_design_calls_for() {
+    let callers = shipped_callers();
+    let cua = callers.resolve("cuad.service").expect("cuad");
     assert_eq!(cua.role, inferd::peers::Role::Cua);
     for exe in ["memoryd", "intentd", "companiond", "readerd", "voiced"] {
-        let caller = config
-            .callers
+        let caller = callers
             .resolve(&format!("{exe}.service"))
             .unwrap_or_else(|| panic!("{exe}"));
         // The three that docket's places reach through are placers: they open as an app does.
@@ -178,29 +181,34 @@ fn the_sample_configuration_reads_and_names_the_callers_the_design_calls_for() {
 
 #[test]
 fn the_agent_launcher_is_listed_by_the_machine_that_runs_it_never_by_default() {
-    let shipped = dist("inferd.toml");
-    let config = InferdConfig::from_toml(&shipped).expect("the sample reads");
+    let shipped = dist("inferd-callers.toml");
     assert!(
-        config
-            .callers
+        shipped_callers()
             .rows()
             .callers
             .iter()
             .all(|row| row.role != porter_dbus::CallerRole::AgentLauncher),
         "no launcher by default"
     );
-    // The line the sample's comment shows is the one a machine writes, uncommented.
+    // The line the table's comment shows is the one a machine writes, uncommented.
     let documented = shipped
         .lines()
         .find_map(|line| line.strip_prefix("# agent_launcher = "))
-        .map(|rest| format!("[callers]\nagent_launcher = {rest}"))
+        .map(|rest| format!("agent_launcher = {rest}"))
         .expect("the documented line");
-    let mine = InferdConfig::from_toml(&documented).expect("the documented line reads");
-    let launcher = mine
-        .callers
-        .resolve("docket-acp.service")
-        .expect("the unit");
+    let mine = CallerTable::from_toml_text(&documented).expect("the documented line reads");
+    let launcher = mine.resolve("docket-acp.service").expect("the unit");
     assert_eq!(launcher.role, inferd::peers::Role::AgentLauncher);
+}
+
+/// Who is calling is the system's table's to say: the sample configuration names no caller, and
+/// a `[callers]` table in a person's file is read as nothing more than present.
+#[test]
+fn the_sample_configuration_gives_no_callers() {
+    let config = InferdConfig::from_toml(&dist("inferd.toml")).expect("the sample reads");
+    assert_eq!(config.ignored_callers, None);
+    let old = InferdConfig::from_toml("[callers]\ncua = [\"mine.service\"]\n").expect("reads");
+    assert!(old.ignored_callers.is_some());
 }
 
 fn schema() -> Schema {
@@ -485,18 +493,14 @@ fn every_model_row_the_live_module_can_describe_is_read_at_its_path() {
 }
 
 #[test]
-fn the_sample_configuration_names_the_settings_app_and_its_example_rows_are_accepted() {
+fn the_shipped_table_names_the_settings_app_and_the_samples_example_rows_are_accepted() {
     let text = dist("inferd.toml");
-    let config = InferdConfig::from_toml(&text).expect("the sample reads");
     // Settings is its unit; an app scope of its name is an app like any other (sec-3).
+    let callers = shipped_callers();
     let app = porter_core::AppName::parse("org.quire.Settings").expect("name");
+    assert_eq!(callers.rows().role_of(&app), porter_dbus::CallerRole::App);
     assert_eq!(
-        config.callers.rows().role_of(&app),
-        porter_dbus::CallerRole::App
-    );
-    assert_eq!(
-        config
-            .callers
+        callers
             .resolve("org.quire.Settings.service")
             .map(|caller| caller.role),
         Some(inferd::peers::Role::Settings)
