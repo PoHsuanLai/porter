@@ -9,9 +9,9 @@
 //! prompt.
 
 use crate::settings::SpendLine;
-use porter_core::{AccountId, AppId, MicroUsd, Tokens, UnixSeconds};
+use porter_core::{AccountId, AppId, MicroUsd, PriceTable, Tokens, UnixSeconds};
 use porter_fs::atomic::AtomicWrite;
-use porter_infer::{Period, SpendScope, SpendVerdict, TokenUsage, spend_verdict};
+use porter_infer::{Period, SpendScope, SpendVerdict, TokenUsage, cost, spend_verdict};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -84,6 +84,16 @@ struct Document {
 struct Unknown {
     day: i64,
     month: i64,
+}
+
+impl Spent {
+    fn of(usage: TokenUsage, cost: MicroUsd) -> Self {
+        Self {
+            micro_usd: cost.0,
+            tokens_in: u64::from(usage.input.0),
+            tokens_out: u64::from(usage.output.0),
+        }
+    }
 }
 
 impl Unknown {
@@ -203,6 +213,27 @@ impl Ledger {
         now: UnixSeconds,
     ) {
         let mut rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
+        self.swap(
+            &mut rows,
+            app,
+            account,
+            Spent::default(),
+            Spent::of(usage, cost),
+            now,
+        );
+    }
+
+    /// Takes `held` off the app's and the account's day and month and puts `counted` on, then
+    /// writes the ledger. Periods that have ended are forgotten.
+    fn swap(
+        &self,
+        rows: &mut HashMap<Key, Spent>,
+        app: &AppId,
+        account: &AccountId,
+        held: Spent,
+        counted: Spent,
+        now: UnixSeconds,
+    ) {
         rows.retain(|key, _| key.bucket >= bucket_of(key.period, now));
         let scopes = [
             SpendScope::App(app.clone()),
@@ -217,12 +248,48 @@ impl Ledger {
                         bucket: bucket_of(period, now),
                     })
                     .or_default();
-                spent.micro_usd = spent.micro_usd.saturating_add(cost.0);
-                spent.tokens_in = spent.tokens_in.saturating_add(u64::from(usage.input.0));
-                spent.tokens_out = spent.tokens_out.saturating_add(u64::from(usage.output.0));
+                spent.micro_usd = spent.micro_usd.saturating_sub(held.micro_usd);
+                spent.tokens_in = spent.tokens_in.saturating_sub(held.tokens_in);
+                spent.tokens_out = spent.tokens_out.saturating_sub(held.tokens_out);
+                spent.micro_usd = spent.micro_usd.saturating_add(counted.micro_usd);
+                spent.tokens_in = spent.tokens_in.saturating_add(counted.tokens_in);
+                spent.tokens_out = spent.tokens_out.saturating_add(counted.tokens_out);
             }
         }
-        self.save(&rows);
+        self.save(rows);
+    }
+
+    /// Sets aside the worst a turn may cost, if the caps allow it: the check and the hold are
+    /// one step under the ledger's lock, so turns that start together see each other's holds and
+    /// cannot together pass a cap. `None` when a cap stops it.
+    ///
+    /// The hold counts as spent until the guard is settled, and stays counted if the guard is
+    /// dropped without settling (an error, a client that went away, a task that was aborted).
+    pub fn reserve<'a>(
+        &'a self,
+        line: SpendLine,
+        app: &AppId,
+        account: &AccountId,
+        price: &PriceTable,
+        worst: TokenUsage,
+        now: UnixSeconds,
+    ) -> Option<SpendGuard<'a>> {
+        let held = Spent::of(worst, cost(worst, price));
+        let mut rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
+        let stop = self.verdict_in(&rows, line, app, account, MicroUsd(held.micro_usd), now)
+            == SpendVerdict::Stop;
+        if stop {
+            return None;
+        }
+        self.swap(&mut rows, app, account, Spent::default(), held, now);
+        Some(SpendGuard {
+            ledger: self,
+            app: app.clone(),
+            account: account.clone(),
+            price: *price,
+            held,
+            at: now,
+        })
     }
 
     fn save(&self, rows: &HashMap<Key, Spent>) {
@@ -257,13 +324,32 @@ impl Ledger {
         estimate: MicroUsd,
         now: UnixSeconds,
     ) -> SpendVerdict {
+        let rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
+        self.verdict_in(&rows, line, app, account, estimate, now)
+    }
+
+    /// [`Ledger::verdict`] over rows the caller already holds the lock on.
+    fn verdict_in(
+        &self,
+        rows: &HashMap<Key, Spent>,
+        line: SpendLine,
+        app: &AppId,
+        account: &AccountId,
+        estimate: MicroUsd,
+        now: UnixSeconds,
+    ) -> SpendVerdict {
         line.caps_for(app, account)
             .iter()
             .map(|cap| match self.is_unknown(cap.period, now) {
                 // What was spent this period is lost: a cap cannot be told to hold, so it stops.
                 true => SpendVerdict::Stop,
                 false => {
-                    let spent = self.spent(&cap.scope, cap.period, now).micro_usd;
+                    let key = Key {
+                        scope: cap.scope.clone(),
+                        period: cap.period,
+                        bucket: bucket_of(cap.period, now),
+                    };
+                    let spent = rows.get(&key).copied().unwrap_or_default().micro_usd;
                     spend_verdict(cap, MicroUsd(spent), estimate)
                 }
             })
@@ -323,10 +409,59 @@ fn strictest(a: SpendVerdict, b: SpendVerdict) -> SpendVerdict {
     if rank(b) > rank(a) { b } else { a }
 }
 
+/// The worst a hosted turn can use, for the hold before it runs: the prompt at one token to three
+/// bytes (more tokens than text usually has) plus the longest reply the turn may ask for.
+pub fn worst_case(prompt_bytes: usize, max_output: Tokens) -> TokenUsage {
+    TokenUsage {
+        input: Tokens(u32::try_from(prompt_bytes.div_ceil(3)).unwrap_or(u32::MAX)),
+        output: max_output,
+        cached: Tokens(0),
+    }
+}
+
+/// A hold on the ledger for one turn that may bill, taken by [`Ledger::reserve`].
+///
+/// Settle it with what the turn used. A guard that is dropped without settling (the turn failed,
+/// the client went away, the task was aborted) leaves the whole hold counted, since the provider
+/// may have billed for it all.
+#[derive(Debug)]
+pub struct SpendGuard<'a> {
+    ledger: &'a Ledger,
+    app: AppId,
+    account: AccountId,
+    price: PriceTable,
+    held: Spent,
+    at: UnixSeconds,
+}
+
+impl SpendGuard<'_> {
+    /// Replaces the hold with what the turn used. `None` is a turn whose usage is not known (an
+    /// error, an early stop, a reply that did not say): the hold stays as the charge. Unknown
+    /// usage will come from stoker's report of how a stream ended, once that lands; until then a
+    /// reply that says it used nothing is passed as `None` too.
+    pub fn settle(self, used: Option<TokenUsage>) {
+        let Some(used) = used else { return };
+        let mut rows = self
+            .ledger
+            .rows
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let counted = Spent::of(used, cost(used, &self.price));
+        self.ledger.swap(
+            &mut rows,
+            &self.app,
+            &self.account,
+            self.held,
+            counted,
+            self.at,
+        );
+    }
+}
+
 /// The cost of a turn whose size is not known yet, for the check before it starts: a thousand
 /// tokens each way at the reach's price.
-pub fn estimate(price: &porter_core::PriceTable) -> MicroUsd {
-    porter_infer::cost(
+pub fn estimate(price: &PriceTable) -> MicroUsd {
+    cost(
         TokenUsage {
             input: Tokens(1_000),
             output: Tokens(1_000),
