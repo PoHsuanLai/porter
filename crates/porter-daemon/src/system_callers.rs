@@ -10,9 +10,8 @@
 //!
 //! A system table may be installed somewhere other than `/etc/porter` (a bundle under
 //! `/opt/quire` ships its own): without the variable, a daemon reads the first of
-//! `/etc/porter/<file>`, `<dir>/porter/<file>` for each `$XDG_CONFIG_DIRS` entry, then the same
-//! for each `$XDG_DATA_DIRS` entry, that root holds ([`root_held`]). Those lists come from the
-//! person's environment, so a table counts only when the person could not have written it.
+//! [`TABLE_DIRS`] that holds the file and that root holds ([`root_held`]). The list is fixed: who
+//! may claim a fixed role never depends on the person's environment.
 
 use crate::ProcGate;
 use std::ffi::OsString;
@@ -100,7 +99,7 @@ impl SystemCallers {
         };
         let system = match choice {
             TableChoice::Fake(_) => PathBuf::from(file.path),
-            TableChoice::System | TableChoice::Ignored(_) => search(file, &lookup, held),
+            TableChoice::System | TableChoice::Ignored(_) => search(file, held),
         };
         Self {
             file,
@@ -141,32 +140,24 @@ impl SystemCallers {
     }
 }
 
-/// The first place `file` is installed that root holds, else `file.path`.
-fn search(
-    file: SystemFile,
-    lookup: impl Fn(&str) -> Option<OsString>,
-    held: impl Fn(&Path) -> bool,
-) -> PathBuf {
+/// Where a system caller table may be installed, the first that has one winning. Fixed, not
+/// `$XDG_*`: a trust input is never read from the person's environment.
+pub const TABLE_DIRS: [&str; 5] = [
+    "/etc/porter",
+    "/etc/xdg/porter",
+    "/usr/local/share/porter",
+    "/usr/share/porter",
+    "/opt/quire/share/porter",
+];
+
+/// The first of [`TABLE_DIRS`] holding `file` that root holds, else `file.path`.
+fn search(file: SystemFile, held: impl Fn(&Path) -> bool) -> PathBuf {
     let primary = Path::new(file.path);
     let Some(name) = primary.file_name() else {
         return primary.to_owned();
     };
-    let list = |var: &str, default: &str| -> Vec<PathBuf> {
-        let value = lookup(var).filter(|value| !value.is_empty());
-        let text = value
-            .as_ref()
-            .map_or(default.into(), |v| v.to_string_lossy());
-        text.split(':')
-            .map(PathBuf::from)
-            .filter(|dir| dir.is_absolute())
-            .collect()
-    };
-    let elsewhere = list("XDG_CONFIG_DIRS", "/etc/xdg")
-        .into_iter()
-        .chain(list("XDG_DATA_DIRS", "/usr/local/share:/usr/share"))
-        .map(|dir| dir.join("porter").join(name));
     std::iter::once(primary.to_owned())
-        .chain(elsewhere)
+        .chain(TABLE_DIRS.iter().map(|dir| Path::new(dir).join(name)))
         .find(|path| held(path))
         .unwrap_or_else(|| primary.to_owned())
 }
@@ -254,49 +245,34 @@ mod tests {
     }
 
     #[test]
-    fn without_the_variable_the_first_table_root_holds_is_read() {
-        let env = |pairs: &'static [(&'static str, &'static str)]| {
-            move |name: &str| {
-                pairs
-                    .iter()
-                    .find(|(key, _)| *key == name)
-                    .map(|(_, value)| OsString::from(value))
-            }
-        };
+    fn without_the_variable_the_first_table_root_holds_in_the_fixed_list_is_read() {
         let held_only = |there: &'static str| move |path: &Path| path == Path::new(there);
-        let choose = |held: &dyn Fn(&Path) -> bool, vars| {
+        let choose = |held: &dyn Fn(&Path) -> bool| {
+            // The person's environment names other directories; they are not read.
+            let vars = |name: &str| {
+                (name == "XDG_DATA_DIRS" || name == "XDG_CONFIG_DIRS")
+                    .then(|| OsString::from("/home/u/evil"))
+            };
             SystemCallers::choose_where(INFERD_CALLERS, ProcGate::Ignore, vars, held)
                 .path()
                 .to_owned()
         };
-        // /etc/porter first, as always.
         assert_eq!(
-            choose(&held_only("/etc/porter/inferd-callers.toml"), env(&[])),
+            choose(&held_only("/etc/porter/inferd-callers.toml")),
             PathBuf::from("/etc/porter/inferd-callers.toml")
         );
-        // A bundle's table under a data directory.
-        let bundle = env(&[("XDG_DATA_DIRS", "/opt/quire/share:/usr/share")]);
         assert_eq!(
-            choose(
-                &held_only("/opt/quire/share/porter/inferd-callers.toml"),
-                bundle
-            ),
+            choose(&held_only("/opt/quire/share/porter/inferd-callers.toml")),
             PathBuf::from("/opt/quire/share/porter/inferd-callers.toml")
         );
-        // A configuration directory comes before the data directories.
+        // The first of the list wins.
         assert_eq!(
-            choose(
-                &|path: &Path| path.starts_with("/etc/xdg") || path.starts_with("/usr"),
-                env(&[])
-            ),
-            PathBuf::from("/etc/xdg/porter/inferd-callers.toml")
+            choose(&|path: &Path| path.starts_with("/usr")),
+            PathBuf::from("/usr/local/share/porter/inferd-callers.toml")
         );
-        // Nothing root holds: the usual path, which reads as an empty table.
+        // Nothing root holds, or only the person's directory: the usual path, read as empty.
         assert_eq!(
-            choose(
-                &|_: &Path| false,
-                env(&[("XDG_CONFIG_DIRS", "/home/u/evil")])
-            ),
+            choose(&|path: &Path| path.starts_with("/home")),
             PathBuf::from("/etc/porter/inferd-callers.toml")
         );
     }
