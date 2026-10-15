@@ -3,7 +3,7 @@
 //! ptrace-gated: a reader inside a Landlock domain is refused it, and then no process is a Flatpak
 //! app (a scope's name proves nothing). The root is a parameter, so the tests read fixture trees.
 
-use super::{Caller, CallerTable};
+use super::{Caller, CallerRole, CallerTable, TRANSITION_SCOPES};
 use porter_core::identity_of;
 use porter_core::{AppId, CgroupPath, PeerFacts, PeerIdentity, SandboxFacts};
 use std::path::Path;
@@ -31,7 +31,8 @@ pub(super) enum Found {
         caller: Caller,
     },
     /// A process in a scope outside the `app-` namespace that the table names
-    /// (`sill-shell.scope`). A scope has no main process to check.
+    /// (`sill-shell.scope`). A scope has no main process to check, so its fixed role holds only
+    /// for a transition scope.
     Scope(Caller),
 }
 
@@ -63,7 +64,12 @@ pub(super) fn found_of_pid(proc_root: &Path, pid: u32, table: &CallerTable) -> O
         });
     }
     if native && leaf.ends_with(".scope") && !leaf.starts_with(APP_PREFIX) {
-        return table.resolve_unit(leaf).map(Found::Scope);
+        // A scope has no main process, so only a transition scope keeps a fixed role.
+        let mut caller = table.resolve_unit(leaf)?;
+        if caller.role.is_fixed() && !TRANSITION_SCOPES.contains(&leaf) {
+            caller.role = CallerRole::App;
+        }
+        return Some(Found::Scope(caller));
     }
     let facts = PeerFacts {
         pid,
