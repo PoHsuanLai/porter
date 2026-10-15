@@ -91,7 +91,13 @@ impl Config {
     /// # Errors
     /// There is no home to keep state in, or the secret store the environment asks for is refused.
     pub fn from_env(provider_dirs: &[PathBuf]) -> Result<Self, StartError> {
-        let paths = Paths::resolve(|name| std::env::var(name).ok(), provider_dirs)?;
+        let mut paths = Paths::resolve(|name| std::env::var(name).ok(), provider_dirs)?;
+        // A test build may read another system caller table (a jail cannot write /etc).
+        let system = porter_daemon::SystemCallers::choose(PROC_GATE, |name| std::env::var_os(name));
+        if let Some(line) = system.notice("accountd") {
+            eprintln!("{line}");
+        }
+        paths.callers_system = system.path().to_owned();
         let keys_var = std::env::var(KEYS_VAR).ok();
         let keys = select(keys_var.as_deref())?;
         let proc = ProcRoot::choose(PROC_GATE, PROC_ROOT_VAR, |name| std::env::var_os(name))

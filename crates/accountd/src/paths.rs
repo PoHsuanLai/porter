@@ -13,7 +13,8 @@ pub struct Paths {
     pub registry_dir: PathBuf,
     /// `$XDG_STATE_HOME/quire/accountd/audit.jsonl`.
     pub audit: PathBuf,
-    /// The system caller table, `/etc/porter/callers.toml`.
+    /// The system caller table, `/etc/porter/callers.toml` (another file in a test build:
+    /// [`porter_daemon::SystemCallers`]).
     pub callers_system: PathBuf,
     /// The user's caller table, `$XDG_CONFIG_HOME/porter/callers.toml`; its rows win.
     pub callers_user: PathBuf,
@@ -70,7 +71,7 @@ impl Paths {
         Ok(Self {
             registry_dir: state.join("porter"),
             audit: state.join("quire/accountd/audit.jsonl"),
-            callers_system: PathBuf::from("/etc/porter/callers.toml"),
+            callers_system: PathBuf::from(porter_daemon::SYSTEM_CALLERS),
             callers_user: config.join("porter/callers.toml"),
             clients_shipped: PathBuf::from("/usr/share/porter/clients.toml"),
             clients_user: config.join("porter/clients.toml"),
