@@ -8,7 +8,6 @@ use crate::common;
 
 use accountd::{BusSheets, Options, serve_with};
 use common::bus::PrivateBus;
-use common::scratch;
 use porter_core::{
     Account, AccountId, AccountLabel, AccountState, AppName, AuthKind, Claim, Credential, Offer,
     Provenance, Restriction, SecretKey, SecretPurpose, SecretText, Subject, UnixSeconds,
@@ -21,7 +20,6 @@ use porter_service::{AccountService, Registry};
 use porter_sync::{BaseVersion, Conflict, RemoteId, RemoteSide, RemoteVersion, StoredConflict};
 use serde_json::Value;
 use std::collections::BTreeSet;
-use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use syncd::service::{Access, DatasetName, Event, Hub, Nudge, serve};
@@ -52,10 +50,11 @@ v = { access = "read_write", delta = "poll", quota = "reported", scope = "app_fo
 
 struct Rig {
     bus: PrivateBus,
-    proc_root: PathBuf,
     hub: Hub,
     settled: Arc<Mutex<Vec<(i64, String)>>>,
     _keep: Vec<zbus::Connection>,
+    /// Last, so it goes after the bus and the connections.
+    proc_root: Scratch,
 }
 
 impl Rig {
@@ -66,7 +65,7 @@ impl Rig {
             .env_clear()
             .env("DBUS_SESSION_BUS_ADDRESS", self.bus.address())
             .args(["--app-id", APP, "--proc-root"])
-            .arg(&self.proc_root)
+            .arg(self.proc_root.path())
             .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -124,13 +123,13 @@ async fn rig() -> Rig {
         .expect("secret");
 
     let bus = PrivateBus::start();
-    let proc_root = scratch("client-proc");
+    let proc_root = Scratch::new("client-proc");
     // The daemons name callers from the fixture the client writes, as a scenario's do.
     let accountd = bus.connect().await;
     let callers = Arc::new(ProcCallers::with_proc_root(
         accountd.clone(),
         CallerTable::default(),
-        proc_root.clone(),
+        proc_root.to_path_buf(),
     ));
     let sheets = BusSheets::new(accountd.clone(), Arc::clone(&callers));
     let service = Arc::new(
@@ -157,7 +156,7 @@ async fn rig() -> Rig {
     let sync_callers = Arc::new(ProcCallers::with_proc_root(
         server.clone(),
         CallerTable::default(),
-        proc_root.clone(),
+        proc_root.to_path_buf(),
     ));
     serve(&server, hub.clone(), sync_callers)
         .await
@@ -189,10 +188,10 @@ async fn rig() -> Rig {
     });
     Rig {
         bus,
-        proc_root,
         hub,
         settled,
         _keep: vec![accountd, server],
+        proc_root,
     }
 }
 
@@ -227,7 +226,7 @@ async fn the_client_lists_identities_and_continues_as_one_as_the_app_the_fixture
     assert_eq!(result_of(&lines), "error", "{lines:?}");
 
     // The fixture is removed when the client ends.
-    let left: Vec<_> = std::fs::read_dir(&rig.proc_root).expect("proc").collect();
+    let left: Vec<_> = std::fs::read_dir(rig.proc_root.path()).expect("proc").collect();
     assert!(left.is_empty(), "{left:?}");
 }
 

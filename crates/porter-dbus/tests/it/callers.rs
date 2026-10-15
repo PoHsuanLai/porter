@@ -8,25 +8,21 @@ mod bus;
 use bus::PrivateBus;
 use porter_core::Isolation;
 use porter_dbus::{Caller, CallerRole, CallerTable, Callers, MainPids, ProcCallers};
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, Ordering};
+use porter_fake::Scratch;
+use std::path::Path;
 
 const SLICE: &str = "/user.slice/user-1000.slice/user@1000.service/app.slice";
 
-static NEXT: AtomicU32 = AtomicU32::new(0);
+/// A fixture `/proc` tree in a scratch directory.
+struct Procs(Scratch);
 
-/// A scratch directory removed on drop.
-struct Scratch(PathBuf);
-
-impl Scratch {
+impl Procs {
     fn new() -> Self {
-        let dir =
-            porter_fake::scratch_dir(&format!("callers-{}", NEXT.fetch_add(1, Ordering::Relaxed)));
-        Self(dir)
+        Self(Scratch::new("callers"))
     }
 
     fn path(&self) -> &Path {
-        &self.0
+        self.0.path()
     }
 
     /// Process `pid` with this cgroup line (none: no file).
@@ -54,12 +50,6 @@ impl Scratch {
     }
 }
 
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
-}
-
 fn table() -> CallerTable {
     serde_json::from_value(serde_json::json!({"caller": [
         {"app": "org.quire.Settings", "role": "settings"},
@@ -80,7 +70,7 @@ fn scope(unit: &str) -> String {
     format!("{SLICE}/{unit}")
 }
 
-fn resolve(scratch: &Scratch, pid: u32) -> Option<(String, Isolation, CallerRole)> {
+fn resolve(scratch: &Procs, pid: u32) -> Option<(String, Isolation, CallerRole)> {
     ProcCallers::caller_of_pid(scratch.path(), pid, &table())
         .map(|c| (c.app.name.to_string(), c.app.isolation, c.role))
 }
@@ -95,7 +85,7 @@ fn got(
 
 #[test]
 fn a_process_is_named_by_its_scope_or_unit() {
-    let s = Scratch::new();
+    let s = Procs::new();
     s.process(10, Some(&scope("app-org.example.Mail-4242.scope")));
     s.process(11, Some(&scope("app-gnome-org.example.Calc-77.scope")));
     s.process(12, Some(&scope("app-flatpak-org.example.Photos-5.scope")));
@@ -183,7 +173,7 @@ fn a_process_is_named_by_its_scope_or_unit() {
 #[test]
 fn a_scope_named_after_a_daemons_app_is_an_app() {
     // Any process may start a scope by any name: only the unit itself carries the unit's role.
-    let s = Scratch::new();
+    let s = Procs::new();
     s.process(30, Some(&scope("app-org.quire.Cua-1.scope")));
     s.process(31, Some(&scope("app-flatpak-org.quire.Inference-2.scope")));
     s.process(32, Some(&scope("app-org.quire.Intent-3.scope")));
@@ -209,7 +199,7 @@ fn a_scope_named_after_a_daemons_app_is_an_app() {
 
 #[test]
 fn a_scope_a_row_names_as_its_unit_is_that_unit_exactly_and_no_more_than_an_app() {
-    let s = Scratch::new();
+    let s = Procs::new();
     s.process(40, Some(&scope("sill-shell.scope")));
     s.process(41, Some(&scope("sill-shell-2.scope")));
     s.process(42, Some(&scope("xsill-shell.scope")));
@@ -230,7 +220,7 @@ fn a_scope_a_row_names_as_its_unit_is_that_unit_exactly_and_no_more_than_an_app(
 
 #[test]
 fn the_shell_as_a_service_counts_only_as_the_units_main_process() {
-    let s = Scratch::new();
+    let s = Procs::new();
     let unit = "/user.slice/user-1000.slice/user@1000.service/app.slice/sill.service";
     s.process(60, Some(unit));
     s.process(61, Some(unit));
@@ -247,7 +237,7 @@ fn the_shell_as_a_service_counts_only_as_the_units_main_process() {
 
 #[test]
 fn a_scope_row_not_marked_as_a_transition_gives_no_fixed_role() {
-    let s = Scratch::new();
+    let s = Procs::new();
     s.process(62, Some(&scope("odd.scope")));
     assert_eq!(
         resolve(&s, 62),
@@ -257,7 +247,7 @@ fn a_scope_row_not_marked_as_a_transition_gives_no_fixed_role() {
 
 #[test]
 fn a_process_nothing_names_is_nobody() {
-    let s = Scratch::new();
+    let s = Procs::new();
     // A session scope; a terminal's child (also a program started by hand); a launcher scope
     // that is not an id; a unit the table does not list; a Flatpak scope with no instance;
     // no cgroup file at all; a cgroup v1 file.
@@ -278,7 +268,7 @@ fn a_process_nothing_names_is_nobody() {
 #[test]
 fn an_unreadable_root_is_no_sandbox_and_a_flatpak_scope_then_proves_nothing() {
     use std::os::unix::fs::PermissionsExt;
-    let s = Scratch::new();
+    let s = Procs::new();
     s.process(50, Some(&scope("app-flatpak-org.example.Photos-5.scope")));
     s.process(51, Some("/system.slice/inferd.service"));
     s.process(52, Some(&scope("app-org.example.Mail-4242.scope")));
@@ -317,7 +307,7 @@ fn an_unreadable_root_is_no_sandbox_and_a_flatpak_scope_then_proves_nothing() {
 
 #[test]
 fn a_flatpak_app_is_named_by_its_metadata_and_never_by_its_scope() {
-    let s = Scratch::new();
+    let s = Procs::new();
     // A Flatpak scope with no metadata: any program can start a scope by that name.
     s.process(60, Some(&scope("app-flatpak-org.example.Photos-5.scope")));
     // Metadata in another app's native scope, or in a daemon's unit as its main process: the
@@ -341,7 +331,7 @@ fn a_flatpak_app_is_named_by_its_metadata_and_never_by_its_scope() {
 
 #[test]
 fn a_service_role_goes_only_to_the_units_main_process() {
-    let s = Scratch::new();
+    let s = Procs::new();
     let unit = "/user.slice/user@1000.service/app.slice/inferd.service";
     s.process(70, Some(unit));
     s.main_of("inferd.service", 70);
@@ -363,7 +353,7 @@ fn a_service_role_goes_only_to_the_units_main_process() {
 
 #[tokio::test]
 async fn on_a_private_bus_an_unidentified_sender_is_refused_and_an_identified_one_is_named() {
-    let s = Scratch::new();
+    let s = Procs::new();
     let bus = PrivateBus::start();
     let client = bus.connect().await;
     let sender = client.unique_name().expect("unique name").to_string();
@@ -470,7 +460,7 @@ mod fake_systemd {
 
 #[tokio::test]
 async fn on_a_private_bus_a_service_is_its_unit_only_as_the_managers_main_process() {
-    let s = Scratch::new();
+    let s = Procs::new();
     let bus = PrivateBus::start();
     let client = bus.connect().await;
     let sender = client.unique_name().expect("unique name").to_string();

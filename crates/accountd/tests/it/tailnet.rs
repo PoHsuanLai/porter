@@ -18,13 +18,12 @@ use porter_core::{
 use porter_dbus::{
     BusStream, CallerRole, ManagerProxy, Sheet, SpacesProxy, TailnetProxy, machine_from_dbus,
 };
-use porter_fake::{Deadline, FixedClock, MemoryStore, RecordingAudit};
+use porter_fake::{Deadline, FixedClock, MemoryStore, RecordingAudit, Scratch};
 use porter_fake_servers::{Daemon, FakeLocalApi, FakePeer, Network};
 use porter_families::{FamilyProvider, TailnetProvider};
 use porter_http::{SharedSleep, Sleep};
 use porter_service::{AccountService, Registry};
 use porter_tailscale::LocalApi;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -47,13 +46,6 @@ impl Sleep for Quick {
     async fn sleep(&self, _how_long: Duration) {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-}
-
-fn scratch(name: &str) -> PathBuf {
-    let dir = porter_fake::scratch_dir(&format!("tailnet-{name}"));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).expect("scratch");
-    dir
 }
 
 /// A small network: this computer (`desk`), and a computer of every kind.
@@ -92,12 +84,15 @@ struct Scene {
     /// The client of its socket.
     api: LocalApi,
     accounts: Vec<Account>,
+    /// The directory of the fake's socket, kept until the scene is dropped.
+    scratch: Option<Scratch>,
 }
 
 impl Scene {
     /// A fake in `daemon`'s state, and the accounts already added.
     async fn with(name: &str, daemon: Daemon, accounts: Vec<Account>) -> Self {
-        let fake = FakeLocalApi::start(&scratch(name), daemon)
+        let scratch = Scratch::new(&format!("tailnet-{name}"));
+        let fake = FakeLocalApi::start(&scratch, daemon)
             .await
             .expect("fake tailscale");
         let api = LocalApi::new(fake.socket()).with_program_dirs(Vec::new());
@@ -105,6 +100,7 @@ impl Scene {
             fake: Some(fake),
             api,
             accounts,
+            scratch: Some(scratch),
         }
     }
 
@@ -446,7 +442,7 @@ async fn adding_tailscale_says_in_closed_words_why_it_could_not() {
     assert_eq!(faults, [SignInFault::NotRunning]);
 
     // No socket and no program: not installed. The program there and no socket: not running.
-    let dir = scratch("refuse-not-installed");
+    let dir = Scratch::new("tailnet-refuse-not-installed");
     let missing = dir.join("tailscaled.sock");
     let bin = dir.join("bin");
     std::fs::create_dir_all(&bin).expect("bin");
@@ -461,6 +457,7 @@ async fn adding_tailscale_says_in_closed_words_why_it_could_not() {
             fake: None,
             api: LocalApi::new(&missing).with_program_dirs(vec![bin.clone()]),
             accounts: vec![],
+            scratch: None,
         };
         let world = World::start(scene, false).await;
         let (_, faults) = world.add(&|_| {}).await;

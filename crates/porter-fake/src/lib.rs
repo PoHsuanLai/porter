@@ -25,7 +25,7 @@ pub use provider::{
     FakeProvider, FakeSession, FakeSignIn, cloud_provider, llm_provider, mail_provider,
 };
 pub use recorders::{MemoryStore, RecordingAudit};
-pub use scratch::scratch_dir;
+pub use scratch::Scratch;
 pub use server::{FakeAddress, FakeProtocol, FakeServer};
 pub use session::{FakeInferSession, Script, ScriptStep};
 pub use sheets::{AskLog, Scripted, ScriptedLink, ScriptedSheets};

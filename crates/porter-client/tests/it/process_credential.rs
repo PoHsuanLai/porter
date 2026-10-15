@@ -42,7 +42,7 @@ struct Rig {
 async fn rig() -> Rig {
     let bus = PrivateBus::start();
     let daemon = bus.connect().await;
-    let fake = FakeInferd::new(bus.scratch().clone(), Sheets::Hang);
+    let fake = FakeInferd::new(bus.scratch().to_path_buf(), Sheets::Hang);
     fake.serve(&daemon).await;
     let launcher = Launcher::connect(&bus.connect().await)
         .await

@@ -109,7 +109,7 @@ async fn a_memfd_credential_is_a_sealed_key_and_a_tmpfs_one_a_0600_file_and_the_
         .await
         .expect("issued");
     let path = path_of(handle);
-    assert!(path.starts_with(&rig.runtime.0));
+    assert!(path.starts_with(rig.runtime.path()));
     assert_eq!(std::fs::read_to_string(&path).expect("read"), KEY);
     let mode =
         |p: &std::path::Path| std::fs::metadata(p).expect("meta").permissions().mode() & 0o777;

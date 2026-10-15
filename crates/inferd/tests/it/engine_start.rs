@@ -16,6 +16,7 @@ use porter_core::consent::Usage;
 use porter_core::need::LlmNeed;
 use porter_core::{DataClass, Need, Tier, Tokens};
 use porter_dbus::{Details, InferenceProxy, need_to_dbus};
+use porter_fake::Scratch;
 use porter_infer::{
     ChatMessage, ChatRequest, ClientFrame, InferEvent, InferReply, InferRequest, MessagePart,
     ModelError, Role as ChatRole,
@@ -24,7 +25,6 @@ use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
 /// What "at once" means for a failure the daemon already knows (an exit, a taken socket path, a
@@ -90,18 +90,16 @@ fn serve(socket: &Path) -> ! {
     std::process::exit(0);
 }
 
-static NEXT: AtomicU32 = AtomicU32::new(0);
-
 /// A scratch directory and the program that is llama-server in it: a script that notes each run
 /// in `runs` and becomes the fake engine in `mode` on the socket it is told (`--host <socket>`).
 struct Engine {
-    dir: PathBuf,
+    dir: Scratch,
     program: PathBuf,
 }
 
 impl Engine {
     fn new(mode: &str) -> Self {
-        let dir = porter_fake::scratch_dir(&format!("es-{}", NEXT.fetch_add(1, Ordering::Relaxed)));
+        let dir = Scratch::new("es");
         let exe = std::env::current_exe().expect("this test binary");
         let program = dir.join("engine.sh");
         let script = format!(
@@ -119,12 +117,6 @@ impl Engine {
     /// How many times the program was started.
     fn runs(&self) -> usize {
         std::fs::read_to_string(self.dir.join("runs")).map_or(0, |text| text.lines().count())
-    }
-}
-
-impl Drop for Engine {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.dir);
     }
 }
 

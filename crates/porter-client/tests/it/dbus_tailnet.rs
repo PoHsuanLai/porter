@@ -14,7 +14,7 @@ use porter_core::{
     ProviderId, Restriction,
 };
 use porter_dbus::{BusStream, Caller, CallerRole};
-use porter_fake::{FixedClock, NOW, ScriptedSheets, cloud_provider};
+use porter_fake::{FixedClock, NOW, Scratch, ScriptedSheets, cloud_provider};
 use porter_fake_servers::{Daemon, FakeLocalApi, FakePeer, Network};
 use porter_secrets::MemorySecrets;
 use porter_service::{AccountService, Registry};
@@ -27,6 +27,8 @@ struct World {
     callers: Arc<TableCallers>,
     fake: FakeLocalApi,
     _connection: zbus::Connection,
+    /// The directory of the fake's socket; last, so it goes after the fake.
+    _scratch: Scratch,
 }
 
 fn network() -> Network {
@@ -59,9 +61,7 @@ fn tailscale() -> Account {
 
 impl World {
     async fn start(name: &str) -> Self {
-        let dir = porter_fake::scratch_dir(&format!("client-tailnet-{name}"));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).expect("scratch");
+        let dir = Scratch::new(&format!("client-tailnet-{name}"));
         let fake = FakeLocalApi::start(&dir, Daemon::Running(network()))
             .await
             .expect("fake tailscale");
@@ -102,6 +102,7 @@ impl World {
             callers,
             fake,
             _connection: connection,
+            _scratch: dir,
         }
     }
 

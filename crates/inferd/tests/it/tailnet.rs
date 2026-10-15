@@ -20,7 +20,6 @@ use porter_core::{AppId, AppName, DataClass, Isolation, ModelId, Tier};
 use porter_dbus::{
     CANDIDATE_KEY_MODELS, CANDIDATE_KEY_NEEDS_APPROVAL, Details, GUEST_KEY_STATE, InferenceProxy,
 };
-use porter_fake_servers::net::Bind;
 use porter_infer::{ComputerName, PlaceId, PlaceState};
 use std::net::{IpAddr, SocketAddr};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -72,8 +71,8 @@ fn policy() -> porter_infer::Policy {
 async fn pair(name: &str, seen: Seen, serving: bool) -> Pair {
     let a = addresses();
     let port = free_port();
-    let dir = porter_fake::scratch_dir(&format!("tn-{name}"));
-    let lab = Lab::start(&Bind::Socket(dir), "lab", &[entries::SERVED], None).await;
+    let dir = porter_fake::Scratch::new(&format!("tn-{name}"));
+    let lab = Lab::start_in(dir, "lab", &[entries::SERVED], None).await;
     let pi = World::start(Plan {
         catalog: catalog(),
         scripts: vec![(
@@ -687,8 +686,8 @@ async fn a_computer_attached_over_the_network_is_never_lent_onward() {
     // runs on pi itself.
     let a = addresses();
     let port = free_port();
-    let dir = porter_fake::scratch_dir("tn-onward");
-    let lab = Lab::start(&Bind::Socket(dir), "lab", &[entries::SERVED], None).await;
+    let dir = porter_fake::Scratch::new("tn-onward");
+    let lab = Lab::start_in(dir, "lab", &[entries::SERVED], None).await;
     let pi = World::start(Plan {
         catalog: vec![("a-attached.toml", entries::attached())],
         attached: vec![Attached {

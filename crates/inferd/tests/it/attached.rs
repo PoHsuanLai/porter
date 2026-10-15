@@ -18,6 +18,7 @@ use porter_core::capability::LlmFeature;
 use porter_core::consent::Usage;
 use porter_core::need::LlmNeed;
 use porter_core::{DataClass, Locality, ModelId, Need, Tier, Tokens};
+use porter_fake::Scratch;
 use porter_fake_servers::net::Bind;
 use porter_infer::{
     ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRefusal, InferReply, InferRequest,
@@ -27,14 +28,11 @@ use rustix::process::{Pid, Signal, kill_process};
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 const ATTACHED: &str = entries::ATTACHED;
 
 const KEY: &str = "sk-lab-1234-NOT-A-REAL-KEY";
-
-static NEXT: AtomicU32 = AtomicU32::new(0);
 
 /// The lab engine as a process of its own. Run as a test it does nothing; run by the tests below
 /// with `FAKE_LAB_DIR` set (as `attached::fake_lab_process`), it serves the attached entry on
@@ -69,12 +67,11 @@ fn fake_lab_process() {
 }
 
 /// A scratch directory, removed when the test ends.
-struct Dir(PathBuf);
+struct Dir(Scratch);
 
 impl Dir {
     fn new() -> Self {
-        let dir = porter_fake::scratch_dir(&format!("at-{}", NEXT.fetch_add(1, Ordering::Relaxed)));
-        Self(dir)
+        Self(Scratch::new("at"))
     }
 
     fn socket(&self) -> PathBuf {
@@ -91,18 +88,12 @@ impl Dir {
     /// A lab engine on this directory's socket.
     async fn lab(&self, key: Option<&str>) -> Lab {
         Lab::start(
-            &Bind::Socket(self.0.clone()),
+            &Bind::Socket(self.0.to_path_buf()),
             "lab",
             &[entries::SERVED],
             key,
         )
         .await
-    }
-}
-
-impl Drop for Dir {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
     }
 }
 
@@ -121,7 +112,7 @@ fn lab_process(dir: &Dir, key: Option<&str>) -> Started {
     let mut command = Command::new(std::env::current_exe().expect("this test binary"));
     command
         .args(["--exact", "attached::fake_lab_process", "--nocapture"])
-        .env("FAKE_LAB_DIR", &dir.0)
+        .env("FAKE_LAB_DIR", dir.0.path())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -337,7 +328,7 @@ async fn each_way_an_engine_cannot_answer_is_a_typed_cause_and_the_session_is_un
 
     // The engine serves another model.
     let lab = Lab::start(
-        &Bind::Socket(dir.0.clone()),
+        &Bind::Socket(dir.0.to_path_buf()),
         "lab",
         &["llama-3-8b", "qwen3-8b"],
         None,

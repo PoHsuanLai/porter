@@ -8,7 +8,7 @@ use inferd::serve::{Seams, serve_session};
 use inferd::session::SessionSpec;
 use porter_core::wire::{FrameRead, decode_frame, encode_frame};
 use porter_core::{AccountsReply, AccountsRequest, AppId};
-use porter_fake::FakeService;
+use porter_fake::{FakeService, Scratch};
 use porter_infer::LinkHello;
 use rustix::net::{SendAncillaryBuffer, SendAncillaryMessage, SendFlags, sendmsg};
 use std::io::IoSlice;
@@ -47,14 +47,14 @@ pub struct Agent {
     pub hellos: Arc<Mutex<Vec<LinkHello>>>,
     /// What the scripted engine was given.
     pub runner: Scripted,
-    scratch: PathBuf,
     task: tokio::task::JoinHandle<()>,
+    /// Last, so it goes after the task is stopped.
+    scratch: Scratch,
 }
 
 impl Drop for Agent {
     fn drop(&mut self) {
         self.task.abort();
-        let _ = std::fs::remove_dir_all(&self.scratch);
     }
 }
 
@@ -66,18 +66,6 @@ pub struct Plan {
     pub route: Route,
     pub gate: Gate,
     pub runner: Scripted,
-}
-
-/// A directory of this test's own.
-fn scratch(name: &str) -> PathBuf {
-    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    let dir = porter_fake::scratch_dir(&format!(
-        "a-{name}-{}",
-        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-    ));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).expect("scratch");
-    dir
 }
 
 /// Reads one whole frame's bytes and no more: whatever follows belongs to the session.
@@ -126,7 +114,7 @@ async fn handle(mut stream: UnixStream, plan: Plan, hellos: Arc<Mutex<Vec<LinkHe
 
 /// Starts an agent on a new socket.
 pub fn start(name: &str, plan: Plan) -> Agent {
-    let scratch = scratch(name);
+    let scratch = Scratch::new(&format!("a-{name}"));
     let path = socket_in(&scratch, AGENT_NAME);
     std::fs::create_dir_all(path.parent().expect("parent")).expect("agent dir");
     let listener = UnixListener::bind(&path).expect("bind");
@@ -141,12 +129,12 @@ pub fn start(name: &str, plan: Plan) -> Agent {
         }
     });
     Agent {
-        door: porter_client::SocketAgent::named(AGENT_NAME).in_runtime_dir(scratch.clone()),
+        door: porter_client::SocketAgent::named(AGENT_NAME).in_runtime_dir(scratch.to_path_buf()),
         path,
         hellos,
         runner,
-        scratch,
         task,
+        scratch,
     }
 }
 

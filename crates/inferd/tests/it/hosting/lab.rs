@@ -3,7 +3,7 @@
 //! ephemeral loopback port. It is the far end of an SSH tunnel in the attached-engine tests; it
 //! binds only what the test names and answers only the scratch it is given.
 
-use porter_fake::FakeAddress;
+use porter_fake::{FakeAddress, Scratch};
 use porter_fake_servers::http::{Request, Response, serve};
 use porter_fake_servers::net::{Bind, Listener};
 use serde_json::{Value, json};
@@ -43,6 +43,8 @@ pub struct Lab {
     address: FakeAddress,
     state: Arc<State>,
     task: JoinHandle<()>,
+    /// The directory its socket is in, when the lab owns it; last, so it goes after the socket.
+    scratch: Option<Scratch>,
 }
 
 impl Lab {
@@ -65,7 +67,15 @@ impl Lab {
             address,
             state,
             task,
+            scratch: None,
         }
+    }
+
+    /// [`Lab::start`] on a socket in `dir`, which the lab keeps until it is dropped.
+    pub async fn start_in(dir: Scratch, name: &str, models: &[&str], key: Option<&str>) -> Self {
+        let mut lab = Self::start(&Bind::Socket(dir.to_path_buf()), name, models, key).await;
+        lab.scratch = Some(dir);
+        lab
     }
 
     /// The socket, for a lab bound on one.

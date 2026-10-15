@@ -9,8 +9,9 @@ use model_catalog::{EngineArg, MiB};
 use rustix::process::{Pid, Signal, kill_process};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
+
+use porter_fake::Scratch;
 
 /// The stand-in for inferd. Run as a test it does nothing; run by the tests below, with
 /// `FAKE_INFERD` set, it starts the forking engine, says it is ready, and then either waits to be
@@ -59,23 +60,6 @@ fn fake_inferd() {
             other => panic!("no mode {other}"),
         }
     });
-}
-
-static NEXT: AtomicU32 = AtomicU32::new(0);
-
-struct Scratch(PathBuf);
-
-impl Scratch {
-    fn new() -> Self {
-        let dir = porter_fake::scratch_dir(&format!("eg-{}", NEXT.fetch_add(1, Ordering::Relaxed)));
-        Self(dir)
-    }
-}
-
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
 }
 
 fn helper(mode: &str, dir: &Path) -> std::process::Child {
@@ -139,12 +123,12 @@ fn kill_pid(pid: i32) {
 
 #[test]
 fn a_killed_inferd_takes_its_direct_engine_with_it_and_leaves_the_grandchild_to_the_unit() {
-    let dir = Scratch::new();
-    let mut inferd = helper("linger", &dir.0);
-    wait_for(&dir.0.join("ready"));
+    let dir = Scratch::new("eg");
+    let mut inferd = helper("linger", &dir);
+    wait_for(&dir.join("ready"));
     let (engine, grandchild) = (
-        pid_in(&dir.0.join("engine")),
-        pid_in(&dir.0.join("grandchild")),
+        pid_in(&dir.join("engine")),
+        pid_in(&dir.join("grandchild")),
     );
     assert!(!gone(engine) && !gone(grandchild));
 
@@ -165,12 +149,12 @@ fn a_killed_inferd_takes_its_direct_engine_with_it_and_leaves_the_grandchild_to_
 
 #[test]
 fn an_inferd_that_exits_normally_leaves_no_engine_process() {
-    let dir = Scratch::new();
-    let mut inferd = helper("exit_normally", &dir.0);
-    wait_for(&dir.0.join("ready"));
+    let dir = Scratch::new("eg");
+    let mut inferd = helper("exit_normally", &dir);
+    wait_for(&dir.join("ready"));
     let (engine, grandchild) = (
-        pid_in(&dir.0.join("engine")),
-        pid_in(&dir.0.join("grandchild")),
+        pid_in(&dir.join("engine")),
+        pid_in(&dir.join("grandchild")),
     );
     let status = inferd.wait().expect("the stand-in ends");
     assert!(status.success(), "{status:?}");

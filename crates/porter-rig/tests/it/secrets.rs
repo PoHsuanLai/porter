@@ -6,9 +6,10 @@
 
 use crate::common;
 
+use common::Proc;
 use common::bus::PrivateBus;
-use common::{Proc, scratch};
 use porter_core::{AccountId, Credential, SecretKey, SecretPurpose, SecretText, UnixSeconds};
+use porter_fake::Scratch;
 use porter_secrets::{Oo7Secrets, PutOutcome, Secrets, SecretsError};
 use std::process::{Command, Stdio};
 
@@ -84,7 +85,7 @@ async fn oo7_child() {
 #[tokio::test(flavor = "multi_thread")]
 async fn accountds_oo7_secrets_stores_and_reads_back_through_the_fake_and_it_ends_on_sigterm() {
     let bus = PrivateBus::start();
-    let home = scratch("secrets");
+    let home = Scratch::new("rig-secrets");
     let mut service = Proc::spawn(
         env!("CARGO_BIN_EXE_porter-rig-secrets"),
         &[],
@@ -93,8 +94,8 @@ async fn accountds_oo7_secrets_stores_and_reads_back_through_the_fake_and_it_end
                 "DBUS_SESSION_BUS_ADDRESS",
                 std::path::Path::new(bus.address()),
             ),
-            ("HOME", &home),
-            ("XDG_RUNTIME_DIR", &home),
+            ("HOME", home.path()),
+            ("XDG_RUNTIME_DIR", home.path()),
         ],
     );
     let probe = bus.connect().await;
@@ -113,7 +114,7 @@ async fn accountds_oo7_secrets_stores_and_reads_back_through_the_fake_and_it_end
 
     let exe = std::env::current_exe().expect("this test binary");
     let output = tokio::task::spawn_blocking({
-        let (address, home) = (bus.address().to_owned(), home.clone());
+        let (address, home) = (bus.address().to_owned(), home.to_path_buf());
         move || {
             Command::new(exe)
                 .env_clear()
@@ -144,5 +145,4 @@ async fn accountds_oo7_secrets_stores_and_reads_back_through_the_fake_and_it_end
 
     let status = service.terminate();
     assert!(status.success(), "{status:?}");
-    let _ = std::fs::remove_dir_all(home);
 }
