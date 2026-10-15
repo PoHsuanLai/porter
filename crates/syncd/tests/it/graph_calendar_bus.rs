@@ -56,17 +56,11 @@ kind = "calendar"
 v = { access = "read_write", delta = "poll", transport = "graph", collections = "present" }
 "#;
 
-/// Polls every 20 ms for up to [`porter_fake::GENEROUS`] by the clock (a poll cycle is a second
-/// here).
-async fn eventually(what: &str, mut check: impl FnMut() -> bool) {
-    let deadline = porter_fake::Deadline::generous();
-    while !deadline.passed() {
-        if check() {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-    deadline.fail(what);
+/// Polls every 20 ms; the limit is idle time (`common::eventually_alive`): the wait ends only when
+/// the rig has not begun a cycle or served a request for [`porter_fake::GENEROUS`], so a loaded
+/// machine that mirrors slowly is never cut short.
+async fn eventually(rig: &Rig, what: &str, check: impl FnMut() -> bool) {
+    common::eventually_alive(what, || rig.pulse(), check).await;
 }
 
 fn read(path: &Path) -> Option<String> {
@@ -110,6 +104,11 @@ impl Rig {
             .into_iter()
             .filter_map(|file| read(&dir.join(file)))
             .find(|text| text.contains(needle))
+    }
+
+    /// What the daemon has done so far, as [`common::pulse`] counts it.
+    fn pulse(&self) -> u64 {
+        common::pulse(&self.hub, self.graph.hits().len())
     }
 
     fn delta_requests(&self) -> usize {
@@ -246,7 +245,7 @@ fn timed(uid: &str, subject: &str, hour: u32) -> Value {
 #[tokio::test(flavor = "multi_thread")]
 async fn two_graph_calendars_mirror_into_the_vdir_with_names_colours_and_ics_files() {
     let rig = rig(true).await;
-    eventually("every event is mirrored", || {
+    eventually(&rig, "every event is mirrored", || {
         rig.items("Personal").len() == 5 && rig.items("Work").len() == 1
     })
     .await;
@@ -353,7 +352,7 @@ async fn two_graph_calendars_mirror_into_the_vdir_with_names_colours_and_ics_fil
 #[tokio::test(flavor = "multi_thread")]
 async fn a_remote_change_a_removal_a_new_event_and_a_rename_arrive_at_the_next_poll() {
     let rig = rig(true).await;
-    eventually("the first mirror", || rig.items("Personal").len() == 5).await;
+    eventually(&rig, "the first mirror", || rig.items("Personal").len() == 5).await;
 
     rig.graph.put_event(
         "cal-personal",
@@ -363,7 +362,7 @@ async fn a_remote_change_a_removal_a_new_event_and_a_rename_arrive_at_the_next_p
     rig.graph.remove_event("cal-personal", "ev-called-off");
     rig.graph
         .put_event("cal-personal", "ev-new", timed("uid-new", "Gym", 7));
-    eventually("change, removal and new event arrive", || {
+    eventually(&rig, "change, removal and new event arrive", || {
         rig.item_with("Personal", "SUMMARY:Dentist (moved)")
             .is_some()
             && rig.items("Personal").len() == 5
@@ -382,7 +381,7 @@ async fn a_remote_change_a_removal_a_new_event_and_a_rename_arrive_at_the_next_p
     rig.graph
         .put_event("cal-new", "t1", timed("uid-trip", "Lisbon", 9));
     rig.graph.remove_calendar("cal-work");
-    eventually("rename, new calendar and calendar removal arrive", || {
+    eventually(&rig, "rename, new calendar and calendar removal arrive", || {
         rig.calendar("Private")
             .is_some_and(|dir| read(&dir.join(COLOR)).as_deref() == Some("#00ff00"))
             && rig.items("Trips").len() == 1
@@ -397,7 +396,7 @@ async fn a_remote_change_a_removal_a_new_event_and_a_rename_arrive_at_the_next_p
 #[tokio::test(flavor = "multi_thread")]
 async fn a_local_edit_a_deletion_and_a_new_file_are_never_sent_and_a_remote_change_overwrites() {
     let rig = rig(true).await;
-    eventually("the first mirror", || rig.items("Personal").len() == 5).await;
+    eventually(&rig, "the first mirror", || rig.items("Personal").len() == 5).await;
     let personal = rig.calendar("Personal").expect("personal");
     std::fs::write(personal.join("uid-dentist.ics"), "locally edited").expect("edit");
     std::fs::remove_file(personal.join("uid-holiday.ics")).expect("delete");
@@ -435,7 +434,7 @@ async fn a_local_edit_a_deletion_and_a_new_file_are_never_sent_and_a_remote_chan
                "end": {"dateTime": "2026-12-25T00:00:00.0000000", "timeZone": "UTC"},
                "isAllDay": true, "isCancelled": false}),
     );
-    eventually("the server's state replaces the local one", || {
+    eventually(&rig, "the server's state replaces the local one", || {
         read(&personal.join("uid-dentist.ics")).is_some_and(|t| t.contains("SUMMARY:Dentist again"))
             && read(&personal.join("uid-holiday.ics")).is_some_and(|t| t.contains("Holiday II"))
     })
@@ -446,20 +445,21 @@ async fn a_local_edit_a_deletion_and_a_new_file_are_never_sent_and_a_remote_chan
 #[tokio::test(flavor = "multi_thread")]
 async fn an_expired_delta_token_lists_again_and_keeps_every_event() {
     let rig = rig(true).await;
-    eventually("the first mirror", || rig.items("Personal").len() == 5).await;
+    eventually(&rig, "the first mirror", || rig.items("Personal").len() == 5).await;
     common::a_cycle_of_each(&rig.hub).await;
     let before = rig.delta_requests();
     rig.graph
         .put_event("cal-personal", "ev-extra", timed("uid-extra", "Extra", 6));
     rig.graph.expire_delta_tokens();
     eventually(
+        &rig,
         "the new event arrives after the listing starts over",
         || rig.items("Personal").len() == 6,
     )
     .await;
     assert_eq!(rig.items("Work").len(), 1);
     // Work polls on its own schedule: it may not have met its 410 yet when Personal is done.
-    eventually("both calendars met the expiry", || {
+    eventually(&rig, "both calendars met the expiry", || {
         rig.graph.hits().iter().filter(|h| h.status == 410).count() >= 2
     })
     .await;

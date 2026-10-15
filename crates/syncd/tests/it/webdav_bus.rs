@@ -8,7 +8,7 @@ use crate::common;
 
 use common::bus::PrivateBus;
 use common::hosted::{Link, host};
-use common::{Known, client, eventually};
+use common::{Known, client};
 use porter_client::Accounts;
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::{
@@ -23,7 +23,6 @@ use porter_service::Registry;
 use porter_sync::ConflictRule;
 use std::collections::BTreeSet;
 use std::sync::Arc;
-use std::time::Duration;
 use storage_webdav::Clock;
 use syncd::clock::Wall;
 use syncd::dataset::MemoryDataset;
@@ -66,6 +65,19 @@ struct Rig {
     grant: GrantId,
     endpoint: EndpointUrl,
     _keep: Vec<zbus::Connection>,
+}
+
+impl Rig {
+    /// What the daemon has done so far, as [`common::pulse`] counts it.
+    fn pulse(&self) -> u64 {
+        common::pulse(&self.hub, self.nextcloud.hits().len())
+    }
+}
+
+/// Polls every 20 ms; the limit is idle time (`common::eventually_alive`): the wait ends only
+/// when the rig has done nothing for [`porter_fake::GENEROUS`].
+async fn eventually(rig: &Rig, what: &str, check: impl FnMut() -> bool) {
+    common::eventually_alive(what, || rig.pulse(), check).await;
 }
 
 async fn rig() -> Rig {
@@ -184,21 +196,17 @@ async fn a_folder_syncs_against_nextcloud_through_the_relay_and_status_shows_the
 
     // Up: a local file reaches the server, and Status carries the quota the server reports.
     dataset.put("2026/IMG_1.HEIC", b"abcdef");
-    eventually("the file is on the server", || puts(&rig.nextcloud) == 1).await;
-    let mut quota = None;
-    let deadline = porter_fake::Deadline::generous();
-    while !deadline.passed() {
-        quota = status_quota(&sync, "a1/photos_originals").await;
-        if quota == Some((6, Some(1_000_000))) {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-    assert_eq!(quota, Some((6, Some(1_000_000))));
+    eventually(&rig, "the file is on the server", || puts(&rig.nextcloud) == 1).await;
+    common::until_alive(
+        "Status carries the quota",
+        || rig.pulse(),
+        || async { status_quota(&sync, "a1/photos_originals").await == Some((6, Some(1_000_000))) },
+    )
+    .await;
 
     // Down: a file put on the server arrives locally.
     rig.nextcloud.put_file("Photos/from-phone.jpg", b"xyz");
-    eventually("the remote file arrives", || {
+    eventually(&rig, "the remote file arrives", || {
         dataset.get("from-phone.jpg").as_deref() == Some(b"xyz".as_slice())
     })
     .await;
@@ -226,7 +234,7 @@ async fn a_folder_syncs_against_nextcloud_through_the_relay_and_status_shows_the
     let before = puts(&rig.nextcloud);
     rig.nextcloud.expire_sync_tokens();
     rig.nextcloud.put_file("Photos/poke.txt", b"p");
-    eventually("the poke arrives", || dataset.get("poke.txt").is_some()).await;
+    eventually(&rig, "the poke arrives", || dataset.get("poke.txt").is_some()).await;
     assert_eq!(
         puts(&rig.nextcloud),
         before,
@@ -236,5 +244,5 @@ async fn a_folder_syncs_against_nextcloud_through_the_relay_and_status_shows_the
 
     rig.hub
         .forget_account(&syncd::paths::AccountDir::parse("a1").expect("account"));
-    eventually("the driver stops", || running.is_finished()).await;
+    eventually(&rig, "the driver stops", || running.is_finished()).await;
 }

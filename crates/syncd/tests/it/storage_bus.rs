@@ -27,7 +27,6 @@ use porter_service::Registry;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
 use syncd::datasets::photos::PhotosSwitch;
 use syncd::datasets::pim::{AccountdUnavailable, Wiring};
 use syncd::datasets::storage::{
@@ -94,6 +93,13 @@ struct Rig {
     supervisor: StorageSupervisor<Link, Gate>,
     _keep: Vec<zbus::Connection>,
     _network: watch::Sender<Network>,
+}
+
+impl Rig {
+    /// What the daemon has done so far, as [`common::pulse`] counts it.
+    fn pulse(&self) -> u64 {
+        common::pulse(&self.hub, self.graph.hits().len())
+    }
 }
 
 fn grant(id: &str, class: DataClass) -> Grant {
@@ -221,17 +227,11 @@ async fn rig(photos: PhotosSwitch) -> Rig {
     }
 }
 
-/// Polls every 20 ms for up to [`porter_fake::GENEROUS`] by the clock (a loaded machine runs a
-/// cycle slowly).
-async fn eventually(what: &str, mut check: impl FnMut() -> bool) {
-    let deadline = porter_fake::Deadline::generous();
-    while !deadline.passed() {
-        if check() {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-    deadline.fail(what);
+/// Polls every 20 ms; the limit is idle time (`common::eventually_alive`): the wait ends only when
+/// the rig has not begun a cycle or served a request for [`porter_fake::GENEROUS`], so a loaded
+/// machine that runs a cycle slowly is never cut short.
+async fn eventually(rig: &Rig, what: &str, check: impl FnMut() -> bool) {
+    common::eventually_alive(what, || rig.pulse(), check).await;
 }
 
 async fn names(sync: &SyncProxy<'_>) -> Vec<String> {
@@ -261,12 +261,12 @@ async fn a_files_grant_on_a_graph_account_mirrors_the_app_folder_both_ways_throu
     // Up, in a folder, and down.
     std::fs::create_dir_all(local(&rig, "notes")).expect("dir");
     std::fs::write(local(&rig, "notes/a.txt"), b"from here").expect("write");
-    eventually("the file is on the drive", || {
+    eventually(&rig, "the file is on the drive", || {
         rig.graph.file("notes/a.txt").as_deref() == Some(b"from here".as_slice())
     })
     .await;
     rig.graph.put_file("from-phone/b.txt", b"from there");
-    eventually("the remote file arrives", || {
+    eventually(&rig, "the remote file arrives", || {
         std::fs::read(local(&rig, "from-phone/b.txt"))
             .ok()
             .as_deref()
@@ -274,7 +274,7 @@ async fn a_files_grant_on_a_graph_account_mirrors_the_app_folder_both_ways_throu
     })
     .await;
     rig.graph.delete("notes/a.txt");
-    eventually("a remote delete is a local delete", || {
+    eventually(&rig, "a remote delete is a local delete", || {
         !local(&rig, "notes/a.txt").exists()
     })
     .await;
@@ -299,7 +299,7 @@ async fn a_two_sided_edit_is_a_conflict_signal_with_a_number_and_keep_remote_set
     assert_eq!(names(&sync).await, [DATASET]);
 
     rig.graph.put_file("doc.txt", b"one");
-    eventually("the file arrives", || {
+    eventually(&rig, "the file arrives", || {
         std::fs::read(local(&rig, "doc.txt")).ok().as_deref() == Some(b"one".as_slice())
     })
     .await;
@@ -333,7 +333,7 @@ async fn a_two_sided_edit_is_a_conflict_signal_with_a_number_and_keep_remote_set
     sync.resolve(DATASET, number, RESOLVE_KEEP_REMOTE)
         .await
         .expect("resolve");
-    eventually("the drive's version is stored locally", || {
+    eventually(&rig, "the drive's version is stored locally", || {
         std::fs::read(local(&rig, "doc.txt")).ok().as_deref() == Some(b"theirs".as_slice())
     })
     .await;
@@ -358,7 +358,7 @@ async fn a_revoked_grant_drops_the_dataset_keeps_the_files_and_a_removed_account
     let sync = SyncProxy::new(&files).await.expect("proxy");
     rig.supervisor.tick().await;
     rig.graph.put_file("keep.txt", b"kept");
-    eventually("the file arrives", || local(&rig, "keep.txt").exists()).await;
+    eventually(&rig, "the file arrives", || local(&rig, "keep.txt").exists()).await;
 
     // A tick that cannot reach accountd, or that finds the grant, changes nothing.
     rig.supervisor.tick().await;
@@ -386,7 +386,7 @@ async fn a_revoked_grant_drops_the_dataset_keeps_the_files_and_a_removed_account
     rig.shown.store(true, Ordering::SeqCst);
     rig.supervisor.tick().await;
     assert_eq!(names(&sync).await, [DATASET]);
-    eventually("the missed file arrives", || {
+    eventually(&rig, "the missed file arrives", || {
         local(&rig, "late.txt").exists()
     })
     .await;
@@ -429,7 +429,7 @@ async fn photos_run_only_behind_the_switch_for_a_photos_grant_and_an_import_reac
     let source = rig.bus.scratch().join("IMG_1.jpg");
     std::fs::write(&source, b"pixels").expect("photo");
     let imported = library.import(&source).expect("import");
-    eventually("the original is on the drive, by content", || {
+    eventually(&rig, "the original is on the drive, by content", || {
         let shard = &imported.id.rel();
         rig.graph
             .file(&format!("Photos/Originals/{shard}"))

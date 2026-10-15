@@ -123,3 +123,80 @@ pub async fn eventually(what: &str, mut check: impl FnMut() -> bool) {
     }
     deadline.fail(what);
 }
+
+/// What a rig's daemon has done so far, as one number that only grows: the cycles every dataset
+/// of `hub` has begun and finished, plus the `requests` its fake server has served. A wait that
+/// reads it ([`eventually_alive`], [`until_alive`]) counts each change as progress, so a loaded
+/// machine that mirrors slowly is never cut short, and a daemon that stopped still is.
+pub fn pulse(hub: &syncd::service::Hub, requests: usize) -> u64 {
+    let cycles: u64 = hub
+        .names()
+        .iter()
+        .filter_map(|name| hub.cycles(name))
+        .map(|cycles| cycles.begun + cycles.ended)
+        .sum();
+    cycles + requests as u64
+}
+
+/// Polls `check` every 20 ms like [`eventually`], but the limit is idle time: the wait fails
+/// only when `pulse` (see [`pulse`]) has not changed for [`porter_fake::GENEROUS`], so the time a
+/// scenario takes may grow with the machine's load as long as the daemon keeps working.
+pub async fn eventually_alive(
+    what: &str,
+    mut pulse: impl FnMut() -> u64,
+    mut check: impl FnMut() -> bool,
+) {
+    until_alive(what, &mut pulse, || std::future::ready(check())).await;
+}
+
+/// [`eventually_alive`] for a check that is itself asynchronous (a bus call).
+pub async fn until_alive<F: std::future::Future<Output = bool>>(
+    what: &str,
+    mut pulse: impl FnMut() -> u64,
+    mut check: impl FnMut() -> F,
+) {
+    let mut deadline = porter_fake::Deadline::idle(porter_fake::GENEROUS);
+    let mut seen = pulse();
+    loop {
+        if check().await {
+            return;
+        }
+        let now = pulse();
+        if now != seen {
+            seen = now;
+            deadline.progress();
+        }
+        if deadline.passed() {
+            deadline.fail(what);
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+}
+
+/// The next item of `stream`, waiting as [`until_alive`] does: while `pulse` changes the wait
+/// goes on; `None` when the stream ended.
+///
+/// # Panics
+/// When nothing came and `pulse` stayed the same for [`porter_fake::GENEROUS`].
+pub async fn next_alive<S: zbus::export::futures_core::Stream + Unpin>(
+    what: &str,
+    mut pulse: impl FnMut() -> u64,
+    stream: &mut S,
+) -> Option<S::Item> {
+    let mut deadline = porter_fake::Deadline::idle(porter_fake::GENEROUS);
+    let mut seen = pulse();
+    loop {
+        let next = std::future::poll_fn(|cx| std::pin::Pin::new(&mut *stream).poll_next(cx));
+        if let Ok(item) = tokio::time::timeout(std::time::Duration::from_millis(20), next).await {
+            return item;
+        }
+        let now = pulse();
+        if now != seen {
+            seen = now;
+            deadline.progress();
+        }
+        if deadline.passed() {
+            deadline.fail(what);
+        }
+    }
+}

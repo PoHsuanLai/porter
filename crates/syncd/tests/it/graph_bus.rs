@@ -12,7 +12,7 @@ use crate::common;
 
 use common::bus::PrivateBus;
 use common::hosted::{Link, host};
-use common::{Known, client, eventually};
+use common::{Known, client};
 use porter_client::Accounts;
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::stream::ByteStream;
@@ -31,7 +31,6 @@ use porter_service::Registry;
 use porter_sync::ConflictRule;
 use std::collections::BTreeSet;
 use std::sync::Arc;
-use std::time::Duration;
 use storage_graph::{CHUNK_UNIT, Clock, Uploads};
 use syncd::clock::Wall;
 use syncd::dataset::MemoryDataset;
@@ -103,6 +102,19 @@ struct Rig {
     endpoint: EndpointUrl,
     link: EndpointUrl,
     _keep: Vec<zbus::Connection>,
+}
+
+impl Rig {
+    /// What the daemon has done so far, as [`common::pulse`] counts it, with both origins' hits.
+    fn pulse(&self) -> u64 {
+        common::pulse(&self.hub, self.graph.hits().len() + self.graph.link_hits().len())
+    }
+}
+
+/// Polls every 20 ms; the limit is idle time (`common::eventually_alive`): the wait ends only
+/// when the rig has done nothing for [`porter_fake::GENEROUS`].
+async fn eventually(rig: &Rig, what: &str, check: impl FnMut() -> bool) {
+    common::eventually_alive(what, || rig.pulse(), check).await;
 }
 
 fn account(provider: &FakeProvider, url: &EndpointUrl) -> Account {
@@ -258,22 +270,20 @@ async fn a_folder_syncs_against_graph_through_the_relay_and_status_shows_the_quo
     let large: Vec<u8> = (0..CHUNK_UNIT + 1000).map(|i| (i % 253) as u8).collect();
     dataset.put("2026/IMG_1.HEIC", b"abcdef");
     dataset.put("2026/BIG.MOV", &large);
-    eventually("both files are on the drive", || {
+    eventually(&rig, "both files are on the drive", || {
         rig.graph.file("Photos/2026/IMG_1.HEIC").as_deref() == Some(b"abcdef".as_slice())
             && rig.graph.file("Photos/2026/BIG.MOV").as_deref() == Some(large.as_slice())
     })
     .await;
     let used = 6 + large.len() as u64;
-    let mut quota = None;
-    let deadline = porter_fake::Deadline::generous();
-    while !deadline.passed() {
-        quota = status_quota(&sync, "a1/photos_originals").await;
-        if quota == Some((used, Some(1_000_000))) {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-    assert_eq!(quota, Some((used, Some(1_000_000))));
+    common::until_alive(
+        "Status carries the quota",
+        || rig.pulse(),
+        || async {
+            status_quota(&sync, "a1/photos_originals").await == Some((used, Some(1_000_000)))
+        },
+    )
+    .await;
     let link_hits = rig.graph.link_hits();
     assert!(
         link_hits
@@ -291,7 +301,7 @@ async fn a_folder_syncs_against_graph_through_the_relay_and_status_shows_the_quo
 
     // Down: a file put on the drive by another device arrives locally.
     rig.graph.put_file("Photos/from-phone.jpg", b"xyz");
-    eventually("the remote file arrives", || {
+    eventually(&rig, "the remote file arrives", || {
         dataset.get("from-phone.jpg").as_deref() == Some(b"xyz".as_slice())
     })
     .await;
@@ -325,13 +335,13 @@ async fn a_folder_syncs_against_graph_through_the_relay_and_status_shows_the_quo
     let before = uploads(&rig.graph);
     rig.graph.expire_delta_tokens();
     rig.graph.put_file("Photos/poke.txt", b"p");
-    eventually("the poke arrives", || dataset.get("poke.txt").is_some()).await;
+    eventually(&rig, "the poke arrives", || dataset.get("poke.txt").is_some()).await;
     assert_eq!(uploads(&rig.graph), before, "no re-upload after the expiry");
     assert_eq!(dataset.snapshot().len(), 4);
 
     rig.hub
         .forget_account(&syncd::paths::AccountDir::parse("a1").expect("account"));
-    eventually("the driver stops", || running.is_finished()).await;
+    eventually(&rig, "the driver stops", || running.is_finished()).await;
 }
 
 /// Reads one HTTP response off a relay: its status line and whatever else came with it.

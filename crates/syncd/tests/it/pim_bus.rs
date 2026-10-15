@@ -67,17 +67,11 @@ fn card(uid: &str, name: &str) -> String {
     format!("BEGIN:VCARD\r\nVERSION:3.0\r\nUID:{uid}\r\nFN:{name}\r\nEND:VCARD\r\n")
 }
 
-/// Polls every 20 ms for up to [`porter_fake::GENEROUS`] (a poll cycle is a second here; a
-/// loaded machine needs the margin, a passing check returns at once).
-async fn eventually(what: &str, mut check: impl FnMut() -> bool) {
-    let deadline = porter_fake::Deadline::generous();
-    while !deadline.passed() {
-        if check() {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-    deadline.fail(what);
+/// Polls every 20 ms; the limit is idle time (`common::eventually_alive`): the wait ends only when
+/// the rig has not begun a cycle or served a request for [`porter_fake::GENEROUS`] (a poll cycle
+/// is a second here), so a loaded machine that mirrors slowly is never cut short.
+async fn eventually(rig: &Rig, what: &str, check: impl FnMut() -> bool) {
+    common::eventually_alive(what, || rig.pulse(), check).await;
 }
 
 /// Polls every 20 ms until `done` items of `total` are finished. The wait is idle time, not
@@ -161,10 +155,16 @@ impl Rig {
     /// loaded machine that looks late is waited for, and an idle one is not kept waiting.
     async fn after_two_looks(&self) {
         let wanted = self.asked.load(Ordering::SeqCst) + 2 * PimKind::ALL.len() + 1;
-        eventually("the supervisor looks twice", || {
+        eventually(self, "the supervisor looks twice", || {
             self.asked.load(Ordering::SeqCst) >= wanted
         })
         .await;
+    }
+
+    /// What the daemon has done so far, as [`common::pulse`] counts it, with the questions the
+    /// supervisor asked of the accounts.
+    fn pulse(&self) -> u64 {
+        common::pulse(&self.hub, self.nextcloud.hits().len() + self.asked.load(Ordering::SeqCst))
     }
 
     fn account_dir(&self) -> PathBuf {
@@ -342,7 +342,7 @@ async fn two_calendars_and_an_address_book_mirror_into_the_vdir_with_their_metad
     let personal = rig.calendar("personal");
     let work = rig.calendar("work");
     let contacts = rig.calendar("contacts-contacts");
-    eventually("every item is mirrored", || {
+    eventually(&rig, "every item is mirrored", || {
         items_in(&personal, PimKind::Calendar) == ["ev1.ics", "ev2.ics"]
             && items_in(&work, PimKind::Calendar) == ["w1.ics"]
             && items_in(&contacts, PimKind::Contacts) == ["c1.vcf", "c2.vcf"]
@@ -360,7 +360,7 @@ async fn two_calendars_and_an_address_book_mirror_into_the_vdir_with_their_metad
         Some(card("c2", "Grace Hopper"))
     );
     // The metadata is vdirsyncer's two files.
-    eventually("the metadata is written", || {
+    eventually(&rig, "the metadata is written", || {
         read(&personal.join(DISPLAYNAME)).as_deref() == Some("Personal")
             && read(&personal.join(COLOR)).as_deref() == Some("#0082c9FF")
             && read(&work.join(DISPLAYNAME)).as_deref() == Some("Work")
@@ -421,7 +421,7 @@ async fn two_calendars_and_an_address_book_mirror_into_the_vdir_with_their_metad
 async fn a_server_edit_a_delete_a_new_item_a_rename_and_collection_changes_all_arrive() {
     let rig = rig(true).await;
     let personal = rig.calendar("personal");
-    eventually("the first mirror", || {
+    eventually(&rig, "the first mirror", || {
         items_in(&personal, PimKind::Calendar) == ["ev1.ics", "ev2.ics"]
     })
     .await;
@@ -432,7 +432,7 @@ async fn a_server_edit_a_delete_a_new_item_a_rename_and_collection_changes_all_a
     // A file name that is not its UID: the mirror names it by the UID.
     rig.nextcloud
         .put_item("personal", "x-server-name.ics", &event("real-uid", "Trip"));
-    eventually("edit, delete and new item arrive", || {
+    eventually(&rig, "edit, delete and new item arrive", || {
         read(&personal.join("ev1.ics")) == Some(event("ev1", "Dentist (moved)"))
             && items_in(&personal, PimKind::Calendar) == ["ev1.ics", "real-uid.ics"]
     })
@@ -451,7 +451,7 @@ async fn a_server_edit_a_delete_a_new_item_a_rename_and_collection_changes_all_a
         .put_item("holidays", "h1.ics", &event("h1", "Midsummer"));
     rig.nextcloud.delete_collection("work");
     let holidays = rig.calendar("holidays");
-    eventually("metadata, new calendar and the removal arrive", || {
+    eventually(&rig, "metadata, new calendar and the removal arrive", || {
         read(&personal.join(DISPLAYNAME)).as_deref() == Some("Private")
             && read(&personal.join(COLOR)).as_deref() == Some("#00ff00FF")
             && items_in(&holidays, PimKind::Calendar) == ["h1.ics"]
@@ -470,7 +470,7 @@ async fn a_server_edit_a_delete_a_new_item_a_rename_and_collection_changes_all_a
 async fn an_expired_sync_token_lists_again_and_downloads_nothing_it_already_has() {
     let rig = rig(true).await;
     let personal = rig.calendar("personal");
-    eventually("the first mirror", || {
+    eventually(&rig, "the first mirror", || {
         items_in(&personal, PimKind::Calendar) == ["ev1.ics", "ev2.ics"]
             && items_in(&rig.calendar("work"), PimKind::Calendar) == ["w1.ics"]
             && items_in(&rig.calendar("contacts-contacts"), PimKind::Contacts).len() == 2
@@ -486,7 +486,7 @@ async fn an_expired_sync_token_lists_again_and_downloads_nothing_it_already_has(
     rig.nextcloud
         .put_item("personal", "ev3.ics", &event("ev3", "Gym"));
     rig.nextcloud.expire_sync_tokens();
-    eventually("the new item arrives", || personal.join("ev3.ics").exists()).await;
+    eventually(&rig, "the new item arrives", || personal.join("ev3.ics").exists()).await;
     // Every collection was listed again (a REPORT with no token), and only the new item came: a
     // cycle of each after the item arrived has passed.
     common::a_cycle_of_each(&rig.hub).await;
@@ -508,7 +508,7 @@ async fn an_expired_sync_token_lists_again_and_downloads_nothing_it_already_has(
 async fn a_local_edit_a_deletion_and_a_new_file_are_never_sent_to_the_server() {
     let rig = rig(true).await;
     let personal = rig.calendar("personal");
-    eventually("the first mirror", || {
+    eventually(&rig, "the first mirror", || {
         items_in(&personal, PimKind::Calendar) == ["ev1.ics", "ev2.ics"]
     })
     .await;
@@ -535,7 +535,7 @@ async fn a_local_edit_a_deletion_and_a_new_file_are_never_sent_to_the_server() {
         .put_item("personal", "ev1.ics", &event("ev1", "Dentist (moved)"));
     rig.nextcloud
         .put_item("personal", "ev2.ics", &event("ev2", "Brunch"));
-    eventually("the server's state replaces the local one", || {
+    eventually(&rig, "the server's state replaces the local one", || {
         read(&personal.join("ev1.ics")) == Some(event("ev1", "Dentist (moved)"))
             && read(&personal.join("ev2.ics")) == Some(event("ev2", "Brunch"))
     })
@@ -618,7 +618,7 @@ async fn a_reader_never_sees_a_file_that_is_not_a_complete_item() {
 #[tokio::test(flavor = "multi_thread")]
 async fn removing_the_account_in_syncd_removes_the_mirror_and_it_does_not_come_back() {
     let rig = rig(true).await;
-    eventually("mirrored", || {
+    eventually(&rig, "mirrored", || {
         items_in(&rig.calendar("personal"), PimKind::Calendar).len() == 2
             && items_in(&rig.calendar("contacts-contacts"), PimKind::Contacts).len() == 2
     })
@@ -630,7 +630,7 @@ async fn removing_the_account_in_syncd_removes_the_mirror_and_it_does_not_come_b
         .remove(&AccountId::parse(ACCOUNT).expect("id"))
         .await
         .expect("removed");
-    eventually("the account's mirror is gone", || {
+    eventually(&rig, "the account's mirror is gone", || {
         !rig.account_dir().exists()
     })
     .await;
@@ -652,7 +652,7 @@ async fn a_revoked_grant_stops_and_removes_the_mirror_but_an_unanswering_grant_l
  {
     let rig = rig(true).await;
     let contacts = rig.calendar("contacts-contacts");
-    eventually("mirrored", || {
+    eventually(&rig, "mirrored", || {
         items_in(&rig.calendar("personal"), PimKind::Calendar).len() == 2
             && items_in(&contacts, PimKind::Contacts).len() == 2
     })
@@ -664,7 +664,7 @@ async fn a_revoked_grant_stops_and_removes_the_mirror_but_an_unanswering_grant_l
     assert_eq!(names(&rig).len(), 3);
     rig.nextcloud
         .put_item("contacts", "c3.vcf", &card("c3", "Alan Turing"));
-    eventually("a running mirror still follows the server", || {
+    eventually(&rig, "a running mirror still follows the server", || {
         items_in(&contacts, PimKind::Contacts).len() == 3
     })
     .await;
@@ -672,7 +672,7 @@ async fn a_revoked_grant_stops_and_removes_the_mirror_but_an_unanswering_grant_l
     // The person withdraws the Contacts grant: that mirror goes, the calendars stay.
     rig.accountd_up.store(true, Ordering::Relaxed);
     rig.accounts.revoke(&rig.grants[1]).await.expect("revoke");
-    eventually("the address book is gone", || !contacts.exists()).await;
+    eventually(&rig, "the address book is gone", || !contacts.exists()).await;
     assert!(rig.calendar("personal").exists());
     assert!(
         names(&rig).iter().all(|n| n.contains("pim_cal_")),
@@ -701,7 +701,7 @@ async fn a_calendar_and_an_address_book_of_one_name_keep_apart_and_retiring_one_
     rig.nextcloud
         .put_book_item("shared", "p1.vcf", &card("p1", "Katherine Johnson"));
     let (calendar, book) = (rig.calendar("shared"), rig.calendar("shared-contacts"));
-    eventually("both mirror, each in its own directory", || {
+    eventually(&rig, "both mirror, each in its own directory", || {
         items_in(&calendar, PimKind::Calendar) == ["s1.ics"]
             && items_in(&book, PimKind::Contacts) == ["p1.vcf"]
     })
@@ -711,7 +711,7 @@ async fn a_calendar_and_an_address_book_of_one_name_keep_apart_and_retiring_one_
 
     // The Contacts grant is withdrawn: the address book goes, the calendar of that name stays.
     rig.accounts.revoke(&rig.grants[1]).await.expect("revoke");
-    eventually("the address book is gone", || !book.exists()).await;
+    eventually(&rig, "the address book is gone", || !book.exists()).await;
     assert_eq!(items_in(&calendar, PimKind::Calendar), ["s1.ics"]);
     assert_eq!(read(&calendar.join(DISPLAYNAME)).as_deref(), Some("Shared"));
 }

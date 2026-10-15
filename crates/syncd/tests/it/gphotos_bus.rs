@@ -7,10 +7,9 @@
 use crate::common;
 use crate::googlerig as google_rig;
 
-use common::eventually;
 use google_rig::{
     FILES_DATASET, Media, PICKER_BEARER, Rig, SECRET_ACCESS, SECRET_REFRESH, UPLOAD_BEARER,
-    UPLOAD_DATASET, client_of, rig, rig_picker_only, rig_with,
+    UPLOAD_DATASET, client_of, eventually, rig, rig_picker_only, rig_with,
 };
 use porter_dbus::SyncProxy;
 use porter_fake_servers::google::Pick;
@@ -106,7 +105,7 @@ async fn a_new_file_uploads_once_a_duplicate_does_not_and_the_album_is_the_apps_
     let mut rig = rig(PhotosSwitch::On).await;
     rig.supervisor.tick().await;
     std::fs::write(upload_dir(&rig).join("a.jpg"), photo(1)).expect("photo");
-    eventually("the photo is in Google Photos", || {
+    eventually(&rig, "the photo is in Google Photos", || {
         rig.google.photos_items().len() == 1 && synced(&rig) == ["a.jpg"]
     })
     .await;
@@ -125,7 +124,7 @@ async fn a_new_file_uploads_once_a_duplicate_does_not_and_the_album_is_the_apps_
     std::fs::write(upload_dir(&rig).join("copy.jpg"), photo(1)).expect("copy");
     std::fs::create_dir_all(upload_dir(&rig).join("trip")).expect("dir");
     std::fs::write(upload_dir(&rig).join("trip/b.jpg"), photo(2)).expect("photo");
-    eventually("the new photo is up and the copy is settled", || {
+    eventually(&rig, "the new photo is up and the copy is settled", || {
         synced(&rig) == ["a.jpg", "copy.jpg", "trip/b.jpg"]
     })
     .await;
@@ -148,7 +147,7 @@ async fn a_new_file_uploads_once_a_duplicate_does_not_and_the_album_is_the_apps_
     rig.photos_shown.store(true, Ordering::SeqCst);
     rig.supervisor.tick().await;
     std::fs::write(upload_dir(&rig).join("again.jpg"), photo(2)).expect("again");
-    eventually("the copy after the restart is settled", || {
+    eventually(&rig, "the copy after the restart is settled", || {
         synced(&rig).contains(&"again.jpg".to_owned())
     })
     .await;
@@ -157,7 +156,7 @@ async fn a_new_file_uploads_once_a_duplicate_does_not_and_the_album_is_the_apps_
 
     // A local delete is not a delete in Google Photos, and nothing is ever read from it.
     std::fs::remove_file(upload_dir(&rig).join("a.jpg")).expect("delete");
-    eventually("the journal forgot the deleted file", || {
+    eventually(&rig, "the journal forgot the deleted file", || {
         !synced(&rig).contains(&"a.jpg".to_owned())
     })
     .await;
@@ -388,7 +387,7 @@ async fn the_google_photos_follow_the_photos_grant_and_leave_what_is_on_disk() {
     rig.supervisor.tick().await;
     assert_eq!(names(&sync).await, [UPLOAD_DATASET]);
     std::fs::write(upload_dir(&rig).join("a.jpg"), photo(1)).expect("photo");
-    eventually("it is up", || rig.google.photos_items().len() == 1).await;
+    eventually(&rig, "it is up", || rig.google.photos_items().len() == 1).await;
 
     rig.photos_shown.store(false, Ordering::SeqCst);
     rig.supervisor.tick().await;
@@ -406,7 +405,7 @@ async fn the_google_photos_follow_the_photos_grant_and_leave_what_is_on_disk() {
     rig.photos_shown.store(true, Ordering::SeqCst);
     rig.supervisor.tick().await;
     assert_eq!(names(&sync).await, [UPLOAD_DATASET]);
-    eventually("the waiting photo goes up", || {
+    eventually(&rig, "the waiting photo goes up", || {
         rig.google.photos_items().len() == 2
     })
     .await;
@@ -429,7 +428,7 @@ async fn no_secret_is_in_the_ledger_the_journal_or_the_picked_files() {
     let mut rig = rig(PhotosSwitch::On).await;
     rig.supervisor.tick().await;
     std::fs::write(upload_dir(&rig).join("a.jpg"), photo(1)).expect("photo");
-    eventually("it is up", || synced(&rig) == ["a.jpg"]).await;
+    eventually(&rig, "it is up", || synced(&rig) == ["a.jpg"]).await;
     let picker = rig.supervisor.google_picker(&rig.account).expect("picker");
     let session = picker.start().await.expect("session");
     rig.google.picker_pick(

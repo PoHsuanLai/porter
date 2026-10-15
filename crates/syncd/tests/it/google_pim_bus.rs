@@ -10,7 +10,6 @@ use crate::common;
 
 use common::bus::PrivateBus;
 use common::caller as caller_of;
-use common::eventually;
 use common::hosted::host;
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::{
@@ -83,6 +82,11 @@ struct Rig {
 }
 
 impl Rig {
+    /// What the daemon has done so far, as [`common::pulse`] counts it.
+    fn pulse(&self) -> u64 {
+        common::pulse(&self.hub, self.google.hits().len())
+    }
+
     fn account_dir(&self) -> PathBuf {
         self.mirrors.join(SEGMENT)
     }
@@ -137,6 +141,12 @@ impl Drop for Rig {
     fn drop(&mut self) {
         self.supervisor.abort();
     }
+}
+
+/// Polls every 20 ms; the limit is idle time (`common::eventually_alive`): the wait ends only when
+/// the rig has not begun a cycle or served a request for [`porter_fake::GENEROUS`].
+async fn eventually(rig: &Rig, what: &str, check: impl FnMut() -> bool) {
+    common::eventually_alive(what, || rig.pulse(), check).await;
 }
 
 /// A Google account granted to syncd for `kinds`, over a fake Google holding the seeded sets.
@@ -305,7 +315,7 @@ fn everything_mirrored(rig: &Rig) -> bool {
 #[tokio::test(flavor = "multi_thread")]
 async fn two_calendars_the_contacts_and_two_task_lists_mirror_into_the_vdir() {
     let rig = rig(&ALL).await;
-    eventually("every collection is mirrored", || everything_mirrored(&rig)).await;
+    eventually(&rig, "every collection is mirrored", || everything_mirrored(&rig)).await;
 
     // Names and colours; the directories are told apart by kind.
     let personal = rig
@@ -474,7 +484,7 @@ async fn two_calendars_the_contacts_and_two_task_lists_mirror_into_the_vdir() {
 #[tokio::test(flavor = "multi_thread")]
 async fn remote_changes_removals_new_items_and_renames_arrive_at_the_next_poll() {
     let rig = rig(&ALL).await;
-    eventually("the first mirror", || everything_mirrored(&rig)).await;
+    eventually(&rig, "the first mirror", || everything_mirrored(&rig)).await;
 
     // Calendar: a changed event, a removed exception, a new event.
     rig.google.put_event(
@@ -509,7 +519,7 @@ async fn remote_changes_removals_new_items_and_renames_arrive_at_the_next_poll()
         json!({"title": "File the report", "status": "completed",
                "completed": "2026-10-07T09:15:00.000Z", "notes": "done"}),
     );
-    eventually("changes, removals and new items arrive", || {
+    eventually(&rig, "changes, removals and new items arrive", || {
         rig.item_with("Personal", PimKind::Calendar, "SUMMARY:Dentist (moved)")
             .is_some()
             && rig.items("Personal", PimKind::Calendar).len() == 4
@@ -547,7 +557,7 @@ async fn remote_changes_removals_new_items_and_renames_arrive_at_the_next_poll()
     rig.google.remove_calendar("cal-work");
     rig.google.set_task_list("list-home", "House");
     rig.google.remove_task_list("list-work");
-    eventually("renames, new and removed collections arrive", || {
+    eventually(&rig, "renames, new and removed collections arrive", || {
         rig.collection("Private", PimKind::Calendar)
             .is_some_and(|dir| read(&dir.join(COLOR)).as_deref() == Some("#00ff00"))
             && rig.items("Trips", PimKind::Calendar).len() == 1
@@ -564,7 +574,7 @@ async fn remote_changes_removals_new_items_and_renames_arrive_at_the_next_poll()
 #[tokio::test(flavor = "multi_thread")]
 async fn local_edits_deletions_and_new_files_are_never_sent_and_a_remote_change_overwrites() {
     let rig = rig(&ALL).await;
-    eventually("the first mirror", || everything_mirrored(&rig)).await;
+    eventually(&rig, "the first mirror", || everything_mirrored(&rig)).await;
     let personal = rig
         .collection("Personal", PimKind::Calendar)
         .expect("personal");
@@ -627,7 +637,7 @@ async fn local_edits_deletions_and_new_files_are_never_sent_and_a_remote_change_
         json!({"title": "File the report", "status": "completed",
                "completed": "2026-10-07T09:15:00.000Z"}),
     );
-    eventually("the server's state replaces the local one", || {
+    eventually(&rig, "the server's state replaces the local one", || {
         read(&personal.join("uid-dentist@google.com.ics"))
             .is_some_and(|t| t.contains("SUMMARY:Dentist again"))
             && read(&personal.join("uid-holiday@google.com.ics"))
@@ -644,7 +654,7 @@ async fn local_edits_deletions_and_new_files_are_never_sent_and_a_remote_change_
 #[tokio::test(flavor = "multi_thread")]
 async fn expired_sync_tokens_list_again_and_keep_every_item() {
     let rig = rig(&ALL).await;
-    eventually("the first mirror", || everything_mirrored(&rig)).await;
+    eventually(&rig, "the first mirror", || everything_mirrored(&rig)).await;
     common::a_cycle_of_each(&rig.hub).await;
     let before = rig.google.hits().len();
     rig.google.put_event(
@@ -657,7 +667,7 @@ async fn expired_sync_tokens_list_again_and_keep_every_item() {
         json!({"names": [{"displayName": "Extra Person"}]}),
     );
     rig.google.expire_sync_tokens();
-    eventually("the new items arrive after the listings start over", || {
+    eventually(&rig, "the new items arrive after the listings start over", || {
         rig.items("Personal", PimKind::Calendar).len() == 5
             && rig.items("Contacts", PimKind::Contacts).len() == 3
     })
@@ -665,7 +675,7 @@ async fn expired_sync_tokens_list_again_and_keep_every_item() {
     // The sources meet the two refusals, each at its own next poll: 410 for each calendar, 400
     // for the contacts. The new items can arrive before the other calendar is polled, so the
     // refusals are waited for, not counted once the items are there.
-    eventually("both calendars and the contacts met the expiry", || {
+    eventually(&rig, "both calendars and the contacts met the expiry", || {
         let (events_gone, contacts_expired) = expiries(&rig, before);
         events_gone >= 2 && contacts_expired >= 1
     })
@@ -699,7 +709,7 @@ fn everything_mirrored_after_extras(rig: &Rig) -> bool {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_tasks_grant_without_a_calendar_grant_mirrors_only_tasks() {
     let rig = rig(&[PimKind::Tasks]).await;
-    eventually("the task lists are mirrored", || {
+    eventually(&rig, "the task lists are mirrored", || {
         rig.items("Home", PimKind::Tasks).len() == 2
             && rig.items("Errands", PimKind::Tasks).len() == 1
     })

@@ -19,9 +19,7 @@ use porter_sync::{
     PutItem, PutRefused, PutTarget, Quota, RemoteId, RemoteVersion, Replica, ReplicaError,
 };
 use std::collections::BTreeSet;
-use std::pin::Pin;
 use std::sync::Arc;
-use std::time::Duration;
 use syncd::clock::Wall;
 use syncd::dataset::{MemoryDataset, replica_hash};
 use syncd::driver::Driver;
@@ -30,7 +28,6 @@ use syncd::journal::Journal;
 use syncd::scheduler::{Network, Settings};
 use syncd::service::{Access as Visible, DatasetName, Hub, serve};
 use tokio::sync::{Notify, watch};
-use zbus::export::futures_core::Stream;
 
 const DENIED: &str = "org.quire.Accounts1.Error.Denied";
 const DATASET: &str = "a1/notes";
@@ -141,15 +138,10 @@ async fn proxy(connection: &zbus::Connection) -> SyncProxy<'_> {
     SyncProxy::new(connection).await.expect("proxy")
 }
 
-async fn until<F: Future<Output = bool>>(what: &str, mut check: impl FnMut() -> F) {
-    let deadline = porter_fake::Deadline::generous();
-    while !deadline.passed() {
-        if check().await {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-    deadline.fail(what);
+/// Polls `check` every 20 ms; the limit is idle time (`common::until_alive`): it ends only when the
+/// rig's daemon has done nothing (no cycle begun or ended) for [`porter_fake::GENEROUS`].
+async fn until<F: Future<Output = bool>>(rig: &Rig, what: &str, check: impl FnMut() -> F) {
+    common::until_alive(what, || common::pulse(&rig.hub, 0), check).await;
 }
 
 async fn remote_text(replica: &Shared, id: &RemoteId) -> Option<String> {
@@ -182,7 +174,7 @@ async fn conflicted(rig: &Rig) -> (zbus::Connection, i64, RemoteId) {
         .put(one, BaseVersion::Absent)
         .await
         .expect("put");
-    until("the file arrives", || async {
+    until(&rig, "the file arrives", || async {
         rig.dataset.get("a.txt") == Some(b"one".to_vec())
     })
     .await;
@@ -210,12 +202,12 @@ async fn conflicted(rig: &Rig) -> (zbus::Connection, i64, RemoteId) {
     drop(between);
     sync.resume(DATASET).await.expect("resume");
 
-    let signal = tokio::time::timeout(
-        porter_fake::GENEROUS,
-        std::future::poll_fn(|cx| Pin::new(&mut conflicts).poll_next(cx)),
+    let signal = common::next_alive(
+        "a Conflict signal",
+        || common::pulse(&rig.hub, 0),
+        &mut conflicts,
     )
     .await
-    .expect("a Conflict signal in time")
     .expect("open stream");
     let args = signal.args().expect("args");
     assert_eq!(args.dataset(), &DATASET);
@@ -235,11 +227,11 @@ async fn keep_remote_has_the_next_cycle_fetch_the_replicas_version_and_the_confl
     sync.resolve(DATASET, number, RESOLVE_KEEP_REMOTE)
         .await
         .expect("resolve");
-    until("the replica's version is stored", || async {
+    until(&rig, "the replica's version is stored", || async {
         rig.dataset.get("a.txt") == Some(b"theirs".to_vec())
     })
     .await;
-    until("no conflict is left", || async {
+    until(&rig, "no conflict is left", || async {
         conflicts_on_status(&sync).await == Some(0)
     })
     .await;
@@ -264,11 +256,11 @@ async fn keep_local_has_the_next_cycle_upload_the_local_content() {
     sync.resolve(DATASET, number, RESOLVE_KEEP_LOCAL)
         .await
         .expect("resolve");
-    until("the local content is uploaded", || async {
+    until(&rig, "the local content is uploaded", || async {
         remote_text(&rig.replica, &id).await.as_deref() == Some("mine")
     })
     .await;
-    until("no conflict is left", || async {
+    until(&rig, "no conflict is left", || async {
         conflicts_on_status(&sync).await == Some(0)
     })
     .await;

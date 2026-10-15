@@ -114,6 +114,20 @@ pub enum Media {
     Unlisted,
 }
 
+impl Rig {
+    /// What the daemon has done so far, as [`crate::common::pulse`] counts it.
+    pub fn pulse(&self) -> u64 {
+        crate::common::pulse(&self.hub, self.google.hits().len())
+    }
+}
+
+/// Polls every 20 ms; the limit is idle time (`common::eventually_alive`): the wait ends only
+/// when the rig has not begun a cycle or served a request for [`porter_fake::GENEROUS`], so a
+/// loaded machine that works slowly is never cut short.
+pub async fn eventually(rig: &Rig, what: &str, check: impl FnMut() -> bool) {
+    crate::common::eventually_alive(what, || rig.pulse(), check).await;
+}
+
 pub struct Rig {
     /// The connection syncd's `Sync1` is served on.
     pub server: zbus::Connection,

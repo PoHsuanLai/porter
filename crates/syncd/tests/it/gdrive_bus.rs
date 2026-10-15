@@ -9,9 +9,9 @@
 use crate::common;
 use crate::googlerig as google_rig;
 
-use common::eventually;
 use google_rig::{
-    DRIVE_BEARER, FILES_DATASET, Rig, SECRET_ACCESS, SECRET_REFRESH, SEGMENT, client_of, local, rig,
+    DRIVE_BEARER, FILES_DATASET, Rig, SECRET_ACCESS, SECRET_REFRESH, SEGMENT, client_of,
+    eventually, local, rig,
 };
 use porter_dbus::{
     CONFLICT_KEY_NUMBER, RESOLVE_KEEP_LOCAL, RESOLVE_KEEP_REMOTE, SYNC_ERROR_NO_SUCH_CONFLICT,
@@ -77,41 +77,41 @@ async fn a_files_grant_on_a_google_account_mirrors_the_app_data_folder_both_ways
     // Up: a file in a folder, then an edit, then a rename, then a delete.
     std::fs::create_dir_all(local(&rig, "notes")).expect("dir");
     std::fs::write(local(&rig, "notes/a.txt"), b"from here").expect("write");
-    eventually("the file is on the drive", || {
+    eventually(&rig, "the file is on the drive", || {
         remote_is(&rig, "notes/a.txt", b"from here")
     })
     .await;
     std::fs::write(local(&rig, "notes/a.txt"), b"edited here").expect("edit");
-    eventually("the edit is on the drive", || {
+    eventually(&rig, "the edit is on the drive", || {
         remote_is(&rig, "notes/a.txt", b"edited here")
     })
     .await;
     std::fs::rename(local(&rig, "notes/a.txt"), local(&rig, "notes/c.txt")).expect("rename");
-    eventually("the rename is on the drive", || {
+    eventually(&rig, "the rename is on the drive", || {
         remote_is(&rig, "notes/c.txt", b"edited here")
             && rig.google.drive_file("notes/a.txt").is_none()
     })
     .await;
     std::fs::remove_file(local(&rig, "notes/c.txt")).expect("delete");
-    eventually("the delete is on the drive", || {
+    eventually(&rig, "the delete is on the drive", || {
         rig.google.drive_file("notes/c.txt").is_none()
     })
     .await;
 
     // Down: an add, an edit, a delete.
     rig.google.drive_put_file("from-phone/b.txt", b"from there");
-    eventually("the remote file arrives", || {
+    eventually(&rig, "the remote file arrives", || {
         local_is(&rig, "from-phone/b.txt", b"from there")
     })
     .await;
     rig.google
         .drive_put_file("from-phone/b.txt", b"changed there");
-    eventually("the remote edit arrives", || {
+    eventually(&rig, "the remote edit arrives", || {
         local_is(&rig, "from-phone/b.txt", b"changed there")
     })
     .await;
     rig.google.drive_delete("from-phone/b.txt");
-    eventually("a remote delete is a local delete", || {
+    eventually(&rig, "a remote delete is a local delete", || {
         !local(&rig, "from-phone/b.txt").exists()
     })
     .await;
@@ -144,7 +144,7 @@ async fn a_two_sided_edit_is_a_conflict_signal_and_keep_remote_or_keep_local_set
         ("other.txt", RESOLVE_KEEP_LOCAL, true),
     ] {
         rig.google.drive_put_file(file, b"one");
-        eventually("the file arrives", || local_is(&rig, file, b"one")).await;
+        eventually(&rig, "the file arrives", || local_is(&rig, file, b"one")).await;
 
         // Both sides edit while no cycle runs, so no cycle sees one edit alone: the cycle lock is
         // held until both are made (a pause and a sleep would leave a slow cycle that was
@@ -179,7 +179,7 @@ async fn a_two_sided_edit_is_a_conflict_signal_and_keep_remote_or_keep_local_set
             true => (b"mine", b"mine"),
             false => (b"theirs", b"theirs"),
         };
-        eventually("both sides agree", || {
+        eventually(&rig, "both sides agree", || {
             local_is(&rig, file, here) && remote_is(&rig, file, there)
         })
         .await;
@@ -203,7 +203,7 @@ async fn a_large_file_goes_up_in_a_resumable_session_and_a_small_one_does_not() 
     let big: Vec<u8> = (0..4_300_000u32).map(|i| (i % 251) as u8).collect();
     write_whole(&rig, "big.bin", &big);
     write_whole(&rig, "small.txt", b"small");
-    eventually("both files are on the drive", || {
+    eventually(&rig, "both files are on the drive", || {
         remote_is(&rig, "big.bin", &big) && remote_is(&rig, "small.txt", b"small")
     })
     .await;
@@ -232,7 +232,7 @@ async fn the_changes_cursor_survives_a_restart_and_an_expired_one_reconciles_wit
     rig.supervisor.tick().await;
     write_whole(&rig, "mine.txt", b"mine");
     rig.google.drive_put_file("theirs.txt", b"theirs");
-    eventually("both directions settle", || {
+    eventually(&rig, "both directions settle", || {
         remote_is(&rig, "mine.txt", b"mine") && local_is(&rig, "theirs.txt", b"theirs")
     })
     .await;
@@ -252,7 +252,7 @@ async fn the_changes_cursor_survives_a_restart_and_an_expired_one_reconciles_wit
     rig.supervisor.tick().await;
     assert_eq!(names(&sync).await, [FILES_DATASET]);
     rig.google.drive_put_file("after.txt", b"after");
-    eventually("a change made after the restart arrives", || {
+    eventually(&rig, "a change made after the restart arrives", || {
         local_is(&rig, "after.txt", b"after")
     })
     .await;
@@ -268,7 +268,7 @@ async fn the_changes_cursor_survives_a_restart_and_an_expired_one_reconciles_wit
     let uploads = count(&rig, "POST", "/upload/drive/v3/");
     rig.google.drive_expire_tokens();
     rig.google.drive_put_file("post-expiry.txt", b"post");
-    eventually("the feed recovers and brings the new file", || {
+    eventually(&rig, "the feed recovers and brings the new file", || {
         local_is(&rig, "post-expiry.txt", b"post")
     })
     .await;
@@ -296,7 +296,7 @@ async fn the_dataset_follows_the_grant_and_an_account_removal_wipes_the_mirror()
     let sync = SyncProxy::new(&files).await.expect("proxy");
     rig.supervisor.tick().await;
     rig.google.drive_put_file("keep.txt", b"kept");
-    eventually("the file arrives", || local(&rig, "keep.txt").exists()).await;
+    eventually(&rig, "the file arrives", || local(&rig, "keep.txt").exists()).await;
 
     // A tick that finds the grant again changes nothing.
     rig.supervisor.tick().await;
@@ -324,7 +324,7 @@ async fn the_dataset_follows_the_grant_and_an_account_removal_wipes_the_mirror()
     rig.files_shown.store(true, Ordering::SeqCst);
     rig.supervisor.tick().await;
     assert_eq!(names(&sync).await, [FILES_DATASET]);
-    eventually("the missed file arrives", || {
+    eventually(&rig, "the missed file arrives", || {
         local(&rig, "late.txt").exists()
     })
     .await;
@@ -402,7 +402,7 @@ async fn no_token_or_secret_is_on_the_bus_in_a_journal_or_in_anything_syncd_prin
     rig.supervisor.tick().await;
     std::fs::write(local(&rig, "a.txt"), b"a").expect("write");
     rig.google.drive_put_file("b.txt", b"b");
-    eventually("both directions settle", || {
+    eventually(&rig, "both directions settle", || {
         remote_is(&rig, "a.txt", b"a") && local_is(&rig, "b.txt", b"b")
     })
     .await;

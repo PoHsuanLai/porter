@@ -188,9 +188,11 @@ async fn emptied(rig: &Rig) {
                 .expect("put"),
         );
     }
-    common::eventually("the files arrive", || {
-        FILES.iter().all(|file| rig.dataset.get(file).is_some())
-    })
+    common::eventually_alive(
+        "the files arrive",
+        || common::pulse(&rig.hub, 0),
+        || FILES.iter().all(|file| rig.dataset.get(file).is_some()),
+    )
     .await;
     // The engine lists between none of these: the removals and the lost history are one change
     // to it. A listing between two removals took them as plain deletions, so no hold came, or a
@@ -215,7 +217,7 @@ async fn a_held_discard_is_signalled_stays_until_confirmed_and_then_the_files_go
     sync.datasets().await.expect("datasets");
     emptied(&rig).await;
 
-    let started = next_hold(&mut holds, parts!()).await;
+    let started = next_hold(&rig, &mut holds, parts!()).await;
     assert_eq!(
         (
             u64::try_from(&started["discard"]).ok(),
@@ -223,7 +225,7 @@ async fn a_held_discard_is_signalled_stays_until_confirmed_and_then_the_files_go
         ),
         (Some(3), Some(3))
     );
-    until("Status says so", || async {
+    until(&rig, "Status says so", || async {
         held_on_status(&sync).await == Some((3, 3))
     })
     .await;
@@ -258,11 +260,13 @@ async fn a_held_discard_is_signalled_stays_until_confirmed_and_then_the_files_go
         .confirm_discard(DATASET)
         .await
         .expect("confirm");
-    let ended = next_hold(&mut holds, parts!()).await;
+    let ended = next_hold(&rig, &mut holds, parts!()).await;
     assert!(ended.is_empty(), "the hold ended: {ended:?}");
-    common::eventually("the files are gone", || {
-        FILES.iter().all(|file| rig.dataset.get(file).is_none())
-    })
+    common::eventually_alive(
+        "the files are gone",
+        || common::pulse(&rig.hub, 0),
+        || FILES.iter().all(|file| rig.dataset.get(file).is_none()),
+    )
     .await;
     assert_eq!(held_on_status(&sync).await, None);
 
@@ -298,7 +302,7 @@ async fn a_server_that_lists_its_items_again_ends_the_hold_without_anyone_confir
     let mut holds = sync.receive_needs_confirmation().await.expect("stream");
     sync.datasets().await.expect("datasets");
     emptied(&rig).await;
-    assert!(!next_hold(&mut holds, parts!()).await.is_empty());
+    assert!(!next_hold(&rig, &mut holds, parts!()).await.is_empty());
     for file in FILES {
         let item = PutItem {
             target: PutTarget::New(ItemPath(file.into())),
@@ -310,7 +314,7 @@ async fn a_server_that_lists_its_items_again_ends_the_hold_without_anyone_confir
             .await
             .expect("put");
     }
-    assert!(next_hold(&mut holds, parts!()).await.is_empty());
+    assert!(next_hold(&rig, &mut holds, parts!()).await.is_empty());
     assert!(FILES.iter().all(|file| rig.dataset.get(file).is_some()));
     let err = sync
         .confirm_discard(DATASET)
@@ -352,7 +356,7 @@ async fn the_shell_hears_a_hold_and_its_end_but_no_data_of_a_dataset_it_does_not
     assert!(sync.datasets().await.expect("datasets").is_empty());
     emptied(&rig).await;
 
-    let started = next_hold(&mut holds, parts!()).await;
+    let started = next_hold(&rig, &mut holds, parts!()).await;
     assert_eq!(
         (
             u64::try_from(&started["discard"]).ok(),
@@ -390,7 +394,7 @@ async fn the_shell_hears_a_hold_and_its_end_but_no_data_of_a_dataset_it_does_not
         .confirm_discard(DATASET)
         .await
         .expect("Settings confirms");
-    let ended = next_hold(&mut holds, parts!()).await;
+    let ended = next_hold(&rig, &mut holds, parts!()).await;
     assert!(ended.is_empty(), "the hold ended: {ended:?}");
 
     // The owner was told of the transfers (so the stream works); the shell was told of none.
@@ -413,8 +417,8 @@ async fn a_shell_that_joins_after_the_hold_started_is_told_at_once() {
         .expect("stream");
     owner_sync.datasets().await.expect("datasets");
     emptied(&rig).await;
-    assert!(!next_hold(&mut owner_holds, parts!()).await.is_empty());
-    until("Status says so", || async {
+    assert!(!next_hold(&rig, &mut owner_holds, parts!()).await.is_empty());
+    until(&rig, "Status says so", || async {
         held_on_status(&owner_sync).await == Some((3, 3))
     })
     .await;
@@ -423,7 +427,7 @@ async fn a_shell_that_joins_after_the_hold_started_is_told_at_once() {
     let sync = proxy(&shell).await;
     let mut holds = sync.receive_needs_confirmation().await.expect("stream");
     sync.watch().await.expect("watch");
-    let told = next_hold(&mut holds, parts!()).await;
+    let told = next_hold(&rig, &mut holds, parts!()).await;
     assert_eq!(
         (
             u64::try_from(&told["discard"]).ok(),
@@ -445,29 +449,28 @@ async fn a_shell_that_joins_after_the_hold_started_is_told_at_once() {
 
 /// The details of the next `NeedsConfirmation` signal; `read` takes a signal apart into its
 /// dataset and details.
-async fn next_hold<S, T>(holds: &mut S, read: impl Fn(&T) -> (String, Details)) -> Details
+async fn next_hold<S, T>(
+    rig: &Rig,
+    holds: &mut S,
+    read: impl Fn(&T) -> (String, Details),
+) -> Details
 where
     S: Stream<Item = T> + Unpin,
 {
-    let signal = tokio::time::timeout(
-        porter_fake::GENEROUS,
-        std::future::poll_fn(|cx| Pin::new(&mut *holds).poll_next(cx)),
+    let signal = common::next_alive(
+        "a NeedsConfirmation signal",
+        || common::pulse(&rig.hub, 0),
+        holds,
     )
     .await
-    .expect("a NeedsConfirmation signal within the generous wait")
     .expect("open stream");
     let (dataset, held) = read(&signal);
     assert_eq!(dataset, DATASET);
     held
 }
 
-async fn until<F: Future<Output = bool>>(what: &str, mut check: impl FnMut() -> F) {
-    let deadline = porter_fake::Deadline::generous();
-    while !deadline.passed() {
-        if check().await {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-    deadline.fail(what);
+/// Polls `check` every 20 ms; the limit is idle time (`common::until_alive`): it ends only when the
+/// rig's daemon has done nothing (no cycle begun or ended) for [`porter_fake::GENEROUS`].
+async fn until<F: Future<Output = bool>>(rig: &Rig, what: &str, check: impl FnMut() -> F) {
+    common::until_alive(what, || common::pulse(&rig.hub, 0), check).await;
 }
