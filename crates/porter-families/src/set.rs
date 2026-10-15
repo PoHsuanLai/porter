@@ -440,11 +440,10 @@ mod tests {
             std::fs::write(sys.join("microsoft.toml"), microsoft()).expect("write");
         }
         std::fs::write(over.join("microsoft.toml"), mine).expect("write");
-        let loaded = load_specs(&[
+        load_specs(&[
             (Layer::Shipped, sys.to_path_buf()),
             (layer, over.to_path_buf()),
-        ]);
-        loaded
+        ])
     }
 
     fn microsoft_of(loaded: &Loaded) -> &ProviderSpec {
