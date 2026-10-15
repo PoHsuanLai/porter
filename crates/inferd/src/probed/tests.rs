@@ -6,7 +6,9 @@ use crate::session::SessionSpec;
 use porter_core::capability::LlmFeature;
 use porter_core::need::LlmNeed;
 use porter_core::{DataClass, Locality, ModelId, Need, Tier, Tokens};
-use porter_infer::{AutoMode, AutoRow, InferRefusal, LocalOnly, Policy, Slot, TierMap, TierRow};
+use porter_infer::{
+    AutoMode, AutoRow, InferRefusal, LocalOnly, ModelRef, Policy, Slot, TierMap, TierRow,
+};
 use std::path::Path;
 
 fn llm() -> Need {
@@ -35,8 +37,24 @@ fn engines() -> Engines {
         Vec::new(),
         crate::supervise::Supervised::idle(),
         Policy::proposed(),
-        TierMap::automatic(Slot::Text),
+        TierMap::automatic(Slot::Text, pool()),
     )
+}
+
+/// Automatic's pool in these tests: every runtime model they list, and the hosted one.
+fn pool() -> Vec<ModelRef> {
+    [
+        models_of(Runtime::Ollama, 11_434, &["llama3.2-3b"]),
+        models_of(Runtime::LlamaCpp, 8080, &["gemma-3-4b"]),
+    ]
+    .iter()
+    .flatten()
+    .map(|model| model.model_ref())
+    .chain([crate::testkit::cloud_card()].iter().map(|card| ModelRef {
+        account: card.account.clone(),
+        model: card.model.clone(),
+    }))
+    .collect()
 }
 
 fn account(text: &str) -> AccountId {
@@ -186,7 +204,7 @@ fn local_only_on_leaves_the_runtime_the_only_answer() {
         Vec::new(),
         crate::supervise::Supervised::idle(),
         policy,
-        TierMap::automatic(Slot::Text),
+        TierMap::automatic(Slot::Text, pool()),
     )
     .with_remote(vec![crate::testkit::cloud_card()]);
     engines.probed().set(
@@ -219,6 +237,7 @@ fn a_probed_model_is_eligible_for_auto_and_for_a_named_pick() {
             model: model[0].model_ref(),
         }],
         autos: Vec::new(),
+        pools: Vec::new(),
     };
     let auto = TierMap {
         rows: Vec::new(),
@@ -226,6 +245,10 @@ fn a_probed_model_is_eligible_for_auto_and_for_a_named_pick() {
             kind: Slot::Text,
             tier: Tier::Balanced,
             mode: AutoMode::WarmFirst,
+        }],
+        pools: vec![porter_infer::PoolRow {
+            kind: Slot::Text,
+            models: vec![model[0].model_ref()],
         }],
     };
     for tiers in [named, auto] {

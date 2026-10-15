@@ -27,6 +27,9 @@ pub struct AutoConfig {
     /// `ai.auto.show_reason`: `off` or `on`.
     #[serde(default)]
     pub show_reason: Option<String>,
+    /// `ai.auto.pool.<slot>`: the `<account>/<model>`s Automatic chooses among, by slot slug.
+    #[serde(default)]
+    pub pool: std::collections::BTreeMap<String, Vec<String>>,
 }
 
 /// The rows in force, and the paths of the ones whose values were refused.

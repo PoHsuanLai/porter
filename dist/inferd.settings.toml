@@ -4,9 +4,10 @@
 # Install to $XDG_DATA_DIRS/quire/settings/inferd.settings.toml.
 #
 # Not in this file: `ai.model.<slot>.<tier>`, the model picker (slots: text, voice_in, voice_out,
-# image_in, computer_use, embeddings; the old kind segments llm, speech_in and speech_out still read). Its choices are the models inferd
-# knows now, so inferd describes those rows itself, as the live module org.quire.SettingsModule1 at
-# /org/quire/Inference1/settings (callable by the Settings role only).
+# image_in, computer_use, embeddings; the old kind segments llm, speech_in and speech_out still
+# read), and `ai.auto.pool.<slot>`, the models Automatic chooses among. Their choices are the models
+# inferd knows now, so inferd describes those rows itself, as the live module
+# org.quire.SettingsModule1 at /org/quire/Inference1/settings (callable by the Settings role only).
 #
 # Every row is hands-off: ai.* is never agent-settable (AGENT_NEVER_SETTABLE), so no row carries
 # `agent = "settable"`.

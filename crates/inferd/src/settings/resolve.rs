@@ -14,7 +14,8 @@ use crate::config::InferdConfig;
 use crate::structured::AiConfig;
 use porter_core::{DataClass, Permille, Tier};
 use porter_infer::{
-    AutoRow, ClassFloor, DescribeImages, Floor, LocalOnly, ModelRef, Policy, Slot, TierMap, TierRow,
+    AutoRow, ClassFloor, DescribeImages, Floor, LocalOnly, ModelRef, Policy, PoolRow, Slot,
+    TierMap, TierRow,
 };
 
 /// The settings in force, and the paths of the rows whose values were refused.
@@ -110,6 +111,20 @@ fn tiers_of(ai: &AiConfig, mut tiers: TierMap, rejected: &mut Vec<String>) -> Ti
             }),
             _ => {}
         }
+    }
+    for (slot_slug, texts) in &ai.auto.pool {
+        let path = format!("ai.auto.pool.{slot_slug}");
+        let Some(kind) = Slot::from_slug(slot_slug) else {
+            rejected.push(path);
+            continue;
+        };
+        // A row that names no model is dropped and said; the rest of the pool stands.
+        let models: Vec<ModelRef> = texts.iter().filter_map(|text| parse_model(text)).collect();
+        if models.len() != texts.len() {
+            rejected.push(path);
+        }
+        tiers.pools.retain(|row| row.kind != kind);
+        tiers.pools.push(PoolRow { kind, models });
     }
     tiers
 }
@@ -212,7 +227,7 @@ pub fn slot_value(tiers: &TierMap, kind: Slot, tier: Tier) -> String {
     match tiers.pick(kind, tier) {
         None => String::new(),
         Some(porter_infer::Pick::Named(model)) => model_text(&model),
-        Some(porter_infer::Pick::Auto(_)) => "auto".to_owned(),
+        Some(porter_infer::Pick::Auto { .. }) => "auto".to_owned(),
     }
 }
 

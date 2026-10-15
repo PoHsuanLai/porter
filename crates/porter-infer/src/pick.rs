@@ -122,8 +122,14 @@ pub struct AutoPolicy {
 pub enum Pick {
     /// This model, exactly.
     Named(ModelRef),
-    /// Choose for me.
-    Auto(AutoMode),
+    /// Choose for me, among `pool` (the person's `ai.auto.pool.<kind>`). An empty pool is
+    /// nothing chosen: refused `NoModelChosen`.
+    Auto {
+        /// How to choose.
+        mode: AutoMode,
+        /// The models it may choose among.
+        pool: Vec<ModelRef>,
+    },
 }
 
 /// What an engine is doing now, for the one that would be unloaded.
@@ -315,7 +321,20 @@ pub fn pick(
 ) -> Result<Picked, PickRefusal> {
     match pick {
         Pick::Named(model) => named(ask, model, candidates, rules.policy),
-        Pick::Auto(AutoMode::WarmFirst) => auto(ask, candidates, rules),
+        Pick::Auto {
+            mode: AutoMode::WarmFirst,
+            pool,
+        } => {
+            if pool.is_empty() {
+                return Err(PickRefusal::from(InferRefusal::NoModelChosen));
+            }
+            let pooled: Vec<PickCandidate> = candidates
+                .iter()
+                .filter(|candidate| pool.contains(&candidate.model_ref()))
+                .cloned()
+                .collect();
+            auto(ask, &pooled, rules)
+        }
     }
 }
 

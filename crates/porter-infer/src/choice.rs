@@ -51,7 +51,19 @@ pub struct AutoRow {
     pub mode: AutoMode,
 }
 
-/// Every choice the user made: settings `ai.model.<kind>.<tier>` = `<account>/<model>` or `"auto"`.
+/// The models Automatic may choose among for a kind, at every tier: settings
+/// `ai.auto.pool.<kind>` = a list of `<account>/<model>`. Automatic is a mode the person opts
+/// into, and choosing it is also choosing this pool; an empty pool is nothing chosen.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct PoolRow {
+    /// The kind.
+    pub kind: Slot,
+    /// The models, in the person's order (the order ranks nothing).
+    pub models: Vec<ModelRef>,
+}
+
+/// Every choice the user made: settings `ai.model.<kind>.<tier>` = `<account>/<model>` or
+/// `"auto"`, and the pool `"auto"` chooses among.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TierMap {
     /// The rows naming a model; at most one per kind and tier.
@@ -59,11 +71,14 @@ pub struct TierMap {
     /// The rows set to "auto"; at most one per kind and tier.
     #[serde(default)]
     pub autos: Vec<AutoRow>,
+    /// Automatic's pools; at most one per kind.
+    #[serde(default)]
+    pub pools: Vec<PoolRow>,
 }
 
 impl TierMap {
-    /// Automatic for `kind` at every tier, and nothing else chosen.
-    pub fn automatic(kind: Slot) -> Self {
+    /// Automatic for `kind` at every tier, choosing among `pool`, and nothing else chosen.
+    pub fn automatic(kind: Slot, pool: Vec<ModelRef>) -> Self {
         Self {
             rows: Vec::new(),
             autos: [Tier::Fast, Tier::Balanced, Tier::Best]
@@ -74,12 +89,22 @@ impl TierMap {
                     mode: AutoMode::default(),
                 })
                 .collect(),
+            pools: vec![PoolRow { kind, models: pool }],
         }
     }
 
+    /// The pool Automatic chooses among for `kind`; empty when the person listed none.
+    pub fn pool(&self, kind: Slot) -> &[ModelRef] {
+        self.pools
+            .iter()
+            .find(|row| row.kind == kind)
+            .map_or(&[], |row| &row.models)
+    }
+
     /// The person's pick for `kind` and `tier`, or `None` when the row is empty: the catalogue's
-    /// own choice for most kinds, and nothing chosen for the text slot, which has no default. A row that names a model wins over an "auto" row for the same
-    /// slot: a named model is never overridden, so a file that says both stays with the name.
+    /// own choice for most kinds, and nothing chosen for the text slot, which has no default. A
+    /// row that names a model wins over an "auto" row for the same slot: a named model is never
+    /// overridden, so a file that says both stays with the name. "auto" carries its pool.
     pub fn pick(&self, kind: Slot, tier: Tier) -> Option<Pick> {
         let named = self
             .rows
@@ -90,7 +115,10 @@ impl TierMap {
             self.autos
                 .iter()
                 .find(|row| row.kind == kind && row.tier == tier)
-                .map(|row| Pick::Auto(row.mode))
+                .map(|row| Pick::Auto {
+                    mode: row.mode,
+                    pool: self.pool(kind).to_vec(),
+                })
         })
     }
 }
@@ -251,6 +279,7 @@ mod tests {
                 model: nemotron.clone(),
             }],
             autos: vec![],
+            pools: vec![],
         };
         let cases = [
             (
@@ -368,6 +397,7 @@ mod tests {
                 },
             ],
             autos: vec![],
+            pools: vec![],
         };
         let rows = picker_rows(Slot::Text, &[a], &map);
         assert_eq!(rows[0].chosen_for, BTreeSet::from([Tier::Fast, Tier::Best]));
@@ -467,6 +497,7 @@ mod tests {
                     mode: AutoMode::WarmFirst,
                 },
             ],
+            pools: vec![],
         };
         assert_eq!(
             map.pick(Slot::Text, Tier::Fast),
@@ -474,7 +505,10 @@ mod tests {
         );
         assert_eq!(
             map.pick(Slot::Text, Tier::Balanced),
-            Some(Pick::Auto(AutoMode::WarmFirst))
+            Some(Pick::Auto {
+                mode: AutoMode::WarmFirst,
+                pool: Vec::new()
+            })
         );
         assert_eq!(map.pick(Slot::Text, Tier::Best), Some(Pick::Named(a)));
         assert_eq!(map.pick(Slot::Embeddings, Tier::Fast), None);

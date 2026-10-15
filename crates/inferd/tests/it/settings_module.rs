@@ -201,10 +201,17 @@ async fn describe_lists_the_picker_rows_of_the_slots_inferd_has_models_for() {
         [
             "ai.model.text.fast",
             "ai.model.text.balanced",
-            "ai.model.text.best"
+            "ai.model.text.best",
+            "ai.auto.pool.text"
         ]
     );
-    for spec in &schema.key {
+    let pickers = || {
+        schema
+            .key
+            .iter()
+            .filter(|spec| spec.path.0.starts_with("ai.model."))
+    };
+    for spec in pickers() {
         // The choices: none (the text slot has no default), Automatic, and the models inferd
         // knows.
         assert_eq!(
@@ -222,11 +229,7 @@ async fn describe_lists_the_picker_rows_of_the_slots_inferd_has_models_for() {
         assert_eq!(spec.labels.of("auto"), Some("Automatic"));
         assert_eq!(spec.labels.of("anthropic/sonnet"), Some("sonnet"));
     }
-    let labels: Vec<&str> = schema
-        .key
-        .iter()
-        .map(|spec| spec.label.0.as_str())
-        .collect();
+    let labels: Vec<&str> = pickers().map(|spec| spec.label.0.as_str()).collect();
     assert_eq!(labels, ["Fast", "Balanced", "Demanding"]);
 }
 
@@ -240,7 +243,11 @@ async fn a_model_on_this_computer_is_grouped_and_the_default_and_automatic_are_n
     let settings = rig.live(&rig.client(Role::Settings).await).await;
     let schema: LiveSchema = settings.describe().await.expect("schema");
     schema.check().expect("a clean schema");
-    for spec in &schema.key {
+    let pickers = schema
+        .key
+        .iter()
+        .filter(|spec| spec.path.0.starts_with("ai.model."));
+    for spec in pickers {
         let group = |word: &str| {
             spec.groups
                 .get(&ChoiceWord(word.to_owned()))
@@ -346,10 +353,53 @@ async fn a_set_by_the_settings_role_is_validated_written_and_in_force_for_the_ne
     );
 
     settings.set(&slot, &text("auto")).await.expect("set");
-    assert!(matches!(in_force(), Some(Pick::Auto(_))));
+    assert!(matches!(in_force(), Some(Pick::Auto { .. })));
     settings.set(&slot, &text("")).await.expect("set");
     assert_eq!(in_force(), None);
     assert_eq!(settings.get(&slot).await.expect("get"), text(""));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn automatics_pool_is_a_list_of_the_slots_choices_written_and_in_force() {
+    let rig = Rig::start().await;
+    let settings = rig.live(&rig.client(Role::Settings).await).await;
+    let pool = key("ai.auto.pool.text");
+    let list = |items: &[&str]| toml::Value::Array(items.iter().map(|one| text(one)).collect());
+    assert_eq!(settings.get(&pool).await.expect("get"), list(&[]));
+    // Listed as a key, a list over the slot's models (no unset choice, no Automatic).
+    let schema = settings.describe().await.expect("describe");
+    let spec = schema
+        .key
+        .iter()
+        .find(|k| k.path.0 == "ai.auto.pool.text")
+        .expect("the pool is a key");
+    assert_eq!(
+        spec.kind,
+        KeyKind::List(Box::new(KeyKind::Menu {
+            variants: vec!["anthropic/sonnet".into()]
+        }))
+    );
+    settings
+        .set(&pool, &list(&["anthropic/sonnet", "anthropic/sonnet"]))
+        .await
+        .expect("set");
+    assert_eq!(
+        settings.get(&pool).await.expect("get"),
+        list(&["anthropic/sonnet"])
+    );
+    assert_eq!(rig.engines.settings().tiers.pool(Slot::Text).len(), 1);
+    for bad in [
+        list(&["local/ghost"]),
+        list(&["auto"]),
+        text("anthropic/sonnet"),
+    ] {
+        let got = settings.set(&pool, &bad).await;
+        assert!(matches!(got, Err(LiveError::BadValue(_))), "{bad}: {got:?}");
+    }
+    assert_eq!(
+        settings.get(&pool).await.expect("get"),
+        list(&["anthropic/sonnet"])
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -486,6 +536,6 @@ async fn an_old_kind_row_in_the_file_is_the_slots_row_and_a_set_keeps_the_two_in
             .settings()
             .tiers
             .pick(Slot::Text, porter_core::Tier::Balanced),
-        Some(Pick::Auto(_))
+        Some(Pick::Auto { .. })
     ));
 }

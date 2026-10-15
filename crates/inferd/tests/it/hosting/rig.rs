@@ -211,6 +211,10 @@ pub struct Plan {
     pub engine_programs: bool,
     /// This computer on a fake Tailscale network; none keeps inferd off the network altogether.
     pub tailnet: Option<TailnetPlan>,
+    /// Models, as `account/model`, the person also put in Automatic's text pool: ones that
+    /// appear only once the world runs (a probed runtime's). The rest of what the world serves
+    /// is in it already.
+    pub pooled: Vec<&'static str>,
 }
 
 /// The agent endpoints of a world: the setting, and who the launcher is.
@@ -251,6 +255,7 @@ impl Default for Plan {
             dispatcher_on: None,
             engine_programs: true,
             tailnet: None,
+            pooled: Vec::new(),
         }
     }
 }
@@ -457,6 +462,36 @@ impl World {
                 )
             }
         };
+        // The person chose Automatic for text, over everything this world serves: the models
+        // here and attached (each catalogue model as `local/<model>`, so a computer added later
+        // is in it too), the remote ones, each catalogue model hosted by whichever account
+        // reaches it (`cloud/<model>`), and what the plan adds.
+        let cloud = porter_core::AccountId::parse(inferd::engines::CLOUD_ACCOUNT).expect("id");
+        let local = porter_core::AccountId::parse("local").expect("id");
+        let pool: Vec<porter_infer::ModelRef> =
+            models
+                .iter()
+                .chain(&attached)
+                .map(LocalModel::model_ref)
+                .chain(plan.remote.iter().map(|card| porter_infer::ModelRef {
+                    account: card.account.clone(),
+                    model: card.model.clone(),
+                }))
+                .chain(catalog.entries.iter().flat_map(|entry| {
+                    let model = porter_core::ModelId::parse(&entry.id.0).ok();
+                    [local.clone(), cloud.clone()]
+                        .into_iter()
+                        .filter_map(move |account| {
+                            Some(porter_infer::ModelRef {
+                                account,
+                                model: model.clone()?,
+                            })
+                        })
+                }))
+                .chain(plan.pooled.iter().map(|text| {
+                    inferd::settings::parse_model(text).expect("an account/model to pool")
+                }))
+                .collect();
         let mut served = Engines::new(
             models.clone(),
             supervised.clone(),
@@ -473,8 +508,7 @@ impl World {
                 true => TailnetServe::On,
                 false => TailnetServe::Off,
             },
-            // The person chose Automatic for text: unset, the assistant has no model.
-            tiers: TierMap::automatic(Slot::Text),
+            tiers: TierMap::automatic(Slot::Text, pool),
             ..Settings::default()
         })
         .with_remote(plan.remote)

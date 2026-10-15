@@ -352,14 +352,11 @@ fn an_unset_text_slot_is_no_model_chosen_unless_the_place_is_pinned() {
         vec![place("this-computer")],
         BTreeMap::from([(place("this-computer"), ModelId::parse("b").expect("id"))]),
     );
-    let auto = TierMap {
-        rows: vec![],
-        autos: vec![porter_infer::AutoRow {
-            kind: porter_infer::Slot::Text,
-            tier: Tier::Balanced,
-            mode: Default::default(),
-        }],
-    };
+    let pool = ["a", "b"].map(|model| porter_infer::ModelRef {
+        account: AccountId::parse("local").expect("id"),
+        model: ModelId::parse(model).expect("id"),
+    });
+    let auto = TierMap::automatic(porter_infer::Slot::Text, pool.to_vec());
     let unset = TierMap::default();
     let refuse = |allowed: &Allowed, tiers: &TierMap| {
         run_with(

@@ -171,6 +171,7 @@ async fn world(port: u16, local_only: LocalOnly) -> World {
             trust: Trust::ScratchCa,
         }),
         probe: Some(only_ollama(port)),
+        pooled: vec!["ollama/llama3.2-3b"],
         ..Plan::default()
     })
     .await
