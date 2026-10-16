@@ -20,7 +20,7 @@ use crate::router::placed::{Allowed, Unplaced};
 use crate::runner::{Pin, Turns};
 use crate::serve::{Seams, serve_session};
 use crate::session::SessionSpec;
-use crate::settings::Reload;
+use crate::settings::{LocalEngines, Reload};
 use crate::structured::Limits;
 use crate::tailnet::{Candidate, Tailnet};
 use crate::watch::Probing;
@@ -55,6 +55,8 @@ pub struct Inference<P, O, C> {
     agents: Option<Agents>,
     computers: Option<Arc<Computers>>,
     tailnet: Option<Tailnet>,
+    /// The engines found at start, for `LocalEngines`; none until [`Self::local_engines`].
+    local_engines: LocalEngines,
     /// Woken when an AI account appeared, went or changed state (the key host fires it).
     keys_news: Option<Arc<tokio::sync::Notify>>,
 }
@@ -73,7 +75,16 @@ impl<P, O, C> Inference<P, O, C> {
             agents: None,
             computers: None,
             tailnet: None,
+            local_engines: LocalEngines::default(),
             keys_news: None,
+        }
+    }
+
+    /// The same object, whose `LocalEngines` tells which engines `found` has a program for.
+    pub fn local_engines(self, found: LocalEngines) -> Self {
+        Self {
+            local_engines: found,
+            ..self
         }
     }
 
@@ -303,7 +314,7 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         computers.relabel(&names);
     }
 
-    /// The caller of `Places`: Settings, the shell or the companion.
+    /// The caller of `Places` and `LocalEngines`: Settings, the shell or the companion.
     async fn place_lister(&self, header: &Header<'_>) -> fdo::Result<Caller> {
         let caller = self.identified(header).await?;
         if caller.may_list_places() {
@@ -488,6 +499,21 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
             .await
             .into_iter()
             .map(place_row)
+            .collect())
+    }
+
+    // The engine kinds and whether each has a program here (Settings, the shell and the
+    // companion): data for the client to say why local AI is absent. (A plain comment, as above.)
+    async fn local_engines(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+    ) -> fdo::Result<Vec<(String, Details)>> {
+        self.place_lister(&header).await?;
+        Ok(self
+            .local_engines
+            .rows()
+            .iter()
+            .map(porter_dbus::local_engine_to_dbus)
             .collect())
     }
 

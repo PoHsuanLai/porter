@@ -250,3 +250,23 @@ replay = "/tmp/c.jsonl"
         "the key is not a replay engine's name"
     );
 }
+
+#[test]
+fn llama_server_is_the_files_path_else_the_first_trusted_system_path() {
+    let dirs =
+        Dirs::from_vars(vars(&[("HOME", "/home/u"), ("XDG_RUNTIME_DIR", "/run")])).expect("dirs");
+    let search = ProgramSearch::in_paths(vec![PathBuf::from("/pkg/llama-server")], |_| true);
+    let unset = InferdConfig::default();
+    assert_eq!(
+        unset.engines_with(&dirs, &search).llama_server,
+        Some(PathBuf::from("/pkg/llama-server"))
+    );
+    let named = InferdConfig::from_toml("[engines]\nllama_server = \"/mine/llama-server\"")
+        .expect("config");
+    assert_eq!(
+        named.engines_with(&dirs, &search).llama_server,
+        Some(PathBuf::from("/mine/llama-server"))
+    );
+    // Only llama.cpp is found this way.
+    assert_eq!(unset.engines_with(&dirs, &search).vllm_python, None);
+}

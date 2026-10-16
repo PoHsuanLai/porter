@@ -14,7 +14,7 @@ use crate::catalog::read_catalog;
 use crate::clock::SystemClock;
 use crate::cloud::Cloud;
 use crate::cloud::spend::Ledger;
-use crate::config::{ConfigError, Dirs, InferdConfig};
+use crate::config::{ConfigError, Dirs, InferdConfig, ProgramSearch};
 use crate::engines::Engines;
 use crate::hosts::{HealthProbe, HostCloser, NvidiaSmi, ProcessHost};
 use crate::keys::{AccountRows, KeyAudit, KeysObject, KeysStartError};
@@ -22,7 +22,7 @@ use crate::local::{LocalModel, build};
 use crate::peers::{CallerTable, PROC_GATE, ProcPeers, ProcRoot};
 use crate::replay::Replays;
 use crate::service::{Inference, serve_with_settings};
-use crate::settings::{ConfigFile, InferdSettings, MissingEngines, Reload, resolve};
+use crate::settings::{ConfigFile, InferdSettings, LocalEngines, MissingEngines, Reload, resolve};
 use crate::shutdown::{self, Ended, Shutdown};
 use crate::supervise::{Ports, Supervised};
 use crate::tailnet::{BusMachines, Parts, Tailnet};
@@ -81,6 +81,8 @@ pub struct Config {
     pub bus: BusTarget,
     /// Which secret store holds the AI keys.
     pub keys: Selection,
+    /// The fixed system paths engine programs are looked for at when the file names none.
+    pub programs: ProgramSearch,
 }
 
 impl Config {
@@ -95,7 +97,15 @@ impl Config {
             callers_file: PathBuf::from(porter_daemon::INFERD_CALLERS.path),
             bus,
             keys: Selection::SecretService,
+            programs: ProgramSearch::system(),
         }
+    }
+
+    /// With engine programs looked for in `programs` instead of the system's fixed paths.
+    #[must_use]
+    pub fn with_programs(mut self, programs: ProgramSearch) -> Self {
+        self.programs = programs;
+        self
     }
 
     /// With this secret store for the AI keys.
@@ -337,6 +347,7 @@ impl Daemon {
             callers_file,
             bus,
             keys,
+            programs,
         } = config;
         let config = read_config(&config_file)?;
         let callers = read_callers(&callers_file, &config)?;
@@ -344,7 +355,11 @@ impl Daemon {
         for skipped in &catalog.skipped {
             eprintln!("inferd: catalog: {}: {}", skipped.what, skipped.why);
         }
-        let mut models = build(&catalog.entries, &config.engines_in(&dirs), &dirs.sockets);
+        let mut models = build(
+            &catalog.entries,
+            &config.engines_with(&dirs, &programs),
+            &dirs.sockets,
+        );
         let replays = Replays::read(&config.engines.named, &dirs.sockets);
         for problem in replays.skipped.iter().chain(&replays.unread()) {
             eprintln!("inferd: replay engine {problem}");
@@ -552,7 +567,9 @@ impl Daemon {
         let reload = Reload::new(ConfigFile::new(config_file), engines.clone());
         reload.clone().watch(RELOAD_EVERY);
         // Which engine programs this computer lacks, for the picker's plain-words note.
-        let missing = MissingEngines::of(&config.engines_in(&dirs));
+        let found = config.engines_with(&dirs, &programs);
+        let missing = MissingEngines::of(&found);
+        let local_engines = LocalEngines::of(&found);
         // The agent endpoints are always served; `ai.agents.endpoint` (off by default) decides
         // whether the launcher, who is in no table until a machine lists it, may open one.
         let agents = Agents::new(
@@ -572,6 +589,7 @@ impl Daemon {
         .probing(probing)
         .computers(computers)
         .tailnet(tailnet)
+        .local_engines(local_engines)
         .keys_news(engines_news);
         // Every object, the settings module among them, is served before the name is claimed.
         serve_with_settings(

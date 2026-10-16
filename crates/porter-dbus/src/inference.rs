@@ -54,6 +54,12 @@ pub trait Inference {
     /// `PLACE_KEY_*`. Only Settings, the shell and the companion may ask; anyone else is
     /// `AccessDenied`.
     fn places(&self) -> zbus::Result<Vec<(String, Details)>>;
+    /// The engine kinds inferd knows (llama.cpp, vLLM, the speech engine, Kokoro), one row each:
+    /// the engine's id first, then `name`, `state` (`found` or `missing`), `path` (`s`, only when
+    /// found) and `slots` (`as`, the slot slugs it would serve); the key names are `ENGINE_KEY_*`
+    /// and `local_engine_from_dbus` reads a row. Only Settings, the shell and the companion may
+    /// ask; anyone else is `AccessDenied`.
+    fn local_engines(&self) -> zbus::Result<Vec<(String, Details)>>;
     /// Adds a computer of the person's own, with the models it serves, and answers its place id
     /// (`computer:<name>`). `name` is what the person calls it (the id's name is made from it);
     /// each of `models` is a catalogue model id and a vardict: `socket` (`s`, the full path of
@@ -154,6 +160,10 @@ impl InferenceSkeleton {
     }
 
     fn places(&self) -> fdo::Result<Vec<(String, Details)>> {
+        Err(crate::introspect::frozen())
+    }
+
+    fn local_engines(&self) -> fdo::Result<Vec<(String, Details)>> {
         Err(crate::introspect::frozen())
     }
 

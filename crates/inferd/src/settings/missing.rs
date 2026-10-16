@@ -3,6 +3,7 @@
 
 use model_catalog::EngineKind;
 use porter_infer::Slot;
+use porter_dbus::EngineState;
 use porter_router::local::EngineConfig;
 use std::path::Path;
 
@@ -20,7 +21,7 @@ pub enum Engine {
 }
 
 impl Engine {
-    const ALL: [Engine; 4] = [Self::LlamaCpp, Self::Vllm, Self::Speech, Self::Kokoro];
+    pub(super) const ALL: [Engine; 4] = [Self::LlamaCpp, Self::Vllm, Self::Speech, Self::Kokoro];
 
     /// The engine a catalogue profile of `kind` starts.
     pub(super) fn of(kind: EngineKind) -> Self {
@@ -29,6 +30,16 @@ impl Engine {
             EngineKind::Vllm => Self::Vllm,
             EngineKind::SpeechHost => Self::Speech,
             EngineKind::KokoroFastApi => Self::Kokoro,
+        }
+    }
+
+    /// The engine's stable id on the bus.
+    pub(super) fn slug(self) -> &'static str {
+        match self {
+            Self::LlamaCpp => "llama_cpp",
+            Self::Vllm => "vllm",
+            Self::Speech => "speech",
+            Self::Kokoro => "kokoro",
         }
     }
 
@@ -43,12 +54,21 @@ impl Engine {
     }
 
     /// Whether a model of `slot` can run on it.
-    fn serves(self, slot: Slot) -> bool {
+    pub(super) fn serves(self, slot: Slot) -> bool {
         let speech = matches!(slot, Slot::VoiceIn | Slot::VoiceOut);
         match self {
             Self::LlamaCpp | Self::Vllm => !speech,
             Self::Speech => speech,
             Self::Kokoro => slot == Slot::VoiceOut,
+        }
+    }
+
+    /// Whether its program is there: named in `config` (the llama.cpp path already resolved by
+    /// [`crate::config::ProgramSearch`]) and present.
+    pub(super) fn state(self, config: &EngineConfig) -> EngineState {
+        match self.program(config).filter(|path| path.exists()) {
+            Some(path) => EngineState::Found(path.to_path_buf()),
+            None => EngineState::Missing,
         }
     }
 
@@ -72,7 +92,7 @@ impl MissingEngines {
         Self(
             Engine::ALL
                 .into_iter()
-                .filter(|engine| !engine.program(config).is_some_and(Path::exists))
+                .filter(|engine| engine.state(config) == EngineState::Missing)
                 .collect(),
         )
     }

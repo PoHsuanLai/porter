@@ -11,7 +11,8 @@ use porter_core::lending::{
 use porter_core::{NodeId, UnixSeconds};
 use porter_dbus::{
     CANDIDATE_KEY_MODELS, CANDIDATE_KEY_NAME, CANDIDATE_KEY_NEEDS_APPROVAL, Details,
-    GUEST_KEY_NAME, GUEST_KEY_SINCE, GUEST_KEY_STATE, InferenceProxy,
+    GUEST_KEY_NAME, GUEST_KEY_SINCE, GUEST_KEY_STATE, InferenceProxy, LocalEngine,
+    local_engine_from_dbus,
 };
 
 impl DbusTransport {
@@ -51,6 +52,24 @@ impl DbusTransport {
             .forget_guest(node.as_str())
             .await
             .map_err(|e| bus_error(&e))
+    }
+
+    /// `Inference1.LocalEngines` row by row, each as a typed [`LocalEngine`]: which engine kinds
+    /// inferd knows and whether each has a program here. A malformed row is in `skipped`. Only
+    /// Settings, the shell and the companion may ask; anyone else is `Denied`.
+    pub async fn list_local_engines(&self) -> Result<Rows<LocalEngine>, TransportError> {
+        let rows = self
+            .inference()
+            .await?
+            .local_engines()
+            .await
+            .map_err(|e| bus_error(&e))?;
+        Ok(Rows::decode(rows, |row| {
+            let id = row.0.clone();
+            local_engine_from_dbus(row).map_err(|why| {
+                TransportError::Malformed(format!("LocalEngines row {id:?}: {why}"))
+            })
+        }))
     }
 
     /// `Inference1.Candidates` row by row: a row that is malformed is in `skipped`, the rest are

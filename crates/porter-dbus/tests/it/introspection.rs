@@ -195,14 +195,16 @@ fn inference1_xml_unchanged_members() {
     ] {
         assert!(xml.contains(member), "missing {member}");
     }
+    // And `LocalEngines`, which engines inferd found on this computer (additive).
+    assert!(xml.contains("<method name=\"LocalEngines\">"));
     let declared = xml.matches("<method ").count()
         + xml.matches("<signal ").count()
         + xml.matches("<property ").count();
     assert_eq!(
         declared,
-        members.len() + 3 + 7,
+        members.len() + 3 + 7 + 1,
         "no member beyond the frozen seven, Places, AddComputer, RemoveComputer, and the five \
-         methods and two signals of lending models across the person's network"
+         methods and two signals of lending models across the person's network, and LocalEngines"
     );
     assert_eq!(
         porter_dbus::COMPUTER_ERROR_PREFIX,

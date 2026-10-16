@@ -30,6 +30,9 @@
    <method name="Places">
      <arg type="a(sa{sv})" direction="out"/>
    </method>
+   <method name="LocalEngines">
+     <arg type="a(sa{sv})" direction="out"/>
+   </method>
    <method name="AddComputer">
      <arg name="name" type="s" direction="in"/>
      <arg name="models" type="a(sa{sv})" direction="in"/>

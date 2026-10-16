@@ -1,13 +1,24 @@
 # inferd's configuration: $XDG_CONFIG_HOME/quire/inferd.toml. Every table is optional; without the
 # file inferd serves nobody (no callers) and runs nothing (no engine programs).
 
-# Where the engine programs are, never found from the environment. A kind with no program is not
-# offered: a catalog model whose only engine is vLLM is not available until vllm_python is set.
+# Where the engine programs are, never found from the environment ($PATH is not searched). The one
+# default is llama.cpp's server: when llama_server is unset, inferd uses /usr/bin/llama-server or
+# /usr/local/bin/llama-server, the first that exists as an executable file only root can have
+# written. A path set here always wins. A kind with no program is not offered: a catalog model whose only engine is vLLM is not available until vllm_python is set.
 # hf_cache is the Hugging Face hub directory the weights were downloaded into (by hand for now);
 # it defaults to $HF_HOME/hub, else ~/.cache/huggingface/hub.
 [engines]
-# vllm_python = "/home/you/vllm/.venv/bin/python"
-# llama_server = "/usr/bin/llama-server"
+# vllm_python = "/home/you/vllm/.venv/bin/python"  # no distro has a vLLM package: run
+#                                                  # `uv tool install vllm` (or make a venv), then set
+#                                                  # this to that environment's python
+# llama_server = "/usr/bin/llama-server"  # the default when the distro package is installed:
+#                                         #   Fedora          dnf install llama-cpp
+#                                         #   Arch            pacman -S llama-cpp (or llama-cpp-vulkan,
+#                                         #                   llama-cpp-rocm)
+#                                         #   Debian 14, Ubuntu 26.04   apt install llama.cpp-tools
+#                                         # Debian 13 and Ubuntu before 26.04 have no package: take
+#                                         # a release build from github.com/ggml-org/llama.cpp and
+#                                         # set its llama-server path here.
 # speech_host = "/usr/libexec/quire/speech-host"
 # speech_host_libs = "/usr/lib/quire/sherpa"  # the directory of libsherpa-onnx-c-api.so and
 #                                             # libonnxruntime.so: the speech host's LD_LIBRARY_PATH,

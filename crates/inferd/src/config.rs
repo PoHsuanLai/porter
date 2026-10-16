@@ -1,6 +1,9 @@
 //! `inferd.toml` and the directories: where the catalog, the sockets, the audit file and the
 //! configuration are. The engine programs and the caller table come from the file, never from the
-//! environment; the directories come from the XDG variables (injected, so a test names its own).
+//! environment (the one exception is llama.cpp's server at a fixed, root-held system path, see
+//! [`ProgramSearch`]); the directories come from the XDG variables (injected, so a test names its own).
+
+mod discover;
 
 use crate::catalog::CatalogDirs;
 use crate::local::EngineConfig;
@@ -10,6 +13,8 @@ use porter_core::xdg::{PathError, Xdg};
 use porter_infer::{Policy, TierMap};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+
+pub use discover::ProgramSearch;
 
 /// Why the configuration could not be read.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -183,9 +188,18 @@ impl Dirs {
 }
 
 impl InferdConfig {
-    /// The engines' weights cache: the file's, or the default.
+    /// The engines' weights cache: the file's, or the default; and the programs found at the
+    /// system's fixed paths ([`ProgramSearch::system`]).
     pub fn engines_in(&self, dirs: &Dirs) -> EngineConfig {
+        self.engines_with(dirs, &ProgramSearch::system())
+    }
+
+    /// [`Self::engines_in`] with the fixed paths looked in by `programs`. The one place the
+    /// effective engine programs are decided: the engine starter, the picker's note and
+    /// `LocalEngines` all read what this returns.
+    pub fn engines_with(&self, dirs: &Dirs, programs: &ProgramSearch) -> EngineConfig {
         let mut engines = self.engines.clone();
+        engines.llama_server = programs.llama_server(engines.llama_server.as_deref());
         if engines.hf_cache.as_os_str().is_empty() {
             engines.hf_cache = dirs.hf_cache.clone();
         }

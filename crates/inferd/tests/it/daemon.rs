@@ -5,7 +5,7 @@
 
 use crate::hosting::bus::{self, PrivateBus};
 
-use inferd::config::Dirs;
+use inferd::config::{Dirs, ProgramSearch};
 use inferd::{Config, Daemon};
 use porter_dbus::{BusTarget, INFERENCE_BUS};
 use porter_fake::Deadline;
@@ -48,7 +48,9 @@ async fn a_daemon_built_from_a_config_serves_its_name_and_stops_when_told() {
     let config = Config::new(dirs(&home), BusTarget::Address(bus.address().to_owned()))
         .with_config_file(file)
         // A Tailscale nobody serves: this computer's real one is never asked.
-        .with_tailscale_socket(home.join("no-tailscale.sock"));
+        .with_tailscale_socket(home.join("no-tailscale.sock"))
+        // No program of this computer's own is found.
+        .with_programs(ProgramSearch::in_paths(Vec::new(), |_| false));
 
     let daemon = bus::within("inferd to start", Daemon::build(config))
         .await

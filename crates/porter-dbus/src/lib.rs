@@ -36,6 +36,7 @@ mod json_value;
 mod keys;
 mod launcher;
 mod launcher_iface;
+mod local_engines;
 mod machines;
 mod manager;
 pub mod names;
@@ -91,6 +92,10 @@ pub use launcher_iface::{
     AgentLoginRequested, AgentLoginRequestedStream, AgentLogoutRequested,
     AgentLogoutRequestedStream, LauncherProxy, LauncherSkeleton, ProcessCredentialRevoked,
     ProcessCredentialRevokedStream,
+};
+pub use local_engines::{
+    ENGINE_KEY_NAME, ENGINE_KEY_PATH, ENGINE_KEY_SLOTS, ENGINE_KEY_STATE, EngineRowError,
+    EngineState, LocalEngine, local_engine_from_dbus, local_engine_to_dbus,
 };
 pub use machines::{
     MACHINE_KEY_ADDRESSES, MACHINE_KEY_DNS, MACHINE_KEY_LAST_SEEN, MACHINE_KEY_NAME,
