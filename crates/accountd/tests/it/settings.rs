@@ -6,7 +6,7 @@
 use crate::common;
 
 use common::*;
-use ds_settings::live::{LiveClient, LiveError, Snapshot};
+use ds_settings::live::{AnyOwner, LiveClient, LiveError, Snapshot};
 use ds_settings::schema::KeyPath;
 use porter_core::audit::AuditEvent;
 use porter_core::{AccountState, SecretKey, SecretPurpose};
@@ -46,8 +46,8 @@ async fn only_the_settings_role_may_read_or_set_anything() {
         &stranger,
         "org.quire.Accounts1",
         &accountd::settings_path(),
+        AnyOwner,
     )
-    .await
     .expect("client");
     assert!(
         client

@@ -10,7 +10,7 @@ use crate::common;
 use common::bus::PrivateBus;
 use common::hosted::{Hosted, Link, NoDirectory, Service, host, keep};
 use common::{Known, client};
-use ds_settings::live::LiveClient;
+use ds_settings::live::{AnyOwner, LiveClient};
 use ds_settings::schema::KeyPath;
 use porter_core::{
     Account, AccountId, AccountLabel, AccountState, AuthKind, Claim, Credential, EndpointUrl,
@@ -156,13 +156,11 @@ async fn rig(photos: PhotosSwitch) -> Rig {
     serve_settings(&server, module).await.expect("settings");
     let name = server.unique_name().expect("name").to_string();
     let settings_side = client(&bus, &known, "org.quire.Settings", CallerRole::Settings).await;
-    let settings = LiveClient::new(&settings_side, &name, SETTINGS_PATH)
-        .await
-        .expect("settings client");
+    let settings =
+        LiveClient::new(&settings_side, &name, SETTINGS_PATH, AnyOwner).expect("settings client");
     let stranger_side = client(&bus, &known, "org.example.Other", CallerRole::App).await;
-    let stranger = LiveClient::new(&stranger_side, &name, SETTINGS_PATH)
-        .await
-        .expect("stranger client");
+    let stranger =
+        LiveClient::new(&stranger_side, &name, SETTINGS_PATH, AnyOwner).expect("stranger client");
 
     let (network_keeps, network) = watch::channel(Network::Unmetered);
     let wiring = Wiring {

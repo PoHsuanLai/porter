@@ -30,6 +30,7 @@ toml = { workspace = true }
 zbus = { workspace = true }
 
 [dev-dependencies]
+ds-settings = { workspace = true, features = ["testing"] }
 porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }
 porter-http = { workspace = true, features = ["hyper"] }
