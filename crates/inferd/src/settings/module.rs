@@ -8,20 +8,22 @@ use super::file::Reload;
 use super::keys::{
     SLOTS, TIERS, model_path, parse_model_path, parse_pool_path, pool_path, slots_of,
 };
-use super::missing::MissingEngines;
+use super::missing::{Engine, MissingEngines};
 use super::resolve::{model_text, parse_model, slot_value};
 use crate::cloud::picker::{Availability, Choice, NEEDS_ACCOUNT, choices};
 use crate::keys::KeyRows;
 use crate::peers::{Peers, Role};
 use ds_settings::live::{Access, Caller, LiveError, LiveModule, LiveSchema, Verdict, serve};
 use ds_settings::schema::{
-    AgentSetting, ChoiceGroup, ChoiceWord, Exposure, Help, KeyKind, KeyPath, KeySpec, Label, Page,
-    Section, UnavailableReason, WordLabels,
+    AgentSetting, ChoiceGroup, ChoicePlace, ChoiceWord, CompanyName, EngineName, Exposure, Help,
+    HostName, KeyKind, KeyPath, KeySpec, Label, Note, Page, Section, UnavailableReason, WordLabels,
 };
 use porter_core::consent::Usage;
+use porter_router::local::LocalModel;
+use std::collections::BTreeMap;
 use porter_core::{AppId, AppName, DataClass, Isolation, Locality, Tier};
 use porter_dbus::INFERENCE_SETTINGS_PATH;
-use porter_infer::{Slot, tier_label};
+use porter_infer::{ModelRef, Slot, tier_label};
 
 /// The picker value that is Automatic.
 const AUTO: &str = "auto";
@@ -145,19 +147,59 @@ impl<P: Peers> InferdSettings<P> {
         slot_value(&self.reload.engines().settings().tiers, kind, tier)
     }
 
-    /// The picker's help, with why nothing runs on this computer when no model of the slot does
-    /// and a program is missing.
-    fn help(&self, kind: Slot) -> String {
-        let base = "The model used for this slot at this tier. Automatic picks one of the \
-                    models you list for it, one already loaded when it can.";
+    /// The picker's help.
+    fn help() -> Help {
+        Help(
+            "The model used for this slot at this tier. Automatic picks one of the models you \
+             list for it, one already loaded when it can."
+                .to_owned(),
+        )
+    }
+
+    /// Why nothing runs on this computer, when no model of the slot does and a program is
+    /// missing.
+    fn note(&self, kind: Slot) -> Option<Note> {
         let here = self
             .known_for(kind)
             .iter()
             .any(|(_, locality)| *locality == Locality::OnDevice);
-        match (here, self.missing.note(kind)) {
-            (false, Some(note)) => format!("{base} {note}"),
-            _ => base.to_owned(),
-        }
+        self.missing.note(kind).filter(|_| !here).map(Note)
+    }
+
+    /// Where each listed model of `kind` runs: the engine of one on this computer, the computer
+    /// of one on another of the person's. A model with no place to name has no entry.
+    fn local_places(&self, kind: Slot) -> BTreeMap<ChoiceWord, ChoicePlace> {
+        let engines = self.reload.engines();
+        engines
+            .listed()
+            .into_iter()
+            .filter(|one| slots_of(&one.card).contains(&kind))
+            .filter_map(|one| {
+                let model = ModelRef {
+                    account: one.card.account,
+                    model: one.card.model,
+                };
+                let found = engines.local_model(&model);
+                let place = match one.card.locality {
+                    Locality::OnDevice => ChoicePlace::ThisComputer {
+                        engine: found.as_deref().and_then(engine_of),
+                    },
+                    Locality::LocalNetwork => ChoicePlace::YourComputer {
+                        host: HostName(
+                            found?
+                                .attached
+                                .as_ref()?
+                                .computer
+                                .as_ref()?
+                                .as_str()
+                                .to_owned(),
+                        ),
+                    },
+                    _ => return None,
+                };
+                Some((ChoiceWord(model_text(&model)), place))
+            })
+            .collect()
     }
 
     /// The models the person may choose for `kind`, with their names, groups and the reason
@@ -207,11 +249,23 @@ impl<P: Peers> InferdSettings<P> {
             )
             .map(|(word, group)| (ChoiceWord(word), ChoiceGroup(group)))
             .collect();
+        let places = self
+            .local_places(kind)
+            .into_iter()
+            .chain(hosted.iter().map(|choice| {
+                let company = CompanyName(choice.company.clone());
+                (
+                    ChoiceWord(choice.value.clone()),
+                    ChoicePlace::Cloud { company },
+                )
+            }))
+            .collect();
         ModelChoices {
             variants,
             labels,
             unavailable,
             groups,
+            places,
         }
     }
 
@@ -226,6 +280,7 @@ impl<P: Peers> InferdSettings<P> {
             mut labels,
             unavailable,
             groups,
+            places,
         } = self.model_choices(kind, hosted, &keep);
         // The text slot has no default: unset, the assistant asks the person to choose
         // (owner, 2026-10-16). The other slots still take the catalogue's choice. The unset
@@ -246,13 +301,15 @@ impl<P: Peers> InferdSettings<P> {
             default: toml::Value::String(String::new()),
             // Grouped by job: a section per slot, the tiers listed under it.
             label: Label(tier_label(tier).to_owned()),
-            help: Help(self.help(kind)),
+            help: Self::help(),
             page: Page::Intelligence,
             section: Section(format!("Models / {}", slot_label(kind))),
             exposure: Exposure::Basic,
             labels,
             unavailable,
             groups,
+            places,
+            note: self.note(kind),
             agent: AgentSetting::HandsOff,
         }
     }
@@ -277,6 +334,7 @@ impl<P: Peers> InferdSettings<P> {
             labels,
             unavailable,
             groups,
+            places,
         } = self.model_choices(kind, hosted, &self.current_pool(kind));
         KeySpec {
             path: KeyPath(pool_path(kind)),
@@ -294,6 +352,8 @@ impl<P: Peers> InferdSettings<P> {
             labels,
             unavailable,
             groups,
+            places,
+            note: self.note(kind),
             agent: AgentSetting::HandsOff,
         }
     }
@@ -339,8 +399,18 @@ impl<P: Peers> InferdSettings<P> {
 struct ModelChoices {
     variants: Vec<String>,
     labels: WordLabels,
-    unavailable: std::collections::BTreeMap<ChoiceWord, UnavailableReason>,
-    groups: std::collections::BTreeMap<ChoiceWord, ChoiceGroup>,
+    unavailable: BTreeMap<ChoiceWord, UnavailableReason>,
+    groups: BTreeMap<ChoiceWord, ChoiceGroup>,
+    places: BTreeMap<ChoiceWord, ChoicePlace>,
+}
+
+/// The engine that runs `model` on this computer, when inferd starts it. A runtime the person
+/// runs themselves, or an engine they attached, is not one of ours to name.
+fn engine_of(model: &LocalModel) -> Option<EngineName> {
+    match (&model.attached, model.loopback) {
+        (None, None) => Some(EngineName(Engine::of(model.profile.kind).name().to_owned())),
+        _ => None,
+    }
 }
 
 fn slot_label(slot: Slot) -> &'static str {

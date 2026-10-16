@@ -5,7 +5,7 @@
 use crate::hosting;
 
 use ds_settings::live::{LiveClient, LiveError, LiveSchema};
-use ds_settings::schema::{AgentSetting, ChoiceWord, KeyKind, KeyPath, Page};
+use ds_settings::schema::{AgentSetting, ChoicePlace, ChoiceWord, KeyKind, KeyPath, Page};
 use hosting::bus::{PrivateBus, within};
 use inferd::audit::Memory;
 use inferd::clock::FixedClock;
@@ -269,6 +269,14 @@ async fn a_model_on_this_computer_is_grouped_and_the_default_and_automatic_are_n
         assert_eq!(group("anthropic/sonnet"), None);
         assert_eq!(group(""), None);
         assert_eq!(group("auto"), None);
+        // A model this computer runs is placed here; one inferd does not start names no engine.
+        assert_eq!(
+            spec.place_of("llama/tiny"),
+            Some(&ChoicePlace::ThisComputer { engine: None })
+        );
+        assert_eq!(spec.place_of("anthropic/sonnet"), None);
+        assert_eq!(spec.place_of(""), None);
+        assert_eq!(spec.place_of("auto"), None);
         let sections: Vec<(Option<&str>, Vec<&str>)> = spec
             .grouped_choices()
             .iter()
@@ -552,7 +560,7 @@ async fn an_old_kind_row_in_the_file_is_the_slots_row_and_a_set_keeps_the_two_in
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_slot_with_no_model_here_says_which_missing_program_would_run_one() {
+async fn a_slot_with_no_model_here_notes_which_missing_program_would_run_one() {
     let bus = PrivateBus::start();
     let file = bus.scratch().join("inferd.toml");
     let engines = Engines::new(
@@ -583,11 +591,9 @@ async fn a_slot_with_no_model_here_says_which_missing_program_would_run_one() {
         .iter()
         .find(|k| k.path.0 == "ai.model.text.best")
         .expect("the text row");
-    assert!(
-        row.help.0.ends_with(
-            "Running models on this computer needs llama.cpp or vLLM, which are not installed."
-        ),
-        "{}",
-        row.help.0
+    assert_eq!(
+        row.note.as_ref().map(|note| note.0.as_str()),
+        Some("Running models on this computer needs llama.cpp or vLLM, which are not installed.")
     );
+    assert!(!row.help.0.contains("not installed"), "{}", row.help.0);
 }

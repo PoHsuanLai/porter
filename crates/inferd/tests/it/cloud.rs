@@ -933,6 +933,17 @@ async fn the_picker_lists_every_hosted_model_by_company_and_marks_the_ones_no_ac
         assert_eq!(group_of("cloud/gpt-6-luna"), Some("OpenAI"));
         assert_eq!(group_of("cloud/kimi-k3"), Some("Moonshot"));
         assert_eq!(group_of(""), None);
+        // And placed in the cloud, by company; the default and Automatic have no place.
+        let place_of = |value: &str| row.place_of(value).cloned();
+        let cloud_of = |company: &str| {
+            Some(ds_settings::schema::ChoicePlace::Cloud {
+                company: ds_settings::schema::CompanyName(company.to_owned()),
+            })
+        };
+        assert_eq!(place_of("cloud/claude-opus-5.5"), cloud_of("Anthropic"));
+        assert_eq!(place_of("cloud/gpt-6-luna"), cloud_of("OpenAI"));
+        assert_eq!(place_of(""), None);
+        assert_eq!(place_of("auto"), None);
         assert_eq!(group_of("auto"), None);
         let sections: Vec<(Option<&str>, Vec<&str>)> = row
             .grouped_choices()
