@@ -562,3 +562,25 @@ fn the_test_proc_root_is_in_no_default_feature_and_no_unit() {
         assert!(!dist(file).contains("INFERD_PROC_ROOT"), "{file}");
     }
 }
+
+/// The shipped table knows docket-acp in its scope by its program, so the editor-agent launcher's
+/// planner turns reach inferd on an installed desktop; a scope's name alone gives no program.
+#[test]
+fn the_shipped_table_names_docket_acps_programs() {
+    let rows = shipped_callers().rows();
+    let acp = rows
+        .callers
+        .iter()
+        .find(|row| row.unit.as_deref() == Some("docket-acp.scope"))
+        .expect("a docket-acp.scope row");
+    assert_eq!(acp.app.to_string(), "org.quire.Companion");
+    assert_eq!(acp.role, porter_dbus::CallerRole::App);
+    assert_eq!(
+        acp.exe,
+        [
+            "/usr/bin/docket-acp",
+            "/usr/local/bin/docket-acp",
+            "/opt/quire/releases/*/bin/docket-acp"
+        ]
+    );
+}
