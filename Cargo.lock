@@ -2366,6 +2366,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "porter-engines"
+version = "0.1.0"
+dependencies = [
+ "porter-fake",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+]
+
+[[package]]
+name = "porter-engines-install"
+version = "0.1.0"
+dependencies = [
+ "porter-core",
+ "porter-engines",
+ "porter-fake",
+ "porter-fake-servers",
+ "porter-http",
+ "rustix",
+ "sha2",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "porter-fake"
 version = "0.1.0"
 dependencies = [

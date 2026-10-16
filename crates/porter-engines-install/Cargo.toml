@@ -1,0 +1,30 @@
+[package]
+name = "porter-engines-install"
+description = "Gets an engine onto this computer from porter-engines' pinned manifest: a resumable, cancellable download with its hash checked, unpacked and sealed into place; a Python environment filled from a hashed lock; or the distro's package. Also the argument grammar and the report lines of the privileged helper that installs for every user."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "porter-engine-helper"
+path = "src/bin/porter-engine-helper.rs"
+
+[dependencies]
+porter-engines = { workspace = true }
+porter-core = { workspace = true }
+porter-http = { workspace = true, features = ["hyper"] }
+rustix = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+porter-fake = { workspace = true }
+porter-fake-servers = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true
