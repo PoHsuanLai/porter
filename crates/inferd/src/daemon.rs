@@ -17,7 +17,7 @@ use crate::cloud::spend::Ledger;
 use crate::config::{ConfigError, Dirs, InferdConfig, ProgramSearch};
 use crate::engines::Engines;
 use crate::hosts::{HealthProbe, HostCloser, NvidiaSmi, ProcessHost};
-use crate::install::{EngineInstalls, HelperProgram, Parts};
+use crate::installed::Installed;
 use crate::keys::{AccountRows, KeyAudit, KeysObject, KeysStartError};
 use crate::local::{LocalModel, build};
 use crate::peers::{CallerTable, PROC_GATE, ProcPeers, ProcRoot};
@@ -334,41 +334,24 @@ fn attached_models(
     Ok(models)
 }
 
-/// The installs Settings may start: over the standard roots, the host this program runs on (the
-/// backend forced by `[engines] install_backend` when the file says one), the pinned manifest and
-/// the system's privileged helper. None on a processor no engine is built for.
-fn engine_installs(
-    dirs: &Dirs,
-    config: &InferdConfig,
-    file: &ConfigFile,
-) -> Option<EngineInstalls> {
-    let choice = config
-        .engines
-        .install_backend
-        .as_deref()
-        .and_then(porter_engines::Backend::from_slug)
-        .map_or(
-            porter_engines::BackendChoice::Detect,
-            porter_engines::BackendChoice::Force,
-        );
-    let host = porter_engines::Host::read(Path::new("/"), choice)?;
+/// The engines of ours that are installed: under the standard roots, pinned by the manifest, with
+/// the Strata folder the file names read each time it is looked for.
+fn installed_engines(dirs: &Dirs, file: &ConfigFile) -> Installed {
     let reading = file.clone();
-    Some(EngineInstalls::new(Parts {
-        roots: porter_engines::Roots::new(
+    Installed::new(
+        porter_engines::Roots::new(
             PathBuf::from(porter_engines::Roots::SYSTEM),
             dirs.engines_own.clone(),
         ),
-        manifest: porter_engines::Manifest::pinned(),
-        host,
-        fetcher: porter_engines_install::Fetcher::new(HyperHttp::new()),
-        helper: HelperProgram::system(),
-        strata_folder: Arc::new(move || {
+        porter_engines::Manifest::pinned(),
+        porter_daemon::root_held,
+        Arc::new(move || {
             reading
                 .read()
                 .ok()
                 .and_then(|config| config.engines.strata_folder)
         }),
-    }))
+    )
 }
 
 /// inferd, serving `org.quire.Inference1` with its engine supervisor and watchers running.
@@ -478,14 +461,11 @@ impl Daemon {
             .iter()
             .map(|model| (model.spec.id.clone(), model.socket.0.clone()))
             .collect();
-        // What an engine program may be: an install of the person's own is checked against the
-        // manifest's pins before each start.
-        let installs = engine_installs(&dirs, &config, &file);
-        let processes = ProcessHost::new().with_sockets(sockets.clone());
-        let processes = match &installs {
-            Some(installs) => processes.with_guard(installs.guard()),
-            None => processes,
-        };
+        // An install of the person's own is checked against the manifest's pins before each start.
+        let installed = installed_engines(&dirs, &file);
+        let processes = ProcessHost::new()
+            .with_sockets(sockets.clone())
+            .with_guard(installed.guard());
         let diagnostics = processes.diagnostics();
         let closer = processes.closer();
         let supervised = Supervised::start_with(
@@ -632,12 +612,9 @@ impl Daemon {
         .spawn();
         let reload = Reload::new(file, engines.clone());
         reload.clone().watch(RELOAD_EVERY);
-        // Which engine programs this computer has, and what could be installed for the rest.
+        // Which engine programs this computer has, and where each came from.
         let found = config.engines_with(&dirs, &programs);
-        let local_engines = match &installs {
-            Some(installs) => LocalEngines::of(&found).with_installs(installs.clone()),
-            None => LocalEngines::of(&found),
-        };
+        let local_engines = LocalEngines::of(&found).with_installed(installed);
         // The agent endpoints are always served; `ai.agents.endpoint` (off by default) decides
         // whether the launcher, who is in no table until a machine lists it, may open one.
         let agents = Agents::new(
@@ -659,10 +636,6 @@ impl Daemon {
         .tailnet(tailnet)
         .engines_found(local_engines)
         .keys_news(engines_news);
-        let daemon = match installs {
-            Some(installs) => daemon.engine_installs(installs),
-            None => daemon,
-        };
         // Every object, the settings module among them, is served before the name is claimed.
         serve_with_settings(
             &connection,

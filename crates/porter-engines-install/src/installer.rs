@@ -108,6 +108,11 @@ impl Installer {
         Self { fetcher, roots }
     }
 
+    /// The roots it installs under.
+    pub fn roots(&self) -> &Roots {
+        &self.roots
+    }
+
     /// Installs `row` for `scope`, counting its bytes in `meter` (made with the row's
     /// download size). An install that is there already is left as it is.
     ///

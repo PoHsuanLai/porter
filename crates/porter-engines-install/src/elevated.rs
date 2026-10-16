@@ -1,13 +1,13 @@
 //! Installing for everyone: the privileged helper, started through `pkexec`.
 //!
-//! inferd gives `pkexec` the helper's fixed path and two words, an engine and a backend, and
+//! The caller gives `pkexec` the helper's fixed path and two words, an engine and a backend, and
 //! reads the helper's report lines. It asks for nothing else and takes nothing else from it: a
 //! download's address, hash and size are in the helper's own manifest. The administrator's
 //! password is asked for by the system's prompt, never here.
 
+use crate::helper::Report;
+use crate::progress::{CancelToken, Meter};
 use porter_engines::{Backend, EngineId, Failure};
-use porter_engines_install::helper::Report;
-use porter_engines_install::{CancelToken, Meter};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
@@ -31,11 +31,11 @@ pub struct HelperProgram {
 }
 
 impl HelperProgram {
-    /// Where the system keeps them.
+    /// Where the system keeps them (the helper beside the daemons, in `libexec/quire`).
     pub fn system() -> Self {
         Self {
             pkexec: PathBuf::from("/usr/bin/pkexec"),
-            program: PathBuf::from("/usr/libexec/porter/porter-engine-helper"),
+            program: PathBuf::from("/usr/libexec/quire/porter-engine-helper"),
         }
     }
 
@@ -53,7 +53,7 @@ enum Event {
 
 /// Runs the helper for `engine` and `backend` to its end. `meter` is out of 1000 and follows the
 /// helper's progress; `cancel` asks it to stop.
-pub(super) async fn install(
+pub async fn install_for_everyone(
     helper: &HelperProgram,
     engine: EngineId,
     backend: Backend,
@@ -139,7 +139,7 @@ mod tests {
 
     async fn run(helper: &HelperProgram) -> (Result<(), Failure>, Meter) {
         let meter = Meter::new(1000);
-        let result = install(
+        let result = install_for_everyone(
             helper,
             EngineId::LlamaCpp,
             Backend::Cpu,
@@ -180,7 +180,7 @@ mod tests {
         let job = {
             let (cancel, slow, meter) = (cancel.clone(), slow.clone(), meter.clone());
             tokio::spawn(async move {
-                install(&slow, EngineId::LlamaCpp, Backend::Cpu, &meter, &cancel).await
+                install_for_everyone(&slow, EngineId::LlamaCpp, Backend::Cpu, &meter, &cancel).await
             })
         };
         while meter.done() == 0 {

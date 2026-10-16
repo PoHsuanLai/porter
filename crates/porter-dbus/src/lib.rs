@@ -94,10 +94,9 @@ pub use launcher_iface::{
     ProcessCredentialRevokedStream,
 };
 pub use local_engines::{
-    ENGINE_KEY_NAME, ENGINE_KEY_PATH, ENGINE_KEY_PLACE, ENGINE_KEY_PROGRESS, ENGINE_KEY_REASON,
-    ENGINE_KEY_SCOPES, ENGINE_KEY_SIZE, ENGINE_KEY_SLOTS, ENGINE_KEY_STATE, ENGINE_KEY_VERSION,
-    EnginePlace, EngineRowError, EngineState, InstallOffer, LocalEngine, local_engine_from_dbus,
-    local_engine_to_dbus,
+    ENGINE_KEY_NAME, ENGINE_KEY_PATH, ENGINE_KEY_PLACE, ENGINE_KEY_SLOTS, ENGINE_KEY_STATE,
+    ENGINE_KEY_VERSION, EnginePlace, EngineRowError, EngineState, LocalEngine,
+    local_engine_from_dbus, local_engine_to_dbus,
 };
 pub use machines::{
     MACHINE_KEY_ADDRESSES, MACHINE_KEY_DNS, MACHINE_KEY_LAST_SEEN, MACHINE_KEY_NAME,

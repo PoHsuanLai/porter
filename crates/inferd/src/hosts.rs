@@ -31,7 +31,7 @@ use tokio::process::Command;
 use tokio::sync::{oneshot, watch};
 
 /// Decides, before a program is started, whether it may be: the check a start of a person's own
-/// install of an engine goes through (see [`crate::install::PinnedPrograms`]).
+/// install of an engine goes through (see [`crate::installed::Installed::guard`]).
 pub trait LaunchGuard: Send + Sync {
     /// `Ok` to start `program`, or why not. May read the whole of an install: it is called off the
     /// async threads.

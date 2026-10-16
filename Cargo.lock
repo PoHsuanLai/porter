@@ -1462,7 +1462,6 @@ dependencies = [
  "porter-dbus",
  "porter-discover",
  "porter-engines",
- "porter-engines-install",
  "porter-fake",
  "porter-fake-servers",
  "porter-families",

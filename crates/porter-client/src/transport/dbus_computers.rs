@@ -71,26 +71,6 @@ impl DbusTransport {
         }))
     }
 
-    /// `Inference1.InstallEngine`: starts installing `engine` (an id of `list_local_engines`) for
-    /// `scope` (`all_users` or `just_me`) and answers at once; `list_local_engines` follows it.
-    /// Only Settings may; anyone else is `Denied`.
-    pub async fn install_engine(&self, engine: &str, scope: &str) -> Result<(), TransportError> {
-        self.inference()
-            .await?
-            .install_engine(engine, scope)
-            .await
-            .map_err(|e| bus_error(&e))
-    }
-
-    /// `Inference1.CancelEngineInstall`: stops the install of `engine`, if one is under way.
-    pub async fn cancel_engine_install(&self, engine: &str) -> Result<(), TransportError> {
-        self.inference()
-            .await?
-            .cancel_engine_install(engine)
-            .await
-            .map_err(|e| bus_error(&e))
-    }
-
     /// `Inference1.PointEngine`: counts the install of `engine` the person already has in
     /// `folder`.
     pub async fn point_engine(&self, engine: &str, folder: &str) -> Result<(), TransportError> {

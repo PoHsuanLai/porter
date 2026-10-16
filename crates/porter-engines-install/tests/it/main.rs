@@ -4,4 +4,5 @@
 mod fetch;
 mod helper;
 mod install;
+mod jobs;
 mod support;

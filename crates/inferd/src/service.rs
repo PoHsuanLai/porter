@@ -14,7 +14,6 @@ use crate::attached::{
 use crate::audit::{AuditOut, SessionAudit};
 use crate::clock::Clock;
 use crate::engines::Engines;
-use crate::install::{EngineInstalls, StartError};
 use crate::peers::{Caller, Peers, Role};
 use crate::pipeline::Hearing;
 use crate::router::placed::{Allowed, Unplaced};
@@ -58,9 +57,6 @@ pub struct Inference<P, O, C> {
     tailnet: Option<Tailnet>,
     /// The engines found at start, for `LocalEngines`; none until [`Self::local_engines`].
     local_engines: LocalEngines,
-    /// The installs Settings starts and stops; without them the three calls answer that nothing
-    /// can be installed.
-    installs: Option<EngineInstalls>,
     /// Woken when an AI account appeared, went or changed state (the key host fires it).
     keys_news: Option<Arc<tokio::sync::Notify>>,
 }
@@ -80,7 +76,6 @@ impl<P, O, C> Inference<P, O, C> {
             computers: None,
             tailnet: None,
             local_engines: LocalEngines::default(),
-            installs: None,
             keys_news: None,
         }
     }
@@ -89,15 +84,6 @@ impl<P, O, C> Inference<P, O, C> {
     pub fn engines_found(self, found: LocalEngines) -> Self {
         Self {
             local_engines: found,
-            ..self
-        }
-    }
-
-    /// The same object, whose `InstallEngine`, `CancelEngineInstall` and `PointEngine` work over
-    /// `installs`, and which says `EnginesChanged` each time one of them changes state.
-    pub fn engine_installs(self, installs: EngineInstalls) -> Self {
-        Self {
-            installs: Some(installs),
             ..self
         }
     }
@@ -206,8 +192,8 @@ fn usage_of(options: &Details) -> fdo::Result<porter_core::consent::Usage> {
     parse_slug(&text)
 }
 
-fn nothing_to_install() -> fdo::Error {
-    fdo::Error::NotSupported("inferd: nothing can be installed that way on this computer".into())
+fn not_configurable() -> fdo::Error {
+    fdo::Error::NotSupported("inferd: this daemon has no settings file to write".into())
 }
 
 fn failed(why: impl ToString) -> fdo::Error {
@@ -535,45 +521,6 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
             .collect())
     }
 
-    // Starts installing an engine for everyone or for the person (Settings only). It answers
-    // at once; `LocalEngines` follows the install and `EnginesChanged` each change of state.
-    async fn install_engine(
-        &self,
-        #[zbus(header)] header: Header<'_>,
-        engine: String,
-        scope: String,
-    ) -> fdo::Result<()> {
-        self.settings_caller(&header).await?;
-        let (Some(engine), Some(scope)) = (
-            porter_engines::EngineId::from_slug(&engine),
-            porter_engines::Scope::from_slug(&scope),
-        ) else {
-            return Err(fdo::Error::InvalidArgs(
-                "inferd: not an engine or a way of installing it that this knows".into(),
-            ));
-        };
-        let installs = self.installs.as_ref().ok_or_else(nothing_to_install)?;
-        installs.start(engine, scope).map_err(|why| match why {
-            StartError::Busy => fdo::Error::Failed(why.to_string()),
-            StartError::Nothing => nothing_to_install(),
-        })
-    }
-
-    // Stops the install of an engine (Settings only).
-    async fn cancel_engine_install(
-        &self,
-        #[zbus(header)] header: Header<'_>,
-        engine: String,
-    ) -> fdo::Result<()> {
-        self.settings_caller(&header).await?;
-        let engine = porter_engines::EngineId::from_slug(&engine)
-            .ok_or_else(|| fdo::Error::InvalidArgs("inferd: not an engine this knows".into()))?;
-        if let Some(installs) = &self.installs {
-            installs.cancel(engine);
-        }
-        Ok(())
-    }
-
     // Counts a Strata the person already has, in a folder they chose (Settings only).
     async fn point_engine(
         &self,
@@ -593,7 +540,7 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
                 "inferd: that folder does not hold the engine".into(),
             ));
         }
-        let reload = self.reload.as_ref().ok_or_else(nothing_to_install)?;
+        let reload = self.reload.as_ref().ok_or_else(not_configurable)?;
         reload
             .file()
             .set("engines.strata_folder", toml::Value::String(folder))
@@ -1004,7 +951,6 @@ where
     let supervised = daemon.engines.supervised().clone();
     let probed = daemon.engines.probed().clone();
     let keys_news = daemon.keys_news.clone();
-    let install_news = daemon.installs.as_ref().map(EngineInstalls::news);
     let asking = daemon.tailnet.as_ref().map(Tailnet::subscribe);
     let agents = daemon.agents.clone().map(|agents| AgentsService {
         peers: Arc::clone(&daemon.peers),
@@ -1071,17 +1017,6 @@ where
             let _ = Inference::<P, O, C>::engines_changed(iface.signal_emitter()).await;
         }
     });
-    // An engine install started, ended or failed: a listener reads `LocalEngines` again.
-    if let Some(news) = install_news {
-        let iface: zbus::object_server::InterfaceRef<Inference<P, O, C>> =
-            connection.object_server().interface(INFERENCE_PATH).await?;
-        tokio::spawn(async move {
-            loop {
-                news.notified().await;
-                let _ = Inference::<P, O, C>::engines_changed(iface.signal_emitter()).await;
-            }
-        });
-    }
     // An AI account appeared, went or changed state (the key host says so): a listener re-reads
     // `Places`. Only a daemon that hosts the keys has accounts to hear.
     if let Some(news) = keys_news {

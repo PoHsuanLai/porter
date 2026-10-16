@@ -7,22 +7,21 @@ use inferd::audit::Memory;
 use inferd::clock::FixedClock;
 use inferd::config::{Dirs, InferdConfig, ProgramSearch};
 use inferd::engines::Engines;
-use inferd::install::{EngineInstalls, HelperProgram, Parts};
+use inferd::installed::Installed;
 use inferd::peers::{Caller, Role, TablePeers};
 use inferd::service::{Inference, serve_on};
 use inferd::settings::LocalEngines;
+use inferd::settings::{ConfigFile, Reload};
 use inferd::supervise::Supervised;
 use porter_core::{AppId, AppName, Isolation, UnixSeconds};
 use porter_dbus::{EnginePlace, EngineState, InferenceProxy, LocalEngine, local_engine_from_dbus};
-use porter_engines::{Arch, BackendChoice, Gpus, Host, Manifest, OsRelease, Roots};
-use porter_engines_install::Fetcher;
-use porter_engines_install::testkit::{release, row};
-use porter_fake_servers::{start_artifacts, tls};
-use porter_http::HyperHttp;
+use porter_engines::{
+    Arch, Artifact, Backend, Delivery, EngineId, Manifest, Record, Roots, Row, Scope, seal_of,
+};
 use porter_infer::{Policy, TierMap};
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
 
 fn who(role: Role) -> Caller {
     Caller {
@@ -140,6 +139,46 @@ async fn an_app_may_not_ask() {
     );
 }
 
+static NO_FILES: [Artifact; 0] = [];
+
+/// An install of llama.cpp for the person made by hand under `roots`: its tree, its seal and its
+/// record, and the manifest that pins it.
+fn made_install(roots: &Roots) -> (Manifest, PathBuf) {
+    let dir = roots
+        .engine_dir(Scope::JustMe, EngineId::LlamaCpp)
+        .join("b-test-cpu");
+    let tree = dir.join("engine");
+    std::fs::create_dir_all(&tree).expect("tree");
+    let program = tree.join("llama-server");
+    std::fs::write(&program, "#!/bin/sh\n").expect("program");
+    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).expect("mode");
+    let seal = seal_of(&tree).expect("seal").as_hex().to_owned();
+    Record {
+        engine: "llama_cpp".into(),
+        version: "b-test".into(),
+        backend: "cpu".into(),
+        seal: seal.clone(),
+        entries: Default::default(),
+        venv_seal: None,
+    }
+    .write(&dir.join("installed.json"))
+    .expect("record");
+    let row = Row {
+        engine: EngineId::LlamaCpp,
+        arch: Arch::X86_64,
+        backend: Backend::Cpu,
+        version: "b-test",
+        min_nvidia_driver: None,
+        delivery: Delivery::Archives(&NO_FILES),
+        program: "llama-server",
+        tree_seal: Some(Box::leak(seal.into_boxed_str())),
+    };
+    (
+        Manifest::of(Box::leak(vec![row].into_boxed_slice())),
+        program,
+    )
+}
+
 fn error_name(error: &zbus::Error) -> String {
     match error {
         zbus::Error::MethodError(name, ..) => name.to_string(),
@@ -148,33 +187,19 @@ fn error_name(error: &zbus::Error) -> String {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn settings_installs_an_engine_for_the_person_over_the_bus_and_nobody_else_may() {
-    let scratch = porter_fake::Scratch::new("le-install");
-    let host = start_artifacts().await.expect("host");
-    let made = release(scratch.path(), "fixture", "");
-    host.put("/e.tar.gz", made.archive.clone());
-    let pinned = row(
-        &host.url("/e.tar.gz"),
-        &made,
-        &made.seal,
-        made.archive.len() as u64,
-    );
-    let installs = EngineInstalls::new(Parts {
-        roots: Roots::new(scratch.path().join("system"), scratch.path().join("person")),
-        manifest: Manifest::of(Box::leak(vec![pinned].into_boxed_slice())),
-        host: Host {
-            arch: Arch::X86_64,
-            gpus: Gpus::default(),
-            release: OsRelease::default(),
-            choice: BackendChoice::Detect,
-        },
-        fetcher: Fetcher::new(HyperHttp::with_extra_roots(vec![tls::ca_der().to_vec()]))
-            .with_timing(Duration::from_secs(5), 1, Duration::from_millis(10)),
-        helper: HelperProgram {
-            pkexec: PathBuf::from("/nonexistent/pkexec"),
-            program: PathBuf::from("/nonexistent/helper"),
-        },
-        strata_folder: Arc::new(|| None),
+async fn an_install_of_ours_says_its_release_and_place_and_a_changed_one_says_so_and_strata_is_pointed_at()
+ {
+    let scratch = porter_fake::Scratch::new("le-installed");
+    let roots = Roots::new(scratch.path().join("system"), scratch.path().join("person"));
+    let (manifest, program) = made_install(&roots);
+    let file = scratch.path().join("inferd.toml");
+    let installed = Installed::new(roots, manifest, |_| true, {
+        let file = ConfigFile::new(file.clone());
+        Arc::new(move || {
+            file.read()
+                .ok()
+                .and_then(|config| config.engines.strata_folder)
+        })
     });
     let bus = PrivateBus::start();
     let peers = Arc::new(TablePeers::new());
@@ -184,14 +209,15 @@ async fn settings_installs_an_engine_for_the_person_over_the_bus_and_nobody_else
         Policy::proposed(),
         TierMap::default(),
     );
+    let reload = Reload::new(ConfigFile::new(file.clone()), engines.clone());
     let inference = Inference::new(
         engines,
         Arc::clone(&peers),
         Memory::default(),
         FixedClock(UnixSeconds(1_700_000_000)),
     )
-    .engines_found(LocalEngines::of(&Default::default()).with_installs(installs.clone()))
-    .engine_installs(installs);
+    .reloading(reload)
+    .engines_found(LocalEngines::of(&Default::default()).with_installed(installed.clone()));
     let daemon = bus.connect().await;
     within("inferd to serve", serve_on(&daemon, inference))
         .await
@@ -203,60 +229,64 @@ async fn settings_installs_an_engine_for_the_person_over_the_bus_and_nobody_else
     );
     let app = bus.connect().await;
     peers.introduce(app.unique_name().expect("name").as_str(), who(Role::App));
+    let proxy = InferenceProxy::new(&settings).await.expect("proxy");
+    let row_of = |id: &'static str| {
+        let proxy = proxy.clone();
+        async move {
+            proxy
+                .local_engines()
+                .await
+                .expect("rows")
+                .into_iter()
+                .map(|row| local_engine_from_dbus(row).expect("row"))
+                .find(|engine| engine.id == id)
+                .expect("listed")
+        }
+    };
+    let llama = row_of("llama_cpp").await;
+    assert_eq!(llama.state, EngineState::Found(program.clone()));
+    assert_eq!(
+        (llama.place, llama.version.as_deref()),
+        (Some(EnginePlace::Person), Some("b-test"))
+    );
+    // A tree that is not the pinned one is not started, and the row says it was changed.
+    let guard = installed.guard();
+    std::fs::write(program.with_file_name("libplanted.so"), "x").expect("plant");
+    assert!(guard.check(&program).is_err());
+    assert_eq!(
+        row_of("llama_cpp").await.state,
+        EngineState::Changed(program)
+    );
 
+    // Strata: counted once the person points at a folder that holds it; nobody else may.
+    let folder = scratch.path().join("strata");
+    std::fs::create_dir_all(folder.join("serve")).expect("serve");
+    std::fs::write(folder.join("serve/server.py"), "").expect("server");
+    let python = folder.join(".venv/bin/python");
+    std::fs::create_dir_all(python.parent().expect("parent")).expect("bin");
+    std::fs::write(&python, "").expect("python");
+    std::fs::set_permissions(&python, std::fs::Permissions::from_mode(0o755)).expect("mode");
+    let folder_text = folder.to_string_lossy().into_owned();
     let denied = InferenceProxy::new(&app)
         .await
         .expect("proxy")
-        .install_engine("llama_cpp", "just_me")
+        .point_engine("strata", &folder_text)
         .await;
     assert!(error_name(&denied.expect_err("refused")).ends_with("AccessDenied"));
-
-    let proxy = InferenceProxy::new(&settings).await.expect("proxy");
-    let not = |engine: &'static str, scope: &'static str| {
-        let proxy = proxy.clone();
-        async move { proxy.install_engine(engine, scope).await }
-    };
-    assert!(error_name(&not("nope", "just_me").await.expect_err("")).ends_with("InvalidArgs"));
-    assert!(
-        error_name(&not("llama_cpp", "everyone").await.expect_err("")).ends_with("InvalidArgs")
-    );
-    assert!(error_name(&not("vllm", "just_me").await.expect_err("")).ends_with("NotSupported"));
-    // Without the helper there is nothing to install for everyone.
-    assert!(
-        error_name(&not("llama_cpp", "all_users").await.expect_err("")).ends_with("NotSupported")
-    );
-
-    let rows = proxy.local_engines().await.expect("rows");
-    let llama = |rows: Vec<(String, porter_dbus::Details)>| {
-        rows.into_iter()
-            .map(|row| local_engine_from_dbus(row).expect("row"))
-            .find(|engine| engine.id == "llama_cpp")
-            .expect("llama.cpp")
-    };
-    let before = llama(rows);
-    assert_eq!(before.state, EngineState::Missing);
-    let offer = before.offer.expect("an offer");
-    assert_eq!(offer.scopes, ["just_me"]);
-
-    proxy
-        .install_engine("llama_cpp", "just_me")
-        .await
-        .expect("started");
-    let mut now = llama(proxy.local_engines().await.expect("rows"));
-    for _ in 0..1000 {
-        if matches!(now.state, EngineState::Found(_)) {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-        now = llama(proxy.local_engines().await.expect("rows"));
+    for (engine, place) in [
+        ("strata", "/nonexistent"),
+        ("llama_cpp", folder_text.as_str()),
+    ] {
+        let refused = proxy.point_engine(engine, place).await;
+        assert!(
+            error_name(&refused.expect_err("refused")).ends_with("InvalidArgs"),
+            "{engine}"
+        );
     }
-    assert!(matches!(now.state, EngineState::Found(_)), "{now:?}");
-    assert_eq!(
-        (now.place, now.version.as_deref()),
-        (Some(EnginePlace::Person), Some("b-test"))
-    );
+    assert_eq!(row_of("strata").await.state, EngineState::Missing);
     proxy
-        .cancel_engine_install("llama_cpp")
+        .point_engine("strata", &folder_text)
         .await
-        .expect("nothing to stop is not an error");
+        .expect("pointed");
+    assert_eq!(row_of("strata").await.state, EngineState::Found(python));
 }

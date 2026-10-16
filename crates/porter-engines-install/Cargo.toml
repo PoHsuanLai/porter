@@ -12,10 +12,6 @@ publish.workspace = true
 name = "porter-engine-helper"
 path = "src/bin/porter-engine-helper.rs"
 
-[features]
-# A tiny release and the row that pins it, for tests of what installs engines (`testkit`).
-testing = []
-
 [dependencies]
 porter-engines = { workspace = true }
 porter-core = { workspace = true }

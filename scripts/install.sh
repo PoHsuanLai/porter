@@ -15,6 +15,11 @@
 #
 # What goes where (DESTDIR, when given, is in front of all of it):
 #   PREFIX/libexec/quire/{accountd,syncd,inferd}             the daemons
+#   PREFIX/libexec/quire/porter-engine-helper                the helper `pkexec` runs as root to install
+#                                                            an AI engine for everyone (Settings starts it)
+#   PREFIX/share/polkit-1/actions/org.quire.porter.engines.policy
+#                                                            the polkit action that asks for the
+#                                                            administrator's password for it
 #   PREFIX/lib/systemd/user/{accountd,syncd,inferd}.service  the user units
 #   PREFIX/lib/systemd/user/{accountd,syncd,inferd}.service.d/sandbox.conf
 #                                                            the part of each unit's sandbox that needs a
@@ -164,7 +169,7 @@ else
                     export RUSTUP_TOOLCHAIN
                 fi &&
                 cargo build --release --manifest-path "$root/Cargo.toml" \
-                    --config net.git-fetch-with-cli=true -p accountd -p syncd -p inferd
+                    --config net.git-fetch-with-cli=true -p accountd -p syncd -p inferd -p porter-engines-install
         )
     fi
     built=$target_dir/release
@@ -176,8 +181,17 @@ for daemon in $daemons; do
     fi
 done
 
+# The helper that installs an engine for everyone, built beside the daemons. It is not a daemon
+# (nothing starts it but `pkexec`), so it is not in the list above.
+if [ ! -x "$built/porter-engine-helper" ]; then
+    echo "install.sh: $built/porter-engine-helper is not there; build first or point --bin-dir at it" >&2
+    exit 1
+fi
+
 # The files in dist/ name /usr/libexec/quire; a different prefix changes that one path.
 libexec=$prefix/libexec/quire
+put 755 "$built/porter-engine-helper" "$libexec/porter-engine-helper"
+put 644 "$dist/org.quire.porter.engines.policy" "$prefix/share/polkit-1/actions/org.quire.porter.engines.policy" /usr/libexec/quire "$libexec"
 for daemon in $daemons; do
     put 755 "$built/$daemon" "$libexec/$daemon"
     put 644 "$dist/$daemon.service" "$prefix/lib/systemd/user/$daemon.service" /usr/libexec/quire "$libexec"

@@ -1,10 +1,10 @@
 //! The engines inferd knows and where each stands, as `Inference1.LocalEngines` tells a client.
 //! The program of each is read from the same resolved [`EngineConfig`] the engine starter reads,
-//! so the two agree; an engine that can be installed also says what an install would be, and one
-//! being installed says how far it has come.
+//! so the two agree; an engine of ours that was installed also says which release and where from,
+//! and one whose install was changed since says so.
 
 use super::missing::Engine;
-use crate::install::{EngineInstalls, Standing};
+use crate::installed::{Installed, Standing};
 use porter_dbus::{EnginePlace, EngineState, LocalEngine};
 use porter_engines::{EngineId, Place};
 use porter_infer::Slot;
@@ -14,7 +14,7 @@ use porter_router::local::EngineConfig;
 #[derive(Debug, Clone, Default)]
 pub struct LocalEngines {
     config: EngineConfig,
-    installs: Option<EngineInstalls>,
+    installed: Option<Installed>,
 }
 
 impl LocalEngines {
@@ -22,15 +22,16 @@ impl LocalEngines {
     pub fn of(config: &EngineConfig) -> Self {
         Self {
             config: config.clone(),
-            installs: None,
+            installed: None,
         }
     }
 
-    /// The same, saying also what could be installed, what is being installed and what failed.
+    /// The same, saying also where each engine of ours was installed and which release, and which
+    /// install was changed since.
     #[must_use]
-    pub fn with_installs(self, installs: EngineInstalls) -> Self {
+    pub fn with_installed(self, installed: Installed) -> Self {
         Self {
-            installs: Some(installs),
+            installed: Some(installed),
             ..self
         }
     }
@@ -55,30 +56,22 @@ impl LocalEngines {
                 .collect(),
             version: None,
             place: None,
-            offer: None,
         };
-        let (Some(installs), Some(id)) = (&self.installs, installable(engine)) else {
+        let (Some(installed), Some(id)) = (&self.installed, installable(engine)) else {
             return row;
         };
-        match installs.standing(id) {
+        match installed.standing(id) {
             Standing::Ready(found) => {
                 row.state = EngineState::Found(found.program);
                 row.version = found.version;
                 row.place = Some(place_of(found.place));
             }
-            Standing::Installing(thousandths) => row.state = EngineState::Installing(thousandths),
-            Standing::Failed(why) => {
-                row.state = EngineState::Failed(why.sentence().to_owned());
-                row.offer = installs.offer(id);
+            Standing::Changed(found) => {
+                row.state = EngineState::Changed(found.program);
+                row.version = found.version;
+                row.place = Some(place_of(found.place));
             }
-            Standing::Changed => {
-                row.state = EngineState::Failed(format!(
-                    "{} was changed since it was installed. Reinstall it?",
-                    engine.name()
-                ));
-                row.offer = installs.offer(id);
-            }
-            Standing::NotInstalled => row.offer = installs.offer(id),
+            Standing::NotInstalled => {}
         }
         row
     }
