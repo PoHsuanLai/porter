@@ -18,7 +18,7 @@ fn repo() -> PathBuf {
 fn stand_ins(root: &Path) -> PathBuf {
     let bins = root.join("bins");
     fs::create_dir_all(&bins).expect("bins");
-    for daemon in ["accountd", "syncd", "inferd"] {
+    for daemon in ["accountd", "syncd", "inferd", "porter-engine-helper"] {
         let file = bins.join(daemon);
         fs::write(&file, format!("#!/bin/sh\necho {daemon}\n")).expect("write");
         fs::set_permissions(&file, fs::Permissions::from_mode(0o755)).expect("chmod");

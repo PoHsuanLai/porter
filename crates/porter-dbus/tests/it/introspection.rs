@@ -202,9 +202,10 @@ fn inference1_xml_unchanged_members() {
         + xml.matches("<property ").count();
     assert_eq!(
         declared,
-        members.len() + 3 + 7 + 1,
+        members.len() + 3 + 7 + 1 + 1,
         "no member beyond the frozen seven, Places, AddComputer, RemoveComputer, and the five \
-         methods and two signals of lending models across the person's network, and LocalEngines"
+         methods and two signals of lending models across the person's network, LocalEngines and \
+         PointEngine"
     );
     assert_eq!(
         porter_dbus::COMPUTER_ERROR_PREFIX,
