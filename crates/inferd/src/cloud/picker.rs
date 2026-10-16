@@ -2,14 +2,13 @@
 //! slot, grouped by company, whether or not the person has an account for it. An entry no
 //! account reaches is listed, unavailable with the reason "Add an account to use" (the schema's
 //! `unavailable`, which Settings greys and the module refuses to set), so the picker is company then
-//! model regardless of accounts. The label carries what a search and a tools filter read: the
-//! company, and the capabilities the entry declares.
+//! model regardless of accounts. The label is the model's name alone, as a Mac menu shows it; the
+//! company is the group it sits under.
 
 use super::accountd::AccountVerdict;
 use super::models::{WIRES, known_providers, provider_of};
 use crate::engines::CLOUD_ACCOUNT;
-use model_catalog::{Modality, ModelEntry, reachable, slot_members};
-use model_provider::ToolSupport;
+use model_catalog::{ModelEntry, reachable, slot_members};
 
 /// Why a model nobody can reach yet cannot be picked (the schema's `unavailable` reason; the
 /// Settings app shows it and greys the choice).
@@ -41,8 +40,10 @@ pub enum Availability {
 pub fn company_of(family: &str) -> String {
     match family {
         "claude" => "Anthropic".to_owned(),
+        "deepseek" => "DeepSeek".to_owned(),
         "gemini" => "Google".to_owned(),
         "kimi" => "Moonshot".to_owned(),
+        "muse" => "Meta".to_owned(),
         "gpt" => "OpenAI".to_owned(),
         other => {
             let mut letters = other.chars();
@@ -70,26 +71,13 @@ pub fn catalog_slot(slot: porter_infer::Slot) -> Option<model_catalog::Slot> {
     }
 }
 
-/// What an entry declares it can do, as the words a filter reads.
-fn capabilities_of(entry: &ModelEntry) -> Vec<&'static str> {
-    let caps = &entry.capabilities;
-    let tools = caps
-        .text_out
-        .as_ref()
-        .is_some_and(|text| text.tools != ToolSupport::Absent);
-    let reasoning = caps
-        .text_out
-        .as_ref()
-        .is_some_and(|text| text.reasoning == model_provider::Support::Present);
-    [
-        (tools, "tools"),
-        (caps.inputs.contains(Modality::Image), "images"),
-        (caps.inputs.contains(Modality::Audio), "audio"),
-        (reasoning, "reasoning"),
-    ]
-    .into_iter()
-    .filter_map(|(has, word)| has.then_some(word))
-    .collect()
+/// The name a person reads for a model: the catalogue's label without a trailing tier note such
+/// as "(contributor)".
+fn plain_name(label: &str) -> &str {
+    match label.rfind(" (") {
+        Some(at) if label.ends_with(')') => label[..at].trim_end(),
+        _ => label,
+    }
 }
 
 /// The hosted models of `slot`, grouped by company (companies in the order the
@@ -114,9 +102,7 @@ pub fn choices(
             continue;
         };
         let company = company_of(&entry.family.0);
-        let mut words = vec![company.clone(), entry.family.0.clone()];
-        words.extend(capabilities_of(entry).into_iter().map(str::to_owned));
-        let label = format!("{} ({})", entry.label, words.join(", "));
+        let label = plain_name(&entry.label).to_owned();
         let choice = Choice {
             value: format!("{CLOUD_ACCOUNT}/{}", entry.id.0),
             label,

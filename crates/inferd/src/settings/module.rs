@@ -149,11 +149,7 @@ impl<P: Peers> InferdSettings<P> {
 
     /// The picker's help.
     fn help() -> Help {
-        Help(
-            "The model used for this slot at this tier. Automatic picks one of the models you \
-             list for it, one already loaded when it can."
-                .to_owned(),
-        )
+        Help("Automatic picks from the models you choose.".to_owned())
     }
 
     /// Why nothing runs on this computer, when no model of the slot does and a program is
@@ -287,7 +283,7 @@ impl<P: Peers> InferdSettings<P> {
         // choice and Automatic stay ungrouped, so they come first.
         let unset = match kind {
             Slot::Text => "Not chosen",
-            _ => "Catalogue default",
+            _ => "Default",
         };
         labels.0.insert(String::new(), unset.to_owned());
         labels.0.insert(AUTO.to_owned(), "Automatic".to_owned());
@@ -341,11 +337,7 @@ impl<P: Peers> InferdSettings<P> {
             kind: KeyKind::List(Box::new(KeyKind::Menu { variants })),
             default: toml::Value::Array(Vec::new()),
             label: Label("Automatic chooses from".to_owned()),
-            help: Help(
-                "The models Automatic may use for this slot, at every tier. With none \
-                 listed, Automatic has nothing to choose from and asks you to pick."
-                    .to_owned(),
-            ),
+            help: Help("Turn on at least one model.".to_owned()),
             page: Page::Intelligence,
             section: Section(format!("Models / {}", slot_label(kind))),
             exposure: Exposure::Basic,

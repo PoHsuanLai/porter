@@ -85,18 +85,23 @@ fn an_openrouter_account_reaches_all_of_them() {
 }
 
 #[test]
-fn a_label_carries_the_company_and_the_capabilities_a_filter_reads() {
+fn a_label_is_the_models_name_alone() {
     let listed = choices(&catalogue(), &[], Slot::Text);
-    assert_eq!(
-        listed[0].label,
-        "Claude Opus 5.5 (Anthropic, claude, tools, images, reasoning)"
-    );
+    assert_eq!(listed[0].label, "Claude Opus 5.5");
+    assert_eq!(plain_name("Muse Spark 1.3 (contributor)"), "Muse Spark 1.3");
+    assert_eq!(plain_name("GPT-6 Luna"), "GPT-6 Luna");
 }
 
 #[test]
-fn a_family_the_table_does_not_know_is_capitalised() {
+fn a_company_is_named_as_its_people_write_it() {
     assert_eq!(company_of("claude"), "Anthropic");
-    assert_eq!(company_of("mistral"), "Mistral");
+    assert_eq!(company_of("deepseek"), "DeepSeek");
+    assert_eq!(company_of("muse"), "Meta");
+    assert_eq!(
+        company_of("mistral"),
+        "Mistral",
+        "an unknown family is capitalised"
+    );
     assert_eq!(company_of(""), "");
 }
 
