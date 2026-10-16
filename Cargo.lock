@@ -426,7 +426,7 @@ dependencies = [
 [[package]]
 name = "chordkit"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/chordkit.git?rev=55a62b2366d6ee1994d95f7cb5a195217807099c#55a62b2366d6ee1994d95f7cb5a195217807099c"
+source = "git+https://github.com/PoHsuanLai/chordkit.git?rev=934a2d71f6516bee5919ee29278003702a4ea5e1#934a2d71f6516bee5919ee29278003702a4ea5e1"
 dependencies = [
  "thiserror",
 ]

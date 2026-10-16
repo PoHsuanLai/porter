@@ -19,11 +19,11 @@ use ds_settings::schema::{
     HostName, KeyKind, KeyPath, KeySpec, Label, Note, Page, Section, UnavailableReason, WordLabels,
 };
 use porter_core::consent::Usage;
-use porter_router::local::LocalModel;
-use std::collections::BTreeMap;
 use porter_core::{AppId, AppName, DataClass, Isolation, Locality, Tier};
 use porter_dbus::INFERENCE_SETTINGS_PATH;
 use porter_infer::{ModelRef, Slot, tier_label};
+use porter_router::local::LocalModel;
+use std::collections::BTreeMap;
 
 /// The picker value that is Automatic.
 const AUTO: &str = "auto";
