@@ -249,6 +249,7 @@ impl Daemon {
         let table = porter_dbus::load_callers(&paths.callers_system, &paths.callers_user)?;
         let connection = bus.connect().await.map_err(StartError::Bus)?;
         let callers = Arc::new(match proc_root {
+            #[cfg(feature = "test-proc-root")]
             Some(root) => {
                 eprintln!(
                     "syncd: reading callers from {} (test-proc-root build)",
@@ -256,7 +257,7 @@ impl Daemon {
                 );
                 ProcCallers::with_proc_root(connection.clone(), table, root)
             }
-            None => ProcCallers::new(connection.clone(), table),
+            _ => ProcCallers::new(connection.clone(), table),
         });
         let hub = Hub::default();
 

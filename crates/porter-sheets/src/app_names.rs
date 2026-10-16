@@ -139,6 +139,7 @@ mod tests {
                 app: app(id),
                 unit: None,
                 role: CallerRole::App,
+                exe: Vec::new(),
                 name: Some(AppTitle(title.to_owned())),
             }],
         }

@@ -1,16 +1,14 @@
-//! `ProcCallers` over fixture `/proc` trees (the pure resolution) and a
-//! private bus where an unidentified sender is refused. Nothing reads the real `/proc` or
-//! `/etc`: the roots and the table paths are the test's own.
+//! `ProcCallers` over fixture `/proc` trees (peephole's judgement of a process, then the table's
+//! roles) and a private bus where an unidentified sender is refused. Nothing reads the real
+//! `/proc` or `/etc`: the roots and the table paths are the test's own. Needs feature
+//! `test-proc-root` (main.rs declares this module only then).
 
 #[path = "callers/bus.rs"]
 mod bus;
 
 use bus::PrivateBus;
 use porter_core::Isolation;
-use porter_dbus::{
-    Caller, CallerRole, CallerTable, Callers, LOADER_VARIABLES, MainPids, ProcCallers, UnitOrigins,
-    UnitRule,
-};
+use porter_dbus::{Caller, CallerRole, CallerTable, Callers, ProcCallers};
 use porter_fake::Scratch;
 use std::path::Path;
 
@@ -45,6 +43,12 @@ impl Procs {
         std::fs::write(root.join(".flatpak-info"), info).expect("flatpak-info");
     }
 
+    /// Process `pid` runs the program `image` (a root-owned one, as the fixture world has them).
+    fn image(&self, pid: u32, image: &str) {
+        let link = self.0.join(pid.to_string()).join("exe");
+        std::os::unix::fs::symlink(image, link).expect("exe link");
+    }
+
     /// Process `pid` is the main process of the service `unit`.
     fn main_of(&self, unit: &str, pid: u32) {
         let units = self.0.join("units");
@@ -61,9 +65,12 @@ fn table() -> CallerTable {
         {"app": "org.quire.Sill", "role": "sheet_host"},
         {"app": "org.quire.Inference", "unit": "inferd.service", "role": "porter_daemon"},
         {"app": "org.example.Sheets", "role": "sheet_host"},
-        {"app": "org.quire.Shell", "unit": "sill-shell.scope", "role": "sheet_host"},
-        {"app": "org.quire.Shell", "unit": "sill.service", "role": "sheet_host"},
-        {"app": "org.example.Odd", "unit": "odd.scope", "role": "settings"},
+        {"app": "org.quire.Shell", "unit": "sill-shell.scope", "role": "sheet_host",
+         "exe": ["/usr/bin/sill"]},
+        {"app": "org.quire.Shell", "unit": "sill.service", "role": "sheet_host",
+         "exe": ["/usr/bin/sill"]},
+        {"app": "org.example.Odd", "unit": "odd.scope", "role": "settings",
+         "exe": ["/usr/bin/odd"]},
         {"app": "org.quire.Trap", "unit": "app-org.quire.Trap-1.scope", "role": "settings"},
     ]}))
     .expect("table")
@@ -147,6 +154,7 @@ fn a_process_is_named_by_its_scope_or_unit() {
                 CallerRole::App,
             ),
         ),
+        // Fixed-role services, shown to be their units' main processes: they keep the role.
         (
             16,
             got(
@@ -171,6 +179,16 @@ fn a_process_is_named_by_its_scope_or_unit() {
     for (pid, want) in cases {
         assert_eq!(resolve(&s, pid), want, "pid {pid}");
     }
+}
+
+#[test]
+fn a_scope_app_is_unsandboxed_and_a_flatpak_is_flatpak() {
+    let s = Procs::new();
+    s.process(80, Some(&scope("app-org.example.Mail-1.scope")));
+    s.process(81, Some(&scope("app-flatpak-org.example.Photos-2.scope")));
+    s.flatpak(81, "org.example.Photos");
+    assert_eq!(resolve(&s, 80).map(|c| c.1), Some(Isolation::Unsandboxed));
+    assert_eq!(resolve(&s, 81).map(|c| c.1), Some(Isolation::Flatpak));
 }
 
 #[test]
@@ -204,6 +222,7 @@ fn a_scope_named_after_a_daemons_app_is_an_app() {
 fn a_scope_a_row_names_as_its_unit_is_that_unit_exactly_and_no_more_than_an_app() {
     let s = Procs::new();
     s.process(40, Some(&scope("sill-shell.scope")));
+    s.image(40, "/usr/bin/sill");
     s.process(41, Some(&scope("sill-shell-2.scope")));
     s.process(42, Some(&scope("xsill-shell.scope")));
     // An app scope never takes a unit row's role, even one naming it exactly.
@@ -222,26 +241,35 @@ fn a_scope_a_row_names_as_its_unit_is_that_unit_exactly_and_no_more_than_an_app(
 }
 
 #[test]
-fn the_shell_as_a_service_counts_only_as_the_units_main_process() {
+fn the_shell_as_a_service_keeps_its_role_only_as_the_units_main_process() {
     let s = Procs::new();
     let unit = "/user.slice/user-1000.slice/user@1000.service/app.slice/sill.service";
     s.process(60, Some(unit));
     s.process(61, Some(unit));
+    s.image(60, "/usr/bin/sill");
+    s.image(61, "/usr/bin/sill");
     s.main_of("sill.service", 60);
-    let shell = got(
-        "org.quire.Shell",
-        Isolation::Unsandboxed,
-        CallerRole::SheetHost,
+    assert_eq!(
+        resolve(&s, 60),
+        got(
+            "org.quire.Shell",
+            Isolation::Unsandboxed,
+            CallerRole::SheetHost
+        )
     );
-    assert_eq!(resolve(&s, 60), shell);
-    // Another process moved into the cgroup is not the main process.
-    assert_eq!(resolve(&s, 61), None);
+    // The genuine program in the unit's cgroup that is not its main process: shown by its
+    // program only, so a plain app.
+    assert_eq!(
+        resolve(&s, 61),
+        got("org.quire.Shell", Isolation::Unsandboxed, CallerRole::App)
+    );
 }
 
 #[test]
 fn a_scope_row_not_marked_as_a_transition_gives_no_fixed_role() {
     let s = Procs::new();
     s.process(62, Some(&scope("odd.scope")));
+    s.image(62, "/usr/bin/odd");
     assert_eq!(
         resolve(&s, 62),
         got("org.example.Odd", Isolation::Unsandboxed, CallerRole::App)
@@ -269,67 +297,47 @@ fn a_process_nothing_names_is_nobody() {
 }
 
 #[test]
-fn an_unreadable_root_is_no_sandbox_and_a_flatpak_scope_then_proves_nothing() {
+fn an_unreadable_sandbox_root_is_nobody_whatever_the_cgroup_says() {
     use std::os::unix::fs::PermissionsExt;
     let s = Procs::new();
     s.process(50, Some(&scope("app-flatpak-org.example.Photos-5.scope")));
     s.process(51, Some("/system.slice/inferd.service"));
     s.process(52, Some(&scope("app-org.example.Mail-4242.scope")));
     s.main_of("inferd.service", 51);
-    // `exe` and `root` are there and unreadable, as ptrace-gated entries are under Landlock;
-    // `exe` is never read.
+    // `root` is there and unreadable, as ptrace-gated entries are under Landlock.
     for pid in [50, 51, 52] {
-        let dir = s.path().join(pid.to_string());
-        for entry in ["exe", "root"] {
-            std::fs::create_dir(dir.join(entry)).expect("entry");
-            std::fs::set_permissions(dir.join(entry), std::fs::Permissions::from_mode(0o0))
-                .expect("chmod");
-        }
+        let root = s.path().join(pid.to_string()).join("root");
+        std::fs::create_dir(&root).expect("root");
+        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o0)).expect("chmod");
     }
-    // The scope's name alone is no proof of a Flatpak app (sec-3 c).
-    assert_eq!(resolve(&s, 50), None);
-    assert_eq!(
-        resolve(&s, 51),
-        got(
-            "org.quire.Inference",
-            Isolation::Unsandboxed,
-            CallerRole::PorterDaemon
-        )
-    );
-    assert_eq!(
-        resolve(&s, 52),
-        got("org.example.Mail", Isolation::Unsandboxed, CallerRole::App)
-    );
     for pid in [50, 51, 52] {
-        for entry in ["exe", "root"] {
-            let path = s.path().join(pid.to_string()).join(entry);
-            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
-        }
+        assert_eq!(resolve(&s, pid), None, "pid {pid}");
+    }
+    for pid in [50, 51, 52] {
+        let root = s.path().join(pid.to_string()).join("root");
+        std::fs::set_permissions(root, std::fs::Permissions::from_mode(0o755)).expect("chmod");
     }
 }
 
 #[test]
-fn a_flatpak_app_is_named_by_its_metadata_and_never_by_its_scope() {
+fn a_flatpak_app_is_named_by_its_metadata_checked_against_its_scope() {
     let s = Procs::new();
     // A Flatpak scope with no metadata: any program can start a scope by that name.
     s.process(60, Some(&scope("app-flatpak-org.example.Photos-5.scope")));
-    // Metadata in another app's native scope, or in a daemon's unit as its main process: the
-    // sandbox's word wins, and a sandboxed process gets no row's unit or app role.
+    // Metadata that disagrees with the cgroup (another app's scope, a daemon's unit): nobody.
     s.process(61, Some(&scope("app-org.quire.Settings-1.scope")));
     s.flatpak(61, "org.example.Photos");
     s.process(62, Some("/system.slice/inferd.service"));
     s.flatpak(62, "org.example.Photos");
     s.main_of("inferd.service", 62);
-    // Metadata that is there and names no application: nobody, in any scope.
+    // Metadata that names no application: nobody, in any scope.
     s.process(63, Some(&scope("app-org.example.Mail-1.scope")));
     let root = s.path().join("63/root");
     std::fs::create_dir_all(&root).expect("root");
     std::fs::write(root.join(".flatpak-info"), "[Instance]\ninstance-id=1\n").expect("info");
-    let photos = got("org.example.Photos", Isolation::Flatpak, CallerRole::App);
-    assert_eq!(resolve(&s, 60), None);
-    assert_eq!(resolve(&s, 61), photos);
-    assert_eq!(resolve(&s, 62), photos);
-    assert_eq!(resolve(&s, 63), None);
+    for pid in [60, 61, 62, 63] {
+        assert_eq!(resolve(&s, pid), None, "pid {pid}");
+    }
 }
 
 #[test]
@@ -338,7 +346,8 @@ fn a_service_role_goes_only_to_the_units_main_process() {
     let unit = "/user.slice/user@1000.service/app.slice/inferd.service";
     s.process(70, Some(unit));
     s.main_of("inferd.service", 70);
-    // Another process of the person's that moved itself into the unit's cgroup (sec-3 b).
+    // Another process of the person's that moved itself into the unit's cgroup: it runs no
+    // program of the row.
     s.process(71, Some(unit));
     // A unit whose main process nothing states (not running, or no manager to ask).
     s.process(72, Some("/system.slice/cuad.service"));
@@ -352,6 +361,18 @@ fn a_service_role_goes_only_to_the_units_main_process() {
     );
     assert_eq!(resolve(&s, 71), None);
     assert_eq!(resolve(&s, 72), None);
+}
+
+#[test]
+fn a_service_whose_program_is_not_the_rows_is_nobody() {
+    let s = Procs::new();
+    s.process(
+        90,
+        Some("/user.slice/user@1000.service/app.slice/inferd.service"),
+    );
+    s.image(90, "/usr/bin/other");
+    s.main_of("inferd.service", 90);
+    assert_eq!(resolve(&s, 90), None);
 }
 
 #[tokio::test]
@@ -379,175 +400,41 @@ async fn on_a_private_bus_an_unidentified_sender_is_refused_and_an_identified_on
         ("org.example.Mail", Isolation::Unsandboxed, CallerRole::App)
     );
 
-    // And as a listed app.
+    // And as a listed Flatpak app.
     s.process(pid, Some(&scope("app-flatpak-org.example.Sheets-3.scope")));
     s.flatpak(pid, "org.example.Sheets");
     let sheets: Option<Caller> = callers.caller_of(&sender).await;
     assert_eq!(sheets.map(|c| c.role), Some(CallerRole::SheetHost));
 }
 
-/// The systemd manager, as far as `ProcCallers` asks it: `GetUnit` for the units it was given,
-/// each with its `Service.MainPID`.
-mod fake_systemd {
-    use std::collections::BTreeMap;
-    use std::sync::{Arc, Mutex};
-    use zbus::zvariant::OwnedObjectPath;
-
-    /// Each loaded unit's main process, which the test may change.
-    pub type Units = Arc<Mutex<BTreeMap<String, u32>>>;
-
-    pub struct Manager(Units);
-
-    fn path_of(unit: &str) -> OwnedObjectPath {
-        let escaped: String = unit
-            .bytes()
-            .map(|b| match b {
-                b if b.is_ascii_alphanumeric() => char::from(b).to_string(),
-                b => format!("_{b:02x}"),
-            })
-            .collect();
-        OwnedObjectPath::try_from(format!("/org/freedesktop/systemd1/unit/{escaped}"))
-            .expect("path")
-    }
-
-    #[zbus::interface(name = "org.freedesktop.systemd1.Manager")]
-    impl Manager {
-        #[zbus(name = "GetUnit")]
-        fn get_unit(&self, unit: &str) -> zbus::fdo::Result<OwnedObjectPath> {
-            match self.0.lock().expect("units").contains_key(unit) {
-                true => Ok(path_of(unit)),
-                false => Err(zbus::fdo::Error::Failed(format!("Unit {unit} not loaded."))),
-            }
-        }
-    }
-
-    pub struct Service {
-        unit: String,
-        units: Units,
-    }
-
-    #[zbus::interface(name = "org.freedesktop.systemd1.Service")]
-    impl Service {
-        #[zbus(property, name = "MainPID")]
-        fn main_pid(&self) -> u32 {
-            self.units
-                .lock()
-                .expect("units")
-                .get(&self.unit)
-                .copied()
-                .unwrap_or(0)
-        }
-    }
-
-    /// Serves the manager for `units` on `connection` under the manager's name.
-    pub async fn serve(connection: &zbus::Connection, units: Units) {
-        let objects = connection.object_server();
-        let loaded: Vec<String> = units.lock().expect("units").keys().cloned().collect();
-        for unit in loaded {
-            let service = Service {
-                unit: unit.clone(),
-                units: Arc::clone(&units),
-            };
-            objects.at(path_of(&unit), service).await.expect("unit");
-        }
-        objects
-            .at("/org/freedesktop/systemd1", Manager(units))
-            .await
-            .expect("manager");
-        connection
-            .request_name("org.freedesktop.systemd1")
-            .await
-            .expect("name");
-    }
-}
-
 #[tokio::test]
-async fn on_a_private_bus_a_service_is_its_unit_only_as_the_managers_main_process() {
+async fn on_a_private_bus_a_service_is_its_unit_only_as_the_units_main_process() {
     let s = Procs::new();
     let bus = PrivateBus::start();
     let client = bus.connect().await;
     let sender = client.unique_name().expect("unique name").to_string();
     let service = bus.connect().await;
-    let manager = bus.connect().await;
     let pid = std::process::id();
     s.process(
         pid,
         Some("/user.slice/user@1000.service/app.slice/inferd.service"),
     );
-    // The fixture says this process is the main process; the manager is asked instead.
+    let callers = ProcCallers::with_proc_root(service.clone(), table(), s.path().to_owned());
+
+    // The tree states no main process: this one only moved in.
+    assert_eq!(callers.caller_of(&sender).await, None);
+    s.main_of("inferd.service", pid + 1);
+    assert_eq!(callers.caller_of(&sender).await, None);
+
+    // The tree names this process.
     s.main_of("inferd.service", pid);
-    let callers = ProcCallers::with_proc_root(service.clone(), table(), s.path().to_owned())
-        .with_main_pids(MainPids::Manager);
-
-    // No manager on the bus: no service is anyone.
-    assert_eq!(callers.caller_of(&sender).await, None);
-
-    // The manager names another process as the unit's main one: this one only moved in.
-    let units: fake_systemd::Units = Default::default();
-    units
-        .lock()
-        .expect("units")
-        .insert("inferd.service".to_owned(), pid + 1);
-    fake_systemd::serve(&manager, std::sync::Arc::clone(&units)).await;
-    assert_eq!(callers.caller_of(&sender).await, None);
-
-    // The manager names this process.
-    units
-        .lock()
-        .expect("units")
-        .insert("inferd.service".to_owned(), pid);
     let caller = callers.caller_of(&sender).await.expect("the daemon");
     assert_eq!(
         (caller.app.name.as_str(), caller.role),
         ("org.quire.Inference", CallerRole::PorterDaemon)
     );
 
-    // A unit the manager has not loaded is nobody's.
+    // A unit the tree has not loaded is nobody's.
     s.process(pid, Some("/system.slice/cuad.service"));
-    s.main_of("cuad.service", pid);
     assert_eq!(callers.caller_of(&sender).await, None);
-}
-
-/// A fixed-role service is judged by the origin its fixture states: a drop-in outside the trusted
-/// directory lowers it to a plain app, a trusted one keeps the role, and so does a unit with no
-/// stated origin.
-#[test]
-fn a_fixed_role_service_with_a_bad_drop_in_is_a_plain_app() {
-    let s = Procs::new();
-    let trusted = s.path().join("trusted");
-    let home = s.path().join("home");
-    for dir in [
-        &trusted,
-        &home,
-        &trusted.join("inferd.service.d"),
-        &home.join("inferd.service.d"),
-    ] {
-        std::fs::create_dir_all(dir).expect("dir");
-    }
-    std::fs::write(trusted.join("inferd.service"), "").expect("unit");
-    std::fs::write(trusted.join("inferd.service.d/10.conf"), "").expect("good drop-in");
-    std::fs::write(home.join("inferd.service.d/10.conf"), "").expect("bad drop-in");
-    s.process(5, Some(&scope("inferd.service")));
-    s.main_of("inferd.service", 5);
-    let origin = |drop_in: &Path| {
-        let unset = LOADER_VARIABLES.join(" ");
-        let text = format!(
-            "invocation=1\nfragment={}\ndrop_in={}\nunset={unset}\n",
-            trusted.join("inferd.service").display(),
-            drop_in.display()
-        );
-        std::fs::write(s.path().join("units/inferd.service.origin"), text).expect("origin");
-    };
-    let rule = UnitRule::new(vec![trusted.clone()], |_| true);
-    let origins = UnitOrigins::Fixture {
-        dir: s.path().to_owned(),
-        rule,
-    };
-    let role = || ProcCallers::caller_of_pid_with(s.path(), 5, &table(), &origins).map(|c| c.role);
-    // No stated origin: not judged.
-    assert_eq!(role(), Some(CallerRole::PorterDaemon));
-    origin(&trusted.join("inferd.service.d/10.conf"));
-    assert_eq!(role(), Some(CallerRole::PorterDaemon));
-    origin(&home.join("inferd.service.d/10.conf"));
-    assert_eq!(role(), Some(CallerRole::App));
 }

@@ -285,6 +285,7 @@ mod tests {
                 app: AppName::parse("org.quire.Mail").expect("name"),
                 unit: None,
                 role: CallerRole::App,
+                exe: Vec::new(),
                 name: Some(AppTitle("Mail".to_owned())),
             }],
         };
