@@ -1,6 +1,7 @@
 //! The engine programs this computer lacks, as the picker says them: a person who sees no model
 //! on this computer is told which program would run one, in plain words and never a path.
 
+use model_catalog::EngineKind;
 use porter_infer::Slot;
 use porter_router::local::EngineConfig;
 use std::path::Path;
@@ -21,8 +22,18 @@ pub enum Engine {
 impl Engine {
     const ALL: [Engine; 4] = [Self::LlamaCpp, Self::Vllm, Self::Speech, Self::Kokoro];
 
+    /// The engine a catalogue profile of `kind` starts.
+    pub(super) fn of(kind: EngineKind) -> Self {
+        match kind {
+            EngineKind::LlamaServer => Self::LlamaCpp,
+            EngineKind::Vllm => Self::Vllm,
+            EngineKind::SpeechHost => Self::Speech,
+            EngineKind::KokoroFastApi => Self::Kokoro,
+        }
+    }
+
     /// What the person calls it.
-    fn name(self) -> &'static str {
+    pub(super) fn name(self) -> &'static str {
         match self {
             Self::LlamaCpp => "llama.cpp",
             Self::Vllm => "vLLM",
@@ -112,5 +123,19 @@ mod tests {
         let llama_here = MissingEngines(vec![Engine::Vllm, Engine::Speech, Engine::Kokoro]);
         assert_eq!(llama_here.note(Slot::Text), None);
         assert_eq!(MissingEngines::default().note(Slot::VoiceOut), None);
+    }
+
+    #[test]
+    fn a_catalogue_engine_kind_is_named_as_the_notes_name_it() {
+        let names: Vec<&str> = [
+            EngineKind::LlamaServer,
+            EngineKind::Vllm,
+            EngineKind::SpeechHost,
+            EngineKind::KokoroFastApi,
+        ]
+        .into_iter()
+        .map(|kind| Engine::of(kind).name())
+        .collect();
+        assert_eq!(names, ["llama.cpp", "vLLM", "the speech engine", "Kokoro"]);
     }
 }
