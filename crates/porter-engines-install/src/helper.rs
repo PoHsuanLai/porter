@@ -158,7 +158,13 @@ impl Helper {
         let row = self
             .manifest
             .row(request.engine, self.arch, request.backend);
-        if let Some((source, program)) = self.package(request.engine) {
+        // A distro's package is the processor-only build; for a graphics card the pinned build of
+        // the backend asked for is the one that uses it.
+        let packaged = match (request.backend, row) {
+            (Backend::Cpu, _) | (_, None) => self.package(request.engine),
+            _ => None,
+        };
+        if let Some((source, program)) = packaged {
             match install_package(&program, source, cancel).await {
                 Ok(()) => return Report::Done,
                 Err(Failure::Cancelled) => return Report::Failed(Failure::Cancelled),
