@@ -826,7 +826,7 @@ async fn availability_says_granted_for_an_app_with_a_grant_and_needs_consent_for
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_picker_lists_every_hosted_model_by_company_and_marks_the_ones_no_account_reaches() {
-    use ds_settings::live::LiveClient;
+    use ds_settings::live::{AnyOwner, LiveClient};
     use ds_settings::schema::{KeyKind, KeyPath};
     use inferd::peers::{Caller, Role};
 
@@ -868,8 +868,8 @@ async fn the_picker_lists_every_hosted_model_by_company_and_marks_the_ones_no_ac
             &settings,
             porter_dbus::INFERENCE_BUS,
             porter_dbus::INFERENCE_SETTINGS_PATH,
+            AnyOwner,
         )
-        .await
         .expect("client");
         let schema = live.describe().await.expect("schema");
         schema.check().expect("a clean schema");

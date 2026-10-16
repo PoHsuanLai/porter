@@ -293,7 +293,7 @@ pub fn refusal_name(refusal: Refusal) -> String {
 pub const ACCESS_DENIED: &str = "org.freedesktop.DBus.Error.AccessDenied";
 pub const UNKNOWN_OBJECT: &str = "org.freedesktop.DBus.Error.UnknownObject";
 
-use ds_settings::live::LiveClient;
+use ds_settings::live::{AnyOwner, LiveClient};
 use ds_settings::schema::KeyPath;
 
 /// A client of the settings module as `who`.
@@ -303,8 +303,8 @@ pub async fn settings_as(rig: &Rig, who: Caller) -> LiveClient {
         &connection,
         "org.quire.Accounts1",
         &accountd::settings_path(),
+        AnyOwner,
     )
-    .await
     .expect("client")
 }
 

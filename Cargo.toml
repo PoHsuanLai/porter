@@ -80,7 +80,7 @@ storage-gdrive  = { path = "crates/storage-gdrive" }
 
 # quire's live settings modules (`org.quire.SettingsModule1`), for accountd only: the one porter -> quire
 # edge (ARCHITECTURE section 1). By git at quire's pinned rev (a local checkout overrides it: ARCHITECTURE section 1); `live` is the module, `tokio` drives its zbus.
-ds-settings     = { git = "https://github.com/PoHsuanLai/quire.git", rev = "5a2e0742e26f279e7708ba8af4ee24622e837d57", features = ["live", "tokio"] }
+ds-settings     = { git = "https://github.com/PoHsuanLai/quire.git", rev = "c73d323f8e8d281455f6d909d308fac9bbe597f3", features = ["live", "tokio"] }
 
 # peephole: which program is calling (a pinned process, the unit manager's word, a root-owned table),
 # by git tag, never by path. porter-dbus's `ProcCallers` is built over it. peephole-bus runs on zbus's

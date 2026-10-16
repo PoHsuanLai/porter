@@ -4,7 +4,7 @@
 
 use crate::hosting;
 
-use ds_settings::live::{LiveClient, LiveError, LiveSchema};
+use ds_settings::live::{AnyOwner, LiveClient, LiveError, LiveSchema};
 use ds_settings::schema::{AgentSetting, ChoicePlace, ChoiceWord, KeyKind, KeyPath, Page};
 use hosting::bus::{PrivateBus, within};
 use inferd::audit::Memory;
@@ -98,8 +98,7 @@ impl Rig {
     }
 
     async fn live(&self, connection: &Connection) -> LiveClient {
-        LiveClient::new(connection, INFERENCE_BUS, INFERENCE_SETTINGS_PATH)
-            .await
+        LiveClient::new(connection, INFERENCE_BUS, INFERENCE_SETTINGS_PATH, AnyOwner)
             .expect("client")
     }
 }
@@ -175,8 +174,7 @@ async fn the_settings_module_answers_a_call_made_as_soon_as_the_name_is_owned() 
     .expect("the owner change");
     // At once: no wait between seeing the name and calling the module.
     let describe = async {
-        LiveClient::new(&client, INFERENCE_BUS, INFERENCE_SETTINGS_PATH)
-            .await?
+        LiveClient::new(&client, INFERENCE_BUS, INFERENCE_SETTINGS_PATH, AnyOwner)?
             .describe()
             .await
     };
@@ -582,9 +580,8 @@ async fn a_slot_with_no_model_here_notes_which_missing_program_would_run_one() {
         client.unique_name().expect("name").as_str(),
         who("org.quire.Settings", Role::Settings),
     );
-    let settings = LiveClient::new(&client, INFERENCE_BUS, INFERENCE_SETTINGS_PATH)
-        .await
-        .expect("client");
+    let settings =
+        LiveClient::new(&client, INFERENCE_BUS, INFERENCE_SETTINGS_PATH, AnyOwner).expect("client");
     let schema = settings.describe().await.expect("schema");
     let row = schema
         .key

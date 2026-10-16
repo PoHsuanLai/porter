@@ -38,6 +38,7 @@ toml = { workspace = true }
 zbus = { workspace = true }
 
 [dev-dependencies]
+ds-settings = { workspace = true, features = ["testing"] }
 syncd = { path = ".", features = ["testing"] }
 base64 = { workspace = true }
 porter-fake = { workspace = true }

@@ -9,7 +9,7 @@
 use crate::common;
 
 use common::*;
-use ds_settings::live::LiveClient;
+use ds_settings::live::{AnyOwner, LiveClient};
 use ds_settings::schema::KeyPath;
 use porter_core::{SecretKey, SecretPurpose};
 use porter_dbus::{AccountProxy, CallerRole, IdentitiesProxy, account_path};
@@ -93,8 +93,8 @@ async fn acceptance_8_removal_leaves_nothing_and_the_reader_is_told() {
         &connection,
         "org.quire.Accounts1",
         &accountd::settings_path(),
+        AnyOwner,
     )
-    .await
     .expect("client");
     settings
         .invoke(&KeyPath("accounts.fake-storage.remove".into()))

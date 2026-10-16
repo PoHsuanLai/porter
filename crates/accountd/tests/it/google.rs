@@ -268,8 +268,8 @@ impl World {
             &connection,
             "org.quire.Accounts1",
             &accountd::settings_path(),
+            ds_settings::live::AnyOwner,
         )
-        .await
         .expect("client")
     }
 
