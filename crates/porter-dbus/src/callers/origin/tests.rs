@@ -7,7 +7,12 @@ struct Tree(Scratch);
 impl Tree {
     fn new() -> Self {
         let tree = Self(Scratch::new("origin"));
-        for dir in ["sys/x.service.d", "home/x.service.d", "run/x.service.d", "sys/wrong"] {
+        for dir in [
+            "sys/x.service.d",
+            "home/x.service.d",
+            "run/x.service.d",
+            "sys/wrong",
+        ] {
             std::fs::create_dir_all(tree.0.path().join(dir)).expect("dir");
         }
         tree
@@ -48,7 +53,11 @@ fn a_trusted_fragment_with_trusted_drop_ins_keeps_its_role() {
         t.file("sys/x.service"),
         vec![t.file("sys/x.service.d/10.conf")],
     );
-    assert_eq!(t.rule().judge("x.service", &facts(definition, &LOADER_VARIABLES)), Ok(()));
+    assert_eq!(
+        t.rule()
+            .judge("x.service", &facts(definition, &LOADER_VARIABLES)),
+        Ok(())
+    );
 }
 
 #[test]
@@ -58,14 +67,45 @@ fn a_definition_from_anywhere_else_is_refused() {
     let dir = t.0.path().to_owned();
     let all = &LOADER_VARIABLES;
     let cases = [
-        ("home fragment", stored(t.file("home/x.service"), vec![]), Refusal::Fragment(dir.join("home/x.service"))),
-        ("runtime drop-in", stored(good.clone(), vec![t.file("run/x.service.d/10.conf")]), Refusal::DropIn(dir.join("run/x.service.d/10.conf"))),
-        ("home drop-in", stored(good.clone(), vec![t.file("home/x.service.d/10.conf")]), Refusal::DropIn(dir.join("home/x.service.d/10.conf"))),
+        (
+            "home fragment",
+            stored(t.file("home/x.service"), vec![]),
+            Refusal::Fragment(dir.join("home/x.service")),
+        ),
+        (
+            "runtime drop-in",
+            stored(good.clone(), vec![t.file("run/x.service.d/10.conf")]),
+            Refusal::DropIn(dir.join("run/x.service.d/10.conf")),
+        ),
+        (
+            "home drop-in",
+            stored(good.clone(), vec![t.file("home/x.service.d/10.conf")]),
+            Refusal::DropIn(dir.join("home/x.service.d/10.conf")),
+        ),
         ("transient", Definition::Transient, Refusal::Transient),
-        ("no fragment", Definition::Stored { fragment: None, drop_ins: vec![] }, Refusal::NoFragment),
-        ("not root-held", stored(t.file("sys/not-root.service"), vec![]), Refusal::Fragment(dir.join("sys/not-root.service"))),
-        ("another unit's drop-in dir", stored(good.clone(), vec![t.file("sys/wrong/10.conf")]), Refusal::DropIn(dir.join("sys/wrong/10.conf"))),
-        ("a .. path out of the directory", stored(dir.join("sys/../home/x.service"), vec![]), Refusal::Fragment(dir.join("sys/../home/x.service"))),
+        (
+            "no fragment",
+            Definition::Stored {
+                fragment: None,
+                drop_ins: vec![],
+            },
+            Refusal::NoFragment,
+        ),
+        (
+            "not root-held",
+            stored(t.file("sys/not-root.service"), vec![]),
+            Refusal::Fragment(dir.join("sys/not-root.service")),
+        ),
+        (
+            "another unit's drop-in dir",
+            stored(good.clone(), vec![t.file("sys/wrong/10.conf")]),
+            Refusal::DropIn(dir.join("sys/wrong/10.conf")),
+        ),
+        (
+            "a .. path out of the directory",
+            stored(dir.join("sys/../home/x.service"), vec![]),
+            Refusal::Fragment(dir.join("sys/../home/x.service")),
+        ),
     ];
     for (what, definition, want) in cases {
         let got = t.rule().judge("x.service", &facts(definition, all));
@@ -77,7 +117,10 @@ fn a_definition_from_anywhere_else_is_refused() {
 fn a_failed_lookup_and_a_missing_file_are_refused() {
     let t = Tree::new();
     let gone = t.0.path().join("sys/gone.service");
-    let got = t.rule().judge("x.service", &facts(stored(gone.clone(), vec![]), &LOADER_VARIABLES));
+    let got = t.rule().judge(
+        "x.service",
+        &facts(stored(gone.clone(), vec![]), &LOADER_VARIABLES),
+    );
     assert_eq!(got, Err(Refusal::Fragment(gone)));
     assert!(Refusal::Unknown.to_string().contains("did not describe"));
 }
@@ -93,9 +136,15 @@ fn a_unit_must_clear_every_loader_variable() {
     );
     assert_eq!(
         t.rule().judge("x.service", &facts(unit(), &[])),
-        Err(Refusal::Unset(LOADER_VARIABLES.iter().map(|n| (*n).to_owned()).collect()))
+        Err(Refusal::Unset(
+            LOADER_VARIABLES.iter().map(|n| (*n).to_owned()).collect()
+        ))
     );
-    assert_eq!(t.rule().judge("x.service", &facts(unit(), &LOADER_VARIABLES)), Ok(()));
+    assert_eq!(
+        t.rule()
+            .judge("x.service", &facts(unit(), &LOADER_VARIABLES)),
+        Ok(())
+    );
 }
 
 #[test]
@@ -116,9 +165,17 @@ fn drop_in_directories_follow_systemds_names() {
 
 #[test]
 fn a_fixture_states_its_facts_in_lines() {
-    let got = facts_from_text("invocation=ab\nfragment=/f\ndrop_in=/d1\ndrop_in=/d2\nunset=A B\nunset=C\n");
+    let got = facts_from_text(
+        "invocation=ab\nfragment=/f\ndrop_in=/d1\ndrop_in=/d2\nunset=A B\nunset=C\n",
+    );
     assert_eq!(got.unset, ["A", "B", "C"]);
     assert_eq!(got.invocation, "ab");
-    assert_eq!(got.definition, stored(PathBuf::from("/f"), vec!["/d1".into(), "/d2".into()]));
-    assert_eq!(facts_from_text("transient\n").definition, Definition::Transient);
+    assert_eq!(
+        got.definition,
+        stored(PathBuf::from("/f"), vec!["/d1".into(), "/d2".into()])
+    );
+    assert_eq!(
+        facts_from_text("transient\n").definition,
+        Definition::Transient
+    );
 }

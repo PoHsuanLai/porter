@@ -351,7 +351,14 @@ impl ProcCallers {
             procfs::Found::Service { unit, caller } => {
                 (procfs::fixture_main_pid(proc_root, &unit) == Some(pid)).then_some(())?;
                 let keeps = !caller.role.is_fixed() || origins.judge_fixture(&unit).is_ok();
-                Some(if keeps { caller } else { Caller { role: CallerRole::App, ..caller } })
+                Some(if keeps {
+                    caller
+                } else {
+                    Caller {
+                        role: CallerRole::App,
+                        ..caller
+                    }
+                })
             }
         }
     }
@@ -380,7 +387,11 @@ impl ProcCallers {
         if !caller.role.is_fixed() {
             return caller;
         }
-        match self.guard.check(&self.origins, &self.connection, unit).await {
+        match self
+            .guard
+            .check(&self.origins, &self.connection, unit)
+            .await
+        {
             Ok(()) => caller,
             Err(_) => Caller {
                 role: CallerRole::App,

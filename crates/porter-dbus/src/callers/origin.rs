@@ -65,7 +65,7 @@ pub const TRUSTED_DIRS: [&str; 3] = [
 /// ```text
 /// UnsetEnvironment=LD_PRELOAD LD_LIBRARY_PATH LD_AUDIT GCONV_PATH GIO_EXTRA_MODULES GTK_MODULES GTK_PATH GST_PLUGIN_PATH GST_PLUGIN_SYSTEM_PATH LIBGL_DRIVERS_PATH MESA_LOADER_DRIVER_OVERRIDE __EGL_VENDOR_LIBRARY_DIRS __EGL_VENDOR_LIBRARY_FILENAMES GBM_BACKENDS_PATH LIBVA_DRIVERS_PATH VK_ICD_FILENAMES VK_DRIVER_FILES VK_ADD_DRIVER_FILES VK_LAYER_PATH VK_ADD_LAYER_PATH VK_INSTANCE_LAYERS VK_LOADER_LAYERS_ENABLE
 /// ```
-pub const LOADER_VARIABLES: [&str; 21] = [
+pub const LOADER_VARIABLES: [&str; 22] = [
     "LD_PRELOAD",
     "LD_LIBRARY_PATH",
     "LD_AUDIT",
@@ -141,8 +141,16 @@ impl fmt::Display for Refusal {
             Self::Unknown => write!(f, "the systemd user manager did not describe the unit"),
             Self::Transient => write!(f, "it is a transient unit"),
             Self::NoFragment => write!(f, "it has no unit file"),
-            Self::Fragment(p) => write!(f, "its unit file {} is not root-held in a system unit directory", p.display()),
-            Self::DropIn(p) => write!(f, "its drop-in {} is not root-held in a system unit directory", p.display()),
+            Self::Fragment(p) => write!(
+                f,
+                "its unit file {} is not root-held in a system unit directory",
+                p.display()
+            ),
+            Self::DropIn(p) => write!(
+                f,
+                "its drop-in {} is not root-held in a system unit directory",
+                p.display()
+            ),
             Self::Unset(names) => write!(f, "UnsetEnvironment= lacks {}", names.join(" ")),
         }
     }
@@ -179,10 +187,7 @@ impl UnitRule {
         self.in_dir(fragment, |_| true)
             .then_some(())
             .ok_or_else(|| Refusal::Fragment(fragment.to_owned()))?;
-        if let Some(bad) = drop_ins
-            .iter()
-            .find(|path| !self.in_dir_d(path, unit))
-        {
+        if let Some(bad) = drop_ins.iter().find(|path| !self.in_dir_d(path, unit)) {
             return Err(Refusal::DropIn(bad.clone()));
         }
         let missing: Vec<String> = LOADER_VARIABLES

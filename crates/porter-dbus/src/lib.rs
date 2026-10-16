@@ -62,8 +62,9 @@ pub use agents::{
 pub use args::{CandidateArg, Details, NeedArg};
 #[doc = "These live in [`callers`] now; this path stays for one more batch."]
 pub use callers::{
-    AppTitle, Caller, CallerRole, CallerRow, CallerTable, Callers, MainPids, ProcCallers, SYSTEMD,
-    SYSTEMD_MANAGER, SYSTEMD_PATH,
+    AppTitle, Caller, CallerRole, CallerRow, CallerTable, Callers, Definition, LOADER_VARIABLES,
+    MainPids, ProcCallers, Refusal, SYSTEMD, SYSTEMD_MANAGER, SYSTEMD_PATH, TRUSTED_DIRS,
+    UnitFacts, UnitOrigins, UnitRule,
 };
 #[cfg(feature = "callers-file")]
 #[doc = "These live in [`callers`] now (feature `callers-file`); this path stays for one more batch."]

@@ -516,7 +516,12 @@ fn a_fixed_role_service_with_a_bad_drop_in_is_a_plain_app() {
     let s = Procs::new();
     let trusted = s.path().join("trusted");
     let home = s.path().join("home");
-    for dir in [&trusted, &home, &trusted.join("inferd.service.d"), &home.join("inferd.service.d")] {
+    for dir in [
+        &trusted,
+        &home,
+        &trusted.join("inferd.service.d"),
+        &home.join("inferd.service.d"),
+    ] {
         std::fs::create_dir_all(dir).expect("dir");
     }
     std::fs::write(trusted.join("inferd.service"), "").expect("unit");
@@ -538,9 +543,7 @@ fn a_fixed_role_service_with_a_bad_drop_in_is_a_plain_app() {
         dir: s.path().to_owned(),
         rule,
     };
-    let role = || {
-        ProcCallers::caller_of_pid_with(s.path(), 5, &table(), &origins).map(|c| c.role)
-    };
+    let role = || ProcCallers::caller_of_pid_with(s.path(), 5, &table(), &origins).map(|c| c.role);
     // No stated origin: not judged.
     assert_eq!(role(), Some(CallerRole::PorterDaemon));
     origin(&trusted.join("inferd.service.d/10.conf"));
