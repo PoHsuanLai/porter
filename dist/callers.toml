@@ -16,6 +16,12 @@
 # An optional `name = "..."` is what a person reads for the app (Settings' account page lists
 # "Mail" under an identity, not "org.quire.Mail"); an app without one is named by its desktop
 # entry (`<app id>.desktop`, its `Name=`), else by its id.
+# A row with a unit that gives a fixed role is honoured only while the manager says the unit is
+# defined by root's files: its unit file and every drop-in must be root-held and under
+# /usr/lib/systemd/user, /usr/local/lib/systemd/user or /etc/systemd/user (never in a home or
+# runtime directory, and not transient), and the unit must carry this line, or the caller is a
+# plain app (porter_dbus::UnitRule):
+#   UnsetEnvironment=LD_PRELOAD LD_LIBRARY_PATH LD_AUDIT GCONV_PATH GIO_EXTRA_MODULES GTK_MODULES GTK_PATH GST_PLUGIN_PATH GST_PLUGIN_SYSTEM_PATH LIBGL_DRIVERS_PATH MESA_LOADER_DRIVER_OVERRIDE __EGL_VENDOR_LIBRARY_DIRS __EGL_VENDOR_LIBRARY_FILENAMES GBM_BACKENDS_PATH LIBVA_DRIVERS_PATH VK_ICD_FILENAMES VK_DRIVER_FILES VK_ADD_DRIVER_FILES VK_LAYER_PATH VK_ADD_LAYER_PATH VK_INSTANCE_LAYERS VK_LOADER_LAYERS_ENABLE
 
 # The Settings app (detent), as the unit the desktop runs it in: any program may start an app
 # scope called `app-org.quire.Settings-N.scope`, so the role is not given by the app's name.

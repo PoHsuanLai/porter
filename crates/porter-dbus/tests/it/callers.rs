@@ -7,7 +7,10 @@ mod bus;
 
 use bus::PrivateBus;
 use porter_core::Isolation;
-use porter_dbus::{Caller, CallerRole, CallerTable, Callers, MainPids, ProcCallers};
+use porter_dbus::{
+    Caller, CallerRole, CallerTable, Callers, LOADER_VARIABLES, MainPids, ProcCallers, UnitOrigins,
+    UnitRule,
+};
 use porter_fake::Scratch;
 use std::path::Path;
 
@@ -503,4 +506,45 @@ async fn on_a_private_bus_a_service_is_its_unit_only_as_the_managers_main_proces
     s.process(pid, Some("/system.slice/cuad.service"));
     s.main_of("cuad.service", pid);
     assert_eq!(callers.caller_of(&sender).await, None);
+}
+
+/// A fixed-role service is judged by the origin its fixture states: a drop-in outside the trusted
+/// directory lowers it to a plain app, a trusted one keeps the role, and so does a unit with no
+/// stated origin.
+#[test]
+fn a_fixed_role_service_with_a_bad_drop_in_is_a_plain_app() {
+    let s = Procs::new();
+    let trusted = s.path().join("trusted");
+    let home = s.path().join("home");
+    for dir in [&trusted, &home, &trusted.join("inferd.service.d"), &home.join("inferd.service.d")] {
+        std::fs::create_dir_all(dir).expect("dir");
+    }
+    std::fs::write(trusted.join("inferd.service"), "").expect("unit");
+    std::fs::write(trusted.join("inferd.service.d/10.conf"), "").expect("good drop-in");
+    std::fs::write(home.join("inferd.service.d/10.conf"), "").expect("bad drop-in");
+    s.process(5, Some(&scope("inferd.service")));
+    s.main_of("inferd.service", 5);
+    let origin = |drop_in: &Path| {
+        let unset = LOADER_VARIABLES.join(" ");
+        let text = format!(
+            "invocation=1\nfragment={}\ndrop_in={}\nunset={unset}\n",
+            trusted.join("inferd.service").display(),
+            drop_in.display()
+        );
+        std::fs::write(s.path().join("units/inferd.service.origin"), text).expect("origin");
+    };
+    let rule = UnitRule::new(vec![trusted.clone()], |_| true);
+    let origins = UnitOrigins::Fixture {
+        dir: s.path().to_owned(),
+        rule,
+    };
+    let role = || {
+        ProcCallers::caller_of_pid_with(s.path(), 5, &table(), &origins).map(|c| c.role)
+    };
+    // No stated origin: not judged.
+    assert_eq!(role(), Some(CallerRole::PorterDaemon));
+    origin(&trusted.join("inferd.service.d/10.conf"));
+    assert_eq!(role(), Some(CallerRole::PorterDaemon));
+    origin(&home.join("inferd.service.d/10.conf"));
+    assert_eq!(role(), Some(CallerRole::App));
 }

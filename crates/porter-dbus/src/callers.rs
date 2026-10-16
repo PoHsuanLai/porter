@@ -8,6 +8,12 @@
 //! the fixed roles; the daemons read the files). An unidentified sender is refused by the daemon (`AccessDenied`), never given a
 //! role.
 //!
+//! A fixed role also needs the unit's definition to come from the system: see [`UnitRule`]. The
+//! desktop must install its user units and drop-ins under `/usr/lib/systemd/user`,
+//! `/usr/local/lib/systemd/user` or `/etc/systemd/user`, never in a home or runtime directory,
+//! and give each such unit the `UnsetEnvironment=` line of [`LOADER_VARIABLES`]; otherwise its
+//! compositor and shell lose their roles.
+//!
 //! The one way to ask "who is this sender" is [`Callers::caller_of`], answered by [`ProcCallers`]:
 //! a daemon builds one from its bus connection and the table, and asks it for every method call.
 //! A daemon does not decide that a name it can see on the bus, or the well-known name it owns,
@@ -42,7 +48,12 @@ pub use crate::callers_file::{
 use zbus::fdo::DBusProxy;
 use zbus::names::BusName;
 
+mod origin;
 mod procfs;
+
+pub use origin::{
+    Definition, LOADER_VARIABLES, Refusal, TRUSTED_DIRS, UnitFacts, UnitOrigins, UnitRule,
+};
 
 use porter_core::{AppId, AppName, Isolation};
 use serde::{Deserialize, Serialize};
@@ -270,6 +281,8 @@ pub struct ProcCallers {
     table: CallerTable,
     proc_root: PathBuf,
     main_pids: MainPids,
+    origins: UnitOrigins,
+    guard: origin::Guard,
 }
 
 impl ProcCallers {
@@ -278,6 +291,7 @@ impl ProcCallers {
     pub fn new(connection: BusConnection, table: CallerTable) -> Self {
         Self {
             main_pids: MainPids::Manager,
+            origins: UnitOrigins::Manager(UnitRule::system()),
             ..Self::with_proc_root(connection, table, PathBuf::from("/proc"))
         }
     }
@@ -293,6 +307,11 @@ impl ProcCallers {
             connection,
             table,
             main_pids: MainPids::Fixture(proc_root.clone()),
+            origins: UnitOrigins::Fixture {
+                dir: proc_root.clone(),
+                rule: UnitRule::system(),
+            },
+            guard: origin::Guard::default(),
             proc_root,
         }
     }
@@ -302,15 +321,37 @@ impl ProcCallers {
         Self { main_pids, ..self }
     }
 
+    /// The same, learning where a fixed-role service's definition came from from `origins`.
+    pub fn with_unit_origins(self, origins: UnitOrigins) -> Self {
+        Self { origins, ..self }
+    }
+
     /// The caller that is process `pid` of the `/proc` tree at `proc_root`, as [`ProcCallers`]
     /// reads it once the bus has named the pid, with a service's main process from the same
     /// tree ([`MainPids::Fixture`]). Read on the real `/proc`, which states no main process, a
     /// service unit's row names nobody: [`ProcCallers`] asks the manager.
     pub fn caller_of_pid(proc_root: &Path, pid: u32, table: &CallerTable) -> Option<Caller> {
+        let origins = UnitOrigins::Fixture {
+            dir: proc_root.to_owned(),
+            rule: UnitRule::system(),
+        };
+        Self::caller_of_pid_with(proc_root, pid, table, &origins)
+    }
+
+    /// [`ProcCallers::caller_of_pid`], judging a fixed-role service's origin with `origins`
+    /// (a fixture's own rule): a unit that fails it is a plain app.
+    pub fn caller_of_pid_with(
+        proc_root: &Path,
+        pid: u32,
+        table: &CallerTable,
+        origins: &UnitOrigins,
+    ) -> Option<Caller> {
         match procfs::found_of_pid(proc_root, pid, table)? {
             procfs::Found::App(caller) | procfs::Found::Scope(caller) => Some(caller),
             procfs::Found::Service { unit, caller } => {
-                (procfs::fixture_main_pid(proc_root, &unit) == Some(pid)).then_some(caller)
+                (procfs::fixture_main_pid(proc_root, &unit) == Some(pid)).then_some(())?;
+                let keeps = !caller.role.is_fixed() || origins.judge_fixture(&unit).is_ok();
+                Some(if keeps { caller } else { Caller { role: CallerRole::App, ..caller } })
             }
         }
     }
@@ -326,30 +367,26 @@ impl ProcCallers {
     /// `MainPID` of the loaded unit `unit` from the systemd manager on the connection's bus;
     /// `None` when the manager is not there, the unit is not loaded or it has no main process.
     async fn manager_main_pid(&self, unit: &str) -> Option<u32> {
-        let reply = self
-            .connection
-            .call_method(
-                Some(SYSTEMD),
-                SYSTEMD_PATH,
-                Some(SYSTEMD_MANAGER),
-                "GetUnit",
-                &(unit,),
-            )
-            .await
-            .ok()?;
-        let path: zbus::zvariant::OwnedObjectPath = reply.body().deserialize().ok()?;
-        let properties = zbus::fdo::PropertiesProxy::builder(&self.connection)
-            .destination(SYSTEMD)
-            .ok()?
-            .path(path)
-            .ok()?
-            .build()
-            .await
-            .ok()?;
+        let properties = unit_properties(&self.connection, unit).await?;
         let service =
             zbus::names::InterfaceName::try_from("org.freedesktop.systemd1.Service").ok()?;
         let value = properties.get(service, "MainPID").await.ok()?;
         u32::try_from(value).ok().filter(|pid| *pid != 0)
+    }
+
+    /// `caller`, unless it holds a fixed role the unit `unit`'s origin does not support, which
+    /// lowers it to a plain app (as a scope is lowered).
+    async fn vetted(&self, unit: &str, caller: Caller) -> Caller {
+        if !caller.role.is_fixed() {
+            return caller;
+        }
+        match self.guard.check(&self.origins, &self.connection, unit).await {
+            Ok(()) => caller,
+            Err(_) => Caller {
+                role: CallerRole::App,
+                ..caller
+            },
+        }
     }
 
     /// The pid of the process behind `sender`, as the bus knows it.
@@ -369,10 +406,37 @@ impl Callers for ProcCallers {
         match procfs::found_of_pid(&self.proc_root, pid, &self.table)? {
             procfs::Found::App(caller) | procfs::Found::Scope(caller) => Some(caller),
             procfs::Found::Service { unit, caller } => {
-                (self.main_pid(&unit).await == Some(pid)).then_some(caller)
+                (self.main_pid(&unit).await == Some(pid)).then_some(())?;
+                Some(self.vetted(&unit, caller).await)
             }
         }
     }
+}
+
+/// The properties proxy of the loaded unit `unit` on the systemd manager of `connection`'s bus.
+async fn unit_properties<'a>(
+    connection: &'a BusConnection,
+    unit: &str,
+) -> Option<zbus::fdo::PropertiesProxy<'a>> {
+    let reply = connection
+        .call_method(
+            Some(SYSTEMD),
+            SYSTEMD_PATH,
+            Some(SYSTEMD_MANAGER),
+            "GetUnit",
+            &(unit,),
+        )
+        .await
+        .ok()?;
+    let path: zbus::zvariant::OwnedObjectPath = reply.body().deserialize().ok()?;
+    zbus::fdo::PropertiesProxy::builder(connection)
+        .destination(SYSTEMD)
+        .ok()?
+        .path(path)
+        .ok()?
+        .build()
+        .await
+        .ok()
 }
 
 #[cfg(test)]
