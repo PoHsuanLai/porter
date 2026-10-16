@@ -26,6 +26,8 @@ members = [
   "crates/porter-tailnet",
   "crates/porter-router",
   "crates/porter-turns",
+  "crates/porter-engines",
+  "crates/porter-engines-install",
   "crates/porter-daemon",
   "crates/accountd",
   "crates/syncd",
@@ -71,6 +73,8 @@ porter-tailscale = { path = "crates/porter-tailscale" }
 porter-tailnet  = { path = "crates/porter-tailnet" }
 porter-router   = { path = "crates/porter-router" }
 porter-turns    = { path = "crates/porter-turns" }
+porter-engines  = { path = "crates/porter-engines" }
+porter-engines-install = { path = "crates/porter-engines-install" }
 # Without the settings-file watch: a daemon that watches asks for `features = ["watch"]`, so
 # porter-dbus (and every bus client through it) never pulls a file watcher in.
 porter-daemon   = { path = "crates/porter-daemon", default-features = false }
