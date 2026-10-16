@@ -118,6 +118,70 @@ impl HyperHttp {
     }
 }
 
+/// What the reader of a streamed body says after each piece.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Flow {
+    /// Go on reading.
+    Continue,
+    /// Stop: the rest is not wanted. The connection is dropped.
+    Stop,
+}
+
+/// Receives a response as it arrives, for a body too long to hold: the head once, then each
+/// piece of the body in turn.
+pub trait BodySink: Send {
+    /// The status and headers, before any of the body. `Stop` reads no body.
+    fn head(&mut self, status: Status, headers: &[Header]) -> Flow;
+    /// The next piece of the body.
+    fn chunk(&mut self, bytes: &[u8]) -> Flow;
+}
+
+impl HyperHttp {
+    /// Sends `request` and gives the response to `sink` as it arrives, without holding it. The
+    /// body has no size cap and no whole-exchange timeout; `idle` is how long the connection, the
+    /// head or any one piece may take. Redirects are not followed, so the caller reads
+    /// `Location` from the head and asks again.
+    ///
+    /// # Errors
+    /// [`HttpError`] when no response head arrived or the body broke off.
+    pub async fn stream<S: BodySink>(
+        &self,
+        request: HttpRequest,
+        idle: Duration,
+        sink: &mut S,
+    ) -> Result<Status, HttpError> {
+        let outgoing = build(request)?;
+        let response = tokio::time::timeout(idle, self.client.request(outgoing))
+            .await
+            .map_err(|_| HttpError::TimedOut)?
+            .map_err(client_fault)?;
+        let (head, mut body) = response.into_parts();
+        let status = Status(head.status.as_u16());
+        let headers: Vec<Header> = head
+            .headers
+            .iter()
+            .filter_map(|(name, value)| Some(Header::new(name.as_str(), value.to_str().ok()?)))
+            .collect();
+        if sink.head(status, &headers) == Flow::Stop {
+            return Ok(status);
+        }
+        loop {
+            let next = tokio::time::timeout(idle, body.frame())
+                .await
+                .map_err(|_| HttpError::TimedOut)?;
+            let Some(frame) = next else {
+                return Ok(status);
+            };
+            let frame = frame.map_err(|_| HttpError::Malformed)?;
+            if let Some(data) = frame.data_ref()
+                && sink.chunk(data) == Flow::Stop
+            {
+                return Ok(status);
+            }
+        }
+    }
+}
+
 impl Http for HyperHttp {
     async fn send(&self, request: HttpRequest) -> Result<HttpResponse, HttpError> {
         tokio::time::timeout(self.limits.timeout, self.exchange(request))
