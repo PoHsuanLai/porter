@@ -296,8 +296,12 @@ fn a_process_nothing_names_is_nobody() {
     }
 }
 
+/// A `root` closed to the reader (another user's process, or ptrace-gated under Landlock) is no
+/// sandbox metadata, as peephole 0.1.3 reads it, not a failed probe: the cgroup and the image
+/// decide. A Flatpak scope then disagrees with "native" and is nobody; a service is its unit's
+/// main process; an app scope is the app it names, as a claim.
 #[test]
-fn an_unreadable_sandbox_root_is_nobody_whatever_the_cgroup_says() {
+fn an_unreadable_sandbox_root_leaves_the_cgroup_and_the_image_to_decide() {
     use std::os::unix::fs::PermissionsExt;
     let s = Procs::new();
     s.process(50, Some(&scope("app-flatpak-org.example.Photos-5.scope")));
@@ -310,9 +314,19 @@ fn an_unreadable_sandbox_root_is_nobody_whatever_the_cgroup_says() {
         std::fs::create_dir(&root).expect("root");
         std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o0)).expect("chmod");
     }
-    for pid in [50, 51, 52] {
-        assert_eq!(resolve(&s, pid), None, "pid {pid}");
-    }
+    assert_eq!(resolve(&s, 50), None, "a Flatpak scope with no metadata");
+    assert_eq!(
+        resolve(&s, 51),
+        got(
+            "org.quire.Inference",
+            Isolation::Unsandboxed,
+            CallerRole::PorterDaemon
+        )
+    );
+    assert_eq!(
+        resolve(&s, 52),
+        got("org.example.Mail", Isolation::Unsandboxed, CallerRole::App)
+    );
     for pid in [50, 51, 52] {
         let root = s.path().join(pid.to_string()).join("root");
         std::fs::set_permissions(root, std::fs::Permissions::from_mode(0o755)).expect("chmod");

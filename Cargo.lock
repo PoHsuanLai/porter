@@ -700,7 +700,7 @@ dependencies = [
 [[package]]
 name = "ds-behaviour"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=b9ced242eaf1f1777de2c8c4d7823e7499ac4e13#b9ced242eaf1f1777de2c8c4d7823e7499ac4e13"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=9234da1dc89bfe98516d77f7dc5c6bd05d18fd07#9234da1dc89bfe98516d77f7dc5c6bd05d18fd07"
 dependencies = [
  "ds-core",
 ]
@@ -708,7 +708,7 @@ dependencies = [
 [[package]]
 name = "ds-core"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=b9ced242eaf1f1777de2c8c4d7823e7499ac4e13#b9ced242eaf1f1777de2c8c4d7823e7499ac4e13"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=9234da1dc89bfe98516d77f7dc5c6bd05d18fd07#9234da1dc89bfe98516d77f7dc5c6bd05d18fd07"
 dependencies = [
  "chordkit",
  "ds-core-derive",
@@ -721,7 +721,7 @@ dependencies = [
 [[package]]
 name = "ds-core-derive"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=b9ced242eaf1f1777de2c8c4d7823e7499ac4e13#b9ced242eaf1f1777de2c8c4d7823e7499ac4e13"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=9234da1dc89bfe98516d77f7dc5c6bd05d18fd07#9234da1dc89bfe98516d77f7dc5c6bd05d18fd07"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -732,7 +732,7 @@ dependencies = [
 [[package]]
 name = "ds-helpers"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=b9ced242eaf1f1777de2c8c4d7823e7499ac4e13#b9ced242eaf1f1777de2c8c4d7823e7499ac4e13"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=9234da1dc89bfe98516d77f7dc5c6bd05d18fd07#9234da1dc89bfe98516d77f7dc5c6bd05d18fd07"
 dependencies = [
  "ds-peer",
  "rustix",
@@ -744,7 +744,7 @@ dependencies = [
 [[package]]
 name = "ds-peer"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=b9ced242eaf1f1777de2c8c4d7823e7499ac4e13#b9ced242eaf1f1777de2c8c4d7823e7499ac4e13"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=9234da1dc89bfe98516d77f7dc5c6bd05d18fd07#9234da1dc89bfe98516d77f7dc5c6bd05d18fd07"
 dependencies = [
  "futures-timer",
  "thiserror",
@@ -753,7 +753,7 @@ dependencies = [
 [[package]]
 name = "ds-settings"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=b9ced242eaf1f1777de2c8c4d7823e7499ac4e13#b9ced242eaf1f1777de2c8c4d7823e7499ac4e13"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=9234da1dc89bfe98516d77f7dc5c6bd05d18fd07#9234da1dc89bfe98516d77f7dc5c6bd05d18fd07"
 dependencies = [
  "ds-behaviour",
  "ds-core",
@@ -774,7 +774,7 @@ dependencies = [
 [[package]]
 name = "ds-settings-derive"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=b9ced242eaf1f1777de2c8c4d7823e7499ac4e13#b9ced242eaf1f1777de2c8c4d7823e7499ac4e13"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=9234da1dc89bfe98516d77f7dc5c6bd05d18fd07#9234da1dc89bfe98516d77f7dc5c6bd05d18fd07"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -784,7 +784,7 @@ dependencies = [
 [[package]]
 name = "ds-style"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=b9ced242eaf1f1777de2c8c4d7823e7499ac4e13#b9ced242eaf1f1777de2c8c4d7823e7499ac4e13"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=9234da1dc89bfe98516d77f7dc5c6bd05d18fd07#9234da1dc89bfe98516d77f7dc5c6bd05d18fd07"
 dependencies = [
  "ds-core",
  "ds-core-derive",
@@ -849,7 +849,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2156,8 +2156,8 @@ dependencies = [
 
 [[package]]
 name = "peephole"
-version = "0.1.2"
-source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.2#f111ee0c32461d72173bb591079a1fbe0fca1953"
+version = "0.1.4"
+source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.4#5a2e742fb12cd78b4555ff07d8d96681fa0bbeb8"
 dependencies = [
  "peephole-core",
  "rustix",
@@ -2166,8 +2166,8 @@ dependencies = [
 
 [[package]]
 name = "peephole-bus"
-version = "0.1.2"
-source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.2#f111ee0c32461d72173bb591079a1fbe0fca1953"
+version = "0.1.4"
+source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.4#5a2e742fb12cd78b4555ff07d8d96681fa0bbeb8"
 dependencies = [
  "futures-timer",
  "peephole",
@@ -2179,8 +2179,8 @@ dependencies = [
 
 [[package]]
 name = "peephole-core"
-version = "0.1.2"
-source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.2#f111ee0c32461d72173bb591079a1fbe0fca1953"
+version = "0.1.4"
+source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.4#5a2e742fb12cd78b4555ff07d8d96681fa0bbeb8"
 dependencies = [
  "serde",
  "thiserror",
@@ -2955,7 +2955,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3424,10 +3424,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3809,7 +3809,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
