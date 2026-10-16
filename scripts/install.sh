@@ -10,6 +10,8 @@
 # --sysconfdir  where the caller table goes (default /etc)
 # --bin-dir     install the already built daemons found in DIR instead of building them
 # --no-build    install from target/release (or $CARGO_TARGET_DIR/release) without building first
+#               (building needs git and cargo and is refused as root: build as your user, then
+#               install with --no-build as root)
 #
 # What goes where (DESTDIR, when given, is in front of all of it):
 #   PREFIX/libexec/quire/{accountd,syncd,inferd}             the daemons
@@ -124,7 +126,26 @@ daemons="accountd syncd inferd"
 if [ -n "$bin_dir" ]; then
     built=$bin_dir
 else
+    # A relative CARGO_TARGET_DIR means the directory the script was started from, which the
+    # build below (run from /) would not see; make it absolute once, for the build and the lookup.
+    target_dir=${CARGO_TARGET_DIR:-$root/target}
+    case $target_dir in
+        /*) ;;
+        *) target_dir=$(pwd)/$target_dir ;;
+    esac
     if [ "$build" = yes ]; then
+        # Built by the person, not by root: a build under sudo leaves a root-owned target/ and
+        # ~/.cargo behind. Installing what was built is what needs root (system paths).
+        if [ "$(id -u)" -eq 0 ]; then
+            echo "install.sh: do not build as root; build as your user first (cargo build --release -p accountd -p syncd -p inferd), then install with --no-build as root" >&2
+            exit 1
+        fi
+        for tool in git cargo; do
+            if ! command -v "$tool" >/dev/null 2>&1; then
+                echo "install.sh: $tool is needed to build porter; install $tool and run this again" >&2
+                exit 1
+            fi
+        done
         # Linked by this system's own linker. The source tree's .cargo/config.toml links with
         # clang and mold, which is how porter is worked on, not something an install may ask the
         # person to have. Cargo reads that file (and rustup the toolchain file) from the
@@ -133,7 +154,12 @@ else
         toolchain=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' "$root/rust-toolchain.toml" 2>/dev/null)
         (
             cd / &&
+                CARGO_TARGET_DIR=$target_dir &&
+                export CARGO_TARGET_DIR &&
                 if [ -n "$toolchain" ] && command -v rustup >/dev/null 2>&1; then
+                    # rustup 1.28 and later no longer fetches the toolchain RUSTUP_TOOLCHAIN names.
+                    rustup run "$toolchain" true >/dev/null 2>&1 ||
+                        rustup toolchain install "$toolchain" --profile minimal
                     RUSTUP_TOOLCHAIN=$toolchain
                     export RUSTUP_TOOLCHAIN
                 fi &&
@@ -141,7 +167,7 @@ else
                     --config net.git-fetch-with-cli=true -p accountd -p syncd -p inferd
         )
     fi
-    built=${CARGO_TARGET_DIR:-$root/target}/release
+    built=$target_dir/release
 fi
 for daemon in $daemons; do
     if [ ! -x "$built/$daemon" ]; then
