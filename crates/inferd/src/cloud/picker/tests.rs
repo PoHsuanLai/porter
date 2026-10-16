@@ -90,6 +90,9 @@ fn a_label_is_the_models_name_alone() {
     assert_eq!(listed[0].label, "Claude Opus 5.5");
     assert_eq!(plain_name("Muse Spark 1.3 (contributor)"), "Muse Spark 1.3");
     assert_eq!(plain_name("GPT-6 Luna"), "GPT-6 Luna");
+    assert_eq!(listed[0].hint, None);
+    assert_eq!(hint_of("Muse Spark 1.3 (contributor)"), Some(TRAINING_HINT));
+    assert_eq!(hint_of("GPT-6 Luna"), None);
 }
 
 #[test]

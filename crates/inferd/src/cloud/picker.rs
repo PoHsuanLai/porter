@@ -25,6 +25,20 @@ pub struct Choice {
     pub company: String,
     /// Whether some account reaches it.
     pub available: Availability,
+    /// A short plain line under the name, when the model has a catch a person should know.
+    pub hint: Option<&'static str>,
+}
+
+/// Said under a model whose catalogue label marks the tier that trades prompts for a discount.
+pub const TRAINING_HINT: &str = "May use your requests for training";
+
+/// The hint a catalogue label implies: its trailing "(contributor)" tier marks a provider that
+/// may train on what it is sent.
+fn hint_of(label: &str) -> Option<&'static str> {
+    label
+        .trim_end()
+        .ends_with("(contributor)")
+        .then_some(TRAINING_HINT)
 }
 
 /// Whether the person can use a model now.
@@ -108,6 +122,7 @@ pub fn choices(
             label,
             company: company.clone(),
             available: reach,
+            hint: hint_of(&entry.label),
         };
         match grouped.iter_mut().find(|(name, _)| *name == company) {
             Some((_, group)) => group.push(choice),
