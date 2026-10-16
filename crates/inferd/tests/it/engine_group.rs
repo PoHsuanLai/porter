@@ -29,8 +29,12 @@ fn fake_inferd() {
     runtime.block_on(async {
         let host = ProcessHost::new();
         let d = dir.display();
+        // Each pid is written beside its file and renamed into place: a reader that sees the
+        // file sees the whole pid, never the moment `>` has created it empty.
         let script = format!(
-            "(trap '' TERM; exec sleep 300) & echo $! > '{d}/grandchild'; echo $$ > '{d}/engine'; wait"
+            "(trap '' TERM; exec sleep 300) & echo $! > '{d}/grandchild.part'; \
+             mv '{d}/grandchild.part' '{d}/grandchild'; \
+             echo $$ > '{d}/engine.part'; mv '{d}/engine.part' '{d}/engine'; wait"
         );
         let unit = UnitSpec {
             program: ProgramPath(PathBuf::from("sh")),
