@@ -81,7 +81,7 @@ impl<P, O, C> Inference<P, O, C> {
     }
 
     /// The same object, whose `LocalEngines` tells which engines `found` has a program for.
-    pub fn local_engines(self, found: LocalEngines) -> Self {
+    pub fn engines_found(self, found: LocalEngines) -> Self {
         Self {
             local_engines: found,
             ..self

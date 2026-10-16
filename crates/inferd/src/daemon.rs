@@ -589,7 +589,7 @@ impl Daemon {
         .probing(probing)
         .computers(computers)
         .tailnet(tailnet)
-        .local_engines(local_engines)
+        .engines_found(local_engines)
         .keys_news(engines_news);
         // Every object, the settings module among them, is served before the name is claimed.
         serve_with_settings(

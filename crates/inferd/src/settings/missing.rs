@@ -2,8 +2,8 @@
 //! on this computer is told which program would run one, in plain words and never a path.
 
 use model_catalog::EngineKind;
-use porter_infer::Slot;
 use porter_dbus::EngineState;
+use porter_infer::Slot;
 use porter_router::local::EngineConfig;
 use std::path::Path;
 

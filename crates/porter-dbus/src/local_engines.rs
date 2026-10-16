@@ -85,6 +85,7 @@ pub fn local_engine_to_dbus(engine: &LocalEngine) -> (String, Details) {
 fn text(details: &Details, key: &'static str) -> Result<String, EngineRowError> {
     details
         .get(key)
+        .and_then(|value| value.try_clone().ok())
         .and_then(|value| String::try_from(value).ok())
         .ok_or(EngineRowError::Missing(key))
 }

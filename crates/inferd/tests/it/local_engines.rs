@@ -57,7 +57,7 @@ async fn asked(role: Role, file: &str, fixed: Vec<PathBuf>) -> zbus::Result<Vec<
         Memory::default(),
         FixedClock(UnixSeconds(1_700_000_000)),
     )
-    .local_engines(LocalEngines::of(&found));
+    .engines_found(LocalEngines::of(&found));
     let daemon = bus.connect().await;
     within("inferd to serve", serve_on(&daemon, inference))
         .await

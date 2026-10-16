@@ -66,9 +66,8 @@ impl DbusTransport {
             .map_err(|e| bus_error(&e))?;
         Ok(Rows::decode(rows, |row| {
             let id = row.0.clone();
-            local_engine_from_dbus(row).map_err(|why| {
-                TransportError::Malformed(format!("LocalEngines row {id:?}: {why}"))
-            })
+            local_engine_from_dbus(row)
+                .map_err(|why| TransportError::Malformed(format!("LocalEngines row {id:?}: {why}")))
         }))
     }
 
