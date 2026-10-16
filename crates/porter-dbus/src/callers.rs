@@ -1,18 +1,26 @@
 //! Who is calling: a bus connection's unique name to a [`Caller`] (an app and a role), for both
-//! daemons (porter PLAN §2.1). The process behind the connection is found through the bus (pid),
-//! then `/proc/<pid>`: a Flatpak app by its sandbox's own metadata (`root/.flatpak-info`, never
-//! by its scope's name), `app-<id>-<n>.scope` a native app (named by `identity_of`),
-//! `<name>.service` a daemon's unit when the process is that unit's main process (the systemd
-//! manager's `MainPID`), `<name>.scope` outside `app-` a scope the table names. The role comes
-//! from a table keyed by app id and unit name (`callers.toml`: the user's file wins, except for
-//! the fixed roles; the daemons read the files). An unidentified sender is refused by the daemon (`AccessDenied`), never given a
-//! role.
+//! daemons (porter PLAN §2.1). The process behind the connection is held and judged by
+//! [peephole](https://github.com/PoHsuanLai/peephole) (`BusPeers`): the bus names the process (a
+//! pidfd), `/proc/<pid>` and the systemd manager state what it is, and the judgement is one of
+//! four standings, which [`ProcCallers`] turns into a [`Caller`]:
 //!
-//! A fixed role also needs the unit's definition to come from the system: see [`UnitRule`]. The
-//! desktop must install its user units and drop-ins under `/usr/lib/systemd/user`,
-//! `/usr/local/lib/systemd/user` or `/etc/systemd/user`, never in a home or runtime directory,
-//! and give each such unit the `UnsetEnvironment=` line of [`LOADER_VARIABLES`]; otherwise its
-//! compositor and shell lose their roles.
+//! - a Flatpak app, by its sandbox's own metadata cross-checked against its cgroup's scope (never
+//!   by a scope's name alone), is `Proven(Flatpak)`; a snap, by the kernel's label, is
+//!   `Proven(Snap)`;
+//! - a native app that a launcher started in `app-<id>-<n>.scope`, from a root-owned program, is
+//!   `Proven(Unsandboxed)` (advisory: any process of the person's may start such a scope);
+//! - a service the table names by unit and program is that row's app and role, as far as the
+//!   proof reaches: a fixed role ([`CallerRole::is_fixed`]) needs peephole's `Full` proof (the
+//!   unit manager says the process is the unit's main process, from a fragment and drop-ins root
+//!   owns, not transient, starting the row's program); with less, the caller is a plain app;
+//! - anything else (a program in no row and no app scope, an image a person can write, a process
+//!   that left) is nobody, and the daemon refuses it (`AccessDenied`), never giving it a role.
+//!
+//! The role comes from the table (`callers.toml`: the user's file wins, except for the fixed
+//! roles; the daemons read the files), never from a scope's name: a row that names a unit gives its
+//! role to that unit alone. A unit row names its programs with `exe`; without one a daemon unit
+//! (`<name>.service`) is taken to be installed as [`installed`]`(Install::Libexec, name)`, and
+//! any other unit has no program and so never reaches a fixed role. See [`CallerRow::images`].
 //!
 //! The one way to ask "who is this sender" is [`Callers::caller_of`], answered by [`ProcCallers`]:
 //! a daemon builds one from its bus connection and the table, and asks it for every method call.
@@ -32,33 +40,40 @@
 //! file) can give them, never the user's file. A user row may add a plain app or lower a role;
 //! [`CallerTable::layered`] drops a user row that claims a fixed role.
 //!
-//! What this cannot prove: every process of the person's runs as the same user, so a service row
-//! is as strong as the manager's word on its main process, and a scope row as strong as "the
-//! scope was there first". That is why a scope never carries a fixed role: a row that gives one
-//! to a scope gives it a plain app's. A Flatpak app's metadata is
-//! read through its root, which a reader inside a Landlock domain is refused: there no caller is
-//! a Flatpak app.
+//! What this cannot prove: every process of the person's runs as the same user. A same-user
+//! process that edits the person's own systemd configuration or environment and waits for the
+//! next start of a trusted service rides on that service's role (peephole's README states the
+//! same residual); the shipped units sit in the system's folders so that `Full` fails for a unit
+//! kept in a home directory. A scope row never carries a fixed role: a scope has no main process,
+//! so the unit manager can only vouch for its program (`Exe`).
 
-use crate::BusConnection;
+mod images;
+mod proc;
+mod standing;
+mod translate;
+
+#[cfg(feature = "test-proc-root")]
+mod fixture;
+
 #[cfg(feature = "callers-file")]
 #[doc = "The caller table as files, from feature `callers-file`."]
 pub use crate::callers_file::{
     CallerFileError, CallerTomlError, load_callers, table_from_file, table_from_toml,
 };
-use zbus::fdo::DBusProxy;
-use zbus::names::BusName;
 
-mod origin;
-mod procfs;
+pub use images::{Install, installed};
+pub use proc::ProcCallers;
 
-pub use origin::{
-    Definition, LOADER_VARIABLES, Refusal, TRUSTED_DIRS, UnitFacts, UnitOrigins, UnitRule,
-};
+/// The systemd manager's bus name.
+pub const SYSTEMD: &str = "org.freedesktop.systemd1";
+/// The systemd manager's object.
+pub const SYSTEMD_PATH: &str = "/org/freedesktop/systemd1";
+/// The interface of the systemd manager's object.
+pub const SYSTEMD_MANAGER: &str = "org.freedesktop.systemd1.Manager";
 
 use porter_core::{AppId, AppName, Isolation};
 use serde::{Deserialize, Serialize};
 use std::future::Future;
-use std::path::{Path, PathBuf};
 
 /// What a caller may ask for, beyond what its consent allows. It grows as the desktop gains
 /// processes with a standing of their own, so a match outside porter needs a `_` arm (an
@@ -136,10 +151,33 @@ pub struct CallerRow {
     pub unit: Option<String>,
     /// Its role.
     pub role: CallerRole,
+    /// The programs the unit runs (absolute paths, one `*` allowed in a segment: peephole's
+    /// patterns). A fixed role needs the unit manager to say the unit starts one of them, so the
+    /// system's table writes them for the units that are not installed as a daemon. Without any,
+    /// see [`CallerRow::images`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exe: Vec<String>,
     /// Its name as a person reads it (`name = "Sync"`), where accountd's Settings lists what the
     /// app may use. Without one accountd looks for the app's desktop entry.
     #[serde(default)]
     pub name: Option<AppTitle>,
+}
+
+impl CallerRow {
+    /// The programs the row's unit may run: its `exe`, else, for a daemon unit
+    /// (`<name>.service`, the name lower case, digits and dashes), where the desktop installs
+    /// daemons ([`installed`] with [`Install::Libexec`]). A row without a unit, or a unit that is
+    /// not named like a daemon and lists no `exe`, has none: it can be an app, never a service.
+    pub fn images(&self) -> Vec<String> {
+        if !self.exe.is_empty() {
+            return self.exe.clone();
+        }
+        self.unit
+            .as_deref()
+            .and_then(images::daemon_name)
+            .map(|name| installed(Install::Libexec, name))
+            .unwrap_or_default()
+    }
 }
 
 /// The table of apps and units: `[[caller]]` rows in `callers.toml`.
@@ -252,202 +290,6 @@ impl<T: Callers> Callers for std::sync::Arc<T> {
     async fn caller_of(&self, sender: &str) -> Option<Caller> {
         (**self).caller_of(sender).await
     }
-}
-
-/// Where a service unit's main process is learnt.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MainPids {
-    /// The systemd manager on the connection's bus (`org.freedesktop.systemd1`, the person's
-    /// user manager on the session bus): `GetUnit`, then the unit's `Service.MainPID`.
-    Manager,
-    /// A fixture tree: `<dir>/units/<unit>` holds the main process's pid (a test's stand-in for
-    /// the manager).
-    Fixture(PathBuf),
-}
-
-/// The systemd manager's bus name.
-pub const SYSTEMD: &str = "org.freedesktop.systemd1";
-/// The systemd manager's object.
-pub const SYSTEMD_PATH: &str = "/org/freedesktop/systemd1";
-/// The interface of the systemd manager's object.
-pub const SYSTEMD_MANAGER: &str = "org.freedesktop.systemd1.Manager";
-
-/// Callers by process: the bus names the connection's pid, `/proc/<pid>` names the app or unit,
-/// the table names the role, and a service unit's role goes only to its main process. The
-/// `/proc` root is the caller's to give, so a test reads a fixture tree.
-#[derive(Debug)]
-pub struct ProcCallers {
-    connection: BusConnection,
-    table: CallerTable,
-    proc_root: PathBuf,
-    main_pids: MainPids,
-    origins: UnitOrigins,
-    guard: origin::Guard,
-}
-
-impl ProcCallers {
-    /// Resolves senders on `connection` through `table`, reading the system's `/proc` and asking
-    /// the systemd manager for a service's main process.
-    pub fn new(connection: BusConnection, table: CallerTable) -> Self {
-        Self {
-            main_pids: MainPids::Manager,
-            origins: UnitOrigins::Manager(UnitRule::system()),
-            ..Self::with_proc_root(connection, table, PathBuf::from("/proc"))
-        }
-    }
-
-    /// As [`ProcCallers::new`], reading the fixture tree `proc_root` instead of `/proc`, with a
-    /// service's main process from the same tree ([`MainPids::Fixture`]).
-    pub fn with_proc_root(
-        connection: BusConnection,
-        table: CallerTable,
-        proc_root: PathBuf,
-    ) -> Self {
-        Self {
-            connection,
-            table,
-            main_pids: MainPids::Fixture(proc_root.clone()),
-            origins: UnitOrigins::Fixture {
-                dir: proc_root.clone(),
-                rule: UnitRule::system(),
-            },
-            guard: origin::Guard::default(),
-            proc_root,
-        }
-    }
-
-    /// The same, learning a service's main process from `main_pids`.
-    pub fn with_main_pids(self, main_pids: MainPids) -> Self {
-        Self { main_pids, ..self }
-    }
-
-    /// The same, learning where a fixed-role service's definition came from from `origins`.
-    pub fn with_unit_origins(self, origins: UnitOrigins) -> Self {
-        Self { origins, ..self }
-    }
-
-    /// The caller that is process `pid` of the `/proc` tree at `proc_root`, as [`ProcCallers`]
-    /// reads it once the bus has named the pid, with a service's main process from the same
-    /// tree ([`MainPids::Fixture`]). Read on the real `/proc`, which states no main process, a
-    /// service unit's row names nobody: [`ProcCallers`] asks the manager.
-    pub fn caller_of_pid(proc_root: &Path, pid: u32, table: &CallerTable) -> Option<Caller> {
-        let origins = UnitOrigins::Fixture {
-            dir: proc_root.to_owned(),
-            rule: UnitRule::system(),
-        };
-        Self::caller_of_pid_with(proc_root, pid, table, &origins)
-    }
-
-    /// [`ProcCallers::caller_of_pid`], judging a fixed-role service's origin with `origins`
-    /// (a fixture's own rule): a unit that fails it is a plain app.
-    pub fn caller_of_pid_with(
-        proc_root: &Path,
-        pid: u32,
-        table: &CallerTable,
-        origins: &UnitOrigins,
-    ) -> Option<Caller> {
-        match procfs::found_of_pid(proc_root, pid, table)? {
-            procfs::Found::App(caller) | procfs::Found::Scope(caller) => Some(caller),
-            procfs::Found::Service { unit, caller } => {
-                (procfs::fixture_main_pid(proc_root, &unit) == Some(pid)).then_some(())?;
-                let keeps = !caller.role.is_fixed() || origins.judge_fixture(&unit).is_ok();
-                Some(if keeps {
-                    caller
-                } else {
-                    Caller {
-                        role: CallerRole::App,
-                        ..caller
-                    }
-                })
-            }
-        }
-    }
-
-    /// The main process of the service `unit`, as `main_pids` learns it.
-    async fn main_pid(&self, unit: &str) -> Option<u32> {
-        match &self.main_pids {
-            MainPids::Fixture(dir) => procfs::fixture_main_pid(dir, unit),
-            MainPids::Manager => self.manager_main_pid(unit).await,
-        }
-    }
-
-    /// `MainPID` of the loaded unit `unit` from the systemd manager on the connection's bus;
-    /// `None` when the manager is not there, the unit is not loaded or it has no main process.
-    async fn manager_main_pid(&self, unit: &str) -> Option<u32> {
-        let properties = unit_properties(&self.connection, unit).await?;
-        let service =
-            zbus::names::InterfaceName::try_from("org.freedesktop.systemd1.Service").ok()?;
-        let value = properties.get(service, "MainPID").await.ok()?;
-        u32::try_from(value).ok().filter(|pid| *pid != 0)
-    }
-
-    /// `caller`, unless it holds a fixed role the unit `unit`'s origin does not support, which
-    /// lowers it to a plain app (as a scope is lowered).
-    async fn vetted(&self, unit: &str, caller: Caller) -> Caller {
-        if !caller.role.is_fixed() {
-            return caller;
-        }
-        match self
-            .guard
-            .check(&self.origins, &self.connection, unit)
-            .await
-        {
-            Ok(()) => caller,
-            Err(_) => Caller {
-                role: CallerRole::App,
-                ..caller
-            },
-        }
-    }
-
-    /// The pid of the process behind `sender`, as the bus knows it.
-    async fn pid_of(&self, sender: &str) -> Option<u32> {
-        let name = BusName::try_from(sender).ok()?;
-        let bus = DBusProxy::new(&self.connection).await.ok()?;
-        bus.get_connection_credentials(name)
-            .await
-            .ok()?
-            .process_id()
-    }
-}
-
-impl Callers for ProcCallers {
-    async fn caller_of(&self, sender: &str) -> Option<Caller> {
-        let pid = self.pid_of(sender).await?;
-        match procfs::found_of_pid(&self.proc_root, pid, &self.table)? {
-            procfs::Found::App(caller) | procfs::Found::Scope(caller) => Some(caller),
-            procfs::Found::Service { unit, caller } => {
-                (self.main_pid(&unit).await == Some(pid)).then_some(())?;
-                Some(self.vetted(&unit, caller).await)
-            }
-        }
-    }
-}
-
-/// The properties proxy of the loaded unit `unit` on the systemd manager of `connection`'s bus.
-async fn unit_properties<'a>(
-    connection: &'a BusConnection,
-    unit: &str,
-) -> Option<zbus::fdo::PropertiesProxy<'a>> {
-    let reply = connection
-        .call_method(
-            Some(SYSTEMD),
-            SYSTEMD_PATH,
-            Some(SYSTEMD_MANAGER),
-            "GetUnit",
-            &(unit,),
-        )
-        .await
-        .ok()?;
-    let path: zbus::zvariant::OwnedObjectPath = reply.body().deserialize().ok()?;
-    zbus::fdo::PropertiesProxy::builder(connection)
-        .destination(SYSTEMD)
-        .ok()?
-        .path(path)
-        .ok()?
-        .build()
-        .await
-        .ok()
 }
 
 #[cfg(test)]

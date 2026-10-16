@@ -9,9 +9,10 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
-# For `root_held` alone: without the settings-file watch, so no file watcher reaches a client.
-porter-daemon = { workspace = true }
 porter-core = { workspace = true }
+peephole = { workspace = true }
+peephole-core = { workspace = true }
+peephole-bus = { workspace = true }
 zbus = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -28,6 +29,11 @@ callers-file = ["dep:toml"]
 # app ships in v1, so the default bus surface does not declare it. syncd's feature of the same
 # name turns it on for the object it serves.
 photos-picker = []
+# TEST ONLY, never default and never in dist: `ProcCallers::with_proc_root` and `caller_of_pid` read a
+# directory tree standing for /proc (peephole's `fake` seams: a process that is only a claim). A daemon
+# turns it on through its own `test-proc-root` feature; check-boundary.sh checks that no default build
+# has it.
+test-proc-root = ["peephole/fake"]
 
 [lints]
 workspace = true

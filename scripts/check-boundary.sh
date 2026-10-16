@@ -258,7 +258,7 @@ EDGES=(
   "porter-store: porter-core porter-fs porter-service"
   "porter-router: porter-core porter-infer cua-action engine-supervisor model-catalog model-http model-openai-compat model-provider speech-provider vision-prep"
   "porter-turns: porter-core porter-infer porter-bridge porter-router cua-action cua-parse cua-session cua-vendors engine-supervisor model-extract model-http model-openai-compat model-provider vision-prep"
-  "porter-dbus: porter-core porter-daemon"
+  "porter-dbus: porter-core"
   "porter-bridge: porter-core porter-infer model-catalog model-openai-compat model-provider vision-prep"
   "porter-sheets: porter-core porter-dbus porter-provider porter-service"
   "porter-client: porter-bridge porter-core porter-dbus porter-fs porter-infer porter-provider porter-proxy porter-secrets porter-service porter-turns model-http model-openai-compat model-provider model-wire"
@@ -322,6 +322,17 @@ if cargo tree -p syncd --depth 0 -f '{p} {f}' 2>/dev/null | grep -q 'test-proc-r
 else
   echo "test-only: syncd's default features do not include test-proc-root"
 fi
+
+# porter-dbus's test-only caller fixtures (feature `test-proc-root`, which turns on peephole's
+# `fake`) are never in a daemon's normal dependency tree.
+for crate in accountd inferd syncd; do
+  if cargo tree -p "$crate" -e normal --prefix none -f '{p} {f}' 2>/dev/null | grep -E '^(porter-dbus|peephole) ' | grep -Eq 'test-proc-root|fake'; then
+    echo "LEAK: $crate's default build enables porter-dbus test-proc-root or peephole fake"
+    fail=1
+  else
+    echo "test-only: $crate's default build has no caller fixtures"
+  fi
+done
 
 # Every workspace member has a row above, so a new crate cannot slip in unchecked.
 for member in $(sed -n 's#^  "crates/\(.*\)",$#\1#p' Cargo.toml); do

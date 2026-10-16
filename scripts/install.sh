@@ -230,7 +230,7 @@ if [ "$changed" -eq 0 ]; then
 fi
 
 # A fixed role (the daemons' own) is kept only by a unit root's files define, in one of the three
-# folders systemd reads for every user (porter-dbus callers/origin.rs). Anywhere else any program of
+# folders systemd reads for every user (peephole's `Full` proof, used by porter-dbus callers). Anywhere else any program of
 # the person's could change the unit, so the daemons run with an app's permissions.
 if [ -z "$destdir" ]; then
     case "$prefix/lib/systemd/user" in

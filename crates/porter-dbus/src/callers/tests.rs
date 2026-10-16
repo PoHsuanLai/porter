@@ -5,6 +5,7 @@ fn row(app: &str, unit: Option<&str>, role: CallerRole) -> CallerRow {
         app: AppName::parse(app).expect("name"),
         unit: unit.map(str::to_owned),
         role,
+        exe: Vec::new(),
         name: None,
     }
 }

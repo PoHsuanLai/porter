@@ -4,15 +4,15 @@
 //! connection, and `porter_dbus::ProcCallers` (shared with accountd) names it. inferd's own
 //! caller table, the system file `/etc/porter/inferd-callers.toml`
 //! (`porter_daemon::INFERD_CALLERS`, which a person cannot write; never `inferd.toml`), is rows of
-//! that shared table, keyed by systemd unit (never by executable path: the cgroup is all
-//! `ProcCallers` reads): cuad's units with the `Cua` role,
+//! that shared table, keyed by systemd unit (the programs a unit runs are `porter_dbus::CallerRow::images`:
+//! daemons by convention, detent and sill in `bin`): cuad's units with the `Cua` role,
 //! each app's with `App`. This is advisory for unsandboxed processes (porter R12): a
 //! process that can start an allowed unit or app scope can be that caller. cuad is a fixed unit and
 //! the only caller that may open a computer-use session; an app is whichever unit the table
 //! names for it, or any identified app scope.
 
 use porter_core::{AppId, AppName};
-use porter_dbus::{BusConnection, CallerRole, CallerRow, ProcCallers};
+use porter_dbus::{BusConnection, CallerRole, CallerRow, Install, ProcCallers, installed};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
@@ -210,6 +210,7 @@ impl CallerTable {
                 unit: Some(unit.clone()),
                 app: app.clone(),
                 role: CallerRole::Cua,
+                exe: Vec::new(),
                 name: None,
             })
         });
@@ -219,10 +220,11 @@ impl CallerTable {
                 unit: Some(unit.clone()),
                 app: app.clone(),
                 role: CallerRole::AgentLauncher,
+                exe: Vec::new(),
                 name: None,
             })
         });
-        // Settings by its unit, whose main process alone has the role (porter_dbus::MainPids):
+        // Settings by its unit, whose main process alone has the role (peephole's `Full` proof):
         // before the apps, so an app entry cannot claim the unit.
         let settings = self
             .settings
@@ -232,6 +234,7 @@ impl CallerTable {
                 unit: Some(unit),
                 app,
                 role: CallerRole::Settings,
+                exe: installed(Install::Bin, SETTINGS_PROGRAM),
                 name: None,
             });
         // The shell by its scope; the shared role is the one accountd gives it.
@@ -241,6 +244,7 @@ impl CallerTable {
                 unit: Some(unit.clone()),
                 app: app.clone(),
                 role: CallerRole::SheetHost,
+                exe: installed(Install::Bin, SHELL_PROGRAM),
                 name: None,
             })
         });
@@ -255,6 +259,7 @@ impl CallerTable {
                 } else {
                     CallerRole::App
                 },
+                exe: Vec::new(),
                 name: None,
             })
         });
@@ -285,6 +290,11 @@ const SETTINGS_APP: &str = "org.quire.Settings";
 
 /// The shell, which a `shell` entry runs.
 const SHELL_APP: &str = "org.quire.Shell";
+
+/// The programs the Settings app and the shell are installed as (in `bin`): the unit manager must
+/// say their units start one of these before they keep a fixed role.
+const SETTINGS_PROGRAM: &str = "detent";
+const SHELL_PROGRAM: &str = "sill";
 
 impl Caller {
     /// A shared caller as inferd knows roles: `Cua` and `Settings`, and `App` for every other.
@@ -332,8 +342,9 @@ impl ProcPeers {
     pub fn with_root(connection: BusConnection, table: CallerTable, root: &ProcRoot) -> Self {
         let rows = table.rows();
         let callers = match root.fixture() {
+            #[cfg(feature = "test-proc-root")]
             Some(dir) => ProcCallers::with_proc_root(connection, rows, dir.to_path_buf()),
-            None => ProcCallers::new(connection, rows),
+            _ => ProcCallers::new(connection, rows),
         };
         Self {
             callers: std::sync::Arc::new(callers),
