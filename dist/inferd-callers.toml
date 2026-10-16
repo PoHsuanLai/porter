@@ -38,7 +38,12 @@ places = ["companiond.service", "readerd.service", "intentd.service"]
 [apps]
 "org.quire.Memory" = ["memoryd.service"]
 "org.quire.Intents" = ["intentd.service"]
-"org.quire.Companion" = ["companiond.service"]
+# The companion: its daemon, and docket-acp, the editor-agent launcher, which runs the planner's
+# turns in its own scope. A scope's name gives no program, so the entry names docket-acp's.
+"org.quire.Companion" = [
+    "companiond.service",
+    { unit = "docket-acp.scope", exe = ["/usr/bin/docket-acp", "/usr/local/bin/docket-acp", "/opt/quire/releases/*/bin/docket-acp"] },
+]
 "org.quire.Reader" = ["readerd.service"]
 # voiced holds the microphone and asks for speech to text, which runs on the speech host on this
 # computer: the default floor keeps the data class `voice` on_device.
