@@ -16,12 +16,16 @@
 # An optional `name = "..."` is what a person reads for the app (Settings' account page lists
 # "Mail" under an identity, not "org.quire.Mail"); an app without one is named by its desktop
 # entry (`<app id>.desktop`, its `Name=`), else by its id.
-# A row with a unit that gives a fixed role is honoured only while the manager says the unit is
-# defined by root's files: its unit file and every drop-in must be root-held and under
-# /usr/lib/systemd/user, /usr/local/lib/systemd/user or /etc/systemd/user (never in a home or
-# runtime directory, and not transient), and the unit must carry this line, or the caller is a
-# plain app (porter_dbus::UnitRule):
-#   UnsetEnvironment=LD_PRELOAD LD_LIBRARY_PATH LD_AUDIT GCONV_PATH GIO_EXTRA_MODULES GTK_MODULES GTK_PATH GST_PLUGIN_PATH GST_PLUGIN_SYSTEM_PATH LIBGL_DRIVERS_PATH MESA_LOADER_DRIVER_OVERRIDE __EGL_VENDOR_LIBRARY_DIRS __EGL_VENDOR_LIBRARY_FILENAMES GBM_BACKENDS_PATH LIBVA_DRIVERS_PATH VK_ICD_FILENAMES VK_DRIVER_FILES VK_ADD_DRIVER_FILES VK_LAYER_PATH VK_ADD_LAYER_PATH VK_INSTANCE_LAYERS VK_LOADER_LAYERS_ENABLE
+# A row with a unit that gives a fixed role is honoured only while the systemd manager vouches for
+# the unit (peephole's `Full` proof): the process is the unit's main process, the unit comes from
+# files root owns (its fragment and every drop-in, in directories only root can write), it is not
+# transient, it starts one of the row's programs, and it unsets the loader variables
+# (`UnsetEnvironment=` of the 22 names of peephole's LOADER_VARIABLES, as dist/inferd.service
+# does). Otherwise the caller is a plain app. A row names its programs with
+# `exe = ["/usr/bin/sill", ...]` (absolute paths, one `*` allowed per segment); a row for a daemon
+# unit (`inferd.service`) that names none runs `libexec/quire/<name>` under /usr, /usr/local or
+# /opt/quire/releases/*. A unit that is not named like a daemon and lists no `exe` is never more
+# than a process nobody knows: put its programs in the row.
 
 # The Settings app (detent), as the unit the desktop runs it in: any program may start an app
 # scope called `app-org.quire.Settings-N.scope`, so the role is not given by the app's name.
@@ -30,6 +34,7 @@ app = "org.quire.Settings"
 unit = "org.quire.Settings.service"
 role = "settings"
 name = "Settings"
+exe = ["/usr/bin/detent", "/usr/local/bin/detent", "/opt/quire/releases/*/bin/detent"]
 
 # The shell that draws the accounts sheets, as the service the desktop session starts it in: only
 # that unit's main process.
@@ -38,6 +43,7 @@ app = "org.quire.Shell"
 unit = "sill.service"
 role = "sheet_host"
 name = "Shell"
+exe = ["/usr/bin/sill", "/usr/local/bin/sill", "/opt/quire/releases/*/bin/sill"]
 
 # inferd: asks for verdicts and resolves API keys for the models it runs.
 [[caller]]
@@ -56,7 +62,8 @@ name = "Sync"
 # temor, the terminal: reads the person's computers (`Tailnet1.Machines`) and nothing else.
 # temor's unit is `org.quire.Temor.service` (`Type=dbus`, as detent's `org.quire.Settings.service`).
 # It is checked against the manager's main process like every unit row, so it matches only the
-# service temor runs in.
+# service temor runs in. No `exe` yet: temor's installed path is not fixed, so until a row names it
+# no process is the terminal (a service needs a known program to be judged).
 [[caller]]
 app = "org.quire.Temor"
 unit = "org.quire.Temor.service"

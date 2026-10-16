@@ -52,7 +52,7 @@ Allowed direct edges (checked by `scripts/check-boundary.sh`; dev-dependencies a
 | `porter-core` | nothing of ours |
 | `porter-daemon` | nothing of ours (`notify` and `thiserror`); no zbus, no tokio, no environment read (checked by check-boundary.sh) |
 | `porter-secrets` | `porter-core`, `porter-fs`; on Linux and Android rustix (the sealed memfd of `sealed_key`) |
-| `prov`, `porter-provider`, `porter-sync`, `porter-dbus`, `porter-http`, `porter-proxy`, `porter-dav` (also `porter-http`) | `porter-core` |
+| `prov`, `porter-provider`, `porter-sync`, `porter-dbus`, `porter-http`, `porter-proxy`, `porter-dav` (also `porter-http`) | `porter-core` (`porter-dbus` also takes peephole, peephole-core and peephole-bus by git tag; none is a porter or quire crate, so check-boundary's edge table does not list them) |
 | `porter-oauth`, `porter-discover` | `porter-core`, `porter-http`, `porter-provider` |
 | `porter-tailscale` | `porter-core` (its `NodeId`, `Machine`, `MachineOwner`); with feature `io`, hyper, hyper-util, http-body-util and tokio for the socket |
 | `porter-tailnet` | `porter-core`, `porter-tailscale` (with feature `io`: hyper, hyper-util, http-body-util and tokio for the sockets) |
@@ -196,7 +196,7 @@ takes porter-oauth without its `io`). A daemon or an app hosting porter turns th
 | HTTP requests and responses | `porter-http` |
 | HTTP/1.1 framing over a byte stream, and the client that dials one | `porter-http::stream` (feature `stream`) |
 | the authenticated relay's protocol rules | `porter-proxy` (`imap`, `smtp`, `pop3`, `http1`) |
-| who is calling a daemon, and its role | `porter-dbus::callers`; the table read from its files, `porter-dbus::callers_file` (feature `callers-file`, on in accountd and syncd) |
+| who is calling a daemon, and its role | `porter-dbus::callers` (`ProcCallers` over peephole's `BusPeers`; see "Caller identity"); the table read from its files, `porter-dbus::callers_file` (feature `callers-file`, on in accountd and syncd) |
 | writing a file atomically (staged, synced, renamed, directory synced), and a file kept with its `.bak` | `porter-fs::atomic` (`AtomicWrite`, `AtomicFile`): the only writer; accountd, inferd, porter-secrets, porter-tailnet and syncd all call it |
 | the XDG base directories from an injected environment | `porter-core::xdg` |
 | a `Retry-After` of seconds | `porter-http`'s `HttpResponse::retry_after_seconds` |
@@ -613,3 +613,29 @@ annotated sample configuration). One `Open` is:
      sent or produced) beside the reply.
 3. **Away.** The first event is `Waiting(readiness)` when the engine is not ready, then `Routed`,
    then the turn's events and one `Finished` per request, exactly as `session::step` decides.
+
+## Caller identity (peephole)
+
+`porter-dbus::ProcCallers` identifies a bus sender with [peephole](https://github.com/PoHsuanLai/peephole)
+(`BusPeers`, by git tag, never by path): the sender's process is held by pidfd, `/proc` and the user
+manager state what it is, and `judge` returns a `Standing`. `callers/standing.rs` turns the standing into a
+`Caller`; `callers/translate.rs` turns porter's table into peephole's.
+
+- Fixed roles (`CallerRole::is_fixed`) need `Proof::Full` (main process of a unit from root-owned
+  fragment and drop-ins, not transient, starting a program of the row, loader variables unset). With less
+  the caller is a plain `App`. `Agent` and `App` units need only the row (`Proof::Cgroup`).
+- A Flatpak app is `Proven(Flatpak)` (metadata checked against the cgroup's `app-flatpak-<id>-<n>.scope`;
+  a disagreement is nobody), a snap `Proven(Snap)` when its name is a reverse-DNS app name, a program in
+  `app-<id>-<n>.scope` `Proven(Unsandboxed)` (the name is a claim; the role is the table's row for the
+  app, which names no unit). Every other program, and any image a person can write, is nobody.
+- Table translation. A `[[caller]]` row with a `unit` and at least one program becomes a `[[peer]]` row of
+  the same app, unit and role (porter's own role spelling), its `exe` being the row's `exe` or, for a
+  daemon unit named `<name>.service` (lower case, digits, dashes), `libexec/quire/<name>` under `/usr`,
+  `/usr/local` and `/opt/quire/releases/*` (`images::installed`). Any other unit lists its `exe` in the row
+  (`dist/callers.toml` does for detent and sill, in `bin`), and without one is nobody. Rows without a unit
+  are not translated. One row for the unit manager (`systemd`, role `manager`, `Exe`) is added, and the
+  manager's answers are believed only while its owner holds it. A user row can name `exe` but only gets
+  a non-fixed role, and only if the program is root-owned.
+- Tests: the daemons' `test-proc-root` features turn on porter-dbus's `test-proc-root`, which turns on
+  peephole's `fake` and adds `ProcCallers::with_proc_root` and `caller_of_pid` over a directory tree
+  (`callers/fixture.rs`). Never in a default build; check-boundary.sh checks it.
