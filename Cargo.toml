@@ -78,7 +78,7 @@ storage-gdrive  = { path = "crates/storage-gdrive" }
 
 # quire's live settings modules (`org.quire.SettingsModule1`), for accountd only: the one porter -> quire
 # edge (ARCHITECTURE section 1). By git at quire's pinned rev (a local checkout overrides it: ARCHITECTURE section 1); `live` is the module, `tokio` drives its zbus.
-ds-settings     = { git = "https://github.com/PoHsuanLai/quire.git", rev = "68a99c19a26a9b7a941f494b28b0cb8da4f6fe0b", features = ["live", "tokio"] }
+ds-settings     = { git = "https://github.com/PoHsuanLai/quire.git", rev = "5a2e0742e26f279e7708ba8af4ee24622e837d57", features = ["live", "tokio"] }
 
 # stoker's computer-use vocabulary, by git at stoker's pinned rev (quire
 # CONSUMING.md section 1; a local checkout overrides it, ARCHITECTURE section 1). stoker has no porter dependency, so there is no cycle.
@@ -147,7 +147,7 @@ hickory-resolver = "0.26"
 rusqlite = { version = "0.40", features = ["bundled-sqlcipher-vendored-openssl"] }
 # The per-user agent's address, lock and start (the `socket` carrier of porter-client). The standalone
 # repo at the rev mailo pins; quire's block still names the old copy inside mailo (see FINDINGS).
-latchkey = { git = "https://github.com/PoHsuanLai/latchkey", rev = "ef0117ada46854702057c79515516da43b271455" }
+latchkey = { git = "https://github.com/PoHsuanLai/latchkey", rev = "99cc9deb198860293253c534c4d26b382ec8b87e" }
 rustix = { version = "1.1", default-features = false, features = ["std", "event", "fs", "net", "time", "process"] }
 
 [workspace.lints.rust]
