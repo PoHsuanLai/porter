@@ -71,7 +71,9 @@ porter-tailscale = { path = "crates/porter-tailscale" }
 porter-tailnet  = { path = "crates/porter-tailnet" }
 porter-router   = { path = "crates/porter-router" }
 porter-turns    = { path = "crates/porter-turns" }
-porter-daemon   = { path = "crates/porter-daemon" }
+# Without the settings-file watch: a daemon that watches asks for `features = ["watch"]`, so
+# porter-dbus (and every bus client through it) never pulls a file watcher in.
+porter-daemon   = { path = "crates/porter-daemon", default-features = false }
 storage-webdav  = { path = "crates/storage-webdav" }
 storage-graph   = { path = "crates/storage-graph" }
 storage-gdrive  = { path = "crates/storage-gdrive" }

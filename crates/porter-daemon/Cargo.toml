@@ -8,8 +8,14 @@ rust-version.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[features]
+default = ["watch"]
+# The settings-file watch, the one part that needs a file watcher. porter-dbus takes this crate
+# without it for `root_held`, so a bus client never pulls notify in.
+watch = ["dep:notify"]
+
 [dependencies]
-notify = { workspace = true }
+notify = { workspace = true, optional = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

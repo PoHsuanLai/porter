@@ -9,6 +9,7 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+# For `root_held` alone: without the settings-file watch, so no file watcher reaches a client.
 porter-daemon = { workspace = true }
 porter-core = { workspace = true }
 zbus = { workspace = true }

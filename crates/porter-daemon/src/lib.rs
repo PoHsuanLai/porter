@@ -29,6 +29,7 @@
 
 mod proc_root;
 mod system_callers;
+#[cfg(feature = "watch")]
 mod watch;
 
 pub use proc_root::{ProcGate, ProcRoot};
@@ -36,4 +37,5 @@ pub use system_callers::{
     CALLERS, INFERD_CALLERS, SYSTEM_CALLERS, SYSTEM_CALLERS_VAR, SystemCallers, SystemFile,
     TABLE_DIRS, TableChoice, root_held,
 };
+#[cfg(feature = "watch")]
 pub use watch::{Watch, WatchError};
