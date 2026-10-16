@@ -470,6 +470,44 @@ async fn a_set_that_names_no_model_inferd_knows_is_a_bad_value_and_changes_nothi
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_coding_agent_is_a_choice_of_the_text_slot_alone_listed_in_its_own_group() {
+    let rig = Rig::start().await;
+    let settings = rig.live(&rig.client(Role::Settings).await).await;
+    let slot = key("ai.model.text.balanced");
+    settings
+        .set(&slot, &text("agent/claude-code"))
+        .await
+        .expect("set");
+    assert!(matches!(
+        rig.engines.settings().tiers.pick(Slot::Text, porter_core::Tier::Balanced),
+        Some(Pick::Named(m)) if m.is_agent()
+    ));
+    let schema = settings.describe().await.expect("describe");
+    let spec = schema.key.iter().find(|k| k.path == slot).expect("the row");
+    let group = spec
+        .groups
+        .get(&ChoiceWord("agent/claude-code".to_owned()))
+        .map(|group| group.0.as_str());
+    assert_eq!(group, Some("Coding Agents"));
+    // Not a choice of any other slot, and never in Automatic's pool.
+    let list = toml::Value::Array(vec![text("agent/claude-code")]);
+    let refused = [
+        (
+            key("ai.model.computer_use.balanced"),
+            text("agent/claude-code"),
+        ),
+        (key("ai.auto.pool.text"), list),
+    ];
+    for (path, bad) in refused {
+        let got = settings.set(&path, &bad).await;
+        assert!(
+            matches!(got, Err(LiveError::BadValue(_))),
+            "{path:?}: {got:?}"
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn nobody_but_the_settings_role_may_describe_get_or_set() {
     let rig = Rig::start().await;
     let slot = key("ai.model.text.fast");

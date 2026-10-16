@@ -34,6 +34,11 @@ const ON_THIS_COMPUTER: &str = "On this computer";
 /// The group of the models an engine on the person's network serves.
 const ON_YOUR_NETWORK: &str = "On your network";
 
+/// The group the coding agents are listed under: outside programs the assistant hands the
+/// conversation to, a third kind of choice beside the models inferd runs. Settings (which knows
+/// `agents.toml`) lists every agent there; the module groups the one the file holds.
+pub const CODING_AGENTS: &str = "Coding Agents";
+
 /// The app the picker asks accountd about the person's accounts as: `Verdicts` lists every account
 /// that serves a language need, and the picker reads only that an account exists.
 fn picker_app() -> Option<AppId> {
@@ -225,6 +230,12 @@ impl<P: Peers> InferdSettings<P> {
                     .iter()
                     .map(|choice| (choice.value.clone(), choice.company.clone())),
             )
+            .chain(
+                variants
+                    .iter()
+                    .filter(|word| agent_word(kind, word))
+                    .map(|word| (word.clone(), CODING_AGENTS.to_owned())),
+            )
             .map(|(word, group)| (ChoiceWord(word), ChoiceGroup(group)))
             .collect();
         let places = self
@@ -369,6 +380,13 @@ impl<P: Peers> InferdSettings<P> {
     }
 }
 
+/// Whether `text` is the word of a coding agent (`agent/<program>`) in the one slot that takes
+/// one. Only the shape is checked here: which agents exist is `agents.toml`'s, docket's, and is
+/// checked where the assistant is handed the conversation and where Settings lists them.
+fn agent_word(kind: Slot, text: &str) -> bool {
+    kind == Slot::Text && parse_model(text).is_some_and(|model| model.is_agent())
+}
+
 /// What a model menu offers: the values, their names, the greyed ones with why, and groups.
 struct ModelChoices {
     variants: Vec<String>,
@@ -464,7 +482,10 @@ impl<P: Peers> LiveModule for InferdSettings<P> {
             return Err(LiveError::BadValue("a model is text".into()));
         };
         let hosted = self.hosted(kind).await;
-        let known = text.is_empty() || text == AUTO || self.choosable(kind, &text, &hosted);
+        let known = text.is_empty()
+            || text == AUTO
+            || agent_word(kind, &text)
+            || self.choosable(kind, &text, &hosted);
         if !known {
             return Err(LiveError::BadValue(format!(
                 "{text}: not a model inferd knows for {}",

@@ -274,6 +274,9 @@ pub enum DeclinedBecause {
     Unavailable,
     /// It does not fit in memory, even with every idle engine unloaded.
     NoRoom,
+    /// The person chose a coding agent, not a model, for this kind of work: no model answers
+    /// here, and the app hands the work to the agent. Not a failure.
+    AgentChosen,
 }
 
 /// A named model that cannot serve, and why. Shown to the person; never answered by another model.
@@ -362,6 +365,14 @@ fn named(
     candidates: &[PickCandidate],
     policy: &Policy,
 ) -> Result<Picked, PickRefusal> {
+    // A coding agent is no candidate: the app that asked is told which one, to hand the work over.
+    if model.is_agent() {
+        return Err(declined(
+            model,
+            DeclinedBecause::AgentChosen,
+            InferRefusal::Unavailable,
+        ));
+    }
     let Some(found) = candidates.iter().find(|c| c.model_ref() == *model) else {
         return Err(declined(
             model,

@@ -92,6 +92,11 @@ fn tiers_of(ai: &AiConfig, mut tiers: TierMap, rejected: &mut Vec<String>) -> Ti
         let named = match text {
             "" | "auto" => None,
             other => match parse_model(other) {
+                // A coding agent is a choice of the text slot alone.
+                Some(model) if model.is_agent() && kind != Slot::Text => {
+                    rejected.push(path);
+                    continue;
+                }
                 Some(model) => Some(model),
                 None => {
                     rejected.push(path);
@@ -119,7 +124,13 @@ fn tiers_of(ai: &AiConfig, mut tiers: TierMap, rejected: &mut Vec<String>) -> Ti
             continue;
         };
         // A row that names no model is dropped and said; the rest of the pool stands.
-        let models: Vec<ModelRef> = texts.iter().filter_map(|text| parse_model(text)).collect();
+        // Automatic chooses among models and never hands a task to an agent, so an agent in the
+        // pool is dropped and said the same way.
+        let models: Vec<ModelRef> = texts
+            .iter()
+            .filter_map(|text| parse_model(text))
+            .filter(|model| !model.is_agent())
+            .collect();
         if models.len() != texts.len() {
             rejected.push(path);
         }

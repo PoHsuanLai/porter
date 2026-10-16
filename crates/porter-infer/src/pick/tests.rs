@@ -424,6 +424,25 @@ fn a_named_non_commercial_model_is_served_because_the_person_named_it() {
 }
 
 #[test]
+fn a_chosen_coding_agent_is_no_model_and_the_refusal_names_it() {
+    let agent = ModelRef::agent("claude-code").expect("agent");
+    let rules = PickPolicy {
+        policy: &open(),
+        auto: AutoPolicy::default(),
+    };
+    let refused = pick(ASK, &Pick::Named(agent.clone()), &[warm("b", 0)], rules)
+        .expect_err("an agent is not a model");
+    assert_eq!(refused.refusal, InferRefusal::Unavailable);
+    assert_eq!(
+        refused.declined,
+        Some(Declined {
+            model: agent,
+            because: DeclinedBecause::AgentChosen,
+        })
+    );
+}
+
+#[test]
 fn the_vocabulary_has_stable_slugs() {
     assert_eq!(AutoMode::from_slug("warm_first"), Some(AutoMode::WarmFirst));
     assert_eq!(AutoEvict::from_slug("idle_only"), Some(AutoEvict::IdleOnly));

@@ -19,6 +19,31 @@ pub struct ModelRef {
     pub model: ModelId,
 }
 
+/// The account a coding agent is chosen under: the text slot's word `agent/<program>` names an
+/// outside agent the assistant hands the conversation to, not a model inferd runs. Only the text
+/// slot takes it, and Automatic never routes to it.
+pub const AGENT_ACCOUNT: &str = "agent";
+
+impl ModelRef {
+    /// The choice of the coding agent listed as `program`; `None` when the name is not an id.
+    pub fn agent(program: &str) -> Option<Self> {
+        Some(Self {
+            account: AccountId::parse(AGENT_ACCOUNT).ok()?,
+            model: ModelId::parse(program).ok()?,
+        })
+    }
+
+    /// The agent's program name, when this names a coding agent rather than a model.
+    pub fn agent_program(&self) -> Option<&str> {
+        (self.account.as_str() == AGENT_ACCOUNT).then(|| self.model.as_str())
+    }
+
+    /// Whether this names a coding agent.
+    pub fn is_agent(&self) -> bool {
+        self.agent_program().is_some()
+    }
+}
+
 /// The label a settings page draws for a tier. The key segment stays `best` (a name for a slot,
 /// kept for compatibility), but the label says what the slot is for and ranks nothing.
 pub fn tier_label(tier: Tier) -> &'static str {
@@ -106,10 +131,13 @@ impl TierMap {
     /// row that names a model wins over an "auto" row for the same slot: a named model is never
     /// overridden, so a file that says both stays with the name. "auto" carries its pool.
     pub fn pick(&self, kind: Slot, tier: Tier) -> Option<Pick> {
+        // A coding agent is a choice of the text slot only: on any other slot the row is not
+        // read, whatever a file says.
         let named = self
             .rows
             .iter()
             .find(|row| row.kind == kind && row.tier == tier)
+            .filter(|row| kind == Slot::Text || !row.model.is_agent())
             .map(|row| Pick::Named(row.model.clone()));
         named.or_else(|| {
             self.autos
@@ -117,7 +145,13 @@ impl TierMap {
                 .find(|row| row.kind == kind && row.tier == tier)
                 .map(|row| Pick::Auto {
                     mode: row.mode,
-                    pool: self.pool(kind).to_vec(),
+                    // Automatic chooses among models; it never hands a task to an agent.
+                    pool: self
+                        .pool(kind)
+                        .iter()
+                        .filter(|model| !model.is_agent())
+                        .cloned()
+                        .collect(),
                 })
         })
     }
@@ -314,6 +348,45 @@ mod tests {
         for (name, kind, tier, who, expected) in cases {
             assert_eq!(tier_choice(&map, kind, tier, who), expected, "{name}");
         }
+    }
+
+    #[test]
+    fn a_coding_agent_is_a_text_choice_and_automatic_never_takes_one() {
+        let agent = ModelRef::agent("claude-code").expect("agent");
+        assert_eq!(agent.agent_program(), Some("claude-code"));
+        assert!(!model("cloud", "claude-haiku").is_agent());
+        assert_eq!(ModelRef::agent("Not An Id"), None);
+        let named = |kind| TierMap {
+            rows: vec![TierRow {
+                kind,
+                tier: Tier::Balanced,
+                model: agent.clone(),
+            }],
+            autos: vec![],
+            pools: vec![],
+        };
+        let cases = [
+            (
+                "the text slot takes it",
+                Slot::Text,
+                Some(Pick::Named(agent.clone())),
+            ),
+            ("computer use does not", Slot::ComputerUse, None),
+            ("neither does voice", Slot::VoiceIn, None),
+        ];
+        for (name, kind, expected) in cases {
+            assert_eq!(named(kind).pick(kind, Tier::Balanced), expected, "{name}");
+        }
+        let local = model("local", "nemotron");
+        let mut pooled = TierMap::automatic(Slot::Text, vec![agent, local.clone()]);
+        pooled.rows.clear();
+        assert_eq!(
+            pooled.pick(Slot::Text, Tier::Fast),
+            Some(Pick::Auto {
+                mode: AutoMode::default(),
+                pool: vec![local],
+            })
+        );
     }
 
     fn card(name: &str, kind: Slot, locality: Locality, readiness: Readiness) -> PickerInput {

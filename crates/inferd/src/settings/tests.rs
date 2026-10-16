@@ -693,6 +693,45 @@ fn automatics_pool_is_read_per_slot_and_a_row_naming_no_model_is_dropped_and_sai
     assert_eq!(resolved.settings.tiers.pool(Slot::Text).len(), 1);
 }
 
+#[test]
+fn a_coding_agent_is_a_choice_of_the_text_slot_and_of_no_pool() {
+    let got = settings("[ai.model.text]\nbalanced = \"agent/claude-code\"\n");
+    assert_eq!(
+        picked(&got, Slot::Text),
+        Some(Pick::Named(ModelRef::agent("claude-code").expect("agent")))
+    );
+    let rows = [
+        (
+            "computer use",
+            "[ai.model.computer_use]\nbalanced = \"agent/claude-code\"\n",
+            "ai.model.computer_use.balanced",
+        ),
+        (
+            "a pool",
+            "[ai.auto.pool]\ntext = [\"local/tiny-chat\", \"agent/claude-code\"]\n",
+            "ai.auto.pool.text",
+        ),
+    ];
+    for (name, text, path) in rows {
+        let resolved = resolve(&config(text));
+        assert_eq!(resolved.rejected, [path], "{name}");
+        assert_eq!(
+            picked(&resolved.settings, Slot::ComputerUse),
+            None,
+            "{name}"
+        );
+        assert!(
+            resolved
+                .settings
+                .tiers
+                .pool(Slot::Text)
+                .iter()
+                .all(|model| !model.is_agent()),
+            "{name}"
+        );
+    }
+}
+
 /// The file moved into inferd's own folder: while only the old one is there it is read, and the
 /// first change writes the whole of it to the new place, leaving the old file as it was.
 #[test]
