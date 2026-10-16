@@ -70,6 +70,9 @@ pub struct Config {
     pub dirs: Dirs,
     /// The configuration file (`inferd.toml`).
     pub config_file: PathBuf,
+    /// Where the file was before it moved into inferd's own folder ([`Dirs::config_before`]):
+    /// read while `config_file` is missing. None for a file named on the command line.
+    pub config_before: Option<PathBuf>,
     /// Tailscale's socket; none means the path Tailscale itself uses.
     pub tailscale_socket: Option<PathBuf>,
     /// Where the caller lookup reads processes.
@@ -91,6 +94,7 @@ impl Config {
     pub fn new(dirs: Dirs, bus: BusTarget) -> Self {
         Self {
             config_file: dirs.config.clone(),
+            config_before: Some(dirs.config_before.clone()),
             dirs,
             tailscale_socket: None,
             proc_root: ProcRoot::System,
@@ -119,6 +123,7 @@ impl Config {
     #[must_use]
     pub fn with_config_file(mut self, path: PathBuf) -> Self {
         self.config_file = path;
+        self.config_before = None;
         self
     }
 
@@ -342,6 +347,7 @@ impl Daemon {
         let Config {
             dirs,
             config_file,
+            config_before,
             tailscale_socket,
             proc_root,
             callers_file,
@@ -349,7 +355,18 @@ impl Daemon {
             keys,
             programs,
         } = config;
-        let config = read_config(&config_file)?;
+        let file = match config_before {
+            Some(before) => ConfigFile::new(config_file).moved_from(before),
+            None => ConfigFile::new(config_file),
+        };
+        if file.source() != file.path() {
+            eprintln!(
+                "inferd: reading {}; move it to {}, where Settings looks for it (the old place is read for this release only)",
+                file.source().display(),
+                file.path().display()
+            );
+        }
+        let config = read_config(file.source())?;
         let callers = read_callers(&callers_file, &config)?;
         let catalog = read_catalog(&dirs.catalog);
         for skipped in &catalog.skipped {
@@ -564,7 +581,7 @@ impl Daemon {
             dirs.sockets.clone(),
         )
         .spawn();
-        let reload = Reload::new(ConfigFile::new(config_file), engines.clone());
+        let reload = Reload::new(file, engines.clone());
         reload.clone().watch(RELOAD_EVERY);
         // Which engine programs this computer lacks, for the picker's plain-words note.
         let found = config.engines_with(&dirs, &programs);

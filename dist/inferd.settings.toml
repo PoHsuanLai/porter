@@ -1,5 +1,5 @@
 # inferd's settings schema (design/22 section 9.2): every row below is read by inferd at exactly
-# this path in $XDG_CONFIG_HOME/quire/inferd.toml (a test walks this file and checks that each row
+# this path in $XDG_CONFIG_HOME/inferd/inferd.toml (a test walks this file and checks that each row
 # changes what inferd does), written by hand until inferd can write its own (`--write-schema`).
 # Install to $XDG_DATA_DIRS/quire/settings/inferd.settings.toml.
 #
@@ -12,7 +12,7 @@
 # Every row is hands-off: ai.* is never agent-settable (AGENT_NEVER_SETTABLE), so no row carries
 # `agent = "settable"`.
 app = "inferd"
-file = "quire/inferd.toml"
+file = "inferd/inferd.toml"
 version = 1
 # The tables inferd keeps in its file beside the rows (quire's ForeignTables; v0.2.19's parser
 # ignores this line, v0.2.20 reads it).

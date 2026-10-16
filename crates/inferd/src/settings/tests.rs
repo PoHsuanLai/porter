@@ -692,3 +692,27 @@ fn automatics_pool_is_read_per_slot_and_a_row_naming_no_model_is_dropped_and_sai
     );
     assert_eq!(resolved.settings.tiers.pool(Slot::Text).len(), 1);
 }
+
+/// The file moved into inferd's own folder: while only the old one is there it is read, and the
+/// first change writes the whole of it to the new place, leaving the old file as it was.
+#[test]
+fn a_file_at_its_old_place_is_read_and_the_first_change_moves_it() {
+    let scratch = Scratch::new("settings-moved");
+    let old = scratch.path().join("quire").join("inferd.toml");
+    let new = scratch.path().join("inferd").join("inferd.toml");
+    std::fs::create_dir_all(old.parent().unwrap()).unwrap();
+    let before = "[ai.auto]\nshow_reason = \"off\"\n";
+    std::fs::write(&old, before).unwrap();
+    let file = ConfigFile::new(new.clone()).moved_from(old.clone());
+    assert_eq!(file.source(), old.as_path());
+    assert_eq!(
+        file.read().unwrap(),
+        InferdConfig::from_toml(before).unwrap()
+    );
+    file.set("ai.model.text.balanced", "auto".into())
+        .expect("write");
+    assert_eq!(file.source(), new.as_path());
+    let moved: toml::Table = std::fs::read_to_string(&new).unwrap().parse().unwrap();
+    assert_eq!(moved["ai"]["auto"]["show_reason"].as_str(), Some("off"));
+    assert_eq!(std::fs::read_to_string(&old).unwrap(), before);
+}

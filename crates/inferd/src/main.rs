@@ -19,7 +19,7 @@ use std::process::ExitCode;
 #[derive(Debug, Parser)]
 #[command(name = "inferd", version)]
 struct Args {
-    /// The configuration file, instead of `$XDG_CONFIG_HOME/quire/inferd.toml`.
+    /// The configuration file, instead of `$XDG_CONFIG_HOME/inferd/inferd.toml`.
     #[arg(long, value_name = "FILE")]
     config: Option<PathBuf>,
 

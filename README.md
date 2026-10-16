@@ -68,7 +68,7 @@ Yours, made as you use porter:
 | Your own provider files, which win over the shipped ones | `$XDG_DATA_HOME/porter/providers/` |
 | Your own client ids (Settings writes this), and callers | `$XDG_CONFIG_HOME/porter/` |
 | Synced copies (calendars, contacts, files, photos) | `$XDG_DATA_HOME/porter/` |
-| The AI service's configuration | `$XDG_CONFIG_HOME/quire/inferd.toml` |
+| The AI service's configuration | `$XDG_CONFIG_HOME/inferd/inferd.toml` |
 
 Secrets (passwords, keys, tokens) are in your keyring, never in these files.
 

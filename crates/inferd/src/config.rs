@@ -88,8 +88,11 @@ impl InferdConfig {
 /// Where everything is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Dirs {
-    /// `$XDG_CONFIG_HOME/quire/inferd.toml`.
+    /// `$XDG_CONFIG_HOME/inferd/inferd.toml`: inferd's own folder, where Settings looks for it.
     pub config: PathBuf,
+    /// `$XDG_CONFIG_HOME/quire/inferd.toml`, where the file was before: read while the new one is
+    /// missing, for one release, and never written.
+    pub config_before: PathBuf,
     /// The catalog directories.
     pub catalog: CatalogDirs,
     /// `$XDG_RUNTIME_DIR/inferd`: the engines' sockets.
@@ -166,7 +169,8 @@ impl Dirs {
             clients_shipped: xdg.shipped("porter/clients.toml"),
             clients_own: config.join("porter").join("clients.toml"),
             applications,
-            config: config.join("quire").join("inferd.toml"),
+            config: config.join("inferd").join("inferd.toml"),
+            config_before: config.join("quire").join("inferd.toml"),
             catalog: CatalogDirs {
                 system: xdg.shipped("stoker/catalog"),
                 user: data.join("stoker").join("catalog"),

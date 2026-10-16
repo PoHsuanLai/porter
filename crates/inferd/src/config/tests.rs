@@ -20,7 +20,7 @@ fn the_directories_follow_xdg_and_fall_back_under_home() {
     .expect("dirs");
     assert_eq!(
         from_home.config,
-        PathBuf::from("/home/u/.config/quire/inferd.toml")
+        PathBuf::from("/home/u/.config/inferd/inferd.toml")
     );
     assert_eq!(
         from_home.catalog.system,
@@ -53,7 +53,7 @@ fn the_directories_follow_xdg_and_fall_back_under_home() {
         ("HF_HOME", "/hf"),
     ]))
     .expect("dirs");
-    assert_eq!(explicit.config, PathBuf::from("/cfg/quire/inferd.toml"));
+    assert_eq!(explicit.config, PathBuf::from("/cfg/inferd/inferd.toml"));
     assert_eq!(explicit.catalog.user, PathBuf::from("/data/stoker/catalog"));
     assert_eq!(
         explicit.audit,
@@ -76,7 +76,7 @@ fn a_relative_or_empty_xdg_variable_is_ignored() {
     .expect("dirs");
     assert_eq!(
         dirs.config,
-        PathBuf::from("/home/u/.config/quire/inferd.toml")
+        PathBuf::from("/home/u/.config/inferd/inferd.toml")
     );
     assert_eq!(
         dirs.audit,

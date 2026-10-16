@@ -1,4 +1,4 @@
-# inferd's configuration: $XDG_CONFIG_HOME/quire/inferd.toml. Every table is optional; without the
+# inferd's configuration: $XDG_CONFIG_HOME/inferd/inferd.toml. Every table is optional; without the
 # file inferd serves nobody (no callers) and runs nothing (no engine programs).
 
 # Where the engine programs are, never found from the environment ($PATH is not searched). The one
