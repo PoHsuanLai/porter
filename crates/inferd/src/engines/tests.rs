@@ -30,6 +30,15 @@ fn spec(need: Need, class: DataClass) -> SessionSpec {
 }
 
 fn start(scratch: &Scratch, host: Recorder) -> Engines {
+    let pool = models(scratch)
+        .iter()
+        .map(|model| model.model_ref())
+        .collect();
+    start_with(scratch, host, TierMap::automatic(Slot::Text, pool))
+}
+
+/// [`start`] with these choices instead of Automatic over every model.
+fn start_with(scratch: &Scratch, host: Recorder, tiers: TierMap) -> Engines {
     let models = models(scratch);
     let supervised = Supervised::start(
         models.iter().map(|m| m.spec.clone()).collect(),
@@ -43,13 +52,7 @@ fn start(scratch: &Scratch, host: Recorder) -> Engines {
             }),
         },
     );
-    let pool = models.iter().map(|model| model.model_ref()).collect();
-    Engines::new(
-        models,
-        supervised,
-        Policy::proposed(),
-        TierMap::automatic(Slot::Text, pool),
-    )
+    Engines::new(models, supervised, Policy::proposed(), tiers)
 }
 
 fn cloud() -> ModelCard {
@@ -479,8 +482,8 @@ fn llm_with_tools() -> Need {
 
 /// Automatic does not give a request that offers tools to a model known to fail at them, and
 /// says why when the whole pool fails; a request without tools and a named model are untouched.
-#[test]
-fn automatic_skips_models_that_failed_for_tools_and_refuses_when_none_can() {
+#[tokio::test]
+async fn automatic_skips_models_that_failed_for_tools_and_refuses_when_none_can() {
     let scratch = Scratch::new("engines-tools");
     let auto = start(&scratch, Recorder::default());
     let tools = spec(llm_with_tools(), DataClass::Notes);
@@ -504,10 +507,9 @@ fn automatic_skips_models_that_failed_for_tools_and_refuses_when_none_can() {
         .find(|model| model.model.as_str() == "tiny-chat")
         .expect("the chat model")
         .clone();
-    let named = Engines::new(
-        models(&scratch),
-        Supervised::idle(),
-        Policy::proposed(),
+    let named = start_with(
+        &scratch,
+        Recorder::default(),
         TierMap {
             rows: vec![porter_infer::TierRow {
                 kind: Slot::Text,
@@ -520,8 +522,10 @@ fn automatic_skips_models_that_failed_for_tools_and_refuses_when_none_can() {
     named
         .tool_proofs()
         .record(chat, porter_infer::ToolProof::Failed);
+    let routed = named.route(&tools, Role::App);
     assert!(
-        named.route(&tools, Role::App).is_ok(),
-        "a named model is not overridden"
+        routed.is_ok(),
+        "a named model is not overridden: {:?}",
+        routed.err()
     );
 }

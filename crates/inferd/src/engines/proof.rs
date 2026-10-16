@@ -2,7 +2,7 @@
 //! `porter_infer::probe_request`, run the first time Automatic considers the model for a request
 //! that offers tools, and the result kept ([`crate::toolproof::ToolProofs`]).
 //!
-//! A hosted model is not checked (see the `toolproof` module). A model that could not be started,
+//! A hosted model and a replay engine are not checked (see the `toolproof` module). A model that could not be started,
 //! or whose turn ended for a reason that says nothing about tool calls (unreachable, rate
 //! limited), is left unknown and checked again at the next session, never marked failed.
 
@@ -40,10 +40,11 @@ impl Engines {
         }
     }
 
-    /// What the canned request shows of `model`; none for a hosted model and for one that could
-    /// not answer at all.
+    /// What the canned request shows of `model`; none for a hosted model, for a replay engine
+    /// (its cassette is the script, and the check would use up an entry of it) and for one that
+    /// could not answer at all.
     async fn probe_tools(&self, model: &ModelRef, offered: &Offered) -> Option<ToolProof> {
-        if self.local(model).is_none() {
+        if self.local(model)?.cassette.is_some() {
             return None;
         }
         let request = probe_request()?;

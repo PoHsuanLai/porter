@@ -176,7 +176,7 @@ fn the_model_row_decides_between_models_and_auto_and_empty_hand_back_to_the_cata
     let best = |text: &str| decide(text, DataClass::Notes, Tier::Best, &models);
     assert_eq!(served(best(&row("local/beta"))), "beta");
     assert_eq!(served(best(&row("local/alpha"))), "alpha");
-    // Another tier is not touched by the row.
+    // Another tier with no row of its own is served by the person's pick for this one.
     assert_eq!(
         served(decide(
             &row("local/beta"),
@@ -184,7 +184,7 @@ fn the_model_row_decides_between_models_and_auto_and_empty_hand_back_to_the_cata
             Tier::Fast,
             &models
         )),
-        "alpha"
+        "beta"
     );
     // Empty: the catalogue's order, as before any row.
     let empty = best(&row("")).expect("served");
