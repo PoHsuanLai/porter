@@ -137,7 +137,7 @@ else
         # Built by the person, not by root: a build under sudo leaves a root-owned target/ and
         # ~/.cargo behind. Installing what was built is what needs root (system paths).
         if [ "$(id -u)" -eq 0 ]; then
-            echo "install.sh: do not build as root; build as your user first (cargo build --release -p accountd -p syncd -p inferd), then install with --no-build as root" >&2
+            echo "install.sh: do not build as root; build it as yourself first, then install with --no-build as root" >&2
             exit 1
         fi
         for tool in git cargo; do
