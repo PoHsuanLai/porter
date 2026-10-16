@@ -67,18 +67,19 @@ fn service_role(role: &peephole_core::RoleName, proof: Proof) -> Option<CallerRo
 /// A service has its row's role (lowered to `App` when the proof falls short, see
 /// [`proof_needed`]). An app, sandboxed or in a launcher's scope, has the role of the table's row
 /// for it that names no unit (`App` when there is none): a unit row's role goes to its unit alone.
-/// A fixed role is never reached that way: only a service shows the proof one needs, so any
-/// program can name a scope after the Settings app and still be no more than an app.
+/// An image the person can write never reaches a fixed role, whatever its scope says: nothing
+/// about it may be trusted beyond the claim.
 pub(super) fn caller_of(standing: &Standing, table: &CallerTable) -> Option<Caller> {
     let PeerIdentity::Proven(app) = identity_of(standing) else {
         return None;
     };
     let role = match standing {
         Standing::Service { role, proof, .. } => service_role(role, *proof)?,
-        _ => match table.role_of(&app.name) {
+        Standing::Unverified { .. } => match table.role_of(&app.name) {
             role if role.is_fixed() => CallerRole::App,
             role => role,
         },
+        _ => table.role_of(&app.name),
     };
     Some(Caller { app, role })
 }

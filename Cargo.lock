@@ -2154,8 +2154,8 @@ dependencies = [
 
 [[package]]
 name = "peephole"
-version = "0.1.1"
-source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.1#e1b1b6adaff180516f198cf5435e85e4dc36e971"
+version = "0.1.2"
+source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.2#f111ee0c32461d72173bb591079a1fbe0fca1953"
 dependencies = [
  "peephole-core",
  "rustix",
@@ -2164,8 +2164,8 @@ dependencies = [
 
 [[package]]
 name = "peephole-bus"
-version = "0.1.1"
-source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.1#e1b1b6adaff180516f198cf5435e85e4dc36e971"
+version = "0.1.2"
+source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.2#f111ee0c32461d72173bb591079a1fbe0fca1953"
 dependencies = [
  "futures-timer",
  "peephole",
@@ -2177,8 +2177,8 @@ dependencies = [
 
 [[package]]
 name = "peephole-core"
-version = "0.1.1"
-source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.1#e1b1b6adaff180516f198cf5435e85e4dc36e971"
+version = "0.1.2"
+source = "git+https://github.com/PoHsuanLai/peephole?tag=v0.1.2#f111ee0c32461d72173bb591079a1fbe0fca1953"
 dependencies = [
  "serde",
  "thiserror",
