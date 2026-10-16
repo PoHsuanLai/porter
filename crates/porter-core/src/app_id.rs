@@ -70,6 +70,9 @@ pub struct AppLabel(pub String);
 pub enum Isolation {
     /// A Flatpak sandbox: the name comes from the sandbox's own metadata for the caller's pid.
     Flatpak,
+    /// A Snap confinement: the name is the snap's, which the kernel attests through the process's
+    /// AppArmor label (`snap.<name>.<app>`), not the app's own word.
+    Snap,
     /// A native process, proven by a systemd scope our launcher made (`app-<name>-*.scope`, read
     /// by `identity_of`). Same-UID processes can impersonate each other, so consent here is
     /// advisory and the UI says "unsandboxed".
