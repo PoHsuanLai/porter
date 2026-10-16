@@ -33,6 +33,17 @@
    <method name="LocalEngines">
      <arg type="a(sa{sv})" direction="out"/>
    </method>
+   <method name="InstallEngine">
+     <arg name="engine" type="s" direction="in"/>
+     <arg name="scope" type="s" direction="in"/>
+   </method>
+   <method name="CancelEngineInstall">
+     <arg name="engine" type="s" direction="in"/>
+   </method>
+   <method name="PointEngine">
+     <arg name="engine" type="s" direction="in"/>
+     <arg name="folder" type="s" direction="in"/>
+   </method>
    <method name="AddComputer">
      <arg name="name" type="s" direction="in"/>
      <arg name="models" type="a(sa{sv})" direction="in"/>

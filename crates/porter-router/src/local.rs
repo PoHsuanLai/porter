@@ -53,6 +53,14 @@ pub struct EngineConfig {
     pub speech_host_libs: Option<PathBuf>,
     /// Python of Kokoro-FastAPI's environment.
     pub kokoro_python: Option<PathBuf>,
+    /// The folder of a Strata the person already has (chosen once, in a file chooser): it counts
+    /// as installed when it holds Strata's server and its own Python.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strata_folder: Option<PathBuf>,
+    /// The backend engines are downloaded for, when the person forces one (`cpu`, `vulkan`,
+    /// `cuda` or `rocm`); left out, it is chosen by the graphics cards found.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub install_backend: Option<String>,
     /// `<cache>/hub`: where `models--<org>--<name>` directories are. Left out of the file, it
     /// is the default `Dirs` computes.
     #[serde(default)]
@@ -222,6 +230,14 @@ impl LocalModel {
 /// The speech host's unit with its libraries: `LD_LIBRARY_PATH` names the configured directory
 /// and the sandbox reads it. Any other engine's unit is as `command` made it.
 fn host_libs(mut unit: UnitSpec, kind: EngineKind, engines: &EngineConfig) -> UnitSpec {
+    if kind == EngineKind::Vllm {
+        // An environment of ours is sealed with its bytecode caches in it, so Python must not
+        // write more of them there (and reads of a changed one are caught before the start).
+        unit.env.push(EnvPair {
+            name: "PYTHONDONTWRITEBYTECODE".to_owned(),
+            value: "1".to_owned(),
+        });
+    }
     if let (EngineKind::SpeechHost, Some(libs)) = (kind, &engines.speech_host_libs) {
         unit.env.push(EnvPair {
             name: "LD_LIBRARY_PATH".to_owned(),

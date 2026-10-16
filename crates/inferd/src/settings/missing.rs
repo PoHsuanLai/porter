@@ -1,11 +1,11 @@
-//! The engine programs this computer lacks, as the picker says them: a person who sees no model
-//! on this computer is told which program would run one, in plain words and never a path.
+//! The engine programs this computer can run models with, by the names the picker and the bus
+//! give them: which slots each serves and whether its program is there.
 
 use model_catalog::EngineKind;
 use porter_dbus::EngineState;
 use porter_infer::Slot;
 use porter_router::local::EngineConfig;
-use std::path::Path;
+use std::path::PathBuf;
 
 /// A program that runs models on this computer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -14,6 +14,8 @@ pub enum Engine {
     LlamaCpp,
     /// vLLM's Python.
     Vllm,
+    /// Strata, run from its own folder.
+    Strata,
     /// quire's speech host.
     Speech,
     /// Kokoro's Python.
@@ -21,7 +23,13 @@ pub enum Engine {
 }
 
 impl Engine {
-    pub(super) const ALL: [Engine; 4] = [Self::LlamaCpp, Self::Vllm, Self::Speech, Self::Kokoro];
+    pub(super) const ALL: [Engine; 5] = [
+        Self::LlamaCpp,
+        Self::Vllm,
+        Self::Strata,
+        Self::Speech,
+        Self::Kokoro,
+    ];
 
     /// The engine a catalogue profile of `kind` starts.
     pub(super) fn of(kind: EngineKind) -> Self {
@@ -38,6 +46,7 @@ impl Engine {
         match self {
             Self::LlamaCpp => "llama_cpp",
             Self::Vllm => "vllm",
+            Self::Strata => "strata",
             Self::Speech => "speech",
             Self::Kokoro => "kokoro",
         }
@@ -48,6 +57,7 @@ impl Engine {
         match self {
             Self::LlamaCpp => "llama.cpp",
             Self::Vllm => "vLLM",
+            Self::Strata => "Strata",
             Self::Speech => "the speech engine",
             Self::Kokoro => "Kokoro",
         }
@@ -57,66 +67,30 @@ impl Engine {
     pub(super) fn serves(self, slot: Slot) -> bool {
         let speech = matches!(slot, Slot::VoiceIn | Slot::VoiceOut);
         match self {
-            Self::LlamaCpp | Self::Vllm => !speech,
+            Self::LlamaCpp | Self::Vllm | Self::Strata => !speech,
             Self::Speech => speech,
             Self::Kokoro => slot == Slot::VoiceOut,
         }
     }
 
-    /// Whether its program is there: named in `config` (the llama.cpp path already resolved by
-    /// [`crate::config::ProgramSearch`]) and present.
+    /// Whether its program is there: named in `config` (the programs already resolved by
+    /// [`crate::config::ProgramSearch`]) and present. Strata's is the Python of the folder the
+    /// person pointed at.
     pub(super) fn state(self, config: &EngineConfig) -> EngineState {
-        match self.program(config).filter(|path| path.exists()) {
-            Some(path) => EngineState::Found(path.to_path_buf()),
+        let program: Option<PathBuf> = match self {
+            Self::LlamaCpp => config.llama_server.clone(),
+            Self::Vllm => config.vllm_python.clone(),
+            Self::Strata => config
+                .strata_folder
+                .as_deref()
+                .and_then(porter_engines::pointed_strata)
+                .map(|found| found.program),
+            Self::Speech => config.speech_host.clone(),
+            Self::Kokoro => config.kokoro_python.clone(),
+        };
+        match program.filter(|path| path.exists()) {
+            Some(path) => EngineState::Found(path),
             None => EngineState::Missing,
-        }
-    }
-
-    fn program(self, config: &EngineConfig) -> Option<&Path> {
-        match self {
-            Self::LlamaCpp => config.llama_server.as_deref(),
-            Self::Vllm => config.vllm_python.as_deref(),
-            Self::Speech => config.speech_host.as_deref(),
-            Self::Kokoro => config.kokoro_python.as_deref(),
-        }
-    }
-}
-
-/// The engines with no program on this computer: not named in the file, or named and not there.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct MissingEngines(Vec<Engine>);
-
-impl MissingEngines {
-    /// The engines `config` has no installed program for.
-    pub fn of(config: &EngineConfig) -> Self {
-        Self(
-            Engine::ALL
-                .into_iter()
-                .filter(|engine| engine.state(config) == EngineState::Missing)
-                .collect(),
-        )
-    }
-
-    /// The sentence for a slot with no model on this computer, when a missing program is why:
-    /// every engine that could run the slot is missing (one that is there means it is not).
-    pub fn note(&self, slot: Slot) -> Option<String> {
-        let serving: Vec<Engine> = Engine::ALL
-            .into_iter()
-            .filter(|engine| engine.serves(slot))
-            .collect();
-        if !serving.iter().all(|engine| self.0.contains(engine)) {
-            return None;
-        }
-        let names: Vec<&str> = serving.iter().map(|engine| engine.name()).collect();
-        match names.as_slice() {
-            [] => None,
-            [one] => Some(format!(
-                "Running models on this computer needs {one}, which is not installed."
-            )),
-            many => Some(format!(
-                "Running models on this computer needs {}, which are not installed.",
-                many.join(" or ")
-            )),
         }
     }
 }
@@ -126,27 +100,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_slot_is_noted_only_when_every_engine_that_could_run_it_is_missing() {
-        let nothing = MissingEngines(Engine::ALL.to_vec());
-        assert_eq!(
-            nothing.note(Slot::Text).as_deref(),
-            Some(
-                "Running models on this computer needs llama.cpp or vLLM, which are not installed."
-            )
-        );
-        assert_eq!(
-            nothing.note(Slot::VoiceIn).as_deref(),
-            Some(
-                "Running models on this computer needs the speech engine, which is not installed."
-            )
-        );
-        let llama_here = MissingEngines(vec![Engine::Vllm, Engine::Speech, Engine::Kokoro]);
-        assert_eq!(llama_here.note(Slot::Text), None);
-        assert_eq!(MissingEngines::default().note(Slot::VoiceOut), None);
-    }
-
-    #[test]
-    fn a_catalogue_engine_kind_is_named_as_the_notes_name_it() {
+    fn a_catalogue_engine_kind_is_named_as_the_picker_names_it() {
         let names: Vec<&str> = [
             EngineKind::LlamaServer,
             EngineKind::Vllm,
@@ -157,5 +111,19 @@ mod tests {
         .map(|kind| Engine::of(kind).name())
         .collect();
         assert_eq!(names, ["llama.cpp", "vLLM", "the speech engine", "Kokoro"]);
+    }
+
+    #[test]
+    fn strata_serves_what_the_other_model_engines_serve_and_is_found_by_its_folder() {
+        assert!(Engine::Strata.serves(Slot::Text) && !Engine::Strata.serves(Slot::VoiceIn));
+        assert_eq!(
+            Engine::Strata.state(&EngineConfig::default()),
+            EngineState::Missing
+        );
+        let elsewhere = EngineConfig {
+            strata_folder: Some(PathBuf::from("/nonexistent/strata")),
+            ..EngineConfig::default()
+        };
+        assert_eq!(Engine::Strata.state(&elsewhere), EngineState::Missing);
     }
 }

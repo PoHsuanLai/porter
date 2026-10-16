@@ -8,7 +8,7 @@ use super::file::Reload;
 use super::keys::{
     SLOTS, TIERS, model_path, parse_model_path, parse_pool_path, pool_path, slots_of,
 };
-use super::missing::{Engine, MissingEngines};
+use super::missing::Engine;
 use super::resolve::{model_text, parse_model, slot_value};
 use crate::cloud::picker::{Availability, Choice, NEEDS_ACCOUNT, choices};
 use crate::keys::KeyRows;
@@ -16,7 +16,7 @@ use crate::peers::{Peers, Role};
 use ds_settings::live::{Access, Caller, LiveError, LiveModule, LiveSchema, Verdict, serve};
 use ds_settings::schema::{
     AgentSetting, ChoiceGroup, ChoicePlace, ChoiceWord, CompanyName, EngineName, Exposure, Help,
-    HostName, KeyKind, KeyPath, KeySpec, Label, Note, Page, Section, UnavailableReason, WordLabels,
+    HostName, KeyKind, KeyPath, KeySpec, Label, Page, Section, UnavailableReason, WordLabels,
 };
 use porter_core::consent::Usage;
 use porter_core::{AppId, AppName, DataClass, Isolation, Locality, Tier};
@@ -30,6 +30,9 @@ const AUTO: &str = "auto";
 
 /// The group the models this computer runs are listed under, before each company's hosted ones.
 const ON_THIS_COMPUTER: &str = "On this computer";
+
+/// The group of the models an engine on the person's network serves.
+const ON_YOUR_NETWORK: &str = "On your network";
 
 /// The app the picker asks accountd about the person's accounts as: `Verdicts` lists every account
 /// that serves a language need, and the picker reads only that an account exists.
@@ -47,8 +50,6 @@ pub struct InferdSettings<P> {
     writing: tokio::sync::Mutex<()>,
     /// The `accounts.<id>.*` rows of the AI accounts, when this daemon hosts them.
     keys: Option<std::sync::Arc<dyn KeyRows>>,
-    /// The engine programs this computer lacks, named in a slot with no model here.
-    missing: MissingEngines,
 }
 
 impl<P> std::fmt::Debug for InferdSettings<P> {
@@ -67,15 +68,7 @@ impl<P: Peers> InferdSettings<P> {
             reload,
             writing: tokio::sync::Mutex::new(()),
             keys: None,
-            missing: MissingEngines::default(),
         }
-    }
-
-    /// The same module, saying in a slot with no model on this computer which missing program
-    /// would run one.
-    #[must_use]
-    pub fn with_missing(self, missing: MissingEngines) -> Self {
-        Self { missing, ..self }
     }
 
     /// The same module, also listing and changing the AI accounts: their rows, the permits'
@@ -147,18 +140,10 @@ impl<P: Peers> InferdSettings<P> {
         slot_value(&self.reload.engines().settings().tiers, kind, tier)
     }
 
-    /// Why nothing runs on this computer, when no model of the slot does and a program is
-    /// missing.
-    fn note(&self, kind: Slot) -> Option<Note> {
-        let here = self
-            .known_for(kind)
-            .iter()
-            .any(|(_, locality)| *locality == Locality::OnDevice);
-        self.missing.note(kind).filter(|_| !here).map(Note)
-    }
-
-    /// Where each listed model of `kind` runs: the engine of one on this computer, the computer
-    /// of one on another of the person's. A model with no place to name has no entry.
+    /// Where each listed model of `kind` runs: the engine of one on this computer, or of one the
+    /// person runs themselves and attached (on this computer or on their network, with no name
+    /// of its own to give), and the computer of one on another of the person's. A model with no
+    /// place to name has no entry.
     fn local_places(&self, kind: Slot) -> BTreeMap<ChoiceWord, ChoicePlace> {
         let engines = self.reload.engines();
         engines
@@ -171,21 +156,20 @@ impl<P: Peers> InferdSettings<P> {
                     model: one.card.model,
                 };
                 let found = engines.local_model(&model);
-                let place = match one.card.locality {
-                    Locality::OnDevice => ChoicePlace::ThisComputer {
-                        engine: found.as_deref().and_then(engine_of),
+                let engine = found.as_deref().and_then(engine_of);
+                let computer = found
+                    .as_deref()
+                    .and_then(|model| model.attached.as_ref())
+                    .and_then(|attached| attached.computer.as_ref());
+                let place = match (one.card.locality, computer) {
+                    (Locality::LocalNetwork, Some(computer)) => ChoicePlace::YourComputer {
+                        host: HostName(computer.as_str().to_owned()),
                     },
-                    Locality::LocalNetwork => ChoicePlace::YourComputer {
-                        host: HostName(
-                            found?
-                                .attached
-                                .as_ref()?
-                                .computer
-                                .as_ref()?
-                                .as_str()
-                                .to_owned(),
-                        ),
-                    },
+                    // An engine the person attached without a computer's name is theirs to run
+                    // wherever it is: it is listed with the engines of Local.
+                    (Locality::OnDevice | Locality::LocalNetwork, _) => {
+                        ChoicePlace::ThisComputer { engine }
+                    }
                     _ => return None,
                 };
                 Some((ChoiceWord(model_text(&model)), place))
@@ -231,8 +215,11 @@ impl<P: Peers> InferdSettings<P> {
         // not one of them: it stays ungrouped), hosted ones under their company.
         let groups = known
             .into_iter()
-            .filter(|(_, locality)| *locality == Locality::OnDevice)
-            .map(|(word, _)| (word, ON_THIS_COMPUTER.to_owned()))
+            .filter_map(|(word, locality)| match locality {
+                Locality::OnDevice => Some((word, ON_THIS_COMPUTER.to_owned())),
+                Locality::LocalNetwork => Some((word, ON_YOUR_NETWORK.to_owned())),
+                _ => None,
+            })
             .chain(
                 hosted
                     .iter()
@@ -300,7 +287,7 @@ impl<P: Peers> InferdSettings<P> {
             unavailable,
             groups,
             places,
-            note: self.note(kind),
+            note: None,
             agent: AgentSetting::HandsOff,
         }
     }
@@ -340,7 +327,7 @@ impl<P: Peers> InferdSettings<P> {
             unavailable,
             groups,
             places,
-            note: self.note(kind),
+            note: None,
             agent: AgentSetting::HandsOff,
         }
     }
@@ -391,12 +378,13 @@ struct ModelChoices {
     places: BTreeMap<ChoiceWord, ChoicePlace>,
 }
 
-/// The engine that runs `model` on this computer, when inferd starts it. A runtime the person
-/// runs themselves, or an engine they attached, is not one of ours to name.
+/// The engine that runs `model`: the program inferd starts for it, or the kind of engine the
+/// person attached. A runtime the person runs themselves and inferd found by probing (Ollama,
+/// LM Studio) is not one of ours to name.
 fn engine_of(model: &LocalModel) -> Option<EngineName> {
-    match (&model.attached, model.loopback) {
-        (None, None) => Some(EngineName(Engine::of(model.profile.kind).name().to_owned())),
-        _ => None,
+    match model.loopback {
+        None => Some(EngineName(Engine::of(model.profile.kind).name().to_owned())),
+        Some(_) => None,
     }
 }
 

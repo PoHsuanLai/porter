@@ -346,6 +346,41 @@ async fn a_program_that_cannot_be_run_says_which() {
     );
 }
 
+/// A guard that says no to one program.
+struct Refuses(&'static str);
+
+impl LaunchGuard for Refuses {
+    fn check(&self, program: &Path) -> Result<(), Cause> {
+        if program.ends_with(self.0) {
+            Err(Cause::ProgramChanged {
+                program: program.to_path_buf(),
+            })
+        } else {
+            Ok(())
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_program_the_guard_refuses_is_not_started_and_the_cause_is_its_own() {
+    let host = ProcessHost::new().with_guard(Arc::new(Refuses("changed")));
+    assert_eq!(
+        host.spawn(&id("g"), &unit("/opt/changed", &[])).await,
+        Err(HostError::Refused)
+    );
+    assert_eq!(
+        host.diagnostics().refusal(&id("g")),
+        Some(Cause::ProgramChanged {
+            program: PathBuf::from("/opt/changed"),
+        })
+    );
+    // A program it does not name starts as it would without a guard.
+    host.spawn(&id("ok"), &unit("sh", &["-c", "exit 4"]))
+        .await
+        .expect("spawn");
+    assert_eq!(host.exited(&id("ok")).await, ExitCode(4));
+}
+
 // The process group: an engine's own children are ended with it.
 
 /// An engine that forks a grandchild which ignores `SIGTERM` and sleeps, and records its pid in

@@ -74,6 +74,15 @@ fn an_engine_kind_with_no_program_is_not_offered() {
     let ids: Vec<&str> = only_vllm.iter().map(|m| m.card.model.as_str()).collect();
     assert_eq!(ids, ["tiny-cua"]);
     assert!(build(&entries, &EngineConfig::default(), scratch.path()).is_empty());
+    // vLLM runs without writing bytecode into the environment it was sealed in.
+    let env: Vec<(&str, &str)> = only_vllm[0]
+        .spec
+        .unit
+        .env
+        .iter()
+        .map(|pair| (pair.name.as_str(), pair.value.as_str()))
+        .collect();
+    assert!(env.contains(&("PYTHONDONTWRITEBYTECODE", "1")), "{env:?}");
 }
 
 #[test]

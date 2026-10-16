@@ -20,6 +20,8 @@ mod package;
 mod progress;
 mod pyenv;
 mod space;
+#[cfg(feature = "testing")]
+pub mod testkit;
 
 pub use extract::{ExtractError, settle_modes, unpack};
 pub use fetch::{FetchError, Fetcher};

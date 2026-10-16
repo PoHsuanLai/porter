@@ -29,6 +29,7 @@ pub mod config;
 pub mod daemon;
 pub mod engines;
 pub mod hosts;
+pub mod install;
 pub mod keys;
 pub mod launcher;
 pub mod peers;

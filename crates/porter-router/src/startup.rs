@@ -172,6 +172,12 @@ pub enum Cause {
         /// What the system said.
         kind: std::io::ErrorKind,
     },
+    /// The program is an install of ours the person owns, and it is no longer the pinned tree:
+    /// something changed it since it was installed. It is not started.
+    ProgramChanged {
+        /// The program.
+        program: PathBuf,
+    },
     /// The host refused to start it and said no more.
     Refused,
     /// The GPU has no room for it.
@@ -200,6 +206,7 @@ impl Cause {
                 | Cause::SocketPathTaken { .. }
                 | Cause::SocketPathUnusable { .. }
                 | Cause::CannotSpawn { .. }
+                | Cause::ProgramChanged { .. }
                 | Cause::Refused
         ) || matches!(self, Cause::Attached(why) if why.is_setup())
     }
@@ -266,6 +273,11 @@ impl fmt::Display for Cause {
             Cause::CannotSpawn { program, kind } => {
                 write!(f, "{} cannot be run: {kind}", program.display())
             }
+            Cause::ProgramChanged { program } => write!(
+                f,
+                "{} was changed since it was installed; it is not started until it is installed again",
+                program.display()
+            ),
             Cause::Refused => f.write_str("the host refused to start the engine"),
             Cause::NoRoom { need, free } => {
                 write!(

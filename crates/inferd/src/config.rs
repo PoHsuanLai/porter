@@ -127,6 +127,8 @@ pub struct Dirs {
     pub providers_system: PathBuf,
     /// `$XDG_DATA_HOME/porter/providers`: the person's own provider files.
     pub providers_own: PathBuf,
+    /// `$XDG_DATA_HOME/porter/engines`: the engines installed for this person alone.
+    pub engines_own: PathBuf,
     /// `porter/clients.toml` under the first data directory that has it.
     pub clients_shipped: PathBuf,
     /// `$XDG_CONFIG_HOME/porter/clients.toml`.
@@ -166,6 +168,7 @@ impl Dirs {
             agent: runtime.join("inferd").join("agent"),
             providers_system: xdg.shipped("porter/providers"),
             providers_own: data.join("porter").join("providers"),
+            engines_own: data.join("porter").join("engines"),
             clients_shipped: xdg.shipped("porter/clients.toml"),
             clients_own: config.join("porter").join("clients.toml"),
             applications,
@@ -204,6 +207,7 @@ impl InferdConfig {
     pub fn engines_with(&self, dirs: &Dirs, programs: &ProgramSearch) -> EngineConfig {
         let mut engines = self.engines.clone();
         engines.llama_server = programs.llama_server(engines.llama_server.as_deref());
+        engines.vllm_python = programs.vllm_python(engines.vllm_python.as_deref());
         if engines.hf_cache.as_os_str().is_empty() {
             engines.hf_cache = dirs.hf_cache.clone();
         }

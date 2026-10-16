@@ -32,6 +32,8 @@ porter-service = { workspace = true }
 porter-sheets = { workspace = true }
 porter-store = { workspace = true }
 porter-discover = { workspace = true }
+porter-engines = { workspace = true }
+porter-engines-install = { workspace = true }
 porter-http = { workspace = true, features = ["hyper"] }
 porter-provider = { workspace = true }
 porter-tailnet = { workspace = true, features = ["io"] }
@@ -74,6 +76,7 @@ toml = { workspace = true }
 zbus = { workspace = true }
 
 [dev-dependencies]
+porter-engines-install = { workspace = true, features = ["testing"] }
 ds-settings = { workspace = true, features = ["testing"] }
 # The client side the tests drive inferd through (inferd itself no longer calls accountd).
 porter-client = { workspace = true, features = ["dbus"] }

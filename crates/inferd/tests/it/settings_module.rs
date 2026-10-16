@@ -12,7 +12,7 @@ use inferd::clock::FixedClock;
 use inferd::engines::Engines;
 use inferd::peers::{Caller, Role, TablePeers};
 use inferd::service::{Inference, serve_with_settings};
-use inferd::settings::{ConfigFile, InferdSettings, MissingEngines, Reload};
+use inferd::settings::{ConfigFile, InferdSettings, Reload};
 use inferd::supervise::Supervised;
 use porter_core::capability::{Capability, LlmCap, LlmFeature, LlmWire};
 use porter_core::{
@@ -111,17 +111,6 @@ fn serving(
     peers: &Arc<TablePeers>,
     file: &std::path::Path,
 ) -> impl std::future::Future<Output = zbus::Result<()>> + Send + 'static {
-    serving_missing(daemon, engines, peers, file, MissingEngines::default())
-}
-
-/// `serving`, the settings module also told which engine programs the computer lacks.
-fn serving_missing(
-    daemon: &Connection,
-    engines: &Engines,
-    peers: &Arc<TablePeers>,
-    file: &std::path::Path,
-    missing: MissingEngines,
-) -> impl std::future::Future<Output = zbus::Result<()>> + Send + 'static {
     let reload = Reload::new(ConfigFile::new(file.to_owned()), engines.clone());
     let inference = Inference::new(
         engines.clone(),
@@ -130,7 +119,7 @@ fn serving_missing(
         FixedClock(UnixSeconds(1_700_000_000)),
     )
     .reloading(reload.clone());
-    let settings = InferdSettings::new(Arc::clone(peers), reload).with_missing(missing);
+    let settings = InferdSettings::new(Arc::clone(peers), reload);
     let daemon = daemon.clone();
     async move { serve_with_settings(&daemon, inference, settings).await }
 }
@@ -286,6 +275,32 @@ async fn a_model_on_this_computer_is_grouped_and_the_default_and_automatic_are_n
                 (None, vec!["", "auto", "anthropic/sonnet"]),
                 (Some("On this computer"), vec!["llama/tiny"]),
             ]
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_model_on_the_persons_network_with_no_computer_of_its_own_is_listed_with_local() {
+    let mut there = sonnet();
+    there.account = AccountId::parse("llama").expect("id");
+    there.model = ModelId::parse("tiny").expect("id");
+    there.locality = Locality::LocalNetwork;
+    let rig = Rig::start_with(vec![sonnet(), there]).await;
+    let settings = rig.live(&rig.client(Role::Settings).await).await;
+    let schema: LiveSchema = settings.describe().await.expect("schema");
+    schema.check().expect("a clean schema");
+    // The text row and the list Automatic chooses from say the same.
+    for spec in schema.key.iter().filter(|spec| {
+        spec.path.0.starts_with("ai.model.") || spec.path.0.starts_with("ai.auto.pool.")
+    }) {
+        let word = ChoiceWord("llama/tiny".to_owned());
+        assert_eq!(
+            spec.groups.get(&word).map(|g| g.0.as_str()),
+            Some("On your network")
+        );
+        assert_eq!(
+            spec.place_of("llama/tiny"),
+            Some(&ChoicePlace::ThisComputer { engine: None })
         );
     }
 }
@@ -558,7 +573,7 @@ async fn an_old_kind_row_in_the_file_is_the_slots_row_and_a_set_keeps_the_two_in
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_slot_with_no_model_here_notes_which_missing_program_would_run_one() {
+async fn a_slot_with_no_model_here_carries_no_note_about_missing_programs() {
     let bus = PrivateBus::start();
     let file = bus.scratch().join("inferd.toml");
     let engines = Engines::new(
@@ -570,9 +585,9 @@ async fn a_slot_with_no_model_here_notes_which_missing_program_would_run_one() {
     .with_remote(vec![sonnet()]);
     let peers = Arc::new(TablePeers::new());
     let daemon = bus.connect().await;
-    // No program is named, so every engine is missing.
-    let missing = MissingEngines::of(&porter_router::local::EngineConfig::default());
-    serving_missing(&daemon, &engines, &peers, &file, missing)
+    // No program is named, so every engine is missing: the picker's Local row asks which to
+    // download, so the row itself says nothing about it.
+    serving(&daemon, &engines, &peers, &file)
         .await
         .expect("serve");
     let client = bus.connect().await;
@@ -588,9 +603,6 @@ async fn a_slot_with_no_model_here_notes_which_missing_program_would_run_one() {
         .iter()
         .find(|k| k.path.0 == "ai.model.text.best")
         .expect("the text row");
-    assert_eq!(
-        row.note.as_ref().map(|note| note.0.as_str()),
-        Some("Running models on this computer needs llama.cpp or vLLM, which are not installed.")
-    );
+    assert_eq!(row.note, None);
     assert!(!row.help.0.contains("not installed"), "{}", row.help.0);
 }

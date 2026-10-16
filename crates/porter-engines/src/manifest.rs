@@ -108,6 +108,27 @@ pub struct Host {
     pub choice: BackendChoice,
 }
 
+impl Host {
+    /// The computer whose files are under `root` (`/` for this one; a test's own directory
+    /// otherwise): its processor is this program's, its cards are what `<root>/sys/class/drm`
+    /// lists, its distro is `<root>/etc/os-release`. `None` for a processor no engine is built
+    /// for.
+    pub fn read(root: &std::path::Path, choice: BackendChoice) -> Option<Self> {
+        let under = |path: &str| root.join(path.trim_start_matches('/'));
+        Some(Self {
+            arch: Arch::current()?,
+            gpus: Gpus::read(
+                &under("/sys/class/drm"),
+                &under("/sys/module/nvidia/version"),
+            ),
+            release: OsRelease::parse(
+                &std::fs::read_to_string(under("/etc/os-release")).unwrap_or_default(),
+            ),
+            choice,
+        })
+    }
+}
+
 /// What can be installed for an engine here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Offer {

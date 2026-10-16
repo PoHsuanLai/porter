@@ -71,6 +71,12 @@ impl Finder {
         }
     }
 
+    /// The same finder over another manifest.
+    #[must_use]
+    pub fn with_manifest(self, manifest: Manifest) -> Self {
+        Self { manifest, ..self }
+    }
+
     /// The same finder over another manifest and other package paths (a test's own).
     #[must_use]
     pub fn with(self, manifest: Manifest, packages: Vec<(EngineId, PathBuf)>) -> Self {

@@ -21,7 +21,7 @@ use rustix::process::Pid;
 use speech_host_client::{HostSocket, SpeechHostClient};
 use speech_provider::SpeechToText;
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -29,6 +29,14 @@ use std::time::Duration;
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio::sync::{oneshot, watch};
+
+/// Decides, before a program is started, whether it may be: the check a start of a person's own
+/// install of an engine goes through (see [`crate::install::PinnedPrograms`]).
+pub trait LaunchGuard: Send + Sync {
+    /// `Ok` to start `program`, or why not. May read the whole of an install: it is called off the
+    /// async threads.
+    fn check(&self, program: &Path) -> Result<(), Cause>;
+}
 
 /// What the monitor of one child process publishes: nothing yet, or its exit code.
 type Exit = watch::Receiver<Option<ExitCode>>;
@@ -73,6 +81,7 @@ pub struct ProcessHost {
     sockets: BTreeMap<EngineId, PathBuf>,
     diagnostics: Diagnostics,
     grace: Duration,
+    guard: Option<Arc<dyn LaunchGuard>>,
 }
 
 type Table = Arc<Mutex<BTreeMap<EngineId, Running>>>;
@@ -144,6 +153,7 @@ impl Default for ProcessHost {
             sockets: BTreeMap::new(),
             diagnostics: Diagnostics::default(),
             grace: STOP_GRACE,
+            guard: None,
         }
     }
 }
@@ -164,6 +174,15 @@ impl ProcessHost {
     pub fn with_sockets(self, sockets: impl IntoIterator<Item = (EngineId, PathBuf)>) -> Self {
         Self {
             sockets: sockets.into_iter().collect(),
+            ..self
+        }
+    }
+
+    /// The same, asking `guard` before each program is started.
+    #[must_use]
+    pub fn with_guard(self, guard: Arc<dyn LaunchGuard>) -> Self {
+        Self {
+            guard: Some(guard),
             ..self
         }
     }
@@ -221,6 +240,14 @@ impl EngineHost for ProcessHost {
         {
             self.diagnostics.refuse(id, cause);
             return Err(HostError::Refused);
+        }
+        if let Some(guard) = &self.guard {
+            let (guard, program) = (Arc::clone(guard), unit.program.0.clone());
+            let verdict = tokio::task::spawn_blocking(move || guard.check(&program)).await;
+            if let Err(cause) = verdict.unwrap_or(Err(Cause::Refused)) {
+                self.diagnostics.refuse(id, cause);
+                return Err(HostError::Refused);
+            }
         }
         let mut command = Command::new(&unit.program.0);
         command

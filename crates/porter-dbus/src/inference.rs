@@ -55,11 +55,24 @@ pub trait Inference {
     /// `AccessDenied`.
     fn places(&self) -> zbus::Result<Vec<(String, Details)>>;
     /// The engine kinds inferd knows (llama.cpp, vLLM, the speech engine, Kokoro), one row each:
-    /// the engine's id first, then `name`, `state` (`found` or `missing`), `path` (`s`, only when
-    /// found) and `slots` (`as`, the slot slugs it would serve); the key names are `ENGINE_KEY_*`
-    /// and `local_engine_from_dbus` reads a row. Only Settings, the shell and the companion may
+    /// the engine's id first, then `name`, `state` (`found`, `missing`, `installing` or `failed`),
+    /// `path` (`s`, only when found) and `slots` (`as`, the slot slugs it would serve), and where
+    /// they apply `version`, `place`, `progress`, `reason`, `size` and `scopes`; the key names are
+    /// `ENGINE_KEY_*` and `local_engine_from_dbus` reads a row. Only Settings, the shell and the companion may
     /// ask; anyone else is `AccessDenied`.
     fn local_engines(&self) -> zbus::Result<Vec<(String, Details)>>;
+    /// Starts installing `engine` (its id from `LocalEngines`) for `scope`, `all_users` (asks for
+    /// the administrator's password, through the system's own prompt) or `just_me`. It answers
+    /// at once; `LocalEngines` says how far it has come (`installing`, then `found` or `failed`)
+    /// and `EnginesChanged` follows each change of state. A refusal is `InvalidArgs` (an engine
+    /// or scope it does not know) or `NotSupported` (nothing to install for this computer). Only
+    /// Settings may call.
+    fn install_engine(&self, engine: &str, scope: &str) -> zbus::Result<()>;
+    /// Stops the install of `engine`, if one is under way. Only Settings may call.
+    fn cancel_engine_install(&self, engine: &str) -> zbus::Result<()>;
+    /// Counts the install of `engine` that the person already has in `folder` (a folder the
+    /// person chose; Strata's). Only Settings may call.
+    fn point_engine(&self, engine: &str, folder: &str) -> zbus::Result<()>;
     /// Adds a computer of the person's own, with the models it serves, and answers its place id
     /// (`computer:<name>`). `name` is what the person calls it (the id's name is made from it);
     /// each of `models` is a catalogue model id and a vardict: `socket` (`s`, the full path of
@@ -164,6 +177,21 @@ impl InferenceSkeleton {
     }
 
     fn local_engines(&self) -> fdo::Result<Vec<(String, Details)>> {
+        Err(crate::introspect::frozen())
+    }
+
+    fn install_engine(&self, engine: String, scope: String) -> fdo::Result<()> {
+        let _ = (engine, scope);
+        Err(crate::introspect::frozen())
+    }
+
+    fn cancel_engine_install(&self, engine: String) -> fdo::Result<()> {
+        let _ = engine;
+        Err(crate::introspect::frozen())
+    }
+
+    fn point_engine(&self, engine: String, folder: String) -> fdo::Result<()> {
+        let _ = (engine, folder);
         Err(crate::introspect::frozen())
     }
 
