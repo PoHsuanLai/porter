@@ -147,11 +147,6 @@ impl<P: Peers> InferdSettings<P> {
         slot_value(&self.reload.engines().settings().tiers, kind, tier)
     }
 
-    /// The picker's help.
-    fn help() -> Help {
-        Help("Automatic picks from the models you choose.".to_owned())
-    }
-
     /// Why nothing runs on this computer, when no model of the slot does and a program is
     /// missing.
     fn note(&self, kind: Slot) -> Option<Note> {
@@ -297,7 +292,7 @@ impl<P: Peers> InferdSettings<P> {
             default: toml::Value::String(String::new()),
             // Grouped by job: a section per slot, the tiers listed under it.
             label: Label(tier_label(tier).to_owned()),
-            help: Self::help(),
+            help: Help(String::new()),
             page: Page::Intelligence,
             section: Section(format!("Models / {}", slot_label(kind))),
             exposure: Exposure::Basic,
@@ -337,7 +332,7 @@ impl<P: Peers> InferdSettings<P> {
             kind: KeyKind::List(Box::new(KeyKind::Menu { variants })),
             default: toml::Value::Array(Vec::new()),
             label: Label("Automatic chooses from".to_owned()),
-            help: Help("Turn on at least one model.".to_owned()),
+            help: Help(String::new()),
             page: Page::Intelligence,
             section: Section(format!("Models / {}", slot_label(kind))),
             exposure: Exposure::Basic,
