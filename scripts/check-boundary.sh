@@ -258,7 +258,7 @@ EDGES=(
   "porter-store: porter-core porter-fs porter-service"
   "porter-router: porter-core porter-infer cua-action engine-supervisor model-catalog model-http model-openai-compat model-provider speech-provider vision-prep"
   "porter-turns: porter-core porter-infer porter-bridge porter-router cua-action cua-parse cua-session cua-vendors engine-supervisor model-extract model-http model-openai-compat model-provider vision-prep"
-  "porter-dbus: porter-core"
+  "porter-dbus: porter-core porter-daemon"
   "porter-bridge: porter-core porter-infer model-catalog model-openai-compat model-provider vision-prep"
   "porter-sheets: porter-core porter-dbus porter-provider porter-service"
   "porter-client: porter-bridge porter-core porter-dbus porter-fs porter-infer porter-provider porter-proxy porter-secrets porter-service porter-turns model-http model-openai-compat model-provider model-wire"
