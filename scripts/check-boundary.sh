@@ -267,6 +267,8 @@ EDGES=(
   "porter-fake: porter-core porter-infer porter-provider porter-secrets porter-service"
   "porter-fake-servers: porter-core porter-discover porter-fake porter-provider"
   "porter-http: porter-core"
+  "porter-engines:"
+  "porter-engines-install: porter-core porter-engines porter-http"
   "porter-proxy: porter-core"
   "porter-oauth: porter-core porter-http porter-provider"
   "porter-discover: porter-core porter-http porter-provider"
@@ -280,7 +282,7 @@ EDGES=(
   "storage-gdrive: porter-core porter-http porter-sync storage-webdav"
   "syncd: ds-settings porter-client porter-core porter-daemon porter-dav porter-dbus porter-families porter-fs porter-http porter-provider porter-secrets porter-service porter-sheets porter-store porter-sync storage-gdrive storage-graph storage-webdav"
   "porter-rig: porter-client porter-core porter-dbus porter-fake porter-fake-servers porter-infer"
-  "inferd: ds-settings porter-bridge porter-families porter-secrets porter-service porter-sheets porter-store porter-router porter-turns porter-core porter-daemon porter-dbus porter-discover porter-fs porter-http porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
+  "inferd: ds-settings porter-bridge porter-engines porter-families porter-secrets porter-service porter-sheets porter-store porter-router porter-turns porter-core porter-daemon porter-dbus porter-discover porter-fs porter-http porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
 )
 for edge in "${EDGES[@]}"; do
   crate="${edge%%:*}"
