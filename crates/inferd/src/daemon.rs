@@ -27,6 +27,7 @@ use crate::settings::{ConfigFile, InferdSettings, LocalEngines, Reload, resolve}
 use crate::shutdown::{self, Ended, Shutdown};
 use crate::supervise::{Ports, Supervised};
 use crate::tailnet::{BusMachines, Parts, Tailnet};
+use crate::toolproof::ToolProofs;
 use crate::watch::Watch;
 use engine_supervisor::EngineId;
 use model_catalog::EngineKind;
@@ -571,7 +572,8 @@ impl Daemon {
         )
         .with_settings(settings.settings)
         .with_cloud(cloud)
-        .with_attached(book);
+        .with_attached(book)
+        .with_tool_proofs(ToolProofs::open(dirs.tool_proofs.clone()));
         // The person's other computers on their Tailscale network: lent to while
         // `ai.tailnet.serve` is on, looked for when Settings asks, and reached through a relay
         // each. Nothing asks Tailscale until one of those happens.

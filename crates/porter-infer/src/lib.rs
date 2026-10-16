@@ -47,6 +47,7 @@ mod session;
 mod slot;
 mod speech;
 mod spend;
+mod tool_proof;
 
 pub use audit::AuditEntry;
 pub use broker::Broker;
@@ -103,3 +104,4 @@ pub use speech::{
     TranscribeMode, VoiceName,
 };
 pub use spend::{Period, SpendCap, SpendScope, SpendVerdict, cost, spend_verdict};
+pub use tool_proof::{PROBE_TOOL, ToolProof, judge, probe_request};

@@ -101,6 +101,9 @@ pub struct Dirs {
     pub audit: PathBuf,
     /// `$XDG_STATE_HOME/quire/inferd/spend.json`: what hosted models have cost this day and month.
     pub spend: PathBuf,
+    /// `$XDG_STATE_HOME/quire/inferd/tool-proofs.json`: which models have shown they can make a
+    /// valid tool call (model ids and a word, never a prompt).
+    pub tool_proofs: PathBuf,
     /// `$XDG_STATE_HOME/quire/inferd/computers.toml`: the computers Settings added. inferd's own
     /// file; the hand-written `inferd.toml` is never written.
     pub computers: PathBuf,
@@ -181,6 +184,7 @@ impl Dirs {
             sockets: runtime.join("inferd"),
             audit: state.join("quire").join("inferd").join("audit.jsonl"),
             spend: state.join("quire").join("inferd").join("spend.json"),
+            tool_proofs: state.join("quire").join("inferd").join("tool-proofs.json"),
             computers: state.join("quire").join("inferd").join("computers.toml"),
             computer_keys: state.join("quire").join("inferd").join("computer-keys"),
             guests: state.join("quire").join("inferd").join("guests.toml"),

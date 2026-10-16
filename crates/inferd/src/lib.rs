@@ -47,6 +47,7 @@ pub mod speech;
 pub mod structured;
 pub mod supervise;
 pub mod tailnet;
+pub mod toolproof;
 pub mod watch;
 
 pub use adapters::AdapterModel;

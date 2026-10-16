@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Automatic checks that a model can use apps
+
+- Before Automatic gives a request that offers tools to a model on this computer, inferd runs one
+  small fixed check on it (made-up text, never the person's data) and keeps the result by model id
+  in `tool-proofs.json`. A model that failed is skipped by Automatic for such requests; a model the
+  person names is never skipped. When no model of the pool passes, the request is refused with the
+  new `InferRefusal::NoModelUsesApps`. Hosted models are not checked; a turn that offered tools and
+  ended unreadable marks its model.
+- A tier with no model of its own is served by the person's pick for another tier of the slot
+  (the asked tier, then Balanced, then the other). A slot with nothing set still refuses.
+
 ### Whoever uses a credential holds it
 
 - An app no longer asks the account service for tokens, grants or ready-made connections over the

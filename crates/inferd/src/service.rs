@@ -23,6 +23,7 @@ use crate::session::SessionSpec;
 use crate::settings::{LocalEngines, Reload};
 use crate::structured::Limits;
 use crate::tailnet::{Candidate, Tailnet};
+use crate::toolproof::ToolWatch;
 use crate::watch::Probing;
 use porter_core::{DataClass, ModelId, NodeId, SecretText, Tier};
 use porter_dbus::{
@@ -365,7 +366,10 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
                 Some(cloud) => turns.hosted(cloud.clone()),
                 None => turns,
             },
-            audit: SessionAudit::new(caller.app, Arc::clone(&self.audit), self.clock.clone()),
+            audit: ToolWatch::new(
+                SessionAudit::new(caller.app, Arc::clone(&self.audit), self.clock.clone()),
+                self.engines.tool_proofs().clone(),
+            ),
         };
         tokio::spawn(async move { serve_session(stream, spec, &seams).await });
         Ok(OwnedFd::from(std::os::fd::OwnedFd::from(theirs)))

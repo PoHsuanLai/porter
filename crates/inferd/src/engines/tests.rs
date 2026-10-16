@@ -469,3 +469,59 @@ async fn an_unset_text_slot_refuses_as_no_model_chosen_and_auto_serves() {
     let auto = start(&scratch, Recorder::default());
     assert!(auto.route(&chat, Role::App).is_ok());
 }
+
+fn llm_with_tools() -> Need {
+    Need::Llm(LlmNeed::new(
+        [LlmFeature::Chat, LlmFeature::Tools].into(),
+        Tokens(1000),
+    ))
+}
+
+/// Automatic does not give a request that offers tools to a model known to fail at them, and
+/// says why when the whole pool fails; a request without tools and a named model are untouched.
+#[test]
+fn automatic_skips_models_that_failed_for_tools_and_refuses_when_none_can() {
+    let scratch = Scratch::new("engines-tools");
+    let auto = start(&scratch, Recorder::default());
+    let tools = spec(llm_with_tools(), DataClass::Notes);
+    let plain = spec(llm(), DataClass::Notes);
+    assert!(
+        auto.route(&tools, Role::App).is_ok(),
+        "nothing known passes"
+    );
+    let pool = auto.settings().tiers.pool(Slot::Text).to_vec();
+    for model in &pool {
+        auto.tool_proofs()
+            .record(model.clone(), porter_infer::ToolProof::Failed);
+    }
+    assert_eq!(
+        auto.route(&tools, Role::App).err(),
+        Some(InferRefusal::NoModelUsesApps)
+    );
+    assert!(auto.route(&plain, Role::App).is_ok(), "no tools, no filter");
+    let chat = pool
+        .iter()
+        .find(|model| model.model.as_str() == "tiny-chat")
+        .expect("the chat model")
+        .clone();
+    let named = Engines::new(
+        models(&scratch),
+        Supervised::idle(),
+        Policy::proposed(),
+        TierMap {
+            rows: vec![porter_infer::TierRow {
+                kind: Slot::Text,
+                tier: Tier::Balanced,
+                model: chat.clone(),
+            }],
+            ..TierMap::default()
+        },
+    );
+    named
+        .tool_proofs()
+        .record(chat, porter_infer::ToolProof::Failed);
+    assert!(
+        named.route(&tools, Role::App).is_ok(),
+        "a named model is not overridden"
+    );
+}

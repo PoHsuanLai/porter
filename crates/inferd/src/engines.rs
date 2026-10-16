@@ -20,6 +20,7 @@ use crate::settings::{Live, Settings};
 use crate::startup::Cause;
 use crate::supervise::{Snapshot, Supervised};
 use crate::swap::{Budget, running_of, swap_cost};
+use crate::toolproof::{ToolProofs, asks_for_tools};
 use engine_supervisor::{EngineId, EngineState, MonoMs};
 use model_catalog::Licence;
 use porter_core::capability::SpeechMode;
@@ -27,7 +28,7 @@ use porter_core::consent::{Availability, Usage};
 use porter_core::{AccountId, AppId, DataClass, Locality, Need, Tier};
 use porter_infer::{
     InferRefusal, LicenceClass, ModelCard, ModelRef, PickRefusal, PlaceRefusal, Policy, Readiness,
-    ServedBy, SpendVerdict, SwapCost, TierMap, Why,
+    ServedBy, Slot, SpendVerdict, SwapCost, TierMap, Why,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -93,6 +94,8 @@ struct Book {
     /// The engines the person already runs; never started, stopped or evicted, looked at when a
     /// session opens.
     attached: AttachedBook,
+    /// Which models have shown they can make a valid tool call; shared by every clone.
+    proofs: ToolProofs,
 }
 
 /// Every engine inferd supervises, and the models behind them.
@@ -132,6 +135,7 @@ impl Engines {
                 }),
                 probed: ProbedBook::default(),
                 attached: AttachedBook::default(),
+                proofs: ToolProofs::default(),
             }),
             supervised,
         }
@@ -146,6 +150,7 @@ impl Engines {
             live: Live::new(settings),
             probed: self.book.probed.clone(),
             attached: self.book.attached.clone(),
+            proofs: self.book.proofs.clone(),
         };
         Self {
             book: Arc::new(book),
@@ -180,6 +185,7 @@ impl Engines {
             live: self.book.live.clone(),
             probed: self.book.probed.clone(),
             attached: self.book.attached.clone(),
+            proofs: self.book.proofs.clone(),
         };
         Self {
             book: Arc::new(book),
@@ -197,6 +203,7 @@ impl Engines {
             live: self.book.live.clone(),
             probed: self.book.probed.clone(),
             attached: self.book.attached.clone(),
+            proofs: self.book.proofs.clone(),
         };
         Self {
             book: Arc::new(book),
@@ -214,11 +221,34 @@ impl Engines {
             live: self.book.live.clone(),
             probed: self.book.probed.clone(),
             attached,
+            proofs: self.book.proofs.clone(),
         };
         Self {
             book: Arc::new(book),
             supervised: self.supervised,
         }
+    }
+
+    /// The same, with these results of the tool-call check (read from, and kept in, a file).
+    pub fn with_tool_proofs(self, proofs: ToolProofs) -> Self {
+        let book = Book {
+            local: self.book.local.clone(),
+            remote: self.book.remote.clone(),
+            cloud: self.book.cloud.clone(),
+            live: self.book.live.clone(),
+            probed: self.book.probed.clone(),
+            attached: self.book.attached.clone(),
+            proofs,
+        };
+        Self {
+            book: Arc::new(book),
+            supervised: self.supervised,
+        }
+    }
+
+    /// Which models have shown they can make a valid tool call.
+    pub fn tool_proofs(&self) -> &ToolProofs {
+        &self.book.proofs
     }
 
     /// The engines the person attached, and what the last look found of each.
@@ -459,6 +489,15 @@ impl Engines {
         }
         let settings = self.settings();
         let tiers = through_grants(&settings.tiers, offered);
+        // A request that offers tools is not given to a model of Automatic's pool that failed to
+        // make a valid call; when none of the pool can, it is refused with that reason. A named
+        // model is not touched.
+        let tiers = match asks_for_tools(&spec.need) {
+            true => tiers
+                .for_tools(Slot::Text, spec.tier, &self.book.proofs.failed())
+                .map_err(|refusal| Unplaced::Other(refusal.into()))?,
+            false => tiers,
+        };
         let policy = settings.routing_policy();
         let decided = match allowed {
             None => chosen_for(&spec.need, spec.tier, &tiers, unchosen)
@@ -998,6 +1037,7 @@ impl crate::serve::Router for SessionRouter {
 
     async fn route_why(&self, spec: &SessionSpec) -> Result<Routing, PickRefusal> {
         let offered = self.offered(spec).await;
+        self.engines.prove_tools(spec, &offered).await;
         let (routing, pinned) = self
             .engines
             .route_in(
@@ -1046,6 +1086,7 @@ pub(crate) fn through_grants(tiers: &TierMap, offered: &Offered) -> TierMap {
 }
 
 mod places;
+mod proof;
 
 #[cfg(test)]
 mod tests;

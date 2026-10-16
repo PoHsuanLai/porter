@@ -35,6 +35,10 @@ pub enum InferRefusal {
     /// Settings; it is not a failure.
     #[error("no model is chosen for this kind of work")]
     NoModelChosen,
+    /// The request offers tools, Automatic is chosen, and no model in its pool has shown it can
+    /// make a valid tool call. The app says so and offers Settings; it is not a failure.
+    #[error("none of the models in Automatic can use apps")]
+    NoModelUsesApps,
 }
 
 /// Why one model call failed.

@@ -2,6 +2,7 @@
 //! and the plain list a settings page draws. The list ranks nothing: no model is marked best or
 //! recommended, and a model the user mapped to a tier is only marked as theirs.
 
+use crate::error::InferRefusal;
 use crate::pick::{AutoMode, Pick};
 use crate::readiness::Readiness;
 use crate::route::TierChoice;
@@ -170,6 +171,41 @@ impl TierMap {
         };
         self.pick(kind, tier)
             .or_else(|| others.into_iter().find_map(|other| self.pick(kind, other)))
+    }
+
+    /// This map for a request that carries tools: Automatic leaves out the models in `failed`
+    /// (those that did not show they can make a valid tool call). A named model stays whatever
+    /// `failed` says. When the pick serving `kind` at `tier` is Automatic over a pool and every
+    /// model of it failed, the answer is [`InferRefusal::NoModelUsesApps`].
+    pub fn for_tools(
+        &self,
+        kind: Slot,
+        tier: Tier,
+        failed: &BTreeSet<ModelRef>,
+    ) -> Result<Self, InferRefusal> {
+        if let Some(Pick::Auto { pool, .. }) = self.pick_serving(kind, tier)
+            && !pool.is_empty()
+            && pool.iter().all(|model| failed.contains(model))
+        {
+            return Err(InferRefusal::NoModelUsesApps);
+        }
+        Ok(Self {
+            rows: self.rows.clone(),
+            autos: self.autos.clone(),
+            pools: self
+                .pools
+                .iter()
+                .map(|row| PoolRow {
+                    kind: row.kind,
+                    models: row
+                        .models
+                        .iter()
+                        .filter(|model| !failed.contains(*model))
+                        .cloned()
+                        .collect(),
+                })
+                .collect(),
+        })
     }
 }
 
@@ -667,6 +703,58 @@ mod tests {
             bare.pick_serving(Slot::VoiceIn, Tier::Fast),
             None,
             "another slot"
+        );
+    }
+
+    #[test]
+    fn for_tools_leaves_failed_models_out_of_automatic_and_never_out_of_a_name() {
+        let (a, b, c) = (
+            model("local", "a"),
+            model("cloud", "b"),
+            model("local", "c"),
+        );
+        let auto = TierMap::automatic(Slot::Text, vec![a.clone(), b.clone(), c.clone()]);
+        let failed = |models: &[&ModelRef]| -> BTreeSet<ModelRef> {
+            models.iter().map(|m| (*m).clone()).collect()
+        };
+        let pool = |map: &TierMap| match map.pick(Slot::Text, Tier::Balanced) {
+            Some(Pick::Auto { pool, .. }) => pool,
+            other => panic!("auto, got {other:?}"),
+        };
+        assert_eq!(
+            pool(
+                &auto
+                    .for_tools(Slot::Text, Tier::Balanced, &failed(&[&a]))
+                    .expect("some pass")
+            ),
+            [b.clone(), c.clone()]
+        );
+        assert_eq!(
+            pool(
+                &auto
+                    .for_tools(Slot::Text, Tier::Balanced, &failed(&[]))
+                    .expect("all pass")
+            ),
+            [a.clone(), b.clone(), c.clone()]
+        );
+        assert_eq!(
+            auto.for_tools(Slot::Text, Tier::Fast, &failed(&[&a, &b, &c])),
+            Err(InferRefusal::NoModelUsesApps)
+        );
+        let mut named = TierMap::automatic(Slot::Text, vec![a.clone()]);
+        named.rows.push(TierRow {
+            kind: Slot::Text,
+            tier: Tier::Balanced,
+            model: a.clone(),
+        });
+        let kept = named
+            .for_tools(Slot::Text, Tier::Balanced, &failed(&[&a]))
+            .expect("a named model is not overridden");
+        assert_eq!(kept.pick(Slot::Text, Tier::Balanced), Some(Pick::Named(a)));
+        let none = TierMap::default();
+        assert_eq!(
+            none.for_tools(Slot::Text, Tier::Balanced, &failed(&[&b])),
+            Ok(none)
         );
     }
 
