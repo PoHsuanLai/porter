@@ -29,11 +29,15 @@ pub(super) enum Peers {
 }
 
 impl Peers {
-    async fn who(&self, sender: &str) -> Option<Standing> {
+    /// Boxed, so a daemon future that awaits a caller does not carry peephole's whole lookup.
+    fn who<'a>(
+        &'a self,
+        sender: &'a str,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<Standing>> + Send + 'a>> {
         match self {
-            Self::System(peers) => peers.who(sender).await.ok(),
+            Self::System(peers) => Box::pin(async move { peers.who(sender).await.ok() }),
             #[cfg(feature = "test-proc-root")]
-            Self::Tree(peers) => peers.who(sender).await.ok(),
+            Self::Tree(peers) => Box::pin(async move { peers.who(sender).await.ok() }),
         }
     }
 }

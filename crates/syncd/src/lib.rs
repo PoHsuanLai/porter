@@ -9,6 +9,9 @@
 //! - `daemon`: the daemon as one call, [`Config`] (typed; [`Config::from_env`] is the one place the
 //!   environment is read), [`Daemon::build`] and [`Daemon::run`]. The binary only parses its
 //!   arguments and calls these.
+// The PIM supervisor's future nests the whole account service's generics; peephole's caller
+// types (porter-dbus ProcCallers) take its layout past the default depth of 128.
+#![recursion_limit = "256"]
 pub mod clock;
 pub mod daemon;
 pub mod dataset;

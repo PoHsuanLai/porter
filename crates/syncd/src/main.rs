@@ -14,6 +14,9 @@
 //!
 //! What stays here is the network: NetworkManager is not read yet, so the network is taken as
 //! unmetered and up.
+// The PIM supervisor's future nests the whole account service's generics; peephole's caller
+// types (porter-dbus ProcCallers) take its layout past the default depth of 128.
+#![recursion_limit = "256"]
 
 use clap::Parser;
 use std::process::ExitCode;

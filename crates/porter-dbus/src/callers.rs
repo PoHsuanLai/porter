@@ -64,6 +64,13 @@ pub use crate::callers_file::{
 pub use images::{Install, installed};
 pub use proc::ProcCallers;
 
+/// The systemd manager's bus name.
+pub const SYSTEMD: &str = "org.freedesktop.systemd1";
+/// The systemd manager's object.
+pub const SYSTEMD_PATH: &str = "/org/freedesktop/systemd1";
+/// The interface of the systemd manager's object.
+pub const SYSTEMD_MANAGER: &str = "org.freedesktop.systemd1.Manager";
+
 use porter_core::{AppId, AppName, Isolation};
 use serde::{Deserialize, Serialize};
 use std::future::Future;
