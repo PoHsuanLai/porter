@@ -120,6 +120,7 @@ fn the_sample_caller_table_gives_settings_the_sheet_host_and_both_daemons_their_
         ("org.quire.Shell", "Shell"),
         ("org.quire.Inference", "Intelligence"),
         ("org.quire.Sync", "Sync"),
+        ("org.quire.Companion", "Assistant"),
     ] {
         assert_eq!(table.title_of(&app(id)).map(|t| t.0.as_str()), Some(title));
     }

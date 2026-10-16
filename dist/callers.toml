@@ -83,6 +83,7 @@ role = "agent"
 app = "org.quire.Companion"
 unit = "companiond.service"
 role = "agent"
+name = "Assistant"
 
 [[caller]]
 app = "org.quire.Reader"
