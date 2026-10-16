@@ -96,16 +96,20 @@ impl Caller {
 /// settings = ["org.quire.Settings.service"]
 /// [apps]
 /// "org.quire.Memory" = ["memoryd.service"]
+/// "org.quire.Companion" = [{ unit = "docket-acp.scope", exe = ["/usr/bin/docket-acp"] }]
 /// ```
+///
+/// An `[apps]` or `agent_launcher` entry may name the programs that run in its unit ([`Unit`]):
+/// a unit whose name gives no program (a scope, a dotted service) is nobody without them.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct CallerTable {
     #[serde(default)]
     cua: BTreeSet<String>,
     /// The units of the agent launcher.
     #[serde(default)]
-    agent_launcher: BTreeSet<String>,
+    agent_launcher: BTreeSet<Unit>,
     #[serde(default)]
-    apps: BTreeMap<AppName, BTreeSet<String>>,
+    apps: BTreeMap<AppName, BTreeSet<Unit>>,
     /// The Settings app's units: the only callers of the settings module, each only as its unit's
     /// main process (as accountd's `callers.toml` row for Settings). An entry that is an app name
     /// (the form this table had, `"org.quire.Settings"`) stands for that app's unit,
@@ -143,7 +147,10 @@ impl CallerTable {
         Self {
             cua,
             agent_launcher: BTreeSet::new(),
-            apps,
+            apps: apps
+                .into_iter()
+                .map(|(app, units)| (app, units.into_iter().map(Unit::from).collect()))
+                .collect(),
             settings: BTreeSet::new(),
             shell: BTreeSet::new(),
             places: BTreeSet::new(),
@@ -170,7 +177,7 @@ impl CallerTable {
     /// The same table, naming `units` as the agent launcher's.
     pub fn with_agent_launcher(self, units: BTreeSet<String>) -> Self {
         Self {
-            agent_launcher: units,
+            agent_launcher: units.into_iter().map(Unit::from).collect(),
             ..self
         }
     }
@@ -194,7 +201,12 @@ impl CallerTable {
         if let Some(bad) = table.shell.iter().find(|e| !e.ends_with(".service")) {
             return Err(TableError::BadShellEntry(bad.clone()));
         }
-        let listed = |unit: &&String| table.apps.values().any(|units| units.contains(*unit));
+        let listed = |unit: &&String| {
+            table
+                .apps
+                .values()
+                .any(|units| units.iter().any(|entry| entry.name() == unit.as_str()))
+        };
         match table.places.iter().find(|unit| !listed(unit)) {
             Some(bad) => Err(TableError::PlacesNotAnApp(bad.clone())),
             None => Ok(table),
@@ -217,10 +229,10 @@ impl CallerTable {
         let launcher_app = AppName::parse(LAUNCHER_APP).ok();
         let launcher = launcher_app.into_iter().flat_map(|app| {
             self.agent_launcher.iter().map(move |unit| CallerRow {
-                unit: Some(unit.clone()),
+                unit: Some(unit.name().to_owned()),
                 app: app.clone(),
                 role: CallerRole::AgentLauncher,
-                exe: Vec::new(),
+                exe: unit.exe(),
                 name: None,
             })
         });
@@ -252,14 +264,14 @@ impl CallerTable {
         // (companiond, readerd and intentd are the ones accountd calls so).
         let apps = self.apps.iter().flat_map(|(app, units)| {
             units.iter().map(move |unit| CallerRow {
-                unit: Some(unit.clone()),
+                unit: Some(unit.name().to_owned()),
                 app: app.clone(),
-                role: if self.places.contains(unit) {
+                role: if self.places.contains(unit.name()) {
                     CallerRole::Agent
                 } else {
                     CallerRole::App
                 },
-                exe: Vec::new(),
+                exe: unit.exe(),
                 name: None,
             })
         });
@@ -406,6 +418,10 @@ impl Peers for TablePeers {
             .cloned()
     }
 }
+
+mod units;
+
+pub use units::Unit;
 
 #[cfg(test)]
 mod tests;

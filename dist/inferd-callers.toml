@@ -28,6 +28,13 @@ places = ["companiond.service", "readerd.service", "intentd.service"]
 # here (the row accountd's callers.toml described: the app org.quire.DocketAcp, unit
 # docket-acp.service, role agent_launcher, named "Agents"), and turns on ai.agents.endpoint.
 # agent_launcher = ["docket-acp.service"]
+#
+# An entry here or under [apps] is a unit's name, or the unit and the programs that may run in it:
+# a daemon's `<name>.service` runs `libexec/quire/<name>` (under /usr, /usr/local or
+# /opt/quire/releases/*) without saying so, but a scope or a dotted service names none, and is
+# nobody until its entry lists them, e.g.
+#   { unit = "docket-acp.scope", exe = ["/usr/bin/docket-acp", "/usr/local/bin/docket-acp",
+#     "/opt/quire/releases/*/bin/docket-acp"] }
 [apps]
 "org.quire.Memory" = ["memoryd.service"]
 "org.quire.Intents" = ["intentd.service"]

@@ -264,3 +264,47 @@ fn the_proc_root_variable_is_honoured_only_by_a_test_build() {
         cfg!(feature = "test-proc-root")
     );
 }
+
+#[test]
+fn an_entry_may_name_the_programs_that_run_in_its_unit() {
+    let table = CallerTable::from_toml_text(
+        r#"
+agent_launcher = [{ unit = "docket-acp.scope", exe = ["/usr/bin/docket-acp"] }]
+places = ["companiond.service"]
+[apps]
+"org.quire.Companion" = [
+    "companiond.service",
+    { unit = "docket-acp-turn.scope", exe = ["/usr/bin/docket-acp", "/opt/quire/releases/*/bin/docket-acp"] },
+]
+"#,
+    )
+    .expect("table");
+    let rows = table.rows().callers;
+    let row = |unit: &str| {
+        rows.iter()
+            .find(|row| row.unit.as_deref() == Some(unit))
+            .map(|row| (row.role, row.exe.clone()))
+    };
+    assert_eq!(
+        row("docket-acp.scope"),
+        Some((
+            CallerRole::AgentLauncher,
+            vec!["/usr/bin/docket-acp".to_owned()]
+        ))
+    );
+    assert_eq!(
+        row("docket-acp-turn.scope"),
+        Some((
+            CallerRole::App,
+            vec![
+                "/usr/bin/docket-acp".to_owned(),
+                "/opt/quire/releases/*/bin/docket-acp".to_owned()
+            ]
+        ))
+    );
+    // A bare name is as before: its program is the one the shared table gives the unit's name.
+    assert_eq!(
+        row("companiond.service"),
+        Some((CallerRole::Agent, Vec::new()))
+    );
+}
