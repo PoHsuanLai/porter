@@ -125,7 +125,21 @@ if [ -n "$bin_dir" ]; then
     built=$bin_dir
 else
     if [ "$build" = yes ]; then
-        (cd "$root" && cargo build --release -p accountd -p syncd -p inferd)
+        # Linked by this system's own linker. The source tree's .cargo/config.toml links with
+        # clang and mold, which is how porter is worked on, not something an install may ask the
+        # person to have. Cargo reads that file (and rustup the toolchain file) from the
+        # directory it runs in, so the build runs from / with the manifest named, the pinned
+        # toolchain passed on, and the one setting an install wants from that file given again.
+        toolchain=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' "$root/rust-toolchain.toml" 2>/dev/null)
+        (
+            cd / &&
+                if [ -n "$toolchain" ] && command -v rustup >/dev/null 2>&1; then
+                    RUSTUP_TOOLCHAIN=$toolchain
+                    export RUSTUP_TOOLCHAIN
+                fi &&
+                cargo build --release --manifest-path "$root/Cargo.toml" \
+                    --config net.git-fetch-with-cli=true -p accountd -p syncd -p inferd
+        )
     fi
     built=${CARGO_TARGET_DIR:-$root/target}/release
 fi
