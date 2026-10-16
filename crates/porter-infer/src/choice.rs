@@ -130,6 +130,9 @@ impl TierMap {
     /// own choice for most kinds, and nothing chosen for the text slot, which has no default. A
     /// row that names a model wins over an "auto" row for the same slot: a named model is never
     /// overridden, so a file that says both stays with the name. "auto" carries its pool.
+    ///
+    /// This reads the row and nothing else: it is what a settings page shows. Routing asks
+    /// [`TierMap::pick_serving`], which also looks at the person's other tiers.
     pub fn pick(&self, kind: Slot, tier: Tier) -> Option<Pick> {
         // A coding agent is a choice of the text slot only: on any other slot the row is not
         // read, whatever a file says.
@@ -154,6 +157,19 @@ impl TierMap {
                         .collect(),
                 })
         })
+    }
+
+    /// The pick a request at `tier` is served by: the person's pick for that tier, else for
+    /// Balanced, else for the remaining tier. Only a pick the person made is used: a slot with
+    /// no row at any tier is `None`, and nothing is invented for it.
+    pub fn pick_serving(&self, kind: Slot, tier: Tier) -> Option<Pick> {
+        let others = match tier {
+            Tier::Fast => [Tier::Balanced, Tier::Best],
+            Tier::Balanced => [Tier::Fast, Tier::Best],
+            Tier::Best => [Tier::Balanced, Tier::Fast],
+        };
+        self.pick(kind, tier)
+            .or_else(|| others.into_iter().find_map(|other| self.pick(kind, other)))
     }
 }
 
@@ -585,6 +601,73 @@ mod tests {
         );
         assert_eq!(map.pick(Slot::Text, Tier::Best), Some(Pick::Named(a)));
         assert_eq!(map.pick(Slot::Embeddings, Tier::Fast), None);
+    }
+
+    #[test]
+    fn a_tier_with_no_row_is_served_by_the_pick_for_another_tier_and_a_bare_slot_stays_empty() {
+        let (a, b) = (model("local", "a"), model("local", "b"));
+        let row = |tier, model: &ModelRef| TierRow {
+            kind: Slot::Text,
+            tier,
+            model: model.clone(),
+        };
+        let only = |tier| TierMap {
+            rows: vec![row(tier, &a)],
+            ..TierMap::default()
+        };
+        let both = TierMap {
+            rows: vec![row(Tier::Fast, &a), row(Tier::Best, &b)],
+            ..TierMap::default()
+        };
+        let named = |m: &ModelRef| Some(Pick::Named(m.clone()));
+        let cases = [
+            (
+                "balanced only, asked fast",
+                only(Tier::Balanced),
+                Tier::Fast,
+                named(&a),
+            ),
+            (
+                "balanced only, asked best",
+                only(Tier::Balanced),
+                Tier::Best,
+                named(&a),
+            ),
+            (
+                "fast only, asked balanced",
+                only(Tier::Fast),
+                Tier::Balanced,
+                named(&a),
+            ),
+            (
+                "best only, asked fast",
+                only(Tier::Best),
+                Tier::Fast,
+                named(&a),
+            ),
+            ("the asked tier wins", both.clone(), Tier::Best, named(&b)),
+            (
+                "balanced asked: fast is looked at first",
+                both,
+                Tier::Balanced,
+                named(&a),
+            ),
+            ("nothing set refuses", TierMap::default(), Tier::Fast, None),
+        ];
+        for (name, map, tier, expected) in cases {
+            assert_eq!(map.pick_serving(Slot::Text, tier), expected, "{name}");
+        }
+        let bare = only(Tier::Balanced);
+        assert_eq!(
+            bare.pick(Slot::Text, Tier::Fast),
+            None,
+            "the settings page reads the row"
+        );
+        assert_eq!(
+            bare.pick_serving(Slot::VoiceIn, Tier::Fast),
+            None,
+            "another slot"
+        );
     }
 
     #[test]

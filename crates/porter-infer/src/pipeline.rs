@@ -437,7 +437,7 @@ pub fn picks_for(map: &crate::choice::TierMap, tier: Tier) -> SlotPicks {
     SlotPicks(
         Slot::ALL
             .into_iter()
-            .filter_map(|slot| Some((slot, map.pick(slot, tier)?)))
+            .filter_map(|slot| Some((slot, map.pick_serving(slot, tier)?)))
             .collect(),
     )
 }

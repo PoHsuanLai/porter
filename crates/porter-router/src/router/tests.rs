@@ -271,8 +271,10 @@ fn the_users_tier_choice_decides_between_models_that_fit() {
     };
     assert_eq!(route(Tier::Best, &tiers("beta")).as_deref(), Ok("beta"));
     assert_eq!(route(Tier::Best, &tiers("alpha")).as_deref(), Ok("alpha"));
-    // The choice is for one tier only; elsewhere the first listed wins the tie.
-    assert_eq!(route(Tier::Fast, &tiers("beta")).as_deref(), Ok("alpha"));
+    // A tier with no row of its own is served by the person's pick for another tier of the slot,
+    // not by the first listed.
+    assert_eq!(route(Tier::Fast, &tiers("beta")).as_deref(), Ok("beta"));
+    assert_eq!(route(Tier::Balanced, &tiers("beta")).as_deref(), Ok("beta"));
 }
 
 #[test]

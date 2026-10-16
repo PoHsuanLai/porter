@@ -212,7 +212,7 @@ pub fn choose(
         })
         .collect();
     let ask = RouteAsk::new(class);
-    let picked = match tiers.pick(kind, tier) {
+    let picked = match tiers.pick_serving(kind, tier) {
         Some(chosen_pick) => {
             let rules = PickPolicy { policy, auto };
             pick(ask, &chosen_pick, &candidates, rules)?
@@ -248,7 +248,7 @@ pub fn chosen_for(
     unchosen: Unchosen,
 ) -> Result<(), PickRefusal> {
     match (need, unchosen) {
-        (Need::Llm(_), Unchosen::Refuse) if tiers.pick(Slot::Text, tier).is_none() => {
+        (Need::Llm(_), Unchosen::Refuse) if tiers.pick_serving(Slot::Text, tier).is_none() => {
             Err(plain(InferRefusal::NoModelChosen))
         }
         _ => Ok(()),
