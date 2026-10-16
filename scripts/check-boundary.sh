@@ -40,6 +40,8 @@ RULES=(
   "porter-tailnet: $EFFECTS"
   "porter-dav: $EFFECTS"
   "porter-families: $EFFECTS"
+  "porter-engines: $EFFECTS"
+  "porter-engines-install: zbus zvariant reqwest ureq oo7 keyring secret-service interprocess latchkey ds-settings inferd"
   "storage-webdav: $EFFECTS"
   "storage-graph: $EFFECTS"
   "storage-gdrive: $EFFECTS"

@@ -53,6 +53,11 @@ pub struct Fetcher {
 }
 
 impl Fetcher {
+    /// A fetcher that trusts the system's certificate authorities, with the usual waits.
+    pub fn system() -> Self {
+        Self::new(HyperHttp::new())
+    }
+
     /// A fetcher over `http`: 30 seconds of silence is a lost connection, and a lost connection
     /// is retried three times, two seconds apart.
     pub fn new(http: HyperHttp) -> Self {

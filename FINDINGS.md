@@ -2666,3 +2666,53 @@ accountd now holds identities, Spaces and Tailscale and nothing grant-keyed.
 - **A user's file cannot give a role with standing.** `CallerRole::is_fixed` (every role but `App` and `Agent`); `CallerTable::layered` leaves out a user row that gives one, with one line on stderr (porter #5).
 - **A scope is never more than an app.** A scope has no main process, so `found_of_pid` gives a scope row's fixed role a plain app's. The shell's rows are `sill.service` (porter #4; the desktop session starts sill as a transient `sill.service`, desktop 1b77646), so its role goes to the unit's main process. The `sill-shell.scope` rows and `TRANSITION_SCOPES` are gone, and inferd's `[callers] shell` refuses any entry that is not a `.service` (`BadShellEntry`).
 - **One way to ask.** `ProcCallers` with `Callers::caller_of(sender)` is how a daemon learns who is calling; the agent daemons (cuad, voiced, companiond, docket, almanac) move onto it from owning a well-known bus name.
+
+## Lane ui-engines: engines the person can download (2026-10-17)
+
+What landed: `porter-engines` (the pinned manifest, hardware detection, tree seal, layout, finder,
+launch verifier), `porter-engines-install` (downloads, installs, the helper), inferd's
+`installed` module (a finder, a launch guard, `PointEngine`), `LocalEngines` rows that say release,
+place and changed, and the engines the person attached listed with Local. Settings (detent) does
+the installing; ARCHITECTURE section 11 has the trust design.
+
+### Decisions and what was found
+
+- inferd cannot be the installer: its unit has `NoNewPrivileges=yes`, no network, a read-only home
+  and no capabilities. Loosening that on the process that holds the AI keys was not done. The
+  install runs in Settings, whose unit has no sandbox, through the same library.
+- Strata publishes Windows builds only (`strata-windows-x64*.zip`); on Linux its own `setup.py`
+  compiles the engine for 20 to 40 minutes with the person's toolchain. There is no pinned Linux
+  download, so Strata has no manifest row. Detection works (a folder the person points at, with its
+  server and its own Python), and so does choosing the folder; starting Strata with a model still
+  needs `EngineKind::Strata` in stoker's catalogue and a model entry.
+- vLLM: x86-64 with NVIDIA only (the PyPI wheels are CUDA 13, driver 580 or newer). The lock for
+  aarch64 does not resolve (`tilelang` has no wheel); a CPU or ROCm vLLM is not on PyPI.
+- Model weights have no downloader (`porter_router::local`: "there is no downloader yet"), so the
+  weights of any model stay the person's to bring; the install here is the engine only.
+- Distro packages (llama.cpp only): Arch `extra/llama-cpp`, Debian forky and sid and Ubuntu 26.04
+  `llama.cpp-tools` (each file list holds `/usr/bin/llama-server`, checked); Fedora 43 `llama-cpp`
+  exists but its file list could not be read, so it is marked unverified. Ubuntu's package also
+  ships a systemd unit and `/etc/default/llama-server`; whether installing it starts anything was
+  not checked.
+
+### Not verified here (nothing was built or run)
+
+- Nothing in these crates was compiled. Every signature was read, but the first build may find
+  mistakes: `porter-engines-install/src/fetch.rs` (the `tokio::select!` over a sink borrowed by the
+  other branch), `src/pyenv.rs` (uv's flags: `venv --no-python-downloads --python`, `pip install
+  --require-hashes --no-deps --no-build --link-mode copy --compile-bytecode`), and
+  `porter-dbus/src/local_engines.rs` (`OwnedValue` conversions to `u32`).
+- `pkexec` from a systemd user service (Settings' unit): whether polkit finds an authentication
+  agent for it was not tried.
+- The llama.cpp archives were unpacked and sealed here with `tools/seal.py`; the Rust `seal_of` was
+  checked against that script only through the test vector in `seal.rs`.
+- The glibc and `libgomp` the llama.cpp archives need (they are Ubuntu builds) were not checked on
+  every distro.
+
+### Interface asks
+
+- sill/slipway: install `porter-engine-helper` at `/usr/libexec/quire/` and
+  `dist/org.quire.porter.engines.policy` at `/usr/share/polkit-1/actions/` (scripts/install.sh does
+  both); make sure nothing sets `NoNewPrivileges` on Settings' unit.
+- stoker: `EngineKind::Strata`, so a Strata the person pointed at can be started with a model.
+
