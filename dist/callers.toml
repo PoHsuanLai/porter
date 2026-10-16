@@ -62,13 +62,14 @@ name = "Sync"
 # temor, the terminal: reads the person's computers (`Tailnet1.Machines`) and nothing else.
 # temor's unit is `org.quire.Temor.service` (`Type=dbus`, as detent's `org.quire.Settings.service`).
 # It is checked against the manager's main process like every unit row, so it matches only the
-# service temor runs in. No `exe` yet: temor's installed path is not fixed, so until a row names it
-# no process is the terminal (a service needs a known program to be judged).
+# service temor runs in, and only with the program temor's unit starts (`ExecStart=/usr/bin/temor`;
+# /usr/local for a source install; the release form for when temor joins the desktop's bundle).
 [[caller]]
 app = "org.quire.Temor"
 unit = "org.quire.Temor.service"
 role = "terminal"
 name = "Terminal"
+exe = ["/usr/bin/temor", "/usr/local/bin/temor", "/opt/quire/releases/*/bin/temor"]
 
 # The agents: intentd, the companion and the reader. `agent` is refused more than an app is
 # (no keys, no accounts added), but it is also who they are: docket and memoryd answer intentd by

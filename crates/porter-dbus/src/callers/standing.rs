@@ -11,8 +11,10 @@ use porter_core::{AppId, AppName, Isolation, PeerIdentity};
 /// - A sandbox the runtime or kernel attests (`Sandboxed`) is that app, `Flatpak` or `Snap`.
 /// - A service a table row matched is the row's app, `Unsandboxed`.
 /// - A program in an app scope of a launcher is the scope's app, `Unsandboxed`: the name is a
-///   claim, so consent here is advisory, as it always was for a native app.
-/// - Every other program and every `Unverified` process shows nothing.
+///   claim, so consent here is advisory, as it always was for a native app. So is one whose image
+///   the person can write (a build of their own, `~/.local/bin`): peephole keeps its scope's claim
+///   for exactly that case (WAVE2 §2.8).
+/// - Every other program and every other `Unverified` process shows nothing.
 pub(super) fn identity_of(standing: &Standing) -> PeerIdentity {
     match standing {
         Standing::Service { app, .. } => proven(app, Isolation::Unsandboxed),
@@ -22,6 +24,10 @@ pub(super) fn identity_of(standing: &Standing) -> PeerIdentity {
             _ => PeerIdentity::Unproven,
         },
         Standing::Program {
+            scope_app: Some(app),
+            ..
+        }
+        | Standing::Unverified {
             scope_app: Some(app),
             ..
         } => proven(app, Isolation::Unsandboxed),
@@ -61,13 +67,18 @@ fn service_role(role: &peephole_core::RoleName, proof: Proof) -> Option<CallerRo
 /// A service has its row's role (lowered to `App` when the proof falls short, see
 /// [`proof_needed`]). An app, sandboxed or in a launcher's scope, has the role of the table's row
 /// for it that names no unit (`App` when there is none): a unit row's role goes to its unit alone.
+/// A fixed role is never reached that way: only a service shows the proof one needs, so any
+/// program can name a scope after the Settings app and still be no more than an app.
 pub(super) fn caller_of(standing: &Standing, table: &CallerTable) -> Option<Caller> {
     let PeerIdentity::Proven(app) = identity_of(standing) else {
         return None;
     };
     let role = match standing {
         Standing::Service { role, proof, .. } => service_role(role, *proof)?,
-        _ => table.role_of(&app.name),
+        _ => match table.role_of(&app.name) {
+            role if role.is_fixed() => CallerRole::App,
+            role => role,
+        },
     };
     Some(Caller { app, role })
 }

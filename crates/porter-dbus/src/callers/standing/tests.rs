@@ -135,25 +135,35 @@ fn a_program_is_an_app_only_by_the_scope_a_launcher_gave_it() {
         shown(&program(Some("org.example.Mail"))),
         want("org.example.Mail", Isolation::Unsandboxed, CallerRole::App)
     );
-    // The role is the table's, by the app's name.
+    // A scope's name never reaches a fixed role, even when the table's row for the app has one:
+    // any program can name its scope after the Settings app.
     assert_eq!(
         shown(&program(Some("org.quire.Settings"))),
-        want(
-            "org.quire.Settings",
-            Isolation::Unsandboxed,
-            CallerRole::Settings
-        )
+        want("org.quire.Settings", Isolation::Unsandboxed, CallerRole::App)
     );
     assert_eq!(shown(&program(None)), None);
     assert_eq!(shown(&program(Some("firefox"))), None);
 }
 
 #[test]
-fn an_unverified_process_is_nobody() {
-    let unverified = Standing::Unverified {
+fn an_unverified_process_is_nobody_unless_it_is_a_writable_image_in_an_app_scope() {
+    let unverified = |scope_app: Option<&str>, why| Standing::Unverified {
         exe_name: Some("app".to_owned()),
-        why: WhyNot::ImageWritable,
+        scope_app: scope_app.map(key),
+        why,
     };
-    assert_eq!(identity_of(&unverified), PeerIdentity::Unproven);
-    assert_eq!(shown(&unverified), None);
+    let bare = unverified(None, WhyNot::ImageWritable);
+    assert_eq!(identity_of(&bare), PeerIdentity::Unproven);
+    assert_eq!(shown(&bare), None);
+    assert_eq!(shown(&unverified(None, WhyNot::ImageHidden)), None);
+    // A build of the person's own, started as an app: the scope's claim, as a native app's always
+    // was, and never more than an app.
+    assert_eq!(
+        shown(&unverified(Some("org.example.Mail"), WhyNot::ImageWritable)),
+        want("org.example.Mail", Isolation::Unsandboxed, CallerRole::App)
+    );
+    assert_eq!(
+        shown(&unverified(Some("org.quire.Settings"), WhyNot::ImageWritable)),
+        want("org.quire.Settings", Isolation::Unsandboxed, CallerRole::App)
+    );
 }
