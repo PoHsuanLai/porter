@@ -103,13 +103,18 @@ const FLATPAK_ENGINE: &str = "org.flatpak";
 const FLATPAK_LAUNCHER: &str = "flatpak";
 
 /// The app `facts` prove, if any. A sandbox's metadata wins: Flatpak's (by its file or its
-/// security context) proves a `Flatpak` id. Another engine proves nothing, since `Isolation`
-/// has no variant for it. A native process is proven `Unsandboxed` by a launcher's scope whose
-/// name is reverse-DNS; anything else, `app-firefox-3.scope` included, is unproven (C39).
+/// security context) proves a `Flatpak` id when the process also sits in the scope Flatpak
+/// makes for a run of that app (`app-flatpak-<id>-<n>.scope`, as peephole's `judge` asks), so a
+/// security context a native process opened cannot name a Flatpak app by itself. Another engine
+/// proves nothing, since `Isolation` has no variant for it. A native process is proven
+/// `Unsandboxed` by a launcher's scope whose name is reverse-DNS; anything else,
+/// `app-firefox-3.scope` included, is unproven (C39).
 pub fn identity_of(facts: &PeerFacts) -> PeerIdentity {
     let proven = match &facts.sandbox {
-        SandboxFacts::Flatpak { app, .. } => sandboxed(app),
-        SandboxFacts::Engine { engine, app, .. } if engine == FLATPAK_ENGINE => sandboxed(app),
+        SandboxFacts::Flatpak { app, .. } => sandboxed(app, &facts.cgroup),
+        SandboxFacts::Engine { engine, app, .. } if engine == FLATPAK_ENGINE => {
+            sandboxed(app, &facts.cgroup)
+        }
         SandboxFacts::Engine { .. } => None,
         SandboxFacts::Native => scope_app(&facts.cgroup).map(|name| AppId {
             name,
@@ -119,11 +124,32 @@ pub fn identity_of(facts: &PeerFacts) -> PeerIdentity {
     proven.map_or(PeerIdentity::Unproven, PeerIdentity::Proven)
 }
 
-/// A Flatpak sandbox's app, when its name is one.
-fn sandboxed(app: &str) -> Option<AppId> {
-    AppName::parse(app).ok().map(|name| AppId {
+/// A Flatpak sandbox's app, when its name is one and `cgroup` is in Flatpak's scope for it.
+fn sandboxed(app: &str, cgroup: &CgroupPath) -> Option<AppId> {
+    let name = AppName::parse(app).ok()?;
+    in_flatpak_scope(cgroup, app).then_some(AppId {
         name,
         isolation: Isolation::Flatpak,
+    })
+}
+
+/// Whether a component of `cgroup` is `app-flatpak-<id>-<n>.scope` for `app`, `n` decimal: the
+/// scope Flatpak makes for each run. The same rule as peephole-core's `flatpak_scope_in`, which
+/// porter-core cannot call (peephole-core reads `toml`).
+fn in_flatpak_scope(cgroup: &CgroupPath, app: &str) -> bool {
+    cgroup.as_str().split('/').any(|segment| {
+        segment
+            .strip_prefix("app-")
+            .and_then(|unit| unit.strip_prefix(FLATPAK_LAUNCHER))
+            .and_then(|unit| unit.strip_prefix('-'))
+            .and_then(|unit| unit.strip_suffix(".scope"))
+            .and_then(|unit| unit.rsplit_once('-'))
+            .is_some_and(|(id, run)| {
+                !id.contains('-')
+                    && !run.is_empty()
+                    && run.bytes().all(|byte| byte.is_ascii_digit())
+                    && unescape(id).as_deref() == Some(app)
+            })
     })
 }
 

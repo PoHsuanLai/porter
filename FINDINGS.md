@@ -2716,3 +2716,10 @@ the installing; ARCHITECTURE section 11 has the trust design.
   both); make sure nothing sets `NoNewPrivileges` on Settings' unit.
 - stoker: `EngineKind::Strata`, so a Strata the person pointed at can be started with a model.
 
+
+## Lane flatpak-scope: a Flatpak claim needs Flatpak's scope (CASW-04, 2026-10-17)
+
+- **`identity_of` checks the scope, as the bus path does.** Flatpak facts (its metadata, or a security context whose engine is `org.flatpak`) prove `Proven(Flatpak)` only when a component of the process's cgroup is `app-flatpak-<id>-<n>.scope` for the same id (`n` decimal, the id escaped as a unit name). A same-user program that opens a security context naming a Flatpak app from its own scope, or from a session scope, is now `Unproven`. This is the rule peephole-core's `judge` applies through `flatpak_scope_in`; porter-core keeps its own copy because peephole-core reads `toml`, which porter-core's boundary forbids.
+- **What is left (WAVE2-DESIGN 2.9):** a scope name is still a claim inside one user. A program started in a scope it names `app-flatpak-<id>-<n>.scope` passes this check. Native `app-<id>-<n>.scope` stays `Proven(Unsandboxed)` for accounts, as the design decided (2.8).
+- **Interface ask, casement:** the row "a flatpak sandbox proves through its metadata" in `casement-core/src/app/key.rs` gives Flatpak metadata in `session-3.scope`; at the next porter move it needs a Flatpak scope (`.../app.slice/app-flatpak-org.gnome.Calc-1.scope`), or it reads `claimed`.
+- latchkey moves to c6cad15 (the Windows single-instance pipe is owner-only; no Linux change).

@@ -1670,10 +1670,11 @@ dependencies = [
 [[package]]
 name = "latchkey"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/latchkey?rev=99cc9deb198860293253c534c4d26b382ec8b87e#99cc9deb198860293253c534c4d26b382ec8b87e"
+source = "git+https://github.com/PoHsuanLai/latchkey?rev=c6cad1521f1efdc66fcc0f398029324e315a12ab#c6cad1521f1efdc66fcc0f398029324e315a12ab"
 dependencies = [
  "interprocess",
  "rustix",
+ "widestring",
 ]
 
 [[package]]

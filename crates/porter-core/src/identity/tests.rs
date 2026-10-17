@@ -89,8 +89,38 @@ const IDENTITIES: &[(&str, &str, Sandbox, Proves)] = &[
         None,
     ),
     (
-        "a Flatpak run without a scope",
+        "Flatpak metadata outside Flatpak's scope",
         "dbus-broker.service",
+        Sandbox::Flatpak("org.mozilla.firefox"),
+        None,
+    ),
+    (
+        "Flatpak metadata in another app's Flatpak scope",
+        "app-flatpak-org.gnome.Maps-9.scope",
+        Sandbox::Flatpak("org.mozilla.firefox"),
+        None,
+    ),
+    (
+        "a Flatpak id with an escaped dash, in its scope",
+        r"app-flatpak-com.example.my_app\x2d2-31.scope",
+        Sandbox::Flatpak("com.example.my_app-2"),
+        Some(("com.example.my_app-2", Isolation::Flatpak)),
+    ),
+    (
+        "a Flatpak id's dash left unescaped in the scope",
+        "app-flatpak-com.example.my_app-2-31.scope",
+        Sandbox::Flatpak("com.example.my_app-2"),
+        None,
+    ),
+    (
+        "a Flatpak scope whose run is not a number",
+        "app-flatpak-org.mozilla.firefox-a3f.scope",
+        Sandbox::Flatpak("org.mozilla.firefox"),
+        None,
+    ),
+    (
+        "a child cgroup below a Flatpak's scope",
+        "app-flatpak-org.mozilla.firefox-9.scope/worker",
         Sandbox::Flatpak("org.mozilla.firefox"),
         Some(("org.mozilla.firefox", Isolation::Flatpak)),
     ),
@@ -99,6 +129,18 @@ const IDENTITIES: &[(&str, &str, Sandbox, Proves)] = &[
         "app-flatpak-org.mozilla.firefox-9.scope",
         Sandbox::Engine("org.flatpak", "org.mozilla.firefox"),
         Some(("org.mozilla.firefox", Isolation::Flatpak)),
+    ),
+    (
+        "a Flatpak security context opened from a native process's own scope (CASW-04)",
+        "app-org.example.Tool-12.scope",
+        Sandbox::Engine("org.flatpak", "org.mozilla.firefox"),
+        None,
+    ),
+    (
+        "a Flatpak security context opened outside any app scope",
+        "session-2.scope",
+        Sandbox::Engine("org.flatpak", "org.mozilla.firefox"),
+        None,
     ),
     (
         "another engine's security context, even in a launcher's scope",
