@@ -1,7 +1,7 @@
 //! `SocketTransport` against a hand-written agent on a Unix socket: accountd calls answered by
 //! the real `AccountService`, sessions by the real session server over scripted seams. One
 //! connection per call, a hello first on a session.
-#![cfg(all(unix, feature = "socket", feature = "infer"))]
+#![cfg(all(target_os = "linux", feature = "socket", feature = "infer"))]
 
 use crate::common;
 

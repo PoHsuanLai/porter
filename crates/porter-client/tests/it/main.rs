@@ -1,9 +1,10 @@
 //! The crate's integration tests: one executable, one module per topic (CONVENTIONS.md, Tests).
-//! Modules that need a feature carry it here. `socket_accounts` is a separate target
-//! (Cargo.toml): it builds without porter-infer. `connect` starts this executable again as a
-//! fake child, by test path.
+//! Modules that need a feature carry it here; the ones that start the daemons build only on
+//! Linux, where the daemons' dev-dependencies are (Cargo.toml). `socket_accounts` is a separate
+//! target (Cargo.toml): it builds without porter-infer. `connect` starts this executable again
+//! as a fake child, by test path.
 
-#[cfg(any(feature = "dbus", feature = "socket"))]
+#[cfg(all(target_os = "linux", any(feature = "dbus", feature = "socket")))]
 mod common;
 #[cfg(all(feature = "dbus", feature = "infer"))]
 mod connect;

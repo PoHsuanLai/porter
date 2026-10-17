@@ -42,9 +42,7 @@ porter-secrets = { workspace = true }
 porter-service = { workspace = true }
 ds-settings = { workspace = true }
 latchkey = { workspace = true }
-accountd = { path = "../accountd" }
 cua-action = { workspace = true }
-inferd = { path = "../inferd" }
 porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }
 porter-families = { workspace = true, features = ["generic"] }
@@ -52,6 +50,13 @@ porter-http = { workspace = true, features = ["hyper"] }
 porter-tailscale = { workspace = true, features = ["io"] }
 tokio = { workspace = true }
 zbus = { workspace = true }
+
+# The daemons the bus and socket tests start (Linux only, as their transports are). They bring
+# peephole (who is calling, through pidfds) and the Secret Service store, which build only there;
+# the portable build (macOS, Windows) tests the pure and in-process paths without them.
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+accountd = { path = "../accountd" }
+inferd = { path = "../inferd" }
 
 [features]
 # Inference: sessions with inferd, `Need::Llm` paths, `prepare`. Default on so every existing
