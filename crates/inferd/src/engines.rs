@@ -1141,6 +1141,7 @@ pub(crate) fn through_grants(tiers: &TierMap, offered: &Offered) -> TierMap {
     }
 }
 
+mod hardware;
 mod places;
 mod proof;
 

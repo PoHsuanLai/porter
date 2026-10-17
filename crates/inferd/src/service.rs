@@ -199,6 +199,26 @@ fn usage_of(options: &Details) -> fdo::Result<porter_core::consent::Usage> {
     parse_slug(&text)
 }
 
+/// One row of `HardwareNotes`: the note's kind slug, and a vardict of the sentence and the
+/// note's numbers (the field names of `porter_infer::HardwareNote`).
+fn note_row(note: &porter_infer::HardwareNote) -> (String, Details) {
+    let numbers = match serde_json::to_value(note) {
+        Ok(serde_json::Value::Object(mut map)) => match map.remove("v") {
+            Some(serde_json::Value::Object(fields)) => fields,
+            _ => serde_json::Map::new(),
+        },
+        _ => serde_json::Map::new(),
+    };
+    let words = zbus::zvariant::Value::from(error::note_words(note));
+    let details = std::iter::once((porter_dbus::NOTE_KEY_WORDS.to_owned(), words))
+        .chain(numbers.into_iter().filter_map(|(name, number)| {
+            Some((name, zbus::zvariant::Value::U64(number.as_u64()?)))
+        }))
+        .filter_map(|(name, value)| Some((name, zbus::zvariant::OwnedValue::try_from(value).ok()?)))
+        .collect();
+    (slug(note, "kind"), details)
+}
+
 fn not_configurable() -> fdo::Error {
     fdo::Error::NotSupported("inferd: this daemon has no settings file to write".into())
 }
@@ -469,6 +489,34 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
             // a variant a newer porter adds: told as the usual refusal for it
             Err(other) => Ok(refusal_slug(&other.into_pick().refusal)),
         }
+    }
+
+    // The facts about this computer that bear on a session like the one Open would make (a plain
+    // comment: a doc comment on a member would change the introspection XML). A fact is never a
+    // refusal.
+    async fn hardware_notes(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        need: NeedArg,
+        class: String,
+        tier: String,
+        options: Details,
+    ) -> Result<Vec<(String, Details)>, InferError> {
+        let caller = self.caller(&header).await?;
+        let spec = Self::spec(need, &class, &tier, &options)?;
+        let allowed = allowed_of(&caller, &options)?;
+        let own = own_of(&caller, &options)?;
+        let notes = self
+            .engines
+            .hardware_notes(
+                &spec,
+                &caller,
+                allowed.as_ref(),
+                own.model.as_ref(),
+                &self.gate,
+            )
+            .await;
+        Ok(notes.iter().map(note_row).collect())
     }
 
     // What the caller used this period, by name: tokens and micro-dollars of today, micro-dollars of

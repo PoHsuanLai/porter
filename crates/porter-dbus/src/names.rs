@@ -105,6 +105,11 @@ pub const OPTION_ASKER: &str = "asker";
 /// [`OPTION_ASKER`].
 pub const OPTION_MODEL: &str = "model";
 
+/// The keys of one row of `Inference1.HardwareNotes` (`a(sa{sv})`: the note's kind slug, then
+/// these). `words` (`s`) is the sentence to show; the rest are the note's numbers, present where
+/// the note has them (`t` each): `helpers`, `ahead`, and `free` and `one_more` in bytes.
+pub const NOTE_KEY_WORDS: &str = "words";
+
 /// The keys of a row of `Inference1.Places` (`a(sa{sv})`: the place's id, then these). `kind`
 /// is `this_computer`, `own_computer` or `cloud_account` (`s`); `name` is the computer's name or
 /// the account's label (`s`); `provider` is the provider's display name, on a cloud account only

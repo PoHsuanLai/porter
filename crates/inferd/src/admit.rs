@@ -219,6 +219,18 @@ impl Admission {
             .find_map(|(one, ahead)| (one == ticket).then_some(ahead))
     }
 
+    /// The requests seated or waiting in `lane`.
+    pub fn tickets(&self, lane: Lane) -> Vec<Ticket> {
+        self.lanes.get(&lane).map_or_else(Vec::new, |state| {
+            state
+                .seated
+                .iter()
+                .copied()
+                .chain(state.waiting.iter().map(|(_, ticket)| *ticket))
+                .collect()
+        })
+    }
+
     /// How many requests are seated or waiting in `lane`.
     pub fn load(&self, lane: Lane) -> Count {
         count_of(

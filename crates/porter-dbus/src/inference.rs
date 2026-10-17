@@ -33,6 +33,19 @@ pub trait Inference {
         tier: &str,
         options: &Details,
     ) -> zbus::Result<OwnedFd>;
+    /// The facts about this computer that bear on a session like the one `Open` would make, one
+    /// row each: the note's kind slug (`model_shared`, `graphics_memory_low`, `queue_long`),
+    /// then a vardict with `words` (the sentence to show) and the note's numbers; the key names
+    /// are `NOTE_KEY_WORDS` and the field names of `porter_infer::HardwareNote`. A note is a
+    /// fact, never a refusal. The arguments and who may send `asker` and `model` are those of
+    /// `Open`.
+    fn hardware_notes(
+        &self,
+        need: &NeedArg,
+        class: &str,
+        tier: &str,
+        options: &Details,
+    ) -> zbus::Result<Vec<(String, Details)>>;
     /// Warms the engine the route would pick (no mic, no request) and answers its readiness
     /// slug (`ready`, `loading`, `loadable`, `downloading`, `downloadable`, `unavailable`); a
     /// refusal answers with its slug.
@@ -151,6 +164,17 @@ impl InferenceSkeleton {
         tier: String,
         options: Details,
     ) -> fdo::Result<String> {
+        let _ = (need, class, tier, options);
+        Err(crate::introspect::frozen())
+    }
+
+    fn hardware_notes(
+        &self,
+        need: NeedArg,
+        class: String,
+        tier: String,
+        options: Details,
+    ) -> fdo::Result<Vec<(String, Details)>> {
         let _ = (need, class, tier, options);
         Err(crate::introspect::frozen())
     }

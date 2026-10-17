@@ -101,3 +101,50 @@ fn class_and_tier_slugs_parse_and_anything_else_is_an_invalid_argument() {
         );
     }
 }
+
+#[test]
+fn a_hardware_note_is_a_row_of_its_kind_its_sentence_and_its_numbers() {
+    use porter_core::{Bytes, Count};
+    use porter_infer::HardwareNote;
+    let notes = [
+        HardwareNote::ModelShared { helpers: Count(2) },
+        HardwareNote::GraphicsMemoryLow {
+            free: Bytes(1 << 30),
+            one_more: Bytes(3 << 29),
+        },
+        HardwareNote::QueueLong { ahead: Count(4) },
+    ];
+    let rows: Vec<(String, Details)> = notes.iter().map(note_row).collect();
+    let kinds: Vec<&str> = rows.iter().map(|(kind, _)| kind.as_str()).collect();
+    assert_eq!(kinds, ["model_shared", "graphics_memory_low", "queue_long"]);
+    let number = |row: usize, key: &str| {
+        let value = rows[row]
+            .1
+            .get(key)
+            .expect("key")
+            .try_clone()
+            .expect("clone");
+        u64::try_from(value).expect("number")
+    };
+    assert_eq!(number(0, "helpers"), 2);
+    assert_eq!(number(1, "one_more"), 3 << 29);
+    assert_eq!(number(2, "ahead"), 4);
+    for (_, details) in &rows {
+        let words = String::try_from(
+            details
+                .get(porter_dbus::NOTE_KEY_WORDS)
+                .expect("words")
+                .try_clone()
+                .expect("clone"),
+        )
+        .expect("text");
+        for developer in ["KV", "VRAM", "seq", "GPU", "cache"] {
+            assert!(!words.contains(developer), "{words}");
+        }
+    }
+    let low = error::note_words(&notes[1]);
+    assert!(
+        low.contains("1.0 GB free") && low.contains("1.5 GB"),
+        "{low}"
+    );
+}

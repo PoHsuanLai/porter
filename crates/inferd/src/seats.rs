@@ -10,7 +10,7 @@ use engine_supervisor::EngineId;
 use model_catalog::{EngineArg, EngineKind};
 use porter_core::Count;
 use porter_infer::Asker;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use tokio::sync::watch;
 
@@ -64,6 +64,8 @@ struct Inner {
     next_lane: u32,
     /// Where each request is told its standing.
     tell: HashMap<Ticket, watch::Sender<Standing>>,
+    /// Who asked for each request.
+    by: HashMap<Ticket, Asker>,
 }
 
 impl Inner {
@@ -131,12 +133,41 @@ impl Gate {
         let (tell, listen) = watch::channel(standing);
         if let Some(placed) = placed {
             inner.tell.insert(placed.ticket, tell);
+            inner.by.insert(placed.ticket, asker.clone());
         }
         Pass {
             gate: self.clone(),
             ticket: placed.map(|placed| placed.ticket),
             listen,
         }
+    }
+}
+
+impl Gate {
+    /// How many helpers have a request seated or waiting on the engine instance `engine`.
+    pub fn helpers_using(&self, engine: &EngineId) -> Count {
+        let inner = self.locked();
+        let Some(lane) = inner.lanes.get(engine) else {
+            return Count(0);
+        };
+        let helpers: HashSet<&Asker> = inner
+            .admission
+            .tickets(*lane)
+            .iter()
+            .filter_map(|ticket| inner.by.get(ticket))
+            .filter(|asker| matches!(asker, Asker::Helper(_)))
+            .collect();
+        Count(u32::try_from(helpers.len()).unwrap_or(u32::MAX))
+    }
+
+    /// How many requests wait for a seat on the engine instance `engine`.
+    pub fn waiting_on(&self, engine: &EngineId) -> Count {
+        let inner = self.locked();
+        let waiting = inner
+            .lanes
+            .get(engine)
+            .map_or(0, |lane| inner.admission.waiting(*lane).len());
+        Count(u32::try_from(waiting).unwrap_or(u32::MAX))
     }
 }
 
@@ -166,6 +197,7 @@ impl Drop for Pass {
         let Some(ticket) = self.ticket else { return };
         let mut inner = self.gate.locked();
         inner.tell.remove(&ticket);
+        inner.by.remove(&ticket);
         let lane = inner.admission.lane_of(ticket);
         let promoted = inner.admission.leave(ticket);
         inner.seat(promoted);

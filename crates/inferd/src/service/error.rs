@@ -11,8 +11,9 @@
 //! second field.
 
 use crate::attached::ComputerError;
+use porter_core::Bytes;
 use porter_dbus::{COMPUTER_ERROR_PREFIX, PLACE_ERROR_PREFIX};
-use porter_infer::{NoPlaceReason, PlaceRefusal};
+use porter_infer::{HardwareNote, NoPlaceReason, PlaceRefusal};
 use zbus::DBusError;
 use zbus::fdo;
 use zbus::message::{Header, Message};
@@ -81,6 +82,34 @@ pub fn words_of(reason: NoPlaceReason) -> &'static str {
             "The model chosen for one of the places you allowed is not available there."
         }
         NoPlaceReason::NoneCapable => "None of the places you allowed can do this.",
+    }
+}
+
+/// A size as a person reads it: gigabytes, one decimal.
+fn gigabytes(bytes: Bytes) -> String {
+    let tenths = bytes.0.saturating_mul(10) >> 30;
+    format!("{}.{} GB", tenths / 10, tenths % 10)
+}
+
+/// What a person is told for each fact about the machine, in plain words. A fact is never a
+/// refusal: the sentence says what to expect and the person may go ahead.
+pub fn note_words(note: &HardwareNote) -> String {
+    match note {
+        HardwareNote::ModelShared { helpers } => format!(
+            "{} helpers are using this model; replies will be slower.",
+            helpers.0
+        ),
+        HardwareNote::GraphicsMemoryLow { free, one_more } => format!(
+            "This computer's graphics memory is nearly full ({} free, about {} needed for one more reply); another helper may fail to start.",
+            gigabytes(*free),
+            gigabytes(*one_more)
+        ),
+        HardwareNote::QueueLong { ahead } => format!(
+            "{} replies are waiting for this model; yours will take longer.",
+            ahead.0
+        ),
+        // a fact a newer porter adds: said without detail
+        _ => "This computer is busy; replies may be slower.".to_owned(),
     }
 }
 

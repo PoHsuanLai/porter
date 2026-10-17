@@ -87,6 +87,27 @@ fn the_person_is_seated_before_helpers_and_the_queue_numbers_follow() {
     assert_eq!(second.standing(), Standing::Seated);
 }
 
+#[test]
+fn the_gate_counts_helpers_and_the_queue_for_the_notes() {
+    let gate = Gate::default();
+    let seats = Seats::of(1);
+    assert_eq!(gate.helpers_using(&engine()), Count(0));
+    let one = gate.pass(&engine(), seats, &helper());
+    let again = gate.pass(&engine(), seats, &helper());
+    let other = gate.pass(
+        &engine(),
+        seats,
+        &Asker::from_text("helper:h-2").expect("helper"),
+    );
+    let person = gate.pass(&engine(), seats, &Asker::Person);
+    // Two helpers (one asked twice), the person not counted; three wait.
+    assert_eq!(gate.helpers_using(&engine()), Count(2));
+    assert_eq!(gate.waiting_on(&engine()), Count(3));
+    drop((one, again, other, person));
+    assert_eq!(gate.helpers_using(&engine()), Count(0));
+    assert_eq!(gate.waiting_on(&engine()), Count(0));
+}
+
 #[tokio::test]
 async fn a_waiting_request_is_woken_when_its_turn_comes() {
     let gate = Gate::default();
