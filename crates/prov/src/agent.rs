@@ -29,7 +29,7 @@ pub enum AgentRef {
 
 impl AgentRef {
     /// The roster party an actor is, if it is one: the person, the planner or reader (both are
-    /// the companion), a worker, or a run. Apps, MCP clients, ACP agents, the command line and the system are not on the
+    /// the companion), a worker or a helper's job (both are a worker task), or a run. Apps, MCP clients, ACP agents, the command line and the system are not on the
     /// roster.
     pub fn of(actor: &Actor) -> Option<AgentRef> {
         match actor {
@@ -37,6 +37,7 @@ impl AgentRef {
             Actor::Companion { role, .. } => Some(match role {
                 AgentRole::Planner | AgentRole::Reader => AgentRef::Companion,
                 AgentRole::Worker { task } => AgentRef::Worker { task: task.clone() },
+                AgentRole::Helper { task, .. } => AgentRef::Worker { task: task.clone() },
                 AgentRole::Cua { run } => AgentRef::Cua { run: run.clone() },
             }),
             Actor::Mcp { .. }

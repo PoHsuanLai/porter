@@ -223,6 +223,13 @@ fn the_roster_reference_follows_the_actor() {
             Some(worker("t-4")),
         ),
         (
+            companion(AgentRole::Helper {
+                helper: HelperId::parse("h-1").expect("helper"),
+                task: TaskId::parse("t-5").expect("task"),
+            }),
+            Some(worker("t-5")),
+        ),
+        (
             companion(AgentRole::Cua { run: run.clone() }),
             Some(AgentRef::Cua { run }),
         ),

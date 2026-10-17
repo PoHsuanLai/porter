@@ -29,8 +29,8 @@ pub use consent::{
 };
 pub use effect::Effect;
 pub use ids::{
-    ActionName, ClientName, EntityId, EntityKey, EntityKind, MessageId, OutcomeRef, RunId,
-    SessionId, TaskId, ThreadId, UndoHandle,
+    ActionName, ClientName, EntityId, EntityKey, EntityKind, HelperId, MessageId, OutcomeRef,
+    RunId, SessionId, TaskId, ThreadId, UndoHandle,
 };
 pub use label::{
     Confidentiality, Integrity, Label, Labelled, Measured, ModelRole, Quarantined, ReaderKey,

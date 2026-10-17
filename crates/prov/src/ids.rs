@@ -148,6 +148,14 @@ text_id!(
     opaque
 );
 
+text_id!(
+    /// One of the person's helpers: a persistent named agent. Opaque to prov (docket mints and
+    /// owns it): 1 to 128 bytes, no control characters.
+    HelperId,
+    "helper id",
+    opaque
+);
+
 /// One thing an app owns, as the router, memory and the confirmation sheet name it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct EntityId {
@@ -200,5 +208,6 @@ mod tests {
         assert!(OutcomeRef::parse("").is_err());
         assert!(OutcomeRef::parse(&"o".repeat(129)).is_err());
         assert!(UndoHandle::parse("u\n1").is_err());
+        assert!(HelperId::parse("01J9ZK").is_ok() && HelperId::parse("").is_err());
     }
 }
