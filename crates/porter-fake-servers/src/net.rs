@@ -86,7 +86,7 @@ impl Listener {
                 })
             }
             #[cfg(not(unix))]
-            Bind::Socket(_) => Err(no_unix_socket()),
+            Bind::Socket(dir) => Err(no_unix_socket(&dir.join(format!("{name}.sock")))),
         }
     }
 
@@ -125,16 +125,19 @@ pub async fn dial(address: &FakeAddress) -> io::Result<Conn> {
         #[cfg(unix)]
         FakeAddress::Socket(path) => Ok(Conn::Unix(UnixStream::connect(path).await?)),
         #[cfg(not(unix))]
-        FakeAddress::Socket(_) => Err(no_unix_socket()),
+        FakeAddress::Socket(path) => Err(no_unix_socket(path)),
     }
 }
 
-/// A Unix socket asked for where there are none.
+/// The Unix socket `path` asked for where there are none.
 #[cfg(not(unix))]
-fn no_unix_socket() -> io::Error {
+fn no_unix_socket(path: &std::path::Path) -> io::Error {
     io::Error::new(
         io::ErrorKind::Unsupported,
-        "a Unix socket needs a Unix platform",
+        format!(
+            "{} is a Unix socket, which needs a Unix platform",
+            path.display()
+        ),
     )
 }
 

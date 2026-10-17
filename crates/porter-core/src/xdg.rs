@@ -112,7 +112,9 @@ fn search_list(value: Option<String>, default: &str) -> Vec<PathBuf> {
         .collect()
 }
 
-#[cfg(test)]
+// The XDG layout is a Unix one: these paths (`/home/ada`, `:`-separated lists) are not absolute
+// on Windows, where no XDG variable names a directory.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
