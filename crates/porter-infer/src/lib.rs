@@ -24,6 +24,7 @@
 //! assert_eq!(serde_json::from_str::<ChatRequest>(&json).expect("deserializes"), request);
 //! ```
 
+mod asker;
 mod audit;
 mod broker;
 mod choice;
@@ -49,6 +50,7 @@ mod speech;
 mod spend;
 mod tool_proof;
 
+pub use asker::Asker;
 pub use audit::AuditEntry;
 pub use broker::Broker;
 pub use choice::{

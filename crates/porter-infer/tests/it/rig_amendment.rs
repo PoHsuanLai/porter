@@ -116,6 +116,37 @@ fn open_options_reserve_the_traceparent() {
 }
 
 #[test]
+fn open_options_carry_the_asker_and_the_sessions_own_model() {
+    use porter_infer::{Asker, ModelRef};
+    let helper = prov::HelperId::parse("h-1").expect("helper");
+    let model = ModelRef::parse("this-computer/qwen3-4b").expect("model");
+    pinned(
+        &OpenOptions::default()
+            .with_asker(Asker::Helper(helper.clone()))
+            .with_model(model.clone()),
+        r#"{"traceparent":null,"asker":{"helper":"h-1"},"model":{"account":"this-computer","model":"qwen3-4b"}}"#,
+    );
+    pinned(
+        &OpenOptions::default().with_asker(Asker::Person),
+        r#"{"traceparent":null,"asker":"person"}"#,
+    );
+    // Absent reads as the person; an older writer's JSON still reads.
+    let old: OpenOptions = serde_json::from_str(r#"{"traceparent":null}"#).expect("old");
+    assert_eq!(
+        (old.asker_or_default(), old.model.clone()),
+        (Asker::Person, None)
+    );
+    // The bus's text form round-trips and refuses what is not one.
+    for asker in [Asker::Person, Asker::Helper(helper)] {
+        assert_eq!(Asker::from_text(&asker.to_text()), Some(asker));
+    }
+    assert_eq!(Asker::from_text("helper:"), None);
+    assert_eq!(Asker::from_text("someone"), None);
+    assert_eq!(ModelRef::parse(&model.to_string()), Some(model));
+    assert_eq!(ModelRef::parse("no-slash"), None);
+}
+
+#[test]
 fn open_options_carry_the_usage_as_its_slug() {
     use porter_core::consent::Usage;
     pinned(

@@ -1,5 +1,7 @@
 //! What a client may attach when it opens a session, beside the need, the class and the tier.
 
+use crate::asker::Asker;
+use crate::choice::ModelRef;
 use crate::ids::Traceparent;
 use crate::place::PlaceId;
 use porter_core::consent::Usage;
@@ -31,6 +33,16 @@ pub struct OpenOptions {
     /// with no entry uses the usual choice.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub place_models: BTreeMap<PlaceId, ModelId>,
+    /// Whose turn the session carries (`asker` on the bus). Only docket's daemons may send it.
+    /// Absent means the person ([`OpenOptions::asker_or_default`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asker: Option<Asker>,
+    /// This session's own named model (`model` on the bus, `<account>/<model>`): a helper's
+    /// pick. It is treated exactly like a model the person named for the slot: never
+    /// overridden, a refusal names it, and no other model stands in. Only docket's daemons may
+    /// send it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<ModelRef>,
 }
 
 impl OpenOptions {
@@ -62,6 +74,27 @@ impl OpenOptions {
             usage: Some(usage),
             ..self
         }
+    }
+
+    /// These options for a turn asked by `asker`.
+    pub fn with_asker(self, asker: Asker) -> Self {
+        Self {
+            asker: Some(asker),
+            ..self
+        }
+    }
+
+    /// These options naming `model` as the session's own model.
+    pub fn with_model(self, model: ModelRef) -> Self {
+        Self {
+            model: Some(model),
+            ..self
+        }
+    }
+
+    /// Whose turn the session carries: the one named, else the person.
+    pub fn asker_or_default(&self) -> Asker {
+        self.asker.clone().unwrap_or(Asker::Person)
     }
 
     /// The usage the session is for: the one named, else `Interactive`.

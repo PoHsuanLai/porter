@@ -9,7 +9,7 @@
 //! turn: exactly one per turn.
 
 use super::{PipelineInput, VecAudio, plan, run_pipeline};
-use crate::engines::{Engines, Offered, through_grants};
+use crate::engines::{Engines, Offered, named_tiers, through_grants};
 use crate::router::placed::Allowed;
 use crate::runner::{Turn, Turns};
 use crate::serve::{RunningTurn, TurnRunner, TurnStep};
@@ -36,6 +36,9 @@ pub struct Hearing {
     /// The places the session may run, when the caller named them: the stages of a voice chat
     /// stay in the place the session's route chose, which is inside the set.
     pub allowed: Option<Allowed>,
+    /// The model the session names for itself, when it does: the text slot's choice for the
+    /// plan, as for the route.
+    pub named: Option<ModelRef>,
 }
 
 impl Hearing {
@@ -84,7 +87,10 @@ impl Hearing {
             spec.tier,
             &listed,
             &settings.routing_policy(),
-            &through_grants(&settings.tiers, &offered),
+            &through_grants(
+                &named_tiers(&settings.tiers, &spec.need, self.named.as_ref()),
+                &offered,
+            ),
             settings.auto,
             settings.describe_images,
         ) {

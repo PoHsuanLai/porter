@@ -484,11 +484,27 @@ impl Engines {
         allowed: Option<&Allowed>,
         unchosen: Unchosen,
     ) -> Result<(Routing, Pinned), Unplaced> {
+        self.route_as(spec, role, offered, allowed, unchosen, None)
+    }
+
+    /// `route_in` for a session that names its own model (`named`): for a language request it
+    /// is the person's named choice for the text slot, so it is never overridden, a refusal
+    /// names it and no other model stands in.
+    pub fn route_as(
+        &self,
+        spec: &SessionSpec,
+        role: Role,
+        offered: &Offered,
+        allowed: Option<&Allowed>,
+        unchosen: Unchosen,
+        named: Option<&ModelRef>,
+    ) -> Result<(Routing, Pinned), Unplaced> {
         if matches!(spec.need, Need::ComputerUse(_)) && role != Role::Cua {
             return Err(Unplaced::Other(InferRefusal::Denied.into()));
         }
         let settings = self.settings();
-        let tiers = through_grants(&settings.tiers, offered);
+        let tiers = named_tiers(&settings.tiers, &spec.need, named);
+        let tiers = through_grants(&tiers, offered);
         // A request that offers tools is not given to a model of Automatic's pool that failed to
         // make a valid call; when none of the pool can, it is refused with that reason. A named
         // model is not touched.
@@ -677,6 +693,7 @@ impl Engines {
             role,
             &Offered::default(),
             None,
+            None,
         )
         .await
         .map_err(|refusal| refusal.into_pick().refusal)
@@ -692,12 +709,14 @@ impl Engines {
         usage: Usage,
         caller: &Caller,
     ) -> Result<Readiness, InferRefusal> {
-        self.prepare_in(need, class, tier, usage, caller, None)
+        self.prepare_in(need, class, tier, usage, caller, None, None)
             .await
             .map_err(|refusal| refusal.into_pick().refusal)
     }
 
-    /// `prepare_for`, inside the places `allowed` names when it does.
+    /// `prepare_for`, inside the places `allowed` names when it does, and for the model `named`
+    /// when the session names its own.
+    #[allow(clippy::too_many_arguments)]
     pub async fn prepare_in(
         &self,
         need: &Need,
@@ -706,10 +725,20 @@ impl Engines {
         usage: Usage,
         caller: &Caller,
         allowed: Option<&Allowed>,
+        named: Option<&ModelRef>,
     ) -> Result<Readiness, Unplaced> {
         let offered = self.offer(&caller.app, class, usage).await;
-        self.prepare_with(need, class, tier, usage, caller.role, &offered, allowed)
-            .await
+        self.prepare_with(
+            need,
+            class,
+            tier,
+            usage,
+            caller.role,
+            &offered,
+            allowed,
+            named,
+        )
+        .await
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -722,6 +751,7 @@ impl Engines {
         role: Role,
         offered: &Offered,
         allowed: Option<&Allowed>,
+        named: Option<&ModelRef>,
     ) -> Result<Readiness, Unplaced> {
         let spec = SessionSpec {
             need: need.clone(),
@@ -730,7 +760,7 @@ impl Engines {
             usage,
         };
         let (decision, pinned) = self
-            .route_in(&spec, role, offered, allowed, Unchosen::Refuse)
+            .route_as(&spec, role, offered, allowed, Unchosen::Refuse, named)
             .map(|(routing, pinned)| (routing.decision(), pinned))?;
         match (decision.readiness, pinned.model) {
             (Readiness::Loadable, Some(model)) => {
@@ -860,6 +890,7 @@ impl Engines {
             role,
             app: None,
             allowed: None,
+            named: None,
         }
     }
 
@@ -880,6 +911,20 @@ impl Engines {
             app: Some(caller.app.clone()),
             allowed,
             ..self.router(pin, caller.role)
+        }
+    }
+
+    /// `router_for_in` for a session that names its own model (see [`Engines::route_as`]).
+    pub fn router_named(
+        &self,
+        pin: Pin,
+        caller: &Caller,
+        allowed: Option<Allowed>,
+        named: Option<ModelRef>,
+    ) -> SessionRouter {
+        SessionRouter {
+            named,
+            ..self.router_for_in(pin, caller, allowed)
         }
     }
 }
@@ -1012,6 +1057,7 @@ pub struct SessionRouter {
     role: Role,
     app: Option<AppId>,
     allowed: Option<Allowed>,
+    named: Option<ModelRef>,
 }
 
 impl SessionRouter {
@@ -1040,16 +1086,26 @@ impl crate::serve::Router for SessionRouter {
         self.engines.prove_tools(spec, &offered).await;
         let (routing, pinned) = self
             .engines
-            .route_in(
+            .route_as(
                 spec,
                 self.role,
                 &offered,
                 self.allowed.as_ref(),
                 Unchosen::Refuse,
+                self.named.as_ref(),
             )
             .map_err(Unplaced::into_pick)?;
         self.pin.set(pinned);
         Ok(routing)
+    }
+}
+
+/// The tier map with `named` as the text slot's choice, for a language request of a session that
+/// names its own model; the map as it is for any other request or session.
+pub(crate) fn named_tiers(tiers: &TierMap, need: &Need, named: Option<&ModelRef>) -> TierMap {
+    match (need, named) {
+        (Need::Llm(_), Some(model)) => tiers.naming(Slot::Text, model.clone()),
+        _ => tiers.clone(),
     }
 }
 

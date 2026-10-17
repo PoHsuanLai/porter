@@ -94,6 +94,17 @@ pub const OPTION_PLACES: &str = "places";
 /// with no entry uses the usual choice. Sent only with [`OPTION_PLACES`].
 pub const OPTION_PLACE_MODELS: &str = "place_models";
 
+/// The key of whose turn the session carries: a string, `person` or `helper:<id>`
+/// (`porter_infer::Asker::to_text`). Absent means the person. Only docket's companion, reader
+/// and intents daemons may send it; any other caller is refused `AccessDenied`, not ignored.
+pub const OPTION_ASKER: &str = "asker";
+
+/// The key of the session's own named model: a string, `<account>/<model>`
+/// (`porter_infer::ModelRef`). It is treated like a model the person named: never overridden,
+/// a refusal names it, no other model stands in. Only docket's daemons may send it, as for
+/// [`OPTION_ASKER`].
+pub const OPTION_MODEL: &str = "model";
+
 /// The keys of a row of `Inference1.Places` (`a(sa{sv})`: the place's id, then these). `kind`
 /// is `this_computer`, `own_computer` or `cloud_account` (`s`); `name` is the computer's name or
 /// the account's label (`s`); `provider` is the provider's display name, on a cloud account only

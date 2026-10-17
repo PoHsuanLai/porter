@@ -20,6 +20,24 @@ pub struct ModelRef {
     pub model: ModelId,
 }
 
+impl ModelRef {
+    /// The model written `account/model`, the form a settings row uses; `None` when it is not
+    /// two ids joined by one slash.
+    pub fn parse(text: &str) -> Option<Self> {
+        let (account, model) = text.split_once('/')?;
+        Some(Self {
+            account: AccountId::parse(account).ok()?,
+            model: ModelId::parse(model).ok()?,
+        })
+    }
+}
+
+impl std::fmt::Display for ModelRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}", self.account, self.model)
+    }
+}
+
 /// The account a coding agent is chosen under: the text slot's word `agent/<program>` names an
 /// outside agent the assistant hands the conversation to, not a model inferd runs. Only the text
 /// slot takes it, and Automatic never routes to it.
@@ -116,6 +134,35 @@ impl TierMap {
                 })
                 .collect(),
             pools: vec![PoolRow { kind, models: pool }],
+        }
+    }
+
+    /// This map with `model` named for `kind` at every tier: the rows and Automatic rows the
+    /// map had for `kind` give way, so a session's own model is a named choice like the
+    /// person's, never overridden and never replaced by a fallback.
+    pub fn naming(&self, kind: Slot, model: ModelRef) -> Self {
+        let named = [Tier::Fast, Tier::Balanced, Tier::Best]
+            .into_iter()
+            .map(|tier| TierRow {
+                kind,
+                tier,
+                model: model.clone(),
+            });
+        Self {
+            rows: self
+                .rows
+                .iter()
+                .filter(|row| row.kind != kind)
+                .cloned()
+                .chain(named)
+                .collect(),
+            autos: self
+                .autos
+                .iter()
+                .filter(|row| row.kind != kind)
+                .cloned()
+                .collect(),
+            pools: self.pools.clone(),
         }
     }
 
@@ -755,6 +802,34 @@ mod tests {
         assert_eq!(
             none.for_tools(Slot::Text, Tier::Balanced, &failed(&[&b])),
             Ok(none)
+        );
+    }
+
+    #[test]
+    fn naming_makes_a_sessions_own_model_the_named_choice_at_every_tier() {
+        let (a, b) = (model("local", "a"), model("local", "b"));
+        let auto = TierMap::automatic(Slot::Text, vec![a.clone()]);
+        let named = auto.naming(Slot::Text, b.clone());
+        for tier in [Tier::Fast, Tier::Balanced, Tier::Best] {
+            assert_eq!(named.pick(Slot::Text, tier), Some(Pick::Named(b.clone())));
+        }
+        // A row the person set for the slot gives way; other slots are left alone.
+        let mut mixed = TierMap::default();
+        mixed.rows.push(TierRow {
+            kind: Slot::Text,
+            tier: Tier::Fast,
+            model: a.clone(),
+        });
+        mixed.rows.push(TierRow {
+            kind: Slot::Embeddings,
+            tier: Tier::Fast,
+            model: a.clone(),
+        });
+        let named = mixed.naming(Slot::Text, b.clone());
+        assert_eq!(named.pick(Slot::Text, Tier::Fast), Some(Pick::Named(b)));
+        assert_eq!(
+            named.pick(Slot::Embeddings, Tier::Fast),
+            Some(Pick::Named(a))
         );
     }
 

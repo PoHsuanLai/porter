@@ -6,9 +6,9 @@ use crate::error::TransportError;
 use porter_core::{DataClass, ModelId, Need, Permille, Tier};
 use porter_dbus::zvariant::{OwnedValue, Value};
 use porter_dbus::{
-    Details, InferenceProxy, OPTION_PLACE_MODELS, OPTION_PLACES, OPTION_TRACEPARENT, OPTION_USAGE,
-    PLACE_KEY_KIND, PLACE_KEY_MODELS, PLACE_KEY_NAME, PLACE_KEY_PROVIDER, PLACE_KEY_READY,
-    need_to_dbus,
+    Details, InferenceProxy, OPTION_ASKER, OPTION_MODEL, OPTION_PLACE_MODELS, OPTION_PLACES,
+    OPTION_TRACEPARENT, OPTION_USAGE, PLACE_KEY_KIND, PLACE_KEY_MODELS, PLACE_KEY_NAME,
+    PLACE_KEY_PROVIDER, PLACE_KEY_READY, need_to_dbus,
 };
 use porter_infer::{OpenOptions, PlaceId, PlaceKind, PlaceModel, PlaceRow, PlaceState, Readiness};
 
@@ -23,8 +23,18 @@ fn details(options: &OpenOptions) -> Details {
         .usage
         .iter()
         .filter_map(|usage| Some((OPTION_USAGE, slug(usage).ok()?)));
+    let asker = options
+        .asker
+        .iter()
+        .map(|asker| (OPTION_ASKER, asker.to_text()));
+    let model = options
+        .model
+        .iter()
+        .map(|model| (OPTION_MODEL, model.to_string()));
     let mut details: Details = trace
         .chain(usage)
+        .chain(asker)
+        .chain(model)
         .filter_map(|(key, text)| {
             let value = OwnedValue::try_from(Value::from(text)).ok()?;
             Some((key.to_owned(), value))

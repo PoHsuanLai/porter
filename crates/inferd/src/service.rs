@@ -6,6 +6,7 @@
 //! `dbus/org.quire.Inference1.xml` (`tests/introspection.rs`).
 
 use self::error::InferError;
+use self::own::{Own, own_of};
 use crate::agent::Agents;
 use crate::agent::service::AgentsService;
 use crate::attached::{
@@ -346,6 +347,7 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         caller: Caller,
         spec: SessionSpec,
         allowed: Option<Allowed>,
+        own: Own,
     ) -> fdo::Result<OwnedFd> {
         let (ours, theirs) = StdStream::pair().map_err(failed)?;
         ours.set_nonblocking(true).map_err(failed)?;
@@ -358,9 +360,10 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
                 app: Some(caller.app.clone()),
                 spec: spec.clone(),
                 allowed: allowed.clone(),
+                named: own.model.clone(),
             });
         let seams = Seams {
-            router: self.engines.router_for_in(pin, &caller, allowed),
+            router: self.engines.router_named(pin, &caller, allowed, own.model),
             engines: self.engines.clone(),
             runner: match self.engines.cloud() {
                 Some(cloud) => turns.hosted(cloud.clone()),
@@ -389,6 +392,7 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         let _trace = trace_of(&options);
         let spec = Self::spec(need, &class, "balanced", &options)?;
         let allowed = allowed_of(&caller, &options)?;
+        own_of(&caller, &options)?;
         let availability = self
             .engines
             .availability_in(
@@ -415,6 +419,7 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         let _trace = trace_of(&options);
         let spec = Self::spec(need, &class, &tier, &options)?;
         let allowed = allowed_of(&caller, &options)?;
+        let own = own_of(&caller, &options)?;
         // A call that named its places and has none to run in is told so here, as an error with
         // its reason, and no session is opened. (Any other refusal is the session's to tell.)
         if let Some(allowed) = &allowed {
@@ -423,7 +428,7 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
                 .await
                 .map_err(InferError::no_place)?;
         }
-        Ok(self.open_session(caller, spec, allowed)?)
+        Ok(self.open_session(caller, spec, allowed, own)?)
     }
 
     async fn prepare(
@@ -438,6 +443,7 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         let _trace = trace_of(&options);
         let spec = Self::spec(need, &class, &tier, &options)?;
         let allowed = allowed_of(&caller, &options)?;
+        let own = own_of(&caller, &options)?;
         let prepared = self
             .engines
             .prepare_in(
@@ -447,6 +453,7 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
                 spec.usage,
                 &caller,
                 allowed.as_ref(),
+                own.model.as_ref(),
             )
             .await;
         match prepared {
@@ -1037,6 +1044,7 @@ where
 }
 
 mod error;
+mod own;
 
 #[cfg(test)]
 mod tests;
