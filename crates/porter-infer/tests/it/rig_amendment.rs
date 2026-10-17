@@ -118,7 +118,7 @@ fn open_options_reserve_the_traceparent() {
 #[test]
 fn open_options_carry_the_asker_and_the_sessions_own_model() {
     use porter_infer::{Asker, ModelRef};
-    let helper = prov::HelperId::parse("h-1").expect("helper");
+    let helper = porter_core::HelperId::parse("h-1").expect("helper");
     let model = ModelRef::parse("this-computer/qwen3-4b").expect("model");
     pinned(
         &OpenOptions::default()

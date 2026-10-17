@@ -34,6 +34,7 @@ mod error;
 mod family;
 #[cfg(test)]
 mod fixtures;
+mod helper_id;
 mod id;
 mod identities;
 mod identity;
@@ -72,6 +73,7 @@ pub use endpoint::{
 };
 pub use error::CoreError;
 pub use family::Family;
+pub use helper_id::HelperId;
 pub use id::{AccountId, GrantId, KeyPermitId, ModelId, ProviderId, is_id, object_segment};
 pub use identities::{Identity, IdentityAddress, IdentityId, IdentityKind, IdentityName};
 pub use identity::{CgroupPath, ClaimedId, PeerFacts, PeerIdentity, SandboxFacts, identity_of};

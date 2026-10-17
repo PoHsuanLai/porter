@@ -148,13 +148,9 @@ text_id!(
     opaque
 );
 
-text_id!(
-    /// One of the person's helpers: a persistent named agent. Opaque to prov (docket mints and
-    /// owns it): 1 to 128 bytes, no control characters.
-    HelperId,
-    "helper id",
-    opaque
-);
+/// One of the person's helpers: a persistent named agent (porter-core owns the type, because
+/// porter-infer names it too).
+pub use porter_core::HelperId;
 
 /// One thing an app owns, as the router, memory and the confirmation sheet name it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]

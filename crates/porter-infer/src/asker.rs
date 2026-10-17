@@ -1,6 +1,6 @@
 //! Who a session is opened for: the person, or one of their helpers.
 
-use prov::HelperId;
+use porter_core::HelperId;
 use serde::{Deserialize, Serialize};
 
 /// Whose turn a session carries. The person always goes ahead of every helper when the model

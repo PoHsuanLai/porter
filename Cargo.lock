@@ -2476,7 +2476,6 @@ dependencies = [
  "porter-core",
  "porter-fake",
  "proptest",
- "prov",
  "serde",
  "serde_json",
  "thiserror",
