@@ -53,8 +53,11 @@ fn transport(error: IdentitiesError) -> TransportError {
 
 impl Removals {
     /// Subscribes to `Identities1`'s removals over `connection`.
-    pub(crate) async fn watch(connection: &BusConnection) -> Result<Self, TransportError> {
-        let removals = Identities::connect(connection)
+    pub(crate) async fn watch(
+        connection: &BusConnection,
+        to: &crate::Destination,
+    ) -> Result<Self, TransportError> {
+        let removals = Identities::connect_at(connection, to)
             .await
             .map_err(transport)?
             .watch_removals()

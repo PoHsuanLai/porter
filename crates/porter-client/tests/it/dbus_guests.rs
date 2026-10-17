@@ -1,7 +1,8 @@
 //! The guest and computer calls of `Accounts` over the session bus, against a scripted
 //! `org.quire.Inference1` on a private bus: each call's decode into typed rows, the answer as
 //! the slug the wire carries, a refusal read back as a typed reason, and the stream that hears
-//! of a computer asking and of the answers changing.
+//! of a computer asking and of the answers changing; and calls sent to the owner a caller
+//! checked, which a program that takes the name afterwards does not get.
 #![cfg(feature = "dbus")]
 
 use crate::common;
@@ -188,7 +189,7 @@ impl FakeInferd {
 }
 
 struct World {
-    _bus: PrivateBus,
+    bus: PrivateBus,
     daemon: zbus::Connection,
     asked: Arc<Mutex<Asked>>,
     accounts: Accounts<DbusTransport>,
@@ -219,7 +220,7 @@ impl World {
         let accounts = Accounts::over(DbusTransport::over(bus.connect().await));
         let transport = DbusTransport::over(bus.connect().await);
         Self {
-            _bus: bus,
+            bus,
             daemon,
             asked,
             accounts,
@@ -639,5 +640,55 @@ async fn a_caller_the_daemon_refuses_is_denied_and_no_daemon_is_unreachable() {
     assert_eq!(
         alone.candidates().await,
         Err(ClientError::Transport(TransportError::Unreachable))
+    );
+}
+
+/// The owner a caller checked keeps the calls aimed at it: a program that takes
+/// `org.quire.Inference1` once the daemon lets go of it answers the well-known name, never them.
+#[tokio::test(flavor = "multi_thread")]
+async fn calls_aimed_at_the_checked_owner_never_reach_a_program_that_takes_the_name_later() {
+    let world = World::start(Script {
+        guests: vec![guest_row("nPI", "pi", "asking", 1)],
+        ..Script::default()
+    })
+    .await;
+    let checked = world.daemon.unique_name().expect("unique name").to_owned();
+    world
+        .daemon
+        .release_name(porter_dbus::INFERENCE_BUS)
+        .await
+        .expect("let go of the name");
+    let squatter = world.bus.connect().await;
+    squatter
+        .object_server()
+        .at(
+            porter_dbus::INFERENCE_PATH,
+            FakeInferd {
+                asked: Arc::default(),
+                script: Script {
+                    guests: vec![guest_row("nEVIL", "evil", "asking", 2)],
+                    ..Script::default()
+                },
+            },
+        )
+        .await
+        .expect("serve");
+    squatter
+        .request_name(porter_dbus::INFERENCE_BUS)
+        .await
+        .expect("take the name");
+    let named = |transport: DbusTransport| async move {
+        let rows = transport.list_guests().await.expect("guests").rows;
+        rows.iter()
+            .map(|row| row.node.as_str().to_owned())
+            .collect::<Vec<_>>()
+    };
+    let aimed = DbusTransport::over(world.bus.connect().await).inference_at(checked.into());
+    assert_eq!(named(aimed).await, ["nPI"], "the checked owner answers");
+    let well_known = DbusTransport::over(world.bus.connect().await);
+    assert_eq!(
+        named(well_known).await,
+        ["nEVIL"],
+        "the name's new owner answers"
     );
 }

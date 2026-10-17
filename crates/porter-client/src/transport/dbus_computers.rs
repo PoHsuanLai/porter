@@ -16,8 +16,9 @@ use porter_dbus::{
 };
 
 impl DbusTransport {
-    async fn inference(&self) -> Result<InferenceProxy<'static>, TransportError> {
-        InferenceProxy::new(self.connection())
+    async fn inference_proxy(&self) -> Result<InferenceProxy<'static>, TransportError> {
+        self.inference()
+            .proxy(self.connection())
             .await
             .map_err(|e| bus_error(&e))
     }
@@ -26,7 +27,7 @@ impl DbusTransport {
     /// `rows` (`Transport::guests` gives the rows alone).
     pub async fn list_guests(&self) -> Result<Rows<GuestRow>, TransportError> {
         let rows = self
-            .inference()
+            .inference_proxy()
             .await?
             .guests()
             .await
@@ -39,7 +40,7 @@ impl DbusTransport {
         node: &NodeId,
         answer: GuestAnswer,
     ) -> Result<(), TransportError> {
-        self.inference()
+        self.inference_proxy()
             .await?
             .answer_guest(node.as_str(), answer.slug())
             .await
@@ -47,7 +48,7 @@ impl DbusTransport {
     }
 
     pub(super) async fn send_forget_guest(&self, node: &NodeId) -> Result<(), TransportError> {
-        self.inference()
+        self.inference_proxy()
             .await?
             .forget_guest(node.as_str())
             .await
@@ -59,7 +60,7 @@ impl DbusTransport {
     /// Settings, the shell and the companion may ask; anyone else is `Denied`.
     pub async fn list_local_engines(&self) -> Result<Rows<LocalEngine>, TransportError> {
         let rows = self
-            .inference()
+            .inference_proxy()
             .await?
             .local_engines()
             .await
@@ -74,7 +75,7 @@ impl DbusTransport {
     /// `Inference1.PointEngine`: counts the install of `engine` the person already has in
     /// `folder`.
     pub async fn point_engine(&self, engine: &str, folder: &str) -> Result<(), TransportError> {
-        self.inference()
+        self.inference_proxy()
             .await?
             .point_engine(engine, folder)
             .await
@@ -85,7 +86,7 @@ impl DbusTransport {
     /// `rows` (`Transport::candidates` gives the rows alone).
     pub async fn list_candidates(&self) -> Result<Rows<ComputerCandidate>, TransportError> {
         let rows = self
-            .inference()
+            .inference_proxy()
             .await?
             .candidates()
             .await
@@ -108,7 +109,7 @@ mod computers {
             node: &NodeId,
         ) -> Result<PlaceId, TransportError> {
             let place = self
-                .inference()
+                .inference_proxy()
                 .await?
                 .add_tailnet_computer(node.as_str())
                 .await
@@ -145,7 +146,7 @@ mod computers {
                 })
                 .collect();
             let place = self
-                .inference()
+                .inference_proxy()
                 .await?
                 .add_computer(&computer.name, models)
                 .await
@@ -157,7 +158,7 @@ mod computers {
             &self,
             name: &ComputerName,
         ) -> Result<(), TransportError> {
-            self.inference()
+            self.inference_proxy()
                 .await?
                 .remove_computer(name.as_str())
                 .await

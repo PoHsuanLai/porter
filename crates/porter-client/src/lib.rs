@@ -79,6 +79,8 @@ mod authenticated;
 mod computers;
 #[cfg(feature = "dbus")]
 pub mod credential;
+#[cfg(feature = "dbus")]
+mod destination;
 #[cfg(feature = "engines")]
 pub mod engines;
 mod env;
@@ -112,6 +114,8 @@ pub use credential::{
     ChildKey, ChildKeyError, CredentialHandle, Delivery, Inherit, ProcessCredential, Revocations,
     Revoked,
 };
+#[cfg(feature = "dbus")]
+pub use destination::Destination;
 pub use env::{ClientEnv, LinkChoice, Place, START_WAIT, SocketAgent, StartAgent};
 /// The refusal [`ClientError::InferRefused`] carries when there is no `infer` feature: a type with
 /// no values (with the feature it is porter-infer's own).

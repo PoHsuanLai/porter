@@ -59,8 +59,16 @@ pub struct Tailnet {
 impl Tailnet {
     /// The list over `connection`.
     pub async fn connect(connection: &BusConnection) -> Result<Self, TailnetError> {
+        Self::connect_at(connection, &crate::Destination::WellKnown).await
+    }
+
+    /// The same, sent to `to`: the owner of accountd's name the caller checked.
+    pub async fn connect_at(
+        connection: &BusConnection,
+        to: &crate::Destination,
+    ) -> Result<Self, TailnetError> {
         Ok(Self {
-            proxy: TailnetProxy::new(connection).await?,
+            proxy: to.proxy(connection).await?,
         })
     }
 

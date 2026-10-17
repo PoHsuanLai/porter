@@ -10,6 +10,7 @@ use super::NewComputer;
 use super::Transport;
 #[cfg(feature = "infer")]
 use super::dbus_session::DbusSession;
+use crate::Destination;
 use crate::error::TransportError;
 use porter_core::lending::{ComputerCandidate, GuestAnswer, GuestRow};
 use porter_core::{AccountsReply, AccountsRequest, NodeId};
@@ -20,17 +21,44 @@ use porter_dbus::{BusConnection, BusError, BusFailure, classify};
 use porter_infer::{ComputerName, OpenOptions, PlaceId, PlaceRow, Readiness};
 #[cfg(feature = "infer")]
 use serde::Serialize;
+use zbus::names::UniqueName;
 
-/// inferd on the session bus, and accountd for the sheets it still shows.
+/// inferd on the session bus, and accountd for the sheets it still shows. Calls go to each
+/// daemon's well-known name unless the caller names the owner it checked ([`Destination`]).
 #[derive(Debug)]
 pub struct DbusTransport {
     connection: BusConnection,
+    accounts: Destination,
+    inference: Destination,
 }
 
 impl DbusTransport {
     /// Over an open session-bus connection the app owns.
     pub fn over(connection: BusConnection) -> Self {
-        Self { connection }
+        Self {
+            connection,
+            accounts: Destination::WellKnown,
+            inference: Destination::WellKnown,
+        }
+    }
+
+    /// The same, with accountd's calls (the sheets, Spaces, identities, the tailnet and the
+    /// removals watch) sent to `owner`, the unique name the caller checked owns
+    /// `org.quire.Accounts1`.
+    pub fn accounts_at(self, owner: UniqueName<'static>) -> Self {
+        Self {
+            accounts: Destination::Owner(owner),
+            ..self
+        }
+    }
+
+    /// The same, with inferd's calls (sessions, places, computers, guests and the guests watch)
+    /// sent to `owner`, the unique name the caller checked owns `org.quire.Inference1`.
+    pub fn inference_at(self, owner: UniqueName<'static>) -> Self {
+        Self {
+            inference: Destination::Owner(owner),
+            ..self
+        }
     }
 
     /// Over a new connection to the session bus (`DBUS_SESSION_BUS_ADDRESS` or the runtime
@@ -42,26 +70,36 @@ impl DbusTransport {
             .map_err(|e| bus_error(&e))
     }
 
-    /// The connection, for the inference calls and the removals watch.
+    /// The connection, for the inference calls and the watches.
     pub(crate) fn connection(&self) -> &BusConnection {
         &self.connection
     }
 
+    /// Where accountd's calls go.
+    pub(crate) fn accounts(&self) -> &Destination {
+        &self.accounts
+    }
+
+    /// Where inferd's calls go.
+    pub(crate) fn inference(&self) -> &Destination {
+        &self.inference
+    }
+
     /// accountd's registry of desktop-wide Spaces (`org.quire.Spaces1`), over this connection.
     pub async fn spaces(&self) -> Result<crate::Spaces, crate::SpacesError> {
-        crate::Spaces::connect(&self.connection).await
+        crate::Spaces::connect_at(&self.connection, &self.accounts).await
     }
 
     /// The identities signed in on this machine (`org.quire.Identities1`), over this connection:
     /// "Continue as" for an app that keeps its own sign-in.
     pub async fn identities(&self) -> Result<crate::Identities, crate::IdentitiesError> {
-        crate::Identities::connect(&self.connection).await
+        crate::Identities::connect_at(&self.connection, &self.accounts).await
     }
 
     /// The person's computers on their Tailscale network (`org.quire.Tailnet1`), over this
     /// connection: for the shell, Settings and the terminal.
     pub async fn tailnet(&self) -> Result<crate::Tailnet, crate::TailnetError> {
-        crate::Tailnet::connect(&self.connection).await
+        crate::Tailnet::connect_at(&self.connection, &self.accounts).await
     }
 }
 
@@ -139,7 +177,7 @@ impl Transport for DbusTransport {
     type Session = DbusSession;
 
     async fn call(&self, request: AccountsRequest) -> Result<AccountsReply, TransportError> {
-        super::dbus_accounts::call(&self.connection, request).await
+        super::dbus_accounts::call(&self.connection, &self.accounts, request).await
     }
 
     #[cfg(feature = "infer")]

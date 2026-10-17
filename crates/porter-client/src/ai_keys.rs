@@ -113,9 +113,17 @@ pub struct AiKeys {
 impl AiKeys {
     /// The Keys interface over `connection`, which inferd knows as an app.
     pub async fn connect(connection: &BusConnection) -> Result<Self, AiKeysError> {
+        Self::connect_at(connection, &crate::Destination::WellKnown).await
+    }
+
+    /// The same, sent to `to`: the owner of inferd's name the caller checked.
+    pub async fn connect_at(
+        connection: &BusConnection,
+        to: &crate::Destination,
+    ) -> Result<Self, AiKeysError> {
         Ok(Self {
             connection: connection.clone(),
-            proxy: KeysProxy::new(connection).await?,
+            proxy: to.proxy(connection).await?,
         })
     }
 

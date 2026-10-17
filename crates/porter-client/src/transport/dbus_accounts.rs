@@ -12,6 +12,7 @@
 //! dropped.
 
 use super::dbus::bus_error;
+use crate::Destination;
 use crate::abandon::Abandon;
 use crate::error::TransportError;
 use porter_core::wire::{ParentWindow, ProviderHint};
@@ -34,21 +35,23 @@ fn malformed(error: impl std::fmt::Display) -> TransportError {
     TransportError::Malformed(error.to_string())
 }
 
-async fn manager(connection: &BusConnection) -> Result<ManagerProxy<'_>, TransportError> {
-    ManagerProxy::new(connection)
-        .await
-        .map_err(|e| bus_error(&e))
+async fn manager(
+    connection: &BusConnection,
+    to: &Destination,
+) -> Result<ManagerProxy<'static>, TransportError> {
+    to.proxy(connection).await.map_err(|e| bus_error(&e))
 }
 
 /// One request to accountd over the bus.
 pub(super) async fn call(
     connection: &BusConnection,
+    to: &Destination,
     request: AccountsRequest,
 ) -> Result<AccountsReply, TransportError> {
     match request {
         AccountsRequest::AddAccount { hint, window } => {
             let (hint, window) = (hint_text(&hint), wire(&window));
-            let proxy = manager(connection).await?;
+            let proxy = manager(connection, to).await?;
             sheet(connection, SheetKind::AddAccount, |options| async move {
                 proxy.add_account(&hint, &window, &options).await
             })
@@ -56,8 +59,11 @@ pub(super) async fn call(
         }
         AccountsRequest::Reauthenticate { account, window } => {
             let window = wire(&window);
-            let proxy = AccountProxy::builder(connection)
+            let builder = AccountProxy::builder(connection)
                 .path(account_path(&account))
+                .map_err(|e| bus_error(&e))?;
+            let proxy = to
+                .aim(builder)
                 .map_err(|e| bus_error(&e))?
                 .build()
                 .await

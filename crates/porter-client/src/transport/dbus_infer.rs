@@ -62,7 +62,9 @@ impl DbusTransport {
         tier: Tier,
         options: &OpenOptions,
     ) -> Result<DbusSession, TransportError> {
-        let proxy = InferenceProxy::new(self.connection())
+        let proxy = self
+            .inference()
+            .proxy::<InferenceProxy<'static>>(self.connection())
             .await
             .map_err(|e| bus_error(&e))?;
         let fd = proxy
@@ -84,7 +86,9 @@ impl DbusTransport {
         tier: Tier,
         options: &OpenOptions,
     ) -> Result<Readiness, TransportError> {
-        let proxy = InferenceProxy::new(self.connection())
+        let proxy = self
+            .inference()
+            .proxy::<InferenceProxy<'static>>(self.connection())
             .await
             .map_err(|e| bus_error(&e))?;
         let text = proxy
@@ -104,7 +108,9 @@ impl DbusTransport {
     /// `Inference1.Places` row by row: a row that is malformed is in `skipped`, the rest are
     /// `rows` (`Transport::places` gives the rows alone).
     pub async fn list_places(&self) -> Result<Rows<PlaceRow>, TransportError> {
-        let proxy = InferenceProxy::new(self.connection())
+        let proxy = self
+            .inference()
+            .proxy::<InferenceProxy<'static>>(self.connection())
             .await
             .map_err(|e| bus_error(&e))?;
         let rows = proxy.places().await.map_err(|e| bus_error(&e))?;

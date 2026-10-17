@@ -56,10 +56,12 @@ pub struct GuestChanges {
 
 impl GuestChanges {
     /// Subscribes to both signals of inferd.
-    pub(crate) async fn watch(connection: &BusConnection) -> Result<Self, TransportError> {
-        let proxy = InferenceProxy::new(connection)
-            .await
-            .map_err(|e| bus_error(&e))?;
+    pub(crate) async fn watch(
+        connection: &BusConnection,
+        to: &crate::Destination,
+    ) -> Result<Self, TransportError> {
+        let proxy: InferenceProxy<'static> =
+            to.proxy(connection).await.map_err(|e| bus_error(&e))?;
         Ok(Self {
             asks: proxy
                 .receive_guest_asks()

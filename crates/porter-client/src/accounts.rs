@@ -48,14 +48,17 @@ impl Accounts<crate::transport::DbusTransport> {
     /// by their object-path segment). An app that keeps something of an identity (a copy of its
     /// sign-in, mirrors) forgets it on each [`crate::RemovedAccount`].
     pub async fn watch_removals(&self) -> Result<crate::Removals, ClientError> {
-        Ok(crate::Removals::watch(self.transport.connection()).await?)
+        Ok(crate::Removals::watch(self.transport.connection(), self.transport.accounts()).await?)
     }
 
     /// The computers that ask to use this computer's models, from now on: a question the person
     /// is to answer, and every change to the answers. Subscribe before reading
     /// [`Accounts::guests`], so no change falls between the two.
     pub async fn watch_guests(&self) -> Result<crate::GuestChanges, ClientError> {
-        Ok(crate::GuestChanges::watch(self.transport.connection()).await?)
+        Ok(
+            crate::GuestChanges::watch(self.transport.connection(), self.transport.inference())
+                .await?,
+        )
     }
 }
 
@@ -65,7 +68,9 @@ impl Accounts<AnyTransport> {
     /// bus has no guests to watch, so it is `TransportError::Unsupported`.
     pub async fn watch_guests(&self) -> Result<crate::GuestChanges, ClientError> {
         match &self.transport {
-            AnyTransport::Dbus(link) => Ok(crate::GuestChanges::watch(link.connection()).await?),
+            AnyTransport::Dbus(link) => {
+                Ok(crate::GuestChanges::watch(link.connection(), link.inference()).await?)
+            }
             _ => Err(TransportError::Unsupported.into()),
         }
     }
