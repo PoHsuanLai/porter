@@ -314,7 +314,7 @@ impl Job {
             // speaking has no runner, and a variant a newer porter adds: refused as unsupported
             _ => refused(InferRefusal::Unsupported),
         };
-        self.explained(&model, reply)
+        self.explained(&model, reply).await
     }
 
     /// Hears the session's audio on the model's speech host and tells the app what it heard.
