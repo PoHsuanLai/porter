@@ -119,22 +119,23 @@ pub async fn install_for_everyone(
 mod tests {
     use super::*;
     use porter_fake::Scratch;
-    use std::os::unix::fs::PermissionsExt;
 
-    /// A helper that says what the script says, with a "pkexec" that runs it directly.
+    /// A helper that says what the script says, with `/bin/sh` standing for pkexec: the script's
+    /// first line exits with `pkexec_code` when that is not 0, as pkexec does when the person did
+    /// not authorise. The script is only read by the shell, never executed itself: a file just
+    /// written can be held open for writing by a child a parallel test is forking, and executing
+    /// it then fails with "text file busy".
     fn fake(dir: &Scratch, pkexec_code: i32, helper_says: &str) -> HelperProgram {
-        let write = |name: &str, body: String| {
-            let path = dir.path().join(name);
-            std::fs::write(&path, body).expect("script");
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("mode");
-            path
-        };
-        let program = write("helper", format!("#!/bin/sh\n{helper_says}\n"));
-        let pkexec = write(
-            "pkexec",
-            format!("#!/bin/sh\n[ {pkexec_code} -ne 0 ] && exit {pkexec_code}\nexec \"$@\"\n"),
-        );
-        HelperProgram { pkexec, program }
+        let program = dir.path().join("helper");
+        std::fs::write(
+            &program,
+            format!("[ {pkexec_code} -ne 0 ] && exit {pkexec_code}\n{helper_says}\n"),
+        )
+        .expect("script");
+        HelperProgram {
+            pkexec: PathBuf::from("/bin/sh"),
+            program,
+        }
     }
 
     async fn run(helper: &HelperProgram) -> (Result<(), Failure>, Meter) {
@@ -183,9 +184,13 @@ mod tests {
                 install_for_everyone(&slow, EngineId::LlamaCpp, Backend::Cpu, &meter, &cancel).await
             })
         };
-        while meter.done() == 0 {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while meter.done() == 0 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the helper reports its progress within 10 s");
         cancel.cancel();
         assert_eq!(job.await.expect("joined"), Err(Failure::Cancelled));
     }
