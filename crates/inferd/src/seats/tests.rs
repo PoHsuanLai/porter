@@ -127,6 +127,25 @@ async fn a_waiting_request_is_woken_when_its_turn_comes() {
 }
 
 #[test]
+fn a_request_goes_to_the_instance_with_a_free_seat() {
+    let gate = Gate::default();
+    let (a, b) = (EngineId("vllm:a".into()), EngineId("vllm:b".into()));
+    let both = [(a.clone(), Seats::of(1)), (b.clone(), Seats::of(1))];
+    let first = gate.pass_among(&both, &helper());
+    let second = gate.pass_among(&both, &helper());
+    assert_eq!(
+        (first.engine(), second.engine(), second.standing()),
+        (Some(&a), Some(&b), Standing::Seated)
+    );
+    // Both are full: the person waits on the instance with fewer persons ahead, the lower one.
+    let person = gate.pass_among(&both, &Asker::Person);
+    assert_eq!(person.standing(), waiting(0));
+    drop(first);
+    assert_eq!(person.standing(), Standing::Seated);
+    assert_eq!(person.engine(), Some(&a));
+}
+
+#[test]
 fn an_aborted_request_frees_its_seat() {
     let gate = Gate::default();
     let seats = Seats::of(1);

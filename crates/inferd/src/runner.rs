@@ -11,22 +11,22 @@
 //! audio frames are queued to the turn, `end_audio` closes the queue. `Speak` is refused
 //! `Unsupported` (no text-to-speech runner yet).
 
-use crate::bridge::{self, Frames};
+use crate::bridge::Frames;
 use crate::cloud::Cloud;
 use crate::cloud::turn::{self as hosted, CloudPin};
+use crate::engines::Engines;
 use crate::local::LocalModel;
 use crate::pipeline::Hearing;
-use crate::seats::{Gate, Pass, Standing, seats_in};
+use crate::seats::Gate;
 use crate::serve::{TurnRunner, TurnStep};
 use crate::session::HeardAudio;
 use crate::speech::{ChannelAudio, SpeechRunner};
-use crate::structured::{self, Limits, Shaping};
+use crate::structured::Limits;
 use crate::supervise::Supervised;
-use model_catalog::EngineKind;
 use porter_core::Tier;
 use porter_infer::{
-    Asker, AudioFrame, ChatRequest, InferEvent, InferRefusal, InferReply, InferRequest, ModelError,
-    QueueFact, ServedBy, TranscribeBegin,
+    Asker, AudioFrame, ChatRequest, InferRefusal, InferReply, InferRequest, ModelError, ServedBy,
+    TranscribeBegin,
 };
 use porter_turns::cua_run::CuaRun;
 use porter_turns::local::{LocalTurns, ToSession};
@@ -81,7 +81,16 @@ pub struct Turns {
     cloud: Option<Cloud>,
     hearing: Option<Hearing>,
     /// The daemon's seats and whose turn these are; none takes every request at once.
-    seats: Option<(Gate, Asker)>,
+    seating: Option<Seating>,
+}
+
+/// What a session's requests share to take their seats: the daemon's gate, whose turns they
+/// are, and the engines (to see which instances are running and how the machine looks).
+#[derive(Debug, Clone)]
+struct Seating {
+    gate: Gate,
+    asker: Asker,
+    engines: Engines,
 }
 
 impl Turns {
@@ -95,15 +104,21 @@ impl Turns {
             limits: Limits::default(),
             cloud: None,
             hearing: None,
-            seats: None,
+            seating: None,
         }
     }
 
     /// The same turns, taking a seat on the engine of a local model before each request, as
-    /// `asker`: the person's turn goes ahead of a helper's when the engine is busy.
-    pub fn admitted(self, gate: Gate, asker: Asker) -> Self {
+    /// `asker`: the person's turn goes ahead of a helper's when the engine is busy, a request
+    /// goes to a running instance of its model with a free seat, and one that lost its engine
+    /// is told so in plain words.
+    pub fn admitted(self, gate: Gate, asker: Asker, engines: Engines) -> Self {
         Self {
-            seats: Some((gate, asker)),
+            seating: Some(Seating {
+                gate,
+                asker,
+                engines,
+            }),
             ..self
         }
     }
@@ -160,12 +175,23 @@ impl TurnRunner for Turns {
             run: Arc::clone(&self.run),
             limits: self.limits,
             cloud: self.cloud.clone(),
-            seats: self.seats.clone(),
+            seating: self.seating.clone(),
             steps,
         };
+        // The request is a task of its own inside the turn's: a panic in it ends this request
+        // with a plain reason and nothing else (the daemon and other sessions never see it).
         let task = tokio::spawn(async move {
-            let reply = job.reply(request, attachments, frames).await;
-            let _ = job.steps.send(TurnStep::Done(reply));
+            let steps = job.steps.clone();
+            let mut work = AbortOnDrop(tokio::spawn(async move {
+                let reply = job.reply(request, attachments, frames).await;
+                let _ = job.steps.send(TurnStep::Done(reply));
+            }));
+            if let Err(ended) = (&mut work.0).await {
+                if ended.is_panic() {
+                    eprintln!("inferd: a request stopped unexpectedly");
+                }
+                let _ = steps.send(TurnStep::Done(InferReply::Failed(ModelError::Interrupted)));
+            }
         });
         Turn::listening(inbox, task, audio)
     }
@@ -192,8 +218,18 @@ struct Job {
     run: Arc<Mutex<Option<CuaRun>>>,
     limits: Limits,
     cloud: Option<Cloud>,
-    seats: Option<(Gate, Asker)>,
+    seating: Option<Seating>,
     steps: mpsc::UnboundedSender<TurnStep>,
+}
+
+/// A spawned task that is aborted when its handle is dropped (the turn was dropped: the client
+/// cancelled or left).
+struct AbortOnDrop(tokio::task::JoinHandle<()>);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
 }
 
 fn refused(refusal: InferRefusal) -> InferReply {
@@ -208,41 +244,6 @@ impl Job {
             self.steps.clone(),
             Arc::clone(&self.run),
         )
-    }
-
-    /// Takes a seat on the model's engine when it is one this daemon launches to chat, telling
-    /// the session where it stands while it waits. The seat is held until the pass is dropped,
-    /// when the reply is over, cancelled or failed.
-    async fn seat(&self, model: &LocalModel) -> Option<Pass> {
-        let (gate, asker) = self.seats.as_ref()?;
-        let launched = model.attached.is_none()
-            && model.loopback.is_none()
-            && model.cassette.is_none()
-            && matches!(
-                model.profile.kind,
-                EngineKind::Vllm | EngineKind::LlamaServer
-            );
-        if !launched {
-            return None;
-        }
-        let seats = seats_in(model.profile.kind, &model.profile.args);
-        let mut pass = gate.pass(&model.spec.id, seats, asker);
-        let mut told = false;
-        while let Standing::Waiting { ahead } = pass.standing() {
-            told = true;
-            self.tell(QueueFact::Waiting { ahead });
-            if !pass.moved().await {
-                break;
-            }
-        }
-        if told {
-            self.tell(QueueFact::Started);
-        }
-        Some(pass)
-    }
-
-    fn tell(&self, fact: QueueFact) {
-        let _ = self.steps.send(TurnStep::Event(InferEvent::Queue(fact)));
     }
 
     async fn reply(
@@ -279,36 +280,41 @@ impl Job {
         else {
             return InferReply::Failed(ModelError::Unreachable);
         };
-        let _seat = self.seat(model).await;
-        self.engines.used(&model.spec.id);
         let frames = match Frames::read(attachments) {
             Ok(frames) => frames,
             Err(_) => return InferReply::Failed(ModelError::Unreadable),
         };
-        let local = self.local();
         match request {
-            InferRequest::Chat(chat) => match bridge::chat_turn(model, &chat, &frames) {
-                Ok(turn) => {
-                    let shaping = structured::shaping(model, &chat, self.limits);
-                    local.chat(model, served, &turn, shaping).await
-                }
-                Err(_) => refused(InferRefusal::Unsupported),
-            },
-            InferRequest::Task(task) => match bridge::task_turn(model, &task, self.tier) {
-                Ok(turn) => local.chat(model, served, &turn, Shaping::Unchecked).await,
-                Err(_) => refused(InferRefusal::Unsupported),
-            },
-            InferRequest::Embed(embed) => local.embed(model, served, &embed).await,
+            InferRequest::Chat(_) | InferRequest::Task(_) | InferRequest::Embed(_) => {
+                self.retrying(model, served, &request, &frames).await
+            }
+            other => self.single(model, served, other, &frames, audio).await,
+        }
+    }
+
+    /// A request that is not retried: a computer-use step, a transcription, a speaking request.
+    async fn single(
+        &self,
+        pinned: &Arc<LocalModel>,
+        served: &ServedBy,
+        request: InferRequest,
+        frames: &Frames,
+        audio: mpsc::UnboundedReceiver<AudioFrame>,
+    ) -> InferReply {
+        let (model, _seat) = self.place(pinned, None).await;
+        self.engines.used(&model.spec.id);
+        let local = self.local();
+        let reply = match request {
             InferRequest::CuaBegin(begin) => local.begin_cua(begin),
-            InferRequest::CuaStep(step) => local.cua(model, &step, &frames).await,
+            InferRequest::CuaStep(step) => local.cua(&model, &step, frames).await,
             InferRequest::Transcribe(begin) => {
-                self.transcribe(model, served, &begin, ChannelAudio(audio))
+                self.transcribe(&model, served, &begin, ChannelAudio(audio))
                     .await
             }
-            InferRequest::Speak(_) => refused(InferRefusal::Unsupported),
-            // a variant a newer porter adds: refused as unsupported
+            // speaking has no runner, and a variant a newer porter adds: refused as unsupported
             _ => refused(InferRefusal::Unsupported),
-        }
+        };
+        self.explained(&model, reply)
     }
 
     /// Hears the session's audio on the model's speech host and tells the app what it heard.
@@ -330,6 +336,8 @@ impl Job {
         }
     }
 }
+
+mod placing;
 
 #[cfg(test)]
 mod tests;

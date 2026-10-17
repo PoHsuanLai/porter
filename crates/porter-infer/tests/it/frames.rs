@@ -267,6 +267,9 @@ fn model_errors_and_refusals_keep_their_slugs() {
             r#"{"kind":"context_overflow"}"#,
         ),
         (ModelError::Unparseable, r#"{"kind":"unparseable"}"#),
+        (ModelError::OutOfMemory, r#"{"kind":"out_of_memory"}"#),
+        (ModelError::EngineStopped, r#"{"kind":"engine_stopped"}"#),
+        (ModelError::Interrupted, r#"{"kind":"interrupted"}"#),
         (
             ModelError::OnlyThought {
                 stop: StopReason::EndTurn,

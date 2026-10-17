@@ -4,6 +4,7 @@
 //! notes themselves are decided by `porter_infer::hardware_notes`.
 
 use super::{Engines, Offered};
+use crate::failure::{EngineView, Moment};
 use crate::local::LocalModel;
 use crate::peers::Caller;
 use crate::router::Unchosen;
@@ -11,9 +12,12 @@ use crate::router::placed::Allowed;
 use crate::seats::Gate;
 use crate::session::SessionSpec;
 use crate::swap::running_of;
+use engine_supervisor::{EngineId, EngineState};
 use model_catalog::{GpuNeed, MiB};
 use porter_core::Bytes;
 use porter_infer::{HardwareFacts, HardwareNote, MemoryFacts, ModelRef, hardware_notes};
+
+use std::sync::Arc;
 
 fn bytes_of(mib: MiB) -> Bytes {
     Bytes(u64::from(mib.0) << 20)
@@ -40,6 +44,52 @@ impl Engines {
             .0
             .saturating_sub(gpu.used_by_others.0)
             .saturating_sub(held)))
+    }
+
+    /// Whether the engine of `model` is ready now.
+    pub(crate) fn view_of(&self, model: &LocalModel) -> EngineView {
+        match self.supervised.snapshot().states.get(&model.spec.id) {
+            Some(EngineState::Ready { .. }) => EngineView::Running,
+            _ => EngineView::NotRunning,
+        }
+    }
+
+    /// The engine instances serving `model` that are ready now, except `avoid`.
+    pub(crate) fn running_instances(
+        &self,
+        model: &ModelRef,
+        avoid: Option<&EngineId>,
+    ) -> Vec<Arc<LocalModel>> {
+        self.book
+            .local
+            .iter()
+            .filter(|one| one.model_ref() == *model && Some(&one.spec.id) != avoid)
+            .filter(|one| self.view_of(one) == EngineView::Running)
+            .cloned()
+            .collect()
+    }
+
+    /// What the machine looked like for `model` just now, and the facts behind it.
+    pub(crate) fn moment_of(&self, model: &LocalModel, gate: &Gate) -> (Moment, HardwareFacts) {
+        let facts = self.facts_for(model, gate);
+        let moment = Moment {
+            engine: self.view_of(model),
+            memory: facts.memory,
+        };
+        (moment, facts)
+    }
+
+    /// The graphics memory and the load of the moment as one clause for the log.
+    pub(crate) fn graphics_line(&self, gate: &Gate) -> String {
+        let (helpers, waiting) = gate.totals();
+        let memory = self.free_graphics_memory().map_or_else(
+            || "graphics memory not read".to_owned(),
+            |free| format!("graphics memory {} MiB free", free.0),
+        );
+        format!(
+            "{memory}; {} helpers using models, {} requests waiting",
+            helpers.0, waiting.0
+        )
     }
 
     /// What `model` faces now: how many helpers use it, how many requests wait, and the graphics

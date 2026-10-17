@@ -95,7 +95,7 @@ fn chat_with(parts: Vec<MessagePart>) -> InferRequest {
     )
 }
 
-fn chat() -> ClientFrame {
+pub(crate) fn chat() -> ClientFrame {
     ClientFrame::Request(chat_with(vec![MessagePart::Text("hi".into())]))
 }
 
@@ -116,7 +116,7 @@ fn image(index: u16) -> MessagePart {
     })
 }
 
-fn mail() -> SessionSpec {
+pub(crate) fn mail() -> SessionSpec {
     spec(llm(), DataClass::Mail)
 }
 

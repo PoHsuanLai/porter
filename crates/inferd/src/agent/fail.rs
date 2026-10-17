@@ -91,6 +91,17 @@ impl Failure {
                 Cause::OnlyThought { stop, thought_len },
                 format!("the model produced only reasoning ({thought_len} bytes) and no answer"),
             ),
+            ModelError::OutOfMemory => Self::new(
+                Cause::Overloaded,
+                "the model ran out of graphics memory for this reply",
+            ),
+            ModelError::EngineStopped => Self::new(
+                Cause::Overloaded,
+                "the model's engine stopped while answering",
+            ),
+            ModelError::Interrupted => {
+                Self::new(Cause::Upstream, "this reply stopped unexpectedly")
+            }
             // a variant a newer porter adds: told to the agent as an upstream failure
             _ => Self::new(Cause::Upstream, "the model failed"),
         }

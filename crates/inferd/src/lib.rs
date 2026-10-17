@@ -29,6 +29,7 @@ pub mod cloud;
 pub mod config;
 pub mod daemon;
 pub mod engines;
+pub mod failure;
 pub mod hosts;
 pub mod installed;
 pub mod keys;

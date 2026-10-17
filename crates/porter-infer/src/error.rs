@@ -86,4 +86,15 @@ pub enum ModelError {
         /// How many bytes of reasoning it held.
         thought_len: u32,
     },
+    /// The model ran out of graphics memory for this reply. It ends this reply only.
+    #[error("the model ran out of graphics memory for this reply")]
+    OutOfMemory,
+    /// The model's engine stopped while it was answering. It ends the replies that were on that
+    /// engine; the engine is started again.
+    #[error("the model's engine stopped while answering")]
+    EngineStopped,
+    /// Something went wrong inside the daemon for this one reply or session, and it ended. Other
+    /// sessions go on.
+    #[error("this reply stopped unexpectedly")]
+    Interrupted,
 }

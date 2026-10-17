@@ -20,7 +20,7 @@ use crate::pipeline::Hearing;
 use crate::router::placed::{Allowed, Unplaced};
 use crate::runner::{Pin, Turns};
 use crate::seats::Gate;
-use crate::serve::{Seams, serve_session};
+use crate::serve::{Seams, guarded, serve_session};
 use crate::session::SessionSpec;
 use crate::settings::{LocalEngines, Reload};
 use crate::structured::Limits;
@@ -376,11 +376,13 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
     ) -> fdo::Result<OwnedFd> {
         let (ours, theirs) = StdStream::pair().map_err(failed)?;
         ours.set_nonblocking(true).map_err(failed)?;
+        // A second handle on the session's end, to tell the client if the session's task panics.
+        let report = UnixStream::from_std(ours.try_clone().map_err(failed)?).map_err(failed)?;
         let stream = UnixStream::from_std(ours).map_err(failed)?;
         let pin = Pin::new();
         let turns = Turns::new(pin.clone(), self.engines.supervised().clone(), spec.tier)
             .limited(self.limits)
-            .admitted(self.gate.clone(), own.asker())
+            .admitted(self.gate.clone(), own.asker(), self.engines.clone())
             .hearing(Hearing {
                 engines: self.engines.clone(),
                 app: Some(caller.app.clone()),
@@ -400,7 +402,12 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
                 self.engines.tool_proofs().clone(),
             ),
         };
-        tokio::spawn(async move { serve_session(stream, spec, &seams).await });
+        let (engines, gate) = (self.engines.clone(), self.gate.clone());
+        tokio::spawn(guarded(
+            async move { serve_session(stream, spec, &seams).await },
+            report,
+            move || engines.graphics_line(&gate),
+        ));
         Ok(OwnedFd::from(std::os::fd::OwnedFd::from(theirs)))
     }
 }

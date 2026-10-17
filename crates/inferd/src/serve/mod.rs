@@ -7,9 +7,11 @@
 //! `porter-router`, so another host can fill them; they stay importable from here.
 
 mod driver;
+mod guard;
 mod wire;
 
 pub use driver::serve_session;
+pub use guard::guarded;
 pub use porter_router::carried::Carried;
 pub use porter_router::seams::{
     AuditSink, EngineFailed, EngineHost, Router, RunningTurn, Seams, TurnRunner, TurnStep,

@@ -12,6 +12,7 @@ mod engine_group;
 mod engine_start;
 mod hosted;
 mod hosting;
+mod isolation;
 mod keys_local;
 mod launcher_credential;
 mod launcher_login;

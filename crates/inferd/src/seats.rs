@@ -84,6 +84,13 @@ impl Inner {
         lane
     }
 
+    fn engine_of(&self, lane: Lane) -> Option<EngineId> {
+        self.lanes
+            .iter()
+            .find(|(_, one)| **one == lane)
+            .map(|(engine, _)| engine.clone())
+    }
+
     /// Tells the promoted requests they have a seat, and the rest of their lanes where they now
     /// stand.
     fn seat(&mut self, promoted: Vec<Promoted>) {
@@ -123,9 +130,22 @@ impl Gate {
     /// A request of `asker` for the engine instance `engine`, which takes `seats` at once. It
     /// has a seat at once when one is free; otherwise it waits and the pass says where.
     pub fn pass(&self, engine: &EngineId, seats: Seats, asker: &Asker) -> Pass {
+        self.pass_among(&[(engine.clone(), seats)], asker)
+    }
+
+    /// A request of `asker` for a model served by several engine instances, each with its seats:
+    /// it goes to an instance with a free seat, else to the one where fewest stand ahead of it.
+    /// The pass says which instance it is on.
+    pub fn pass_among(&self, instances: &[(EngineId, Seats)], asker: &Asker) -> Pass {
         let mut inner = self.locked();
-        let lane = inner.lane_of(engine, seats);
-        let placed = inner.admission.arrive(&[lane], Priority::from(asker));
+        let lanes: Vec<Lane> = instances
+            .iter()
+            .map(|(engine, seats)| inner.lane_of(engine, *seats))
+            .collect();
+        let placed = inner.admission.arrive(&lanes, Priority::from(asker));
+        let engine = placed
+            .and_then(|placed| inner.engine_of(placed.lane))
+            .or_else(|| instances.first().map(|(engine, _)| engine.clone()));
         if let Some(placed) = placed {
             inner.renumber(placed.lane);
         }
@@ -137,6 +157,7 @@ impl Gate {
         }
         Pass {
             gate: self.clone(),
+            engine,
             ticket: placed.map(|placed| placed.ticket),
             listen,
         }
@@ -160,6 +181,23 @@ impl Gate {
         Count(u32::try_from(helpers.len()).unwrap_or(u32::MAX))
     }
 
+    /// How many helpers have requests anywhere, and how many requests wait anywhere.
+    pub fn totals(&self) -> (Count, Count) {
+        let inner = self.locked();
+        let helpers: HashSet<&Asker> = inner
+            .by
+            .values()
+            .filter(|asker| matches!(asker, Asker::Helper(_)))
+            .collect();
+        let waiting: usize = inner
+            .lanes
+            .values()
+            .map(|lane| inner.admission.waiting(*lane).len())
+            .sum();
+        let count = |number: usize| Count(u32::try_from(number).unwrap_or(u32::MAX));
+        (count(helpers.len()), count(waiting))
+    }
+
     /// How many requests wait for a seat on the engine instance `engine`.
     pub fn waiting_on(&self, engine: &EngineId) -> Count {
         let inner = self.locked();
@@ -176,11 +214,18 @@ impl Gate {
 #[derive(Debug)]
 pub struct Pass {
     gate: Gate,
+    /// The engine instance the request is on (none only for a request given no instance).
+    engine: Option<EngineId>,
     ticket: Option<Ticket>,
     listen: watch::Receiver<Standing>,
 }
 
 impl Pass {
+    /// The engine instance the request is on.
+    pub fn engine(&self) -> Option<&EngineId> {
+        self.engine.as_ref()
+    }
+
     /// Where the request stands now.
     pub fn standing(&self) -> Standing {
         *self.listen.borrow()
