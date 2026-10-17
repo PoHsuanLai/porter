@@ -16,15 +16,17 @@ use crate::cloud::Cloud;
 use crate::cloud::turn::{self as hosted, CloudPin};
 use crate::local::LocalModel;
 use crate::pipeline::Hearing;
+use crate::seats::{Gate, Pass, Standing, seats_in};
 use crate::serve::{TurnRunner, TurnStep};
 use crate::session::HeardAudio;
 use crate::speech::{ChannelAudio, SpeechRunner};
 use crate::structured::{self, Limits, Shaping};
 use crate::supervise::Supervised;
+use model_catalog::EngineKind;
 use porter_core::Tier;
 use porter_infer::{
-    AudioFrame, ChatRequest, InferRefusal, InferReply, InferRequest, ModelError, ServedBy,
-    TranscribeBegin,
+    Asker, AudioFrame, ChatRequest, InferEvent, InferRefusal, InferReply, InferRequest, ModelError,
+    QueueFact, ServedBy, TranscribeBegin,
 };
 use porter_turns::cua_run::CuaRun;
 use porter_turns::local::{LocalTurns, ToSession};
@@ -78,6 +80,8 @@ pub struct Turns {
     limits: Limits,
     cloud: Option<Cloud>,
     hearing: Option<Hearing>,
+    /// The daemon's seats and whose turn these are; none takes every request at once.
+    seats: Option<(Gate, Asker)>,
 }
 
 impl Turns {
@@ -91,6 +95,16 @@ impl Turns {
             limits: Limits::default(),
             cloud: None,
             hearing: None,
+            seats: None,
+        }
+    }
+
+    /// The same turns, taking a seat on the engine of a local model before each request, as
+    /// `asker`: the person's turn goes ahead of a helper's when the engine is busy.
+    pub fn admitted(self, gate: Gate, asker: Asker) -> Self {
+        Self {
+            seats: Some((gate, asker)),
+            ..self
         }
     }
 
@@ -146,6 +160,7 @@ impl TurnRunner for Turns {
             run: Arc::clone(&self.run),
             limits: self.limits,
             cloud: self.cloud.clone(),
+            seats: self.seats.clone(),
             steps,
         };
         let task = tokio::spawn(async move {
@@ -177,6 +192,7 @@ struct Job {
     run: Arc<Mutex<Option<CuaRun>>>,
     limits: Limits,
     cloud: Option<Cloud>,
+    seats: Option<(Gate, Asker)>,
     steps: mpsc::UnboundedSender<TurnStep>,
 }
 
@@ -192,6 +208,41 @@ impl Job {
             self.steps.clone(),
             Arc::clone(&self.run),
         )
+    }
+
+    /// Takes a seat on the model's engine when it is one this daemon launches to chat, telling
+    /// the session where it stands while it waits. The seat is held until the pass is dropped,
+    /// when the reply is over, cancelled or failed.
+    async fn seat(&self, model: &LocalModel) -> Option<Pass> {
+        let (gate, asker) = self.seats.as_ref()?;
+        let launched = model.attached.is_none()
+            && model.loopback.is_none()
+            && model.cassette.is_none()
+            && matches!(
+                model.profile.kind,
+                EngineKind::Vllm | EngineKind::LlamaServer
+            );
+        if !launched {
+            return None;
+        }
+        let seats = seats_in(model.profile.kind, &model.profile.args);
+        let mut pass = gate.pass(&model.spec.id, seats, asker);
+        let mut told = false;
+        while let Standing::Waiting { ahead } = pass.standing() {
+            told = true;
+            self.tell(QueueFact::Waiting { ahead });
+            if !pass.moved().await {
+                break;
+            }
+        }
+        if told {
+            self.tell(QueueFact::Started);
+        }
+        Some(pass)
+    }
+
+    fn tell(&self, fact: QueueFact) {
+        let _ = self.steps.send(TurnStep::Event(InferEvent::Queue(fact)));
     }
 
     async fn reply(
@@ -228,6 +279,7 @@ impl Job {
         else {
             return InferReply::Failed(ModelError::Unreachable);
         };
+        let _seat = self.seat(model).await;
         self.engines.used(&model.spec.id);
         let frames = match Frames::read(attachments) {
             Ok(frames) => frames,

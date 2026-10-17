@@ -20,6 +20,7 @@
 //! arguments, listens for signals and calls these.
 
 mod adapters;
+pub mod admit;
 pub mod agent;
 pub mod attached;
 pub mod auto;
@@ -39,6 +40,7 @@ pub mod probed;
 pub mod replay;
 pub mod report;
 pub mod runner;
+pub mod seats;
 pub mod serve;
 pub mod service;
 pub mod settings;

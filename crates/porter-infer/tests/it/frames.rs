@@ -7,7 +7,7 @@ use cua_action::{
 };
 use porter_core::capability::{CuaEnv, LanguageTag};
 use porter_core::consent::Usage;
-use porter_core::{AccountId, DataClass, Locality, ModelId, Permille, Tokens};
+use porter_core::{AccountId, Count, DataClass, Locality, ModelId, Permille, Tokens};
 use porter_infer::*;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -187,6 +187,8 @@ fn infer_frames_round_trip() {
         }),
         InferEvent::Waiting(Readiness::Loading),
         InferEvent::Waiting(Readiness::Downloading(Permille(420))),
+        InferEvent::Queue(QueueFact::Waiting { ahead: Count(2) }),
+        InferEvent::Queue(QueueFact::Started),
         InferEvent::TextDelta("he".into()),
         InferEvent::ThoughtDelta("hmm".into()),
         InferEvent::ToolCall(ToolCallPart {

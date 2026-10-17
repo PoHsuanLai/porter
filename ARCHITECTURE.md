@@ -174,6 +174,7 @@ takes porter-oauth without its `io`). A daemon or an app hosting porter turns th
 | starting, probing and unloading an engine | `inferd::supervise` (the driver of stoker's `step`) over `inferd::hosts` |
 | porter's request to stoker's turn, and back | `porter-bridge` (the only mapping; `porter_turns::bridge` adds the `LocalModel` targets) |
 | running a turn on a model of this computer | `porter_turns::local::LocalTurns` (inferd's `runner::Turns` adds a hosted model's turn and a speech turn) |
+| which request takes the next seat of an engine (person before helpers, FIFO among helpers, spread over instances) | `inferd::admit` (pure); `inferd::seats` holds it behind a lock for the sessions |
 | inference in an app with no inferd | `porter-client::engines` (`EngineHost`: the app's table and policy, `porter_infer::admit` for the hard rules, the app's `KeySource`) |
 | provider file format | `porter-provider::spec` + `parse` |
 | which secret an auth kind presents | `porter-service::secret_purpose` |

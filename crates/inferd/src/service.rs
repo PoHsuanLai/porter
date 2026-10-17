@@ -19,6 +19,7 @@ use crate::peers::{Caller, Peers, Role};
 use crate::pipeline::Hearing;
 use crate::router::placed::{Allowed, Unplaced};
 use crate::runner::{Pin, Turns};
+use crate::seats::Gate;
 use crate::serve::{Seams, serve_session};
 use crate::session::SessionSpec;
 use crate::settings::{LocalEngines, Reload};
@@ -59,6 +60,9 @@ pub struct Inference<P, O, C> {
     tailnet: Option<Tailnet>,
     /// The engines found at start, for `LocalEngines`; none until [`Self::local_engines`].
     local_engines: LocalEngines,
+    /// The seats of the engines: every session of the daemon asks here before a request goes
+    /// to an engine.
+    gate: Gate,
     /// Woken when an AI account appeared, went or changed state (the key host fires it).
     keys_news: Option<Arc<tokio::sync::Notify>>,
 }
@@ -78,6 +82,7 @@ impl<P, O, C> Inference<P, O, C> {
             computers: None,
             tailnet: None,
             local_engines: LocalEngines::default(),
+            gate: Gate::default(),
             keys_news: None,
         }
     }
@@ -355,6 +360,7 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         let pin = Pin::new();
         let turns = Turns::new(pin.clone(), self.engines.supervised().clone(), spec.tier)
             .limited(self.limits)
+            .admitted(self.gate.clone(), own.asker())
             .hearing(Hearing {
                 engines: self.engines.clone(),
                 app: Some(caller.app.clone()),

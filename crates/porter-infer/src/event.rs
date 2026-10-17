@@ -7,6 +7,7 @@ use crate::reply::{InferReply, ServedBy, TokenUsage};
 use crate::request::{InferRequest, ToolCallPart};
 use crate::speech::{AudioFrame, AudioFrameOut, HeardDelta};
 use cua_action::{CuaAction, WindowSpace};
+use porter_core::Count;
 use serde::{Deserialize, Serialize};
 
 /// A frame from the client to inferd. Audio frames follow a `Transcribe` request.
@@ -57,6 +58,10 @@ pub enum InferEvent {
     Stage(StageNote),
     /// The engine is loading: presence is "working", never a spinner in the app.
     Waiting(Readiness),
+    /// Where the turn stands when the model is busy with other requests: sent when it has to
+    /// wait and again when its place changes, then `Started` once it has its turn. Not sent
+    /// when the turn starts at once. Additive: a reader that does not know it must skip it.
+    Queue(QueueFact),
     /// Reply text so far.
     TextDelta(String),
     /// Reasoning so far.
@@ -73,6 +78,19 @@ pub enum InferEvent {
     Spoken(AudioFrameOut),
     /// The turn is over.
     Finished(InferReply),
+}
+
+/// Where a turn stands in line for a busy model: a fact, never a refusal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "v", rename_all = "snake_case")]
+pub enum QueueFact {
+    /// Waiting for the model; `ahead` requests are served before this one.
+    Waiting {
+        /// How many are ahead.
+        ahead: Count,
+    },
+    /// It has its turn and starts now.
+    Started,
 }
 
 /// What a sink answers to an event.

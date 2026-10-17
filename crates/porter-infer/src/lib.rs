@@ -67,7 +67,7 @@ pub use cua::{
     TreeText, WindowGeometry,
 };
 pub use error::{InferRefusal, ModelError};
-pub use event::{ClientFrame, Flow, InferEvent, ModelLabel, StageNote};
+pub use event::{ClientFrame, Flow, InferEvent, ModelLabel, QueueFact, StageNote};
 pub use ids::{
     AttachIndex, Base64Bytes, JsonSchemaText, JsonText, OpaqueText, SignatureText, TextError,
     ToolCallId, ToolName, Traceparent,
