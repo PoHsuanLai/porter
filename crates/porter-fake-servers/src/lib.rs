@@ -30,6 +30,7 @@ pub mod pop3;
 pub mod seen;
 pub mod shipped;
 pub mod smtp;
+#[cfg(unix)]
 pub mod tailscale;
 pub mod tls;
 
@@ -51,4 +52,5 @@ pub use oauth::{Consent, FakeIssuer, IssuerEvent, IssuerHandle, Style, TokenResu
 pub use pop3::FakePop3;
 pub use seen::{Running, Seen};
 pub use smtp::FakeSmtp;
+#[cfg(unix)]
 pub use tailscale::{Daemon, FakeLocalApi, FakePeer, FakeUser, LocalApiHandle, Network};

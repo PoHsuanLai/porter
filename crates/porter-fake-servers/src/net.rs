@@ -1,5 +1,6 @@
 //! Scratch listeners: a loopback port or a Unix socket in a scratch directory, and the one
-//! connection type both produce.
+//! connection type both produce. A Unix socket is a Unix platform's: elsewhere binding or
+//! dialling one is `ErrorKind::Unsupported`.
 
 use porter_fake::FakeAddress;
 use std::io;
@@ -8,7 +9,9 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tokio::net::{TcpListener, TcpStream, UnixListener, UnixStream};
+use tokio::net::{TcpListener, TcpStream};
+#[cfg(unix)]
+use tokio::net::{UnixListener, UnixStream};
 
 /// Where a fake binds.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,6 +34,7 @@ pub struct Listener {
 #[derive(Debug)]
 enum Kind {
     Tcp(TcpListener),
+    #[cfg(unix)]
     Unix(UnixListener),
 }
 
@@ -49,6 +53,7 @@ pub enum Conn {
     /// Over loopback.
     Tcp(TcpStream),
     /// Over a Unix socket.
+    #[cfg(unix)]
     Unix(UnixStream),
 }
 
@@ -71,6 +76,7 @@ impl Listener {
                     address: FakeAddress::Loopback(*port),
                 })
             }
+            #[cfg(unix)]
             Bind::Socket(dir) => {
                 let path = dir.join(format!("{name}.sock"));
                 let listener = UnixListener::bind(&path)?;
@@ -79,6 +85,8 @@ impl Listener {
                     address: FakeAddress::Socket(path),
                 })
             }
+            #[cfg(not(unix))]
+            Bind::Socket(_) => Err(no_unix_socket()),
         }
     }
 
@@ -97,6 +105,7 @@ impl Listener {
                 let _ = stream.set_nodelay(true);
                 Ok((Conn::Tcp(stream), Peer::Tcp(peer)))
             }
+            #[cfg(unix)]
             Kind::Unix(l) => {
                 let (stream, _) = l.accept().await?;
                 Ok((Conn::Unix(stream), Peer::Unix))
@@ -113,8 +122,20 @@ pub async fn dial(address: &FakeAddress) -> io::Result<Conn> {
             let _ = stream.set_nodelay(true);
             Ok(Conn::Tcp(stream))
         }
+        #[cfg(unix)]
         FakeAddress::Socket(path) => Ok(Conn::Unix(UnixStream::connect(path).await?)),
+        #[cfg(not(unix))]
+        FakeAddress::Socket(_) => Err(no_unix_socket()),
     }
+}
+
+/// A Unix socket asked for where there are none.
+#[cfg(not(unix))]
+fn no_unix_socket() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::Unsupported,
+        "a Unix socket needs a Unix platform",
+    )
 }
 
 /// The port of a loopback address; a Unix socket has none, so the caller named the wrong
@@ -139,6 +160,7 @@ impl AsyncRead for Conn {
     ) -> Poll<io::Result<()>> {
         match self.get_mut() {
             Conn::Tcp(s) => Pin::new(s).poll_read(cx, buf),
+            #[cfg(unix)]
             Conn::Unix(s) => Pin::new(s).poll_read(cx, buf),
         }
     }
@@ -152,6 +174,7 @@ impl AsyncWrite for Conn {
     ) -> Poll<io::Result<usize>> {
         match self.get_mut() {
             Conn::Tcp(s) => Pin::new(s).poll_write(cx, buf),
+            #[cfg(unix)]
             Conn::Unix(s) => Pin::new(s).poll_write(cx, buf),
         }
     }
@@ -159,6 +182,7 @@ impl AsyncWrite for Conn {
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         match self.get_mut() {
             Conn::Tcp(s) => Pin::new(s).poll_flush(cx),
+            #[cfg(unix)]
             Conn::Unix(s) => Pin::new(s).poll_flush(cx),
         }
     }
@@ -166,6 +190,7 @@ impl AsyncWrite for Conn {
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         match self.get_mut() {
             Conn::Tcp(s) => Pin::new(s).poll_shutdown(cx),
+            #[cfg(unix)]
             Conn::Unix(s) => Pin::new(s).poll_shutdown(cx),
         }
     }
