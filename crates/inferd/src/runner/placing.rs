@@ -135,7 +135,7 @@ impl Job {
             let (model, seat) = self.place(pinned, avoid.as_ref()).await;
             self.engines.used(&model.spec.id);
             let (reply, spoke) = self.tapped(&model, served, request, frames).await;
-            let reply = self.explained(&model, reply);
+            let reply = self.explained(&model, reply).await;
             drop(seat);
             let Some(error) = failed(&reply) else {
                 return reply;
@@ -208,10 +208,13 @@ impl Job {
 
     /// A failed reply told in plain words (the engine stopped, the card ran out of memory), and
     /// logged once with the hardware numbers of the moment. Any other reply as it is.
-    pub(super) fn explained(&self, model: &LocalModel, reply: InferReply) -> InferReply {
+    pub(super) async fn explained(&self, model: &LocalModel, reply: InferReply) -> InferReply {
         let (Some(seating), Some(error)) = (self.seating.as_ref(), failed(&reply)) else {
             return reply;
         };
+        if matches!(error, ModelError::Unreachable) {
+            seating.engines.noticed(model).await;
+        }
         let (moment, facts) = seating.engines.moment_of(model, &seating.gate);
         eprintln!(
             "{}",

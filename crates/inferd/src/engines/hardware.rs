@@ -18,10 +18,16 @@ use porter_core::Bytes;
 use porter_infer::{HardwareFacts, HardwareNote, MemoryFacts, ModelRef, hardware_notes};
 
 use std::sync::Arc;
+use std::time::Duration;
 
 fn bytes_of(mib: MiB) -> Bytes {
     Bytes(u64::from(mib.0) << 20)
 }
+
+/// How long a failed turn waits for the supervisor to notice an engine that stopped.
+const NOTICE: Duration = Duration::from_millis(500);
+/// How often it looks while it waits.
+const NOTICE_STEP: Duration = Duration::from_millis(20);
 
 impl Engines {
     /// The graphics memory that is free now, when the card has been read: what is left after
@@ -44,6 +50,17 @@ impl Engines {
             .0
             .saturating_sub(gpu.used_by_others.0)
             .saturating_sub(held)))
+    }
+
+    /// Waits, up to [`NOTICE`], while the supervisor still holds the engine of `model` ready: a
+    /// turn that could not reach its engine often fails before the supervisor has seen the
+    /// engine exit, and the failure is told by what the supervisor sees.
+    pub(crate) async fn noticed(&self, model: &LocalModel) {
+        let mut waited = Duration::ZERO;
+        while waited < NOTICE && self.view_of(model) == EngineView::Running {
+            tokio::time::sleep(NOTICE_STEP).await;
+            waited += NOTICE_STEP;
+        }
     }
 
     /// Whether the engine of `model` is ready now.
