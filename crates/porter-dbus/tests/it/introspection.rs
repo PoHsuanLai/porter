@@ -197,15 +197,17 @@ fn inference1_xml_unchanged_members() {
     }
     // And `LocalEngines`, which engines inferd found on this computer (additive).
     assert!(xml.contains("<method name=\"LocalEngines\">"));
+    // And `HardwareNotes`, facts about the machine beside a choice (helpers, swarm.md 6.4).
+    assert!(xml.contains("<method name=\"HardwareNotes\">"));
     let declared = xml.matches("<method ").count()
         + xml.matches("<signal ").count()
         + xml.matches("<property ").count();
     assert_eq!(
         declared,
-        members.len() + 3 + 7 + 1 + 1,
+        members.len() + 3 + 7 + 1 + 1 + 1,
         "no member beyond the frozen seven, Places, AddComputer, RemoveComputer, and the five \
-         methods and two signals of lending models across the person's network, LocalEngines and \
-         PointEngine"
+         methods and two signals of lending models across the person's network, LocalEngines, \
+         PointEngine and HardwareNotes"
     );
     assert_eq!(
         porter_dbus::COMPUTER_ERROR_PREFIX,
@@ -230,8 +232,8 @@ fn inference_calls_carry_an_options_dict_for_the_reserved_traceparent() {
     assert_eq!(
         xml.matches("<arg name=\"options\" type=\"a{sv}\" direction=\"in\"/>")
             .count(),
-        3,
-        "Availability, Open and Prepare"
+        4,
+        "Availability, Open, Prepare and HardwareNotes"
     );
     assert_eq!(porter_dbus::OPTION_TRACEPARENT, "traceparent");
 }

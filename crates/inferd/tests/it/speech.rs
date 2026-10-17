@@ -280,7 +280,8 @@ async fn the_engine_restarts_after_a_crash_and_a_turn_in_flight_fails_not_hangs(
     );
     assert_eq!(speech.spawns(), 1);
 
-    // The host dies with the person still talking: the turn ends `Failed`, it does not hang.
+    // The host dies with the person still talking: the turn ends `Failed` with the engine stopped
+    // (a plain reason, not the bare unreachable), it does not hang.
     let mut cut = open(&world).await;
     speak(&mut cut, 1, false).await;
     let heard_first = async {
@@ -299,7 +300,7 @@ async fn the_engine_restarts_after_a_crash_and_a_turn_in_flight_fails_not_hangs(
     assert_eq!(
         events.last(),
         Some(&InferEvent::Finished(InferReply::Failed(
-            ModelError::Unreachable
+            ModelError::EngineStopped
         )))
     );
 
