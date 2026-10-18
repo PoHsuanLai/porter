@@ -430,14 +430,23 @@ mod tests {
         let plain = PlaceModel::new(id.clone(), "Qwen".to_owned());
         let json = serde_json::to_string(&plain).expect("json");
         assert_eq!(json, r#"{"id":"qwen","name":"Qwen"}"#);
-        assert_eq!(serde_json::from_str::<PlaceModel>(&json).expect("old"), plain);
+        assert_eq!(
+            serde_json::from_str::<PlaceModel>(&json).expect("old"),
+            plain
+        );
         let run = plain.with_engine(PlaceEngine {
             id: "llama_cpp".to_owned(),
             name: "llama.cpp".to_owned(),
         });
         let json = serde_json::to_string(&run).expect("json");
-        assert!(json.contains(r#""engine":{"id":"llama_cpp","name":"llama.cpp"}"#), "{json}");
-        assert_eq!(serde_json::from_str::<PlaceModel>(&json).expect("back"), run);
+        assert!(
+            json.contains(r#""engine":{"id":"llama_cpp","name":"llama.cpp"}"#),
+            "{json}"
+        );
+        assert_eq!(
+            serde_json::from_str::<PlaceModel>(&json).expect("back"),
+            run
+        );
     }
 
     #[test]

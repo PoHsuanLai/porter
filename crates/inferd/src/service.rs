@@ -31,8 +31,8 @@ use porter_core::{DataClass, ModelId, NodeId, SecretText, Tier};
 use porter_dbus::{
     CANDIDATE_KEY_MODELS, CANDIDATE_KEY_NAME, CANDIDATE_KEY_NEEDS_APPROVAL, Details,
     GUEST_KEY_NAME, GUEST_KEY_SINCE, GUEST_KEY_STATE, INFERENCE_BUS, INFERENCE_PATH, NeedArg,
-    PLACE_KEY_ENGINES, PLACE_KEY_KIND, PLACE_KEY_MODELS, PLACE_KEY_NAME, PLACE_KEY_PROVIDER, PLACE_KEY_READY,
-    need_from_dbus,
+    PLACE_KEY_ENGINES, PLACE_KEY_KIND, PLACE_KEY_MODELS, PLACE_KEY_NAME, PLACE_KEY_PROVIDER,
+    PLACE_KEY_READY, need_from_dbus,
 };
 use porter_infer::{InferRefusal, PlaceId, PlaceRow, PlaceState};
 use serde::Serialize;

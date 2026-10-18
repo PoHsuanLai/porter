@@ -162,7 +162,8 @@ fn place_row((id, details): (String, Details)) -> Result<PlaceRow, TransportErro
                     id: id.clone(),
                     name: name.clone(),
                 });
-            let placed = PlaceModel::new(ModelId::parse(&model).map_err(|_| bad("a model id"))?, name);
+            let placed =
+                PlaceModel::new(ModelId::parse(&model).map_err(|_| bad("a model id"))?, name);
             Ok(match engine {
                 Some(engine) => placed.with_engine(engine),
                 None => placed,
@@ -248,7 +249,10 @@ mod tests {
         )];
         let row = place_row(("this-computer".to_owned(), row_details(Some(engines)))).expect("row");
         let engine = row.models[0].engine.as_ref().expect("engine");
-        assert_eq!((engine.id.as_str(), engine.name.as_str()), ("llama_cpp", "llama.cpp"));
+        assert_eq!(
+            (engine.id.as_str(), engine.name.as_str()),
+            ("llama_cpp", "llama.cpp")
+        );
         assert_eq!(row.models[1].engine, None);
     }
 }
