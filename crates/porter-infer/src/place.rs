@@ -439,7 +439,10 @@ mod tests {
 
     #[test]
     fn a_locality_names_the_kind_of_place_it_is_served_from() {
-        assert_eq!(PlaceKind::from(&Locality::OnDevice), PlaceKind::ThisComputer);
+        assert_eq!(
+            PlaceKind::from(&Locality::OnDevice),
+            PlaceKind::ThisComputer
+        );
         assert_eq!(
             PlaceKind::from(&Locality::LocalNetwork),
             PlaceKind::OwnComputer
