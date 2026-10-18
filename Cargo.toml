@@ -89,9 +89,9 @@ ds-settings     = { git = "https://github.com/PoHsuanLai/quire.git", rev = "3882
 # peephole: which program is calling (a pinned process, the unit manager's word, a root-owned table),
 # by git tag, never by path. porter-dbus's `ProcCallers` is built over it. peephole-bus runs on zbus's
 # tokio feature here (its default `async-io` stays off, as the zbus line below).
-peephole        = { git = "https://github.com/PoHsuanLai/peephole", tag = "v0.1.6" }
-peephole-core   = { git = "https://github.com/PoHsuanLai/peephole", tag = "v0.1.6" }
-peephole-bus    = { git = "https://github.com/PoHsuanLai/peephole", tag = "v0.1.6", default-features = false, features = ["tokio"] }
+peephole        = { git = "https://github.com/PoHsuanLai/peephole", tag = "v0.1.7" }
+peephole-core   = { git = "https://github.com/PoHsuanLai/peephole", tag = "v0.1.7" }
+peephole-bus    = { git = "https://github.com/PoHsuanLai/peephole", tag = "v0.1.7", default-features = false, features = ["tokio"] }
 
 # stoker's computer-use vocabulary, by git at stoker's pinned rev (quire
 # CONSUMING.md section 1; a local checkout overrides it, ARCHITECTURE section 1). stoker has no porter dependency, so there is no cycle.
