@@ -1,9 +1,8 @@
-//! inferd's parts, as a library so the daemon's modules are tested without a bus: the adapters,
-//! the bridge to stoker's provider types, the fd session server (`serve`) and the real seams it
-//! is hosted over: the router (`engines`), the engine host (`engines`, `supervise`, `hosts`), the
-//! model turns (`runner`, which pins a session's turns to a model and adds the hosted and speech
+//! inferd's parts, as a library so the daemon's modules are tested without a bus: the bridge to
+//! stoker's provider types, the fd session server (`serve`) and the real seams it is hosted over:
+//! the router (`engines`), the engine host (`engines`, `supervise`, `hosts`), the model turns (`runner`, which pins a session's turns to a model and adds the hosted and speech
 //! ones) and the audit file's wiring; `service` is the `Inference1` object on the bus and `peers`
-//! who is calling. Stubs behind frozen interfaces (`speech`, `adapters`) are listed in
+//! who is calling. Stubs behind frozen interfaces (`speech`) are listed in
 //! `FINDINGS.md`.
 //!
 //! The logic of routing and the session machine is not here: it is the library `porter-router`
@@ -19,7 +18,6 @@
 //! the environment is read), [`Daemon::build`] and [`Daemon::run`]. The binary only parses its
 //! arguments, listens for signals and calls these.
 
-mod adapters;
 pub mod admit;
 pub mod agent;
 pub mod attached;
@@ -53,7 +51,6 @@ pub mod tailnet;
 pub mod toolproof;
 pub mod watch;
 
-pub use adapters::AdapterModel;
 pub use daemon::{Config, Daemon, StartError, StopError};
 
 /// The catalogue, moved to `porter_router::catalog`.

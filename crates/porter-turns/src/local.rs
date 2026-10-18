@@ -1,24 +1,25 @@
 //! Model turns on an engine of this computer: stoker's `OpenAiCompat` (`Driver<OpenAiCodec,
 //! HttpClient>`) against a [`LocalModel`]'s engine, wrapped in `Retrying` (the daemon owns retry,
-//! ARCHITECTURE section 7). A [`LocalTurns`] runs the turns of one session that is pinned to a
-//! local model: chat (validated and repaired when the request's shape asks), embeddings and
-//! computer-use steps. Events go down a channel of [`TurnStep`]s, the reply is the return value,
-//! and the engine's owner is told the engine is in use ([`EngineUse`]) while a turn runs.
+//! ARCHITECTURE section 7). A [`LocalTurn`] is a [`porter_infer::Model`] made for one request on a
+//! local model: chat (validated and repaired when the request's shape asks), tasks and
+//! embeddings, its events going to the sink it is given. A [`LocalTurns`] runs the computer-use
+//! steps of one session that is pinned to a local model; their events go down a channel of
+//! [`TurnStep`]s. The engine's owner is told the engine is in use ([`EngineUse`]) while a turn
+//! runs.
 //!
 //! What it leaves to its caller: which model the session is pinned to, a hosted model, and a
 //! speech turn (a speech engine is not an OpenAI-compatible one).
 
 use crate::bridge::{self, Frames};
 use crate::cua_run::{CuaRun, StepJob};
-use crate::structured::{self, Shaping};
 use engine_supervisor::EngineId;
 use model_http::{HttpClient, Timeouts, WaitMs as HttpWaitMs};
 use model_openai_compat::{Flavor, OpenAiCodec, OpenAiCompat};
 use model_provider as sp;
-use model_provider::{Embedder, Retrying};
+use model_provider::Retrying;
 use porter_infer::{
-    ChatSink, CuaBegin, CuaStepFailure, CuaStepReply, EmbedReply, Flow, InferEvent, InferRefusal,
-    InferReply, ModelError, ServedBy, TokenUsage,
+    ChatReply, ChatSink, CuaBegin, CuaStepFailure, CuaStepReply, Flow, InferEvent, InferRefusal,
+    InferReply, ModelError, ServedBy,
 };
 use porter_router::local::LocalModel;
 use porter_router::seams::TurnStep;
@@ -27,6 +28,9 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
+
+mod turn;
+pub use turn::LocalTurn;
 
 /// Waits with the clock of the runtime, so a test with paused time does not wait.
 #[derive(Debug, Clone, Copy)]
@@ -136,13 +140,13 @@ where
 /// is the gathered text, thought and tool calls with the turn's usage. The second value says why
 /// a turn that asked for option shares has none, for the caller to note; the reply is the same
 /// either way.
-pub async fn run_chat<P: sp::Provider>(
+pub async fn run_turn<P: sp::Provider>(
     provider: &P,
     turn: &sp::TurnRequest,
     served: &ServedBy,
     events: impl FnMut(InferEvent) -> sp::Flow + Send,
     touch: impl FnMut() + Send,
-) -> (InferReply, Option<bridge::NoScores>) {
+) -> (Result<ChatReply, ModelError>, Option<bridge::NoScores>) {
     let mut sink = Forward {
         events,
         touch,
@@ -152,10 +156,28 @@ pub async fn run_chat<P: sp::Provider>(
     match provider.turn(turn, &mut sink).await {
         Ok(end) => {
             let (reply, why) = sink.gathered.chat_reply_noted(&end, served.clone());
-            (InferReply::Chat(reply), why)
+            (Ok(reply), why)
         }
-        Err(error) => (InferReply::Failed(bridge::model_error(&error)), None),
+        Err(error) => (Err(bridge::model_error(&error)), None),
     }
+}
+
+/// [`run_turn`] with the reply as the session's [`InferReply`].
+pub async fn run_chat<P: sp::Provider>(
+    provider: &P,
+    turn: &sp::TurnRequest,
+    served: &ServedBy,
+    events: impl FnMut(InferEvent) -> sp::Flow + Send,
+    touch: impl FnMut() + Send,
+) -> (InferReply, Option<bridge::NoScores>) {
+    let (reply, why) = run_turn(provider, turn, served, events, touch).await;
+    (
+        match reply {
+            Ok(reply) => InferReply::Chat(reply),
+            Err(error) => InferReply::Failed(error),
+        },
+        why,
+    )
 }
 
 /// Says in the daemon's log why a reply that asked for option shares has none: the reply is the
@@ -163,13 +185,6 @@ pub async fn run_chat<P: sp::Provider>(
 pub fn note_no_scores(why: Option<bridge::NoScores>) {
     if let Some(why) = why {
         eprintln!("inferd: choice scores: none: {why}");
-    }
-}
-
-fn send(steps: &mpsc::UnboundedSender<TurnStep>, event: InferEvent) -> sp::Flow {
-    match steps.send(TurnStep::Event(event)) {
-        Ok(()) => sp::Flow::Continue,
-        Err(_) => sp::Flow::Stop,
     }
 }
 
@@ -214,111 +229,6 @@ impl<U: EngineUse> LocalTurns<U> {
     pub fn begin_cua(&self, begin: CuaBegin) -> InferReply {
         *self.run.lock().unwrap_or_else(PoisonError::into_inner) = Some(CuaRun::begin(begin));
         InferReply::CuaStep(CuaStepReply::new(Vec::new()))
-    }
-
-    /// One chat turn on `model`, `shaping` saying whether its reply is validated and repaired.
-    pub async fn chat(
-        &self,
-        model: &LocalModel,
-        served: &ServedBy,
-        turn: &sp::TurnRequest,
-        shaping: Shaping,
-    ) -> InferReply {
-        let Some(provider) = chat_provider(model) else {
-            return refused(InferRefusal::Unsupported);
-        };
-        if let Shaping::Checked(checked) = shaping {
-            return self.checked(&provider, model, served, *checked, turn).await;
-        }
-        let steps = &self.steps;
-        let (reply, why) = run_chat(
-            &provider,
-            turn,
-            served,
-            |event| send(steps, event),
-            || self.engines.used(&model.spec.id),
-        )
-        .await;
-        note_no_scores(why);
-        reply
-    }
-
-    /// A turn whose reply is validated, and repaired once, before the app is told it.
-    async fn checked(
-        &self,
-        provider: &impl sp::Provider,
-        model: &LocalModel,
-        served: &ServedBy,
-        checked: structured::Checked,
-        turn: &sp::TurnRequest,
-    ) -> InferReply {
-        let steps = &self.steps;
-        let mut forward = |event| send(steps, event);
-        let touch = || self.engines.used(&model.spec.id);
-        match structured::run(provider, checked, turn, &mut forward, touch).await {
-            Ok(valid) => {
-                let _ = send(steps, InferEvent::TextDelta(valid.text.clone()));
-                let scores = match bridge::turn_scores(turn, valid.first_token.as_ref()) {
-                    Some(Ok(scores)) => Some(scores),
-                    Some(Err(why)) => {
-                        note_no_scores(Some(why));
-                        None
-                    }
-                    None => None,
-                };
-                let mut reply = porter_infer::ChatReply::new(
-                    valid.text,
-                    porter_infer::StopReason::EndTurn,
-                    valid.usage,
-                    served.clone(),
-                );
-                if let Some(thought) = valid.thought {
-                    reply = reply.with_thought(thought);
-                }
-                if let Some(scores) = scores {
-                    reply = reply.with_scores(scores);
-                }
-                InferReply::Chat(reply)
-            }
-            Err(error) => InferReply::Failed(error),
-        }
-    }
-
-    /// An embedding request on `model`, cut into the batches its entry allows.
-    pub async fn embed(
-        &self,
-        model: &LocalModel,
-        served: &ServedBy,
-        request: &porter_infer::EmbedRequest,
-    ) -> InferReply {
-        let Some(flavor) = model.flavor else {
-            return refused(InferRefusal::Unsupported);
-        };
-        let Ok(turns) = bridge::embed_turns(model, request) else {
-            return refused(InferRefusal::Unsupported);
-        };
-        let provider = OpenAiCodec::new(flavor).provider(client(model));
-        let mut vectors = Vec::new();
-        let mut input = sp::Tokens(0);
-        for turn in &turns {
-            match provider.embed(turn).await {
-                Ok(end) => {
-                    input = sp::Tokens(input.0.saturating_add(end.usage.input.0));
-                    vectors.extend(bridge::vectors(end.vectors));
-                }
-                Err(error) => return InferReply::Failed(bridge::model_error(&error)),
-            }
-            self.engines.used(&model.spec.id);
-        }
-        InferReply::Embed(EmbedReply::new(
-            vectors,
-            TokenUsage {
-                input: porter_core::Tokens(input.0),
-                output: porter_core::Tokens(0),
-                cached: porter_core::Tokens(0),
-            },
-            served.clone(),
-        ))
     }
 
     /// One computer-use step of the session's run on `model`; refused `Unsupported` when no run

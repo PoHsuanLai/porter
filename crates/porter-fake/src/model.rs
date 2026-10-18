@@ -3,7 +3,7 @@
 use porter_core::{AccountId, Billing, Capability, Locality, ModelId, Tokens};
 use porter_infer::{
     ChatReply, ChatRequest, ChatSink, EmbedReply, EmbedRequest, EmbedVector, InferEvent,
-    MessagePart, Model, ModelCard, ModelError, ServedBy, StopReason, TokenUsage,
+    MessagePart, Model, ModelCard, ServedBy, StopReason, TaskRequest, TokenUsage, TurnError,
 };
 
 /// An on-device model of the fake runtime.
@@ -44,7 +44,7 @@ impl Model for FakeModel {
         &self,
         request: &ChatRequest,
         sink: &mut impl ChatSink,
-    ) -> Result<ChatReply, ModelError> {
+    ) -> Result<ChatReply, TurnError> {
         let text = request
             .messages
             .iter()
@@ -76,7 +76,28 @@ impl Model for FakeModel {
         ))
     }
 
-    async fn embed(&self, request: &EmbedRequest) -> Result<EmbedReply, ModelError> {
+    async fn task(
+        &self,
+        request: &TaskRequest,
+        sink: &mut impl ChatSink,
+    ) -> Result<ChatReply, TurnError> {
+        let text = request.input.clone();
+        let usage = TokenUsage {
+            input: Tokens(1),
+            output: Tokens(1),
+            cached: Tokens(0),
+        };
+        let _ = sink.event(InferEvent::TextDelta(text.clone()));
+        let _ = sink.event(InferEvent::Usage(usage));
+        Ok(ChatReply::new(
+            text,
+            StopReason::EndTurn,
+            usage,
+            self.served(),
+        ))
+    }
+
+    async fn embed(&self, request: &EmbedRequest) -> Result<EmbedReply, TurnError> {
         let vectors = request
             .inputs
             .iter()

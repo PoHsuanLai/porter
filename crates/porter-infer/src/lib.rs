@@ -74,7 +74,7 @@ pub use ids::{
     AttachIndex, Base64Bytes, JsonSchemaText, JsonText, OpaqueText, SignatureText, TextError,
     ToolCallId, ToolName, Traceparent,
 };
-pub use model::{ChatSink, Model, ModelCard};
+pub use model::{ChatSink, Model, ModelCard, TurnError, answer};
 pub use open::{LinkHello, OpenFrame, OpenOptions};
 pub use pick::{
     AutoEvict, AutoMode, AutoPolicy, Declined, DeclinedBecause, Door, EngineLoad, Pick,

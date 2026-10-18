@@ -3,21 +3,17 @@
 //! for a request the engine could not finish; and one more try, on another running instance, for
 //! the person's own request that lost its engine before it had said anything.
 
-use super::{Job, Seating, refused};
+use super::{Job, Seating};
 use crate::admit::{Priority, Seats};
-use crate::bridge::{self, Frames};
+use crate::bridge::Frames;
 use crate::failure::{EngineView, Retry, Spoke, Tried, explain, log_line, retry};
 use crate::local::LocalModel;
 use crate::seats::{Pass, Standing, seats_in};
 use crate::serve::TurnStep;
-use crate::structured::{self, Shaping};
-use crate::supervise::Supervised;
 use engine_supervisor::EngineId;
 use model_catalog::EngineKind;
-use porter_infer::{
-    InferEvent, InferRefusal, InferReply, InferRequest, ModelError, QueueFact, ServedBy,
-};
-use porter_turns::local::LocalTurns;
+use porter_infer::{InferEvent, InferReply, InferRequest, ModelError, QueueFact, ServedBy, answer};
+use porter_turns::local::{LocalTurn, ToSession};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
@@ -174,36 +170,18 @@ impl Job {
             }
             spoke
         });
-        let local = LocalTurns::new(self.engines.clone(), tap, Arc::clone(&self.run));
-        let reply = self.borrowed(&local, model, served, request, frames).await;
-        drop(local);
+        let turn = LocalTurn {
+            model,
+            served,
+            engines: &self.engines,
+            tier: self.tier,
+            limits: self.limits,
+            frames,
+        };
+        let mut sink = ToSession::new(tap);
+        let reply = answer(&turn, request, &mut sink).await;
+        drop(sink);
         (reply, forward.await.unwrap_or(Spoke::Something))
-    }
-
-    /// A chat, task or embedding request on `model` through `local`.
-    async fn borrowed(
-        &self,
-        local: &LocalTurns<Supervised>,
-        model: &LocalModel,
-        served: &ServedBy,
-        request: &InferRequest,
-        frames: &Frames,
-    ) -> InferReply {
-        match request {
-            InferRequest::Chat(chat) => match bridge::chat_turn(model, chat, frames) {
-                Ok(turn) => {
-                    let shaping = structured::shaping(model, chat, self.limits);
-                    local.chat(model, served, &turn, shaping).await
-                }
-                Err(_) => refused(InferRefusal::Unsupported),
-            },
-            InferRequest::Task(task) => match bridge::task_turn(model, task, self.tier) {
-                Ok(turn) => local.chat(model, served, &turn, Shaping::Unchecked).await,
-                Err(_) => refused(InferRefusal::Unsupported),
-            },
-            InferRequest::Embed(embed) => local.embed(model, served, embed).await,
-            _ => refused(InferRefusal::Unsupported),
-        }
     }
 
     /// A failed reply told in plain words (the engine stopped, the card ran out of memory), and

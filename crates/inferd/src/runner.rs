@@ -1,9 +1,11 @@
 //! The model turns of one session. A turn is a task that pushes `TurnStep`s down a channel;
 //! dropping the turn aborts the task, which drops the HTTP future and closes the engine's stream.
-//! The turns on a model of this computer (stoker's `OpenAiCompat` against the pinned model's
-//! engine, wrapped in `Retrying`: inferd owns retry, ARCHITECTURE section 7) are
-//! `porter_turns::local::LocalTurns`; what stays here is the daemon's half: what a session is
-//! pinned to, a hosted model's turn, and a speech turn.
+//! A chat, task or embedding turn is one path wherever the model is: a `porter_infer::Model`
+//! (`porter_turns::local::LocalTurn` on a model of this computer, stoker's `OpenAiCompat` against
+//! the pinned model's engine wrapped in `Retrying`; `cloud::turn::CloudModel` on a hosted one),
+//! run by `porter_infer::answer`. inferd owns retry (ARCHITECTURE section 7). What stays here is
+//! the daemon's half: what a session is pinned to, where a local request is seated and tried
+//! again, and a speech turn.
 //!
 //! What a session is pinned to is decided by its router and read here through a [`Pin`] cell:
 //! `serve_session` calls the router once and the runner never sees the decision otherwise.
@@ -13,7 +15,7 @@
 
 use crate::bridge::Frames;
 use crate::cloud::Cloud;
-use crate::cloud::turn::{self as hosted, CloudPin};
+use crate::cloud::turn::{CloudModel, CloudPin};
 use crate::engines::Engines;
 use crate::local::LocalModel;
 use crate::pipeline::Hearing;
@@ -26,7 +28,7 @@ use crate::supervise::Supervised;
 use porter_core::Tier;
 use porter_infer::{
     Asker, AudioFrame, ChatRequest, InferRefusal, InferReply, InferRequest, ModelError, ServedBy,
-    TranscribeBegin,
+    TranscribeBegin, answer,
 };
 use porter_turns::cua_run::CuaRun;
 use porter_turns::local::{LocalTurns, ToSession};
@@ -261,16 +263,12 @@ impl Job {
             Some(cloud),
         ) = (&self.pinned, &self.cloud)
         {
-            return hosted::reply(
-                cloud,
-                pin,
-                served,
-                self.tier,
-                self.steps.clone(),
-                &request,
-                attachments,
-            )
-            .await;
+            let model = match CloudModel::open(cloud, pin, served, self.tier, attachments) {
+                Ok(model) => model,
+                Err(error) => return error.into(),
+            };
+            let mut sink = ToSession::new(self.steps.clone());
+            return answer(&model, &request, &mut sink).await;
         }
         let Some(Pinned {
             served,

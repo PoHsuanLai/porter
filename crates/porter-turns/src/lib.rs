@@ -14,8 +14,8 @@
 //!   limits ([`structured::Limits`]), before the app is told it.
 //! - [`cua_step`] and [`cua_run`]: one computer-use step over a model turn, and the run of steps
 //!   of one session.
-//! - [`local`]: the turns of one session pinned to a local model ([`local::LocalTurns`]: chat,
-//!   embeddings, computer-use steps) over [`local::chat_provider`], retried as the daemon retries;
+//! - [`local`]: the turns on a local model ([`local::LocalTurn`], a `porter_infer::Model` for one
+//!   request: chat, tasks, embeddings; [`local::LocalTurns`]: computer-use steps) over [`local::chat_provider`], retried as the daemon retries;
 //!   [`local::EngineUse`] is how the engine's owner is told it is in use.
 //! - [`turn`]: [`turn::Turn`], a turn in flight, which implements `porter_router::seams::RunningTurn`.
 //! - [`pipeline`]: running a plan stage by stage (hear, then answer) over a `TurnRunner`.

@@ -2,7 +2,7 @@
 //! for this turn only, the request goes out through stoker's `OpenAiCompat` driver over the TLS
 //! transport, the events stream back, and what the reply says it used is metered.
 //!
-//! The key lives from `Peer.ResolveKey` to the end of this function: it is read from a sealed
+//! The key lives from `Peer.ResolveKey` to the end of the turn: it is read from a sealed
 //! descriptor into a [`porter_core::SecretText`], copied once into the endpoint's bearer header of
 //! a transport built for this turn, and dropped with them. It is never put in a log line, an
 //! event, an audit entry or a file; an error from the provider is classified without its body.
@@ -14,7 +14,6 @@ use super::spend::{SpendGuard, worst_case};
 use super::wire::{BodyShape, Temperature, flavor_of};
 use crate::bridge::{self, DefaultSampling, Frames, JsonReply, Target};
 use crate::runner::{RETRY, TokioSleep};
-use crate::serve::TurnStep;
 use crate::settings::SpendLine;
 use model_openai_compat::OpenAiCodec;
 use model_provider as sp;
@@ -22,11 +21,11 @@ use model_provider::{Provider, Retrying};
 use model_wire::Driver;
 use porter_core::{AppId, Tokens};
 use porter_infer::{
-    InferRefusal, InferReply, InferRequest, Knob, ModelError, ServedBy, SpendVerdict, TokenUsage,
+    ChatReply, ChatRequest, ChatSink, EmbedReply, EmbedRequest, Flow, InferRefusal, Knob, Model,
+    ModelCard, ModelError, ServedBy, SpendVerdict, TaskRequest, TokenUsage, TurnError,
 };
 use std::os::fd::OwnedFd;
 use std::sync::{Arc, Mutex, PoisonError};
-use tokio::sync::mpsc;
 
 /// The longest reply asked for when the app names no limit: a hosted model's entry says what it
 /// can write (a hundred and twenty-eight thousand tokens), and some gateways hold back credit for
@@ -69,19 +68,19 @@ pub fn remote_target(model: &RemoteModel) -> Target {
     }
 }
 
-/// Where a hosted turn's events go: to the session, and into the reply being gathered.
-struct Forward {
-    steps: mpsc::UnboundedSender<TurnStep>,
+/// Where a hosted turn's events go: to the sink, and into the reply being gathered.
+struct Forward<'a, S> {
+    sink: &'a mut S,
     gathered: bridge::Gathered,
 }
 
-impl sp::TurnSink for Forward {
+impl<S: ChatSink> sp::TurnSink for Forward<'_, S> {
     fn event(&mut self, event: sp::TurnEvent) -> sp::Flow {
         self.gathered.take(&event);
         match bridge::event(&event) {
-            Some(out) => match self.steps.send(TurnStep::Event(out)) {
-                Ok(()) => sp::Flow::Continue,
-                Err(_) => sp::Flow::Stop,
+            Some(out) => match self.sink.event(out) {
+                Flow::Stop => sp::Flow::Stop,
+                _ => sp::Flow::Continue,
             },
             None => sp::Flow::Continue,
         }
@@ -95,108 +94,139 @@ fn fault(fault: AccountdFault) -> ModelError {
     }
 }
 
-/// The turn's request, and how its body is shaped for the provider; `None` for a request a hosted
-/// model does not take (embeddings, speech, computer use).
-fn turn_of(
-    pin: &CloudPin,
-    request: &InferRequest,
-    frames: &Frames,
-    tier: porter_core::Tier,
-) -> Option<Result<(sp::TurnRequest, Temperature), bridge::BridgeError>> {
-    let target = remote_target(&pin.model);
-    match request {
-        InferRequest::Chat(chat) => {
-            let temperature = match chat.control.sampling {
-                Knob::Set(_) => Temperature::Sent,
-                Knob::Off => Temperature::ProviderDefault,
-            };
-            Some(bridge::chat_turn_for(&target, chat, frames).map(|turn| (turn, temperature)))
-        }
-        InferRequest::Task(task) => Some(
-            bridge::task_turn_for(&target, task, tier)
-                .map(|turn| (turn, Temperature::ProviderDefault)),
-        ),
-        _ => None,
-    }
-}
-
 /// The most a hosted turn may take once its connection is open, however many keep-alive frames
 /// arrive: the per-stage waits bound a silent server, never one that trickles. Three minutes for
 /// a first byte, then the longest reply inferd asks for (16 384 tokens) at a slow twenty a second
 /// is about fourteen more; an overrun is a timeout, which keeps the turn's hold charged.
 const TURN_DEADLINE: sp::WaitMs = sp::WaitMs(900_000);
 
-/// Runs `request` on the hosted model `pin` names, streaming its events to `steps`, and answers
-/// with the reply.
-pub async fn reply(
-    cloud: &Cloud,
-    pin: &CloudPin,
-    served: &ServedBy,
+/// A request on the hosted model a [`CloudPin`] names, as a [`Model`]. It exists only while the
+/// caps allow the app another turn on the account, and holds the request's attachments.
+#[derive(Debug)]
+pub struct CloudModel<'a> {
+    cloud: &'a Cloud,
+    pin: &'a CloudPin,
+    served: ServedBy,
     tier: porter_core::Tier,
-    steps: mpsc::UnboundedSender<TurnStep>,
-    request: &InferRequest,
-    attachments: Vec<OwnedFd>,
-) -> InferReply {
-    let refused = |why| InferReply::Refused(why);
-    if cloud.spend(pin.line, &pin.app, &pin.model) == SpendVerdict::Stop {
-        return refused(InferRefusal::OverBudget);
-    }
-    let Ok(frames) = Frames::read(attachments) else {
-        return InferReply::Failed(ModelError::Unreadable);
-    };
-    let (mut turn, temperature) = match turn_of(pin, request, &frames, tier) {
-        Some(Ok(built)) => built,
-        Some(Err(_)) | None => return refused(InferRefusal::Unsupported),
-    };
-    let Some(grant) = pin.model.grant() else {
-        return refused(InferRefusal::NeedsGrant);
-    };
-    let key = match cloud.key(grant).await {
-        Ok(key) => key,
-        Err(why) => return InferReply::Failed(fault(why)),
-    };
-    let reach = &pin.model.reach;
-    let shape = BodyShape::of(&reach.provider, &pin.model.entry.id.0, temperature);
-    let Some(transport) = cloud.transport(&pin.model, &key, shape) else {
-        return InferReply::Failed(ModelError::Unreachable);
-    };
-    drop(key);
-    turn.limits.deadline = Some(TURN_DEADLINE);
-    // The worst this turn can cost is held before it goes out, so turns that run together see
-    // each other's holds. The prompt's size is read off the request as it will be sent.
-    let prompt_bytes = serde_json::to_vec(&turn).map_or(0, |body| body.len());
-    let Some(first) = cloud.ledger().reserve(
-        pin.line,
-        &pin.app,
-        &pin.model.card.account,
-        &pin.model.price(),
-        worst_case(prompt_bytes, Tokens(turn.limits.max_output.0)),
-        cloud.now(),
-    ) else {
-        return refused(InferRefusal::OverBudget);
-    };
-    let provider = Retrying::new(
-        Billed {
-            inner: Driver::new(OpenAiCodec::new(flavor_of(&reach.provider)), transport),
+    frames: Frames,
+}
+
+impl<'a> CloudModel<'a> {
+    /// The request on `pin`'s model, with its `attachments`: refused `OverBudget` when the caps
+    /// are asked again and say stop, failed `Unreadable` when an attachment cannot be read.
+    pub fn open(
+        cloud: &'a Cloud,
+        pin: &'a CloudPin,
+        served: &ServedBy,
+        tier: porter_core::Tier,
+        attachments: Vec<OwnedFd>,
+    ) -> Result<Self, TurnError> {
+        if cloud.spend(pin.line, &pin.app, &pin.model) == SpendVerdict::Stop {
+            return Err(InferRefusal::OverBudget.into());
+        }
+        let frames = Frames::read(attachments).map_err(|_| ModelError::Unreadable)?;
+        Ok(Self {
             cloud,
             pin,
-            worst: worst_case(prompt_bytes, Tokens(turn.limits.max_output.0)),
-            first: Mutex::new(Some(first)),
-        },
-        RETRY,
-        TokioSleep,
-    );
-    let mut sink = Forward {
-        steps,
-        gathered: bridge::Gathered::for_turn(&turn),
-    };
-    match provider.turn(&turn, &mut sink).await {
-        Ok(end) => {
-            let (chat, why) = sink.gathered.chat_reply_noted(&end, served.clone());
-            crate::runner::note_no_scores(why);
-            InferReply::Chat(chat)
+            served: served.clone(),
+            tier,
+            frames,
+        })
+    }
+
+    /// `turn` on the hosted model, its events going to `sink`: the key is fetched for this turn
+    /// only, the worst cost is held before it goes out, and what it used is settled.
+    async fn run(
+        &self,
+        mut turn: sp::TurnRequest,
+        temperature: Temperature,
+        sink: &mut impl ChatSink,
+    ) -> Result<ChatReply, TurnError> {
+        let (cloud, pin) = (self.cloud, self.pin);
+        let Some(grant) = pin.model.grant() else {
+            return Err(InferRefusal::NeedsGrant.into());
+        };
+        let key = cloud.key(grant).await.map_err(fault)?;
+        let reach = &pin.model.reach;
+        let shape = BodyShape::of(&reach.provider, &pin.model.entry.id.0, temperature);
+        let Some(transport) = cloud.transport(&pin.model, &key, shape) else {
+            return Err(ModelError::Unreachable.into());
+        };
+        drop(key);
+        turn.limits.deadline = Some(TURN_DEADLINE);
+        // The worst this turn can cost is held before it goes out, so turns that run together see
+        // each other's holds. The prompt's size is read off the request as it will be sent.
+        let prompt_bytes = serde_json::to_vec(&turn).map_or(0, |body| body.len());
+        let Some(first) = cloud.ledger().reserve(
+            pin.line,
+            &pin.app,
+            &pin.model.card.account,
+            &pin.model.price(),
+            worst_case(prompt_bytes, Tokens(turn.limits.max_output.0)),
+            cloud.now(),
+        ) else {
+            return Err(InferRefusal::OverBudget.into());
+        };
+        let provider = Retrying::new(
+            Billed {
+                inner: Driver::new(OpenAiCodec::new(flavor_of(&reach.provider)), transport),
+                cloud,
+                pin,
+                worst: worst_case(prompt_bytes, Tokens(turn.limits.max_output.0)),
+                first: Mutex::new(Some(first)),
+            },
+            RETRY,
+            TokioSleep,
+        );
+        let mut forward = Forward {
+            sink,
+            gathered: bridge::Gathered::for_turn(&turn),
+        };
+        match provider.turn(&turn, &mut forward).await {
+            Ok(end) => {
+                let (chat, why) = forward.gathered.chat_reply_noted(&end, self.served.clone());
+                crate::runner::note_no_scores(why);
+                Ok(chat)
+            }
+            Err(error) => Err(bridge::model_error(&error).into()),
         }
-        Err(error) => InferReply::Failed(bridge::model_error(&error)),
+    }
+}
+
+impl Model for CloudModel<'_> {
+    fn card(&self) -> &ModelCard {
+        &self.pin.model.card
+    }
+
+    async fn chat(
+        &self,
+        request: &ChatRequest,
+        sink: &mut impl ChatSink,
+    ) -> Result<ChatReply, TurnError> {
+        let temperature = match request.control.sampling {
+            Knob::Set(_) => Temperature::Sent,
+            Knob::Off => Temperature::ProviderDefault,
+        };
+        let target = remote_target(&self.pin.model);
+        let turn = bridge::chat_turn_for(&target, request, &self.frames)
+            .map_err(|_| InferRefusal::Unsupported)?;
+        self.run(turn, temperature, sink).await
+    }
+
+    async fn task(
+        &self,
+        request: &TaskRequest,
+        sink: &mut impl ChatSink,
+    ) -> Result<ChatReply, TurnError> {
+        let target = remote_target(&self.pin.model);
+        let turn = bridge::task_turn_for(&target, request, self.tier)
+            .map_err(|_| InferRefusal::Unsupported)?;
+        self.run(turn, Temperature::ProviderDefault, sink).await
+    }
+
+    /// A hosted model takes no embeddings.
+    async fn embed(&self, _: &EmbedRequest) -> Result<EmbedReply, TurnError> {
+        Err(InferRefusal::Unsupported.into())
     }
 }
 
