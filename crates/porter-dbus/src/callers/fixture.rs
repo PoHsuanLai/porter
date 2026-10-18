@@ -17,7 +17,7 @@ use super::standing::caller_of;
 use super::translate::peephole_table;
 use super::{Caller, CallerTable, ProcCallers};
 use crate::BusConnection;
-use peephole::{Pinned, Prober, ProcFs};
+use peephole::{Follow, Pinned, Prober, ProcFs};
 use peephole_bus::{BusPeers, ManagerCheck, UnitError, UnitSource};
 use peephole_core::{
     CgroupPath, DropIns, ExePath, FileTrust, Fragment, Loader, Pid, Pin, Transient, Uid, UnitFacts,
@@ -28,9 +28,6 @@ use std::path::{Path, PathBuf};
 
 /// The image of a process the tree gives no image and that is no unit's main process.
 pub(super) const STAND_IN_IMAGE: &str = "/usr/bin/porter-fixture-app";
-
-/// Where the fixture's fragments sit.
-const FRAGMENT_DIR: &str = "/usr/lib/systemd/user";
 
 /// The file system of the fixture world.
 #[derive(Debug, Clone)]
@@ -72,17 +69,21 @@ impl DirProc {
 
     /// The unit whose main process the tree says the process in `pid_dir` is.
     fn main_of_unit(&self, pid_dir: &Path) -> Option<String> {
-        let text = std::fs::read_to_string(self.root.join(pid_dir).join("cgroup")).ok()?;
+        let text = std::fs::read_to_string(pid_dir.join("cgroup")).ok()?;
         let unit = CgroupPath::from_proc(&text).ok()?.leaf().to_owned();
         let pid = std::fs::read_to_string(self.root.join("units").join(&unit)).ok()?;
-        (pid.trim() == pid_dir.to_str()?).then_some(unit)
+        (pid.trim() == pid_dir.file_name()?.to_str()?).then_some(unit)
     }
 }
 
 impl ProcFs for DirProc {
-    fn read_capped(&self, rel: &Path, cap: u64) -> io::Result<Vec<u8>> {
+    fn proc_root(&self) -> &Path {
+        &self.root
+    }
+
+    fn read_capped(&self, path: &Path, cap: u64) -> io::Result<Vec<u8>> {
         let mut bytes = Vec::new();
-        std::fs::File::open(self.root.join(rel))?
+        std::fs::File::open(path)?
             .take(cap.saturating_add(1))
             .read_to_end(&mut bytes)?;
         match u64::try_from(bytes.len()).is_ok_and(|n| n > cap) {
@@ -91,29 +92,21 @@ impl ProcFs for DirProc {
         }
     }
 
-    fn readlink(&self, rel: &Path) -> io::Result<PathBuf> {
-        match std::fs::read_link(self.root.join(rel)) {
+    fn read_link(&self, path: &Path) -> io::Result<PathBuf> {
+        match std::fs::read_link(path) {
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                let pid_dir = rel.parent().ok_or_else(Self::not_found)?;
+                let pid_dir = path.parent().ok_or_else(Self::not_found)?;
                 Ok(PathBuf::from(self.stand_in(pid_dir)))
             }
             other => other,
         }
     }
 
-    fn trust_of(&self, _abs: &Path) -> io::Result<FileTrust> {
+    fn trust_of(&self, _path: &Path, _follow: Follow) -> io::Result<FileTrust> {
         Ok(FileTrust::RootOnly)
     }
 
-    fn trust_of_followed(&self, _rel: &Path) -> io::Result<FileTrust> {
-        Ok(FileTrust::RootOnly)
-    }
-
-    fn read_file_capped(&self, _abs: &Path, _cap: u64) -> io::Result<Vec<u8>> {
-        Err(Self::not_found())
-    }
-
-    fn list_dir(&self, _abs: &Path) -> io::Result<Vec<PathBuf>> {
+    fn list_dir(&self, _path: &Path) -> io::Result<Vec<PathBuf>> {
         Err(Self::not_found())
     }
 }
@@ -134,11 +127,11 @@ impl DirUnits {
     pub(super) fn facts(&self, name: &UnitName) -> Option<UnitFacts> {
         let text = std::fs::read_to_string(self.root.join("units").join(name.as_str())).ok()?;
         let pid = Pid::new(text.trim().parse().ok()?)?;
-        let image = self.fs.readlink(Path::new(&format!("{pid}/exe"))).ok()?;
+        let image = self.fs.read_link(&self.root.join(format!("{pid}/exe"))).ok()?;
         Some(UnitFacts {
             name: name.clone(),
             main_pid: Some(pid),
-            fragment: Fragment::RootOwned(Path::new(FRAGMENT_DIR).join(name.as_str())),
+            fragment: Fragment::RootOwned,
             drop_ins: DropIns::None,
             transient: Transient::No,
             exec: ExePath::new(image.to_str()?).ok(),
