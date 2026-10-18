@@ -195,7 +195,7 @@ const IDENTITIES: &[(&str, &str, Sandbox, Proves)] = &[
 fn facts(cgroup: &str, sandbox: Sandbox) -> PeerFacts {
     PeerFacts {
         pid: 4242,
-        cgroup: CgroupPath::parse(cgroup).expect("cgroup path"),
+        cgroup: CgroupPath::new(cgroup).expect("cgroup path"),
         sandbox: sandbox.facts(),
     }
 }
@@ -249,7 +249,7 @@ const PROC_FILES: &[(&str, &str, Option<&str>)] = &[
 #[test]
 fn the_unified_line_of_proc_cgroup_is_the_path() {
     for (case, contents, want) in PROC_FILES {
-        let got = CgroupPath::from_proc_cgroup(contents).ok();
+        let got = CgroupPath::from_proc(contents).ok();
         assert_eq!(got.as_ref().map(CgroupPath::as_str), *want, "{case}");
     }
 }

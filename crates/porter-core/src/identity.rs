@@ -5,48 +5,8 @@
 
 use crate::app_id::{AppId, AppName, Isolation};
 use crate::error::CoreError;
+pub use peephole_core::CgroupPath;
 use serde::{Deserialize, Serialize};
-
-/// A process's cgroup v2 path (`/user.slice/…/app.slice/app-org.quire.Mail-12.scope`), as the
-/// unified hierarchy's `0::` line of `/proc/<pid>/cgroup` writes it.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct CgroupPath(String);
-
-impl CgroupPath {
-    /// The path `text`: absolute, on one line.
-    pub fn parse(text: &str) -> Result<Self, CoreError> {
-        if text.starts_with('/') && !text.contains(['\n', '\0']) {
-            Ok(Self(text.to_owned()))
-        } else {
-            Err(CoreError::MalformedId {
-                what: "cgroup path",
-                text: text.to_owned(),
-            })
-        }
-    }
-
-    /// The unified-hierarchy path in `contents`, the text of `/proc/<pid>/cgroup`. A system
-    /// with only cgroup v1 hierarchies has no such line, and the contents are refused.
-    pub fn from_proc_cgroup(contents: &str) -> Result<Self, CoreError> {
-        match contents.lines().find_map(|line| line.strip_prefix("0::")) {
-            Some(path) => Self::parse(path),
-            None => Err(CoreError::MalformedId {
-                what: "cgroup path",
-                text: contents.to_owned(),
-            }),
-        }
-    }
-
-    /// The path's text.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    /// The last component: the unit (or the delegated child of one) the process sits in.
-    fn leaf(&self) -> &str {
-        self.0.rsplit('/').next().unwrap_or_default()
-    }
-}
 
 /// What the peer's sandbox says about it, read by the edge from the sandbox's own metadata
 /// (Flatpak's `/.flatpak-info` for the pid) or from the `wp_security_context_v1` its listening
@@ -134,8 +94,8 @@ fn sandboxed(app: &str, cgroup: &CgroupPath) -> Option<AppId> {
 }
 
 /// Whether a component of `cgroup` is `app-flatpak-<id>-<n>.scope` for `app`, `n` decimal: the
-/// scope Flatpak makes for each run. The same rule as peephole-core's `flatpak_scope_in`, which
-/// porter-core cannot call (peephole-core reads `toml`).
+/// scope Flatpak makes for each run. The same rule as peephole-core's `flatpak_scope_in`, here on
+/// the app id as the text the sandbox stated.
 fn in_flatpak_scope(cgroup: &CgroupPath, app: &str) -> bool {
     cgroup.as_str().split('/').any(|segment| {
         segment
