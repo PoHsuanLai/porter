@@ -154,6 +154,23 @@ mod computers {
             place_of(&place)
         }
 
+        pub(in crate::transport) async fn send_helper_pool(
+            &self,
+            slot: porter_infer::Slot,
+            helper: &porter_core::HelperId,
+            models: &[porter_infer::ModelRef],
+        ) -> Result<(), TransportError> {
+            let models = models
+                .iter()
+                .map(|model| format!("{}/{}", model.account, model.model))
+                .collect();
+            self.inference_proxy()
+                .await?
+                .set_helper_pool(slot.slug(), helper.as_str(), models)
+                .await
+                .map_err(|e| bus_error(&e))
+        }
+
         pub(in crate::transport) async fn send_remove_computer(
             &self,
             name: &ComputerName,

@@ -8,9 +8,10 @@ use super::file::Reload;
 use super::keys::{
     SLOTS, TIERS, model_path, parse_model_path, parse_pool_path, pool_path, slots_of,
 };
+use super::pool;
 use super::missing::Engine;
 use super::resolve::{model_text, parse_model, slot_value};
-use crate::cloud::picker::{Availability, Choice, NEEDS_ACCOUNT, choices};
+use crate::cloud::picker::{Availability, Choice, NEEDS_ACCOUNT};
 use crate::keys::KeyRows;
 use crate::peers::{Peers, Role};
 use ds_settings::live::{Access, Caller, LiveError, LiveModule, LiveSchema, Verdict, serve};
@@ -18,10 +19,9 @@ use ds_settings::schema::{
     AgentSetting, ChoiceGroup, ChoicePlace, ChoiceWord, CompanyName, EngineName, Exposure, Help,
     HostName, KeyKind, KeyPath, KeySpec, Label, Page, Section, UnavailableReason, WordLabels,
 };
-use porter_core::consent::Usage;
-use porter_core::{AppId, AppName, DataClass, Isolation, Locality, Tier};
+use porter_core::{Locality, Tier};
 use porter_dbus::INFERENCE_SETTINGS_PATH;
-use porter_infer::{ModelRef, Slot, tier_label};
+use porter_infer::{Chooser, ModelRef, Slot, tier_label};
 use porter_router::local::LocalModel;
 use std::collections::BTreeMap;
 
@@ -39,20 +39,10 @@ const ON_YOUR_NETWORK: &str = "On your network";
 /// `agents.toml`) lists every agent there; the module groups the one the file holds.
 pub const CODING_AGENTS: &str = "Coding Agents";
 
-/// The app the picker asks accountd about the person's accounts as: `Verdicts` lists every account
-/// that serves a language need, and the picker reads only that an account exists.
-fn picker_app() -> Option<AppId> {
-    Some(AppId {
-        name: AppName::parse("org.quire.Settings").ok()?,
-        isolation: Isolation::Unsandboxed,
-    })
-}
-
 /// The module over the daemon's engines and its file.
 pub struct InferdSettings<P> {
     peers: P,
     reload: Reload,
-    writing: tokio::sync::Mutex<()>,
     /// The `accounts.<id>.*` rows of the AI accounts, when this daemon hosts them.
     keys: Option<std::sync::Arc<dyn KeyRows>>,
 }
@@ -71,7 +61,6 @@ impl<P: Peers> InferdSettings<P> {
         Self {
             peers,
             reload,
-            writing: tokio::sync::Mutex::new(()),
             keys: None,
         }
     }
@@ -96,35 +85,13 @@ impl<P: Peers> InferdSettings<P> {
 
     /// `models_for`, each with where it runs.
     fn known_for(&self, kind: Slot) -> Vec<(String, Locality)> {
-        self.reload
-            .engines()
-            .listed()
-            .into_iter()
-            .filter(|one| slots_of(&one.card).contains(&kind))
-            .map(|one| {
-                let text = model_text(&porter_infer::ModelRef {
-                    account: one.card.account,
-                    model: one.card.model,
-                });
-                (text, one.card.locality)
-            })
-            .collect()
+        pool::known_for(&self.reload, kind)
     }
 
     /// The hosted models that fit `slot`, company then model, with whether the person has an
     /// account that reaches each; none when this daemon serves none.
     async fn hosted(&self, slot: Slot) -> Vec<Choice> {
-        let (Some(cloud), Some(app)) = (self.reload.engines().cloud().cloned(), picker_app())
-        else {
-            return Vec::new();
-        };
-        choices(
-            cloud.entries(),
-            &cloud
-                .accounts(&app, DataClass::Prompt, Usage::Interactive)
-                .await,
-            slot,
-        )
+        pool::hosted(&self.reload, slot).await
     }
 
     /// The path of the old-kind row for this slot and tier, when the file has one.
@@ -303,13 +270,13 @@ impl<P: Peers> InferdSettings<P> {
         }
     }
 
-    /// The models in `kind`'s Automatic pool now, as `account/model`.
-    fn current_pool(&self, kind: Slot) -> Vec<String> {
+    /// The models in `chooser`'s Automatic pool for `kind` now, as `account/model`.
+    fn current_pool(&self, kind: Slot, chooser: &Chooser) -> Vec<String> {
         self.reload
             .engines()
             .settings()
             .tiers
-            .pool(kind)
+            .pool_of(chooser, kind)
             .iter()
             .map(model_text)
             .collect()
@@ -324,7 +291,7 @@ impl<P: Peers> InferdSettings<P> {
             unavailable,
             groups,
             places,
-        } = self.model_choices(kind, hosted, &self.current_pool(kind));
+        } = self.model_choices(kind, hosted, &self.current_pool(kind, &Chooser::Assistant));
         KeySpec {
             path: KeyPath(pool_path(kind)),
             kind: KeyKind::List(Box::new(KeyKind::Menu { variants })),
@@ -345,38 +312,17 @@ impl<P: Peers> InferdSettings<P> {
 
     /// Whether `text` names a model the person may choose for `kind`.
     fn choosable(&self, kind: Slot, text: &str, hosted: &[Choice]) -> bool {
-        parse_model(text).is_some()
-            && (self.models_for(kind).iter().any(|known| known == text)
-                || hosted.iter().any(|choice| choice.value == text))
+        pool::choosable(&self.reload, kind, text, hosted)
     }
 
-    async fn set_pool(&self, kind: Slot, value: toml::Value) -> Result<(), LiveError> {
-        let toml::Value::Array(items) = value else {
-            return Err(LiveError::BadValue("a pool is a list of models".into()));
-        };
-        let hosted = self.hosted(kind).await;
-        let mut texts = Vec::with_capacity(items.len());
-        for item in items {
-            let toml::Value::String(text) = item else {
-                return Err(LiveError::BadValue("a model is text".into()));
-            };
-            if !self.choosable(kind, &text, &hosted) {
-                return Err(LiveError::BadValue(format!(
-                    "{text}: not a model inferd knows for {}",
-                    kind.slug()
-                )));
-            }
-            if !texts.contains(&text) {
-                texts.push(text);
-            }
-        }
-        let _one_writer = self.writing.lock().await;
-        let list = texts.into_iter().map(toml::Value::String).collect();
-        self.reload
-            .file()
-            .set(&pool_path(kind), toml::Value::Array(list))
-            .map_err(failed)?;
-        self.reload.now().map_err(failed).map(|_| ())
+    async fn set_pool(
+        &self,
+        kind: Slot,
+        chooser: &Chooser,
+        value: toml::Value,
+    ) -> Result<(), LiveError> {
+        let texts = pool::validated(&self.reload, kind, value).await?;
+        pool::write(&self.reload, kind, chooser, texts).await
     }
 }
 
@@ -452,8 +398,8 @@ impl<P: Peers> LiveModule for InferdSettings<P> {
     }
 
     async fn get(&self, key: &KeyPath) -> Result<toml::Value, LiveError> {
-        if let Some(kind) = parse_pool_path(&key.0) {
-            let pool = self.current_pool(kind);
+        if let Some((kind, chooser)) = parse_pool_path(&key.0) {
+            let pool = self.current_pool(kind, &chooser);
             return Ok(toml::Value::Array(
                 pool.into_iter().map(toml::Value::String).collect(),
             ));
@@ -468,8 +414,8 @@ impl<P: Peers> LiveModule for InferdSettings<P> {
     }
 
     async fn set(&self, key: &KeyPath, value: toml::Value) -> Result<(), LiveError> {
-        if let Some(kind) = parse_pool_path(&key.0) {
-            return self.set_pool(kind, value).await;
+        if let Some((kind, chooser)) = parse_pool_path(&key.0) {
+            return self.set_pool(kind, &chooser, value).await;
         }
         let Some((slot, tier)) = parse_model_path(&key.0) else {
             return match &self.keys {
@@ -492,7 +438,7 @@ impl<P: Peers> LiveModule for InferdSettings<P> {
                 kind.slug()
             )));
         }
-        let _one_writer = self.writing.lock().await;
+        let _one_writer = self.reload.writing().lock().await;
         // Always the slot's own path; an old kind row for the same slot, if the file still has
         // one, is kept in step so it cannot say otherwise.
         let file = self.reload.file();

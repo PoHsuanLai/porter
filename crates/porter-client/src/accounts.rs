@@ -369,6 +369,19 @@ impl<T: Transport> Accounts<T> {
         Ok(self.transport.remove_computer(name).await?)
     }
 
+    /// Sets the models Automatic chooses among for the helper `helper` in `slot`
+    /// ([`Transport::set_helper_pool`]); each must be a model inferd knows for the slot, and an
+    /// empty list takes the helper off Automatic for it. Settings and the shell may call.
+    #[cfg(feature = "infer")]
+    pub async fn set_helper_pool(
+        &self,
+        slot: porter_infer::Slot,
+        helper: &porter_core::HelperId,
+        models: &[porter_infer::ModelRef],
+    ) -> Result<(), ClientError> {
+        Ok(self.transport.set_helper_pool(slot, helper, models).await?)
+    }
+
     /// Runs one AI request to its end on a fresh session and returns the reply, dropping the
     /// deltas; a refusal is an error the app shows.
     #[cfg(feature = "infer")]

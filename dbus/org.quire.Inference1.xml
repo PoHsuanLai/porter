@@ -69,6 +69,11 @@
    <method name="ForgetGuest">
      <arg name="node" type="s" direction="in"/>
    </method>
+   <method name="SetHelperPool">
+     <arg name="slot" type="s" direction="in"/>
+     <arg name="helper" type="s" direction="in"/>
+     <arg name="models" type="as" direction="in"/>
+   </method>
    <signal name="GuestAsks">
      <arg name="node" type="s"/>
      <arg name="details" type="a{sv}"/>

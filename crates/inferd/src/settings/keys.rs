@@ -65,9 +65,8 @@ pub fn pool_path(slot: Slot) -> String {
 /// `ai.auto.pool.<slot>.helper.<id>`: the models Automatic chooses among for the slot when
 /// `chooser` asks. The assistant's is `pool_path`'s, unchanged. In `inferd.toml` a helper's key
 /// is the quoted tail (`"text.helper.<id>" = [...]` under `[ai.auto.pool]`), since a table cannot
-/// share a name with the assistant's list. Only the round trip reads it until a writer of
-/// helpers' pools lands.
-#[cfg(test)]
+/// share a name with the assistant's list. This is the one writer of the path;
+/// [`parse_pool_path`] reads it back.
 pub fn pool_path_of(slot: Slot, chooser: &Chooser) -> String {
     match chooser {
         Chooser::Assistant => pool_path(slot),
@@ -87,9 +86,17 @@ pub fn parse_pool_key(tail: &str) -> Option<(Slot, Chooser)> {
     }
 }
 
-/// The slot an `ai.auto.pool.<slot>` path names.
-pub fn parse_pool_path(path: &str) -> Option<Slot> {
-    Slot::from_slug(path.strip_prefix("ai.auto.pool.")?)
+/// The slot and chooser an `ai.auto.pool.<slot>` or `ai.auto.pool.<slot>.helper.<id>` path names.
+pub fn parse_pool_path(path: &str) -> Option<(Slot, Chooser)> {
+    parse_pool_key(path.strip_prefix("ai.auto.pool.")?)
+}
+
+/// The key of `chooser`'s pool for `slot` inside the `[ai.auto.pool]` table of `inferd.toml`:
+/// `pool_path_of` without the table's own path.
+pub fn pool_row_key(slot: Slot, chooser: &Chooser) -> String {
+    let path = pool_path_of(slot, chooser);
+    path.strip_prefix("ai.auto.pool.")
+        .map_or(path.clone(), str::to_owned)
 }
 
 #[cfg(test)]
@@ -182,6 +189,15 @@ mod tests {
             pool_path_of(Slot::Text, &helper),
             "ai.auto.pool.text.helper.h.1"
         );
-        assert_eq!(parse_pool_path("ai.auto.pool.text.helper.h.1"), None);
+        for chooser in [Chooser::Assistant, helper.clone()] {
+            let path = pool_path_of(Slot::Text, &chooser);
+            assert_eq!(parse_pool_path(&path), Some((Slot::Text, chooser.clone())));
+        }
+        assert_eq!(
+            pool_row_key(Slot::Text, &helper),
+            "text.helper.h.1".to_owned()
+        );
+        assert_eq!(parse_pool_path("ai.auto.pool.text.helper."), None);
+        assert_eq!(parse_pool_path("ai.model.text.fast"), None);
     }
 }

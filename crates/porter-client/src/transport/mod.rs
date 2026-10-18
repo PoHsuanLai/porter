@@ -211,6 +211,20 @@ pub trait Transport: Send + Sync {
         async { Err(TransportError::Unsupported) }
     }
 
+    /// Sets the models Automatic chooses among for the helper `helper` in `slot`
+    /// (`Inference1.SetHelperPool`; Settings and the shell). An empty list takes the helper off
+    /// Automatic for the slot. The default is `Unsupported`.
+    #[cfg(feature = "infer")]
+    fn set_helper_pool(
+        &self,
+        slot: porter_infer::Slot,
+        helper: &porter_core::HelperId,
+        models: &[porter_infer::ModelRef],
+    ) -> impl Future<Output = Result<(), TransportError>> + Send {
+        let _ = (slot, helper, models);
+        async { Err(TransportError::Unsupported) }
+    }
+
     /// [`Transport::open_with`] with no trace context: inferd starts its own root.
     #[cfg(feature = "infer")]
     fn open(
@@ -416,6 +430,20 @@ impl Transport for AnyTransport {
             #[cfg(feature = "dbus")]
             AnyTransport::Dbus(link) => link.remove_computer(name).await,
             AnyTransport::Socket(link) => link.remove_computer(name).await,
+        }
+    }
+
+    #[cfg(feature = "infer")]
+    async fn set_helper_pool(
+        &self,
+        slot: porter_infer::Slot,
+        helper: &porter_core::HelperId,
+        models: &[porter_infer::ModelRef],
+    ) -> Result<(), TransportError> {
+        match self {
+            #[cfg(feature = "dbus")]
+            AnyTransport::Dbus(link) => link.set_helper_pool(slot, helper, models).await,
+            AnyTransport::Socket(link) => link.set_helper_pool(slot, helper, models).await,
         }
     }
 }

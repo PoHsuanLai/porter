@@ -116,6 +116,11 @@ pub trait Inference {
     /// again the next time it wants a model, if it is one of the person's own. Only Settings
     /// may call.
     fn forget_guest(&self, node: &str) -> zbus::Result<()>;
+    /// The models Automatic chooses among for the helper `helper` in the slot `slot` (a slot
+    /// slug), as `account/model`. Each must be a model inferd knows for the slot; an empty list
+    /// takes the helper off Automatic for the slot. Only Settings and the shell may call; a model
+    /// inferd does not know is `InvalidArgs`.
+    fn set_helper_pool(&self, slot: &str, helper: &str, models: Vec<String>) -> zbus::Result<()>;
     /// A computer began asking to use this computer's models: the person is to be asked "Let
     /// <name> use this computer's models?". The details are `name` and `since`. Broadcast: a
     /// computer's name is not secret, and only the shell and Settings can answer. A shell that
@@ -230,6 +235,16 @@ impl InferenceSkeleton {
 
     fn forget_guest(&self, node: String) -> fdo::Result<()> {
         let _ = node;
+        Err(crate::introspect::frozen())
+    }
+
+    fn set_helper_pool(
+        &self,
+        slot: String,
+        helper: String,
+        models: Vec<String>,
+    ) -> fdo::Result<()> {
+        let _ = (slot, helper, models);
         Err(crate::introspect::frozen())
     }
 

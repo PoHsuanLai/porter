@@ -644,3 +644,106 @@ async fn a_slot_with_no_model_here_carries_no_note_about_missing_programs() {
     assert_eq!(row.note, None);
     assert!(!row.help.0.contains("not installed"), "{}", row.help.0);
 }
+
+fn helper(id: &str) -> porter_infer::Chooser {
+    porter_infer::Chooser::Helper(porter_core::HelperId::parse(id).expect("helper id"))
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_shell_may_set_a_helpers_pool_and_it_is_written_and_in_force() {
+    let rig = Rig::start().await;
+    let shell = rig.client(Role::Shell).await;
+    let proxy = InferenceProxy::new(&shell).await.expect("proxy");
+    proxy
+        .set_helper_pool(
+            "text",
+            "h.1",
+            vec!["anthropic/sonnet".into(), "anthropic/sonnet".into()],
+        )
+        .await
+        .expect("the shell sets a helper's pool");
+    let tiers = rig.engines.settings().tiers;
+    assert_eq!(tiers.pool_of(&helper("h.1"), Slot::Text).len(), 1);
+    assert!(tiers.pool(Slot::Text).is_empty(), "not the assistant's");
+    assert!(tiers.pool_of(&helper("h.2"), Slot::Text).is_empty());
+    let written = std::fs::read_to_string(&rig.file).expect("the file");
+    assert!(written.contains("\"text.helper.h.1\""), "{written}");
+    // Settings reads it back through the settings module by the same key.
+    let settings = rig.live(&rig.client(Role::Settings).await).await;
+    assert_eq!(
+        settings
+            .get(&key("ai.auto.pool.text.helper.h.1"))
+            .await
+            .expect("get"),
+        toml::Value::Array(vec![text("anthropic/sonnet")])
+    );
+    // An empty pool removes the row: the helper is not on Automatic any more.
+    proxy
+        .set_helper_pool("text", "h.1", Vec::new())
+        .await
+        .expect("clear");
+    let tiers = rig.engines.settings().tiers;
+    assert!(tiers.pool_of(&helper("h.1"), Slot::Text).is_empty());
+    let written = std::fs::read_to_string(&rig.file).expect("the file");
+    assert!(!written.contains("helper"), "{written}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_helpers_pool_names_only_models_inferd_knows_and_the_settings_role_may_set_it_too() {
+    let rig = Rig::start().await;
+    let settings = rig.client(Role::Settings).await;
+    let proxy = InferenceProxy::new(&settings).await.expect("proxy");
+    for (slot, helper, models) in [
+        ("text", "h.1", vec!["local/ghost"]),
+        ("text", "h.1", vec!["auto"]),
+        ("tv", "h.1", vec![]),
+        ("text", "", vec![]),
+    ] {
+        let got = proxy
+            .set_helper_pool(slot, helper, models.into_iter().map(Into::into).collect())
+            .await;
+        assert!(
+            matches!(&got, Err(zbus::Error::MethodError(name, _, _)) if name.as_str().ends_with("InvalidArgs")),
+            "{slot}/{helper}: {got:?}"
+        );
+    }
+    assert!(!rig.file.exists());
+    proxy
+        .set_helper_pool("text", "h.1", vec!["anthropic/sonnet".into()])
+        .await
+        .expect("Settings sets it");
+    assert_eq!(
+        rig.engines
+            .settings()
+            .tiers
+            .pool_of(&helper("h.1"), Slot::Text)
+            .len(),
+        1
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_shell_may_write_no_other_setting_and_an_app_no_helper_pool() {
+    let rig = Rig::start().await;
+    let shell = rig.live(&rig.client(Role::Shell).await).await;
+    for path in [
+        "ai.auto.pool.text",
+        "ai.auto.pool.text.helper.h.1",
+        "ai.model.text.fast",
+    ] {
+        let got = shell.set(&key(path), &toml::Value::Array(Vec::new())).await;
+        assert!(matches!(got, Err(LiveError::NotPermitted(_))), "{path}: {got:?}");
+    }
+    let app = rig.client(Role::App).await;
+    let got = InferenceProxy::new(&app)
+        .await
+        .expect("proxy")
+        .set_helper_pool("text", "h.1", Vec::new())
+        .await;
+    assert!(
+        matches!(&got, Err(zbus::Error::MethodError(name, _, _)) if name.as_str().ends_with("AccessDenied")),
+        "{got:?}"
+    );
+    assert!(!rig.file.exists());
+    assert_eq!(rig.engines.settings().tiers, TierMap::default());
+}

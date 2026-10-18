@@ -72,10 +72,37 @@ impl ConfigFile {
     /// then renamed over it). The file is rewritten from its parsed form, so its comments are not
     /// kept; a file that does not parse is left alone and is the error.
     pub fn set(&self, path: &str, value: toml::Value) -> Result<(), FileError> {
+        self.edit(|table| put(table, path, value))
+    }
+
+    /// Sets `key` in the table at the dotted `table_path` to `value`, or removes it when `value`
+    /// is `None`. `key` is one key even where it holds dots (a helper's pool is
+    /// `"text.helper.<id>"` in `[ai.auto.pool]`). Written as `set` writes.
+    pub fn set_key(
+        &self,
+        table_path: &str,
+        key: &str,
+        value: Option<toml::Value>,
+    ) -> Result<(), FileError> {
+        self.edit(|table| {
+            let inner = table_at(table, table_path);
+            match value {
+                Some(value) => {
+                    inner.insert(key.to_owned(), value);
+                }
+                None => {
+                    inner.remove(key);
+                }
+            }
+        })
+    }
+
+    /// Reads the file whole, lets `change` edit it, and writes it back as `set` describes.
+    fn edit(&self, change: impl FnOnce(&mut toml::Table)) -> Result<(), FileError> {
         let mut table: toml::Table = self.text()?.parse().map_err(|e: toml::de::Error| {
             FileError::Toml(format!("{}: {e}", self.path.display()))
         })?;
-        put(&mut table, path, value);
+        change(&mut table);
         let text = toml::to_string(&table).map_err(|e| FileError::Toml(e.to_string()))?;
         InferdConfig::from_toml(&text).map_err(|e| FileError::Toml(e.to_string()))?;
         let io = |e: std::io::Error| FileError::Io(format!("{}: {e}", self.path.display()));
@@ -90,6 +117,19 @@ impl ConfigFile {
         let meta = std::fs::metadata(self.source()).ok()?;
         Some((meta.modified().ok()?, meta.len()))
     }
+}
+
+/// The table at the dotted `path` in `table`, made (over anything else there) on the way.
+fn table_at<'a>(table: &'a mut toml::Table, path: &str) -> &'a mut toml::Table {
+    path.split('.').fold(table, |table, name| {
+        let entry = table
+            .entry(name.to_owned())
+            .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+        if !entry.is_table() {
+            *entry = toml::Value::Table(toml::Table::new());
+        }
+        entry.as_table_mut().expect("a table, made just above")
+    })
 }
 
 /// Sets `table` at the dotted `path`, making the tables on the way.
@@ -129,17 +169,29 @@ pub struct Reloaded {
 pub struct Reload {
     file: ConfigFile,
     engines: Engines,
+    /// Held by whoever reads the file, changes it and reloads, so two writers (the settings
+    /// module and the helpers' pools) never overwrite each other.
+    writing: std::sync::Arc<tokio::sync::Mutex<()>>,
 }
 
 impl Reload {
     /// Reloads `engines` from `file`.
     pub fn new(file: ConfigFile, engines: Engines) -> Self {
-        Self { file, engines }
+        Self {
+            file,
+            engines,
+            writing: Default::default(),
+        }
     }
 
     /// The file.
     pub fn file(&self) -> &ConfigFile {
         &self.file
+    }
+
+    /// The lock of the one writer at a time, shared by every clone.
+    pub fn writing(&self) -> &tokio::sync::Mutex<()> {
+        &self.writing
     }
 
     /// The engines it reloads.

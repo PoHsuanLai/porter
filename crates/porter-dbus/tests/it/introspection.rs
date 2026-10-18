@@ -189,6 +189,7 @@ fn inference1_xml_unchanged_members() {
         "<method name=\"Guests\">",
         "<method name=\"AnswerGuest\">",
         "<method name=\"ForgetGuest\">",
+        "<method name=\"SetHelperPool\">",
         "<signal name=\"GuestAsks\">",
         "<signal name=\"GuestsChanged\">",
         "<arg name=\"answer\" type=\"s\" direction=\"in\"/>",
@@ -204,10 +205,10 @@ fn inference1_xml_unchanged_members() {
         + xml.matches("<property ").count();
     assert_eq!(
         declared,
-        members.len() + 3 + 7 + 1 + 1 + 1,
+        members.len() + 3 + 7 + 1 + 1 + 1 + 1,
         "no member beyond the frozen seven, Places, AddComputer, RemoveComputer, and the five \
          methods and two signals of lending models across the person's network, LocalEngines, \
-         PointEngine and HardwareNotes"
+         PointEngine, HardwareNotes and SetHelperPool"
     );
     assert_eq!(
         porter_dbus::COMPUTER_ERROR_PREFIX,

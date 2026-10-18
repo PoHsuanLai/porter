@@ -22,12 +22,12 @@ use crate::runner::{Pin, Turns};
 use crate::seats::Gate;
 use crate::serve::{Seams, guarded, serve_session};
 use crate::session::SessionSpec;
-use crate::settings::{LocalEngines, Reload};
+use crate::settings::{HelperPools, LocalEngines, Reload};
 use crate::structured::Limits;
 use crate::tailnet::{Candidate, Tailnet};
 use crate::toolproof::ToolWatch;
 use crate::watch::Probing;
-use porter_core::{DataClass, ModelId, NodeId, SecretText, Tier};
+use porter_core::{DataClass, HelperId, ModelId, NodeId, SecretText, Tier};
 use porter_dbus::{
     CANDIDATE_KEY_MODELS, CANDIDATE_KEY_NAME, CANDIDATE_KEY_NEEDS_APPROVAL, Details,
     GUEST_KEY_NAME, GUEST_KEY_SINCE, GUEST_KEY_STATE, INFERENCE_BUS, INFERENCE_PATH, NeedArg,
@@ -322,6 +322,18 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
             Err(fdo::Error::AccessDenied(
                 "inferd: only Settings and the shell may see or answer the computers that ask"
                     .into(),
+            ))
+        }
+    }
+
+    /// The caller of `SetHelperPool`: Settings or the shell (where the Helpers window lives).
+    async fn helper_pool_caller(&self, header: &Header<'_>) -> fdo::Result<Caller> {
+        let caller = self.identified(header).await?;
+        if caller.may_write_helper_pools() {
+            Ok(caller)
+        } else {
+            Err(fdo::Error::AccessDenied(
+                "inferd: only Settings and the shell may set a helper's pool".into(),
             ))
         }
     }
@@ -814,6 +826,33 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
             .forget(&node)
             .map_err(ComputerError::from)?;
         Ok(())
+    }
+
+    // The models Automatic chooses among for one helper in one slot (Settings and the shell). An
+    // empty list takes the helper off Automatic for the slot. Every model must be one inferd
+    // knows for the slot, as the assistant's pool is checked.
+    async fn set_helper_pool(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+        slot: String,
+        helper: String,
+        models: Vec<String>,
+    ) -> fdo::Result<()> {
+        self.helper_pool_caller(&header).await?;
+        let slot = porter_infer::Slot::from_slug(&slot)
+            .ok_or_else(|| fdo::Error::InvalidArgs(format!("{slot}: not a slot")))?;
+        let helper =
+            HelperId::parse(&helper).map_err(|e| fdo::Error::InvalidArgs(e.to_string()))?;
+        let reload = self.reload.as_ref().ok_or_else(not_configurable)?;
+        HelperPools::new(reload.clone())
+            .set(slot, &helper, models)
+            .await
+            .map_err(|e| match e {
+                ds_settings::live::LiveError::BadValue(why) => fdo::Error::InvalidArgs(why),
+                other => failed(other),
+            })?;
+        Self::engines_changed(&emitter).await.map_err(failed)
     }
 
     #[zbus(signal)]

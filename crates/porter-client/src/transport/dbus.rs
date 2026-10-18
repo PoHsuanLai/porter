@@ -223,6 +223,16 @@ impl Transport for DbusTransport {
     }
 
     #[cfg(feature = "infer")]
+    async fn set_helper_pool(
+        &self,
+        slot: porter_infer::Slot,
+        helper: &porter_core::HelperId,
+        models: &[porter_infer::ModelRef],
+    ) -> Result<(), TransportError> {
+        self.send_helper_pool(slot, helper, models).await
+    }
+
+    #[cfg(feature = "infer")]
     async fn prepare(
         &self,
         need: &Need,

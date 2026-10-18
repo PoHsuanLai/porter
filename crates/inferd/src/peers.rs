@@ -82,6 +82,12 @@ impl Caller {
         self.role == Role::Placer
     }
 
+    /// Whether it may set the models Automatic chooses among for a helper: Settings and the
+    /// shell, where the Helpers window lives. No other inferd setting is the shell's.
+    pub fn may_write_helper_pools(&self) -> bool {
+        matches!(self.role, Role::Settings | Role::Shell)
+    }
+
     /// Whether it may list the computers that ask to use this one and answer one that is
     /// asking: Settings and the shell.
     pub fn may_answer_guests(&self) -> bool {
