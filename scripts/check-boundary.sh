@@ -16,7 +16,7 @@ cd "$(dirname "$0")/.."
 # each of its family features is checked on its own in FAMILY_FORBIDS below.
 EFFECTS="zbus zvariant tokio reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
 RULES=(
-  "porter-core: $EFFECTS"
+  "porter-core: $EFFECTS toml"
   "porter-fs: $EFFECTS"
   "prov: $EFFECTS"
   "porter-provider: $EFFECTS"
@@ -71,16 +71,6 @@ for rule in "${RULES[@]}"; do
     echo "boundary holds: $crate reaches none of ${forbidden[*]}"
   fi
 done
-
-# porter-core names no toml itself: the only path to it is peephole-core (its caller table's
-# parser), which porter-core links for the one CgroupPath it re-exports.
-toml_parents=$(cargo tree -p porter-core -i toml -e normal,build --prefix none 2>/dev/null | sed 's/ .*//' | sort -u | grep -vxE 'toml|peephole-core|porter-core')
-if [ -n "$toml_parents" ]; then
-  echo "LEAK: porter-core reaches toml through more than peephole-core: $toml_parents"
-  fail=1
-else
-  echo "boundary holds: porter-core reaches toml only through peephole-core"
-fi
 
 # FAMILY FEATURES: porter-families with each of its family features on, one at a time, and no
 # other. Its default build is checked by RULES above (it reaches none of EFFECTS). A family
