@@ -24,6 +24,7 @@ pub use file::{ConfigFile, FileError, Reload, ReloadFailed, Reloaded};
 pub use keys::slots_of;
 pub use keys::{CLASSES, SLOTS, TIERS, from_slug, model_path, slug_of};
 pub use local_engines::LocalEngines;
+pub(crate) use missing::Engine;
 pub use module::{InferdSettings, serve_settings};
 pub use resolve::{Resolved, floor_value, model_text, parse_model, resolve, slot_value};
 

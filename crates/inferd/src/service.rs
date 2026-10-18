@@ -31,7 +31,7 @@ use porter_core::{DataClass, ModelId, NodeId, SecretText, Tier};
 use porter_dbus::{
     CANDIDATE_KEY_MODELS, CANDIDATE_KEY_NAME, CANDIDATE_KEY_NEEDS_APPROVAL, Details,
     GUEST_KEY_NAME, GUEST_KEY_SINCE, GUEST_KEY_STATE, INFERENCE_BUS, INFERENCE_PATH, NeedArg,
-    PLACE_KEY_KIND, PLACE_KEY_MODELS, PLACE_KEY_NAME, PLACE_KEY_PROVIDER, PLACE_KEY_READY,
+    PLACE_KEY_ENGINES, PLACE_KEY_KIND, PLACE_KEY_MODELS, PLACE_KEY_NAME, PLACE_KEY_PROVIDER, PLACE_KEY_READY,
     need_from_dbus,
 };
 use porter_infer::{InferRefusal, PlaceId, PlaceRow, PlaceState};
@@ -944,6 +944,14 @@ fn ask_details(ask: &porter_tailnet::Ask) -> Details {
 fn place_row(row: PlaceRow) -> (String, Details) {
     use porter_dbus::zvariant::{OwnedValue, Value};
     let text = |text: String| OwnedValue::try_from(Value::from(text)).ok();
+    let engines: Vec<(String, String, String)> = row
+        .models
+        .iter()
+        .filter_map(|model| {
+            let engine = model.engine.as_ref()?;
+            Some((model.id.to_string(), engine.id.clone(), engine.name.clone()))
+        })
+        .collect();
     let models: Vec<(String, String)> = row
         .models
         .into_iter()
@@ -961,6 +969,12 @@ fn place_row(row: PlaceRow) -> (String, Details) {
         (
             PLACE_KEY_READY,
             OwnedValue::try_from(Value::Bool(ready)).ok(),
+        ),
+        (
+            PLACE_KEY_ENGINES,
+            (!engines.is_empty())
+                .then(|| OwnedValue::try_from(Value::new(engines)).ok())
+                .flatten(),
         ),
     ];
     let details = entries

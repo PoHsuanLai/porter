@@ -7,10 +7,12 @@ use porter_core::{DataClass, ModelId, Need, Permille, Tier};
 use porter_dbus::zvariant::{OwnedValue, Value};
 use porter_dbus::{
     Details, InferenceProxy, OPTION_ASKER, OPTION_MODEL, OPTION_PLACE_MODELS, OPTION_PLACES,
-    OPTION_TRACEPARENT, OPTION_USAGE, PLACE_KEY_KIND, PLACE_KEY_MODELS, PLACE_KEY_NAME,
-    PLACE_KEY_PROVIDER, PLACE_KEY_READY, need_to_dbus,
+    OPTION_TRACEPARENT, OPTION_USAGE, PLACE_KEY_ENGINES, PLACE_KEY_KIND, PLACE_KEY_MODELS,
+    PLACE_KEY_NAME, PLACE_KEY_PROVIDER, PLACE_KEY_READY, need_to_dbus,
 };
-use porter_infer::{OpenOptions, PlaceId, PlaceKind, PlaceModel, PlaceRow, PlaceState, Readiness};
+use porter_infer::{
+    OpenOptions, PlaceEngine, PlaceId, PlaceKind, PlaceModel, PlaceRow, PlaceState, Readiness,
+};
 
 /// The `options` dictionary of `Open`: the reserved `traceparent` and `usage` when the caller has
 /// them (`usage` as its slug).
@@ -144,12 +146,26 @@ fn place_row((id, details): (String, Details)) -> Result<PlaceRow, TransportErro
         .and_then(|value| value.try_clone().ok())
         .and_then(|value| Vec::<(String, String)>::try_from(value).ok())
         .ok_or_else(|| bad("no models"))?;
+    // Absent from an older inferd and for a model whose engine is not known.
+    let engines: Vec<(String, String, String)> = details
+        .get(PLACE_KEY_ENGINES)
+        .and_then(|value| value.try_clone().ok())
+        .and_then(|value| Vec::<(String, String, String)>::try_from(value).ok())
+        .unwrap_or_default();
     let models = models
         .into_iter()
         .map(|(model, name)| {
-            Ok(PlaceModel {
-                id: ModelId::parse(&model).map_err(|_| bad("a model id"))?,
-                name,
+            let engine = engines
+                .iter()
+                .find(|(id, _, _)| *id == model)
+                .map(|(_, id, name)| PlaceEngine {
+                    id: id.clone(),
+                    name: name.clone(),
+                });
+            let placed = PlaceModel::new(ModelId::parse(&model).map_err(|_| bad("a model id"))?, name);
+            Ok(match engine {
+                Some(engine) => placed.with_engine(engine),
+                None => placed,
             })
         })
         .collect::<Result<Vec<_>, TransportError>>()?;
@@ -183,5 +199,56 @@ fn readiness_of(text: &str) -> Result<Readiness, TransportError> {
         "unavailable" => Ok(Readiness::Unavailable),
         "" => Err(TransportError::Malformed("empty Prepare answer".to_owned())),
         refusal => Err(TransportError::Denied(format!("inferd refused: {refusal}"))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn value<T: Into<Value<'static>>>(inner: T) -> OwnedValue {
+        OwnedValue::try_from(inner.into()).expect("value")
+    }
+
+    fn row_details(engines: Option<Vec<(String, String, String)>>) -> Details {
+        let models = vec![
+            ("qwen".to_owned(), "Qwen".to_owned()),
+            ("gemma".to_owned(), "Gemma".to_owned()),
+        ];
+        let mut details = Details::new();
+        details.insert(PLACE_KEY_KIND.to_owned(), value("this_computer"));
+        details.insert(PLACE_KEY_NAME.to_owned(), value("This computer"));
+        details.insert(PLACE_KEY_READY.to_owned(), value(true));
+        details.insert(
+            PLACE_KEY_MODELS.to_owned(),
+            OwnedValue::try_from(Value::new(models)).expect("models"),
+        );
+        if let Some(engines) = engines {
+            details.insert(
+                PLACE_KEY_ENGINES.to_owned(),
+                OwnedValue::try_from(Value::new(engines)).expect("engines"),
+            );
+        }
+        details
+    }
+
+    #[test]
+    fn a_row_without_engines_parses_with_no_engine_on_any_model() {
+        let row = place_row(("this-computer".to_owned(), row_details(None))).expect("row");
+        assert_eq!(row.models.len(), 2);
+        assert!(row.models.iter().all(|model| model.engine.is_none()));
+    }
+
+    #[test]
+    fn a_row_with_engines_names_the_engine_of_the_models_it_lists() {
+        let engines = vec![(
+            "qwen".to_owned(),
+            "llama_cpp".to_owned(),
+            "llama.cpp".to_owned(),
+        )];
+        let row = place_row(("this-computer".to_owned(), row_details(Some(engines)))).expect("row");
+        let engine = row.models[0].engine.as_ref().expect("engine");
+        assert_eq!((engine.id.as_str(), engine.name.as_str()), ("llama_cpp", "llama.cpp"));
+        assert_eq!(row.models[1].engine, None);
     }
 }

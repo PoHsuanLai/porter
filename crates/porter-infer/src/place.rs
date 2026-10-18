@@ -226,6 +226,16 @@ pub enum PlaceState {
     NotReady,
 }
 
+/// The engine that runs a model on this computer: its id as `LocalEngines` lists it, and the name
+/// a person reads for it.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct PlaceEngine {
+    /// The engine's id, the same text as a `LocalEngines` row's.
+    pub id: String,
+    /// The name a person reads for it.
+    pub name: String,
+}
+
 /// One model a place can serve now.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PlaceModel {
@@ -233,6 +243,27 @@ pub struct PlaceModel {
     pub id: porter_core::ModelId,
     /// The name a person reads for it.
     pub name: String,
+    /// The engine that runs it, for a model on this computer whose engine inferd knows. Absent
+    /// for a cloud model, a model on another computer, and in rows written before the field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine: Option<PlaceEngine>,
+}
+
+impl PlaceModel {
+    /// A model with its name and no engine.
+    pub fn new(id: porter_core::ModelId, name: String) -> Self {
+        Self {
+            id,
+            name,
+            engine: None,
+        }
+    }
+
+    /// The same model, run by `engine`.
+    pub fn with_engine(mut self, engine: PlaceEngine) -> Self {
+        self.engine = Some(engine);
+        self
+    }
 }
 
 /// One row of `Inference1.Places`: a place known now.
@@ -391,6 +422,22 @@ mod tests {
         assert_eq!(PlaceId::account(&work), parsed("account:work-claude"));
         assert_eq!(PlaceId::this_computer(), parsed("this-computer"));
         assert_eq!(PlaceKind::from_slug("elsewhere"), None);
+    }
+
+    #[test]
+    fn a_model_row_without_an_engine_reads_and_leaves_the_field_out() {
+        let id = porter_core::ModelId::parse("qwen").expect("id");
+        let plain = PlaceModel::new(id.clone(), "Qwen".to_owned());
+        let json = serde_json::to_string(&plain).expect("json");
+        assert_eq!(json, r#"{"id":"qwen","name":"Qwen"}"#);
+        assert_eq!(serde_json::from_str::<PlaceModel>(&json).expect("old"), plain);
+        let run = plain.with_engine(PlaceEngine {
+            id: "llama_cpp".to_owned(),
+            name: "llama.cpp".to_owned(),
+        });
+        let json = serde_json::to_string(&run).expect("json");
+        assert!(json.contains(r#""engine":{"id":"llama_cpp","name":"llama.cpp"}"#), "{json}");
+        assert_eq!(serde_json::from_str::<PlaceModel>(&json).expect("back"), run);
     }
 
     #[test]

@@ -168,6 +168,9 @@ pub const PLACE_KEY_PROVIDER: &str = "provider";
 pub const PLACE_KEY_MODELS: &str = "models";
 /// See [`PLACE_KEY_KIND`].
 pub const PLACE_KEY_READY: &str = "ready";
+/// See [`PLACE_KEY_KIND`]. `a(sss)`: for each model of `models` whose engine is known, its id, the
+/// engine's id and the engine's name; a model with no entry has no known engine.
+pub const PLACE_KEY_ENGINES: &str = "engines";
 
 /// The object path of one account (`org.quire.Accounts1.Account`).
 pub fn account_path(id: &AccountId) -> String {

@@ -85,7 +85,7 @@ pub use pipeline::{
     Refusal, RequestShape, SlotPicks, Stage, StageRole, default_choice, picks_for, plan_pipeline,
 };
 pub use place::{
-    ComputerName, NoPlaceReason, PlaceId, PlaceKind, PlaceModel, PlaceRefusal, PlaceRow,
+    ComputerName, NoPlaceReason, PlaceEngine, PlaceId, PlaceKind, PlaceModel, PlaceRefusal, PlaceRow,
     PlaceState, PlaceTarget,
 };
 pub use policy::{ClassFloor, Floor, LocalOnly, Policy};

@@ -102,12 +102,15 @@ async fn settings_lists_this_computer_a_named_computer_and_the_cloud_accounts() 
     assert_eq!(here.state, PlaceState::Ready);
     assert_eq!(models(here), vec!["tiny-chat"]);
     assert_eq!(here.models[0].name, "Tiny chat");
+    let engine = here.models[0].engine.as_ref().expect("the engine inferd runs it with");
+    assert_eq!((engine.id.as_str(), engine.name.as_str()), ("llama_cpp", "llama.cpp"));
 
     let lab = row(&rows, "computer:lab");
     assert_eq!(lab.kind, PlaceKind::OwnComputer);
     assert_eq!(lab.name, "lab");
     assert_eq!(lab.state, PlaceState::Ready);
     assert_eq!(models(lab), vec![entries::ATTACHED]);
+    assert_eq!(lab.models[0].engine, None);
 
     let router = row(&rows, "account:openrouter");
     assert_eq!(router.kind, PlaceKind::CloudAccount);

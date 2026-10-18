@@ -8,7 +8,10 @@ use crate::router::fits;
 use porter_core::capability::LlmFeature;
 use porter_core::need::LlmNeed;
 use porter_core::{AccountState, ModelId, Tokens};
-use porter_infer::{ComputerName, PlaceId, PlaceModel, PlaceRow, PlaceState, PlaceTarget};
+use crate::settings::Engine;
+use porter_infer::{
+    ComputerName, PlaceEngine, PlaceId, PlaceModel, PlaceRow, PlaceState, PlaceTarget,
+};
 use std::collections::BTreeMap;
 
 /// Whether a model in this state can take a request now: it is up, coming up, or a request
@@ -46,6 +49,22 @@ impl Engines {
             .find(model)
             .and_then(|local| local.attached.as_ref()?.computer.clone())
             .unwrap_or_else(ComputerName::other)
+    }
+
+    /// The engine inferd runs a model with, by the names `LocalEngines` gives it. None for a model
+    /// it does not run itself: one on another computer, a runtime the person runs, an attached
+    /// engine, a cloud model.
+    fn engine_of(&self, model: &ModelRef) -> Option<PlaceEngine> {
+        let local = self
+            .book
+            .local
+            .iter()
+            .find(|one| one.model_ref() == *model)?;
+        let engine = Engine::of(local.profile.kind);
+        Some(PlaceEngine {
+            id: engine.slug().to_owned(),
+            name: engine.name().to_owned(),
+        })
     }
 
     /// The language models this computer lends to the person's other computers: the ones that
@@ -122,11 +141,14 @@ impl Engines {
                         account: one.card.account.clone(),
                         model: one.card.model.clone(),
                     };
-                    PlaceModel {
-                        id: one.card.model.clone(),
-                        name: self
-                            .label_of(&model, &none)
+                    let placed = PlaceModel::new(
+                        one.card.model.clone(),
+                        self.label_of(&model, &none)
                             .map_or_else(|| one.card.model.to_string(), |label| label.0),
+                    );
+                    match self.engine_of(&model) {
+                        Some(engine) => placed.with_engine(engine),
+                        None => placed,
                     }
                 })
                 .collect()
@@ -195,10 +217,10 @@ impl Engines {
                         .into_iter()
                         .filter(|one| fits(chat, &one.card))
                         .filter_map(|one| {
-                            Some(PlaceModel {
-                                id: ModelId::parse(&one.entry.id.0).ok()?,
-                                name: one.entry.label.clone(),
-                            })
+                            Some(PlaceModel::new(
+                                ModelId::parse(&one.entry.id.0).ok()?,
+                                one.entry.label.clone(),
+                            ))
                         })
                         .collect()
                 } else {

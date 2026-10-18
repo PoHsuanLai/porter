@@ -32,7 +32,7 @@ impl Engine {
     ];
 
     /// The engine a catalogue profile of `kind` starts.
-    pub(super) fn of(kind: EngineKind) -> Self {
+    pub(crate) fn of(kind: EngineKind) -> Self {
         match kind {
             EngineKind::LlamaServer => Self::LlamaCpp,
             EngineKind::Vllm => Self::Vllm,
@@ -42,7 +42,7 @@ impl Engine {
     }
 
     /// The engine's stable id on the bus.
-    pub(super) fn slug(self) -> &'static str {
+    pub(crate) fn slug(self) -> &'static str {
         match self {
             Self::LlamaCpp => "llama_cpp",
             Self::Vllm => "vllm",
@@ -53,7 +53,7 @@ impl Engine {
     }
 
     /// What the person calls it.
-    pub(super) fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Self::LlamaCpp => "llama.cpp",
             Self::Vllm => "vLLM",
