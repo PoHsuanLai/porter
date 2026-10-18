@@ -65,7 +65,9 @@ pub fn pool_path(slot: Slot) -> String {
 /// `ai.auto.pool.<slot>.helper.<id>`: the models Automatic chooses among for the slot when
 /// `chooser` asks. The assistant's is `pool_path`'s, unchanged. In `inferd.toml` a helper's key
 /// is the quoted tail (`"text.helper.<id>" = [...]` under `[ai.auto.pool]`), since a table cannot
-/// share a name with the assistant's list.
+/// share a name with the assistant's list. Only the round trip reads it until a writer of
+/// helpers' pools lands.
+#[cfg(test)]
 pub fn pool_path_of(slot: Slot, chooser: &Chooser) -> String {
     match chooser {
         Chooser::Assistant => pool_path(slot),
