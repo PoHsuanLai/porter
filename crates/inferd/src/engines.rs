@@ -28,8 +28,8 @@ use porter_core::capability::SpeechMode;
 use porter_core::consent::{Availability, Usage};
 use porter_core::{AccountId, AppId, DataClass, Locality, Need, Tier};
 use porter_infer::{
-    Asker, InferRefusal, LicenceClass, ModelCard, ModelRef, PickRefusal, PlaceRefusal, Policy, Readiness,
-    ServedBy, Slot, SpendVerdict, SwapCost, TierMap, Why,
+    Asker, InferRefusal, LicenceClass, ModelCard, ModelRef, PickRefusal, PlaceRefusal, Policy,
+    Readiness, ServedBy, Slot, SpendVerdict, SwapCost, TierMap, Why,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -500,7 +500,15 @@ impl Engines {
         unchosen: Unchosen,
         named: Option<&ModelRef>,
     ) -> Result<(Routing, Pinned), Unplaced> {
-        self.route_for(spec, role, offered, allowed, unchosen, named, &Who::default())
+        self.route_for(
+            spec,
+            role,
+            offered,
+            allowed,
+            unchosen,
+            named,
+            &Who::default(),
+        )
     }
 
     /// `route_as` for the asker `who`: Automatic chooses from that asker's pool (a helper's own,
@@ -1091,9 +1099,11 @@ impl SessionRouter {
     }
 
     fn who(&self) -> Who {
-        self.asking.as_ref().map_or_else(Who::default, |(asker, gate)| {
-            Who::of(asker, gate, &self.engines)
-        })
+        self.asking
+            .as_ref()
+            .map_or_else(Who::default, |(asker, gate)| {
+                Who::of(asker, gate, &self.engines)
+            })
     }
 
     /// What the session's app is offered: the hosted models its grants reach, when it is known.

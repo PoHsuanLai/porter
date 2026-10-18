@@ -690,7 +690,10 @@ fn automatics_pool_is_read_per_slot_and_a_row_naming_no_model_is_dropped_and_sai
         resolved.rejected,
         ["ai.auto.pool.not_a_slot", "ai.auto.pool.text"]
     );
-    assert_eq!(resolved.settings.tiers.pool(porter_infer::Slot::Text).len(), 1);
+    assert_eq!(
+        resolved.settings.tiers.pool(porter_infer::Slot::Text).len(),
+        1
+    );
 }
 
 #[test]
@@ -765,7 +768,10 @@ fn a_helper_pool_is_its_own_and_the_old_key_stays_the_assistants() {
         pool.iter().map(|model| model.model.to_string()).collect()
     };
     assert_eq!(names(tiers.pool(porter_infer::Slot::Text)), ["alpha"]);
-    assert_eq!(names(tiers.pool_of(&helper, porter_infer::Slot::Text)), ["beta"]);
+    assert_eq!(
+        names(tiers.pool_of(&helper, porter_infer::Slot::Text)),
+        ["beta"]
+    );
     let other = porter_infer::Chooser::Helper(porter_core::HelperId::parse("h-2").expect("id"));
     assert!(tiers.pool_of(&other, porter_infer::Slot::Text).is_empty());
     let bad = resolve(&config("[ai.auto.pool]\n\"text.helper.\" = []\n"));

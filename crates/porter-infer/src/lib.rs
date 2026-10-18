@@ -78,7 +78,7 @@ pub use model::{ChatSink, Model, ModelCard};
 pub use open::{LinkHello, OpenFrame, OpenOptions};
 pub use pick::{
     AutoEvict, AutoMode, AutoPolicy, Declined, DeclinedBecause, Door, EngineLoad, Pick,
-    PickCandidate, PickPolicy, PickRefusal, Picked, ShowReason, Sharing, SwapCost, Why, pick,
+    PickCandidate, PickPolicy, PickRefusal, Picked, Sharing, ShowReason, SwapCost, Why, pick,
 };
 pub use pipeline::{
     Answer, CatalogueModel, ClassSet, DescribeImages, Modality, Pipeline, PlanRules, ProviderId,

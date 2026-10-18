@@ -172,8 +172,14 @@ mod tests {
         ] {
             assert_eq!(parse_pool_key(tail), expected, "{tail}");
         }
-        assert_eq!(pool_path_of(Slot::Text, &Chooser::Assistant), "ai.auto.pool.text");
-        assert_eq!(pool_path_of(Slot::Text, &helper), "ai.auto.pool.text.helper.h.1");
+        assert_eq!(
+            pool_path_of(Slot::Text, &Chooser::Assistant),
+            "ai.auto.pool.text"
+        );
+        assert_eq!(
+            pool_path_of(Slot::Text, &helper),
+            "ai.auto.pool.text.helper.h.1"
+        );
         assert_eq!(parse_pool_path("ai.auto.pool.text.helper.h.1"), None);
     }
 }
