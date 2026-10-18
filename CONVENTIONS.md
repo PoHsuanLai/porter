@@ -13,10 +13,15 @@ What porter adds or decides differently, each with its reason:
    design system. A closed set's stable slug is its serde `snake_case` form (the same slug in
    files, on the bus and in the consent store); nothing hand-writes `slug`, `parse` or `ALL`,
    and labels a person reads belong to the UI that draws them (detent, accounts-ui).
-2. **Async seams use `-> impl Future<Output = ...> + Send`** (return-position `impl Trait`),
-   so implementations write `async fn` and every future can cross a multi-threaded runtime.
-   Closed sets of implementations are enums implementing the trait (`accountd`'s
-   `FamilyProvider`, `inferd`'s `AdapterModel`), never `dyn`.
+2. **Async in traits is native, never the `async-trait` crate.** A seam is
+   `-> impl Future<Output = ...> + Send` (return-position `impl Trait`) or a plain `async fn` in
+   its implementations, so every future can cross a multi-threaded runtime and dispatch is
+   static. Only a trait used as `dyn` (an `Arc<dyn Machines>`) returns a hand-boxed
+   `Pin<Box<dyn Future<Output = T> + Send + 'a>>` (inferd's `Boxed`). Closed sets of
+   implementations are enums implementing the trait (`accountd`'s `FamilyProvider`), not `dyn`.
+   Events of a model turn go to a `ChatSink` callback, not a `Stream`: a turn is one future that
+   pushes as it runs, dropping it cancels, and the sink ends it early with `Flow::Stop`. That is
+   deliberate.
 3. **`todo!()` bodies exist only while an interface is frozen and its behaviour is not
    built.** Each one is listed in `FINDINGS.md` with the work that removes it. This departs
    from the shared rule "no `todo!()` stub on master"; the freeze decides when it lands.

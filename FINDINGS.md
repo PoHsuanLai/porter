@@ -2723,3 +2723,27 @@ the installing; ARCHITECTURE section 11 has the trust design.
 - **What is left (WAVE2-DESIGN 2.9):** a scope name is still a claim inside one user. A program started in a scope it names `app-flatpak-<id>-<n>.scope` passes this check. Native `app-<id>-<n>.scope` stays `Proven(Unsandboxed)` for accounts, as the design decided (2.8).
 - **Interface ask, casement:** the row "a flatpak sandbox proves through its metadata" in `casement-core/src/app/key.rs` gives Flatpak metadata in `session-3.scope`; at the next porter move it needs a Flatpak scope (`.../app.slice/app-flatpak-org.gnome.Calc-1.scope`), or it reads `claimed`.
 - latchkey moves to c6cad15 (the Windows single-instance pipe is owner-only; no Linux change).
+
+## Backend idioms (2026-10-18)
+
+- One path for a model turn: `porter_infer::Model` (`chat`, `task`, `embed`, errors as
+  `TurnError`) is implemented by `porter_turns::local::LocalTurn` (this computer, an attached
+  engine, an own computer) and `inferd::cloud::turn::CloudModel`; the runner runs a chat, task or
+  embedding request through `porter_infer::answer`. inferd still owns retry (local: `retrying`
+  in `runner/placing.rs`; cloud: `Retrying<Billed<..>>`). `AdapterModel` is gone: no wire adapter
+  was ever built behind it. Computer-use steps and speech stay on `LocalTurns` and
+  `SpeechRunner` (they are not chat turns).
+- `PlaceKind` derives from `Locality` (`From<&Locality>`); `PlaceKind` stays because it is on the
+  wire for the picker and `Locality` carries the cloud region.
+- Single-impl seams in inferd, each kept or simplified:
+  - `KeyDesk`: kept; used as `Arc<dyn KeyDesk>`, which erases `SecretsDesk`'s three type parameters.
+  - `KeyHost`: kept; one implementor, but it keeps the bus objects free of `AccountService`'s six type parameters (the concrete type would carry them everywhere).
+  - `KeyRows`: kept; `Arc<dyn KeyRows>` in the settings module, so the module does not name `AccountRows<H, L>`.
+  - `Terminal`: kept; `Script` in the tests plays answers and records output, a real second behaviour.
+  - `Machines`: kept; `BusMachines` and `NoMachines` (a daemon without accountd's list), used as `dyn`.
+  - `LauncherHost`: kept; one implementor, for the same six-parameter reason as `KeyHost`.
+  - `LaunchGuard`: kept; `PinnedPrograms` is real and the tests' `Refuses` needs behaviour.
+  - `Peers`: kept; `ProcPeers`, `TablePeers` and the `Arc` forwarder are three real callers' ways to identify a peer.
+  - `Accountd`: kept; `LocalKeys` and the integration tests' `FakeAccountd`, which scripts answers.
+  - `Reports`: kept; `LocalKeys`, `NoReports` and the tests' recorder, used as `dyn`.
+  - `Shutdown`: kept; real signals and a channel the tests fire.
