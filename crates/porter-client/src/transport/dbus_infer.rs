@@ -8,10 +8,11 @@ use porter_dbus::zvariant::{OwnedValue, Value};
 use porter_dbus::{
     Details, InferenceProxy, OPTION_ASKER, OPTION_MODEL, OPTION_PLACE_MODELS, OPTION_PLACES,
     OPTION_TRACEPARENT, OPTION_USAGE, PLACE_KEY_ENGINES, PLACE_KEY_KIND, PLACE_KEY_MODELS,
-    PLACE_KEY_NAME, PLACE_KEY_PROVIDER, PLACE_KEY_READY, need_to_dbus,
+    PLACE_KEY_NAME, PLACE_KEY_PROVIDER, PLACE_KEY_READY, PLACE_KEY_TAKES, need_to_dbus,
 };
 use porter_infer::{
     OpenOptions, PlaceEngine, PlaceId, PlaceKind, PlaceModel, PlaceRow, PlaceState, Readiness,
+    Takes,
 };
 
 /// The `options` dictionary of `Open`: the reserved `traceparent` and `usage` when the caller has
@@ -152,9 +153,19 @@ fn place_row((id, details): (String, Details)) -> Result<PlaceRow, TransportErro
         .and_then(|value| value.try_clone().ok())
         .and_then(|value| Vec::<(String, String, String)>::try_from(value).ok())
         .unwrap_or_default();
+    // Absent from an older inferd and for a model whose input is not known.
+    let takes: Vec<(String, String)> = details
+        .get(PLACE_KEY_TAKES)
+        .and_then(|value| value.try_clone().ok())
+        .and_then(|value| Vec::<(String, String)>::try_from(value).ok())
+        .unwrap_or_default();
     let models = models
         .into_iter()
         .map(|(model, name)| {
+            let takes = takes
+                .iter()
+                .find(|(id, _)| *id == model)
+                .map_or(Takes::Unknown, |(_, slug)| Takes::from_slug(slug));
             let engine = engines
                 .iter()
                 .find(|(id, _, _)| *id == model)
@@ -163,7 +174,8 @@ fn place_row((id, details): (String, Details)) -> Result<PlaceRow, TransportErro
                     name: name.clone(),
                 });
             let placed =
-                PlaceModel::new(ModelId::parse(&model).map_err(|_| bad("a model id"))?, name);
+                PlaceModel::new(ModelId::parse(&model).map_err(|_| bad("a model id"))?, name)
+                    .with_takes(takes);
             Ok(match engine {
                 Some(engine) => placed.with_engine(engine),
                 None => placed,
@@ -254,5 +266,18 @@ mod tests {
             ("llama_cpp", "llama.cpp")
         );
         assert_eq!(row.models[1].engine, None);
+    }
+
+    #[test]
+    fn a_row_says_what_each_model_takes_in_and_an_older_row_says_nothing() {
+        let mut details = row_details(None);
+        let takes = vec![("qwen".to_owned(), "text_and_images".to_owned())];
+        details.insert(
+            PLACE_KEY_TAKES.to_owned(),
+            OwnedValue::try_from(Value::new(takes)).expect("takes"),
+        );
+        let row = place_row(("this-computer".to_owned(), details)).expect("row");
+        assert_eq!(row.models[0].takes, Takes::TextAndImages);
+        assert_eq!(row.models[1].takes, Takes::Unknown);
     }
 }

@@ -132,3 +132,12 @@ fn each_slot_lists_the_hosted_models_that_fit_it() {
         assert_eq!(count(none), 0, "{none:?}");
     }
 }
+
+#[test]
+fn each_hosted_model_says_what_it_takes_in_from_its_entry() {
+    let listed = choices(&catalogue(), &[], Slot::Text);
+    assert!(
+        listed.iter().all(|c| c.takes == Takes::TextAndImages),
+        "the fixtures read text and images: {listed:?}"
+    );
+}

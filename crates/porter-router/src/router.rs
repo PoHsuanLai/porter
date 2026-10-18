@@ -17,9 +17,10 @@ use porter_core::{Capability, DataClass, GrantId, Locality, Need, Tier};
 use porter_core::{Match, matches};
 use porter_core::{Offer as CoreOffer, capability::SpeechMode};
 use porter_infer::{
-    AutoPolicy, Chosen, InferRefusal, LicenceClass, ModelCard, ModelRef, PickCandidate, PickPolicy,
-    PickRefusal, Policy, ProviderId, Readiness, RouteAsk, RouteCandidate, Sharing, Slot,
-    SpendVerdict, SwapCost, TierMap, Why, default_choice, pick, tier_choice,
+    AutoPolicy, Chosen, Declined, DeclinedBecause, InferRefusal, LicenceClass, ModelCard, ModelRef,
+    Pick, PickCandidate, PickPolicy, PickRefusal, Policy, ProviderId, Readiness, RouteAsk,
+    RouteCandidate, Sharing, Sight, Slot, SpendVerdict, SwapCost, Takes, TierMap, Why,
+    default_choice, pick, tier_choice,
 };
 
 /// One model the router may pick, and how soon it can answer.
@@ -181,6 +182,7 @@ pub fn choose(
 ) -> Result<Decided, PickRefusal> {
     if matches!(need, Need::ComputerUse(_)) {
         check_class(class).map_err(plain)?;
+        refuse_blind_pick(tiers, tier, listed)?;
     }
     let kind = slot_of_need(need).ok_or(plain(InferRefusal::Unsupported))?;
     if let Need::Llm(_) = need {
@@ -229,6 +231,29 @@ pub fn choose(
         readiness: picked.readiness,
         why: picked.why,
     })
+}
+
+/// Computer use works from screenshots: a model the person named for it that cannot read images
+/// is refused by name (`DeclinedBecause::CannotSeeScreen`), never replaced by another.
+fn refuse_blind_pick(tiers: &TierMap, tier: Tier, listed: &[Listed]) -> Result<(), PickRefusal> {
+    let Some(Pick::Named(model)) = tiers.pick_serving(Slot::ComputerUse, tier) else {
+        return Ok(());
+    };
+    let blind = listed.iter().any(|one| {
+        one.card.account == model.account
+            && one.card.model == model.model
+            && Takes::of(&one.card.capabilities).sight() == Sight::Blind
+    });
+    match blind {
+        true => Err(PickRefusal {
+            refusal: InferRefusal::Unavailable,
+            declined: Some(Declined {
+                model,
+                because: DeclinedBecause::CannotSeeScreen,
+            }),
+        }),
+        false => Ok(()),
+    }
 }
 
 /// What a language request does when the person has left the text slot unset for its tier.

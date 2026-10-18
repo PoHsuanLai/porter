@@ -9,6 +9,7 @@
 //!   by the engine's `computer` key;
 //! - `account:<account id>`, a cloud AI account accountd holds.
 
+use crate::takes::Takes;
 use porter_core::{AccountId, CoreError, Locality, is_id};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -260,6 +261,10 @@ pub struct PlaceModel {
     /// for a cloud model, a model on another computer, and in rows written before the field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub engine: Option<PlaceEngine>,
+    /// What it takes in (text, images, sound). Unknown in rows written before the field and for a
+    /// model whose capabilities say nothing.
+    #[serde(default, skip_serializing_if = "Takes::is_unknown")]
+    pub takes: Takes,
 }
 
 impl PlaceModel {
@@ -269,7 +274,14 @@ impl PlaceModel {
             id,
             name,
             engine: None,
+            takes: Takes::Unknown,
         }
+    }
+
+    /// The same model, taking in `takes`.
+    pub fn with_takes(mut self, takes: Takes) -> Self {
+        self.takes = takes;
+        self
     }
 
     /// The same model, run by `engine`.
@@ -476,6 +488,24 @@ mod tests {
             serde_json::from_str::<PlaceModel>(&json).expect("back"),
             run
         );
+    }
+
+    #[test]
+    fn a_model_row_says_what_it_takes_in_only_when_that_is_known() {
+        let id = porter_core::ModelId::parse("qwen").expect("id");
+        let plain = PlaceModel::new(id, "Qwen".to_owned()).with_takes(Takes::TextAndImages);
+        let json = serde_json::to_string(&plain).expect("json");
+        assert_eq!(
+            json,
+            r#"{"id":"qwen","name":"Qwen","takes":"text_and_images"}"#
+        );
+        assert_eq!(
+            serde_json::from_str::<PlaceModel>(&json).expect("back"),
+            plain
+        );
+        let old = r#"{"id":"qwen","name":"Qwen"}"#;
+        let old = serde_json::from_str::<PlaceModel>(old).expect("old");
+        assert_eq!(old.takes, Takes::Unknown);
     }
 
     #[test]

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Model lists say what a model takes in
+
+- Each model row of `Inference1.Places` carries `takes` (text only, text and images, text and
+  sound, or all three), worked out from the model's capabilities; a row with nothing to say leaves
+  it out and an older reader ignores it. Hosted picker choices carry the same fact.
+- A model named for computer use that cannot read images is refused by name, with the new
+  `DeclinedBecause::CannotSeeScreen`; `porter_infer::cannot_see_screen` words it.
+
 ### Automatic checks that a model can use apps
 
 - Before Automatic gives a request that offers tools to a model on this computer, inferd runs one

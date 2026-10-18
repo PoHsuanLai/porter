@@ -11,6 +11,7 @@ use porter_core::need::LlmNeed;
 use porter_core::{AccountState, ModelId, Tokens};
 use porter_infer::{
     ComputerName, PlaceEngine, PlaceId, PlaceKind, PlaceModel, PlaceRow, PlaceState, PlaceTarget,
+    Takes,
 };
 use std::collections::BTreeMap;
 
@@ -145,7 +146,8 @@ impl Engines {
                         one.card.model.clone(),
                         self.label_of(&model, &none)
                             .map_or_else(|| one.card.model.to_string(), |label| label.0),
-                    );
+                    )
+                    .with_takes(Takes::of(&one.card.capabilities));
                     match self.engine_of(&model) {
                         Some(engine) => placed.with_engine(engine),
                         None => placed,
@@ -217,10 +219,13 @@ impl Engines {
                         .into_iter()
                         .filter(|one| fits(chat, &one.card))
                         .filter_map(|one| {
-                            Some(PlaceModel::new(
-                                ModelId::parse(&one.entry.id.0).ok()?,
-                                one.entry.label.clone(),
-                            ))
+                            Some(
+                                PlaceModel::new(
+                                    ModelId::parse(&one.entry.id.0).ok()?,
+                                    one.entry.label.clone(),
+                                )
+                                .with_takes(Takes::of(&one.card.capabilities)),
+                            )
                         })
                         .collect()
                 } else {

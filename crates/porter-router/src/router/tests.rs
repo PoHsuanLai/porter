@@ -456,3 +456,37 @@ fn a_named_model_that_cannot_serve_refuses_naming_it_and_no_other_answers() {
         })
     );
 }
+
+#[test]
+fn a_text_only_model_named_for_computer_use_is_refused_by_name() {
+    let models = [
+        listed(local("blind"), Readiness::Ready),
+        listed(
+            card("local", "sighted", Locality::OnDevice, cua_cap()),
+            Readiness::Ready,
+        ),
+    ];
+    let tiers = TierMap::default().naming(Slot::ComputerUse, named("blind"));
+    let ask = |tiers: &TierMap| {
+        choose(
+            &cua_need(),
+            DataClass::Screen,
+            Tier::Balanced,
+            &models,
+            &Policy::proposed(),
+            tiers,
+            AutoPolicy::default(),
+        )
+    };
+    let err = ask(&tiers).expect_err("a model that cannot see the screen");
+    assert_eq!(
+        err.declined,
+        Some(Declined {
+            model: named("blind"),
+            because: DeclinedBecause::CannotSeeScreen,
+        })
+    );
+    let served = ask(&TierMap::default().naming(Slot::ComputerUse, named("sighted")))
+        .expect("a model that reads images is served");
+    assert_eq!(served.chosen.model.as_str(), "sighted");
+}

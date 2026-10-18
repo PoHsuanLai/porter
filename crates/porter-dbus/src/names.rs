@@ -171,6 +171,10 @@ pub const PLACE_KEY_READY: &str = "ready";
 /// See [`PLACE_KEY_KIND`]. `a(sss)`: for each model of `models` whose engine is known, its id, the
 /// engine's id and the engine's name; a model with no entry has no known engine.
 pub const PLACE_KEY_ENGINES: &str = "engines";
+/// See [`PLACE_KEY_KIND`]. `a(ss)`: for each model of `models` whose input is known, its id and
+/// what it takes in (`text_only`, `text_and_images`, `text_and_audio`, `text_images_and_audio`);
+/// a model with no entry has no known input, and a name a reader does not know reads as unknown.
+pub const PLACE_KEY_TAKES: &str = "takes";
 
 /// The object path of one account (`org.quire.Accounts1.Account`).
 pub fn account_path(id: &AccountId) -> String {

@@ -9,6 +9,7 @@ use super::accountd::AccountVerdict;
 use super::models::{WIRES, known_providers, provider_of};
 use crate::engines::CLOUD_ACCOUNT;
 use model_catalog::{ModelEntry, reachable, slot_members};
+use porter_infer::Takes;
 
 /// Why a model nobody can reach yet cannot be picked (the schema's `unavailable` reason; the
 /// Settings app shows it and greys the choice).
@@ -27,6 +28,8 @@ pub struct Choice {
     pub available: Availability,
     /// A short plain line under the name, when the model has a catch a person should know.
     pub hint: Option<&'static str>,
+    /// What the model takes in, from its catalogue entry; unknown when the entry says nothing.
+    pub takes: Takes,
 }
 
 /// Said under a model whose catalogue label marks the tier that trades prompts for a discount.
@@ -123,6 +126,7 @@ pub fn choices(
             company: company.clone(),
             available: reach,
             hint: hint_of(&entry.label),
+            takes: Takes::of(&crate::catalog::capabilities_of(entry)),
         };
         match grouped.iter_mut().find(|(name, _)| *name == company) {
             Some((_, group)) => group.push(choice),

@@ -292,6 +292,9 @@ pub enum DeclinedBecause {
     /// The person chose a coding agent, not a model, for this kind of work: no model answers
     /// here, and the app hands the work to the agent. Not a failure.
     AgentChosen,
+    /// The work is done from screenshots and the model cannot read images. Say it with
+    /// [`crate::cannot_see_screen`].
+    CannotSeeScreen,
 }
 
 /// A named model that cannot serve, and why. Shown to the person; never answered by another model.

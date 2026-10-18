@@ -32,7 +32,7 @@ use porter_dbus::{
     CANDIDATE_KEY_MODELS, CANDIDATE_KEY_NAME, CANDIDATE_KEY_NEEDS_APPROVAL, Details,
     GUEST_KEY_NAME, GUEST_KEY_SINCE, GUEST_KEY_STATE, INFERENCE_BUS, INFERENCE_PATH, NeedArg,
     PLACE_KEY_ENGINES, PLACE_KEY_KIND, PLACE_KEY_MODELS, PLACE_KEY_NAME, PLACE_KEY_PROVIDER,
-    PLACE_KEY_READY, need_from_dbus,
+    PLACE_KEY_READY, PLACE_KEY_TAKES, need_from_dbus,
 };
 use porter_infer::{InferRefusal, PlaceId, PlaceRow, PlaceState};
 use serde::Serialize;
@@ -995,6 +995,12 @@ fn place_row(row: PlaceRow) -> (String, Details) {
             Some((model.id.to_string(), engine.id.clone(), engine.name.clone()))
         })
         .collect();
+    let takes: Vec<(String, String)> = row
+        .models
+        .iter()
+        .filter(|model| !model.takes.is_unknown())
+        .map(|model| (model.id.to_string(), model.takes.slug().to_owned()))
+        .collect();
     let models: Vec<(String, String)> = row
         .models
         .into_iter()
@@ -1017,6 +1023,12 @@ fn place_row(row: PlaceRow) -> (String, Details) {
             PLACE_KEY_ENGINES,
             (!engines.is_empty())
                 .then(|| OwnedValue::try_from(Value::new(engines)).ok())
+                .flatten(),
+        ),
+        (
+            PLACE_KEY_TAKES,
+            (!takes.is_empty())
+                .then(|| OwnedValue::try_from(Value::new(takes)).ok())
                 .flatten(),
         ),
     ];

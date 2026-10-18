@@ -13,7 +13,7 @@ use inferd::attached::{Attached, Place, Reach};
 use inferd::peers::{Caller, Role};
 use porter_client::{ClientError, TransportError};
 use porter_core::{AppId, AppName, DataClass, Isolation, ModelId, Tier};
-use porter_infer::{ComputerName, PlaceKind, PlaceRow, PlaceState};
+use porter_infer::{ComputerName, PlaceKind, PlaceRow, PlaceState, Takes};
 
 fn app(name: &str) -> AppId {
     AppId {
@@ -102,6 +102,7 @@ async fn settings_lists_this_computer_a_named_computer_and_the_cloud_accounts() 
     assert_eq!(here.state, PlaceState::Ready);
     assert_eq!(models(here), vec!["tiny-chat"]);
     assert_eq!(here.models[0].name, "Tiny chat");
+    assert_eq!(here.models[0].takes, Takes::TextAndImages);
     let engine = here.models[0]
         .engine
         .as_ref()
@@ -125,6 +126,7 @@ async fn settings_lists_this_computer_a_named_computer_and_the_cloud_accounts() 
     assert_eq!(router.state, PlaceState::Ready);
     assert_eq!(models(router), vec!["claude-opus-5.5", "gpt-6-luna"]);
     assert_eq!(router.models[0].name, "Claude Opus 5.5");
+    assert_eq!(router.models[0].takes, Takes::TextAndImages);
 
     // An account that must be signed in again is a place, but serves nothing now.
     let stale = row(&rows, "account:openai");
