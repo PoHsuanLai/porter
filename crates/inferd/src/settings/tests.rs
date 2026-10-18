@@ -690,7 +690,7 @@ fn automatics_pool_is_read_per_slot_and_a_row_naming_no_model_is_dropped_and_sai
         resolved.rejected,
         ["ai.auto.pool.not_a_slot", "ai.auto.pool.text"]
     );
-    assert_eq!(resolved.settings.tiers.pool(Slot::Text).len(), 1);
+    assert_eq!(resolved.settings.tiers.pool(porter_infer::Slot::Text).len(), 1);
 }
 
 #[test]
@@ -754,4 +754,20 @@ fn a_file_at_its_old_place_is_read_and_the_first_change_moves_it() {
     let moved: toml::Table = std::fs::read_to_string(&new).unwrap().parse().unwrap();
     assert_eq!(moved["ai"]["auto"]["show_reason"].as_str(), Some("off"));
     assert_eq!(std::fs::read_to_string(&old).unwrap(), before);
+}
+
+#[test]
+fn a_helper_pool_is_its_own_and_the_old_key_stays_the_assistants() {
+    let text = "[ai.auto.pool]\ntext = [\"local/alpha\"]\n\"text.helper.h-1\" = [\"local/beta\"]\n";
+    let tiers = settings(text).tiers;
+    let helper = porter_infer::Chooser::Helper(porter_core::HelperId::parse("h-1").expect("id"));
+    let names = |pool: &[porter_infer::ModelRef]| -> Vec<String> {
+        pool.iter().map(|model| model.model.to_string()).collect()
+    };
+    assert_eq!(names(tiers.pool(porter_infer::Slot::Text)), ["alpha"]);
+    assert_eq!(names(tiers.pool_of(&helper, porter_infer::Slot::Text)), ["beta"]);
+    let other = porter_infer::Chooser::Helper(porter_core::HelperId::parse("h-2").expect("id"));
+    assert!(tiers.pool_of(&other, porter_infer::Slot::Text).is_empty());
+    let bad = resolve(&config("[ai.auto.pool]\n\"text.helper.\" = []\n"));
+    assert_eq!(bad.rejected, vec!["ai.auto.pool.text.helper.".to_owned()]);
 }

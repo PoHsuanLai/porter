@@ -380,9 +380,10 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         let report = UnixStream::from_std(ours.try_clone().map_err(failed)?).map_err(failed)?;
         let stream = UnixStream::from_std(ours).map_err(failed)?;
         let pin = Pin::new();
+        let asker = own.asker();
         let turns = Turns::new(pin.clone(), self.engines.supervised().clone(), spec.tier)
             .limited(self.limits)
-            .admitted(self.gate.clone(), own.asker(), self.engines.clone())
+            .admitted(self.gate.clone(), asker.clone(), self.engines.clone())
             .hearing(Hearing {
                 engines: self.engines.clone(),
                 app: Some(caller.app.clone()),
@@ -391,7 +392,10 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
                 named: own.model.clone(),
             });
         let seams = Seams {
-            router: self.engines.router_named(pin, &caller, allowed, own.model),
+            router: self
+                .engines
+                .router_named(pin, &caller, allowed, own.model)
+                .asked_by(asker, self.gate.clone()),
             engines: self.engines.clone(),
             runner: match self.engines.cloud() {
                 Some(cloud) => turns.hosted(cloud.clone()),

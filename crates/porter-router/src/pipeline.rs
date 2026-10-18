@@ -84,6 +84,7 @@ pub fn catalogue_of(listed: &[Listed], need: &Need) -> Vec<CatalogueModel> {
                     readiness: one.readiness,
                     swap: one.swap.clone(),
                     licence: one.licence,
+                    sharing: one.sharing,
                     catalogue_index: u32::try_from(index).unwrap_or(u32::MAX),
                 },
                 takes,

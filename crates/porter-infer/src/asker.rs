@@ -14,6 +14,29 @@ pub enum Asker {
     Helper(HelperId),
 }
 
+/// Whose Automatic pool a pick reads (`ai.auto.pool.<slot>` for the assistant,
+/// `ai.auto.pool.<slot>.helper.<id>` for a helper). A helper never reads the assistant's pool: a
+/// helper without a pool of its own has nothing to choose among.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Chooser {
+    /// The assistant, and the person's own turns.
+    #[default]
+    Assistant,
+    /// One helper.
+    Helper(HelperId),
+}
+
+impl Asker {
+    /// The pool owner this asker chooses with: the person's turn is the assistant's.
+    pub fn chooser(&self) -> Chooser {
+        match self {
+            Asker::Person => Chooser::Assistant,
+            Asker::Helper(helper) => Chooser::Helper(helper.clone()),
+        }
+    }
+}
+
 /// The word that starts a helper's text form.
 const HELPER_PREFIX: &str = "helper:";
 

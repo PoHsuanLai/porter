@@ -43,6 +43,7 @@ pub(super) fn local(
             readiness: Readiness::Ready,
             swap: SwapCost::Resident,
             licence: LicenceClass::Open,
+            sharing: crate::pick::Sharing::Alone,
             catalogue_index: 0,
         },
         takes,

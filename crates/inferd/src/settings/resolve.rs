@@ -1,6 +1,6 @@
 //! The file's `[ai]` table (laid over the old `[policy]` and `[tiers]` tables) as [`Settings`].
 
-use super::keys::{from_slug, slug_of};
+use super::keys::{from_slug, parse_pool_key, slug_of};
 use super::{
     AGENT_ENDPOINT, AgentEndpoint, DESCRIBE_IMAGES, MY_NETWORK, MyNetwork, TAILNET_SERVE,
     TailnetServe,
@@ -117,9 +117,9 @@ fn tiers_of(ai: &AiConfig, mut tiers: TierMap, rejected: &mut Vec<String>) -> Ti
             _ => {}
         }
     }
-    for (slot_slug, texts) in &ai.auto.pool {
-        let path = format!("ai.auto.pool.{slot_slug}");
-        let Some(kind) = Slot::from_slug(slot_slug) else {
+    for (key, texts) in &ai.auto.pool {
+        let path = format!("ai.auto.pool.{key}");
+        let Some((kind, chooser)) = parse_pool_key(key) else {
             rejected.push(path);
             continue;
         };
@@ -134,8 +134,14 @@ fn tiers_of(ai: &AiConfig, mut tiers: TierMap, rejected: &mut Vec<String>) -> Ti
         if models.len() != texts.len() {
             rejected.push(path);
         }
-        tiers.pools.retain(|row| row.kind != kind);
-        tiers.pools.push(PoolRow { kind, models });
+        tiers
+            .pools
+            .retain(|row| row.kind != kind || row.chooser != chooser);
+        tiers.pools.push(PoolRow {
+            kind,
+            models,
+            chooser,
+        });
     }
     tiers
 }
