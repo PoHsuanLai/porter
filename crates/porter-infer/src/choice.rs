@@ -885,8 +885,8 @@ mod tests {
             models: vec![b.clone()],
             chooser: helper.clone(),
         });
-        assert_eq!(map.pool(Slot::Text), [a.clone()]);
-        assert_eq!(map.pool_of(&helper, Slot::Text), [b.clone()]);
+        assert_eq!(map.pool(Slot::Text), std::slice::from_ref(&a));
+        assert_eq!(map.pool_of(&helper, Slot::Text), std::slice::from_ref(&b));
         let pool_in = |view: &TierMap| match view.pick(Slot::Text, Tier::Balanced) {
             Some(Pick::Auto { pool, .. }) => pool,
             other => panic!("auto, got {other:?}"),

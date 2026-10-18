@@ -1,7 +1,6 @@
 //! Who a route is for: whose Automatic pool it reads, and which models other helpers are using.
 
 use super::Engines;
-use crate::local::LocalModel;
 use crate::router::Listed;
 use crate::router::placed::Placed;
 use crate::seats::Gate;
@@ -68,7 +67,7 @@ impl Engines {
                     .local
                     .iter()
                     .find(|model| model.spec.id == *id)
-                    .map(LocalModel::model_ref)
+                    .map(|model| model.model_ref())
             })
             .collect()
     }

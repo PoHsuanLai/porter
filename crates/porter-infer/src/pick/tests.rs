@@ -517,5 +517,10 @@ fn sharing_is_deterministic_whatever_the_slice_order() {
     let (first, second) = (auto_of(&forward), auto_of(&backward));
     assert_eq!(first, second);
     let picked = first.expect("served");
-    assert_eq!((model_name(&picked).as_str(), picked.why), ("b", Why::SharedWithHelper));
+    // b beats a by sharing and c (shared too) by the catalogue: the reason is what set it apart
+    // from the runner-up.
+    assert_eq!(
+        (model_name(&picked).as_str(), picked.why),
+        ("b", Why::CatalogueOrder)
+    );
 }
