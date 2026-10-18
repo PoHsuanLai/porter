@@ -97,7 +97,7 @@ root, or its graph holds two copies of `ds-*` (the git one through porter, its p
 
 External boundaries: every crate but `porter-dbus` and the daemons never reaches `zbus`,
 `zvariant`, `tokio`, `reqwest`, `hyper`, `ureq`, `oo7`, `keyring`, `secret-service`,
-`interprocess` or `latchkey` (default features); `porter-core` also never reaches `toml`.
+`interprocess` or `latchkey` (default features); `porter-core` names no `toml` itself and reaches it only through `peephole-core` (the caller table's parser, linked for the re-exported `CgroupPath`).
 `porter-http` reaches `hyper` and `tokio` only through its feature `hyper` (its feature `stream`
 reaches none: check-boundary checks it), `porter-proxy` and
 `porter-oauth` reach `tokio` only through their feature `io`. `porter-families` reaches none with
