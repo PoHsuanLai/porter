@@ -36,12 +36,29 @@ pub(super) fn cand(name: &str, index: u32, readiness: Readiness, swap: SwapCost)
         readiness,
         swap,
         licence: LicenceClass::Open,
+        sharing: Sharing::Alone,
         catalogue_index: index,
     }
 }
 
 fn warm(name: &str, index: u32) -> PickCandidate {
     cand(name, index, Readiness::Ready, SwapCost::Resident)
+}
+
+fn shared(name: &str, index: u32) -> PickCandidate {
+    PickCandidate {
+        sharing: Sharing::HeldByHelper,
+        ..warm(name, index)
+    }
+}
+
+impl PickCandidate {
+    fn shared(self) -> Self {
+        Self {
+            sharing: Sharing::HeldByHelper,
+            ..self
+        }
+    }
 }
 
 fn cold(name: &str, index: u32, secs: u16) -> PickCandidate {
@@ -165,6 +182,16 @@ fn automatic_table() {
             "a model that fits beside beats one that needs a swap",
             vec![evicting("a", 0, "x", EngineLoad::Idle), cold("b", 1, 300)],
             Ok(("b", Why::Smallest)),
+        ),
+        case(
+            "a model another helper uses breaks a tie the catalogue listed the other way",
+            vec![warm("a", 0), shared("b", 1)],
+            Ok(("b", Why::SharedWithHelper)),
+        ),
+        case(
+            "sharing never outranks a loaded model",
+            vec![cold("a", 0, 5).shared(), warm("b", 1)],
+            Ok(("b", Why::Warm)),
         ),
         case(
             "the catalogue order breaks a full tie",
@@ -481,4 +508,14 @@ fn no_why_is_a_ranking_word() {
             assert!(!text.contains(word), "{text}");
         }
     }
+}
+
+#[test]
+fn sharing_is_deterministic_whatever_the_slice_order() {
+    let forward = [warm("a", 0), shared("b", 1), shared("c", 2)];
+    let backward = [forward[2].clone(), forward[1].clone(), forward[0].clone()];
+    let (first, second) = (auto_of(&forward), auto_of(&backward));
+    assert_eq!(first, second);
+    let picked = first.expect("served");
+    assert_eq!((model_name(&picked).as_str(), picked.why), ("b", Why::SharedWithHelper));
 }

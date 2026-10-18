@@ -181,6 +181,23 @@ impl Gate {
         Count(u32::try_from(helpers.len()).unwrap_or(u32::MAX))
     }
 
+    /// The engine instances a helper other than `asker` has a request on now, seated or waiting.
+    pub fn engines_of_other_helpers(&self, asker: &Asker) -> Vec<EngineId> {
+        let inner = self.locked();
+        let other_helper = |ticket: &Ticket| {
+            inner
+                .by
+                .get(ticket)
+                .is_some_and(|by| matches!(by, Asker::Helper(_)) && by != asker)
+        };
+        inner
+            .lanes
+            .iter()
+            .filter(|(_, lane)| inner.admission.tickets(**lane).iter().any(other_helper))
+            .map(|(engine, _)| engine.clone())
+            .collect()
+    }
+
     /// How many helpers have requests anywhere, and how many requests wait anywhere.
     pub fn totals(&self) -> (Count, Count) {
         let inner = self.locked();

@@ -302,6 +302,7 @@ fn picker_data_round_trips_with_plain_slugs() {
         autos: vec![],
         pools: vec![porter_infer::PoolRow {
             kind: Slot::Text,
+            chooser: porter_infer::Chooser::Assistant,
             models: vec![model.clone()],
         }],
     };

@@ -14,6 +14,7 @@ use crate::probed::{ProbedBook, Standing};
 use crate::router::placed::{Allowed, Placed, Rules, Serving, Unplaced, choose_in};
 use crate::router::{Listed, Unchosen, choose, chosen_for};
 use crate::runner::{Pin, Pinned};
+use crate::seats::Gate;
 use crate::serve::{EngineFailed, EngineHost};
 use crate::session::{RouteDecision, Routing, SessionSpec};
 use crate::settings::{Live, Settings};
@@ -27,7 +28,7 @@ use porter_core::capability::SpeechMode;
 use porter_core::consent::{Availability, Usage};
 use porter_core::{AccountId, AppId, DataClass, Locality, Need, Tier};
 use porter_infer::{
-    InferRefusal, LicenceClass, ModelCard, ModelRef, PickRefusal, PlaceRefusal, Policy, Readiness,
+    Asker, InferRefusal, LicenceClass, ModelCard, ModelRef, PickRefusal, PlaceRefusal, Policy, Readiness,
     ServedBy, Slot, SpendVerdict, SwapCost, TierMap, Why,
 };
 use std::sync::Arc;
@@ -499,11 +500,27 @@ impl Engines {
         unchosen: Unchosen,
         named: Option<&ModelRef>,
     ) -> Result<(Routing, Pinned), Unplaced> {
+        self.route_for(spec, role, offered, allowed, unchosen, named, &Who::default())
+    }
+
+    /// `route_as` for the asker `who`: Automatic chooses from that asker's pool (a helper's own,
+    /// never the assistant's) and prefers a model another helper already uses.
+    #[allow(clippy::too_many_arguments)]
+    pub fn route_for(
+        &self,
+        spec: &SessionSpec,
+        role: Role,
+        offered: &Offered,
+        allowed: Option<&Allowed>,
+        unchosen: Unchosen,
+        named: Option<&ModelRef>,
+        who: &Who,
+    ) -> Result<(Routing, Pinned), Unplaced> {
         if matches!(spec.need, Need::ComputerUse(_)) && role != Role::Cua {
             return Err(Unplaced::Other(InferRefusal::Denied.into()));
         }
         let settings = self.settings();
-        let tiers = named_tiers(&settings.tiers, &spec.need, named);
+        let tiers = named_tiers(&settings.tiers.for_chooser(&who.chooser), &spec.need, named);
         let tiers = through_grants(&tiers, offered);
         // A request that offers tools is not given to a model of Automatic's pool that failed to
         // make a valid call; when none of the pool can, it is refused with that reason. A named
@@ -522,7 +539,7 @@ impl Engines {
                         &spec.need,
                         spec.class,
                         spec.tier,
-                        &self.listed_for(&spec.need, offered),
+                        &who.mark(self.listed_for(&spec.need, offered)),
                         &policy,
                         &tiers,
                         settings.auto,
@@ -534,7 +551,7 @@ impl Engines {
                     &spec.need,
                     spec.class,
                     spec.tier,
-                    &self.placed(&spec.need, offered),
+                    &who.mark_placed(self.placed(&spec.need, offered)),
                     allowed,
                     Rules {
                         policy: &policy,
@@ -891,6 +908,7 @@ impl Engines {
             app: None,
             allowed: None,
             named: None,
+            asking: None,
         }
     }
 
@@ -1058,9 +1076,26 @@ pub struct SessionRouter {
     app: Option<AppId>,
     allowed: Option<Allowed>,
     named: Option<ModelRef>,
+    /// The session's asker and the gate that shows what other helpers use; none routes for the
+    /// person with nothing shared.
+    asking: Option<(Asker, Gate)>,
 }
 
 impl SessionRouter {
+    /// The same router for a session of `asker`, which sees the helpers' seats through `gate`.
+    pub fn asked_by(self, asker: Asker, gate: Gate) -> Self {
+        Self {
+            asking: Some((asker, gate)),
+            ..self
+        }
+    }
+
+    fn who(&self) -> Who {
+        self.asking.as_ref().map_or_else(Who::default, |(asker, gate)| {
+            Who::of(asker, gate, &self.engines)
+        })
+    }
+
     /// What the session's app is offered: the hosted models its grants reach, when it is known.
     async fn offered(&self, spec: &SessionSpec) -> Offered {
         match &self.app {
@@ -1086,13 +1121,14 @@ impl crate::serve::Router for SessionRouter {
         self.engines.prove_tools(spec, &offered).await;
         let (routing, pinned) = self
             .engines
-            .route_as(
+            .route_for(
                 spec,
                 self.role,
                 &offered,
                 self.allowed.as_ref(),
                 Unchosen::Refuse,
                 self.named.as_ref(),
+                &self.who(),
             )
             .map_err(Unplaced::into_pick)?;
         self.pin.set(pinned);
@@ -1135,6 +1171,7 @@ pub(crate) fn through_grants(tiers: &TierMap, offered: &Offered) -> TierMap {
             .iter()
             .map(|row| porter_infer::PoolRow {
                 kind: row.kind,
+                chooser: row.chooser.clone(),
                 models: row.models.iter().map(resolve).collect(),
             })
             .collect(),
@@ -1144,6 +1181,9 @@ pub(crate) fn through_grants(tiers: &TierMap, offered: &Offered) -> TierMap {
 mod hardware;
 mod places;
 mod proof;
+mod who;
+
+pub use who::Who;
 
 #[cfg(test)]
 mod tests;

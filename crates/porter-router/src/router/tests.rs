@@ -332,6 +332,7 @@ fn auto_map() -> TierMap {
         }],
         pools: vec![porter_infer::PoolRow {
             kind: Slot::Text,
+            chooser: porter_infer::Chooser::Assistant,
             models: ["a", "alpha", "beta"]
                 .map(named)
                 .into_iter()

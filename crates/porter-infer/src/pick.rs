@@ -11,7 +11,8 @@
 //!   and says why ([`Declined`]); there is no fallback.
 //! * Automatic orders what is left by: nearer first (this computer, the network, the cloud, so it
 //!   chooses the cloud only when `admit` allows it and nothing nearer can serve), then models
-//!   already loaded, then the cheaper swap, then the lower price, then the catalogue's order. It
+//!   already loaded, then the cheaper swap, then the lower price, then a model another helper is
+//!   already using (fewer swaps), then the catalogue's order. It
 //!   may unload one idle engine to load another, only when `ai.auto.allow_evict` says
 //!   [`AutoEvict::IdleOnly`]; an engine in a turn is never a victim.
 //! * Every answer carries a [`Why`], a closed enum of facts, never a judgement.
@@ -171,6 +172,16 @@ pub enum SwapCost {
     NoRoom,
 }
 
+/// Whether a model is in use by another helper now, from what the daemon tracks per session.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub enum Sharing {
+    /// No other helper uses it.
+    #[default]
+    Alone,
+    /// Another helper uses it: choosing it loads nothing more.
+    HeldByHelper,
+}
+
 /// One model the pick may land on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PickCandidate {
@@ -182,6 +193,8 @@ pub struct PickCandidate {
     pub swap: SwapCost,
     /// How it may be used; a non-commercial model is never chosen by Automatic.
     pub licence: LicenceClass,
+    /// Whether another helper is using it now.
+    pub sharing: Sharing,
     /// Its place in the catalogue's directory order: the last tie-break, so the answer does not
     /// depend on the order of the slice.
     pub catalogue_index: u32,
@@ -215,6 +228,8 @@ pub enum Why {
     LeastCost,
     /// Nothing told them apart; the catalogue lists it first.
     CatalogueOrder,
+    /// Another helper is already using it, so it asks for nothing more to be loaded.
+    SharedWithHelper,
     /// The pick named another model that could not serve and the person allowed a fallback.
     FallbackFrom {
         /// The model that could not serve.
@@ -424,7 +439,7 @@ fn eligible(candidate: &PickCandidate, rules: PickPolicy<'_>) -> bool {
 
 /// The ordering key of Automatic: nearer, then loaded, then the cheaper swap, then the lower
 /// price, then the catalogue's order. Smaller is first.
-type Key = (u8, u8, (u8, u16), (u8, u64), u32);
+type Key = (u8, u8, (u8, u16), (u8, u64), u8, u32);
 
 fn key(candidate: &PickCandidate) -> Key {
     let warmth = match candidate.readiness {
@@ -448,6 +463,10 @@ fn key(candidate: &PickCandidate) -> Key {
         warmth,
         swap,
         price_rank(&candidate.route.billing),
+        match candidate.sharing {
+            Sharing::HeldByHelper => 0,
+            Sharing::Alone => 1,
+        },
         candidate.catalogue_index,
     )
 }
@@ -493,6 +512,8 @@ fn why_auto(first: &PickCandidate, runner_up: Option<&PickCandidate>) -> Why {
         Why::Smallest
     } else if a.3 != b.3 {
         Why::LeastCost
+    } else if a.4 != b.4 {
+        Why::SharedWithHelper
     } else {
         Why::CatalogueOrder
     }

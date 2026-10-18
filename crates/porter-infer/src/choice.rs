@@ -2,6 +2,7 @@
 //! and the plain list a settings page draws. The list ranks nothing: no model is marked best or
 //! recommended, and a model the user mapped to a tier is only marked as theirs.
 
+use crate::asker::Chooser;
 use crate::error::InferRefusal;
 use crate::pick::{AutoMode, Pick};
 use crate::readiness::Readiness;
@@ -104,6 +105,9 @@ pub struct PoolRow {
     pub kind: Slot,
     /// The models, in the person's order (the order ranks nothing).
     pub models: Vec<ModelRef>,
+    /// Whose pool it is; a file written before helpers had pools reads as the assistant's.
+    #[serde(default)]
+    pub chooser: Chooser,
 }
 
 /// Every choice the user made: settings `ai.model.<kind>.<tier>` = `<account>/<model>` or
@@ -133,7 +137,11 @@ impl TierMap {
                     mode: AutoMode::default(),
                 })
                 .collect(),
-            pools: vec![PoolRow { kind, models: pool }],
+            pools: vec![PoolRow {
+                kind,
+                models: pool,
+                chooser: Chooser::Assistant,
+            }],
         }
     }
 
@@ -166,12 +174,37 @@ impl TierMap {
         }
     }
 
-    /// The pool Automatic chooses among for `kind`; empty when the person listed none.
+    /// The assistant's pool Automatic chooses among for `kind`; empty when the person listed none.
     pub fn pool(&self, kind: Slot) -> &[ModelRef] {
+        self.pool_of(&Chooser::Assistant, kind)
+    }
+
+    /// The pool `chooser` has for `kind`; empty when it has none. A helper's empty pool is not
+    /// filled from the assistant's.
+    pub fn pool_of(&self, chooser: &Chooser, kind: Slot) -> &[ModelRef] {
         self.pools
             .iter()
-            .find(|row| row.kind == kind)
+            .find(|row| row.kind == kind && row.chooser == *chooser)
             .map_or(&[], |row| &row.models)
+    }
+
+    /// This map as `chooser` reads it: the pools are its own, presented as the pools a pick reads
+    /// (so `pick` and the routing built on it need not know who asks). Rows and Automatic rows
+    /// are the person's and stay as they are.
+    pub fn for_chooser(&self, chooser: &Chooser) -> Self {
+        Self {
+            rows: self.rows.clone(),
+            autos: self.autos.clone(),
+            pools: self
+                .pools
+                .iter()
+                .filter(|row| row.chooser == *chooser)
+                .map(|row| PoolRow {
+                    chooser: Chooser::Assistant,
+                    ..row.clone()
+                })
+                .collect(),
+        }
     }
 
     /// The person's pick for `kind` and `tier`, or `None` when the row is empty: the catalogue's
@@ -244,6 +277,7 @@ impl TierMap {
                 .iter()
                 .map(|row| PoolRow {
                     kind: row.kind,
+                    chooser: row.chooser.clone(),
                     models: row
                         .models
                         .iter()
@@ -838,5 +872,34 @@ mod tests {
         let old = r#"{"rows":[]}"#;
         let map: TierMap = serde_json::from_str(old).expect("reads");
         assert_eq!(map, TierMap::default());
+    }
+
+    #[test]
+    fn a_helper_reads_its_own_pool_and_never_the_assistants() {
+        let (a, b) = (model("local", "a"), model("cloud", "b"));
+        let helper = Chooser::Helper(porter_core::HelperId::parse("h-1").expect("id"));
+        let other = Chooser::Helper(porter_core::HelperId::parse("h-2").expect("id"));
+        let mut map = TierMap::automatic(Slot::Text, vec![a.clone()]);
+        map.pools.push(PoolRow {
+            kind: Slot::Text,
+            models: vec![b.clone()],
+            chooser: helper.clone(),
+        });
+        assert_eq!(map.pool(Slot::Text), [a.clone()]);
+        assert_eq!(map.pool_of(&helper, Slot::Text), [b.clone()]);
+        let pool_in = |view: &TierMap| match view.pick(Slot::Text, Tier::Balanced) {
+            Some(Pick::Auto { pool, .. }) => pool,
+            other => panic!("auto, got {other:?}"),
+        };
+        assert_eq!(pool_in(&map.for_chooser(&Chooser::Assistant)), [a]);
+        assert_eq!(pool_in(&map.for_chooser(&helper)), [b]);
+        assert_eq!(pool_in(&map.for_chooser(&other)), Vec::<ModelRef>::new());
+    }
+
+    #[test]
+    fn a_pool_row_from_before_helpers_is_the_assistants() {
+        let old = r#"{"kind":"text","models":[]}"#;
+        let row: PoolRow = serde_json::from_str(old).expect("reads");
+        assert_eq!(row.chooser, Chooser::Assistant);
     }
 }

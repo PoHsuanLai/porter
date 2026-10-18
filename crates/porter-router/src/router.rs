@@ -18,8 +18,8 @@ use porter_core::{Match, matches};
 use porter_core::{Offer as CoreOffer, capability::SpeechMode};
 use porter_infer::{
     AutoPolicy, Chosen, InferRefusal, LicenceClass, ModelCard, ModelRef, PickCandidate, PickPolicy,
-    PickRefusal, Policy, ProviderId, Readiness, RouteAsk, RouteCandidate, Slot, SpendVerdict,
-    SwapCost, TierMap, Why, default_choice, pick, tier_choice,
+    PickRefusal, Policy, ProviderId, Readiness, RouteAsk, RouteCandidate, Sharing, Slot,
+    SpendVerdict, SwapCost, TierMap, Why, default_choice, pick, tier_choice,
 };
 
 /// One model the router may pick, and how soon it can answer.
@@ -40,6 +40,9 @@ pub struct Listed {
     pub spend: SpendVerdict,
     /// The provider that reaches it, for a hosted model; none for one on this computer.
     pub provider: Option<ProviderId>,
+    /// Whether another helper is using it now; set by the caller that knows (`Sharing::Alone`
+    /// otherwise).
+    pub sharing: Sharing,
 }
 
 impl Listed {
@@ -59,6 +62,7 @@ impl Listed {
             permission,
             spend: SpendVerdict::Within,
             provider: None,
+            sharing: Sharing::Alone,
         }
     }
 }
@@ -208,6 +212,7 @@ pub fn choose(
             readiness: one.readiness,
             swap: one.swap.clone(),
             licence: one.licence,
+            sharing: one.sharing,
             catalogue_index: u32::try_from(index).unwrap_or(u32::MAX),
         })
         .collect();

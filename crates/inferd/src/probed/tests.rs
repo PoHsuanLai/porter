@@ -248,6 +248,7 @@ fn a_probed_model_is_eligible_for_auto_and_for_a_named_pick() {
         }],
         pools: vec![porter_infer::PoolRow {
             kind: Slot::Text,
+            chooser: porter_infer::Chooser::Assistant,
             models: vec![model[0].model_ref()],
         }],
     };
