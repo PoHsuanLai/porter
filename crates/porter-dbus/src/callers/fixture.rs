@@ -127,7 +127,10 @@ impl DirUnits {
     pub(super) fn facts(&self, name: &UnitName) -> Option<UnitFacts> {
         let text = std::fs::read_to_string(self.root.join("units").join(name.as_str())).ok()?;
         let pid = Pid::new(text.trim().parse().ok()?)?;
-        let image = self.fs.read_link(&self.root.join(format!("{pid}/exe"))).ok()?;
+        let image = self
+            .fs
+            .read_link(&self.root.join(format!("{pid}/exe")))
+            .ok()?;
         Some(UnitFacts {
             name: name.clone(),
             main_pid: Some(pid),
