@@ -7,8 +7,11 @@
 - Each model row of `Inference1.Places` carries `takes` (text only, text and images, text and
   sound, or all three), worked out from the model's capabilities; a row with nothing to say leaves
   it out and an older reader ignores it. Hosted picker choices carry the same fact.
-- A model named for computer use that cannot read images is refused by name, with the new
-  `DeclinedBecause::CannotSeeScreen`; `porter_infer::cannot_see_screen` words it.
+- A computer-use need is never given to a model that cannot read images, whatever its card
+  claims. When no model can serve it, the session is refused with the new
+  `InferRefusal::NoModelSeesScreen` (`porter_infer::NO_MODEL_SEES_SCREEN` words it); a model the
+  person named that cannot read images is refused by name, `DeclinedBecause::CannotSeeScreen`
+  (`porter_infer::cannot_see_screen`).
 
 ### Automatic checks that a model can use apps
 

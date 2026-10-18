@@ -490,3 +490,47 @@ fn a_text_only_model_named_for_computer_use_is_refused_by_name() {
         .expect("a model that reads images is served");
     assert_eq!(served.chosen.model.as_str(), "sighted");
 }
+
+#[test]
+fn computer_use_never_picks_a_model_that_cannot_read_images_even_if_its_card_claims_it() {
+    let claims_without_sight = ModelCard {
+        capabilities: vec![llm_cap(), cua_cap()],
+        ..local("claims")
+    };
+    let sees = ModelCard {
+        capabilities: vec![
+            Capability::Llm(LlmCap {
+                features: [LlmFeature::Chat, LlmFeature::Vision].into(),
+                context: Tokens(8192),
+                max_output: Tokens(1024),
+                wire: LlmWire::ChatCompletions,
+            }),
+            cua_cap(),
+        ],
+        ..local("sees")
+    };
+    let ask = |models: &[Listed]| {
+        choose(
+            &cua_need(),
+            DataClass::Screen,
+            Tier::Balanced,
+            models,
+            &Policy::proposed(),
+            &TierMap::default(),
+            AutoPolicy::default(),
+        )
+    };
+    let both = [
+        listed(claims_without_sight.clone(), Readiness::Ready),
+        listed(sees, Readiness::Ready),
+    ];
+    assert_eq!(
+        ask(&both).expect("the one that sees").chosen.model.as_str(),
+        "sees"
+    );
+    let only_claim = [listed(claims_without_sight, Readiness::Ready)];
+    assert_eq!(
+        ask(&only_claim).expect_err("none sees").refusal,
+        InferRefusal::NoModelSeesScreen
+    );
+}

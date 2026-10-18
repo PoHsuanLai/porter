@@ -39,6 +39,10 @@ pub enum InferRefusal {
     /// make a valid tool call. The app says so and offers Settings; it is not a failure.
     #[error("none of the models in Automatic can use apps")]
     NoModelUsesApps,
+    /// Work done from screenshots (a computer-use need) finds no model that reads images. The
+    /// app says so ([`crate::NO_MODEL_SEES_SCREEN`]) and offers Settings; it is not a failure.
+    #[error("no model can see the screen")]
+    NoModelSeesScreen,
 }
 
 /// Why one model call failed.

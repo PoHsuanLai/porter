@@ -189,7 +189,18 @@ pub fn choose(
         // The language slot is planned as a pipeline: today a text-only request, so one stage.
         return crate::pipeline::decide_text(need, class, tier, listed, policy, tiers, auto);
     }
-    let fitting: Vec<&Listed> = listed.iter().filter(|one| fits(need, &one.card)).collect();
+    // Work from screenshots needs a model that reads images, whatever its card claims.
+    let sees = |one: &Listed| match need {
+        Need::ComputerUse(_) => Takes::of(&one.card.capabilities).sight() != Sight::Blind,
+        _ => true,
+    };
+    let fitting: Vec<&Listed> = listed
+        .iter()
+        .filter(|one| fits(need, &one.card) && sees(one))
+        .collect();
+    if fitting.is_empty() && matches!(need, Need::ComputerUse(_)) {
+        return Err(plain(InferRefusal::NoModelSeesScreen));
+    }
     let candidates: Vec<PickCandidate> = fitting
         .iter()
         .enumerate()

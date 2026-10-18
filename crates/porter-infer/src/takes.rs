@@ -53,12 +53,8 @@ impl Found {
                 images: self.images || llm.features.contains(&LlmFeature::Vision),
                 audio: self.audio || llm.features.contains(&LlmFeature::AudioIn),
             },
-            // A computer-use model works from screenshots.
-            Capability::ComputerUse(_) => Self {
-                text: true,
-                images: true,
-                ..self
-            },
+            // A computer-use claim says nothing of what the model reads: only its language
+            // capability does, so a card that claims computer use without Vision is text only.
             _ => self,
         }
     }
@@ -136,11 +132,15 @@ pub fn cannot_see_screen(model: &str) -> String {
     )
 }
 
+/// Said when no model can serve work done from screenshots ([`crate::InferRefusal::NoModelSeesScreen`]).
+pub const NO_MODEL_SEES_SCREEN: &str =
+    "No model here can see the screen. Choose one that reads images.";
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_core::Tokens;
-    use porter_core::capability::{LlmCap, LlmWire};
+    use porter_core::capability::{CuaBatching, CuaCap, CuaEnv, LlmCap, LlmWire, Offered};
+    use porter_core::{Px, Tokens};
 
     fn llm(features: &[LlmFeature]) -> Capability {
         Capability::Llm(LlmCap {
@@ -151,19 +151,28 @@ mod tests {
         })
     }
 
+    fn cua() -> Capability {
+        Capability::ComputerUse(CuaCap {
+            environments: [CuaEnv::Desktop].into(),
+            batching: CuaBatching::One,
+            zoom: Offered::Absent,
+            max_image: Px(1024),
+            wire: LlmWire::ChatCompletions,
+        })
+    }
+
     #[test]
     fn a_model_is_named_by_what_its_capabilities_take() {
         let cases = [
             (vec![], Takes::Unknown),
+            (vec![cua()], Takes::Unknown),
+            (vec![llm(&[LlmFeature::Chat]), cua()], Takes::TextOnly),
             (vec![llm(&[LlmFeature::Chat])], Takes::TextOnly),
             (
                 vec![llm(&[LlmFeature::Chat, LlmFeature::Vision])],
                 Takes::TextAndImages,
             ),
-            (
-                vec![llm(&[LlmFeature::AudioIn])],
-                Takes::TextAndAudio,
-            ),
+            (vec![llm(&[LlmFeature::AudioIn])], Takes::TextAndAudio),
             (
                 vec![llm(&[LlmFeature::Vision, LlmFeature::AudioIn])],
                 Takes::TextImagesAndAudio,
