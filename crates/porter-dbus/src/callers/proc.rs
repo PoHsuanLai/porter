@@ -25,7 +25,7 @@ pub(super) enum Peers {
     System(BusPeers),
     /// A fixture tree ([`super::fixture`]).
     #[cfg(feature = "test-proc-root")]
-    Tree(BusPeers<super::fixture::DirProc, peephole_bus::Inline, super::fixture::DirUnits>),
+    Tree(BusPeers<super::fixture::DirProc, super::fixture::DirUnits>),
 }
 
 impl Peers {

@@ -18,7 +18,7 @@ use super::translate::peephole_table;
 use super::{Caller, CallerTable, ProcCallers};
 use crate::BusConnection;
 use peephole::{Pinned, Prober, ProcFs};
-use peephole_bus::{BusPeers, Inline, ManagerCheck, UnitError, UnitSource};
+use peephole_bus::{BusPeers, ManagerCheck, UnitError, UnitSource};
 use peephole_core::{
     CgroupPath, DropIns, ExePath, FileTrust, Fragment, Loader, Pid, Pin, Transient, Uid, UnitFacts,
     UnitName, judge,
@@ -163,7 +163,7 @@ impl ProcCallers {
     ) -> Self {
         let fs = DirProc::new(proc_root.clone(), &table);
         let units = DirUnits::new(proc_root, fs.clone());
-        let peers: BusPeers<DirProc, Inline, DirUnits> = BusPeers::with_proc(
+        let peers: BusPeers<DirProc, DirUnits> = BusPeers::with_proc(
             connection,
             peephole_table(&table),
             ManagerCheck::Unchecked,
