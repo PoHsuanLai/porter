@@ -9,7 +9,7 @@
 //!   by the engine's `computer` key;
 //! - `account:<account id>`, a cloud AI account accountd holds.
 
-use porter_core::{AccountId, CoreError, is_id};
+use porter_core::{AccountId, CoreError, Locality, is_id};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -52,6 +52,19 @@ impl PlaceKind {
         ]
         .into_iter()
         .find(|kind| kind.slug() == slug)
+    }
+}
+
+/// The kind of place a model's locality is served from: the one mapping between the two sets, so
+/// they cannot drift. `Locality` is where a model runs as routing sees it; `PlaceKind` is the
+/// same thing as a person chooses it.
+impl From<&Locality> for PlaceKind {
+    fn from(locality: &Locality) -> Self {
+        match locality {
+            Locality::OnDevice => PlaceKind::ThisComputer,
+            Locality::LocalNetwork => PlaceKind::OwnComputer,
+            Locality::Cloud { .. } => PlaceKind::CloudAccount,
+        }
     }
 }
 
@@ -422,6 +435,19 @@ mod tests {
         assert_eq!(PlaceId::account(&work), parsed("account:work-claude"));
         assert_eq!(PlaceId::this_computer(), parsed("this-computer"));
         assert_eq!(PlaceKind::from_slug("elsewhere"), None);
+    }
+
+    #[test]
+    fn a_locality_names_the_kind_of_place_it_is_served_from() {
+        assert_eq!(PlaceKind::from(&Locality::OnDevice), PlaceKind::ThisComputer);
+        assert_eq!(
+            PlaceKind::from(&Locality::LocalNetwork),
+            PlaceKind::OwnComputer
+        );
+        assert_eq!(
+            PlaceKind::from(&Locality::Cloud { region: None }),
+            PlaceKind::CloudAccount
+        );
     }
 
     #[test]

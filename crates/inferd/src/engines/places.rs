@@ -10,7 +10,7 @@ use porter_core::capability::LlmFeature;
 use porter_core::need::LlmNeed;
 use porter_core::{AccountState, ModelId, Tokens};
 use porter_infer::{
-    ComputerName, PlaceEngine, PlaceId, PlaceModel, PlaceRow, PlaceState, PlaceTarget,
+    ComputerName, PlaceEngine, PlaceId, PlaceKind, PlaceModel, PlaceRow, PlaceState, PlaceTarget,
 };
 use std::collections::BTreeMap;
 
@@ -161,7 +161,7 @@ impl Engines {
         let mut rows = vec![
             PlaceRow::new(
                 PlaceId::this_computer(),
-                porter_infer::PlaceKind::ThisComputer,
+                PlaceKind::from(&Locality::OnDevice),
                 "This computer".to_owned(),
                 PlaceState::Ready,
             )
@@ -189,7 +189,7 @@ impl Engines {
             };
             let state = state_of(!models.is_empty());
             rows.push(
-                PlaceRow::new(id, porter_infer::PlaceKind::OwnComputer, name, state)
+                PlaceRow::new(id, PlaceKind::from(&Locality::LocalNetwork), name, state)
                     .with_models(models),
             );
         }
@@ -229,7 +229,7 @@ impl Engines {
                 Some(
                     PlaceRow::new(
                         PlaceId::account(&account.account),
-                        porter_infer::PlaceKind::CloudAccount,
+                        PlaceKind::from(&Locality::Cloud { region: None }),
                         account
                             .label
                             .clone()
