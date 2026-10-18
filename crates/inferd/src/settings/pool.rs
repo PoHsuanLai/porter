@@ -59,7 +59,9 @@ pub(super) async fn hosted(reload: &Reload, slot: Slot) -> Vec<Choice> {
 /// Whether `text` names a model the person may choose for `kind`.
 pub(super) fn choosable(reload: &Reload, kind: Slot, text: &str, hosted: &[Choice]) -> bool {
     parse_model(text).is_some()
-        && (known_for(reload, kind).iter().any(|(known, _)| known == text)
+        && (known_for(reload, kind)
+            .iter()
+            .any(|(known, _)| known == text)
             || hosted.iter().any(|choice| choice.value == text))
 }
 
@@ -104,11 +106,11 @@ pub(super) async fn write(
     let _one_writer = reload.writing().lock().await;
     match chooser {
         Chooser::Assistant => reload.file().set(&pool_path(kind), list),
-        Chooser::Helper(_) => {
-            reload
-                .file()
-                .set_key(POOL_TABLE, &pool_row_key(kind, chooser), (!empty).then_some(list))
-        }
+        Chooser::Helper(_) => reload.file().set_key(
+            POOL_TABLE,
+            &pool_row_key(kind, chooser),
+            (!empty).then_some(list),
+        ),
     }
     .map_err(failed)?;
     reload.now().map_err(failed).map(|_| ())

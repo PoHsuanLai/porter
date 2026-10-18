@@ -662,7 +662,7 @@ async fn the_shell_may_set_a_helpers_pool_and_it_is_written_and_in_force() {
         )
         .await
         .expect("the shell sets a helper's pool");
-    let tiers = rig.engines.settings().tiers;
+    let tiers = rig.engines.settings().tiers.clone();
     assert_eq!(tiers.pool_of(&helper("h.1"), Slot::Text).len(), 1);
     assert!(tiers.pool(Slot::Text).is_empty(), "not the assistant's");
     assert!(tiers.pool_of(&helper("h.2"), Slot::Text).is_empty());
@@ -682,7 +682,7 @@ async fn the_shell_may_set_a_helpers_pool_and_it_is_written_and_in_force() {
         .set_helper_pool("text", "h.1", Vec::new())
         .await
         .expect("clear");
-    let tiers = rig.engines.settings().tiers;
+    let tiers = rig.engines.settings().tiers.clone();
     assert!(tiers.pool_of(&helper("h.1"), Slot::Text).is_empty());
     let written = std::fs::read_to_string(&rig.file).expect("the file");
     assert!(!written.contains("helper"), "{written}");
@@ -732,7 +732,10 @@ async fn the_shell_may_write_no_other_setting_and_an_app_no_helper_pool() {
         "ai.model.text.fast",
     ] {
         let got = shell.set(&key(path), &toml::Value::Array(Vec::new())).await;
-        assert!(matches!(got, Err(LiveError::NotPermitted(_))), "{path}: {got:?}");
+        assert!(
+            matches!(got, Err(LiveError::NotPermitted(_))),
+            "{path}: {got:?}"
+        );
     }
     let app = rig.client(Role::App).await;
     let got = InferenceProxy::new(&app)

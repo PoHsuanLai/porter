@@ -8,8 +8,8 @@ use super::file::Reload;
 use super::keys::{
     SLOTS, TIERS, model_path, parse_model_path, parse_pool_path, pool_path, slots_of,
 };
-use super::pool;
 use super::missing::Engine;
+use super::pool;
 use super::resolve::{model_text, parse_model, slot_value};
 use crate::cloud::picker::{Availability, Choice, NEEDS_ACCOUNT};
 use crate::keys::KeyRows;
