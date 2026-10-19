@@ -13,9 +13,12 @@ fn vars(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
 
 #[test]
 fn the_directories_follow_xdg_and_fall_back_under_home() {
+    // A data directory that holds nothing, so the stoker installed on this machine does not
+    // decide where the system's catalog is.
     let from_home = Dirs::from_vars(vars(&[
         ("HOME", "/home/u"),
         ("XDG_RUNTIME_DIR", "/run/user/1000"),
+        ("XDG_DATA_DIRS", "/scratch/share"),
     ]))
     .expect("dirs");
     assert_eq!(
