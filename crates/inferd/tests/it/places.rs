@@ -146,7 +146,7 @@ async fn a_computer_that_does_not_answer_is_listed_but_not_ready() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn only_settings_the_shell_and_the_companion_may_list_the_places() {
+async fn only_settings_the_shell_the_companion_and_cuad_may_list_the_places() {
     let (world, _lab) = world("callers", Role::Settings, "org.quire.Settings").await;
     let me = world.client.unique_name().expect("unique name").to_string();
     let cases = [
@@ -156,7 +156,7 @@ async fn only_settings_the_shell_and_the_companion_may_list_the_places() {
         (Role::Placer, "org.quire.Reader", false),
         (Role::Placer, "org.quire.Intents", false),
         (Role::App, "org.quire.Memory", false),
-        (Role::Cua, "org.quire.Cua", false),
+        (Role::Cua, "org.quire.Cua", true),
         (Role::AgentLauncher, "org.quire.AgentLauncher", false),
     ];
     for (role, name, allowed) in cases {

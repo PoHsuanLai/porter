@@ -92,6 +92,7 @@ fn a_refused_table_says_which_way_it_was_refused_and_keeps_the_parser_error() {
 fn placed_table() -> CallerTable {
     CallerTable::from_toml_text(
         r#"
+cua = ["cuad.service"]
 shell = ["sill.service"]
 places = ["companiond.service", "readerd.service"]
 [apps]
@@ -115,7 +116,7 @@ fn the_places_rows_make_placers_the_shell_row_makes_the_shell_and_the_rest_stay_
 }
 
 #[test]
-fn only_settings_the_shell_and_the_companion_list_places_and_only_placers_choose_them() {
+fn settings_the_shell_the_companion_and_cuad_list_places_and_only_placers_choose_them() {
     let table = placed_table().with_settings(["org.quire.Settings.service".to_owned()].into());
     let who = |unit: &str| table.resolve(unit).expect(unit);
     let list = |unit: &str| who(unit).may_list_places();
@@ -123,6 +124,11 @@ fn only_settings_the_shell_and_the_companion_list_places_and_only_placers_choose
     assert!(list("org.quire.Settings.service"));
     assert!(list("sill.service"));
     assert!(list("companiond.service"));
+    assert!(
+        list("cuad.service"),
+        "cuad reads whether a ready model can see"
+    );
+    assert!(!who("cuad.service").may_list_engines());
     assert!(!list("readerd.service"));
     assert!(!list("memoryd.service"));
     assert!(choose("companiond.service") && choose("readerd.service"));

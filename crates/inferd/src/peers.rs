@@ -68,8 +68,17 @@ pub struct Caller {
 }
 
 impl Caller {
-    /// Whether it may list the places: Settings, the shell and the companion.
+    /// Whether it may list the places: Settings, the shell, the companion, and cuad, which reads
+    /// what the ready models take in to say plainly when none of them can see the screen.
     pub fn may_list_places(&self) -> bool {
+        match self.role {
+            Role::Cua => true,
+            _ => self.may_list_engines(),
+        }
+    }
+
+    /// Whether it may list the local engine kinds: Settings, the shell and the companion.
+    pub fn may_list_engines(&self) -> bool {
         match self.role {
             Role::Settings | Role::Shell => true,
             Role::Placer => self.app.name.as_str() == COMPANION_APP,

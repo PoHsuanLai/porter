@@ -6,7 +6,8 @@
 #
 # Who may call. A caller is the systemd unit behind a bus connection (the bus names its process,
 # /proc/<pid>/cgroup names the unit); an app in its own app scope or Flatpak scope is an App
-# without a line here. cuad is the only caller that may open a computer-use session.
+# without a line here. cuad is the only caller that may open a computer-use session; it may also
+# list the places (Inference1.Places), to say plainly when no ready model can see the screen.
 cua = ["cuad.service"]
 # The Settings app: the only caller of inferd's settings module (the model picker), as the unit the
 # desktop runs it in, and only that unit's main process (as accountd's callers.toml). An app name
