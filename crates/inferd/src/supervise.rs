@@ -9,7 +9,7 @@
 use crate::startup::{Cause, Diagnostics, Tail};
 use engine_supervisor::{
     EngineFailure, EngineHost, EngineId, EngineSpec, EngineState, ExitCode, GpuMemory, GpuProbe,
-    MonoMs, ReadyProbe, Supervisor, SupervisorConfig, SupervisorIn, SupervisorOut, step,
+    MonoMs, Probe, ReadyProbe, Supervisor, SupervisorConfig, SupervisorIn, SupervisorOut, step,
 };
 use model_catalog::MiB;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -66,6 +66,9 @@ pub struct Snapshot {
     /// first look. The router reads it to cost a swap.
     pub gpu: Option<GpuMemory>,
 }
+
+mod change;
+use change::Change;
 
 #[derive(Debug)]
 enum Command {
@@ -143,6 +146,7 @@ impl Supervised {
         G: GpuProbe + 'static,
     {
         let (commands, inbox) = mpsc::unbounded_channel();
+        let probe_every = config.probe_every;
         let ids: Vec<EngineId> = specs.iter().map(|spec| spec.id.clone()).collect();
         let stopped: BTreeMap<EngineId, EngineState> = ids
             .iter()
@@ -169,6 +173,7 @@ impl Supervised {
             origin: Instant::now(),
             publish,
             gpu: None,
+            probe_every,
             diagnostics,
             seen: stopped,
             pending: BTreeMap::new(),
@@ -271,6 +276,8 @@ struct Driver<H, P, G> {
     origin: Instant,
     publish: watch::Sender<Snapshot>,
     gpu: Option<GpuMemory>,
+    /// The least time between two probes of an engine.
+    probe_every: Duration,
     diagnostics: Diagnostics,
     /// Each engine's state as of the last change reported, to tell what it changed from.
     seen: BTreeMap<EngineId, EngineState>,
@@ -403,11 +410,17 @@ where
             .iter()
             .filter_map(|id| self.sup.state(id).map(|state| (id.clone(), *state)))
             .collect();
-        self.publish.send_replace(Snapshot {
+        let next = Snapshot {
             states,
             failures: self.failures.clone(),
             now: Some(self.now()),
             gpu: self.gpu,
+        };
+        // The clock is kept fresh for readers, but only a change a reader can see wakes them.
+        self.publish.send_if_modified(|current| {
+            let seen = current.change_to(&next);
+            *current = next;
+            matches!(seen, Change::Seen)
         });
     }
 
@@ -493,8 +506,15 @@ where
                 None
             }
             SupervisorOut::Probe(id) => {
+                let every = self.probe_every;
                 self.tasks.spawn(async move {
+                    let began = Instant::now();
                     let probe = ports.probe.probe(&id).await;
+                    // An answer that is not "ready" makes the machine probe again at once: a
+                    // probe that fails instantly would loop hot, so the next one waits its turn.
+                    if !matches!(probe, Probe::Ready) {
+                        tokio::time::sleep_until(began + every).await;
+                    }
                     SupervisorIn::Probed { id, probe }.into()
                 });
                 None

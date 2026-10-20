@@ -384,3 +384,122 @@ async fn a_supervisor_of_nothing_refuses_every_want_and_an_unknown_engine_too() 
         Err(Failed::unknown())
     );
 }
+
+fn snapshot_at(now: u64, state: EngineState, gpu_total: u32) -> Snapshot {
+    Snapshot {
+        failures: BTreeMap::new(),
+        states: [(EngineId("a".into()), state)].into(),
+        now: Some(MonoMs(now)),
+        gpu: Some(GpuMemory {
+            total: MiB(gpu_total),
+            used_by_others: MiB(0),
+        }),
+    }
+}
+
+#[test]
+fn only_what_a_reader_sees_is_a_change() {
+    let ready = EngineState::Ready {
+        since: MonoMs(0),
+        last_used: MonoMs(0),
+    };
+    let used = EngineState::Ready {
+        since: MonoMs(0),
+        last_used: MonoMs(5),
+    };
+    let mut failing = snapshot_at(10, EngineState::Stopped, 100);
+    failing.failures.insert(
+        EngineId("a".into()),
+        Failure {
+            cause: Cause::Unknown,
+            seq: 1,
+            retry_at: MonoMs(30),
+        },
+    );
+    let mut later = failing.clone();
+    later.now = Some(MonoMs(20));
+    let mut after_pause = failing.clone();
+    after_pause.now = Some(MonoMs(31));
+    let cases = [
+        (
+            "the clock alone",
+            snapshot_at(1, ready, 100),
+            snapshot_at(900, ready, 100),
+            Change::Unseen,
+        ),
+        (
+            "an engine's state",
+            snapshot_at(1, ready, 100),
+            snapshot_at(2, used, 100),
+            Change::Seen,
+        ),
+        (
+            "the gpu",
+            snapshot_at(1, ready, 100),
+            snapshot_at(1, ready, 200),
+            Change::Seen,
+        ),
+        (
+            "a pause not over yet",
+            failing.clone(),
+            later,
+            Change::Unseen,
+        ),
+        ("a pause that ends", failing, after_pause, Change::Seen),
+    ];
+    for (name, before, after, expected) in cases {
+        assert_eq!(before.change_to(&after), expected, "{name}");
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_pump_that_changed_nothing_publishes_nothing_and_a_change_publishes_once() {
+    let scratch = Scratch::new("sup-quiet");
+    let specs = specs(&scratch);
+    let id = specs[0].id.clone();
+    let supervised = Supervised::start(
+        specs,
+        SupervisorConfig::default(),
+        Ports {
+            host: Recorder::default(),
+            probe: FakeReadyProbe(Probe::Ready),
+            gpu: gpu(16_000),
+        },
+    );
+    assert_eq!(supervised.want(&id).await, Ok(()));
+    let mut watching = supervised.state.clone();
+    watching.borrow_and_update();
+    // The wakes in the next 100 s pump the machine; nothing in it changes.
+    let quiet = tokio::time::timeout(Duration::from_secs(100), watching.changed()).await;
+    assert!(quiet.is_err(), "a pump with nothing changed published");
+    // The idle unload at 600 s is a change, and it is published.
+    watching.changed().await.expect("the unload is published");
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_probe_that_fails_at_once_is_asked_again_only_when_its_turn_comes() {
+    struct Counting(Arc<Mutex<u32>>);
+    impl ReadyProbe for Counting {
+        async fn probe(&self, _: &EngineId) -> Probe {
+            *self.0.lock().expect("lock") += 1;
+            Probe::Down
+        }
+    }
+    let scratch = Scratch::new("sup-hot");
+    let specs = specs(&scratch);
+    let id = specs[0].id.clone();
+    let asked = Arc::new(Mutex::new(0));
+    let supervised = Supervised::start(
+        specs,
+        SupervisorConfig::default(),
+        Ports {
+            host: Recorder::default(),
+            probe: Counting(Arc::clone(&asked)),
+            gpu: gpu(16_000),
+        },
+    );
+    supervised.warm(&id);
+    tokio::time::sleep(Duration::from_secs(10)).await;
+    // One probe every 500 ms, not one per scheduler turn.
+    assert!(*asked.lock().expect("lock") <= 25);
+}

@@ -1115,11 +1115,17 @@ where
     let iface: zbus::object_server::InterfaceRef<Inference<P, O, C>> =
         connection.object_server().interface(INFERENCE_PATH).await?;
     tokio::spawn(async move {
+        let mut told = iface.get().await.engines.gpu();
         while supervised.changed().await.is_ok() {
             let emitter = iface.signal_emitter();
             let _ = Inference::<P, O, C>::engines_changed(emitter).await;
             let guard = iface.get().await;
-            let _ = guard.gpu_changed(emitter).await;
+            let now = guard.engines.gpu();
+            // The property changes only when its value did.
+            if now != told {
+                told = now;
+                let _ = guard.gpu_changed(emitter).await;
+            }
         }
     });
     // A computer of the person's asks to use this one, or an answer changed: the shell and
