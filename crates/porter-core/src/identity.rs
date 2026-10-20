@@ -5,6 +5,7 @@
 
 use crate::app_id::{AppId, AppName, Isolation};
 use crate::error::CoreError;
+use crate::scope::{FLATPAK_LAUNCHER, ScopeName};
 pub use peephole_core::CgroupPath;
 use serde::{Deserialize, Serialize};
 
@@ -59,9 +60,6 @@ pub enum PeerIdentity {
 /// The security-context engine name Flatpak gives its sockets.
 const FLATPAK_ENGINE: &str = "org.flatpak";
 
-/// The launcher tag Flatpak writes into its own scopes' names.
-const FLATPAK_LAUNCHER: &str = "flatpak";
-
 /// The app `facts` prove, if any. A sandbox's metadata wins: Flatpak's (by its file or its
 /// security context) proves a `Flatpak` id when the process also sits in the scope Flatpak
 /// makes for a run of that app (`app-flatpak-<id>-<n>.scope`, as peephole's `judge` asks), so a
@@ -93,76 +91,25 @@ fn sandboxed(app: &str, cgroup: &CgroupPath) -> Option<AppId> {
     })
 }
 
-/// Whether a component of `cgroup` is `app-flatpak-<id>-<n>.scope` for `app`, `n` decimal: the
-/// scope Flatpak makes for each run. The same rule as peephole-core's `flatpak_scope_in`, here on
-/// the app id as the text the sandbox stated.
+/// Whether a component of `cgroup` is the scope Flatpak makes for a run of `app`
+/// (`app-flatpak-<id>-<n>.scope`, `n` decimal). The same rule as peephole-core's
+/// `flatpak_scope_in`, here on the app id as the text the sandbox stated.
 fn in_flatpak_scope(cgroup: &CgroupPath, app: &str) -> bool {
-    cgroup.as_str().split('/').any(|segment| {
-        segment
-            .strip_prefix("app-")
-            .and_then(|unit| unit.strip_prefix(FLATPAK_LAUNCHER))
-            .and_then(|unit| unit.strip_prefix('-'))
-            .and_then(|unit| unit.strip_suffix(".scope"))
-            .and_then(|unit| unit.rsplit_once('-'))
-            .is_some_and(|(id, run)| {
-                !id.contains('-')
-                    && !run.is_empty()
-                    && run.bytes().all(|byte| byte.is_ascii_digit())
-                    && unescape(id).as_deref() == Some(app)
-            })
-    })
+    cgroup
+        .as_str()
+        .split('/')
+        .filter_map(ScopeName::parse)
+        .any(|scope| scope.is_flatpak() && scope.app() == app)
 }
 
-/// The app a launcher's scope names: `app-[<launcher>-]<id>-<random>.scope`, the id escaped as
-/// a unit name component (XDG "Desktop Entry / systemd integration"). A literal `-` in an id is
-/// written `\x2d`, so the dashes split the name unambiguously; a launcher tag is one plain word.
-/// Flatpak's own scopes prove nothing by name: a real Flatpak process brings sandbox facts.
+/// The app a launcher's scope names ([`ScopeName`]). Flatpak's own scopes prove nothing by
+/// name: a real Flatpak process brings sandbox facts.
 fn scope_app(cgroup: &CgroupPath) -> Option<AppName> {
-    let unit = cgroup.leaf().strip_prefix("app-")?.strip_suffix(".scope")?;
-    let parts: Vec<&str> = unit.split('-').collect();
-    let (id, random) = match parts.as_slice() {
-        [id, random] => (*id, *random),
-        [launcher, id, random] if is_word(launcher) && *launcher != FLATPAK_LAUNCHER => {
-            (*id, *random)
-        }
-        _ => return None,
-    };
-    if !is_word(random) {
+    let scope = ScopeName::parse(cgroup.leaf())?;
+    if scope.launcher() == Some(FLATPAK_LAUNCHER) {
         return None;
     }
-    AppName::parse(&unescape(id)?).ok()
-}
-
-/// Whether `text` is one non-empty run of ASCII letters and digits.
-fn is_word(text: &str) -> bool {
-    !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_alphanumeric())
-}
-
-/// A unit name component with its `\xHH` escapes undone, or `None` for a broken escape.
-fn unescape(text: &str) -> Option<String> {
-    let mut bytes = Vec::with_capacity(text.len());
-    let mut rest = text.as_bytes();
-    while let Some((&first, tail)) = rest.split_first() {
-        rest = match (first, tail) {
-            (b'\\', [b'x', high, low, after @ ..]) => {
-                bytes.push((hex_digit(*high)? << 4) | hex_digit(*low)?);
-                after
-            }
-            (b'\\', _) => return None,
-            _ => {
-                bytes.push(first);
-                tail
-            }
-        };
-    }
-    String::from_utf8(bytes).ok()
-}
-
-/// The value of one hexadecimal digit.
-fn hex_digit(byte: u8) -> Option<u8> {
-    char::from(byte)
-        .to_digit(16)
-        .and_then(|digit| u8::try_from(digit).ok())
+    AppName::parse(scope.app()).ok()
 }
 
 /// An app id a client declared itself (`xdg_toplevel.app_id`, `foot`, `firefox`): what an

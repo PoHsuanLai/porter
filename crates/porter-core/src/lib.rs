@@ -45,6 +45,7 @@ pub mod need;
 mod offer;
 mod process_credential;
 mod restriction;
+pub mod scope;
 mod secret;
 pub mod sheet;
 mod space;
@@ -86,6 +87,7 @@ pub use restriction::{
     Limit, LimitReason, ReauthReason, Restriction, SEVEN_DAYS, TenantConsent, TokenLifetime,
     Verification,
 };
+pub use scope::ScopeName;
 pub use secret::{Credential, SecretKey, SecretPurpose, SecretText};
 pub use space::{DesktopSpace, LocalSpace, SpaceId, SpaceKind, SpaceScope};
 pub use space_record::{
