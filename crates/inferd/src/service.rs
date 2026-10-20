@@ -357,7 +357,7 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         computers.relabel(&names);
     }
 
-    /// The caller of `Places` and `LocalEngines`: Settings, the shell or the companion.
+    /// The caller of `Places`: Settings, the shell, the companion or cuad.
     async fn place_lister(&self, header: &Header<'_>) -> fdo::Result<Caller> {
         let caller = self.identified(header).await?;
         if caller.may_list_places() {
@@ -365,6 +365,18 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         } else {
             Err(fdo::Error::AccessDenied(
                 "inferd: this caller may not list the places".into(),
+            ))
+        }
+    }
+
+    /// The caller of `LocalEngines`: Settings, the shell or the companion.
+    async fn engine_lister(&self, header: &Header<'_>) -> fdo::Result<Caller> {
+        let caller = self.identified(header).await?;
+        if caller.may_list_engines() {
+            Ok(caller)
+        } else {
+            Err(fdo::Error::AccessDenied(
+                "inferd: this caller may not list the local engines".into(),
             ))
         }
     }
@@ -600,7 +612,7 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         &self,
         #[zbus(header)] header: Header<'_>,
     ) -> fdo::Result<Vec<(String, Details)>> {
-        self.place_lister(&header).await?;
+        self.engine_lister(&header).await?;
         Ok(self
             .local_engines
             .rows()
