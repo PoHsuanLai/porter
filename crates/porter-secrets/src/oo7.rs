@@ -88,27 +88,98 @@ impl Oo7KeyringSecrets {
 /// The opened keyring. A keyring that could not be opened is tried again on the next call: a
 /// Secret Service that was not up at the first call (a session whose keyring daemon starts
 /// late) is up for the second. One keyring serves every namespace.
-static OPENED: Mutex<Option<Arc<oo7::Keyring>>> = Mutex::new(None);
+static OPENED: Held<oo7::Keyring> = Held::new();
 
-async fn ambient(namespace: &Namespace) -> Result<Oo7KeyringSecrets, SecretsError> {
-    let held = OPENED
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .clone();
-    let keyring = match held {
-        Some(keyring) => keyring,
-        None => {
-            let keyring = Arc::new(oo7::Keyring::new().await.map_err(refused)?);
-            *OPENED
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(keyring.clone());
-            keyring
+/// A store opened on first use and kept until it stops answering.
+///
+/// A kept Secret Service keyring holds a session with the daemon that opened it. When that daemon
+/// goes (the desktop session ends, and the next one starts a daemon of its own), every call on
+/// the kept keyring is refused, and a process that outlives the session, a sync service, would
+/// never reach the new daemon. So a call refused as [`SecretsError::Unavailable`] forgets the
+/// keyring, and a call that used a kept one is tried once more on a freshly opened one.
+struct Held<K> {
+    slot: Mutex<Option<Arc<K>>>,
+}
+
+impl<K> Held<K> {
+    const fn new() -> Self {
+        Self {
+            slot: Mutex::new(None),
         }
-    };
-    Ok(Oo7KeyringSecrets {
-        keyring,
-        namespace: namespace.clone(),
-    })
+    }
+
+    fn slot(&self) -> std::sync::MutexGuard<'_, Option<Arc<K>>> {
+        self.slot
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    async fn open<O, Opening>(&self, open: &O) -> Result<Arc<K>, SecretsError>
+    where
+        O: Fn() -> Opening,
+        Opening: Future<Output = Result<K, SecretsError>>,
+    {
+        let keyring = Arc::new(open().await?);
+        *self.slot() = Some(keyring.clone());
+        Ok(keyring)
+    }
+
+    /// Forgets `keyring`, unless another call has already put a newer one in its place.
+    fn forget(&self, keyring: &Arc<K>) {
+        let mut slot = self.slot();
+        if slot.as_ref().is_some_and(|held| Arc::ptr_eq(held, keyring)) {
+            *slot = None;
+        }
+    }
+
+    /// `call` on the kept keyring, or on one opened with `open` when none is kept.
+    async fn run<T, O, Opening, C, Calling>(&self, open: O, call: C) -> Result<T, SecretsError>
+    where
+        O: Fn() -> Opening,
+        Opening: Future<Output = Result<K, SecretsError>>,
+        C: Fn(Arc<K>) -> Calling,
+        Calling: Future<Output = Result<T, SecretsError>>,
+    {
+        let held = self.slot().clone();
+        let kept = held.is_some();
+        let keyring = match held {
+            Some(keyring) => keyring,
+            None => self.open(&open).await?,
+        };
+        let answer = call(keyring.clone()).await;
+        if !matches!(answer, Err(SecretsError::Unavailable)) {
+            return answer;
+        }
+        self.forget(&keyring);
+        if !kept {
+            return answer;
+        }
+        let fresh = self.open(&open).await?;
+        let answer = call(fresh.clone()).await;
+        if matches!(answer, Err(SecretsError::Unavailable)) {
+            self.forget(&fresh);
+        }
+        answer
+    }
+}
+
+/// `call` on the user's keyring, filing under `namespace`.
+async fn ambient<T, C, Calling>(namespace: &Namespace, call: C) -> Result<T, SecretsError>
+where
+    C: Fn(Oo7KeyringSecrets) -> Calling,
+    Calling: Future<Output = Result<T, SecretsError>>,
+{
+    OPENED
+        .run(
+            || async { oo7::Keyring::new().await.map_err(refused) },
+            |keyring| {
+                call(Oo7KeyringSecrets {
+                    keyring,
+                    namespace: namespace.clone(),
+                })
+            },
+        )
+        .await
 }
 
 fn refused(error: oo7::Error) -> SecretsError {
@@ -218,11 +289,15 @@ impl Secrets for Oo7KeyringSecrets {
 
 impl Secrets for Oo7Secrets {
     async fn put(&self, key: &SecretKey, value: &Credential) -> Result<(), SecretsError> {
-        ambient(&Namespace::PORTER).await?.put(key, value).await
+        ambient(
+            &Namespace::PORTER,
+            |s| async move { s.put(key, value).await },
+        )
+        .await
     }
 
     async fn get(&self, key: &SecretKey) -> Result<Credential, SecretsError> {
-        ambient(&Namespace::PORTER).await?.get(key).await
+        ambient(&Namespace::PORTER, |s| async move { s.get(key).await }).await
     }
 
     async fn put_if_absent(
@@ -230,31 +305,31 @@ impl Secrets for Oo7Secrets {
         key: &SecretKey,
         value: &Credential,
     ) -> Result<PutOutcome, SecretsError> {
-        ambient(&Namespace::PORTER)
-            .await?
-            .put_if_absent(key, value)
-            .await
+        ambient(&Namespace::PORTER, |s| async move {
+            s.put_if_absent(key, value).await
+        })
+        .await
     }
 
     async fn delete(&self, key: &SecretKey) -> Result<(), SecretsError> {
-        ambient(&Namespace::PORTER).await?.delete(key).await
+        ambient(&Namespace::PORTER, |s| async move { s.delete(key).await }).await
     }
 
     async fn delete_account(&self, account: &AccountId) -> Result<(), SecretsError> {
-        ambient(&Namespace::PORTER)
-            .await?
-            .delete_account(account)
-            .await
+        ambient(&Namespace::PORTER, |s| async move {
+            s.delete_account(account).await
+        })
+        .await
     }
 }
 
 impl Secrets for Oo7NamedSecrets {
     async fn put(&self, key: &SecretKey, value: &Credential) -> Result<(), SecretsError> {
-        ambient(&self.namespace).await?.put(key, value).await
+        ambient(&self.namespace, |s| async move { s.put(key, value).await }).await
     }
 
     async fn get(&self, key: &SecretKey) -> Result<Credential, SecretsError> {
-        ambient(&self.namespace).await?.get(key).await
+        ambient(&self.namespace, |s| async move { s.get(key).await }).await
     }
 
     async fn put_if_absent(
@@ -262,21 +337,21 @@ impl Secrets for Oo7NamedSecrets {
         key: &SecretKey,
         value: &Credential,
     ) -> Result<PutOutcome, SecretsError> {
-        ambient(&self.namespace)
-            .await?
-            .put_if_absent(key, value)
-            .await
+        ambient(&self.namespace, |s| async move {
+            s.put_if_absent(key, value).await
+        })
+        .await
     }
 
     async fn delete(&self, key: &SecretKey) -> Result<(), SecretsError> {
-        ambient(&self.namespace).await?.delete(key).await
+        ambient(&self.namespace, |s| async move { s.delete(key).await }).await
     }
 
     async fn delete_account(&self, account: &AccountId) -> Result<(), SecretsError> {
-        ambient(&self.namespace)
-            .await?
-            .delete_account(account)
-            .await
+        ambient(&self.namespace, |s| async move {
+            s.delete_account(account).await
+        })
+        .await
     }
 }
 
@@ -284,6 +359,87 @@ impl Secrets for Oo7NamedSecrets {
 mod tests {
     use super::*;
     use porter_core::{SecretText, UnixSeconds};
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    /// A daemon that answers only the keyrings opened since it started: the `n`th open is
+    /// keyring `n`, and a keyring older than `started` is refused as unavailable.
+    struct Daemon {
+        opens: AtomicU32,
+        started: AtomicU32,
+    }
+
+    impl Daemon {
+        fn new() -> Self {
+            Self {
+                opens: AtomicU32::new(0),
+                started: AtomicU32::new(1),
+            }
+        }
+
+        async fn open(&self) -> Result<u32, SecretsError> {
+            Ok(self.opens.fetch_add(1, Ordering::SeqCst) + 1)
+        }
+
+        /// The daemon goes and a new one starts: every keyring opened so far is refused.
+        fn restart(&self) {
+            self.started
+                .store(self.opens.load(Ordering::SeqCst) + 1, Ordering::SeqCst);
+        }
+
+        async fn read(&self, keyring: Arc<u32>) -> Result<u32, SecretsError> {
+            match *keyring >= self.started.load(Ordering::SeqCst) {
+                true => Ok(*keyring),
+                false => Err(SecretsError::Unavailable),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_kept_keyring_the_daemon_no_longer_answers_is_opened_again() {
+        let held = Held::new();
+        let daemon = Daemon::new();
+        let read = || held.run(|| daemon.open(), |k| daemon.read(k));
+        assert_eq!(read().await, Ok(1));
+        assert_eq!(read().await, Ok(1), "the keyring is kept between calls");
+        daemon.restart();
+        assert_eq!(read().await, Ok(2), "the same call reaches the new daemon");
+        assert_eq!(read().await, Ok(2));
+        assert_eq!(daemon.opens.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn a_keyring_that_answers_missing_or_locked_is_kept() {
+        let held = Held::new();
+        let opens = AtomicU32::new(0);
+        let open = || async {
+            opens.fetch_add(1, Ordering::SeqCst);
+            Ok::<_, SecretsError>(())
+        };
+        for refusal in [SecretsError::Missing, SecretsError::Locked] {
+            let got = held.run(open, |_| async { Err::<(), _>(refusal) }).await;
+            assert_eq!(got, Err(refusal));
+        }
+        assert_eq!(opens.load(Ordering::SeqCst), 1, "opened once, never again");
+    }
+
+    #[tokio::test]
+    async fn a_daemon_that_is_down_is_tried_once_per_call_and_again_on_the_next() {
+        let held = Held::new();
+        let opens = AtomicU32::new(0);
+        let open = || async {
+            opens.fetch_add(1, Ordering::SeqCst);
+            Ok::<_, SecretsError>(())
+        };
+        let down = |_| async { Err::<(), _>(SecretsError::Unavailable) };
+        assert_eq!(held.run(open, down).await, Err(SecretsError::Unavailable));
+        assert_eq!(
+            opens.load(Ordering::SeqCst),
+            1,
+            "a fresh keyring is not retried"
+        );
+        assert_eq!(held.run(open, down).await, Err(SecretsError::Unavailable));
+        assert_eq!(opens.load(Ordering::SeqCst), 2, "the next call opens again");
+    }
 
     #[test]
     fn a_credential_is_encoded_into_a_wiped_buffer_that_never_grew() {
