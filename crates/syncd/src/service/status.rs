@@ -1,4 +1,4 @@
-//! The vardicts `Sync1` sends: `Status` (anchor age, pending, conflicts, paused, quota) and the
+//! The vardicts `Sync1` sends: `Status` (anchor age, pending, conflicts, paused, syncing, quota) and the
 //! two signals' details.
 
 use super::hub::{DatasetName, StatusSnapshot};
@@ -18,6 +18,8 @@ pub const KEY_PENDING: &str = "pending";
 pub const KEY_CONFLICTS: &str = "conflicts";
 /// `Status` key: whether the user paused it (`b`).
 pub const KEY_PAUSED: &str = "paused";
+/// `Status` key: whether a cycle is running now (`b`), "Syncing…".
+pub const KEY_SYNCING: &str = "syncing";
 /// `Status` key, present only while the dataset waits for the person (`a{sv}` `{discard: t,
 /// held: t}`): the replica's listing lacks `discard` of the `held` items, and nothing has been
 /// discarded.
@@ -70,6 +72,7 @@ pub fn status_details(status: &StatusSnapshot) -> Details {
         KEY_PAUSED,
         owned(Value::Bool(status.pausing == Pausing::Paused)),
     );
+    put(KEY_SYNCING, owned(Value::Bool(status.syncing)));
     put(
         STATUS_KEY_QUOTA,
         status.quota.as_ref().and_then(quota_value),
@@ -156,6 +159,7 @@ mod tests {
                 total: Some(Bytes(100)),
             }),
             needs_confirmation: None,
+            syncing: true,
         };
         let details = status_details(&status);
         let get = |key: &str| details.get(key).map(|v| (**v).try_clone().expect("clone"));
@@ -163,6 +167,7 @@ mod tests {
         assert_eq!(get(KEY_PENDING), Some(Value::U64(4)));
         assert_eq!(get(KEY_CONFLICTS), Some(Value::U64(1)));
         assert_eq!(get(KEY_PAUSED), Some(Value::Bool(true)));
+        assert_eq!(get(KEY_SYNCING), Some(Value::Bool(true)));
         let quota = details.get(STATUS_KEY_QUOTA).expect("quota");
         assert_eq!(quota.value_signature().to_string(), "a{sv}");
         let nested: std::collections::HashMap<String, OwnedValue> =

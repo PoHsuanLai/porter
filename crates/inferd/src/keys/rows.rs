@@ -1,10 +1,11 @@
 //! The rows of the AI accounts in inferd's settings module (`/org/quire/Inference1/settings`),
 //! as a pure function of the registry: one row per account for its label, place, state, how it
 //! signs in, its provider and group (read-outs), a switch for the language service, one Revoke
-//! per permit with its day and how long it lasts, and "Sign in" / "Sign out" / "Remove account"
-//! actions. The paths and words are the ones accountd's rows had (`accounts.<id>.*`), so
-//! Settings reads them unchanged. Every key is under `accounts.`, so it is never
-//! agent-settable (`ds-settings` refuses a schema that says otherwise).
+//! per permit with its day, how long it lasts, its app and its service, what an account reached
+//! over the network spent this month and its monthly cap (when inferd meters hosted models), and
+//! "Sign in" / "Sign out" / "Remove account" actions. The paths and words are the ones accountd's
+//! rows had (`accounts.<id>.*`), so Settings reads them unchanged. Every key is under `accounts.`,
+//! so it is never agent-settable (`ds-settings` refuses a schema that says otherwise).
 
 use super::host::KeyHost;
 use super::local::state_slug;
@@ -19,7 +20,7 @@ use porter_core::sheet::ProviderGroup;
 use porter_core::wire::ParentWindow;
 use porter_core::{
     Account, AccountId, AccountState, AccountsReply, AgentState, AppId, AppName, AuthKind,
-    CapabilityKind, GrantId, Isolation, LoginOutcome, Offer, Toggle,
+    CapabilityKind, GrantId, Isolation, LoginOutcome, MicroUsd, Offer, Toggle,
 };
 use porter_families::set::ProviderNames;
 use porter_service::{Launchers as LaunchersSeam, LoginEnd, Registry, program_of};
@@ -49,6 +50,18 @@ pub(crate) enum Key {
     Since(AccountId, GrantId),
     /// `accounts.<id>.grant.<grant>.scope`: read-only, how long it holds.
     Scope(AccountId, GrantId),
+    /// `accounts.<id>.grant.<grant>.app`: read-only, the app the permit is for (its labels give
+    /// the app's name).
+    App(AccountId, GrantId),
+    /// `accounts.<id>.grant.<grant>.service`: read-only, the service it reaches (its labels give
+    /// the service's name).
+    GrantService(AccountId, GrantId),
+    /// `accounts.<id>.spend.month`: read-only, what was spent through the account on hosted
+    /// models this calendar month (UTC), in whole US cents rounded up, as digits.
+    SpendMonth(AccountId),
+    /// `accounts.<id>.spend.cap`: read-only, the monthly cap on an account
+    /// (`ai.spend.account_monthly_cents`) in whole US cents, as digits; `0` for no cap.
+    SpendCap(AccountId),
     /// `accounts.<id>.reauth`.
     Reauth(AccountId),
     /// `accounts.<id>.sign_out`: for an agent that signs itself in, forgets that it was signed in.
@@ -87,16 +100,21 @@ pub(crate) fn parse(path: &str, registry: &Registry) -> Option<Key> {
             "reauth" => Some(Key::Reauth(id)),
             "sign_out" => Some(Key::SignOut(id)),
             "remove" => Some(Key::Remove(id)),
+            "spend.month" => Some(Key::SpendMonth(id)),
+            "spend.cap" => Some(Key::SpendCap(id)),
             _ => {
                 if let Some(kind) = tail.strip_prefix("service.") {
                     return from_slug(kind).map(|k| Key::Service(id, k));
                 }
                 let grant = tail.strip_prefix("grant.")?;
-                // A permit's own rows end `.since` and `.scope`; an id may hold dots, so the
-                // suffix counts only when what is left names a permit the registry has.
+                // A permit's own rows end `.since`, `.scope`, `.app` and `.service`; an id may
+                // hold dots, so the suffix counts only when what is left names a permit the
+                // registry has.
                 for (suffix, make) in [
                     (".since", Key::Since as fn(AccountId, GrantId) -> Key),
                     (".scope", Key::Scope),
+                    (".app", Key::App),
+                    (".service", Key::GrantService),
                 ] {
                     let held = grant
                         .strip_suffix(suffix)
@@ -125,6 +143,10 @@ pub(crate) fn path(key: &Key) -> String {
         Key::Grant(id, grant) => format!("accounts.{id}.grant.{grant}"),
         Key::Since(id, grant) => format!("accounts.{id}.grant.{grant}.since"),
         Key::Scope(id, grant) => format!("accounts.{id}.grant.{grant}.scope"),
+        Key::App(id, grant) => format!("accounts.{id}.grant.{grant}.app"),
+        Key::GrantService(id, grant) => format!("accounts.{id}.grant.{grant}.service"),
+        Key::SpendMonth(id) => format!("accounts.{id}.spend.month"),
+        Key::SpendCap(id) => format!("accounts.{id}.spend.cap"),
         Key::Reauth(id) => format!("accounts.{id}.reauth"),
         Key::SignOut(id) => format!("accounts.{id}.sign_out"),
         Key::Remove(id) => format!("accounts.{id}.remove"),
@@ -254,6 +276,7 @@ fn account_keys(
     grants: &[Grant],
     names: &AppNames,
     providers: &ProviderNames,
+    spending: bool,
 ) -> Vec<KeySpec> {
     let section = account.label.0.as_str();
     let id = &account.id;
@@ -353,6 +376,39 @@ fn account_keys(
             grant.scope.word(),
             &SCOPE_WORDS,
         ));
+        let app = grant.key.app.name.as_str();
+        keys.push(readout(
+            &Key::App(id.clone(), grant.id.clone()),
+            section,
+            "App",
+            app,
+            &[(app, &names.title_of(&grant.key.app.name).0)],
+        ));
+        let service = slug(&grant.key.kind);
+        keys.push(readout(
+            &Key::GrantService(id.clone(), grant.id.clone()),
+            section,
+            "Service",
+            &service,
+            &[(&service, grant.key.kind.display_name())],
+        ));
+    }
+    // A program on this computer costs nothing: only an account reached over the network spends.
+    if spending && account.auth != AuthKind::LocalRuntime {
+        keys.push(readout(
+            &Key::SpendMonth(id.clone()),
+            section,
+            "Spent this month",
+            "0",
+            &[],
+        ));
+        keys.push(readout(
+            &Key::SpendCap(id.clone()),
+            section,
+            "Monthly limit",
+            "0",
+            &[],
+        ));
     }
     keys.extend(match account.auth {
         AuthKind::AgentLogin if account.state == AccountState::NeedsLogin => Some(spec(
@@ -393,17 +449,34 @@ fn account_keys(
     keys
 }
 
-/// The rows of every account of `registry`.
+/// The rows of every account of `registry`; with `spending`, each account reached over the
+/// network has its spend this month and its monthly cap too.
 pub(crate) fn schema(
     registry: &Registry,
     names: &AppNames,
     providers: &ProviderNames,
+    spending: bool,
 ) -> Vec<KeySpec> {
     registry
         .accounts
         .iter()
-        .flat_map(|account| account_keys(account, &registry.grants, names, providers))
+        .flat_map(|account| account_keys(account, &registry.grants, names, providers, spending))
         .collect()
+}
+
+/// What accounts have spent on hosted models this month, and the cap on each.
+pub trait SpendBook: Send + Sync + 'static {
+    /// What was spent through `account` this calendar month (UTC), and the monthly cap on an
+    /// account (`None`: no cap).
+    fn month(&self, account: &AccountId) -> (MicroUsd, Option<MicroUsd>);
+}
+
+/// Micro-dollars in a cent.
+const MICRO_USD_PER_CENT: u64 = 10_000;
+
+/// `micro` in whole cents, as digits: rounded up, so a part of a cent spent shows as one.
+fn cents_up(micro: MicroUsd) -> String {
+    micro.0.div_ceil(MICRO_USD_PER_CENT).to_string()
 }
 
 /// The rows of the AI accounts, as the settings module serves them.
@@ -525,6 +598,7 @@ pub struct AccountRows<H, L> {
     names: AppNames,
     providers: ProviderNames,
     served: ServedSlot,
+    spend: Option<Arc<dyn SpendBook>>,
 }
 
 impl<H, L> std::fmt::Debug for AccountRows<H, L> {
@@ -549,6 +623,15 @@ impl<H, L> AccountRows<H, L> {
             names,
             providers,
             served,
+            spend: None,
+        }
+    }
+
+    /// The rows with each account's spend this month and its monthly cap, read from `spend`.
+    pub fn with_spend(self, spend: Arc<dyn SpendBook>) -> Self {
+        Self {
+            spend: Some(spend),
+            ..self
         }
     }
 }
@@ -642,6 +725,29 @@ impl<H: KeyHost, L: LaunchersSeam + Clone + 'static> AccountRows<H, L> {
                 .find(|g| g.id == grant)
                 .map(|g| toml::Value::String(g.scope.word().to_owned()))
                 .ok_or_else(unknown),
+            Key::App(_, grant) => registry
+                .grants
+                .iter()
+                .find(|g| g.id == grant)
+                .map(|g| toml::Value::String(g.key.app.name.as_str().to_owned()))
+                .ok_or_else(unknown),
+            Key::GrantService(_, grant) => registry
+                .grants
+                .iter()
+                .find(|g| g.id == grant)
+                .map(|g| toml::Value::String(slug(&g.key.kind)))
+                .ok_or_else(unknown),
+            Key::SpendMonth(id) => {
+                let spend = self.spend.as_ref().ok_or_else(unknown)?;
+                account(&id)?;
+                text(&cents_up(spend.month(&id).0))
+            }
+            Key::SpendCap(id) => {
+                let spend = self.spend.as_ref().ok_or_else(unknown)?;
+                account(&id)?;
+                let cap = spend.month(&id).1;
+                text(&cap.map_or_else(|| "0".to_owned(), cents_up))
+            }
             Key::Grant(..) | Key::Reauth(_) | Key::SignOut(_) | Key::Remove(_) => {
                 Ok(toml::Value::Boolean(false))
             }
@@ -722,7 +828,11 @@ impl<H: KeyHost, L: LaunchersSeam + Clone + 'static> AccountRows<H, L> {
             | Key::Provider(_)
             | Key::Group(_)
             | Key::Since(..)
-            | Key::Scope(..) => {
+            | Key::Scope(..)
+            | Key::App(..)
+            | Key::GrantService(..)
+            | Key::SpendMonth(_)
+            | Key::SpendCap(_) => {
                 return Err(LiveError::NotPermitted("this row is a read-out".into()));
             }
         }
@@ -732,7 +842,12 @@ impl<H: KeyHost, L: LaunchersSeam + Clone + 'static> AccountRows<H, L> {
 
 impl<H: KeyHost, L: LaunchersSeam + Clone + 'static> KeyRows for AccountRows<H, L> {
     fn schema(&self) -> Vec<KeySpec> {
-        schema(&self.host.registry(), &self.names, &self.providers)
+        schema(
+            &self.host.registry(),
+            &self.names,
+            &self.providers,
+            self.spend.is_some(),
+        )
     }
 
     fn handles(&self, path_text: &str) -> bool {

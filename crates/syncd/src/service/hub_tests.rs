@@ -317,3 +317,21 @@ fn the_cycle_counts_say_which_cycle_began_after_a_moment() {
     handle.cycle_ended();
     assert_eq!(counts(&hub), Some((2, 2)));
 }
+
+#[test]
+fn status_says_syncing_while_a_cycle_runs_whatever_the_driver_published() {
+    let hub = Hub::default();
+    let dataset = name("a1/pim");
+    let handle = hub.register(dataset.clone(), Access::default());
+    let settings = caller("org.quire.Settings", CallerRole::Settings);
+    let syncing = |hub: &Hub| hub.status_for(&settings, &dataset).map(|s| s.syncing);
+    handle.publish(StatusSnapshot {
+        syncing: true,
+        ..StatusSnapshot::default()
+    });
+    assert_eq!(syncing(&hub), Some(false), "no cycle has begun");
+    handle.cycle_begun();
+    assert_eq!(syncing(&hub), Some(true));
+    handle.cycle_ended();
+    assert_eq!(syncing(&hub), Some(false));
+}

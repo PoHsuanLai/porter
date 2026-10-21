@@ -320,6 +320,8 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
             pausing: self.handle.pausing(),
             quota: self.quota,
             needs_confirmation: self.held,
+            // The hub tells whether a cycle runs from the cycles it counts.
+            syncing: false,
         });
     }
 }

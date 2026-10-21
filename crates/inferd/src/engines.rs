@@ -26,10 +26,10 @@ use engine_supervisor::{EngineId, EngineState, MonoMs};
 use model_catalog::Licence;
 use porter_core::capability::SpeechMode;
 use porter_core::consent::{Availability, Usage};
-use porter_core::{AccountId, AppId, DataClass, Locality, Need, Tier};
+use porter_core::{AccountId, AppId, DataClass, Locality, MicroUsd, Need, Tier};
 use porter_infer::{
-    Asker, InferRefusal, LicenceClass, ModelCard, ModelRef, PickRefusal, PlaceRefusal, Policy,
-    Readiness, ServedBy, Slot, SpendVerdict, SwapCost, TierMap, Why,
+    Asker, InferRefusal, LicenceClass, ModelCard, ModelRef, Period, PickRefusal, PlaceRefusal,
+    Policy, Readiness, ServedBy, Slot, SpendScope, SpendVerdict, SwapCost, TierMap, Why,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -277,6 +277,20 @@ impl Engines {
                 .usage_of(self.settings().spend, app, cloud.now()),
             None => Vec::new(),
         }
+    }
+
+    /// What was spent through `account` on hosted models this calendar month, and the monthly cap
+    /// on an account (`ai.spend.account_monthly_cents`); nothing spent when this daemon has none.
+    pub fn month_of(&self, account: &AccountId) -> (MicroUsd, Option<MicroUsd>) {
+        let cap = self.settings().spend.limits.account.monthly;
+        let spent = self.book.cloud.as_ref().map_or(0, |cloud| {
+            let scope = SpendScope::Account(account.clone());
+            cloud
+                .ledger()
+                .spent(&scope, Period::Monthly, cloud.now())
+                .micro_usd
+        });
+        (MicroUsd(spent), cap)
     }
 
     /// The hosted models `app` is offered for data of `class` now: what its grants reach, and the
@@ -1194,6 +1208,12 @@ mod proof;
 mod who;
 
 pub use who::Who;
+
+impl crate::keys::SpendBook for Engines {
+    fn month(&self, account: &AccountId) -> (MicroUsd, Option<MicroUsd>) {
+        self.month_of(account)
+    }
+}
 
 #[cfg(test)]
 mod tests;
