@@ -8,8 +8,8 @@
 //!   there for this caller, and no dataset (the state before W6e/W6f) is the same answer, never a
 //!   panic. A malformed name is `InvalidArgs`.
 //! - `Status` is `anchor_age` (seconds, once there is an anchor), `pending`, `conflicts`,
-//!   `paused` and, where the replica reports one, `quota` (`STATUS_KEY_QUOTA`: `used` and
-//!   `total`, both `t`).
+//!   `paused`, `syncing` (a cycle is running now) and, where the replica reports one, `quota`
+//!   (`STATUS_KEY_QUOTA`: `used` and `total`, both `t`).
 //! - `Resolve(dataset, conflict, how)` settles a stored conflict (`how` is `keep_local` or
 //!   `keep_remote`; the `Conflict` signal's `number` is the conflict). Only the dataset's owning
 //!   app may call it (Settings and the porter daemons see a dataset but do not own it: `Denied`);

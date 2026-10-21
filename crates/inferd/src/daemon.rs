@@ -624,6 +624,8 @@ impl Daemon {
             Arc::new(JsonLines::new(dirs.audit.clone())),
             Arc::new(SystemClock),
         );
+        // The accounts' rows read what each spent this month, and the cap, from the engines.
+        let spend: Arc<dyn crate::keys::SpendBook> = Arc::new(engines.clone());
         let daemon = Inference::new(
             engines,
             Arc::clone(&peers),
@@ -642,7 +644,7 @@ impl Daemon {
         serve_with_settings(
             &connection,
             daemon,
-            InferdSettings::new(peers, reload).with_keys(Arc::new(rows)),
+            InferdSettings::new(peers, reload).with_keys(Arc::new(rows.with_spend(spend))),
         )
         .await?;
         Ok(Self { connection, closer })

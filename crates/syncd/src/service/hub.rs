@@ -109,6 +109,9 @@ pub struct StatusSnapshot {
     /// Set while the dataset waits for the person: the replica's listing lacks all, or most, of
     /// what is held, and nothing has been discarded.
     pub needs_confirmation: Option<MassDelete>,
+    /// Whether a cycle is running now. The hub tells it from the cycles begun and ended; what a
+    /// driver publishes here is not read.
+    pub syncing: bool,
 }
 
 /// What a running dataset tells watchers: transfer progress, or a conflict stored.
@@ -401,6 +404,7 @@ impl Hub {
             .filter(|entry| entry.access.admits(caller))?;
         Some(StatusSnapshot {
             pausing: *entry.pausing.borrow(),
+            syncing: entry.cycles.begun > entry.cycles.ended,
             ..entry.status.clone()
         })
     }

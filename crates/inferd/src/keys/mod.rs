@@ -41,4 +41,4 @@ pub use desk::{KeyDesk, SecretsDesk, usable};
 pub use host::KeyHost;
 pub use local::LocalKeys;
 pub use news::NewsStore;
-pub use rows::{AccountRows, KeyRows, ServedSlot};
+pub use rows::{AccountRows, KeyRows, ServedSlot, SpendBook};
