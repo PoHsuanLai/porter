@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 /// The `[ai]` table: every settings row of the `ai` domain at its settings path, as a settings
 /// writer lays a file out (`ai.local_only`, `ai.floor.<class>`, `ai.model.<kind>.<tier>`,
-/// `ai.auto.*`, `ai.spend.*`, `ai.structured.*`). Values are the rows' slugs, resolved (and
+/// `ai.auto.*`, `ai.spend.*`, `ai.length.*`, `ai.structured.*`). Values are the rows' slugs, resolved (and
 /// refused field by field) in `settings`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AiConfig {
@@ -25,6 +25,9 @@ pub struct AiConfig {
     /// `ai.spend.*`.
     #[serde(default)]
     pub spend: crate::settings::SpendConfig,
+    /// `ai.length.*`.
+    #[serde(default)]
+    pub length: crate::settings::LengthConfig,
     /// `ai.pipeline.*`.
     #[serde(default)]
     pub pipeline: crate::settings::PipelineConfig,

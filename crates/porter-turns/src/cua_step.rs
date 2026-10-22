@@ -22,7 +22,7 @@ use cua_session::{
 use cua_session::{StepNote as NoteLine, TreeText as WindowText};
 use cua_vendors::StepResult;
 use model_provider::{
-    Batching, CuaSupport, Flow, ImageInput, Limits, Provider, Reasoning, ToolCallId,
+    Batching, CuaSupport, Flow, ImageInput, Limits, Provider, Reasoning, Tokens, ToolCallId,
     ToolParallelism,
 };
 use porter_infer::{
@@ -52,7 +52,8 @@ fn unreadable() -> Failed {
 
 /// The session for a run on this model, or none when the model has no tool or text dialect (a
 /// vendor's wire needs the vendor's backend, not an engine on this computer).
-pub fn open(model: &LocalModel, begin: &CuaBegin) -> Option<CuaSession> {
+/// A reply is never asked to be longer than `ceiling`.
+pub fn open(model: &LocalModel, begin: &CuaBegin, ceiling: Tokens) -> Option<CuaSession> {
     let caps = model.caps()?;
     let CuaSupport::Dialect {
         dialect,
@@ -80,7 +81,7 @@ pub fn open(model: &LocalModel, begin: &CuaBegin) -> Option<CuaSession> {
     let settings = TurnSettings {
         sampling: model.entry.sampling?.reasoning_off,
         limits: Limits {
-            max_output: caps.max_output,
+            max_output: caps.max_output.min(ceiling),
             stop: Vec::new(),
             // The session that runs the steps bounds them; a step has no deadline of its own.
             deadline: None,

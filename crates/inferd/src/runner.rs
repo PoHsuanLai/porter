@@ -304,7 +304,10 @@ impl Job {
         let local = self.local();
         let reply = match request {
             InferRequest::CuaBegin(begin) => local.begin_cua(begin),
-            InferRequest::CuaStep(step) => local.cua(&model, &step, frames).await,
+            InferRequest::CuaStep(step) => {
+                let ceiling = self.ceiling(&model);
+                local.cua(&model, &step, frames, ceiling).await
+            }
             InferRequest::Transcribe(begin) => {
                 self.transcribe(&model, served, &begin, ChannelAudio(audio))
                     .await

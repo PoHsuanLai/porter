@@ -81,6 +81,7 @@ pub fn local_model(
     let profile = EngineProfile {
         kind,
         args: Vec::new(),
+        context_arg: None,
         weights: WeightFiles::HfSnapshot,
         inputs: None,
         outputs: None,

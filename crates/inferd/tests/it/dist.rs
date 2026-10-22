@@ -250,7 +250,7 @@ fn effect(text: &str) -> (String, Vec<String>) {
     rejected.extend(config.ai.resolve().rejected.iter().map(|p| (*p).to_owned()));
     (
         format!(
-            "{:?} {floors:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {limits:?}",
+            "{:?} {floors:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?} {limits:?}",
             s.policy.local_only,
             s.tiers,
             s.auto,
@@ -258,7 +258,8 @@ fn effect(text: &str) -> (String, Vec<String>) {
             s.describe_images,
             s.my_network,
             s.agent_endpoint,
-            s.tailnet_serve
+            s.tailnet_serve,
+            s.lengths
         ),
         rejected,
     )
@@ -302,6 +303,8 @@ fn the_schema_holds_the_rows_the_design_names_and_each_is_a_page_row_of_intellig
             "ai.spend.account_monthly_cents",
             "ai.spend.app_daily_cents",
             "ai.spend.app_monthly_cents",
+            "ai.length.conversation",
+            "ai.length.reply",
             "ai.structured.open_text",
             "ai.structured.open_list",
             "ai.structured.depth",
@@ -315,6 +318,7 @@ fn the_schema_holds_the_rows_the_design_names_and_each_is_a_page_row_of_intellig
         assert_eq!(key.page, Page::Intelligence, "{}", key.path.0);
         let want_section = match key.path.0.as_str() {
             p if p.starts_with("ai.structured.") => "Structured output",
+            p if p.starts_with("ai.length.") => "Local models",
             p if p.starts_with("ai.auto.") || p.starts_with("ai.spend.") => "Automatic",
             _ => "Models",
         };
@@ -415,6 +419,37 @@ fn the_cap_rows_are_cents_from_zero_and_default_to_no_cap() {
         Some(porter_core::MicroUsd(2_500_000))
     );
     assert_eq!(settings::cents_to_limit(0), None);
+}
+
+#[test]
+fn the_length_rows_default_to_automatic_and_every_choice_is_one_the_row_accepts() {
+    let keys = schema_keys();
+    for (path, range) in [
+        (
+            settings::LENGTH_CONVERSATION,
+            settings::LENGTH_CONVERSATION_RANGE,
+        ),
+        (settings::LENGTH_REPLY, settings::LENGTH_REPLY_RANGE),
+    ] {
+        let key = keys.iter().find(|k| k.path.0 == path).expect(path);
+        assert_eq!(
+            key.default,
+            toml::Value::String(settings::LENGTH_AUTOMATIC.to_owned()),
+            "{path}"
+        );
+        let KeyKind::Menu { variants } = &key.kind else {
+            panic!("{path}: a menu");
+        };
+        assert_eq!(variants.first().map(String::as_str), Some("automatic"));
+        for word in variants {
+            assert!(key.labels.0.contains_key(word), "{path}: {word} has a name");
+            if let Ok(number) = word.parse::<u32>() {
+                assert!(range.contains(&number), "{path}: {word}");
+            }
+            let (_, rejected) = effect(&file_with(path, toml::Value::String(word.clone())));
+            assert!(rejected.is_empty(), "{path}: {word}");
+        }
+    }
 }
 
 #[test]

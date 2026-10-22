@@ -29,6 +29,9 @@ pub struct LocalTurn<'a, U> {
     pub limits: Limits,
     /// The bytes of the request's attachments.
     pub frames: &'a Frames,
+    /// The most a reply may write, whatever the request asks (the model's most, the person's
+    /// length and the window the engine runs with: `LocalModel::reply_ceiling`).
+    pub ceiling: sp::Tokens,
 }
 
 fn flow(sent: Flow) -> sp::Flow {
@@ -39,6 +42,14 @@ fn flow(sent: Flow) -> sp::Flow {
 }
 
 impl<U: EngineUse> LocalTurn<'_, U> {
+    /// `turn`, asking for no longer a reply than the ceiling: a request that asks for more gets
+    /// the most the model may write, and one that leaves it open gets the model's served reply
+    /// unless the ceiling is lower.
+    fn within_ceiling(&self, mut turn: sp::TurnRequest) -> sp::TurnRequest {
+        turn.limits.max_output = turn.limits.max_output.min(self.ceiling);
+        turn
+    }
+
     /// `turn` on the model's engine, `shaping` saying whether its reply is validated and repaired.
     async fn run(
         &self,
@@ -111,6 +122,7 @@ impl<U: EngineUse> Model for LocalTurn<'_, U> {
         sink: &mut impl ChatSink,
     ) -> Result<ChatReply, TurnError> {
         let turn = bridge::chat_turn(self.model, request, self.frames)
+            .map(|turn| self.within_ceiling(turn))
             .map_err(|_| InferRefusal::Unsupported)?;
         let shaping = structured::shaping(self.model, request, self.limits);
         self.run(&turn, shaping, sink).await
@@ -122,6 +134,7 @@ impl<U: EngineUse> Model for LocalTurn<'_, U> {
         sink: &mut impl ChatSink,
     ) -> Result<ChatReply, TurnError> {
         let turn = bridge::task_turn(self.model, request, self.tier)
+            .map(|turn| self.within_ceiling(turn))
             .map_err(|_| InferRefusal::Unsupported)?;
         self.run(&turn, Shaping::Unchecked, sink).await
     }

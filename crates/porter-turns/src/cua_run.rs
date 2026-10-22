@@ -6,7 +6,7 @@
 use crate::bridge::Frames;
 use crate::cua_step::{self, Failed};
 use cua_session::CuaSession;
-use model_provider::{Flow as ProviderFlow, Provider};
+use model_provider::{Flow as ProviderFlow, Provider, Tokens};
 use porter_infer::{
     ChatSink, CuaBegin, CuaStepFailure, CuaStepReply, CuaStepRequest, Flow, ModelError,
 };
@@ -49,6 +49,8 @@ pub struct StepJob<'a, P> {
     pub frames: &'a Frames,
     /// The step.
     pub request: &'a CuaStepRequest,
+    /// The most a reply may write (`LocalModel::reply_ceiling`).
+    pub ceiling: Tokens,
 }
 
 /// The provider's flow control for the session's.
@@ -80,7 +82,7 @@ impl CuaRun {
     ) -> Result<CuaStepReply, CuaStepFailure> {
         if self.session.is_none() {
             self.session = Some(
-                cua_step::open(job.model, &self.begin)
+                cua_step::open(job.model, &self.begin, job.ceiling)
                     .ok_or(CuaStepFailure::ModelFailed(ModelError::Unreadable))?,
             );
         }

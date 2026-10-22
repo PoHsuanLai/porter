@@ -7,6 +7,9 @@
 //! [`TurnStep`]s. The engine's owner is told the engine is in use ([`EngineUse`]) while a turn
 //! runs.
 //!
+//! A reply is never asked to be longer than the ceiling the caller gives a turn (the model's most,
+//! the person's length and the engine's window: `LocalModel::reply_ceiling`).
+//!
 //! What it leaves to its caller: which model the session is pinned to, a hosted model, and a
 //! speech turn (a speech engine is not an OpenAI-compatible one).
 
@@ -238,6 +241,7 @@ impl<U: EngineUse> LocalTurns<U> {
         model: &LocalModel,
         request: &porter_infer::CuaStepRequest,
         frames: &Frames,
+        ceiling: sp::Tokens,
     ) -> InferReply {
         let run = self
             .run
@@ -255,6 +259,7 @@ impl<U: EngineUse> LocalTurns<U> {
             provider: &provider,
             frames,
             request,
+            ceiling,
         };
         match run.step(job, &mut sink).await {
             Ok(reply) => {

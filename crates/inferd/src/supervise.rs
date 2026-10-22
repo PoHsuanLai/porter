@@ -3,13 +3,18 @@
 //! else talks to it through a [`Supervised`] handle (commands in, snapshots out), so the rest of
 //! inferd names none of the three seams' types and a test swaps them for stoker's fakes.
 //!
+//! An engine whose window is a launch flag is started with a window chosen at that moment, from the
+//! card's free memory and what the person set ([`Sizing`]); the machine's budget still counts it at
+//! the window the catalogue serves.
+//!
 //! Time is `tokio::time::Instant` from the driver's start, so a test with paused time is
 //! deterministic.
 
 use crate::startup::{Cause, Diagnostics, Tail};
 use engine_supervisor::{
     EngineFailure, EngineHost, EngineId, EngineSpec, EngineState, ExitCode, GpuMemory, GpuProbe,
-    MonoMs, Probe, ReadyProbe, Supervisor, SupervisorConfig, SupervisorIn, SupervisorOut, step,
+    MonoMs, Probe, ReadyProbe, Supervisor, SupervisorConfig, SupervisorIn, SupervisorOut, UnitSpec,
+    step,
 };
 use model_catalog::MiB;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -68,7 +73,9 @@ pub struct Snapshot {
 }
 
 mod change;
+mod sizing;
 use change::Change;
+pub use sizing::Sizing;
 
 #[derive(Debug)]
 enum Command {
@@ -96,6 +103,7 @@ pub struct Supervised {
     state: watch::Receiver<Snapshot>,
     probe_every: Duration,
     headroom: MiB,
+    sizing: Sizing,
 }
 
 /// The turns of `porter-turns` tell the supervisor which engine they use (the inherent `used`).
@@ -115,6 +123,7 @@ impl Supervised {
             state,
             probe_every: SupervisorConfig::default().probe_every,
             headroom: SupervisorConfig::default().headroom,
+            sizing: Sizing::default(),
         }
     }
 
@@ -145,9 +154,30 @@ impl Supervised {
         P: ReadyProbe + 'static,
         G: GpuProbe + 'static,
     {
+        Self::start_sized(specs, config, ports, diagnostics, Sizing::default())
+    }
+
+    /// `start_with`, starting an engine with the window `sizing` chooses for it instead of the
+    /// one its spec's unit carries.
+    pub fn start_sized<H, P, G>(
+        specs: Vec<EngineSpec>,
+        config: SupervisorConfig,
+        ports: Ports<H, P, G>,
+        diagnostics: Diagnostics,
+        sizing: Sizing,
+    ) -> Self
+    where
+        H: EngineHost + 'static,
+        P: ReadyProbe + 'static,
+        G: GpuProbe + 'static,
+    {
         let (commands, inbox) = mpsc::unbounded_channel();
         let probe_every = config.probe_every;
         let ids: Vec<EngineId> = specs.iter().map(|spec| spec.id.clone()).collect();
+        let needs: BTreeMap<EngineId, MiB> = specs
+            .iter()
+            .map(|spec| (spec.id.clone(), spec.need))
+            .collect();
         let stopped: BTreeMap<EngineId, EngineState> = ids
             .iter()
             .map(|id| (id.clone(), EngineState::Stopped))
@@ -166,6 +196,8 @@ impl Supervised {
         let driver = Driver {
             sup: Supervisor::new(specs, nothing),
             ids,
+            needs,
+            sizing: sizing.clone(),
             config,
             ports: Arc::new(ports),
             tasks: JoinSet::new(),
@@ -186,7 +218,24 @@ impl Supervised {
             state,
             probe_every: config.probe_every,
             headroom: config.headroom,
+            sizing,
         }
+    }
+
+    /// The window the engine was last started with, when it is one whose window is chosen at
+    /// start.
+    pub fn window_of(&self, id: &EngineId) -> Option<model_provider::Tokens> {
+        self.sizing.window_of(id)
+    }
+
+    /// What the person set for the length of a conversation and a reply.
+    pub fn lengths(&self) -> crate::local::Lengths {
+        self.sizing.lengths()
+    }
+
+    /// Sets the lengths the person set; an engine started after this reads them.
+    pub fn set_lengths(&self, lengths: crate::local::Lengths) {
+        self.sizing.set_lengths(lengths);
     }
 
     /// Asks for the engine and waits until it is ready (`Ok`) or fails (`Failed`, with the cause):
@@ -269,6 +318,9 @@ impl Supervised {
 struct Driver<H, P, G> {
     sup: Supervisor,
     ids: Vec<EngineId>,
+    /// The memory each engine takes with the window its spec serves.
+    needs: BTreeMap<EngineId, MiB>,
+    sizing: Sizing,
     config: SupervisorConfig,
     ports: Arc<Ports<H, P, G>>,
     tasks: JoinSet<Joined>,
@@ -475,32 +527,72 @@ where
         );
     }
 
+    /// The unit to start `id` with: the one the machine gave, or for an engine whose window is
+    /// chosen at start, the same with the window that fits the card now.
+    fn sized(&self, id: &EngineId, unit: UnitSpec) -> UnitSpec {
+        let total = self.gpu.filter(|gpu| gpu.total.0 > 0).map(|gpu| gpu.total);
+        self.sizing
+            .unit(id, self.free_for(id), total)
+            .unwrap_or(unit)
+    }
+
+    /// The card's memory left for `id`: the total, less what others use, what the other engines
+    /// take (at the window each was started with) and the headroom the machine keeps. None when
+    /// the card was not read.
+    fn free_for(&self, id: &EngineId) -> Option<MiB> {
+        let gpu = self.gpu.filter(|gpu| gpu.total.0 > 0)?;
+        let engines: u32 = self
+            .needs
+            .iter()
+            .filter(|(other, _)| *other != id)
+            .filter(|(other, _)| {
+                matches!(
+                    self.sup.state(other),
+                    Some(
+                        EngineState::Starting { .. }
+                            | EngineState::Ready { .. }
+                            | EngineState::Stopping { .. }
+                    )
+                )
+            })
+            .map(|(other, served)| self.sizing.need_of(other, *served).0)
+            .fold(0, u32::saturating_add);
+        Some(MiB(gpu
+            .total
+            .0
+            .saturating_sub(gpu.used_by_others.0)
+            .saturating_sub(engines)
+            .saturating_sub(self.config.headroom.0)))
+    }
+
     /// Carries out one effect; an input it causes at once is returned.
     async fn apply(&mut self, effect: SupervisorOut) -> Option<SupervisorIn> {
         let ports = Arc::clone(&self.ports);
         match effect {
-            SupervisorOut::Spawn(id, unit) => match ports.host.spawn(&id, &unit).await {
-                Ok(()) => {
-                    let diagnostics = self.diagnostics.clone();
-                    self.tasks.spawn(async move {
-                        let code = ports.host.exited(&id).await;
-                        let tail = Some(diagnostics.tail(&id));
-                        Joined {
-                            input: SupervisorIn::Exited { id, code },
-                            tail,
-                        }
-                    });
-                    None
+            SupervisorOut::Spawn(id, unit) => {
+                match ports.host.spawn(&id, &self.sized(&id, unit)).await {
+                    Ok(()) => {
+                        let diagnostics = self.diagnostics.clone();
+                        self.tasks.spawn(async move {
+                            let code = ports.host.exited(&id).await;
+                            let tail = Some(diagnostics.tail(&id));
+                            Joined {
+                                input: SupervisorIn::Exited { id, code },
+                                tail,
+                            }
+                        });
+                        None
+                    }
+                    Err(_) => {
+                        let cause = self.diagnostics.refusal(&id).unwrap_or(Cause::Refused);
+                        self.pending.insert(id.clone(), cause);
+                        Some(SupervisorIn::Exited {
+                            id,
+                            code: ExitCode(-1),
+                        })
+                    }
                 }
-                Err(_) => {
-                    let cause = self.diagnostics.refusal(&id).unwrap_or(Cause::Refused);
-                    self.pending.insert(id.clone(), cause);
-                    Some(SupervisorIn::Exited {
-                        id,
-                        code: ExitCode(-1),
-                    })
-                }
-            },
+            }
             SupervisorOut::Stop(id) => {
                 let _ = ports.host.stop(&id).await;
                 None

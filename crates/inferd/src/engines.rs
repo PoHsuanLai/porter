@@ -144,6 +144,7 @@ impl Engines {
 
     /// The same, starting from these settings (a new holder: the old one's clones keep theirs).
     pub fn with_settings(self, settings: Settings) -> Self {
+        self.supervised.set_lengths(settings.lengths);
         let book = Book {
             local: self.book.local.clone(),
             remote: self.book.remote.clone(),
@@ -170,8 +171,11 @@ impl Engines {
     }
 
     /// Puts new settings in force for every clone of these engines: the next session is routed
-    /// by them, a session already open keeps the decision it was given.
+    /// by them, a session already open keeps the decision it was given. The next engine to start
+    /// takes its window from them.
     pub fn apply(&self, settings: Settings) {
+        // An engine started from now on is sized by the lengths; one running keeps its window.
+        self.supervised.set_lengths(settings.lengths);
         self.book.live.set(settings);
     }
 

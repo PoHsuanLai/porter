@@ -6,12 +6,18 @@ use super::{
     TailnetServe,
 };
 use super::{
+    LENGTH_AUTOMATIC, LENGTH_CONVERSATION, LENGTH_CONVERSATION_RANGE, LENGTH_REPLY,
+    LENGTH_REPLY_RANGE, LengthSaid,
+};
+use super::{
     SPEND_ACCOUNT_DAILY, SPEND_ACCOUNT_MONTHLY, SPEND_APP_DAILY, SPEND_APP_MONTHLY,
     SPEND_CAP_RANGE, SPEND_WARN, SPEND_WARN_DEFAULT, SPEND_WARN_RANGE, ScopeLimits, Settings,
     SpendLimits, SpendLine, cents_to_limit,
 };
 use crate::config::InferdConfig;
+use crate::local::Lengths;
 use crate::structured::AiConfig;
+use model_provider::Tokens;
 use porter_core::{DataClass, Permille, Tier};
 use porter_infer::{
     AutoRow, ClassFloor, DescribeImages, Floor, LocalOnly, ModelRef, Policy, PoolRow, Slot,
@@ -221,6 +227,44 @@ fn spend_of(ai: &AiConfig, rejected: &mut Vec<String>) -> SpendLine {
     SpendLine { warn_at, limits }
 }
 
+/// A length row's value: none for Automatic or for a value out of `range` (said in `rejected`).
+fn length_of(
+    said: Option<&LengthSaid>,
+    path: &str,
+    range: &std::ops::RangeInclusive<u32>,
+    rejected: &mut Vec<String>,
+) -> Option<Tokens> {
+    let number = match said? {
+        LengthSaid::Words(word) if word == LENGTH_AUTOMATIC => return None,
+        LengthSaid::Words(word) => word.parse::<u32>().ok(),
+        LengthSaid::Number(number) => u32::try_from(*number).ok(),
+    };
+    match number {
+        Some(value) if range.contains(&value) => Some(Tokens(value)),
+        _ => {
+            rejected.push(path.to_owned());
+            None
+        }
+    }
+}
+
+fn lengths_of(ai: &AiConfig, rejected: &mut Vec<String>) -> Lengths {
+    Lengths {
+        conversation: length_of(
+            ai.length.conversation.as_ref(),
+            LENGTH_CONVERSATION,
+            &LENGTH_CONVERSATION_RANGE,
+            rejected,
+        ),
+        reply: length_of(
+            ai.length.reply.as_ref(),
+            LENGTH_REPLY,
+            &LENGTH_REPLY_RANGE,
+            rejected,
+        ),
+    }
+}
+
 /// The settings a configuration says.
 pub fn resolve(config: &InferdConfig) -> Resolved {
     let mut rejected = Vec::new();
@@ -235,6 +279,7 @@ pub fn resolve(config: &InferdConfig) -> Resolved {
         my_network: my_network_of(&config.ai, &mut rejected),
         agent_endpoint: agent_endpoint_of(&config.ai, &mut rejected),
         tailnet_serve: tailnet_serve_of(&config.ai, &mut rejected),
+        lengths: lengths_of(&config.ai, &mut rejected),
     };
     Resolved { settings, rejected }
 }
