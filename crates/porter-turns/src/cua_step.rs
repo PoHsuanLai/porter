@@ -55,7 +55,10 @@ fn unreadable() -> Failed {
 pub fn open(model: &LocalModel, begin: &CuaBegin) -> Option<CuaSession> {
     let caps = model.caps()?;
     let CuaSupport::Dialect {
-        dialect, batching, ..
+        dialect,
+        batching,
+        profile: actions,
+        ..
     } = caps.computer_use
     else {
         return None;
@@ -71,7 +74,9 @@ pub fn open(model: &LocalModel, begin: &CuaBegin) -> Option<CuaSession> {
         FrameBudget::within(caps.images.per_prompt),
         RepairBudget(1),
         Encoding::Png,
-    );
+    )
+    // The model is shown, and read through, its own action names and drag and scroll styles.
+    .with_actions(actions);
     let settings = TurnSettings {
         sampling: model.entry.sampling?.reasoning_off,
         limits: Limits {
@@ -228,7 +233,8 @@ pub async fn step<P: Provider>(
             // The session is gone: the cut turn holds no call, and a repair would be asked of nobody.
             return Err(CuaStepFailure::Unparseable.into());
         }
-        let outcome = session.absorb_for(&sent, tee.finish(end), &map);
+        // Where the cursor was: a model that drags from the cursor needs it, or its drags drop.
+        let outcome = session.absorb_at(&sent, tee.finish(end), &map, request.cursor);
         match outcome {
             StepOutcome::Actions {
                 thought,
