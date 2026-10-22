@@ -5,8 +5,10 @@
 //!
 //! What stoker leaves to the daemon is done here, from the model's catalog entry: the
 //! `CuaProfile` (dialect, resize rule and space of the entry, a history of one frame fewer than
-//! the model takes per prompt, one repair) and the `TurnSettings` (the entry's reasoning-off
-//! sampling, its output limit, no reasoning, how many calls a turn may make, the engine's extras).
+//! the model takes per prompt, one repair) and the `TurnSettings` (the entry's output limit, how
+//! many calls a turn may make, the engine's extras, and reasoning off with its sampling, except for
+//! a model trained to think before its action, which runs with the engine's reasoning and the
+//! sampling for it).
 //!
 //! The window's contents and the notes said to the run are `ObservationIn::with_tree` and
 //! `with_notes`; a note keeps who said it in its words ("The person says: ..."), because stoker's
@@ -14,7 +16,7 @@
 
 use crate::bridge::{self, BridgeError, Frames};
 use crate::tee::{Echo, Tee};
-use cua_action::CuaDialect;
+use cua_action::{AnswerShape, CuaDialect};
 use cua_session::{
     CuaProfile, CuaSession, CuaTaskText, FrameBudget, MaskedRegions, ObservationIn, RepairBudget,
     StepIndex, StepLines, StepOutcome, TurnSettings,
@@ -78,15 +80,20 @@ pub fn open(model: &LocalModel, begin: &CuaBegin, ceiling: Tokens) -> Option<Cua
     )
     // The model is shown, and read through, its own action names and drag and scroll styles.
     .with_actions(actions);
+    // A model trained to think before it acts is run with its reasoning; any other answers plainly.
+    let reasoning = match actions.answer {
+        AnswerShape::ThinkActionCall => Reasoning::EngineDefault,
+        _ => Reasoning::Off,
+    };
     let settings = TurnSettings {
-        sampling: model.entry.sampling?.reasoning_off,
+        sampling: *model.entry.sampling?.for_reasoning(reasoning),
         limits: Limits {
             max_output: caps.max_output.min(ceiling),
             stop: Vec::new(),
             // The session that runs the steps bounds them; a step has no deadline of its own.
             deadline: None,
         },
-        reasoning: Reasoning::Off,
+        reasoning,
         tool_calls: match batching {
             Batching::One => ToolParallelism::One,
             Batching::Many => ToolParallelism::Many,

@@ -210,6 +210,36 @@ async fn the_request_is_set_from_the_catalog_entry() {
 }
 
 #[tokio::test]
+async fn a_model_trained_to_think_before_it_acts_is_run_with_its_reasoning() {
+    let scratch = Scratch::new("cua-think");
+    let mut model = cua_model(&scratch);
+    let caps = model.entry.caps.as_mut().expect("caps");
+    let CuaSupport::Dialect { profile, .. } = &mut caps.computer_use else {
+        panic!("the fixture has a dialect");
+    };
+    profile.answer = cua_action::AnswerShape::ThinkActionCall;
+    let provider = says(vec![click(r#"{"action":"terminate","status":"success"}"#)]);
+    let frames = Frames::read(vec![memfd(b"png bytes")]).expect("frames");
+    let mut kept = session(&model);
+    let _ = step(
+        &mut kept,
+        &model,
+        &provider,
+        &png_request(),
+        &frames,
+        |_| Flow::Continue,
+    )
+    .await;
+    let sent = &provider.requests()[0];
+    let entry = model.entry.sampling.expect("sampling");
+    assert_eq!(sent.reasoning, model_provider::Reasoning::EngineDefault);
+    assert_eq!(
+        sent.sampling,
+        *entry.for_reasoning(model_provider::Reasoning::EngineDefault)
+    );
+}
+
+#[tokio::test]
 async fn a_raw_frame_is_prepared_into_a_png_at_the_size_the_model_is_shown() {
     let provider = says(vec![click(r#"{"action":"terminate","status":"success"}"#)]);
     let scratch = Scratch::new("cua-raw");
