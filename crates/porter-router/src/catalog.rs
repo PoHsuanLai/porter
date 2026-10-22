@@ -181,6 +181,7 @@ fn cua_cap(caps: &Caps) -> Option<CuaCap> {
         dialect: CuaDialect::Tool(_) | CuaDialect::Text(_),
         batching,
         zoom,
+        ..
     } = caps.computer_use
     else {
         return None;

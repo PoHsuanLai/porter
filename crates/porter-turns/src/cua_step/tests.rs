@@ -486,6 +486,7 @@ fn a_session_opens_for_a_tool_or_text_dialect_and_for_nothing_else() {
         dialect: CuaDialect::Wire(cua_action::WireDialect::OpenAiComputer),
         batching: Batching::One,
         zoom: model_provider::Zoom::Absent,
+        profile: cua_action::ActionProfile::default(),
     };
     assert!(open(&models[2], &begin()).is_none());
 }
