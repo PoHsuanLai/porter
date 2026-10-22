@@ -19,13 +19,13 @@ use crate::engines::Engines;
 use crate::hosts::{HealthProbe, HostCloser, NvidiaSmi, ProcessHost};
 use crate::installed::Installed;
 use crate::keys::{AccountRows, KeyAudit, KeysObject, KeysStartError};
-use crate::local::{LocalModel, build};
+use crate::local::{Lengths, LocalModel, build};
 use crate::peers::{CallerTable, PROC_GATE, ProcPeers, ProcRoot};
 use crate::replay::Replays;
 use crate::service::{Inference, serve_with_settings};
 use crate::settings::{ConfigFile, InferdSettings, LocalEngines, Reload, resolve};
 use crate::shutdown::{self, Ended, Shutdown};
-use crate::supervise::{Ports, Supervised};
+use crate::supervise::{Ports, Sizing, Supervised};
 use crate::tailnet::{BusMachines, Parts, Tailnet};
 use crate::toolproof::ToolProofs;
 use crate::watch::Watch;
@@ -398,11 +398,11 @@ impl Daemon {
         for skipped in &catalog.skipped {
             eprintln!("inferd: catalog: {}: {}", skipped.what, skipped.why);
         }
-        let mut models = build(
-            &catalog.entries,
-            &config.engines_with(&dirs, &programs),
-            &dirs.sockets,
-        );
+        let engine_config = config.engines_with(&dirs, &programs);
+        let mut models = build(&catalog.entries, &engine_config, &dirs.sockets);
+        // The window of an engine that takes it as a launch flag is chosen when it starts, under
+        // the lengths the settings put in force (`Engines::with_settings`).
+        let sizing = Sizing::for_models(engine_config, &models, Lengths::default());
         let replays = Replays::read(&config.engines.named, &dirs.sockets);
         for problem in replays.skipped.iter().chain(&replays.unread()) {
             eprintln!("inferd: replay engine {problem}");
@@ -469,7 +469,7 @@ impl Daemon {
             .with_guard(installed.guard());
         let diagnostics = processes.diagnostics();
         let closer = processes.closer();
-        let supervised = Supervised::start_with(
+        let supervised = Supervised::start_sized(
             specs,
             replays.supervisor_config(models.len()),
             Ports {
@@ -478,6 +478,7 @@ impl Daemon {
                 gpu: NvidiaSmi::new(PathBuf::from("nvidia-smi")),
             },
             diagnostics,
+            sizing,
         );
         let structured = config.ai.resolve();
         for path in &structured.rejected {

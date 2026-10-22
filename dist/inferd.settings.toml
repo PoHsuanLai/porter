@@ -546,6 +546,57 @@ unit = "cents"
 kind = "intelligence"
 
 [[key]]
+path = "ai.length.conversation"
+default = "automatic"
+label = "Longest conversation"
+help = "How much one conversation with a model on this computer can hold at once: your messages, its answers and anything attached. Automatic uses as much as the model supports and your graphics card has room for. A longer conversation uses more graphics memory. Sizes are rough, in pages of text. Takes effect the next time the model starts."
+section = "Local models"
+exposure = "advanced"
+
+[key.kind]
+kind = "menu"
+
+[key.kind.v]
+variants = ["automatic", "8192", "16384", "32768", "65536", "131072"]
+
+[key.labels]
+automatic = "Automatic"
+"8192" = "About 12 pages"
+"16384" = "About 25 pages"
+"32768" = "About 50 pages"
+"65536" = "About 100 pages"
+"131072" = "About 200 pages"
+
+[key.page]
+kind = "intelligence"
+
+[[key]]
+path = "ai.length.reply"
+default = "automatic"
+label = "Longest reply"
+help = "The most one answer from a model on this computer can run to. Automatic allows as much as the model supports and its conversation length leaves room for. An app that asks for a shorter answer still gets it. Sizes are rough, in pages of text."
+section = "Local models"
+exposure = "advanced"
+
+[key.kind]
+kind = "menu"
+
+[key.kind.v]
+variants = ["automatic", "1024", "2048", "4096", "8192", "16384", "32768"]
+
+[key.labels]
+automatic = "Automatic"
+"1024" = "About 2 pages"
+"2048" = "About 3 pages"
+"4096" = "About 6 pages"
+"8192" = "About 12 pages"
+"16384" = "About 25 pages"
+"32768" = "About 50 pages"
+
+[key.page]
+kind = "intelligence"
+
+[[key]]
 path = "ai.structured.open_text"
 default = 4096
 label = "Longest free text"

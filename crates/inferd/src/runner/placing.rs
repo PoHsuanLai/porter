@@ -152,6 +152,15 @@ impl Job {
         }
     }
 
+    /// The most a reply of `model` may write now: what the model supports and the person's
+    /// length allow, bounded by the window its engine was started with.
+    pub(super) fn ceiling(&self, model: &LocalModel) -> model_provider::Tokens {
+        model.reply_ceiling(
+            self.engines.lengths(),
+            self.engines.window_of(&model.spec.id),
+        )
+    }
+
     /// One try of a request on `model`, noting whether it sent the session anything.
     async fn tapped(
         &self,
@@ -177,6 +186,7 @@ impl Job {
             tier: self.tier,
             limits: self.limits,
             frames,
+            ceiling: self.ceiling(model),
         };
         let mut sink = ToSession::new(tap);
         let reply = answer(&turn, request, &mut sink).await;

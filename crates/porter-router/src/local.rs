@@ -2,6 +2,9 @@
 //! engine can serve, with its card (what routing sees), the supervisor's spec (how to start its
 //! engine) and the socket its engine listens on.
 //!
+//! How long a conversation and a reply may be is the catalogue's and the person's (`window`): the
+//! window an engine starts with, and the longest reply a model may write.
+//!
 //! Nothing here starts anything. The weights are looked for (a model whose files are not in the
 //! cache is `Downloadable`, and there is no downloader yet), and the engine programs come from
 //! configuration, never from the environment.
@@ -329,6 +332,9 @@ fn one(entry: &ModelEntry, engines: &EngineConfig, sockets: &Path) -> Option<Loc
         profile,
     })
 }
+
+mod window;
+pub use window::{Lengths, choose_window, reply_ceiling, share_of};
 
 #[cfg(test)]
 mod tests;

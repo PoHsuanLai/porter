@@ -777,3 +777,54 @@ fn a_helper_pool_is_its_own_and_the_old_key_stays_the_assistants() {
     let bad = resolve(&config("[ai.auto.pool]\n\"text.helper.\" = []\n"));
     assert_eq!(bad.rejected, vec!["ai.auto.pool.text.helper.".to_owned()]);
 }
+
+fn length(text: &str) -> crate::local::Lengths {
+    settings(text).lengths
+}
+
+#[test]
+fn the_length_rows_are_automatic_unless_the_person_sets_a_number() {
+    use model_provider::Tokens as Count;
+    let automatic = crate::local::Lengths::default();
+    assert_eq!(length(""), automatic);
+    assert_eq!(
+        length("[ai.length]\nconversation = \"automatic\"\nreply = \"automatic\"\n"),
+        automatic
+    );
+    // A number as Settings writes it (in quotes) and as a person writes it by hand.
+    let set = length("[ai.length]\nconversation = \"65536\"\nreply = 16384\n");
+    assert_eq!(set.conversation, Some(Count(65_536)));
+    assert_eq!(set.reply, Some(Count(16_384)));
+    // The rows are separate: one set leaves the other automatic.
+    let one = length("[ai.length]\nreply = 2048\n");
+    assert_eq!((one.conversation, one.reply), (None, Some(Count(2_048))));
+}
+
+#[test]
+fn a_length_out_of_range_or_not_a_number_is_automatic_and_said() {
+    for (table, row, path) in [
+        ("conversation", "2047", LENGTH_CONVERSATION),
+        ("conversation", "1048577", LENGTH_CONVERSATION),
+        ("conversation", "-1", LENGTH_CONVERSATION),
+        ("conversation", "\"long\"", LENGTH_CONVERSATION),
+        ("reply", "255", LENGTH_REPLY),
+        ("reply", "262145", LENGTH_REPLY),
+        ("reply", "\"\"", LENGTH_REPLY),
+    ] {
+        let resolved = resolve(&config(&format!("[ai.length]\n{table} = {row}\n")));
+        assert_eq!(
+            resolved.settings.lengths,
+            crate::local::Lengths::default(),
+            "{table} {row}"
+        );
+        assert_eq!(resolved.rejected, vec![path.to_owned()], "{table} {row}");
+    }
+    for (table, row) in [
+        ("conversation", "2048"),
+        ("conversation", "1048576"),
+        ("reply", "256"),
+    ] {
+        let resolved = resolve(&config(&format!("[ai.length]\n{table} = {row}\n")));
+        assert!(resolved.rejected.is_empty(), "{table} {row}");
+    }
+}

@@ -3,7 +3,9 @@
 //!
 //! * [`Settings`] is what routing runs under: the policy (`ai.local_only`, `ai.floor.<class>`), the
 //!   tier map (`ai.model.<slot>.<tier>`), Automatic (`ai.auto.*`) and the spend line
-//!   (`ai.spend.warn_permille`). [`resolve`] reads it from the file's `[ai]` table, laid over the
+//!   (`ai.spend.warn_permille`) and, for the models on this computer, the longest conversation
+//!   and reply the person set (`ai.length.*`, Automatic where they set none; a window takes effect
+//!   the next time an engine starts). [`resolve`] reads it from the file's `[ai]` table, laid over the
 //!   old `[policy]` and `[tiers]` tables; a value a row does not accept falls back to the row's
 //!   default, for that field only, and is named in [`Resolved::rejected`].
 //! * [`Live`] holds the settings in force, shared by every clone of `Engines`; a session is routed
@@ -30,6 +32,7 @@ pub use module::{InferdSettings, serve_settings};
 pub use pool::HelperPools;
 pub use resolve::{Resolved, floor_value, model_text, parse_model, resolve, slot_value};
 
+use crate::local::Lengths;
 use porter_core::{AccountId, AppId, MicroUsd, Permille};
 use porter_infer::{
     AutoPolicy, ClassFloor, DescribeImages, Floor, Period, Policy, SpendCap, SpendScope, TierMap,
@@ -112,6 +115,40 @@ pub struct TailnetConfig {
 
 /// `ai.pipeline.describe_images`.
 pub const DESCRIBE_IMAGES: &str = "ai.pipeline.describe_images";
+
+/// `ai.length.conversation`.
+pub const LENGTH_CONVERSATION: &str = "ai.length.conversation";
+/// `ai.length.reply`.
+pub const LENGTH_REPLY: &str = "ai.length.reply";
+/// What the two length rows say for "worked out for each model".
+pub const LENGTH_AUTOMATIC: &str = "automatic";
+/// The conversation lengths the row accepts, in the units models count by: from about 3 pages to
+/// about 1600 (a page is about 650 of them).
+pub const LENGTH_CONVERSATION_RANGE: std::ops::RangeInclusive<u32> = 2048..=1_048_576;
+/// The reply lengths the row accepts: from about half a page to about 400.
+pub const LENGTH_REPLY_RANGE: std::ops::RangeInclusive<u32> = 256..=262_144;
+
+/// A length row as written: a word (`automatic`, or a number in quotes, as Settings writes it) or
+/// a bare whole number. Signed, so a negative number reaches the range check.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum LengthSaid {
+    /// `65536`.
+    Number(i64),
+    /// `"automatic"` or `"65536"`.
+    Words(String),
+}
+
+/// The `[ai.length]` table, as written.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LengthConfig {
+    /// `ai.length.conversation`.
+    #[serde(default)]
+    pub conversation: Option<LengthSaid>,
+    /// `ai.length.reply`.
+    #[serde(default)]
+    pub reply: Option<LengthSaid>,
+}
 
 /// `ai.spend.warn_permille`.
 pub const SPEND_WARN: &str = "ai.spend.warn_permille";
@@ -265,6 +302,8 @@ pub struct Settings {
     pub agent_endpoint: AgentEndpoint,
     /// `ai.tailnet.serve`.
     pub tailnet_serve: TailnetServe,
+    /// `ai.length.*`: what the person set for the models on this computer; Automatic where not.
+    pub lengths: Lengths,
 }
 
 impl Settings {
@@ -301,6 +340,7 @@ impl Default for Settings {
             my_network: MyNetwork::default(),
             agent_endpoint: AgentEndpoint::default(),
             tailnet_serve: TailnetServe::default(),
+            lengths: Lengths::default(),
         }
     }
 }

@@ -88,7 +88,7 @@ fn says(events: Vec<TurnEvent>) -> ScriptedProvider {
 }
 
 fn session(model: &LocalModel) -> CuaSession {
-    open(model, &begin()).expect("a session")
+    open(model, &begin(), Tokens(u32::MAX)).expect("a session")
 }
 
 type Stepped = Result<CuaStepReply, Failed>;
@@ -477,9 +477,9 @@ async fn a_stop_from_the_sink_ends_the_turn_so_there_is_nothing_to_act_on_and_no
 fn a_session_opens_for_a_tool_or_text_dialect_and_for_nothing_else() {
     let scratch = Scratch::new("cua-open");
     let mut models = models(&scratch);
-    assert!(open(&models[2], &begin()).is_some());
+    assert!(open(&models[2], &begin(), Tokens(u32::MAX)).is_some());
     assert!(
-        open(&models[0], &begin()).is_none(),
+        open(&models[0], &begin(), Tokens(u32::MAX)).is_none(),
         "a chat model has no dialect"
     );
     models[2].entry.caps.as_mut().expect("caps").computer_use = CuaSupport::Dialect {
@@ -488,7 +488,7 @@ fn a_session_opens_for_a_tool_or_text_dialect_and_for_nothing_else() {
         zoom: model_provider::Zoom::Absent,
         profile: cua_action::ActionProfile::default(),
     };
-    assert!(open(&models[2], &begin()).is_none());
+    assert!(open(&models[2], &begin(), Tokens(u32::MAX)).is_none());
 }
 
 #[test]

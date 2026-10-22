@@ -122,6 +122,16 @@
 # app_daily_cents = 200
 # app_monthly_cents = 2000
 #
+# How long a conversation and a reply of a model on this computer may be (ai.length.conversation and
+# ai.length.reply): "automatic" (the default) or a whole number. Automatic starts an engine with the
+# largest window the model supports and the graphics card has room for, and lets a reply run as long
+# as the model supports. A number is the length in the units models count by (about 650 to a page of
+# text); 2048 to 1048576 for a conversation and 256 to 262144 for a reply. A new conversation length
+# takes effect the next time the model starts.
+# [ai.length]
+# conversation = "automatic"
+# reply = 16384
+#
 # The old shape, still read: a [policy] table (local_only, floors) and [[tiers.rows]] (kind, tier,
 # model = { account, model }). The rows above win over it where both say something. It goes when
 # FINDINGS "inferd.toml: the old [policy] and [tiers] tables" says.
