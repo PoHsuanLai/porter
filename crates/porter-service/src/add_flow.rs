@@ -631,10 +631,27 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                 .store_renewed(caller, account, &signed)
                 .await
                 .map(|()| Stored::Reauthenticated),
-            Job::Extend { account, .. } => self
-                .store_extended(caller, account, &signed)
-                .await
-                .map(|()| Stored::Reauthenticated),
+            Job::Extend {
+                account,
+                provider,
+                kinds,
+                ..
+            } => {
+                let given: Vec<porter_core::Capability> = self
+                    .catalog
+                    .get(provider)
+                    .map(|spec| {
+                        kinds
+                            .iter()
+                            .flat_map(|kind| spec.on_use_rows(*kind))
+                            .map(|row| row.capability.clone())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                self.store_extended(caller, account, &signed, &given)
+                    .await
+                    .map(|()| Stored::Reauthenticated)
+            }
         };
         match stored {
             Ok(stored) => {

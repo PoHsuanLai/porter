@@ -1765,3 +1765,74 @@ async fn only_an_access_the_provider_asks_on_use_can_be_asked_for_later() {
     }
     assert_eq!(script.modes.lock().expect("modes").clone(), vec![]);
 }
+
+fn whole_store() -> porter_core::Need {
+    use porter_core::capability::{QuotaReport, StorageScope};
+    porter_core::Need::Storage(porter_core::need::StorageNeed::new(
+        Access::ReadWrite,
+        Delta::Poll,
+        StorageScope::Full,
+        QuotaReport::Unreported,
+    ))
+}
+
+async fn availability_of_the_whole_store(service: &Service) -> AccountsReply {
+    service
+        .handle(
+            &app("org.quire.Files"),
+            AccountsRequest::Availability {
+                need: whole_store(),
+                class: DataClass::Files,
+                usage: Usage::Background,
+            },
+        )
+        .await
+}
+
+/// An account stored before it was given the on-use access (its record has no claim of it)
+/// reads as it was and fits no need of that access; once the person agreed, it claims the
+/// provider's on-use row, so the need fits it.
+#[tokio::test]
+async fn one_more_access_given_is_claimed_so_a_need_of_it_fits_the_account() {
+    let files = app("org.quire.Files");
+    let script = Script::answering(vec![review("ada"), SignInStep::Done(signed("ada"))]);
+    let (service, _kept) = extend_service(&script);
+    let before = service.registry().accounts[0].capabilities.clone();
+    assert_eq!(before, vec![imap_claim()]);
+    assert_eq!(
+        availability_of_the_whole_store(&service).await,
+        AccountsReply::Availability(porter_core::consent::Availability::NeedsAccount)
+    );
+    let asked = service
+        .extend_access(
+            &files,
+            &ada(),
+            vec![CapabilityKind::Storage],
+            ParentWindow::Unparented,
+        )
+        .await;
+    assert_eq!(asked, Ok(()));
+    let claims = service.registry().accounts[0].capabilities.clone();
+    let row = parse_provider(ASKS_ON_USE).expect("spec");
+    let on_use = row
+        .on_use_rows(CapabilityKind::Storage)
+        .next()
+        .expect("an on-use row")
+        .capability
+        .clone();
+    assert_eq!(
+        claims,
+        vec![
+            imap_claim(),
+            Claim {
+                subject: Subject::Account,
+                offer: Offer::Present(on_use),
+                provenance: Provenance::Declared,
+            },
+        ]
+    );
+    assert_eq!(
+        availability_of_the_whole_store(&service).await,
+        AccountsReply::Availability(porter_core::consent::Availability::AvailableNeedsConsent)
+    );
+}

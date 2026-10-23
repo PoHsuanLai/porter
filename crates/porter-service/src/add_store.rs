@@ -20,8 +20,8 @@ use porter_core::consent::{ConsentAnswer, GrantScope};
 use porter_core::sheet::ServiceChoice;
 use porter_core::store::AccountToggle;
 use porter_core::{
-    Account, AccountId, AccountState, AccountsReply, AppId, AuthKind, KindToggle, LoginName,
-    ProviderId, SecretKey, Toggle, effective,
+    Account, AccountId, AccountState, AccountsReply, AppId, AuthKind, Capability, Claim,
+    KindToggle, LoginName, Offer, Provenance, ProviderId, SecretKey, Subject, Toggle, effective,
 };
 use porter_provider::{Provider, ProviderSpec, SignInStep, Signed};
 use porter_secrets::Secrets;
@@ -374,11 +374,16 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
     /// Files the credential of a sign-in that asked for one more access, as
     /// [`Self::store_renewed`] does, once it is known to be the same person: the answer's login
     /// must be the account's own, and an account with no login to compare keeps what it has.
+    /// The account then claims `given`, the access the person just agreed to (the provider's
+    /// on-use rows of the kinds asked), so a need of it fits the account from now on. Each is
+    /// claimed as `Declared`, below what sign-in found of its kind, so what the account shows of
+    /// the kind is unchanged; a claim already held is not added twice.
     pub(crate) async fn store_extended(
         &self,
         caller: &AppId,
         account: &AccountId,
         signed: &Signed,
+        given: &[Capability],
     ) -> Result<(), ()> {
         let held = self
             .lock()
@@ -390,7 +395,32 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         if !same_person(&held, &signed.endpoints) {
             return Err(());
         }
-        self.store_renewed(caller, account, signed).await
+        self.store_renewed(caller, account, signed).await?;
+        let added = {
+            let mut registry = self.lock();
+            let row = registry
+                .accounts
+                .iter_mut()
+                .find(|a| a.id == *account)
+                .ok_or(())?;
+            let mut added = false;
+            for capability in given {
+                let claim = Claim {
+                    subject: Subject::Account,
+                    offer: Offer::Present(capability.clone()),
+                    provenance: Provenance::Declared,
+                };
+                if !row.capabilities.contains(&claim) {
+                    row.capabilities.push(claim);
+                    added = true;
+                }
+            }
+            added
+        };
+        match added {
+            true => self.persist().await.map_err(drop),
+            false => Ok(()),
+        }
     }
 }
 

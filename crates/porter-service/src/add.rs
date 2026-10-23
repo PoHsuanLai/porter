@@ -92,7 +92,9 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
     /// when it is first used (`ask = "on_use"`) for `kinds`: the whole of a drive, when the
     /// person turns on "Show in Files". The sheet opens on the account, the provider's page asks
     /// for that access alone, and the review names it in plain words; on Allow the new
-    /// credential replaces the old under the same id. An answer from anyone but the account's
+    /// credential replaces the old under the same id, and the account claims the access given
+    /// (the provider's on-use rows of `kinds`), so a need of it fits the account from then on:
+    /// an account fits such a need only once the person agreed. An answer from anyone but the account's
     /// own login stores nothing. For the host itself (syncd, for its own accounts): no grant is
     /// asked of `caller`, who is named in the audit.
     ///
