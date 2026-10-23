@@ -26,6 +26,8 @@ pub const TAILNET_PATH: &str = "/org/quire/Tailnet1";
 pub const SYNC_BUS: &str = "org.quire.Sync1";
 /// syncd's object.
 pub const SYNC_PATH: &str = "/org/quire/Sync1";
+/// Where syncd serves `org.quire.Storage1` (the drives in Files), on its own bus name.
+pub const STORAGE_PATH: &str = "/org/quire/Storage1";
 /// The sheet host's bus name (`org.quire.AccountsSheet1`, served by sill or a standalone host).
 pub const SHEET_BUS: &str = "org.quire.AccountsSheet1";
 /// The sheet host's object.

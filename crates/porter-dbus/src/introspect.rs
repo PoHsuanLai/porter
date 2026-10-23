@@ -13,6 +13,7 @@ use crate::photos_picker::PickerSkeleton;
 use crate::request::RequestSkeleton;
 use crate::sheet_backend::AccountsSheetSkeleton;
 use crate::spaces::SpacesSkeleton;
+use crate::storage::StorageSkeleton;
 use crate::sync::SyncSkeleton;
 use crate::tailnet::TailnetSkeleton;
 use zbus::fdo;
@@ -48,6 +49,9 @@ pub enum Bus {
     /// `org.quire.Tailnet1` (the person's computers on their Tailscale network), on accountd's
     /// bus name.
     Tailnet,
+    /// `org.quire.Storage1` (each storage account's drive as a folder, for Files), on syncd's bus
+    /// name.
+    Storage,
 }
 
 impl Bus {
@@ -64,6 +68,7 @@ impl Bus {
             Bus::Spaces => "org.quire.Spaces1.xml",
             Bus::Identities => "org.quire.Identities1.xml",
             Bus::Tailnet => "org.quire.Tailnet1.xml",
+            Bus::Storage => "org.quire.Storage1.xml",
         }
     }
 }
@@ -81,6 +86,7 @@ pub fn introspection(bus: Bus) -> String {
         Bus::Spaces => vec![&SpacesSkeleton],
         Bus::Identities => vec![&IdentitiesSkeleton],
         Bus::Tailnet => vec![&TailnetSkeleton],
+        Bus::Storage => vec![&StorageSkeleton],
     };
     let mut xml = String::from(
         "<!DOCTYPE node PUBLIC \"-//freedesktop//DTD D-BUS Object Introspection 1.0//EN\"\n \"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\">\n<node>\n",

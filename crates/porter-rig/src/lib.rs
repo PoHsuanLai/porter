@@ -1,7 +1,7 @@
 //! The rig a jailed scenario drives porter with (test tooling: `publish = false`, never
 //! installed, never in `dist/`; check-boundary lists it so nothing shipped depends on it).
 //!
-//! Three binaries, built on the modules here:
+//! Four binaries, built on the modules here:
 //!
 //! - `porter-rig-servers`: starts `porter-fake-servers`' fakes on loopback, plants known secrets
 //!   (`planted`), writes `rig.json` (`rigfile`) and serves the scenario's levers (`control`);
@@ -10,6 +10,8 @@
 //!   identity the daemons' `test-proc-root` builds read.
 //! - `porter-rig-secrets`: a fake `org.freedesktop.secrets` (`secrets_service`), in memory,
 //!   plain algorithm, so the real accountd's `Oo7Secrets` works in a jail with no keyring.
+//! - `porter-rig-storage`: a fake `org.quire.Storage1` (`storage_fake`), two drives of real
+//!   files whose states move, for building Files before syncd serves the real one.
 
 pub mod client;
 pub mod control;
@@ -18,3 +20,4 @@ pub mod planted;
 pub mod rigfile;
 pub mod secrets_service;
 pub mod servers;
+pub mod storage_fake;

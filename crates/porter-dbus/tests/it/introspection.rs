@@ -18,6 +18,7 @@ fn checked_in_introspection_matches_the_interfaces() {
         Bus::Spaces,
         Bus::Identities,
         Bus::Tailnet,
+        Bus::Storage,
     ] {
         let path = dir.join(bus.file_name());
         let expected =

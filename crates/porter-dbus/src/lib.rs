@@ -51,6 +51,7 @@ mod service_root;
 pub mod sheet;
 mod sheet_backend;
 mod spaces;
+mod storage;
 mod sync;
 mod tailnet;
 mod target;
@@ -117,7 +118,7 @@ pub use names::{
     PLACE_KEY_TAKES, RESOLVE_KEEP_LOCAL, RESOLVE_KEEP_REMOTE, SHEET_BUS, SHEET_PATH,
     SPACE_KEY_CREATED, SPACE_KEY_LOOK, SPACE_KEY_NAME, SPACES_PATH, STATUS_KEY_QUOTA, SYNC_BUS,
     SYNC_ERROR_NO_SUCH_CONFLICT, SYNC_ERROR_NOTHING_HELD, SYNC_ERROR_PAUSED, SYNC_ERROR_PREFIX,
-    SYNC_PATH, TAILNET_PATH, account_path,
+    STORAGE_PATH, SYNC_PATH, TAILNET_PATH, account_path,
 };
 pub use pending::{Closer, Sheet, SheetError};
 #[cfg(feature = "photos-picker")]
@@ -145,6 +146,13 @@ pub use sheet::{
 pub use sheet_backend::{AccountsSheetProxy, AccountsSheetSkeleton};
 pub use spaces::{
     Changed as SpaceChanged, ChangedStream as SpaceChangedStream, SpacesProxy, SpacesSkeleton,
+};
+pub use storage::{
+    DRIVE_KEY_ACCOUNT, DRIVE_KEY_LABEL, DRIVE_KEY_PATH, DRIVE_KEY_PROVIDER, DRIVE_KEY_STATE,
+    DRIVE_KEY_TOTAL, DRIVE_KEY_USED, DRIVE_KEY_WORDS, DriveState, DrivesChanged,
+    DrivesChangedStream, ITEM_KEY_FRACTION, ITEM_KEY_KEPT, ITEM_KEY_KIND, ITEM_KEY_STATE,
+    ITEM_KEY_WORDS, ItemDetails, ItemKind, ItemState, ItemsChanged, ItemsChangedStream, Refused,
+    StorageProxy, StorageSkeleton,
 };
 pub use sync::{SyncProxy, SyncSkeleton};
 pub use tailnet::{
