@@ -65,7 +65,10 @@ fn words_of(error: &zbus::Error) -> String {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn start_brings_a_scripted_engine_ready_and_stop_stops_it_and_both_are_told() {
+    let began = std::time::Instant::now();
+    let step = |what: &str| eprintln!("running test: {what} at {:?}", began.elapsed());
     let world = World::start(settings_world(Script::default())).await;
+    step("world up");
     let inference = proxy(&world).await;
     let mut changed = inference.receive_running_changed().await.expect("signal");
 
@@ -79,6 +82,7 @@ async fn start_brings_a_scripted_engine_ready_and_stop_stops_it_and_both_are_tol
     assert!(row.memory_mib > 0 && row.since.is_none() && row.reason.is_none());
 
     inference.start(CHAT).await.expect("start");
+    step("started");
     let ready = running(&inference).await.remove(0);
     assert_eq!(ready.state, RunState::Ready);
     let since = ready.since.expect("a ready engine says since when");
@@ -97,7 +101,9 @@ async fn start_brings_a_scripted_engine_ready_and_stop_stops_it_and_both_are_tol
 
     let mut after = inference.receive_running_changed().await.expect("signal");
     inference.stop(CHAT).await.expect("stop");
+    step("stopped");
     let gone = in_state(&inference, RunState::Stopped).await;
+    step("seen stopped");
     assert!(gone.since.is_none());
     within("RunningChanged after Stop", next(&mut after))
         .await
@@ -106,6 +112,7 @@ async fn start_brings_a_scripted_engine_ready_and_stop_stops_it_and_both_are_tol
 
     // Stopping a stopped model does nothing, and a later Start starts it again.
     inference.stop(CHAT).await.expect("stop again");
+    step("stopped again");
     inference.start(CHAT).await.expect("start again");
     assert_eq!(world.host.spawned.lock().expect("lock").len(), 2);
 }
