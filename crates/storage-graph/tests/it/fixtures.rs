@@ -115,6 +115,8 @@ async fn a_delta_in_two_pages_is_read_as_the_documented_answers_have_them() {
                 "000102030405060708090a0b0c0d0e0f10111213".into()
             )),
             kind: ItemKind::File,
+            // `2026-09-30T08:01:02Z`, as the answer has it.
+            modified: Some(UnixSeconds(1_790_755_262)),
         })]
     );
     assert_eq!(first.more, More::More);
@@ -142,6 +144,7 @@ async fn a_delta_in_two_pages_is_read_as_the_documented_answers_have_them() {
                 size: Bytes(12),
                 hash: None,
                 kind: ItemKind::File,
+                modified: None,
             }),
         ],
         "a shortcut (remoteItem) is not synced"

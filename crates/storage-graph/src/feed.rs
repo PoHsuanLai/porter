@@ -12,7 +12,7 @@ use crate::addr::{Root, item_path};
 use crate::json::{DeltaPage, DriveItem, Kind};
 use crate::refuse::read_error;
 use crate::replica::GraphReplica;
-use porter_core::{Bytes, WebUrl};
+use porter_core::{Bytes, UnixSeconds, WebUrl};
 use porter_http::{Http, HttpRequest, Method};
 use porter_sync::{
     Anchor, Change, ChangePage, Cursor, Folder, ItemKind, ItemPath, More, RemoteId, RemoteItem,
@@ -183,6 +183,7 @@ impl<H: Http> GraphReplica<H> {
             size: Bytes(if file { item.size.unwrap_or(0) } else { 0 }),
             hash: item.hash(),
             kind,
+            modified: item.modified.as_deref().and_then(UnixSeconds::from_rfc3339),
         })))
     }
 

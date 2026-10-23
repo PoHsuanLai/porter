@@ -8,10 +8,10 @@ use porter_sync::ItemPath;
 /// The fields every file answer is asked for.
 pub const FILE_FIELDS: &str = "id,name,mimeType,parents,version,md5Checksum,size,trashed";
 
-/// The fields a listing of My Drive asks for besides: where a document opens, and what a
-/// shortcut points at.
+/// The fields a listing of My Drive asks for besides: when it last changed, where a document
+/// opens, and what a shortcut points at.
 const DRIVE_FIELDS: &str = "id,name,mimeType,parents,version,md5Checksum,size,trashed,\
-                            webViewLink,shortcutDetails(targetId,targetMimeType)";
+                            modifiedTime,webViewLink,shortcutDetails(targetId,targetMimeType)";
 
 /// Where a replica's paths start.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]

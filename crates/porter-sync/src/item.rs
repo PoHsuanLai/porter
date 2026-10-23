@@ -1,6 +1,6 @@
 //! A remote item and the versions a write is checked against.
 
-use porter_core::{Bytes, WebUrl};
+use porter_core::{Bytes, UnixSeconds, WebUrl};
 use serde::{Deserialize, Serialize};
 
 /// A replica's own id for an item (a Drive file id, a WebDAV href).
@@ -78,6 +78,9 @@ pub struct RemoteItem {
     /// What it is; a file when the form names none.
     #[serde(default)]
     pub kind: ItemKind,
+    /// When it last changed, as the replica says; none when it does not.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modified: Option<UnixSeconds>,
 }
 
 #[cfg(test)]

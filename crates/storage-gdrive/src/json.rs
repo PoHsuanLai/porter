@@ -56,6 +56,8 @@ pub struct File {
     /// Drive sends sizes as strings.
     pub size: Option<String>,
     pub trashed: Option<bool>,
+    #[serde(rename = "modifiedTime")]
+    pub modified: Option<String>,
     #[serde(rename = "webViewLink")]
     pub web_view_link: Option<String>,
     #[serde(rename = "shortcutDetails")]

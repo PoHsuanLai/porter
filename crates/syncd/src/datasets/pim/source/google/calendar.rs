@@ -150,6 +150,7 @@ impl<T: Transport> GoogleCalendarFeed<T> {
                 size: Bytes(ics.len() as u64),
                 hash: Some(fingerprint(&ics)),
                 kind: ItemKind::File,
+                modified: None,
             },
             content: Some(ics),
         })

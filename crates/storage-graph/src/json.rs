@@ -12,6 +12,8 @@ pub struct DriveItem {
     pub size: Option<u64>,
     #[serde(rename = "eTag")]
     pub etag: Option<String>,
+    #[serde(rename = "lastModifiedDateTime")]
+    pub modified: Option<String>,
     #[serde(rename = "parentReference")]
     pub parent: Option<Parent>,
     pub file: Option<FileFacet>,

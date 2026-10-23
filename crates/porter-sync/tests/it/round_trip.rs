@@ -38,6 +38,7 @@ fn journal_values_round_trip() {
                 size: Bytes(3),
                 hash: Some(ContentHash("abc".into())),
                 kind: ItemKind::File,
+                modified: None,
             }),
             Change::Tombstone(Tombstone {
                 id: id.clone(),

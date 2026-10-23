@@ -42,6 +42,7 @@ impl Entry {
             size: self.size,
             hash: None,
             kind: ItemKind::File,
+            modified: None,
         })
     }
 }

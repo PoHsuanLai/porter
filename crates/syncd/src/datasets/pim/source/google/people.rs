@@ -110,6 +110,7 @@ impl<T: Transport> GooglePeopleFeed<T> {
                 size: Bytes(vcf.len() as u64),
                 hash: Some(fingerprint(&vcf)),
                 kind: ItemKind::File,
+                modified: None,
             },
             content: Some(vcf),
         }

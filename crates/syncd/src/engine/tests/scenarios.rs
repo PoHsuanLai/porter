@@ -70,6 +70,7 @@ async fn a_folder_and_an_item_that_lives_online_are_not_fetched_or_kept() {
             size: Bytes(0),
             hash: None,
             kind,
+            modified: None,
         })
     };
     let online = ItemKind::Online {

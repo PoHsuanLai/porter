@@ -209,6 +209,7 @@ impl Replica for MemoryReplica {
             size,
             hash: item.hash,
             kind: ItemKind::File,
+            modified: None,
         };
         state.log.push((seq, Change::Upsert(stored.clone())));
         state.deleted.remove(&id);

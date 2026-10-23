@@ -164,6 +164,7 @@ mod tests {
             size: Bytes(1),
             hash: None,
             kind: ItemKind::File,
+            modified: None,
         }
     }
 

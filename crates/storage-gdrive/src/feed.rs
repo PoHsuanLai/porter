@@ -18,7 +18,7 @@ use crate::addr::{Root, item_path, literal};
 use crate::json::{Change as Wire, ChangeList, File, FileList, StartToken};
 use crate::refuse::read_error;
 use crate::replica::GdriveReplica;
-use porter_core::{Bytes, WebUrl};
+use porter_core::{Bytes, UnixSeconds, WebUrl};
 use porter_http::{Http, HttpRequest, HttpResponse, Method};
 use porter_sync::{
     Anchor, Change, ChangePage, Cursor, Folder, ItemKind, ItemPath, More, RemoteId, RemoteItem,
@@ -394,6 +394,7 @@ impl<H: Http> GdriveReplica<H> {
             size: Bytes(file.bytes()),
             hash: file.hash(),
             kind,
+            modified: file.modified.as_deref().and_then(UnixSeconds::from_rfc3339),
         })])
     }
 
