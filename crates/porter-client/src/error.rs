@@ -55,6 +55,10 @@ pub enum TransportError {
         /// The sentence to show.
         words: String,
     },
+    /// inferd would not start or stop a model, with the plain sentence it wrote for the person:
+    /// the model is not one it runs, or its engine did not come up.
+    #[error("{0}")]
+    NotRun(String),
     /// The call named the places it may run (`OpenOptions::places`) and none of them can serve
     /// it: the reason, and the kind of place outside the set that could have (feature `infer`).
     #[cfg(feature = "infer")]

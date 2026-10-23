@@ -46,6 +46,7 @@ mod photos_picker;
 mod ready;
 mod refusal;
 mod request;
+mod running;
 mod service_root;
 pub mod sheet;
 mod sheet_backend;
@@ -129,6 +130,11 @@ pub use refusal::{
     REFUSAL_ERROR_PREFIX, refusal_error_name, refusal_error_name_in, refusal_from_error_name,
 };
 pub use request::{RequestProxy, RequestSkeleton};
+pub use running::{
+    RUNNING_KEY_ENGINE, RUNNING_KEY_MEMORY_MIB, RUNNING_KEY_REASON, RUNNING_KEY_SINCE,
+    RUNNING_KEY_STATE, RUNNING_KEY_WINDOW, RunState, RunningModel, RunningRowError,
+    running_from_dbus, running_to_dbus,
+};
 pub use service_root::ServiceRoot;
 #[doc = "These live in [`sheet`] now; this path stays for one more batch."]
 pub use sheet::{

@@ -1209,8 +1209,10 @@ pub(crate) fn through_grants(tiers: &TierMap, offered: &Offered) -> TierMap {
 mod hardware;
 mod places;
 mod proof;
+mod running;
 mod who;
 
+pub use running::RunError;
 pub use who::Who;
 
 impl crate::keys::SpendBook for Engines {

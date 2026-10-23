@@ -121,6 +121,22 @@ pub trait Inference {
     /// takes the helper off Automatic for the slot. Only Settings and the shell may call; a model
     /// inferd does not know is `InvalidArgs`.
     fn set_helper_pool(&self, slot: &str, helper: &str, models: Vec<String>) -> zbus::Result<()>;
+    /// Starts the engine of `model` (`account/model`) and waits until it answers. A model this
+    /// computer runs itself is started; one the person attached or one that runs on a loopback
+    /// port is not inferd's to start (`NotSupported`), and an unknown model is `InvalidArgs`. A
+    /// failure to start is `Failed` with the reason in plain words. Only Settings may call.
+    fn start(&self, model: &str) -> zbus::Result<()>;
+    /// Stops the engine of `model`, and nothing starts it again until it is wanted. A model
+    /// already stopped is not an error. The refusals are those of `Start`. Only Settings may
+    /// call.
+    fn stop(&self, model: &str) -> zbus::Result<()>;
+    /// The models this computer runs itself, one row each: the model first (`account/model`),
+    /// then a vardict of `state` (`stopped`, `starting`, `ready`, `stopping`, `retrying` or
+    /// `failed`), `engine` (`vllm`, `llama-server`, `speech-host` or `kokoro`), `memory_mib`
+    /// (`u`), and where they apply `since` (`x`, unix seconds), `window` (`u`, tokens; while
+    /// ready) and `reason` (`s`; while failed); the key names are `RUNNING_KEY_*` and
+    /// `running_from_dbus` reads a row. Only Settings may ask.
+    fn running(&self) -> zbus::Result<Vec<(String, Details)>>;
     /// A computer began asking to use this computer's models: the person is to be asked "Let
     /// <name> use this computer's models?". The details are `name` and `since`. Broadcast: a
     /// computer's name is not secret, and only the shell and Settings can answer. A shell that
@@ -135,6 +151,9 @@ pub trait Inference {
     /// settings module (detent), and the places with `Places`.
     #[zbus(signal)]
     fn engines_changed(&self) -> zbus::Result<()>;
+    /// A model's engine changed state: a listener reads `Running` again.
+    #[zbus(signal)]
+    fn running_changed(&self) -> zbus::Result<()>;
     /// The GPU's use: `idle`, `busy` or `loading`.
     #[zbus(property)]
     fn gpu(&self) -> zbus::Result<String>;
@@ -248,6 +267,20 @@ impl InferenceSkeleton {
         Err(crate::introspect::frozen())
     }
 
+    fn start(&self, model: String) -> fdo::Result<()> {
+        let _ = model;
+        Err(crate::introspect::frozen())
+    }
+
+    fn stop(&self, model: String) -> fdo::Result<()> {
+        let _ = model;
+        Err(crate::introspect::frozen())
+    }
+
+    fn running(&self) -> fdo::Result<Vec<(String, Details)>> {
+        Err(crate::introspect::frozen())
+    }
+
     #[zbus(signal)]
     async fn guest_asks(
         emitter: &SignalEmitter<'_>,
@@ -260,6 +293,9 @@ impl InferenceSkeleton {
 
     #[zbus(signal)]
     async fn engines_changed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    async fn running_changed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
 
     #[zbus(property)]
     fn gpu(&self) -> fdo::Result<String> {

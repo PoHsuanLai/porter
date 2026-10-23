@@ -867,6 +867,36 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         Self::engines_changed(&emitter).await.map_err(failed)
     }
 
+    // Starts the engine of a model this computer runs itself and waits until it answers
+    // (Settings only; plain comments, as above). The model is `account/model`. A model the
+    // person attached or runs in a program of their own is refused in plain words, as is one
+    // inferd does not know; a failure to start is the reason in plain words.
+    async fn start(&self, #[zbus(header)] header: Header<'_>, model: String) -> fdo::Result<()> {
+        self.settings_caller(&header).await?;
+        Ok(self.engines.start_model(&model).await?)
+    }
+
+    // Stops the engine of such a model and keeps it stopped until it is wanted again (Settings
+    // only). A model already stopped is not an error.
+    async fn stop(&self, #[zbus(header)] header: Header<'_>, model: String) -> fdo::Result<()> {
+        self.settings_caller(&header).await?;
+        Ok(self.engines.stop_model(&model)?)
+    }
+
+    // The models this computer runs itself and what each engine is doing (Settings only).
+    async fn running(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+    ) -> fdo::Result<Vec<(String, Details)>> {
+        self.settings_caller(&header).await?;
+        Ok(self
+            .engines
+            .running()
+            .iter()
+            .map(porter_dbus::running_to_dbus)
+            .collect())
+    }
+
     #[zbus(signal)]
     async fn guest_asks(
         emitter: &SignalEmitter<'_>,
@@ -879,6 +909,9 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
 
     #[zbus(signal)]
     async fn engines_changed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    async fn running_changed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
 
     #[zbus(property)]
     async fn gpu(&self) -> String {
@@ -1131,6 +1164,7 @@ where
         while supervised.changed().await.is_ok() {
             let emitter = iface.signal_emitter();
             let _ = Inference::<P, O, C>::engines_changed(emitter).await;
+            let _ = Inference::<P, O, C>::running_changed(emitter).await;
             let guard = iface.get().await;
             let now = guard.engines.gpu();
             // The property changes only when its value did.

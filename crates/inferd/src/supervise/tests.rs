@@ -101,6 +101,34 @@ async fn an_idle_engine_unloads_and_a_later_want_starts_it_again() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_released_engine_stops_and_stays_stopped_until_wanted_again() {
+    let scratch = Scratch::new("sup-release");
+    let specs = specs(&scratch);
+    let id = specs[0].id.clone();
+    let host = Recorder::default();
+    let supervised = Supervised::start(
+        specs,
+        SupervisorConfig::default(),
+        Ports {
+            host: host.clone(),
+            probe: FakeReadyProbe(Probe::Ready),
+            gpu: gpu(16_000),
+        },
+    );
+    assert_eq!(supervised.want(&id).await, Ok(()));
+    supervised.release(&id);
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert_eq!(*host.stopped.lock().expect("lock"), vec![id.clone()]);
+    assert!(matches!(state(&supervised, &id), EngineState::Stopped));
+    // Releasing a stopped engine does nothing.
+    supervised.release(&id);
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert_eq!(host.stopped.lock().expect("lock").len(), 1);
+    assert_eq!(supervised.want(&id).await, Ok(()));
+    assert_eq!(host.spawned.lock().expect("lock").len(), 2);
+}
+
+#[tokio::test(start_paused = true)]
 async fn an_engine_in_use_is_not_unloaded() {
     let scratch = Scratch::new("sup-used");
     let specs = specs(&scratch);

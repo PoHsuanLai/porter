@@ -11,8 +11,8 @@ use porter_core::lending::{
 use porter_core::{NodeId, UnixSeconds};
 use porter_dbus::{
     CANDIDATE_KEY_MODELS, CANDIDATE_KEY_NAME, CANDIDATE_KEY_NEEDS_APPROVAL, Details,
-    GUEST_KEY_NAME, GUEST_KEY_SINCE, GUEST_KEY_STATE, InferenceProxy, LocalEngine,
-    local_engine_from_dbus,
+    GUEST_KEY_NAME, GUEST_KEY_SINCE, GUEST_KEY_STATE, InferenceProxy, LocalEngine, RunningModel,
+    local_engine_from_dbus, running_from_dbus,
 };
 
 impl DbusTransport {
@@ -80,6 +80,44 @@ impl DbusTransport {
             .point_engine(engine, folder)
             .await
             .map_err(|e| bus_error(&e))
+    }
+
+    /// `Inference1.Running` row by row, each as a typed [`RunningModel`]: the models this
+    /// computer runs itself and what each engine is doing. A malformed row is in `skipped`. Only
+    /// Settings may ask; anyone else is `Denied`. `RunningChanged` (`InferenceProxy`) says when
+    /// to ask again.
+    pub async fn list_running(&self) -> Result<Rows<RunningModel>, TransportError> {
+        let rows = self
+            .inference_proxy()
+            .await?
+            .running()
+            .await
+            .map_err(|e| bus_error(&e))?;
+        Ok(Rows::decode(rows, |row| {
+            let id = row.0.clone();
+            running_from_dbus(row)
+                .map_err(|why| TransportError::Malformed(format!("Running row {id:?}: {why}")))
+        }))
+    }
+
+    /// `Inference1.Start`: starts the engine of `model` (`account/model`) and waits until it
+    /// answers. Only Settings may call; a refusal carries plain words.
+    pub async fn start_model(&self, model: &str) -> Result<(), TransportError> {
+        self.inference_proxy()
+            .await?
+            .start(model)
+            .await
+            .map_err(|e| run_error(&e))
+    }
+
+    /// `Inference1.Stop`: stops the engine of `model` (`account/model`); a model already stopped
+    /// is not an error. Only Settings may call.
+    pub async fn stop_model(&self, model: &str) -> Result<(), TransportError> {
+        self.inference_proxy()
+            .await?
+            .stop(model)
+            .await
+            .map_err(|e| run_error(&e))
     }
 
     /// `Inference1.Candidates` row by row: a row that is malformed is in `skipped`, the rest are
@@ -186,6 +224,25 @@ mod computers {
     fn place_of(text: &str) -> Result<PlaceId, TransportError> {
         PlaceId::parse(text)
             .map_err(|_| TransportError::Malformed(format!("a place id was expected: {text:?}")))
+    }
+}
+
+/// A refusal of `Start` or `Stop` as the transport's: inferd's plain sentence (`Failed`,
+/// `NotSupported` or `InvalidArgs` with a message) is [`TransportError::NotRun`]; anything else
+/// is as any bus call's.
+fn run_error(error: &porter_dbus::BusError) -> TransportError {
+    const REFUSALS: [&str; 3] = [
+        "org.freedesktop.DBus.Error.Failed",
+        "org.freedesktop.DBus.Error.NotSupported",
+        "org.freedesktop.DBus.Error.InvalidArgs",
+    ];
+    match error {
+        porter_dbus::BusError::MethodError(name, Some(words), _)
+            if REFUSALS.contains(&name.as_str()) =>
+        {
+            TransportError::NotRun(words.clone())
+        }
+        other => bus_error(other),
     }
 }
 

@@ -19,7 +19,7 @@ use engine_supervisor::{
 use model_catalog::MiB;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinSet;
 use tokio::time::Instant;
@@ -83,6 +83,8 @@ enum Command {
     /// start it again yet.
     Want(EngineId, oneshot::Sender<Result<(), Cause>>),
     Used(EngineId),
+    /// The person stopped the engine.
+    Release(EngineId),
 }
 
 /// The seams the driver is built over.
@@ -104,6 +106,8 @@ pub struct Supervised {
     probe_every: Duration,
     headroom: MiB,
     sizing: Sizing,
+    /// The wall clock when the driver's clock began, to tell a `MonoMs` as a date.
+    began: SystemTime,
 }
 
 /// The turns of `porter-turns` tell the supervisor which engine they use (the inherent `used`).
@@ -124,6 +128,7 @@ impl Supervised {
             probe_every: SupervisorConfig::default().probe_every,
             headroom: SupervisorConfig::default().headroom,
             sizing: Sizing::default(),
+            began: SystemTime::now(),
         }
     }
 
@@ -212,6 +217,7 @@ impl Supervised {
             failures: BTreeMap::new(),
             failed: 0,
         };
+        let began = SystemTime::now();
         tokio::spawn(driver.run(inbox));
         Self {
             commands,
@@ -219,7 +225,19 @@ impl Supervised {
             probe_every: config.probe_every,
             headroom: config.headroom,
             sizing,
+            began,
         }
+    }
+
+    /// The date a time of the driver's clock (a `MonoMs` of a snapshot) was.
+    pub fn wall_clock(&self, at: MonoMs) -> SystemTime {
+        self.began + Duration::from_millis(at.0)
+    }
+
+    /// The memory the engine takes: `served` (what its spec asks) unless it was started with a
+    /// window of its own.
+    pub fn memory_of(&self, id: &EngineId, served: MiB) -> MiB {
+        self.sizing.need_of(id, served)
     }
 
     /// The window the engine was last started with, when it is one whose window is chosen at
@@ -288,6 +306,12 @@ impl Supervised {
     /// A turn is using the engine: it is not idle and never a victim of eviction.
     pub fn used(&self, id: &EngineId) {
         let _ = self.commands.send(Command::Used(id.clone()));
+    }
+
+    /// The person stopped the engine: a starting or ready one is stopped, and nothing wants it
+    /// again until the next `want`.
+    pub fn release(&self, id: &EngineId) {
+        let _ = self.commands.send(Command::Release(id.clone()));
     }
 
     /// What every engine is doing now.
@@ -392,6 +416,7 @@ where
     async fn command(&mut self, command: Command) {
         match command {
             Command::Used(id) => self.pump(vec![SupervisorIn::Used(id)]).await,
+            Command::Release(id) => self.pump(vec![SupervisorIn::Release(id)]).await,
             Command::Want(id, ack) => {
                 // No request starts an engine again while it is paused after failing.
                 if let Some(cause) = self.paused(&id) {

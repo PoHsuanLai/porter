@@ -200,15 +200,25 @@ fn inference1_xml_unchanged_members() {
     assert!(xml.contains("<method name=\"LocalEngines\">"));
     // And `HardwareNotes`, facts about the machine beside a choice (helpers, swarm.md 6.4).
     assert!(xml.contains("<method name=\"HardwareNotes\">"));
+    // And `Start`, `Stop`, `Running` and `RunningChanged`: starting and stopping the models
+    // inferd runs itself, and seeing them run (additive).
+    for member in [
+        "<method name=\"Start\">",
+        "<method name=\"Stop\">",
+        "<method name=\"Running\">",
+        "<signal name=\"RunningChanged\">",
+    ] {
+        assert!(xml.contains(member), "missing {member}");
+    }
     let declared = xml.matches("<method ").count()
         + xml.matches("<signal ").count()
         + xml.matches("<property ").count();
     assert_eq!(
         declared,
-        members.len() + 3 + 7 + 1 + 1 + 1 + 1,
+        members.len() + 3 + 7 + 1 + 1 + 1 + 1 + 4,
         "no member beyond the frozen seven, Places, AddComputer, RemoveComputer, and the five \
          methods and two signals of lending models across the person's network, LocalEngines, \
-         PointEngine, HardwareNotes and SetHelperPool"
+         PointEngine, HardwareNotes, SetHelperPool, and Start, Stop, Running and RunningChanged"
     );
     assert_eq!(
         porter_dbus::COMPUTER_ERROR_PREFIX,

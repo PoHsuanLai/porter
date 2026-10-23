@@ -74,6 +74,15 @@
      <arg name="helper" type="s" direction="in"/>
      <arg name="models" type="as" direction="in"/>
    </method>
+   <method name="Start">
+     <arg name="model" type="s" direction="in"/>
+   </method>
+   <method name="Stop">
+     <arg name="model" type="s" direction="in"/>
+   </method>
+   <method name="Running">
+     <arg type="a(sa{sv})" direction="out"/>
+   </method>
    <signal name="GuestAsks">
      <arg name="node" type="s"/>
      <arg name="details" type="a{sv}"/>
@@ -81,6 +90,8 @@
    <signal name="GuestsChanged">
    </signal>
    <signal name="EnginesChanged">
+   </signal>
+   <signal name="RunningChanged">
    </signal>
    <property name="Gpu" type="s" access="read"/>
  </interface>
