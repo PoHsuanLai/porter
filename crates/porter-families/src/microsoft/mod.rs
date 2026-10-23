@@ -18,7 +18,6 @@ pub use scopes::{AccountClass, classify};
 pub use session::MicrosoftSession;
 pub use signin::MicrosoftSignIn;
 
-use porter_core::capability::CapabilityKind;
 use porter_core::{Account, AccountId, Claim, Credential, EndpointUrl, Family, SecretText};
 use porter_http::{Http, HyperHttp};
 use porter_provider::{
@@ -99,19 +98,6 @@ fn fixed_endpoint(spec: &ProviderSpec, family: Family, fallback: &str) -> Endpoi
         .find_map(|row| EndpointUrl::parse(&row.endpoint.as_ref()?.0).ok())
         .or_else(|| EndpointUrl::parse(fallback).ok())
         .unwrap_or_else(|| unreachable!("{fallback} is a literal endpoint URL"))
-}
-
-/// The kinds the file declares, once each, in file order.
-pub(crate) fn declared_kinds(spec: &ProviderSpec) -> Vec<CapabilityKind> {
-    spec.capabilities
-        .iter()
-        .map(|row| row.capability.kind())
-        .fold(Vec::new(), |mut kinds, kind| {
-            if !kinds.contains(&kind) {
-                kinds.push(kind);
-            }
-            kinds
-        })
 }
 
 impl<H: Http + 'static> Provider for MicrosoftProvider<H> {

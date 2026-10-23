@@ -154,6 +154,11 @@ pub fn client(issuer: &IssuerHandle) -> ClientEntry {
 
 impl Rig {
     pub async fn new(with_client: bool) -> Self {
+        Self::over(with_client, spec()).await
+    }
+
+    /// A rig whose provider file is `spec`.
+    pub async fn over(with_client: bool, spec: ProviderSpec) -> Self {
         let issuer = FakeIssuer::start().await.expect("issuer");
         let graph = Arc::new(Graph {
             issuer: (*issuer).clone(),
@@ -191,7 +196,7 @@ impl Rig {
             issuer,
             graph,
             clock,
-            provider: MicrosoftProvider::with_env(spec(), env),
+            provider: MicrosoftProvider::with_env(spec, env),
         }
     }
 

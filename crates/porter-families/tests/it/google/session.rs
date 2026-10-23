@@ -33,6 +33,7 @@ fn seeded(rig: &Rig) -> (Presented, String) {
             access: SecretText::new("stale"),
             refresh: SecretText::new(refresh.clone()),
             expires_at: UnixSeconds(0),
+            granted: Default::default(),
         }),
         refresh,
     )
@@ -222,7 +223,18 @@ async fn a_token_is_reused_until_due_and_renewed_with_the_same_refresh_token() {
         .expect("token");
     assert_eq!(first, again, "one token serves every service");
     assert_eq!(token_calls(&rig), 1);
-    // Google does not rotate: nothing new to store, and the refresh token is still live.
+    // Google does not rotate: the refresh token is still live, and what is new to store is
+    // only what the answer said was granted, which a credential from before did not say.
+    let Some(Credential::OAuth {
+        refresh: kept,
+        granted,
+        ..
+    }) = session.renewed()
+    else {
+        panic!("the granted scopes to keep")
+    };
+    assert_eq!(kept.expose(), refresh);
+    assert_eq!(granted.holds(CALENDAR), Some(true));
     assert_eq!(session.renewed(), None);
 
     rig.advance(3600 - 30);
@@ -372,4 +384,88 @@ async fn an_install_with_no_client_is_unreachable_not_signed_out() {
         session.access_token(&audience("google_tasks")).await,
         Err(ProviderError::Unreachable)
     );
+}
+
+const DRIVE: &str = "https://www.googleapis.com/auth/drive";
+
+/// The shipped file with the app-folder row taken out: Storage is the whole of Drive alone,
+/// asked on use.
+fn whole_drive_alone(spec: &mut porter_provider::ProviderSpec) {
+    spec.capabilities
+        .retain(|row| row.capability.kind() != K::Storage || !row.asked_at_sign_in());
+}
+
+/// A credential whose grant at Google is `held` and whose record says `recorded`.
+fn holding(rig: &Rig, held: &str, recorded: &[&str]) -> Presented {
+    let refresh = rig.google.issuer.seed_held_refresh(CLIENT_ID, held);
+    Presented::Credential(Credential::OAuth {
+        access: SecretText::new("stale"),
+        refresh: SecretText::new(refresh),
+        expires_at: UnixSeconds(0),
+        granted: porter_core::GrantedScopes::of(recorded.iter().map(|s| (*s).to_owned())),
+    })
+}
+
+#[tokio::test]
+async fn the_whole_drive_never_given_is_needs_consent_and_google_is_not_asked() {
+    let rig = Rig::over(PLAIN, whole_drive_alone).await;
+    // A credential from before porter kept what was granted holds nothing asked on use.
+    let session = open(&rig).await;
+    assert_eq!(
+        session
+            .access_token_for(&audience("google_drive"), K::Storage)
+            .await,
+        Err(ProviderError::NeedsConsent)
+    );
+    assert_eq!(rig.wire.refresh_scopes(), Vec::<Option<String>>::new());
+    session
+        .access_token_for(&audience("google_calendar"), K::Calendar)
+        .await
+        .expect("the account is as good as it was");
+}
+
+#[tokio::test]
+async fn the_whole_drive_once_given_is_minted_with_its_scope_alone() {
+    let rig = Rig::over(PLAIN, whole_drive_alone).await;
+    let held = format!("{SCOPES} {DRIVE}");
+    let presented = holding(&rig, &held, &[CALENDAR, DRIVE]);
+    let session = rig
+        .provider
+        .open(&account(), presented)
+        .await
+        .expect("open");
+    let token = session
+        .access_token_for(&audience("google_drive"), K::Storage)
+        .await
+        .expect("the whole drive");
+    assert_eq!(rig.wire.refresh_scopes(), [Some(DRIVE.to_owned())]);
+    assert_eq!(
+        rig.google
+            .issuer
+            .access_scope(token.value.expose())
+            .as_deref(),
+        Some(DRIVE)
+    );
+}
+
+#[tokio::test]
+async fn a_scope_google_calls_invalid_is_needs_consent_not_a_sign_in_again() {
+    let rig = Rig::over(PLAIN, whole_drive_alone).await;
+    // The record says the whole of Drive, the grant at Google does not (`invalid_scope`).
+    let presented = holding(&rig, SCOPES, &[CALENDAR, DRIVE]);
+    let session = rig
+        .provider
+        .open(&account(), presented)
+        .await
+        .expect("open");
+    assert_eq!(
+        session
+            .access_token_for(&audience("google_drive"), K::Storage)
+            .await,
+        Err(ProviderError::NeedsConsent)
+    );
+    session
+        .access_token_for(&audience("google_calendar"), K::Calendar)
+        .await
+        .expect("the refresh token is still good");
 }

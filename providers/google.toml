@@ -1,7 +1,9 @@
-# Google with this build's non-restricted scopes (design/31 R1-R5): Drive is the app folder,
-# Photos is an upload target and a picker import, never a library mirror. The sign-in is the
-# installed-app flow of a Google Cloud OAuth client the owner registers (docs/google.md); with no
-# client row in clients.toml the provider is listed and adding says it needs a client id.
+# Google with this build's non-restricted scopes at sign-in (design/31 R1-R5): Drive is the app
+# folder, Photos is an upload target and a picker import, never a library mirror. The whole of
+# Drive is asked later, and only when the person turns on "Show in Files" (its row is `on_use`).
+# The sign-in is the installed-app flow of a Google Cloud OAuth client the owner registers
+# (docs/google.md); with no client row in clients.toml the provider is listed and adding says it
+# needs a client id.
 #
 # Mail is the one row that is not for every client: Gmail over IMAP and SMTP needs the restricted
 # scope `https://mail.google.com/`, which Google grants only to a client it has assessed, so the
@@ -57,6 +59,15 @@ endpoint = "https://www.googleapis.com/drive/v3"
 kind = "storage"
 # The app data folder (scope drive.appdata): a hidden folder only this client reads.
 v = { access = "read_write", delta = "poll", quota = "reported", scope = "app_folder", hashes = "md5", ranges = "present", chunked_upload = "present" }
+
+[[capability]]
+family = "google_drive"
+endpoint = "https://www.googleapis.com/drive/v3"
+kind = "storage"
+ask = "on_use"
+# The whole of My Drive (scope drive, restricted like Mail's), asked only when the person turns on
+# "Show in Files" for the account, in a sign-in that asks for it alone.
+v = { access = "read_write", delta = "poll", quota = "reported", scope = "full", hashes = "md5", ranges = "present", chunked_upload = "present" }
 
 [[capability]]
 family = "google_photos_upload"

@@ -54,11 +54,13 @@ fn a_review_step_tells_the_sheet_each_service_and_its_limit() {
                 kind: CapabilityKind::Storage,
                 state: ServiceState::Offered(Toggle::On),
                 limit: Some(LimitReason::AppFolderOnly),
+                access: None,
             },
             ServiceRow {
                 kind: CapabilityKind::Notes,
                 state: ServiceState::Absent(AbsentReason::NotOnServer),
                 limit: None,
+                access: None,
             },
         ]
     );

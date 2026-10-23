@@ -61,6 +61,7 @@ Porter asks one set of scopes per service and only for services you leave on. Th
 | Contacts | `https://www.googleapis.com/auth/contacts` | sensitive |
 | Tasks | `https://www.googleapis.com/auth/tasks` | sensitive |
 | Drive, the app folder | `https://www.googleapis.com/auth/drive.appdata` | non-sensitive |
+| Drive, all of it (asked only when you turn on **Show in Files**) | `https://www.googleapis.com/auth/drive` | **restricted** |
 | Photos, upload | `https://www.googleapis.com/auth/photoslibrary.appendonly` | sensitive |
 | Photos, picker import | `https://www.googleapis.com/auth/photospicker.mediaitems.readonly` | sensitive |
 | Mail (Gmail IMAP and SMTP) | `https://mail.google.com/` | **restricted** |
@@ -71,9 +72,12 @@ verifies it only after a security assessment, so it works only for **your own** 
 **your own** test users, which is why mail needs `byo = true` below. Without it porter never asks
 for it, and Gmail shows as unavailable for this build.
 
-Porter never asks for the whole of Drive (`.../auth/drive`, restricted) or for the Photos library
-(Google removed its read scopes in 2025): Drive is a hidden app folder only porter reads, and
-Photos is upload plus the picker you drive in Google's own window.
+Signing in never asks for the whole of Drive (`.../auth/drive`, restricted): it asks only for
+the hidden app folder. Porter asks for all of Drive later, and only when you turn on **Show in
+Files** for the account in Settings: Google's page then asks for that one thing, and what you
+granted before is kept. Like Gmail's scope it is restricted, so a client in testing can use it
+for its test users only. Porter never asks for the Photos library (Google removed its read scopes
+in 2025): Photos is upload plus the picker you drive in Google's own window.
 
 ## 4. The client
 
@@ -138,7 +142,7 @@ started with `SYNCD_PHOTOS=on`.
 | Service | What porter does with it | What it never does |
 | --- | --- | --- |
 | Calendar, Contacts, Tasks | Mirrors them for apps that hold a grant (Calendar, Contacts, Tasks apps read and change them through porter). | Share them with any app that holds no grant. |
-| Drive | Keeps one hidden **app data folder** that only porter can see, and mirrors it to a folder on this computer so apps can keep files there. | Read or list the rest of your Drive: the scope is `drive.appdata` only. |
+| Drive | Keeps one hidden **app data folder** that only porter can see, and mirrors it to a folder on this computer so apps can keep files there. With **Show in Files** on, lists all of your Drive in Files. | Read or list the rest of your Drive unless you turn on Show in Files: until then the scope is `drive.appdata` only. |
 | Photos, upload | Sends each **new photo or video you put in this account's upload folder** (`$XDG_DATA_HOME/porter/photos/<account>/upload`) to Google Photos, once, into an album porter makes. Settings > Accounts > the account > *Upload new photos from a folder on this computer to Google Photos* turns it on. | Read your library, delete a photo at Google, or delete a local file when it uploads. |
 | Photos, picker | The Photos app opens Google's own picker in your browser; what you pick is downloaded into `$XDG_DATA_HOME/porter/photos/<account>/picked/<session>/`. | See anything you did not pick. |
 | Mail | With `byo = true` only: IMAP and SMTP to Gmail, signed in with XOAUTH2 (the token never reaches the mail app). | Ask for the mailbox scope otherwise. |

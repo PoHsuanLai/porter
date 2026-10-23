@@ -1634,3 +1634,132 @@ async fn a_wipe_whose_secrets_cannot_be_deleted_keeps_the_account_and_its_grants
     assert_eq!(service.registry(), registry);
     assert_eq!(kept.audit.entries(), vec![]);
 }
+
+// ---- asking for an access on its first use ----
+
+/// [`SPEC`] with a whole-drive row asked only when it is first used.
+const ASKS_ON_USE: &str = r#"
+id = "scripted"
+label = "Scripted"
+mark = "generic"
+[auth]
+kind = "password"
+[discovery]
+kind = "fixed"
+[[capability]]
+family = "imap"
+kind = "mail"
+v = { access = "read_write", send = "present", delta = "poll", transport = "imap", labels = "folders" }
+[[capability]]
+family = "webdav"
+kind = "storage"
+ask = "on_use"
+v = { access = "read_write", delta = "poll", quota = "reported", scope = "full", hashes = "sha1", ranges = "present", chunked_upload = "present" }
+"#;
+
+fn extend_service(script: &Script) -> (Service, Kept) {
+    let registry = Registry {
+        grants: vec![],
+        accounts: vec![held_account("ada", AccountState::Ok)],
+        toggles: vec![],
+    };
+    let asks = ScriptedProvider {
+        spec: parse_provider(ASKS_ON_USE).expect("spec"),
+        ..provider(script)
+    };
+    let secrets = Shared::default();
+    let (service, kept) = service_over(vec![asks], registry, secrets.clone(), vec![typist()]);
+    (service, Kept { secrets, ..kept })
+}
+
+fn ada() -> AccountId {
+    AccountId::parse("scripted-ada").expect("id")
+}
+
+fn incoming() -> SecretKey {
+    SecretKey {
+        account: ada(),
+        purpose: SecretPurpose::IncomingPassword,
+    }
+}
+
+#[tokio::test]
+async fn asking_for_one_more_access_reviews_it_and_keeps_the_account() {
+    let files = app("org.quire.Files");
+    let script = Script::answering(vec![review("ada"), SignInStep::Done(signed("ada"))]);
+    let (service, kept) = extend_service(&script);
+    let before = service.registry().accounts[0].clone();
+    let asked = service
+        .extend_access(
+            &files,
+            &ada(),
+            vec![CapabilityKind::Storage],
+            ParentWindow::Unparented,
+        )
+        .await;
+    assert_eq!(asked, Ok(()));
+    assert_eq!(
+        script.modes.lock().expect("modes").clone(),
+        vec![SignInMode::Extend {
+            account: ada(),
+            endpoints: vec![imap("ada")],
+            kinds: vec![CapabilityKind::Storage],
+        }]
+    );
+    // Unlike signing in again, the person is shown what is asked before it is given.
+    assert_eq!(kinds(&kept.shown), ["working", "review", "working", "done"]);
+    assert_eq!(script.told(), ["start", "confirm"]);
+    let registry = service.registry();
+    assert_eq!(registry.accounts.len(), 1);
+    assert_eq!(registry.accounts[0].id, before.id);
+    assert_eq!(registry.accounts[0].state, AccountState::Ok);
+    assert_eq!(
+        kept.secrets.get(&incoming()).await,
+        Ok(Credential::Password(SecretText::new("in-pw")))
+    );
+}
+
+#[tokio::test]
+async fn one_more_access_answered_by_another_person_stores_nothing() {
+    let files = app("org.quire.Files");
+    let script = Script::answering(vec![review("eve"), SignInStep::Done(signed("eve"))]);
+    let (service, kept) = extend_service(&script);
+    let asked = service
+        .extend_access(
+            &files,
+            &ada(),
+            vec![CapabilityKind::Storage],
+            ParentWindow::Unparented,
+        )
+        .await;
+    assert_eq!(asked, Err(Refusal::Unavailable));
+    assert_eq!(
+        kept.secrets.get(&incoming()).await,
+        Err(SecretsError::Missing)
+    );
+    assert_eq!(service.registry().accounts[0].endpoints, vec![imap("ada")]);
+    assert_eq!(kept.audit.entries(), vec![]);
+}
+
+#[tokio::test]
+async fn only_an_access_the_provider_asks_on_use_can_be_asked_for_later() {
+    let files = app("org.quire.Files");
+    let script = Script::answering(vec![]);
+    let (service, _kept) = extend_service(&script);
+    let unknown = AccountId::parse("scripted-eve").expect("id");
+    for (account, kinds, refusal) in [
+        (ada(), vec![CapabilityKind::Mail], Refusal::Unavailable),
+        (ada(), vec![], Refusal::Unavailable),
+        (
+            unknown,
+            vec![CapabilityKind::Storage],
+            Refusal::UnknownGrant,
+        ),
+    ] {
+        let asked = service
+            .extend_access(&files, &account, kinds, ParentWindow::Unparented)
+            .await;
+        assert_eq!(asked, Err(refusal));
+    }
+    assert_eq!(script.modes.lock().expect("modes").clone(), vec![]);
+}

@@ -1,8 +1,9 @@
 //! docs/google.md is what the owner follows in Google's console, so it must say what the code
-//! asks: every scope, with the class the code gives it, and the clients.toml row it reads.
+//! asks: every scope, those asked only on use included, with the class the code gives it, and the
+//! clients.toml row it reads.
 
 use porter_core::capability::CapabilityKind as K;
-use porter_families::{Sensitivity, scope_sensitivity, scopes_of};
+use porter_families::{Sensitivity, on_use_scopes_of, scope_sensitivity, scopes_of};
 use porter_oauth::{AppReview, ClientRegistry, MailRights};
 use porter_provider::{ClientChannel, Issuer};
 
@@ -22,7 +23,7 @@ fn every_scope_the_code_asks_is_in_the_guide_with_its_class() {
         K::Storage,
         K::Photos,
     ] {
-        for scope in scopes_of(kind) {
+        for scope in scopes_of(kind).iter().chain(on_use_scopes_of(kind)) {
             let row = text
                 .lines()
                 .find(|line| line.starts_with('|') && line.contains(&format!("`{scope}`")))
@@ -98,6 +99,7 @@ fn the_guide_says_what_porter_does_with_each_google_service() {
         "Upload new photos from a folder on this computer to Google Photos",
         "lh3.googleusercontent.com",
         "Google signs this account out on",
+        "Show in Files",
     ] {
         assert!(section.contains(word), "{word} is not in the section");
     }

@@ -214,6 +214,7 @@ fn why(refusal: Refusal) -> &'static str {
         Refusal::Unavailable => "the account or the saved secrets cannot be reached",
         Refusal::EndpointNotGranted => "that address is not one of the account's",
         Refusal::NoLauncher => "nothing is there to sign the agent in",
+        Refusal::NeedsConsent => "the account has not been given that access yet",
         // a variant a newer porter adds: a generic sentence
         _ => "the request was refused",
     }

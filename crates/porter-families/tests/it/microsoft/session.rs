@@ -28,6 +28,7 @@ fn seeded(rig: &Rig) -> Presented {
         access: SecretText::new("stale"),
         refresh: SecretText::new(refresh),
         expires_at: UnixSeconds(0),
+        granted: Default::default(),
     })
 }
 
@@ -383,6 +384,7 @@ mod service {
             access: SecretText::new("stale"),
             refresh: SecretText::new("never-issued"),
             expires_at: UnixSeconds(0),
+            granted: Default::default(),
         };
         secrets.put(&key, &dead).await.expect("put");
         let service = AccountService::new(
@@ -401,4 +403,94 @@ mod service {
         );
         assert_eq!(secrets.get(&key).await, Ok(dead));
     }
+}
+
+const FILES: &str = "https://graph.microsoft.com/Files.ReadWrite";
+
+/// The shipped file with the app-folder row taken out: Storage is the whole drive alone, asked
+/// on use.
+fn whole_drive_alone() -> porter_provider::ProviderSpec {
+    let mut spec = spec();
+    spec.capabilities
+        .retain(|row| row.capability.kind() != K::Storage || !row.asked_at_sign_in());
+    spec
+}
+
+/// A credential whose grant at the issuer is `held` and whose record says `recorded`.
+fn holding(rig: &Rig, held: &str, recorded: &[&str]) -> Presented {
+    let refresh = rig.issuer.seed_held_refresh(CLIENT_ID, held);
+    Presented::Credential(Credential::OAuth {
+        access: SecretText::new("stale"),
+        refresh: SecretText::new(refresh),
+        expires_at: UnixSeconds(0),
+        granted: porter_core::GrantedScopes::of(recorded.iter().map(|s| (*s).to_owned())),
+    })
+}
+
+#[tokio::test]
+async fn the_whole_drive_never_given_is_needs_consent_and_microsoft_is_not_asked() {
+    let rig = Rig::over(true, whole_drive_alone()).await;
+    // A credential from before porter kept what was granted holds nothing asked on use.
+    let session = open(&rig).await;
+    assert_eq!(
+        session
+            .access_token_for(&audience_of("graph"), K::Storage)
+            .await,
+        Err(ProviderError::NeedsConsent)
+    );
+    assert_eq!(rig.graph.refresh_scopes(), Vec::<Option<String>>::new());
+    assert_eq!(session.renewed(), None);
+    // The account is as good as it was for what sign-in asked.
+    session
+        .access_token_for(&audience_of("graph"), K::Calendar)
+        .await
+        .expect("calendar");
+}
+
+#[tokio::test]
+async fn the_whole_drive_once_given_is_minted_with_its_scope_and_the_record_is_kept() {
+    let rig = Rig::over(true, whole_drive_alone()).await;
+    let held = format!("offline_access {FILES}");
+    let presented = holding(&rig, &held, &["offline_access", FILES]);
+    let session = rig
+        .provider
+        .open(&account(), presented)
+        .await
+        .expect("open");
+    let token = session
+        .access_token_for(&audience_of("graph"), K::Storage)
+        .await
+        .expect("the whole drive");
+    assert_eq!(
+        rig.issuer.access_scope(token.value.expose()).as_deref(),
+        Some(FILES)
+    );
+    let Some(Credential::OAuth { granted, .. }) = session.renewed() else {
+        panic!("a rotated refresh token to keep")
+    };
+    assert_eq!(granted.holds(FILES), Some(true));
+}
+
+#[tokio::test]
+async fn a_scope_microsoft_says_was_never_consented_is_needs_consent_not_a_sign_in_again() {
+    let rig = Rig::over(true, whole_drive_alone()).await;
+    // The record says the whole drive, the grant at Microsoft does not (AADSTS65001).
+    let calendars = "https://graph.microsoft.com/Calendars.ReadWrite";
+    let held = format!("offline_access {calendars}");
+    let presented = holding(&rig, &held, &[FILES]);
+    let session = rig
+        .provider
+        .open(&account(), presented)
+        .await
+        .expect("open");
+    assert_eq!(
+        session
+            .access_token_for(&audience_of("graph"), K::Storage)
+            .await,
+        Err(ProviderError::NeedsConsent)
+    );
+    session
+        .access_token_for(&audience_of("graph"), K::Calendar)
+        .await
+        .expect("the refresh token is still good");
 }

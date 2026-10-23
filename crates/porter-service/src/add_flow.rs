@@ -20,7 +20,8 @@ use porter_core::sheet::{
 };
 use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
 use porter_core::{
-    AccountId, AccountsReply, AppId, AuthKind, DataClass, Need, ProviderId, ServiceEndpoint,
+    AccountId, AccountsReply, AppId, AuthKind, CapabilityKind, DataClass, Need, ProviderId,
+    ServiceEndpoint,
 };
 use porter_provider::{
     ConsentHistory, LoginHint, Provider, ProviderError, ProviderSpec, Readiness, SignIn,
@@ -81,6 +82,15 @@ pub(crate) enum Job {
         provider: ProviderId,
         /// The account's servers as stored, for the family to start from.
         endpoints: Vec<ServiceEndpoint>,
+    },
+    /// The on-use access of `kinds` for an existing account, and a credential that holds it.
+    Extend {
+        account: AccountId,
+        provider: ProviderId,
+        /// The account's servers as stored: the family starts from them, and the answer must be
+        /// their login.
+        endpoints: Vec<ServiceEndpoint>,
+        kinds: Vec<CapabilityKind>,
     },
 }
 
@@ -224,6 +234,44 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         }
     }
 
+    /// Runs a sign-in for `account` that asks for the on-use access of `kinds` alone, and files
+    /// the credential it ends with under the same id: the same person only, or nothing is kept.
+    pub(crate) async fn run_extend(
+        &self,
+        caller: &AppId,
+        account: &AccountId,
+        kinds: Vec<CapabilityKind>,
+        window: ParentWindow,
+    ) -> Result<(), Refusal> {
+        let (provider, endpoints) = {
+            let registry = self.lock();
+            let row = registry
+                .accounts
+                .iter()
+                .find(|a| a.id == *account)
+                .ok_or(Refusal::UnknownGrant)?;
+            (row.provider.clone(), row.endpoints.clone())
+        };
+        let asks = self
+            .catalog
+            .get(&provider)
+            .is_some_and(|spec| kinds.iter().all(|k| spec.on_use_rows(*k).next().is_some()));
+        if kinds.is_empty() || !asks {
+            return Err(Refusal::Unavailable);
+        }
+        let job = Job::Extend {
+            account: account.clone(),
+            provider,
+            endpoints,
+            kinds,
+        };
+        match self.drive(caller, window, &job).await {
+            Ok(Stored::Reauthenticated) => Ok(()),
+            Ok(Stored::Added(_) | Stored::AlreadyThere(_)) => Err(Refusal::Unavailable),
+            Err(refusal) => Err(refusal),
+        }
+    }
+
     /// Runs the sign-in again for `account` and replaces its credential. `Held` asks that
     /// `caller` hold a grant for the account; `Shell` is for the sheet host and Settings, which
     /// sign any account in again (accountd decides by role who may).
@@ -301,10 +349,16 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                 account: account.clone(),
                 provider: provider.clone(),
             },
+            Job::Extend {
+                account, provider, ..
+            } => Purpose::Extend {
+                account: account.clone(),
+                provider: provider.clone(),
+            },
         };
         let rows = match job {
             Job::Add { .. } => rows,
-            Job::Reauthenticate { .. } => Vec::new(),
+            Job::Reauthenticate { .. } | Job::Extend { .. } => Vec::new(),
         };
         let own = match self.own_machines.get() {
             Some(machines) => machines.read().await,
@@ -325,7 +379,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             polling: false,
             identity: match job {
                 Job::Add { identity, .. } => identity.clone(),
-                Job::Reauthenticate { .. } => None,
+                Job::Reauthenticate { .. } | Job::Extend { .. } => None,
             },
             stored: None,
             already: None,
@@ -446,12 +500,27 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                     account: account.clone(),
                     endpoints: endpoints.clone(),
                 },
+                Job::Extend {
+                    account,
+                    endpoints,
+                    kinds,
+                    ..
+                } => SignInMode::Extend {
+                    account: account.clone(),
+                    endpoints: endpoints.clone(),
+                    kinds: kinds.clone(),
+                },
             });
-            provider.sign_in(match identity {
-                Some(SignInAs { hint, history, .. }) => {
+            provider.sign_in(match (identity, job) {
+                (Some(SignInAs { hint, history, .. }), _) => {
                     start.with_login_hint(hint.clone()).with_consent(*history)
                 }
-                None => start,
+                // The page opens on the account's own address: the answer must be that person.
+                (None, Job::Extend { endpoints, .. }) => match login_hint_of(endpoints) {
+                    Some(hint) => start.with_login_hint(hint),
+                    None => start,
+                },
+                (None, _) => start,
             })
         })
     }
@@ -562,6 +631,10 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                 .store_renewed(caller, account, &signed)
                 .await
                 .map(|()| Stored::Reauthenticated),
+            Job::Extend { account, .. } => self
+                .store_extended(caller, account, &signed)
+                .await
+                .map(|()| Stored::Reauthenticated),
         };
         match stored {
             Ok(stored) => {
@@ -606,6 +679,13 @@ fn person(input: Result<porter_core::sheet::SheetInput, SheetFault>) -> SheetEve
         Ok(input) => SheetEvent::Input(input),
         Err(SheetFault::Closed | SheetFault::Unavailable) => SheetEvent::Left,
     }
+}
+
+/// The address an account's servers sign in as, as a hint for the provider's page.
+fn login_hint_of(endpoints: &[ServiceEndpoint]) -> Option<LoginHint> {
+    endpoints
+        .iter()
+        .find_map(|e| LoginHint::parse(&e.login.0).ok())
 }
 
 /// The provider a sign-in under way is for.

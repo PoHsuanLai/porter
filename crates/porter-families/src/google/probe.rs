@@ -8,8 +8,8 @@
 //! owner can fix it), a Workspace administrator turned the service off (`TenantConsent`), or a
 //! personal account that has no such service (`ProviderOffersNone`).
 
+use super::apis_of;
 use super::scopes::Granted;
-use super::{apis_of, declared_kinds};
 use porter_core::capability::{Capability, CapabilityKind};
 use porter_core::{AbsentReason, Claim, EndpointUrl, Family, Offer, Provenance, Subject, WebUrl};
 use porter_http::{Http, HttpRequest, HttpResponse, Method};
@@ -73,10 +73,10 @@ pub(super) async fn probe<H: Http>(
     (granted, mail): (&Granted, MailRights),
 ) -> Result<Vec<Claim>, ProviderError> {
     let mut claims = Vec::new();
-    for kind in declared_kinds(spec) {
+    // An on-use row (the whole of Drive) is not the account's until it is asked for.
+    for kind in spec.sign_in_kinds() {
         let Some(declared) = spec
-            .capabilities
-            .iter()
+            .sign_in_rows()
             .find(|row| row.capability.kind() == kind)
             .map(|row| &row.capability)
         else {

@@ -12,8 +12,9 @@ pub use linked::{AuthOrigin, LinkedOrigin};
 pub use matching::{DomainMatch, DomainName, Matching};
 
 use porter_core::AuthKind;
+use porter_core::capability::Ask;
 use porter_core::sheet::{MarkFace, ProviderGroup, ProviderKind, ProviderRow, RowKind};
-use porter_core::{Billing, Capability, Family, Locality, ProviderId};
+use porter_core::{Billing, Capability, CapabilityKind, Family, Locality, ProviderId};
 use serde::{Deserialize, Serialize};
 
 /// One provider, as its file declares it.
@@ -82,6 +83,19 @@ pub struct CapabilityRow {
     /// family. Exact hosts, no wildcard, same scheme as the row's endpoint.
     #[serde(default)]
     pub auth_origins: Vec<AuthOrigin>,
+    /// When the person is asked for this row's access: with the sign-in (the default, not
+    /// written), or `ask = "on_use"`, when something first uses it, in a sign-in that asks for
+    /// it alone (`SignInMode::Extend`). A sign-in leaves an on-use row's access out, and the
+    /// account's claims leave the row out until then.
+    #[serde(default, skip_serializing_if = "Ask::is_sign_in")]
+    pub ask: Ask,
+}
+
+impl CapabilityRow {
+    /// Whether this row's access is asked with the sign-in.
+    pub fn asked_at_sign_in(&self) -> bool {
+        self.ask == Ask::SignIn
+    }
 }
 
 /// A service URL written in a provider file.
@@ -110,6 +124,46 @@ impl ProviderSpec {
                 .collect();
             ProviderGroup::fallback(self.auth.kind, &kinds)
         })
+    }
+
+    /// The rows whose access a sign-in asks for, in file order: every row but the on-use ones.
+    pub fn sign_in_rows(&self) -> impl Iterator<Item = &CapabilityRow> {
+        self.capabilities
+            .iter()
+            .filter(|row| row.asked_at_sign_in())
+    }
+
+    /// The kinds a sign-in asks for, once each, in file order.
+    pub fn sign_in_kinds(&self) -> Vec<CapabilityKind> {
+        self.sign_in_rows()
+            .map(|row| row.capability.kind())
+            .fold(Vec::new(), |mut kinds, kind| {
+                if !kinds.contains(&kind) {
+                    kinds.push(kind);
+                }
+                kinds
+            })
+    }
+
+    /// The rows of `kind` whose access is asked when first used.
+    pub fn on_use_rows(&self, kind: CapabilityKind) -> impl Iterator<Item = &CapabilityRow> {
+        self.capabilities
+            .iter()
+            .filter(move |row| row.ask == Ask::OnUse && row.capability.kind() == kind)
+    }
+
+    /// When a token for a grant of `kind` is asked: with the sign-in when a sign-in row has the
+    /// kind (an app folder, though a whole drive may be asked later), else on use; `None` for
+    /// a kind the file does not declare.
+    pub fn ask_for(&self, kind: CapabilityKind) -> Option<Ask> {
+        let mut rows = self
+            .capabilities
+            .iter()
+            .filter(|row| row.capability.kind() == kind);
+        match rows.clone().any(CapabilityRow::asked_at_sign_in) {
+            true => Some(Ask::SignIn),
+            false => rows.next().map(|_| Ask::OnUse),
+        }
     }
 
     /// The row the sheet's provider list shows for this provider.

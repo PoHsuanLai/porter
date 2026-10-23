@@ -124,6 +124,7 @@ async fn service() -> (Svc, Asked) {
                 access: SecretText::new("stale"),
                 refresh: SecretText::new("refresh"),
                 expires_at: UnixSeconds(0),
+                granted: Default::default(),
             },
         )
         .await

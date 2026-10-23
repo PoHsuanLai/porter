@@ -40,4 +40,9 @@ pub enum ProviderError {
     /// The server answered something this family cannot read.
     #[error("unreadable answer")]
     Unreadable,
+    /// The account was not given this access (it is asked when first used, or the person left
+    /// it unticked): the credential is good, and only a sign-in that asks for the access
+    /// (`SignInMode::Extend`) changes the answer.
+    #[error("access not given")]
+    NeedsConsent,
 }

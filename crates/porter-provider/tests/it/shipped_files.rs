@@ -88,6 +88,8 @@ fn the_microsoft_file_declares_mail_over_imap_and_the_rest_over_graph() {
             (K::Tasks, Family::Graph),
             (K::Notes, Family::Graph),
             (K::Storage, Family::Graph),
+            // The whole drive, asked on use.
+            (K::Storage, Family::Graph),
         ]
     );
     assert_eq!(spec.auth.issuer, Some(porter_provider::Issuer::Microsoft));
@@ -330,31 +332,125 @@ fn the_compiled_in_files_are_the_whole_providers_directory_byte_for_byte() {
 }
 
 #[test]
-fn only_microsofts_storage_row_declares_linked_origins_and_asks_the_app_folder_only() {
-    use porter_core::CapabilityKind;
-    let rows: Vec<(String, CapabilityKind, Vec<String>)> = shipped()
+fn only_microsofts_storage_rows_declare_linked_origins_the_app_folder_at_sign_in() {
+    use porter_core::capability::{Ask, StorageScope};
+    use porter_core::{Capability, CapabilityKind};
+    type Row = (
+        String,
+        CapabilityKind,
+        Option<StorageScope>,
+        Ask,
+        Vec<String>,
+    );
+    let rows: Vec<Row> = shipped()
         .into_iter()
         .flat_map(|(_, spec)| {
             let id = spec.id.as_str().to_owned();
             spec.capabilities.into_iter().map(move |row| {
                 let origins = row.linked_origins.iter().map(ToString::to_string).collect();
-                (id.clone(), row.capability.kind(), origins)
+                let scope = match &row.capability {
+                    Capability::Storage(storage) => Some(storage.scope),
+                    _ => None,
+                };
+                (id.clone(), row.capability.kind(), scope, row.ask, origins)
             })
         })
-        .filter(|(_, _, origins): &(String, CapabilityKind, Vec<String>)| !origins.is_empty())
+        .filter(|row: &Row| !row.4.is_empty())
         .collect();
-    assert_eq!(
-        rows,
-        [(
+    let origins = vec![
+        "*.up.1drv.com".to_owned(),
+        "*.files.1drv.com".to_owned(),
+        "*.sharepoint.com".to_owned(),
+    ];
+    let microsoft = |scope, ask| {
+        (
             "microsoft".to_owned(),
             CapabilityKind::Storage,
-            vec![
-                "*.up.1drv.com".to_owned(),
-                "*.files.1drv.com".to_owned(),
-                "*.sharepoint.com".to_owned()
-            ]
-        )]
+            Some(scope),
+            ask,
+            origins.clone(),
+        )
+    };
+    assert_eq!(
+        rows,
+        [
+            microsoft(StorageScope::AppFolder, Ask::SignIn),
+            microsoft(StorageScope::Full, Ask::OnUse),
+        ]
     );
+}
+
+#[test]
+fn a_whole_drive_is_asked_only_on_use() {
+    use porter_core::Capability;
+    use porter_core::capability::{Ask, StorageScope};
+    for (_, spec) in shipped() {
+        let id = spec.id.as_str();
+        for row in &spec.capabilities {
+            if let Capability::Storage(storage) = &row.capability
+                && storage.scope == StorageScope::Full
+                && matches!(id, "google" | "microsoft")
+            {
+                assert_eq!(row.ask, Ask::OnUse, "{id}");
+            }
+        }
+        // What sign-in asks leaves the on-use rows out.
+        assert!(
+            spec.sign_in_rows().all(|row| row.ask == Ask::SignIn),
+            "{id}"
+        );
+    }
+}
+
+#[test]
+fn ask_reads_on_use_and_is_sign_in_when_left_out() {
+    use porter_core::CapabilityKind as K;
+    use porter_core::capability::Ask;
+    let spec = porter_provider::parse_provider(
+        r#"
+id = "asks"
+label = "Asks"
+mark = "generic"
+[auth]
+kind = "password"
+[discovery]
+kind = "fixed"
+[[capability]]
+family = "imap"
+kind = "mail"
+v = { access = "read_write", send = "present", delta = "poll", transport = "imap", labels = "folders" }
+[[capability]]
+family = "webdav"
+kind = "storage"
+ask = "on_use"
+v = { access = "read_write", delta = "poll", quota = "reported", scope = "full", hashes = "sha1", ranges = "present", chunked_upload = "present" }
+"#,
+    )
+    .expect("spec");
+    let asks: Vec<Ask> = spec.capabilities.iter().map(|row| row.ask).collect();
+    assert_eq!(asks, [Ask::SignIn, Ask::OnUse]);
+    assert_eq!(spec.sign_in_kinds(), [K::Mail]);
+    assert_eq!(spec.ask_for(K::Mail), Some(Ask::SignIn));
+    assert_eq!(spec.ask_for(K::Storage), Some(Ask::OnUse));
+    assert_eq!(spec.ask_for(K::Calendar), None);
+    assert_eq!(spec.on_use_rows(K::Storage).count(), 1);
+    let bad = porter_provider::parse_provider(
+        r#"
+id = "asks"
+label = "Asks"
+mark = "generic"
+[auth]
+kind = "password"
+[discovery]
+kind = "fixed"
+[[capability]]
+family = "imap"
+kind = "mail"
+ask = "sometimes"
+v = { access = "read_write", send = "present", delta = "poll", transport = "imap", labels = "folders" }
+"#,
+    );
+    assert!(bad.is_err());
 }
 
 #[test]

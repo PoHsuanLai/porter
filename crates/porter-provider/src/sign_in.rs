@@ -7,8 +7,8 @@ use porter_core::sheet::{
     FieldSpec, Progress, Review, ServiceRow, ServiceState, SignInFault, SignInInput, UserCode,
 };
 use porter_core::{
-    AccountId, AccountLabel, Claim, Credential, EndpointUrl, Offer, Restriction, SecretPurpose,
-    ServiceEndpoint, Toggle, WebUrl,
+    AccountId, AccountLabel, CapabilityKind, Claim, Credential, EndpointUrl, Offer, Restriction,
+    SecretPurpose, ServiceEndpoint, Toggle, WebUrl,
 };
 use std::future::Future;
 
@@ -25,6 +25,18 @@ pub enum SignInMode {
         /// Its servers as stored, so a family that signs in again needs no discovery to find
         /// them (Nextcloud's login name and server are among them).
         endpoints: Vec<ServiceEndpoint>,
+    },
+    /// An existing account asked for the access of its on-use rows of `kinds` (the whole of a
+    /// drive), and nothing else: the browser asks for that alone, and the person reviews it in
+    /// plain words before it is kept. What comes back replaces the account's credential, so it
+    /// must be the same person; the host refuses another.
+    Extend {
+        /// The account.
+        account: AccountId,
+        /// Its servers as stored, whose login the answer must match.
+        endpoints: Vec<ServiceEndpoint>,
+        /// The kinds whose on-use access is asked.
+        kinds: Vec<CapabilityKind>,
     },
 }
 
@@ -240,6 +252,10 @@ fn service_row(claim: &Claim, restriction: &Restriction) -> ServiceRow {
             .iter()
             .find(|limit| limit.kind == kind)
             .map(|limit| limit.reason),
+        access: match &claim.offer {
+            Offer::Present(capability) => capability.access_words().map(str::to_owned),
+            Offer::Absent { .. } => None,
+        },
     }
 }
 

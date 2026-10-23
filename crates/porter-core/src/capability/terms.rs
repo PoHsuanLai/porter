@@ -46,3 +46,26 @@ pub enum QuotaReport {
     /// Used and total are reported.
     Reported,
 }
+
+/// When the person is asked for a capability's access: at sign-in with everything else, or only
+/// when something first uses it (the whole of a drive, asked when the person turns on "Show in
+/// Files"). A provider file's row says `ask = "on_use"` for the second; the first is the
+/// default and is not written.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum Ask {
+    /// With the sign-in.
+    #[default]
+    SignIn,
+    /// When it is first used, in a sign-in of its own that asks for it alone.
+    OnUse,
+}
+
+impl Ask {
+    /// Whether this is the default, asked with the sign-in.
+    pub fn is_sign_in(&self) -> bool {
+        *self == Ask::SignIn
+    }
+}

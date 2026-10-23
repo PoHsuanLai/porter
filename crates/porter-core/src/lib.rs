@@ -89,7 +89,7 @@ pub use restriction::{
     Verification,
 };
 pub use scope::ScopeName;
-pub use secret::{Credential, SecretKey, SecretPurpose, SecretText};
+pub use secret::{Credential, GrantedScopes, SecretKey, SecretPurpose, SecretText};
 pub use space::{DesktopSpace, LocalSpace, SpaceId, SpaceKind, SpaceScope};
 pub use space_record::{
     DesktopSpaceRecord, SPACE_LOOK_MAX_BYTES, SPACE_NAME_MAX_CHARS, SpaceChange, SpaceLook,

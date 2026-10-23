@@ -226,6 +226,7 @@ async fn rig(kinds: &[PimKind]) -> Rig {
                 access: SecretText::new("SECRET-ACCESS-TOKEN"),
                 refresh: SecretText::new("SECRET-REFRESH-TOKEN"),
                 expires_at: UnixSeconds(1),
+                granted: Default::default(),
             },
         )
         .await

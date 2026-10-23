@@ -1,5 +1,8 @@
 //! A fake OAuth issuer: authorize (PKCE S256 required, state echoed), token (code exchange,
-//! refresh with rotation, device code), device authorization, revoke and `invalid_grant`.
+//! refresh with rotation, device code), device authorization, revoke and `invalid_grant`. A
+//! refresh may narrow its grant to the `scope` it names and no further: beyond it Google answers
+//! `invalid_scope` and Microsoft `AADSTS65001`; a later authorize keeps what was consented
+//! before.
 //! It speaks plain HTTP on loopback; the person's consent is a knob on the handle.
 
 mod routes;
@@ -128,6 +131,9 @@ struct Device {
 struct Grant {
     client_id: String,
     scope: String,
+    /// Whether a refresh may ask only within `scope` (a grant the person consented to), or for
+    /// anything (one planted by `seed_refresh`, which names no real scopes).
+    limited: bool,
 }
 
 #[derive(Debug)]
@@ -140,6 +146,9 @@ struct State {
     refuse_refreshes: u32,
     /// Scopes the person unticks on the consent page: asked, not granted.
     unticked: Vec<String>,
+    /// What each client was granted by the codes it redeemed: the consent a later authorize
+    /// keeps (Microsoft always, Google with `include_granted_scopes`).
+    consented: HashMap<String, Vec<String>>,
     /// The `expires_in` of every access token issued from now on, in seconds.
     lifetime_s: u64,
     codes: HashMap<String, Code>,
@@ -186,6 +195,7 @@ impl FakeIssuer {
             client_secret: None,
             refuse_refreshes: 0,
             unticked: Vec::new(),
+            consented: HashMap::new(),
             lifetime_s: routes::DEFAULT_LIFETIME_S,
             codes: HashMap::new(),
             refresh: HashMap::new(),
@@ -277,13 +287,25 @@ impl IssuerHandle {
         lock(&self.shared.state).lifetime_s = seconds;
     }
 
-    /// Issues a refresh token as if the person had already signed in (a seeded account).
+    /// Issues a refresh token as if the person had already signed in (a seeded account). A
+    /// refresh with it is served whatever scope it asks.
     pub fn seed_refresh(&self, client_id: &str, scope: &str) -> String {
+        self.seed(client_id, scope, false)
+    }
+
+    /// [`IssuerHandle::seed_refresh`] for a grant held to `scope`, as one a sign-in made is: a
+    /// refresh that asks beyond it is refused as the issuer's style refuses it.
+    pub fn seed_held_refresh(&self, client_id: &str, scope: &str) -> String {
+        self.seed(client_id, scope, true)
+    }
+
+    fn seed(&self, client_id: &str, scope: &str, limited: bool) -> String {
         let mut state = lock(&self.shared.state);
         let token = routes::next(&mut state, "fake-refresh");
         let grant = Grant {
             client_id: client_id.to_owned(),
             scope: scope.to_owned(),
+            limited,
         };
         state.refresh.insert(token.clone(), grant);
         token
@@ -296,6 +318,7 @@ impl IssuerHandle {
         let grant = Grant {
             client_id: client_id.to_owned(),
             scope: scope.to_owned(),
+            limited: false,
         };
         lock(&self.shared.state)
             .refresh

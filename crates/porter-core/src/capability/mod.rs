@@ -23,7 +23,7 @@ pub use photos::{Albums, LibraryRead, PhotosCap};
 pub use pim::{NotesCap, NotesTransport, PimCap, PimTransport};
 pub use storage::{HashKind, StorageCap, StorageScope};
 pub use sync_kinds::{KeyValueCap, PushCap, PushChannel};
-pub use terms::{Access, Delta, Offered, QuotaReport};
+pub use terms::{Access, Ask, Delta, Offered, QuotaReport};
 
 use serde::{Deserialize, Serialize};
 
@@ -89,6 +89,24 @@ impl Capability {
             Capability::KeyValue(_) => CapabilityKind::KeyValue,
             Capability::Push(_) => CapabilityKind::Push,
             Capability::Agent(_) => CapabilityKind::Agent,
+        }
+    }
+
+    /// What this capability lets porter do with the account, in the words a sign-in that asks
+    /// for it shows ("See and change this account's files"), where those say more than the
+    /// kind's name: today only a whole store does.
+    pub fn access_words(&self) -> Option<&'static str> {
+        match self {
+            Capability::Storage(StorageCap {
+                scope: StorageScope::Full,
+                access,
+                ..
+            }) => match access {
+                Access::ReadWrite => Some("See and change this account's files"),
+                Access::Read => Some("See this account's files"),
+                Access::None => None,
+            },
+            _ => None,
         }
     }
 }

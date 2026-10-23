@@ -5,17 +5,20 @@
 //!
 //! The host feeds `Start`, then `Poll` until the browser has answered, then `Confirm`. `Cancel`
 //! ends it at any step and frees the listeners. Signing in again (`SignInMode::Reauthenticate`)
-//! has no review: it is `Done` after the Graph read.
+//! has no review: it is `Done` after the Graph read. Asking for one more access
+//! (`SignInMode::Extend`) asks Microsoft for its Graph permission alone, reads only who
+//! answered, and reviews that access before it is `Done`.
 
 use super::env::MicrosoftEnv;
-use super::graph::{Found, probe};
-use super::scopes::{GRAPH_DEFAULT, graph_only, scopes_for};
-use super::{declared_kinds, graph_origin, imap_origin};
+use super::graph::{Found, probe, whoami};
+use super::scopes::{GRAPH_DEFAULT, extend_scopes, graph_only, scopes_for};
+use super::{graph_origin, imap_origin};
+use crate::extend::{answered_as, asked_claims};
 use porter_core::capability::{Capability, CapabilityKind, Offered};
 use porter_core::sheet::{SignInFault, SignInInput};
 use porter_core::{
-    AccountLabel, Credential, EndpointUrl, Family, LoginName, Offer, Restriction, SecretPurpose,
-    ServiceEndpoint, TenantConsent, Tls, WebUrl,
+    AccountLabel, Credential, EndpointUrl, Family, GrantedScopes, LoginName, Offer, Restriction,
+    SecretPurpose, ServiceEndpoint, TenantConsent, Tls, WebUrl,
 };
 use porter_http::Http;
 use porter_oauth::{
@@ -128,9 +131,13 @@ impl<H: Http + 'static> MicrosoftSignIn<H> {
             .lookup(Issuer::Microsoft, self.env.channel)
             .cloned()
             .ok_or(SignInFault::NeedsClientId)?;
+        let scopes = match &self.start.mode {
+            SignInMode::Extend { kinds, .. } => extend_scopes(kinds),
+            _ => scopes_for(&self.spec.sign_in_kinds()),
+        };
         let grant = Grant {
             endpoints: endpoints_of(&client),
-            scopes: scopes_for(&declared_kinds(&self.spec)),
+            scopes,
             client,
         };
         self.begin_loopback(grant).await
@@ -197,6 +204,12 @@ impl<H: Http + 'static> MicrosoftSignIn<H> {
             .refresh_token
             .clone()
             .ok_or(SignInFault::Unreadable)?;
+        if let SignInMode::Extend {
+            endpoints, kinds, ..
+        } = self.start.mode.clone()
+        {
+            return self.extended(&grant, tokens, &endpoints, &kinds).await;
+        }
         let (graph, refresh) = match graph_only(&grant.scopes) {
             true => (tokens, refresh),
             false => {
@@ -222,6 +235,8 @@ impl<H: Http + 'static> MicrosoftSignIn<H> {
         )
         .await
         .map_err(provider_fault)?;
+        // Microsoft's consent is all that was asked or nothing, so what was asked is what the
+        // refresh token holds.
         let signed = signed_from(
             &self.spec,
             found,
@@ -229,12 +244,56 @@ impl<H: Http + 'static> MicrosoftSignIn<H> {
                 expires_at: graph.expires_at(now),
                 access: graph.access_token,
                 refresh,
+                granted: GrantedScopes::of(grant.scopes),
             },
         );
         // Signing in again does not ask what to use again: the account keeps its services.
         if matches!(self.start.mode, SignInMode::Reauthenticate { .. }) {
             return Ok(SignInStep::Done(signed));
         }
+        let step = review_of(&signed);
+        self.phase = Phase::Review(Box::new(signed));
+        Ok(step)
+    }
+
+    /// The tokens of a sign-in that asked for the on-use access of `kinds` alone: who answered
+    /// (the host keeps the answer only for the account's own login) and a review of that access.
+    /// The refresh token reaches everything consented before too, so it holds what sign-in asks
+    /// and what was asked now.
+    async fn extended(
+        &mut self,
+        grant: &Grant,
+        tokens: TokenResponse,
+        stored: &[ServiceEndpoint],
+        kinds: &[CapabilityKind],
+    ) -> Step {
+        let now = (self.env.clock)();
+        let expires_at = tokens.expires_at(now);
+        let refresh = tokens.refresh_token.ok_or(SignInFault::Unreadable)?;
+        let address = whoami(
+            &*self.env.http,
+            &graph_origin(&self.spec),
+            tokens.access_token.expose(),
+        )
+        .await
+        .map_err(provider_fault)?;
+        let mut granted = scopes_for(&self.spec.sign_in_kinds());
+        granted.extend(grant.scopes.iter().cloned());
+        let signed = Signed::new(
+            AccountLabel(address.clone()),
+            vec![(
+                SecretPurpose::OAuthRefresh,
+                Credential::OAuth {
+                    expires_at,
+                    access: tokens.access_token,
+                    refresh,
+                    granted: GrantedScopes::of(granted),
+                },
+            )],
+            asked_claims(&self.spec, kinds),
+            answered_as(stored, &address),
+            Restriction::none(),
+        );
         let step = review_of(&signed);
         self.phase = Phase::Review(Box::new(signed));
         Ok(step)

@@ -9,7 +9,7 @@ use porter_core::wire::Refusal;
 pub const REFUSAL_ERROR_PREFIX: &str = "org.quire.Accounts1.Error.";
 
 /// Every refusal, so the name table is total by construction.
-const ALL: [Refusal; 9] = [
+const ALL: [Refusal; 10] = [
     Refusal::Dismissed,
     Refusal::Denied,
     Refusal::NoFittingAccount,
@@ -19,6 +19,7 @@ const ALL: [Refusal; 9] = [
     Refusal::Unavailable,
     Refusal::EndpointNotGranted,
     Refusal::NoLauncher,
+    Refusal::NeedsConsent,
 ];
 
 /// The error name accountd replies with for `refusal`. The same as [`refusal_error_name_in`] with
@@ -112,7 +113,8 @@ mod tests {
             | Refusal::NeedsReauth
             | Refusal::Unavailable
             | Refusal::EndpointNotGranted
-            | Refusal::NoLauncher => ALL.contains(&refusal),
+            | Refusal::NoLauncher
+            | Refusal::NeedsConsent => ALL.contains(&refusal),
             // a variant a newer porter adds: not covered, so the test fails until ALL lists it
             _ => false,
         };

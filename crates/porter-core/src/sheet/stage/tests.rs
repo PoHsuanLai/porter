@@ -28,6 +28,7 @@ fn review() -> Review {
             kind: CapabilityKind::Storage,
             state: ServiceState::Offered(Toggle::On),
             limit: None,
+            access: None,
         }],
         endpoints: vec![],
     }

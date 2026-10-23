@@ -3,13 +3,17 @@
 //!
 //! The host feeds `Start`, then `Poll` until the browser has answered, then `Confirm`. `Cancel`
 //! ends it at any step and frees the listener. Signing in again (`SignInMode::Reauthenticate`)
-//! has no review: it is `Done` after the reads. With no client row for this build the first step
-//! is `Failed(NeedsClientId)`: nothing is opened and nothing is dialled.
+//! has no review: it is `Done` after the reads. Asking for one more access (`SignInMode::Extend`)
+//! asks Google for its scopes alone (with `include_granted_scopes`, so the answer keeps what was
+//! granted before), reads only who answered, and reviews that access before it is `Done`; a
+//! person who unticks it has refused it. With no client row for this build the first step is
+//! `Failed(NeedsClientId)`: nothing is opened and nothing is dialled.
 
 use super::env::GoogleEnv;
 use super::probe::{probe, whoami};
-use super::scopes::{Granted, scopes_for};
-use super::{Apis, apis_of, declared_kinds};
+use super::scopes::{Granted, IDENTITY, on_use_scopes_of, scopes_for};
+use super::{Apis, apis_of};
+use crate::extend::{answered_as, asked_claims};
 use porter_core::capability::{Capability, CapabilityKind};
 use porter_core::sheet::{SignInFault, SignInInput};
 use porter_core::{
@@ -124,7 +128,10 @@ impl<H: Http + 'static> GoogleSignIn<H> {
             .cloned()
             .ok_or(SignInFault::NeedsClientId)?;
         let traits = clients.traits(Issuer::Google, self.env.channel);
-        let scopes = scopes_for(&declared_kinds(&self.spec), traits.mail);
+        let scopes = match &self.start.mode {
+            SignInMode::Extend { kinds, .. } => extend_scopes(kinds),
+            _ => scopes_for(&self.spec.sign_in_kinds(), traits.mail),
+        };
         let (verifier, state) = (self.env.random)().ok_or(SignInFault::Unreadable)?;
         let pkce = Pkce::from_random(verifier, state);
         let server = LoopbackServer::bind()
@@ -187,6 +194,14 @@ impl<H: Http + 'static> GoogleSignIn<H> {
             .clone()
             .ok_or(SignInFault::Unreadable)?;
         let granted = Granted::of(tokens.granted_scopes());
+        if let SignInMode::Extend {
+            endpoints, kinds, ..
+        } = self.start.mode.clone()
+        {
+            return self
+                .extended(traits, tokens, (refresh, granted), (&endpoints, &kinds))
+                .await;
+        }
         let token = tokens.access_token.expose().to_owned();
         let address = whoami(&*self.env.http, &self.env.userinfo, &token)
             .await
@@ -211,6 +226,7 @@ impl<H: Http + 'static> GoogleSignIn<H> {
                     expires_at: tokens.expires_at(now),
                     access: tokens.access_token,
                     refresh,
+                    granted: granted.record(),
                 },
             )],
             claims,
@@ -226,6 +242,48 @@ impl<H: Http + 'static> GoogleSignIn<H> {
         Ok(step)
     }
 
+    /// The tokens of a sign-in that asked for the on-use access of `kinds` alone: refused if the
+    /// person unticked it; else who answered (the host keeps the answer only for the account's
+    /// own login) and a review of that access. Google's answer lists everything the refresh
+    /// token holds, what was granted before included.
+    async fn extended(
+        &mut self,
+        traits: ClientTraits,
+        tokens: TokenResponse,
+        (refresh, granted): (porter_core::SecretText, Granted),
+        (stored, kinds): (&[ServiceEndpoint], &[CapabilityKind]),
+    ) -> Step {
+        let now = (self.env.clock)();
+        if !granted.holds_all(&extend_scopes_of(kinds)) {
+            return Err(SignInFault::Refused);
+        }
+        let address = whoami(
+            &*self.env.http,
+            &self.env.userinfo,
+            tokens.access_token.expose(),
+        )
+        .await
+        .map_err(provider_fault)?;
+        let signed = Signed::new(
+            AccountLabel(address.clone()),
+            vec![(
+                SecretPurpose::OAuthRefresh,
+                Credential::OAuth {
+                    expires_at: tokens.expires_at(now),
+                    access: tokens.access_token,
+                    refresh,
+                    granted: granted.record(),
+                },
+            )],
+            asked_claims(&self.spec, kinds),
+            answered_as(stored, &address),
+            restriction_for(traits.review, &[], now),
+        );
+        let step = review_of(&signed);
+        self.phase = Phase::Review(Box::new(signed));
+        Ok(step)
+    }
+
     fn review_or_done(&mut self, signed: Signed, input: SignInInput) -> Step {
         match input {
             SignInInput::Confirm(_) => Ok(SignInStep::Done(signed)),
@@ -236,6 +294,25 @@ impl<H: Http + 'static> GoogleSignIn<H> {
             }
         }
     }
+}
+
+/// The scopes a sign-in for the on-use access of `kinds` asks: theirs alone.
+fn extend_scopes_of(kinds: &[CapabilityKind]) -> Vec<&'static str> {
+    kinds
+        .iter()
+        .flat_map(|kind| on_use_scopes_of(*kind).iter().copied())
+        .collect()
+}
+
+/// [`extend_scopes_of`] as the authorize URL takes them, with who the person is (granted at
+/// sign-in already) so the answer can be told to be theirs.
+fn extend_scopes(kinds: &[CapabilityKind]) -> Vec<String> {
+    IDENTITY
+        .iter()
+        .copied()
+        .chain(extend_scopes_of(kinds))
+        .map(str::to_owned)
+        .collect()
 }
 
 fn review_of(signed: &Signed) -> SignInStep {
@@ -323,7 +400,7 @@ fn endpoints_for(
             out.push(endpoint(Family::Smtp, smtp));
         }
     }
-    for row in &spec.capabilities {
+    for row in spec.sign_in_rows() {
         let api = !matches!(row.family, Family::Imap | Family::Smtp);
         if api
             && present(row.capability.kind()).is_some()

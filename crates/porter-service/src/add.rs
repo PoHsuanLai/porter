@@ -87,6 +87,29 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             .await
     }
 
+    /// Asks the person, in a sign-in of its own, for the access `account`'s provider asks only
+    /// when it is first used (`ask = "on_use"`) for `kinds`: the whole of a drive, when the
+    /// person turns on "Show in Files". The sheet opens on the account, the provider's page asks
+    /// for that access alone, and the review names it in plain words; on Allow the new
+    /// credential replaces the old under the same id. An answer from anyone but the account's
+    /// own login stores nothing. For the host itself (syncd, for its own accounts): no grant is
+    /// asked of `caller`, who is named in the audit.
+    ///
+    /// # Errors
+    /// `UnknownGrant` for an account the registry does not hold; `Unavailable` when its provider
+    /// asks none of `kinds` on use, or when what came back could not be kept (another person
+    /// included); otherwise the sheet's own ending (`Dismissed`, `Denied` when the person
+    /// refused the access).
+    pub async fn extend_access(
+        &self,
+        caller: &AppId,
+        account: &AccountId,
+        kinds: Vec<CapabilityKind>,
+        window: ParentWindow,
+    ) -> Result<(), Refusal> {
+        self.run_extend(caller, account, kinds, window).await
+    }
+
     /// What the relay for one checked endpoint presents: the account's password, or an access
     /// token the provider session mints.
     pub(crate) async fn relay_plan(

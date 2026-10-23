@@ -6,7 +6,7 @@
 //! `MICROSOFT_SCOPES`, `is_personal_microsoft`, `issuer_for_server`), the issuer and brand half
 //! only.
 
-use porter_core::capability::CapabilityKind;
+use porter_core::capability::{Ask, CapabilityKind};
 use porter_core::{Audience, TokenKind};
 
 /// Exchange Online's IMAP scope (a delegated permission, not the application-only family).
@@ -41,6 +41,24 @@ pub(super) fn scopes_for(kinds: &[CapabilityKind]) -> Vec<String> {
     scopes
 }
 
+/// The scopes a sign-in that asks for the on-use access of `kinds` alone asks
+/// (`SignInMode::Extend`): their Graph permissions, and `User.Read`, which shows who answered
+/// (already consented, so it adds nothing to the page). Microsoft keeps what was consented
+/// before, so the refresh token that comes back reaches that too.
+pub(super) fn extend_scopes(kinds: &[CapabilityKind]) -> Vec<String> {
+    let mut scopes: Vec<String> = GRAPH_ON_USE
+        .iter()
+        .filter(|(k, _)| kinds.contains(k))
+        .map(|(_, s)| format!("{GRAPH}{s}"))
+        .collect();
+    scopes.extend([
+        USER_READ.to_owned(),
+        "offline_access".to_owned(),
+        "openid".to_owned(),
+    ]);
+    scopes
+}
+
 /// The Graph permission each kind is signed in with (`scopes_for`), and the only one a token
 /// for a grant of that kind carries.
 const GRAPH_PER_KIND: [(CapabilityKind, &str); 5] = [
@@ -51,9 +69,18 @@ const GRAPH_PER_KIND: [(CapabilityKind, &str); 5] = [
     (CapabilityKind::Storage, "Files.ReadWrite.AppFolder"),
 ];
 
-/// The Graph scope a grant for `kind` is refreshed with; none for a kind Graph does not serve.
-fn graph_scope(kind: CapabilityKind) -> Option<String> {
-    GRAPH_PER_KIND
+/// The Graph permission of each kind's on-use row (`ask = "on_use"`): asked only by a sign-in for
+/// it alone ([`extend_scopes`]), never by `scopes_for`.
+const GRAPH_ON_USE: [(CapabilityKind, &str); 1] = [(CapabilityKind::Storage, "Files.ReadWrite")];
+
+/// The Graph scope a grant for `kind` is refreshed with, from the table of rows asked as `ask`
+/// says; none for a kind Graph does not serve.
+fn graph_scope(kind: CapabilityKind, ask: Ask) -> Option<String> {
+    let table: &[(CapabilityKind, &str)] = match ask {
+        Ask::SignIn => &GRAPH_PER_KIND,
+        Ask::OnUse => &GRAPH_ON_USE,
+    };
+    table
         .iter()
         .find(|(k, _)| *k == kind)
         .map(|(_, s)| format!("{GRAPH}{s}"))
@@ -87,17 +114,24 @@ pub(super) fn audience_scope(
 /// nothing else, never `.default` (which names every Graph permission the account consented to,
 /// so a calendar grant's token would reach the account's files). Microsoft's v2 token endpoint
 /// takes a subset of the signed-in scopes on a refresh. Mail reaches IMAP and SMTP only; the
-/// other kinds reach Graph only. `None` for an audience the kind does not reach.
+/// other kinds reach Graph only. `ask` is how the kind's rows are asked (`ProviderSpec::ask_for`):
+/// an on-use kind's token carries its on-use permission. `None` for an audience the kind does not
+/// reach.
 pub(super) fn grant_scope(
     audience: &Audience,
     kind: CapabilityKind,
+    ask: Ask,
     graph_endpoint: &str,
 ) -> Option<(String, TokenKind)> {
-    match (audience.0.as_str(), kind) {
-        ("imap", CapabilityKind::Mail) => Some((IMAP_SCOPE.to_owned(), TokenKind::Xoauth2)),
-        ("smtp", CapabilityKind::Mail) => Some((SMTP_SCOPE.to_owned(), TokenKind::Xoauth2)),
+    match (audience.0.as_str(), kind, ask) {
+        ("imap", CapabilityKind::Mail, Ask::SignIn) => {
+            Some((IMAP_SCOPE.to_owned(), TokenKind::Xoauth2))
+        }
+        ("smtp", CapabilityKind::Mail, Ask::SignIn) => {
+            Some((SMTP_SCOPE.to_owned(), TokenKind::Xoauth2))
+        }
         _ if is_graph(audience, graph_endpoint) => {
-            graph_scope(kind).map(|scope| (scope, TokenKind::Bearer))
+            graph_scope(kind, ask).map(|scope| (scope, TokenKind::Bearer))
         }
         _ => None,
     }
@@ -248,7 +282,7 @@ mod tests {
             ("https://graph.evil.test", K::Calendar, None),
         ];
         for (audience, kind, want) in CASES {
-            let got = grant_scope(&Audience((*audience).into()), *kind, G);
+            let got = grant_scope(&Audience((*audience).into()), *kind, Ask::SignIn, G);
             assert_eq!(
                 got,
                 want.map(|(s, k)| (s.to_owned(), k)),
@@ -261,9 +295,40 @@ mod tests {
         }
         // Every kind's grant scope is one the sign-in asked for when the kind was on.
         for kind in [K::Calendar, K::Contacts, K::Tasks, K::Notes, K::Storage] {
-            let (scope, _) = grant_scope(&Audience("graph".into()), kind, G).expect("graph kind");
+            let (scope, _) =
+                grant_scope(&Audience("graph".into()), kind, Ask::SignIn, G).expect("graph kind");
             assert!(scopes_for(&[kind]).contains(&scope), "{kind:?}");
         }
+    }
+
+    #[test]
+    fn the_whole_drive_is_asked_alone_and_only_an_on_use_grant_carries_it() {
+        const G: &str = "https://graph.microsoft.com";
+        const WHOLE: &str = "https://graph.microsoft.com/Files.ReadWrite";
+        assert!(
+            !scopes_for(&[K::Storage, K::Calendar]).contains(&WHOLE.to_owned()),
+            "a sign-in never asks the whole drive"
+        );
+        assert_eq!(
+            extend_scopes(&[K::Storage]),
+            [
+                WHOLE,
+                "https://graph.microsoft.com/User.Read",
+                "offline_access",
+                "openid"
+            ]
+        );
+        assert!(graph_only(&extend_scopes(&[K::Storage])));
+        let graph = Audience("graph".into());
+        assert_eq!(
+            grant_scope(&graph, K::Storage, Ask::OnUse, G),
+            Some((WHOLE.to_owned(), TokenKind::Bearer))
+        );
+        assert_eq!(grant_scope(&graph, K::Calendar, Ask::OnUse, G), None);
+        assert_eq!(
+            grant_scope(&Audience("imap".into()), K::Mail, Ask::OnUse, G),
+            None
+        );
     }
 
     #[test]

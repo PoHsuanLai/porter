@@ -96,6 +96,10 @@ pub enum Credential {
         refresh: SecretText,
         /// When `access` expires.
         expires_at: UnixSeconds,
+        /// The scopes the refresh token was granted, as the issuer last said. A credential
+        /// stored before porter kept them has none (`GrantedScopes::unknown`).
+        #[serde(default, skip_serializing_if = "GrantedScopes::is_unknown")]
+        granted: GrantedScopes,
     },
     /// An API key.
     ApiKey(SecretText),
@@ -111,17 +115,68 @@ pub enum Credential {
     },
 }
 
+/// The scopes an OAuth refresh token was granted, as the issuer's token answers said (their
+/// `scope`), kept with the token so they are replaced with it: a sign-in again, or one that asks
+/// for more, files both at once. A record from before porter kept them is unknown, which a family
+/// reads as "what sign-in asks was granted, and nothing asked later".
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct GrantedScopes(Option<Vec<String>>);
+
+impl GrantedScopes {
+    /// Not known: a credential stored before porter kept its scopes, or an issuer that does not
+    /// say.
+    pub fn unknown() -> Self {
+        Self(None)
+    }
+
+    /// These scopes, once each, in the order given.
+    pub fn of<I, S>(scopes: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        let mut held = Vec::new();
+        for scope in scopes.into_iter().map(Into::into) {
+            if !held.contains(&scope) {
+                held.push(scope);
+            }
+        }
+        Self(Some(held))
+    }
+
+    /// Whether nothing is known.
+    pub fn is_unknown(&self) -> bool {
+        self.0.is_none()
+    }
+
+    /// The scopes, when known.
+    pub fn scopes(&self) -> Option<&[String]> {
+        self.0.as_deref()
+    }
+
+    /// Whether `scope` was granted, or `None` when that is not known.
+    pub fn holds(&self, scope: &str) -> Option<bool> {
+        self.0.as_ref().map(|held| held.iter().any(|s| s == scope))
+    }
+}
+
 impl fmt::Debug for Credential {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Credential::Password(_) => f.write_str("Credential::Password(<redacted>)"),
             Credential::ApiKey(_) => f.write_str("Credential::ApiKey(<redacted>)"),
             Credential::Bearer(_) => f.write_str("Credential::Bearer(<redacted>)"),
-            Credential::OAuth { expires_at, .. } => f
+            Credential::OAuth {
+                expires_at,
+                granted,
+                ..
+            } => f
                 .debug_struct("Credential::OAuth")
                 .field("access", &"<redacted>")
                 .field("refresh", &"<redacted>")
                 .field("expires_at", expires_at)
+                .field("granted", granted)
                 .finish(),
             Credential::KeyPair { access_key, .. } => f
                 .debug_struct("Credential::KeyPair")
@@ -142,9 +197,37 @@ mod tests {
             access: SecretText::new("access-xyz"),
             refresh: SecretText::new("refresh-xyz"),
             expires_at: UnixSeconds(10),
+            granted: GrantedScopes::unknown(),
         };
         let shown = format!("{credential:?} {:?}", SecretText::new("pw-xyz"));
         assert!(!shown.contains("xyz"), "{shown}");
+    }
+
+    #[test]
+    fn a_credential_stored_before_scopes_were_kept_reads_as_unknown_and_writes_back_the_same() {
+        let old = r#"{"kind":"oauth","v":{"access":"a","refresh":"r","expires_at":10}}"#;
+        let read: Credential = serde_json::from_str(old).expect("an old credential");
+        let Credential::OAuth { granted, .. } = &read else {
+            panic!("{read:?}");
+        };
+        assert!(granted.is_unknown());
+        assert_eq!(granted.holds("files"), None);
+        assert_eq!(serde_json::to_string(&read).expect("json"), old);
+        let new = Credential::OAuth {
+            access: SecretText::new("a"),
+            refresh: SecretText::new("r"),
+            expires_at: UnixSeconds(10),
+            granted: GrantedScopes::of(["files", "mail", "files"]),
+        };
+        let text = serde_json::to_string(&new).expect("json");
+        assert!(text.contains(r#""granted":["files","mail"]"#), "{text}");
+        let back: Credential = serde_json::from_str(&text).expect("read back");
+        assert_eq!(back, new);
+        let Credential::OAuth { granted, .. } = back else {
+            unreachable!()
+        };
+        assert_eq!(granted.holds("mail"), Some(true));
+        assert_eq!(granted.holds("calendar"), Some(false));
     }
 
     /// `SecretText` wipes itself when dropped: it is `ZeroizeOnDrop`, and `zeroize`, which its

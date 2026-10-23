@@ -154,6 +154,7 @@ impl Rig {
                     access: SecretText::new(ACCESS_TOKEN),
                     refresh: SecretText::new(REFRESH_TOKEN),
                     expires_at: porter_core::UnixSeconds(1_790_000_000),
+                    granted: Default::default(),
                 },
             ),
         ] {

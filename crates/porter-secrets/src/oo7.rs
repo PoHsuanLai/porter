@@ -448,6 +448,7 @@ mod tests {
             access: SecretText::new("a".repeat(3000)),
             refresh: SecretText::new("r".repeat(3000)),
             expires_at: UnixSeconds(1),
+            granted: Default::default(),
         };
         let buffer: Zeroizing<Vec<u8>> = encoded(&credential).expect("encodes");
         assert_eq!(buffer.capacity(), ENCODE_ROOM, "the buffer was not regrown");

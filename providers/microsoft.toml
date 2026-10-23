@@ -60,3 +60,13 @@ kind = "storage"
 # and SharePoint `https://<tenant>[-my].sharepoint.com/...`). `*.sharepoint.com` is every tenant's.
 linked_origins = ["*.up.1drv.com", "*.files.1drv.com", "*.sharepoint.com"]
 v = { access = "read_write", delta = "poll", quota = "reported", scope = "app_folder", hashes = "quick_xor", ranges = "present", chunked_upload = "present" }
+
+# The whole OneDrive (`Files.ReadWrite`), asked only when the person turns on "Show in Files" for
+# the account, in a sign-in that asks for it alone; the app folder above is what sign-in asks.
+[[capability]]
+family = "graph"
+endpoint = "https://graph.microsoft.com"
+kind = "storage"
+ask = "on_use"
+linked_origins = ["*.up.1drv.com", "*.files.1drv.com", "*.sharepoint.com"]
+v = { access = "read_write", delta = "poll", quota = "reported", scope = "full", hashes = "quick_xor", ranges = "present", chunked_upload = "present" }

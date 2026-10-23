@@ -382,3 +382,75 @@ async fn a_graph_that_answers_5xx_ends_the_sign_in_unreachable_and_it_stays_over
         SignInStep::Failed(SignInFault::Cancelled)
     );
 }
+
+const FILES: &str = "https://graph.microsoft.com/Files.ReadWrite";
+const CALENDARS: &str = "https://graph.microsoft.com/Calendars.ReadWrite";
+
+fn asked_scope(rig: &Rig) -> String {
+    let query = rig
+        .issuer
+        .authorize_queries()
+        .pop()
+        .expect("an authorize request");
+    query
+        .into_iter()
+        .find(|(n, _)| n == "scope")
+        .map(|(_, v)| v)
+        .expect("scope")
+}
+
+#[tokio::test]
+async fn sign_in_never_asks_the_whole_drive() {
+    let rig = Rig::new(true).await;
+    let _ = to_review(&rig).await;
+    let scope = asked_scope(&rig);
+    assert!(!scope.split(' ').any(|s| s == FILES), "{scope}");
+    assert!(scope.split(' ').any(|s| s == CALENDARS), "{scope}");
+}
+
+#[tokio::test]
+async fn asking_for_the_whole_drive_asks_it_alone_and_records_it_with_the_rest() {
+    let rig = Rig::new(true).await;
+    let (_, step) = to_review(&rig).await;
+    let SignInStep::Review {
+        endpoints: stored, ..
+    } = step
+    else {
+        panic!("expected a review, got {step:?}")
+    };
+    let begun = SignInStart::new(SignInMode::Extend {
+        account: AccountId::parse("ada").expect("id"),
+        endpoints: stored.clone(),
+        kinds: vec![K::Storage],
+    });
+    let (mut signin, step) = to_review_from(&rig, begun).await;
+    let scope = asked_scope(&rig);
+    assert!(scope.split(' ').any(|s| s == FILES), "{scope}");
+    assert!(!scope.split(' ').any(|s| s == CALENDARS), "{scope}");
+    let SignInStep::Review {
+        claims, endpoints, ..
+    } = step
+    else {
+        panic!("expected a review, got {step:?}")
+    };
+    let kinds: Vec<K> = claims.iter().map(|c| c.offer.kind()).collect();
+    assert_eq!(kinds, [K::Storage]);
+    assert_eq!(endpoints.len(), stored.len());
+    assert!(
+        endpoints
+            .iter()
+            .all(|e| e.login.0 == "ada@contoso.onmicrosoft.com")
+    );
+    let choices = vec![ServiceChoice {
+        kind: K::Storage,
+        toggle: Toggle::On,
+    }];
+    let SignInStep::Done(signed) = signin.next(SignInInput::Confirm(choices)).await else {
+        panic!("expected done")
+    };
+    let [(_, Credential::OAuth { granted, .. })] = signed.credentials.as_slice() else {
+        panic!("one OAuth credential: {:?}", signed.credentials)
+    };
+    assert_eq!(granted.holds(FILES), Some(true));
+    assert_eq!(granted.holds(CALENDARS), Some(true));
+}

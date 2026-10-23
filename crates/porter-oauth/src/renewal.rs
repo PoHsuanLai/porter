@@ -4,7 +4,7 @@
 //! it, and only the issuer's own refusal is a reason to sign in again.
 
 use crate::exchange::{ExchangeFault, refresh};
-use porter_core::{Credential, UnixSeconds};
+use porter_core::{Credential, GrantedScopes, UnixSeconds};
 use porter_http::Http;
 use porter_provider::{ClientEntry, IssuerEndpoints};
 
@@ -67,6 +67,8 @@ pub async fn renew<H: Http>(
             expires_at: tokens.expires_at(now),
             refresh: tokens.refresh_token.unwrap_or_else(|| presented.clone()),
             access: tokens.access_token,
+            // Renewal is handed the refresh token alone, so what it holds stays unknown here.
+            granted: GrantedScopes::unknown(),
         }),
         Err(ExchangeFault::Refused) => RenewOutcome::NeedsReauth,
         Err(ExchangeFault::Unreachable | ExchangeFault::Unreadable) => RenewOutcome::Offline,
@@ -115,6 +117,7 @@ mod tests {
             access: SecretText::new("old-access"),
             refresh: SecretText::new("old-refresh"),
             expires_at: UnixSeconds(expires_at),
+            granted: Default::default(),
         }
     }
 
@@ -139,6 +142,7 @@ mod tests {
                 access: SecretText::new("new"),
                 refresh: SecretText::new("old-refresh"),
                 expires_at: UnixSeconds(3_700),
+                granted: Default::default(),
             })
         );
     }

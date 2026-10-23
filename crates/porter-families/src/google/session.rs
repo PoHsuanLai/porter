@@ -7,18 +7,24 @@
 //!
 //! Narrowing on a refresh follows Google's documented rule, unverified against Google itself
 //! (FINDINGS): the scopes named must be a subset of the original grant. So a refresh never names
-//! a scope the last token answer said was not granted (granular consent).
+//! a scope the last token answer said was not granted (granular consent): that grant is
+//! `Forbidden`. One for an on-use access (the whole of Drive) the credential does not say it
+//! holds is `NeedsConsent`, and so is Google's own `invalid_scope`. Neither is a sign-in again. What a
+//! whole-grant answer says was granted is filed with the credential.
 
 use super::env::GoogleEnv;
 use super::probe::{self, whoami};
 use super::reauth::ReauthReason;
 use super::scopes::{Granted, grant_scopes};
+use porter_core::capability::Ask;
 use porter_core::{
     AccountId, Audience, CapabilityKind, Claim, Credential, Family, IssuedToken, SecretText,
     TokenKind, UnixSeconds,
 };
 use porter_http::Http;
-use porter_oauth::{ExchangeFault, MailRights, Renewal, endpoints_of, refresh_scoped, renewal};
+use porter_oauth::{
+    ExchangeFault, MailRights, Renewal, endpoints_of, refresh_scoped_detailed, renewal,
+};
 use porter_provider::{Issuer, Presented, ProviderError, ProviderSession, ProviderSpec};
 use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard};
@@ -66,6 +72,10 @@ impl<H: Http> GoogleSession<H> {
         let Presented::Credential(credential @ Credential::OAuth { .. }) = presented else {
             return Err(ProviderError::Unauthorized);
         };
+        let granted = match &credential {
+            Credential::OAuth { granted, .. } => Granted::recorded(granted),
+            _ => Granted::of(Vec::new()),
+        };
         Ok(Self {
             account,
             spec: Box::new(spec),
@@ -73,7 +83,7 @@ impl<H: Http> GoogleSession<H> {
             state: Box::new(Mutex::new(State {
                 credential,
                 minted: HashMap::new(),
-                granted: Granted::of(Vec::new()),
+                granted,
                 renewed: None,
                 address: None,
                 signed_in: None,
@@ -166,7 +176,7 @@ impl<H: Http> GoogleSession<H> {
         let client = clients
             .lookup(Issuer::Google, self.env.channel)
             .ok_or(ProviderError::Unreachable)?;
-        let tokens = refresh_scoped(
+        let tokens = refresh_scoped_detailed(
             &*self.env.http,
             &endpoints_of(client),
             client,
@@ -174,7 +184,9 @@ impl<H: Http> GoogleSession<H> {
             scope,
         )
         .await
-        .map_err(|fault| match fault {
+        .map_err(|failure| match failure.fault {
+            // `invalid_scope`: the grant is good, the scope was never given.
+            _ if failure.wants_consent() => ProviderError::NeedsConsent,
             ExchangeFault::Refused => {
                 let review = clients.traits(Issuer::Google, self.env.channel).review;
                 let mut state = self.state();
@@ -195,12 +207,20 @@ impl<H: Http> GoogleSession<H> {
         if scope.is_none() && !tokens.granted_scopes().is_empty() {
             state.granted = Granted::of(tokens.granted_scopes());
         }
-        // Google does not rotate refresh tokens; one that came back different is kept.
-        if let Some(changed) = tokens.refresh_token.filter(|r| *r != refresh) {
+        let record = state.granted.record();
+        // Google does not rotate refresh tokens; one that came back different is kept, and so
+        // is a change in what the grant holds.
+        let changed = tokens.refresh_token.filter(|r| *r != refresh);
+        let regranted = match &state.credential {
+            Credential::OAuth { granted, .. } => *granted != record,
+            _ => false,
+        };
+        if changed.is_some() || regranted {
             let credential = Credential::OAuth {
                 access: tokens.access_token,
-                refresh: changed,
+                refresh: changed.unwrap_or(refresh),
                 expires_at: issued.expires,
+                granted: record,
             };
             state.credential = credential.clone();
             state.renewed = Some(credential);
@@ -297,16 +317,26 @@ impl<H: Http> ProviderSession for GoogleSession<H> {
     }
 
     /// A token refreshed with the scopes of `kind` alone (`grant_scopes`). A scope the last
-    /// token answer said was not granted is not asked: the refresh may only narrow the grant.
+    /// token answer said was not granted is not asked: the refresh may only narrow the grant. A
+    /// kind with a sign-in row is served by it (a Storage grant reaches the app folder), and one
+    /// the person unticked at sign-in is `Forbidden`; a kind whose rows are all on use is
+    /// `NeedsConsent` until the account was given that access.
     async fn access_token_for(
         &self,
         audience: &Audience,
         kind: CapabilityKind,
     ) -> Result<IssuedToken, ProviderError> {
         let (family, form) = self.grant_target(audience, kind)?;
-        let scopes = grant_scopes(kind, family);
-        if scopes.is_empty() || !self.state().granted.holds_all(scopes) {
+        let ask = self.spec.ask_for(kind).unwrap_or(Ask::SignIn);
+        let scopes = grant_scopes(kind, family, ask);
+        if scopes.is_empty() {
             return Err(ProviderError::Forbidden);
+        }
+        if !self.state().granted.admits(scopes, ask) {
+            return Err(match ask {
+                Ask::OnUse => ProviderError::NeedsConsent,
+                Ask::SignIn => ProviderError::Forbidden,
+            });
         }
         let token = self.mint_scoped(Some(&scopes.join(" "))).await?;
         self.shaped(token, form).await

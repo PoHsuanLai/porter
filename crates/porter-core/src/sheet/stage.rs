@@ -32,6 +32,15 @@ pub enum Purpose {
         /// Its provider.
         provider: ProviderId,
     },
+    /// Ask an existing account for an access its provider asks only when it is first used (the
+    /// whole of a drive). Like signing in again, except that the person reviews what is asked
+    /// before it is kept.
+    Extend {
+        /// The account.
+        account: AccountId,
+        /// Its provider.
+        provider: ProviderId,
+    },
 }
 
 /// Where the sheet stands.
@@ -161,7 +170,8 @@ impl Sheet {
                 hint: ProviderHint::Provider(id),
                 ..
             }
-            | Purpose::Reauthenticate { provider: id, .. } => Stage::Working(id.clone()),
+            | Purpose::Reauthenticate { provider: id, .. }
+            | Purpose::Extend { provider: id, .. } => Stage::Working(id.clone()),
             Purpose::Add {
                 hint: ProviderHint::Any,
                 ..
@@ -193,7 +203,7 @@ impl Sheet {
         let row = |provider: &ProviderId| self.row_of(provider);
         let allow = match &self.purpose {
             Purpose::Add { allow, .. } => allow.clone(),
-            Purpose::Reauthenticate { .. } => None,
+            Purpose::Reauthenticate { .. } | Purpose::Extend { .. } => None,
         };
         match &self.stage {
             Stage::Choosing(rows) => SheetView::Providers(rows.clone()),

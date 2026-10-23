@@ -94,7 +94,8 @@ pub(super) async fn probe<H: Http>(
     let class = classify(&address);
     let mut claims = Vec::new();
     let mut seen = Vec::new();
-    for row in &spec.capabilities {
+    // An on-use row (the whole drive) is not the account's until it is asked for.
+    for row in spec.sign_in_rows() {
         let kind = row.capability.kind();
         if seen.contains(&kind) {
             continue;

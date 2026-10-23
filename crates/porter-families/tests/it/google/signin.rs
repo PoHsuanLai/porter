@@ -227,8 +227,8 @@ async fn the_authorize_url_asks_offline_access_with_consent_and_one_scope_per_se
     }
     assert!(!scope.contains("mail.google.com"), "{scope}");
     assert!(
-        !scope.contains("auth/drive "),
-        "the whole Drive is never asked: {scope}"
+        !scope.split(' ').any(|s| s == DRIVE),
+        "the whole Drive is asked only on use: {scope}"
     );
 }
 
@@ -444,4 +444,60 @@ async fn both_photos_scopes_offer_both_and_neither_turns_photos_off() {
         e.family,
         Family::GooglePhotosUpload | Family::GooglePhotosPicker
     )));
+}
+
+const DRIVE: &str = "https://www.googleapis.com/auth/drive";
+const CALENDAR: &str = "https://www.googleapis.com/auth/calendar";
+
+fn extend(endpoints: Vec<porter_core::ServiceEndpoint>) -> SignInStart {
+    SignInStart::new(SignInMode::Extend {
+        account: porter_core::AccountId::parse("ada").expect("id"),
+        endpoints,
+        kinds: vec![K::Storage],
+    })
+}
+
+#[tokio::test]
+async fn asking_for_the_whole_drive_asks_it_alone_and_records_it_with_the_rest() {
+    let rig = Rig::new(PLAIN).await;
+    let (_, step) = to_review(&rig).await;
+    let (_, stored) = review(step);
+    let (mut signin, step) = to_review_from(&rig, extend(stored.clone())).await;
+    let q = query_of(&rig);
+    assert_eq!(get(&q, "include_granted_scopes"), Some("true"));
+    let scope = get(&q, "scope").expect("scope");
+    assert!(scope.split(' ').any(|s| s == DRIVE), "{scope}");
+    assert!(!scope.split(' ').any(|s| s == CALENDAR), "{scope}");
+    let SignInStep::Review {
+        claims, endpoints, ..
+    } = step
+    else {
+        panic!("expected a review, got {step:?}")
+    };
+    let kinds: Vec<K> = claims.iter().map(|c| c.offer.kind()).collect();
+    assert_eq!(kinds, [K::Storage]);
+    assert_eq!(endpoints.len(), stored.len());
+    assert!(endpoints.iter().all(|e| e.login.0 == "ada@gmail.com"));
+    let choices = vec![ServiceChoice {
+        kind: K::Storage,
+        toggle: Toggle::On,
+    }];
+    let SignInStep::Done(signed) = signin.next(SignInInput::Confirm(choices)).await else {
+        panic!("expected done")
+    };
+    let [(_, Credential::OAuth { granted, .. })] = signed.credentials.as_slice() else {
+        panic!("one OAuth credential: {:?}", signed.credentials)
+    };
+    assert_eq!(granted.holds(DRIVE), Some(true));
+    assert_eq!(granted.holds(CALENDAR), Some(true), "granted before");
+}
+
+#[tokio::test]
+async fn the_whole_drive_unticked_on_googles_page_is_refused_not_stored() {
+    let rig = Rig::new(PLAIN).await;
+    let (_, step) = to_review(&rig).await;
+    let (_, stored) = review(step);
+    rig.google.issuer.untick(&[DRIVE]);
+    let (_, step) = to_review_from(&rig, extend(stored)).await;
+    assert_eq!(step, SignInStep::Failed(SignInFault::Refused));
 }

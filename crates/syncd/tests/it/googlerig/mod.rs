@@ -287,6 +287,7 @@ async fn build(photos: PhotosSwitch, media: Media, picker_only: bool) -> Rig {
                 access: SecretText::new(SECRET_ACCESS),
                 refresh: SecretText::new(SECRET_REFRESH),
                 expires_at: UnixSeconds(1),
+                granted: Default::default(),
             },
         )
         .await

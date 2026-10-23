@@ -30,6 +30,8 @@ pub(crate) fn provider_refusal(error: ProviderError) -> Refusal {
         ProviderError::Unauthorized => Refusal::NeedsReauth,
         ProviderError::Forbidden => Refusal::Denied,
         ProviderError::Unreachable | ProviderError::Unreadable => Refusal::Unavailable,
+        // The account is fine; it was never given this access. Not a fault to wait out.
+        ProviderError::NeedsConsent => Refusal::NeedsConsent,
         // a variant a newer porter adds: the app is told it is unavailable
         _ => Refusal::Unavailable,
     }
@@ -46,6 +48,20 @@ pub(crate) fn secrets_refusal(error: SecretsError) -> Refusal {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_provider_fault_is_told_to_the_app_as_what_it_can_act_on() {
+        let cases = [
+            (ProviderError::Unauthorized, Refusal::NeedsReauth),
+            (ProviderError::Forbidden, Refusal::Denied),
+            (ProviderError::Unreachable, Refusal::Unavailable),
+            (ProviderError::Unreadable, Refusal::Unavailable),
+            (ProviderError::NeedsConsent, Refusal::NeedsConsent),
+        ];
+        for (error, want) in cases {
+            assert_eq!(provider_refusal(error), want, "{error:?}");
+        }
+    }
 
     #[test]
     fn each_auth_kind_presents_its_secret() {

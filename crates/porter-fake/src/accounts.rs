@@ -29,9 +29,9 @@ fn account(
         label: AccountLabel(label.into()),
         state: AccountState::Ok,
         auth: spec.auth.kind,
+        // An on-use row (a whole drive) is not an account's until it is asked for.
         capabilities: spec
-            .capabilities
-            .iter()
+            .sign_in_rows()
             .map(|row| Claim {
                 subject: Subject::Account,
                 offer: Offer::Present(row.capability.clone()),

@@ -22,11 +22,10 @@ mod signin;
 
 pub use env::GoogleEnv;
 pub use reauth::{ReauthReason, TESTING_SIGN_IN_SECONDS, testing_expiry_seam};
-pub use scopes::{Sensitivity, scope_sensitivity, scopes_of};
+pub use scopes::{Sensitivity, on_use_scopes_of, scope_sensitivity, scopes_of};
 pub use session::GoogleSession;
 pub use signin::GoogleSignIn;
 
-use porter_core::capability::CapabilityKind;
 use porter_core::{Account, AccountId, Claim, Credential, EndpointUrl, Family};
 use porter_http::{Http, HyperHttp};
 use porter_oauth::{ExchangeFault, endpoints_of, revoke};
@@ -107,19 +106,6 @@ pub(crate) fn apis_of(spec: &ProviderSpec) -> Apis {
             })
             .collect(),
     )
-}
-
-/// The kinds the file declares, once each, in file order.
-pub(crate) fn declared_kinds(spec: &ProviderSpec) -> Vec<CapabilityKind> {
-    spec.capabilities
-        .iter()
-        .map(|row| row.capability.kind())
-        .fold(Vec::new(), |mut kinds, kind| {
-            if !kinds.contains(&kind) {
-                kinds.push(kind);
-            }
-            kinds
-        })
 }
 
 impl<H: Http + 'static> Provider for GoogleProvider<H> {

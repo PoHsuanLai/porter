@@ -103,6 +103,7 @@ async fn contract<F: Fixture>(fixture: F) {
                 access: SecretText::new("a"),
                 refresh: SecretText::new("r"),
                 expires_at: porter_core::UnixSeconds(9),
+                granted: Default::default(),
             },
         ),
         (

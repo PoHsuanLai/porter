@@ -256,6 +256,7 @@ fn oauth(access: &str, refresh: &str, expires_at: i64) -> Credential {
         access: SecretText::new(access),
         refresh: SecretText::new(refresh),
         expires_at: UnixSeconds(expires_at),
+        granted: Default::default(),
     }
 }
 
@@ -276,6 +277,7 @@ async fn renewal_stores_the_rotated_refresh_token_and_spends_the_old_one() {
         access,
         refresh,
         expires_at,
+        ..
     }) = outcome
     else {
         panic!("expected a renewal, got {outcome:?}");

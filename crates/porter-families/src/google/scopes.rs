@@ -5,8 +5,8 @@
 //! unverified (FINDINGS), and docs/google.md, which tells the owner what to put on the consent
 //! screen, is checked against this table by a test.
 
-use porter_core::Family;
-use porter_core::capability::{Albums, Capability, CapabilityKind, LibraryRead, Offered};
+use porter_core::capability::{Albums, Ask, Capability, CapabilityKind, LibraryRead, Offered};
+use porter_core::{Family, GrantedScopes};
 use porter_oauth::MailRights;
 
 /// Gmail over IMAP and SMTP (XOAUTH2). Restricted.
@@ -18,6 +18,8 @@ const CALENDAR: &str = "https://www.googleapis.com/auth/calendar";
 const CONTACTS: &str = "https://www.googleapis.com/auth/contacts";
 const TASKS: &str = "https://www.googleapis.com/auth/tasks";
 const DRIVE_APP_FOLDER: &str = "https://www.googleapis.com/auth/drive.appdata";
+/// The whole of the person's Drive. Restricted, like Mail's: asked only on use.
+const DRIVE: &str = "https://www.googleapis.com/auth/drive";
 const PHOTOS_UPLOAD: &str = "https://www.googleapis.com/auth/photoslibrary.appendonly";
 const PHOTOS_PICKER: &str = "https://www.googleapis.com/auth/photospicker.mediaitems.readonly";
 
@@ -49,14 +51,30 @@ pub fn scopes_of(kind: CapabilityKind) -> &'static [&'static str] {
     }
 }
 
+/// The scopes of the capability `kind`'s on-use row (`ask = "on_use"`), which a sign-in never
+/// asks: only a sign-in for that access alone (`SignInMode::Extend`) does. None for a kind with
+/// no such row.
+pub fn on_use_scopes_of(kind: CapabilityKind) -> &'static [&'static str] {
+    match kind {
+        CapabilityKind::Storage => &[DRIVE],
+        _ => &[],
+    }
+}
+
 /// The scopes a token for a grant of `kind`, used against the API of `family`, is refreshed
 /// with: the kind's own, and for Photos only the one its API takes (a person may have ticked one
-/// of the two). Never the identity scopes or another kind's. Empty for a kind Google has no
-/// service for.
-pub(super) fn grant_scopes(kind: CapabilityKind, family: Family) -> &'static [&'static str] {
-    match (kind, family) {
-        (CapabilityKind::Photos, Family::GooglePhotosUpload) => &[PHOTOS_UPLOAD],
-        (CapabilityKind::Photos, Family::GooglePhotosPicker) => &[PHOTOS_PICKER],
+/// of the two). Never the identity scopes or another kind's. `ask` is how the kind's rows are
+/// asked (`ProviderSpec::ask_for`): an on-use kind's token carries its on-use scopes. Empty for a
+/// kind Google has no service for.
+pub(super) fn grant_scopes(
+    kind: CapabilityKind,
+    family: Family,
+    ask: Ask,
+) -> &'static [&'static str] {
+    match (kind, family, ask) {
+        (_, _, Ask::OnUse) => on_use_scopes_of(kind),
+        (CapabilityKind::Photos, Family::GooglePhotosUpload, _) => &[PHOTOS_UPLOAD],
+        (CapabilityKind::Photos, Family::GooglePhotosPicker, _) => &[PHOTOS_PICKER],
         _ => scopes_of(kind),
     }
 }
@@ -66,6 +84,7 @@ pub fn scope_sensitivity(scope: &str) -> Sensitivity {
     match scope {
         OPENID | EMAIL | PROFILE | DRIVE_APP_FOLDER => Sensitivity::NonSensitive,
         CALENDAR | CONTACTS | TASKS | PHOTOS_UPLOAD | PHOTOS_PICKER => Sensitivity::Sensitive,
+        MAIL | DRIVE => Sensitivity::Restricted,
         _ => Sensitivity::Restricted,
     }
 }
@@ -85,13 +104,26 @@ pub(super) fn scopes_for(kinds: &[CapabilityKind], mail: MailRights) -> Vec<Stri
 
 /// What a token's granted scopes say. Google lets a person untick some of what was asked
 /// (granular consent), and says so in the token answer; an answer that does not say leaves it
-/// unknown and everything asked is taken as granted.
+/// unknown and everything sign-in asks is taken as granted (nothing asked on use is).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Granted(Option<Vec<String>>);
 
 impl Granted {
     pub(super) fn of(scopes: Vec<String>) -> Self {
         Self((!scopes.is_empty()).then_some(scopes))
+    }
+
+    /// What a credential's record says.
+    pub(super) fn recorded(record: &GrantedScopes) -> Self {
+        Self(record.scopes().map(<[String]>::to_vec))
+    }
+
+    /// The record a credential keeps of this.
+    pub(super) fn record(&self) -> GrantedScopes {
+        match &self.0 {
+            Some(scopes) => GrantedScopes::of(scopes.iter().cloned()),
+            None => GrantedScopes::unknown(),
+        }
     }
 
     /// Whether the scopes `kind` needs were granted (either one of Photos' two is enough: the
@@ -116,6 +148,16 @@ impl Granted {
     /// a refresh may only narrow the grant, never ask beyond it.
     pub(super) fn holds_all(&self, scopes: &[&str]) -> bool {
         scopes.iter().all(|scope| self.holds(scope))
+    }
+
+    /// Whether a grant whose rows are asked as `ask` may be refreshed with `scopes`: all of them
+    /// were granted, or the answer did not say and they are what sign-in asks. An on-use scope
+    /// is never taken as granted unasked.
+    pub(super) fn admits(&self, scopes: &[&str], ask: Ask) -> bool {
+        match (&self.0, ask) {
+            (None, Ask::OnUse) => false,
+            _ => self.holds_all(scopes),
+        }
     }
 
     fn holds(&self, scope: &str) -> bool {
@@ -213,6 +255,8 @@ mod tests {
         for (scope, want) in CASES {
             assert_eq!(scope_sensitivity(scope), *want, "{scope}");
         }
+        assert_eq!(on_use_scopes_of(K::Storage), [DRIVE]);
+        assert_eq!(scope_sensitivity(DRIVE), Sensitivity::Restricted);
         let restricted: Vec<&str> = [
             K::Mail,
             K::Calendar,
@@ -225,7 +269,11 @@ mod tests {
         .flat_map(|k| scopes_of(*k).iter().copied())
         .filter(|s| scope_sensitivity(s) == Sensitivity::Restricted)
         .collect();
-        assert_eq!(restricted, [MAIL]);
+        assert_eq!(
+            restricted,
+            [MAIL],
+            "of what sign-in asks, only mail is restricted"
+        );
     }
 
     #[test]
@@ -243,7 +291,7 @@ mod tests {
             (K::Notes, F::GoogleDrive, &[]),
         ];
         for (kind, family, want) in CASES {
-            let got = grant_scopes(*kind, *family);
+            let got = grant_scopes(*kind, *family, Ask::SignIn);
             assert_eq!(got, *want, "{kind:?} {family:?}");
             assert!(
                 got.iter().all(|s| !IDENTITY.contains(s)),
@@ -258,6 +306,36 @@ mod tests {
         assert!(!some.holds_all(&[PHOTOS_UPLOAD]));
         assert!(!some.holds_all(&[CALENDAR, TASKS]));
         assert!(granted(&[]).holds_all(&[TASKS]), "unknown is not a refusal");
+    }
+
+    #[test]
+    fn the_whole_drive_is_never_asked_at_sign_in_and_never_taken_as_granted_unasked() {
+        let every = [
+            K::Mail,
+            K::Calendar,
+            K::Contacts,
+            K::Tasks,
+            K::Storage,
+            K::Photos,
+        ];
+        assert!(!scopes_for(&every, MailRights::Byo).contains(&DRIVE.to_owned()));
+        assert_eq!(
+            grant_scopes(K::Storage, Family::GoogleDrive, Ask::OnUse),
+            [DRIVE]
+        );
+        assert_eq!(
+            grant_scopes(K::Storage, Family::GoogleDrive, Ask::SignIn),
+            [DRIVE_APP_FOLDER]
+        );
+        let unknown = Granted::of(Vec::new());
+        assert!(unknown.admits(&[DRIVE_APP_FOLDER], Ask::SignIn));
+        assert!(!unknown.admits(&[DRIVE], Ask::OnUse));
+        let without = Granted::of(vec![DRIVE_APP_FOLDER.to_owned()]);
+        assert!(!without.admits(&[DRIVE], Ask::OnUse));
+        let with = Granted::of(vec![DRIVE_APP_FOLDER.to_owned(), DRIVE.to_owned()]);
+        assert!(with.admits(&[DRIVE], Ask::OnUse));
+        assert_eq!(Granted::recorded(&with.record()), with);
+        assert!(unknown.record().is_unknown());
     }
 
     #[test]

@@ -16,6 +16,8 @@ mod api_key;
 mod dispatch;
 #[cfg(any(feature = "microsoft", feature = "google"))]
 mod env_common;
+#[cfg(any(feature = "microsoft", feature = "google"))]
+mod extend;
 #[cfg(feature = "generic")]
 mod generic;
 #[cfg(feature = "google")]
@@ -51,7 +53,7 @@ pub use generic::{GenericProvider, GenericSession, GenericSignIn};
 #[cfg(feature = "google")]
 pub use google::{
     GoogleEnv, GoogleProvider, GoogleSession, GoogleSignIn, ReauthReason, Sensitivity,
-    TESTING_SIGN_IN_SECONDS, scope_sensitivity, scopes_of, testing_expiry_seam,
+    TESTING_SIGN_IN_SECONDS, on_use_scopes_of, scope_sensitivity, scopes_of, testing_expiry_seam,
 };
 #[cfg(any(feature = "nextcloud", feature = "generic"))]
 pub use io::{Pacing, SharedDns};

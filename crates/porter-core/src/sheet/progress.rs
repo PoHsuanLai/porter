@@ -67,6 +67,10 @@ pub struct ServiceRow {
     pub state: ServiceState,
     /// What limits it, for the secondary line.
     pub limit: Option<LimitReason>,
+    /// What porter may do with it, in plain words, when the sign-in asks for that access alone
+    /// ("See and change this account's files"); `None` where the kind's name says enough.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub access: Option<String>,
 }
 
 /// Whether the account will use a service.

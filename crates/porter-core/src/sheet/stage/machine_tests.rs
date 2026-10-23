@@ -79,6 +79,7 @@ fn review() -> Review {
             kind: CapabilityKind::Storage,
             state: ServiceState::Offered(Toggle::On),
             limit: None,
+            access: None,
         }],
         endpoints: vec![],
     }
@@ -328,6 +329,34 @@ fn a_review_offered_to_a_sign_in_again_is_confirmed_unchanged_not_shown() {
         let (_, effects) = run(at(reauth(), after), SheetEvent::SignIn(Progress::Done));
         assert_eq!(effects, vec![SheetEffect::Store(vec![])], "{name}");
     }
+}
+
+#[test]
+fn a_review_of_one_more_access_is_shown_and_stored_only_after_confirm() {
+    let extend = Purpose::Extend {
+        account: AccountId::parse("cloud").expect("id"),
+        provider: nc(),
+    };
+    let (after, effects) = run(
+        at(extend.clone(), Stage::Working(nc())),
+        SheetEvent::SignIn(Progress::Review(review())),
+    );
+    assert_eq!(after, reviewing());
+    let view = at(extend.clone(), reviewing()).view();
+    assert!(matches!(view, SheetView::Review(_)), "{view:?}");
+    assert_eq!(effects, vec![SheetEffect::Show(view)]);
+    let (after, effects) = run(
+        at(extend.clone(), after),
+        input(SheetInput::Confirm(choices())),
+    );
+    assert_eq!(after, confirming());
+    assert_eq!(
+        effects.last(),
+        Some(&SheetEffect::Feed(SignInInput::Confirm(choices())))
+    );
+    assert!(!effects.iter().any(|e| matches!(e, SheetEffect::Store(_))));
+    let (_, effects) = run(at(extend, after), SheetEvent::SignIn(Progress::Done));
+    assert_eq!(effects, vec![SheetEffect::Store(choices())]);
 }
 
 #[test]

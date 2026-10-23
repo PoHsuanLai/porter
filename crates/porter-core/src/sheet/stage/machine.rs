@@ -215,8 +215,9 @@ fn on_progress(sheet: Sheet, progress: Progress) -> (Sheet, Vec<SheetEffect>) {
         // confirmed; after `Confirm` they are dropped.
         _ if matches!(sheet.stage, Stage::Confirming { .. }) => ignore(sheet),
         // Signing in again never asks what to use again: the account keeps its services, so a
-        // sign-in that offers a review is confirmed at once with no changes.
-        Progress::Review(_) if again(&sheet) => {
+        // sign-in that offers a review is confirmed at once with no changes. A sign-in that asks
+        // for one more access shows its review: that access is what the person agrees to.
+        Progress::Review(_) if matches!(sheet.purpose, Purpose::Reauthenticate { .. }) => {
             let stage = Stage::Confirming {
                 provider,
                 choices: Vec::new(),
@@ -274,9 +275,12 @@ fn on_stored(sheet: Sheet) -> (Sheet, Vec<SheetEffect>) {
     }
 }
 
-/// Whether the sheet signs an existing account in again.
+/// Whether the sheet signs an existing account in again, as it is or for one more access.
 fn again(sheet: &Sheet) -> bool {
-    matches!(sheet.purpose, Purpose::Reauthenticate { .. })
+    matches!(
+        sheet.purpose,
+        Purpose::Reauthenticate { .. } | Purpose::Extend { .. }
+    )
 }
 
 fn stored(sheet: Sheet) -> (Sheet, Vec<SheetEffect>) {

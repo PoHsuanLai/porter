@@ -30,6 +30,8 @@ use std::sync::{Arc, Mutex};
 struct Seen {
     minted: Arc<AtomicUsize>,
     refreshes: Arc<Mutex<Vec<String>>>,
+    /// The issuer says the grant was never given the scope asked (`invalid_scope`, AADSTS65001).
+    unconsented: Arc<Mutex<bool>>,
 }
 
 impl Seen {
@@ -101,6 +103,9 @@ impl Provider for Rotating {
 
 impl ProviderSession for RotatingSession {
     async fn access_token(&self, _audience: &Audience) -> Result<IssuedToken, ProviderError> {
+        if *self.seen.unconsented.lock().expect("unconsented") {
+            return Err(ProviderError::NeedsConsent);
+        }
         let n = self.seen.minted.fetch_add(1, Ordering::SeqCst) + 1;
         self.seen
             .refreshes
@@ -114,6 +119,7 @@ impl ProviderSession for RotatingSession {
             access: SecretText::new(format!("access-{n}")),
             refresh: SecretText::new(format!("refresh-{}", n + 1)),
             expires_at: expires,
+            granted: Default::default(),
         });
         Ok(IssuedToken::new(
             TokenKind::Bearer,
@@ -151,6 +157,7 @@ async fn service() -> (Svc, Seen, Candidate) {
                 access: SecretText::new("access-0"),
                 refresh: SecretText::new("refresh"),
                 expires_at: NOW,
+                granted: Default::default(),
             },
         )
         .await
@@ -233,4 +240,22 @@ async fn the_rotated_refresh_token_is_stored_before_the_next_refresh_presents_it
     assert_eq!(bearer(token(&service, &candidate, "imap").await), "token-3");
     assert_eq!(seen.minted(), 3);
     assert_eq!(seen.refreshes(), ["refresh", "refresh-2", "refresh-3"]);
+}
+
+/// An access the account was never given is the app's refusal alone: the account stays signed
+/// in, and the next token it is given is served.
+#[tokio::test]
+async fn a_scope_never_given_is_needs_consent_and_the_account_stays_signed_in() {
+    let (service, seen, candidate) = service().await;
+    *seen.unconsented.lock().expect("unconsented") = true;
+    assert_eq!(
+        token(&service, &candidate, "imap").await,
+        AccountsReply::Refused(porter_core::wire::Refusal::NeedsConsent)
+    );
+    assert_eq!(
+        service.registry().accounts[0].state,
+        porter_core::AccountState::Ok
+    );
+    *seen.unconsented.lock().expect("unconsented") = false;
+    assert_eq!(bearer(token(&service, &candidate, "imap").await), "token-1");
 }

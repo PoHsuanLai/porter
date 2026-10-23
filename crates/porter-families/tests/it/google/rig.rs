@@ -105,8 +105,14 @@ pub fn entry(google: &Google) -> ClientEntry {
 
 impl Rig {
     pub async fn new(row: Row) -> Self {
+        Self::over(row, |_| {}).await
+    }
+
+    /// A rig whose provider file is the shipped one changed by `edit`.
+    pub async fn over(row: Row, edit: impl FnOnce(&mut ProviderSpec)) -> Self {
         let google = Google::start(SECRET).await.expect("fake google");
-        let spec = google.api.rewrite(&shipped::google());
+        let mut spec = google.api.rewrite(&shipped::google());
+        edit(&mut spec);
         let handle = google.api.clone();
         let registry = match row {
             Row::Absent => ClientRegistry::default(),

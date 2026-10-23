@@ -1,16 +1,23 @@
 //! An open Microsoft account: the refresh token, and the short-lived tokens minted from it, one
 //! per scope (Exchange for IMAP and SMTP; for Graph, the one permission of a grant's kind).
+//!
+//! A grant whose scope the account was not given is refused as `NeedsConsent` before Microsoft
+//! is asked: the credential keeps the scopes its sign-in asked (Microsoft's consent is all of
+//! them or none, and a refresh's answer names only the one resource it is for). A credential
+//! from before porter kept them is taken to hold what sign-in asks and nothing asked on use.
+//! Microsoft's own `AADSTS65001` on a refresh is the same refusal, never a sign-in again.
 
 use super::env::MicrosoftEnv;
 use super::graph::{Found, probe, whoami};
 use super::graph_origin;
 use super::scopes::{audience_scope, grant_scope};
+use porter_core::capability::Ask;
 use porter_core::{
     AccountId, Audience, CapabilityKind, Credential, IssuedToken, SecretText, TokenKind,
     UnixSeconds,
 };
 use porter_http::Http;
-use porter_oauth::{ExchangeFault, Renewal, endpoints_of, refresh_scoped, renewal};
+use porter_oauth::{ExchangeFault, Renewal, endpoints_of, refresh_scoped_detailed, renewal};
 use porter_provider::{Presented, ProviderError, ProviderSession, ProviderSpec};
 use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard};
@@ -91,6 +98,17 @@ impl<H: Http> MicrosoftSession<H> {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
+    /// Whether a grant asked as `ask` may be refreshed with `scope`. Microsoft's consent is all
+    /// or nothing, so what sign-in asks was given; an on-use scope only once the credential says
+    /// so.
+    fn given(&self, scope: &str, ask: Ask) -> bool {
+        match (&self.state().credential, ask) {
+            (_, Ask::SignIn) => true,
+            (Credential::OAuth { granted, .. }, Ask::OnUse) => granted.holds(scope) == Some(true),
+            _ => false,
+        }
+    }
+
     fn fresh(&self, scope: &str, now: UnixSeconds) -> Option<IssuedToken> {
         self.state()
             .minted
@@ -123,7 +141,10 @@ impl<H: Http> MicrosoftSession<H> {
         if let Some(token) = self.fresh(&scope, now) {
             return Ok(token);
         }
-        let Credential::OAuth { refresh, .. } = self.state().credential.clone() else {
+        let Credential::OAuth {
+            refresh, granted, ..
+        } = self.state().credential.clone()
+        else {
             return Err(ProviderError::Unauthorized);
         };
         // No client id configured is a fault of this install, not of the account: offline, so
@@ -134,7 +155,7 @@ impl<H: Http> MicrosoftSession<H> {
             .lookup(porter_provider::Issuer::Microsoft, self.env.channel)
             .cloned()
             .ok_or(ProviderError::Unreachable)?;
-        let tokens = refresh_scoped(
+        let tokens = refresh_scoped_detailed(
             &*self.env.http,
             &endpoints_of(&client),
             &client,
@@ -142,7 +163,10 @@ impl<H: Http> MicrosoftSession<H> {
             Some(&scope),
         )
         .await
-        .map_err(|fault| match fault {
+        .map_err(|failure| match failure.fault {
+            // `AADSTS65001` comes as `invalid_grant`: the grant is good, the scope was never
+            // consented.
+            _ if failure.wants_consent() => ProviderError::NeedsConsent,
             ExchangeFault::Refused => ProviderError::Unauthorized,
             ExchangeFault::Unreachable => ProviderError::Unreachable,
             ExchangeFault::Unreadable => ProviderError::Unreadable,
@@ -154,6 +178,7 @@ impl<H: Http> MicrosoftSession<H> {
                 access: tokens.access_token,
                 refresh: rotated,
                 expires_at: issued.expires,
+                granted,
             };
             state.credential = credential.clone();
             state.renewed = Some(credential);
@@ -196,15 +221,21 @@ impl<H: Http> ProviderSession for MicrosoftSession<H> {
     }
 
     /// A token carrying the scope of `kind` alone (`grant_scope`): a calendar grant's Graph
-    /// token is for `Calendars.ReadWrite`, so it cannot read the account's files or mail.
+    /// token is for `Calendars.ReadWrite`, so it cannot read the account's files or mail. A kind
+    /// with a sign-in row is served by it (a Storage grant reaches the app folder); a kind whose
+    /// rows are all on use is `NeedsConsent` until the account was given that access.
     async fn access_token_for(
         &self,
         audience: &Audience,
         kind: CapabilityKind,
     ) -> Result<IssuedToken, ProviderError> {
         let graph = graph_origin(&self.spec);
+        let ask = self.spec.ask_for(kind).ok_or(ProviderError::Forbidden)?;
         let (scope, form) =
-            grant_scope(audience, kind, graph.as_str()).ok_or(ProviderError::Forbidden)?;
+            grant_scope(audience, kind, ask, graph.as_str()).ok_or(ProviderError::Forbidden)?;
+        if !self.given(&scope, ask) {
+            return Err(ProviderError::NeedsConsent);
+        }
         self.issue(&scope, form).await
     }
 

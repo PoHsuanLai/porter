@@ -370,6 +370,38 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         );
         Ok(())
     }
+
+    /// Files the credential of a sign-in that asked for one more access, as
+    /// [`Self::store_renewed`] does, once it is known to be the same person: the answer's login
+    /// must be the account's own, and an account with no login to compare keeps what it has.
+    pub(crate) async fn store_extended(
+        &self,
+        caller: &AppId,
+        account: &AccountId,
+        signed: &Signed,
+    ) -> Result<(), ()> {
+        let held = self
+            .lock()
+            .accounts
+            .iter()
+            .find(|a| a.id == *account)
+            .map(|a| a.endpoints.clone())
+            .ok_or(())?;
+        if !same_person(&held, &signed.endpoints) {
+            return Err(());
+        }
+        self.store_renewed(caller, account, signed).await
+    }
+}
+
+/// Whether a sign-in that showed `new` was the person whose servers are `held`: the same logins,
+/// and at least one.
+fn same_person(
+    held: &[porter_core::ServiceEndpoint],
+    new: &[porter_core::ServiceEndpoint],
+) -> bool {
+    let held = logins(held);
+    !held.is_empty() && held == logins(new)
 }
 
 fn ask_kind(allow: Option<&AllowFor>) -> porter_core::CapabilityKind {

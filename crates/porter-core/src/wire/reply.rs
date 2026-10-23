@@ -67,4 +67,8 @@ pub enum Refusal {
     /// An agent account asked to sign in or out, and no launcher has registered the agent's
     /// program: only the agent can log itself in, and nobody is there to ask it.
     NoLauncher,
+    /// The account was never given this access: it is asked when first used, in a sign-in that
+    /// asks for it alone (the whole of a drive). The account itself is fine, and asking again
+    /// gets the same answer until the person allows it.
+    NeedsConsent,
 }

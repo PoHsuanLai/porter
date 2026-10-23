@@ -93,6 +93,28 @@ pub struct ExchangeFailure {
     pub says: Option<IssuerSays>,
 }
 
+impl IssuerSays {
+    /// Whether the issuer refused because the person never gave the access asked for, not
+    /// because the grant is gone: Google's `invalid_scope` (a refresh that names a scope the
+    /// grant lacks), and Microsoft's `AADSTS65001` ("the user or administrator has not
+    /// consented"), which it sends as `invalid_grant`. Signing in again as before would not
+    /// help; asking for that access would.
+    pub fn wants_consent(&self) -> bool {
+        self.error.as_deref() == Some("invalid_scope")
+            || self
+                .description
+                .as_deref()
+                .is_some_and(|d| d.contains("AADSTS65001"))
+    }
+}
+
+impl ExchangeFailure {
+    /// Whether the issuer said the access asked for was never given ([`IssuerSays::wants_consent`]).
+    pub fn wants_consent(&self) -> bool {
+        self.says.as_ref().is_some_and(IssuerSays::wants_consent)
+    }
+}
+
 impl From<ExchangeFault> for ExchangeFailure {
     fn from(fault: ExchangeFault) -> Self {
         Self { fault, says: None }
@@ -498,6 +520,54 @@ mod tests {
             );
             // The plain call is unchanged: the fault alone.
             assert_eq!(refresh_with(vec![scripted]).await, Err(fault), "{name}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_scope_never_given_is_told_from_a_grant_that_is_gone() {
+        const AADSTS65001: &str = r#"{"error":"invalid_grant","error_description":"AADSTS65001: The user or administrator has not consented to use the application."}"#;
+        let cases: Vec<(&str, &str, ExchangeFault, bool)> = vec![
+            (
+                "Google's invalid_scope",
+                r#"{"error":"invalid_scope","error_description":"Bad Request"}"#,
+                ExchangeFault::Unreadable,
+                true,
+            ),
+            (
+                "Microsoft's AADSTS65001",
+                AADSTS65001,
+                ExchangeFault::Refused,
+                true,
+            ),
+            (
+                "a grant that is gone",
+                r#"{"error":"invalid_grant","error_description":"AADSTS70008: expired"}"#,
+                ExchangeFault::Refused,
+                false,
+            ),
+            (
+                "no words",
+                r#"{"error":"invalid_client"}"#,
+                ExchangeFault::Unreadable,
+                false,
+            ),
+        ];
+        for (name, body, fault, wants) in cases {
+            let http = Scripted::new(vec![answer(400, body)]);
+            let failure = refresh_scoped_detailed(
+                &http,
+                &Issuer::Microsoft.endpoints(),
+                &client(None),
+                &SecretText::new("r"),
+                Some("files"),
+            )
+            .await
+            .expect_err(name);
+            assert_eq!(
+                (failure.fault, failure.wants_consent()),
+                (fault, wants),
+                "{name}"
+            );
         }
     }
 
