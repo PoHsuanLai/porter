@@ -348,13 +348,25 @@ impl Supervised {
         self.headroom
     }
 
-    /// Resolves when any engine's state changes (for `EnginesChanged`).
-    pub async fn changed(&self) -> Result<(), Failed> {
-        self.state
-            .clone()
-            .changed()
-            .await
-            .map_err(|_| Failed::unknown())
+    /// A listener for the engines' states (for `EnginesChanged` and `RunningChanged`), up to date
+    /// as it is made: each [`Changes::next`] resolves once for the changes since the last one it
+    /// gave. A receiver cloned for each wait would start from this handle's view, which never
+    /// moves, and so resolve at once for ever after the first change.
+    pub fn changes(&self) -> Changes {
+        let mut state = self.state.clone();
+        state.borrow_and_update();
+        Changes(state)
+    }
+}
+
+/// What [`Supervised::changes`] gives: one loop's own view of the engines' states.
+#[derive(Debug)]
+pub struct Changes(watch::Receiver<Snapshot>);
+
+impl Changes {
+    /// Resolves at the next change of any engine's state, or fails once the supervisor is gone.
+    pub async fn next(&mut self) -> Result<(), Failed> {
+        self.0.changed().await.map_err(|_| Failed::unknown())
     }
 }
 

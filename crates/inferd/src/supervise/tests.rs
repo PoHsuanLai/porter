@@ -45,6 +45,37 @@ async fn the_first_want_starts_the_engine_and_the_second_reuses_it() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_listener_wakes_once_for_a_change_and_not_again_until_the_next() {
+    let scratch = Scratch::new("sup-changes");
+    let specs = specs(&scratch);
+    let id = specs[0].id.clone();
+    let supervised = Supervised::start(
+        specs,
+        SupervisorConfig::default(),
+        Ports {
+            host: Recorder::default(),
+            probe: FakeReadyProbe(Probe::Ready),
+            gpu: gpu(16_000),
+        },
+    );
+    let quiet = std::time::Duration::from_secs(60);
+    let mut changes = supervised.changes();
+    assert_eq!(supervised.want(&id).await, Ok(()));
+    // The start is told...
+    changes.next().await.expect("a change");
+    // ...and once it has been, nothing more is until something changes again: a listener that
+    // woke at once every time made the bus loop send EnginesChanged without end.
+    let woke = tokio::time::timeout(quiet, changes.next()).await;
+    assert!(woke.is_err(), "woke with nothing changed");
+    // A listener made after the start has nothing to hear either.
+    let mut late = supervised.changes();
+    let woke = tokio::time::timeout(quiet, late.next()).await;
+    assert!(woke.is_err(), "a new listener woke for an old change");
+    supervised.release(&id);
+    changes.next().await.expect("the stop is told");
+}
+
+#[tokio::test(start_paused = true)]
 async fn an_engine_that_answers_loading_is_waited_for() {
     let scratch = Scratch::new("sup-loading");
     let specs = specs(&scratch);
