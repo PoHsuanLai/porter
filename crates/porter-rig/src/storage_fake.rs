@@ -802,7 +802,7 @@ mod tests {
         let (dir, mut world) = world();
         let beach = path(&dir, "OneDrive/Pictures/Beach.jpg");
         let mut changed = Changed::new();
-        assert!(world.download(&[beach.clone()], &mut changed).is_empty());
+        assert!(world.download(std::slice::from_ref(&beach), &mut changed).is_empty());
         assert_eq!(state(&world, &beach), "downloading");
         let mut ticks = 0;
         while state(&world, &beach) == "downloading" {
@@ -840,14 +840,14 @@ mod tests {
     fn an_online_document_is_never_downloaded_and_offline_waits() {
         let (dir, mut world) = world();
         let plan = path(&dir, "Google Drive/Projects/Plan.gdoc");
-        let refused = world.download(&[plan.clone()], &mut Changed::new());
+        let refused = world.download(std::slice::from_ref(&plan), &mut Changed::new());
         assert_eq!(
             refused.get(&plan).map(String::as_str),
             Some(words::ONLINE_ONLY)
         );
         world.command("offline gdrive").expect("a known command");
         let sketch = path(&dir, "Google Drive/Projects/Sketch.png");
-        let refused = world.download(&[sketch.clone()], &mut Changed::new());
+        let refused = world.download(std::slice::from_ref(&sketch), &mut Changed::new());
         assert_eq!(
             refused.get(&sketch).map(String::as_str),
             Some(words::OFFLINE)
@@ -858,8 +858,8 @@ mod tests {
     fn keep_downloaded_marks_a_folder_kept_once_every_file_in_it_is() {
         let (dir, mut world) = world();
         let pictures = path(&dir, "OneDrive/Pictures");
-        world.keep(&[pictures.clone()], true, &mut Changed::new());
-        let items = world.items(&[pictures.clone()]);
+        world.keep(std::slice::from_ref(&pictures), true, &mut Changed::new());
+        let items = world.items(std::slice::from_ref(&pictures));
         assert_eq!(
             bool::try_from(items[&pictures][ITEM_KEY_KEPT].clone()).ok(),
             Some(true)
