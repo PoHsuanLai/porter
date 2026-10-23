@@ -173,6 +173,79 @@ async fn a_wait_for_an_engine_the_person_stops_ends_with_that_instead_of_hanging
     assert!(matches!(state(&supervised, &id), EngineState::Stopped));
 }
 
+/// A host that records the program of every unit it is asked to start.
+#[derive(Debug, Clone, Default)]
+struct Programmed {
+    started: Arc<Mutex<Vec<std::path::PathBuf>>>,
+    gone: Arc<tokio::sync::Notify>,
+}
+
+impl EngineHost for Programmed {
+    async fn spawn(
+        &self,
+        _: &EngineId,
+        unit: &engine_supervisor::UnitSpec,
+    ) -> Result<(), engine_supervisor::HostError> {
+        self.started.lock().expect("lock").push(unit.program.0.clone());
+        Ok(())
+    }
+
+    async fn stop(&self, _: &EngineId) -> Result<(), engine_supervisor::HostError> {
+        self.gone.notify_waiters();
+        Ok(())
+    }
+
+    async fn exited(&self, _: &EngineId) -> ExitCode {
+        self.gone.notified().await;
+        ExitCode(0)
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_next_start_of_an_engine_uses_the_program_named_by_then() {
+    use std::path::PathBuf;
+    let scratch = Scratch::new("sup-programs");
+    let specs = specs(&scratch);
+    let id = specs[0].id.clone();
+    let made = specs[0].unit.program.0.clone();
+    // Whichever kind the model's engine is, its program is the one the units were made with.
+    let config = |path: Option<&PathBuf>| porter_router::local::EngineConfig {
+        vllm_python: path.cloned(),
+        llama_server: path.cloned(),
+        ..Default::default()
+    };
+    let programs = Programs::new(&config(Some(&made)), None, None);
+    let host = Programmed::default();
+    let supervised = Supervised::start_sized(
+        specs,
+        SupervisorConfig::default(),
+        Ports {
+            host: host.clone(),
+            probe: FakeReadyProbe(Probe::Ready),
+            gpu: gpu(16_000),
+        },
+        Diagnostics::default(),
+        Sizing::default().with_programs(programs.clone()),
+    );
+    // Nothing named: the engine starts with the program from start.
+    assert_eq!(supervised.want(&id).await, Ok(()));
+    // The file names another; the running engine is left alone, the next start uses it.
+    let other = PathBuf::from("/opt/other/program");
+    programs.follow(&config(Some(&other)));
+    assert_eq!(supervised.want(&id).await, Ok(()));
+    assert_eq!(host.started.lock().expect("lock").len(), 1);
+    supervised.release(&id);
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert_eq!(supervised.want(&id).await, Ok(()));
+    assert_eq!(*host.started.lock().expect("lock"), [made.clone(), other]);
+    // Cleared again, and nothing found: the program from start.
+    programs.follow(&config(None));
+    supervised.release(&id);
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert_eq!(supervised.want(&id).await, Ok(()));
+    assert_eq!(host.started.lock().expect("lock")[2], made);
+}
+
 #[tokio::test(start_paused = true)]
 async fn an_engine_in_use_is_not_unloaded() {
     let scratch = Scratch::new("sup-used");

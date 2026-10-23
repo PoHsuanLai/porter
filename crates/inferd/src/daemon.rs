@@ -25,7 +25,7 @@ use crate::replay::Replays;
 use crate::service::{Inference, serve_with_settings};
 use crate::settings::{ConfigFile, InferdSettings, LocalEngines, Reload, resolve};
 use crate::shutdown::{self, Ended, Shutdown};
-use crate::supervise::{Ports, Sizing, Supervised};
+use crate::supervise::{Ports, Programs, Sizing, Supervised};
 use crate::tailnet::{BusMachines, Parts, Tailnet};
 use crate::toolproof::ToolProofs;
 use crate::watch::Watch;
@@ -402,7 +402,16 @@ impl Daemon {
         let mut models = build(&catalog.entries, &engine_config, &dirs.sockets);
         // The window of an engine that takes it as a launch flag is chosen when it starts, under
         // the lengths the settings put in force (`Engines::with_settings`).
-        let sizing = Sizing::for_models(engine_config, &models, Lengths::default());
+        // The program of an engine is the file's now, not only at start: the next start of an
+        // engine uses what `engines.vllm_python` and `engines.llama_server` say then.
+        let live_programs = Programs::new(
+            &engine_config,
+            programs.vllm_python(None),
+            programs.llama_server(None),
+        );
+        live_programs.follow(&config.engines);
+        let sizing = Sizing::for_models(engine_config, &models, Lengths::default())
+            .with_programs(live_programs.clone());
         let replays = Replays::read(&config.engines.named, &dirs.sockets);
         for problem in replays.skipped.iter().chain(&replays.unread()) {
             eprintln!("inferd: replay engine {problem}");
@@ -613,11 +622,13 @@ impl Daemon {
             dirs.sockets.clone(),
         )
         .spawn();
-        let reload = Reload::new(file, engines.clone());
+        let reload = Reload::new(file, engines.clone()).with_programs(live_programs.clone());
         reload.clone().watch(RELOAD_EVERY);
         // Which engine programs this computer has, and where each came from.
         let found = config.engines_with(&dirs, &programs);
-        let local_engines = LocalEngines::of(&found).with_installed(installed);
+        let local_engines = LocalEngines::of(&found)
+            .with_installed(installed)
+            .following(live_programs);
         // The agent endpoints are always served; `ai.agents.endpoint` (off by default) decides
         // whether the launcher, who is in no table until a machine lists it, may open one.
         let agents = Agents::new(

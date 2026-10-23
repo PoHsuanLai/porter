@@ -5,6 +5,7 @@
 
 use super::missing::Engine;
 use crate::installed::{Installed, Standing};
+use crate::supervise::Programs;
 use porter_dbus::{EnginePlace, EngineState, LocalEngine};
 use porter_engines::{EngineId, Place};
 use porter_infer::Slot;
@@ -15,6 +16,7 @@ use porter_router::local::EngineConfig;
 pub struct LocalEngines {
     config: EngineConfig,
     installed: Option<Installed>,
+    programs: Option<Programs>,
 }
 
 impl LocalEngines {
@@ -23,6 +25,16 @@ impl LocalEngines {
         Self {
             config: config.clone(),
             installed: None,
+            programs: None,
+        }
+    }
+
+    /// The same, whose programs follow `programs` (what the person names while inferd runs).
+    #[must_use]
+    pub fn following(self, programs: Programs) -> Self {
+        Self {
+            programs: Some(programs),
+            ..self
         }
     }
 
@@ -38,17 +50,21 @@ impl LocalEngines {
 
     /// One row per engine kind, in the picker's order.
     pub fn rows(&self) -> Vec<LocalEngine> {
+        let config = match &self.programs {
+            Some(programs) => programs.over(&self.config),
+            None => self.config.clone(),
+        };
         Engine::ALL
             .into_iter()
-            .map(|engine| self.row(engine))
+            .map(|engine| self.row(engine, &config))
             .collect()
     }
 
-    fn row(&self, engine: Engine) -> LocalEngine {
+    fn row(&self, engine: Engine, config: &EngineConfig) -> LocalEngine {
         let mut row = LocalEngine {
             id: engine.slug().to_owned(),
             name: engine.name().to_owned(),
-            state: engine.state(&self.config),
+            state: engine.state(config),
             slots: Slot::ALL
                 .into_iter()
                 .filter(|slot| engine.serves(*slot))

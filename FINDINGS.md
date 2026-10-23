@@ -2780,12 +2780,20 @@ Decisions and gaps:
   rig starts its supervisor with `Supervised::start`, which has no `Sizing`, so the hosted test
   asserts `window` is absent; it is shown by the unit logic only. A sized world test needs the
   rig to call `start_sized`, which would change the units every hosted test starts.
-- **The program rows take effect on the next start of inferd.** `Reload::now` puts the policy and
-  tiers in force; the engine units and `LocalEngines` are made once from `InferdConfig::engines_with`
-  at start. So after a `Set` of a program the file and the row say the new path, `EnginesChanged`
-  is sent (the module wakes the same `Notify` as the AI-account news), but an engine already
-  defined keeps its old program and `LocalEngines` its old row until inferd restarts. Making them
-  follow needs the engine starter to read the program per start; not done here.
+- **The program rows take effect on the next start of an engine, without restarting inferd.**
+  The units are made once at start, so `supervise::Programs` (carried by `Sizing`, shared with
+  `Reload` and `LocalEngines`) holds the program each unit was made with, the one inferd finds
+  when the file names none, and the one the file names. `Reload::now` (a `Set`, `Rescan` or a
+  hand edit seen by the watch) tells it; the driver puts the program now in force into a unit as
+  the engine is spawned, matching units by the program they were made with. A running engine is
+  left alone. The host's launch guard still checks whatever program is spawned. `LocalEngines`
+  rows follow it too. Gap: a row cleared when inferd found no program of its own keeps the
+  program from start rather than leaving the engine with none. A hand-edited path is not run
+  through the row's checks (nor was one at start).
+- A wait for an engine the person stops (`Stop` during `Start`, or a turn waiting) ends with
+  `Cause::Released` ("the model was stopped"): `Snapshot::released` counts releases per engine and
+  `Supervised::want` fails when its engine's count grows after it asked. A `Release` queued before
+  the wait's own `Want` is also counted against it, and that `Want` then starts the engine.
 - A program row is taken only for a whole path to an executable regular file that root or the
   daemon's user holds, in folders only they can change. A path under a home directory whose
   folders are group-writable (a umask of 002) is refused with the reason.

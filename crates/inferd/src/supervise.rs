@@ -76,8 +76,10 @@ pub struct Snapshot {
 }
 
 mod change;
+mod programs;
 mod sizing;
 use change::Change;
+pub use programs::Programs;
 pub use sizing::Sizing;
 
 #[derive(Debug)]
@@ -580,9 +582,11 @@ where
     /// chosen at start, the same with the window that fits the card now.
     fn sized(&self, id: &EngineId, unit: UnitSpec) -> UnitSpec {
         let total = self.gpu.filter(|gpu| gpu.total.0 > 0).map(|gpu| gpu.total);
-        self.sizing
+        let unit = self
+            .sizing
             .unit(id, self.free_for(id), total)
-            .unwrap_or(unit)
+            .unwrap_or(unit);
+        self.sizing.program_in(unit)
     }
 
     /// The card's memory left for `id`: the total, less what others use, what the other engines

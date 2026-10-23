@@ -4,6 +4,7 @@
 use super::resolve::resolve;
 use crate::config::InferdConfig;
 use crate::engines::Engines;
+use crate::supervise::Programs;
 use porter_fs::atomic::AtomicWrite;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
@@ -172,6 +173,8 @@ pub struct Reload {
     /// Held by whoever reads the file, changes it and reloads, so two writers (the settings
     /// module and the helpers' pools) never overwrite each other.
     writing: std::sync::Arc<tokio::sync::Mutex<()>>,
+    /// The programs the engines are started with, when the daemon lets the file change them.
+    programs: Option<Programs>,
 }
 
 impl Reload {
@@ -181,6 +184,17 @@ impl Reload {
             file,
             engines,
             writing: Default::default(),
+            programs: None,
+        }
+    }
+
+    /// The same, also telling `programs` which program of an engine the file names, so the next
+    /// start of an engine uses it.
+    #[must_use]
+    pub fn with_programs(self, programs: Programs) -> Self {
+        Self {
+            programs: Some(programs),
+            ..self
         }
     }
 
@@ -204,6 +218,9 @@ impl Reload {
         let config = self.file.read().map_err(|e| ReloadFailed(e.to_string()))?;
         let resolved = resolve(&config);
         self.engines.apply(resolved.settings);
+        if let Some(programs) = &self.programs {
+            programs.follow(&config.engines);
+        }
         Ok(Reloaded {
             rejected: resolved.rejected,
         })

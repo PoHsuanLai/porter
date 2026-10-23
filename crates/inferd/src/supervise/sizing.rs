@@ -11,6 +11,7 @@
 use crate::local::{EngineConfig, Lengths, LocalModel};
 use engine_supervisor::{EngineId, UnitSpec, Window};
 use model_catalog::MiB;
+use super::Programs;
 use model_provider::Tokens;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -19,6 +20,8 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 #[derive(Debug, Clone, Default)]
 pub struct Sizing {
     shared: Arc<Shared>,
+    /// The programs engines are started with now (the units say the ones from start).
+    programs: Programs,
 }
 
 #[derive(Debug, Default)]
@@ -53,7 +56,19 @@ impl Sizing {
                 lengths: Mutex::new(lengths),
                 chosen: Mutex::default(),
             }),
+            programs: Programs::default(),
         }
+    }
+
+    /// The same, starting each engine with the program `programs` has now.
+    #[must_use]
+    pub fn with_programs(self, programs: Programs) -> Self {
+        Self { programs, ..self }
+    }
+
+    /// `unit` with the program now in force (see [`Programs`]).
+    pub(super) fn program_in(&self, unit: UnitSpec) -> UnitSpec {
+        self.programs.apply(unit)
     }
 
     /// What the person set now; read the next time an engine starts.
