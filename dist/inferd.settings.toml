@@ -8,6 +8,9 @@
 # read), and `ai.auto.pool.<slot>`, the models Automatic chooses among. Their choices are the models
 # inferd knows now, so inferd describes those rows itself, as the live module
 # org.quire.SettingsModule1 at /org/quire/Inference1/settings (callable by the Settings role only).
+# The same module lists `engines.vllm_python` and `engines.llama_server`, the program of each engine
+# when the person names it (a full path to a program only they or root can change); `engines` stays
+# a foreign table here because its other keys (attached, replay, record) are not settings rows.
 #
 # Every row is hands-off: ai.* is never agent-settable (AGENT_NEVER_SETTABLE), so no row carries
 # `agent = "settable"`.

@@ -21,6 +21,7 @@ mod local_engines;
 mod missing;
 mod module;
 mod pool;
+mod programs;
 mod resolve;
 
 pub use file::{ConfigFile, FileError, Reload, ReloadFailed, Reloaded};

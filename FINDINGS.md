@@ -2747,3 +2747,59 @@ the installing; ARCHITECTURE section 11 has the trust design.
   - `Accountd`: kept; `LocalKeys` and the integration tests' `FakeAccountd`, which scripts answers.
   - `Reports`: kept; `LocalKeys`, `NoReports` and the tests' recorder, used as `dyn`.
   - `Shutdown`: kept; real signals and a channel the tests fire.
+
+## Lane inferd-run: Settings starts, stops and sees local models (2026-10-23)
+
+What landed (nothing was built or run; the coordinator gates):
+
+- **stoker `SupervisorIn::Release(EngineId)`** (branch `supervisor-release`): a starting or ready
+  engine is unwanted, told `Stop` and goes to `Stopping` (its exit, or a late probe, is handled by
+  the code that already handles a stopping engine: a probe is ignored, the exit rests it and
+  settles what waits for the memory); a waiting (`Backoff`) or `Failed` one is unwanted and goes to
+  `Stopped`; `Stopped` and `Stopping` do nothing. A later `Want` starts it as usual. No design doc
+  or fixture lists the inputs but `tests/it/shapes.rs`, which now has a row.
+- **`Inference1.Start(model)`, `Stop(model)`, `Running()`, `RunningChanged`**, Settings only,
+  `model` being `account/model`. `Start` is `Supervised::want`; `Stop` is `Supervised::release`.
+  Refusals are bus errors with plain words: `InvalidArgs` (unknown), `NotSupported` (attached or a
+  program the person runs), `Failed` (not downloaded; or the reason an engine did not come up).
+  `engines/running.rs` has the words of a failure (`start_words`), kept apart from `Cause`'s
+  `Display`, which is for logs.
+- **`Running` rows** are `porter_dbus::RunningModel` (`running.rs`, the codec beside `LocalEngine`'s);
+  `DbusTransport::list_running`, `start_model`, `stop_model` read and call them, a refusal being
+  the new `TransportError::NotRun(words)`.
+- **`engines.vllm_python`, `engines.llama_server`** are live Text rows (Advanced, "Local models").
+  `held_by(path, uid)` joins `root_held` in porter-daemon.
+
+Decisions and gaps:
+
+- `since` is the date the state began, from the machine's `Starting`, `Ready` or `Stopping`
+  `since`; `Retrying` and `Failed` carry no start time in stoker's states, so they have none (the
+  brief said absent while stopped only). `Supervised` keeps the wall clock of the driver's start to
+  turn a `MonoMs` into a date, because the snapshot's own `now` is as old as the last step.
+- `window` is only known for an engine whose window is chosen at start (`Sizing`). The hosted
+  rig starts its supervisor with `Supervised::start`, which has no `Sizing`, so the hosted test
+  asserts `window` is absent; it is shown by the unit logic only. A sized world test needs the
+  rig to call `start_sized`, which would change the units every hosted test starts.
+- **The program rows take effect on the next start of inferd.** `Reload::now` puts the policy and
+  tiers in force; the engine units and `LocalEngines` are made once from `InferdConfig::engines_with`
+  at start. So after a `Set` of a program the file and the row say the new path, `EnginesChanged`
+  is sent (the module wakes the same `Notify` as the AI-account news), but an engine already
+  defined keeps its old program and `LocalEngines` its old row until inferd restarts. Making them
+  follow needs the engine starter to read the program per start; not done here.
+- A program row is taken only for a whole path to an executable regular file that root or the
+  daemon's user holds, in folders only they can change. A path under a home directory whose
+  folders are group-writable (a umask of 002) is refused with the reason.
+- `Start` on an engine that failed so lately that no request may start it (the 30 s pause after
+  the last attempt) answers that failure at once, as any request does.
+
+Not verified (nothing was compiled):
+
+- `porter-dbus/src/running.rs`: `u32`/`i64` conversions from `OwnedValue` (the macro list in
+  zvariant 5.15 has both).
+- `inferd/src/engines/running.rs`: the exhaustive `match` on `Cause` and `EngineKind` (neither is
+  `non_exhaustive` in the sources read; a wildcard would warn as unreachable), and the let chain in
+  `running()`.
+- `inferd/tests/it/hosted/running.rs`: that `Role::Settings` as the plan's role is accepted by the
+  rig's peer table, and the memory text `needs 19.` (the big entry is 20 000 MiB of weights).
+- `settings/programs.rs` tests and `settings_module.rs`: they take `/usr/bin/env` as a program the
+  system holds.

@@ -165,14 +165,32 @@ fn search(file: SystemFile, held: impl Fn(&Path) -> bool) -> PathBuf {
 /// Whether `path` is a file only root can have written: it, and every directory on its real
 /// path, belongs to root and is writable by nobody else.
 pub fn root_held(path: &Path) -> bool {
+    held_by(path, 0)
+}
+
+/// Whether `path` is a file only `uid` or root can have written: it, and every directory on its
+/// real path, belongs to `uid` or to root, and none is writable by its group or by anyone else.
+/// With `uid` 0 this is [`root_held`].
+pub fn held_by(path: &Path, uid: u32) -> bool {
+    held_under(path, uid, Path::new("/"))
+}
+
+/// [`held_by`], looking at the directories from `below` down only (a test holds a file in a
+/// directory of its own, whose parents are not the test's to say anything about).
+fn held_under(path: &Path, uid: u32, below: &Path) -> bool {
     let Ok(real) = std::fs::canonicalize(path) else {
         return false;
     };
     let is_file = std::fs::metadata(&real).is_ok_and(|meta| meta.is_file());
     is_file
-        && real.ancestors().all(|step| {
-            std::fs::metadata(step).is_ok_and(|meta| meta.uid() == 0 && meta.mode() & 0o022 == 0)
-        })
+        && real
+            .ancestors()
+            .take_while(|step| step.starts_with(below))
+            .all(|step| {
+                std::fs::metadata(step).is_ok_and(|meta| {
+                    (meta.uid() == 0 || meta.uid() == uid) && meta.mode() & 0o022 == 0
+                })
+            })
 }
 
 #[cfg(test)]
@@ -290,5 +308,54 @@ mod tests {
         // A directory is not a table.
         assert!(!root_held(Path::new("/")));
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_file_is_held_by_a_user_when_only_that_user_or_root_can_change_it_or_its_folders() {
+        use std::os::unix::fs::PermissionsExt;
+        let made = porter_fake::Scratch::new("held-by");
+        // The real path: `held_under` looks at the real path's directories.
+        let scratch = std::fs::canonicalize(&*made).expect("real path");
+        let folder = scratch.join("bin");
+        std::fs::create_dir_all(&folder).expect("dir");
+        let program = folder.join("python");
+        std::fs::write(&program, "").expect("write");
+        let uid = std::fs::metadata(&*scratch).expect("meta").uid();
+        let chmod = |path: &Path, mode: u32| {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).expect("chmod");
+        };
+        // (mode of the scratch folder, of `bin`, of the file, held)
+        for (top, bin, file, held) in [
+            (0o755, 0o755, 0o644, true),
+            (0o700, 0o755, 0o755, true),
+            // The file, `bin` or the folder above it can be changed by the group or anyone.
+            (0o755, 0o755, 0o664, false),
+            (0o755, 0o755, 0o646, false),
+            (0o755, 0o775, 0o644, false),
+            (0o757, 0o755, 0o644, false),
+        ] {
+            chmod(&scratch, top);
+            chmod(&folder, bin);
+            chmod(&program, file);
+            assert_eq!(
+                held_under(&program, uid, &scratch),
+                held,
+                "{top:o} {bin:o} {file:o}"
+            );
+        }
+        chmod(&scratch, 0o755);
+        chmod(&folder, 0o755);
+        chmod(&program, 0o644);
+        // Another user's file is not held by this one (root holds it for everyone, so a test run
+        // as root cannot tell).
+        if uid != 0 {
+            assert!(!held_under(&program, uid + 1, &scratch));
+        }
+        // Nothing there, and a folder, are not held.
+        assert!(!held_under(&folder.join("absent"), uid, &scratch));
+        assert!(!held_under(&folder, uid, &scratch));
+        // The whole path counts: the temporary directory above the scratch folder is writable by
+        // everyone, so nothing in it is held without a `below`.
+        assert!(!held_by(&program, uid));
     }
 }

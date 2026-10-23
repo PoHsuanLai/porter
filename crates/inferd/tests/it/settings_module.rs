@@ -5,7 +5,9 @@
 use crate::hosting;
 
 use ds_settings::live::{AnyOwner, LiveClient, LiveError, LiveSchema};
-use ds_settings::schema::{AgentSetting, ChoicePlace, ChoiceWord, KeyKind, KeyPath, Page};
+use ds_settings::schema::{
+    AgentSetting, ChoicePlace, ChoiceWord, Exposure, KeyKind, KeyPath, Page,
+};
 use hosting::bus::{PrivateBus, within};
 use inferd::audit::Memory;
 use inferd::clock::FixedClock;
@@ -112,14 +114,17 @@ fn serving(
     file: &std::path::Path,
 ) -> impl std::future::Future<Output = zbus::Result<()>> + Send + 'static {
     let reload = Reload::new(ConfigFile::new(file.to_owned()), engines.clone());
+    // As the daemon wires it: what the module changes about the engines is announced.
+    let news = Arc::new(tokio::sync::Notify::new());
     let inference = Inference::new(
         engines.clone(),
         Arc::clone(peers),
         Memory::default(),
         FixedClock(UnixSeconds(1_700_000_000)),
     )
-    .reloading(reload.clone());
-    let settings = InferdSettings::new(Arc::clone(peers), reload);
+    .reloading(reload.clone())
+    .keys_news(Arc::clone(&news));
+    let settings = InferdSettings::new(Arc::clone(peers), reload).announcing(news);
     let daemon = daemon.clone();
     async move { serve_with_settings(&daemon, inference, settings).await }
 }
@@ -200,9 +205,30 @@ async fn describe_lists_the_picker_rows_of_the_slots_inferd_has_models_for() {
             "ai.model.text.fast",
             "ai.model.text.balanced",
             "ai.model.text.best",
-            "ai.auto.pool.text"
+            "ai.auto.pool.text",
+            "engines.vllm_python",
+            "engines.llama_server",
         ]
     );
+    // The two programs are Advanced text rows in "Local models", empty by default.
+    for spec in schema
+        .key
+        .iter()
+        .filter(|k| k.path.0.starts_with("engines."))
+    {
+        assert_eq!(spec.kind, KeyKind::Text);
+        assert_eq!(spec.default, text(""));
+        assert_eq!(spec.exposure, Exposure::Advanced);
+        assert_eq!(spec.section.0, "Local models");
+        assert_eq!(spec.agent, AgentSetting::HandsOff);
+    }
+    let labels: Vec<&str> = schema
+        .key
+        .iter()
+        .filter(|k| k.path.0.starts_with("engines."))
+        .map(|k| k.label.0.as_str())
+        .collect();
+    assert_eq!(labels, ["vLLM's Python", "llama-server"]);
     let pickers = || {
         schema
             .key
@@ -341,7 +367,11 @@ async fn a_model_of_a_probed_runtime_is_listed_under_this_computer_and_stays_lis
     for standing in [Standing::Online, Standing::Offline] {
         rig.engines.probed().set(Runtime::Ollama, standing, None);
         let schema: LiveSchema = settings.describe().await.expect("schema");
-        for spec in &schema.key {
+        for spec in schema
+            .key
+            .iter()
+            .filter(|spec| matches!(spec.kind, KeyKind::Menu { .. } | KeyKind::List(_)))
+        {
             let group = spec
                 .groups
                 .get(&ChoiceWord("ollama/llama3.2-3b".to_owned()))
@@ -749,4 +779,80 @@ async fn the_shell_may_write_no_other_setting_and_an_app_no_helper_pool() {
     );
     assert!(!rig.file.exists());
     assert_eq!(rig.engines.settings().tiers, TierMap::default());
+}
+
+/// A program the system holds: root's, in folders only root can change.
+const HELD_PROGRAM: &str = "/usr/bin/env";
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_engine_program_is_written_read_back_announced_and_cleared_and_a_bad_path_is_refused() {
+    use std::os::unix::fs::PermissionsExt;
+    let rig = Rig::start().await;
+    let settings = rig.live(&rig.client(Role::Settings).await).await;
+    let listener = rig.client(Role::App).await;
+    let inference = InferenceProxy::new(&listener).await.expect("proxy");
+    let mut heard = inference
+        .receive_engines_changed()
+        .await
+        .expect("subscribe");
+    let row = key("engines.llama_server");
+    let written = || -> toml::Table {
+        std::fs::read_to_string(&rig.file)
+            .expect("file")
+            .parse()
+            .expect("toml")
+    };
+    assert_eq!(settings.get(&row).await.expect("get"), text(""));
+
+    settings.set(&row, &text(HELD_PROGRAM)).await.expect("set");
+    assert_eq!(settings.get(&row).await.expect("get"), text(HELD_PROGRAM));
+    assert_eq!(
+        written()["engines"]["llama_server"].as_str(),
+        Some(HELD_PROGRAM)
+    );
+    within(
+        "EnginesChanged",
+        std::future::poll_fn(|cx| std::pin::Pin::new(&mut heard).poll_next(cx)),
+    )
+    .await
+    .expect("an open stream");
+    // The other program is its own row.
+    assert_eq!(
+        settings
+            .get(&key("engines.vllm_python"))
+            .await
+            .expect("get"),
+        text("")
+    );
+
+    // Refused in plain words, and the row keeps what it had.
+    let scratch = porter_fake::Scratch::new("program-row");
+    let loose = scratch.join("python");
+    std::fs::write(&loose, "").expect("write");
+    std::fs::set_permissions(&loose, std::fs::Permissions::from_mode(0o775)).expect("chmod");
+    let loose = loose.to_string_lossy().into_owned();
+    for (bad, words) in [
+        ("python", "whole path"),
+        ("/nonexistent/python", "no program"),
+        (loose.as_str(), "can be changed by other people"),
+    ] {
+        let got = settings.set(&row, &text(bad)).await;
+        assert!(
+            matches!(&got, Err(LiveError::BadValue(why)) if why.contains(words)),
+            "{bad}: {got:?}"
+        );
+    }
+    assert!(
+        matches!(
+            settings.set(&row, &toml::Value::Integer(1)).await,
+            Err(LiveError::BadValue(_))
+        ),
+        "a program is text"
+    );
+    assert_eq!(settings.get(&row).await.expect("get"), text(HELD_PROGRAM));
+
+    // Empty takes the key out of the file: inferd finds the program itself again.
+    settings.set(&row, &text("")).await.expect("clear");
+    assert_eq!(settings.get(&row).await.expect("get"), text(""));
+    assert!(written()["engines"].get("llama_server").is_none());
 }

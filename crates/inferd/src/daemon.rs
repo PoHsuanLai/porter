@@ -640,12 +640,14 @@ impl Daemon {
         .computers(computers)
         .tailnet(tailnet)
         .engines_found(local_engines)
-        .keys_news(engines_news);
+        .keys_news(Arc::clone(&engines_news));
         // Every object, the settings module among them, is served before the name is claimed.
         serve_with_settings(
             &connection,
             daemon,
-            InferdSettings::new(peers, reload).with_keys(Arc::new(rows.with_spend(spend))),
+            InferdSettings::new(peers, reload)
+                .with_keys(Arc::new(rows.with_spend(spend)))
+                .announcing(engines_news),
         )
         .await?;
         Ok(Self { connection, closer })

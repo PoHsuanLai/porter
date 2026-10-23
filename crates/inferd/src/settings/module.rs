@@ -2,7 +2,9 @@
 //! `ai.model.<slot>.<tier>` picker, whose choices are the models inferd knows now (and, per slot,
 //! the curated hosted models, company then model, each marked when no account reaches it). Only the
 //! `Settings` role may `Describe`, `Get` or `Set`. A `Set` validates the model, writes it to
-//! `inferd.toml` at that path and puts it in force; the next session is routed by it.
+//! `inferd.toml` at that path and puts it in force; the next session is routed by it. The module
+//! also lists the program of each engine the person may name (`engines.vllm_python`,
+//! `engines.llama_server`; see `programs`).
 
 use super::file::Reload;
 use super::keys::{
@@ -10,6 +12,7 @@ use super::keys::{
 };
 use super::missing::Engine;
 use super::pool;
+use super::programs::{self, Program};
 use super::resolve::{model_text, parse_model, slot_value};
 use crate::cloud::picker::{Availability, Choice, NEEDS_ACCOUNT};
 use crate::keys::KeyRows;
@@ -45,6 +48,7 @@ pub struct InferdSettings<P> {
     reload: Reload,
     /// The `accounts.<id>.*` rows of the AI accounts, when this daemon hosts them.
     keys: Option<std::sync::Arc<dyn KeyRows>>,
+    news: Option<std::sync::Arc<tokio::sync::Notify>>,
 }
 
 impl<P> std::fmt::Debug for InferdSettings<P> {
@@ -62,6 +66,18 @@ impl<P: Peers> InferdSettings<P> {
             peers,
             reload,
             keys: None,
+            news: None,
+        }
+    }
+
+    /// The same module, which wakes `news` after it changes what the engines run (the program of
+    /// an engine): the daemon says `EnginesChanged` each time `news` is woken, as it does for an
+    /// AI account (`Inference::keys_news`).
+    #[must_use]
+    pub fn announcing(self, news: std::sync::Arc<tokio::sync::Notify>) -> Self {
+        Self {
+            news: Some(news),
+            ..self
         }
     }
 
@@ -315,6 +331,31 @@ impl<P: Peers> InferdSettings<P> {
         pool::choosable(&self.reload, kind, text, hosted)
     }
 
+    /// Names the program of an engine, or with an empty text takes the name away (inferd then
+    /// finds the program itself). A name is taken only when `programs::checked` allows it.
+    async fn set_program(&self, program: Program, value: toml::Value) -> Result<(), LiveError> {
+        let toml::Value::String(text) = value else {
+            return Err(LiveError::BadValue("a program is a path".into()));
+        };
+        let named = if text.is_empty() {
+            None
+        } else {
+            programs::checked(&text, rustix::process::geteuid().as_raw())
+                .map_err(LiveError::BadValue)?;
+            Some(toml::Value::String(text))
+        };
+        let _one_writer = self.reload.writing().lock().await;
+        self.reload
+            .file()
+            .set_key(programs::TABLE, program.key(), named)
+            .map_err(failed)?;
+        self.reload.now().map_err(failed)?;
+        if let Some(news) = &self.news {
+            news.notify_one();
+        }
+        Ok(())
+    }
+
     async fn set_pool(
         &self,
         kind: Slot,
@@ -391,6 +432,7 @@ impl<P: Peers> LiveModule for InferdSettings<P> {
                 key.push(self.pool_spec(kind, &hosted));
             }
         }
+        key.extend(Program::ALL.map(Program::spec));
         if let Some(keys) = &self.keys {
             key.extend(keys.schema());
         }
@@ -398,6 +440,10 @@ impl<P: Peers> LiveModule for InferdSettings<P> {
     }
 
     async fn get(&self, key: &KeyPath) -> Result<toml::Value, LiveError> {
+        if let Some(program) = Program::of_path(&key.0) {
+            let config = self.reload.file().read().map_err(failed)?;
+            return Ok(toml::Value::String(program.named(&config.engines)));
+        }
         if let Some((kind, chooser)) = parse_pool_path(&key.0) {
             let pool = self.current_pool(kind, &chooser);
             return Ok(toml::Value::Array(
@@ -414,6 +460,9 @@ impl<P: Peers> LiveModule for InferdSettings<P> {
     }
 
     async fn set(&self, key: &KeyPath, value: toml::Value) -> Result<(), LiveError> {
+        if let Some(program) = Program::of_path(&key.0) {
+            return self.set_program(program, value).await;
+        }
         if let Some((kind, chooser)) = parse_pool_path(&key.0) {
             return self.set_pool(kind, &chooser, value).await;
         }
