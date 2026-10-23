@@ -95,7 +95,11 @@ impl Programs {
     pub fn over(&self, base: &EngineConfig) -> EngineConfig {
         let inner = held(&self.shared);
         EngineConfig {
-            vllm_python: inner.vllm.now().cloned().or_else(|| base.vllm_python.clone()),
+            vllm_python: inner
+                .vllm
+                .now()
+                .cloned()
+                .or_else(|| base.vllm_python.clone()),
             llama_server: inner
                 .llama
                 .now()

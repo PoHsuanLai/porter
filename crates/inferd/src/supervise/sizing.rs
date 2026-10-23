@@ -8,10 +8,10 @@
 //! memory of the engine is counted at it when another engine's window is chosen. A change of
 //! `ai.length.conversation` is read the next time an engine starts.
 
+use super::Programs;
 use crate::local::{EngineConfig, Lengths, LocalModel};
 use engine_supervisor::{EngineId, UnitSpec, Window};
 use model_catalog::MiB;
-use super::Programs;
 use model_provider::Tokens;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};

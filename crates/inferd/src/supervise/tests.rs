@@ -186,7 +186,10 @@ impl EngineHost for Programmed {
         _: &EngineId,
         unit: &engine_supervisor::UnitSpec,
     ) -> Result<(), engine_supervisor::HostError> {
-        self.started.lock().expect("lock").push(unit.program.0.clone());
+        self.started
+            .lock()
+            .expect("lock")
+            .push(unit.program.0.clone());
         Ok(())
     }
 

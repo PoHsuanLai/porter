@@ -303,7 +303,8 @@ impl Origin {
             }
             Err(_) => {
                 let host = self.host.trim_end_matches('.');
-                host.ends_with(".ts.net") || (!host.is_empty() && !host.contains('.') && host != "localhost")
+                host.ends_with(".ts.net")
+                    || (!host.is_empty() && !host.contains('.') && host != "localhost")
             }
         }
     }

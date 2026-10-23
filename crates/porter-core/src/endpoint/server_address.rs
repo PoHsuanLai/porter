@@ -73,10 +73,14 @@ pub fn server_address(text: &str, own: &[Machine]) -> Result<ServerAddress, Serv
             url,
             tls: Tls::Implicit,
         }),
-        UrlScheme::Http if origin.is_loopback() || (origin.is_tailnet() && is_own(&origin, own)) => Ok(ServerAddress {
-            url,
-            tls: Tls::Plain,
-        }),
+        UrlScheme::Http
+            if origin.is_loopback() || (origin.is_tailnet() && is_own(&origin, own)) =>
+        {
+            Ok(ServerAddress {
+                url,
+                tls: Tls::Plain,
+            })
+        }
         UrlScheme::Http => Err(ServerAddressFault::PlainOffTrusted),
         _ => Err(ServerAddressFault::NotAnAddress),
     }
