@@ -76,7 +76,12 @@ Signing in never asks for the whole of Drive (`.../auth/drive`, restricted): it 
 the hidden app folder. Porter asks for all of Drive later, and only when you turn on **Show in
 Files** for the account in Settings: Google's page then asks for that one thing, and what you
 granted before is kept. Like Gmail's scope it is restricted, so a client in testing can use it
-for its test users only. Porter never asks for the Photos library (Google removed its read scopes
+for its test users only. With it on, porter lists your My Drive (names, sizes, when each last
+changed; shared drives not yet) and downloads nothing until you open a file. Google's own
+documents (Docs, Sheets, Slides, Forms) show as documents that open in the browser, and Files'
+Save a Copy (served from the next step) saves a Doc, Sheet, Slides or Drawing next to it as an
+Office file. A grant made before Show in
+Files existed reaches the app folder only. Porter never asks for the Photos library (Google removed its read scopes
 in 2025): Photos is upload plus the picker you drive in Google's own window.
 
 ## 4. The client
