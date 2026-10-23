@@ -1,5 +1,6 @@
 use super::rig::*;
 use porter_core::capability::CapabilityKind as K;
+use porter_core::capability::StorageScope;
 use porter_core::{AccountId, Credential, Offer, SecretText, TokenKind, UnixSeconds};
 use porter_fake_servers::IssuerEvent;
 use porter_families::ReauthReason;
@@ -100,7 +101,11 @@ async fn a_grants_refresh_carries_its_own_kinds_scope_alone() {
     let rig = Rig::new(PLAIN).await;
     let session = open(&rig).await;
     let token = session
-        .access_token_for(&audience("google_calendar"), K::Calendar)
+        .access_token_for(
+            &audience("google_calendar"),
+            K::Calendar,
+            StorageScope::AppFolder,
+        )
         .await
         .expect("calendar");
     assert_eq!(token.kind, TokenKind::Bearer);
@@ -108,11 +113,15 @@ async fn a_grants_refresh_carries_its_own_kinds_scope_alone() {
     assert_eq!(rig.wire.refresh_scopes(), [Some(CALENDAR.to_owned())]);
 
     session
-        .access_token_for(&audience("google_tasks"), K::Tasks)
+        .access_token_for(&audience("google_tasks"), K::Tasks, StorageScope::AppFolder)
         .await
         .expect("tasks");
     session
-        .access_token_for(&audience("google_drive"), K::Storage)
+        .access_token_for(
+            &audience("google_drive"),
+            K::Storage,
+            StorageScope::AppFolder,
+        )
         .await
         .expect("drive");
     assert_eq!(
@@ -132,7 +141,9 @@ async fn a_grants_refresh_carries_its_own_kinds_scope_alone() {
         ("google_calendar", K::Mail),
     ] {
         assert_eq!(
-            session.access_token_for(&audience(name), kind).await,
+            session
+                .access_token_for(&audience(name), kind, StorageScope::AppFolder)
+                .await,
             Err(ProviderError::Forbidden),
             "{name} {kind:?}"
         );
@@ -140,7 +151,11 @@ async fn a_grants_refresh_carries_its_own_kinds_scope_alone() {
     // Photos asks for the one scope its API takes: a person may have ticked only the picker.
     let fresh = open(&rig).await;
     let _ = fresh
-        .access_token_for(&audience("google_photos_picker"), K::Photos)
+        .access_token_for(
+            &audience("google_photos_picker"),
+            K::Photos,
+            StorageScope::AppFolder,
+        )
         .await;
     assert_eq!(
         rig.wire.refresh_scopes().last(),
@@ -162,7 +177,11 @@ async fn a_grants_refresh_never_asks_beyond_what_was_granted() {
     assert_eq!(rig.wire.refresh_scopes(), [None]);
     assert_eq!(
         session
-            .access_token_for(&audience("google_people"), K::Contacts)
+            .access_token_for(
+                &audience("google_people"),
+                K::Contacts,
+                StorageScope::AppFolder
+            )
             .await,
         Err(ProviderError::Forbidden)
     );
@@ -172,7 +191,7 @@ async fn a_grants_refresh_never_asks_beyond_what_was_granted() {
         "no refresh named a scope the grant does not hold"
     );
     session
-        .access_token_for(&audience("google_tasks"), K::Tasks)
+        .access_token_for(&audience("google_tasks"), K::Tasks, StorageScope::AppFolder)
         .await
         .expect("tasks is in the grant");
     assert_eq!(rig.wire.refresh_scopes(), [None, Some(TASKS.to_owned())]);
@@ -413,13 +432,17 @@ async fn the_whole_drive_never_given_is_needs_consent_and_google_is_not_asked() 
     let session = open(&rig).await;
     assert_eq!(
         session
-            .access_token_for(&audience("google_drive"), K::Storage)
+            .access_token_for(&audience("google_drive"), K::Storage, StorageScope::Full)
             .await,
         Err(ProviderError::NeedsConsent)
     );
     assert_eq!(rig.wire.refresh_scopes(), Vec::<Option<String>>::new());
     session
-        .access_token_for(&audience("google_calendar"), K::Calendar)
+        .access_token_for(
+            &audience("google_calendar"),
+            K::Calendar,
+            StorageScope::AppFolder,
+        )
         .await
         .expect("the account is as good as it was");
 }
@@ -435,7 +458,7 @@ async fn the_whole_drive_once_given_is_minted_with_its_scope_alone() {
         .await
         .expect("open");
     let token = session
-        .access_token_for(&audience("google_drive"), K::Storage)
+        .access_token_for(&audience("google_drive"), K::Storage, StorageScope::Full)
         .await
         .expect("the whole drive");
     assert_eq!(rig.wire.refresh_scopes(), [Some(DRIVE.to_owned())]);
@@ -460,12 +483,75 @@ async fn a_scope_google_calls_invalid_is_needs_consent_not_a_sign_in_again() {
         .expect("open");
     assert_eq!(
         session
-            .access_token_for(&audience("google_drive"), K::Storage)
+            .access_token_for(&audience("google_drive"), K::Storage, StorageScope::Full)
             .await,
         Err(ProviderError::NeedsConsent)
     );
     session
-        .access_token_for(&audience("google_calendar"), K::Calendar)
+        .access_token_for(
+            &audience("google_calendar"),
+            K::Calendar,
+            StorageScope::AppFolder,
+        )
         .await
         .expect("the refresh token is still good");
+}
+
+#[tokio::test]
+async fn a_grant_of_the_whole_store_mints_the_on_use_row_beside_the_app_folder_row() {
+    // The shipped file: Storage has the app data folder asked at sign-in and the whole of Drive
+    // asked on use. The grant's reach picks which one its token carries.
+    let rig = Rig::new(PLAIN).await;
+    let folder = "https://www.googleapis.com/auth/drive.appdata";
+    let held = format!("{SCOPES} {DRIVE}");
+    let presented = holding(&rig, &held, &[CALENDAR, folder, DRIVE]);
+    let session = rig
+        .provider
+        .open(&account(), presented)
+        .await
+        .expect("open");
+    for (reach, scope) in [
+        (StorageScope::Full, DRIVE),
+        (StorageScope::AppFolder, folder),
+    ] {
+        let token = session
+            .access_token_for(&audience("google_drive"), K::Storage, reach)
+            .await
+            .expect("a storage token");
+        assert_eq!(
+            rig.google
+                .issuer
+                .access_scope(token.value.expose())
+                .as_deref(),
+            Some(scope),
+            "{reach:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_grant_of_the_whole_store_is_needs_consent_while_only_the_app_folder_was_given() {
+    let rig = Rig::new(PLAIN).await;
+    let folder = "https://www.googleapis.com/auth/drive.appdata";
+    let presented = holding(&rig, SCOPES, &[CALENDAR, folder]);
+    let session = rig
+        .provider
+        .open(&account(), presented)
+        .await
+        .expect("open");
+    assert_eq!(
+        session
+            .access_token_for(&audience("google_drive"), K::Storage, StorageScope::Full)
+            .await,
+        Err(ProviderError::NeedsConsent)
+    );
+    assert_eq!(rig.wire.refresh_scopes(), Vec::<Option<String>>::new());
+    session
+        .access_token_for(
+            &audience("google_drive"),
+            K::Storage,
+            StorageScope::AppFolder,
+        )
+        .await
+        .expect("the app folder is as it was");
 }

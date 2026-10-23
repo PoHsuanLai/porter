@@ -12,7 +12,7 @@ pub use data::{
     IdentityNeed, KeyValueNeed, MailNeed, NotesNeed, PhotosNeed, PimNeed, PushNeed, StorageNeed,
 };
 
-use crate::capability::CapabilityKind;
+use crate::capability::{CapabilityKind, StorageScope};
 use serde::{Deserialize, Serialize};
 
 /// A capability query: "an account that can do at least this".
@@ -77,6 +77,15 @@ impl Need {
             Need::KeyValue(_) => CapabilityKind::KeyValue,
             Need::Push(_) => CapabilityKind::Push,
             Need::Agent(_) => CapabilityKind::Agent,
+        }
+    }
+
+    /// How far a grant made for this need reaches: a Storage need's scope (the app folder, or
+    /// the whole store), and the app folder for every other kind, which has no reach of its own.
+    pub fn reach(&self) -> StorageScope {
+        match self {
+            Need::Storage(storage) => storage.scope,
+            _ => StorageScope::AppFolder,
         }
     }
 }

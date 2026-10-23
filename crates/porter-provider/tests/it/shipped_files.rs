@@ -394,6 +394,21 @@ fn a_whole_drive_is_asked_only_on_use() {
                 assert_eq!(row.ask, Ask::OnUse, "{id}");
             }
         }
+        // A grant of the app folder is served by the app-folder row asked at sign-in, a grant
+        // of the whole store by the on-use row.
+        if matches!(id, "google" | "microsoft") {
+            use porter_core::CapabilityKind as K;
+            assert_eq!(
+                spec.ask_for(K::Storage, StorageScope::AppFolder),
+                Some(Ask::SignIn),
+                "{id}"
+            );
+            assert_eq!(
+                spec.ask_for(K::Storage, StorageScope::Full),
+                Some(Ask::OnUse),
+                "{id}"
+            );
+        }
         // What sign-in asks leaves the on-use rows out.
         assert!(
             spec.sign_in_rows().all(|row| row.ask == Ask::SignIn),
@@ -405,7 +420,7 @@ fn a_whole_drive_is_asked_only_on_use() {
 #[test]
 fn ask_reads_on_use_and_is_sign_in_when_left_out() {
     use porter_core::CapabilityKind as K;
-    use porter_core::capability::Ask;
+    use porter_core::capability::{Ask, StorageScope};
     let spec = porter_provider::parse_provider(
         r#"
 id = "asks"
@@ -430,9 +445,11 @@ v = { access = "read_write", delta = "poll", quota = "reported", scope = "full",
     let asks: Vec<Ask> = spec.capabilities.iter().map(|row| row.ask).collect();
     assert_eq!(asks, [Ask::SignIn, Ask::OnUse]);
     assert_eq!(spec.sign_in_kinds(), [K::Mail]);
-    assert_eq!(spec.ask_for(K::Mail), Some(Ask::SignIn));
-    assert_eq!(spec.ask_for(K::Storage), Some(Ask::OnUse));
-    assert_eq!(spec.ask_for(K::Calendar), None);
+    let (folder, whole) = (StorageScope::AppFolder, StorageScope::Full);
+    assert_eq!(spec.ask_for(K::Mail, folder), Some(Ask::SignIn));
+    assert_eq!(spec.ask_for(K::Storage, folder), Some(Ask::OnUse));
+    assert_eq!(spec.ask_for(K::Storage, whole), Some(Ask::OnUse));
+    assert_eq!(spec.ask_for(K::Calendar, folder), None);
     assert_eq!(spec.on_use_rows(K::Storage).count(), 1);
     let bad = porter_provider::parse_provider(
         r#"

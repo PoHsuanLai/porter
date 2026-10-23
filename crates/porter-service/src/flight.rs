@@ -5,11 +5,11 @@
 //! together would each present the same token and the second would be refused, or would store a
 //! token the first has already replaced. So each account has one [`Flight`]: a caller takes its
 //! gate, reads the stored credential again (the caller ahead of it may have rotated it), and, if
-//! a caller ahead of it refreshed while it waited and issued a token for the same audience and
-//! kind that is still good, uses it instead of asking the issuer again. A caller that did not
-//! wait behind a refresh always asks the issuer: this is no cache, only the merging of refreshes
-//! that ran together. The rotated credential is written back before the new
-//! access token is handed out, and before the gate is let go.
+//! a caller ahead of it refreshed while it waited and issued a token for the same audience, kind
+//! and reach that is still good, uses it instead of asking the issuer again. A caller that did
+//! not wait behind a refresh always asks the issuer: this is no cache, only the merging of
+//! refreshes that ran together. The rotated credential is written back before the new access
+//! token is handed out, and before the gate is let go.
 
 use crate::audit::AuditSink;
 use crate::clock::Clock;
@@ -18,6 +18,7 @@ use crate::service::AccountService;
 use crate::sheets::Sheets;
 use crate::store::RegistryStore;
 use crate::token::secrets_refusal;
+use porter_core::capability::StorageScope;
 use porter_core::wire::Refusal;
 use porter_core::{
     Account, AccountId, Audience, CapabilityKind, Credential, IssuedToken, SecretKey,
@@ -37,7 +38,8 @@ const REUSE_MARGIN_SECONDS: i64 = 60;
 #[derive(Debug)]
 struct Issued {
     audience: Audience,
-    kind: CapabilityKind,
+    /// The grant's kind and reach.
+    grant: (CapabilityKind, StorageScope),
     token: IssuedToken,
 }
 
@@ -74,13 +76,14 @@ impl Flight {
         self.refreshes.load(Ordering::Acquire)
     }
 
-    /// The token the caller ahead of us issued for this audience and kind, when the store still
-    /// holds the credential that refresh left and the token is good for longer than the margin.
+    /// The token the caller ahead of us issued for this audience, kind and reach, when the store
+    /// still holds the credential that refresh left and the token is good for longer than the
+    /// margin.
     pub(crate) fn reusable(
         &self,
         stored: &Credential,
         audience: &Audience,
-        kind: CapabilityKind,
+        grant: (CapabilityKind, StorageScope),
         now: UnixSeconds,
     ) -> Option<IssuedToken> {
         let issuing = self.issuing();
@@ -90,7 +93,7 @@ impl Flight {
         issuing
             .issued
             .iter()
-            .find(|i| i.audience == *audience && i.kind == kind)
+            .find(|i| i.audience == *audience && i.grant == grant)
             .filter(|i| i.token.expires.0 - now.0 > REUSE_MARGIN_SECONDS)
             .map(|i| i.token.clone())
     }
@@ -104,7 +107,7 @@ impl Flight {
         presented: &Credential,
         left: Credential,
         audience: &Audience,
-        kind: CapabilityKind,
+        grant: (CapabilityKind, StorageScope),
         token: IssuedToken,
     ) {
         let mut issuing = self.issuing();
@@ -115,10 +118,10 @@ impl Flight {
         issuing.left = Some(left);
         issuing
             .issued
-            .retain(|i| !(i.audience == *audience && i.kind == kind));
+            .retain(|i| !(i.audience == *audience && i.grant == grant));
         issuing.issued.push(Issued {
             audience: audience.clone(),
-            kind,
+            grant,
             token,
         });
     }
@@ -145,11 +148,11 @@ impl Flights {
 impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSink>
     AccountService<P, S, U, K, R, A>
 {
-    /// A short-lived token for `audience` and `kind` from `account`'s session, as the caller
-    /// receives it. For an OAuth credential the refresh goes one at a time per account: a second
-    /// caller waits for the first, then uses the token the first issued (one call to the issuer
-    /// serves both) or, when that is not good for this audience and kind, refreshes from what
-    /// the first stored. A credential the provider rotated is written back before the token is
+    /// A short-lived token for `audience` under a grant of a kind and reach (`grant`) from
+    /// `account`'s session, as the caller receives it. For an OAuth credential the refresh goes
+    /// one at a time per account: a second caller waits for the first, then uses the token the
+    /// first issued (one call to the issuer serves both) or, when that is not good for this
+    /// audience, kind and reach, refreshes from what the first stored. A credential the provider rotated is written back before the token is
     /// returned. Other credentials are not rotated, so they are not queued.
     pub(crate) async fn issue_for(
         &self,
@@ -157,7 +160,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         provider: &P,
         purpose: Option<SecretPurpose>,
         audience: &Audience,
-        kind: CapabilityKind,
+        grant: (CapabilityKind, StorageScope),
     ) -> Result<IssuedToken, Refusal> {
         let Some(purpose) = purpose else {
             let (token, _) = self
@@ -167,7 +170,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                     Presented::Anonymous,
                     None,
                     audience,
-                    kind,
+                    grant,
                 )
                 .await?;
             return Ok(token);
@@ -185,7 +188,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                     Presented::Credential(first),
                     Some(&key),
                     audience,
-                    kind,
+                    grant,
                 )
                 .await?;
             return Ok(token);
@@ -197,7 +200,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         let stored = self.secrets.get(&key).await.map_err(secrets_refusal)?;
         // Only a refresh made while we waited is shared; otherwise this caller asks the issuer.
         if flight.refreshes() != seen
-            && let Some(token) = flight.reusable(&stored, audience, kind, self.clock.now())
+            && let Some(token) = flight.reusable(&stored, audience, grant, self.clock.now())
         {
             return Ok(token);
         }
@@ -208,11 +211,11 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                 Presented::Credential(stored.clone()),
                 Some(&key),
                 audience,
-                kind,
+                grant,
             )
             .await?;
         let left = renewed.unwrap_or_else(|| stored.clone());
-        flight.remember(&stored, left, audience, kind, token.clone());
+        flight.remember(&stored, left, audience, grant, token.clone());
         Ok(token)
     }
 
@@ -225,14 +228,15 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         presented: Presented,
         key: Option<&SecretKey>,
         audience: &Audience,
-        kind: CapabilityKind,
+        (kind, reach): (CapabilityKind, StorageScope),
     ) -> Result<(IssuedToken, Option<Credential>), Refusal> {
         let session = match provider.open(&account.id, presented).await {
             Ok(session) => session,
             Err(error) => return Err(self.refused_refresh(&account.id, error).await),
         };
-        // The grant's kind, so the token reaches that kind's service alone.
-        let token = match session.access_token_for(audience, kind).await {
+        // The grant's kind and reach, so the token reaches that kind's service alone, as far as
+        // the grant does.
+        let token = match session.access_token_for(audience, kind, reach).await {
             Ok(token) => token,
             Err(error) => return Err(self.refused_refresh(&account.id, error).await),
         };
@@ -270,36 +274,55 @@ mod tests {
     }
 
     #[test]
-    fn a_token_is_reused_for_its_audience_and_kind_while_the_store_holds_what_it_left() {
+    fn a_token_is_reused_for_its_audience_kind_and_reach_while_the_store_holds_what_it_left() {
         let flight = Flight::default();
         let imap = Audience("imap".to_owned());
         let smtp = Audience("smtp".to_owned());
+        let graph = Audience("graph".to_owned());
+        let mail = (CapabilityKind::Mail, StorageScope::AppFolder);
+        let folder = (CapabilityKind::Storage, StorageScope::AppFolder);
+        let drive = (CapabilityKind::Storage, StorageScope::Full);
         flight.remember(
             &credential("r1"),
             credential("r2"),
             &imap,
-            CapabilityKind::Mail,
+            mail,
+            token(1_000),
+        );
+        flight.remember(
+            &credential("r2"),
+            credential("r2"),
+            &graph,
+            folder,
             token(1_000),
         );
         let cases = [
-            // (stored refresh, audience, kind, now, reused)
-            ("r2", &imap, CapabilityKind::Mail, 100, true),
-            // Another audience, another kind: asked of the issuer.
-            ("r2", &smtp, CapabilityKind::Mail, 100, false),
-            ("r2", &imap, CapabilityKind::Calendar, 100, false),
+            // (stored refresh, audience, grant, now, reused)
+            ("r2", &imap, mail, 100, true),
+            ("r2", &graph, folder, 100, true),
+            // Another audience, another kind, another reach: asked of the issuer.
+            ("r2", &smtp, mail, 100, false),
+            (
+                "r2",
+                &imap,
+                (CapabilityKind::Calendar, StorageScope::AppFolder),
+                100,
+                false,
+            ),
+            ("r2", &graph, drive, 100, false),
             // The store holds another credential: rotated again, signed in again.
-            ("r3", &imap, CapabilityKind::Mail, 100, false),
+            ("r3", &imap, mail, 100, false),
             // Good for 60 seconds or less is not reused.
-            ("r2", &imap, CapabilityKind::Mail, 940, false),
-            ("r2", &imap, CapabilityKind::Mail, 939, true),
+            ("r2", &imap, mail, 940, false),
+            ("r2", &imap, mail, 939, true),
         ];
-        for (refresh, audience, kind, at, want) in cases {
+        for (refresh, audience, grant, at, want) in cases {
             assert_eq!(
                 flight
-                    .reusable(&credential(refresh), audience, kind, UnixSeconds(at))
+                    .reusable(&credential(refresh), audience, grant, UnixSeconds(at))
                     .is_some(),
                 want,
-                "{refresh} {audience:?} {kind:?} {at}"
+                "{refresh} {audience:?} {grant:?} {at}"
             );
         }
     }
@@ -309,7 +332,7 @@ mod tests {
         let flight = Flight::default();
         let imap = Audience("imap".to_owned());
         let smtp = Audience("smtp".to_owned());
-        let mail = CapabilityKind::Mail;
+        let mail = (CapabilityKind::Mail, StorageScope::AppFolder);
         flight.remember(
             &credential("r1"),
             credential("r2"),
@@ -341,7 +364,7 @@ mod tests {
         let flight = Flight::default();
         let imap = Audience("imap".to_owned());
         let smtp = Audience("smtp".to_owned());
-        let mail = CapabilityKind::Mail;
+        let mail = (CapabilityKind::Mail, StorageScope::AppFolder);
         flight.remember(
             &credential("r1"),
             credential("r2"),

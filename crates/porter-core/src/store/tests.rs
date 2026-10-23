@@ -59,6 +59,7 @@ fn filled() -> Persisted {
                 class: DataClass::Photos,
                 usage: Usage::Interactive,
                 space: SpaceScope::Any,
+                reach: crate::capability::StorageScope::AppFolder,
             },
             decision: Decision::Allow,
             scope: GrantScope::Always,

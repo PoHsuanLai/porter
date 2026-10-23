@@ -1,6 +1,7 @@
 //! The closed enums over the built families: a variant per family, its arms present only when
 //! its feature is on.
 
+use porter_core::capability::StorageScope;
 use porter_core::sheet::SignInInput;
 use porter_core::{Account, AccountId, Audience, CapabilityKind, Claim, Credential, IssuedToken};
 use porter_provider::{
@@ -228,8 +229,9 @@ impl ProviderSession for FamilySession {
         &self,
         audience: &Audience,
         kind: CapabilityKind,
+        reach: StorageScope,
     ) -> Result<IssuedToken, ProviderError> {
-        each_family!(self, s => s.access_token_for(audience, kind).await)
+        each_family!(self, s => s.access_token_for(audience, kind, reach).await)
     }
 
     fn renewed(&self) -> Option<Credential> {

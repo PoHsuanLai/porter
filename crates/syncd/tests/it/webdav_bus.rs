@@ -10,6 +10,7 @@ use common::bus::PrivateBus;
 use common::hosted::{Link, host};
 use common::{Known, client};
 use porter_client::Accounts;
+use porter_core::capability::StorageScope;
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::{
     AccountId, AppName, AuthKind, CapabilityKind, Credential, DataClass, EndpointUrl, Family,
@@ -103,6 +104,7 @@ async fn rig() -> Rig {
             class: DataClass::Photos,
             usage: Usage::Interactive,
             space: SpaceScope::Any,
+            reach: StorageScope::AppFolder,
         },
         decision: Decision::Allow,
         scope: GrantScope::Always,

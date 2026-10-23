@@ -1,4 +1,5 @@
 use super::*;
+use porter_core::capability::StorageScope;
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::store::{AccountToggle, Persisted};
 use porter_core::{
@@ -50,6 +51,7 @@ fn old_registry() -> Persisted {
             class: DataClass::Photos,
             usage: Usage::Interactive,
             space: SpaceScope::Any,
+            reach: StorageScope::AppFolder,
         },
         decision: Decision::Allow,
         scope: GrantScope::Always,

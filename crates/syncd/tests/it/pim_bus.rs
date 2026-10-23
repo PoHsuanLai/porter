@@ -10,6 +10,7 @@ use common::bus::PrivateBus;
 use common::caller as caller_of;
 use common::hosted::{Link, NoDirectory, Service, host, keep};
 use porter_client::Accounts;
+use porter_core::capability::StorageScope;
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::{
     Account, AccountId, AccountLabel, AccountState, AuthKind, CapabilityKind, Claim, Credential,
@@ -203,6 +204,7 @@ fn grant_for(kind: CapabilityKind, class: DataClass, id: &str) -> Grant {
             class,
             usage: Usage::Background,
             space: SpaceScope::Any,
+            reach: StorageScope::AppFolder,
         },
         decision: Decision::Allow,
         scope: GrantScope::Always,

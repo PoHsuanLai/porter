@@ -3,6 +3,7 @@
 //! tokens are per kind (Microsoft's Graph, Google's APIs) gives a calendar grant a calendar
 //! token and nothing wider (sec-1).
 
+use porter_core::capability::StorageScope;
 use porter_core::consent::{Decision, GrantScope, Usage};
 use porter_core::consent::{Grant, GrantKey};
 use porter_core::{
@@ -11,8 +12,8 @@ use porter_core::{
     SpaceScope, UnixSeconds,
 };
 use porter_fake::{
-    FakeProvider, FixedClock, MemoryStore, RecordingAudit, ScriptedSheets, mail_account,
-    mail_provider,
+    FakeProvider, FixedClock, MemoryStore, RecordingAudit, ScriptedSheets, cloud_provider,
+    mail_account, mail_provider, storage_account,
 };
 use porter_provider::{
     Presented, Provider, ProviderError, ProviderSession, ProviderSpec, RevokeOutcome, SignInStart,
@@ -21,8 +22,8 @@ use porter_secrets::{MemorySecrets, Secrets};
 use porter_service::{AccountService, Registry};
 use std::sync::{Arc, Mutex};
 
-/// The kind each token was asked for: `None` for a token asked with no kind.
-type Asked = Arc<Mutex<Vec<Option<CapabilityKind>>>>;
+/// The kind and reach each token was asked for: `None` for a token asked with no kind.
+type Asked = Arc<Mutex<Vec<Option<(CapabilityKind, StorageScope)>>>>;
 
 /// The fake provider, noting the kind of every token its sessions are asked for.
 #[derive(Debug, Clone)]
@@ -46,8 +47,9 @@ impl ProviderSession for NotingSession {
         &self,
         audience: &Audience,
         kind: CapabilityKind,
+        reach: StorageScope,
     ) -> Result<IssuedToken, ProviderError> {
-        self.asked.lock().unwrap().push(Some(kind));
+        self.asked.lock().unwrap().push(Some((kind, reach)));
         self.inner.access_token(audience).await
     }
 
@@ -138,6 +140,7 @@ async fn service() -> (Svc, Asked) {
             class: DataClass::Mail,
             usage: Usage::Interactive,
             space: SpaceScope::Any,
+            reach: StorageScope::AppFolder,
         },
         decision: Decision::Allow,
         scope: GrantScope::Always,
@@ -177,7 +180,10 @@ async fn a_token_issued_to_an_app_is_asked_for_the_grants_kind() {
         )
         .await;
     assert!(matches!(reply, AccountsReply::Token(_)), "{reply:?}");
-    assert_eq!(*asked.lock().unwrap(), [Some(CapabilityKind::Mail)]);
+    assert_eq!(
+        *asked.lock().unwrap(),
+        [Some((CapabilityKind::Mail, StorageScope::AppFolder))]
+    );
 }
 
 #[tokio::test]
@@ -190,5 +196,140 @@ async fn a_token_a_relay_presents_is_asked_for_the_grants_kind() {
         .expect("plan");
     assert!(matches!(plan.auth, RelayAuth::AccessToken(_)));
     assert_eq!(plan.kind, CapabilityKind::Mail);
-    assert_eq!(*asked.lock().unwrap(), [Some(CapabilityKind::Mail)]);
+    assert_eq!(
+        *asked.lock().unwrap(),
+        [Some((CapabilityKind::Mail, StorageScope::AppFolder))]
+    );
+}
+
+#[tokio::test]
+async fn a_token_is_asked_for_as_far_as_the_storage_grant_reaches() {
+    let account = storage_account();
+    let secrets = MemorySecrets::default();
+    secrets
+        .put(
+            &SecretKey {
+                account: account.id.clone(),
+                purpose: SecretPurpose::Password,
+            },
+            &Credential::Password(SecretText::new("app-password")),
+        )
+        .await
+        .expect("filed");
+    let files = AppId {
+        name: AppName::parse("org.example.Files").expect("name"),
+        isolation: Isolation::Unsandboxed,
+    };
+    let held = account.id.clone();
+    let grant = |id: &str, reach| Grant {
+        id: GrantId::parse(id).expect("id"),
+        key: GrantKey {
+            app: files.clone(),
+            account: held.clone(),
+            kind: CapabilityKind::Storage,
+            class: DataClass::Files,
+            usage: Usage::Background,
+            space: SpaceScope::Any,
+            reach,
+        },
+        decision: Decision::Allow,
+        scope: GrantScope::Always,
+        at: UnixSeconds(1),
+    };
+    let asked = Asked::default();
+    let provider = Noting {
+        inner: cloud_provider(),
+        asked: Arc::clone(&asked),
+    };
+    let service = AccountService::new(
+        vec![provider],
+        Registry {
+            accounts: vec![account],
+            grants: vec![
+                grant("folder", StorageScope::AppFolder),
+                grant("drive", StorageScope::Full),
+            ],
+            ..Registry::default()
+        },
+        secrets,
+        ScriptedSheets::default(),
+        FixedClock(porter_fake::NOW),
+    )
+    .with_store(MemoryStore::default())
+    .with_audit(RecordingAudit::default());
+    for id in ["folder", "drive"] {
+        let reply = service
+            .handle(
+                &files,
+                AccountsRequest::IssueToken {
+                    grant: GrantId::parse(id).expect("id"),
+                    audience: Audience("webdav".into()),
+                },
+            )
+            .await;
+        assert!(matches!(reply, AccountsReply::Token(_)), "{id}: {reply:?}");
+    }
+    assert_eq!(
+        *asked.lock().unwrap(),
+        [
+            Some((CapabilityKind::Storage, StorageScope::AppFolder)),
+            Some((CapabilityKind::Storage, StorageScope::Full)),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn a_grant_reaches_as_far_as_the_need_it_was_chosen_for() {
+    use porter_core::capability::{Access, Delta, QuotaReport};
+    use porter_core::need::StorageNeed;
+    use porter_core::wire::ParentWindow;
+    use porter_fake::Scripted;
+    let files = AppId {
+        name: AppName::parse("org.example.Files").expect("name"),
+        isolation: Isolation::Unsandboxed,
+    };
+    let service = AccountService::new(
+        vec![cloud_provider()],
+        Registry {
+            accounts: vec![storage_account()],
+            ..Registry::default()
+        },
+        MemorySecrets::default(),
+        ScriptedSheets::answering([
+            Scripted::AllowFirst(GrantScope::Always),
+            Scripted::AllowFirst(GrantScope::Always),
+        ]),
+        FixedClock(porter_fake::NOW),
+    )
+    .with_store(MemoryStore::default());
+    for reach in [StorageScope::Full, StorageScope::AppFolder] {
+        let need = porter_core::Need::Storage(StorageNeed::new(
+            Access::ReadWrite,
+            Delta::Poll,
+            reach,
+            QuotaReport::Unreported,
+        ));
+        let reply = service
+            .handle(
+                &files,
+                AccountsRequest::Choose {
+                    need,
+                    class: DataClass::Files,
+                    usage: Usage::Background,
+                    window: ParentWindow::Unparented,
+                },
+            )
+            .await;
+        assert!(
+            matches!(reply, AccountsReply::Chosen(_)),
+            "{reach:?}: {reply:?}"
+        );
+    }
+    let reaches: Vec<StorageScope> = service
+        .registry()
+        .grants
+        .iter()
+        .map(|g| g.key.reach)
+        .collect();
+    assert_eq!(reaches, [StorageScope::Full, StorageScope::AppFolder]);
 }

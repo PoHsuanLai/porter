@@ -230,7 +230,11 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         let (account, endpoint, kind) = {
             let registry = self.lock();
             match registry.relay_target(caller, grant, endpoint) {
-                Ok(target) => (target.account.clone(), target.endpoint.clone(), target.kind),
+                Ok(target) => (
+                    target.account.clone(),
+                    target.endpoint.clone(),
+                    (target.kind, target.reach),
+                ),
                 // Not one of the account's endpoints: perhaps an origin its provider file names
                 // as one that wants the bearer (picked photos' bytes).
                 Err(Refusal::EndpointNotGranted) => {
@@ -538,12 +542,13 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                     account.clone(),
                     g.scope.clone(),
                     g.decision,
-                    g.key.kind,
+                    (g.key.kind, g.key.reach),
                     g.key.space_is_open(),
                 ))
             })
         };
-        let Some((account, scope, porter_core::consent::Decision::Allow, kind, open)) = found
+        let Some((account, scope, porter_core::consent::Decision::Allow, (kind, reach), open)) =
+            found
         else {
             return AccountsReply::Refused(Refusal::UnknownGrant);
         };
@@ -567,15 +572,16 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         else {
             return AccountsReply::Refused(Refusal::Unavailable);
         };
-        // The grant's kind, so the token reaches that kind's service alone. One refresh at a
-        // time per account; a rotated credential is stored before the token is returned.
+        // The grant's kind and reach, so the token reaches that kind's service alone, as far as
+        // the grant does. One refresh at a time per account; a rotated credential is stored
+        // before the token is returned.
         let token = match self
             .issue_for(
                 &account,
                 provider,
                 secret_purpose(account.auth),
                 audience,
-                kind,
+                (kind, reach),
             )
             .await
         {

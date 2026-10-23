@@ -1,7 +1,7 @@
 //! A consent decision and what it covers (design/31 §4.5).
 
 use crate::app_id::AppId;
-use crate::capability::CapabilityKind;
+use crate::capability::{CapabilityKind, StorageScope};
 use crate::data_class::DataClass;
 use crate::id::{AccountId, GrantId};
 use crate::launcher_session::LauncherSession;
@@ -9,7 +9,8 @@ use crate::space::SpaceScope;
 use crate::units::UnixSeconds;
 use serde::{Deserialize, Serialize};
 
-/// What one decision covers: this app, this account, this kind, this data class, this use.
+/// What one decision covers: this app, this account, this kind, this data class, this use, and
+/// for Storage how far into the store.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct GrantKey {
     /// The app.
@@ -24,6 +25,15 @@ pub struct GrantKey {
     pub usage: Usage,
     /// The Spaces it covers: account grants made from the sheet cover `Any`.
     pub space: SpaceScope,
+    /// How far a Storage grant reaches, from the need it was made for (`Need::reach`): the app
+    /// folder, or the whole store, whose token carries the provider's on-use row. The app folder
+    /// for every other kind, and for a grant stored before grants had a reach.
+    #[serde(default = "app_folder")]
+    pub reach: StorageScope,
+}
+
+fn app_folder() -> StorageScope {
+    StorageScope::AppFolder
 }
 
 impl GrantKey {

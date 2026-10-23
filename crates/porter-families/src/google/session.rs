@@ -16,7 +16,7 @@ use super::env::GoogleEnv;
 use super::probe::{self, whoami};
 use super::reauth::ReauthReason;
 use super::scopes::{Granted, grant_scopes};
-use porter_core::capability::Ask;
+use porter_core::capability::{Ask, StorageScope};
 use porter_core::{
     AccountId, Audience, CapabilityKind, Claim, Credential, Family, IssuedToken, SecretText,
     TokenKind, UnixSeconds,
@@ -317,17 +317,19 @@ impl<H: Http> ProviderSession for GoogleSession<H> {
     }
 
     /// A token refreshed with the scopes of `kind` alone (`grant_scopes`). A scope the last
-    /// token answer said was not granted is not asked: the refresh may only narrow the grant. A
-    /// kind with a sign-in row is served by it (a Storage grant reaches the app folder), and one
-    /// the person unticked at sign-in is `Forbidden`; a kind whose rows are all on use is
-    /// `NeedsConsent` until the account was given that access.
+    /// token answer said was not granted is not asked: the refresh may only narrow the grant.
+    /// The row is the one of the grant's `reach`: a sign-in row serves it (a Storage grant of the
+    /// app folder, `drive.appdata`), and one the person unticked at sign-in is `Forbidden`; an
+    /// on-use row (a Storage grant of the whole store, `drive`) is `NeedsConsent` until the
+    /// account was given that access.
     async fn access_token_for(
         &self,
         audience: &Audience,
         kind: CapabilityKind,
+        reach: StorageScope,
     ) -> Result<IssuedToken, ProviderError> {
         let (family, form) = self.grant_target(audience, kind)?;
-        let ask = self.spec.ask_for(kind).unwrap_or(Ask::SignIn);
+        let ask = self.spec.ask_for(kind, reach).unwrap_or(Ask::SignIn);
         let scopes = grant_scopes(kind, family, ask);
         if scopes.is_empty() {
             return Err(ProviderError::Forbidden);

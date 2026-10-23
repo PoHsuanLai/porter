@@ -12,7 +12,7 @@ pub use linked::{AuthOrigin, LinkedOrigin};
 pub use matching::{DomainMatch, DomainName, Matching};
 
 use porter_core::AuthKind;
-use porter_core::capability::Ask;
+use porter_core::capability::{Ask, StorageScope};
 use porter_core::sheet::{MarkFace, ProviderGroup, ProviderKind, ProviderRow, RowKind};
 use porter_core::{Billing, Capability, CapabilityKind, Family, Locality, ProviderId};
 use serde::{Deserialize, Serialize};
@@ -96,6 +96,15 @@ impl CapabilityRow {
     pub fn asked_at_sign_in(&self) -> bool {
         self.ask == Ask::SignIn
     }
+
+    /// Whether this row reaches as far as a grant of `reach` goes: a Storage row as far as its
+    /// scope, every other row as far as any grant (only Storage has a reach of its own).
+    pub fn reaches(&self, reach: StorageScope) -> bool {
+        match &self.capability {
+            Capability::Storage(storage) => storage.scope >= reach,
+            _ => true,
+        }
+    }
 }
 
 /// A service URL written in a provider file.
@@ -152,14 +161,15 @@ impl ProviderSpec {
             .filter(move |row| row.ask == Ask::OnUse && row.capability.kind() == kind)
     }
 
-    /// When a token for a grant of `kind` is asked: with the sign-in when a sign-in row has the
-    /// kind (an app folder, though a whole drive may be asked later), else on use; `None` for
-    /// a kind the file does not declare.
-    pub fn ask_for(&self, kind: CapabilityKind) -> Option<Ask> {
+    /// When the access a token for a grant of `kind` and `reach` carries is asked, from the rows
+    /// of the kind that reach that far ([`CapabilityRow::reaches`]): with the sign-in when one of
+    /// them is a sign-in row (the app folder, for a grant of the app folder), else on use (the
+    /// whole drive, for a grant of the whole store); `None` when no row of the file reaches.
+    pub fn ask_for(&self, kind: CapabilityKind, reach: StorageScope) -> Option<Ask> {
         let mut rows = self
             .capabilities
             .iter()
-            .filter(|row| row.capability.kind() == kind);
+            .filter(|row| row.capability.kind() == kind && row.reaches(reach));
         match rows.clone().any(CapabilityRow::asked_at_sign_in) {
             true => Some(Ask::SignIn),
             false => rows.next().map(|_| Ask::OnUse),

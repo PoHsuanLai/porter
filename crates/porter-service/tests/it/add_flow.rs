@@ -3,6 +3,7 @@
 
 use porter_core::audit::AuditEvent;
 use porter_core::capability::CapabilityKind;
+use porter_core::capability::StorageScope;
 use porter_core::capability::{
     Access, Capability, Delta, LabelModel, MailCap, MailTransport, Offered,
 };
@@ -1293,6 +1294,7 @@ fn grant_to(caller: &AppId, account: &Account) -> Grant {
             class: DataClass::Mail,
             usage: Usage::Interactive,
             space: SpaceScope::Any,
+            reach: StorageScope::AppFolder,
         },
         decision: Decision::Allow,
         scope: GrantScope::Always,

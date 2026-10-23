@@ -2,7 +2,7 @@
 //! consent store says for each, and the candidates a caller may see.
 
 use porter_core::SpaceScope;
-use porter_core::capability::VocabVersion;
+use porter_core::capability::{StorageScope, VocabVersion};
 use porter_core::consent::{Decision, Grant, GrantKey, Usage, Verdict, decide_key};
 use porter_core::store::{AccountToggle, Persisted};
 use porter_core::wire::Refusal;
@@ -49,6 +49,8 @@ pub(crate) struct Fit<'a> {
     pub(crate) account: &'a Account,
     pub(crate) claim: &'a Claim,
     pub(crate) capability: &'a Capability,
+    /// How far a grant made for the need reaches (`Need::reach`).
+    pub(crate) reach: StorageScope,
 }
 
 /// Who asks, for what data, for what use.
@@ -68,6 +70,7 @@ impl Asker<'_> {
             class: self.class,
             usage: self.usage,
             space: SpaceScope::Any,
+            reach: fit.reach,
         }
     }
 }
@@ -89,6 +92,7 @@ impl Registry {
                                 account,
                                 claim,
                                 capability,
+                                reach: need.reach(),
                             })
                         }
                         _ => None,
@@ -132,7 +136,7 @@ impl Registry {
         id: &GrantId,
         endpoint: &EndpointUrl,
     ) -> Result<RelayTarget<'_>, Refusal> {
-        let (account, kind) = self.grant_account(app, id)?;
+        let (account, kind, reach) = self.grant_account(app, id)?;
         let endpoint = account
             .endpoints
             .iter()
@@ -143,15 +147,16 @@ impl Registry {
             account,
             endpoint,
             kind,
+            reach,
         })
     }
 
-    /// The account and kind of `app`'s grant `id`, when the grant is an allowing one.
+    /// The account, kind and reach of `app`'s grant `id`, when the grant is an allowing one.
     pub(crate) fn grant_account(
         &self,
         app: &AppId,
         id: &GrantId,
-    ) -> Result<(&Account, CapabilityKind), Refusal> {
+    ) -> Result<(&Account, CapabilityKind, StorageScope), Refusal> {
         let grant = self
             .grant_of(app, id)
             .filter(|g| g.decision == Decision::Allow)
@@ -165,7 +170,7 @@ impl Registry {
             .iter()
             .find(|a| a.id == grant.key.account)
             .ok_or(Refusal::UnknownGrant)?;
-        Ok((account, grant.key.kind))
+        Ok((account, grant.key.kind, grant.key.reach))
     }
 }
 
@@ -175,6 +180,7 @@ pub(crate) struct RelayTarget<'a> {
     pub(crate) account: &'a Account,
     pub(crate) endpoint: &'a ServiceEndpoint,
     pub(crate) kind: CapabilityKind,
+    pub(crate) reach: StorageScope,
 }
 
 /// Whether `endpoint` is one a grant for `kind` may reach, and one a relay can carry.

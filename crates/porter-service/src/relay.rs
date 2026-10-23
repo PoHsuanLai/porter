@@ -10,6 +10,7 @@ use crate::registry::serves;
 use crate::service::AccountService;
 use crate::sheets::Sheets;
 use crate::token::{secret_purpose, secrets_refusal};
+use porter_core::capability::StorageScope;
 use porter_core::wire::Refusal;
 use porter_core::{
     Account, AppId, Audience, CapabilityKind, Credential, EndpointUrl, Family, GrantId, RelayAuth,
@@ -52,11 +53,13 @@ where
         &self,
         account: &Account,
         endpoint: &ServiceEndpoint,
-        kind: CapabilityKind,
+        (kind, reach): (CapabilityKind, StorageScope),
     ) -> Result<RelayPlan, Refusal> {
         let auth = match secret_purpose(account.auth) {
             Some(SecretPurpose::Password) => self.password_for(account, endpoint, kind).await?,
-            Some(SecretPurpose::OAuthRefresh) => self.token_for(account, endpoint, kind).await?,
+            Some(SecretPurpose::OAuthRefresh) => {
+                self.token_for(account, endpoint, (kind, reach)).await?
+            }
             // An API key or a key pair has no password protocol to present it to.
             _ => return Err(Refusal::Unavailable),
         };
@@ -74,8 +77,8 @@ where
         caller: &AppId,
         grant: &GrantId,
         origin: &EndpointUrl,
-    ) -> Result<(Account, ServiceEndpoint, CapabilityKind), Refusal> {
-        let (account, kind) = registry.grant_account(caller, grant)?;
+    ) -> Result<(Account, ServiceEndpoint, (CapabilityKind, StorageScope)), Refusal> {
+        let (account, kind, reach) = registry.grant_account(caller, grant)?;
         let spec = self
             .catalog
             .get(&account.provider)
@@ -100,7 +103,7 @@ where
             ..home.clone()
         };
         endpoint.check().map_err(|_| Refusal::EndpointNotGranted)?;
-        Ok((account.clone(), endpoint, kind))
+        Ok((account.clone(), endpoint, (kind, reach)))
     }
 
     /// The plan of a relay to `origin`, an origin the account's provider file declares for a
@@ -114,7 +117,7 @@ where
         origin: &EndpointUrl,
     ) -> Result<(RelayPlan, Account), Refusal> {
         let registry = self.lock();
-        let (account, kind) = registry.grant_account(caller, grant)?;
+        let (account, kind, _) = registry.grant_account(caller, grant)?;
         let spec = self
             .catalog
             .get(&account.provider)
@@ -170,7 +173,7 @@ where
         &self,
         account: &Account,
         endpoint: &ServiceEndpoint,
-        kind: CapabilityKind,
+        (kind, reach): (CapabilityKind, StorageScope),
     ) -> Result<RelayAuth, Refusal> {
         let audience = Audience(endpoint.family.slug().to_owned());
         let spec = self
@@ -185,15 +188,16 @@ where
             .iter()
             .find(|p| p.spec().id == account.provider)
             .ok_or(Refusal::Unavailable)?;
-        // The grant's kind, so the bearer reaches that kind's service alone. One refresh at a
-        // time per account, shared with `IssueToken`; a rotated token is stored first.
+        // The grant's kind and reach, so the bearer reaches that kind's service alone, as far as
+        // the grant does. One refresh at a time per account, shared with `IssueToken`; a rotated
+        // token is stored first.
         let issued = self
             .issue_for(
                 account,
                 provider,
                 Some(SecretPurpose::OAuthRefresh),
                 &audience,
-                kind,
+                (kind, reach),
             )
             .await?;
         bearer_of(issued.kind, &issued.value)

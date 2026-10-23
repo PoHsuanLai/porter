@@ -1,5 +1,6 @@
 use super::rig::*;
 use porter_core::capability::CapabilityKind as K;
+use porter_core::capability::StorageScope;
 use porter_core::{
     AbsentReason, AccountId, Credential, Offer, Provenance, SecretText, TokenKind, UnixSeconds,
 };
@@ -85,7 +86,7 @@ async fn a_calendar_grants_token_request_names_only_the_calendar_scope() {
     let session = open(&rig).await;
     for audience in ["graph", GRAPH] {
         let token = session
-            .access_token_for(&audience_of(audience), K::Calendar)
+            .access_token_for(&audience_of(audience), K::Calendar, StorageScope::AppFolder)
             .await
             .expect(audience);
         assert_eq!(token.kind, TokenKind::Bearer, "{audience}");
@@ -111,7 +112,7 @@ async fn a_calendar_grants_token_request_names_only_the_calendar_scope() {
         ),
     ] {
         session
-            .access_token_for(&audience_of("graph"), kind)
+            .access_token_for(&audience_of("graph"), kind, StorageScope::AppFolder)
             .await
             .expect("token");
         assert_eq!(
@@ -121,7 +122,7 @@ async fn a_calendar_grants_token_request_names_only_the_calendar_scope() {
         );
     }
     let mail = session
-        .access_token_for(&audience_of("imap"), K::Mail)
+        .access_token_for(&audience_of("imap"), K::Mail, StorageScope::AppFolder)
         .await
         .expect("imap");
     assert_eq!(mail.kind, TokenKind::Xoauth2);
@@ -132,7 +133,9 @@ async fn a_calendar_grants_token_request_names_only_the_calendar_scope() {
         ("https://graph.evil.test", K::Calendar),
     ] {
         assert_eq!(
-            session.access_token_for(&audience_of(audience), kind).await,
+            session
+                .access_token_for(&audience_of(audience), kind, StorageScope::AppFolder)
+                .await,
             Err(ProviderError::Forbidden),
             "{audience} {kind:?}"
         );
@@ -434,7 +437,7 @@ async fn the_whole_drive_never_given_is_needs_consent_and_microsoft_is_not_asked
     let session = open(&rig).await;
     assert_eq!(
         session
-            .access_token_for(&audience_of("graph"), K::Storage)
+            .access_token_for(&audience_of("graph"), K::Storage, StorageScope::Full)
             .await,
         Err(ProviderError::NeedsConsent)
     );
@@ -442,7 +445,7 @@ async fn the_whole_drive_never_given_is_needs_consent_and_microsoft_is_not_asked
     assert_eq!(session.renewed(), None);
     // The account is as good as it was for what sign-in asked.
     session
-        .access_token_for(&audience_of("graph"), K::Calendar)
+        .access_token_for(&audience_of("graph"), K::Calendar, StorageScope::AppFolder)
         .await
         .expect("calendar");
 }
@@ -458,7 +461,7 @@ async fn the_whole_drive_once_given_is_minted_with_its_scope_and_the_record_is_k
         .await
         .expect("open");
     let token = session
-        .access_token_for(&audience_of("graph"), K::Storage)
+        .access_token_for(&audience_of("graph"), K::Storage, StorageScope::Full)
         .await
         .expect("the whole drive");
     assert_eq!(
@@ -485,12 +488,64 @@ async fn a_scope_microsoft_says_was_never_consented_is_needs_consent_not_a_sign_
         .expect("open");
     assert_eq!(
         session
-            .access_token_for(&audience_of("graph"), K::Storage)
+            .access_token_for(&audience_of("graph"), K::Storage, StorageScope::Full)
             .await,
         Err(ProviderError::NeedsConsent)
     );
     session
-        .access_token_for(&audience_of("graph"), K::Calendar)
+        .access_token_for(&audience_of("graph"), K::Calendar, StorageScope::AppFolder)
         .await
         .expect("the refresh token is still good");
+}
+
+#[tokio::test]
+async fn a_grant_of_the_whole_store_mints_the_on_use_row_beside_the_app_folder_row() {
+    // The shipped file: Storage has the app-folder row asked at sign-in and the whole drive
+    // asked on use. The grant's reach picks which one its token carries.
+    let rig = Rig::new(true).await;
+    let folder = "https://graph.microsoft.com/Files.ReadWrite.AppFolder";
+    let held = format!("offline_access {folder} {FILES}");
+    let presented = holding(&rig, &held, &["offline_access", folder, FILES]);
+    let session = rig
+        .provider
+        .open(&account(), presented)
+        .await
+        .expect("open");
+    for (reach, scope) in [
+        (StorageScope::Full, FILES),
+        (StorageScope::AppFolder, folder),
+    ] {
+        let token = session
+            .access_token_for(&audience_of("graph"), K::Storage, reach)
+            .await
+            .expect("a storage token");
+        assert_eq!(
+            rig.issuer.access_scope(token.value.expose()).as_deref(),
+            Some(scope),
+            "{reach:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_grant_of_the_whole_store_is_needs_consent_while_only_the_app_folder_was_given() {
+    let rig = Rig::new(true).await;
+    let folder = "https://graph.microsoft.com/Files.ReadWrite.AppFolder";
+    let held = format!("offline_access {folder}");
+    let presented = holding(&rig, &held, &["offline_access", folder]);
+    let session = rig
+        .provider
+        .open(&account(), presented)
+        .await
+        .expect("open");
+    assert_eq!(
+        session
+            .access_token_for(&audience_of("graph"), K::Storage, StorageScope::Full)
+            .await,
+        Err(ProviderError::NeedsConsent)
+    );
+    session
+        .access_token_for(&audience_of("graph"), K::Storage, StorageScope::AppFolder)
+        .await
+        .expect("the app folder is as it was");
 }

@@ -8,6 +8,7 @@ use crate::common::bus::PrivateBus;
 use crate::common::hosted::{Link, host};
 use crate::common::{Known, client};
 use porter_client::Accounts;
+use porter_core::capability::StorageScope;
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::{
     Account, AccountId, AccountLabel, AccountState, AppName, AuthKind, Candidate, CapabilityKind,
@@ -158,6 +159,7 @@ fn grant(id: &str, kind: CapabilityKind, class: DataClass) -> Grant {
             class,
             usage: Usage::Background,
             space: SpaceScope::Any,
+            reach: StorageScope::AppFolder,
         },
         decision: Decision::Allow,
         scope: GrantScope::Always,

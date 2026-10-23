@@ -7,6 +7,7 @@ use crate::hosting::bus::PrivateBus;
 
 use inferd::launcher::{LauncherConfig, Launchers, LoginTiming, serve_launcher};
 use inferd::peers::{Caller, Role, TablePeers};
+use porter_core::capability::StorageScope;
 use porter_core::clock::FixedClock;
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::{
@@ -79,6 +80,7 @@ pub fn permit(id: &str, app: AppId, account: &str, scope: GrantScope, decision: 
             class: DataClass::Prompt,
             usage: Usage::Interactive,
             space: SpaceScope::Any,
+            reach: StorageScope::AppFolder,
         },
         decision,
         scope,

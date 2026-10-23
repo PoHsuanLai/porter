@@ -10,6 +10,7 @@ use crate::cloud::own::{OWN_PROVIDER, OwnServer};
 use crate::probe::Runtime;
 use crate::probed::Standing;
 use crate::report::{ReportFault, Reports};
+use porter_core::capability::StorageScope;
 use porter_core::consent::{Decision, GrantKey, Usage, decide_key};
 use porter_core::wire::Refusal;
 use porter_core::{
@@ -86,6 +87,7 @@ impl<H: KeyHost> Accountd for LocalKeys<H> {
                         class,
                         usage,
                         space: SpaceScope::Any,
+                        reach: StorageScope::AppFolder,
                     };
                     Some(AccountVerdict {
                         account: account.id.clone(),

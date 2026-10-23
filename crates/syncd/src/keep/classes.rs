@@ -10,7 +10,7 @@
 //! ([`photos_key`]), so a `Storage` grant of syncd's (the Drive app folder) never reaches them.
 
 use crate::datasets::storage::{photos_need, storage_need};
-use porter_core::capability::Offered;
+use porter_core::capability::{Offered, StorageScope};
 use porter_core::consent::{Decision, Grant, GrantKey, Usage};
 use porter_core::{
     Account, AccountId, AppId, AppName, Capability, CapabilityKind, DataClass, Family, Isolation,
@@ -64,6 +64,7 @@ pub fn sync_key(account: &AccountId, class: SyncClass) -> GrantKey {
         class: class.class(),
         usage: Usage::Background,
         space: SpaceScope::Any,
+        reach: StorageScope::AppFolder,
     }
 }
 

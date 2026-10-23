@@ -9,6 +9,7 @@ use crate::clock::Clock;
 use crate::service::AccountService;
 use crate::sheets::Sheets;
 use crate::store::RegistryStore;
+use porter_core::capability::StorageScope;
 use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
 use porter_core::{
     Account, AccountId, AccountsReply, AppId, CapabilityKind, Credential, RelayPlan, SecretKey,
@@ -116,8 +117,8 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         &self,
         account: &Account,
         endpoint: &ServiceEndpoint,
-        kind: CapabilityKind,
+        grant: (CapabilityKind, StorageScope),
     ) -> Result<RelayPlan, Refusal> {
-        self.plan_relay(account, endpoint, kind).await
+        self.plan_relay(account, endpoint, grant).await
     }
 }

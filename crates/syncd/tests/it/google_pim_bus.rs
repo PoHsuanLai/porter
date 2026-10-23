@@ -11,6 +11,7 @@ use crate::common;
 use common::bus::PrivateBus;
 use common::caller as caller_of;
 use common::hosted::host;
+use porter_core::capability::StorageScope;
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::{
     Account, AccountId, AccountLabel, AccountState, AuthKind, CapabilityKind, Claim, Credential,
@@ -209,6 +210,7 @@ async fn rig(kinds: &[PimKind]) -> Rig {
                 class: kind.class(),
                 usage: Usage::Background,
                 space: SpaceScope::Any,
+                reach: StorageScope::AppFolder,
             },
             decision: Decision::Allow,
             scope: GrantScope::Always,

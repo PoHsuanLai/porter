@@ -11,7 +11,7 @@ use super::env::MicrosoftEnv;
 use super::graph::{Found, probe, whoami};
 use super::graph_origin;
 use super::scopes::{audience_scope, grant_scope};
-use porter_core::capability::Ask;
+use porter_core::capability::{Ask, StorageScope};
 use porter_core::{
     AccountId, Audience, CapabilityKind, Credential, IssuedToken, SecretText, TokenKind,
     UnixSeconds,
@@ -221,16 +221,21 @@ impl<H: Http> ProviderSession for MicrosoftSession<H> {
     }
 
     /// A token carrying the scope of `kind` alone (`grant_scope`): a calendar grant's Graph
-    /// token is for `Calendars.ReadWrite`, so it cannot read the account's files or mail. A kind
-    /// with a sign-in row is served by it (a Storage grant reaches the app folder); a kind whose
-    /// rows are all on use is `NeedsConsent` until the account was given that access.
+    /// token is for `Calendars.ReadWrite`, so it cannot read the account's files or mail. The
+    /// row is the one of the grant's `reach`: a Storage grant of the app folder is served by the
+    /// sign-in row (`Files.ReadWrite.AppFolder`), one of the whole store by the on-use row
+    /// (`Files.ReadWrite`), which is `NeedsConsent` until the account was given that access.
     async fn access_token_for(
         &self,
         audience: &Audience,
         kind: CapabilityKind,
+        reach: StorageScope,
     ) -> Result<IssuedToken, ProviderError> {
         let graph = graph_origin(&self.spec);
-        let ask = self.spec.ask_for(kind).ok_or(ProviderError::Forbidden)?;
+        let ask = self
+            .spec
+            .ask_for(kind, reach)
+            .ok_or(ProviderError::Forbidden)?;
         let (scope, form) =
             grant_scope(audience, kind, ask, graph.as_str()).ok_or(ProviderError::Forbidden)?;
         if !self.given(&scope, ask) {

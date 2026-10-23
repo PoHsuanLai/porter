@@ -3,6 +3,7 @@
 //! `caller`, which the transport verified), never the Space id's text alone. A grant over a
 //! desktop-wide Space, outside any Space, or any Space is used as before.
 
+use porter_core::capability::StorageScope;
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::wire::Refusal;
 use porter_core::{
@@ -43,6 +44,7 @@ fn grant(id: &str, space: SpaceScope) -> Grant {
             class: DataClass::Mail,
             usage: Usage::Interactive,
             space,
+            reach: StorageScope::AppFolder,
         },
         decision: Decision::Allow,
         scope: GrantScope::Always,

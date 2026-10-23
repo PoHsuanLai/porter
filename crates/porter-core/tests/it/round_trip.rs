@@ -267,6 +267,7 @@ fn grant() -> Grant {
             class: DataClass::Photos,
             usage: Usage::Background,
             space: SpaceScope::Only(SpaceId::parse("work").expect("space")),
+            reach: StorageScope::AppFolder,
         },
         decision: Decision::Allow,
         scope: GrantScope::Always,
@@ -579,6 +580,32 @@ fn every_request_and_reply_round_trips() {
         AccountsReply::Refused(Refusal::EndpointNotGranted),
     ];
     replies.iter().for_each(round_trip);
+}
+
+#[test]
+fn a_grant_keeps_its_reach_and_one_stored_without_a_reach_reaches_the_app_folder() {
+    let mut whole = grant();
+    whole.key.reach = StorageScope::Full;
+    round_trip(&whole);
+    assert!(json(&whole).contains(r#""reach":"full""#));
+    let mut stored: serde_json::Value = serde_json::from_str(&json(&whole)).expect("json");
+    stored["key"]
+        .as_object_mut()
+        .expect("a key")
+        .remove("reach");
+    let read: Grant = serde_json::from_value(stored).expect("an older grant reads");
+    assert_eq!(read.key.reach, StorageScope::AppFolder);
+    assert_eq!(
+        Need::Storage(StorageNeed::new(
+            Access::ReadWrite,
+            Delta::Poll,
+            StorageScope::Full,
+            QuotaReport::Unreported,
+        ))
+        .reach(),
+        StorageScope::Full
+    );
+    assert_eq!(every_need()[1].reach(), StorageScope::AppFolder);
 }
 
 #[test]

@@ -6,6 +6,7 @@ use crate::common;
 
 use common::bus::PrivateBus;
 use porter_core::AuthKind;
+use porter_core::capability::StorageScope;
 use porter_core::store::Persisted;
 use porter_dbus::IdentitiesProxy;
 use std::path::{Path, PathBuf};
@@ -138,6 +139,7 @@ fn seed(home: &Path) {
             class: DataClass::Photos,
             usage: Usage::Interactive,
             space: SpaceScope::Any,
+            reach: StorageScope::AppFolder,
         },
         decision: Decision::Allow,
         scope: GrantScope::Always,

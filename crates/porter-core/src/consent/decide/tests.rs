@@ -19,6 +19,7 @@ fn key(app: &str, usage: Usage) -> GrantKey {
         class: DataClass::Photos,
         usage,
         space: SpaceScope::Any,
+        reach: crate::capability::StorageScope::AppFolder,
     }
 }
 

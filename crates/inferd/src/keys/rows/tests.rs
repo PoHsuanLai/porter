@@ -1,5 +1,6 @@
 use super::*;
 use porter_core::UnixSeconds;
+use porter_core::capability::StorageScope;
 use porter_core::consent::{GrantKey, Usage};
 use porter_core::{DataClass, SpaceScope};
 use porter_fake::llm_account;
@@ -19,6 +20,7 @@ fn registry() -> Registry {
                 class: DataClass::Prompt,
                 usage: Usage::Interactive,
                 space: SpaceScope::Any,
+                reach: StorageScope::AppFolder,
             },
             decision: Decision::Allow,
             scope: GrantScope::Always,
