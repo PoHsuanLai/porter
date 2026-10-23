@@ -77,8 +77,8 @@ pub struct GdriveReplica<H> {
 }
 
 impl<H: Http> GdriveReplica<H> {
-    /// The replica of `folder` (a path below the app data folder, empty for the app data folder
-    /// itself) of the API served at `base` (`https://www.googleapis.com/drive/v3`), sending
+    /// The replica of `folder` (a path below the root, empty for the root itself: the app data
+    /// folder unless [`GdriveReplica::with_root`] says otherwise) of the API served at `base` (`https://www.googleapis.com/drive/v3`), sending
     /// through `http` and dating tombstones with `clock`.
     pub fn new(http: H, base: &WebUrl, folder: &str, clock: Clock) -> Self {
         Self {

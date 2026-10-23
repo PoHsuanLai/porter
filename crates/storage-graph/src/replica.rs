@@ -77,8 +77,8 @@ pub struct GraphReplica<H> {
 }
 
 impl<H: Http> GraphReplica<H> {
-    /// The replica of `folder` (a path below the app folder, empty for the app folder itself) of
-    /// the drive served at `base` (`https://graph.microsoft.com`), sending through `http` and
+    /// The replica of `folder` (a path below the root, empty for the root itself: the app folder
+    /// unless [`GraphReplica::with_root`] says otherwise) of the drive served at `base` (`https://graph.microsoft.com`), sending through `http` and
     /// dating tombstones with `clock`.
     pub fn new(http: H, base: &WebUrl, folder: &str, clock: Clock) -> Self {
         Self {
