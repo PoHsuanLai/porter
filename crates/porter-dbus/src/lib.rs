@@ -152,7 +152,7 @@ pub use storage::{
     DRIVE_KEY_STATE, DRIVE_KEY_TOTAL, DRIVE_KEY_USED, DRIVE_KEY_WORDS, DriveState, DrivesChanged,
     DrivesChangedStream, ITEM_KEY_FRACTION, ITEM_KEY_KEPT, ITEM_KEY_KIND, ITEM_KEY_OTHER,
     ITEM_KEY_STATE, ITEM_KEY_URL, ITEM_KEY_WORDS, ItemDetails, ItemKind, ItemState, ItemsChanged,
-    ItemsChangedStream, Refused, StorageProxy, StorageSkeleton,
+    ItemsChangedStream, Refused, Saved, StorageProxy, StorageSkeleton,
 };
 pub use sync::{SyncProxy, SyncSkeleton};
 pub use tailnet::{

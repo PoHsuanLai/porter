@@ -214,6 +214,9 @@ pub type ItemDetails = HashMap<String, Details>;
 /// them all.
 pub type Refused = HashMap<String, String>;
 
+/// Each online document `SaveCopy` saved, by its path, with the path of the file it saved (`a{ss}`).
+pub type Saved = HashMap<String, String>;
+
 /// The caller's side.
 #[zbus::proxy(
     interface = "org.quire.Storage1",
@@ -245,6 +248,13 @@ pub trait Storage {
     /// changes not yet sent ("Waiting to upload") or uploading, so nothing made here is lost, a
     /// file in conflict, and an item kept with its folder.
     fn remove_download(&self, paths: Vec<String>) -> zbus::Result<Refused>;
+    /// "Save a Copy": saves each online document of `paths` as a file in its export format (a
+    /// Doc as `.docx`, a Sheet as `.xlsx`, Slides as `.pptx`, a Drawing as `.png`) next to it,
+    /// named as the document is: "Plan.docx", or "Plan 2.docx", "Plan 3.docx" when the name is
+    /// taken. The copy is a downloaded file of the drive. Answers `saved`, each document's path
+    /// with its copy's, and `refused`: a path that is not an online document, a Form, Site or
+    /// Map (which have no file format), and a path on no drive.
+    fn save_copy(&self, paths: Vec<String>) -> zbus::Result<(Saved, Refused)>;
     /// "Pause Syncing" (`paused` true) or "Resume Syncing" (false) for each drive id of
     /// `drives`. A paused drive sends nothing and reads no changes; a file the person opens or
     /// asks to download still downloads. Answers the ids it did not take, with words. The shell
@@ -291,6 +301,12 @@ impl StorageSkeleton {
     }
 
     fn remove_download(&self, paths: Vec<String>) -> fdo::Result<Refused> {
+        let _ = paths;
+        Err(crate::introspect::frozen())
+    }
+
+    #[zbus(out_args("saved", "refused"))]
+    fn save_copy(&self, paths: Vec<String>) -> fdo::Result<(Saved, Refused)> {
         let _ = paths;
         Err(crate::introspect::frozen())
     }

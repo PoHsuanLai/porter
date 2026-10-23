@@ -12,7 +12,7 @@ use porter_dbus::{
     DRIVE_KEY_ACCOUNT, DRIVE_KEY_LABEL, DRIVE_KEY_LOCAL, DRIVE_KEY_PATH, DRIVE_KEY_PROVIDER,
     DRIVE_KEY_STATE, DRIVE_KEY_TOTAL, DRIVE_KEY_USED, DRIVE_KEY_WORDS, Details, DriveState,
     ITEM_KEY_FRACTION, ITEM_KEY_KEPT, ITEM_KEY_KIND, ITEM_KEY_OTHER, ITEM_KEY_STATE, ITEM_KEY_URL,
-    ITEM_KEY_WORDS, ItemDetails, ItemKind, ItemState, Refused, STORAGE_PATH,
+    ITEM_KEY_WORDS, ItemDetails, ItemKind, ItemState, Refused, STORAGE_PATH, Saved,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -44,6 +44,10 @@ pub mod words {
     pub const KEPT_WITH_FOLDER: &str = "This item is kept downloaded with its folder.";
     /// A drive id that names no drive.
     pub const NO_DRIVE: &str = "This drive isn't in Files.";
+    /// Save a Copy asked for an item that is not an online document.
+    pub const NOT_A_DOCUMENT: &str = "Only an online document can be saved as a copy.";
+    /// Save a Copy asked for a Form, Site or Map, which have no file format.
+    pub const NO_FILE_FORMAT: &str = "This document can't be saved as a file.";
 }
 
 /// What a file of the other version of a conflict is called: its name with this before the
@@ -170,6 +174,14 @@ const PLANTED: &[(&str, &str, ItemKind, ItemState, bool, u64)] = &[
     (
         "gdrive",
         "Projects/Plan.gdoc",
+        ItemKind::Online,
+        ItemState::Cloud,
+        false,
+        0,
+    ),
+    (
+        "gdrive",
+        "Projects/Survey.gform",
         ItemKind::Online,
         ItemState::Cloud,
         false,
@@ -433,6 +445,68 @@ impl World {
             }
         }
         refused
+    }
+
+    /// "Save a Copy": each online document's export written next to it as a downloaded file,
+    /// "Plan.docx", or "Plan 2.docx", "Plan 3.docx" when the name is taken.
+    pub fn save_copy(&mut self, paths: &[String], changed: &mut Changed) -> (Saved, Refused) {
+        let mut saved = Saved::new();
+        let mut refused = Refused::new();
+        for text in paths {
+            let path = PathBuf::from(text);
+            let Some(item) = self.items.get(&path) else {
+                refused.insert(text.clone(), words::NOT_ON_A_DRIVE.into());
+                continue;
+            };
+            if item.kind != ItemKind::Online {
+                refused.insert(text.clone(), words::NOT_A_DOCUMENT.into());
+                continue;
+            }
+            let Some(extension) = export_of(&path) else {
+                refused.insert(text.clone(), words::NO_FILE_FORMAT.into());
+                continue;
+            };
+            let drive = item.drive.clone();
+            let copy = self.free_name(&path, extension);
+            let contents = format!("A fake copy of {}\n", path.display());
+            if let Err(why) = std::fs::write(&copy, &contents) {
+                refused.insert(text.clone(), format!("The copy couldn't be written: {why}"));
+                continue;
+            }
+            self.items.insert(
+                copy.clone(),
+                Item {
+                    drive,
+                    kind: ItemKind::File,
+                    state: ItemState::Downloaded,
+                    kept: false,
+                    fraction: 0.0,
+                    words: None,
+                    size: contents.len() as u64,
+                    url: None,
+                    other: None,
+                },
+            );
+            self.touch(&copy, changed);
+            saved.insert(text.clone(), copy.to_string_lossy().into_owned());
+        }
+        (saved, refused)
+    }
+
+    /// The first name next to `document` with its stem and `extension` that no item or file
+    /// has: "Plan.docx", then "Plan 2.docx", "Plan 3.docx".
+    fn free_name(&self, document: &Path, extension: &str) -> PathBuf {
+        let stem = document
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        (1..)
+            .map(|n| match n {
+                1 => document.with_file_name(format!("{stem}.{extension}")),
+                n => document.with_file_name(format!("{stem} {n}.{extension}")),
+            })
+            .find(|name| !self.items.contains_key(name) && !name.exists())
+            .expect("some number is free")
     }
 
     /// "Pause Syncing" or "Resume Syncing" for each drive id. Pausing holds what would upload;
@@ -888,6 +962,18 @@ fn online_url(path: &Path) -> String {
     format!("https://docs.example.test/document/{name}")
 }
 
+/// The file format an online document is saved as, by its link file's extension: none for a
+/// Form, Site or Map.
+fn export_of(document: &Path) -> Option<&'static str> {
+    match document.extension()?.to_str()? {
+        "gdoc" => Some("docx"),
+        "gsheet" => Some("xlsx"),
+        "gslides" => Some("pptx"),
+        "gdraw" => Some("png"),
+        _ => None,
+    }
+}
+
 /// An online document's link file, as Google's desktop client writes them: a JSON object whose
 /// `url` is the document's address.
 fn link_file(url: &str) -> String {
@@ -1017,6 +1103,19 @@ impl FakeStorage {
         Ok(self
             .apply(&emitter, |world, changed| {
                 (world.remove_download(&paths, changed), false)
+            })
+            .await)
+    }
+
+    #[zbus(out_args("saved", "refused"))]
+    async fn save_copy(
+        &self,
+        paths: Vec<String>,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+    ) -> fdo::Result<(Saved, Refused)> {
+        Ok(self
+            .apply(&emitter, |world, changed| {
+                (world.save_copy(&paths, changed), false)
             })
             .await)
     }
@@ -1270,6 +1369,64 @@ mod tests {
         let before = local(&world, "onedrive");
         world.remove_download(std::slice::from_ref(&notes), &mut Changed::new());
         assert_eq!(local(&world, "onedrive"), before - 4_000);
+    }
+
+    #[test]
+    fn save_a_copy_names_each_copy_as_a_mac_does_and_lists_it_downloaded() {
+        let (dir, mut world) = world();
+        let plan = path(&dir, "Google Drive/Projects/Plan.gdoc");
+        let mut names = Vec::new();
+        for _ in 0..3 {
+            let mut changed = Changed::new();
+            let (saved, refused) = world.save_copy(std::slice::from_ref(&plan), &mut changed);
+            assert!(refused.is_empty(), "{refused:?}");
+            let copy = saved[&plan].clone();
+            assert!(
+                changed["gdrive"].contains(Path::new(&copy)),
+                "the copy is told"
+            );
+            assert_eq!(state(&world, &copy), "downloaded");
+            assert!(
+                Path::new(&copy).is_file(),
+                "the copy is a file on the drive"
+            );
+            names.push(
+                Path::new(&copy)
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+            );
+        }
+        assert_eq!(names, ["Plan.docx", "Plan 2.docx", "Plan 3.docx"]);
+    }
+
+    #[test]
+    fn save_a_copy_refuses_a_file_a_form_and_a_path_on_no_drive() {
+        let (dir, mut world) = world();
+        let sketch = path(&dir, "Google Drive/Projects/Sketch.png");
+        let survey = path(&dir, "Google Drive/Projects/Survey.gform");
+        let nowhere = dir
+            .path()
+            .join("elsewhere.gdoc")
+            .to_string_lossy()
+            .into_owned();
+        let (saved, refused) = world.save_copy(
+            &[sketch.clone(), survey.clone(), nowhere.clone()],
+            &mut Changed::new(),
+        );
+        assert!(saved.is_empty());
+        assert_eq!(
+            refused.get(&sketch).map(String::as_str),
+            Some(words::NOT_A_DOCUMENT)
+        );
+        assert_eq!(
+            refused.get(&survey).map(String::as_str),
+            Some(words::NO_FILE_FORMAT)
+        );
+        assert_eq!(
+            refused.get(&nowhere).map(String::as_str),
+            Some(words::NOT_ON_A_DRIVE)
+        );
     }
 
     #[test]
