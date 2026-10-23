@@ -663,7 +663,10 @@ impl World {
             return Ok(());
         }
         let other = other_version(path);
-        std::fs::write(&other, "A fake file: the version changed on this computer\n")?;
+        std::fs::write(
+            &other,
+            "A fake file: the version changed on this computer\n",
+        )?;
         self.items.insert(
             other.clone(),
             Item {
@@ -1203,7 +1206,10 @@ mod tests {
         let (Some(folder), Some(file)) = (folder, file) else {
             panic!("a moving folder and file both carry a fraction");
         };
-        assert!((folder - file).abs() < 1e-9, "the one file moving is the folder's share");
+        assert!(
+            (folder - file).abs() < 1e-9,
+            "the one file moving is the folder's share"
+        );
         assert!(folder > 0.0 && folder < 1.0);
     }
 
@@ -1215,7 +1221,9 @@ mod tests {
         world.keep(std::slice::from_ref(&pictures), true, &mut Changed::new());
         assert!(kept(&world, &beach), "a child of a kept folder reads kept");
         let added = path(&dir, "OneDrive/Pictures/Hike.jpg");
-        world.command(&format!("add {added}")).expect("a known command");
+        world
+            .command(&format!("add {added}"))
+            .expect("a known command");
         assert!(kept(&world, &added));
         assert_eq!(state(&world, &added), "downloading");
         let refused = world.keep(std::slice::from_ref(&beach), false, &mut Changed::new());
