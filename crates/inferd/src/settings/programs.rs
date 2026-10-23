@@ -80,6 +80,7 @@ impl Program {
     /// The row.
     pub(super) fn spec(self) -> KeySpec {
         KeySpec {
+            control: None,
             path: KeyPath(self.path()),
             kind: KeyKind::Text,
             default: toml::Value::String(String::new()),

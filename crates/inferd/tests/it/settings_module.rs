@@ -785,7 +785,6 @@ async fn the_shell_may_write_no_other_setting_and_an_app_no_helper_pool() {
     assert_eq!(rig.engines.settings().tiers, TierMap::default());
 }
 
-
 #[tokio::test(flavor = "multi_thread")]
 async fn an_engine_program_is_written_read_back_announced_and_cleared_and_a_bad_path_is_refused() {
     use std::os::unix::fs::PermissionsExt;
@@ -816,10 +815,7 @@ async fn an_engine_program_is_written_read_back_announced_and_cleared_and_a_bad_
 
     settings.set(&row, &text(held)).await.expect("set");
     assert_eq!(settings.get(&row).await.expect("get"), text(held));
-    assert_eq!(
-        written()["engines"]["llama_server"].as_str(),
-        Some(held)
-    );
+    assert_eq!(written()["engines"]["llama_server"].as_str(), Some(held));
     within(
         "EnginesChanged",
         std::future::poll_fn(|cx| std::pin::Pin::new(&mut heard).poll_next(cx)),

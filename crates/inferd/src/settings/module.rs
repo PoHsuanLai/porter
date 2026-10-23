@@ -281,6 +281,7 @@ impl<P: Peers> InferdSettings<P> {
             .chain(models)
             .collect();
         KeySpec {
+            control: None,
             path: KeyPath(model_path(kind, tier)),
             kind: KeyKind::Menu { variants },
             default: toml::Value::String(String::new()),
@@ -322,6 +323,7 @@ impl<P: Peers> InferdSettings<P> {
             places,
         } = self.model_choices(kind, hosted, &self.current_pool(kind, &Chooser::Assistant));
         KeySpec {
+            control: None,
             path: KeyPath(pool_path(kind)),
             kind: KeyKind::List(Box::new(KeyKind::Menu { variants })),
             default: toml::Value::Array(Vec::new()),
@@ -358,7 +360,7 @@ impl<P: Peers> InferdSettings<P> {
                 rustix::process::geteuid().as_raw(),
                 &self.programs_below,
             )
-                .map_err(LiveError::BadValue)?;
+            .map_err(LiveError::BadValue)?;
             Some(toml::Value::String(text))
         };
         let _one_writer = self.reload.writing().lock().await;

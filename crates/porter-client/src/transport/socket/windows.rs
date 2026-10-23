@@ -51,9 +51,9 @@ pub(super) fn door(agent: &SocketAgent) -> Door {
         Place::Ambient => Agent::new(&agent.name),
         Place::RuntimeDir(dir) => {
             let env = Environment {
-                runtime_dir: Some(dir.as_os_str()),
-                tmpdir: Some(dir.as_os_str()),
-                local_app_data: Some(dir.as_os_str()),
+                runtime_dir: Some(dir.as_os_str().to_owned()),
+                tmpdir: Some(dir.as_os_str().to_owned()),
+                local_app_data: Some(dir.as_os_str().to_owned()),
                 ..Environment::default()
             };
             Agent::in_environment(&agent.name, here(), &env)

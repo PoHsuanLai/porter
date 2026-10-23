@@ -24,8 +24,8 @@ const NAME: &str = "pt";
 /// latchkey's agent under `dir`, as the agent end names it.
 fn agent_in(dir: &Path) -> Agent {
     let env = Environment {
-        runtime_dir: Some(dir.as_os_str()),
-        tmpdir: Some(dir.as_os_str()),
+        runtime_dir: Some(dir.as_os_str().to_owned()),
+        tmpdir: Some(dir.as_os_str().to_owned()),
         ..Environment::default()
     };
     Agent::in_environment(NAME, here(), &env).expect("an address")

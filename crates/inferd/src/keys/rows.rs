@@ -162,6 +162,7 @@ fn spec(
     default: toml::Value,
 ) -> KeySpec {
     KeySpec {
+        control: None,
         path: KeyPath(path(key)),
         kind,
         default,

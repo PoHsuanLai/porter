@@ -26,8 +26,8 @@ pub const AGENT_NAME: &str = "pt";
 /// Where latchkey puts the agent called `name` under the runtime directory `dir`.
 pub fn socket_in(dir: &std::path::Path, name: &str) -> PathBuf {
     let env = latchkey::Environment {
-        runtime_dir: Some(dir.as_os_str()),
-        tmpdir: Some(dir.as_os_str()),
+        runtime_dir: Some(dir.as_os_str().to_owned()),
+        tmpdir: Some(dir.as_os_str().to_owned()),
         ..latchkey::Environment::default()
     };
     latchkey::Agent::in_environment(name, latchkey::here(), &env)
