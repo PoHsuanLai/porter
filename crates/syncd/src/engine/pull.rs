@@ -80,6 +80,11 @@ impl<R: Replica, D: Dataset, K: Clock> Engine<R, D, K> {
                 More::Done => break page.next,
             }
         };
+        // The engine keeps files; a folder or an item that lives only online is not one.
+        all.retain(|change| match change {
+            Change::Upsert(item) => item.kind.is_file(),
+            Change::Tombstone(_) => true,
+        });
         let listing: Vec<RemoteItem> = all
             .iter()
             .filter_map(|change| match change {
@@ -175,6 +180,8 @@ impl<R: Replica, D: Dataset, K: Clock> Engine<R, D, K> {
 
     async fn apply_change(&self, change: Change, report: &mut Report) -> Result<(), Halt> {
         match change {
+            // A folder or an item that lives only online has no bytes to keep.
+            Change::Upsert(item) if !item.kind.is_file() => Ok(()),
             Change::Upsert(item) => self.upsert(item, report).await,
             Change::Tombstone(tombstone) => self.deleted(tombstone, report).await,
         }

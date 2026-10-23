@@ -16,7 +16,8 @@ use crate::datasets::pim::discover::{DiscoverError, Found};
 use porter_client::{Accounts, Transport};
 use porter_core::{Bytes, EndpointUrl, GrantId, WebUrl};
 use porter_sync::{
-    ItemPath, More, RemoteId, RemoteItem, RemoteVersion, ReplicaError, RetryAfter, Tombstone,
+    ItemKind, ItemPath, More, RemoteId, RemoteItem, RemoteVersion, ReplicaError, RetryAfter,
+    Tombstone,
 };
 use serde::Deserialize;
 use std::sync::Arc;
@@ -115,6 +116,7 @@ impl<T: Transport> GoogleTasksFeed<T> {
                 path: file_of(task),
                 size: Bytes(ics.len() as u64),
                 hash: Some(fingerprint(&ics)),
+                kind: ItemKind::File,
             },
             content: Some(ics),
         }

@@ -2,11 +2,12 @@ use super::rig::*;
 use crate::dataset::{Dataset, DatasetError, DatasetId, MemoryDataset};
 use crate::engine::{Engine, Outcome};
 use crate::journal::Journal;
-use porter_core::Bytes;
 use porter_core::capability::{Delta, HashKind, QuotaReport};
+use porter_core::{Bytes, WebUrl};
 use porter_sync::{
-    Acknowledgement, BaseVersion, Blob, ConflictRule, ItemPath, ItemState, LocalId, PutRefused,
-    RemoteId, RemoteSide, ReplicaError, Resolution, RetryAfter, Scanned,
+    Acknowledgement, BaseVersion, Blob, Change, ConflictRule, ItemKind, ItemPath, ItemState,
+    LocalId, PutRefused, RemoteId, RemoteItem, RemoteSide, RemoteVersion, ReplicaError, Resolution,
+    RetryAfter, Scanned,
 };
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -55,6 +56,49 @@ async fn a_first_sync_lists_everything_and_a_later_feed_pages_until_done() {
     assert_eq!(world.puts(), 0, "nothing was uploaded");
     assert_eq!(world.fetches(), 10, "and nothing fetched twice");
     assert!(states(&engine).iter().all(|(_, s)| *s == ItemState::Synced));
+}
+
+#[tokio::test]
+async fn a_folder_and_an_item_that_lives_online_are_not_fetched_or_kept() {
+    let world = World::new("kinds", sha(), 10);
+    world.remote_put("a.txt", b"a").await;
+    let item = |id: &str, kind: ItemKind| {
+        Change::Upsert(RemoteItem {
+            id: RemoteId(id.into()),
+            version: RemoteVersion("1".into()),
+            path: ItemPath(format!("{id}.x")),
+            size: Bytes(0),
+            hash: None,
+            kind,
+        })
+    };
+    let online = ItemKind::Online {
+        url: WebUrl::parse("https://docs.example.test/d/1").expect("url"),
+        export: None,
+    };
+    *world
+        .replica
+        .planted
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner) =
+        vec![item("folder", ItemKind::Folder), item("doc", online)];
+    let engine = world.engine();
+    let first = engine.sync_once().await.expect("cycle");
+    assert_eq!((first.fetched, first.outcome), (1, Outcome::Done));
+    world.remote_put("b.txt", b"b").await;
+    let second = engine.sync_once().await.expect("cycle");
+    assert_eq!(
+        second.fetched, 1,
+        "the feed's folder and document are passed over"
+    );
+    assert_eq!(
+        world.dataset.snapshot(),
+        files(&[("a.txt", "a"), ("b.txt", "b")])
+    );
+    assert_eq!(world.fetches(), 2);
+    let mut kept: Vec<String> = states(&engine).into_iter().map(|(path, _)| path).collect();
+    kept.sort();
+    assert_eq!(kept, ["a.txt", "b.txt"]);
 }
 
 #[tokio::test]

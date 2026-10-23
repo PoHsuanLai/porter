@@ -5,8 +5,9 @@
 use porter_core::{Bytes, UnixSeconds, WebUrl};
 use porter_http::{Header, Http, HttpError, HttpRequest, HttpResponse, Status};
 use porter_sync::{
-    Anchor, BaseVersion, Blob, Change, ContentHash, Cursor, ItemPath, More, PutItem, PutTarget,
-    Quota, RemoteId, RemoteItem, RemoteVersion, Replica, ReplicaError, RetryAfter, Tombstone,
+    Anchor, BaseVersion, Blob, Change, ContentHash, Cursor, ItemKind, ItemPath, More, PutItem,
+    PutTarget, Quota, RemoteId, RemoteItem, RemoteVersion, Replica, ReplicaError, RetryAfter,
+    Tombstone,
 };
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -113,6 +114,7 @@ async fn a_delta_in_two_pages_is_read_as_the_documented_answers_have_them() {
             hash: Some(ContentHash(
                 "000102030405060708090a0b0c0d0e0f10111213".into()
             )),
+            kind: ItemKind::File,
         })]
     );
     assert_eq!(first.more, More::More);
@@ -139,6 +141,7 @@ async fn a_delta_in_two_pages_is_read_as_the_documented_answers_have_them() {
                 path: ItemPath("cover.jpg".into()),
                 size: Bytes(12),
                 hash: None,
+                kind: ItemKind::File,
             }),
         ],
         "a shortcut (remoteItem) is not synced"

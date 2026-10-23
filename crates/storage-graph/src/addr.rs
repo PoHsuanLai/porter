@@ -1,5 +1,6 @@
 //! Where things are: the drive's URLs for the dataset's folder, an item by id or by path, and
-//! the check that a link the server handed back (a delta link) is still this server's.
+//! the check that a link the server handed back (a delta link) is still this server's. Paths
+//! start at the root the replica was given: the app folder or the drive's own root.
 
 use porter_core::WebUrl;
 use porter_sync::ItemPath;
@@ -7,12 +8,36 @@ use porter_sync::ItemPath;
 /// Graph's version prefix and the signed-in user's drive.
 const DRIVE: &str = "/v1.0/me/drive";
 
-/// The dataset's folder in the app folder, and the origin it is served from.
+/// Where a replica's paths start.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum Root {
+    /// OneDrive's app folder (`special/approot`): what `Files.ReadWrite.AppFolder` reaches.
+    #[default]
+    AppFolder,
+    /// The drive's own root (`root`): the whole drive, which `Files.ReadWrite` reaches. Its
+    /// changes are read by a delta query of the root, which work and school drives answer too.
+    Drive,
+}
+
+impl Root {
+    /// The segment after `/me/drive` that names it.
+    fn segment(self) -> &'static str {
+        match self {
+            Root::AppFolder => "special/approot",
+            Root::Drive => "root",
+        }
+    }
+}
+
+/// The dataset's folder below the root, and the origin it is served from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Addr {
     /// `scheme://authority`.
     origin: String,
-    /// The folder's names below the app folder; none is the app folder itself.
+    /// Where paths start.
+    root: Root,
+    /// The folder's names below the root; none is the root itself.
     folder: Vec<String>,
 }
 
@@ -49,12 +74,23 @@ impl Addr {
             .map_or(text.len(), |at| after + at);
         Self {
             origin: text[..end].to_owned(),
+            root: Root::AppFolder,
             folder: folder
                 .split('/')
                 .filter(|n| !n.is_empty() && *n != "." && *n != "..")
                 .map(str::to_owned)
                 .collect(),
         }
+    }
+
+    /// The same folder below `root`.
+    pub fn with_root(self, root: Root) -> Self {
+        Self { root, ..self }
+    }
+
+    /// Where paths start.
+    pub fn root(&self) -> Root {
+        self.root
     }
 
     /// The drive itself (quota).
@@ -71,12 +107,21 @@ impl Addr {
             .chain(rel.unwrap_or(&[]))
             .cloned()
             .collect();
-        self.under_app(&names, op, query)
+        self.under_root(&names, op, query)
     }
 
-    /// The item at `names` below the app folder, and `op` asked of it.
-    pub fn under_app(&self, names: &[String], op: Option<&str>, query: &str) -> Option<WebUrl> {
-        let base = format!("{}{DRIVE}/special/approot", self.origin);
+    /// Where the change feed starts: below the app folder the dataset folder's own delta, in a
+    /// whole drive the root's (folder-scoped delta is answered by personal drives only).
+    pub fn delta(&self) -> Option<WebUrl> {
+        match self.root {
+            Root::AppFolder => self.path(None, Some("delta"), ""),
+            Root::Drive => self.under_root(&[], Some("delta"), ""),
+        }
+    }
+
+    /// The item at `names` below the root, and `op` asked of it.
+    pub fn under_root(&self, names: &[String], op: Option<&str>, query: &str) -> Option<WebUrl> {
+        let base = format!("{}{DRIVE}/{}", self.origin, self.root.segment());
         let url = match (names.is_empty(), op) {
             (true, None) => base,
             (true, Some(op)) => format!("{base}/{op}"),
@@ -118,7 +163,7 @@ impl Addr {
         self.owns(link).then(|| WebUrl::parse(link).ok()).flatten()
     }
 
-    /// The dataset's folder as names below the app folder.
+    /// The dataset's folder as names below the root.
     pub fn folder(&self) -> &[String] {
         &self.folder
     }
@@ -175,6 +220,31 @@ mod tests {
         ];
         for ((name, got), want) in cases.iter().zip(want) {
             assert_eq!(got.as_ref().map(WebUrl::as_str), Some(want), "{name}");
+        }
+    }
+
+    #[test]
+    fn below_the_drive_root_urls_name_the_root_and_its_delta_is_the_roots() {
+        let drive = |folder: &str| addr(folder).with_root(Root::Drive);
+        let names = |p: &str| names_of(p).expect("names");
+        let got = [
+            drive("").path(None, None, ""),
+            drive("").delta(),
+            drive("Photos").delta(),
+            drive("Photos").path(None, Some("children"), ""),
+            drive("").path(Some(&names("a b/c.txt")), Some("content"), ""),
+            addr("Photos").delta(),
+        ];
+        let want = [
+            "https://graph.microsoft.com/v1.0/me/drive/root",
+            "https://graph.microsoft.com/v1.0/me/drive/root/delta",
+            "https://graph.microsoft.com/v1.0/me/drive/root/delta",
+            "https://graph.microsoft.com/v1.0/me/drive/root:/Photos:/children",
+            "https://graph.microsoft.com/v1.0/me/drive/root:/a%20b/c.txt:/content",
+            "https://graph.microsoft.com/v1.0/me/drive/special/approot:/Photos:/delta",
+        ];
+        for (got, want) in got.iter().zip(want) {
+            assert_eq!(got.as_ref().map(WebUrl::as_str), Some(want));
         }
     }
 

@@ -128,7 +128,7 @@ impl<H: Http> GdriveReplica<H> {
             .await?;
         match response.status.0 {
             200 | 204 => {
-                self.state().files.remove(&item.0);
+                self.state().folders.remove_file(item);
                 Ok(RemoteVersion(DELETED.to_owned()))
             }
             404 => Err(Self::conflict(&target, &base, None)),
@@ -193,8 +193,8 @@ impl<H: Http> GdriveReplica<H> {
                     .map_err(|_| PutRefused::Transient(RetryAfter(30)))?;
                 if let Some(parent) = file.parent_id() {
                     self.state()
-                        .files
-                        .insert(file.id.clone(), parent.to_owned());
+                        .folders
+                        .insert_file(RemoteId(file.id.clone()), RemoteId(parent.to_owned()));
                 }
                 Ok((
                     RemoteId(file.id),

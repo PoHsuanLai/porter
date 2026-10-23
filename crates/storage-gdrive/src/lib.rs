@@ -1,13 +1,18 @@
 //! The Google Drive replica (design/31 §6.1, lane google-drive): [`GdriveReplica`] implements
 //! porter-sync's `Replica` over a folder of Drive's app data folder (`spaces=appDataFolder`, the
-//! scope `drive.appdata`, which is the only Drive scope this build asks).
+//! scope `drive.appdata`) or, given [`Root::Drive`], of My Drive (`spaces=drive`, the user's own
+//! corpus, no shared drives; the scope `drive`). In My Drive, folders are items too, and Google's
+//! own documents and shortcuts are items that open online (`ItemKind::Online`, with the Office
+//! type a copy is saved as); only a file's first parent is followed.
 //!
 //! - **Changes** are `changes.list` with a page token as the anchor (`changes:<token>`). The
 //!   first listing is `files.list` of the space, page by page, after the start token was taken
 //!   (so nothing between is missed): while it runs the anchor is `list:<start>:<page>`, and the
 //!   last page's anchor is `changes:<start>`. A token Drive refuses (`400`, `404`, `410` on a
 //!   resumed anchor) is `AnchorExpired`. A change names a file by id and parent id, so paths are
-//!   built from the folders seen (and asked for when one is not).
+//!   built from the folders seen (and asked for when one is not). The folders seen are a
+//!   [`porter_sync::Folders`] a dataset may keep ([`GdriveReplica::folders`]) and hand back
+//!   ([`GdriveReplica::with_folders`]).
 //! - **Writes** are checked first: a new file looks for its name in the parent (a name already
 //!   there is a `Conflict`: Drive allows two files of one name, this replica does not make
 //!   them), a changed one or a removal reads the file's `version` and compares it with the base
@@ -38,6 +43,7 @@ mod replica;
 mod upload;
 mod write;
 
+pub use addr::Root;
 pub use porter_http::stream::{Dial, StreamHttp, StreamLimits};
 pub use replica::{CHUNK_UNIT, GdriveReplica, SIMPLE_MAX, Uploads};
 pub use storage_webdav::{Clock, DELETED};

@@ -1,6 +1,7 @@
-//! [`GdriveReplica`]: porter-sync's [`Replica`] over a folder of Drive's app data folder.
+//! [`GdriveReplica`]: porter-sync's [`Replica`] over a folder of Drive's app data folder, or of
+//! My Drive.
 
-use crate::addr::{Addr, FILE_FIELDS};
+use crate::addr::{Addr, FILE_FIELDS, Root};
 use crate::json::{About, File};
 use crate::refuse::{read_error, unreached};
 use porter_core::capability::{
@@ -9,10 +10,9 @@ use porter_core::capability::{
 use porter_core::{Bytes, WebUrl};
 use porter_http::{Http, HttpRequest, HttpResponse, Method};
 use porter_sync::{
-    BaseVersion, Blob, ByteRange, ChangePage, Cursor, PutItem, PutRefused, Quota, RemoteId,
-    RemoteVersion, Replica, ReplicaError, RetryAfter,
+    BaseVersion, Blob, ByteRange, ChangePage, Cursor, Folders, PutItem, PutRefused, Quota,
+    RemoteId, RemoteVersion, Replica, ReplicaError, RetryAfter,
 };
-use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use storage_webdav::Clock;
 
@@ -55,18 +55,17 @@ impl Default for Uploads {
 }
 
 /// What the replica remembers between calls; losing it (a new process) costs requests, never
-/// correctness.
+/// correctness, except that a folder deleted since is not known to have held its files unless
+/// the tree was kept ([`GdriveReplica::folders`]) and handed back.
 #[derive(Debug, Default)]
 pub(crate) struct State {
     /// The dataset folder's id.
     pub root: Option<String>,
-    /// Folders seen: id to (name, parent id).
-    pub folders: HashMap<String, (String, Option<String>)>,
-    /// Files seen: id to parent id, so a deleted folder can name its files.
-    pub files: HashMap<String, String>,
+    /// Folders seen, and the parent of each file seen, so a deleted folder can name its files.
+    pub folders: Folders,
 }
 
-/// The replica of one folder of the app data folder, over any [`Http`].
+/// The replica of one folder of the app data folder or of My Drive, over any [`Http`].
 #[derive(Debug)]
 pub struct GdriveReplica<H> {
     pub(crate) http: H,
@@ -103,6 +102,33 @@ impl<H: Http> GdriveReplica<H> {
     /// The same replica with these upload limits.
     pub fn with_uploads(self, uploads: Uploads) -> Self {
         Self { uploads, ..self }
+    }
+
+    /// The same replica with its folder below `root` ([`Root::AppFolder`] unless told otherwise).
+    pub fn with_root(self, root: Root) -> Self {
+        Self {
+            addr: self.addr.with_root(root),
+            ..self
+        }
+    }
+
+    /// The same replica starting from a tree an earlier one learnt ([`GdriveReplica::folders`]).
+    /// A listing from the start forgets it, as it forgets everything else seen.
+    pub fn with_folders(self, folders: Folders) -> Self {
+        let state = State {
+            root: None,
+            folders,
+        };
+        Self {
+            state: Mutex::new(state),
+            ..self
+        }
+    }
+
+    /// The tree learnt so far, for a dataset to keep beside the anchor of the last page it
+    /// applied and hand to the next replica.
+    pub fn folders(&self) -> Folders {
+        self.state().folders.clone()
     }
 
     pub(crate) fn state(&self) -> MutexGuard<'_, State> {
@@ -233,8 +259,11 @@ impl<H: Http> Replica for GdriveReplica<H> {
             // found by asking.
             delta: Delta::Poll,
             quota: QuotaReport::Reported,
-            // The replica touches the app data folder only, whatever the token's scope allows.
-            scope: StorageScope::AppFolder,
+            // The replica touches its root only, whatever the token's scope allows.
+            scope: match self.addr.root() {
+                Root::AppFolder => StorageScope::AppFolder,
+                Root::Drive => StorageScope::Full,
+            },
             // Drive reports an MD5 for each binary file; this build compares SHA-256 only, so
             // an item whose version differs is compared by its bytes.
             hashes: HashKind::Md5,

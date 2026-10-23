@@ -1,14 +1,56 @@
 //! Where things are: the Drive API's URLs on the origin the replica is handed, the query strings
-//! they take, and the dataset's folder below the app data folder.
+//! they take, and the dataset's folder below the root the replica was given (the app data folder
+//! or My Drive).
 
 use porter_core::{Origin, WebUrl};
 use porter_sync::ItemPath;
 
-/// The alias Drive gives the app data folder's id.
-pub const ROOT_ALIAS: &str = "appDataFolder";
-
 /// The fields every file answer is asked for.
 pub const FILE_FIELDS: &str = "id,name,mimeType,parents,version,md5Checksum,size,trashed";
+
+/// The fields a listing of My Drive asks for besides: where a document opens, and what a
+/// shortcut points at.
+const DRIVE_FIELDS: &str = "id,name,mimeType,parents,version,md5Checksum,size,trashed,\
+                            webViewLink,shortcutDetails(targetId,targetMimeType)";
+
+/// Where a replica's paths start.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum Root {
+    /// The app data folder (`spaces=appDataFolder`): what `drive.appdata` reaches.
+    #[default]
+    AppFolder,
+    /// My Drive (`spaces=drive`, the user's own corpus): the whole drive, which the `drive`
+    /// scope reaches. Shared drives, and files shared with the person that are not in My Drive,
+    /// are left out.
+    Drive,
+}
+
+impl Root {
+    /// The alias Drive gives the root's id.
+    pub(crate) fn alias(self) -> &'static str {
+        match self {
+            Root::AppFolder => "appDataFolder",
+            Root::Drive => "root",
+        }
+    }
+
+    /// The space its files are in.
+    pub(crate) fn space(self) -> &'static str {
+        match self {
+            Root::AppFolder => "appDataFolder",
+            Root::Drive => "drive",
+        }
+    }
+
+    /// The fields a listing or a change page asks of each file.
+    pub(crate) fn fields(self) -> &'static str {
+        match self {
+            Root::AppFolder => FILE_FIELDS,
+            Root::Drive => DRIVE_FIELDS,
+        }
+    }
+}
 
 /// A value as a URL query component: everything but unreserved characters percent-encoded.
 pub fn encode(text: &str) -> String {
@@ -57,12 +99,14 @@ pub fn item_path(names: &[String]) -> ItemPath {
     ItemPath(names.join("/"))
 }
 
-/// The dataset's folder in the app data folder, and the origin the API is served from.
+/// The dataset's folder below the root, and the origin the API is served from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Addr {
     /// `scheme://authority`.
     origin: String,
-    /// The folder's names below the app data folder; none is the app data folder itself.
+    /// Where paths start.
+    root: Root,
+    /// The folder's names below the root; none is the root itself.
     folder: Vec<String>,
 }
 
@@ -78,12 +122,23 @@ impl Addr {
             .map_or(text.len(), |at| after + at);
         Self {
             origin: text[..end].to_owned(),
+            root: Root::AppFolder,
             folder: folder
                 .split('/')
                 .filter(|n| !n.is_empty() && *n != "." && *n != "..")
                 .map(str::to_owned)
                 .collect(),
         }
+    }
+
+    /// The same folder below `root`.
+    pub fn with_root(self, root: Root) -> Self {
+        Self { root, ..self }
+    }
+
+    /// Where paths start.
+    pub fn root(&self) -> Root {
+        self.root
     }
 
     /// The API's own origin: a resumable session's URL must be on it.
@@ -111,7 +166,7 @@ impl Addr {
         self.api(&format!("files/{}", encode(id)), pairs)
     }
 
-    /// The dataset's folder as names below the app data folder.
+    /// The dataset's folder as names below the root.
     pub fn folder(&self) -> &[String] {
         &self.folder
     }

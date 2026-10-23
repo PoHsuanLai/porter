@@ -17,6 +17,7 @@
 mod anchor;
 mod change;
 mod dataset;
+mod folders;
 mod item;
 mod journal;
 mod journal_reconcile;
@@ -30,7 +31,8 @@ mod transfer;
 pub use anchor::{Anchor, Cursor};
 pub use change::{Change, ChangePage, More, Tombstone};
 pub use dataset::{ConflictRule, DatasetKind};
-pub use item::{BaseVersion, ContentHash, ItemPath, RemoteId, RemoteItem, RemoteVersion};
+pub use folders::{Folder, Folders, Held};
+pub use item::{BaseVersion, ContentHash, ItemKind, ItemPath, RemoteId, RemoteItem, RemoteVersion};
 pub use journal::{
     Acknowledgement, ItemState, JournalItem, LocalId, Resolution, StoredAnchor, StoredConflict,
     StoredTombstone, TombstoneOrigin,

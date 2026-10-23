@@ -1,9 +1,10 @@
-//! The HTTP over the drive: the Drive v3 requests a replica of the app data folder makes,
+//! The HTTP over the drive: the Drive v3 requests a replica of the app data folder or of My
+//! Drive makes (`spaces=` picks the tree a listing or a change page reads, `drive` unless named),
 //! answered as Drive answers them (`{"error":{"code","errors":[{"reason"}]}}` bodies,
 //! `storageQuotaExceeded` past the limit, `308` between resumable chunks, a page token the
 //! server dropped refused `400`).
 
-use super::drive::{ALIAS, Aim, CHUNK_UNIT, Drive, FOLDER, Node, Refused, checksum};
+use super::drive::{Aim, CHUNK_UNIT, Drive, FOLDER, Node, Refused, SHORTCUT, Space, checksum};
 use crate::http::{Request, Response, percent_decode};
 use serde_json::{Value, json};
 
@@ -27,19 +28,57 @@ fn error(status: u16, reason: &str) -> Response {
     )
 }
 
+/// The page a node opens at in a browser (Drive names one for every file in My Drive).
+fn web_view_link(node: &Node) -> String {
+    match (&node.native, node.is_folder()) {
+        (Some(native), _) if native.mime != SHORTCUT => {
+            format!("https://docs.example.test/d/{}/edit", node.id)
+        }
+        (_, true) => format!("https://drive.example.test/drive/folders/{}", node.id),
+        _ => format!("https://drive.example.test/file/d/{}/view", node.id),
+    }
+}
+
+/// The space `spaces=` names; Drive reads `drive` when it names none.
+fn space_of(request: &Request) -> Space {
+    match request.query_value("spaces") {
+        Some(spaces) if spaces.split(',').any(|s| s.trim() == Space::AppData.name()) => {
+            Space::AppData
+        }
+        _ => Space::Drive,
+    }
+}
+
 /// The file resource of a node.
 pub fn file_json(drive: &Drive, node: &Node) -> Value {
+    let mime = match (&node.native, node.is_folder()) {
+        (Some(native), _) => native.mime.as_str(),
+        (None, true) => FOLDER,
+        (None, false) => "application/octet-stream",
+    };
     let mut file = json!({
         "kind": "drive#file",
         "id": node.id,
         "name": node.name,
-        "mimeType": if node.is_folder() { FOLDER } else { "application/octet-stream" },
+        "mimeType": mime,
         "version": node.version.to_string(),
         "trashed": node.trashed,
-        "spaces": [ALIAS],
+        "spaces": [node.space.name()],
     });
     if let Some(parent) = &node.parent {
         file["parents"] = json!([parent]);
+    }
+    if node.space == Space::Drive {
+        file["webViewLink"] = json!(web_view_link(node));
+    }
+    if let Some(target) = node.native.as_ref().and_then(|n| n.target.as_deref()) {
+        let target_mime = drive.any(target).map_or(FOLDER.to_owned(), |t| {
+            file_json(drive, t)["mimeType"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned()
+        });
+        file["shortcutDetails"] = json!({"targetId": target, "targetMimeType": target_mime});
     }
     if let Some(bytes) = &node.bytes {
         file["size"] = json!(bytes.len().to_string());
@@ -47,7 +86,6 @@ pub fn file_json(drive: &Drive, node: &Node) -> Value {
             file["md5Checksum"] = json!(sum);
         }
     }
-    let _ = drive;
     file
 }
 
@@ -130,7 +168,7 @@ fn list(drive: &Drive, request: &Request) -> Response {
     let q = request.query_value("q").unwrap_or_default();
     let wants = terms(&q);
     let mut nodes: Vec<&Node> = drive
-        .nodes_listed()
+        .nodes_listed(space_of(request))
         .into_iter()
         .filter(|n| {
             wants
@@ -188,7 +226,14 @@ fn changes(drive: &Drive, knobs: DriveKnobs, request: &Request) -> Response {
         .and_then(|s| s.parse::<usize>().ok())
         .filter(|s| *s > 0)
         .unwrap_or(knobs.page);
-    let all = drive.changes_after(token);
+    let space = space_of(request);
+    let my_drive = request.query_value("restrictToMyDrive").as_deref() == Some("true");
+    let all: Vec<&Node> = drive
+        .changes_after(token)
+        .into_iter()
+        .filter(|n| n.space == space && !drive.is_root(&n.id))
+        .filter(|n| !my_drive || drive.in_my_drive(&n.id))
+        .collect();
     let page: Vec<&Node> = all.iter().copied().take(size).collect();
     let mut body = json!({
         "kind": "drive#changeList",
@@ -223,6 +268,10 @@ fn span(header: &str, len: usize) -> Option<(usize, usize)> {
 }
 
 fn media(node: &Node, request: &Request) -> Response {
+    if node.native.is_some() {
+        // A Google document has no bytes of its own; it is exported, not downloaded.
+        return error(403, "fileNotDownloadable");
+    }
     let bytes = node.bytes.as_deref().unwrap_or_default();
     match request.header("range") {
         None => Response::new(200).typed("application/octet-stream", bytes),

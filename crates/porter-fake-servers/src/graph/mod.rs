@@ -1,6 +1,6 @@
 //! A fake Microsoft Graph drive: the part of `/v1.0/me/drive` a replica of OneDrive's app folder
-//! uses (items by id and by path under `special/approot`, content with ranges and redirects,
-//! simple and session uploads, delta, children, quota) and the calendars of `/v1.0/me/calendars`
+//! or of the whole drive uses (items by id and by path under `special/approot` or `root`, content
+//! with ranges and redirects, simple and session uploads, delta of either, children, quota) and the calendars of `/v1.0/me/calendars`
 //! (events, `events/delta`, see `calendar`), behind `Authorization: Bearer`. Plain
 //! HTTP on loopback. The bearer is what accountd's relay adds, so a test asserts that the app
 //! side never sent one.
@@ -181,6 +181,63 @@ impl GraphHandle {
             .drive
             .write(&parent, name, bytes.to_vec())
             .expect("the drive has room");
+    }
+
+    /// Creates or replaces the file at `path` below the drive's root (folders on the way are
+    /// made), as another device of the same account would.
+    pub fn put_root_file(&self, path: &str, bytes: &[u8]) {
+        let names = names_of(path);
+        let mut state = lock(&self.shared.state);
+        let Some((name, folders)) = names.split_last() else {
+            return;
+        };
+        let parent = state
+            .drive
+            .ensure(drive::ROOT, folders)
+            .expect("the folders on the path are folders");
+        state
+            .drive
+            .write(&parent, name, bytes.to_vec())
+            .expect("the drive has room");
+    }
+
+    /// Makes the folders on `path` below the drive's root.
+    pub fn make_root_folder(&self, path: &str) {
+        lock(&self.shared.state)
+            .drive
+            .ensure(drive::ROOT, &names_of(path))
+            .expect("the folders on the path are folders");
+    }
+
+    /// Moves or renames the item at `from` below the drive's root to `to` (the folders on the
+    /// way are made); `false` when there is nothing at `from` or `to` is inside it.
+    pub fn move_root_item(&self, from: &str, to: &str) -> bool {
+        let target = names_of(to);
+        let mut state = lock(&self.shared.state);
+        let Some((name, folders)) = target.split_last() else {
+            return false;
+        };
+        let Some(id) = state
+            .drive
+            .at_from(drive::ROOT, &names_of(from))
+            .map(|n| n.id.clone())
+        else {
+            return false;
+        };
+        let parent = state
+            .drive
+            .ensure(drive::ROOT, folders)
+            .expect("the folders on the path are folders");
+        state.drive.relocate(&id, &parent, name)
+    }
+
+    /// Deletes the item at `path` below the drive's root, and what it holds.
+    pub fn delete_root_item(&self, path: &str) {
+        let mut state = lock(&self.shared.state);
+        let found = state.drive.at_from(drive::ROOT, &names_of(path));
+        if let Some(id) = found.map(|n| n.id.clone()) {
+            state.drive.delete(&id);
+        }
     }
 
     /// Deletes the item at `path` below the app folder.

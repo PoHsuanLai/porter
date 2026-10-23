@@ -135,7 +135,7 @@ pub fn local_changes(known: &[JournalItem], scan: &[Scanned]) -> Vec<LocalChange
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::item::{BaseVersion, RemoteId};
+    use crate::item::{BaseVersion, ItemKind, RemoteId};
 
     fn row(
         local: &str,
@@ -163,6 +163,7 @@ mod tests {
             path: ItemPath(id.into()),
             size: Bytes(1),
             hash: None,
+            kind: ItemKind::File,
         }
     }
 

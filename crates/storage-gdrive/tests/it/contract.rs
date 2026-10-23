@@ -1,7 +1,8 @@
 //! porter-sync's contract tests (`porter-sync/tests/contract.rs`), the same cases, run against the
 //! reference `MemoryReplica` (so the suite is the reference's) and against `GdriveReplica` over the
 //! fake Google's Drive, in two ways it can differ: small files by multipart upload and every file
-//! by resumable session. A rule the memory replica passes, the Drive replica passes.
+//! by resumable session; and once more in My Drive rather than the app data folder. A rule the
+//! memory replica passes, the Drive replica passes.
 
 use crate::common;
 
@@ -14,7 +15,7 @@ use porter_sync::{
     BaseVersion, Blob, ByteRange, Change, Conflict, Cursor, ItemPath, MemoryReplica, More, PutItem,
     PutRefused, PutTarget, Quota, RemoteId, RemoteSide, Replica as _, ReplicaError, Tombstone,
 };
-use storage_gdrive::Uploads;
+use storage_gdrive::{Root, Uploads};
 
 /// A replica under test, its server, and the two knobs the contract needs from a server: an
 /// expired feed and a size limit.
@@ -60,12 +61,27 @@ impl Harness for Memory {
 /// How the Drive replica is set up for a run of the suite.
 trait Setup {
     fn uploads() -> Uploads;
+    fn root() -> Root {
+        Root::AppFolder
+    }
 }
 
 /// Small files in one multipart request (every file the suite writes is small).
 struct Simple;
 /// Every file through a resumable session.
 struct Sessions;
+/// My Drive rather than the app data folder.
+struct MyDrive;
+
+impl Setup for MyDrive {
+    fn uploads() -> Uploads {
+        Uploads::default()
+    }
+
+    fn root() -> Root {
+        Root::Drive
+    }
+}
 
 impl Setup for Simple {
     fn uploads() -> Uploads {
@@ -93,7 +109,7 @@ impl<S: Setup> Harness for Drive<S> {
         if let Some(total) = limit {
             server.google.drive_set_limit(total);
         }
-        let replica = server.replica("", page, S::uploads());
+        let replica = server.replica_at(S::root(), "", page, S::uploads());
         Self {
             server,
             replica,
@@ -392,3 +408,4 @@ macro_rules! suite {
 suite!(memory_reference: Memory);
 suite!(drive_multipart_upload: Drive<Simple>);
 suite!(drive_resumable_session: Drive<Sessions>);
+suite!(drive_my_drive: Drive<MyDrive>);

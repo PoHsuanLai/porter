@@ -65,7 +65,7 @@ impl<H: Http> GraphReplica<H> {
         let response = self.write_send(request).await?;
         match response.status.0 {
             200 | 204 => {
-                self.state().files.remove(&item.0);
+                self.state().folders.remove_file(item);
                 Ok(RemoteVersion(DELETED.to_owned()))
             }
             404 | 412 => Err(self.conflict(&target, &base, false).await),
@@ -121,8 +121,8 @@ impl<H: Http> GraphReplica<H> {
                     .map_err(|_| PutRefused::Transient(RetryAfter(30)))?;
                 if let Some(parent) = item.parent_id() {
                     self.state()
-                        .files
-                        .insert(item.id.clone(), parent.to_owned());
+                        .folders
+                        .insert_file(RemoteId(item.id.clone()), RemoteId(parent.to_owned()));
                 }
                 Ok((
                     RemoteId(item.id),

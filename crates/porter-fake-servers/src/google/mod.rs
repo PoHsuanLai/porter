@@ -10,8 +10,8 @@
 //! `/tasks/v1/users/@me/lists`, `/drive/v3/files`, `/v1/userinfo`), so a provider file rewritten
 //! by [`FakeServer::rewrite`] keeps each row's path and only moves its origin.
 //!
-//! The Drive app data folder (`drive`, `drive_routes`: files, folders, `changes.list`,
-//! multipart and resumable uploads, the quota) and Google Photos (`photos`: the Library API's
+//! Drive's app data folder and My Drive (`drive`, `drive_routes`: files, folders, Google's own
+//! documents and shortcuts, `changes.list`, multipart and resumable uploads, the quota) and Google Photos (`photos`: the Library API's
 //! append-only upload and the Picker API's sessions) are served beside them, with control levers
 //! on [`GoogleHandle`] (another device writes or deletes a file, a person picks photos). A fake
 //! made with [`FakeGoogle::bind_fixed`] accepts fixed bearers (what accountd's relay adds in a
@@ -27,7 +27,7 @@ mod md5;
 mod media;
 mod photos;
 
-pub use drive::{ALIAS, CHUNK_UNIT, FOLDER};
+pub use drive::{ALIAS, CHUNK_UNIT, FOLDER, MY_DRIVE, SHORTCUT};
 pub use drive_routes::DriveKnobs;
 pub use md5::md5_hex;
 pub use media::MediaOrigin;
@@ -59,6 +59,7 @@ pub use tasks::Tasks;
 pub const DEFAULT_ADDRESS: &str = "ada@gmail.com";
 
 const APPDATA: &str = "https://www.googleapis.com/auth/drive.appdata";
+const DRIVE: &str = "https://www.googleapis.com/auth/drive";
 const PHOTOS_UPLOAD: &str = "https://www.googleapis.com/auth/photoslibrary.appendonly";
 const PHOTOS_PICKER: &str = "https://www.googleapis.com/auth/photospicker.mediaitems.readonly";
 
@@ -66,7 +67,8 @@ const PHOTOS_PICKER: &str = "https://www.googleapis.com/auth/photospicker.mediai
 fn wants(request: &Request) -> Option<&'static [&'static str]> {
     let path = request.path();
     if path.starts_with("/drive/v3/") || path.starts_with("/upload/drive/v3/") {
-        return Some(&[APPDATA]);
+        // Either reaches the API; which files a token may see is not checked here.
+        return Some(&[APPDATA, DRIVE]);
     }
     match path {
         "/v1/uploads" | "/v1/mediaItems:batchCreate" | "/v1/albums" => {

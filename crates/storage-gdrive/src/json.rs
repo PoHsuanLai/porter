@@ -1,10 +1,46 @@
 //! What Drive's JSON says, read as far as the replica needs.
 
-use porter_sync::ContentHash;
+use porter_core::WebUrl;
+use porter_sync::{ContentHash, ItemKind};
 use serde::Deserialize;
 
 /// The mime type of a folder.
 pub const FOLDER: &str = "application/vnd.google-apps.folder";
+
+/// The mime type of a shortcut to another file.
+pub const SHORTCUT: &str = "application/vnd.google-apps.shortcut";
+
+/// What Google's own documents' mime types start with: they have no bytes, only a page.
+const NATIVE: &str = "application/vnd.google-apps.";
+
+/// Where a file opens when Drive names no page for it.
+const OPEN: &str = "https://drive.google.com/open?id=";
+
+/// The type each kind of Google document is saved as when a copy is made: the Office type, or
+/// PNG for a drawing. Forms, sites, maps and the rest have none.
+const EXPORTS: &[(&str, &str)] = &[
+    (
+        "application/vnd.google-apps.document",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ),
+    (
+        "application/vnd.google-apps.spreadsheet",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ),
+    (
+        "application/vnd.google-apps.presentation",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ),
+    ("application/vnd.google-apps.drawing", "image/png"),
+];
+
+/// The type a document of `mime` is saved as, if it has one.
+pub fn export_of(mime: &str) -> Option<String> {
+    EXPORTS
+        .iter()
+        .find(|(native, _)| *native == mime)
+        .map(|(_, office)| (*office).to_owned())
+}
 
 /// A file resource.
 #[derive(Debug, Clone, Deserialize)]
@@ -20,6 +56,19 @@ pub struct File {
     /// Drive sends sizes as strings.
     pub size: Option<String>,
     pub trashed: Option<bool>,
+    #[serde(rename = "webViewLink")]
+    pub web_view_link: Option<String>,
+    #[serde(rename = "shortcutDetails")]
+    pub shortcut: Option<ShortcutDetails>,
+}
+
+/// What a shortcut points at.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ShortcutDetails {
+    #[serde(rename = "targetId")]
+    pub target_id: Option<String>,
+    #[serde(rename = "targetMimeType")]
+    pub target_mime: Option<String>,
 }
 
 impl File {
@@ -49,6 +98,33 @@ impl File {
     /// Whether it is in the trash.
     pub fn in_trash(&self) -> bool {
         self.trashed == Some(true)
+    }
+
+    /// What it is in My Drive: a folder, a file with bytes, or a Google document or a shortcut,
+    /// which open online (a shortcut where its target opens). `None` for an online item with no
+    /// page to open.
+    pub fn kind(&self) -> Option<ItemKind> {
+        let mime = self.mime.as_deref().unwrap_or_default();
+        if mime == FOLDER {
+            return Some(ItemKind::Folder);
+        }
+        if mime == SHORTCUT {
+            let target = self.shortcut.as_ref()?;
+            let url = WebUrl::parse(&format!("{OPEN}{}", target.target_id.as_deref()?)).ok()?;
+            let export = target.target_mime.as_deref().and_then(export_of);
+            return Some(ItemKind::Online { url, export });
+        }
+        if !mime.starts_with(NATIVE) {
+            return Some(ItemKind::File);
+        }
+        let url = match self.web_view_link.as_deref() {
+            Some(link) => WebUrl::parse(link).ok()?,
+            None => WebUrl::parse(&format!("{OPEN}{}", self.id)).ok()?,
+        };
+        Some(ItemKind::Online {
+            url,
+            export: export_of(mime),
+        })
     }
 }
 
@@ -151,5 +227,74 @@ mod tests {
             (folder.is_folder(), folder.bytes(), folder.hash()),
             (true, 0, None)
         );
+    }
+
+    #[test]
+    fn a_google_document_opens_online_and_saves_as_its_office_type_and_a_shortcut_as_its_target() {
+        let online = |url: &str, export: Option<&str>| {
+            Some(ItemKind::Online {
+                url: WebUrl::parse(url).expect("url"),
+                export: export.map(str::to_owned),
+            })
+        };
+        let docx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        let xlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        let pptx = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+        let cases: Vec<(&str, &str, Option<ItemKind>)> = vec![
+            (
+                "doc",
+                r#"{"id":"d","mimeType":"application/vnd.google-apps.document","webViewLink":"https://docs.example.test/document/d/d/edit"}"#,
+                online("https://docs.example.test/document/d/d/edit", Some(docx)),
+            ),
+            (
+                "sheet",
+                r#"{"id":"s","mimeType":"application/vnd.google-apps.spreadsheet","webViewLink":"https://docs.example.test/s"}"#,
+                online("https://docs.example.test/s", Some(xlsx)),
+            ),
+            (
+                "slides",
+                r#"{"id":"p","mimeType":"application/vnd.google-apps.presentation","webViewLink":"https://docs.example.test/p"}"#,
+                online("https://docs.example.test/p", Some(pptx)),
+            ),
+            (
+                "drawing",
+                r#"{"id":"w","mimeType":"application/vnd.google-apps.drawing","webViewLink":"https://docs.example.test/w"}"#,
+                online("https://docs.example.test/w", Some("image/png")),
+            ),
+            (
+                "form",
+                r#"{"id":"f","mimeType":"application/vnd.google-apps.form","webViewLink":"https://docs.example.test/f"}"#,
+                online("https://docs.example.test/f", None),
+            ),
+            (
+                "site with no page named",
+                r#"{"id":"t","mimeType":"application/vnd.google-apps.site"}"#,
+                online("https://drive.google.com/open?id=t", None),
+            ),
+            (
+                "shortcut to a sheet",
+                r#"{"id":"c","mimeType":"application/vnd.google-apps.shortcut","shortcutDetails":{"targetId":"s","targetMimeType":"application/vnd.google-apps.spreadsheet"}}"#,
+                online("https://drive.google.com/open?id=s", Some(xlsx)),
+            ),
+            (
+                "shortcut that names no target",
+                r#"{"id":"c2","mimeType":"application/vnd.google-apps.shortcut"}"#,
+                None,
+            ),
+            (
+                "pdf",
+                r#"{"id":"b","mimeType":"application/pdf"}"#,
+                Some(ItemKind::File),
+            ),
+            (
+                "folder",
+                r#"{"id":"o","mimeType":"application/vnd.google-apps.folder"}"#,
+                Some(ItemKind::Folder),
+            ),
+        ];
+        for (name, json, want) in cases {
+            let file: File = serde_json::from_str(json).expect("file");
+            assert_eq!(file.kind(), want, "{name}");
+        }
     }
 }

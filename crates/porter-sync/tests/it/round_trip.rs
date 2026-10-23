@@ -3,7 +3,8 @@
 use porter_core::{Bytes, UnixSeconds};
 use porter_sync::{
     Anchor, BaseVersion, Change, ChangePage, Conflict, ConflictRule, ContentHash, Cursor,
-    DatasetKind, ItemPath, More, Quota, RemoteId, RemoteItem, RemoteSide, RemoteVersion, Tombstone,
+    DatasetKind, ItemKind, ItemPath, More, Quota, RemoteId, RemoteItem, RemoteSide, RemoteVersion,
+    Tombstone,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -36,6 +37,7 @@ fn journal_values_round_trip() {
                 path: ItemPath("Originals/a.jpg".into()),
                 size: Bytes(3),
                 hash: Some(ContentHash("abc".into())),
+                kind: ItemKind::File,
             }),
             Change::Tombstone(Tombstone {
                 id: id.clone(),

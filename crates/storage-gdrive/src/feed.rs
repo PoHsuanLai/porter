@@ -1,31 +1,33 @@
-//! The change feed. The first listing is `files.list` of the app data folder space, page by
-//! page, taken after `changes.getStartPageToken` so nothing between the two is missed; after
-//! it, `changes.list` from the start token. The anchor says where in that the replica is:
-//! `changes:<page token>` or, during the first listing, `list:<start token>:<files page token>`.
+//! The change feed. The first listing is `files.list` of the root's space (the app data folder,
+//! or My Drive: `spaces=drive`, the user's own corpus), page by page, taken after
+//! `changes.getStartPageToken` so nothing between the two is missed; after it, `changes.list`
+//! from the start token (in My Drive restricted to it). The anchor says where in that the replica
+//! is: `changes:<page token>` or, during the first listing, `list:<start token>:<files page
+//! token>`.
 //!
 //! A change names a file by id and parent id and carries no path, so a path is built by walking
 //! the folders seen up to the dataset's folder, asking the server for one that has not been
-//! seen. A deleted folder is reported alone: the files known to have been in it are given
+//! seen; a file whose parents do not lead there (shared with the person, not added to My Drive)
+//! is left out. A deleted folder is reported alone: the files known to have been in it are given
 //! tombstones here.
+//!
+//! An app folder's feed is its files. My Drive's is its folders too, and Google's own documents
+//! and shortcuts as items that open online.
 
-use crate::addr::{FILE_FIELDS, item_path, literal};
+use crate::addr::{Root, item_path, literal};
 use crate::json::{Change as Wire, ChangeList, File, FileList, StartToken};
 use crate::refuse::read_error;
 use crate::replica::GdriveReplica;
 use porter_core::{Bytes, WebUrl};
 use porter_http::{Http, HttpRequest, HttpResponse, Method};
 use porter_sync::{
-    Anchor, Change, ChangePage, Cursor, ItemPath, More, RemoteId, RemoteItem, RemoteVersion,
-    ReplicaError, RetryAfter, Tombstone,
+    Anchor, Change, ChangePage, Cursor, Folder, ItemKind, ItemPath, More, RemoteId, RemoteItem,
+    RemoteVersion, ReplicaError, RetryAfter, Tombstone,
 };
-use std::collections::HashMap;
 use storage_webdav::DELETED;
 
 /// How many folders a path may have above a file before the walk gives up.
 const DEPTH: usize = 64;
-
-/// The space the replica lives in.
-const SPACE: &str = "appDataFolder";
 
 fn busy() -> ReplicaError {
     ReplicaError::Transient(RetryAfter(30))
@@ -103,14 +105,19 @@ impl<H: Http> GdriveReplica<H> {
     }
 
     async fn list_page(&self, start: &str, page: Option<&str>) -> Result<ChangePage, ReplicaError> {
-        let fields = format!("nextPageToken,files({FILE_FIELDS})");
+        let root = self.addr.root();
+        let fields = format!("nextPageToken,files({})", root.fields());
         let page_size = size(self.page);
         let mut pairs = vec![
-            ("spaces", SPACE),
+            ("spaces", root.space()),
             ("q", "trashed = false"),
             ("pageSize", page_size.as_str()),
             ("fields", fields.as_str()),
         ];
+        if root == Root::Drive {
+            // The person's own files, not those of shared drives.
+            pairs.push(("corpora", "user"));
+        }
         if let Some(token) = page {
             pairs.push(("pageToken", token));
         }
@@ -140,16 +147,22 @@ impl<H: Http> GdriveReplica<H> {
     }
 
     async fn change_page(&self, token: &str) -> Result<ChangePage, ReplicaError> {
-        let fields =
-            format!("nextPageToken,newStartPageToken,changes(fileId,removed,file({FILE_FIELDS}))");
+        let root = self.addr.root();
+        let fields = format!(
+            "nextPageToken,newStartPageToken,changes(fileId,removed,file({}))",
+            root.fields()
+        );
         let page_size = size(self.page);
-        let pairs = [
+        let mut pairs = vec![
             ("pageToken", token),
-            ("spaces", SPACE),
+            ("spaces", root.space()),
             ("includeRemoved", "true"),
             ("pageSize", page_size.as_str()),
             ("fields", fields.as_str()),
         ];
+        if root == Root::Drive {
+            pairs.push(("restrictToMyDrive", "true"));
+        }
         let response = self.get_url(self.addr.api("changes", &pairs)).await?;
         if response.status.0 != 200 {
             return Err(Self::resumed(&response));
@@ -168,9 +181,11 @@ impl<H: Http> GdriveReplica<H> {
         })
     }
 
-    /// The app data folder's id.
-    async fn app_root(&self) -> Result<String, ReplicaError> {
-        let url = self.addr.file(crate::addr::ROOT_ALIAS, &[("fields", "id")]);
+    /// The root's id (the app data folder's, or My Drive's).
+    async fn top_id(&self) -> Result<String, ReplicaError> {
+        let url = self
+            .addr
+            .file(self.addr.root().alias(), &[("fields", "id")]);
         let response = self.get_url(url).await?;
         if response.status.0 != 200 {
             return Err(read_error(&response));
@@ -190,12 +205,16 @@ impl<H: Http> GdriveReplica<H> {
             literal(parent),
             literal(name)
         );
-        let fields = format!("files({FILE_FIELDS})");
-        let pairs = [
-            ("spaces", SPACE),
+        let fields = format!("files({})", crate::addr::FILE_FIELDS);
+        let root = self.addr.root();
+        let mut pairs = vec![
+            ("spaces", root.space()),
             ("q", q.as_str()),
             ("fields", fields.as_str()),
         ];
+        if root == Root::Drive {
+            pairs.push(("corpora", "user"));
+        }
         let response = self.get_url(self.addr.api("files", &pairs)).await?;
         if response.status.0 != 200 {
             return Err(read_error(&response));
@@ -257,8 +276,8 @@ impl<H: Http> GdriveReplica<H> {
         if let Some(id) = self.state().root.clone() {
             return Ok(id);
         }
-        let app = self.app_root().await?;
-        let id = self.folder_below(&app, self.addr.folder(), make).await?;
+        let top = self.top_id().await?;
+        let id = self.folder_below(&top, self.addr.folder(), make).await?;
         self.state().root = Some(id.clone());
         Ok(id)
     }
@@ -267,22 +286,32 @@ impl<H: Http> GdriveReplica<H> {
     async fn apply_files(&self, files: Vec<File>) -> Result<Vec<Change>, ReplicaError> {
         self.remember_folders(files.iter());
         let mut changes = Vec::new();
-        for file in files.iter().filter(|f| !f.is_folder()) {
-            changes.extend(self.upsert(file).await?);
+        for file in &files {
+            changes.extend(self.live(file).await?);
         }
         Ok(changes)
+    }
+
+    /// The change a live file is, if the dataset carries it: below an app folder its files,
+    /// in My Drive its folders too and what opens online.
+    async fn live(&self, file: &File) -> Result<Vec<Change>, ReplicaError> {
+        let kind = match self.addr.root() {
+            Root::AppFolder if file.is_folder() => return Ok(Vec::new()),
+            Root::AppFolder => ItemKind::File,
+            Root::Drive => match file.kind() {
+                Some(kind) => kind,
+                None => return Ok(Vec::new()),
+            },
+        };
+        self.upsert(file, kind).await
     }
 
     fn remember_folders<'a>(&self, files: impl Iterator<Item = &'a File>) {
         let mut state = self.state();
         for folder in files.filter(|f| f.is_folder() && !f.in_trash()) {
-            state.folders.insert(
-                folder.id.clone(),
-                (
-                    folder.name.clone().unwrap_or_default(),
-                    folder.parent_id().map(str::to_owned),
-                ),
-            );
+            state
+                .folders
+                .insert_folder(RemoteId(folder.id.clone()), folder_of(folder));
         }
     }
 
@@ -301,9 +330,7 @@ impl<H: Http> GdriveReplica<H> {
             };
             match entry.file {
                 Some(file) if entry.removed != Some(true) && !file.in_trash() => {
-                    if !file.is_folder() {
-                        changes.extend(self.upsert(&file).await?);
-                    }
+                    changes.extend(self.live(&file).await?);
                 }
                 _ => changes.extend(self.gone(&id)),
             }
@@ -320,55 +347,65 @@ impl<H: Http> GdriveReplica<H> {
     }
 
     /// The tombstones a deletion of `id` is: its own, and those of the files it held if it was a
-    /// folder.
+    /// folder (in My Drive, which reports folders as items, of the folders inside it and its own
+    /// too, inner ones first).
     fn gone(&self, id: &str) -> Vec<Change> {
-        let mut state = self.state();
-        let was_folder = state.folders.remove(id).is_some();
-        if !was_folder {
-            state.files.remove(id);
-            return vec![self.tombstone(id)];
-        }
-        let held: Vec<String> = state
-            .files
+        let id = RemoteId(id.to_owned());
+        let Some(held) = self.state().folders.remove(&id) else {
+            return vec![self.tombstone(&id.0)];
+        };
+        let folders = match self.addr.root() {
+            Root::Drive => held.folders.into_iter().chain([id]).collect(),
+            Root::AppFolder => Vec::new(),
+        };
+        held.files
             .iter()
-            .filter(|(_, parent)| below(&state.folders, parent, id))
-            .map(|(file, _)| file.clone())
-            .collect();
-        // Folders inside it are gone with it.
-        let inner: Vec<String> = state
-            .folders
-            .keys()
-            .filter(|folder| below(&state.folders, folder, id))
-            .cloned()
-            .collect();
-        for folder in inner {
-            state.folders.remove(&folder);
-        }
-        for file in &held {
-            state.files.remove(file);
-        }
-        held.iter().map(|file| self.tombstone(file)).collect()
+            .chain(&folders)
+            .map(|gone| self.tombstone(&gone.0))
+            .collect()
     }
 
-    async fn upsert(&self, file: &File) -> Result<Option<Change>, ReplicaError> {
+    async fn upsert(&self, file: &File, kind: ItemKind) -> Result<Vec<Change>, ReplicaError> {
         let (Some(parent), Some(name)) = (file.parent_id(), file.name.as_deref()) else {
-            return Ok(None);
+            return Ok(Vec::new());
         };
+        let id = RemoteId(file.id.clone());
         let Some(path) = self.path_of(parent, name).await? else {
-            // Outside the dataset's folder: a file moved out of it is gone from the dataset.
-            let known = self.state().files.remove(&file.id).is_some();
-            return Ok(known.then(|| self.tombstone(&file.id)));
+            // Outside the dataset's folder: an item moved out of it is gone from the dataset
+            // (in My Drive a folder takes what it held with it).
+            if kind == ItemKind::Folder {
+                return Ok(self.gone_folder(&id));
+            }
+            let known = self.state().folders.remove_file(&id);
+            return Ok(known
+                .then(|| self.tombstone(&file.id))
+                .into_iter()
+                .collect());
         };
-        self.state()
-            .files
-            .insert(file.id.clone(), parent.to_owned());
-        Ok(Some(Change::Upsert(RemoteItem {
-            id: RemoteId(file.id.clone()),
+        if kind != ItemKind::Folder {
+            self.state()
+                .folders
+                .insert_file(id.clone(), RemoteId(parent.to_owned()));
+        }
+        Ok(vec![Change::Upsert(RemoteItem {
+            id,
             version: RemoteVersion(file.version.clone().unwrap_or_default()),
             path,
             size: Bytes(file.bytes()),
             hash: file.hash(),
-        })))
+            kind,
+        })])
+    }
+
+    /// The tombstones of a folder that left the dataset, if it was in it.
+    fn gone_folder(&self, id: &RemoteId) -> Vec<Change> {
+        // The page's folders were remembered before its items, so a folder that moved out is
+        // still in the tree, now under its new parent; one never seen is nothing to remove.
+        let known = self.state().folders.folder(id).is_some();
+        match known {
+            true => self.gone(&id.0),
+            false => Vec::new(),
+        }
     }
 
     /// The path of the file `name` in the folder `parent`, below the dataset's folder; `None`
@@ -386,40 +423,35 @@ impl<H: Http> GdriveReplica<H> {
                 names.reverse();
                 return Ok(Some(item_path(&names)));
             }
-            let known = self.state().folders.get(&at).cloned();
-            let (folder, up) = match known {
+            let id = RemoteId(at.clone());
+            let known = self.state().folders.folder(&id).cloned();
+            let folder = match known {
                 Some(known) => known,
                 None => match self.file_now(&at).await? {
                     Some(file) if file.is_folder() && !file.in_trash() => {
-                        let known = (
-                            file.name.clone().unwrap_or_default(),
-                            file.parent_id().map(str::to_owned),
-                        );
-                        self.state().folders.insert(at.clone(), known.clone());
+                        let known = folder_of(&file);
+                        self.state().folders.insert_folder(id, known.clone());
                         known
                     }
                     _ => return Ok(None),
                 },
             };
-            let Some(up) = up else { return Ok(None) };
-            names.push(folder);
+            let Some(RemoteId(up)) = folder.parent else {
+                return Ok(None);
+            };
+            names.push(folder.name);
             at = up;
         }
         Ok(None)
     }
 }
 
-/// Whether the folder `at` is `ancestor` or inside it, by the folders seen.
-fn below(folders: &HashMap<String, (String, Option<String>)>, at: &str, ancestor: &str) -> bool {
-    let mut current = Some(at);
-    for _ in 0..DEPTH {
-        match current {
-            Some(id) if id == ancestor => return true,
-            Some(id) => current = folders.get(id).and_then(|(_, up)| up.as_deref()),
-            None => return false,
-        }
+/// A folder as the tree keeps it.
+fn folder_of(file: &File) -> Folder {
+    Folder {
+        name: file.name.clone().unwrap_or_default(),
+        parent: file.parent_id().map(|p| RemoteId(p.to_owned())),
     }
-    false
 }
 
 /// A web URL of a Location or other link the server handed back, if it parses.

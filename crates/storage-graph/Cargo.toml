@@ -1,6 +1,6 @@
 [package]
 name = "storage-graph"
-description = "The Microsoft Graph replica: porter-sync's Replica over OneDrive's app folder (`/me/drive/special/approot`). Changes by delta query with the delta link as the anchor (a resync is AnchorExpired), writes guarded by If-Match and conflictBehavior=fail, small files by simple upload and large ones by upload session, quota from the drive. Its HTTP goes through the Http it is handed (in syncd, storage-webdav's StreamHttp over accountd's OpenAuthenticated, which adds the bearer). Pure: no runtime, no socket."
+description = "The Microsoft Graph replica: porter-sync's Replica over OneDrive's app folder (`/me/drive/special/approot`) or the whole drive (`/me/drive/root`). Changes by delta query with the delta link as the anchor (a resync is AnchorExpired), writes guarded by If-Match and conflictBehavior=fail, small files by simple upload and large ones by upload session, quota from the drive. Its HTTP goes through the Http it is handed (in syncd, storage-webdav's StreamHttp over accountd's OpenAuthenticated, which adds the bearer). Pure: no runtime, no socket."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

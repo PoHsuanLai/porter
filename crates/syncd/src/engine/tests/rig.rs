@@ -38,6 +38,9 @@ pub struct Faulty {
     pub inner: MemoryReplica,
     pub changes_fault: Mutex<Option<ReplicaError>>,
     pub put_fault: Mutex<Option<PutRefused>>,
+    /// Changes added to every page the replica answers (a whole drive's folders and online
+    /// items, which the memory replica does not make).
+    pub planted: Mutex<Vec<Change>>,
     pub puts: AtomicUsize,
     pub fetches: AtomicUsize,
 }
@@ -71,7 +74,14 @@ impl Replica for Shared {
         if let Some(fault) = take(&self.0.changes_fault) {
             return Err(fault);
         }
-        self.0.inner.changes(from).await
+        let mut page = self.0.inner.changes(from).await?;
+        let planted = self
+            .0
+            .planted
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        page.changes.extend(planted.iter().cloned());
+        Ok(page)
     }
 
     async fn fetch(&self, item: &RemoteId, range: ByteRange) -> Result<Blob, ReplicaError> {
@@ -133,6 +143,7 @@ impl World {
                 inner,
                 changes_fault: Mutex::default(),
                 put_fault: Mutex::default(),
+                planted: Mutex::default(),
                 puts: AtomicUsize::new(0),
                 fetches: AtomicUsize::new(0),
             }),

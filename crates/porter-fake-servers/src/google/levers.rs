@@ -2,7 +2,7 @@
 //! deleting a file, a person picking photos, and what the fake holds now.
 
 use super::GoogleHandle;
-use super::drive::Node;
+use super::drive::{MY_DRIVE, Node, SHORTCUT};
 use super::photos::{Album, MediaItem, Pick, Session};
 use crate::seen::lock;
 
@@ -16,7 +16,7 @@ fn names_of(path: &str) -> Vec<String> {
 fn path_of(drive: &super::drive::Drive, node: &Node) -> String {
     let mut names = vec![node.name.clone()];
     let mut at = node.parent.as_deref().and_then(|p| drive.any(p));
-    while let Some(parent) = at.filter(|p| p.id != drive.root()) {
+    while let Some(parent) = at.filter(|p| !drive.is_root(&p.id)) {
         names.push(parent.name.clone());
         at = parent.parent.as_deref().and_then(|p| drive.any(p));
     }
@@ -88,6 +88,117 @@ impl GoogleHandle {
             .ensure(folders)
             .expect("the folders on the path are folders");
         state.drive.relocate(&id, Some(name), Some(&parent));
+    }
+
+    /// Creates or replaces the file at `path` below My Drive (folders on the way are made), as
+    /// another device of the same account would.
+    pub fn my_drive_put_file(&self, path: &str, bytes: &[u8]) {
+        let names = names_of(path);
+        let mut state = lock(&self.shared.state);
+        let Some((name, folders)) = names.split_last() else {
+            return;
+        };
+        let drive = &mut state.drive;
+        let parent = drive
+            .ensure_from(MY_DRIVE, folders)
+            .expect("the folders on the path are folders");
+        let over = drive
+            .children(&parent)
+            .into_iter()
+            .find(|n| !n.is_folder() && &n.name == name)
+            .map(|n| n.id.clone());
+        drive
+            .write(&parent, name, bytes.to_vec(), over.as_deref())
+            .expect("the drive has room");
+    }
+
+    /// Makes the folders on `path` below My Drive.
+    pub fn my_drive_folder(&self, path: &str) {
+        lock(&self.shared.state)
+            .drive
+            .ensure_from(MY_DRIVE, &names_of(path))
+            .expect("the folders on the path are folders");
+    }
+
+    /// Plants a Google document of `mime` (`application/vnd.google-apps.document`, `.spreadsheet`,
+    /// `.form`, ...) at `path` below My Drive; its id.
+    pub fn my_drive_document(&self, path: &str, mime: &str) -> String {
+        self.plant(path, mime, None)
+    }
+
+    /// Plants a shortcut at `path` below My Drive to the file `target` (an id); the shortcut's id.
+    pub fn my_drive_shortcut(&self, path: &str, target: &str) -> String {
+        self.plant(path, SHORTCUT, Some(target))
+    }
+
+    fn plant(&self, path: &str, mime: &str, target: Option<&str>) -> String {
+        let names = names_of(path);
+        let (name, folders) = names.split_last().expect("a path");
+        let mut state = lock(&self.shared.state);
+        let drive = &mut state.drive;
+        let parent = drive
+            .ensure_from(MY_DRIVE, folders)
+            .expect("the folders on the path are folders");
+        drive
+            .plant_native(&parent, name, mime, target)
+            .expect("the parent is a folder")
+    }
+
+    /// Plants a file someone shared with the person, in the `drive` space with no parent in My
+    /// Drive; its id.
+    pub fn drive_shared_file(&self, name: &str, bytes: &[u8]) -> String {
+        lock(&self.shared.state)
+            .drive
+            .plant_shared(name, bytes.to_vec())
+    }
+
+    /// Moves or renames the item at `from` below My Drive to `to` (the folders on the way are
+    /// made).
+    pub fn my_drive_move(&self, from: &str, to: &str) {
+        let target = names_of(to);
+        let mut state = lock(&self.shared.state);
+        let Some((name, folders)) = target.split_last() else {
+            return;
+        };
+        let Some(id) = state
+            .drive
+            .at_from(MY_DRIVE, &names_of(from))
+            .map(|n| n.id.clone())
+        else {
+            return;
+        };
+        let parent = state
+            .drive
+            .ensure_from(MY_DRIVE, folders)
+            .expect("the folders on the path are folders");
+        state.drive.relocate(&id, Some(name), Some(&parent));
+    }
+
+    /// Deletes the file or folder at `path` below My Drive permanently.
+    pub fn my_drive_delete(&self, path: &str) {
+        let mut state = lock(&self.shared.state);
+        let found = state.drive.at_from(MY_DRIVE, &names_of(path));
+        if let Some(id) = found.map(|n| n.id.clone()) {
+            state.drive.delete(&id);
+        }
+    }
+
+    /// Puts the file or folder at `path` below My Drive in the trash (only the item itself is
+    /// marked, and reported).
+    pub fn my_drive_trash(&self, path: &str) {
+        let mut state = lock(&self.shared.state);
+        let found = state.drive.at_from(MY_DRIVE, &names_of(path));
+        if let Some(id) = found.map(|n| n.id.clone()) {
+            state.drive.trash(&id, true);
+        }
+    }
+
+    /// The id of the item at `path` below My Drive.
+    pub fn my_drive_id(&self, path: &str) -> Option<String> {
+        lock(&self.shared.state)
+            .drive
+            .at_from(MY_DRIVE, &names_of(path))
+            .map(|n| n.id.clone())
     }
 
     /// The bytes of the file at `path`.

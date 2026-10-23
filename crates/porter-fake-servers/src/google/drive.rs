@@ -1,6 +1,9 @@
-//! The Drive app data folder behind the fake Google: files in a tree below one root (the
-//! `appDataFolder` alias names it), a change counter that `changes.list` reads, and the
-//! resumable uploads in flight. Pure state; `drive_routes` is the HTTP over it.
+//! The Drive behind the fake Google: files in two trees, the app data folder (the `appDataFolder`
+//! alias names its root, in the `appDataFolder` space) and My Drive (the `root` alias, in the
+//! `drive` space, which also holds files shared with the person that have no parent there), one
+//! change counter that `changes.list` reads, and the resumable uploads in flight. My Drive can
+//! hold Google's own documents and shortcuts, which have no bytes. Pure state; `drive_routes` is
+//! the HTTP over it.
 //!
 //! What it keeps from Drive: a file's `version` grows with every change to it; names are not
 //! unique (two files may share one in a folder); `md5Checksum` is the real MD5 of the content;
@@ -13,8 +16,40 @@ use std::collections::BTreeMap;
 
 /// The mime type of a folder.
 pub const FOLDER: &str = "application/vnd.google-apps.folder";
-/// The id the root answers to besides its own.
+/// The id the app data folder's root answers to besides its own.
 pub const ALIAS: &str = "appDataFolder";
+/// The id My Drive's root answers to besides its own.
+pub const MY_DRIVE: &str = "root";
+/// The mime type of a shortcut.
+pub const SHORTCUT: &str = "application/vnd.google-apps.shortcut";
+
+/// Which space a file is in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Space {
+    /// The app data folder.
+    AppData,
+    /// My Drive and what is shared with the person.
+    Drive,
+}
+
+impl Space {
+    /// Its name in `spaces=`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Space::AppData => ALIAS,
+            Space::Drive => "drive",
+        }
+    }
+}
+
+/// What a Google document or a shortcut is, in place of bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Native {
+    /// Its mime type (`application/vnd.google-apps.document`, ...).
+    pub mime: String,
+    /// For a shortcut, the file it points at.
+    pub target: Option<String>,
+}
 /// What a non-final resumable chunk's size must be a multiple of (256 KiB).
 pub const CHUNK_UNIT: usize = 262_144;
 
@@ -37,12 +72,31 @@ pub struct Node {
     pub trashed: bool,
     /// Permanently deleted: only the change log remembers it.
     pub removed: bool,
+    /// The space it is in.
+    pub space: Space,
+    /// A Google document or a shortcut: no bytes, no folder.
+    pub native: Option<Native>,
 }
 
 impl Node {
+    fn new(id: &str, parent: Option<&str>, name: &str, space: Space) -> Self {
+        Self {
+            id: id.to_owned(),
+            parent: parent.map(str::to_owned),
+            name: name.to_owned(),
+            bytes: None,
+            version: 0,
+            changed: 0,
+            trashed: false,
+            removed: false,
+            space,
+            native: None,
+        }
+    }
+
     /// Whether it is a folder.
     pub fn is_folder(&self) -> bool {
-        self.bytes.is_none()
+        self.bytes.is_none() && self.native.is_none()
     }
 
     /// Whether a listing shows it.
@@ -93,25 +147,22 @@ pub struct Drive {
     limit: Option<u64>,
     uploads: BTreeMap<String, Upload>,
     root: String,
+    my_drive: String,
 }
 
 impl Default for Drive {
     fn default() -> Self {
         let root = "0AFakeAppDataRoot".to_owned();
+        let my_drive = "0AFakeMyDriveRoot".to_owned();
         let mut nodes = BTreeMap::new();
-        nodes.insert(
-            root.clone(),
-            Node {
-                id: root.clone(),
-                parent: None,
-                name: ALIAS.to_owned(),
-                bytes: None,
-                version: 1,
-                changed: 0,
-                trashed: false,
-                removed: false,
-            },
-        );
+        for (id, name, space) in [
+            (&root, ALIAS, Space::AppData),
+            (&my_drive, "My Drive", Space::Drive),
+        ] {
+            let mut node = Node::new(id, None, name, space);
+            node.version = 1;
+            nodes.insert(id.clone(), node);
+        }
         Self {
             nodes,
             next: 1,
@@ -120,19 +171,36 @@ impl Default for Drive {
             limit: None,
             uploads: BTreeMap::new(),
             root,
+            my_drive,
         }
     }
 }
 
 impl Drive {
-    /// The root's id.
-    pub fn root(&self) -> &str {
-        &self.root
+    /// The id for an id or an alias.
+    pub fn resolve<'a>(&'a self, id: &'a str) -> &'a str {
+        match id {
+            ALIAS => &self.root,
+            MY_DRIVE => &self.my_drive,
+            _ => id,
+        }
     }
 
-    /// The id for an id or the alias.
-    pub fn resolve<'a>(&'a self, id: &'a str) -> &'a str {
-        if id == ALIAS { &self.root } else { id }
+    /// Whether `id` is one of the two roots.
+    pub fn is_root(&self, id: &str) -> bool {
+        id == self.root || id == self.my_drive
+    }
+
+    /// Whether `id`'s parents lead to My Drive's root (removed nodes keep their parents).
+    pub fn in_my_drive(&self, id: &str) -> bool {
+        let mut at = self.nodes.get(id);
+        while let Some(node) = at {
+            if node.id == self.my_drive {
+                return true;
+            }
+            at = node.parent.as_deref().and_then(|p| self.nodes.get(p));
+        }
+        false
     }
 
     /// The change counter.
@@ -159,17 +227,22 @@ impl Drive {
             .collect()
     }
 
-    /// Every live node but the root, in id order.
+    /// Every live node but the roots, in id order.
     pub fn live(&self) -> Vec<&Node> {
         self.nodes
             .values()
-            .filter(|n| n.live() && n.id != self.root)
+            .filter(|n| n.live() && !self.is_root(&n.id))
             .collect()
     }
 
-    /// The live node at `names` below the root.
+    /// The live node at `names` below the app data folder's root.
     pub fn at(&self, names: &[String]) -> Option<&Node> {
-        names.iter().try_fold(self.get(&self.root)?, |at, name| {
+        self.at_from(&self.root, names)
+    }
+
+    /// The live node at `names` below the folder `from` (an id or an alias).
+    pub fn at_from(&self, from: &str, names: &[String]) -> Option<&Node> {
+        names.iter().try_fold(self.get(from)?, |at, name| {
             self.children(&at.id).into_iter().find(|n| &n.name == name)
         })
     }
@@ -207,33 +280,63 @@ impl Drive {
         format!("1fake{:05}", self.next)
     }
 
+    /// The space of the folder `parent`, if it is a live folder.
+    fn folder_space(&self, parent: &str) -> Option<Space> {
+        self.get(parent).filter(|p| p.is_folder()).map(|p| p.space)
+    }
+
     /// Makes a folder.
     pub fn make_folder(&mut self, parent: &str, name: &str) -> Result<String, Refused> {
         let parent = self.resolve(parent).to_owned();
-        if !self.get(&parent).is_some_and(Node::is_folder) {
-            return Err(Refused::NoParent);
-        }
+        let space = self.folder_space(&parent).ok_or(Refused::NoParent)?;
         let id = self.fresh_id();
-        self.nodes.insert(
-            id.clone(),
-            Node {
-                id: id.clone(),
-                parent: Some(parent),
-                name: name.to_owned(),
-                bytes: None,
-                version: 0,
-                changed: 0,
-                trashed: false,
-                removed: false,
-            },
-        );
+        self.nodes
+            .insert(id.clone(), Node::new(&id, Some(&parent), name, space));
         self.touch(&id);
         Ok(id)
     }
 
-    /// The folders on `names` below the root, made as needed.
+    /// Plants a Google document of `mime` (or, with a `target`, a shortcut to it) in `parent`.
+    pub fn plant_native(
+        &mut self,
+        parent: &str,
+        name: &str,
+        mime: &str,
+        target: Option<&str>,
+    ) -> Result<String, Refused> {
+        let parent = self.resolve(parent).to_owned();
+        let space = self.folder_space(&parent).ok_or(Refused::NoParent)?;
+        let id = self.fresh_id();
+        let mut node = Node::new(&id, Some(&parent), name, space);
+        node.native = Some(Native {
+            mime: mime.to_owned(),
+            target: target.map(str::to_owned),
+        });
+        self.nodes.insert(id.clone(), node);
+        self.touch(&id);
+        Ok(id)
+    }
+
+    /// Plants a file someone shared with the person: in the `drive` space, with no parent the
+    /// person can see.
+    pub fn plant_shared(&mut self, name: &str, bytes: Vec<u8>) -> String {
+        let id = self.fresh_id();
+        let mut node = Node::new(&id, None, name, Space::Drive);
+        node.bytes = Some(bytes);
+        self.nodes.insert(id.clone(), node);
+        self.touch(&id);
+        id
+    }
+
+    /// The folders on `names` below the app data folder's root, made as needed.
     pub fn ensure(&mut self, names: &[String]) -> Result<String, Refused> {
-        let mut at = self.root.clone();
+        let root = self.root.clone();
+        self.ensure_from(&root, names)
+    }
+
+    /// The folders on `names` below the folder `from`, made as needed.
+    pub fn ensure_from(&mut self, from: &str, names: &[String]) -> Result<String, Refused> {
+        let mut at = self.resolve(from).to_owned();
         for name in names {
             let found = self
                 .children(&at)
@@ -276,23 +379,11 @@ impl Drive {
             return Ok(id);
         }
         let parent = self.resolve(parent).to_owned();
-        if !self.get(&parent).is_some_and(Node::is_folder) {
-            return Err(Refused::NoParent);
-        }
+        let space = self.folder_space(&parent).ok_or(Refused::NoParent)?;
         let id = self.fresh_id();
-        self.nodes.insert(
-            id.clone(),
-            Node {
-                id: id.clone(),
-                parent: Some(parent),
-                name: name.to_owned(),
-                bytes: Some(bytes),
-                version: 0,
-                changed: 0,
-                trashed: false,
-                removed: false,
-            },
-        );
+        let mut node = Node::new(&id, Some(&parent), name, space);
+        node.bytes = Some(bytes);
+        self.nodes.insert(id.clone(), node);
         self.touch(&id);
         Ok(id)
     }
@@ -397,12 +488,13 @@ pub fn checksum(node: &Node) -> Option<String> {
 }
 
 impl Drive {
-    /// Every live node but the root, the way a listing shows them (trashed ones are filtered by
-    /// the query, as Drive does: a plain listing includes them).
-    pub fn nodes_listed(&self) -> Vec<&Node> {
+    /// Every node but the roots in `space` that has not been permanently deleted, the way a
+    /// listing shows them (trashed ones are filtered by the query, as Drive does: a plain listing
+    /// includes them).
+    pub fn nodes_listed(&self, space: Space) -> Vec<&Node> {
         self.nodes
             .values()
-            .filter(|n| !n.removed && n.id != self.root)
+            .filter(|n| !n.removed && !self.is_root(&n.id) && n.space == space)
             .collect()
     }
 }

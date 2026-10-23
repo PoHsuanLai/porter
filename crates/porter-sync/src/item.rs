@@ -1,6 +1,6 @@
 //! A remote item and the versions a write is checked against.
 
-use porter_core::Bytes;
+use porter_core::{Bytes, WebUrl};
 use serde::{Deserialize, Serialize};
 
 /// A replica's own id for an item (a Drive file id, a WebDAV href).
@@ -33,6 +33,35 @@ pub enum BaseVersion {
     At(RemoteVersion),
 }
 
+/// What an item is. A replica of an app folder reports files only; one of a whole drive reports
+/// its folders too, and the documents that live only online.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "v", rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum ItemKind {
+    /// A file whose bytes `fetch` reads.
+    #[default]
+    File,
+    /// A folder; it has no bytes.
+    Folder,
+    /// A document that lives only online (a Google Doc, a shortcut): it has no bytes to fetch and
+    /// is opened at `url`.
+    Online {
+        /// Where it opens in a browser.
+        url: WebUrl,
+        /// The MIME type a copy of it is saved as (an Office type, or PNG for a drawing), or
+        /// `None` when it cannot be saved as a file (a form, a site, a map).
+        export: Option<String>,
+    },
+}
+
+impl ItemKind {
+    /// Whether it is a file with bytes.
+    pub fn is_file(&self) -> bool {
+        matches!(self, ItemKind::File)
+    }
+}
+
 /// One live item as the change feed reports it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct RemoteItem {
@@ -46,4 +75,33 @@ pub struct RemoteItem {
     pub size: Bytes,
     /// Its content hash, when the replica reports one.
     pub hash: Option<ContentHash>,
+    /// What it is; a file when the form names none.
+    #[serde(default)]
+    pub kind: ItemKind,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_kind_pins_its_form_and_an_item_that_names_none_is_a_file() {
+        let online = ItemKind::Online {
+            url: WebUrl::parse("https://docs.example.test/d/1").expect("url"),
+            export: Some("image/png".into()),
+        };
+        let json = serde_json::to_string(&online).expect("json");
+        assert_eq!(
+            json,
+            r#"{"kind":"online","v":{"url":"https://docs.example.test/d/1","export":"image/png"}}"#
+        );
+        assert_eq!(
+            serde_json::from_str::<ItemKind>(&json).expect("kind"),
+            online
+        );
+        let old = r#"{"id":"1","version":"v","path":"a.txt","size":3,"hash":null}"#;
+        let item: RemoteItem = serde_json::from_str(old).expect("item");
+        assert_eq!(item.kind, ItemKind::File);
+        assert!(item.kind.is_file() && !ItemKind::Folder.is_file() && !online.is_file());
+    }
 }

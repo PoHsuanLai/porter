@@ -1,5 +1,5 @@
-//! The HTTP over the drive: the Graph requests a drive-item replica makes, answered as Graph
-//! answers them (error bodies `{"error":{"code",...}}`, `412` on a stale `If-Match`, `409
+//! The HTTP over the drive: the Graph requests a drive-item replica makes, below the app folder
+//! (`special/approot`) or the drive's root (`root`), answered as Graph answers them (error bodies `{"error":{"code",...}}`, `412` on a stale `If-Match`, `409
 //! nameAlreadyExists` under `conflictBehavior=fail`, `507` past the quota, `410 resyncRequired`
 //! for a delta token the server has dropped, upload sessions, redirected downloads).
 
@@ -110,16 +110,28 @@ fn drive_children(drive: &Drive, id: &str) -> usize {
 /// What a request addresses.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Address {
-    /// `special/approot`, or a path below it.
-    App(Vec<String>),
+    /// A path below the folder `.0` (the app folder for `special/approot`, the root for
+    /// `root`); no names is that folder.
+    Below(String, Vec<String>),
     /// `items/{id}`.
     Item(String),
 }
 
 /// An address and what is asked of it (`content`, `delta`, ...; empty for the item itself).
-fn route(path: &str) -> Option<(Address, String)> {
+fn route(drive: &Drive, path: &str) -> Option<(Address, String)> {
     let rest = path.strip_prefix(DRIVE)?.strip_prefix('/')?;
-    if let Some(rest) = rest.strip_prefix("special/approot") {
+    let tops = [
+        ("special/approot", drive.approot()),
+        ("root", super::drive::ROOT),
+    ];
+    for (top, from) in tops {
+        let Some(rest) = rest.strip_prefix(top) else {
+            continue;
+        };
+        if !(rest.is_empty() || rest.starts_with('/') || rest.starts_with(':')) {
+            continue;
+        }
+        let from = from.to_owned();
         return match rest.strip_prefix(":/") {
             Some(after) => {
                 let (names, op) = after.split_once(':').unwrap_or((after, ""));
@@ -128,10 +140,13 @@ fn route(path: &str) -> Option<(Address, String)> {
                     .filter(|s| !s.is_empty())
                     .map(percent_decode)
                     .collect();
-                Some((Address::App(names), op.trim_start_matches('/').to_owned()))
+                Some((
+                    Address::Below(from, names),
+                    op.trim_start_matches('/').to_owned(),
+                ))
             }
             None => Some((
-                Address::App(Vec::new()),
+                Address::Below(from, Vec::new()),
                 rest.trim_start_matches('/').to_owned(),
             )),
         };
@@ -191,11 +206,11 @@ fn store(
                 Err(why) => refused(why),
             }
         }
-        Address::App(names) => {
+        Address::Below(from, names) => {
             let Some((name, folders)) = names.split_last() else {
                 return error(400, "invalidRequest");
             };
-            if let Some(node) = drive.at(names) {
+            if let Some(node) = drive.at_from(from, names) {
                 if fail {
                     return error(409, "nameAlreadyExists");
                 }
@@ -205,9 +220,8 @@ fn store(
             } else if if_match.is_some() {
                 return error(404, "itemNotFound");
             }
-            let existed = drive.at(names).is_some();
-            let approot = drive.approot().to_owned();
-            let parent = match drive.ensure(&approot, folders) {
+            let existed = drive.at_from(from, names).is_some();
+            let parent = match drive.ensure(from, folders) {
                 Ok(parent) => parent,
                 Err(why) => return refused(why),
             };
@@ -222,14 +236,14 @@ fn store(
 fn aim_of(drive: &Drive, address: &Address) -> Aim {
     match address {
         Address::Item(id) => Aim::Item(id.clone()),
-        Address::App(names) => match drive.at(names) {
+        Address::Below(from, names) => match drive.at_from(from, names) {
             Some(node) => Aim::Item(node.id.clone()),
             None => {
                 let (name, folders) = names
                     .split_last()
                     .map(|(name, folders)| (name.clone(), folders.to_vec()))
                     .unwrap_or_default();
-                Aim::New(folders, name)
+                Aim::New(from.clone(), folders, name)
             }
         },
     }
@@ -342,7 +356,7 @@ fn create_session(state: &mut State, link: &str, address: &Address, request: &Re
     match &aim {
         Aim::Item(id) => match drive.live(id) {
             None => return error(404, "itemNotFound"),
-            Some(_) if matches!(address, Address::App(_)) && fail => {
+            Some(_) if matches!(address, Address::Below(..)) && fail => {
                 return error(409, "nameAlreadyExists");
             }
             Some(node) if !matches_etag(node, if_match.as_deref()) => {
@@ -394,9 +408,9 @@ fn upload_chunk(state: &mut State, session: &str, request: &Request) -> Response
     };
     let address = match done.aim {
         Aim::Item(id) => Address::Item(id),
-        Aim::New(mut folders, name) => {
+        Aim::New(from, mut folders, name) => {
             folders.push(name);
-            Address::App(folders)
+            Address::Below(from, folders)
         }
     };
     store(
@@ -412,7 +426,7 @@ fn children(state: &mut State, address: &Address, request: &Request) -> Response
     let drive = &mut state.drive;
     let parent = match address {
         Address::Item(id) => id.clone(),
-        Address::App(names) => match drive.at(names) {
+        Address::Below(from, names) => match drive.at_from(from, names) {
             Some(node) => node.id.clone(),
             None => return error(404, "itemNotFound"),
         },
@@ -504,13 +518,13 @@ pub fn answer(
     ) {
         return response;
     }
-    let Some((address, op)) = route(&path) else {
+    let Some((address, op)) = route(&state.drive, &path) else {
         return error(404, "itemNotFound");
     };
     let method = request.method.as_str();
     let node = match &address {
         Address::Item(id) => state.drive.live(id),
-        Address::App(names) => state.drive.at(names),
+        Address::Below(from, names) => state.drive.at_from(from, names),
     };
     let if_match = request.header("if-match");
     match (method, op.as_str()) {

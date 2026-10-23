@@ -4,7 +4,7 @@
 use crate::path::Root;
 use porter_core::Bytes;
 use porter_dav::{Multistatus, names};
-use porter_sync::{RemoteId, RemoteItem, RemoteVersion};
+use porter_sync::{ItemKind, RemoteId, RemoteItem, RemoteVersion};
 
 /// `DAV:getcontentlength`.
 pub const CONTENT_LENGTH: &str = "DAV:getcontentlength";
@@ -41,6 +41,7 @@ impl Entry {
             path: root.item_path(&self.id)?,
             size: self.size,
             hash: None,
+            kind: ItemKind::File,
         })
     }
 }

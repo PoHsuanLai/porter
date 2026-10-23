@@ -5,6 +5,7 @@ mod contract;
 mod fixtures;
 mod graph;
 mod linked;
+mod whole_drive;
 
 #[test]
 fn every_module_is_declared() {

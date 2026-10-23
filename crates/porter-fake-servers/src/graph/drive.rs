@@ -1,6 +1,7 @@
 //! The drive behind the fake Graph: items in a tree (a root, the `Apps/Quire` folder that is the
-//! app folder, whatever the app made below it), a change counter that delta queries read, and the
-//! upload sessions in flight. Pure state; `routes` is the HTTP over it.
+//! app folder, whatever the app made below it and whatever else the drive holds), a change
+//! counter that delta queries read, and the upload sessions in flight. Pure state; `routes` is
+//! the HTTP over it.
 //!
 //! What it keeps from OneDrive: an item's `eTag` is `"{ID},version"` with its quotes and changes
 //! with every write; a parent folder changes when a child does; a deleted folder is reported once,
@@ -82,8 +83,9 @@ pub enum Refused {
 pub enum Aim {
     /// An item that exists.
     Item(String),
-    /// A new item: the folder names below the app folder, then the file's name.
-    New(Vec<String>, String),
+    /// A new item: the folder the names start at (the app folder or the root), the folder names
+    /// below it, then the file's name.
+    New(String, Vec<String>, String),
 }
 
 /// An upload session in flight.
@@ -205,11 +207,14 @@ impl Drive {
 
     /// The live item at `names` below the app folder; no names is the app folder.
     pub fn at(&self, names: &[String]) -> Option<&Node> {
+        self.at_from(&self.approot, names)
+    }
+
+    /// The live item at `names` below the folder `from`; no names is `from` itself.
+    pub fn at_from(&self, from: &str, names: &[String]) -> Option<&Node> {
         names
             .iter()
-            .try_fold(self.live(&self.approot)?, |at, name| {
-                self.child(&at.id, name)
-            })
+            .try_fold(self.live(from)?, |at, name| self.child(&at.id, name))
     }
 
     /// Whether `id` is `scope` or below it (deleted items keep their parents).
@@ -345,6 +350,24 @@ impl Drive {
             .and_then(|n| Some((n.parent.clone()?, n.name.clone())))
             .ok_or(Refused::Blocked)?;
         self.write(&parent, &name, bytes).map(|_| ())
+    }
+
+    /// Moves the live item `id` into the folder `parent` as `name`; `false` if either is missing,
+    /// `parent` is not a folder or is the item or inside it.
+    pub fn relocate(&mut self, id: &str, parent: &str, name: &str) -> bool {
+        let fits = self.live(parent).is_some_and(|p| p.body == Body::Folder)
+            && self.live(id).is_some()
+            && !self.within(parent, id);
+        if !fits {
+            return false;
+        }
+        if let Some(node) = self.nodes.get_mut(id) {
+            node.parent = Some(parent.to_owned());
+            node.name = name.to_owned();
+            node.version += 1;
+        }
+        self.touch(id);
+        true
     }
 
     /// Deletes an item and everything below it; only the item itself is reported by delta.

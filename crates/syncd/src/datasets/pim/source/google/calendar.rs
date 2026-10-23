@@ -15,7 +15,9 @@ use crate::datasets::pim::PimKind;
 use crate::datasets::pim::discover::{DiscoverError, Found};
 use porter_client::{Accounts, Transport};
 use porter_core::{Bytes, EndpointUrl, GrantId, WebUrl};
-use porter_sync::{More, RemoteId, RemoteItem, RemoteVersion, ReplicaError, RetryAfter, Tombstone};
+use porter_sync::{
+    ItemKind, More, RemoteId, RemoteItem, RemoteVersion, ReplicaError, RetryAfter, Tombstone,
+};
 use serde::Deserialize;
 use std::sync::Arc;
 use storage_webdav::{Clock, DELETED};
@@ -147,6 +149,7 @@ impl<T: Transport> GoogleCalendarFeed<T> {
                 path: name_of(&event.id),
                 size: Bytes(ics.len() as u64),
                 hash: Some(fingerprint(&ics)),
+                kind: ItemKind::File,
             },
             content: Some(ics),
         })

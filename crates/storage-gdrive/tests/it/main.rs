@@ -3,6 +3,7 @@
 mod common;
 mod contract;
 mod gdrive;
+mod my_drive;
 
 #[test]
 fn every_module_is_declared() {

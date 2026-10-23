@@ -1,8 +1,9 @@
 //! porter-sync's contract tests (`porter-sync/tests/contract.rs`), the same cases, run against the
 //! reference `MemoryReplica` (so the suite is the reference's) and against `GraphReplica` over the
 //! fake Graph drive, in three ways it can differ: small files by simple upload, every file by
-//! upload session, and downloads redirected to a pre-authenticated URL. A rule the memory replica
-//! passes, the Graph replica passes.
+//! upload session, and downloads redirected to a pre-authenticated URL; and once more over the
+//! whole drive rather than the app folder. A rule the memory replica passes, the Graph replica
+//! passes.
 
 use crate::common;
 
@@ -16,7 +17,7 @@ use porter_sync::{
     BaseVersion, Blob, ByteRange, Change, Conflict, Cursor, ItemPath, MemoryReplica, More, PutItem,
     PutRefused, PutTarget, Quota, RemoteId, RemoteSide, Replica as _, ReplicaError, Tombstone,
 };
-use storage_graph::Uploads;
+use storage_graph::{Root, Uploads};
 
 /// A replica under test, its server, and the two knobs the contract needs from a server: an
 /// expired feed and a size limit.
@@ -63,6 +64,9 @@ impl Harness for Memory {
 trait Setup {
     fn uploads() -> Uploads;
     fn knobs() -> Knobs;
+    fn root() -> Root {
+        Root::AppFolder
+    }
 }
 
 /// Small files in one PUT (every file the suite writes is small).
@@ -71,6 +75,8 @@ struct Simple;
 struct Sessions;
 /// Downloads redirected.
 struct Redirected;
+/// The whole drive, below its root.
+struct WholeDrive;
 
 impl Setup for Simple {
     fn uploads() -> Uploads {
@@ -105,6 +111,20 @@ impl Setup for Redirected {
     }
 }
 
+impl Setup for WholeDrive {
+    fn uploads() -> Uploads {
+        Uploads::default()
+    }
+
+    fn knobs() -> Knobs {
+        Knobs::default()
+    }
+
+    fn root() -> Root {
+        Root::Drive
+    }
+}
+
 struct Graph<S: Setup> {
     server: Server,
     replica: Replica,
@@ -120,7 +140,7 @@ impl<S: Setup> Harness for Graph<S> {
         if let Some(total) = limit {
             server.graph.set_limit(total);
         }
-        let replica = server.replica("", page, S::uploads());
+        let replica = server.replica_at(S::root(), "", page, S::uploads());
         Self {
             server,
             replica,
@@ -420,3 +440,4 @@ suite!(memory_reference: Memory);
 suite!(graph_simple_upload: Graph<Simple>);
 suite!(graph_upload_session: Graph<Sessions>);
 suite!(graph_redirected_download: Graph<Redirected>);
+suite!(graph_whole_drive: Graph<WholeDrive>);

@@ -3,7 +3,7 @@
 
 use crate::anchor::{Anchor, Cursor};
 use crate::change::{Change, ChangePage, More, Tombstone};
-use crate::item::{BaseVersion, RemoteId, RemoteItem, RemoteVersion};
+use crate::item::{BaseVersion, ItemKind, RemoteId, RemoteItem, RemoteVersion};
 use crate::quota::Quota;
 use crate::refusal::{Conflict, PutRefused, RemoteSide, ReplicaError};
 use crate::replica::Replica;
@@ -208,6 +208,7 @@ impl Replica for MemoryReplica {
             path,
             size,
             hash: item.hash,
+            kind: ItemKind::File,
         };
         state.log.push((seq, Change::Upsert(stored.clone())));
         state.deleted.remove(&id);

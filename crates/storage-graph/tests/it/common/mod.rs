@@ -8,7 +8,7 @@ use porter_fake_servers::{FakeGraph, GraphHandle, Running};
 use porter_http::{Header, Http, HttpError, HttpRequest, HttpResponse};
 use std::future::Future;
 use std::io;
-use storage_graph::{Clock, Dial, GraphReplica, StreamHttp, StreamLimits, Uploads};
+use storage_graph::{Clock, Dial, GraphReplica, Root, StreamHttp, StreamLimits, Uploads};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
@@ -94,7 +94,13 @@ impl Server {
     /// A replica of `folder` below the app folder with delta pages of `page` items and these
     /// upload limits; each call is a new replica (a new process, as far as caches go).
     pub fn replica(&self, folder: &str, page: usize, uploads: Uploads) -> Replica {
+        self.replica_at(Root::AppFolder, folder, page, uploads)
+    }
+
+    /// The same, of `folder` below `root`.
+    pub fn replica_at(&self, root: Root, folder: &str, page: usize, uploads: Uploads) -> Replica {
         GraphReplica::new(client(self.port), &self.base, folder, Clock::fixed(NOW))
+            .with_root(root)
             .with_page(page)
             .with_uploads(uploads)
     }
