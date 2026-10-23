@@ -432,7 +432,7 @@ dependencies = [
 [[package]]
 name = "chordkit"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/chordkit.git?rev=934a2d71f6516bee5919ee29278003702a4ea5e1#934a2d71f6516bee5919ee29278003702a4ea5e1"
+source = "git+https://github.com/PoHsuanLai/chordkit.git?rev=99eec9ddd03ee345b669fcc7954ed44590724290#99eec9ddd03ee345b669fcc7954ed44590724290"
 dependencies = [
  "thiserror",
 ]
@@ -707,7 +707,7 @@ dependencies = [
 [[package]]
 name = "ds-behaviour"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=3882bc95979b9fcb65aa17d596f6628c1bb982b8#3882bc95979b9fcb65aa17d596f6628c1bb982b8"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=7fa27afc834e8365b356e7a0db94b269e62aaaf6#7fa27afc834e8365b356e7a0db94b269e62aaaf6"
 dependencies = [
  "ds-core",
 ]
@@ -715,7 +715,7 @@ dependencies = [
 [[package]]
 name = "ds-core"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=3882bc95979b9fcb65aa17d596f6628c1bb982b8#3882bc95979b9fcb65aa17d596f6628c1bb982b8"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=7fa27afc834e8365b356e7a0db94b269e62aaaf6#7fa27afc834e8365b356e7a0db94b269e62aaaf6"
 dependencies = [
  "chordkit",
  "ds-core-derive",
@@ -728,7 +728,7 @@ dependencies = [
 [[package]]
 name = "ds-core-derive"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=3882bc95979b9fcb65aa17d596f6628c1bb982b8#3882bc95979b9fcb65aa17d596f6628c1bb982b8"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=7fa27afc834e8365b356e7a0db94b269e62aaaf6#7fa27afc834e8365b356e7a0db94b269e62aaaf6"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -739,7 +739,7 @@ dependencies = [
 [[package]]
 name = "ds-helpers"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=3882bc95979b9fcb65aa17d596f6628c1bb982b8#3882bc95979b9fcb65aa17d596f6628c1bb982b8"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=7fa27afc834e8365b356e7a0db94b269e62aaaf6#7fa27afc834e8365b356e7a0db94b269e62aaaf6"
 dependencies = [
  "ds-peer",
  "rustix",
@@ -751,7 +751,7 @@ dependencies = [
 [[package]]
 name = "ds-peer"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=3882bc95979b9fcb65aa17d596f6628c1bb982b8#3882bc95979b9fcb65aa17d596f6628c1bb982b8"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=7fa27afc834e8365b356e7a0db94b269e62aaaf6#7fa27afc834e8365b356e7a0db94b269e62aaaf6"
 dependencies = [
  "futures-timer",
  "thiserror",
@@ -760,7 +760,7 @@ dependencies = [
 [[package]]
 name = "ds-settings"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=3882bc95979b9fcb65aa17d596f6628c1bb982b8#3882bc95979b9fcb65aa17d596f6628c1bb982b8"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=7fa27afc834e8365b356e7a0db94b269e62aaaf6#7fa27afc834e8365b356e7a0db94b269e62aaaf6"
 dependencies = [
  "ds-behaviour",
  "ds-core",
@@ -770,6 +770,7 @@ dependencies = [
  "ds-style",
  "futures-timer",
  "notify",
+ "objc2-core-foundation",
  "serde",
  "serde_json",
  "thiserror",
@@ -781,7 +782,7 @@ dependencies = [
 [[package]]
 name = "ds-settings-derive"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=3882bc95979b9fcb65aa17d596f6628c1bb982b8#3882bc95979b9fcb65aa17d596f6628c1bb982b8"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=7fa27afc834e8365b356e7a0db94b269e62aaaf6#7fa27afc834e8365b356e7a0db94b269e62aaaf6"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -791,7 +792,7 @@ dependencies = [
 [[package]]
 name = "ds-style"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/quire.git?rev=3882bc95979b9fcb65aa17d596f6628c1bb982b8#3882bc95979b9fcb65aa17d596f6628c1bb982b8"
+source = "git+https://github.com/PoHsuanLai/quire.git?rev=7fa27afc834e8365b356e7a0db94b269e62aaaf6#7fa27afc834e8365b356e7a0db94b269e62aaaf6"
 dependencies = [
  "ds-core",
  "ds-core-derive",
@@ -856,7 +857,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1677,7 +1678,7 @@ dependencies = [
 [[package]]
 name = "latchkey"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/latchkey?rev=c6cad1521f1efdc66fcc0f398029324e315a12ab#c6cad1521f1efdc66fcc0f398029324e315a12ab"
+source = "git+https://github.com/PoHsuanLai/latchkey?rev=b10ae1b8c49c55cce2c5affde8f5db76edb66ab4#b10ae1b8c49c55cce2c5affde8f5db76edb66ab4"
 dependencies = [
  "interprocess",
  "rustix",
@@ -2050,6 +2051,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "objc2-core-foundation"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2a180dd8642fa45cdb7dd721cd4c11b1cadd4929ce112ebd8b9f5803cc79d536"
+dependencies = [
+ "bitflags",
 ]
 
 [[package]]
@@ -3005,7 +3015,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3474,10 +3484,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3859,7 +3869,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
