@@ -802,7 +802,11 @@ mod tests {
         let (dir, mut world) = world();
         let beach = path(&dir, "OneDrive/Pictures/Beach.jpg");
         let mut changed = Changed::new();
-        assert!(world.download(std::slice::from_ref(&beach), &mut changed).is_empty());
+        assert!(
+            world
+                .download(std::slice::from_ref(&beach), &mut changed)
+                .is_empty()
+        );
         assert_eq!(state(&world, &beach), "downloading");
         let mut ticks = 0;
         while state(&world, &beach) == "downloading" {
