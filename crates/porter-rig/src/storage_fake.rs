@@ -391,19 +391,19 @@ impl World {
                 Some("Sign in again to see this drive's files.".into()),
             )?,
             ("pause", [drive]) => self.set_drive(drive, DriveState::Paused, None)?,
-            ("upload", [path @ ..]) if !path.is_empty() => {
+            ("upload", path) if !path.is_empty() => {
                 self.set_item(&joined(path), ItemState::Uploading, None, &mut changed)?;
                 false
             }
-            ("wait", [path @ ..]) if !path.is_empty() => {
+            ("wait", path) if !path.is_empty() => {
                 self.set_item(&joined(path), ItemState::Waiting, None, &mut changed)?;
                 false
             }
-            ("conflict", [path @ ..]) if !path.is_empty() => {
+            ("conflict", path) if !path.is_empty() => {
                 self.set_item(&joined(path), ItemState::Conflict, None, &mut changed)?;
                 false
             }
-            ("error", [path @ ..]) if !path.is_empty() => {
+            ("error", path) if !path.is_empty() => {
                 self.set_item(
                     &joined(path),
                     ItemState::Error,
