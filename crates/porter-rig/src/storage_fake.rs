@@ -11,8 +11,8 @@
 use porter_dbus::{
     DRIVE_KEY_ACCOUNT, DRIVE_KEY_LABEL, DRIVE_KEY_PATH, DRIVE_KEY_PROVIDER, DRIVE_KEY_STATE,
     DRIVE_KEY_TOTAL, DRIVE_KEY_USED, DRIVE_KEY_WORDS, Details, DriveState, ITEM_KEY_FRACTION,
-    ITEM_KEY_KEPT, ITEM_KEY_KIND, ITEM_KEY_STATE, ITEM_KEY_WORDS, ItemDetails, ItemKind,
-    ItemState, Refused, STORAGE_PATH,
+    ITEM_KEY_KEPT, ITEM_KEY_KIND, ITEM_KEY_STATE, ITEM_KEY_WORDS, ItemDetails, ItemKind, ItemState,
+    Refused, STORAGE_PATH,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -79,19 +79,97 @@ pub struct World {
 
 /// Each file the fake plants: its drive, its path under the drive, its kind and its state.
 const PLANTED: &[(&str, &str, ItemKind, ItemState, bool)] = &[
-    ("onedrive", "Documents", ItemKind::Folder, ItemState::Cloud, false),
-    ("onedrive", "Documents/Report.docx", ItemKind::File, ItemState::Cloud, false),
-    ("onedrive", "Documents/Notes.txt", ItemKind::File, ItemState::Downloaded, false),
-    ("onedrive", "Documents/Taxes 2025.pdf", ItemKind::File, ItemState::Downloaded, true),
-    ("onedrive", "Pictures", ItemKind::Folder, ItemState::Cloud, false),
-    ("onedrive", "Pictures/Beach.jpg", ItemKind::File, ItemState::Cloud, false),
-    ("onedrive", "Pictures/Garden.jpg", ItemKind::File, ItemState::Waiting, false),
-    ("onedrive", "Budget.xlsx", ItemKind::File, ItemState::Conflict, false),
-    ("gdrive", "Projects", ItemKind::Folder, ItemState::Cloud, false),
-    ("gdrive", "Projects/Plan.gdoc", ItemKind::Online, ItemState::Cloud, false),
-    ("gdrive", "Projects/Sketch.png", ItemKind::File, ItemState::Cloud, false),
-    ("gdrive", "Projects/Old draft.odt", ItemKind::File, ItemState::Error, false),
-    ("gdrive", "Recipes.pdf", ItemKind::File, ItemState::Downloaded, false),
+    (
+        "onedrive",
+        "Documents",
+        ItemKind::Folder,
+        ItemState::Cloud,
+        false,
+    ),
+    (
+        "onedrive",
+        "Documents/Report.docx",
+        ItemKind::File,
+        ItemState::Cloud,
+        false,
+    ),
+    (
+        "onedrive",
+        "Documents/Notes.txt",
+        ItemKind::File,
+        ItemState::Downloaded,
+        false,
+    ),
+    (
+        "onedrive",
+        "Documents/Taxes 2025.pdf",
+        ItemKind::File,
+        ItemState::Downloaded,
+        true,
+    ),
+    (
+        "onedrive",
+        "Pictures",
+        ItemKind::Folder,
+        ItemState::Cloud,
+        false,
+    ),
+    (
+        "onedrive",
+        "Pictures/Beach.jpg",
+        ItemKind::File,
+        ItemState::Cloud,
+        false,
+    ),
+    (
+        "onedrive",
+        "Pictures/Garden.jpg",
+        ItemKind::File,
+        ItemState::Waiting,
+        false,
+    ),
+    (
+        "onedrive",
+        "Budget.xlsx",
+        ItemKind::File,
+        ItemState::Conflict,
+        false,
+    ),
+    (
+        "gdrive",
+        "Projects",
+        ItemKind::Folder,
+        ItemState::Cloud,
+        false,
+    ),
+    (
+        "gdrive",
+        "Projects/Plan.gdoc",
+        ItemKind::Online,
+        ItemState::Cloud,
+        false,
+    ),
+    (
+        "gdrive",
+        "Projects/Sketch.png",
+        ItemKind::File,
+        ItemState::Cloud,
+        false,
+    ),
+    (
+        "gdrive",
+        "Projects/Old draft.odt",
+        ItemKind::File,
+        ItemState::Error,
+        false,
+    ),
+    (
+        "gdrive",
+        "Recipes.pdf",
+        ItemKind::File,
+        ItemState::Downloaded,
+        false,
+    ),
 ];
 
 impl World {
@@ -141,7 +219,8 @@ impl World {
                 )?,
                 _ => std::fs::write(&path, format!("A fake file: {under}\n"))?,
             }
-            let words = (*state == ItemState::Error).then(|| "The server could not send it.".into());
+            let words =
+                (*state == ItemState::Error).then(|| "The server could not send it.".into());
             items.insert(
                 path,
                 Item {
@@ -164,10 +243,26 @@ impl World {
             .map(|drive| {
                 let mut details = Details::new();
                 put(&mut details, DRIVE_KEY_ACCOUNT, object(&drive.account));
-                put(&mut details, DRIVE_KEY_LABEL, Value::from(drive.label.as_str()));
-                put(&mut details, DRIVE_KEY_PROVIDER, Value::from(drive.provider.as_str()));
-                put(&mut details, DRIVE_KEY_PATH, Value::from(drive.path.to_string_lossy().as_ref()));
-                put(&mut details, DRIVE_KEY_STATE, Value::from(drive.state.as_str()));
+                put(
+                    &mut details,
+                    DRIVE_KEY_LABEL,
+                    Value::from(drive.label.as_str()),
+                );
+                put(
+                    &mut details,
+                    DRIVE_KEY_PROVIDER,
+                    Value::from(drive.provider.as_str()),
+                );
+                put(
+                    &mut details,
+                    DRIVE_KEY_PATH,
+                    Value::from(drive.path.to_string_lossy().as_ref()),
+                );
+                put(
+                    &mut details,
+                    DRIVE_KEY_STATE,
+                    Value::from(drive.state.as_str()),
+                );
                 put(&mut details, DRIVE_KEY_USED, Value::U64(drive.used));
                 if let Some(total) = drive.total {
                     put(&mut details, DRIVE_KEY_TOTAL, Value::U64(total));
@@ -205,7 +300,11 @@ impl World {
                 item.kept = keep;
             }
             world.touch(path, changed);
-            if keep { world.start_download(path, changed) } else { None }
+            if keep {
+                world.start_download(path, changed)
+            } else {
+                None
+            }
         })
     }
 
@@ -237,8 +336,12 @@ impl World {
             .map(|(path, _)| path.clone())
             .collect();
         for path in moving {
-            let offline = self.drive_of_path(&path).is_some_and(|drive| drive.state == DriveState::Offline);
-            let Some(item) = self.items.get_mut(&path) else { continue };
+            let offline = self
+                .drive_of_path(&path)
+                .is_some_and(|drive| drive.state == DriveState::Offline);
+            let Some(item) = self.items.get_mut(&path) else {
+                continue;
+            };
             if offline {
                 // A transfer cut off by the network: a download goes back to the cloud, an upload
                 // waits.
@@ -314,7 +417,12 @@ impl World {
         Ok((changed, drives))
     }
 
-    fn set_drive(&mut self, id: &str, state: DriveState, words: Option<String>) -> Result<bool, String> {
+    fn set_drive(
+        &mut self,
+        id: &str,
+        state: DriveState,
+        words: Option<String>,
+    ) -> Result<bool, String> {
         let drive = self
             .drives
             .iter_mut()
@@ -367,7 +475,9 @@ impl World {
                     let under: Vec<PathBuf> = self
                         .items
                         .iter()
-                        .filter(|(inner, item)| inner.starts_with(&path) && item.kind == ItemKind::File)
+                        .filter(|(inner, item)| {
+                            inner.starts_with(&path) && item.kind == ItemKind::File
+                        })
                         .map(|(inner, _)| inner.clone())
                         .collect();
                     if let Some(why) = under.iter().find_map(|inner| act(self, inner, changed)) {
@@ -385,7 +495,9 @@ impl World {
     }
 
     fn start_download(&mut self, path: &Path, changed: &mut Changed) -> Option<String> {
-        let offline = self.drive_of_path(path).is_some_and(|drive| drive.state == DriveState::Offline);
+        let offline = self
+            .drive_of_path(path)
+            .is_some_and(|drive| drive.state == DriveState::Offline);
         let item = self.items.get_mut(path)?;
         if !matches!(item.state, ItemState::Cloud | ItemState::Error) {
             return None;
@@ -402,7 +514,9 @@ impl World {
 
     /// Marks `path` and every folder above it on its drive as changed.
     fn touch(&self, path: &Path, changed: &mut Changed) {
-        let Some(drive) = self.drive_of_path(path) else { return };
+        let Some(drive) = self.drive_of_path(path) else {
+            return;
+        };
         let set = changed.entry(drive.id.clone()).or_default();
         let mut at = Some(path);
         while let Some(here) = at {
@@ -415,7 +529,9 @@ impl World {
     }
 
     fn drive_of_path(&self, path: &Path) -> Option<&Drive> {
-        self.drives.iter().find(|drive| path.starts_with(&drive.path))
+        self.drives
+            .iter()
+            .find(|drive| path.starts_with(&drive.path))
     }
 
     /// One path's details: a file's own, a folder's worked out from what is under it.
@@ -463,7 +579,11 @@ impl World {
             }
         }
         for state in [ItemState::Uploading, ItemState::Downloading] {
-            let moving: Vec<f64> = files.iter().filter(|item| item.state == state).map(|item| item.fraction).collect();
+            let moving: Vec<f64> = files
+                .iter()
+                .filter(|item| item.state == state)
+                .map(|item| item.fraction)
+                .collect();
             if !moving.is_empty() {
                 return (state, moving.iter().sum::<f64>() / moving.len() as f64);
             }
@@ -525,7 +645,10 @@ impl FakeStorage {
         step: impl FnOnce(&mut World, &mut Changed) -> (T, bool),
     ) -> T {
         let (out, signals) = {
-            let mut world = self.world.lock().expect("the fake's world lock is never poisoned");
+            let mut world = self
+                .world
+                .lock()
+                .expect("the fake's world lock is never poisoned");
             let mut changed = Changed::new();
             let (out, drives) = step(&mut world, &mut changed);
             let items: Vec<(String, ItemDetails)> = changed
@@ -545,7 +668,9 @@ impl FakeStorage {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, World> {
-        self.world.lock().expect("the fake's world lock is never poisoned")
+        self.world
+            .lock()
+            .expect("the fake's world lock is never poisoned")
     }
 }
 
@@ -564,7 +689,11 @@ impl FakeStorage {
         paths: Vec<String>,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> fdo::Result<Refused> {
-        Ok(self.apply(&emitter, |world, changed| (world.download(&paths, changed), false)).await)
+        Ok(self
+            .apply(&emitter, |world, changed| {
+                (world.download(&paths, changed), false)
+            })
+            .await)
     }
 
     async fn keep(
@@ -573,7 +702,11 @@ impl FakeStorage {
         keep: bool,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> fdo::Result<Refused> {
-        Ok(self.apply(&emitter, |world, changed| (world.keep(&paths, keep, changed), false)).await)
+        Ok(self
+            .apply(&emitter, |world, changed| {
+                (world.keep(&paths, keep, changed), false)
+            })
+            .await)
     }
 
     async fn remove_download(
@@ -582,7 +715,9 @@ impl FakeStorage {
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> fdo::Result<Refused> {
         Ok(self
-            .apply(&emitter, |world, changed| (world.remove_download(&paths, changed), false))
+            .apply(&emitter, |world, changed| {
+                (world.remove_download(&paths, changed), false)
+            })
             .await)
     }
 
@@ -606,18 +741,22 @@ impl FakeStorage {
 /// Serves `storage` at `/org/quire/Storage1` on `connection` under `name`, and steps its
 /// transfers every [`TICK`] until the connection closes.
 pub async fn serve(connection: &Connection, name: &str, storage: FakeStorage) -> zbus::Result<()> {
-    connection.object_server().at(STORAGE_PATH, storage.clone()).await?;
+    connection
+        .object_server()
+        .at(STORAGE_PATH, storage.clone())
+        .await?;
     connection.request_name(name.to_owned()).await?;
     let emitter = SignalEmitter::new(connection, STORAGE_PATH)?.into_owned();
     tokio::spawn(async move {
         let mut every = tokio::time::interval(TICK);
         loop {
             every.tick().await;
-            storage.apply(&emitter, |world, changed| {
-                *changed = world.tick();
-                ((), false)
-            })
-            .await;
+            storage
+                .apply(&emitter, |world, changed| {
+                    *changed = world.tick();
+                    ((), false)
+                })
+                .await;
         }
     });
     Ok(())
@@ -625,7 +764,9 @@ pub async fn serve(connection: &Connection, name: &str, storage: FakeStorage) ->
 
 /// The details by key, for tests and the bin's printout.
 pub fn word_of(details: &Details, key: &str) -> Option<String> {
-    details.get(key).and_then(|value| String::try_from(value.clone()).ok())
+    details
+        .get(key)
+        .and_then(|value| String::try_from(value.clone()).ok())
 }
 
 /// Every item path the fake plants, for printing what there is.
@@ -644,7 +785,11 @@ mod tests {
     }
 
     fn path(dir: &porter_fake::Scratch, under: &str) -> String {
-        dir.path().join("drives").join(under).to_string_lossy().into_owned()
+        dir.path()
+            .join("drives")
+            .join(under)
+            .to_string_lossy()
+            .into_owned()
     }
 
     fn state(world: &World, at: &str) -> String {
@@ -662,12 +807,19 @@ mod tests {
         let mut ticks = 0;
         while state(&world, &beach) == "downloading" {
             let moved = world.tick();
-            assert!(moved["onedrive"].contains(Path::new(&beach)), "a moving file is told each tick");
+            assert!(
+                moved["onedrive"].contains(Path::new(&beach)),
+                "a moving file is told each tick"
+            );
             ticks += 1;
             assert!(ticks <= 20, "a download ends in twenty ticks");
         }
         assert_eq!(state(&world, &beach), "downloaded");
-        assert_eq!(state(&world, &path(&dir, "OneDrive/Pictures")), "waiting", "Garden still waits");
+        assert_eq!(
+            state(&world, &path(&dir, "OneDrive/Pictures")),
+            "waiting",
+            "Garden still waits"
+        );
     }
 
     #[test]
@@ -676,7 +828,10 @@ mod tests {
         let garden = path(&dir, "OneDrive/Pictures/Garden.jpg");
         let notes = path(&dir, "OneDrive/Documents/Notes.txt");
         let refused = world.remove_download(&[garden.clone(), notes.clone()], &mut Changed::new());
-        assert_eq!(refused.get(&garden).map(String::as_str), Some(words::WAITING));
+        assert_eq!(
+            refused.get(&garden).map(String::as_str),
+            Some(words::WAITING)
+        );
         assert!(!refused.contains_key(&notes));
         assert_eq!(state(&world, &notes), "cloud");
     }
@@ -686,11 +841,17 @@ mod tests {
         let (dir, mut world) = world();
         let plan = path(&dir, "Google Drive/Projects/Plan.gdoc");
         let refused = world.download(&[plan.clone()], &mut Changed::new());
-        assert_eq!(refused.get(&plan).map(String::as_str), Some(words::ONLINE_ONLY));
+        assert_eq!(
+            refused.get(&plan).map(String::as_str),
+            Some(words::ONLINE_ONLY)
+        );
         world.command("offline gdrive").expect("a known command");
         let sketch = path(&dir, "Google Drive/Projects/Sketch.png");
         let refused = world.download(&[sketch.clone()], &mut Changed::new());
-        assert_eq!(refused.get(&sketch).map(String::as_str), Some(words::OFFLINE));
+        assert_eq!(
+            refused.get(&sketch).map(String::as_str),
+            Some(words::OFFLINE)
+        );
     }
 
     #[test]
@@ -699,6 +860,9 @@ mod tests {
         let pictures = path(&dir, "OneDrive/Pictures");
         world.keep(&[pictures.clone()], true, &mut Changed::new());
         let items = world.items(&[pictures.clone()]);
-        assert_eq!(bool::try_from(items[&pictures][ITEM_KEY_KEPT].clone()).ok(), Some(true));
+        assert_eq!(
+            bool::try_from(items[&pictures][ITEM_KEY_KEPT].clone()).ok(),
+            Some(true)
+        );
     }
 }

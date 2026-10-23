@@ -45,7 +45,12 @@ async fn main() -> ExitCode {
     };
     let world = match World::plant(&dir) {
         Ok(world) => world,
-        Err(why) => return fail(format!("cannot plant the drives under {}: {why}", dir.display())),
+        Err(why) => {
+            return fail(format!(
+                "cannot plant the drives under {}: {why}",
+                dir.display()
+            ));
+        }
     };
     for (id, details) in world.drives() {
         let path = porter_rig::storage_fake::word_of(&details, porter_dbus::DRIVE_KEY_PATH)

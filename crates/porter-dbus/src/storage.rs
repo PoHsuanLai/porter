@@ -94,7 +94,9 @@ impl DriveState {
     /// The state a word names; `None` for one this build does not know (a newer syncd's), which a
     /// caller shows as it shows `Error`.
     pub fn from_word(word: &str) -> Option<DriveState> {
-        DriveState::ALL.into_iter().find(|state| state.as_str() == word)
+        DriveState::ALL
+            .into_iter()
+            .find(|state| state.as_str() == word)
     }
 }
 
@@ -147,7 +149,9 @@ impl ItemState {
 
     /// The state a word names; `None` for one this build does not know.
     pub fn from_word(word: &str) -> Option<ItemState> {
-        ItemState::ALL.into_iter().find(|state| state.as_str() == word)
+        ItemState::ALL
+            .into_iter()
+            .find(|state| state.as_str() == word)
     }
 }
 
