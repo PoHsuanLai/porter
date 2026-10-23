@@ -287,6 +287,26 @@ impl Origin {
                 .parse::<std::net::IpAddr>()
                 .is_ok_and(|ip| ip.is_loopback())
     }
+
+    /// Whether the host is an address only a tailnet hands out: one in Tailscale's ranges
+    /// (100.64.0.0/10, fd7a:115c:a1e0::/48), a MagicDNS name under `.ts.net`, or a MagicDNS
+    /// short name (one label, no dot), which only a tailnet's resolver answers for.
+    pub fn is_tailnet(&self) -> bool {
+        match self.host.parse::<std::net::IpAddr>() {
+            Ok(std::net::IpAddr::V4(ip)) => {
+                let [a, b, ..] = ip.octets();
+                a == 100 && (64..128).contains(&b)
+            }
+            Ok(std::net::IpAddr::V6(ip)) => {
+                let s = ip.segments();
+                s[0] == 0xfd7a && s[1] == 0x115c && s[2] == 0xa1e0
+            }
+            Err(_) => {
+                let host = self.host.trim_end_matches('.');
+                host.ends_with(".ts.net") || (!host.is_empty() && !host.contains('.') && host != "localhost")
+            }
+        }
+    }
 }
 
 impl fmt::Display for Origin {
@@ -321,11 +341,12 @@ impl ServiceEndpoint {
     /// discovery, the bus), so nothing past that has to ask again.
     ///
     /// One family is the exception: the address of a person's own AI server (`ChatCompletions`)
-    /// may be plain `http` to one of their own computers on their tailnet, which only
-    /// [`server_address`] (given the list of computers when the address was typed) can tell.
-    /// This check cannot, and must not refuse an account later because a computer has left the
-    /// list, so it admits plain `http` for that family and leaves the decision to where the
-    /// address entered. A relay never carries the family.
+    /// may be plain `http` to one of their own computers on their tailnet, whose traffic the
+    /// tailnet already encrypts. Whose computer it is only [`server_address`] (given the list of
+    /// computers when the address was typed) can tell; this check must not refuse an account
+    /// later because a computer has left the list, so it admits plain `http` for that family to
+    /// an address only a tailnet hands out ([`Origin::is_tailnet`]), and to no other host. A
+    /// relay never carries the family.
     pub fn check(&self) -> Result<(), EndpointFault> {
         let origin = self.url.origin();
         if self
@@ -337,7 +358,7 @@ impl ServiceEndpoint {
         if !origin.scheme.admits(self.tls) {
             return Err(EndpointFault::TlsMismatch);
         }
-        let own_server = self.family == Family::ChatCompletions;
+        let own_server = self.family == Family::ChatCompletions && origin.is_tailnet();
         match self.tls == Tls::Plain && !origin.is_loopback() && !own_server {
             true => Err(EndpointFault::PlainOffLoopback),
             false => Ok(()),
