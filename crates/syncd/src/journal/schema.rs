@@ -48,7 +48,7 @@ pub const SCHEMA_VERSION: u32 = MIGRATIONS.len() as u32;
 
 /// Brings `connection` to the last of `migrations`: creates the migration table, applies what is
 /// missing. A file ahead of `migrations` is an error naming its version.
-pub(super) fn migrate(
+pub(crate) fn migrate(
     connection: &mut Connection,
     migrations: &[&str],
 ) -> Result<(), JournalError> {

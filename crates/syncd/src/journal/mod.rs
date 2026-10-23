@@ -9,6 +9,7 @@ mod rows;
 mod schema;
 
 pub use schema::SCHEMA_VERSION;
+pub(crate) use schema::migrate;
 
 use porter_sync::{
     ItemPath, JournalItem, LocalId, RemoteId, StoredAnchor, StoredConflict, StoredTombstone,

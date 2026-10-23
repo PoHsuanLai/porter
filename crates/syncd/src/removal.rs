@@ -1,5 +1,6 @@
 //! Removing an account: syncd forgets everything of it: its running datasets, its journals and
-//! anchors (`<state>/porter/sync/<account>`), its mirrors (`<data>/porter/vdir/<account>`), its
+//! anchors (`<state>/porter/sync/<account>`, the drive listing's `storage_drive` among them), its
+//! mirrors (`<data>/porter/vdir/<account>`), its
 //! photos library (`<data>/porter/photos/<account>`) and its app folder mirror
 //! (`<data>/porter/storage/<account>`).
 //!
@@ -64,6 +65,8 @@ mod tests {
             std::fs::create_dir_all(mirror.join("calendar")).expect("mirror");
             std::fs::write(mirror.join("calendar/x.ics"), "BEGIN:VCALENDAR").expect("ics");
         }
+        let drive = crate::datasets::drive::journal_path(&paths, &gone);
+        crate::datasets::drive::DriveJournal::open(&drive).expect("the drive's journal");
         let hub = Hub::default();
         let name = crate::service::DatasetName::parse("a1/files").expect("name");
         let handle = hub.register(name, crate::service::Access::default());
@@ -76,6 +79,7 @@ mod tests {
             .collect();
         assert_eq!(left, BTreeSet::from(["a2".to_owned()]));
         assert!(!handle.is_registered(), "its engines are stopped");
+        assert!(!drive.exists(), "the drive listing goes with the rest");
         assert_eq!(
             wipe(&paths, &hub, &gone).await.expect("again"),
             0,

@@ -8,6 +8,7 @@ mod common;
 mod confirm_bus;
 mod daemon;
 mod dist;
+mod drive_listing;
 mod gdrive_bus;
 mod google_pim_bus;
 mod googlerig;

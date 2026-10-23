@@ -1,0 +1,110 @@
+//! One pass of a drive's listing: pages from where the journal stands until the feed is caught
+//! up, each applied as it comes. An anchor that expired begins a full listing, which removes
+//! what it no longer finds when it ends. Nothing is downloaded and nothing is written to the
+//! drive; that is S2's, on demand.
+
+use super::journal::DriveJournal;
+use crate::journal::JournalError;
+use porter_http::Http;
+use porter_sync::{Cursor, Folders, More, Replica, ReplicaError, RetryAfter};
+use storage_gdrive::GdriveReplica;
+use storage_graph::GraphReplica;
+
+/// A replica of a whole drive whose tree the listing keeps between processes.
+pub trait DriveReplica: Replica {
+    /// The tree learnt so far, stored with each page.
+    fn folders(&self) -> Folders;
+}
+
+impl<H: Http> DriveReplica for GraphReplica<H> {
+    fn folders(&self) -> Folders {
+        GraphReplica::folders(self)
+    }
+}
+
+impl<H: Http> DriveReplica for GdriveReplica<H> {
+    fn folders(&self) -> Folders {
+        GdriveReplica::folders(self)
+    }
+}
+
+/// How a pass ended.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Listed {
+    /// Caught up.
+    #[default]
+    Done,
+    /// The drive asked to be tried again later; what was applied stays.
+    Retry(RetryAfter),
+    /// The account has not given the access to the whole drive yet: nothing is listed until it
+    /// is, and nothing asks for it again here.
+    NeedsConsent,
+    /// The account's sign-in was refused: it must sign in again.
+    Unauthorized,
+    /// The drive is gone (or its root could not be read).
+    Gone,
+}
+
+/// What a pass did.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Pass {
+    /// How it ended.
+    pub outcome: Listed,
+    /// Pages applied.
+    pub pages: usize,
+    /// Entries written.
+    pub upserted: usize,
+    /// Entries removed.
+    pub removed: usize,
+    /// Whether the anchor had expired, so the pass listed the drive again from the start.
+    pub relisted: bool,
+}
+
+/// Reads `replica`'s pages into `journal` until the feed is caught up or stops. The replica
+/// should start from the tree the journal kept (`with_folders(journal.folders()?)`).
+///
+/// # Errors
+/// The journal could not be read or written; what was committed before stays.
+pub async fn list_once<R: DriveReplica>(
+    journal: &DriveJournal,
+    replica: &R,
+) -> Result<Pass, JournalError> {
+    let mut pass = Pass::default();
+    let mut cursor = journal.cursor()?;
+    if cursor == Cursor::Start && !journal.listing()? {
+        journal.begin_listing()?;
+    }
+    loop {
+        let resuming = cursor != Cursor::Start;
+        match replica.changes(cursor).await {
+            Ok(page) => {
+                let applied = journal.apply(&page, &replica.folders())?;
+                pass.pages += 1;
+                pass.upserted += applied.upserted;
+                pass.removed += applied.removed;
+                match page.more {
+                    More::More => cursor = Cursor::At(page.next),
+                    More::Done => return Ok(pass),
+                }
+            }
+            // The feed dropped what the anchor stood for: list everything again, and remove
+            // what that listing no longer has once it ends.
+            Err(ReplicaError::AnchorExpired) if resuming && !pass.relisted => {
+                journal.begin_listing()?;
+                pass.relisted = true;
+                cursor = Cursor::Start;
+            }
+            Err(error) => {
+                pass.outcome = match error {
+                    ReplicaError::NeedsConsent => Listed::NeedsConsent,
+                    ReplicaError::Unauthorized => Listed::Unauthorized,
+                    ReplicaError::Transient(after) => Listed::Retry(after),
+                    ReplicaError::Gone => Listed::Gone,
+                    // A listing from the start that the feed calls expired: try again later.
+                    ReplicaError::AnchorExpired => Listed::Retry(RetryAfter(30)),
+                };
+                return Ok(pass);
+            }
+        }
+    }
+}

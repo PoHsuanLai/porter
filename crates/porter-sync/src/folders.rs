@@ -71,6 +71,15 @@ impl Folders {
         self.files.contains_key(id)
     }
 
+    /// The id of the folder `id` is in, a folder's or a file's, as far as the tree knows; none
+    /// for a drive's root or an id never seen.
+    pub fn parent_of(&self, id: &RemoteId) -> Option<&RemoteId> {
+        match self.folders.get(id) {
+            Some(folder) => folder.parent.as_ref(),
+            None => self.files.get(id),
+        }
+    }
+
     /// Forgets `id`. A folder takes what it held with it, which is answered; anything else is
     /// forgotten as a file, and `None` is answered.
     pub fn remove(&mut self, id: &RemoteId) -> Option<Held> {
@@ -161,6 +170,9 @@ mod tests {
             }
         );
         assert_eq!(tree.len(), 2);
+        assert_eq!(tree.parent_of(&id("c")), Some(&id("root")));
+        assert_eq!(tree.parent_of(&id("f3")), Some(&id("c")));
+        assert_eq!(tree.parent_of(&id("f1")), None, "gone with its folder");
         assert_eq!(tree.remove(&id("f3")), None);
         assert!(!tree.has_file(&id("f3")));
         // An id never seen is a file no one knew.
