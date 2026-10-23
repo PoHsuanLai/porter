@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 /// What a field is for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum FieldKind {
     /// The account's address (`ada@example.org`).
     Address,
@@ -39,6 +40,11 @@ pub enum FieldKind {
     OutgoingSecurity,
     /// A JMAP session URL (`https://...`).
     SessionUrl,
+    /// The web address of an AI server the person names (`https://llm.example.test/v1`): the
+    /// base address of a server that speaks the OpenAI chat protocol. The UI words it "Server
+    /// address". What it may be is `endpoint::server_address` (https for any host, plain http
+    /// only for this computer or one of the person's own computers).
+    ServerUrl,
 }
 
 impl FieldKind {

@@ -28,10 +28,10 @@ use std::path::Path;
 const KEY_OR: &str = "sk-or-v1-S3CRET-CLOUD-KEY-0123456789";
 const KEY_OAI: &str = "sk-proj-OTHER-SECRET-KEY-9876543210";
 
-const COMPANION: &str = "org.quire.Companion";
+pub(crate) const COMPANION: &str = "org.quire.Companion";
 const READER: &str = "org.quire.Reader";
 
-fn app(name: &str) -> AppId {
+pub(crate) fn app(name: &str) -> AppId {
     AppId {
         name: AppName::parse(name).expect("name"),
         isolation: Isolation::Unsandboxed,
@@ -72,7 +72,7 @@ async fn until_finished(session: &mut impl InferSession) -> Vec<InferEvent> {
 }
 
 /// One chat turn of the world's app, the events it produced.
-async fn turn(world: &World, text: &str) -> Vec<InferEvent> {
+pub(crate) async fn turn(world: &World, text: &str) -> Vec<InferEvent> {
     let mut session = within(
         "inferd's answer to Open",
         world
@@ -91,7 +91,7 @@ async fn turn(world: &World, text: &str) -> Vec<InferEvent> {
     until_finished(&mut session).await
 }
 
-fn finished(events: &[InferEvent]) -> &InferReply {
+pub(crate) fn finished(events: &[InferEvent]) -> &InferReply {
     match events.last() {
         Some(InferEvent::Finished(reply)) => reply,
         other => panic!("a finished session, got {other:?}"),
@@ -131,7 +131,7 @@ fn grant_for(usage: &'static str) -> FakeAccount {
 }
 
 /// A person who allows cloud models for every class: the floors are lowered and local-only is off.
-fn open_policy() -> Policy {
+pub(crate) fn open_policy() -> Policy {
     Policy {
         local_only: LocalOnly::Off,
         floors: Vec::new(),
@@ -181,7 +181,7 @@ fn plan(accounts: Vec<FakeAccount>, app_name: &str) -> Plan {
     }
 }
 
-fn routed(events: &[InferEvent]) -> &porter_infer::ServedBy {
+pub(crate) fn routed(events: &[InferEvent]) -> &porter_infer::ServedBy {
     events
         .iter()
         .find_map(|event| match event {

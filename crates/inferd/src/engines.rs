@@ -1054,6 +1054,7 @@ impl EngineHost for Engines {
                     .entries()
                     .iter()
                     .any(|entry| entry.id.0 == model.model.as_str())
+                    || cloud.lists(&model)
             });
             return if hosted {
                 Ok(())

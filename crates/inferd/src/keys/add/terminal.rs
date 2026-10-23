@@ -205,6 +205,9 @@ fn label_of(kind: FieldKind) -> &'static str {
         FieldKind::OutgoingPort => "Outgoing port",
         FieldKind::OutgoingSecurity => "Outgoing security",
         FieldKind::SessionUrl => "JMAP session URL",
+        FieldKind::ServerUrl => "Server address",
+        // a kind a newer porter adds: named by what it is
+        _ => "Answer",
     }
 }
 

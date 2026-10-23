@@ -377,3 +377,128 @@ async fn a_key_account_holds_a_claim_for_each_agent_program_its_file_names() {
         }
     }
 }
+
+#[tokio::test]
+async fn a_server_of_the_persons_own_is_asked_for_its_address_and_an_optional_key() {
+    use porter_core::sheet::{FieldProblem, ProblemKind, form_problem_among};
+    use porter_core::{Family, Tls};
+    let fake = FakeLlmApi::start(Auth::Bearer).await.expect("fake server");
+    fake.seed_key(PASTED);
+    let server = fake.api_url();
+    let provider =
+        ApiKeyProvider::with_http(shipped::ai("openai-compatible"), HyperHttp::default());
+    let address = |text: &str| FieldAnswer {
+        kind: FieldKind::ServerUrl,
+        value: FieldValue::Plain(text.to_owned()),
+    };
+    let key = |text: &str| FieldAnswer {
+        kind: FieldKind::ApiKey,
+        value: FieldValue::Secret(SecretText::new(text)),
+    };
+
+    let mut signin = provider.sign_in(start(SignInMode::Add)).expect("sign-in");
+    let SignInStep::AskFields(fields) = signin.next(SignInInput::Start).await else {
+        panic!("a form");
+    };
+    let asked: Vec<_> = fields
+        .iter()
+        .map(|f| (f.kind, f.entry, f.presence))
+        .collect();
+    assert_eq!(
+        asked,
+        [
+            (FieldKind::ServerUrl, Entry::Plain, Presence::Required),
+            (FieldKind::ApiKey, Entry::Secret, Presence::Optional),
+        ]
+    );
+    // A bad address is a problem on the address field, found before anything is sent.
+    for bad in [
+        "llm.example.test",
+        "ftp://llm.example.test",
+        "http://llm.example.test/v1",
+    ] {
+        assert_eq!(
+            form_problem_among(&fields, &[address(bad)], &[]),
+            Some(FieldProblem {
+                field: FieldKind::ServerUrl,
+                problem: ProblemKind::Invalid,
+            }),
+            "{bad}"
+        );
+    }
+    assert_eq!(form_problem_among(&fields, &[address(&server)], &[]), None);
+
+    // The server answers its models list to the key, and the account keeps the address.
+    let review = signin
+        .next(SignInInput::Fields(vec![address(&server), key(PASTED)]))
+        .await;
+    let SignInStep::Review {
+        endpoints, label, ..
+    } = &review
+    else {
+        panic!("a review: {review:?}");
+    };
+    assert_eq!(endpoints.len(), 1);
+    assert_eq!(endpoints[0].family, Family::ChatCompletions);
+    assert_eq!(endpoints[0].url.as_str(), server);
+    assert_eq!(endpoints[0].tls, Tls::Plain);
+    assert!(label.0.starts_with("127.0.0.1:"), "{label:?}");
+    let signed = signed_of(signin.next(SignInInput::Confirm(Vec::new())).await);
+    assert_eq!(key_of(&signed), PASTED);
+    assert_eq!(signed.endpoints, *endpoints);
+    let own = |c: &&porter_core::Claim| c.subject == porter_core::Subject::Account;
+    assert_eq!(signed.claims.iter().filter(own).count(), 1);
+    let calls = fake.calls();
+    assert_eq!(calls.len(), 1, "{calls:?}");
+    assert_presented(&calls[0], Auth::Bearer, PASTED);
+
+    // No key is no header, and a server that wants one says so.
+    let mut signin = provider.sign_in(start(SignInMode::Add)).expect("sign-in");
+    signin.next(SignInInput::Start).await;
+    assert_eq!(
+        signin
+            .next(SignInInput::Fields(vec![address(&server)]))
+            .await,
+        SignInStep::Failed(SignInFault::Refused)
+    );
+    assert_eq!(fake.calls()[1].authorization, None);
+
+    // Without an address there is nothing to ask.
+    let mut signin = provider.sign_in(start(SignInMode::Add)).expect("sign-in");
+    signin.next(SignInInput::Start).await;
+    assert_eq!(
+        signin.next(SignInInput::Fields(vec![key(PASTED)])).await,
+        SignInStep::Failed(SignInFault::Unreadable)
+    );
+
+    // A later check asks the account's own server.
+    let mut holder = account("openai-compatible");
+    holder.endpoints = endpoints.clone();
+    assert!(provider.discover(&holder, &live(PASTED)).await.is_ok());
+    assert_eq!(
+        provider.discover(&holder, &live("sk-dead")).await,
+        Err(ProviderError::Unauthorized)
+    );
+    holder.endpoints.clear();
+    assert_eq!(
+        provider.discover(&holder, &live(PASTED)).await,
+        Err(ProviderError::Unreadable)
+    );
+
+    // Signing in again asks the key only: the account has its address.
+    let mut signin = provider
+        .sign_in(start(SignInMode::Reauthenticate {
+            account: AccountId::parse("cloud-1").expect("id"),
+            endpoints: endpoints.clone(),
+        }))
+        .expect("sign-in");
+    let SignInStep::AskFields(fields) = signin.next(SignInInput::Start).await else {
+        panic!("a form");
+    };
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::ApiKey);
+    assert_eq!(
+        signed_of(signin.next(typed(PASTED)).await).endpoints,
+        *endpoints
+    );
+}

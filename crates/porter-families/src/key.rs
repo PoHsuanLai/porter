@@ -2,13 +2,19 @@
 //! leaves accountd, checked by listing the provider's models with it. The listing is only a
 //! check (a 200 with a readable body is a live key); nothing in it is kept, so no model list
 //! sits in accountd or on any bus: inferd fetches its own with the key `Peer.ResolveKey` gives it.
+//!
+//! One provider file names no server: `openai-compatible`, a server of the person's own at an
+//! address they type. Its Llm row has no endpoint, so the sign-in asks for the address
+//! ([`asks_server`]); the address is kept with the account as a `ChatCompletions` endpoint
+//! ([`own_server`]) and the key, which such a server may not need, is kept as an empty key when
+//! there is none, so the account always has its one secret. An empty key is presented as no key.
 
 use porter_core::Capability;
 use porter_core::capability::CapabilityKind;
 use porter_core::sheet::SignInFault;
 use porter_core::{
     AccountId, AccountLabel, Audience, Claim, Credential, EndpointUrl, Family, IssuedToken, Offer,
-    Provenance, Restriction, SecretPurpose, SecretText, Subject,
+    Provenance, Restriction, SecretPurpose, SecretText, ServiceEndpoint, Subject,
 };
 use porter_http::{Http, HttpRequest, Method};
 use porter_provider::{
@@ -51,13 +57,34 @@ fn target_of(spec: &ProviderSpec) -> Result<(EndpointUrl, Family), ProviderError
     Ok((url, family))
 }
 
+/// Whether the file names no server, so that the person types the address: no language-model row
+/// has an endpoint.
+pub(crate) fn asks_server(spec: &ProviderSpec) -> bool {
+    spec.capabilities
+        .iter()
+        .filter(|row| row.capability.kind() == CapabilityKind::Llm)
+        .all(|row| row.endpoint.is_none())
+}
+
+/// The address of the server an account of such a file was made for, as it is kept: its
+/// `ChatCompletions` endpoint.
+pub(crate) fn own_server(endpoints: &[ServiceEndpoint]) -> Option<&ServiceEndpoint> {
+    endpoints
+        .iter()
+        .find(|endpoint| endpoint.family == Family::ChatCompletions)
+}
+
 /// The version header Anthropic's API requires with every call.
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 
 /// `request` carrying `key` the way the company documents: `x-api-key` and `anthropic-version`
 /// for Anthropic's Messages API, `x-goog-api-key` for Gemini, a bearer token for the
-/// OpenAI-compatible rest (OpenAI, Moonshot).
+/// OpenAI-compatible rest (OpenAI, Moonshot). An empty key is no key: the request goes without
+/// (a server of the person's own may need none).
 pub(crate) fn present_key(request: HttpRequest, family: Family, key: &SecretText) -> HttpRequest {
+    if key.expose().is_empty() {
+        return request;
+    }
     match family {
         Family::Messages => request
             .with_header("x-api-key", key.expose())
@@ -75,7 +102,33 @@ pub(crate) async fn check<H: Http>(
     key: &SecretText,
 ) -> Result<(), ProviderError> {
     let (url, family) = target_of(spec)?;
-    let request = HttpRequest::to(Method::Get, &url)
+    check_at(http, &url, family, key).await
+}
+
+/// The models list of the server of the person's own at `server`: `<server address>/models`.
+pub(crate) fn models_url(server: &EndpointUrl) -> Result<EndpointUrl, ProviderError> {
+    EndpointUrl::parse(&format!("{}/models", server.as_str().trim_end_matches('/')))
+        .map_err(|_| ProviderError::Unreadable)
+}
+
+/// [`check`] of the server of the person's own at `server`, which speaks the OpenAI chat
+/// protocol: `GET <server address>/models`, with the bearer key when there is one.
+pub(crate) async fn check_server<H: Http>(
+    http: &H,
+    server: &EndpointUrl,
+    key: &SecretText,
+) -> Result<(), ProviderError> {
+    check_at(http, &models_url(server)?, Family::ChatCompletions, key).await
+}
+
+/// The one call that checks a key, at `url`, presented the way `family` wants.
+async fn check_at<H: Http>(
+    http: &H,
+    url: &EndpointUrl,
+    family: Family,
+    key: &SecretText,
+) -> Result<(), ProviderError> {
+    let request = HttpRequest::to(Method::Get, url)
         .map_err(|_| ProviderError::Unreachable)?
         .with_header("Accept", "application/json");
     let response = http
@@ -137,6 +190,28 @@ pub(crate) fn signed(spec: &ProviderSpec, key: SecretText) -> Signed {
         vec![(SecretPurpose::ApiKey, Credential::ApiKey(key))],
         claims(spec),
         Vec::new(),
+        Restriction::none(),
+    )
+}
+
+/// The finished sign-in of a server of the person's own that answered: the account is named for
+/// the server (`llm.example.test`, with its port when it is not the usual one), and keeps its
+/// address.
+pub(crate) fn signed_server(
+    spec: &ProviderSpec,
+    server: ServiceEndpoint,
+    key: SecretText,
+) -> Signed {
+    let origin = server.url.origin();
+    let label = match origin.port == origin.scheme.default_port() {
+        true => origin.host.clone(),
+        false => format!("{}:{}", origin.host, origin.port),
+    };
+    Signed::new(
+        AccountLabel(label),
+        vec![(SecretPurpose::ApiKey, Credential::ApiKey(key))],
+        claims(spec),
+        vec![server],
         Restriction::none(),
     )
 }

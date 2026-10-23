@@ -149,7 +149,9 @@ fn reply_bound(body: &[u8], entry: &ModelEntry) -> Tokens {
         .capabilities
         .text_out
         .as_ref()
-        .map_or(UNSTATED_MAX_OUTPUT, |text| text.max_output.0);
+        .map(|text| text.max_output.0)
+        .filter(|most| *most > 0)
+        .unwrap_or(UNSTATED_MAX_OUTPUT);
     let asked = serde_json::from_slice::<Value>(body).ok().and_then(|root| {
         ["max_tokens", "max_completion_tokens"]
             .iter()

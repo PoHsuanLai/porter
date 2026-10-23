@@ -84,6 +84,7 @@ fn every_stage_has_its_view() {
         },
         stage,
         providers: rows(),
+        own: vec![],
     };
     let row = rows().first().cloned();
     let cases: Vec<(&str, Stage, SheetView)> = vec![
@@ -189,6 +190,7 @@ fn the_review_names_the_app_to_allow_when_a_chooser_started_the_sheet() {
             review: review(),
         },
         providers: rows(),
+        own: vec![],
     };
     match sheet.view() {
         SheetView::Review(view) => assert_eq!(view.allow, Some(app)),
@@ -227,6 +229,7 @@ fn every_view_of_an_agent_provider_carries_its_display_name_and_kind() {
         },
         stage: Stage::Working(agent.id.clone()),
         providers: vec![agent.clone()],
+        own: vec![],
     };
     assert_eq!(
         sheet.view(),

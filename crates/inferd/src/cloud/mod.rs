@@ -4,6 +4,8 @@
 //! * [`accountd`]: the seam to accountd (`Peer.Verdicts` for which accounts an app holds a grant
 //!   on, `Peer.ResolveKey` for a key on a sealed descriptor).
 //! * [`models`]: the entries an app's grants reach, each through one reach, as routing's cards.
+//! * [`own`]: the servers of the person's own (accounts of `openai-compatible`): where each is,
+//!   and the models each lists, as hosted models with no limit known.
 //! * [`picker`]: the hosted models as the model picker lists them.
 //! * [`wire`]: where each provider is and how a request is shaped for it.
 //! * [`transport`]: stoker's TLS `HttpClient` behind inferd's body shaping.
@@ -16,6 +18,7 @@
 
 pub mod accountd;
 pub mod models;
+pub mod own;
 pub mod picker;
 pub mod spend;
 pub mod transport;
@@ -33,8 +36,9 @@ use model_http::{
 };
 use model_http::{UrlPath, WaitMs};
 use models::{RemoteModel, remote_entries, remote_models};
+use own::{OwnBook, OwnServer, Place};
 use porter_core::consent::Usage;
-use porter_core::{AppId, DataClass, GrantId, SecretText, UnixSeconds};
+use porter_core::{AccountId, AppId, DataClass, GrantId, SecretText, UnixSeconds};
 use porter_infer::SpendVerdict;
 use spend::{Ledger, estimate};
 use std::sync::Arc;
@@ -49,6 +53,15 @@ const TIMEOUTS: Timeouts = Timeouts {
     idle: WaitMs(90_000),
 };
 
+/// Which servers of the person's own a look asks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Look {
+    /// The ones whose list is not known.
+    IfNeeded,
+    /// All of them.
+    Again,
+}
+
 struct Inner {
     accountd: Arc<dyn Accountd>,
     entries: Vec<ModelEntry>,
@@ -56,6 +69,8 @@ struct Inner {
     clock: Arc<dyn Clock>,
     doors: Doors,
     roots: TlsRoots,
+    /// What the servers of the person's own listed: each is its own provider, at its own address.
+    own: OwnBook,
 }
 
 /// The hosted models of one daemon.
@@ -86,6 +101,7 @@ impl Cloud {
             clock,
             doors: Doors::real(),
             roots: TlsRoots::Platform,
+            own: OwnBook::default(),
         }))
     }
 
@@ -129,9 +145,54 @@ impl Cloud {
             .unwrap_or_default()
     }
 
-    /// The hosted models `app` is offered for data of `class`.
+    /// The hosted models `app` is offered for data of `class`: the catalogue's, and the ones the
+    /// servers of the person's own listed (asked for the first time an account is seen).
     pub async fn models(&self, app: &AppId, class: DataClass, usage: Usage) -> Vec<RemoteModel> {
-        remote_models(&self.0.entries, &self.accounts(app, class, usage).await)
+        let accounts = self.accounts(app, class, usage).await;
+        self.look_at_servers(Look::IfNeeded).await;
+        let mut found = remote_models(&self.0.entries, &accounts);
+        found.extend(self.0.own.models(&accounts));
+        found
+    }
+
+    /// The models of the servers of the person's own, as the model picker lists them, for the
+    /// accounts in `accounts`.
+    pub async fn own_choices(&self, accounts: &[AccountVerdict]) -> Vec<picker::Choice> {
+        self.look_at_servers(Look::IfNeeded).await;
+        self.0.own.choices(accounts)
+    }
+
+    /// Asks every server of the person's own for its models again (`Rescan`).
+    pub async fn relist(&self) {
+        self.look_at_servers(Look::Again).await;
+    }
+
+    /// Whether `model` is one a server of the person's own lists: a model with no engine to start.
+    pub fn lists(&self, model: &porter_infer::ModelRef) -> bool {
+        self.0.own.holds(&model.account, &model.model)
+    }
+
+    /// Asks the servers of the person's own for their models: all of them, or only the ones whose
+    /// list is not known (`IfNeeded`: new, moved, or a failed look long enough ago). A server
+    /// whose key cannot be read now is left for the next look.
+    async fn look_at_servers(&self, look: Look) {
+        let servers = self.0.accountd.servers().await;
+        self.0.own.keep(&servers);
+        for server in servers {
+            let known = look == Look::IfNeeded && self.0.own.is_current(&server, self.now());
+            if !known {
+                self.list(&server).await;
+            }
+        }
+    }
+
+    async fn list(&self, server: &OwnServer) {
+        let Ok(key) = self.0.accountd.server_key(&server.account).await else {
+            return;
+        };
+        let names = own::list(&server.place, &key, &self.0.roots).await;
+        drop(key);
+        self.0.own.record(server, names, self.now());
     }
 
     /// What the caps say about one more turn of `app` on `model`.
@@ -158,19 +219,19 @@ impl Cloud {
         key: &SecretText,
         shape: BodyShape,
     ) -> Option<ShapedTransport> {
-        let door = self.0.doors.of(&model.reach.provider)?;
-        let endpoint = HttpEndpoint {
-            target: HttpTarget::Tls {
-                host: HostName(door.host.clone()),
-                port: Port(door.port),
-            },
-            proxy: Proxy::Direct,
-            base: UrlPath(door.base.clone()),
-            auth: AuthHeader::Bearer(Secret(key.expose().to_owned())),
-            headers: Vec::new(),
-            timeouts: TIMEOUTS,
-        };
+        let endpoint = self
+            .place_of(&model.reach.provider)?
+            .endpoint(key, TIMEOUTS);
         Some(ShapedTransport::new(endpoint, self.0.roots.clone(), shape))
+    }
+
+    /// Where `provider` is: the fixed table's address, else the address of the server of the
+    /// person's own that is the account of that name.
+    fn place_of(&self, provider: &ProviderId) -> Option<Place> {
+        match self.0.doors.of(provider) {
+            Some(door) => Some(Place::tls(door.clone())),
+            None => self.0.own.place_of(&AccountId::parse(&provider.0).ok()?),
+        }
     }
 
     /// A client for an agent's request to `provider`, authenticated with `key` the way the wire

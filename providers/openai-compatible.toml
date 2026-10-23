@@ -1,0 +1,33 @@
+# Any server that speaks the OpenAI chat protocol, at an address the person types: a company's
+# gateway, a llama.cpp or vLLM server on their network, a proxy. Checked with GET <address>/models,
+# header Authorization: Bearer when the person gave a key (some servers take none).
+# No row names an endpoint, so the sign-in asks for the server address (like Nextcloud's server);
+# the address is kept with the account and each account is its own provider in inferd. The key,
+# when there is one, is kept in the Secret Service like every other key.
+# `discover` checks the server with one call to the models list. The models themselves are listed
+# by inferd (add time and Rescan) with no limits known: the row below is the floor every chat
+# model meets, with a context and a longest reply of 0, meaning not known. No price is known
+# either, so the price is 0 and a spend cap never counts this account.
+id = "openai-compatible"
+label = "Other provider (OpenAI-compatible)"
+mark = "openai-compatible"
+group = "intelligence"
+
+[mark_face]
+letter = "Ot"
+colour = "#6B7280"
+
+[auth]
+kind = "api_key"
+
+[discovery]
+kind = "model_list"
+
+[ai]
+locality = { kind = "cloud", v = {} }
+billing = { kind = "metered", v = { input_per_mtok = 0, output_per_mtok = 0 } }
+
+[[capability]]
+family = "chat_completions"
+kind = "llm"
+v = { features = ["chat"], context = 0, max_output = 0, wire = "chat_completions" }

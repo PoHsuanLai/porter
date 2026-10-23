@@ -135,7 +135,7 @@ fn is_denied(verdict: &Verdict) -> bool {
     matches!(verdict, Verdict::Denied)
 }
 
-fn card_of(entry: &ModelEntry, account: &AccountId, reach: &Reach) -> Option<ModelCard> {
+pub(super) fn card_of(entry: &ModelEntry, account: &AccountId, reach: &Reach) -> Option<ModelCard> {
     let capabilities = crate::catalog::capabilities_of(entry);
     if capabilities.is_empty() {
         return None;

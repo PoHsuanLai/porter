@@ -25,7 +25,7 @@ fn shipped() -> Vec<(PathBuf, ProviderSpec)> {
 #[test]
 fn every_shipped_provider_file_parses_and_is_named_by_its_id() {
     let files = shipped();
-    assert_eq!(files.len(), 24);
+    assert_eq!(files.len(), 25);
     for (path, spec) in files {
         let stem = path.file_stem().and_then(|s| s.to_str()).expect("stem");
         assert_eq!(spec.id.as_str(), stem, "{}", path.display());
@@ -132,6 +132,32 @@ fn the_generic_files_declare_what_the_generic_family_finds() {
             "{}",
             spec.id
         );
+    }
+}
+
+#[test]
+fn the_openai_compatible_file_is_a_pasted_key_with_no_server_so_the_sign_in_asks() {
+    use porter_core::capability::{Capability, CapabilityKind as K};
+    use porter_core::{AuthKind, Family, Locality};
+    use porter_provider::Discovery;
+    let spec = shipped_spec("openai-compatible");
+    assert_eq!((spec.auth.kind, spec.auth.issuer), (AuthKind::ApiKey, None));
+    assert_eq!(spec.discovery, Discovery::ModelList);
+    assert_eq!(
+        spec.ai.as_ref().map(|ai| ai.locality.clone()),
+        Some(Locality::Cloud { region: None })
+    );
+    // One chat row, with no endpoint (the person types it) and no limit stated (0 is not known).
+    assert_eq!(spec.capabilities.len(), 1);
+    let row = &spec.capabilities[0];
+    assert_eq!(
+        (row.capability.kind(), row.family),
+        (K::Llm, Family::ChatCompletions)
+    );
+    assert!(row.endpoint.is_none());
+    match &row.capability {
+        Capability::Llm(llm) => assert_eq!((llm.context.0, llm.max_output.0), (0, 0)),
+        other => panic!("{other:?}"),
     }
 }
 
@@ -518,6 +544,7 @@ fn the_shipped_files_carry_the_agreed_faces_and_the_named_mark_providers_carry_n
         ("moonshot", "K", "#16191E"),
         ("nextcloud", "N", "#0082C9"),
         ("openrouter", "OR", "#6467F2"),
+        ("openai-compatible", "Ot", "#6B7280"),
         ("ollama", "Ol", "#1F1F1F"),
         ("lm-studio", "LM", "#4B3CC9"),
         ("llama-cpp", "L", "#8A5A44"),
@@ -564,6 +591,7 @@ fn every_shipped_file_names_its_group_and_it_is_the_expected_one() {
         ("moonshot", Intelligence),
         ("ollama", Intelligence),
         ("openai", Intelligence),
+        ("openai-compatible", Intelligence),
         ("openrouter", Intelligence),
         ("fastmail", Internet),
         ("generic-dav", Internet),
@@ -626,6 +654,7 @@ fn no_shipped_provider_label_uses_a_developer_word() {
         ("generic-imap", "Other email account"),
         ("generic-dav", "Other calendar and contacts"),
         ("generic-jmap", "Other email account (newer servers)"),
+        ("openai-compatible", "Other provider (OpenAI-compatible)"),
     ] {
         assert_eq!(labels[id], label, "{id}");
     }
@@ -642,7 +671,7 @@ fn the_sheet_rows_of_the_shipped_files_carry_their_face() {
     );
     assert_eq!(row("codex").mark, "openai");
     assert_eq!(row("google").mark_face, None);
-    assert_eq!(rows.iter().filter(|r| r.mark_face.is_some()).count(), 15);
+    assert_eq!(rows.iter().filter(|r| r.mark_face.is_some()).count(), 16);
 }
 
 #[test]

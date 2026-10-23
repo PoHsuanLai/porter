@@ -25,9 +25,11 @@ pub fn local() -> ProviderSpec {
 }
 
 /// The shipped `providers/<id>.toml` of an AI company served by the `api_key` family
-/// (`anthropic`, `google-ai`, `moonshot`, `openai`, `openrouter`).
+/// (`anthropic`, `google-ai`, `moonshot`, `openai`, `openrouter`, and `openai-compatible`, which
+/// names no server: the sign-in asks for one).
 pub fn ai(id: &str) -> ProviderSpec {
     let text = match id {
+        "openai-compatible" => include_str!("../../../providers/openai-compatible.toml"),
         "anthropic" => include_str!("../../../providers/anthropic.toml"),
         "google-ai" => include_str!("../../../providers/google-ai.toml"),
         "moonshot" => include_str!("../../../providers/moonshot.toml"),

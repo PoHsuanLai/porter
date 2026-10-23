@@ -306,7 +306,11 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             Job::Add { .. } => rows,
             Job::Reauthenticate { .. } => Vec::new(),
         };
-        let mut sheet = Sheet::new(purpose, rows);
+        let own = match self.own_machines.get() {
+            Some(machines) => machines.read().await,
+            None => Vec::new(),
+        };
+        let mut sheet = Sheet::new(purpose, rows).with_own_machines(own);
         let mut link = self
             .sheets
             .conversation(SheetOpen {

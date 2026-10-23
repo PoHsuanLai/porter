@@ -220,6 +220,13 @@ fn an_endpoint_must_be_coherent() {
             Err(EndpointFault::PlainOffLoopback),
         ),
         (
+            "plain http to a person's own AI server off this computer",
+            Family::ChatCompletions,
+            "http://studio:8080/v1",
+            Tls::Plain,
+            Ok(()),
+        ),
+        (
             "plain http on loopback",
             Family::WebDav,
             "http://127.0.0.1:8080",

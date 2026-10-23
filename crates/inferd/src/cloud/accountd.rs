@@ -6,7 +6,13 @@
 //! key is read in this process, into a [`SecretText`] (whose `Debug` shows nothing) that the
 //! caller drops after building one request. The seam stays so the cloud turns are tested over a
 //! scripted fake. The module keeps its old name; it is the "accounts" seam.
+//!
+//! Two more questions are about the servers of the person's own (`own`, accounts of the provider
+//! `openai-compatible`): which accounts they are and where ([`Accountd::servers`]), and the key
+//! of one to ask it for its models ([`Accountd::server_key`]), which no app asked for and so
+//! needs no permit. A seam that has no such account answers none.
 
+use super::own::OwnServer;
 use porter_core::capability::LlmFeature;
 use porter_core::consent::{Usage, Verdict};
 use porter_core::need::LlmNeed;
@@ -77,6 +83,20 @@ pub trait Accountd: Debug + Send + Sync + 'static {
 
     /// The API key behind `grant`.
     fn key<'a>(&'a self, grant: &'a GrantId) -> Boxed<'a, Result<SecretText, AccountdFault>>;
+
+    /// The accounts that are servers of the person's own, and where each is.
+    fn servers(&self) -> Boxed<'_, Vec<OwnServer>> {
+        Box::pin(async { Vec::new() })
+    }
+
+    /// The key of the server of `account`, for the one request that asks it for its models. An
+    /// empty key is a server that needs none.
+    fn server_key<'a>(
+        &'a self,
+        _account: &'a AccountId,
+    ) -> Boxed<'a, Result<SecretText, AccountdFault>> {
+        Box::pin(async { Err(AccountdFault::Refused) })
+    }
 }
 
 #[cfg(test)]

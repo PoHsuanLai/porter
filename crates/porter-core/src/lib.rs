@@ -70,7 +70,8 @@ pub use data_class::DataClass;
 pub use effective::{KindToggle, Toggle, effective};
 pub use endpoint::{
     EndpointFault, EndpointProtocol, EndpointUrl, LoginName, Origin, RelayAuth, RelayPlan,
-    ServiceEndpoint, Tls, UrlScheme,
+    SERVER_ADDRESS_RULE, ServerAddress, ServerAddressFault, ServiceEndpoint, Tls, UrlScheme,
+    server_address, server_address_shape,
 };
 pub use error::CoreError;
 pub use family::Family;

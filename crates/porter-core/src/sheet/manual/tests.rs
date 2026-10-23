@@ -494,3 +494,55 @@ fn an_old_sign_in_view_still_reads() {
         new
     );
 }
+
+#[test]
+fn an_ai_servers_address_is_marked_when_it_cannot_be_right() {
+    use crate::tailnet::{MachineOwner, NodeId};
+    let form = vec![
+        FieldSpec {
+            kind: FieldKind::ServerUrl,
+            entry: Entry::Plain,
+            presence: Presence::Required,
+            prefill: None,
+        },
+        FieldSpec {
+            kind: FieldKind::ApiKey,
+            entry: Entry::Secret,
+            presence: Presence::Optional,
+            prefill: None,
+        },
+    ];
+    let studio = Machine::new(
+        NodeId::parse("nSTUDIO1").expect("node id"),
+        "studio".to_owned(),
+        "studio.tail1.ts.net".to_owned(),
+        MachineOwner::Mine,
+    );
+    let bad = Some(FieldProblem {
+        field: FieldKind::ServerUrl,
+        problem: ProblemKind::Invalid,
+    });
+    let gone = Some(FieldProblem {
+        field: FieldKind::ServerUrl,
+        problem: ProblemKind::Missing,
+    });
+    // (the address, what the form alone says, what it says knowing the person's computers)
+    let cases = [
+        ("https://llm.example.test/v1", None, None),
+        ("http://localhost:8080/v1", None, None),
+        ("http://studio:8080/v1", None, None),
+        ("http://llm.example.test/v1", None, bad),
+        ("llm.example.test", bad, bad),
+        ("ftp://llm.example.test", bad, bad),
+        ("", gone, gone),
+    ];
+    for (text, alone, among) in cases {
+        let answers = [plain(FieldKind::ServerUrl, text)];
+        assert_eq!(form_problem(&form, &answers), alone, "{text}");
+        assert_eq!(
+            form_problem_among(&form, &answers, std::slice::from_ref(&studio)),
+            among,
+            "{text}"
+        );
+    }
+}

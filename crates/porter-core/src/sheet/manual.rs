@@ -21,8 +21,9 @@ use super::fields::{
     Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence, first_missing,
 };
 use super::view::{FieldProblem, ProblemKind};
-use crate::endpoint::{EndpointUrl, UrlScheme};
+use crate::endpoint::{EndpointUrl, UrlScheme, server_address, server_address_shape};
 use crate::secret::SecretText;
+use crate::tailnet::Machine;
 use serde::{Deserialize, Serialize};
 
 /// How a mail server speaks.
@@ -503,14 +504,57 @@ fn parse_in(answers: &[FieldAnswer], choices: &[&str]) -> Result<Manual, FieldPr
 /// What is wrong with a form's answers, if anything: the first required field left empty, then,
 /// for the server form, the first answer that cannot be right. A host keeps Continue off while
 /// this is `Some`, and marks the field; the sheet's machine checks the same before it sends.
+///
+/// A form that asks for an AI server's address (`FieldKind::ServerUrl`) is checked for the
+/// address's shape only (a web address); whether plain `http` is for one of the person's own
+/// computers needs their list of computers, which this does not read: see [`form_problem_among`].
 pub fn form_problem(fields: &[FieldSpec], answers: &[FieldAnswer]) -> Option<FieldProblem> {
+    problem_of(fields, answers, None)
+}
+
+/// [`form_problem`] with the person's computers on their tailnet known, so that an AI server's
+/// address is checked by the whole rule (`server_address`): `https`, or `http` for this computer
+/// or one of `own`. The sheet's machine asks this when the person sends the form.
+pub fn form_problem_among(
+    fields: &[FieldSpec],
+    answers: &[FieldAnswer],
+    own: &[Machine],
+) -> Option<FieldProblem> {
+    problem_of(fields, answers, Some(own))
+}
+
+fn problem_of(
+    fields: &[FieldSpec],
+    answers: &[FieldAnswer],
+    own: Option<&[Machine]>,
+) -> Option<FieldProblem> {
     if let Some(field) = first_missing(fields, answers) {
         return Some(missing(field));
+    }
+    if let Some(problem) = server_problem(fields, answers, own) {
+        return Some(problem);
     }
     match is_manual(fields) {
         true => parse_manual(answers).err(),
         false => None,
     }
+}
+
+/// The problem with an AI server's address, when the form asks for one.
+fn server_problem(
+    fields: &[FieldSpec],
+    answers: &[FieldAnswer],
+    own: Option<&[Machine]>,
+) -> Option<FieldProblem> {
+    if !fields.iter().any(|f| f.kind == FieldKind::ServerUrl) {
+        return None;
+    }
+    let typed = text(answers, FieldKind::ServerUrl)?;
+    let fine = match own {
+        Some(own) => server_address(&typed, own).is_ok(),
+        None => server_address_shape(&typed).is_ok(),
+    };
+    (!fine).then(|| invalid(FieldKind::ServerUrl))
 }
 
 #[cfg(test)]

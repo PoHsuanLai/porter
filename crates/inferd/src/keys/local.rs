@@ -6,6 +6,7 @@
 use super::desk::{KeyDesk, usable};
 use super::host::KeyHost;
 use crate::cloud::accountd::{AccountVerdict, Accountd, AccountdFault, Boxed, llm_need};
+use crate::cloud::own::{OWN_PROVIDER, OwnServer};
 use crate::probe::Runtime;
 use crate::probed::Standing;
 use crate::report::{ReportFault, Reports};
@@ -122,6 +123,40 @@ impl<H: KeyHost> Accountd for LocalKeys<H> {
             // read above returned before this and left it.
             self.host.spend_once(&held.key.app, grant).await?;
             Ok(key)
+        })
+    }
+
+    fn servers(&self) -> Boxed<'_, Vec<OwnServer>> {
+        Box::pin(async move {
+            self.host
+                .registry()
+                .accounts
+                .iter()
+                .filter(|account| account.provider.as_str() == OWN_PROVIDER)
+                .filter_map(|account| {
+                    OwnServer::of(
+                        account.id.clone(),
+                        account.label.0.clone(),
+                        &account.endpoints,
+                    )
+                })
+                .collect()
+        })
+    }
+
+    fn server_key<'a>(
+        &'a self,
+        account: &'a AccountId,
+    ) -> Boxed<'a, Result<SecretText, AccountdFault>> {
+        Box::pin(async move {
+            let registry = self.host.registry();
+            let account = registry
+                .accounts
+                .iter()
+                .find(|a| a.id == *account && a.provider.as_str() == OWN_PROVIDER)
+                .ok_or(Refusal::UnknownGrant)?;
+            usable(&registry, account)?;
+            Ok(self.desk.read(&account.id).await?)
         })
     }
 }

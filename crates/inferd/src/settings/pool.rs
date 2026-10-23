@@ -47,13 +47,15 @@ pub(super) async fn hosted(reload: &Reload, slot: Slot) -> Vec<Choice> {
     let (Some(cloud), Some(app)) = (reload.engines().cloud().cloned(), picker_app()) else {
         return Vec::new();
     };
-    choices(
-        cloud.entries(),
-        &cloud
-            .accounts(&app, DataClass::Prompt, Usage::Interactive)
-            .await,
-        slot,
-    )
+    let accounts = cloud
+        .accounts(&app, DataClass::Prompt, Usage::Interactive)
+        .await;
+    let mut found = choices(cloud.entries(), &accounts, slot);
+    // The servers of the person's own list chat models only, after the companies'.
+    if matches!(slot, Slot::Text) {
+        found.extend(cloud.own_choices(&accounts).await);
+    }
+    found
 }
 
 /// Whether `text` names a model the person may choose for `kind`.

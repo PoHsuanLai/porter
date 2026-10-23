@@ -184,7 +184,7 @@ fn submit(sheet: Sheet, answers: Vec<FieldAnswer>) -> (Sheet, Vec<SheetEffect>) 
     // The server form changes with its answers (JMAP has no outgoing server): what is checked
     // and sent is the form as the answers make it.
     let fields = &manual::refit(fields, &answers);
-    if let Some(problem) = manual::form_problem(fields, &answers) {
+    if let Some(problem) = manual::form_problem_among(fields, &answers, &sheet.own) {
         let stage = Stage::Asking {
             provider: provider.clone(),
             fields: fields.clone(),

@@ -10,6 +10,7 @@ use super::view::{FieldProblem, ProviderRow, ReviewView, SheetView, SignInView};
 use crate::app_id::AppId;
 use crate::endpoint::EndpointUrl;
 use crate::id::{AccountId, ProviderId};
+use crate::tailnet::Machine;
 use crate::weburl::WebUrl;
 use crate::wire::ProviderHint;
 
@@ -101,6 +102,10 @@ pub struct Sheet {
     pub stage: Stage,
     /// The providers the person may pick from; `Back` returns to this list.
     pub providers: Vec<ProviderRow>,
+    /// The person's computers on their tailnet, as far as the host knows them: an AI server's
+    /// address may be plain `http` to one of these (`server_address`). Empty when the host has
+    /// no view of the tailnet.
+    pub own: Vec<Machine>,
 }
 
 /// What happened to the sheet.
@@ -166,7 +171,16 @@ impl Sheet {
             purpose,
             stage,
             providers,
+            own: Vec::new(),
         }
+    }
+
+    /// The same sheet that knows the person's computers on their tailnet, so that an AI server's
+    /// address may be plain `http` to one of them.
+    #[must_use]
+    pub fn with_own_machines(mut self, own: Vec<Machine>) -> Self {
+        self.own = own;
+        self
     }
 
     /// The row of `provider` among the providers this sheet lists.

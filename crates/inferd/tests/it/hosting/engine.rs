@@ -362,6 +362,15 @@ pub async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
     log.lock().expect("lock").push(seen.clone());
     let pieces: Vec<Vec<u8>> = match (seen.method.as_str(), seen.path.as_str()) {
         ("GET", "/health") => vec![json_response("200 OK", &json!({"status": "ok"}))],
+        // The models list of a server of the person's own (an `openai-compatible` account whose
+        // address is this fake's `/compat/v1`): two names, one of them not an id as it stands.
+        ("GET", "/compat/v1/models") => vec![json_response(
+            "200 OK",
+            &json!({"object": "list", "data": [
+                {"id": "Llama-3.2:3B", "object": "model"},
+                {"id": "qwen3", "object": "model"},
+            ]}),
+        )],
         ("POST", path) if path.ends_with("/chat/completions") || path.ends_with("/messages") => {
             let anthropic = path.ends_with("/messages");
             let streaming = seen.body["stream"] == json!(true);

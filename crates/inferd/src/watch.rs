@@ -266,6 +266,10 @@ impl<H: Http + 'static> Watch<H> {
                 };
                 let changed = self.look().await;
                 if let Some(ask) = asked {
+                    // `Rescan` also asks the servers of the person's own for their models again.
+                    if let Some(cloud) = self.engines.cloud() {
+                        cloud.relist().await;
+                    }
                     let _ = ask.send(());
                 }
                 wait = match (self.doubtful, wait.is_zero()) {

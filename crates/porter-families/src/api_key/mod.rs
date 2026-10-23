@@ -5,10 +5,14 @@
 //! gives it to a porter daemon on a sealed memfd.
 //!
 //! Revoking is the person's: the family has no key-delete call, so the company's keys page is named.
+//!
+//! A file that names no server (`openai-compatible`) is a server of the person's own: the sign-in
+//! asks for its address and an optional key, the address is kept with the account, and a later
+//! check (`discover`) asks that server.
 
 mod sign_in;
 
-use crate::key::{check, key_of};
+use crate::key::{asks_server, check, check_server, key_of, own_server};
 use porter_core::{Account, AccountId, Claim, EndpointUrl};
 use porter_http::{Http, HyperHttp};
 use porter_provider::{
@@ -78,10 +82,17 @@ impl<H: Http + 'static> Provider for ApiKeyProvider<H> {
 
     async fn discover(
         &self,
-        _account: &Account,
+        account: &Account,
         presented: &Presented,
     ) -> Result<Vec<Claim>, ProviderError> {
-        check(&*self.http, &self.spec, key_of(presented)?).await?;
+        let key = key_of(presented)?;
+        match asks_server(&self.spec) {
+            true => {
+                let server = own_server(&account.endpoints).ok_or(ProviderError::Unreadable)?;
+                check_server(&*self.http, &server.url, key).await?;
+            }
+            false => check(&*self.http, &self.spec, key).await?,
+        }
         Ok(crate::key::claims(&self.spec))
     }
 

@@ -20,6 +20,7 @@ mod launcher_register;
 mod launcher_rig;
 mod launcher_session;
 mod local_engines;
+mod own_server;
 mod places;
 mod probed;
 mod proc_root;

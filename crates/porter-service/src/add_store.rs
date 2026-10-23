@@ -82,9 +82,14 @@ fn first_state(auth: AuthKind) -> AccountState {
     }
 }
 
-/// The logins an account's endpoints are for.
+/// The logins an account's endpoints are for. An endpoint with an empty login name has none (the
+/// address of a server of the person's own, which takes a key and no login).
 fn logins(endpoints: &[porter_core::ServiceEndpoint]) -> HashSet<&LoginName> {
-    endpoints.iter().map(|e| &e.login).collect()
+    endpoints
+        .iter()
+        .map(|e| &e.login)
+        .filter(|login| !login.0.is_empty())
+        .collect()
 }
 
 /// The servers an account's endpoints are at (scheme, host and port).

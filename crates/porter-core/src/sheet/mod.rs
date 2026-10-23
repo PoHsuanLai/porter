@@ -21,8 +21,8 @@ pub use fields::{Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence,
 pub use group::ProviderGroup;
 pub use input::SheetInput;
 pub use manual::{
-    Hop, JmapServer, MailServers, Manual, Protocol, Security, form_problem, manual_form,
-    parse_manual, refit,
+    Hop, JmapServer, MailServers, Manual, Protocol, Security, form_problem, form_problem_among,
+    manual_form, parse_manual, refit,
 };
 pub use mark::{MarkColour, MarkFace, MarkFaceError, MarkLetter};
 pub use progress::{

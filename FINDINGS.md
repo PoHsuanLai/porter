@@ -2811,3 +2811,72 @@ Not verified (nothing was compiled):
   rig's peer table, and the memory text `needs 19.` (the big entry is 20 000 MiB of weights).
 - `settings/programs.rs` tests and `settings_module.rs`: they take `/usr/bin/env` as a program the
   system holds.
+## Lane inferd-compat: a custom OpenAI-compatible provider (2026-10-23)
+
+Nothing here was compiled or run (no-build lane); the coordinator gates the merge.
+
+- **The provider.** `providers/openai-compatible.toml`, "Other provider (OpenAI-compatible)",
+  `auth = api_key`, one `chat_completions` Llm row with no endpoint and `context = 0`,
+  `max_output = 0`. It goes through the existing `Keys.AddAccount` sheet (`provider_hint
+  "openai-compatible"`, or the Any list). The `api_key` family treats a file whose Llm rows name no
+  endpoint as "the person names the server" (`key::asks_server`), as Nextcloud does.
+- **The sheet.** `FieldKind::ServerUrl` (Plain, Required; the UI words it "Server address") then
+  `ApiKey` (Secret, Optional). `FieldKind` is `#[non_exhaustive]` from this commit. Signing in
+  again asks the key only (the account has its address). The check is `GET <address>/models`, with
+  `Authorization: Bearer <key>` only when there is a key.
+- **The address rule** is `porter_core::server_address(text, own_machines)` (pure, table-tested):
+  https for any host; plain http for loopback and for a `Machine` with `owner == Mine` matched by
+  name, MagicDNS name or address. `SERVER_ADDRESS_RULE` holds the words ("Use an https address, or
+  http only for this computer or one of your own computers."). A bad address is a
+  `FieldProblem { field: ServerUrl, problem: Invalid }`, made by the sheet's machine on submit
+  (`form_problem_among`, as `session_url` reports a bad JMAP URL), before anything is sent.
+  `form_problem` (no list of computers) checks the shape only, so a host that keeps Continue off
+  with it never refuses a tailnet address the machine would accept.
+- **Where the tailnet list comes from.** `Sheet` has a new public field `own: Vec<Machine>`
+  (`Sheet::with_own_machines`); `porter_service::OwnMachines` (set once with
+  `AccountService::set_own_machines`, like the launcher roster) reads it when a sheet opens.
+  inferd sets it from `BusMachines` (accountd's `Tailnet1.Machines`) in `keys::build::open`.
+  GAP: `inferd add` (the terminal) opens no bus connection, so it accepts plain http for this
+  computer only. GAP: accountd's own sheets never ask for this field, so they set none.
+- **Stored.** The address is the account's `ChatCompletions` `ServiceEndpoint` (`Tls::Implicit` for
+  https, `Tls::Plain` for http); the key is the account's one `ApiKey` secret, kept as an empty
+  key when there is none, so the account always has its secret (`desk.read`, `rediscover` and
+  `usable` all expect one). An empty key is presented as no key (`present_key`, `Place::endpoint`).
+  `ServiceEndpoint::check` now admits plain http off this computer for the `ChatCompletions`
+  family only: the registry loader runs `check` on every stored endpoint, so refusing a tailnet
+  address there (the computer left the list, or the list is unreadable at start) would make the
+  whole registry unreadable. The address rule is enforced where the address enters (the sheet).
+  The account's label is the server's host (with the port when it is not the usual one). The
+  duplicate rule (`add_store::logins`) now ignores an empty login name, so two keys on one server
+  are two accounts, as two keys of one company are.
+- **inferd.** Each such account is its own provider: `cloud::own` (`OwnServer`, `Place`, `OwnBook`,
+  `list`). `Accountd` gained `servers()` and `server_key(account)` (default: none), implemented by
+  `LocalKeys`; `server_key` needs no permit (it is inferd listing models of its own account; the
+  key goes to that server only). `Cloud::models` adds the listed models of the verdicts' accounts;
+  `Cloud::transport` finds the address in `OwnBook` when `Doors` has none; `Cloud::relist` runs on
+  `Rescan` (in `Watch::spawn`); `settings::pool::hosted` adds the picker rows "<model> on
+  <account label>" under the group "Other providers", for the text slot only. A listed name
+  becomes a model id by `probe::names::id_of`; the request carries the server's own name. A list
+  that did not come is kept as nothing for 60 seconds (`FAILED_RETRY`), then asked again by the
+  next session or picker, so a server that was down is found without a Rescan and one that hangs is
+  asked once a minute at most.
+- **Unknown limits.** `porter_core::matches` now treats an LLM offer with a context window of 0 as
+  fitting any context need (a 0 meant "too small" before: every session need asks for at least 1
+  token, so a model with no stated window could never be routed). `window.rs` (`choose_window`,
+  `reply_ceiling`) is for models inferd starts; a hosted model does not pass through it, and
+  nothing divides by either figure. Two places capped a reply at the figure and would have asked
+  for no tokens: `cloud/turn.rs::remote_target` and `agent/account.rs::reply_bound` now read a
+  longest reply of 0 as the default (16 384, and the agent route's 128 000). Price 0 means a spend
+  cap never counts such an account.
+- **Gaps and cautions.**
+  - stoker refuses `AuthHeader::Bearer` over a plain `Tcp` target that is not loopback
+    (`HttpError::Insecure`): a keyed server reached by plain http on the tailnet fails at the turn
+    ("unreachable") although the sheet accepted it. A key-less server on the tailnet works, and so
+    does any keyed https or loopback one. It needs a stoker opt-in beside `LoopbackBearer`.
+  - Tools are declared `native` and structured output `none` for every listed model: nothing in
+    `GET /models` says otherwise. A server whose model cannot call tools will fail those requests.
+  - Empty secrets in the Secret Service were not tried against a real keyring.
+  - Reading the tailnet list when a sheet opens is one bus call to accountd (25 s at worst if it
+    hangs); it returns none when accountd is not there.
+  - The `Sheet` struct gained a public field: a consumer that builds one as a literal needs
+    `own: Vec::new()` (use `Sheet::new`).

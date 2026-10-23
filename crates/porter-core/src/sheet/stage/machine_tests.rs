@@ -110,6 +110,7 @@ fn at(purpose: Purpose, stage: Stage) -> Sheet {
         purpose,
         stage,
         providers: rows(),
+        own: vec![],
     }
 }
 

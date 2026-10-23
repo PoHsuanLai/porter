@@ -64,6 +64,10 @@ pub const SHIPPED_FILES: &[(&str, &str)] = &[
     ("ollama", include_str!("../../../providers/ollama.toml")),
     ("openai", include_str!("../../../providers/openai.toml")),
     (
+        "openai-compatible",
+        include_str!("../../../providers/openai-compatible.toml"),
+    ),
+    (
         "openrouter",
         include_str!("../../../providers/openrouter.toml"),
     ),

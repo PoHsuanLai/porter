@@ -7,6 +7,7 @@ use crate::choose::{ask_for, settle};
 use crate::clock::Clock;
 use crate::flight::Flights;
 use crate::gate::Gate;
+use crate::own_machines::OwnMachines;
 use crate::registry::{Asker, Registry};
 use crate::sheets::Sheets;
 use crate::store::{NoStore, RegistryStore};
@@ -44,6 +45,9 @@ pub struct AccountService<P, S, U, K, R = NoStore, A = NoAudit> {
     pub(crate) reserved: Mutex<HashSet<AccountId>>,
     /// Which agent programs have a launcher, once the host says (accountd, when it serves).
     pub(crate) roster: OnceLock<Roster>,
+    /// The person's computers on their tailnet, once the host says (inferd, which has a view of
+    /// the tailnet): an AI server's address may be plain `http` to one of them.
+    pub(crate) own_machines: OnceLock<OwnMachines>,
 }
 
 impl<P: Provider, S: Secrets, U: Sheets, K: Clock> AccountService<P, S, U, K> {
@@ -64,6 +68,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock> AccountService<P, S, U, K> {
             flights: Flights::default(),
             reserved: Mutex::new(HashSet::new()),
             roster: OnceLock::new(),
+            own_machines: OnceLock::new(),
         }
     }
 }
@@ -84,6 +89,7 @@ impl<P, S, U, K, R, A> AccountService<P, S, U, K, R, A> {
             flights: self.flights,
             reserved: self.reserved,
             roster: self.roster,
+            own_machines: self.own_machines,
         }
     }
 
@@ -102,7 +108,15 @@ impl<P, S, U, K, R, A> AccountService<P, S, U, K, R, A> {
             flights: self.flights,
             reserved: self.reserved,
             roster: self.roster,
+            own_machines: self.own_machines,
         }
+    }
+
+    /// Tells the service where the person's computers on their tailnet are listed, so that an
+    /// AI server's address in an add sheet may be plain `http` to one of them. Set once; a
+    /// service that is never told accepts plain `http` for this computer only.
+    pub fn set_own_machines(&self, machines: OwnMachines) {
+        let _ = self.own_machines.set(machines);
     }
 
     /// Tells the service which agent programs have a launcher, so that adding an agent account

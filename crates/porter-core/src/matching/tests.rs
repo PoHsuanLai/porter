@@ -196,6 +196,15 @@ fn cases() -> Vec<(&'static str, Need, Offer, Match)> {
             Match::Short(Shortfall::Context),
         ),
         (
+            "llm with an unstated window is not known to be too small",
+            Need::Llm(LlmNeed {
+                features: Default::default(),
+                context: Tokens(32_000),
+            }),
+            present(llm(&[LlmFeature::Chat], 0)),
+            Match::Fits,
+        ),
+        (
             "the agent asked for fits the agent offered",
             agent_need("claude-code", &[], Offered::Absent),
             agent("claude-code", None, &[AgentProtocol::AnthropicMessages]),

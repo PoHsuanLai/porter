@@ -12,6 +12,12 @@ use crate::secret::SecretText;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+mod server_address;
+
+pub use server_address::{
+    SERVER_ADDRESS_RULE, ServerAddress, ServerAddressFault, server_address, server_address_shape,
+};
+
 /// One server of an account, as an app or the relay needs to reach it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ServiceEndpoint {
@@ -313,6 +319,13 @@ impl ServiceEndpoint {
     /// Whether the endpoint is coherent: the scheme is the family's protocol, the TLS mode goes
     /// with the scheme, and only a loopback host is plain. Run where an endpoint enters (a file,
     /// discovery, the bus), so nothing past that has to ask again.
+    ///
+    /// One family is the exception: the address of a person's own AI server (`ChatCompletions`)
+    /// may be plain `http` to one of their own computers on their tailnet, which only
+    /// [`server_address`] (given the list of computers when the address was typed) can tell.
+    /// This check cannot, and must not refuse an account later because a computer has left the
+    /// list, so it admits plain `http` for that family and leaves the decision to where the
+    /// address entered. A relay never carries the family.
     pub fn check(&self) -> Result<(), EndpointFault> {
         let origin = self.url.origin();
         if self
@@ -324,7 +337,8 @@ impl ServiceEndpoint {
         if !origin.scheme.admits(self.tls) {
             return Err(EndpointFault::TlsMismatch);
         }
-        match self.tls == Tls::Plain && !origin.is_loopback() {
+        let own_server = self.family == Family::ChatCompletions;
+        match self.tls == Tls::Plain && !origin.is_loopback() && !own_server {
             true => Err(EndpointFault::PlainOffLoopback),
             false => Ok(()),
         }

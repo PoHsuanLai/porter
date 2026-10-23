@@ -7,6 +7,7 @@ use super::desk::SecretsDesk;
 use super::local::LocalKeys;
 use super::news::NewsStore;
 use crate::config::Dirs;
+use crate::tailnet::{BusMachines, Machines};
 use porter_core::clock::SystemClock;
 use porter_core::sheet::ProviderGroup;
 use porter_dbus::{CallerTable, Callers};
@@ -15,7 +16,7 @@ use porter_families::{ClientFiles, FamilyProvider};
 use porter_provider::{Provider, ProviderSet, ProviderSpec};
 use porter_secrets::Namespace;
 use porter_secrets::keysel::{AnyKeys, Chosen, KeysRefusal, Selection};
-use porter_service::{AccountService, Registry, RegistryStore};
+use porter_service::{AccountService, OwnMachines, Registry, RegistryStore};
 use porter_sheets::{AppNames, BusSheets};
 use porter_store::FileStore;
 use std::sync::Arc;
@@ -158,6 +159,9 @@ pub async fn open<C: Callers>(
     let file = FileStore::new(dirs.keys.clone());
     let registry = load_registry(&file).await?;
     let saved = Arc::new(Notify::new());
+    // The person's computers on their tailnet, as accountd lists them: an add sheet for a server
+    // of their own accepts plain http to one of them.
+    let tailnet = Arc::new(BusMachines::new(connection.clone()));
     let sheets = BusSheets::new(connection, callers).with_names(apps.clone());
     let service = Arc::new(
         AccountService::new(families, registry, secrets.clone(), sheets, SystemClock)
@@ -165,6 +169,10 @@ pub async fn open<C: Callers>(
             .with_store(NewsStore::new(file, Arc::clone(&saved)))
             .with_audit(KeyAudit::new(dirs.keys_audit.clone())),
     );
+    service.set_own_machines(OwnMachines::new(move || {
+        let tailnet = Arc::clone(&tailnet);
+        async move { tailnet.machines().await }
+    }));
     let desk = SecretsDesk::new(secrets, KeyAudit::new(dirs.keys_audit.clone()), SystemClock);
     let local = LocalKeys::new(Arc::clone(&service), Arc::new(desk), names.clone());
     Ok(Opened {

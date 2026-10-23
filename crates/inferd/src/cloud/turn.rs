@@ -46,12 +46,15 @@ pub struct CloudPin {
 /// The turn target of a hosted model on the reach chosen: the provider's own name for it, the
 /// provider's defaults for sampling, a bounded reply.
 pub fn remote_target(model: &RemoteModel) -> Target {
+    // A longest reply of 0 is one nobody stated (a server of the person's own): the default.
     let limit = model
         .entry
         .capabilities
         .text_out
         .as_ref()
-        .map_or(DEFAULT_MAX_OUTPUT, |text| text.max_output.0)
+        .map(|text| text.max_output.0)
+        .filter(|most| *most > 0)
+        .unwrap_or(DEFAULT_MAX_OUTPUT)
         .min(DEFAULT_MAX_OUTPUT);
     Target {
         name: sp::ModelName(model.reach.model.0.clone()),

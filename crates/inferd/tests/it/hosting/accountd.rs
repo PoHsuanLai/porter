@@ -7,11 +7,15 @@
 //! `keys_local.rs`.
 
 use inferd::cloud::accountd::{AccountVerdict, Accountd, AccountdFault, Boxed};
+use inferd::cloud::own::{OWN_PROVIDER, OwnServer};
 use inferd::probe::Runtime;
 use inferd::probed::Standing as Probed;
 use inferd::report::{ReportFault, Reports};
 use porter_core::consent::{GrantScope, Usage, Verdict};
-use porter_core::{AccountId, AccountState, AppId, Claim, DataClass, GrantId, SecretText};
+use porter_core::{
+    AccountId, AccountState, AppId, Claim, DataClass, EndpointUrl, Family, GrantId, LoginName,
+    SecretText, ServiceEndpoint, Tls,
+};
 use std::sync::{Arc, Mutex};
 use tokio::sync::Notify;
 
@@ -46,6 +50,21 @@ pub struct FakeAccount {
     pub standing: Standing,
 }
 
+/// A server of the person's own the fake holds: an account of `openai-compatible` at an address.
+#[derive(Debug, Clone)]
+pub struct FakeServer {
+    pub id: &'static str,
+    /// What the person calls it.
+    pub label: &'static str,
+    /// The apps that hold `grant` on it; any other is asked.
+    pub to: Vec<&'static str>,
+    pub grant: &'static str,
+    /// Its key (`None`: the store cannot read it).
+    pub key: Option<&'static str>,
+    /// Its address (`https://localhost:<port>/compat/v1`).
+    pub url: String,
+}
+
 /// What the fake was asked.
 #[derive(Debug, Clone, Default)]
 pub struct Calls {
@@ -63,6 +82,7 @@ pub struct Calls {
 #[derive(Debug, Clone, Default)]
 pub struct FakeAccountd {
     accounts: Arc<Mutex<Vec<FakeAccount>>>,
+    servers: Arc<Mutex<Vec<FakeServer>>>,
     calls: Arc<Mutex<Calls>>,
     looks: Arc<Mutex<std::collections::BTreeMap<String, Look>>>,
     news: Arc<Notify>,
@@ -90,6 +110,12 @@ impl FakeAccountd {
             accounts: Arc::new(Mutex::new(accounts)),
             ..Self::default()
         }
+    }
+
+    /// Adds a server of the person's own, as an add sheet would.
+    pub fn add_server(&self, server: FakeServer) {
+        self.servers.lock().expect("lock").push(server);
+        self.changed();
     }
 
     /// What it was asked so far.
@@ -149,7 +175,25 @@ impl Accountd for FakeAccountd {
             }
             let looks = self.looks.lock().expect("lock").clone();
             let accounts = self.accounts.lock().expect("lock").clone();
+            let servers = self.servers.lock().expect("lock").clone();
             let name = app.name.as_str();
+            let own = servers.into_iter().filter_map(|server| {
+                let verdict = match server.to.contains(&name) {
+                    true => Verdict::Granted {
+                        grant: GrantId::parse(server.grant).ok()?,
+                        scope: GrantScope::Always,
+                    },
+                    false => Verdict::Ask,
+                };
+                Some(AccountVerdict {
+                    account: AccountId::parse(server.id).ok()?,
+                    provider: Some(OWN_PROVIDER.to_owned()),
+                    label: Some(server.label.to_owned()),
+                    provider_label: None,
+                    state: None,
+                    verdict,
+                })
+            });
             Ok(accounts
                 .into_iter()
                 .filter_map(|account| {
@@ -187,6 +231,7 @@ impl Accountd for FakeAccountd {
                         verdict: verdict?,
                     })
                 })
+                .chain(own)
                 .collect())
         })
     }
@@ -212,7 +257,51 @@ impl Accountd for FakeAccountd {
                 } if *held == grant.as_str() => Some(*key),
                 _ => None,
             });
+            let servers = self.servers.lock().expect("lock").clone();
+            let key = key.or_else(|| {
+                servers
+                    .iter()
+                    .find(|server| server.grant == grant.as_str())
+                    .and_then(|server| server.key)
+            });
             key.map(SecretText::new).ok_or(AccountdFault::Refused)
+        })
+    }
+
+    fn servers(&self) -> Boxed<'_, Vec<OwnServer>> {
+        Box::pin(async move {
+            let servers = self.servers.lock().expect("lock").clone();
+            servers
+                .into_iter()
+                .filter_map(|server| {
+                    let endpoint = ServiceEndpoint {
+                        family: Family::ChatCompletions,
+                        url: EndpointUrl::parse(&server.url).ok()?,
+                        tls: Tls::Implicit,
+                        login: LoginName(String::new()),
+                    };
+                    OwnServer::of(
+                        AccountId::parse(server.id).ok()?,
+                        server.label.to_owned(),
+                        &[endpoint],
+                    )
+                })
+                .collect()
+        })
+    }
+
+    fn server_key<'a>(
+        &'a self,
+        account: &'a AccountId,
+    ) -> Boxed<'a, Result<SecretText, AccountdFault>> {
+        Box::pin(async move {
+            let servers = self.servers.lock().expect("lock").clone();
+            servers
+                .iter()
+                .find(|server| server.id == account.as_str())
+                .and_then(|server| server.key)
+                .map(SecretText::new)
+                .ok_or(AccountdFault::Refused)
         })
     }
 }

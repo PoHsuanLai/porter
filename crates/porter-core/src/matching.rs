@@ -125,7 +125,9 @@ fn fit(need: &Need, capability: &Capability) -> Match {
         ]),
         (Need::Llm(n), Capability::Llm(c)) => first_short(&[
             (n.features.is_subset(&c.features), S::Features),
-            (c.context >= n.context, S::Context),
+            // A window of zero is one nobody stated (a server of the person's own lists its
+            // models and no limits): it is not known to be too small.
+            (c.context.0 == 0 || c.context >= n.context, S::Context),
         ]),
         (Need::Embeddings(n), Capability::Embeddings(c)) => first_short(&[
             (
