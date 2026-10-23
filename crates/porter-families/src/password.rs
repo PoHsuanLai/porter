@@ -59,7 +59,9 @@ pub(crate) fn typed_password(answers: &[FieldAnswer]) -> Option<SecretText> {
 /// What a request that went nowhere says about the sign-in.
 pub(crate) fn fault_of(error: HttpError) -> SignInFault {
     match error {
-        HttpError::Unreachable | HttpError::Tls | HttpError::TimedOut => SignInFault::Unreachable,
+        HttpError::Unreachable | HttpError::Tls | HttpError::TimedOut | HttpError::NotGranted => {
+            SignInFault::Unreachable
+        }
         HttpError::TooLarge | HttpError::Malformed => SignInFault::Unreadable,
     }
 }

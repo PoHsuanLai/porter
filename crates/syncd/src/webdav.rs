@@ -6,8 +6,9 @@
 //! and reaches that endpoint's origin only. [`webdav_replica`] builds the replica of a dataset's
 //! folder under that endpoint over them.
 
-use porter_client::{Accounts, AuthenticatedStream, Transport};
+use porter_client::{Accounts, AuthenticatedStream, ClientError, Transport};
 use porter_core::stream::{ByteStream, DuplexEnd};
+use porter_core::wire::Refusal;
 use porter_core::{EndpointUrl, GrantId, WebUrl};
 use std::future::Future;
 use std::io;
@@ -120,6 +121,16 @@ impl ByteStream for RelayStream {
     }
 }
 
+/// Why a relay could not be had, as the replica's client takes it: access the account has not
+/// given yet (`NeedsConsent`, a whole drive before the person turned it on) is its own error, so
+/// the dataset says so instead of retrying; anything else is a connection that did not open.
+pub(crate) fn dial_error(error: ClientError) -> porter_http::HttpError {
+    match error {
+        ClientError::Refused(Refusal::NeedsConsent) => porter_http::HttpError::NotGranted,
+        _ => porter_http::HttpError::Unreachable,
+    }
+}
+
 /// Opens relays to one endpoint of one grant.
 #[derive(Debug)]
 pub struct RelayDial<T> {
@@ -147,7 +158,7 @@ impl<T: Transport> Dial for RelayDial<T> {
             .accounts
             .open_authenticated(&self.grant, &self.endpoint)
             .await
-            .map_err(|_| porter_http::HttpError::Unreachable)?;
+            .map_err(dial_error)?;
         RelayStream::from_relay(stream).map_err(|_| porter_http::HttpError::Unreachable)
     }
 }
@@ -186,4 +197,24 @@ pub fn webdav_replica<T: Transport>(
         &url,
         clock,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn access_not_given_reaches_the_replica_as_its_own_error() {
+        assert_eq!(
+            dial_error(ClientError::Refused(Refusal::NeedsConsent)),
+            porter_http::HttpError::NotGranted
+        );
+        for other in [Refusal::NeedsReauth, Refusal::Denied, Refusal::UnknownGrant] {
+            assert_eq!(
+                dial_error(ClientError::Refused(other)),
+                porter_http::HttpError::Unreachable,
+                "{other:?}"
+            );
+        }
+    }
 }

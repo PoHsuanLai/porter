@@ -36,6 +36,9 @@ pub enum Outcome {
     Retry(RetryAfter),
     /// The account's token was refused: the account needs reauthentication.
     Unauthorized,
+    /// The account has not given the access the replica needs yet: it is asked once, when the
+    /// person turns on what uses it, and nothing here asks it or retries until then.
+    NeedsConsent,
     /// The replica is full: uploads wait, the rest went on.
     QuotaFull,
     /// The dataset's folder is gone from the replica.
@@ -102,6 +105,7 @@ impl From<DatasetError> for Halt {
 pub(crate) fn halt(error: ReplicaError) -> Halt {
     Halt::Stop(match error {
         ReplicaError::Unauthorized => Outcome::Unauthorized,
+        ReplicaError::NeedsConsent => Outcome::NeedsConsent,
         ReplicaError::Transient(after) => Outcome::Retry(after),
         ReplicaError::AnchorExpired | ReplicaError::Gone => Outcome::Gone,
     })

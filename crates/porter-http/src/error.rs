@@ -18,4 +18,9 @@ pub enum HttpError {
     /// The server did not speak HTTP.
     #[error("malformed response")]
     Malformed,
+    /// No connection was opened because the account has not given the access this client needs
+    /// yet: the relay host that opens connections answered `NeedsConsent` (a whole drive, asked
+    /// when first used). Trying again does not help until the person gives it.
+    #[error("access not given yet")]
+    NotGranted,
 }

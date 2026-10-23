@@ -16,7 +16,7 @@
 //! Storage account on a Microsoft account is reached through is the service's candidate: the
 //! `graph` endpoint under a Storage grant.
 
-use crate::webdav::{BuildError, RelayDial, RelayStream};
+use crate::webdav::{BuildError, RelayDial, RelayStream, dial_error};
 use porter_client::{Accounts, Transport};
 use porter_core::{EndpointUrl, GrantId, Origin, WebUrl};
 use std::sync::Arc;
@@ -54,7 +54,7 @@ impl<T: Transport> Dial for LinkedDial<T> {
             .accounts
             .open_linked(&self.grant, origin)
             .await
-            .map_err(|_| porter_http::HttpError::Unreachable)?;
+            .map_err(dial_error)?;
         RelayStream::from_relay(stream).map_err(|_| porter_http::HttpError::Unreachable)
     }
 }

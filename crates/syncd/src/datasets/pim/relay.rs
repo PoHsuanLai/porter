@@ -40,7 +40,7 @@ impl<T: Transport> Dial for PimDial<T> {
             .accounts
             .open_authenticated(&self.grant, &self.endpoint)
             .await
-            .map_err(|_| porter_http::HttpError::Unreachable)?;
+            .map_err(crate::webdav::dial_error)?;
         RelayStream::from_relay(stream).map_err(|_| porter_http::HttpError::Unreachable)
     }
 }

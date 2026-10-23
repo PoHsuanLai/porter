@@ -258,13 +258,15 @@ impl<R: Replica, D: Dataset, K: Clock> Driver<R, D, K> {
         match result {
             Ok(report) => match report.outcome {
                 Outcome::Retry(after) => failed(after.0),
-                // The account must sign in again, or the folder is gone: no point before the
-                // slowest poll; the scheduler's backoff keeps asking.
+                // The account must sign in again, or give access it has not given yet, or the
+                // folder is gone: no point before the slowest poll; the scheduler's backoff keeps
+                // asking.
                 // Held for the person: asking again at the slowest poll lets a server that was in
                 // trouble show its items again, and nothing is discarded meanwhile.
-                Outcome::Unauthorized | Outcome::Gone | Outcome::NeedsConfirmation(_) => {
-                    failed(self.settings.poll_max)
-                }
+                Outcome::Unauthorized
+                | Outcome::NeedsConsent
+                | Outcome::Gone
+                | Outcome::NeedsConfirmation(_) => failed(self.settings.poll_max),
                 Outcome::Done | Outcome::QuotaFull => {
                     let quiet = report.fetched
                         + report.uploaded

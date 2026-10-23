@@ -487,6 +487,12 @@ async fn a_transient_or_unauthorized_replica_stops_the_cycle_and_changes_nothing
         engine.sync_once().await.expect("cycle").outcome,
         Outcome::Unauthorized
     );
+    world.replica.fail_next_changes(ReplicaError::NeedsConsent);
+    assert_eq!(
+        engine.sync_once().await.expect("cycle").outcome,
+        Outcome::NeedsConsent,
+        "access not given yet is its own stop, never a retry"
+    );
     world.replica.fail_next_changes(ReplicaError::Gone);
     assert_eq!(
         engine.sync_once().await.expect("cycle").outcome,

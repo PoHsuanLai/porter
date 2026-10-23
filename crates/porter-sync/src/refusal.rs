@@ -66,4 +66,8 @@ pub enum ReplicaError {
     /// The item or the dataset folder is gone.
     #[error("gone")]
     Gone,
+    /// The account has not given the access the replica needs yet (the whole of a drive, asked
+    /// when first used): nothing is retried until the person gives it.
+    #[error("access not given yet")]
+    NeedsConsent,
 }

@@ -253,7 +253,10 @@ async fn fetch<H: Http>(http: &H, url: &WebUrl) -> Result<String, Miss> {
         .send(HttpRequest::new(Method::Get, url.clone()))
         .await
         .map_err(|e| match e {
-            HttpError::Unreachable | HttpError::Tls | HttpError::TimedOut => Miss::Unreachable,
+            HttpError::Unreachable
+            | HttpError::Tls
+            | HttpError::TimedOut
+            | HttpError::NotGranted => Miss::Unreachable,
             HttpError::TooLarge | HttpError::Malformed => Miss::Malformed,
         })?;
     match response.status.0 {
