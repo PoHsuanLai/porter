@@ -252,10 +252,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                 .ok_or(Refusal::UnknownGrant)?;
             (row.provider.clone(), row.endpoints.clone())
         };
-        let asks = self
-            .catalog
-            .get(&provider)
-            .is_some_and(|spec| kinds.iter().all(|k| spec.on_use_rows(*k).next().is_some()));
+        let asks = kinds.iter().all(|k| self.asks_on_use(&provider, *k));
         if kinds.is_empty() || !asks {
             return Err(Refusal::Unavailable);
         }

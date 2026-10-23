@@ -12,8 +12,8 @@ use crate::store::RegistryStore;
 use porter_core::capability::StorageScope;
 use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
 use porter_core::{
-    Account, AccountId, AccountsReply, AppId, CapabilityKind, Credential, RelayPlan, SecretKey,
-    SecretPurpose, SecretText, ServiceEndpoint,
+    Account, AccountId, AccountsReply, AppId, CapabilityKind, Credential, ProviderId, RelayPlan,
+    SecretKey, SecretPurpose, SecretText, ServiceEndpoint,
 };
 use porter_provider::Provider;
 use porter_secrets::{Secrets, SecretsError};
@@ -111,6 +111,15 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         window: ParentWindow,
     ) -> Result<(), Refusal> {
         self.run_extend(caller, account, kinds, window).await
+    }
+
+    /// Whether `provider` asks some access of `kind` only when it is first used (`ask =
+    /// "on_use"`): what [`Self::extend_access`] can ask an account of it for, and so whether a
+    /// host offers the switch that asks it ("Show in Files").
+    pub fn asks_on_use(&self, provider: &ProviderId, kind: CapabilityKind) -> bool {
+        self.catalog
+            .get(provider)
+            .is_some_and(|spec| spec.on_use_rows(kind).next().is_some())
     }
 
     /// What the relay for one checked endpoint presents: the account's password, or an access

@@ -7,7 +7,7 @@ use porter_core::{
 };
 use porter_provider::{
     Presented, Provider, ProviderError, ProviderSession, ProviderSpec, RevokeOutcome, SignIn,
-    SignInStart, SignInStep, Signed, parse_provider,
+    SignInMode, SignInStart, SignInStep, Signed, parse_provider,
 };
 
 /// A provider over one parsed provider file.
@@ -58,26 +58,44 @@ pub struct FakeSession {
 }
 
 /// A sign-in that needs nothing from the person: `Start` signs in at once with a fixed
-/// password, and anything after it is a refusal. A real family asks, waits and reviews.
+/// password, and anything after it is a refusal. A real family asks, waits and reviews. Signing
+/// an account in again, or asking it for one more access, answers its servers as stored, as the
+/// same person would; one more access is first shown for review, as every family shows it, and
+/// signed in on `Confirm`.
 #[derive(Debug)]
 pub struct FakeSignIn {
     label: AccountLabel,
     claims: Vec<Claim>,
+    endpoints: Vec<porter_core::ServiceEndpoint>,
+    reviews: bool,
+}
+
+impl FakeSignIn {
+    fn signed(&self) -> SignInStep {
+        SignInStep::Done(Signed::new(
+            self.label.clone(),
+            vec![(
+                SecretPurpose::Password,
+                Credential::Password(SecretText::new("fake-signed-in")),
+            )],
+            self.claims.clone(),
+            self.endpoints.clone(),
+            Restriction::none(),
+        ))
+    }
 }
 
 impl SignIn for FakeSignIn {
     async fn next(&mut self, input: SignInInput) -> SignInStep {
         match input {
-            SignInInput::Start => SignInStep::Done(Signed::new(
-                self.label.clone(),
-                vec![(
-                    SecretPurpose::Password,
-                    Credential::Password(SecretText::new("fake-signed-in")),
-                )],
-                self.claims.clone(),
-                Vec::new(),
-                Restriction::none(),
-            )),
+            SignInInput::Start if self.reviews => SignInStep::Review {
+                claims: self.claims.clone(),
+                endpoints: self.endpoints.clone(),
+                restriction: Restriction::none(),
+                label: self.label.clone(),
+            },
+            SignInInput::Start => self.signed(),
+            SignInInput::Confirm(_) if self.reviews => self.signed(),
             _ => SignInStep::Failed(SignInFault::Cancelled),
         }
     }
@@ -125,8 +143,17 @@ impl Provider for FakeProvider {
         }
     }
 
-    fn sign_in(&self, _start: SignInStart) -> Result<FakeSignIn, ProviderError> {
+    fn sign_in(&self, start: SignInStart) -> Result<FakeSignIn, ProviderError> {
+        let reviews = matches!(start.mode, SignInMode::Extend { .. });
+        let endpoints = match start.mode {
+            SignInMode::Reauthenticate { endpoints, .. } | SignInMode::Extend { endpoints, .. } => {
+                endpoints
+            }
+            _ => Vec::new(),
+        };
         Ok(FakeSignIn {
+            endpoints,
+            reviews,
             label: AccountLabel(self.spec.label.clone()),
             claims: self
                 .spec

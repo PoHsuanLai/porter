@@ -12,12 +12,16 @@
 //!   kept: it guards local copies a listing would discard, and a listing holds none (a wrong
 //!   listing is mended by the next one), and it waits for the person, whom the drive has no way
 //!   to ask yet. S2, which keeps downloads, decides what guards them.
+//! - [`keep_listing`]: the pass now and then, as the storage supervisor runs it for each
+//!   account syncd holds a grant of the whole drive for (`StorageKind::Drive`, made by the
+//!   person's "Show in Files"). The grant going ends it and keeps the journal, so turning it on
+//!   again resumes from the anchor.
 
 mod journal;
 mod listing;
 
 pub use journal::{Applied, DriveEntry, DriveJournal};
-pub use listing::{DriveReplica, Listed, Pass, list_once};
+pub use listing::{DriveReplica, Listed, Pass, keep_listing, list_once};
 
 use crate::paths::{AccountDir, Paths};
 

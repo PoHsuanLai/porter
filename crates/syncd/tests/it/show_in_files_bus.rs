@@ -1,0 +1,352 @@
+//! "Show in Files", end to end on one private bus: syncd's own settings module over its own
+//! hosted account service, a Microsoft-shaped account signed in before it was given the whole
+//! drive (its record claims only the app folder), syncd's storage supervisor and a fake Graph
+//! drive. Turning the row on asks the person for the whole drive in a sign-in of its own, then
+//! records syncd's grant of it, and the supervisor lists the drive; refused, the row reads off with
+//! a plain line under it; off takes the grant back, keeps the listing and the access given, so on
+//! again asks nothing.
+
+use crate::common;
+
+use common::bus::PrivateBus;
+use common::hosted::{Hosted, Link, NoDirectory, Service, host_with};
+use common::{Known, client};
+use ds_settings::live::{AnyOwner, LiveClient};
+use ds_settings::schema::KeyPath;
+use porter_core::capability::{CapabilityKind, StorageScope};
+use porter_core::sheet::{ServiceChoice, SheetInput};
+use porter_core::{
+    Account, AccountId, AccountLabel, AccountState, AuthKind, Claim, Credential, EndpointUrl,
+    Family, LoginName, Offer, Provenance, Restriction, SecretKey, SecretPurpose, SecretText,
+    ServiceEndpoint, Subject, Tls, Toggle, UnixSeconds,
+};
+use porter_dbus::CallerRole;
+use porter_fake::{FakeProvider, ScriptedSheets};
+use porter_fake_servers::{FakeGraph, GraphHandle, Running};
+use porter_families::set::ProviderNames;
+use porter_provider::Provider;
+use porter_secrets::{MemorySecrets, Secrets};
+use porter_service::Registry;
+use porter_sync::ItemPath;
+use std::sync::Arc;
+use std::time::Duration;
+use syncd::datasets::drive::{DriveJournal, journal_path};
+use syncd::datasets::pim::Wiring;
+use syncd::datasets::storage::{ClientStorageGrants, StorageConfig, StorageSupervisor};
+use syncd::keep::{SyncClass, claims_whole_drive, drive_allowed, sync_allowed};
+use syncd::paths::{AccountDir, Paths};
+use syncd::scheduler::{Network, Settings};
+use syncd::service::{Access, Hub, serve};
+use syncd::settings::{FILES_NOT_ON, SETTINGS_PATH, SyncSettings, serve_settings};
+use tokio::sync::watch;
+
+const ACCOUNT: &str = "graph-acct";
+const SEGMENT: &str = "graph_acct";
+const BEARER: &str = "fake:graph-acct:graph";
+const FILES_ROW: &str = "accounts.graph-acct.storage.files";
+
+/// A Microsoft-shaped provider: the app folder asked at sign-in, the whole drive on use.
+const PROVIDER: &str = r#"
+id = "fake-graph"
+label = "Fake Microsoft"
+mark = "generic"
+
+[auth]
+kind = "oauth_pkce"
+issuer = "microsoft"
+
+[discovery]
+kind = "autoconfig"
+
+[[capability]]
+family = "graph"
+kind = "storage"
+v = { access = "read_write", delta = "poll", quota = "reported", scope = "app_folder", hashes = "quick_xor", ranges = "present", chunked_upload = "present" }
+
+[[capability]]
+family = "graph"
+kind = "storage"
+ask = "on_use"
+v = { access = "read_write", delta = "poll", quota = "reported", scope = "full", hashes = "quick_xor", ranges = "present", chunked_upload = "present" }
+"#;
+
+struct Rig {
+    graph: Running<GraphHandle>,
+    paths: Paths,
+    account: AccountDir,
+    hosted: Hosted,
+    settings: LiveClient,
+    supervisor: StorageSupervisor<Link, ClientStorageGrants<Link>>,
+    _bus: PrivateBus,
+    _keep: Vec<zbus::Connection>,
+    _network: watch::Sender<Network>,
+}
+
+/// The rig, its sheet host answering as `sheets` says.
+async fn rig(sheets: ScriptedSheets) -> Rig {
+    let graph = FakeGraph::start(BEARER).await.expect("graph");
+    let provider = FakeProvider::from_file(PROVIDER);
+    let spec = provider.spec().clone();
+    let login = LoginName("ada@outlook.test".into());
+    // Signed in before the whole drive was asked: the record claims what sign-in asked only.
+    let account = Account {
+        id: AccountId::parse(ACCOUNT).expect("id"),
+        provider: spec.id.clone(),
+        label: AccountLabel("ada@outlook.test".into()),
+        state: AccountState::Ok,
+        auth: AuthKind::OAuthPkce,
+        capabilities: spec
+            .capabilities
+            .iter()
+            .filter(|row| row.asked_at_sign_in())
+            .map(|row| Claim {
+                subject: Subject::Account,
+                offer: Offer::Present(row.capability.clone()),
+                provenance: Provenance::Probed,
+            })
+            .collect(),
+        restriction: Restriction::none(),
+        endpoints: vec![ServiceEndpoint {
+            family: Family::Graph,
+            url: EndpointUrl::parse(graph.base_url()).expect("url"),
+            tls: Tls::Plain,
+            login,
+        }],
+    };
+    let secrets = MemorySecrets::default();
+    secrets
+        .put(
+            &SecretKey {
+                account: account.id.clone(),
+                purpose: SecretPurpose::OAuthRefresh,
+            },
+            &Credential::OAuth {
+                access: SecretText::new("SECRET-ACCESS-TOKEN"),
+                refresh: SecretText::new("SECRET-REFRESH-TOKEN"),
+                expires_at: UnixSeconds(1),
+                granted: Default::default(),
+            },
+        )
+        .await
+        .expect("secret");
+
+    let bus = PrivateBus::start();
+    let hosted = host_with(
+        provider,
+        Registry {
+            grants: vec![],
+            accounts: vec![account],
+            toggles: vec![],
+        },
+        secrets,
+        sheets,
+    );
+    let known = Known::default();
+    let hub = Hub::default();
+    let server = bus.connect().await;
+    serve(&server, hub.clone(), known.clone())
+        .await
+        .expect("sync1");
+    let home = bus.scratch().join("syncd-home");
+    let paths = Paths::resolve(|name| match name {
+        "HOME" => Some(home.display().to_string()),
+        _ => None,
+    })
+    .expect("paths");
+
+    let own = common::hosted::keep(&hosted, NoDirectory, paths.clone(), hub.clone());
+    let module = SyncSettings::new(
+        Arc::new(own),
+        Arc::new(known.clone()),
+        ProviderNames::from_specs(std::slice::from_ref(&spec)),
+    );
+    serve_settings(&server, module).await.expect("settings");
+    let name = server.unique_name().expect("name").to_string();
+    let settings_side = client(&bus, &known, "org.quire.Settings", CallerRole::Settings).await;
+    let settings =
+        LiveClient::new(&settings_side, &name, SETTINGS_PATH, AnyOwner).expect("settings client");
+
+    let (network_keeps, network) = watch::channel(Network::Unmetered);
+    let wiring = Wiring {
+        accounts: Arc::clone(&hosted.accounts),
+        hub,
+        paths: paths.clone(),
+        settings: Settings::quick(),
+        network,
+        owners: Access::default(),
+    };
+    let supervisor = StorageSupervisor::new(
+        wiring,
+        ClientStorageGrants::new(Arc::clone(&hosted.accounts)),
+        StorageConfig {
+            drive_every: Duration::from_millis(100),
+            ..StorageConfig::default()
+        },
+    );
+    Rig {
+        graph,
+        paths,
+        account: AccountDir::parse(SEGMENT).expect("segment"),
+        hosted,
+        settings,
+        supervisor,
+        _bus: bus,
+        _keep: vec![server, settings_side],
+        _network: network_keeps,
+    }
+}
+
+/// Sheets whose one sign-in the person goes through: they review the whole drive and allow it.
+fn agreeing() -> ScriptedSheets {
+    ScriptedSheets::default().conversing([vec![SheetInput::Confirm(vec![ServiceChoice {
+        kind: CapabilityKind::Storage,
+        toggle: Toggle::On,
+    }])]])
+}
+
+/// Sheets whose one sign-in the person closes.
+fn declining() -> ScriptedSheets {
+    ScriptedSheets::default().conversing([vec![SheetInput::Dismiss]])
+}
+
+fn row() -> KeyPath {
+    KeyPath(FILES_ROW.to_owned())
+}
+
+fn word(on: bool) -> toml::Value {
+    toml::Value::String(if on { "on" } else { "off" }.to_owned())
+}
+
+fn id() -> AccountId {
+    AccountId::parse(ACCOUNT).expect("id")
+}
+
+fn service(rig: &Rig) -> &Service {
+    &rig.hosted.service
+}
+
+async fn eventually(what: &str, mut check: impl AsyncFnMut() -> bool) {
+    let deadline = porter_fake::Deadline::generous();
+    while !deadline.passed() {
+        if check().await {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    deadline.fail(what);
+}
+
+fn listed(rig: &Rig, at: &str) -> bool {
+    let Ok(journal) = DriveJournal::open(&journal_path(&rig.paths, &rig.account)) else {
+        return false;
+    };
+    journal
+        .entry_at(&ItemPath(at.into()))
+        .is_ok_and(|entry| entry.is_some())
+}
+
+async fn note(rig: &Rig) -> Option<String> {
+    let schema = rig.settings.describe().await.expect("schema");
+    let key = schema
+        .key
+        .into_iter()
+        .find(|key| key.path.0 == FILES_ROW)
+        .expect("the row is offered");
+    key.note.map(|note| note.0)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn turning_show_in_files_on_asks_for_the_whole_drive_then_the_drive_is_listed() {
+    let mut rig = rig(agreeing()).await;
+    rig.graph.put_root_file("Docs/Plan.txt", b"plan");
+    assert_eq!(rig.settings.get(&row()).await.expect("get"), word(false));
+    assert!(!claims_whole_drive(&service(&rig).registry().accounts[0]));
+
+    rig.settings.set(&row(), &word(true)).await.expect("on");
+    eventually("the row reads on", async || {
+        rig.settings.get(&row()).await.ok() == Some(word(true))
+    })
+    .await;
+    let registry = service(&rig).registry();
+    assert!(
+        claims_whole_drive(&registry.accounts[0]),
+        "the access was given"
+    );
+    assert!(drive_allowed(&registry.grants, &id()));
+    assert!(
+        !sync_allowed(&registry.grants, &id(), SyncClass::Files),
+        "the app folder mirror is a switch of its own"
+    );
+    let reaches: Vec<StorageScope> = registry.grants.iter().map(|g| g.key.reach).collect();
+    assert_eq!(reaches, [StorageScope::Full]);
+    assert_eq!(note(&rig).await, None);
+
+    rig.supervisor.tick().await;
+    assert_eq!(rig.supervisor.drives(), [rig.account.clone()]);
+    assert!(
+        rig.supervisor.datasets().is_empty(),
+        "a listing is no dataset"
+    );
+    eventually("the drive is listed", async || {
+        listed(&rig, "Docs/Plan.txt")
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn show_in_files_the_person_does_not_agree_to_reads_off_with_a_plain_line() {
+    let mut rig = rig(declining()).await;
+    rig.settings.set(&row(), &word(true)).await.expect("asked");
+    eventually("the row says it did not turn on", async || {
+        note(&rig).await.as_deref() == Some(FILES_NOT_ON)
+    })
+    .await;
+    assert_eq!(rig.settings.get(&row()).await.expect("get"), word(false));
+    let registry = service(&rig).registry();
+    assert!(registry.grants.is_empty(), "nothing was granted");
+    assert!(!claims_whole_drive(&registry.accounts[0]));
+    rig.supervisor.tick().await;
+    assert!(rig.supervisor.drives().is_empty());
+    for word in ["scope", "token", "consent", "WebDAV", "FUSE", "mount"] {
+        assert!(!FILES_NOT_ON.contains(word), "{word}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn turning_show_in_files_off_stops_the_listing_and_keeps_it_so_on_again_asks_nothing() {
+    let mut rig = rig(agreeing()).await;
+    rig.graph.put_root_file("Docs/Plan.txt", b"plan");
+    rig.settings.set(&row(), &word(true)).await.expect("on");
+    eventually("the row reads on", async || {
+        rig.settings.get(&row()).await.ok() == Some(word(true))
+    })
+    .await;
+    rig.supervisor.tick().await;
+    eventually("the drive is listed", async || {
+        listed(&rig, "Docs/Plan.txt")
+    })
+    .await;
+
+    rig.settings.set(&row(), &word(false)).await.expect("off");
+    assert_eq!(rig.settings.get(&row()).await.expect("get"), word(false));
+    assert!(service(&rig).registry().grants.is_empty());
+    rig.supervisor.tick().await;
+    assert!(rig.supervisor.drives().is_empty(), "the listing stopped");
+    assert!(listed(&rig, "Docs/Plan.txt"), "the listing's journal stays");
+    assert!(
+        claims_whole_drive(&service(&rig).registry().accounts[0]),
+        "the access given stays"
+    );
+
+    // The sheet host has no second sign-in: on again must ask nothing of the person.
+    rig.settings
+        .set(&row(), &word(true))
+        .await
+        .expect("on again");
+    eventually("the row reads on again", async || {
+        rig.settings.get(&row()).await.ok() == Some(word(true))
+    })
+    .await;
+    rig.supervisor.tick().await;
+    assert_eq!(rig.supervisor.drives(), [rig.account.clone()]);
+}

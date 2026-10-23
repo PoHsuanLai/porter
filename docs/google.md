@@ -77,7 +77,9 @@ the hidden app folder. Porter asks for all of Drive later, and only when you tur
 Files** for the account in Settings: Google's page then asks for that one thing, and what you
 granted before is kept. Like Gmail's scope it is restricted, so a client in testing can use it
 for its test users only. With it on, porter lists your My Drive (names, sizes, when each last
-changed; shared drives not yet) and downloads nothing until you open a file. Google's own
+changed; shared drives not yet) and downloads nothing until you open a file. Turning it off
+stops the listing and keeps what was listed and the access you gave, so turning it on again asks
+nothing in the browser. Google's own
 documents (Docs, Sheets, Slides, Forms) show as documents that open in the browser, and Files'
 Save a Copy (served from the next step) saves a Doc, Sheet, Slides or Drawing next to it as an
 Office file. A grant made before Show in

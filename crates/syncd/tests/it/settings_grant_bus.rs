@@ -245,6 +245,10 @@ async fn switching_files_on_in_settings_starts_the_mirror_and_off_drops_it_but_k
         "{paths:?}"
     );
     assert!(paths.contains(&"accounts.sync.add"), "{paths:?}");
+    assert!(
+        !paths.contains(&"accounts.graph-acct.storage.files"),
+        "a provider that never asks the whole drive offers no Show in Files: {paths:?}"
+    );
     assert_eq!(
         rig.settings.get(&row(FILES_ROW)).await.expect("get"),
         word(false)

@@ -13,6 +13,9 @@
 //!   switch is on: the upload folder `$XDG_DATA_HOME/porter/photos/<account>/upload/` as the
 //!   dataset `<account>/google_photos_upload` (owner `org.quire.Photos`), and the picker the
 //!   Photos app imports through ([`StorageSupervisor::google_picker`]).
+//! - `Drive` (`DataClass::Files`, a grant that reaches the whole store): the whole drive's
+//!   listing into `<account>/storage_drive` ([`crate::datasets::drive::keep_listing`]), every
+//!   [`StorageConfig::drive_every`]. It is no dataset of the hub: nothing syncs, it is listed.
 //!
 //! A new grant starts its mirror. A grant that is gone (revoked, or the account removed) stops
 //! it: its datasets leave the hub (so `Sync1` stops listing them) and its engines end. What the
@@ -26,6 +29,7 @@ use super::grants::{
 };
 use crate::clock::Wall;
 use crate::dataset::{Dataset, DatasetId};
+use crate::datasets::drive::{self, DriveJournal};
 use crate::datasets::photos::google::{
     GooglePicker, PhotosApi, PhotosPicker, SLUG as UPLOAD_SLUG, UploadReplica, library_http,
     picker_http,
@@ -71,6 +75,8 @@ pub struct StorageConfig {
     pub photos_owners: Access,
     /// The title of the album Google Photos uploads go into (an album the app creates).
     pub google_album: String,
+    /// How often a whole drive's listing reads its changes.
+    pub drive_every: Duration,
 }
 
 fn owned_by(app: &str) -> Access {
@@ -87,6 +93,7 @@ impl Default for StorageConfig {
             files_owners: owned_by(FILES_APP),
             photos_owners: owned_by(PHOTOS_APP),
             google_album: crate::datasets::photos::google::ALBUM_TITLE.to_owned(),
+            drive_every: Duration::from_secs(300),
         }
     }
 }
@@ -108,6 +115,8 @@ enum Running<T: Transport> {
         upload: Option<(DatasetName, JoinHandle<()>)>,
         picker: Option<Arc<GooglePicker<T>>>,
     },
+    /// The whole drive's listing.
+    Drive { task: JoinHandle<()> },
 }
 
 impl<T: Transport> std::fmt::Debug for Running<T> {
@@ -124,6 +133,7 @@ impl<T: Transport> Running<T> {
                 upload.iter().map(|(name, _)| name.clone()).collect()
             }
             Running::Photos { names, .. } => names.clone(),
+            Running::Drive { .. } => Vec::new(),
         }
     }
 }
@@ -186,7 +196,7 @@ where
     pub fn photos_library(&self, account: &AccountDir) -> Option<&PhotoLibrary> {
         match self.running.get(&(account.clone(), StorageKind::Photos))? {
             Running::Photos { run, .. } => Some(run.library()),
-            Running::Folder { .. } | Running::GooglePhotos { .. } => None,
+            Running::Folder { .. } | Running::GooglePhotos { .. } | Running::Drive { .. } => None,
         }
     }
 
@@ -199,13 +209,22 @@ where
             .get(&(account.clone(), StorageKind::GooglePhotos))?
         {
             Running::GooglePhotos { picker, .. } => picker.clone(),
-            Running::Folder { .. } | Running::Photos { .. } => None,
+            Running::Folder { .. } | Running::Photos { .. } | Running::Drive { .. } => None,
         }
     }
 
     /// The datasets running now.
     pub fn datasets(&self) -> Vec<DatasetName> {
         self.running.values().flat_map(Running::names).collect()
+    }
+
+    /// The accounts whose whole drive is being listed now.
+    pub fn drives(&self) -> Vec<AccountDir> {
+        self.running
+            .keys()
+            .filter(|(_, kind)| *kind == StorageKind::Drive)
+            .map(|(account, _)| account.clone())
+            .collect()
     }
 
     /// One look: grants, what to start and what to stop. `true` when every step went through;
@@ -318,7 +337,52 @@ where
                 self.start_photos(account, candidate, &endpoint.url)
             }
             StorageKind::GooglePhotos => self.start_google_photos(account, candidate),
+            StorageKind::Drive => self.start_drive(account, candidate),
         }
+    }
+
+    /// The whole drive's listing of `account`, over OneDrive's root or My Drive by the endpoint,
+    /// from the tree its journal kept.
+    fn start_drive(
+        &self,
+        account: &AccountDir,
+        candidate: &Candidate,
+    ) -> Result<Running<T>, String> {
+        let wiring = &self.wiring;
+        let journal = DriveJournal::open(&drive::journal_path(&wiring.paths, account))
+            .map_err(|e| e.to_string())?;
+        let folders = journal.folders().map_err(|e| e.to_string())?;
+        let every = self.config.drive_every;
+        let store = app_folder_store(candidate).ok_or("no Graph or Drive endpoint")?;
+        let task = match store {
+            AppFolderStore::Graph(e) => {
+                let replica = graph_replica(
+                    Arc::clone(&wiring.accounts),
+                    candidate.grant.clone(),
+                    e.url.clone(),
+                    "",
+                    Clock::system(),
+                )
+                .map_err(|e| e.to_string())?
+                .with_root(storage_graph::Root::Drive)
+                .with_folders(folders);
+                tokio::spawn(drive::keep_listing(journal, replica, every))
+            }
+            AppFolderStore::Drive(e) => {
+                let replica = gdrive_replica(
+                    Arc::clone(&wiring.accounts),
+                    candidate.grant.clone(),
+                    e.url.clone(),
+                    "",
+                    storage_gdrive::Clock::system(),
+                )
+                .map_err(|e| e.to_string())?
+                .with_root(storage_gdrive::Root::Drive)
+                .with_folders(folders);
+                tokio::spawn(drive::keep_listing(journal, replica, every))
+            }
+        };
+        Ok(Running::Drive { task })
     }
 
     /// The app folder mirror of `account` over `replica`.
@@ -505,7 +569,7 @@ where
             self.wiring.hub.stop(&name).await;
         }
         match running {
-            Running::Folder { task, .. } => task.abort(),
+            Running::Folder { task, .. } | Running::Drive { task } => task.abort(),
             Running::GooglePhotos {
                 upload: Some((_, task)),
                 ..
@@ -542,7 +606,7 @@ impl<T: Transport, G> Drop for StorageSupervisor<T, G> {
     fn drop(&mut self) {
         for running in self.running.values() {
             match running {
-                Running::Folder { task, .. } => task.abort(),
+                Running::Folder { task, .. } | Running::Drive { task } => task.abort(),
                 Running::GooglePhotos {
                     upload: Some((_, task)),
                     ..

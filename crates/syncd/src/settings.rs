@@ -4,28 +4,33 @@
 //!
 //! One group of rows per account syncd holds: `accounts.<id>.label`, `.provider` and `.state`
 //! (read-outs), `.sync.files` and `.sync.photos` (what syncd keeps of the account, shown for what
-//! it offers), `.reauth` ("Sign in again") and `.remove`. One more row, `accounts.sync.add`, starts
+//! it offers), `.storage.files` ("Show in Files", for an account whose provider asks the whole
+//! drive on use), `.reauth` ("Sign in again") and `.remove`. Turning "Show in Files" on may open
+//! the provider's page, so it answers at once and the row says how it went afterwards: on, or
+//! off with a line under it when the person did not give the access. One more row, `accounts.sync.add`, starts
 //! "Continue as": the person picks an account they are signed in to and syncd signs in as it. The
 //! switch for a new account turns on only once that sign-in finished. Removing an account deletes
 //! its journals and mirrors here and its stored sign-in; accountd's own removal of the identity
 //! does not touch it. Every key is under `accounts.`, so it is never agent-settable.
 
 use crate::keep::{
-    ContinueError, Directory, Hosted, Keep, SyncClass, account_of, sync_allowed, sync_offers,
+    ContinueError, Directory, Hosted, Keep, SyncClass, account_of, drive_allowed, sync_allowed,
+    sync_offers,
 };
 use ds_settings::live::{
     Access, Caller, LiveError, LiveModule, LiveSchema, Served, Verdict, serve,
 };
 use ds_settings::schema::{
     ActionLabel, ActionWeight, AgentSetting, Exposure, Help, KeyKind, KeyPath, KeySpec, Label,
-    LiveAction, Page, Section, WordLabels,
+    LiveAction, Note, Page, Section, WordLabels,
 };
 use porter_core::wire::ParentWindow;
 use porter_core::{Account, AccountId, AccountState, Family, Toggle};
 use porter_dbus::{CallerRole, Callers};
 use porter_families::set::ProviderNames;
 use porter_service::Registry;
-use std::sync::{Arc, OnceLock};
+use std::collections::BTreeSet;
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use zbus::Connection;
 
 /// The settings module's path.
@@ -44,6 +49,8 @@ pub(crate) enum Key {
     State(AccountId),
     /// `accounts.<id>.sync.files` and `.sync.photos`.
     Sync(AccountId, SyncClass),
+    /// `accounts.<id>.storage.files`: "Show in Files".
+    Files(AccountId),
     /// `accounts.<id>.reauth`.
     Reauth(AccountId),
     /// `accounts.<id>.remove`.
@@ -70,6 +77,7 @@ pub(crate) fn parse(path: &str, registry: &Registry) -> Option<Key> {
             "state" => Some(Key::State(id)),
             "reauth" => Some(Key::Reauth(id)),
             "remove" => Some(Key::Remove(id)),
+            "storage.files" => Some(Key::Files(id)),
             _ => {
                 let what = tail.strip_prefix("sync.")?;
                 SyncClass::ALL
@@ -89,6 +97,7 @@ pub(crate) fn path(key: &Key) -> String {
         Key::Provider(id) => format!("accounts.{id}.provider"),
         Key::State(id) => format!("accounts.{id}.state"),
         Key::Sync(id, class) => format!("accounts.{id}.sync.{}", class.slug()),
+        Key::Files(id) => format!("accounts.{id}.storage.files"),
         Key::Reauth(id) => format!("accounts.{id}.reauth"),
         Key::Remove(id) => format!("accounts.{id}.remove"),
     }
@@ -184,7 +193,24 @@ fn sync_words(account: &Account, class: SyncClass) -> (&'static str, &'static st
     }
 }
 
-fn account_keys(account: &Account, names: &ProviderNames) -> Vec<KeySpec> {
+/// "Show in Files": its label and help line.
+const FILES_WORDS: (&str, &str) = (
+    "Show in Files",
+    "See this account's files in Files. They download when you open them.",
+);
+
+/// The line under "Show in Files" when turning it on did not end in it on.
+pub const FILES_NOT_ON: &str = "Files wasn't turned on. You can try again.";
+
+/// How an account's rows are drawn beyond the registry: whether "Show in Files" is offered, and
+/// whether its last turning on did not go through.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct FilesRow {
+    pub offered: bool,
+    pub not_on: bool,
+}
+
+fn account_keys(account: &Account, names: &ProviderNames, files: FilesRow) -> Vec<KeySpec> {
     let section = account.label.0.as_str();
     let id = &account.id;
     let provider = names
@@ -229,6 +255,21 @@ fn account_keys(account: &Account, names: &ProviderNames) -> Vec<KeySpec> {
             toml::Value::String("off".to_owned()),
         ));
     }
+    if files.offered {
+        let (label, help) = FILES_WORDS;
+        let mut row = spec(
+            &Key::Files(id.clone()),
+            section,
+            label,
+            help,
+            KeyKind::Toggle {
+                variants: ["on".to_owned(), "off".to_owned()],
+            },
+            toml::Value::String("off".to_owned()),
+        );
+        row.note = files.not_on.then(|| Note(FILES_NOT_ON.to_owned()));
+        keys.push(row);
+    }
     keys.push(spec(
         &Key::Reauth(id.clone()),
         section,
@@ -248,8 +289,12 @@ fn account_keys(account: &Account, names: &ProviderNames) -> Vec<KeySpec> {
     keys
 }
 
-/// The schema of the module for `registry`.
-pub(crate) fn schema(registry: &Registry, names: &ProviderNames) -> LiveSchema {
+/// The schema of the module for `registry`, each account's "Show in Files" row as `files` says.
+pub(crate) fn schema(
+    registry: &Registry,
+    names: &ProviderNames,
+    files: impl Fn(&Account) -> FilesRow,
+) -> LiveSchema {
     let mut key = vec![spec(
         &Key::Add,
         "Sync",
@@ -262,7 +307,7 @@ pub(crate) fn schema(registry: &Registry, names: &ProviderNames) -> LiveSchema {
         registry
             .accounts
             .iter()
-            .flat_map(|account| account_keys(account, names)),
+            .flat_map(|account| account_keys(account, names, files(account))),
     );
     LiveSchema { version: 1, key }
 }
@@ -297,6 +342,8 @@ pub struct SyncSettings<H, D, C> {
     callers: Arc<C>,
     names: ProviderNames,
     served: Arc<OnceLock<Served>>,
+    /// The accounts whose "Show in Files" was last turned on without it ending on.
+    not_on: Arc<Mutex<BTreeSet<AccountId>>>,
 }
 
 impl<H, D, C> std::fmt::Debug for SyncSettings<H, D, C> {
@@ -314,6 +361,7 @@ impl<H, D, C> SyncSettings<H, D, C> {
             callers,
             names,
             served: Arc::new(OnceLock::new()),
+            not_on: Arc::default(),
         }
     }
 }
@@ -337,7 +385,15 @@ impl<H: Hosted, D: Directory, C: Callers> LiveModule for SyncSettings<H, D, C> {
     }
 
     async fn describe(&self) -> LiveSchema {
-        schema(&self.keep.registry(), &self.names)
+        let not_on = self
+            .not_on
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        schema(&self.keep.registry(), &self.names, |account| FilesRow {
+            offered: self.keep.offers_files(account),
+            not_on: not_on.contains(&account.id),
+        })
     }
 
     async fn get(&self, key: &KeyPath) -> Result<toml::Value, LiveError> {
@@ -352,6 +408,14 @@ impl<H: Hosted, D: Directory, C: Callers> LiveModule for SyncSettings<H, D, C> {
             Key::Sync(id, class) => {
                 account(&id)?;
                 text(if sync_allowed(&registry.grants, &id, class) {
+                    "on"
+                } else {
+                    "off"
+                })
+            }
+            Key::Files(id) => {
+                account(&id)?;
+                text(if drive_allowed(&registry.grants, &id) {
                     "on"
                 } else {
                     "off"
@@ -397,6 +461,11 @@ impl<H: Hosted, D: Directory, C: Callers> LiveModule for SyncSettings<H, D, C> {
                         failed("That could not be done.")
                     })?;
             }
+            Key::Files(id) => {
+                let toggle = toggle_of(&value)
+                    .ok_or_else(|| LiveError::BadValue("this row is `on` or `off`".into()))?;
+                self.set_files(id, toggle).await?;
+            }
             Key::Reauth(id) => {
                 let (keep, served) = (Arc::clone(&self.keep), Arc::clone(&self.served));
                 tokio::spawn(async move {
@@ -415,6 +484,55 @@ impl<H: Hosted, D: Directory, C: Callers> LiveModule for SyncSettings<H, D, C> {
                 return Err(LiveError::NotPermitted("this row is a read-out".into()));
             }
         }
+        Ok(())
+    }
+}
+
+impl<H: Hosted, D: Directory, C> SyncSettings<H, D, C> {
+    /// "Show in Files". Off answers when the grant is taken back. On may open the provider's
+    /// page and wait on the person, longer than a Settings call waits, so it answers at once and
+    /// tells the row afterwards: `on`, or `off` with [`FILES_NOT_ON`] under it.
+    async fn set_files(&self, id: AccountId, toggle: Toggle) -> Result<(), LiveError> {
+        let forget = |not_on: &Mutex<BTreeSet<AccountId>>, id: &AccountId| {
+            not_on
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .remove(id);
+        };
+        forget(&self.not_on, &id);
+        if toggle != Toggle::On {
+            self.keep.show_in_files(&id, toggle).await.map_err(|why| {
+                eprintln!("syncd: a Settings change was refused: {why}");
+                failed("That could not be done.")
+            })?;
+            return Ok(());
+        }
+        let row = account_of(&self.keep.registry(), &id)
+            .ok_or_else(|| LiveError::UnknownKey(path(&Key::Files(id.clone()))))?;
+        if !self.keep.offers_files(&row) {
+            return Err(LiveError::NotPermitted(
+                "this account can't be shown in Files".into(),
+            ));
+        }
+        let (keep, served, not_on) = (
+            Arc::clone(&self.keep),
+            Arc::clone(&self.served),
+            Arc::clone(&self.not_on),
+        );
+        tokio::spawn(async move {
+            let word = match keep.show_in_files(&id, Toggle::On).await {
+                Ok(()) => "on",
+                Err(why) => {
+                    eprintln!("syncd: Show in Files was not turned on: {why}");
+                    not_on
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .insert(id.clone());
+                    "off"
+                }
+            };
+            announce(&served, &Key::Files(id), word).await;
+        });
         Ok(())
     }
 }
@@ -451,6 +569,7 @@ mod tests {
             Key::State(id.clone()),
             Key::Sync(id.clone(), SyncClass::Files),
             Key::Sync(id.clone(), SyncClass::Photos),
+            Key::Files(id.clone()),
             Key::Reauth(id.clone()),
             Key::Remove(id),
         ];

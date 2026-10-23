@@ -10,6 +10,10 @@
 //! - [`Keep::set_sync`]: the sync switches. On records syncd's own grant for the class (the
 //!   switch is the person's answer: [`SyncSheets`] answers syncd's consent ask from it), off takes
 //!   it back, and the mirror stops at the supervisor's next look; the files stay.
+//! - [`Keep::show_in_files`]: "Show in Files". On asks the person for the whole drive in a
+//!   sign-in of its own when the account was not given it yet ([`Hosted::extend_access`]), then
+//!   records syncd's grant of it, and the supervisor lists the drive at its next look; off takes
+//!   the grant back and keeps the listing, and the access stays given, so on again asks nothing.
 //! - [`Keep::remove`]: forgets an account: stops its datasets, deletes its journals and mirrors
 //!   ([`crate::removal::wipe`]) and its secrets. accountd removing the identity does not do this:
 //!   the person removes it in the sync rows.
@@ -20,7 +24,8 @@ mod hosted;
 
 pub use audit::FileAudit;
 pub use classes::{
-    SyncClass, keys_of, need_for, photos_key, sync_allowed, sync_app, sync_key, sync_offers,
+    SyncClass, claims_whole_drive, drive_allowed, drive_key, keys_of, lists_whole_drive, need_for,
+    photos_key, sync_allowed, sync_app, sync_key, sync_offers,
 };
 pub use hosted::{Directory, Hosted, Intent, Pick, SyncSheets, account_of};
 
@@ -28,9 +33,12 @@ use crate::paths::{AccountDir, Paths};
 use crate::removal;
 use crate::service::Hub;
 use porter_client::IdentitiesError;
+use porter_core::consent::GrantKey;
 use porter_core::consent::Usage;
 use porter_core::wire::{ParentWindow, Refusal};
-use porter_core::{AccountId, AccountsReply, AccountsRequest, Toggle};
+use porter_core::{
+    Account, AccountId, AccountsReply, AccountsRequest, CapabilityKind, DataClass, Toggle,
+};
 use porter_provider::{ConsentHistory, LoginHint};
 use porter_service::SignInAs;
 
@@ -68,6 +76,10 @@ pub enum SwitchError {
     /// The grant could not be recorded or taken back.
     #[error("that could not be saved")]
     Unsaved,
+    /// The person did not give the access the switch needs (they closed the page, refused it,
+    /// or it could not be asked).
+    #[error("the access was not given")]
+    NotGiven,
 }
 
 /// Why an account was not removed.
@@ -239,27 +251,90 @@ impl<H: Hosted, D: Directory> Keep<H, D> {
                     _ => Err(SwitchError::Unsaved),
                 }
             }
-            _ => {
-                let wanted = keys_of(account, class);
-                let AccountsReply::Grants(grants) =
-                    self.hosted.answer(AccountsRequest::ListGrants).await
-                else {
-                    return Err(SwitchError::Unsaved);
-                };
-                for grant in grants.iter().filter(|g| wanted.contains(&g.key)) {
-                    let reply = self
-                        .hosted
-                        .answer(AccountsRequest::Revoke {
-                            grant: grant.id.clone(),
-                        })
-                        .await;
-                    if reply != AccountsReply::Revoked {
-                        return Err(SwitchError::Unsaved);
-                    }
+            _ => self.revoke(&keys_of(account, class)).await,
+        }
+    }
+
+    /// Whether Files offers "Show in Files" for `account`: its drive is one the listing reads
+    /// whole, and its provider asks the whole drive on use.
+    pub fn offers_files(&self, account: &Account) -> bool {
+        lists_whole_drive(account)
+            && self
+                .hosted
+                .asks_on_use(&account.provider, CapabilityKind::Storage)
+    }
+
+    /// "Show in Files" on or off for `account`. On, when the account was not given the whole
+    /// drive yet, asks the person for it in a sign-in of its own (the browser asks that alone),
+    /// then records syncd's grant of it; a refusal there is [`SwitchError::NotGiven`] and nothing
+    /// is recorded. Off takes the grant back; the listing's journal and the access given stay.
+    pub async fn show_in_files(
+        &self,
+        account: &AccountId,
+        toggle: Toggle,
+    ) -> Result<(), SwitchError> {
+        let registry = self.hosted.registry();
+        let row = account_of(&registry, account).ok_or(SwitchError::UnknownAccount)?;
+        match toggle {
+            Toggle::On => {
+                if !self.offers_files(&row) {
+                    return Err(SwitchError::NothingToKeep);
                 }
-                Ok(())
+                if drive_allowed(&registry.grants, account) {
+                    return Ok(());
+                }
+                if !claims_whole_drive(&row) {
+                    self.hosted
+                        .extend_access(
+                            account,
+                            vec![CapabilityKind::Storage],
+                            ParentWindow::Unparented,
+                        )
+                        .await
+                        .map_err(|why| {
+                            eprintln!("syncd: the whole drive was not given: {why:?}");
+                            SwitchError::NotGiven
+                        })?;
+                }
+                let _one_switch = self.turning.lock().await;
+                self.intent.set(account.clone());
+                let reply = self
+                    .hosted
+                    .answer(AccountsRequest::Choose {
+                        need: crate::datasets::storage::drive_need(),
+                        class: DataClass::Files,
+                        usage: Usage::Background,
+                        window: ParentWindow::Unparented,
+                    })
+                    .await;
+                self.intent.clear();
+                match reply {
+                    AccountsReply::Chosen(chosen) if chosen.account == *account => Ok(()),
+                    _ => Err(SwitchError::Unsaved),
+                }
+            }
+            _ => self.revoke(&[drive_key(account)]).await,
+        }
+    }
+
+    /// Takes back every grant of syncd's under one of `wanted`.
+    async fn revoke(&self, wanted: &[GrantKey]) -> Result<(), SwitchError> {
+        let AccountsReply::Grants(grants) = self.hosted.answer(AccountsRequest::ListGrants).await
+        else {
+            return Err(SwitchError::Unsaved);
+        };
+        for grant in grants.iter().filter(|g| wanted.contains(&g.key)) {
+            let reply = self
+                .hosted
+                .answer(AccountsRequest::Revoke {
+                    grant: grant.id.clone(),
+                })
+                .await;
+            if reply != AccountsReply::Revoked {
+                return Err(SwitchError::Unsaved);
             }
         }
+        Ok(())
     }
 
     /// Signs `account` in again, through the sheet.

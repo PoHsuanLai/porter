@@ -8,7 +8,8 @@
 //!   ([`StorageKind`]): the app folder at `$XDG_DATA_HOME/porter/storage/<account>/` (OneDrive's
 //!   or Drive's, by the endpoint the account has), and (behind the Photos switch) the Photos
 //!   datasets over `Photos/Originals` and `Photos/Metadata` of a Microsoft account, or Google
-//!   Photos' upload folder and picker for a Google one.
+//!   Photos' upload folder and picker for a Google one; and the whole drive's listing
+//!   ([`crate::datasets::drive`]) of an account the person turned on "Show in Files" for.
 //!
 //! A person needs: a Microsoft or Google account in accountd, and a grant for `org.quire.Sync`
 //! made in Settings (class Files for the app folder, class Photos for Photos); for Photos also
@@ -20,7 +21,7 @@ mod supervisor;
 
 pub use folder::{FolderDataset, SLUG as APP_FOLDER_SLUG};
 pub use grants::{
-    AppFolderStore, ClientStorageGrants, StorageGrants, StorageKind, app_folder_store,
+    AppFolderStore, ClientStorageGrants, StorageGrants, StorageKind, app_folder_store, drive_need,
     google_photos_endpoints, graph_endpoint, photos_need, storage_need,
 };
 pub use supervisor::{FILES_APP, PHOTOS_APP, StorageConfig, StorageSupervisor};

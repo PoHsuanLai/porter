@@ -93,7 +93,7 @@ pub struct Gate {
 impl StorageGrants for Gate {
     async fn granted(&self, kind: StorageKind) -> Result<Vec<Candidate>, AccountdUnavailable> {
         let shown = match kind {
-            StorageKind::AppFolder => &self.files,
+            StorageKind::AppFolder | StorageKind::Drive => &self.files,
             StorageKind::Photos | StorageKind::GooglePhotos => &self.photos,
         };
         match shown.load(Ordering::SeqCst) {

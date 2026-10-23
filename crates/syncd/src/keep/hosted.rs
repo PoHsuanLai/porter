@@ -4,9 +4,10 @@
 use super::classes::sync_app;
 use porter_client::{Identities, IdentitiesError};
 use porter_core::consent::{ConsentAnswer, ConsentAsk, GrantScope};
-use porter_core::wire::{ParentWindow, ProviderHint};
+use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
 use porter_core::{
-    Account, AccountId, AccountsReply, AccountsRequest, IdentityAddress, IdentityId, ProviderId,
+    Account, AccountId, AccountsReply, AccountsRequest, CapabilityKind, IdentityAddress,
+    IdentityId, ProviderId,
 };
 use porter_provider::Provider;
 use porter_secrets::{Secrets, SecretsError};
@@ -44,6 +45,20 @@ pub trait Hosted: Send + Sync + 'static {
         &self,
         account: &AccountId,
     ) -> impl Future<Output = Result<(), SecretsError>> + Send;
+
+    /// Asks the person, in a sign-in of its own, for the access of `kinds` the account's
+    /// provider asks only on use (the whole drive, for "Show in Files"); on Allow the account
+    /// claims it. The refusal is the sheet's ending, or `Unavailable`.
+    fn extend_access(
+        &self,
+        account: &AccountId,
+        kinds: Vec<CapabilityKind>,
+        window: ParentWindow,
+    ) -> impl Future<Output = Result<(), Refusal>> + Send;
+
+    /// Whether `provider` asks some access of `kind` only on use, which
+    /// [`Hosted::extend_access`] can ask for.
+    fn asks_on_use(&self, provider: &ProviderId, kind: CapabilityKind) -> bool;
 }
 
 impl<P, S, U, K, R, A> Hosted for AccountService<P, S, U, K, R, A>
@@ -73,6 +88,19 @@ where
 
     async fn remove_account(&self, account: &AccountId) -> Result<(), SecretsError> {
         AccountService::remove_account(self, account).await
+    }
+
+    async fn extend_access(
+        &self,
+        account: &AccountId,
+        kinds: Vec<CapabilityKind>,
+        window: ParentWindow,
+    ) -> Result<(), Refusal> {
+        AccountService::extend_access(self, &sync_app(), account, kinds, window).await
+    }
+
+    fn asks_on_use(&self, provider: &ProviderId, kind: CapabilityKind) -> bool {
+        AccountService::asks_on_use(self, provider, kind)
     }
 }
 

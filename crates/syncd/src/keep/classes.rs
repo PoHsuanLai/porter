@@ -9,12 +9,12 @@
 //! `Photos` kind of the provider file. syncd's key for it is `Photos`-kind, class `Photos`
 //! ([`photos_key`]), so a `Storage` grant of syncd's (the Drive app folder) never reaches them.
 
-use crate::datasets::storage::{photos_need, storage_need};
+use crate::datasets::storage::{drive_need, photos_need, storage_need};
 use porter_core::capability::{Offered, StorageScope};
 use porter_core::consent::{Decision, Grant, GrantKey, Usage};
 use porter_core::{
     Account, AccountId, AppId, AppName, Capability, CapabilityKind, DataClass, Family, Isolation,
-    Need, Offer, SpaceScope,
+    Match, Need, Offer, SpaceScope, matches,
 };
 
 /// What syncd is allowed to keep of an account.
@@ -66,6 +66,38 @@ pub fn sync_key(account: &AccountId, class: SyncClass) -> GrantKey {
         space: SpaceScope::Any,
         reach: StorageScope::AppFolder,
     }
+}
+
+/// The key of the grant that lets syncd list the whole drive of `account` for Files ("Show in
+/// Files"): the Files grant's, reaching the whole store, so it is never the app folder's.
+pub fn drive_key(account: &AccountId) -> GrantKey {
+    GrantKey {
+        reach: StorageScope::Full,
+        ..sync_key(account, SyncClass::Files)
+    }
+}
+
+/// Whether syncd holds an allowing grant of the whole drive of `account`.
+pub fn drive_allowed(grants: &[Grant], account: &AccountId) -> bool {
+    let wanted = drive_key(account);
+    grants
+        .iter()
+        .any(|g| g.key == wanted && g.decision == Decision::Allow)
+}
+
+/// Whether `account` is reached over a drive the listing reads whole: OneDrive (Graph) or
+/// Google Drive. Its provider must also ask the whole drive on use for Files to offer it.
+pub fn lists_whole_drive(account: &Account) -> bool {
+    has_endpoint(account, Family::Graph) || has_endpoint(account, Family::GoogleDrive)
+}
+
+/// Whether `account` was given the whole drive: it claims an offer the drive's need fits.
+pub fn claims_whole_drive(account: &Account) -> bool {
+    let need = drive_need();
+    account
+        .capabilities
+        .iter()
+        .any(|claim| matches(&need, &claim.offer) == Match::Fits)
 }
 
 /// The key of the grant that lets syncd upload to, and import from, the Google Photos of

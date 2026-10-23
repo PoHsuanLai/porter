@@ -7,6 +7,7 @@ use super::journal::DriveJournal;
 use crate::journal::JournalError;
 use porter_http::Http;
 use porter_sync::{Cursor, Folders, More, Replica, ReplicaError, RetryAfter};
+use std::time::Duration;
 use storage_gdrive::GdriveReplica;
 use storage_graph::GraphReplica;
 
@@ -106,5 +107,26 @@ pub async fn list_once<R: DriveReplica>(
                 return Ok(pass);
             }
         }
+    }
+}
+
+/// Lists `replica` into `journal` now and then every `every`, for as long as the task lives. A
+/// drive that asked to wait is listed again when it said; one whose access is missing, whose
+/// sign-in was refused or that is gone is looked at again after `every`. The storage supervisor
+/// ends the task when the grant goes; the journal stays.
+pub async fn keep_listing<R: DriveReplica>(journal: DriveJournal, replica: R, every: Duration) {
+    loop {
+        let wait = match list_once(&journal, &replica).await {
+            Ok(Pass {
+                outcome: Listed::Retry(after),
+                ..
+            }) => Duration::from_secs(after.0.into()),
+            Ok(_) => every,
+            Err(why) => {
+                eprintln!("syncd: a drive listing could not be kept: {why}");
+                every
+            }
+        };
+        tokio::time::sleep(wait).await;
     }
 }

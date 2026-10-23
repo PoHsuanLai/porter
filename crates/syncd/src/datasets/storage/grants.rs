@@ -30,27 +30,31 @@ pub enum StorageKind {
     /// Google Photos (`DataClass::Photos`, a `Photos`-kind grant): the upload folder, and the
     /// picker import. Behind the same switch.
     GooglePhotos,
+    /// The whole drive, listed for Files (`DataClass::Files`, a grant that reaches the whole
+    /// store, made by "Show in Files"): OneDrive's or My Drive, by the endpoint.
+    Drive,
 }
 
 impl StorageKind {
     /// Every kind.
-    pub const ALL: [StorageKind; 3] = [
+    pub const ALL: [StorageKind; 4] = [
         StorageKind::AppFolder,
         StorageKind::Photos,
         StorageKind::GooglePhotos,
+        StorageKind::Drive,
     ];
 
     /// The data class the grant covers.
     pub fn class(self) -> DataClass {
         match self {
-            StorageKind::AppFolder => DataClass::Files,
+            StorageKind::AppFolder | StorageKind::Drive => DataClass::Files,
             StorageKind::Photos | StorageKind::GooglePhotos => DataClass::Photos,
         }
     }
 
     /// Whether the kind is one of the Photos datasets, which the switch gates.
     pub fn is_photos(self) -> bool {
-        !matches!(self, StorageKind::AppFolder)
+        !matches!(self, StorageKind::AppFolder | StorageKind::Drive)
     }
 }
 
@@ -60,6 +64,17 @@ pub fn storage_need() -> Need {
         Access::ReadWrite,
         Delta::Poll,
         StorageScope::AppFolder,
+        QuotaReport::Unreported,
+    ))
+}
+
+/// The need of the whole drive ("Show in Files"): read and write all of it and poll it. An
+/// account fits it only once it was given that access (the account service's `extend_access`).
+pub fn drive_need() -> Need {
+    Need::Storage(StorageNeed::new(
+        Access::ReadWrite,
+        Delta::Poll,
+        StorageScope::Full,
         QuotaReport::Unreported,
     ))
 }
@@ -129,7 +144,7 @@ pub fn google_photos_endpoints(
 /// Whether a candidate is one `kind` can run over.
 fn runs_over(kind: StorageKind, candidate: &Candidate) -> bool {
     match kind {
-        StorageKind::AppFolder => app_folder_store(candidate).is_some(),
+        StorageKind::AppFolder | StorageKind::Drive => app_folder_store(candidate).is_some(),
         StorageKind::Photos => graph_endpoint(candidate).is_some(),
         StorageKind::GooglePhotos => google_photos_endpoints(candidate).is_some(),
     }
@@ -167,6 +182,7 @@ impl<T: Transport> StorageGrants for ClientStorageGrants<T> {
         let needs = match kind {
             StorageKind::GooglePhotos => vec![photos_need(), picker_need()],
             StorageKind::AppFolder | StorageKind::Photos => vec![storage_need()],
+            StorageKind::Drive => vec![drive_need()],
         };
         let mut candidates = Vec::new();
         for need in needs {
