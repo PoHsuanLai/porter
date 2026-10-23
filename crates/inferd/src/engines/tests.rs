@@ -79,6 +79,7 @@ fn snapshot(states: &[(&str, EngineState)], now: u64) -> Snapshot {
         failures: Default::default(),
         now: Some(MonoMs(now)),
         gpu: None,
+        ..Snapshot::default()
     }
 }
 
@@ -173,6 +174,7 @@ fn the_gpu_is_loading_while_an_engine_starts_busy_in_a_turn_and_idle_otherwise()
                 failures: Default::default(),
                 now: None,
                 gpu: None,
+                ..Snapshot::default()
             },
             GpuState::Idle,
         ),

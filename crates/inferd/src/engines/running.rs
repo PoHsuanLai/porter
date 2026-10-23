@@ -80,6 +80,7 @@ pub fn start_words(cause: &Cause) -> String {
         Cause::BadProfile => "this computer cannot run the model as it is set up".to_owned(),
         Cause::Attached(_) => "the engine runs where you set it up, not here".to_owned(),
         Cause::Unknown => "the engine is not known here".to_owned(),
+        Cause::Released => "the model was stopped".to_owned(),
     }
 }
 

@@ -70,6 +70,9 @@ pub struct Snapshot {
     /// The GPU as the driver last read it (each time an engine was asked for); `None` before the
     /// first look. The router reads it to cost a swap.
     pub gpu: Option<GpuMemory>,
+    /// How many times the person has released each engine; a wait for an engine that sees its
+    /// count grow was ended by the person.
+    pub released: BTreeMap<EngineId, u32>,
 }
 
 mod change;
@@ -193,6 +196,7 @@ impl Supervised {
             failures: BTreeMap::new(),
             now: None,
             gpu: None,
+            released: BTreeMap::new(),
         });
         let nothing = GpuMemory {
             total: MiB(0),
@@ -215,6 +219,7 @@ impl Supervised {
             seen: stopped,
             pending: BTreeMap::new(),
             failures: BTreeMap::new(),
+            released: BTreeMap::new(),
             failed: 0,
         };
         let began = SystemTime::now();
@@ -261,7 +266,13 @@ impl Supervised {
     /// timeout. Dropping the future abandons the wait, not the engine.
     pub async fn want(&self, id: &EngineId) -> Result<(), Failed> {
         // Failures before this call do not fail it; one after it does.
-        let seen = self.state.borrow().failures.get(id).map(|f| f.seq);
+        let (seen, released) = {
+            let snap = self.state.borrow();
+            (
+                snap.failures.get(id).map(|f| f.seq),
+                snap.released.get(id).copied().unwrap_or(0),
+            )
+        };
         let (ack, done) = oneshot::channel();
         self.commands
             .send(Command::Want(id.clone(), ack))
@@ -276,6 +287,12 @@ impl Supervised {
             let verdict = {
                 let snap = state.borrow_and_update();
                 let failure = snap.failures.get(id);
+                // The person stopped the engine while this waited for it.
+                if snap.released.get(id).copied().unwrap_or(0) > released {
+                    return Err(Failed {
+                        cause: Cause::Released,
+                    });
+                }
                 match snap.states.get(id) {
                     Some(EngineState::Ready { .. }) => Some(Ok(())),
                     Some(EngineState::Failed(_)) | None => {
@@ -361,6 +378,8 @@ struct Driver<H, P, G> {
     /// a spawn the host refused.
     pending: BTreeMap<EngineId, Cause>,
     failures: BTreeMap<EngineId, Failure>,
+    /// How many times each engine was released (`Snapshot::released`).
+    released: BTreeMap<EngineId, u32>,
     /// How many failures there have been (their numbers).
     failed: u32,
 }
@@ -416,7 +435,11 @@ where
     async fn command(&mut self, command: Command) {
         match command {
             Command::Used(id) => self.pump(vec![SupervisorIn::Used(id)]).await,
-            Command::Release(id) => self.pump(vec![SupervisorIn::Release(id)]).await,
+            Command::Release(id) => {
+                let count = self.released.entry(id.clone()).or_insert(0);
+                *count = count.saturating_add(1);
+                self.pump(vec![SupervisorIn::Release(id)]).await;
+            }
             Command::Want(id, ack) => {
                 // No request starts an engine again while it is paused after failing.
                 if let Some(cause) = self.paused(&id) {
@@ -492,6 +515,7 @@ where
             failures: self.failures.clone(),
             now: Some(self.now()),
             gpu: self.gpu,
+            released: self.released.clone(),
         };
         // The clock is kept fresh for readers, but only a change a reader can see wakes them.
         self.publish.send_if_modified(|current| {

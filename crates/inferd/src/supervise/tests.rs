@@ -129,6 +129,51 @@ async fn a_released_engine_stops_and_stays_stopped_until_wanted_again() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_wait_for_an_engine_the_person_stops_ends_with_that_instead_of_hanging() {
+    let scratch = Scratch::new("sup-release-wait");
+    let specs = specs(&scratch);
+    let id = specs[0].id.clone();
+    // An engine that is always still loading, as the real probe takes its time.
+    #[derive(Debug, Clone)]
+    struct Loading;
+    impl ReadyProbe for Loading {
+        async fn probe(&self, _: &EngineId) -> Probe {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            Probe::Loading
+        }
+    }
+    let host = Recorder::default();
+    let supervised = Supervised::start(
+        specs,
+        SupervisorConfig::default(),
+        Ports {
+            host: host.clone(),
+            probe: Loading,
+            gpu: gpu(16_000),
+        },
+    );
+    let waiting = tokio::spawn({
+        let (supervised, id) = (supervised.clone(), id.clone());
+        async move { supervised.want(&id).await }
+    });
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    assert!(matches!(
+        state(&supervised, &id),
+        EngineState::Starting { .. }
+    ));
+    supervised.release(&id);
+    let ended = waiting.await.expect("the wait ends");
+    assert_eq!(
+        ended,
+        Err(Failed {
+            cause: Cause::Released
+        })
+    );
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert!(matches!(state(&supervised, &id), EngineState::Stopped));
+}
+
+#[tokio::test(start_paused = true)]
 async fn an_engine_in_use_is_not_unloaded() {
     let scratch = Scratch::new("sup-used");
     let specs = specs(&scratch);
@@ -422,6 +467,7 @@ fn snapshot_at(now: u64, state: EngineState, gpu_total: u32) -> Snapshot {
             total: MiB(gpu_total),
             used_by_others: MiB(0),
         }),
+        ..Snapshot::default()
     }
 }
 

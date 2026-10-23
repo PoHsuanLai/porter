@@ -23,6 +23,7 @@ impl Snapshot {
             || self.states != next.states
             || self.failures != next.failures
             || self.gpu != next.gpu
+            || self.released != next.released
         {
             Change::Seen
         } else {

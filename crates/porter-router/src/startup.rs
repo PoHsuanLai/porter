@@ -189,6 +189,8 @@ pub enum Cause {
     },
     /// The model's profile cannot be run.
     BadProfile,
+    /// The person stopped the engine while a request waited for it.
+    Released,
     /// An engine the person attached cannot answer (nothing here started it, and nothing here
     /// will).
     Attached(crate::attached::NotReady),
@@ -224,7 +226,11 @@ impl Cause {
     pub fn pauses(&self) -> bool {
         !matches!(
             self,
-            Cause::NoRoom { .. } | Cause::BadProfile | Cause::Unknown | Cause::Attached(_)
+            Cause::NoRoom { .. }
+                | Cause::BadProfile
+                | Cause::Unknown
+                | Cause::Attached(_)
+                | Cause::Released
         )
     }
 }
@@ -287,6 +293,7 @@ impl fmt::Display for Cause {
                 )
             }
             Cause::BadProfile => f.write_str("the model's engine profile cannot be run"),
+            Cause::Released => f.write_str("the model was stopped"),
             Cause::Attached(why) => write!(f, "{why}"),
             Cause::Unknown => f.write_str("the engine is unknown to the supervisor"),
         }
