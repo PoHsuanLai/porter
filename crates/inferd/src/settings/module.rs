@@ -49,6 +49,8 @@ pub struct InferdSettings<P> {
     /// The `accounts.<id>.*` rows of the AI accounts, when this daemon hosts them.
     keys: Option<std::sync::Arc<dyn KeyRows>>,
     news: Option<std::sync::Arc<tokio::sync::Notify>>,
+    /// The folder an engine program's folders are looked at from (`/`; a test's own folder).
+    programs_below: std::path::PathBuf,
 }
 
 impl<P> std::fmt::Debug for InferdSettings<P> {
@@ -67,6 +69,17 @@ impl<P: Peers> InferdSettings<P> {
             reload,
             keys: None,
             news: None,
+            programs_below: std::path::PathBuf::from("/"),
+        }
+    }
+
+    /// The same module, vouching for `folder` and the folders above it when it checks the
+    /// program a row names: only the folders from `folder` down must be the person's or root's.
+    /// For a test, whose own folder sits in a temporary folder everybody may write to.
+    pub fn programs_held_below(self, folder: impl Into<std::path::PathBuf>) -> Self {
+        Self {
+            programs_below: folder.into(),
+            ..self
         }
     }
 
@@ -340,7 +353,11 @@ impl<P: Peers> InferdSettings<P> {
         let named = if text.is_empty() {
             None
         } else {
-            programs::checked(&text, rustix::process::geteuid().as_raw())
+            programs::checked(
+                &text,
+                rustix::process::geteuid().as_raw(),
+                &self.programs_below,
+            )
                 .map_err(LiveError::BadValue)?;
             Some(toml::Value::String(text))
         };

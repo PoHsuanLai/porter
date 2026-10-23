@@ -7,7 +7,7 @@
 use ds_settings::schema::{
     AgentSetting, Exposure, Help, KeyKind, KeyPath, KeySpec, Label, Page, Section,
 };
-use porter_daemon::held_by;
+use porter_daemon::held_under;
 use porter_router::local::EngineConfig;
 use std::collections::BTreeMap;
 use std::os::unix::fs::PermissionsExt;
@@ -100,8 +100,9 @@ impl Program {
 
 /// Whether `text` may be the program of an engine run by the user `uid`, or why not, in plain
 /// words: a full path to a file that can be run, held by `uid` or root, that nobody else can
-/// change and that is in no folder anybody else can change.
-pub(super) fn checked(text: &str, uid: u32) -> Result<(), String> {
+/// change and that is in no folder anybody else can change. The folders are looked at from
+/// `below` down (`/` for inferd itself).
+pub(super) fn checked(text: &str, uid: u32, below: &Path) -> Result<(), String> {
     let path = Path::new(text);
     if !path.is_absolute() {
         return Err("Give the whole path of the program, starting with a slash.".to_owned());
@@ -115,7 +116,7 @@ pub(super) fn checked(text: &str, uid: u32) -> Result<(), String> {
     if meta.permissions().mode() & 0o111 == 0 {
         return Err("That file is not allowed to run as a program.".to_owned());
     }
-    if !held_by(path, uid) {
+    if !held_under(path, uid, below) {
         return Err(
             "That program, or a folder it is in, belongs to someone else or can be changed by other people, so it is not used."
                 .to_owned(),
@@ -131,6 +132,8 @@ mod tests {
     #[test]
     fn a_path_is_taken_only_when_it_is_a_whole_path_to_a_program_nobody_else_holds() {
         let scratch = porter_fake::Scratch::new("program");
+        std::fs::set_permissions(&*scratch, std::fs::Permissions::from_mode(0o755))
+            .expect("chmod scratch");
         let program = scratch.join("python");
         std::fs::write(&program, "").expect("write");
         let mode = |bits| {
@@ -138,7 +141,7 @@ mod tests {
                 .expect("chmod");
         };
         let me = rustix::process::geteuid().as_raw();
-        let words = |text: &str| checked(text, me).expect_err(text);
+        let words = |text: &str| checked(text, me, &scratch).expect_err(text);
         assert!(words("python").contains("whole path"));
         assert!(words("./python").contains("whole path"));
         assert!(words(&scratch.join("absent").to_string_lossy()).contains("no program"));
@@ -148,8 +151,14 @@ mod tests {
         // A program the group can change is not taken.
         mode(0o775);
         assert!(words(&program.to_string_lossy()).contains("belongs to someone else"));
-        // A program the system holds is taken.
-        assert_eq!(checked("/usr/bin/env", me), Ok(()));
+        // A program held by the person, in a folder only they can change, is taken.
+        mode(0o755);
+        assert_eq!(checked(&program.to_string_lossy(), me, &scratch), Ok(()));
+        // One that another person holds is not (root holds for everyone, so a test run as root
+        // cannot tell).
+        if me != 0 {
+            assert!(checked(&program.to_string_lossy(), me + 1, &scratch).is_err());
+        }
     }
 
     #[test]

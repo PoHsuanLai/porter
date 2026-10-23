@@ -175,17 +175,21 @@ pub fn held_by(path: &Path, uid: u32) -> bool {
     held_under(path, uid, Path::new("/"))
 }
 
-/// [`held_by`], looking at the directories from `below` down only (a test holds a file in a
-/// directory of its own, whose parents are not the test's to say anything about).
-fn held_under(path: &Path, uid: u32, below: &Path) -> bool {
+/// [`held_by`], looking at the directories from `below` down only: a program kept under a folder
+/// the caller vouches for (a test's own folder, whose parents are not the test's to say anything
+/// about). [`held_by`] is this from `/`.
+pub fn held_under(path: &Path, uid: u32, below: &Path) -> bool {
     let Ok(real) = std::fs::canonicalize(path) else {
         return false;
     };
     let is_file = std::fs::metadata(&real).is_ok_and(|meta| meta.is_file());
+    // A program outside the folder vouched for is nobody's to vouch for.
+    let below = std::fs::canonicalize(below).unwrap_or_else(|_| below.to_owned());
     is_file
+        && real.starts_with(&below)
         && real
             .ancestors()
-            .take_while(|step| step.starts_with(below))
+            .take_while(|step| step.starts_with(&below))
             .all(|step| {
                 std::fs::metadata(step).is_ok_and(|meta| {
                     (meta.uid() == 0 || meta.uid() == uid) && meta.mode() & 0o022 == 0

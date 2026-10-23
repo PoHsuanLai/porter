@@ -124,7 +124,11 @@ fn serving(
     )
     .reloading(reload.clone())
     .keys_news(Arc::clone(&news));
-    let settings = InferdSettings::new(Arc::clone(peers), reload).announcing(news);
+    // A program the person keeps in the test's own folder counts as theirs alone.
+    let below = file.parent().expect("a folder").to_owned();
+    let settings = InferdSettings::new(Arc::clone(peers), reload)
+        .announcing(news)
+        .programs_held_below(below);
     let daemon = daemon.clone();
     async move { serve_with_settings(&daemon, inference, settings).await }
 }
@@ -781,8 +785,6 @@ async fn the_shell_may_write_no_other_setting_and_an_app_no_helper_pool() {
     assert_eq!(rig.engines.settings().tiers, TierMap::default());
 }
 
-/// A program the system holds: root's, in folders only root can change.
-const HELD_PROGRAM: &str = "/usr/bin/env";
 
 #[tokio::test(flavor = "multi_thread")]
 async fn an_engine_program_is_written_read_back_announced_and_cleared_and_a_bad_path_is_refused() {
@@ -796,6 +798,14 @@ async fn an_engine_program_is_written_read_back_announced_and_cleared_and_a_bad_
         .await
         .expect("subscribe");
     let row = key("engines.llama_server");
+    // A program the person holds, in the rig's folder, which only they can change.
+    let folder = rig.file.parent().expect("a folder");
+    std::fs::set_permissions(folder, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    let held = folder.join("llama-server");
+    std::fs::write(&held, "").expect("write");
+    std::fs::set_permissions(&held, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    let held = held.to_string_lossy().into_owned();
+    let held = held.as_str();
     let written = || -> toml::Table {
         std::fs::read_to_string(&rig.file)
             .expect("file")
@@ -804,11 +814,11 @@ async fn an_engine_program_is_written_read_back_announced_and_cleared_and_a_bad_
     };
     assert_eq!(settings.get(&row).await.expect("get"), text(""));
 
-    settings.set(&row, &text(HELD_PROGRAM)).await.expect("set");
-    assert_eq!(settings.get(&row).await.expect("get"), text(HELD_PROGRAM));
+    settings.set(&row, &text(held)).await.expect("set");
+    assert_eq!(settings.get(&row).await.expect("get"), text(held));
     assert_eq!(
         written()["engines"]["llama_server"].as_str(),
-        Some(HELD_PROGRAM)
+        Some(held)
     );
     within(
         "EnginesChanged",
@@ -849,7 +859,7 @@ async fn an_engine_program_is_written_read_back_announced_and_cleared_and_a_bad_
         ),
         "a program is text"
     );
-    assert_eq!(settings.get(&row).await.expect("get"), text(HELD_PROGRAM));
+    assert_eq!(settings.get(&row).await.expect("get"), text(held));
 
     // Empty takes the key out of the file: inferd finds the program itself again.
     settings.set(&row, &text("")).await.expect("clear");

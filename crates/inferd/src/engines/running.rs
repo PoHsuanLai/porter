@@ -45,9 +45,9 @@ impl From<RunError> for fdo::Error {
     }
 }
 
-/// A memory size as a person reads it: gigabytes, one decimal.
+/// A memory size as a person reads it: gigabytes, to the nearest tenth.
 fn gigabytes(mib: MiB) -> String {
-    let tenths = u64::from(mib.0) * 10 / 1024;
+    let tenths = (u64::from(mib.0) * 10 + 512) / 1024;
     format!("{}.{} GB", tenths / 10, tenths % 10)
 }
 
