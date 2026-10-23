@@ -11,10 +11,9 @@ use porter_client::Accounts;
 use porter_core::capability::StorageScope;
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::{
-    Account, AccountId, AccountLabel, AccountState, AppName, AuthKind, Candidate, CapabilityKind,
-    Claim, Credential, DataClass, EndpointUrl, Family, GrantId, LoginName, Offer, Provenance,
-    Restriction, SecretKey, SecretPurpose, SecretText, ServiceEndpoint, SpaceScope, Subject, Tls,
-    UnixSeconds,
+    Account, AccountId, AccountLabel, AccountState, AuthKind, Candidate, CapabilityKind, Claim,
+    Credential, DataClass, EndpointUrl, Family, GrantId, LoginName, Offer, Provenance, Restriction,
+    SecretKey, SecretPurpose, SecretText, ServiceEndpoint, SpaceScope, Subject, Tls, UnixSeconds,
 };
 use porter_dbus::CallerRole;
 use porter_fake::FakeProvider;
@@ -386,7 +385,8 @@ pub fn local(rig: &Rig, rel: &str) -> std::path::PathBuf {
 #[cfg(feature = "photos-picker")]
 pub async fn serve_picker(rig: &Rig) {
     let owners = syncd::service::Access {
-        owners: [AppName::parse(syncd::datasets::storage::PHOTOS_APP).expect("app")].into(),
+        owners: [porter_core::AppName::parse(syncd::datasets::storage::PHOTOS_APP).expect("app")]
+            .into(),
     };
     syncd::service::serve_picker(
         &rig.server,
