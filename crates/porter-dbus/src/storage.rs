@@ -10,6 +10,12 @@
 //! Who may call: the shell (`CallerRole::SheetHost`), Settings (`CallerRole::Settings`) and an app
 //! the person let see their files (per-app consent, as any app asks porter). Anyone else, and a
 //! sender syncd does not know, is `AccessDenied`. A caller sees only the drives it was let see.
+//! Only the shell and Settings may pause a drive.
+//!
+//! An online document (a Google Doc, Sheet or Slides) is a small file on the drive, named with
+//! its own extension (`.gdoc`, `.gsheet`, `.gslides`): a JSON object whose `url` member is the
+//! document's address, as Google's own desktop client writes them. A caller opens the `url` of
+//! its details rather than reading the file; an app that opens the file directly reads `url`.
 
 use crate::args::Details;
 use std::collections::HashMap;
@@ -32,18 +38,31 @@ pub const DRIVE_KEY_WORDS: &str = "words";
 pub const DRIVE_KEY_USED: &str = "used";
 /// Bytes the account may use (`t`); absent when unknown or unlimited.
 pub const DRIVE_KEY_TOTAL: &str = "total";
+/// Bytes of the drive's files downloaded on this computer (`t`), what "Remove Download" frees.
+/// It moves when a download ends or is removed, not while one fills.
+pub const DRIVE_KEY_LOCAL: &str = "local";
 
 /// An item's state ([`ItemState`], `s`).
 pub const ITEM_KEY_STATE: &str = "state";
 /// Whether the person keeps it downloaded (`b`): true while it is kept, whatever else it is
-/// doing (a kept file that is uploading is `uploading` and kept).
+/// doing (a kept file that is uploading is `uploading` and kept). Keeping a folder keeps
+/// everything in it, also what is added to it later, so every item under a kept folder reads
+/// true.
 pub const ITEM_KEY_KEPT: &str = "kept";
-/// How far a transfer is, 0 to 1 (`d`), while the state is `downloading` or `uploading`.
+/// How far a transfer is, 0 to 1 (`d`), while the state is `downloading` or `uploading`. A
+/// folder's is the share of the bytes moving under it that have moved, so a caller never sums
+/// its children.
 pub const ITEM_KEY_FRACTION: &str = "fraction";
 /// What went wrong, in words a person reads, when the state is `error` (`s`).
 pub const ITEM_KEY_WORDS: &str = "words";
 /// What the item is ([`ItemKind`], `s`).
 pub const ITEM_KEY_KIND: &str = "kind";
+/// An online document's address (`s`), always there when the kind is `online`: a caller opens
+/// it with the OpenURI portal.
+pub const ITEM_KEY_URL: &str = "url";
+/// The other version of a file in `conflict` (`s`): its path, on the same drive, next to this
+/// one. Each of the two names the other.
+pub const ITEM_KEY_OTHER: &str = "other";
 
 /// Where a drive stands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -118,7 +137,8 @@ pub enum ItemState {
     Waiting,
     /// It could not be downloaded or sent; `words` says why.
     Error,
-    /// Changed here and on the drive both: both versions are kept, side by side.
+    /// Changed here and on the drive both: both versions are kept, side by side, and `other`
+    /// names the other one.
     Conflict,
 }
 
@@ -202,12 +222,13 @@ pub type Refused = HashMap<String, String>;
 )]
 pub trait Storage {
     /// The drives the caller may see, one row each: the drive's id (stable while the account is
-    /// in porter), then `account`, `label`, `provider`, `path`, `state`, and `words`, `used` and
-    /// `total` when there is something to say (the `DRIVE_KEY_*` names). A drive is listed from
-    /// the moment the person turns it on, `starting` until its listing is read.
+    /// in porter), then `account`, `label`, `provider`, `path`, `state`, `local`, and `words`,
+    /// `used` and `total` when there is something to say (the `DRIVE_KEY_*` names). A drive is
+    /// listed from the moment the person turns it on, `starting` until its listing is read.
     fn drives(&self) -> zbus::Result<Vec<(String, Details)>>;
     /// Where each of `paths` stands: `state`, `kept` and `kind` always, `fraction` while it
-    /// moves, `words` on an error (the `ITEM_KEY_*` names). A path on no drive the caller sees,
+    /// moves, `words` on an error, `url` for an online document and `other` on a conflict (the
+    /// `ITEM_KEY_*` names). A path on no drive the caller sees,
     /// or that is not there, is left out of the answer.
     fn items(&self, paths: Vec<String>) -> zbus::Result<ItemDetails>;
     /// "Download Now": downloads each of `paths` (a folder: everything under it). Answers when
@@ -215,15 +236,23 @@ pub trait Storage {
     /// taken and nothing happens; an online document, or a path on no drive, is refused.
     fn download(&self, paths: Vec<String>) -> zbus::Result<Refused>;
     /// "Keep Downloaded" on (`keep` true: downloads each of `paths` and never removes it to free
-    /// space) or off (false: it stays downloaded until space is needed). Refuses an online
-    /// document and a path on no drive.
+    /// space) or off (false: it stays downloaded until space is needed). A kept folder keeps
+    /// what is added to it later; turning a folder off turns off everything in it. Refuses an
+    /// online document, a path on no drive, and turning off an item kept with its folder.
     fn keep(&self, paths: Vec<String>, keep: bool) -> zbus::Result<Refused>;
     /// "Remove Download": frees the space each of `paths` takes here; it stays listed and
     /// downloads again when opened. Turns Keep Downloaded off for it. Refuses an item with
-    /// changes not yet sent ("Waiting to upload") or uploading, so nothing made here is lost.
+    /// changes not yet sent ("Waiting to upload") or uploading, so nothing made here is lost, a
+    /// file in conflict, and an item kept with its folder.
     fn remove_download(&self, paths: Vec<String>) -> zbus::Result<Refused>;
+    /// "Pause Syncing" (`paused` true) or "Resume Syncing" (false) for each drive id of
+    /// `drives`. A paused drive sends nothing and reads no changes; a file the person opens or
+    /// asks to download still downloads. Answers the ids it did not take, with words. The shell
+    /// and Settings only.
+    fn set_paused(&self, drives: Vec<String>, paused: bool) -> zbus::Result<Refused>;
     /// Joins the caller to the connections syncd tells: a connection hears `DrivesChanged` and
-    /// `ItemsChanged` only after calling this, and then only for the drives it may see.
+    /// `ItemsChanged` only after calling this, and then only for the drives it may see. It lasts
+    /// until the connection closes; a caller that connects again calls it again.
     fn watch(&self) -> zbus::Result<()>;
     /// The drives changed (one turned on or off, a state, the space used). No payload: a
     /// listener calls `Drives` again.
@@ -263,6 +292,11 @@ impl StorageSkeleton {
 
     fn remove_download(&self, paths: Vec<String>) -> fdo::Result<Refused> {
         let _ = paths;
+        Err(crate::introspect::frozen())
+    }
+
+    fn set_paused(&self, drives: Vec<String>, paused: bool) -> fdo::Result<Refused> {
+        let _ = (drives, paused);
         Err(crate::introspect::frozen())
     }
 

@@ -22,6 +22,11 @@
      <arg name="paths" type="as" direction="in"/>
      <arg type="a{ss}" direction="out"/>
    </method>
+   <method name="SetPaused">
+     <arg name="drives" type="as" direction="in"/>
+     <arg name="paused" type="b" direction="in"/>
+     <arg type="a{ss}" direction="out"/>
+   </method>
    <method name="Watch">
    </method>
    <signal name="DrivesChanged">

@@ -2,17 +2,17 @@
 //! of real files under a scratch folder, whose states move as the real ones will. Download Now
 //! fills a progress fraction ten times a second until the file is downloaded; Keep Downloaded and
 //! Remove Download change what they say; the commands of [`World::command`] (read from stdin by
-//! `porter-rig-storage`) take a drive offline, ask for sign-in again, or start an upload, an
-//! error or a conflict on one item.
+//! `porter-rig-storage`) take a drive offline, ask for sign-in again, add a file as another
+//! device would, or start an upload, an error or a conflict on one item.
 //!
 //! The files on disk are ordinary files with a line of text: nothing here is downloaded from
 //! anywhere, only the states are. Test tooling, never installed.
 
 use porter_dbus::{
-    DRIVE_KEY_ACCOUNT, DRIVE_KEY_LABEL, DRIVE_KEY_PATH, DRIVE_KEY_PROVIDER, DRIVE_KEY_STATE,
-    DRIVE_KEY_TOTAL, DRIVE_KEY_USED, DRIVE_KEY_WORDS, Details, DriveState, ITEM_KEY_FRACTION,
-    ITEM_KEY_KEPT, ITEM_KEY_KIND, ITEM_KEY_STATE, ITEM_KEY_WORDS, ItemDetails, ItemKind, ItemState,
-    Refused, STORAGE_PATH,
+    DRIVE_KEY_ACCOUNT, DRIVE_KEY_LABEL, DRIVE_KEY_LOCAL, DRIVE_KEY_PATH, DRIVE_KEY_PROVIDER,
+    DRIVE_KEY_STATE, DRIVE_KEY_TOTAL, DRIVE_KEY_USED, DRIVE_KEY_WORDS, Details, DriveState,
+    ITEM_KEY_FRACTION, ITEM_KEY_KEPT, ITEM_KEY_KIND, ITEM_KEY_OTHER, ITEM_KEY_STATE, ITEM_KEY_URL,
+    ITEM_KEY_WORDS, ItemDetails, ItemKind, ItemState, Refused, STORAGE_PATH,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -40,7 +40,15 @@ pub mod words {
     pub const WAITING: &str = "Waiting to upload.";
     /// A removal asked for an item with two versions.
     pub const CONFLICT: &str = "This file has two versions. Choose one first.";
+    /// Keep Downloaded off, or a removal, asked for an item inside a kept folder.
+    pub const KEPT_WITH_FOLDER: &str = "This item is kept downloaded with its folder.";
+    /// A drive id that names no drive.
+    pub const NO_DRIVE: &str = "This drive isn't in Files.";
 }
+
+/// What a file of the other version of a conflict is called: its name with this before the
+/// extension.
+const OTHER_VERSION: &str = " (this computer)";
 
 /// One drive of the fake.
 #[derive(Debug, Clone)]
@@ -56,7 +64,8 @@ struct Drive {
     total: Option<u64>,
 }
 
-/// One file or folder of the fake. A folder's state is worked out from what is under it.
+/// One file or folder of the fake. A folder's state is worked out from what is under it; its
+/// `kept` is its own, and everything under it reads kept with it.
 #[derive(Debug, Clone)]
 struct Item {
     drive: String,
@@ -65,6 +74,12 @@ struct Item {
     kept: bool,
     fraction: f64,
     words: Option<String>,
+    /// Bytes, as the drive says: what downloading it takes here.
+    size: u64,
+    /// An online document's address.
+    url: Option<String>,
+    /// The other version of a file in conflict.
+    other: Option<PathBuf>,
 }
 
 /// What a step changed: per drive, the paths whose details are new.
@@ -77,14 +92,16 @@ pub struct World {
     items: BTreeMap<PathBuf, Item>,
 }
 
-/// Each file the fake plants: its drive, its path under the drive, its kind and its state.
-const PLANTED: &[(&str, &str, ItemKind, ItemState, bool)] = &[
+/// Each file the fake plants: its drive, its path under the drive, its kind, its state, whether
+/// it is kept, and its size.
+const PLANTED: &[(&str, &str, ItemKind, ItemState, bool, u64)] = &[
     (
         "onedrive",
         "Documents",
         ItemKind::Folder,
         ItemState::Cloud,
         false,
+        0,
     ),
     (
         "onedrive",
@@ -92,6 +109,7 @@ const PLANTED: &[(&str, &str, ItemKind, ItemState, bool)] = &[
         ItemKind::File,
         ItemState::Cloud,
         false,
+        240_000,
     ),
     (
         "onedrive",
@@ -99,6 +117,7 @@ const PLANTED: &[(&str, &str, ItemKind, ItemState, bool)] = &[
         ItemKind::File,
         ItemState::Downloaded,
         false,
+        4_000,
     ),
     (
         "onedrive",
@@ -106,6 +125,7 @@ const PLANTED: &[(&str, &str, ItemKind, ItemState, bool)] = &[
         ItemKind::File,
         ItemState::Downloaded,
         true,
+        1_800_000,
     ),
     (
         "onedrive",
@@ -113,6 +133,7 @@ const PLANTED: &[(&str, &str, ItemKind, ItemState, bool)] = &[
         ItemKind::Folder,
         ItemState::Cloud,
         false,
+        0,
     ),
     (
         "onedrive",
@@ -120,6 +141,7 @@ const PLANTED: &[(&str, &str, ItemKind, ItemState, bool)] = &[
         ItemKind::File,
         ItemState::Cloud,
         false,
+        3_600_000,
     ),
     (
         "onedrive",
@@ -127,6 +149,7 @@ const PLANTED: &[(&str, &str, ItemKind, ItemState, bool)] = &[
         ItemKind::File,
         ItemState::Waiting,
         false,
+        2_900_000,
     ),
     (
         "onedrive",
@@ -134,6 +157,7 @@ const PLANTED: &[(&str, &str, ItemKind, ItemState, bool)] = &[
         ItemKind::File,
         ItemState::Conflict,
         false,
+        52_000,
     ),
     (
         "gdrive",
@@ -141,6 +165,7 @@ const PLANTED: &[(&str, &str, ItemKind, ItemState, bool)] = &[
         ItemKind::Folder,
         ItemState::Cloud,
         false,
+        0,
     ),
     (
         "gdrive",
@@ -148,6 +173,7 @@ const PLANTED: &[(&str, &str, ItemKind, ItemState, bool)] = &[
         ItemKind::Online,
         ItemState::Cloud,
         false,
+        0,
     ),
     (
         "gdrive",
@@ -155,6 +181,7 @@ const PLANTED: &[(&str, &str, ItemKind, ItemState, bool)] = &[
         ItemKind::File,
         ItemState::Cloud,
         false,
+        760_000,
     ),
     (
         "gdrive",
@@ -162,6 +189,7 @@ const PLANTED: &[(&str, &str, ItemKind, ItemState, bool)] = &[
         ItemKind::File,
         ItemState::Error,
         false,
+        31_000,
     ),
     (
         "gdrive",
@@ -169,6 +197,7 @@ const PLANTED: &[(&str, &str, ItemKind, ItemState, bool)] = &[
         ItemKind::File,
         ItemState::Downloaded,
         false,
+        980_000,
     ),
 ];
 
@@ -201,28 +230,31 @@ impl World {
                 total: Some(15_000_000_000),
             },
         ];
-        let mut items = BTreeMap::new();
         for drive in &drives {
             std::fs::create_dir_all(&drive.path)?;
         }
-        for (id, under, kind, state, kept) in PLANTED {
-            let drive = drives
+        let mut world = World {
+            drives,
+            items: BTreeMap::new(),
+        };
+        for (id, under, kind, state, kept, size) in PLANTED {
+            let path = world
+                .drives
                 .iter()
                 .find(|drive| drive.id == *id)
-                .expect("a planted item's drive is one of the two");
-            let path = drive.path.join(under);
-            match kind {
-                ItemKind::Folder => std::fs::create_dir_all(&path)?,
-                ItemKind::Online => std::fs::write(
-                    &path,
-                    "{\"url\": \"https://docs.example.test/fake\", \"note\": \"a fake online document\"}\n",
-                )?,
+                .expect("a planted item's drive is one of the two")
+                .path
+                .join(under);
+            let url = (*kind == ItemKind::Online).then(|| online_url(&path));
+            match (kind, &url) {
+                (ItemKind::Folder, _) => std::fs::create_dir_all(&path)?,
+                (ItemKind::Online, Some(url)) => std::fs::write(&path, link_file(url))?,
                 _ => std::fs::write(&path, format!("A fake file: {under}\n"))?,
             }
             let words =
                 (*state == ItemState::Error).then(|| "The server could not send it.".into());
-            items.insert(
-                path,
+            world.items.insert(
+                path.clone(),
                 Item {
                     drive: (*id).into(),
                     kind: *kind,
@@ -230,10 +262,16 @@ impl World {
                     kept: *kept,
                     fraction: 0.0,
                     words,
+                    size: *size,
+                    url,
+                    other: None,
                 },
             );
+            if *state == ItemState::Conflict {
+                world.split(&path, &mut Changed::new())?;
+            }
         }
-        Ok(World { drives, items })
+        Ok(world)
     }
 
     /// The drive rows, as `Drives` answers.
@@ -264,6 +302,11 @@ impl World {
                     Value::from(drive.state.as_str()),
                 );
                 put(&mut details, DRIVE_KEY_USED, Value::U64(drive.used));
+                put(
+                    &mut details,
+                    DRIVE_KEY_LOCAL,
+                    Value::U64(self.local(&drive.id)),
+                );
                 if let Some(total) = drive.total {
                     put(&mut details, DRIVE_KEY_TOTAL, Value::U64(total));
                 }
@@ -272,6 +315,32 @@ impl World {
                 }
                 (drive.id.clone(), details)
             })
+            .collect()
+    }
+
+    /// Bytes of a drive's files here: what is downloaded, or changed here and not sent yet.
+    fn local(&self, drive: &str) -> u64 {
+        self.items
+            .values()
+            .filter(|item| item.drive == drive && item.kind == ItemKind::File)
+            .filter(|item| {
+                matches!(
+                    item.state,
+                    ItemState::Downloaded
+                        | ItemState::Uploading
+                        | ItemState::Waiting
+                        | ItemState::Conflict
+                )
+            })
+            .map(|item| item.size)
+            .sum()
+    }
+
+    /// Every drive's bytes here, to tell whether a step changed the drive rows.
+    fn locals(&self) -> Vec<u64> {
+        self.drives
+            .iter()
+            .map(|drive| self.local(&drive.id))
             .collect()
     }
 
@@ -293,24 +362,55 @@ impl World {
         })
     }
 
-    /// "Keep Downloaded" on or off.
+    /// "Keep Downloaded" on or off. On, a folder's own flag is set and everything under it,
+    /// also what is added later, reads kept; off, everything under it is turned off too.
     pub fn keep(&mut self, paths: &[String], keep: bool, changed: &mut Changed) -> Refused {
-        self.each_file(paths, changed, |world, path, changed| {
-            if let Some(item) = world.items.get_mut(path) {
-                item.kept = keep;
+        let mut refused = Refused::new();
+        for text in paths {
+            let path = PathBuf::from(text);
+            match self.items.get(&path).map(|item| item.kind) {
+                None => {
+                    refused.insert(text.clone(), words::NOT_ON_A_DRIVE.into());
+                    continue;
+                }
+                Some(ItemKind::Online) => {
+                    refused.insert(text.clone(), words::ONLINE_ONLY.into());
+                    continue;
+                }
+                Some(_) => {}
             }
-            world.touch(path, changed);
-            if keep {
-                world.start_download(path, changed)
-            } else {
-                None
+            if !keep && self.kept_by_folder(&path) {
+                refused.insert(text.clone(), words::KEPT_WITH_FOLDER.into());
+                continue;
             }
-        })
+            for inner in self.under(&path) {
+                if let Some(item) = self.items.get_mut(&inner)
+                    && (inner == path || !keep)
+                {
+                    item.kept = keep;
+                }
+                self.touch(&inner, changed);
+            }
+            if keep && let Some(why) = self.download_under(&path, changed) {
+                refused.insert(text.clone(), why);
+            }
+        }
+        refused
     }
 
     /// "Remove Download".
     pub fn remove_download(&mut self, paths: &[String], changed: &mut Changed) -> Refused {
-        self.each_file(paths, changed, |world, path, changed| {
+        let mut refused = Refused::new();
+        let mut taken = Vec::new();
+        for text in paths {
+            let path = Path::new(text);
+            if self.items.contains_key(path) && self.kept_by_folder(path) {
+                refused.insert(text.clone(), words::KEPT_WITH_FOLDER.into());
+            } else {
+                taken.push(text.clone());
+            }
+        }
+        refused.extend(self.each_file(&taken, changed, |world, path, changed| {
             let item = world.items.get_mut(path)?;
             match item.state {
                 ItemState::Waiting | ItemState::Uploading => return Some(words::WAITING.into()),
@@ -323,7 +423,58 @@ impl World {
             item.words = None;
             world.touch(path, changed);
             None
-        })
+        }));
+        // A folder removed is no longer kept itself.
+        for text in &taken {
+            if let Some(item) = self.items.get_mut(Path::new(text))
+                && item.kind == ItemKind::Folder
+            {
+                item.kept = false;
+            }
+        }
+        refused
+    }
+
+    /// "Pause Syncing" or "Resume Syncing" for each drive id. Pausing holds what would upload;
+    /// resuming sends it.
+    pub fn set_paused(
+        &mut self,
+        drives: &[String],
+        paused: bool,
+        changed: &mut Changed,
+    ) -> Refused {
+        let mut refused = Refused::new();
+        for id in drives {
+            let Some(drive) = self.drives.iter_mut().find(|drive| drive.id == *id) else {
+                refused.insert(id.clone(), words::NO_DRIVE.into());
+                continue;
+            };
+            drive.state = if paused {
+                DriveState::Paused
+            } else {
+                DriveState::Ready
+            };
+            drive.words = None;
+            let (from, to) = if paused {
+                (ItemState::Uploading, ItemState::Waiting)
+            } else {
+                (ItemState::Waiting, ItemState::Uploading)
+            };
+            let moving: Vec<PathBuf> = self
+                .items
+                .iter()
+                .filter(|(_, item)| item.drive == *id && item.state == from)
+                .map(|(path, _)| path.clone())
+                .collect();
+            for path in moving {
+                if let Some(item) = self.items.get_mut(&path) {
+                    item.state = to;
+                    item.fraction = 0.0;
+                }
+                self.touch(&path, changed);
+            }
+        }
+        refused
     }
 
     /// Moves every transfer one step: what changed, per drive.
@@ -371,26 +522,25 @@ impl World {
         let rest: Vec<&str> = words_of.collect();
         let drives = match (verb, rest.as_slice()) {
             ("offline", [drive]) => self.set_drive(drive, DriveState::Offline, None)?,
-            ("online" | "ready", [drive]) => {
-                let back = self.set_drive(drive, DriveState::Ready, None)?;
-                // Back online: what waited is sent.
-                let waiting: Vec<PathBuf> = self
-                    .items
-                    .iter()
-                    .filter(|(_, item)| item.drive == *drive && item.state == ItemState::Waiting)
-                    .map(|(path, _)| path.clone())
-                    .collect();
-                for path in waiting {
-                    self.set_item(&path, ItemState::Uploading, None, &mut changed)?;
-                }
-                back
+            ("online" | "ready" | "resume", [drive]) => {
+                self.known_drive(drive)?;
+                self.set_paused(&[(*drive).to_owned()], false, &mut changed);
+                true
+            }
+            ("pause", [drive]) => {
+                self.known_drive(drive)?;
+                self.set_paused(&[(*drive).to_owned()], true, &mut changed);
+                true
             }
             ("signin", [drive]) => self.set_drive(
                 drive,
                 DriveState::NeedsSignIn,
                 Some("Sign in again to see this drive's files.".into()),
             )?,
-            ("pause", [drive]) => self.set_drive(drive, DriveState::Paused, None)?,
+            ("add", path) if !path.is_empty() => {
+                self.add(&joined(path), &mut changed)?;
+                false
+            }
             ("upload", path) if !path.is_empty() => {
                 self.set_item(&joined(path), ItemState::Uploading, None, &mut changed)?;
                 false
@@ -400,7 +550,10 @@ impl World {
                 false
             }
             ("conflict", path) if !path.is_empty() => {
-                self.set_item(&joined(path), ItemState::Conflict, None, &mut changed)?;
+                let path = joined(path);
+                self.set_item(&path, ItemState::Conflict, None, &mut changed)?;
+                self.split(&path, &mut changed)
+                    .map_err(|why| format!("cannot write the other version: {why}"))?;
                 false
             }
             ("error", path) if !path.is_empty() => {
@@ -415,6 +568,14 @@ impl World {
             _ => return Err(HELP.into()),
         };
         Ok((changed, drives))
+    }
+
+    fn known_drive(&self, id: &str) -> Result<(), String> {
+        if self.drives.iter().any(|drive| drive.id == id) {
+            Ok(())
+        } else {
+            Err(format!("no drive {id:?}: onedrive or gdrive"))
+        }
     }
 
     fn set_drive(
@@ -452,8 +613,75 @@ impl World {
         Ok(())
     }
 
+    /// A file another device added: listed, not downloaded, and downloading at once when a
+    /// folder above it is kept.
+    fn add(&mut self, path: &Path, changed: &mut Changed) -> Result<(), String> {
+        let drive = self
+            .drive_of_path(path)
+            .ok_or_else(|| format!("{} is in no drive", path.display()))?
+            .id
+            .clone();
+        let parent = path.parent().unwrap_or(path);
+        let in_folder = self
+            .items
+            .get(parent)
+            .is_some_and(|item| item.kind == ItemKind::Folder);
+        let at_top = self.drives.iter().any(|drive| drive.path == parent);
+        if !(in_folder || at_top) || self.items.contains_key(path) {
+            return Err(format!("cannot add {}", path.display()));
+        }
+        std::fs::write(path, "A fake file another device added\n")
+            .map_err(|why| format!("cannot write {}: {why}", path.display()))?;
+        self.items.insert(
+            path.to_path_buf(),
+            Item {
+                drive,
+                kind: ItemKind::File,
+                state: ItemState::Cloud,
+                kept: false,
+                fraction: 0.0,
+                words: None,
+                size: 1_000_000,
+                url: None,
+                other: None,
+            },
+        );
+        self.touch(path, changed);
+        if self.kept_by_folder(path) {
+            self.start_download(path, changed);
+        }
+        Ok(())
+    }
+
+    /// Keeps both versions of a file in conflict: the other one is written next to it, and each
+    /// names the other.
+    fn split(&mut self, path: &Path, changed: &mut Changed) -> std::io::Result<()> {
+        let Some(item) = self.items.get(path).cloned() else {
+            return Ok(());
+        };
+        if item.other.is_some() {
+            return Ok(());
+        }
+        let other = other_version(path);
+        std::fs::write(&other, "A fake file: the version changed on this computer\n")?;
+        self.items.insert(
+            other.clone(),
+            Item {
+                other: Some(path.to_path_buf()),
+                kept: false,
+                ..item
+            },
+        );
+        if let Some(item) = self.items.get_mut(path) {
+            item.other = Some(other.clone());
+        }
+        self.touch(path, changed);
+        self.touch(&other, changed);
+        Ok(())
+    }
+
     /// Runs `act` on every file of `paths` (a folder: every file under it), gathering refusals by
-    /// the path the caller gave.
+    /// the path the caller gave: the first refusal of a folder's files stands for it.
     fn each_file(
         &mut self,
         paths: &[String],
@@ -467,31 +695,32 @@ impl World {
                 refused.insert(text.clone(), words::NOT_ON_A_DRIVE.into());
                 continue;
             };
-            match item.kind {
-                ItemKind::Online => {
-                    refused.insert(text.clone(), words::ONLINE_ONLY.into());
+            if item.kind == ItemKind::Online {
+                refused.insert(text.clone(), words::ONLINE_ONLY.into());
+                continue;
+            }
+            let mut why = None;
+            for inner in self.files(&path) {
+                if let Some(said) = act(self, &inner, changed) {
+                    why.get_or_insert(said);
                 }
-                ItemKind::Folder => {
-                    let under: Vec<PathBuf> = self
-                        .items
-                        .iter()
-                        .filter(|(inner, item)| {
-                            inner.starts_with(&path) && item.kind == ItemKind::File
-                        })
-                        .map(|(inner, _)| inner.clone())
-                        .collect();
-                    if let Some(why) = under.iter().find_map(|inner| act(self, inner, changed)) {
-                        refused.insert(text.clone(), why);
-                    }
-                }
-                _ => {
-                    if let Some(why) = act(self, &path, changed) {
-                        refused.insert(text.clone(), why);
-                    }
-                }
+            }
+            if let Some(why) = why {
+                refused.insert(text.clone(), why);
             }
         }
         refused
+    }
+
+    /// Starts a download of every file at or under `path`: the first refusal, if any.
+    fn download_under(&mut self, path: &Path, changed: &mut Changed) -> Option<String> {
+        let mut why = None;
+        for inner in self.files(path) {
+            if let Some(said) = self.start_download(&inner, changed) {
+                why.get_or_insert(said);
+            }
+        }
+        why
     }
 
     fn start_download(&mut self, path: &Path, changed: &mut Changed) -> Option<String> {
@@ -510,6 +739,32 @@ impl World {
         item.words = None;
         self.touch(path, changed);
         None
+    }
+
+    /// `path` and every item under it.
+    fn under(&self, path: &Path) -> Vec<PathBuf> {
+        self.items
+            .keys()
+            .filter(|inner| inner.starts_with(path))
+            .cloned()
+            .collect()
+    }
+
+    /// The files at or under `path`.
+    fn files(&self, path: &Path) -> Vec<PathBuf> {
+        self.items
+            .iter()
+            .filter(|(inner, item)| inner.starts_with(path) && item.kind == ItemKind::File)
+            .map(|(inner, _)| inner.clone())
+            .collect()
+    }
+
+    /// Whether a folder above `path` is kept.
+    fn kept_by_folder(&self, path: &Path) -> bool {
+        path.ancestors()
+            .skip(1)
+            .filter_map(|above| self.items.get(above))
+            .any(|item| item.kind == ItemKind::Folder && item.kept)
     }
 
     /// Marks `path` and every folder above it on its drive as changed.
@@ -541,13 +796,7 @@ impl World {
             ItemKind::Folder => self.folder_state(path),
             _ => (item.state, item.fraction),
         };
-        let kept = match item.kind {
-            ItemKind::Folder => {
-                let mut files = self.files_under(path).peekable();
-                files.peek().is_some() && files.all(|inner| inner.kept)
-            }
-            _ => item.kept,
-        };
+        let kept = item.kept || self.kept_by_folder(path);
         let mut details = Details::new();
         put(&mut details, ITEM_KEY_STATE, Value::from(state.as_str()));
         put(&mut details, ITEM_KEY_KEPT, Value::Bool(kept));
@@ -557,6 +806,16 @@ impl World {
         }
         if let (ItemState::Error, Some(words)) = (state, &item.words) {
             put(&mut details, ITEM_KEY_WORDS, Value::from(words.as_str()));
+        }
+        if let Some(url) = &item.url {
+            put(&mut details, ITEM_KEY_URL, Value::from(url.as_str()));
+        }
+        if let (ItemState::Conflict, Some(other)) = (state, &item.other) {
+            put(
+                &mut details,
+                ITEM_KEY_OTHER,
+                Value::from(other.to_string_lossy().as_ref()),
+            );
         }
         Some(details)
     }
@@ -568,8 +827,8 @@ impl World {
             .map(|(_, item)| item)
     }
 
-    /// A folder's state: conflict, error, moving (with the mean fraction of what moves),
-    /// downloaded when every file is, else cloud.
+    /// A folder's state: conflict, error, moving (with the share of the moving bytes that have
+    /// moved), downloaded when every file is, else cloud.
     fn folder_state(&self, path: &Path) -> (ItemState, f64) {
         let files: Vec<&Item> = self.files_under(path).collect();
         let any = |state: ItemState| files.iter().any(|item| item.state == state);
@@ -579,13 +838,19 @@ impl World {
             }
         }
         for state in [ItemState::Uploading, ItemState::Downloading] {
-            let moving: Vec<f64> = files
-                .iter()
-                .filter(|item| item.state == state)
-                .map(|item| item.fraction)
-                .collect();
+            let moving: Vec<&&Item> = files.iter().filter(|item| item.state == state).collect();
             if !moving.is_empty() {
-                return (state, moving.iter().sum::<f64>() / moving.len() as f64);
+                let bytes: u64 = moving.iter().map(|item| item.size).sum();
+                let moved: f64 = moving
+                    .iter()
+                    .map(|item| item.size as f64 * item.fraction)
+                    .sum();
+                let fraction = if bytes == 0 {
+                    0.0
+                } else {
+                    moved / bytes as f64
+                };
+                return (state, fraction);
             }
         }
         if any(ItemState::Waiting) {
@@ -608,7 +873,36 @@ impl World {
 
 /// What `porter-rig-storage` prints for a command it does not know.
 pub const HELP: &str = "commands: offline <drive> | online <drive> | signin <drive> | pause <drive> \
-     | upload <path> | wait <path> | conflict <path> | error <path>   (drives: onedrive, gdrive)";
+     | resume <drive> | add <path> | upload <path> | wait <path> | conflict <path> \
+     | error <path>   (drives: onedrive, gdrive)";
+
+/// An online document's address in the fake.
+fn online_url(path: &Path) -> String {
+    let name = path
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().replace(' ', "-"))
+        .unwrap_or_default();
+    format!("https://docs.example.test/document/{name}")
+}
+
+/// An online document's link file, as Google's desktop client writes them: a JSON object whose
+/// `url` is the document's address.
+fn link_file(url: &str) -> String {
+    format!("{{\"url\": \"{url}\", \"doc_id\": \"fake\"}}\n")
+}
+
+/// Where the other version of the file at `path` goes: next to it, its name marked.
+fn other_version(path: &Path) -> PathBuf {
+    let stem = path
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let name = match path.extension() {
+        Some(extension) => format!("{stem}{OTHER_VERSION}.{}", extension.to_string_lossy()),
+        None => format!("{stem}{OTHER_VERSION}"),
+    };
+    path.with_file_name(name)
+}
 
 fn joined(parts: &[&str]) -> PathBuf {
     PathBuf::from(parts.join(" "))
@@ -638,7 +932,8 @@ impl FakeStorage {
         }
     }
 
-    /// Runs `step` on the world and sends what it changed.
+    /// Runs `step` on the world and sends what it changed: the drives too when `step` says so
+    /// or a drive's bytes here moved.
     pub async fn apply<T>(
         &self,
         emitter: &SignalEmitter<'_>,
@@ -650,7 +945,9 @@ impl FakeStorage {
                 .lock()
                 .expect("the fake's world lock is never poisoned");
             let mut changed = Changed::new();
+            let before = world.locals();
             let (out, drives) = step(&mut world, &mut changed);
+            let drives = drives || world.locals() != before;
             let items: Vec<(String, ItemDetails)> = changed
                 .iter()
                 .map(|(drive, paths)| (drive.clone(), world.details_of(paths)))
@@ -717,6 +1014,19 @@ impl FakeStorage {
         Ok(self
             .apply(&emitter, |world, changed| {
                 (world.remove_download(&paths, changed), false)
+            })
+            .await)
+    }
+
+    async fn set_paused(
+        &self,
+        drives: Vec<String>,
+        paused: bool,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+    ) -> fdo::Result<Refused> {
+        Ok(self
+            .apply(&emitter, |world, changed| {
+                (world.set_paused(&drives, paused, changed), true)
             })
             .await)
     }
@@ -797,6 +1107,27 @@ mod tests {
         word_of(&items[at], ITEM_KEY_STATE).expect("every item has a state")
     }
 
+    fn kept(world: &World, at: &str) -> bool {
+        let items = world.items(&[at.to_owned()]);
+        bool::try_from(items[at][ITEM_KEY_KEPT].clone()).expect("every item says whether kept")
+    }
+
+    fn fraction(world: &World, at: &str) -> Option<f64> {
+        let items = world.items(&[at.to_owned()]);
+        items[at]
+            .get(ITEM_KEY_FRACTION)
+            .and_then(|value| f64::try_from(value.clone()).ok())
+    }
+
+    fn local(world: &World, drive: &str) -> u64 {
+        let (_, details) = world
+            .drives()
+            .into_iter()
+            .find(|(id, _)| id == drive)
+            .expect("the fake has this drive");
+        u64::try_from(details[DRIVE_KEY_LOCAL].clone()).expect("every drive says its bytes here")
+    }
+
     #[test]
     fn a_download_fills_its_fraction_and_ends_downloaded() {
         let (dir, mut world) = world();
@@ -859,7 +1190,82 @@ mod tests {
     }
 
     #[test]
-    fn keep_downloaded_marks_a_folder_kept_once_every_file_in_it_is() {
+    fn a_folder_carries_the_fraction_of_what_moves_under_it() {
+        let (dir, mut world) = world();
+        let report = path(&dir, "OneDrive/Documents/Report.docx");
+        let documents = path(&dir, "OneDrive/Documents");
+        world.download(std::slice::from_ref(&report), &mut Changed::new());
+        for _ in 0..4 {
+            world.tick();
+        }
+        assert_eq!(state(&world, &documents), "downloading");
+        let (folder, file) = (fraction(&world, &documents), fraction(&world, &report));
+        let (Some(folder), Some(file)) = (folder, file) else {
+            panic!("a moving folder and file both carry a fraction");
+        };
+        assert!((folder - file).abs() < 1e-9, "the one file moving is the folder's share");
+        assert!(folder > 0.0 && folder < 1.0);
+    }
+
+    #[test]
+    fn a_kept_folder_keeps_what_is_added_to_it_later() {
+        let (dir, mut world) = world();
+        let pictures = path(&dir, "OneDrive/Pictures");
+        let beach = path(&dir, "OneDrive/Pictures/Beach.jpg");
+        world.keep(std::slice::from_ref(&pictures), true, &mut Changed::new());
+        assert!(kept(&world, &beach), "a child of a kept folder reads kept");
+        let added = path(&dir, "OneDrive/Pictures/Hike.jpg");
+        world.command(&format!("add {added}")).expect("a known command");
+        assert!(kept(&world, &added));
+        assert_eq!(state(&world, &added), "downloading");
+        let refused = world.keep(std::slice::from_ref(&beach), false, &mut Changed::new());
+        assert_eq!(
+            refused.get(&beach).map(String::as_str),
+            Some(words::KEPT_WITH_FOLDER)
+        );
+        world.keep(std::slice::from_ref(&pictures), false, &mut Changed::new());
+        assert!(!kept(&world, &beach) && !kept(&world, &added));
+    }
+
+    #[test]
+    fn an_online_document_gives_its_address_and_a_conflict_names_the_other_version() {
+        let (dir, world) = world();
+        let plan = path(&dir, "Google Drive/Projects/Plan.gdoc");
+        let items = world.items(std::slice::from_ref(&plan));
+        let url = word_of(&items[&plan], ITEM_KEY_URL).expect("an online document has a url");
+        let link = std::fs::read_to_string(&plan).expect("the link file is on disk");
+        assert!(link.contains(&format!("\"url\": \"{url}\"")));
+
+        let budget = path(&dir, "OneDrive/Budget.xlsx");
+        let items = world.items(std::slice::from_ref(&budget));
+        let other = word_of(&items[&budget], ITEM_KEY_OTHER).expect("a conflict names the other");
+        assert!(Path::new(&other).is_file());
+        let back = world.items(std::slice::from_ref(&other));
+        assert_eq!(word_of(&back[&other], ITEM_KEY_OTHER), Some(budget));
+    }
+
+    #[test]
+    fn pausing_holds_uploads_and_removing_a_download_frees_its_bytes() {
+        let (dir, mut world) = world();
+        let garden = path(&dir, "OneDrive/Pictures/Garden.jpg");
+        world.set_paused(&["onedrive".into()], false, &mut Changed::new());
+        assert_eq!(state(&world, &garden), "uploading");
+        world.set_paused(&["onedrive".into()], true, &mut Changed::new());
+        assert_eq!(state(&world, &garden), "waiting");
+        let refused = world.set_paused(&["nowhere".into()], true, &mut Changed::new());
+        assert_eq!(
+            refused.get("nowhere").map(String::as_str),
+            Some(words::NO_DRIVE)
+        );
+
+        let notes = path(&dir, "OneDrive/Documents/Notes.txt");
+        let before = local(&world, "onedrive");
+        world.remove_download(std::slice::from_ref(&notes), &mut Changed::new());
+        assert_eq!(local(&world, "onedrive"), before - 4_000);
+    }
+
+    #[test]
+    fn keep_downloaded_marks_the_folder_itself_kept() {
         let (dir, mut world) = world();
         let pictures = path(&dir, "OneDrive/Pictures");
         world.keep(std::slice::from_ref(&pictures), true, &mut Changed::new());
