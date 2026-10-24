@@ -64,15 +64,16 @@ fn the_unit_is_a_sandbox_that_writes_only_its_own_directories() {
         value(&unit, "StateDirectory"),
         Some("porter/sync quire/syncd")
     );
+    // The drives' cache and syncd.toml's folder are writable too, and nothing else.
     assert_eq!(
         value(&dist("syncd.service.d/sandbox.conf"), "ReadWritePaths"),
-        Some("%h/.local/share/porter")
+        Some("%h/.local/share/porter %h/.cache/porter %h/.config/porter")
     );
     assert_eq!(
         value(&unit, "ExecStartPre"),
         Some(
             "+/usr/bin/mkdir -p %h/.local/share/porter/vdir %h/.local/share/porter/storage \
-             %h/.local/share/porter/photos"
+             %h/.local/share/porter/photos %h/.cache/porter %h/.config/porter"
         )
     );
     // The bus, and the servers syncd talks to itself now that it holds its own sign-ins (and the
@@ -81,6 +82,25 @@ fn the_unit_is_a_sandbox_that_writes_only_its_own_directories() {
         value(&unit, "RestrictAddressFamilies"),
         Some("AF_UNIX AF_INET AF_INET6")
     );
+}
+
+#[test]
+fn showing_drives_in_files_left_the_sandbox_as_it_was() {
+    // porter-mountd mounts for syncd, so syncd's unit keeps every protection: no new privileges
+    // (the setuid fusermount3 stays refused), no devices (the connection it serves is handed to
+    // it), a read-only home and a mount namespace of its own.
+    let unit = dist("syncd.service");
+    let sandbox = dist("syncd.service.d/sandbox.conf");
+    assert_eq!(value(&unit, "NoNewPrivileges"), Some("yes"));
+    assert_eq!(value(&unit, "RestrictSUIDSGID"), Some("yes"));
+    assert_eq!(value(&unit, "CapabilityBoundingSet"), Some(""));
+    assert_eq!(value(&sandbox, "PrivateDevices"), Some("yes"));
+    assert_eq!(value(&sandbox, "ProtectHome"), Some("read-only"));
+    assert_eq!(value(&sandbox, "ProtectSystem"), Some("strict"));
+    assert_eq!(value(&sandbox, "PrivateTmp"), Some("yes"));
+    // ~/Cloud is not writable to syncd: the helper makes the folders there.
+    let writable = value(&sandbox, "ReadWritePaths").expect("ReadWritePaths");
+    assert!(!writable.contains("Cloud"), "{writable}");
 }
 
 #[test]
@@ -119,6 +139,9 @@ fn every_path_syncd_writes_is_writable_under_the_unit() {
         paths.photos_upload_dir(&account),
         paths.photos_picked_dir(&account),
         paths.storage_dir(&account),
+        // A drive's downloaded files, and the settings file (Downloaded Files Limit).
+        paths.drive_cache_dir(&account).join("index.json"),
+        paths.settings.clone(),
     ];
     written.extend(paths.account_dirs(&account));
     // Its own accounts: the registry (and its backup beside it) and the audit file.

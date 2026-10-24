@@ -28,10 +28,13 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 # What syncd keeps: the journals (porter/sync under $XDG_STATE_HOME) and its own accounts
 # (quire/syncd under $XDG_STATE_HOME), which systemd creates, and what it keeps under the data
 # home: the PIM mirrors (porter/vdir), the app folder mirrors (porter/storage) and the photo
-# libraries (porter/photos). systemd has no data-directory setting, so the pre-start step, outside
-# the sandbox, makes the three; sandbox.conf makes the whole porter directory writable.
+# libraries (porter/photos); the drives' downloaded files (porter under $XDG_CACHE_HOME); and its
+# settings file, porter/syncd.toml under $XDG_CONFIG_HOME, written by a rename in its folder.
+# systemd has no data-directory setting, so the pre-start step, outside the sandbox, makes them;
+# sandbox.conf makes the porter directories writable. A drive's folder in ~/Cloud is not among
+# them: porter-mountd makes and mounts it, and syncd only serves the connection it hands back.
 StateDirectory=porter/sync quire/syncd
-ExecStartPre=+/usr/bin/mkdir -p %h/.local/share/porter/vdir %h/.local/share/porter/storage %h/.local/share/porter/photos
+ExecStartPre=+/usr/bin/mkdir -p %h/.local/share/porter/vdir %h/.local/share/porter/storage %h/.local/share/porter/photos %h/.cache/porter %h/.config/porter
 NoNewPrivileges=yes
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
