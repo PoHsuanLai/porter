@@ -7,7 +7,6 @@
 //! with every write; a parent folder changes when a child does; a deleted folder is reported once,
 //! its children not at all; a re-created path is a new item with a new id.
 
-use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
 /// The id of the drive's root.
@@ -57,12 +56,14 @@ impl Node {
         }
     }
 
-    /// A stand-in for the QuickXorHash: base64 of 20 bytes made from the content.
+    /// The QuickXorHash of the content, in base64 as Graph sends it.
     pub fn quick_xor(&self) -> Option<String> {
         use base64::Engine;
         match &self.body {
             Body::File(bytes) => {
-                Some(base64::engine::general_purpose::STANDARD.encode(&Sha256::digest(bytes)[..20]))
+                let mut hash = porter_core::quick_xor::QuickXor::new();
+                hash.update(bytes);
+                Some(base64::engine::general_purpose::STANDARD.encode(hash.finish()))
             }
             Body::Folder => None,
         }
