@@ -2596,6 +2596,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "porter-mountd"
+version = "0.1.0"
+dependencies = [
+ "porter-fake",
+ "rustix",
+]
+
+[[package]]
 name = "porter-oauth"
 version = "0.1.0"
 dependencies = [

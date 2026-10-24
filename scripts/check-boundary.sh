@@ -15,6 +15,8 @@ cd "$(dirname "$0")/.."
 # their named I/O feature (`hyper`, `io`). porter-families reaches none with default features;
 # each of its family features is checked on its own in FAMILY_FORBIDS below. porter-drive and
 # porter-drive-fuse reach tokio (a drive fetches in the background) but never a bus or a client.
+# porter-mountd, the mount helper outside syncd's sandbox, reaches no effect crate and none of
+# porter's own: std and rustix only (no network, keyring or account data).
 EFFECTS="zbus zvariant tokio reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
 RULES=(
   "porter-core: $EFFECTS toml"
@@ -47,6 +49,7 @@ RULES=(
   "storage-graph: $EFFECTS"
   "storage-gdrive: $EFFECTS"
   "porter-drive: zbus zvariant reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
+  "porter-mountd: $EFFECTS fuser porter-core porter-fs porter-http porter-secrets porter-service porter-client porter-sync porter-drive porter-drive-fuse"
   "porter-drive-fuse: zbus zvariant reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
   "porter-dbus: reqwest hyper ureq oo7 keyring secret-service ds-settings"
 )
@@ -285,6 +288,7 @@ EDGES=(
   "storage-gdrive: porter-core porter-http porter-sync storage-webdav"
   "porter-drive: porter-core porter-fs porter-sync"
   "porter-drive-fuse: porter-drive"
+  "porter-mountd:"
   "syncd: ds-settings porter-client porter-core porter-daemon porter-dav porter-dbus porter-drive porter-drive-fuse porter-families porter-fs porter-http porter-provider porter-secrets porter-service porter-sheets porter-store porter-sync storage-gdrive storage-graph storage-webdav"
   "porter-rig: porter-client porter-core porter-dbus porter-drive porter-fake porter-fake-servers porter-infer"
   "inferd: ds-settings porter-bridge porter-engines porter-families porter-secrets porter-service porter-sheets porter-store porter-router porter-turns porter-core porter-daemon porter-dbus porter-discover porter-fs porter-http porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
