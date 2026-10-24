@@ -17,8 +17,8 @@ use crate::index::{Awaiting, Edit, Index, Row};
 use crate::ranges::Ranges;
 use crate::words;
 use porter_sync::{
-    BaseVersion, Content, Place, Progress, PutRefused, RemoteId, RemoteVersion, Session, Upload,
-    UploadTo, Written,
+    BaseVersion, Conflict, Content, Place, Progress, PutRefused, RemoteId, RemoteVersion, Session,
+    Upload, UploadTo, Written,
 };
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
@@ -253,6 +253,8 @@ impl Inner {
                 .filter(|edit| edit.pending() && edit.refused.is_none())
                 .cloned()
                 .collect();
+            let stale = held(&self.stale);
+            edits.retain(|edit| !stale.contains(&edit.id));
             edits.sort_by_key(|edit| edit.seq);
             edits
         };
@@ -537,21 +539,25 @@ pub(super) async fn sender(weak: Weak<Inner>, wake: Arc<Notify>) {
             }
             Err(PutRefused::Quota) => inner.refused(&op, words::NO_ROOM),
             Err(PutRefused::Forbidden) => inner.refused(&op, words::MAY_NOT_WRITE),
-            Err(PutRefused::Conflict(_)) => inner.conflicted(&op),
+            Err(PutRefused::Conflict(conflict)) => inner.conflicted(&op, &conflict),
         }
     }
 }
 
 impl Inner {
     /// The drive has another version than `op` was made against: held until a listing pass
-    /// shows it, which settles both.
-    fn conflicted(&self, op: &Op) {
-        if let Some(edit) = held(&self.index).edits.get_mut(op.id()) {
-            edit.refused = Some(words::CONFLICT.to_owned());
+    /// shows it, which meets both (see `conflict`). A name taken there is met at once.
+    fn conflicted(&self, op: &Op, conflict: &Conflict) {
+        let mut changed = vec![op.id().clone()];
+        if self.met_conflict(op.id(), conflict) {
+            changed.push(self.canonical(op.id()));
+            self.wake.notify_one();
+        } else {
+            held(&self.stale).insert(op.id().clone());
+            self.wanted.notify_one();
         }
         self.touched();
-        self.wanted.notify_one();
-        self.emit(vec![op.id().clone()]);
+        self.emit(changed);
     }
 }
 

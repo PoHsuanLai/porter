@@ -24,6 +24,7 @@
 //!   and is fetched again from the start when next asked.
 
 mod actions;
+mod conflict;
 mod copy;
 mod fetch;
 mod send;
@@ -255,6 +256,8 @@ pub(crate) struct Inner {
     /// Told when a listing pass is wanted (a change was sent, or the drive's version is newer).
     wanted: Arc<Notify>,
     paused: AtomicBool,
+    /// Changes the drive answered with a newer version: held until a listing pass shows it.
+    stale: Mutex<HashSet<NodeId>>,
     /// When the sender tries again after the drive could not take a change, and how long it
     /// waited last.
     backoff: Mutex<Option<(Instant, Duration)>>,
@@ -519,6 +522,7 @@ impl Drive {
             wake: Arc::new(Notify::new()),
             wanted: Arc::new(Notify::new()),
             paused: AtomicBool::new(false),
+            stale: Mutex::default(),
             backoff: Mutex::new(None),
             _lock: lock,
         });
@@ -627,6 +631,12 @@ impl Drive {
     /// that was saved over another file) is named by that.
     pub fn canonical(&self, id: &NodeId) -> NodeId {
         self.inner.canonical(id)
+    }
+
+    /// Whether `id` stays on this computer and is never sent (see [`crate::local_only`]): a
+    /// list of the drive's items leaves it out.
+    pub fn local_only(&self, id: &NodeId) -> bool {
+        self.inner.local_only(id)
     }
 
     /// The nodes directly inside `folder`, each with its shown name; none for a file.

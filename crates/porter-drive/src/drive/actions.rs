@@ -225,7 +225,10 @@ impl Drive {
             NodeId::Top => return Err(words::NOT_ON_A_DRIVE),
             NodeId::Local(_) => {
                 inner.edit(id).ok_or(words::NOT_ON_A_DRIVE)?;
-                return Err(words::WAITING);
+                return match inner.other(id) {
+                    Some(_) => Err(words::CONFLICT),
+                    None => Err(words::WAITING),
+                };
             }
             NodeId::Remote(remote) => remote,
         };
@@ -236,6 +239,9 @@ impl Drive {
             .ok_or(words::NOT_ON_A_DRIVE)?;
         if matches!(entry.kind, ItemKind::Online { .. }) {
             return Err(words::ONLINE_ONLY);
+        }
+        if inner.other(id).is_some() {
+            return Err(words::CONFLICT);
         }
         let under: Vec<Entry> = match entry.kind {
             ItemKind::Folder => inner.listing.descendants(remote).unwrap_or_default(),
@@ -295,6 +301,8 @@ impl Drive {
         {
             return;
         }
+        held(&inner.stale).clear();
+        let met = inner.meet_the_drive();
         inner.settle();
         let rows: Vec<(String, String)> = held(&inner.index)
             .items
@@ -368,6 +376,7 @@ impl Drive {
             inner.wake.notify_one();
             changed.extend(moved);
         }
+        changed.extend(met);
         inner.emit(changed);
         inner.evict();
     }

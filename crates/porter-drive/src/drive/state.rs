@@ -19,6 +19,9 @@ pub enum ItemState {
     Waiting,
     /// Being sent; the fraction says how far.
     Uploading,
+    /// Two versions of it are kept side by side (the drive's, and this computer's); each names
+    /// the other.
+    Conflict,
     /// It could not be downloaded or sent; the words say why.
     Error,
 }
@@ -36,6 +39,8 @@ pub struct Status {
     pub kept: bool,
     /// What it is.
     pub kind: NodeKind,
+    /// The other version of it, while it is in conflict.
+    pub other: Option<NodeId>,
 }
 
 /// One file's part of a state: where it stands, bytes moved and its size while it moves.
@@ -79,6 +84,9 @@ impl Inner {
     fn change_part(&self, id: &NodeId) -> Option<Part> {
         if self.local_only(id) {
             return Some(Part::plain(ItemState::Downloaded));
+        }
+        if self.other(id).is_some() {
+            return Some(Part::plain(ItemState::Conflict));
         }
         let edit = self.edit(id)?;
         if let Some(words) = edit.refused {
@@ -172,13 +180,15 @@ impl Inner {
     }
 }
 
-/// A folder's state from its files': an error when any is, then uploading or downloading (with
-/// the share of the moving bytes that moved) while any is, waiting while any waits, downloaded
-/// when all are, else cloud.
+/// A folder's state from its files': a conflict or an error when any is, then uploading or
+/// downloading (with the share of the moving bytes that moved) while any is, waiting while any
+/// waits, downloaded when all are, else cloud.
 fn aggregate(parts: &[Part]) -> (ItemState, Option<f64>) {
     let any = |state: ItemState| parts.iter().any(|part| part.state == state);
-    if any(ItemState::Error) {
-        return (ItemState::Error, None);
+    for state in [ItemState::Conflict, ItemState::Error] {
+        if any(state) {
+            return (state, None);
+        }
     }
     for state in [ItemState::Uploading, ItemState::Downloading] {
         if any(state) {
@@ -241,12 +251,17 @@ impl Drive {
                 None => (ItemState::Cloud, None, None),
             },
         };
+        let other = match state {
+            ItemState::Conflict => inner.other(&id).map(|other| inner.canonical(&other)),
+            _ => None,
+        };
         Some(Status {
             state,
             fraction,
             words,
             kept: !matches!(attrs.kind, NodeKind::Online { .. }) && kept(inner, &id),
             kind: attrs.kind,
+            other,
         })
     }
 }

@@ -165,6 +165,7 @@ async fn saving_by_rename_over_a_file_gives_the_same_item_a_new_version() {
     let tmp = rig.write_new(&NodeId::Top, ".goutputstream-ABC", b"new words");
     rig.drive
         .rename(&tmp, &NodeId::Top, "report.txt")
+        .await
         .expect("rename");
     rig.drive.set_paused(false);
     assert_eq!(rig.drive.canonical(&tmp), remote("doc"));
@@ -186,6 +187,7 @@ async fn a_folder_is_sent_before_what_is_in_it_and_moves_keep_ids() {
     let inner = rig.write_new(&work, "a.txt", b"abc");
     rig.drive
         .rename(&remote("old"), &remote("dest"), "Renamed")
+        .await
         .expect("move");
     rig.sent(3).await;
     let took = rig.sink.took();
@@ -381,4 +383,221 @@ async fn a_read_only_drive_refuses_every_change() {
         drive.make_folder(&NodeId::Top, "a"),
         Err(WriteError::ReadOnly)
     );
+}
+
+/// Changes `id` on the drive behind the core's back: a new version with `bytes`.
+fn changed_there(rig: &Rig, id: &str, name: &str, bytes: &[u8], version: &str) {
+    rig.listing
+        .file(id, None, name, bytes.len() as u64, version);
+    rig.source.put(id, bytes.to_vec());
+}
+
+#[tokio::test]
+async fn a_newer_version_on_the_drive_keeps_both_and_each_names_the_other() {
+    let rig = rig();
+    rig.file("r", None, "Plan.txt", b"old");
+    rig.listing
+        .file("taken", None, "Plan (this computer).txt", 1, "v1");
+    rig.drive.set_paused(true);
+    rig.drive
+        .open_write(&remote("r"), true)
+        .await
+        .expect("open");
+    rig.drive.write(&remote("r"), 0, b"mine").expect("write");
+    rig.drive.release_write(&remote("r"));
+    changed_there(&rig, "r", "Plan.txt", b"theirs", "v2");
+    rig.drive.listing_changed();
+    let mut names = rig.names(&NodeId::Top);
+    names.sort();
+    assert_eq!(
+        names,
+        [
+            "Plan (this computer) 2.txt",
+            "Plan (this computer).txt",
+            "Plan.txt"
+        ]
+    );
+    let copy = rig
+        .drive
+        .lookup(&NodeId::Top, "Plan (this computer) 2.txt")
+        .expect("lookup")
+        .expect("there")
+        .id;
+    let theirs = rig.drive.status(&remote("r")).expect("status");
+    assert_eq!(theirs.state, ItemState::Conflict);
+    assert_eq!(theirs.other, Some(copy.clone()));
+    let mine = rig.drive.status(&copy).expect("status");
+    assert_eq!(mine.state, ItemState::Conflict);
+    assert_eq!(mine.other, Some(remote("r")));
+    assert_eq!(rig.drive.read(&copy, 0, 64).await.expect("read"), b"mine");
+    assert_eq!(
+        rig.drive.read(&remote("r"), 0, 64).await.expect("read"),
+        b"theirs"
+    );
+    assert_eq!(rig.drive.remove_download(&copy), Err(words::CONFLICT));
+    rig.drive.set_paused(false);
+    rig.sent(1).await;
+    assert_eq!(
+        rig.sink.took(),
+        [Took::New(None, "Plan (this computer) 2.txt".into(), 4)]
+    );
+    let sent = rig.drive.canonical(&copy);
+    assert!(matches!(sent, NodeId::Remote(_)));
+    assert_eq!(
+        rig.drive.status(&remote("r")).expect("status").other,
+        Some(sent)
+    );
+}
+
+#[tokio::test]
+async fn bytes_not_sent_of_a_file_the_drive_removed_are_sent_again_as_a_new_file() {
+    let rig = rig();
+    rig.listing.folder("keep", None, "Keep");
+    rig.file("r", None, "Notes.txt", b"old");
+    rig.drive.set_paused(true);
+    rig.drive
+        .open_write(&remote("r"), false)
+        .await
+        .expect("open");
+    rig.drive
+        .write(&remote("r"), 3, b" and new")
+        .expect("write");
+    let ino = rig.drive.ino(&remote("r"));
+    rig.drive.release_write(&remote("r"));
+    rig.listing.remove("r");
+    rig.drive.listing_changed();
+    let node = rig
+        .drive
+        .lookup(&NodeId::Top, "Notes.txt")
+        .expect("lookup")
+        .expect("kept");
+    assert_eq!(rig.drive.ino(&node.id), ino, "the same file");
+    rig.drive.set_paused(false);
+    rig.sent(1).await;
+    assert_eq!(rig.sink.took(), [Took::New(None, "Notes.txt".into(), 11)]);
+}
+
+#[tokio::test]
+async fn a_removal_of_a_file_changed_on_the_drive_brings_the_drives_version_back() {
+    let rig = rig();
+    rig.listing.folder("keep", None, "Keep");
+    rig.file("r", None, "Plan.txt", b"old");
+    rig.drive.set_paused(true);
+    rig.drive.remove(&remote("r")).expect("unlink");
+    assert_eq!(rig.names(&NodeId::Top), ["Keep"]);
+    changed_there(&rig, "r", "Plan.txt", b"newer", "v2");
+    rig.drive.set_paused(false);
+    // The drive refuses the stale removal, and wants the listing.
+    let wanted = rig.drive.listing_wanted();
+    tokio::time::timeout(Duration::from_secs(10), wanted.notified())
+        .await
+        .expect("a listing pass is wanted");
+    rig.drive.listing_changed();
+    let mut names = rig.names(&NodeId::Top);
+    names.sort();
+    assert_eq!(names, ["Keep", "Plan.txt"]);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(rig.sink.took(), [], "nothing was removed");
+    assert_eq!(rig.drive.unsent(), 0);
+}
+
+#[tokio::test]
+async fn a_rename_is_made_again_on_new_bytes_and_yields_to_a_rename_there() {
+    let rig = rig();
+    rig.file("a", None, "a.txt", b"a");
+    rig.file("b", None, "b.txt", b"b");
+    rig.drive.set_paused(true);
+    rig.drive
+        .rename(&remote("a"), &NodeId::Top, "a2.txt")
+        .await
+        .expect("rename");
+    rig.drive
+        .rename(&remote("b"), &NodeId::Top, "b2.txt")
+        .await
+        .expect("rename");
+    changed_there(&rig, "a", "a.txt", b"new bytes", "v2");
+    changed_there(&rig, "b", "renamed there.txt", b"b", "v2");
+    rig.drive.listing_changed();
+    let mut names = rig.names(&NodeId::Top);
+    names.sort();
+    assert_eq!(names, ["a2.txt", "renamed there.txt"]);
+    rig.drive.set_paused(false);
+    rig.sent(1).await;
+    assert_eq!(
+        rig.sink.took(),
+        [Took::Relocate("a".into(), None, "a2.txt".into())]
+    );
+}
+
+#[tokio::test]
+async fn a_name_taken_on_the_drive_meets_the_folder_there_or_keeps_this_computers_file() {
+    let rig = rig();
+    rig.drive.set_paused(true);
+    let work = rig.drive.make_folder(&NodeId::Top, "Work").expect("mkdir");
+    let inside = rig.write_new(&work, "in.txt", b"in");
+    let file = rig.write_new(&NodeId::Top, "a.txt", b"mine");
+    // Made on the drive by someone else meanwhile.
+    rig.listing.folder("w", None, "Work");
+    rig.file("x", None, "a.txt", b"theirs");
+    rig.drive.set_paused(false);
+    rig.sent(2).await;
+    assert_eq!(rig.drive.canonical(&work), remote("w"));
+    let took = rig.sink.took();
+    assert!(
+        took.contains(&Took::New(Some("w".into()), "in.txt".into(), 2)),
+        "{took:?}"
+    );
+    assert!(
+        took.contains(&Took::New(None, "a (this computer).txt".into(), 4)),
+        "{took:?}"
+    );
+    assert_eq!(
+        rig.drive.path_of(&inside).expect("path"),
+        Some("Work/in.txt".into())
+    );
+    let mine = rig.drive.status(&file).expect("status");
+    assert_eq!(mine.state, ItemState::Conflict);
+    assert_eq!(mine.other, Some(remote("x")));
+}
+
+#[tokio::test]
+async fn the_desktop_trash_stays_here_and_sends_what_goes_in_to_the_recycle_bin() {
+    let rig = rig();
+    rig.file("r", None, "doc.txt", b"drive bytes");
+    let trash = rig
+        .drive
+        .make_folder(&NodeId::Top, ".Trash-1000")
+        .expect("trash");
+    let files = rig.drive.make_folder(&trash, "files").expect("files");
+    let info = rig.drive.make_folder(&trash, "info").expect("info");
+    let note = rig.write_new(&info, "doc.txt.trashinfo", b"[Trash Info]");
+    rig.drive
+        .rename(&remote("r"), &files, "doc.txt")
+        .await
+        .expect("to the trash");
+    rig.sent(1).await;
+    assert_eq!(rig.sink.took(), [Took::Trash("r".into())]);
+    let kept = rig
+        .drive
+        .lookup(&files, "doc.txt")
+        .expect("lookup")
+        .expect("its bytes stay");
+    assert_eq!(
+        rig.drive.read(&kept.id, 0, 64).await.expect("read"),
+        b"drive bytes"
+    );
+    assert_eq!(rig.state(&trash), ItemState::Downloaded);
+    assert!(rig.drive.local_only(&kept.id));
+    // Restored: sent again as a new file.
+    rig.drive
+        .rename(&kept.id, &NodeId::Top, "doc.txt")
+        .await
+        .expect("restore");
+    rig.sent(2).await;
+    assert_eq!(rig.sink.took()[1], Took::New(None, "doc.txt".into(), 11));
+    // Emptied: only the bytes here go.
+    rig.drive.remove(&note).expect("empty");
+    rig.drive.remove_folder(&info).expect("empty");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(rig.sink.took().len(), 2);
 }

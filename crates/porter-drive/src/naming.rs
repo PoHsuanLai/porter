@@ -25,6 +25,9 @@ use std::collections::BTreeSet;
 /// What a `/` in a name is shown as.
 pub const SLASH: char = '\u{FF0F}';
 
+/// What marks this computer's version of a file kept beside the drive's ([`marked`]).
+pub const THIS_COMPUTER: &str = " (this computer)";
+
 /// The MIME types Google's documents are saved as, and the extension each saved copy and each
 /// link file is named with.
 const KINDS: &[(&str, &str, &str)] = &[

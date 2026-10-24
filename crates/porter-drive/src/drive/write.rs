@@ -14,6 +14,10 @@
 //! - **Names** are given back to the drive by [`naming::drive_name`]'s rule, and one the drive
 //!   refuses is refused here, when it is made ([`WriteError::BadName`]), except on what stays on
 //!   this computer.
+//! - **The desktop's trash** (see [`crate::local_only`]): an item of the drive's moved into it
+//!   goes to the drive's recycle bin and its bytes stay in the trash, as a copy made here
+//!   (downloaded first when they are not all here); moved back out, the copy is sent as a new
+//!   file; emptying the trash removes only those bytes.
 
 use super::{
     Drive, DriveError, Inner, NodeId, NodeKind, ReadError, Writing, held, key_text, now_secs,
@@ -637,8 +641,12 @@ impl Drive {
         let parent = inner.parent_of(id)?.ok_or(WriteError::Gone)?;
         match id {
             NodeId::Top => return Err(WriteError::NotAllowed),
-            NodeId::Local(n) => inner.forget_made(*n),
+            NodeId::Local(n) => {
+                inner.unpair(id);
+                inner.forget_made(*n);
+            }
             NodeId::Remote(remote) => {
+                inner.unpair(id);
                 let mut edit = inner.edit_of_remote(remote)?;
                 if let Some(dirty) = edit.dirty.take() {
                     let _ = std::fs::remove_file(inner.local_file(dirty.file));
@@ -661,7 +669,7 @@ impl Drive {
     ///
     /// # Errors
     /// See [`WriteError`].
-    pub fn rename(&self, id: &NodeId, folder: &NodeId, name: &str) -> Result<(), WriteError> {
+    pub async fn rename(&self, id: &NodeId, folder: &NodeId, name: &str) -> Result<(), WriteError> {
         let inner = &self.inner;
         inner.writable()?;
         let id = inner.canonical(id);
@@ -673,6 +681,13 @@ impl Drive {
         let is_folder = node.kind == NodeKind::Folder;
         if is_folder && inner.within(&folder, &id) {
             return Err(WriteError::Inside);
+        }
+        let into_trash = inner.local_only(&folder) && !inner.local_only(&id);
+        if into_trash && self.lookup(&folder, name)?.is_some() {
+            return Err(WriteError::Exists);
+        }
+        if into_trash && matches!(id, NodeId::Remote(_)) {
+            return self.keep_here(&node, &folder, name).await;
         }
         if let Some(there) = self.lookup(&folder, name)? {
             if there.id == id {
@@ -719,6 +734,135 @@ impl Drive {
         }
         inner.emit(vec![id, from, folder.clone()]);
         Ok(())
+    }
+
+    /// Moves the drive's `node` into what stays on this computer, at `name` in `folder`: a copy
+    /// of it (and of all in it) is made there, and the drive's items go to its recycle bin.
+    async fn keep_here(
+        &self,
+        node: &super::Node,
+        folder: &NodeId,
+        name: &str,
+    ) -> Result<(), WriteError> {
+        let inner = &self.inner;
+        let mut made = Vec::new();
+        let mut gone = Vec::new();
+        let mut moves = Vec::new();
+        let copied = self
+            .copy_here(node, folder, name, &mut made, &mut gone, &mut moves)
+            .await;
+        if let Err(why) = copied {
+            for copy in made {
+                if let NodeId::Local(n) = copy {
+                    inner.forget_made(n);
+                }
+            }
+            return Err(why);
+        }
+        for (id, parent, name) in moves {
+            if let Some(mut edit) = inner.edit(&id) {
+                edit.parent = parent;
+                edit.name = name;
+                inner.put_edit(edit);
+            }
+        }
+        // The copy is the item where it went: it keeps its inode number.
+        if let Some(copy) = made.first() {
+            let ino = inner.ino(&node.id);
+            held(&inner.index).inos.insert(key_text(copy), ino);
+            held(&inner.inodes).insert(ino, copy.clone());
+        }
+        for id in gone.iter().rev() {
+            if let NodeId::Remote(remote) = id {
+                let mut edit = inner.edit_of_remote(remote)?;
+                if let Some(dirty) = edit.dirty.take() {
+                    let _ = std::fs::remove_file(inner.local_file(dirty.file));
+                }
+                inner.unpair(id);
+                edit.removed = true;
+                edit.awaiting = None;
+                edit.session = None;
+                edit.refused = None;
+                inner.queue(&mut edit);
+                inner.put_edit(edit);
+            }
+        }
+        let mut changed = vec![node.parent.clone(), folder.clone()];
+        changed.extend(made);
+        changed.extend(gone);
+        inner.emit(changed);
+        Ok(())
+    }
+
+    /// Copies `node` to `name` in `folder` as an item made here, and what is in it; notes each
+    /// copy in `made`, each of the drive's items copied in `gone`, and what was made here inside
+    /// it, which moves along once all is copied, in `moves`.
+    fn copy_here<'a>(
+        &'a self,
+        node: &'a super::Node,
+        folder: &'a NodeId,
+        name: &'a str,
+        made: &'a mut Vec<NodeId>,
+        gone: &'a mut Vec<NodeId>,
+        moves: &'a mut Vec<(NodeId, NodeId, String)>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), WriteError>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            let inner = &self.inner;
+            if let NodeId::Local(_) = node.id {
+                moves.push((node.id.clone(), folder.clone(), name.to_owned()));
+                return Ok(());
+            }
+            let n = held(&inner.index).take_local();
+            let now = now_secs();
+            let mut edit = match node.kind {
+                NodeKind::Folder => Edit::made_here(n, folder.clone(), name.to_owned(), None, now),
+                _ => {
+                    let path = inner.local_file(n);
+                    new_file(&path)?;
+                    let size = match &node.kind {
+                        NodeKind::Online { .. } => {
+                            let link = self.read(&node.id, 0, node.size).await;
+                            let link = link.map_err(WriteError::Read)?;
+                            std::fs::write(&path, &link)?;
+                            link.len() as u64
+                        }
+                        _ => match inner.edit(&node.id).and_then(|edit| edit.dirty) {
+                            Some(dirty) => {
+                                copy_span(&inner.local_file(dirty.file), &path, dirty.size)?;
+                                dirty.size
+                            }
+                            None => {
+                                inner
+                                    .download_into(self, &node.id, &path, node.size)
+                                    .await?;
+                                node.size
+                            }
+                        },
+                    };
+                    let dirty = Dirty {
+                        file: n,
+                        size,
+                        modified: node.modified.map_or(now, |m| m.0),
+                        writes: 1,
+                    };
+                    inner.wrote(&path);
+                    Edit::made_here(n, folder.clone(), name.to_owned(), Some(dirty), now)
+                }
+            };
+            inner.queue(&mut edit);
+            let copy = edit.id.clone();
+            inner.put_edit(edit);
+            made.push(copy.clone());
+            gone.push(node.id.clone());
+            if node.kind == NodeKind::Folder {
+                for child in self.children(&node.id)? {
+                    self.copy_here(&child, &copy, &child.name, made, gone, moves)
+                        .await?;
+                }
+            }
+            Ok(())
+        })
     }
 
     /// Saves the file `from` over the file `over`: `over` takes its bytes and its place.
