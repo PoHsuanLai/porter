@@ -6,7 +6,12 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 repository.workspace = true
-publish.workspace = true
+# Published: mailo's libraries name these types from crates.io. The rest of porter is not.
+publish = true
+homepage = "https://github.com/PoHsuanLai/porter"
+readme = "README.md"
+keywords = ["accounts", "consent", "oauth", "credentials", "desktop"]
+categories = ["authentication", "data-structures"]
 
 [dependencies]
 peephole-core = { workspace = true }

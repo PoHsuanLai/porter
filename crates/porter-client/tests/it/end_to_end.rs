@@ -203,8 +203,10 @@ async fn an_app_adds_an_account_through_a_family_is_granted_it_and_signs_it_in_a
     use porter_service::{AccountService, Registry};
 
     let dav = FakeDav::start("bob", "hunter2").await.expect("dav");
-    let spec =
-        parse_provider(include_str!("../../../../providers/generic-dav.toml")).expect("file");
+    let spec = parse_provider(include_str!(
+        "../../../porter-provider/providers/generic-dav.toml"
+    ))
+    .expect("file");
     let provider = FamilyProvider::Generic(GenericProvider::new(
         spec,
         SharedHttp::new(HyperHttp::new()),
@@ -322,8 +324,10 @@ async fn adding_an_account_that_is_already_here_tells_the_app_which_one_it_is() 
     use porter_service::{AccountService, Registry};
 
     let dav = FakeDav::start("bob", "hunter2").await.expect("dav");
-    let spec =
-        parse_provider(include_str!("../../../../providers/generic-dav.toml")).expect("file");
+    let spec = parse_provider(include_str!(
+        "../../../porter-provider/providers/generic-dav.toml"
+    ))
+    .expect("file");
     let provider = FamilyProvider::Generic(GenericProvider::new(
         spec,
         SharedHttp::new(HyperHttp::new()),
@@ -432,8 +436,10 @@ async fn a_typed_pop3_server_is_added_through_the_sheet_and_found_by_a_mail_need
         kind,
         value: FieldValue::Plain(text.to_owned()),
     };
-    let spec =
-        parse_provider(include_str!("../../../../providers/generic-imap.toml")).expect("file");
+    let spec = parse_provider(include_str!(
+        "../../../porter-provider/providers/generic-imap.toml"
+    ))
+    .expect("file");
     let provider = FamilyProvider::Generic(GenericProvider::new(
         spec,
         SharedHttp::new(NothingPublished),

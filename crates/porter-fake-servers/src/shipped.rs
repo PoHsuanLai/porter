@@ -6,22 +6,24 @@ use porter_provider::{Endpoint, ProviderSpec, parse_provider};
 
 /// The shipped `providers/nextcloud.toml`.
 pub fn nextcloud() -> ProviderSpec {
-    parse(include_str!("../../../providers/nextcloud.toml"))
+    parse(include_str!(
+        "../../porter-provider/providers/nextcloud.toml"
+    ))
 }
 
 /// The shipped `providers/ollama.toml`.
 pub fn ollama() -> ProviderSpec {
-    parse(include_str!("../../../providers/ollama.toml"))
+    parse(include_str!("../../porter-provider/providers/ollama.toml"))
 }
 
 /// The shipped `providers/google.toml`.
 pub fn google() -> ProviderSpec {
-    parse(include_str!("../../../providers/google.toml"))
+    parse(include_str!("../../porter-provider/providers/google.toml"))
 }
 
 /// The shipped `providers/local.toml`.
 pub fn local() -> ProviderSpec {
-    parse(include_str!("../../../providers/local.toml"))
+    parse(include_str!("../../porter-provider/providers/local.toml"))
 }
 
 /// The shipped `providers/<id>.toml` of an AI company served by the `api_key` family
@@ -29,12 +31,14 @@ pub fn local() -> ProviderSpec {
 /// names no server: the sign-in asks for one).
 pub fn ai(id: &str) -> ProviderSpec {
     let text = match id {
-        "openai-compatible" => include_str!("../../../providers/openai-compatible.toml"),
-        "anthropic" => include_str!("../../../providers/anthropic.toml"),
-        "google-ai" => include_str!("../../../providers/google-ai.toml"),
-        "moonshot" => include_str!("../../../providers/moonshot.toml"),
-        "openrouter" => include_str!("../../../providers/openrouter.toml"),
-        "openai" => include_str!("../../../providers/openai.toml"),
+        "openai-compatible" => {
+            include_str!("../../porter-provider/providers/openai-compatible.toml")
+        }
+        "anthropic" => include_str!("../../porter-provider/providers/anthropic.toml"),
+        "google-ai" => include_str!("../../porter-provider/providers/google-ai.toml"),
+        "moonshot" => include_str!("../../porter-provider/providers/moonshot.toml"),
+        "openrouter" => include_str!("../../porter-provider/providers/openrouter.toml"),
+        "openai" => include_str!("../../porter-provider/providers/openai.toml"),
         other => panic!("no shipped AI provider file `{other}`"),
     };
     parse(text)

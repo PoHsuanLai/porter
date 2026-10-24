@@ -14,6 +14,11 @@
 //! assert_eq!(nextcloud.id.as_str(), "nextcloud");
 //! ```
 
+/// The README's example, compiled and run as a doctest.
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
+pub struct ReadmeDoctests;
+
 mod clients;
 mod error;
 mod parse;
