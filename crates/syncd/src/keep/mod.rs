@@ -366,6 +366,22 @@ impl<H: Hosted, D: Directory> Keep<H, D> {
         drive_dir(account).is_some_and(|dir| self.drives.short_of_room(dir.as_str()))
     }
 
+    /// Hears the drives whose room to keep everything downloaded changes, by drive id
+    /// ([`Keep::account_of_drive`] names the account).
+    pub fn watch_room(&self) -> tokio::sync::broadcast::Receiver<String> {
+        self.drives.watch_room()
+    }
+
+    /// The account whose drive is `drive` (a drive's id is its account's folder name).
+    pub fn account_of_drive(&self, drive: &str) -> Option<AccountId> {
+        self.hosted
+            .registry()
+            .accounts
+            .into_iter()
+            .map(|account| account.id)
+            .find(|id| drive_dir(id).is_some_and(|dir| dir.as_str() == drive))
+    }
+
     /// Takes back every grant of syncd's under one of `wanted`.
     async fn revoke(&self, wanted: &[GrantKey]) -> Result<(), SwitchError> {
         let AccountsReply::Grants(grants) = self.hosted.answer(AccountsRequest::ListGrants).await

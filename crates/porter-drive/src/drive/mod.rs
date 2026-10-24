@@ -56,7 +56,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::{Duration, Instant};
-use tokio::sync::{Notify, Semaphore, broadcast};
+use tokio::sync::{Notify, Semaphore, broadcast, watch};
 
 /// The inode number of the top of the drive.
 pub const ROOT_INO: u64 = 1;
@@ -187,9 +187,9 @@ pub struct DriveConfig {
     pub lock_wait: Duration,
     /// How long a file changed here is left closed and alone before it is sent.
     pub quiet: Duration,
-    /// How many bytes the cache's file system has free, when not measured (`None`: measured each
-    /// time it is asked). Keeping everything downloaded fetches nothing past it.
-    pub free_space: Option<u64>,
+    /// How the free space keeping everything downloaded is held against is found (measured each
+    /// time it is asked, by default).
+    pub free_space: FreeSpace,
 }
 
 impl DriveConfig {
@@ -205,9 +205,24 @@ impl DriveConfig {
             deadline: Duration::from_secs(120),
             lock_wait: Duration::from_secs(2),
             quiet: QUIET,
-            free_space: None,
+            free_space: FreeSpace::Measured,
         }
     }
+}
+
+/// How the free space of a drive's cache is found: what keeping the whole drive downloaded is
+/// held against before anything is fetched for it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum FreeSpace {
+    /// Measured on the cache's file system each time it is asked; when the file system cannot be
+    /// asked it is not known.
+    #[default]
+    Measured,
+    /// This many bytes (a test's figure, or a host's share of the disk).
+    Bytes(u64),
+    /// Not known. An unknown free space is never short: downloads go ahead, and a disk that fills
+    /// shows on the item as any download that fails does.
+    Unknown,
 }
 
 /// Why an item's last fetch failed, as its status shows it.
@@ -247,10 +262,11 @@ pub(crate) struct Inner {
     limit: Mutex<CacheLimit>,
     /// "Keep Everything Downloaded": every item counts as kept.
     keep_all: AtomicBool,
-    /// Keeping everything downloaded needs more room than the cache's file system has free.
-    short_of_room: AtomicBool,
-    /// The free space a test (or a host) names in place of measuring it.
-    free_space: Option<u64>,
+    /// Keeping everything downloaded needs more room than the cache's file system has free; its
+    /// watchers hear each change, and only a change.
+    short_of_room: watch::Sender<bool>,
+    /// How the free space is found.
+    free_space: FreeSpace,
     inodes: Mutex<HashMap<u64, NodeId>>,
     offline: AtomicBool,
     quota: Mutex<Option<(u64, Option<u64>)>>,
@@ -563,7 +579,7 @@ impl Drive {
             errors: Mutex::default(),
             limit: Mutex::new(config.limit),
             keep_all: AtomicBool::new(false),
-            short_of_room: AtomicBool::new(false),
+            short_of_room: watch::channel(false).0,
             free_space: config.free_space,
             inodes: Mutex::new(inodes),
             offline: AtomicBool::new(false),

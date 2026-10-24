@@ -38,12 +38,18 @@
   removed for space. Off goes back to the items kept one by one; nothing is removed then, and the
   rest may be removed past the limit again. Kept in `syncd.toml` (`[storage] keep_all`), so it
   holds after a restart. When the drive does not fit the free space, nothing more is downloaded,
-  nothing is removed, and the row says "Not enough space to keep everything downloaded."
+  nothing is removed, and the row says "Not enough space to keep everything downloaded." The row
+  is told of each time that changes, so the line comes and goes without reopening Settings. A
+  free space that cannot be measured is never taken as short.
+- Once an account shows in Files, its old "Keep this account's files on this computer" switch is
+  hidden when it is off; while that mirror still runs the switch stays, so it can be turned off.
+  Its folder is left where it is.
 - The Photos row (`accounts.<id>.sync.photos`) is the only thing that turns Photos on: its grant
   starts the Photos datasets and taking it back stops them, keeping the photos. `SYNCD_PHOTOS` is
   gone, and `org.quire.Photos1.Picker` is served whenever syncd is built with `photos-picker`.
-- porter-drive: `Drive::set_keep_all`, `keeps_all` and `short_of_room`, the words
-  `KEPT_WITH_DRIVE` and `NO_ROOM_FOR_ALL`, and `DriveConfig::free_space`.
+- porter-drive: `Drive::set_keep_all`, `keeps_all`, `short_of_room` and `watch_room`, the words
+  `KEPT_WITH_DRIVE` and `NO_ROOM_FOR_ALL`, and `DriveConfig::free_space` (`FreeSpace`:
+  measured, a figure, or unknown).
 
 ### Model lists say what a model takes in
 

@@ -24,7 +24,7 @@ use porter_core::{
     ServiceEndpoint, Subject, Tls, Toggle, UnixSeconds,
 };
 use porter_dbus::CallerRole;
-use porter_drive::{CacheLimit, ItemState, words};
+use porter_drive::{CacheLimit, FreeSpace, ItemState, words};
 use porter_drive_fuse::{Mounter, mountd};
 use porter_fake::{FakeProvider, ScriptedSheets};
 use porter_fake_servers::{FakeGraph, GraphHandle, Running};
@@ -98,6 +98,19 @@ async fn rig(sheets: ScriptedSheets) -> Rig {
 async fn rig_showing(
     sheets: ScriptedSheets,
     mount: impl FnOnce(&std::path::Path) -> DriveMount,
+) -> Rig {
+    build(sheets, mount, FreeSpace::Measured).await
+}
+
+/// The rig, each drive holding this much free space to keep it downloaded whole.
+async fn rig_with_room(sheets: ScriptedSheets, room: FreeSpace) -> Rig {
+    build(sheets, |_| DriveMount::Off, room).await
+}
+
+async fn build(
+    sheets: ScriptedSheets,
+    mount: impl FnOnce(&std::path::Path) -> DriveMount,
+    room: FreeSpace,
 ) -> Rig {
     let graph = FakeGraph::start(BEARER).await.expect("graph");
     let provider = FakeProvider::from_file(PROVIDER);
@@ -184,6 +197,7 @@ async fn rig_showing(
         StorageConfig {
             drive_every: Duration::from_millis(100),
             mount: mount(bus.scratch()),
+            free_space: room,
             ..StorageConfig::default()
         },
     );
@@ -584,6 +598,76 @@ async fn keep_everything_downloaded_is_offered_while_shown_and_outlasts_a_restar
     // Show in Files off takes the row away.
     rig.settings.set(&row(), &word(false)).await.expect("off");
     assert!(!offered(&rig, KEEP_ROW).await);
+}
+
+/// The next `Changed` of `row`.
+async fn next_change_of(changes: &mut ds_settings::live::Changes, row: &KeyPath) {
+    use zbus::export::futures_core::Stream;
+    loop {
+        let change = tokio::time::timeout(
+            porter_fake::GENEROUS,
+            std::future::poll_fn(|cx| std::pin::Pin::new(&mut *changes).poll_next(cx)),
+        )
+        .await
+        .expect("a Changed in time")
+        .expect("open stream")
+        .expect("a change");
+        if change.key == *row {
+            return;
+        }
+    }
+}
+
+async fn keep_note(rig: &Rig) -> Option<String> {
+    let schema = rig.settings.describe().await.expect("schema");
+    let key = schema
+        .key
+        .into_iter()
+        .find(|key| key.path.0 == KEEP_ROW)
+        .expect("the row is offered");
+    key.note.map(|note| note.0)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_keep_row_is_told_of_when_the_drive_stops_fitting_and_again_when_it_fits() {
+    let mut rig = rig_with_room(agreeing(), FreeSpace::Bytes(10)).await;
+    rig.graph.put_root_file("Docs/Plan.txt", b"plan");
+    let keep_row = KeyPath(KEEP_ROW.to_owned());
+    rig.settings.set(&row(), &word(true)).await.expect("on");
+    eventually("the row reads on", async || {
+        rig.settings.get(&row()).await.ok() == Some(word(true))
+    })
+    .await;
+    rig.settings
+        .set(&keep_row, &word(true))
+        .await
+        .expect("keep all");
+    rig.supervisor.tick().await;
+    let drives = rig.supervisor.drive_set();
+    let drive = drives.get(rig.account.as_str()).expect("served");
+    eventually("it fits and is downloaded", async || {
+        state_at(&drive, "Docs/Plan.txt") == Some(ItemState::Downloaded)
+    })
+    .await;
+    assert_eq!(keep_note(&rig).await, None);
+
+    // Twenty bytes more than the ten free: the next listing pass finds it short, and the row is
+    // told of so the pane draws the line.
+    let mut changes = rig.settings.changes().await.expect("changes");
+    rig.graph.put_root_file("Big.bin", &[7; 20]);
+    next_change_of(&mut changes, &keep_row).await;
+    assert!(drive.drive.short_of_room());
+    assert_eq!(
+        keep_note(&rig).await.as_deref(),
+        Some(words::NO_ROOM_FOR_ALL)
+    );
+    assert_eq!(state_at(&drive, "Big.bin"), Some(ItemState::Cloud));
+
+    // Gone from the drive: it fits again, and the row is told of again.
+    rig.graph.delete_root_item("Big.bin");
+    next_change_of(&mut changes, &keep_row).await;
+    assert!(!drive.drive.short_of_room());
+    assert_eq!(keep_note(&rig).await, None);
 }
 
 #[tokio::test(flavor = "multi_thread")]

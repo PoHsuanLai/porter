@@ -281,6 +281,8 @@ pub struct DriveSet {
     settings: Option<PathBuf>,
     /// The accounts whose drives are held while they are removed.
     held: Arc<Mutex<std::collections::BTreeSet<String>>>,
+    /// The drives whose room to keep everything downloaded changed (short, or no longer).
+    room: broadcast::Sender<String>,
 }
 
 impl Default for DriveSet {
@@ -290,6 +292,7 @@ impl Default for DriveSet {
             events: broadcast::channel(1024).0,
             settings: None,
             held: Arc::default(),
+            room: broadcast::channel(64).0,
         }
     }
 }
@@ -427,8 +430,25 @@ impl DriveSet {
         }
     }
 
-    /// Adds `drive`, telling of its items as they change from now on.
+    /// Adds `drive`, telling of its items as they change from now on, and of its room to keep
+    /// everything downloaded each time that changes ([`DriveSet::watch_room`]).
     pub fn insert(&self, drive: Arc<LiveDrive>) {
+        let mut room = drive.drive.watch_room();
+        let (told, id) = (self.room.clone(), drive.id.clone());
+        let weak = Arc::downgrade(&drive);
+        tokio::spawn(async move {
+            // What it was when it came is told too: a drive started short of room says so.
+            if *room.borrow_and_update() {
+                let _ = told.send(id.clone());
+            }
+            while room.changed().await.is_ok() {
+                if weak.upgrade().is_none() {
+                    return;
+                }
+                room.borrow_and_update();
+                let _ = told.send(id.clone());
+            }
+        });
         let mut changes = drive.drive.subscribe();
         let events = self.events.clone();
         let weak = Arc::downgrade(&drive);
@@ -467,6 +487,12 @@ impl DriveSet {
     /// The drive `id`.
     pub fn get(&self, id: &str) -> Option<Arc<LiveDrive>> {
         held(&self.drives).get(id).cloned()
+    }
+
+    /// Hears the ids of the drives whose room to keep everything downloaded changes from now on:
+    /// short of it, or no longer ([`porter_drive::Drive::short_of_room`]).
+    pub fn watch_room(&self) -> broadcast::Receiver<String> {
+        self.room.subscribe()
     }
 
     /// Hears what changes from now on.

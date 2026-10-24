@@ -321,7 +321,7 @@ async fn keeping_everything_past_the_free_space_fetches_nothing_and_removes_noth
     let drive = Drive::open(
         DriveConfig {
             chunk: 4,
-            free_space: Some(10),
+            free_space: FreeSpace::Bytes(10),
             ..DriveConfig::new(dir.join("cache"))
         },
         listing.clone(),
@@ -340,8 +340,16 @@ async fn keeping_everything_past_the_free_space_fetches_nothing_and_removes_noth
     rig.file("b", None, "b.bin", 8);
     rig.file("c", None, "c.bin", 8);
     let fetched = rig.source.fetched().len();
+    let mut room = rig.drive.watch_room();
     rig.drive.set_keep_all(true);
     assert!(rig.drive.short_of_room(), "16 bytes to come, 10 free");
+    assert!(room.has_changed().expect("open"), "a watcher hears it");
+    assert!(*room.borrow_and_update());
+    rig.drive.listing_changed();
+    assert!(
+        !room.has_changed().expect("open"),
+        "a look that changes nothing is quiet"
+    );
     assert_eq!(rig.source.fetched().len(), fetched, "nothing started");
     assert_eq!(rig.state("b"), ItemState::Cloud);
     assert_eq!(rig.state("a"), ItemState::Downloaded, "nothing removed");
@@ -350,9 +358,42 @@ async fn keeping_everything_past_the_free_space_fetches_nothing_and_removes_noth
     rig.listing.remove("c");
     rig.drive.listing_changed();
     assert!(!rig.drive.short_of_room());
+    assert!(room.has_changed().expect("open"), "and hears it clear");
+    assert!(!*room.borrow_and_update());
     eventually("it fits now", || rig.state("b") == ItemState::Downloaded).await;
     rig.drive.set_keep_all(false);
     assert!(!rig.drive.short_of_room(), "only while kept whole");
+}
+
+#[tokio::test]
+async fn a_free_space_that_is_not_known_is_never_short_and_everything_downloads() {
+    let dir = Scratch::new("porter-drive-unknown-room");
+    let listing = Arc::new(MemoryListing::default());
+    let source = Arc::new(MemorySource::default());
+    let drive = Drive::open(
+        DriveConfig {
+            chunk: 4,
+            free_space: FreeSpace::Unknown,
+            ..DriveConfig::new(dir.join("cache"))
+        },
+        listing.clone(),
+        source.clone(),
+    )
+    .expect("drive");
+    let rig = Rig {
+        dir,
+        listing,
+        source,
+        drive,
+    };
+    rig.file("a", None, "a.bin", 8);
+    rig.file("b", None, "b.bin", 8);
+    rig.drive.set_keep_all(true);
+    assert!(!rig.drive.short_of_room(), "nothing measured, nothing said");
+    eventually("everything downloads", || {
+        rig.state("a") == ItemState::Downloaded && rig.state("b") == ItemState::Downloaded
+    })
+    .await;
 }
 
 #[tokio::test]

@@ -84,7 +84,9 @@ they run the drive in memory and mount nothing.
     Remove Download says "Everything on this drive is kept downloaded." Set the limit to `1`:
     nothing goes. Restart syncd: the row is still on. Turn it off: nothing goes until the limit
     asks. On a drive larger than the free disk, the row says "Not enough space to keep everything
-    downloaded." and nothing more comes down.
+    downloaded." and nothing more comes down; the line goes by itself once there is room again.
+    Under the account, "Keep this account's files on this computer" is gone while it is off; its
+    folder in `~/.local/share/porter/storage/` is still there.
 15. Turn "Show in Files" off: `~/Cloud/OneDrive` is no longer a mount (`mount | grep Cloud` says
     nothing). Do it again with a terminal sitting in the folder (`cd ~/Cloud/OneDrive`): it goes
     at once, syncd keeps answering, and the terminal's folder reads as gone. Turn it on and stop

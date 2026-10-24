@@ -4,7 +4,8 @@
 //!
 //! One group of rows per account syncd holds: `accounts.<id>.label`, `.provider` and `.state`
 //! (read-outs), `.sync.files` and `.sync.photos` (what syncd keeps of the account, shown for what
-//! it offers), `.storage.files` ("Show in Files", for an account whose provider asks the whole
+//! it offers; the app folder's `.sync.files` is hidden once the account shows in Files and that
+//! switch is off, its folder left where it is), `.storage.files` ("Show in Files", for an account whose provider asks the whole
 //! drive on use), `.storage.keep` ("Keep Everything Downloaded", only while Show in Files is on;
 //! kept in `syncd.toml`, with a line under it when the drive does not fit this computer's free
 //! space), `.reauth` ("Sign in again") and `.remove`. Turning "Show in Files" on may open
@@ -237,13 +238,25 @@ const KEEP_ALL_WORDS: (&str, &str) = (
 
 /// How an account's rows are drawn beyond the registry: whether "Show in Files" is offered,
 /// whether its last turning on did not go through, whether it is on (which offers "Keep
-/// Everything Downloaded"), and whether keeping everything does not fit the free space.
+/// Everything Downloaded" and hides the app folder's switch once that is off), whether keeping
+/// everything does not fit the free space, and whether the app folder's mirror is on.
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct FilesRow {
     pub offered: bool,
     pub not_on: bool,
     pub shown: bool,
     pub short_of_room: bool,
+    pub app_folder: bool,
+}
+
+impl FilesRow {
+    /// Whether the app folder's switch ("Keep this account's files on this computer") is offered:
+    /// while the account is not shown in Files, or while its mirror still runs, so it can be
+    /// turned off. Once it is off and the account is shown in Files it stays hidden; its folder
+    /// stays where it is.
+    fn offers_app_folder(self) -> bool {
+        !self.shown || self.app_folder
+    }
 }
 
 fn account_keys(account: &Account, names: &ProviderNames, files: FilesRow) -> Vec<KeySpec> {
@@ -279,6 +292,9 @@ fn account_keys(account: &Account, names: &ProviderNames, files: FilesRow) -> Ve
         ),
     ];
     for class in sync_offers(account) {
+        if class == SyncClass::Files && !files.offers_app_folder() {
+            continue;
+        }
         let (label, help) = sync_words(account, class);
         keys.push(spec(
             &Key::Sync(id.clone(), class),
@@ -604,6 +620,7 @@ impl<H: Hosted, D: Directory, C: Callers> LiveModule for SyncSettings<H, D, C> {
             not_on: not_on.contains(&account.id),
             shown: drive_allowed(&registry.grants, &account.id),
             short_of_room: self.keep.short_of_room(&account.id),
+            app_folder: sync_allowed(&registry.grants, &account.id, SyncClass::Files),
         });
         let kept = self
             .kept
@@ -688,6 +705,17 @@ impl<H: Hosted, D: Directory, C: Callers> LiveModule for SyncSettings<H, D, C> {
             Key::Sync(id, class) => {
                 let toggle = toggle_of(&value)
                     .ok_or_else(|| LiveError::BadValue("a sync row is `on` or `off`".into()))?;
+                // The app folder's switch, hidden once the drive is shown in Files, is not
+                // turned on again.
+                if class == SyncClass::Files
+                    && toggle == Toggle::On
+                    && drive_allowed(&registry.grants, &id)
+                    && !sync_allowed(&registry.grants, &id, class)
+                {
+                    return Err(LiveError::NotPermitted(
+                        "this account's files are in Files".into(),
+                    ));
+                }
                 self.keep
                     .set_sync(&id, class, toggle)
                     .await
@@ -813,17 +841,44 @@ impl<H: Hosted, D: Directory, C> SyncSettings<H, D, C> {
     }
 }
 
-/// Serves the module at [`SETTINGS_PATH`].
+/// Serves the module at [`SETTINGS_PATH`]. From then on, each time a drive comes to need more
+/// room than there is to keep everything downloaded, or no longer does, its account's
+/// "Keep Everything Downloaded" row is told of, so the pane draws its line again; nothing is
+/// told while that stands still.
 pub async fn serve_settings<H: Hosted, D: Directory, C: Callers>(
     connection: &Connection,
     module: SyncSettings<H, D, C>,
 ) -> zbus::Result<()> {
     let served_slot = Arc::clone(&module.served);
+    let (keep, mut room) = (Arc::clone(&module.keep), module.keep.watch_room());
     let served = serve(connection, SETTINGS_PATH, module)
         .await
         .map_err(|e| zbus::Error::Failure(e.to_string()))?;
     // Served once; a second call leaves the first in place.
     let _ = served_slot.set(served);
+    tokio::spawn(async move {
+        loop {
+            let accounts: Vec<AccountId> = match room.recv().await {
+                Ok(drive) => keep.account_of_drive(&drive).into_iter().collect(),
+                // Missed some: every account's row is told of again.
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => keep
+                    .registry()
+                    .accounts
+                    .into_iter()
+                    .map(|account| account.id)
+                    .collect(),
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+            };
+            for id in accounts {
+                let word = if keep.keeps_everything(&id) {
+                    "on"
+                } else {
+                    "off"
+                };
+                announce(&served_slot, &Key::KeepAll(id), word).await;
+            }
+        }
+    });
     Ok(())
 }
 
@@ -896,6 +951,48 @@ mod tests {
         for word in ["mount", "FUSE", "WebDAV", "delta", "scope", "token"] {
             assert!(!KEEP_ALL_WORDS.0.contains(word) && !KEEP_ALL_WORDS.1.contains(word));
         }
+    }
+
+    #[test]
+    fn the_app_folder_switch_is_hidden_once_shown_in_files_and_off() {
+        let mut registry = Registry::default();
+        // Its files over Graph: an app folder syncd mirrors.
+        let mut account = porter_fake::storage_account();
+        account.endpoints[0].family = Family::Graph;
+        registry.accounts.push(account);
+        let id = registry.accounts[0].id.clone();
+        let names = ProviderNames::default();
+        let app_folder = path(&Key::Sync(id, SyncClass::Files));
+        let offered = |files: FilesRow| {
+            schema(&registry, &names, |_| files)
+                .key
+                .iter()
+                .any(|key| key.path.0 == app_folder)
+        };
+        let not_shown = FilesRow {
+            offered: true,
+            ..FilesRow::default()
+        };
+        assert!(offered(not_shown), "Show in Files off: offered");
+        assert!(
+            offered(FilesRow {
+                app_folder: true,
+                ..not_shown
+            }),
+            "Show in Files off, the mirror on: offered"
+        );
+        let shown = FilesRow {
+            shown: true,
+            ..not_shown
+        };
+        assert!(
+            offered(FilesRow {
+                app_folder: true,
+                ..shown
+            }),
+            "shown in Files with the mirror still on: offered, so it can be turned off"
+        );
+        assert!(!offered(shown), "shown in Files and off: hidden");
     }
 
     #[test]

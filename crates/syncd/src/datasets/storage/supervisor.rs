@@ -50,7 +50,7 @@ use crate::service::{Access, DatasetName};
 use porter_client::Transport;
 use porter_core::{AppName, Candidate, EndpointUrl, WebUrl};
 use porter_dbus::DriveState;
-use porter_drive::{CacheLimit, Drive, DriveConfig, ReplicaSource};
+use porter_drive::{CacheLimit, Drive, DriveConfig, FreeSpace, ReplicaSource};
 use porter_drive_fuse::{DriveFs, Mounter};
 use porter_sync::{DriveWrite, Replica};
 use sha2::{Digest, Sha256};
@@ -83,6 +83,8 @@ pub struct StorageConfig {
     pub mount: DriveMount,
     /// The cache limit the drives start with (Settings' `storage.cache_limit` changes it).
     pub cache_limit: CacheLimit,
+    /// How each drive finds the free space keeping it downloaded whole is held against.
+    pub free_space: FreeSpace,
 }
 
 /// How a drive shown in Files is put at its path.
@@ -113,6 +115,7 @@ impl Default for StorageConfig {
             drive_every: Duration::from_secs(300),
             mount: DriveMount::Off,
             cache_limit: CacheLimit::Automatic,
+            free_space: FreeSpace::Measured,
         }
     }
 }
@@ -477,6 +480,7 @@ where
         let files = Drive::open_writable(
             DriveConfig {
                 limit: *self.limit.borrow(),
+                free_space: self.config.free_space,
                 ..DriveConfig::new(wiring.paths.drive_cache_dir(account))
             },
             Arc::clone(&journal) as Arc<dyn porter_drive::Listing>,

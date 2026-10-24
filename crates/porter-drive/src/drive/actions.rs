@@ -1,7 +1,7 @@
 //! What a person asks of a drive's items (Download Now, Keep Downloaded, Remove Download) and of
 //! the whole drive (Keep Everything Downloaded), what a new listing changes, and eviction.
 
-use super::{Drive, Inner, NodeId, held};
+use super::{Drive, FreeSpace, Inner, NodeId, held};
 use crate::listing::Entry;
 use crate::words;
 use porter_sync::{ItemKind, RemoteId};
@@ -51,23 +51,33 @@ impl Inner {
     }
 
     /// How many bytes the cache's file system has free (what a person may use, not what is kept
-    /// for the system), or what [`super::DriveConfig::free_space`] says.
-    fn free_bytes(&self) -> u64 {
-        self.free_space.unwrap_or_else(|| {
-            self.dir
+    /// for the system), as [`super::DriveConfig::free_space`] says to find it; `None` when it is
+    /// not known (a file system that cannot be asked).
+    fn free_bytes(&self) -> Option<u64> {
+        match self.free_space {
+            FreeSpace::Bytes(bytes) => Some(bytes),
+            FreeSpace::Unknown => None,
+            FreeSpace::Measured => self
+                .dir
                 .ancestors()
                 .find_map(|at| rustix::fs::statvfs(at).ok())
-                .map_or(0, |fs| fs.f_bavail.saturating_mul(fs.f_frsize))
-        })
+                .map(|fs| fs.f_bavail.saturating_mul(fs.f_frsize)),
+        }
+    }
+
+    /// Notes whether keeping everything is short of room, telling the watchers only of a change.
+    fn set_short_of_room(&self, short: bool) {
+        self.short_of_room
+            .send_if_modified(|was| std::mem::replace(was, short) != short);
     }
 
     /// While the whole drive is kept: starts a download of each file not here and not on its
     /// way, when what is still to come fits in the free space; when it does not, nothing is
     /// started (and nothing is removed) and the drive says it is short of room until a later
-    /// look finds the room.
+    /// look finds the room. A free space that is not known is never short.
     pub(super) fn fetch_everything(self: &Arc<Self>) {
         if !self.keeps_all() {
-            self.short_of_room.store(false, Ordering::SeqCst);
+            self.set_short_of_room(false);
             return;
         }
         let files: Vec<Entry> = self
@@ -89,8 +99,8 @@ impl Inner {
                 })
                 .sum()
         };
-        let short = coming > self.free_bytes();
-        self.short_of_room.store(short, Ordering::SeqCst);
+        let short = self.free_bytes().is_some_and(|free| coming > free);
+        self.set_short_of_room(short);
         if short {
             return;
         }
@@ -488,7 +498,12 @@ impl Drive {
     /// has free, as the last look found ([`crate::words::NO_ROOM_FOR_ALL`]): what is not here is
     /// then not fetched until it fits. Always `false` while the drive is not kept whole.
     pub fn short_of_room(&self) -> bool {
-        self.inner.short_of_room.load(Ordering::SeqCst)
+        *self.inner.short_of_room.borrow()
+    }
+
+    /// Hears [`Drive::short_of_room`] change, each time it does and only then.
+    pub fn watch_room(&self) -> tokio::sync::watch::Receiver<bool> {
+        self.inner.short_of_room.subscribe()
     }
 
     /// Bytes of the drive's files here: what is cached and what was written here.
