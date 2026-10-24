@@ -20,25 +20,20 @@ path = "src/bin/porter-rig-client.rs"
 name = "porter-rig-secrets"
 path = "src/bin/porter-rig-secrets.rs"
 
-[[bin]]
-name = "porter-rig-storage"
-path = "src/bin/porter-rig-storage.rs"
-
 [dependencies]
 fake-secret-service = { workspace = true }
 porter-core = { workspace = true }
 porter-client = { workspace = true, features = ["dbus", "in-process"] }
 porter-dbus = { workspace = true, features = ["test-proc-root"] }
-porter-drive = { workspace = true }
 porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }
 porter-infer = { workspace = true }
+syncd-fakes = { workspace = true }
 clap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-# `signal` and `io-std` are what this crate adds to the pinned line: SIGTERM ends the servers
-# cleanly, and porter-rig-storage reads its commands from stdin.
-tokio = { workspace = true, features = ["signal", "io-std"] }
+# `signal` is what this crate adds to the pinned line: SIGTERM ends the servers cleanly.
+tokio = { workspace = true, features = ["signal"] }
 zbus = { workspace = true }
 
 [dev-dependencies]

@@ -1,7 +1,7 @@
 //! The rig a jailed scenario drives porter with (test tooling: `publish = false`, never
 //! installed, never in `dist/`; check-boundary lists it so nothing shipped depends on it).
 //!
-//! Four binaries, built on the modules here:
+//! Three binaries, built on the modules here:
 //!
 //! - `porter-rig-servers`: starts `porter-fake-servers`' fakes on loopback, plants known secrets
 //!   (`planted`), writes `rig.json` (`rigfile`) and serves the scenario's levers (`control`);
@@ -10,8 +10,9 @@
 //!   identity the daemons' `test-proc-root` builds read.
 //! - `porter-rig-secrets`: a fake `org.freedesktop.secrets` (the `fake-secret-service` crate), in
 //!   memory, plain algorithm, so the real accountd's `Oo7Secrets` works in a jail with no keyring.
-//! - `porter-rig-storage`: a fake `org.quire.Storage1` (`storage_fake`), two drives of real
-//!   files whose states move, for building Files before syncd serves the real one.
+//!
+//! `porter-rig-storage`, the fake `org.quire.Storage1` for building Files, lives with syncd's
+//! fakes in the `syncd-fakes` crate, under the same name and flags.
 
 pub mod client;
 pub mod control;
@@ -19,8 +20,11 @@ pub mod fixture;
 pub mod planted;
 pub mod rigfile;
 pub mod servers;
-pub mod storage_fake;
 
 // moved to fake-secret-service; re-export kept for one batch
 #[doc(hidden)]
 pub use fake_secret_service as secrets_service;
+
+// moved to syncd-fakes (`syncd_fakes::storage`); re-export kept for one batch
+#[doc(hidden)]
+pub use syncd_fakes::storage as storage_fake;

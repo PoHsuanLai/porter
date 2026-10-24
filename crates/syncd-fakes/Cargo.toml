@@ -1,0 +1,25 @@
+[package]
+name = "syncd-fakes"
+description = "Test tooling, never installed and never in dist: fakes of what syncd serves. `storage` is a fake org.quire.Storage1, two drives of real files whose states move, and the binary in src/bin serves it on the session bus for building Files before syncd serves the real one. Nothing shipped depends on it."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+# The binary is found by its file in src/bin; its name and flags are the shell session's, unchanged.
+
+[dependencies]
+porter-dbus = { workspace = true }
+porter-drive = { workspace = true }
+clap = { workspace = true }
+# `signal` and `io-std`: SIGTERM ends the binary, and it reads its commands from stdin.
+tokio = { workspace = true, features = ["signal", "io-std"] }
+zbus = { workspace = true }
+
+[dev-dependencies]
+porter-fake = { workspace = true }
+
+[lints]
+workspace = true

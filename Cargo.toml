@@ -41,6 +41,7 @@ members = [
   "crates/storage-gdrive",
   "crates/porter-rig",
   "crates/fake-secret-service",
+  "crates/syncd-fakes",
 ]
 
 [workspace.package]
@@ -73,6 +74,7 @@ porter-client   = { path = "crates/porter-client" }
 porter-fake     = { path = "crates/porter-fake", default-features = false }
 porter-fake-servers = { path = "crates/porter-fake-servers" }
 fake-secret-service = { path = "crates/fake-secret-service" }
+syncd-fakes     = { path = "crates/syncd-fakes" }
 porter-http     = { path = "crates/porter-http" }
 porter-proxy    = { path = "crates/porter-proxy" }
 porter-oauth    = { path = "crates/porter-oauth" }

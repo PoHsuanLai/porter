@@ -11,6 +11,10 @@
 - porter-rig's fake Secret Service is its own crate, `fake-secret-service`: `serve(&Connection)`
   returns its own `Error`, and the wire types (`Secret`, `SecretError`, the objects) are private.
   `porter_rig::secrets_service` re-exports the crate for one batch.
+- The fake `org.quire.Storage1` and its binary `porter-rig-storage` moved from porter-rig to a
+  new test crate, `syncd-fakes` (`syncd_fakes::storage`). The binary keeps its name and flags;
+  build it with `cargo build -p syncd-fakes`. `porter_rig::storage_fake` re-exports the module
+  for one batch.
 
 ### A drive's files in Files, downloaded when opened
 

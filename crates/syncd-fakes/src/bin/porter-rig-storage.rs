@@ -13,9 +13,9 @@
 //! tooling, never installed.
 
 use clap::Parser;
-use porter_rig::storage_fake::{FakeStorage, World, serve};
 use std::path::PathBuf;
 use std::process::ExitCode;
+use syncd_fakes::storage::{FakeStorage, World, serve};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::signal::unix::{SignalKind, signal};
 use zbus::object_server::SignalEmitter;
@@ -53,7 +53,7 @@ async fn main() -> ExitCode {
         }
     };
     for (id, details) in world.drives() {
-        let path = porter_rig::storage_fake::word_of(&details, porter_dbus::DRIVE_KEY_PATH)
+        let path = syncd_fakes::storage::word_of(&details, porter_dbus::DRIVE_KEY_PATH)
             .unwrap_or_default();
         eprintln!("porter-rig-storage: drive {id} at {path}");
     }
@@ -70,7 +70,7 @@ async fn main() -> ExitCode {
         Err(why) => return fail(format!("cannot send signals: {why}")),
     };
     eprintln!("porter-rig-storage: serving org.quire.Storage1 as {name}");
-    eprintln!("porter-rig-storage: {}", porter_rig::storage_fake::HELP);
+    eprintln!("porter-rig-storage: {}", syncd_fakes::storage::HELP);
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
     let mut reading = true;
     loop {
