@@ -31,6 +31,7 @@ use super::{
 };
 use crate::index::{Dirty, Edit, Index};
 use crate::naming;
+use porter_core::capability::HashKind;
 use porter_sync::{ItemKind, RemoteId};
 use std::os::unix::fs::{FileExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
@@ -125,15 +126,38 @@ fn copy_open(from: &std::fs::File, to: &std::fs::File, size: u64) -> std::io::Re
     to.set_len(size)
 }
 
-/// `path`, or the first free number of its name in its folder when something has it.
-fn free_path(path: &Path) -> PathBuf {
-    let (Some(folder), Some(name)) = (path.parent(), path.file_name().and_then(|n| n.to_str()))
-    else {
-        return path.to_path_buf();
-    };
-    folder.join(naming::free(name, |candidate| {
-        folder.join(candidate).symlink_metadata().is_ok()
-    }))
+/// `name` as one plain file name: never empty, never a step up or down a folder.
+fn plain_name(name: &str) -> String {
+    match name.replace('/', "\u{ff0f}") {
+        name if name.is_empty() || name == "." || name == ".." => "Untitled".to_owned(),
+        name => name,
+    }
+}
+
+/// Makes the folder `path` below `into` (and `into`), each folder made synced into the one it
+/// is in.
+fn make_dirs(into: &Path, path: &Path) -> std::io::Result<()> {
+    let mut at = into.to_path_buf();
+    let mut steps = vec![at.clone()];
+    for part in path.components() {
+        at.push(part);
+        steps.push(at.clone());
+    }
+    for step in steps {
+        match std::fs::create_dir(&step) {
+            Ok(()) => {
+                if let Some(parent) = step.parent() {
+                    std::fs::File::open(parent)?.sync_all()?;
+                }
+            }
+            Err(why) if why.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(why) if why.kind() == std::io::ErrorKind::NotFound => {
+                std::fs::create_dir_all(&step)?;
+            }
+            Err(why) => return Err(why),
+        }
+    }
+    Ok(())
 }
 
 /// Copies the first `size` bytes of `from` into the file `to`, which exists.
@@ -467,6 +491,47 @@ impl Inner {
         }
     }
 
+    /// Copies the bytes `id` has here into the file `path`, off the runtime's threads and
+    /// without their lock (a write waits on it): the copy is kept when they are still the same
+    /// generation under the lock after it, else taken again. Their size, or `None` when `id`
+    /// has none here.
+    async fn copy_written(
+        self: &Arc<Self>,
+        id: &NodeId,
+        path: &Path,
+    ) -> Result<Option<u64>, WriteError> {
+        for _ in 0..TRIES {
+            let Some(dirty) = self.edit(id).and_then(|edit| edit.dirty) else {
+                return Ok(None);
+            };
+            let (inner, id, to) = (Arc::clone(self), id.clone(), path.to_path_buf());
+            let kept = tokio::task::spawn_blocking(move || {
+                let copied = copy_span(&inner.local_file(dirty.file), &to, dirty.size);
+                #[cfg(test)]
+                inner.at_hook("copied here");
+                let lock = inner.file_lock(dirty.file);
+                let _bytes = held(&lock);
+                let same = inner
+                    .edit(&id)
+                    .and_then(|edit| edit.dirty)
+                    .is_some_and(|now| {
+                        now.file == dirty.file && now.generation == dirty.generation
+                    });
+                match same {
+                    true => copied.map(|()| true),
+                    // Written, sent or removed meanwhile: taken again as it is now.
+                    false => Ok(false),
+                }
+            })
+            .await
+            .unwrap_or(Err(WriteError::Cache))?;
+            if kept {
+                return Ok(Some(dirty.size));
+            }
+        }
+        Err(WriteError::Gone)
+    }
+
     /// Writes the first `size` bytes of `id` into `path`, read through the cache.
     async fn download_into(
         &self,
@@ -785,47 +850,71 @@ impl Inner {
 
 impl Drive {
     /// Writes what was made or changed here and not sent yet out as plain files at their paths
-    /// below `into` (the drive's folder, once nothing is shown there): what removing the account
-    /// keeps of it. Their folders are made as needed, and so is a folder made here; a name
-    /// taken there takes the next free number. What stays on this computer (the desktop's
-    /// trash) is kept too, where it is. How many files were written. The cache itself is left
-    /// as it is.
+    /// below `into` (a folder of their own beside the drive's folder): what removing the account
+    /// keeps of it. A file whose place here cannot be told goes at the top under its own name;
+    /// lock files are left out, and what stays on this computer (the desktop's trash) is kept
+    /// too. Asked again, it writes nothing twice: a file already there with the same content is
+    /// left as it is, one with other content takes the next free number. Every file and folder
+    /// it writes is synced before it answers. How many files are kept there. The cache itself is
+    /// left as it is.
     ///
     /// # Errors
-    /// A file or folder could not be written there, or a file's place here could not be told.
+    /// A file or folder could not be written there.
     pub fn keep_unsent(&self, into: &Path) -> std::io::Result<usize> {
         let inner = &self.inner;
         let edits: Vec<Edit> = held(&inner.index).edits.values().cloned().collect();
         let mut kept = 0;
         for edit in edits {
             let made_folder = edit.folder && edit.base.is_none();
-            if edit.removed || (edit.dirty.is_none() && !made_folder) {
+            let lock_file = !edit.folder && crate::local_only::is_lock_file(&edit.name);
+            if edit.removed || lock_file || (edit.dirty.is_none() && !made_folder) {
                 continue;
             }
-            let Some(path) = self.path_here(&edit.id) else {
-                return Err(std::io::Error::other(format!(
-                    "where {:?} is here could not be told",
-                    edit.name
-                )));
-            };
+            let path = self
+                .path_here(&edit.id)
+                .unwrap_or_else(|| PathBuf::from(plain_name(&edit.name)));
             let Some(dirty) = &edit.dirty else {
-                std::fs::create_dir_all(into.join(&path))?;
+                make_dirs(into, &path)?;
                 continue;
             };
-            let to = free_path(&into.join(&path));
-            if let Some(parent) = to.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
+            let folder = path.parent().map_or_else(PathBuf::new, Path::to_path_buf);
+            make_dirs(into, &folder)?;
             let lock = inner.file_lock(dirty.file);
             let _bytes = held(&lock);
-            let source = std::fs::File::open(inner.local_file(dirty.file))?;
-            let target = std::fs::OpenOptions::new()
+            let from = inner.local_file(dirty.file);
+            let ours = crate::hash::of_file(HashKind::Sha256, &from)?;
+            let name = path
+                .file_name()
+                .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
+            let at = into.join(&folder);
+            let mut target = None;
+            for n in 1.. {
+                let candidate = at.join(match n {
+                    1 => name.clone(),
+                    n => naming::numbered(&name, n),
+                });
+                if candidate.symlink_metadata().is_err() {
+                    target = Some(candidate);
+                    break;
+                }
+                if ours.is_some() && crate::hash::of_file(HashKind::Sha256, &candidate)? == ours {
+                    break;
+                }
+            }
+            kept += 1;
+            let Some(to) = target else {
+                // Kept already, by an earlier try.
+                continue;
+            };
+            let source = std::fs::File::open(&from)?;
+            let written = std::fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)
+                .mode(0o600)
                 .open(&to)?;
-            copy_open(&source, &target, dirty.size)?;
-            target.sync_all()?;
-            kept += 1;
+            copy_open(&source, &written, dirty.size)?;
+            written.sync_all()?;
+            std::fs::File::open(&at)?.sync_all()?;
         }
         Ok(kept)
     }
@@ -1271,19 +1360,8 @@ impl Drive {
                             std::fs::write(&path, &link)?;
                             link.len() as u64
                         }
-                        _ => match inner.edit(&node.id).and_then(|edit| edit.dirty) {
-                            Some(dirty) => {
-                                let inner = Arc::clone(inner);
-                                let to = path.clone();
-                                tokio::task::spawn_blocking(move || {
-                                    let lock = inner.file_lock(dirty.file);
-                                    let _bytes = held(&lock);
-                                    copy_span(&inner.local_file(dirty.file), &to, dirty.size)
-                                })
-                                .await
-                                .unwrap_or(Err(WriteError::Cache))?;
-                                dirty.size
-                            }
+                        _ => match inner.copy_written(&node.id, &path).await? {
+                            Some(size) => size,
                             None => {
                                 inner
                                     .download_into(self, &node.id, &path, node.size)
@@ -1378,9 +1456,9 @@ impl Drive {
                 }
                 // Before the bytes' locks go: no write of a handle of `over` gets in between.
                 inner.detach(over);
-                drop(guards);
                 #[cfg(test)]
                 inner.at_hook("saved over");
+                drop(guards);
                 match from {
                     NodeId::Local(n) => inner.alias(*n, over),
                     _ => {

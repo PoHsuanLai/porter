@@ -1143,10 +1143,19 @@ async fn what_was_not_sent_is_written_out_as_plain_files_when_the_drive_is_let_g
     rig.drive
         .make_folder(&NodeId::Top, "Empty")
         .expect("folder");
-    let into = rig.dir.join("Cloud").join("Drive");
+    rig.write_new(&NodeId::Top, ".~lock.a.txt#", b"lock").await;
+    let into = rig.dir.join("Cloud").join("Drive (Not Uploaded)");
     std::fs::create_dir_all(into.join("Work")).expect("folder");
     std::fs::write(into.join("Work").join("made.txt"), b"there").expect("write");
     assert_eq!(rig.drive.keep_unsent(&into).expect("kept"), 3);
+    // Asked again (a removal tried again while the cache is still here): nothing twice.
+    assert_eq!(rig.drive.keep_unsent(&into).expect("kept"), 3);
+    assert!(!into.join("Work/made 3.txt").exists());
+    assert!(!into.join("Work/report 2.txt").exists());
+    assert!(
+        !into.join(".~lock.a.txt#").exists(),
+        "a lock file is left out"
+    );
     let read = |path: &str| std::fs::read(into.join(path)).expect(path);
     assert_eq!(read("Work/report.txt"), b"new text");
     assert_eq!(read("Work/made 2.txt"), b"made here");
@@ -1154,8 +1163,8 @@ async fn what_was_not_sent_is_written_out_as_plain_files_when_the_drive_is_let_g
     assert_eq!(read("Plans/a.txt"), b"a");
     assert!(into.join("Empty").is_dir());
     assert_eq!(
-        words::kept_unsent(3, "~/Cloud/Drive"),
-        "3 files that weren't uploaded were kept in ~/Cloud/Drive."
+        words::kept_unsent(3, "~/Cloud/Drive (Not Uploaded)"),
+        "3 files that weren't uploaded were kept in ~/Cloud/Drive (Not Uploaded)."
     );
     assert_eq!(
         words::kept_unsent(1, "~/Cloud/Drive"),
@@ -1257,13 +1266,15 @@ async fn a_write_through_a_file_saved_over_never_lands_in_the_bytes_that_replace
     held(&rig.drive.inner.hooks).insert("saved over", Arc::clone(&hook));
     let drive = rig.drive.clone();
     let saving = tokio::spawn(async move { drive.rename(&new, &NodeId::Top, "r.txt").await });
-    // Saved over, and the bytes' locks let go.
+    // Saved over, its handles shut, the bytes' locks still held: a write waits for them.
     meet(&hook).await.expect("met");
-    let late = rig.drive.write(handle, 0, b"ZZZ").await;
+    let drive = rig.drive.clone();
+    let late = tokio::spawn(async move { drive.write(handle, 0, b"ZZZ").await });
+    tokio::time::sleep(Duration::from_millis(100)).await;
     held(&rig.drive.inner.hooks).remove("saved over");
     meet(&hook).await.expect("met");
     saving.await.expect("joined").expect("saved");
-    assert_eq!(late, Err(WriteError::Gone));
+    assert_eq!(late.await.expect("joined"), Err(WriteError::Gone));
     rig.drive.release_write(handle);
     rig.drive.set_paused(false);
     eventually("sent", || rig.drive.unsent() == 0).await;
@@ -1355,4 +1366,79 @@ async fn a_file_this_computer_has_no_room_to_copy_for_its_upload_says_so() {
     .await;
     held(&rig.drive.inner.faults).clear();
     rig.sent(1).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_older_copy_of_the_index_is_never_written_over_a_newer_one() {
+    let rig = rig();
+    rig.drive.set_paused(true);
+    rig.drive
+        .make_folder(&NodeId::Top, "First")
+        .expect("folder");
+    let hook = Arc::new(std::sync::Barrier::new(2));
+    held(&rig.drive.inner.hooks).insert("flush", Arc::clone(&hook));
+    let inner = Arc::clone(&rig.drive.inner);
+    let older = tokio::task::spawn_blocking(move || inner.flush_now());
+    // The first write has taken its copy, without "Second".
+    meet(&hook).await.expect("met");
+    rig.drive
+        .make_folder(&NodeId::Top, "Second")
+        .expect("folder");
+    let inner = Arc::clone(&rig.drive.inner);
+    let newer = tokio::task::spawn_blocking(move || inner.flush_now());
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    held(&rig.drive.inner.hooks).remove("flush");
+    meet(&hook).await.expect("met");
+    older.await.expect("joined").expect("written");
+    newer.await.expect("joined").expect("written");
+    let stored = std::fs::read_to_string(rig.dir.join("cache").join("index.json")).expect("index");
+    assert!(stored.contains("Second"), "{stored}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_write_never_waits_for_a_copy_into_the_trash() {
+    let rig = rig();
+    rig.file("r", None, "r.txt", b"0123456789");
+    rig.file("k", None, "Kept.txt", b"k");
+    rig.drive.set_paused(true);
+    rig.write_at("r", 0, b"AAAA").await;
+    let trash = rig
+        .drive
+        .make_folder(&NodeId::Top, ".Trash-1000")
+        .expect("trash");
+    let hook = Arc::new(std::sync::Barrier::new(2));
+    held(&rig.drive.inner.hooks).insert("copied here", Arc::clone(&hook));
+    let drive = rig.drive.clone();
+    let moving = tokio::spawn(async move { drive.rename(&remote("r"), &trash, "r.txt").await });
+    // The copy is made; the bytes' lock is not taken.
+    meet(&hook).await.expect("met");
+    let handle = rig
+        .drive
+        .open_write(&remote("r"), false)
+        .await
+        .expect("open");
+    let wrote =
+        tokio::time::timeout(Duration::from_secs(5), rig.drive.write(handle, 4, b"BBBB")).await;
+    held(&rig.drive.inner.hooks).remove("copied here");
+    meet(&hook).await.expect("met");
+    assert_eq!(wrote.expect("not held up by the copy"), Ok(4));
+    rig.drive.release_write(handle);
+    moving.await.expect("joined").expect("moved");
+    // Taken again with the write: the trash holds the bytes as they are now.
+    let kept = rig
+        .drive
+        .lookup(
+            &rig.drive
+                .lookup(&NodeId::Top, ".Trash-1000")
+                .expect("lookup")
+                .expect("trash")
+                .id,
+            "r.txt",
+        )
+        .expect("lookup")
+        .expect("in the trash");
+    assert_eq!(
+        rig.drive.read(&kept.id, 0, 10).await.expect("read"),
+        b"AAAABBBB89"
+    );
 }

@@ -279,6 +279,8 @@ pub(crate) struct Inner {
     abandoned: Mutex<Vec<porter_sync::Session>>,
     /// A file was made in `local/` since the folder was last synced.
     local_made: AtomicBool,
+    /// Held by each write of the index, from taking its copy to saving it.
+    flushing: Mutex<()>,
     /// A test's hold inside a write, between its bytes and what the index says of them: met
     /// twice there.
     #[cfg(test)]
@@ -571,6 +573,7 @@ impl Drive {
             next_handle: AtomicU64::new(1),
             abandoned: Mutex::default(),
             local_made: AtomicBool::new(false),
+            flushing: Mutex::new(()),
             #[cfg(test)]
             write_hook: Mutex::default(),
             #[cfg(test)]
@@ -798,12 +801,16 @@ impl Inner {
     /// Writes the index now if it changed, after syncing every content file written to since
     /// the last write: the index never claims bytes that are not on the disk.
     fn flush_now(&self) -> std::io::Result<()> {
+        // One at a time: an older copy of the index is never written over a newer one.
+        let _one = held(&self.flushing);
         if !self.dirty.swap(false, Ordering::SeqCst) {
             return Ok(());
         }
         // The index first, then the files: every range it notes was written, and its file
         // named in `unsynced`, before it was noted.
         let index = held(&self.index).clone();
+        #[cfg(test)]
+        self.at_hook("flush");
         if self.local_made.swap(false, Ordering::SeqCst) {
             // A file made in `local/` is in the folder before an index that names it is
             // written.

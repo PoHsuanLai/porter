@@ -267,7 +267,13 @@ pub(crate) struct Index {
     /// The open clock.
     #[serde(default)]
     pub clock: u64,
+    /// The format it was written in: [`FORMAT`] since generations were kept (none before).
+    #[serde(default)]
+    pub format: u32,
 }
+
+/// The index's format now: 1, since the bytes' generations were kept.
+pub(crate) const FORMAT: u32 = 1;
 
 impl Index {
     /// Takes the files made here that an index from before the queue kept in as changes to
@@ -288,8 +294,13 @@ impl Index {
             self.next_local = self.next_local.max(row.n + 1);
             self.edits.insert(edit.id.clone(), edit);
         }
-        // Bytes written before generations were kept: a generation of their own, so they are
-        // never taken for a copy that was not written to.
+        // Bytes written before generations were kept (an index of an older format): a generation
+        // of their own, so they are never taken for a copy that was not written to. Once only:
+        // a copy not written to yet keeps its `0` across a restart.
+        if self.format >= FORMAT {
+            return;
+        }
+        self.format = FORMAT;
         let unnumbered: Vec<NodeId> = self
             .edits
             .values()
@@ -467,8 +478,18 @@ mod tests {
             generation: 0,
         });
         index.edits.insert(id.clone(), edit);
+        let mut current = index.clone();
+        current.format = FORMAT;
         index.migrate();
         let generation = index.edits[&id].dirty.as_ref().map(|d| d.generation);
         assert!(generation.is_some_and(|g| g > 0), "{generation:?}");
+        assert_eq!(index.format, FORMAT);
+        let once = index.clone();
+        index.migrate();
+        assert_eq!(index, once, "once only");
+        // A copy not written to yet, in an index of this format, is left as it is.
+        current.migrate();
+        let generation = current.edits[&id].dirty.as_ref().map(|d| d.generation);
+        assert_eq!(generation, Some(0));
     }
 }
