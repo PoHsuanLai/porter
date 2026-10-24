@@ -14,8 +14,21 @@
 - What is downloaded stays in `$XDG_CACHE_HOME/porter/drives/` until space is needed: past
   Settings' "Downloaded Files Limit" (`storage.cache_limit`, bytes, `0` for a tenth of the disk
   and at least 1 GiB) the files opened longest ago are removed; kept and open files never are.
-- New crates `porter-drive` (the drive's files on demand, no file system attached) and
-  `porter-drive-fuse` (the folder, through `fusermount3`; libfuse is not linked).
+- The folder works with syncd in its unit: a new user service, `porter-mountd` (started by
+  `porter-mountd.socket`, installed and enabled by `scripts/install.sh`), runs `fusermount3` for
+  it and hands back the open connection, so syncd keeps its whole sandbox. The helper answers only
+  the person, puts a folder only in `~/Cloud`, refuses a folder with files in it, and never
+  touches a mount that is not porter's. Run by hand, with no helper listening, syncd mounts by
+  itself as before.
+- Turning a drive off, or stopping syncd, takes its folder away at once, even while a terminal
+  sits in it, and syncd keeps answering meanwhile. Two accounts of one provider with the same
+  label get two folders ("OneDrive (Work)", "OneDrive (Work) 2").
+- syncd's settings move to `$XDG_CONFIG_HOME/porter/syncd/syncd.toml`, the only folder of
+  porter's configuration syncd may write; one at `porter/syncd.toml` is read until the first
+  save, and left where it is.
+- New crates `porter-drive` (the drive's files on demand, no file system attached),
+  `porter-drive-fuse` (the folder, through `fusermount3`; libfuse is not linked) and
+  `porter-mountd` (the helper; std and rustix only).
   `Replica::export` (porter-sync) has a default that refuses; Google Drive's uses `files.export`.
 
 ### Model lists say what a model takes in
