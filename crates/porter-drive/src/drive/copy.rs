@@ -70,11 +70,14 @@ impl Drive {
             file: n,
             size: bytes.len() as u64,
             modified: made,
-            writes: 1,
+            generation: 0,
         };
         let mut edit = Edit::made_here(n, folder.clone(), name, Some(dirty), made);
         {
             let mut index = held(&inner.index);
+            if let Some(dirty) = edit.dirty.as_mut() {
+                dirty.generation = index.take_generation();
+            }
             edit.seq = index.take_seq();
             index.edits.insert(edit.id.clone(), edit);
         }

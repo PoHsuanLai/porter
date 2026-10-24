@@ -82,9 +82,11 @@ pub(crate) struct Dirty {
     pub size: u64,
     /// When it was last written.
     pub modified: i64,
-    /// How many times it was written: an upload of an older count leaves it dirty.
+    /// Which version of the bytes this is: a number no other version in the index has had
+    /// ([`Index::take_generation`]), new with each change; `0` for a copy of the drive's not
+    /// written to yet. An upload of an older generation leaves the bytes to be sent again.
     #[serde(default)]
-    pub writes: u64,
+    pub generation: u64,
 }
 
 /// A change sent and not in the listing yet.
@@ -122,6 +124,9 @@ pub(crate) struct Edit {
     /// owner-only, and the session never shows in a log.
     #[serde(default)]
     pub session: Option<Session>,
+    /// The generation of the bytes the session sends: a session never resumes with other bytes.
+    #[serde(default)]
+    pub session_of: u64,
     /// Sent, and not in the listing yet.
     #[serde(default)]
     pub awaiting: Option<Awaiting>,
@@ -148,11 +153,56 @@ impl Edit {
             dirty: file,
             removed: false,
             session: None,
+            session_of: 0,
             awaiting: None,
             made,
             seq: 0,
             refused: None,
         }
+    }
+
+    /// A change of the drive's item as `base` describes it, in `parent` here, with nothing
+    /// changed yet.
+    pub fn of_base(id: NodeId, folder: bool, parent: NodeId, base: Base, made: i64) -> Self {
+        Self {
+            id,
+            folder,
+            parent,
+            name: base.name.clone(),
+            base: Some(base),
+            dirty: None,
+            removed: false,
+            session: None,
+            session_of: 0,
+            awaiting: None,
+            made,
+            seq: 0,
+            refused: None,
+        }
+    }
+
+    /// A change of the drive's item as the listing has it, with nothing changed yet.
+    pub fn of_entry(entry: crate::listing::Entry, made: i64) -> Self {
+        let parent = entry.parent.clone().map_or(NodeId::Top, NodeId::Remote);
+        let base = Base {
+            version: entry.version.0,
+            parent: entry.parent.map(|p| p.0),
+            name: entry.name,
+            size: entry.size.0,
+            modified: entry.modified.map(|m| m.0),
+        };
+        let folder = entry.kind == porter_sync::ItemKind::Folder;
+        Self::of_base(NodeId::Remote(entry.id), folder, parent, base, made)
+    }
+
+    /// Whether it holds nothing any more: the drive has it as it is here, and nothing waits on
+    /// a listing pass.
+    pub fn spent(&self) -> bool {
+        self.base.is_some()
+            && !self.removed
+            && self.dirty.is_none()
+            && self.awaiting.is_none()
+            && self.in_place()
     }
 
     /// Whether the drive's item still stands where it was and as it was named.
@@ -167,10 +217,11 @@ impl Edit {
         })
     }
 
-    /// Whether something of it is still to be sent (a removal is sent once).
+    /// Whether something of it is still to be sent (a removal is sent once; one made here and
+    /// removed, kept only while it is open, is never sent).
     pub fn pending(&self) -> bool {
         match (&self.base, self.removed) {
-            (None, _) => true,
+            (None, removed) => !removed,
             (Some(_), true) => self.awaiting.is_none(),
             (Some(_), false) => self.dirty.is_some() || !self.in_place(),
         }
@@ -224,7 +275,7 @@ impl Index {
                 file: row.n,
                 size: row.size,
                 modified: row.made,
-                writes: 0,
+                generation: self.take_generation(),
             };
             let mut edit = Edit::made_here(row.n, parent, row.name, Some(dirty), row.made);
             edit.seq = self.take_seq();
@@ -244,6 +295,35 @@ impl Index {
     pub fn take_seq(&mut self) -> u64 {
         self.next_seq += 1;
         self.next_seq
+    }
+
+    /// A generation for bytes just changed: the clock's next tick, so no two versions of any
+    /// file's bytes share one.
+    pub fn take_generation(&mut self) -> u64 {
+        self.clock += 1;
+        self.clock
+    }
+
+    /// Pairs `a` and `b` as two versions of one file.
+    pub fn pair(&mut self, a: &NodeId, b: &NodeId) {
+        self.conflicts.insert(a.clone(), b.clone());
+        self.conflicts.insert(b.clone(), a.clone());
+    }
+
+    /// `id` and the other version it named are no longer a pair.
+    pub fn unpair(&mut self, id: &NodeId) -> Option<NodeId> {
+        let other = self.conflicts.remove(id)?;
+        self.conflicts.remove(&other);
+        Some(other)
+    }
+
+    /// Drops what names an item made here or an inode it kept, once nothing of it is left to
+    /// send: no one names those after a restart.
+    pub fn prune(&mut self) {
+        let live: BTreeSet<String> = self.edits.keys().map(crate::drive::key_text).collect();
+        self.aliases
+            .retain(|_, to| live.contains(&crate::drive::key_text(to)));
+        self.inos.retain(|key, _| live.contains(key));
     }
 }
 

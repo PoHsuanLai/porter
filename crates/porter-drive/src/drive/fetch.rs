@@ -445,6 +445,31 @@ async fn finish(weak: Weak<Inner>, transfer: Arc<Transfer>) {
     inner.evict();
 }
 
+impl Inner {
+    /// `len` bytes from `offset` of the bytes `id` has here, read under their lock; `None` when
+    /// they went meanwhile (sent: the cache has them now).
+    fn read_dirty(&self, id: &NodeId, offset: u64, len: u64) -> Option<Result<Vec<u8>, ReadError>> {
+        let n = held(&self.index)
+            .edits
+            .get(id)
+            .and_then(|edit| edit.dirty.as_ref())
+            .map(|dirty| dirty.file)?;
+        let lock = self.file_lock(n);
+        let _bytes = held(&lock);
+        let size = held(&self.index)
+            .edits
+            .get(id)
+            .and_then(|edit| edit.dirty.as_ref())
+            .filter(|dirty| dirty.file == n)
+            .map(|dirty| dirty.size)?;
+        let end = offset.saturating_add(len).min(size);
+        Some(match offset < end {
+            true => read_at(&self.local_file(n), offset, end - offset),
+            false => Ok(Vec::new()),
+        })
+    }
+}
+
 impl Drive {
     /// Opens `id` for reading: a file not here starts downloading from its start, and it is not
     /// evicted until [`Drive::release`]. Its last opened time is now.
@@ -499,13 +524,18 @@ impl Drive {
     pub fn release(&self, id: &NodeId) {
         let id = &self.inner.canonical(id);
         let mut open = held(&self.inner.open);
+        let mut closed = false;
         if let Some(n) = open.get_mut(id) {
             *n = n.saturating_sub(1);
             if *n == 0 {
                 open.remove(id);
+                closed = true;
             }
         }
         drop(open);
+        if closed {
+            self.inner.closed(id);
+        }
         // Off the caller's thread (a file system's): eviction reads the listing.
         let inner = Arc::clone(&self.inner);
         drop(self.inner.runtime.spawn_blocking(move || inner.evict()));
@@ -523,12 +553,10 @@ impl Drive {
             if edit.folder {
                 return Err(ReadError::Folder);
             }
-            if let Some(dirty) = &edit.dirty {
-                let end = offset.saturating_add(len).min(dirty.size);
-                return match offset < end {
-                    true => read_at(&inner.local_file(dirty.file), offset, end - offset),
-                    false => Ok(Vec::new()),
-                };
+            if edit.dirty.is_some()
+                && let Some(read) = inner.read_dirty(id, offset, len)
+            {
+                return read;
             }
         }
         let remote = match id {

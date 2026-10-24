@@ -214,6 +214,10 @@ impl<H: Http> GdriveReplica<H> {
         };
         upload.progress.sent(sent);
         while sent < total {
+            if upload.progress.held() {
+                // Paused: the session stays, to be resumed.
+                return Err(PutRefused::Transient(RetryAfter(0)));
+            }
             let chunk = upload
                 .content
                 .read(sent, self.uploads.chunk as u64)

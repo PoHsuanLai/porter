@@ -46,7 +46,7 @@ pub mod words;
 
 pub use drive::{
     Attrs, Changed, Drive, DriveConfig, DriveError, ItemState, Node, NodeId, NodeKind, QUIET,
-    ROOT_INO, ReadError, Status, WriteError,
+    ROOT_INO, ReadError, Status, WriteError, WriteHandle,
 };
 pub use limit::{AUTOMATIC_FLOOR, CacheLimit};
 pub use listing::{Entry, Listing, ListingError};

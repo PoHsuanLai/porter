@@ -2,15 +2,22 @@
 //! rename over a file among them), and removals. Each is kept in the cache at once and in the
 //! index's queue of changes, and sent after (see `send`).
 //!
+//! - **One owner.** Every change of an item's [`Edit`] is made in one step under the index's
+//!   lock, on the edit as it is then ([`Inner::change`]): nothing reads an edit, changes the copy
+//!   and puts it back over what changed meanwhile.
 //! - **Bytes.** A file changed here is written to `local/<n>`: a copy of the drive's version
-//!   made when it is first opened for writing (downloaded first when it is not all here), or a
-//!   new file. A sync makes those bytes durable (and the index that names them); it does not
-//!   send them.
+//!   made when it is first written (downloaded first when it is not all here), or a new file.
+//!   Each change of the bytes takes the file's lock and gives them a new generation, unique in
+//!   the index, so an upload of older bytes never counts as one of these. A sync makes the bytes
+//!   durable (and the index that names them, and the folder they are in); it does not send them.
+//! - **Handles.** A file opened to write is written through its [`WriteHandle`], which follows
+//!   the bytes: to the id the drive gives a file made here, to this computer's version when the
+//!   drive changed the file meanwhile (see `conflict`), and nowhere once the file was saved over.
 //! - **Saving by rename.** A file renamed over a file of the drive's gives that file its bytes:
 //!   the same item, a new version, so the drive keeps its history. It is never a removal and a
 //!   new file.
 //! - **Removals** go to the drive's recycle bin. An item made here and removed before it was sent
-//!   is never sent.
+//!   is never sent. A file removed while it is open stays usable until it is closed.
 //! - **Names** are given back to the drive by [`naming::drive_name`]'s rule, and one the drive
 //!   refuses is refused here, when it is made ([`WriteError::BadName`]), except on what stays on
 //!   this computer.
@@ -22,12 +29,18 @@
 use super::{
     Drive, DriveError, Inner, NodeId, NodeKind, ReadError, Writing, held, key_text, now_secs,
 };
-use crate::index::{Base, Dirty, Edit};
+use crate::index::{Dirty, Edit, Index};
 use crate::naming;
 use porter_sync::{ItemKind, RemoteId};
 use std::os::unix::fs::{FileExt, OpenOptionsExt};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
+
+/// How many times a change follows bytes that moved under it (sent, or taken into a copy)
+/// before it gives up.
+const TRIES: usize = 8;
 
 /// Why a change was not made.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -87,15 +100,53 @@ impl From<std::io::Error> for WriteError {
     }
 }
 
-/// A new, empty, owner-only file at `path`.
-fn new_file(path: &PathBuf) -> std::io::Result<()> {
-    std::fs::OpenOptions::new()
+/// A file open for writing ([`Drive::open_write`], [`Drive::create`]), closed with
+/// [`Drive::release_write`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct WriteHandle(u64);
+
+/// Keeps `edit` in `index`, unless it holds nothing any more.
+fn keep(index: &mut Index, edit: Edit) {
+    if !edit.spent() {
+        index.edits.insert(edit.id.clone(), edit);
+    }
+}
+
+/// Copies the first `size` bytes of `from` to `to`.
+fn copy_open(from: &std::fs::File, to: &std::fs::File, size: u64) -> std::io::Result<()> {
+    let mut at = 0;
+    let mut buffer = vec![0; 1 << 20];
+    while at < size {
+        let len = usize::try_from((size - at).min(buffer.len() as u64)).unwrap_or(0);
+        from.read_exact_at(&mut buffer[..len], at)?;
+        to.write_all_at(&buffer[..len], at)?;
+        at += len as u64;
+    }
+    to.set_len(size)
+}
+
+/// Copies the first `size` bytes of `from` into the file `to`, which exists.
+fn copy_span(from: &Path, to: &Path, size: u64) -> Result<(), WriteError> {
+    let source = std::fs::File::open(from)?;
+    let target = std::fs::OpenOptions::new().write(true).open(to)?;
+    copy_open(&source, &target, size)?;
+    Ok(())
+}
+
+/// The first `size` bytes of `from` as a new owner-only file `to`: a clone sharing its blocks
+/// where the file system makes one, else a copy.
+pub(super) fn clone_file(from: &Path, to: &Path, size: u64) -> std::io::Result<()> {
+    let source = std::fs::File::open(from)?;
+    let target = std::fs::OpenOptions::new()
         .create(true)
         .truncate(true)
         .write(true)
         .mode(0o600)
-        .open(path)
-        .map(drop)
+        .open(to)?;
+    match rustix::fs::ioctl_ficlone(&target, &source) {
+        Ok(()) => target.set_len(size),
+        Err(_) => copy_open(&source, &target, size),
+    }
 }
 
 impl Inner {
@@ -131,51 +182,138 @@ impl Inner {
         }
     }
 
-    /// Notes a change in the queue: its place is after everything queued before.
-    fn queue(&self, edit: &mut Edit) {
-        let mut index = held(&self.index);
-        edit.seq = index.take_seq();
+    /// The lock of the bytes `local/<n>`.
+    pub(super) fn file_lock(&self, n: u64) -> Arc<Mutex<()>> {
+        Arc::clone(held(&self.files).entry(n).or_default())
     }
 
-    /// Puts `edit` in the index, and wakes the sender.
-    fn put_edit(&self, edit: Edit) {
-        held(&self.index).edits.insert(edit.id.clone(), edit);
+    /// Removes the bytes `local/<n>`, which nothing names any more.
+    pub(super) fn drop_file(&self, n: u64) {
+        let _ = std::fs::remove_file(self.local_file(n));
+        held(&self.files).remove(&n);
+    }
+
+    /// A new, empty, owner-only file `local/<n>`.
+    pub(super) fn new_local(&self, n: u64) -> std::io::Result<PathBuf> {
+        let path = self.local_file(n);
+        std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .mode(0o600)
+            .open(&path)?;
+        self.local_made.store(true, Ordering::SeqCst);
+        Ok(path)
+    }
+
+    /// The number of the bytes `id` has here, if any.
+    fn dirty_file(&self, id: &NodeId) -> Option<u64> {
+        held(&self.index)
+            .edits
+            .get(id)
+            .and_then(|edit| edit.dirty.as_ref())
+            .map(|dirty| dirty.file)
+    }
+
+    /// Changes the edit of `id` as it is now, in one step under the index's lock; `None` when
+    /// it has none. An edit left holding nothing is dropped.
+    pub(super) fn change<R>(
+        &self,
+        id: &NodeId,
+        f: impl FnOnce(&mut Edit, &mut Index) -> R,
+    ) -> Option<R> {
+        let mut index = held(&self.index);
+        let mut edit = index.edits.remove(id)?;
+        let out = f(&mut edit, &mut index);
+        keep(&mut index, edit);
+        drop(index);
+        self.touched();
+        Some(out)
+    }
+
+    /// [`Inner::change`] of the drive's item `id`, from the listing's entry when nothing was
+    /// changed of it yet. One removed here is [`WriteError::Gone`].
+    fn change_remote<R>(
+        &self,
+        id: &RemoteId,
+        f: impl FnOnce(&mut Edit, &mut Index) -> R,
+    ) -> Result<R, WriteError> {
+        let node = NodeId::Remote(id.clone());
+        // Read before the index is locked: the listing has locks of its own.
+        let entry = self.listing.entry(id)?;
+        let mut index = held(&self.index);
+        let mut edit = match index.edits.remove(&node) {
+            Some(edit) if edit.removed => {
+                index.edits.insert(node, edit);
+                return Err(WriteError::Gone);
+            }
+            Some(edit) => edit,
+            None => {
+                let mut edit = Edit::of_entry(entry.ok_or(WriteError::Gone)?, now_secs());
+                edit.seq = index.take_seq();
+                edit
+            }
+        };
+        let out = f(&mut edit, &mut index);
+        keep(&mut index, edit);
+        drop(index);
+        self.touched();
+        Ok(out)
+    }
+
+    /// Puts an edit made here in the queue, after everything queued before.
+    fn put_new(&self, mut edit: Edit) -> NodeId {
+        let id = edit.id.clone();
+        {
+            let mut index = held(&self.index);
+            edit.seq = index.take_seq();
+            index.edits.insert(id.clone(), edit);
+        }
         self.touched();
         self.wake.notify_one();
+        id
     }
 
-    /// The change of the drive's item `id` made here, or a new one against the listing's entry.
-    fn edit_of_remote(&self, id: &RemoteId) -> Result<Edit, WriteError> {
-        let node = NodeId::Remote(id.clone());
-        if let Some(edit) = self.edit(&node) {
-            return match edit.removed {
-                true => Err(WriteError::Gone),
-                false => Ok(edit),
-            };
+    /// The upload session of `edit`'s bytes is of no use any more: given up before the next
+    /// step is sent.
+    pub(super) fn abandon(&self, edit: &mut Edit) {
+        if let Some(session) = edit.session.take() {
+            held(&self.abandoned).push(session);
         }
-        let entry = self.listing.entry(id)?.ok_or(WriteError::Gone)?;
-        let mut edit = Edit {
-            id: node,
-            folder: entry.kind == ItemKind::Folder,
-            parent: entry.parent.clone().map_or(NodeId::Top, NodeId::Remote),
-            name: entry.name.clone(),
-            base: Some(Base {
-                version: entry.version.0.clone(),
-                parent: entry.parent.map(|p| p.0),
-                name: entry.name,
-                size: entry.size.0,
-                modified: entry.modified.map(|m| m.0),
-            }),
-            dirty: None,
-            removed: false,
-            session: None,
-            awaiting: None,
-            made: now_secs(),
-            seq: 0,
-            refused: None,
-        };
-        self.queue(&mut edit);
-        Ok(edit)
+        edit.session_of = 0;
+    }
+
+    /// `edit`'s bytes changed: they are a new generation, sent afresh.
+    fn renew(&self, edit: &mut Edit, index: &mut Index) {
+        if let Some(dirty) = edit.dirty.as_mut() {
+            dirty.generation = index.take_generation();
+            dirty.modified = now_secs();
+        }
+        self.abandon(edit);
+        edit.refused = None;
+    }
+
+    /// Opens `id` to write: a new handle.
+    fn open_handle(&self, id: &NodeId) -> WriteHandle {
+        let handle = self.next_handle.fetch_add(1, Ordering::SeqCst);
+        held(&self.handles).insert(handle, Some(id.clone()));
+        {
+            let mut writing = held(&self.writing);
+            let at = writing.entry(id.clone()).or_insert(Writing {
+                handles: 0,
+                last: Instant::now(),
+            });
+            at.handles += 1;
+            at.last = Instant::now();
+        }
+        *held(&self.open).entry(id.clone()).or_default() += 1;
+        WriteHandle(handle)
+    }
+
+    /// What `handle` writes to now.
+    pub(super) fn written(&self, handle: WriteHandle) -> Option<NodeId> {
+        let id = held(&self.handles).get(&handle.0).cloned().flatten()?;
+        Some(self.canonical(&id))
     }
 
     /// Makes `id`'s bytes here to change: `keep` of the drive's version's first bytes copied (all
@@ -187,8 +325,13 @@ impl Inner {
         keep: Option<u64>,
     ) -> Result<(), WriteError> {
         let id = self.canonical(id);
-        if self.edit(&id).is_some_and(|edit| edit.dirty.is_some()) {
-            return Ok(());
+        if let Some(edit) = self.edit(&id) {
+            if edit.removed {
+                return Err(WriteError::Gone);
+            }
+            if edit.dirty.is_some() {
+                return Ok(());
+            }
         }
         let NodeId::Remote(remote) = &id else {
             return Err(WriteError::Gone);
@@ -201,35 +344,61 @@ impl Inner {
         }
         let size = keep.unwrap_or(entry.size.0).min(entry.size.0);
         let n = held(&self.index).take_local();
-        let path = self.local_file(n);
-        new_file(&path)?;
+        let path = self.new_local(n)?;
         let cached = held(&self.index)
             .items
             .get(&remote.0)
             .is_some_and(|row| row.version == entry.version.0 && row.present.covers(0, size));
         let copied = match cached {
-            true => copy_span(&self.content(remote, &entry.version.0), &path, size),
+            true => {
+                let (from, to) = (self.content(remote, &entry.version.0), path.clone());
+                // A whole file's copy waits on the disk: off the runtime's threads.
+                tokio::task::spawn_blocking(move || copy_span(&from, &to, size))
+                    .await
+                    .unwrap_or(Err(WriteError::Cache))
+            }
             false => self.download_into(drive, &id, &path, size).await,
         };
         if let Err(why) = copied {
-            let _ = std::fs::remove_file(&path);
+            self.drop_file(n);
             return Err(why);
         }
-        let mut edit = self.edit_of_remote(remote)?;
-        if edit.dirty.is_some() {
-            // Made dirty by another call meanwhile: its copy stands.
-            let _ = std::fs::remove_file(&path);
-            return Ok(());
-        }
-        edit.dirty = Some(Dirty {
-            file: n,
-            size,
-            modified: entry.modified.map_or_else(now_secs, |m| m.0),
-            writes: u64::from(keep.is_some_and(|k| k != entry.size.0)),
+        let cut = keep.is_some_and(|k| k != entry.size.0);
+        let version = entry.version.0.clone();
+        let modified = entry.modified.map_or_else(now_secs, |m| m.0);
+        let took = self.change_remote(remote, |edit, index| {
+            // Made dirty meanwhile, or changed against another version since: this copy is not
+            // the one to change.
+            if edit.dirty.is_some() || edit.base.as_ref().is_none_or(|b| b.version != version) {
+                return false;
+            }
+            edit.dirty = Some(Dirty {
+                file: n,
+                size,
+                modified,
+                generation: match cut {
+                    true => index.take_generation(),
+                    false => 0,
+                },
+            });
+            edit.refused = None;
+            true
         });
-        self.wrote(&path);
-        self.put_edit(edit);
-        Ok(())
+        match took {
+            Ok(true) => {
+                self.wrote(&path);
+                self.wake.notify_one();
+                Ok(())
+            }
+            Ok(false) => {
+                self.drop_file(n);
+                Ok(())
+            }
+            Err(why) => {
+                self.drop_file(n);
+                Err(why)
+            }
+        }
     }
 
     /// Writes the first `size` bytes of `id` into `path`, read through the cache.
@@ -237,7 +406,7 @@ impl Inner {
         &self,
         drive: &Drive,
         id: &NodeId,
-        path: &PathBuf,
+        path: &Path,
         size: u64,
     ) -> Result<(), WriteError> {
         let file = std::fs::OpenOptions::new().write(true).open(path)?;
@@ -254,6 +423,77 @@ impl Inner {
         Ok(())
     }
 
+    /// Writes `bytes` at `offset` into the bytes `id` has here, under their lock, while they are
+    /// what `handle` writes to; `None` when `id` has none here (or they moved under this write).
+    fn write_locked(
+        &self,
+        handle: WriteHandle,
+        id: &NodeId,
+        offset: u64,
+        bytes: &[u8],
+    ) -> Result<Option<u64>, WriteError> {
+        let Some(n) = self.dirty_file(id) else {
+            return Ok(None);
+        };
+        let lock = self.file_lock(n);
+        let _bytes = held(&lock);
+        if self.written(handle).as_ref() != Some(id) || self.dirty_file(id) != Some(n) {
+            return Ok(None);
+        }
+        let path = self.local_file(n);
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .and_then(|file| file.write_all_at(bytes, offset))?;
+        #[cfg(test)]
+        self.at_write_hook();
+        let end = offset + bytes.len() as u64;
+        self.change(id, |edit, index| {
+            if let Some(dirty) = edit.dirty.as_mut() {
+                dirty.size = dirty.size.max(end);
+            }
+            self.renew(edit, index);
+        });
+        self.wrote(&path);
+        self.touched_write(id);
+        self.wake.notify_one();
+        Ok(Some(bytes.len() as u64))
+    }
+
+    /// Sets the size of the bytes `id` has here, under their lock; `false` when it has none.
+    fn set_len_locked(&self, id: &NodeId, size: u64) -> Result<bool, WriteError> {
+        let Some(n) = self.dirty_file(id) else {
+            return Ok(false);
+        };
+        let lock = self.file_lock(n);
+        let _bytes = held(&lock);
+        if self.dirty_file(id) != Some(n) {
+            return Ok(false);
+        }
+        let path = self.local_file(n);
+        let now = held(&self.index)
+            .edits
+            .get(id)
+            .and_then(|edit| edit.dirty.as_ref())
+            .map(|dirty| dirty.size);
+        if now != Some(size) {
+            std::fs::OpenOptions::new()
+                .write(true)
+                .open(&path)
+                .and_then(|file| file.set_len(size))?;
+            self.change(id, |edit, index| {
+                if let Some(dirty) = edit.dirty.as_mut() {
+                    dirty.size = size;
+                }
+                self.renew(edit, index);
+            });
+            self.wrote(&path);
+        }
+        self.touched_write(id);
+        self.wake.notify_one();
+        Ok(true)
+    }
+
     /// Notes that `id` was written or closed now: its quiet time starts again.
     fn touched_write(&self, id: &NodeId) {
         if let Some(writing) = held(&self.writing).get_mut(id) {
@@ -261,7 +501,8 @@ impl Inner {
         }
     }
 
-    /// Moves what is known of `from` in memory to `to`, which it became.
+    /// Moves what is known of `from` in memory to `to`, which it became: its handles, its open
+    /// count and its quiet time.
     pub(super) fn rekey(&self, from: &NodeId, to: &NodeId) {
         let moved = held(&self.writing).remove(from);
         if let Some(writing) = moved {
@@ -276,6 +517,70 @@ impl Inner {
         let opened = held(&self.open).remove(from);
         if let Some(n) = opened {
             *held(&self.open).entry(to.clone()).or_default() += n;
+        }
+        for target in held(&self.handles).values_mut() {
+            if target.as_ref() == Some(from) {
+                *target = Some(to.clone());
+            }
+        }
+    }
+
+    /// Moves only what writes to `from` to `to`: its handles, as many of its opens, and its
+    /// quiet time. Who reads `from` still reads it.
+    pub(super) fn rekey_writes(&self, from: &NodeId, to: &NodeId) {
+        let mut moved = 0;
+        for target in held(&self.handles).values_mut() {
+            if target.as_ref() == Some(from) {
+                *target = Some(to.clone());
+                moved += 1;
+            }
+        }
+        if moved == 0 {
+            return;
+        }
+        let writing = held(&self.writing).remove(from);
+        if let Some(writing) = writing {
+            held(&self.writing).insert(to.clone(), writing);
+        }
+        let mut open = held(&self.open);
+        if let Some(n) = open.get_mut(from) {
+            *n = n.saturating_sub(moved);
+            if *n == 0 {
+                open.remove(from);
+            }
+        }
+        *open.entry(to.clone()).or_default() += moved;
+    }
+
+    /// Whether a handle writes to `id` now.
+    pub(super) fn written_by_handle(&self, id: &NodeId) -> bool {
+        held(&self.handles)
+            .values()
+            .any(|target| target.as_ref() == Some(id))
+    }
+
+    /// The handles writing to `id` write nowhere from now on: what they wrote to was saved
+    /// over. Its count of them goes with them.
+    fn detach(&self, id: &NodeId) {
+        let mut detached = 0;
+        for target in held(&self.handles).values_mut() {
+            if target.as_ref() == Some(id) {
+                *target = None;
+                detached += 1;
+            }
+        }
+        if detached == 0 {
+            return;
+        }
+        if let Some(writing) = held(&self.writing).get_mut(id) {
+            writing.handles = writing.handles.saturating_sub(detached);
+        }
+        let mut open = held(&self.open);
+        if let Some(n) = open.get_mut(id) {
+            *n = n.saturating_sub(detached);
+            if *n == 0 {
+                open.remove(id);
+            }
         }
     }
 
@@ -311,13 +616,89 @@ impl Inner {
     }
 
     /// Drops what was made here as `n` (never sent): its bytes and its change.
-    fn forget_made(&self, n: u64) {
-        let gone = held(&self.index).edits.remove(&NodeId::Local(n));
+    pub(super) fn forget_made(&self, n: u64) {
+        let id = NodeId::Local(n);
+        let lock = self.dirty_file(&id).map(|file| self.file_lock(file));
+        let _bytes = lock.as_ref().map(|lock| held(lock));
+        let gone = held(&self.index).edits.remove(&id);
         if let Some(dirty) = gone.and_then(|edit| edit.dirty) {
-            let _ = std::fs::remove_file(self.local_file(dirty.file));
+            self.drop_file(dirty.file);
         }
-        held(&self.writing).remove(&NodeId::Local(n));
+        held(&self.writing).remove(&id);
         self.touched();
+    }
+
+    /// Nothing has `id` open any more: what was removed while it was open goes now.
+    pub(super) fn closed(&self, id: &NodeId) {
+        let Some(edit) = self.edit(id).filter(|edit| edit.removed) else {
+            return;
+        };
+        match (&edit.id, edit.dirty) {
+            (NodeId::Local(n), _) => self.forget_made(*n),
+            (_, Some(dirty)) => {
+                let lock = self.file_lock(dirty.file);
+                let _bytes = held(&lock);
+                let taken = self.change(id, |edit, _| match &edit.dirty {
+                    Some(now) if now.file == dirty.file => edit.dirty.take(),
+                    _ => None,
+                });
+                if let Some(Some(dirty)) = taken {
+                    self.drop_file(dirty.file);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// `id` was closed for writing by its last handle: bytes copied to change and never written
+    /// are dropped, and the file is left as the drive has it.
+    fn drop_untouched(&self, id: &NodeId) {
+        let Some(edit) = self.edit(id) else {
+            return;
+        };
+        let Some(n) = edit
+            .dirty
+            .as_ref()
+            .filter(|dirty| dirty.generation == 0 && edit.base.is_some())
+            .map(|dirty| dirty.file)
+        else {
+            return;
+        };
+        let lock = self.file_lock(n);
+        let _bytes = held(&lock);
+        let taken = self.change(id, |edit, _| match &edit.dirty {
+            Some(dirty) if dirty.file == n && dirty.generation == 0 => edit.dirty.take(),
+            _ => None,
+        });
+        if let Some(Some(_)) = taken {
+            self.drop_file(n);
+            self.emit(vec![id.clone()]);
+        }
+    }
+
+    /// Marks the drive's item `remote` removed here: it goes to the recycle bin. Its bytes
+    /// written here go too, unless `keep_bytes` (it is open, and they go when it is closed).
+    fn remove_remote(&self, remote: &RemoteId, keep_bytes: bool) -> Result<(), WriteError> {
+        let id = NodeId::Remote(remote.clone());
+        let lock = self.dirty_file(&id).map(|file| self.file_lock(file));
+        let _bytes = lock.as_ref().map(|lock| held(lock));
+        let dropped = self.change_remote(remote, |edit, index| {
+            index.unpair(&id);
+            edit.removed = true;
+            edit.awaiting = None;
+            edit.refused = None;
+            self.abandon(edit);
+            edit.seq = index.take_seq();
+            match keep_bytes {
+                true => None,
+                false => edit.dirty.take(),
+            }
+        })?;
+        if let Some(dirty) = dropped {
+            self.drop_file(dirty.file);
+        }
+        self.wake.notify_one();
+        Ok(())
     }
 
     /// Whether `id` is `inside` or in it, at any depth.
@@ -336,29 +717,13 @@ impl Inner {
     }
 }
 
-/// Copies the first `size` bytes of `from` to `to`.
-fn copy_span(from: &PathBuf, to: &PathBuf, size: u64) -> Result<(), WriteError> {
-    let source = std::fs::File::open(from)?;
-    let target = std::fs::OpenOptions::new().write(true).open(to)?;
-    let mut at = 0;
-    let mut buffer = vec![0; 1 << 20];
-    while at < size {
-        let len = usize::try_from((size - at).min(buffer.len() as u64)).unwrap_or(0);
-        source.read_exact_at(&mut buffer[..len], at)?;
-        target.write_all_at(&buffer[..len], at)?;
-        at += len as u64;
-    }
-    target.set_len(size)?;
-    Ok(())
-}
-
 impl Drive {
-    /// Makes an empty file `name` in `folder`, open for writing (as [`Drive::open_write`]
-    /// opens; close it with [`Drive::release_write`]).
+    /// Makes an empty file `name` in `folder`, open for writing through the handle it answers
+    /// with (as [`Drive::open_write`] opens; close it with [`Drive::release_write`]).
     ///
     /// # Errors
     /// See [`WriteError`].
-    pub fn create(&self, folder: &NodeId, name: &str) -> Result<NodeId, WriteError> {
+    pub fn create(&self, folder: &NodeId, name: &str) -> Result<(NodeId, WriteHandle), WriteError> {
         let inner = &self.inner;
         inner.writable()?;
         let folder = inner.folder_for(folder)?;
@@ -367,30 +732,23 @@ impl Drive {
             return Err(WriteError::Exists);
         }
         let n = held(&inner.index).take_local();
-        new_file(&inner.local_file(n))?;
+        let path = inner.new_local(n)?;
         let now = now_secs();
+        let generation = held(&inner.index).take_generation();
         let dirty = Dirty {
             file: n,
             size: 0,
             modified: now,
-            writes: 1,
+            generation,
         };
-        let mut edit = Edit::made_here(n, folder.clone(), name.to_owned(), Some(dirty), now);
-        inner.queue(&mut edit);
+        let edit = Edit::made_here(n, folder.clone(), name.to_owned(), Some(dirty), now);
         let id = edit.id.clone();
-        held(&inner.writing).insert(
-            id.clone(),
-            Writing {
-                handles: 1,
-                last: Instant::now(),
-            },
-        );
-        *held(&inner.open).entry(id.clone()).or_default() += 1;
-        inner.wrote(&inner.local_file(n));
-        inner.put_edit(edit);
+        let handle = inner.open_handle(&id);
+        inner.wrote(&path);
+        inner.put_new(edit);
         inner.ino(&id);
         inner.emit(vec![id.clone(), folder]);
-        Ok(id)
+        Ok((id, handle))
     }
 
     /// Makes a folder `name` in `folder`.
@@ -406,22 +764,21 @@ impl Drive {
             return Err(WriteError::Exists);
         }
         let n = held(&inner.index).take_local();
-        let mut edit = Edit::made_here(n, folder.clone(), name.to_owned(), None, now_secs());
-        inner.queue(&mut edit);
-        let id = edit.id.clone();
-        inner.put_edit(edit);
+        let edit = Edit::made_here(n, folder.clone(), name.to_owned(), None, now_secs());
+        let id = inner.put_new(edit);
         inner.ino(&id);
         inner.emit(vec![id.clone(), folder]);
         Ok(id)
     }
 
-    /// Opens the file `id` for writing (`truncate`: emptied), as many times as it is asked; each
-    /// open is closed with [`Drive::release_write`]. The drive's version is copied to change
-    /// (downloaded first when it is not all here); it is not evicted while open.
+    /// Opens the file `id` for writing (`truncate`: emptied), as many times as it is asked: a
+    /// handle each, closed with [`Drive::release_write`]. Nothing is copied until it is written
+    /// (then the drive's version is, downloaded first when it is not all here); it is not
+    /// evicted while open.
     ///
     /// # Errors
     /// See [`WriteError`]: an online document's content is never written.
-    pub async fn open_write(&self, id: &NodeId, truncate: bool) -> Result<(), WriteError> {
+    pub async fn open_write(&self, id: &NodeId, truncate: bool) -> Result<WriteHandle, WriteError> {
         let inner = &self.inner;
         inner.writable()?;
         let id = inner.canonical(id);
@@ -431,72 +788,47 @@ impl Drive {
             Some(NodeKind::Online { .. }) => return Err(WriteError::NotAllowed),
             Some(NodeKind::File) => {}
         }
-        *held(&inner.open).entry(id.clone()).or_default() += 1;
-        let made = match truncate {
-            true => self.set_len(&id, 0).await,
-            false => inner.make_dirty(self, &id, None).await,
-        };
-        if let Err(why) = made {
-            self.release(&id);
+        let handle = inner.open_handle(&id);
+        if truncate && let Err(why) = self.set_len(&id, 0).await {
+            self.release_write(handle);
             return Err(why);
         }
-        let mut writing = held(&inner.writing);
-        let at = writing.entry(id).or_insert(Writing {
-            handles: 0,
-            last: Instant::now(),
-        });
-        at.handles += 1;
-        at.last = Instant::now();
-        Ok(())
+        Ok(handle)
     }
 
-    /// Writes `bytes` into the file `id` at `offset`; how many were written.
+    /// What the handle writes to now: the file it opened, as the drive names it, or this
+    /// computer's version of it (see [`WriteHandle`]); `None` once it writes nowhere.
+    pub fn written(&self, handle: WriteHandle) -> Option<NodeId> {
+        self.inner.written(handle)
+    }
+
+    /// Writes `bytes` at `offset` into the file open as `handle`; how many were written.
     ///
     /// # Errors
     /// See [`WriteError`].
-    pub fn write(&self, id: &NodeId, offset: u64, bytes: &[u8]) -> Result<u64, WriteError> {
+    pub async fn write(
+        &self,
+        handle: WriteHandle,
+        offset: u64,
+        bytes: &[u8],
+    ) -> Result<u64, WriteError> {
         let inner = &self.inner;
         inner.writable()?;
-        let id = inner.canonical(id);
-        let mut edit = inner.edit(&id).ok_or(WriteError::Gone)?;
-        if edit.removed {
-            return Err(WriteError::Gone);
+        for _ in 0..TRIES {
+            let id = inner.written(handle).ok_or(WriteError::Gone)?;
+            match inner.write_locked(handle, &id, offset, bytes)? {
+                Some(n) => {
+                    inner.emit(vec![id]);
+                    return Ok(n);
+                }
+                // Its bytes are copied to change, unless the handle went elsewhere meanwhile.
+                None if inner.written(handle).as_ref() == Some(&id) => {
+                    inner.make_dirty(self, &id, None).await?;
+                }
+                None => {}
+            }
         }
-        if edit.dirty.is_none() {
-            // Sent while it was open: the bytes it sent are the cache's now.
-            let NodeId::Remote(remote) = &id else {
-                return Err(WriteError::Gone);
-            };
-            let base = edit.base.clone().ok_or(WriteError::Gone)?;
-            let content = inner.content(remote, &base.version);
-            let n = held(&inner.index).take_local();
-            let path = inner.local_file(n);
-            new_file(&path)?;
-            copy_span(&content, &path, base.size)?;
-            edit.dirty = Some(Dirty {
-                file: n,
-                size: base.size,
-                modified: now_secs(),
-                writes: 0,
-            });
-        }
-        let Some(dirty) = edit.dirty.as_mut() else {
-            return Err(WriteError::Gone);
-        };
-        let path = inner.local_file(dirty.file);
-        std::fs::OpenOptions::new()
-            .write(true)
-            .open(&path)
-            .and_then(|file| file.write_all_at(bytes, offset))?;
-        dirty.size = dirty.size.max(offset + bytes.len() as u64);
-        dirty.modified = now_secs();
-        dirty.writes += 1;
-        edit.refused = None;
-        inner.wrote(&path);
-        inner.touched_write(&id);
-        inner.put_edit(edit);
-        inner.emit(vec![id]);
-        Ok(bytes.len() as u64)
+        Err(WriteError::Gone)
     }
 
     /// Sets the size of the file `id`: cut, or grown with zeros.
@@ -507,27 +839,25 @@ impl Drive {
         let inner = &self.inner;
         inner.writable()?;
         let id = inner.canonical(id);
-        inner.make_dirty(self, &id, Some(size)).await?;
-        let mut edit = inner.edit(&id).ok_or(WriteError::Gone)?;
-        let Some(dirty) = edit.dirty.as_mut() else {
-            return Err(WriteError::Gone);
-        };
-        let path = inner.local_file(dirty.file);
-        if dirty.size != size {
-            std::fs::OpenOptions::new()
-                .write(true)
-                .open(&path)
-                .and_then(|file| file.set_len(size))?;
-            dirty.size = size;
-            dirty.writes += 1;
-            dirty.modified = now_secs();
+        for _ in 0..TRIES {
+            match inner.set_len_locked(&id, size)? {
+                true => {
+                    inner.emit(vec![id]);
+                    return Ok(());
+                }
+                false => inner.make_dirty(self, &id, Some(size)).await?,
+            }
         }
-        edit.refused = None;
-        inner.wrote(&path);
-        inner.touched_write(&id);
-        inner.put_edit(edit);
-        inner.emit(vec![id]);
-        Ok(())
+        Err(WriteError::Gone)
+    }
+
+    /// Sets the size of the file open as `handle`, as [`Drive::set_len`].
+    ///
+    /// # Errors
+    /// See [`WriteError`].
+    pub async fn truncate(&self, handle: WriteHandle, size: u64) -> Result<(), WriteError> {
+        let id = self.inner.written(handle).ok_or(WriteError::Gone)?;
+        self.set_len(&id, size).await
     }
 
     /// Sets when the file `id` last changed, as a file system's `utimes` does: kept with bytes
@@ -539,12 +869,14 @@ impl Drive {
         let inner = &self.inner;
         inner.writable()?;
         let id = inner.canonical(id);
-        if let Some(mut edit) = inner.edit(&id)
-            && let Some(dirty) = edit.dirty.as_mut()
-        {
-            dirty.modified = at;
-            held(&inner.index).edits.insert(id.clone(), edit);
-            inner.touched();
+        let kept = inner.change(&id, |edit, _| match edit.dirty.as_mut() {
+            Some(dirty) => {
+                dirty.modified = at;
+                true
+            }
+            None => false,
+        });
+        if kept == Some(true) {
             inner.emit(vec![id]);
             return Ok(());
         }
@@ -554,17 +886,22 @@ impl Drive {
         }
     }
 
-    /// Makes what was written to `id` durable here, with the index that names it. It is not
-    /// sent any sooner.
+    /// Makes what was written to `id` durable here, with the index that names it and the folder
+    /// its bytes are in. It is not sent any sooner.
     ///
     /// # Errors
     /// See [`WriteError`].
     pub fn sync(&self, id: &NodeId) -> Result<(), WriteError> {
         let inner = &self.inner;
         let id = inner.canonical(id);
-        if let Some(dirty) = inner.edit(&id).and_then(|edit| edit.dirty) {
-            std::fs::File::open(inner.local_file(dirty.file)).and_then(|f| f.sync_data())?;
+        if let Some(n) = inner.dirty_file(&id) {
+            match std::fs::File::open(inner.local_file(n)).and_then(|f| f.sync_data()) {
+                // Sent meanwhile: the bytes are the cache's, which the index's write syncs.
+                Err(why) if why.kind() == std::io::ErrorKind::NotFound => {}
+                other => other?,
+            }
         }
+        inner.touched();
         inner.flush_now()?;
         Ok(())
     }
@@ -572,9 +909,15 @@ impl Drive {
     /// Closes what [`Drive::open_write`] or [`Drive::create`] opened. Once nothing has it open,
     /// it is sent after the quiet time; a file opened and closed with nothing written is left as
     /// the drive has it.
-    pub fn release_write(&self, id: &NodeId) {
+    pub fn release_write(&self, handle: WriteHandle) {
         let inner = &self.inner;
-        let id = inner.canonical(id);
+        let Some(target) = held(&inner.handles).remove(&handle.0) else {
+            return;
+        };
+        // A handle whose file was saved over had its counts taken with it.
+        let Some(id) = target.map(|target| inner.canonical(&target)) else {
+            return;
+        };
         let closed = {
             let mut writing = held(&inner.writing);
             match writing.get_mut(&id) {
@@ -586,29 +929,15 @@ impl Drive {
                 None => true,
             }
         };
-        if closed && let Some(mut edit) = inner.edit(&id) {
-            let untouched =
-                edit.base.is_some() && edit.dirty.as_ref().is_some_and(|d| d.writes == 0);
-            if untouched {
-                if let Some(dirty) = edit.dirty.take() {
-                    let _ = std::fs::remove_file(inner.local_file(dirty.file));
-                }
-                let mut index = held(&inner.index);
-                match edit.pending() || edit.awaiting.is_some() {
-                    true => index.edits.insert(id.clone(), edit),
-                    false => index.edits.remove(&id),
-                };
-                drop(index);
-                inner.touched();
-                inner.emit(vec![id.clone()]);
-            }
+        if closed {
+            inner.drop_untouched(&id);
         }
         inner.wake.notify_one();
         self.release(&id);
     }
 
     /// Removes the file `id`: an item of the drive's goes to its recycle bin, one made here and
-    /// not sent yet is gone.
+    /// not sent yet is gone. Open, it stays usable until it is closed.
     ///
     /// # Errors
     /// See [`WriteError`].
@@ -639,25 +968,20 @@ impl Drive {
         let inner = &self.inner;
         inner.writable()?;
         let parent = inner.parent_of(id)?.ok_or(WriteError::Gone)?;
+        let open = inner.is_open(id);
         match id {
             NodeId::Top => return Err(WriteError::NotAllowed),
             NodeId::Local(n) => {
-                inner.unpair(id);
-                inner.forget_made(*n);
-            }
-            NodeId::Remote(remote) => {
-                inner.unpair(id);
-                let mut edit = inner.edit_of_remote(remote)?;
-                if let Some(dirty) = edit.dirty.take() {
-                    let _ = std::fs::remove_file(inner.local_file(dirty.file));
+                held(&inner.index).unpair(id);
+                match open {
+                    // Kept, unseen and never sent, until it is closed.
+                    true => {
+                        inner.change(id, |edit, _| edit.removed = true);
+                    }
+                    false => inner.forget_made(*n),
                 }
-                edit.removed = true;
-                edit.awaiting = None;
-                edit.session = None;
-                edit.refused = None;
-                inner.queue(&mut edit);
-                inner.put_edit(edit);
             }
+            NodeId::Remote(remote) => inner.remove_remote(remote, open)?,
         }
         inner.emit(vec![id.clone(), parent]);
         Ok(())
@@ -708,31 +1032,28 @@ impl Drive {
         let inner = &self.inner;
         let id = node.id.clone();
         let file = node.kind != NodeKind::Folder;
-        let (mut edit, kind) = match &id {
-            NodeId::Remote(remote) => {
-                let kind = inner
-                    .entry(remote)?
-                    .map_or(ItemKind::File, |entry| entry.kind);
-                (inner.edit_of_remote(remote)?, kind)
-            }
-            local => (inner.edit(local).ok_or(WriteError::Gone)?, ItemKind::File),
+        let kind = match &id {
+            NodeId::Remote(remote) => inner
+                .entry(remote)?
+                .map_or(ItemKind::File, |entry| entry.kind),
+            _ => ItemKind::File,
         };
-        let wanted = naming::drive_name(name, &node.name, &edit.name, &kind);
-        if wanted != edit.name || *folder != node.parent {
+        let now = inner.node_name(&id).ok_or(WriteError::Gone)?;
+        let wanted = naming::drive_name(name, &node.name, &now, &kind);
+        if wanted != now || *folder != node.parent {
             inner.check_name(folder, &wanted, file)?;
         }
-        let from = node.parent.clone();
-        edit.parent = folder.clone();
-        edit.name = wanted;
-        edit.refused = None;
-        if edit.base.is_some() && !edit.pending() && edit.awaiting.is_none() {
-            // Back where the drive has it.
-            held(&inner.index).edits.remove(&id);
-            inner.touched();
-        } else {
-            inner.put_edit(edit);
+        let place = |edit: &mut Edit, _: &mut Index| {
+            edit.parent = folder.clone();
+            edit.name = wanted.clone();
+            edit.refused = None;
+        };
+        match &id {
+            NodeId::Remote(remote) => inner.change_remote(remote, place)?,
+            local => inner.change(local, place).ok_or(WriteError::Gone)?,
         }
-        inner.emit(vec![id, from, folder.clone()]);
+        inner.wake.notify_one();
+        inner.emit(vec![id, node.parent.clone(), folder.clone()]);
         Ok(())
     }
 
@@ -760,11 +1081,10 @@ impl Drive {
             return Err(why);
         }
         for (id, parent, name) in moves {
-            if let Some(mut edit) = inner.edit(&id) {
+            inner.change(&id, |edit, _| {
                 edit.parent = parent;
                 edit.name = name;
-                inner.put_edit(edit);
-            }
+            });
         }
         // The copy is the item where it went: it keeps its inode number.
         if let Some(copy) = made.first() {
@@ -774,17 +1094,7 @@ impl Drive {
         }
         for id in gone.iter().rev() {
             if let NodeId::Remote(remote) = id {
-                let mut edit = inner.edit_of_remote(remote)?;
-                if let Some(dirty) = edit.dirty.take() {
-                    let _ = std::fs::remove_file(inner.local_file(dirty.file));
-                }
-                inner.unpair(id);
-                edit.removed = true;
-                edit.awaiting = None;
-                edit.session = None;
-                edit.refused = None;
-                inner.queue(&mut edit);
-                inner.put_edit(edit);
+                inner.remove_remote(remote, false)?;
             }
         }
         let mut changed = vec![node.parent.clone(), folder.clone()];
@@ -815,11 +1125,10 @@ impl Drive {
             }
             let n = held(&inner.index).take_local();
             let now = now_secs();
-            let mut edit = match node.kind {
+            let edit = match node.kind {
                 NodeKind::Folder => Edit::made_here(n, folder.clone(), name.to_owned(), None, now),
                 _ => {
-                    let path = inner.local_file(n);
-                    new_file(&path)?;
+                    let path = inner.new_local(n)?;
                     let size = match &node.kind {
                         NodeKind::Online { .. } => {
                             let link = self.read(&node.id, 0, node.size).await;
@@ -829,7 +1138,15 @@ impl Drive {
                         }
                         _ => match inner.edit(&node.id).and_then(|edit| edit.dirty) {
                             Some(dirty) => {
-                                copy_span(&inner.local_file(dirty.file), &path, dirty.size)?;
+                                let inner = Arc::clone(inner);
+                                let to = path.clone();
+                                tokio::task::spawn_blocking(move || {
+                                    let lock = inner.file_lock(dirty.file);
+                                    let _bytes = held(&lock);
+                                    copy_span(&inner.local_file(dirty.file), &to, dirty.size)
+                                })
+                                .await
+                                .unwrap_or(Err(WriteError::Cache))?;
                                 dirty.size
                             }
                             None => {
@@ -844,15 +1161,13 @@ impl Drive {
                         file: n,
                         size,
                         modified: node.modified.map_or(now, |m| m.0),
-                        writes: 1,
+                        generation: held(&inner.index).take_generation(),
                     };
                     inner.wrote(&path);
                     Edit::made_here(n, folder.clone(), name.to_owned(), Some(dirty), now)
                 }
             };
-            inner.queue(&mut edit);
-            let copy = edit.id.clone();
-            inner.put_edit(edit);
+            let copy = inner.put_new(edit);
             made.push(copy.clone());
             gone.push(node.id.clone());
             if node.kind == NodeKind::Folder {
@@ -865,61 +1180,84 @@ impl Drive {
         })
     }
 
-    /// Saves the file `from` over the file `over`: `over` takes its bytes and its place.
+    /// Saves the file `from` over the file `over`: `over` takes its bytes (a new generation of
+    /// them) and its place. What was open on `over` writes nowhere from now on.
     fn save_over(&self, from: &NodeId, over: &NodeId) -> Result<(), WriteError> {
         let inner = &self.inner;
-        let source = inner.edit(from);
         let source_parent = inner.parent_of(from)?.ok_or(WriteError::Gone)?;
         let over_parent = inner.parent_of(over)?.ok_or(WriteError::Gone)?;
         match over {
             NodeId::Remote(target) => {
-                let bytes = source.as_ref().and_then(|edit| edit.dirty.clone());
-                let Some(bytes) = bytes else {
+                let Some(file) = inner.dirty_file(from) else {
                     // A file of the drive's, unchanged, over another: that one goes to the
                     // recycle bin and this one takes its name.
                     let name = self.node(over)?.map(|n| n.name).ok_or(WriteError::Gone)?;
+                    inner.detach(over);
                     self.remove_any(over)?;
                     let node = self.node(from)?.ok_or(WriteError::Gone)?;
                     return self.relocate(&node, &over_parent, &name);
                 };
-                let mut edit = inner.edit_of_remote(target)?;
-                if let Some(old) = edit.dirty.replace(Dirty {
-                    writes: bytes.writes.max(1),
-                    ..bytes
-                }) {
-                    let _ = std::fs::remove_file(inner.local_file(old.file));
-                }
-                edit.refused = None;
-                edit.session = None;
-                match from {
-                    NodeId::Local(n) => {
-                        held(&inner.index).edits.remove(from);
-                        inner.put_edit(edit);
-                        inner.alias(*n, over);
-                    }
-                    NodeId::Remote(_) => {
-                        // Its bytes went over the other; it goes to the recycle bin.
-                        if let Some(mut gone) = source {
-                            gone.dirty = None;
-                            gone.removed = true;
-                            gone.awaiting = None;
-                            gone.session = None;
-                            inner.queue(&mut gone);
-                            held(&inner.index).edits.insert(from.clone(), gone);
+                // Both files' bytes change hands: both locks, the lower number first.
+                let mut files: Vec<u64> = std::iter::once(file)
+                    .chain(inner.dirty_file(over))
+                    .collect();
+                files.sort_unstable();
+                files.dedup();
+                let locks: Vec<_> = files.iter().map(|n| inner.file_lock(*n)).collect();
+                let guards: Vec<_> = locks.iter().map(|lock| held(lock)).collect();
+                let replaced = inner.change_remote(target, |edit, index| {
+                    let bytes = index
+                        .edits
+                        .get(from)
+                        .and_then(|source| source.dirty.clone())
+                        .filter(|bytes| bytes.file == file)?;
+                    let old = edit.dirty.replace(Dirty {
+                        generation: index.take_generation(),
+                        ..bytes
+                    });
+                    self.inner.abandon(edit);
+                    edit.refused = None;
+                    match from {
+                        NodeId::Remote(_) => {
+                            // Its bytes went over the other; it goes to the recycle bin.
+                            let seq = index.take_seq();
+                            if let Some(gone) = index.edits.get_mut(from) {
+                                gone.dirty = None;
+                                gone.removed = true;
+                                gone.awaiting = None;
+                                self.inner.abandon(gone);
+                                gone.seq = seq;
+                            }
                         }
+                        _ => {
+                            index.edits.remove(from);
+                        }
+                    }
+                    Some(old)
+                })?;
+                let Some(old) = replaced else {
+                    return Err(WriteError::Gone);
+                };
+                if let Some(old) = old.filter(|old| old.file != file) {
+                    inner.drop_file(old.file);
+                }
+                drop(guards);
+                inner.detach(over);
+                match from {
+                    NodeId::Local(n) => inner.alias(*n, over),
+                    _ => {
                         let ino = inner.ino(from);
                         held(&inner.index).inos.insert(key_text(over), ino);
                         held(&inner.inodes).insert(ino, over.clone());
                         inner.rekey(from, over);
-                        inner.put_edit(edit);
                     }
-                    NodeId::Top => return Err(WriteError::NotAllowed),
                 }
                 inner.touched_write(over);
             }
             NodeId::Local(n) => {
                 // Made here and not sent: it is simply replaced.
                 let name = self.node(over)?.map(|n| n.name).ok_or(WriteError::Gone)?;
+                inner.detach(over);
                 inner.forget_made(*n);
                 held(&inner.index).aliases.insert(*n, from.clone());
                 let node = self.node(from)?.ok_or(WriteError::Gone)?;

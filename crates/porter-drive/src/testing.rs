@@ -269,6 +269,8 @@ struct SinkState {
     lagging: Option<Vec<Option<Entry>>>,
     lag_removed: Vec<RemoteId>,
     gate: Option<Arc<Semaphore>>,
+    abandoned: u32,
+    uploads: Vec<Vec<u8>>,
 }
 
 /// The writes of a drive held in memory: what it takes changes a [`MemoryListing`] and a
@@ -331,6 +333,16 @@ impl MemorySink {
     /// The names in the recycle bin.
     pub fn bin(&self) -> Vec<String> {
         held(&self.state).bin.clone()
+    }
+
+    /// The bytes of each upload it took, in order.
+    pub fn uploads(&self) -> Vec<Vec<u8>> {
+        held(&self.state).uploads.clone()
+    }
+
+    /// How many upload sessions it was told to give up.
+    pub fn abandoned(&self) -> u32 {
+        held(&self.state).abandoned
     }
 
     /// Holds every upload after its first chunk until [`MemorySink::release`].
@@ -516,6 +528,12 @@ impl Sink for MemorySink {
             let mut at = bytes.len() as u64;
             let mut chunks = 0u32;
             while at < size {
+                if upload.progress.held() {
+                    if let Some(key) = &session {
+                        held(&self.state).sessions.insert(key.clone(), bytes);
+                    }
+                    return Err(PutRefused::Transient(RetryAfter(0)));
+                }
                 let cut = held(&self.state).cut_after;
                 if cut.is_some_and(|after| chunks >= after) {
                     let mut state = held(&self.state);
@@ -557,6 +575,7 @@ impl Sink for MemorySink {
             file.size = Bytes(size);
             file.version = version.clone();
             file.hash = None;
+            held(&self.state).uploads.push(bytes.clone());
             self.source.put(&id.0, bytes);
             held(&self.state).took.push(match &upload.to {
                 UploadTo::New(place) => Took::New(parent_text(place), place.name.clone(), size),
@@ -591,6 +610,18 @@ impl Sink for MemorySink {
                 id: item.clone(),
                 version,
             })
+        })
+    }
+
+    fn abandon<'a>(
+        &'a self,
+        session: &'a Session,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>> {
+        Box::pin(async move {
+            let mut state = held(&self.state);
+            if state.sessions.remove(session.address()).is_some() {
+                state.abandoned += 1;
+            }
         })
     }
 

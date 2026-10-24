@@ -8,17 +8,23 @@
 //!   is tried again after a wait that doubles up to [`BACKOFF_MOST`]; one it refused (no room,
 //!   no right to change it) keeps its bytes here with the words, and is tried again on the next
 //!   listing change or when it is changed again.
-//! - **After.** A file sent becomes the cache's copy of the version the drive gave it; an item
-//!   made here takes the drive's id (keeping its inode number and path), and what is in it
-//!   follows. The change stays laid over the listing until a listing pass shows it.
+//! - **A snapshot.** An upload sends a copy of the bytes taken when it begins (a clone sharing
+//!   their blocks where the file system makes one), so what is written meanwhile never mixes
+//!   into what is sent. Its session belongs to that generation of the bytes: one opened for
+//!   older bytes is given up, never resumed with newer ones.
+//! - **After.** The snapshot sent becomes the cache's copy of the version the drive gave it; the
+//!   bytes here are taken as sent only when they are still the generation it was taken of. An
+//!   item made here takes the drive's id (keeping its inode number and path), and what is in it
+//!   follows; one removed here while it was sent goes to the recycle bin. The change stays laid
+//!   over the listing until a listing pass shows it.
 
 use super::{Drive, Inner, NodeId, held};
-use crate::index::{Awaiting, Edit, Index, Row};
+use crate::index::{Awaiting, Base, Edit, Index, Row};
 use crate::ranges::Ranges;
 use crate::words;
 use porter_sync::{
-    BaseVersion, Conflict, Content, Place, Progress, PutRefused, RemoteId, RemoteVersion, Session,
-    Upload, UploadTo, Written,
+    BaseVersion, Conflict, Content, Place, Progress, PutRefused, RemoteId, RemoteVersion,
+    RetryAfter, Session, Upload, UploadTo, Written,
 };
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
@@ -54,11 +60,15 @@ enum Op {
         id: NodeId,
         to: UploadTo,
         base: BaseVersion,
-        file: PathBuf,
+        /// The number of the bytes here.
+        file: u64,
         size: u64,
-        writes: u64,
+        /// The generation of the bytes it sends.
+        generation: u64,
         resume: Option<Session>,
         before: Option<String>,
+        /// The copy it sends, once taken.
+        snapshot: Option<PathBuf>,
     },
     Relocate {
         id: NodeId,
@@ -107,10 +117,11 @@ fn place_of(parent: &NodeId, name: &str) -> Option<Place> {
     }
 }
 
-/// Tells the index of the upload session and the bytes sent.
+/// Tells the index of the upload session and the bytes sent, for the bytes of one generation.
 struct Told {
     weak: Weak<Inner>,
     id: NodeId,
+    generation: u64,
 }
 
 impl Progress for Told {
@@ -118,8 +129,26 @@ impl Progress for Told {
         let Some(inner) = self.weak.upgrade() else {
             return;
         };
-        if let Some(edit) = held(&inner.index).edits.get_mut(&self.id) {
-            edit.session = session.cloned();
+        {
+            let mut index = held(&inner.index);
+            let edit = index.edits.get_mut(&self.id);
+            let current = edit
+                .as_ref()
+                .and_then(|edit| edit.dirty.as_ref())
+                .map(|d| d.generation);
+            match (session, edit) {
+                (Some(session), Some(edit)) if current == Some(self.generation) => {
+                    edit.session = Some(session.clone());
+                    edit.session_of = self.generation;
+                }
+                // Opened for bytes that changed meanwhile: given up once this upload ends.
+                (Some(session), _) => held(&inner.abandoned).push(session.clone()),
+                (None, Some(edit)) if edit.session_of == self.generation => {
+                    edit.session = None;
+                    edit.session_of = 0;
+                }
+                (None, _) => {}
+            }
         }
         inner.touched();
         // On the disk at once: an upload resumes after a crash.
@@ -136,6 +165,12 @@ impl Progress for Told {
             sent.sent = bytes;
         }
         inner.emit(vec![self.id.clone()]);
+    }
+
+    fn held(&self) -> bool {
+        self.weak
+            .upgrade()
+            .is_some_and(|inner| inner.paused.load(Ordering::SeqCst))
     }
 }
 
@@ -186,11 +221,12 @@ impl Inner {
             return Ok(Op::Upload {
                 to: UploadTo::New(place),
                 base: BaseVersion::Absent,
-                file: self.local_file(dirty.file),
+                file: dirty.file,
                 size: dirty.size,
-                writes: dirty.writes,
-                resume: edit.session.clone(),
+                generation: dirty.generation,
+                resume: Self::resumed(edit),
                 before: None,
+                snapshot: None,
                 id,
             });
         };
@@ -223,13 +259,45 @@ impl Inner {
         Ok(Op::Upload {
             to: UploadTo::Replace(item.clone()),
             base: at,
-            file: self.local_file(dirty.file),
+            file: dirty.file,
             size: dirty.size,
-            writes: dirty.writes,
-            resume: edit.session.clone(),
+            generation: dirty.generation,
+            resume: Self::resumed(edit),
             before: listed(item),
+            snapshot: None,
             id,
         })
+    }
+
+    /// The session `edit`'s upload resumes: only one opened for the bytes it has now.
+    fn resumed(edit: &Edit) -> Option<Session> {
+        let generation = edit.dirty.as_ref()?.generation;
+        edit.session
+            .clone()
+            .filter(|_| edit.session_of == generation)
+    }
+
+    /// Takes the copy an upload of `id`'s bytes `local/<n>` of `generation` sends, under their
+    /// lock: the copy and its size, or `None` when the bytes changed since (the step is looked
+    /// at again).
+    fn take_snapshot(
+        &self,
+        id: &NodeId,
+        n: u64,
+        generation: u64,
+    ) -> std::io::Result<Option<(PathBuf, u64)>> {
+        let lock = self.file_lock(n);
+        let _bytes = held(&lock);
+        let dirty = held(&self.index)
+            .edits
+            .get(id)
+            .and_then(|edit| edit.dirty.clone());
+        let Some(dirty) = dirty.filter(|d| d.file == n && d.generation == generation) else {
+            return Ok(None);
+        };
+        let to = self.local_file(n).with_extension("sending");
+        super::write::clone_file(&self.local_file(n), &to, dirty.size)?;
+        Ok(Some((to, dirty.size)))
     }
 
     /// The next step to send, oldest change first among those ready.
@@ -288,113 +356,54 @@ impl Inner {
 
     /// The drive took `op`: the index says what the drive has now.
     fn landed(self: &Arc<Self>, op: Op, written: Option<Written>) {
-        let mut changed = vec![op.id().clone()];
-        let local = match op.id() {
-            NodeId::Local(n) => Some(*n),
+        // The bytes' lock first: no write is half-noted while they are taken as sent.
+        let lock = match &op {
+            Op::Upload { file, .. } => Some(self.file_lock(*file)),
             _ => None,
         };
+        let bytes = lock.as_ref().map(|lock| held(lock));
+        let mut changed = vec![op.id().clone()];
+        let mut aliased = None;
         {
             let mut index = held(&self.index);
-            let Some(mut edit) = index.edits.remove(op.id()) else {
-                return;
-            };
-            match (&op, &written) {
-                (Op::Trash { .. }, _) => {
-                    edit.awaiting = Some(Awaiting {
-                        before: None,
-                        passes: 0,
-                    });
-                }
-                (
-                    Op::Folder { place, .. } | Op::Relocate { place, .. },
-                    Some(Written { id, version }),
-                ) => {
-                    let before = match &op {
-                        Op::Relocate { before, .. } => before.clone(),
-                        _ => None,
-                    };
-                    edit.id = NodeId::Remote(id.clone());
-                    edit.base = Some(crate::index::Base {
-                        version: version.0.clone(),
-                        parent: place.parent.clone().map(|p| p.0),
-                        name: place.name.clone(),
-                        size: edit.base.as_ref().map_or(0, |b| b.size),
-                        modified: edit.base.as_ref().and_then(|b| b.modified),
-                    });
-                    edit.awaiting = Some(Awaiting { before, passes: 0 });
-                }
-                (
-                    Op::Upload {
-                        to,
-                        size,
-                        writes,
-                        before,
-                        ..
-                    },
-                    Some(Written { id, version }),
-                ) => {
-                    let place = match to {
-                        UploadTo::New(place) => Some(place.clone()),
-                        UploadTo::Replace(_) => None,
-                    };
-                    let old = edit.base.clone();
-                    edit.id = NodeId::Remote(id.clone());
-                    edit.session = None;
-                    let modified = edit.dirty.as_ref().map(|d| d.modified);
-                    edit.base = Some(crate::index::Base {
-                        version: version.0.clone(),
-                        parent: match &place {
-                            Some(place) => place.parent.clone().map(|p| p.0),
-                            None => old.as_ref().and_then(|b| b.parent.clone()),
+            match index.edits.remove(op.id()) {
+                None => {
+                    // Removed here while it was sent, or saved over another file: what the
+                    // drive made of it goes to the recycle bin.
+                    if let (
+                        Op::Folder { place, .. }
+                        | Op::Upload {
+                            to: UploadTo::New(place),
+                            ..
                         },
-                        name: match &place {
-                            Some(place) => place.name.clone(),
-                            None => old.as_ref().map_or_else(String::new, |b| b.name.clone()),
-                        },
-                        size: *size,
-                        modified,
-                    });
-                    edit.awaiting = Some(Awaiting {
-                        before: before.clone(),
-                        passes: 0,
-                    });
-                    // The bytes sent are the cache's copy of the new version, unless they
-                    // changed while they went.
-                    if let Some(dirty) = edit.dirty.clone()
-                        && dirty.writes == *writes
+                        Some(written),
+                    ) = (&op, &written)
                     {
-                        let from = self.local_file(dirty.file);
-                        let to = self.content(id, &version.0);
-                        if std::fs::rename(&from, &to).is_ok() {
-                            edit.dirty = None;
-                            if let Some(old) = index.items.remove(&id.0)
-                                && old.version != version.0
-                            {
-                                let _ = std::fs::remove_file(self.content(id, &old.version));
-                            }
-                            let clock = index.clock;
-                            index.items.insert(
-                                id.0.clone(),
-                                Row {
-                                    version: version.0.clone(),
-                                    size: *size,
-                                    present: Ranges::whole(*size),
-                                    opened: clock,
-                                    checked: true,
-                                },
-                            );
-                            self.wrote(&to);
-                        }
+                        let mut gone = Self::removed_there(&op, place, written);
+                        gone.seq = index.take_seq();
+                        changed.push(gone.id.clone());
+                        index.edits.insert(gone.id.clone(), gone);
+                    }
+                    if let Op::Upload {
+                        snapshot: Some(path),
+                        ..
+                    } = &op
+                    {
+                        let _ = std::fs::remove_file(path);
                     }
                 }
-                _ => {}
+                Some(mut edit) => {
+                    self.took(&mut index, &mut edit, &op, written.as_ref());
+                    if let (NodeId::Local(n), NodeId::Remote(_)) = (op.id(), &edit.id) {
+                        aliased = Some((*n, edit.id.clone()));
+                    }
+                    changed.push(edit.id.clone());
+                    index.edits.insert(edit.id.clone(), edit);
+                }
             }
-            changed.push(edit.id.clone());
-            index.edits.insert(edit.id.clone(), edit);
         }
-        if let Some(n) = local
-            && let Some(id) = changed.get(1).cloned()
-        {
+        drop(bytes);
+        if let Some((n, id)) = aliased {
             self.alias(n, &id);
         }
         *held(&self.backoff) = None;
@@ -404,7 +413,140 @@ impl Inner {
             eprintln!("porter-drive: the cache's index could not be written: {why}");
         }
         self.wanted.notify_one();
+        self.wake.notify_one();
         self.emit(changed);
+    }
+
+    /// What the drive made of `op` at `place`, which was removed here while it was sent: its
+    /// removal, to send.
+    fn removed_there(op: &Op, place: &Place, written: &Written) -> Edit {
+        let (folder, size) = match op {
+            Op::Upload { size, .. } => (false, *size),
+            _ => (true, 0),
+        };
+        let base = Base {
+            version: written.version.0.clone(),
+            parent: place.parent.clone().map(|p| p.0),
+            name: place.name.clone(),
+            size,
+            modified: None,
+        };
+        let parent = place.parent.clone().map_or(NodeId::Top, NodeId::Remote);
+        let mut gone = Edit::of_base(
+            NodeId::Remote(written.id.clone()),
+            folder,
+            parent,
+            base,
+            super::now_secs(),
+        );
+        gone.removed = true;
+        gone
+    }
+
+    /// Notes in `edit` what the drive has after it took `op`, under the index's lock (and an
+    /// upload's bytes' lock).
+    fn took(&self, index: &mut Index, edit: &mut Edit, op: &Op, written: Option<&Written>) {
+        // A removal made meanwhile is still to be sent, against the version the drive has now.
+        let awaiting = |before: Option<String>, edit: &Edit| {
+            (!edit.removed).then_some(Awaiting { before, passes: 0 })
+        };
+        match (op, written) {
+            (Op::Trash { .. }, _) => {
+                edit.awaiting = Some(Awaiting {
+                    before: None,
+                    passes: 0,
+                });
+            }
+            (
+                Op::Folder { place, .. } | Op::Relocate { place, .. },
+                Some(Written { id, version }),
+            ) => {
+                let before = match op {
+                    Op::Relocate { before, .. } => before.clone(),
+                    _ => None,
+                };
+                edit.id = NodeId::Remote(id.clone());
+                edit.base = Some(Base {
+                    version: version.0.clone(),
+                    parent: place.parent.clone().map(|p| p.0),
+                    name: place.name.clone(),
+                    size: edit.base.as_ref().map_or(0, |b| b.size),
+                    modified: edit.base.as_ref().and_then(|b| b.modified),
+                });
+                edit.awaiting = awaiting(before, edit);
+            }
+            (
+                Op::Upload {
+                    to,
+                    size,
+                    generation,
+                    file,
+                    before,
+                    snapshot,
+                    ..
+                },
+                Some(Written { id, version }),
+            ) => {
+                let place = match to {
+                    UploadTo::New(place) => Some(place.clone()),
+                    UploadTo::Replace(_) => None,
+                };
+                let old = edit.base.clone();
+                edit.id = NodeId::Remote(id.clone());
+                if edit.session_of == *generation {
+                    edit.session = None;
+                    edit.session_of = 0;
+                }
+                edit.base = Some(Base {
+                    version: version.0.clone(),
+                    parent: match &place {
+                        Some(place) => place.parent.clone().map(|p| p.0),
+                        None => old.as_ref().and_then(|b| b.parent.clone()),
+                    },
+                    name: match &place {
+                        Some(place) => place.name.clone(),
+                        None => old.as_ref().map_or_else(String::new, |b| b.name.clone()),
+                    },
+                    size: *size,
+                    modified: edit.dirty.as_ref().map(|d| d.modified),
+                });
+                edit.awaiting = awaiting(before.clone(), edit);
+                // The copy sent is the cache's copy of the new version.
+                if let Some(snapshot) = snapshot {
+                    let to = self.content(id, &version.0);
+                    if std::fs::rename(snapshot, &to).is_ok() {
+                        if let Some(old) = index.items.remove(&id.0)
+                            && old.version != version.0
+                        {
+                            let _ = std::fs::remove_file(self.content(id, &old.version));
+                        }
+                        let clock = index.clock;
+                        index.items.insert(
+                            id.0.clone(),
+                            Row {
+                                version: version.0.clone(),
+                                size: *size,
+                                present: Ranges::whole(*size),
+                                opened: clock,
+                                checked: true,
+                            },
+                        );
+                        self.wrote(&to);
+                    }
+                }
+                // The bytes here were sent only if they are still the ones the copy was taken
+                // of; written since, they are sent again.
+                let sent = edit
+                    .dirty
+                    .as_ref()
+                    .is_some_and(|d| d.file == *file && d.generation == *generation);
+                if sent && !edit.removed {
+                    edit.dirty = None;
+                    self.drop_file(*file);
+                }
+            }
+            _ => {}
+        }
     }
 
     /// The drive refused `op` for good (for now): the change keeps its bytes here and says why.
@@ -458,12 +600,58 @@ impl Inner {
                 edit.awaiting = None;
                 continue;
             }
+            // Removed here while open: its bytes stay until it is closed.
+            if let Some(dirty) = &edit.dirty {
+                let file = dirty.file;
+                if self.is_open(&id) {
+                    continue;
+                }
+                self.drop_file(file);
+            }
             index.edits.remove(&id);
             changed.push(id);
         }
         self.touched();
         self.wake.notify_one();
         self.emit(changed);
+    }
+}
+
+/// `op` with the copy it sends taken, off the runtime's threads (a copy waits on the disk);
+/// `None` when the bytes changed since it was chosen, or no copy could be taken (tried again
+/// after a wait).
+async fn snapshot(inner: &Arc<Inner>, mut op: Op) -> Option<Op> {
+    let Op::Upload {
+        id,
+        file,
+        generation,
+        ..
+    } = &op
+    else {
+        return Some(op);
+    };
+    let (id, file, generation) = (id.clone(), *file, *generation);
+    let taker = Arc::clone(inner);
+    let taken =
+        tokio::task::spawn_blocking(move || taker.take_snapshot(&id, file, generation)).await;
+    match taken {
+        Ok(Ok(Some((path, taken_size)))) => {
+            if let Op::Upload { snapshot, size, .. } = &mut op {
+                *snapshot = Some(path);
+                *size = taken_size;
+            }
+            Some(op)
+        }
+        Ok(Ok(None)) => None,
+        Ok(Err(why)) => {
+            eprintln!("porter-drive: a file to send could not be copied: {why}");
+            inner.back_off(Duration::ZERO);
+            None
+        }
+        Err(_) => {
+            inner.back_off(Duration::ZERO);
+            None
+        }
     }
 }
 
@@ -489,6 +677,18 @@ pub(super) async fn sender(weak: Weak<Inner>, wake: Arc<Notify>) {
         let Some(sink) = inner.sink.clone() else {
             return;
         };
+        // Sessions of bytes that changed are given up first.
+        let abandoned = std::mem::take(&mut *held(&inner.abandoned));
+        for session in &abandoned {
+            sink.abandon(session).await;
+        }
+        let op = match op {
+            Op::Upload { .. } => match snapshot(&inner, op).await {
+                Some(op) => op,
+                None => continue,
+            },
+            op => op,
+        };
         let size = match &op {
             Op::Upload { size, .. } => *size,
             _ => 0,
@@ -503,18 +703,22 @@ pub(super) async fn sender(weak: Weak<Inner>, wake: Arc<Notify>) {
         let told = Told {
             weak: weak.clone(),
             id: op.id().clone(),
+            generation: match &op {
+                Op::Upload { generation, .. } => *generation,
+                _ => 0,
+            },
         };
         let result = match &op {
             Op::Folder { place, .. } => sink.make_folder(place).await.map(Some),
             Op::Upload {
                 to,
                 base,
-                file,
+                snapshot: Some(snapshot),
                 size,
                 resume,
                 ..
             } => {
-                let content = Content::new(file.clone(), *size);
+                let content = Content::new(snapshot.clone(), *size);
                 let upload = Upload {
                     to: to.clone(),
                     base: base.clone(),
@@ -528,9 +732,18 @@ pub(super) async fn sender(weak: Weak<Inner>, wake: Arc<Notify>) {
                 item, base, place, ..
             } => sink.relocate(item, base, place).await.map(Some),
             Op::Trash { item, base, .. } => sink.trash(item, base).await.map(|()| None),
+            Op::Upload { snapshot: None, .. } => Err(PutRefused::Transient(RetryAfter(0))),
         };
         let Some(inner) = weak.upgrade() else { return };
         *held(&inner.sending) = None;
+        if result.is_err()
+            && let Op::Upload {
+                snapshot: Some(path),
+                ..
+            } = &op
+        {
+            let _ = std::fs::remove_file(path);
+        }
         match result {
             Ok(written) => inner.landed(op, written),
             Err(PutRefused::Transient(after)) => {

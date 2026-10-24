@@ -272,6 +272,10 @@ impl<H: Http> GraphReplica<H> {
         let total = upload.content.size();
         upload.progress.sent(sent);
         while sent < total {
+            if upload.progress.held() {
+                // Paused: the session stays, to be resumed.
+                return Err(PutRefused::Transient(RetryAfter(0)));
+            }
             let chunk = upload
                 .content
                 .read(sent, self.uploads.chunk as u64)
@@ -418,6 +422,13 @@ impl<H: Http> DriveWrite for GraphReplica<H> {
 
     async fn trash(&self, item: &RemoteId, base: &BaseVersion) -> Result<(), PutRefused> {
         self.drive_trash(item, base).await
+    }
+
+    async fn abandon(&self, session: &Session) {
+        // Graph drops the bytes of a session it is told to delete.
+        if let Ok(url) = WebUrl::parse(session.address()) {
+            let _ = self.write_send(HttpRequest::new(Method::Delete, url)).await;
+        }
     }
 }
 

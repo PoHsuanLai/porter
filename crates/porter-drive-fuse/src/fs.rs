@@ -2,11 +2,11 @@
 
 use fuser::{
     BsdFileFlags, Errno, FileAttr, FileHandle, FileType, Filesystem, FopenFlags, Generation,
-    INodeNo, LockOwner, OpenAccMode, OpenFlags, RenameFlags, ReplyAttr, ReplyCreate, ReplyData,
-    ReplyDirectory, ReplyEmpty, ReplyEntry, ReplyOpen, ReplyStatfs, ReplyWrite, Request, TimeOrNow,
-    WriteFlags,
+    INodeNo, InitFlags, KernelConfig, LockOwner, OpenAccMode, OpenFlags, RenameFlags, ReplyAttr,
+    ReplyCreate, ReplyData, ReplyDirectory, ReplyEmpty, ReplyEntry, ReplyOpen, ReplyStatfs,
+    ReplyWrite, Request, TimeOrNow, WriteFlags,
 };
-use porter_drive::{Drive, NodeId, NodeKind, ROOT_INO, ReadError, WriteError};
+use porter_drive::{Drive, NodeId, NodeKind, ROOT_INO, ReadError, WriteError, WriteHandle};
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::path::Path;
@@ -88,11 +88,11 @@ const KIND: u32 = 0o170_000;
 /// A regular file's kind bits.
 const REGULAR: u32 = 0o100_000;
 
-/// One open file: which, and whether it was opened to write.
+/// One open file: which, and the drive's handle when it was opened to write.
 #[derive(Debug, Clone)]
 struct Handle {
     id: NodeId,
-    write: bool,
+    write: Option<WriteHandle>,
 }
 
 fn held<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -129,7 +129,7 @@ impl DriveFs {
         self.drive.writable()
     }
 
-    fn handle(&self, id: NodeId, write: bool) -> u64 {
+    fn handle(&self, id: NodeId, write: Option<WriteHandle>) -> u64 {
         let fh = self.next.fetch_add(1, Ordering::Relaxed);
         held(&self.handles).insert(fh, Handle { id, write });
         fh
@@ -247,14 +247,18 @@ impl DriveFs {
     /// `EISDIR` for a folder, `ENOENT` when it is not there.
     pub async fn open(&self, ino: u64, write: bool, truncate: bool) -> Result<u64, Errno> {
         let id = self.node_of(ino)?;
-        match write {
-            true => self
-                .drive
-                .open_write(&id, truncate)
-                .await
-                .map_err(write_errno)?,
-            false => self.drive.open_file(&id).map_err(errno_of)?,
-        }
+        let write = match write {
+            true => Some(
+                self.drive
+                    .open_write(&id, truncate)
+                    .await
+                    .map_err(write_errno)?,
+            ),
+            false => {
+                self.drive.open_file(&id).map_err(errno_of)?;
+                None
+            }
+        };
         Ok(self.handle(id, write))
     }
 
@@ -269,9 +273,15 @@ impl DriveFs {
             return Err(Errno::EPERM);
         }
         let (folder, name) = self.named(parent, name)?;
-        let id = self.drive.create(&folder, name).map_err(write_errno)?;
-        let attr = self.attr_of(&id)?;
-        Ok((attr, self.handle(id, true)))
+        let (id, write) = self.drive.create(&folder, name).map_err(write_errno)?;
+        let fh = self.handle(id.clone(), Some(write));
+        match self.attr_of(&id) {
+            Ok(attr) => Ok((attr, fh)),
+            Err(errno) => {
+                self.release(fh);
+                Err(errno)
+            }
+        }
     }
 
     /// Makes the file `name` in `parent`, closed, as `mknod` does for a regular file.
@@ -298,32 +308,43 @@ impl DriveFs {
     ///
     /// # Errors
     /// `EBADF` for a handle not open to write.
-    pub fn write(&self, fh: u64, offset: u64, data: &[u8]) -> Result<u32, Errno> {
+    pub async fn write(&self, fh: u64, offset: u64, data: &[u8]) -> Result<u32, Errno> {
         let handle = held(&self.handles).get(&fh).cloned().ok_or(Errno::EBADF)?;
-        if !handle.write {
-            return Err(Errno::EBADF);
-        }
+        let write = handle.write.ok_or(Errno::EBADF)?;
         let n = self
             .drive
-            .write(&handle.id, offset, data)
+            .write(write, offset, data)
+            .await
             .map_err(write_errno)?;
         Ok(u32::try_from(n).unwrap_or(u32::MAX))
     }
 
-    /// Sets `ino`'s size and when it last changed, as `truncate` and `utimes` do; a mode or an
-    /// owner is taken and ignored (a drive keeps neither). Its attributes after.
+    /// Sets `ino`'s size and when it last changed, as `truncate` and `utimes` do (`fh`: through
+    /// the file open so, as `ftruncate` does); a mode or an owner is taken and ignored (a drive
+    /// keeps neither). Its attributes after.
     ///
     /// # Errors
     /// As [`DriveFs::open`] to write.
     pub async fn setattr(
         &self,
         ino: u64,
+        fh: Option<u64>,
         size: Option<u64>,
         modified: Option<SystemTime>,
     ) -> Result<Attr, Errno> {
-        let id = self.node_of(ino)?;
+        let write = fh.and_then(|fh| held(&self.handles).get(&fh).and_then(|h| h.write));
+        // Through its handle, the file it writes to now (this computer's version of it, after a
+        // conflict).
+        let id = match write.and_then(|write| self.drive.written(write)) {
+            Some(id) => id,
+            None => self.node_of(ino)?,
+        };
         if let Some(size) = size {
-            self.drive.set_len(&id, size).await.map_err(write_errno)?;
+            match write {
+                Some(write) => self.drive.truncate(write, size).await,
+                None => self.drive.set_len(&id, size).await,
+            }
+            .map_err(write_errno)?;
         }
         if let Some(at) = modified {
             let secs = at
@@ -387,8 +408,8 @@ impl DriveFs {
     /// # Errors
     /// `EBADF` for a handle not open, `EIO` when the cache could not be written.
     pub fn fsync(&self, fh: u64) -> Result<(), Errno> {
-        let handle = held(&self.handles).get(&fh).cloned().ok_or(Errno::EBADF)?;
-        self.drive.sync(&handle.id).map_err(write_errno)
+        let id = self.target(fh)?;
+        self.drive.sync(&id).map_err(write_errno)
     }
 
     /// `size` bytes of the file open as `fh` from `offset`, waiting for them when they are not
@@ -397,18 +418,30 @@ impl DriveFs {
     /// # Errors
     /// `EBADF` for a handle not open, else as [`errno_of`] says.
     pub async fn read(&self, fh: u64, offset: u64, size: u32) -> Result<Vec<u8>, Errno> {
-        let handle = held(&self.handles).get(&fh).cloned().ok_or(Errno::EBADF)?;
+        let id = self.target(fh)?;
         self.drive
-            .read(&handle.id, offset, u64::from(size))
+            .read(&id, offset, u64::from(size))
             .await
             .map_err(errno_of)
+    }
+
+    /// What `fh` reads and writes now: for a handle open to write, the file the drive says it
+    /// writes to (this computer's version, after a conflict), else the file it opened.
+    fn target(&self, fh: u64) -> Result<NodeId, Errno> {
+        let handle = held(&self.handles).get(&fh).cloned().ok_or(Errno::EBADF)?;
+        Ok(handle
+            .write
+            .and_then(|write| self.drive.written(write))
+            .unwrap_or(handle.id))
     }
 
     /// Closes `fh`: a file written through it is sent once it has been left alone.
     pub fn release(&self, fh: u64) {
         match held(&self.handles).remove(&fh) {
-            Some(Handle { id, write: true }) => self.drive.release_write(&id),
-            Some(Handle { id, write: false }) => self.drive.release(&id),
+            Some(Handle {
+                write: Some(write), ..
+            }) => self.drive.release_write(write),
+            Some(Handle { id, write: None }) => self.drive.release(&id),
             None => {}
         }
     }
@@ -467,6 +500,13 @@ fn kind_of(folder: bool) -> FileType {
 pub(crate) struct Mounted(pub(crate) std::sync::Arc<DriveFs>);
 
 impl Filesystem for Mounted {
+    fn init(&mut self, _req: &Request, config: &mut KernelConfig) -> std::io::Result<()> {
+        // An open that empties the file says so, rather than a separate truncate first: nothing
+        // is downloaded to be cut away.
+        let _ = config.add_capabilities(InitFlags::FUSE_ATOMIC_O_TRUNC);
+        Ok(())
+    }
+
     fn lookup(&self, _req: &Request, parent: INodeNo, name: &OsStr, reply: ReplyEntry) {
         match self.0.lookup(parent.0, name) {
             Ok(attr) => reply.entry(&TTL, &self.0.file_attr(&attr), Generation(0)),
@@ -582,10 +622,14 @@ impl Filesystem for Mounted {
         _lock_owner: Option<LockOwner>,
         reply: ReplyWrite,
     ) {
-        match self.0.write(fh.0, offset, data) {
-            Ok(n) => reply.written(n),
-            Err(errno) => reply.error(errno),
-        }
+        let fs = std::sync::Arc::clone(&self.0);
+        let data = data.to_vec();
+        self.0.runtime.spawn(async move {
+            match fs.write(fh.0, offset, &data).await {
+                Ok(n) => reply.written(n),
+                Err(errno) => reply.error(errno),
+            }
+        });
     }
 
     fn setattr(
@@ -599,7 +643,7 @@ impl Filesystem for Mounted {
         _atime: Option<TimeOrNow>,
         mtime: Option<TimeOrNow>,
         _ctime: Option<SystemTime>,
-        _fh: Option<FileHandle>,
+        fh: Option<FileHandle>,
         _crtime: Option<SystemTime>,
         _chgtime: Option<SystemTime>,
         _bkuptime: Option<SystemTime>,
@@ -612,7 +656,7 @@ impl Filesystem for Mounted {
         });
         let fs = std::sync::Arc::clone(&self.0);
         self.0.runtime.spawn(async move {
-            match fs.setattr(ino.0, size, modified).await {
+            match fs.setattr(ino.0, fh.map(|fh| fh.0), size, modified).await {
                 Ok(attr) => reply.attr(&TTL, &fs.file_attr(&attr)),
                 Err(errno) => reply.error(errno),
             }
@@ -904,8 +948,8 @@ mod tests {
             .create(ROOT_INO, OsStr::new("notes.txt"), REGULAR | 0o644)
             .expect("create");
         assert_eq!(fs.file_attr(&attr).perm, 0o644);
-        assert_eq!(fs.write(fh, 0, b"hello ").expect("write"), 6);
-        assert_eq!(fs.write(fh, 6, b"world").expect("write"), 5);
+        assert_eq!(fs.write(fh, 0, b"hello ").await.expect("write"), 6);
+        assert_eq!(fs.write(fh, 6, b"world").await.expect("write"), 5);
         fs.fsync(fh).expect("fsync");
         assert_eq!(fs.getattr(attr.ino).expect("attr").size, 11);
         assert_eq!(fs.read(fh, 0, 64).await.expect("read"), b"hello world");
@@ -955,7 +999,10 @@ mod tests {
             Err(Errno::EEXIST)
         );
         // A mode or an owner is taken, and ignored.
-        assert_eq!(fs.setattr(made.ino, None, None).await, Ok(made.clone()));
+        assert_eq!(
+            fs.setattr(made.ino, None, None, None).await,
+            Ok(made.clone())
+        );
     }
 
     #[tokio::test]
@@ -974,7 +1021,7 @@ mod tests {
         let (_, fh) = fs
             .create(work.ino, OsStr::new(".report.txt.swx~"), REGULAR)
             .expect("temp");
-        fs.write(fh, 0, b"new text").expect("write");
+        fs.write(fh, 0, b"new text").await.expect("write");
         fs.release(fh);
         assert_eq!(
             fs.rename(
@@ -1001,7 +1048,7 @@ mod tests {
             .lookup(work.ino, OsStr::new("report.txt"))
             .expect("report");
         let truncated = fs
-            .setattr(report.ino, Some(3), None)
+            .setattr(report.ino, None, Some(3), None)
             .await
             .expect("truncate");
         assert_eq!(truncated.size, 3);

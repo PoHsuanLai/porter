@@ -2,7 +2,8 @@
 //!
 //! The cache directory holds `index.json` (see `index`), `content/<key>` (one file per item,
 //! `<key>` from its id and version, sparse while a fetch fills it), `local/<n>` (the bytes
-//! written here and not sent) and `lock`, which one open drive holds at a time. Every call that
+//! written here and not sent, with `local/<n>.sending` beside one being sent: the copy taken
+//! when its upload began) and `lock`, which one open drive holds at a time. Every call that
 //! only looks is synchronous; reading bytes that are not here yet waits for them.
 //!
 //! What is changed here is shown at once and sent after (see `send`): the tree shown is the
@@ -38,7 +39,7 @@ mod write_tests;
 
 pub use fetch::ReadError;
 pub use state::{ItemState, Status};
-pub use write::WriteError;
+pub use write::{WriteError, WriteHandle};
 
 use crate::index::{Dirty, Edit, Index, IndexFile};
 use crate::limit::CacheLimit;
@@ -52,7 +53,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::{Duration, Instant};
 use tokio::sync::{Notify, Semaphore, broadcast};
@@ -261,6 +262,22 @@ pub(crate) struct Inner {
     /// When the sender tries again after the drive could not take a change, and how long it
     /// waited last.
     backoff: Mutex<Option<(Instant, Duration)>>,
+    /// One lock per file of bytes written here (`local/<n>`), taken around each change of the
+    /// bytes and of what the index says of them, by a write, a snapshot for an upload and the
+    /// upload's landing. Always taken before the index's lock.
+    files: Mutex<HashMap<u64, Arc<Mutex<()>>>>,
+    /// The files open for writing, by handle: what each writes to now (`None`: the file it
+    /// opened was saved over, and it writes nowhere).
+    handles: Mutex<HashMap<u64, Option<NodeId>>>,
+    next_handle: AtomicU64,
+    /// Upload sessions whose bytes changed: the sender gives each up before its next step.
+    abandoned: Mutex<Vec<porter_sync::Session>>,
+    /// A file was made in `local/` since the folder was last synced.
+    local_made: AtomicBool,
+    /// A test's hold inside a write, between its bytes and what the index says of them: met
+    /// twice there.
+    #[cfg(test)]
+    write_hook: Mutex<Option<Arc<std::sync::Barrier>>>,
     /// The cache directory's lock, held for as long as the drive lives. A field drops after
     /// `drop` has written the index, so the next drive reads it whole.
     _lock: std::fs::File,
@@ -335,11 +352,14 @@ fn reconcile(dir: &Path, index: &mut Index) -> std::io::Result<bool> {
     }
     for file in std::fs::read_dir(dir.join("local"))? {
         let file = file?;
-        let Some(n) = file
-            .file_name()
-            .to_str()
-            .and_then(|name| name.parse::<u64>().ok())
-        else {
+        let name = file.file_name();
+        let name = name.to_str().unwrap_or_default();
+        if name.ends_with(".sending") {
+            // A copy taken for an upload that did not land: taken again when it is sent.
+            let _ = std::fs::remove_file(file.path());
+            continue;
+        }
+        let Ok(n) = name.parse::<u64>() else {
             continue;
         };
         index.next_local = index.next_local.max(n + 1);
@@ -362,7 +382,7 @@ fn reconcile(dir: &Path, index: &mut Index) -> std::io::Result<bool> {
             file: n,
             size: meta.len(),
             modified: made,
-            writes: 1,
+            generation: index.take_generation(),
         };
         let name = format!("{} {n}", copy::RECOVERED);
         let mut edit = Edit::made_here(n, NodeId::Top, name, Some(dirty), made);
@@ -379,16 +399,25 @@ fn reconcile(dir: &Path, index: &mut Index) -> std::io::Result<bool> {
             changed = true;
         }
     }
+    // What was made here and removed while it was open, and what lost its bytes, is gone; no
+    // one has anything open after a restart.
     let lost: Vec<NodeId> = index
         .edits
         .values()
-        .filter(|edit| edit.base.is_none() && !edit.folder && edit.dirty.is_none())
+        .filter(|edit| {
+            edit.base.is_none() && (edit.removed || (!edit.folder && edit.dirty.is_none()))
+        })
         .map(|edit| edit.id.clone())
         .collect();
     for id in lost {
-        index.edits.remove(&id);
+        if let Some(dirty) = index.edits.remove(&id).and_then(|edit| edit.dirty) {
+            let _ = std::fs::remove_file(dir.join("local").join(dirty.file.to_string()));
+        }
         changed = true;
     }
+    let before = (index.aliases.len(), index.inos.len());
+    index.prune();
+    changed |= before != (index.aliases.len(), index.inos.len());
     Ok(changed)
 }
 
@@ -524,6 +553,13 @@ impl Drive {
             paused: AtomicBool::new(false),
             stale: Mutex::default(),
             backoff: Mutex::new(None),
+            files: Mutex::default(),
+            handles: Mutex::default(),
+            next_handle: AtomicU64::new(1),
+            abandoned: Mutex::default(),
+            local_made: AtomicBool::new(false),
+            #[cfg(test)]
+            write_hook: Mutex::default(),
             _lock: lock,
         });
         let weak = Arc::downgrade(&inner);
@@ -751,6 +787,18 @@ impl Inner {
         // The index first, then the files: every range it notes was written, and its file
         // named in `unsynced`, before it was noted.
         let index = held(&self.index).clone();
+        if self.local_made.swap(false, Ordering::SeqCst) {
+            // A file made in `local/` is in the folder before an index that names it is
+            // written.
+            let local = self.dir.join("local");
+            if let Err(why) = std::fs::File::open(&local).and_then(|dir| dir.sync_all()) {
+                self.local_made.store(true, Ordering::SeqCst);
+                self.dirty.store(true, Ordering::SeqCst);
+                return Err(why);
+            }
+            #[cfg(test)]
+            held(&self.synced).push(local);
+        }
         let files: Vec<PathBuf> = held(&self.unsynced).drain().collect();
         let failed = |files: &[PathBuf], why: std::io::Error| {
             held(&self.unsynced).extend(files.iter().cloned());
@@ -833,6 +881,18 @@ impl Inner {
     }
 }
 
+#[cfg(test)]
+impl Inner {
+    /// Waits at the test's hold inside a write, if it set one.
+    fn at_write_hook(&self) {
+        let hook = held(&self.write_hook).clone();
+        if let Some(hold) = hook {
+            hold.wait();
+            hold.wait();
+        }
+    }
+}
+
 /// Writes the index about once a second while it changes, for as long as the drive lives (its
 /// drop wakes this to end it).
 async fn flusher(weak: Weak<Inner>, flush: Arc<Notify>) {
@@ -843,7 +903,9 @@ async fn flusher(weak: Weak<Inner>, flush: Arc<Notify>) {
         }
         tokio::time::sleep(FLUSH_AFTER).await;
         let Some(inner) = weak.upgrade() else { return };
-        if let Err(why) = inner.flush_now() {
+        // Syncing files waits on the disk: off the runtime's threads.
+        let flushed = tokio::task::spawn_blocking(move || inner.flush_now()).await;
+        if let Ok(Err(why)) = flushed {
             eprintln!("porter-drive: the cache's index could not be written: {why}");
         }
     }

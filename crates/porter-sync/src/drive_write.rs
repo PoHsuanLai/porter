@@ -96,6 +96,12 @@ pub trait Progress: Send + Sync {
 
     /// How many bytes the drive has so far.
     fn sent(&self, bytes: u64);
+
+    /// Whether the upload is to stop between chunks (the drive was paused): it ends as
+    /// [`PutRefused::Transient`], its session kept, to resume later.
+    fn held(&self) -> bool {
+        false
+    }
 }
 
 /// A [`Progress`] that keeps nothing.
@@ -177,6 +183,14 @@ pub trait DriveWrite: Send + Sync {
         item: &RemoteId,
         base: &BaseVersion,
     ) -> impl Future<Output = Result<(), PutRefused>> + Send;
+
+    /// Gives up an upload session that will not be resumed (the bytes it was sending changed),
+    /// so the drive drops what it holds of it. A drive that drops sessions only in time does
+    /// nothing.
+    fn abandon(&self, session: &Session) -> impl Future<Output = ()> + Send {
+        let _ = session;
+        async {}
+    }
 }
 
 #[cfg(test)]

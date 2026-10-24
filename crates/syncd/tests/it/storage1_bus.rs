@@ -495,11 +495,11 @@ async fn a_change_made_here_waits_while_paused_then_uploads_and_is_downloaded_on
         .expect("resolve")
         .expect("there")
         .id;
-    let id = files.create(&work, "Notes.txt").expect("create");
-    files.write(&id, 0, b"notes").expect("write");
-    files.release_write(&id);
-    let lock = files.create(&work, ".~lock.Notes.txt#").expect("lock");
-    files.release_write(&lock);
+    let (id, handle) = files.create(&work, "Notes.txt").expect("create");
+    files.write(handle, 0, b"notes").await.expect("write");
+    files.release_write(handle);
+    let (_, lock) = files.create(&work, ".~lock.Notes.txt#").expect("lock");
+    files.release_write(lock);
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert_eq!(
         state_of(&proxy, "Work/Notes.txt").await.as_deref(),
@@ -563,9 +563,9 @@ async fn a_file_changed_here_and_on_the_drive_shows_both_in_conflict_each_naming
     rig.drive.set_paused(true);
     let files = &rig.drive.drive;
     let report = NodeId::Remote(porter_sync::RemoteId("r".into()));
-    files.open_write(&report, true).await.expect("open");
-    files.write(&report, 0, b"mine").expect("write");
-    files.release_write(&report);
+    let handle = files.open_write(&report, true).await.expect("open");
+    files.write(handle, 0, b"mine").await.expect("write");
+    files.release_write(handle);
     rig.listing.file("r", Some("w"), "Report.pdf", 6, "2");
     rig.source.put("r", b"theirs".to_vec());
     files.listing_changed();

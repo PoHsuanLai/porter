@@ -81,15 +81,27 @@ impl Rig {
     }
 
     /// Makes `name` in `folder` with `bytes`, written in pieces, and closes it.
-    fn write_new(&self, folder: &NodeId, name: &str, bytes: &[u8]) -> NodeId {
-        let id = self.drive.create(folder, name).expect("create");
+    async fn write_new(&self, folder: &NodeId, name: &str, bytes: &[u8]) -> NodeId {
+        let (id, handle) = self.drive.create(folder, name).expect("create");
         for (at, piece) in bytes.chunks(3).enumerate() {
             self.drive
-                .write(&id, (at * 3) as u64, piece)
+                .write(handle, (at * 3) as u64, piece)
+                .await
                 .expect("write");
         }
-        self.drive.release_write(&id);
+        self.drive.release_write(handle);
         id
+    }
+
+    /// Opens the drive's file `id`, writes `bytes` at `at` and closes it.
+    async fn write_at(&self, id: &str, at: u64, bytes: &[u8]) {
+        let handle = self
+            .drive
+            .open_write(&remote(id), false)
+            .await
+            .expect("open");
+        self.drive.write(handle, at, bytes).await.expect("write");
+        self.drive.release_write(handle);
     }
 
     /// Waits for `n` changes to be sent, and checks no more follow.
@@ -114,7 +126,9 @@ async fn eventually(what: &str, mut check: impl FnMut() -> bool) {
 #[tokio::test]
 async fn a_new_file_is_sent_once_after_it_is_closed_and_keeps_its_inode_and_path() {
     let rig = rig();
-    let id = rig.write_new(&NodeId::Top, "notes.txt", b"one two three");
+    let id = rig
+        .write_new(&NodeId::Top, "notes.txt", b"one two three")
+        .await;
     let ino = rig.drive.ino(&id);
     assert_eq!(rig.state(&id), ItemState::Waiting);
     rig.sent(1).await;
@@ -146,10 +160,14 @@ async fn a_new_file_is_sent_once_after_it_is_closed_and_keeps_its_inode_and_path
 #[tokio::test]
 async fn a_file_made_and_removed_before_it_was_sent_is_never_sent() {
     let rig = rig();
-    let id = rig.drive.create(&NodeId::Top, "scratch").expect("create");
-    rig.drive.write(&id, 0, b"temp").expect("write");
+    let (id, handle) = rig.drive.create(&NodeId::Top, "scratch").expect("create");
+    rig.drive.write(handle, 0, b"temp").await.expect("write");
     rig.drive.remove(&id).expect("remove");
-    rig.drive.release_write(&id);
+    assert_eq!(
+        rig.drive.read(&id, 0, 8).await.expect("still open"),
+        b"temp"
+    );
+    rig.drive.release_write(handle);
     tokio::time::sleep(Duration::from_millis(150)).await;
     assert_eq!(rig.sink.took(), []);
     assert!(rig.names(&NodeId::Top).is_empty());
@@ -162,7 +180,9 @@ async fn saving_by_rename_over_a_file_gives_the_same_item_a_new_version() {
     rig.file("doc", None, "report.txt", b"old");
     // Held, so the temp file is not sent before it is renamed whatever the timing.
     rig.drive.set_paused(true);
-    let tmp = rig.write_new(&NodeId::Top, ".goutputstream-ABC", b"new words");
+    let tmp = rig
+        .write_new(&NodeId::Top, ".goutputstream-ABC", b"new words")
+        .await;
     rig.drive
         .rename(&tmp, &NodeId::Top, "report.txt")
         .await
@@ -184,7 +204,7 @@ async fn a_folder_is_sent_before_what_is_in_it_and_moves_keep_ids() {
     rig.listing.folder("old", None, "Old");
     rig.listing.folder("dest", None, "Dest");
     let work = rig.drive.make_folder(&NodeId::Top, "Work").expect("mkdir");
-    let inner = rig.write_new(&work, "a.txt", b"abc");
+    let inner = rig.write_new(&work, "a.txt", b"abc").await;
     rig.drive
         .rename(&remote("old"), &remote("dest"), "Renamed")
         .await
@@ -238,7 +258,7 @@ async fn removals_go_to_the_recycle_bin_what_was_in_a_folder_first() {
 async fn offline_or_paused_a_change_waits_and_is_sent_after() {
     let rig = rig();
     rig.sink.refuse(Some(Refuse::Offline));
-    let id = rig.write_new(&NodeId::Top, "a.txt", b"abc");
+    let id = rig.write_new(&NodeId::Top, "a.txt", b"abc").await;
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert_eq!(rig.state(&id), ItemState::Waiting);
     rig.drive.set_paused(true);
@@ -256,7 +276,7 @@ async fn offline_or_paused_a_change_waits_and_is_sent_after() {
 async fn the_queue_survives_a_restart() {
     let rig = rig();
     rig.drive.set_paused(true);
-    let id = rig.write_new(&NodeId::Top, "kept.txt", b"keep me");
+    let id = rig.write_new(&NodeId::Top, "kept.txt", b"keep me").await;
     let ino = rig.drive.ino(&id);
     let rig = restarted(rig);
     assert_eq!(rig.drive.ino(&id), ino);
@@ -269,7 +289,7 @@ async fn a_large_file_goes_in_chunks_and_resumes_after_a_restart() {
     let rig = rig();
     let bytes: Vec<u8> = (0..40u8).collect();
     rig.sink.cut_after(3);
-    let id = rig.write_new(&NodeId::Top, "big.bin", &bytes);
+    let id = rig.write_new(&NodeId::Top, "big.bin", &bytes).await;
     eventually("cut off", || rig.sink.cuts() == 1).await;
     let index = std::fs::read_to_string(rig.dir.join("cache").join("index.json")).expect("index");
     assert!(
@@ -289,7 +309,7 @@ async fn a_large_file_goes_in_chunks_and_resumes_after_a_restart() {
 async fn a_refusal_keeps_the_copy_with_its_words_and_is_tried_again() {
     let rig = rig();
     rig.sink.refuse(Some(Refuse::Quota));
-    let id = rig.write_new(&NodeId::Top, "big.txt", b"abc");
+    let id = rig.write_new(&NodeId::Top, "big.txt", b"abc").await;
     eventually("refused", || {
         rig.drive
             .status(&id)
@@ -326,8 +346,8 @@ async fn a_name_the_drive_refuses_is_refused_when_made_and_lock_files_stay_here(
         rig.drive.make_folder(&NodeId::Top, "c:d"),
         Err(WriteError::BadName)
     );
-    let lock = rig.write_new(&NodeId::Top, "~$Plan.docx", b"me");
-    let other = rig.write_new(&NodeId::Top, ".~lock.Plan.odt#", b"me");
+    let lock = rig.write_new(&NodeId::Top, "~$Plan.docx", b"me").await;
+    let other = rig.write_new(&NodeId::Top, ".~lock.Plan.odt#", b"me").await;
     tokio::time::sleep(Duration::from_millis(150)).await;
     assert_eq!(rig.sink.took(), [], "lock files are never sent");
     assert_eq!(rig.state(&lock), ItemState::Downloaded);
@@ -339,12 +359,7 @@ async fn eviction_never_takes_what_was_changed_here() {
     let rig = rig();
     rig.file("r", None, "r.txt", b"drive bytes");
     rig.drive.set_paused(true);
-    rig.drive
-        .open_write(&remote("r"), false)
-        .await
-        .expect("open");
-    rig.drive.write(&remote("r"), 0, b"DRIVE").expect("write");
-    rig.drive.release_write(&remote("r"));
+    rig.write_at("r", 0, b"DRIVE").await;
     rig.drive.set_limit(CacheLimit::Bytes(0));
     tokio::time::sleep(Duration::from_millis(50)).await;
     assert_eq!(
@@ -362,11 +377,12 @@ async fn eviction_never_takes_what_was_changed_here() {
 async fn opened_and_closed_with_nothing_written_is_left_as_the_drive_has_it() {
     let rig = rig();
     rig.file("r", None, "r.txt", b"same");
-    rig.drive
+    let handle = rig
+        .drive
         .open_write(&remote("r"), false)
         .await
         .expect("open");
-    rig.drive.release_write(&remote("r"));
+    rig.drive.release_write(handle);
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert_eq!(rig.sink.took(), []);
     assert_eq!(rig.drive.unsent(), 0);
@@ -399,12 +415,13 @@ async fn a_newer_version_on_the_drive_keeps_both_and_each_names_the_other() {
     rig.listing
         .file("taken", None, "Plan (this computer).txt", 1, "v1");
     rig.drive.set_paused(true);
-    rig.drive
+    let handle = rig
+        .drive
         .open_write(&remote("r"), true)
         .await
         .expect("open");
-    rig.drive.write(&remote("r"), 0, b"mine").expect("write");
-    rig.drive.release_write(&remote("r"));
+    rig.drive.write(handle, 0, b"mine").await.expect("write");
+    rig.drive.release_write(handle);
     changed_there(&rig, "r", "Plan.txt", b"theirs", "v2");
     rig.drive.listing_changed();
     let mut names = rig.names(&NodeId::Top);
@@ -455,15 +472,17 @@ async fn bytes_not_sent_of_a_file_the_drive_removed_are_sent_again_as_a_new_file
     rig.listing.folder("keep", None, "Keep");
     rig.file("r", None, "Notes.txt", b"old");
     rig.drive.set_paused(true);
-    rig.drive
+    let handle = rig
+        .drive
         .open_write(&remote("r"), false)
         .await
         .expect("open");
     rig.drive
-        .write(&remote("r"), 3, b" and new")
+        .write(handle, 3, b" and new")
+        .await
         .expect("write");
     let ino = rig.drive.ino(&remote("r"));
-    rig.drive.release_write(&remote("r"));
+    rig.drive.release_write(handle);
     rig.listing.remove("r");
     rig.drive.listing_changed();
     let node = rig
@@ -534,8 +553,8 @@ async fn a_name_taken_on_the_drive_meets_the_folder_there_or_keeps_this_computer
     let rig = rig();
     rig.drive.set_paused(true);
     let work = rig.drive.make_folder(&NodeId::Top, "Work").expect("mkdir");
-    let inside = rig.write_new(&work, "in.txt", b"in");
-    let file = rig.write_new(&NodeId::Top, "a.txt", b"mine");
+    let inside = rig.write_new(&work, "in.txt", b"in").await;
+    let file = rig.write_new(&NodeId::Top, "a.txt", b"mine").await;
     // Made on the drive by someone else meanwhile.
     rig.listing.folder("w", None, "Work");
     rig.file("x", None, "a.txt", b"theirs");
@@ -570,7 +589,9 @@ async fn the_desktop_trash_stays_here_and_sends_what_goes_in_to_the_recycle_bin(
         .expect("trash");
     let files = rig.drive.make_folder(&trash, "files").expect("files");
     let info = rig.drive.make_folder(&trash, "info").expect("info");
-    let note = rig.write_new(&info, "doc.txt.trashinfo", b"[Trash Info]");
+    let note = rig
+        .write_new(&info, "doc.txt.trashinfo", b"[Trash Info]")
+        .await;
     rig.drive
         .rename(&remote("r"), &files, "doc.txt")
         .await
@@ -600,4 +621,329 @@ async fn the_desktop_trash_stays_here_and_sends_what_goes_in_to_the_recycle_bin(
     rig.drive.remove_folder(&info).expect("empty");
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert_eq!(rig.sink.took().len(), 2);
+}
+
+/// Waits until `id` is being sent.
+async fn uploading(rig: &Rig, id: &NodeId) {
+    eventually("uploading", || rig.state(id) == ItemState::Uploading).await;
+}
+
+#[tokio::test]
+async fn a_second_save_by_rename_during_an_upload_is_sent_too() {
+    let rig = rig();
+    rig.file("r", None, "doc.txt", b"0000000000");
+    rig.sink.hold();
+    let one = rig
+        .write_new(&NodeId::Top, ".doc.txt.1", b"1111111111")
+        .await;
+    rig.drive
+        .rename(&one, &NodeId::Top, "doc.txt")
+        .await
+        .expect("save");
+    uploading(&rig, &remote("r")).await;
+    // Written the same way as the first: as many writes, the same size.
+    let two = rig
+        .write_new(&NodeId::Top, ".doc.txt.2", b"2222222222")
+        .await;
+    rig.drive
+        .rename(&two, &NodeId::Top, "doc.txt")
+        .await
+        .expect("save");
+    rig.sink.release();
+    eventually("the second save sent", || {
+        rig.sink.uploads().last().map(Vec::as_slice) == Some(b"2222222222".as_slice())
+    })
+    .await;
+    eventually("nothing left", || rig.drive.unsent() == 0).await;
+    assert_eq!(
+        rig.drive.read(&remote("r"), 0, 64).await.expect("read"),
+        b"2222222222"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_write_while_its_upload_lands_is_never_lost() {
+    let rig = rig();
+    rig.file("r", None, "r.txt", b"0123456789");
+    rig.sink.hold();
+    rig.write_at("r", 0, b"AAAA").await;
+    uploading(&rig, &remote("r")).await;
+    let handle = rig
+        .drive
+        .open_write(&remote("r"), false)
+        .await
+        .expect("open");
+    let hook = Arc::new(std::sync::Barrier::new(2));
+    *held(&rig.drive.inner.write_hook) = Some(Arc::clone(&hook));
+    let drive = rig.drive.clone();
+    let writing = tokio::spawn(async move { drive.write(handle, 4, b"BBBB").await });
+    let meet = |hook: &Arc<std::sync::Barrier>| {
+        let hook = Arc::clone(hook);
+        tokio::task::spawn_blocking(move || {
+            hook.wait();
+        })
+    };
+    // The write has put its bytes down and not yet said so.
+    meet(&hook).await.expect("met");
+    *held(&rig.drive.inner.write_hook) = None;
+    rig.sink.release();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    meet(&hook).await.expect("met");
+    writing.await.expect("joined").expect("write");
+    rig.drive.release_write(handle);
+    eventually("sent again with the write", || {
+        rig.sink.uploads().last().map(Vec::as_slice) == Some(b"AAAABBBB89".as_slice())
+    })
+    .await;
+    eventually("nothing left", || rig.drive.unsent() == 0).await;
+    let rig = restarted(rig);
+    assert_eq!(
+        rig.drive.read(&remote("r"), 0, 64).await.expect("read"),
+        b"AAAABBBB89"
+    );
+}
+
+#[tokio::test]
+async fn what_is_written_during_an_upload_never_mixes_into_what_it_sends() {
+    let rig = rig();
+    rig.file("r", None, "r.txt", b"0123456789");
+    rig.sink.hold();
+    rig.write_at("r", 0, b"AAAA").await;
+    uploading(&rig, &remote("r")).await;
+    // Past what the upload has sent so far.
+    rig.write_at("r", 8, b"ZZ").await;
+    rig.sink.release();
+    eventually("both sent", || rig.sink.uploads().len() == 2).await;
+    let uploads = rig.sink.uploads();
+    assert_eq!(
+        uploads[0], b"AAAA456789",
+        "the bytes as they were when it began"
+    );
+    assert_eq!(uploads[1], b"AAAA4567ZZ");
+}
+
+#[tokio::test]
+async fn bytes_changed_after_an_upload_was_cut_off_start_a_new_session() {
+    let rig = rig();
+    let bytes: Vec<u8> = (0..40u8).collect();
+    rig.sink.cut_after(2);
+    let id = rig.write_new(&NodeId::Top, "big.bin", &bytes).await;
+    eventually("cut off", || rig.sink.cuts() == 1).await;
+    let handle = rig.drive.open_write(&id, false).await.expect("open");
+    rig.drive.write(handle, 0, b"XY").await.expect("write");
+    rig.drive.release_write(handle);
+    eventually("sent", || !rig.sink.uploads().is_empty()).await;
+    let mut wanted = bytes.clone();
+    wanted[..2].copy_from_slice(b"XY");
+    assert_eq!(rig.sink.uploads(), [wanted], "never old bytes and new");
+    assert_eq!(rig.sink.abandoned(), 1, "the old session is given up");
+}
+
+#[tokio::test]
+async fn a_file_open_to_write_when_the_drive_changed_it_writes_this_computers_version() {
+    let rig = rig();
+    rig.file("r", None, "Plan.txt", b"old");
+    rig.drive.set_paused(true);
+    let handle = rig
+        .drive
+        .open_write(&remote("r"), false)
+        .await
+        .expect("open");
+    rig.drive.write(handle, 0, b"mine").await.expect("write");
+    let ino = rig.drive.ino(&remote("r"));
+    changed_there(&rig, "r", "Plan.txt", b"theirs", "v2");
+    rig.drive.listing_changed();
+    rig.drive.write(handle, 4, b" too").await.expect("write");
+    let copy = rig.drive.written(handle).expect("it writes somewhere");
+    assert_ne!(copy, remote("r"));
+    assert_eq!(rig.drive.ino(&copy), ino, "the file it opened");
+    assert_ne!(rig.drive.ino(&remote("r")), ino);
+    assert_eq!(
+        rig.drive.read(&copy, 0, 64).await.expect("read"),
+        b"mine too"
+    );
+    assert_eq!(
+        rig.drive.read(&remote("r"), 0, 64).await.expect("read"),
+        b"theirs"
+    );
+    rig.drive.release_write(handle);
+    rig.drive.set_paused(false);
+    rig.sent(1).await;
+    assert_eq!(
+        rig.sink.took(),
+        [Took::New(None, "Plan (this computer).txt".into(), 8)]
+    );
+}
+
+#[tokio::test]
+async fn a_file_open_to_write_when_the_drive_removed_it_keeps_writing() {
+    let rig = rig();
+    rig.file("r", None, "Notes.txt", b"old");
+    // An empty listing is never taken as the drive's: something else stays.
+    rig.file("k", None, "Kept.txt", b"k");
+    rig.drive.set_paused(true);
+    let handle = rig
+        .drive
+        .open_write(&remote("r"), false)
+        .await
+        .expect("open");
+    rig.drive.write(handle, 3, b" new").await.expect("write");
+    rig.listing.remove("r");
+    rig.drive.listing_changed();
+    rig.drive
+        .write(handle, 7, b"er")
+        .await
+        .expect("still writes");
+    rig.drive.release_write(handle);
+    rig.drive.set_paused(false);
+    rig.sent(1).await;
+    assert_eq!(rig.sink.took(), [Took::New(None, "Notes.txt".into(), 9)]);
+}
+
+#[tokio::test]
+async fn an_item_removed_while_it_is_sent_goes_to_the_recycle_bin_once_there() {
+    let rig = rig();
+    rig.sink.hold();
+    let id = rig.write_new(&NodeId::Top, "gone.txt", b"0123456789").await;
+    uploading(&rig, &id).await;
+    rig.drive.remove(&id).expect("remove");
+    rig.sink.release();
+    rig.sent(2).await;
+    let took = rig.sink.took();
+    assert_eq!(took[0], Took::New(None, "gone.txt".into(), 10));
+    assert!(matches!(took[1], Took::Trash(_)), "{took:?}");
+    assert_eq!(rig.sink.bin(), ["gone.txt"]);
+    assert!(rig.names(&NodeId::Top).is_empty());
+}
+
+#[tokio::test]
+async fn a_file_opened_to_write_offline_or_emptied_downloads_nothing() {
+    let rig = rig();
+    rig.file("r", None, "r.txt", b"drive bytes");
+    rig.source.set_offline(true);
+    rig.drive.set_paused(true);
+    let handle = rig
+        .drive
+        .open_write(&remote("r"), false)
+        .await
+        .expect("opens offline");
+    rig.drive.release_write(handle);
+    let handle = rig
+        .drive
+        .open_write(&remote("r"), true)
+        .await
+        .expect("empties offline");
+    rig.drive.write(handle, 0, b"new").await.expect("write");
+    rig.drive.release_write(handle);
+    assert_eq!(rig.source.fetched(), []);
+    assert_eq!(
+        rig.drive.read(&remote("r"), 0, 64).await.expect("read"),
+        b"new"
+    );
+}
+
+#[tokio::test]
+async fn the_folder_of_bytes_made_here_is_synced_before_the_index_names_them() {
+    let rig = rig();
+    rig.drive.set_paused(true);
+    let id = rig.write_new(&NodeId::Top, "n.txt", b"n").await;
+    rig.drive.sync(&id).expect("sync");
+    let synced = held(&rig.drive.inner.synced).clone();
+    assert!(
+        synced.contains(&rig.dir.join("cache").join("local")),
+        "{synced:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_file_removed_while_open_stays_usable_until_it_is_closed() {
+    let rig = rig();
+    rig.file("r", None, "r.txt", b"old");
+    let handle = rig
+        .drive
+        .open_write(&remote("r"), false)
+        .await
+        .expect("open");
+    rig.drive.write(handle, 0, b"new").await.expect("write");
+    rig.drive.remove(&remote("r")).expect("unlink");
+    assert!(rig.names(&NodeId::Top).is_empty());
+    rig.drive
+        .write(handle, 3, b"er")
+        .await
+        .expect("writes after unlink");
+    assert_eq!(
+        rig.drive.read(&remote("r"), 0, 64).await.expect("read"),
+        b"newer"
+    );
+    rig.drive.release_write(handle);
+    rig.sent(1).await;
+    assert_eq!(rig.sink.took(), [Took::Trash("r".into())]);
+    let local = rig.dir.join("cache").join("local");
+    eventually("its bytes go", || {
+        std::fs::read_dir(&local).map_or(0, |dir| dir.count()) == 0
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn what_had_a_file_open_before_it_was_saved_over_writes_nowhere() {
+    let rig = rig();
+    rig.file("r", None, "doc.txt", b"old");
+    rig.drive.set_paused(true);
+    let before = rig
+        .drive
+        .open_write(&remote("r"), false)
+        .await
+        .expect("open");
+    let tmp = rig.write_new(&NodeId::Top, ".doc.txt.tmp", b"new").await;
+    rig.drive
+        .rename(&tmp, &NodeId::Top, "doc.txt")
+        .await
+        .expect("save");
+    assert_eq!(
+        rig.drive.write(before, 0, b"XXX").await,
+        Err(WriteError::Gone)
+    );
+    assert_eq!(
+        rig.drive.read(&remote("r"), 0, 64).await.expect("read"),
+        b"new"
+    );
+    rig.drive.release_write(before);
+    rig.drive.set_paused(false);
+    rig.sent(1).await;
+    assert_eq!(rig.sink.uploads(), [b"new".to_vec()]);
+}
+
+#[tokio::test]
+async fn this_computers_version_is_named_among_the_drives_names() {
+    let rig = rig();
+    // Shown as "a／b (this computer).txt"; the drive's name has the slash.
+    rig.listing
+        .file("t", None, "a/b (this computer).txt", 1, "v1");
+    rig.file("r", None, "a/b.txt", b"old");
+    rig.drive.set_paused(true);
+    rig.write_at("r", 0, b"mine").await;
+    changed_there(&rig, "r", "a/b.txt", b"theirs", "v2");
+    rig.drive.listing_changed();
+    rig.drive.set_paused(false);
+    rig.sent(1).await;
+    assert_eq!(
+        rig.sink.took(),
+        [Took::New(None, "a/b (this computer) 2.txt".into(), 4)]
+    );
+}
+
+#[tokio::test]
+async fn what_named_an_item_made_here_goes_once_it_is_settled() {
+    let rig = rig();
+    rig.write_new(&NodeId::Top, "n.txt", b"n").await;
+    rig.sent(1).await;
+    for _ in 0..3 {
+        rig.drive.listing_changed();
+    }
+    eventually("settled", || held(&rig.drive.inner.index).edits.is_empty()).await;
+    let rig = restarted(rig);
+    let index = held(&rig.drive.inner.index);
+    assert!(index.aliases.is_empty(), "{:?}", index.aliases);
+    assert!(index.inos.is_empty(), "{:?}", index.inos);
 }

@@ -1,7 +1,7 @@
 //! Where a drive's changes go: porter-sync's whole-drive writes, one step at a time.
 
 use crate::source::ReplicaSource;
-use porter_sync::{BaseVersion, DriveWrite, Place, PutRefused, RemoteId, Upload, Written};
+use porter_sync::{BaseVersion, DriveWrite, Place, PutRefused, RemoteId, Session, Upload, Written};
 use std::future::Future;
 use std::pin::Pin;
 
@@ -30,6 +30,10 @@ pub trait Sink: Send + Sync {
 
     /// Sends `item` to the drive's recycle bin, if the drive still has `base`.
     fn trash<'a>(&'a self, item: &'a RemoteId, base: &'a BaseVersion) -> Sending<'a, ()>;
+
+    /// Gives up an upload session that will not be resumed.
+    fn abandon<'a>(&'a self, session: &'a Session)
+    -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
 }
 
 impl<R: DriveWrite> Sink for ReplicaSource<R> {
@@ -56,5 +60,12 @@ impl<R: DriveWrite> Sink for ReplicaSource<R> {
 
     fn trash<'a>(&'a self, item: &'a RemoteId, base: &'a BaseVersion) -> Sending<'a, ()> {
         Box::pin(self.0.trash(item, base))
+    }
+
+    fn abandon<'a>(
+        &'a self,
+        session: &'a Session,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        Box::pin(self.0.abandon(session))
     }
 }
