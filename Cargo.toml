@@ -162,6 +162,11 @@ digest = "0.10"
 # Apache-2.0) and a constant-time compare (BSD-3-Clause).
 getrandom = "0.4.3"
 subtle = "2.6.1"
+# porter-engines-install unpacks the pinned engine archives (`tar.gz`) in process instead of
+# running the system's `tar` (both MIT OR Apache-2.0). flate2 is already in Cargo.lock through
+# png; tar's `xattr` default is off, nothing reads extended attributes.
+flate2 = "1.1.10"
+tar = { version = "0.4.46", default-features = false }
 md-5 = "0.10"
 clap = { version = "4", features = ["derive"] }
 proptest = "1"

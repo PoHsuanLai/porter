@@ -16,6 +16,15 @@
   build it with `cargo build -p syncd-fakes`. `porter_rig::storage_fake` re-exports the module
   for one batch.
 
+### Engine archives are unpacked in process
+
+- porter-engines-install unpacks a pinned `tar.gz` with the `tar` and `flate2` crates instead of
+  running `/usr/bin/tar`. An entry with an absolute path or a `..`, a path through a link, a link
+  that points out of the install, and a device or pipe are refused (`ExtractError::Refused`);
+  before, `tar` alone decided. The free-space check, the seal check and the final rename are as
+  they were.
+- `ExtractError::NoTar` is gone: a computer without `tar` installs engines too.
+
 ### The agent token uses getrandom and subtle
 
 - inferd's agent token takes its bytes from `getrandom` instead of reading `/dev/urandom`, and is

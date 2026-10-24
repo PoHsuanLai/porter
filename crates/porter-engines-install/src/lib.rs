@@ -3,8 +3,9 @@
 //! - [`Fetcher`] downloads one pinned file: over `https` only, resumable, cancellable, counted
 //!   in a [`Meter`], and kept only if its size and SHA-256 are the pinned ones.
 //! - [`Installer`] installs a manifest row for everyone or for one person: space checked, files
-//!   fetched, unpacked with the system's `tar` (or a Python environment filled from the row's
-//!   hashed lock), the tree's seal compared with the pinned one, then renamed into place whole.
+//!   fetched, unpacked in process with nothing let out of the install (or a Python environment
+//!   filled from the row's hashed lock), the tree's seal compared with the pinned one, then
+//!   renamed into place whole.
 //! - [`install_package`] installs the distro's package instead.
 //! - [`EngineInstalls`] is what a program that offers installs holds: what could be installed for
 //!   an engine here ([`InstallChoice`]), the jobs it starts (for the person in this process, for

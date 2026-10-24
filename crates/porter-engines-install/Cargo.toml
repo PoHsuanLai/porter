@@ -16,6 +16,9 @@ path = "src/bin/porter-engine-helper.rs"
 porter-engines = { workspace = true }
 porter-core = { workspace = true }
 porter-http = { workspace = true, features = ["hyper"] }
+# The archives are unpacked in process (`extract`), never by the system's `tar`.
+flate2 = { workspace = true }
+tar = { workspace = true }
 rustix = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
