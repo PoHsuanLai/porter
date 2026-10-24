@@ -28,6 +28,7 @@ path = "src/bin/porter-rig-storage.rs"
 porter-core = { workspace = true }
 porter-client = { workspace = true, features = ["dbus", "in-process"] }
 porter-dbus = { workspace = true, features = ["test-proc-root"] }
+porter-drive = { workspace = true }
 porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }
 porter-infer = { workspace = true }

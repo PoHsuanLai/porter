@@ -2400,6 +2400,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "porter-drive"
+version = "0.1.0"
+dependencies = [
+ "porter-core",
+ "porter-drive",
+ "porter-fake",
+ "porter-fs",
+ "porter-sync",
+ "rustix",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "porter-engines"
 version = "0.1.0"
 dependencies = [
@@ -2567,6 +2584,7 @@ dependencies = [
  "porter-client",
  "porter-core",
  "porter-dbus",
+ "porter-drive",
  "porter-fake",
  "porter-fake-servers",
  "porter-infer",

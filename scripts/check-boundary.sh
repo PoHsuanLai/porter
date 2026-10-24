@@ -13,7 +13,8 @@ cd "$(dirname "$0")/.."
 # through its `dbus` feature; porter-dbus reaches tokio only through zbus's `tokio` feature.
 # porter-http, porter-proxy and porter-oauth reach tokio (and porter-http hyper) only through
 # their named I/O feature (`hyper`, `io`). porter-families reaches none with default features;
-# each of its family features is checked on its own in FAMILY_FORBIDS below.
+# each of its family features is checked on its own in FAMILY_FORBIDS below. porter-drive reaches
+# tokio (a drive fetches in the background) but never a bus or a client.
 EFFECTS="zbus zvariant tokio reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
 RULES=(
   "porter-core: $EFFECTS toml"
@@ -45,6 +46,7 @@ RULES=(
   "storage-webdav: $EFFECTS"
   "storage-graph: $EFFECTS"
   "storage-gdrive: $EFFECTS"
+  "porter-drive: zbus zvariant reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
   "porter-dbus: reqwest hyper ureq oo7 keyring secret-service ds-settings"
 )
 fail=0
@@ -280,8 +282,9 @@ EDGES=(
   "storage-webdav: porter-core porter-dav porter-http porter-sync"
   "storage-graph: porter-core porter-http porter-sync storage-webdav"
   "storage-gdrive: porter-core porter-http porter-sync storage-webdav"
+  "porter-drive: porter-core porter-fs porter-sync"
   "syncd: ds-settings porter-client porter-core porter-daemon porter-dav porter-dbus porter-families porter-fs porter-http porter-provider porter-secrets porter-service porter-sheets porter-store porter-sync storage-gdrive storage-graph storage-webdav"
-  "porter-rig: porter-client porter-core porter-dbus porter-fake porter-fake-servers porter-infer"
+  "porter-rig: porter-client porter-core porter-dbus porter-drive porter-fake porter-fake-servers porter-infer"
   "inferd: ds-settings porter-bridge porter-engines porter-families porter-secrets porter-service porter-sheets porter-store porter-router porter-turns porter-core porter-daemon porter-dbus porter-discover porter-fs porter-http porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
 )
 for edge in "${EDGES[@]}"; do
