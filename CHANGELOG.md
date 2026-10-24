@@ -62,6 +62,19 @@
   build it with `cargo build -p syncd-fakes`. `porter_rig::storage_fake` re-exports the module
   for one batch.
 
+### Keyring chunking is its own crate
+
+- `keyring-chunked` is a new library crate: `ChunkedStore<S>`, a keyring-core store over any
+  other that keeps a value too long for one entry (the Windows Credential Manager's 2560 bytes) in
+  parts, with its own `ChunkError`. porter-secrets' `StoreSecrets` uses it, and its private
+  `keyring/chunks.rs` is gone. What porter wrote reads unchanged: the head `porter-parts:<count>`
+  and the parts `<name>#1`, `<name>#2`, ...
+- A write that fails part-way now removes what it overwrote, so the credential reads as missing
+  instead of as two values mixed; one that fails before any part is written leaves the old value.
+- Parts left past the new count by an earlier failed write are swept on the next write or delete.
+- A value that would need more than 64 parts is refused when it is written (`TooLong`), not when
+  it is read back.
+
 ### Engine archives are unpacked in process
 
 - porter-engines-install unpacks a pinned `tar.gz` with the `tar` and `flate2` crates instead of

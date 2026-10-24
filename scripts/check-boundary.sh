@@ -262,7 +262,7 @@ EDGES=(
   "keyring-chunked:"
   "prov: porter-core"
   "porter-provider: porter-core"
-  "porter-secrets: porter-core porter-fs"
+  "porter-secrets: keyring-chunked porter-core porter-fs"
   "porter-sync: porter-core"
   "porter-infer: porter-core cua-action"
   "porter-service: porter-core porter-provider porter-secrets"

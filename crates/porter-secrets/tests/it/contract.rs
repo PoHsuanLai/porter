@@ -420,6 +420,50 @@ async fn a_large_secret_is_filed_in_numbered_parts_and_leaves_none_behind() {
     assert_eq!(store.get(&big).await, Ok(password("s")));
 }
 
+/// Entries as porter-secrets' own chunking wrote them before keyring-chunked: a head
+/// `porter-parts:<count>` and the parts `#1`, `#2`, ... They still read, and deleting the key
+/// removes every one.
+#[tokio::test]
+async fn a_credential_filed_in_parts_before_keyring_chunked_still_reads() {
+    let mock: Arc<keyring_core::CredentialStore> = keyring_core::mock::Store::new().expect("mock");
+    let name = r#"old:{"kind":"password"}"#;
+    let filed = [
+        (name.to_owned(), "porter-parts:3"),
+        (format!("{name}#1"), r#"{"kind":"passwo"#),
+        (format!("{name}#2"), r#"rd","v":"correct horse "#),
+        (format!("{name}#3"), r#"battery staple"}"#),
+    ];
+    for (user, value) in &filed {
+        mock.build("porter", user, None)
+            .expect("entry")
+            .set_password(value)
+            .expect("planted");
+    }
+    let old = key("old", SecretPurpose::Password);
+    for store in [
+        StoreSecrets::new(mock.clone()),
+        StoreSecrets::chunked(mock.clone(), 256),
+    ] {
+        assert_eq!(
+            store.get(&old).await,
+            Ok(password("correct horse battery staple"))
+        );
+    }
+    StoreSecrets::new(mock.clone())
+        .delete(&old)
+        .await
+        .expect("delete");
+    for (user, _) in &filed {
+        let entry = mock.build("porter", user, None).expect("entry");
+        assert!(
+            entry
+                .get_password()
+                .is_err_and(|e| matches!(e, keyring_core::Error::NoEntry)),
+            "{user}"
+        );
+    }
+}
+
 /// A store that knows only `get` and `put`, as one written before `put_if_absent` existed.
 struct Plain(MemorySecrets, std::sync::atomic::AtomicBool);
 

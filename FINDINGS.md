@@ -9,7 +9,7 @@ Each row names the lane of the accounts program (porter PLAN §6) that removes i
 | Where | Closes when |
 | --- | --- |
 | porter-secrets `Oo7Secrets` against a live Secret Service (no `todo!()`) | The integration scenario that runs accountd on a private dbus-daemon with a Secret Service (oo7-daemon or gnome-keyring); W2a tests cover oo7's file backend only, since no private-bus Secret Service was available in the jail |
-| porter-secrets `KeyringSecrets` on real macOS and Windows stores | The `portable` workflow's first green run on macos-latest and windows-latest; locally only `cargo check --target x86_64-apple-darwin` and `x86_64-pc-windows-msvc` were run, and the 1280-unit Windows cut is exercised through keyring-core's mock |
+| porter-secrets `KeyringSecrets` on real macOS and Windows stores | The `portable` workflow's first green run on macos-latest and windows-latest; locally only `cargo check --target x86_64-apple-darwin` and `x86_64-pc-windows-msvc` were run, and the 1280-unit Windows cut (keyring-chunked) is exercised through keyring-core's mock |
 | `Secrets::put_if_absent` is atomic only on `MemorySecrets` and the oo7 file backend (within one process, under the keyring lock); the Secret Service (`Keyring::DBus`) and keyring-core stores read then write, so another process can file the key in the window. The trait's default body is that read-then-write, so existing implementors (mailo, accountd tests) compile unchanged | the owner's live run against a real Secret Service/keychain; mailo's `adopt` switches to it later and treats `Stored` as the win |
 | `.github/workflows/portable.yml` and `ci.yml` | The runner can load the workspace: members (inferd) take stoker and quire by git rev (I5), so a job needs network and credentials for the private repositories but no sibling checkout. Both workflows point git at GitHub with the repository secret `DEPS_TOKEN`; closes when the owner adds that secret and the first run of each is green. `ci.yml`'s `bus-tests` job (the packages whose tests start a private session bus) is `continue-on-error` until it has been seen to pass on a hosted runner |
 | inferd probes `127.0.0.1` only, at the ports of `[probe]`: Ollama `11434`, llama.cpp `8080`, LM Studio `1234` | design/31 §3.3's "URLs the user listed" (vLLM, a LAN peer, ComfyUI on `:8188`) and "when a user unit named in settings starts": a settings row for extra URLs; `porter_discover::probe_ports` is loopback-only today, and a LAN host is never auto-probed by design |
@@ -2917,3 +2917,25 @@ Nothing here was compiled or run (no-build lane); the coordinator gates the merg
   can now be built without a `WebUrl` (tested in `tests/it/hyper.rs`).
 - **Unverified.** The move was done with no compiler in the lane's session: the gate and every
   cargo command were left for the owner to run.
+## Lane b-keyring: keyring-chunked (Wave B, base `01cb4301`, 2026-10-25)
+
+- **Third-party check.** No crate on crates.io wraps a keyring-core store to split long secrets:
+  keyring-core's reverse dependencies are the platform stores and applications, and a search for
+  keyring chunking finds nothing of the kind. windows-native-keyring-store 1.1.0 returns
+  `TooLong` past 2560 bytes and does not split. So `crates/keyring-chunked` is new.
+- **Format.** Unchanged from porter-secrets' `chunks.rs`: head `<user>` = marker + count (2 to
+  64), parts `<user>#1` ... The marker is the caller's (`porter-parts:` in porter-secrets);
+  `entries_porter_wrote_before_this_crate_*` and porter-secrets'
+  `a_credential_filed_in_parts_before_keyring_chunked_still_reads` pin it.
+- **mailo's copy** (`mail-runtime/src/signing_store/chunks.rs`) has the same layout, the same
+  part names and the same 2-to-64 count, under the marker `mailo-parts:` instead of
+  `porter-parts:`. A `ChunkedStore` built with the marker `mailo-parts:` reads mailo's entries
+  as they are (`mailos_entries_read_with_mailos_marker`), so mailo needs no migration if it keeps
+  its marker. Behaviour that differs from mailo's copy: the partial-write clean-up, the sweep of
+  leftover parts, the refusal of more than 64 parts at write time, and a value that begins with
+  the marker going into parts.
+- **Not run against a real store.** As before, only keyring-core's mock: the Credential Manager
+  and the Keychain are the `portable` workflow's. The extra delete of `<user>#1` on each write of
+  a whole value (the sweep's probe) is one more keyring call there.
+- **Byte secrets.** `set_secret` cuts at two bytes to a UTF-16 unit of the limit; porter calls only
+  `set_password`.

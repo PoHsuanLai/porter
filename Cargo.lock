@@ -2746,6 +2746,7 @@ name = "porter-secrets"
 version = "0.1.0"
 dependencies = [
  "apple-native-keyring-store",
+ "keyring-chunked",
  "keyring-core",
  "oo7",
  "porter-core",
