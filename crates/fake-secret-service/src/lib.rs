@@ -1,7 +1,7 @@
 //! A fake Secret Service (`org.freedesktop.secrets`): the freedesktop Secret Service API as far
-//! as oo7's D-Bus client uses it, in memory, with the plain algorithm only. It lets the real
-//! accountd (`Oo7Secrets`) run in a jail that has no keyring daemon: nothing is encrypted and
-//! nothing is kept after the process ends, which is the point.
+//! as a D-Bus client such as oo7's uses it, in memory, with the plain algorithm only. It lets a
+//! real Secret Service client run where no keyring daemon does, such as a test jail: nothing is
+//! encrypted and nothing is kept after the process ends, which is the point.
 //!
 //! - `OpenSession("plain", "")` opens a session. Any other algorithm is
 //!   `org.freedesktop.DBus.Error.NotSupported`, which makes oo7 fall back to plain after its
@@ -11,6 +11,19 @@
 //! - Items carry a label, attributes, a secret and its content type; `SearchItems` matches every
 //!   attribute asked for; `CreateItem` with `replace` overwrites the item with the same
 //!   attributes.
+//!
+//! [`serve`] puts it on a connection to the bus the clients use:
+//!
+//! ```no_run
+//! # async fn run() -> Result<(), fake_secret_service::Error> {
+//! let connection = zbus::Connection::session().await?;
+//! let _keyring = fake_secret_service::serve(&connection).await?;
+//! // Clients on this bus now find org.freedesktop.secrets until `connection` is dropped.
+//! # Ok(())
+//! # }
+//! ```
+
+#![warn(missing_docs)]
 
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -31,7 +44,7 @@ const COLLECTION_LABEL: &str = "org.freedesktop.Secret.Collection.Label";
 /// A secret as it crosses the bus (`(oayays)`): the session, algorithm parameters (none for
 /// plain), the value and its content type.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
-pub struct Secret(pub OwnedObjectPath, pub Vec<u8>, pub Vec<u8>, pub String);
+struct Secret(OwnedObjectPath, Vec<u8>, Vec<u8>, String);
 
 #[derive(Debug, Clone)]
 struct ItemRow {
@@ -58,9 +71,19 @@ struct Store {
     aliases: BTreeMap<String, String>,
 }
 
-/// The state every object shares.
+/// The served keyring: the state every object on the bus shares. [`serve`] returns it; the
+/// objects hold their own clones, so dropping it does not stop the service.
 #[derive(Debug, Clone, Default)]
 pub struct Shared(Arc<Mutex<Store>>);
+
+/// What can go wrong putting the service on the bus.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum Error {
+    /// The bus refused an object or the name [`BUS_NAME`].
+    #[error("the bus refused the Secret Service: {0}")]
+    Bus(#[from] zbus::Error),
+}
 
 fn now() -> u64 {
     std::time::SystemTime::now()
@@ -84,10 +107,10 @@ fn session_path(id: u64) -> String {
     format!("{ROOT}/session/s{id}")
 }
 
-/// What went wrong, as the Secret Service API names it.
+/// What went wrong, as the Secret Service API names it on the bus.
 #[derive(Debug, zbus::DBusError)]
 #[zbus(prefix = "org.freedesktop.Secret.Error")]
-pub enum SecretError {
+enum SecretError {
     /// A bus-level failure.
     #[zbus(error)]
     ZBus(zbus::Error),
@@ -156,7 +179,7 @@ impl Shared {
 
 /// `org.freedesktop.Secret.Service` at [`ROOT`].
 #[derive(Debug)]
-pub struct Service {
+struct Service {
     shared: Shared,
 }
 
@@ -315,7 +338,7 @@ fn find_item(shared: &Shared, text: &str) -> Option<ItemRow> {
 
 /// A session: closing it forgets it.
 #[derive(Debug)]
-pub struct Session {
+struct Session {
     shared: Shared,
     path: String,
 }
@@ -331,7 +354,7 @@ impl Session {
 
 /// `org.freedesktop.Secret.Collection`.
 #[derive(Debug)]
-pub struct Collection {
+struct Collection {
     shared: Shared,
     name: String,
 }
@@ -478,7 +501,7 @@ impl Collection {
 
 /// `org.freedesktop.Secret.Item`.
 #[derive(Debug)]
-pub struct Item {
+struct Item {
     shared: Shared,
     collection: String,
     id: u64,
@@ -604,7 +627,7 @@ async fn register_collection(
 
 /// Serves the Secret Service on `connection` (which must be on the bus the clients use) and takes
 /// the name [`BUS_NAME`]: one empty collection `default`, aliased `default`.
-pub async fn serve(connection: &Connection) -> zbus::Result<Shared> {
+pub async fn serve(connection: &Connection) -> Result<Shared, Error> {
     let shared = Shared::default();
     shared.make_collection("Default", "default");
     let server = connection.object_server();
@@ -619,4 +642,72 @@ pub async fn serve(connection: &Connection) -> zbus::Result<Shared> {
         .await?;
     connection.request_name(BUS_NAME).await?;
     Ok(shared)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_item_path_reads_back_as_its_collection_and_id() {
+        assert_eq!(
+            split_item(&item_path("default", 7)),
+            Some(("default".to_owned(), 7))
+        );
+        assert_eq!(split_item(&collection_path("default")), None);
+        assert_eq!(split_item("/elsewhere/collection/default/i1"), None);
+    }
+
+    #[test]
+    fn a_collection_takes_its_alias_as_name_unless_the_name_is_taken() {
+        let shared = Shared::default();
+        assert_eq!(shared.make_collection("Default", "default"), "default");
+        assert_eq!(alias_target(&shared, "default").as_deref(), Some("default"));
+        let other = shared.make_collection("Other", "default");
+        assert_ne!(other, "default");
+        assert_eq!(shared.make_collection("Unnamed", ""), "c2");
+    }
+
+    #[test]
+    fn a_search_matches_every_attribute_asked_for() {
+        let shared = Shared::default();
+        shared.make_collection("Default", "default");
+        let row = ItemRow {
+            label: "one".to_owned(),
+            attributes: [("a", "1"), ("b", "2")]
+                .into_iter()
+                .map(|(k, v)| (k.to_owned(), v.to_owned()))
+                .collect(),
+            value: b"secret".to_vec(),
+            content_type: "text/plain".to_owned(),
+            created: 0,
+            modified: 0,
+        };
+        shared
+            .store()
+            .collections
+            .get_mut("default")
+            .expect("default")
+            .items
+            .insert(1, row);
+        let ask = |pairs: &[(&str, &str)]| {
+            let wanted = pairs
+                .iter()
+                .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+                .collect();
+            shared.matching("default", &wanted).len()
+        };
+        assert_eq!(ask(&[("a", "1")]), 1);
+        assert_eq!(ask(&[("a", "1"), ("b", "2")]), 1);
+        assert_eq!(ask(&[("a", "1"), ("b", "3")]), 0);
+        assert_eq!(ask(&[]), 1);
+    }
+
+    #[test]
+    fn a_session_is_open_until_forgotten() {
+        let shared = Shared::default();
+        let session = shared.open_session();
+        assert!(shared.session_is_open(&session));
+        assert!(!shared.session_is_open(&session_path(99)));
+    }
 }

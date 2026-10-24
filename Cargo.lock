@@ -880,6 +880,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fake-secret-service"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "thiserror",
+ "tokio",
+ "zbus",
+]
+
+[[package]]
 name = "fallible-iterator"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2658,6 +2668,7 @@ version = "0.1.0"
 dependencies = [
  "accountd",
  "clap",
+ "fake-secret-service",
  "porter-client",
  "porter-core",
  "porter-dbus",

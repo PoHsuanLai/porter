@@ -8,8 +8,8 @@
 //!   `servers` is which flag starts which fake.
 //! - `porter-rig-client`: acts as an app over the session bus (`client`); `fixture` makes the
 //!   identity the daemons' `test-proc-root` builds read.
-//! - `porter-rig-secrets`: a fake `org.freedesktop.secrets` (`secrets_service`), in memory,
-//!   plain algorithm, so the real accountd's `Oo7Secrets` works in a jail with no keyring.
+//! - `porter-rig-secrets`: a fake `org.freedesktop.secrets` (the `fake-secret-service` crate), in
+//!   memory, plain algorithm, so the real accountd's `Oo7Secrets` works in a jail with no keyring.
 //! - `porter-rig-storage`: a fake `org.quire.Storage1` (`storage_fake`), two drives of real
 //!   files whose states move, for building Files before syncd serves the real one.
 
@@ -18,6 +18,9 @@ pub mod control;
 pub mod fixture;
 pub mod planted;
 pub mod rigfile;
-pub mod secrets_service;
 pub mod servers;
 pub mod storage_fake;
+
+// moved to fake-secret-service; re-export kept for one batch
+#[doc(hidden)]
+pub use fake_secret_service as secrets_service;

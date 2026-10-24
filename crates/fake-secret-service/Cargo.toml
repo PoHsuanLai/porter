@@ -1,0 +1,23 @@
+[package]
+name = "fake-secret-service"
+description = "A fake freedesktop Secret Service (org.freedesktop.secrets) over zbus: in memory, plain algorithm only, no prompts, so a real Secret Service client can be tested where no keyring daemon runs."
+version = "0.1.0"
+edition.workspace = true
+license = "MIT OR Apache-2.0"
+rust-version.workspace = true
+repository.workspace = true
+keywords = ["secret-service", "dbus", "zbus", "keyring", "testing"]
+categories = ["development-tools::testing"]
+publish = false
+
+[dependencies]
+serde = { workspace = true }
+thiserror = { workspace = true }
+zbus = { workspace = true }
+
+[dev-dependencies]
+# The example waits for Ctrl-C.
+tokio = { workspace = true, features = ["signal"] }
+
+[lints]
+workspace = true

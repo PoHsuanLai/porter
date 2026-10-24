@@ -27,7 +27,7 @@ async fn main() -> ExitCode {
         Ok(connection) => connection,
         Err(why) => return fail(format!("no session bus: {why}")),
     };
-    let _kept = match porter_rig::secrets_service::serve(&connection).await {
+    let _kept = match fake_secret_service::serve(&connection).await {
         Ok(shared) => shared,
         Err(why) => return fail(format!("cannot serve org.freedesktop.secrets: {why}")),
     };

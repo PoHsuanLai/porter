@@ -25,6 +25,7 @@ name = "porter-rig-storage"
 path = "src/bin/porter-rig-storage.rs"
 
 [dependencies]
+fake-secret-service = { workspace = true }
 porter-core = { workspace = true }
 porter-client = { workspace = true, features = ["dbus", "in-process"] }
 porter-dbus = { workspace = true, features = ["test-proc-root"] }

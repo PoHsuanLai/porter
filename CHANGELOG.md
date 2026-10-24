@@ -8,6 +8,9 @@
   `porter_infer::testing`, behind porter-infer's new `testing` feature. porter-fake re-exports
   them under its default feature `infer` for one batch; porter's own crates turn it off, so
   porter-core's tests no longer build porter-infer.
+- porter-rig's fake Secret Service is its own crate, `fake-secret-service`: `serve(&Connection)`
+  returns its own `Error`, and the wire types (`Secret`, `SecretError`, the objects) are private.
+  `porter_rig::secrets_service` re-exports the crate for one batch.
 
 ### A drive's files in Files, downloaded when opened
 
