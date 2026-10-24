@@ -17,6 +17,11 @@
 //! assert!(AccountId::parse("Work").is_err());
 //! ```
 
+/// The README's example, compiled and run as a doctest.
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
+pub struct ReadmeDoctests;
+
 mod account;
 mod agent_login;
 mod ai_props;

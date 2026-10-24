@@ -6,7 +6,12 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 repository.workspace = true
-publish.workspace = true
+# Published beside porter-core, which it names. The rest of porter is not.
+publish = true
+homepage = "https://github.com/PoHsuanLai/porter"
+readme = "README.md"
+keywords = ["accounts", "providers", "imap", "caldav", "oauth"]
+categories = ["authentication", "config", "parser-implementations"]
 
 [dependencies]
 porter-core = { workspace = true }
