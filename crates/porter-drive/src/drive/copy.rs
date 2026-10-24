@@ -10,6 +10,10 @@ use porter_fs::atomic::AtomicWrite;
 use porter_sync::ItemKind;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// The name a file made here is shown by when the index lost it (a crash between its write and
+/// the index's), followed by its number.
+pub(super) const RECOVERED: &str = "Recovered File";
+
 impl Drive {
     /// Saves the online document `id` as a file in its export format next to it, named as the
     /// document is with the format's extension ("Plan.docx", or "Plan 2.docx" when that is
@@ -74,6 +78,13 @@ impl Drive {
             made,
         });
         inner.touched();
+        // On the disk before it is answered: a copy said made is never lost.
+        if inner.flush_now().is_err() {
+            held(&inner.index).local.retain(|row| row.n != n);
+            let _ = std::fs::remove_file(inner.local_file(n));
+            inner.touched();
+            return Err(words::COPY_FAILED);
+        }
         let copy = NodeId::Local(n);
         inner.ino(&copy);
         inner.emit(vec![copy.clone(), folder]);

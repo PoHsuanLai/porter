@@ -25,6 +25,7 @@
 //! ```
 
 mod drive;
+mod hash;
 mod index;
 mod limit;
 mod listing;
@@ -42,5 +43,5 @@ pub use drive::{
 };
 pub use limit::{AUTOMATIC_FLOOR, CacheLimit};
 pub use listing::{Entry, Listing, ListingError};
-pub use porter_sync::RemoteId;
+pub use porter_sync::{ContentHash, RemoteId};
 pub use source::{CopyError, Exporting, Fetching, ReplicaSource, Source, SourceError};

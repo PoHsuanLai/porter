@@ -52,22 +52,23 @@ impl Inner {
         row.is_some()
     }
 
-    /// Removes what is past the limit: oldest opened first, never what is kept, open or being
-    /// fetched.
+    /// Removes what is past the limit, which counts what is not kept downloaded: oldest opened
+    /// first, never what is kept, open or being fetched.
     pub(super) fn evict(&self) {
         let limit = held(&self.limit).bytes_for(&self.dir);
         let gone: Vec<RemoteId> = {
             let index = held(&self.index);
-            let mut total: u64 = index.items.values().map(|row| row.present.bytes()).sum();
+            let mut rows: Vec<(&String, u64, u64)> = index
+                .items
+                .iter()
+                .filter(|(id, _)| !self.kept_in(&index, &RemoteId((*id).clone())))
+                .map(|(id, row)| (id, row.opened, row.present.bytes()))
+                .collect();
+            let mut total: u64 = rows.iter().map(|(_, _, bytes)| bytes).sum();
             if total <= limit {
                 return;
             }
             let transfers = held(&self.transfers);
-            let mut rows: Vec<(&String, u64, u64)> = index
-                .items
-                .iter()
-                .map(|(id, row)| (id, row.opened, row.present.bytes()))
-                .collect();
             rows.sort_by_key(|(id, opened, _)| (*opened, (*id).clone()));
             let mut gone = Vec::new();
             for (id, _, bytes) in rows {
@@ -76,10 +77,7 @@ impl Inner {
                 }
                 let remote = RemoteId(id.clone());
                 let node = NodeId::Remote(remote.clone());
-                if transfers.contains_key(&remote)
-                    || self.is_open(&node)
-                    || self.kept_in(&index, &remote)
-                {
+                if transfers.contains_key(&remote) || self.is_open(&node) {
                     continue;
                 }
                 total = total.saturating_sub(bytes);
@@ -270,8 +268,19 @@ impl Drive {
     /// of an older version is stale (fetched again at once when kept, else on the next open),
     /// and everything under a kept folder that is not here, also what was just added, is
     /// fetched. Then eviction runs.
+    ///
+    /// Call it after a pass that ended caught up: what an unfinished listing lacks is not gone.
+    /// A listing with nothing at its top, or that cannot be read, is taken as not listed yet,
+    /// and nothing is dropped against it.
     pub fn listing_changed(&self) {
         let inner = &self.inner;
+        if inner
+            .listing
+            .children(None)
+            .map_or(true, |top| top.is_empty())
+        {
+            return;
+        }
         let rows: Vec<(String, String)> = held(&inner.index)
             .items
             .iter()

@@ -3,6 +3,7 @@
 
 use crate::listing::{Entry, Listing, ListingError};
 use crate::source::{CopyError, Exporting, Fetching, Source, SourceError};
+use porter_core::capability::HashKind;
 use porter_core::{Bytes, UnixSeconds, WebUrl};
 use porter_sync::{ItemKind, RemoteId, RemoteVersion};
 use std::collections::{BTreeMap, HashMap};
@@ -18,6 +19,7 @@ fn held<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 #[derive(Debug, Default)]
 pub struct MemoryListing {
     entries: Mutex<BTreeMap<RemoteId, Entry>>,
+    unreadable: AtomicBool,
 }
 
 impl MemoryListing {
@@ -39,6 +41,18 @@ impl MemoryListing {
     /// A file `id` named `name` in `parent`, `size` bytes, at `version`.
     pub fn file(&self, id: &str, parent: Option<&str>, name: &str, size: u64, version: &str) {
         self.put(entry(id, parent, name, ItemKind::File, size, version));
+    }
+
+    /// Makes every read fail (`false`: read again).
+    pub fn set_unreadable(&self, unreadable: bool) {
+        self.unreadable.store(unreadable, Ordering::SeqCst);
+    }
+
+    fn readable(&self) -> Result<(), ListingError> {
+        match self.unreadable.load(Ordering::SeqCst) {
+            true => Err(ListingError("the test listing is unreadable".to_owned())),
+            false => Ok(()),
+        }
     }
 
     /// An online document `id` that opens at `url`, saved as `export`.
@@ -74,16 +88,19 @@ pub fn entry(
         kind,
         size: Bytes(size),
         version: RemoteVersion(version.to_owned()),
+        hash: None,
         modified: Some(UnixSeconds(1_700_000_000)),
     }
 }
 
 impl Listing for MemoryListing {
     fn entry(&self, id: &RemoteId) -> Result<Option<Entry>, ListingError> {
+        self.readable()?;
         Ok(held(&self.entries).get(id).cloned())
     }
 
     fn children(&self, folder: Option<&RemoteId>) -> Result<Vec<Entry>, ListingError> {
+        self.readable()?;
         Ok(held(&self.entries)
             .values()
             .filter(|entry| entry.parent.as_ref() == folder)
@@ -101,6 +118,7 @@ pub struct MemorySource {
     fetched: Mutex<Vec<(String, u64, u64)>>,
     waiting: std::sync::atomic::AtomicUsize,
     exports: Mutex<HashMap<RemoteId, Result<Vec<u8>, CopyError>>>,
+    hashes: Mutex<Option<HashKind>>,
 }
 
 impl MemorySource {
@@ -118,6 +136,11 @@ impl MemorySource {
     /// refused `NoFormat`.)
     pub fn refuse_export(&self, id: &str, why: CopyError) {
         held(&self.exports).insert(RemoteId(id.to_owned()), Err(why));
+    }
+
+    /// Says the listing's hashes are of `kind` (by default it has none).
+    pub fn set_hashes(&self, kind: HashKind) {
+        *held(&self.hashes) = Some(kind);
     }
 
     /// Takes the drive offline, or back.
@@ -180,6 +203,10 @@ impl Source for MemorySource {
                 .min(content.len());
             Ok(content[from..to].to_vec())
         })
+    }
+
+    fn hashes(&self) -> HashKind {
+        held(&self.hashes).unwrap_or(HashKind::None)
     }
 
     fn export<'a>(&'a self, id: &'a RemoteId, mime: &'a str) -> Exporting<'a> {

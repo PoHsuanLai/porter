@@ -23,12 +23,17 @@ pub(crate) struct Row {
     pub present: Ranges,
     /// When it was last opened, as the index's own clock counts: oldest is evicted first.
     pub opened: u64,
+    /// Every byte is there and was checked against the drive's hash (or its version): the file
+    /// is the drive's at `version`. A row of an index from before the check is not, and is
+    /// checked when next opened.
+    #[serde(default)]
+    pub checked: bool,
 }
 
 impl Row {
-    /// Whether every byte is there.
+    /// Whether every byte is there, checked.
     pub fn whole(&self) -> bool {
-        self.present.covers(0, self.size)
+        self.checked && self.present.covers(0, self.size)
     }
 }
 
@@ -76,7 +81,9 @@ impl IndexFile {
         Self(AtomicFile::new(dir.to_path_buf(), INDEX))
     }
 
-    /// The index as stored, the copy before it when the file is unreadable, or an empty one.
+    /// The index as stored, or an empty one. When the file is unreadable, the copy before it,
+    /// without its cached items: what it says is kept and what was made here stands, but it
+    /// cannot vouch for the content files, written to after it, so it claims none of them.
     pub fn load(&self) -> Index {
         let read = |path: PathBuf| {
             std::fs::read(&path)
@@ -84,7 +91,12 @@ impl IndexFile {
                 .and_then(|bytes| serde_json::from_slice::<Index>(&bytes).ok())
         };
         read(self.0.path())
-            .or_else(|| read(self.0.backup_path()))
+            .or_else(|| {
+                read(self.0.backup_path()).map(|mut index| {
+                    index.items.clear();
+                    index
+                })
+            })
             .unwrap_or_default()
     }
 

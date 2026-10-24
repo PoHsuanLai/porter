@@ -354,6 +354,7 @@ fn listed_where(
             kind: row.kind,
             size: row.size,
             version: row.version,
+            hash: row.hash,
             modified: row.modified,
         })
         .collect())

@@ -2,6 +2,7 @@
 //! copy as a file.
 
 use porter_core::Bytes;
+use porter_core::capability::HashKind;
 use porter_sync::{ByteRange, ExportError, RemoteId, Replica, ReplicaError};
 use std::future::Future;
 use std::pin::Pin;
@@ -66,6 +67,12 @@ pub trait Source: Send + Sync {
     /// `len` bytes of `id` from `start` (fewer at its end).
     fn fetch<'a>(&'a self, id: &'a RemoteId, start: u64, len: u64) -> Fetching<'a>;
 
+    /// The kind of the hashes the listing has for this drive's files ([`crate::Entry::hash`]),
+    /// which a whole file is checked against. This default says none.
+    fn hashes(&self) -> HashKind {
+        HashKind::None
+    }
+
     /// The online document `id` as a file of `mime`. A drive that gives no copies refuses
     /// (`NoFormat`), as this default does.
     fn export<'a>(&'a self, id: &'a RemoteId, mime: &'a str) -> Exporting<'a> {
@@ -92,6 +99,10 @@ impl<R: Replica> Source for ReplicaSource<R> {
                 .map(|blob| blob.0)
                 .map_err(SourceError::from)
         })
+    }
+
+    fn hashes(&self) -> HashKind {
+        self.0.features().hashes
     }
 
     fn export<'a>(&'a self, id: &'a RemoteId, mime: &'a str) -> Exporting<'a> {

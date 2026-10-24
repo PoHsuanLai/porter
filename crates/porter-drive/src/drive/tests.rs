@@ -2,6 +2,7 @@ use super::*;
 use crate::testing::{MemoryListing, MemorySource};
 use crate::words;
 use porter_fake::Scratch;
+use porter_sync::ItemKind;
 use std::time::Duration;
 
 struct Rig {
@@ -94,6 +95,7 @@ async fn names_follow_both_rules_and_are_the_same_after_a_restart() {
         .expect("there");
     assert_eq!(oldest.id, remote("a1"), "the oldest by id keeps the name");
     let ino = rig.drive.ino(&remote("b2"));
+    drop(rig.drive);
 
     let again = Drive::open(
         config(&rig.dir, 1 << 20),
@@ -267,7 +269,8 @@ async fn eviction_keeps_the_cache_under_its_limit_and_spares_kept_and_open_files
     for id in ["x", "y", "z", "w"] {
         rig.file(id, None, &format!("{id}.bin"), 8);
     }
-    rig.drive.set_limit(CacheLimit::Bytes(24));
+    // The limit counts what is not kept: 16 of it.
+    rig.drive.set_limit(CacheLimit::Bytes(16));
     rig.drive.keep(&remote("z"), true).expect("keep");
     eventually("kept is here", || rig.state("z") == ItemState::Downloaded).await;
     for id in ["x", "w", "y"] {
@@ -278,7 +281,7 @@ async fn eviction_keeps_the_cache_under_its_limit_and_spares_kept_and_open_files
             rig.drive.release(&remote(id));
         }
     }
-    // 32 bytes: the oldest opened that is neither kept nor open goes.
+    // 24 bytes not kept: the oldest opened that is neither kept nor open goes.
     eventually("the oldest goes", || rig.state("x") == ItemState::Cloud).await;
     assert_eq!(rig.state("z"), ItemState::Downloaded, "kept");
     assert_eq!(rig.state("w"), ItemState::Downloaded, "open");
@@ -288,7 +291,7 @@ async fn eviction_keeps_the_cache_under_its_limit_and_spares_kept_and_open_files
     assert_eq!(rig.state("y"), ItemState::Cloud);
     assert_eq!(rig.state("w"), ItemState::Downloaded, "still open");
     rig.drive.release(&remote("w"));
-    assert_eq!(rig.state("w"), ItemState::Cloud);
+    eventually("closed, it goes", || rig.state("w") == ItemState::Cloud).await;
     assert_eq!(rig.state("z"), ItemState::Downloaded, "never a kept one");
 }
 
@@ -326,6 +329,7 @@ async fn what_is_here_and_kept_is_remembered_across_a_restart() {
     rig.drive.keep(&remote("k"), true).expect("keep");
     eventually("here", || rig.state("k") == ItemState::Downloaded).await;
     rig.drive.flush().expect("flush");
+    drop(rig.drive);
     let again =
         Drive::open(config(&rig.dir, 4), rig.listing.clone(), rig.source.clone()).expect("drive");
     let status = again.status(&remote("k")).expect("status");
@@ -376,7 +380,7 @@ async fn a_copy_is_saved_next_to_its_document_named_as_it_is_and_waits_to_upload
     );
 
     // The same names after a restart.
-    rig.drive.flush().expect("flush");
+    drop(rig.drive);
     let reopened =
         Drive::open(config(&rig.dir, 4), rig.listing.clone(), rig.source.clone()).expect("drive");
     let names: Vec<String> = reopened
@@ -422,4 +426,328 @@ async fn save_a_copy_refuses_what_has_no_file_and_says_why() {
             .all(|n| !matches!(n.id, NodeId::Local(_))),
         "no copy was made"
     );
+}
+
+fn reopen(dir: &Scratch, listing: &Arc<MemoryListing>, source: &Arc<MemorySource>) -> Drive {
+    Drive::open(config(dir, 4), listing.clone(), source.clone()).expect("drive")
+}
+
+#[tokio::test]
+async fn a_second_drive_over_one_cache_waits_for_the_first_to_go() {
+    let rig = rig(4);
+    rig.file("k", None, "kept.txt", 4);
+    rig.drive.keep(&remote("k"), true).expect("keep");
+    eventually("here", || rig.state("k") == ItemState::Downloaded).await;
+    let soon = DriveConfig {
+        lock_wait: Duration::from_millis(50),
+        ..config(&rig.dir, 4)
+    };
+    let refused = Drive::open(soon, rig.listing.clone(), rig.source.clone());
+    assert!(
+        matches!(refused, Err(DriveError::InUse)),
+        "the first is still open: {refused:?}"
+    );
+
+    // The first goes while the second waits: the second reads what the first wrote last, and
+    // nothing the first does after can write over it.
+    let first = rig.drive.clone();
+    let gone = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(100));
+        first.keep(&remote("k"), false).expect("unkeep");
+        drop(first);
+    });
+    let Rig {
+        dir,
+        listing,
+        source,
+        drive,
+    } = rig;
+    drop(drive);
+    let second = Drive::open(config(&dir, 4), listing.clone(), source.clone()).expect("opens");
+    gone.join().expect("thread");
+    assert!(!second.status(&remote("k")).expect("status").kept);
+    second.keep(&remote("k"), true).expect("keep");
+    second.flush().expect("flush");
+    drop(second);
+    let third = reopen(&dir, &listing, &source);
+    assert!(third.status(&remote("k")).expect("status").kept);
+}
+
+#[tokio::test]
+async fn the_index_claims_only_bytes_synced_and_its_old_copy_claims_none() {
+    let rig = rig(4);
+    rig.file("k", None, "kept.txt", 6);
+    rig.drive.keep(&remote("k"), true).expect("keep");
+    eventually("here", || rig.state("k") == ItemState::Downloaded).await;
+    rig.drive.flush().expect("flush");
+    let content = rig.drive.inner.content(&RemoteId("k".into()), "v1");
+    assert!(
+        held(&rig.drive.inner.synced).contains(&content),
+        "the content file was synced before the index noted it"
+    );
+
+    // One more write: the index before it is the copy beside it. The index is then lost.
+    rig.file("o", None, "other.txt", 2);
+    rig.drive.download(&remote("o")).expect("download");
+    eventually("here", || rig.state("o") == ItemState::Downloaded).await;
+    rig.drive.flush().expect("flush");
+    let Rig {
+        dir,
+        listing,
+        source,
+        drive,
+    } = rig;
+    let index = drive.cache_dir().join("index.json");
+    drop(drive);
+    std::fs::write(&index, b"{ not json").expect("break the index");
+    let again = reopen(&dir, &listing, &source);
+    let status = again.status(&remote("k")).expect("status");
+    assert!(status.kept, "what is kept stands");
+    assert_eq!(
+        status.state,
+        ItemState::Cloud,
+        "no ranges from the old copy"
+    );
+    assert_eq!(again.local_bytes(), 0);
+    again.listing_changed();
+    eventually("kept, it is fetched again", || {
+        again.status(&remote("k")).map(|s| s.state) == Some(ItemState::Downloaded)
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_cancelled_transfer_says_nothing_of_the_one_after_it() {
+    let rig = rig(4);
+    rig.file("d", None, "Doc.txt", 4);
+    rig.source.hold();
+    rig.drive.open_file(&remote("d")).expect("open");
+    eventually("the first fetch waits", || rig.source.waiting() == 1).await;
+    rig.drive.remove_download(&remote("d")).expect("remove");
+    rig.drive.open_file(&remote("d")).expect("open again");
+    eventually("the second fetch waits", || rig.source.waiting() == 2).await;
+    // The first, cancelled, fails; the second comes.
+    rig.source.set_offline(true);
+    rig.source.allow(1);
+    eventually("the first is through", || rig.source.waiting() == 1).await;
+    rig.source.set_offline(false);
+    rig.source.release();
+    eventually("the second is here", || {
+        rig.state("d") == ItemState::Downloaded
+    })
+    .await;
+    assert!(
+        !rig.drive.offline(),
+        "the cancelled one's failure is not the drive's"
+    );
+}
+
+fn hashed(rig: &Rig, id: &str, size: u64, version: &str, of: &[u8]) {
+    let mut entry = crate::testing::entry(
+        id,
+        None,
+        &format!("{id}.bin"),
+        ItemKind::File,
+        size,
+        version,
+    );
+    entry.hash = crate::hash::of_bytes(porter_core::capability::HashKind::Sha256, of)
+        .map(porter_sync::ContentHash);
+    rig.listing.put(entry);
+}
+
+#[tokio::test]
+async fn a_download_is_checked_against_the_drives_hash_and_dropped_when_it_differs() {
+    let rig = rig(4);
+    rig.source
+        .set_hashes(porter_core::capability::HashKind::Sha256);
+    hashed(&rig, "g", 8, "v1", b"12345678");
+    rig.source.put("g", b"12345678".to_vec());
+    rig.drive.download(&remote("g")).expect("download");
+    eventually("it is here", || rig.state("g") == ItemState::Downloaded).await;
+
+    // The drive has another version than the listing says: what comes is not it.
+    hashed(&rig, "h", 8, "v1", b"abcdefgh");
+    rig.source.put("h", b"abcdXXXX".to_vec());
+    rig.drive.open_file(&remote("h")).expect("open");
+    eventually("it is dropped", || {
+        rig.state("h") == ItemState::Cloud
+            && rig.drive.inner.transfer(&RemoteId("h".into())).is_none()
+    })
+    .await;
+    assert_eq!(rig.drive.local_bytes(), 8, "only the first is here");
+    rig.drive.release(&remote("h"));
+}
+
+#[tokio::test]
+async fn with_no_hash_a_download_whose_version_moved_on_is_dropped() {
+    let rig = rig(4);
+    rig.file("v", None, "v.bin", 8);
+    rig.source.hold();
+    rig.drive.open_file(&remote("v")).expect("open");
+    eventually("the first fetch waits", || rig.source.waiting() == 1).await;
+    rig.listing.file("v", None, "v.bin", 8, "v2");
+    rig.source.release();
+    eventually("the bytes of v1 are dropped", || {
+        rig.drive.inner.transfer(&RemoteId("v".into())).is_none() && rig.drive.local_bytes() == 0
+    })
+    .await;
+    rig.drive.release(&remote("v"));
+}
+
+#[tokio::test]
+async fn a_waiting_read_joins_the_newer_version_instead_of_fighting_it() {
+    let rig = rig(4);
+    rig.file("n", None, "n.bin", 8);
+    rig.source.hold();
+    rig.drive.open_file(&remote("n")).expect("open");
+    eventually("the first fetch waits", || rig.source.waiting() == 1).await;
+    let drive = rig.drive.clone();
+    let read = tokio::spawn(async move { drive.read(&remote("n"), 4, 4).await });
+    tokio::task::yield_now().await;
+    rig.listing.file("n", None, "n.bin", 8, "v2");
+    rig.source.put("n", b"NEWBYTES".to_vec());
+    rig.drive.open_file(&remote("n")).expect("open the new one");
+    rig.source.release();
+    let got = read.await.expect("task").expect("read");
+    assert_eq!(got, b"YTES");
+    eventually("the new version is here", || {
+        rig.state("n") == ItemState::Downloaded
+    })
+    .await;
+    rig.drive.release(&remote("n"));
+    rig.drive.release(&remote("n"));
+}
+
+#[tokio::test]
+async fn the_limit_counts_only_what_is_not_kept() {
+    let rig = rig(1 << 20);
+    rig.file("k", None, "k.bin", 16);
+    rig.file("a", None, "a.bin", 8);
+    rig.file("b", None, "b.bin", 8);
+    rig.drive.set_limit(CacheLimit::Bytes(20));
+    rig.drive.keep(&remote("k"), true).expect("keep");
+    rig.drive.download(&remote("a")).expect("download");
+    rig.drive.download(&remote("b")).expect("download");
+    eventually("all here", || {
+        ["k", "a", "b"]
+            .iter()
+            .all(|id| rig.state(id) == ItemState::Downloaded)
+    })
+    .await;
+    rig.drive.set_limit(CacheLimit::Bytes(20));
+    assert_eq!(
+        rig.state("a"),
+        ItemState::Downloaded,
+        "16 bytes not kept, under 20"
+    );
+    assert_eq!(rig.state("b"), ItemState::Downloaded);
+}
+
+#[tokio::test]
+async fn nothing_is_evicted_when_the_folders_above_cannot_be_read() {
+    let rig = rig(1 << 20);
+    rig.file("a", None, "a.bin", 8);
+    rig.drive.download(&remote("a")).expect("download");
+    eventually("here", || rig.state("a") == ItemState::Downloaded).await;
+    rig.listing.set_unreadable(true);
+    rig.drive.set_limit(CacheLimit::Bytes(1));
+    rig.listing.set_unreadable(false);
+    assert_eq!(rig.state("a"), ItemState::Downloaded, "taken as kept");
+}
+
+#[tokio::test]
+async fn a_copy_is_on_the_disk_when_answered_and_one_the_index_lost_is_taken_in() {
+    let rig = rig(4);
+    let url = "https://docs.example.test/document/d/doc1";
+    rig.listing.online("doc1", None, "Plan", url, Some(DOCX));
+    rig.source.put_export("doc1", b"docx".to_vec());
+    let copy = rig.drive.save_copy(&remote("doc1")).await.expect("copy");
+    let NodeId::Local(n) = copy else {
+        panic!("a local node")
+    };
+    let stored = std::fs::read_to_string(rig.drive.cache_dir().join("index.json")).expect("index");
+    assert!(
+        stored.contains("Plan.docx"),
+        "written before the answer: {stored}"
+    );
+
+    // A file made here that the index never noted (a crash between the two writes).
+    let lost = rig
+        .drive
+        .cache_dir()
+        .join("local")
+        .join((n + 4).to_string());
+    std::fs::write(&lost, b"lost").expect("write");
+    let Rig {
+        dir,
+        listing,
+        source,
+        drive,
+    } = rig;
+    drop(drive);
+    let again = reopen(&dir, &listing, &source);
+    let node = again
+        .lookup(&NodeId::Top, &format!("Recovered File {}", n + 4))
+        .expect("lookup")
+        .expect("taken in");
+    assert_eq!(again.read(&node.id, 0, 16).await.expect("read"), b"lost");
+    let next = again.save_copy(&remote("doc1")).await.expect("copy");
+    assert_eq!(next, NodeId::Local(n + 5), "its number is not given again");
+}
+
+#[tokio::test]
+async fn an_empty_listing_drops_nothing() {
+    let rig = rig(4);
+    rig.file("k", None, "k.bin", 4);
+    rig.drive.keep(&remote("k"), true).expect("keep");
+    eventually("here", || rig.state("k") == ItemState::Downloaded).await;
+    rig.listing.remove("k");
+    rig.drive.listing_changed();
+    rig.file("k", None, "k.bin", 4);
+    let status = rig.drive.status(&remote("k")).expect("status");
+    assert_eq!(status.state, ItemState::Downloaded);
+    assert!(status.kept);
+}
+
+#[tokio::test]
+async fn reached_again_a_file_that_failed_offline_is_in_the_cloud_again() {
+    let rig = rig(4);
+    rig.file("d", None, "Doc.txt", 10);
+    rig.source.set_offline(true);
+    rig.drive.open_file(&remote("d")).expect("open");
+    assert_eq!(
+        rig.drive.read(&remote("d"), 0, 10).await,
+        Err(ReadError::Offline)
+    );
+    assert_eq!(rig.state("d"), ItemState::Error);
+    rig.source.set_offline(false);
+    rig.drive.set_offline(false);
+    assert_eq!(rig.state("d"), ItemState::Cloud);
+    rig.drive.release(&remote("d"));
+}
+
+#[tokio::test]
+async fn a_stalled_fetch_fails_its_reader_at_its_deadline() {
+    let dir = Scratch::new("porter-drive");
+    let listing = Arc::new(MemoryListing::default());
+    let source = Arc::new(MemorySource::default());
+    let drive = Drive::open(
+        DriveConfig {
+            deadline: Duration::from_millis(50),
+            ..config(&dir, 4)
+        },
+        listing.clone(),
+        source.clone(),
+    )
+    .expect("drive");
+    listing.file("s", None, "s.bin", 4, "v1");
+    source.put("s", b"slow".to_vec());
+    source.hold();
+    drive.open_file(&remote("s")).expect("open");
+    let read = tokio::time::timeout(Duration::from_secs(20), drive.read(&remote("s"), 0, 4)).await;
+    assert_eq!(read, Ok(Err(ReadError::Stalled)));
+    source.release();
+    assert_eq!(drive.read(&remote("s"), 0, 4).await.expect("read"), b"slow");
+    drive.release(&remote("s"));
 }

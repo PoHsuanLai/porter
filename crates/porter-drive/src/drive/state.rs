@@ -65,7 +65,7 @@ impl Inner {
                 words: None,
             };
         }
-        if let Some(words) = held(&self.errors).get(&file.id).cloned() {
+        if let Some(words) = held(&self.errors).get(&file.id).map(|f| f.words.clone()) {
             return Part {
                 state: ItemState::Error,
                 moved: 0,

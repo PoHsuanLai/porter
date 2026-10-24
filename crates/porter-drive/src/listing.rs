@@ -2,7 +2,7 @@
 //! name, never a path.
 
 use porter_core::{Bytes, UnixSeconds};
-use porter_sync::{ItemKind, RemoteId, RemoteVersion};
+use porter_sync::{ContentHash, ItemKind, RemoteId, RemoteVersion};
 use std::collections::{BTreeSet, VecDeque};
 
 /// How deep a folder walk goes before it is given up as a loop.
@@ -23,6 +23,9 @@ pub struct Entry {
     pub size: Bytes,
     /// The drive's version of it: a cached copy of another version is stale.
     pub version: RemoteVersion,
+    /// The drive's hash of that version's bytes ([`crate::Source::hashes`] says of which kind),
+    /// when it reports one: a download is checked against it.
+    pub hash: Option<ContentHash>,
     /// When it last changed, when the drive says.
     pub modified: Option<UnixSeconds>,
 }

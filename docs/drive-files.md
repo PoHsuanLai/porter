@@ -51,7 +51,8 @@ the real folder, which the tests never make: they run the drive in memory and mo
 
 - The cache: `$XDG_CACHE_HOME/porter/drives/<account>/`: `content/` (one sparse file per item
   and version), `local/` (copies made here, waiting to upload), `index.json` (what is here, kept,
-  and when each was last opened, written atomically with a `.bak`). Removing the account removes
-  it.
+  and when each was last opened, written atomically with a `.bak`, after the content files it
+  notes are synced) and `lock` (held by the one drive open over the directory). Removing the
+  account removes it.
 - The limit: `[storage] cache_limit = "<bytes>"` in `$XDG_CONFIG_HOME/porter/syncd.toml`, set by
   Settings.

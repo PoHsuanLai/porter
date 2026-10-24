@@ -1,14 +1,16 @@
 //! Fetching: one transfer per item being fetched, filling its content file chunk by chunk from
 //! the start, and a read that waits for the chunk it needs (asked for before the rest).
 
-use super::{Drive, Inner, NodeId, held};
+use super::{Drive, Failure, Inner, NodeId, held};
+use crate::hash;
 use crate::index::Row;
 use crate::listing::Entry;
 use crate::online;
 use crate::ranges::Ranges;
 use crate::source::SourceError;
 use crate::words;
-use porter_sync::{ItemKind, RemoteId};
+use porter_sync::{ContentHash, ItemKind, RemoteId};
+use std::collections::HashMap;
 use std::os::unix::fs::FileExt;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
@@ -34,6 +36,13 @@ pub enum ReadError {
     /// The cache could not be read or written.
     #[error("the cache could not be used")]
     Cache,
+    /// It changed on the drive while it downloaded: the bytes were dropped, and it downloads
+    /// again when next asked.
+    #[error("it changed on the drive while it downloaded")]
+    Changed,
+    /// The drive stopped sending it (a chunk took longer than its deadline).
+    #[error("the drive stopped sending it")]
+    Stalled,
 }
 
 impl From<SourceError> for ReadError {
@@ -50,6 +59,9 @@ pub(super) struct Transfer {
     pub(super) id: RemoteId,
     pub(super) version: String,
     pub(super) size: u64,
+    /// The drive's hash of this version, when the listing has one: the whole file is checked
+    /// against it.
+    hash: Option<ContentHash>,
     file: PathBuf,
     pub(super) state: Mutex<TransferState>,
     /// Bumped whenever the state moves, for readers to wait on.
@@ -62,7 +74,7 @@ pub(super) struct TransferState {
     pub(super) present: Ranges,
     /// Chunk starts readers wait for, the next to fetch last.
     wanted: Vec<u64>,
-    failure: Option<SourceError>,
+    failure: Option<ReadError>,
     pub(super) cancelled: bool,
     cursor: u64,
 }
@@ -74,6 +86,15 @@ impl Transfer {
 
     pub(super) fn cancel(&self) {
         held(&self.state).cancelled = true;
+        self.moved.send_modify(|n| *n += 1);
+    }
+
+    fn cancelled(&self) -> bool {
+        held(&self.state).cancelled
+    }
+
+    fn fail(&self, error: ReadError) {
+        held(&self.state).failure = Some(error);
         self.moved.send_modify(|n| *n += 1);
     }
 }
@@ -117,6 +138,7 @@ impl Inner {
                             size: entry.size.0,
                             present: Ranges::default(),
                             opened: clock,
+                            checked: false,
                         },
                     );
                     Ranges::default()
@@ -126,7 +148,7 @@ impl Inner {
         let mut transfers = held(&self.transfers);
         if let Some(running) = transfers.get(&entry.id)
             && running.version == version
-            && !held(&running.state).cancelled
+            && !running.cancelled()
         {
             return Ok(Some(Arc::clone(running)));
         }
@@ -143,6 +165,7 @@ impl Inner {
             id: entry.id.clone(),
             version,
             size: entry.size.0,
+            hash: entry.hash.clone(),
             file,
             state: Mutex::new(TransferState {
                 present,
@@ -172,31 +195,104 @@ impl Inner {
         held(&self.transfers).get(id).cloned()
     }
 
+    /// Whether `transfer` is the one registered for its item.
+    fn current_in(transfers: &HashMap<RemoteId, Arc<Transfer>>, transfer: &Arc<Transfer>) -> bool {
+        transfers
+            .get(&transfer.id)
+            .is_some_and(|running| Arc::ptr_eq(running, transfer))
+    }
+
     /// Ends `transfer` (done, failed or cancelled): it leaves the running ones.
     fn retire(&self, transfer: &Arc<Transfer>) {
         let mut transfers = held(&self.transfers);
-        if transfers
-            .get(&transfer.id)
-            .is_some_and(|running| Arc::ptr_eq(running, transfer))
-        {
+        if Self::current_in(&transfers, transfer) {
             transfers.remove(&transfer.id);
         }
     }
 
-    /// Notes `present` of `transfer` in the index, if it still names that version.
-    fn note(&self, transfer: &Transfer, present: &Ranges) {
+    /// Ends `transfer` with `error`: when it is still its item's transfer, the item says why
+    /// (a transfer cancelled or replaced says nothing of the one after it).
+    fn failed(&self, transfer: &Arc<Transfer>, error: ReadError) {
+        transfer.fail(error);
+        let mut transfers = held(&self.transfers);
+        if !Self::current_in(&transfers, transfer) {
+            return;
+        }
+        transfers.remove(&transfer.id);
+        if error == ReadError::Offline {
+            self.offline.store(true, Ordering::SeqCst);
+        }
+        held(&self.errors).insert(
+            transfer.id.clone(),
+            Failure {
+                words: words::OFFLINE.to_owned(),
+                transient: matches!(error, ReadError::Offline | ReadError::Stalled),
+            },
+        );
+    }
+
+    /// Notes `present` of `transfer` in the index (`checked`: it is all there and checked), if
+    /// it is still its item's transfer and the row names its version; whether it was noted.
+    fn note(&self, transfer: &Arc<Transfer>, present: &Ranges, checked: bool) -> bool {
         let mut index = held(&self.index);
-        if let Some(row) = index.items.get_mut(&transfer.id.0)
-            && row.version == transfer.version
+        if !Self::current_in(&held(&self.transfers), transfer) {
+            return false;
+        }
+        let Some(row) = index.items.get_mut(&transfer.id.0) else {
+            return false;
+        };
+        if row.version != transfer.version {
+            return false;
+        }
+        row.present = present.clone();
+        row.checked = checked;
+        drop(index);
+        self.touched();
+        true
+    }
+
+    /// Drops what `transfer` fetched, which is not the drive's version it was asked for: the
+    /// item is stale and fetched again from the start when next asked.
+    fn stale(&self, transfer: &Arc<Transfer>) {
+        let mut index = held(&self.index);
+        let mut transfers = held(&self.transfers);
+        if !Self::current_in(&transfers, transfer) {
+            return;
+        }
+        transfers.remove(&transfer.id);
+        drop(transfers);
+        if index
+            .items
+            .get(&transfer.id.0)
+            .is_some_and(|row| row.version == transfer.version)
         {
-            row.present = present.clone();
+            index.items.remove(&transfer.id.0);
+            let _ = std::fs::remove_file(&transfer.file);
         }
         drop(index);
         self.touched();
     }
+
+    /// The drive was reached again: what failed for want of it says so no more.
+    pub(super) fn came_online(&self) {
+        let cleared: Vec<NodeId> = {
+            let mut errors = held(&self.errors);
+            let ids: Vec<RemoteId> = errors
+                .iter()
+                .filter(|(_, failure)| failure.transient)
+                .map(|(id, _)| id.clone())
+                .collect();
+            for id in &ids {
+                errors.remove(id);
+            }
+            ids.into_iter().map(NodeId::Remote).collect()
+        };
+        self.emit(cleared);
+    }
 }
 
-/// Fills `transfer`'s file: the chunks readers wait for first, then the rest from the start.
+/// Fills `transfer`'s file: the chunks readers wait for first, then the rest from the start;
+/// then checks it.
 async fn run(weak: Weak<Inner>, transfer: Arc<Transfer>, background: bool) {
     let _permit = match background {
         true => {
@@ -238,37 +334,44 @@ async fn run(weak: Weak<Inner>, transfer: Arc<Transfer>, background: bool) {
             })
         };
         let Some(start) = next else {
-            finish(&inner, &transfer);
+            drop(inner);
+            finish(weak, transfer).await;
             return;
         };
         let len = chunk.min(transfer.size - start);
         let source = Arc::clone(&inner.source);
+        let deadline = inner.deadline;
         drop(inner);
-        let fetched = source.fetch(&transfer.id, start, len).await;
+        let fetched =
+            match tokio::time::timeout(deadline, source.fetch(&transfer.id, start, len)).await {
+                Ok(Ok(bytes)) if bytes.is_empty() => Err(ReadError::Refused),
+                Ok(Ok(bytes)) => Ok(bytes),
+                Ok(Err(error)) => Err(ReadError::from(error)),
+                Err(_) => Err(ReadError::Stalled),
+            };
         let Some(inner) = weak.upgrade() else { return };
-        let written = match fetched {
-            Ok(bytes) if bytes.is_empty() => Err(SourceError::Refused),
+        if transfer.cancelled() {
+            inner.retire(&transfer);
+            return;
+        }
+        match fetched {
             Ok(bytes) => {
                 let bytes = &bytes[..bytes.len().min(usize::try_from(len).unwrap_or(usize::MAX))];
                 let wrote = std::fs::OpenOptions::new()
                     .write(true)
                     .open(&transfer.file)
                     .and_then(|file| file.write_all_at(bytes, start));
-                match wrote {
-                    Ok(()) => Ok(bytes.len() as u64),
+                if wrote.is_err() {
                     // The file went (the download was removed): nothing more to do.
-                    Err(_) => {
-                        transfer.cancel();
-                        inner.retire(&transfer);
-                        return;
-                    }
+                    transfer.cancel();
+                    inner.retire(&transfer);
+                    return;
                 }
-            }
-            Err(error) => Err(error),
-        };
-        match written {
-            Ok(n) => {
-                inner.offline.store(false, Ordering::SeqCst);
+                inner.wrote(&transfer.file);
+                if inner.offline.swap(false, Ordering::SeqCst) {
+                    inner.came_online();
+                }
+                let n = bytes.len() as u64;
                 let present = {
                     let mut state = held(&transfer.state);
                     if state.cancelled {
@@ -278,18 +381,12 @@ async fn run(weak: Weak<Inner>, transfer: Arc<Transfer>, background: bool) {
                     state.cursor = start + n;
                     state.present.clone()
                 };
-                inner.note(&transfer, &present);
+                inner.note(&transfer, &present, false);
                 transfer.moved.send_modify(|n| *n += 1);
                 inner.emit(vec![NodeId::Remote(transfer.id.clone())]);
             }
             Err(error) => {
-                if error == SourceError::Offline {
-                    inner.offline.store(true, Ordering::SeqCst);
-                }
-                held(&transfer.state).failure = Some(error);
-                inner.retire(&transfer);
-                held(&inner.errors).insert(transfer.id.clone(), words::OFFLINE.to_owned());
-                transfer.moved.send_modify(|n| *n += 1);
+                inner.failed(&transfer, error);
                 inner.emit(vec![NodeId::Remote(transfer.id.clone())]);
                 return;
             }
@@ -297,10 +394,52 @@ async fn run(weak: Weak<Inner>, transfer: Arc<Transfer>, background: bool) {
     }
 }
 
-fn finish(inner: &Arc<Inner>, transfer: &Arc<Transfer>) {
-    inner.note(transfer, &Ranges::whole(transfer.size));
-    inner.retire(transfer);
-    transfer.moved.send_modify(|n| *n += 1);
+/// Every byte of `transfer` is here: it is checked against the drive's hash of its version
+/// (or, with none this crate computes, against the listing's version now), then noted whole,
+/// or dropped as stale.
+async fn finish(weak: Weak<Inner>, transfer: Arc<Transfer>) {
+    let Some(inner) = weak.upgrade() else { return };
+    let kind = inner.source.hashes();
+    let expected = transfer.hash.clone().filter(|_| hash::computes(kind));
+    let same = match expected {
+        Some(expected) => {
+            drop(inner);
+            let file = transfer.file.clone();
+            let got = tokio::task::spawn_blocking(move || hash::of_file(kind, &file)).await;
+            let Some(again) = weak.upgrade() else { return };
+            match got {
+                Ok(Ok(Some(got))) => Some((again, got.eq_ignore_ascii_case(&expected.0))),
+                // The file went (the download was removed), or could not be read.
+                _ => {
+                    again.retire(&transfer);
+                    None
+                }
+            }
+        }
+        None => {
+            let same = inner
+                .entry(&transfer.id)
+                .ok()
+                .flatten()
+                .is_some_and(|entry| entry.version.0 == transfer.version);
+            Some((inner, same))
+        }
+    };
+    let Some((inner, same)) = same else {
+        transfer.fail(ReadError::Cache);
+        return;
+    };
+    match same {
+        true => {
+            inner.note(&transfer, &Ranges::whole(transfer.size), true);
+            inner.retire(&transfer);
+            transfer.moved.send_modify(|n| *n += 1);
+        }
+        false => {
+            inner.stale(&transfer);
+            transfer.fail(ReadError::Changed);
+        }
+    }
     inner.emit(vec![NodeId::Remote(transfer.id.clone())]);
     inner.evict();
 }
@@ -354,7 +493,9 @@ impl Drive {
             }
         }
         drop(open);
-        self.inner.evict();
+        // Off the caller's thread (a file system's): eviction reads the listing.
+        let inner = Arc::clone(&self.inner);
+        drop(self.inner.runtime.spawn_blocking(move || inner.evict()));
     }
 
     /// `len` bytes of `id` from `offset` (fewer at its end): what is here at once, the rest when
@@ -376,35 +517,40 @@ impl Drive {
             }
             NodeId::Remote(remote) => remote,
         };
-        let entry = inner
-            .entry(remote)
-            .map_err(|_| ReadError::Cache)?
-            .ok_or(ReadError::Gone)?;
-        match &entry.kind {
-            ItemKind::Folder => return Err(ReadError::Folder),
-            ItemKind::Online { url, .. } => {
-                let link = online::link_file(url.as_str(), remote);
-                let from = usize::try_from(offset)
-                    .unwrap_or(usize::MAX)
-                    .min(link.len());
-                let to = from
-                    .saturating_add(usize::try_from(len).unwrap_or(usize::MAX))
-                    .min(link.len());
-                return Ok(link[from..to].to_vec());
-            }
-            _ => {}
-        }
-        let end = offset.saturating_add(len).min(entry.size.0);
-        if offset >= end {
-            return Ok(Vec::new());
-        }
-        let here = inner.content(remote, &entry.version.0);
+        // The entry is read again each try: a newer version that replaced the transfer this
+        // read waited on is joined, not fought, and one that went is gone.
         for _ in 0..8 {
+            let entry = inner
+                .entry(remote)
+                .map_err(|_| ReadError::Cache)?
+                .ok_or(ReadError::Gone)?;
+            match &entry.kind {
+                ItemKind::Folder => return Err(ReadError::Folder),
+                ItemKind::Online { url, .. } => {
+                    let link = online::link_file(url.as_str(), remote);
+                    let from = usize::try_from(offset)
+                        .unwrap_or(usize::MAX)
+                        .min(link.len());
+                    let to = from
+                        .saturating_add(usize::try_from(len).unwrap_or(usize::MAX))
+                        .min(link.len());
+                    return Ok(link[from..to].to_vec());
+                }
+                _ => {}
+            }
+            let end = offset.saturating_add(len).min(entry.size.0);
+            if offset >= end {
+                return Ok(Vec::new());
+            }
             let covered = held(&inner.index).items.get(&remote.0).is_some_and(|row| {
                 row.version == entry.version.0 && row.present.covers(offset, end)
             });
             if covered {
-                return read_at(&here, offset, end - offset);
+                return read_at(
+                    &inner.content(remote, &entry.version.0),
+                    offset,
+                    end - offset,
+                );
             }
             let Some(transfer) = inner.ensure(&entry, false)? else {
                 continue;
@@ -430,7 +576,7 @@ impl Drive {
                         return read_at(&transfer.file, offset, end - offset);
                     }
                     if let Some(failure) = state.failure {
-                        return Err(failure.into());
+                        return Err(failure);
                     }
                     if state.cancelled {
                         break;
@@ -441,6 +587,7 @@ impl Drive {
                 }
             }
         }
-        Err(ReadError::Gone)
+        // It is there, but each try was overtaken by another change.
+        Err(ReadError::Changed)
     }
 }

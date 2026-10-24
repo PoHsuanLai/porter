@@ -1,9 +1,24 @@
 //! One drive's files on demand: its tree as shown, its cache and what each item is doing.
 //!
 //! The cache directory holds `index.json` (see `index`), `content/<key>` (one file per item,
-//! `<key>` from its id and version, sparse while a fetch fills it) and `local/<n>` (the files
-//! made here). Every call that only looks is synchronous; reading bytes that are not here yet
-//! waits for them.
+//! `<key>` from its id and version, sparse while a fetch fills it), `local/<n>` (the files
+//! made here) and `lock`, which one open drive holds at a time. Every call that only looks is
+//! synchronous; reading bytes that are not here yet waits for them.
+//!
+//! - **One drive per directory.** [`Drive::open`] takes an exclusive lock on `lock` (`flock`),
+//!   waiting [`DriveConfig::lock_wait`] for a drive still open there to go, else
+//!   [`DriveError::InUse`]. The lock goes with the drive, after its index is written.
+//! - **What the index claims is on the disk.** A content file a fetch wrote to is synced
+//!   (`fdatasync`) before an index that notes its ranges is written. An index read from the
+//!   copy before the last write claims no ranges (it cannot vouch for files written since), and
+//!   at open a row whose file is missing or of another size is dropped, as is a content file no
+//!   row names.
+//! - **A whole file is checked.** When every byte of a version is here, it is hashed and
+//!   compared with the hash the listing has for it (MD5 for Google Drive, QuickXorHash for
+//!   OneDrive, SHA-256 where a drive reports that); only then is it downloaded. With no hash
+//!   (or a kind this crate does not compute) the listing's version is read again instead, which
+//!   finds a change only once the listing has it. A mismatch drops the bytes: the item is stale,
+//!   and is fetched again from the start when next asked.
 
 mod actions;
 mod copy;
@@ -25,7 +40,7 @@ use fetch::Transfer;
 use porter_core::UnixSeconds;
 use porter_sync::{ItemKind, RemoteId};
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
@@ -41,6 +56,12 @@ const DEPTH: usize = 64;
 /// How long the index waits after a change before it is written, so a fetch that moves many
 /// times a second writes it about once a second.
 const FLUSH_AFTER: Duration = Duration::from_secs(1);
+
+/// The lock file's name in the cache directory.
+const LOCK: &str = "lock";
+
+/// How often an open waiting for the lock tries it again.
+const LOCK_EVERY: Duration = Duration::from_millis(20);
 
 /// What a node of the drive's tree is.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -127,6 +148,9 @@ pub enum DriveError {
     /// The drive was opened outside an async runtime, which its fetches run on.
     #[error("the drive needs an async runtime to fetch in")]
     NoRuntime,
+    /// Another drive is still open over the same cache directory; try again once it is gone.
+    #[error("the cache is in use by a drive still open over it")]
+    InUse,
 }
 
 /// How a drive's cache is set up.
@@ -140,18 +164,35 @@ pub struct DriveConfig {
     pub limit: CacheLimit,
     /// How many downloads nobody is waiting on (Keep Downloaded, Download Now) run at once.
     pub parallel: usize,
+    /// How long one fetch of a chunk may take before it is given up (its readers get
+    /// [`ReadError::Stalled`] and the file downloads when next asked).
+    pub deadline: Duration,
+    /// How long [`Drive::open`] waits for another drive over the same directory to go.
+    pub lock_wait: Duration,
 }
 
 impl DriveConfig {
-    /// A cache in `dir`, with chunks of a mebibyte, the automatic limit and four downloads at once.
+    /// A cache in `dir`, with chunks of a mebibyte, the automatic limit, four downloads at once,
+    /// two minutes for a chunk and two seconds for the lock.
     pub fn new(dir: PathBuf) -> Self {
         Self {
             cache: dir,
             chunk: 1 << 20,
             limit: CacheLimit::Automatic,
             parallel: 4,
+            deadline: Duration::from_secs(120),
+            lock_wait: Duration::from_secs(2),
         }
     }
+}
+
+/// Why an item's last fetch failed, as its status shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Failure {
+    /// The words Files shows.
+    pub words: String,
+    /// It may pass by itself (no network, a stall): cleared when the drive is reached again.
+    pub transient: bool,
 }
 
 pub(crate) struct Inner {
@@ -162,10 +203,14 @@ pub(crate) struct Inner {
     file: IndexFile,
     index: Mutex<Index>,
     dirty: AtomicBool,
+    /// Content files written to since the index was last written: synced before it is.
+    unsynced: Mutex<HashSet<PathBuf>>,
+    #[cfg(test)]
+    synced: Mutex<Vec<PathBuf>>,
     flush: Arc<Notify>,
     transfers: Mutex<HashMap<RemoteId, Arc<Transfer>>>,
     open: Mutex<HashMap<NodeId, usize>>,
-    errors: Mutex<HashMap<RemoteId, String>>,
+    errors: Mutex<HashMap<RemoteId, Failure>>,
     limit: Mutex<CacheLimit>,
     inodes: Mutex<HashMap<u64, NodeId>>,
     offline: AtomicBool,
@@ -173,15 +218,99 @@ pub(crate) struct Inner {
     events: broadcast::Sender<Changed>,
     background: Arc<Semaphore>,
     runtime: tokio::runtime::Handle,
+    deadline: Duration,
+    /// The cache directory's lock, held for as long as the drive lives. A field drops after
+    /// `drop` has written the index, so the next drive reads it whole.
+    _lock: std::fs::File,
 }
 
 impl Drop for Inner {
     fn drop(&mut self) {
-        if self.dirty.swap(false, Ordering::SeqCst) {
-            let _ = self.file.save(&held(&self.index));
+        if let Err(why) = self.flush_now() {
+            eprintln!("porter-drive: the cache's index could not be written: {why}");
         }
         self.flush.notify_one();
     }
+}
+
+/// Takes the lock of the cache directory `dir`, waiting up to `wait` for the drive holding it.
+fn lock(dir: &Path, wait: Duration) -> Result<std::fs::File, DriveError> {
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(dir.join(LOCK))?;
+    let deadline = std::time::Instant::now() + wait;
+    loop {
+        match file.try_lock() {
+            Ok(()) => return Ok(file),
+            Err(std::fs::TryLockError::WouldBlock) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(LOCK_EVERY);
+            }
+            Err(std::fs::TryLockError::WouldBlock) => return Err(DriveError::InUse),
+            Err(std::fs::TryLockError::Error(why)) => return Err(why.into()),
+        }
+    }
+}
+
+/// Makes `index` agree with the cache directory `dir`: a row whose content file is missing or
+/// of another size is dropped (it claims what is not there), a content file no row names is
+/// removed, and a file made here the index does not know (written before a crash) is taken
+/// in, so its number is never given out again.
+fn reconcile(dir: &Path, index: &mut Index) -> std::io::Result<bool> {
+    let mut changed = false;
+    index.items.retain(|id, row| {
+        let path = dir
+            .join("content")
+            .join(key(&RemoteId(id.clone()), &row.version));
+        let fits = std::fs::metadata(&path).is_ok_and(|meta| meta.len() == row.size);
+        changed |= !fits;
+        fits
+    });
+    let named: HashSet<String> = index
+        .items
+        .iter()
+        .map(|(id, row)| key(&RemoteId(id.clone()), &row.version))
+        .collect();
+    for file in std::fs::read_dir(dir.join("content"))? {
+        let file = file?;
+        if !file
+            .file_name()
+            .to_str()
+            .is_some_and(|name| named.contains(name))
+        {
+            let _ = std::fs::remove_file(file.path());
+        }
+    }
+    for file in std::fs::read_dir(dir.join("local"))? {
+        let file = file?;
+        let Some(n) = file
+            .file_name()
+            .to_str()
+            .and_then(|name| name.parse::<u64>().ok())
+        else {
+            continue;
+        };
+        index.next_local = index.next_local.max(n + 1);
+        if index.local.iter().any(|row| row.n == n) {
+            continue;
+        }
+        let meta = file.metadata()?;
+        let made = meta
+            .modified()
+            .ok()
+            .and_then(|at| at.duration_since(std::time::UNIX_EPOCH).ok())
+            .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX));
+        index.local.push(LocalRow {
+            n,
+            parent: None,
+            name: format!("{} {n}", copy::RECOVERED),
+            size: meta.len(),
+            made,
+        });
+        changed = true;
+    }
+    Ok(changed)
 }
 
 fn held<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -236,8 +365,10 @@ impl Drive {
         let runtime = tokio::runtime::Handle::try_current().map_err(|_| DriveError::NoRuntime)?;
         std::fs::create_dir_all(config.cache.join("content"))?;
         std::fs::create_dir_all(config.cache.join("local"))?;
+        let lock = lock(&config.cache, config.lock_wait)?;
         let file = IndexFile::new(&config.cache);
-        let index = file.load();
+        let mut index = file.load();
+        let changed = reconcile(&config.cache, &mut index)?;
         let (events, _) = broadcast::channel(1024);
         let inner = Arc::new(Inner {
             listing,
@@ -246,7 +377,10 @@ impl Drive {
             chunk: config.chunk.max(1),
             file,
             index: Mutex::new(index),
-            dirty: AtomicBool::new(false),
+            dirty: AtomicBool::new(changed),
+            unsynced: Mutex::default(),
+            #[cfg(test)]
+            synced: Mutex::default(),
             flush: Arc::new(Notify::new()),
             transfers: Mutex::default(),
             open: Mutex::default(),
@@ -258,9 +392,14 @@ impl Drive {
             events,
             background: Arc::new(Semaphore::new(config.parallel.max(1))),
             runtime,
+            deadline: config.deadline,
+            _lock: lock,
         });
         let weak = Arc::downgrade(&inner);
         inner.runtime.spawn(flusher(weak, Arc::clone(&inner.flush)));
+        if changed {
+            inner.flush_now()?;
+        }
         Ok(Drive { inner })
     }
 
@@ -308,9 +447,25 @@ impl Drive {
         self.inner.offline.load(Ordering::SeqCst)
     }
 
-    /// Notes whether the drive can be reached (the listing says so too).
+    /// Notes whether the drive can be reached (the listing says so too). Reached again, what
+    /// failed for want of it says so no more: it downloads when next asked.
     pub fn set_offline(&self, offline: bool) {
-        self.inner.offline.store(offline, Ordering::SeqCst);
+        if self.inner.offline.swap(offline, Ordering::SeqCst) && !offline {
+            self.inner.came_online();
+        }
+    }
+
+    /// Every item whose state is not plain "in the cloud": cached, downloading or failed. What a
+    /// listener that missed changes asks again about.
+    pub fn tracked(&self) -> Vec<NodeId> {
+        let mut ids: std::collections::BTreeSet<RemoteId> = held(&self.inner.index)
+            .items
+            .keys()
+            .map(|id| RemoteId(id.clone()))
+            .collect();
+        ids.extend(held(&self.inner.transfers).keys().cloned());
+        ids.extend(held(&self.inner.errors).keys().cloned());
+        ids.into_iter().map(NodeId::Remote).collect()
     }
 
     /// The inode number of `id`.
@@ -415,15 +570,41 @@ impl Inner {
         self.flush.notify_one();
     }
 
+    /// Notes that `file`'s data changed: it is synced before the index is next written.
+    fn wrote(&self, file: &Path) {
+        held(&self.unsynced).insert(file.to_path_buf());
+    }
+
+    /// Writes the index now if it changed, after syncing every content file written to since
+    /// the last write: the index never claims bytes that are not on the disk.
     fn flush_now(&self) -> std::io::Result<()> {
-        if self.dirty.swap(false, Ordering::SeqCst) {
-            let index = held(&self.index).clone();
-            if let Err(why) = self.file.save(&index) {
-                self.dirty.store(true, Ordering::SeqCst);
-                return Err(why);
+        if !self.dirty.swap(false, Ordering::SeqCst) {
+            return Ok(());
+        }
+        // The index first, then the files: every range it notes was written, and its file
+        // named in `unsynced`, before it was noted.
+        let index = held(&self.index).clone();
+        let files: Vec<PathBuf> = held(&self.unsynced).drain().collect();
+        let failed = |files: &[PathBuf], why: std::io::Error| {
+            held(&self.unsynced).extend(files.iter().cloned());
+            self.dirty.store(true, Ordering::SeqCst);
+            why
+        };
+        for (at, path) in files.iter().enumerate() {
+            match std::fs::File::open(path).and_then(|file| file.sync_data()) {
+                Ok(()) => {
+                    #[cfg(test)]
+                    held(&self.synced).push(path.clone());
+                }
+                // Removed with its row (a removal, a newer version): the index that drops the
+                // row is written next, and an open drops a row whose file is missing.
+                Err(why) if why.kind() == std::io::ErrorKind::NotFound => {
+                    self.dirty.store(true, Ordering::SeqCst);
+                }
+                Err(why) => return Err(failed(&files[at..], why)),
             }
         }
-        Ok(())
+        self.file.save(&index).map_err(|why| failed(&[], why))
     }
 
     fn content(&self, id: &RemoteId, version: &str) -> PathBuf {
@@ -572,37 +753,38 @@ impl Inner {
             .find(|node| node.id == *id))
     }
 
-    /// Whether `id` is kept, itself or by a folder above it, as `index` says.
+    /// Whether `id` is kept, itself or by a folder above it, as `index` says. When the folders
+    /// above it cannot be read it counts as kept: nothing is evicted on a guess.
     fn kept_in(&self, index: &Index, id: &RemoteId) -> bool {
         index.kept.contains(&id.0)
-            || self
-                .listing
-                .ancestors(id)
-                .unwrap_or_default()
-                .iter()
-                .any(|above| index.kept.contains(&above.0))
+            || self.listing.ancestors(id).map_or(true, |above| {
+                above.iter().any(|folder| index.kept.contains(&folder.0))
+            })
     }
 
-    /// Whether a folder above `id` is kept.
+    /// Whether a folder above `id` is kept; when the folders above it cannot be read, yes.
     fn kept_by_folder(&self, id: &NodeId) -> bool {
         let index = held(&self.index);
         let above = match id {
             NodeId::Top => return false,
-            NodeId::Remote(id) => self.listing.ancestors(id).unwrap_or_default(),
+            NodeId::Remote(id) => self.listing.ancestors(id),
             NodeId::Local(n) => match index.local.iter().find(|row| row.n == *n) {
                 Some(LocalRow {
                     parent: Some(parent),
                     ..
                 }) => {
                     let parent = RemoteId(parent.clone());
-                    let mut above = self.listing.ancestors(&parent).unwrap_or_default();
-                    above.insert(0, parent);
-                    above
+                    self.listing.ancestors(&parent).map(|mut above| {
+                        above.insert(0, parent);
+                        above
+                    })
                 }
-                _ => Vec::new(),
+                _ => Ok(Vec::new()),
             },
         };
-        above.iter().any(|folder| index.kept.contains(&folder.0))
+        above.map_or(true, |above| {
+            above.iter().any(|folder| index.kept.contains(&folder.0))
+        })
     }
 
     fn is_open(&self, id: &NodeId) -> bool {

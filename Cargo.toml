@@ -148,6 +148,7 @@ webpki-roots = "1"
 # porter-http's TLS: hyper-rustls and the platform's roots (quire accounts-pins, on master).
 hyper-rustls = { version = "0.27", default-features = false, features = ["ring", "http1", "tls12", "native-tokio", "logging"] }
 sha2 = "0.10"
+md-5 = "0.10"
 clap = { version = "4", features = ["derive"] }
 proptest = "1"
 oo7 = "0.6"
