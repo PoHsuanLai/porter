@@ -1,14 +1,13 @@
 //! "Save a Copy": an online document's export, written next to it as a file made on this
-//! computer (a local row), "Waiting to upload" until it is sent.
+//! computer, "Waiting to upload" until it is sent.
 
-use super::{Drive, NodeId, held};
-use crate::index::LocalRow;
+use super::{Drive, NodeId, held, now_secs};
+use crate::index::{Dirty, Edit};
 use crate::naming;
 use crate::source::CopyError;
 use crate::words;
 use porter_fs::atomic::AtomicWrite;
 use porter_sync::ItemKind;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 /// The name a file made here is shown by when the index lost it (a crash between its write and
 /// the index's), followed by its number.
@@ -49,7 +48,11 @@ impl Drive {
                 CopyError::TooLarge => words::TOO_LARGE,
                 CopyError::Failed => words::COPY_FAILED,
             })?;
-        let folder = entry.parent.clone().map_or(NodeId::Top, NodeId::Remote);
+        let folder = inner
+            .parent_of(id)
+            .ok()
+            .flatten()
+            .ok_or(words::NOT_A_DOCUMENT)?;
         let taken: Vec<String> = inner
             .children(&folder)
             .map_err(|_| words::COPY_FAILED)?
@@ -58,35 +61,34 @@ impl Drive {
             .collect();
         let wanted = format!("{}.{extension}", naming::shown_base(&entry.name));
         let name = naming::free(&wanted, |name| taken.iter().any(|t| t == name));
-        let n = {
-            let mut index = held(&inner.index);
-            let n = index.next_local.max(1);
-            index.next_local = n + 1;
-            n
-        };
+        let n = held(&inner.index).take_local();
         AtomicWrite::PRIVATE
             .write(&inner.local_file(n), &bytes)
             .map_err(|_| words::COPY_FAILED)?;
-        let made = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX));
-        held(&inner.index).local.push(LocalRow {
-            n,
-            parent: entry.parent.map(|p| p.0),
-            name,
+        let made = now_secs();
+        let dirty = Dirty {
+            file: n,
             size: bytes.len() as u64,
-            made,
-        });
+            modified: made,
+            writes: 1,
+        };
+        let mut edit = Edit::made_here(n, folder.clone(), name, Some(dirty), made);
+        {
+            let mut index = held(&inner.index);
+            edit.seq = index.take_seq();
+            index.edits.insert(edit.id.clone(), edit);
+        }
         inner.touched();
         // On the disk before it is answered: a copy said made is never lost.
         if inner.flush_now().is_err() {
-            held(&inner.index).local.retain(|row| row.n != n);
+            held(&inner.index).edits.remove(&NodeId::Local(n));
             let _ = std::fs::remove_file(inner.local_file(n));
             inner.touched();
             return Err(words::COPY_FAILED);
         }
         let copy = NodeId::Local(n);
         inner.ino(&copy);
+        inner.wake.notify_one();
         inner.emit(vec![copy.clone(), folder]);
         Ok(copy)
     }

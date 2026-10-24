@@ -9,6 +9,15 @@
 //!
 //! The names depend only on what the folder holds, so the same listing is shown by the same names
 //! after a restart.
+//!
+//! Back the other way, a name given here ([`drive_name`]):
+//! - A name made here (a new file or folder, or a rename to a new name) is sent as written:
+//!   a `／` typed here is a `／` on the drive too.
+//! - A name left as it is shown (a move to another folder under the same name) keeps the
+//!   drive's own name: the `／` that stands for a `/`, and a " 2" these rules added, are never
+//!   sent.
+//! - An online document's link file renamed keeps its link extension out of the drive's name:
+//!   "Plan.gdoc" renamed "Budget.gdoc" is the document "Budget".
 
 use porter_sync::ItemKind;
 use std::collections::BTreeSet;
@@ -89,6 +98,34 @@ pub fn numbered(name: &str, n: u32) -> String {
     }
 }
 
+/// `name` with `mark` before its extension: "Plan.docx" marked " (this computer)" is
+/// "Plan (this computer).docx".
+pub fn marked(name: &str, mark: &str) -> String {
+    match split(name) {
+        Some((stem, ext)) => format!("{stem}{mark}.{ext}"),
+        None => format!("{name}{mark}"),
+    }
+}
+
+/// The name the drive is to have for an item of `kind` shown as `shown` and now named `drive`
+/// on the drive, when it is given the shown name `wanted` here (see the module's rules).
+pub fn drive_name(wanted: &str, shown: &str, drive: &str, kind: &ItemKind) -> String {
+    if wanted == shown {
+        return drive.to_owned();
+    }
+    match kind {
+        ItemKind::Online { export, .. } => {
+            let extension = format!(".{}", link_extension(export.as_deref()));
+            wanted
+                .strip_suffix(&extension)
+                .filter(|stem| !stem.is_empty())
+                .unwrap_or(wanted)
+                .to_owned()
+        }
+        _ => wanted.to_owned(),
+    }
+}
+
 /// The first of `name`, "Name 2.ext", "Name 3.ext", ... that `taken` does not hold.
 pub fn free(name: &str, taken: impl Fn(&str) -> bool) -> String {
     if !taken(name) {
@@ -161,6 +198,32 @@ mod tests {
             ]
         );
         assert_eq!(numbered(".bashrc", 2), ".bashrc 2");
+    }
+
+    #[test]
+    fn a_name_given_here_is_sent_as_written_and_one_left_as_shown_keeps_the_drives() {
+        let file = ItemKind::File;
+        assert_eq!(drive_name("a／b", "x", "x", &file), "a／b");
+        assert_eq!(drive_name("a／b", "a／b", "a/b", &file), "a/b");
+        assert_eq!(
+            drive_name("Plan 2.docx", "Plan 2.docx", "Plan.docx", &file),
+            "Plan.docx"
+        );
+        let url = WebUrl::parse("https://docs.example.test/d/1").expect("url");
+        let doc = ItemKind::Online {
+            url,
+            export: Some(KINDS[0].0.to_owned()),
+        };
+        assert_eq!(
+            drive_name("Budget.gdoc", "Plan.gdoc", "Plan", &doc),
+            "Budget"
+        );
+        assert_eq!(drive_name("Budget", "Plan.gdoc", "Plan", &doc), "Budget");
+        assert_eq!(
+            marked("Plan.docx", " (this computer)"),
+            "Plan (this computer).docx"
+        );
+        assert_eq!(marked("Notes", " (this computer)"), "Notes (this computer)");
     }
 
     #[test]

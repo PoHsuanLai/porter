@@ -1,9 +1,12 @@
 //! One drive's files on demand: its tree as shown, its cache and what each item is doing.
 //!
 //! The cache directory holds `index.json` (see `index`), `content/<key>` (one file per item,
-//! `<key>` from its id and version, sparse while a fetch fills it), `local/<n>` (the files
-//! made here) and `lock`, which one open drive holds at a time. Every call that only looks is
-//! synchronous; reading bytes that are not here yet waits for them.
+//! `<key>` from its id and version, sparse while a fetch fills it), `local/<n>` (the bytes
+//! written here and not sent) and `lock`, which one open drive holds at a time. Every call that
+//! only looks is synchronous; reading bytes that are not here yet waits for them.
+//!
+//! What is changed here is shown at once and sent after (see `send`): the tree shown is the
+//! listing with the changes not on the drive yet laid over it (see `view`).
 //!
 //! - **One drive per directory.** [`Drive::open`] takes an exclusive lock on `lock` (`flock`),
 //!   waiting [`DriveConfig::lock_wait`] for a drive still open there to go, else
@@ -23,28 +26,34 @@
 mod actions;
 mod copy;
 mod fetch;
+mod send;
 mod state;
 #[cfg(test)]
 mod tests;
+mod view;
+mod write;
+#[cfg(test)]
+mod write_tests;
 
 pub use fetch::ReadError;
 pub use state::{ItemState, Status};
+pub use write::WriteError;
 
-use crate::index::{Index, IndexFile, LocalRow};
+use crate::index::{Dirty, Edit, Index, IndexFile};
 use crate::limit::CacheLimit;
-use crate::listing::{Entry, Listing, ListingError};
-use crate::naming;
-use crate::online;
+use crate::listing::{Listing, ListingError};
+use crate::sink::Sink;
 use crate::source::Source;
 use fetch::Transfer;
 use porter_core::UnixSeconds;
 use porter_sync::{ItemKind, RemoteId};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::{Notify, Semaphore, broadcast};
 
 /// The inode number of the top of the drive.
@@ -63,14 +72,19 @@ const LOCK: &str = "lock";
 /// How often an open waiting for the lock tries it again.
 const LOCK_EVERY: Duration = Duration::from_millis(20);
 
+/// The quiet time [`DriveConfig::new`] gives: a file is sent once it has been closed and left
+/// alone this long, not on each write.
+pub const QUIET: Duration = Duration::from_secs(2);
+
 /// What a node of the drive's tree is.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum NodeId {
     /// The top of the drive.
     Top,
     /// One of the drive's own items.
     Remote(RemoteId),
-    /// A file made on this computer and not on the drive yet, by its number.
+    /// A file or folder made on this computer and not on the drive yet, by its number. Once the
+    /// drive has it, the number names its drive id ([`Drive::canonical`]).
     Local(u64),
 }
 
@@ -169,11 +183,13 @@ pub struct DriveConfig {
     pub deadline: Duration,
     /// How long [`Drive::open`] waits for another drive over the same directory to go.
     pub lock_wait: Duration,
+    /// How long a file changed here is left closed and alone before it is sent.
+    pub quiet: Duration,
 }
 
 impl DriveConfig {
     /// A cache in `dir`, with chunks of a mebibyte, the automatic limit, four downloads at once,
-    /// two minutes for a chunk and two seconds for the lock.
+    /// two minutes for a chunk, two seconds for the lock and [`QUIET`] before a change is sent.
     pub fn new(dir: PathBuf) -> Self {
         Self {
             cache: dir,
@@ -182,6 +198,7 @@ impl DriveConfig {
             parallel: 4,
             deadline: Duration::from_secs(120),
             lock_wait: Duration::from_secs(2),
+            quiet: QUIET,
         }
     }
 }
@@ -195,9 +212,18 @@ pub(crate) struct Failure {
     pub transient: bool,
 }
 
+/// A file open for writing: how many have it open, and when it was last written or closed.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Writing {
+    handles: usize,
+    last: Instant,
+}
+
 pub(crate) struct Inner {
     listing: Arc<dyn Listing>,
     source: Arc<dyn Source>,
+    /// Where changes go; `None`: the drive is shown read-only.
+    sink: Option<Arc<dyn Sink>>,
     dir: PathBuf,
     chunk: u64,
     file: IndexFile,
@@ -219,6 +245,19 @@ pub(crate) struct Inner {
     background: Arc<Semaphore>,
     runtime: tokio::runtime::Handle,
     deadline: Duration,
+    /// The files open for writing, and when each was last touched.
+    writing: Mutex<HashMap<NodeId, Writing>>,
+    quiet: Duration,
+    /// The change being sent now.
+    sending: Mutex<Option<send::Sent>>,
+    /// Wakes the sender: something changed, or it may send again.
+    wake: Arc<Notify>,
+    /// Told when a listing pass is wanted (a change was sent, or the drive's version is newer).
+    wanted: Arc<Notify>,
+    paused: AtomicBool,
+    /// When the sender tries again after the drive could not take a change, and how long it
+    /// waited last.
+    backoff: Mutex<Option<(Instant, Duration)>>,
     /// The cache directory's lock, held for as long as the drive lives. A field drops after
     /// `drop` has written the index, so the next drive reads it whole.
     _lock: std::fs::File,
@@ -230,6 +269,7 @@ impl Drop for Inner {
             eprintln!("porter-drive: the cache's index could not be written: {why}");
         }
         self.flush.notify_one();
+        self.wake.notify_one();
     }
 }
 
@@ -255,8 +295,10 @@ fn lock(dir: &Path, wait: Duration) -> Result<std::fs::File, DriveError> {
 
 /// Makes `index` agree with the cache directory `dir`: a row whose content file is missing or
 /// of another size is dropped (it claims what is not there), a content file no row names is
-/// removed, and a file made here the index does not know (written before a crash) is taken
-/// in, so its number is never given out again.
+/// removed, a change's bytes are as long as its file is (they were written before a crash the
+/// index did not see), and a file of bytes the index does not know (written before a crash) is
+/// taken in as a file made here, so nothing written here is lost and its number is never given
+/// out again.
 fn reconcile(dir: &Path, index: &mut Index) -> std::io::Result<bool> {
     let mut changed = false;
     index.items.retain(|id, row| {
@@ -282,6 +324,12 @@ fn reconcile(dir: &Path, index: &mut Index) -> std::io::Result<bool> {
             let _ = std::fs::remove_file(file.path());
         }
     }
+    let mut known: HashMap<u64, NodeId> = HashMap::new();
+    for edit in index.edits.values() {
+        if let Some(dirty) = &edit.dirty {
+            known.insert(dirty.file, edit.id.clone());
+        }
+    }
     for file in std::fs::read_dir(dir.join("local"))? {
         let file = file?;
         let Some(n) = file
@@ -292,25 +340,60 @@ fn reconcile(dir: &Path, index: &mut Index) -> std::io::Result<bool> {
             continue;
         };
         index.next_local = index.next_local.max(n + 1);
-        if index.local.iter().any(|row| row.n == n) {
+        let meta = file.metadata()?;
+        if let Some(id) = known.get(&n) {
+            if let Some(dirty) = index.edits.get_mut(id).and_then(|e| e.dirty.as_mut())
+                && dirty.size != meta.len()
+            {
+                dirty.size = meta.len();
+                changed = true;
+            }
             continue;
         }
-        let meta = file.metadata()?;
         let made = meta
             .modified()
             .ok()
             .and_then(|at| at.duration_since(std::time::UNIX_EPOCH).ok())
             .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX));
-        index.local.push(LocalRow {
-            n,
-            parent: None,
-            name: format!("{} {n}", copy::RECOVERED),
+        let dirty = Dirty {
+            file: n,
             size: meta.len(),
-            made,
-        });
+            modified: made,
+            writes: 1,
+        };
+        let name = format!("{} {n}", copy::RECOVERED);
+        let mut edit = Edit::made_here(n, NodeId::Top, name, Some(dirty), made);
+        edit.seq = index.take_seq();
+        index.edits.insert(edit.id.clone(), edit);
+        changed = true;
+    }
+    // A change whose bytes went (a crash before they were written) keeps what else it was.
+    for edit in index.edits.values_mut() {
+        if let Some(dirty) = &edit.dirty
+            && !dir.join("local").join(dirty.file.to_string()).exists()
+        {
+            edit.dirty = None;
+            changed = true;
+        }
+    }
+    let lost: Vec<NodeId> = index
+        .edits
+        .values()
+        .filter(|edit| edit.base.is_none() && !edit.folder && edit.dirty.is_none())
+        .map(|edit| edit.id.clone())
+        .collect();
+    for id in lost {
+        index.edits.remove(&id);
         changed = true;
     }
     Ok(changed)
+}
+
+/// Seconds since the epoch, now.
+fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
 }
 
 fn held<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -338,22 +421,31 @@ fn key(id: &RemoteId, version: &str) -> String {
     digest.iter().take(20).map(|b| format!("{b:02x}")).collect()
 }
 
-/// The inode number of `id`: stable for a remote id, the same after a restart.
-fn ino_for(id: &NodeId) -> u64 {
-    let text = match id {
-        NodeId::Top => return ROOT_INO,
+/// The text an inode number is made from, and the index names an item by when it keeps the
+/// inode number of what it was.
+pub(crate) fn key_text(id: &NodeId) -> String {
+    match id {
+        NodeId::Top => String::new(),
         NodeId::Remote(id) => format!("r:{}", id.0),
         NodeId::Local(n) => format!("l:{n}"),
-    };
-    let digest = Sha256::digest(text.as_bytes());
+    }
+}
+
+/// The inode number of `id`: stable for a remote id, the same after a restart.
+fn ino_for(id: &NodeId) -> u64 {
+    if *id == NodeId::Top {
+        return ROOT_INO;
+    }
+    let digest = Sha256::digest(key_text(id).as_bytes());
     let ino = u64::from_be_bytes(digest[..8].try_into().unwrap_or([0; 8]));
     // 0 is no inode and 1 the top.
     ino.max(2)
 }
 
 impl Drive {
-    /// The drive over `listing`, fetching from `source`, with its cache as `config` says. Must
-    /// be called inside a Tokio runtime: its fetches and the index's writes run there.
+    /// The drive over `listing`, fetching from `source`, with its cache as `config` says, shown
+    /// read-only. Must be called inside a Tokio runtime: its fetches and the index's writes run
+    /// there.
     ///
     /// # Errors
     /// No runtime, or the cache directory could not be made.
@@ -361,6 +453,29 @@ impl Drive {
         config: DriveConfig,
         listing: Arc<dyn Listing>,
         source: Arc<dyn Source>,
+    ) -> Result<Drive, DriveError> {
+        Self::open_with(config, listing, source, None)
+    }
+
+    /// The drive as [`Drive::open`] opens it, and changed here: each change is kept in the cache
+    /// first, then sent to `sink`.
+    ///
+    /// # Errors
+    /// No runtime, or the cache directory could not be made.
+    pub fn open_writable(
+        config: DriveConfig,
+        listing: Arc<dyn Listing>,
+        source: Arc<dyn Source>,
+        sink: Arc<dyn Sink>,
+    ) -> Result<Drive, DriveError> {
+        Self::open_with(config, listing, source, Some(sink))
+    }
+
+    fn open_with(
+        config: DriveConfig,
+        listing: Arc<dyn Listing>,
+        source: Arc<dyn Source>,
+        sink: Option<Arc<dyn Sink>>,
     ) -> Result<Drive, DriveError> {
         let runtime = tokio::runtime::Handle::try_current().map_err(|_| DriveError::NoRuntime)?;
         std::fs::create_dir_all(config.cache.join("content"))?;
@@ -370,9 +485,14 @@ impl Drive {
         let mut index = file.load();
         let changed = reconcile(&config.cache, &mut index)?;
         let (events, _) = broadcast::channel(1024);
+        let mut inodes = HashMap::from([(ROOT_INO, NodeId::Top)]);
+        for (n, id) in &index.aliases {
+            inodes.insert(ino_for(&NodeId::Local(*n)), id.clone());
+        }
         let inner = Arc::new(Inner {
             listing,
             source,
+            sink,
             dir: config.cache,
             chunk: config.chunk.max(1),
             file,
@@ -386,17 +506,30 @@ impl Drive {
             open: Mutex::default(),
             errors: Mutex::default(),
             limit: Mutex::new(config.limit),
-            inodes: Mutex::new(HashMap::from([(ROOT_INO, NodeId::Top)])),
+            inodes: Mutex::new(inodes),
             offline: AtomicBool::new(false),
             quota: Mutex::new(None),
             events,
             background: Arc::new(Semaphore::new(config.parallel.max(1))),
             runtime,
             deadline: config.deadline,
+            writing: Mutex::default(),
+            quiet: config.quiet,
+            sending: Mutex::new(None),
+            wake: Arc::new(Notify::new()),
+            wanted: Arc::new(Notify::new()),
+            paused: AtomicBool::new(false),
+            backoff: Mutex::new(None),
             _lock: lock,
         });
         let weak = Arc::downgrade(&inner);
         inner.runtime.spawn(flusher(weak, Arc::clone(&inner.flush)));
+        if inner.sink.is_some() {
+            let weak = Arc::downgrade(&inner);
+            inner
+                .runtime
+                .spawn(send::sender(weak, Arc::clone(&inner.wake)));
+        }
         if changed {
             inner.flush_now()?;
         }
@@ -448,34 +581,52 @@ impl Drive {
     }
 
     /// Notes whether the drive can be reached (the listing says so too). Reached again, what
-    /// failed for want of it says so no more: it downloads when next asked.
+    /// failed for want of it says so no more: it downloads when next asked, and what waits to
+    /// be sent is sent.
     pub fn set_offline(&self, offline: bool) {
         if self.inner.offline.swap(offline, Ordering::SeqCst) && !offline {
             self.inner.came_online();
+            *held(&self.inner.backoff) = None;
+            self.inner.wake.notify_one();
         }
     }
 
     /// Every item whose state is not plain "in the cloud": cached, downloading or failed. What a
     /// listener that missed changes asks again about.
     pub fn tracked(&self) -> Vec<NodeId> {
-        let mut ids: std::collections::BTreeSet<RemoteId> = held(&self.inner.index)
+        let index = held(&self.inner.index);
+        let mut ids: std::collections::BTreeSet<NodeId> = index
             .items
             .keys()
-            .map(|id| RemoteId(id.clone()))
+            .map(|id| NodeId::Remote(RemoteId(id.clone())))
             .collect();
-        ids.extend(held(&self.inner.transfers).keys().cloned());
-        ids.extend(held(&self.inner.errors).keys().cloned());
-        ids.into_iter().map(NodeId::Remote).collect()
+        ids.extend(index.edits.keys().cloned());
+        drop(index);
+        ids.extend(
+            held(&self.inner.transfers)
+                .keys()
+                .cloned()
+                .map(NodeId::Remote),
+        );
+        ids.extend(held(&self.inner.errors).keys().cloned().map(NodeId::Remote));
+        ids.into_iter().collect()
     }
 
-    /// The inode number of `id`.
+    /// The inode number of `id`. An item made here keeps its number once the drive has it.
     pub fn ino(&self, id: &NodeId) -> u64 {
         self.inner.ino(id)
     }
 
     /// The node an inode number this drive gave out names.
     pub fn by_ino(&self, ino: u64) -> Option<NodeId> {
-        held(&self.inner.inodes).get(&ino).cloned()
+        let id = held(&self.inner.inodes).get(&ino).cloned()?;
+        Some(self.inner.canonical(&id))
+    }
+
+    /// The node `id` names now: an item made here that the drive has since given an id (or
+    /// that was saved over another file) is named by that.
+    pub fn canonical(&self, id: &NodeId) -> NodeId {
+        self.inner.canonical(id)
     }
 
     /// The nodes directly inside `folder`, each with its shown name; none for a file.
@@ -615,144 +766,6 @@ impl Inner {
         self.dir.join("local").join(n.to_string())
     }
 
-    fn ino(&self, id: &NodeId) -> u64 {
-        let ino = ino_for(id);
-        held(&self.inodes).entry(ino).or_insert_with(|| id.clone());
-        ino
-    }
-
-    fn top(&self) -> Node {
-        Node {
-            id: NodeId::Top,
-            parent: NodeId::Top,
-            name: String::new(),
-            kind: NodeKind::Folder,
-            size: 0,
-            modified: None,
-        }
-    }
-
-    fn entry(&self, id: &RemoteId) -> Result<Option<Entry>, DriveError> {
-        Ok(self.listing.entry(id)?)
-    }
-
-    fn local_row(&self, n: u64) -> Option<LocalRow> {
-        held(&self.index)
-            .local
-            .iter()
-            .find(|row| row.n == n)
-            .cloned()
-    }
-
-    fn attrs_of_entry(entry: &Entry) -> Attrs {
-        let kind = NodeKind::of(&entry.kind);
-        let size = match &kind {
-            NodeKind::Online { url, .. } => online::link_file(url, &entry.id).len() as u64,
-            NodeKind::Folder => 0,
-            NodeKind::File => entry.size.0,
-        };
-        Attrs {
-            kind,
-            size,
-            modified: entry.modified,
-        }
-    }
-
-    fn attrs(&self, id: &NodeId) -> Result<Option<Attrs>, DriveError> {
-        Ok(match id {
-            NodeId::Top => Some(Attrs {
-                kind: NodeKind::Folder,
-                size: 0,
-                modified: None,
-            }),
-            NodeId::Remote(id) => self.entry(id)?.as_ref().map(Self::attrs_of_entry),
-            NodeId::Local(n) => self.local_row(*n).map(|row| Attrs {
-                kind: NodeKind::File,
-                size: row.size,
-                modified: Some(UnixSeconds(row.made)),
-            }),
-        })
-    }
-
-    fn children(&self, folder: &NodeId) -> Result<Vec<Node>, DriveError> {
-        let parent = match folder {
-            NodeId::Top => None,
-            NodeId::Remote(id) => match self.entry(id)? {
-                Some(entry) if entry.kind == ItemKind::Folder => Some(id.clone()),
-                _ => return Ok(Vec::new()),
-            },
-            NodeId::Local(_) => return Ok(Vec::new()),
-        };
-        let mut entries = self.listing.children(parent.as_ref())?;
-        entries.sort_by(|a, b| a.id.cmp(&b.id));
-        let mut locals: Vec<LocalRow> = held(&self.index)
-            .local
-            .iter()
-            .filter(|row| row.parent.as_deref() == parent.as_ref().map(|p| p.0.as_str()))
-            .cloned()
-            .collect();
-        locals.sort_by_key(|row| row.n);
-        let bases: Vec<String> = entries
-            .iter()
-            .map(|entry| naming::base_of(&entry.name, &entry.kind))
-            .chain(locals.iter().map(|row| naming::shown_base(&row.name)))
-            .collect();
-        let names = naming::assign(&bases);
-        let mut nodes = Vec::with_capacity(names.len());
-        let mut names = names.into_iter();
-        for entry in &entries {
-            let attrs = Self::attrs_of_entry(entry);
-            nodes.push(Node {
-                id: NodeId::Remote(entry.id.clone()),
-                parent: folder.clone(),
-                name: names.next().unwrap_or_default(),
-                kind: attrs.kind,
-                size: attrs.size,
-                modified: attrs.modified,
-            });
-        }
-        for row in &locals {
-            nodes.push(Node {
-                id: NodeId::Local(row.n),
-                parent: folder.clone(),
-                name: names.next().unwrap_or_default(),
-                kind: NodeKind::File,
-                size: row.size,
-                modified: Some(UnixSeconds(row.made)),
-            });
-        }
-        for node in &nodes {
-            self.ino(&node.id);
-        }
-        Ok(nodes)
-    }
-
-    fn parent_of(&self, id: &NodeId) -> Result<Option<NodeId>, DriveError> {
-        Ok(match id {
-            NodeId::Top => Some(NodeId::Top),
-            NodeId::Remote(id) => self
-                .entry(id)?
-                .map(|entry| entry.parent.map_or(NodeId::Top, NodeId::Remote)),
-            NodeId::Local(n) => self.local_row(*n).map(|row| {
-                row.parent
-                    .map_or(NodeId::Top, |p| NodeId::Remote(RemoteId(p)))
-            }),
-        })
-    }
-
-    fn node(&self, id: &NodeId) -> Result<Option<Node>, DriveError> {
-        if *id == NodeId::Top {
-            return Ok(Some(self.top()));
-        }
-        let Some(parent) = self.parent_of(id)? else {
-            return Ok(None);
-        };
-        Ok(self
-            .children(&parent)?
-            .into_iter()
-            .find(|node| node.id == *id))
-    }
-
     /// Whether `id` is kept, itself or by a folder above it, as `index` says. When the folders
     /// above it cannot be read it counts as kept: nothing is evicted on a guess.
     fn kept_in(&self, index: &Index, id: &RemoteId) -> bool {
@@ -764,24 +777,36 @@ impl Inner {
 
     /// Whether a folder above `id` is kept; when the folders above it cannot be read, yes.
     fn kept_by_folder(&self, id: &NodeId) -> bool {
-        let index = held(&self.index);
-        let above = match id {
+        let above = match self.canonical(id) {
             NodeId::Top => return false,
-            NodeId::Remote(id) => self.listing.ancestors(id),
-            NodeId::Local(n) => match index.local.iter().find(|row| row.n == *n) {
-                Some(LocalRow {
-                    parent: Some(parent),
-                    ..
-                }) => {
-                    let parent = RemoteId(parent.clone());
-                    self.listing.ancestors(&parent).map(|mut above| {
-                        above.insert(0, parent);
-                        above
-                    })
+            NodeId::Remote(id)
+                if !held(&self.index)
+                    .edits
+                    .contains_key(&NodeId::Remote(id.clone())) =>
+            {
+                self.listing.ancestors(&id)
+            }
+            other => {
+                // Up through what was made or moved here to the first of the drive's folders.
+                let mut at = other;
+                let mut found = Ok(Vec::new());
+                for _ in 0..DEPTH {
+                    match self.parent_of(&at) {
+                        Ok(Some(NodeId::Remote(parent))) => {
+                            found = self.listing.ancestors(&parent).map(|mut above| {
+                                above.insert(0, parent);
+                                above
+                            });
+                            break;
+                        }
+                        Ok(Some(NodeId::Local(n))) => at = NodeId::Local(n),
+                        _ => break,
+                    }
                 }
-                _ => Ok(Vec::new()),
-            },
+                found
+            }
         };
+        let index = held(&self.index);
         above.map_or(true, |above| {
             above.iter().any(|folder| index.kept.contains(&folder.0))
         })

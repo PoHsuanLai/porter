@@ -16,6 +16,11 @@
 //!   `Replica::fetch`), never the whole file in memory. Keep Downloaded, Remove Download,
 //!   Download Now, eviction oldest-opened first past a [`CacheLimit`] (kept and open files are
 //!   never evicted), and each item's [`Status`] as Files shows it.
+//! - **Changes made here** ([`Drive::open_writable`]): new files and folders, bytes written,
+//!   renames and moves (saving by rename over a file among them) and removals are kept in the
+//!   cache first, in a queue in its index, and sent through a [`Sink`] (porter-sync's
+//!   `DriveWrite`) once a file is closed and quiet for [`QUIET`]. Lock files and the desktop's
+//!   trash stay here ([`local_only`]).
 //!
 //! ```
 //! use porter_drive::naming;
@@ -29,19 +34,22 @@ mod hash;
 mod index;
 mod limit;
 mod listing;
+pub mod local_only;
 pub mod naming;
 pub mod online;
 mod ranges;
+mod sink;
 mod source;
 #[cfg(feature = "testing")]
 pub mod testing;
 pub mod words;
 
 pub use drive::{
-    Attrs, Changed, Drive, DriveConfig, DriveError, ItemState, Node, NodeId, NodeKind, ROOT_INO,
-    ReadError, Status,
+    Attrs, Changed, Drive, DriveConfig, DriveError, ItemState, Node, NodeId, NodeKind, QUIET,
+    ROOT_INO, ReadError, Status, WriteError,
 };
 pub use limit::{AUTOMATIC_FLOOR, CacheLimit};
 pub use listing::{Entry, Listing, ListingError};
 pub use porter_sync::{ContentHash, RemoteId};
+pub use sink::{Sending, Sink};
 pub use source::{CopyError, Exporting, Fetching, ReplicaSource, Source, SourceError};

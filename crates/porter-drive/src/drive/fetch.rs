@@ -287,6 +287,7 @@ impl Inner {
             }
             ids.into_iter().map(NodeId::Remote).collect()
         };
+        self.wake.notify_one();
         self.emit(cleared);
     }
 }
@@ -452,6 +453,17 @@ impl Drive {
     /// It is a folder, it is not there, or its download could not start.
     pub fn open_file(&self, id: &NodeId) -> Result<(), ReadError> {
         let inner = &self.inner;
+        let id = &inner.canonical(id);
+        if let Some(edit) = inner.edit(id) {
+            if edit.folder {
+                return Err(ReadError::Folder);
+            }
+            if edit.dirty.is_some() {
+                // Its bytes are the ones written here.
+                *held(&inner.open).entry(id.clone()).or_default() += 1;
+                return Ok(());
+            }
+        }
         if let NodeId::Remote(remote) = id {
             let entry = inner
                 .entry(remote)
@@ -485,6 +497,7 @@ impl Drive {
 
     /// Closes what [`Drive::open_file`] opened.
     pub fn release(&self, id: &NodeId) {
+        let id = &self.inner.canonical(id);
         let mut open = held(&self.inner.open);
         if let Some(n) = open.get_mut(id) {
             *n = n.saturating_sub(1);
@@ -505,16 +518,22 @@ impl Drive {
     /// See [`ReadError`].
     pub async fn read(&self, id: &NodeId, offset: u64, len: u64) -> Result<Vec<u8>, ReadError> {
         let inner = &self.inner;
-        let remote = match id {
-            NodeId::Top => return Err(ReadError::Folder),
-            NodeId::Local(n) => {
-                let row = inner.local_row(*n).ok_or(ReadError::Gone)?;
-                let end = offset.saturating_add(len).min(row.size);
+        let id = &inner.canonical(id);
+        if let Some(edit) = inner.edit(id) {
+            if edit.folder {
+                return Err(ReadError::Folder);
+            }
+            if let Some(dirty) = &edit.dirty {
+                let end = offset.saturating_add(len).min(dirty.size);
                 return match offset < end {
-                    true => read_at(&inner.local_file(*n), offset, end - offset),
+                    true => read_at(&inner.local_file(dirty.file), offset, end - offset),
                     false => Ok(Vec::new()),
                 };
             }
+        }
+        let remote = match id {
+            NodeId::Top => return Err(ReadError::Folder),
+            NodeId::Local(_) => return Err(ReadError::Gone),
             NodeId::Remote(remote) => remote,
         };
         // The entry is read again each try: a newer version that replaced the transfer this

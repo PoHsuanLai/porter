@@ -53,7 +53,8 @@ impl Inner {
     }
 
     /// Removes what is past the limit, which counts what is not kept downloaded: oldest opened
-    /// first, never what is kept, open or being fetched.
+    /// first, never what is kept, open or being fetched, and never what was changed here and is
+    /// not settled on the drive yet (bytes written here are in `local/`, outside the limit).
     pub(super) fn evict(&self) {
         let limit = held(&self.limit).bytes_for(&self.dir);
         let gone: Vec<RemoteId> = {
@@ -61,6 +62,11 @@ impl Inner {
             let mut rows: Vec<(&String, u64, u64)> = index
                 .items
                 .iter()
+                .filter(|(id, _)| {
+                    !index
+                        .edits
+                        .contains_key(&NodeId::Remote(RemoteId((*id).clone())))
+                })
                 .filter(|(id, _)| !self.kept_in(&index, &RemoteId((*id).clone())))
                 .map(|(id, row)| (id, row.opened, row.present.bytes()))
                 .collect();
@@ -100,10 +106,11 @@ impl Drive {
     /// The words when it is refused: an online document, an item that is not there, or the
     /// drive cannot be reached now.
     pub fn download(&self, id: &NodeId) -> Result<(), Refusal> {
+        let id = &self.inner.canonical(id);
         let remote = match id {
             NodeId::Top => return Err(words::NOT_ON_A_DRIVE),
-            NodeId::Local(n) => {
-                return match self.inner.local_row(*n) {
+            NodeId::Local(_) => {
+                return match self.inner.edit(id) {
                     Some(_) => Ok(()),
                     None => Err(words::NOT_ON_A_DRIVE),
                 };
@@ -144,10 +151,11 @@ impl Drive {
     /// off an item kept with its folder.
     pub fn keep(&self, id: &NodeId, keep: bool) -> Result<(), Refusal> {
         let inner = &self.inner;
+        let id = &inner.canonical(id);
         let remote = match id {
             NodeId::Top => return Err(words::NOT_ON_A_DRIVE),
-            NodeId::Local(n) => {
-                inner.local_row(*n).ok_or(words::NOT_ON_A_DRIVE)?;
+            NodeId::Local(_) => {
+                inner.edit(id).ok_or(words::NOT_ON_A_DRIVE)?;
                 if !keep && inner.kept_by_folder(id) {
                     return Err(words::KEPT_WITH_FOLDER);
                 }
@@ -209,13 +217,14 @@ impl Drive {
     /// stands for it; the rest of it is still freed).
     pub fn remove_download(&self, id: &NodeId) -> Result<(), Refusal> {
         let inner = &self.inner;
+        let id = &inner.canonical(id);
         if self.inner.kept_by_folder(id) {
             return Err(words::KEPT_WITH_FOLDER);
         }
         let remote = match id {
             NodeId::Top => return Err(words::NOT_ON_A_DRIVE),
-            NodeId::Local(n) => {
-                inner.local_row(*n).ok_or(words::NOT_ON_A_DRIVE)?;
+            NodeId::Local(_) => {
+                inner.edit(id).ok_or(words::NOT_ON_A_DRIVE)?;
                 return Err(words::WAITING);
             }
             NodeId::Remote(remote) => remote,
@@ -241,23 +250,28 @@ impl Drive {
         }
         inner.touched();
         let mut changed = vec![id.clone()];
+        let mut waiting = false;
         for file in std::iter::once(&entry).chain(under.iter()) {
+            // What was changed here stays: it is not on the drive yet.
+            if inner.edit(&NodeId::Remote(file.id.clone())).is_some() {
+                waiting |= file.kind.is_file();
+                continue;
+            }
             if file.kind.is_file() {
                 inner.drop_cached(&file.id);
             }
             changed.push(NodeId::Remote(file.id.clone()));
         }
         inner.emit(changed);
-        // What was made here under it stays: it is not on the drive yet.
-        let folders: BTreeSet<String> = std::iter::once(&entry)
+        let folders: BTreeSet<NodeId> = std::iter::once(&entry)
             .chain(under.iter())
             .filter(|e| e.kind == ItemKind::Folder)
-            .map(|e| e.id.0.clone())
+            .map(|e| NodeId::Remote(e.id.clone()))
             .collect();
-        let waiting = held(&inner.index)
-            .local
-            .iter()
-            .any(|row| row.parent.as_ref().is_some_and(|p| folders.contains(p)));
+        waiting |= held(&inner.index)
+            .edits
+            .values()
+            .any(|edit| !edit.removed && folders.contains(&edit.parent));
         match waiting {
             true => Err(words::WAITING),
             false => Ok(()),
@@ -281,6 +295,7 @@ impl Drive {
         {
             return;
         }
+        inner.settle();
         let rows: Vec<(String, String)> = held(&inner.index)
             .items
             .iter()
@@ -326,36 +341,50 @@ impl Drive {
                 Err(_) => {}
             }
         }
-        // A file made here whose folder is gone shows at the top: nothing made here is lost.
-        {
-            let mut index = held(&inner.index);
-            let mut moved = Vec::new();
-            for row in &mut index.local {
-                if let Some(parent) = &row.parent
-                    && matches!(inner.listing.entry(&RemoteId(parent.clone())), Ok(None))
-                {
-                    row.parent = None;
-                    moved.push(NodeId::Local(row.n));
-                }
+        // What was made or moved here into a folder that is gone shows at the top: nothing made
+        // here is lost.
+        let placed: Vec<(NodeId, RemoteId)> = held(&inner.index)
+            .edits
+            .values()
+            .filter(|edit| !edit.removed)
+            .filter_map(|edit| match &edit.parent {
+                NodeId::Remote(parent) => Some((edit.id.clone(), parent.clone())),
+                _ => None,
+            })
+            .collect();
+        let mut moved = Vec::new();
+        for (id, parent) in placed {
+            let gone = !held(&inner.index)
+                .edits
+                .contains_key(&NodeId::Remote(parent.clone()))
+                && matches!(inner.listing.entry(&parent), Ok(None));
+            if gone && let Some(edit) = held(&inner.index).edits.get_mut(&id) {
+                edit.parent = NodeId::Top;
+                moved.push(id);
             }
-            if !moved.is_empty() {
-                drop(index);
-                inner.touched();
-                changed.extend(moved);
-            }
+        }
+        if !moved.is_empty() {
+            inner.touched();
+            inner.wake.notify_one();
+            changed.extend(moved);
         }
         inner.emit(changed);
         inner.evict();
     }
 
-    /// Bytes of the drive's files here: what is cached and what was made here.
+    /// Bytes of the drive's files here: what is cached and what was written here.
     pub fn local_bytes(&self) -> u64 {
         let index = held(&self.inner.index);
         index
             .items
             .values()
             .map(|row| row.present.bytes())
-            .chain(index.local.iter().map(|row| row.size))
+            .chain(
+                index
+                    .edits
+                    .values()
+                    .filter_map(|edit| edit.dirty.as_ref().map(|dirty| dirty.size)),
+            )
             .sum()
     }
 }

@@ -9,6 +9,10 @@ pub const ONLINE_ONLY: &str = "This document opens online.";
 pub const OFFLINE: &str = "This file will download when you're connected.";
 /// A removal asked for an item with changes not sent yet.
 pub const WAITING: &str = "Waiting to upload.";
+/// A change the drive refused: it has no room left.
+pub const NO_ROOM: &str = "There's no room left on this drive.";
+/// A change the drive refused: the account may not change the item there.
+pub const MAY_NOT_WRITE: &str = "You can't change this file.";
 /// A removal asked for an item with two versions.
 pub const CONFLICT: &str = "This file has two versions. Choose one first.";
 /// Keep Downloaded off, or a removal, asked for an item inside a kept folder.

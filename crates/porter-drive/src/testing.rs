@@ -1,11 +1,16 @@
 //! A drive held in memory: a [`MemoryListing`] of entries and a [`MemorySource`] of their bytes,
-//! which can be taken offline and made to fetch one chunk at a time. For tests only.
+//! which can be taken offline and made to fetch one chunk at a time, and a [`MemorySink`] that
+//! takes changes into both. For tests only.
 
 use crate::listing::{Entry, Listing, ListingError};
+use crate::sink::{Sending, Sink};
 use crate::source::{CopyError, Exporting, Fetching, Source, SourceError};
 use porter_core::capability::HashKind;
 use porter_core::{Bytes, UnixSeconds, WebUrl};
-use porter_sync::{ItemKind, RemoteId, RemoteVersion};
+use porter_sync::{
+    BaseVersion, Conflict, ItemKind, Place, PutRefused, RemoteId, RemoteSide, RemoteVersion,
+    RetryAfter, Session, Upload, UploadTo, Written,
+};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -219,6 +224,370 @@ impl Source for MemorySource {
                 .get(id)
                 .cloned()
                 .unwrap_or(Err(CopyError::NoFormat))
+        })
+    }
+}
+
+/// One change a [`MemorySink`] took, as its log shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Took {
+    /// A folder made: its parent and name.
+    Folder(Option<String>, String),
+    /// A new file uploaded: its parent, name and size.
+    New(Option<String>, String, u64),
+    /// New bytes for a file: its id and size.
+    Replace(String, u64),
+    /// A rename or move: the id, the new parent and name.
+    Relocate(String, Option<String>, String),
+    /// Sent to the recycle bin: the id.
+    Trash(String),
+}
+
+/// How a [`MemorySink`] refuses every change, while it does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Refuse {
+    /// The drive could not be reached.
+    Offline,
+    /// No room left.
+    Quota,
+    /// The account may not write.
+    Forbidden,
+}
+
+#[derive(Debug, Default)]
+struct SinkState {
+    took: Vec<Took>,
+    refuse: Option<Refuse>,
+    names: Option<fn(&str) -> bool>,
+    sessions: HashMap<String, Vec<u8>>,
+    next: u64,
+    cut_after: Option<u32>,
+    cuts: u32,
+    largest: u64,
+    read: u64,
+    bin: Vec<String>,
+    lagging: Option<Vec<Option<Entry>>>,
+    lag_removed: Vec<RemoteId>,
+}
+
+/// The writes of a drive held in memory: what it takes changes a [`MemoryListing`] and a
+/// [`MemorySource`], as a drive's next listing pass would show it. It can refuse, refuse names,
+/// cut an upload off mid-way and hold its listing back.
+#[derive(Debug)]
+pub struct MemorySink {
+    listing: Arc<MemoryListing>,
+    source: Arc<MemorySource>,
+    chunk: u64,
+    state: Mutex<SinkState>,
+}
+
+impl MemorySink {
+    /// Writes into `listing` and `source`, uploads `chunk` bytes at a time.
+    pub fn new(listing: Arc<MemoryListing>, source: Arc<MemorySource>, chunk: u64) -> Self {
+        Self {
+            listing,
+            source,
+            chunk: chunk.max(1),
+            state: Mutex::default(),
+        }
+    }
+
+    /// Every change taken so far, in order.
+    pub fn took(&self) -> Vec<Took> {
+        held(&self.state).took.clone()
+    }
+
+    /// Refuses every change so (`None`: takes them again).
+    pub fn refuse(&self, how: Option<Refuse>) {
+        held(&self.state).refuse = how;
+    }
+
+    /// Takes only names `rule` takes.
+    pub fn names(&self, rule: fn(&str) -> bool) {
+        held(&self.state).names = Some(rule);
+    }
+
+    /// Cuts the next upload off after `chunks` chunks, as a dropped connection does.
+    pub fn cut_after(&self, chunks: u32) {
+        held(&self.state).cut_after = Some(chunks);
+    }
+
+    /// How many uploads were cut off.
+    pub fn cuts(&self) -> u32 {
+        held(&self.state).cuts
+    }
+
+    /// The most bytes one chunk of an upload read.
+    pub fn largest_chunk(&self) -> u64 {
+        held(&self.state).largest
+    }
+
+    /// The bytes uploads read in all.
+    pub fn read_bytes(&self) -> u64 {
+        held(&self.state).read
+    }
+
+    /// The names in the recycle bin.
+    pub fn bin(&self) -> Vec<String> {
+        held(&self.state).bin.clone()
+    }
+
+    /// Holds what it takes out of the listing until [`MemorySink::catch_up`].
+    pub fn lag(&self) {
+        held(&self.state).lagging = Some(Vec::new());
+    }
+
+    /// Puts what it held back into the listing.
+    pub fn catch_up(&self) {
+        let (held_back, removed) = {
+            let mut state = held(&self.state);
+            (
+                state.lagging.take().unwrap_or_default(),
+                std::mem::take(&mut state.lag_removed),
+            )
+        };
+        for entry in held_back.into_iter().flatten() {
+            self.listing.put(entry);
+        }
+        for id in removed {
+            self.listing.remove(&id.0);
+        }
+    }
+
+    fn show(&self, entry: Entry) {
+        let mut state = held(&self.state);
+        match state.lagging.as_mut() {
+            Some(lag) => lag.push(Some(entry)),
+            None => {
+                drop(state);
+                self.listing.put(entry);
+            }
+        }
+    }
+
+    fn hide(&self, id: &RemoteId) {
+        let mut state = held(&self.state);
+        match state.lagging.is_some() {
+            true => state.lag_removed.push(id.clone()),
+            false => {
+                drop(state);
+                self.listing.remove(&id.0);
+            }
+        }
+    }
+
+    fn version(&self) -> RemoteVersion {
+        let mut state = held(&self.state);
+        state.next += 1;
+        RemoteVersion(format!("w{}", state.next))
+    }
+
+    fn check(&self, name: Option<&str>) -> Result<(), PutRefused> {
+        let state = held(&self.state);
+        match state.refuse {
+            Some(Refuse::Offline) => return Err(PutRefused::Transient(RetryAfter(0))),
+            Some(Refuse::Quota) => return Err(PutRefused::Quota),
+            Some(Refuse::Forbidden) => return Err(PutRefused::Forbidden),
+            None => {}
+        }
+        match (name, state.names) {
+            (Some(name), Some(rule)) if !rule(name) => Err(PutRefused::Forbidden),
+            _ => Ok(()),
+        }
+    }
+
+    fn at_base(&self, id: &RemoteId, base: &BaseVersion) -> Result<Entry, PutRefused> {
+        let now = self.listing.entry(id).ok().flatten();
+        match (now, base) {
+            (Some(entry), BaseVersion::At(seen)) if entry.version == *seen => Ok(entry),
+            (Some(entry), _) => Err(PutRefused::Conflict(Conflict {
+                item: id.clone(),
+                base: base.clone(),
+                remote: RemoteSide::Changed(entry.version),
+            })),
+            (None, _) => Err(PutRefused::Conflict(Conflict {
+                item: id.clone(),
+                base: base.clone(),
+                remote: RemoteSide::Deleted(RemoteVersion(String::new())),
+            })),
+        }
+    }
+
+    fn free(&self, place: &Place, except: Option<&RemoteId>) -> Result<(), PutRefused> {
+        let taken = self
+            .listing
+            .children(place.parent.as_ref())
+            .unwrap_or_default()
+            .into_iter()
+            .find(|e| e.name == place.name && Some(&e.id) != except);
+        match taken {
+            Some(entry) => Err(PutRefused::Conflict(Conflict {
+                item: entry.id.clone(),
+                base: BaseVersion::Absent,
+                remote: RemoteSide::Exists(entry.id, entry.version),
+            })),
+            None => Ok(()),
+        }
+    }
+
+    fn new_id(&self) -> RemoteId {
+        let mut state = held(&self.state);
+        state.next += 1;
+        RemoteId(format!("made{}", state.next))
+    }
+}
+
+fn parent_text(place: &Place) -> Option<String> {
+    place.parent.as_ref().map(|p| p.0.clone())
+}
+
+impl Sink for MemorySink {
+    fn accepts_name(&self, name: &str) -> bool {
+        held(&self.state).names.is_none_or(|rule| rule(name))
+    }
+
+    fn make_folder<'a>(&'a self, place: &'a Place) -> Sending<'a, Written> {
+        Box::pin(async move {
+            self.check(Some(&place.name))?;
+            self.free(place, None)?;
+            let id = self.new_id();
+            let version = self.version();
+            let mut folder = entry(&id.0, None, &place.name, ItemKind::Folder, 0, &version.0);
+            folder.parent = place.parent.clone();
+            self.show(folder);
+            held(&self.state)
+                .took
+                .push(Took::Folder(parent_text(place), place.name.clone()));
+            Ok(Written { id, version })
+        })
+    }
+
+    fn upload<'a>(&'a self, upload: Upload<'a>) -> Sending<'a, Written> {
+        Box::pin(async move {
+            let name = match &upload.to {
+                UploadTo::New(place) => Some(place.name.as_str()),
+                UploadTo::Replace(_) => None,
+            };
+            self.check(name)?;
+            let (id, mut file) = match &upload.to {
+                UploadTo::New(place) => {
+                    self.free(place, None)?;
+                    let mut file = entry("", None, &place.name, ItemKind::File, 0, "");
+                    file.parent = place.parent.clone();
+                    (None, file)
+                }
+                UploadTo::Replace(id) => (Some(id.clone()), self.at_base(id, &upload.base)?),
+            };
+            let size = upload.content.size();
+            let mut bytes = Vec::new();
+            let mut session = None;
+            if size > self.chunk {
+                let resumed = upload.resume.as_ref().and_then(|old| {
+                    let had = held(&self.state).sessions.get(old.address()).cloned()?;
+                    Some((old.address().to_owned(), had))
+                });
+                let key = match resumed {
+                    Some((key, had)) => {
+                        bytes = had;
+                        key
+                    }
+                    None => {
+                        let key = format!("mem://session/{}", self.new_id().0);
+                        held(&self.state).sessions.insert(key.clone(), Vec::new());
+                        upload.progress.session(Some(&Session::new(key.clone())));
+                        key
+                    }
+                };
+                session = Some(key);
+            }
+            let mut at = bytes.len() as u64;
+            let mut chunks = 0u32;
+            while at < size {
+                let cut = held(&self.state).cut_after;
+                if cut.is_some_and(|after| chunks >= after) {
+                    let mut state = held(&self.state);
+                    state.cut_after = None;
+                    state.cuts += 1;
+                    if let Some(key) = &session {
+                        state.sessions.insert(key.clone(), bytes);
+                    }
+                    return Err(PutRefused::Transient(RetryAfter(0)));
+                }
+                let chunk = upload
+                    .content
+                    .read(at, self.chunk)
+                    .map_err(|_| PutRefused::Transient(RetryAfter(0)))?;
+                {
+                    let mut state = held(&self.state);
+                    state.largest = state.largest.max(chunk.len() as u64);
+                    state.read += chunk.len() as u64;
+                }
+                at += chunk.len() as u64;
+                bytes.extend_from_slice(&chunk);
+                chunks += 1;
+                upload.progress.sent(at);
+                tokio::task::yield_now().await;
+            }
+            if let Some(key) = &session {
+                held(&self.state).sessions.remove(key);
+                upload.progress.session(None);
+            }
+            let id = id.unwrap_or_else(|| self.new_id());
+            let version = self.version();
+            file.id = id.clone();
+            file.size = Bytes(size);
+            file.version = version.clone();
+            file.hash = None;
+            self.source.put(&id.0, bytes);
+            held(&self.state).took.push(match &upload.to {
+                UploadTo::New(place) => Took::New(parent_text(place), place.name.clone(), size),
+                UploadTo::Replace(id) => Took::Replace(id.0.clone(), size),
+            });
+            self.show(file);
+            Ok(Written { id, version })
+        })
+    }
+
+    fn relocate<'a>(
+        &'a self,
+        item: &'a RemoteId,
+        base: &'a BaseVersion,
+        to: &'a Place,
+    ) -> Sending<'a, Written> {
+        Box::pin(async move {
+            self.check(Some(&to.name))?;
+            let mut moved = self.at_base(item, base)?;
+            self.free(to, Some(item))?;
+            let version = self.version();
+            moved.parent = to.parent.clone();
+            moved.name = to.name.clone();
+            moved.version = version.clone();
+            self.show(moved);
+            held(&self.state).took.push(Took::Relocate(
+                item.0.clone(),
+                parent_text(to),
+                to.name.clone(),
+            ));
+            Ok(Written {
+                id: item.clone(),
+                version,
+            })
+        })
+    }
+
+    fn trash<'a>(&'a self, item: &'a RemoteId, base: &'a BaseVersion) -> Sending<'a, ()> {
+        Box::pin(async move {
+            self.check(None)?;
+            let gone = self.at_base(item, base)?;
+            let under = self.listing.descendants(item).unwrap_or_default();
+            for inside in &under {
+                self.hide(&inside.id);
+            }
+            self.hide(item);
+            let mut state = held(&self.state);
+            state.bin.push(gone.name);
+            state.took.push(Took::Trash(item.0.clone()));
+            Ok(())
         })
     }
 }
