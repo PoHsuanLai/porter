@@ -399,11 +399,9 @@ impl<C: Callers> StorageObject<C> {
         }
         let mut refused = Refused::new();
         for id in drives {
-            match self.0.drives.get(&id) {
-                Some(drive) => drive.set_paused(paused),
-                None => {
-                    refused.insert(id, words::NO_DRIVE.to_owned());
-                }
+            // Kept across restarts.
+            if !self.0.drives.set_paused(&id, paused) {
+                refused.insert(id, words::NO_DRIVE.to_owned());
             }
         }
         self.0.drives.tell_drives();

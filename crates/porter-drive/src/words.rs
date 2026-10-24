@@ -19,6 +19,16 @@ pub const IN_USE: &str = "This file is in use on the drive.";
 pub const NAME_REFUSED: &str = "The drive doesn't take this name.";
 /// A change the drive refused for a reason of its own.
 pub const DECLINED: &str = "The drive couldn't take this change.";
+
+/// What removing an account kept: `count` files made or changed here that were not uploaded,
+/// written out as plain files in the drive's folder (`folder`, as people see it:
+/// `~/Cloud/OneDrive`).
+pub fn kept_unsent(count: usize, folder: &str) -> String {
+    match count {
+        1 => format!("1 file that wasn't uploaded was kept in {folder}."),
+        n => format!("{n} files that weren't uploaded were kept in {folder}."),
+    }
+}
 /// A removal asked for an item with two versions.
 pub const CONFLICT: &str = "This file has two versions. Choose one first.";
 /// Keep Downloaded off, or a removal, asked for an item inside a kept folder.

@@ -1123,3 +1123,40 @@ async fn a_pause_stops_an_upload_at_its_next_chunk_and_it_goes_on_from_there() {
     assert_eq!(rig.sink.read_bytes(), 16, "no byte is sent twice");
     assert_eq!(rig.sink.uploads(), [b"0123456789abcdef".to_vec()]);
 }
+
+#[tokio::test]
+async fn what_was_not_sent_is_written_out_as_plain_files_when_the_drive_is_let_go() {
+    let rig = rig();
+    rig.listing.folder("f", None, "Work");
+    rig.file("r", Some("f"), "report.txt", b"old text");
+    rig.drive.set_paused(true);
+    rig.write_at("r", 0, b"new").await;
+    let work = remote("f");
+    rig.write_new(&work, "made.txt", b"made here").await;
+    let plans = rig
+        .drive
+        .make_folder(&NodeId::Top, "Plans")
+        .expect("folder");
+    rig.write_new(&plans, "a.txt", b"a").await;
+    rig.drive
+        .make_folder(&NodeId::Top, "Empty")
+        .expect("folder");
+    let into = rig.dir.join("Cloud").join("Drive");
+    std::fs::create_dir_all(into.join("Work")).expect("folder");
+    std::fs::write(into.join("Work").join("made.txt"), b"there").expect("write");
+    assert_eq!(rig.drive.keep_unsent(&into).expect("kept"), 3);
+    let read = |path: &str| std::fs::read(into.join(path)).expect(path);
+    assert_eq!(read("Work/report.txt"), b"new text");
+    assert_eq!(read("Work/made 2.txt"), b"made here");
+    assert_eq!(read("Work/made.txt"), b"there", "what was there stays");
+    assert_eq!(read("Plans/a.txt"), b"a");
+    assert!(into.join("Empty").is_dir());
+    assert_eq!(
+        words::kept_unsent(3, "~/Cloud/Drive"),
+        "3 files that weren't uploaded were kept in ~/Cloud/Drive."
+    );
+    assert_eq!(
+        words::kept_unsent(1, "~/Cloud/Drive"),
+        "1 file that wasn't uploaded was kept in ~/Cloud/Drive."
+    );
+}

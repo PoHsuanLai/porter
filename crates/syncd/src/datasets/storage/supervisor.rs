@@ -53,7 +53,7 @@ use porter_client::Transport;
 use porter_core::{AppName, Candidate, EndpointUrl, WebUrl};
 use porter_dbus::DriveState;
 use porter_drive::{CacheLimit, Drive, DriveConfig, ReplicaSource};
-use porter_drive_fuse::{DriveFs, Mounted, Mounter};
+use porter_drive_fuse::{DriveFs, Mounter};
 use porter_sync::{DriveWrite, Replica};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
@@ -145,8 +145,6 @@ enum Running<T: Transport> {
         limit: JoinHandle<()>,
         id: String,
         path: std::path::PathBuf,
-        /// Its folder being mounted, then mounted (dropping it takes the folder away).
-        mounting: Option<JoinHandle<Option<Mounted>>>,
     },
 }
 
@@ -209,13 +207,14 @@ where
     /// A supervisor over `wiring` (its `owners` are not used: `config` names the owners of each
     /// kind), asking `grants`.
     pub fn new(wiring: Wiring<T>, grants: G, config: StorageConfig) -> Self {
+        let drives = DriveSet::default().with_settings(wiring.paths.settings.clone());
         Self {
             wiring,
             grants,
             running: BTreeMap::new(),
             pickers: crate::service::Pickers::default(),
             silent: BTreeSet::new(),
-            drives: DriveSet::default(),
+            drives,
             limit: Arc::new(watch::channel(config.cache_limit).0),
             config,
         }
@@ -304,9 +303,11 @@ where
                 let key = (account.clone(), kind);
                 let folder = folders.get(&candidate.account).cloned().unwrap_or_default();
                 // A drive whose folder name changed (a second account of its provider came or
-                // went) is put at its new path.
-                if let Some(Running::Drive { path, .. }) = self.running.get(&key)
-                    && *path != self.wiring.paths.cloud.join(&folder)
+                // went) is put at its new path; one let go for a removal that did not go
+                // through is started again.
+                if let Some(Running::Drive { path, id, .. }) = self.running.get(&key)
+                    && (*path != self.wiring.paths.cloud.join(&folder)
+                        || self.drives.get(id).is_some_and(|live| live.released()))
                     && let Some(running) = self.running.remove(&key)
                 {
                     self.retire(running).await;
@@ -496,6 +497,10 @@ where
             path.clone(),
             files.clone(),
         ));
+        // Paused before a restart: paused still, before anything is read or sent.
+        if self.drives.was_paused(&live.id) {
+            live.set_paused(true);
+        }
         // The folder is mounted off the runtime's one thread: asking porter-mountd, or running
         // fusermount3, waits on another process (bounded, but not for the runtime to sit on).
         let mounting = match &self.config.mount {
@@ -522,6 +527,9 @@ where
                 }))
             }
         };
+        if let Some(mounting) = mounting {
+            live.set_mounting(mounting);
+        }
         self.drives.insert(Arc::clone(&live));
         let mut knob = self.limit.subscribe();
         let follower = files.clone();
@@ -547,6 +555,7 @@ where
                 Err(_) => (DriveState::Error, Some(UNREADABLE_WORDS)),
             };
             live.drive.set_offline(state == DriveState::Offline);
+            live.drive.set_signed_out(state == DriveState::NeedsSignIn);
             if live.set_listed(state, words) {
                 set.tell_drives();
             }
@@ -574,7 +583,6 @@ where
             limit,
             id: live.id.clone(),
             path,
-            mounting,
         })
     }
 
@@ -764,29 +772,14 @@ where
         match running {
             Running::Folder { task, .. } => task.abort(),
             Running::Drive {
-                task,
-                limit,
-                id,
-                mounting,
-                ..
+                task, limit, id, ..
             } => {
                 task.abort();
                 limit.abort();
-                self.drives.remove(&id);
-                // Waits for a mount still being made, so none is left behind, then takes the
-                // folder away off the runtime's thread (it never waits for the session).
-                if let Some(mounting) = mounting
-                    && let Ok(Some(mounted)) = mounting.await
+                if let Some(live) = self.drives.remove(&id)
+                    && let Err(why) = live.take_away().await
                 {
-                    match tokio::task::spawn_blocking(move || mounted.unmount()).await {
-                        Ok(Ok(())) => {}
-                        Ok(Err(why)) => {
-                            eprintln!("syncd: a drive's folder was not taken away: {why}")
-                        }
-                        Err(why) => {
-                            eprintln!("syncd: a drive's folder was not taken away: {why}")
-                        }
-                    }
+                    eprintln!("syncd: a drive's folder was not taken away: {why}");
                 }
             }
             Running::GooglePhotos {

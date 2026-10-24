@@ -29,6 +29,7 @@ pub use classes::{
 };
 pub use hosted::{Directory, Hosted, Intent, Pick, SyncSheets, account_of};
 
+use crate::datasets::drive::{DriveSet, Kept};
 use crate::paths::{AccountDir, Paths};
 use crate::removal;
 use crate::service::Hub;
@@ -126,6 +127,8 @@ pub struct Keep<H, D> {
     turning: tokio::sync::Mutex<()>,
     paths: Paths,
     hub: Hub,
+    /// The drives shown in Files, let go before their account is removed.
+    drives: DriveSet,
 }
 
 impl<H: Hosted, D: Directory> Keep<H, D> {
@@ -145,7 +148,16 @@ impl<H: Hosted, D: Directory> Keep<H, D> {
             turning: tokio::sync::Mutex::new(()),
             paths,
             hub,
+            drives: DriveSet::default(),
         }
+    }
+
+    /// With the drives shown in Files: a removal lets the account's drive go first, keeping
+    /// what was not uploaded in its folder.
+    #[must_use]
+    pub fn with_drives(mut self, drives: DriveSet) -> Self {
+        self.drives = drives;
+        self
     }
 
     /// The registry: the accounts syncd signed in and its own grants.
@@ -350,18 +362,27 @@ impl<H: Hosted, D: Directory> Keep<H, D> {
         }
     }
 
-    /// Removes `account`: its datasets stop, its journals and mirrors are deleted, then its
-    /// stored sign-in and grants. A failure to delete the files leaves the account as it was.
-    pub async fn remove(&self, account: &AccountId) -> Result<(), RemoveError> {
+    /// Removes `account`: its drive is let go (what was made or changed in its folder and not
+    /// uploaded is written out there as plain files), its datasets stop, its journals, mirrors
+    /// and cache are deleted, then its stored sign-in and grants. What was kept. A failure
+    /// before the stored sign-in goes leaves the account, and its drive is started again.
+    pub async fn remove(&self, account: &AccountId) -> Result<Vec<Kept>, RemoveError> {
         account_of(&self.hosted.registry(), account).ok_or(RemoveError::Unknown)?;
         let dir =
             AccountDir::parse(&porter_core::object_segment(account)).ok_or(RemoveError::Unknown)?;
+        let release = |why: String| {
+            self.drives.release(dir.as_str());
+            RemoveError::Files(why)
+        };
+        let kept = self.drives.retire(dir.as_str()).await.map_err(release)?;
         removal::wipe(&self.paths, &self.hub, &dir)
             .await
-            .map_err(|why| RemoveError::Files(why.to_string()))?;
-        self.hosted
-            .remove_account(account)
-            .await
-            .map_err(|_| RemoveError::Secrets)
+            .map_err(|why| release(why.to_string()))?;
+        self.hosted.remove_account(account).await.map_err(|_| {
+            self.drives.release(dir.as_str());
+            RemoveError::Secrets
+        })?;
+        self.drives.forget(dir.as_str());
+        Ok(kept)
     }
 }

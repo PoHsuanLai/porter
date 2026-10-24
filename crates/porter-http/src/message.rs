@@ -56,8 +56,9 @@ pub fn web_url(url: &EndpointUrl) -> Result<WebUrl, HttpError> {
     })
 }
 
-/// One request.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// One request. Its `Debug` shows the URL's origin only: a path or query can be a credential
+/// of its own (an upload session's address takes bytes with no sign-in).
+#[derive(Clone, PartialEq, Eq)]
 pub struct HttpRequest {
     /// The method.
     pub method: Method,
@@ -67,6 +68,17 @@ pub struct HttpRequest {
     pub headers: Vec<Header>,
     /// The body.
     pub body: Vec<u8>,
+}
+
+impl std::fmt::Debug for HttpRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HttpRequest")
+            .field("method", &self.method)
+            .field("origin", &self.url.origin())
+            .field("headers", &self.headers)
+            .field("body", &self.body.len())
+            .finish()
+    }
 }
 
 impl HttpRequest {

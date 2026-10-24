@@ -21,7 +21,9 @@ mod files;
 mod journal;
 mod listing;
 
-pub use files::{CacheKnob, DriveEvent, DriveSet, LiveDrive, SIGN_IN_WORDS, UNREADABLE_WORDS};
+pub use files::{
+    CacheKnob, DriveEvent, DriveSet, Kept, LiveDrive, SIGN_IN_WORDS, UNREADABLE_WORDS,
+};
 pub use journal::{Applied, DriveEntry, DriveJournal};
 pub use listing::{DriveReplica, Listed, Pass, keep_listing, keep_listing_told, list_once};
 

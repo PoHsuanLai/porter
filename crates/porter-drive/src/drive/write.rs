@@ -125,6 +125,17 @@ fn copy_open(from: &std::fs::File, to: &std::fs::File, size: u64) -> std::io::Re
     to.set_len(size)
 }
 
+/// `path`, or the first free number of its name in its folder when something has it.
+fn free_path(path: &Path) -> PathBuf {
+    let (Some(folder), Some(name)) = (path.parent(), path.file_name().and_then(|n| n.to_str()))
+    else {
+        return path.to_path_buf();
+    };
+    folder.join(naming::free(name, |candidate| {
+        folder.join(candidate).symlink_metadata().is_ok()
+    }))
+}
+
 /// Copies the first `size` bytes of `from` into the file `to`, which exists.
 fn copy_span(from: &Path, to: &Path, size: u64) -> Result<(), WriteError> {
     let source = std::fs::File::open(from)?;
@@ -766,6 +777,68 @@ impl Inner {
 }
 
 impl Drive {
+    /// Writes what was made or changed here and not sent yet out as plain files at their paths
+    /// below `into` (the drive's folder, once nothing is shown there): what removing the account
+    /// keeps of it. Their folders are made as needed, and so is a folder made here; a name
+    /// taken there takes the next free number. How many files were written. The cache itself
+    /// is left as it is.
+    ///
+    /// # Errors
+    /// A file or folder could not be written there.
+    pub fn keep_unsent(&self, into: &Path) -> std::io::Result<usize> {
+        let inner = &self.inner;
+        let edits: Vec<Edit> = held(&inner.index).edits.values().cloned().collect();
+        let mut kept = 0;
+        for edit in edits {
+            if edit.removed || inner.local_only(&edit.id) {
+                continue;
+            }
+            let Some(path) = self.path_here(&edit.id) else {
+                continue;
+            };
+            let Some(dirty) = &edit.dirty else {
+                if edit.folder && edit.base.is_none() {
+                    std::fs::create_dir_all(into.join(&path))?;
+                }
+                continue;
+            };
+            let to = free_path(&into.join(&path));
+            if let Some(parent) = to.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            let lock = inner.file_lock(dirty.file);
+            let _bytes = held(&lock);
+            let source = std::fs::File::open(inner.local_file(dirty.file))?;
+            let target = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&to)?;
+            copy_open(&source, &target, dirty.size)?;
+            target.sync_all()?;
+            kept += 1;
+        }
+        Ok(kept)
+    }
+
+    /// Where `id` is shown, below the drive's folder: its names from the top.
+    fn path_here(&self, id: &NodeId) -> Option<PathBuf> {
+        let mut names = Vec::new();
+        let mut at = self.inner.canonical(id);
+        for _ in 0..super::DEPTH {
+            if at == NodeId::Top {
+                names.reverse();
+                return Some(names.iter().collect());
+            }
+            let node = self.node(&at).ok().flatten()?;
+            if node.name.is_empty() || node.name == "." || node.name == ".." {
+                return None;
+            }
+            names.push(node.name);
+            at = self.inner.parent_of(&at).ok().flatten()?;
+        }
+        None
+    }
+
     /// Makes an empty file `name` in `folder`, open for writing through the handle it answers
     /// with (as [`Drive::open_write`] opens; close it with [`Drive::release_write`]).
     ///

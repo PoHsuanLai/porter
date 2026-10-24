@@ -378,6 +378,8 @@ pub struct SyncSettings<H, D, C> {
     not_on: Arc<Mutex<BTreeSet<AccountId>>>,
     /// The cache limit the drives follow, and the file it is kept in.
     cache: Option<(CacheKnob, PathBuf)>,
+    /// What the last removal kept of what was not uploaded, said under the first row.
+    kept: Arc<Mutex<Option<String>>>,
 }
 
 impl<H, D, C> std::fmt::Debug for SyncSettings<H, D, C> {
@@ -397,6 +399,7 @@ impl<H, D, C> SyncSettings<H, D, C> {
             served: Arc::new(OnceLock::new()),
             not_on: Arc::default(),
             cache: None,
+            kept: Arc::default(),
         }
     }
 
@@ -442,6 +445,53 @@ pub fn read_cache_limit(file: &Path) -> CacheLimit {
         .and_then(|storage| storage.get("cache_limit"))
         .and_then(bytes_of)
         .map_or(CacheLimit::Automatic, CacheLimit::from_setting)
+}
+
+/// The drives `file` keeps paused (`[storage] paused = ["<drive id>", ...]`).
+pub fn read_paused(file: &Path) -> BTreeSet<String> {
+    settings_text(file)
+        .and_then(|text| text.parse::<toml::Table>().ok())
+        .and_then(|table| {
+            let paused = table.get("storage")?.get("paused")?.as_array()?.clone();
+            Some(
+                paused
+                    .iter()
+                    .filter_map(|id| id.as_str().map(str::to_owned))
+                    .collect(),
+            )
+        })
+        .unwrap_or_default()
+}
+
+/// Writes to `file` that the drive `id` is paused, or not, keeping the rest of it.
+pub fn write_paused(file: &Path, id: &str, paused: bool) -> std::io::Result<()> {
+    let mut ids = read_paused(file);
+    match paused {
+        true => ids.insert(id.to_owned()),
+        false => ids.remove(id),
+    };
+    let mut table = settings_text(file)
+        .and_then(|text| text.parse::<toml::Table>().ok())
+        .unwrap_or_default();
+    let storage = table
+        .entry("storage")
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+    if let toml::Value::Table(storage) = storage {
+        storage.insert(
+            "paused".to_owned(),
+            toml::Value::Array(ids.into_iter().map(toml::Value::String).collect()),
+        );
+    }
+    let text = toml::to_string(&table).map_err(std::io::Error::other)?;
+    porter_fs::atomic::AtomicWrite::PRIVATE.write(file, text.as_bytes())
+}
+
+/// A drive's folder as people see it: each is a folder of `~/Cloud` ([`crate::paths::Paths`]).
+fn shown_folder(path: &Path) -> String {
+    match path.file_name() {
+        Some(name) => format!("~/Cloud/{}", name.to_string_lossy()),
+        None => path.display().to_string(),
+    }
 }
 
 /// Writes `limit` to `file`, keeping the rest of it.
@@ -495,10 +545,19 @@ impl<H: Hosted, D: Directory, C: Callers> LiveModule for SyncSettings<H, D, C> {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
-        schema(&self.keep.registry(), &self.names, |account| FilesRow {
+        let mut schema = schema(&self.keep.registry(), &self.names, |account| FilesRow {
             offered: self.keep.offers_files(account),
             not_on: not_on.contains(&account.id),
-        })
+        });
+        let kept = self
+            .kept
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if let (Some(kept), Some(first)) = (kept, schema.key.first_mut()) {
+            first.note = Some(Note(kept));
+        }
+        schema
     }
 
     async fn get(&self, key: &KeyPath) -> Result<toml::Value, LiveError> {
@@ -589,7 +648,16 @@ impl<H: Hosted, D: Directory, C: Callers> LiveModule for SyncSettings<H, D, C> {
                 });
             }
             Key::Remove(id) => {
-                self.keep.remove(&id).await.map_err(failed)?;
+                let kept = self.keep.remove(&id).await.map_err(failed)?;
+                let words: Vec<String> = kept
+                    .iter()
+                    .filter(|kept| kept.count > 0)
+                    .map(|kept| {
+                        porter_drive::words::kept_unsent(kept.count, &shown_folder(&kept.path))
+                    })
+                    .collect();
+                *self.kept.lock().unwrap_or_else(PoisonError::into_inner) =
+                    (!words.is_empty()).then(|| words.join(" "));
                 announce(&self.served, &Key::State(id), "removed").await;
             }
             Key::CacheLimit => {

@@ -350,13 +350,10 @@ impl Daemon {
             .await
             .map_err(StartError::Identities)?;
         let settings_file = paths.settings.clone();
-        let own = Arc::new(Keep::new(
-            Arc::clone(&service),
-            identities,
-            intent,
-            paths,
-            hub.clone(),
-        ));
+        let own = Arc::new(
+            Keep::new(Arc::clone(&service), identities, intent, paths, hub.clone())
+                .with_drives(drives.clone()),
+        );
         serve_settings(
             &connection,
             SyncSettings::new(own, Arc::clone(&callers), names)
