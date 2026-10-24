@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Test crates
+
+- `FakeModel`, `FakeInferSession`, `Script` and `ScriptStep` moved from porter-fake to
+  `porter_infer::testing`, behind porter-infer's new `testing` feature. porter-fake re-exports
+  them under its default feature `infer` for one batch; porter's own crates turn it off, so
+  porter-core's tests no longer build porter-infer.
+
 ### A drive's files in Files, downloaded when opened
 
 - With "Show in Files" on, syncd shows the whole drive as a folder (`~/Cloud/OneDrive`,

@@ -50,6 +50,8 @@ mod slot;
 mod speech;
 mod spend;
 mod takes;
+#[cfg(feature = "testing")]
+pub mod testing;
 mod tool_proof;
 
 pub use asker::{Asker, Chooser};

@@ -1,10 +1,10 @@
 //! A model that echoes the last user text, as a stream of one text delta and a usage event.
 
-use porter_core::{AccountId, Billing, Capability, Locality, ModelId, Tokens};
-use porter_infer::{
+use crate::{
     ChatReply, ChatRequest, ChatSink, EmbedReply, EmbedRequest, EmbedVector, InferEvent,
     MessagePart, Model, ModelCard, ServedBy, StopReason, TaskRequest, TokenUsage, TurnError,
 };
+use porter_core::{AccountId, Billing, Capability, Locality, ModelId, Tokens};
 
 /// An on-device model of the fake runtime.
 #[derive(Debug, Clone)]
@@ -55,8 +55,6 @@ impl Model for FakeModel {
                 | MessagePart::ToolCall(_)
                 | MessagePart::ToolResult(_)
                 | MessagePart::Thought(_) => None,
-                // a variant a newer porter adds: it carries no text to echo
-                _ => None,
             })
             .next_back()
             .unwrap_or_default()

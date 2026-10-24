@@ -15,7 +15,7 @@ use porter_core::capability::CuaEnv;
 use porter_core::consent::Usage;
 use porter_core::need::{CuaNeed, DimsNeed, EmbedNeed};
 use porter_core::{AccountId, DataClass, Dims, Locality, ModelId, Need, Tier, Tokens};
-use porter_fake::{Script, ScriptStep};
+use porter_infer::testing::{Script, ScriptStep};
 use porter_infer::{
     AttachIndex, ClientFrame, CuaBegin, CuaStepReply, EmbedReply, EmbedRequest, EmbedRole,
     EmbedVector, ImageSource, InferEvent, InferRefusal, InferReply, InferRequest, Readiness,

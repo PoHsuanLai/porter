@@ -6,7 +6,7 @@
 use porter_core::wire::{FrameRead, decode_frame, encode_frame};
 use porter_core::{DataClass, Need, Tier};
 use porter_dbus::{Details, NeedArg, need_from_dbus};
-use porter_fake::{FakeInferSession, Script};
+use porter_infer::testing::{FakeInferSession, Script};
 use porter_infer::{ClientFrame, InferEvent, InferRefusal, InferReply, InferSession};
 use rustix::net::{RecvAncillaryBuffer, RecvAncillaryMessage, RecvFlags, recvmsg};
 use std::io::IoSliceMut;

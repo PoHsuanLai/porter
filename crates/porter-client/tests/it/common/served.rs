@@ -6,7 +6,7 @@ use inferd::serve::{
     AuditSink, Carried, EngineFailed, EngineHost, Router, RunningTurn, TurnRunner, TurnStep,
 };
 use inferd::session::{RouteDecision, SessionSpec};
-use porter_fake::{Script, ScriptStep};
+use porter_infer::testing::{Script, ScriptStep};
 use porter_infer::{
     AudioFrame, InferEvent, InferRefusal, InferReply, InferRequest, ModelRef, ServedBy,
 };
@@ -40,7 +40,7 @@ impl EngineHost for Gate {
     fn release(&self, _model: &ModelRef) {}
 }
 
-/// Turns that play a `porter_fake::Script` of their request kind: `Emit` steps at once,
+/// Turns that play a `porter_infer::testing::Script` of their request kind: `Emit` steps at once,
 /// `AfterAudio` steps when the audio ends. A request with no script finishes `Unsupported`.
 #[derive(Debug, Clone, Default)]
 pub struct Scripted {

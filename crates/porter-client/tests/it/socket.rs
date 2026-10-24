@@ -20,7 +20,8 @@ use porter_core::{
     AccountId, AppId, AppName, Audience, DataClass, Dims, Isolation, Locality, ModelId, Need, Tier,
     Tokens,
 };
-use porter_fake::{Script, ScriptStep, Scripted as Answer, ScriptedSheets, fake_service};
+use porter_fake::{Scripted as Answer, ScriptedSheets, fake_service};
+use porter_infer::testing::{Script, ScriptStep};
 use porter_infer::{
     AttachIndex, ClientFrame, CuaBegin, CuaStepReply, EmbedReply, EmbedRequest, EmbedRole,
     EmbedVector, ImageSource, InferEvent, InferRefusal, InferReply, InferRequest, LinkHello,

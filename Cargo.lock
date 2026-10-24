@@ -2591,10 +2591,12 @@ dependencies = [
  "cua-action",
  "porter-core",
  "porter-fake",
+ "porter-infer",
  "proptest",
  "serde",
  "serde_json",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]

@@ -4,7 +4,7 @@
 use porter_core::capability::LanguageTag;
 use porter_core::consent::Usage;
 use porter_core::{DataClass, Tokens};
-use porter_fake::{FakeInferSession, Script, ScriptStep};
+use porter_infer::testing::{FakeInferSession, Script, ScriptStep};
 use porter_infer::{
     AudioFrame, AudioRate, Base64Bytes, ClientFrame, HeardDelta, InferEvent, InferRefusal,
     InferReply, InferRequest, InferSession, LangPick, RequestKind, SessionError, SpeakRequest,

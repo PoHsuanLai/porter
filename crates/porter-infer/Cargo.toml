@@ -17,9 +17,16 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+# Its own fakes, for tests/it.
+porter-infer = { path = ".", features = ["testing"] }
 # Only for the include guard of tests/it (`porter_fake::guard`).
 porter-fake = { workspace = true }
 proptest = { workspace = true }
+tokio = { workspace = true }
+
+[features]
+# `testing`: `FakeModel` and `FakeInferSession`, for the tests of code built on the broker.
+testing = []
 
 [lints]
 workspace = true

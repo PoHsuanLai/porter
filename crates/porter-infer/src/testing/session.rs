@@ -2,7 +2,7 @@
 //! the client sent, and releases a transcript's events as the audio passes their sample index
 //! (the shape of stoker's `ScriptedStt`).
 
-use porter_infer::{
+use crate::{
     ClientFrame, InferEvent, InferRefusal, InferReply, InferSession, RequestKind, SessionError,
 };
 use std::collections::VecDeque;
@@ -110,12 +110,6 @@ impl InferSession for FakeInferSession {
                 self.release(false);
             }
             ClientFrame::EndOfAudio => self.release(true),
-            // a variant a newer porter adds: the fake refuses it
-            _ => {
-                return Err(SessionError::Malformed(
-                    "the fake does not take that frame".to_owned(),
-                ));
-            }
         }
         Ok(())
     }

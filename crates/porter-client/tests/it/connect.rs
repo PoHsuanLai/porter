@@ -11,7 +11,7 @@ use porter_client::{Accounts, ClientEnv, ClientError, LinkChoice, SocketAgent, T
 use porter_core::consent::Usage;
 use porter_core::need::LlmNeed;
 use porter_core::{AccountId, DataClass, ModelId, Need, Tier, Tokens};
-use porter_fake::{Script, ScriptStep};
+use porter_infer::testing::{Script, ScriptStep};
 use porter_infer::{
     ChatControl, ChatReply, ChatRequest, InferEvent, InferReply, InferRequest, RequestKind,
     ServedBy, StopReason, TokenUsage, ToolParallelism,
