@@ -1,7 +1,8 @@
 //! `GdriveReplica` over My Drive (`Root::Drive`) against the fake Google: the listing paged and
 //! resumed, folders as items, Google's own documents and shortcuts as items that open online,
 //! what is not in My Drive left out, a move as a new path, and a folder trashed while no replica
-//! ran, which a kept tree still knows the files of.
+//! ran, which a kept tree still knows the files of. A document exports as its file
+//! (`files.export`); a Form, or one past the export limit, is refused.
 
 use crate::common;
 
@@ -9,7 +10,8 @@ use common::{Replica, Server};
 use porter_core::WebUrl;
 use porter_core::capability::StorageScope;
 use porter_sync::{
-    Anchor, Change, Cursor, Folders, ItemKind, More, RemoteId, Replica as _, ReplicaError,
+    Anchor, Change, Cursor, ExportError, Folders, ItemKind, More, RemoteId, Replica as _,
+    ReplicaError,
 };
 use storage_gdrive::{Root, Uploads};
 
@@ -246,4 +248,36 @@ async fn my_drive_reports_full_scope_and_an_app_folder_its_own() {
     let app = server.replica("", 50, Uploads::default());
     assert_eq!(app.features().scope, StorageScope::AppFolder);
     assert!(app.folders().is_empty());
+}
+
+#[tokio::test]
+async fn a_document_exports_as_its_file_and_a_form_or_a_large_one_is_refused() {
+    let server = Server::start().await;
+    let planted = plant(&server);
+    let replica = my_drive(&server, 100);
+    let blob = replica
+        .export(&RemoteId(planted.plan.clone()), DOCX)
+        .await
+        .expect("export");
+    assert_eq!(
+        blob.0,
+        format!("export of {} as {DOCX}", planted.plan).into_bytes()
+    );
+    assert_eq!(
+        replica
+            .export(&RemoteId(planted.survey.clone()), DOCX)
+            .await,
+        Err(ExportError::Unsupported)
+    );
+    server.google.my_drive_export_too_large(&planted.budget);
+    assert_eq!(
+        replica
+            .export(&RemoteId(planted.budget.clone()), XLSX)
+            .await,
+        Err(ExportError::TooLarge)
+    );
+    assert_eq!(
+        replica.export(&RemoteId("nothing".into()), DOCX).await,
+        Err(ExportError::Read(ReplicaError::Gone))
+    );
 }

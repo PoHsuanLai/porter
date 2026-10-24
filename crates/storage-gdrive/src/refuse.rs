@@ -5,7 +5,7 @@
 
 use crate::json::ErrorBody;
 use porter_http::{HttpError, HttpResponse};
-use porter_sync::{PutRefused, ReplicaError, RetryAfter};
+use porter_sync::{ExportError, PutRefused, ReplicaError, RetryAfter};
 
 /// How long to wait when the server did not say.
 const RETRY: RetryAfter = RetryAfter(30);
@@ -37,6 +37,19 @@ pub fn read_error(response: &HttpResponse) -> ReplicaError {
         401 | 403 => ReplicaError::Unauthorized,
         404 | 410 => ReplicaError::Gone,
         _ => ReplicaError::Transient(retry_after(response)),
+    }
+}
+
+/// An export answered with `response`, which was not the file: Drive refuses a document past
+/// its export limit with `403 exportSizeLimitExceeded`, and one with no file format (a Form, a
+/// Site) with `403 cannotExportFile` or a `400`.
+pub fn export_error(response: &HttpResponse) -> ExportError {
+    match (response.status.0, reason(response).as_deref()) {
+        (403, Some("exportSizeLimitExceeded")) => ExportError::TooLarge,
+        (403, Some("cannotExportFile" | "fileNotExportable")) | (400, _) => {
+            ExportError::Unsupported
+        }
+        _ => ExportError::Read(read_error(response)),
     }
 }
 
@@ -93,6 +106,29 @@ mod tests {
             body: reason
                 .map(|r| format!(r#"{{"error":{{"errors":[{{"reason":"{r}"}}]}}}}"#).into_bytes())
                 .unwrap_or_default(),
+        }
+    }
+
+    #[test]
+    fn a_refused_export_says_too_large_no_format_or_why_it_failed() {
+        let cases = [
+            (403, Some("exportSizeLimitExceeded"), ExportError::TooLarge),
+            (403, Some("cannotExportFile"), ExportError::Unsupported),
+            (400, Some("badRequest"), ExportError::Unsupported),
+            (404, None, ExportError::Read(ReplicaError::Gone)),
+            (
+                403,
+                Some("insufficientPermissions"),
+                ExportError::Read(ReplicaError::Unauthorized),
+            ),
+            (503, None, ExportError::Read(ReplicaError::Transient(RETRY))),
+        ];
+        for (status, why, want) in cases {
+            assert_eq!(
+                export_error(&answer(status, None, why)),
+                want,
+                "{status} {why:?}"
+            );
         }
     }
 

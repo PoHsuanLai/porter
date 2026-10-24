@@ -3,15 +3,15 @@
 
 use crate::addr::{Addr, FILE_FIELDS, Root};
 use crate::json::{About, File};
-use crate::refuse::{read_error, unreached};
+use crate::refuse::{export_error, read_error, unreached};
 use porter_core::capability::{
     Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
 };
 use porter_core::{Bytes, WebUrl};
 use porter_http::{Http, HttpRequest, HttpResponse, Method};
 use porter_sync::{
-    BaseVersion, Blob, ByteRange, ChangePage, Cursor, Folders, PutItem, PutRefused, Quota,
-    RemoteId, RemoteVersion, Replica, ReplicaError, RetryAfter,
+    BaseVersion, Blob, ByteRange, ChangePage, Cursor, ExportError, Folders, PutItem, PutRefused,
+    Quota, RemoteId, RemoteVersion, Replica, ReplicaError, RetryAfter,
 };
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use storage_webdav::Clock;
@@ -28,6 +28,9 @@ pub const CHUNK_UNIT: usize = 262_144;
 
 /// The chunk a resumable upload sends unless told otherwise: 40 units (10 MiB).
 const CHUNK: usize = 40 * CHUNK_UNIT;
+
+/// The most `files.export` gives: Drive exports a document of up to 10 MB.
+pub const EXPORT_LIMIT: u64 = 10_000_000;
 
 /// When a write is one multipart request and when it is a resumable session, and the chunk.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -203,6 +206,28 @@ impl<H: Http> GdriveReplica<H> {
         }
     }
 
+    /// `files.export` of the document `id` as `mime`: Drive exports up to [`EXPORT_LIMIT`].
+    async fn exported(&self, id: &RemoteId, mime: &str) -> Result<Blob, ExportError> {
+        let url = self
+            .addr
+            .api(
+                &format!("files/{}/export", crate::addr::encode(&id.0)),
+                &[("mimeType", mime)],
+            )
+            .ok_or(ExportError::Read(ReplicaError::Gone))?;
+        // No `Accept: application/json`: the answer is the file.
+        let response = self
+            .http
+            .send(HttpRequest::new(Method::Get, url))
+            .await
+            .map_err(|e| ExportError::Read(unreached(e)))?;
+        match response.status.0 {
+            200 if response.body.len() as u64 > EXPORT_LIMIT => Err(ExportError::TooLarge),
+            200 => Ok(Blob(response.body)),
+            _ => Err(export_error(&response)),
+        }
+    }
+
     async fn quota_of_about(&self) -> Result<Quota, ReplicaError> {
         let url = self.addr.api("about", &[("fields", "storageQuota")]);
         let response = self.get_url(url).await?;
@@ -250,6 +275,10 @@ impl<H: Http> Replica for GdriveReplica<H> {
 
     async fn quota(&self) -> Result<Quota, ReplicaError> {
         self.quota_of_about().await
+    }
+
+    async fn export(&self, item: &RemoteId, mime: &str) -> Result<Blob, ExportError> {
+        self.exported(item, mime).await
     }
 
     fn features(&self) -> StorageCap {

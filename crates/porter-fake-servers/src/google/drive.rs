@@ -148,6 +148,8 @@ pub struct Drive {
     uploads: BTreeMap<String, Upload>,
     root: String,
     my_drive: String,
+    /// The documents larger than Drive exports.
+    too_large: std::collections::BTreeSet<String>,
 }
 
 impl Default for Drive {
@@ -172,6 +174,7 @@ impl Default for Drive {
             uploads: BTreeMap::new(),
             root,
             my_drive,
+            too_large: std::collections::BTreeSet::new(),
         }
     }
 }
@@ -294,6 +297,16 @@ impl Drive {
             .insert(id.clone(), Node::new(&id, Some(&parent), name, space));
         self.touch(&id);
         Ok(id)
+    }
+
+    /// Makes the document `id` larger than Drive exports.
+    pub fn make_too_large(&mut self, id: &str) {
+        self.too_large.insert(id.to_owned());
+    }
+
+    /// Whether the document `id` is larger than Drive exports.
+    pub fn too_large(&self, id: &str) -> bool {
+        self.too_large.contains(id)
     }
 
     /// Plants a Google document of `mime` (or, with a `target`, a shortcut to it) in `parent`.

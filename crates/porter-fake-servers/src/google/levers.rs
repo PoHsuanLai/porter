@@ -126,6 +126,11 @@ impl GoogleHandle {
         self.plant(path, mime, None)
     }
 
+    /// Makes the document `id` larger than Drive exports: `files.export` refuses it.
+    pub fn my_drive_export_too_large(&self, id: &str) {
+        lock(&self.shared.state).drive.make_too_large(id);
+    }
+
     /// Plants a shortcut at `path` below My Drive to the file `target` (an id); the shortcut's id.
     pub fn my_drive_shortcut(&self, path: &str, target: &str) -> String {
         self.plant(path, SHORTCUT, Some(target))

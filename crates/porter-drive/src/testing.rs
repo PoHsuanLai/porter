@@ -2,7 +2,7 @@
 //! which can be taken offline and made to fetch one chunk at a time. For tests only.
 
 use crate::listing::{Entry, Listing, ListingError};
-use crate::source::{Fetching, Source, SourceError};
+use crate::source::{CopyError, Exporting, Fetching, Source, SourceError};
 use porter_core::{Bytes, UnixSeconds, WebUrl};
 use porter_sync::{ItemKind, RemoteId, RemoteVersion};
 use std::collections::{BTreeMap, HashMap};
@@ -100,12 +100,24 @@ pub struct MemorySource {
     gate: Mutex<Option<Arc<Semaphore>>>,
     fetched: Mutex<Vec<(String, u64, u64)>>,
     waiting: std::sync::atomic::AtomicUsize,
+    exports: Mutex<HashMap<RemoteId, Result<Vec<u8>, CopyError>>>,
 }
 
 impl MemorySource {
     /// `bytes` as the content of `id`.
     pub fn put(&self, id: &str, bytes: Vec<u8>) {
         held(&self.bytes).insert(RemoteId(id.to_owned()), bytes);
+    }
+
+    /// `bytes` as what the online document `id` exports as.
+    pub fn put_export(&self, id: &str, bytes: Vec<u8>) {
+        held(&self.exports).insert(RemoteId(id.to_owned()), Ok(bytes));
+    }
+
+    /// The online document `id`'s export refused with `why`. (One with no export put is
+    /// refused `NoFormat`.)
+    pub fn refuse_export(&self, id: &str, why: CopyError) {
+        held(&self.exports).insert(RemoteId(id.to_owned()), Err(why));
     }
 
     /// Takes the drive offline, or back.
@@ -167,6 +179,19 @@ impl Source for MemorySource {
                 .saturating_add(usize::try_from(len).unwrap_or(usize::MAX))
                 .min(content.len());
             Ok(content[from..to].to_vec())
+        })
+    }
+
+    fn export<'a>(&'a self, id: &'a RemoteId, mime: &'a str) -> Exporting<'a> {
+        let _ = mime;
+        Box::pin(async move {
+            if self.offline.load(Ordering::SeqCst) {
+                return Err(CopyError::Failed);
+            }
+            held(&self.exports)
+                .get(id)
+                .cloned()
+                .unwrap_or(Err(CopyError::NoFormat))
         })
     }
 }

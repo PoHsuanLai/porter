@@ -1,6 +1,6 @@
 //! `org.quire.Storage1` as syncd serves it, on a private bus over drives held in memory: the
 //! frozen interface, who may call, the shapes `Drives` and `Items` answer, the actions and the
-//! words they refuse with, pausing, and the signals a watcher hears. No folder is shown: nothing
+//! words they refuse with, Save a Copy, pausing, and the signals a watcher hears. No folder is shown: nothing
 //! here mounts.
 
 use crate::common;
@@ -430,4 +430,40 @@ async fn a_watcher_hears_a_download_move_with_its_folder_and_others_hear_nothing
             .is_err(),
         "a connection that did not watch hears nothing"
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn save_a_copy_writes_the_document_next_to_it_and_refuses_what_has_no_file() {
+    let rig = rig().await;
+    rig.source.put_export("doc", b"docx".to_vec());
+    rig.listing.online(
+        "form",
+        None,
+        "Survey",
+        "https://docs.example.test/forms/d/form",
+        None,
+    );
+    let me = client(&rig.bus, &rig.known, FILES, CallerRole::App).await;
+    let proxy = storage(&me).await;
+    let (saved, refused) = proxy
+        .save_copy(vec![
+            at("Plan.gdoc"),
+            at("Survey.glink"),
+            at("Work/Report.pdf"),
+            at("Nope.gdoc"),
+        ])
+        .await
+        .expect("save copy");
+    assert_eq!(saved.len(), 1, "{saved:?}");
+    assert_eq!(saved[&at("Plan.gdoc")], at("Plan.docx"));
+    assert_eq!(refused.len(), 3, "{refused:?}");
+    assert_eq!(refused[&at("Survey.glink")], words::NO_FILE_FORMAT);
+    assert_eq!(refused[&at("Work/Report.pdf")], words::NOT_A_DOCUMENT);
+    assert_eq!(refused[&at("Nope.gdoc")], words::NOT_ON_A_DRIVE);
+    let items = proxy.items(vec![at("Plan.docx")]).await.expect("items");
+    let copy = &items[&at("Plan.docx")];
+    assert_eq!(text(copy, ITEM_KEY_STATE).as_deref(), Some("waiting"));
+    assert_eq!(text(copy, ITEM_KEY_KIND).as_deref(), Some("file"));
+    let (saved, _) = proxy.save_copy(vec![at("Plan.gdoc")]).await.expect("again");
+    assert_eq!(saved[&at("Plan.gdoc")], at("Plan 2.docx"));
 }

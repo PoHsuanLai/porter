@@ -287,6 +287,52 @@ fn media(node: &Node, request: &Request) -> Response {
     }
 }
 
+/// What a document exports as, by its mime type: the formats Drive gives a Doc, a Sheet, Slides
+/// and a Drawing. A Form, a Site or a Map has none.
+fn exports(native: &str) -> &'static [&'static str] {
+    match native {
+        "application/vnd.google-apps.document" => &[
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/pdf",
+            "text/plain",
+        ],
+        "application/vnd.google-apps.spreadsheet" => &[
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/pdf",
+        ],
+        "application/vnd.google-apps.presentation" => &[
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "application/pdf",
+        ],
+        "application/vnd.google-apps.drawing" => &["image/png", "application/pdf"],
+        _ => &[],
+    }
+}
+
+/// `files.export`: a document's content as a file of `mimeType`, these bytes:
+/// `export of <id> as <mime>`.
+fn export(drive: &Drive, node: &Node, request: &Request) -> Response {
+    let Some(native) = node.native.as_ref().filter(|n| n.mime != SHORTCUT) else {
+        // A file with bytes, a folder or a shortcut has nothing to export.
+        return error(403, "fileNotExportable");
+    };
+    let formats = exports(&native.mime);
+    if formats.is_empty() {
+        return error(403, "cannotExportFile");
+    }
+    let Some(mime) = request
+        .query_value("mimeType")
+        .filter(|m| formats.contains(&m.as_str()))
+    else {
+        return error(400, "badRequest");
+    };
+    if drive.too_large(&node.id) {
+        return error(403, "exportSizeLimitExceeded");
+    }
+    let body = format!("export of {} as {mime}", node.id);
+    Response::new(200).typed(&mime, body.as_bytes())
+}
+
 /// The parts of a `multipart/related` body: each part's bytes after its headers.
 fn multipart(request: &Request) -> Option<Vec<Vec<u8>>> {
     let kind = request.header("content-type")?;
@@ -503,6 +549,16 @@ pub fn answer(
                 }
                 (None, ..) => error(403, "insufficientFilePermissions"),
                 _ => finish(drive, &meta, Vec::new(), None),
+            }
+        }
+        ("GET", files) if files.starts_with("files/") && files.ends_with("/export") => {
+            let id = files
+                .strip_prefix("files/")
+                .and_then(|rest| rest.strip_suffix("/export"))
+                .map(percent_decode)?;
+            match drive.get(&id) {
+                Some(node) => export(drive, node, request),
+                None => error(404, "notFound"),
             }
         }
         (_, files) => {

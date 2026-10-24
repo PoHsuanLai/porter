@@ -43,4 +43,4 @@ pub use drive::{
 pub use limit::{AUTOMATIC_FLOOR, CacheLimit};
 pub use listing::{Entry, Listing, ListingError};
 pub use porter_sync::RemoteId;
-pub use source::{Fetching, ReplicaSource, Source, SourceError};
+pub use source::{CopyError, Exporting, Fetching, ReplicaSource, Source, SourceError};

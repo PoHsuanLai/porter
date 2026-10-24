@@ -6,6 +6,7 @@
 //! waits for them.
 
 mod actions;
+mod copy;
 mod fetch;
 mod state;
 #[cfg(test)]

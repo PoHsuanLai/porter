@@ -45,5 +45,5 @@ mod write;
 
 pub use addr::Root;
 pub use porter_http::stream::{Dial, StreamHttp, StreamLimits};
-pub use replica::{CHUNK_UNIT, GdriveReplica, SIMPLE_MAX, Uploads};
+pub use replica::{CHUNK_UNIT, EXPORT_LIMIT, GdriveReplica, SIMPLE_MAX, Uploads};
 pub use storage_webdav::{Clock, DELETED};

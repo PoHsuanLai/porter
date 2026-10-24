@@ -4,7 +4,7 @@ use crate::anchor::Cursor;
 use crate::change::ChangePage;
 use crate::item::{BaseVersion, RemoteId, RemoteVersion};
 use crate::quota::Quota;
-use crate::refusal::{PutRefused, ReplicaError};
+use crate::refusal::{ExportError, PutRefused, ReplicaError};
 use crate::transfer::{Blob, ByteRange, PutItem};
 use porter_core::capability::StorageCap;
 use std::future::Future;
@@ -44,4 +44,15 @@ pub trait Replica: Send + Sync {
 
     /// What the backend offers (delta, hashes, ranges, chunked upload).
     fn features(&self) -> StorageCap;
+
+    /// An online document's content as a file of `mime`, its export format (`ItemKind::Online`
+    /// names it). A backend that exports nothing answers `Unsupported`, as this default does.
+    fn export(
+        &self,
+        item: &RemoteId,
+        mime: &str,
+    ) -> impl Future<Output = Result<Blob, ExportError>> + Send {
+        let _ = (item, mime);
+        std::future::ready(Err(ExportError::Unsupported))
+    }
 }

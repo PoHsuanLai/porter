@@ -50,6 +50,20 @@ pub enum PutRefused {
     Transient(RetryAfter),
 }
 
+/// Why an online document could not be exported as a file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum ExportError {
+    /// The backend exports no file of it (a Form, a Site, a Map, or a backend with no export).
+    #[error("no file format")]
+    Unsupported,
+    /// The document is larger than the backend exports.
+    #[error("too large to export")]
+    TooLarge,
+    /// The export could not be read.
+    #[error(transparent)]
+    Read(#[from] ReplicaError),
+}
+
 /// Why a read failed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum ReplicaError {

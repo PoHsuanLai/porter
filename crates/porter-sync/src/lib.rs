@@ -43,6 +43,6 @@ pub use journal_reconcile::{
 #[cfg(feature = "testing")]
 pub use memory::MemoryReplica;
 pub use quota::Quota;
-pub use refusal::{Conflict, PutRefused, RemoteSide, ReplicaError, RetryAfter};
+pub use refusal::{Conflict, ExportError, PutRefused, RemoteSide, ReplicaError, RetryAfter};
 pub use replica::Replica;
 pub use transfer::{Blob, ByteRange, PutItem, PutTarget};

@@ -9,6 +9,8 @@
 //! - A path is absolute and inside one drive's `path`, by the names the drive's items are shown
 //!   by (`porter_drive::naming`). A path on no drive, or not there, is left out of `Items` and
 //!   refused by the actions with `NOT_ON_A_DRIVE`; the drive's own folder is no item.
+//! - `SaveCopy` exports each online document (`porter_drive::Drive::save_copy`) and answers each
+//!   copy's absolute path; the copy waits to upload beside its document.
 //! - `Watch` joins the caller's connection to those told `DrivesChanged` and `ItemsChanged`
 //!   until it leaves the bus. Each drive's item changes are gathered and sent together at most
 //!   ten times a second, each changed item with the folders above it.
@@ -335,14 +337,28 @@ impl<C: Callers> StorageObject<C> {
         paths: Vec<String>,
     ) -> Result<(Saved, Refused), RefusedError> {
         self.0.identify(&header).await?;
-        // No copy is made yet: an online document has no export here.
-        let refused = self.0.each(&paths, |drive, id| {
-            match drive.drive.attrs(id).ok().flatten().map(|a| a.kind) {
-                Some(NodeKind::Online { .. }) => Err(words::NO_FILE_FORMAT),
-                _ => Err(words::NOT_A_DOCUMENT),
+        let mut saved = Saved::new();
+        let mut refused = Refused::new();
+        for text in paths {
+            let Some((drive, node)) = self.0.find(&text) else {
+                refused.insert(text, words::NOT_ON_A_DRIVE.to_owned());
+                continue;
+            };
+            match drive.drive.save_copy(&node.id).await {
+                Ok(copy) => match absolute(&drive, &copy) {
+                    Some(path) => {
+                        saved.insert(text, path.to_string_lossy().into_owned());
+                    }
+                    None => {
+                        refused.insert(text, words::COPY_FAILED.to_owned());
+                    }
+                },
+                Err(why) => {
+                    refused.insert(text, why.to_owned());
+                }
             }
-        });
-        Ok((Saved::new(), refused))
+        }
+        Ok((saved, refused))
     }
 
     async fn set_paused(

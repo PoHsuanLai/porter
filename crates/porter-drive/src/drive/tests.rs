@@ -333,3 +333,93 @@ async fn what_is_here_and_kept_is_remembered_across_a_restart() {
     assert!(status.kept);
     assert_eq!(again.local_bytes(), 6);
 }
+
+const DOCX: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+#[tokio::test]
+async fn a_copy_is_saved_next_to_its_document_named_as_it_is_and_waits_to_upload() {
+    let rig = rig(4);
+    rig.listing.folder("f", None, "Work");
+    let url = "https://docs.example.test/document/d/doc1";
+    rig.listing
+        .online("doc1", Some("f"), "Plan", url, Some(DOCX));
+    rig.file("old", Some("f"), "Plan.docx", 3);
+    rig.source.put_export("doc1", b"docx bytes".to_vec());
+    let plan = rig
+        .drive
+        .resolve("Work/Plan.gdoc".as_ref())
+        .expect("resolve")
+        .expect("there");
+
+    let copy = rig.drive.save_copy(&plan.id).await.expect("copy");
+    let node = rig.drive.node(&copy).expect("node").expect("there");
+    assert_eq!(node.name, "Plan 2.docx", "Plan.docx is taken");
+    assert_eq!(
+        rig.drive.path_of(&copy).expect("path"),
+        Some("Work/Plan 2.docx".into())
+    );
+    assert_eq!(
+        rig.drive.read(&copy, 0, 64).await.expect("read"),
+        b"docx bytes"
+    );
+    let status = rig.drive.status(&copy).expect("status");
+    assert_eq!(status.state, ItemState::Waiting);
+    assert_eq!(
+        rig.drive.remove_download(&copy),
+        Err(words::WAITING),
+        "nothing made here is lost"
+    );
+    let again = rig.drive.save_copy(&plan.id).await.expect("again");
+    assert_eq!(
+        rig.drive.node(&again).expect("node").expect("there").name,
+        "Plan 3.docx"
+    );
+
+    // The same names after a restart.
+    rig.drive.flush().expect("flush");
+    let reopened =
+        Drive::open(config(&rig.dir, 4), rig.listing.clone(), rig.source.clone()).expect("drive");
+    let names: Vec<String> = reopened
+        .children(&remote("f"))
+        .expect("children")
+        .into_iter()
+        .map(|n| n.name)
+        .collect();
+    assert_eq!(
+        names,
+        ["Plan.gdoc", "Plan.docx", "Plan 2.docx", "Plan 3.docx"]
+    );
+}
+
+#[tokio::test]
+async fn save_a_copy_refuses_what_has_no_file_and_says_why() {
+    let rig = rig(4);
+    rig.file("bin", None, "Notes.txt", 3);
+    let form = "https://docs.example.test/forms/d/form1";
+    rig.listing.online("form1", None, "Survey", form, None);
+    let big = "https://docs.example.test/document/d/big";
+    rig.listing.online("big", None, "Book", big, Some(DOCX));
+    rig.source.refuse_export("big", crate::CopyError::TooLarge);
+    let doc = "https://docs.example.test/document/d/doc";
+    rig.listing.online("doc", None, "Plan", doc, Some(DOCX));
+    rig.source.put_export("doc", b"x".to_vec());
+
+    let copy = |id: &str| {
+        let drive = rig.drive.clone();
+        let id = remote(id);
+        async move { drive.save_copy(&id).await }
+    };
+    assert_eq!(copy("bin").await, Err(words::NOT_A_DOCUMENT));
+    assert_eq!(copy("form1").await, Err(words::NO_FILE_FORMAT));
+    assert_eq!(copy("big").await, Err(words::TOO_LARGE));
+    rig.source.set_offline(true);
+    assert_eq!(copy("doc").await, Err(words::COPY_FAILED));
+    assert!(
+        rig.drive
+            .children(&NodeId::Top)
+            .expect("children")
+            .iter()
+            .all(|n| !matches!(n.id, NodeId::Local(_))),
+        "no copy was made"
+    );
+}
