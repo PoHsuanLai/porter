@@ -48,7 +48,20 @@ async fn main() -> ExitCode {
         Ok(daemon) => daemon,
         Err(why) => return fail(why),
     };
-    // Serves until the session ends or the unit stops it (SIGTERM ends the process).
-    daemon.run(std::future::pending()).await;
+    // Serves until the unit stops it (SIGTERM) or it is interrupted: the drives shown in Files
+    // are unmounted on the way out.
+    let shutdown = async {
+        use tokio::signal::unix::{SignalKind, signal};
+        match signal(SignalKind::terminate()) {
+            Ok(mut term) => {
+                tokio::select! {
+                    _ = term.recv() => {}
+                    _ = tokio::signal::ctrl_c() => {}
+                }
+            }
+            Err(_) => std::future::pending().await,
+        }
+    };
+    daemon.run(shutdown).await;
     ExitCode::SUCCESS
 }

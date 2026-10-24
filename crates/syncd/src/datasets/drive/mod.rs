@@ -17,11 +17,13 @@
 //!   person's "Show in Files"). The grant going ends it and keeps the journal, so turning it on
 //!   again resumes from the anchor.
 
+mod files;
 mod journal;
 mod listing;
 
+pub use files::{CacheKnob, DriveEvent, DriveSet, LiveDrive, SIGN_IN_WORDS, UNREADABLE_WORDS};
 pub use journal::{Applied, DriveEntry, DriveJournal};
-pub use listing::{DriveReplica, Listed, Pass, keep_listing, list_once};
+pub use listing::{DriveReplica, Listed, Pass, keep_listing, keep_listing_told, list_once};
 
 use crate::paths::{AccountDir, Paths};
 

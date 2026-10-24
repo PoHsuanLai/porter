@@ -2,7 +2,8 @@
 //! anchors (`<state>/porter/sync/<account>`, the drive listing's `storage_drive` among them), its
 //! mirrors (`<data>/porter/vdir/<account>`), its
 //! photos library (`<data>/porter/photos/<account>`) and its app folder mirror
-//! (`<data>/porter/storage/<account>`).
+//! (`<data>/porter/storage/<account>`), and its drive's downloaded files
+//! (`<cache>/porter/drives/<account>`).
 //!
 //! The account is syncd's own, removed in its Settings rows (`crate::keep::Keep::remove` calls
 //! [`wipe`] and then deletes the account's stored sign-in). accountd removing an identity does
@@ -19,7 +20,11 @@ pub async fn wipe(paths: &Paths, hub: &Hub, account: &AccountDir) -> std::io::Re
     let dirs: Vec<_> = paths
         .account_dirs(account)
         .into_iter()
-        .chain([paths.photos_dir(account), paths.storage_dir(account)])
+        .chain([
+            paths.photos_dir(account),
+            paths.storage_dir(account),
+            paths.drive_cache_dir(account),
+        ])
         .collect();
     // Mirrors and libraries hold many files: removing them blocks, so it runs off the async
     // threads (the daemon's other accounts keep being served meanwhile).
@@ -52,6 +57,9 @@ mod tests {
             mirrors: root.join("data/porter/vdir"),
             callers_system: root.join("none"),
             callers_user: root.join("none"),
+            cloud: root.join("Cloud"),
+            drive_cache: root.join("cache/porter/drives"),
+            settings: root.join("none"),
         };
         let (gone, kept) = (
             AccountDir::parse("a1").expect("a1"),

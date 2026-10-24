@@ -11,8 +11,12 @@
 //! "Continue as": the person picks an account they are signed in to and syncd signs in as it. The
 //! switch for a new account turns on only once that sign-in finished. Removing an account deletes
 //! its journals and mirrors here and its stored sign-in; accountd's own removal of the identity
-//! does not touch it. Every key is under `accounts.`, so it is never agent-settable.
+//! does not touch it. One more row, `storage.cache_limit` ("Downloaded Files Limit", an Advanced
+//! text row of bytes, "0" for automatic), is how much the drives shown in Files keep of what is
+//! not kept downloaded; it is written to `syncd.toml` and every drive follows it at once. No key
+//! is agent-settable.
 
+use crate::datasets::drive::CacheKnob;
 use crate::keep::{
     ContinueError, Directory, Hosted, Keep, SyncClass, account_of, drive_allowed, sync_allowed,
     sync_offers,
@@ -27,9 +31,11 @@ use ds_settings::schema::{
 use porter_core::wire::ParentWindow;
 use porter_core::{Account, AccountId, AccountState, Family, Toggle};
 use porter_dbus::{CallerRole, Callers};
+use porter_drive::CacheLimit;
 use porter_families::set::ProviderNames;
 use porter_service::Registry;
 use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use zbus::Connection;
 
@@ -55,15 +61,29 @@ pub(crate) enum Key {
     Reauth(AccountId),
     /// `accounts.<id>.remove`.
     Remove(AccountId),
+    /// `storage.cache_limit`.
+    CacheLimit,
 }
 
 const ADD: &str = "accounts.sync.add";
+
+/// The cache limit's row.
+pub const CACHE_LIMIT: &str = "storage.cache_limit";
+
+/// The cache limit's label and help line.
+const CACHE_LIMIT_WORDS: (&str, &str) = (
+    "Downloaded Files Limit",
+    "Files you haven't kept downloaded are removed, oldest first, past this size.",
+);
 
 /// The key `path` names, among the accounts of `registry` (an id may hold dots, so the account is
 /// found by prefix, the longest id first).
 pub(crate) fn parse(path: &str, registry: &Registry) -> Option<Key> {
     if path == ADD {
         return Some(Key::Add);
+    }
+    if path == CACHE_LIMIT {
+        return Some(Key::CacheLimit);
     }
     let rest = path.strip_prefix("accounts.")?;
     let mut ids: Vec<&AccountId> = registry.accounts.iter().map(|a| &a.id).collect();
@@ -93,6 +113,7 @@ pub(crate) fn parse(path: &str, registry: &Registry) -> Option<Key> {
 pub(crate) fn path(key: &Key) -> String {
     match key {
         Key::Add => ADD.to_owned(),
+        Key::CacheLimit => CACHE_LIMIT.to_owned(),
         Key::Label(id) => format!("accounts.{id}.label"),
         Key::Provider(id) => format!("accounts.{id}.provider"),
         Key::State(id) => format!("accounts.{id}.state"),
@@ -309,6 +330,17 @@ pub(crate) fn schema(
             .iter()
             .flat_map(|account| account_keys(account, names, files(account))),
     );
+    let (label, help) = CACHE_LIMIT_WORDS;
+    let mut limit = spec(
+        &Key::CacheLimit,
+        "Files",
+        label,
+        help,
+        KeyKind::Text,
+        toml::Value::String("0".to_owned()),
+    );
+    limit.exposure = Exposure::Advanced;
+    key.push(limit);
     LiveSchema { version: 1, key }
 }
 
@@ -344,6 +376,8 @@ pub struct SyncSettings<H, D, C> {
     served: Arc<OnceLock<Served>>,
     /// The accounts whose "Show in Files" was last turned on without it ending on.
     not_on: Arc<Mutex<BTreeSet<AccountId>>>,
+    /// The cache limit the drives follow, and the file it is kept in.
+    cache: Option<(CacheKnob, PathBuf)>,
 }
 
 impl<H, D, C> std::fmt::Debug for SyncSettings<H, D, C> {
@@ -362,7 +396,60 @@ impl<H, D, C> SyncSettings<H, D, C> {
             names,
             served: Arc::new(OnceLock::new()),
             not_on: Arc::default(),
+            cache: None,
         }
+    }
+
+    /// With the cache limit row: setting it writes `file` and moves `knob`, which the drives
+    /// follow.
+    #[must_use]
+    pub fn with_cache_limit(mut self, knob: CacheKnob, file: PathBuf) -> Self {
+        self.cache = Some((knob, file));
+        self
+    }
+}
+
+/// The cache limit `file` keeps (`[storage] cache_limit = "<bytes>"`); automatic when there is
+/// no file, or it says nothing this build reads.
+pub fn read_cache_limit(file: &Path) -> CacheLimit {
+    let Ok(text) = std::fs::read_to_string(file) else {
+        return CacheLimit::Automatic;
+    };
+    let Ok(table) = text.parse::<toml::Table>() else {
+        return CacheLimit::Automatic;
+    };
+    table
+        .get("storage")
+        .and_then(|storage| storage.get("cache_limit"))
+        .and_then(bytes_of)
+        .map_or(CacheLimit::Automatic, CacheLimit::from_setting)
+}
+
+/// Writes `limit` to `file`, keeping the rest of it.
+fn write_cache_limit(file: &Path, limit: CacheLimit) -> std::io::Result<()> {
+    let mut table = std::fs::read_to_string(file)
+        .ok()
+        .and_then(|text| text.parse::<toml::Table>().ok())
+        .unwrap_or_default();
+    let storage = table
+        .entry("storage")
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+    if let toml::Value::Table(storage) = storage {
+        storage.insert(
+            "cache_limit".to_owned(),
+            toml::Value::String(limit.setting().to_string()),
+        );
+    }
+    let text = toml::to_string(&table).map_err(std::io::Error::other)?;
+    porter_fs::atomic::AtomicWrite::PRIVATE.write(file, text.as_bytes())
+}
+
+/// Bytes as the row takes them: text of digits (or a whole number).
+fn bytes_of(value: &toml::Value) -> Option<u64> {
+    match value {
+        toml::Value::String(text) => text.trim().parse().ok(),
+        toml::Value::Integer(n) => u64::try_from(*n).ok(),
+        _ => None,
     }
 }
 
@@ -422,6 +509,13 @@ impl<H: Hosted, D: Directory, C: Callers> LiveModule for SyncSettings<H, D, C> {
                 })
             }
             Key::Add | Key::Reauth(_) | Key::Remove(_) => Ok(off()),
+            Key::CacheLimit => {
+                let limit = self
+                    .cache
+                    .as_ref()
+                    .map_or(CacheLimit::Automatic, |(knob, _)| *knob.borrow());
+                text(&limit.setting().to_string())
+            }
         }
     }
 
@@ -479,6 +573,21 @@ impl<H: Hosted, D: Directory, C: Callers> LiveModule for SyncSettings<H, D, C> {
             Key::Remove(id) => {
                 self.keep.remove(&id).await.map_err(failed)?;
                 announce(&self.served, &Key::State(id), "removed").await;
+            }
+            Key::CacheLimit => {
+                let bytes = bytes_of(&value).ok_or_else(|| {
+                    LiveError::BadValue("the limit is a number of bytes, 0 for automatic".into())
+                })?;
+                let (knob, file) = self.cache.as_ref().ok_or_else(|| {
+                    LiveError::NotPermitted("this computer shows no drives".into())
+                })?;
+                let limit = CacheLimit::from_setting(bytes);
+                write_cache_limit(file, limit).map_err(|why| {
+                    eprintln!("syncd: the cache limit could not be saved: {why}");
+                    failed("That could not be saved.")
+                })?;
+                knob.send_replace(limit);
+                announce(&self.served, &Key::CacheLimit, &bytes.to_string()).await;
             }
             Key::Label(_) | Key::Provider(_) | Key::State(_) => {
                 return Err(LiveError::NotPermitted("this row is a read-out".into()));
@@ -572,6 +681,7 @@ mod tests {
             Key::Files(id.clone()),
             Key::Reauth(id.clone()),
             Key::Remove(id),
+            Key::CacheLimit,
         ];
         for key in keys {
             assert_eq!(parse(&path(&key), &registry), Some(key.clone()), "{key:?}");

@@ -3516,6 +3516,8 @@ dependencies = [
  "porter-daemon",
  "porter-dav",
  "porter-dbus",
+ "porter-drive",
+ "porter-drive-fuse",
  "porter-fake",
  "porter-fake-servers",
  "porter-families",

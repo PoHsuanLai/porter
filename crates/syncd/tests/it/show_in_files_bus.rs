@@ -4,7 +4,8 @@
 //! drive. Turning the row on asks the person for the whole drive in a sign-in of its own, then
 //! records syncd's grant of it, and the supervisor lists the drive; refused, the row reads off with
 //! a plain line under it; off takes the grant back, keeps the listing and the access given, so on
-//! again asks nothing.
+//! again asks nothing. A listed drive's files download on demand into its cache, the cache limit
+//! row sets what eviction keeps to, and a computer with no way to show the folder says so.
 
 use crate::common;
 
@@ -21,6 +22,8 @@ use porter_core::{
     ServiceEndpoint, Subject, Tls, Toggle, UnixSeconds,
 };
 use porter_dbus::CallerRole;
+use porter_drive::{CacheLimit, ItemState, words};
+use porter_drive_fuse::Mounter;
 use porter_fake::{FakeProvider, ScriptedSheets};
 use porter_fake_servers::{FakeGraph, GraphHandle, Running};
 use porter_families::set::ProviderNames;
@@ -30,14 +33,15 @@ use porter_service::Registry;
 use porter_sync::ItemPath;
 use std::sync::Arc;
 use std::time::Duration;
+use syncd::datasets::drive::LiveDrive;
 use syncd::datasets::drive::{DriveJournal, journal_path};
 use syncd::datasets::pim::Wiring;
-use syncd::datasets::storage::{ClientStorageGrants, StorageConfig, StorageSupervisor};
+use syncd::datasets::storage::{ClientStorageGrants, DriveMount, StorageConfig, StorageSupervisor};
 use syncd::keep::{SyncClass, claims_whole_drive, drive_allowed, sync_allowed};
 use syncd::paths::{AccountDir, Paths};
 use syncd::scheduler::{Network, Settings};
 use syncd::service::{Access, Hub, serve};
-use syncd::settings::{FILES_NOT_ON, SETTINGS_PATH, SyncSettings, serve_settings};
+use syncd::settings::{CACHE_LIMIT, FILES_NOT_ON, SETTINGS_PATH, SyncSettings, serve_settings};
 use tokio::sync::watch;
 
 const ACCOUNT: &str = "graph-acct";
@@ -82,8 +86,16 @@ struct Rig {
     _network: watch::Sender<Network>,
 }
 
-/// The rig, its sheet host answering as `sheets` says.
+/// The rig, its sheet host answering as `sheets` says; no drive's folder is shown.
 async fn rig(sheets: ScriptedSheets) -> Rig {
+    rig_showing(sheets, |_| DriveMount::Off).await
+}
+
+/// The rig, each drive's folder shown as `mount` says (given the scratch directory).
+async fn rig_showing(
+    sheets: ScriptedSheets,
+    mount: impl FnOnce(&std::path::Path) -> DriveMount,
+) -> Rig {
     let graph = FakeGraph::start(BEARER).await.expect("graph");
     let provider = FakeProvider::from_file(PROVIDER);
     let spec = provider.spec().clone();
@@ -154,22 +166,10 @@ async fn rig(sheets: ScriptedSheets) -> Rig {
     })
     .expect("paths");
 
-    let own = common::hosted::keep(&hosted, NoDirectory, paths.clone(), hub.clone());
-    let module = SyncSettings::new(
-        Arc::new(own),
-        Arc::new(known.clone()),
-        ProviderNames::from_specs(std::slice::from_ref(&spec)),
-    );
-    serve_settings(&server, module).await.expect("settings");
-    let name = server.unique_name().expect("name").to_string();
-    let settings_side = client(&bus, &known, "org.quire.Settings", CallerRole::Settings).await;
-    let settings =
-        LiveClient::new(&settings_side, &name, SETTINGS_PATH, AnyOwner).expect("settings client");
-
     let (network_keeps, network) = watch::channel(Network::Unmetered);
     let wiring = Wiring {
         accounts: Arc::clone(&hosted.accounts),
-        hub,
+        hub: hub.clone(),
         paths: paths.clone(),
         settings: Settings::quick(),
         network,
@@ -180,9 +180,23 @@ async fn rig(sheets: ScriptedSheets) -> Rig {
         ClientStorageGrants::new(Arc::clone(&hosted.accounts)),
         StorageConfig {
             drive_every: Duration::from_millis(100),
+            mount: mount(bus.scratch()),
             ..StorageConfig::default()
         },
     );
+    let own = common::hosted::keep(&hosted, NoDirectory, paths.clone(), hub.clone());
+    let module = SyncSettings::new(
+        Arc::new(own),
+        Arc::new(known.clone()),
+        ProviderNames::from_specs(std::slice::from_ref(&spec)),
+    )
+    .with_cache_limit(supervisor.cache_knob(), paths.settings.clone());
+    serve_settings(&server, module).await.expect("settings");
+    let name = server.unique_name().expect("name").to_string();
+    let settings_side = client(&bus, &known, "org.quire.Settings", CallerRole::Settings).await;
+    let settings =
+        LiveClient::new(&settings_side, &name, SETTINGS_PATH, AnyOwner).expect("settings client");
+
     Rig {
         graph,
         paths,
@@ -349,4 +363,142 @@ async fn turning_show_in_files_off_stops_the_listing_and_keeps_it_so_on_again_as
     .await;
     rig.supervisor.tick().await;
     assert_eq!(rig.supervisor.drives(), [rig.account.clone()]);
+}
+
+/// Turns the row on, lists the drive, and answers it as Files serves it.
+async fn shown(rig: &mut Rig) -> Arc<LiveDrive> {
+    rig.settings.set(&row(), &word(true)).await.expect("on");
+    eventually("the row reads on", async || {
+        rig.settings.get(&row()).await.ok() == Some(word(true))
+    })
+    .await;
+    rig.supervisor.tick().await;
+    eventually("the drive is listed", async || listed(rig, "Docs/Plan.txt")).await;
+    let drives = rig.supervisor.drive_set();
+    let drive = drives.get(rig.account.as_str()).expect("served");
+    eventually("its items are named", async || {
+        drive
+            .drive
+            .resolve("Docs/Plan.txt".as_ref())
+            .is_ok_and(|n| n.is_some())
+    })
+    .await;
+    drive
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_listed_drive_downloads_a_file_into_its_cache_when_asked() {
+    let mut rig = rig(agreeing()).await;
+    rig.graph.put_root_file("Docs/Plan.txt", b"plan");
+    let drive = shown(&mut rig).await;
+    assert_eq!(drive.provider, "OneDrive");
+    assert_eq!(drive.path, rig.paths.cloud.join("OneDrive"));
+    let node = drive
+        .drive
+        .resolve("Docs/Plan.txt".as_ref())
+        .expect("resolve")
+        .expect("there");
+    let status = drive.drive.status(&node.id).expect("status");
+    assert_eq!(status.state, ItemState::Cloud);
+
+    drive.drive.download(&node.id).expect("download");
+    eventually("it is downloaded", async || {
+        drive
+            .drive
+            .status(&node.id)
+            .is_some_and(|s| s.state == ItemState::Downloaded)
+    })
+    .await;
+    assert_eq!(drive.drive.local_bytes(), 4);
+    assert_eq!(
+        drive.drive.read(&node.id, 0, 64).await.expect("read"),
+        b"plan"
+    );
+    let cache = rig.paths.drive_cache_dir(&rig.account);
+    assert_eq!(drive.drive.cache_dir(), cache.as_path());
+    assert!(cache.starts_with(rig._bus.scratch()), "a scratch cache");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_cache_limit_row_sets_what_eviction_keeps_to() {
+    let mut rig = rig(agreeing()).await;
+    rig.graph.put_root_file("Docs/Plan.txt", b"plan");
+    let drive = shown(&mut rig).await;
+    let limit = KeyPath(CACHE_LIMIT.to_owned());
+    let text = |t: &str| toml::Value::String(t.to_owned());
+    assert_eq!(rig.settings.get(&limit).await.expect("get"), text("0"));
+    assert_eq!(drive.drive.limit(), CacheLimit::Automatic);
+
+    let node = drive
+        .drive
+        .resolve("Docs/Plan.txt".as_ref())
+        .expect("resolve")
+        .expect("there");
+    drive.drive.download(&node.id).expect("download");
+    eventually("it is downloaded", async || {
+        drive
+            .drive
+            .status(&node.id)
+            .is_some_and(|s| s.state == ItemState::Downloaded)
+    })
+    .await;
+
+    // Smaller than the file: eviction removes it.
+    rig.settings.set(&limit, &text("1")).await.expect("set");
+    assert_eq!(rig.settings.get(&limit).await.expect("get"), text("1"));
+    eventually("the drive follows the row", async || {
+        drive.drive.limit() == CacheLimit::Bytes(1)
+    })
+    .await;
+    eventually("the download is removed", async || {
+        drive
+            .drive
+            .status(&node.id)
+            .is_some_and(|s| s.state == ItemState::Cloud)
+    })
+    .await;
+    assert_eq!(drive.drive.local_bytes(), 0);
+    let saved = std::fs::read_to_string(&rig.paths.settings).expect("saved");
+    assert!(saved.contains("cache_limit = \"1\""), "{saved}");
+
+    // Kept, a file stays whatever the limit.
+    drive.drive.keep(&node.id, true).expect("keep");
+    eventually("kept is here", async || {
+        drive
+            .drive
+            .status(&node.id)
+            .is_some_and(|s| s.state == ItemState::Downloaded)
+    })
+    .await;
+    rig.settings
+        .set(&limit, &text("0"))
+        .await
+        .expect("automatic");
+    eventually("automatic again", async || {
+        drive.drive.limit() == CacheLimit::Automatic
+    })
+    .await;
+    assert!(
+        rig.settings.set(&limit, &text("lots")).await.is_err(),
+        "bytes or 0 only"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_computer_that_cannot_show_the_folder_says_so_and_the_drive_still_lists() {
+    let mut rig = rig_showing(agreeing(), |scratch| {
+        DriveMount::Fuse(Mounter {
+            device: scratch.join("no-fuse-device"),
+            helper: "fusermount3".to_owned(),
+        })
+    })
+    .await;
+    rig.graph.put_root_file("Docs/Plan.txt", b"plan");
+    let drive = shown(&mut rig).await;
+    let (state, said) = drive.state();
+    assert_eq!(state, porter_dbus::DriveState::Error);
+    assert_eq!(said.as_deref(), Some(words::NO_FILES_HERE));
+    for word in ["mount", "FUSE", "fuse"] {
+        assert!(!words::NO_FILES_HERE.contains(word), "{word}");
+    }
 }

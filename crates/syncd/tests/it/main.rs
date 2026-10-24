@@ -24,6 +24,7 @@ mod settings_grant_bus;
 mod show_in_files_bus;
 mod stalled;
 mod start;
+mod storage1_bus;
 mod storage_bus;
 mod sync_bus;
 mod webdav_bus;

@@ -9,19 +9,21 @@
 
 use crate::datasets::photos::PhotosSwitch;
 use crate::datasets::pim::{ClientGrants, PimConfig, PimSupervisor, Wiring};
+use crate::datasets::storage::DriveMount;
 use crate::datasets::storage::{ClientStorageGrants, StorageConfig, StorageSupervisor};
 use crate::keep::{FileAudit, Intent, Keep, SyncSheets, sync_app};
 use crate::paths::{BUILD, KeepPaths, PROC_GATE, Paths, rescan};
 use crate::scheduler::{Network, Settings};
 use crate::service;
 use crate::service::{Access, Hub};
-use crate::settings::{SyncSettings, serve_settings};
+use crate::settings::{SyncSettings, read_cache_limit, serve_settings};
 use porter_client::{Accounts, Identities, IdentitiesError, InProcess, PorterRelays};
 use porter_core::clock::SystemClock;
 use porter_core::sheet::ProviderGroup;
 use porter_core::xdg::PathError;
 use porter_daemon::ProcRoot;
 use porter_dbus::{BusTarget, CallerFileError, ProcCallers};
+use porter_drive_fuse::Mounter;
 use porter_families::FamilyProvider;
 use porter_families::set::{FamilyIo, ProviderNames, load_specs, served};
 use porter_provider::ProviderSet;
@@ -161,9 +163,13 @@ impl Config {
         // Storage over Graph: the app folder mirror for a Files grant, and Photos for a Photos
         // grant when `SYNCD_PHOTOS=on` (it is off otherwise: there is no Photos app yet).
         let storage = StorageConfig::default();
+        // Each drive shown in Files is a folder at `~/Cloud/<Drive>`, mounted through the
+        // system's `fusermount3`; its cache keeps what `syncd.toml` says.
         let storage = StorageConfig {
             rescan: rescan(BUILD, rescan_var, storage.rescan),
             photos: PhotosSwitch::from_var(std::env::var(PHOTOS_VAR).ok().as_deref()),
+            mount: DriveMount::Fuse(Mounter::default()),
+            cache_limit: read_cache_limit(&paths.settings),
             ..storage
         };
         Ok(Self {
@@ -314,6 +320,7 @@ impl Daemon {
         let photos_on = storage.photos == PhotosSwitch::On;
         #[cfg(feature = "photos-picker")]
         let photos_owners = storage.photos_owners.clone();
+        let storage_files_apps = storage.files_owners.clone();
         let storage = StorageSupervisor::new(
             wiring(network),
             ClientStorageGrants::new(Arc::clone(&accounts)),
@@ -321,6 +328,8 @@ impl Daemon {
         );
         #[cfg(feature = "photos-picker")]
         let pickers = storage.pickers();
+        let (drives, cache_knob) = (storage.drive_set(), storage.cache_knob());
+        let files_apps = storage_files_apps.clone();
         let storage = storage.spawn();
         let daemon = Self {
             connection: connection.clone(),
@@ -333,6 +342,7 @@ impl Daemon {
         let identities = Identities::connect(&connection)
             .await
             .map_err(StartError::Identities)?;
+        let settings_file = paths.settings.clone();
         let own = Arc::new(Keep::new(
             Arc::clone(&service),
             identities,
@@ -342,7 +352,8 @@ impl Daemon {
         ));
         serve_settings(
             &connection,
-            SyncSettings::new(own, Arc::clone(&callers), names),
+            SyncSettings::new(own, Arc::clone(&callers), names)
+                .with_cache_limit(cache_knob, settings_file),
         )
         .await
         .map_err(StartError::Settings)?;
@@ -354,6 +365,10 @@ impl Daemon {
                 .await
                 .map_err(StartError::Picker)?;
         }
+        // `org.quire.Storage1`: the drives shown in Files.
+        service::serve_storage(&connection, drives, Arc::clone(&callers), files_apps)
+            .await
+            .map_err(StartError::Serve)?;
         service::serve(&connection, hub, callers)
             .await
             .map_err(StartError::Serve)?;

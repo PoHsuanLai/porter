@@ -43,6 +43,7 @@ mod object;
 mod picker;
 mod resolve;
 mod status;
+mod storage;
 
 pub use errors::RefusedError;
 pub use hub::{Access, Cycles, DatasetName, Event, Handle, Hub, Nudge, StatusSnapshot};
@@ -54,3 +55,4 @@ pub use resolve::{
     Confirm, ConfirmError, ConflictNumber, How, Settle, SettleError, SyncNowError, UnknownHow,
 };
 pub use status::{conflict_details, held_details, progress_details, status_details};
+pub use storage::{FilesApps, ITEMS_EVERY, absolute, drive_details, item_details, serve_storage};

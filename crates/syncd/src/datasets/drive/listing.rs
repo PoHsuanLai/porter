@@ -7,9 +7,11 @@ use super::journal::DriveJournal;
 use crate::journal::JournalError;
 use porter_http::Http;
 use porter_sync::{Cursor, Folders, More, Replica, ReplicaError, RetryAfter};
+use std::sync::Arc;
 use std::time::Duration;
 use storage_gdrive::GdriveReplica;
 use storage_graph::GraphReplica;
+use tokio::sync::watch;
 
 /// A replica of a whole drive whose tree the listing keeps between processes.
 pub trait DriveReplica: Replica {
@@ -115,8 +117,28 @@ pub async fn list_once<R: DriveReplica>(
 /// sign-in was refused or that is gone is looked at again after `every`. The storage supervisor
 /// ends the task when the grant goes; the journal stays.
 pub async fn keep_listing<R: DriveReplica>(journal: DriveJournal, replica: R, every: Duration) {
+    let (_running, paused) = watch::channel(false);
+    keep_listing_told(Arc::new(journal), replica, every, paused, |_| {}).await;
+}
+
+/// [`keep_listing`] over a journal shared with the drive's files, telling `told` how each pass
+/// ended. While `paused` says so no pass runs (a paused drive reads no changes).
+pub async fn keep_listing_told<R: DriveReplica>(
+    journal: Arc<DriveJournal>,
+    replica: R,
+    every: Duration,
+    mut paused: watch::Receiver<bool>,
+    mut told: impl FnMut(&Result<Pass, JournalError>) + Send,
+) {
     loop {
-        let wait = match list_once(&journal, &replica).await {
+        while *paused.borrow_and_update() {
+            if paused.changed().await.is_err() {
+                return;
+            }
+        }
+        let pass = list_once(&journal, &replica).await;
+        told(&pass);
+        let wait = match pass {
             Ok(Pass {
                 outcome: Listed::Retry(after),
                 ..
@@ -127,6 +149,10 @@ pub async fn keep_listing<R: DriveReplica>(journal: DriveJournal, replica: R, ev
                 every
             }
         };
-        tokio::time::sleep(wait).await;
+        tokio::select! {
+            () = tokio::time::sleep(wait) => {}
+            // Resumed (or paused): look again now.
+            changed = paused.changed() => if changed.is_err() { return },
+        }
     }
 }

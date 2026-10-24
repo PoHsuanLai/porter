@@ -20,6 +20,12 @@ pub struct Paths {
     pub callers_system: PathBuf,
     /// The user's caller table, `$XDG_CONFIG_HOME/porter/callers.toml`; its rows win.
     pub callers_user: PathBuf,
+    /// `~/Cloud`: where each drive the person shows in Files is a folder (`~/Cloud/OneDrive`).
+    pub cloud: PathBuf,
+    /// `$XDG_CACHE_HOME/porter/drives`: each drive's downloaded files, one directory per account.
+    pub drive_cache: PathBuf,
+    /// `$XDG_CONFIG_HOME/porter/syncd.toml`: syncd's own settings (`storage.cache_limit`).
+    pub settings: PathBuf,
 }
 
 impl Paths {
@@ -29,11 +35,16 @@ impl Paths {
         let state = xdg.dir("XDG_STATE_HOME", ".local/state")?;
         let config = xdg.dir("XDG_CONFIG_HOME", ".config")?;
         let data = xdg.dir("XDG_DATA_HOME", ".local/share")?;
+        let cache = xdg.dir("XDG_CACHE_HOME", ".cache")?;
+        let home = xdg.home().ok_or(PathError::NoHome)?.to_path_buf();
         Ok(Self {
             journals: state.join("porter/sync"),
             mirrors: data.join("porter/vdir"),
             callers_system: PathBuf::from(porter_daemon::SYSTEM_CALLERS),
             callers_user: config.join("porter/callers.toml"),
+            cloud: home.join("Cloud"),
+            drive_cache: cache.join("porter/drives"),
+            settings: config.join("porter/syncd.toml"),
         })
     }
 
@@ -83,6 +94,11 @@ impl Paths {
         self.journals
             .join(account.as_str())
             .join("google_photos_upload.ledger.json")
+    }
+
+    /// The downloaded files of one account's drive, `$XDG_CACHE_HOME/porter/drives/<account>`.
+    pub fn drive_cache_dir(&self, account: &AccountDir) -> PathBuf {
+        self.drive_cache.join(account.as_str())
     }
 
     /// Everything of one account that syncd keeps: its journals and its mirrors.

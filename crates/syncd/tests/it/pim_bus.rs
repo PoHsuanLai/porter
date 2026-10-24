@@ -290,6 +290,9 @@ async fn rig(with_grants: bool) -> Rig {
         mirrors: root.join("data/porter/vdir"),
         callers_system: root.join("none"),
         callers_user: root.join("none"),
+        cloud: root.join("Cloud"),
+        drive_cache: root.join("cache/porter/drives"),
+        settings: root.join("config/porter/syncd.toml"),
     };
     let hub = Hub::default();
     let own = keep(&hosted, NoDirectory, paths.clone(), hub.clone());

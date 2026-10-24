@@ -1,0 +1,472 @@
+//! `org.quire.Storage1` at `/org/quire/Storage1` on syncd's connection: the drives shown in
+//! Files and their items, served from each drive's files on demand ([`DriveSet`]).
+//!
+//! - The caller is the connection's, found by porter-dbus's `Callers` as for `Sync1`. The shell
+//!   (`CallerRole::SheetHost`) and Settings (`CallerRole::Settings`) see every drive; an app sees
+//!   them when the person let it see their files (the apps of [`FilesApps`]); anyone else, and a
+//!   sender syncd does not know, is `AccessDenied`, for every method. `SetPaused` is the shell's
+//!   and Settings' only: an app is `AccessDenied` there too.
+//! - A path is absolute and inside one drive's `path`, by the names the drive's items are shown
+//!   by (`porter_drive::naming`). A path on no drive, or not there, is left out of `Items` and
+//!   refused by the actions with `NOT_ON_A_DRIVE`; the drive's own folder is no item.
+//! - `Watch` joins the caller's connection to those told `DrivesChanged` and `ItemsChanged`
+//!   until it leaves the bus. Each drive's item changes are gathered and sent together at most
+//!   ten times a second, each changed item with the folders above it.
+
+use super::errors::RefusedError;
+use crate::datasets::drive::{DriveEvent, DriveSet, LiveDrive};
+use crate::service::Access;
+use porter_dbus::{
+    Caller, CallerRole, Callers, DRIVE_KEY_ACCOUNT, DRIVE_KEY_LABEL, DRIVE_KEY_LOCAL,
+    DRIVE_KEY_PATH, DRIVE_KEY_PROVIDER, DRIVE_KEY_STATE, DRIVE_KEY_TOTAL, DRIVE_KEY_USED,
+    DRIVE_KEY_WORDS, Details, ITEM_KEY_FRACTION, ITEM_KEY_KEPT, ITEM_KEY_KIND, ITEM_KEY_STATE,
+    ITEM_KEY_URL, ITEM_KEY_WORDS, ItemDetails, ItemKind, ItemState, Refused, STORAGE_PATH, Saved,
+};
+use porter_drive::{Node, NodeId, NodeKind, Status, words};
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
+use std::pin::Pin;
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
+use zbus::Connection;
+use zbus::export::futures_core::Stream;
+use zbus::fdo::DBusProxy;
+use zbus::message::Header;
+use zbus::names::BusName;
+use zbus::object_server::SignalEmitter;
+use zbus::zvariant::{ObjectPath, OwnedValue, Value};
+
+/// How often a drive's item changes are sent at most.
+pub const ITEMS_EVERY: Duration = Duration::from_millis(100);
+
+/// The apps the person let see their files: they see every drive. (The shell and Settings
+/// always do.)
+pub type FilesApps = Access;
+
+fn held<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+struct Core<C> {
+    drives: DriveSet,
+    callers: C,
+    apps: FilesApps,
+    connection: Connection,
+    /// The connections that called `Watch`, by unique name.
+    watchers: Mutex<BTreeMap<String, Caller>>,
+}
+
+/// Whether `caller` may use the interface at all.
+fn admitted(apps: &FilesApps, caller: &Caller) -> bool {
+    match caller.role {
+        CallerRole::SheetHost | CallerRole::Settings => true,
+        CallerRole::App => apps.owners.contains(&caller.app.name),
+        _ => false,
+    }
+}
+
+fn put(details: &mut Details, key: &str, value: Value<'_>) {
+    if let Ok(owned) = OwnedValue::try_from(value) {
+        details.insert(key.to_owned(), owned);
+    }
+}
+
+fn state_of(status: &Status) -> ItemState {
+    match status.state {
+        porter_drive::ItemState::Downloading => ItemState::Downloading,
+        porter_drive::ItemState::Downloaded => ItemState::Downloaded,
+        porter_drive::ItemState::Waiting => ItemState::Waiting,
+        porter_drive::ItemState::Error => ItemState::Error,
+        _ => ItemState::Cloud,
+    }
+}
+
+/// An item's details as `Items` gives them.
+pub fn item_details(status: &Status) -> Details {
+    let mut details = Details::new();
+    let state = state_of(status);
+    put(&mut details, ITEM_KEY_STATE, Value::from(state.as_str()));
+    put(&mut details, ITEM_KEY_KEPT, Value::Bool(status.kept));
+    let kind = match &status.kind {
+        NodeKind::Folder => ItemKind::Folder,
+        NodeKind::File => ItemKind::File,
+        NodeKind::Online { .. } => ItemKind::Online,
+    };
+    put(&mut details, ITEM_KEY_KIND, Value::from(kind.as_str()));
+    if let (ItemState::Downloading, Some(fraction)) = (state, status.fraction) {
+        put(&mut details, ITEM_KEY_FRACTION, Value::F64(fraction));
+    }
+    if let (ItemState::Error, Some(words)) = (state, &status.words) {
+        put(&mut details, ITEM_KEY_WORDS, Value::from(words.as_str()));
+    }
+    if let NodeKind::Online { url, .. } = &status.kind {
+        put(&mut details, ITEM_KEY_URL, Value::from(url.as_str()));
+    }
+    details
+}
+
+/// A drive's row as `Drives` gives it.
+pub fn drive_details(drive: &LiveDrive) -> Details {
+    let mut details = Details::new();
+    let account = ObjectPath::try_from(drive.account.clone())
+        .map_or_else(|_| Value::from(drive.account.clone()), Value::from);
+    put(&mut details, DRIVE_KEY_ACCOUNT, account);
+    put(
+        &mut details,
+        DRIVE_KEY_LABEL,
+        Value::from(drive.label.as_str()),
+    );
+    put(
+        &mut details,
+        DRIVE_KEY_PROVIDER,
+        Value::from(drive.provider),
+    );
+    put(
+        &mut details,
+        DRIVE_KEY_PATH,
+        Value::from(drive.path.to_string_lossy().as_ref()),
+    );
+    let (state, words) = drive.state();
+    put(&mut details, DRIVE_KEY_STATE, Value::from(state.as_str()));
+    put(
+        &mut details,
+        DRIVE_KEY_LOCAL,
+        Value::U64(drive.drive.local_bytes()),
+    );
+    if let Some((used, total)) = drive.drive.quota() {
+        put(&mut details, DRIVE_KEY_USED, Value::U64(used));
+        if let Some(total) = total {
+            put(&mut details, DRIVE_KEY_TOTAL, Value::U64(total));
+        }
+    }
+    if let Some(words) = words {
+        put(&mut details, DRIVE_KEY_WORDS, Value::from(words));
+    }
+    details
+}
+
+impl<C: Callers> Core<C> {
+    /// Who the sender is, if it may use the interface.
+    async fn identify(&self, header: &Header<'_>) -> Result<Caller, RefusedError> {
+        let sender = header
+            .sender()
+            .ok_or_else(|| RefusedError::access_denied("no sender"))?;
+        let caller = self
+            .callers
+            .caller_of(sender.as_str())
+            .await
+            .ok_or_else(|| RefusedError::access_denied("syncd does not know this caller"))?;
+        match admitted(&self.apps, &caller) {
+            true => Ok(caller),
+            false => Err(RefusedError::access_denied(
+                "this caller may not see the person's files",
+            )),
+        }
+    }
+
+    /// The drive and node at `path`.
+    fn find(&self, path: &str) -> Option<(Arc<LiveDrive>, Node)> {
+        let path = Path::new(path);
+        self.drives.all().into_iter().find_map(|drive| {
+            let inside = path.strip_prefix(&drive.path).ok()?;
+            if inside.as_os_str().is_empty() {
+                return None;
+            }
+            let node = drive.drive.resolve(inside).ok().flatten()?;
+            Some((drive, node))
+        })
+    }
+
+    /// Runs `act` on each of `paths` found on a drive; what it refused, and every path on no
+    /// drive.
+    fn each(
+        &self,
+        paths: &[String],
+        mut act: impl FnMut(&LiveDrive, &NodeId) -> Result<(), &'static str>,
+    ) -> Refused {
+        let mut refused = Refused::new();
+        for text in paths {
+            match self.find(text) {
+                Some((drive, node)) => {
+                    if let Err(why) = act(&drive, &node.id) {
+                        refused.insert(text.clone(), why.to_owned());
+                    }
+                }
+                None => {
+                    refused.insert(text.clone(), words::NOT_ON_A_DRIVE.to_owned());
+                }
+            }
+        }
+        refused
+    }
+
+    /// `id`'s absolute path and its details, then each folder above it, on `drive`.
+    fn with_folders(&self, drive: &LiveDrive, id: &NodeId, into: &mut ItemDetails) {
+        let Ok(Some(path)) = drive.drive.path_of(id) else {
+            return;
+        };
+        let mut at: Option<&Path> = Some(&path);
+        let mut ids = vec![id.clone()];
+        // The folders above, by their ids.
+        let mut up = id.clone();
+        while let Ok(Some(node)) = drive.drive.node(&up) {
+            if node.parent == NodeId::Top {
+                break;
+            }
+            ids.push(node.parent.clone());
+            up = node.parent;
+        }
+        for id in ids {
+            let Some(here) = at else { break };
+            let key = drive.path.join(here).to_string_lossy().into_owned();
+            if !into.contains_key(&key)
+                && let Some(status) = drive.drive.status(&id)
+            {
+                into.insert(key, item_details(&status));
+            }
+            at = here.parent().filter(|p| !p.as_os_str().is_empty());
+        }
+    }
+
+    async fn tell_items(&self, drive: &LiveDrive, ids: &BTreeSet<NodeId>) {
+        let mut details = ItemDetails::new();
+        for id in ids {
+            self.with_folders(drive, id, &mut details);
+        }
+        if details.is_empty() {
+            return;
+        }
+        for name in self.watcher_names() {
+            if let Ok(emitter) = self.emitter(&name) {
+                let _ =
+                    StorageObject::<C>::items_changed(&emitter, &drive.id, details.clone()).await;
+            }
+        }
+    }
+
+    async fn tell_drives(&self) {
+        for name in self.watcher_names() {
+            if let Ok(emitter) = self.emitter(&name) {
+                let _ = StorageObject::<C>::drives_changed(&emitter).await;
+            }
+        }
+    }
+
+    fn watcher_names(&self) -> Vec<String> {
+        held(&self.watchers).keys().cloned().collect()
+    }
+
+    fn emitter(&self, name: &str) -> zbus::Result<SignalEmitter<'static>> {
+        Ok(SignalEmitter::new(&self.connection, STORAGE_PATH)?
+            .set_destination(BusName::try_from(name.to_owned())?)
+            .into_owned())
+    }
+}
+
+/// The interface object.
+struct StorageObject<C>(Arc<Core<C>>);
+
+#[zbus::interface(name = "org.quire.Storage1")]
+impl<C: Callers> StorageObject<C> {
+    async fn drives(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+    ) -> Result<Vec<(String, Details)>, RefusedError> {
+        self.0.identify(&header).await?;
+        Ok(self
+            .0
+            .drives
+            .all()
+            .iter()
+            .map(|drive| (drive.id.clone(), drive_details(drive)))
+            .collect())
+    }
+
+    async fn items(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        paths: Vec<String>,
+    ) -> Result<ItemDetails, RefusedError> {
+        self.0.identify(&header).await?;
+        Ok(paths
+            .into_iter()
+            .filter_map(|text| {
+                let (drive, node) = self.0.find(&text)?;
+                let status = drive.drive.status(&node.id)?;
+                Some((text, item_details(&status)))
+            })
+            .collect())
+    }
+
+    async fn download(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        paths: Vec<String>,
+    ) -> Result<Refused, RefusedError> {
+        self.0.identify(&header).await?;
+        Ok(self.0.each(&paths, |drive, id| drive.drive.download(id)))
+    }
+
+    async fn keep(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        paths: Vec<String>,
+        keep: bool,
+    ) -> Result<Refused, RefusedError> {
+        self.0.identify(&header).await?;
+        Ok(self.0.each(&paths, |drive, id| drive.drive.keep(id, keep)))
+    }
+
+    async fn remove_download(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        paths: Vec<String>,
+    ) -> Result<Refused, RefusedError> {
+        self.0.identify(&header).await?;
+        Ok(self
+            .0
+            .each(&paths, |drive, id| drive.drive.remove_download(id)))
+    }
+
+    #[zbus(out_args("saved", "refused"))]
+    async fn save_copy(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        paths: Vec<String>,
+    ) -> Result<(Saved, Refused), RefusedError> {
+        self.0.identify(&header).await?;
+        // No copy is made yet: an online document has no export here.
+        let refused = self.0.each(&paths, |drive, id| {
+            match drive.drive.attrs(id).ok().flatten().map(|a| a.kind) {
+                Some(NodeKind::Online { .. }) => Err(words::NO_FILE_FORMAT),
+                _ => Err(words::NOT_A_DOCUMENT),
+            }
+        });
+        Ok((Saved::new(), refused))
+    }
+
+    async fn set_paused(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+        drives: Vec<String>,
+        paused: bool,
+    ) -> Result<Refused, RefusedError> {
+        let caller = self.0.identify(&header).await?;
+        if !matches!(caller.role, CallerRole::SheetHost | CallerRole::Settings) {
+            return Err(RefusedError::access_denied(
+                "only the shell and Settings pause a drive",
+            ));
+        }
+        let mut refused = Refused::new();
+        for id in drives {
+            match self.0.drives.get(&id) {
+                Some(drive) => drive.set_paused(paused),
+                None => {
+                    refused.insert(id, words::NO_DRIVE.to_owned());
+                }
+            }
+        }
+        self.0.drives.tell_drives();
+        Ok(refused)
+    }
+
+    async fn watch(&self, #[zbus(header)] header: Header<'_>) -> Result<(), RefusedError> {
+        let caller = self.0.identify(&header).await?;
+        let sender = header
+            .sender()
+            .ok_or_else(|| RefusedError::access_denied("no sender"))?;
+        held(&self.0.watchers).insert(sender.to_string(), caller);
+        Ok(())
+    }
+
+    #[zbus(signal)]
+    async fn drives_changed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    async fn items_changed(
+        emitter: &SignalEmitter<'_>,
+        drive: &str,
+        items: ItemDetails,
+    ) -> zbus::Result<()>;
+}
+
+/// Serves `org.quire.Storage1` at [`STORAGE_PATH`] on `connection` over `drives`, with
+/// `callers` saying who calls and `apps` the apps that may see the person's files. Call it
+/// before [`super::serve`], which claims the name once every object is there.
+pub async fn serve_storage<C: Callers>(
+    connection: &Connection,
+    drives: DriveSet,
+    callers: C,
+    apps: FilesApps,
+) -> zbus::Result<()> {
+    let core = Arc::new(Core {
+        drives,
+        callers,
+        apps,
+        connection: connection.clone(),
+        watchers: Mutex::new(BTreeMap::new()),
+    });
+    connection
+        .object_server()
+        .at(STORAGE_PATH, StorageObject(Arc::clone(&core)))
+        .await?;
+    let mut owners = DBusProxy::new(connection)
+        .await?
+        .receive_name_owner_changed()
+        .await?;
+    let weak = Arc::downgrade(&core);
+    tokio::spawn(async move {
+        while let Some(signal) =
+            std::future::poll_fn(|cx| Pin::new(&mut owners).poll_next(cx)).await
+        {
+            let Some(core) = weak.upgrade() else { return };
+            if let Ok(args) = signal.args()
+                && args.new_owner().is_none()
+            {
+                held(&core.watchers).remove(args.name().as_str());
+            }
+        }
+    });
+    let mut events = core.drives.subscribe();
+    let weak = Arc::downgrade(&core);
+    tokio::spawn(async move {
+        let mut items: BTreeMap<String, BTreeSet<NodeId>> = BTreeMap::new();
+        let mut drives = false;
+        let mut every = tokio::time::interval(ITEMS_EVERY);
+        every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            tokio::select! {
+                event = events.recv() => match event {
+                    Ok(DriveEvent::Drives) => drives = true,
+                    Ok(DriveEvent::Items { drive, ids }) => {
+                        items.entry(drive).or_default().extend(ids);
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => drives = true,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+                },
+                _ = every.tick() => {
+                    let Some(core) = weak.upgrade() else { return };
+                    if std::mem::take(&mut drives) {
+                        core.tell_drives().await;
+                    }
+                    for (id, ids) in std::mem::take(&mut items) {
+                        if let Some(drive) = core.drives.get(&id) {
+                            core.tell_items(&drive, &ids).await;
+                        }
+                    }
+                }
+            }
+        }
+    });
+    Ok(())
+}
+
+/// The absolute path of `id` on `drive`, for tests and callers that hold a node.
+pub fn absolute(drive: &LiveDrive, id: &NodeId) -> Option<PathBuf> {
+    drive
+        .drive
+        .path_of(id)
+        .ok()
+        .flatten()
+        .map(|inside| drive.path.join(inside))
+}

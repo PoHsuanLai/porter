@@ -29,7 +29,10 @@ use super::grants::{
 };
 use crate::clock::Wall;
 use crate::dataset::{Dataset, DatasetId};
-use crate::datasets::drive::{self, DriveJournal};
+use crate::datasets::drive::{
+    self, CacheKnob, DriveJournal, DriveReplica, DriveSet, Listed, LiveDrive, SIGN_IN_WORDS,
+    UNREADABLE_WORDS,
+};
 use crate::datasets::photos::google::{
     GooglePicker, PhotosApi, PhotosPicker, SLUG as UPLOAD_SLUG, UploadReplica, library_http,
     picker_http,
@@ -48,13 +51,16 @@ use crate::scheduler::next_look;
 use crate::service::{Access, DatasetName};
 use porter_client::Transport;
 use porter_core::{AppName, Candidate, EndpointUrl, WebUrl};
+use porter_dbus::DriveState;
+use porter_drive::{CacheLimit, Drive, DriveConfig, ReplicaSource};
+use porter_drive_fuse::{DriveFs, Mounted, Mounter};
 use porter_sync::Replica;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::Duration;
 use storage_graph::Clock;
-use tokio::sync::Notify;
+use tokio::sync::{Notify, watch};
 use tokio::task::JoinHandle;
 
 /// The app that owns the app folder mirror's dataset (it settles its conflicts).
@@ -77,6 +83,22 @@ pub struct StorageConfig {
     pub google_album: String,
     /// How often a whole drive's listing reads its changes.
     pub drive_every: Duration,
+    /// Whether a drive is shown as a folder at `~/Cloud/<Drive>`.
+    pub mount: DriveMount,
+    /// The cache limit the drives start with (Settings' `storage.cache_limit` changes it).
+    pub cache_limit: CacheLimit,
+}
+
+/// How a drive shown in Files is put at its path.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum DriveMount {
+    /// Not at all: its files are served on the bus only, and nothing is mounted (what a library
+    /// user and the tests get unless they ask).
+    #[default]
+    Off,
+    /// Mounted through FUSE as this mounter says (what the daemon does). A computer that cannot
+    /// mount it reads the drive `error` with plain words.
+    Fuse(Mounter),
 }
 
 fn owned_by(app: &str) -> Access {
@@ -94,6 +116,8 @@ impl Default for StorageConfig {
             photos_owners: owned_by(PHOTOS_APP),
             google_album: crate::datasets::photos::google::ALBUM_TITLE.to_owned(),
             drive_every: Duration::from_secs(300),
+            mount: DriveMount::Off,
+            cache_limit: CacheLimit::Automatic,
         }
     }
 }
@@ -115,8 +139,14 @@ enum Running<T: Transport> {
         upload: Option<(DatasetName, JoinHandle<()>)>,
         picker: Option<Arc<GooglePicker<T>>>,
     },
-    /// The whole drive's listing.
-    Drive { task: JoinHandle<()> },
+    /// The whole drive: its listing, its cache limit's follower, and its folder.
+    Drive {
+        task: JoinHandle<()>,
+        limit: JoinHandle<()>,
+        id: String,
+        path: std::path::PathBuf,
+        mounted: Option<Mounted>,
+    },
 }
 
 impl<T: Transport> std::fmt::Debug for Running<T> {
@@ -148,6 +178,8 @@ pub struct StorageSupervisor<T: Transport, G> {
     /// The Google Photos pickers running now, for the bus object that serves them.
     pickers: crate::service::Pickers<T>,
     silent: BTreeSet<StorageKind>,
+    drives: DriveSet,
+    limit: CacheKnob,
 }
 
 /// A device name for this machine's Photos library, made once (the library keeps it).
@@ -179,11 +211,24 @@ where
         Self {
             wiring,
             grants,
-            config,
             running: BTreeMap::new(),
             pickers: crate::service::Pickers::default(),
             silent: BTreeSet::new(),
+            drives: DriveSet::default(),
+            limit: Arc::new(watch::channel(config.cache_limit).0),
+            config,
         }
+    }
+
+    /// The drives shown in Files, as `org.quire.Storage1` serves them: kept current by every
+    /// `tick`.
+    pub fn drive_set(&self) -> DriveSet {
+        self.drives.clone()
+    }
+
+    /// The cache limit the drives follow, for Settings to set.
+    pub fn cache_knob(&self) -> CacheKnob {
+        Arc::clone(&self.limit)
     }
 
     /// The pickers as the bus object reads them: kept current by every `tick`.
@@ -247,6 +292,7 @@ where
                 );
             }
             let mut granted: Vec<AccountDir> = Vec::new();
+            let folders = drive_folders(&candidates);
             for candidate in &candidates {
                 let Some(account) =
                     AccountDir::parse(&porter_core::object_segment(&candidate.account))
@@ -255,10 +301,19 @@ where
                 };
                 granted.push(account.clone());
                 let key = (account.clone(), kind);
+                let folder = folders.get(&candidate.account).cloned().unwrap_or_default();
+                // A drive whose folder name changed (a second account of its provider came or
+                // went) is put at its new path.
+                if let Some(Running::Drive { path, .. }) = self.running.get(&key)
+                    && *path != self.wiring.paths.cloud.join(&folder)
+                    && let Some(running) = self.running.remove(&key)
+                {
+                    self.retire(running).await;
+                }
                 if self.running.contains_key(&key) {
                     continue;
                 }
-                match self.start(kind, &account, candidate) {
+                match self.start(kind, &account, candidate, &folder) {
                     Ok(running) => {
                         self.running.insert(key, running);
                     }
@@ -302,6 +357,7 @@ where
         kind: StorageKind,
         account: &AccountDir,
         candidate: &Candidate,
+        folder: &str,
     ) -> Result<Running<T>, String> {
         let wiring = &self.wiring;
         let grant = || candidate.grant.clone();
@@ -337,52 +393,174 @@ where
                 self.start_photos(account, candidate, &endpoint.url)
             }
             StorageKind::GooglePhotos => self.start_google_photos(account, candidate),
-            StorageKind::Drive => self.start_drive(account, candidate),
+            StorageKind::Drive => self.start_drive(account, candidate, folder),
         }
     }
 
-    /// The whole drive's listing of `account`, over OneDrive's root or My Drive by the endpoint,
-    /// from the tree its journal kept.
+    /// The whole drive of `account`, over OneDrive's root or My Drive by the endpoint: its
+    /// listing from the tree its journal kept, its files on demand over the journal and a
+    /// replica of its own for fetching, and its folder `~/Cloud/<folder>`.
     fn start_drive(
         &self,
         account: &AccountDir,
         candidate: &Candidate,
+        folder: &str,
     ) -> Result<Running<T>, String> {
         let wiring = &self.wiring;
-        let journal = DriveJournal::open(&drive::journal_path(&wiring.paths, account))
-            .map_err(|e| e.to_string())?;
-        let folders = journal.folders().map_err(|e| e.to_string())?;
-        let every = self.config.drive_every;
         let store = app_folder_store(candidate).ok_or("no Graph or Drive endpoint")?;
-        let task = match store {
+        match store {
             AppFolderStore::Graph(e) => {
-                let replica = graph_replica(
-                    Arc::clone(&wiring.accounts),
-                    candidate.grant.clone(),
-                    e.url.clone(),
-                    "",
-                    Clock::system(),
+                let replica = || {
+                    graph_replica(
+                        Arc::clone(&wiring.accounts),
+                        candidate.grant.clone(),
+                        e.url.clone(),
+                        "",
+                        Clock::system(),
+                    )
+                    .map(|r| r.with_root(storage_graph::Root::Drive))
+                    .map_err(|e| e.to_string())
+                };
+                self.run_drive(
+                    account,
+                    candidate,
+                    folder,
+                    "OneDrive",
+                    replica()?,
+                    replica()?,
                 )
-                .map_err(|e| e.to_string())?
-                .with_root(storage_graph::Root::Drive)
-                .with_folders(folders);
-                tokio::spawn(drive::keep_listing(journal, replica, every))
             }
             AppFolderStore::Drive(e) => {
-                let replica = gdrive_replica(
-                    Arc::clone(&wiring.accounts),
-                    candidate.grant.clone(),
-                    e.url.clone(),
-                    "",
-                    storage_gdrive::Clock::system(),
+                let replica = || {
+                    gdrive_replica(
+                        Arc::clone(&wiring.accounts),
+                        candidate.grant.clone(),
+                        e.url.clone(),
+                        "",
+                        storage_gdrive::Clock::system(),
+                    )
+                    .map(|r| r.with_root(storage_gdrive::Root::Drive))
+                    .map_err(|e| e.to_string())
+                };
+                self.run_drive(
+                    account,
+                    candidate,
+                    folder,
+                    "Google Drive",
+                    replica()?,
+                    replica()?,
                 )
-                .map_err(|e| e.to_string())?
-                .with_root(storage_gdrive::Root::Drive)
-                .with_folders(folders);
-                tokio::spawn(drive::keep_listing(journal, replica, every))
+            }
+        }
+    }
+
+    fn run_drive<L, F>(
+        &self,
+        account: &AccountDir,
+        candidate: &Candidate,
+        folder: &str,
+        provider: &'static str,
+        listing: L,
+        fetch: F,
+    ) -> Result<Running<T>, String>
+    where
+        L: DriveReplica + WithFolders + 'static,
+        F: Replica + 'static,
+    {
+        let wiring = &self.wiring;
+        let journal = Arc::new(
+            DriveJournal::open(&drive::journal_path(&wiring.paths, account))
+                .map_err(|e| e.to_string())?,
+        );
+        let listing = listing.with_folders(journal.folders().map_err(|e| e.to_string())?);
+        let fetch = Arc::new(fetch);
+        let files = Drive::open(
+            DriveConfig {
+                limit: *self.limit.borrow(),
+                ..DriveConfig::new(wiring.paths.drive_cache_dir(account))
+            },
+            Arc::clone(&journal) as Arc<dyn porter_drive::Listing>,
+            Arc::new(ReplicaSource(Arc::clone(&fetch))),
+        )
+        .map_err(|e| e.to_string())?;
+        let path = wiring.paths.cloud.join(folder);
+        let live = Arc::new(LiveDrive::new(
+            account.as_str().to_owned(),
+            porter_dbus::account_path(&candidate.account),
+            candidate.label.0.clone(),
+            provider,
+            path.clone(),
+            files.clone(),
+        ));
+        let mounted = match &self.config.mount {
+            DriveMount::Off => None,
+            DriveMount::Fuse(mounter) => {
+                let fs = DriveFs::new(files.clone(), tokio::runtime::Handle::current());
+                match mounter.mount(fs, &path) {
+                    Ok(mounted) => Some(mounted),
+                    Err(why) => {
+                        eprintln!(
+                            "syncd: {} is not shown at {}: {why}",
+                            account,
+                            path.display()
+                        );
+                        live.set_unshown();
+                        None
+                    }
+                }
             }
         };
-        Ok(Running::Drive { task })
+        self.drives.insert(Arc::clone(&live));
+        let mut knob = self.limit.subscribe();
+        let follower = files.clone();
+        let limit = tokio::spawn(async move {
+            while knob.changed().await.is_ok() {
+                let limit = *knob.borrow_and_update();
+                follower.set_limit(limit);
+            }
+        });
+        let set = self.drives.clone();
+        let weak = Arc::downgrade(&live);
+        let told = move |pass: &Result<drive::Pass, crate::journal::JournalError>| {
+            let Some(live) = weak.upgrade() else { return };
+            let (state, words) = match pass {
+                Ok(pass) => match pass.outcome {
+                    Listed::Done => (DriveState::Ready, None),
+                    Listed::Retry(_) => (DriveState::Offline, None),
+                    Listed::NeedsConsent | Listed::Unauthorized => {
+                        (DriveState::NeedsSignIn, Some(SIGN_IN_WORDS))
+                    }
+                    Listed::Gone => (DriveState::Error, Some(UNREADABLE_WORDS)),
+                },
+                Err(_) => (DriveState::Error, Some(UNREADABLE_WORDS)),
+            };
+            live.drive.set_offline(state == DriveState::Offline);
+            if live.set_listed(state, words) {
+                set.tell_drives();
+            }
+            live.drive.listing_changed();
+            let (fetch, set, live) = (Arc::clone(&fetch), set.clone(), Arc::clone(&live));
+            tokio::spawn(async move {
+                if let Ok(quota) = fetch.quota().await {
+                    live.drive.set_quota(quota.used.0, quota.total.map(|t| t.0));
+                    set.tell_drives();
+                }
+            });
+        };
+        let task = tokio::spawn(drive::keep_listing_told(
+            journal,
+            listing,
+            self.config.drive_every,
+            live.paused(),
+            told,
+        ));
+        Ok(Running::Drive {
+            task,
+            limit,
+            id: live.id.clone(),
+            path,
+            mounted,
+        })
     }
 
     /// The app folder mirror of `account` over `replica`.
@@ -569,7 +747,23 @@ where
             self.wiring.hub.stop(&name).await;
         }
         match running {
-            Running::Folder { task, .. } | Running::Drive { task } => task.abort(),
+            Running::Folder { task, .. } => task.abort(),
+            Running::Drive {
+                task,
+                limit,
+                id,
+                mounted,
+                ..
+            } => {
+                task.abort();
+                limit.abort();
+                self.drives.remove(&id);
+                if let Some(mounted) = mounted
+                    && let Err(why) = mounted.unmount()
+                {
+                    eprintln!("syncd: a drive's folder was not taken away: {why}");
+                }
+            }
             Running::GooglePhotos {
                 upload: Some((_, task)),
                 ..
@@ -596,6 +790,47 @@ where
     }
 }
 
+/// A drive replica that starts from a tree a journal kept.
+trait WithFolders: Sized {
+    fn with_folders(self, folders: porter_sync::Folders) -> Self;
+}
+
+impl<H: porter_http::Http> WithFolders for storage_graph::GraphReplica<H> {
+    fn with_folders(self, folders: porter_sync::Folders) -> Self {
+        storage_graph::GraphReplica::with_folders(self, folders)
+    }
+}
+
+impl<H: porter_http::Http> WithFolders for storage_gdrive::GdriveReplica<H> {
+    fn with_folders(self, folders: porter_sync::Folders) -> Self {
+        storage_gdrive::GdriveReplica::with_folders(self, folders)
+    }
+}
+
+/// Each drive's folder name in `~/Cloud`, by account: its provider's ("OneDrive", "Google
+/// Drive"), with the account's label when one provider has two.
+fn drive_folders(candidates: &[Candidate]) -> BTreeMap<porter_core::AccountId, String> {
+    let provider = |c: &Candidate| match app_folder_store(c) {
+        Some(AppFolderStore::Graph(_)) => "OneDrive",
+        _ => "Google Drive",
+    };
+    let mut count: BTreeMap<&str, usize> = BTreeMap::new();
+    for candidate in candidates {
+        *count.entry(provider(candidate)).or_default() += 1;
+    }
+    candidates
+        .iter()
+        .map(|c| {
+            let name = provider(c);
+            let folder = match count.get(name).copied().unwrap_or(0) {
+                0 | 1 => name.to_owned(),
+                _ => porter_drive::naming::shown_base(&format!("{name} ({})", c.label.0)),
+            };
+            (c.account.clone(), folder)
+        })
+        .collect()
+}
+
 /// Two replica types, so one `match` can build either.
 enum Either<A, B> {
     Left(A),
@@ -606,7 +841,11 @@ impl<T: Transport, G> Drop for StorageSupervisor<T, G> {
     fn drop(&mut self) {
         for running in self.running.values() {
             match running {
-                Running::Folder { task, .. } | Running::Drive { task } => task.abort(),
+                Running::Folder { task, .. } => task.abort(),
+                Running::Drive { task, limit, .. } => {
+                    task.abort();
+                    limit.abort();
+                }
                 Running::GooglePhotos {
                     upload: Some((_, task)),
                     ..

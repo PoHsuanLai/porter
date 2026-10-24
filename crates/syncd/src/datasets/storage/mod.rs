@@ -24,4 +24,4 @@ pub use grants::{
     AppFolderStore, ClientStorageGrants, StorageGrants, StorageKind, app_folder_store, drive_need,
     google_photos_endpoints, graph_endpoint, photos_need, storage_need,
 };
-pub use supervisor::{FILES_APP, PHOTOS_APP, StorageConfig, StorageSupervisor};
+pub use supervisor::{DriveMount, FILES_APP, PHOTOS_APP, StorageConfig, StorageSupervisor};
