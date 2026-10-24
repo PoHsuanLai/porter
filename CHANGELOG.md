@@ -16,6 +16,12 @@
   build it with `cargo build -p syncd-fakes`. `porter_rig::storage_fake` re-exports the module
   for one batch.
 
+### The agent token uses getrandom and subtle
+
+- inferd's agent token takes its bytes from `getrandom` instead of reading `/dev/urandom`, and is
+  compared with `subtle`'s constant-time compare instead of a hand-written loop. Both are in the
+  workspace dependency block.
+
 ### Routing reads a permit, not a consent grant
 
 - `porter_infer::RouteCandidate::permission` and `porter_router::Listed::permission` are a

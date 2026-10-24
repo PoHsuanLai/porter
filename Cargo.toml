@@ -158,6 +158,10 @@ hyper-rustls = { version = "0.27", default-features = false, features = ["ring",
 sha2 = "0.10"
 # The RustCrypto hasher traits quickxorhash implements, at the line sha2 and md-5 already bring.
 digest = "0.10"
+# inferd's agent token (both already in Cargo.lock): random bytes from the system (MIT OR
+# Apache-2.0) and a constant-time compare (BSD-3-Clause).
+getrandom = "0.4.3"
+subtle = "2.6.1"
 md-5 = "0.10"
 clap = { version = "4", features = ["derive"] }
 proptest = "1"

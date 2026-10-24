@@ -2,7 +2,7 @@
 //! lets a process that was told it reach the session's loopback listener. Random (32 bytes from
 //! the kernel), compared in constant time, and printed by nothing: `Debug` shows its length.
 
-use std::io::Read;
+use subtle::ConstantTimeEq;
 
 /// The prefix of every token, so a person who sees one in a process list knows what it is.
 const PREFIX: &str = "sk-porter-agent-";
@@ -10,9 +10,7 @@ const PREFIX: &str = "sk-porter-agent-";
 /// `N` random bytes from the kernel, as hex.
 pub fn random_hex<const N: usize>() -> Option<String> {
     let mut bytes = [0_u8; N];
-    std::fs::File::open("/dev/urandom")
-        .and_then(|mut file| file.read_exact(&mut bytes))
-        .ok()?;
+    getrandom::fill(&mut bytes).ok()?;
     Some(bytes.iter().map(|b| format!("{b:02x}")).collect())
 }
 
@@ -40,12 +38,7 @@ impl Token {
     /// Whether `presented` is this token. Takes the same time for every input of the same
     /// length, and the length is not a secret.
     pub fn matches(&self, presented: &str) -> bool {
-        let (ours, theirs) = (self.0.as_bytes(), presented.as_bytes());
-        let mut diff = u8::from(ours.len() != theirs.len());
-        for (index, byte) in ours.iter().enumerate() {
-            diff |= byte ^ theirs.get(index).copied().unwrap_or(0);
-        }
-        diff == 0
+        self.0.as_bytes().ct_eq(presented.as_bytes()).into()
     }
 }
 
