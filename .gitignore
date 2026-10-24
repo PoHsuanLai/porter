@@ -2,3 +2,6 @@
 /target-*
 .claude/
 .cargo/config.toml
+# Logs of a build or a gate run in the checkout's top folder.
+/*.log
+/*.log.build
