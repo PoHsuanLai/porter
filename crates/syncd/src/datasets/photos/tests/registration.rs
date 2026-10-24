@@ -44,7 +44,7 @@ fn wiring(root: &Path) -> PhotosWiring {
             callers_user: root.join("none"),
             cloud: root.join("Cloud"),
             drive_cache: root.join("cache/porter/drives"),
-            settings: root.join("config/porter/syncd.toml"),
+            settings: root.join("config/porter/syncd/syncd.toml"),
         },
         settings: Settings::quick(),
         network,

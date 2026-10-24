@@ -48,7 +48,7 @@ async fn a_look_that_could_not_ask_for_grants_says_it_was_not_whole_and_the_next
         callers_user: root.join("none"),
         cloud: root.join("Cloud"),
         drive_cache: root.join("cache/porter/drives"),
-        settings: root.join("config/porter/syncd.toml"),
+        settings: root.join("config/porter/syncd/syncd.toml"),
     };
     let (_network_up, network) = watch::channel(Network::Unmetered);
     let wiring = Wiring {

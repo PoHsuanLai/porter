@@ -253,7 +253,7 @@ async fn rig(kinds: &[PimKind]) -> Rig {
         callers_user: root.join("none"),
         cloud: root.join("Cloud"),
         drive_cache: root.join("cache/porter/drives"),
-        settings: root.join("config/porter/syncd.toml"),
+        settings: root.join("config/porter/syncd/syncd.toml"),
     };
     let hub = Hub::default();
     let (network_up, network) = watch::channel(Network::Unmetered);

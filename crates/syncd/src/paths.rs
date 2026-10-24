@@ -24,7 +24,10 @@ pub struct Paths {
     pub cloud: PathBuf,
     /// `$XDG_CACHE_HOME/porter/drives`: each drive's downloaded files, one directory per account.
     pub drive_cache: PathBuf,
-    /// `$XDG_CONFIG_HOME/porter/syncd.toml`: syncd's own settings (`storage.cache_limit`).
+    /// `$XDG_CONFIG_HOME/porter/syncd/syncd.toml`: syncd's own settings (`storage.cache_limit`),
+    /// in a folder of its own so that syncd's unit may write it and nothing else of porter's
+    /// configuration (accountd's caller table sits in `porter/`). The file kept at
+    /// `porter/syncd.toml` before is read while this one is absent.
     pub settings: PathBuf,
 }
 
@@ -44,7 +47,7 @@ impl Paths {
             callers_user: config.join("porter/callers.toml"),
             cloud: home.join("Cloud"),
             drive_cache: cache.join("porter/drives"),
-            settings: config.join("porter/syncd.toml"),
+            settings: config.join("porter/syncd/syncd.toml"),
         })
     }
 

@@ -409,10 +409,29 @@ impl<H, D, C> SyncSettings<H, D, C> {
     }
 }
 
+/// Where syncd kept its settings before they had a folder of their own: the same name one folder
+/// up (`$XDG_CONFIG_HOME/porter/syncd.toml` for `porter/syncd/syncd.toml`).
+fn earlier(file: &Path) -> Option<PathBuf> {
+    Some(file.parent()?.parent()?.join(file.file_name()?))
+}
+
+/// The text of the settings file `file`; while there is none, the one kept where it was before
+/// ([`earlier`]). That one is only read: the next save writes `file`, and the earlier one stays
+/// where it is, since syncd's unit may write only syncd's own folder and so cannot remove it.
+fn settings_text(file: &Path) -> Option<String> {
+    match std::fs::read_to_string(file) {
+        Ok(text) => Some(text),
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => {
+            std::fs::read_to_string(earlier(file)?).ok()
+        }
+        Err(_) => None,
+    }
+}
+
 /// The cache limit `file` keeps (`[storage] cache_limit = "<bytes>"`); automatic when there is
 /// no file, or it says nothing this build reads.
 pub fn read_cache_limit(file: &Path) -> CacheLimit {
-    let Ok(text) = std::fs::read_to_string(file) else {
+    let Some(text) = settings_text(file) else {
         return CacheLimit::Automatic;
     };
     let Ok(table) = text.parse::<toml::Table>() else {
@@ -427,8 +446,7 @@ pub fn read_cache_limit(file: &Path) -> CacheLimit {
 
 /// Writes `limit` to `file`, keeping the rest of it.
 fn write_cache_limit(file: &Path, limit: CacheLimit) -> std::io::Result<()> {
-    let mut table = std::fs::read_to_string(file)
-        .ok()
+    let mut table = settings_text(file)
         .and_then(|text| text.parse::<toml::Table>().ok())
         .unwrap_or_default();
     let storage = table
@@ -688,5 +706,39 @@ mod tests {
         }
         assert_eq!(parse("accounts.other.label", &registry), None);
         assert_eq!(parse("accounts.graph.acct.sync.video", &registry), None);
+    }
+
+    #[test]
+    fn settings_kept_before_their_folder_are_read_and_the_next_save_moves_them() {
+        let dir = porter_fake::Scratch::new("syncd-settings-move");
+        let file = dir.join("porter/syncd/syncd.toml");
+        let before = dir.join("porter/syncd.toml");
+        assert_eq!(read_cache_limit(&file), CacheLimit::Automatic);
+        std::fs::create_dir_all(dir.join("porter")).expect("dir");
+        std::fs::write(
+            &before,
+            "[storage]\ncache_limit = \"5000000000\"\n[other]\nkept = true\n",
+        )
+        .expect("before");
+        assert_eq!(
+            read_cache_limit(&file),
+            CacheLimit::from_setting(5_000_000_000)
+        );
+        write_cache_limit(&file, CacheLimit::from_setting(3_000_000_000)).expect("save");
+        let saved = std::fs::read_to_string(&file).expect("saved at its own place");
+        assert!(
+            saved.contains("3000000000") && saved.contains("kept = true"),
+            "{saved}"
+        );
+        // The earlier file is left as it was, and no longer read.
+        assert!(
+            std::fs::read_to_string(&before)
+                .expect("left")
+                .contains("5000000000")
+        );
+        assert_eq!(
+            read_cache_limit(&file),
+            CacheLimit::from_setting(3_000_000_000)
+        );
     }
 }

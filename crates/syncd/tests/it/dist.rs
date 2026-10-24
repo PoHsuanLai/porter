@@ -64,16 +64,16 @@ fn the_unit_is_a_sandbox_that_writes_only_its_own_directories() {
         value(&unit, "StateDirectory"),
         Some("porter/sync quire/syncd")
     );
-    // The drives' cache and syncd.toml's folder are writable too, and nothing else.
+    // The drives' cache and syncd's settings folder are writable too, and nothing else.
     assert_eq!(
         value(&dist("syncd.service.d/sandbox.conf"), "ReadWritePaths"),
-        Some("%h/.local/share/porter %h/.cache/porter %h/.config/porter")
+        Some("%h/.local/share/porter %h/.cache/porter %h/.config/porter/syncd")
     );
     assert_eq!(
         value(&unit, "ExecStartPre"),
         Some(
             "+/usr/bin/mkdir -p %h/.local/share/porter/vdir %h/.local/share/porter/storage \
-             %h/.local/share/porter/photos %h/.cache/porter %h/.config/porter"
+             %h/.local/share/porter/photos %h/.cache/porter %h/.config/porter/syncd"
         )
     );
     // The bus, and the servers syncd talks to itself now that it holds its own sign-ins (and the
@@ -98,9 +98,17 @@ fn showing_drives_in_files_left_the_sandbox_as_it_was() {
     assert_eq!(value(&sandbox, "ProtectHome"), Some("read-only"));
     assert_eq!(value(&sandbox, "ProtectSystem"), Some("strict"));
     assert_eq!(value(&sandbox, "PrivateTmp"), Some("yes"));
-    // ~/Cloud is not writable to syncd: the helper makes the folders there.
+    // ~/Cloud is not writable to syncd: the helper makes the folders there. Nor is porter's
+    // configuration folder, which holds accountd's caller table: only syncd's folder in it.
     let writable = value(&sandbox, "ReadWritePaths").expect("ReadWritePaths");
     assert!(!writable.contains("Cloud"), "{writable}");
+    for path in writable.split_whitespace() {
+        assert_ne!(path, "%h/.config/porter", "{writable}");
+        assert!(
+            !path.starts_with("%h/.config") || path == "%h/.config/porter/syncd",
+            "{path}"
+        );
+    }
 }
 
 #[test]
