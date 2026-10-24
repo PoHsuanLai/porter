@@ -3,12 +3,13 @@
 //! that runs them and `org.quire.Storage1` that serves them.
 //!
 //! A drive paused stays paused after a restart (syncd's settings keep it). An account being
-//! removed lets its drive go first ([`DriveSet::retire`]): nothing more is sent, its folder is
-//! taken away, and what was made or changed in it and not uploaded is written out as plain
-//! files beside it, moved into the folder once the account is gone ([`Kept::settle`]) and
-//! dropped when it stays ([`Kept::discard`]), so nothing made here is lost with the cache and
-//! nothing is kept twice. A drive not shown (Files turned off, or it did not start) has its
-//! cache opened for this; a cache that cannot be read stops the removal.
+//! removed lets its drive go first ([`DriveSet::retire`]): it is held (paused, its folder
+//! taken away, and not started again until the removal ends), and what was made or changed in
+//! it and not uploaded is written out as plain files to a folder of their own beside it,
+//! `~/Cloud/<Drive> (Not Uploaded)`, which nothing removes. Only then are its cache and the
+//! account removed, so a removal that fails, or is tried again, loses nothing and keeps
+//! nothing twice. A drive not shown (Files turned off, or it did not start) has its cache
+//! opened for this; a cache that cannot be read stops the removal.
 
 use crate::paths::{AccountDir, Paths};
 use porter_dbus::DriveState;
@@ -55,68 +56,21 @@ enum Hold {
     Released,
 }
 
-/// What letting a drive go kept of what was not uploaded: how many files, for which folder,
-/// and where they wait until the account is gone.
+/// What letting a drive go kept of what was not uploaded: how many files, and where.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Kept {
     /// How many files.
     pub count: usize,
-    /// The drive's folder (`~/Cloud/OneDrive`).
+    /// The folder they are in, beside the drive's (`~/Cloud/OneDrive (Not Uploaded)`).
     pub path: PathBuf,
-    /// Where they wait: a hidden folder beside it (`~/Cloud/.OneDrive.kept`).
-    pub staging: PathBuf,
 }
 
-impl Kept {
-    /// The account is gone: what was kept goes into the drive's folder (a name taken there
-    /// takes the next free number).
-    ///
-    /// # Errors
-    /// It could not be moved there; what is left stays where it waits.
-    pub fn settle(&self) -> std::io::Result<()> {
-        if !self.staging.exists() {
-            return Ok(());
-        }
-        std::fs::create_dir_all(&self.path)?;
-        move_into(&self.staging, &self.path)?;
-        std::fs::remove_dir_all(&self.staging)
-    }
-
-    /// The account stays: what was kept is dropped (the drive still has it to send).
-    pub fn discard(&self) {
-        let _ = std::fs::remove_dir_all(&self.staging);
-    }
-}
-
-/// Moves what is in the folder `from` into the folder `to`, folders into folders of their
-/// name, and anything else to the first free number of its name.
-fn move_into(from: &Path, to: &Path) -> std::io::Result<()> {
-    for entry in std::fs::read_dir(from)? {
-        let entry = entry?;
-        let name = entry.file_name();
-        let there = to.join(&name);
-        let folder = entry.file_type()?.is_dir();
-        match there.symlink_metadata() {
-            Err(_) => std::fs::rename(entry.path(), &there)?,
-            Ok(meta) if folder && meta.is_dir() => move_into(&entry.path(), &there)?,
-            Ok(_) => {
-                let name = name.to_string_lossy();
-                let free = porter_drive::naming::free(&name, |candidate| {
-                    to.join(candidate).symlink_metadata().is_ok()
-                });
-                std::fs::rename(entry.path(), to.join(free))?;
-            }
-        }
-    }
-    Ok(())
-}
-
-/// The hidden folder beside `folder` that what is kept of it waits in.
-fn staging_for(folder: &Path) -> PathBuf {
+/// The folder beside the drive's `folder` that what it did not upload is kept in.
+fn not_uploaded(folder: &Path) -> PathBuf {
     let name = folder
         .file_name()
         .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
-    folder.with_file_name(format!(".{name}.kept"))
+    folder.with_file_name(format!("{name} (Not Uploaded)"))
 }
 
 /// The bytes of a drive not shown: none can be had (only what is here is read).
@@ -138,6 +92,9 @@ impl porter_drive::Source for Away {
 enum Shown {
     Mounting(JoinHandle<Option<Mounted>>),
     Mounted(Mounted),
+    /// A test's mount that is never taken away.
+    #[cfg(test)]
+    Stuck,
 }
 
 /// One drive shown in Files.
@@ -205,6 +162,11 @@ impl LiveDrive {
         let shown = held(&self.shown).take();
         let mut mounted = match shown {
             None => return Ok(()),
+            #[cfg(test)]
+            Some(Shown::Stuck) => {
+                *held(&self.shown) = Some(Shown::Stuck);
+                return Err(std::io::Error::other("still mounted"));
+            }
             Some(Shown::Mounted(mounted)) => mounted,
             Some(Shown::Mounting(mounting)) => match mounting.await {
                 Ok(Some(mounted)) => mounted,
@@ -221,6 +183,12 @@ impl LiveDrive {
             *held(&self.shown) = Some(Shown::Mounted(mounted));
         }
         taken
+    }
+
+    /// Shows its folder as a mount that is never taken away.
+    #[cfg(test)]
+    fn set_stuck(&self) {
+        *held(&self.shown) = Some(Shown::Stuck);
     }
 
     /// Whether it was let go and its account stays: to be started again.
@@ -309,6 +277,8 @@ pub struct DriveSet {
     events: broadcast::Sender<DriveEvent>,
     /// syncd's settings, which keep the drives paused across restarts.
     settings: Option<PathBuf>,
+    /// The accounts whose drives are held while they are removed.
+    held: Arc<Mutex<std::collections::BTreeSet<String>>>,
 }
 
 impl Default for DriveSet {
@@ -317,6 +287,7 @@ impl Default for DriveSet {
             drives: Arc::default(),
             events: broadcast::channel(1024).0,
             settings: None,
+            held: Arc::default(),
         }
     }
 }
@@ -349,15 +320,17 @@ impl DriveSet {
             .is_some_and(|file| crate::settings::read_paused(file).contains(id))
     }
 
-    /// Lets the drive of `account` go before the account is removed: nothing more is sent, its
-    /// folder is taken away, and what was not uploaded is written out to wait beside it (see
-    /// [`Kept`]). A drive not shown has its cache opened for this. What was kept; nothing when
-    /// the account has no cache.
+    /// Lets the drive of `account` go before the account is removed: it is held (paused, its
+    /// folder taken away, and not started again until [`DriveSet::release`] or
+    /// [`DriveSet::forget`]), and what was not uploaded is written to the folder beside its own
+    /// (see [`Kept`]). A drive not shown has its cache opened for this. What was kept; nothing
+    /// when the account has no cache.
     ///
     /// # Errors
-    /// The folder could not be taken away, the cache could not be read, or what was not
-    /// uploaded could not be written out: the removal is not to go on.
+    /// The folder could not be taken away (nothing was written), the cache could not be read,
+    /// or what was not uploaded could not be written out: the removal is not to go on.
     pub async fn retire(&self, paths: &Paths, account: &AccountDir) -> Result<Vec<Kept>, String> {
+        held(&self.held).insert(account.as_str().to_owned());
         let cache = paths.drive_cache_dir(account);
         let (drive, path) = match self.get(account.as_str()) {
             Some(live) => {
@@ -370,8 +343,8 @@ impl DriveSet {
             None => (None, super::shown_at(paths, account)),
         };
         let journal = super::journal_path(paths, account);
-        let staging = staging_for(&path);
-        let to = staging.clone();
+        let into = not_uploaded(&path);
+        let to = into.clone();
         let count = tokio::task::spawn_blocking(move || {
             let drive = match drive {
                 Some(drive) => drive,
@@ -381,29 +354,22 @@ impl DriveSet {
                         .map_err(|e| e.to_string())?
                 }
             };
-            match std::fs::remove_dir_all(&to) {
-                Err(why) if why.kind() != std::io::ErrorKind::NotFound => {
-                    return Err(why.to_string());
-                }
-                _ => {}
-            }
-            std::fs::create_dir_all(&to).map_err(|e| e.to_string())?;
             drive.keep_unsent(&to).map_err(|e| e.to_string())
         })
         .await
-        .map_err(|why| why.to_string())?;
-        let kept = Kept {
-            count: 0,
-            path,
-            staging,
-        };
-        let count = count.inspect_err(|_| kept.discard())?;
-        Ok(vec![Kept { count, ..kept }])
+        .map_err(|why| why.to_string())??;
+        Ok(vec![Kept { count, path: into }])
+    }
+
+    /// Whether the drive of the account `id` is held for its removal: not to be started.
+    pub fn is_held(&self, id: &str) -> bool {
+        held(&self.held).contains(id)
     }
 
     /// The account `id` stays after all (its removal did not go through): its drive, let go,
     /// is started again.
     pub fn release(&self, id: &str) {
+        held(&self.held).remove(id);
         if let Some(live) = self.get(id) {
             let mut hold = held(&live.hold);
             if *hold == Hold::Held {
@@ -414,6 +380,7 @@ impl DriveSet {
 
     /// The account `id` is gone: no pause of its drive is kept.
     pub fn forget(&self, id: &str) {
+        held(&self.held).remove(id);
         if let Some(file) = &self.settings
             && crate::settings::read_paused(file).contains(id)
             && let Err(why) = crate::settings::write_paused(file, id, false)
@@ -568,45 +535,99 @@ mod tests {
         std::fs::create_dir_all(&folder).expect("folder");
         let paths = paths(&dir);
         let account = AccountDir::parse("one").expect("account");
-        let staging = dir.join("Cloud").join(".OneDrive.kept");
+        let kept_in = dir.join("Cloud").join("OneDrive (Not Uploaded)");
         let kept = set.retire(&paths, &account).await.expect("let go");
         assert_eq!(
             kept,
             [Kept {
                 count: 1,
-                path: folder.clone(),
-                staging: staging.clone(),
+                path: kept_in.clone(),
             }]
+        );
+        assert_eq!(
+            std::fs::read(kept_in.join("new.txt")).expect("kept"),
+            b"made here"
         );
         assert_eq!(
             std::fs::read_dir(&folder).expect("folder").count(),
             0,
-            "the folder stays empty while the account may stay"
+            "nothing under the drive's own folder, which a drive started again shows over"
         );
         assert!(live.paused().borrow().to_owned(), "nothing more is sent");
+        assert!(set.is_held("one"), "not started again meanwhile");
         assert!(!live.released());
-        // The removal did not go through: nothing is left behind, and it starts again.
-        kept[0].discard();
-        assert!(!staging.exists());
+        // Tried again while the cache is still here: kept once.
+        let kept = set.retire(&paths, &account).await.expect("let go");
+        assert_eq!(kept[0].count, 1);
+        // The removal did not go through: it starts again, and what was kept stays.
         set.release("one");
         assert!(live.released(), "started again when its account stays");
-        // Tried again, it is kept once.
-        let kept = set.retire(&paths, &account).await.expect("let go");
-        kept[0].settle().expect("settled");
-        let names: Vec<_> = std::fs::read_dir(&folder)
+        assert!(!set.is_held("one"));
+        let names: Vec<_> = std::fs::read_dir(&kept_in)
             .expect("folder")
             .map(|entry| entry.expect("entry").file_name())
             .collect();
         assert_eq!(names, ["new.txt"]);
-        assert_eq!(
-            std::fs::read(folder.join("new.txt")).expect("kept"),
-            b"made here"
-        );
-        assert!(!staging.exists());
+        // A crash after the cache was wiped, before the account went, and a removal again:
+        // nothing to keep, and what was kept is there once.
+        drop(set);
+        drop(live);
+        drop(drive);
+        std::fs::remove_dir_all(dir.join("cache")).expect("wiped");
+        let again = DriveSet::default();
+        assert_eq!(again.retire(&paths, &account).await, Ok(Vec::new()));
+        again.forget("one");
+        let names: Vec<_> = std::fs::read_dir(&kept_in)
+            .expect("folder")
+            .map(|entry| entry.expect("entry").file_name())
+            .collect();
+        assert_eq!(names, ["new.txt"]);
         let none = AccountDir::parse("none").expect("account");
         assert_eq!(
             DriveSet::default().retire(&paths, &none).await,
             Ok(Vec::new())
+        );
+    }
+
+    #[tokio::test]
+    async fn a_folder_that_cannot_be_taken_away_stops_the_removal_before_anything_is_kept() {
+        let dir = porter_fake::Scratch::new("drive-files-stuck");
+        let listing = Arc::new(MemoryListing::default());
+        let source = Arc::new(MemorySource::default());
+        let sink = Arc::new(porter_drive::testing::MemorySink::new(
+            listing.clone(),
+            source.clone(),
+            4,
+        ));
+        let drive =
+            Drive::open_writable(DriveConfig::new(dir.join("cache")), listing, source, sink)
+                .expect("drive");
+        drive.set_paused(true);
+        let (_, handle) = drive.create(&NodeId::Top, "new.txt").expect("create");
+        drive.write(handle, 0, b"made here").await.expect("write");
+        drive.release_write(handle);
+        let folder = dir.join("Cloud").join("OneDrive");
+        let live = Arc::new(LiveDrive::new(
+            "one".into(),
+            "/org/quire/Accounts1/account/one".into(),
+            "ada@example.test".into(),
+            "OneDrive",
+            folder,
+            drive,
+        ));
+        live.set_stuck();
+        let set = DriveSet::default();
+        set.insert(Arc::clone(&live));
+        let paths = paths(&dir);
+        let account = AccountDir::parse("one").expect("account");
+        assert!(set.retire(&paths, &account).await.is_err());
+        assert!(
+            !dir.join("Cloud").join("OneDrive (Not Uploaded)").exists(),
+            "nothing written"
+        );
+        assert!(
+            live.take_away().await.is_err(),
+            "asked again, it is still shown"
         );
     }
 
@@ -656,10 +677,9 @@ mod tests {
             .retire(&paths, &account)
             .await
             .expect("kept");
-        let folder = dir.join("Cloud").join("OneDrive");
+        let folder = dir.join("Cloud").join("OneDrive (Not Uploaded)");
         assert_eq!(kept.len(), 1);
         assert_eq!((kept[0].count, &kept[0].path), (1, &folder));
-        kept[0].settle().expect("settled");
         assert_eq!(
             std::fs::read(folder.join("offline.txt")).expect("kept"),
             b"not sent"

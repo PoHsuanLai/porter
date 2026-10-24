@@ -362,48 +362,31 @@ impl<H: Hosted, D: Directory> Keep<H, D> {
         }
     }
 
-    /// Removes `account`: its drive is let go (what was made or changed in its folder and not
-    /// uploaded is written out to wait beside it), its datasets stop, its journals, mirrors and
-    /// cache are deleted, then its stored sign-in and grants, and what was kept goes into the
-    /// drive's folder. What was kept. A failure before the stored sign-in goes leaves the
-    /// account, drops what was kept (its drive still has it) and starts the drive again.
+    /// Removes `account`: its drive is let go (held, and what was made or changed in its folder
+    /// and not uploaded written out to a folder of its own beside it), then its datasets stop,
+    /// its journals, mirrors and cache are deleted, and its stored sign-in and grants. What was
+    /// kept. A removal that fails leaves the account and starts its drive again; what was kept
+    /// stays where it is, so trying again keeps nothing twice.
     pub async fn remove(&self, account: &AccountId) -> Result<Vec<Kept>, RemoveError> {
         account_of(&self.hosted.registry(), account).ok_or(RemoveError::Unknown)?;
         let dir =
             AccountDir::parse(&porter_core::object_segment(account)).ok_or(RemoveError::Unknown)?;
-        let kept = self.drives.retire(&self.paths, &dir).await.map_err(|why| {
-            self.drives.release(dir.as_str());
-            RemoveError::Files(why)
-        })?;
-        let cache_index = self.paths.drive_cache_dir(&dir).join("index.json");
-        let undo = |why: RemoveError| {
-            for kept in &kept {
-                // The cache went partly with a failed wipe: what was kept is the only copy.
-                match cache_index.exists() {
-                    true => kept.discard(),
-                    false => {
-                        let _ = kept.settle();
-                    }
-                }
-            }
+        let failed = |why: RemoveError| {
             self.drives.release(dir.as_str());
             why
         };
+        let kept = self
+            .drives
+            .retire(&self.paths, &dir)
+            .await
+            .map_err(|why| failed(RemoveError::Files(why)))?;
         removal::wipe(&self.paths, &self.hub, &dir)
             .await
-            .map_err(|why| undo(RemoveError::Files(why.to_string())))?;
+            .map_err(|why| failed(RemoveError::Files(why.to_string())))?;
         self.hosted
             .remove_account(account)
             .await
-            .map_err(|_| undo(RemoveError::Secrets))?;
-        for kept in &kept {
-            if let Err(why) = kept.settle() {
-                eprintln!(
-                    "syncd: what was kept of a drive stays at {}: {why}",
-                    kept.staging.display()
-                );
-            }
-        }
+            .map_err(|_| failed(RemoveError::Secrets))?;
         self.drives.forget(dir.as_str());
         Ok(kept)
     }

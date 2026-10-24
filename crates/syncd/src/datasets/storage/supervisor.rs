@@ -301,6 +301,10 @@ where
                 };
                 granted.push(account.clone());
                 let key = (account.clone(), kind);
+                // Held while its account is removed: neither started nor shown again.
+                if !may_run(&self.drives, kind, &account) {
+                    continue;
+                }
                 let folder = folders.get(&candidate.account).cloned().unwrap_or_default();
                 // A drive whose folder name changed (a second account of its provider came or
                 // went) is put at its new path; one let go for a removal that did not go
@@ -836,6 +840,12 @@ impl<H: porter_http::Http> WithFolders for storage_gdrive::GdriveReplica<H> {
     }
 }
 
+/// Whether the dataset `kind` of `account` may be started or shown again now: not a drive held
+/// while its account is removed.
+fn may_run(drives: &DriveSet, kind: StorageKind, account: &AccountDir) -> bool {
+    kind != StorageKind::Drive || !drives.is_held(account.as_str())
+}
+
 /// Each drive's folder name in `~/Cloud`, by account: its provider's ("OneDrive", "Google
 /// Drive"), with the account's label when one provider has two.
 fn drive_folders(candidates: &[Candidate]) -> BTreeMap<porter_core::AccountId, String> {
@@ -930,6 +940,34 @@ mod tests {
         assert!(!reconciles(&Err(crate::journal::JournalError::Corrupt(
             "a test".into()
         ))));
+    }
+
+    #[tokio::test]
+    async fn a_drive_held_while_its_account_is_removed_is_not_started() {
+        let root = crate::testing::scratch("held-drive");
+        let paths = crate::paths::Paths {
+            journals: root.join("state/porter/sync"),
+            mirrors: root.join("data/porter/vdir"),
+            callers_system: root.join("none"),
+            callers_user: root.join("none"),
+            cloud: root.join("Cloud"),
+            drive_cache: root.join("cache/porter/drives"),
+            settings: root.join("none"),
+        };
+        let account = AccountDir::parse("one").expect("account");
+        let drives = DriveSet::default();
+        assert!(may_run(&drives, StorageKind::Drive, &account));
+        drives.retire(&paths, &account).await.expect("held");
+        assert!(!may_run(&drives, StorageKind::Drive, &account), "held");
+        assert!(may_run(&drives, StorageKind::AppFolder, &account));
+        drives.release("one");
+        assert!(
+            may_run(&drives, StorageKind::Drive, &account),
+            "the account stays"
+        );
+        drives.retire(&paths, &account).await.expect("held");
+        drives.forget("one");
+        assert!(may_run(&drives, StorageKind::Drive, &account), "gone");
     }
 
     #[test]
