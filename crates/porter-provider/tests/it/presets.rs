@@ -14,7 +14,7 @@ use porter_provider::{DomainMatch, DomainName, ProviderSet, ProviderSpec, parse_
 use std::path::PathBuf;
 
 fn set() -> ProviderSet {
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../providers");
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("providers");
     let mut paths: Vec<PathBuf> = std::fs::read_dir(&dir)
         .expect("providers directory")
         .map(|entry| entry.expect("entry").path())

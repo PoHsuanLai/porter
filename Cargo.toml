@@ -48,10 +48,10 @@ repository = "https://github.com/PoHsuanLai/porter"
 publish = false
 
 [workspace.dependencies]
-porter-core     = { path = "crates/porter-core" }
+porter-core     = { path = "crates/porter-core", version = "0.1.0" }
 porter-fs        = { path = "crates/porter-fs" }
 prov            = { path = "crates/prov" }
-porter-provider = { path = "crates/porter-provider" }
+porter-provider = { path = "crates/porter-provider", version = "0.1.0" }
 porter-secrets  = { path = "crates/porter-secrets" }
 porter-sync     = { path = "crates/porter-sync" }
 porter-infer    = { path = "crates/porter-infer" }
@@ -90,7 +90,7 @@ ds-settings     = { git = "https://github.com/PoHsuanLai/quire.git", rev = "7fa2
 # by git tag, never by path. porter-dbus's `ProcCallers` is built over it. peephole-bus runs on zbus's
 # tokio feature here (its default `async-io` stays off, as the zbus line below).
 peephole        = { git = "https://github.com/PoHsuanLai/peephole", tag = "v0.1.9" }
-peephole-core   = { git = "https://github.com/PoHsuanLai/peephole", tag = "v0.1.9", default-features = false }
+peephole-core   = { git = "https://github.com/PoHsuanLai/peephole", tag = "v0.1.9", version = "0.1.9", default-features = false }
 peephole-bus    = { git = "https://github.com/PoHsuanLai/peephole", tag = "v0.1.9", default-features = false, features = ["tokio"] }
 
 # stoker's computer-use vocabulary, by git at stoker's pinned rev (quire
