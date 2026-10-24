@@ -12,6 +12,8 @@ publish.workspace = true
 porter-core = { workspace = true }
 porter-provider = { workspace = true }
 porter-secrets = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

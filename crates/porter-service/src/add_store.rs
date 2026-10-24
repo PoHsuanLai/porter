@@ -15,7 +15,6 @@ use crate::registry::{Asker, Registry};
 use crate::service::AccountService;
 use crate::sheets::Sheets;
 use crate::store::RegistryStore;
-use porter_core::audit::AuditEvent;
 use porter_core::consent::{ConsentAnswer, GrantScope};
 use porter_core::sheet::ServiceChoice;
 use porter_core::store::AccountToggle;
@@ -25,6 +24,7 @@ use porter_core::{
 };
 use porter_provider::{Provider, ProviderSpec, SignInStep, Signed};
 use porter_secrets::Secrets;
+use crate::audit::AuditEvent;
 use std::collections::HashSet;
 use std::sync::{Mutex, MutexGuard};
 

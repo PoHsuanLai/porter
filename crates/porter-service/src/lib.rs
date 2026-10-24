@@ -26,7 +26,7 @@ mod add_store;
 mod agent;
 mod agent_login;
 mod audience;
-mod audit;
+pub mod audit;
 mod choose;
 mod clock;
 mod flight;

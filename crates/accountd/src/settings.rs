@@ -18,12 +18,12 @@ use ds_settings::live::{
     Access, Caller, LiveError, LiveModule, LiveSchema, Snapshot, Verdict, serve,
 };
 use ds_settings::schema::KeyPath;
-use porter_core::audit::{AuditEvent, ClientIdChange, IssuerSlug};
 use porter_core::wire::ParentWindow;
 use porter_core::{AccountsReply, AppId, AppName, AuthKind, IdentityId, Isolation};
 use porter_dbus::{ACCOUNTS_SETTINGS_PATH, CallerRole};
 use porter_provider::{ClientChannel, ClientsFile, Issuer, parse_clients};
 use porter_service::Registry;
+use porter_service::audit::{AuditEvent, ClientIdChange, IssuerSlug};
 use std::sync::Arc;
 use zbus::Connection;
 

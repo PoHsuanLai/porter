@@ -7,7 +7,6 @@ use crate::common;
 
 use accountd::{Options, UsesStore};
 use common::*;
-use porter_core::audit::AuditEvent;
 use porter_core::consent::{AskPurpose, ConsentAnswer, GrantScope};
 use porter_core::sheet::{SheetInput, SheetView};
 use porter_core::wire::Refusal;
@@ -16,6 +15,7 @@ use porter_core::{
     ProviderId,
 };
 use porter_dbus::{CallerRole, IdentitiesProxy, identity_from_dbus};
+use porter_service::audit::AuditEvent;
 use std::io::Read;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};

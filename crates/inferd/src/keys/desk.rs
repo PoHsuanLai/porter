@@ -6,13 +6,13 @@
 //! permit a key was used under and by whom, never the key.
 
 use crate::cloud::accountd::Boxed;
-use porter_core::audit::{AuditEntry, AuditEvent};
 use porter_core::wire::Refusal;
 use porter_core::{
     Account, AccountId, AccountState, AppId, Audience, CapabilityKind, Credential, GrantId,
     SecretKey, SecretPurpose, SecretText, Toggle,
 };
 use porter_secrets::{Secrets, SecretsError};
+use porter_service::audit::{AuditEntry, AuditEvent};
 use porter_service::{AuditSink, Clock, Registry};
 
 /// Reads API keys and notes each use.

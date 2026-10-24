@@ -8,7 +8,6 @@
 use crate::common;
 
 use common::{Brief, Fakes, Kept, Person, Service, TestSheets, plain, service};
-use porter_core::audit::AuditEvent;
 use porter_core::capability::{Access, CapabilityKind, Delta, QuotaReport, StorageScope};
 use porter_core::consent::{GrantScope, Usage};
 use porter_core::need::StorageNeed;
@@ -23,6 +22,7 @@ use porter_fake_servers::{FakeNextcloud, LoginPolicy, NextcloudHandle, Running, 
 use porter_families::{FamilyProvider, NextcloudProvider, Pacing};
 use porter_http::SharedHttp;
 use porter_service::AllowFor;
+use porter_service::audit::AuditEvent;
 use std::time::Duration;
 
 fn app(name: &str) -> AppId {

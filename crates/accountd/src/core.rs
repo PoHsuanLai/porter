@@ -66,13 +66,13 @@ pub trait Host: Send + Sync + 'static {
 
     /// Records what Settings changed outside the registry (a client id). A host with no audit
     /// records nothing.
-    fn audit_settings(&self, event: porter_core::audit::AuditEvent) {
+    fn audit_settings(&self, event: porter_service::audit::AuditEvent) {
         let _ = event;
     }
 
     /// Records what `app` did that concerns no account (a desktop-wide Space made, renamed or
     /// removed). A host with no audit records nothing.
-    fn audit_app(&self, app: &AppId, event: porter_core::audit::AuditEvent) {
+    fn audit_app(&self, app: &AppId, event: porter_service::audit::AuditEvent) {
         let _ = (app, event);
     }
 
@@ -120,11 +120,11 @@ where
         AccountService::remove_with_revoke(self, id)
     }
 
-    fn audit_settings(&self, event: porter_core::audit::AuditEvent) {
+    fn audit_settings(&self, event: porter_service::audit::AuditEvent) {
         AccountService::audit_settings(self, event);
     }
 
-    fn audit_app(&self, app: &AppId, event: porter_core::audit::AuditEvent) {
+    fn audit_app(&self, app: &AppId, event: porter_service::audit::AuditEvent) {
         AccountService::audit_app(self, app.clone(), event);
     }
 

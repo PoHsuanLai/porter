@@ -12,7 +12,6 @@ use crate::registry::{Asker, Registry};
 use crate::sheets::Sheets;
 use crate::store::{NoStore, RegistryStore};
 use crate::token::{provider_refusal, secret_purpose};
-use porter_core::audit::{AuditEntry, AuditEvent};
 use porter_core::consent::{ConsentAnswer, GrantScope, Usage, Verdict, availability};
 use porter_core::wire::{ParentWindow, Refusal};
 use porter_core::{
@@ -21,6 +20,7 @@ use porter_core::{
 };
 use porter_provider::{Provider, ProviderError, ProviderSet, ProviderSpec};
 use porter_secrets::{Secrets, SecretsError};
+use crate::audit::{AuditEntry, AuditEvent};
 use std::collections::HashSet;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 

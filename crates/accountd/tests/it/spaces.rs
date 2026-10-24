@@ -7,8 +7,8 @@ use crate::common;
 use accountd::{CREATES_PER_WINDOW, Options, SpacesStore};
 use common::*;
 use porter_core::DesktopSpace;
-use porter_core::audit::AuditEvent;
 use porter_dbus::{CallerRole, SpaceChangedStream, SpacesProxy};
+use porter_service::audit::AuditEvent;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 

@@ -1,7 +1,6 @@
 //! Adding an account and signing in again, over a provider whose sign-in is a script: the host
 //! half of the conversation (what is drawn, what the sign-in is told, what is stored, when).
 
-use porter_core::audit::AuditEvent;
 use porter_core::capability::CapabilityKind;
 use porter_core::capability::StorageScope;
 use porter_core::capability::{
@@ -25,6 +24,7 @@ use porter_provider::{
     RevokeOutcome, SignIn, SignInMode, SignInStart, SignInStep, Signed, parse_provider,
 };
 use porter_secrets::{MemorySecrets, Secrets, SecretsError};
+use porter_service::audit::AuditEvent;
 use porter_service::{
     AccountService, Registry, SheetFault, SheetLink, SheetOpen, Sheets, SignInAs,
 };

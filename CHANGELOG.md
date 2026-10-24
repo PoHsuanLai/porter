@@ -38,6 +38,12 @@
   gone; nothing outside porter named it.
 - The XDG base directories (`Xdg`, `PathError`) are `porter_daemon::xdg`, beside the other pieces the
   daemons share; `porter_core::xdg` is gone (only accountd, syncd and inferd named it).
+- What accountd audits (`AuditEntry`, `AuditEvent`, `IssuerSlug`, `ClientIdChange`) is
+  `porter_service::audit`, beside the `AuditSink` that receives it; the module is public now.
+  porter-core keeps `Handoff` and `CredentialEnd` in `porter_core::audit`, the words a bus
+  client names without the account service, and `porter_service::audit` re-exports them. No
+  re-export is left at the old path: porter-core cannot depend on porter-service, and nothing
+  outside porter named the moved types.
 
 ### Settings rows for drives and Photos
 

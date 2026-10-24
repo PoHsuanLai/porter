@@ -8,7 +8,6 @@ use crate::service::AccountService;
 use crate::sheets::Sheets;
 use crate::store::RegistryStore;
 use crate::token::secret_purpose;
-use porter_core::audit::AuditEvent;
 use porter_core::store::AccountToggle;
 use porter_core::wire::Refusal;
 use porter_core::{
@@ -17,6 +16,7 @@ use porter_core::{
 };
 use porter_provider::{Presented, Provider, ProviderSession, RevokeOutcome};
 use porter_secrets::{Secrets, SecretsError};
+use crate::audit::AuditEvent;
 
 /// What removing an account did at the provider.
 #[derive(Debug, Clone, PartialEq, Eq)]

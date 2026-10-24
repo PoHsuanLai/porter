@@ -2,7 +2,6 @@
 //! the request was made in, a session scope is recorded only for that session, and ending a
 //! session removes exactly its grants.
 
-use porter_core::audit::AuditEvent;
 use porter_core::capability::LlmFeature;
 use porter_core::consent::{Decision, GrantScope, Usage};
 use porter_core::need::LlmNeed;
@@ -16,6 +15,7 @@ use porter_fake::{
     llm_account, llm_provider,
 };
 use porter_secrets::MemorySecrets;
+use porter_service::audit::AuditEvent;
 use porter_service::{AccountService, Registry};
 use std::collections::BTreeSet;
 

@@ -7,10 +7,10 @@ use crate::launcher_register::error_name;
 use crate::launcher_rig::*;
 
 use inferd::launcher::LoginTiming;
-use porter_core::audit::AuditEvent;
 use porter_core::capability::AgentProgram;
 use porter_core::{AccountId, AccountState, LoginOutcome};
 use porter_dbus::{LauncherFault, ServiceRoot};
+use porter_service::audit::AuditEvent;
 use porter_service::{Clock, Launchers as _, LoginEnd};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};

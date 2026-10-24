@@ -32,7 +32,6 @@ use super::errors::RefusedError;
 use super::host::LauncherHost;
 use super::roster::Launchers;
 use crate::peers::{Peers, Role};
-use porter_core::audit::{AuditEvent, CredentialEnd, Handoff};
 use porter_core::capability::AgentProgram;
 use porter_core::consent::{Decision, GrantScope};
 use porter_core::wire::Refusal;
@@ -42,6 +41,7 @@ use porter_core::{
 };
 use porter_dbus::LauncherFault;
 use porter_service::Registry;
+use porter_service::audit::{AuditEvent, CredentialEnd, Handoff};
 use porter_sheets::{OpenSheets, RequestObjects};
 use std::sync::Arc;
 use zbus::message::Header;

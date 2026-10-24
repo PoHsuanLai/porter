@@ -2,8 +2,8 @@
 //! append-only, in the shape of inferd's (`crates/inferd/src/audit.rs`). An entry holds ids,
 //! kinds and endpoints, never a value, so the file cannot leak a secret.
 
-use porter_core::audit::AuditEntry;
 use porter_service::AuditSink;
+use porter_service::audit::AuditEntry;
 use std::io::Write;
 use std::path::PathBuf;
 

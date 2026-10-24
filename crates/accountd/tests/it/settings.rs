@@ -8,11 +8,11 @@ use crate::common;
 use common::*;
 use ds_settings::live::{AnyOwner, LiveClient, LiveError, Snapshot};
 use ds_settings::schema::KeyPath;
-use porter_core::audit::AuditEvent;
 use porter_core::{AccountState, SecretKey, SecretPurpose};
 use porter_dbus::{CallerRole, IdentitiesProxy};
 use porter_fake::Scratch;
 use porter_secrets::{Secrets, SecretsError};
+use porter_service::audit::AuditEvent;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn only_the_settings_role_may_read_or_set_anything() {
@@ -384,7 +384,7 @@ async fn a_client_id_is_written_to_the_users_file_only_by_settings() {
         toml::Value::String(String::new())
     );
     // Both changes are audited, never with the id (sec-5); the refused one is not.
-    use porter_core::audit::{ClientIdChange, IssuerSlug};
+    use porter_service::audit::{ClientIdChange, IssuerSlug};
     let changed: Vec<_> = rig
         .audit
         .entries()

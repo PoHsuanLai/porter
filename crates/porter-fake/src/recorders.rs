@@ -1,8 +1,8 @@
 //! A registry store and an audit sink that keep everything in memory and can be read back after
 //! they moved into a service.
 
-use porter_core::audit::AuditEntry;
 use porter_core::store::Persisted;
+use porter_service::audit::AuditEntry;
 use porter_service::{AuditSink, RegistryStore, StoreError};
 use std::sync::{Arc, Mutex, MutexGuard};
 

@@ -1,5 +1,4 @@
 use super::*;
-use porter_core::audit::AuditEvent;
 use porter_core::capability::{Access, Delta, QuotaReport, StorageScope};
 use porter_core::consent::{GrantScope, Usage};
 use porter_core::need::StorageNeed;
@@ -9,6 +8,7 @@ use porter_core::{
     UnixSeconds,
 };
 use porter_fake::{Scripted, ScriptedSheets, fake_service};
+use porter_service::audit::AuditEvent;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 static NEXT: AtomicU32 = AtomicU32::new(0);

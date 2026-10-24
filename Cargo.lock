@@ -2722,6 +2722,8 @@ dependencies = [
  "porter-fake",
  "porter-provider",
  "porter-secrets",
+ "serde",
+ "serde_json",
  "thiserror",
  "tokio",
 ]

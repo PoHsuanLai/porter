@@ -128,7 +128,7 @@ async fn acceptance_8_removal_leaves_nothing_and_the_reader_is_told() {
         rig.audit
             .entries()
             .iter()
-            .any(|e| e.event == porter_core::audit::AuditEvent::Removed
+            .any(|e| e.event == porter_service::audit::AuditEvent::Removed
                 && e.account == Some(storage_account().id))
     );
 }

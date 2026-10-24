@@ -1,7 +1,6 @@
 //! The account service over its seams: the audience a grant covers, the endpoints a candidate
 //! carries and a relay may dial, and what is saved and audited when the registry changes.
 
-use porter_core::audit::AuditEvent;
 use porter_core::capability::{Access, Delta, Offered, QuotaReport, StorageScope};
 use porter_core::consent::{GrantScope, Usage};
 use porter_core::need::{MailNeed, StorageNeed};
@@ -14,6 +13,7 @@ use porter_core::{
 use porter_fake::{
     FixedClock, MemoryStore, NOW, RecordingAudit, Scripted, ScriptedSheets, fake_service,
 };
+use porter_service::audit::AuditEvent;
 
 fn app(name: &str) -> AppId {
     AppId {
@@ -228,7 +228,7 @@ async fn an_opened_relay_is_audited_with_its_grant_and_endpoint_and_a_refused_on
     let service = fake_service(sheets).await.with_audit(audit.clone());
     let me = app("org.quire.Photos");
     let storage = granted(choose(&service, &me, files(), DataClass::Files).await);
-    let opened = |entries: Vec<porter_core::audit::AuditEntry>| {
+    let opened = |entries: Vec<porter_service::audit::AuditEntry>| {
         entries
             .into_iter()
             .filter(|e| matches!(e.event, AuditEvent::ProxyOpened { .. }))
@@ -273,7 +273,7 @@ async fn a_linked_relay_dials_only_an_origin_the_provider_file_declares_and_pres
     let me = app("org.quire.Photos");
     let storage = granted(choose(&service, &me, files(), DataClass::Files).await);
     let mailer = granted(choose(&service, &me, mail(), DataClass::Mail).await);
-    let opened = |entries: Vec<porter_core::audit::AuditEntry>| {
+    let opened = |entries: Vec<porter_service::audit::AuditEntry>| {
         entries
             .into_iter()
             .filter(|e| matches!(e.event, AuditEvent::ProxyOpened { .. }))
