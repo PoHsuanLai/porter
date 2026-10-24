@@ -6,8 +6,16 @@
 //!   it. What stays on this computer (see [`crate::local_only`]) is never sent.
 //! - **Holding.** Nothing is sent while paused or offline. A change the drive could not take now
 //!   is tried again after a wait that doubles up to [`BACKOFF_MOST`]; one it refused (no room,
-//!   no right to change it) keeps its bytes here with the words, and is tried again on the next
-//!   listing change or when it is changed again.
+//!   no right to change it, a name it does not take) keeps its bytes here with the words, and is
+//!   tried again on the next listing change or when it is changed again. One in use on the drive
+//!   waits with words that say so. A sign-in the drive refused holds everything until it is
+//!   signed in again ([`Drive::set_signed_out`]).
+//! - **A lost answer.** A step the drive took whose answer never came is sent again, and the
+//!   drive refuses it as a conflict: an item made under the id reserved for it (on a drive that
+//!   reserves ids, kept with the change before the first try), or one that holds just the bytes
+//!   sent (its size and hash), is taken as what the step made, never made twice. A rename onto a
+//!   name the drive gave something else meanwhile takes the next free number (" 2") and is sent
+//!   again after a wait.
 //! - **A snapshot.** An upload sends a copy of the bytes taken when it begins (a clone sharing
 //!   their blocks where the file system makes one), so what is written meanwhile never mixes
 //!   into what is sent. Its session belongs to that generation of the bytes: one opened for
@@ -20,11 +28,13 @@
 
 use super::{Drive, Inner, NodeId, held};
 use crate::index::{Awaiting, Base, Edit, Index, Row};
+use crate::naming;
 use crate::ranges::Ranges;
+use crate::sink::Sink;
 use crate::words;
 use porter_sync::{
-    BaseVersion, Conflict, Content, Place, Progress, PutRefused, RemoteId, RemoteVersion,
-    RetryAfter, Session, Upload, UploadTo, Written,
+    BaseVersion, Conflict, Content, Place, Progress, PutRefused, RemoteId, RemoteSide,
+    RemoteVersion, RetryAfter, Session, Upload, UploadTo, Written,
 };
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
@@ -105,16 +115,17 @@ enum Next {
 /// The folder `parent` as the drive names it, when it is on the drive.
 fn place_of(parent: &NodeId, name: &str) -> Option<Place> {
     match parent {
-        NodeId::Top => Some(Place {
-            parent: None,
-            name: name.to_owned(),
-        }),
-        NodeId::Remote(id) => Some(Place {
-            parent: Some(id.clone()),
-            name: name.to_owned(),
-        }),
+        NodeId::Top => Some(Place::new(None, name)),
+        NodeId::Remote(id) => Some(Place::new(Some(id.clone()), name)),
         NodeId::Local(_) => None,
     }
+}
+
+/// Where the item made here as `edit` goes, under the id reserved for it.
+fn new_place(edit: &Edit) -> Option<Place> {
+    let mut place = place_of(&edit.parent, &edit.name)?;
+    place.id = edit.reserved.clone().map(RemoteId);
+    Some(place)
 }
 
 /// Tells the index of the upload session and the bytes sent, for the bytes of one generation.
@@ -212,7 +223,7 @@ impl Inner {
                 .map(|entry| entry.version.0)
         };
         let Some(base) = &edit.base else {
-            let place = place_of(&edit.parent, &edit.name).ok_or(None)?;
+            let place = new_place(edit).ok_or(None)?;
             if edit.folder {
                 return Ok(Op::Folder { id, place });
             }
@@ -305,6 +316,7 @@ impl Inner {
         if self.sink.is_none()
             || self.paused.load(Ordering::SeqCst)
             || self.offline.load(Ordering::SeqCst)
+            || self.signed_out.load(Ordering::SeqCst)
         {
             return Next::Wait(None);
         }
@@ -655,6 +667,110 @@ async fn snapshot(inner: &Arc<Inner>, mut op: Op) -> Option<Op> {
     }
 }
 
+/// `op` with an id reserved for the item it makes, on a drive that reserves them: kept with the
+/// change and on the disk before the first try, so every try makes the same item. `None` when
+/// none could be had now (tried again after a wait) or the change went meanwhile.
+async fn reserved(inner: &Arc<Inner>, sink: &dyn Sink, mut op: Op) -> Option<Op> {
+    let id = op.id().clone();
+    let place = match &mut op {
+        Op::Folder { place, .. }
+        | Op::Upload {
+            to: UploadTo::New(place),
+            ..
+        } => place,
+        _ => return Some(op),
+    };
+    if place.id.is_some() {
+        return Some(op);
+    }
+    let given = match sink.reserve_ids(1).await {
+        Ok(ids) => ids.into_iter().next(),
+        Err(PutRefused::Transient(after)) => {
+            inner.back_off(Duration::from_secs(u64::from(after.0)));
+            return None;
+        }
+        // Sent with none: the step itself meets what refused it.
+        Err(_) => None,
+    };
+    let Some(given) = given else {
+        return Some(op);
+    };
+    inner.change(&id, |edit, _| edit.reserved = Some(given.0.clone()))?;
+    inner.touched();
+    let writer = Arc::clone(inner);
+    let written = tokio::task::spawn_blocking(move || writer.flush_now()).await;
+    if !matches!(written, Ok(Ok(()))) {
+        inner.back_off(Duration::ZERO);
+        return None;
+    }
+    place.id = Some(given);
+    Some(op)
+}
+
+/// What the drive made of `op` on an earlier try whose answer was lost, when `conflict` names
+/// it: the item made under the id reserved for it, or one that holds just what `op` sends (the
+/// same size and content hash).
+async fn adopted(
+    inner: &Arc<Inner>,
+    sink: &dyn Sink,
+    op: &Op,
+    conflict: &Conflict,
+) -> Option<Written> {
+    let (there, version) = match (op, &conflict.remote) {
+        (
+            Op::Folder { .. }
+            | Op::Upload {
+                to: UploadTo::New(_),
+                ..
+            },
+            RemoteSide::Exists(id, version),
+        ) => (id, version),
+        (
+            Op::Upload {
+                to: UploadTo::Replace(id),
+                ..
+            },
+            RemoteSide::Changed(version),
+        ) => (id, version),
+        _ => return None,
+    };
+    let reserved = match op {
+        Op::Folder { place, .. }
+        | Op::Upload {
+            to: UploadTo::New(place),
+            ..
+        } => place.id.as_ref(),
+        _ => None,
+    };
+    if reserved == Some(there) {
+        return Some(Written {
+            id: there.clone(),
+            version: version.clone(),
+        });
+    }
+    let Op::Upload {
+        snapshot: Some(path),
+        size,
+        ..
+    } = op
+    else {
+        return None;
+    };
+    let found = sink.look(there).await.ok().flatten()?;
+    let theirs = found
+        .hash
+        .filter(|_| !found.folder && found.size == *size)?;
+    let (kind, path) = (inner.source.hashes(), path.clone());
+    let ours = tokio::task::spawn_blocking(move || crate::hash::of_file(kind, &path))
+        .await
+        .ok()?
+        .ok()??;
+    (ours == theirs.0).then(|| Written {
+        id: there.clone(),
+        version: found.version,
+    })
+}
+
 /// Sends what was changed here, one step at a time, for as long as the drive lives.
 pub(super) async fn sender(weak: Weak<Inner>, wake: Arc<Notify>) {
     loop {
@@ -682,6 +798,9 @@ pub(super) async fn sender(weak: Weak<Inner>, wake: Arc<Notify>) {
         for session in &abandoned {
             sink.abandon(session).await;
         }
+        let Some(op) = reserved(&inner, &*sink, op).await else {
+            continue;
+        };
         let op = match op {
             Op::Upload { .. } => match snapshot(&inner, op).await {
                 Some(op) => op,
@@ -736,6 +855,17 @@ pub(super) async fn sender(weak: Weak<Inner>, wake: Arc<Notify>) {
         };
         let Some(inner) = weak.upgrade() else { return };
         *held(&inner.sending) = None;
+        held(&inner.waiting).remove(op.id());
+        // A conflict may be this step's own earlier try, whose answer was lost.
+        let result = match result {
+            Err(PutRefused::Conflict(conflict)) => {
+                match adopted(&inner, &*sink, &op, &conflict).await {
+                    Some(written) => Ok(Some(written)),
+                    None => Err(PutRefused::Conflict(conflict)),
+                }
+            }
+            other => other,
+        };
         if result.is_err()
             && let Op::Upload {
                 snapshot: Some(path),
@@ -750,8 +880,25 @@ pub(super) async fn sender(weak: Weak<Inner>, wake: Arc<Notify>) {
                 inner.back_off(Duration::from_secs(u64::from(after.0)));
                 inner.emit(vec![op.id().clone()]);
             }
+            Err(PutRefused::InUse(after)) => {
+                held(&inner.waiting).insert(op.id().clone(), words::IN_USE);
+                inner.back_off(Duration::from_secs(u64::from(after.0)));
+                inner.emit(vec![op.id().clone()]);
+            }
+            Err(PutRefused::Unauthorized) => {
+                // Held until it is signed in again; a listing pass says so to the person.
+                inner.signed_out.store(true, Ordering::SeqCst);
+                inner.wanted.notify_one();
+                inner.emit(vec![op.id().clone()]);
+            }
             Err(PutRefused::Quota) => inner.refused(&op, words::NO_ROOM),
             Err(PutRefused::Forbidden) => inner.refused(&op, words::MAY_NOT_WRITE),
+            Err(PutRefused::NameRefused) => inner.refused(&op, words::NAME_REFUSED),
+            Err(PutRefused::Declined) => {
+                // An id reserved and used up is given up with it: the next try reserves another.
+                inner.change(op.id(), |edit, _| edit.reserved = None);
+                inner.refused(&op, words::DECLINED);
+            }
             Err(PutRefused::Conflict(conflict)) => inner.conflicted(&op, &conflict),
         }
     }
@@ -762,6 +909,18 @@ impl Inner {
     /// shows it, which meets both (see `conflict`). A name taken there is met at once.
     fn conflicted(&self, op: &Op, conflict: &Conflict) {
         let mut changed = vec![op.id().clone()];
+        if let (Op::Relocate { item, .. }, RemoteSide::Exists(there, _)) = (op, &conflict.remote)
+            && there != item
+        {
+            // The name was given to something else on the drive meanwhile: this one takes the
+            // next free number there, sent after a wait.
+            self.name_aside(op.id());
+            self.back_off(Duration::ZERO);
+            self.wake.notify_one();
+            self.touched();
+            self.emit(vec![op.id().clone()]);
+            return;
+        }
         if self.met_conflict(op.id(), conflict) {
             changed.push(self.canonical(op.id()));
             self.wake.notify_one();
@@ -774,8 +933,34 @@ impl Inner {
     }
 }
 
+impl Inner {
+    /// Renames `id` here to the next free number of its name among the drive's names in its
+    /// folder (never the name it has).
+    fn name_aside(&self, id: &NodeId) {
+        let Some(edit) = self.edit(id) else {
+            return;
+        };
+        let taken: Vec<String> = self
+            .children(&edit.parent)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|node| self.node_name(&node.id))
+            .collect();
+        let name = naming::free(&edit.name, |candidate| {
+            candidate == edit.name || taken.iter().any(|t| t == candidate)
+        });
+        self.change(id, |now, _| {
+            if now.name == edit.name {
+                now.name = name;
+            }
+        });
+    }
+}
+
 impl Drive {
     /// Holds what waits to be sent (`true`), or sends it again.
+    ///
+    /// An upload under way stops at its next chunk, its session kept, and goes on from there.
     pub fn set_paused(&self, paused: bool) {
         let was = self.inner.paused.swap(paused, Ordering::SeqCst);
         if was && !paused {
@@ -789,6 +974,20 @@ impl Drive {
     /// Whether what waits to be sent is held.
     pub fn paused(&self) -> bool {
         self.inner.paused.load(Ordering::SeqCst)
+    }
+
+    /// Notes whether the drive refuses the account's sign-in (the listing says so too): while it
+    /// does, nothing is sent; signed in again, what waits is sent.
+    pub fn set_signed_out(&self, signed_out: bool) {
+        if self.inner.signed_out.swap(signed_out, Ordering::SeqCst) && !signed_out {
+            *held(&self.inner.backoff) = None;
+            self.inner.wake.notify_one();
+        }
+    }
+
+    /// Whether the drive refused the account's sign-in when it was last sent something.
+    pub fn signed_out(&self) -> bool {
+        self.inner.signed_out.load(Ordering::SeqCst)
     }
 
     /// Told each time a listing pass is wanted: a change was sent (the listing shows it on its

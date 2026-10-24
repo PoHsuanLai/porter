@@ -947,3 +947,179 @@ async fn what_named_an_item_made_here_goes_once_it_is_settled() {
     assert!(index.aliases.is_empty(), "{:?}", index.aliases);
     assert!(index.inos.is_empty(), "{:?}", index.inos);
 }
+
+#[tokio::test]
+async fn a_new_file_whose_answer_was_lost_is_taken_as_made_and_never_made_twice() {
+    let rig = rig();
+    rig.source
+        .set_hashes(porter_core::capability::HashKind::Md5);
+    rig.sink.lose_next();
+    rig.write_new(&NodeId::Top, "a.txt", b"one two").await;
+    eventually("it is sent again", || {
+        rig.sink.tries() >= 2 && rig.drive.unsent() == 0
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    assert_eq!(rig.sink.took(), [Took::New(None, "a.txt".into(), 7)]);
+    assert_eq!(rig.names(&NodeId::Top), ["a.txt"]);
+}
+
+#[tokio::test]
+async fn new_bytes_whose_answer_was_lost_are_taken_as_sent_not_split_off() {
+    let rig = rig();
+    rig.source
+        .set_hashes(porter_core::capability::HashKind::Md5);
+    rig.file("r", None, "r.txt", b"old");
+    rig.sink.lose_next();
+    rig.write_at("r", 0, b"new bytes").await;
+    eventually("it is sent again", || {
+        rig.sink.tries() >= 2 && rig.drive.unsent() == 0
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    assert_eq!(rig.sink.took(), [Took::Replace("r".into(), 9)]);
+    assert_eq!(rig.names(&NodeId::Top), ["r.txt"]);
+}
+
+#[tokio::test]
+async fn what_is_made_under_a_reserved_id_is_made_once_however_often_it_is_sent() {
+    let rig = rig();
+    // A drive that takes a second item of a name: only the id tells a retry from a new item.
+    rig.sink.twins();
+    rig.sink.reserving();
+    rig.sink.lose_next();
+    let work = rig.drive.make_folder(&NodeId::Top, "Work").expect("folder");
+    eventually("it is sent again", || {
+        rig.sink.tries() >= 2 && rig.drive.unsent() == 0
+    })
+    .await;
+    rig.sink.lose_next();
+    let work = rig.drive.inner.canonical(&work);
+    rig.write_new(&work, "a.txt", b"a").await;
+    eventually("it is sent again", || {
+        rig.sink.tries() >= 4 && rig.drive.unsent() == 0
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    let NodeId::Remote(folder) = &work else {
+        panic!("{work:?}")
+    };
+    assert_eq!(
+        rig.sink.took(),
+        [
+            Took::Folder(None, "Work".into()),
+            Took::New(Some(folder.0.clone()), "a.txt".into(), 1)
+        ]
+    );
+    assert_eq!(rig.names(&work), ["a.txt"]);
+}
+
+#[tokio::test]
+async fn a_sign_in_the_drive_refuses_holds_what_waits_until_it_is_signed_in_again() {
+    let rig = rig();
+    rig.sink.refuse(Some(Refuse::SignedOut));
+    rig.write_new(&NodeId::Top, "a.txt", b"a").await;
+    eventually("held", || rig.drive.signed_out()).await;
+    // Longer than the first wait after a change the drive could not take.
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    assert_eq!(rig.sink.tries(), 1, "nothing more is sent meanwhile");
+    rig.sink.refuse(None);
+    rig.drive.set_signed_out(false);
+    rig.sent(1).await;
+}
+
+#[tokio::test]
+async fn a_file_in_use_on_the_drive_waits_with_words_that_say_so() {
+    let rig = rig();
+    rig.sink.refuse(Some(Refuse::InUse));
+    let id = rig.write_new(&NodeId::Top, "a.txt", b"a").await;
+    eventually("it waits with words", || {
+        rig.drive.status(&id).is_some_and(|status| {
+            status.state == ItemState::Waiting && status.words.as_deref() == Some(words::IN_USE)
+        })
+    })
+    .await;
+    rig.sink.refuse(None);
+    rig.sent(1).await;
+}
+
+#[tokio::test]
+async fn a_name_the_drive_refuses_and_a_change_it_declines_say_what_they_are() {
+    let rig = rig();
+    rig.drive.set_paused(true);
+    let bad = rig.write_new(&NodeId::Top, "a#b.txt", b"a").await;
+    rig.sink.names(|name| !name.contains('#'));
+    rig.drive.set_paused(false);
+    let words_of = |id: &NodeId| rig.drive.status(id).and_then(|status| status.words);
+    eventually("refused", || {
+        words_of(&bad).as_deref() == Some(words::NAME_REFUSED)
+    })
+    .await;
+    rig.sink.refuse(Some(Refuse::Declined));
+    let declined = rig.write_new(&NodeId::Top, "c.txt", b"c").await;
+    eventually("declined", || {
+        words_of(&declined).as_deref() == Some(words::DECLINED)
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_path_longer_than_the_drive_takes_is_refused_where_it_is_made() {
+    let rig = rig();
+    rig.drive.set_paused(true);
+    rig.sink.set_path_max(12);
+    let work = rig.drive.make_folder(&NodeId::Top, "Work").expect("folder");
+    let (_, handle) = rig.drive.create(&work, "1234567").expect("12 characters");
+    rig.drive.release_write(handle);
+    assert_eq!(
+        rig.drive.create(&work, "12345678").map(drop),
+        Err(WriteError::BadName)
+    );
+    assert_eq!(
+        rig.drive.make_folder(&work, "12345678").map(drop),
+        Err(WriteError::BadName)
+    );
+    assert_eq!(
+        rig.drive.rename(&work, &NodeId::Top, "Works").await,
+        Err(WriteError::BadName),
+        "what is inside a folder moves with it"
+    );
+}
+
+#[tokio::test]
+async fn a_rename_onto_a_name_the_drive_gave_away_meanwhile_takes_the_next_number() {
+    let rig = rig();
+    rig.file("a", None, "a.txt", b"a");
+    rig.drive.set_paused(true);
+    rig.drive
+        .rename(&remote("a"), &NodeId::Top, "b.txt")
+        .await
+        .expect("rename");
+    // Someone else's on the drive, there before this rename is sent.
+    rig.file("b", None, "b.txt", b"b");
+    rig.drive.set_paused(false);
+    rig.sent(1).await;
+    assert_eq!(
+        rig.sink.took(),
+        [Took::Relocate("a".into(), None, "b 2.txt".into())]
+    );
+    assert_eq!(rig.sink.tries(), 2);
+}
+
+#[tokio::test]
+async fn a_pause_stops_an_upload_at_its_next_chunk_and_it_goes_on_from_there() {
+    let rig = rig();
+    rig.sink.hold();
+    let id = rig
+        .write_new(&NodeId::Top, "big.bin", b"0123456789abcdef")
+        .await;
+    uploading(&rig, &id).await;
+    rig.drive.set_paused(true);
+    rig.sink.release();
+    eventually("it stops", || rig.state(&id) == ItemState::Waiting).await;
+    assert!(rig.sink.took().is_empty());
+    rig.drive.set_paused(false);
+    rig.sent(1).await;
+    assert_eq!(rig.sink.read_bytes(), 16, "no byte is sent twice");
+    assert_eq!(rig.sink.uploads(), [b"0123456789abcdef".to_vec()]);
+}

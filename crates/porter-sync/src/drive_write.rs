@@ -5,8 +5,13 @@
 //! one is a [`PutRefused::Conflict`], never an overwrite. Uploads read their file a chunk at a
 //! time; a large one runs in an upload session that can be resumed after a restart. A delete
 //! sends the item to the drive's recycle bin, never a permanent delete.
+//!
+//! A write whose answer was lost can be told from one that never landed: [`DriveWrite::look`]
+//! says what the drive has as an item (its size and content hash), and a drive that lets its
+//! client choose ids ([`DriveWrite::reserve_ids`]) makes a new item under the id reserved for
+//! it, so a retry finds it there rather than making a second.
 
-use crate::item::{BaseVersion, RemoteId, RemoteVersion};
+use crate::item::{BaseVersion, ContentHash, RemoteId, RemoteVersion};
 use crate::refusal::PutRefused;
 use serde::{Deserialize, Serialize};
 use std::future::Future;
@@ -19,6 +24,20 @@ pub struct Place {
     pub parent: Option<RemoteId>,
     /// The name, as the drive will have it.
     pub name: String,
+    /// The id reserved for a new item ([`DriveWrite::reserve_ids`]), which a drive that takes
+    /// one makes it under.
+    pub id: Option<RemoteId>,
+}
+
+impl Place {
+    /// `name` in the folder `parent`, with no id reserved.
+    pub fn new(parent: Option<RemoteId>, name: impl Into<String>) -> Self {
+        Self {
+            parent,
+            name: name.into(),
+            id: None,
+        }
+    }
 }
 
 /// What an upload makes or replaces.
@@ -148,12 +167,50 @@ pub struct Written {
     pub version: RemoteVersion,
 }
 
+/// An item as the drive has it now, to tell whether a write whose answer was lost landed.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Found {
+    /// Its version.
+    pub version: RemoteVersion,
+    /// Its size (a folder's is 0).
+    pub size: u64,
+    /// Its content hash, of the kind the drive reports, when it reports one.
+    pub hash: Option<ContentHash>,
+    /// Whether it is a folder.
+    pub folder: bool,
+}
+
 /// The writes of a whole drive. Each is one step: a folder, a file's bytes, a new place, the
 /// recycle bin.
 pub trait DriveWrite: Send + Sync {
     /// Whether the drive takes `name` for a file or folder. A name it refuses is refused when it
     /// is made here, not when it is sent.
     fn accepts_name(&self, name: &str) -> bool;
+
+    /// The longest path the drive takes for an item, in characters, from the top of the drive
+    /// (its names joined by `/`); `None` when it sets none. A longer one is refused when it is
+    /// made here, as a name is.
+    fn path_max(&self) -> Option<usize> {
+        None
+    }
+
+    /// `item` as the drive has it now; `None` when it has no such item (or has it only in its
+    /// recycle bin).
+    fn look(
+        &self,
+        item: &RemoteId,
+    ) -> impl Future<Output = Result<Option<Found>, PutRefused>> + Send;
+
+    /// Ids for `count` items not made yet, for a drive that lets its client choose them: an item
+    /// made with one ([`Place::id`]) is made once however often it is sent. A drive that does
+    /// not gives none.
+    fn reserve_ids(
+        &self,
+        count: usize,
+    ) -> impl Future<Output = Result<Vec<RemoteId>, PutRefused>> + Send {
+        let _ = count;
+        async { Ok(Vec::new()) }
+    }
 
     /// Makes a folder at `place`. A name taken there is a `Conflict` (`Exists`).
     fn make_folder(

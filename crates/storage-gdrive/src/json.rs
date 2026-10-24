@@ -139,6 +139,13 @@ pub struct FileList {
     pub next: Option<String>,
 }
 
+/// `files.generateIds`.
+#[derive(Debug, Deserialize)]
+pub struct GeneratedIds {
+    #[serde(default)]
+    pub ids: Vec<String>,
+}
+
 /// One entry of `changes.list`.
 #[derive(Debug, Deserialize)]
 pub struct Change {

@@ -13,6 +13,12 @@ pub const WAITING: &str = "Waiting to upload.";
 pub const NO_ROOM: &str = "There's no room left on this drive.";
 /// A change the drive refused: the account may not change the item there.
 pub const MAY_NOT_WRITE: &str = "You can't change this file.";
+/// A change the drive could not take now: the item is open or checked out there.
+pub const IN_USE: &str = "This file is in use on the drive.";
+/// A change the drive refused: it does not take the item's name, or the path is too long.
+pub const NAME_REFUSED: &str = "The drive doesn't take this name.";
+/// A change the drive refused for a reason of its own.
+pub const DECLINED: &str = "The drive couldn't take this change.";
 /// A removal asked for an item with two versions.
 pub const CONFLICT: &str = "This file has two versions. Choose one first.";
 /// Keep Downloaded off, or a removal, asked for an item inside a kept folder.

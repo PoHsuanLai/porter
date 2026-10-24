@@ -14,17 +14,26 @@
 //! 64883a5d-228e-48f5-b3d2-eb39e07630fa, read 2026-10): the characters `" * : < > ? / \ |`, a
 //! leading or trailing space, the names `.lock`, `CON`, `PRN`, `AUX`, `NUL`, `COM0`-`COM9`,
 //! `LPT0`-`LPT9`, `desktop.ini`, a name starting with `~$`, and `_vti_` anywhere. A trailing dot
-//! (which Windows drops) and a name over 255 characters are refused here too.
+//! (which Windows drops) and a name over 255 characters are refused here too. The same article
+//! limits the whole decoded path, the file's name with it, to [`PATH_MAX`] characters.
+//!
+//! Graph checks `If-Match` when an upload session is made, not when its last bytes come: a
+//! session that replaces a file asks again what the file is before its last chunk and when it is
+//! resumed, and gives itself up (`DELETE`) when the file changed meanwhile.
+//!
+//! A write that seemed to fail may have landed (its answer lost): [`DriveWrite::look`] reads what
+//! the drive has (size, QuickXorHash), for the caller to take an item that holds what it sent as
+//! its own.
 
 use crate::feed::{folder_of, json_string};
 use crate::json::{DriveItem, Session as SessionJson, SessionStatus};
-use crate::refuse::{refused, write_error};
+use crate::refuse::{error_code, refused, write_error};
 use crate::replica::GraphReplica;
 use porter_core::WebUrl;
 use porter_http::{Http, HttpRequest, HttpResponse, Method};
 use porter_sync::{
-    BaseVersion, Conflict, DriveWrite, Place, PutRefused, RemoteId, RemoteSide, RemoteVersion,
-    RetryAfter, Session, Upload, UploadTo, Written,
+    BaseVersion, Conflict, DriveWrite, Found, Place, PutRefused, RemoteId, RemoteSide,
+    RemoteVersion, RetryAfter, Session, Upload, UploadTo, Written,
 };
 use storage_webdav::DELETED;
 
@@ -36,6 +45,9 @@ const REFUSED_NAMES: &[&str] = &[".lock", "con", "prn", "aux", "nul", "desktop.i
 
 /// The longest name taken.
 const NAME_MAX: usize = 255;
+
+/// The longest path taken, from the top of the drive, the item's name with it.
+pub const PATH_MAX: usize = 400;
 
 /// Whether OneDrive takes `name` for a file or folder (see the module's list).
 pub fn accepts_name(name: &str) -> bool {
@@ -60,6 +72,21 @@ pub fn accepts_name(name: &str) -> bool {
 
 fn again() -> PutRefused {
     PutRefused::Transient(RetryAfter(30))
+}
+
+/// Whether `response` says the name is taken (`409 nameAlreadyExists`).
+fn name_taken(response: &HttpResponse) -> bool {
+    response.status.0 == 409 && error_code(response).as_deref() == Some("nameAlreadyExists")
+}
+
+/// A whole-drive write answered with `response`, which was not a success, a stale base or a
+/// name taken: a name the drive refuses (`400 invalidRequest` on a write that names the item,
+/// `named`) says so; the rest as [`write_error`].
+fn drive_refusal(response: &HttpResponse, named: bool) -> PutRefused {
+    match (response.status.0, error_code(response).as_deref()) {
+        (400, Some("invalidRequest" | "nameInvalid")) if named => PutRefused::NameRefused,
+        _ => write_error(response),
+    }
 }
 
 /// The eTag a base names, or the conflict an existing item written on the belief that it is
@@ -151,9 +178,32 @@ impl<H: Http> GraphReplica<H> {
                 Ok(written)
             }
             (404 | 412, UploadTo::Replace(id)) => Err(self.changed_conflict(id, base).await),
-            (409, UploadTo::New(place)) => Err(self.taken_conflict(place).await),
-            _ => Err(write_error(&response)),
+            (409, UploadTo::New(place)) if name_taken(&response) => {
+                Err(self.taken_conflict(place).await)
+            }
+            (_, to) => Err(drive_refusal(&response, matches!(to, UploadTo::New(_)))),
         }
+    }
+
+    /// Whether the file an upload replaces is still the version it was made against; else the
+    /// conflict that is.
+    async fn still_at_base(&self, upload: &Upload<'_>) -> Result<(), PutRefused> {
+        let (UploadTo::Replace(id), BaseVersion::At(seen)) = (&upload.to, &upload.base) else {
+            return Ok(());
+        };
+        match self.item_now(&id.0).await {
+            Err(error) => Err(refused(error)),
+            Ok(Some(now)) if now.etag.as_deref() == Some(seen.0.as_str()) => Ok(()),
+            Ok(_) => Err(self.changed_conflict(id, &upload.base).await),
+        }
+    }
+
+    /// Gives the session at `url` up: the server drops what it holds of it.
+    async fn give_up(&self, url: &WebUrl, upload: &Upload<'_>) {
+        let _ = self
+            .write_send(HttpRequest::new(Method::Delete, url.clone()))
+            .await;
+        upload.progress.session(None);
     }
 
     async fn drive_upload(&self, upload: Upload<'_>) -> Result<Written, PutRefused> {
@@ -257,6 +307,7 @@ impl<H: Http> GraphReplica<H> {
             Some(session) => self.resumed(session).await?,
             None => None,
         };
+        let from_before = resumed.is_some();
         let (url, mut sent) = match resumed {
             Some(found) => found,
             None => {
@@ -270,6 +321,11 @@ impl<H: Http> GraphReplica<H> {
             }
         };
         let total = upload.content.size();
+        // A session from before: the file it replaces may have changed since.
+        if from_before && let Err(why) = self.still_at_base(upload).await {
+            self.give_up(&url, upload).await;
+            return Err(why);
+        }
         upload.progress.sent(sent);
         while sent < total {
             if upload.progress.held() {
@@ -281,6 +337,13 @@ impl<H: Http> GraphReplica<H> {
                 .read(sent, self.uploads.chunk as u64)
                 .map_err(|_| again())?;
             let last = sent + chunk.len() as u64 - 1;
+            // The last chunk commits the file, with no `If-Match` looked at: asked first.
+            if last + 1 == total
+                && let Err(why) = self.still_at_base(upload).await
+            {
+                self.give_up(&url, upload).await;
+                return Err(why);
+            }
             let request = HttpRequest::new(Method::Put, url.clone())
                 .with_header("Content-Type", "application/octet-stream")
                 .with_header("Content-Range", format!("bytes {sent}-{last}/{total}"))
@@ -304,10 +367,7 @@ impl<H: Http> GraphReplica<H> {
                 429 | 500..=599 => return Ok(response),
                 _ => {
                     // Give the session up; the server drops it anyway in time.
-                    let _ = self
-                        .write_send(HttpRequest::new(Method::Delete, url.clone()))
-                        .await;
-                    upload.progress.session(None);
+                    self.give_up(&url, upload).await;
                     return Ok(response);
                 }
             }
@@ -335,8 +395,8 @@ impl<H: Http> GraphReplica<H> {
                 self.remember(&item);
                 Ok(written)
             }
-            409 => Err(self.taken_conflict(place).await),
-            _ => Err(write_error(&response)),
+            409 if name_taken(&response) => Err(self.taken_conflict(place).await),
+            _ => Err(drive_refusal(&response, true)),
         }
     }
 
@@ -371,8 +431,8 @@ impl<H: Http> GraphReplica<H> {
                 Ok(written)
             }
             404 | 412 => Err(self.changed_conflict(item, base).await),
-            409 => Err(self.taken_conflict(to).await),
-            _ => Err(write_error(&response)),
+            409 if name_taken(&response) => Err(self.taken_conflict(to).await),
+            _ => Err(drive_refusal(&response, true)),
         }
     }
 
@@ -393,14 +453,32 @@ impl<H: Http> GraphReplica<H> {
                 Ok(())
             }
             404 | 412 => Err(self.changed_conflict(item, base).await),
-            _ => Err(write_error(&response)),
+            _ => Err(drive_refusal(&response, false)),
         }
+    }
+
+    async fn drive_look(&self, item: &RemoteId) -> Result<Option<Found>, PutRefused> {
+        let now = self.item_now(&item.0).await.map_err(refused)?;
+        Ok(now.filter(|now| now.deleted.is_none()).map(|now| Found {
+            version: RemoteVersion(now.etag.clone().unwrap_or_default()),
+            size: now.size.unwrap_or(0),
+            hash: now.hash(),
+            folder: now.folder.is_some(),
+        }))
     }
 }
 
 impl<H: Http> DriveWrite for GraphReplica<H> {
     fn accepts_name(&self, name: &str) -> bool {
         accepts_name(name)
+    }
+
+    fn path_max(&self) -> Option<usize> {
+        Some(PATH_MAX)
+    }
+
+    async fn look(&self, item: &RemoteId) -> Result<Option<Found>, PutRefused> {
+        self.drive_look(item).await
     }
 
     async fn make_folder(&self, place: &Place) -> Result<Written, PutRefused> {
@@ -467,5 +545,31 @@ mod tests {
         }
         assert!(accepts_name(&"a".repeat(255)));
         assert!(!accepts_name(&"a".repeat(256)));
+    }
+
+    fn answer(status: u16, code: &str) -> HttpResponse {
+        HttpResponse {
+            status: porter_http::Status(status),
+            headers: Vec::new(),
+            body: format!(r#"{{"error":{{"code":"{code}","message":"m"}}}}"#).into_bytes(),
+        }
+    }
+
+    #[test]
+    fn a_refused_name_a_lock_and_a_conflict_that_is_no_name_say_what_they_are() {
+        let named = |status, code| drive_refusal(&answer(status, code), true);
+        assert_eq!(named(400, "invalidRequest"), PutRefused::NameRefused);
+        assert_eq!(
+            drive_refusal(&answer(400, "invalidRequest"), false),
+            PutRefused::Forbidden
+        );
+        assert_eq!(named(409, "resourceModified"), PutRefused::Declined);
+        assert_eq!(
+            named(423, "resourceLocked"),
+            PutRefused::InUse(RetryAfter(30))
+        );
+        assert_eq!(named(401, "unauthenticated"), PutRefused::Unauthorized);
+        assert!(name_taken(&answer(409, "nameAlreadyExists")));
+        assert!(!name_taken(&answer(409, "resourceModified")));
     }
 }

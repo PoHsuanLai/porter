@@ -48,6 +48,18 @@ pub enum PutRefused {
     /// Try again later.
     #[error("transient; retry after {} s", .0.0)]
     Transient(RetryAfter),
+    /// The account's sign-in was refused: nothing more is sent until it is signed in again.
+    #[error("unauthorized")]
+    Unauthorized,
+    /// The item is in use on the replica (locked there): try again after the wait.
+    #[error("in use; retry after {} s", .0.0)]
+    InUse(RetryAfter),
+    /// The replica does not take the item's name or path.
+    #[error("name refused")]
+    NameRefused,
+    /// The replica refused the change for a reason of its own, which no name taken explains.
+    #[error("declined")]
+    Declined,
 }
 
 /// Why an online document could not be exported as a file.

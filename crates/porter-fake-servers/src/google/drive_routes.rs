@@ -93,6 +93,14 @@ fn refusal(why: Refused) -> Response {
     match why {
         Refused::Full => error(403, "storageQuotaExceeded"),
         Refused::NoParent => error(404, "notFound"),
+        // Google's "Create and populate files" guide: a retry with a pre-generated id already
+        // used is answered `409 Conflict` and makes no duplicate. The message is the one Drive
+        // gives; its reason is not documented, so a client reads the status only.
+        Refused::IdUsed => Response::json(
+            409,
+            &json!({"error": {"code": 409, "message": "A file already exists with the provided ID.", "errors": [{"reason": "conflict", "message": "A file already exists with the provided ID."}]}}),
+        ),
+        Refused::IdUnknown => error(400, "invalid"),
     }
 }
 
@@ -385,6 +393,7 @@ fn upload(drive: &mut Drive, base: &str, request: &Request, over: Option<&str>) 
                     (Some(parent), Some(name)) if drive.get(&parent).is_some() => Aim::New {
                         parent,
                         name: name.to_owned(),
+                        id: meta["id"].as_str().map(str::to_owned),
                     },
                     (None, _) => return error(403, "insufficientFilePermissions"),
                     _ => return error(404, "notFound"),
@@ -408,7 +417,9 @@ fn finish(drive: &mut Drive, meta: &Value, content: Vec<u8>, over: Option<&str>)
             None => return error(404, "notFound"),
         },
         None => match (parent_of(meta), meta["name"].as_str()) {
-            (Some(parent), Some(name)) => drive.write(&parent, name, content, None),
+            (Some(parent), Some(name)) => {
+                drive.write_as(&parent, name, content, None, meta["id"].as_str())
+            }
             (None, _) => return error(403, "insufficientFilePermissions"),
             _ => return error(400, "required"),
         },
@@ -467,9 +478,9 @@ fn chunk(drive: &mut Drive, request: &Request) -> Response {
     };
     match done.aim {
         Aim::Item(item) => finish(drive, &Value::Null, done.received, Some(&item)),
-        Aim::New { parent, name } => finish(
+        Aim::New { parent, name, id } => finish(
             drive,
-            &json!({"parents": [parent], "name": name}),
+            &json!({"parents": [parent], "name": name, "id": id}),
             done.received,
             None,
         ),
@@ -537,6 +548,17 @@ pub fn answer(
         }
         ("GET", "changes") => changes(drive, knobs, request),
         ("GET", "files") => list(drive, request),
+        ("GET", "files/generateIds") => {
+            let count = request
+                .query_value("count")
+                .and_then(|n| n.parse().ok())
+                .unwrap_or(10);
+            let ids = drive.generate_ids(count);
+            Response::json(
+                200,
+                &json!({"kind": "drive#generatedIds", "space": "drive", "ids": ids}),
+            )
+        }
         ("POST", "files") => {
             let meta = json_of(&request.body);
             match (
@@ -545,7 +567,7 @@ pub fn answer(
                 meta["mimeType"].as_str(),
             ) {
                 (Some(parent), Some(name), Some(FOLDER)) => {
-                    match drive.make_folder(&parent, name) {
+                    match drive.make_folder_as(&parent, name, meta["id"].as_str()) {
                         Ok(id) => drive.get(&id).map_or_else(
                             || error(404, "notFound"),
                             |n| Response::json(200, &file_json(drive, n)),

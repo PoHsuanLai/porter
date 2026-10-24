@@ -398,7 +398,6 @@ fn create_session(state: &mut State, link: &str, address: &Address, request: &Re
     let id = drive.open_upload(Upload {
         aim,
         fail_if_exists: fail,
-        if_match,
         received: Vec::new(),
     });
     Response::json(
@@ -450,13 +449,9 @@ fn upload_chunk(state: &mut State, session: &str, request: &Request) -> Response
             Address::Below(from, folders)
         }
     };
-    store(
-        drive,
-        &address,
-        done.fail_if_exists,
-        done.if_match.as_deref(),
-        done.received,
-    )
+    // Graph looks at `If-Match` when the session is made, not when its last bytes come (the
+    // docs of createUploadSession name it there only): a file changed meanwhile is replaced.
+    store(drive, &address, done.fail_if_exists, None, done.received)
 }
 
 fn children(state: &mut State, address: &Address, request: &Request) -> Response {

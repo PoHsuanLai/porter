@@ -29,10 +29,7 @@ fn at(written: &Written) -> BaseVersion {
 }
 
 fn place(parent: Option<&Written>, name: &str) -> Place {
-    Place {
-        parent: parent.map(|w| w.id.clone()),
-        name: name.to_owned(),
-    }
+    Place::new(parent.map(|w| w.id.clone()), name)
 }
 
 async fn send(
@@ -50,6 +47,38 @@ async fn send(
             progress: &Unheard,
         })
         .await
+}
+
+/// Changes the file on the drive once an upload has sent its first chunk, as another device
+/// would meanwhile; keeps the session it is told of.
+struct Changing {
+    session: Mutex<Option<Session>>,
+    change: Mutex<Option<Box<dyn FnOnce() + Send>>>,
+}
+
+impl Changing {
+    fn new(change: impl FnOnce() + Send + 'static) -> Self {
+        Self {
+            session: Mutex::default(),
+            change: Mutex::new(Some(Box::new(change))),
+        }
+    }
+}
+
+impl Progress for Changing {
+    fn session(&self, session: Option<&Session>) {
+        *self.session.lock().expect("lock") = session.cloned();
+    }
+
+    fn sent(&self, bytes: u64) {
+        let change = match bytes {
+            0 => None,
+            _ => self.change.lock().expect("lock").take(),
+        };
+        if let Some(change) = change {
+            change();
+        }
+    }
 }
 
 /// What an upload told: the session it keeps, and the bytes sent.
@@ -192,4 +221,106 @@ async fn a_large_file_goes_in_chunks_and_a_cut_session_is_resumed_by_a_new_repli
         chunks, 6,
         "one sent, one cut, the question where it stands, and the three after it"
     );
+}
+
+#[tokio::test]
+async fn an_item_made_under_a_reserved_id_is_found_again_and_never_made_twice() {
+    let server = Server::start().await;
+    let dir = Scratch::new("gdrive-drive-reserved");
+    let replica = drive(&server, Uploads::default());
+    let ids = replica.reserve_ids(2).await.expect("ids");
+    assert_eq!(ids.len(), 2);
+    let mut folder = place(None, "Work");
+    folder.id = Some(ids[0].clone());
+    let made = replica.make_folder(&folder).await.expect("a folder");
+    assert_eq!(made.id, ids[0]);
+    let again = replica.make_folder(&folder).await;
+    let Err(PutRefused::Conflict(conflict)) = &again else {
+        panic!("{again:?}")
+    };
+    assert_eq!(
+        conflict.remote,
+        RemoteSide::Exists(ids[0].clone(), made.version.clone())
+    );
+    let mut file = place(Some(&made), "a.txt");
+    file.id = Some(ids[1].clone());
+    for (small, uploads) in [(true, Uploads::default()), (false, Uploads::new(0, 1))] {
+        let mut file = file.clone();
+        if !small {
+            file.id = Some(replica.reserve_ids(1).await.expect("id")[0].clone());
+            file.name = "b.txt".into();
+        }
+        let replica = drive(&server, uploads);
+        let bytes = content(&dir, &file.name, b"one");
+        let sent = send(
+            &replica,
+            UploadTo::New(file.clone()),
+            BaseVersion::Absent,
+            &bytes,
+        )
+        .await
+        .expect("a file");
+        assert_eq!(Some(&sent.id), file.id.as_ref());
+        let again = send(
+            &replica,
+            UploadTo::New(file.clone()),
+            BaseVersion::Absent,
+            &bytes,
+        )
+        .await;
+        let Err(PutRefused::Conflict(conflict)) = &again else {
+            panic!("{again:?}")
+        };
+        assert_eq!(
+            conflict.remote,
+            RemoteSide::Exists(sent.id.clone(), sent.version.clone()),
+            "small: {small}"
+        );
+    }
+    let found = replica.look(&ids[1]).await.expect("look").expect("found");
+    assert_eq!((found.size, found.folder), (3, false));
+    assert!(found.hash.is_some(), "its MD5");
+    let names: Vec<String> = server
+        .google
+        .drive_files()
+        .into_iter()
+        .map(|(path, _)| path)
+        .filter(|path| path.ends_with("a.txt") || path.ends_with("b.txt"))
+        .collect();
+    assert_eq!(names.len(), 2, "one of each: {names:?}");
+}
+
+#[tokio::test]
+async fn a_session_replacing_a_file_changed_meanwhile_stops_before_its_last_chunk() {
+    let server = Server::start().await;
+    let dir = Scratch::new("gdrive-drive-changed");
+    let uploads = Uploads::new(0, 1);
+    let replica = drive(&server, uploads);
+    let file = send(
+        &replica,
+        UploadTo::New(place(None, "big.bin")),
+        BaseVersion::Absent,
+        &content(&dir, "a", b"old"),
+    )
+    .await
+    .expect("a file");
+    let bytes: Vec<u8> = (0..CHUNK_UNIT * 2 + 5).map(|i| (i % 251) as u8).collect();
+    let big = content(&dir, "big", &bytes);
+    let google = (*server.google).clone();
+    let changing = Changing::new(move || google.my_drive_put_file("big.bin", b"theirs"));
+    let stale = replica
+        .upload(Upload {
+            to: UploadTo::Replace(file.id.clone()),
+            base: at(&file),
+            content: &big,
+            resume: None,
+            progress: &changing,
+        })
+        .await;
+    assert!(matches!(stale, Err(PutRefused::Conflict(_))), "{stale:?}");
+    assert_eq!(
+        server.google.my_drive_file("big.bin"),
+        Some(b"theirs".to_vec())
+    );
+    assert_eq!(*changing.session.lock().expect("lock"), None);
 }

@@ -108,7 +108,11 @@ impl Inner {
                 words: None,
             });
         }
-        Some(Part::plain(ItemState::Waiting))
+        let words = held(&self.waiting).get(id).map(|words| (*words).to_owned());
+        Some(Part {
+            words,
+            ..Part::plain(ItemState::Waiting)
+        })
     }
 
     fn part(&self, file: &Entry) -> Part {

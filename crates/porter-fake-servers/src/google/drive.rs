@@ -112,6 +112,10 @@ pub enum Refused {
     Full,
     /// The parent is not a folder, or does not exist (`404`).
     NoParent,
+    /// The id asked for names an item already (`409`).
+    IdUsed,
+    /// The id asked for was never given by `generateIds` (`400`).
+    IdUnknown,
 }
 
 /// Where a resumable upload will put its bytes.
@@ -125,6 +129,8 @@ pub enum Aim {
         parent: String,
         /// The name.
         name: String,
+        /// The id asked for, one `generateIds` gave.
+        id: Option<String>,
     },
 }
 
@@ -153,6 +159,8 @@ pub struct Drive {
     /// How many more resumable chunks are taken before the next is refused (`503`, nothing
     /// stored, the upload kept); `None`: every one is taken.
     cut_after: Option<u32>,
+    /// The ids `generateIds` gave and no item has taken yet.
+    reserved: std::collections::BTreeSet<String>,
 }
 
 impl Default for Drive {
@@ -179,6 +187,7 @@ impl Default for Drive {
             my_drive,
             too_large: std::collections::BTreeSet::new(),
             cut_after: None,
+            reserved: std::collections::BTreeSet::new(),
         }
     }
 }
@@ -287,6 +296,29 @@ impl Drive {
         format!("1fake{:05}", self.next)
     }
 
+    /// `count` ids for items not made yet, as `files.generateIds` gives them.
+    pub fn generate_ids(&mut self, count: usize) -> Vec<String> {
+        let ids: Vec<String> = (0..count)
+            .map(|_| {
+                self.next += 1;
+                format!("1gen{:05}", self.next)
+            })
+            .collect();
+        self.reserved.extend(ids.iter().cloned());
+        ids
+    }
+
+    /// The id a new item is made under: `wanted` when `generateIds` gave it and nothing took
+    /// it since, else a fresh one.
+    fn id_for(&mut self, wanted: Option<&str>) -> Result<String, Refused> {
+        match wanted {
+            None => Ok(self.fresh_id()),
+            Some(id) if self.nodes.contains_key(id) => Err(Refused::IdUsed),
+            Some(id) if self.reserved.remove(id) => Ok(id.to_owned()),
+            Some(_) => Err(Refused::IdUnknown),
+        }
+    }
+
     /// The space of the folder `parent`, if it is a live folder.
     fn folder_space(&self, parent: &str) -> Option<Space> {
         self.get(parent).filter(|p| p.is_folder()).map(|p| p.space)
@@ -294,9 +326,19 @@ impl Drive {
 
     /// Makes a folder.
     pub fn make_folder(&mut self, parent: &str, name: &str) -> Result<String, Refused> {
+        self.make_folder_as(parent, name, None)
+    }
+
+    /// Makes a folder under the id `wanted`, one `generateIds` gave (`None`: a fresh one).
+    pub fn make_folder_as(
+        &mut self,
+        parent: &str,
+        name: &str,
+        wanted: Option<&str>,
+    ) -> Result<String, Refused> {
         let parent = self.resolve(parent).to_owned();
         let space = self.folder_space(&parent).ok_or(Refused::NoParent)?;
-        let id = self.fresh_id();
+        let id = self.id_for(wanted)?;
         self.nodes
             .insert(id.clone(), Node::new(&id, Some(&parent), name, space));
         self.touch(&id);
@@ -385,6 +427,18 @@ impl Drive {
         bytes: Vec<u8>,
         over: Option<&str>,
     ) -> Result<String, Refused> {
+        self.write_as(parent, name, bytes, over, None)
+    }
+
+    /// As [`Drive::write`], a new file made under the id `wanted`, one `generateIds` gave.
+    pub fn write_as(
+        &mut self,
+        parent: &str,
+        name: &str,
+        bytes: Vec<u8>,
+        over: Option<&str>,
+        wanted: Option<&str>,
+    ) -> Result<String, Refused> {
         if !self.room_for(over, bytes.len()) {
             return Err(Refused::Full);
         }
@@ -397,7 +451,7 @@ impl Drive {
         }
         let parent = self.resolve(parent).to_owned();
         let space = self.folder_space(&parent).ok_or(Refused::NoParent)?;
-        let id = self.fresh_id();
+        let id = self.id_for(wanted)?;
         let mut node = Node::new(&id, Some(&parent), name, space);
         node.bytes = Some(bytes);
         self.nodes.insert(id.clone(), node);

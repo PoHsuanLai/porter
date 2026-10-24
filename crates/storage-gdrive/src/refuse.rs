@@ -1,7 +1,8 @@
 //! What a status the replica did not expect means to the contract: a read that failed
 //! ([`ReplicaError`]) or a write that was refused ([`PutRefused`]). Drive throttles with `429`,
 //! `503` and, as a `403`, the reasons `rateLimitExceeded` and `userRateLimitExceeded`; a full
-//! account is a `403 storageQuotaExceeded`.
+//! account is a `403 storageQuotaExceeded`. A day's limit of requests or uploads used up
+//! (`dailyLimitExceeded`, `quotaExceeded`) is waited out for [`DAY_LIMIT`].
 
 use crate::json::ErrorBody;
 use porter_http::{HttpError, HttpResponse};
@@ -9,6 +10,14 @@ use porter_sync::{ExportError, PutRefused, ReplicaError, RetryAfter};
 
 /// How long to wait when the server did not say.
 const RETRY: RetryAfter = RetryAfter(30);
+
+/// How long to wait when a day's limit is used up: an hour, then again.
+pub const DAY_LIMIT: RetryAfter = RetryAfter(3600);
+
+/// Whether a refusal is a day's limit used up.
+fn day_limit(reason: Option<&str>) -> bool {
+    matches!(reason, Some("dailyLimitExceeded" | "quotaExceeded"))
+}
 
 fn retry_after(response: &HttpResponse) -> RetryAfter {
     response.retry_after_seconds().map_or(RETRY, RetryAfter)
@@ -31,6 +40,7 @@ fn throttled(reason: Option<&str>) -> bool {
 /// A read answered with `response`, which was not what it needed.
 pub fn read_error(response: &HttpResponse) -> ReplicaError {
     match response.status.0 {
+        403 | 429 if day_limit(reason(response).as_deref()) => ReplicaError::Transient(DAY_LIMIT),
         403 if throttled(reason(response).as_deref()) => {
             ReplicaError::Transient(retry_after(response))
         }
@@ -58,8 +68,11 @@ pub fn write_error(response: &HttpResponse) -> PutRefused {
     let why = reason(response);
     match response.status.0 {
         403 if why.as_deref() == Some("storageQuotaExceeded") => PutRefused::Quota,
+        403 | 429 if day_limit(why.as_deref()) => PutRefused::Transient(DAY_LIMIT),
         403 if throttled(why.as_deref()) => PutRefused::Transient(retry_after(response)),
-        400 | 401 | 403 | 405 | 409 | 413 => PutRefused::Forbidden,
+        401 => PutRefused::Unauthorized,
+        409 => PutRefused::Declined,
+        400 | 403 | 405 | 413 => PutRefused::Forbidden,
         _ => PutRefused::Transient(retry_after(response)),
     }
 }
@@ -77,7 +90,8 @@ pub fn unreached(error: HttpError) -> ReplicaError {
 /// token the server refused.
 pub fn refused(error: ReplicaError) -> PutRefused {
     match error {
-        ReplicaError::Unauthorized | ReplicaError::NeedsConsent => PutRefused::Forbidden,
+        ReplicaError::Unauthorized => PutRefused::Unauthorized,
+        ReplicaError::NeedsConsent => PutRefused::Forbidden,
         ReplicaError::Transient(after) => PutRefused::Transient(after),
         ReplicaError::Gone | ReplicaError::AnchorExpired => PutRefused::Transient(RetryAfter(1)),
     }
@@ -189,7 +203,21 @@ mod tests {
                 PutRefused::Transient(RetryAfter(9)),
             ),
             (400, None, None, PutRefused::Forbidden),
+            (401, None, None, PutRefused::Unauthorized),
+            (409, None, None, PutRefused::Declined),
             (413, None, None, PutRefused::Forbidden),
+            (
+                403,
+                None,
+                Some("dailyLimitExceeded"),
+                PutRefused::Transient(DAY_LIMIT),
+            ),
+            (
+                403,
+                None,
+                Some("quotaExceeded"),
+                PutRefused::Transient(DAY_LIMIT),
+            ),
             (429, Some("7"), None, PutRefused::Transient(RetryAfter(7))),
             (502, None, None, PutRefused::Transient(RETRY)),
         ];
@@ -210,6 +238,14 @@ mod tests {
             PutRefused::Forbidden
         );
         assert_eq!(refused(ReplicaError::NeedsConsent), PutRefused::Forbidden);
+        assert_eq!(
+            refused(ReplicaError::Unauthorized),
+            PutRefused::Unauthorized
+        );
+        assert_eq!(
+            read_error(&answer(403, None, Some("dailyLimitExceeded"))),
+            ReplicaError::Transient(DAY_LIMIT)
+        );
         assert_eq!(
             unreached(HttpError::Unreachable),
             ReplicaError::Transient(RETRY)

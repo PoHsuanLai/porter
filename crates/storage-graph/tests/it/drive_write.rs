@@ -29,10 +29,7 @@ fn at(written: &Written) -> BaseVersion {
 }
 
 fn place(parent: Option<&Written>, name: &str) -> Place {
-    Place {
-        parent: parent.map(|w| w.id.clone()),
-        name: name.to_owned(),
-    }
+    Place::new(parent.map(|w| w.id.clone()), name)
 }
 
 async fn send(
@@ -50,6 +47,38 @@ async fn send(
             progress: &Unheard,
         })
         .await
+}
+
+/// Changes the file on the drive once an upload has sent its first chunk, as another device
+/// would meanwhile; keeps the session it is told of.
+struct Changing {
+    session: Mutex<Option<Session>>,
+    change: Mutex<Option<Box<dyn FnOnce() + Send>>>,
+}
+
+impl Changing {
+    fn new(change: impl FnOnce() + Send + 'static) -> Self {
+        Self {
+            session: Mutex::default(),
+            change: Mutex::new(Some(Box::new(change))),
+        }
+    }
+}
+
+impl Progress for Changing {
+    fn session(&self, session: Option<&Session>) {
+        *self.session.lock().expect("lock") = session.cloned();
+    }
+
+    fn sent(&self, bytes: u64) {
+        let change = match bytes {
+            0 => None,
+            _ => self.change.lock().expect("lock").take(),
+        };
+        if let Some(change) = change {
+            change();
+        }
+    }
 }
 
 /// What an upload told: the session it keeps, and the bytes sent.
@@ -187,4 +216,120 @@ async fn a_large_file_goes_in_chunks_and_a_cut_session_is_resumed_by_a_new_repli
         chunks, 5,
         "one sent, one cut, and the three after it: none sent twice"
     );
+}
+
+#[tokio::test]
+async fn a_session_replacing_a_file_changed_meanwhile_is_given_up_before_its_last_chunk() {
+    let server = Server::start().await;
+    let dir = Scratch::new("graph-drive-changed");
+    let uploads = Uploads::new(0, 1);
+    let replica = drive(&server, uploads);
+    let file = send(
+        &replica,
+        UploadTo::New(place(None, "big.bin")),
+        BaseVersion::Absent,
+        &content(&dir, "a", b"old"),
+    )
+    .await
+    .expect("a file");
+    let bytes: Vec<u8> = (0..CHUNK_UNIT * 2 + 5).map(|i| (i % 251) as u8).collect();
+    let big = content(&dir, "big", &bytes);
+    let graph = (*server.graph).clone();
+    let changing = Changing::new(move || graph.put_root_file("big.bin", b"theirs"));
+    let stale = replica
+        .upload(Upload {
+            to: UploadTo::Replace(file.id.clone()),
+            base: at(&file),
+            content: &big,
+            resume: None,
+            progress: &changing,
+        })
+        .await;
+    let Err(PutRefused::Conflict(conflict)) = &stale else {
+        panic!("{stale:?}")
+    };
+    assert!(
+        matches!(conflict.remote, RemoteSide::Changed(_)),
+        "{conflict:?}"
+    );
+    assert_eq!(
+        server.graph.root_file("big.bin"),
+        Some(b"theirs".to_vec()),
+        "their version stands"
+    );
+    assert_eq!(*changing.session.lock().expect("lock"), None);
+    assert!(
+        server
+            .graph
+            .hits()
+            .iter()
+            .any(|h| h.method == "DELETE" && h.target.starts_with("/upload/")),
+        "the session is given up"
+    );
+}
+
+#[tokio::test]
+async fn a_resumed_session_asks_first_whether_the_file_it_replaces_changed() {
+    let server = Server::start().await;
+    let dir = Scratch::new("graph-drive-resume-changed");
+    let uploads = Uploads::new(0, 1);
+    let file = send(
+        &drive(&server, uploads),
+        UploadTo::New(place(None, "big.bin")),
+        BaseVersion::Absent,
+        &content(&dir, "a", b"old"),
+    )
+    .await
+    .expect("a file");
+    let bytes: Vec<u8> = (0..CHUNK_UNIT * 3).map(|i| (i % 251) as u8).collect();
+    let big = content(&dir, "big", &bytes);
+    let kept = Kept::default();
+    let upload = |resume| Upload {
+        to: UploadTo::Replace(file.id.clone()),
+        base: at(&file),
+        content: &big,
+        resume,
+        progress: &kept,
+    };
+    server.graph.cut_upload_after(1);
+    let cut = drive(&server, uploads).upload(upload(None)).await;
+    assert!(matches!(cut, Err(PutRefused::Transient(_))), "{cut:?}");
+    let session = kept.session().expect("kept");
+    server.graph.put_root_file("big.bin", b"theirs");
+    let stale = drive(&server, uploads).upload(upload(Some(session))).await;
+    assert!(matches!(stale, Err(PutRefused::Conflict(_))), "{stale:?}");
+    assert_eq!(server.graph.root_file("big.bin"), Some(b"theirs".to_vec()));
+    assert_eq!(kept.session(), None, "the session is given up");
+}
+
+#[tokio::test]
+async fn look_says_what_the_drive_has_and_the_path_limit_is_onedrives() {
+    let server = Server::start().await;
+    let dir = Scratch::new("graph-drive-look");
+    let replica = drive(&server, Uploads::default());
+    let file = send(
+        &replica,
+        UploadTo::New(place(None, "a.txt")),
+        BaseVersion::Absent,
+        &content(&dir, "a", b"hello"),
+    )
+    .await
+    .expect("a file");
+    let found = replica.look(&file.id).await.expect("look").expect("found");
+    assert_eq!(
+        (found.size, found.folder, &found.version),
+        (5, false, &file.version)
+    );
+    assert!(found.hash.is_some(), "its QuickXorHash");
+    let work = replica
+        .make_folder(&place(None, "Work"))
+        .await
+        .expect("a folder");
+    let found = replica.look(&work.id).await.expect("look").expect("found");
+    assert!(found.folder);
+    assert_eq!(
+        replica.look(&porter_sync::RemoteId("nowhere".into())).await,
+        Ok(None)
+    );
+    assert_eq!(replica.path_max(), Some(400));
 }

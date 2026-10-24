@@ -96,8 +96,6 @@ pub struct Upload {
     pub aim: Aim,
     /// Whether an existing item at the end is a conflict.
     pub fail_if_exists: bool,
-    /// The `If-Match` it was opened with.
-    pub if_match: Option<String>,
     /// The bytes received.
     pub received: Vec<u8>,
 }

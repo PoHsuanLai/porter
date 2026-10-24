@@ -138,6 +138,10 @@ pub(crate) struct Edit {
     /// again (the next listing change, or a new change of it).
     #[serde(default)]
     pub refused: Option<String>,
+    /// The id reserved for an item made here, on a drive that lets its client choose one: on
+    /// the disk before it is first sent, so every try makes the same item.
+    #[serde(default)]
+    pub reserved: Option<String>,
 }
 
 impl Edit {
@@ -158,6 +162,7 @@ impl Edit {
             made,
             seq: 0,
             refused: None,
+            reserved: None,
         }
     }
 
@@ -178,6 +183,7 @@ impl Edit {
             made,
             seq: 0,
             refused: None,
+            reserved: None,
         }
     }
 

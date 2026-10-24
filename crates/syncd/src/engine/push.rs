@@ -132,11 +132,14 @@ impl<R: Replica, D: Dataset, K: Clock> Engine<R, D, K> {
             }
             Err(PutRefused::Conflict(conflict)) => self.refused_upload(row, conflict, report).await,
             Err(PutRefused::Quota) => Err(Halt::Stop(Outcome::QuotaFull)),
-            Err(PutRefused::Forbidden) => {
+            Err(PutRefused::Forbidden | PutRefused::NameRefused | PutRefused::Declined) => {
                 report.refused += 1;
                 Ok(())
             }
-            Err(PutRefused::Transient(after)) => Err(Halt::Stop(Outcome::Retry(after))),
+            Err(PutRefused::Unauthorized) => Err(Halt::Stop(Outcome::Unauthorized)),
+            Err(PutRefused::Transient(after) | PutRefused::InUse(after)) => {
+                Err(Halt::Stop(Outcome::Retry(after)))
+            }
         }
     }
 
@@ -174,11 +177,19 @@ impl<R: Replica, D: Dataset, K: Clock> Engine<R, D, K> {
                 let ops = self.conflict_ops(row, conflict, report);
                 Ok(self.journal.apply(&ops)?)
             }
-            Err(PutRefused::Quota | PutRefused::Forbidden) => {
+            Err(
+                PutRefused::Quota
+                | PutRefused::Forbidden
+                | PutRefused::NameRefused
+                | PutRefused::Declined,
+            ) => {
                 report.refused += 1;
                 Ok(())
             }
-            Err(PutRefused::Transient(after)) => Err(Halt::Stop(Outcome::Retry(after))),
+            Err(PutRefused::Unauthorized) => Err(Halt::Stop(Outcome::Unauthorized)),
+            Err(PutRefused::Transient(after) | PutRefused::InUse(after)) => {
+                Err(Halt::Stop(Outcome::Retry(after)))
+            }
         }
     }
 

@@ -85,6 +85,18 @@ impl DriveItem {
     }
 }
 
+/// An error's answer: `{"error":{"code":...}}`.
+#[derive(Debug, Deserialize)]
+pub struct ErrorBody {
+    pub error: Option<ErrorCode>,
+}
+
+/// An error's code.
+#[derive(Debug, Deserialize)]
+pub struct ErrorCode {
+    pub code: Option<String>,
+}
+
 /// One page of a delta query.
 #[derive(Debug, Deserialize)]
 pub struct DeltaPage {

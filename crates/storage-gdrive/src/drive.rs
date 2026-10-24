@@ -10,19 +10,26 @@
 //! an upload given one asks it what it has (`Content-Range: bytes */<size>`, answered `308` with
 //! a `Range`) and sends the rest; a session Drive has dropped is begun again.
 //!
-//! Drive refuses almost no name: any but an empty one is taken.
+//! Drive refuses almost no name: any but an empty one is taken. It takes a second item of a name,
+//! so a create whose answer was lost and is sent again would make a twin: each new item is made
+//! under an id reserved for it first (`files.generateIds`, space `drive`; Drive takes them for
+//! files and folders, not for its own documents), and a create of an id already used is refused
+//! (`409`, per Google's "Create and populate files" guide), which finds the item made.
+//!
+//! Drive has no `If-Match` either: a resumable session that replaces a file asks again what the
+//! file is before its last chunk and when it is resumed.
 
 use crate::addr::{FILE_FIELDS, encode};
 use crate::feed::link;
-use crate::json::File;
+use crate::json::{File, GeneratedIds};
 use crate::refuse::{refused, write_error};
 use crate::replica::GdriveReplica;
 use crate::write::Target;
 use porter_core::WebUrl;
 use porter_http::{Http, HttpRequest, HttpResponse, Method};
 use porter_sync::{
-    BaseVersion, DriveWrite, Place, PutRefused, RemoteId, RetryAfter, Session, Upload, UploadTo,
-    Written,
+    BaseVersion, Conflict, DriveWrite, Found, Place, PutRefused, RemoteId, RemoteSide,
+    RemoteVersion, RetryAfter, Session, Upload, UploadTo, Written,
 };
 
 fn again() -> PutRefused {
@@ -68,14 +75,41 @@ impl<H: Http> GdriveReplica<H> {
             .map(|(id, version)| Written { id, version })
     }
 
+    /// The metadata of a new item at `place`, under the id reserved for it.
+    fn new_meta(place: &Place, parent: &str) -> serde_json::Value {
+        let mut meta = serde_json::json!({"name": place.name, "parents": [parent]});
+        if let Some(id) = &place.id {
+            meta["id"] = serde_json::Value::String(id.0.clone());
+        }
+        meta
+    }
+
+    /// A create of `place` was refused `409`: its reserved id is used, by the item an earlier
+    /// try made. That item, as a conflict for the caller to take.
+    async fn made_before(&self, place: &Place) -> PutRefused {
+        let Some(id) = &place.id else {
+            return PutRefused::Declined;
+        };
+        match self.file_now(&id.0).await {
+            Err(error) => refused(error),
+            Ok(Some(file)) if !file.in_trash() => PutRefused::Conflict(Conflict {
+                item: id.clone(),
+                base: BaseVersion::Absent,
+                remote: RemoteSide::Exists(
+                    id.clone(),
+                    RemoteVersion(file.version.unwrap_or_default()),
+                ),
+            }),
+            // Used, and in the trash or gone: a new id is wanted.
+            Ok(_) => PutRefused::Declined,
+        }
+    }
+
     async fn drive_make_folder(&self, place: &Place) -> Result<Written, PutRefused> {
         let parent = self.parent_id(place).await?;
-        let body = serde_json::json!({
-            "name": place.name,
-            "mimeType": crate::json::FOLDER,
-            "parents": [parent],
-        })
-        .to_string();
+        let mut meta = Self::new_meta(place, &parent);
+        meta["mimeType"] = serde_json::Value::String(crate::json::FOLDER.to_owned());
+        let body = meta.to_string();
         let url = self
             .addr
             .api("files", &[("fields", FILE_FIELDS)])
@@ -84,6 +118,9 @@ impl<H: Http> GdriveReplica<H> {
             .with_header("Content-Type", "application/json")
             .with_body(body);
         let response = self.write_send(request).await?;
+        if response.status.0 == 409 {
+            return Err(self.made_before(place).await);
+        }
         let target = Target::New {
             parent,
             name: place.name.clone(),
@@ -97,7 +134,7 @@ impl<H: Http> GdriveReplica<H> {
         let (target, meta) = match &upload.to {
             UploadTo::New(place) => {
                 let parent = self.parent_id(place).await?;
-                let meta = serde_json::json!({"name": place.name, "parents": [parent]});
+                let meta = Self::new_meta(place, &parent);
                 (
                     Target::New {
                         parent,
@@ -123,7 +160,19 @@ impl<H: Http> GdriveReplica<H> {
             }
             (false, _) => self.resumable(&upload, &meta).await?,
         };
+        if let (409, UploadTo::New(place)) = (response.status.0, &upload.to) {
+            return Err(self.made_before(place).await);
+        }
         self.settled(response, &target, &upload.base).await
+    }
+
+    /// Whether the file an upload replaces is still the version it was made against; else the
+    /// conflict that is.
+    async fn still_at_base(&self, upload: &Upload<'_>) -> Result<(), PutRefused> {
+        match &upload.to {
+            UploadTo::Replace(id) => self.at_base(id, &upload.base).await.map(drop),
+            UploadTo::New(_) => Ok(()),
+        }
     }
 
     /// Where a session from before stands: the first byte it still wants, the finished file's
@@ -201,7 +250,14 @@ impl<H: Http> GdriveReplica<H> {
                 upload.progress.session(None);
                 return Ok(response);
             }
-            Resumed::At(url, from) => (url, from),
+            Resumed::At(url, from) => {
+                // A session from before: the file it replaces may have changed since.
+                if let Err(why) = self.still_at_base(upload).await {
+                    upload.progress.session(None);
+                    return Err(why);
+                }
+                (url, from)
+            }
             Resumed::Gone => {
                 if upload.resume.is_some() {
                     upload.progress.session(None);
@@ -223,6 +279,13 @@ impl<H: Http> GdriveReplica<H> {
                 .read(sent, self.uploads.chunk as u64)
                 .map_err(|_| again())?;
             let last = sent + chunk.len() as u64 - 1;
+            // The last chunk commits the file: what it replaces is asked about first.
+            if last + 1 == total
+                && let Err(why) = self.still_at_base(upload).await
+            {
+                upload.progress.session(None);
+                return Err(why);
+            }
             let request = HttpRequest::new(Method::Put, url.clone())
                 .with_header("Content-Type", "application/octet-stream")
                 .with_header("Content-Range", format!("bytes {sent}-{last}/{total}"))
@@ -307,6 +370,36 @@ impl<H: Http> GdriveReplica<H> {
                 .map(drop),
         }
     }
+
+    async fn drive_look(&self, item: &RemoteId) -> Result<Option<Found>, PutRefused> {
+        let now = self.file_now(&item.0).await.map_err(refused)?;
+        Ok(now.filter(|file| !file.in_trash()).map(|file| Found {
+            version: RemoteVersion(file.version.clone().unwrap_or_default()),
+            size: file.bytes(),
+            hash: file.hash(),
+            folder: file.is_folder(),
+        }))
+    }
+
+    async fn drive_reserve_ids(&self, count: usize) -> Result<Vec<RemoteId>, PutRefused> {
+        let count = count.clamp(1, 1000).to_string();
+        let url = self
+            .addr
+            .api(
+                "files/generateIds",
+                &[("count", &count), ("space", "drive")],
+            )
+            .ok_or(PutRefused::Forbidden)?;
+        let response = self.write_send(HttpRequest::new(Method::Get, url)).await?;
+        match response.status.0 {
+            200 => {
+                let ids: GeneratedIds =
+                    serde_json::from_slice(&response.body).map_err(|_| again())?;
+                Ok(ids.ids.into_iter().map(RemoteId).collect())
+            }
+            _ => Err(write_error(&response)),
+        }
+    }
 }
 
 /// Where a resumable session from before stands.
@@ -322,6 +415,14 @@ enum Resumed {
 impl<H: Http> DriveWrite for GdriveReplica<H> {
     fn accepts_name(&self, name: &str) -> bool {
         accepts_name(name)
+    }
+
+    async fn look(&self, item: &RemoteId) -> Result<Option<Found>, PutRefused> {
+        self.drive_look(item).await
+    }
+
+    async fn reserve_ids(&self, count: usize) -> Result<Vec<RemoteId>, PutRefused> {
+        self.drive_reserve_ids(count).await
     }
 
     async fn make_folder(&self, place: &Place) -> Result<Written, PutRefused> {

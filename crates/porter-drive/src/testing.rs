@@ -8,8 +8,8 @@ use crate::source::{CopyError, Exporting, Fetching, Source, SourceError};
 use porter_core::capability::HashKind;
 use porter_core::{Bytes, UnixSeconds, WebUrl};
 use porter_sync::{
-    BaseVersion, Conflict, ItemKind, Place, PutRefused, RemoteId, RemoteSide, RemoteVersion,
-    RetryAfter, Session, Upload, UploadTo, Written,
+    BaseVersion, Conflict, ContentHash, Found, ItemKind, Place, PutRefused, RemoteId, RemoteSide,
+    RemoteVersion, RetryAfter, Session, Upload, UploadTo, Written,
 };
 use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -252,6 +252,12 @@ pub enum Refuse {
     Quota,
     /// The account may not write.
     Forbidden,
+    /// The account's sign-in is refused.
+    SignedOut,
+    /// The item is in use on the drive.
+    InUse,
+    /// The drive declines, for a reason of its own.
+    Declined,
 }
 
 #[derive(Debug, Default)]
@@ -271,6 +277,11 @@ struct SinkState {
     gate: Option<Arc<Semaphore>>,
     abandoned: u32,
     uploads: Vec<Vec<u8>>,
+    lose: bool,
+    reserving: bool,
+    path_max: Option<usize>,
+    tries: u32,
+    twins: bool,
 }
 
 /// The writes of a drive held in memory: what it takes changes a [`MemoryListing`] and a
@@ -338,6 +349,56 @@ impl MemorySink {
     /// The bytes of each upload it took, in order.
     pub fn uploads(&self) -> Vec<Vec<u8>> {
         held(&self.state).uploads.clone()
+    }
+
+    /// Takes the next change and loses its answer, as a connection dropped after the drive
+    /// took it: the change says the drive could not be reached.
+    pub fn lose_next(&self) {
+        held(&self.state).lose = true;
+    }
+
+    /// Reserves ids for new items, as a drive that lets its client choose them does.
+    pub fn reserving(&self) {
+        held(&self.state).reserving = true;
+    }
+
+    /// Takes a second item of a name taken, as Google Drive does.
+    pub fn twins(&self) {
+        held(&self.state).twins = true;
+    }
+
+    /// Takes paths of at most `max` characters.
+    pub fn set_path_max(&self, max: usize) {
+        held(&self.state).path_max = Some(max);
+    }
+
+    /// How many steps were tried, taken or refused.
+    pub fn tries(&self) -> u32 {
+        held(&self.state).tries
+    }
+
+    /// The answer of a change taken: lost when [`MemorySink::lose_next`] asked.
+    fn answer<T>(&self, taken: T) -> Result<T, PutRefused> {
+        match std::mem::take(&mut held(&self.state).lose) {
+            true => Err(PutRefused::Transient(RetryAfter(0))),
+            false => Ok(taken),
+        }
+    }
+
+    /// The id a new item at `place` is made under: the one reserved for it, unless something
+    /// has it (a conflict, as a drive answers), else a new one.
+    fn id_for(&self, place: &Place) -> Result<RemoteId, PutRefused> {
+        match &place.id {
+            Some(id) => match self.listing.entry(id).ok().flatten() {
+                Some(there) => Err(PutRefused::Conflict(Conflict {
+                    item: id.clone(),
+                    base: BaseVersion::Absent,
+                    remote: RemoteSide::Exists(id.clone(), there.version),
+                })),
+                None => Ok(id.clone()),
+            },
+            None => Ok(self.new_id()),
+        }
     }
 
     /// How many upload sessions it was told to give up.
@@ -408,15 +469,19 @@ impl MemorySink {
     }
 
     fn check(&self, name: Option<&str>) -> Result<(), PutRefused> {
-        let state = held(&self.state);
+        let mut state = held(&self.state);
+        state.tries += 1;
         match state.refuse {
             Some(Refuse::Offline) => return Err(PutRefused::Transient(RetryAfter(0))),
             Some(Refuse::Quota) => return Err(PutRefused::Quota),
             Some(Refuse::Forbidden) => return Err(PutRefused::Forbidden),
+            Some(Refuse::SignedOut) => return Err(PutRefused::Unauthorized),
+            Some(Refuse::InUse) => return Err(PutRefused::InUse(RetryAfter(0))),
+            Some(Refuse::Declined) => return Err(PutRefused::Declined),
             None => {}
         }
         match (name, state.names) {
-            (Some(name), Some(rule)) if !rule(name) => Err(PutRefused::Forbidden),
+            (Some(name), Some(rule)) if !rule(name) => Err(PutRefused::NameRefused),
             _ => Ok(()),
         }
     }
@@ -439,6 +504,9 @@ impl MemorySink {
     }
 
     fn free(&self, place: &Place, except: Option<&RemoteId>) -> Result<(), PutRefused> {
+        if held(&self.state).twins {
+            return Ok(());
+        }
         let taken = self
             .listing
             .children(place.parent.as_ref())
@@ -471,11 +539,44 @@ impl Sink for MemorySink {
         held(&self.state).names.is_none_or(|rule| rule(name))
     }
 
+    fn path_max(&self) -> Option<usize> {
+        held(&self.state).path_max
+    }
+
+    fn look<'a>(&'a self, item: &'a RemoteId) -> Sending<'a, Option<Found>> {
+        Box::pin(async move {
+            let Some(entry) = self.listing.entry(item).ok().flatten() else {
+                return Ok(None);
+            };
+            let kind = self.source.hashes();
+            let hash = held(&self.source.bytes)
+                .get(item)
+                .and_then(|bytes| crate::hash::of_bytes(kind, bytes))
+                .map(ContentHash);
+            Ok(Some(Found {
+                version: entry.version,
+                size: entry.size.0,
+                hash,
+                folder: entry.kind == ItemKind::Folder,
+            }))
+        })
+    }
+
+    fn reserve_ids(&self, count: usize) -> Sending<'_, Vec<RemoteId>> {
+        Box::pin(async move {
+            let reserving = held(&self.state).reserving;
+            match reserving {
+                true => Ok((0..count).map(|_| self.new_id()).collect()),
+                false => Ok(Vec::new()),
+            }
+        })
+    }
+
     fn make_folder<'a>(&'a self, place: &'a Place) -> Sending<'a, Written> {
         Box::pin(async move {
             self.check(Some(&place.name))?;
+            let id = self.id_for(place)?;
             self.free(place, None)?;
-            let id = self.new_id();
             let version = self.version();
             let mut folder = entry(&id.0, None, &place.name, ItemKind::Folder, 0, &version.0);
             folder.parent = place.parent.clone();
@@ -483,7 +584,7 @@ impl Sink for MemorySink {
             held(&self.state)
                 .took
                 .push(Took::Folder(parent_text(place), place.name.clone()));
-            Ok(Written { id, version })
+            self.answer(Written { id, version })
         })
     }
 
@@ -496,10 +597,11 @@ impl Sink for MemorySink {
             self.check(name)?;
             let (id, mut file) = match &upload.to {
                 UploadTo::New(place) => {
+                    let id = self.id_for(place)?;
                     self.free(place, None)?;
                     let mut file = entry("", None, &place.name, ItemKind::File, 0, "");
                     file.parent = place.parent.clone();
-                    (None, file)
+                    (Some(id), file)
                 }
                 UploadTo::Replace(id) => (Some(id.clone()), self.at_base(id, &upload.base)?),
             };
@@ -582,7 +684,7 @@ impl Sink for MemorySink {
                 UploadTo::Replace(id) => Took::Replace(id.0.clone(), size),
             });
             self.show(file);
-            Ok(Written { id, version })
+            self.answer(Written { id, version })
         })
     }
 

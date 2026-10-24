@@ -410,7 +410,7 @@ async fn without_the_relays_bearer_every_request_is_refused_and_the_replica_neve
     assert_eq!(bare.quota().await, Err(ReplicaError::Unauthorized));
     assert_eq!(
         bare.put(new_item("a.jpg", b"x"), BaseVersion::Absent).await,
-        Err(PutRefused::Forbidden)
+        Err(PutRefused::Unauthorized)
     );
     assert!(
         server

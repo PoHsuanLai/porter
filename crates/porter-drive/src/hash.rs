@@ -50,7 +50,7 @@ impl Hasher {
 }
 
 /// The `kind` hash of `bytes`; `None` for a kind not computed here.
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 pub(crate) fn of_bytes(kind: HashKind, bytes: &[u8]) -> Option<String> {
     let mut hasher = Hasher::of(kind)?;
     hasher.update(bytes);

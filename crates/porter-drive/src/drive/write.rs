@@ -168,8 +168,56 @@ impl Inner {
             || (*folder != NodeId::Top && self.local_only(folder));
         match (stays, &self.sink) {
             (false, Some(sink)) if !sink.accepts_name(name) => Err(WriteError::BadName),
+            (false, Some(_)) => self.check_path(folder, name, 0),
             _ => Ok(()),
         }
+    }
+
+    /// Refuses `name` in `folder` when the path it makes from the top of the drive, with
+    /// `below` more characters of what is inside it, is longer than the drive takes.
+    fn check_path(&self, folder: &NodeId, name: &str, below: usize) -> Result<(), WriteError> {
+        let Some(max) = self.sink.as_ref().and_then(|sink| sink.path_max()) else {
+            return Ok(());
+        };
+        let mut len = name.chars().count() + below;
+        let mut at = self.canonical(folder);
+        for _ in 0..super::DEPTH {
+            if at == NodeId::Top {
+                break;
+            }
+            len += 1 + self.node_name(&at).map_or(0, |name| name.chars().count());
+            match self.parent_of(&at) {
+                Ok(Some(parent)) => at = parent,
+                _ => break,
+            }
+        }
+        match len > max {
+            true => Err(WriteError::BadName),
+            false => Ok(()),
+        }
+    }
+
+    /// The most characters a path inside the folder `id` adds to its own: a `/` and a name for
+    /// each step down.
+    fn deepest_below(&self, id: &NodeId, depth: usize) -> usize {
+        if depth >= super::DEPTH {
+            return 0;
+        }
+        self.children(id)
+            .unwrap_or_default()
+            .iter()
+            .map(|child| {
+                let name = self
+                    .node_name(&child.id)
+                    .map_or(0, |name| name.chars().count());
+                let inside = match child.kind {
+                    NodeKind::Folder => self.deepest_below(&child.id, depth + 1),
+                    _ => 0,
+                };
+                1 + name + inside
+            })
+            .max()
+            .unwrap_or(0)
     }
 
     /// `folder` as a folder to make something in.
@@ -1042,6 +1090,10 @@ impl Drive {
         let wanted = naming::drive_name(name, &node.name, &now, &kind);
         if wanted != now || *folder != node.parent {
             inner.check_name(folder, &wanted, file)?;
+            // What is inside a folder moves with it, at paths longer by as much.
+            if !file && !inner.local_only(folder) {
+                inner.check_path(folder, &wanted, inner.deepest_below(&id, 0))?;
+            }
         }
         let place = |edit: &mut Edit, _: &mut Index| {
             edit.parent = folder.clone();

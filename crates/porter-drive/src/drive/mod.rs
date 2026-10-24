@@ -257,6 +257,11 @@ pub(crate) struct Inner {
     /// Told when a listing pass is wanted (a change was sent, or the drive's version is newer).
     wanted: Arc<Notify>,
     paused: AtomicBool,
+    /// The drive refused the account's sign-in: nothing is sent until it is signed in again.
+    signed_out: AtomicBool,
+    /// Changes the drive could not take now with words to say why (in use there), until their
+    /// next try.
+    waiting: Mutex<HashMap<NodeId, &'static str>>,
     /// Changes the drive answered with a newer version: held until a listing pass shows it.
     stale: Mutex<HashSet<NodeId>>,
     /// When the sender tries again after the drive could not take a change, and how long it
@@ -551,6 +556,8 @@ impl Drive {
             wake: Arc::new(Notify::new()),
             wanted: Arc::new(Notify::new()),
             paused: AtomicBool::new(false),
+            signed_out: AtomicBool::new(false),
+            waiting: Mutex::default(),
             stale: Mutex::default(),
             backoff: Mutex::new(None),
             files: Mutex::default(),

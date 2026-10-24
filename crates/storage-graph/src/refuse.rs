@@ -1,7 +1,9 @@
 //! What a status the replica did not expect means to the contract: a read that failed
 //! ([`ReplicaError`]) or a write that was refused ([`PutRefused`]). Graph throttles with `429`
-//! and `503` and a `Retry-After` in seconds.
+//! and `503` and a `Retry-After` in seconds, and answers `423` for an item locked on the drive
+//! (open in an Office app there, or checked out).
 
+use crate::json::ErrorBody;
 use porter_http::{HttpError, HttpResponse};
 use porter_sync::{PutRefused, ReplicaError, RetryAfter};
 
@@ -10,6 +12,12 @@ const RETRY: RetryAfter = RetryAfter(30);
 
 fn retry_after(response: &HttpResponse) -> RetryAfter {
     response.retry_after_seconds().map_or(RETRY, RetryAfter)
+}
+
+/// The code an error's answer gives (`nameAlreadyExists`, `invalidRequest`).
+pub fn error_code(response: &HttpResponse) -> Option<String> {
+    let body: ErrorBody = serde_json::from_slice(&response.body).ok()?;
+    body.error?.code
 }
 
 /// A read answered with `response`, which was not what it needed.
@@ -25,7 +33,10 @@ pub fn read_error(response: &HttpResponse) -> ReplicaError {
 pub fn write_error(response: &HttpResponse) -> PutRefused {
     match response.status.0 {
         507 => PutRefused::Quota,
-        400 | 401 | 403 | 405 | 409 | 413 | 423 => PutRefused::Forbidden,
+        401 => PutRefused::Unauthorized,
+        423 => PutRefused::InUse(retry_after(response)),
+        409 => PutRefused::Declined,
+        400 | 403 | 405 | 413 => PutRefused::Forbidden,
         _ => PutRefused::Transient(retry_after(response)),
     }
 }
@@ -43,7 +54,8 @@ pub fn unreached(error: HttpError) -> ReplicaError {
 /// token the server refused.
 pub fn refused(error: ReplicaError) -> PutRefused {
     match error {
-        ReplicaError::Unauthorized | ReplicaError::NeedsConsent => PutRefused::Forbidden,
+        ReplicaError::Unauthorized => PutRefused::Unauthorized,
+        ReplicaError::NeedsConsent => PutRefused::Forbidden,
         ReplicaError::Transient(after) => PutRefused::Transient(after),
         ReplicaError::Gone | ReplicaError::AnchorExpired => PutRefused::Transient(RetryAfter(1)),
     }
@@ -94,9 +106,12 @@ mod tests {
     fn a_refused_write_is_classed_by_its_status() {
         const CASES: &[(u16, Option<&str>, PutRefused)] = &[
             (507, None, PutRefused::Quota),
+            (401, None, PutRefused::Unauthorized),
             (403, None, PutRefused::Forbidden),
+            (409, None, PutRefused::Declined),
             (413, None, PutRefused::Forbidden),
-            (423, None, PutRefused::Forbidden),
+            (423, None, PutRefused::InUse(RETRY)),
+            (423, Some("12"), PutRefused::InUse(RetryAfter(12))),
             (429, Some("7"), PutRefused::Transient(RetryAfter(7))),
             (502, None, PutRefused::Transient(RETRY)),
         ];
@@ -113,6 +128,10 @@ mod tests {
             PutRefused::Forbidden
         );
         assert_eq!(refused(ReplicaError::NeedsConsent), PutRefused::Forbidden);
+        assert_eq!(
+            refused(ReplicaError::Unauthorized),
+            PutRefused::Unauthorized
+        );
         assert_eq!(
             unreached(HttpError::Unreachable),
             ReplicaError::Transient(RETRY)
