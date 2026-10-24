@@ -823,20 +823,40 @@ fn drive_folders(candidates: &[Candidate]) -> BTreeMap<porter_core::AccountId, S
         Some(AppFolderStore::Graph(_)) => "OneDrive",
         _ => "Google Drive",
     };
+    folder_names(
+        candidates
+            .iter()
+            .map(|c| (c.account.clone(), provider(c), c.label.0.as_str())),
+    )
+}
+
+/// The folder name of each `(account, provider, label)`: the provider's name, with the label
+/// after it when a provider has two, a `/` shown as porter-drive shows it, and two that would
+/// still be one name told apart as porter-drive tells a folder's items apart ("OneDrive (Work)",
+/// "OneDrive (Work) 2"), the account first by id keeping it, so a folder is never shared and
+/// keeps its name across restarts.
+fn folder_names<'a>(
+    drives: impl IntoIterator<Item = (porter_core::AccountId, &'a str, &'a str)>,
+) -> BTreeMap<porter_core::AccountId, String> {
+    let mut drives: Vec<_> = drives.into_iter().collect();
+    drives.sort_by(|a, b| a.0.cmp(&b.0));
     let mut count: BTreeMap<&str, usize> = BTreeMap::new();
-    for candidate in candidates {
-        *count.entry(provider(candidate)).or_default() += 1;
+    for (_, provider, _) in &drives {
+        *count.entry(provider).or_default() += 1;
     }
-    candidates
+    let bases: Vec<String> = drives
         .iter()
-        .map(|c| {
-            let name = provider(c);
-            let folder = match count.get(name).copied().unwrap_or(0) {
-                0 | 1 => name.to_owned(),
-                _ => porter_drive::naming::shown_base(&format!("{name} ({})", c.label.0)),
-            };
-            (c.account.clone(), folder)
-        })
+        .map(
+            |(_, provider, label)| match count.get(provider).copied().unwrap_or(0) {
+                0 | 1 => (*provider).to_owned(),
+                _ => porter_drive::naming::shown_base(&format!("{provider} ({label})")),
+            },
+        )
+        .collect();
+    drives
+        .into_iter()
+        .zip(porter_drive::naming::assign(&bases))
+        .map(|((account, _, _), folder)| (account, folder))
         .collect()
 }
 
@@ -890,5 +910,20 @@ mod tests {
         assert!(!reconciles(&Err(crate::journal::JournalError::Corrupt(
             "a test".into()
         ))));
+    }
+
+    #[test]
+    fn two_drives_never_share_a_folder() {
+        let id = |n: &str| porter_core::AccountId::parse(n).expect("id");
+        let names = folder_names([
+            (id("acct-b"), "OneDrive", "Work"),
+            (id("acct-a"), "OneDrive", "Work"),
+            (id("acct-c"), "OneDrive", "a/b"),
+            (id("acct-d"), "Google Drive", "Home"),
+        ]);
+        assert_eq!(names[&id("acct-a")], "OneDrive (Work)");
+        assert_eq!(names[&id("acct-b")], "OneDrive (Work) 2");
+        assert_eq!(names[&id("acct-c")], "OneDrive (a\u{FF0F}b)");
+        assert_eq!(names[&id("acct-d")], "Google Drive");
     }
 }
