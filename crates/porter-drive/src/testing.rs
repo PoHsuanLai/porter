@@ -268,6 +268,7 @@ struct SinkState {
     bin: Vec<String>,
     lagging: Option<Vec<Option<Entry>>>,
     lag_removed: Vec<RemoteId>,
+    gate: Option<Arc<Semaphore>>,
 }
 
 /// The writes of a drive held in memory: what it takes changes a [`MemoryListing`] and a
@@ -330,6 +331,18 @@ impl MemorySink {
     /// The names in the recycle bin.
     pub fn bin(&self) -> Vec<String> {
         held(&self.state).bin.clone()
+    }
+
+    /// Holds every upload after its first chunk until [`MemorySink::release`].
+    pub fn hold(&self) {
+        held(&self.state).gate = Some(Arc::new(Semaphore::new(0)));
+    }
+
+    /// Lets every held upload go on, and those after.
+    pub fn release(&self) {
+        if let Some(gate) = held(&self.state).gate.take() {
+            gate.add_permits(Semaphore::MAX_PERMITS / 2);
+        }
     }
 
     /// Holds what it takes out of the listing until [`MemorySink::catch_up`].
@@ -527,6 +540,12 @@ impl Sink for MemorySink {
                 chunks += 1;
                 upload.progress.sent(at);
                 tokio::task::yield_now().await;
+                let gate = held(&self.state).gate.clone();
+                if let Some(gate) = gate
+                    && at < size
+                {
+                    let _through = gate.acquire().await;
+                }
             }
             if let Some(key) = &session {
                 held(&self.state).sessions.remove(key);

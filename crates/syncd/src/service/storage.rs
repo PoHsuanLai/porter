@@ -8,7 +8,11 @@
 //!   and Settings' only: an app is `AccessDenied` there too.
 //! - A path is absolute and inside one drive's `path`, by the names the drive's items are shown
 //!   by (`porter_drive::naming`). A path on no drive, or not there, is left out of `Items` and
-//!   refused by the actions with `NOT_ON_A_DRIVE`; the drive's own folder is no item.
+//!   refused by the actions with `NOT_ON_A_DRIVE`; the drive's own folder is no item, and
+//!   neither is what stays on this computer (`porter_drive::local_only`: the desktop's trash).
+//! - An item changed here is `waiting`, then `uploading` with its fraction while it is sent; a
+//!   file kept in two versions is `conflict`, and `other` is the other version's path; one the
+//!   drive refused is `error` with the words (`porter_drive::words`).
 //! - `SaveCopy` exports each online document (`porter_drive::Drive::save_copy`) and answers each
 //!   copy's absolute path; the copy waits to upload beside its document.
 //! - `Watch` joins the caller's connection to those told `DrivesChanged` and `ItemsChanged`
@@ -21,8 +25,9 @@ use crate::service::Access;
 use porter_dbus::{
     Caller, CallerRole, Callers, DRIVE_KEY_ACCOUNT, DRIVE_KEY_LABEL, DRIVE_KEY_LOCAL,
     DRIVE_KEY_PATH, DRIVE_KEY_PROVIDER, DRIVE_KEY_STATE, DRIVE_KEY_TOTAL, DRIVE_KEY_USED,
-    DRIVE_KEY_WORDS, Details, ITEM_KEY_FRACTION, ITEM_KEY_KEPT, ITEM_KEY_KIND, ITEM_KEY_STATE,
-    ITEM_KEY_URL, ITEM_KEY_WORDS, ItemDetails, ItemKind, ItemState, Refused, STORAGE_PATH, Saved,
+    DRIVE_KEY_WORDS, Details, ITEM_KEY_FRACTION, ITEM_KEY_KEPT, ITEM_KEY_KIND, ITEM_KEY_OTHER,
+    ITEM_KEY_STATE, ITEM_KEY_URL, ITEM_KEY_WORDS, ItemDetails, ItemKind, ItemState, Refused,
+    STORAGE_PATH, Saved,
 };
 use porter_drive::{Node, NodeId, NodeKind, Status, words};
 use std::collections::{BTreeMap, BTreeSet};
@@ -78,13 +83,15 @@ fn state_of(status: &Status) -> ItemState {
         porter_drive::ItemState::Downloading => ItemState::Downloading,
         porter_drive::ItemState::Downloaded => ItemState::Downloaded,
         porter_drive::ItemState::Waiting => ItemState::Waiting,
+        porter_drive::ItemState::Uploading => ItemState::Uploading,
+        porter_drive::ItemState::Conflict => ItemState::Conflict,
         porter_drive::ItemState::Error => ItemState::Error,
         _ => ItemState::Cloud,
     }
 }
 
-/// An item's details as `Items` gives them.
-pub fn item_details(status: &Status) -> Details {
+/// An item's details as `Items` gives them, on `drive` (where its other version is).
+pub fn item_details(drive: &LiveDrive, status: &Status) -> Details {
     let mut details = Details::new();
     let state = state_of(status);
     put(&mut details, ITEM_KEY_STATE, Value::from(state.as_str()));
@@ -95,8 +102,19 @@ pub fn item_details(status: &Status) -> Details {
         NodeKind::Online { .. } => ItemKind::Online,
     };
     put(&mut details, ITEM_KEY_KIND, Value::from(kind.as_str()));
-    if let (ItemState::Downloading, Some(fraction)) = (state, status.fraction) {
+    if let (ItemState::Downloading | ItemState::Uploading, Some(fraction)) =
+        (state, status.fraction)
+    {
         put(&mut details, ITEM_KEY_FRACTION, Value::F64(fraction));
+    }
+    if let (ItemState::Conflict, Some(other)) = (state, &status.other)
+        && let Some(path) = absolute(drive, other)
+    {
+        put(
+            &mut details,
+            ITEM_KEY_OTHER,
+            Value::from(path.to_string_lossy().as_ref()),
+        );
     }
     if let (ItemState::Error, Some(words)) = (state, &status.words) {
         put(&mut details, ITEM_KEY_WORDS, Value::from(words.as_str()));
@@ -175,6 +193,9 @@ impl<C: Callers> Core<C> {
                 return None;
             }
             let node = drive.drive.resolve(inside).ok().flatten()?;
+            if drive.drive.local_only(&node.id) {
+                return None;
+            }
             Some((drive, node))
         })
     }
@@ -204,6 +225,9 @@ impl<C: Callers> Core<C> {
 
     /// `id`'s absolute path and its details, then each folder above it, on `drive`.
     fn with_folders(&self, drive: &LiveDrive, id: &NodeId, into: &mut ItemDetails) {
+        if drive.drive.local_only(id) {
+            return;
+        }
         let Ok(Some(path)) = drive.drive.path_of(id) else {
             return;
         };
@@ -224,7 +248,7 @@ impl<C: Callers> Core<C> {
             if !into.contains_key(&key)
                 && let Some(status) = drive.drive.status(&id)
             {
-                into.insert(key, item_details(&status));
+                into.insert(key, item_details(drive, &status));
             }
             at = here.parent().filter(|p| !p.as_os_str().is_empty());
         }
@@ -295,7 +319,7 @@ impl<C: Callers> StorageObject<C> {
             .filter_map(|text| {
                 let (drive, node) = self.0.find(&text)?;
                 let status = drive.drive.status(&node.id)?;
-                Some((text, item_details(&status)))
+                Some((text, item_details(&drive, &status)))
             })
             .collect())
     }

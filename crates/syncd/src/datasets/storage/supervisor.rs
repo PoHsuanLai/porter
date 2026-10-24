@@ -54,7 +54,7 @@ use porter_core::{AppName, Candidate, EndpointUrl, WebUrl};
 use porter_dbus::DriveState;
 use porter_drive::{CacheLimit, Drive, DriveConfig, ReplicaSource};
 use porter_drive_fuse::{DriveFs, Mounted, Mounter};
-use porter_sync::Replica;
+use porter_sync::{DriveWrite, Replica};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -466,7 +466,7 @@ where
     ) -> Result<Running<T>, String>
     where
         L: DriveReplica + WithFolders + 'static,
-        F: Replica + 'static,
+        F: Replica + DriveWrite + 'static,
     {
         let wiring = &self.wiring;
         let journal = Arc::new(
@@ -475,13 +475,16 @@ where
         );
         let listing = listing.with_folders(journal.folders().map_err(|e| e.to_string())?);
         let fetch = Arc::new(fetch);
-        let files = Drive::open(
+        // What is changed in the folder is kept in the cache first, then sent through the same
+        // replica the bytes come from.
+        let files = Drive::open_writable(
             DriveConfig {
                 limit: *self.limit.borrow(),
                 ..DriveConfig::new(wiring.paths.drive_cache_dir(account))
             },
             Arc::clone(&journal) as Arc<dyn porter_drive::Listing>,
             Arc::new(ReplicaSource(Arc::clone(&fetch))),
+            Arc::new(ReplicaSource(Arc::clone(&fetch))) as Arc<dyn porter_drive::Sink>,
         )
         .map_err(|e| e.to_string())?;
         let path = wiring.paths.cloud.join(folder);
@@ -563,6 +566,7 @@ where
             listing,
             self.config.drive_every,
             live.paused(),
+            files.listing_wanted(),
             told,
         ));
         Ok(Running::Drive {

@@ -1,7 +1,7 @@
 //! `org.quire.Storage1` as syncd serves it, on a private bus over drives held in memory: the
 //! frozen interface, who may call, the shapes `Drives` and `Items` answer, the actions and the
-//! words they refuse with, Save a Copy, pausing, and the signals a watcher hears. No folder is shown: nothing
-//! here mounts.
+//! words they refuse with, Save a Copy, pausing, what was changed here on its way to the drive,
+//! and the signals a watcher hears. No folder is shown: nothing here mounts.
 
 use crate::common;
 
@@ -10,14 +10,15 @@ use common::{ACCESS_DENIED, Known, client, error_name, eventually};
 use porter_core::AppName;
 use porter_dbus::{
     CallerRole, DRIVE_KEY_LOCAL, DRIVE_KEY_PATH, DRIVE_KEY_PROVIDER, DRIVE_KEY_STATE,
-    DRIVE_KEY_WORDS, ITEM_KEY_FRACTION, ITEM_KEY_KEPT, ITEM_KEY_KIND, ITEM_KEY_STATE, ITEM_KEY_URL,
-    STORAGE_PATH, SYNC_BUS, StorageProxy,
+    DRIVE_KEY_WORDS, ITEM_KEY_FRACTION, ITEM_KEY_KEPT, ITEM_KEY_KIND, ITEM_KEY_OTHER,
+    ITEM_KEY_STATE, ITEM_KEY_URL, STORAGE_PATH, SYNC_BUS, StorageProxy,
 };
-use porter_drive::testing::{MemoryListing, MemorySource};
-use porter_drive::{Drive, DriveConfig, words};
+use porter_drive::testing::{MemoryListing, MemorySink, MemorySource, Took};
+use porter_drive::{Drive, DriveConfig, NodeId, words};
 use std::collections::BTreeSet;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 use syncd::datasets::drive::{DriveSet, LiveDrive};
 use syncd::service::{Access, Hub, serve, serve_storage};
 use zbus::export::futures_core::Stream;
@@ -32,10 +33,21 @@ struct Rig {
     listing: Arc<MemoryListing>,
     source: Arc<MemorySource>,
     drive: Arc<LiveDrive>,
+    sink: Arc<MemorySink>,
     _server: zbus::Connection,
 }
 
+/// A drive that is read only.
 async fn rig() -> Rig {
+    rig_over(false).await
+}
+
+/// A drive that takes changes, sent through a sink held in memory.
+async fn writable() -> Rig {
+    rig_over(true).await
+}
+
+async fn rig_over(writable: bool) -> Rig {
     let bus = PrivateBus::start();
     let known = Known::default();
     let listing = Arc::new(MemoryListing::default());
@@ -53,14 +65,16 @@ async fn rig() -> Rig {
     listing.folder("k", None, "Kept");
     listing.file("p", Some("k"), "Photo.jpg", 3, "1");
     source.put("p", b"jpg".to_vec());
-    let files = Drive::open(
-        DriveConfig {
-            chunk: 2,
-            ..DriveConfig::new(bus.scratch().join("cache/one"))
-        },
-        listing.clone(),
-        source.clone(),
-    )
+    let sink = Arc::new(MemorySink::new(listing.clone(), source.clone(), 2));
+    let config = DriveConfig {
+        chunk: 2,
+        quiet: Duration::from_millis(30),
+        ..DriveConfig::new(bus.scratch().join("cache/one"))
+    };
+    let files = match writable {
+        true => Drive::open_writable(config, listing.clone(), source.clone(), sink.clone()),
+        false => Drive::open(config, listing.clone(), source.clone()),
+    }
     .expect("drive");
     let drive = Arc::new(LiveDrive::new(
         "one".to_owned(),
@@ -89,6 +103,7 @@ async fn rig() -> Rig {
         listing,
         source,
         drive,
+        sink,
         _server: server,
     }
 }
@@ -466,4 +481,122 @@ async fn save_a_copy_writes_the_document_next_to_it_and_refuses_what_has_no_file
     assert_eq!(text(copy, ITEM_KEY_KIND).as_deref(), Some("file"));
     let (saved, _) = proxy.save_copy(vec![at("Plan.gdoc")]).await.expect("again");
     assert_eq!(saved[&at("Plan.gdoc")], at("Plan 2.docx"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_change_made_here_waits_while_paused_then_uploads_and_is_downloaded_once_sent() {
+    let rig = writable().await;
+    let me = client(&rig.bus, &rig.known, FILES, CallerRole::App).await;
+    let proxy = storage(&me).await;
+    rig.drive.set_paused(true);
+    let files = &rig.drive.drive;
+    let work = files
+        .resolve("Work".as_ref())
+        .expect("resolve")
+        .expect("there")
+        .id;
+    let id = files.create(&work, "Notes.txt").expect("create");
+    files.write(&id, 0, b"notes").expect("write");
+    files.release_write(&id);
+    let lock = files.create(&work, ".~lock.Notes.txt#").expect("lock");
+    files.release_write(&lock);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(
+        state_of(&proxy, "Work/Notes.txt").await.as_deref(),
+        Some("waiting")
+    );
+    assert_eq!(state_of(&proxy, "Work").await.as_deref(), Some("waiting"));
+    let items = proxy
+        .items(vec![at("Work/.~lock.Notes.txt#")])
+        .await
+        .expect("items");
+    assert!(
+        items.is_empty(),
+        "a lock file is not the drive's: {items:?}"
+    );
+    assert_eq!(rig.sink.took(), [], "held while paused");
+
+    rig.sink.hold();
+    rig.drive.set_paused(false);
+    eventually("uploading", || {
+        files
+            .status(&id)
+            .is_some_and(|s| s.state == porter_drive::ItemState::Uploading)
+    })
+    .await;
+    let items = proxy
+        .items(vec![at("Work/Notes.txt")])
+        .await
+        .expect("items");
+    let notes = &items[&at("Work/Notes.txt")];
+    assert_eq!(text(notes, ITEM_KEY_STATE).as_deref(), Some("uploading"));
+    let fraction = notes
+        .get(ITEM_KEY_FRACTION)
+        .and_then(|v| f64::try_from(v).ok())
+        .expect("a fraction");
+    assert!(fraction > 0.0 && fraction < 1.0, "{fraction}");
+    assert_eq!(state_of(&proxy, "Work").await.as_deref(), Some("uploading"));
+    rig.sink.release();
+    eventually("sent", || !rig.sink.took().is_empty()).await;
+    assert_eq!(
+        rig.sink.took(),
+        [Took::New(Some("w".into()), "Notes.txt".into(), 5)]
+    );
+    eventually("downloaded once sent", || {
+        matches!(files.canonical(&id), NodeId::Remote(_))
+            && files
+                .status(&id)
+                .is_some_and(|s| s.state == porter_drive::ItemState::Downloaded)
+    })
+    .await;
+    assert_eq!(
+        state_of(&proxy, "Work/Notes.txt").await.as_deref(),
+        Some("downloaded")
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_file_changed_here_and_on_the_drive_shows_both_in_conflict_each_naming_the_other() {
+    let rig = writable().await;
+    let me = client(&rig.bus, &rig.known, FILES, CallerRole::App).await;
+    let proxy = storage(&me).await;
+    rig.drive.set_paused(true);
+    let files = &rig.drive.drive;
+    let report = NodeId::Remote(porter_sync::RemoteId("r".into()));
+    files.open_write(&report, true).await.expect("open");
+    files.write(&report, 0, b"mine").expect("write");
+    files.release_write(&report);
+    rig.listing.file("r", Some("w"), "Report.pdf", 6, "2");
+    rig.source.put("r", b"theirs".to_vec());
+    files.listing_changed();
+
+    let mine = at("Work/Report (this computer).pdf");
+    let theirs = at("Work/Report.pdf");
+    let items = proxy
+        .items(vec![mine.clone(), theirs.clone()])
+        .await
+        .expect("items");
+    assert_eq!(items.len(), 2, "{items:?}");
+    assert_eq!(
+        text(&items[&mine], ITEM_KEY_STATE).as_deref(),
+        Some("conflict")
+    );
+    assert_eq!(
+        text(&items[&theirs], ITEM_KEY_STATE).as_deref(),
+        Some("conflict")
+    );
+    assert_eq!(
+        text(&items[&mine], ITEM_KEY_OTHER).as_deref(),
+        Some(theirs.as_str())
+    );
+    assert_eq!(
+        text(&items[&theirs], ITEM_KEY_OTHER).as_deref(),
+        Some(mine.as_str())
+    );
+    assert_eq!(state_of(&proxy, "Work").await.as_deref(), Some("conflict"));
+    let refused = proxy
+        .remove_download(vec![mine.clone()])
+        .await
+        .expect("remove");
+    assert_eq!(refused[&mine], words::CONFLICT);
 }

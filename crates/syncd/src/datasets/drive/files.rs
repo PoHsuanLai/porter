@@ -108,10 +108,11 @@ impl LiveDrive {
         held(&self.standing).unshown = Some(words.to_owned());
     }
 
-    /// Pauses or resumes reading its changes.
+    /// Pauses or resumes reading its changes and sending what was changed here.
     pub fn set_paused(&self, paused: bool) {
         held(&self.standing).paused = paused;
         self.paused.send_replace(paused);
+        self.drive.set_paused(paused);
     }
 
     /// Whether it is paused, for its listing to wait on.

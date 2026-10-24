@@ -118,16 +118,19 @@ pub async fn list_once<R: DriveReplica>(
 /// ends the task when the grant goes; the journal stays.
 pub async fn keep_listing<R: DriveReplica>(journal: DriveJournal, replica: R, every: Duration) {
     let (_running, paused) = watch::channel(false);
-    keep_listing_told(Arc::new(journal), replica, every, paused, |_| {}).await;
+    let wanted = Arc::new(tokio::sync::Notify::new());
+    keep_listing_told(Arc::new(journal), replica, every, paused, wanted, |_| {}).await;
 }
 
 /// [`keep_listing`] over a journal shared with the drive's files, telling `told` how each pass
-/// ended. While `paused` says so no pass runs (a paused drive reads no changes).
+/// ended. While `paused` says so no pass runs (a paused drive reads no changes); told by
+/// `wanted` (the drive's files sent a change, or met a newer version), it lists at once.
 pub async fn keep_listing_told<R: DriveReplica>(
     journal: Arc<DriveJournal>,
     replica: R,
     every: Duration,
     mut paused: watch::Receiver<bool>,
+    wanted: Arc<tokio::sync::Notify>,
     mut told: impl FnMut(&Result<Pass, JournalError>) + Send,
 ) {
     loop {
@@ -153,6 +156,8 @@ pub async fn keep_listing_told<R: DriveReplica>(
             () = tokio::time::sleep(wait) => {}
             // Resumed (or paused): look again now.
             changed = paused.changed() => if changed.is_err() { return },
+            // A change was sent from here, or the drive has a newer version: look now.
+            () = wanted.notified() => {}
         }
     }
 }
