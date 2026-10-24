@@ -984,6 +984,8 @@ async fn new_bytes_whose_answer_was_lost_are_taken_as_sent_not_split_off() {
 #[tokio::test]
 async fn what_is_made_under_a_reserved_id_is_made_once_however_often_it_is_sent() {
     let rig = rig();
+    rig.source
+        .set_hashes(porter_core::capability::HashKind::Md5);
     // A drive that takes a second item of a name: only the id tells a retry from a new item.
     rig.sink.twins();
     rig.sink.reserving();
@@ -1159,4 +1161,198 @@ async fn what_was_not_sent_is_written_out_as_plain_files_when_the_drive_is_let_g
         words::kept_unsent(1, "~/Cloud/Drive"),
         "1 file that wasn't uploaded was kept in ~/Cloud/Drive."
     );
+}
+
+/// Meets a test's hold inside the drive once.
+fn meet(hook: &Arc<std::sync::Barrier>) -> tokio::task::JoinHandle<()> {
+    let hook = Arc::clone(hook);
+    tokio::task::spawn_blocking(move || {
+        hook.wait();
+    })
+}
+
+#[tokio::test]
+async fn bytes_written_between_two_tries_under_a_reserved_id_are_sent_over_what_the_first_made() {
+    let rig = rig();
+    rig.source
+        .set_hashes(porter_core::capability::HashKind::Md5);
+    rig.sink.reserving();
+    rig.sink.lose_next();
+    let id = rig.write_new(&NodeId::Top, "a.txt", b"first").await;
+    eventually("the first try", || rig.sink.tries() >= 1).await;
+    // Written again before the next try, whose bytes the drive does not hold.
+    let handle = rig.drive.open_write(&id, false).await.expect("open");
+    rig.drive
+        .write(handle, 0, b"FIRST, then more")
+        .await
+        .expect("write");
+    rig.drive.release_write(handle);
+    eventually("sent", || {
+        rig.sink.uploads().len() >= 2 && rig.drive.unsent() == 0
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    assert_eq!(
+        rig.sink.uploads(),
+        [b"first".to_vec(), b"FIRST, then more".to_vec()]
+    );
+    let took = rig.sink.took();
+    assert_eq!(took[0], Took::New(None, "a.txt".into(), 5));
+    assert!(matches!(&took[1], Took::Replace(_, 16)), "{took:?}");
+    assert_eq!(took.len(), 2, "{took:?}");
+}
+
+#[tokio::test]
+async fn a_new_file_is_never_taken_for_a_drive_item_another_change_here_is_of() {
+    let rig = rig();
+    rig.source
+        .set_hashes(porter_core::capability::HashKind::Md5);
+    rig.file("r", None, "a.txt", b"same");
+    rig.file("k", None, "Kept.txt", b"k");
+    rig.sink.refuse(Some(Refuse::Forbidden));
+    rig.drive
+        .rename(&remote("r"), &NodeId::Top, "b.txt")
+        .await
+        .expect("rename");
+    eventually("refused", || {
+        rig.drive
+            .inner
+            .edit(&remote("r"))
+            .is_some_and(|edit| edit.refused.is_some())
+    })
+    .await;
+    rig.sink.refuse(None);
+    // The drive's "a.txt" holds just these bytes, and is the file renamed here.
+    rig.write_new(&NodeId::Top, "a.txt", b"same").await;
+    eventually("tried", || rig.sink.tries() >= 2).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let edit = rig
+        .drive
+        .inner
+        .edit(&remote("r"))
+        .expect("the rename stays");
+    assert_eq!(edit.name, "b.txt");
+    eventually("sent as a file of its own", || {
+        rig.sink
+            .took()
+            .iter()
+            .any(|took| matches!(took, Took::New(None, _, 4)))
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_write_through_a_file_saved_over_never_lands_in_the_bytes_that_replaced_it() {
+    let rig = rig();
+    rig.file("r", None, "r.txt", b"old");
+    rig.drive.set_paused(true);
+    let handle = rig
+        .drive
+        .open_write(&remote("r"), false)
+        .await
+        .expect("open");
+    rig.drive.write(handle, 0, b"OLD").await.expect("write");
+    let new = rig.write_new(&NodeId::Top, "r.new", b"NEW").await;
+    let hook = Arc::new(std::sync::Barrier::new(2));
+    held(&rig.drive.inner.hooks).insert("saved over", Arc::clone(&hook));
+    let drive = rig.drive.clone();
+    let saving = tokio::spawn(async move { drive.rename(&new, &NodeId::Top, "r.txt").await });
+    // Saved over, and the bytes' locks let go.
+    meet(&hook).await.expect("met");
+    let late = rig.drive.write(handle, 0, b"ZZZ").await;
+    held(&rig.drive.inner.hooks).remove("saved over");
+    meet(&hook).await.expect("met");
+    saving.await.expect("joined").expect("saved");
+    assert_eq!(late, Err(WriteError::Gone));
+    rig.drive.release_write(handle);
+    rig.drive.set_paused(false);
+    eventually("sent", || rig.drive.unsent() == 0).await;
+    assert_eq!(rig.sink.uploads(), [b"NEW".to_vec()]);
+}
+
+#[tokio::test]
+async fn a_file_removed_while_open_is_still_written_and_never_sent() {
+    let rig = rig();
+    rig.file("r", None, "r.txt", b"old");
+    rig.file("k", None, "Kept.txt", b"k");
+    rig.drive.set_paused(true);
+    let handle = rig
+        .drive
+        .open_write(&remote("r"), false)
+        .await
+        .expect("open");
+    // `exec 3<>r.txt; rm r.txt; echo x >&3`
+    rig.drive.remove(&remote("r")).expect("remove");
+    assert_eq!(rig.drive.write(handle, 3, b"x").await, Ok(1));
+    rig.drive.release_write(handle);
+    rig.drive.set_paused(false);
+    rig.sent(1).await;
+    assert_eq!(rig.sink.took(), [Took::Trash("r".into())]);
+}
+
+#[tokio::test]
+async fn a_reader_of_a_file_the_drive_removed_closes_what_it_opened() {
+    let rig = rig();
+    rig.file("r", None, "Notes.txt", b"old");
+    rig.file("k", None, "Kept.txt", b"k");
+    rig.drive.set_paused(true);
+    rig.write_at("r", 3, b" new").await;
+    rig.drive.open_file(&remote("r")).expect("open to read");
+    rig.listing.remove("r");
+    rig.drive.listing_changed();
+    assert!(
+        rig.drive
+            .lookup(&NodeId::Top, "Notes.txt")
+            .expect("lookup")
+            .is_some(),
+        "kept as a new file"
+    );
+    rig.drive.release(&remote("r"));
+    let open = held(&rig.drive.inner.open).clone();
+    assert!(open.is_empty(), "{open:?}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_write_never_waits_for_the_copy_an_upload_takes() {
+    let rig = rig();
+    rig.file("r", None, "r.txt", b"0123456789");
+    let hook = Arc::new(std::sync::Barrier::new(2));
+    held(&rig.drive.inner.hooks).insert("snapshot", Arc::clone(&hook));
+    rig.write_at("r", 0, b"AAAA").await;
+    // The copy is taken; the bytes' lock is not.
+    meet(&hook).await.expect("met");
+    let handle = rig
+        .drive
+        .open_write(&remote("r"), false)
+        .await
+        .expect("open");
+    let wrote =
+        tokio::time::timeout(Duration::from_secs(5), rig.drive.write(handle, 4, b"BBBB")).await;
+    held(&rig.drive.inner.hooks).remove("snapshot");
+    meet(&hook).await.expect("met");
+    assert_eq!(wrote.expect("not held up by the copy"), Ok(4));
+    rig.drive.release_write(handle);
+    eventually("sent with the write", || rig.drive.unsent() == 0).await;
+    assert_eq!(
+        rig.sink.uploads(),
+        [b"AAAABBBB89".to_vec()],
+        "the copy of older bytes is not sent"
+    );
+}
+
+#[tokio::test]
+async fn a_file_this_computer_has_no_room_to_copy_for_its_upload_says_so() {
+    let rig = rig();
+    held(&rig.drive.inner.faults).insert("snapshot", std::io::ErrorKind::StorageFull);
+    let id = rig.write_new(&NodeId::Top, "a.txt", b"a").await;
+    eventually("said", || {
+        rig.drive
+            .status(&id)
+            .and_then(|status| status.words)
+            .as_deref()
+            == Some(words::NO_ROOM_HERE)
+    })
+    .await;
+    held(&rig.drive.inner.faults).clear();
+    rig.sent(1).await;
 }

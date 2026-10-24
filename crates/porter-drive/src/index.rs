@@ -288,6 +288,25 @@ impl Index {
             self.next_local = self.next_local.max(row.n + 1);
             self.edits.insert(edit.id.clone(), edit);
         }
+        // Bytes written before generations were kept: a generation of their own, so they are
+        // never taken for a copy that was not written to.
+        let unnumbered: Vec<NodeId> = self
+            .edits
+            .values()
+            .filter(|edit| edit.dirty.as_ref().is_some_and(|d| d.generation == 0))
+            .map(|edit| edit.id.clone())
+            .collect();
+        for id in unnumbered {
+            let generation = self.take_generation();
+            if let Some(edit) = self.edits.get_mut(&id)
+                && let Some(dirty) = edit.dirty.as_mut()
+            {
+                dirty.generation = generation;
+                if edit.session.is_some() && edit.session_of == 0 {
+                    edit.session_of = generation;
+                }
+            }
+        }
     }
 
     /// A new number for a file made here.
@@ -422,5 +441,34 @@ impl IndexFile {
     pub fn save(&self, index: &Index) -> std::io::Result<()> {
         let text = serde_json::to_string(index).map_err(std::io::Error::other)?;
         self.0.write(&text)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bytes_written_before_generations_were_kept_are_given_one() {
+        let mut index = Index::default();
+        let base = Base {
+            version: "v1".into(),
+            parent: None,
+            name: "a.txt".into(),
+            size: 1,
+            modified: None,
+        };
+        let id = NodeId::Remote(porter_sync::RemoteId("r".into()));
+        let mut edit = Edit::of_base(id.clone(), false, NodeId::Top, base, 0);
+        edit.dirty = Some(Dirty {
+            file: 1,
+            size: 2,
+            modified: 0,
+            generation: 0,
+        });
+        index.edits.insert(id.clone(), edit);
+        index.migrate();
+        let generation = index.edits[&id].dirty.as_ref().map(|d| d.generation);
+        assert!(generation.is_some_and(|g| g > 0), "{generation:?}");
     }
 }

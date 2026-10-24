@@ -419,7 +419,7 @@ async fn finish(weak: Weak<Inner>, transfer: Arc<Transfer>) {
         }
         None => {
             let same = inner
-                .entry(&transfer.id)
+                .entry_open(&transfer.id)
                 .ok()
                 .flatten()
                 .is_some_and(|entry| entry.version.0 == transfer.version);
@@ -568,7 +568,7 @@ impl Drive {
         // read waited on is joined, not fought, and one that went is gone.
         for _ in 0..8 {
             let entry = inner
-                .entry(remote)
+                .entry_open(remote)
                 .map_err(|_| ReadError::Cache)?
                 .ok_or(ReadError::Gone)?;
             match &entry.kind {

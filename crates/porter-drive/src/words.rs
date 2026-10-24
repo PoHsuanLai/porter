@@ -19,6 +19,8 @@ pub const IN_USE: &str = "This file is in use on the drive.";
 pub const NAME_REFUSED: &str = "The drive doesn't take this name.";
 /// A change the drive refused for a reason of its own.
 pub const DECLINED: &str = "The drive couldn't take this change.";
+/// A file to send could not be copied for its upload: this computer's disk is full.
+pub const NO_ROOM_HERE: &str = "There isn't room on this computer to send this file.";
 
 /// What removing an account kept: `count` files made or changed here that were not uploaded,
 /// written out as plain files in the drive's folder (`folder`, as people see it:
@@ -29,6 +31,7 @@ pub fn kept_unsent(count: usize, folder: &str) -> String {
         n => format!("{n} files that weren't uploaded were kept in {folder}."),
     }
 }
+
 /// A removal asked for an item with two versions.
 pub const CONFLICT: &str = "This file has two versions. Choose one first.";
 /// Keep Downloaded off, or a removal, asked for an item inside a kept folder.

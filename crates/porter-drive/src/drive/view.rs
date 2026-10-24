@@ -87,6 +87,16 @@ impl Inner {
         })
     }
 
+    /// The entry of `id` as [`Inner::entry`] shows it, or, removed here while it is open, the
+    /// drive's: it stays usable until it is closed.
+    pub(super) fn entry_open(&self, id: &RemoteId) -> Result<Option<Entry>, DriveError> {
+        let node = NodeId::Remote(id.clone());
+        match self.edit(&node).is_some_and(|edit| edit.removed) && self.is_open(&node) {
+            true => Ok(self.listing.entry(id)?),
+            false => self.entry(id),
+        }
+    }
+
     pub(super) fn top(&self) -> Node {
         Node {
             id: NodeId::Top,

@@ -283,6 +283,12 @@ pub(crate) struct Inner {
     /// twice there.
     #[cfg(test)]
     write_hook: Mutex<Option<Arc<std::sync::Barrier>>>,
+    /// A test's holds at named places, each met twice there, as `write_hook` is.
+    #[cfg(test)]
+    hooks: Mutex<HashMap<&'static str, Arc<std::sync::Barrier>>>,
+    /// A test's failures at named places: the error a step there meets instead of the disk.
+    #[cfg(test)]
+    faults: Mutex<HashMap<&'static str, std::io::ErrorKind>>,
     /// The cache directory's lock, held for as long as the drive lives. A field drops after
     /// `drop` has written the index, so the next drive reads it whole.
     _lock: std::fs::File,
@@ -567,6 +573,10 @@ impl Drive {
             local_made: AtomicBool::new(false),
             #[cfg(test)]
             write_hook: Mutex::default(),
+            #[cfg(test)]
+            hooks: Mutex::default(),
+            #[cfg(test)]
+            faults: Mutex::default(),
             _lock: lock,
         });
         let weak = Arc::downgrade(&inner);
@@ -896,6 +906,23 @@ impl Inner {
         if let Some(hold) = hook {
             hold.wait();
             hold.wait();
+        }
+    }
+
+    /// Waits at the test's hold `name`, if it set one.
+    fn at_hook(&self, name: &str) {
+        let hook = held(&self.hooks).get(name).cloned();
+        if let Some(hold) = hook {
+            hold.wait();
+            hold.wait();
+        }
+    }
+
+    /// The failure the test set at `name`, if any.
+    fn fault(&self, name: &str) -> std::io::Result<()> {
+        match held(&self.faults).get(name) {
+            Some(kind) => Err(std::io::Error::from(*kind)),
+            None => Ok(()),
         }
     }
 }

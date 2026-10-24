@@ -384,18 +384,21 @@ impl Inner {
         keep: Option<u64>,
     ) -> Result<(), WriteError> {
         let id = self.canonical(id);
+        // Removed while open, it is still written until it is closed (never sent).
+        let mut removed = false;
         if let Some(edit) = self.edit(&id) {
-            if edit.removed {
+            if edit.removed && !self.is_open(&id) {
                 return Err(WriteError::Gone);
             }
             if edit.dirty.is_some() {
                 return Ok(());
             }
+            removed = edit.removed;
         }
         let NodeId::Remote(remote) = &id else {
             return Err(WriteError::Gone);
         };
-        let entry = self.entry(remote)?.ok_or(WriteError::Gone)?;
+        let entry = self.entry_open(remote)?.ok_or(WriteError::Gone)?;
         match entry.kind {
             ItemKind::Folder => return Err(WriteError::Folder),
             ItemKind::Online { .. } => return Err(WriteError::NotAllowed),
@@ -425,7 +428,7 @@ impl Inner {
         let cut = keep.is_some_and(|k| k != entry.size.0);
         let version = entry.version.0.clone();
         let modified = entry.modified.map_or_else(now_secs, |m| m.0);
-        let took = self.change_remote(remote, |edit, index| {
+        let made_dirty = |edit: &mut Edit, index: &mut Index| {
             // Made dirty meanwhile, or changed against another version since: this copy is not
             // the one to change.
             if edit.dirty.is_some() || edit.base.as_ref().is_none_or(|b| b.version != version) {
@@ -442,7 +445,11 @@ impl Inner {
             });
             edit.refused = None;
             true
-        });
+        };
+        let took = match removed {
+            true => self.change(&id, made_dirty).ok_or(WriteError::Gone),
+            false => self.change_remote(remote, made_dirty),
+        };
         match took {
             Ok(true) => {
                 self.wrote(&path);
@@ -780,26 +787,29 @@ impl Drive {
     /// Writes what was made or changed here and not sent yet out as plain files at their paths
     /// below `into` (the drive's folder, once nothing is shown there): what removing the account
     /// keeps of it. Their folders are made as needed, and so is a folder made here; a name
-    /// taken there takes the next free number. How many files were written. The cache itself
-    /// is left as it is.
+    /// taken there takes the next free number. What stays on this computer (the desktop's
+    /// trash) is kept too, where it is. How many files were written. The cache itself is left
+    /// as it is.
     ///
     /// # Errors
-    /// A file or folder could not be written there.
+    /// A file or folder could not be written there, or a file's place here could not be told.
     pub fn keep_unsent(&self, into: &Path) -> std::io::Result<usize> {
         let inner = &self.inner;
         let edits: Vec<Edit> = held(&inner.index).edits.values().cloned().collect();
         let mut kept = 0;
         for edit in edits {
-            if edit.removed || inner.local_only(&edit.id) {
+            let made_folder = edit.folder && edit.base.is_none();
+            if edit.removed || (edit.dirty.is_none() && !made_folder) {
                 continue;
             }
             let Some(path) = self.path_here(&edit.id) else {
-                continue;
+                return Err(std::io::Error::other(format!(
+                    "where {:?} is here could not be told",
+                    edit.name
+                )));
             };
             let Some(dirty) = &edit.dirty else {
-                if edit.folder && edit.base.is_none() {
-                    std::fs::create_dir_all(into.join(&path))?;
-                }
+                std::fs::create_dir_all(into.join(&path))?;
                 continue;
             };
             let to = free_path(&into.join(&path));
@@ -1366,8 +1376,11 @@ impl Drive {
                 if let Some(old) = old.filter(|old| old.file != file) {
                     inner.drop_file(old.file);
                 }
-                drop(guards);
+                // Before the bytes' locks go: no write of a handle of `over` gets in between.
                 inner.detach(over);
+                drop(guards);
+                #[cfg(test)]
+                inner.at_hook("saved over");
                 match from {
                     NodeId::Local(n) => inner.alias(*n, over),
                     _ => {

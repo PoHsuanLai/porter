@@ -162,10 +162,13 @@ impl Progress for Told {
             }
         }
         inner.touched();
-        // On the disk at once: an upload resumes after a crash.
-        if let Err(why) = inner.flush_now() {
-            eprintln!("porter-drive: the cache's index could not be written: {why}");
-        }
+        // On the disk at once (an upload resumes after a crash), off the runtime's threads.
+        let writer = Arc::clone(&inner);
+        drop(inner.runtime.spawn_blocking(move || {
+            if let Err(why) = writer.flush_now() {
+                eprintln!("porter-drive: the cache's index could not be written: {why}");
+            }
+        }));
     }
 
     fn sent(&self, bytes: u64) {
@@ -288,27 +291,46 @@ impl Inner {
             .filter(|_| edit.session_of == generation)
     }
 
-    /// Takes the copy an upload of `id`'s bytes `local/<n>` of `generation` sends, under their
-    /// lock: the copy and its size, or `None` when the bytes changed since (the step is looked
-    /// at again).
+    /// Takes the copy an upload of `id`'s bytes `local/<n>` of `generation` sends: the copy and
+    /// its size, or `None` when the bytes changed since (the step is looked at again). The copy
+    /// is made without the bytes' lock, which a write waits on (a large file's copy takes long),
+    /// and kept only when the bytes are still that generation under the lock after it.
     fn take_snapshot(
         &self,
         id: &NodeId,
         n: u64,
         generation: u64,
     ) -> std::io::Result<Option<(PathBuf, u64)>> {
-        let lock = self.file_lock(n);
-        let _bytes = held(&lock);
-        let dirty = held(&self.index)
-            .edits
-            .get(id)
-            .and_then(|edit| edit.dirty.clone());
-        let Some(dirty) = dirty.filter(|d| d.file == n && d.generation == generation) else {
+        let current = || {
+            held(&self.index)
+                .edits
+                .get(id)
+                .and_then(|edit| edit.dirty.clone())
+                .filter(|d| d.file == n && d.generation == generation)
+        };
+        let Some(dirty) = current() else {
             return Ok(None);
         };
         let to = self.local_file(n).with_extension("sending");
-        super::write::clone_file(&self.local_file(n), &to, dirty.size)?;
-        Ok(Some((to, dirty.size)))
+        let copied = super::write::clone_file(&self.local_file(n), &to, dirty.size);
+        #[cfg(test)]
+        let copied = copied.and_then(|()| self.fault("snapshot"));
+        #[cfg(test)]
+        self.at_hook("snapshot");
+        let lock = self.file_lock(n);
+        let _bytes = held(&lock);
+        match (copied, current()) {
+            (Ok(()), Some(_)) => Ok(Some((to, dirty.size))),
+            (copied, now) => {
+                let _ = std::fs::remove_file(&to);
+                match (copied, now) {
+                    // Written, sent or removed meanwhile: what it is now is looked at again.
+                    (_, None) => Ok(None),
+                    (Err(why), Some(_)) => Err(why),
+                    (Ok(()), Some(_)) => Ok(None),
+                }
+            }
+        }
     }
 
     /// The next step to send, oldest change first among those ready.
@@ -366,8 +388,10 @@ impl Inner {
         *backoff = Some((Instant::now() + wait, wait));
     }
 
-    /// The drive took `op`: the index says what the drive has now.
-    fn landed(self: &Arc<Self>, op: Op, written: Option<Written>) {
+    /// The drive took `op` (with `made`, only the item it makes: an earlier try made it with
+    /// other bytes than these): the index says what the drive has now. The index is written to
+    /// the disk after, by the sender, off the runtime's threads.
+    fn landed(self: &Arc<Self>, op: Op, written: Option<Written>, made: bool) {
         // The bytes' lock first: no write is half-noted while they are taken as sent.
         let lock = match &op {
             Op::Upload { file, .. } => Some(self.file_lock(*file)),
@@ -405,7 +429,7 @@ impl Inner {
                     }
                 }
                 Some(mut edit) => {
-                    self.took(&mut index, &mut edit, &op, written.as_ref());
+                    self.took(&mut index, &mut edit, &op, written.as_ref(), made);
                     if let (NodeId::Local(n), NodeId::Remote(_)) = (op.id(), &edit.id) {
                         aliased = Some((*n, edit.id.clone()));
                     }
@@ -420,10 +444,6 @@ impl Inner {
         }
         *held(&self.backoff) = None;
         self.touched();
-        // On the disk at once: what the drive has is never sent again.
-        if let Err(why) = self.flush_now() {
-            eprintln!("porter-drive: the cache's index could not be written: {why}");
-        }
         self.wanted.notify_one();
         self.wake.notify_one();
         self.emit(changed);
@@ -456,8 +476,16 @@ impl Inner {
     }
 
     /// Notes in `edit` what the drive has after it took `op`, under the index's lock (and an
-    /// upload's bytes' lock).
-    fn took(&self, index: &mut Index, edit: &mut Edit, op: &Op, written: Option<&Written>) {
+    /// upload's bytes' lock). With `made`, the upload made the item and not with these bytes:
+    /// it takes the drive's id and version, and its bytes are sent again over them.
+    fn took(
+        &self,
+        index: &mut Index,
+        edit: &mut Edit,
+        op: &Op,
+        written: Option<&Written>,
+        made: bool,
+    ) {
         // A removal made meanwhile is still to be sent, against the version the drive has now.
         let awaiting = |before: Option<String>, edit: &Edit| {
             (!edit.removed).then_some(Awaiting { before, passes: 0 })
@@ -523,10 +551,20 @@ impl Inner {
                     modified: edit.dirty.as_ref().map(|d| d.modified),
                 });
                 edit.awaiting = awaiting(before.clone(), edit);
+                if made {
+                    // The drive holds an earlier try's bytes: these are sent again over them.
+                    self.abandon(edit);
+                    if let Some(snapshot) = snapshot {
+                        let _ = std::fs::remove_file(snapshot);
+                    }
+                    return;
+                }
                 // The copy sent is the cache's copy of the new version.
                 if let Some(snapshot) = snapshot {
                     let to = self.content(id, &version.0);
-                    if std::fs::rename(snapshot, &to).is_ok() {
+                    if std::fs::rename(snapshot, &to).is_err() {
+                        let _ = std::fs::remove_file(snapshot);
+                    } else {
                         if let Some(old) = index.items.remove(&id.0)
                             && old.version != version.0
                         {
@@ -657,6 +695,10 @@ async fn snapshot(inner: &Arc<Inner>, mut op: Op) -> Option<Op> {
         Ok(Ok(None)) => None,
         Ok(Err(why)) => {
             eprintln!("porter-drive: a file to send could not be copied: {why}");
+            if why.kind() == std::io::ErrorKind::StorageFull {
+                held(&inner.waiting).insert(op.id().clone(), words::NO_ROOM_HERE);
+                inner.emit(vec![op.id().clone()]);
+            }
             inner.back_off(Duration::ZERO);
             None
         }
@@ -707,15 +749,24 @@ async fn reserved(inner: &Arc<Inner>, sink: &dyn Sink, mut op: Op) -> Option<Op>
     Some(op)
 }
 
+/// What the drive made of a step on an earlier try whose answer was lost.
+enum Adopted {
+    /// Just what the step sends: it is taken as sent.
+    Sent(Written),
+    /// The item the step makes, under the id reserved for it, with bytes of an earlier try:
+    /// it takes the id, and these bytes are sent again over it.
+    Made(Written),
+}
+
 /// What the drive made of `op` on an earlier try whose answer was lost, when `conflict` names
 /// it: the item made under the id reserved for it, or one that holds just what `op` sends (the
-/// same size and content hash).
+/// same size and content hash) and that no other change here is of.
 async fn adopted(
     inner: &Arc<Inner>,
     sink: &dyn Sink,
     op: &Op,
     conflict: &Conflict,
-) -> Option<Written> {
+) -> Option<Adopted> {
     let (there, version) = match (op, &conflict.remote) {
         (
             Op::Folder { .. }
@@ -739,15 +790,40 @@ async fn adopted(
         | Op::Upload {
             to: UploadTo::New(place),
             ..
-        } => place.id.as_ref(),
-        _ => None,
+        } => place.id.as_ref() == Some(there),
+        _ => false,
     };
-    if reserved == Some(there) {
-        return Some(Written {
-            id: there.clone(),
-            version: version.clone(),
-        });
+    let made = Written {
+        id: there.clone(),
+        version: version.clone(),
+    };
+    if reserved && matches!(op, Op::Folder { .. }) {
+        return Some(Adopted::Sent(made));
     }
+    // Another change here is of that item: it is not what this step made.
+    let theirs = NodeId::Remote(there.clone());
+    if !reserved && *op.id() != theirs && held(&inner.index).edits.contains_key(&theirs) {
+        return None;
+    }
+    let same = same_bytes(inner, sink, op, there).await;
+    match (same, reserved) {
+        (Some(version), _) => Some(Adopted::Sent(Written {
+            id: there.clone(),
+            version,
+        })),
+        (None, true) => Some(Adopted::Made(made)),
+        (None, false) => None,
+    }
+}
+
+/// The version of the drive's `there` when it holds just what the upload `op` sends (its size
+/// and content hash).
+async fn same_bytes(
+    inner: &Arc<Inner>,
+    sink: &dyn Sink,
+    op: &Op,
+    there: &RemoteId,
+) -> Option<RemoteVersion> {
     let Op::Upload {
         snapshot: Some(path),
         size,
@@ -765,10 +841,7 @@ async fn adopted(
         .await
         .ok()?
         .ok()??;
-    (ours == theirs.0).then(|| Written {
-        id: there.clone(),
-        version: found.version,
-    })
+    (ours == theirs.0).then_some(found.version)
 }
 
 /// Sends what was changed here, one step at a time, for as long as the drive lives.
@@ -857,10 +930,15 @@ pub(super) async fn sender(weak: Weak<Inner>, wake: Arc<Notify>) {
         *held(&inner.sending) = None;
         held(&inner.waiting).remove(op.id());
         // A conflict may be this step's own earlier try, whose answer was lost.
+        let mut made = false;
         let result = match result {
             Err(PutRefused::Conflict(conflict)) => {
                 match adopted(&inner, &*sink, &op, &conflict).await {
-                    Some(written) => Ok(Some(written)),
+                    Some(Adopted::Sent(written)) => Ok(Some(written)),
+                    Some(Adopted::Made(written)) => {
+                        made = true;
+                        Ok(Some(written))
+                    }
                     None => Err(PutRefused::Conflict(conflict)),
                 }
             }
@@ -875,7 +953,15 @@ pub(super) async fn sender(weak: Weak<Inner>, wake: Arc<Notify>) {
             let _ = std::fs::remove_file(path);
         }
         match result {
-            Ok(written) => inner.landed(op, written),
+            Ok(written) => {
+                inner.landed(op, written, made);
+                // On the disk before the next step: what the drive has is never sent again.
+                let writer = Arc::clone(&inner);
+                if let Ok(Err(why)) = tokio::task::spawn_blocking(move || writer.flush_now()).await
+                {
+                    eprintln!("porter-drive: the cache's index could not be written: {why}");
+                }
+            }
             Err(PutRefused::Transient(after)) => {
                 inner.back_off(Duration::from_secs(u64::from(after.0)));
                 inner.emit(vec![op.id().clone()]);

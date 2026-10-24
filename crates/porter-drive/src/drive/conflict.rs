@@ -158,12 +158,10 @@ impl Inner {
                         self.newer_on_the_drive(&mut index, edit, &base, entry, name)
                     }
                 };
-                // Its writers follow the bytes before anything can write again.
-                for (from, to, fresh) in &met.moved {
-                    match fresh {
-                        true => self.rekey_writes(from, to),
-                        false => self.rekey(from, to),
-                    }
+                // Its writers follow the bytes before anything can write again; who reads it
+                // still reads (and closes) what it opened.
+                for (from, to, _) in &met.moved {
+                    self.rekey_writes(from, to);
                 }
                 met
             };
