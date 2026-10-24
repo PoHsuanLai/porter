@@ -10,6 +10,8 @@ publish.workspace = true
 
 [dependencies]
 porter-drive = { workspace = true }
+# The helper syncd asks to mount when its sandbox may not (its client and wire format).
+porter-mountd = { workspace = true }
 # No default features: the pure-Rust mount, through `fusermount3` as a separate process, and no
 # libfuse linked (no GPL or LGPL linking).
 fuser = { version = "0.18", default-features = false }

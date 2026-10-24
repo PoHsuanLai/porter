@@ -504,7 +504,7 @@ where
                             account,
                             path.display()
                         );
-                        live.set_unshown();
+                        live.set_unshown(why.words());
                         None
                     }
                 }

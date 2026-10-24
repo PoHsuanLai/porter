@@ -23,7 +23,7 @@ use porter_core::{
 };
 use porter_dbus::CallerRole;
 use porter_drive::{CacheLimit, ItemState, words};
-use porter_drive_fuse::Mounter;
+use porter_drive_fuse::{Mounter, mountd};
 use porter_fake::{FakeProvider, ScriptedSheets};
 use porter_fake_servers::{FakeGraph, GraphHandle, Running};
 use porter_families::set::ProviderNames;
@@ -487,9 +487,12 @@ async fn the_cache_limit_row_sets_what_eviction_keeps_to() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_computer_that_cannot_show_the_folder_says_so_and_the_drive_still_lists() {
     let mut rig = rig_showing(agreeing(), |scratch| {
+        // No porter-mountd listens at its socket, so syncd mounts by itself, as when run by
+        // hand, and this computer has no FUSE device.
         DriveMount::Fuse(Mounter {
             device: scratch.join("no-fuse-device"),
             helper: "fusermount3".to_owned(),
+            mountd: Some(mountd::wire::socket_in(&scratch.join("run"))),
         })
     })
     .await;
@@ -501,4 +504,39 @@ async fn a_computer_that_cannot_show_the_folder_says_so_and_the_drive_still_list
     for word in ["mount", "FUSE", "fuse"] {
         assert!(!words::NO_FILES_HERE.contains(word), "{word}");
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn porter_mountd_is_asked_when_it_listens_and_its_words_are_shown() {
+    let mut rig = rig_showing(agreeing(), |scratch| {
+        // The drive's folder already holds a file of the person's: the helper refuses before it
+        // would run fusermount3.
+        let folder = scratch.join("syncd-home/Cloud/OneDrive");
+        std::fs::create_dir_all(&folder).expect("folder");
+        std::fs::write(folder.join("mine.txt"), b"mine").expect("file");
+        let socket = mountd::wire::socket_in(&scratch.join("run"));
+        let listener = mountd::server::bind_at(&socket).expect("bind");
+        let helper = mountd::server::Helper::new(
+            scratch.join("syncd-home/Cloud"),
+            mountd::server::Fusermount {
+                program: scratch.join("no-fusermount3").display().to_string(),
+                ..Default::default()
+            },
+        );
+        std::thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("asked");
+            let _ = helper.answer(&stream);
+        });
+        DriveMount::Fuse(Mounter {
+            device: scratch.join("no-fuse-device"),
+            mountd: Some(socket),
+            ..Mounter::default()
+        })
+    })
+    .await;
+    rig.graph.put_root_file("Docs/Plan.txt", b"plan");
+    let drive = shown(&mut rig).await;
+    let (state, said) = drive.state();
+    assert_eq!(state, porter_dbus::DriveState::Error);
+    assert_eq!(said.as_deref(), Some(mountd::words::FOLDER_IN_USE));
 }

@@ -287,7 +287,7 @@ EDGES=(
   "storage-graph: porter-core porter-http porter-sync storage-webdav"
   "storage-gdrive: porter-core porter-http porter-sync storage-webdav"
   "porter-drive: porter-core porter-fs porter-sync"
-  "porter-drive-fuse: porter-drive"
+  "porter-drive-fuse: porter-drive porter-mountd"
   "porter-mountd:"
   "syncd: ds-settings porter-client porter-core porter-daemon porter-dav porter-dbus porter-drive porter-drive-fuse porter-families porter-fs porter-http porter-provider porter-secrets porter-service porter-sheets porter-store porter-sync storage-gdrive storage-graph storage-webdav"
   "porter-rig: porter-client porter-core porter-dbus porter-drive porter-fake porter-fake-servers porter-infer"

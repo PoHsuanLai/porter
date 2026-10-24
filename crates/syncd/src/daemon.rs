@@ -33,7 +33,7 @@ use porter_service::{AccountService, Registry, RegistryStore};
 use porter_sheets::BusSheets;
 use porter_store::FileStore;
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -163,12 +163,19 @@ impl Config {
         // Storage over Graph: the app folder mirror for a Files grant, and Photos for a Photos
         // grant when `SYNCD_PHOTOS=on` (it is off otherwise: there is no Photos app yet).
         let storage = StorageConfig::default();
-        // Each drive shown in Files is a folder at `~/Cloud/<Drive>`, mounted through the
-        // system's `fusermount3`; its cache keeps what `syncd.toml` says.
+        // Each drive shown in Files is a folder at `~/Cloud/<Drive>`, mounted by porter-mountd
+        // (the unit's sandbox may not run the setuid `fusermount3`, nor make a mount anyone else
+        // sees), or by syncd itself through `fusermount3` when no helper listens (syncd run by
+        // hand); its cache keeps what `syncd.toml` says.
+        let mounter = Mounter {
+            mountd: std::env::var_os("XDG_RUNTIME_DIR")
+                .map(|runtime| porter_drive_fuse::mountd::wire::socket_in(Path::new(&runtime))),
+            ..Mounter::default()
+        };
         let storage = StorageConfig {
             rescan: rescan(BUILD, rescan_var, storage.rescan),
             photos: PhotosSwitch::from_var(std::env::var(PHOTOS_VAR).ok().as_deref()),
-            mount: DriveMount::Fuse(Mounter::default()),
+            mount: DriveMount::Fuse(mounter),
             cache_limit: read_cache_limit(&paths.settings),
             ..storage
         };

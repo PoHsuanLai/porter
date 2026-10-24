@@ -3,7 +3,7 @@
 //! that runs them and `org.quire.Storage1` that serves them.
 
 use porter_dbus::DriveState;
-use porter_drive::{Changed, Drive, NodeId, words};
+use porter_drive::{Changed, Drive, NodeId};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -28,8 +28,8 @@ fn held<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 struct Standing {
     listed: DriveState,
     words: Option<String>,
-    /// The folder could not be shown on this computer.
-    unshown: bool,
+    /// The folder could not be shown on this computer: what Files says.
+    unshown: Option<String>,
     paused: bool,
 }
 
@@ -72,7 +72,7 @@ impl LiveDrive {
             standing: Mutex::new(Standing {
                 listed: DriveState::Starting,
                 words: None,
-                unshown: false,
+                unshown: None,
                 paused: false,
             }),
             paused: watch::channel(false).0,
@@ -83,8 +83,8 @@ impl LiveDrive {
     /// then what the listing last said.
     pub fn state(&self) -> (DriveState, Option<String>) {
         let standing = held(&self.standing);
-        if standing.unshown {
-            return (DriveState::Error, Some(words::NO_FILES_HERE.to_owned()));
+        if let Some(words) = &standing.unshown {
+            return (DriveState::Error, Some(words.clone()));
         }
         if standing.paused {
             return (DriveState::Paused, None);
@@ -102,9 +102,10 @@ impl LiveDrive {
         changed
     }
 
-    /// Notes that its folder could not be shown on this computer.
-    pub fn set_unshown(&self) {
-        held(&self.standing).unshown = true;
+    /// Notes that its folder could not be shown on this computer, and the words Files shows
+    /// (porter-drive's `NO_FILES_HERE`, or porter-mountd's when it refused).
+    pub fn set_unshown(&self, words: &str) {
+        held(&self.standing).unshown = Some(words.to_owned());
     }
 
     /// Pauses or resumes reading its changes.
