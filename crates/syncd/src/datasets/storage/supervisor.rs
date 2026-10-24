@@ -145,7 +145,8 @@ enum Running<T: Transport> {
         limit: JoinHandle<()>,
         id: String,
         path: std::path::PathBuf,
-        mounted: Option<Mounted>,
+        /// Its folder being mounted, then mounted (dropping it takes the folder away).
+        mounting: Option<JoinHandle<Option<Mounted>>>,
     },
 }
 
@@ -492,22 +493,30 @@ where
             path.clone(),
             files.clone(),
         ));
-        let mounted = match &self.config.mount {
+        // The folder is mounted off the runtime's one thread: asking porter-mountd, or running
+        // fusermount3, waits on another process (bounded, but not for the runtime to sit on).
+        let mounting = match &self.config.mount {
             DriveMount::Off => None,
             DriveMount::Fuse(mounter) => {
                 let fs = DriveFs::new(files.clone(), tokio::runtime::Handle::current());
-                match mounter.mount(fs, &path) {
-                    Ok(mounted) => Some(mounted),
-                    Err(why) => {
-                        eprintln!(
-                            "syncd: {} is not shown at {}: {why}",
-                            account,
-                            path.display()
-                        );
-                        live.set_unshown(why.words());
-                        None
+                let (mounter, path, live, set) = (
+                    mounter.clone(),
+                    path.clone(),
+                    Arc::clone(&live),
+                    self.drives.clone(),
+                );
+                let account = account.to_string();
+                Some(tokio::task::spawn_blocking(move || {
+                    match mounter.mount(fs, &path) {
+                        Ok(mounted) => Some(mounted),
+                        Err(why) => {
+                            eprintln!("syncd: {account} is not shown at {}: {why}", path.display());
+                            live.set_unshown(why.words());
+                            set.tell_drives();
+                            None
+                        }
                     }
-                }
+                }))
             }
         };
         self.drives.insert(Arc::clone(&live));
@@ -561,7 +570,7 @@ where
             limit,
             id: live.id.clone(),
             path,
-            mounted,
+            mounting,
         })
     }
 
@@ -754,16 +763,26 @@ where
                 task,
                 limit,
                 id,
-                mounted,
+                mounting,
                 ..
             } => {
                 task.abort();
                 limit.abort();
                 self.drives.remove(&id);
-                if let Some(mounted) = mounted
-                    && let Err(why) = mounted.unmount()
+                // Waits for a mount still being made, so none is left behind, then takes the
+                // folder away off the runtime's thread (it never waits for the session).
+                if let Some(mounting) = mounting
+                    && let Ok(Some(mounted)) = mounting.await
                 {
-                    eprintln!("syncd: a drive's folder was not taken away: {why}");
+                    match tokio::task::spawn_blocking(move || mounted.unmount()).await {
+                        Ok(Ok(())) => {}
+                        Ok(Err(why)) => {
+                            eprintln!("syncd: a drive's folder was not taken away: {why}")
+                        }
+                        Err(why) => {
+                            eprintln!("syncd: a drive's folder was not taken away: {why}")
+                        }
+                    }
                 }
             }
             Running::GooglePhotos {

@@ -498,8 +498,12 @@ async fn a_computer_that_cannot_show_the_folder_says_so_and_the_drive_still_list
     .await;
     rig.graph.put_root_file("Docs/Plan.txt", b"plan");
     let drive = shown(&mut rig).await;
-    let (state, said) = drive.state();
-    assert_eq!(state, porter_dbus::DriveState::Error);
+    // The folder is mounted off the runtime's thread: its answer comes a moment later.
+    eventually("the drive says it is not shown", async || {
+        drive.state().0 == porter_dbus::DriveState::Error
+    })
+    .await;
+    let (_, said) = drive.state();
     assert_eq!(said.as_deref(), Some(words::NO_FILES_HERE));
     for word in ["mount", "FUSE", "fuse"] {
         assert!(!words::NO_FILES_HERE.contains(word), "{word}");
@@ -536,7 +540,11 @@ async fn porter_mountd_is_asked_when_it_listens_and_its_words_are_shown() {
     .await;
     rig.graph.put_root_file("Docs/Plan.txt", b"plan");
     let drive = shown(&mut rig).await;
-    let (state, said) = drive.state();
-    assert_eq!(state, porter_dbus::DriveState::Error);
+    // The folder is mounted off the runtime's thread: its answer comes a moment later.
+    eventually("the drive says it is not shown", async || {
+        drive.state().0 == porter_dbus::DriveState::Error
+    })
+    .await;
+    let (_, said) = drive.state();
     assert_eq!(said.as_deref(), Some(mountd::words::FOLDER_IN_USE));
 }
