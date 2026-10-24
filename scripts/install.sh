@@ -1,6 +1,6 @@
 #!/bin/sh
 # Install porter: the three daemons, their systemd user units and D-Bus activation files, the
-# provider files and the caller table.
+# helper that shows drives in ~/Cloud with its socket, the provider files and the caller table.
 #
 #   scripts/install.sh [--prefix DIR] [--destdir DIR] [--sysconfdir DIR] [--bin-dir DIR] [--no-build]
 #
@@ -15,6 +15,12 @@
 #
 # What goes where (DESTDIR, when given, is in front of all of it):
 #   PREFIX/libexec/quire/{accountd,syncd,inferd}             the daemons
+#   PREFIX/libexec/quire/porter-mountd                       the helper syncd asks to show a drive in
+#                                                            ~/Cloud (runs fusermount3, which syncd's
+#                                                            sandbox refuses)
+#   PREFIX/lib/systemd/user/porter-mountd.{service,socket}   its user units; the socket is enabled for
+#                                                            every user by the link
+#                                                            sockets.target.wants/porter-mountd.socket
 #   PREFIX/libexec/quire/porter-engine-helper                the helper `pkexec` runs as root to install
 #                                                            an AI engine for everyone (Settings starts it)
 #   PREFIX/share/polkit-1/actions/org.quire.porter.engines.policy
@@ -113,6 +119,19 @@ put() {
     fi
 }
 
+# link TARGET PATH: DESTDIR/PATH is a symbolic link to TARGET. One already so is left alone.
+link() {
+    path=$destdir$2
+    if [ -L "$path" ] && [ "$(readlink "$path")" = "$1" ]; then
+        return
+    fi
+    mkdir -p "$(dirname "$path")"
+    rm -f "$path"
+    ln -s "$1" "$path"
+    changed=$((changed + 1))
+    echo "installed $2"
+}
+
 mode_of() {
     stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"
 }
@@ -169,7 +188,7 @@ else
                     export RUSTUP_TOOLCHAIN
                 fi &&
                 cargo build --release --manifest-path "$root/Cargo.toml" \
-                    --config net.git-fetch-with-cli=true -p accountd -p syncd -p inferd -p porter-engines-install
+                    --config net.git-fetch-with-cli=true -p accountd -p syncd -p inferd -p porter-mountd -p porter-engines-install
         )
     fi
     built=$target_dir/release
@@ -181,12 +200,15 @@ for daemon in $daemons; do
     fi
 done
 
-# The helper that installs an engine for everyone, built beside the daemons. It is not a daemon
-# (nothing starts it but `pkexec`), so it is not in the list above.
-if [ ! -x "$built/porter-engine-helper" ]; then
-    echo "install.sh: $built/porter-engine-helper is not there; build first or point --bin-dir at it" >&2
-    exit 1
-fi
+# The helper that installs an engine for everyone, and the one that shows drives in ~/Cloud, built
+# beside the daemons. Neither is a daemon on the bus (`pkexec` starts the first, its socket the
+# second), so they are not in the list above.
+for helper in porter-engine-helper porter-mountd; do
+    if [ ! -x "$built/$helper" ]; then
+        echo "install.sh: $built/$helper is not there; build first or point --bin-dir at it" >&2
+        exit 1
+    fi
+done
 
 # The files in dist/ name /usr/libexec/quire; a different prefix changes that one path.
 libexec=$prefix/libexec/quire
@@ -207,6 +229,13 @@ else
     done
     echo "The daemons run without their extra sandbox on this system, which does not let a user service have its own mount namespace. On Ubuntu, allow it with the kernel.apparmor_restrict_unprivileged_userns setting or an AppArmor profile, then run this again."
 fi
+# porter-mountd and its socket. The socket is enabled for every user as a package does it: a link
+# in sockets.target.wants beside the units (no `systemctl`, which would write under /etc or a home).
+# The service has no sandbox drop-in: what it may not have is said in its header.
+put 755 "$built/porter-mountd" "$libexec/porter-mountd"
+put 644 "$dist/porter-mountd.service" "$prefix/lib/systemd/user/porter-mountd.service" /usr/libexec/quire "$libexec"
+put 644 "$dist/porter-mountd.socket" "$prefix/lib/systemd/user/porter-mountd.socket"
+link "../porter-mountd.socket" "$prefix/lib/systemd/user/sockets.target.wants/porter-mountd.socket"
 for activation in "$dist"/dbus/*.service; do
     put 644 "$activation" "$prefix/share/dbus-1/services/$(basename "$activation")" /usr/libexec/quire "$libexec"
 done

@@ -1,0 +1,14 @@
+# porter-mountd's socket. systemd listens for it from login, and starts porter-mountd.service the
+# first time syncd asks to show a drive in ~/Cloud. Only the person can connect: the socket is
+# 0600 in a 0700 folder under the runtime directory (and the helper checks the caller's uid too).
+[Unit]
+Description=porter's helper that shows drives in ~/Cloud (socket)
+
+[Socket]
+ListenStream=%t/porter/mountd.sock
+SocketMode=0600
+DirectoryMode=0700
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target

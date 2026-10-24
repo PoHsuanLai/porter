@@ -2,6 +2,7 @@
 //! /dev/fuse and no fusermount3).
 
 mod common;
+mod dist;
 mod helper;
 mod socket;
 

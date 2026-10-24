@@ -1,0 +1,57 @@
+# porter-mountd as a systemd user unit, started by porter-mountd.socket. It does the one step
+# syncd's sandbox refuses: it runs the system's setuid fusermount3 to show a drive at
+# ~/Cloud/<name>, and hands syncd the open FUSE connection, which syncd serves from inside its
+# sandbox. It owns no state and needs no network, keyring or account data.
+#
+# What protects the person here is how little the helper is and does, not the sandbox:
+#   - it is std and rustix only, and scripts/check-boundary.sh forbids it every crate of porter's
+#     and every effect crate (no network, keyring or account code is in it);
+#   - it answers only a caller of its own uid (SO_PEERCRED), on a 0600 socket;
+#   - a request names a folder, never a path: one plain name (no '/', NUL or leading dot), put in
+#     ~/Cloud; a folder that is a link or not a folder, or has files in it, is refused;
+#   - it mounts only fuse.porter (read-only, nosuid, nodev) and unmounts only a fuse.porter
+#     mount; another file system at the folder, the person's own, is left alone.
+#
+# What it has: settings that keep NoNewPrivileges off and make no namespace, each checked on a
+# user manager with `systemd-run --user -p <setting> grep NoNewPrivs /proc/self/status` (0) and
+# by comparing /proc/self/ns/{mnt,user} with the session's.
+#
+# What it is left without, and why:
+#   - NoNewPrivileges, RestrictSUIDSGID, CapabilityBoundingSet=, AmbientCapabilities=: each stops
+#     the setuid fusermount3 from gaining the privilege it mounts with.
+#   - LockPersonality, MemoryDenyWriteExecute, RestrictRealtime, RestrictNamespaces,
+#     RestrictAddressFamilies, SystemCallArchitectures, SystemCallFilter: a user manager has no
+#     CAP_SYS_ADMIN, so it can install their seccomp filters only with NoNewPrivileges, which it
+#     then turns on by itself (NoNewPrivs 1), breaking fusermount3 as surely as setting it.
+#   - ProtectClock, ProtectHostname, ProtectKernelTunables, ProtectKernelModules,
+#     ProtectKernelLogs: a user manager puts the unit in a user namespace of its own for them (and
+#     for the last three a mount namespace too), where the setuid fusermount3 is not root and so
+#     cannot mount.
+#   - ProtectHome, ProtectSystem, PrivateTmp, PrivateDevices, PrivateMounts, ProtectControlGroups,
+#     ReadWritePaths, ReadOnlyPaths, InaccessiblePaths and the like: each gives the unit a mount
+#     namespace of its own, where the mount would be seen by no one else (and PrivateDevices
+#     hides /dev/fuse).
+#   - ProtectProc and PrivatePIDs: a namespace too, and the helper reads /proc/self/mountinfo.
+[Unit]
+Description=porter's helper that shows drives in ~/Cloud
+Requires=porter-mountd.socket
+After=porter-mountd.socket
+
+[Service]
+# The manager's environment must not reach this unit, as for porter's daemons.
+UnsetEnvironment=LD_PRELOAD LD_LIBRARY_PATH LD_AUDIT GCONV_PATH GIO_EXTRA_MODULES GTK_MODULES GTK_PATH GST_PLUGIN_PATH GST_PLUGIN_SYSTEM_PATH LIBGL_DRIVERS_PATH MESA_LOADER_DRIVER_OVERRIDE __EGL_VENDOR_LIBRARY_DIRS __EGL_VENDOR_LIBRARY_FILENAMES GBM_BACKENDS_PATH LIBVA_DRIVERS_PATH VK_ICD_FILENAMES VK_DRIVER_FILES VK_ADD_DRIVER_FILES VK_LAYER_PATH VK_ADD_LAYER_PATH VK_INSTANCE_LAYERS VK_LOADER_LAYERS_ENABLE
+Type=simple
+ExecStart=/usr/libexec/quire/porter-mountd
+Restart=on-failure
+RestartSec=2
+
+# --- Sandbox (only what keeps NoNewPrivileges off and makes no namespace) ---
+# No IP traffic in or out: it talks on its unix socket only.
+IPAddressDeny=any
+# No access to the session's kernel keyring.
+KeyringMode=private
+# It runs one request at a time: itself and a fusermount3.
+TasksMax=16
+MemoryMax=64M
+# Files and folders it makes (~/Cloud/<name>) are the person's only.
+UMask=0077

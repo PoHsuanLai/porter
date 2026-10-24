@@ -18,7 +18,13 @@ fn repo() -> PathBuf {
 fn stand_ins(root: &Path) -> PathBuf {
     let bins = root.join("bins");
     fs::create_dir_all(&bins).expect("bins");
-    for daemon in ["accountd", "syncd", "inferd", "porter-engine-helper"] {
+    for daemon in [
+        "accountd",
+        "syncd",
+        "inferd",
+        "porter-engine-helper",
+        "porter-mountd",
+    ] {
         let file = bins.join(daemon);
         fs::write(&file, format!("#!/bin/sh\necho {daemon}\n")).expect("write");
         fs::set_permissions(&file, fs::Permissions::from_mode(0o755)).expect("chmod");
@@ -112,7 +118,7 @@ fn every_file_a_unit_or_an_activation_file_names_is_installed_at_the_path_it_nam
         run.install(&["--prefix", prefix]);
         let units = run.at(&format!("{prefix}/lib/systemd/user"));
         let mut checked = 0;
-        for unit in ["accountd", "syncd", "inferd"] {
+        for unit in ["accountd", "syncd", "inferd", "porter-mountd"] {
             let text = fs::read_to_string(units.join(format!("{unit}.service"))).expect("unit");
             let exec = value(&text, "ExecStart").expect("ExecStart");
             assert_eq!(program(&exec), format!("{prefix}/libexec/quire/{unit}"));
@@ -131,7 +137,7 @@ fn every_file_a_unit_or_an_activation_file_names_is_installed_at_the_path_it_nam
             assert_eq!(value(&unit, "ExecStart"), Some(exec));
             checked += 1;
         }
-        assert_eq!(checked, 6);
+        assert_eq!(checked, 7);
     }
 }
 
@@ -263,6 +269,29 @@ fn the_sandbox_drop_ins_land_next_to_their_units_without_a_probe_when_staging() 
         );
     }
     assert!(files_under(&run.home).is_empty());
+}
+
+#[test]
+fn the_drive_folder_helper_is_installed_with_its_socket_enabled_for_everyone() {
+    let run = Run::new("mountd");
+    run.install(&["--prefix", "/opt/porter"]);
+    let units = run.at("/opt/porter/lib/systemd/user");
+    for unit in ["porter-mountd.service", "porter-mountd.socket"] {
+        assert!(units.join(unit).is_file(), "{unit}");
+    }
+    // Enabled as a package enables it: a link beside the units, nothing under /etc or a home.
+    let wants = units.join("sockets.target.wants/porter-mountd.socket");
+    assert_eq!(
+        fs::read_link(&wants).expect("the socket is enabled"),
+        Path::new("../porter-mountd.socket")
+    );
+    assert!(wants.is_file(), "the link resolves to the socket unit");
+    assert!(!run.at("/etc/systemd").exists());
+    assert!(files_under(&run.home).is_empty());
+    // It has no sandbox drop-in: its unit says what it may not have.
+    assert!(!units.join("porter-mountd.service.d").exists());
+    let again = run.install(&["--prefix", "/opt/porter"]);
+    assert_eq!(again.trim(), "nothing to change");
 }
 
 #[test]
