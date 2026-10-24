@@ -36,3 +36,34 @@ pub const DRIVE_DATASET: &str = "storage_drive";
 pub fn journal_path(paths: &Paths, account: &AccountDir) -> std::path::PathBuf {
     paths.journal(account, DRIVE_DATASET)
 }
+
+/// The note of the folder in `~/Cloud` the drive of `account` was last shown at, beside its
+/// journal (and gone with it): where what was not uploaded is kept when the account is removed
+/// while the drive is not shown.
+fn folder_note(paths: &Paths, account: &AccountDir) -> std::path::PathBuf {
+    journal_path(paths, account).with_extension("folder")
+}
+
+/// Notes that the drive of `account` is shown at `folder` in `~/Cloud`.
+///
+/// # Errors
+/// The note could not be written.
+pub fn note_folder(paths: &Paths, account: &AccountDir, folder: &str) -> std::io::Result<()> {
+    let note = folder_note(paths, account);
+    if let Some(dir) = note.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    porter_fs::atomic::AtomicWrite::PRIVATE.write(&note, folder.as_bytes())
+}
+
+/// The folder the drive of `account` was last shown at: the noted one, else one named after
+/// the account.
+pub fn shown_at(paths: &Paths, account: &AccountDir) -> std::path::PathBuf {
+    let noted = std::fs::read_to_string(folder_note(paths, account)).ok();
+    let plain = noted.filter(|name| {
+        !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\0'])
+    });
+    paths
+        .cloud
+        .join(plain.as_deref().unwrap_or(account.as_str()))
+}

@@ -284,23 +284,46 @@ impl Mounted {
         self.take_away()
     }
 
-    fn take_away(&mut self) -> std::io::Result<()> {
-        let Some(session) = self.session.take() else {
+    /// Unmounts it now, keeping it as it was when that fails, so it can be asked again.
+    ///
+    /// # Errors
+    /// The unmount failed: it is still mounted, and still served.
+    pub fn try_unmount(&mut self) -> std::io::Result<()> {
+        if self.session.is_none() {
             return Ok(());
-        };
-        let taken = match &self.by {
+        }
+        self.unmount_now()?;
+        self.let_go();
+        Ok(())
+    }
+
+    fn take_away(&mut self) -> std::io::Result<()> {
+        if self.session.is_none() {
+            return Ok(());
+        }
+        let taken = self.unmount_now();
+        self.let_go();
+        taken
+    }
+
+    fn unmount_now(&self) -> std::io::Result<()> {
+        match &self.by {
             By::Helper(through) => {
                 client::unmount(&through.socket, &through.name).map_err(std::io::Error::other)
             }
             By::Directly(helper) => take_away_directly(helper, &self.path),
-        };
-        // Its thread ends when the connection does: left to finish on a thread of its own,
-        // never joined here. If the folder was not taken away, it goes on serving it until the
-        // process ends and the connection closes with it.
-        let _ = std::thread::Builder::new()
-            .name("porter-drive-fuse-end".to_owned())
-            .spawn(move || drop(session.join()));
-        taken
+        }
+    }
+
+    /// Its session's thread ends when the connection does: left to finish on a thread of its
+    /// own, never joined here. If the folder was not taken away, it goes on serving it until
+    /// the process ends and the connection closes with it.
+    fn let_go(&mut self) {
+        if let Some(session) = self.session.take() {
+            let _ = std::thread::Builder::new()
+                .name("porter-drive-fuse-end".to_owned())
+                .spawn(move || drop(session.join()));
+        }
     }
 }
 

@@ -489,6 +489,10 @@ where
         )
         .map_err(|e| e.to_string())?;
         let path = wiring.paths.cloud.join(folder);
+        // Where what was not uploaded is kept if the account is removed while it is not shown.
+        if let Err(why) = drive::note_folder(&wiring.paths, account, folder) {
+            eprintln!("syncd: the folder of {account}'s drive was not noted: {why}");
+        }
         let live = Arc::new(LiveDrive::new(
             account.as_str().to_owned(),
             porter_dbus::account_path(&candidate.account),
