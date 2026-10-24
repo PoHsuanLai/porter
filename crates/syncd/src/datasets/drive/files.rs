@@ -3,7 +3,7 @@
 //! that runs them and `org.quire.Storage1` that serves them.
 
 use porter_dbus::DriveState;
-use porter_drive::{Drive, NodeId, words};
+use porter_drive::{Changed, Drive, NodeId, words};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -133,6 +133,24 @@ pub enum DriveEvent {
     },
 }
 
+/// What the set tells of what `drive`'s changes said; `None` once they end. Changes missed
+/// (the listener lagged) tell of every item the drive tracks again, so no item stays on a state
+/// it left while nobody heard.
+fn heard(
+    drive: &LiveDrive,
+    got: Result<Changed, broadcast::error::RecvError>,
+) -> Option<DriveEvent> {
+    let ids = match got {
+        Ok(changed) => changed.0,
+        Err(broadcast::error::RecvError::Lagged(_)) => drive.drive.tracked(),
+        Err(broadcast::error::RecvError::Closed) => return None,
+    };
+    Some(DriveEvent::Items {
+        drive: drive.id.clone(),
+        ids,
+    })
+}
+
 /// The drives shown in Files, by id. Clones share the set.
 #[derive(Debug, Clone)]
 pub struct DriveSet {
@@ -160,20 +178,15 @@ impl DriveSet {
         tokio::spawn(async move {
             let mut local = None;
             loop {
-                match changes.recv().await {
-                    Ok(changed) => {
-                        let _ = events.send(DriveEvent::Items {
-                            drive: id.clone(),
-                            ids: changed.0,
-                        });
-                        let Some(drive) = weak.upgrade() else { return };
-                        let now = drive.drive.local_bytes();
-                        if local.replace(now) != Some(now) {
-                            let _ = events.send(DriveEvent::Drives);
-                        }
-                    }
-                    Err(broadcast::error::RecvError::Lagged(_)) => {}
-                    Err(broadcast::error::RecvError::Closed) => return,
+                let got = changes.recv().await;
+                let Some(drive) = weak.upgrade() else { return };
+                let Some(items) = heard(&drive, got) else {
+                    return;
+                };
+                let _ = events.send(items);
+                let now = drive.drive.local_bytes();
+                if local.replace(now) != Some(now) {
+                    let _ = events.send(DriveEvent::Drives);
                 }
             }
         });
@@ -205,5 +218,50 @@ impl DriveSet {
     /// Tells that the drives changed.
     pub fn tell_drives(&self) {
         let _ = self.events.send(DriveEvent::Drives);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use porter_drive::testing::{MemoryListing, MemorySource};
+    use porter_drive::{DriveConfig, RemoteId};
+
+    #[tokio::test]
+    async fn changes_missed_tell_of_every_tracked_item_again() {
+        let dir = porter_fake::Scratch::new("drive-files");
+        let listing = Arc::new(MemoryListing::default());
+        let source = Arc::new(MemorySource::default());
+        listing.file("a", None, "a.bin", 4, "1");
+        source.put("a", b"aaaa".to_vec());
+        source.hold();
+        let drive = Drive::open(
+            DriveConfig::new(dir.join("cache")),
+            listing.clone(),
+            source.clone(),
+        )
+        .expect("drive");
+        let a = NodeId::Remote(RemoteId("a".into()));
+        drive.open_file(&a).expect("open");
+        let live = LiveDrive::new(
+            "one".into(),
+            "/org/quire/Accounts1/account/one".into(),
+            "ada@example.test".into(),
+            "OneDrive",
+            dir.join("Cloud"),
+            drive.clone(),
+        );
+        let told = heard(&live, Err(broadcast::error::RecvError::Lagged(3)));
+        assert_eq!(
+            told,
+            Some(DriveEvent::Items {
+                drive: "one".into(),
+                ids: vec![a.clone()],
+            }),
+            "the download nobody heard of is told of again"
+        );
+        assert_eq!(heard(&live, Err(broadcast::error::RecvError::Closed)), None);
+        source.release();
+        drive.release(&a);
     }
 }

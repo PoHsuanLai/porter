@@ -538,7 +538,9 @@ where
             if live.set_listed(state, words) {
                 set.tell_drives();
             }
-            live.drive.listing_changed();
+            if reconciles(pass) {
+                live.drive.listing_changed();
+            }
             let (fetch, set, live) = (Arc::clone(&fetch), set.clone(), Arc::clone(&live));
             tokio::spawn(async move {
                 if let Ok(quota) = fetch.quota().await {
@@ -790,6 +792,13 @@ where
     }
 }
 
+/// Whether the files on demand are reconciled with the listing after `pass`: only once it
+/// ended caught up. What a pass cut short (offline, refused, failed) lacks is not gone from the
+/// drive, so nothing cached or kept is dropped against it.
+fn reconciles(pass: &Result<drive::Pass, crate::journal::JournalError>) -> bool {
+    matches!(pass, Ok(pass) if pass.outcome == Listed::Done)
+}
+
 /// A drive replica that starts from a tree a journal kept.
 trait WithFolders: Sized {
     fn with_folders(self, folders: porter_sync::Folders) -> Self;
@@ -853,5 +862,33 @@ impl<T: Transport, G> Drop for StorageSupervisor<T, G> {
                 _ => {}
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use porter_sync::RetryAfter;
+
+    #[test]
+    fn only_a_pass_that_ended_caught_up_reconciles_the_cache() {
+        let ended = |outcome| -> Result<drive::Pass, crate::journal::JournalError> {
+            Ok(drive::Pass {
+                outcome,
+                ..drive::Pass::default()
+            })
+        };
+        assert!(reconciles(&ended(Listed::Done)));
+        for cut in [
+            Listed::Retry(RetryAfter(30)),
+            Listed::NeedsConsent,
+            Listed::Unauthorized,
+            Listed::Gone,
+        ] {
+            assert!(!reconciles(&ended(cut)), "{cut:?}");
+        }
+        assert!(!reconciles(&Err(crate::journal::JournalError::Corrupt(
+            "a test".into()
+        ))));
     }
 }

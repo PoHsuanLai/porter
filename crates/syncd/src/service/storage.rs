@@ -392,6 +392,18 @@ impl<C: Callers> StorageObject<C> {
             .sender()
             .ok_or_else(|| RefusedError::access_denied("no sender"))?;
         held(&self.0.watchers).insert(sender.to_string(), caller);
+        // A sender that left before it was kept may have had its going heard first: asked
+        // after, the bus says it has no owner, and it is not kept.
+        let gone = match DBusProxy::new(&self.0.connection).await {
+            Ok(bus) => matches!(
+                bus.get_name_owner(BusName::Unique(sender.to_owned())).await,
+                Err(zbus::fdo::Error::NameHasNoOwner(_))
+            ),
+            Err(_) => false,
+        };
+        if gone {
+            held(&self.0.watchers).remove(sender.as_str());
+        }
         Ok(())
     }
 
@@ -452,13 +464,11 @@ pub async fn serve_storage<C: Callers>(
         every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             tokio::select! {
-                event = events.recv() => match event {
-                    Ok(DriveEvent::Drives) => drives = true,
-                    Ok(DriveEvent::Items { drive, ids }) => {
-                        items.entry(drive).or_default().extend(ids);
+                event = events.recv() => {
+                    let Some(core) = weak.upgrade() else { return };
+                    if !gather(&core.drives, event, &mut items, &mut drives) {
+                        return;
                     }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => drives = true,
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
                 },
                 _ = every.tick() => {
                     let Some(core) = weak.upgrade() else { return };
@@ -477,6 +487,34 @@ pub async fn serve_storage<C: Callers>(
     Ok(())
 }
 
+/// Adds what `event` tells to what is sent next (`items` by drive, and whether the drives
+/// changed); `false` once the events end. Events missed (the listener lagged) send the drives
+/// and every item each drive tracks again, so Files never stays on a state an item left.
+fn gather(
+    set: &DriveSet,
+    event: Result<DriveEvent, tokio::sync::broadcast::error::RecvError>,
+    items: &mut BTreeMap<String, BTreeSet<NodeId>>,
+    drives: &mut bool,
+) -> bool {
+    match event {
+        Ok(DriveEvent::Drives) => *drives = true,
+        Ok(DriveEvent::Items { drive, ids }) => {
+            items.entry(drive).or_default().extend(ids);
+        }
+        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+            *drives = true;
+            for drive in set.all() {
+                items
+                    .entry(drive.id.clone())
+                    .or_default()
+                    .extend(drive.drive.tracked());
+            }
+        }
+        Err(tokio::sync::broadcast::error::RecvError::Closed) => return false,
+    }
+    true
+}
+
 /// The absolute path of `id` on `drive`, for tests and callers that hold a node.
 pub fn absolute(drive: &LiveDrive, id: &NodeId) -> Option<PathBuf> {
     drive
@@ -485,4 +523,56 @@ pub fn absolute(drive: &LiveDrive, id: &NodeId) -> Option<PathBuf> {
         .ok()
         .flatten()
         .map(|inside| drive.path.join(inside))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use porter_drive::testing::{MemoryListing, MemorySource};
+    use porter_drive::{Drive, DriveConfig, RemoteId};
+    use tokio::sync::broadcast::error::RecvError;
+
+    #[tokio::test]
+    async fn events_missed_send_every_tracked_item_again() {
+        let dir = porter_fake::Scratch::new("storage1-gather");
+        let listing = Arc::new(MemoryListing::default());
+        let source = Arc::new(MemorySource::default());
+        listing.file("a", None, "a.bin", 4, "1");
+        source.put("a", b"aaaa".to_vec());
+        source.hold();
+        let drive = Drive::open(
+            DriveConfig::new(dir.join("cache")),
+            listing.clone(),
+            source.clone(),
+        )
+        .expect("drive");
+        let a = NodeId::Remote(RemoteId("a".into()));
+        drive.open_file(&a).expect("open");
+        let set = DriveSet::default();
+        set.insert(Arc::new(LiveDrive::new(
+            "one".into(),
+            "/org/quire/Accounts1/account/one".into(),
+            "ada@example.test".into(),
+            "OneDrive",
+            dir.join("Cloud"),
+            drive.clone(),
+        )));
+        let (mut items, mut drives) = (BTreeMap::new(), false);
+        assert!(gather(
+            &set,
+            Err(RecvError::Lagged(9)),
+            &mut items,
+            &mut drives
+        ));
+        assert!(drives);
+        assert_eq!(items.get("one"), Some(&BTreeSet::from([a.clone()])));
+        assert!(!gather(
+            &set,
+            Err(RecvError::Closed),
+            &mut items,
+            &mut drives
+        ));
+        source.release();
+        drive.release(&a);
+    }
 }
