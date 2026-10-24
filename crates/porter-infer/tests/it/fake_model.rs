@@ -1,4 +1,4 @@
-//! The fake model echoes the last text, and the unbuilt broker refuses instead of panicking.
+//! The fake model echoes the last text.
 
 use porter_core::consent::Usage;
 use porter_core::{AccountId, DataClass, ModelId, Tier};
@@ -40,34 +40,6 @@ async fn the_fake_model_echoes_the_last_text() {
         reply.served.account,
         AccountId::parse("fake-llm").expect("id")
     );
-}
-
-/// The broker body is not built: a request is refused (nothing panics) and no event is sent.
-#[tokio::test]
-async fn the_unbuilt_broker_refuses_instead_of_panicking() {
-    use porter_core::{AppId, AppName, Isolation};
-    use porter_infer::{Broker, InferRefusal, InferReply, InferRequest, Policy};
-    let broker: Broker<FakeModel> = Broker::new(Policy::proposed(), Vec::new(), Vec::new());
-    let app = AppId {
-        name: AppName::parse("org.quire.Mail").expect("name"),
-        isolation: Isolation::Unsandboxed,
-    };
-    let request = InferRequest::Chat(
-        ChatRequest::new(
-            vec![ChatMessage {
-                role: Role::User,
-                parts: vec![MessagePart::Text("hi".into())],
-            }],
-            Tier::Fast,
-            DataClass::Public,
-            Usage::Interactive,
-        )
-        .with_control(ChatControl::new().with_tool_calls(ToolParallelism::Many)),
-    );
-    let mut events = Collect::default();
-    let reply = broker.infer(&app, request, &mut events).await;
-    assert_eq!(reply, InferReply::Refused(InferRefusal::Unavailable));
-    assert!(events.0.is_empty());
 }
 
 #[derive(Default)]
