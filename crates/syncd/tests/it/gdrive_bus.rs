@@ -9,6 +9,7 @@
 use crate::common;
 use crate::googlerig as google_rig;
 
+use common::PhotosGrant;
 use google_rig::{
     DRIVE_BEARER, FILES_DATASET, Rig, SECRET_ACCESS, SECRET_REFRESH, SEGMENT, client_of,
     eventually, local, rig,
@@ -20,7 +21,6 @@ use porter_dbus::{
 use std::pin::Pin;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
-use syncd::datasets::photos::PhotosSwitch;
 use syncd::datasets::storage::FILES_APP;
 use syncd::service::DatasetName;
 use zbus::export::futures_core::Stream;
@@ -62,7 +62,7 @@ fn count(rig: &Rig, method: &str, part: &str) -> usize {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_files_grant_on_a_google_account_mirrors_the_app_data_folder_both_ways_through_the_relay()
 {
-    let mut rig = rig(PhotosSwitch::Off).await;
+    let mut rig = rig(PhotosGrant::NotGranted).await;
     let files = client_of(&rig, FILES_APP).await;
     let sync = SyncProxy::new(&files).await.expect("proxy");
     assert_eq!(names(&sync).await, Vec::<String>::new(), "nothing before");
@@ -132,7 +132,7 @@ async fn a_files_grant_on_a_google_account_mirrors_the_app_data_folder_both_ways
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_two_sided_edit_is_a_conflict_signal_and_keep_remote_or_keep_local_settles_it() {
-    let mut rig = rig(PhotosSwitch::Off).await;
+    let mut rig = rig(PhotosGrant::NotGranted).await;
     let files = client_of(&rig, FILES_APP).await;
     let sync = SyncProxy::new(&files).await.expect("proxy");
     let mut conflicts = sync.receive_conflict().await.expect("stream");
@@ -196,7 +196,7 @@ async fn a_two_sided_edit_is_a_conflict_signal_and_keep_remote_or_keep_local_set
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_large_file_goes_up_in_a_resumable_session_and_a_small_one_does_not() {
-    let mut rig = rig(PhotosSwitch::Off).await;
+    let mut rig = rig(PhotosGrant::NotGranted).await;
     rig.supervisor.tick().await;
 
     // Past the 4 000 000 byte threshold of one multipart request.
@@ -226,7 +226,7 @@ async fn a_large_file_goes_up_in_a_resumable_session_and_a_small_one_does_not() 
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_changes_cursor_survives_a_restart_and_an_expired_one_reconciles_without_re_uploads() {
-    let mut rig = rig(PhotosSwitch::Off).await;
+    let mut rig = rig(PhotosGrant::NotGranted).await;
     let files = client_of(&rig, FILES_APP).await;
     let sync = SyncProxy::new(&files).await.expect("proxy");
     rig.supervisor.tick().await;
@@ -240,12 +240,10 @@ async fn the_changes_cursor_survives_a_restart_and_an_expired_one_reconciles_wit
     // The daemon stops and starts again: its datasets leave the hub, a new supervisor finds the
     // journal and its anchor.
     rig.files_shown.store(false, Ordering::SeqCst);
-    rig.photos_shown.store(false, Ordering::SeqCst);
     rig.supervisor.tick().await;
     assert_eq!(names(&sync).await, Vec::<String>::new());
     rig.supervisor = rig.new_supervisor();
     rig.files_shown.store(true, Ordering::SeqCst);
-    rig.photos_shown.store(true, Ordering::SeqCst);
 
     let before = rig.google.hits().len();
     let listings_before = count(&rig, "GET", "q=trashed%20%3D%20false");
@@ -291,7 +289,7 @@ async fn the_changes_cursor_survives_a_restart_and_an_expired_one_reconciles_wit
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_dataset_follows_the_grant_and_an_account_removal_wipes_the_mirror() {
-    let mut rig = rig(PhotosSwitch::Off).await;
+    let mut rig = rig(PhotosGrant::NotGranted).await;
     let files = client_of(&rig, FILES_APP).await;
     let sync = SyncProxy::new(&files).await.expect("proxy");
     rig.supervisor.tick().await;
@@ -398,7 +396,7 @@ fn files_below(dir: &std::path::Path, into: &mut Vec<(std::path::PathBuf, Vec<u8
 
 #[tokio::test(flavor = "multi_thread")]
 async fn no_token_or_secret_is_on_the_bus_in_a_journal_or_in_anything_syncd_prints() {
-    let mut rig = rig(PhotosSwitch::Off).await;
+    let mut rig = rig(PhotosGrant::NotGranted).await;
     let mut tap = Tap::start(&rig).await;
     let files = client_of(&rig, FILES_APP).await;
     let sync = SyncProxy::new(&files).await.expect("proxy");

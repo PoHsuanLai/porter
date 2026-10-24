@@ -141,8 +141,8 @@ Everything below is built: the sign-in and the grant, the calendar, contacts and
 the Drive app folder, Photos upload and the picker, and Gmail. All of it has so far run only
 against porter's own stand-in for Google, never against Google itself, because no client of yours
 existed to try it with. Expect to find a detail or two that Google answers differently: the first
-sign-in with your client is the first real test. Photos stays off until the sync service is
-started with `SYNCD_PHOTOS=on`.
+sign-in with your client is the first real test. Photos stays off until its row is turned on for
+the account in Settings.
 
 ## What porter does with each Google service
 

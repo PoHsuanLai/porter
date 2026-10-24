@@ -1,5 +1,5 @@
-//! What a person asks of a drive's items (Download Now, Keep Downloaded, Remove Download), what
-//! a new listing changes, and eviction.
+//! What a person asks of a drive's items (Download Now, Keep Downloaded, Remove Download) and of
+//! the whole drive (Keep Everything Downloaded), what a new listing changes, and eviction.
 
 use super::{Drive, Inner, NodeId, held};
 use crate::listing::Entry;
@@ -36,6 +36,69 @@ impl Inner {
             failed |= self.ensure(file, true).is_err();
         }
         failed
+    }
+
+    /// Every entry of the drive, at any depth, from the listing.
+    fn every_entry(&self) -> Vec<Entry> {
+        let mut all = Vec::new();
+        for entry in self.listing.children(None).unwrap_or_default() {
+            if entry.kind == ItemKind::Folder {
+                all.extend(self.listing.descendants(&entry.id).unwrap_or_default());
+            }
+            all.push(entry);
+        }
+        all
+    }
+
+    /// How many bytes the cache's file system has free (what a person may use, not what is kept
+    /// for the system), or what [`super::DriveConfig::free_space`] says.
+    fn free_bytes(&self) -> u64 {
+        self.free_space.unwrap_or_else(|| {
+            self.dir
+                .ancestors()
+                .find_map(|at| rustix::fs::statvfs(at).ok())
+                .map_or(0, |fs| fs.f_bavail.saturating_mul(fs.f_frsize))
+        })
+    }
+
+    /// While the whole drive is kept: starts a download of each file not here and not on its
+    /// way, when what is still to come fits in the free space; when it does not, nothing is
+    /// started (and nothing is removed) and the drive says it is short of room until a later
+    /// look finds the room.
+    pub(super) fn fetch_everything(self: &Arc<Self>) {
+        if !self.keeps_all() {
+            self.short_of_room.store(false, Ordering::SeqCst);
+            return;
+        }
+        let files: Vec<Entry> = self
+            .every_entry()
+            .into_iter()
+            .filter(|e| e.kind.is_file() && !self.here(e))
+            .collect();
+        let coming: u64 = {
+            let index = held(&self.index);
+            files
+                .iter()
+                .map(|file| {
+                    let present = index
+                        .items
+                        .get(&file.id.0)
+                        .filter(|row| row.version == file.version.0)
+                        .map_or(0, |row| row.present.bytes());
+                    file.size.0.saturating_sub(present)
+                })
+                .sum()
+        };
+        let short = coming > self.free_bytes();
+        self.short_of_room.store(short, Ordering::SeqCst);
+        if short {
+            return;
+        }
+        let missing: Vec<Entry> = files
+            .into_iter()
+            .filter(|file| self.transfer(&file.id).is_none())
+            .collect();
+        self.download_all(&missing);
     }
 
     /// Drops what is cached of `id` and stops its download.
@@ -156,6 +219,9 @@ impl Drive {
             NodeId::Top => return Err(words::NOT_ON_A_DRIVE),
             NodeId::Local(_) => {
                 inner.edit(id).ok_or(words::NOT_ON_A_DRIVE)?;
+                if !keep && inner.keeps_all() {
+                    return Err(words::KEPT_WITH_DRIVE);
+                }
                 if !keep && inner.kept_by_folder(id) {
                     return Err(words::KEPT_WITH_FOLDER);
                 }
@@ -170,6 +236,9 @@ impl Drive {
             .ok_or(words::NOT_ON_A_DRIVE)?;
         if matches!(entry.kind, ItemKind::Online { .. }) {
             return Err(words::ONLINE_ONLY);
+        }
+        if !keep && inner.keeps_all() {
+            return Err(words::KEPT_WITH_DRIVE);
         }
         if !keep && inner.kept_by_folder(id) {
             return Err(words::KEPT_WITH_FOLDER);
@@ -218,6 +287,9 @@ impl Drive {
     pub fn remove_download(&self, id: &NodeId) -> Result<(), Refusal> {
         let inner = &self.inner;
         let id = &inner.canonical(id);
+        if inner.keeps_all() && *id != NodeId::Top {
+            return Err(words::KEPT_WITH_DRIVE);
+        }
         if self.inner.kept_by_folder(id) {
             return Err(words::KEPT_WITH_FOLDER);
         }
@@ -378,7 +450,45 @@ impl Drive {
         }
         changed.extend(met);
         inner.emit(changed);
+        // While the whole drive is kept, what the listing just added is fetched too.
+        inner.fetch_everything();
         inner.evict();
+    }
+
+    /// "Keep Everything Downloaded" on or off. On: every item of the drive is kept, downloaded
+    /// and never evicted, also what the listing adds later, as long as what is still to come fits
+    /// in the free space ([`Drive::short_of_room`] says when it does not; nothing is removed for
+    /// it). Off: back to the items kept one by one. Nothing is removed then; the rest may be
+    /// evicted again past the limit.
+    ///
+    /// The drive does not remember it: its host sets it again each time it opens the drive.
+    pub fn set_keep_all(&self, on: bool) {
+        let inner = &self.inner;
+        let was = inner.keep_all.swap(on, Ordering::SeqCst);
+        if was != on {
+            let every: Vec<NodeId> = inner
+                .every_entry()
+                .into_iter()
+                .map(|entry| NodeId::Remote(entry.id))
+                .collect();
+            inner.emit(every);
+        }
+        inner.fetch_everything();
+        if !on {
+            inner.evict();
+        }
+    }
+
+    /// Whether the whole drive is kept downloaded ([`Drive::set_keep_all`]).
+    pub fn keeps_all(&self) -> bool {
+        self.inner.keeps_all()
+    }
+
+    /// Whether keeping the whole drive downloaded needs more room than the cache's file system
+    /// has free, as the last look found ([`crate::words::NO_ROOM_FOR_ALL`]): what is not here is
+    /// then not fetched until it fits. Always `false` while the drive is not kept whole.
+    pub fn short_of_room(&self) -> bool {
+        self.inner.short_of_room.load(Ordering::SeqCst)
     }
 
     /// Bytes of the drive's files here: what is cached and what was written here.

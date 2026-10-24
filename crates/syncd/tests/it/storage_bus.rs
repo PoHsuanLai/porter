@@ -2,14 +2,14 @@
 //! Graph drive on one private bus. A Storage grant on a Microsoft account (class Files) becomes a
 //! dataset that mirrors the app folder both ways; a two-sided edit is a `Conflict` signal with its
 //! number and `Resolve` settles it; a grant that goes (or an account that is removed) drops the
-//! dataset. Photos runs only behind its switch. The relay, not syncd, authenticates: the bearer is
+//! dataset. Photos runs only for a grant of class Photos. The relay, not syncd, authenticates: the bearer is
 //! the fake provider's, and the credential the service holds appears nowhere.
 
 use crate::common;
 
 use common::bus::PrivateBus;
 use common::hosted::{Link, host};
-use common::{Known, client};
+use common::{Known, PhotosGrant, client};
 use porter_core::capability::StorageScope;
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::{
@@ -28,7 +28,6 @@ use porter_service::Registry;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use syncd::datasets::photos::PhotosSwitch;
 use syncd::datasets::pim::{AccountdUnavailable, Wiring};
 use syncd::datasets::storage::{
     ClientStorageGrants, FILES_APP, PHOTOS_APP, StorageConfig, StorageGrants, StorageKind,
@@ -121,7 +120,7 @@ fn grant(id: &str, class: DataClass) -> Grant {
     }
 }
 
-async fn rig(photos: PhotosSwitch) -> Rig {
+async fn rig(photos: PhotosGrant) -> Rig {
     let graph = FakeGraph::start(BEARER).await.expect("graph");
     graph.set_limit(1_000_000);
     let endpoint = EndpointUrl::parse(graph.base_url()).expect("url");
@@ -171,10 +170,12 @@ async fn rig(photos: PhotosSwitch) -> Rig {
     let hosted = host(
         provider,
         Registry {
-            grants: vec![
-                grant("files-grant", DataClass::Files),
-                grant("photos-grant", DataClass::Photos),
-            ],
+            grants: std::iter::once(grant("files-grant", DataClass::Files))
+                .chain(
+                    (photos == PhotosGrant::Granted)
+                        .then(|| grant("photos-grant", DataClass::Photos)),
+                )
+                .collect(),
             accounts: vec![account],
             toggles: vec![],
         },
@@ -211,10 +212,7 @@ async fn rig(photos: PhotosSwitch) -> Rig {
             real: ClientStorageGrants::new(accounts),
             shown: Arc::clone(&shown),
         },
-        StorageConfig {
-            photos,
-            ..StorageConfig::default()
-        },
+        StorageConfig::default(),
     );
     Rig {
         bus,
@@ -247,14 +245,14 @@ fn local(rig: &Rig, rel: &str) -> std::path::PathBuf {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_files_grant_on_a_graph_account_mirrors_the_app_folder_both_ways_through_the_relay() {
-    let mut rig = rig(PhotosSwitch::Off).await;
+    let mut rig = rig(PhotosGrant::NotGranted).await;
     let files = client(&rig.bus, &rig.known, FILES_APP, CallerRole::App).await;
     let sync = SyncProxy::new(&files).await.expect("proxy");
     assert_eq!(names(&sync).await, Vec::<String>::new(), "nothing before");
 
     rig.supervisor.tick().await;
     assert_eq!(names(&sync).await, [DATASET], "the grant became a dataset");
-    // The Photos switch is off, so the Photos-class grant starts nothing.
+    // No Photos-class grant, so no Photos dataset.
     let photos = client(&rig.bus, &rig.known, PHOTOS_APP, CallerRole::App).await;
     assert_eq!(
         names(&SyncProxy::new(&photos).await.expect("proxy")).await,
@@ -294,7 +292,7 @@ async fn a_files_grant_on_a_graph_account_mirrors_the_app_folder_both_ways_throu
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_two_sided_edit_is_a_conflict_signal_with_a_number_and_keep_remote_settles_it() {
-    let mut rig = rig(PhotosSwitch::Off).await;
+    let mut rig = rig(PhotosGrant::NotGranted).await;
     let files = client(&rig.bus, &rig.known, FILES_APP, CallerRole::App).await;
     let sync = SyncProxy::new(&files).await.expect("proxy");
     let mut conflicts = sync.receive_conflict().await.expect("stream");
@@ -356,7 +354,7 @@ async fn a_two_sided_edit_is_a_conflict_signal_with_a_number_and_keep_remote_set
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_revoked_grant_drops_the_dataset_keeps_the_files_and_a_removed_account_wipes_them() {
-    let mut rig = rig(PhotosSwitch::Off).await;
+    let mut rig = rig(PhotosGrant::NotGranted).await;
     let files = client(&rig.bus, &rig.known, FILES_APP, CallerRole::App).await;
     let sync = SyncProxy::new(&files).await.expect("proxy");
     rig.supervisor.tick().await;
@@ -409,8 +407,8 @@ async fn a_revoked_grant_drops_the_dataset_keeps_the_files_and_a_removed_account
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn photos_run_only_behind_the_switch_for_a_photos_grant_and_an_import_reaches_the_drive() {
-    let mut rig = rig(PhotosSwitch::On).await;
+async fn photos_run_for_a_photos_grant_and_an_import_reaches_the_drive() {
+    let mut rig = rig(PhotosGrant::Granted).await;
     let photos = client(&rig.bus, &rig.known, PHOTOS_APP, CallerRole::App).await;
     let sync = SyncProxy::new(&photos).await.expect("proxy");
     rig.supervisor.tick().await;

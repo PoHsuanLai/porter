@@ -5,7 +5,9 @@
 //! records syncd's grant of it, and the supervisor lists the drive; refused, the row reads off with
 //! a plain line under it; off takes the grant back, keeps the listing and the access given, so on
 //! again asks nothing. A listed drive's files download on demand into its cache, the cache limit
-//! row sets what eviction keeps to, and a computer with no way to show the folder says so.
+//! row sets what eviction keeps to, "Keep Everything Downloaded" (offered only while the drive is
+//! shown) keeps the whole drive and what is added to it, also after a restart, and a computer
+//! with no way to show the folder says so.
 
 use crate::common;
 
@@ -48,6 +50,7 @@ const ACCOUNT: &str = "graph-acct";
 const SEGMENT: &str = "graph_acct";
 const BEARER: &str = "fake:graph-acct:graph";
 const FILES_ROW: &str = "accounts.graph-acct.storage.files";
+const KEEP_ROW: &str = "accounts.graph-acct.storage.keep";
 
 /// A Microsoft-shaped provider: the app folder asked at sign-in, the whole drive on use.
 const PROVIDER: &str = r#"
@@ -184,7 +187,8 @@ async fn rig_showing(
             ..StorageConfig::default()
         },
     );
-    let own = common::hosted::keep(&hosted, NoDirectory, paths.clone(), hub.clone());
+    let own = common::hosted::keep(&hosted, NoDirectory, paths.clone(), hub.clone())
+        .with_drives(supervisor.drive_set());
     let module = SyncSettings::new(
         Arc::new(own),
         Arc::new(known.clone()),
@@ -482,6 +486,104 @@ async fn the_cache_limit_row_sets_what_eviction_keeps_to() {
         rig.settings.set(&limit, &text("lots")).await.is_err(),
         "bytes or 0 only"
     );
+}
+
+async fn offered(rig: &Rig, path: &str) -> bool {
+    let schema = rig.settings.describe().await.expect("schema");
+    schema.key.iter().any(|key| key.path.0 == path)
+}
+
+/// Where the item at `at` of `drive` stands, once it is named.
+fn state_at(drive: &LiveDrive, at: &str) -> Option<ItemState> {
+    let node = drive.drive.resolve(at.as_ref()).ok()??;
+    drive.drive.status(&node.id).map(|status| status.state)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn keep_everything_downloaded_is_offered_while_shown_and_outlasts_a_restart() {
+    let mut rig = rig(agreeing()).await;
+    rig.graph.put_root_file("Docs/Plan.txt", b"plan");
+    rig.graph.put_root_file("Notes.txt", b"notes");
+    let keep_row = KeyPath(KEEP_ROW.to_owned());
+    assert!(
+        !offered(&rig, KEEP_ROW).await,
+        "not while the drive isn't shown"
+    );
+    assert!(rig.settings.set(&keep_row, &word(true)).await.is_err());
+
+    rig.settings.set(&row(), &word(true)).await.expect("on");
+    eventually("the row reads on", async || {
+        rig.settings.get(&row()).await.ok() == Some(word(true))
+    })
+    .await;
+    assert!(offered(&rig, KEEP_ROW).await, "offered once shown");
+    assert_eq!(rig.settings.get(&keep_row).await.expect("get"), word(false));
+    // Set before the drive starts, as it is found after a restart: kept in syncd.toml.
+    rig.settings
+        .set(&keep_row, &word(true))
+        .await
+        .expect("keep all");
+    assert_eq!(rig.settings.get(&keep_row).await.expect("get"), word(true));
+    let saved = std::fs::read_to_string(&rig.paths.settings).expect("saved");
+    assert!(saved.contains("keep_all = [\"graph_acct\"]"), "{saved}");
+
+    rig.supervisor.tick().await;
+    let drives = rig.supervisor.drive_set();
+    let drive = drives.get(rig.account.as_str()).expect("served");
+    assert!(
+        drive.drive.keeps_all(),
+        "the drive started keeping everything"
+    );
+    eventually("the whole drive is downloaded", async || {
+        state_at(&drive, "Docs/Plan.txt") == Some(ItemState::Downloaded)
+            && state_at(&drive, "Notes.txt") == Some(ItemState::Downloaded)
+    })
+    .await;
+    // What is added to the drive is downloaded too, and nothing is evicted past the limit.
+    rig.graph.put_root_file("Docs/Later.txt", b"later");
+    eventually("the new file is downloaded", async || {
+        state_at(&drive, "Docs/Later.txt") == Some(ItemState::Downloaded)
+    })
+    .await;
+    let limit = KeyPath(CACHE_LIMIT.to_owned());
+    rig.settings
+        .set(&limit, &toml::Value::String("1".to_owned()))
+        .await
+        .expect("limit");
+    eventually("the drive follows the limit", async || {
+        drive.drive.limit() == CacheLimit::Bytes(1)
+    })
+    .await;
+    for at in ["Docs/Plan.txt", "Notes.txt", "Docs/Later.txt"] {
+        assert_eq!(state_at(&drive, at), Some(ItemState::Downloaded), "{at}");
+    }
+    let schema = rig.settings.describe().await.expect("schema");
+    let keep = schema
+        .key
+        .iter()
+        .find(|k| k.path.0 == KEEP_ROW)
+        .expect("row");
+    assert_eq!(keep.label.0, "Keep Everything Downloaded");
+    assert!(keep.note.is_none(), "it fits");
+
+    // Off: nothing is removed then, and what is past the limit may be evicted again.
+    rig.settings
+        .set(&keep_row, &word(false))
+        .await
+        .expect("keep all off");
+    assert!(!drive.drive.keeps_all());
+    rig.settings
+        .set(&limit, &toml::Value::String("2".to_owned()))
+        .await
+        .expect("limit");
+    eventually("evictable again", async || {
+        state_at(&drive, "Notes.txt") == Some(ItemState::Cloud)
+    })
+    .await;
+
+    // Show in Files off takes the row away.
+    rig.settings.set(&row(), &word(false)).await.expect("off");
+    assert!(!offered(&rig, KEEP_ROW).await);
 }
 
 #[tokio::test(flavor = "multi_thread")]

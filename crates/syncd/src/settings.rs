@@ -5,7 +5,9 @@
 //! One group of rows per account syncd holds: `accounts.<id>.label`, `.provider` and `.state`
 //! (read-outs), `.sync.files` and `.sync.photos` (what syncd keeps of the account, shown for what
 //! it offers), `.storage.files` ("Show in Files", for an account whose provider asks the whole
-//! drive on use), `.reauth` ("Sign in again") and `.remove`. Turning "Show in Files" on may open
+//! drive on use), `.storage.keep` ("Keep Everything Downloaded", only while Show in Files is on;
+//! kept in `syncd.toml`, with a line under it when the drive does not fit this computer's free
+//! space), `.reauth` ("Sign in again") and `.remove`. Turning "Show in Files" on may open
 //! the provider's page, so it answers at once and the row says how it went afterwards: on, or
 //! off with a line under it when the person did not give the access. One more row, `accounts.sync.add`, starts
 //! "Continue as": the person picks an account they are signed in to and syncd signs in as it. The
@@ -18,8 +20,8 @@
 
 use crate::datasets::drive::CacheKnob;
 use crate::keep::{
-    ContinueError, Directory, Hosted, Keep, SyncClass, account_of, drive_allowed, sync_allowed,
-    sync_offers,
+    ContinueError, Directory, Hosted, Keep, SwitchError, SyncClass, account_of, drive_allowed,
+    sync_allowed, sync_offers,
 };
 use ds_settings::live::{
     Access, Caller, LiveError, LiveModule, LiveSchema, Served, Verdict, serve,
@@ -57,6 +59,8 @@ pub(crate) enum Key {
     Sync(AccountId, SyncClass),
     /// `accounts.<id>.storage.files`: "Show in Files".
     Files(AccountId),
+    /// `accounts.<id>.storage.keep`: "Keep Everything Downloaded".
+    KeepAll(AccountId),
     /// `accounts.<id>.reauth`.
     Reauth(AccountId),
     /// `accounts.<id>.remove`.
@@ -98,6 +102,7 @@ pub(crate) fn parse(path: &str, registry: &Registry) -> Option<Key> {
             "reauth" => Some(Key::Reauth(id)),
             "remove" => Some(Key::Remove(id)),
             "storage.files" => Some(Key::Files(id)),
+            "storage.keep" => Some(Key::KeepAll(id)),
             _ => {
                 let what = tail.strip_prefix("sync.")?;
                 SyncClass::ALL
@@ -119,6 +124,7 @@ pub(crate) fn path(key: &Key) -> String {
         Key::State(id) => format!("accounts.{id}.state"),
         Key::Sync(id, class) => format!("accounts.{id}.sync.{}", class.slug()),
         Key::Files(id) => format!("accounts.{id}.storage.files"),
+        Key::KeepAll(id) => format!("accounts.{id}.storage.keep"),
         Key::Reauth(id) => format!("accounts.{id}.reauth"),
         Key::Remove(id) => format!("accounts.{id}.remove"),
     }
@@ -223,12 +229,21 @@ const FILES_WORDS: (&str, &str) = (
 /// The line under "Show in Files" when turning it on did not end in it on.
 pub const FILES_NOT_ON: &str = "Files wasn't turned on. You can try again.";
 
-/// How an account's rows are drawn beyond the registry: whether "Show in Files" is offered, and
-/// whether its last turning on did not go through.
+/// "Keep Everything Downloaded": its label and help line.
+const KEEP_ALL_WORDS: (&str, &str) = (
+    "Keep Everything Downloaded",
+    "Downloads all of this account's files and keeps them on this computer, so they open without a connection.",
+);
+
+/// How an account's rows are drawn beyond the registry: whether "Show in Files" is offered,
+/// whether its last turning on did not go through, whether it is on (which offers "Keep
+/// Everything Downloaded"), and whether keeping everything does not fit the free space.
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct FilesRow {
     pub offered: bool,
     pub not_on: bool,
+    pub shown: bool,
+    pub short_of_room: bool,
 }
 
 fn account_keys(account: &Account, names: &ProviderNames, files: FilesRow) -> Vec<KeySpec> {
@@ -289,6 +304,23 @@ fn account_keys(account: &Account, names: &ProviderNames, files: FilesRow) -> Ve
             toml::Value::String("off".to_owned()),
         );
         row.note = files.not_on.then(|| Note(FILES_NOT_ON.to_owned()));
+        keys.push(row);
+    }
+    if files.offered && files.shown {
+        let (label, help) = KEEP_ALL_WORDS;
+        let mut row = spec(
+            &Key::KeepAll(id.clone()),
+            section,
+            label,
+            help,
+            KeyKind::Toggle {
+                variants: ["on".to_owned(), "off".to_owned()],
+            },
+            toml::Value::String("off".to_owned()),
+        );
+        row.note = files
+            .short_of_room
+            .then(|| Note(porter_drive::words::NO_ROOM_FOR_ALL.to_owned()));
         keys.push(row);
     }
     keys.push(spec(
@@ -449,13 +481,33 @@ pub fn read_cache_limit(file: &Path) -> CacheLimit {
 
 /// The drives `file` keeps paused (`[storage] paused = ["<drive id>", ...]`).
 pub fn read_paused(file: &Path) -> BTreeSet<String> {
+    read_drives(file, "paused")
+}
+
+/// Writes to `file` that the drive `id` is paused, or not, keeping the rest of it.
+pub fn write_paused(file: &Path, id: &str, paused: bool) -> std::io::Result<()> {
+    write_drives(file, "paused", id, paused)
+}
+
+/// The drives `file` keeps downloaded whole (`[storage] keep_all = ["<drive id>", ...]`).
+pub fn read_keep_all(file: &Path) -> BTreeSet<String> {
+    read_drives(file, "keep_all")
+}
+
+/// Writes to `file` that the drive `id` is kept downloaded whole, or not, keeping the rest of
+/// it.
+pub fn write_keep_all(file: &Path, id: &str, on: bool) -> std::io::Result<()> {
+    write_drives(file, "keep_all", id, on)
+}
+
+/// The drive ids `file` lists under `[storage] <list>`.
+fn read_drives(file: &Path, list: &str) -> BTreeSet<String> {
     settings_text(file)
         .and_then(|text| text.parse::<toml::Table>().ok())
         .and_then(|table| {
-            let paused = table.get("storage")?.get("paused")?.as_array()?.clone();
+            let ids = table.get("storage")?.get(list)?.as_array()?.clone();
             Some(
-                paused
-                    .iter()
+                ids.iter()
                     .filter_map(|id| id.as_str().map(str::to_owned))
                     .collect(),
             )
@@ -463,10 +515,11 @@ pub fn read_paused(file: &Path) -> BTreeSet<String> {
         .unwrap_or_default()
 }
 
-/// Writes to `file` that the drive `id` is paused, or not, keeping the rest of it.
-pub fn write_paused(file: &Path, id: &str, paused: bool) -> std::io::Result<()> {
-    let mut ids = read_paused(file);
-    match paused {
+/// Writes to `file` that the drive `id` is in `[storage] <list>`, or not, keeping the rest of it,
+/// in one atomic write.
+fn write_drives(file: &Path, list: &str, id: &str, listed: bool) -> std::io::Result<()> {
+    let mut ids = read_drives(file, list);
+    match listed {
         true => ids.insert(id.to_owned()),
         false => ids.remove(id),
     };
@@ -478,7 +531,7 @@ pub fn write_paused(file: &Path, id: &str, paused: bool) -> std::io::Result<()> 
         .or_insert_with(|| toml::Value::Table(toml::Table::new()));
     if let toml::Value::Table(storage) = storage {
         storage.insert(
-            "paused".to_owned(),
+            list.to_owned(),
             toml::Value::Array(ids.into_iter().map(toml::Value::String).collect()),
         );
     }
@@ -545,9 +598,12 @@ impl<H: Hosted, D: Directory, C: Callers> LiveModule for SyncSettings<H, D, C> {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
-        let mut schema = schema(&self.keep.registry(), &self.names, |account| FilesRow {
+        let registry = self.keep.registry();
+        let mut schema = schema(&registry, &self.names, |account| FilesRow {
             offered: self.keep.offers_files(account),
             not_on: not_on.contains(&account.id),
+            shown: drive_allowed(&registry.grants, &account.id),
+            short_of_room: self.keep.short_of_room(&account.id),
         });
         let kept = self
             .kept
@@ -580,6 +636,14 @@ impl<H: Hosted, D: Directory, C: Callers> LiveModule for SyncSettings<H, D, C> {
             Key::Files(id) => {
                 account(&id)?;
                 text(if drive_allowed(&registry.grants, &id) {
+                    "on"
+                } else {
+                    "off"
+                })
+            }
+            Key::KeepAll(id) => {
+                account(&id)?;
+                text(if self.keep.keeps_everything(&id) {
                     "on"
                 } else {
                     "off"
@@ -636,6 +700,23 @@ impl<H: Hosted, D: Directory, C: Callers> LiveModule for SyncSettings<H, D, C> {
                 let toggle = toggle_of(&value)
                     .ok_or_else(|| LiveError::BadValue("this row is `on` or `off`".into()))?;
                 self.set_files(id, toggle).await?;
+            }
+            Key::KeepAll(id) => {
+                let toggle = toggle_of(&value)
+                    .ok_or_else(|| LiveError::BadValue("this row is `on` or `off`".into()))?;
+                self.keep
+                    .keep_everything(&id, toggle)
+                    .map_err(|why| match why {
+                        SwitchError::NothingToKeep => {
+                            LiveError::NotPermitted("this account isn't shown in Files".into())
+                        }
+                        why => {
+                            eprintln!("syncd: a Settings change was refused: {why}");
+                            failed("That could not be saved.")
+                        }
+                    })?;
+                let word = if toggle == Toggle::On { "on" } else { "off" };
+                announce(&self.served, &Key::KeepAll(id), word).await;
             }
             Key::Reauth(id) => {
                 let (keep, served) = (Arc::clone(&self.keep), Arc::clone(&self.served));
@@ -765,6 +846,7 @@ mod tests {
             Key::Sync(id.clone(), SyncClass::Files),
             Key::Sync(id.clone(), SyncClass::Photos),
             Key::Files(id.clone()),
+            Key::KeepAll(id.clone()),
             Key::Reauth(id.clone()),
             Key::Remove(id),
             Key::CacheLimit,
@@ -774,6 +856,62 @@ mod tests {
         }
         assert_eq!(parse("accounts.other.label", &registry), None);
         assert_eq!(parse("accounts.graph.acct.sync.video", &registry), None);
+    }
+
+    #[test]
+    fn keep_everything_is_offered_only_while_shown_in_files_and_says_when_it_does_not_fit() {
+        let mut registry = Registry::default();
+        registry.accounts.push(porter_fake::storage_account());
+        let id = registry.accounts[0].id.clone();
+        let names = ProviderNames::default();
+        let keep = path(&Key::KeepAll(id));
+        let row = |files: FilesRow| {
+            schema(&registry, &names, |_| files)
+                .key
+                .into_iter()
+                .find(|key| key.path.0 == keep)
+        };
+        let offered = FilesRow {
+            offered: true,
+            ..FilesRow::default()
+        };
+        assert!(row(offered).is_none(), "not while Show in Files is off");
+        let shown = FilesRow {
+            shown: true,
+            ..offered
+        };
+        let it = row(shown).expect("offered while shown");
+        assert_eq!(it.label.0, KEEP_ALL_WORDS.0);
+        assert_eq!(it.exposure, Exposure::Basic);
+        assert!(it.note.is_none());
+        let short = row(FilesRow {
+            short_of_room: true,
+            ..shown
+        })
+        .expect("offered");
+        assert_eq!(
+            short.note.map(|note| note.0).as_deref(),
+            Some("Not enough space to keep everything downloaded.")
+        );
+        for word in ["mount", "FUSE", "WebDAV", "delta", "scope", "token"] {
+            assert!(!KEEP_ALL_WORDS.0.contains(word) && !KEEP_ALL_WORDS.1.contains(word));
+        }
+    }
+
+    #[test]
+    fn which_drives_are_kept_whole_is_saved_beside_the_rest_and_read_back() {
+        let dir = porter_fake::Scratch::new("syncd-settings-keep-all");
+        let file = dir.join("porter/syncd/syncd.toml");
+        write_paused(&file, "one", true).expect("paused");
+        write_keep_all(&file, "one", true).expect("save");
+        write_keep_all(&file, "two", true).expect("save");
+        write_keep_all(&file, "two", false).expect("save");
+        assert_eq!(read_keep_all(&file), BTreeSet::from(["one".to_owned()]));
+        assert_eq!(
+            read_paused(&file),
+            BTreeSet::from(["one".to_owned()]),
+            "kept"
+        );
     }
 
     #[test]

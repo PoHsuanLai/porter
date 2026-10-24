@@ -14,6 +14,9 @@
 //!   sign-in of its own when the account was not given it yet ([`Hosted::extend_access`]), then
 //!   records syncd's grant of it, and the supervisor lists the drive at its next look; off takes
 //!   the grant back and keeps the listing, and the access stays given, so on again asks nothing.
+//! - [`Keep::keep_everything`]: "Keep Everything Downloaded" for a drive shown in Files, kept in
+//!   syncd's settings so it holds across restarts (the drive does the keeping:
+//!   `porter_drive::Drive::set_keep_all`).
 //! - [`Keep::remove`]: forgets an account: stops its datasets, deletes its journals and mirrors
 //!   ([`crate::removal::wipe`]) and its secrets. accountd removing the identity does not do this:
 //!   the person removes it in the sync rows.
@@ -115,6 +118,11 @@ impl Continued {
             Continued::SignedIn(id) | Continued::AlreadyHere(id) => id,
         }
     }
+}
+
+/// The folder an account's journals, cache and drive are kept under, and its drive's id.
+fn drive_dir(account: &AccountId) -> Option<AccountDir> {
+    AccountDir::parse(&porter_core::object_segment(account))
 }
 
 /// syncd's accounts over the service it hosts and the directory of identities.
@@ -329,6 +337,35 @@ impl<H: Hosted, D: Directory> Keep<H, D> {
         }
     }
 
+    /// "Keep Everything Downloaded" on or off for the drive of `account`, which must be shown in
+    /// Files. It is kept in syncd's settings, so the drive keeps everything again after a restart
+    /// (and after Show in Files is turned off and on again); the drive shown now follows at once.
+    pub fn keep_everything(&self, account: &AccountId, toggle: Toggle) -> Result<(), SwitchError> {
+        let registry = self.hosted.registry();
+        account_of(&registry, account).ok_or(SwitchError::UnknownAccount)?;
+        if !drive_allowed(&registry.grants, account) {
+            return Err(SwitchError::NothingToKeep);
+        }
+        let dir = drive_dir(account).ok_or(SwitchError::UnknownAccount)?;
+        self.drives
+            .set_keep_all(dir.as_str(), toggle == Toggle::On)
+            .map_err(|why| {
+                eprintln!("syncd: whether to keep everything downloaded could not be saved: {why}");
+                SwitchError::Unsaved
+            })
+    }
+
+    /// Whether the drive of `account` is kept downloaded whole.
+    pub fn keeps_everything(&self, account: &AccountId) -> bool {
+        drive_dir(account).is_some_and(|dir| self.drives.keeps_all(dir.as_str()))
+    }
+
+    /// Whether keeping the drive of `account` downloaded whole needs more room than this computer
+    /// has free.
+    pub fn short_of_room(&self, account: &AccountId) -> bool {
+        drive_dir(account).is_some_and(|dir| self.drives.short_of_room(dir.as_str()))
+    }
+
     /// Takes back every grant of syncd's under one of `wanted`.
     async fn revoke(&self, wanted: &[GrantKey]) -> Result<(), SwitchError> {
         let AccountsReply::Grants(grants) = self.hosted.answer(AccountsRequest::ListGrants).await
@@ -369,8 +406,7 @@ impl<H: Hosted, D: Directory> Keep<H, D> {
     /// stays where it is, so trying again keeps nothing twice.
     pub async fn remove(&self, account: &AccountId) -> Result<Vec<Kept>, RemoveError> {
         account_of(&self.hosted.registry(), account).ok_or(RemoveError::Unknown)?;
-        let dir =
-            AccountDir::parse(&porter_core::object_segment(account)).ok_or(RemoveError::Unknown)?;
+        let dir = drive_dir(account).ok_or(RemoveError::Unknown)?;
         let failed = |why: RemoveError| {
             self.drives.release(dir.as_str());
             why

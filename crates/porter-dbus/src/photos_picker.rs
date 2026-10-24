@@ -3,7 +3,8 @@
 //! (`Start`), the person picks in the browser at `picker_uri`, the app polls (`Poll`) until
 //! `picked`, then `Import` fetches what was picked into the account's `picked/<session>`
 //! folder and answers the files' paths; `Cancel` ends a session. The interface exists only
-//! while syncd runs Google Photos (`SYNCD_PHOTOS`); only the Photos app (`org.quire.Photos`)
+//! in a build with the `photos-picker` feature, and an account answers while syncd runs its
+//! Google Photos (the account's Photos row in Settings); only the Photos app (`org.quire.Photos`)
 //! may call it. No token, no URL of Google's bytes, and no picked file's content ever crosses it.
 
 use zbus::fdo;

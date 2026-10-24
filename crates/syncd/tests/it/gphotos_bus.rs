@@ -1,5 +1,5 @@
 //! syncd's Google Photos against the real accountd and the fake Google on one private bus:
-//! behind the Photos switch, a Photos grant on a Google account becomes an upload dataset (new
+//! a Photos grant on a Google account (the account's Photos row in Settings) becomes an upload dataset (new
 //! files in the upload folder are sent once, into an album the app created, and nothing is
 //! pulled) and a picker (session, polling, the picked items downloaded, the session deleted).
 //! The relay authenticates each API with its own audience's bearer; no secret is anywhere.
@@ -7,6 +7,7 @@
 use crate::common;
 use crate::googlerig as google_rig;
 
+use common::PhotosGrant;
 use google_rig::{
     FILES_DATASET, Media, PICKER_BEARER, Rig, SECRET_ACCESS, SECRET_REFRESH, UPLOAD_BEARER,
     UPLOAD_DATASET, client_of, eventually, rig, rig_picker_only, rig_with,
@@ -15,7 +16,6 @@ use porter_dbus::SyncProxy;
 use porter_fake_servers::google::Pick;
 use porter_sync::ItemState;
 use std::sync::atomic::Ordering;
-use syncd::datasets::photos::PhotosSwitch;
 use syncd::datasets::photos::google::{
     ALBUM_TITLE, PickerError, PickerState, SLUG, SessionEnd, SessionId,
 };
@@ -62,9 +62,9 @@ fn photo(n: u8) -> Vec<u8> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn google_photos_run_only_behind_the_switch() {
-    // Off: the Photos grant starts nothing, makes no folder and has no picker.
-    let mut off = rig(PhotosSwitch::Off).await;
+async fn google_photos_run_only_for_a_photos_grant() {
+    // No Photos grant: nothing starts, no folder is made and there is no picker.
+    let mut off = rig(PhotosGrant::NotGranted).await;
     let photos = client_of(&off, PHOTOS_APP).await;
     let files = client_of(&off, FILES_APP).await;
     off.supervisor.tick().await;
@@ -80,8 +80,8 @@ async fn google_photos_run_only_behind_the_switch() {
     assert!(off.supervisor.google_picker(&off.account).is_none());
     assert!(!upload_dir(&off).exists());
 
-    // On: the upload dataset is the Photos app's, the Drive mirror still the Files app's.
-    let mut on = rig(PhotosSwitch::On).await;
+    // The grant: the upload dataset is the Photos app's, the Drive mirror still the Files app's.
+    let mut on = rig(PhotosGrant::Granted).await;
     let photos = client_of(&on, PHOTOS_APP).await;
     let files = client_of(&on, FILES_APP).await;
     on.supervisor.tick().await;
@@ -102,7 +102,7 @@ async fn google_photos_run_only_behind_the_switch() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_new_file_uploads_once_a_duplicate_does_not_and_the_album_is_the_apps_own() {
-    let mut rig = rig(PhotosSwitch::On).await;
+    let mut rig = rig(PhotosGrant::Granted).await;
     rig.supervisor.tick().await;
     std::fs::write(upload_dir(&rig).join("a.jpg"), photo(1)).expect("photo");
     eventually(&rig, "the photo is in Google Photos", || {
@@ -181,7 +181,7 @@ async fn a_new_file_uploads_once_a_duplicate_does_not_and_the_album_is_the_apps_
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_picker_starts_a_session_polls_it_imports_what_was_picked_and_deletes_it() {
-    let mut rig = rig(PhotosSwitch::On).await;
+    let mut rig = rig(PhotosGrant::Granted).await;
     rig.supervisor.tick().await;
     let picker = rig
         .supervisor
@@ -310,7 +310,7 @@ fn pick_two(rig: &Rig, session: &str) {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn picked_bytes_on_a_second_origin_come_with_the_bearer_when_the_provider_file_lists_it() {
-    let mut rig = rig_with(PhotosSwitch::On, Media::Listed).await;
+    let mut rig = rig_with(PhotosGrant::Granted, Media::Listed).await;
     rig.supervisor.tick().await;
     let picker = rig.supervisor.google_picker(&rig.account).expect("picker");
     let session = picker.start().await.expect("session");
@@ -341,7 +341,7 @@ async fn picked_bytes_on_a_second_origin_come_with_the_bearer_when_the_provider_
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_person_who_granted_only_the_picker_gets_the_picker_and_no_upload_dataset() {
-    let mut rig = rig_picker_only(PhotosSwitch::On).await;
+    let mut rig = rig_picker_only(PhotosGrant::Granted).await;
     rig.supervisor.tick().await;
     // No upload dataset, no upload folder, no call to the upload API (no 403 later).
     let photos = client_of(&rig, PHOTOS_APP).await;
@@ -362,7 +362,7 @@ async fn a_person_who_granted_only_the_picker_gets_the_picker_and_no_upload_data
 
 #[tokio::test(flavor = "multi_thread")]
 async fn picked_bytes_on_an_origin_the_provider_file_does_not_list_are_refused_and_get_no_bearer() {
-    let mut rig = rig_with(PhotosSwitch::On, Media::Unlisted).await;
+    let mut rig = rig_with(PhotosGrant::Granted, Media::Unlisted).await;
     rig.supervisor.tick().await;
     let picker = rig.supervisor.google_picker(&rig.account).expect("picker");
     let session = picker.start().await.expect("session");
@@ -381,7 +381,7 @@ async fn picked_bytes_on_an_origin_the_provider_file_does_not_list_are_refused_a
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_google_photos_follow_the_photos_grant_and_leave_what_is_on_disk() {
-    let mut rig = rig(PhotosSwitch::On).await;
+    let mut rig = rig(PhotosGrant::Granted).await;
     let photos = client_of(&rig, PHOTOS_APP).await;
     let sync = SyncProxy::new(&photos).await.expect("proxy");
     rig.supervisor.tick().await;
@@ -425,7 +425,7 @@ async fn the_google_photos_follow_the_photos_grant_and_leave_what_is_on_disk() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn no_secret_is_in_the_ledger_the_journal_or_the_picked_files() {
-    let mut rig = rig(PhotosSwitch::On).await;
+    let mut rig = rig(PhotosGrant::Granted).await;
     rig.supervisor.tick().await;
     std::fs::write(upload_dir(&rig).join("a.jpg"), photo(1)).expect("photo");
     eventually(&rig, "it is up", || synced(&rig) == ["a.jpg"]).await;

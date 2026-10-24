@@ -36,6 +36,10 @@ pub fn kept_unsent(count: usize, folder: &str) -> String {
 pub const CONFLICT: &str = "This file has two versions. Choose one first.";
 /// Keep Downloaded off, or a removal, asked for an item inside a kept folder.
 pub const KEPT_WITH_FOLDER: &str = "This item is kept downloaded with its folder.";
+/// Keep Downloaded off, or a removal, asked for an item while the whole drive is kept downloaded.
+pub const KEPT_WITH_DRIVE: &str = "Everything on this drive is kept downloaded.";
+/// Keeping a whole drive downloaded needs more room than this computer has free.
+pub const NO_ROOM_FOR_ALL: &str = "Not enough space to keep everything downloaded.";
 /// A drive id that names no drive.
 pub const NO_DRIVE: &str = "This drive isn't in Files.";
 /// Save a Copy asked for an item that is not an online document.

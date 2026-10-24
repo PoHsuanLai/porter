@@ -6,7 +6,7 @@
 use crate::common;
 use crate::googlerig as google_rig;
 
-use common::{ACCESS_DENIED, INVALID_ARGS, NO_FITTING, error_name};
+use common::{ACCESS_DENIED, INVALID_ARGS, NO_FITTING, PhotosGrant, error_name};
 use google_rig::{
     PICKER_BEARER, Rig, SECRET_ACCESS, SECRET_REFRESH, SEGMENT, client_of, rig, rig_picker_only,
     serve_picker,
@@ -18,7 +18,6 @@ use porter_dbus::{
 use porter_fake_servers::google::Pick;
 use std::pin::Pin;
 use std::time::Duration;
-use syncd::datasets::photos::PhotosSwitch;
 use syncd::datasets::storage::{FILES_APP, PHOTOS_APP};
 use zbus::export::futures_core::Stream;
 
@@ -43,7 +42,7 @@ fn pick(rig: &Rig, session: &str) {
     ));
 }
 
-async fn ready(photos: PhotosSwitch) -> Rig {
+async fn ready(photos: PhotosGrant) -> Rig {
     let mut rig = rig(photos).await;
     serve_picker(&rig).await;
     rig.supervisor.tick().await;
@@ -89,7 +88,7 @@ fn contains(haystack: &[u8], needle: &str) -> bool {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_photos_app_starts_polls_imports_and_cancels_over_the_bus() {
-    let rig = ready(PhotosSwitch::On).await;
+    let rig = ready(PhotosGrant::Granted).await;
     let mut tap = Tap::start(&rig).await;
     let app = client_of(&rig, PHOTOS_APP).await;
     let picker = PhotosPickerProxy::new(&app).await.expect("proxy");
@@ -159,7 +158,7 @@ async fn the_photos_app_starts_polls_imports_and_cancels_over_the_bus() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn only_the_photos_app_may_call_and_every_bad_word_or_missing_picker_is_a_typed_error() {
-    let rig = ready(PhotosSwitch::On).await;
+    let rig = ready(PhotosGrant::Granted).await;
     let app = client_of(&rig, PHOTOS_APP).await;
     let picker = PhotosPickerProxy::new(&app).await.expect("proxy");
 
@@ -232,9 +231,9 @@ async fn only_the_photos_app_may_call_and_every_bad_word_or_missing_picker_is_a_
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn behind_the_switch_off_there_is_no_picker_and_picker_only_consent_still_has_one() {
-    // Off: Photos starts nothing, so no account has a Picker.
-    let off = ready(PhotosSwitch::Off).await;
+async fn without_a_photos_grant_there_is_no_picker_and_picker_only_consent_still_has_one() {
+    // No Photos grant: Photos starts nothing, so no account has a Picker.
+    let off = ready(PhotosGrant::NotGranted).await;
     let app = client_of(&off, PHOTOS_APP).await;
     let refused = PhotosPickerProxy::new(&app)
         .await
@@ -245,7 +244,7 @@ async fn behind_the_switch_off_there_is_no_picker_and_picker_only_consent_still_
     assert_eq!(error_name(&refused), NO_FITTING);
 
     // The picker scope alone: the Picker stands, there is no upload.
-    let mut only = rig_picker_only(PhotosSwitch::On).await;
+    let mut only = rig_picker_only(PhotosGrant::Granted).await;
     serve_picker(&only).await;
     only.supervisor.tick().await;
     let app = client_of(&only, PHOTOS_APP).await;

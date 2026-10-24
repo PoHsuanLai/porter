@@ -187,11 +187,15 @@ pub struct DriveConfig {
     pub lock_wait: Duration,
     /// How long a file changed here is left closed and alone before it is sent.
     pub quiet: Duration,
+    /// How many bytes the cache's file system has free, when not measured (`None`: measured each
+    /// time it is asked). Keeping everything downloaded fetches nothing past it.
+    pub free_space: Option<u64>,
 }
 
 impl DriveConfig {
     /// A cache in `dir`, with chunks of a mebibyte, the automatic limit, four downloads at once,
-    /// two minutes for a chunk, two seconds for the lock and [`QUIET`] before a change is sent.
+    /// two minutes for a chunk, two seconds for the lock and [`QUIET`] before a change is sent;
+    /// the free space is measured.
     pub fn new(dir: PathBuf) -> Self {
         Self {
             cache: dir,
@@ -201,6 +205,7 @@ impl DriveConfig {
             deadline: Duration::from_secs(120),
             lock_wait: Duration::from_secs(2),
             quiet: QUIET,
+            free_space: None,
         }
     }
 }
@@ -240,6 +245,12 @@ pub(crate) struct Inner {
     open: Mutex<HashMap<NodeId, usize>>,
     errors: Mutex<HashMap<RemoteId, Failure>>,
     limit: Mutex<CacheLimit>,
+    /// "Keep Everything Downloaded": every item counts as kept.
+    keep_all: AtomicBool,
+    /// Keeping everything downloaded needs more room than the cache's file system has free.
+    short_of_room: AtomicBool,
+    /// The free space a test (or a host) names in place of measuring it.
+    free_space: Option<u64>,
     inodes: Mutex<HashMap<u64, NodeId>>,
     offline: AtomicBool,
     quota: Mutex<Option<(u64, Option<u64>)>>,
@@ -551,6 +562,9 @@ impl Drive {
             open: Mutex::default(),
             errors: Mutex::default(),
             limit: Mutex::new(config.limit),
+            keep_all: AtomicBool::new(false),
+            short_of_room: AtomicBool::new(false),
+            free_space: config.free_space,
             inodes: Mutex::new(inodes),
             offline: AtomicBool::new(false),
             quota: Mutex::new(None),
@@ -854,17 +868,23 @@ impl Inner {
         self.dir.join("local").join(n.to_string())
     }
 
-    /// Whether `id` is kept, itself or by a folder above it, as `index` says. When the folders
-    /// above it cannot be read it counts as kept: nothing is evicted on a guess.
+    /// Whether `id` is kept, itself, by a folder above it, or with the whole drive, as `index`
+    /// says. When the folders above it cannot be read it counts as kept: nothing is evicted on a
+    /// guess.
     fn kept_in(&self, index: &Index, id: &RemoteId) -> bool {
-        index.kept.contains(&id.0)
+        self.keeps_all()
+            || index.kept.contains(&id.0)
             || self.listing.ancestors(id).map_or(true, |above| {
                 above.iter().any(|folder| index.kept.contains(&folder.0))
             })
     }
 
-    /// Whether a folder above `id` is kept; when the folders above it cannot be read, yes.
+    /// Whether a folder above `id` is kept, or the whole drive is; when the folders above it
+    /// cannot be read, yes.
     fn kept_by_folder(&self, id: &NodeId) -> bool {
+        if self.keeps_all() {
+            return true;
+        }
         let above = match self.canonical(id) {
             NodeId::Top => return false,
             NodeId::Remote(id)
@@ -898,6 +918,11 @@ impl Inner {
         above.map_or(true, |above| {
             above.iter().any(|folder| index.kept.contains(&folder.0))
         })
+    }
+
+    /// Whether everything is kept downloaded.
+    fn keeps_all(&self) -> bool {
+        self.keep_all.load(Ordering::SeqCst)
     }
 
     fn is_open(&self, id: &NodeId) -> bool {

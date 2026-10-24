@@ -2,11 +2,10 @@
 //! the hub as `<account>/photos_originals` and `<account>/photos_metadata`, each with its own
 //! journal under `<state>/porter/sync/<account>/`.
 //!
-//! **Off by default.** There is no Photos app yet and no flow that grants syncd a Storage
-//! account for photos, so the daemon does not start it; [`start`] is the seam a test, and later
-//! the supervisor, calls, and it does nothing unless the [`PhotosSwitch`] is on
-//! (`SYNCD_PHOTOS=on` is how a host reads it, [`PhotosSwitch::from_var`]). The replicas are
-//! handed in: the caller builds them over relays accountd opens, as `syncd::webdav` does.
+//! The storage supervisor calls [`start`] for each account holding a Storage grant of class
+//! Photos, which the person makes with the account's Photos row in Settings
+//! (`accounts.<id>.sync.photos`); that row is the only switch. The replicas are handed in: the
+//! caller builds them over relays accountd opens, as `syncd::webdav` does.
 
 use super::library::{PhotoLibrary, PhotosError};
 use super::metadata::PhotoMetadata;
@@ -23,27 +22,6 @@ use porter_sync::Replica;
 use std::sync::Arc;
 use tokio::sync::{Notify, watch};
 use tokio::task::JoinHandle;
-
-/// Whether the daemon runs the Photos dataset.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum PhotosSwitch {
-    /// It does not (the default).
-    #[default]
-    Off,
-    /// It does.
-    On,
-}
-
-impl PhotosSwitch {
-    /// The switch a variable's value (`SYNCD_PHOTOS`) sets: `on`, `1` or `true` turn it on,
-    /// anything else, or nothing, leaves it off.
-    pub fn from_var(value: Option<&str>) -> Self {
-        match value.map(str::trim) {
-            Some("on" | "1" | "true") => Self::On,
-            _ => Self::Off,
-        }
-    }
-}
 
 /// What a running dataset shares with the daemon.
 #[derive(Debug)]
@@ -127,23 +105,18 @@ fn run_one<R: Replica + 'static, D: Dataset + 'static>(
 }
 
 /// Starts the Photos dataset of `account` over `library` and the two replicas (originals,
-/// then metadata), registering both in the hub. `None` when the switch is off: nothing is
-/// opened, registered or run.
+/// then metadata), registering both in the hub.
 pub fn start<O, M>(
     wiring: &PhotosWiring,
-    switch: PhotosSwitch,
     account: &AccountDir,
     library: PhotoLibrary,
     originals: O,
     metadata: M,
-) -> Result<Option<PhotosRun>, StartError>
+) -> Result<PhotosRun, StartError>
 where
     O: Replica + 'static,
     M: Replica + 'static,
 {
-    if switch == PhotosSwitch::Off {
-        return Ok(None);
-    }
     let wake = Arc::new(Notify::new());
     let open = |slug: &str| {
         Journal::open(&wiring.paths.journal(account, slug))
@@ -177,31 +150,9 @@ where
             ),
         ),
     ];
-    Ok(Some(PhotosRun {
+    Ok(PhotosRun {
         library,
         wake,
         tasks,
-    }))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_switch_is_off_unless_a_variable_says_on() {
-        const CASES: &[(Option<&str>, PhotosSwitch)] = &[
-            (None, PhotosSwitch::Off),
-            (Some(""), PhotosSwitch::Off),
-            (Some("off"), PhotosSwitch::Off),
-            (Some("no"), PhotosSwitch::Off),
-            (Some("on"), PhotosSwitch::On),
-            (Some(" 1 "), PhotosSwitch::On),
-            (Some("true"), PhotosSwitch::On),
-        ];
-        for (value, expected) in CASES {
-            assert_eq!(PhotosSwitch::from_var(*value), *expected, "{value:?}");
-        }
-        assert_eq!(PhotosSwitch::default(), PhotosSwitch::Off);
-    }
+    })
 }

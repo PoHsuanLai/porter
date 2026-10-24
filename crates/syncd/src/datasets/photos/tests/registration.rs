@@ -1,6 +1,6 @@
 //! The registration seam and the `AccountRemoved` wipe.
 
-use super::super::{DeviceId, ManualMillis, PhotoLibrary, PhotosSwitch, PhotosWiring, start};
+use super::super::{DeviceId, ManualMillis, PhotoLibrary, PhotosWiring, start};
 use crate::paths::{AccountDir, Paths};
 use crate::removal::wipe;
 use crate::scheduler::{Network, Settings};
@@ -72,37 +72,23 @@ fn library(wiring: &PhotosWiring, account: &AccountDir) -> PhotoLibrary {
 }
 
 #[tokio::test]
-async fn photos_is_off_by_default_and_registers_both_datasets_when_switched_on() {
+async fn starting_photos_registers_both_datasets() {
     let root = scratch("photos-register");
     let wiring = wiring(&root);
     let account = AccountDir::parse("a1").expect("account");
+    assert_eq!(
+        wiring.hub.names_for(&settings_caller()),
+        Vec::<String>::new()
+    );
 
-    let off = start(
+    let run = start(
         &wiring,
-        PhotosSwitch::default(),
         &account,
         library(&wiring, &account),
         replica(),
         replica(),
     )
     .expect("start");
-    assert!(off.is_none());
-    assert_eq!(
-        wiring.hub.names_for(&settings_caller()),
-        Vec::<String>::new()
-    );
-    assert!(!wiring.paths.journals.exists(), "nothing opened while off");
-
-    let run = start(
-        &wiring,
-        PhotosSwitch::On,
-        &account,
-        library(&wiring, &account),
-        replica(),
-        replica(),
-    )
-    .expect("start")
-    .expect("running");
     let mut names = wiring.hub.names_for(&settings_caller());
     names.sort();
     assert_eq!(
@@ -149,18 +135,7 @@ async fn account_removed_wipes_the_photos_directory_the_journals_and_the_running
         let photo = root.join(format!("{account}.jpg"));
         std::fs::write(&photo, account.as_str()).expect("photo");
         library.import(&photo).expect("import");
-        runs.push(
-            start(
-                &wiring,
-                PhotosSwitch::On,
-                account,
-                library,
-                replica(),
-                replica(),
-            )
-            .expect("start")
-            .expect("running"),
-        );
+        runs.push(start(&wiring, account, library, replica(), replica()).expect("start"));
     }
     assert!(wiring.paths.photos_dir(&gone).join("originals").is_dir());
     assert!(wiring.paths.journal(&gone, "photos_originals").is_file());

@@ -15,6 +15,16 @@ pub const ACCESS_DENIED: &str = "org.freedesktop.DBus.Error.AccessDenied";
 pub const INVALID_ARGS: &str = "org.freedesktop.DBus.Error.InvalidArgs";
 pub const NO_FITTING: &str = "org.quire.Accounts1.Error.NoFittingAccount";
 
+/// Whether a rig's account holds syncd's Photos grant, which the account's Photos row in Settings
+/// makes and takes back: the only thing that runs Photos.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PhotosGrant {
+    /// It holds one: Photos runs.
+    Granted,
+    /// It holds none: Photos runs nothing.
+    NotGranted,
+}
+
 /// The D-Bus error name of a failed call.
 pub fn error_name(error: &zbus::Error) -> String {
     match error {

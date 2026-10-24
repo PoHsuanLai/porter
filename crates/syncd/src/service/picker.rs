@@ -1,6 +1,6 @@
 //! `org.quire.Photos1.Picker` on syncd's object (`porter_dbus::PhotosPickerProxy`): the Google
-//! Photos Picker for the Photos app. Served only while syncd runs Google Photos
-//! (`SYNCD_PHOTOS`); the caller is identified as `Sync1`'s are (the connection's, by
+//! Photos Picker for the Photos app. Served in a build with the `photos-picker` feature; an
+//! account answers through it while its Photos row in Settings is on. The caller is identified as `Sync1`'s are (the connection's, by
 //! porter-dbus's `Callers`), and only an app that owns the Photos datasets (`org.quire.Photos`)
 //! may call it. Settings and the porter daemons see datasets but are not the app that imports
 //! photos, so they are `Denied`, as they are for `Sync1.Resolve`.

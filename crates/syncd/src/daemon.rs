@@ -7,7 +7,6 @@
 //! a `watch::Receiver<Network>`: NetworkManager is not read yet, so the binary hands in a
 //! receiver that says "unmetered and up" for good.
 
-use crate::datasets::photos::PhotosSwitch;
 use crate::datasets::pim::{ClientGrants, PimConfig, PimSupervisor, Wiring};
 use crate::datasets::storage::DriveMount;
 use crate::datasets::storage::{ClientStorageGrants, StorageConfig, StorageSupervisor};
@@ -46,9 +45,6 @@ pub const PROC_ROOT_VAR: &str = "SYNCD_PROC_ROOT";
 /// The variable that shortens how often grants are read again (a test build only).
 pub const RESCAN_VAR: &str = "SYNCD_RESCAN_S";
 
-/// The variable that turns the Photos datasets on (`on`).
-pub const PHOTOS_VAR: &str = "SYNCD_PHOTOS";
-
 /// The variable that names a key file in place of the Secret Service (a `test-keys` build only).
 pub const KEYS_VAR: &str = "SYNCD_KEYS";
 
@@ -83,7 +79,7 @@ pub struct Config {
     pub proc_root: Option<PathBuf>,
     /// The calendar and address book supervisor.
     pub pim: PimConfig,
-    /// The storage supervisor, with the Photos switch.
+    /// The storage supervisor.
     pub storage: StorageConfig,
     /// The bus to serve on.
     pub bus: BusTarget,
@@ -91,7 +87,7 @@ pub struct Config {
 
 impl Config {
     /// A configuration over `paths` on `bus`: callers read from `/proc`, every supervisor at its
-    /// shipped settings (grants read again every ten minutes, no Photos).
+    /// shipped settings (grants read again every ten minutes).
     pub fn new(paths: Paths, bus: BusTarget) -> Self {
         // Its own accounts beside the journals unless `with_keep` says where.
         let keep = KeepPaths::under(&paths.journals.with_file_name("syncd-own"));
@@ -137,7 +133,7 @@ impl Config {
 
     /// The configuration the process's environment gives. The one place syncd reads the
     /// environment: `HOME` and the XDG directories, `SYNCD_PROC_ROOT`, `SYNCD_RESCAN_S` and
-    /// `SYNCD_KEYS` (a test build only) and `SYNCD_PHOTOS`.
+    /// `SYNCD_KEYS` (a test build only).
     ///
     /// # Errors
     /// There is no home to keep state in, or the secret store the environment asks for is refused.
@@ -160,8 +156,8 @@ impl Config {
         let pim = PimConfig {
             rescan: rescan(BUILD, rescan_var.clone(), pim.rescan),
         };
-        // Storage over Graph: the app folder mirror for a Files grant, and Photos for a Photos
-        // grant when `SYNCD_PHOTOS=on` (it is off otherwise: there is no Photos app yet).
+        // Storage: the app folder mirror for a Files grant, the whole drive for a grant of all of
+        // it ("Show in Files"), and Photos for a Photos grant (the account's Photos row).
         let storage = StorageConfig::default();
         // Each drive shown in Files is a folder at `~/Cloud/<Drive>`, mounted by porter-mountd
         // (the unit's sandbox may not run the setuid `fusermount3`, nor make a mount anyone else
@@ -174,7 +170,6 @@ impl Config {
         };
         let storage = StorageConfig {
             rescan: rescan(BUILD, rescan_var, storage.rescan),
-            photos: PhotosSwitch::from_var(std::env::var(PHOTOS_VAR).ok().as_deref()),
             mount: DriveMount::Fuse(mounter),
             cache_limit: read_cache_limit(&paths.settings),
             ..storage
@@ -236,8 +231,7 @@ pub struct Daemon {
 impl Daemon {
     /// Loads the caller tables, opens syncd's own accounts (its registry and secrets, hosted in
     /// process), starts the supervisors, serves the settings module and serves
-    /// `org.quire.Sync1` (and, with the `photos-picker` feature and `SYNCD_PHOTOS=on`,
-    /// `org.quire.Photos1.Picker`). When this returns the name is owned and calls are answered.
+    /// `org.quire.Sync1` (and, with the `photos-picker` feature, `org.quire.Photos1.Picker`). When this returns the name is owned and calls are answered.
     /// `network` is what the supervisors read the network from.
     ///
     /// # Errors
@@ -324,8 +318,6 @@ impl Daemon {
         )
         .spawn();
         #[cfg(feature = "photos-picker")]
-        let photos_on = storage.photos == PhotosSwitch::On;
-        #[cfg(feature = "photos-picker")]
         let photos_owners = storage.photos_owners.clone();
         let storage_files_apps = storage.files_owners.clone();
         let storage = StorageSupervisor::new(
@@ -361,14 +353,12 @@ impl Daemon {
         )
         .await
         .map_err(StartError::Settings)?;
-        // `org.quire.Photos1.Picker` is there only while Google Photos runs (`SYNCD_PHOTOS=on`),
-        // and only in a build with the `photos-picker` feature.
+        // `org.quire.Photos1.Picker`, only in a build with the `photos-picker` feature; each
+        // account answers through it while its Google Photos run.
         #[cfg(feature = "photos-picker")]
-        if photos_on {
-            service::serve_picker(&connection, pickers, photos_owners, Arc::clone(&callers))
-                .await
-                .map_err(StartError::Picker)?;
-        }
+        service::serve_picker(&connection, pickers, photos_owners, Arc::clone(&callers))
+            .await
+            .map_err(StartError::Picker)?;
         // `org.quire.Storage1`: the drives shown in Files.
         service::serve_storage(&connection, drives, Arc::clone(&callers), files_apps)
             .await

@@ -31,6 +31,20 @@
   `porter-mountd` (the helper; std and rustix only).
   `Replica::export` (porter-sync) has a default that refuses; Google Drive's uses `files.export`.
 
+### Settings rows for drives and Photos
+
+- "Keep Everything Downloaded" (`accounts.<id>.storage.keep`), offered while "Show in Files" is
+  on: every file of the drive is downloaded and kept, also what is added to it later, and none is
+  removed for space. Off goes back to the items kept one by one; nothing is removed then, and the
+  rest may be removed past the limit again. Kept in `syncd.toml` (`[storage] keep_all`), so it
+  holds after a restart. When the drive does not fit the free space, nothing more is downloaded,
+  nothing is removed, and the row says "Not enough space to keep everything downloaded."
+- The Photos row (`accounts.<id>.sync.photos`) is the only thing that turns Photos on: its grant
+  starts the Photos datasets and taking it back stops them, keeping the photos. `SYNCD_PHOTOS` is
+  gone, and `org.quire.Photos1.Picker` is served whenever syncd is built with `photos-picker`.
+- porter-drive: `Drive::set_keep_all`, `keeps_all` and `short_of_room`, the words
+  `KEPT_WITH_DRIVE` and `NO_ROOM_FOR_ALL`, and `DriveConfig::free_space`.
+
 ### Model lists say what a model takes in
 
 - Each model row of `Inference1.Places` carries `takes` (text only, text and images, text and
@@ -115,7 +129,7 @@ tested against stand-ins for them (FINDINGS.md says, per piece, what is still un
 
 - Calendar, contacts and tasks kept as local copies for Microsoft, Google, Nextcloud and
   other servers; a storage folder on Microsoft OneDrive, Google Drive's app folder and file servers such as Nextcloud;
-  Photos (upload from a folder, the picker) behind `SYNCD_PHOTOS=on`.
+  Photos (upload from a folder, the picker), off unless switched on.
 - "Sync now": an app, Settings or a porter service can ask a dataset to sync at once instead of
   waiting for its next scheduled look (`org.quire.Sync1.SyncNow`). A sync already running finishes
   and one more follows it. A dataset the person paused says so and does not sync until it is

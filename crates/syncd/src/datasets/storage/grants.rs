@@ -24,11 +24,11 @@ use std::sync::Arc;
 pub enum StorageKind {
     /// The account's app folder, mirrored two ways into a local folder (`DataClass::Files`).
     AppFolder,
-    /// The Photos dataset's two folders in the app folder (`DataClass::Photos`), behind the
-    /// [`crate::datasets::photos::PhotosSwitch`].
+    /// The Photos dataset's two folders in the app folder (`DataClass::Photos`), made by the
+    /// account's Photos row in Settings.
     Photos,
     /// Google Photos (`DataClass::Photos`, a `Photos`-kind grant): the upload folder, and the
-    /// picker import. Behind the same switch.
+    /// picker import. Made by the same row.
     GooglePhotos,
     /// The whole drive, listed for Files (`DataClass::Files`, a grant that reaches the whole
     /// store, made by "Show in Files"): OneDrive's or My Drive, by the endpoint.
@@ -52,7 +52,7 @@ impl StorageKind {
         }
     }
 
-    /// Whether the kind is one of the Photos datasets, which the switch gates.
+    /// Whether the kind is one of the Photos datasets (a grant of class Photos).
     pub fn is_photos(self) -> bool {
         !matches!(self, StorageKind::AppFolder | StorageKind::Drive)
     }

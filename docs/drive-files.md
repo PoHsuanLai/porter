@@ -79,16 +79,22 @@ they run the drive in memory and mount nothing.
 13. The limit: set Settings' "Downloaded Files Limit" (`storage.cache_limit`, bytes, `0` is
     automatic: a tenth of the disk, at least 1 GiB) below what is cached: the files opened
     longest ago go first; kept ones and open ones stay.
-14. Turn "Show in Files" off: `~/Cloud/OneDrive` is no longer a mount (`mount | grep Cloud` says
+14. Turn on "Keep Everything Downloaded" under the account: every file of the drive comes down,
+    a file added on the web comes down after the next listing, Files shows each one kept, and
+    Remove Download says "Everything on this drive is kept downloaded." Set the limit to `1`:
+    nothing goes. Restart syncd: the row is still on. Turn it off: nothing goes until the limit
+    asks. On a drive larger than the free disk, the row says "Not enough space to keep everything
+    downloaded." and nothing more comes down.
+15. Turn "Show in Files" off: `~/Cloud/OneDrive` is no longer a mount (`mount | grep Cloud` says
     nothing). Do it again with a terminal sitting in the folder (`cd ~/Cloud/OneDrive`): it goes
     at once, syncd keeps answering, and the terminal's folder reads as gone. Turn it on and stop
     syncd (`systemctl --user stop syncd.service`): the mount goes with it. Kill it with
     `systemctl --user kill -s KILL syncd.service` and let it start again: the stale mount is
     cleared (`fusermount3 -u -z`) and the folder comes back.
-15. A folder that is not porter's is left alone: stop syncd, put a file in an empty
+16. A folder that is not porter's is left alone: stop syncd, put a file in an empty
     `~/Cloud/OneDrive` and start it: the drive says "The drive's folder in Cloud already has other
     files in it. Move them, then try again." and the file is still there.
-16. syncd's sandbox is whole: `systemctl --user show syncd.service -p NoNewPrivileges -p
+17. syncd's sandbox is whole: `systemctl --user show syncd.service -p NoNewPrivileges -p
     PrivateDevices -p ProtectHome` says `yes`, `yes`, `read-only`. `journalctl --user -u
     porter-mountd` says why each refusal was made.
 
@@ -117,5 +123,7 @@ keeps it.
   removes it.
 - The limit: `[storage] cache_limit = "<bytes>"` in `$XDG_CONFIG_HOME/porter/syncd/syncd.toml`,
   set by Settings (a `porter/syncd.toml` from before is read until the first save, and left).
+  Beside it, `[storage] paused` and `[storage] keep_all` list the drives (by account folder name)
+  paused and kept downloaded whole.
 - The helper: `/usr/libexec/quire/porter-mountd`, its units `porter-mountd.service` and
   `porter-mountd.socket`, its socket `$XDG_RUNTIME_DIR/porter/mountd.sock`.

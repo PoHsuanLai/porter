@@ -239,6 +239,123 @@ async fn keeping_a_folder_fetches_what_is_under_it_and_what_is_added_later() {
 }
 
 #[tokio::test]
+async fn keeping_everything_fetches_the_whole_drive_and_what_is_added_and_never_evicts_it() {
+    let rig = rig(4);
+    rig.listing.folder("p", None, "Pictures");
+    rig.file("a", Some("p"), "a.jpg", 9);
+    rig.file("b", None, "b.txt", 5);
+    rig.drive.set_limit(CacheLimit::Bytes(1));
+    rig.drive.set_keep_all(true);
+    assert!(rig.drive.keeps_all());
+    eventually("the whole drive is here", || {
+        rig.state("a") == ItemState::Downloaded && rig.state("b") == ItemState::Downloaded
+    })
+    .await;
+    for id in ["p", "a", "b"] {
+        assert!(rig.drive.status(&remote(id)).expect("status").kept, "{id}");
+    }
+    // What the listing adds, at any depth, is fetched too.
+    rig.listing.folder("q", Some("p"), "2026");
+    rig.file("c", Some("q"), "c.jpg", 6);
+    rig.drive.listing_changed();
+    eventually("the new one is fetched", || {
+        rig.state("c") == ItemState::Downloaded
+    })
+    .await;
+    // Past a limit of one byte, nothing goes: kept bytes are not counted against it.
+    rig.drive.set_limit(CacheLimit::Bytes(1));
+    for id in ["a", "b", "c"] {
+        assert_eq!(rig.state(id), ItemState::Downloaded, "{id}");
+    }
+    assert_eq!(
+        rig.drive.remove_download(&remote("a")),
+        Err(words::KEPT_WITH_DRIVE)
+    );
+    assert_eq!(
+        rig.drive.keep(&remote("p"), false),
+        Err(words::KEPT_WITH_DRIVE)
+    );
+    assert!(!rig.drive.short_of_room());
+}
+
+#[tokio::test]
+async fn keeping_everything_off_leaves_the_files_here_but_evictable_and_keeps_what_was_kept() {
+    let rig = rig(4);
+    for id in ["a", "b", "k"] {
+        rig.file(id, None, &format!("{id}.bin"), 8);
+    }
+    rig.drive.keep(&remote("k"), true).expect("keep");
+    rig.drive.set_keep_all(true);
+    eventually("all here", || {
+        ["a", "b", "k"]
+            .iter()
+            .all(|id| rig.state(id) == ItemState::Downloaded)
+    })
+    .await;
+    rig.drive.set_keep_all(false);
+    assert!(!rig.drive.keeps_all());
+    for id in ["a", "b", "k"] {
+        assert_eq!(
+            rig.state(id),
+            ItemState::Downloaded,
+            "nothing removed: {id}"
+        );
+    }
+    assert!(!rig.drive.status(&remote("a")).expect("status").kept);
+    assert!(
+        rig.drive.status(&remote("k")).expect("status").kept,
+        "kept one by one"
+    );
+    // Evictable again: past the limit what is not kept goes, what was kept stays.
+    rig.drive.set_limit(CacheLimit::Bytes(1));
+    assert_eq!(rig.state("a"), ItemState::Cloud);
+    assert_eq!(rig.state("b"), ItemState::Cloud);
+    assert_eq!(rig.state("k"), ItemState::Downloaded);
+}
+
+#[tokio::test]
+async fn keeping_everything_past_the_free_space_fetches_nothing_and_removes_nothing() {
+    let dir = Scratch::new("porter-drive-room");
+    let listing = Arc::new(MemoryListing::default());
+    let source = Arc::new(MemorySource::default());
+    let drive = Drive::open(
+        DriveConfig {
+            chunk: 4,
+            free_space: Some(10),
+            ..DriveConfig::new(dir.join("cache"))
+        },
+        listing.clone(),
+        source.clone(),
+    )
+    .expect("drive");
+    let rig = Rig {
+        dir,
+        listing,
+        source,
+        drive,
+    };
+    rig.file("a", None, "a.bin", 8);
+    rig.drive.download(&remote("a")).expect("download");
+    eventually("here", || rig.state("a") == ItemState::Downloaded).await;
+    rig.file("b", None, "b.bin", 8);
+    rig.file("c", None, "c.bin", 8);
+    let fetched = rig.source.fetched().len();
+    rig.drive.set_keep_all(true);
+    assert!(rig.drive.short_of_room(), "16 bytes to come, 10 free");
+    assert_eq!(rig.source.fetched().len(), fetched, "nothing started");
+    assert_eq!(rig.state("b"), ItemState::Cloud);
+    assert_eq!(rig.state("a"), ItemState::Downloaded, "nothing removed");
+    assert!(rig.drive.status(&remote("b")).expect("status").kept);
+    // With less to fetch it fits on the next look.
+    rig.listing.remove("c");
+    rig.drive.listing_changed();
+    assert!(!rig.drive.short_of_room());
+    eventually("it fits now", || rig.state("b") == ItemState::Downloaded).await;
+    rig.drive.set_keep_all(false);
+    assert!(!rig.drive.short_of_room(), "only while kept whole");
+}
+
+#[tokio::test]
 async fn a_new_version_makes_the_copy_stale_and_a_kept_one_is_fetched_again() {
     let rig = rig(4);
     rig.file("k", None, "kept.txt", 4);

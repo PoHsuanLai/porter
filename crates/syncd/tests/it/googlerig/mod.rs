@@ -6,7 +6,7 @@
 
 use crate::common::bus::PrivateBus;
 use crate::common::hosted::{Link, host};
-use crate::common::{Known, client};
+use crate::common::{Known, PhotosGrant, client};
 use porter_client::Accounts;
 use porter_core::capability::StorageScope;
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
@@ -24,7 +24,6 @@ use porter_secrets::{MemorySecrets, Secrets};
 use porter_service::Registry;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use syncd::datasets::photos::PhotosSwitch;
 use syncd::datasets::pim::{AccountdUnavailable, Wiring};
 use syncd::datasets::storage::{
     ClientStorageGrants, StorageConfig, StorageGrants, StorageKind, StorageSupervisor,
@@ -143,7 +142,6 @@ pub struct Rig {
     pub supervisor: StorageSupervisor<Link, Gate>,
     pub accounts: Arc<Accounts<Link>>,
     pub network: watch::Receiver<Network>,
-    pub photos: PhotosSwitch,
     pub _keep: Vec<zbus::Connection>,
     pub _network: watch::Sender<Network>,
 }
@@ -193,31 +191,28 @@ impl Rig {
                 files: Arc::clone(&self.files_shown),
                 photos: Arc::clone(&self.photos_shown),
             },
-            StorageConfig {
-                photos: self.photos,
-                ..StorageConfig::default()
-            },
+            StorageConfig::default(),
         )
     }
 }
 
-/// The rig, with Google Photos behind `photos`.
-pub async fn rig(photos: PhotosSwitch) -> Rig {
+/// The rig, its account holding the Photos grant as `photos` says.
+pub async fn rig(photos: PhotosGrant) -> Rig {
     rig_with(photos, Media::Same).await
 }
 
 /// [`rig`], with the picked photos' bytes where `media` says.
-pub async fn rig_with(photos: PhotosSwitch, media: Media) -> Rig {
+pub async fn rig_with(photos: PhotosGrant, media: Media) -> Rig {
     build(photos, media, false).await
 }
 
 /// [`rig`] for an account where the person granted the picker scope alone: no upload endpoint,
 /// no upload capability (what the Google family leaves of Photos then).
-pub async fn rig_picker_only(photos: PhotosSwitch) -> Rig {
+pub async fn rig_picker_only(photos: PhotosGrant) -> Rig {
     build(photos, Media::Same, true).await
 }
 
-async fn build(photos: PhotosSwitch, media: Media, picker_only: bool) -> Rig {
+async fn build(photos: PhotosGrant, media: Media, picker_only: bool) -> Rig {
     let google = FakeGoogle::start_fixed(DRIVE_BEARER).await.expect("google");
     google.accept_bearer(UPLOAD_BEARER);
     google.accept_bearer(PICKER_BEARER);
@@ -333,12 +328,11 @@ async fn build(photos: PhotosSwitch, media: Media, picker_only: bool) -> Rig {
         paths,
         account: AccountDir::parse(SEGMENT).expect("segment"),
         files_shown: Arc::new(AtomicBool::new(true)),
-        photos_shown: Arc::new(AtomicBool::new(true)),
+        photos_shown: Arc::new(AtomicBool::new(photos == PhotosGrant::Granted)),
         // Replaced just below, once the rig it is made from exists.
         supervisor: placeholder(&accounts, &network),
         accounts,
         network,
-        photos,
         _keep: vec![server],
         _network: network_keeps,
     };

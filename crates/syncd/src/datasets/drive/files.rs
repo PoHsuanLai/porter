@@ -2,7 +2,8 @@
 //! journal), its folder in `~/Cloud`, and where it stands, shared between the storage supervisor
 //! that runs them and `org.quire.Storage1` that serves them.
 //!
-//! A drive paused stays paused after a restart (syncd's settings keep it). An account being
+//! A drive paused stays paused after a restart, and one kept downloaded whole stays kept (syncd's
+//! settings keep both). An account being
 //! removed lets its drive go first ([`DriveSet::retire`]): it is held (paused, its folder
 //! taken away, and not started again until the removal ends), and what was made or changed in
 //! it and not uploaded is written out as plain files to a folder of their own beside it,
@@ -275,7 +276,8 @@ fn heard(
 pub struct DriveSet {
     drives: Arc<Mutex<BTreeMap<String, Arc<LiveDrive>>>>,
     events: broadcast::Sender<DriveEvent>,
-    /// syncd's settings, which keep the drives paused across restarts.
+    /// syncd's settings, which keep the drives paused, or kept downloaded whole, across
+    /// restarts.
     settings: Option<PathBuf>,
     /// The accounts whose drives are held while they are removed.
     held: Arc<Mutex<std::collections::BTreeSet<String>>>,
@@ -318,6 +320,36 @@ impl DriveSet {
         self.settings
             .as_ref()
             .is_some_and(|file| crate::settings::read_paused(file).contains(id))
+    }
+
+    /// Keeps the drive `id` downloaded whole, or no longer, from now on and after a restart: the
+    /// drive shown now follows at once, one shown later when it starts ([`DriveSet::keeps_all`]).
+    ///
+    /// # Errors
+    /// syncd's settings could not be written; nothing changed.
+    pub fn set_keep_all(&self, id: &str, on: bool) -> std::io::Result<()> {
+        if let Some(file) = &self.settings {
+            crate::settings::write_keep_all(file, id, on)?;
+        }
+        if let Some(drive) = self.get(id) {
+            drive.drive.set_keep_all(on);
+        }
+        Ok(())
+    }
+
+    /// Whether the drive `id` is kept downloaded whole, as syncd's settings say (also while it is
+    /// not shown).
+    pub fn keeps_all(&self, id: &str) -> bool {
+        match &self.settings {
+            Some(file) => crate::settings::read_keep_all(file).contains(id),
+            None => self.get(id).is_some_and(|live| live.drive.keeps_all()),
+        }
+    }
+
+    /// Whether keeping the drive `id` downloaded whole needs more room than this computer has
+    /// free; `false` for a drive not shown.
+    pub fn short_of_room(&self, id: &str) -> bool {
+        self.get(id).is_some_and(|live| live.drive.short_of_room())
     }
 
     /// Lets the drive of `account` go before the account is removed: it is held (paused, its
@@ -378,7 +410,7 @@ impl DriveSet {
         }
     }
 
-    /// The account `id` is gone: no pause of its drive is kept.
+    /// The account `id` is gone: no pause of its drive is kept, nor that it was kept whole.
     pub fn forget(&self, id: &str) {
         held(&self.held).remove(id);
         if let Some(file) = &self.settings
@@ -386,6 +418,12 @@ impl DriveSet {
             && let Err(why) = crate::settings::write_paused(file, id, false)
         {
             eprintln!("syncd: whether the drive is paused could not be saved: {why}");
+        }
+        if let Some(file) = &self.settings
+            && crate::settings::read_keep_all(file).contains(id)
+            && let Err(why) = crate::settings::write_keep_all(file, id, false)
+        {
+            eprintln!("syncd: whether to keep the drive downloaded could not be saved: {why}");
         }
     }
 
@@ -484,6 +522,46 @@ mod tests {
         assert_eq!(heard(&live, Err(broadcast::error::RecvError::Closed)), None);
         source.release();
         drive.release(&a);
+    }
+
+    #[tokio::test]
+    async fn keeping_a_drive_whole_outlasts_a_restart_and_goes_with_its_account() {
+        let dir = porter_fake::Scratch::new("drive-files-keep-all");
+        let settings = dir.join("syncd.toml");
+        let listing = Arc::new(MemoryListing::default());
+        let source = Arc::new(MemorySource::default());
+        listing.file("a", None, "a.bin", 4, "1");
+        source.put("a", b"aaaa".to_vec());
+        let drive = Drive::open(
+            DriveConfig::new(dir.join("cache")),
+            listing.clone(),
+            source.clone(),
+        )
+        .expect("drive");
+        let live = Arc::new(LiveDrive::new(
+            "one".into(),
+            "/org/quire/Accounts1/account/one".into(),
+            "ada@example.test".into(),
+            "OneDrive",
+            dir.join("Cloud").join("OneDrive"),
+            drive.clone(),
+        ));
+        let set = DriveSet::default().with_settings(settings.clone());
+        set.insert(Arc::clone(&live));
+        set.set_keep_all("one", true).expect("saved");
+        assert!(drive.keeps_all(), "the drive shown follows at once");
+        // Not shown now: kept for when it is.
+        set.set_keep_all("two", true).expect("saved");
+        let again = DriveSet::default().with_settings(settings.clone());
+        assert!(
+            again.keeps_all("one") && again.keeps_all("two"),
+            "after a restart"
+        );
+        set.set_keep_all("one", false).expect("saved");
+        assert!(!drive.keeps_all());
+        assert!(!again.keeps_all("one"));
+        again.forget("two");
+        assert!(!DriveSet::default().with_settings(settings).keeps_all("two"));
     }
 
     #[tokio::test]

@@ -7,10 +7,10 @@
 //!   account or a [`gdrive_replica`] relay for a Google one. Which one is read from the
 //!   endpoint the account's candidate lists ([`app_folder_store`]), never from the provider.
 //! - `Photos` (`DataClass::Photos`): the two Photos datasets over `Photos/Originals` and
-//!   `Photos/Metadata` of the app folder of a Microsoft account, only when the [`PhotosSwitch`]
-//!   is on.
-//! - `GooglePhotos` (`DataClass::Photos`, a `Photos`-kind grant): Google Photos, only when the
-//!   switch is on: the upload folder `$XDG_DATA_HOME/porter/photos/<account>/upload/` as the
+//!   `Photos/Metadata` of the app folder of a Microsoft account. The grant is the switch: the
+//!   account's Photos row in Settings makes it and takes it back.
+//! - `GooglePhotos` (`DataClass::Photos`, a `Photos`-kind grant): Google Photos, by the same
+//!   grant: the upload folder `$XDG_DATA_HOME/porter/photos/<account>/upload/` as the
 //!   dataset `<account>/google_photos_upload` (owner `org.quire.Photos`), and the picker the
 //!   Photos app imports through ([`StorageSupervisor::google_picker`]).
 //! - `Drive` (`DataClass::Files`, a grant that reaches the whole store): the whole drive's
@@ -37,9 +37,7 @@ use crate::datasets::photos::google::{
     GooglePicker, PhotosApi, PhotosPicker, SLUG as UPLOAD_SLUG, UploadReplica, library_http,
     picker_http,
 };
-use crate::datasets::photos::{
-    DeviceId, PhotoLibrary, PhotosRun, PhotosSwitch, PhotosWiring, SystemMillis,
-};
+use crate::datasets::photos::{DeviceId, PhotoLibrary, PhotosRun, PhotosWiring, SystemMillis};
 use crate::datasets::pim::Wiring;
 use crate::driver::Driver;
 use crate::engine::Engine;
@@ -73,8 +71,6 @@ pub const PHOTOS_APP: &str = "org.quire.Photos";
 pub struct StorageConfig {
     /// How often grants are read again.
     pub rescan: Duration,
-    /// Whether the Photos datasets run (off by default: there is no Photos app yet).
-    pub photos: PhotosSwitch,
     /// Who owns the app folder dataset.
     pub files_owners: Access,
     /// Who owns the Photos datasets.
@@ -111,7 +107,6 @@ impl Default for StorageConfig {
     fn default() -> Self {
         Self {
             rescan: Duration::from_secs(600),
-            photos: PhotosSwitch::Off,
             files_owners: owned_by(FILES_APP),
             photos_owners: owned_by(PHOTOS_APP),
             google_album: crate::datasets::photos::google::ALBUM_TITLE.to_owned(),
@@ -278,9 +273,6 @@ where
     pub async fn tick(&mut self) -> bool {
         let mut whole = true;
         for kind in StorageKind::ALL {
-            if kind.is_photos() && self.config.photos == PhotosSwitch::Off {
-                continue;
-            }
             let Ok(candidates) = self.grants.granted(kind).await else {
                 eprintln!("syncd: cannot ask for the {kind:?} grants; asking again soon");
                 whole = false;
@@ -508,6 +500,11 @@ where
         // Paused before a restart: paused still, before anything is read or sent.
         if self.drives.was_paused(&live.id) {
             live.set_paused(true);
+        }
+        // Kept downloaded whole before: kept so again, before its listing is read or anything
+        // is evicted.
+        if self.drives.keeps_all(&live.id) {
+            files.set_keep_all(true);
         }
         // The folder is mounted off the runtime's one thread: asking porter-mountd, or running
         // fusermount3, waits on another process (bounded, but not for the runtime to sit on).
@@ -749,14 +746,12 @@ where
         };
         let run = crate::datasets::photos::start(
             &photos,
-            self.config.photos,
             account,
             library,
             replica("Photos/Originals")?,
             replica("Photos/Metadata")?,
         )
-        .map_err(|e| e.to_string())?
-        .ok_or("the Photos switch is off")?;
+        .map_err(|e| e.to_string())?;
         let names = [
             crate::datasets::photos::PhotoOriginals::SLUG,
             crate::datasets::photos::PhotoMetadata::SLUG,

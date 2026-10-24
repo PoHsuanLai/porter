@@ -8,8 +8,8 @@
 //! supervisor (W6e) keeps a calendar or address book mirror running for every Calendar or
 //! Contacts grant syncd holds (its own grants, made by the sync switches); with no grant `Datasets` answers an empty list and every name the
 //! refusal `NoFittingAccount`. The storage supervisor keeps an app folder mirror running for
-//! every Storage grant (class Files) on a Microsoft account and, with `SYNCD_PHOTOS=on`, the
-//! Photos datasets for every one of class Photos. A test build (`test-proc-root`) reads
+//! every Storage grant (class Files) on a Microsoft account, and the Photos datasets for every one
+//! of class Photos (the account's Photos row in Settings). A test build (`test-proc-root`) reads
 //! `SYNCD_RESCAN_S` as how often both supervisors read grants again; the default is ten minutes.
 //!
 //! What stays here is the network: NetworkManager is not read yet, so the network is taken as

@@ -6,14 +6,14 @@
 //! - `grants`: which accounts syncd holds a Storage grant for ([`StorageGrants`]).
 //! - `supervisor`: [`StorageSupervisor`], one mirror per granted account and kind
 //!   ([`StorageKind`]): the app folder at `$XDG_DATA_HOME/porter/storage/<account>/` (OneDrive's
-//!   or Drive's, by the endpoint the account has), and (behind the Photos switch) the Photos
-//!   datasets over `Photos/Originals` and `Photos/Metadata` of a Microsoft account, or Google
-//!   Photos' upload folder and picker for a Google one; and the whole drive's listing
+//!   or Drive's, by the endpoint the account has), the Photos datasets over `Photos/Originals`
+//!   and `Photos/Metadata` of a Microsoft account, or Google Photos' upload folder and picker
+//!   for a Google one; and the whole drive's listing
 //!   ([`crate::datasets::drive`]) of an account the person turned on "Show in Files" for.
 //!
 //! A person needs: a Microsoft or Google account in accountd, and a grant for `org.quire.Sync`
-//! made in Settings (class Files for the app folder, class Photos for Photos); for Photos also
-//! `SYNCD_PHOTOS=on` in syncd's environment.
+//! made in Settings (class Files for the app folder, class Photos for Photos: the account's
+//! Photos row is the only thing that turns Photos on).
 
 mod folder;
 mod grants;

@@ -2,8 +2,9 @@
 //! (`/org/quire/Sync1/settings`) over its own hosted account service, a Graph account that holds
 //! no grant, syncd's storage supervisor and a fake Graph drive. Switching "Keep this account's
 //! files on this computer" on makes the grant `org.quire.Sync` is asked for and the mirror starts;
-//! off takes it back, the dataset goes and the files stay. Nothing seeds a grant by hand. Only the
-//! Settings role may use the module.
+//! off takes it back, the dataset goes and the files stay. The Photos row does the same for the
+//! Photos datasets, and is all that runs them. Nothing seeds a grant by hand. Only the Settings
+//! role may use the module.
 
 use crate::common;
 
@@ -26,7 +27,6 @@ use porter_secrets::{MemorySecrets, Secrets};
 use porter_service::Registry;
 use std::sync::Arc;
 use std::time::Duration;
-use syncd::datasets::photos::PhotosSwitch;
 use syncd::datasets::pim::Wiring;
 use syncd::datasets::storage::{
     ClientStorageGrants, FILES_APP, PHOTOS_APP, StorageConfig, StorageSupervisor,
@@ -78,7 +78,7 @@ struct Rig {
     _network: watch::Sender<Network>,
 }
 
-async fn rig(photos: PhotosSwitch) -> Rig {
+async fn rig() -> Rig {
     let graph = FakeGraph::start(BEARER).await.expect("graph");
     graph.set_limit(1_000_000);
     let provider = FakeProvider::from_file(PROVIDER);
@@ -175,10 +175,7 @@ async fn rig(photos: PhotosSwitch) -> Rig {
     let supervisor = StorageSupervisor::new(
         wiring,
         ClientStorageGrants::new(Arc::clone(&hosted.accounts)),
-        StorageConfig {
-            photos,
-            ..StorageConfig::default()
-        },
+        StorageConfig::default(),
     );
     Rig {
         bus,
@@ -237,7 +234,7 @@ fn grants(rig: &Rig) -> Vec<porter_core::consent::Grant> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn switching_files_on_in_settings_starts_the_mirror_and_off_drops_it_but_keeps_the_files() {
-    let mut rig = rig(PhotosSwitch::Off).await;
+    let mut rig = rig().await;
     let schema = rig.settings.describe().await.expect("schema");
     let paths: Vec<&str> = schema.key.iter().map(|k| k.path.0.as_str()).collect();
     assert!(
@@ -309,8 +306,18 @@ async fn switching_files_on_in_settings_starts_the_mirror_and_off_drops_it_but_k
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn switching_photos_on_starts_the_photos_datasets_beside_the_files_ones_when_photos_run() {
-    let mut rig = rig(PhotosSwitch::On).await;
+async fn the_photos_row_alone_turns_the_photos_datasets_on_and_off_and_keeps_the_library() {
+    let mut rig = rig().await;
+    assert_eq!(
+        rig.settings.get(&row(PHOTOS_ROW)).await.expect("get"),
+        word(false)
+    );
+    rig.supervisor.tick().await;
+    assert!(
+        names(&rig, PHOTOS_APP).await.is_empty(),
+        "off: nothing runs"
+    );
+
     rig.settings
         .set(&row(PHOTOS_ROW), &word(true))
         .await
@@ -324,18 +331,32 @@ async fn switching_photos_on_starts_the_photos_datasets_beside_the_files_ones_wh
         names(&rig, FILES_APP).await.is_empty(),
         "photos alone, no app folder mirror"
     );
+    assert!(rig.supervisor.photos_library(&rig.account).is_some());
 
+    // Off stops them as a Files grant that goes does, and keeps what they kept.
     rig.settings
         .set(&row(PHOTOS_ROW), &word(false))
         .await
         .expect("photos off");
     rig.supervisor.tick().await;
     assert!(names(&rig, PHOTOS_APP).await.is_empty());
+    assert!(rig.supervisor.photos_library(&rig.account).is_none());
+    assert!(
+        rig.paths.photos_dir(&rig.account).is_dir(),
+        "the library stays"
+    );
+
+    rig.settings
+        .set(&row(PHOTOS_ROW), &word(true))
+        .await
+        .expect("photos on again");
+    rig.supervisor.tick().await;
+    assert_eq!(names(&rig, PHOTOS_APP).await.len(), 2);
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn only_the_settings_role_may_read_or_change_the_rows() {
-    let rig = rig(PhotosSwitch::Off).await;
+    let rig = rig().await;
     assert!(rig.stranger.describe().await.is_err());
     assert!(rig.stranger.get(&row(FILES_ROW)).await.is_err());
     assert!(
@@ -349,7 +370,7 @@ async fn only_the_settings_role_may_read_or_change_the_rows() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn removing_the_account_in_the_rows_deletes_its_files_and_its_sign_in_here() {
-    let mut rig = rig(PhotosSwitch::Off).await;
+    let mut rig = rig().await;
     rig.settings
         .set(&row(FILES_ROW), &word(true))
         .await
