@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### A drive's files in Files, downloaded when opened
+
+- With "Show in Files" on, syncd shows the whole drive as a folder (`~/Cloud/OneDrive`,
+  `~/Cloud/Google Drive`), every file listed and its bytes downloaded when it is opened, the part
+  read first. It needs the `fuse3` package; without it the drive still lists and Files says
+  "Files can't show this drive on this computer." Nothing can be written there yet.
+- `org.quire.Storage1` is served by syncd: `Drives`, `Items`, `Download`, `Keep`,
+  `RemoveDownload`, `SaveCopy` (a Google document saved next to it as `.docx`, `.xlsx`, `.pptx` or
+  `.png`), `SetPaused` and `Watch`, for the shell, Settings and Files.
+- What is downloaded stays in `$XDG_CACHE_HOME/porter/drives/` until space is needed: past
+  Settings' "Downloaded Files Limit" (`storage.cache_limit`, bytes, `0` for a tenth of the disk
+  and at least 1 GiB) the files opened longest ago are removed; kept and open files never are.
+- New crates `porter-drive` (the drive's files on demand, no file system attached) and
+  `porter-drive-fuse` (the folder, through `fusermount3`; libfuse is not linked).
+  `Replica::export` (porter-sync) has a default that refuses; Google Drive's uses `files.export`.
+
 ### Model lists say what a model takes in
 
 - Each model row of `Inference1.Places` carries `takes` (text only, text and images, text and
