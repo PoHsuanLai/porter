@@ -112,6 +112,8 @@ pub struct Drive {
     limit: Option<u64>,
     uploads: BTreeMap<String, Upload>,
     approot: String,
+    /// What was deleted through the API, oldest first: OneDrive's recycle bin.
+    bin: Vec<String>,
 }
 
 impl Default for Drive {
@@ -124,6 +126,7 @@ impl Default for Drive {
             limit: None,
             uploads: BTreeMap::new(),
             approot: String::new(),
+            bin: Vec::new(),
         };
         drive.nodes.insert(
             ROOT.to_owned(),
@@ -389,6 +392,20 @@ impl Drive {
             node.version += 1;
         }
         self.touch(id);
+    }
+
+    /// Deletes an item as the API does: into the recycle bin.
+    pub fn recycle(&mut self, id: &str) {
+        self.delete(id);
+        self.bin.push(id.to_owned());
+    }
+
+    /// The items in the recycle bin, oldest first.
+    pub fn bin(&self) -> Vec<&Node> {
+        self.bin
+            .iter()
+            .filter_map(|id| self.nodes.get(id))
+            .collect()
     }
 
     /// Opens an upload session.

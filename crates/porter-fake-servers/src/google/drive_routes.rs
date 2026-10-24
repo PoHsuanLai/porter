@@ -435,6 +435,12 @@ fn chunk(drive: &mut Drive, request: &Request) -> Response {
     };
     let (part, total) = spec.split_once('/').unwrap_or((spec, "*"));
     let total: Option<usize> = total.parse().ok();
+    if drive.upload(&id).is_none() {
+        return error(404, "notFound");
+    }
+    if part != "*" && drive.cut_now() {
+        return error(503, "backendError");
+    }
     let Some(upload) = drive.upload(&id) else {
         return error(404, "notFound");
     };

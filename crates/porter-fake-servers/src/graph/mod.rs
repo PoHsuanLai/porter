@@ -240,6 +240,39 @@ impl GraphHandle {
         }
     }
 
+    /// The id and `eTag` of the live item at `path` below the drive's root.
+    pub fn root_item(&self, path: &str) -> Option<(String, String)> {
+        lock(&self.shared.state)
+            .drive
+            .at_from(drive::ROOT, &names_of(path))
+            .map(|n| (n.id.clone(), n.etag()))
+    }
+
+    /// The bytes of the live file at `path` below the drive's root.
+    pub fn root_file(&self, path: &str) -> Option<Vec<u8>> {
+        let state = lock(&self.shared.state);
+        match &state.drive.at_from(drive::ROOT, &names_of(path))?.body {
+            Body::File(bytes) => Some(bytes.clone()),
+            Body::Folder => None,
+        }
+    }
+
+    /// The names of what was deleted through the API, oldest first: the recycle bin.
+    pub fn recycle_bin(&self) -> Vec<String> {
+        lock(&self.shared.state)
+            .drive
+            .bin()
+            .into_iter()
+            .map(|n| n.name.clone())
+            .collect()
+    }
+
+    /// Takes `chunks` more upload-session chunks, then answers the next `503` (storing nothing,
+    /// the session kept), as a connection cut mid-upload would leave it.
+    pub fn cut_upload_after(&self, chunks: u32) {
+        lock(&self.shared.state).knobs.cut_upload_after = Some(chunks);
+    }
+
     /// Deletes the item at `path` below the app folder.
     pub fn delete(&self, path: &str) {
         let mut state = lock(&self.shared.state);

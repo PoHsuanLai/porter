@@ -147,7 +147,11 @@ impl<H: Http> GdriveReplica<H> {
     }
 
     /// A new file, metadata and content in one request.
-    async fn create_small(&self, meta: &str, bytes: Vec<u8>) -> Result<HttpResponse, PutRefused> {
+    pub(crate) async fn create_small(
+        &self,
+        meta: &str,
+        bytes: Vec<u8>,
+    ) -> Result<HttpResponse, PutRefused> {
         let url = self
             .addr
             .upload(
@@ -167,7 +171,11 @@ impl<H: Http> GdriveReplica<H> {
 
     /// New content for a file, in one request. Google's APIs take a POST with
     /// `X-HTTP-Method-Override: PATCH` where a client has no PATCH.
-    async fn update_small(&self, id: &str, bytes: Vec<u8>) -> Result<HttpResponse, PutRefused> {
+    pub(crate) async fn update_small(
+        &self,
+        id: &str,
+        bytes: Vec<u8>,
+    ) -> Result<HttpResponse, PutRefused> {
         let path = format!("files/{}", crate::addr::encode(id));
         let url = self
             .addr
@@ -217,7 +225,7 @@ impl<H: Http> GdriveReplica<H> {
     }
 
     /// The conflict a refused write is: what the server has there now.
-    fn conflict(target: &Target, base: &BaseVersion, now: Option<&File>) -> PutRefused {
+    pub(crate) fn conflict(target: &Target, base: &BaseVersion, now: Option<&File>) -> PutRefused {
         let live = now.filter(|f| !f.in_trash());
         let version = |f: &File| RemoteVersion(f.version.clone().unwrap_or_default());
         let (item, remote) = match (live, base) {

@@ -102,6 +102,20 @@ pub struct Session {
     pub upload_url: String,
 }
 
+/// What an upload session has so far (`GET` of its URL).
+#[derive(Debug, Deserialize)]
+pub struct SessionStatus {
+    #[serde(rename = "nextExpectedRanges", default)]
+    pub next: Vec<String>,
+}
+
+impl SessionStatus {
+    /// The first byte the session still wants.
+    pub fn from(&self) -> Option<u64> {
+        self.next.first()?.split('-').next()?.parse().ok()
+    }
+}
+
 /// `GET /me/drive`.
 #[derive(Debug, Deserialize)]
 pub struct DriveInfo {

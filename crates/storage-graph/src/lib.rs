@@ -13,6 +13,10 @@
 //!   is a `Conflict` read back from the server and never an overwrite. A file up to
 //!   [`SIMPLE_MAX`] bytes (Graph's 4 MB simple-upload limit) is one PUT; a larger one goes in an
 //!   upload session, in chunks of a multiple of [`CHUNK_UNIT`] (320 KiB).
+//! - **Whole-drive writes** ([`porter_sync::DriveWrite`], for a replica of [`Root::Drive`]): a
+//!   folder or a file made in a parent by id, new content for an item by id, a rename or move
+//!   as a `PATCH`, the recycle bin as a `DELETE`, each with `If-Match`; a large file in an
+//!   upload session that a new replica resumes; the names OneDrive refuses ([`accepts_name`]).
 //! - **Quota** is the drive's `quota` (`used`, `total`).
 //! - **The connection** is whatever [`porter_http::Http`] the replica is handed. In syncd it is a
 //!   [`Routed`]: `porter_http::stream::StreamHttp` over the descriptors of accountd's
@@ -25,6 +29,7 @@
 //! and wire reading.
 
 mod addr;
+mod drive;
 mod feed;
 mod json;
 mod refuse;
@@ -34,6 +39,7 @@ mod upload;
 mod write;
 
 pub use addr::Root;
+pub use drive::accepts_name;
 pub use porter_http::stream::{Dial, StreamHttp, StreamLimits};
 pub use replica::{CHUNK_UNIT, GraphReplica, SIMPLE_MAX, Uploads};
 pub use route::Routed;

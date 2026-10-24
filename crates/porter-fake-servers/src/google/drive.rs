@@ -150,6 +150,9 @@ pub struct Drive {
     my_drive: String,
     /// The documents larger than Drive exports.
     too_large: std::collections::BTreeSet<String>,
+    /// How many more resumable chunks are taken before the next is refused (`503`, nothing
+    /// stored, the upload kept); `None`: every one is taken.
+    cut_after: Option<u32>,
 }
 
 impl Default for Drive {
@@ -175,6 +178,7 @@ impl Default for Drive {
             root,
             my_drive,
             too_large: std::collections::BTreeSet::new(),
+            cut_after: None,
         }
     }
 }
@@ -469,6 +473,34 @@ impl Drive {
         self.oldest_valid = self.seq + 1;
         // A change that moves nothing, so the next token is above the expired ones.
         self.seq += 1;
+    }
+
+    /// Takes `chunks` more resumable chunks, then refuses the next.
+    pub fn cut_upload_after(&mut self, chunks: u32) {
+        self.cut_after = Some(chunks);
+    }
+
+    /// Whether this chunk is the one refused.
+    pub fn cut_now(&mut self) -> bool {
+        match self.cut_after {
+            Some(0) => {
+                self.cut_after = None;
+                true
+            }
+            Some(left) => {
+                self.cut_after = Some(left - 1);
+                false
+            }
+            None => false,
+        }
+    }
+
+    /// What is in the trash, in id order.
+    pub fn trashed(&self) -> Vec<&Node> {
+        self.nodes
+            .values()
+            .filter(|n| n.trashed && !n.removed)
+            .collect()
     }
 
     /// Starts a resumable upload.

@@ -151,6 +151,28 @@ impl Addr {
         .ok()
     }
 
+    /// The item `name` in the folder `parent` (`None`: the dataset's folder), and `op` asked of
+    /// it: `/items/{parent}:/{name}` (`:/{op}`), or the same below the dataset's folder.
+    pub fn child(
+        &self,
+        parent: Option<&str>,
+        name: &str,
+        op: Option<&str>,
+        query: &str,
+    ) -> Option<WebUrl> {
+        match parent {
+            None => self.path(Some(&[name.to_owned()]), op, query),
+            Some(id) => WebUrl::parse(&format!(
+                "{}{DRIVE}/items/{}:/{}{}{query}",
+                self.origin,
+                encode(id),
+                encode(name),
+                op.map_or_else(String::new, |op| format!(":/{op}"))
+            ))
+            .ok(),
+        }
+    }
+
     /// Whether `link` is a URL on this origin: a delta link from another server is not ours to
     /// follow.
     pub fn owns(&self, link: &str) -> bool {
@@ -208,6 +230,14 @@ mod tests {
             ),
             ("id".into(), addr("").item("01AB!c d", None, "")),
             ("id content".into(), addr("").item("X", Some("content"), "")),
+            (
+                "child of an id".into(),
+                addr("").child(Some("P!1"), "a b.txt", Some("content"), "?x=1"),
+            ),
+            (
+                "child of the folder".into(),
+                addr("Photos").child(None, "a.txt", Some("createUploadSession"), ""),
+            ),
         ];
         let want = [
             "https://graph.microsoft.com/v1.0/me/drive/special/approot",
@@ -217,6 +247,8 @@ mod tests {
             "https://graph.microsoft.com/v1.0/me/drive/special/approot:/Photos/2026/a%20b%2Bc.jpg:/content",
             "https://graph.microsoft.com/v1.0/me/drive/items/01AB%21c%20d",
             "https://graph.microsoft.com/v1.0/me/drive/items/X/content",
+            "https://graph.microsoft.com/v1.0/me/drive/items/P%211:/a%20b.txt:/content?x=1",
+            "https://graph.microsoft.com/v1.0/me/drive/special/approot:/Photos/a.txt:/createUploadSession",
         ];
         for ((name, got), want) in cases.iter().zip(want) {
             assert_eq!(got.as_ref().map(WebUrl::as_str), Some(want), "{name}");

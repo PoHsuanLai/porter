@@ -18,6 +18,9 @@ pub struct Knobs {
     pub throttle: Option<(u32, u32)>,
     /// How many delta items a page holds when the request names no `odata.maxpagesize`.
     pub page: usize,
+    /// How many more upload-session chunks are taken before the next is answered `503` and
+    /// stored nothing (the session stays, to be resumed); `None`: every one is taken.
+    pub cut_upload_after: Option<u32>,
 }
 
 impl Default for Knobs {
@@ -27,6 +30,7 @@ impl Default for Knobs {
             redirect_downloads: false,
             throttle: None,
             page: 200,
+            cut_upload_after: None,
         }
     }
 }
@@ -152,8 +156,29 @@ fn route(drive: &Drive, path: &str) -> Option<(Address, String)> {
         };
     }
     let rest = rest.strip_prefix("items/")?;
+    if let Some((id, after)) = rest.split_once(":/") {
+        // `items/{parent}:/{names}:/{op}`: a path below the folder `parent`.
+        let (names, op) = after.split_once(':').unwrap_or((after, ""));
+        let names = names
+            .split('/')
+            .filter(|s| !s.is_empty())
+            .map(percent_decode)
+            .collect();
+        return Some((
+            Address::Below(percent_decode(id), names),
+            op.trim_start_matches('/').to_owned(),
+        ));
+    }
     let (id, op) = rest.split_once('/').unwrap_or((rest, ""));
     Some((Address::Item(percent_decode(id)), op.to_owned()))
+}
+
+/// Whether OneDrive takes `name`: here, the characters it refuses and a leading or trailing
+/// space (`400 invalidRequest` otherwise).
+fn name_ok(name: &str) -> bool {
+    !name.is_empty()
+        && !name.contains(['"', '*', ':', '<', '>', '?', '/', '\\', '|'])
+        && name.trim() == name
 }
 
 fn matches_etag(node: &Node, if_match: Option<&str>) -> bool {
@@ -210,6 +235,9 @@ fn store(
             let Some((name, folders)) = names.split_last() else {
                 return error(400, "invalidRequest");
             };
+            if !name_ok(name) {
+                return error(400, "invalidRequest");
+            }
             if let Some(node) = drive.at_from(from, names) {
                 if fail {
                     return error(409, "nameAlreadyExists");
@@ -380,10 +408,19 @@ fn create_session(state: &mut State, link: &str, address: &Address, request: &Re
 }
 
 fn upload_chunk(state: &mut State, session: &str, request: &Request) -> Response {
-    let drive = &mut state.drive;
     let Some((first, last, total)) = content_range(request) else {
         return error(400, "invalidRange");
     };
+    if state.drive.upload_mut(session).is_none() {
+        return error(404, "itemNotFound");
+    }
+    if let Some(left) = state.knobs.cut_upload_after {
+        state.knobs.cut_upload_after = left.checked_sub(1);
+        if left == 0 {
+            return error(503, "serviceNotAvailable");
+        }
+    }
+    let drive = &mut state.drive;
     let Some(upload) = drive.upload_mut(session) else {
         return error(404, "itemNotFound");
     };
@@ -438,9 +475,46 @@ fn children(state: &mut State, address: &Address, request: &Request) -> Response
     if drive.live(&parent).is_none() {
         return error(404, "itemNotFound");
     }
+    if !name_ok(name) {
+        return error(400, "invalidRequest");
+    }
     match drive.mkdir(&parent, name) {
         Some(id) => written(drive, &id, 201),
         None => error(409, "nameAlreadyExists"),
+    }
+}
+
+/// `PATCH` of an item: a new name and/or a new parent (`parentReference.id`), with `If-Match`
+/// checked and a name taken in the folder refused (`409`).
+fn relocate(drive: &mut Drive, id: Option<String>, request: &Request) -> Response {
+    let Some(id) = id else {
+        return error(404, "itemNotFound");
+    };
+    let Some(node) = drive.live(&id) else {
+        return error(404, "itemNotFound");
+    };
+    if !matches_etag(node, request.header("if-match")) {
+        return error(412, "preconditionFailed");
+    }
+    let body: Value = serde_json::from_slice(&request.body).unwrap_or(Value::Null);
+    let name = body["name"].as_str().unwrap_or(&node.name).to_owned();
+    let parent = body["parentReference"]["id"]
+        .as_str()
+        .map(str::to_owned)
+        .or_else(|| node.parent.clone())
+        .unwrap_or_default();
+    if !name_ok(&name) {
+        return error(400, "invalidRequest");
+    }
+    if drive
+        .child(&parent, &name)
+        .is_some_and(|other| other.id != id)
+    {
+        return error(409, "nameAlreadyExists");
+    }
+    match drive.relocate(&id, &parent, &name) {
+        true => written(drive, &id, 200),
+        false => error(400, "invalidRequest"),
     }
 }
 
@@ -473,6 +547,16 @@ pub fn answer_link(state: &mut State, strict: bool, request: &Request) -> Respon
     if let Some(session) = path.strip_prefix("/upload/") {
         return match request.method.as_str() {
             "PUT" => upload_chunk(state, session, request),
+            "GET" => match state.drive.upload_mut(session) {
+                Some(upload) => Response::json(
+                    200,
+                    &json!({
+                        "expirationDateTime": "2099-01-01T00:00:00Z",
+                        "nextExpectedRanges": [format!("{}-", upload.received.len())],
+                    }),
+                ),
+                None => error(404, "itemNotFound"),
+            },
             "DELETE" => {
                 state.drive.close_upload(session);
                 Response::new(204)
@@ -544,10 +628,15 @@ pub fn answer(
             None => error(404, "itemNotFound"),
             Some((_, false)) => error(412, "preconditionFailed"),
             Some((id, true)) => {
-                state.drive.delete(&id);
+                // OneDrive keeps what is deleted in its recycle bin.
+                state.drive.recycle(&id);
                 Response::new(204)
             }
         },
+        ("PATCH", "") => {
+            let id = node.map(|n| n.id.clone());
+            relocate(&mut state.drive, id, request)
+        }
         ("PUT", "content") => {
             if request.body.len() > state.knobs.simple_max {
                 return error(413, "requestEntityTooLarge");

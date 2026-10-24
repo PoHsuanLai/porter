@@ -2,6 +2,7 @@
 
 mod common;
 mod contract;
+mod drive_write;
 mod fixtures;
 mod graph;
 mod linked;

@@ -206,6 +206,38 @@ impl GoogleHandle {
             .map(|n| n.id.clone())
     }
 
+    /// The bytes of the file at `path` below My Drive.
+    pub fn my_drive_file(&self, path: &str) -> Option<Vec<u8>> {
+        lock(&self.shared.state)
+            .drive
+            .at_from(MY_DRIVE, &names_of(path))
+            .and_then(|n| n.bytes.clone())
+    }
+
+    /// The `version` of the item at `path` below My Drive.
+    pub fn my_drive_version(&self, path: &str) -> Option<String> {
+        lock(&self.shared.state)
+            .drive
+            .at_from(MY_DRIVE, &names_of(path))
+            .map(|n| n.version.to_string())
+    }
+
+    /// The names of what is in the trash, in id order.
+    pub fn drive_trashed(&self) -> Vec<String> {
+        lock(&self.shared.state)
+            .drive
+            .trashed()
+            .into_iter()
+            .map(|n| n.name.clone())
+            .collect()
+    }
+
+    /// Takes `chunks` more resumable chunks, then answers the next `503` (storing nothing, the
+    /// upload kept), as a connection cut mid-upload would leave it.
+    pub fn drive_cut_upload_after(&self, chunks: u32) {
+        lock(&self.shared.state).drive.cut_upload_after(chunks);
+    }
+
     /// The bytes of the file at `path`.
     pub fn drive_file(&self, path: &str) -> Option<Vec<u8>> {
         lock(&self.shared.state)

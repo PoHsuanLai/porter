@@ -226,7 +226,7 @@ impl<H: Http> GraphReplica<H> {
 }
 
 /// A folder item as the tree keeps it.
-fn folder_of(item: &DriveItem) -> Folder {
+pub(crate) fn folder_of(item: &DriveItem) -> Folder {
     Folder {
         name: item.name.clone().unwrap_or_default(),
         parent: item.parent_id().map(|p| RemoteId(p.to_owned())),

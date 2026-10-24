@@ -2,6 +2,7 @@
 
 mod common;
 mod contract;
+mod drive_write;
 mod gdrive;
 mod my_drive;
 

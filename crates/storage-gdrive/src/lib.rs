@@ -20,6 +20,11 @@
 //!   so another writer can still slip in between the check and the write: the window is one
 //!   round trip (FINDINGS). A file up to [`SIMPLE_MAX`] bytes is one multipart request; a larger
 //!   one goes in a resumable session, in chunks of a multiple of [`CHUNK_UNIT`] (256 KiB).
+//! - **Whole-drive writes** ([`porter_sync::DriveWrite`], in My Drive): a folder or a file made
+//!   in a parent by id, new content for a file by id, a rename or move and the trash as
+//!   `files.update` (never `files.delete`), each checked against the file's `version` first; a
+//!   large file in a resumable session that a new replica resumes ([`accepts_name`]: Drive
+//!   takes any name but an empty one).
 //! - **Quota** is `about`'s `storageQuota` (`usage`, `limit`).
 //! - **The connection** is whatever [`porter_http::Http`] the replica is handed. In syncd it is
 //!   `storage_webdav::StreamHttp` over the descriptors of accountd's `Tokens.OpenAuthenticated`,
@@ -36,6 +41,7 @@
 //! unverified (FINDINGS).
 
 mod addr;
+mod drive;
 mod feed;
 mod json;
 mod refuse;
@@ -44,6 +50,7 @@ mod upload;
 mod write;
 
 pub use addr::Root;
+pub use drive::accepts_name;
 pub use porter_http::stream::{Dial, StreamHttp, StreamLimits};
 pub use replica::{CHUNK_UNIT, EXPORT_LIMIT, GdriveReplica, SIMPLE_MAX, Uploads};
 pub use storage_webdav::{Clock, DELETED};

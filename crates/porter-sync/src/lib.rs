@@ -17,6 +17,7 @@
 mod anchor;
 mod change;
 mod dataset;
+mod drive_write;
 mod folders;
 mod item;
 mod journal;
@@ -31,6 +32,9 @@ mod transfer;
 pub use anchor::{Anchor, Cursor};
 pub use change::{Change, ChangePage, More, Tombstone};
 pub use dataset::{ConflictRule, DatasetKind};
+pub use drive_write::{
+    Content, DriveWrite, Place, Progress, Session, Unheard, Upload, UploadTo, Written,
+};
 pub use folders::{Folder, Folders, Held};
 pub use item::{BaseVersion, ContentHash, ItemKind, ItemPath, RemoteId, RemoteItem, RemoteVersion};
 pub use journal::{

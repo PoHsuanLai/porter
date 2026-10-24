@@ -25,7 +25,7 @@ pub fn read_error(response: &HttpResponse) -> ReplicaError {
 pub fn write_error(response: &HttpResponse) -> PutRefused {
     match response.status.0 {
         507 => PutRefused::Quota,
-        401 | 403 | 405 | 409 | 413 | 423 => PutRefused::Forbidden,
+        400 | 401 | 403 | 405 | 409 | 413 | 423 => PutRefused::Forbidden,
         _ => PutRefused::Transient(retry_after(response)),
     }
 }

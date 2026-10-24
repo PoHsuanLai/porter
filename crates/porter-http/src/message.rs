@@ -17,6 +17,8 @@ pub enum Method {
     Put,
     /// `DELETE`.
     Delete,
+    /// `PATCH`.
+    Patch,
     /// `OPTIONS`.
     Options,
     /// WebDAV `PROPFIND`.
@@ -36,6 +38,7 @@ impl Method {
             Method::Post => "POST",
             Method::Put => "PUT",
             Method::Delete => "DELETE",
+            Method::Patch => "PATCH",
             Method::Options => "OPTIONS",
             Method::Propfind => "PROPFIND",
             Method::Report => "REPORT",
