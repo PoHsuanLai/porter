@@ -5,7 +5,6 @@
 use crate::error::InferRefusal;
 use crate::policy::{LocalOnly, Policy};
 use crate::spend::SpendVerdict;
-use porter_core::consent::Verdict;
 use porter_core::{AccountId, Billing, DataClass, Locality, ModelId};
 
 /// What routing needs to know about the request.
@@ -32,6 +31,20 @@ pub enum TierChoice {
     Other,
 }
 
+/// Whether the app may use a model, in routing's own words. The broker says it: a model that
+/// needs nobody's leave (on this computer, attached by the person, configured by the app) is
+/// `Granted` with no grant behind it, and a hosted model's consent is mapped here at the edge
+/// that read it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Permit {
+    /// The app may use it.
+    Granted,
+    /// The app may not yet, but the person can be asked.
+    Askable,
+    /// The app may not, and asking would not change that.
+    Denied,
+}
+
 /// One model whose capability meets the request, with what the broker knows about it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RouteCandidate {
@@ -45,8 +58,8 @@ pub struct RouteCandidate {
     pub billing: Billing,
     /// Whether it is the tier's choice.
     pub tier: TierChoice,
-    /// The app's consent for this account, kind and class.
-    pub permission: Verdict,
+    /// Whether the app may use it.
+    pub permission: Permit,
     /// The spend caps' verdict for this request.
     pub spend: SpendVerdict,
 }
@@ -90,10 +103,10 @@ pub fn admit<'a>(
     let permitted: Vec<&RouteCandidate> = admitted
         .iter()
         .copied()
-        .filter(|c| matches!(c.permission, Verdict::Granted { .. }))
+        .filter(|c| c.permission == Permit::Granted)
         .collect();
     if permitted.is_empty() {
-        let askable = admitted.iter().any(|c| c.permission == Verdict::Ask);
+        let askable = admitted.iter().any(|c| c.permission == Permit::Askable);
         return Err(if askable {
             InferRefusal::NeedsGrant
         } else {

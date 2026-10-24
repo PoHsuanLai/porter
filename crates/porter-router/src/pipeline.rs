@@ -78,7 +78,7 @@ pub fn catalogue_of(listed: &[Listed], need: &Need) -> Vec<CatalogueModel> {
                         locality: one.card.locality.clone(),
                         billing: one.card.billing.clone(),
                         tier: porter_infer::TierChoice::Other,
-                        permission: one.permission.clone(),
+                        permission: one.permission,
                         spend: one.spend,
                     },
                     readiness: one.readiness,

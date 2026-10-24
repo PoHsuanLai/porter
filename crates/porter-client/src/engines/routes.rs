@@ -5,9 +5,10 @@
 
 use super::engine::{Engine, EngineError, EngineId, KeyUse};
 use super::keys::KeySource;
-use porter_core::consent::{GrantScope, Verdict};
-use porter_core::{Billing, DataClass, GrantId, Need, Tier};
-use porter_infer::{InferRefusal, Policy, RouteAsk, RouteCandidate, Slot, SpendVerdict, admit};
+use porter_core::{Billing, DataClass, Need, Tier};
+use porter_infer::{
+    InferRefusal, Permit, Policy, RouteAsk, RouteCandidate, Slot, SpendVerdict, admit,
+};
 
 /// One row: these engines, most preferred first, serve `slot` at `tier`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -94,8 +95,8 @@ impl Table {
         let mut candidates = Vec::with_capacity(row.len());
         for engine in &row {
             let permission = match (engine.key, engine.key_held(keys).await) {
-                (KeyUse::Bearer, false) => Verdict::Ask,
-                _ => granted(),
+                (KeyUse::Bearer, false) => Permit::Askable,
+                _ => Permit::Granted,
             };
             candidates.push(RouteCandidate {
                 account: engine.account.clone(),
@@ -117,17 +118,6 @@ impl Table {
             })
             .and_then(|index| row.get(index).copied())
             .ok_or(InferRefusal::Unavailable)
-    }
-}
-
-/// What an engine the app configured carries as consent: the app's own say-so, always.
-fn granted() -> Verdict {
-    match GrantId::parse("in-process") {
-        Ok(grant) => Verdict::Granted {
-            grant,
-            scope: GrantScope::Always,
-        },
-        Err(_) => Verdict::Denied,
     }
 }
 

@@ -1,14 +1,6 @@
 use super::*;
 use crate::policy::{ClassFloor, Floor};
-use porter_core::consent::GrantScope;
-use porter_core::{GrantId, MicroUsd, PriceTable};
-
-fn granted() -> Verdict {
-    Verdict::Granted {
-        grant: GrantId::parse("g").expect("id"),
-        scope: GrantScope::Always,
-    }
-}
+use porter_core::{MicroUsd, PriceTable};
 
 fn metered(input: u64) -> Billing {
     Billing::Metered(PriceTable {
@@ -24,7 +16,7 @@ fn candidate(name: &str, locality: Locality, billing: Billing) -> RouteCandidate
         locality,
         billing,
         tier: TierChoice::Chosen,
-        permission: granted(),
+        permission: Permit::Granted,
         spend: SpendVerdict::Within,
     }
 }
@@ -68,11 +60,11 @@ fn cases() -> Vec<Case> {
         ..cloud("capped", 1)
     };
     let asking = RouteCandidate {
-        permission: Verdict::Ask,
+        permission: Permit::Askable,
         ..ollama()
     };
     let refused = RouteCandidate {
-        permission: Verdict::Denied,
+        permission: Permit::Denied,
         ..ollama()
     };
     let peer_floor = Policy {
@@ -248,10 +240,10 @@ fn legacy_route(
     let permitted: Vec<&RouteCandidate> = admitted
         .iter()
         .copied()
-        .filter(|c| matches!(c.permission, Verdict::Granted { .. }))
+        .filter(|c| c.permission == Permit::Granted)
         .collect();
     if permitted.is_empty() {
-        let askable = admitted.iter().any(|c| c.permission == Verdict::Ask);
+        let askable = admitted.iter().any(|c| c.permission == Permit::Askable);
         return Err(if askable {
             InferRefusal::NeedsGrant
         } else {
@@ -279,7 +271,7 @@ fn pool() -> Vec<RouteCandidate> {
         Locality::Cloud { region: None },
     ];
     let tiers = [TierChoice::Chosen, TierChoice::Other];
-    let permissions = [granted(), Verdict::Ask, Verdict::Denied];
+    let permissions = [Permit::Granted, Permit::Askable, Permit::Denied];
     let spends = [SpendVerdict::Within, SpendVerdict::Warn, SpendVerdict::Stop];
     let mut pool = Vec::new();
     for locality in &localities {
@@ -294,7 +286,7 @@ fn pool() -> Vec<RouteCandidate> {
                     };
                     pool.push(RouteCandidate {
                         tier,
-                        permission: permission.clone(),
+                        permission: *permission,
                         spend,
                         ..candidate(&format!("a{n}"), locality.clone(), billing)
                     });

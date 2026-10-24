@@ -1,9 +1,9 @@
-use super::tests::{ASK, cand, granted, mref, open};
+use super::tests::{ASK, cand, mref, open};
 use super::*;
 use crate::policy::{ClassFloor, Floor, LocalOnly};
+use crate::route::Permit;
 use crate::route::TierChoice;
 use crate::spend::SpendVerdict;
-use porter_core::consent::Verdict;
 use porter_core::{AccountId, Billing, DataClass, Locality, ModelId};
 use proptest::prelude::*;
 
@@ -45,8 +45,12 @@ fn locality() -> impl Strategy<Value = Locality> {
     ]
 }
 
-fn permission() -> impl Strategy<Value = Verdict> {
-    prop_oneof![Just(granted()), Just(Verdict::Ask), Just(Verdict::Denied)]
+fn permission() -> impl Strategy<Value = Permit> {
+    prop_oneof![
+        Just(Permit::Granted),
+        Just(Permit::Askable),
+        Just(Permit::Denied)
+    ]
 }
 
 fn spend() -> impl Strategy<Value = SpendVerdict> {

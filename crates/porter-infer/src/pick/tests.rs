@@ -1,17 +1,8 @@
 use super::*;
 use crate::policy::{ClassFloor, Floor, LocalOnly};
+use crate::route::Permit;
 use crate::spend::SpendVerdict;
-use porter_core::consent::{GrantScope, Verdict};
-use porter_core::{
-    AccountId, Billing, DataClass, GrantId, Locality, MicroUsd, ModelId, PriceTable,
-};
-
-pub(super) fn granted() -> Verdict {
-    Verdict::Granted {
-        grant: GrantId::parse("g").expect("id"),
-        scope: GrantScope::Always,
-    }
-}
+use porter_core::{AccountId, Billing, DataClass, Locality, MicroUsd, ModelId, PriceTable};
 
 pub(super) fn mref(name: &str) -> ModelRef {
     ModelRef {
@@ -30,7 +21,7 @@ pub(super) fn cand(name: &str, index: u32, readiness: Readiness, swap: SwapCost)
             locality: Locality::OnDevice,
             billing: Billing::Free,
             tier: crate::route::TierChoice::Other,
-            permission: granted(),
+            permission: Permit::Granted,
             spend: SpendVerdict::Within,
         },
         readiness,

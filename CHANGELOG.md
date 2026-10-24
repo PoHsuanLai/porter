@@ -16,6 +16,17 @@
   build it with `cargo build -p syncd-fakes`. `porter_rig::storage_fake` re-exports the module
   for one batch.
 
+### Routing reads a permit, not a consent grant
+
+- `porter_infer::RouteCandidate::permission` and `porter_router::Listed::permission` are a
+  `porter_infer::Permit` (`Granted`, `Askable`, `Denied`), no longer a `porter_core::consent::Verdict`.
+  inferd maps the verdict accountd gave a hosted model at its edge (`RemoteModel::permit`).
+- The made-up grants are gone: a model on this computer, an attached engine and an engine the app
+  configured in porter-client are `Permit::Granted` instead of carrying a grant named
+  `on-this-computer`, `attached-engine` or `in-process`.
+- `porter_infer::Broker`, which refused every request, is gone. inferd serves requests through its
+  own pipeline, as before.
+
 ### A drive's files in Files, downloaded when opened
 
 - With "Show in Files" on, syncd shows the whole drive as a folder (`~/Cloud/OneDrive`,

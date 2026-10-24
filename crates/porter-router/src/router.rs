@@ -2,23 +2,23 @@
 //! `porter_infer::route` (this computer first, the user's tier choice, cost). Pure over the list
 //! of models and their readiness; the engines and the clock are somebody else's.
 //!
-//! Consent: a model on this computer needs no grant (the data does not leave the machine, and
-//! the class's floor already decides which classes may be sent where). A hosted model carries the
-//! verdict accountd gave the app for its account (`Listed::permission`, from `cloud::models`); a
-//! model of an account inferd knows nothing of is `Ask` (`NeedsGrant`).
+//! Consent is not routing's: each model carries a [`Permit`] its caller decided. A model on this
+//! computer is `Granted` (the data does not leave the machine, and the class's floor already
+//! decides which classes may be sent where). A hosted model carries what inferd made of the
+//! verdict accountd gave the app for its account (`Listed::permission`); a model of an account
+//! inferd knows nothing of is `Askable` (`NeedsGrant`).
 //!
 //! [`placed`] routes inside a set of places a caller named.
 
 pub mod placed;
 
 use porter_core::capability::LlmFeature;
-use porter_core::consent::{GrantScope, Verdict};
-use porter_core::{Capability, DataClass, GrantId, Locality, Need, Tier};
+use porter_core::{Capability, DataClass, Locality, Need, Tier};
 use porter_core::{Match, matches};
 use porter_core::{Offer as CoreOffer, capability::SpeechMode};
 use porter_infer::{
     AutoPolicy, Chosen, Declined, DeclinedBecause, InferRefusal, LicenceClass, ModelCard, ModelRef,
-    Pick, PickCandidate, PickPolicy, PickRefusal, Policy, ProviderId, Readiness, RouteAsk,
+    Permit, Pick, PickCandidate, PickPolicy, PickRefusal, Policy, ProviderId, Readiness, RouteAsk,
     RouteCandidate, Sharing, Sight, Slot, SpendVerdict, SwapCost, Takes, TierMap, Why,
     default_choice, pick, tier_choice,
 };
@@ -35,8 +35,8 @@ pub struct Listed {
     pub swap: SwapCost,
     /// How it may be used.
     pub licence: LicenceClass,
-    /// What the consent store says for the app on this model's account.
-    pub permission: Verdict,
+    /// Whether the app may use it.
+    pub permission: Permit,
     /// What the spend caps say about one more request on it.
     pub spend: SpendVerdict,
     /// The provider that reaches it, for a hosted model; none for one on this computer.
@@ -47,14 +47,14 @@ pub struct Listed {
 }
 
 impl Listed {
-    /// A model with the consent its locality carries (`consent_of`) and no spend against it.
+    /// A model with the permit its locality carries (`permit_of`) and no spend against it.
     pub fn new(
         card: ModelCard,
         readiness: Readiness,
         swap: SwapCost,
         licence: LicenceClass,
     ) -> Self {
-        let permission = consent_of(&card);
+        let permission = permit_of(&card);
         Self {
             card,
             readiness,
@@ -139,20 +139,11 @@ pub fn check_class(class: DataClass) -> Result<(), InferRefusal> {
     }
 }
 
-/// The grant the on-device models carry: one name for all of them.
-fn local_grant() -> Option<GrantId> {
-    GrantId::parse("on-this-computer").ok()
-}
-
-/// What the consent store says for `card` when nobody has said: a model on this computer is
-/// granted, any other asks.
-pub(crate) fn consent_of(card: &ModelCard) -> Verdict {
-    match (&card.locality, local_grant()) {
-        (Locality::OnDevice, Some(grant)) => Verdict::Granted {
-            grant,
-            scope: GrantScope::Always,
-        },
-        _ => Verdict::Ask,
+/// What a model may do when nobody has said: one on this computer is granted, any other asks.
+pub(crate) fn permit_of(card: &ModelCard) -> Permit {
+    match card.locality {
+        Locality::OnDevice => Permit::Granted,
+        _ => Permit::Askable,
     }
 }
 
@@ -219,7 +210,7 @@ pub fn choose(
                         model: one.card.model.clone(),
                     },
                 ),
-                permission: one.permission.clone(),
+                permission: one.permission,
                 spend: one.spend,
             },
             readiness: one.readiness,

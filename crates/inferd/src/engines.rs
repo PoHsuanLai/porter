@@ -28,8 +28,9 @@ use porter_core::capability::SpeechMode;
 use porter_core::consent::{Availability, Usage};
 use porter_core::{AccountId, AppId, DataClass, Locality, MicroUsd, Need, Tier};
 use porter_infer::{
-    Asker, InferRefusal, LicenceClass, ModelCard, ModelRef, Period, PickRefusal, PlaceRefusal,
-    Policy, Readiness, ServedBy, Slot, SpendScope, SpendVerdict, SwapCost, TierMap, Why,
+    Asker, InferRefusal, LicenceClass, ModelCard, ModelRef, Period, Permit, PickRefusal,
+    PlaceRefusal, Policy, Readiness, ServedBy, Slot, SpendScope, SpendVerdict, SwapCost, TierMap,
+    Why,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -404,8 +405,10 @@ impl Engines {
                 licence_of(&model.entry.licence),
             )
         });
+        // An attached engine needs no grant: the person named it, and where its data goes is
+        // its locality, which the class floor reads.
         let attached = self.book.attached.models().into_iter().map(|model| Listed {
-            permission: attached_grant(),
+            permission: Permit::Granted,
             ..Listed::new(
                 model.card.clone(),
                 self.book.attached.readiness(&model.model_ref()),
@@ -441,7 +444,7 @@ impl Engines {
             )
         });
         let hosted = offered.models.iter().map(|(model, spend)| Listed {
-            permission: model.verdict.clone(),
+            permission: model.permit(),
             spend: *spend,
             provider: Some(porter_infer::ProviderId(model.reach.provider.0.clone())),
             ..Listed::new(
@@ -982,18 +985,6 @@ fn reached_of(reach: &model_catalog::Reach) -> Why {
         } else {
             porter_infer::Door::Direct
         },
-    }
-}
-
-/// The verdict an attached engine carries: the person named it, so no grant is asked of accountd
-/// (where its data goes is `where`, which the class floor reads).
-fn attached_grant() -> porter_core::consent::Verdict {
-    match porter_core::GrantId::parse("attached-engine") {
-        Ok(grant) => porter_core::consent::Verdict::Granted {
-            grant,
-            scope: porter_core::consent::GrantScope::Always,
-        },
-        Err(_) => porter_core::consent::Verdict::Ask,
     }
 }
 

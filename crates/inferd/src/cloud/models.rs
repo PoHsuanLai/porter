@@ -14,7 +14,7 @@ use porter_core::consent::Verdict;
 use porter_core::{
     AccountId, AccountState, Billing, GrantId, Locality as Where, MicroUsd, ModelId, PriceTable,
 };
-use porter_infer::{ModelCard, ModelRef};
+use porter_infer::{ModelCard, ModelRef, Permit};
 use std::collections::BTreeSet;
 
 /// The wires this build speaks to a hosted model. Anthropic's Messages API waits for a stoker
@@ -50,6 +50,16 @@ impl RemoteModel {
         match &self.verdict {
             Verdict::Granted { grant, .. } => Some(grant),
             Verdict::Denied | Verdict::Ask => None,
+        }
+    }
+
+    /// What routing makes of the app's grant: consent stays here, and routing reads only whether
+    /// the app may use the model, may be asked, or may not.
+    pub fn permit(&self) -> Permit {
+        match self.verdict {
+            Verdict::Granted { .. } => Permit::Granted,
+            Verdict::Ask => Permit::Askable,
+            Verdict::Denied => Permit::Denied,
         }
     }
 

@@ -1,10 +1,9 @@
 use super::*;
 use porter_core::capability::{Capability, LlmCap, LlmFeature, LlmWire};
-use porter_core::consent::{GrantScope, Verdict};
 use porter_core::need::{DimsNeed, EmbedNeed, LlmNeed};
-use porter_core::{AccountId, Billing, GrantId, Locality, Tokens};
+use porter_core::{AccountId, Billing, Locality, Tokens};
 use porter_infer::{
-    AutoPolicy, LicenceClass, LocalOnly, ModelCard, PlaceKind, Policy, Readiness, SwapCost,
+    AutoPolicy, LicenceClass, LocalOnly, ModelCard, Permit, PlaceKind, Policy, Readiness, SwapCost,
 };
 
 fn llm_cap() -> Capability {
@@ -31,13 +30,6 @@ fn place(text: &str) -> PlaceId {
     PlaceId::parse(text).expect("place")
 }
 
-fn granted() -> Verdict {
-    Verdict::Granted {
-        grant: GrantId::parse("g").expect("id"),
-        scope: GrantScope::Always,
-    }
-}
-
 /// A model at `place_text`, with the locality that kind of place has and consent given.
 fn at(place_text: &str, model: &str, serving: Serving) -> Placed {
     let id = place(place_text);
@@ -62,7 +54,7 @@ fn at(place_text: &str, model: &str, serving: Serving) -> Placed {
         SwapCost::Resident,
         LicenceClass::Open,
     );
-    listed.permission = granted();
+    listed.permission = Permit::Granted;
     Placed {
         listed,
         place: id,
@@ -318,7 +310,7 @@ fn a_pin_is_the_callers_word_for_that_place() {
 #[test]
 fn a_rule_other_than_the_place_keeps_its_own_refusal() {
     let mut asks = at("account:work", "far", Serving::Now);
-    asks.listed.permission = Verdict::Ask;
+    asks.listed.permission = Permit::Askable;
     let got = run(
         &[asks],
         &allowed(&["account:work"]),

@@ -26,7 +26,6 @@
 
 mod asker;
 mod audit;
-mod broker;
 mod choice;
 mod control;
 mod cua;
@@ -56,7 +55,6 @@ mod tool_proof;
 
 pub use asker::{Asker, Chooser};
 pub use audit::AuditEntry;
-pub use broker::Broker;
 pub use choice::{
     AGENT_ACCOUNT, AutoRow, Fit, LicenceClass, ModelRef, PickerInput, PickerRow, PoolRow, TierMap,
     TierRow, picker_rows, tier_choice, tier_label,
@@ -102,7 +100,7 @@ pub use request::{
     MessagePart, ReplyShape, RequestKind, Role, Task, TaskRequest, ThoughtPart, ToolCallPart,
     ToolDecl, ToolResultPart, ToolStatus,
 };
-pub use route::{Chosen, RouteAsk, RouteCandidate, TierChoice, admit, route};
+pub use route::{Chosen, Permit, RouteAsk, RouteCandidate, TierChoice, admit, route};
 pub use scores::{MOST_CANDIDATES, OptionScore, OptionScores, ScoreOptions, ScoresError};
 pub use session::{InferSession, SessionError};
 pub use slot::Slot;

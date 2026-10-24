@@ -119,7 +119,7 @@ fn route_of(placed: &Placed) -> RouteCandidate {
         locality: card.locality.clone(),
         billing: card.billing.clone(),
         tier: TierChoice::Other,
-        permission: placed.listed.permission.clone(),
+        permission: placed.listed.permission,
         spend: placed.listed.spend,
     }
 }

@@ -96,11 +96,12 @@ fn a_runtime_that_answers_lists_its_models_ready_under_this_computer() {
             .iter()
             .all(|one| one.card.locality == Locality::OnDevice)
     );
-    // A local model carries the on-this-computer grant: nobody is asked.
-    assert!(listed.iter().all(|one| matches!(
-        one.permission,
-        porter_core::consent::Verdict::Granted { .. }
-    )));
+    // A local model is granted: nobody is asked.
+    assert!(
+        listed
+            .iter()
+            .all(|one| one.permission == porter_infer::Permit::Granted)
+    );
 }
 
 #[test]

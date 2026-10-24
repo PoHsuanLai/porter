@@ -2,10 +2,9 @@ use super::*;
 use crate::choice::LicenceClass;
 use crate::pick::SwapCost;
 use crate::policy::{ClassFloor, Floor, LocalOnly};
-use crate::route::{RouteCandidate, TierChoice};
+use crate::route::{Permit, RouteCandidate, TierChoice};
 use crate::spend::SpendVerdict;
-use porter_core::consent::{GrantScope, Verdict};
-use porter_core::{AccountId, Billing, GrantId, Locality, ModelId};
+use porter_core::{AccountId, Billing, Locality, ModelId};
 
 pub(super) fn mref(name: &str) -> ModelRef {
     ModelRef {
@@ -34,10 +33,7 @@ pub(super) fn local(
                 locality: Locality::OnDevice,
                 billing: Billing::Free,
                 tier: TierChoice::Other,
-                permission: Verdict::Granted {
-                    grant: GrantId::parse("g").expect("id"),
-                    scope: GrantScope::Always,
-                },
+                permission: Permit::Granted,
                 spend: SpendVerdict::Within,
             },
             readiness: Readiness::Ready,

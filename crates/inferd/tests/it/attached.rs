@@ -441,10 +441,7 @@ async fn this_device_takes_on_device_only_data_and_my_network_does_not_unless_th
     assert_eq!(listed[0].card.locality, Locality::LocalNetwork);
     assert_eq!(listed[0].card.billing, porter_core::Billing::Free);
     assert_eq!(listed[0].spend, porter_infer::SpendVerdict::Within);
-    assert!(matches!(
-        listed[0].permission,
-        porter_core::consent::Verdict::Granted { .. }
-    ));
+    assert_eq!(listed[0].permission, porter_infer::Permit::Granted);
 
     // A class whose floor says "my machines" is let through either way.
     let mut settings: Settings = (*world.served.settings()).clone();
