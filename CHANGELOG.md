@@ -31,6 +31,12 @@
   `porter-mountd` (the helper; std and rustix only).
   `Replica::export` (porter-sync) has a default that refuses; Google Drive's uses `files.export`.
 
+### porter-core holds less
+
+- QuickXorHash is its own crate, `quickxorhash`: a RustCrypto `digest` hasher of 20 bytes, checked
+  against Microsoft's reference outputs, with no porter type in it. `porter_core::quick_xor` is
+  gone; nothing outside porter named it.
+
 ### Settings rows for drives and Photos
 
 - "Keep Everything Downloaded" (`accounts.<id>.storage.keep`), offered while "Show in Files" is

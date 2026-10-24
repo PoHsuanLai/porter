@@ -44,7 +44,6 @@ mod matching;
 pub mod need;
 mod offer;
 mod process_credential;
-pub mod quick_xor;
 mod restriction;
 pub mod scope;
 mod secret;

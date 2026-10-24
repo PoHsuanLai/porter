@@ -1,0 +1,17 @@
+[package]
+name = "quickxorhash"
+description = "Microsoft's QuickXorHash, the content hash OneDrive and Graph report for each file, as a RustCrypto `digest` hasher."
+version = "0.1.0"
+edition.workspace = true
+license = "MIT OR Apache-2.0"
+rust-version.workspace = true
+repository.workspace = true
+keywords = ["quickxorhash", "onedrive", "hash", "digest", "graph"]
+categories = ["algorithms", "cryptography"]
+publish = false
+
+[dependencies]
+digest = { workspace = true }
+
+[lints]
+workspace = true

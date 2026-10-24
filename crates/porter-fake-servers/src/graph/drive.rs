@@ -59,11 +59,10 @@ impl Node {
     /// The QuickXorHash of the content, in base64 as Graph sends it.
     pub fn quick_xor(&self) -> Option<String> {
         use base64::Engine;
+        use quickxorhash::{Digest, QuickXorHash};
         match &self.body {
             Body::File(bytes) => {
-                let mut hash = porter_core::quick_xor::QuickXor::new();
-                hash.update(bytes);
-                Some(base64::engine::general_purpose::STANDARD.encode(hash.finish()))
+                Some(base64::engine::general_purpose::STANDARD.encode(QuickXorHash::digest(bytes)))
             }
             Body::Folder => None,
         }

@@ -3,6 +3,7 @@ resolver = "3"
 members = [
   "crates/porter-core",
   "crates/porter-fs",
+  "crates/quickxorhash",
   "crates/prov",
   "crates/porter-provider",
   "crates/porter-secrets",
@@ -53,6 +54,7 @@ publish = false
 [workspace.dependencies]
 porter-core     = { path = "crates/porter-core" }
 porter-fs        = { path = "crates/porter-fs" }
+quickxorhash    = { path = "crates/quickxorhash" }
 prov            = { path = "crates/prov" }
 porter-provider = { path = "crates/porter-provider" }
 porter-secrets  = { path = "crates/porter-secrets" }
@@ -150,6 +152,8 @@ webpki-roots = "1"
 # porter-http's TLS: hyper-rustls and the platform's roots (quire accounts-pins, on master).
 hyper-rustls = { version = "0.27", default-features = false, features = ["ring", "http1", "tls12", "native-tokio", "logging"] }
 sha2 = "0.10"
+# The RustCrypto hasher traits quickxorhash implements, at the line sha2 and md-5 already bring.
+digest = "0.10"
 md-5 = "0.10"
 clap = { version = "4", features = ["derive"] }
 proptest = "1"

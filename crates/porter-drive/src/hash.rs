@@ -4,7 +4,7 @@
 //! version instead.
 
 use porter_core::capability::HashKind;
-use porter_core::quick_xor::QuickXor;
+use quickxorhash::QuickXorHash;
 use sha2::Digest;
 use std::io::Read;
 use std::path::Path;
@@ -18,7 +18,7 @@ pub(crate) fn computes(kind: HashKind) -> bool {
 enum Hasher {
     Md5(md5::Md5),
     Sha256(sha2::Sha256),
-    QuickXor(QuickXor),
+    QuickXor(QuickXorHash),
 }
 
 impl Hasher {
@@ -26,7 +26,7 @@ impl Hasher {
         match kind {
             HashKind::Md5 => Some(Hasher::Md5(md5::Md5::new())),
             HashKind::Sha256 => Some(Hasher::Sha256(sha2::Sha256::new())),
-            HashKind::QuickXor => Some(Hasher::QuickXor(QuickXor::new())),
+            HashKind::QuickXor => Some(Hasher::QuickXor(QuickXorHash::new())),
             _ => None,
         }
     }
@@ -44,7 +44,7 @@ impl Hasher {
         match self {
             Hasher::Md5(h) => hex(&h.finalize()),
             Hasher::Sha256(h) => hex(&h.finalize()),
-            Hasher::QuickXor(h) => h.hex(),
+            Hasher::QuickXor(h) => hex(&h.finalize()),
         }
     }
 }
