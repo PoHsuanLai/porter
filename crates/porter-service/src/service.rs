@@ -2,6 +2,7 @@
 
 use crate::agent_login::Roster;
 use crate::audience::covers;
+use crate::audit::{AuditEntry, AuditEvent};
 use crate::audit::{AuditSink, NoAudit};
 use crate::choose::{ask_for, settle};
 use crate::clock::Clock;
@@ -20,7 +21,6 @@ use porter_core::{
 };
 use porter_provider::{Provider, ProviderError, ProviderSet, ProviderSpec};
 use porter_secrets::{Secrets, SecretsError};
-use crate::audit::{AuditEntry, AuditEvent};
 use std::collections::HashSet;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 

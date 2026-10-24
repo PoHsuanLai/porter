@@ -3,6 +3,7 @@
 //! porter holds for an `AgentLogin` account: no token, no key, no path to the agent's own login
 //! files, which are the agent's and never read.
 
+use crate::audit::AuditEvent;
 use crate::audit::AuditSink;
 use crate::clock::Clock;
 use crate::service::AccountService;
@@ -11,7 +12,6 @@ use crate::store::RegistryStore;
 use porter_core::{AccountId, AgentState, AuthKind};
 use porter_provider::Provider;
 use porter_secrets::Secrets;
-use crate::audit::AuditEvent;
 
 /// Why a report of an agent's state was not taken.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
