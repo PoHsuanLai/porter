@@ -259,6 +259,7 @@ EDGES=(
   "porter-daemon:"
   "porter-fs:"
   "quickxorhash:"
+  "keyring-chunked:"
   "prov: porter-core"
   "porter-provider: porter-core"
   "porter-secrets: porter-core porter-fs"
