@@ -1,6 +1,6 @@
 //! What the desktop's daemons share and need no bus, runtime or environment for.
 //!
-//! Two small pieces, each used by several daemons that used to carry a copy:
+//! Three small pieces, each used by several daemons that used to carry a copy:
 //!
 //! - [`ProcRoot`]: which `/proc` a daemon reads its callers from. The system's, unless a test
 //!   build is told to read a fixture tree. Which process a caller is decides what it may do, so
@@ -8,6 +8,8 @@
 //!   whether it honours the variable ([`ProcGate`]), and a shipped build does not.
 //! - [`Watch`]: a watch on one settings file, which survives the atomic rename an editor or the
 //!   Settings app writes it with.
+//! - [`xdg`]: the XDG base directories a daemon keeps its files under, resolved from the lookup
+//!   the daemon passes in.
 //!
 //! The library reads no environment variable. The daemon passes in how it looks one up, so a
 //! test (or a program that runs a daemon inside itself) passes a table instead.
@@ -31,6 +33,7 @@ mod proc_root;
 mod system_callers;
 #[cfg(feature = "watch")]
 mod watch;
+pub mod xdg;
 
 pub use proc_root::{ProcGate, ProcRoot};
 pub use system_callers::{

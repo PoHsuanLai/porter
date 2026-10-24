@@ -1,8 +1,8 @@
 //! Where accountd reads and writes, resolved from the environment (PLAN §2.3, §2.6): the one
 //! place the daemon names a path, so a test can give it scratch directories.
 
-pub use porter_core::xdg::PathError;
-use porter_core::xdg::{Xdg, absolute};
+pub use porter_daemon::xdg::PathError;
+use porter_daemon::xdg::{Xdg, absolute};
 use porter_families::set::Layer;
 use std::path::PathBuf;
 

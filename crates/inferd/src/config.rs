@@ -9,7 +9,7 @@ use crate::catalog::CatalogDirs;
 use crate::local::EngineConfig;
 use crate::probe::ProbeConfig;
 use crate::structured::AiConfig;
-use porter_core::xdg::{PathError, Xdg};
+use porter_daemon::xdg::{PathError, Xdg};
 use porter_infer::{Policy, TierMap};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;

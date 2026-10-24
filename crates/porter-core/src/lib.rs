@@ -57,7 +57,6 @@ mod token;
 mod units;
 mod weburl;
 pub mod wire;
-pub mod xdg;
 
 pub use account::{Account, AccountLabel, AccountState, AgentState};
 pub use agent_login::{LoginFault, LoginOutcome, LoginRequestId};

@@ -36,6 +36,8 @@
 - QuickXorHash is its own crate, `quickxorhash`: a RustCrypto `digest` hasher of 20 bytes, checked
   against Microsoft's reference outputs, with no porter type in it. `porter_core::quick_xor` is
   gone; nothing outside porter named it.
+- The XDG base directories (`Xdg`, `PathError`) are `porter_daemon::xdg`, beside the other pieces the
+  daemons share; `porter_core::xdg` is gone (only accountd, syncd and inferd named it).
 
 ### Settings rows for drives and Photos
 

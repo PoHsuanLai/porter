@@ -3,8 +3,8 @@
 //! by its object-path segment (`porter_core::object_segment`), the form the account's
 //! directories are named in, so a wipe needs no map back to the id.
 
-pub use porter_core::xdg::PathError;
-use porter_core::xdg::Xdg;
+pub use porter_daemon::xdg::PathError;
+use porter_daemon::xdg::Xdg;
 use std::path::PathBuf;
 use std::time::Duration;
 
