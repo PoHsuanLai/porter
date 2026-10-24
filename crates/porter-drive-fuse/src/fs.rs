@@ -1,16 +1,18 @@
 //! fuser's calls over a drive.
 
 use fuser::{
-    Errno, FileAttr, FileHandle, FileType, Filesystem, FopenFlags, Generation, INodeNo, LockOwner,
-    OpenAccMode, OpenFlags, ReplyAttr, ReplyData, ReplyDirectory, ReplyEmpty, ReplyEntry,
-    ReplyOpen, ReplyStatfs, Request,
+    BsdFileFlags, Errno, FileAttr, FileHandle, FileType, Filesystem, FopenFlags, Generation,
+    INodeNo, LockOwner, OpenAccMode, OpenFlags, RenameFlags, ReplyAttr, ReplyCreate, ReplyData,
+    ReplyDirectory, ReplyEmpty, ReplyEntry, ReplyOpen, ReplyStatfs, ReplyWrite, Request, TimeOrNow,
+    WriteFlags,
 };
-use porter_drive::{Drive, NodeId, NodeKind, ROOT_INO, ReadError};
+use porter_drive::{Drive, NodeId, NodeKind, ROOT_INO, ReadError, WriteError};
 use std::collections::HashMap;
 use std::ffi::OsStr;
+use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, PoisonError};
-use std::time::{Duration, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// How long the kernel may keep an entry or attributes before asking again: short, since the
 /// listing changes under it.
@@ -30,6 +32,8 @@ pub struct Attr {
     pub size: u64,
     /// Its mtime, seconds since the epoch.
     pub mtime: i64,
+    /// Whether its content may be written (an online document's link file's may not).
+    pub writable: bool,
 }
 
 /// One directory entry.
@@ -62,18 +66,47 @@ pub fn errno_of(error: ReadError) -> Errno {
     }
 }
 
+/// The errno a refused change answers.
+pub fn write_errno(error: WriteError) -> Errno {
+    match error {
+        WriteError::ReadOnly => Errno::EROFS,
+        WriteError::NotAllowed => Errno::EPERM,
+        WriteError::BadName | WriteError::Inside => Errno::EINVAL,
+        WriteError::Exists => Errno::EEXIST,
+        WriteError::Gone => Errno::ENOENT,
+        WriteError::NotEmpty => Errno::ENOTEMPTY,
+        WriteError::Folder => Errno::EISDIR,
+        WriteError::NotFolder => Errno::ENOTDIR,
+        WriteError::Read(error) => errno_of(error),
+        _ => Errno::EIO,
+    }
+}
+
+/// The kind bits of a `mode`.
+const KIND: u32 = 0o170_000;
+
+/// A regular file's kind bits.
+const REGULAR: u32 = 0o100_000;
+
+/// One open file: which, and whether it was opened to write.
+#[derive(Debug, Clone)]
+struct Handle {
+    id: NodeId,
+    write: bool,
+}
+
 fn held<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// One drive as a read-only file system.
+/// One drive as a file system: read-only over a drive opened so, else writable.
 #[derive(Debug)]
 pub struct DriveFs {
     drive: Drive,
     runtime: tokio::runtime::Handle,
     uid: u32,
     gid: u32,
-    handles: Mutex<HashMap<u64, NodeId>>,
+    handles: Mutex<HashMap<u64, Handle>>,
     next: AtomicU64,
 }
 
@@ -89,6 +122,33 @@ impl DriveFs {
             handles: Mutex::default(),
             next: AtomicU64::new(1),
         }
+    }
+
+    /// Whether the drive takes changes.
+    pub fn writable(&self) -> bool {
+        self.drive.writable()
+    }
+
+    fn handle(&self, id: NodeId, write: bool) -> u64 {
+        let fh = self.next.fetch_add(1, Ordering::Relaxed);
+        held(&self.handles).insert(fh, Handle { id, write });
+        fh
+    }
+
+    fn named<'a>(&self, parent: u64, name: &'a OsStr) -> Result<(NodeId, &'a str), Errno> {
+        let folder = self.node_of(parent)?;
+        let name = name.to_str().ok_or(Errno::EINVAL)?;
+        Ok((folder, name))
+    }
+
+    /// The node `name` in `parent`.
+    fn child(&self, parent: u64, name: &OsStr) -> Result<NodeId, Errno> {
+        let (folder, name) = self.named(parent, name)?;
+        self.drive
+            .lookup(&folder, name)
+            .map_err(|_| Errno::EIO)?
+            .map(|node| node.id)
+            .ok_or(Errno::ENOENT)
     }
 
     fn node_of(&self, ino: u64) -> Result<NodeId, Errno> {
@@ -109,6 +169,7 @@ impl DriveFs {
             folder: attrs.kind == NodeKind::Folder,
             size: attrs.size,
             mtime: attrs.modified.map_or(0, |m| m.0),
+            writable: !matches!(attrs.kind, NodeKind::Online { .. }),
         })
     }
 
@@ -177,19 +238,157 @@ impl DriveFs {
         Ok(entries)
     }
 
-    /// Opens `ino` to read: a file not here starts downloading. Opening to write is `EROFS`.
+    /// Opens `ino`: to read, a file not here starts downloading; to write (`truncate`: emptied
+    /// first), the drive's version is copied to change, downloaded first when it is not all
+    /// here.
     ///
     /// # Errors
-    /// `EROFS` to write, `EISDIR` for a folder, `ENOENT` when it is not there.
-    pub fn open(&self, ino: u64, write: bool) -> Result<u64, Errno> {
-        if write {
-            return Err(Errno::EROFS);
-        }
+    /// `EROFS` to write a read-only drive, `EPERM` to write an online document's link file,
+    /// `EISDIR` for a folder, `ENOENT` when it is not there.
+    pub async fn open(&self, ino: u64, write: bool, truncate: bool) -> Result<u64, Errno> {
         let id = self.node_of(ino)?;
-        self.drive.open_file(&id).map_err(errno_of)?;
-        let fh = self.next.fetch_add(1, Ordering::Relaxed);
-        held(&self.handles).insert(fh, id);
-        Ok(fh)
+        match write {
+            true => self
+                .drive
+                .open_write(&id, truncate)
+                .await
+                .map_err(write_errno)?,
+            false => self.drive.open_file(&id).map_err(errno_of)?,
+        }
+        Ok(self.handle(id, write))
+    }
+
+    /// Makes the file `name` in `parent`, open to write: its attributes and handle. Only a
+    /// regular file is made (`mode`'s kind; none is a regular file).
+    ///
+    /// # Errors
+    /// `EPERM` for any other kind, `EEXIST` when the name is taken, `EINVAL` for a name the
+    /// drive refuses, `EROFS` on a read-only drive.
+    pub fn create(&self, parent: u64, name: &OsStr, mode: u32) -> Result<(Attr, u64), Errno> {
+        if !matches!(mode & KIND, 0 | REGULAR) {
+            return Err(Errno::EPERM);
+        }
+        let (folder, name) = self.named(parent, name)?;
+        let id = self.drive.create(&folder, name).map_err(write_errno)?;
+        let attr = self.attr_of(&id)?;
+        Ok((attr, self.handle(id, true)))
+    }
+
+    /// Makes the file `name` in `parent`, closed, as `mknod` does for a regular file.
+    ///
+    /// # Errors
+    /// As [`DriveFs::create`].
+    pub fn mknod(&self, parent: u64, name: &OsStr, mode: u32) -> Result<Attr, Errno> {
+        let (attr, fh) = self.create(parent, name, mode)?;
+        self.release(fh);
+        Ok(attr)
+    }
+
+    /// Makes the folder `name` in `parent`.
+    ///
+    /// # Errors
+    /// As [`DriveFs::create`].
+    pub fn mkdir(&self, parent: u64, name: &OsStr) -> Result<Attr, Errno> {
+        let (folder, name) = self.named(parent, name)?;
+        let id = self.drive.make_folder(&folder, name).map_err(write_errno)?;
+        self.attr_of(&id)
+    }
+
+    /// Writes `data` at `offset` into the file open as `fh`; how many bytes were written.
+    ///
+    /// # Errors
+    /// `EBADF` for a handle not open to write.
+    pub fn write(&self, fh: u64, offset: u64, data: &[u8]) -> Result<u32, Errno> {
+        let handle = held(&self.handles).get(&fh).cloned().ok_or(Errno::EBADF)?;
+        if !handle.write {
+            return Err(Errno::EBADF);
+        }
+        let n = self
+            .drive
+            .write(&handle.id, offset, data)
+            .map_err(write_errno)?;
+        Ok(u32::try_from(n).unwrap_or(u32::MAX))
+    }
+
+    /// Sets `ino`'s size and when it last changed, as `truncate` and `utimes` do; a mode or an
+    /// owner is taken and ignored (a drive keeps neither). Its attributes after.
+    ///
+    /// # Errors
+    /// As [`DriveFs::open`] to write.
+    pub async fn setattr(
+        &self,
+        ino: u64,
+        size: Option<u64>,
+        modified: Option<SystemTime>,
+    ) -> Result<Attr, Errno> {
+        let id = self.node_of(ino)?;
+        if let Some(size) = size {
+            self.drive.set_len(&id, size).await.map_err(write_errno)?;
+        }
+        if let Some(at) = modified {
+            let secs = at
+                .duration_since(UNIX_EPOCH)
+                .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX));
+            self.drive.set_modified(&id, secs).map_err(write_errno)?;
+        }
+        self.attr_of(&id)
+    }
+
+    /// Renames `name` in `parent` to `new_name` in `new_parent`, over a file there when
+    /// `replace`.
+    ///
+    /// # Errors
+    /// `EEXIST` when the new name is taken and not to be replaced, else as the core refuses.
+    pub async fn rename(
+        &self,
+        parent: u64,
+        name: &OsStr,
+        new_parent: u64,
+        new_name: &OsStr,
+        replace: bool,
+    ) -> Result<(), Errno> {
+        let id = self.child(parent, name)?;
+        let (folder, new_name) = self.named(new_parent, new_name)?;
+        if !replace
+            && self
+                .drive
+                .lookup(&folder, new_name)
+                .map_err(|_| Errno::EIO)?
+                .is_some()
+        {
+            return Err(Errno::EEXIST);
+        }
+        self.drive
+            .rename(&id, &folder, new_name)
+            .await
+            .map_err(write_errno)
+    }
+
+    /// Removes the file `name` in `parent`: to the drive's recycle bin.
+    ///
+    /// # Errors
+    /// `EISDIR` for a folder, `ENOENT` when it is not there.
+    pub fn unlink(&self, parent: u64, name: &OsStr) -> Result<(), Errno> {
+        let id = self.child(parent, name)?;
+        self.drive.remove(&id).map_err(write_errno)
+    }
+
+    /// Removes the empty folder `name` in `parent`: to the drive's recycle bin.
+    ///
+    /// # Errors
+    /// `ENOTEMPTY` when it is not empty, `ENOTDIR` for a file.
+    pub fn rmdir(&self, parent: u64, name: &OsStr) -> Result<(), Errno> {
+        let id = self.child(parent, name)?;
+        self.drive.remove_folder(&id).map_err(write_errno)
+    }
+
+    /// Makes what was written through `fh` durable here (it is not sent any sooner).
+    ///
+    /// # Errors
+    /// `EBADF` for a handle not open, `EIO` when the cache could not be written.
+    pub fn fsync(&self, fh: u64) -> Result<(), Errno> {
+        let handle = held(&self.handles).get(&fh).cloned().ok_or(Errno::EBADF)?;
+        self.drive.sync(&handle.id).map_err(write_errno)
     }
 
     /// `size` bytes of the file open as `fh` from `offset`, waiting for them when they are not
@@ -198,17 +397,19 @@ impl DriveFs {
     /// # Errors
     /// `EBADF` for a handle not open, else as [`errno_of`] says.
     pub async fn read(&self, fh: u64, offset: u64, size: u32) -> Result<Vec<u8>, Errno> {
-        let id = held(&self.handles).get(&fh).cloned().ok_or(Errno::EBADF)?;
+        let handle = held(&self.handles).get(&fh).cloned().ok_or(Errno::EBADF)?;
         self.drive
-            .read(&id, offset, u64::from(size))
+            .read(&handle.id, offset, u64::from(size))
             .await
             .map_err(errno_of)
     }
 
-    /// Closes `fh`.
+    /// Closes `fh`: a file written through it is sent once it has been left alone.
     pub fn release(&self, fh: u64) {
-        if let Some(id) = held(&self.handles).remove(&fh) {
-            self.drive.release(&id);
+        match held(&self.handles).remove(&fh) {
+            Some(Handle { id, write: true }) => self.drive.release_write(&id),
+            Some(Handle { id, write: false }) => self.drive.release(&id),
+            None => {}
         }
     }
 
@@ -223,6 +424,15 @@ impl DriveFs {
         }
     }
 
+    fn perm(&self, attr: &Attr) -> u16 {
+        match (attr.folder, self.drive.writable() && attr.writable) {
+            (true, true) => 0o755,
+            (true, false) => 0o555,
+            (false, true) => 0o644,
+            (false, false) => 0o444,
+        }
+    }
+
     fn file_attr(&self, attr: &Attr) -> FileAttr {
         let mtime = UNIX_EPOCH + Duration::from_secs(u64::try_from(attr.mtime).unwrap_or(0));
         FileAttr {
@@ -234,7 +444,7 @@ impl DriveFs {
             ctime: mtime,
             crtime: mtime,
             kind: kind_of(attr.folder),
-            perm: if attr.folder { 0o555 } else { 0o444 },
+            perm: self.perm(attr),
             nlink: if attr.folder { 2 } else { 1 },
             uid: self.uid,
             gid: self.gid,
@@ -296,8 +506,205 @@ impl Filesystem for Mounted {
 
     fn open(&self, _req: &Request, ino: INodeNo, flags: OpenFlags, reply: ReplyOpen) {
         let write = flags.acc_mode() != OpenAccMode::O_RDONLY;
-        match self.0.open(ino.0, write) {
-            Ok(fh) => reply.opened(FileHandle(fh), FopenFlags::empty()),
+        let truncate = rustix::fs::OFlags::from_bits_retain(flags.0 as u32)
+            .contains(rustix::fs::OFlags::TRUNC);
+        let fs = std::sync::Arc::clone(&self.0);
+        self.0.runtime.spawn(async move {
+            match fs.open(ino.0, write, truncate).await {
+                Ok(fh) => reply.opened(FileHandle(fh), FopenFlags::empty()),
+                Err(errno) => reply.error(errno),
+            }
+        });
+    }
+
+    fn create(
+        &self,
+        _req: &Request,
+        parent: INodeNo,
+        name: &OsStr,
+        mode: u32,
+        _umask: u32,
+        _flags: i32,
+        reply: ReplyCreate,
+    ) {
+        match self.0.create(parent.0, name, mode) {
+            Ok((attr, fh)) => reply.created(
+                &TTL,
+                &self.0.file_attr(&attr),
+                Generation(0),
+                FileHandle(fh),
+                FopenFlags::empty(),
+            ),
+            Err(errno) => reply.error(errno),
+        }
+    }
+
+    fn mknod(
+        &self,
+        _req: &Request,
+        parent: INodeNo,
+        name: &OsStr,
+        mode: u32,
+        _umask: u32,
+        _rdev: u32,
+        reply: ReplyEntry,
+    ) {
+        match self.0.mknod(parent.0, name, mode) {
+            Ok(attr) => reply.entry(&TTL, &self.0.file_attr(&attr), Generation(0)),
+            Err(errno) => reply.error(errno),
+        }
+    }
+
+    fn mkdir(
+        &self,
+        _req: &Request,
+        parent: INodeNo,
+        name: &OsStr,
+        _mode: u32,
+        _umask: u32,
+        reply: ReplyEntry,
+    ) {
+        match self.0.mkdir(parent.0, name) {
+            Ok(attr) => reply.entry(&TTL, &self.0.file_attr(&attr), Generation(0)),
+            Err(errno) => reply.error(errno),
+        }
+    }
+
+    fn write(
+        &self,
+        _req: &Request,
+        _ino: INodeNo,
+        fh: FileHandle,
+        offset: u64,
+        data: &[u8],
+        _write_flags: WriteFlags,
+        _flags: OpenFlags,
+        _lock_owner: Option<LockOwner>,
+        reply: ReplyWrite,
+    ) {
+        match self.0.write(fh.0, offset, data) {
+            Ok(n) => reply.written(n),
+            Err(errno) => reply.error(errno),
+        }
+    }
+
+    fn setattr(
+        &self,
+        _req: &Request,
+        ino: INodeNo,
+        _mode: Option<u32>,
+        _uid: Option<u32>,
+        _gid: Option<u32>,
+        size: Option<u64>,
+        _atime: Option<TimeOrNow>,
+        mtime: Option<TimeOrNow>,
+        _ctime: Option<SystemTime>,
+        _fh: Option<FileHandle>,
+        _crtime: Option<SystemTime>,
+        _chgtime: Option<SystemTime>,
+        _bkuptime: Option<SystemTime>,
+        _flags: Option<BsdFileFlags>,
+        reply: ReplyAttr,
+    ) {
+        let modified = mtime.map(|at| match at {
+            TimeOrNow::SpecificTime(at) => at,
+            TimeOrNow::Now => SystemTime::now(),
+        });
+        let fs = std::sync::Arc::clone(&self.0);
+        self.0.runtime.spawn(async move {
+            match fs.setattr(ino.0, size, modified).await {
+                Ok(attr) => reply.attr(&TTL, &fs.file_attr(&attr)),
+                Err(errno) => reply.error(errno),
+            }
+        });
+    }
+
+    fn rename(
+        &self,
+        _req: &Request,
+        parent: INodeNo,
+        name: &OsStr,
+        newparent: INodeNo,
+        newname: &OsStr,
+        flags: RenameFlags,
+        reply: ReplyEmpty,
+    ) {
+        if flags.contains(RenameFlags::RENAME_EXCHANGE) {
+            reply.error(Errno::EINVAL);
+            return;
+        }
+        let replace = !flags.contains(RenameFlags::RENAME_NOREPLACE);
+        let fs = std::sync::Arc::clone(&self.0);
+        let (name, newname) = (name.to_owned(), newname.to_owned());
+        self.0.runtime.spawn(async move {
+            match fs
+                .rename(parent.0, &name, newparent.0, &newname, replace)
+                .await
+            {
+                Ok(()) => reply.ok(),
+                Err(errno) => reply.error(errno),
+            }
+        });
+    }
+
+    fn unlink(&self, _req: &Request, parent: INodeNo, name: &OsStr, reply: ReplyEmpty) {
+        match self.0.unlink(parent.0, name) {
+            Ok(()) => reply.ok(),
+            Err(errno) => reply.error(errno),
+        }
+    }
+
+    fn rmdir(&self, _req: &Request, parent: INodeNo, name: &OsStr, reply: ReplyEmpty) {
+        match self.0.rmdir(parent.0, name) {
+            Ok(()) => reply.ok(),
+            Err(errno) => reply.error(errno),
+        }
+    }
+
+    fn symlink(
+        &self,
+        _req: &Request,
+        _parent: INodeNo,
+        _link_name: &OsStr,
+        _target: &Path,
+        reply: ReplyEntry,
+    ) {
+        reply.error(Errno::EPERM);
+    }
+
+    fn link(
+        &self,
+        _req: &Request,
+        _ino: INodeNo,
+        _newparent: INodeNo,
+        _newname: &OsStr,
+        reply: ReplyEntry,
+    ) {
+        reply.error(Errno::EPERM);
+    }
+
+    fn flush(
+        &self,
+        _req: &Request,
+        _ino: INodeNo,
+        _fh: FileHandle,
+        _lock_owner: LockOwner,
+        reply: ReplyEmpty,
+    ) {
+        // The bytes are in the cache already; they are sent once the file is closed.
+        reply.ok();
+    }
+
+    fn fsync(
+        &self,
+        _req: &Request,
+        _ino: INodeNo,
+        fh: FileHandle,
+        _datasync: bool,
+        reply: ReplyEmpty,
+    ) {
+        match self.0.fsync(fh.0) {
+            Ok(()) => reply.ok(),
             Err(errno) => reply.error(errno),
         }
     }
@@ -354,7 +761,7 @@ impl Filesystem for Mounted {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_drive::testing::{MemoryListing, MemorySource};
+    use porter_drive::testing::{MemoryListing, MemorySink, MemorySource, Took};
     use porter_drive::{DriveConfig, words};
     use std::sync::Arc;
 
@@ -406,13 +813,22 @@ mod tests {
             Err(Errno::ENOENT)
         );
 
-        assert_eq!(fs.open(file.ino, true), Err(Errno::EROFS), "read-only");
-        let fh = fs.open(file.ino, false).expect("open");
+        assert_eq!(
+            fs.open(file.ino, true, false).await,
+            Err(Errno::EROFS),
+            "read-only"
+        );
+        assert_eq!(
+            fs.create(work.ino, OsStr::new("new.txt"), REGULAR | 0o644),
+            Err(Errno::EROFS)
+        );
+        assert_eq!(fs.file_attr(&file).perm, 0o444);
+        let fh = fs.open(file.ino, false, false).await.expect("open");
         assert_eq!(fs.read(fh, 3, 4).await.expect("read"), b"3456");
         fs.release(fh);
 
         let doc = fs.lookup(work.ino, OsStr::new("Plan.gdoc")).expect("doc");
-        let fh = fs.open(doc.ino, false).expect("open");
+        let fh = fs.open(doc.ino, false, false).await.expect("open");
         let link = fs.read(fh, 0, 4096).await.expect("read");
         assert_eq!(link.len() as u64, doc.size);
         fs.release(fh);
@@ -425,7 +841,7 @@ mod tests {
         listing.file("a", None, "a.txt", 10, "1");
         source.set_offline(true);
         let file = fs.lookup(ROOT_INO, OsStr::new("a.txt")).expect("file");
-        let fh = fs.open(file.ino, false).expect("open");
+        let fh = fs.open(file.ino, false, false).await.expect("open");
         assert_eq!(fs.read(fh, 0, 10).await, Err(Errno::ENETDOWN));
         let status = fs
             .drive
@@ -435,5 +851,173 @@ mod tests {
             Some(words::OFFLINE)
         );
         assert_eq!(fs.read(999, 0, 1).await, Err(Errno::EBADF));
+    }
+
+    struct Writable {
+        listing: Arc<MemoryListing>,
+        source: Arc<MemorySource>,
+        sink: Arc<MemorySink>,
+        fs: DriveFs,
+    }
+
+    fn writable(dir: &porter_fake::Scratch) -> Writable {
+        let listing = Arc::new(MemoryListing::default());
+        let source = Arc::new(MemorySource::default());
+        let sink = Arc::new(MemorySink::new(listing.clone(), source.clone(), 4));
+        let drive = Drive::open_writable(
+            DriveConfig {
+                chunk: 4,
+                quiet: Duration::from_millis(20),
+                ..DriveConfig::new(dir.join("cache"))
+            },
+            listing.clone(),
+            source.clone(),
+            sink.clone(),
+        )
+        .expect("drive");
+        let fs = DriveFs::new(drive, tokio::runtime::Handle::current());
+        Writable {
+            listing,
+            source,
+            sink,
+            fs,
+        }
+    }
+
+    async fn sent(sink: &MemorySink, n: usize) -> Vec<Took> {
+        let deadline = porter_fake::Deadline::generous();
+        while sink.took().len() < n {
+            if deadline.passed() {
+                deadline.fail(&format!("{n} changes sent"));
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        sink.took()
+    }
+
+    #[tokio::test]
+    async fn a_file_made_written_and_closed_is_sent_through_the_core() {
+        let dir = porter_fake::Scratch::new("drive-fuse-write");
+        let w = writable(&dir);
+        let fs = &w.fs;
+        let (attr, fh) = fs
+            .create(ROOT_INO, OsStr::new("notes.txt"), REGULAR | 0o644)
+            .expect("create");
+        assert_eq!(fs.file_attr(&attr).perm, 0o644);
+        assert_eq!(fs.write(fh, 0, b"hello ").expect("write"), 6);
+        assert_eq!(fs.write(fh, 6, b"world").expect("write"), 5);
+        fs.fsync(fh).expect("fsync");
+        assert_eq!(fs.getattr(attr.ino).expect("attr").size, 11);
+        assert_eq!(fs.read(fh, 0, 64).await.expect("read"), b"hello world");
+        fs.release(fh);
+        assert_eq!(
+            sent(&w.sink, 1).await,
+            [Took::New(None, "notes.txt".into(), 11)]
+        );
+        let again = fs
+            .lookup(ROOT_INO, OsStr::new("notes.txt"))
+            .expect("lookup");
+        assert_eq!(again.ino, attr.ino, "the same inode once the drive has it");
+    }
+
+    #[tokio::test]
+    async fn what_a_drive_cannot_hold_is_refused_with_its_errno() {
+        let dir = porter_fake::Scratch::new("drive-fuse-refuse");
+        let w = writable(&dir);
+        let fs = &w.fs;
+        w.sink.names(|name| !name.contains(':'));
+        w.listing.online(
+            "d",
+            None,
+            "Plan",
+            "https://docs.example.test/d",
+            Some("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+        );
+        assert_eq!(
+            fs.create(ROOT_INO, OsStr::new("a:b"), REGULAR),
+            Err(Errno::EINVAL)
+        );
+        assert_eq!(fs.mkdir(ROOT_INO, OsStr::new("c:d")), Err(Errno::EINVAL));
+        // A fifo.
+        assert_eq!(
+            fs.mknod(ROOT_INO, OsStr::new("pipe"), 0o010_644),
+            Err(Errno::EPERM)
+        );
+        let doc = fs.lookup(ROOT_INO, OsStr::new("Plan.gdoc")).expect("doc");
+        assert_eq!(fs.open(doc.ino, true, false).await, Err(Errno::EPERM));
+        assert_eq!(fs.file_attr(&doc).perm, 0o444);
+        let made = fs
+            .mknod(ROOT_INO, OsStr::new("empty"), REGULAR)
+            .expect("mknod");
+        assert_eq!(made.size, 0);
+        assert_eq!(
+            fs.create(ROOT_INO, OsStr::new("empty"), REGULAR),
+            Err(Errno::EEXIST)
+        );
+        // A mode or an owner is taken, and ignored.
+        assert_eq!(fs.setattr(made.ino, None, None).await, Ok(made.clone()));
+    }
+
+    #[tokio::test]
+    async fn saving_by_rename_truncating_and_removing_go_through_the_core() {
+        let dir = porter_fake::Scratch::new("drive-fuse-save");
+        let w = writable(&dir);
+        let fs = &w.fs;
+        w.listing.folder("f", None, "Work");
+        w.listing.file("r", Some("f"), "report.txt", 3, "v1");
+        w.source.put("r", b"old".to_vec());
+        w.listing.file("x", Some("f"), "x.txt", 1, "v1");
+        w.source.put("x", b"x".to_vec());
+        let work = fs.lookup(ROOT_INO, OsStr::new("Work")).expect("work");
+        // Held until all is done, so what is sent does not hang on the timing.
+        fs.drive.set_paused(true);
+        let (_, fh) = fs
+            .create(work.ino, OsStr::new(".report.txt.swx~"), REGULAR)
+            .expect("temp");
+        fs.write(fh, 0, b"new text").expect("write");
+        fs.release(fh);
+        assert_eq!(
+            fs.rename(
+                work.ino,
+                OsStr::new(".report.txt.swx~"),
+                work.ino,
+                OsStr::new("x.txt"),
+                false
+            )
+            .await,
+            Err(Errno::EEXIST),
+            "not over a file unless asked"
+        );
+        fs.rename(
+            work.ino,
+            OsStr::new(".report.txt.swx~"),
+            work.ino,
+            OsStr::new("report.txt"),
+            true,
+        )
+        .await
+        .expect("save");
+        let report = fs
+            .lookup(work.ino, OsStr::new("report.txt"))
+            .expect("report");
+        let truncated = fs
+            .setattr(report.ino, Some(3), None)
+            .await
+            .expect("truncate");
+        assert_eq!(truncated.size, 3);
+        fs.unlink(work.ino, OsStr::new("x.txt")).expect("unlink");
+        assert_eq!(
+            fs.rmdir(ROOT_INO, OsStr::new("Work")),
+            Err(Errno::ENOTEMPTY)
+        );
+        fs.drive.set_paused(false);
+        let took = sent(&w.sink, 2).await;
+        assert!(took.contains(&Took::Replace("r".into(), 3)), "{took:?}");
+        assert!(took.contains(&Took::Trash("x".into())), "{took:?}");
+        assert_eq!(
+            w.source.fetched(),
+            [],
+            "nothing was downloaded to replace it"
+        );
     }
 }

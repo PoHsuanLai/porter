@@ -17,6 +17,8 @@ pub struct FakeMounts {
     pub writers: Mutex<HashMap<PathBuf, PipeWriter>>,
     /// Every unmount asked for, in order.
     pub unmounted: Mutex<Vec<PathBuf>>,
+    /// The access of each mount made, by path.
+    pub access: Mutex<HashMap<PathBuf, Access>>,
     /// Whether the mount step fails.
     pub fail: bool,
 }
@@ -39,7 +41,11 @@ impl Mounts for FakeMounts {
             .unwrap_or(At::Nothing)
     }
 
-    fn mount(&self, path: &Path, _access: Access) -> io::Result<OwnedFd> {
+    fn mount(&self, path: &Path, access: Access) -> io::Result<OwnedFd> {
+        self.access
+            .lock()
+            .expect("access")
+            .insert(path.to_path_buf(), access);
         if self.fail {
             return Err(io::Error::other(
                 "fusermount3: mount failed: Operation not permitted",

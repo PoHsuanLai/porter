@@ -103,18 +103,22 @@ impl Mounter {
         }
     }
 
-    /// Mounts `fs` at `path`, read-only: through porter-mountd when it listens at
-    /// [`mountd`](Self::mountd), which cleans a stale mount there and makes the folder; else
-    /// directly, which does the same here.
+    /// Mounts `fs` at `path`, read-write over a drive that takes changes and read-only over one
+    /// that does not: through porter-mountd when it listens at [`mountd`](Self::mountd), which
+    /// cleans a stale mount there and makes the folder; else directly, which does the same here.
     ///
     /// # Errors
     /// porter-mountd refused; or, mounting directly, no device or helper, the folder could not
     /// be made, or the mount failed.
     pub fn mount(&self, fs: DriveFs, path: &Path) -> Result<Mounted, MountError> {
+        let access = match fs.writable() {
+            true => Access::ReadWrite,
+            false => Access::ReadOnly,
+        };
         if let Some(socket) = &self.mountd {
             match helped(socket, path) {
                 Ok(through) => {
-                    let fd = client::mount(socket, &through.name, Access::ReadOnly);
+                    let fd = client::mount(socket, &through.name, access);
                     match fd {
                         Ok(fd) => return serve_over(fs, fd, path, through),
                         Err(AskError::Absent) => {}
@@ -140,7 +144,10 @@ impl Mounter {
         std::fs::create_dir_all(path).map_err(MountError::Folder)?;
         let mut config = Config::default();
         config.mount_options = vec![
-            MountOption::RO,
+            match access {
+                Access::ReadWrite => MountOption::RW,
+                _ => MountOption::RO,
+            },
             MountOption::NoSuid,
             MountOption::NoDev,
             MountOption::NoAtime,

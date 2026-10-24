@@ -545,6 +545,12 @@ impl Drive {
         &self.inner.dir
     }
 
+    /// Whether what is changed here is sent to the drive ([`Drive::open_writable`]); a drive
+    /// opened read-only refuses every change.
+    pub fn writable(&self) -> bool {
+        self.inner.sink.is_some()
+    }
+
     /// Hears which nodes' details change from now on.
     pub fn subscribe(&self) -> broadcast::Receiver<Changed> {
         self.inner.events.subscribe()

@@ -9,7 +9,7 @@
 //!
 //! | message | fields |
 //! |---|---|
-//! | mount request | `1`, `mount`, the folder name, the access (`ro`) |
+//! | mount request | `1`, `mount`, the folder name, the access (`ro` or `rw`) |
 //! | unmount request | `1`, `unmount`, the folder name |
 //! | reply, done | `ok` (a mount's reply carries the open FUSE connection as one SCM_RIGHTS fd) |
 //! | reply, refused | `no`, words a person can be shown |
@@ -105,8 +105,10 @@ impl std::fmt::Display for FolderName {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Access {
-    /// Read only (S2a: every write is refused).
+    /// Read only: every write is refused.
     ReadOnly,
+    /// Read and write: what is changed there is sent to the drive.
+    ReadWrite,
 }
 
 impl Access {
@@ -114,11 +116,16 @@ impl Access {
     pub fn field(self) -> &'static str {
         match self {
             Access::ReadOnly => "ro",
+            Access::ReadWrite => "rw",
         }
     }
 
     fn from_field(field: &str) -> Option<Self> {
-        (field == "ro").then_some(Access::ReadOnly)
+        match field {
+            "ro" => Some(Access::ReadOnly),
+            "rw" => Some(Access::ReadWrite),
+            _ => None,
+        }
     }
 
     /// The options `fusermount3 -o` is given for it: the access, then what every drive's folder
@@ -369,6 +376,16 @@ mod tests {
             Access::ReadOnly.options(),
             "ro,nosuid,nodev,noatime,fsname=porter,subtype=porter"
         );
+        let writable = Request::Mount {
+            name: FolderName::parse("OneDrive").expect("name"),
+            access: Access::ReadWrite,
+        };
+        assert_eq!(writable.encode(), b"1\0mount\0OneDrive\0rw\0");
+        assert_eq!(Request::decode(&writable.encode()), Ok(writable));
+        assert_eq!(
+            Access::ReadWrite.options(),
+            "rw,nosuid,nodev,noatime,fsname=porter,subtype=porter"
+        );
     }
 
     #[test]
@@ -376,8 +393,8 @@ mod tests {
         let cases: [(&[u8], BadMessage); 7] = [
             (b"2\0mount\0OneDrive\0ro\0", BadMessage::Version("2".into())),
             (
-                b"1\0mount\0OneDrive\0rw\0",
-                BadMessage::Unknown("access rw".into()),
+                b"1\0mount\0OneDrive\0rwx\0",
+                BadMessage::Unknown("access rwx".into()),
             ),
             (
                 b"1\0format\0OneDrive\0",

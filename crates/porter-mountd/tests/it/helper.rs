@@ -87,6 +87,30 @@ fn a_mount_hands_back_the_fd_the_mount_step_made_end_to_end() {
 }
 
 #[test]
+fn a_writable_mount_is_asked_with_its_access() {
+    let dir = Scratch::new("mountd-rw");
+    let (cloud, real) = cloud(&dir);
+    let helper = Helper::new(cloud, FakeMounts::default());
+    let request = Request::Mount {
+        name: name("OneDrive"),
+        access: Access::ReadWrite,
+    };
+    let (outcome, reply, fd) = exchange(&helper, &request.encode());
+    outcome.expect("answered");
+    assert_eq!(reply, Reply::Done);
+    assert!(fd.is_some());
+    assert_eq!(
+        helper
+            .mounts()
+            .access
+            .lock()
+            .expect("access")
+            .get(&real.join("OneDrive")),
+        Some(&Access::ReadWrite)
+    );
+}
+
+#[test]
 fn a_refused_name_is_answered_with_words_and_nothing_is_touched() {
     let dir = Scratch::new("mountd-names");
     let (cloud, real) = cloud(&dir);

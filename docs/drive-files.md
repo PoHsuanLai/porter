@@ -23,9 +23,10 @@ the real folder, which the tests never make: they run the drive in memory and mo
 
 1. syncd connects to `$XDG_RUNTIME_DIR/porter/mountd.sock`; systemd, listening there for
    `porter-mountd.socket`, starts `porter-mountd.service`.
-2. syncd asks to show "OneDrive" (a folder name, never a path). porter-mountd checks the caller
-   is the person, the name is one plain name and the folder is empty or new, clears a stale
-   `fuse.porter` mount there, runs `fusermount3` and sends back the `/dev/fuse` fd.
+2. syncd asks to show "OneDrive" (a folder name, never a path), read-write (`rw`; `ro` for a
+   drive shown read-only). porter-mountd checks the caller is the person, the name is one plain
+   name and the folder is empty or new, clears a stale `fuse.porter` mount there, runs
+   `fusermount3` (always with `nosuid,nodev,noatime`) and sends back the `/dev/fuse` fd.
 3. syncd serves the drive over that fd. Turning the drive off asks porter-mountd to unmount it
    (`fusermount3 -u -z`, then the connection is ended), so syncd stops serving at once, even
    while a terminal sits in the folder.
