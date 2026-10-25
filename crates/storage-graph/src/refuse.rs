@@ -4,7 +4,7 @@
 //! (open in an Office app there, or checked out).
 
 use crate::json::ErrorBody;
-use porter_http::{HttpError, HttpResponse};
+use porter_http::{HeaderText, HttpError, HttpResponse};
 use porter_sync::{PutRefused, ReplicaError, RetryAfter};
 
 /// How long to wait when the server did not say.
@@ -16,13 +16,13 @@ fn retry_after(response: &HttpResponse) -> RetryAfter {
 
 /// The code an error's answer gives (`nameAlreadyExists`, `invalidRequest`).
 pub fn error_code(response: &HttpResponse) -> Option<String> {
-    let body: ErrorBody = serde_json::from_slice(&response.body).ok()?;
+    let body: ErrorBody = serde_json::from_slice(response.body()).ok()?;
     body.error?.code
 }
 
 /// A read answered with `response`, which was not what it needed.
 pub fn read_error(response: &HttpResponse) -> ReplicaError {
-    match response.status.0 {
+    match response.status().as_u16() {
         401 | 403 => ReplicaError::Unauthorized,
         404 | 410 => ReplicaError::Gone,
         _ => ReplicaError::Transient(retry_after(response)),
@@ -31,7 +31,7 @@ pub fn read_error(response: &HttpResponse) -> ReplicaError {
 
 /// A write answered with `response`, which was not a success or a precondition failure.
 pub fn write_error(response: &HttpResponse) -> PutRefused {
-    match response.status.0 {
+    match response.status().as_u16() {
         507 => PutRefused::Quota,
         401 => PutRefused::Unauthorized,
         423 => PutRefused::InUse(retry_after(response)),
@@ -72,17 +72,16 @@ pub fn write_unreached(error: HttpError) -> PutRefused {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_http::{Header, Status};
+    use porter_http::http::Response;
 
     fn answer(status: u16, retry: Option<&str>) -> HttpResponse {
-        HttpResponse {
-            status: Status(status),
-            headers: retry
-                .map(|v| Header::new("Retry-After", v))
-                .into_iter()
-                .collect(),
-            body: vec![],
-        }
+        retry
+            .into_iter()
+            .fold(Response::builder().status(status), |b, v| {
+                b.header("Retry-After", v)
+            })
+            .body(vec![])
+            .expect("response")
     }
 
     #[test]

@@ -3,7 +3,9 @@
 //! the bearer.
 
 use porter_core::WebUrl;
-use porter_http::{Http, HttpRequest, HttpResponse, Method};
+use porter_http::http::request::Builder;
+use porter_http::http::{Method, StatusCode};
+use porter_http::{HeaderText, Http, HttpResponse, request};
 use serde::Deserialize;
 
 /// What an upload returns, to be made into a media item.
@@ -103,7 +105,7 @@ struct Item {
 
 fn refused(response: &HttpResponse) -> ApiError {
     ApiError::Refused {
-        status: response.status.0,
+        status: response.status().as_u16(),
         retry_after: response.retry_after_seconds(),
     }
 }
@@ -130,20 +132,23 @@ impl<H: Http> PhotosApi<H> {
         }
     }
 
-    fn request(&self, path: &str) -> Result<HttpRequest, ApiError> {
+    fn request(&self, path: &str) -> Result<Builder, ApiError> {
         let url = WebUrl::parse(&format!("{}/v1/{path}", self.origin))
             .map_err(|_| ApiError::Unreadable)?;
-        Ok(HttpRequest::new(Method::Post, url))
+        Ok(request(Method::POST, &url).header("Accept", "application/json"))
     }
 
-    async fn send(&self, request: HttpRequest) -> Result<HttpResponse, ApiError> {
+    /// Sends the request `request` builds with `body`. A request that would not build is never
+    /// sent, which is no answer, as a client that refuses it is.
+    async fn send(&self, request: Builder, body: Vec<u8>) -> Result<HttpResponse, ApiError> {
+        let request = request.body(body).map_err(|_| ApiError::Unreached)?;
         let response = self
             .http
-            .send(request.with_header("Accept", "application/json"))
+            .send(request)
             .await
             .map_err(|_| ApiError::Unreached)?;
-        match response.status.0 {
-            200 => Ok(response),
+        match response.status() {
+            StatusCode::OK => Ok(response),
             _ => Err(refused(&response)),
         }
     }
@@ -153,13 +158,12 @@ impl<H: Http> PhotosApi<H> {
     pub async fn upload(&self, name: &str, bytes: Vec<u8>) -> Result<UploadToken, ApiError> {
         let request = self
             .request("uploads")?
-            .with_header("Content-Type", "application/octet-stream")
-            .with_header("X-Goog-Upload-Content-Type", mime_of(name))
-            .with_header("X-Goog-Upload-Protocol", "raw")
-            .with_header("X-Goog-Upload-File-Name", name)
-            .with_body(bytes);
-        let response = self.send(request).await?;
-        let token = String::from_utf8(response.body).map_err(|_| ApiError::Unreadable)?;
+            .header("Content-Type", "application/octet-stream")
+            .header("X-Goog-Upload-Content-Type", mime_of(name))
+            .header("X-Goog-Upload-Protocol", "raw")
+            .header("X-Goog-Upload-File-Name", name);
+        let response = self.send(request, bytes).await?;
+        let token = String::from_utf8(response.into_body()).map_err(|_| ApiError::Unreadable)?;
         let token = token.trim();
         match token.is_empty() {
             true => Err(ApiError::Unreadable),
@@ -172,11 +176,10 @@ impl<H: Http> PhotosApi<H> {
         let body = serde_json::json!({"album": {"title": title}}).to_string();
         let request = self
             .request("albums")?
-            .with_header("Content-Type", "application/json")
-            .with_body(body);
-        let response = self.send(request).await?;
+            .header("Content-Type", "application/json");
+        let response = self.send(request, body.into_bytes()).await?;
         let album: Album =
-            serde_json::from_slice(&response.body).map_err(|_| ApiError::Unreadable)?;
+            serde_json::from_slice(response.body()).map_err(|_| ApiError::Unreadable)?;
         Ok(AlbumId(album.id))
     }
 
@@ -195,11 +198,10 @@ impl<H: Http> PhotosApi<H> {
         }
         let request = self
             .request("mediaItems:batchCreate")?
-            .with_header("Content-Type", "application/json")
-            .with_body(body.to_string());
-        let response = self.send(request).await?;
+            .header("Content-Type", "application/json");
+        let response = self.send(request, body.to_string().into_bytes()).await?;
         let created: Created =
-            serde_json::from_slice(&response.body).map_err(|_| ApiError::Unreadable)?;
+            serde_json::from_slice(response.body()).map_err(|_| ApiError::Unreadable)?;
         let result = created
             .results
             .into_iter()

@@ -66,7 +66,10 @@ where
     F: Fn(&Origin) -> L + Send + Sync,
 {
     async fn send(&self, request: HttpRequest) -> Result<HttpResponse, HttpError> {
-        let origin = request.url.origin();
+        // The URI is a `WebUrl`'s text (porter_http::request), so it reads back as one.
+        let origin = WebUrl::parse(&request.uri().to_string())
+            .map_err(|_| HttpError::Malformed)?
+            .origin();
         if origin == self.home_origin {
             return self.home.send(request).await;
         }
@@ -77,7 +80,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_http::{Method, Status};
+    use porter_http::http::{Method, Response};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     /// Answers with its own name.
@@ -86,16 +89,14 @@ mod tests {
     impl Http for Named {
         async fn send(&self, _: HttpRequest) -> Result<HttpResponse, HttpError> {
             self.1.fetch_add(1, Ordering::SeqCst);
-            Ok(HttpResponse {
-                status: Status(200),
-                headers: Vec::new(),
-                body: self.0.as_bytes().to_vec(),
-            })
+            Ok(Response::new(self.0.as_bytes().to_vec()))
         }
     }
 
     fn get(url: &str) -> HttpRequest {
-        HttpRequest::new(Method::Get, WebUrl::parse(url).expect("url"))
+        porter_http::request(Method::GET, &WebUrl::parse(url).expect("url"))
+            .body(Vec::new())
+            .expect("request")
     }
 
     #[tokio::test]
@@ -115,7 +116,7 @@ mod tests {
         let body = |url: &str| {
             let routed = &routed;
             let request = get(url);
-            async move { routed.send(request).await.expect("sent").body }
+            async move { routed.send(request).await.expect("sent").into_body() }
         };
         assert_eq!(body("https://graph.example/v1.0/me/drive").await, b"home");
         assert_eq!(body("https://up.example/up/s1").await, b"linked");

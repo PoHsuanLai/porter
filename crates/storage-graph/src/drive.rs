@@ -27,10 +27,12 @@
 
 use crate::feed::{folder_of, json_string};
 use crate::json::{DriveItem, Session as SessionJson, SessionStatus};
-use crate::refuse::{error_code, refused, write_error};
+use crate::refuse::{error_code, refused, write_error, write_unreached};
 use crate::replica::GraphReplica;
 use porter_core::WebUrl;
-use porter_http::{Http, HttpRequest, HttpResponse, Method};
+use porter_http::http::Method;
+use porter_http::http::header::CONTENT_TYPE;
+use porter_http::{Http, HttpResponse, request};
 use porter_sync::{
     BaseVersion, Conflict, DriveWrite, Found, Place, PutRefused, RemoteId, RemoteSide,
     RemoteVersion, RetryAfter, Session, Upload, UploadTo, Written,
@@ -76,14 +78,15 @@ fn again() -> PutRefused {
 
 /// Whether `response` says the name is taken (`409 nameAlreadyExists`).
 fn name_taken(response: &HttpResponse) -> bool {
-    response.status.0 == 409 && error_code(response).as_deref() == Some("nameAlreadyExists")
+    response.status().as_u16() == 409
+        && error_code(response).as_deref() == Some("nameAlreadyExists")
 }
 
 /// A whole-drive write answered with `response`, which was not a success, a stale base or a
 /// name taken: a name the drive refuses (`400 invalidRequest` on a write that names the item,
 /// `named`) says so; the rest as [`write_error`].
 fn drive_refusal(response: &HttpResponse, named: bool) -> PutRefused {
-    match (response.status.0, error_code(response).as_deref()) {
+    match (response.status().as_u16(), error_code(response).as_deref()) {
         (400, Some("invalidRequest" | "nameInvalid")) if named => PutRefused::NameRefused,
         _ => write_error(response),
     }
@@ -109,7 +112,7 @@ impl<H: Http> GraphReplica<H> {
 
     /// What a write that made or changed an item answered with: the item.
     fn written(&self, response: &HttpResponse) -> Result<(Written, DriveItem), PutRefused> {
-        let item: DriveItem = serde_json::from_slice(&response.body).map_err(|_| again())?;
+        let item: DriveItem = serde_json::from_slice(response.body()).map_err(|_| again())?;
         let written = Written {
             id: RemoteId(item.id.clone()),
             version: RemoteVersion(item.etag.clone().unwrap_or_default()),
@@ -171,7 +174,7 @@ impl<H: Http> GraphReplica<H> {
         to: &UploadTo,
         base: &BaseVersion,
     ) -> Result<Written, PutRefused> {
-        match (response.status.0, to) {
+        match (response.status().as_u16(), to) {
             (200 | 201, _) => {
                 let (written, item) = self.written(&response)?;
                 self.remember(&item);
@@ -200,9 +203,9 @@ impl<H: Http> GraphReplica<H> {
 
     /// Gives the session at `url` up: the server drops what it holds of it.
     async fn give_up(&self, url: &WebUrl, upload: &Upload<'_>) {
-        let _ = self
-            .write_send(HttpRequest::new(Method::Delete, url.clone()))
-            .await;
+        if let Ok(delete) = request(Method::DELETE, url).body(Vec::new()) {
+            let _ = self.write_send(delete).await;
+        }
         upload.progress.session(None);
     }
 
@@ -226,14 +229,14 @@ impl<H: Http> GraphReplica<H> {
                     }
                     UploadTo::Replace(id) => self.addr.item(&id.0, Some("content"), ""),
                 };
-                let request = HttpRequest::new(Method::Put, url.ok_or(PutRefused::Forbidden)?)
-                    .with_header("Content-Type", "application/octet-stream")
-                    .with_body(bytes);
-                let request = match guard_of(&upload.base) {
-                    Some(tag) => request.with_header("If-Match", tag),
-                    None => request,
+                let put = request(Method::PUT, &url.ok_or(PutRefused::Forbidden)?)
+                    .header(CONTENT_TYPE, "application/octet-stream");
+                let put = match guard_of(&upload.base) {
+                    Some(tag) => put.header("If-Match", tag),
+                    None => put,
                 };
-                let response = self.write_send(request).await?;
+                let put = put.body(bytes).map_err(|e| write_unreached(e.into()))?;
+                let response = self.write_send(put).await?;
                 upload.progress.sent(size);
                 response
             }
@@ -248,13 +251,14 @@ impl<H: Http> GraphReplica<H> {
         let Ok(url) = WebUrl::parse(session.address()) else {
             return Ok(None);
         };
-        let response = self
-            .write_send(HttpRequest::new(Method::Get, url.clone()))
-            .await?;
-        match response.status.0 {
+        let get = request(Method::GET, &url)
+            .body(Vec::new())
+            .map_err(|e| write_unreached(e.into()))?;
+        let response = self.write_send(get).await?;
+        match response.status().as_u16() {
             200 => {
                 let status: SessionStatus =
-                    serde_json::from_slice(&response.body).map_err(|_| again())?;
+                    serde_json::from_slice(response.body()).map_err(|_| again())?;
                 Ok(status.from().map(|from| (url, from)))
             }
             404 | 410 => Ok(None),
@@ -282,18 +286,20 @@ impl<H: Http> GraphReplica<H> {
             ),
         };
         let body = format!(r#"{{"item":{{"@microsoft.graph.conflictBehavior":"{behaviour}"}}}}"#);
-        let request = HttpRequest::new(Method::Post, url.ok_or(PutRefused::Forbidden)?)
-            .with_header("Content-Type", "application/json")
-            .with_body(body);
-        let request = match guard_of(&upload.base) {
-            Some(tag) => request.with_header("If-Match", tag),
-            None => request,
+        let create = request(Method::POST, &url.ok_or(PutRefused::Forbidden)?)
+            .header(CONTENT_TYPE, "application/json");
+        let create = match guard_of(&upload.base) {
+            Some(tag) => create.header("If-Match", tag),
+            None => create,
         };
-        let created = self.write_send(request).await?;
-        if created.status.0 != 200 {
+        let create = create
+            .body(body.into_bytes())
+            .map_err(|e| write_unreached(e.into()))?;
+        let created = self.write_send(create).await?;
+        if created.status().as_u16() != 200 {
             return Ok(Err(created));
         }
-        let session: SessionJson = serde_json::from_slice(&created.body).map_err(|_| again())?;
+        let session: SessionJson = serde_json::from_slice(created.body()).map_err(|_| again())?;
         let url = WebUrl::parse(&session.upload_url).map_err(|_| again())?;
         upload
             .progress
@@ -344,16 +350,17 @@ impl<H: Http> GraphReplica<H> {
                 self.give_up(&url, upload).await;
                 return Err(why);
             }
-            let request = HttpRequest::new(Method::Put, url.clone())
-                .with_header("Content-Type", "application/octet-stream")
-                .with_header("Content-Range", format!("bytes {sent}-{last}/{total}"))
-                .with_body(chunk);
-            let response = match self.write_send(request).await {
+            let piece = request(Method::PUT, &url)
+                .header(CONTENT_TYPE, "application/octet-stream")
+                .header("Content-Range", format!("bytes {sent}-{last}/{total}"))
+                .body(chunk)
+                .map_err(|e| write_unreached(e.into()))?;
+            let response = match self.write_send(piece).await {
                 Ok(response) => response,
                 // Not reached: the session stays, to be resumed.
                 Err(why) => return Err(why),
             };
-            match response.status.0 {
+            match response.status().as_u16() {
                 202 => {
                     sent = last + 1;
                     upload.progress.sent(sent);
@@ -385,11 +392,12 @@ impl<H: Http> GraphReplica<H> {
             r#"{{"name":{},"folder":{{}},"@microsoft.graph.conflictBehavior":"fail"}}"#,
             json_string(&place.name)
         );
-        let request = HttpRequest::new(Method::Post, url)
-            .with_header("Content-Type", "application/json")
-            .with_body(body);
-        let response = self.write_send(request).await?;
-        match response.status.0 {
+        let make = request(Method::POST, &url)
+            .header(CONTENT_TYPE, "application/json")
+            .body(body.into_bytes())
+            .map_err(|e| write_unreached(e.into()))?;
+        let response = self.write_send(make).await?;
+        match response.status().as_u16() {
             200 | 201 => {
                 let (written, item) = self.written(&response)?;
                 self.remember(&item);
@@ -419,12 +427,13 @@ impl<H: Http> GraphReplica<H> {
             json_string(&to.name),
             json_string(&parent)
         );
-        let request = HttpRequest::new(Method::Patch, url)
-            .with_header("Content-Type", "application/json")
-            .with_header("If-Match", tag)
-            .with_body(body);
-        let response = self.write_send(request).await?;
-        match response.status.0 {
+        let patch = request(Method::PATCH, &url)
+            .header(CONTENT_TYPE, "application/json")
+            .header("If-Match", tag)
+            .body(body.into_bytes())
+            .map_err(|e| write_unreached(e.into()))?;
+        let response = self.write_send(patch).await?;
+        match response.status().as_u16() {
             200 => {
                 let (written, item) = self.written(&response)?;
                 self.remember(&item);
@@ -445,9 +454,12 @@ impl<H: Http> GraphReplica<H> {
             .item(&item.0, None, "")
             .ok_or(PutRefused::Forbidden)?;
         // OneDrive keeps a deleted item in the recycle bin.
-        let request = HttpRequest::new(Method::Delete, url).with_header("If-Match", tag);
-        let response = self.write_send(request).await?;
-        match response.status.0 {
+        let delete = request(Method::DELETE, &url)
+            .header("If-Match", tag)
+            .body(Vec::new())
+            .map_err(|e| write_unreached(e.into()))?;
+        let response = self.write_send(delete).await?;
+        match response.status().as_u16() {
             200 | 204 => {
                 self.state().folders.remove(item);
                 Ok(())
@@ -504,8 +516,10 @@ impl<H: Http> DriveWrite for GraphReplica<H> {
 
     async fn abandon(&self, session: &Session) {
         // Graph drops the bytes of a session it is told to delete.
-        if let Ok(url) = WebUrl::parse(session.address()) {
-            let _ = self.write_send(HttpRequest::new(Method::Delete, url)).await;
+        if let Ok(url) = WebUrl::parse(session.address())
+            && let Ok(delete) = request(Method::DELETE, &url).body(Vec::new())
+        {
+            let _ = self.write_send(delete).await;
         }
     }
 }
@@ -548,11 +562,10 @@ mod tests {
     }
 
     fn answer(status: u16, code: &str) -> HttpResponse {
-        HttpResponse {
-            status: porter_http::Status(status),
-            headers: Vec::new(),
-            body: format!(r#"{{"error":{{"code":"{code}","message":"m"}}}}"#).into_bytes(),
-        }
+        porter_http::http::Response::builder()
+            .status(status)
+            .body(format!(r#"{{"error":{{"code":"{code}","message":"m"}}}}"#).into_bytes())
+            .expect("response")
     }
 
     #[test]

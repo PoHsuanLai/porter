@@ -13,7 +13,8 @@ use porter_core::sheet::{
 };
 use porter_core::{Claim, Credential, EndpointUrl, Offer, Provenance, SecretText, Subject, Tls};
 use porter_core::{ServiceEndpoint, UrlScheme};
-use porter_http::HttpError;
+use porter_http::http::header::{AUTHORIZATION, HeaderValue};
+use porter_http::{HttpError, HttpRequest};
 use porter_provider::{Presented, ProviderError, ProviderSpec};
 
 /// A form field.
@@ -177,6 +178,15 @@ pub(crate) fn basic(login: &str, password: &SecretText) -> String {
     let token =
         base64::engine::general_purpose::STANDARD.encode(format!("{login}:{}", password.expose()));
     format!("Basic {token}")
+}
+
+/// Puts `value` on a built request as its `Authorization`, marked sensitive so the request's
+/// `Debug` never shows it. A value that cannot be a header's is `Malformed`.
+pub(crate) fn authorize(request: &mut HttpRequest, value: &str) -> Result<(), HttpError> {
+    let mut value = HeaderValue::from_str(value).map_err(|_| HttpError::Malformed)?;
+    value.set_sensitive(true);
+    request.headers_mut().insert(AUTHORIZATION, value);
+    Ok(())
 }
 
 /// What the provider file declares, as claims at `Declared` provenance.

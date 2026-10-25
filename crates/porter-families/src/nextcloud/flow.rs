@@ -8,7 +8,9 @@ use crate::io::Io;
 use crate::password::{fault_of, join, parse_server};
 use porter_core::sheet::SignInFault;
 use porter_core::{EndpointUrl, LoginName, SecretText, WebUrl};
-use porter_http::{Http, HttpRequest, Method, Status};
+use porter_http::http::header::{ACCEPT, CONTENT_TYPE, USER_AGENT};
+use porter_http::http::{Method, StatusCode};
+use porter_http::{Http, HttpError, HttpRequest, request_to};
 use serde_json::Value;
 
 /// What the server named for a flow just started.
@@ -47,13 +49,17 @@ pub(super) enum Polled {
 /// Starts a flow at `server`.
 pub(super) async fn start(io: &Io, server: &EndpointUrl) -> Result<Started, SignInFault> {
     let url = join(server, "/index.php/login/v2").ok_or(SignInFault::Unreadable)?;
-    let request = HttpRequest::to(Method::Post, &url)
-        .map_err(fault_of)?
-        .with_header("User-Agent", "Porter")
-        .with_header("Accept", "application/json");
+    let request = request_to(Method::POST, &url)
+        .and_then(|builder| {
+            Ok(builder
+                .header(USER_AGENT, "Porter")
+                .header(ACCEPT, "application/json")
+                .body(Vec::new())?)
+        })
+        .map_err(fault_of)?;
     let response = io.http.send(request).await.map_err(fault_of)?;
-    match response.status {
-        Status(200) => started(&response.body).ok_or(SignInFault::Unreadable),
+    match response.status() {
+        StatusCode::OK => started(response.body()).ok_or(SignInFault::Unreadable),
         // A server without Login Flow v2 (before Nextcloud 16) or not a Nextcloud at all.
         _ => Err(SignInFault::Unreadable),
     }
@@ -71,13 +77,10 @@ fn started(body: &[u8]) -> Option<Started> {
 
 /// Polls once.
 pub(super) async fn poll(io: &Io, started: &Started) -> Polled {
-    let request = match HttpRequest::to(Method::Post, &started.poll) {
+    let request = match poll_request(started) {
         Ok(request) => request,
         Err(error) => return Polled::Failed(fault_of(error)),
-    }
-    .with_header("User-Agent", "Porter")
-    .with_header("Content-Type", "application/x-www-form-urlencoded")
-    .with_body(format!("token={}", started.token.expose()));
+    };
     let response = match io.http.send(request).await {
         Ok(response) => response,
         Err(error) => {
@@ -87,14 +90,22 @@ pub(super) async fn poll(io: &Io, started: &Started) -> Polled {
             };
         }
     };
-    match response.status.0 {
+    match response.status().as_u16() {
         404 => Polled::Waiting,
-        200 => {
-            granted(&response.body).map_or(Polled::Failed(SignInFault::Unreadable), Polled::Granted)
-        }
+        200 => granted(response.body())
+            .map_or(Polled::Failed(SignInFault::Unreadable), Polled::Granted),
         500..=599 | 429 => Polled::Hiccup,
         _ => Polled::Failed(SignInFault::Unreadable),
     }
+}
+
+/// The poll's `POST`, the token as its form body.
+fn poll_request(started: &Started) -> Result<HttpRequest, HttpError> {
+    let request = request_to(Method::POST, &started.poll)?
+        .header(USER_AGENT, "Porter")
+        .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .body(format!("token={}", started.token.expose()).into_bytes())?;
+    Ok(request)
 }
 
 fn granted(body: &[u8]) -> Option<Granted> {

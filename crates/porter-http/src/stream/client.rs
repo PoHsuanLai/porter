@@ -4,7 +4,8 @@
 //! dial is a loopback socket to the fake server.
 
 use super::wire::{Exchange, encode, io_fault, read_response};
-use crate::{Http, HttpError, HttpRequest, HttpResponse, Status};
+use crate::{Http, HttpError, HttpRequest, HttpResponse};
+use http::StatusCode;
 use porter_core::stream::ByteStream;
 use std::future::Future;
 use std::sync::{Mutex, MutexGuard, PoisonError};
@@ -71,7 +72,7 @@ impl<D: Dial> StreamHttp<D> {
             .write_all(bytes)
             .await
             .map_err(|error| io_fault(&error))?;
-        read_response(stream, request.method, self.limits.max_body).await
+        read_response(stream, request.method(), self.limits.max_body).await
     }
 
     fn keep(&self, stream: D::Stream, exchange: &Exchange) {
@@ -95,7 +96,7 @@ impl<D: Dial> Http for StreamHttp<D> {
                 // lapsed while it sat idle. Every kept connection holds the same one, so none is
                 // used again; the request goes out once more on a new connection, whose dial
                 // presents a fresh credential (or is refused, which the dial reports).
-                Ok(exchange) if exchange.response.status == Status(401) => {
+                Ok(exchange) if exchange.response.status() == StatusCode::UNAUTHORIZED => {
                     self.idle().clear();
                 }
                 Ok(exchange) => {
@@ -115,18 +116,16 @@ impl<D: Dial> Http for StreamHttp<D> {
 
 /// The `host[:port]` of the request's URL as it was written.
 fn authority_of(request: &HttpRequest) -> String {
-    let text = request.url.as_str();
-    let after = text.find("://").map_or(0, |at| at + 3);
-    let end = text[after..]
-        .find(['/', '?'])
-        .map_or(text.len(), |at| after + at);
-    text[after..end].to_owned()
+    request
+        .uri()
+        .authority()
+        .map_or_else(String::new, |authority| authority.as_str().to_owned())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Method;
+    use http::Method;
     use porter_core::WebUrl;
     use porter_core::stream::{DuplexEnd, duplex};
     use std::collections::VecDeque;
@@ -184,18 +183,21 @@ mod tests {
         let dial = Scripted::new(&[&[OK, LAPSED], &[OK, LAPSED], &[LAPSED]]);
         let http = StreamHttp::new(dial, StreamLimits::default());
         let get = || {
-            HttpRequest::new(
-                Method::Get,
-                WebUrl::parse("https://h.example.test/x").expect("url"),
-            )
+            let url = WebUrl::parse("https://h.example.test/x").expect("url");
+            crate::request(Method::GET, &url)
+                .body(Vec::new())
+                .expect("request")
         };
         let mut seen = Vec::new();
         for _ in 0..3 {
-            seen.push(http.send(get()).await.expect("answer").status);
+            seen.push(http.send(get()).await.expect("answer").status());
         }
         // The second request finds its kept connection lapsed and succeeds on a new one; the
         // third finds the same and the new connection's 401 is the answer, not tried again.
-        assert_eq!(seen, [Status(200), Status(200), Status(401)]);
+        assert_eq!(
+            seen,
+            [StatusCode::OK, StatusCode::OK, StatusCode::UNAUTHORIZED]
+        );
         assert_eq!(http.dial.dialled.load(Ordering::SeqCst), 3);
     }
 
@@ -207,7 +209,9 @@ mod tests {
             ("https://cloud.example.org?x=1", "cloud.example.org"),
         ];
         for (url, want) in CASES {
-            let request = HttpRequest::new(Method::Get, WebUrl::parse(url).expect("url"));
+            let request = crate::request(Method::GET, &WebUrl::parse(url).expect("url"))
+                .body(Vec::new())
+                .expect("request");
             assert_eq!(authority_of(&request), *want, "{url}");
         }
     }

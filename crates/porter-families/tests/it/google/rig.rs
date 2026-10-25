@@ -8,7 +8,8 @@ use porter_fake_servers::browser::split_loopback;
 use porter_fake_servers::http::{Request, Scheme, send};
 use porter_fake_servers::{Google, shipped};
 use porter_families::{GoogleEnv, GoogleProvider};
-use porter_http::{Header, Http, HttpError, HttpRequest, HttpResponse, Status};
+use porter_http::http::Response;
+use porter_http::{Http, HttpError, HttpRequest, HttpResponse};
 use porter_oauth::{AppReview, ClientRegistry, ClientTraits, MailRights};
 use porter_provider::{
     ClientChannel, ClientEntry, ClientId, ClientsFile, Issuer, ProviderSpec, SignIn, SignInMode,
@@ -37,11 +38,14 @@ impl Wire {
 impl Http for Wire {
     async fn send(&self, request: HttpRequest) -> Result<HttpResponse, HttpError> {
         let (address, target) =
-            split_loopback(request.url.as_str()).map_err(|_| HttpError::Unreachable)?;
-        let mut wire = Request::new(request.method.token(), &target).with_body(request.body);
-        for h in &request.headers {
-            wire = wire.with_header(h.name.as_str(), &h.value.0);
+            split_loopback(&request.uri().to_string()).map_err(|_| HttpError::Unreachable)?;
+        let mut wire = Request::new(request.method().as_str(), &target);
+        for (name, value) in request.headers() {
+            if let Ok(value) = value.to_str() {
+                wire = wire.with_header(name.as_str(), value);
+            }
         }
+        let wire = wire.with_body(request.into_body());
         if wire.form_value("grant_type").as_deref() == Some("refresh_token") {
             self.refresh_scopes
                 .lock()
@@ -51,15 +55,13 @@ impl Http for Wire {
         let response = send(&address, Scheme::Http, &wire)
             .await
             .map_err(|_| HttpError::Unreachable)?;
-        Ok(HttpResponse {
-            status: Status(response.status),
-            headers: response
-                .headers
-                .iter()
-                .map(|(n, v)| Header::new(n, v.clone()))
-                .collect(),
-            body: response.body,
-        })
+        let answer = response
+            .headers
+            .iter()
+            .fold(Response::builder().status(response.status), |b, (n, v)| {
+                b.header(n.as_str(), v.as_str())
+            });
+        Ok(answer.body(response.body)?)
     }
 }
 

@@ -8,7 +8,9 @@ use porter_core::capability::{
     Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
 };
 use porter_core::{Bytes, WebUrl};
-use porter_http::{Http, HttpRequest, HttpResponse, Method};
+use porter_http::http::Method;
+use porter_http::http::header::{ACCEPT, HeaderValue, RANGE};
+use porter_http::{HeaderText, Http, HttpRequest, HttpResponse, request};
 use porter_sync::{
     BaseVersion, Blob, ByteRange, ChangePage, Cursor, Folders, PutItem, PutRefused, Quota,
     RemoteId, RemoteVersion, Replica, ReplicaError, RetryAfter,
@@ -136,17 +138,23 @@ impl<H: Http> GraphReplica<H> {
     }
 
     /// Sends a request, a transport failure being a read that should be retried.
-    pub(crate) async fn send(&self, request: HttpRequest) -> Result<HttpResponse, ReplicaError> {
-        self.http
-            .send(request.with_header("Accept", "application/json"))
-            .await
-            .map_err(unreached)
+    pub(crate) async fn send(
+        &self,
+        mut request: HttpRequest,
+    ) -> Result<HttpResponse, ReplicaError> {
+        request
+            .headers_mut()
+            .append(ACCEPT, HeaderValue::from_static("application/json"));
+        self.http.send(request).await.map_err(unreached)
     }
 
     /// A GET of `url`.
     pub(crate) async fn get_url(&self, url: Option<WebUrl>) -> Result<HttpResponse, ReplicaError> {
         let url = url.ok_or(ReplicaError::Gone)?;
-        self.send(HttpRequest::new(Method::Get, url)).await
+        let get = request(Method::GET, &url)
+            .body(Vec::new())
+            .map_err(|e| unreached(e.into()))?;
+        self.send(get).await
     }
 
     /// The item `id` now, or `None` when there is none.
@@ -159,8 +167,8 @@ impl<H: Http> GraphReplica<H> {
         url: Option<WebUrl>,
     ) -> Result<Option<DriveItem>, ReplicaError> {
         let response = self.get_url(url).await?;
-        match response.status.0 {
-            200 => serde_json::from_slice(&response.body)
+        match response.status().as_u16() {
+            200 => serde_json::from_slice(response.body())
                 .map(Some)
                 .map_err(|_| ReplicaError::Transient(RetryAfter(30))),
             404 => Ok(None),
@@ -182,33 +190,36 @@ impl<H: Http> GraphReplica<H> {
             }
             headers.push(format!("bytes={start}-{}", start.saturating_add(len - 1)));
         }
-        let request = |url: WebUrl| {
+        let ranged = |url: WebUrl| {
             headers
                 .iter()
-                .fold(HttpRequest::new(Method::Get, url), |r, range| {
-                    r.with_header("Range", range.clone())
+                .fold(request(Method::GET, &url), |r, range| {
+                    r.header(RANGE, range.as_str())
                 })
+                .body(Vec::new())
+                .map_err(|e| unreached(e.into()))
         };
         let url = self.addr.item(&id.0, Some("content"), "");
-        let mut response = self.send(request(url.ok_or(ReplicaError::Gone)?)).await?;
-        if matches!(response.status.0, 301 | 302 | 303 | 307 | 308) {
+        let mut response = self.send(ranged(url.ok_or(ReplicaError::Gone)?)?).await?;
+        if matches!(response.status().as_u16(), 301 | 302 | 303 | 307 | 308) {
             let target = response
                 .header("location")
                 .and_then(|l| WebUrl::parse(l).ok())
                 .ok_or(ReplicaError::Transient(RetryAfter(30)))?;
-            response = self.send(request(target)).await?;
+            response = self.send(ranged(target)?).await?;
         }
-        match (response.status.0, range) {
-            (206, _) | (200, ByteRange::Whole) => Ok(Blob(response.body)),
+        match (response.status().as_u16(), range) {
+            (206, _) | (200, ByteRange::Whole) => Ok(Blob(response.into_body())),
             (200, ByteRange::Span { start, len }) => {
                 // The server ignored the range: the span is cut out here.
+                let body = response.body();
                 let from = usize::try_from(start.0)
                     .unwrap_or(usize::MAX)
-                    .min(response.body.len());
+                    .min(body.len());
                 let to = from
                     .saturating_add(usize::try_from(len.0).unwrap_or(usize::MAX))
-                    .min(response.body.len());
-                Ok(Blob(response.body[from..to].to_vec()))
+                    .min(body.len());
+                Ok(Blob(body[from..to].to_vec()))
             }
             (416, _) => Ok(Blob(Vec::new())),
             _ => Err(read_error(&response)),
@@ -217,10 +228,10 @@ impl<H: Http> GraphReplica<H> {
 
     async fn quota_of_drive(&self) -> Result<Quota, ReplicaError> {
         let response = self.get_url(self.addr.drive()).await?;
-        if response.status.0 != 200 {
+        if response.status().as_u16() != 200 {
             return Err(read_error(&response));
         }
-        let info: DriveInfo = serde_json::from_slice(&response.body)
+        let info: DriveInfo = serde_json::from_slice(response.body())
             .map_err(|_| ReplicaError::Transient(RetryAfter(30)))?;
         let quota = info.quota;
         Ok(Quota {

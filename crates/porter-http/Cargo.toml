@@ -1,6 +1,6 @@
 [package]
 name = "porter-http"
-description = "porter's HTTP seam: request and response values and the `Http` trait every family, discovery and OAuth call goes through; the hyper client is behind the `hyper` feature."
+description = "porter's HTTP seam: the `Http` trait over the `http` crate's request and response, which every family, discovery and OAuth call goes through; the hyper client is behind the `hyper` feature."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,6 +10,7 @@ publish.workspace = true
 
 [dependencies]
 porter-core = { workspace = true }
+http = { workspace = true }
 thiserror = { workspace = true }
 hyper = { workspace = true, optional = true, features = ["client", "http1"] }
 hyper-util = { workspace = true, optional = true, features = ["tokio", "client-legacy", "http1"] }

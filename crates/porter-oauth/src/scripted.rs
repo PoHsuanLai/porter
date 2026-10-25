@@ -1,6 +1,7 @@
 //! A scripted [`Http`] for the unit tests: answers come off a queue and every request is kept.
 
-use porter_http::{Http, HttpError, HttpRequest, HttpResponse, Status};
+use porter_http::http::Response;
+use porter_http::{Http, HttpError, HttpRequest, HttpResponse};
 use std::collections::VecDeque;
 use std::sync::Mutex;
 
@@ -18,16 +19,15 @@ impl Scripted {
     }
 
     pub(crate) fn body_of(&self, at: usize) -> String {
-        String::from_utf8_lossy(&self.seen.lock().expect("lock")[at].body).into_owned()
+        String::from_utf8_lossy(self.seen.lock().expect("lock")[at].body()).into_owned()
     }
 }
 
 pub(crate) fn answer(status: u16, body: &str) -> Result<HttpResponse, HttpError> {
-    Ok(HttpResponse {
-        status: Status(status),
-        headers: Vec::new(),
-        body: body.as_bytes().to_vec(),
-    })
+    Ok(Response::builder()
+        .status(status)
+        .body(body.as_bytes().to_vec())
+        .expect("response"))
 }
 
 impl Http for Scripted {

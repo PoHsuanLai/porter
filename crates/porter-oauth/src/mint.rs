@@ -6,7 +6,9 @@ use crate::exchange::ExchangeFault;
 use crate::loopback::AuthCode;
 use crate::pkce::Pkce;
 use porter_core::{Credential, SecretText};
-use porter_http::{Http, HttpRequest, Method};
+use porter_http::http::Method;
+use porter_http::http::header::{ACCEPT, CONTENT_TYPE};
+use porter_http::{Http, request_to};
 use porter_provider::IssuerEndpoints;
 use serde::Deserialize;
 
@@ -28,17 +30,18 @@ pub async fn mint_key<H: Http>(
         "code_verifier": pkce.verifier.expose(),
         "code_challenge_method": "S256",
     });
-    let request = HttpRequest::to(Method::Post, &endpoints.token)
+    let request = request_to(Method::POST, &endpoints.token)
         .map_err(|_| ExchangeFault::Unreachable)?
-        .with_header("Content-Type", "application/json")
-        .with_header("Accept", "application/json")
-        .with_body(body.to_string());
+        .header(CONTENT_TYPE, "application/json")
+        .header(ACCEPT, "application/json")
+        .body(body.to_string().into_bytes())
+        .map_err(|_| ExchangeFault::Unreachable)?;
     let response = http
         .send(request)
         .await
         .map_err(|_| ExchangeFault::Unreachable)?;
-    match response.status.0 {
-        200..=299 => serde_json::from_slice::<Minted>(&response.body)
+    match response.status().as_u16() {
+        200..=299 => serde_json::from_slice::<Minted>(response.body())
             .map(|m| Credential::ApiKey(m.key))
             .map_err(|_| ExchangeFault::Unreadable),
         // A wrong, spent or expired code.

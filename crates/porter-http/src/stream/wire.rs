@@ -2,7 +2,9 @@
 //! `Content-Length`, chunks or the end of the stream. Only what a WebDAV exchange needs: no
 //! redirects, no upgrade, no compression (the requests say `Accept-Encoding: identity`).
 
-use crate::{Header, HttpError, HttpRequest, HttpResponse, Method, Status};
+use crate::{HeaderText, HttpError, HttpRequest, HttpResponse};
+use http::header::{HeaderMap, HeaderName, HeaderValue};
+use http::{Method, Response, StatusCode};
 use porter_core::stream::ByteStream;
 
 /// The most a response head may take.
@@ -19,36 +21,40 @@ pub struct Exchange {
 
 /// A request as bytes: origin-form target, `Host` from `authority`, our own framing headers.
 pub fn encode(request: &HttpRequest, authority: &str) -> Vec<u8> {
-    let url = request.url.path();
-    let target = match request.url.query() {
-        Some(query) => format!("{url}?{query}"),
-        None => url.to_owned(),
-    };
-    let mut head = format!(
+    let target = request
+        .uri()
+        .path_and_query()
+        .map_or("/", |target| target.as_str());
+    let mut bytes = format!(
         "{} {target} HTTP/1.1\r\nHost: {authority}\r\nAccept-Encoding: identity\r\nConnection: keep-alive\r\n",
-        request.method.token()
-    );
-    for header in request.headers.iter().filter(|h| !ours(h)) {
-        head.push_str(&format!("{}: {}\r\n", header.name.as_str(), header.value.0));
+        request.method()
+    )
+    .into_bytes();
+    for (name, value) in request.headers().iter().filter(|(name, _)| !ours(name)) {
+        bytes.extend_from_slice(name.as_str().as_bytes());
+        bytes.extend_from_slice(b": ");
+        bytes.extend_from_slice(value.as_bytes());
+        bytes.extend_from_slice(b"\r\n");
     }
-    let bodied = !request.body.is_empty()
-        || matches!(
-            request.method,
-            Method::Put | Method::Post | Method::Propfind | Method::Report
-        );
+    let body = request.body();
+    let method = request.method();
+    let bodied = !body.is_empty()
+        || *method == Method::PUT
+        || *method == Method::POST
+        || *method == "PROPFIND"
+        || *method == "REPORT";
     if bodied {
-        head.push_str(&format!("Content-Length: {}\r\n", request.body.len()));
+        bytes.extend_from_slice(format!("Content-Length: {}\r\n", body.len()).as_bytes());
     }
-    head.push_str("\r\n");
-    let mut bytes = head.into_bytes();
-    bytes.extend_from_slice(&request.body);
+    bytes.extend_from_slice(b"\r\n");
+    bytes.extend_from_slice(body);
     bytes
 }
 
 /// Headers the encoder writes itself.
-fn ours(header: &Header) -> bool {
+fn ours(name: &HeaderName) -> bool {
     matches!(
-        header.name.as_str(),
+        name.as_str(),
         "host" | "content-length" | "connection" | "transfer-encoding" | "accept-encoding"
     )
 }
@@ -56,7 +62,7 @@ fn ours(header: &Header) -> bool {
 /// Reads one response for a request made with `method`. `max_body` caps what is kept.
 pub async fn read_response<S: ByteStream>(
     stream: &mut S,
-    method: Method,
+    method: &Method,
     max_body: usize,
 ) -> Result<Exchange, HttpError> {
     let mut buf = Vec::new();
@@ -72,16 +78,11 @@ pub async fn read_response<S: ByteStream>(
     let head = String::from_utf8(buf[..end].to_vec()).map_err(|_| HttpError::Malformed)?;
     let mut rest = buf.split_off(end + 4);
     let (status, headers) = parse_head(&head)?;
-    let header = |name: &str| {
-        headers
-            .iter()
-            .find(|h| h.name.as_str() == name)
-            .map(|h| h.value.0.as_str())
-    };
+    let header = |name: &str| headers.header(name);
     let closes = header("connection").is_some_and(|v| v.eq_ignore_ascii_case("close"));
     let chunked = header("transfer-encoding").is_some_and(|v| v.eq_ignore_ascii_case("chunked"));
     let length = header("content-length").and_then(|v| v.trim().parse::<usize>().ok());
-    let bodiless = method == Method::Head || matches!(status.0, 100..=199 | 204 | 304);
+    let bodiless = *method == Method::HEAD || matches!(status.as_u16(), 100..=199 | 204 | 304);
     let (body, framed) = match (bodiless, chunked, length) {
         (true, _, _) => (Vec::new(), true),
         (false, true, _) => (read_chunked(stream, &mut rest, max_body).await?, true),
@@ -111,14 +112,11 @@ pub async fn read_response<S: ByteStream>(
             (std::mem::take(&mut rest), false)
         }
     };
-    Ok(Exchange {
-        response: HttpResponse {
-            status,
-            headers,
-            body,
-        },
-        reusable: framed && !closes && rest.is_empty(),
-    })
+    let reusable = framed && !closes && rest.is_empty();
+    let mut response = Response::new(body);
+    *response.status_mut() = status;
+    *response.headers_mut() = headers;
+    Ok(Exchange { response, reusable })
 }
 
 /// What a failed read or write of the stream means: a stream that gave up waiting
@@ -145,19 +143,25 @@ async fn fill<S: ByteStream>(stream: &mut S, buf: &mut Vec<u8>) -> Result<(), Ht
     }
 }
 
-fn parse_head(head: &str) -> Result<(Status, Vec<Header>), HttpError> {
+/// The status and headers of a response head. A header line that is not a name and a value
+/// the `http` crate takes is skipped.
+fn parse_head(head: &str) -> Result<(StatusCode, HeaderMap), HttpError> {
     let mut lines = head.split("\r\n");
     let status = lines
         .next()
         .filter(|line| line.starts_with("HTTP/1."))
         .and_then(|line| line.split(' ').nth(1))
-        .and_then(|code| code.parse::<u16>().ok())
+        .and_then(|code| StatusCode::from_bytes(code.as_bytes()).ok())
         .ok_or(HttpError::Malformed)?;
-    let headers = lines
-        .filter_map(|line| line.split_once(':'))
-        .map(|(name, value)| Header::new(name.trim(), value.trim()))
-        .collect();
-    Ok((Status(status), headers))
+    let mut headers = HeaderMap::new();
+    for (name, value) in lines.filter_map(|line| line.split_once(':')) {
+        let name = HeaderName::from_bytes(name.trim().as_bytes());
+        let value = HeaderValue::from_str(value.trim());
+        if let (Ok(name), Ok(value)) = (name, value) {
+            headers.append(name, value);
+        }
+    }
+    Ok((status, headers))
 }
 
 /// A chunked body, its trailers dropped. `rest` holds what is already read.
@@ -216,31 +220,37 @@ mod tests {
     use porter_core::WebUrl;
     use porter_core::stream::duplex;
 
-    fn request(method: Method, url: &str) -> HttpRequest {
-        HttpRequest::new(method, WebUrl::parse(url).expect("url"))
+    fn request(method: Method, url: &str) -> http::request::Builder {
+        crate::request(method, &WebUrl::parse(url).expect("url"))
+    }
+
+    fn bare(method: Method, url: &str) -> HttpRequest {
+        request(method, url).body(Vec::new()).expect("request")
+    }
+
+    fn propfind() -> Method {
+        Method::from_bytes(b"PROPFIND").expect("method")
     }
 
     #[test]
     fn a_request_is_origin_form_with_its_own_framing() {
-        let put = request(Method::Put, "http://127.0.0.1:9/dav/a%20b.txt?x=1")
-            .with_header("If-Match", "\"e1\"")
-            .with_header("Content-Length", "999")
-            .with_header("Host", "evil.test")
-            .with_body("hello");
+        let put = request(Method::PUT, "http://127.0.0.1:9/dav/a%20b.txt?x=1")
+            .header("If-Match", "\"e1\"")
+            .header("Content-Length", "999")
+            .header("Host", "evil.test")
+            .body(b"hello".to_vec())
+            .expect("request");
         let text = String::from_utf8(encode(&put, "127.0.0.1:9")).expect("text");
         assert_eq!(
             text,
             "PUT /dav/a%20b.txt?x=1 HTTP/1.1\r\nHost: 127.0.0.1:9\r\nAccept-Encoding: identity\r\n\
              Connection: keep-alive\r\nif-match: \"e1\"\r\nContent-Length: 5\r\n\r\nhello"
         );
-        let get = String::from_utf8(encode(&request(Method::Get, "http://127.0.0.1:9/a"), "h"))
+        let get = String::from_utf8(encode(&bare(Method::GET, "http://127.0.0.1:9/a"), "h"))
             .expect("text");
         assert!(!get.contains("Content-Length"), "{get}");
-        let propfind = String::from_utf8(encode(
-            &request(Method::Propfind, "http://127.0.0.1:9/a"),
-            "h",
-        ))
-        .expect("text");
+        let propfind = String::from_utf8(encode(&bare(propfind(), "http://127.0.0.1:9/a"), "h"))
+            .expect("text");
         assert!(propfind.contains("Content-Length: 0\r\n"), "{propfind}");
     }
 
@@ -254,7 +264,7 @@ mod tests {
             }
             peer
         };
-        let (result, _peer) = tokio::join!(read_response(&mut client, method, max), writer);
+        let (result, _peer) = tokio::join!(read_response(&mut client, &method, max), writer);
         result
     }
 
@@ -262,24 +272,22 @@ mod tests {
     async fn responses_are_framed_by_length_chunks_or_the_end_of_the_stream() {
         const BY_LENGTH: &[u8] = b"HTTP/1.1 207 Multi-Status\r\nContent-Length: 5\r\nContent-Type: application/xml\r\n\r\nhello";
         const CHUNKED: &[u8] = b"HTTP/1.1 207 Multi-Status\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc\r\n4;ext=1\r\ndefg\r\n0\r\nTrailer: x\r\n\r\n";
-        let by_length = read(Method::Propfind, BY_LENGTH, 100)
-            .await
-            .expect("length");
+        let by_length = read(propfind(), BY_LENGTH, 100).await.expect("length");
         assert_eq!(
             (
-                by_length.response.status,
-                by_length.response.body.as_slice(),
+                by_length.response.status(),
+                by_length.response.body().as_slice(),
                 by_length.reusable
             ),
-            (Status(207), b"hello".as_slice(), true)
+            (StatusCode::MULTI_STATUS, b"hello".as_slice(), true)
         );
         assert_eq!(
             by_length.response.header("content-type"),
             Some("application/xml")
         );
-        let chunked = read(Method::Propfind, CHUNKED, 100).await.expect("chunked");
+        let chunked = read(propfind(), CHUNKED, 100).await.expect("chunked");
         assert_eq!(
-            (chunked.response.body.as_slice(), chunked.reusable),
+            (chunked.response.body().as_slice(), chunked.reusable),
             (b"abcdefg".as_slice(), true)
         );
     }
@@ -291,11 +299,11 @@ mod tests {
             .await
             .expect("write");
         drop(peer);
-        let got = read_response(&mut client, Method::Get, 100)
+        let got = read_response(&mut client, &Method::GET, 100)
             .await
             .expect("read");
         assert_eq!(
-            (got.response.body.as_slice(), got.reusable),
+            (got.response.body().as_slice(), got.reusable),
             (b"rest of it".as_slice(), false)
         );
     }
@@ -303,22 +311,22 @@ mod tests {
     #[tokio::test]
     async fn no_body_for_head_204_and_close_is_not_reusable() {
         let head = read(
-            Method::Head,
+            Method::HEAD,
             b"HTTP/1.1 200 OK\r\nContent-Length: 50\r\n\r\n",
             100,
         )
         .await
         .expect("head");
-        assert_eq!((head.response.body.len(), head.reusable), (0, true));
-        let none = read(Method::Delete, b"HTTP/1.1 204 No Content\r\n\r\n", 100)
+        assert_eq!((head.response.body().len(), head.reusable), (0, true));
+        let none = read(Method::DELETE, b"HTTP/1.1 204 No Content\r\n\r\n", 100)
             .await
             .expect("204");
         assert_eq!(
-            (none.response.status, none.response.body.len()),
-            (Status(204), 0)
+            (none.response.status(), none.response.body().len()),
+            (StatusCode::NO_CONTENT, 0)
         );
         let close = read(
-            Method::Get,
+            Method::GET,
             b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\nConnection: close\r\n\r\nx",
             100,
         )
@@ -337,7 +345,7 @@ mod tests {
             (b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nzz\r\n", 100, HttpError::Malformed),
         ];
         for (bytes, max, want) in CASES {
-            let got = read(Method::Get, bytes, *max).await.expect_err("refused");
+            let got = read(Method::GET, bytes, *max).await.expect_err("refused");
             assert_eq!(got, *want, "{}", String::from_utf8_lossy(bytes));
         }
     }
@@ -346,7 +354,7 @@ mod tests {
     async fn a_stream_that_ends_before_the_head_is_unreachable() {
         let (mut client, peer) = duplex(64);
         drop(peer);
-        let got = read_response(&mut client, Method::Get, 10)
+        let got = read_response(&mut client, &Method::GET, 10)
             .await
             .expect_err("eof");
         assert_eq!(got, HttpError::Unreachable);
@@ -397,7 +405,7 @@ mod tests {
             let mut stream = GoesQuiet {
                 sent: bytes.to_vec(),
             };
-            let got = read_response(&mut stream, Method::Get, 100)
+            let got = read_response(&mut stream, &Method::GET, 100)
                 .await
                 .expect_err("a stall");
             assert_eq!(

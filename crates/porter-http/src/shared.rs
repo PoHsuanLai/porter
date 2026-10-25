@@ -4,8 +4,8 @@
 //! nothing next to the request.
 
 use crate::error::HttpError;
-use crate::http::Http;
 use crate::message::{HttpRequest, HttpResponse};
+use crate::seam::Http;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;

@@ -81,9 +81,9 @@ pub async fn request_device_code<H: Http>(
         &[("client_id", client.client_id.0.as_str()), ("scope", scope)],
     )
     .await?;
-    match response.status.0 {
+    match response.status().as_u16() {
         200..=299 => {
-            serde_json::from_slice(&response.body).map_err(|_| ExchangeFault::Unreadable.into())
+            serde_json::from_slice(response.body()).map_err(|_| ExchangeFault::Unreadable.into())
         }
         429 | 500..=599 => Err(ExchangeFault::Unreachable.into()),
         _ => Err(ExchangeFault::Unreadable.into()),
@@ -113,7 +113,10 @@ pub async fn poll_device<H: Http>(
 }
 
 fn read_poll(response: &HttpResponse) -> Result<DevicePoll, ExchangeFault> {
-    match (response.status.0, form::oauth_error(response).as_deref()) {
+    match (
+        response.status().as_u16(),
+        form::oauth_error(response).as_deref(),
+    ) {
         (400, Some("authorization_pending")) => Ok(DevicePoll::Pending),
         (400, Some("slow_down")) => Ok(DevicePoll::SlowDown),
         (400, Some("access_denied" | "authorization_declined")) => Ok(DevicePoll::Denied),

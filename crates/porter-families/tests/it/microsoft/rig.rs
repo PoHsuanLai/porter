@@ -7,7 +7,8 @@ use porter_fake_servers::browser::split_loopback;
 use porter_fake_servers::http::{Request, Scheme, send};
 use porter_fake_servers::{FakeIssuer, IssuerHandle, Running, shipped};
 use porter_families::{MicrosoftEnv, MicrosoftProvider};
-use porter_http::{Header, Http, HttpError, HttpRequest, HttpResponse, Status};
+use porter_http::http::Response;
+use porter_http::{Http, HttpError, HttpRequest, HttpResponse};
 use porter_oauth::ClientRegistry;
 use porter_provider::{
     ClientChannel, ClientEntry, ClientId, ClientsFile, Issuer, ProviderSpec, SignIn, SignInMode,
@@ -55,12 +56,12 @@ impl Graph {
     }
 
     fn answer(&self, request: &HttpRequest) -> HttpResponse {
-        let path = request.url.path().to_owned();
+        let path = request.uri().path().to_owned();
         let bearer = request
-            .headers
-            .iter()
-            .find(|h| h.name.as_str().eq_ignore_ascii_case("authorization"))
-            .and_then(|h| h.value.0.strip_prefix("Bearer "))
+            .headers()
+            .get(porter_http::http::header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.strip_prefix("Bearer "))
             .unwrap_or_default()
             .to_owned();
         self.calls
@@ -85,11 +86,11 @@ impl Graph {
             (200, _) => serde_json::json!({"value": []}),
             _ => serde_json::json!({"error": {"code": "Forbidden"}}),
         };
-        HttpResponse {
-            status: Status(status),
-            headers: vec![Header::new("Content-Type", "application/json")],
-            body: body.to_string().into_bytes(),
-        }
+        Response::builder()
+            .status(status)
+            .header("Content-Type", "application/json")
+            .body(body.to_string().into_bytes())
+            .expect("response")
     }
 }
 
@@ -104,15 +105,18 @@ impl Http for Wire {
         if *self.graph.down.lock().unwrap() {
             return Err(HttpError::Unreachable);
         }
-        if request.url.as_str().starts_with(GRAPH) {
+        if request.uri().to_string().starts_with(GRAPH) {
             return Ok(self.graph.answer(&request));
         }
         let (address, target) =
-            split_loopback(request.url.as_str()).map_err(|_| HttpError::Unreachable)?;
-        let mut wire = Request::new(request.method.token(), &target).with_body(request.body);
-        for h in &request.headers {
-            wire = wire.with_header(h.name.as_str(), &h.value.0);
+            split_loopback(&request.uri().to_string()).map_err(|_| HttpError::Unreachable)?;
+        let mut wire = Request::new(request.method().as_str(), &target);
+        for (name, value) in request.headers() {
+            if let Ok(value) = value.to_str() {
+                wire = wire.with_header(name.as_str(), value);
+            }
         }
+        let wire = wire.with_body(request.into_body());
         if wire.form_value("grant_type").as_deref() == Some("refresh_token") {
             self.graph
                 .refresh_scopes
@@ -123,15 +127,13 @@ impl Http for Wire {
         let response = send(&address, Scheme::Http, &wire)
             .await
             .map_err(|_| HttpError::Unreachable)?;
-        Ok(HttpResponse {
-            status: Status(response.status),
-            headers: response
-                .headers
-                .iter()
-                .map(|(n, v)| Header::new(n, v.clone()))
-                .collect(),
-            body: response.body,
-        })
+        let answer = response
+            .headers
+            .iter()
+            .fold(Response::builder().status(response.status), |b, (n, v)| {
+                b.header(n.as_str(), v.as_str())
+            });
+        Ok(answer.body(response.body)?)
     }
 }
 

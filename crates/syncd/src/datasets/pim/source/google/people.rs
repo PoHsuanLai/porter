@@ -142,16 +142,16 @@ impl<T: Transport + 'static> Feed for GooglePeopleFeed<T> {
             .api
             .read(&self.api.url("/people/me/connections", &query))
             .await?;
-        match (response.status.0, resuming) {
+        match (response.status().as_u16(), resuming) {
             (200, _) => {}
             (400, true)
-                if String::from_utf8_lossy(&response.body).contains("EXPIRED_SYNC_TOKEN") =>
+                if String::from_utf8_lossy(response.body()).contains("EXPIRED_SYNC_TOKEN") =>
             {
                 return Err(ReplicaError::AnchorExpired);
             }
             _ => return Err(read_error(&response)),
         }
-        let listing: Connections = serde_json::from_slice(&response.body)
+        let listing: Connections = serde_json::from_slice(response.body())
             .map_err(|_| ReplicaError::Transient(RetryAfter(30)))?;
         let (next, more) = match (listing.next_page, listing.next_sync) {
             (Some(page), _) if !page.is_empty() => (SyncCursor::Paging { page, sync }, More::More),
@@ -187,10 +187,10 @@ impl<T: Transport + 'static> Feed for GooglePeopleFeed<T> {
             .api
             .read(&self.api.url(&path, &[("personFields", FIELDS)]))
             .await?;
-        if response.status.0 != 200 {
+        if response.status().as_u16() != 200 {
             return Err(read_error(&response));
         }
-        let person: Person = serde_json::from_slice(&response.body)
+        let person: Person = serde_json::from_slice(response.body())
             .map_err(|_| ReplicaError::Transient(RetryAfter(30)))?;
         match person.is_deleted() {
             true => Err(ReplicaError::Gone),

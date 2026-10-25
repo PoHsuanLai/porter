@@ -48,24 +48,23 @@ impl Fakes {
 
 impl Http for Fakes {
     async fn send(&self, mut request: HttpRequest) -> Result<HttpResponse, HttpError> {
-        let origin = request.url.origin();
+        let url = porter_core::WebUrl::parse(&request.uri().to_string())
+            .map_err(|_| HttpError::Malformed)?;
+        let origin = url.origin();
         self.sent
             .lock()
             .expect("sent")
-            .push(format!("{} {}", request.method.token(), request.url));
+            .push(format!("{} {}", request.method(), url));
         if !origin.is_loopback() {
             let place = self
                 .places
                 .iter()
-                .filter(|p| p.host == origin.host && request.url.path().starts_with(p.prefix))
+                .filter(|p| p.host == origin.host && url.path().starts_with(p.prefix))
                 .max_by_key(|p| p.prefix.len())
                 .ok_or(HttpError::Unreachable)?;
-            request.url = porter_core::WebUrl::parse(&format!(
-                "http://127.0.0.1:{}{}",
-                place.port,
-                request.url.path()
-            ))
-            .map_err(|_| HttpError::Malformed)?;
+            *request.uri_mut() = format!("http://127.0.0.1:{}{}", place.port, url.path())
+                .parse()
+                .map_err(|_| HttpError::Malformed)?;
         }
         self.inner.send(request).await
     }

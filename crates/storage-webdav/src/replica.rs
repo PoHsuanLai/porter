@@ -10,7 +10,9 @@ use porter_core::capability::{
     Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
 };
 use porter_core::{Bytes, WebUrl};
-use porter_http::{Http, HttpRequest, HttpResponse, Method};
+use porter_http::http::Method;
+use porter_http::http::header::RANGE;
+use porter_http::{Http, HttpRequest, HttpResponse, request};
 use porter_sync::{
     BaseVersion, Blob, ByteRange, ChangePage, Cursor, PutItem, PutRefused, Quota, RemoteId,
     RemoteVersion, Replica, ReplicaError,
@@ -89,7 +91,7 @@ impl<H: Http> WebDavReplica<H> {
     /// A GET of `id`, with a `Range` header when `range` says so.
     async fn get(&self, id: &RemoteId, range: ByteRange) -> Result<Blob, ReplicaError> {
         let url = self.root.url_of(id).ok_or(ReplicaError::Gone)?;
-        let mut request = HttpRequest::new(Method::Get, url);
+        let mut get = request(Method::GET, &url);
         if let ByteRange::Span {
             start: Bytes(start),
             len: Bytes(len),
@@ -99,20 +101,22 @@ impl<H: Http> WebDavReplica<H> {
                 return Ok(Blob(Vec::new()));
             }
             let last = start.saturating_add(len - 1);
-            request = request.with_header("Range", format!("bytes={start}-{last}"));
+            get = get.header(RANGE, format!("bytes={start}-{last}"));
         }
-        let response = self.send(request).await?;
-        match (response.status.0, range) {
-            (206, _) | (200, ByteRange::Whole) => Ok(Blob(response.body)),
+        let get = get.body(Vec::new()).map_err(|e| unreached(e.into()))?;
+        let response = self.send(get).await?;
+        match (response.status().as_u16(), range) {
+            (206, _) | (200, ByteRange::Whole) => Ok(Blob(response.into_body())),
             (200, ByteRange::Span { start, len }) => {
                 // The server ignored the range: the span is cut out here.
+                let body = response.body();
                 let from = usize::try_from(start.0)
                     .unwrap_or(usize::MAX)
-                    .min(response.body.len());
+                    .min(body.len());
                 let to = from
                     .saturating_add(usize::try_from(len.0).unwrap_or(usize::MAX))
-                    .min(response.body.len());
-                Ok(Blob(response.body[from..to].to_vec()))
+                    .min(body.len());
+                Ok(Blob(body[from..to].to_vec()))
             }
             (416, _) => Ok(Blob(Vec::new())),
             _ => Err(read_error(&response)),
@@ -121,11 +125,11 @@ impl<H: Http> WebDavReplica<H> {
 
     async fn quota_of_folder(&self) -> Result<Quota, ReplicaError> {
         let url = self.root.folder_url().ok_or(ReplicaError::Gone)?;
-        let response = self.send(requests::quota(url)).await?;
-        if response.status.0 != 207 {
+        let response = self.send(requests::quota(url).map_err(unreached)?).await?;
+        if response.status().as_u16() != 207 {
             return Err(read_error(&response));
         }
-        let text = String::from_utf8_lossy(&response.body);
+        let text = String::from_utf8_lossy(response.body());
         let status = parse_multistatus(&text)
             .map_err(|_| ReplicaError::Transient(porter_sync::RetryAfter(30)))?;
         let reported = porter_dav::quota(&status);

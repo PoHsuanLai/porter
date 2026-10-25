@@ -11,7 +11,8 @@ use crate::testing::scratch;
 use porter_core::stream::ByteStream;
 use porter_core::{UnixSeconds, WebUrl};
 use porter_fake_servers::{DavHandle, FakeDav, Running};
-use porter_http::{Header, Http, HttpError, HttpRequest, HttpResponse};
+use porter_http::http::header::{AUTHORIZATION, HeaderValue};
+use porter_http::{Http, HttpError, HttpRequest, HttpResponse};
 use std::future::Future;
 use std::io;
 use std::path::PathBuf;
@@ -68,9 +69,10 @@ impl<H: Http> Http for Basic<H> {
     ) -> impl Future<Output = Result<HttpResponse, HttpError>> + Send {
         use base64::Engine;
         let token = base64::engine::general_purpose::STANDARD.encode(format!("{USER}:{PASSWORD}"));
-        request
-            .headers
-            .push(Header::new("Authorization", format!("Basic {token}")));
+        let mut value =
+            HeaderValue::from_str(&format!("Basic {token}")).expect("base64 is a value");
+        value.set_sensitive(true);
+        request.headers_mut().insert(AUTHORIZATION, value);
         self.0.send(request)
     }
 }

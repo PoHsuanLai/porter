@@ -5,7 +5,8 @@
 use porter_core::stream::ByteStream;
 use porter_core::{UnixSeconds, WebUrl};
 use porter_fake_servers::{FakeGoogle, GoogleHandle, Running};
-use porter_http::{Header, Http, HttpError, HttpRequest, HttpResponse};
+use porter_http::http::header::{AUTHORIZATION, HeaderValue};
+use porter_http::{Http, HttpError, HttpRequest, HttpResponse};
 use std::future::Future;
 use std::io;
 use storage_gdrive::{Clock, Dial, GdriveReplica, Root, StreamHttp, StreamLimits, Uploads};
@@ -57,9 +58,8 @@ impl<H: Http> Http for Bearer<H> {
         &self,
         mut request: HttpRequest,
     ) -> impl Future<Output = Result<HttpResponse, HttpError>> + Send {
-        request
-            .headers
-            .push(Header::new("Authorization", format!("Bearer {TOKEN}")));
+        let value = HeaderValue::try_from(format!("Bearer {TOKEN}")).expect("a header value");
+        request.headers_mut().append(AUTHORIZATION, value);
         self.0.send(request)
     }
 }

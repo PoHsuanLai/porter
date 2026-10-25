@@ -5,7 +5,7 @@
 //! (`dailyLimitExceeded`, `quotaExceeded`) is waited out for [`DAY_LIMIT`].
 
 use crate::json::ErrorBody;
-use porter_http::{HttpError, HttpResponse};
+use porter_http::{HeaderText, HttpError, HttpResponse};
 use porter_sync::{ExportError, PutRefused, ReplicaError, RetryAfter};
 
 /// How long to wait when the server did not say.
@@ -25,7 +25,7 @@ fn retry_after(response: &HttpResponse) -> RetryAfter {
 
 /// The first reason an error body gives.
 fn reason(response: &HttpResponse) -> Option<String> {
-    let body: ErrorBody = serde_json::from_slice(&response.body).ok()?;
+    let body: ErrorBody = serde_json::from_slice(response.body()).ok()?;
     body.error?.errors.into_iter().find_map(|r| r.reason)
 }
 
@@ -39,7 +39,7 @@ fn throttled(reason: Option<&str>) -> bool {
 
 /// A read answered with `response`, which was not what it needed.
 pub fn read_error(response: &HttpResponse) -> ReplicaError {
-    match response.status.0 {
+    match response.status().as_u16() {
         403 | 429 if day_limit(reason(response).as_deref()) => ReplicaError::Transient(DAY_LIMIT),
         403 if throttled(reason(response).as_deref()) => {
             ReplicaError::Transient(retry_after(response))
@@ -54,7 +54,7 @@ pub fn read_error(response: &HttpResponse) -> ReplicaError {
 /// its export limit with `403 exportSizeLimitExceeded`, and one with no file format (a Form, a
 /// Site) with `403 cannotExportFile` or a `400`.
 pub fn export_error(response: &HttpResponse) -> ExportError {
-    match (response.status.0, reason(response).as_deref()) {
+    match (response.status().as_u16(), reason(response).as_deref()) {
         (403, Some("exportSizeLimitExceeded")) => ExportError::TooLarge,
         (403, Some("cannotExportFile" | "fileNotExportable")) | (400, _) => {
             ExportError::Unsupported
@@ -66,7 +66,7 @@ pub fn export_error(response: &HttpResponse) -> ExportError {
 /// A write answered with `response`, which was not a success or a precondition failure.
 pub fn write_error(response: &HttpResponse) -> PutRefused {
     let why = reason(response);
-    match response.status.0 {
+    match response.status().as_u16() {
         403 if why.as_deref() == Some("storageQuotaExceeded") => PutRefused::Quota,
         403 | 429 if day_limit(why.as_deref()) => PutRefused::Transient(DAY_LIMIT),
         403 if throttled(why.as_deref()) => PutRefused::Transient(retry_after(response)),
@@ -108,19 +108,19 @@ pub fn write_unreached(error: HttpError) -> PutRefused {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_http::{Header, Status};
+    use porter_http::http::Response;
 
     fn answer(status: u16, retry: Option<&str>, reason: Option<&str>) -> HttpResponse {
-        HttpResponse {
-            status: Status(status),
-            headers: retry
-                .map(|v| Header::new("Retry-After", v))
-                .into_iter()
-                .collect(),
-            body: reason
-                .map(|r| format!(r#"{{"error":{{"errors":[{{"reason":"{r}"}}]}}}}"#).into_bytes())
-                .unwrap_or_default(),
-        }
+        let body = reason
+            .map(|r| format!(r#"{{"error":{{"errors":[{{"reason":"{r}"}}]}}}}"#).into_bytes())
+            .unwrap_or_default();
+        retry
+            .into_iter()
+            .fold(Response::builder().status(status), |b, v| {
+                b.header("Retry-After", v)
+            })
+            .body(body)
+            .expect("response")
     }
 
     #[test]

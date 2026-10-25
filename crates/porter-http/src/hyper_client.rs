@@ -7,15 +7,16 @@
 //! a timeout, and a response longer than the cap is `TooLarge`.
 
 use crate::error::HttpError;
-use crate::headers::Header;
-use crate::http::Http;
-use crate::message::{HttpRequest, HttpResponse, Status};
+use crate::message::{HttpRequest, HttpResponse};
+use crate::seam::Http;
+use http::{HeaderMap, Response, StatusCode, Uri};
 use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
 use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
 use hyper_util::client::legacy::Client;
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::rt::TokioExecutor;
+use porter_core::{Origin, UrlScheme};
 use rustls::crypto::ring::default_provider;
 use rustls::{ClientConfig, RootCertStore};
 use rustls_pki_types::CertificateDer;
@@ -92,7 +93,6 @@ impl HyperHttp {
     }
 
     async fn exchange(&self, request: HttpRequest) -> Result<HttpResponse, HttpError> {
-        // A `WebUrl` is `https`, or `http` to this computer: nothing is sent in the clear.
         let outgoing = build(request)?;
         let response = self.client.request(outgoing).await.map_err(client_fault)?;
         let (head, mut body) = response.into_parts();
@@ -106,15 +106,7 @@ impl HyperHttp {
                 bytes.extend_from_slice(data);
             }
         }
-        Ok(HttpResponse {
-            status: Status(head.status.as_u16()),
-            headers: head
-                .headers
-                .iter()
-                .filter_map(|(name, value)| Some(Header::new(name.as_str(), value.to_str().ok()?)))
-                .collect(),
-            body: bytes,
-        })
+        Ok(Response::from_parts(head, bytes))
     }
 }
 
@@ -131,7 +123,7 @@ pub enum Flow {
 /// piece of the body in turn.
 pub trait BodySink: Send {
     /// The status and headers, before any of the body. `Stop` reads no body.
-    fn head(&mut self, status: Status, headers: &[Header]) -> Flow;
+    fn head(&mut self, status: StatusCode, headers: &HeaderMap) -> Flow;
     /// The next piece of the body.
     fn chunk(&mut self, bytes: &[u8]) -> Flow;
 }
@@ -149,20 +141,15 @@ impl HyperHttp {
         request: HttpRequest,
         idle: Duration,
         sink: &mut S,
-    ) -> Result<Status, HttpError> {
+    ) -> Result<StatusCode, HttpError> {
         let outgoing = build(request)?;
         let response = tokio::time::timeout(idle, self.client.request(outgoing))
             .await
             .map_err(|_| HttpError::TimedOut)?
             .map_err(client_fault)?;
         let (head, mut body) = response.into_parts();
-        let status = Status(head.status.as_u16());
-        let headers: Vec<Header> = head
-            .headers
-            .iter()
-            .filter_map(|(name, value)| Some(Header::new(name.as_str(), value.to_str().ok()?)))
-            .collect();
-        if sink.head(status, &headers) == Flow::Stop {
+        let status = head.status;
+        if sink.head(status, &head.headers) == Flow::Stop {
             return Ok(status);
         }
         loop {
@@ -190,24 +177,31 @@ impl Http for HyperHttp {
     }
 }
 
+/// The request as hyper sends it. Plain `http` goes to this computer only: a request to any
+/// other host over `http` is `Tls` and is never dialled, and a scheme that is not HTTP is
+/// `Malformed`.
 fn build(request: HttpRequest) -> Result<hyper::Request<Full<Bytes>>, HttpError> {
-    let method = hyper::Method::from_bytes(request.method.token().as_bytes())
-        .map_err(|_| HttpError::Malformed)?;
-    let builder = request.headers.iter().try_fold(
-        hyper::Request::builder()
-            .method(method)
-            .uri(request.url.as_str()),
-        |builder, header| {
-            let name = hyper::header::HeaderName::from_bytes(header.name.as_str().as_bytes())
-                .map_err(|_| HttpError::Malformed)?;
-            let value = hyper::header::HeaderValue::from_str(&header.value.0)
-                .map_err(|_| HttpError::Malformed)?;
-            Ok::<_, HttpError>(builder.header(name, value))
-        },
-    )?;
-    builder
-        .body(Full::new(Bytes::from(request.body)))
-        .map_err(|_| HttpError::Malformed)
+    in_the_clear_only_here(request.uri())?;
+    Ok(request.map(|body| Full::new(Bytes::from(body))))
+}
+
+fn in_the_clear_only_here(uri: &Uri) -> Result<(), HttpError> {
+    match uri.scheme_str() {
+        Some("https") => Ok(()),
+        Some("http") => {
+            let host = uri.host().unwrap_or_default();
+            let origin = Origin {
+                scheme: UrlScheme::Http,
+                host: host.trim_matches(['[', ']']).to_ascii_lowercase(),
+                port: uri.port_u16().unwrap_or(UrlScheme::Http.default_port()),
+            };
+            match origin.is_loopback() {
+                true => Ok(()),
+                false => Err(HttpError::Tls),
+            }
+        }
+        _ => Err(HttpError::Malformed),
+    }
 }
 
 /// What a client error comes to: a certificate or handshake refusal, no route, or garbage.

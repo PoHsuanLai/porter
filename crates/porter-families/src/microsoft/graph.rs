@@ -8,7 +8,9 @@
 use super::scopes::{AccountClass, classify};
 use porter_core::capability::{Capability, CapabilityKind, QuotaReport};
 use porter_core::{AbsentReason, Claim, EndpointUrl, Offer, Provenance, Subject};
-use porter_http::{Http, HttpRequest, HttpResponse, Method};
+use porter_http::http::Method;
+use porter_http::http::header::{ACCEPT, AUTHORIZATION};
+use porter_http::{Http, HttpResponse, SensitiveHeader, request_to};
 use porter_provider::{ProviderError, ProviderSpec};
 use serde::Deserialize;
 
@@ -72,8 +74,8 @@ pub(super) async fn whoami<H: Http>(
     token: &str,
 ) -> Result<String, ProviderError> {
     let me = get(http, base, "/v1.0/me", token).await?;
-    let me: Me = match me.status.0 {
-        200..=299 => serde_json::from_slice(&me.body).map_err(|_| ProviderError::Unreadable)?,
+    let me: Me = match me.status().as_u16() {
+        200..=299 => serde_json::from_slice(me.body()).map_err(|_| ProviderError::Unreadable)?,
         status => return Err(fault(status)),
     };
     [me.mail, me.user_principal_name]
@@ -128,7 +130,7 @@ async fn claim_for<H: Http>(
     };
     let answer = get(http, base, path, token).await?;
     let absent = |reason| Offer::Absent { kind, reason };
-    Ok(match answer.status.0 {
+    Ok(match answer.status().as_u16() {
         200..=299 => claim(
             Offer::Present(with_quota(declared, &answer)),
             Provenance::Probed,
@@ -150,7 +152,7 @@ async fn claim_for<H: Http>(
 fn with_quota(declared: &Capability, answer: &HttpResponse) -> Capability {
     match declared {
         Capability::Storage(storage) => {
-            let reported = serde_json::from_slice::<Drive>(&answer.body)
+            let reported = serde_json::from_slice::<Drive>(answer.body())
                 .ok()
                 .and_then(|d| d.quota)
                 .and_then(|q| q.total)
@@ -185,10 +187,12 @@ async fn get<H: Http>(
 ) -> Result<HttpResponse, ProviderError> {
     let url = EndpointUrl::parse(&format!("{}{path}", base.as_str().trim_end_matches('/')))
         .map_err(|_| ProviderError::Unreadable)?;
-    let request = HttpRequest::to(Method::Get, &url)
+    let request = request_to(Method::GET, &url)
         .map_err(|_| ProviderError::Unreadable)?
-        .with_header("Authorization", format!("Bearer {token}"))
-        .with_header("Accept", "application/json");
+        .sensitive_header(AUTHORIZATION, &format!("Bearer {token}"))
+        .header(ACCEPT, "application/json")
+        .body(Vec::new())
+        .map_err(|_| ProviderError::Unreachable)?;
     http.send(request)
         .await
         .map_err(|_| ProviderError::Unreachable)

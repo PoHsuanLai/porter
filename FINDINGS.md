@@ -2895,3 +2895,25 @@ Nothing here was compiled or run (no-build lane); the coordinator gates the merg
   tests do not run porter-fake's module guard, since the crate depends on no porter crate.
   mailo's own CardDAV sync (`mail-runtime/src/carddav/sync.rs`) does not handle a 507 either; it
   gets the fix when it moves to dav-proto.
+## Lane b-http: porter-http's message types become the `http` crate's (2026-10-25)
+
+- **Third-party check.** `http` 1.5.0 (MIT OR Apache-2.0, hyperium, already in Cargo.lock through
+  hyper) holds the request, response, method, status and header types. Read from the registry
+  copy; `cargo search` was refused in the lane's session, so its downloads and release dates
+  were not looked up there.
+- **The body is `Vec<u8>`.** What porter sends and reads is small and whole, every caller reads it
+  as a slice or a string, and hyper takes `Bytes::from(Vec)` without a copy. `bytes::Bytes` would
+  only buy cheap clones nobody makes.
+- **What became fallible.** A request is built with `http::request::Builder`, so a header value
+  with a line break (a token from a server) or a `WebUrl` the `http` crate does not take as a URI
+  (`<`, `>` or `` ` `` in the path, `"` in the query) now fails when the request is built, as
+  `HttpError::Malformed`, which is what the hyper client answered for it at send time before.
+  `porter_dav::propfind` and `report_sync_collection` return a `Result` for this reason.
+- **Debug.** A request's `Debug` is the `http` crate's and shows the whole URI; it showed only the
+  origin before. A credential set with `SensitiveHeader` shows as `Sensitive`. Nothing in porter
+  prints a request outside tests; closes when a request is logged, which then needs a redacting
+  wrapper.
+- **Plain `http`.** `HyperHttp` checks the loopback-only rule on the URI itself, since a request
+  can now be built without a `WebUrl` (tested in `tests/it/hyper.rs`).
+- **Unverified.** The move was done with no compiler in the lane's session: the gate and every
+  cargo command were left for the owner to run.

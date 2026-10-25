@@ -179,13 +179,13 @@ impl<T: Transport + 'static> Feed for GoogleCalendarFeed<T> {
             .api
             .read(&self.api.url(&self.events_path(""), &query))
             .await?;
-        match (response.status.0, resuming) {
+        match (response.status().as_u16(), resuming) {
             (200, _) => {}
             // `fullSyncRequired`: the token (or the page it began with) is no longer honoured.
             (410, true) => return Err(ReplicaError::AnchorExpired),
             _ => return Err(read_error(&response)),
         }
-        let listing: EventsPage = serde_json::from_slice(&response.body)
+        let listing: EventsPage = serde_json::from_slice(response.body())
             .map_err(|_| ReplicaError::Transient(RetryAfter(30)))?;
         let (next, more) = match (listing.next_page, listing.next_sync) {
             (Some(page), _) if !page.is_empty() => (SyncCursor::Paging { page, sync }, More::More),
@@ -217,10 +217,10 @@ impl<T: Transport + 'static> Feed for GoogleCalendarFeed<T> {
             .api
             .read(&self.api.url(&self.events_path(&tail), &[]))
             .await?;
-        if response.status.0 != 200 {
+        if response.status().as_u16() != 200 {
             return Err(read_error(&response));
         }
-        let event: Event = serde_json::from_slice(&response.body)
+        let event: Event = serde_json::from_slice(response.body())
             .map_err(|_| ReplicaError::Transient(RetryAfter(30)))?;
         match event.is_cancelled() {
             true => Err(ReplicaError::Gone),

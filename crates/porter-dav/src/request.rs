@@ -3,32 +3,37 @@
 
 use dav_proto::{Depth, SyncLevel};
 use porter_core::WebUrl;
-use porter_http::{HttpRequest, Method};
+use porter_http::http::Method;
+use porter_http::http::header::CONTENT_TYPE;
+use porter_http::{HttpError, HttpRequest, request, webdav};
 
 const XML: &str = "application/xml; charset=utf-8";
 
-/// A PROPFIND of `props` (namespace-qualified names) on `url`.
-pub fn propfind(url: WebUrl, depth: Depth, props: &[&str]) -> HttpRequest {
-    xml(Method::Propfind, url, depth, dav_proto::propfind(props))
+/// A PROPFIND of `props` (namespace-qualified names) on `url`. `Malformed` when the URL is not
+/// one the `http` crate takes as a URI.
+pub fn propfind(url: WebUrl, depth: Depth, props: &[&str]) -> Result<HttpRequest, HttpError> {
+    xml(webdav::propfind(), url, depth, dav_proto::propfind(props))
 }
 
 /// A sync-collection REPORT on `url` from `sync_token` (empty for the first listing) at
-/// `level`, asking for `props` of each changed member.
+/// `level`, asking for `props` of each changed member. `Malformed` when the URL is not one the
+/// `http` crate takes as a URI.
 pub fn report_sync_collection(
     url: WebUrl,
     sync_token: &str,
     level: SyncLevel,
     props: &[&str],
-) -> HttpRequest {
+) -> Result<HttpRequest, HttpError> {
     let body = dav_proto::sync_collection(sync_token, level, props);
-    xml(Method::Report, url, Depth::Zero, body)
+    xml(webdav::report(), url, Depth::Zero, body)
 }
 
-fn xml(method: Method, url: WebUrl, depth: Depth, body: String) -> HttpRequest {
-    HttpRequest::new(method, url)
-        .with_header("Depth", depth.as_str())
-        .with_header("Content-Type", XML)
-        .with_body(body)
+fn xml(method: Method, url: WebUrl, depth: Depth, body: String) -> Result<HttpRequest, HttpError> {
+    let request = request(method, &url)
+        .header("Depth", depth.as_str())
+        .header(CONTENT_TYPE, XML)
+        .body(body.into_bytes())?;
+    Ok(request)
 }
 
 #[cfg(test)]
@@ -41,15 +46,11 @@ mod tests {
     }
 
     fn body(request: &HttpRequest) -> String {
-        String::from_utf8(request.body.clone()).unwrap()
+        String::from_utf8(request.body().clone()).unwrap()
     }
 
     fn header<'a>(request: &'a HttpRequest, name: &str) -> Option<&'a str> {
-        request
-            .headers
-            .iter()
-            .find(|h| h.name.as_str() == name)
-            .map(|h| h.value.0.as_str())
+        request.headers().get(name)?.to_str().ok()
     }
 
     #[test]
@@ -58,8 +59,9 @@ mod tests {
             url(),
             Depth::Zero,
             &[CURRENT_USER_PRINCIPAL, ADDRESSBOOK_HOME_SET],
-        );
-        assert_eq!(request.method, Method::Propfind);
+        )
+        .unwrap();
+        assert_eq!(request.method(), "PROPFIND");
         assert_eq!(header(&request, "depth"), Some("0"));
         assert_eq!(
             header(&request, "content-type"),
@@ -76,7 +78,7 @@ mod tests {
     #[test]
     fn the_depth_header_follows_the_depth() {
         assert_eq!(
-            header(&propfind(url(), Depth::One, &[GETETAG]), "depth"),
+            header(&propfind(url(), Depth::One, &[GETETAG]).unwrap(), "depth"),
             Some("1")
         );
     }
@@ -88,8 +90,9 @@ mod tests {
             "http://x.test/sync?a=1&b=<2>",
             SyncLevel::One,
             &[GETETAG],
-        );
-        assert_eq!(request.method, Method::Report);
+        )
+        .unwrap();
+        assert_eq!(request.method(), "REPORT");
         assert_eq!(header(&request, "depth"), Some("0"));
         let text = body(&request);
         let doc = roxmltree::Document::parse(&text).unwrap();

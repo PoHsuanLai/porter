@@ -8,7 +8,7 @@ use porter_fake_servers::browser::split_loopback;
 use porter_fake_servers::http::{Request, Response, Scheme, send, serve};
 use porter_fake_servers::net::{Bind, Listener};
 use porter_fake_servers::{Consent, FakeIssuer, IssuerEvent, Running, TokenResult, follow};
-use porter_http::{Http, HttpError, HttpRequest, HttpResponse, Status};
+use porter_http::{Http, HttpError, HttpRequest, HttpResponse};
 use porter_oauth::{
     DeviceFault, ExchangeFault, LoopbackFault, LoopbackServer, Pkce, RenewOutcome, authorize_url,
     await_device, exchange_code, mint_key, openrouter_auth_url, renew, request_device_code, revoke,
@@ -23,23 +23,21 @@ struct LoopbackHttp;
 impl Http for LoopbackHttp {
     async fn send(&self, request: HttpRequest) -> Result<HttpResponse, HttpError> {
         let (address, target) =
-            split_loopback(request.url.as_str()).map_err(|_| HttpError::Unreachable)?;
-        let mut wire = Request::new(request.method.token(), &target).with_body(request.body);
-        for h in &request.headers {
-            wire = wire.with_header(h.name.as_str(), &h.value.0);
+            split_loopback(&request.uri().to_string()).map_err(|_| HttpError::Unreachable)?;
+        let (head, body) = request.into_parts();
+        let mut wire = Request::new(head.method.as_str(), &target).with_body(body);
+        for (name, value) in &head.headers {
+            let value = value.to_str().map_err(|_| HttpError::Malformed)?;
+            wire = wire.with_header(name.as_str(), value);
         }
         let response = send(&address, Scheme::Http, &wire)
             .await
             .map_err(|_| HttpError::Unreachable)?;
-        Ok(HttpResponse {
-            status: Status(response.status),
-            headers: response
-                .headers
-                .iter()
-                .map(|(n, v)| porter_http::Header::new(n, v.clone()))
-                .collect(),
-            body: response.body,
-        })
+        let answer = response.headers.iter().fold(
+            porter_http::http::Response::builder().status(response.status),
+            |answer, (name, value)| answer.header(name.as_str(), value.as_str()),
+        );
+        Ok(answer.body(response.body)?)
     }
 }
 

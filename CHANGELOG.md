@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+### porter-http speaks the `http` crate's request and response
+
+- `HttpRequest` and `HttpResponse` are now `http::Request<Vec<u8>>` and `http::Response<Vec<u8>>`
+  (http 1.x, re-exported as `porter_http::http`). The `Http` trait, `SharedHttp`, `HyperHttp` and
+  `stream::StreamHttp` take and return them. The body stays a whole `Vec<u8>`: what porter sends
+  and reads is small, and every caller reads it as a slice or a string.
+- porter-http's own `Method`, `Status`, `Header`, `HeaderName` and `HeaderValue` are gone. Use
+  `http::Method` (`Method::GET`; `porter_http::webdav::{propfind, report, mkcol}` for WebDAV's),
+  `http::StatusCode`, and `http::HeaderMap`. `porter_http::{Method, Status, HeaderName,
+  HeaderValue}` re-export the `http` crate's types for one batch; `Header` has no re-export.
+- A request is built with `porter_http::request(method, &web_url)`, the one place a `WebUrl`
+  becomes the request's URI, which returns `http::request::Builder`; `request_to` does the same
+  for an `EndpointUrl` (it replaces `HttpRequest::to`). A header value the `http` crate refuses
+  (a line break in a token) now fails when the request is built; `HttpError` converts from
+  `http::Error` as `Malformed`, which is what the hyper client answered for it before.
+- `HeaderText` reads a header as text (`header(name)`) and `retry_after_seconds()` on a request,
+  a response or a `HeaderMap`; it replaces `HttpResponse::header` and
+  `HttpResponse::retry_after_seconds`. `SensitiveHeader::sensitive_header` marks a credential's
+  value sensitive, so a request's `Debug` shows `Sensitive` for it. A request's `Debug` is now
+  the `http` crate's and shows the whole URI, not only its origin.
+- `HyperHttp` checks the rule that plain `http` goes to this computer only on the request's URI
+  itself, since a request no longer has to come from a `WebUrl`. `BodySink::head` takes
+  `(StatusCode, &HeaderMap)` and `HyperHttp::stream` returns `StatusCode`.
+- `porter_dav::propfind` and `porter_dav::report_sync_collection` return
+  `Result<HttpRequest, HttpError>`: building the request can fail on a URL the `http` crate does
+  not take.
+
 ### WebDAV as a library: dav-proto
 
 - New crate `dav-proto`: WebDAV, CalDAV and CardDAV bodies built as `String` and replies read

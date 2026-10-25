@@ -1,13 +1,14 @@
-//! The requests the replica sends, as values.
+//! The requests the replica sends, as values. Each is `Malformed` when the URL is not one the
+//! `http` crate takes as a URI.
 
 use crate::entry::CONTENT_LENGTH;
 use dav_proto::{Depth, SyncLevel, names};
 use porter_core::WebUrl;
 use porter_dav::{propfind, report_sync_collection};
-use porter_http::HttpRequest;
+use porter_http::{HttpError, HttpRequest};
 
 /// A PROPFIND at depth 1 of what a listing needs.
-pub fn list(url: WebUrl) -> HttpRequest {
+pub fn list(url: WebUrl) -> Result<HttpRequest, HttpError> {
     propfind(
         url,
         Depth::One,
@@ -16,7 +17,7 @@ pub fn list(url: WebUrl) -> HttpRequest {
 }
 
 /// A PROPFIND at depth 0 of what a listing needs, for one resource.
-pub fn stat(url: WebUrl) -> HttpRequest {
+pub fn stat(url: WebUrl) -> Result<HttpRequest, HttpError> {
     propfind(
         url,
         Depth::Zero,
@@ -25,7 +26,7 @@ pub fn stat(url: WebUrl) -> HttpRequest {
 }
 
 /// A PROPFIND of the quota properties (RFC 4331).
-pub fn quota(url: WebUrl) -> HttpRequest {
+pub fn quota(url: WebUrl) -> Result<HttpRequest, HttpError> {
     propfind(
         url,
         Depth::Zero,
@@ -35,7 +36,7 @@ pub fn quota(url: WebUrl) -> HttpRequest {
 
 /// A sync-collection REPORT from `token` (empty for the first listing) over everything below
 /// the folder (RFC 6578 section 3.3, `sync-level` `infinite`), asking for what a listing reads.
-pub fn sync(url: WebUrl, token: &str) -> HttpRequest {
+pub fn sync(url: WebUrl, token: &str) -> Result<HttpRequest, HttpError> {
     report_sync_collection(
         url,
         token,
@@ -51,8 +52,8 @@ mod tests {
     #[test]
     fn the_report_asks_for_every_level_and_what_a_listing_reads_and_escapes_the_token() {
         let url = WebUrl::parse("http://127.0.0.1:1/dav/").expect("url");
-        let request = sync(url, "t&<1>");
-        let text = String::from_utf8(request.body).expect("utf8");
+        let request = sync(url, "t&<1>").expect("request");
+        let text = String::from_utf8(request.into_body()).expect("utf8");
         let doc = roxmltree::Document::parse(&text).expect("xml");
         let text_of = |name: &str| {
             doc.descendants()

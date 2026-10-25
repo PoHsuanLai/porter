@@ -422,9 +422,10 @@ impl porter_http::Http for FakeJmap {
             ),
         };
         let ok = request
-            .headers
+            .headers()
+            .get_all(porter_http::http::header::AUTHORIZATION)
             .iter()
-            .any(|h| h.name.as_str().eq_ignore_ascii_case("authorization") && h.value.0 == want);
+            .any(|value| value.as_bytes() == want.as_bytes());
         let status = match (self.status, ok) {
             (200, true) => 200,
             (200, false) => 401,
@@ -434,11 +435,10 @@ impl porter_http::Http for FakeJmap {
             r#"{{"capabilities":{{"urn:ietf:params:jmap:core":{{}},"urn:ietf:params:jmap:mail":{{}},"urn:ietf:params:jmap:submission":{{}}}},"apiUrl":"https://jmap.fake.test/api","username":"{}"}}"#,
             self.api_user
         );
-        Ok(porter_http::HttpResponse {
-            status: porter_http::Status(status),
-            headers: vec![],
-            body: body.into_bytes(),
-        })
+        Ok(porter_http::http::Response::builder()
+            .status(status)
+            .body(body.into_bytes())
+            .expect("response"))
     }
 }
 

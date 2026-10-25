@@ -14,7 +14,9 @@
 
 use crate::datasets::photos::cas;
 use porter_core::WebUrl;
-use porter_http::{Http, HttpRequest, HttpResponse, Method};
+use porter_http::http::Method;
+use porter_http::http::request::Builder;
+use porter_http::{Http, HttpResponse, request};
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -228,13 +230,19 @@ impl<H: Http> PhotosPicker<H> {
         WebUrl::parse(&format!("{}/v1/{path}", self.origin)).map_err(|_| PickerError::Unreadable)
     }
 
-    async fn send(&self, request: HttpRequest) -> Result<HttpResponse, PickerError> {
+    /// Sends the request `request` builds with `body`. A request that would not build is never
+    /// sent, which is no answer, as a client that refuses it is.
+    async fn send(&self, request: Builder, body: Vec<u8>) -> Result<HttpResponse, PickerError> {
+        let request = request
+            .header("Accept", "application/json")
+            .body(body)
+            .map_err(|_| PickerError::Unreached)?;
         let response = self
             .http
-            .send(request.with_header("Accept", "application/json"))
+            .send(request)
             .await
             .map_err(|_| PickerError::Unreached)?;
-        match response.status.0 {
+        match response.status().as_u16() {
             200 => Ok(response),
             status => Err(PickerError::Refused(status)),
         }
@@ -242,12 +250,11 @@ impl<H: Http> PhotosPicker<H> {
 
     /// Opens a session for the person to pick in.
     pub async fn start(&self) -> Result<PickerSession, PickerError> {
-        let request = HttpRequest::new(Method::Post, self.url("sessions")?)
-            .with_header("Content-Type", "application/json")
-            .with_body(b"{}".to_vec());
-        let response = self.send(request).await?;
+        let request = request(Method::POST, &self.url("sessions")?)
+            .header("Content-Type", "application/json");
+        let response = self.send(request, b"{}".to_vec()).await?;
         let wire: SessionWire =
-            serde_json::from_slice(&response.body).map_err(|_| PickerError::Unreadable)?;
+            serde_json::from_slice(response.body()).map_err(|_| PickerError::Unreadable)?;
         let id = SessionId::parse(&wire.id).ok_or(PickerError::BadSession)?;
         let polling = wire.polling;
         Ok(PickerSession {
@@ -268,10 +275,10 @@ impl<H: Http> PhotosPicker<H> {
 
     /// Whether the person has finished picking in `session`.
     pub async fn poll(&self, session: &SessionId) -> Result<PickerState, PickerError> {
-        let request = HttpRequest::new(Method::Get, self.url(&format!("sessions/{session}"))?);
-        let response = self.send(request).await?;
+        let request = request(Method::GET, &self.url(&format!("sessions/{session}"))?);
+        let response = self.send(request, Vec::new()).await?;
         let wire: SessionWire =
-            serde_json::from_slice(&response.body).map_err(|_| PickerError::Unreadable)?;
+            serde_json::from_slice(response.body()).map_err(|_| PickerError::Unreadable)?;
         Ok(match wire.set {
             true => PickerState::Picked,
             false => PickerState::Waiting,
@@ -294,10 +301,10 @@ impl<H: Http> PhotosPicker<H> {
                 path.push_str(&format!("&pageToken={}", encode(token)));
             }
             let response = self
-                .send(HttpRequest::new(Method::Get, self.url(&path)?))
+                .send(request(Method::GET, &self.url(&path)?), Vec::new())
                 .await?;
             let list: ListWire =
-                serde_json::from_slice(&response.body).map_err(|_| PickerError::Unreadable)?;
+                serde_json::from_slice(response.body()).map_err(|_| PickerError::Unreadable)?;
             for item in list.items {
                 let Some(file) = item.file else { continue };
                 let suffix = match item.kind.as_deref() {
@@ -306,7 +313,10 @@ impl<H: Http> PhotosPicker<H> {
                 };
                 let url = WebUrl::parse(&format!("{}{suffix}", file.base))
                     .map_err(|_| PickerError::Unreadable)?;
-                let bytes = self.send(HttpRequest::new(Method::Get, url)).await?.body;
+                let bytes = self
+                    .send(request(Method::GET, &url), Vec::new())
+                    .await?
+                    .into_body();
                 let wanted = safe_name(file.filename.as_deref().unwrap_or(&item.id));
                 let name = unique(&wanted, &names);
                 let target = dir.join(&name);
@@ -335,7 +345,7 @@ impl<H: Http> PhotosPicker<H> {
         let Ok(url) = self.url(&format!("sessions/{session}")) else {
             return SessionEnd::Left;
         };
-        match self.send(HttpRequest::new(Method::Delete, url)).await {
+        match self.send(request(Method::DELETE, &url), Vec::new()).await {
             Ok(_) => SessionEnd::Deleted,
             Err(_) => SessionEnd::Left,
         }

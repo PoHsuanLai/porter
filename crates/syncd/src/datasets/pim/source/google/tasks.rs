@@ -153,10 +153,10 @@ impl<T: Transport + 'static> Feed for GoogleTasksFeed<T> {
             .api
             .read(&self.api.url(&self.tasks_path(""), &query))
             .await?;
-        if response.status.0 != 200 {
+        if response.status().as_u16() != 200 {
             return Err(read_error(&response));
         }
-        let listing: TasksPage = serde_json::from_slice(&response.body)
+        let listing: TasksPage = serde_json::from_slice(response.body())
             .map_err(|_| ReplicaError::Transient(RetryAfter(30)))?;
         // `updated` is always `YYYY-MM-DDTHH:MM:SS.sssZ`, which orders as text.
         let newest = listing
@@ -201,10 +201,10 @@ impl<T: Transport + 'static> Feed for GoogleTasksFeed<T> {
             .api
             .read(&self.api.url(&self.tasks_path(&tail), &[]))
             .await?;
-        if response.status.0 != 200 {
+        if response.status().as_u16() != 200 {
             return Err(read_error(&response));
         }
-        let task: Task = serde_json::from_slice(&response.body)
+        let task: Task = serde_json::from_slice(response.body())
             .map_err(|_| ReplicaError::Transient(RetryAfter(30)))?;
         match task.is_deleted() {
             true => Err(ReplicaError::Gone),

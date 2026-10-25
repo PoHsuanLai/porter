@@ -7,7 +7,8 @@ use porter_core::capability::StorageCap;
 use porter_core::{UnixSeconds, WebUrl};
 use porter_fake::Scratch;
 use porter_fake_servers::{FakeGoogle, FakeGraph};
-use porter_http::{Header, Http, HttpError, HttpRequest, HttpResponse, HyperHttp};
+use porter_http::http::header::{AUTHORIZATION, HeaderValue};
+use porter_http::{Http, HttpError, HttpRequest, HttpResponse, HyperHttp};
 use porter_sync::{
     Blob, ByteRange, ChangePage, Cursor, Folders, ItemKind, ItemPath, PutItem, PutRefused, Quota,
     RemoteId, RemoteVersion, Replica, ReplicaError, RetryAfter,
@@ -28,9 +29,9 @@ impl Http for Bearer {
         &self,
         mut request: HttpRequest,
     ) -> impl Future<Output = Result<HttpResponse, HttpError>> + Send {
-        request
-            .headers
-            .push(Header::new("Authorization", format!("Bearer {TOKEN}")));
+        let mut value = HeaderValue::from_str(&format!("Bearer {TOKEN}")).expect("a value");
+        value.set_sensitive(true);
+        request.headers_mut().insert(AUTHORIZATION, value);
         self.0.send(request)
     }
 }

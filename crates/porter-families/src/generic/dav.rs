@@ -3,7 +3,7 @@
 //! PROPFIND with the password at each to see that it is accepted.
 
 use crate::io::Io;
-use crate::password::{basic, endpoint, fault_of, join};
+use crate::password::{authorize, basic, endpoint, fault_of, join};
 use dav_proto::Depth;
 use dav_proto::names::CURRENT_USER_PRINCIPAL;
 use porter_core::capability::CapabilityKind;
@@ -14,7 +14,8 @@ use porter_core::{
 };
 use porter_dav::propfind;
 use porter_discover::well_known_found;
-use porter_http::{Header, Http, HttpRequest, Method, web_url};
+use porter_http::http::Method;
+use porter_http::{Http, request_to, web_url};
 use porter_provider::ProviderSpec;
 
 /// The two DAV services a generic server may offer, and the family of each.
@@ -88,11 +89,10 @@ async fn root(
     let Some(requested) = join(server, well_known) else {
         return Ok(None);
     };
-    let response = io
-        .http
-        .send(HttpRequest::to(Method::Get, &requested).map_err(fault_of)?)
-        .await
+    let request = request_to(Method::GET, &requested)
+        .and_then(|builder| Ok(builder.body(Vec::new())?))
         .map_err(fault_of)?;
+    let response = io.http.send(request).await.map_err(fault_of)?;
     Ok(well_known_found(kind, &requested, &response, login)
         .ok()
         .and_then(|found| found.endpoints.into_iter().next())
@@ -111,12 +111,11 @@ async fn check(
         web_url(url).map_err(fault_of)?,
         Depth::Zero,
         &[CURRENT_USER_PRINCIPAL],
-    );
-    request
-        .headers
-        .push(Header::new("Authorization", basic(&login.0, password)));
+    )
+    .map_err(fault_of)?;
+    authorize(&mut request, &basic(&login.0, password)).map_err(fault_of)?;
     let response = io.http.send(request).await.map_err(fault_of)?;
-    match response.status.0 {
+    match response.status().as_u16() {
         401 | 403 => Err(SignInFault::Refused),
         200..=299 => Ok(true),
         500..=599 => Err(SignInFault::Unreachable),

@@ -8,7 +8,9 @@ use porter_core::capability::{
     Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
 };
 use porter_core::{Bytes, WebUrl};
-use porter_http::{Http, HttpRequest, HttpResponse, Method};
+use porter_http::http::Method;
+use porter_http::http::header::{ACCEPT, HeaderValue, RANGE};
+use porter_http::{Http, HttpRequest, HttpResponse, request};
 use porter_sync::{
     BaseVersion, Blob, ByteRange, ChangePage, Cursor, ExportError, Folders, PutItem, PutRefused,
     Quota, RemoteId, RemoteVersion, Replica, ReplicaError, RetryAfter,
@@ -140,25 +142,31 @@ impl<H: Http> GdriveReplica<H> {
     }
 
     /// Sends a request, a transport failure being a read that should be retried.
-    pub(crate) async fn send(&self, request: HttpRequest) -> Result<HttpResponse, ReplicaError> {
-        self.http
-            .send(request.with_header("Accept", "application/json"))
-            .await
-            .map_err(unreached)
+    pub(crate) async fn send(
+        &self,
+        mut request: HttpRequest,
+    ) -> Result<HttpResponse, ReplicaError> {
+        request
+            .headers_mut()
+            .append(ACCEPT, HeaderValue::from_static("application/json"));
+        self.http.send(request).await.map_err(unreached)
     }
 
     /// A GET of `url`.
     pub(crate) async fn get_url(&self, url: Option<WebUrl>) -> Result<HttpResponse, ReplicaError> {
         let url = url.ok_or(ReplicaError::Gone)?;
-        self.send(HttpRequest::new(Method::Get, url)).await
+        let get = request(Method::GET, &url)
+            .body(Vec::new())
+            .map_err(|e| unreached(e.into()))?;
+        self.send(get).await
     }
 
     /// The file `id` now (also in the trash), or `None` when there is none.
     pub(crate) async fn file_now(&self, id: &str) -> Result<Option<File>, ReplicaError> {
         let url = self.addr.file(id, &[("fields", FILE_FIELDS)]);
         let response = self.get_url(url).await?;
-        match response.status.0 {
-            200 => serde_json::from_slice(&response.body)
+        match response.status().as_u16() {
+            200 => serde_json::from_slice(response.body())
                 .map(Some)
                 .map_err(|_| ReplicaError::Transient(RetryAfter(30))),
             404 => Ok(None),
@@ -168,12 +176,11 @@ impl<H: Http> GdriveReplica<H> {
 
     /// A GET of `id`'s content, with a `Range` header when `range` says so.
     async fn content(&self, id: &RemoteId, range: ByteRange) -> Result<Blob, ReplicaError> {
-        let mut request = HttpRequest::new(
-            Method::Get,
-            self.addr
-                .file(&id.0, &[("alt", "media")])
-                .ok_or(ReplicaError::Gone)?,
-        );
+        let url = self
+            .addr
+            .file(&id.0, &[("alt", "media")])
+            .ok_or(ReplicaError::Gone)?;
+        let mut get = request(Method::GET, &url);
         if let ByteRange::Span {
             start: Bytes(start),
             len: Bytes(len),
@@ -182,23 +189,25 @@ impl<H: Http> GdriveReplica<H> {
             if len == 0 {
                 return Ok(Blob(Vec::new()));
             }
-            request = request.with_header(
-                "Range",
+            get = get.header(
+                RANGE,
                 format!("bytes={start}-{}", start.saturating_add(len - 1)),
             );
         }
-        let response = self.send(request).await?;
-        match (response.status.0, range) {
-            (206, _) | (200, ByteRange::Whole) => Ok(Blob(response.body)),
+        let get = get.body(Vec::new()).map_err(|e| unreached(e.into()))?;
+        let response = self.send(get).await?;
+        match (response.status().as_u16(), range) {
+            (206, _) | (200, ByteRange::Whole) => Ok(Blob(response.into_body())),
             (200, ByteRange::Span { start, len }) => {
                 // The server ignored the range: the span is cut out here.
+                let body = response.body();
                 let from = usize::try_from(start.0)
                     .unwrap_or(usize::MAX)
-                    .min(response.body.len());
+                    .min(body.len());
                 let to = from
                     .saturating_add(usize::try_from(len.0).unwrap_or(usize::MAX))
-                    .min(response.body.len());
-                Ok(Blob(response.body[from..to].to_vec()))
+                    .min(body.len());
+                Ok(Blob(body[from..to].to_vec()))
             }
             (416, _) => Ok(Blob(Vec::new())),
             // A file in the trash, or gone, reads as gone.
@@ -216,14 +225,17 @@ impl<H: Http> GdriveReplica<H> {
             )
             .ok_or(ExportError::Read(ReplicaError::Gone))?;
         // No `Accept: application/json`: the answer is the file.
+        let get = request(Method::GET, &url)
+            .body(Vec::new())
+            .map_err(|e| ExportError::Read(unreached(e.into())))?;
         let response = self
             .http
-            .send(HttpRequest::new(Method::Get, url))
+            .send(get)
             .await
             .map_err(|e| ExportError::Read(unreached(e)))?;
-        match response.status.0 {
-            200 if response.body.len() as u64 > EXPORT_LIMIT => Err(ExportError::TooLarge),
-            200 => Ok(Blob(response.body)),
+        match response.status().as_u16() {
+            200 if response.body().len() as u64 > EXPORT_LIMIT => Err(ExportError::TooLarge),
+            200 => Ok(Blob(response.into_body())),
             _ => Err(export_error(&response)),
         }
     }
@@ -231,10 +243,10 @@ impl<H: Http> GdriveReplica<H> {
     async fn quota_of_about(&self) -> Result<Quota, ReplicaError> {
         let url = self.addr.api("about", &[("fields", "storageQuota")]);
         let response = self.get_url(url).await?;
-        if response.status.0 != 200 {
+        if response.status().as_u16() != 200 {
             return Err(read_error(&response));
         }
-        let about: About = serde_json::from_slice(&response.body)
+        let about: About = serde_json::from_slice(response.body())
             .map_err(|_| ReplicaError::Transient(RetryAfter(30)))?;
         let number = |text: Option<String>| text.and_then(|t| t.parse::<u64>().ok());
         let quota = about.quota;

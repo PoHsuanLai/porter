@@ -4,7 +4,7 @@
 //! password, so a refused one is found here, before anything is stored.
 
 use crate::io::Io;
-use crate::password::{basic, endpoint, fault_of, join, offers, resolve, segment};
+use crate::password::{authorize, basic, endpoint, fault_of, join, offers, resolve, segment};
 use dav_proto::names::{
     ADDRESSBOOK_HOME_SET, CALENDAR_HOME_SET, CURRENT_USER_PRINCIPAL, QUOTA_AVAILABLE, QUOTA_USED,
 };
@@ -14,7 +14,12 @@ use porter_core::sheet::SignInFault;
 use porter_core::{Claim, EndpointUrl, Family, LoginName, SecretText, ServiceEndpoint};
 use porter_dav::{Home, home_set, propfind};
 use porter_discover::parse_ocs_capabilities;
-use porter_http::{Http, HttpRequest, HttpResponse, Method, web_url};
+use porter_http::http::Method;
+use porter_http::http::header::{ACCEPT, AUTHORIZATION};
+use porter_http::http::request::Builder;
+use porter_http::{
+    Http, HttpError, HttpRequest, HttpResponse, SensitiveHeader, request_to, web_url,
+};
 
 /// Who is signed in, and where.
 #[derive(Debug, Clone)]
@@ -32,25 +37,23 @@ pub(super) struct Found {
 }
 
 impl Who {
-    fn get(&self, url: &EndpointUrl) -> Result<HttpRequest, SignInFault> {
-        Ok(HttpRequest::to(Method::Get, url)
+    fn get(&self, url: &EndpointUrl) -> Result<Builder, SignInFault> {
+        Ok(request_to(Method::GET, url)
             .map_err(fault_of)?
-            .with_header("Authorization", basic(&self.login.0, &self.password)))
+            .sensitive_header(AUTHORIZATION, &basic(&self.login.0, &self.password)))
     }
 
     fn propfind(&self, url: &EndpointUrl, props: &[&str]) -> Result<HttpRequest, SignInFault> {
-        let mut request = propfind(web_url(url).map_err(fault_of)?, Depth::Zero, props);
-        request.headers.push(porter_http::Header::new(
-            "Authorization",
-            basic(&self.login.0, &self.password),
-        ));
+        let mut request =
+            propfind(web_url(url).map_err(fault_of)?, Depth::Zero, props).map_err(fault_of)?;
+        authorize(&mut request, &basic(&self.login.0, &self.password)).map_err(fault_of)?;
         Ok(request)
     }
 }
 
 /// A reply that is a login refusal, a success, or something else.
 fn judged(response: HttpResponse) -> Result<HttpResponse, SignInFault> {
-    match response.status.0 {
+    match response.status().as_u16() {
         401 | 403 => Err(SignInFault::Refused),
         200..=299 => Ok(response),
         500..=599 => Err(SignInFault::Unreachable),
@@ -81,8 +84,10 @@ pub(super) async fn discover(io: &Io, who: &Who) -> Result<Found, SignInFault> {
     let capabilities = {
         let request = who
             .get(&join(&who.server, "/ocs/v2.php/cloud/capabilities").ok_or_else(unreadable)?)?
-            .with_header("OCS-APIRequest", "true")
-            .with_header("Accept", "application/json");
+            .header("OCS-APIRequest", "true")
+            .header(ACCEPT, "application/json")
+            .body(Vec::new())
+            .map_err(|error| fault_of(HttpError::from(error)))?;
         send(io, request).await?
     };
     let claims = parse_ocs_capabilities(&text(&capabilities))
@@ -195,7 +200,7 @@ fn percent_decode(text: &str) -> Option<String> {
 }
 
 fn text(response: &HttpResponse) -> String {
-    String::from_utf8_lossy(&response.body).into_owned()
+    String::from_utf8_lossy(response.body()).into_owned()
 }
 
 #[cfg(test)]

@@ -14,7 +14,7 @@
 //!   instead of listing from the start, which a big tree would cut short every time.
 
 use crate::entry::{Entry, Kind, entries};
-use crate::refuse::read_error;
+use crate::refuse::{read_error, unreached};
 use crate::replica::{DELETED, WebDavReplica};
 use crate::requests;
 use dav_proto::{Multistatus, SyncEnd, parse_multistatus, parse_sync_collection, token_expired};
@@ -324,11 +324,11 @@ impl<H: Http> WebDavReplica<H> {
             .folder_url()
             .ok_or(Report::Failed(ReplicaError::Gone))?;
         let response = self
-            .send(requests::sync(url, token))
+            .send(requests::sync(url, token).map_err(|e| Report::Failed(unreached(e)))?)
             .await
             .map_err(Report::Failed)?;
-        let body = String::from_utf8_lossy(&response.body).into_owned();
-        match response.status.0 {
+        let body = String::from_utf8_lossy(response.body()).into_owned();
+        match response.status().as_u16() {
             207 => self.reported(&body),
             code if token_expired(code, &body) => Err(Report::Expired),
             401 | 429 | 500 | 502..=599 => Err(Report::Failed(read_error(&response))),
@@ -378,7 +378,7 @@ impl<H: Http> WebDavReplica<H> {
                 .root
                 .collection_url(&folder)
                 .ok_or(ReplicaError::Gone)?;
-            let response = self.send(requests::list(url)).await?;
+            let response = self.send(requests::list(url).map_err(unreached)?).await?;
             let listed = self.listed(&response, &folder)?;
             for entry in listed {
                 match entry.kind {
@@ -398,9 +398,9 @@ impl<H: Http> WebDavReplica<H> {
         response: &HttpResponse,
         folder: &RemoteId,
     ) -> Result<Vec<Entry>, ReplicaError> {
-        match response.status.0 {
+        match response.status().as_u16() {
             207 => {
-                let text = String::from_utf8_lossy(&response.body);
+                let text = String::from_utf8_lossy(response.body());
                 let status = parse_multistatus(&text)
                     .map_err(|_| ReplicaError::Transient(RetryAfter(30)))?;
                 Ok(entries(&self.root, &status))

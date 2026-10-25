@@ -7,7 +7,8 @@ use porter_core::capability::{PimCap, PimTransport};
 use porter_core::{
     Claim, EndpointUrl, Family, LoginName, Offer, Provenance, ServiceEndpoint, Subject, Tls,
 };
-use porter_http::{Http, HttpRequest, HttpResponse, Method};
+use porter_http::http::Method;
+use porter_http::{HeaderText, Http, HttpResponse, request_to};
 use porter_provider::DomainName;
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -52,7 +53,7 @@ pub fn well_known_found(
     login: &LoginName,
 ) -> Result<Found, DiscoverFault> {
     let (_, family) = well_known_of(kind).ok_or(DiscoverFault::NoServers)?;
-    let url = match response.status.0 {
+    let url = match response.status().as_u16() {
         301 | 302 | 303 | 307 | 308 => redirect_target(requested, response.header("location"))?,
         200..=299 | 401 => requested.clone(),
         404 | 410 => return Err(DiscoverFault::NoServers),
@@ -83,7 +84,7 @@ pub async fn discover_well_known<H: Http>(
 ) -> Result<Found, DiscoverFault> {
     let mut fault = DiscoverFault::NoServers;
     for url in well_known_urls(domain, kind) {
-        let Ok(request) = HttpRequest::to(Method::Get, &url) else {
+        let Ok(Ok(request)) = request_to(Method::GET, &url).map(|r| r.body(Vec::new())) else {
             continue;
         };
         match http.send(request).await {

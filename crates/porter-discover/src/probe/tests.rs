@@ -32,7 +32,7 @@ fn ollama() -> Table {
             respond(200, include_str!("../../fixtures/ollama-tags.json")),
         )
         .with(
-            Method::Post,
+            Method::POST,
             &url(11434, "/api/show"),
             respond(200, include_str!("../../fixtures/ollama-show-llama.json")),
         )

@@ -7,7 +7,8 @@
 
 use porter_core::WebUrl;
 use porter_core::stream::{ByteStream, duplex};
-use porter_http::{Http, HttpError, HttpRequest, Method};
+use porter_http::http::Method;
+use porter_http::{Http, HttpError, HttpRequest, request};
 use std::sync::Mutex;
 use std::time::Duration;
 use storage_webdav::{Dial, StreamHttp, StreamLimits};
@@ -42,10 +43,10 @@ impl Dial for Once {
 }
 
 fn get() -> HttpRequest {
-    HttpRequest::new(
-        Method::Get,
-        WebUrl::parse("http://127.0.0.1:9/dav/").expect("url"),
-    )
+    let url = WebUrl::parse("http://127.0.0.1:9/dav/").expect("url");
+    request(Method::GET, &url)
+        .body(Vec::new())
+        .expect("request")
 }
 
 const IDLE: Duration = Duration::from_millis(200);
@@ -115,7 +116,7 @@ async fn a_slow_server_that_keeps_sending_is_not_cut_off_by_the_idle_time() {
         std::future::pending::<()>().await;
     });
     let got = http.send(get()).await.expect("answered");
-    assert_eq!(got.body, b"abcdef");
+    assert_eq!(got.body(), b"abcdef");
     slow.abort();
 }
 

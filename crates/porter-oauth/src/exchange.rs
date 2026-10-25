@@ -222,7 +222,7 @@ pub async fn revoke<H: Http>(
         return Ok(());
     };
     let response = form::send_form(http, url, &[("token", token.expose())]).await?;
-    match response.status.0 {
+    match response.status().as_u16() {
         200..=299 => Ok(()),
         401 => Err(ExchangeFault::Refused),
         429 | 500..=599 => Err(ExchangeFault::Unreachable),
@@ -256,9 +256,9 @@ pub(crate) fn read_tokens(response: &HttpResponse) -> Result<TokenResponse, Exch
 pub(crate) fn read_tokens_detailed(
     response: &HttpResponse,
 ) -> Result<TokenResponse, ExchangeFailure> {
-    let fault = match response.status.0 {
+    let fault = match response.status().as_u16() {
         200..=299 => {
-            return serde_json::from_slice(&response.body)
+            return serde_json::from_slice(response.body())
                 .map_err(|_| ExchangeFault::Unreadable.into());
         }
         401 => ExchangeFault::Refused,
@@ -383,7 +383,7 @@ mod tests {
         );
         let seen = http.seen.lock().expect("lock");
         assert_eq!(
-            seen[0].url.as_str(),
+            seen[0].uri().to_string(),
             Issuer::Google.endpoints().token.as_str()
         );
     }

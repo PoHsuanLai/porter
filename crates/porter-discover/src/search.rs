@@ -21,7 +21,8 @@ use crate::found::{DiscoverFault, Found, SearchOptions, Source, StartTlsOnly};
 use crate::mx::{ProviderLead, ispdb_candidates, lookup_mx, provider_leads};
 use crate::srv::{found_from_srv_with, lookup_srv};
 use porter_core::{Tls, WebUrl};
-use porter_http::{Http, HttpError, HttpRequest, Method};
+use porter_http::http::Method;
+use porter_http::{Http, HttpError, request};
 use porter_provider::{DomainMatch, ProviderSet};
 use std::fmt;
 
@@ -249,21 +250,20 @@ async fn document<H: Http>(
 
 /// GETs a document, at most [`MAX_DOCUMENT`] of it.
 async fn fetch<H: Http>(http: &H, url: &WebUrl) -> Result<String, Miss> {
-    let response = http
-        .send(HttpRequest::new(Method::Get, url.clone()))
-        .await
-        .map_err(|e| match e {
-            HttpError::Unreachable
-            | HttpError::Tls
-            | HttpError::TimedOut
-            | HttpError::NotGranted => Miss::Unreachable,
-            HttpError::TooLarge | HttpError::Malformed => Miss::Malformed,
-        })?;
-    match response.status.0 {
+    let asked = request(Method::GET, url)
+        .body(Vec::new())
+        .map_err(|_| Miss::Malformed)?;
+    let response = http.send(asked).await.map_err(|e| match e {
+        HttpError::Unreachable | HttpError::Tls | HttpError::TimedOut | HttpError::NotGranted => {
+            Miss::Unreachable
+        }
+        HttpError::TooLarge | HttpError::Malformed => Miss::Malformed,
+    })?;
+    match response.status().as_u16() {
         404 | 410 => Err(Miss::Absent),
-        _ if !response.status.is_success() => Err(Miss::Malformed),
-        _ if response.body.len() > MAX_DOCUMENT => Err(Miss::Malformed),
-        _ => String::from_utf8(response.body).map_err(|_| Miss::Malformed),
+        _ if !response.status().is_success() => Err(Miss::Malformed),
+        _ if response.body().len() > MAX_DOCUMENT => Err(Miss::Malformed),
+        _ => String::from_utf8(response.into_body()).map_err(|_| Miss::Malformed),
     }
 }
 

@@ -8,7 +8,9 @@ use crate::addr::names_of;
 use crate::json::DriveItem;
 use crate::refuse::{refused, write_error, write_unreached};
 use crate::replica::GraphReplica;
-use porter_http::{Http, HttpRequest, HttpResponse, Method};
+use porter_http::http::Method;
+use porter_http::http::header::{ACCEPT, CONTENT_TYPE, HeaderValue};
+use porter_http::{Http, HttpRequest, HttpResponse, request};
 use porter_sync::{
     BaseVersion, Conflict, PutItem, PutRefused, PutTarget, RemoteId, RemoteSide, RemoteVersion,
     RetryAfter,
@@ -61,9 +63,12 @@ impl<H: Http> GraphReplica<H> {
             .addr
             .item(&item.0, None, "")
             .ok_or(PutRefused::Forbidden)?;
-        let request = HttpRequest::new(Method::Delete, url).with_header("If-Match", seen.0.clone());
-        let response = self.write_send(request).await?;
-        match response.status.0 {
+        let delete = request(Method::DELETE, &url)
+            .header("If-Match", seen.0.as_str())
+            .body(Vec::new())
+            .map_err(|e| write_unreached(e.into()))?;
+        let response = self.write_send(delete).await?;
+        match response.status().as_u16() {
             200 | 204 => {
                 self.state().folders.remove_file(item);
                 Ok(RemoteVersion(DELETED.to_owned()))
@@ -75,12 +80,12 @@ impl<H: Http> GraphReplica<H> {
 
     pub(crate) async fn write_send(
         &self,
-        request: HttpRequest,
+        mut request: HttpRequest,
     ) -> Result<HttpResponse, PutRefused> {
-        self.http
-            .send(request.with_header("Accept", "application/json"))
-            .await
-            .map_err(write_unreached)
+        request
+            .headers_mut()
+            .append(ACCEPT, HeaderValue::from_static("application/json"));
+        self.http.send(request).await.map_err(write_unreached)
     }
 
     /// One PUT of the whole content.
@@ -98,14 +103,14 @@ impl<H: Http> GraphReplica<H> {
             ),
             Target::Existing(id) => self.addr.item(&id.0, Some("content"), ""),
         };
-        let request = HttpRequest::new(Method::Put, url.ok_or(PutRefused::Forbidden)?)
-            .with_header("Content-Type", "application/octet-stream")
-            .with_body(bytes);
-        let request = match guard {
-            Some(tag) => request.with_header("If-Match", tag),
-            None => request,
+        let put = request(Method::PUT, &url.ok_or(PutRefused::Forbidden)?)
+            .header(CONTENT_TYPE, "application/octet-stream");
+        let put = match guard {
+            Some(tag) => put.header("If-Match", tag),
+            None => put,
         };
-        self.write_send(request).await
+        let put = put.body(bytes).map_err(|e| write_unreached(e.into()))?;
+        self.write_send(put).await
     }
 
     /// What a finished write's answer comes to.
@@ -115,9 +120,9 @@ impl<H: Http> GraphReplica<H> {
         target: &Target,
         base: &BaseVersion,
     ) -> Written {
-        match response.status.0 {
+        match response.status().as_u16() {
             200 | 201 => {
-                let item: DriveItem = serde_json::from_slice(&response.body)
+                let item: DriveItem = serde_json::from_slice(response.body())
                     .map_err(|_| PutRefused::Transient(RetryAfter(30)))?;
                 if let Some(parent) = item.parent_id() {
                     self.state()

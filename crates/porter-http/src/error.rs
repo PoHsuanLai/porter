@@ -24,3 +24,11 @@ pub enum HttpError {
     #[error("access not given yet")]
     NotGranted,
 }
+
+impl From<http::Error> for HttpError {
+    /// A request the `http` crate would not build (a header value with a line break, a URL it
+    /// does not take) is never sent: `Malformed`, as a reply that is not HTTP is.
+    fn from(_: http::Error) -> Self {
+        HttpError::Malformed
+    }
+}

@@ -12,7 +12,9 @@ use super::apis_of;
 use super::scopes::Granted;
 use porter_core::capability::{Capability, CapabilityKind};
 use porter_core::{AbsentReason, Claim, EndpointUrl, Family, Offer, Provenance, Subject, WebUrl};
-use porter_http::{Http, HttpRequest, HttpResponse, Method};
+use porter_http::http::Method;
+use porter_http::http::header::{ACCEPT, AUTHORIZATION};
+use porter_http::{Http, HttpResponse, SensitiveHeader, request};
 use porter_oauth::MailRights;
 use porter_provider::{ProviderError, ProviderSpec};
 use serde::Deserialize;
@@ -29,8 +31,10 @@ pub(super) async fn whoami<H: Http>(
     token: &str,
 ) -> Result<String, ProviderError> {
     let answer = get(http, userinfo.as_str(), token).await?;
-    let info: UserInfo = match answer.status.0 {
-        200..=299 => serde_json::from_slice(&answer.body).map_err(|_| ProviderError::Unreadable)?,
+    let info: UserInfo = match answer.status().as_u16() {
+        200..=299 => {
+            serde_json::from_slice(answer.body()).map_err(|_| ProviderError::Unreadable)?
+        }
         status => return Err(fault(status)),
     };
     info.email
@@ -134,7 +138,7 @@ async fn claim_for<H: Http>(
         token,
     )
     .await?;
-    Ok(match answer.status.0 {
+    Ok(match answer.status().as_u16() {
         200..=299 => claim(present(), Provenance::Probed),
         403 => claim(absent(refusal_reason(&answer, address)), Provenance::Probed),
         404 => claim(absent(AbsentReason::NotOnServer), Provenance::Probed),
@@ -144,7 +148,7 @@ async fn claim_for<H: Http>(
 
 /// Why Google said 403, from what it wrote.
 fn refusal_reason(answer: &HttpResponse, address: &str) -> AbsentReason {
-    let body = String::from_utf8_lossy(&answer.body);
+    let body = String::from_utf8_lossy(answer.body());
     if body.contains("accessNotConfigured") || body.contains("SERVICE_DISABLED") {
         return AbsentReason::UnverifiedBuild;
     }
@@ -166,9 +170,11 @@ pub(super) fn fault(status: u16) -> ProviderError {
 
 async fn get<H: Http>(http: &H, url: &str, token: &str) -> Result<HttpResponse, ProviderError> {
     let url = WebUrl::parse(url).map_err(|_| ProviderError::Unreadable)?;
-    let request = HttpRequest::new(Method::Get, url)
-        .with_header("Authorization", format!("Bearer {token}"))
-        .with_header("Accept", "application/json");
+    let request = request(Method::GET, &url)
+        .sensitive_header(AUTHORIZATION, &format!("Bearer {token}"))
+        .header(ACCEPT, "application/json")
+        .body(Vec::new())
+        .map_err(|_| ProviderError::Unreachable)?;
     http.send(request)
         .await
         .map_err(|_| ProviderError::Unreachable)
@@ -180,10 +186,11 @@ mod tests {
 
     #[test]
     fn a_403_is_told_apart_by_what_google_wrote_and_who_asked() {
-        let body = |text: &str| HttpResponse {
-            status: porter_http::Status(403),
-            headers: Vec::new(),
-            body: text.as_bytes().to_vec(),
+        let body = |text: &str| -> HttpResponse {
+            porter_http::http::Response::builder()
+                .status(403)
+                .body(text.as_bytes().to_vec())
+                .expect("response")
         };
         const CASES: &[(&str, &str, &str, AbsentReason)] = &[
             (

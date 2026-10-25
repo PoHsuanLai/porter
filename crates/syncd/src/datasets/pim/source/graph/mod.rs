@@ -26,7 +26,8 @@ use crate::datasets::pim::relay::{PimDial, pim_http};
 use json::{Calendar, CalendarPage, Event, EventPage};
 use porter_client::{Accounts, Transport};
 use porter_core::{Bytes, EndpointUrl, GrantId, WebUrl};
-use porter_http::{Http, HttpError, HttpRequest, HttpResponse, Method};
+use porter_http::http::Method;
+use porter_http::{HeaderText, Http, HttpError, HttpResponse, request};
 use porter_sync::{
     ItemKind, ItemPath, More, RemoteId, RemoteItem, RemoteVersion, ReplicaError, RetryAfter,
     Tombstone,
@@ -166,7 +167,7 @@ pub(super) fn retry_after(response: &HttpResponse) -> RetryAfter {
 }
 
 fn read_error(response: &HttpResponse) -> ReplicaError {
-    match response.status.0 {
+    match response.status().as_u16() {
         401 | 403 => ReplicaError::Unauthorized,
         404 => ReplicaError::Gone,
         _ => ReplicaError::Transient(retry_after(response)),
@@ -183,11 +184,11 @@ pub(super) async fn get<H: Http>(
     prefer: Option<&str>,
 ) -> Result<HttpResponse, HttpError> {
     let url = WebUrl::parse(url).map_err(|_| HttpError::Unreachable)?;
-    let mut request = HttpRequest::new(Method::Get, url).with_header("Accept", "application/json");
+    let mut builder = request(Method::GET, &url).header("Accept", "application/json");
     if let Some(prefer) = prefer {
-        request = request.with_header("Prefer", prefer);
+        builder = builder.header("Prefer", prefer);
     }
-    http.send(request).await
+    http.send(builder.body(Vec::new())?).await
 }
 
 impl<T: Transport + 'static> PimSource for GraphCalendarSource<T> {
@@ -208,13 +209,13 @@ impl<T: Transport + 'static> PimSource for GraphCalendarSource<T> {
                 HttpError::Unreachable | HttpError::TimedOut => DiscoverError::Unreachable,
                 _ => DiscoverError::Unreadable,
             })?;
-            match response.status.0 {
+            match response.status().as_u16() {
                 200 => {}
                 401 | 403 => return Err(DiscoverError::Unauthorized),
                 other => return Err(DiscoverError::Status(other)),
             }
             let page: CalendarPage =
-                serde_json::from_slice(&response.body).map_err(|_| DiscoverError::Unreadable)?;
+                serde_json::from_slice(response.body()).map_err(|_| DiscoverError::Unreadable)?;
             for calendar in &page.value {
                 let own = format!("{base}/v1.0/me/calendars/{}/", encode(&calendar.id));
                 found.push(Found {
@@ -303,13 +304,13 @@ impl<T: Transport + 'static> Feed for GraphCalendarFeed<T> {
         let response = get(&*self.http, &url, Some(&prefer))
             .await
             .map_err(unreached)?;
-        match (response.status.0, resuming) {
+        match (response.status().as_u16(), resuming) {
             (200, _) => {}
             // `syncStateNotFound` and its kin: the server dropped what the link stands for.
             (410, true) => return Err(ReplicaError::AnchorExpired),
             _ => return Err(read_error(&response)),
         }
-        let page: EventPage = serde_json::from_slice(&response.body)
+        let page: EventPage = serde_json::from_slice(response.body())
             .map_err(|_| ReplicaError::Transient(RetryAfter(30)))?;
         let (next, more) = match (page.next, page.delta) {
             (Some(next), _) => (next, More::More),
@@ -341,10 +342,10 @@ impl<T: Transport + 'static> Feed for GraphCalendarFeed<T> {
         let response = get(&*self.http, &url, Some(prefer))
             .await
             .map_err(unreached)?;
-        if response.status.0 != 200 {
+        if response.status().as_u16() != 200 {
             return Err(read_error(&response));
         }
-        let event: Event = serde_json::from_slice(&response.body)
+        let event: Event = serde_json::from_slice(response.body())
             .map_err(|_| ReplicaError::Transient(RetryAfter(30)))?;
         convert::to_ics(&event)
             .map(String::into_bytes)

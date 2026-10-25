@@ -9,7 +9,9 @@
 use crate::progress::{CancelToken, Meter};
 use porter_core::{UrlScheme, WebUrl};
 use porter_engines::{Artifact, file_digest, hex};
-use porter_http::{BodySink, Flow, Header, HttpError, HttpRequest, HyperHttp, Method, Status};
+use porter_http::http::header::RANGE;
+use porter_http::http::{HeaderMap, Method, StatusCode};
+use porter_http::{BodySink, Flow, HeaderText, HttpError, HyperHttp, request};
 use sha2::{Digest, Sha256};
 use std::ffi::OsString;
 use std::fs::{File, OpenOptions};
@@ -133,19 +135,22 @@ impl Fetcher {
             if web.origin().scheme != UrlScheme::Https {
                 return Err(FetchError::BadAddress);
             }
-            let mut request = HttpRequest::new(Method::Get, web.clone());
+            let mut asked = request(Method::GET, &web);
             if sink.have > 0 {
-                request = request.with_header("Range", format!("bytes={}-", sink.have));
+                asked = asked.header(RANGE, format!("bytes={}-", sink.have));
             }
+            let asked = asked
+                .body(Vec::new())
+                .map_err(|e| FetchError::Network(HttpError::from(e)))?;
             let sent = tokio::select! {
                 () = cancel.cancelled() => None,
-                sent = self.http.stream(request, self.idle, &mut sink) => Some(sent),
+                sent = self.http.stream(asked, self.idle, &mut sink) => Some(sent),
             };
             let Some(sent) = sent else {
                 return Err(FetchError::Cancelled);
             };
             let status = sent.map_err(FetchError::Network)?;
-            match (status.0, sink.redirect.take()) {
+            match (status.as_u16(), sink.redirect.take()) {
                 (301 | 302 | 303 | 307 | 308, Some(location)) => {
                     url = resolve(&web, &location)?;
                 }
@@ -280,18 +285,11 @@ impl Sink {
     }
 }
 
-fn header<'a>(headers: &'a [Header], name: &str) -> Option<&'a str> {
-    headers
-        .iter()
-        .find(|header| header.name.as_str() == name)
-        .map(|header| header.value.0.as_str())
-}
-
 impl BodySink for Sink {
-    fn head(&mut self, status: Status, headers: &[Header]) -> Flow {
-        match status.0 {
+    fn head(&mut self, status: StatusCode, headers: &HeaderMap) -> Flow {
+        match status.as_u16() {
             301 | 302 | 303 | 307 | 308 => {
-                self.redirect = header(headers, "location").map(str::to_owned);
+                self.redirect = headers.header("location").map(str::to_owned);
                 Flow::Stop
             }
             200 => {
@@ -305,7 +303,8 @@ impl BodySink for Sink {
             }
             206 => {
                 let wanted = format!("bytes {}-", self.have);
-                self.misplaced = !header(headers, "content-range")
+                self.misplaced = !headers
+                    .header("content-range")
                     .is_some_and(|range| range.starts_with(&wanted));
                 self.writing = !self.misplaced;
                 if self.writing {

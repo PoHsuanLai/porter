@@ -108,7 +108,7 @@ struct Listing<I> {
 
 /// Whether an error body says the caller is going too fast (Google answers some of these `403`).
 pub(super) fn rate_limited(response: &HttpResponse) -> bool {
-    let body = String::from_utf8_lossy(&response.body);
+    let body = String::from_utf8_lossy(response.body());
     [
         "rateLimitExceeded",
         "userRateLimitExceeded",
@@ -120,7 +120,7 @@ pub(super) fn rate_limited(response: &HttpResponse) -> bool {
 
 /// What a failed read means to a replica.
 pub(super) fn read_error(response: &HttpResponse) -> ReplicaError {
-    match response.status.0 {
+    match response.status().as_u16() {
         403 if rate_limited(response) => ReplicaError::Transient(retry_after(response)),
         401 | 403 => ReplicaError::Unauthorized,
         404 => ReplicaError::Gone,
@@ -145,14 +145,14 @@ pub(super) async fn list_all<T: Transport, I: DeserializeOwned>(
             HttpError::Unreachable | HttpError::TimedOut => DiscoverError::Unreachable,
             _ => DiscoverError::Unreadable,
         })?;
-        match response.status.0 {
+        match response.status().as_u16() {
             200 => {}
             403 if rate_limited(&response) => return Err(DiscoverError::Status(429)),
             401 | 403 => return Err(DiscoverError::Unauthorized),
             other => return Err(DiscoverError::Status(other)),
         }
         let page: Listing<I> =
-            serde_json::from_slice(&response.body).map_err(|_| DiscoverError::Unreadable)?;
+            serde_json::from_slice(response.body()).map_err(|_| DiscoverError::Unreadable)?;
         all.extend(page.items);
         match page.next.filter(|next| !next.is_empty()) {
             Some(next) => token = Some(next),
@@ -183,14 +183,14 @@ pub(super) fn id_in(url: &WebUrl) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_http::{Header, Status};
+    use porter_http::http::Response;
 
     fn response(status: u16, body: &str) -> HttpResponse {
-        HttpResponse {
-            status: Status(status),
-            headers: vec![Header::new("Retry-After", "7")],
-            body: body.as_bytes().to_vec(),
-        }
+        Response::builder()
+            .status(status)
+            .header("Retry-After", "7")
+            .body(body.as_bytes().to_vec())
+            .expect("response")
     }
 
     #[test]

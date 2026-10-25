@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::testing::{ADDRESS, Table, name, respond};
-use porter_http::{Header, Status};
+use porter_http::http::Response;
 
 fn login() -> LoginName {
     LoginName(ADDRESS.to_owned())
@@ -13,11 +13,11 @@ fn url(text: &str) -> EndpointUrl {
 }
 
 fn redirect(status: u16, location: &str) -> HttpResponse {
-    HttpResponse {
-        status: Status(status),
-        headers: vec![Header::new("Location", location)],
-        body: Vec::new(),
-    }
+    Response::builder()
+        .status(status)
+        .header("Location", location)
+        .body(Vec::new())
+        .expect("response")
 }
 
 #[test]

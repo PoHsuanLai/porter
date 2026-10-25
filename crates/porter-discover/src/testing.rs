@@ -1,7 +1,8 @@
 //! Fakes of the two seams, and the document builders the tests share.
 
 use crate::dns::{Dns, DnsFault, MxRecord, SrvRecord};
-use porter_http::{Http, HttpError, HttpRequest, HttpResponse, Method, Status};
+use porter_http::http::{Method, Response};
+use porter_http::{Http, HttpError, HttpRequest, HttpResponse};
 use porter_provider::DomainName;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -71,11 +72,10 @@ pub(crate) fn mx(preference: u16, host: &str) -> MxRecord {
 }
 
 pub(crate) fn respond(status: u16, body: &str) -> HttpResponse {
-    HttpResponse {
-        status: Status(status),
-        headers: Vec::new(),
-        body: body.as_bytes().to_vec(),
-    }
+    Response::builder()
+        .status(status)
+        .body(body.as_bytes().to_vec())
+        .expect("response")
 }
 
 /// An `Http` answering from a table keyed by `METHOD url`; a request not in it is unreachable.
@@ -88,13 +88,12 @@ pub(crate) struct Table {
 
 impl Table {
     pub(crate) fn with(mut self, method: Method, url: &str, response: HttpResponse) -> Self {
-        self.answers
-            .insert(format!("{} {url}", method.token()), response);
+        self.answers.insert(format!("{method} {url}"), response);
         self
     }
 
     pub(crate) fn get(self, url: &str, response: HttpResponse) -> Self {
-        self.with(Method::Get, url, response)
+        self.with(Method::GET, url, response)
     }
 
     pub(crate) fn seen(&self) -> Vec<String> {
@@ -104,7 +103,7 @@ impl Table {
 
 impl Http for Table {
     async fn send(&self, request: HttpRequest) -> Result<HttpResponse, HttpError> {
-        let key = format!("{} {}", request.method.token(), request.url);
+        let key = format!("{} {}", request.method(), request.uri());
         self.seen.lock().expect("seen").push(key.clone());
         self.answers
             .get(&key)

@@ -392,11 +392,9 @@ impl porter_http::Http for NothingPublished {
         &self,
         _request: porter_http::HttpRequest,
     ) -> Result<porter_http::HttpResponse, porter_http::HttpError> {
-        Ok(porter_http::HttpResponse {
-            status: porter_http::Status(404),
-            headers: vec![],
-            body: Vec::new(),
-        })
+        let mut response = porter_http::HttpResponse::new(Vec::new());
+        *response.status_mut() = porter_http::http::StatusCode::NOT_FOUND;
+        Ok(response)
     }
 }
 

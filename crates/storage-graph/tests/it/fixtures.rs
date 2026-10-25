@@ -3,7 +3,8 @@
 //! are written from Microsoft's documentation, not recorded from a live account.
 
 use porter_core::{Bytes, UnixSeconds, WebUrl};
-use porter_http::{Header, Http, HttpError, HttpRequest, HttpResponse, Status};
+use porter_http::http::Response;
+use porter_http::{HeaderText, Http, HttpError, HttpRequest, HttpResponse};
 use porter_sync::{
     Anchor, BaseVersion, Blob, Change, ContentHash, Cursor, ItemKind, ItemPath, More, PutItem,
     PutTarget, Quota, RemoteId, RemoteItem, RemoteVersion, Replica, ReplicaError, RetryAfter,
@@ -25,11 +26,12 @@ fn fixture(name: &str) -> String {
 }
 
 fn answer(status: u16, body: impl Into<Vec<u8>>) -> HttpResponse {
-    HttpResponse {
-        status: Status(status),
-        headers: vec![Header::new("Content-Type", "application/json")],
-        body: body.into(),
-    }
+    let body: Vec<u8> = body.into();
+    Response::builder()
+        .status(status)
+        .header("Content-Type", "application/json")
+        .body(body)
+        .expect("response")
 }
 
 /// Answers by `METHOD url`; remembers what it was sent.
@@ -55,7 +57,7 @@ impl Script {
     fn urls(&self) -> Vec<String> {
         self.sent()
             .iter()
-            .map(|r| format!("{} {}", r.method.token(), r.url.as_str()))
+            .map(|r| format!("{} {}", r.method(), r.uri()))
             .collect()
     }
 }
@@ -65,7 +67,7 @@ impl Http for Script {
         &self,
         request: HttpRequest,
     ) -> impl Future<Output = Result<HttpResponse, HttpError>> + Send {
-        let key = format!("{} {}", request.method.token(), request.url.as_str());
+        let key = format!("{} {}", request.method(), request.uri());
         self.sent.lock().expect("lock").push(request);
         let found = self.answers.lock().expect("lock").get(&key).cloned();
         async move { found.ok_or(HttpError::Unreachable) }
@@ -159,7 +161,7 @@ async fn a_delta_in_two_pages_is_read_as_the_documented_answers_have_them() {
         script
             .sent()
             .iter()
-            .all(|r| r.headers.iter().all(|h| h.name.as_str() != "authorization"))
+            .all(|r| !r.headers().contains_key("authorization"))
     );
 }
 
@@ -232,11 +234,11 @@ async fn a_resync_is_an_expired_anchor_and_a_link_from_elsewhere_is_one_without_
 
 #[tokio::test]
 async fn a_throttled_read_says_when_to_come_back_and_a_refused_token_is_unauthorized() {
-    let throttled = HttpResponse {
-        status: Status(429),
-        headers: vec![Header::new("Retry-After", "17")],
-        body: br#"{"error":{"code":"activityLimitReached"}}"#.to_vec(),
-    };
+    let throttled = Response::builder()
+        .status(429)
+        .header("Retry-After", "17")
+        .body(br#"{"error":{"code":"activityLimitReached"}}"#.to_vec())
+        .expect("response");
     let script = Script::default()
         .on(&format!("GET {DRIVE}"), throttled)
         .on(&format!("GET {APPROOT}"), answer(401, "{}"));
@@ -305,15 +307,10 @@ async fn a_session_upload_goes_to_the_url_it_names_in_ranges_and_conditions_the_
     let sent = script.sent();
     let create = &sent[0];
     assert_eq!(
-        String::from_utf8_lossy(&create.body),
+        String::from_utf8_lossy(create.body()),
         r#"{"item":{"@microsoft.graph.conflictBehavior":"fail"}}"#
     );
     let chunk = &sent[1];
-    let range = chunk
-        .headers
-        .iter()
-        .find(|h| h.name.as_str() == "content-range")
-        .map(|h| h.value.0.as_str());
-    assert_eq!(range, Some("bytes 0-4/5"));
-    assert_eq!(chunk.body, b"hello");
+    assert_eq!(chunk.header("content-range"), Some("bytes 0-4/5"));
+    assert_eq!(chunk.body(), b"hello");
 }

@@ -11,7 +11,7 @@ use super::PimKind;
 use dav_proto::{Depth, Multistatus, names, parse_multistatus};
 use porter_core::WebUrl;
 use porter_dav::{Home, collections, current_user_principal, home_set, propfind};
-use porter_http::{Http, HttpError, HttpRequest, Method};
+use porter_http::{Http, HttpError};
 
 /// Apple's calendar colour property, which Nextcloud, iCloud and Radicale all serve.
 pub const CALENDAR_COLOR: &str = "http://apple.com/ns/ical/calendar-color";
@@ -121,14 +121,14 @@ async fn ask<H: Http>(
     depth: Depth,
     props: &[&str],
 ) -> Result<Multistatus, DiscoverError> {
-    let request: HttpRequest = propfind(url, depth, props);
-    debug_assert_eq!(request.method, Method::Propfind);
-    let response = http.send(request).await.map_err(|e| match e {
+    let fault = |e| match e {
         HttpError::Unreachable | HttpError::TimedOut => DiscoverError::Unreachable,
         _ => DiscoverError::Unreadable,
-    })?;
-    match response.status.0 {
-        207 => parse_multistatus(&String::from_utf8_lossy(&response.body))
+    };
+    let request = propfind(url, depth, props).map_err(fault)?;
+    let response = http.send(request).await.map_err(fault)?;
+    match response.status().as_u16() {
+        207 => parse_multistatus(&String::from_utf8_lossy(response.body()))
             .map_err(|_| DiscoverError::Unreadable),
         401 | 403 => Err(DiscoverError::Unauthorized),
         other => Err(DiscoverError::Status(other)),
@@ -213,7 +213,8 @@ pub async fn discover<H: Http>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_http::{HttpResponse, Status};
+    use porter_http::http::Response;
+    use porter_http::{HttpRequest, HttpResponse};
     use std::sync::Mutex;
 
     /// Answers each PROPFIND from a table of `(path, body)`, remembering what was asked.
@@ -224,18 +225,17 @@ mod tests {
 
     impl Http for Script {
         async fn send(&self, request: HttpRequest) -> Result<HttpResponse, HttpError> {
-            let path = request.url.path().to_owned();
+            let path = request.uri().path().to_owned();
             self.asked.lock().expect("lock").push(path.clone());
             let (_, status, body) = self
                 .answers
                 .iter()
                 .find(|(p, _, _)| *p == path)
                 .ok_or(HttpError::Unreachable)?;
-            Ok(HttpResponse {
-                status: Status(*status),
-                headers: Vec::new(),
-                body: body.clone().into_bytes(),
-            })
+            Ok(Response::builder()
+                .status(*status)
+                .body(body.clone().into_bytes())
+                .expect("response"))
         }
     }
 

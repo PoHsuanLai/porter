@@ -2,7 +2,8 @@
 //! the replica, with a scripted HTTP seam in place of a server: no network, no socket.
 
 use porter_core::{Bytes, UnixSeconds, WebUrl};
-use porter_http::{Header, Http, HttpError, HttpRequest, HttpResponse, Status};
+use porter_http::http::Response;
+use porter_http::{Http, HttpError, HttpRequest, HttpResponse};
 use porter_sync::{
     Change, Cursor, Quota, RemoteId, RemoteVersion, Replica, ReplicaError, RetryAfter,
 };
@@ -17,11 +18,11 @@ fn fixture(name: &str) -> Vec<u8> {
 }
 
 fn answer(status: u16, body: Vec<u8>) -> HttpResponse {
-    HttpResponse {
-        status: Status(status),
-        headers: vec![Header::new("Content-Type", "application/xml")],
-        body,
-    }
+    Response::builder()
+        .status(status)
+        .header("Content-Type", "application/xml")
+        .body(body)
+        .expect("response")
 }
 
 /// Answers by `METHOD target`, in the order given for a key and then the last one again;
@@ -53,7 +54,7 @@ impl Http for Script {
         &self,
         request: HttpRequest,
     ) -> impl Future<Output = Result<HttpResponse, HttpError>> + Send {
-        let key = format!("{} {}", request.method.token(), request.url.path());
+        let key = format!("{} {}", request.method(), request.uri().path());
         self.sent.lock().expect("lock").push(request);
         let found = self
             .answers
@@ -143,7 +144,7 @@ async fn a_sabre_sync_report_gives_changes_removals_and_the_next_token() {
     // expired and the engine lists again.
     assert_eq!(page, Err(ReplicaError::AnchorExpired));
     let sent = script.sent();
-    let body = String::from_utf8(sent[0].body.clone()).expect("utf8");
+    let body = String::from_utf8(sent[0].body().clone()).expect("utf8");
     assert!(body.contains("http://sabre.test/sync/41"), "{body}");
     assert!(body.contains("infinite"));
 }
@@ -200,7 +201,7 @@ async fn a_truncated_report_continues_from_its_token_instead_of_expiring() {
     );
     let sent = script.sent();
     assert_eq!(sent.len(), 2);
-    let body = String::from_utf8(sent[1].body.clone()).expect("utf8");
+    let body = String::from_utf8(sent[1].body().clone()).expect("utf8");
     assert!(body.contains("http://sabre.test/sync/7"), "{body}");
 }
 
@@ -260,11 +261,11 @@ async fn fetch_and_write_statuses_map_to_the_contract() {
         replica(past_end).fetch(&id, span).await,
         Ok(porter_sync::Blob(vec![]))
     );
-    let busy = HttpResponse {
-        status: Status(503),
-        headers: vec![Header::new("Retry-After", "17")],
-        body: vec![],
-    };
+    let busy = Response::builder()
+        .status(503)
+        .header("Retry-After", "17")
+        .body(vec![])
+        .expect("response");
     let script = Script::default()
         .on(&key("GET"), busy.clone())
         .on(&key("PUT"), busy);

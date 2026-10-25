@@ -6,7 +6,9 @@
 
 use crate::exchange::{ExchangeFault, IssuerSays, SAYS_MAX_CHARS};
 use porter_core::EndpointUrl;
-use porter_http::{Http, HttpRequest, HttpResponse, Method};
+use porter_http::http::Method;
+use porter_http::http::header::{ACCEPT, CONTENT_TYPE};
+use porter_http::{Http, HttpResponse, request_to};
 
 /// Percent-encodes everything but the RFC 3986 unreserved set.
 pub(crate) fn encode(text: &str) -> String {
@@ -74,11 +76,12 @@ pub(crate) async fn send_form<H: Http>(
     url: &EndpointUrl,
     pairs: &[(&str, &str)],
 ) -> Result<HttpResponse, ExchangeFault> {
-    let request = HttpRequest::to(Method::Post, url)
+    let request = request_to(Method::POST, url)
         .map_err(|_| ExchangeFault::Unreachable)?
-        .with_header("Content-Type", "application/x-www-form-urlencoded")
-        .with_header("Accept", "application/json")
-        .with_body(body(pairs));
+        .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .header(ACCEPT, "application/json")
+        .body(body(pairs).into_bytes())
+        .map_err(|_| ExchangeFault::Unreachable)?;
     http.send(request)
         .await
         .map_err(|_| ExchangeFault::Unreachable)
@@ -86,7 +89,7 @@ pub(crate) async fn send_form<H: Http>(
 
 /// The `error` of an OAuth error body, if the body is one.
 pub(crate) fn oauth_error(response: &HttpResponse) -> Option<String> {
-    serde_json::from_slice::<serde_json::Value>(&response.body)
+    serde_json::from_slice::<serde_json::Value>(response.body())
         .ok()?
         .get("error")?
         .as_str()
@@ -108,7 +111,7 @@ fn tidy(text: &str) -> Option<String> {
 /// What an OAuth error body says (`error`, `error_description`), tidied; `None` when the body is
 /// not one or says nothing.
 pub(crate) fn issuer_says(response: &HttpResponse) -> Option<IssuerSays> {
-    let body = serde_json::from_slice::<serde_json::Value>(&response.body).ok()?;
+    let body = serde_json::from_slice::<serde_json::Value>(response.body()).ok()?;
     let field = |name: &str| body.get(name)?.as_str().and_then(tidy);
     let says = IssuerSays {
         error: field("error"),

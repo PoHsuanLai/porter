@@ -6,7 +6,8 @@ use porter_core::stream::ByteStream;
 use porter_core::{UnixSeconds, WebUrl};
 use porter_fake_servers::dav::{Behaviour, Propagation, SyncCollection};
 use porter_fake_servers::{DavHandle, FakeDav, Running};
-use porter_http::{Header, Http, HttpError, HttpRequest, HttpResponse};
+use porter_http::http::header::{AUTHORIZATION, HeaderValue};
+use porter_http::{Http, HttpError, HttpRequest, HttpResponse};
 use std::future::Future;
 use std::io;
 use storage_webdav::{Clock, Dial, StreamHttp, StreamLimits, WebDavReplica};
@@ -61,9 +62,8 @@ impl<H: Http> Http for Basic<H> {
     ) -> impl Future<Output = Result<HttpResponse, HttpError>> + Send {
         use base64::Engine;
         let token = base64::engine::general_purpose::STANDARD.encode(format!("{USER}:{PASSWORD}"));
-        request
-            .headers
-            .push(Header::new("Authorization", format!("Basic {token}")));
+        let value = HeaderValue::try_from(format!("Basic {token}")).expect("a header value");
+        request.headers_mut().append(AUTHORIZATION, value);
         self.0.send(request)
     }
 }
