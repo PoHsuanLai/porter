@@ -301,7 +301,7 @@ mod tests {
         let key = SecretText::new("KEY");
         let headers = |family| {
             present_key(porter_http::request(Method::GET, &url), family, &key)
-                .body(Vec::new())
+                .body(Vec::<u8>::new())
                 .expect("request")
                 .headers()
                 .iter()

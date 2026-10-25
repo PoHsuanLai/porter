@@ -163,7 +163,7 @@ mod tests {
         let url = EndpointUrl::parse("https://cloud.example.org/dav/").expect("url");
         let sent = request_to(Method::GET, &url)
             .expect("builder")
-            .body(Vec::new())
+            .body(Vec::<u8>::new())
             .expect("request");
         assert_eq!(sent.uri().to_string(), url.as_str());
     }
@@ -174,7 +174,7 @@ mod tests {
         let sent = request(Method::GET, &url)
             .sensitive_header(AUTHORIZATION, "Bearer abc123")
             .header("Content-Type", "text/xml")
-            .body(Vec::new())
+            .body(Vec::<u8>::new())
             .expect("request");
         let text = format!("{sent:?}");
         assert!(!text.contains("abc123"), "{text}");
@@ -182,7 +182,7 @@ mod tests {
         assert_eq!(sent.header("authorization"), Some("Bearer abc123"));
         let bad = request(Method::GET, &url)
             .sensitive_header(AUTHORIZATION, "Bearer abc\r\nX: y")
-            .body(Vec::new());
+            .body(Vec::<u8>::new());
         assert!(bad.is_err());
     }
 }
