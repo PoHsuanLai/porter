@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav" xmlns:A="urn:ietf:params:xml:ns:carddav">
+<D:response>
+<D:href>/dav/principals/user/alice@fastmail.example/</D:href>
+<D:propstat>
+<D:prop>
+<D:current-user-principal><D:href>/dav/principals/user/alice@fastmail.example/</D:href></D:current-user-principal>
+<C:calendar-home-set><D:href>/dav/calendars/user/alice@fastmail.example/</D:href></C:calendar-home-set>
+<A:addressbook-home-set><D:href>/dav/addressbooks/user/alice@fastmail.example/</D:href></A:addressbook-home-set>
+</D:prop>
+<D:status>HTTP/1.1 200 OK</D:status>
+</D:propstat>
+</D:response>
+</D:multistatus>

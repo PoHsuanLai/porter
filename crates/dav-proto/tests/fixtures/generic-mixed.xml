@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+  <D:response>
+    <D:href>/dav/cal/work/</D:href>
+    <D:propstat>
+      <D:prop><D:displayname>Work</D:displayname><D:resourcetype><D:collection/><C:calendar/></D:resourcetype></D:prop>
+      <D:status>HTTP/1.1 200 OK</D:status>
+    </D:propstat>
+    <D:propstat>
+      <D:prop><D:quota-used-bytes/><D:getetag/></D:prop>
+      <D:status>HTTP/1.1 404 Not Found</D:status>
+    </D:propstat>
+    <D:propstat>
+      <D:prop><D:sync-token/></D:prop>
+      <D:status>HTTP/1.1 403 Forbidden</D:status>
+    </D:propstat>
+  </D:response>
+  <D:response>
+    <D:href>/dav/cal/secret/</D:href>
+    <D:status>HTTP/1.1 403 Forbidden</D:status>
+  </D:response>
+  <D:response>
+    <D:href>/dav/cal/gone/</D:href>
+    <D:status>HTTP/1.1 404 Not Found</D:status>
+  </D:response>
+</D:multistatus>
