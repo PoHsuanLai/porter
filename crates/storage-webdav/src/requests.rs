@@ -1,15 +1,10 @@
 //! The requests the replica sends, as values.
-//!
-//! The sync-collection REPORT is built here, not by `porter_dav::report_sync_collection`: a
-//! replica needs `sync-level` `infinite` (the dataset has folders) and the size and resource
-//! type of what changed, and that function asks for the etag at level 1 (an interface ask).
 
 use crate::entry::CONTENT_LENGTH;
+use dav_proto::{Depth, SyncLevel, names};
 use porter_core::WebUrl;
-use porter_dav::{Depth, names, propfind};
-use porter_http::{HttpRequest, Method};
-
-const XML: &str = "application/xml; charset=utf-8";
+use porter_dav::{propfind, report_sync_collection};
+use porter_http::HttpRequest;
 
 /// A PROPFIND at depth 1 of what a listing needs.
 pub fn list(url: WebUrl) -> HttpRequest {
@@ -39,25 +34,14 @@ pub fn quota(url: WebUrl) -> HttpRequest {
 }
 
 /// A sync-collection REPORT from `token` (empty for the first listing) over everything below
-/// the folder (RFC 6578 section 3.3, `sync-level` `infinite`).
+/// the folder (RFC 6578 section 3.3, `sync-level` `infinite`), asking for what a listing reads.
 pub fn sync(url: WebUrl, token: &str) -> HttpRequest {
-    let token = token
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;");
-    let body = format!(
-        concat!(
-            r#"<?xml version="1.0" encoding="utf-8"?>"#,
-            r#"<d:sync-collection xmlns:d="DAV:"><d:sync-token>{}</d:sync-token>"#,
-            r#"<d:sync-level>infinite</d:sync-level>"#,
-            r#"<d:prop><d:getetag/><d:getcontentlength/><d:resourcetype/></d:prop></d:sync-collection>"#
-        ),
-        token
-    );
-    HttpRequest::new(Method::Report, url)
-        .with_header("Depth", "0")
-        .with_header("Content-Type", XML)
-        .with_body(body)
+    report_sync_collection(
+        url,
+        token,
+        SyncLevel::Infinite,
+        &[names::GETETAG, CONTENT_LENGTH, names::RESOURCETYPE],
+    )
 }
 
 #[cfg(test)]

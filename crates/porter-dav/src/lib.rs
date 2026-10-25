@@ -1,15 +1,21 @@
-//! WebDAV for the families (decision D13), from mailo's `mail-pim::dav`: the requests PROPFIND
-//! and REPORT take, and the parsed multistatus, sync-collection, discovery and quota answers.
-//! Pure: the requests are [`porter_http::HttpRequest`] values and the replies are read from
-//! text, so recorded fixtures drive every test. vCard and iCalendar values are the consumer's.
+//! WebDAV for the families (decision D13), over [`dav_proto`]: the requests PROPFIND and REPORT
+//! take as [`porter_http::HttpRequest`] values, and the discovery and quota answers read from a
+//! parsed multistatus. The bodies, the multistatus and sync-collection parsers and the property
+//! names are dav-proto's; vCard and iCalendar values are the consumer's.
 
 mod discover;
-mod multistatus;
-pub mod names;
 mod request;
-mod sync;
 
 pub use discover::{Home, Quota, collections, current_user_principal, home_set, quota};
-pub use multistatus::{DavFault, Multistatus, Prop, PropStatus, Response, parse_multistatus};
-pub use request::{Depth, propfind, report_sync_collection};
-pub use sync::{SyncChange, SyncReply, parse_sync_collection, token_expired};
+pub use request::{propfind, report_sync_collection};
+
+// moved to dav_proto; re-export kept for one batch
+#[doc(hidden)]
+pub use dav_proto::{
+    Depth, Multistatus, Prop, PropStatus, Response, SyncChange, SyncEnd, SyncLevel, SyncReply,
+    names, parse_multistatus, parse_sync_collection, token_expired,
+};
+
+// moved to dav_proto::Error; re-export kept for one batch
+#[doc(hidden)]
+pub use dav_proto::Error as DavFault;

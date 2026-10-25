@@ -2,8 +2,8 @@
 //! its size.
 
 use crate::path::Root;
+use dav_proto::{Multistatus, names};
 use porter_core::Bytes;
-use porter_dav::{Multistatus, names};
 use porter_sync::{ItemKind, RemoteId, RemoteItem, RemoteVersion};
 
 /// `DAV:getcontentlength`.

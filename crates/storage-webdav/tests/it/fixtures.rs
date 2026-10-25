@@ -24,10 +24,11 @@ fn answer(status: u16, body: Vec<u8>) -> HttpResponse {
     }
 }
 
-/// Answers by `METHOD target`; remembers what it was sent.
+/// Answers by `METHOD target`, in the order given for a key and then the last one again;
+/// remembers what it was sent.
 #[derive(Debug, Clone, Default)]
 struct Script {
-    answers: Arc<Mutex<BTreeMap<String, HttpResponse>>>,
+    answers: Arc<Mutex<BTreeMap<String, Vec<HttpResponse>>>>,
     sent: Arc<Mutex<Vec<HttpRequest>>>,
 }
 
@@ -36,7 +37,9 @@ impl Script {
         self.answers
             .lock()
             .expect("lock")
-            .insert(key.to_owned(), response);
+            .entry(key.to_owned())
+            .or_default()
+            .push(response);
         self
     }
 
@@ -52,7 +55,15 @@ impl Http for Script {
     ) -> impl Future<Output = Result<HttpResponse, HttpError>> + Send {
         let key = format!("{} {}", request.method.token(), request.url.path());
         self.sent.lock().expect("lock").push(request);
-        let found = self.answers.lock().expect("lock").get(&key).cloned();
+        let found = self
+            .answers
+            .lock()
+            .expect("lock")
+            .get_mut(&key)
+            .and_then(|queue| match queue.len() {
+                0 | 1 => queue.first().cloned(),
+                _ => Some(queue.remove(0)),
+            });
         async move { found.ok_or(HttpError::Unreachable) }
     }
 }
@@ -135,6 +146,62 @@ async fn a_sabre_sync_report_gives_changes_removals_and_the_next_token() {
     let body = String::from_utf8(sent[0].body.clone()).expect("utf8");
     assert!(body.contains("http://sabre.test/sync/41"), "{body}");
     assert!(body.contains("infinite"));
+}
+
+/// A report a server cut short (RFC 6578 section 3.6): one file, the 507 for the folder, and
+/// the token that continues it.
+fn truncated_report() -> Vec<u8> {
+    format!(
+        r#"<?xml version="1.0" encoding="utf-8"?>
+<d:multistatus xmlns:d="DAV:">
+ <d:response><d:href>{FOLDER}a.jpg</d:href>
+  <d:propstat><d:prop><d:getetag>"a1"</d:getetag><d:getcontentlength>3</d:getcontentlength><d:resourcetype/></d:prop>
+  <d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
+ <d:response><d:href>{FOLDER}</d:href><d:status>HTTP/1.1 507 Insufficient Storage</d:status></d:response>
+ <d:sync-token>http://sabre.test/sync/7</d:sync-token>
+</d:multistatus>"#
+    )
+    .into_bytes()
+}
+
+#[tokio::test]
+async fn a_truncated_report_continues_from_its_token_instead_of_expiring() {
+    let script = Script::default()
+        .on(&format!("REPORT {FOLDER}"), answer(207, truncated_report()))
+        .on(
+            &format!("REPORT {FOLDER}"),
+            answer(207, fixture("sabre-sync-report.xml")),
+        );
+    let replica = replica(script.clone());
+    let first = replica.changes(Cursor::Start).await.expect("first page");
+    let ids: Vec<&str> = first
+        .changes
+        .iter()
+        .map(|c| match c {
+            Change::Upsert(item) => item.id.0.as_str(),
+            Change::Tombstone(t) => panic!("{t:?}"),
+        })
+        .collect();
+    assert_eq!(ids, [format!("{FOLDER}a.jpg")]);
+    // Not the end: the rest is asked for at once, from the token the server gave.
+    assert_eq!(first.more, porter_sync::More::More);
+    assert_eq!(
+        first.next,
+        porter_sync::Anchor("sync:http://sabre.test/sync/7".into())
+    );
+    let rest = replica
+        .changes(Cursor::At(first.next))
+        .await
+        .expect("the rest");
+    assert_eq!(rest.more, porter_sync::More::Done);
+    assert_eq!(
+        rest.next,
+        porter_sync::Anchor("sync:http://sabre.test/sync/42".into())
+    );
+    let sent = script.sent();
+    assert_eq!(sent.len(), 2);
+    let body = String::from_utf8(sent[1].body.clone()).expect("utf8");
+    assert!(body.contains("http://sabre.test/sync/7"), "{body}");
 }
 
 #[tokio::test]

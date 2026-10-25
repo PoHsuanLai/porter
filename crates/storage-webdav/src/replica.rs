@@ -5,11 +5,11 @@ use crate::feed::{Known, Pending};
 use crate::path::Root;
 use crate::refuse::{read_error, unreached};
 use crate::requests;
+use dav_proto::parse_multistatus;
 use porter_core::capability::{
     Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
 };
 use porter_core::{Bytes, WebUrl};
-use porter_dav::parse_multistatus;
 use porter_http::{Http, HttpRequest, HttpResponse, Method};
 use porter_sync::{
     BaseVersion, Blob, ByteRange, ChangePage, Cursor, PutItem, PutRefused, Quota, RemoteId,

@@ -2879,3 +2879,19 @@ Nothing here was compiled or run (no-build lane); the coordinator gates the merg
     hangs); it returns none when accountd is not there.
   - The `Sheet` struct gained a public field: a consumer that builds one as a literal needs
     `own: Vec::new()` (use `Sheet::new`).
+
+## Lane b-dav: dav-proto, and a cut-short sync report continues (Wave B, base `01cb4301`, 2026-10-25)
+- **Third-party check.** No crate on crates.io reads a multistatus with each property's status
+  and the RFC 6578 cases with no IO. libdav 0.11 (ISC) is a client over hyper and tokio with no
+  sync-collection request and no general per-property model; reqwest_dav 0.3 (MIT OR Apache-2.0)
+  is a reqwest client; dav-server 0.11 (Apache-2.0) is a server; webdav-xml 0.1 is unmaintained
+  since 2024 with about 3k downloads; webdav_raw has no repository; fast-dav-rs is LGPL-3.0.
+- **The 507 bug (S4-DESIGN section 3).** porter-dav read a 507 response in a sync report as no
+  token, which storage-webdav took for an expired anchor, so a server that cuts every first
+  report short was listed from the start forever. Now `SyncEnd::Truncated` keeps the token and
+  the replica's last page ends `More::More` there. A truncated report that listed nothing ends
+  `More::Done`, so a server that only ever answers 507 cannot spin the engine.
+- **Open.** porter-dav's discovery tests read dav-proto's fixtures by a relative path. dav-proto's
+  tests do not run porter-fake's module guard, since the crate depends on no porter crate.
+  mailo's own CardDAV sync (`mail-runtime/src/carddav/sync.rs`) does not handle a 507 either; it
+  gets the fix when it moves to dav-proto.

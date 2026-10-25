@@ -4,14 +4,15 @@
 
 use crate::io::Io;
 use crate::password::{basic, endpoint, fault_of, join};
+use dav_proto::Depth;
+use dav_proto::names::CURRENT_USER_PRINCIPAL;
 use porter_core::capability::CapabilityKind;
 use porter_core::sheet::SignInFault;
 use porter_core::{
     AbsentReason, Claim, EndpointUrl, Family, LoginName, Offer, Provenance, SecretText,
     ServiceEndpoint, Subject,
 };
-use porter_dav::names::CURRENT_USER_PRINCIPAL;
-use porter_dav::{Depth, propfind};
+use porter_dav::propfind;
 use porter_discover::well_known_found;
 use porter_http::{Header, Http, HttpRequest, Method, web_url};
 use porter_provider::ProviderSpec;

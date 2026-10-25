@@ -1,85 +1,40 @@
-//! The requests: PROPFIND and the sync-collection REPORT.
-//!
-//! Adapted from mailo `crates/mail-pim/src/dav/request.rs` (same author, MIT OR Apache-2.0): the
-//! body building and escaping; the vocabulary is generalised from CardDAV to any property name.
+//! The requests: PROPFIND and the sync-collection REPORT, as values of the HTTP seam. The
+//! bodies are dav-proto's.
 
-use crate::names::split;
+use dav_proto::{Depth, SyncLevel};
 use porter_core::WebUrl;
 use porter_http::{HttpRequest, Method};
 
-const HEAD: &str = r#"<?xml version="1.0" encoding="utf-8"?>"#;
 const XML: &str = "application/xml; charset=utf-8";
-
-/// How deep a PROPFIND goes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Depth {
-    /// The resource itself.
-    Zero,
-    /// Its members.
-    One,
-}
-
-impl Depth {
-    fn header(self) -> &'static str {
-        match self {
-            Depth::Zero => "0",
-            Depth::One => "1",
-        }
-    }
-}
 
 /// A PROPFIND of `props` (namespace-qualified names) on `url`.
 pub fn propfind(url: WebUrl, depth: Depth, props: &[&str]) -> HttpRequest {
-    // Each property gets its own namespace declaration: names are free-form, so no prefix table.
-    let asked: String = props
-        .iter()
-        .map(|name| match split(name) {
-            ("", local) => format!("<{}/>", escape(local)),
-            (ns, local) => format!(r#"<p:{} xmlns:p="{}"/>"#, escape(local), escape(ns)),
-        })
-        .collect();
-    let body = format!(r#"{HEAD}<d:propfind xmlns:d="DAV:"><d:prop>{asked}</d:prop></d:propfind>"#);
-    xml(Method::Propfind, url, depth, body)
+    xml(Method::Propfind, url, depth, dav_proto::propfind(props))
 }
 
-/// A sync-collection REPORT on `url` from `sync_token` (empty for the first listing).
-pub fn report_sync_collection(url: WebUrl, sync_token: &str) -> HttpRequest {
-    let token = escape(sync_token);
-    let body = format!(
-        r#"{HEAD}<d:sync-collection xmlns:d="DAV:"><d:sync-token>{token}</d:sync-token><d:sync-level>1</d:sync-level><d:prop><d:getetag/></d:prop></d:sync-collection>"#
-    );
+/// A sync-collection REPORT on `url` from `sync_token` (empty for the first listing) at
+/// `level`, asking for `props` of each changed member.
+pub fn report_sync_collection(
+    url: WebUrl,
+    sync_token: &str,
+    level: SyncLevel,
+    props: &[&str],
+) -> HttpRequest {
+    let body = dav_proto::sync_collection(sync_token, level, props);
     xml(Method::Report, url, Depth::Zero, body)
 }
 
 fn xml(method: Method, url: WebUrl, depth: Depth, body: String) -> HttpRequest {
-    let mut request = HttpRequest::new(method, url)
-        .with_header("Depth", depth.header())
-        .with_header("Content-Type", XML);
-    request.body = body.into_bytes();
-    request
-}
-
-/// XML character escaping for text and attribute content.
-fn escape(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for ch in text.chars() {
-        match ch {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            c => out.push(c),
-        }
-    }
-    out
+    HttpRequest::new(method, url)
+        .with_header("Depth", depth.as_str())
+        .with_header("Content-Type", XML)
+        .with_body(body)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::names::*;
-
-    const DAV: &str = "DAV:";
+    use dav_proto::names::*;
 
     fn url() -> WebUrl {
         WebUrl::parse("https://dav.example.test/remote.php/dav/").unwrap()
@@ -98,37 +53,23 @@ mod tests {
     }
 
     #[test]
-    fn a_propfind_names_each_property_in_its_namespace() {
+    fn a_propfind_carries_its_method_depth_and_body() {
         let request = propfind(
             url(),
             Depth::Zero,
-            &[
-                CURRENT_USER_PRINCIPAL,
-                ADDRESSBOOK_HOME_SET,
-                CALENDAR_HOME_SET,
-                QUOTA_USED,
-            ],
+            &[CURRENT_USER_PRINCIPAL, ADDRESSBOOK_HOME_SET],
         );
         assert_eq!(request.method, Method::Propfind);
         assert_eq!(header(&request, "depth"), Some("0"));
+        assert_eq!(
+            header(&request, "content-type"),
+            Some("application/xml; charset=utf-8")
+        );
         let text = body(&request);
         let doc = roxmltree::Document::parse(&text).unwrap_or_else(|e| panic!("{e}: {text}"));
-        let asked: Vec<(Option<&str>, &str)> = doc
-            .descendants()
-            .filter(|n| n.parent().is_some_and(|p| p.has_tag_name((DAV, "prop"))))
-            .map(|n| (n.tag_name().namespace(), n.tag_name().name()))
-            .collect();
-        assert_eq!(
-            asked,
-            [
-                (Some(DAV), "current-user-principal"),
-                (
-                    Some("urn:ietf:params:xml:ns:carddav"),
-                    "addressbook-home-set"
-                ),
-                (Some("urn:ietf:params:xml:ns:caldav"), "calendar-home-set"),
-                (Some(DAV), "quota-used-bytes"),
-            ]
+        assert!(
+            doc.descendants()
+                .any(|n| n.has_tag_name((CARDDAV, "addressbook-home-set")))
         );
     }
 
@@ -141,8 +82,13 @@ mod tests {
     }
 
     #[test]
-    fn a_sync_token_is_escaped_into_the_body() {
-        let request = report_sync_collection(url(), "http://x.test/sync?a=1&b=<2>");
+    fn a_sync_report_is_depth_zero_and_carries_its_token_and_level() {
+        let request = report_sync_collection(
+            url(),
+            "http://x.test/sync?a=1&b=<2>",
+            SyncLevel::One,
+            &[GETETAG],
+        );
         assert_eq!(request.method, Method::Report);
         assert_eq!(header(&request, "depth"), Some("0"));
         let text = body(&request);
@@ -152,12 +98,7 @@ mod tests {
             .find(|n| n.has_tag_name((DAV, "sync-token")))
             .and_then(|n| n.text());
         assert_eq!(token, Some("http://x.test/sync?a=1&b=<2>"));
-    }
-
-    #[test]
-    fn a_first_sync_sends_an_empty_token() {
-        let text = body(&report_sync_collection(url(), ""));
-        assert!(text.contains("<d:sync-token></d:sync-token>"), "{text}");
-        assert!(text.contains("<d:getetag/>"));
+        assert!(text.contains("<d:sync-level>1</d:sync-level>"), "{text}");
+        assert!(text.contains("<d:getetag/>"), "{text}");
     }
 }

@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### WebDAV as a library: dav-proto
+
+- New crate `dav-proto`: WebDAV, CalDAV and CardDAV bodies built as `String` and replies read
+  from `&str`, with no porter type and no IO. It holds porter-dav's model (`Prop`, `PropStatus`,
+  `Response`, `Multistatus`, `Depth`, `names`, the multistatus and sync-collection parsers) and
+  what only mailo had (`multiget`, the typed `carddav::Props`); feature `http` builds the
+  requests as `http::Request<String>`.
+- A sync-collection report the server cut short (a 507 response, RFC 6578 section 3.6) is
+  `SyncEnd::Truncated` with its token, no longer read as an expired token. storage-webdav ends
+  that page `More::More` at the token, so the engine continues instead of listing from the
+  start again (which on a big tree looped forever). The PIM `DavFeed` gets the same through the
+  replica. A whole-request 507 is no longer `token_expired`.
+- porter-dav keeps the `HttpRequest` builders and the discovery and quota readers. Its old
+  paths for the moved items re-export dav-proto for one batch (`#[doc(hidden)]`);
+  `porter_dav::DavFault` is `dav_proto::Error` (`Xml(String)`, `NotMultistatus`).
+- Changed: `parse_sync_collection` returns `SyncReply` (no `Result`), and `SyncReply.sync_token`
+  is `SyncReply.end` (`token()` reads it). `report_sync_collection` takes a `SyncLevel` and the
+  properties; storage-webdav builds its report with it instead of its own copy.
+
 ### Test crates
 
 - `FakeModel`, `FakeInferSession`, `Script` and `ScriptStep` moved from porter-fake to

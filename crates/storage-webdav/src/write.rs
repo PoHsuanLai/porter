@@ -8,7 +8,7 @@ use crate::path::parents_of;
 use crate::refuse::{write_error, write_unreached};
 use crate::replica::{DELETED, WebDavReplica};
 use crate::requests;
-use porter_dav::parse_multistatus;
+use dav_proto::parse_multistatus;
 use porter_http::{Http, HttpRequest, HttpResponse, Method};
 use porter_sync::{
     BaseVersion, Conflict, PutItem, PutRefused, PutTarget, RemoteId, RemoteSide, RemoteVersion,

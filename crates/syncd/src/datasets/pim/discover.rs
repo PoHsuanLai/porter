@@ -1,18 +1,16 @@
 //! The collections of an account: from the CalDAV or CardDAV endpoint to the principal, from
 //! the principal to the calendar or address book home set, and the home's calendars or address
 //! books with their names and colours (RFC 5397, 4791, 6352; the requests and the reading are
-//! porter-dav's, the walk follows mailo `crates/mail-pim/src/dav/mod.rs`, same author,
+//! dav-proto's and porter-dav's, the walk follows mailo `crates/mail-pim/src/dav/mod.rs`, same author,
 //! MIT OR Apache-2.0).
 //!
 //! A server that names no principal is read as if the endpoint were the home set, and an
 //! endpoint that is itself a collection is its own only member.
 
 use super::PimKind;
+use dav_proto::{Depth, Multistatus, names, parse_multistatus};
 use porter_core::WebUrl;
-use porter_dav::{
-    Depth, Home, Multistatus, collections, current_user_principal, home_set, names,
-    parse_multistatus, propfind,
-};
+use porter_dav::{Home, collections, current_user_principal, home_set, propfind};
 use porter_http::{Http, HttpError, HttpRequest, Method};
 
 /// Apple's calendar colour property, which Nextcloud, iCloud and Radicale all serve.

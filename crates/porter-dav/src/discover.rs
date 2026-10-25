@@ -1,15 +1,15 @@
 //! Discovery and quota, read from a parsed [`Multistatus`]: `current-user-principal` (RFC 5397),
 //! the calendar and addressbook home sets, and `quota-used-bytes`/`quota-available-bytes`
-//! (RFC 4331). The request side is [`crate::propfind`] with the names in [`crate::names`].
+//! (RFC 4331). The request side is [`crate::propfind`] with the names in [`dav_proto::names`].
 //!
 //! The discovery walk (principal, then home set, then the home's children) follows mailo
 //! `crates/mail-pim/src/dav/mod.rs` (same author, MIT OR Apache-2.0).
 
-use crate::multistatus::{Multistatus, Response};
-use crate::names::{
+use dav_proto::names::{
     ADDRESSBOOK_HOME_SET, CALENDAR_HOME_SET, CURRENT_USER_PRINCIPAL, QUOTA_AVAILABLE, QUOTA_USED,
     RESOURCETYPE,
 };
+use dav_proto::{Multistatus, Response};
 
 /// Which home set to read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

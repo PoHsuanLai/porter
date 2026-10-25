@@ -9,13 +9,16 @@
 //!   by the engine (nothing known is fetched or uploaded again).
 //! - a long answer is handed out in pages: the anchor `more:<replica>:<batch>:<offset>` reads the
 //!   next page of a batch held in memory, and ends in the anchor the whole batch came to.
+//! - a report the server cut short (a 507 response, RFC 6578 section 3.6) ends its last page
+//!   `More::More` at `sync:<token>`, so the next read continues from the token the server gave
+//!   instead of listing from the start, which a big tree would cut short every time.
 
 use crate::entry::{Entry, Kind, entries};
 use crate::refuse::read_error;
 use crate::replica::{DELETED, WebDavReplica};
 use crate::requests;
+use dav_proto::{Multistatus, SyncEnd, parse_multistatus, parse_sync_collection, token_expired};
 use porter_core::Bytes;
-use porter_dav::{Multistatus, parse_multistatus, parse_sync_collection, token_expired};
 use porter_http::{Http, HttpResponse};
 use porter_sync::{
     Anchor, Change, ChangePage, Cursor, More, RemoteId, RemoteVersion, ReplicaError, RetryAfter,
@@ -52,12 +55,16 @@ pub struct Pending {
     pub batch: u64,
     pub changes: Vec<Change>,
     pub end: Anchor,
+    /// The batch is a cut-short report: its last page is not the end of the changes.
+    pub truncated: bool,
 }
 
 /// Everything one read of the server came to.
 struct Batch {
     changes: Vec<Change>,
     end: Anchor,
+    /// The server cut the report short: the read after `end` is due at once.
+    truncated: bool,
 }
 
 /// Why a sync-collection report gave no changes.
@@ -75,6 +82,8 @@ struct Reported {
     token: String,
     files: Vec<Entry>,
     removed: Vec<RemoteId>,
+    /// The server cut the report short (507); `token` continues it.
+    truncated: bool,
 }
 
 /// An anchor read back.
@@ -124,12 +133,16 @@ impl<H: Http> WebDavReplica<H> {
 
     /// The first page of `batch`, the rest held for `page_of`.
     fn paged(&self, batch: Batch) -> ChangePage {
-        let Batch { changes, end } = batch;
+        let Batch {
+            changes,
+            end,
+            truncated,
+        } = batch;
         if changes.len() <= self.page {
             return ChangePage {
                 changes,
                 next: end,
-                more: More::Done,
+                more: last(truncated),
             };
         }
         let mut state = self.state();
@@ -140,6 +153,7 @@ impl<H: Http> WebDavReplica<H> {
             batch: id,
             changes,
             end,
+            truncated,
         });
         ChangePage {
             changes: first,
@@ -159,7 +173,7 @@ impl<H: Http> WebDavReplica<H> {
             .ok_or(ReplicaError::AnchorExpired)?;
         let stop = offset.saturating_add(self.page).min(pending.changes.len());
         let (next, more) = match stop == pending.changes.len() {
-            true => (pending.end.clone(), More::Done),
+            true => (pending.end.clone(), last(pending.truncated)),
             false => (self.more_anchor(batch, stop), More::More),
         };
         Ok(ChangePage {
@@ -196,6 +210,7 @@ impl<H: Http> WebDavReplica<H> {
         Batch {
             changes: upserts(&self.root, &items),
             end: Anchor(format!("sync:{}", reported.token)),
+            truncated: reported.truncated,
         }
     }
 
@@ -208,6 +223,7 @@ impl<H: Http> WebDavReplica<H> {
         Batch {
             changes: upserts(&self.root, &files),
             end,
+            truncated: false,
         }
     }
 
@@ -239,6 +255,7 @@ impl<H: Http> WebDavReplica<H> {
         Ok(Batch {
             changes,
             end: Anchor(format!("sync:{}", reported.token)),
+            truncated: reported.truncated,
         })
     }
 
@@ -287,12 +304,17 @@ impl<H: Http> WebDavReplica<H> {
             return Ok(Batch {
                 changes,
                 end: anchor.clone(),
+                truncated: false,
             });
         }
         state.counter += 1;
         let end = Anchor(format!("tree:{}:{}", self.nonce, state.counter));
         state.known = Some(known_of(&files, Some(end.clone())));
-        Ok(Batch { changes, end })
+        Ok(Batch {
+            changes,
+            end,
+            truncated: false,
+        })
     }
 
     /// A sync-collection report from `token`.
@@ -316,9 +338,15 @@ impl<H: Http> WebDavReplica<H> {
 
     fn reported(&self, body: &str) -> Result<Reported, Report> {
         let status: Multistatus = parse_multistatus(body).map_err(|_| Report::Unsupported)?;
-        let reply = parse_sync_collection(&status).map_err(|_| Report::Unsupported)?;
-        // A reply with no token is the server cutting the report short, or not serving it.
-        let token = reply.sync_token.ok_or(Report::Expired)?;
+        let reply = parse_sync_collection(&status);
+        // A reply with no token cannot be continued: the server does not stand behind it.
+        // A cut-short report that listed nothing made no progress: asking again at once could
+        // go on forever, so it waits for the next poll like a complete one.
+        let (token, truncated) = match reply.end {
+            SyncEnd::Complete(token) => (token, false),
+            SyncEnd::Truncated(token) => (token, !reply.changes.is_empty()),
+            _ => return Err(Report::Expired),
+        };
         let removed = status
             .responses
             .iter()
@@ -333,6 +361,7 @@ impl<H: Http> WebDavReplica<H> {
             token,
             files,
             removed,
+            truncated,
         })
     }
 
@@ -379,6 +408,14 @@ impl<H: Http> WebDavReplica<H> {
             404 if *folder != self.root.folder() => Ok(Vec::new()),
             _ => Err(read_error(response)),
         }
+    }
+}
+
+/// How the last page of a batch ends: at once again when the server cut the report short.
+fn last(truncated: bool) -> More {
+    match truncated {
+        true => More::More,
+        false => More::Done,
     }
 }
 

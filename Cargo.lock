@@ -2440,11 +2440,11 @@ dependencies = [
 name = "porter-dav"
 version = "0.1.0"
 dependencies = [
+ "dav-proto",
  "porter-core",
  "porter-fake",
  "porter-http",
  "roxmltree",
- "thiserror",
 ]
 
 [[package]]
@@ -2576,6 +2576,7 @@ name = "porter-families"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "dav-proto",
  "porter-core",
  "porter-dav",
  "porter-discover",
@@ -3516,6 +3517,7 @@ name = "storage-webdav"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "dav-proto",
  "porter-core",
  "porter-dav",
  "porter-fake",
@@ -3566,6 +3568,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "clap",
+ "dav-proto",
  "ds-settings",
  "porter-client",
  "porter-core",

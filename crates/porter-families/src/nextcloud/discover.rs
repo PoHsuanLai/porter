@@ -5,13 +5,14 @@
 
 use crate::io::Io;
 use crate::password::{basic, endpoint, fault_of, join, offers, resolve, segment};
+use dav_proto::names::{
+    ADDRESSBOOK_HOME_SET, CALENDAR_HOME_SET, CURRENT_USER_PRINCIPAL, QUOTA_AVAILABLE, QUOTA_USED,
+};
+use dav_proto::{Depth, parse_multistatus};
 use porter_core::capability::CapabilityKind;
 use porter_core::sheet::SignInFault;
 use porter_core::{Claim, EndpointUrl, Family, LoginName, SecretText, ServiceEndpoint};
-use porter_dav::names::{
-    ADDRESSBOOK_HOME_SET, CALENDAR_HOME_SET, CURRENT_USER_PRINCIPAL, QUOTA_AVAILABLE, QUOTA_USED,
-};
-use porter_dav::{Depth, Home, home_set, parse_multistatus, propfind};
+use porter_dav::{Home, home_set, propfind};
 use porter_discover::parse_ocs_capabilities;
 use porter_http::{Http, HttpRequest, HttpResponse, Method, web_url};
 
