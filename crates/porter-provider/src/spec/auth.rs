@@ -44,6 +44,8 @@ pub enum Issuer {
     /// OpenAI (ChatGPT sign-in, R9).
     #[serde(rename = "openai")]
     OpenAi,
+    /// Yahoo (mail over IMAP and SMTP with XOAUTH2, the `mail-w` scope).
+    Yahoo,
 }
 
 /// Where an issuer's pages and APIs are. A client registration may point elsewhere (a sovereign
@@ -112,6 +114,14 @@ impl Issuer {
                 None,
                 None,
             ),
+            // Yahoo's OAuth 2 endpoints; it publishes a revoke for neither a grant nor a device
+            // code that this applies to.
+            Issuer::Yahoo => (
+                "https://api.login.yahoo.com/oauth2/request_auth",
+                "https://api.login.yahoo.com/oauth2/get_token",
+                None,
+                None,
+            ),
         };
         let url = |text: &str| {
             EndpointUrl::parse(text)
@@ -130,7 +140,7 @@ impl Issuer {
 mod tests {
     use super::*;
 
-    const ALL: [Issuer; 7] = [
+    const ALL: [Issuer; 8] = [
         Issuer::Google,
         Issuer::Microsoft,
         Issuer::Dropbox,
@@ -138,6 +148,7 @@ mod tests {
         Issuer::Fastmail,
         Issuer::OpenRouter,
         Issuer::OpenAi,
+        Issuer::Yahoo,
     ];
 
     #[test]
@@ -163,6 +174,16 @@ mod tests {
         assert_eq!(has(Issuer::Google), (true, true));
         assert_eq!(has(Issuer::Microsoft), (false, true));
         assert_eq!(has(Issuer::OpenRouter), (false, false));
+    }
+
+    #[test]
+    fn yahoo_is_named_yahoo_in_a_file_and_signs_in_on_its_own_host() {
+        let spec: AuthSpec = toml::from_str("kind = \"oauth_pkce\"\nissuer = \"yahoo\"").unwrap();
+        let issuer = spec.issuer.unwrap();
+        assert_eq!(issuer, Issuer::Yahoo);
+        let e = issuer.endpoints();
+        assert!(e.authorize.as_str().contains("login.yahoo.com"));
+        assert!(e.token.as_str().contains("login.yahoo.com"));
     }
 
     #[test]
