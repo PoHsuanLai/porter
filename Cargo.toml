@@ -26,6 +26,7 @@ members = [
   "crates/porter-discover",
   "crates/dav-proto",
   "crates/porter-dav",
+  "crates/porter-calendar",
   "crates/porter-families",
   "crates/porter-tailscale",
   "crates/porter-tailnet",
@@ -82,6 +83,7 @@ porter-oauth    = { path = "crates/porter-oauth" }
 porter-discover = { path = "crates/porter-discover" }
 dav-proto       = { path = "crates/dav-proto" }
 porter-dav      = { path = "crates/porter-dav" }
+porter-calendar = { path = "crates/porter-calendar" }
 porter-families = { path = "crates/porter-families" }
 porter-tailscale = { path = "crates/porter-tailscale" }
 porter-tailnet  = { path = "crates/porter-tailnet" }

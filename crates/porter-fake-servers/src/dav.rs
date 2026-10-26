@@ -120,6 +120,13 @@ fn escape(text: &str) -> String {
         .replace('>', "&gt;")
 }
 
+fn unescape(text: &str) -> String {
+    text.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&amp;", "&")
+}
+
 fn parent_of(path: &str) -> &str {
     path.rsplit_once('/').map_or("", |(p, _)| p)
 }
@@ -543,6 +550,9 @@ impl Tree {
     /// The `sync-collection` REPORT: what changed under `path` since the token in `body`, among
     /// its members (`sync-level` 1) or everything below it (`infinite`).
     pub fn report(&self, path: &str, body: &str) -> Response {
+        if body.contains("calendar-query") {
+            return self.calendar_query(path, body);
+        }
         if self.behaviour.sync_collection == SyncCollection::NotImplemented {
             return Response::new(501);
         }
@@ -599,6 +609,44 @@ impl Tree {
             &out,
             &format!("<d:sync-token>{}</d:sync-token>", self.sync_token()),
         )
+    }
+
+    /// The `calendar-query` REPORT (RFC 4791 section 7.8), as far as finding an event by its
+    /// `UID`: the members of the calendar at `path` whose text has a `UID` line equal to the
+    /// query's `text-match`, with their etag and text. A query with no `text-match` lists every
+    /// member.
+    fn calendar_query(&self, path: &str, body: &str) -> Response {
+        if !self
+            .nodes
+            .get(path)
+            .is_some_and(|n| matches!(n.kind, Kind::Calendar(_)))
+        {
+            return Response::new(404);
+        }
+        // The element carries a collation attribute, so it is found by its opening tag.
+        let uid = body.find("text-match").and_then(|at| {
+            let open = &body[at..];
+            let start = open.find('>')? + 1;
+            let end = open[start..].find('<')?;
+            Some(unescape(&open[start..start + end]))
+        });
+        let mut out = String::new();
+        for (child_path, child) in self.children(path).filter(|(_, n)| n.kind == Kind::Item) {
+            let text = String::from_utf8_lossy(&child.body);
+            let matches = uid.as_deref().is_none_or(|uid| {
+                text.lines()
+                    .any(|line| line.trim_end_matches('\r').strip_prefix("UID:") == Some(uid))
+            });
+            if matches {
+                out.push_str(&format!(
+                    "<d:response><d:href>{}</d:href><d:propstat><d:prop><d:getetag>&quot;{:x}&quot;</d:getetag><cal:calendar-data>{}</cal:calendar-data></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>",
+                    escape(child_path),
+                    child.changed,
+                    escape(&text)
+                ));
+            }
+        }
+        Self::multistatus(&out, "")
     }
 
     /// `412` when the request's `If-Match` or `If-None-Match` does not hold for the node at

@@ -1,0 +1,33 @@
+[package]
+name = "porter-calendar"
+description = "One calendar store for every porter client: list calendars, put an event (as iCalendar for the stores that take it, as its fields for the ones that take JSON), find one by UID and remove one. Backends: CalDAV, Microsoft Graph, the Google Calendar API and JMAP over the HTTP seam, and Evolution Data Server over D-Bus (feature `eds`). Pure but for `eds`: no runtime, no socket."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+dav-proto = { workspace = true }
+porter-core = { workspace = true }
+porter-dav = { workspace = true }
+porter-http = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+zbus = { workspace = true, optional = true }
+
+[features]
+# Evolution Data Server, the calendar store of GNOME and of most Linux desktops, over the session
+# bus. Off by default: it is the one backend that reaches a bus.
+eds = ["dep:zbus"]
+
+[dev-dependencies]
+base64 = { workspace = true }
+porter-fake = { workspace = true }
+porter-fake-servers = { workspace = true }
+porter-http = { workspace = true, features = ["stream"] }
+tokio = { workspace = true }
+
+[lints]
+workspace = true

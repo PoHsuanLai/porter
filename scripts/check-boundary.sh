@@ -15,6 +15,7 @@ cd "$(dirname "$0")/.."
 # their named I/O feature (`hyper`, `io`). porter-families reaches none with default features;
 # each of its family features is checked on its own in FAMILY_FORBIDS below. porter-drive and
 # porter-drive-fuse reach tokio (a drive fetches in the background) but never a bus or a client.
+# porter-calendar reaches zbus only through its `eds` feature.
 # porter-mountd, the mount helper outside syncd's sandbox, reaches no effect crate and none of
 # porter's own: std and rustix only (no network, keyring or account data).
 EFFECTS="zbus zvariant tokio reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
@@ -43,6 +44,7 @@ RULES=(
   "porter-tailnet: $EFFECTS"
   "dav-proto: $EFFECTS"
   "porter-dav: $EFFECTS"
+  "porter-calendar: $EFFECTS"
   "porter-families: $EFFECTS"
   "porter-engines: $EFFECTS"
   "porter-engines-install: zbus zvariant reqwest ureq oo7 keyring secret-service interprocess latchkey ds-settings inferd"
@@ -284,6 +286,7 @@ EDGES=(
   "porter-tailnet: porter-core porter-fs porter-tailscale"
   "dav-proto:"
   "porter-dav: dav-proto porter-core porter-http"
+  "porter-calendar: dav-proto porter-core porter-dav porter-http"
   "porter-families: dav-proto porter-core porter-dav porter-discover porter-http porter-oauth porter-provider porter-proxy porter-tailscale"
   "accountd: ds-settings porter-core porter-daemon porter-dbus porter-families porter-fs porter-provider porter-secrets porter-service porter-sheets porter-store porter-tailscale"
   "storage-webdav: dav-proto porter-core porter-dav porter-http porter-sync"

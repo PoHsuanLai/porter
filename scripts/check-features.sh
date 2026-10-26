@@ -53,6 +53,8 @@ BUILDS=(
   "porter-oauth (no features: mailo) :: -p porter-oauth --no-default-features"
   "porter-oauth (io: mailo mail-runtime) :: -p porter-oauth --no-default-features --features io"
   "porter-proxy (io: mailo mail-runtime, its link tests) :: -p porter-proxy --no-default-features --features io"
+  "porter-calendar (no features: mailo) :: -p porter-calendar"
+  "porter-calendar (eds: the Linux desktops) :: -p porter-calendar --features eds"
 )
 
 logs="${CARGO_TARGET_DIR:-target}/check-features"
