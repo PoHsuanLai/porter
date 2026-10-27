@@ -17,6 +17,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 form_urlencoded = { workspace = true }
 sha2 = { workspace = true }
+subtle = { workspace = true }
 thiserror = { workspace = true }
 toml = { workspace = true }
 tokio = { workspace = true, optional = true, features = ["net", "time", "io-util"] }
