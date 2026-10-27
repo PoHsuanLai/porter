@@ -4,17 +4,18 @@
 //! app carries it.
 
 use crate::audience::covers;
-use crate::audit::AuditSink;
+use crate::audit::{AuditEvent, AuditSink};
+use crate::ctx::Ctx;
 use crate::reach::{Declared, declared_endpoint, reach_for};
-use crate::service::AccountService;
 use crate::sheets::Sheets;
 use crate::token::{secret_purpose, secrets_refusal};
 use porter_core::capability::StorageScope;
 use porter_core::clock::Clock;
 use porter_core::wire::Refusal;
 use porter_core::{
-    Account, AppId, Audience, CapabilityKind, Credential, EndpointUrl, Family, GrantId, RelayAuth,
-    RelayPlan, SecretKey, SecretPurpose, SecretText, ServiceEndpoint, TokenKind,
+    Account, AccountState, AppId, Audience, CapabilityKind, Credential, EndpointUrl, Family,
+    GrantId, RelayAuth, RelayPlan, SecretKey, SecretPurpose, SecretText, ServiceEndpoint,
+    TokenKind,
 };
 use porter_provider::Provider;
 use porter_secrets::{Secrets, SecretsError};
@@ -42,7 +43,7 @@ fn bearer_of(kind: TokenKind, value: &SecretText) -> Option<SecretText> {
     }
 }
 
-impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R, A: AuditSink> AccountService<P, S, U, K, R, A>
+impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R, A: AuditSink> Ctx<P, S, U, K, R, A>
 where
     R: porter_core::store::RegistryStore,
 {
@@ -63,6 +64,65 @@ where
         };
         let reach = reach_for(endpoint);
         Ok(RelayPlan::new(endpoint.clone(), kind, auth, reach))
+    }
+
+    /// The body of [`AccountService::open_authenticated`](crate::AccountService::open_authenticated).
+    pub(crate) async fn open_authenticated(
+        &self,
+        caller: &AppId,
+        grant: &GrantId,
+        endpoint: &EndpointUrl,
+    ) -> Result<RelayPlan, Refusal> {
+        let (account, endpoint, kind) = {
+            let registry = self.lock();
+            match registry.relay_target(caller, grant, endpoint) {
+                Ok(target) => (
+                    target.account.clone(),
+                    target.endpoint.clone(),
+                    (target.kind, target.reach),
+                ),
+                // Not one of the account's endpoints: perhaps an origin its provider file names
+                // as one that wants the bearer (picked photos' bytes).
+                Err(Refusal::EndpointNotGranted) => {
+                    self.auth_origin_target(&registry, caller, grant, endpoint)?
+                }
+                Err(other) => return Err(other),
+            }
+        };
+        if account.state == AccountState::NeedsReauth {
+            return Err(Refusal::NeedsReauth);
+        }
+        let plan = self.plan_relay(&account, &endpoint, kind).await?;
+        self.spend_once(caller, grant).await?;
+        self.note(
+            Some(caller.clone()),
+            Some(account.id.clone()),
+            AuditEvent::ProxyOpened {
+                grant: grant.clone(),
+                endpoint: endpoint.url.clone(),
+            },
+        );
+        Ok(plan)
+    }
+
+    /// The body of [`AccountService::open_linked`](crate::AccountService::open_linked).
+    pub(crate) async fn open_linked(
+        &self,
+        caller: &AppId,
+        grant: &GrantId,
+        origin: &EndpointUrl,
+    ) -> Result<RelayPlan, Refusal> {
+        let (plan, account) = self.plan_linked(caller, grant, origin)?;
+        self.spend_once(caller, grant).await?;
+        self.note(
+            Some(caller.clone()),
+            Some(account.id.clone()),
+            AuditEvent::ProxyOpened {
+                grant: grant.clone(),
+                endpoint: plan.endpoint.url.clone(),
+            },
+        );
+        Ok(plan)
     }
 
     /// The account, endpoint and kind for an `OpenAuthenticated` to `origin`, an origin that is

@@ -5,7 +5,7 @@
 //! for that (removing it is the person's, in Settings).
 
 use crate::audit::AuditSink;
-use crate::service::AccountService;
+use crate::ctx::Ctx;
 use crate::sheets::Sheets;
 use porter_core::clock::Clock;
 use porter_core::store::RegistryStore;
@@ -44,14 +44,10 @@ fn claimable(claim: &Claim) -> bool {
 }
 
 impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSink>
-    AccountService<P, S, U, K, R, A>
+    Ctx<P, S, U, K, R, A>
 {
-    /// Takes what a probe found: the account of `provider` (its id is the provider's, one per
-    /// runtime) is made if it is not there, holds `models` as its claims, and is in `state`.
-    ///
-    /// An `offline` report with no models keeps the models the account had, so a stopped runtime
-    /// still lists what it ran and comes back as it was. An `ok` report replaces them.
-    pub async fn report_local(
+    /// The body of [`AccountService::report_local`](crate::AccountService::report_local).
+    pub(crate) async fn report_local(
         &self,
         provider: &ProviderId,
         models: Vec<Claim>,

@@ -6,13 +6,14 @@
 //! While the person is in the browser (or reading a code) the loop polls the sign-in and
 //! listens to the sheet at the same time, so closing the sheet ends the wait at once.
 
-use crate::agent_login::{Roster, program_of_spec};
+use crate::add_store::AllowFor;
 use crate::audit::AuditSink;
+use crate::ctx::Ctx;
+use crate::launcher::{Roster, program_of_spec};
 use crate::race::{Raced, race};
-use crate::service::AccountService;
 use crate::sheets::{SheetFault, SheetLink, SheetOpen, Sheets};
+use crate::token::refusal_of;
 use porter_core::clock::Clock;
-use porter_core::consent::Usage;
 use porter_core::sheet::{
     Progress, ProviderRow, Purpose, RowKind, Sheet, SheetEffect, SheetEnd, SheetEvent, SignInFault,
     SignInInput, Stage, step,
@@ -20,8 +21,7 @@ use porter_core::sheet::{
 use porter_core::store::RegistryStore;
 use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
 use porter_core::{
-    AccountId, AccountsReply, AppId, AuthKind, CapabilityKind, DataClass, Need, ProviderId,
-    ServiceEndpoint,
+    AccountId, AccountsReply, AppId, AuthKind, CapabilityKind, Need, ProviderId, ServiceEndpoint,
 };
 use porter_provider::{
     ConsentHistory, LoginHint, Provider, ProviderError, ProviderSpec, Readiness, SignIn,
@@ -29,18 +29,6 @@ use porter_provider::{
 };
 use porter_secrets::Secrets;
 use std::collections::VecDeque;
-
-/// What an app asked for when no account fit: the account added from its sheet is granted to it
-/// in the same step ("Add, and allow Mail to use it"), not by a second prompt.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AllowFor {
-    /// The need the new account must meet to be granted.
-    pub need: Need,
-    /// The data it touches.
-    pub class: DataClass,
-    /// Interactive or background.
-    pub usage: Usage,
-}
 
 /// Who an add is for when the host already knows ("Continue as"): the provider the identity is
 /// with, the address its page opens on, and whether this client was signed in for that identity
@@ -111,28 +99,6 @@ fn fault_of(error: ProviderError) -> SignInFault {
         ProviderError::Unreadable => SignInFault::Unreadable,
         // a variant a newer porter adds: the sign-in ends as unreadable
         _ => SignInFault::Unreadable,
-    }
-}
-
-/// What an app is told when the sheet ends without an account.
-pub(crate) fn refusal_of(fault: SignInFault) -> Refusal {
-    match fault {
-        SignInFault::Cancelled => Refusal::Dismissed,
-        SignInFault::NoLauncher => Refusal::NoLauncher,
-        SignInFault::Forbidden | SignInFault::Refused => Refusal::Denied,
-        SignInFault::Unreachable
-        | SignInFault::Unreadable
-        | SignInFault::NeedsClientId
-        | SignInFault::TimedOut
-        | SignInFault::Expired
-        | SignInFault::NotInstalled
-        | SignInFault::NotRunning
-        | SignInFault::SignedOut
-        | SignInFault::NotAllowed
-        | SignInFault::AlreadyAdded
-        | SignInFault::StoreFailed => Refusal::Unavailable,
-        // a variant a newer porter adds: the app is told it is unavailable
-        _ => Refusal::Unavailable,
     }
 }
 
@@ -208,7 +174,7 @@ pub(crate) enum Reauth {
 }
 
 impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSink>
-    AccountService<P, S, U, K, R, A>
+    Ctx<P, S, U, K, R, A>
 {
     /// Opens the add-account sheet, drives the sign-in through it, and answers `Added` with the
     /// new account's id.
@@ -722,12 +688,17 @@ fn said<S>(run: &mut Run<S>, step: SignInStep) -> SheetEvent {
 }
 
 impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSink>
-    AccountService<P, S, U, K, R, A>
+    Ctx<P, S, U, K, R, A>
 {
-    /// Opens the add-account sheet as `AddAccount` does and, when it ends in an account that
-    /// meets `ask`, records one grant of it for `caller` in the same step: the sheet's last
-    /// button reads "Add, and allow". This is what a `Choose` that found no account opens.
-    pub async fn add_and_allow(
+    /// The body of [`AccountService::asks_on_use`](crate::AccountService::asks_on_use).
+    pub(crate) fn asks_on_use(&self, provider: &ProviderId, kind: CapabilityKind) -> bool {
+        self.catalog
+            .get(provider)
+            .is_some_and(|spec| spec.on_use_rows(kind).next().is_some())
+    }
+
+    /// The body of [`AccountService::add_and_allow`](crate::AccountService::add_and_allow).
+    pub(crate) async fn add_and_allow(
         &self,
         caller: &AppId,
         hint: ProviderHint,
@@ -739,7 +710,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
 }
 
 impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSink>
-    AccountService<P, S, U, K, R, A>
+    Ctx<P, S, U, K, R, A>
 {
     /// The answer "Add Account…" to a consent alert: runs the add sheet with the app's ask
     /// attached, so the account added is granted to it in the same step (one grant, no second

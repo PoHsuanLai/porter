@@ -7,26 +7,38 @@
 //! away) therefore leaves either no row, or a whole account; at worst some secrets filed under
 //! an id no account has, which nothing reads and a later account of that id overwrites.
 
-use crate::add_flow::AllowFor;
 use crate::audit::AuditEvent;
 use crate::audit::AuditSink;
 use crate::choose::settle;
+use crate::ctx::Ctx;
 use crate::registry::{Asker, Registry};
-use crate::service::AccountService;
 use crate::sheets::Sheets;
 use porter_core::clock::Clock;
-use porter_core::consent::{ConsentAnswer, GrantScope};
+use porter_core::consent::{ConsentAnswer, GrantScope, Usage};
 use porter_core::sheet::ServiceChoice;
 use porter_core::store::AccountToggle;
 use porter_core::store::RegistryStore;
 use porter_core::{
-    Account, AccountId, AccountState, AccountsReply, AppId, AuthKind, Capability, Claim,
-    KindToggle, LoginName, Offer, Provenance, ProviderId, SecretKey, Subject, Toggle, effective,
+    Account, AccountId, AccountState, AccountsReply, AppId, AuthKind, Capability, Claim, DataClass,
+    KindToggle, LoginName, Need, Offer, Provenance, ProviderId, SecretKey, Subject, Toggle,
+    effective,
 };
 use porter_provider::{Provider, ProviderSpec, SignInStep, Signed};
 use porter_secrets::Secrets;
 use std::collections::HashSet;
 use std::sync::{Mutex, MutexGuard};
+
+/// What an app asked for when no account fit: the account added from its sheet is granted to it
+/// in the same step ("Add, and allow Mail to use it"), not by a second prompt.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AllowFor {
+    /// The need the new account must meet to be granted.
+    pub need: Need,
+    /// The data it touches.
+    pub class: DataClass,
+    /// Interactive or background.
+    pub usage: Usage,
+}
 
 /// An account id for `label` at `provider` that no account in `registry` has and no add in
 /// flight has reserved: the provider's id and the label as a slug, with a number after it when
@@ -132,7 +144,7 @@ impl Drop for Reservation<'_> {
 }
 
 impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSink>
-    AccountService<P, S, U, K, R, A>
+    Ctx<P, S, U, K, R, A>
 {
     fn reserved_ids(&self) -> MutexGuard<'_, HashSet<AccountId>> {
         self.reserved

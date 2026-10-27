@@ -4,7 +4,7 @@
 
 use crate::audit::AuditEvent;
 use crate::audit::AuditSink;
-use crate::service::AccountService;
+use crate::ctx::Ctx;
 use crate::sheets::Sheets;
 use crate::token::secret_purpose;
 use porter_core::clock::Clock;
@@ -12,8 +12,8 @@ use porter_core::store::AccountToggle;
 use porter_core::store::RegistryStore;
 use porter_core::wire::Refusal;
 use porter_core::{
-    AbsentReason, AccountId, AccountState, AppId, CapabilityKind, Claim, GrantId, Offer,
-    Provenance, SecretKey, Subject, Toggle, effective,
+    AbsentReason, AccountId, AppId, CapabilityKind, Claim, GrantId, Offer, Provenance, SecretKey,
+    Subject, Toggle, effective,
 };
 use porter_provider::{Presented, Provider, ProviderSession, RevokeOutcome};
 use porter_secrets::{Secrets, SecretsError};
@@ -28,12 +28,13 @@ pub enum RevokeReport {
 }
 
 impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSink>
-    AccountService<P, S, U, K, R, A>
+    Ctx<P, S, U, K, R, A>
 {
-    /// Removes an account (PLAN §2.9): asks its provider to stop honouring the credential, best
-    /// effort, then wipes its secrets, grants, toggles and row, and audits `Removed`. The
-    /// provider's answer never stops the wipe.
-    pub async fn remove_with_revoke(&self, id: &AccountId) -> Result<RevokeReport, SecretsError> {
+    /// The body of [`AccountService::remove_with_revoke`](crate::AccountService::remove_with_revoke).
+    pub(crate) async fn remove_with_revoke(
+        &self,
+        id: &AccountId,
+    ) -> Result<RevokeReport, SecretsError> {
         let account = self.lock().accounts.iter().find(|a| a.id == *id).cloned();
         let report = match account {
             Some(account) => self.revoke_at_provider(&account).await,
@@ -75,11 +76,8 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         }
     }
 
-    /// Asks the provider what the account can do now and records it (the claims, with the
-    /// account's toggles applied). A refresh token the provider rotated while it looked is read
-    /// back from a session opened afterwards (`renewed`) and stored, so the next sign-in
-    /// check does not present a token the issuer has since replaced.
-    pub async fn rediscover(&self, id: &AccountId) -> Result<Vec<Claim>, Refusal> {
+    /// The body of [`AccountService::rediscover`](crate::AccountService::rediscover).
+    pub(crate) async fn rediscover(&self, id: &AccountId) -> Result<Vec<Claim>, Refusal> {
         let account = self
             .lock()
             .accounts
@@ -138,11 +136,8 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         Ok(claims)
     }
 
-    /// Switches one kind of one account on or off: the toggle row is kept, and the account's
-    /// effective capabilities follow (a kind turned off reads `Absent { TurnedOff }`; turned on
-    /// again it reads as its provider file declares it until the next discovery refreshes it).
-    /// A switch that changes the kind is audited (`ServiceToggled`).
-    pub async fn set_toggle(
+    /// The body of [`AccountService::set_toggle`](crate::AccountService::set_toggle).
+    pub(crate) async fn set_toggle(
         &self,
         id: &AccountId,
         kind: CapabilityKind,
@@ -233,21 +228,18 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         self.persist().await
     }
 
-    /// Records `event`, which the host did on the person's behalf (Settings' client id row),
-    /// in the service's audit sink.
-    pub fn audit_settings(&self, event: AuditEvent) {
+    /// The body of [`AccountService::audit_settings`](crate::AccountService::audit_settings).
+    pub(crate) fn audit_settings(&self, event: AuditEvent) {
         self.note(None, None, event);
     }
 
-    /// Records `event`, which `app` caused and which concerns no account (a desktop-wide Space
-    /// made, renamed or removed), in the service's audit sink.
-    pub fn audit_app(&self, app: AppId, event: AuditEvent) {
+    /// The body of [`AccountService::audit_app`](crate::AccountService::audit_app).
+    pub(crate) fn audit_app(&self, app: AppId, event: AuditEvent) {
         self.note(Some(app), None, event);
     }
 
-    /// Withdraws any grant, whoever holds it (Settings' "Revoke"). `UnknownGrant` when none has
-    /// that id.
-    pub async fn revoke_grant(&self, grant: &GrantId) -> Result<(), Refusal> {
+    /// The body of [`AccountService::revoke_grant`](crate::AccountService::revoke_grant).
+    pub(crate) async fn revoke_grant(&self, grant: &GrantId) -> Result<(), Refusal> {
         let held = {
             let mut registry = self.lock();
             let held = registry.grants.iter().find(|g| g.id == *grant).cloned();
@@ -265,20 +257,38 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         self.persist().await
     }
 
-    /// Sets an account's state (`NeedsReauth` when its credential was refused, `Ok` again once
-    /// it is signed in). Whether it changed.
-    pub async fn set_state(&self, id: &AccountId, state: AccountState) -> bool {
-        let changed = {
+    /// The wipe of `remove_account`: secrets, grants, toggles, the registry row, one audit line.
+    pub(crate) async fn wipe_account(&self, id: &AccountId) -> Result<(), SecretsError> {
+        // The rows go first, in one step with no await, and come back if the secrets cannot be
+        // deleted. A wipe dropped while it awaits the secrets therefore leaves no account
+        // without its credentials; at worst credentials with no account, which nothing reads.
+        let (accounts, grants, toggles) = {
             let mut registry = self.lock();
-            registry
-                .accounts
-                .iter_mut()
-                .find(|a| a.id == *id)
-                .is_some_and(|a| std::mem::replace(&mut a.state, state) != state)
+            let (gone, kept) = std::mem::take(&mut registry.accounts)
+                .into_iter()
+                .partition(|a| a.id == *id);
+            registry.accounts = kept;
+            let (dropped, kept) = std::mem::take(&mut registry.grants)
+                .into_iter()
+                .partition(|g| g.key.account == *id);
+            registry.grants = kept;
+            let (off, kept) = std::mem::take(&mut registry.toggles)
+                .into_iter()
+                .partition(|t| t.account == *id);
+            registry.toggles = kept;
+            (gone, dropped, off)
         };
-        if changed {
-            let _ = self.persist().await;
+        if let Err(why) = self.secrets.delete_account(id).await {
+            let mut registry = self.lock();
+            registry.accounts.extend(accounts);
+            registry.grants.extend(grants);
+            registry.toggles.extend(toggles);
+            return Err(why);
         }
-        changed
+        self.note(None, Some(id.clone()), AuditEvent::Removed);
+        // The in-memory registry is already without the account; a store that cannot be
+        // written keeps the old row until the next save, and the host sees it on its own save.
+        let _ = self.persist().await;
+        Ok(())
     }
 }

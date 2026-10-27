@@ -1,4 +1,4 @@
-//! One refresh at a time per account, inside a store.
+//! One refresh at a time per account, inside a store: the turns (`issue` takes them).
 //!
 //! An OAuth account's refresh token can rotate: the issuer answers a refresh with a new refresh
 //! token and the old one stops working (Microsoft does). Two callers that refresh the same account
@@ -11,21 +11,9 @@
 //! refreshes that ran together. The rotated credential is written back before the new access
 //! token is handed out, and before the gate is let go.
 
-use crate::audit::AuditSink;
 use crate::gate::Gate;
-use crate::service::AccountService;
-use crate::sheets::Sheets;
-use crate::token::secrets_refusal;
 use porter_core::capability::StorageScope;
-use porter_core::clock::Clock;
-use porter_core::store::RegistryStore;
-use porter_core::wire::Refusal;
-use porter_core::{
-    Account, AccountId, Audience, CapabilityKind, Credential, IssuedToken, SecretKey,
-    SecretPurpose, UnixSeconds,
-};
-use porter_provider::{Presented, Provider, ProviderSession};
-use porter_secrets::Secrets;
+use porter_core::{AccountId, Audience, CapabilityKind, Credential, IssuedToken, UnixSeconds};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -142,112 +130,6 @@ impl Flights {
             .entry(account.clone())
             .or_default()
             .clone()
-    }
-}
-
-impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSink>
-    AccountService<P, S, U, K, R, A>
-{
-    /// A short-lived token for `audience` under a grant of a kind and reach (`grant`) from
-    /// `account`'s session, as the caller receives it. For an OAuth credential the refresh goes
-    /// one at a time per account: a second caller waits for the first, then uses the token the
-    /// first issued (one call to the issuer serves both) or, when that is not good for this
-    /// audience, kind and reach, refreshes from what the first stored. A credential the provider rotated is written back before the token is
-    /// returned. Other credentials are not rotated, so they are not queued.
-    pub(crate) async fn issue_for(
-        &self,
-        account: &Account,
-        provider: &P,
-        purpose: Option<SecretPurpose>,
-        audience: &Audience,
-        grant: (CapabilityKind, StorageScope),
-    ) -> Result<IssuedToken, Refusal> {
-        let Some(purpose) = purpose else {
-            let (token, _) = self
-                .mint(
-                    account,
-                    provider,
-                    Presented::Anonymous,
-                    None,
-                    audience,
-                    grant,
-                )
-                .await?;
-            return Ok(token);
-        };
-        let key = SecretKey {
-            account: account.id.clone(),
-            purpose,
-        };
-        let first = self.secrets.get(&key).await.map_err(secrets_refusal)?;
-        if !matches!(first, Credential::OAuth { .. }) {
-            let (token, _) = self
-                .mint(
-                    account,
-                    provider,
-                    Presented::Credential(first),
-                    Some(&key),
-                    audience,
-                    grant,
-                )
-                .await?;
-            return Ok(token);
-        }
-        let flight = self.flights.of(&account.id);
-        let seen = flight.refreshes();
-        let _turn = flight.gate.lock().await;
-        // Read again under the gate: the caller ahead of us may have rotated the credential.
-        let stored = self.secrets.get(&key).await.map_err(secrets_refusal)?;
-        // Only a refresh made while we waited is shared; otherwise this caller asks the issuer.
-        if flight.refreshes() != seen
-            && let Some(token) = flight.reusable(&stored, audience, grant, self.clock.now())
-        {
-            return Ok(token);
-        }
-        let (token, renewed) = self
-            .mint(
-                account,
-                provider,
-                Presented::Credential(stored.clone()),
-                Some(&key),
-                audience,
-                grant,
-            )
-            .await?;
-        let left = renewed.unwrap_or_else(|| stored.clone());
-        flight.remember(&stored, left, audience, grant, token.clone());
-        Ok(token)
-    }
-
-    /// Opens `account` with `presented`, asks the session for a token, and files a credential it
-    /// rotated under `key` before returning the token. The credential filed is returned too.
-    async fn mint(
-        &self,
-        account: &Account,
-        provider: &P,
-        presented: Presented,
-        key: Option<&SecretKey>,
-        audience: &Audience,
-        (kind, reach): (CapabilityKind, StorageScope),
-    ) -> Result<(IssuedToken, Option<Credential>), Refusal> {
-        let session = match provider.open(&account.id, presented).await {
-            Ok(session) => session,
-            Err(error) => return Err(self.refused_refresh(&account.id, error).await),
-        };
-        // The grant's kind and reach, so the token reaches that kind's service alone, as far as
-        // the grant does.
-        let token = match session.access_token_for(audience, kind, reach).await {
-            Ok(token) => token,
-            Err(error) => return Err(self.refused_refresh(&account.id, error).await),
-        };
-        let renewed = session.renewed();
-        if let (Some(renewed), Some(key)) = (&renewed, key) {
-            self.secrets
-                .put(key, renewed)
-                .await
-                .map_err(secrets_refusal)?;
-        }
-        Ok((token, renewed))
     }
 }
 

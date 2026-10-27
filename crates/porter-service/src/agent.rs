@@ -5,7 +5,7 @@
 
 use crate::audit::AuditEvent;
 use crate::audit::AuditSink;
-use crate::service::AccountService;
+use crate::ctx::Ctx;
 use crate::sheets::Sheets;
 use porter_core::clock::Clock;
 use porter_core::store::RegistryStore;
@@ -26,11 +26,10 @@ pub enum AgentFault {
 }
 
 impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSink>
-    AccountService<P, S, U, K, R, A>
+    Ctx<P, S, U, K, R, A>
 {
-    /// Records what the agent says of its own sign-in. Returns whether the account's state
-    /// changed (a repeat of the same word changes nothing and writes nothing).
-    pub async fn set_agent_state(
+    /// The body of [`AccountService::set_agent_state`](crate::AccountService::set_agent_state).
+    pub(crate) async fn set_agent_state(
         &self,
         account: &AccountId,
         state: AgentState,

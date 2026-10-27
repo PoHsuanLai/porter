@@ -1,5 +1,6 @@
 //! `IssueToken`: which secret an account presents, and minting a short-lived token from it.
 
+use porter_core::sheet::SignInFault;
 use porter_core::wire::Refusal;
 use porter_core::{AuthKind, SecretPurpose};
 use porter_provider::ProviderError;
@@ -42,6 +43,28 @@ pub(crate) fn secrets_refusal(error: SecretsError) -> Refusal {
     match error {
         SecretsError::Missing | SecretsError::Unreadable => Refusal::NeedsReauth,
         SecretsError::Locked | SecretsError::Unavailable => Refusal::Unavailable,
+    }
+}
+
+/// What an app is told when the sheet ends without an account.
+pub(crate) fn refusal_of(fault: SignInFault) -> Refusal {
+    match fault {
+        SignInFault::Cancelled => Refusal::Dismissed,
+        SignInFault::NoLauncher => Refusal::NoLauncher,
+        SignInFault::Forbidden | SignInFault::Refused => Refusal::Denied,
+        SignInFault::Unreachable
+        | SignInFault::Unreadable
+        | SignInFault::NeedsClientId
+        | SignInFault::TimedOut
+        | SignInFault::Expired
+        | SignInFault::NotInstalled
+        | SignInFault::NotRunning
+        | SignInFault::SignedOut
+        | SignInFault::NotAllowed
+        | SignInFault::AlreadyAdded
+        | SignInFault::StoreFailed => Refusal::Unavailable,
+        // a variant a newer porter adds: the app is told it is unavailable
+        _ => Refusal::Unavailable,
     }
 }
 
