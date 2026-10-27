@@ -56,12 +56,17 @@ async fn tokens_come_per_audience_in_the_form_the_protocol_takes() {
             .expect(audience);
         assert_eq!(token.kind, kind, "{audience}");
         let bearer = match kind {
-            TokenKind::Xoauth2 => token
-                .value
-                .expose()
-                .strip_prefix("user=ada@contoso.onmicrosoft.com\u{1}auth=Bearer ")
-                .and_then(|rest| rest.strip_suffix("\u{1}\u{1}"))
-                .unwrap_or_else(|| panic!("{audience}: not the unencoded SASL string")),
+            TokenKind::Xoauth2 => {
+                let (user, bearer) = porter_core::token::parse_xoauth2(token.value.expose())
+                    .unwrap_or_else(|| panic!("{audience}: not the unencoded SASL string"));
+                assert_eq!(user, "ada@contoso.onmicrosoft.com", "{audience}");
+                assert_eq!(
+                    token.value,
+                    porter_core::token::xoauth2(user, bearer),
+                    "{audience}"
+                );
+                bearer
+            }
             _ => token.value.expose(),
         };
         assert!(rig.issuer.access_is_live(bearer), "{audience}");

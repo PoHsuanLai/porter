@@ -18,8 +18,8 @@ use super::reauth::ReauthReason;
 use super::scopes::{Granted, grant_scopes};
 use porter_core::capability::{Ask, StorageScope};
 use porter_core::{
-    AccountId, Audience, CapabilityKind, Claim, Credential, Family, IssuedToken, SecretText,
-    TokenKind, UnixSeconds,
+    AccountId, Audience, CapabilityKind, Claim, Credential, Family, IssuedToken, TokenKind,
+    UnixSeconds,
 };
 use porter_http::Http;
 use porter_oauth::{
@@ -273,10 +273,7 @@ impl<H: Http> GoogleSession<H> {
                 let user = self.address().await?;
                 Ok(IssuedToken::new(
                     form,
-                    SecretText::new(format!(
-                        "user={user}\u{1}auth=Bearer {}\u{1}\u{1}",
-                        token.value.expose()
-                    )),
+                    porter_core::token::xoauth2(&user, token.value.expose()),
                     token.expires,
                 ))
             }

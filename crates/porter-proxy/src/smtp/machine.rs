@@ -63,14 +63,11 @@ impl SmtpRelay {
         let line = match (auth, &self.plan.auth) {
             (SmtpAuth::Plain, RelayAuth::Password(password)) => format!(
                 "AUTH PLAIN {}",
-                STANDARD.encode(format!("\0{user}\0{}", password.expose()))
+                STANDARD.encode(porter_core::token::plain(user, password.expose()).expose())
             ),
             (SmtpAuth::Xoauth2, RelayAuth::AccessToken(token)) => format!(
                 "AUTH XOAUTH2 {}",
-                STANDARD.encode(format!(
-                    "user={user}\x01auth=Bearer {}\x01\x01",
-                    token.expose()
-                ))
+                STANDARD.encode(porter_core::token::xoauth2(user, token.expose()).expose())
             ),
             _ => return fail(RelayFault::Protocol),
         };

@@ -10,6 +10,7 @@ publish.workspace = true
 
 [dependencies]
 base64 = { workspace = true }
+dav-proto = { workspace = true }
 porter-core = { workspace = true }
 porter-discover = { workspace = true }
 porter-fake = { workspace = true }

@@ -270,7 +270,7 @@ EDGES=(
   "porter-sheets: porter-core porter-dbus porter-provider porter-service"
   "porter-client: porter-bridge porter-core porter-dbus porter-fs porter-infer porter-provider porter-proxy porter-secrets porter-service porter-turns model-http model-openai-compat model-provider model-wire"
   "porter-fake: porter-core porter-provider porter-secrets porter-service"
-  "porter-fake-servers: porter-core porter-discover porter-fake porter-provider quickxorhash"
+  "porter-fake-servers: dav-proto porter-core porter-discover porter-fake porter-provider quickxorhash"
   "porter-http: porter-core"
   "porter-engines:"
   "porter-engines-install: porter-core porter-engines porter-http"

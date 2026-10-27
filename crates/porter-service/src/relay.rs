@@ -36,9 +36,7 @@ fn bearer_of(kind: TokenKind, value: &SecretText) -> Option<SecretText> {
     match kind {
         TokenKind::Bearer => Some(value.clone()),
         TokenKind::Xoauth2 => {
-            let after = value.expose().split_once("auth=Bearer ")?.1;
-            let token = after.split('\x01').next()?;
-            (!token.is_empty()).then(|| SecretText::new(token))
+            porter_core::token::xoauth2_bearer(value.expose()).map(SecretText::new)
         }
         TokenKind::ApiKeyHandle => None,
     }
@@ -212,7 +210,7 @@ mod tests {
 
     #[test]
     fn the_bearer_comes_out_of_whichever_form_the_provider_issued() {
-        let raw = SecretText::new("user=ada\x01auth=Bearer tok-1\x01\x01");
+        let raw = porter_core::token::xoauth2("ada", "tok-1");
         let plain = SecretText::new("tok-3");
         let cases = [
             (TokenKind::Bearer, &plain, Some("tok-3")),

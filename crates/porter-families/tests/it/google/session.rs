@@ -213,12 +213,14 @@ async fn mail_audiences_are_only_for_a_persons_own_client() {
     for name in ["imap", "smtp"] {
         let token = session.access_token(&audience(name)).await.expect(name);
         assert_eq!(token.kind, TokenKind::Xoauth2, "{name}");
-        let bearer = token
-            .value
-            .expose()
-            .strip_prefix("user=ada@gmail.com\u{1}auth=Bearer ")
-            .and_then(|rest| rest.strip_suffix("\u{1}\u{1}"))
+        let (user, bearer) = porter_core::token::parse_xoauth2(token.value.expose())
             .unwrap_or_else(|| panic!("{name}: not the unencoded SASL string"));
+        assert_eq!(user, "ada@gmail.com", "{name}");
+        assert_eq!(
+            token.value,
+            porter_core::token::xoauth2(user, bearer),
+            "{name}"
+        );
         assert!(own.google.issuer.access_is_live(bearer));
     }
 }

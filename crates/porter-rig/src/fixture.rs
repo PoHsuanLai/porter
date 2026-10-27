@@ -23,22 +23,11 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-/// A unit-name component with the bytes systemd escapes written as `\xHH`.
-fn escape(text: &str) -> String {
-    text.bytes()
-        .map(|b| match b {
-            b'-' => "\\x2d".to_owned(),
-            b if b.is_ascii_alphanumeric() || b == b'.' || b == b'_' => char::from(b).to_string(),
-            b => format!("\\x{b:02x}"),
-        })
-        .collect()
-}
-
 /// The text of `<pid>/cgroup` for Flatpak app `app`.
 pub fn cgroup_text(app: &str, pid: u32) -> String {
     format!(
         "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-flatpak-{}-{pid}.scope\n",
-        escape(app)
+        porter_core::scope::escape(app)
     )
 }
 
@@ -82,18 +71,6 @@ impl Drop for Identity {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_unit_name_escapes_the_dash_and_keeps_dots() {
-        const CASES: &[(&str, &str)] = &[
-            ("org.quire.Photos", "org.quire.Photos"),
-            ("org.example.My-App", "org.example.My\\x2dApp"),
-            ("a_b", "a_b"),
-        ];
-        for (app, escaped) in CASES {
-            assert_eq!(escape(app), *escaped, "{app}");
-        }
-    }
 
     #[test]
     fn the_cgroup_names_a_flatpak_scope_the_daemons_parse_back() {

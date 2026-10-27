@@ -1,4 +1,4 @@
-use super::{FLATPAK_LAUNCHER, ScopeName};
+use super::{FLATPAK_LAUNCHER, ScopeName, escape, unescape};
 
 /// (case, launcher, app, run, the unit name written).
 const WRITTEN: &[(&str, Option<&str>, &str, &str, &str)] = &[
@@ -95,4 +95,19 @@ fn flatpak_is_its_tag_and_a_decimal_run() {
     assert!(flatpak("app-flatpak-org.mozilla.firefox-9.scope"));
     assert!(!flatpak("app-flatpak-org.mozilla.firefox-a3.scope"));
     assert!(!flatpak("app-sill-org.mozilla.firefox-9.scope"));
+}
+
+#[test]
+fn a_unit_name_component_escapes_the_dash_the_slash_and_a_leading_dot() {
+    const CASES: &[(&str, &str)] = &[
+        ("org.quire.Photos", "org.quire.Photos"),
+        ("org.example.My-App", r"org.example.My\x2dApp"),
+        ("a_b:c", "a_b:c"),
+        ("a/b", r"a\x2fb"),
+        (".hidden", r"\x2ehidden"),
+    ];
+    for (text, escaped) in CASES {
+        assert_eq!(escape(text), *escaped, "{text}");
+        assert_eq!(unescape(escaped).as_deref(), Some(*text), "{text}");
+    }
 }

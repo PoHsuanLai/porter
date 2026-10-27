@@ -49,12 +49,11 @@ impl ImapRelay {
         let user = &self.plan.endpoint.login.0;
         match (&self.plan.auth, auth) {
             (RelayAuth::Password(password), ImapAuth::Plain) => {
-                Some(STANDARD.encode(format!("\0{user}\0{}", password.expose())))
+                Some(STANDARD.encode(porter_core::token::plain(user, password.expose()).expose()))
             }
-            (RelayAuth::AccessToken(token), ImapAuth::Xoauth2) => Some(STANDARD.encode(format!(
-                "user={user}\x01auth=Bearer {}\x01\x01",
-                token.expose()
-            ))),
+            (RelayAuth::AccessToken(token), ImapAuth::Xoauth2) => {
+                Some(STANDARD.encode(porter_core::token::xoauth2(user, token.expose()).expose()))
+            }
             _ => None,
         }
     }

@@ -47,17 +47,14 @@ impl Pop3Relay {
                 self.phase = Pop3Phase::Authenticating;
                 format!(
                     "AUTH PLAIN {}",
-                    STANDARD.encode(format!("\0{user}\0{}", password.expose()))
+                    STANDARD.encode(porter_core::token::plain(&user, password.expose()).expose())
                 )
             }
             (Pop3Auth::Xoauth2, RelayAuth::AccessToken(token)) => {
                 self.phase = Pop3Phase::Authenticating;
                 format!(
                     "AUTH XOAUTH2 {}",
-                    STANDARD.encode(format!(
-                        "user={user}\x01auth=Bearer {}\x01\x01",
-                        token.expose()
-                    ))
+                    STANDARD.encode(porter_core::token::xoauth2(&user, token.expose()).expose())
                 )
             }
             _ => return fail(RelayFault::Protocol),

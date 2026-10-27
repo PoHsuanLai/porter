@@ -132,18 +132,20 @@ impl SieveRelay {
         let user = &self.plan.endpoint.login.0;
         let (name, response) = match (auth, &self.plan.auth) {
             (SieveAuth::Plain, RelayAuth::Password(password)) => {
-                ("PLAIN", format!("\0{user}\0{}", password.expose()))
+                ("PLAIN", porter_core::token::plain(user, password.expose()))
             }
-            (SieveAuth::Xoauth2, RelayAuth::AccessToken(token)) => (
-                "XOAUTH2",
-                format!("user={user}\x01auth=Bearer {}\x01\x01", token.expose()),
-            ),
+            (SieveAuth::Xoauth2, RelayAuth::AccessToken(token)) => {
+                ("XOAUTH2", porter_core::token::xoauth2(user, token.expose()))
+            }
             _ => return fail(RelayFault::Protocol),
         };
         self.phase = SievePhase::Authenticating;
         vec![send_line(
             Side::Server,
-            &format!("AUTHENTICATE \"{name}\" \"{}\"", STANDARD.encode(response)),
+            &format!(
+                "AUTHENTICATE \"{name}\" \"{}\"",
+                STANDARD.encode(response.expose())
+            ),
         )]
     }
 

@@ -13,8 +13,7 @@ use super::graph_origin;
 use super::scopes::{audience_scope, grant_scope};
 use porter_core::capability::{Ask, StorageScope};
 use porter_core::{
-    AccountId, Audience, CapabilityKind, Credential, IssuedToken, SecretText, TokenKind,
-    UnixSeconds,
+    AccountId, Audience, CapabilityKind, Credential, IssuedToken, TokenKind, UnixSeconds,
 };
 use porter_http::Http;
 use porter_oauth::{ExchangeFault, Renewal, endpoints_of, refresh_scoped_detailed, renewal};
@@ -198,10 +197,7 @@ impl<H: Http> MicrosoftSession<H> {
                 let user = self.address().await?;
                 Ok(IssuedToken::new(
                     token.kind,
-                    SecretText::new(format!(
-                        "user={user}\u{1}auth=Bearer {}\u{1}\u{1}",
-                        token.value.expose()
-                    )),
+                    porter_core::token::xoauth2(&user, token.value.expose()),
                     token.expires,
                 ))
             }

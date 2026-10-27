@@ -1123,8 +1123,9 @@ async fn a_fixed_file_signs_in_to_the_servers_it_names_and_the_password_logs_in(
     assert!(line(&mut stream).await.starts_with("220"));
     say(&mut stream, "EHLO test\r\n").await;
     while !line(&mut stream).await.starts_with("250 ") {}
-    let plain =
-        porter_fake_servers::mail::b64(&format!("\0{}\0{}", smtp_end.login.0, password.expose()));
+    let plain = porter_fake_servers::mail::b64(
+        porter_core::token::plain(&smtp_end.login.0, password.expose()).expose(),
+    );
     say(&mut stream, &format!("AUTH PLAIN {plain}\r\n")).await;
     assert!(line(&mut stream).await.starts_with("235"));
 

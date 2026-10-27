@@ -308,14 +308,5 @@ impl SpaceBook {
     }
 }
 
-/// Seconds since the Unix epoch now, for a Space's `created`.
-pub(crate) fn unix_now() -> UnixSeconds {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    UnixSeconds(i64::try_from(secs).unwrap_or(i64::MAX))
-}
-
 #[cfg(test)]
 mod tests;

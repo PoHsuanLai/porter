@@ -182,7 +182,7 @@ async fn imap_implicit_tls_takes_authenticate_plain_and_xoauth2() {
 
     let mut lines = implicit(&address).await;
     lines.read_line().await.expect("read");
-    let xoauth = b64("user=alice@fake.test\u{1}auth=Bearer fake-access-9\u{1}\u{1}");
+    let xoauth = b64(porter_core::token::xoauth2("alice@fake.test", "fake-access-9").expose());
     assert!(
         last(&command(&mut lines, "d1", &format!("AUTHENTICATE XOAUTH2 {xoauth}")).await)
             .starts_with("d1 OK")

@@ -114,12 +114,6 @@ const NAMESPACES: &str = "xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\" xm
     xmlns:nc=\"http://nextcloud.org/ns\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" \
     xmlns:card=\"urn:ietf:params:xml:ns:carddav\" xmlns:cs=\"http://calendarserver.org/ns/\" xmlns:ic=\"http://apple.com/ns/ical/\"";
 
-fn escape(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-}
-
 fn parent_of(path: &str) -> &str {
     path.rsplit_once('/').map_or("", |(p, _)| p)
 }
@@ -419,7 +413,7 @@ impl Tree {
                 .and_then(|m| m.displayname.as_deref())
                 .unwrap_or_else(|| path.rsplit('/').next().unwrap_or(""));
             out.push_str(&if wants("displayname") {
-                format!("<d:displayname>{}</d:displayname>", escape(name))
+                format!("<d:displayname>{}</d:displayname>", dav_proto::escape(name))
             } else {
                 String::new()
             });
@@ -430,7 +424,7 @@ impl Tree {
             ) {
                 out.push_str(&format!(
                     "<ic:calendar-color>{}</ic:calendar-color>",
-                    escape(color)
+                    dav_proto::escape(color)
                 ));
             }
             if let Some(principal) = &self.principal {
@@ -490,20 +484,20 @@ impl Tree {
         if asked("current-user-principal") {
             out.push_str(&format!(
                 "<d:current-user-principal><d:href>{}/</d:href></d:current-user-principal>",
-                escape(&principal.path)
+                dav_proto::escape(&principal.path)
             ));
         }
         if path == principal.path {
             if asked("calendar-home-set") {
                 out.push_str(&format!(
                     "<cal:calendar-home-set><d:href>{}/</d:href></cal:calendar-home-set>",
-                    escape(&principal.calendar_home)
+                    dav_proto::escape(&principal.calendar_home)
                 ));
             }
             if asked("addressbook-home-set") {
                 out.push_str(&format!(
                     "<card:addressbook-home-set><d:href>{}/</d:href></card:addressbook-home-set>",
-                    escape(&principal.addressbook_home)
+                    dav_proto::escape(&principal.addressbook_home)
                 ));
             }
         }
@@ -514,7 +508,7 @@ impl Tree {
         let slash = if node.kind == Kind::Item { "" } else { "/" };
         format!(
             "<d:response><d:href>{}{slash}</d:href><d:propstat><d:prop>{}</d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>",
-            escape(path),
+            dav_proto::escape(path),
             self.props(path, node, requested)
         )
     }
@@ -591,7 +585,7 @@ impl Tree {
             if !self.nodes.contains_key(gone) {
                 out.push_str(&format!(
                     "<d:response><d:href>{}</d:href><d:status>HTTP/1.1 404 Not Found</d:status></d:response>",
-                    escape(gone)
+                    dav_proto::escape(gone)
                 ));
             }
         }

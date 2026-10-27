@@ -54,7 +54,7 @@ mod space_record;
 pub mod store;
 pub mod stream;
 mod tailnet;
-mod token;
+pub mod token;
 mod units;
 mod weburl;
 pub mod wire;
