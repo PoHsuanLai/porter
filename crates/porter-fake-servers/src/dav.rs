@@ -613,8 +613,8 @@ impl Tree {
 
     /// The `calendar-query` REPORT (RFC 4791 section 7.8), as far as finding an event by its
     /// `UID`: the members of the calendar at `path` whose text has a `UID` line containing the
-    /// query's `text-match` (a substring match, as RFC 4791 section 9.7.5 has it), with their etag and text. A query with no `text-match` lists every
-    /// member.
+    /// query's `text-match` (a substring match, as RFC 4791 section 9.7.5 has it), with their
+    /// etag and text. A query with no `text-match` lists every member.
     fn calendar_query(&self, path: &str, body: &str) -> Response {
         if !self
             .nodes

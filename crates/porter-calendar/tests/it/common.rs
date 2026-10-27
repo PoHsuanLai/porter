@@ -1,7 +1,6 @@
 //! The rigs: a fake DAV server on loopback reached through `StreamHttp` over a TCP dial with the
 //! credential added the way accountd's relay would add it, and a scripted seam for the stores
 //! that take JSON. No network beyond loopback.
-#![allow(dead_code)]
 
 use porter_core::WebUrl;
 use porter_core::stream::ByteStream;
@@ -73,7 +72,8 @@ pub type Client = Basic<StreamHttp<TcpDial>>;
 
 /// A running fake DAV server and the URLs a test reaches it at.
 pub struct Server {
-    pub dav: Running<DavHandle>,
+    /// Held so the server runs for as long as the test does.
+    _dav: Running<DavHandle>,
     pub port: u16,
     /// `/dav/`, the home the calendar is under.
     pub home: WebUrl,
@@ -93,7 +93,7 @@ impl Server {
         let home = WebUrl::parse(&format!("{}/dav/", dav.base_url())).expect("url");
         let calendar = format!("{}/dav/calendar/", dav.base_url());
         Self {
-            dav,
+            _dav: dav,
             port,
             home,
             calendar,

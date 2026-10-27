@@ -8,7 +8,8 @@
 //! [`Stored::version`] is always `None` here.
 //!
 //! The bus names carry the interface's version (`Sources5`, `Calendar8`), which a desktop's
-//! release moves: [`Names`] holds them, with today's as its default.
+//! release moves: [`Names`] holds them, with the versions this crate was written against as its
+//! default.
 
 use crate::CalendarStore;
 use crate::error::CalendarError;
@@ -41,9 +42,16 @@ impl Default for Names {
     }
 }
 
+/// The interfaces a source, the calendar factory and an opened calendar answer.
 const SOURCE: &str = "org.gnome.evolution.dataserver.Source";
 const FACTORY: &str = "org.gnome.evolution.dataserver.CalendarFactory";
 const CALENDAR: &str = "org.gnome.evolution.dataserver.Calendar";
+
+/// The modification type that reaches every instance of a recurring event.
+const ALL_INSTANCES: &str = "all";
+
+/// No operation flags.
+const NO_FLAGS: u32 = 0;
 
 /// The calendars of the desktop's Evolution Data Server.
 #[derive(Debug, Clone)]
@@ -77,6 +85,15 @@ impl Eds {
             .map_err(bus)?;
         calendar.call::<_, _, ()>("Open", &()).await.map_err(bus)?;
         Ok(calendar)
+    }
+}
+
+/// The iCalendar text of the event with `uid` in the opened `calendar`, `None` when there is none.
+async fn fetch(calendar: &Proxy<'_>, uid: &str) -> Result<Option<String>, CalendarError> {
+    match calendar.call::<_, _, String>("GetObject", &(uid, "")).await {
+        Ok(ics) => Ok(Some(ics)),
+        Err(error) if not_found(&error) => Ok(None),
+        Err(error) => Err(bus(error)),
     }
 }
 
@@ -131,6 +148,7 @@ fn calendar_of(uid: &str, data: &str) -> Option<CalendarRef> {
     })
 }
 
+/// A string property of a source, when it has one.
 fn text(value: Option<&OwnedValue>) -> Option<String> {
     value.and_then(|v| String::try_from(v.clone()).ok())
 }
@@ -148,7 +166,7 @@ impl CalendarStore for Eds {
         let objects = manager
             .get_managed_objects()
             .await
-            .map_err(|e| CalendarError::Bus(e.to_string()))?;
+            .map_err(|error| CalendarError::Bus(error.to_string()))?;
         let mut out: Vec<CalendarRef> = objects
             .values()
             .filter_map(|interfaces| {
@@ -165,38 +183,26 @@ impl CalendarStore for Eds {
 
     async fn find(&self, calendar: &str, uid: &str) -> Result<Option<Stored>, CalendarError> {
         let backend = self.open(calendar).await?;
-        match backend.call::<_, _, String>("GetObject", &(uid, "")).await {
-            Ok(ics) => Ok(Some(Stored {
-                calendar: calendar.to_owned(),
-                uid: uid.to_owned(),
-                id: uid.to_owned(),
-                version: None,
-                ics: Some(ics),
-            })),
-            Err(error) if not_found(&error) => Ok(None),
-            Err(error) => Err(bus(error)),
-        }
+        Ok(fetch(&backend, uid).await?.map(|ics| Stored {
+            calendar: calendar.to_owned(),
+            uid: uid.to_owned(),
+            id: uid.to_owned(),
+            version: None,
+            ics: Some(ics),
+        }))
     }
 
     async fn put(&self, calendar: &str, event: &Event) -> Result<Stored, CalendarError> {
         let backend = self.open(calendar).await?;
         let objects = vec![event.ics.clone()];
-        let held = match backend
-            .call::<_, _, String>("GetObject", &(event.uid.as_str(), ""))
-            .await
-        {
-            Ok(_) => true,
-            Err(error) if not_found(&error) => false,
-            Err(error) => return Err(bus(error)),
-        };
-        if held {
+        if fetch(&backend, &event.uid).await?.is_some() {
             backend
-                .call::<_, _, ()>("ModifyObjects", &(objects, "all", 0u32))
+                .call::<_, _, ()>("ModifyObjects", &(objects, ALL_INSTANCES, NO_FLAGS))
                 .await
                 .map_err(bus)?;
         } else {
             backend
-                .call::<_, _, Vec<String>>("CreateObjects", &(objects, 0u32))
+                .call::<_, _, Vec<String>>("CreateObjects", &(objects, NO_FLAGS))
                 .await
                 .map_err(bus)?;
         }
@@ -213,7 +219,7 @@ impl CalendarStore for Eds {
         let backend = self.open(calendar).await?;
         let which = vec![(uid.to_owned(), String::new())];
         match backend
-            .call::<_, _, ()>("RemoveObjects", &(which, "all", 0u32))
+            .call::<_, _, ()>("RemoveObjects", &(which, ALL_INSTANCES, NO_FLAGS))
             .await
         {
             Ok(()) => Ok(true),

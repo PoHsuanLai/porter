@@ -12,10 +12,33 @@ use porter_core::WebUrl;
 use porter_http::{Http, Method};
 use serde_json::{Value, json};
 
+/// The capabilities every request names it uses.
 const USING: [&str; 2] = [
     "urn:ietf:params:jmap:core",
     "urn:ietf:params:jmap:calendars",
 ];
+
+/// The id a create names its one event by, so the answer can be read back under it.
+const NEW: &str = "e";
+
+/// Which of `CalendarEvent/set`'s three changes a call makes.
+#[derive(Debug, Clone, Copy)]
+enum Change {
+    Create,
+    Update,
+    Destroy,
+}
+
+impl Change {
+    /// The members of the answer that hold what was done and what was refused.
+    fn members(self) -> (&'static str, &'static str) {
+        match self {
+            Change::Create => ("created", "notCreated"),
+            Change::Update => ("updated", "notUpdated"),
+            Change::Destroy => ("destroyed", "notDestroyed"),
+        }
+    }
+}
 
 /// A JMAP account's calendars.
 #[derive(Debug, Clone)]
@@ -98,7 +121,7 @@ impl<H: Http> Jmap<H> {
     async fn set(
         &self,
         mut args: Value,
-        kind: &str,
+        change: Change,
         id: &str,
     ) -> Result<Option<Value>, CalendarError> {
         args["accountId"] = json!(self.account);
@@ -107,8 +130,8 @@ impl<H: Http> Jmap<H> {
             .into_iter()
             .next()
             .ok_or_else(|| CalendarError::Malformed("no answer to CalendarEvent/set".to_owned()))?;
-        let refused = format!("not{}{}", kind[..1].to_uppercase(), &kind[1..]);
-        if let Some(error) = answer.get(&refused).and_then(|r| r.get(id)) {
+        let (done, refused) = change.members();
+        if let Some(error) = answer.get(refused).and_then(|r| r.get(id)) {
             return match text(error, "type") {
                 Some("notFound") => Ok(None),
                 Some("forbidden") => Err(CalendarError::Unauthorized),
@@ -118,19 +141,19 @@ impl<H: Http> Jmap<H> {
                 ))),
             };
         }
-        Ok(Some(match kind {
-            "destroyed" => Value::Null,
+        Ok(Some(match change {
+            Change::Destroy => Value::Null,
             _ => answer
-                .get(kind)
-                .and_then(|done| done.get(id))
+                .get(done)
+                .and_then(|made| made.get(id))
                 .cloned()
                 .unwrap_or(Value::Null),
         }))
     }
 }
 
-/// `event` as JSCalendar: a floating start read in `Etc/UTC` and a duration; an all-day event as
-/// whole days, shown without a time.
+/// `event` as JSCalendar: a start in `Etc/UTC` and a duration; an all-day event as whole days,
+/// shown without a time.
 fn jscalendar(calendar: &str, event: &Event) -> Value {
     let (start, duration, all_day) = match event.when {
         When::AllDay { first, last } => (
@@ -204,7 +227,7 @@ impl<H: Http> CalendarStore for Jmap<H> {
             Some(id) => {
                 self.set(
                     json!({ "update": { (id.as_str()): written } }),
-                    "updated",
+                    Change::Update,
                     &id,
                 )
                 .await?
@@ -213,7 +236,7 @@ impl<H: Http> CalendarStore for Jmap<H> {
             }
             None => {
                 let made = self
-                    .set(json!({ "create": { "e": written } }), "created", "e")
+                    .set(json!({ "create": { (NEW): written } }), Change::Create, NEW)
                     .await?
                     .ok_or(CalendarError::Changed)?;
                 text(&made, "id")
@@ -237,7 +260,7 @@ impl<H: Http> CalendarStore for Jmap<H> {
             return Ok(false);
         };
         Ok(self
-            .set(json!({ "destroy": [&id] }), "destroyed", &id)
+            .set(json!({ "destroy": [&id] }), Change::Destroy, &id)
             .await?
             .is_some())
     }

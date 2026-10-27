@@ -1,7 +1,7 @@
 //! CalDAV against the fake DAV server: the calendar listed, an event put, found, replaced and
 //! removed by its UID, and one stored under another name found by a calendar-query.
 
-use crate::common::Server;
+use crate::common::{Client, Server};
 use porter_calendar::porter_http::{Http, HttpRequest, Method};
 use porter_calendar::{CalDav, CalendarError, CalendarStore, Event, Instant, When};
 use porter_core::WebUrl;
@@ -26,6 +26,19 @@ fn event(uid: &str, summary: &str) -> Event {
         location: None,
         description: None,
     }
+}
+
+/// Put an event into the fake under a name of the server's own, as an invitation it took in.
+async fn put_elsewhere(client: &Client, at: &str, uid: &str, summary: &str) {
+    let made = client
+        .send(
+            HttpRequest::new(Method::Put, WebUrl::parse(at).unwrap())
+                .with_header("Content-Type", "text/calendar")
+                .with_body(ics(uid, summary)),
+        )
+        .await
+        .unwrap();
+    assert!(made.status.is_success());
 }
 
 #[tokio::test]
@@ -83,15 +96,7 @@ async fn an_event_stored_under_another_name_is_found_and_replaced_there() {
     let server = Server::start().await;
     let client = server.client();
     let other = format!("{}from-server.ics", server.calendar);
-    let made = client
-        .send(
-            HttpRequest::new(Method::Put, WebUrl::parse(&other).unwrap())
-                .with_header("Content-Type", "text/calendar")
-                .with_body(ics("invite-7@example.test", "Invited")),
-        )
-        .await
-        .unwrap();
-    assert!(made.status.is_success());
+    put_elsewhere(&client, &other, "invite-7@example.test", "Invited").await;
 
     let store = CalDav::new(client, server.home.clone());
     let calendar = server.calendar.as_str();
@@ -115,7 +120,7 @@ async fn an_event_stored_under_another_name_is_found_and_replaced_there() {
 }
 
 #[tokio::test]
-async fn the_home_is_discovered_or_a_server_without_one_says_so() {
+async fn a_server_with_no_calendar_home_says_so() {
     let server = Server::start().await;
     let got = CalDav::discover(server.client(), server.home.clone()).await;
     assert!(
@@ -129,15 +134,7 @@ async fn a_longer_uid_that_contains_the_one_asked_for_is_another_event() {
     let server = Server::start().await;
     let client = server.client();
     let other = format!("{}from-server.ics", server.calendar);
-    let made = client
-        .send(
-            HttpRequest::new(Method::Put, WebUrl::parse(&other).unwrap())
-                .with_header("Content-Type", "text/calendar")
-                .with_body(ics("invite-70@example.test", "Someone else's")),
-        )
-        .await
-        .unwrap();
-    assert!(made.status.is_success());
+    put_elsewhere(&client, &other, "invite-70@example.test", "Someone else's").await;
 
     let store = CalDav::new(client, server.home.clone());
     let calendar = server.calendar.as_str();

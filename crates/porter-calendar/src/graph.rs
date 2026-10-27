@@ -7,13 +7,13 @@
 use crate::CalendarStore;
 use crate::error::CalendarError;
 use crate::event::{CalendarRef, Event, Stored, When};
-use crate::json::{bare, body, encode, exchange, request, text, url};
+use crate::json::{bare, body, encode, exchange, removed, request, text, url};
 use porter_core::WebUrl;
 use porter_http::{Http, Method};
 use serde_json::{Value, json};
 
 /// Graph's v1.0 endpoint.
-pub const GRAPH: &str = "https://graph.microsoft.com/v1.0";
+const GRAPH: &str = "https://graph.microsoft.com/v1.0";
 
 /// The extended property an event put here carries its UID in: a string property under a GUID
 /// that names porter's events.
@@ -177,11 +177,7 @@ impl<H: Http> CalendarStore for Graph<H> {
         };
         let at = self.url(&format!("/me/events/{}", encode(&held.id)))?;
         let response = self.http.send(bare(Method::Delete, at)).await?;
-        match response.status.0 {
-            200..=299 => Ok(true),
-            404 | 410 => Ok(false),
-            status => Err(CalendarError::of_status(status, "the deletion of an event")),
-        }
+        removed(&response, "the deletion of an event")
     }
 }
 

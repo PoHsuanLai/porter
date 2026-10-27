@@ -1,6 +1,6 @@
 //! What the JSON backends share: a request with a JSON body, the exchange that turns a status
-//! that is not a success into a [`CalendarError`], a body read as JSON, and the URL pieces a
-//! store's ids and query values are written into.
+//! that is not a success into a [`CalendarError`], the reading of a `DELETE`'s answer, a body read
+//! as JSON, and the URL pieces a store's ids and query values are written into.
 
 use crate::error::CalendarError;
 use porter_core::WebUrl;
@@ -31,6 +31,16 @@ pub(crate) async fn exchange<H: Http>(
         Ok(response)
     } else {
         Err(CalendarError::of_status(response.status.0, what))
+    }
+}
+
+/// Whether a `DELETE` removed something: `true` for a success, `false` for an event that was not
+/// there, the error a status stands for otherwise.
+pub(crate) fn removed(response: &HttpResponse, what: &'static str) -> Result<bool, CalendarError> {
+    match response.status.0 {
+        200..=299 => Ok(true),
+        404 | 410 => Ok(false),
+        status => Err(CalendarError::of_status(status, what)),
     }
 }
 

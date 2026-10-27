@@ -30,6 +30,7 @@ pub struct Event {
     pub ics: String,
     /// `SUMMARY`.
     pub summary: String,
+    /// `DTSTART` and `DTEND` (or `DURATION`).
     pub when: When,
     /// `LOCATION`.
     pub location: Option<String>,

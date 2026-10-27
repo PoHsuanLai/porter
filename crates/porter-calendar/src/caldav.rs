@@ -10,7 +10,7 @@
 use crate::CalendarStore;
 use crate::error::CalendarError;
 use crate::event::{CalendarRef, Event, Stored};
-use crate::json::{encode, url};
+use crate::json::{encode, removed, url};
 use dav_proto::names::{CALDAV, CALENDAR_DATA, DISPLAYNAME, GETETAG, RESOURCETYPE};
 use dav_proto::{Depth, Multistatus, escape, parse_multistatus};
 use porter_core::WebUrl;
@@ -217,11 +217,7 @@ impl<H: Http> CalendarStore for CalDav<H> {
             request = request.with_header("If-Match", etag.clone());
         }
         let response = self.send(request).await?;
-        match response.status.0 {
-            200..=299 => Ok(true),
-            404 | 410 => Ok(false),
-            status => Err(CalendarError::of_status(status, "the DELETE of an event")),
-        }
+        removed(&response, "the DELETE of an event")
     }
 }
 

@@ -7,13 +7,13 @@
 use crate::CalendarStore;
 use crate::error::CalendarError;
 use crate::event::{CalendarRef, Event, Stored, When};
-use crate::json::{bare, body, encode, exchange, request, text, url};
+use crate::json::{bare, body, encode, exchange, removed, request, text, url};
 use porter_core::WebUrl;
 use porter_http::{Http, Method};
 use serde_json::{Value, json};
 
 /// The Calendar API's endpoint.
-pub const GOOGLE: &str = "https://www.googleapis.com/calendar/v3";
+const GOOGLE: &str = "https://www.googleapis.com/calendar/v3";
 
 /// A Google account's calendars.
 #[derive(Debug, Clone)]
@@ -73,6 +73,7 @@ fn google_event(event: &Event) -> Value {
     out
 }
 
+/// What the Calendar API answered for an event, as stored.
 fn stored(calendar: &str, uid: &str, event: &Value) -> Result<Stored, CalendarError> {
     let id = text(event, "id")
         .ok_or_else(|| CalendarError::Malformed("an event with no id".to_owned()))?;
@@ -169,11 +170,7 @@ impl<H: Http> CalendarStore for Google<H> {
         };
         let at = self.events(calendar, &format!("/{}", encode(&held.id)))?;
         let response = self.http.send(bare(Method::Delete, at)).await?;
-        match response.status.0 {
-            200..=299 => Ok(true),
-            404 | 410 => Ok(false),
-            status => Err(CalendarError::of_status(status, "the deletion of an event")),
-        }
+        removed(&response, "the deletion of an event")
     }
 }
 
