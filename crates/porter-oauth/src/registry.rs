@@ -281,7 +281,7 @@ struct MailoEndpoints {
 
 /// Reads mailo's `oauth.json` (the `OAuthRegistry` of `signin.rs`) as clients for `channel`
 /// (mailo has no channels, so the caller says which build the ids were registered for). Mailo's
-/// overridden `auth`/`token` become the entry's endpoints, with revoke and device absent: a
+/// overridden `auth`/`token` become the entry's endpoints, with revoke absent: a
 /// sovereign-cloud or proxy override is not known to have either. The result is for the person's
 /// own file.
 pub fn from_mailo(text: &str, channel: ClientChannel) -> Result<ClientsFile, RegistryError> {
@@ -299,7 +299,6 @@ pub fn from_mailo(text: &str, channel: ClientChannel) -> Result<ClientsFile, Reg
                     authorize: endpoint(&e.auth)?,
                     token: endpoint(&e.token)?,
                     revoke: None,
-                    device: None,
                 })
             })
             .transpose()?;

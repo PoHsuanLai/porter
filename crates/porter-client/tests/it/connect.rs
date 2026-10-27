@@ -1,4 +1,4 @@
-//! `Accounts::connect`: the first reachable link wins. The session bus is found through the
+//! `Accounts::connect`. The session bus is found through the
 //! environment, so the D-Bus case runs the connecting half in a child process whose
 //! environment names a private bus; this process never edits its own. The child is this test
 //! executable run again, by test path (`connect::child_finds_no_bus`).
@@ -7,7 +7,7 @@ use crate::common;
 
 use common::bus::PrivateBus;
 use common::inferd::{Behaviour, FakeInferd};
-use porter_client::{Accounts, ClientEnv, ClientError, LinkChoice, TransportError};
+use porter_client::{Accounts, ClientError, TransportError};
 use porter_core::consent::Usage;
 use porter_core::need::LlmNeed;
 use porter_core::{AccountId, DataClass, ModelId, Need, Tier, Tokens};
@@ -48,17 +48,6 @@ fn request() -> InferRequest {
     )
 }
 
-#[tokio::test]
-async fn no_links_is_unreachable() {
-    let got = Accounts::connect(&ClientEnv { links: vec![] })
-        .await
-        .map(|_| ());
-    assert_eq!(
-        got,
-        Err(ClientError::Transport(TransportError::Unreachable))
-    );
-}
-
 /// The connecting half, run by the parent below with `DBUS_SESSION_BUS_ADDRESS` pointing at a
 /// private bus. Without the marker it does nothing, so a plain test run passes it by.
 #[tokio::test]
@@ -66,10 +55,7 @@ async fn child_connects_over_the_session_bus_it_is_given() {
     if std::env::var_os(CHILD_MARKER).is_none() {
         return;
     }
-    let env = ClientEnv {
-        links: vec![LinkChoice::Dbus],
-    };
-    let accounts = Accounts::connect(&env).await.expect("a link is reachable");
+    let accounts = Accounts::connect().await.expect("the bus is reachable");
     let got = accounts
         .infer(&need(), DataClass::Public, Tier::Fast, request())
         .await;
@@ -126,10 +112,7 @@ async fn child_finds_no_bus() {
     if std::env::var_os(CHILD_MARKER).is_none() {
         return;
     }
-    let env = ClientEnv {
-        links: vec![LinkChoice::Dbus],
-    };
-    let got = Accounts::connect(&env).await.map(|_| ());
+    let got = Accounts::connect().await.map(|_| ());
     assert_eq!(
         got,
         Err(ClientError::Transport(TransportError::Unreachable))

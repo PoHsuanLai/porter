@@ -221,7 +221,6 @@ impl IssuerHandle {
             authorize: url("/authorize"),
             token: url("/token"),
             revoke: Some(url("/revoke")),
-            device: None,
         }
     }
 

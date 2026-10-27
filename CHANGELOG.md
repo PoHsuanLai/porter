@@ -24,7 +24,10 @@
   needed. The latchkey socket carrier is deleted: `SocketTransport`, `SocketSession`,
   `SocketAgent`, `StartAgent`, `Place`, `START_WAIT`, `LinkChoice::Socket`, the `socket` and
   `framed` features and the `latchkey` dependency, with porter-infer's `LinkHello` and
-  `OpenFrame`. `AnyTransport` and `AnySession` are D-Bus only and exist with feature `dbus`.
+  `OpenFrame`. `ClientEnv`, `LinkChoice`, `AnyTransport` and `AnySession` are gone with it:
+  `Accounts::<DbusTransport>::connect()` connects over the session bus (feature `dbus`), and
+  callers name `DbusTransport` and `DbusSession`.
+- `IssuerEndpoints::device` is gone: nothing reads a device endpoint now.
 
 ### porter-http speaks the `http` crate's request and response
 

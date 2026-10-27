@@ -1,14 +1,10 @@
 //! `Accounts`: the app's handle on porter.
 
 use crate::authenticated::{AuthenticatedStream, Relayed};
-#[cfg(feature = "dbus")]
-use crate::env::{ClientEnv, LinkChoice};
 use crate::error::ClientError;
 #[cfg(feature = "dbus")]
 use crate::error::TransportError;
 use crate::found::{ConsentOffer, Found, found};
-#[cfg(feature = "dbus")]
-use crate::transport::AnyTransport;
 use crate::transport::Transport;
 #[cfg(feature = "infer")]
 use porter_core::Tier;
@@ -31,23 +27,17 @@ pub struct Accounts<T> {
 }
 
 #[cfg(feature = "dbus")]
-impl Accounts<AnyTransport> {
-    /// Connects over the first reachable link in `env`, in order. A D-Bus link is reachable when
-    /// the session bus is: the daemons are found, and started by bus activation, at the first
-    /// call, so a machine with inferd and no accountd still connects. No reachable link is
-    /// `TransportError::Unreachable`.
-    pub async fn connect(env: &ClientEnv) -> Result<Self, ClientError> {
-        for link in &env.links {
-            if let Some(transport) = reach(link).await {
-                return Ok(Self { transport });
-            }
-        }
-        Err(TransportError::Unreachable.into())
-    }
-}
-
-#[cfg(feature = "dbus")]
 impl Accounts<crate::transport::DbusTransport> {
+    /// Connects over the session bus. The daemons are found, and started by bus activation, at
+    /// the first call, so a machine with inferd and no accountd still connects. No session bus is
+    /// `TransportError::Unreachable`.
+    pub async fn connect() -> Result<Self, ClientError> {
+        crate::transport::DbusTransport::session()
+            .await
+            .map(|transport| Self { transport })
+            .map_err(|_| TransportError::Unreachable.into())
+    }
+
     /// The identities accountd removes, from now on (`Identities::watch_removals`, as accounts
     /// by their object-path segment). An app that keeps something of an identity (a copy of its
     /// sign-in, mirrors) forgets it on each [`crate::RemovedAccount`].
@@ -63,29 +53,6 @@ impl Accounts<crate::transport::DbusTransport> {
             crate::GuestChanges::watch(self.transport.connection(), self.transport.inference())
                 .await?,
         )
-    }
-}
-
-#[cfg(feature = "dbus")]
-impl Accounts<AnyTransport> {
-    /// [`Accounts::watch_guests`] over the link that was found.
-    pub async fn watch_guests(&self) -> Result<crate::GuestChanges, ClientError> {
-        match &self.transport {
-            AnyTransport::Dbus(link) => {
-                Ok(crate::GuestChanges::watch(link.connection(), link.inference()).await?)
-            }
-        }
-    }
-}
-
-/// The transport for one link, if it is reachable.
-#[cfg(feature = "dbus")]
-async fn reach(link: &LinkChoice) -> Option<AnyTransport> {
-    match link {
-        LinkChoice::Dbus => crate::transport::DbusTransport::session()
-            .await
-            .ok()
-            .map(AnyTransport::Dbus),
     }
 }
 

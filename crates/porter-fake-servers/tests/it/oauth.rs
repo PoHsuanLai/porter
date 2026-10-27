@@ -257,7 +257,7 @@ async fn unknown_paths_404_and_endpoints_point_at_the_issuer() {
         endpoints.token.as_str(),
         format!("{}/token", issuer.base_url())
     );
-    assert!(endpoints.revoke.is_some() && endpoints.device.is_none());
+    assert!(endpoints.revoke.is_some());
 }
 
 #[tokio::test]

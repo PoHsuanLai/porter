@@ -56,8 +56,6 @@ pub struct IssuerEndpoints {
     pub token: EndpointUrl,
     /// Where a grant is revoked, if the issuer has such an endpoint.
     pub revoke: Option<EndpointUrl>,
-    /// Where a device code is requested, if the issuer has the device flow.
-    pub device: Option<EndpointUrl>,
 }
 
 impl Issuer {
@@ -72,30 +70,25 @@ impl Issuer {
                 "https://accounts.google.com/o/oauth2/v2/auth",
                 "https://oauth2.googleapis.com/token",
                 Some("https://oauth2.googleapis.com/revoke"),
-                Some("https://oauth2.googleapis.com/device/code"),
             ),
             Issuer::Microsoft => (
                 "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
                 "https://login.microsoftonline.com/common/oauth2/v2.0/token",
                 None,
-                Some("https://login.microsoftonline.com/common/oauth2/v2.0/devicecode"),
             ),
             Issuer::Dropbox => (
                 "https://www.dropbox.com/oauth2/authorize",
                 "https://api.dropboxapi.com/oauth2/token",
-                None,
                 None,
             ),
             Issuer::Box => (
                 "https://account.box.com/api/oauth2/authorize",
                 "https://api.box.com/oauth2/token",
                 None,
-                None,
             ),
             Issuer::Fastmail => (
                 "https://api.fastmail.com/oauth/authorize",
                 "https://api.fastmail.com/oauth/refresh",
-                None,
                 None,
             ),
             // The key mint: the page the person approves on, and the call that turns the code
@@ -104,12 +97,10 @@ impl Issuer {
                 "https://openrouter.ai/auth",
                 "https://openrouter.ai/api/v1/auth/keys",
                 None,
-                None,
             ),
             Issuer::OpenAi => (
                 "https://auth.openai.com/oauth/authorize",
                 "https://auth.openai.com/oauth/token",
-                None,
                 None,
             ),
         };
@@ -121,7 +112,6 @@ impl Issuer {
             authorize: url(rows.0),
             token: url(rows.1),
             revoke: rows.2.map(url),
-            device: rows.3.map(url),
         }
     }
 }
@@ -141,28 +131,18 @@ mod tests {
     ];
 
     #[test]
-    fn every_issuer_has_https_endpoints_and_only_known_ones_revoke_or_device() {
+    fn every_issuer_has_https_endpoints_and_only_known_ones_revoke() {
         for issuer in ALL {
             let e = issuer.endpoints();
-            let all = [
-                Some(&e.authorize),
-                Some(&e.token),
-                e.revoke.as_ref(),
-                e.device.as_ref(),
-            ];
+            let all = [Some(&e.authorize), Some(&e.token), e.revoke.as_ref()];
             for url in all.into_iter().flatten() {
                 assert!(url.as_str().starts_with("https://"), "{issuer:?} {url:?}");
             }
         }
-        let has = |i: Issuer| {
-            (
-                i.endpoints().revoke.is_some(),
-                i.endpoints().device.is_some(),
-            )
-        };
-        assert_eq!(has(Issuer::Google), (true, true));
-        assert_eq!(has(Issuer::Microsoft), (false, true));
-        assert_eq!(has(Issuer::OpenRouter), (false, false));
+        let revokes = |i: Issuer| i.endpoints().revoke.is_some();
+        assert!(revokes(Issuer::Google));
+        assert!(!revokes(Issuer::Microsoft));
+        assert!(!revokes(Issuer::OpenRouter));
     }
 
     #[test]

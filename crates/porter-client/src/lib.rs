@@ -9,7 +9,7 @@
 //! use porter_core::wire::ParentWindow;
 //! use porter_core::{Candidate, DataClass, Need};
 //!
-//! // `accounts` is `Accounts::connect(&env)` (D-Bus) or `Accounts::over(transport)`.
+//! // `accounts` is `Accounts::connect()` (D-Bus) or `Accounts::over(transport)`.
 //! async fn photos_account<T: Transport>(
 //!     accounts: &Accounts<T>,
 //!     need: &Need,
@@ -80,7 +80,6 @@ pub mod credential;
 mod destination;
 #[cfg(feature = "engines")]
 pub mod engines;
-mod env;
 mod error;
 mod found;
 #[cfg(feature = "dbus")]
@@ -113,7 +112,6 @@ pub use credential::{
 };
 #[cfg(feature = "dbus")]
 pub use destination::Destination;
-pub use env::{ClientEnv, LinkChoice};
 /// The refusal [`ClientError::InferRefused`] carries when there is no `infer` feature: a type with
 /// no values (with the feature it is porter-infer's own).
 #[cfg(not(feature = "infer"))]
@@ -160,10 +158,6 @@ pub use tailnet_lending::{
     INFERD_UNIT, LendingConfig, LendingError, LendingState, SHIPPED_NAME, TailnetLending,
     UnitFailure, UnitManager, UnitName,
 };
-#[cfg(all(feature = "dbus", feature = "infer"))]
-pub use transport::AnySession;
-#[cfg(feature = "dbus")]
-pub use transport::AnyTransport;
 #[cfg(all(feature = "dbus", feature = "infer"))]
 pub use transport::{DbusSession, MAX_ATTACHMENTS};
 #[cfg(feature = "dbus")]

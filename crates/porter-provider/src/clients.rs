@@ -78,16 +78,11 @@ impl ClientEntry {
     /// (Microsoft's `organizations` or `consumers` tenant). A row with no endpoints stays.
     pub fn leaves_the_issuer(&self) -> bool {
         let origins = |e: &IssuerEndpoints| -> Vec<porter_core::Origin> {
-            [
-                Some(&e.authorize),
-                Some(&e.token),
-                e.revoke.as_ref(),
-                e.device.as_ref(),
-            ]
-            .into_iter()
-            .flatten()
-            .map(porter_core::EndpointUrl::origin)
-            .collect()
+            [Some(&e.authorize), Some(&e.token), e.revoke.as_ref()]
+                .into_iter()
+                .flatten()
+                .map(porter_core::EndpointUrl::origin)
+                .collect()
         };
         let published = origins(&self.issuer.endpoints());
         self.endpoints
