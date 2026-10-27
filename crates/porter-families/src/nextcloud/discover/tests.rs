@@ -19,7 +19,7 @@ fn the_user_id_is_the_last_segment_of_the_principal_and_is_decoded() {
 
 #[test]
 fn a_reply_is_a_refusal_a_success_or_a_fault_by_its_status() {
-    let reply = |status: u16| -> HttpResponse {
+    let reply = |status: u16| -> Response<Vec<u8>> {
         porter_http::http::Response::builder()
             .status(status)
             .body(Vec::new())

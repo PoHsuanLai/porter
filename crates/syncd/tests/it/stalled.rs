@@ -7,9 +7,9 @@
 
 use porter_core::WebUrl;
 use porter_core::stream::{ByteStream, duplex};
-use porter_http::http::Method;
+use porter_http::http::{Method, Request};
 use porter_http::stream::{Dial, StreamHttp, StreamLimits};
-use porter_http::{Http, HttpError, HttpRequest, request};
+use porter_http::{Http, HttpError, request};
 use std::sync::Mutex;
 use std::time::Duration;
 use syncd::webdav::RelayStream;
@@ -42,7 +42,7 @@ impl Dial for Once {
     }
 }
 
-fn get() -> HttpRequest {
+fn get() -> Request<Vec<u8>> {
     let url = WebUrl::parse("http://127.0.0.1:9/dav/").expect("url");
     request(Method::GET, &url)
         .body(Vec::new())

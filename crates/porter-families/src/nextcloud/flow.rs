@@ -9,8 +9,8 @@ use crate::password::{fault_of, join, parse_server};
 use porter_core::sheet::SignInFault;
 use porter_core::{EndpointUrl, LoginName, SecretText, WebUrl};
 use porter_http::http::header::{ACCEPT, CONTENT_TYPE, USER_AGENT};
-use porter_http::http::{Method, StatusCode};
-use porter_http::{Http, HttpError, HttpRequest, request_to};
+use porter_http::http::{Method, Request, StatusCode};
+use porter_http::{Http, HttpError, request_to};
 use serde_json::Value;
 
 /// What the server named for a flow just started.
@@ -100,7 +100,7 @@ pub(super) async fn poll(io: &Io, started: &Started) -> Polled {
 }
 
 /// The poll's `POST`, the token as its form body.
-fn poll_request(started: &Started) -> Result<HttpRequest, HttpError> {
+fn poll_request(started: &Started) -> Result<Request<Vec<u8>>, HttpError> {
     let request = request_to(Method::POST, &started.poll)?
         .header(USER_AGENT, "Porter")
         .header(CONTENT_TYPE, "application/x-www-form-urlencoded")

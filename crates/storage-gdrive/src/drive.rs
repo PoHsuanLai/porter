@@ -26,9 +26,9 @@ use crate::refuse::{refused, write_error, write_unreached};
 use crate::replica::GdriveReplica;
 use crate::write::Target;
 use porter_core::WebUrl;
-use porter_http::http::Method;
 use porter_http::http::header::CONTENT_TYPE;
-use porter_http::{HeaderText, Http, HttpResponse, request};
+use porter_http::http::{Method, Response};
+use porter_http::{HeaderText, Http, request};
 use porter_sync::{
     BaseVersion, Conflict, DriveWrite, Found, Place, PutRefused, RemoteId, RemoteSide,
     RemoteVersion, RetryAfter, Session, Upload, UploadTo, Written,
@@ -68,7 +68,7 @@ impl<H: Http> GdriveReplica<H> {
 
     async fn settled(
         &self,
-        response: HttpResponse,
+        response: Response<Vec<u8>>,
         target: &Target,
         base: &BaseVersion,
     ) -> Result<Written, PutRefused> {
@@ -211,7 +211,7 @@ impl<H: Http> GdriveReplica<H> {
         &self,
         upload: &Upload<'_>,
         meta: &str,
-    ) -> Result<Result<WebUrl, HttpResponse>, PutRefused> {
+    ) -> Result<Result<WebUrl, Response<Vec<u8>>>, PutRefused> {
         let pairs = [("uploadType", "resumable"), ("fields", FILE_FIELDS)];
         let start = match &upload.to {
             UploadTo::New(_) => self.addr.upload("files", &pairs),
@@ -245,7 +245,11 @@ impl<H: Http> GdriveReplica<H> {
     }
 
     /// Sends `upload` in a resumable session, resuming the one it names when Drive still has it.
-    async fn resumable(&self, upload: &Upload<'_>, meta: &str) -> Result<HttpResponse, PutRefused> {
+    async fn resumable(
+        &self,
+        upload: &Upload<'_>,
+        meta: &str,
+    ) -> Result<Response<Vec<u8>>, PutRefused> {
         let total = upload.content.size();
         let resumed = match &upload.resume {
             Some(session) => self.session_at(session, total).await?,
@@ -327,7 +331,7 @@ impl<H: Http> GdriveReplica<H> {
         id: &RemoteId,
         meta: serde_json::Value,
         parents: &[(&str, &str)],
-    ) -> Result<HttpResponse, PutRefused> {
+    ) -> Result<Response<Vec<u8>>, PutRefused> {
         let mut pairs = vec![("fields", FILE_FIELDS)];
         pairs.extend_from_slice(parents);
         let url = self.addr.file(&id.0, &pairs).ok_or(PutRefused::Forbidden)?;
@@ -419,7 +423,7 @@ enum Resumed {
     /// Drive wants the bytes from here on.
     At(WebUrl, u64),
     /// It had them all: the finished file's answer.
-    Done(HttpResponse),
+    Done(Response<Vec<u8>>),
     /// Drive no longer has it.
     Gone,
 }

@@ -10,9 +10,9 @@ use porter_core::capability::{
     Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
 };
 use porter_core::{Bytes, WebUrl};
-use porter_http::http::Method;
 use porter_http::http::header::RANGE;
-use porter_http::{Http, HttpRequest, HttpResponse, request};
+use porter_http::http::{Method, Request, Response};
+use porter_http::{Http, request};
 use porter_sync::{
     BaseVersion, Blob, ByteRange, ChangePage, Cursor, PutItem, PutRefused, Quota, RemoteId,
     RemoteVersion, Replica, ReplicaError,
@@ -84,7 +84,10 @@ impl<H: Http> WebDavReplica<H> {
     }
 
     /// Sends a request, a transport failure being a read that should be retried.
-    pub(crate) async fn send(&self, request: HttpRequest) -> Result<HttpResponse, ReplicaError> {
+    pub(crate) async fn send(
+        &self,
+        request: Request<Vec<u8>>,
+    ) -> Result<Response<Vec<u8>>, ReplicaError> {
         self.http.send(request).await.map_err(unreached)
     }
 

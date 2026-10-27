@@ -4,9 +4,10 @@
 
 use porter_core::{Credential, SecretText, UnixSeconds};
 use porter_fake_servers::browser::split_loopback;
-use porter_fake_servers::http::{Request, Scheme, send};
+use porter_fake_servers::http::{Scheme, send};
 use porter_fake_servers::{Consent, FakeIssuer, IssuerEvent, Running, TokenResult, follow};
-use porter_http::{Http, HttpError, HttpRequest, HttpResponse};
+use porter_http::http::{Request, Response};
+use porter_http::{Http, HttpError};
 use porter_oauth::{
     ExchangeFault, LoopbackFault, LoopbackServer, Pkce, RenewOutcome, authorize_url, exchange_code,
     renew, revoke,
@@ -18,11 +19,12 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 struct LoopbackHttp;
 
 impl Http for LoopbackHttp {
-    async fn send(&self, request: HttpRequest) -> Result<HttpResponse, HttpError> {
+    async fn send(&self, request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>, HttpError> {
         let (address, target) =
             split_loopback(&request.uri().to_string()).map_err(|_| HttpError::Unreachable)?;
         let (head, body) = request.into_parts();
-        let mut wire = Request::new(head.method.as_str(), &target).with_body(body);
+        let mut wire =
+            porter_fake_servers::http::Request::new(head.method.as_str(), &target).with_body(body);
         for (name, value) in &head.headers {
             let value = value.to_str().map_err(|_| HttpError::Malformed)?;
             wire = wire.with_header(name.as_str(), value);

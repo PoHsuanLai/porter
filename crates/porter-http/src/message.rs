@@ -1,19 +1,12 @@
-//! A request and its response: the `http` crate's, with a whole body. The URL a request goes to
-//! is a porter `WebUrl`, and [`request`] is the one place it becomes the request's `Uri`.
+//! Building a request from porter's URLs, and reading headers. The request and response are the
+//! `http` crate's (`Request<Vec<u8>>`, `Response<Vec<u8>>`); the URL a request goes to is a porter
+//! `WebUrl`, and [`request`] is the one place it becomes the request's `Uri`.
 
 use crate::error::HttpError;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 use http::request::Builder;
 use http::{Method, Request, Response};
 use porter_core::{EndpointUrl, UrlScheme, WebUrl};
-
-/// One request: the `http` crate's, with the whole body as bytes. What porter sends is small
-/// (sign-in exchanges, PROPFIND bodies, an upload's piece), and a body every caller reads as a
-/// slice or a string needs no shared buffer.
-pub type HttpRequest = Request<Vec<u8>>;
-
-/// One response, its body read whole.
-pub type HttpResponse = Response<Vec<u8>>;
 
 /// A request to `url`: the builder with its method and URI set, to which the caller adds headers
 /// and a body. The URI is the URL's text; a URL the `http` crate does not take as a URI fails
@@ -107,7 +100,7 @@ mod tests {
     use http::StatusCode;
     use http::header::AUTHORIZATION;
 
-    fn answer(status: u16, headers: &[(&str, &str)]) -> HttpResponse {
+    fn answer(status: u16, headers: &[(&str, &str)]) -> Response<Vec<u8>> {
         headers
             .iter()
             .fold(Response::builder().status(status), |b, (name, value)| {

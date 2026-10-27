@@ -8,7 +8,8 @@ use porter_core::{UnixSeconds, WebUrl};
 use porter_fake::Scratch;
 use porter_fake_servers::{FakeGoogle, FakeGraph};
 use porter_http::http::header::{AUTHORIZATION, HeaderValue};
-use porter_http::{Http, HttpError, HttpRequest, HttpResponse, HyperHttp};
+use porter_http::http::{Request, Response};
+use porter_http::{Http, HttpError, HyperHttp};
 use porter_sync::{
     Blob, ByteRange, ChangePage, Cursor, Folders, ItemKind, ItemPath, PutItem, PutRefused, Quota,
     RemoteId, RemoteVersion, Replica, ReplicaError, RetryAfter,
@@ -27,8 +28,8 @@ struct Bearer(HyperHttp);
 impl Http for Bearer {
     fn send(
         &self,
-        mut request: HttpRequest,
-    ) -> impl Future<Output = Result<HttpResponse, HttpError>> + Send {
+        mut request: Request<Vec<u8>>,
+    ) -> impl Future<Output = Result<Response<Vec<u8>>, HttpError>> + Send {
         let mut value = HeaderValue::from_str(&format!("Bearer {TOKEN}")).expect("a value");
         value.set_sensitive(true);
         request.headers_mut().insert(AUTHORIZATION, value);
@@ -41,7 +42,7 @@ impl Http for Bearer {
 struct NotGranted;
 
 impl Http for NotGranted {
-    async fn send(&self, _: HttpRequest) -> Result<HttpResponse, HttpError> {
+    async fn send(&self, _: Request<Vec<u8>>) -> Result<Response<Vec<u8>>, HttpError> {
         Err(HttpError::NotGranted)
     }
 }

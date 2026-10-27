@@ -2,8 +2,8 @@
 //! the replica, with a scripted HTTP seam in place of a server: no network, no socket.
 
 use porter_core::{Bytes, UnixSeconds, WebUrl};
-use porter_http::http::Response;
-use porter_http::{Http, HttpError, HttpRequest, HttpResponse};
+use porter_http::http::{Request, Response};
+use porter_http::{Http, HttpError};
 use porter_sync::{
     Change, Cursor, Quota, RemoteId, RemoteVersion, Replica, ReplicaError, RetryAfter,
 };
@@ -17,7 +17,7 @@ fn fixture(name: &str) -> Vec<u8> {
     std::fs::read(&path).unwrap_or_else(|e| panic!("{path}: {e}"))
 }
 
-fn answer(status: u16, body: Vec<u8>) -> HttpResponse {
+fn answer(status: u16, body: Vec<u8>) -> Response<Vec<u8>> {
     Response::builder()
         .status(status)
         .header("Content-Type", "application/xml")
@@ -25,16 +25,18 @@ fn answer(status: u16, body: Vec<u8>) -> HttpResponse {
         .expect("response")
 }
 
+type Answers = Arc<Mutex<BTreeMap<String, Vec<Response<Vec<u8>>>>>>;
+
 /// Answers by `METHOD target`, in the order given for a key and then the last one again;
 /// remembers what it was sent.
 #[derive(Debug, Clone, Default)]
 struct Script {
-    answers: Arc<Mutex<BTreeMap<String, Vec<HttpResponse>>>>,
-    sent: Arc<Mutex<Vec<HttpRequest>>>,
+    answers: Answers,
+    sent: Arc<Mutex<Vec<Request<Vec<u8>>>>>,
 }
 
 impl Script {
-    fn on(self, key: &str, response: HttpResponse) -> Self {
+    fn on(self, key: &str, response: Response<Vec<u8>>) -> Self {
         self.answers
             .lock()
             .expect("lock")
@@ -44,7 +46,7 @@ impl Script {
         self
     }
 
-    fn sent(&self) -> Vec<HttpRequest> {
+    fn sent(&self) -> Vec<Request<Vec<u8>>> {
         self.sent.lock().expect("lock").clone()
     }
 }
@@ -52,8 +54,8 @@ impl Script {
 impl Http for Script {
     fn send(
         &self,
-        request: HttpRequest,
-    ) -> impl Future<Output = Result<HttpResponse, HttpError>> + Send {
+        request: Request<Vec<u8>>,
+    ) -> impl Future<Output = Result<Response<Vec<u8>>, HttpError>> + Send {
         let key = format!("{} {}", request.method(), request.uri().path());
         self.sent.lock().expect("lock").push(request);
         let found = self

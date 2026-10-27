@@ -2,9 +2,9 @@
 //! `Content-Length`, chunks or the end of the stream. Only what a WebDAV exchange needs: no
 //! redirects, no upgrade, no compression (the requests say `Accept-Encoding: identity`).
 
-use crate::{HeaderText, HttpError, HttpRequest, HttpResponse};
+use crate::{HeaderText, HttpError};
 use http::header::{HeaderMap, HeaderName, HeaderValue};
-use http::{Method, Response, StatusCode};
+use http::{Method, Request, Response, StatusCode};
 use porter_core::stream::ByteStream;
 
 /// The most a response head may take.
@@ -14,13 +14,13 @@ const MAX_HEAD: usize = 64 * 1024;
 #[derive(Debug)]
 pub struct Exchange {
     /// The response.
-    pub response: HttpResponse,
+    pub response: Response<Vec<u8>>,
     /// Whether the server kept the stream open and the body was framed.
     pub reusable: bool,
 }
 
 /// A request as bytes: origin-form target, `Host` from `authority`, our own framing headers.
-pub fn encode(request: &HttpRequest, authority: &str) -> Vec<u8> {
+pub fn encode(request: &Request<Vec<u8>>, authority: &str) -> Vec<u8> {
     let target = request
         .uri()
         .path_and_query()
@@ -224,7 +224,7 @@ mod tests {
         crate::request(method, &WebUrl::parse(url).expect("url"))
     }
 
-    fn bare(method: Method, url: &str) -> HttpRequest {
+    fn bare(method: Method, url: &str) -> Request<Vec<u8>> {
         request(method, url).body(Vec::new()).expect("request")
     }
 

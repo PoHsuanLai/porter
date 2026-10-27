@@ -10,8 +10,9 @@ use common::{TOKEN, TcpDial, client};
 use porter_core::{Bytes, Origin, WebUrl};
 use porter_fake_servers::graph::{CHUNK_UNIT, Knobs};
 use porter_fake_servers::{FakeGraph, GraphHandle, Running};
+use porter_http::http::{Request, Response};
 use porter_http::stream::{StreamHttp, StreamLimits};
-use porter_http::{Http, HttpError, HttpRequest, HttpResponse};
+use porter_http::{Http, HttpError};
 use porter_sync::{
     BaseVersion, Blob, ByteRange, Change, Cursor, ItemPath, PutItem, PutRefused, PutTarget,
     Replica as _, ReplicaError,
@@ -26,8 +27,8 @@ struct Linked(Option<StreamHttp<TcpDial>>);
 impl Http for Linked {
     fn send(
         &self,
-        request: HttpRequest,
-    ) -> impl Future<Output = Result<HttpResponse, HttpError>> + Send {
+        request: Request<Vec<u8>>,
+    ) -> impl Future<Output = Result<Response<Vec<u8>>, HttpError>> + Send {
         let client = self.0.as_ref();
         async move {
             match client {

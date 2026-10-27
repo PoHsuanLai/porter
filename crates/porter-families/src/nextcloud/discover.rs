@@ -14,12 +14,10 @@ use porter_core::sheet::SignInFault;
 use porter_core::{Claim, EndpointUrl, Family, LoginName, SecretText, ServiceEndpoint};
 use porter_dav::{Home, home_set, propfind};
 use porter_discover::parse_ocs_capabilities;
-use porter_http::http::Method;
 use porter_http::http::header::{ACCEPT, AUTHORIZATION};
 use porter_http::http::request::Builder;
-use porter_http::{
-    Http, HttpError, HttpRequest, HttpResponse, SensitiveHeader, request_to, web_url,
-};
+use porter_http::http::{Method, Request, Response};
+use porter_http::{Http, HttpError, SensitiveHeader, request_to, web_url};
 
 /// Who is signed in, and where.
 #[derive(Debug, Clone)]
@@ -43,7 +41,7 @@ impl Who {
             .sensitive_header(AUTHORIZATION, &basic(&self.login.0, &self.password)))
     }
 
-    fn propfind(&self, url: &EndpointUrl, props: &[&str]) -> Result<HttpRequest, SignInFault> {
+    fn propfind(&self, url: &EndpointUrl, props: &[&str]) -> Result<Request<Vec<u8>>, SignInFault> {
         let mut request =
             propfind(web_url(url).map_err(fault_of)?, Depth::Zero, props).map_err(fault_of)?;
         authorize(&mut request, &basic(&self.login.0, &self.password)).map_err(fault_of)?;
@@ -52,7 +50,7 @@ impl Who {
 }
 
 /// A reply that is a login refusal, a success, or something else.
-fn judged(response: HttpResponse) -> Result<HttpResponse, SignInFault> {
+fn judged(response: Response<Vec<u8>>) -> Result<Response<Vec<u8>>, SignInFault> {
     match response.status().as_u16() {
         401 | 403 => Err(SignInFault::Refused),
         200..=299 => Ok(response),
@@ -61,7 +59,7 @@ fn judged(response: HttpResponse) -> Result<HttpResponse, SignInFault> {
     }
 }
 
-async fn send(io: &Io, request: HttpRequest) -> Result<HttpResponse, SignInFault> {
+async fn send(io: &Io, request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>, SignInFault> {
     judged(io.http.send(request).await.map_err(fault_of)?)
 }
 
@@ -179,7 +177,7 @@ fn user_of(path: &str) -> Option<String> {
     (!decoded.is_empty()).then_some(decoded)
 }
 
-fn text(response: &HttpResponse) -> String {
+fn text(response: &Response<Vec<u8>>) -> String {
     String::from_utf8_lossy(response.body()).into_owned()
 }
 

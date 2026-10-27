@@ -9,9 +9,9 @@ use crate::addr::{FILE_FIELDS, names_of};
 use crate::json::File;
 use crate::refuse::{refused, write_error, write_unreached};
 use crate::replica::GdriveReplica;
-use porter_http::http::Method;
 use porter_http::http::header::{ACCEPT, CONTENT_TYPE, HeaderValue};
-use porter_http::{Http, HttpRequest, HttpResponse, request};
+use porter_http::http::{Method, Request, Response};
+use porter_http::{Http, request};
 use porter_sync::{
     BaseVersion, Conflict, PutItem, PutRefused, PutTarget, RemoteId, RemoteSide, RemoteVersion,
     RetryAfter,
@@ -141,8 +141,8 @@ impl<H: Http> GdriveReplica<H> {
 
     pub(crate) async fn write_send(
         &self,
-        mut request: HttpRequest,
-    ) -> Result<HttpResponse, PutRefused> {
+        mut request: Request<Vec<u8>>,
+    ) -> Result<Response<Vec<u8>>, PutRefused> {
         request
             .headers_mut()
             .append(ACCEPT, HeaderValue::from_static("application/json"));
@@ -154,7 +154,7 @@ impl<H: Http> GdriveReplica<H> {
         &self,
         meta: &str,
         bytes: Vec<u8>,
-    ) -> Result<HttpResponse, PutRefused> {
+    ) -> Result<Response<Vec<u8>>, PutRefused> {
         let url = self
             .addr
             .upload(
@@ -179,7 +179,7 @@ impl<H: Http> GdriveReplica<H> {
         &self,
         id: &str,
         bytes: Vec<u8>,
-    ) -> Result<HttpResponse, PutRefused> {
+    ) -> Result<Response<Vec<u8>>, PutRefused> {
         let path = format!("files/{}", crate::addr::encode(id));
         let url = self
             .addr
@@ -196,7 +196,7 @@ impl<H: Http> GdriveReplica<H> {
     /// What a finished write's answer comes to.
     pub(crate) async fn settle(
         &self,
-        response: HttpResponse,
+        response: Response<Vec<u8>>,
         target: &Target,
         base: &BaseVersion,
     ) -> Written {

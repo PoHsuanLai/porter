@@ -12,9 +12,9 @@ use crate::refuse::write_unreached;
 use crate::replica::GraphReplica;
 use crate::write::Target;
 use porter_core::WebUrl;
-use porter_http::http::Method;
 use porter_http::http::header::CONTENT_TYPE;
-use porter_http::{Http, HttpResponse, request};
+use porter_http::http::{Method, Response};
+use porter_http::{Http, request};
 use porter_sync::{PutRefused, RetryAfter};
 
 impl<H: Http> GraphReplica<H> {
@@ -25,7 +25,7 @@ impl<H: Http> GraphReplica<H> {
         target: &Target,
         guard: Option<&str>,
         bytes: Vec<u8>,
-    ) -> Result<HttpResponse, PutRefused> {
+    ) -> Result<Response<Vec<u8>>, PutRefused> {
         let (url, behaviour) = match target {
             Target::New(names) => (
                 self.addr.path(Some(names), Some("createUploadSession"), ""),

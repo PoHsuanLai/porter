@@ -8,9 +8,9 @@ use porter_core::capability::{
     Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
 };
 use porter_core::{Bytes, WebUrl};
-use porter_http::http::Method;
 use porter_http::http::header::{ACCEPT, HeaderValue, RANGE};
-use porter_http::{Http, HttpRequest, HttpResponse, request};
+use porter_http::http::{Method, Request, Response};
+use porter_http::{Http, request};
 use porter_sync::{
     BaseVersion, Blob, ByteRange, ChangePage, Cursor, ExportError, Folders, PutItem, PutRefused,
     Quota, RemoteId, RemoteVersion, Replica, ReplicaError, RetryAfter,
@@ -144,8 +144,8 @@ impl<H: Http> GdriveReplica<H> {
     /// Sends a request, a transport failure being a read that should be retried.
     pub(crate) async fn send(
         &self,
-        mut request: HttpRequest,
-    ) -> Result<HttpResponse, ReplicaError> {
+        mut request: Request<Vec<u8>>,
+    ) -> Result<Response<Vec<u8>>, ReplicaError> {
         request
             .headers_mut()
             .append(ACCEPT, HeaderValue::from_static("application/json"));
@@ -153,7 +153,10 @@ impl<H: Http> GdriveReplica<H> {
     }
 
     /// A GET of `url`.
-    pub(crate) async fn get_url(&self, url: Option<WebUrl>) -> Result<HttpResponse, ReplicaError> {
+    pub(crate) async fn get_url(
+        &self,
+        url: Option<WebUrl>,
+    ) -> Result<Response<Vec<u8>>, ReplicaError> {
         let url = url.ok_or(ReplicaError::Gone)?;
         let get = request(Method::GET, &url)
             .body(Vec::new())

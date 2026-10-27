@@ -1,7 +1,7 @@
 //! The seam.
 
 use crate::error::HttpError;
-use crate::message::{HttpRequest, HttpResponse};
+use http::{Request, Response};
 use std::future::Future;
 
 /// Sends one request and returns the response, both the `http` crate's with a whole body.
@@ -10,6 +10,6 @@ pub trait Http: Send + Sync {
     /// Sends `request`.
     fn send(
         &self,
-        request: HttpRequest,
-    ) -> impl Future<Output = Result<HttpResponse, HttpError>> + Send;
+        request: Request<Vec<u8>>,
+    ) -> impl Future<Output = Result<Response<Vec<u8>>, HttpError>> + Send;
 }

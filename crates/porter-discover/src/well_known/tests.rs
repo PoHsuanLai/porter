@@ -12,7 +12,7 @@ fn url(text: &str) -> EndpointUrl {
     EndpointUrl::parse(text).expect("url")
 }
 
-fn redirect(status: u16, location: &str) -> HttpResponse {
+fn redirect(status: u16, location: &str) -> Response<Vec<u8>> {
     Response::builder()
         .status(status)
         .header("Location", location)

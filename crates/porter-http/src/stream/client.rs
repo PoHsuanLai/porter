@@ -4,8 +4,8 @@
 //! dial is a loopback socket to the fake server.
 
 use super::wire::{Exchange, encode, io_fault, read_response};
-use crate::{Http, HttpError, HttpRequest, HttpResponse};
-use http::StatusCode;
+use crate::{Http, HttpError};
+use http::{Request, Response, StatusCode};
 use porter_core::stream::ByteStream;
 use std::future::Future;
 use std::sync::{Mutex, MutexGuard, PoisonError};
@@ -65,7 +65,7 @@ impl<D: Dial> StreamHttp<D> {
     async fn exchange(
         &self,
         stream: &mut D::Stream,
-        request: &HttpRequest,
+        request: &Request<Vec<u8>>,
         bytes: &[u8],
     ) -> Result<Exchange, HttpError> {
         stream
@@ -84,7 +84,7 @@ impl<D: Dial> StreamHttp<D> {
 }
 
 impl<D: Dial> Http for StreamHttp<D> {
-    async fn send(&self, request: HttpRequest) -> Result<HttpResponse, HttpError> {
+    async fn send(&self, request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>, HttpError> {
         let authority = authority_of(&request);
         let bytes = encode(&request, &authority);
         let kept = self.idle().pop();
@@ -115,7 +115,7 @@ impl<D: Dial> Http for StreamHttp<D> {
 }
 
 /// The `host[:port]` of the request's URL as it was written.
-fn authority_of(request: &HttpRequest) -> String {
+fn authority_of(request: &Request<Vec<u8>>) -> String {
     request
         .uri()
         .authority()

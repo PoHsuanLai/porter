@@ -146,13 +146,14 @@ fn userinfo_endpoint(url: &str) -> EndpointUrl {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_http::{HttpError, HttpRequest, HttpResponse};
+    use porter_http::HttpError;
+    use porter_http::http::{Request, Response};
 
     #[derive(Default)]
     struct Nowhere;
 
     impl Http for Nowhere {
-        async fn send(&self, _: HttpRequest) -> Result<HttpResponse, HttpError> {
+        async fn send(&self, _: Request<Vec<u8>>) -> Result<Response<Vec<u8>>, HttpError> {
             Err(HttpError::Unreachable)
         }
     }

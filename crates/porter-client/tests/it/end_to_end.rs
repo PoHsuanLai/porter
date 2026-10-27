@@ -392,9 +392,9 @@ struct NothingPublished;
 impl porter_http::Http for NothingPublished {
     async fn send(
         &self,
-        _request: porter_http::HttpRequest,
-    ) -> Result<porter_http::HttpResponse, porter_http::HttpError> {
-        let mut response = porter_http::HttpResponse::new(Vec::new());
+        _request: porter_http::http::Request<Vec<u8>>,
+    ) -> Result<porter_http::http::Response<Vec<u8>>, porter_http::HttpError> {
+        let mut response = porter_http::http::Response::new(Vec::new());
         *response.status_mut() = porter_http::http::StatusCode::NOT_FOUND;
         Ok(response)
     }

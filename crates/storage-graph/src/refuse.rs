@@ -4,24 +4,25 @@
 //! (open in an Office app there, or checked out).
 
 use crate::json::ErrorBody;
-use porter_http::{HeaderText, HttpError, HttpResponse};
+use porter_http::http::Response;
+use porter_http::{HeaderText, HttpError};
 use porter_sync::{PutRefused, ReplicaError, RetryAfter};
 
 /// How long to wait when the server did not say.
 const RETRY: RetryAfter = RetryAfter(30);
 
-fn retry_after(response: &HttpResponse) -> RetryAfter {
+fn retry_after(response: &Response<Vec<u8>>) -> RetryAfter {
     response.retry_after_seconds().map_or(RETRY, RetryAfter)
 }
 
 /// The code an error's answer gives (`nameAlreadyExists`, `invalidRequest`).
-pub fn error_code(response: &HttpResponse) -> Option<String> {
+pub fn error_code(response: &Response<Vec<u8>>) -> Option<String> {
     let body: ErrorBody = serde_json::from_slice(response.body()).ok()?;
     body.error?.code
 }
 
 /// A read answered with `response`, which was not what it needed.
-pub fn read_error(response: &HttpResponse) -> ReplicaError {
+pub fn read_error(response: &Response<Vec<u8>>) -> ReplicaError {
     match response.status().as_u16() {
         401 | 403 => ReplicaError::Unauthorized,
         404 | 410 => ReplicaError::Gone,
@@ -30,7 +31,7 @@ pub fn read_error(response: &HttpResponse) -> ReplicaError {
 }
 
 /// A write answered with `response`, which was not a success or a precondition failure.
-pub fn write_error(response: &HttpResponse) -> PutRefused {
+pub fn write_error(response: &Response<Vec<u8>>) -> PutRefused {
     match response.status().as_u16() {
         507 => PutRefused::Quota,
         401 => PutRefused::Unauthorized,
@@ -74,7 +75,7 @@ mod tests {
     use super::*;
     use porter_http::http::Response;
 
-    fn answer(status: u16, retry: Option<&str>) -> HttpResponse {
+    fn answer(status: u16, retry: Option<&str>) -> Response<Vec<u8>> {
         retry
             .into_iter()
             .fold(Response::builder().status(status), |b, v| {

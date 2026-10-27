@@ -26,9 +26,9 @@ use crate::datasets::pim::relay::{PimDial, pim_http};
 use json::{Calendar, CalendarPage, Event, EventPage};
 use porter_client::{Accounts, Transport};
 use porter_core::{Bytes, EndpointUrl, GrantId, WebUrl};
-use porter_http::http::Method;
+use porter_http::http::{Method, Response};
 use porter_http::stream::StreamHttp;
-use porter_http::{HeaderText, Http, HttpError, HttpResponse, request};
+use porter_http::{HeaderText, Http, HttpError, request};
 use porter_sync::{
     ItemKind, ItemPath, More, RemoteId, RemoteItem, RemoteVersion, ReplicaError, RetryAfter,
     Tombstone,
@@ -137,13 +137,13 @@ fn color_of(calendar: &Calendar) -> Option<String> {
     Some(named.to_owned())
 }
 
-pub(super) fn retry_after(response: &HttpResponse) -> RetryAfter {
+pub(super) fn retry_after(response: &Response<Vec<u8>>) -> RetryAfter {
     response
         .retry_after_seconds()
         .map_or(RetryAfter(30), RetryAfter)
 }
 
-fn read_error(response: &HttpResponse) -> ReplicaError {
+fn read_error(response: &Response<Vec<u8>>) -> ReplicaError {
     match response.status().as_u16() {
         401 | 403 => ReplicaError::Unauthorized,
         404 => ReplicaError::Gone,
@@ -159,7 +159,7 @@ pub(super) async fn get<H: Http>(
     http: &H,
     url: &str,
     prefer: Option<&str>,
-) -> Result<HttpResponse, HttpError> {
+) -> Result<Response<Vec<u8>>, HttpError> {
     let url = WebUrl::parse(url).map_err(|_| HttpError::Unreachable)?;
     let mut builder = request(Method::GET, &url).header("Accept", "application/json");
     if let Some(prefer) = prefer {

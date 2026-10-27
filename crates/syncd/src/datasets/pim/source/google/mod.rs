@@ -38,8 +38,9 @@ use crate::datasets::pim::discover::DiscoverError;
 use crate::datasets::pim::relay::{PimDial, pim_http};
 use porter_client::{Accounts, Transport};
 use porter_core::{EndpointUrl, GrantId, WebUrl};
+use porter_http::HttpError;
+use porter_http::http::Response;
 use porter_http::stream::StreamHttp;
-use porter_http::{HttpError, HttpResponse};
 use porter_sync::ReplicaError;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -87,12 +88,12 @@ impl<T: Transport> Api<T> {
         &self.base
     }
 
-    pub(super) async fn get(&self, url: &str) -> Result<HttpResponse, HttpError> {
+    pub(super) async fn get(&self, url: &str) -> Result<Response<Vec<u8>>, HttpError> {
         get(&self.http, url, None).await
     }
 
     /// A GET whose failure is a replica's: unreachable is transient.
-    pub(super) async fn read(&self, url: &str) -> Result<HttpResponse, ReplicaError> {
+    pub(super) async fn read(&self, url: &str) -> Result<Response<Vec<u8>>, ReplicaError> {
         self.get(url).await.map_err(unreached)
     }
 }
@@ -107,7 +108,7 @@ struct Listing<I> {
 }
 
 /// Whether an error body says the caller is going too fast (Google answers some of these `403`).
-pub(super) fn rate_limited(response: &HttpResponse) -> bool {
+pub(super) fn rate_limited(response: &Response<Vec<u8>>) -> bool {
     let body = String::from_utf8_lossy(response.body());
     [
         "rateLimitExceeded",
@@ -119,7 +120,7 @@ pub(super) fn rate_limited(response: &HttpResponse) -> bool {
 }
 
 /// What a failed read means to a replica.
-pub(super) fn read_error(response: &HttpResponse) -> ReplicaError {
+pub(super) fn read_error(response: &Response<Vec<u8>>) -> ReplicaError {
     match response.status().as_u16() {
         403 if rate_limited(response) => ReplicaError::Transient(retry_after(response)),
         401 | 403 => ReplicaError::Unauthorized,
@@ -185,7 +186,7 @@ mod tests {
     use super::*;
     use porter_http::http::Response;
 
-    fn response(status: u16, body: &str) -> HttpResponse {
+    fn response(status: u16, body: &str) -> Response<Vec<u8>> {
         Response::builder()
             .status(status)
             .header("Retry-After", "7")

@@ -344,8 +344,8 @@ struct Slowed {
 impl Http for Slowed {
     async fn send(
         &self,
-        request: porter_http::HttpRequest,
-    ) -> Result<porter_http::HttpResponse, porter_http::HttpError> {
+        request: porter_http::http::Request<Vec<u8>>,
+    ) -> Result<porter_http::http::Response<Vec<u8>>, porter_http::HttpError> {
         match self.slow.load(std::sync::atomic::Ordering::Relaxed) {
             true => {
                 tokio::time::sleep(Duration::from_millis(20)).await;

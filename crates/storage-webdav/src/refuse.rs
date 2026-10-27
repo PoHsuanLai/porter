@@ -1,19 +1,20 @@
 //! What a status the replica did not expect means to the contract: a read that failed
 //! ([`ReplicaError`]) or a write that was refused ([`PutRefused`]).
 
-use porter_http::{HeaderText, HttpError, HttpResponse};
+use porter_http::http::Response;
+use porter_http::{HeaderText, HttpError};
 use porter_sync::{PutRefused, ReplicaError, RetryAfter};
 
 /// How long to wait when the server did not say.
 const RETRY: RetryAfter = RetryAfter(30);
 
 /// The wait a `Retry-After` of whole seconds asks for.
-fn retry_after(response: &HttpResponse) -> RetryAfter {
+fn retry_after(response: &Response<Vec<u8>>) -> RetryAfter {
     response.retry_after_seconds().map_or(RETRY, RetryAfter)
 }
 
 /// A read answered with `response`, which was not what it needed.
-pub fn read_error(response: &HttpResponse) -> ReplicaError {
+pub fn read_error(response: &Response<Vec<u8>>) -> ReplicaError {
     match response.status().as_u16() {
         401 | 403 => ReplicaError::Unauthorized,
         404 | 410 => ReplicaError::Gone,
@@ -22,7 +23,7 @@ pub fn read_error(response: &HttpResponse) -> ReplicaError {
 }
 
 /// A write answered with `response`, which was not a success or a precondition failure.
-pub fn write_error(response: &HttpResponse) -> PutRefused {
+pub fn write_error(response: &Response<Vec<u8>>) -> PutRefused {
     match response.status().as_u16() {
         507 => PutRefused::Quota,
         401 | 403 | 405 | 409 | 413 | 423 => PutRefused::Forbidden,
@@ -53,7 +54,7 @@ mod tests {
     use super::*;
     use porter_http::http::Response;
 
-    fn answer(status: u16, retry: Option<&str>) -> HttpResponse {
+    fn answer(status: u16, retry: Option<&str>) -> Response<Vec<u8>> {
         retry
             .into_iter()
             .fold(Response::builder().status(status), |b, v| {

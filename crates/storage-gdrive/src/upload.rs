@@ -11,9 +11,9 @@ use crate::addr::FILE_FIELDS;
 use crate::feed::link;
 use crate::refuse::write_unreached;
 use crate::replica::GdriveReplica;
-use porter_http::http::Method;
 use porter_http::http::header::CONTENT_TYPE;
-use porter_http::{HeaderText, Http, HttpResponse, request};
+use porter_http::http::{Method, Response};
+use porter_http::{HeaderText, Http, request};
 use porter_sync::{PutRefused, RetryAfter};
 
 impl<H: Http> GdriveReplica<H> {
@@ -25,7 +25,7 @@ impl<H: Http> GdriveReplica<H> {
         over: Option<&str>,
         meta: &str,
         bytes: Vec<u8>,
-    ) -> Result<HttpResponse, PutRefused> {
+    ) -> Result<Response<Vec<u8>>, PutRefused> {
         let again = || PutRefused::Transient(RetryAfter(30));
         let pairs = [("uploadType", "resumable"), ("fields", FILE_FIELDS)];
         let start = match over {

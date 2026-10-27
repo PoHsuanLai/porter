@@ -2,9 +2,9 @@
 
 use crate::exchange::{ExchangeFault, IssuerSays, SAYS_MAX_CHARS};
 use porter_core::EndpointUrl;
-use porter_http::http::Method;
 use porter_http::http::header::{ACCEPT, CONTENT_TYPE};
-use porter_http::{Http, HttpResponse, request_to};
+use porter_http::http::{Method, Response};
+use porter_http::{Http, request_to};
 
 /// The pairs of a query string or form body, decoded: `%XX` and `+` as a space, a malformed
 /// escape kept as written so a truncated code fails at the issuer and not silently here. A part
@@ -28,7 +28,7 @@ pub(crate) async fn send_form<H: Http>(
     http: &H,
     url: &EndpointUrl,
     pairs: &[(&str, &str)],
-) -> Result<HttpResponse, ExchangeFault> {
+) -> Result<Response<Vec<u8>>, ExchangeFault> {
     let request = request_to(Method::POST, url)
         .map_err(|_| ExchangeFault::Unreachable)?
         .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
@@ -41,7 +41,7 @@ pub(crate) async fn send_form<H: Http>(
 }
 
 /// The `error` of an OAuth error body, if the body is one.
-pub(crate) fn oauth_error(response: &HttpResponse) -> Option<String> {
+pub(crate) fn oauth_error(response: &Response<Vec<u8>>) -> Option<String> {
     serde_json::from_slice::<serde_json::Value>(response.body())
         .ok()?
         .get("error")?
@@ -63,7 +63,7 @@ fn tidy(text: &str) -> Option<String> {
 
 /// What an OAuth error body says (`error`, `error_description`), tidied; `None` when the body is
 /// not one or says nothing.
-pub(crate) fn issuer_says(response: &HttpResponse) -> Option<IssuerSays> {
+pub(crate) fn issuer_says(response: &Response<Vec<u8>>) -> Option<IssuerSays> {
     let body = serde_json::from_slice::<serde_json::Value>(response.body()).ok()?;
     let field = |name: &str| body.get(name)?.as_str().and_then(tidy);
     let says = IssuerSays {

@@ -8,7 +8,8 @@
 //! `Authorization` header, so a credential cannot follow a link to another host.
 
 use porter_core::{Origin, WebUrl};
-use porter_http::{Http, HttpError, HttpRequest, HttpResponse};
+use porter_http::http::{Request, Response};
+use porter_http::{Http, HttpError};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -65,7 +66,7 @@ where
     L: Http,
     F: Fn(&Origin) -> L + Send + Sync,
 {
-    async fn send(&self, request: HttpRequest) -> Result<HttpResponse, HttpError> {
+    async fn send(&self, request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>, HttpError> {
         // The URI is a `WebUrl`'s text (porter_http::request), so it reads back as one.
         let origin = WebUrl::parse(&request.uri().to_string())
             .map_err(|_| HttpError::Malformed)?
@@ -87,13 +88,13 @@ mod tests {
     struct Named(&'static str, Arc<AtomicUsize>);
 
     impl Http for Named {
-        async fn send(&self, _: HttpRequest) -> Result<HttpResponse, HttpError> {
+        async fn send(&self, _: Request<Vec<u8>>) -> Result<Response<Vec<u8>>, HttpError> {
             self.1.fetch_add(1, Ordering::SeqCst);
             Ok(Response::new(self.0.as_bytes().to_vec()))
         }
     }
 
-    fn get(url: &str) -> HttpRequest {
+    fn get(url: &str) -> Request<Vec<u8>> {
         porter_http::request(Method::GET, &WebUrl::parse(url).expect("url"))
             .body(Vec::new())
             .expect("request")

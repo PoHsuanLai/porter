@@ -9,7 +9,8 @@ use porter_core::sheet::{
     FieldAnswer, FieldKind, FieldValue, ServiceChoice, SheetInput, SheetView,
 };
 use porter_core::{SecretText, Toggle};
-use porter_http::{Http, HttpError, HttpRequest, HttpResponse, HyperHttp};
+use porter_http::http::{Request, Response};
+use porter_http::{Http, HttpError, HyperHttp};
 use porter_provider::{SignIn, SignInStep};
 use std::sync::{Arc, Mutex};
 
@@ -47,7 +48,7 @@ impl Fakes {
 }
 
 impl Http for Fakes {
-    async fn send(&self, mut request: HttpRequest) -> Result<HttpResponse, HttpError> {
+    async fn send(&self, mut request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>, HttpError> {
         let url = porter_core::WebUrl::parse(&request.uri().to_string())
             .map_err(|_| HttpError::Malformed)?;
         let origin = url.origin();

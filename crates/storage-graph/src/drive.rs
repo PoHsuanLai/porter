@@ -30,9 +30,9 @@ use crate::json::{DriveItem, Session as SessionJson, SessionStatus};
 use crate::refuse::{error_code, refused, write_error, write_unreached};
 use crate::replica::GraphReplica;
 use porter_core::WebUrl;
-use porter_http::http::Method;
 use porter_http::http::header::CONTENT_TYPE;
-use porter_http::{Http, HttpResponse, request};
+use porter_http::http::{Method, Response};
+use porter_http::{Http, request};
 use porter_sync::{
     BaseVersion, Conflict, DriveWrite, Found, Place, PutRefused, RemoteId, RemoteSide,
     RemoteVersion, RetryAfter, Session, Upload, UploadTo, Written,
@@ -77,7 +77,7 @@ fn again() -> PutRefused {
 }
 
 /// Whether `response` says the name is taken (`409 nameAlreadyExists`).
-fn name_taken(response: &HttpResponse) -> bool {
+fn name_taken(response: &Response<Vec<u8>>) -> bool {
     response.status().as_u16() == 409
         && error_code(response).as_deref() == Some("nameAlreadyExists")
 }
@@ -85,7 +85,7 @@ fn name_taken(response: &HttpResponse) -> bool {
 /// A whole-drive write answered with `response`, which was not a success, a stale base or a
 /// name taken: a name the drive refuses (`400 invalidRequest` on a write that names the item,
 /// `named`) says so; the rest as [`write_error`].
-fn drive_refusal(response: &HttpResponse, named: bool) -> PutRefused {
+fn drive_refusal(response: &Response<Vec<u8>>, named: bool) -> PutRefused {
     match (response.status().as_u16(), error_code(response).as_deref()) {
         (400, Some("invalidRequest" | "nameInvalid")) if named => PutRefused::NameRefused,
         _ => write_error(response),
@@ -111,7 +111,7 @@ impl<H: Http> GraphReplica<H> {
     }
 
     /// What a write that made or changed an item answered with: the item.
-    fn written(&self, response: &HttpResponse) -> Result<(Written, DriveItem), PutRefused> {
+    fn written(&self, response: &Response<Vec<u8>>) -> Result<(Written, DriveItem), PutRefused> {
         let item: DriveItem = serde_json::from_slice(response.body()).map_err(|_| again())?;
         let written = Written {
             id: RemoteId(item.id.clone()),
@@ -170,7 +170,7 @@ impl<H: Http> GraphReplica<H> {
     /// What a finished write of `to` comes to.
     async fn settle_upload(
         &self,
-        response: HttpResponse,
+        response: Response<Vec<u8>>,
         to: &UploadTo,
         base: &BaseVersion,
     ) -> Result<Written, PutRefused> {
@@ -270,7 +270,7 @@ impl<H: Http> GraphReplica<H> {
     async fn open_session(
         &self,
         upload: &Upload<'_>,
-    ) -> Result<Result<WebUrl, HttpResponse>, PutRefused> {
+    ) -> Result<Result<WebUrl, Response<Vec<u8>>>, PutRefused> {
         let (url, behaviour) = match &upload.to {
             UploadTo::New(place) => {
                 let parent = self.parent_id(place).await?;
@@ -308,7 +308,7 @@ impl<H: Http> GraphReplica<H> {
     }
 
     /// Sends `upload` in a session, resuming the one it names when the server still has it.
-    async fn in_session(&self, upload: &Upload<'_>) -> Result<HttpResponse, PutRefused> {
+    async fn in_session(&self, upload: &Upload<'_>) -> Result<Response<Vec<u8>>, PutRefused> {
         let resumed = match &upload.resume {
             Some(session) => self.resumed(session).await?,
             None => None,
@@ -561,7 +561,7 @@ mod tests {
         assert!(!accepts_name(&"a".repeat(256)));
     }
 
-    fn answer(status: u16, code: &str) -> HttpResponse {
+    fn answer(status: u16, code: &str) -> Response<Vec<u8>> {
         porter_http::http::Response::builder()
             .status(status)
             .body(format!(r#"{{"error":{{"code":"{code}","message":"m"}}}}"#).into_bytes())

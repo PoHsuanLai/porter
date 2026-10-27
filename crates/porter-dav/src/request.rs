@@ -3,15 +3,15 @@
 
 use dav_proto::{Depth, SyncLevel};
 use porter_core::WebUrl;
-use porter_http::http::Method;
 use porter_http::http::header::CONTENT_TYPE;
-use porter_http::{HttpError, HttpRequest, request, webdav};
+use porter_http::http::{Method, Request};
+use porter_http::{HttpError, request, webdav};
 
 const XML: &str = "application/xml; charset=utf-8";
 
 /// A PROPFIND of `props` (namespace-qualified names) on `url`. `Malformed` when the URL is not
 /// one the `http` crate takes as a URI.
-pub fn propfind(url: WebUrl, depth: Depth, props: &[&str]) -> Result<HttpRequest, HttpError> {
+pub fn propfind(url: WebUrl, depth: Depth, props: &[&str]) -> Result<Request<Vec<u8>>, HttpError> {
     xml(webdav::propfind(), url, depth, dav_proto::propfind(props))
 }
 
@@ -23,12 +23,17 @@ pub fn report_sync_collection(
     sync_token: &str,
     level: SyncLevel,
     props: &[&str],
-) -> Result<HttpRequest, HttpError> {
+) -> Result<Request<Vec<u8>>, HttpError> {
     let body = dav_proto::sync_collection(sync_token, level, props);
     xml(webdav::report(), url, Depth::Zero, body)
 }
 
-fn xml(method: Method, url: WebUrl, depth: Depth, body: String) -> Result<HttpRequest, HttpError> {
+fn xml(
+    method: Method,
+    url: WebUrl,
+    depth: Depth,
+    body: String,
+) -> Result<Request<Vec<u8>>, HttpError> {
     let request = request(method, &url)
         .header("Depth", depth.as_str())
         .header(CONTENT_TYPE, XML)
@@ -45,11 +50,11 @@ mod tests {
         WebUrl::parse("https://dav.example.test/remote.php/dav/").unwrap()
     }
 
-    fn body(request: &HttpRequest) -> String {
+    fn body(request: &Request<Vec<u8>>) -> String {
         String::from_utf8(request.body().clone()).unwrap()
     }
 
-    fn header<'a>(request: &'a HttpRequest, name: &str) -> Option<&'a str> {
+    fn header<'a>(request: &'a Request<Vec<u8>>, name: &str) -> Option<&'a str> {
         request.headers().get(name)?.to_str().ok()
     }
 

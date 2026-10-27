@@ -9,9 +9,9 @@ use crate::refuse::{write_error, write_unreached};
 use crate::replica::{DELETED, WebDavReplica};
 use crate::requests;
 use dav_proto::parse_multistatus;
-use porter_http::http::Method;
 use porter_http::http::header::CONTENT_TYPE;
-use porter_http::{HeaderText, Http, HttpRequest, HttpResponse, request, webdav};
+use porter_http::http::{Method, Request, Response};
+use porter_http::{HeaderText, Http, request, webdav};
 use porter_sync::{
     BaseVersion, Conflict, PutItem, PutRefused, PutTarget, RemoteId, RemoteSide, RemoteVersion,
     RetryAfter,
@@ -77,7 +77,7 @@ impl<H: Http> WebDavReplica<H> {
         }
     }
 
-    async fn write_send(&self, request: HttpRequest) -> Result<HttpResponse, PutRefused> {
+    async fn write_send(&self, request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>, PutRefused> {
         self.http.send(request).await.map_err(write_unreached)
     }
 
@@ -107,7 +107,7 @@ impl<H: Http> WebDavReplica<H> {
 
     /// The version a successful PUT made: the `ETag` it answered with, else what the server
     /// says the item is now, else nothing the next read cannot settle.
-    async fn version_after(&self, id: &RemoteId, response: &HttpResponse) -> RemoteVersion {
+    async fn version_after(&self, id: &RemoteId, response: &Response<Vec<u8>>) -> RemoteVersion {
         if let Some(tag) = response.header("etag") {
             return RemoteVersion(tag.to_owned());
         }

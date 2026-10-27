@@ -5,10 +5,11 @@ use crate::entry::CONTENT_LENGTH;
 use dav_proto::{Depth, SyncLevel, names};
 use porter_core::WebUrl;
 use porter_dav::{propfind, report_sync_collection};
-use porter_http::{HttpError, HttpRequest};
+use porter_http::HttpError;
+use porter_http::http::Request;
 
 /// A PROPFIND at depth 1 of what a listing needs.
-pub fn list(url: WebUrl) -> Result<HttpRequest, HttpError> {
+pub fn list(url: WebUrl) -> Result<Request<Vec<u8>>, HttpError> {
     propfind(
         url,
         Depth::One,
@@ -17,7 +18,7 @@ pub fn list(url: WebUrl) -> Result<HttpRequest, HttpError> {
 }
 
 /// A PROPFIND at depth 0 of what a listing needs, for one resource.
-pub fn stat(url: WebUrl) -> Result<HttpRequest, HttpError> {
+pub fn stat(url: WebUrl) -> Result<Request<Vec<u8>>, HttpError> {
     propfind(
         url,
         Depth::Zero,
@@ -26,7 +27,7 @@ pub fn stat(url: WebUrl) -> Result<HttpRequest, HttpError> {
 }
 
 /// A PROPFIND of the quota properties (RFC 4331).
-pub fn quota(url: WebUrl) -> Result<HttpRequest, HttpError> {
+pub fn quota(url: WebUrl) -> Result<Request<Vec<u8>>, HttpError> {
     propfind(
         url,
         Depth::Zero,
@@ -36,7 +37,7 @@ pub fn quota(url: WebUrl) -> Result<HttpRequest, HttpError> {
 
 /// A sync-collection REPORT from `token` (empty for the first listing) over everything below
 /// the folder (RFC 6578 section 3.3, `sync-level` `infinite`), asking for what a listing reads.
-pub fn sync(url: WebUrl, token: &str) -> Result<HttpRequest, HttpError> {
+pub fn sync(url: WebUrl, token: &str) -> Result<Request<Vec<u8>>, HttpError> {
     report_sync_collection(
         url,
         token,

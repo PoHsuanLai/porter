@@ -9,9 +9,7 @@ use porter_fake_servers::http::{Request, Response, serve};
 use porter_fake_servers::net::{Bind, Listener, port_of};
 use porter_fake_servers::tls;
 use porter_http::http::{self, Method, StatusCode};
-use porter_http::{
-    HeaderText, Http, HttpError, HttpRequest, HyperHttp, Limits, request, request_to,
-};
+use porter_http::{HeaderText, Http, HttpError, HyperHttp, Limits, request, request_to};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
@@ -40,7 +38,7 @@ fn url(scheme: &str, host: &str, port: u16, path: &str) -> WebUrl {
     WebUrl::parse(&format!("{scheme}://{host}:{port}{path}")).expect("url")
 }
 
-fn get(url: &WebUrl) -> HttpRequest {
+fn get(url: &WebUrl) -> http::Request<Vec<u8>> {
     request(Method::GET, url).body(Vec::new()).expect("request")
 }
 

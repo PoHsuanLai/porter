@@ -4,8 +4,8 @@
 
 use porter_core::WebUrl;
 use porter_http::http::request::Builder;
-use porter_http::http::{Method, StatusCode};
-use porter_http::{HeaderText, Http, HttpResponse, request};
+use porter_http::http::{Method, Response, StatusCode};
+use porter_http::{HeaderText, Http, request};
 use serde::Deserialize;
 
 /// What an upload returns, to be made into a media item.
@@ -87,7 +87,7 @@ struct Item {
     id: String,
 }
 
-fn refused(response: &HttpResponse) -> ApiError {
+fn refused(response: &Response<Vec<u8>>) -> ApiError {
     ApiError::Refused {
         status: response.status().as_u16(),
         retry_after: response.retry_after_seconds(),
@@ -124,7 +124,7 @@ impl<H: Http> PhotosApi<H> {
 
     /// Sends the request `request` builds with `body`. A request that would not build is never
     /// sent, which is no answer, as a client that refuses it is.
-    async fn send(&self, request: Builder, body: Vec<u8>) -> Result<HttpResponse, ApiError> {
+    async fn send(&self, request: Builder, body: Vec<u8>) -> Result<Response<Vec<u8>>, ApiError> {
         let request = request.body(body).map_err(|_| ApiError::Unreached)?;
         let response = self
             .http

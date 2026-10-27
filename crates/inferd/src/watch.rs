@@ -18,7 +18,8 @@ use crate::engines::Engines;
 use crate::probe::{Found, ProbeConfig, Runtime, probe};
 use crate::probed::Standing;
 use crate::report::{ReportFault, Reports};
-use porter_http::{Http, HttpError, HttpRequest, HttpResponse};
+use porter_http::http::{Request, Response};
+use porter_http::{Http, HttpError};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -124,7 +125,7 @@ struct Noting<'a, H> {
 }
 
 impl<H: Http> Http for Noting<'_, H> {
-    async fn send(&self, request: HttpRequest) -> Result<HttpResponse, HttpError> {
+    async fn send(&self, request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>, HttpError> {
         let sent = self.inner.send(request).await;
         if matches!(sent, Err(HttpError::TimedOut)) {
             self.timed_out.store(true, Ordering::Relaxed);

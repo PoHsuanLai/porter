@@ -19,9 +19,9 @@ use crate::json::{Change as Wire, ChangeList, File, FileList, StartToken};
 use crate::refuse::{read_error, unreached};
 use crate::replica::GdriveReplica;
 use porter_core::{Bytes, UnixSeconds, WebUrl};
-use porter_http::http::Method;
 use porter_http::http::header::CONTENT_TYPE;
-use porter_http::{Http, HttpResponse, request};
+use porter_http::http::{Method, Response};
+use porter_http::{Http, request};
 use porter_sync::{
     Anchor, Change, ChangePage, Cursor, Folder, ItemKind, ItemPath, More, RemoteId, RemoteItem,
     RemoteVersion, ReplicaError, RetryAfter, Tombstone,
@@ -99,7 +99,7 @@ impl<H: Http> GdriveReplica<H> {
     }
 
     /// An answer to a request that resumed an anchor: a token Drive refuses is an expired anchor.
-    fn resumed(response: &HttpResponse) -> ReplicaError {
+    fn resumed(response: &Response<Vec<u8>>) -> ReplicaError {
         match response.status().as_u16() {
             400 | 404 | 410 => ReplicaError::AnchorExpired,
             _ => read_error(response),

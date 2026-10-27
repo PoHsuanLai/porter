@@ -7,8 +7,8 @@ use porter_core::capability::{PimCap, PimTransport};
 use porter_core::{
     Claim, EndpointUrl, Family, LoginName, Offer, Provenance, ServiceEndpoint, Subject, Tls,
 };
-use porter_http::http::Method;
-use porter_http::{HeaderText, Http, HttpResponse, request_to};
+use porter_http::http::{Method, Response};
+use porter_http::{HeaderText, Http, request_to};
 use porter_provider::DomainName;
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -49,7 +49,7 @@ pub fn well_known_urls(domain: &DomainName, kind: CapabilityKind) -> Vec<Endpoin
 pub fn well_known_found(
     kind: CapabilityKind,
     requested: &EndpointUrl,
-    response: &HttpResponse,
+    response: &Response<Vec<u8>>,
     login: &LoginName,
 ) -> Result<Found, DiscoverFault> {
     let (_, family) = well_known_of(kind).ok_or(DiscoverFault::NoServers)?;

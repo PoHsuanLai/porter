@@ -6,8 +6,9 @@ use porter_core::stream::ByteStream;
 use porter_core::{UnixSeconds, WebUrl};
 use porter_fake_servers::{FakeGoogle, GoogleHandle, Running};
 use porter_http::http::header::{AUTHORIZATION, HeaderValue};
+use porter_http::http::{Request, Response};
 use porter_http::stream::{Dial, StreamHttp, StreamLimits};
-use porter_http::{Http, HttpError, HttpRequest, HttpResponse};
+use porter_http::{Http, HttpError};
 use std::future::Future;
 use std::io;
 use storage_gdrive::{Clock, GdriveReplica, Root, Uploads};
@@ -57,8 +58,8 @@ pub struct Bearer<H>(pub H);
 impl<H: Http> Http for Bearer<H> {
     fn send(
         &self,
-        mut request: HttpRequest,
-    ) -> impl Future<Output = Result<HttpResponse, HttpError>> + Send {
+        mut request: Request<Vec<u8>>,
+    ) -> impl Future<Output = Result<Response<Vec<u8>>, HttpError>> + Send {
         let value = HeaderValue::try_from(format!("Bearer {TOKEN}")).expect("a header value");
         request.headers_mut().append(AUTHORIZATION, value);
         self.0.send(request)

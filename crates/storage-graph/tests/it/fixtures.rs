@@ -3,8 +3,8 @@
 //! are written from Microsoft's documentation, not recorded from a live account.
 
 use porter_core::{Bytes, UnixSeconds, WebUrl};
-use porter_http::http::Response;
-use porter_http::{HeaderText, Http, HttpError, HttpRequest, HttpResponse};
+use porter_http::http::{Request, Response};
+use porter_http::{HeaderText, Http, HttpError};
 use porter_sync::{
     Anchor, BaseVersion, Blob, Change, ContentHash, Cursor, ItemKind, ItemPath, More, PutItem,
     PutTarget, Quota, RemoteId, RemoteItem, RemoteVersion, Replica, ReplicaError, RetryAfter,
@@ -25,7 +25,7 @@ fn fixture(name: &str) -> String {
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"))
 }
 
-fn answer(status: u16, body: impl Into<Vec<u8>>) -> HttpResponse {
+fn answer(status: u16, body: impl Into<Vec<u8>>) -> Response<Vec<u8>> {
     let body: Vec<u8> = body.into();
     Response::builder()
         .status(status)
@@ -37,12 +37,12 @@ fn answer(status: u16, body: impl Into<Vec<u8>>) -> HttpResponse {
 /// Answers by `METHOD url`; remembers what it was sent.
 #[derive(Debug, Clone, Default)]
 struct Script {
-    answers: Arc<Mutex<BTreeMap<String, HttpResponse>>>,
-    sent: Arc<Mutex<Vec<HttpRequest>>>,
+    answers: Arc<Mutex<BTreeMap<String, Response<Vec<u8>>>>>,
+    sent: Arc<Mutex<Vec<Request<Vec<u8>>>>>,
 }
 
 impl Script {
-    fn on(self, key: &str, response: HttpResponse) -> Self {
+    fn on(self, key: &str, response: Response<Vec<u8>>) -> Self {
         self.answers
             .lock()
             .expect("lock")
@@ -50,7 +50,7 @@ impl Script {
         self
     }
 
-    fn sent(&self) -> Vec<HttpRequest> {
+    fn sent(&self) -> Vec<Request<Vec<u8>>> {
         self.sent.lock().expect("lock").clone()
     }
 
@@ -65,8 +65,8 @@ impl Script {
 impl Http for Script {
     fn send(
         &self,
-        request: HttpRequest,
-    ) -> impl Future<Output = Result<HttpResponse, HttpError>> + Send {
+        request: Request<Vec<u8>>,
+    ) -> impl Future<Output = Result<Response<Vec<u8>>, HttpError>> + Send {
         let key = format!("{} {}", request.method(), request.uri());
         self.sent.lock().expect("lock").push(request);
         let found = self.answers.lock().expect("lock").get(&key).cloned();

@@ -410,8 +410,8 @@ struct FakeJmap {
 impl porter_http::Http for FakeJmap {
     async fn send(
         &self,
-        request: porter_http::HttpRequest,
-    ) -> Result<porter_http::HttpResponse, porter_http::HttpError> {
+        request: porter_http::http::Request<Vec<u8>>,
+    ) -> Result<porter_http::http::Response<Vec<u8>>, porter_http::HttpError> {
         use base64::Engine;
         let want = match self.token {
             Some(token) => format!("Bearer {token}"),

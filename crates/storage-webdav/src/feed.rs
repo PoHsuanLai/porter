@@ -19,7 +19,8 @@ use crate::replica::{DELETED, WebDavReplica};
 use crate::requests;
 use dav_proto::{Multistatus, SyncEnd, parse_multistatus, parse_sync_collection, token_expired};
 use porter_core::Bytes;
-use porter_http::{Http, HttpResponse};
+use porter_http::Http;
+use porter_http::http::Response;
 use porter_sync::{
     Anchor, Change, ChangePage, Cursor, More, RemoteId, RemoteVersion, ReplicaError, RetryAfter,
     Tombstone,
@@ -395,7 +396,7 @@ impl<H: Http> WebDavReplica<H> {
     /// listed has nothing; the dataset's own folder gone is `Gone`.
     fn listed(
         &self,
-        response: &HttpResponse,
+        response: &Response<Vec<u8>>,
         folder: &RemoteId,
     ) -> Result<Vec<Entry>, ReplicaError> {
         match response.status().as_u16() {

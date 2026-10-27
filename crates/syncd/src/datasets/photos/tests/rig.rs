@@ -12,8 +12,9 @@ use porter_core::stream::ByteStream;
 use porter_core::{UnixSeconds, WebUrl};
 use porter_fake_servers::{DavHandle, FakeDav, Running};
 use porter_http::http::header::{AUTHORIZATION, HeaderValue};
+use porter_http::http::{Request, Response};
 use porter_http::stream::{Dial, StreamHttp, StreamLimits};
-use porter_http::{Http, HttpError, HttpRequest, HttpResponse};
+use porter_http::{Http, HttpError};
 use std::future::Future;
 use std::io;
 use std::path::PathBuf;
@@ -66,8 +67,8 @@ pub struct Basic<H>(H);
 impl<H: Http> Http for Basic<H> {
     fn send(
         &self,
-        mut request: HttpRequest,
-    ) -> impl Future<Output = Result<HttpResponse, HttpError>> + Send {
+        mut request: Request<Vec<u8>>,
+    ) -> impl Future<Output = Result<Response<Vec<u8>>, HttpError>> + Send {
         use base64::Engine;
         let token = base64::engine::general_purpose::STANDARD.encode(format!("{USER}:{PASSWORD}"));
         let mut value =

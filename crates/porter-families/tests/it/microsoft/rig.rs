@@ -4,11 +4,11 @@
 use porter_core::sheet::SignInInput;
 use porter_core::{Audience, UnixSeconds};
 use porter_fake_servers::browser::split_loopback;
-use porter_fake_servers::http::{Request, Scheme, send};
+use porter_fake_servers::http::{Scheme, send};
 use porter_fake_servers::{FakeIssuer, IssuerHandle, Running, shipped};
 use porter_families::{MicrosoftEnv, MicrosoftProvider};
-use porter_http::http::Response;
-use porter_http::{Http, HttpError, HttpRequest, HttpResponse};
+use porter_http::http::{Request, Response};
+use porter_http::{Http, HttpError};
 use porter_oauth::ClientRegistry;
 use porter_provider::{
     ClientChannel, ClientEntry, ClientId, ClientsFile, Issuer, ProviderSpec, SignIn, SignInMode,
@@ -55,7 +55,7 @@ impl Graph {
         self.calls.lock().unwrap().clone()
     }
 
-    fn answer(&self, request: &HttpRequest) -> HttpResponse {
+    fn answer(&self, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
         let path = request.uri().path().to_owned();
         let bearer = request
             .headers()
@@ -101,7 +101,7 @@ pub struct Wire {
 }
 
 impl Http for Wire {
-    async fn send(&self, request: HttpRequest) -> Result<HttpResponse, HttpError> {
+    async fn send(&self, request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>, HttpError> {
         if *self.graph.down.lock().unwrap() {
             return Err(HttpError::Unreachable);
         }
@@ -110,7 +110,7 @@ impl Http for Wire {
         }
         let (address, target) =
             split_loopback(&request.uri().to_string()).map_err(|_| HttpError::Unreachable)?;
-        let mut wire = Request::new(request.method().as_str(), &target);
+        let mut wire = porter_fake_servers::http::Request::new(request.method().as_str(), &target);
         for (name, value) in request.headers() {
             if let Ok(value) = value.to_str() {
                 wire = wire.with_header(name.as_str(), value);

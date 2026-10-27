@@ -8,9 +8,9 @@
 use super::scopes::{AccountClass, classify};
 use porter_core::capability::{Capability, CapabilityKind, QuotaReport};
 use porter_core::{AbsentReason, Claim, EndpointUrl, Offer, Provenance, Subject};
-use porter_http::http::Method;
 use porter_http::http::header::{ACCEPT, AUTHORIZATION};
-use porter_http::{Http, HttpResponse, SensitiveHeader, request_to};
+use porter_http::http::{Method, Response};
+use porter_http::{Http, SensitiveHeader, request_to};
 use porter_provider::{ProviderError, ProviderSpec};
 use serde::Deserialize;
 
@@ -149,7 +149,7 @@ async fn claim_for<H: Http>(
 }
 
 /// OneDrive says whether it reports a quota; the declared row assumed it does.
-fn with_quota(declared: &Capability, answer: &HttpResponse) -> Capability {
+fn with_quota(declared: &Capability, answer: &Response<Vec<u8>>) -> Capability {
     match declared {
         Capability::Storage(storage) => {
             let reported = serde_json::from_slice::<Drive>(answer.body())
@@ -184,7 +184,7 @@ async fn get<H: Http>(
     base: &EndpointUrl,
     path: &str,
     token: &str,
-) -> Result<HttpResponse, ProviderError> {
+) -> Result<Response<Vec<u8>>, ProviderError> {
     let url = EndpointUrl::parse(&format!("{}{path}", base.as_str().trim_end_matches('/')))
         .map_err(|_| ProviderError::Unreadable)?;
     let request = request_to(Method::GET, &url)

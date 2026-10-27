@@ -8,9 +8,9 @@ use crate::addr::names_of;
 use crate::json::DriveItem;
 use crate::refuse::{refused, write_error, write_unreached};
 use crate::replica::GraphReplica;
-use porter_http::http::Method;
 use porter_http::http::header::{ACCEPT, CONTENT_TYPE, HeaderValue};
-use porter_http::{Http, HttpRequest, HttpResponse, request};
+use porter_http::http::{Method, Request, Response};
+use porter_http::{Http, request};
 use porter_sync::{
     BaseVersion, Conflict, PutItem, PutRefused, PutTarget, RemoteId, RemoteSide, RemoteVersion,
     RetryAfter,
@@ -80,8 +80,8 @@ impl<H: Http> GraphReplica<H> {
 
     pub(crate) async fn write_send(
         &self,
-        mut request: HttpRequest,
-    ) -> Result<HttpResponse, PutRefused> {
+        mut request: Request<Vec<u8>>,
+    ) -> Result<Response<Vec<u8>>, PutRefused> {
         request
             .headers_mut()
             .append(ACCEPT, HeaderValue::from_static("application/json"));
@@ -94,7 +94,7 @@ impl<H: Http> GraphReplica<H> {
         target: &Target,
         guard: Option<&str>,
         bytes: Vec<u8>,
-    ) -> Result<HttpResponse, PutRefused> {
+    ) -> Result<Response<Vec<u8>>, PutRefused> {
         let url = match target {
             Target::New(names) => self.addr.path(
                 Some(names),
@@ -116,7 +116,7 @@ impl<H: Http> GraphReplica<H> {
     /// What a finished write's answer comes to.
     pub(crate) async fn settle(
         &self,
-        response: HttpResponse,
+        response: Response<Vec<u8>>,
         target: &Target,
         base: &BaseVersion,
     ) -> Written {

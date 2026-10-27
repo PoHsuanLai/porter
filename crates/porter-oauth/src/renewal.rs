@@ -121,7 +121,9 @@ mod tests {
         }
     }
 
-    async fn renewed(answer: Result<porter_http::HttpResponse, HttpError>) -> RenewOutcome {
+    async fn renewed(
+        answer: Result<porter_http::http::Response<Vec<u8>>, HttpError>,
+    ) -> RenewOutcome {
         let http = Scripted::new(vec![answer]);
         renew(
             &http,

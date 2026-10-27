@@ -7,9 +7,8 @@
 //! a timeout, and a response longer than the cap is `TooLarge`.
 
 use crate::error::HttpError;
-use crate::message::{HttpRequest, HttpResponse};
 use crate::seam::Http;
-use http::{HeaderMap, Response, StatusCode, Uri};
+use http::{HeaderMap, Request, Response, StatusCode, Uri};
 use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
 use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
@@ -92,7 +91,7 @@ impl HyperHttp {
         Self { limits, ..self }
     }
 
-    async fn exchange(&self, request: HttpRequest) -> Result<HttpResponse, HttpError> {
+    async fn exchange(&self, request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>, HttpError> {
         let outgoing = build(request)?;
         let response = self.client.request(outgoing).await.map_err(client_fault)?;
         let (head, mut body) = response.into_parts();
@@ -138,7 +137,7 @@ impl HyperHttp {
     /// [`HttpError`] when no response head arrived or the body broke off.
     pub async fn stream<S: BodySink>(
         &self,
-        request: HttpRequest,
+        request: Request<Vec<u8>>,
         idle: Duration,
         sink: &mut S,
     ) -> Result<StatusCode, HttpError> {
@@ -170,7 +169,7 @@ impl HyperHttp {
 }
 
 impl Http for HyperHttp {
-    async fn send(&self, request: HttpRequest) -> Result<HttpResponse, HttpError> {
+    async fn send(&self, request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>, HttpError> {
         tokio::time::timeout(self.limits.timeout, self.exchange(request))
             .await
             .unwrap_or(Err(HttpError::TimedOut))
@@ -180,7 +179,7 @@ impl Http for HyperHttp {
 /// The request as hyper sends it. Plain `http` goes to this computer only: a request to any
 /// other host over `http` is `Tls` and is never dialled, and a scheme that is not HTTP is
 /// `Malformed`.
-fn build(request: HttpRequest) -> Result<hyper::Request<Full<Bytes>>, HttpError> {
+fn build(request: Request<Vec<u8>>) -> Result<hyper::Request<Full<Bytes>>, HttpError> {
     in_the_clear_only_here(request.uri())?;
     Ok(request.map(|body| Full::new(Bytes::from(body))))
 }

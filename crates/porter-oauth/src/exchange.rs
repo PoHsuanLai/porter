@@ -7,7 +7,8 @@ use crate::form;
 use crate::loopback::AuthCode;
 use crate::pkce::Pkce;
 use porter_core::{SecretText, UnixSeconds};
-use porter_http::{Http, HttpResponse};
+use porter_http::Http;
+use porter_http::http::Response;
 use porter_provider::{ClientEntry, IssuerEndpoints};
 use serde::{Deserialize, Serialize};
 
@@ -248,7 +249,7 @@ pub(crate) async fn token_call_detailed<H: Http>(
 }
 
 /// A token endpoint's answer as tokens, or the fault it amounts to with what the issuer said.
-fn read_tokens_detailed(response: &HttpResponse) -> Result<TokenResponse, ExchangeFailure> {
+fn read_tokens_detailed(response: &Response<Vec<u8>>) -> Result<TokenResponse, ExchangeFailure> {
     let fault = match response.status().as_u16() {
         200..=299 => {
             return serde_json::from_slice(response.body())
@@ -286,12 +287,12 @@ mod tests {
 
     type Case = (
         &'static str,
-        Result<HttpResponse, HttpError>,
+        Result<Response<Vec<u8>>, HttpError>,
         Result<(&'static str, Option<&'static str>), ExchangeFault>,
     );
 
     async fn refresh_with(
-        answers: Vec<Result<HttpResponse, HttpError>>,
+        answers: Vec<Result<Response<Vec<u8>>, HttpError>>,
     ) -> Result<TokenResponse, ExchangeFault> {
         let http = Scripted::new(answers);
         refresh(
@@ -460,7 +461,8 @@ mod tests {
 
     #[tokio::test]
     async fn the_issuers_words_come_only_from_the_detailed_calls_and_only_when_there_are_some() {
-        let cases: Vec<(&str, Result<HttpResponse, HttpError>, ExchangeFault, bool)> = vec![
+        type Reply = Result<Response<Vec<u8>>, HttpError>;
+        let cases: Vec<(&str, Reply, ExchangeFault, bool)> = vec![
             (
                 "401 with a body",
                 answer(

@@ -14,9 +14,9 @@
 
 use crate::datasets::photos::cas;
 use porter_core::WebUrl;
-use porter_http::http::Method;
 use porter_http::http::request::Builder;
-use porter_http::{Http, HttpResponse, request};
+use porter_http::http::{Method, Response};
+use porter_http::{Http, request};
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -225,7 +225,11 @@ impl<H: Http> PhotosPicker<H> {
 
     /// Sends the request `request` builds with `body`. A request that would not build is never
     /// sent, which is no answer, as a client that refuses it is.
-    async fn send(&self, request: Builder, body: Vec<u8>) -> Result<HttpResponse, PickerError> {
+    async fn send(
+        &self,
+        request: Builder,
+        body: Vec<u8>,
+    ) -> Result<Response<Vec<u8>>, PickerError> {
         let request = request
             .header("Accept", "application/json")
             .body(body)

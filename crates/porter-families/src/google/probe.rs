@@ -12,9 +12,9 @@ use super::apis_of;
 use super::scopes::Granted;
 use porter_core::capability::{Capability, CapabilityKind};
 use porter_core::{AbsentReason, Claim, EndpointUrl, Family, Offer, Provenance, Subject, WebUrl};
-use porter_http::http::Method;
 use porter_http::http::header::{ACCEPT, AUTHORIZATION};
-use porter_http::{Http, HttpResponse, SensitiveHeader, request};
+use porter_http::http::{Method, Response};
+use porter_http::{Http, SensitiveHeader, request};
 use porter_oauth::MailRights;
 use porter_provider::{ProviderError, ProviderSpec};
 use serde::Deserialize;
@@ -147,7 +147,7 @@ async fn claim_for<H: Http>(
 }
 
 /// Why Google said 403, from what it wrote.
-fn refusal_reason(answer: &HttpResponse, address: &str) -> AbsentReason {
+fn refusal_reason(answer: &Response<Vec<u8>>, address: &str) -> AbsentReason {
     let body = String::from_utf8_lossy(answer.body());
     if body.contains("accessNotConfigured") || body.contains("SERVICE_DISABLED") {
         return AbsentReason::UnverifiedBuild;
@@ -168,7 +168,11 @@ pub(super) fn fault(status: u16) -> ProviderError {
     }
 }
 
-async fn get<H: Http>(http: &H, url: &str, token: &str) -> Result<HttpResponse, ProviderError> {
+async fn get<H: Http>(
+    http: &H,
+    url: &str,
+    token: &str,
+) -> Result<Response<Vec<u8>>, ProviderError> {
     let url = WebUrl::parse(url).map_err(|_| ProviderError::Unreadable)?;
     let request = request(Method::GET, &url)
         .sensitive_header(AUTHORIZATION, &format!("Bearer {token}"))
@@ -186,7 +190,7 @@ mod tests {
 
     #[test]
     fn a_403_is_told_apart_by_what_google_wrote_and_who_asked() {
-        let body = |text: &str| -> HttpResponse {
+        let body = |text: &str| -> Response<Vec<u8>> {
             porter_http::http::Response::builder()
                 .status(403)
                 .body(text.as_bytes().to_vec())

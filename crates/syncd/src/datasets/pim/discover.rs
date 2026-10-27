@@ -190,8 +190,7 @@ pub async fn discover<H: Http>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_http::http::Response;
-    use porter_http::{HttpRequest, HttpResponse};
+    use porter_http::http::{Request, Response};
     use std::sync::Mutex;
 
     /// Answers each PROPFIND from a table of `(path, body)`, remembering what was asked.
@@ -201,7 +200,7 @@ mod tests {
     }
 
     impl Http for Script {
-        async fn send(&self, request: HttpRequest) -> Result<HttpResponse, HttpError> {
+        async fn send(&self, request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>, HttpError> {
             let path = request.uri().path().to_owned();
             self.asked.lock().expect("lock").push(path.clone());
             let (_, status, body) = self
