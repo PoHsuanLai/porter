@@ -25,7 +25,7 @@ pub struct RequestSkeleton;
 #[zbus::interface(name = "org.quire.Accounts1.Request")]
 impl RequestSkeleton {
     fn close(&self) -> fdo::Result<()> {
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     #[zbus(signal)]
@@ -34,4 +34,10 @@ impl RequestSkeleton {
         response: u32,
         results: Details,
     ) -> zbus::Result<()>;
+}
+
+/// Writes this interface's introspection into `xml`, as an `<interface>` element one level in:
+/// the bus's introspection collects each interface's own.
+pub(crate) fn introspect(xml: &mut String) {
+    zbus::object_server::Interface::introspect_to_writer(&RequestSkeleton, xml, 1);
 }

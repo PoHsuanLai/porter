@@ -77,22 +77,22 @@ pub struct SyncSkeleton;
 #[zbus::interface(name = "org.quire.Sync1")]
 impl SyncSkeleton {
     fn datasets(&self) -> fdo::Result<Vec<String>> {
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn status(&self, dataset: String) -> fdo::Result<Details> {
         let _ = dataset;
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn pause(&self, dataset: String) -> fdo::Result<()> {
         let _ = dataset;
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn resume(&self, dataset: String) -> fdo::Result<()> {
         let _ = dataset;
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     /// Settles one stored conflict of `dataset` (`<account>/<dataset>`). `conflict` is the number
@@ -105,7 +105,7 @@ impl SyncSkeleton {
     /// unknown or already settled.
     fn resolve(&self, dataset: String, conflict: i64, how: String) -> fdo::Result<()> {
         let _ = (dataset, conflict, how);
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     /// Lets one discard through for `dataset` (`<account>/<dataset>`) while it is held: the
@@ -119,7 +119,7 @@ impl SyncSkeleton {
     /// `org.quire.Sync1.Error.NothingHeld` when nothing is held (never, or already confirmed).
     fn confirm_discard(&self, dataset: String) -> fdo::Result<()> {
         let _ = dataset;
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     /// "Sync now": has `dataset` (`<account>/<dataset>`) sync at once instead of at its next
@@ -132,7 +132,7 @@ impl SyncSkeleton {
     /// `org.quire.Sync1.Error.Paused` when the person paused it (`Resume` first).
     fn sync_now(&self, dataset: String) -> fdo::Result<()> {
         let _ = dataset;
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     /// Joins the caller to the connections syncd tells, without asking for any data: any
@@ -141,7 +141,7 @@ impl SyncSkeleton {
     /// `NeedsConfirmation` for every dataset, the holds already on at once, and nothing else of
     /// a dataset it does not own. Errors: `AccessDenied` for a sender syncd does not know.
     fn watch(&self) -> fdo::Result<()> {
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     #[zbus(signal)]
@@ -168,4 +168,10 @@ impl SyncSkeleton {
         dataset: &str,
         held: Details,
     ) -> zbus::Result<()>;
+}
+
+/// Writes this interface's introspection into `xml`, as an `<interface>` element one level in:
+/// the bus's introspection collects each interface's own.
+pub(crate) fn introspect(xml: &mut String) {
+    zbus::object_server::Interface::introspect_to_writer(&SyncSkeleton, xml, 1);
 }

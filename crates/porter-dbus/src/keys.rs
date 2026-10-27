@@ -59,7 +59,7 @@ impl KeysSkeleton {
         options: Details,
     ) -> fdo::Result<OwnedObjectPath> {
         let _ = (class, usage, parent_window, options);
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn add_account(
@@ -69,6 +69,12 @@ impl KeysSkeleton {
         options: Details,
     ) -> fdo::Result<OwnedObjectPath> {
         let _ = (provider_hint, parent_window, options);
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
+}
+
+/// Writes this interface's introspection into `xml`, as an `<interface>` element one level in:
+/// the bus's introspection collects each interface's own.
+pub(crate) fn introspect(xml: &mut String) {
+    zbus::object_server::Interface::introspect_to_writer(&KeysSkeleton, xml, 1);
 }

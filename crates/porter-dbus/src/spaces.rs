@@ -58,34 +58,40 @@ pub struct SpacesSkeleton;
 #[zbus::interface(name = "org.quire.Spaces1")]
 impl SpacesSkeleton {
     fn list(&self) -> fdo::Result<Vec<(String, Details)>> {
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn create(&self, name: String, look: String) -> fdo::Result<String> {
         let _ = (name, look);
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn register(&self, id: String, name: String, look: String) -> fdo::Result<()> {
         let _ = (id, name, look);
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn rename(&self, id: String, name: String) -> fdo::Result<()> {
         let _ = (id, name);
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn set_look(&self, id: String, look: String) -> fdo::Result<()> {
         let _ = (id, look);
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn remove(&self, id: String) -> fdo::Result<()> {
         let _ = id;
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     #[zbus(signal)]
     async fn changed(emitter: &SignalEmitter<'_>, id: &str, what: &str) -> zbus::Result<()>;
+}
+
+/// Writes this interface's introspection into `xml`, as an `<interface>` element one level in:
+/// the bus's introspection collects each interface's own.
+pub(crate) fn introspect(xml: &mut String) {
+    zbus::object_server::Interface::introspect_to_writer(&SpacesSkeleton, xml, 1);
 }

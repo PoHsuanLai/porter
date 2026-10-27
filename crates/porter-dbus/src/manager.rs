@@ -50,11 +50,11 @@ impl ManagerSkeleton {
         options: Details,
     ) -> fdo::Result<OwnedObjectPath> {
         let _ = (provider_hint, parent_window, options);
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn needing_reauth(&self) -> fdo::Result<Vec<(OwnedObjectPath, String)>> {
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     #[zbus(signal)]
@@ -72,4 +72,10 @@ impl ManagerSkeleton {
     #[zbus(signal)]
     async fn needs_reauth(emitter: &SignalEmitter<'_>, account: ObjectPath<'_>)
     -> zbus::Result<()>;
+}
+
+/// Writes this interface's introspection into `xml`, as an `<interface>` element one level in:
+/// the bus's introspection collects each interface's own.
+pub(crate) fn introspect(xml: &mut String) {
+    zbus::object_server::Interface::introspect_to_writer(&ManagerSkeleton, xml, 1);
 }

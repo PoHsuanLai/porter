@@ -72,11 +72,17 @@ impl AgentsSkeleton {
         options: std::collections::HashMap<String, OwnedValue>,
     ) -> fdo::Result<EndpointArg> {
         let _ = (program, route, class, protocols, options);
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn close_endpoint(&self, session: String) -> fdo::Result<()> {
         let _ = session;
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
+}
+
+/// Writes this interface's introspection into `xml`, as an `<interface>` element one level in:
+/// the bus's introspection collects each interface's own.
+pub(crate) fn introspect(xml: &mut String) {
+    zbus::object_server::Interface::introspect_to_writer(&AgentsSkeleton, xml, 1);
 }

@@ -134,7 +134,7 @@ pub struct IdentitiesSkeleton;
 #[zbus::interface(name = "org.quire.Identities1")]
 impl IdentitiesSkeleton {
     fn list(&self) -> fdo::Result<Vec<(String, Details)>> {
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn offer(
@@ -143,26 +143,32 @@ impl IdentitiesSkeleton {
         parent_window: String,
     ) -> fdo::Result<(String, String, String)> {
         let _ = (provider_hint, parent_window);
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn take_password(&self, identity_id: String) -> fdo::Result<OwnedFd> {
         let _ = identity_id;
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn register_use(&self, identity_id: String) -> fdo::Result<()> {
         let _ = identity_id;
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn uses(&self, identity_id: String) -> fdo::Result<Vec<String>> {
         let _ = identity_id;
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     #[zbus(signal)]
     async fn identity_removed(emitter: &SignalEmitter<'_>, identity_id: &str) -> zbus::Result<()>;
+}
+
+/// Writes this interface's introspection into `xml`, as an `<interface>` element one level in:
+/// the bus's introspection collects each interface's own.
+pub(crate) fn introspect(xml: &mut String) {
+    zbus::object_server::Interface::introspect_to_writer(&IdentitiesSkeleton, xml, 1);
 }
 
 #[cfg(test)]

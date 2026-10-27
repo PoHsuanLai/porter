@@ -43,9 +43,15 @@ pub struct TailnetSkeleton;
 #[zbus::interface(name = "org.quire.Tailnet1")]
 impl TailnetSkeleton {
     fn machines(&self) -> fdo::Result<Vec<(String, Details)>> {
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     #[zbus(signal)]
     async fn changed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
+}
+
+/// Writes this interface's introspection into `xml`, as an `<interface>` element one level in:
+/// the bus's introspection collects each interface's own.
+pub(crate) fn introspect(xml: &mut String) {
+    zbus::object_server::Interface::introspect_to_writer(&TailnetSkeleton, xml, 1);
 }

@@ -1,23 +1,12 @@
 //! The introspection XML of each bus, from the skeletons: the checked-in `dbus/*.xml` must
 //! equal it.
 
-use crate::account::AccountSkeleton;
-use crate::agents::AgentsSkeleton;
-use crate::identities::IdentitiesSkeleton;
-use crate::inference::InferenceSkeleton;
-use crate::keys::KeysSkeleton;
-use crate::launcher_iface::LauncherSkeleton;
-use crate::manager::ManagerSkeleton;
 #[cfg(feature = "photos-picker")]
-use crate::photos_picker::PickerSkeleton;
-use crate::request::RequestSkeleton;
-use crate::sheet_backend::AccountsSheetSkeleton;
-use crate::spaces::SpacesSkeleton;
-use crate::storage::StorageSkeleton;
-use crate::sync::SyncSkeleton;
-use crate::tailnet::TailnetSkeleton;
-use zbus::fdo;
-use zbus::object_server::Interface;
+use crate::photos_picker;
+use crate::{
+    account, agents, identities, inference, keys, launcher_iface, manager, request, sheet_backend,
+    spaces, storage, sync, tailnet,
+};
 
 /// One of porter's buses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,26 +62,32 @@ impl Bus {
     }
 }
 
-/// The introspection document of `bus`: every interface it serves, in one `<node>`.
+/// The introspection document of `bus`: every interface it serves, in one `<node>`. Each
+/// interface writes its own element; this only puts them in a node, in the order the bus serves
+/// them.
 pub fn introspection(bus: Bus) -> String {
-    let interfaces: Vec<&dyn Interface> = match bus {
-        Bus::Accounts => vec![&ManagerSkeleton, &AccountSkeleton, &RequestSkeleton],
-        Bus::AccountsSheet => vec![&AccountsSheetSkeleton],
-        Bus::Sync => sync_interfaces(),
-        Bus::Inference => vec![&InferenceSkeleton],
-        Bus::InferenceAgents => vec![&AgentsSkeleton],
-        Bus::InferenceLauncher => vec![&LauncherSkeleton],
-        Bus::InferenceKeys => vec![&KeysSkeleton],
-        Bus::Spaces => vec![&SpacesSkeleton],
-        Bus::Identities => vec![&IdentitiesSkeleton],
-        Bus::Tailnet => vec![&TailnetSkeleton],
-        Bus::Storage => vec![&StorageSkeleton],
-    };
     let mut xml = String::from(
         "<!DOCTYPE node PUBLIC \"-//freedesktop//DTD D-BUS Object Introspection 1.0//EN\"\n \"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\">\n<node>\n",
     );
-    for interface in interfaces {
-        interface.introspect_to_writer(&mut xml, 1);
+    let interfaces: &[fn(&mut String)] = match bus {
+        Bus::Accounts => &[
+            manager::introspect,
+            account::introspect,
+            request::introspect,
+        ],
+        Bus::AccountsSheet => &[sheet_backend::introspect],
+        Bus::Sync => SYNC,
+        Bus::Inference => &[inference::introspect],
+        Bus::InferenceAgents => &[agents::introspect],
+        Bus::InferenceLauncher => &[launcher_iface::introspect],
+        Bus::InferenceKeys => &[keys::introspect],
+        Bus::Spaces => &[spaces::introspect],
+        Bus::Identities => &[identities::introspect],
+        Bus::Tailnet => &[tailnet::introspect],
+        Bus::Storage => &[storage::introspect],
+    };
+    for introspect in interfaces {
+        introspect(&mut xml);
     }
     xml.push_str("</node>\n");
     xml
@@ -100,16 +95,7 @@ pub fn introspection(bus: Bus) -> String {
 
 /// Sync1, and the Photos Picker beside it only with the `photos-picker` feature.
 #[cfg(feature = "photos-picker")]
-fn sync_interfaces() -> Vec<&'static dyn Interface> {
-    vec![&SyncSkeleton, &PickerSkeleton]
-}
+const SYNC: &[fn(&mut String)] = &[sync::introspect, photos_picker::introspect];
 
 #[cfg(not(feature = "photos-picker"))]
-fn sync_interfaces() -> Vec<&'static dyn Interface> {
-    vec![&SyncSkeleton]
-}
-
-/// The answer of every skeleton method: the interface is frozen, its behaviour not built.
-pub(crate) fn frozen() -> fdo::Error {
-    fdo::Error::NotSupported("porter: frozen interface, not implemented".into())
-}
+const SYNC: &[fn(&mut String)] = &[sync::introspect];

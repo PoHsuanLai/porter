@@ -28,6 +28,7 @@ pub mod callers;
 mod callers_file;
 mod codec;
 mod failure;
+mod frozen;
 mod identities;
 mod inference;
 mod introspect;

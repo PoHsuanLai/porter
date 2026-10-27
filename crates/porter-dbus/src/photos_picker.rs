@@ -50,21 +50,27 @@ pub struct PickerSkeleton;
 impl PickerSkeleton {
     fn start(&self, account: String) -> fdo::Result<(String, String, u32)> {
         let _ = account;
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn poll(&self, account: String, session: String) -> fdo::Result<String> {
         let _ = (account, session);
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn import(&self, account: String, session: String) -> fdo::Result<Vec<String>> {
         let _ = (account, session);
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn cancel(&self, account: String, session: String) -> fdo::Result<()> {
         let _ = (account, session);
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
+}
+
+/// Writes this interface's introspection into `xml`, as an `<interface>` element one level in:
+/// the bus's introspection collects each interface's own.
+pub(crate) fn introspect(xml: &mut String) {
+    zbus::object_server::Interface::introspect_to_writer(&PickerSkeleton, xml, 1);
 }

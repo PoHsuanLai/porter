@@ -167,7 +167,7 @@ pub struct InferenceSkeleton;
 impl InferenceSkeleton {
     fn availability(&self, need: NeedArg, class: String, options: Details) -> fdo::Result<String> {
         let _ = (need, class, options);
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn open(
@@ -178,7 +178,7 @@ impl InferenceSkeleton {
         options: Details,
     ) -> fdo::Result<OwnedFd> {
         let _ = (need, class, tier, options);
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn prepare(
@@ -189,7 +189,7 @@ impl InferenceSkeleton {
         options: Details,
     ) -> fdo::Result<String> {
         let _ = (need, class, tier, options);
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn hardware_notes(
@@ -200,61 +200,61 @@ impl InferenceSkeleton {
         options: Details,
     ) -> fdo::Result<Vec<(String, Details)>> {
         let _ = (need, class, tier, options);
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn usage(&self) -> fdo::Result<Details> {
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn rescan(&self) -> fdo::Result<()> {
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn places(&self) -> fdo::Result<Vec<(String, Details)>> {
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn local_engines(&self) -> fdo::Result<Vec<(String, Details)>> {
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn point_engine(&self, engine: String, folder: String) -> fdo::Result<()> {
         let _ = (engine, folder);
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn add_computer(&self, name: String, models: Vec<(String, Details)>) -> fdo::Result<String> {
         let _ = (name, models);
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn remove_computer(&self, name: String) -> fdo::Result<()> {
         let _ = name;
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn candidates(&self) -> fdo::Result<Vec<(String, Details)>> {
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn add_tailnet_computer(&self, node: String) -> fdo::Result<String> {
         let _ = node;
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn guests(&self) -> fdo::Result<Vec<(String, Details)>> {
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn answer_guest(&self, node: String, answer: String) -> fdo::Result<()> {
         let _ = (node, answer);
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn forget_guest(&self, node: String) -> fdo::Result<()> {
         let _ = node;
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn set_helper_pool(
@@ -264,21 +264,21 @@ impl InferenceSkeleton {
         models: Vec<String>,
     ) -> fdo::Result<()> {
         let _ = (slot, helper, models);
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn start(&self, model: String) -> fdo::Result<()> {
         let _ = model;
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn stop(&self, model: String) -> fdo::Result<()> {
         let _ = model;
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn running(&self) -> fdo::Result<Vec<(String, Details)>> {
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     #[zbus(signal)]
@@ -299,6 +299,12 @@ impl InferenceSkeleton {
 
     #[zbus(property)]
     fn gpu(&self) -> fdo::Result<String> {
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
+}
+
+/// Writes this interface's introspection into `xml`, as an `<interface>` element one level in:
+/// the bus's introspection collects each interface's own.
+pub(crate) fn introspect(xml: &mut String) {
+    zbus::object_server::Interface::introspect_to_writer(&InferenceSkeleton, xml, 1);
 }

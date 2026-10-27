@@ -36,19 +36,25 @@ pub struct AccountsSheetSkeleton;
 impl AccountsSheetSkeleton {
     fn open(&self, handle: String, parent_window: String, view: String) -> fdo::Result<()> {
         let _ = (handle, parent_window, view);
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn update(&self, handle: String, view: String) -> fdo::Result<()> {
         let _ = (handle, view);
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn close(&self, handle: String) -> fdo::Result<()> {
         let _ = handle;
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     #[zbus(signal)]
     async fn input(emitter: &SignalEmitter<'_>, handle: &str, input: &str) -> zbus::Result<()>;
+}
+
+/// Writes this interface's introspection into `xml`, as an `<interface>` element one level in:
+/// the bus's introspection collects each interface's own.
+pub(crate) fn introspect(xml: &mut String) {
+    zbus::object_server::Interface::introspect_to_writer(&AccountsSheetSkeleton, xml, 1);
 }

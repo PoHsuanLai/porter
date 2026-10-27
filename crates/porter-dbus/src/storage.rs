@@ -282,42 +282,42 @@ pub struct StorageSkeleton;
 #[zbus::interface(name = "org.quire.Storage1")]
 impl StorageSkeleton {
     fn drives(&self) -> fdo::Result<Vec<(String, Details)>> {
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn items(&self, paths: Vec<String>) -> fdo::Result<ItemDetails> {
         let _ = paths;
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn download(&self, paths: Vec<String>) -> fdo::Result<Refused> {
         let _ = paths;
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn keep(&self, paths: Vec<String>, keep: bool) -> fdo::Result<Refused> {
         let _ = (paths, keep);
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn remove_download(&self, paths: Vec<String>) -> fdo::Result<Refused> {
         let _ = paths;
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     #[zbus(out_args("saved", "refused"))]
     fn save_copy(&self, paths: Vec<String>) -> fdo::Result<(Saved, Refused)> {
         let _ = paths;
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn set_paused(&self, drives: Vec<String>, paused: bool) -> fdo::Result<Refused> {
         let _ = (drives, paused);
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn watch(&self) -> fdo::Result<()> {
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     #[zbus(signal)]
@@ -329,4 +329,10 @@ impl StorageSkeleton {
         drive: &str,
         items: ItemDetails,
     ) -> zbus::Result<()>;
+}
+
+/// Writes this interface's introspection into `xml`, as an `<interface>` element one level in:
+/// the bus's introspection collects each interface's own.
+pub(crate) fn introspect(xml: &mut String) {
+    zbus::object_server::Interface::introspect_to_writer(&StorageSkeleton, xml, 1);
 }

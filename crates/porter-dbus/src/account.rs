@@ -47,32 +47,32 @@ pub struct AccountSkeleton;
 impl AccountSkeleton {
     #[zbus(property)]
     fn id(&self) -> fdo::Result<String> {
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     #[zbus(property)]
     fn provider(&self) -> fdo::Result<String> {
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     #[zbus(property)]
     fn label(&self) -> fdo::Result<String> {
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     #[zbus(property)]
     fn state(&self) -> fdo::Result<String> {
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     #[zbus(property)]
     fn reauth_reason(&self) -> fdo::Result<String> {
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     #[zbus(property)]
     fn capabilities(&self) -> fdo::Result<Vec<(String, Details)>> {
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn reauthenticate(
@@ -81,6 +81,12 @@ impl AccountSkeleton {
         options: Details,
     ) -> fdo::Result<OwnedObjectPath> {
         let _ = (parent_window, options);
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
+}
+
+/// Writes this interface's introspection into `xml`, as an `<interface>` element one level in:
+/// the bus's introspection collects each interface's own.
+pub(crate) fn introspect(xml: &mut String) {
+    zbus::object_server::Interface::introspect_to_writer(&AccountSkeleton, xml, 1);
 }

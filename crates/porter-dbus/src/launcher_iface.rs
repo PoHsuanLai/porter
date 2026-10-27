@@ -116,22 +116,22 @@ pub struct LauncherSkeleton;
 impl LauncherSkeleton {
     fn set_agent_state(&self, account: String, state: String) -> fdo::Result<()> {
         let _ = (account, state);
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn register_launcher(&self, programs: Vec<String>) -> fdo::Result<()> {
         let _ = programs;
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn begin_session(&self, session: String) -> fdo::Result<()> {
         let _ = session;
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn end_session(&self, session: String) -> fdo::Result<()> {
         let _ = session;
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn request_agent_key(
@@ -143,7 +143,7 @@ impl LauncherSkeleton {
         options: Details,
     ) -> fdo::Result<OwnedObjectPath> {
         let _ = (program, class, session, parent_window, options);
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn report_agent_login(
@@ -153,7 +153,7 @@ impl LauncherSkeleton {
         reason: String,
     ) -> fdo::Result<()> {
         let _ = (request, outcome, reason);
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn report_agent_logout(
@@ -163,7 +163,7 @@ impl LauncherSkeleton {
         reason: String,
     ) -> fdo::Result<()> {
         let _ = (request, outcome, reason);
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn issue_process_credential(
@@ -173,12 +173,12 @@ impl LauncherSkeleton {
         target: String,
     ) -> fdo::Result<(String, OwnedValue)> {
         let _ = (permit, program, target);
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     fn revoke_process_credential(&self, id: String) -> fdo::Result<()> {
         let _ = id;
-        Err(crate::introspect::frozen())
+        Err(crate::frozen::error())
     }
 
     #[zbus(signal)]
@@ -203,4 +203,10 @@ impl LauncherSkeleton {
         id: &str,
         reason: &str,
     ) -> zbus::Result<()>;
+}
+
+/// Writes this interface's introspection into `xml`, as an `<interface>` element one level in:
+/// the bus's introspection collects each interface's own.
+pub(crate) fn introspect(xml: &mut String) {
+    zbus::object_server::Interface::introspect_to_writer(&LauncherSkeleton, xml, 1);
 }
