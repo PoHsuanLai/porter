@@ -152,16 +152,18 @@ fn a_file_that_cannot_be_read_is_refused_not_emptied() {
     }
 }
 
+/// A version that changed the stored shape has a row in the table with its frozen document in
+/// this file; none has yet, so a document from any stored version reads by moving its version
+/// (`a_document_frozen_at_each_vocabulary_since_the_first_stored_one_reads` has one per version).
 #[test]
-fn every_version_since_the_first_stored_one_has_a_migration() {
-    for from in (FIRST_PERSISTED.0..).take_while(|v| *v < VocabVersion::CURRENT.0) {
-        assert!(
-            MIGRATIONS.iter().any(|(start, _)| start.0 == from),
-            "vocabulary {from} to {} has no migration row; add one and a fixture of the old \
-             document to these tests",
-            from + 1
-        );
-    }
+fn a_version_without_a_migration_row_is_read_as_it_was() {
+    assert!(MIGRATIONS.is_empty());
+    let stored = filled().to_json().expect("json").replacen(
+        &format!("\"vocab\": {}", VocabVersion::CURRENT.0),
+        &format!("\"vocab\": {}", FIRST_PERSISTED.0),
+        1,
+    );
+    assert_eq!(Persisted::from_json(&stored), Ok(filled()));
 }
 
 /// A document exactly as the build at vocabulary 7 wrote it: no account, two grants of the two
