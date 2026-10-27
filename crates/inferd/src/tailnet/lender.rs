@@ -94,7 +94,7 @@ fn guest_app(node: &NodeId) -> AppId {
 
 async fn refuse<S: AsyncWrite + Unpin>(stream: &mut S, refusal: &Refusal) {
     let body = json!({
-        "error": {"message": refusal.to_string(), "type": "refused", "code": "refused"}
+        "error": {"message": super::words::refusal(refusal), "type": "refused", "code": refusal.slug()}
     })
     .to_string();
     let _ = http::write_json(stream, refusal.status(), &[], &body).await;

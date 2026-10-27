@@ -71,7 +71,7 @@ pub use data_class::DataClass;
 pub use effective::{KindToggle, Toggle, effective};
 pub use endpoint::{
     EndpointFault, EndpointUrl, LoginName, Origin, PathReach, Reach, ReachMethods, RelayAuth,
-    RelayPlan, SERVER_ADDRESS_RULE, ServerAddress, ServerAddressFault, ServiceEndpoint, Tls,
+    RelayPlan, ServerAddress, ServerAddressFault, ServiceEndpoint, Tls,
     UrlScheme, server_address, server_address_shape,
 };
 pub use error::CoreError;

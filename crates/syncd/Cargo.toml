@@ -59,6 +59,8 @@ porter-http-reqwest = { workspace = true }
 porter-drive = { workspace = true, features = ["testing"] }
 porter-secrets = { workspace = true, features = ["testing"] }
 porter-sync = { workspace = true, features = ["testing"] }
+# The words the fake of Storage1 gives are held to the live ones (tests/it/fake_words.rs).
+syncd-fakes = { workspace = true }
 # A paused clock for the stop wait's timing test.
 tokio = { workspace = true, features = ["test-util"] }
 

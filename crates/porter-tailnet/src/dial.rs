@@ -17,27 +17,27 @@ use tokio::net::{TcpSocket, TcpStream};
 /// beyond the time a computer that is up needs, and below the time the system itself would wait.
 const PATIENCE: Duration = Duration::from_secs(60);
 
-/// Why a computer was not reached. `Display` is the plain sentence.
+/// Why a computer was not reached.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum DialError {
     /// Tailscale could not be asked, or is not running and signed in.
-    #[error("{0}")]
+    #[error("Tailscale: {0}")]
     Tailscale(TailscaleError),
     /// There is no such computer on the network now.
-    #[error("That computer is not on your Tailscale network any more.")]
+    #[error("no such computer on the network now")]
     NoSuchComputer,
     /// It is not the person's own.
-    #[error("That computer is not one of your own.")]
+    #[error("the computer is not the user's own ({0:?})")]
     NotYours(MachineOwner),
     /// It is switched off or out of reach.
-    #[error("That computer is switched off or out of reach.")]
+    #[error("the computer is offline")]
     Offline,
     /// The address is now another computer's.
-    #[error("That computer's place on the network now belongs to another computer.")]
+    #[error("the address now belongs to another computer")]
     Changed,
     /// Nothing answered.
-    #[error("That computer did not answer.")]
+    #[error("the computer did not answer")]
     Unreachable,
 }
 
@@ -204,24 +204,5 @@ mod tests {
         let mut shared = who("nPI", 1, "100.64.0.2");
         shared.node.sharer = Some(UserId(2));
         assert!(!is_the_one(&shared, &node("nPI"), at, ME));
-    }
-
-    #[test]
-    fn the_sentences_are_plain() {
-        for fault in [
-            DialError::Tailscale(TailscaleError::NotRunning),
-            DialError::NoSuchComputer,
-            DialError::NotYours(MachineOwner::Shared),
-            DialError::Offline,
-            DialError::Changed,
-            DialError::Unreachable,
-        ] {
-            let text = fault.to_string();
-            assert!(text.ends_with('.'), "{text}");
-            let lower = text.to_lowercase();
-            for word in ["porter", "inferd", "socket", "node", "tailnet", "address"] {
-                assert!(!lower.contains(word), "{text}");
-            }
-        }
     }
 }

@@ -12,7 +12,7 @@
 //! | mount request | `1`, `mount`, the folder name, the access (`ro` or `rw`) |
 //! | unmount request | `1`, `unmount`, the folder name |
 //! | reply, done | `ok` (a mount's reply carries the open FUSE connection as one SCM_RIGHTS fd) |
-//! | reply, refused | `no`, words a person can be shown |
+//! | reply, refused | `no`, the [`Code`] of the refusal (its [`Code::slug`]) |
 //!
 //! `1` is the format's version; a helper refuses a version it does not know. A request is at
 //! most [`MAX_MESSAGE`] bytes, a reply too. The folder name is only a name ([`FolderName`]): the
@@ -236,28 +236,71 @@ impl Request {
     }
 }
 
+/// Why the helper refused, as a code: the words a person reads for it are the caller's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Code {
+    /// The drive cannot be shown here: no way to, a request out of the format, a caller not this
+    /// person, or a folder that is not a plain folder in Cloud.
+    NotHere,
+    /// The drive's folder already holds files of its own, or another folder is shown there.
+    FolderInUse,
+    /// The drive is shown there already.
+    AlreadyShown,
+    /// The drive's folder could not be taken away.
+    NotTakenAway,
+}
+
+impl Code {
+    /// The code as it travels.
+    pub fn slug(self) -> &'static str {
+        match self {
+            Code::NotHere => "not_here",
+            Code::FolderInUse => "folder_in_use",
+            Code::AlreadyShown => "already_shown",
+            Code::NotTakenAway => "not_taken_away",
+        }
+    }
+
+    /// The code a word stands for.
+    pub fn from_slug(slug: &str) -> Option<Self> {
+        [
+            Code::NotHere,
+            Code::FolderInUse,
+            Code::AlreadyShown,
+            Code::NotTakenAway,
+        ]
+        .into_iter()
+        .find(|code| code.slug() == slug)
+    }
+}
+
+impl std::fmt::Display for Code {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Code::NotHere => "the drive cannot be shown here",
+            Code::FolderInUse => "the folder is in use",
+            Code::AlreadyShown => "the drive is shown there already",
+            Code::NotTakenAway => "the folder could not be taken away",
+        })
+    }
+}
+
 /// The helper's answer.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Reply {
     /// Done; a mount's carries the connection's fd beside it.
     Done,
-    /// Refused, with words a person can be shown.
-    Refused(String),
+    /// Refused, for this reason.
+    Refused(Code),
 }
 
 impl Reply {
-    /// The reply as bytes (words past what fits are cut at a character).
+    /// The reply as bytes.
     pub fn encode(&self) -> Vec<u8> {
         match self {
             Reply::Done => encode(&["ok"]),
-            Reply::Refused(words) => {
-                let words = words.replace('\0', " ");
-                let mut end = words.len().min(MAX_MESSAGE - 5);
-                while !words.is_char_boundary(end) {
-                    end -= 1;
-                }
-                encode(&["no", &words[..end]])
-            }
+            Reply::Refused(code) => encode(&["no", code.slug()]),
         }
     }
 
@@ -268,7 +311,9 @@ impl Reply {
     pub fn decode(bytes: &[u8]) -> Result<Self, BadMessage> {
         match fields(bytes)?.as_slice() {
             ["ok"] => Ok(Reply::Done),
-            ["no", words] => Ok(Reply::Refused((*words).to_owned())),
+            ["no", slug] => Code::from_slug(slug)
+                .map(Reply::Refused)
+                .ok_or_else(|| BadMessage::Unknown((*slug).to_owned())),
             [what, ..] => Err(BadMessage::Unknown(what.to_string())),
             [] => Err(BadMessage::NotFields),
         }
@@ -369,7 +414,7 @@ mod tests {
         let unmount = Request::Unmount { name };
         assert_eq!(unmount.encode(), b"1\0unmount\0Google Drive\0");
         assert_eq!(Request::decode(&unmount.encode()), Ok(unmount));
-        for reply in [Reply::Done, Reply::Refused("Not now.".into())] {
+        for reply in [Reply::Done, Reply::Refused(Code::NotHere)] {
             assert_eq!(Reply::decode(&reply.encode()), Ok(reply));
         }
         assert_eq!(
@@ -415,10 +460,16 @@ mod tests {
     }
 
     #[test]
-    fn long_words_are_cut_to_fit_a_reply() {
-        let words = "é".repeat(MAX_MESSAGE);
-        let bytes = Reply::Refused(words).encode();
-        assert!(bytes.len() <= MAX_MESSAGE);
-        assert!(matches!(Reply::decode(&bytes), Ok(Reply::Refused(_))));
+    fn a_refusal_travels_as_its_code() {
+        for code in [
+            Code::NotHere,
+            Code::FolderInUse,
+            Code::AlreadyShown,
+            Code::NotTakenAway,
+        ] {
+            let bytes = Reply::Refused(code).encode();
+            assert_eq!(Reply::decode(&bytes), Ok(Reply::Refused(code)));
+        }
+        assert!(Reply::decode(b"no\0There is no room.\0").is_err());
     }
 }

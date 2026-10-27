@@ -100,21 +100,21 @@ pub enum GuestEvent {
     Changed,
 }
 
-/// Why a change was not made. `Display` is the plain sentence.
+/// Why a change was not made.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum GuestError {
     /// The computer is not waiting for an answer.
-    #[error("That computer is not asking to use this computer's models.")]
+    #[error("the computer is not waiting for an answer")]
     NotAsking,
     /// Too many computers are waiting for an answer.
-    #[error("Too many computers are asking at once. Answer some of them first.")]
+    #[error("too many computers are waiting for an answer")]
     TooManyAsking,
     /// The list is as long as it may be.
-    #[error("That is more computers than can be kept here.")]
+    #[error("the list of computers is full")]
     TooMany,
     /// The answer could not be written down.
-    #[error("The answer could not be saved.")]
+    #[error("the answer could not be saved")]
     NotSaved,
 }
 

@@ -19,6 +19,7 @@
 mod candidates;
 mod lender;
 mod machines;
+pub mod words;
 
 pub use candidates::{Candidate, Candidates};
 pub use lender::Lender;
@@ -184,7 +185,10 @@ impl Tailnet {
         })?;
         let told: OnFault = {
             let node = node.clone();
-            Arc::new(move |fault| eprintln!("inferd: computer {node}: {fault}"))
+            Arc::new(move |fault| {
+                eprintln!("inferd: computer {node}: {fault}");
+                words::fault(fault)
+            })
         };
         let relay = Relay::start(&path, node.clone(), self.0.dialer.clone(), told)?;
         relays.insert(node.clone(), relay);

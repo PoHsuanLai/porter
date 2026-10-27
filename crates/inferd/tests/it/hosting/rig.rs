@@ -636,6 +636,7 @@ impl World {
                             limits: porter_tailnet::Limits::default(),
                             first_pause: std::time::Duration::from_millis(50),
                             longest_pause: std::time::Duration::from_millis(200),
+                            words: inferd::tailnet::words::refusal,
                         },
                         timing: porter_tailnet::Timing {
                             backstop: std::time::Duration::from_millis(300),

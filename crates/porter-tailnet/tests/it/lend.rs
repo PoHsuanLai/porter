@@ -223,7 +223,7 @@ async fn never_on_every_address_whatever_tailscale_reports_and_the_config_allows
 
 #[tokio::test]
 async fn the_products_configuration_listens_on_the_networks_own_addresses_alone() {
-    let product = Config::product();
+    let product = Config::product(|_| "refused in words");
     assert_eq!(product.port, porter_tailnet::PORT);
     assert!((product.allowed)("100.101.102.103".parse().unwrap()));
     assert!((product.allowed)("fd7a:115c:a1e0::5".parse().unwrap()));
@@ -348,7 +348,7 @@ async fn computers_that_are_not_the_persons_own_are_refused_with_words() {
             answer.starts_with("HTTP/1.1 403 Forbidden"),
             "{who}: {answer}"
         );
-        assert!(answer.contains(&refusal.to_string()), "{who}: {answer}");
+        assert!(answer.contains(refusal.slug()), "{who}: {answer}");
     }
     assert!(
         l.recorder.came.lock().unwrap().is_empty(),
@@ -373,7 +373,7 @@ async fn a_no_from_the_person_is_a_refusal_and_a_yes_lets_a_shared_computer_in()
         )
         .unwrap();
     let denied = answer_to(&l, &a, a.pi).await;
-    assert!(denied.contains(&Refusal::Denied.to_string()), "{denied}");
+    assert!(denied.contains(Refusal::Denied.slug()), "{denied}");
     let stream = connect_from(a.spare, at(a.me, l.port))
         .await
         .expect("connect");
@@ -393,8 +393,8 @@ async fn when_tailscale_cannot_say_who_asks_nobody_is_let_in() {
     // Either the connection was judged with no answer to the question, or this computer had
     // already noticed Tailscale going: in both cases no handler was reached.
     assert!(
-        answer.contains(&Refusal::CouldNotCheck.to_string())
-            || answer.contains(&Refusal::Off.to_string())
+        answer.contains(Refusal::CouldNotCheck.slug())
+            || answer.contains(Refusal::Off.slug())
             || answer.is_empty(),
         "{answer}"
     );
@@ -427,7 +427,7 @@ async fn a_computer_has_a_few_connections_at_once_and_no_more() {
     let third = connect_from(a.pi, at(a.me, port)).await.unwrap();
     let answer = ask(third, "GET /hello HTTP/1.1\r\n\r\n").await;
     assert!(answer.starts_with("HTTP/1.1 429"), "{answer}");
-    assert!(answer.contains(&Refusal::Busy.to_string()), "{answer}");
+    assert!(answer.contains(Refusal::Busy.slug()), "{answer}");
     // Closing one makes room.
     drop(first);
     let mut room = false;

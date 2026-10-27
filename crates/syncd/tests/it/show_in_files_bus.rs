@@ -24,7 +24,7 @@ use porter_core::{
     ServiceEndpoint, Subject, Tls, Toggle, UnixSeconds,
 };
 use porter_dbus::callers::CallerRole;
-use porter_drive::{CacheLimit, FreeSpace, ItemState, words};
+use porter_drive::{CacheLimit, FreeSpace, ItemState, Reason};
 use porter_drive_fuse::{Mounter, mountd};
 use porter_fake::{FakeProvider, ScriptedSheets};
 use porter_fake_servers::{FakeGraph, GraphHandle, Running};
@@ -44,6 +44,7 @@ use syncd::paths::{AccountDir, Paths};
 use syncd::scheduler::{Network, Settings};
 use syncd::service::{Access, Hub, serve};
 use syncd::settings::{CACHE_LIMIT, FILES_NOT_ON, SETTINGS_PATH, SyncSettings, serve_settings};
+use syncd::words;
 use tokio::sync::watch;
 
 const ACCOUNT: &str = "graph-acct";
@@ -662,7 +663,7 @@ async fn the_keep_row_is_told_of_when_the_drive_stops_fitting_and_again_when_it_
     assert!(drive.drive.short_of_room());
     assert_eq!(
         keep_note(&rig).await.as_deref(),
-        Some(words::NO_ROOM_FOR_ALL)
+        Some(words::reason(Reason::NoRoomForAll))
     );
     assert_eq!(state_at(&drive, "Big.bin"), Some(ItemState::Cloud));
 
@@ -732,5 +733,8 @@ async fn porter_mountd_is_asked_when_it_listens_and_its_words_are_shown() {
     })
     .await;
     let (_, said) = drive.state();
-    assert_eq!(said.as_deref(), Some(mountd::words::FOLDER_IN_USE));
+    assert_eq!(
+        said.as_deref(),
+        Some(syncd::words::refusal(mountd::wire::Code::FolderInUse))
+    );
 }

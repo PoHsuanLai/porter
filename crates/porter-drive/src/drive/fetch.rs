@@ -2,13 +2,13 @@
 //! the start, and a read that waits for the chunk it needs (asked for before the rest).
 
 use super::{Drive, Failure, Inner, NodeId, held};
+use crate::Reason;
 use crate::hash;
 use crate::index::Row;
 use crate::listing::Entry;
 use crate::online;
 use crate::ranges::Ranges;
 use crate::source::SourceError;
-use crate::words;
 use porter_sync::{ContentHash, ItemKind, RemoteId};
 use std::collections::HashMap;
 use std::os::unix::fs::FileExt;
@@ -225,7 +225,7 @@ impl Inner {
         held(&self.errors).insert(
             transfer.id.clone(),
             Failure {
-                words: words::OFFLINE.to_owned(),
+                reason: Reason::Offline,
                 transient: matches!(error, ReadError::Offline | ReadError::Stalled),
             },
         );

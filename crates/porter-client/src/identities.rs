@@ -52,6 +52,9 @@ pub enum IdentitiesError {
     /// was not picked for it just now.
     #[error("refused by accountd: {0}")]
     Denied(String),
+    /// accountd refused the call for a reason it names.
+    #[error("refused by accountd: {0:?}")]
+    Refused(Refusal),
     /// The password of the identity is gone: it needs signing in again.
     #[error("the identity must be signed in again")]
     NeedsSignIn,
@@ -74,7 +77,7 @@ impl From<BusError> for IdentitiesError {
                 Refusal::NoFittingAccount => IdentitiesError::NoIdentity,
                 Refusal::NeedsReauth => IdentitiesError::NeedsSignIn,
                 Refusal::Unavailable => IdentitiesError::Unavailable,
-                other => IdentitiesError::Denied(format!("{other:?}")),
+                other => IdentitiesError::Refused(other),
             };
         }
         if is_limits_exceeded(&error) {

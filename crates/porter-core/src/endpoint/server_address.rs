@@ -15,10 +15,6 @@
 
 use super::{EndpointUrl, Tls, UrlScheme};
 
-/// What a person reads when an address is refused for its scheme.
-pub const SERVER_ADDRESS_RULE: &str =
-    "Use an https address, or http only for this computer or one of your own computers.";
-
 /// Why an address is not accepted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]

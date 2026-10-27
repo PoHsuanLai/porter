@@ -6,9 +6,9 @@
 //!   it. What stays on this computer (see [`crate::local_only`]) is never sent.
 //! - **Holding.** Nothing is sent while paused or offline. A change the drive could not take now
 //!   is tried again after a wait that doubles up to [`BACKOFF_MOST`]; one it refused (no room,
-//!   no right to change it, a name it does not take) keeps its bytes here with the words, and is
+//!   no right to change it, a name it does not take) keeps its bytes here with the reason, and is
 //!   tried again on the next listing change or when it is changed again. One in use on the drive
-//!   waits with words that say so. A sign-in the drive refused holds everything until it is
+//!   waits with a reason that says so. A sign-in the drive refused holds everything until it is
 //!   signed in again ([`Drive::set_signed_out`]).
 //! - **A lost answer.** A step the drive took whose answer never came is sent again, and the
 //!   drive refuses it as a conflict: an item made under the id reserved for it (on a drive that
@@ -27,11 +27,11 @@
 //!   over the listing until a listing pass shows it.
 
 use super::{Drive, Inner, NodeId, held};
+use crate::Reason;
 use crate::index::{Awaiting, Base, Edit, Index, Row};
 use crate::naming;
 use crate::ranges::Ranges;
 use crate::sink::Sink;
-use crate::words;
 use porter_sync::{
     BaseVersion, Conflict, Content, Place, Progress, PutRefused, RemoteId, RemoteSide,
     RemoteVersion, RetryAfter, Session, Upload, UploadTo, Written,
@@ -600,9 +600,9 @@ impl Inner {
     }
 
     /// The drive refused `op` for good (for now): the change keeps its bytes here and says why.
-    fn refused(&self, op: &Op, words: &str) {
+    fn refused(&self, op: &Op, reason: Reason) {
         if let Some(edit) = held(&self.index).edits.get_mut(op.id()) {
-            edit.refused = Some(words.to_owned());
+            edit.refused = Some(reason);
         }
         self.touched();
         self.emit(vec![op.id().clone()]);
@@ -696,7 +696,7 @@ async fn snapshot(inner: &Arc<Inner>, mut op: Op) -> Option<Op> {
         Ok(Err(why)) => {
             eprintln!("porter-drive: a file to send could not be copied: {why}");
             if why.kind() == std::io::ErrorKind::StorageFull {
-                held(&inner.waiting).insert(op.id().clone(), words::NO_ROOM_HERE);
+                held(&inner.waiting).insert(op.id().clone(), Reason::NoRoomHere);
                 inner.emit(vec![op.id().clone()]);
             }
             inner.back_off(Duration::ZERO);
@@ -967,7 +967,7 @@ pub(super) async fn sender(weak: Weak<Inner>, wake: Arc<Notify>) {
                 inner.emit(vec![op.id().clone()]);
             }
             Err(PutRefused::InUse(after)) => {
-                held(&inner.waiting).insert(op.id().clone(), words::IN_USE);
+                held(&inner.waiting).insert(op.id().clone(), Reason::InUse);
                 inner.back_off(Duration::from_secs(u64::from(after.0)));
                 inner.emit(vec![op.id().clone()]);
             }
@@ -977,13 +977,13 @@ pub(super) async fn sender(weak: Weak<Inner>, wake: Arc<Notify>) {
                 inner.wanted.notify_one();
                 inner.emit(vec![op.id().clone()]);
             }
-            Err(PutRefused::Quota) => inner.refused(&op, words::NO_ROOM),
-            Err(PutRefused::Forbidden) => inner.refused(&op, words::MAY_NOT_WRITE),
-            Err(PutRefused::NameRefused) => inner.refused(&op, words::NAME_REFUSED),
+            Err(PutRefused::Quota) => inner.refused(&op, Reason::NoRoom),
+            Err(PutRefused::Forbidden) => inner.refused(&op, Reason::MayNotWrite),
+            Err(PutRefused::NameRefused) => inner.refused(&op, Reason::NameRefused),
             Err(PutRefused::Declined) => {
                 // An id reserved and used up is given up with it: the next try reserves another.
                 inner.change(op.id(), |edit, _| edit.reserved = None);
-                inner.refused(&op, words::DECLINED);
+                inner.refused(&op, Reason::Declined);
             }
             Err(PutRefused::Conflict(conflict)) => inner.conflicted(&op, &conflict),
         }

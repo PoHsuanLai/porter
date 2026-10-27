@@ -42,6 +42,7 @@ pub use fetch::ReadError;
 pub use state::{ItemState, Status};
 pub use write::{WriteError, WriteHandle};
 
+use crate::Reason;
 use crate::index::{Dirty, Edit, Index, IndexFile};
 use crate::limit::CacheLimit;
 use crate::listing::{Listing, ListingError};
@@ -229,8 +230,8 @@ pub enum FreeSpace {
 /// Why an item's last fetch failed, as its status shows it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Failure {
-    /// The words Files shows.
-    pub words: String,
+    /// Why, for whoever shows it.
+    pub reason: Reason,
     /// It may pass by itself (no network, a stall): cleared when the drive is reached again.
     pub transient: bool,
 }
@@ -287,9 +288,9 @@ pub(crate) struct Inner {
     paused: AtomicBool,
     /// The drive refused the account's sign-in: nothing is sent until it is signed in again.
     signed_out: AtomicBool,
-    /// Changes the drive could not take now with words to say why (in use there), until their
+    /// Changes the drive could not take now, with the reason (in use there), until their
     /// next try.
-    waiting: Mutex<HashMap<NodeId, &'static str>>,
+    waiting: Mutex<HashMap<NodeId, Reason>>,
     /// Changes the drive answered with a newer version: held until a listing pass shows it.
     stale: Mutex<HashSet<NodeId>>,
     /// When the sender tries again after the drive could not take a change, and how long it

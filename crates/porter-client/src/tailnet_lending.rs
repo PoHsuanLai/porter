@@ -149,34 +149,22 @@ pub enum LendingState {
     Differs,
 }
 
-/// Why turning the sharing on or off did not work. Each sentence is plain words that Settings
-/// can show as they are. More may be added: match with a wildcard.
+/// Why turning the sharing on or off did not work. Each text says what failed; the words a person
+/// reads are the app's, written from the variant. More may be added: match with a wildcard.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum LendingError {
     /// The file porter ships is not on this computer.
-    #[error(
-        "This computer is missing a file it needs to share its models, so nothing was changed. \
-         Installing the software again puts it back."
-    )]
+    #[error("the shipped drop-in file is not on this computer")]
     ShippedFileMissing,
     /// The setting could not be saved in the person's folder.
-    #[error(
-        "Your setting for sharing this computer's models could not be saved. \
-         Check that your home folder can be written to."
-    )]
+    #[error("the drop-in file could not be written")]
     CouldNotWrite(#[source] io::Error),
     /// The file is saved, but the computer would not read its files again.
-    #[error(
-        "Your setting was saved, but the computer did not take it up yet. \
-         Signing out and back in will apply it."
-    )]
+    #[error("the drop-in was written but the manager did not read the unit files again")]
     ReloadFailed(#[source] UnitFailure),
     /// The file is saved and read, but the models service did not restart.
-    #[error(
-        "Your setting was saved, but the models service did not restart. \
-         Try again, or sign out and back in."
-    )]
+    #[error("the drop-in was written but the unit did not restart")]
     RestartFailed(#[source] UnitFailure),
 }
 

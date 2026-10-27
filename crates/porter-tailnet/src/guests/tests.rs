@@ -247,7 +247,7 @@ fn the_answers_have_words_that_read_back_and_no_other_word_is_one() {
 }
 
 #[test]
-fn every_sentence_is_plain() {
+fn every_error_says_what_failed_in_lower_case() {
     for error in [
         GuestError::NotAsking,
         GuestError::TooManyAsking,
@@ -255,10 +255,7 @@ fn every_sentence_is_plain() {
         GuestError::NotSaved,
     ] {
         let text = error.to_string();
-        assert!(text.ends_with('.'), "{text}");
-        let lower = text.to_lowercase();
-        for word in ["porter", "inferd", "node", "socket", "tailnet"] {
-            assert!(!lower.contains(word), "{text}");
-        }
+        assert!(!text.ends_with('.'), "{text}");
+        assert!(text.starts_with(|c: char| c.is_ascii_lowercase()), "{text}");
     }
 }

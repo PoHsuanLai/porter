@@ -12,7 +12,7 @@
 //!   neither is what stays on this computer (`porter_drive::local_only`: the desktop's trash).
 //! - An item changed here is `waiting`, then `uploading` with its fraction while it is sent; a
 //!   file kept in two versions is `conflict`, and `other` is the other version's path; one the
-//!   drive refused is `error` with the words (`porter_drive::words`).
+//!   drive refused is `error` with the words (`crate::words`).
 //! - `SaveCopy` exports each online document (`porter_drive::Drive::save_copy`) and answers each
 //!   copy's absolute path; the copy waits to upload beside its document.
 //! - `Watch` joins the caller's connection to those told `DrivesChanged` and `ItemsChanged`
@@ -22,6 +22,7 @@
 use super::errors::RefusedError;
 use crate::datasets::drive::{DriveEvent, DriveSet, LiveDrive};
 use crate::service::Access;
+use crate::words;
 use porter_dbus::callers::{Caller, CallerRole, Callers};
 use porter_dbus::names::STORAGE_PATH;
 use porter_dbus::{
@@ -30,7 +31,7 @@ use porter_dbus::{
     ITEM_KEY_KEPT, ITEM_KEY_KIND, ITEM_KEY_OTHER, ITEM_KEY_STATE, ITEM_KEY_URL, ITEM_KEY_WORDS,
     ItemDetails, ItemKind, ItemState, Refused, Saved,
 };
-use porter_drive::{Node, NodeId, NodeKind, Status, words};
+use porter_drive::{Node, NodeId, NodeKind, Reason, Status};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -117,8 +118,12 @@ pub fn item_details(drive: &LiveDrive, status: &Status) -> Details {
             Value::from(path.to_string_lossy().as_ref()),
         );
     }
-    if let (ItemState::Error, Some(words)) = (state, &status.words) {
-        put(&mut details, ITEM_KEY_WORDS, Value::from(words.as_str()));
+    if let (ItemState::Error, Some(reason)) = (state, status.reason) {
+        put(
+            &mut details,
+            ITEM_KEY_WORDS,
+            Value::from(words::reason(reason)),
+        );
     }
     if let NodeKind::Online { url, .. } = &status.kind {
         put(&mut details, ITEM_KEY_URL, Value::from(url.as_str()));
@@ -206,18 +211,18 @@ impl<C: Callers> Core<C> {
     fn each(
         &self,
         paths: &[String],
-        mut act: impl FnMut(&LiveDrive, &NodeId) -> Result<(), &'static str>,
+        mut act: impl FnMut(&LiveDrive, &NodeId) -> Result<(), Reason>,
     ) -> Refused {
         let mut refused = Refused::new();
         for text in paths {
             match self.find(text) {
                 Some((drive, node)) => {
                     if let Err(why) = act(&drive, &node.id) {
-                        refused.insert(text.clone(), why.to_owned());
+                        refused.insert(text.clone(), words::reason(why).to_owned());
                     }
                 }
                 None => {
-                    refused.insert(text.clone(), words::NOT_ON_A_DRIVE.to_owned());
+                    refused.insert(text.clone(), words::reason(Reason::NotOnADrive).to_owned());
                 }
             }
         }
@@ -366,7 +371,7 @@ impl<C: Callers> StorageObject<C> {
         let mut refused = Refused::new();
         for text in paths {
             let Some((drive, node)) = self.0.find(&text) else {
-                refused.insert(text, words::NOT_ON_A_DRIVE.to_owned());
+                refused.insert(text, words::reason(Reason::NotOnADrive).to_owned());
                 continue;
             };
             match drive.drive.save_copy(&node.id).await {
@@ -375,11 +380,11 @@ impl<C: Callers> StorageObject<C> {
                         saved.insert(text, path.to_string_lossy().into_owned());
                     }
                     None => {
-                        refused.insert(text, words::COPY_FAILED.to_owned());
+                        refused.insert(text, words::reason(Reason::CopyFailed).to_owned());
                     }
                 },
                 Err(why) => {
-                    refused.insert(text, why.to_owned());
+                    refused.insert(text, words::reason(why).to_owned());
                 }
             }
         }
@@ -402,7 +407,7 @@ impl<C: Callers> StorageObject<C> {
         for id in drives {
             // Kept across restarts.
             if !self.0.drives.set_paused(&id, paused) {
-                refused.insert(id, words::NO_DRIVE.to_owned());
+                refused.insert(id, words::reason(Reason::NoDrive).to_owned());
             }
         }
         self.0.drives.tell_drives();

@@ -316,10 +316,6 @@ async fn a_client_in_testing_is_signed_out_after_seven_days_and_the_reason_says_
     );
     let reason = session.reauth_reason().expect("a reason");
     assert_eq!(reason, ReauthReason::TestingExpiry);
-    assert_eq!(
-        reason.plain(),
-        "Google signs this app out every 7 days until it is verified."
-    );
 }
 
 #[tokio::test]

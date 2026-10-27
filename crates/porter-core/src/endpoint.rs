@@ -17,9 +17,7 @@ mod reach;
 mod server_address;
 
 pub use reach::{PathReach, Reach, ReachMethods};
-pub use server_address::{
-    SERVER_ADDRESS_RULE, ServerAddress, ServerAddressFault, server_address, server_address_shape,
-};
+pub use server_address::{ServerAddress, ServerAddressFault, server_address, server_address_shape};
 
 /// One server of an account, as an app or the relay needs to reach it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

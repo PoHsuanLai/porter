@@ -28,6 +28,7 @@ pub mod scheduler;
 pub mod service;
 pub mod settings;
 pub mod webdav;
+pub mod words;
 
 pub use daemon::{Config, Daemon, StartError};
 

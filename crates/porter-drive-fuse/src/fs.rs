@@ -826,7 +826,7 @@ impl Filesystem for Mounted {
 mod tests {
     use super::*;
     use porter_drive::testing::{MemoryListing, MemorySink, MemorySource, Took};
-    use porter_drive::{DriveConfig, words};
+    use porter_drive::{DriveConfig, Reason};
     use std::sync::Arc;
 
     async fn fs(dir: &test_kit::Scratch) -> (Arc<MemoryListing>, Arc<MemorySource>, DriveFs) {
@@ -915,10 +915,7 @@ mod tests {
         let status = fs
             .drive
             .status(&NodeId::Remote(porter_drive::RemoteId("a".into())));
-        assert_eq!(
-            status.and_then(|s| s.words).as_deref(),
-            Some(words::OFFLINE)
-        );
+        assert_eq!(status.and_then(|s| s.reason), Some(Reason::Offline));
         assert_eq!(fs.read(999, 0, 1).await, Err(Errno::EBADF));
     }
 

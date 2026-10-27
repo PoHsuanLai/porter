@@ -121,6 +121,7 @@ pub fn config(port: u16) -> Config {
         limits: Limits::default(),
         first_pause: Duration::from_millis(50),
         longest_pause: Duration::from_millis(200),
+        words: |_| "refused in words",
     }
 }
 

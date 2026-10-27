@@ -16,13 +16,14 @@ use porter_dbus::{
     StorageProxy,
 };
 use porter_drive::testing::{MemoryListing, MemorySink, MemorySource, Took};
-use porter_drive::{Drive, DriveConfig, NodeId, words};
+use porter_drive::{Drive, DriveConfig, NodeId, Reason};
 use std::collections::BTreeSet;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 use syncd::datasets::drive::{DriveSet, LiveDrive};
 use syncd::service::{Access, Hub, serve, serve_storage};
+use syncd::words;
 use zbus::export::futures_core::Stream;
 use zbus::zvariant::OwnedValue;
 
@@ -267,8 +268,8 @@ async fn download_keep_and_remove_act_and_refuse_with_the_words_files_shows() {
         .await
         .expect("download");
     assert_eq!(refused.len(), 2, "{refused:?}");
-    assert_eq!(refused[&at("Plan.gdoc")], words::ONLINE_ONLY);
-    assert_eq!(refused[&at("Nope")], words::NOT_ON_A_DRIVE);
+    assert_eq!(refused[&at("Plan.gdoc")], words::reason(Reason::OnlineOnly));
+    assert_eq!(refused[&at("Nope")], words::reason(Reason::NotOnADrive));
     eventually("the report is downloaded", || {
         rig.drive
             .drive
@@ -299,7 +300,10 @@ async fn download_keep_and_remove_act_and_refuse_with_the_words_files_shows() {
         .await
         .expect("remove");
     assert_eq!(refused.len(), 1, "{refused:?}");
-    assert_eq!(refused[&at("Kept/Photo.jpg")], words::KEPT_WITH_FOLDER);
+    assert_eq!(
+        refused[&at("Kept/Photo.jpg")],
+        words::reason(Reason::KeptWithFolder)
+    );
     assert_eq!(
         state_of(&proxy, "Work/Report.pdf").await.as_deref(),
         Some("cloud")
@@ -308,7 +312,10 @@ async fn download_keep_and_remove_act_and_refuse_with_the_words_files_shows() {
         .keep(vec![at("Kept/Photo.jpg")], false)
         .await
         .expect("keep off");
-    assert_eq!(refused[&at("Kept/Photo.jpg")], words::KEPT_WITH_FOLDER);
+    assert_eq!(
+        refused[&at("Kept/Photo.jpg")],
+        words::reason(Reason::KeptWithFolder)
+    );
 
     rig.source.set_offline(true);
     rig.listing.file("n", Some("w"), "Notes.txt", 2, "1");
@@ -317,7 +324,7 @@ async fn download_keep_and_remove_act_and_refuse_with_the_words_files_shows() {
         .download(vec![at("Work/Notes.txt")])
         .await
         .expect("download");
-    assert!(refused.is_empty() || refused[&at("Work/Notes.txt")] == words::OFFLINE);
+    assert!(refused.is_empty() || refused[&at("Work/Notes.txt")] == words::reason(Reason::Offline));
     eventually("offline, it says it downloads when connected", || {
         rig.drive
             .drive
@@ -325,7 +332,7 @@ async fn download_keep_and_remove_act_and_refuse_with_the_words_files_shows() {
             .ok()
             .flatten()
             .and_then(|n| rig.drive.drive.status(&n.id))
-            .is_some_and(|s| s.words.as_deref() == Some(words::OFFLINE))
+            .is_some_and(|s| s.reason == Some(Reason::Offline))
     })
     .await;
 }
@@ -354,7 +361,7 @@ async fn only_the_shell_and_settings_pause_a_drive() {
         .await
         .expect("pause");
     assert_eq!(refused.len(), 1);
-    assert_eq!(refused["two"], words::NO_DRIVE);
+    assert_eq!(refused["two"], words::reason(Reason::NoDrive));
     let drives = proxy.drives().await.expect("drives");
     assert_eq!(
         text(&drives[0].1, DRIVE_KEY_STATE).as_deref(),
@@ -474,9 +481,18 @@ async fn save_a_copy_writes_the_document_next_to_it_and_refuses_what_has_no_file
     assert_eq!(saved.len(), 1, "{saved:?}");
     assert_eq!(saved[&at("Plan.gdoc")], at("Plan.docx"));
     assert_eq!(refused.len(), 3, "{refused:?}");
-    assert_eq!(refused[&at("Survey.glink")], words::NO_FILE_FORMAT);
-    assert_eq!(refused[&at("Work/Report.pdf")], words::NOT_A_DOCUMENT);
-    assert_eq!(refused[&at("Nope.gdoc")], words::NOT_ON_A_DRIVE);
+    assert_eq!(
+        refused[&at("Survey.glink")],
+        words::reason(Reason::NoFileFormat)
+    );
+    assert_eq!(
+        refused[&at("Work/Report.pdf")],
+        words::reason(Reason::NotADocument)
+    );
+    assert_eq!(
+        refused[&at("Nope.gdoc")],
+        words::reason(Reason::NotOnADrive)
+    );
     let items = proxy.items(vec![at("Plan.docx")]).await.expect("items");
     let copy = &items[&at("Plan.docx")];
     assert_eq!(text(copy, ITEM_KEY_STATE).as_deref(), Some("waiting"));
@@ -600,5 +616,5 @@ async fn a_file_changed_here_and_on_the_drive_shows_both_in_conflict_each_naming
         .remove_download(vec![mine.clone()])
         .await
         .expect("remove");
-    assert_eq!(refused[&mine], words::CONFLICT);
+    assert_eq!(refused[&mine], words::reason(Reason::Conflict));
 }

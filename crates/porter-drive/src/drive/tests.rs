@@ -1,6 +1,6 @@
 use super::*;
+use crate::Reason;
 use crate::testing::{MemoryListing, MemorySource};
-use crate::words;
 use porter_sync::ItemKind;
 use std::time::Duration;
 use test_kit::Scratch;
@@ -187,8 +187,8 @@ async fn offline_a_read_fails_and_the_item_says_it_downloads_when_connected() {
     assert_eq!(read, Err(ReadError::Offline));
     let status = rig.drive.status(&remote("d")).expect("status");
     assert_eq!(status.state, ItemState::Error);
-    assert_eq!(status.words.as_deref(), Some(words::OFFLINE));
-    assert_eq!(rig.drive.download(&remote("d")), Err(words::OFFLINE));
+    assert_eq!(status.reason, Some(Reason::Offline));
+    assert_eq!(rig.drive.download(&remote("d")), Err(Reason::Offline));
     rig.source.set_offline(false);
     rig.drive.set_offline(false);
     let read = rig
@@ -222,11 +222,11 @@ async fn keeping_a_folder_fetches_what_is_under_it_and_what_is_added_later() {
 
     assert_eq!(
         rig.drive.remove_download(&remote("a")),
-        Err(words::KEPT_WITH_FOLDER)
+        Err(Reason::KeptWithFolder)
     );
     assert_eq!(
         rig.drive.keep(&remote("b"), false),
-        Err(words::KEPT_WITH_FOLDER)
+        Err(Reason::KeptWithFolder)
     );
     rig.drive.remove_download(&remote("p")).expect("remove");
     assert_eq!(rig.drive.local_bytes(), 0);
@@ -272,11 +272,11 @@ async fn keeping_everything_fetches_the_whole_drive_and_what_is_added_and_never_
     }
     assert_eq!(
         rig.drive.remove_download(&remote("a")),
-        Err(words::KEPT_WITH_DRIVE)
+        Err(Reason::KeptWithDrive)
     );
     assert_eq!(
         rig.drive.keep(&remote("p"), false),
-        Err(words::KEPT_WITH_DRIVE)
+        Err(Reason::KeptWithDrive)
     );
     assert!(!rig.drive.short_of_room());
 }
@@ -478,9 +478,9 @@ async fn an_online_document_reads_as_its_link_and_is_never_downloaded() {
     let link: serde_json::Value = serde_json::from_slice(&read).expect("json");
     assert_eq!(link["url"], "https://docs.example.test/document/d/doc1");
     assert_eq!(link["doc_id"], "doc1");
-    assert_eq!(rig.drive.download(&node.id), Err(words::ONLINE_ONLY));
-    assert_eq!(rig.drive.keep(&node.id, true), Err(words::ONLINE_ONLY));
-    assert_eq!(rig.drive.remove_download(&node.id), Err(words::ONLINE_ONLY));
+    assert_eq!(rig.drive.download(&node.id), Err(Reason::OnlineOnly));
+    assert_eq!(rig.drive.keep(&node.id, true), Err(Reason::OnlineOnly));
+    assert_eq!(rig.drive.remove_download(&node.id), Err(Reason::OnlineOnly));
     assert!(rig.source.fetched().is_empty());
     assert_eq!(rig.drive.local_bytes(), 0);
 }
@@ -534,7 +534,7 @@ async fn a_copy_is_saved_next_to_its_document_named_as_it_is_and_waits_to_upload
     assert_eq!(status.state, ItemState::Waiting);
     assert_eq!(
         rig.drive.remove_download(&copy),
-        Err(words::WAITING),
+        Err(Reason::Waiting),
         "nothing made here is lost"
     );
     let again = rig.drive.save_copy(&plan.id).await.expect("again");
@@ -578,11 +578,11 @@ async fn save_a_copy_refuses_what_has_no_file_and_says_why() {
         let id = remote(id);
         async move { drive.save_copy(&id).await }
     };
-    assert_eq!(copy("bin").await, Err(words::NOT_A_DOCUMENT));
-    assert_eq!(copy("form1").await, Err(words::NO_FILE_FORMAT));
-    assert_eq!(copy("big").await, Err(words::TOO_LARGE));
+    assert_eq!(copy("bin").await, Err(Reason::NotADocument));
+    assert_eq!(copy("form1").await, Err(Reason::NoFileFormat));
+    assert_eq!(copy("big").await, Err(Reason::TooLarge));
     rig.source.set_offline(true);
-    assert_eq!(copy("doc").await, Err(words::COPY_FAILED));
+    assert_eq!(copy("doc").await, Err(Reason::CopyFailed));
     assert!(
         rig.drive
             .children(&NodeId::Top)

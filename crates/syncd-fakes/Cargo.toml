@@ -12,7 +12,6 @@ publish.workspace = true
 
 [dependencies]
 porter-dbus = { workspace = true }
-porter-drive = { workspace = true }
 clap = { workspace = true }
 # `signal` and `io-std`: SIGTERM ends the binary, and it reads its commands from stdin.
 tokio = { workspace = true, features = ["signal", "io-std"] }

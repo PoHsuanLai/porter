@@ -533,7 +533,7 @@ where
                         Ok(mounted) => Some(mounted),
                         Err(why) => {
                             eprintln!("syncd: {account} is not shown at {}: {why}", path.display());
-                            live.set_unshown(why.words());
+                            live.set_unshown(crate::words::unshown(&why));
                             set.tell_drives();
                             None
                         }

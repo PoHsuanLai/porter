@@ -9,6 +9,7 @@ mod confirm_bus;
 mod daemon;
 mod dist;
 mod drive_listing;
+mod fake_words;
 mod gdrive_bus;
 mod google_pim_bus;
 mod googlerig;

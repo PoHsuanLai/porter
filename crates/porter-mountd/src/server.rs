@@ -6,11 +6,10 @@
 //! path. A mount is refused when the folder is a link or not a folder, holds files of its own, is
 //! another file system's mount, or is a drive's folder still served (one live mount per name); a
 //! drive's folder left by a crash (its connection gone) is cleared first. Each refusal answers
-//! with [`words`](crate::words) and is said in full on stderr.
+//! with its [`Code`] and is said in full on stderr.
 
 use crate::mountinfo;
-use crate::wire::{self, Access, BadMessage, FSTYPE, FolderName, Reply, Request};
-use crate::words;
+use crate::wire::{self, Access, BadMessage, Code, FSTYPE, FolderName, Reply, Request};
 use rustix::io::{Errno, FdFlags};
 use rustix::process::Uid;
 use std::fs::DirBuilder;
@@ -194,17 +193,17 @@ pub enum Refusal {
 
 impl Refusal {
     /// What the caller is answered.
-    pub fn words(&self) -> &'static str {
+    pub fn code(&self) -> Code {
         match self {
-            Refusal::NotEmpty(_) | Refusal::OtherMount(..) => words::FOLDER_IN_USE,
-            Refusal::AlreadyShown(_) => words::ALREADY_SHOWN,
-            Refusal::Unmount(..) => words::NOT_TAKEN_AWAY,
+            Refusal::NotEmpty(_) | Refusal::OtherMount(..) => Code::FolderInUse,
+            Refusal::AlreadyShown(_) => Code::AlreadyShown,
+            Refusal::Unmount(..) => Code::NotTakenAway,
             Refusal::Peer(_)
             | Refusal::Read(_)
             | Refusal::Message(_)
             | Refusal::NotInCloud(_)
             | Refusal::Folder(..)
-            | Refusal::Mount(..) => words::NOT_HERE,
+            | Refusal::Mount(..) => Code::NotHere,
         }
     }
 }
@@ -357,7 +356,7 @@ impl<M: Mounts> Helper<M> {
         self.handle(&request)
     }
 
-    /// Answers the request on `stream`, with words when it is refused.
+    /// Answers the request on `stream`, with the refusal's code when it is refused.
     ///
     /// # Errors
     /// Why it was refused (the caller has been told), or the answer could not be sent (a mount
@@ -366,7 +365,7 @@ impl<M: Mounts> Helper<M> {
         let outcome = self.take(stream);
         let reply = match &outcome {
             Ok(_) => Reply::Done,
-            Err(refusal) => Reply::Refused(refusal.words().to_owned()),
+            Err(refusal) => Reply::Refused(refusal.code()),
         };
         let fd = outcome
             .as_ref()

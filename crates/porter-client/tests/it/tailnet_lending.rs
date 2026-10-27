@@ -313,7 +313,7 @@ async fn disable_that_fails_to_restart_has_still_taken_the_file_away() {
 }
 
 #[test]
-fn every_failure_reads_in_plain_words_a_person_can_be_shown() {
+fn every_failure_says_what_failed_and_none_is_a_sentence_for_a_person() {
     let errors = [
         LendingError::ShippedFileMissing,
         LendingError::CouldNotWrite(std::io::Error::other("EACCES")),
@@ -321,27 +321,11 @@ fn every_failure_reads_in_plain_words_a_person_can_be_shown() {
         LendingError::RestartFailed(UnitFailure("job canceled".to_owned())),
     ];
     for error in errors {
-        let words = error.to_string();
-        assert!(words.ends_with('.'), "{words}");
-        assert!(
-            words.starts_with(|c: char| c.is_ascii_uppercase()),
-            "{words}"
-        );
-        for jargon in [
-            "systemd",
-            "unit",
-            "daemon",
-            "D-Bus",
-            "dbus",
-            "drop-in",
-            "IPAddress",
-            "EACCES",
-            "job",
-            "IO",
-            "io::",
-            "Error",
-        ] {
-            assert!(!words.contains(jargon), "{jargon} in {words}");
+        let text = error.to_string();
+        assert!(!text.ends_with('.'), "{text}");
+        assert!(text.starts_with(|c: char| c.is_ascii_lowercase()), "{text}");
+        for person in ["Your", "your", "Try again", "Check that", "Signing out"] {
+            assert!(!text.contains(person), "{person} in {text}");
         }
         // The cause is kept for a log, never shown.
         if let LendingError::ReloadFailed(_) | LendingError::RestartFailed(_) = error {

@@ -3,13 +3,12 @@
 use crate::common::FakeMounts;
 use porter_mountd::client::{self, AskError};
 use porter_mountd::server::{self, Helper};
-use porter_mountd::wire::{self, Access, FolderName};
-use porter_mountd::words;
+use porter_mountd::wire::{self, Access, Code, FolderName};
 use std::os::unix::fs::PermissionsExt;
 use test_kit::Scratch;
 
 #[test]
-fn the_client_reaches_a_helper_at_its_socket_and_gets_its_words() {
+fn the_client_reaches_a_helper_at_its_socket_and_gets_its_code() {
     let dir = Scratch::new("mountd-socket");
     let socket = wire::socket_in(&dir.join("run"));
     let listener = server::bind_at(&socket).expect("bind");
@@ -32,7 +31,7 @@ fn the_client_reaches_a_helper_at_its_socket_and_gets_its_words() {
         });
         client::mount(&socket, &name, Access::ReadOnly).expect("the connection");
         match client::mount(&socket, &name, Access::ReadOnly) {
-            Err(AskError::Refused(said)) => assert_eq!(said, words::ALREADY_SHOWN),
+            Err(AskError::Refused(said)) => assert_eq!(said, Code::AlreadyShown),
             other => panic!("{other:?}"),
         }
     });

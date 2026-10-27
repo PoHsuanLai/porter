@@ -1,6 +1,6 @@
 //! Reading a hello from a computer that answers one.
 
-use porter_tailnet::{Approval, GreetError, Hello, LentModel, greet};
+use porter_tailnet::{Approval, GreetError, Hello, LentModel, Refusal, greet};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
@@ -41,13 +41,20 @@ async fn a_hello_is_read_with_its_models_and_whether_approval_is_needed() {
 }
 
 #[tokio::test]
-async fn a_refusal_is_read_as_the_computers_own_words() {
-    let body = r#"{"error":{"message":"That computer is asking its owner whether to let this one use its models. Say yes there, then try again."}}"#;
+async fn a_refusal_is_read_as_the_code_the_computer_gave() {
+    let body = r#"{"error":{"message":"any words","type":"refused","code":"waiting"}}"#;
     let stream = answering(json("403 Forbidden", body)).await;
-    match greet(stream, "pi").await {
-        Err(GreetError::Refused(words)) => assert!(words.contains("Say yes there"), "{words}"),
-        other => panic!("{other:?}"),
-    }
+    assert_eq!(
+        greet(stream, "pi").await,
+        Err(GreetError::Refused(Some(Refusal::Waiting)))
+    );
+}
+
+#[tokio::test]
+async fn a_refusal_with_a_code_this_build_does_not_know_is_still_a_refusal() {
+    let body = r#"{"error":{"message":"any words","type":"refused","code":"refused"}}"#;
+    let stream = answering(json("403 Forbidden", body)).await;
+    assert_eq!(greet(stream, "pi").await, Err(GreetError::Refused(None)));
 }
 
 #[tokio::test]

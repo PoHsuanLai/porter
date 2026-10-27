@@ -22,7 +22,7 @@
 //!   process (fuser with no default features links no libfuse). A stale drive's folder at the
 //!   path (`fuse.porter`), left by a crash, is unmounted first (`fusermount3 -u -z`); a mount of
 //!   anything else there is never touched. No `/dev/fuse`, no `fusermount3`, a refusal, or a
-//!   mount that fails is a [`MountError`] with the words Files shows. [`Mounted`] unmounts when
+//!   mount that fails is a [`MountError`]. [`Mounted`] unmounts when
 //!   dropped and ends the connection, without waiting for the session.
 
 mod fs;

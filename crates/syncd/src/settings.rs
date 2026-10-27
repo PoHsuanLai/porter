@@ -336,7 +336,7 @@ fn account_keys(account: &Account, names: &ProviderNames, files: FilesRow) -> Ve
         );
         row.note = files
             .short_of_room
-            .then(|| Note(porter_drive::words::NO_ROOM_FOR_ALL.to_owned()));
+            .then(|| Note(crate::words::reason(porter_drive::Reason::NoRoomForAll).to_owned()));
         keys.push(row);
     }
     keys.push(spec(
@@ -761,9 +761,7 @@ impl<H: Hosted, D: Directory, C: Callers> LiveModule for SyncSettings<H, D, C> {
                 let words: Vec<String> = kept
                     .iter()
                     .filter(|kept| kept.count > 0)
-                    .map(|kept| {
-                        porter_drive::words::kept_unsent(kept.count, &shown_folder(&kept.path))
-                    })
+                    .map(|kept| crate::words::kept_unsent(kept.count, &shown_folder(&kept.path)))
                     .collect();
                 *self.kept.lock().unwrap_or_else(PoisonError::into_inner) =
                     (!words.is_empty()).then(|| words.join(" "));

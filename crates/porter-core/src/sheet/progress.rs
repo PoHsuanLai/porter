@@ -41,17 +41,16 @@ pub enum SignInFault {
     NoLauncher,
     /// The launcher was asked and did not answer in time (accountd's own clock).
     Expired,
-    /// The program is not installed: an agent (the launcher's word), or Tailscale ("Tailscale
-    /// isn't installed on this computer.").
+    /// The program is not installed: an agent (the launcher's word), or Tailscale.
     NotInstalled,
     /// A program on this computer that holds its own sign-in is installed and is not running
-    /// ("Tailscale isn't running on this computer.").
+    /// (Tailscale).
     NotRunning,
     /// A program on this computer that holds its own sign-in answers, and nobody is signed in to
-    /// it, and it gave no page to sign in at ("Tailscale is signed out.").
+    /// it, and it gave no page to sign in at (Tailscale signed out).
     SignedOut,
     /// A program on this computer that holds its own sign-in will not talk to the accounts
-    /// service ("This computer's Tailscale doesn't let your accounts ask it yet.").
+    /// service (Tailscale's socket refuses this user).
     NotAllowed,
     /// An account of this provider and login is already there; nothing was stored and the
     /// account that is there is as it was.

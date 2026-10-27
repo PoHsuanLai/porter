@@ -314,7 +314,7 @@ EDGES=(
   "syncd: dav-proto ds-settings porter-client porter-core porter-daemon porter-dav porter-dbus porter-drive porter-drive-fuse porter-families porter-fs porter-http porter-http-relay porter-provider porter-secrets porter-service porter-sheets porter-store porter-sync storage-gdrive storage-graph storage-webdav windows-zones"
   "porter-rig: fake-secret-service porter-client porter-core porter-dbus porter-fake porter-fake-servers porter-infer test-kit"
   "fake-secret-service:"
-  "syncd-fakes: porter-dbus porter-drive"
+  "syncd-fakes: porter-dbus"
   "inferd: ds-settings porter-bridge porter-engines porter-families porter-secrets porter-service porter-sheets porter-store porter-router porter-turns porter-core porter-daemon porter-dbus porter-discover porter-fs porter-http porter-http-reqwest porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
 )
 for edge in "${EDGES[@]}"; do

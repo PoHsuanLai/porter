@@ -608,7 +608,7 @@ impl Daemon {
                 machines: Arc::new(BusMachines::new(connection.clone())),
                 guests: Arc::new(guests),
                 sockets: dirs.sockets.clone(),
-                config: TailnetConfig::product(),
+                config: TailnetConfig::product(crate::tailnet::words::refusal),
                 timing: Timing::usual(),
             },
             engines.clone(),

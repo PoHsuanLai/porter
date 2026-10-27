@@ -6,7 +6,7 @@ use crate::fs::{DriveFs, Mounted as Served};
 use fuser::{BackgroundSession, Config, MountOption, Session, SessionACL};
 use porter_mountd::client::{self, AskError};
 use porter_mountd::mountinfo;
-use porter_mountd::wire::{Access, FSTYPE, FolderName};
+use porter_mountd::wire::{Access, Code, FSTYPE, FolderName};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
@@ -27,20 +27,9 @@ pub enum MountError {
     /// Mounting failed.
     #[error("mounting failed: {0}")]
     Failed(#[source] std::io::Error),
-    /// porter-mountd refused, with words a person can be shown.
+    /// porter-mountd refused, for this reason.
     #[error("porter-mountd refused: {0}")]
-    Refused(String),
-}
-
-impl MountError {
-    /// What Files shows for it: porter-mountd's words when it refused, else
-    /// [`NO_FILES_HERE`](porter_drive::words::NO_FILES_HERE).
-    pub fn words(&self) -> &str {
-        match self {
-            MountError::Refused(words) => words,
-            _ => porter_drive::words::NO_FILES_HERE,
-        }
-    }
+    Refused(Code),
 }
 
 /// How drives are mounted on this computer.
@@ -124,7 +113,7 @@ impl Mounter {
                     match fd {
                         Ok(fd) => return serve_over(fs, fd, path, through),
                         Err(AskError::Absent) => {}
-                        Err(AskError::Refused(words)) => return Err(MountError::Refused(words)),
+                        Err(AskError::Refused(code)) => return Err(MountError::Refused(code)),
                         Err(AskError::Broken(why)) => return Err(MountError::Failed(why)),
                         Err(why) => return Err(MountError::Failed(std::io::Error::other(why))),
                     }
@@ -135,13 +124,10 @@ impl Mounter {
         self.check()?;
         self.clean(path);
         if let Some(entry) = mountinfo::at(&mountinfo::read(), path) {
-            return Err(MountError::Refused(
-                match entry.fstype == FSTYPE {
-                    true => porter_mountd::words::ALREADY_SHOWN,
-                    false => porter_mountd::words::FOLDER_IN_USE,
-                }
-                .to_owned(),
-            ));
+            return Err(MountError::Refused(match entry.fstype == FSTYPE {
+                true => Code::AlreadyShown,
+                false => Code::FolderInUse,
+            }));
         }
         std::fs::create_dir_all(path).map_err(MountError::Folder)?;
         let mut config = Config::default();

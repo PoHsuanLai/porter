@@ -1,5 +1,5 @@
-//! Why a Google account has to be signed in again, in words the sheet can show, and the seven
-//! day rule behind the one that is Google's doing.
+//! Why a Google account has to be signed in again, and the seven day rule behind the one that is
+//! Google's doing. The words for each reason are the sheet's.
 //!
 //! An OAuth client whose consent screen is in *testing* (the state every client the owner
 //! registers starts in, and stays in until Google verifies it) gets refresh tokens that Google
@@ -19,6 +19,7 @@ const TESTING_REFUSAL_FROM_SECONDS: i64 = 6 * 24 * 60 * 60;
 
 /// Why Google would not renew a sign-in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum ReauthReason {
     /// The client is in testing, and Google signs its accounts out every seven days.
     TestingExpiry,
@@ -28,18 +29,6 @@ pub enum ReauthReason {
 }
 
 impl ReauthReason {
-    /// The reason in plain words, for the sheet.
-    pub fn plain(self) -> &'static str {
-        match self {
-            ReauthReason::TestingExpiry => {
-                "Google signs this app out every 7 days until it is verified."
-            }
-            ReauthReason::Revoked => {
-                "Google no longer accepts this sign-in. It may have been removed from your Google account."
-            }
-        }
-    }
-
     /// What a refused refresh means for a client with `review`, given when the person signed in
     /// when that is known. A client in testing whose sign-in is old, or of unknown age, is the
     /// seven day rule; a young sign-in was ended by someone.
@@ -92,12 +81,7 @@ mod tests {
     }
 
     #[test]
-    fn the_words_and_the_date_are_what_the_owner_asked_to_be_shown() {
-        assert_eq!(
-            ReauthReason::TestingExpiry.plain(),
-            "Google signs this app out every 7 days until it is verified."
-        );
-        assert!(!ReauthReason::Revoked.plain().is_empty());
+    fn the_date_is_seven_days_after_the_sign_in() {
         assert_eq!(
             testing_expiry_seam(UnixSeconds(1_000)),
             UnixSeconds(1_000 + 7 * 86_400)
