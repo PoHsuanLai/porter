@@ -438,33 +438,28 @@ pub fn bind_at(socket: &Path) -> io::Result<UnixListener> {
     Ok(listener)
 }
 
-/// The listening socket systemd passed, when it passed one to this process.
-#[allow(unsafe_code)]
+/// The listening socket systemd passed, when it passed one to this process. `listenfd` checks
+/// `LISTEN_PID` and takes the fd; the close-on-exec flag and the socket check stay here, because
+/// `fusermount3` must not inherit the fd and this is a privileged helper.
 fn activated() -> io::Result<Option<UnixListener>> {
-    use std::os::fd::FromRawFd;
     use std::sync::atomic::{AtomicBool, Ordering};
-    /// The first fd systemd passes (`SD_LISTEN_FDS_START`).
-    const FIRST: i32 = 3;
     static TAKEN: AtomicBool = AtomicBool::new(false);
-    let ours = std::env::var("LISTEN_PID").ok() == Some(std::process::id().to_string());
-    if !ours || std::env::var("LISTEN_FDS").ok().as_deref() != Some("1") {
+    if std::env::var("LISTEN_FDS").ok().as_deref() != Some("1") {
         return Ok(None);
     }
     if TAKEN.swap(true, Ordering::SeqCst) {
         return Ok(None);
     }
-    // SAFETY: systemd passed this process (LISTEN_PID is ours) exactly one fd, at 3. Nothing in
-    // this process opens, owns or closes it before this, and `TAKEN` makes this the one place
-    // that takes it, once.
-    let fd = unsafe { OwnedFd::from_raw_fd(FIRST) };
-    // It came without close-on-exec; fusermount3 must not inherit it.
-    rustix::io::fcntl_setfd(&fd, FdFlags::CLOEXEC)?;
-    let stat = rustix::fs::fstat(&fd)?;
+    let Some(listener) = listenfd::ListenFd::from_env().take_unix_listener(0)? else {
+        return Ok(None);
+    };
+    rustix::io::fcntl_setfd(&listener, FdFlags::CLOEXEC)?;
+    let stat = rustix::fs::fstat(&listener)?;
     if FileType::from_raw_mode(stat.st_mode) != FileType::Socket {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "the fd systemd passed is not a socket",
         ));
     }
-    Ok(Some(UnixListener::from(fd)))
+    Ok(Some(listener))
 }

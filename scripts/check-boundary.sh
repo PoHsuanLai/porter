@@ -16,7 +16,7 @@ cd "$(dirname "$0")/.."
 # each of its family features is checked on its own in FAMILY_FORBIDS below. porter-drive and
 # porter-drive-fuse reach tokio (a drive fetches in the background) but never a bus or a client.
 # porter-mountd, the mount helper outside syncd's sandbox, reaches no effect crate and none of
-# porter's own: std and rustix only (no network, keyring or account data).
+# porter's own: std, rustix and listenfd only (no network, keyring or account data).
 EFFECTS="zbus zvariant tokio reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
 RULES=(
   "porter-core: $EFFECTS toml"
