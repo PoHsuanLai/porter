@@ -77,6 +77,7 @@ fn what_the_sheet_is_told_of_a_step_never_holds_the_credential() {
         claims: vec![],
         endpoints: vec![],
         restriction: Restriction::none(),
+        name: None,
     };
     assert!(!format!("{signed:?}").contains("xyz"));
     let progress = SignInStep::Done(signed).progress();

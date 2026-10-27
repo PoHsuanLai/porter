@@ -7,6 +7,9 @@
 //! the app. Here the "app" is a stream that notes that first write and refuses it, which ends the
 //! relay at once: a session that logged in, and nothing else, is what the check needs.
 //!
+//! An edit of an account's servers tries the outgoing server the same way ([`SharedLogin::check_at`]
+//! with the SMTP endpoint): the relay says `EHLO` and authenticates before its first write.
+//!
 //! DAV does not come through here: `dav::discover` already sends a PROPFIND with the password.
 
 use porter_core::stream::ByteStream;
@@ -62,8 +65,20 @@ impl SharedLogin {
         credential: &Credential,
         endpoints: &[ServiceEndpoint],
     ) -> Result<(), SignInFault> {
-        let (Credential::Password(password), Some(endpoint)) = (credential, incoming(endpoints))
-        else {
+        match incoming(endpoints) {
+            Some(endpoint) => self.check_at(credential, endpoint).await,
+            None => Ok(()),
+        }
+    }
+
+    /// Tries `credential` at `endpoint`, a mail server (IMAP, POP3 or SMTP). Nothing to try (a
+    /// token) passes.
+    pub(super) async fn check_at(
+        &self,
+        credential: &Credential,
+        endpoint: &ServiceEndpoint,
+    ) -> Result<(), SignInFault> {
+        let Credential::Password(password) = credential else {
             return Ok(());
         };
         let plan = RelayPlan::new(

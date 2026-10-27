@@ -15,13 +15,13 @@ use crate::sheets::{SheetFault, SheetLink, SheetOpen, Sheets};
 use crate::store::RegistryStore;
 use porter_core::consent::Usage;
 use porter_core::sheet::{
-    Progress, ProviderRow, Purpose, RowKind, Sheet, SheetEffect, SheetEnd, SheetEvent, SignInFault,
-    SignInInput, Stage, step,
+    EditedServers, Manual, Progress, ProviderRow, Purpose, RowKind, Sheet, SheetEffect, SheetEnd,
+    SheetEvent, SignInFault, SignInInput, Stage, step,
 };
 use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
 use porter_core::{
-    AccountId, AccountsReply, AppId, AuthKind, CapabilityKind, DataClass, Need, ProviderId,
-    ServiceEndpoint,
+    AccountId, AccountLabel, AccountsReply, AppId, AuthKind, CapabilityKind, Credential, DataClass,
+    Need, ProviderId, SecretPurpose, ServiceEndpoint,
 };
 use porter_provider::{
     ConsentHistory, LoginHint, Provider, ProviderError, ProviderSpec, Readiness, SignIn,
@@ -92,12 +92,27 @@ pub(crate) enum Job {
         endpoints: Vec<ServiceEndpoint>,
         kinds: Vec<CapabilityKind>,
     },
+    /// New servers for an existing account, tried before anything is kept; the caller stores
+    /// what passed.
+    EditServers {
+        account: AccountId,
+        provider: ProviderId,
+        /// Its address: the login name when the form leaves that empty.
+        label: AccountLabel,
+        current: Manual,
+        name: Option<String>,
+        /// Its stored secrets, tried when the form leaves the password empty.
+        credentials: Vec<(SecretPurpose, Credential)>,
+    },
 }
 
 /// How a conversation ended well.
-enum Stored {
+pub(crate) enum Stored {
     Added(AccountId),
     Reauthenticated,
+    /// An edit's servers passed: what the sheet ended with, and the servers as the sign-in
+    /// built them.
+    Edited(EditedServers, Vec<ServiceEndpoint>),
     /// Nothing stored: the sign-in showed this account, which was already here.
     AlreadyThere(AccountId),
 }
@@ -229,7 +244,9 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             Ok(Stored::Added(id)) => AccountsReply::Added(id),
             // The app is told which account it is, and may ask for a grant of it.
             Ok(Stored::AlreadyThere(id)) => AccountsReply::AlreadyAdded(id),
-            Ok(Stored::Reauthenticated) => AccountsReply::Refused(Refusal::Unavailable),
+            Ok(Stored::Reauthenticated | Stored::Edited(..)) => {
+                AccountsReply::Refused(Refusal::Unavailable)
+            }
             Err(refusal) => AccountsReply::Refused(refusal),
         }
     }
@@ -264,7 +281,9 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         };
         match self.drive(caller, window, &job).await {
             Ok(Stored::Reauthenticated) => Ok(()),
-            Ok(Stored::Added(_) | Stored::AlreadyThere(_)) => Err(Refusal::Unavailable),
+            Ok(Stored::Added(_) | Stored::AlreadyThere(_) | Stored::Edited(..)) => {
+                Err(Refusal::Unavailable)
+            }
             Err(refusal) => Err(refusal),
         }
     }
@@ -299,7 +318,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         };
         match self.drive(caller, window, &job).await {
             Ok(Stored::Reauthenticated) => AccountsReply::Reauthenticated,
-            Ok(Stored::Added(_) | Stored::AlreadyThere(_)) => {
+            Ok(Stored::Added(_) | Stored::AlreadyThere(_) | Stored::Edited(..)) => {
                 AccountsReply::Refused(Refusal::Unavailable)
             }
             Err(refusal) => AccountsReply::Refused(refusal),
@@ -310,7 +329,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         self.providers.iter().find(|p| p.spec().id == *id)
     }
 
-    async fn drive(
+    pub(crate) async fn drive(
         &self,
         caller: &AppId,
         window: ParentWindow,
@@ -352,10 +371,22 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                 account: account.clone(),
                 provider: provider.clone(),
             },
+            Job::EditServers {
+                account,
+                provider,
+                current,
+                name,
+                ..
+            } => Purpose::EditServers {
+                account: account.clone(),
+                provider: provider.clone(),
+                current: current.clone(),
+                name: name.clone(),
+            },
         };
         let rows = match job {
             Job::Add { .. } => rows,
-            Job::Reauthenticate { .. } | Job::Extend { .. } => Vec::new(),
+            Job::Reauthenticate { .. } | Job::Extend { .. } | Job::EditServers { .. } => Vec::new(),
         };
         let own = match self.own_machines.get() {
             Some(machines) => machines.read().await,
@@ -376,7 +407,7 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             polling: false,
             identity: match job {
                 Job::Add { identity, .. } => identity.clone(),
-                Job::Reauthenticate { .. } | Job::Extend { .. } => None,
+                Job::Reauthenticate { .. } | Job::Extend { .. } | Job::EditServers { .. } => None,
             },
             stored: None,
             already: None,
@@ -403,7 +434,8 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                         None
                     }
                     SheetEffect::Close(end) => {
-                        return finish(end, run.stored.take(), run.already.take());
+                        let built = run.signed.take().map(|signed| signed.endpoints);
+                        return finish(end, run.stored.take(), run.already.take(), built);
                     }
                 };
                 if let Some(event) = event {
@@ -507,6 +539,18 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                     endpoints: endpoints.clone(),
                     kinds: kinds.clone(),
                 },
+                Job::EditServers {
+                    account,
+                    label,
+                    current,
+                    credentials,
+                    ..
+                } => SignInMode::EditServers {
+                    account: account.clone(),
+                    label: label.clone(),
+                    current: current.clone(),
+                    credentials: credentials.clone(),
+                },
             });
             provider.sign_in(match (identity, job) {
                 (Some(SignInAs { hint, history, .. }), _) => {
@@ -576,6 +620,23 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                 Some(self.settled(sheet, job, run, first).await)
             }
             other => {
+                // An edit opens on its form with no sign-in running: the servers it sends are
+                // the first thing the sign-in hears.
+                if run.signin.is_none()
+                    && let (Job::EditServers { .. }, Some(id)) = (job, stage_provider(&sheet.stage))
+                {
+                    match self.begin(id, job, None) {
+                        Some(Ok(signin)) => run.signin = Some(signin),
+                        Some(Err(error)) => {
+                            return Some(SheetEvent::SignIn(Progress::Failed(fault_of(error))));
+                        }
+                        None => {
+                            return Some(SheetEvent::SignIn(Progress::Failed(
+                                SignInFault::Unreadable,
+                            )));
+                        }
+                    }
+                }
                 let signin = run.signin.as_mut()?;
                 let step = signin.next(other).await;
                 // The same login twice is not a second account: the sign-in ends here, at the
@@ -649,6 +710,9 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
                     .await
                     .map(|()| Stored::Reauthenticated)
             }
+            // An edit is stored by its caller, from what the sheet ends with; the machine asks
+            // no store of it.
+            Job::EditServers { .. } => Err(()),
         };
         match stored {
             Ok(stored) => {
@@ -660,13 +724,16 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
     }
 }
 
-/// What a finished sheet answers.
+/// What a finished sheet answers. `built` is the servers the sign-in ended with, which an edit
+/// hands back with what it ended with.
 fn finish(
     end: SheetEnd,
     stored: Option<Stored>,
     already: Option<AccountId>,
+    built: Option<Vec<ServiceEndpoint>>,
 ) -> Result<Stored, Refusal> {
     match (end, stored, already) {
+        (SheetEnd::Edited(edit), _, _) => Ok(Stored::Edited(edit, built.unwrap_or_default())),
         (SheetEnd::Added, Some(stored), _) => Ok(stored),
         (SheetEnd::Added, None, _) => Err(Refusal::Unavailable),
         (SheetEnd::Dismissed, _, _) => Err(Refusal::Dismissed),
@@ -705,7 +772,9 @@ fn login_hint_of(endpoints: &[ServiceEndpoint]) -> Option<LoginHint> {
 /// The provider a sign-in under way is for.
 fn stage_provider(stage: &Stage) -> Option<&ProviderId> {
     match stage {
-        Stage::Working(provider) | Stage::Confirming { provider, .. } => Some(provider),
+        Stage::Working(provider)
+        | Stage::Confirming { provider, .. }
+        | Stage::Checking { provider, .. } => Some(provider),
         _ => None,
     }
 }

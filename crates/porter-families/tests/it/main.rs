@@ -7,6 +7,7 @@ mod agent_login;
 #[cfg(feature = "api_key")]
 mod api_key;
 mod common;
+mod edit_servers;
 mod generic;
 #[cfg(feature = "google")]
 mod google;

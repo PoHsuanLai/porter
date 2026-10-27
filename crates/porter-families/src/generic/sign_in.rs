@@ -1,15 +1,18 @@
-//! The Generic sign-in conversation. A mail account asks for an address and a password and
-//! finds the servers from the address (the server too, when none is published); a DAV account
-//! asks for the server, a user name and a password.
+//! The Generic sign-in conversation. A mail account asks for an address and a password (and,
+//! optionally, the name shown in From) and finds the servers from the address (the server too,
+//! when none is published); a DAV account asks for the server, a user name and a password. An
+//! edit of a mail account's servers asks nothing: it tries the servers it is fed (`edit`).
+
+mod edit;
 
 use super::login::SharedLogin;
 use super::mail::{self, Looked, Vouched};
 use super::{dav, jmap};
 use crate::io::{Io, SharedDns};
-use crate::password::{parse_server, password_for, plain, text_of, typed_password};
+use crate::password::{field, parse_server, password_for, plain, text_of, typed_password};
 use porter_core::sheet::{
-    FieldAnswer, FieldKind, FieldSpec, Manual, Protocol, SignInFault, SignInInput, manual_form,
-    parse_manual,
+    Entry, FieldAnswer, FieldKind, FieldSpec, Manual, Presence, Protocol, SignInFault, SignInInput,
+    manual_form, parse_manual,
 };
 use porter_core::{
     AccountLabel, Claim, Credential, Family, LoginName, Restriction, SecretPurpose, SecretText,
@@ -75,6 +78,8 @@ pub struct GenericSignIn {
     flavor: Flavor,
     mode: SignInMode,
     state: State,
+    /// The name shown in From, as typed on the first form.
+    name: Option<String>,
 }
 
 impl GenericSignIn {
@@ -96,6 +101,7 @@ impl GenericSignIn {
             flavor,
             mode,
             state: State::Fresh,
+            name: None,
         }
     }
 
@@ -103,9 +109,11 @@ impl GenericSignIn {
     /// (ship-5).
     fn form(&self) -> Vec<FieldSpec> {
         match self.flavor {
-            Flavor::Mail | Flavor::Fixed => {
-                vec![plain(FieldKind::Address), password_for(&self.spec)]
-            }
+            Flavor::Mail | Flavor::Fixed => vec![
+                field(FieldKind::Name, Entry::Plain, Presence::Optional),
+                plain(FieldKind::Address),
+                password_for(&self.spec),
+            ],
             Flavor::Dav => vec![
                 plain(FieldKind::Server),
                 plain(FieldKind::Username),
@@ -132,7 +140,8 @@ impl GenericSignIn {
         if let Err(fault) = self.login.check(&credential, &endpoints).await {
             return self.failed(fault);
         }
-        let signed = Self::signed(credential, label, endpoints, claims);
+        let signed =
+            Self::signed(credential, label, endpoints, claims).with_name(self.name.clone());
         match self.mode {
             SignInMode::Add => Self::review(&mut self.state, signed, State::Reviewing),
             SignInMode::Reauthenticate { .. } => {
@@ -158,7 +167,8 @@ impl GenericSignIn {
         let credential = Credential::Password(typed.password.clone());
         match &self.mode {
             SignInMode::Add => {
-                let signed = Self::signed(credential, typed.login, endpoints, claims);
+                let signed = Self::signed(credential, typed.login, endpoints, claims)
+                    .with_name(self.name.clone());
                 Self::review(&mut self.state, signed, State::ReviewingUnchecked)
             }
             SignInMode::Reauthenticate {
@@ -220,6 +230,7 @@ impl GenericSignIn {
     }
 
     async fn submitted(&mut self, answers: Vec<FieldAnswer>) -> SignInStep {
+        self.name = text_of(&answers, FieldKind::Name);
         match self.flavor {
             Flavor::Mail => self.submitted_mail(answers).await,
             Flavor::Dav => self.submitted_dav(answers).await,
@@ -336,6 +347,12 @@ impl SignIn for GenericSignIn {
         let state = std::mem::replace(&mut self.state, State::Ended);
         match (state, input) {
             (_, SignInInput::Cancel) => SignInStep::Failed(SignInFault::Cancelled),
+            // An edit is fed the servers to try, as often as the person sends them.
+            (_, SignInInput::Fields(answers))
+                if matches!(self.mode, SignInMode::EditServers { .. }) =>
+            {
+                self.edit(&answers).await
+            }
             // Begin, and begin again after a step back.
             (_, SignInInput::Start) => {
                 self.state = State::Asked;

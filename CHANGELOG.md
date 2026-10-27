@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+### Editing an account's servers through the sheet
+
+- `sheet::Purpose::EditServers { account, provider, current, name }` opens the sheet on the
+  server form of the account's protocol (`sheet::edit_form`), prefilled from `current` with no
+  password: an empty password or token keeps the stored one, and there is no provider list. The
+  answers are checked as the add form's are (no plain connection off this computer) and the
+  protocol stays the account's own.
+- Nothing is kept before the servers pass: the answers go to the provider's sign-in, begun as the
+  new `porter_provider::SignInMode::EditServers`, and only its `Done` ends the sheet with
+  `SheetEnd::Edited(EditedServers)`, carrying the servers, the name and a new password when one
+  was typed. The host stores that. A refusal is the new `SignInStep::Refused(FieldProblem)` /
+  `Progress::Refused`, which asks the form again with the field marked; a `Failed` refusal or
+  unreachable server is marked on the password or the server too.
+- `sheet::servers_editable(AuthKind)` and `servers_fixed`: only a password or app password
+  account may edit its servers. `porter_service::AccountService::edit_servers` refuses the others
+  before a sheet opens (`EditRefused::Fixed(ServersFixed::ProviderSignIn)` for OAuth and browser
+  sign-ins), so their token never goes to a typed host.
+- The generic family tries the incoming server, and the outgoing SMTP server (`EHLO`, `AUTH`)
+  when it, the login name or the password changed; a JMAP session is fetched over https.
+- `FieldKind::Name`, the name shown in From: optional on the generic family's mail add form, on
+  the edit form prefilled; at most 256 characters and no control character. A sign-in carries it
+  in the new `Signed::name` (`Signed::with_name`).
+- `Protocol::slug` and `Manual::protocol` are public; `refit` keeps a form's fields that are not
+  the server form's (the name, a password) where they were.
+
 ### porter-http speaks the `http` crate's request and response
 
 - `HttpRequest` and `HttpResponse` are now `http::Request<Vec<u8>>` and `http::Response<Vec<u8>>`

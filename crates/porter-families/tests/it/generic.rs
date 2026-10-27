@@ -131,7 +131,10 @@ async fn a_mail_account_is_found_from_its_address_by_autoconfig() {
         panic!("a form first: {steps:?}");
     };
     let asked: Vec<FieldKind> = form.iter().map(|f| f.kind).collect();
-    assert_eq!(asked, [FieldKind::Address, FieldKind::Password]);
+    assert_eq!(
+        asked,
+        [FieldKind::Name, FieldKind::Address, FieldKind::Password]
+    );
     assert!(matches!(steps[1], SignInStep::Review { .. }), "{steps:?}");
 
     let signed = done(&steps);
@@ -231,7 +234,7 @@ async fn a_domain_that_publishes_nothing_gets_a_question_for_the_server() {
     assert_eq!(
         questions,
         vec![
-            vec![Address, Password],
+            vec![Name, Address, Password],
             vec![
                 Protocol,
                 Server,
@@ -1083,7 +1086,10 @@ async fn a_fixed_file_signs_in_to_the_servers_it_names_and_the_password_logs_in(
         other => panic!("a form first: {other:?}"),
     };
     // Fastmail takes only an app password from a mail app: the form says so (ship-5).
-    assert_eq!(asked, [FieldKind::Address, FieldKind::AppPassword]);
+    assert_eq!(
+        asked,
+        [FieldKind::Name, FieldKind::Address, FieldKind::AppPassword]
+    );
     let signed = done(&steps);
     assert_eq!(signed.label.0, "ada@fastmail.com");
     let [(SecretPurpose::Password, Credential::Password(password))] = signed.credentials.as_slice()
@@ -1160,7 +1166,7 @@ async fn the_providers_that_take_only_an_app_password_ask_for_one() {
             panic!("{file}: a form first");
         };
         let kinds: Vec<FieldKind> = form.iter().map(|f| f.kind).collect();
-        assert_eq!(kinds, [FieldKind::Address, want], "{file}");
+        assert_eq!(kinds, [FieldKind::Name, FieldKind::Address, want], "{file}");
     }
 }
 

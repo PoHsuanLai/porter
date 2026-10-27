@@ -45,6 +45,9 @@ pub enum FieldKind {
     /// address". What it may be is `endpoint::server_address` (https for any host, plain http
     /// only for this computer or one of the person's own computers).
     ServerUrl,
+    /// The name shown in From on the mail the account sends (`Ada Lovelace`). Optional; empty
+    /// means none, and the address alone is shown.
+    Name,
 }
 
 impl FieldKind {

@@ -106,6 +106,20 @@ fn reauth() -> Purpose {
     }
 }
 
+/// An edit of a JMAP account's servers.
+fn edit() -> Purpose {
+    Purpose::EditServers {
+        account: AccountId::parse("cloud").expect("id"),
+        provider: nc(),
+        current: crate::sheet::manual::Manual::Jmap(crate::sheet::manual::JmapServer {
+            session: url(),
+            login: None,
+            token: None,
+        }),
+        name: None,
+    }
+}
+
 fn at(purpose: Purpose, stage: Stage) -> Sheet {
     Sheet {
         purpose,
@@ -815,7 +829,8 @@ fn the_device_code_flow_from_start_to_stored() {
 }
 
 // The property: whatever the person and the sign-in do, in any order, a typed secret appears in
-// no effect but `Feed(Fields)`, and there only under a field the form asked for.
+// no effect but `Feed(Fields)`, and there only under a field the form asked for. (The end of an
+// edit hands a typed password to the host, and its `Debug` redacts it.)
 
 fn leaks(effect: &SheetEffect) -> bool {
     let text = match effect {
@@ -856,6 +871,10 @@ fn event_strategy() -> impl Strategy<Value = SheetEvent> {
         Just(SheetEvent::SignIn(Progress::Review(review()))),
         Just(SheetEvent::SignIn(Progress::Done)),
         Just(SheetEvent::SignIn(Progress::Failed(SignInFault::Refused))),
+        Just(SheetEvent::SignIn(Progress::Refused(FieldProblem {
+            field: FieldKind::Password,
+            problem: ProblemKind::Refused,
+        }))),
         Just(SheetEvent::Stored),
         Just(SheetEvent::StoreFailed),
         Just(SheetEvent::Left),
@@ -866,9 +885,13 @@ proptest! {
     #[test]
     fn no_effect_carries_a_secret_outward(
         events in proptest::collection::vec(event_strategy(), 0..40),
-        reauthenticating in any::<bool>(),
+        which in 0u8..3,
     ) {
-        let purpose = if reauthenticating { reauth() } else { add() };
+        let purpose = match which {
+            0 => add(),
+            1 => reauth(),
+            _ => edit(),
+        };
         let mut sheet = Sheet::new(purpose, rows());
         for event in events {
             let (next, effects) = step(sheet, event);

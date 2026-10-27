@@ -8,8 +8,9 @@ use porter_core::capability::{
 };
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::sheet::{
-    Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence, ServiceChoice, SheetInput,
-    SheetView, SignInFault, SignInInput, UserCode,
+    Entry, FieldAnswer, FieldKind, FieldProblem, FieldSpec, FieldValue, Hop, MailServers, Manual,
+    Presence, ProblemKind, Security, ServersFixed, ServiceChoice, SheetInput, SheetView,
+    SignInFault, SignInInput, UserCode,
 };
 use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
 use porter_core::{
@@ -26,7 +27,8 @@ use porter_provider::{
 use porter_secrets::{MemorySecrets, Secrets, SecretsError};
 use porter_service::audit::AuditEvent;
 use porter_service::{
-    AccountService, Registry, SheetFault, SheetLink, SheetOpen, Sheets, SignInAs,
+    AccountService, EditRefused, EditServers, Registry, SheetFault, SheetLink, SheetOpen, Sheets,
+    SignInAs,
 };
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -1835,4 +1837,169 @@ async fn one_more_access_given_is_claimed_so_a_need_of_it_fits_the_account() {
         availability_of_the_whole_store(&service).await,
         AccountsReply::Availability(porter_core::consent::Availability::AvailableNeedsConsent)
     );
+}
+
+// ---- editing an account's servers ----
+
+const OAUTH: &str = r#"
+id = "scripted-oauth"
+label = "Scripted OAuth"
+mark = "generic"
+[auth]
+kind = "oauth_pkce"
+issuer = "microsoft"
+[discovery]
+kind = "autoconfig"
+[[capability]]
+family = "imap"
+kind = "mail"
+v = { access = "read_write", send = "present", delta = "push", transport = "imap", labels = "folders" }
+"#;
+
+fn edited_account() -> AccountId {
+    AccountId::parse("scripted-ada").expect("id")
+}
+
+fn servers(outgoing: &str) -> Manual {
+    let hop = |host: &str, port| Hop {
+        host: host.to_owned(),
+        port,
+        security: Security::Tls,
+    };
+    Manual::Imap(MailServers {
+        incoming: hop("imap.example.org", 993),
+        outgoing: hop(outgoing, 465),
+        login: None,
+    })
+}
+
+fn edit_of(provider: &str) -> EditServers {
+    EditServers {
+        account: edited_account(),
+        provider: ProviderId::parse(provider).expect("id"),
+        label: AccountLabel("ada@example.org".into()),
+        current: servers("smtp.example.org"),
+        name: Some("Ada".into()),
+    }
+}
+
+/// The person who changes the outgoing server, leaves the password empty and sends the form
+/// each time it is shown.
+fn editor() -> Reactor {
+    Arc::new(|view| match view {
+        SheetView::SignIn(form) => Some(SheetInput::Submit(
+            form.fields
+                .iter()
+                .map(|f| FieldAnswer {
+                    kind: f.kind,
+                    value: match (f.kind, f.entry) {
+                        (FieldKind::OutgoingServer, _) => {
+                            FieldValue::Plain("relay.example.org".into())
+                        }
+                        (_, Entry::Secret) => FieldValue::Secret(SecretText::new("")),
+                        _ => FieldValue::Plain(f.prefill.clone().unwrap_or_default()),
+                    },
+                })
+                .collect(),
+        )),
+        _ => None,
+    })
+}
+
+#[tokio::test]
+async fn edited_servers_are_tried_with_the_stored_password_and_handed_back_not_stored() {
+    let script = Script::answering(vec![SignInStep::Done(signed("ada"))]);
+    let (service, kept) = service(&script, vec![editor()]);
+    let stored = SecretKey {
+        account: edited_account(),
+        purpose: SecretPurpose::Password,
+    };
+    let password = Credential::Password(SecretText::new("stored-pw"));
+    kept.secrets.put(&stored, &password).await.expect("put");
+
+    let caller = app("org.quire.Mail");
+    let edited = service
+        .edit_servers(&caller, edit_of("scripted"), ParentWindow::Unparented)
+        .await
+        .expect("edited");
+    assert_eq!(edited.edited.servers, servers("relay.example.org"));
+    assert_eq!(edited.edited.name.as_deref(), Some("Ada"));
+    assert_eq!(edited.edited.password, None, "the stored one is kept");
+    assert_eq!(edited.endpoints, vec![imap("ada")]);
+    assert_eq!(
+        script.modes.lock().expect("modes").clone(),
+        vec![SignInMode::EditServers {
+            account: edited_account(),
+            label: AccountLabel("ada@example.org".into()),
+            current: servers("smtp.example.org"),
+            credentials: vec![(SecretPurpose::Password, password)],
+        }]
+    );
+    assert_eq!(script.told(), ["fields"]);
+    assert_eq!(kinds(&kept.shown), ["form", "working", "done"]);
+    assert!(service.registry().accounts.is_empty(), "nothing is stored");
+}
+
+#[tokio::test]
+async fn a_refused_check_shows_the_form_again_with_the_field_marked() {
+    let problem = FieldProblem {
+        field: FieldKind::OutgoingServer,
+        problem: ProblemKind::Refused,
+    };
+    let script = Script::answering(vec![
+        SignInStep::Refused(problem),
+        SignInStep::Done(signed("ada")),
+    ]);
+    let (service, kept) = service(&script, vec![editor()]);
+    let caller = app("org.quire.Mail");
+    let edited = service
+        .edit_servers(&caller, edit_of("scripted"), ParentWindow::Unparented)
+        .await;
+    assert!(edited.is_ok(), "{edited:?}");
+    assert_eq!(script.told(), ["fields", "fields"]);
+    assert_eq!(
+        kinds(&kept.shown),
+        ["form", "working", "form", "working", "done"]
+    );
+    let marked = kept.shown.lock().expect("shown")[2].clone();
+    let SheetView::SignIn(form) = marked else {
+        panic!("{marked:?}");
+    };
+    assert_eq!(form.problem, Some(problem));
+}
+
+#[tokio::test]
+async fn an_account_that_signs_in_at_its_providers_page_cannot_edit_its_servers() {
+    let caller = app("org.quire.Mail");
+    for (text, id, want) in [
+        (
+            OAUTH,
+            "scripted-oauth",
+            EditRefused::Fixed(ServersFixed::ProviderSignIn),
+        ),
+        (LOCAL, "runtime", EditRefused::Fixed(ServersFixed::NotTyped)),
+        (SPEC, "nobody", EditRefused::Refused(Refusal::Unavailable)),
+    ] {
+        let script = Script::default();
+        let provider = ScriptedProvider {
+            spec: parse_provider(text).expect("spec"),
+            script: script.clone(),
+            refuses_to_start: false,
+        };
+        let (service, kept) = service_over(
+            vec![provider],
+            Registry::default(),
+            Shared::default(),
+            vec![editor()],
+        );
+        let edited = service
+            .edit_servers(&caller, edit_of(id), ParentWindow::Unparented)
+            .await;
+        assert_eq!(edited, Err(want), "{id}");
+        assert!(
+            kept.shown.lock().expect("shown").is_empty(),
+            "{id}: no sheet"
+        );
+        assert!(script.modes.lock().expect("modes").is_empty(), "{id}");
+    }
 }

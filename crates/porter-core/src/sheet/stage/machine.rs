@@ -8,22 +8,33 @@
 //! conversation (`Feed`), not mailo's lookup and add.
 //!
 //! Rules, in order of importance:
-//! - A typed secret appears in exactly one effect, `Feed(Fields)`; nothing else carries it.
+//! - A typed secret appears in exactly one effect, `Feed(Fields)`; nothing else carries it,
+//!   except the `Close(SheetEnd::Edited)` that ends an edit whose servers passed, which hands the
+//!   host the new password to store.
 //! - `Store` comes only when the sign-in says `Done`: after a `Confirm` it carries the person's
 //!   choices (kept in `Stage::Confirming`), after a re-sign-in's `Done` with no review it is empty.
 //!   A sign-in that fails after `Confirm` stores nothing.
 //! - A second press while something runs does nothing (`Working` takes no input but Dismiss).
 //! - Dismiss and `Left` cancel a sign-in that is in flight, then close; every stage can end.
 //! - What does not fit the stage (a late progress, a pick on the form) is dropped, not guessed.
+//! - An edit of an account's servers (`Purpose::EditServers`) keeps nothing until the sign-in has
+//!   logged in at what was typed: the servers go to the sign-in in `Feed(Fields)`, and only its
+//!   `Done` ends the sheet with `SheetEnd::Edited`, which carries them (and a password, when one
+//!   was typed) to the host to store. A refusal marks the field it was about and asks again;
+//!   nothing ends. The protocol stays the account's own, and there is no step back.
 //!
 //! The consent alert is not a stage: it is one call (`Sheets::consent`), so `Answer` is not
 //! this machine's input and is dropped here.
 
 use super::{Purpose, Sheet, SheetEffect, SheetEnd, SheetEvent, Stage};
-use crate::sheet::fields::{FieldAnswer, FieldSpec, FieldValue};
+use crate::secret::SecretText;
+use crate::sheet::edit::EditedServers;
+use crate::sheet::fields::{FieldAnswer, FieldKind, FieldSpec, FieldValue};
 use crate::sheet::input::SheetInput;
 use crate::sheet::manual;
+use crate::sheet::manual::Manual;
 use crate::sheet::progress::{Progress, SignInFault, SignInInput};
+use crate::sheet::view::{FieldProblem, ProblemKind};
 use crate::wire::ProviderHint;
 
 pub(super) fn step(sheet: Sheet, event: SheetEvent) -> (Sheet, Vec<SheetEffect>) {
@@ -55,6 +66,7 @@ fn in_flight(stage: &Stage) -> bool {
         stage,
         Stage::Working(_)
             | Stage::Asking { .. }
+            | Stage::Checking { .. }
             | Stage::Browser { .. }
             | Stage::Code { .. }
             | Stage::Confirming { .. }
@@ -85,6 +97,11 @@ fn on_input(sheet: Sheet, input: SheetInput) -> (Sheet, Vec<SheetEffect>) {
             (sheet, effects)
         }
         (Stage::Asking { .. }, SheetInput::Submit(answers)) => submit(sheet, answers),
+        // An edit opens on its form: there is nothing before it to go back to.
+        (Stage::Asking { .. }, SheetInput::Back) if editing(&sheet) => ignore(sheet),
+        (Stage::Failed { .. }, SheetInput::Back | SheetInput::Retry) if editing(&sheet) => {
+            edit_again(sheet)
+        }
         (Stage::Reviewing { provider, .. }, SheetInput::Confirm(choices)) => {
             let provider = provider.clone();
             let feed = SheetEffect::Feed(SignInInput::Confirm(choices.clone()));
@@ -192,6 +209,27 @@ fn submit(sheet: Sheet, answers: Vec<FieldAnswer>) -> (Sheet, Vec<SheetEffect>) 
         };
         return to(sheet, stage);
     }
+    if let Purpose::EditServers { current, .. } = &sheet.purpose {
+        let checking = match edited(current, &answers) {
+            Ok(edit) => Stage::Checking {
+                provider: provider.clone(),
+                fields: fields.clone(),
+                edit,
+            },
+            Err(problem) => Stage::Asking {
+                provider: provider.clone(),
+                fields: fields.clone(),
+                problem: Some(problem),
+            },
+        };
+        let tried = matches!(checking, Stage::Checking { .. });
+        let feed = SheetEffect::Feed(SignInInput::Fields(asked(fields, answers)));
+        let (sheet, mut effects) = to(sheet, checking);
+        if tried {
+            effects.push(feed);
+        }
+        return (sheet, effects);
+    }
     let feed = SheetEffect::Feed(SignInInput::Fields(asked(fields, answers)));
     let provider = provider.clone();
     let (sheet, mut effects) = to(sheet, Stage::Working(provider));
@@ -199,7 +237,121 @@ fn submit(sheet: Sheet, answers: Vec<FieldAnswer>) -> (Sheet, Vec<SheetEffect>) 
     (sheet, effects)
 }
 
+/// Whether the sheet edits an account's servers.
+fn editing(sheet: &Sheet) -> bool {
+    matches!(sheet.purpose, Purpose::EditServers { .. })
+}
+
+/// What an edit's answers come to: the servers, in the account's own protocol, the name shown in
+/// From, and a new password when one was typed (exactly as typed: a password may start or end
+/// with a space).
+fn edited(current: &Manual, answers: &[FieldAnswer]) -> Result<EditedServers, FieldProblem> {
+    let servers = manual::parse_as(answers, current.protocol())?;
+    let name = manual::display_name(answers)?;
+    let password = answers
+        .iter()
+        .find(|a| a.kind == FieldKind::Password)
+        .map(|a| match &a.value {
+            FieldValue::Secret(secret) => secret.clone(),
+            FieldValue::Plain(text) => SecretText::new(text.clone()),
+        })
+        .filter(|secret| !secret.expose().is_empty());
+    Ok(EditedServers {
+        servers,
+        name,
+        password,
+    })
+}
+
+/// The edit's form again, as the account has it, after a failure the person chose to leave.
+fn edit_again(sheet: Sheet) -> (Sheet, Vec<SheetEffect>) {
+    let Purpose::EditServers {
+        provider,
+        current,
+        name,
+        ..
+    } = &sheet.purpose
+    else {
+        return ignore(sheet);
+    };
+    let stage = Stage::Asking {
+        provider: provider.clone(),
+        fields: manual::edit_form(current, name.as_deref()),
+        problem: None,
+    };
+    to(sheet, stage)
+}
+
+/// The field a failed check of edited servers is about: a refused password (or token), else the
+/// server that did not answer or answered nonsense. `None` for a fault that no field explains.
+fn mark_of(fault: SignInFault, edit: &EditedServers) -> Option<FieldProblem> {
+    let jmap = match &edit.servers {
+        Manual::Jmap(server) => Some(server.token.is_some()),
+        Manual::Imap(_) | Manual::Pop3(_) => None,
+    };
+    let field = match (fault, jmap) {
+        (SignInFault::Refused, Some(true)) => FieldKind::Token,
+        (SignInFault::Refused, _) => FieldKind::Password,
+        (SignInFault::Unreachable | SignInFault::Unreadable, Some(_)) => FieldKind::SessionUrl,
+        (SignInFault::Unreachable | SignInFault::Unreadable, None) => FieldKind::Server,
+        _ => return None,
+    };
+    Some(FieldProblem {
+        field,
+        problem: ProblemKind::Refused,
+    })
+}
+
+/// What the sign-in said of edited servers it was trying.
+fn checked(sheet: Sheet, progress: Progress) -> (Sheet, Vec<SheetEffect>) {
+    let Stage::Checking {
+        provider,
+        fields,
+        edit,
+    } = &sheet.stage
+    else {
+        return ignore(sheet);
+    };
+    let ask = |problem| Stage::Asking {
+        provider: provider.clone(),
+        fields: fields.clone(),
+        problem: Some(problem),
+    };
+    let failed = |fault| Stage::Failed {
+        provider: provider.clone(),
+        fault,
+    };
+    match progress {
+        Progress::Done => {
+            let end = SheetEffect::Close(SheetEnd::Edited(edit.clone()));
+            let (sheet, mut effects) = to(sheet, Stage::Added);
+            effects.push(end);
+            (sheet, effects)
+        }
+        Progress::Waiting => (sheet, vec![SheetEffect::Feed(SignInInput::Poll)]),
+        Progress::Refused(problem) => {
+            let stage = ask(problem);
+            to(sheet, stage)
+        }
+        Progress::Failed(fault) => {
+            let stage = match mark_of(fault, edit) {
+                Some(problem) => ask(problem),
+                None => failed(fault),
+            };
+            to(sheet, stage)
+        }
+        // A page, a code, a question or a review is not what trying servers says.
+        Progress::Ask(_) | Progress::Browser(_) | Progress::Code { .. } | Progress::Review(_) => {
+            let stage = failed(SignInFault::Unreadable);
+            to(sheet, stage)
+        }
+    }
+}
+
 fn on_progress(sheet: Sheet, progress: Progress) -> (Sheet, Vec<SheetEffect>) {
+    if matches!(sheet.stage, Stage::Checking { .. }) {
+        return checked(sheet, progress);
+    }
     let provider = match &sheet.stage {
         Stage::Working(p)
         | Stage::Confirming { provider: p, .. }
@@ -211,6 +363,11 @@ fn on_progress(sheet: Sheet, progress: Progress) -> (Sheet, Vec<SheetEffect>) {
         Progress::Done => done(sheet),
         Progress::Waiting => (sheet, vec![SheetEffect::Feed(SignInInput::Poll)]),
         Progress::Failed(fault) => to(sheet, Stage::Failed { provider, fault }),
+        // Only an edit asks again with a field marked; anywhere else a refusal ends the sign-in.
+        Progress::Refused(_) => {
+            let fault = SignInFault::Refused;
+            to(sheet, Stage::Failed { provider, fault })
+        }
         // A question, a page, a code or a review belongs to a sign-in that has not been
         // confirmed; after `Confirm` they are dropped.
         _ if matches!(sheet.stage, Stage::Confirming { .. }) => ignore(sheet),

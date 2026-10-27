@@ -4,7 +4,9 @@
 //! a password goes to the sign-in and nowhere else) are the ones of mailo's add-account
 //! machine, which this one replaces.
 
+use super::edit::EditedServers;
 use super::input::SheetInput;
+use super::manual::{Manual, edit_form};
 use super::progress::{Progress, Review, ServiceChoice, SignInFault, SignInInput, UserCode};
 use super::view::{FieldProblem, ProviderRow, ReviewView, SheetView, SignInView};
 use crate::app_id::AppId;
@@ -40,6 +42,19 @@ pub enum Purpose {
         account: AccountId,
         /// Its provider.
         provider: ProviderId,
+    },
+    /// Edit an existing account's servers: the server form of its protocol, prefilled from
+    /// `current`, tried before anything is kept. Only for an account whose sign-in is a password
+    /// (`servers_editable`); the host asks that before it opens the sheet.
+    EditServers {
+        /// The account.
+        account: AccountId,
+        /// Its provider.
+        provider: ProviderId,
+        /// Its servers as they are.
+        current: Manual,
+        /// The name shown in From, as it is.
+        name: Option<String>,
     },
 }
 
@@ -91,6 +106,15 @@ pub enum Stage {
         /// What was found.
         review: Review,
     },
+    /// An account's edited servers are being tried; nothing is kept until they pass.
+    Checking {
+        /// The provider.
+        provider: ProviderId,
+        /// The form as sent, to ask again with a field marked if the servers do not pass.
+        fields: Vec<super::fields::FieldSpec>,
+        /// What the edit comes to if they pass.
+        edit: EditedServers,
+    },
     /// The account is stored.
     Added,
     /// It ended without an account; the person may retry or go back.
@@ -141,6 +165,8 @@ pub enum SheetEnd {
     Dismissed,
     /// It failed.
     Failed(SignInFault),
+    /// An account's servers were edited and the sign-in logged in at them; the host stores this.
+    Edited(EditedServers),
 }
 
 /// What the host must do next.
@@ -163,7 +189,8 @@ pub enum SheetEffect {
 
 impl Sheet {
     /// The sheet as first shown: the provider list, or, where the provider is already known (a
-    /// hint, a re-sign-in), working on it until the sign-in says what it needs.
+    /// hint, a re-sign-in), working on it until the sign-in says what it needs. An edit of an
+    /// account's servers opens on its form, prefilled (`edit_form`).
     pub fn new(purpose: Purpose, providers: Vec<ProviderRow>) -> Self {
         let stage = match &purpose {
             Purpose::Add {
@@ -176,6 +203,16 @@ impl Sheet {
                 hint: ProviderHint::Any,
                 ..
             } => Stage::Choosing(providers.clone()),
+            Purpose::EditServers {
+                provider,
+                current,
+                name,
+                ..
+            } => Stage::Asking {
+                provider: provider.clone(),
+                fields: edit_form(current, name.as_deref()),
+                problem: None,
+            },
         };
         Self {
             purpose,
@@ -203,7 +240,9 @@ impl Sheet {
         let row = |provider: &ProviderId| self.row_of(provider);
         let allow = match &self.purpose {
             Purpose::Add { allow, .. } => allow.clone(),
-            Purpose::Reauthenticate { .. } | Purpose::Extend { .. } => None,
+            Purpose::Reauthenticate { .. }
+            | Purpose::Extend { .. }
+            | Purpose::EditServers { .. } => None,
         };
         match &self.stage {
             Stage::Choosing(rows) => SheetView::Providers(rows.clone()),
@@ -217,7 +256,9 @@ impl Sheet {
                 fields: fields.clone(),
                 problem: *problem,
             }),
-            Stage::Working(provider) | Stage::Confirming { provider, .. } => SheetView::Working {
+            Stage::Working(provider)
+            | Stage::Confirming { provider, .. }
+            | Stage::Checking { provider, .. } => SheetView::Working {
                 provider: provider.clone(),
                 row: row(provider),
             },
@@ -258,6 +299,8 @@ pub fn step(sheet: Sheet, event: SheetEvent) -> (Sheet, Vec<SheetEffect>) {
     machine::step(sheet, event)
 }
 
+#[cfg(test)]
+mod edit_tests;
 mod machine;
 #[cfg(test)]
 mod machine_tests;

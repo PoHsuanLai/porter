@@ -4,7 +4,8 @@
 //! keeps: it is never drawn, never sent to a sheet and never serialised.
 
 use porter_core::sheet::{
-    FieldSpec, Progress, Review, ServiceRow, ServiceState, SignInFault, SignInInput, UserCode,
+    FieldProblem, FieldSpec, Manual, Progress, Review, ServiceRow, ServiceState, SignInFault,
+    SignInInput, UserCode,
 };
 use porter_core::{
     AccountId, AccountLabel, CapabilityKind, Claim, Credential, EndpointUrl, Offer, Restriction,
@@ -37,6 +38,20 @@ pub enum SignInMode {
         endpoints: Vec<ServiceEndpoint>,
         /// The kinds whose on-use access is asked.
         kinds: Vec<CapabilityKind>,
+    },
+    /// An existing account's servers, edited: the sign-in tries the servers it is fed
+    /// (`SignInInput::Fields`, the answers to `sheet::edit_form`) and ends `Done` only when it
+    /// logged in at them. It asks nothing first, and the account is not changed by it.
+    EditServers {
+        /// The account.
+        account: AccountId,
+        /// Its address: the login name when the form leaves that empty.
+        label: AccountLabel,
+        /// Its servers as they are, so the sign-in knows what changed.
+        current: Manual,
+        /// Its stored secrets, each under its purpose: what is tried when the form leaves the
+        /// password empty. Empty when the host keeps none (an app that files its own).
+        credentials: Vec<(SecretPurpose, Credential)>,
     },
 }
 
@@ -153,6 +168,8 @@ pub struct Signed {
     pub endpoints: Vec<ServiceEndpoint>,
     /// What limits it.
     pub restriction: Restriction,
+    /// The name shown in From on the mail it sends, when the person gave one (`Ada Lovelace`).
+    pub name: Option<String>,
 }
 
 impl Signed {
@@ -171,7 +188,15 @@ impl Signed {
             claims,
             endpoints,
             restriction,
+            name: None,
         }
+    }
+
+    /// The same account, with the name shown in From on its mail.
+    #[must_use]
+    pub fn with_name(mut self, name: Option<String>) -> Self {
+        self.name = name;
+        self
     }
 }
 
@@ -208,6 +233,9 @@ pub enum SignInStep {
     },
     /// Signed in.
     Done(Signed),
+    /// What was typed was tried and this field did not do; the form is asked again with it
+    /// marked. Only an edit of an account's servers says this; the sign-in goes on.
+    Refused(FieldProblem),
     /// It ended without an account.
     Failed(SignInFault),
 }
@@ -234,6 +262,7 @@ impl SignInStep {
                 endpoints: endpoints.clone(),
             }),
             SignInStep::Done(_) => Progress::Done,
+            SignInStep::Refused(problem) => Progress::Refused(*problem),
             SignInStep::Failed(fault) => Progress::Failed(*fault),
         }
     }

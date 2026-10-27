@@ -2,6 +2,7 @@
 //! `SignInStep`, and its `SignInInput`.
 
 use super::fields::{FieldAnswer, FieldSpec};
+use super::view::FieldProblem;
 use crate::account::AccountLabel;
 use crate::capability::CapabilityKind;
 use crate::effective::Toggle;
@@ -114,6 +115,9 @@ pub enum Progress {
     Waiting,
     /// It found these; nothing is stored yet.
     Review(Review),
+    /// What was typed was tried and this field did not do (a refused password, a server that
+    /// did not answer): the form is asked again with it marked, and nothing has ended.
+    Refused(FieldProblem),
     /// Signed in; the host holds the credential.
     Done,
     /// It ended without an account.

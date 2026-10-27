@@ -4,6 +4,10 @@
 //! (where the registry lives between runs) and an [`AuditSink`]. Transport-free: accountd hosts
 //! it behind D-Bus and the socket, and an app may host it in process.
 //!
+//! An account whose sign-in is a password may have its servers edited through the sheet
+//! ([`AccountService::edit_servers`]): the servers typed are tried before anything is kept, and
+//! the caller stores what passed.
+//!
 //! An OAuth account is refreshed one caller at a time inside a service: a second caller waits and
 //! then uses the token the first one issued (one call to the issuer serves both), and a refresh
 //! token the issuer rotated is stored before the new access token is handed out. A host that
@@ -29,6 +33,7 @@ mod audience;
 pub mod audit;
 mod choose;
 mod clock;
+mod edit_servers;
 mod flight;
 mod gate;
 mod local;
@@ -47,6 +52,7 @@ pub use agent::AgentFault;
 pub use agent_login::{Launchers, LoginEnd, NoLauncher, Roster, Waiting, program_of};
 pub use audit::{AuditSink, NoAudit};
 pub use clock::Clock;
+pub use edit_servers::{EditRefused, EditServers, ServersEdited};
 pub use local::{LocalFault, MAX_LOCAL_CLAIMS};
 pub use manage::RevokeReport;
 pub use own_machines::OwnMachines;
