@@ -15,6 +15,7 @@ fn plan(url: &str, tls: Tls, auth: RelayAuth) -> RelayPlan {
         },
         CapabilityKind::Storage,
         auth,
+        porter_core::Reach::origin(),
     )
 }
 
@@ -361,6 +362,11 @@ fn a_contacts_grants_relay_refuses_the_files_and_ocs_and_passes_its_address_book
     );
     contacts.endpoint.family = Family::CardDav;
     contacts.kind = CapabilityKind::Contacts;
+    // What the service plans for it: the address books alone.
+    contacts.reach = porter_core::Reach::under(vec![porter_core::PathReach::new(
+        b"/remote.php/dav/addressbooks/users/ada".to_vec(),
+        porter_core::ReachMethods::Any,
+    )]);
     for refused in [
         "PROPFIND /remote.php/dav/files/ada/ HTTP/1.1\r\nDepth: 1\r\n\r\n",
         "GET /ocs/v2.php/core/apppassword HTTP/1.1\r\nOCS-APIRequest: true\r\n\r\n",

@@ -11,7 +11,7 @@
 
 use porter_core::stream::ByteStream;
 use porter_core::{
-    CapabilityKind, Credential, EndpointProtocol, RelayAuth, RelayPlan, ServiceEndpoint,
+    CapabilityKind, Credential, EndpointProtocol, Reach, RelayAuth, RelayPlan, ServiceEndpoint,
     sheet::SignInFault,
 };
 use porter_proxy::{Connect, RelayEnd, RelayFault, RustlsConnect, relay};
@@ -70,6 +70,7 @@ impl SharedLogin {
             endpoint.clone(),
             CapabilityKind::Mail,
             RelayAuth::Password(password.clone()),
+            Reach::origin(),
         );
         self.0.check_boxed(plan).await
     }

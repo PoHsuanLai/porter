@@ -86,6 +86,7 @@ fn a_new_relay_waits_for_the_servers_greeting_and_never_shows_its_credential() {
         },
         CapabilityKind::Mail,
         password(),
+        porter_core::Reach::origin(),
     );
     let relay = ImapRelay::new(plan);
     assert_eq!(relay.phase, ImapPhase::Greeting);
@@ -107,6 +108,7 @@ mod scripted {
             },
             CapabilityKind::Mail,
             auth,
+            porter_core::Reach::origin(),
         ))
     }
 

@@ -17,6 +17,7 @@ fn relay(tls: Tls, auth: RelayAuth) -> SieveRelay {
         },
         CapabilityKind::Mail,
         auth,
+        porter_core::Reach::origin(),
     ))
 }
 

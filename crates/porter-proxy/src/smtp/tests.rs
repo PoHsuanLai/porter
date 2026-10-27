@@ -96,6 +96,7 @@ mod scripted {
             },
             CapabilityKind::Mail,
             RelayAuth::Password(SecretText::new("hunter2")),
+            porter_core::Reach::origin(),
         ))
     }
 

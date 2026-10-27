@@ -5,7 +5,7 @@
 
 use crate::audience::covers;
 use crate::audit::AuditSink;
-use crate::registry::serves;
+use crate::reach::{Declared, declared_endpoint, reach_for};
 use crate::service::AccountService;
 use crate::sheets::Sheets;
 use crate::token::{secret_purpose, secrets_refusal};
@@ -61,7 +61,8 @@ where
             // An API key or a key pair has no password protocol to present it to.
             _ => return Err(Refusal::Unavailable),
         };
-        Ok(RelayPlan::new(endpoint.clone(), kind, auth))
+        let reach = reach_for(endpoint);
+        Ok(RelayPlan::new(endpoint.clone(), kind, auth, reach))
     }
 
     /// The account, endpoint and kind for an `OpenAuthenticated` to `origin`, an origin that is
@@ -81,26 +82,7 @@ where
             .catalog
             .get(&account.provider)
             .ok_or(Refusal::EndpointNotGranted)?;
-        let dialled = origin.origin();
-        let bare = origin.path() == "/" && !origin.as_str().ends_with('/');
-        let declared = |endpoint: &ServiceEndpoint| {
-            spec.capabilities
-                .iter()
-                .filter(|row| row.family == endpoint.family && row.capability.kind() == kind)
-                .any(|row| row.auth_origins.iter().any(|o| o.allows(&dialled)))
-        };
-        let home = account
-            .endpoints
-            .iter()
-            .filter(|e| serves(e, kind))
-            .find(|e| bare && e.url.origin().scheme == dialled.scheme && declared(e))
-            .ok_or(Refusal::EndpointNotGranted)?;
-        let endpoint = ServiceEndpoint {
-            url: EndpointUrl::parse(&dialled.to_string())
-                .map_err(|_| Refusal::EndpointNotGranted)?,
-            ..home.clone()
-        };
-        endpoint.check().map_err(|_| Refusal::EndpointNotGranted)?;
+        let endpoint = declared_endpoint(account, spec, kind, origin, Declared::Auth)?;
         Ok((account.clone(), endpoint, (kind, reach)))
     }
 
@@ -120,27 +102,9 @@ where
             .catalog
             .get(&account.provider)
             .ok_or(Refusal::Unavailable)?;
-        let dialled = origin.origin();
-        let bare = origin.path() == "/" && !origin.as_str().ends_with('/');
-        let declared = |endpoint: &ServiceEndpoint| {
-            spec.capabilities
-                .iter()
-                .filter(|row| row.family == endpoint.family && row.capability.kind() == kind)
-                .any(|row| row.linked_origins.iter().any(|o| o.allows(&dialled)))
-        };
-        let home = account
-            .endpoints
-            .iter()
-            .filter(|e| serves(e, kind))
-            .find(|e| bare && e.url.origin().scheme == dialled.scheme && declared(e))
-            .ok_or(Refusal::EndpointNotGranted)?;
-        let endpoint = ServiceEndpoint {
-            url: EndpointUrl::parse(&dialled.to_string())
-                .map_err(|_| Refusal::EndpointNotGranted)?,
-            ..home.clone()
-        };
-        endpoint.check().map_err(|_| Refusal::EndpointNotGranted)?;
-        let plan = RelayPlan::new(endpoint, kind, RelayAuth::Anonymous);
+        let endpoint = declared_endpoint(account, spec, kind, origin, Declared::Linked)?;
+        let reach = reach_for(&endpoint);
+        let plan = RelayPlan::new(endpoint, kind, RelayAuth::Anonymous, reach);
         Ok((plan, account.clone()))
     }
 

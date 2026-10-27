@@ -348,6 +348,7 @@ fn a_relay_plan_never_shows_its_credential() {
         endpoint: endpoint(Family::Imap, "imaps://mail.example.org", Tls::Implicit),
         kind: CapabilityKind::Mail,
         auth: RelayAuth::Password(crate::SecretText::new("hunter2")),
+        reach: Reach::origin(),
     };
     assert!(!format!("{plan:?}").contains("hunter2"));
 }

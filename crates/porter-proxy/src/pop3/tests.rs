@@ -83,6 +83,7 @@ fn relay(tls: Tls, auth: RelayAuth) -> Pop3Relay {
         },
         CapabilityKind::Mail,
         auth,
+        porter_core::Reach::origin(),
     ))
 }
 

@@ -6,8 +6,8 @@
 pub mod sieve;
 
 use porter_core::{
-    CapabilityKind, EndpointUrl, Family, LoginName, RelayAuth, RelayPlan, SecretText,
-    ServiceEndpoint, Tls,
+    CapabilityKind, EndpointUrl, Family, LoginName, PathReach, Reach, ReachMethods, RelayAuth,
+    RelayPlan, SecretText, ServiceEndpoint, Tls,
 };
 use porter_fake::FakeAddress;
 use porter_fake_servers::tls;
@@ -41,7 +41,17 @@ pub fn plan(family: Family, url: &str, tls: Tls, auth: RelayAuth) -> RelayPlan {
         },
         CapabilityKind::Mail,
         auth,
+        Reach::origin(),
     )
+}
+
+/// `plan` confined to the paths under `prefix`, as the service plans a grant for one kind.
+pub fn confined_to(mut plan: RelayPlan, prefix: &str) -> RelayPlan {
+    plan.reach = Reach::under(vec![PathReach::new(
+        prefix.as_bytes().to_vec(),
+        ReachMethods::Any,
+    )]);
+    plan
 }
 
 pub fn password() -> RelayAuth {

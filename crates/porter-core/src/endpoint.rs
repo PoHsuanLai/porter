@@ -13,8 +13,10 @@ use crate::secret::SecretText;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+mod reach;
 mod server_address;
 
+pub use reach::{PathReach, Reach, ReachMethods};
 pub use server_address::{
     SERVER_ADDRESS_RULE, ServerAddress, ServerAddressFault, server_address, server_address_shape,
 };
@@ -377,15 +379,24 @@ pub struct RelayPlan {
     pub kind: CapabilityKind,
     /// What it presents.
     pub auth: RelayAuth,
+    /// The paths of the endpoint's origin it may send requests to.
+    pub reach: Reach,
 }
 
 impl RelayPlan {
-    /// A plan to dial `endpoint` for a grant of `kind`, presenting `auth` there.
-    pub fn new(endpoint: ServiceEndpoint, kind: CapabilityKind, auth: RelayAuth) -> Self {
+    /// A plan to dial `endpoint` for a grant of `kind`, presenting `auth` there and going no
+    /// further than `reach`.
+    pub fn new(
+        endpoint: ServiceEndpoint,
+        kind: CapabilityKind,
+        auth: RelayAuth,
+        reach: Reach,
+    ) -> Self {
         Self {
             endpoint,
             kind,
             auth,
+            reach,
         }
     }
 }

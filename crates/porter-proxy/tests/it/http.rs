@@ -18,7 +18,7 @@ fn dav_plan(base: &str, auth: porter_core::RelayAuth) -> porter_core::RelayPlan 
         auth,
     );
     plan.endpoint.login.0 = "alice".into();
-    plan
+    confined_to(plan, "/dav/files")
 }
 
 /// Reads one response: its status line and its body (by `Content-Length`).
@@ -157,7 +157,7 @@ async fn a_contacts_relay_reaches_the_address_books_and_not_the_files_or_ocs() {
         );
         plan.endpoint.login.0 = "alice".into();
         plan.kind = porter_core::CapabilityKind::Contacts;
-        plan
+        confined_to(plan, "/dav/addressbooks/users/alice")
     };
     const REFUSED: &[(&str, &str)] = &[
         (

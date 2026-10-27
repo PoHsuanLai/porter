@@ -33,6 +33,7 @@ mod local;
 mod manage;
 mod own_machines;
 mod race;
+mod reach;
 mod registry;
 mod relay;
 mod service;
