@@ -45,8 +45,17 @@ fn restarted(rig: Rig) -> Rig {
         drive,
     } = rig;
     drop(drive);
-    let drive = Drive::open_writable(config(&dir), listing.clone(), source.clone(), sink.clone())
-        .expect("drive");
+    // The cache's lock goes with the drive's last sender task, which can still be finishing its
+    // flush when the handle is dropped; a restart waits for it, as a person reopening would.
+    let deadline = porter_fake::Deadline::generous();
+    let drive = loop {
+        match Drive::open_writable(config(&dir), listing.clone(), source.clone(), sink.clone()) {
+            Err(DriveError::InUse) if !deadline.passed() => {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            opened => break opened.expect("drive"),
+        }
+    };
     Rig {
         dir,
         listing,
