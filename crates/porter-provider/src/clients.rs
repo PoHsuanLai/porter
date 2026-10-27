@@ -45,7 +45,7 @@ pub struct ClientEntry {
     /// The application secret an issuer requires of every installed client (Google's desktop
     /// clients); not the user's credential, and identical for every user of the build. Absent
     /// for public clients (Microsoft).
-    #[serde(default)]
+    #[serde(default, serialize_with = "porter_core::write_secret_option")]
     pub client_secret: Option<SecretText>,
     /// Endpoints other than the ones the issuer publishes.
     #[serde(default)]

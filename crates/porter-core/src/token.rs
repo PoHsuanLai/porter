@@ -76,6 +76,7 @@ pub struct IssuedToken {
     /// Its form.
     pub kind: TokenKind,
     /// The token.
+    #[serde(serialize_with = "crate::write_secret")]
     pub value: SecretText,
     /// When it stops working; ask again then, or on a 401.
     pub expires: UnixSeconds,

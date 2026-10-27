@@ -12,10 +12,10 @@ use porter_http::http::header::{ACCEPT, CONTENT_TYPE};
 use porter_http::http::{Method, Response};
 use porter_http::{Http, request_to};
 use porter_provider::{ClientEntry, IssuerEndpoints};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 /// A token endpoint's answer, as the issuer writes it. Secret fields redact in `Debug`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct TokenResponse {
     /// The access token.
     pub access_token: SecretText,
@@ -58,6 +58,7 @@ impl TokenResponse {
 
 /// Why an exchange failed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum ExchangeFault {
     /// `invalid_grant`, or a 401: the credential is gone; the account needs signing in again.
     #[error("the grant was refused")]

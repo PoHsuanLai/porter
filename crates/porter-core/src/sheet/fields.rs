@@ -122,7 +122,7 @@ pub enum FieldValue {
     /// Text that is not a secret.
     Plain(String),
     /// A password, a key or a token.
-    Secret(SecretText),
+    Secret(#[serde(serialize_with = "crate::write_secret")] SecretText),
 }
 
 /// One field's answer.
