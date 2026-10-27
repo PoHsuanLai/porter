@@ -566,6 +566,12 @@ D-Bus on the desktop). Where each mailo piece lands:
   (Apache-2.0 OR MIT): `Debug` redacts, `==` is constant time (`subtle`), the bytes are wiped on
   drop, and it has no `Serialize`; the fields that must carry one (the stored `Credential`, an
   `IssuedToken`, a typed sheet answer, `clients.toml`) say `serialize_with = "write_secret"`.
+- **A library's errors say what failed, and no more.** The `#[error]` text of a library crate
+  is in the program's terms ("token endpoint answered 400"); the sentence a person reads is built
+  where it is shown (an app's copy, or the settings rows of the daemon that owns the page: inferd's
+  `tailnet::words`, syncd's `words`) from the typed variant. Error enums that can grow are
+  `#[non_exhaustive]`, and check-boundary fails a library crate's public `*Error` enum without it
+  (a library is a crate a shipped program links, other than the daemons themselves).
 - **A message carries no authority.** `prov::Message` is the one model for every exchange
   between agents: a request from the companion to a worker, a worker's or a computer-use run's
   progress and final report, the person's direct turn to a subagent (the person is a sender,
@@ -734,3 +740,4 @@ is not a place to download and install from: it is never given more.
   not caught. For everyone's install the record does not matter, because root holds it.
 - Residual risk of the person's install: the check and the start are two steps, so a file swapped
   between them is not caught; the engines also run in inferd's sandbox either way.
+

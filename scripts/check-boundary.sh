@@ -424,6 +424,44 @@ else
   echo "test-only: nothing depends on porter-rig, and dist/ does not name it"
 fi
 
+# LIBRARY ERRORS CAN GROW: every `pub enum` whose name ends in `Error`, in a library crate, is
+# `#[non_exhaustive]`, so a variant added later breaks no caller's `match`. A library crate is
+# one a shipped program links: the programs are the binaries dist/ names, the crates they reach
+# through normal and build dependencies are the shipped ones, and of those a daemon (a crate
+# with a `daemon` module) holds its own errors for itself. Test tooling is never reached from a
+# shipped program, so it is outside the rule by what it is.
+shipped_programs=$(cargo metadata --format-version 1 --no-deps 2>/dev/null \
+  | jq -r '.packages[] | .name as $p | .targets[] | select(.kind | index("bin")) | "\($p) \(.name)"' \
+  | while read -r package program; do grep -rqF -- "$program" dist && echo "$package"; done | sort -u)
+shipped=$(for package in $shipped_programs; do
+  cargo tree -p "$package" -e normal,build --prefix none 2>/dev/null | grep -E '\(/' | awk '{print $1}'
+done | sort -u)
+grow_leaks=""
+for crate in $shipped; do
+  [ -f "crates/$crate/src/lib.rs" ] && [ ! -f "crates/$crate/src/daemon.rs" ] || continue
+  found=$(find "crates/$crate/src" -name '*.rs' ! -name 'tests.rs' ! -name '*_tests.rs' ! -name 'testing.rs' \
+    ! -name 'testkit.rs' ! -path '*/tests/*' ! -path '*/testkit/*' ! -path '*/testing/*' -print0 \
+    | xargs -0 awk '
+      FNR == 1 { exhaustive = 1 }
+      /^[[:space:]]*#\[non_exhaustive\]/ { exhaustive = 0; next }
+      /^[[:space:]]*pub enum [A-Za-z0-9_]*Error([^A-Za-z0-9_]|$)/ {
+        if (exhaustive) print FILENAME ":" FNR ": " $0
+        exhaustive = 1
+        next
+      }
+      /^[[:space:]]*(pub(\([a-z]+\))? )?(fn|struct|enum|impl|trait|mod|use|const|static|type|union|extern|unsafe|async)[[:space:]]/ { exhaustive = 1 }
+      /^}/ { exhaustive = 1 }')
+  [ -n "$found" ] && grow_leaks="$grow_leaks$found
+"
+done
+if [ -n "$grow_leaks" ]; then
+  printf '%s' "$grow_leaks"
+  echo "LEAK: a public error enum of a library crate is not #[non_exhaustive]"
+  fail=1
+else
+  echo "grows: every public *Error enum of the libraries is #[non_exhaustive] ($(echo $shipped | wc -w) shipped crates looked at)"
+fi
+
 # The portable cores build without the desktop and reach no D-Bus; the accounts-only client
 # reaches no inference either (quire design/36).
 ./scripts/check-portable.sh || fail=1
