@@ -291,11 +291,13 @@ async fn a_large_file_goes_in_chunks_and_resumes_after_a_restart() {
     rig.sink.cut_after(3);
     let id = rig.write_new(&NodeId::Top, "big.bin", &bytes).await;
     eventually("cut off", || rig.sink.cuts() == 1).await;
-    let index = std::fs::read_to_string(rig.dir.join("cache").join("index.json")).expect("index");
-    assert!(
-        index.contains("mem://session"),
-        "its session is kept: {index}"
-    );
+    // The drive writes its index after the cut, on its own flush, so the test waits for it
+    // rather than reading it the moment the cut is seen.
+    let index = rig.dir.join("cache").join("index.json");
+    eventually("its session is kept in the index", || {
+        std::fs::read_to_string(&index).is_ok_and(|kept| kept.contains("mem://session"))
+    })
+    .await;
     let rig = restarted(rig);
     rig.sent(1).await;
     assert_eq!(rig.sink.largest_chunk(), 4, "never the whole file at once");
