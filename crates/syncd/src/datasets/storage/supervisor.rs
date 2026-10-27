@@ -314,7 +314,7 @@ where
                 if self.running.contains_key(&key) {
                     continue;
                 }
-                match self.start(kind, &account, candidate, &folder) {
+                match self.start(kind, &account, candidate, &folder).await {
                     Ok(running) => {
                         self.running.insert(key, running);
                     }
@@ -353,7 +353,7 @@ where
         whole
     }
 
-    fn start(
+    async fn start(
         &self,
         kind: StorageKind,
         account: &AccountDir,
@@ -394,14 +394,14 @@ where
                 self.start_photos(account, candidate, &endpoint.url)
             }
             StorageKind::GooglePhotos => self.start_google_photos(account, candidate),
-            StorageKind::Drive => self.start_drive(account, candidate, folder),
+            StorageKind::Drive => self.start_drive(account, candidate, folder).await,
         }
     }
 
     /// The whole drive of `account`, over OneDrive's root or My Drive by the endpoint: its
     /// listing from the tree its journal kept, its files on demand over the journal and a
     /// replica of its own for fetching, and its folder `~/Cloud/<folder>`.
-    fn start_drive(
+    async fn start_drive(
         &self,
         account: &AccountDir,
         candidate: &Candidate,
@@ -430,6 +430,7 @@ where
                     replica()?,
                     replica()?,
                 )
+                .await
             }
             AppFolderStore::Drive(e) => {
                 let replica = || {
@@ -451,11 +452,12 @@ where
                     replica()?,
                     replica()?,
                 )
+                .await
             }
         }
     }
 
-    fn run_drive<L, F>(
+    async fn run_drive<L, F>(
         &self,
         account: &AccountDir,
         candidate: &Candidate,
@@ -477,9 +479,11 @@ where
         let fetch = Arc::new(fetch);
         // What is changed in the folder is kept in the cache first, then sent through the same
         // replica the bytes come from.
+        // Read before the open's await: the watch's guard is not held across it.
+        let limit = *self.limit.borrow();
         let files = Drive::open_writable(
             DriveConfig {
-                limit: *self.limit.borrow(),
+                limit,
                 free_space: self.config.free_space,
                 ..DriveConfig::new(wiring.paths.drive_cache_dir(account))
             },
@@ -487,6 +491,7 @@ where
             Arc::new(ReplicaSource(Arc::clone(&fetch))),
             Arc::new(ReplicaSource(Arc::clone(&fetch))) as Arc<dyn porter_drive::Sink>,
         )
+        .await
         .map_err(|e| e.to_string())?;
         let path = wiring.paths.cloud.join(folder);
         // Where what was not uploaded is kept if the account is removed while it is not shown.

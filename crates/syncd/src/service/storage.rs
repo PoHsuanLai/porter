@@ -568,6 +568,7 @@ mod tests {
             listing.clone(),
             source.clone(),
         )
+        .await
         .expect("drive");
         let a = NodeId::Remote(RemoteId("a".into()));
         drive.open_file(&a).expect("open");

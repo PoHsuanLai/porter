@@ -809,7 +809,7 @@ mod tests {
     use porter_drive::{DriveConfig, words};
     use std::sync::Arc;
 
-    fn fs(dir: &porter_fake::Scratch) -> (Arc<MemoryListing>, Arc<MemorySource>, DriveFs) {
+    async fn fs(dir: &porter_fake::Scratch) -> (Arc<MemoryListing>, Arc<MemorySource>, DriveFs) {
         let listing = Arc::new(MemoryListing::default());
         let source = Arc::new(MemorySource::default());
         let drive = Drive::open(
@@ -820,6 +820,7 @@ mod tests {
             listing.clone(),
             source.clone(),
         )
+        .await
         .expect("drive");
         let fs = DriveFs::new(drive, tokio::runtime::Handle::current());
         (listing, source, fs)
@@ -828,7 +829,7 @@ mod tests {
     #[tokio::test]
     async fn the_tree_reads_by_shown_names_with_stable_inodes_and_the_drives_sizes() {
         let dir = porter_fake::Scratch::new("drive-fuse");
-        let (listing, source, fs) = fs(&dir);
+        let (listing, source, fs) = fs(&dir).await;
         listing.folder("f", None, "Work");
         listing.file("a", Some("f"), "a/b.txt", 10, "1");
         listing.online(
@@ -881,7 +882,7 @@ mod tests {
     #[tokio::test]
     async fn offline_a_read_is_enetdown_and_the_item_says_why() {
         let dir = porter_fake::Scratch::new("drive-fuse");
-        let (listing, source, fs) = fs(&dir);
+        let (listing, source, fs) = fs(&dir).await;
         listing.file("a", None, "a.txt", 10, "1");
         source.set_offline(true);
         let file = fs.lookup(ROOT_INO, OsStr::new("a.txt")).expect("file");
@@ -904,7 +905,7 @@ mod tests {
         fs: DriveFs,
     }
 
-    fn writable(dir: &porter_fake::Scratch) -> Writable {
+    async fn writable(dir: &porter_fake::Scratch) -> Writable {
         let listing = Arc::new(MemoryListing::default());
         let source = Arc::new(MemorySource::default());
         let sink = Arc::new(MemorySink::new(listing.clone(), source.clone(), 4));
@@ -918,6 +919,7 @@ mod tests {
             source.clone(),
             sink.clone(),
         )
+        .await
         .expect("drive");
         let fs = DriveFs::new(drive, tokio::runtime::Handle::current());
         Writable {
@@ -942,7 +944,7 @@ mod tests {
     #[tokio::test]
     async fn a_file_made_written_and_closed_is_sent_through_the_core() {
         let dir = porter_fake::Scratch::new("drive-fuse-write");
-        let w = writable(&dir);
+        let w = writable(&dir).await;
         let fs = &w.fs;
         let (attr, fh) = fs
             .create(ROOT_INO, OsStr::new("notes.txt"), REGULAR | 0o644)
@@ -967,7 +969,7 @@ mod tests {
     #[tokio::test]
     async fn what_a_drive_cannot_hold_is_refused_with_its_errno() {
         let dir = porter_fake::Scratch::new("drive-fuse-refuse");
-        let w = writable(&dir);
+        let w = writable(&dir).await;
         let fs = &w.fs;
         w.sink.names(|name| !name.contains(':'));
         w.listing.online(
@@ -1008,7 +1010,7 @@ mod tests {
     #[tokio::test]
     async fn saving_by_rename_truncating_and_removing_go_through_the_core() {
         let dir = porter_fake::Scratch::new("drive-fuse-save");
-        let w = writable(&dir);
+        let w = writable(&dir).await;
         let fs = &w.fs;
         w.listing.folder("f", None, "Work");
         w.listing.file("r", Some("f"), "report.txt", 3, "v1");

@@ -74,8 +74,8 @@ async fn rig_over(writable: bool) -> Rig {
         ..DriveConfig::new(bus.scratch().join("cache/one"))
     };
     let files = match writable {
-        true => Drive::open_writable(config, listing.clone(), source.clone(), sink.clone()),
-        false => Drive::open(config, listing.clone(), source.clone()),
+        true => Drive::open_writable(config, listing.clone(), source.clone(), sink.clone()).await,
+        false => Drive::open(config, listing.clone(), source.clone()).await,
     }
     .expect("drive");
     let drive = Arc::new(LiveDrive::new(

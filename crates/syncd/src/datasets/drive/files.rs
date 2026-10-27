@@ -380,19 +380,21 @@ impl DriveSet {
         let journal = super::journal_path(paths, account);
         let into = not_uploaded(&path);
         let to = into.clone();
-        let count = tokio::task::spawn_blocking(move || {
-            let drive = match drive {
-                Some(drive) => drive,
-                None => {
-                    let listing = super::DriveJournal::open(&journal).map_err(|e| e.to_string())?;
-                    Drive::open(DriveConfig::new(cache), Arc::new(listing), Arc::new(Away))
-                        .map_err(|e| e.to_string())?
-                }
-            };
-            drive.keep_unsent(&to).map_err(|e| e.to_string())
-        })
-        .await
-        .map_err(|why| why.to_string())??;
+        // Opened here, not in the blocking task: opening waits for the cache's lock on the
+        // runtime, yielding to it.
+        let drive = match drive {
+            Some(drive) => drive,
+            None => {
+                let listing = super::DriveJournal::open(&journal).map_err(|e| e.to_string())?;
+                Drive::open(DriveConfig::new(cache), Arc::new(listing), Arc::new(Away))
+                    .await
+                    .map_err(|e| e.to_string())?
+            }
+        };
+        let count =
+            tokio::task::spawn_blocking(move || drive.keep_unsent(&to).map_err(|e| e.to_string()))
+                .await
+                .map_err(|why| why.to_string())??;
         Ok(vec![Kept { count, path: into }])
     }
 
@@ -525,6 +527,7 @@ mod tests {
             listing.clone(),
             source.clone(),
         )
+        .await
         .expect("drive");
         let a = NodeId::Remote(RemoteId("a".into()));
         drive.open_file(&a).expect("open");
@@ -563,6 +566,7 @@ mod tests {
             listing.clone(),
             source.clone(),
         )
+        .await
         .expect("drive");
         let live = Arc::new(LiveDrive::new(
             "one".into(),
@@ -608,6 +612,7 @@ mod tests {
             source.clone(),
             sink.clone(),
         )
+        .await
         .expect("drive");
         let folder = dir.join("Cloud").join("OneDrive");
         let live = Arc::new(LiveDrive::new(
@@ -705,6 +710,7 @@ mod tests {
         ));
         let drive =
             Drive::open_writable(DriveConfig::new(dir.join("cache")), listing, source, sink)
+                .await
                 .expect("drive");
         drive.set_paused(true);
         let (_, handle) = drive.create(&NodeId::Top, "new.txt").expect("create");
@@ -771,6 +777,7 @@ mod tests {
                 source,
                 sink,
             )
+            .await
             .expect("drive");
             drive.set_paused(true);
             let (_, handle) = drive.create(&NodeId::Top, "offline.txt").expect("create");
