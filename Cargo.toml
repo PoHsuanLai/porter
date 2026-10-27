@@ -5,7 +5,6 @@ members = [
   "crates/porter-fs",
   "crates/quickxorhash",
   "crates/keyring-chunked",
-  "crates/prov",
   "crates/porter-provider",
   "crates/porter-secrets",
   "crates/porter-sync",
@@ -60,7 +59,6 @@ porter-core     = { path = "crates/porter-core" }
 porter-fs        = { path = "crates/porter-fs" }
 quickxorhash    = { path = "crates/quickxorhash" }
 keyring-chunked = { path = "crates/keyring-chunked" }
-prov            = { path = "crates/prov" }
 porter-provider = { path = "crates/porter-provider" }
 porter-secrets  = { path = "crates/porter-secrets" }
 porter-sync     = { path = "crates/porter-sync" }

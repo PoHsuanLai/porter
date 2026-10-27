@@ -21,7 +21,6 @@ EFFECTS="zbus zvariant tokio reqwest hyper ureq oo7 keyring secret-service inter
 RULES=(
   "porter-core: $EFFECTS toml"
   "porter-fs: $EFFECTS"
-  "prov: $EFFECTS"
   "porter-provider: $EFFECTS"
   "porter-secrets: $EFFECTS"
   "porter-sync: $EFFECTS"
@@ -258,7 +257,6 @@ EDGES=(
   "porter-fs:"
   "quickxorhash:"
   "keyring-chunked:"
-  "prov: porter-core"
   "porter-provider: porter-core"
   "porter-secrets: keyring-chunked porter-core porter-fs"
   "porter-sync: porter-core"
