@@ -3,7 +3,6 @@
 mod fake_model;
 mod fake_session;
 mod frames;
-mod link_hello;
 mod rig_amendment;
 mod round_trip;
 

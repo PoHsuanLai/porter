@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # The portable core (quire design/36 section 1, rule 3 and section 4): everything except the
 # desktop itself builds without the desktop. Each core below must `cargo check` with the
-# features named, and its normal dependency tree must reach no D-Bus (zbus, zvariant). The two
-# porter-client builds an accounts-only consumer uses (`default-features = false`, with and
-# without `socket`) must also reach no inference: no porter-infer, and so no stoker.
+# features named, and its normal dependency tree must reach no D-Bus (zbus, zvariant). The
+# porter-client build an accounts-only consumer uses (no features) must also reach no inference:
+# no porter-infer, and so no stoker.
 #
 # Called from check-boundary.sh, which the lane gate runs. Output says each check and each
 # tree; the exit status is the verdict.
@@ -49,8 +49,6 @@ check() {
 }
 
 check "porter-client --no-default-features" porter-client "$BUS|$INFER" --no-default-features
-check "porter-client --no-default-features --features socket" porter-client "$BUS|$INFER" \
-  --no-default-features --features socket
 check "porter-core" porter-core "$BUS"
 check "porter-provider" porter-provider "$BUS"
 check "porter-secrets --no-default-features" porter-secrets "$BUS" --no-default-features

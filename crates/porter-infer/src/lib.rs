@@ -76,7 +76,7 @@ pub use ids::{
     ToolCallId, ToolName, Traceparent,
 };
 pub use model::{ChatSink, Model, ModelCard, TurnError, answer};
-pub use open::{LinkHello, OpenFrame, OpenOptions};
+pub use open::OpenOptions;
 pub use pick::{
     AutoEvict, AutoMode, AutoPolicy, Declined, DeclinedBecause, Door, EngineLoad, Pick,
     PickCandidate, PickPolicy, PickRefusal, Picked, Sharing, ShowReason, SwapCost, Why, pick,

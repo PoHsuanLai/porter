@@ -1,5 +1,5 @@
-//! The one protocol with two carriers (design/31 §4.3): these values travel as D-Bus
-//! arguments (porter-dbus) and as frames on the latchkey socket.
+//! The one protocol (design/31 §4.3): these values travel as D-Bus arguments (porter-dbus) and,
+//! for a session, as frames on the socket `Inference1.Open` returns.
 
 mod frame;
 mod reply;

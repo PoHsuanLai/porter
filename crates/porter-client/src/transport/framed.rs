@@ -1,28 +1,18 @@
 //! A Unix stream socket whose frames are `porter_core::wire` envelopes (a 4-byte length, then
-//! JSON): a connection to the latchkey agent's socket, and with feature `infer` the fd
-//! `Inference1.Open` returns. The accountd calls (a request frame out, a reply frame back, a
-//! relay's descriptor riding on it) need nothing more; a session (feature `infer`) writes
-//! `ClientFrame`s and reads `InferEvent`s, a memfd riding on the frame that names it as
-//! SCM_RIGHTS.
+//! JSON): the fd `Inference1.Open` returns. A session writes `ClientFrame`s and reads
+//! `InferEvent`s, a memfd riding on the frame that names it as SCM_RIGHTS.
 
 use crate::error::TransportError;
 use porter_core::wire::{FrameRead, decode_frame, encode_frame};
-#[cfg(feature = "socket")]
-use rustix::net::{RecvAncillaryBuffer, RecvAncillaryMessage, RecvFlags, recvmsg};
 use std::mem::MaybeUninit;
 use std::os::fd::OwnedFd;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, Interest};
 use tokio::net::UnixStream;
 
-#[cfg(feature = "infer")]
 use porter_infer::{ClientFrame, InferEvent, InferSession, SessionError};
-#[cfg(feature = "infer")]
 use rustix::net::{SendAncillaryBuffer, SendAncillaryMessage, SendFlags, sendmsg};
-#[cfg(feature = "infer")]
 use std::io::IoSlice;
-#[cfg(feature = "infer")]
 use std::os::fd::AsFd;
-#[cfg(all(feature = "dbus", feature = "infer"))]
 use std::os::unix::net::UnixStream as StdStream;
 
 /// The most descriptors one frame may carry (a computer-use step names one frame; a chat turn
@@ -39,36 +29,16 @@ pub struct FramedSession {
 
 impl FramedSession {
     /// A session over `fd`, a socket. Needs a tokio runtime.
-    #[cfg(all(feature = "dbus", feature = "infer"))]
     pub(crate) fn over(fd: OwnedFd) -> Result<Self, TransportError> {
         let std_stream = StdStream::from(fd);
         std_stream
             .set_nonblocking(true)
             .and_then(|()| UnixStream::from_std(std_stream))
-            .map(Self::from_stream)
+            .map(|stream| Self {
+                stream,
+                inbox: Vec::new(),
+            })
             .map_err(|e| TransportError::Malformed(format!("not a socket: {e}")))
-    }
-
-    /// A session over a connected stream.
-    pub(crate) fn from_stream(stream: UnixStream) -> Self {
-        Self {
-            stream,
-            inbox: Vec::new(),
-        }
-    }
-
-    /// Writes one frame of any body (the hello, or an accountd call). Only the socket link writes
-    /// a bare body; the bus session's frames go through `InferSession::send`.
-    #[cfg(feature = "socket")]
-    pub(crate) async fn write_body<T: serde::Serialize>(
-        &mut self,
-        body: &T,
-    ) -> Result<(), TransportError> {
-        let bytes = encode_frame(body).map_err(|e| TransportError::Malformed(e.to_string()))?;
-        self.stream
-            .write_all(&bytes)
-            .await
-            .map_err(|_| TransportError::Closed)
     }
 
     /// Reads one frame of any body. Cancel safe: a partial frame stays in the session.
@@ -90,62 +60,9 @@ impl FramedSession {
             }
         }
     }
-
-    /// Reads one frame of any body with the descriptors that rode on the bytes of it (a relay's
-    /// end, on `AccountsReply::Authenticated`). Every descriptor received is returned, in
-    /// order, so the caller can refuse a reply that brings too many or too few. Only the socket
-    /// link's accountd replies carry descriptors this way.
-    #[cfg(feature = "socket")]
-    pub(crate) async fn read_body_with_fds<T: serde::de::DeserializeOwned>(
-        &mut self,
-    ) -> Result<(T, Vec<OwnedFd>), TransportError> {
-        let mut fds = Vec::new();
-        loop {
-            match decode_frame::<T>(&self.inbox) {
-                Ok(FrameRead::Complete(envelope, used)) => {
-                    self.inbox.drain(..used);
-                    return Ok((envelope.body, fds));
-                }
-                Ok(FrameRead::Partial) => {}
-                Err(error) => return Err(TransportError::Malformed(error.to_string())),
-            }
-            let mut chunk = [0u8; 4096];
-            let (read, mut received) = self
-                .stream
-                .async_io(Interest::READABLE, || {
-                    let mut space =
-                        [MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(MAX_ATTACHMENTS))];
-                    let mut control = RecvAncillaryBuffer::new(&mut space);
-                    let message = recvmsg(
-                        &self.stream,
-                        &mut [std::io::IoSliceMut::new(&mut chunk)],
-                        &mut control,
-                        RecvFlags::CMSG_CLOEXEC,
-                    )
-                    .map_err(std::io::Error::from)?;
-                    let received: Vec<OwnedFd> = control
-                        .drain()
-                        .filter_map(|m| match m {
-                            RecvAncillaryMessage::ScmRights(rights) => Some(rights),
-                            _ => None,
-                        })
-                        .flatten()
-                        .collect();
-                    Ok((message.bytes, received))
-                })
-                .await
-                .map_err(|_| TransportError::Closed)?;
-            fds.append(&mut received);
-            if read == 0 {
-                return Err(TransportError::Closed);
-            }
-            self.inbox.extend_from_slice(&chunk[..read]);
-        }
-    }
 }
 
 /// A transport failure as the session's.
-#[cfg(feature = "infer")]
 fn session_error(error: TransportError) -> SessionError {
     match error {
         TransportError::Closed => SessionError::Closed,
@@ -154,7 +71,6 @@ fn session_error(error: TransportError) -> SessionError {
     }
 }
 
-#[cfg(feature = "infer")]
 impl FramedSession {
     /// Writes `frame` with `attachments` (memfds) riding on it as SCM_RIGHTS. A frame names
     /// one by its index in `attachments` (`ImageSource::Attached`), and exactly as many must be
@@ -205,7 +121,6 @@ impl FramedSession {
     }
 }
 
-#[cfg(feature = "infer")]
 impl InferSession for FramedSession {
     async fn send(&mut self, frame: ClientFrame) -> Result<(), SessionError> {
         self.send_with(frame, &[]).await

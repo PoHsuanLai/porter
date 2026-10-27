@@ -1,10 +1,15 @@
 //! `Accounts`: the app's handle on porter.
 
 use crate::authenticated::{AuthenticatedStream, Relayed};
+#[cfg(feature = "dbus")]
 use crate::env::{ClientEnv, LinkChoice};
-use crate::error::{ClientError, TransportError};
+use crate::error::ClientError;
+#[cfg(feature = "dbus")]
+use crate::error::TransportError;
 use crate::found::{ConsentOffer, Found, found};
-use crate::transport::{AnyTransport, Transport};
+#[cfg(feature = "dbus")]
+use crate::transport::AnyTransport;
+use crate::transport::Transport;
 #[cfg(feature = "infer")]
 use porter_core::Tier;
 use porter_core::consent::{Grant, Usage};
@@ -25,13 +30,12 @@ pub struct Accounts<T> {
     transport: T,
 }
 
+#[cfg(feature = "dbus")]
 impl Accounts<AnyTransport> {
-    /// Connects over the first reachable link in `env`, in order (D-Bus on the desktop, the
-    /// latchkey socket elsewhere). A D-Bus link is reachable when the session bus is: the
-    /// daemons are found, and started by bus activation, at the first call, so a machine with
-    /// inferd and no accountd still connects. A socket link is reachable when the agent accepts
-    /// a connection. Without the `dbus` feature a D-Bus link is skipped, and without `socket` a
-    /// socket link is; no reachable link is `TransportError::Unreachable`.
+    /// Connects over the first reachable link in `env`, in order. A D-Bus link is reachable when
+    /// the session bus is: the daemons are found, and started by bus activation, at the first
+    /// call, so a machine with inferd and no accountd still connects. No reachable link is
+    /// `TransportError::Unreachable`.
     pub async fn connect(env: &ClientEnv) -> Result<Self, ClientError> {
         for link in &env.links {
             if let Some(transport) = reach(link).await {
@@ -64,32 +68,24 @@ impl Accounts<crate::transport::DbusTransport> {
 
 #[cfg(feature = "dbus")]
 impl Accounts<AnyTransport> {
-    /// [`Accounts::watch_guests`] over whichever link was found: a link that is not the session
-    /// bus has no guests to watch, so it is `TransportError::Unsupported`.
+    /// [`Accounts::watch_guests`] over the link that was found.
     pub async fn watch_guests(&self) -> Result<crate::GuestChanges, ClientError> {
         match &self.transport {
             AnyTransport::Dbus(link) => {
                 Ok(crate::GuestChanges::watch(link.connection(), link.inference()).await?)
             }
-            _ => Err(TransportError::Unsupported.into()),
         }
     }
 }
 
 /// The transport for one link, if it is reachable.
+#[cfg(feature = "dbus")]
 async fn reach(link: &LinkChoice) -> Option<AnyTransport> {
     match link {
-        #[cfg(feature = "dbus")]
         LinkChoice::Dbus => crate::transport::DbusTransport::session()
             .await
             .ok()
             .map(AnyTransport::Dbus),
-        #[cfg(not(feature = "dbus"))]
-        LinkChoice::Dbus => None,
-        LinkChoice::Socket(agent) => {
-            let link = crate::transport::SocketTransport::at(agent.clone());
-            link.reachable().await.then_some(AnyTransport::Socket(link))
-        }
     }
 }
 

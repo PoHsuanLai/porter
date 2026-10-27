@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### Dead API, no-op migrations, the one-batch shims and the socket carrier are deleted
+
+- porter-oauth: the device-code flow, `mint_key`, `openrouter_auth_url`, `clients_toml`,
+  `MovedEndpoints` and `ClientRegistry::moved_endpoints` are gone, with the fake issuer's device
+  grant. porter-families has no `openrouter` feature or skeleton family. `AuditEvent::Adopted`
+  and `porter_sync::DatasetKind::{Settings, Keychain}` are gone; an `audit.jsonl` line written
+  for `adopted` is skipped on read, like any line of a kind this build does not know.
+- The registry's ten version-only migrations are gone: a vocabulary that changed no stored
+  shape has no row in the table, and a document from any stored version still reads.
+- Every re-export "kept for one batch" is deleted, and each caller names the real path:
+  `porter_core::clock::{Clock, FixedClock, SystemClock}` replace `porter_service::Clock`,
+  `porter_fake::FixedClock` and `syncd::clock`'s; porter-dbus's `names`, `callers` and `sheet`
+  items are named through those modules, not at the crate root; `porter_http::{Method, Status,
+  HeaderName, HeaderValue}`, `porter_dav`'s dav-proto types, `storage_webdav`, `storage_graph`
+  and `storage_gdrive`'s `Dial`, `StreamHttp` and `StreamLimits`, `porter_tailnet::{GuestRow,
+  RowState}`, porter-rig's `secrets_service` and `storage_fake`, accountd's and syncd's
+  `proc_root`, and porter-fake's `infer` feature with its `FakeModel`, `FakeInferSession`,
+  `Script` and `ScriptStep` (use `porter_infer::testing`) are gone.
+- porter-client has no default features: name `infer`, `in-process`, `dbus` and the rest as
+  needed. The latchkey socket carrier is deleted: `SocketTransport`, `SocketSession`,
+  `SocketAgent`, `StartAgent`, `Place`, `START_WAIT`, `LinkChoice::Socket`, the `socket` and
+  `framed` features and the `latchkey` dependency, with porter-infer's `LinkHello` and
+  `OpenFrame`. `AnyTransport` and `AnySession` are D-Bus only and exist with feature `dbus`.
+
 ### porter-http speaks the `http` crate's request and response
 
 - `HttpRequest` and `HttpResponse` are now `http::Request<Vec<u8>>` and `http::Response<Vec<u8>>`

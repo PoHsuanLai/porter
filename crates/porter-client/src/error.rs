@@ -42,7 +42,7 @@ pub enum TransportError {
     #[error("malformed reply: {0}")]
     Malformed(String),
     /// This link does not carry that call: the computers and the guests are inferd's, over the
-    /// session bus, and a link with no inferd (the socket, the app hosting the core itself) has
+    /// session bus, and a link with no inferd (the app hosting the core itself) has
     /// neither.
     #[error("this link does not carry that call")]
     Unsupported,

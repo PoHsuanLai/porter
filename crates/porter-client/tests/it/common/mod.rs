@@ -1,12 +1,10 @@
-//! Shared by the bus and socket tests: a private bus, a fake inferd and the real accountd on it,
-//! the real session server over scripted seams, and a hand-written agent on a socket. What
-//! speaks inference is behind the client's `infer` feature, as it is in the client.
+//! Shared by the bus tests: a private bus, a fake inferd and the real accountd on it, and the real
+//! session server over scripted seams. What speaks inference is behind the client's `infer`
+//! feature, as it is in the client.
 #![allow(dead_code)]
 
 #[cfg(feature = "dbus")]
 pub mod accountd;
-#[cfg(feature = "infer")]
-pub mod agent;
 #[cfg(feature = "dbus")]
 pub mod bus;
 #[cfg(feature = "dbus")]

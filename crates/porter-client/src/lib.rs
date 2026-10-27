@@ -9,7 +9,7 @@
 //! use porter_core::wire::ParentWindow;
 //! use porter_core::{Candidate, DataClass, Need};
 //!
-//! // `accounts` is `Accounts::connect(&env)` (D-Bus or the socket) or `Accounts::over(transport)`.
+//! // `accounts` is `Accounts::connect(&env)` (D-Bus) or `Accounts::over(transport)`.
 //! async fn photos_account<T: Transport>(
 //!     accounts: &Accounts<T>,
 //!     need: &Need,
@@ -25,17 +25,14 @@
 //! }
 //! ```
 //!
-//! Transport-agnostic behind [`Transport`]: D-Bus to accountd (feature `dbus`), the latchkey
-//! socket where D-Bus is absent (feature `socket`), or [`InProcess`] where the app hosts the core
-//! itself (feature `in-process`).
+//! Transport-agnostic behind [`Transport`]: D-Bus to accountd (feature `dbus`), or [`InProcess`]
+//! where the app hosts the core itself (feature `in-process`).
 //!
-//! Features (design/36 §1): the accounts core builds with `--no-default-features`, which reaches
+//! Features (design/36 §1): no feature is on by default, and the accounts core with none reaches
 //! no zbus, no porter-infer and no stoker. Inference (sessions, `prepare`, `infer`, `Need::Llm`
-//! paths) is the default feature `infer`; an accounts-only consumer says
-//! `default-features = false, features = ["socket"]`. `InProcess` and the account service it
-//! hosts (porter-service, porter-secrets, porter-provider) are the default feature `in-process`;
-//! a bus-only consumer says `default-features = false, features = ["dbus"]` and reaches none of
-//! them.
+//! paths) is the feature `infer`. `InProcess` and the account service it hosts (porter-service,
+//! porter-secrets, porter-provider) are the feature `in-process`; a bus-only consumer says
+//! `features = ["dbus"]` and reaches none of them.
 //!
 //! Settings' switch "Let my other computers use this computer's models" has a file to install
 //! besides the setting: feature `lending` has `TailnetLending` (`enable`, `disable`, `state`),
@@ -116,7 +113,7 @@ pub use credential::{
 };
 #[cfg(feature = "dbus")]
 pub use destination::Destination;
-pub use env::{ClientEnv, LinkChoice, Place, START_WAIT, SocketAgent, StartAgent};
+pub use env::{ClientEnv, LinkChoice};
 /// The refusal [`ClientError::InferRefused`] carries when there is no `infer` feature: a type with
 /// no values (with the feature it is porter-infer's own).
 #[cfg(not(feature = "infer"))]
@@ -163,12 +160,16 @@ pub use tailnet_lending::{
     INFERD_UNIT, LendingConfig, LendingError, LendingState, SHIPPED_NAME, TailnetLending,
     UnitFailure, UnitManager, UnitName,
 };
-#[cfg(feature = "infer")]
-pub use transport::{AnySession, InProcessSession, SessionHost, SocketSession};
-pub use transport::{AnyTransport, NoBroker, SocketTransport, Transport};
+#[cfg(all(feature = "dbus", feature = "infer"))]
+pub use transport::AnySession;
+#[cfg(feature = "dbus")]
+pub use transport::AnyTransport;
 #[cfg(all(feature = "dbus", feature = "infer"))]
 pub use transport::{DbusSession, MAX_ATTACHMENTS};
 #[cfg(feature = "dbus")]
 pub use transport::{DbusTransport, Rows};
 #[cfg(feature = "in-process")]
 pub use transport::{HostedCore, InProcess};
+#[cfg(feature = "infer")]
+pub use transport::{InProcessSession, SessionHost};
+pub use transport::{NoBroker, Transport};

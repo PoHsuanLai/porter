@@ -1,4 +1,4 @@
-//! Framing for the socket carrier (design/31 §4.3): a 4-byte big-endian length, then one JSON
+//! Framing for a session socket (design/31 §4.3): a 4-byte big-endian length, then one JSON
 //! envelope carrying the vocabulary version and the body.
 
 use crate::capability::VocabVersion;

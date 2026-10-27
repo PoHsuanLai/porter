@@ -1,6 +1,6 @@
 [package]
 name = "porter-client"
-description = "The app-facing API: find an account by capability, ask for consent, get tokens and inference, over D-Bus, the latchkey socket, or in process."
+description = "The app-facing API: find an account by capability, ask for consent, get tokens and inference, over D-Bus or in process."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -25,7 +25,6 @@ porter-dbus = { workspace = true, optional = true }
 porter-fs = { workspace = true, optional = true }
 # `relays`: `PorterRelays`, the relay host that runs `porter_proxy::relay` over rustls.
 porter-proxy = { workspace = true, optional = true, features = ["io", "tls"] }
-latchkey = { workspace = true, optional = true }
 rustix = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
@@ -41,7 +40,6 @@ porter-provider = { workspace = true }
 porter-secrets = { workspace = true }
 porter-service = { workspace = true }
 ds-settings = { workspace = true }
-latchkey = { workspace = true }
 cua-action = { workspace = true }
 porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }
@@ -52,7 +50,7 @@ porter-http = { workspace = true, features = ["hyper"] }
 tokio = { workspace = true }
 zbus = { workspace = true }
 
-# The daemons the bus and socket tests start (Linux only, as their transports are). They bring
+# The daemons the bus tests start (Linux only, as the transport is). They bring
 # peephole (who is calling, through pidfds) and the Secret Service store, which build only there;
 # the portable build (macOS, Windows) tests the pure and in-process paths without them.
 [target.'cfg(target_os = "linux")'.dev-dependencies]
@@ -90,23 +88,13 @@ lending = ["dep:porter-fs"]
 # own `AccountService` (`InProcess::with_relays`), on its tokio runtime, over rustls. Off by
 # default: it brings porter-proxy with TLS and a runtime.
 relays = ["dep:porter-proxy", "dep:tokio"]
-# Frames over a Unix stream socket with descriptors riding on them (what both carriers below
-# share). Pulls in the runtime, so it is off by default: the pure build reaches none.
-framed = ["dep:rustix", "dep:serde", "dep:tokio"]
-# The D-Bus transport (Linux, the desktop's accountd and inferd).
-dbus = ["framed", "dep:porter-dbus", "dep:serde_json", "dep:zbus"]
-# The latchkey socket carrier (other desktops, macOS; a named pipe on Windows is not built):
-# the agent's address, lock and start come from latchkey. Without it `SocketTransport` finds
-# nobody.
-socket = ["framed", "dep:latchkey"]
+# The D-Bus transport (Linux, the desktop's accountd and inferd). It reads the session `Open`
+# returns as frames over a Unix stream socket with descriptors riding on them, so it pulls in the
+# runtime: the pure build reaches none.
+dbus = ["dep:rustix", "dep:serde", "dep:tokio", "dep:porter-dbus", "dep:serde_json", "dep:zbus"]
 
 [lints]
 workspace = true
-
-# Its own test executable: it builds without porter-infer (`--no-default-features --features
-# socket`) and starts that executable again as a fake child, by test name.
-[[test]]
-name = "socket_accounts"
 
 # Lists the guests and answers one, for Settings and the shell to copy.
 [[example]]

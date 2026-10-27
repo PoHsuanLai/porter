@@ -4,8 +4,8 @@ use crate::asker::Asker;
 use crate::choice::ModelRef;
 use crate::ids::Traceparent;
 use crate::place::PlaceId;
+use porter_core::ModelId;
 use porter_core::consent::Usage;
-use porter_core::{DataClass, ModelId, Need, Tier};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -101,44 +101,4 @@ impl OpenOptions {
     pub fn usage_or_default(&self) -> Usage {
         self.usage.unwrap_or(Usage::Interactive)
     }
-}
-
-/// What `Inference1.Open` takes, as a frame: the session a connection on the latchkey socket
-/// asks for. On the bus these are the method's arguments.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[non_exhaustive]
-pub struct OpenFrame {
-    /// The need the session is for.
-    pub need: Need,
-    /// The data class of everything on it.
-    pub class: DataClass,
-    /// The tier asked for.
-    pub tier: Tier,
-    /// The options of the call.
-    pub options: OpenOptions,
-}
-
-impl OpenFrame {
-    /// A session for `need`, carrying data of `class`, at `tier`, with these options.
-    pub fn new(need: Need, class: DataClass, tier: Tier, options: OpenOptions) -> Self {
-        Self {
-            need,
-            class,
-            tier,
-            options,
-        }
-    }
-}
-
-/// The first frame of a connection on the latchkey socket that is a session rather than one
-/// accountd call (a bare `AccountsRequest` frame, answered by one `AccountsReply` frame). It is
-/// tagged `kind`/`v` like `AccountsRequest`, with a kind that request never has, so the agent
-/// reads the first frame once and knows which it is. After it the connection carries
-/// `ClientFrame`s one way and `InferEvent`s the other, as the bus's `Open` fd does; a refusal is
-/// the first event.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", content = "v", rename_all = "snake_case")]
-pub enum LinkHello {
-    /// Open a session.
-    Open(OpenFrame),
 }

@@ -7,7 +7,7 @@ use crate::common;
 
 use common::bus::PrivateBus;
 use common::inferd::{Behaviour, FakeInferd};
-use porter_client::{Accounts, ClientEnv, ClientError, LinkChoice, SocketAgent, TransportError};
+use porter_client::{Accounts, ClientEnv, ClientError, LinkChoice, TransportError};
 use porter_core::consent::Usage;
 use porter_core::need::LlmNeed;
 use porter_core::{AccountId, DataClass, ModelId, Need, Tier, Tokens};
@@ -16,7 +16,6 @@ use porter_infer::{
     ChatControl, ChatReply, ChatRequest, InferEvent, InferReply, InferRequest, RequestKind,
     ServedBy, StopReason, TokenUsage, ToolParallelism,
 };
-use std::path::PathBuf;
 
 const CHILD_MARKER: &str = "PORTER_CLIENT_CONNECT_CHILD";
 const CHILD_TEST: &str = "connect::child_connects_over_the_session_bus_it_is_given";
@@ -49,27 +48,11 @@ fn request() -> InferRequest {
     )
 }
 
-fn socket_link() -> LinkChoice {
-    LinkChoice::Socket(SocketAgent::porter().in_runtime_dir(PathBuf::from("/nonexistent/runtime")))
-}
-
 #[tokio::test]
 async fn no_links_is_unreachable() {
     let got = Accounts::connect(&ClientEnv { links: vec![] })
         .await
         .map(|_| ());
-    assert_eq!(
-        got,
-        Err(ClientError::Transport(TransportError::Unreachable))
-    );
-}
-
-#[tokio::test]
-async fn a_socket_link_alone_is_unreachable_until_its_carrier_is_built() {
-    let env = ClientEnv {
-        links: vec![socket_link()],
-    };
-    let got = Accounts::connect(&env).await.map(|_| ());
     assert_eq!(
         got,
         Err(ClientError::Transport(TransportError::Unreachable))
@@ -84,7 +67,7 @@ async fn child_connects_over_the_session_bus_it_is_given() {
         return;
     }
     let env = ClientEnv {
-        links: vec![socket_link(), LinkChoice::Dbus],
+        links: vec![LinkChoice::Dbus],
     };
     let accounts = Accounts::connect(&env).await.expect("a link is reachable");
     let got = accounts
@@ -94,7 +77,7 @@ async fn child_connects_over_the_session_bus_it_is_given() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn connect_skips_a_dead_link_and_reaches_inferd_over_the_session_bus() {
+async fn connect_reaches_inferd_over_the_session_bus() {
     let bus = PrivateBus::start();
     let (fake, seen) = FakeInferd::new(Behaviour::Scripted(vec![Script {
         kind: RequestKind::Chat,
