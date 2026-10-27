@@ -15,7 +15,7 @@ sha2 = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-porter-fake = { workspace = true }
+test-kit = { workspace = true }
 
 [lints]
 workspace = true

@@ -9,8 +9,8 @@ mod bus;
 use bus::PrivateBus;
 use porter_core::Isolation;
 use porter_dbus::callers::{Caller, CallerRole, CallerTable, Callers, ProcCallers};
-use porter_fake::Scratch;
 use std::path::Path;
+use test_kit::Scratch;
 
 const SLICE: &str = "/user.slice/user-1000.slice/user@1000.service/app.slice";
 

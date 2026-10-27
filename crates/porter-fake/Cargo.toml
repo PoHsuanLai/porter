@@ -15,6 +15,7 @@ porter-secrets = { workspace = true, features = ["testing"] }
 porter-service = { workspace = true }
 
 [dev-dependencies]
+test-kit = { workspace = true }
 tokio = { workspace = true }
 
 [lints]

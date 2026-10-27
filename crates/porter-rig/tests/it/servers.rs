@@ -5,7 +5,6 @@
 use crate::common;
 
 use common::{Proc, eventually};
-use porter_fake::Scratch;
 use porter_fake_servers::browser::split_loopback;
 use porter_fake_servers::http::{Request, Scheme, post_form, send};
 use porter_rig::control::call;
@@ -13,6 +12,7 @@ use porter_rig::planted;
 use porter_rig::rigfile::RigFile;
 use serde_json::Value;
 use std::net::TcpStream;
+use test_kit::Scratch;
 
 fn json(text: &str) -> Value {
     serde_json::from_str(text).expect("JSON")

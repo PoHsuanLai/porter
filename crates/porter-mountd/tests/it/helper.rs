@@ -1,7 +1,6 @@
 //! The helper's checks and the fd it hands back, over a socket pair.
 
 use crate::common::FakeMounts;
-use porter_fake::Scratch;
 use porter_mountd::client;
 use porter_mountd::server::{At, Helper, Refusal};
 use porter_mountd::wire::{self, Access, FolderName, Reply, Request};
@@ -10,6 +9,7 @@ use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
+use test_kit::Scratch;
 
 fn name(text: &str) -> FolderName {
     FolderName::parse(text).expect("name")

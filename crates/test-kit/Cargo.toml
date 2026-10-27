@@ -1,0 +1,12 @@
+[package]
+name = "test-kit"
+description = "Test-only utilities that know nothing of porter: scratch directories, the one wait deadline, and the include guard of a tests/it binary."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

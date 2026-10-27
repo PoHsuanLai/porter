@@ -401,7 +401,7 @@ mod tests {
 
     #[test]
     fn paths_are_read_layered_and_a_missing_file_is_empty() {
-        let dir = porter_fake::Scratch::new("oauth-reg");
+        let dir = test_kit::Scratch::new("oauth-reg");
         let shipped = dir.join("shipped.toml");
         let own = dir.join("own.toml");
         std::fs::write(
@@ -512,7 +512,7 @@ mod tests {
 
     #[test]
     fn a_rows_byo_and_testing_are_read_and_the_persons_row_wins() {
-        let dir = porter_fake::Scratch::new("oauth-traits");
+        let dir = test_kit::Scratch::new("oauth-traits");
         let (shipped, own) = (dir.join("shipped.toml"), dir.join("own.toml"));
         std::fs::write(
             &shipped,

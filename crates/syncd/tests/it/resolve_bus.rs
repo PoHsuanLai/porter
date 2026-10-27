@@ -140,7 +140,7 @@ async fn proxy(connection: &zbus::Connection) -> SyncProxy<'_> {
 }
 
 /// Polls `check` every 20 ms; the limit is idle time (`common::until_alive`): it ends only when the
-/// rig's daemon has done nothing (no cycle begun or ended) for [`porter_fake::GENEROUS`].
+/// rig's daemon has done nothing (no cycle begun or ended) for [`test_kit::GENEROUS`].
 async fn until<F: Future<Output = bool>>(rig: &Rig, what: &str, check: impl FnMut() -> F) {
     common::until_alive(what, || common::pulse(&rig.hub, 0), check).await;
 }

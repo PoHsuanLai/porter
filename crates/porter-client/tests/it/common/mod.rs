@@ -15,9 +15,9 @@ pub mod inferd;
 pub mod served;
 
 /// Waits until `condition` holds (a daemon's task has run); fails the test, naming `what`, when
-/// `porter_fake::GENEROUS` has passed by the clock.
+/// `test_kit::GENEROUS` has passed by the clock.
 pub async fn eventually(what: &str, mut condition: impl FnMut() -> bool) {
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if condition() {
             return;

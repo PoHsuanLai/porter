@@ -31,7 +31,7 @@ async fn a_socket_nobody_listens_on_is_not_running() {
     assert!(api.status().await.is_ok());
     fake.stop();
     // Wait until the aborted server has gone, then ask over its leftover socket.
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while api.status().await.is_ok() {
         if deadline.passed() {
             deadline.fail("the stopped fake to refuse connections");

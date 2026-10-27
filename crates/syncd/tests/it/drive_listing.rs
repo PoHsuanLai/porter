@@ -5,7 +5,6 @@
 
 use porter_core::capability::StorageCap;
 use porter_core::{UnixSeconds, WebUrl};
-use porter_fake::Scratch;
 use porter_fake_servers::{FakeGoogle, FakeGraph};
 use porter_http::http::header::{AUTHORIZATION, HeaderValue};
 use porter_http::http::{Request, Response};
@@ -18,6 +17,7 @@ use porter_sync::{
 use std::future::Future;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use syncd::datasets::drive::{DriveJournal, DriveReplica, Listed, list_once};
+use test_kit::Scratch;
 
 const TOKEN: &str = "ey.fake-access-token";
 const NOW: UnixSeconds = UnixSeconds(1_000);

@@ -302,7 +302,7 @@ async fn a_closed_session_refuses_and_cancels_what_is_in_flight() {
         .close_endpoint(&endpoint.session)
         .await
         .expect("closed");
-    let ended = tokio::time::timeout(porter_fake::GENEROUS, waiting)
+    let ended = tokio::time::timeout(test_kit::GENEROUS, waiting)
         .await
         .expect("the in-flight request ends with the session")
         .expect("task");

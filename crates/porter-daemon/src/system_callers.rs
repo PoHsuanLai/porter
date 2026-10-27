@@ -317,7 +317,7 @@ mod tests {
     #[test]
     fn a_file_is_held_by_a_user_when_only_that_user_or_root_can_change_it_or_its_folders() {
         use std::os::unix::fs::PermissionsExt;
-        let made = porter_fake::Scratch::new("held-by");
+        let made = test_kit::Scratch::new("held-by");
         // The real path: `held_under` looks at the real path's directories.
         let scratch = std::fs::canonicalize(&*made).expect("real path");
         let folder = scratch.join("bin");

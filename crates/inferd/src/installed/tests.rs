@@ -1,7 +1,7 @@
 use super::*;
 use porter_engines::{Arch, Artifact, Backend, Delivery, Record, Row, Scope, seal_of};
-use porter_fake::Scratch;
 use std::os::unix::fs::PermissionsExt;
+use test_kit::Scratch;
 
 static NO_FILES: [Artifact; 0] = [];
 

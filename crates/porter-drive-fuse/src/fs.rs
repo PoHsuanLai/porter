@@ -809,7 +809,7 @@ mod tests {
     use porter_drive::{DriveConfig, words};
     use std::sync::Arc;
 
-    async fn fs(dir: &porter_fake::Scratch) -> (Arc<MemoryListing>, Arc<MemorySource>, DriveFs) {
+    async fn fs(dir: &test_kit::Scratch) -> (Arc<MemoryListing>, Arc<MemorySource>, DriveFs) {
         let listing = Arc::new(MemoryListing::default());
         let source = Arc::new(MemorySource::default());
         let drive = Drive::open(
@@ -828,7 +828,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_tree_reads_by_shown_names_with_stable_inodes_and_the_drives_sizes() {
-        let dir = porter_fake::Scratch::new("drive-fuse");
+        let dir = test_kit::Scratch::new("drive-fuse");
         let (listing, source, fs) = fs(&dir).await;
         listing.folder("f", None, "Work");
         listing.file("a", Some("f"), "a/b.txt", 10, "1");
@@ -881,7 +881,7 @@ mod tests {
 
     #[tokio::test]
     async fn offline_a_read_is_enetdown_and_the_item_says_why() {
-        let dir = porter_fake::Scratch::new("drive-fuse");
+        let dir = test_kit::Scratch::new("drive-fuse");
         let (listing, source, fs) = fs(&dir).await;
         listing.file("a", None, "a.txt", 10, "1");
         source.set_offline(true);
@@ -905,7 +905,7 @@ mod tests {
         fs: DriveFs,
     }
 
-    async fn writable(dir: &porter_fake::Scratch) -> Writable {
+    async fn writable(dir: &test_kit::Scratch) -> Writable {
         let listing = Arc::new(MemoryListing::default());
         let source = Arc::new(MemorySource::default());
         let sink = Arc::new(MemorySink::new(listing.clone(), source.clone(), 4));
@@ -931,7 +931,7 @@ mod tests {
     }
 
     async fn sent(sink: &MemorySink, n: usize) -> Vec<Took> {
-        let deadline = porter_fake::Deadline::generous();
+        let deadline = test_kit::Deadline::generous();
         while sink.took().len() < n {
             if deadline.passed() {
                 deadline.fail(&format!("{n} changes sent"));
@@ -943,7 +943,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_file_made_written_and_closed_is_sent_through_the_core() {
-        let dir = porter_fake::Scratch::new("drive-fuse-write");
+        let dir = test_kit::Scratch::new("drive-fuse-write");
         let w = writable(&dir).await;
         let fs = &w.fs;
         let (attr, fh) = fs
@@ -968,7 +968,7 @@ mod tests {
 
     #[tokio::test]
     async fn what_a_drive_cannot_hold_is_refused_with_its_errno() {
-        let dir = porter_fake::Scratch::new("drive-fuse-refuse");
+        let dir = test_kit::Scratch::new("drive-fuse-refuse");
         let w = writable(&dir).await;
         let fs = &w.fs;
         w.sink.names(|name| !name.contains(':'));
@@ -1009,7 +1009,7 @@ mod tests {
 
     #[tokio::test]
     async fn saving_by_rename_truncating_and_removing_go_through_the_core() {
-        let dir = porter_fake::Scratch::new("drive-fuse-save");
+        let dir = test_kit::Scratch::new("drive-fuse-save");
         let w = writable(&dir).await;
         let fs = &w.fs;
         w.listing.folder("f", None, "Work");

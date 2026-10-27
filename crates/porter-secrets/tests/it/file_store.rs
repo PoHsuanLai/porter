@@ -3,10 +3,10 @@
 #![cfg(unix)]
 
 use porter_core::{AccountId, Credential, SecretKey, SecretPurpose, SecretText};
-use porter_fake::Scratch;
 use porter_secrets::{FileSecrets, FileSecretsError, Namespace, PutOutcome, Secrets, SecretsError};
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
+use test_kit::Scratch;
 
 fn key(account: &str) -> SecretKey {
     SecretKey {

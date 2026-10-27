@@ -161,7 +161,7 @@ async fn a_two_sided_edit_is_a_conflict_signal_and_keep_remote_or_keep_local_set
         sync.resume(FILES_DATASET).await.expect("resume");
 
         let signal = tokio::time::timeout(
-            porter_fake::GENEROUS,
+            test_kit::GENEROUS,
             std::future::poll_fn(|cx| Pin::new(&mut conflicts).poll_next(cx)),
         )
         .await

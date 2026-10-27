@@ -34,6 +34,7 @@ zbus = { workspace = true, optional = true }
 zeroize = { workspace = true }
 
 [dev-dependencies]
+test-kit = { workspace = true }
 # The tests name the service, the secrets and the provider catalogue whether or not `in-process`
 # is on; the feature gates only the crate's own `InProcess` and its dependencies.
 porter-provider = { workspace = true }

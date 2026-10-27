@@ -34,6 +34,7 @@ RULES=(
   "porter-client: $EFFECTS"
   "porter-sheets: reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
   "porter-fake: $EFFECTS"
+  "test-kit: $EFFECTS"
   "porter-http: $EFFECTS"
   "porter-proxy: $EFFECTS"
   "porter-oauth: $EFFECTS"
@@ -288,7 +289,8 @@ EDGES=(
   "porter-sheets: porter-core porter-dbus porter-provider porter-service"
   "porter-client: porter-bridge porter-core porter-dbus porter-fs porter-infer porter-provider porter-proxy porter-secrets porter-service porter-turns model-http model-openai-compat model-provider model-wire"
   "porter-fake: porter-core porter-provider porter-secrets porter-service"
-  "porter-fake-servers: dav-proto porter-core porter-discover porter-fake porter-provider quickxorhash"
+  "test-kit:"
+  "porter-fake-servers: dav-proto porter-core porter-discover porter-fake porter-provider quickxorhash test-kit"
   "porter-http: porter-core"
   "porter-http-reqwest: porter-core porter-http"
   "porter-http-relay: porter-client porter-core porter-http"
@@ -310,7 +312,7 @@ EDGES=(
   "porter-drive-fuse: porter-drive porter-mountd"
   "porter-mountd:"
   "syncd: dav-proto ds-settings porter-client porter-core porter-daemon porter-dav porter-dbus porter-drive porter-drive-fuse porter-families porter-fs porter-http porter-http-relay porter-provider porter-secrets porter-service porter-sheets porter-store porter-sync storage-gdrive storage-graph storage-webdav windows-zones"
-  "porter-rig: fake-secret-service porter-client porter-core porter-dbus porter-fake porter-fake-servers porter-infer"
+  "porter-rig: fake-secret-service porter-client porter-core porter-dbus porter-fake porter-fake-servers porter-infer test-kit"
   "fake-secret-service:"
   "syncd-fakes: porter-dbus porter-drive"
   "inferd: ds-settings porter-bridge porter-engines porter-families porter-secrets porter-service porter-sheets porter-store porter-router porter-turns porter-core porter-daemon porter-dbus porter-discover porter-fs porter-http porter-http-reqwest porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
@@ -372,6 +374,19 @@ done
 # Every workspace member has a row above, so a new crate cannot slip in unchecked.
 for member in $(sed -n 's#^  "crates/\(.*\)",$#\1#p' Cargo.toml); do
   printf '%s\n' "${EDGES[@]}" | grep -q "^$member:" || { echo "ERROR: $member has no row in EDGES"; fail=1; }
+done
+
+# porter-fake is built over porter-core, porter-provider, porter-secrets and porter-service, so none
+# of them (nor anything below them) may take it, even as a dev dependency: a dev-dependency
+# cycle makes the crate's own tests compile it twice. Their tests use `test-kit`, which knows
+# nothing of porter; tests that need the fakes live in porter-fake's own tests.
+for below in porter-core porter-provider porter-secrets porter-service; do
+  if cargo tree -p "$below" -e normal,build,dev --prefix none 2>/dev/null | grep -qx 'porter-fake v.*'; then
+    echo "LEAK: $below reaches porter-fake, which depends on it (a dev-dependency cycle)"
+    fail=1
+  else
+    echo "no cycle: $below does not reach porter-fake"
+  fi
 done
 
 # A test-only crate is never a dependency (normal, build or dev) of another crate of ours:

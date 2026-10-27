@@ -184,7 +184,7 @@ async fn inferd_ending_a_credential_reaches_the_launcher_as_a_revocation() {
         .await;
 
     let told = tokio::time::timeout(
-        porter_fake::GENEROUS,
+        test_kit::GENEROUS,
         std::future::poll_fn(|cx| std::pin::Pin::new(&mut revocations).poll_next(cx)),
     )
     .await

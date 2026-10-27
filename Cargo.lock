@@ -27,6 +27,7 @@ dependencies = [
  "rustix",
  "serde",
  "serde_json",
+ "test-kit",
  "thiserror",
  "tokio",
  "toml",
@@ -1566,6 +1567,7 @@ dependencies = [
  "speech-host-client",
  "speech-provider",
  "subtle",
+ "test-kit",
  "thiserror",
  "tokio",
  "toml",
@@ -2457,6 +2459,7 @@ dependencies = [
  "rustix",
  "serde",
  "serde_json",
+ "test-kit",
  "thiserror",
  "tokio",
  "zbus",
@@ -2470,10 +2473,10 @@ dependencies = [
  "chrono",
  "peephole-core",
  "percent-encoding",
- "porter-fake",
  "proptest",
  "serde",
  "serde_json",
+ "test-kit",
  "thiserror",
  "zeroize",
 ]
@@ -2483,7 +2486,7 @@ name = "porter-daemon"
 version = "0.1.0"
 dependencies = [
  "notify",
- "porter-fake",
+ "test-kit",
  "thiserror",
 ]
 
@@ -2493,9 +2496,9 @@ version = "0.1.0"
 dependencies = [
  "dav-proto",
  "porter-core",
- "porter-fake",
  "porter-http",
  "roxmltree",
+ "test-kit",
 ]
 
 [[package]]
@@ -2506,10 +2509,10 @@ dependencies = [
  "peephole-bus",
  "peephole-core",
  "porter-core",
- "porter-fake",
  "proptest",
  "serde",
  "serde_json",
+ "test-kit",
  "thiserror",
  "tokio",
  "toml",
@@ -2540,7 +2543,6 @@ dependencies = [
  "md-5",
  "porter-core",
  "porter-drive",
- "porter-fake",
  "porter-fs",
  "porter-sync",
  "quickxorhash",
@@ -2549,6 +2551,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "test-kit",
  "thiserror",
  "tokio",
 ]
@@ -2559,9 +2562,9 @@ version = "0.1.0"
 dependencies = [
  "fuser",
  "porter-drive",
- "porter-fake",
  "porter-mountd",
  "rustix",
+ "test-kit",
  "thiserror",
  "tokio",
 ]
@@ -2570,10 +2573,10 @@ dependencies = [
 name = "porter-engines"
 version = "0.1.0"
 dependencies = [
- "porter-fake",
  "serde",
  "serde_json",
  "sha2",
+ "test-kit",
  "thiserror",
 ]
 
@@ -2584,13 +2587,13 @@ dependencies = [
  "flate2",
  "porter-core",
  "porter-engines",
- "porter-fake",
  "porter-fake-servers",
  "porter-http",
  "porter-http-reqwest",
  "rustix",
  "sha2",
  "tar",
+ "test-kit",
  "thiserror",
  "tokio",
 ]
@@ -2603,6 +2606,7 @@ dependencies = [
  "porter-provider",
  "porter-secrets",
  "porter-service",
+ "test-kit",
  "tokio",
 ]
 
@@ -2625,6 +2629,7 @@ dependencies = [
  "rustls-pki-types",
  "serde_json",
  "sha2",
+ "test-kit",
  "tokio",
  "tokio-rustls",
 ]
@@ -2650,6 +2655,7 @@ dependencies = [
  "porter-tailscale",
  "serde",
  "serde_json",
+ "test-kit",
  "thiserror",
  "tokio",
 ]
@@ -2677,8 +2683,8 @@ dependencies = [
  "hyper-util",
  "porter-client",
  "porter-core",
- "porter-fake",
  "porter-http",
+ "test-kit",
  "tokio",
 ]
 
@@ -2687,11 +2693,11 @@ name = "porter-http-reqwest"
 version = "0.1.0"
 dependencies = [
  "porter-core",
- "porter-fake",
  "porter-fake-servers",
  "porter-http",
  "reqwest",
  "rustls",
+ "test-kit",
  "tokio",
 ]
 
@@ -2707,6 +2713,7 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
+ "test-kit",
  "thiserror",
  "tokio",
 ]
@@ -2716,8 +2723,8 @@ name = "porter-mountd"
 version = "0.1.0"
 dependencies = [
  "listenfd",
- "porter-fake",
  "rustix",
+ "test-kit",
 ]
 
 [[package]]
@@ -2728,7 +2735,6 @@ dependencies = [
  "form_urlencoded",
  "httparse",
  "porter-core",
- "porter-fake",
  "porter-fake-servers",
  "porter-http",
  "porter-provider",
@@ -2736,6 +2742,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "subtle",
+ "test-kit",
  "thiserror",
  "tokio",
  "toml",
@@ -2746,8 +2753,8 @@ name = "porter-provider"
 version = "0.1.0"
 dependencies = [
  "porter-core",
- "porter-fake",
  "serde",
+ "test-kit",
  "thiserror",
  "toml",
 ]
@@ -2764,6 +2771,7 @@ dependencies = [
  "porter-proxy",
  "rustls-native-certs",
  "rustls-pki-types",
+ "test-kit",
  "tokio",
  "tokio-rustls",
  "webpki-roots",
@@ -2790,6 +2798,7 @@ dependencies = [
  "serde",
  "serde_json",
  "syncd",
+ "test-kit",
  "tokio",
  "zbus",
 ]
@@ -2823,11 +2832,11 @@ dependencies = [
  "keyring-core",
  "oo7",
  "porter-core",
- "porter-fake",
  "porter-fs",
  "porter-secrets",
  "rustix",
  "serde_json",
+ "test-kit",
  "thiserror",
  "tokio",
  "windows-native-keyring-store",
@@ -2839,13 +2848,11 @@ name = "porter-service"
 version = "0.1.0"
 dependencies = [
  "porter-core",
- "porter-fake",
  "porter-provider",
  "porter-secrets",
  "serde",
  "serde_json",
  "thiserror",
- "tokio",
 ]
 
 [[package]]
@@ -2854,10 +2861,10 @@ version = "0.1.0"
 dependencies = [
  "porter-core",
  "porter-dbus",
- "porter-fake",
  "porter-provider",
  "porter-service",
  "serde_json",
+ "test-kit",
  "tokio",
  "zbus",
 ]
@@ -2878,10 +2885,10 @@ name = "porter-sync"
 version = "0.1.0"
 dependencies = [
  "porter-core",
- "porter-fake",
  "porter-sync",
  "serde",
  "serde_json",
+ "test-kit",
  "thiserror",
  "tokio",
 ]
@@ -2894,13 +2901,13 @@ dependencies = [
  "hyper",
  "hyper-util",
  "porter-core",
- "porter-fake",
  "porter-fake-servers",
  "porter-fs",
  "porter-tailnet",
  "porter-tailscale",
  "serde",
  "serde_json",
+ "test-kit",
  "thiserror",
  "tokio",
  "toml",
@@ -2914,11 +2921,11 @@ dependencies = [
  "hyper",
  "hyper-util",
  "porter-core",
- "porter-fake",
  "porter-fake-servers",
  "porter-tailscale",
  "serde",
  "serde_json",
+ "test-kit",
  "thiserror",
  "tokio",
 ]
@@ -3686,7 +3693,6 @@ name = "storage-gdrive"
 version = "0.1.0"
 dependencies = [
  "porter-core",
- "porter-fake",
  "porter-fake-servers",
  "porter-http",
  "porter-http-relay",
@@ -3694,6 +3700,7 @@ dependencies = [
  "serde",
  "serde_json",
  "storage-webdav",
+ "test-kit",
  "tokio",
 ]
 
@@ -3704,7 +3711,6 @@ dependencies = [
  "base64 0.22.1",
  "hex",
  "porter-core",
- "porter-fake",
  "porter-fake-servers",
  "porter-http",
  "porter-http-relay",
@@ -3712,6 +3718,7 @@ dependencies = [
  "serde",
  "serde_json",
  "storage-webdav",
+ "test-kit",
  "tokio",
 ]
 
@@ -3723,12 +3730,12 @@ dependencies = [
  "dav-proto",
  "porter-core",
  "porter-dav",
- "porter-fake",
  "porter-fake-servers",
  "porter-http",
  "porter-http-relay",
  "porter-sync",
  "roxmltree",
+ "test-kit",
  "tokio",
 ]
 
@@ -3816,6 +3823,7 @@ dependencies = [
  "storage-webdav",
  "syncd",
  "tempfile",
+ "test-kit",
  "thiserror",
  "tokio",
  "toml",
@@ -3830,7 +3838,7 @@ dependencies = [
  "clap",
  "porter-dbus",
  "porter-drive",
- "porter-fake",
+ "test-kit",
  "tokio",
  "zbus",
 ]
@@ -3895,6 +3903,10 @@ dependencies = [
  "rustix",
  "windows-sys 0.61.2",
 ]
+
+[[package]]
+name = "test-kit"
+version = "0.1.0"
 
 [[package]]
 name = "thiserror"

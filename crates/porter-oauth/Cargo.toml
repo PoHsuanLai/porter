@@ -24,7 +24,7 @@ toml = { workspace = true }
 tokio = { workspace = true, optional = true, features = ["net", "time", "io-util"] }
 
 [dev-dependencies]
-porter-fake = { workspace = true }
+test-kit = { workspace = true }
 porter-fake-servers = { workspace = true }
 tokio = { workspace = true, features = ["rt", "macros", "net", "time", "io-util"] }
 

@@ -24,8 +24,8 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]
+test-kit = { workspace = true }
 porter-drive = { path = ".", features = ["testing"] }
-porter-fake = { workspace = true }
 tokio = { workspace = true }
 
 [features]

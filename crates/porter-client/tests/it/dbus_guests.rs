@@ -575,7 +575,7 @@ mod computers {
 /// Waits as long as a starved machine needs for a signal that should come.
 async fn next(changes: &mut porter_client::GuestChanges) -> Option<GuestChange> {
     tokio::time::timeout(
-        porter_fake::GENEROUS,
+        test_kit::GENEROUS,
         std::future::poll_fn(|cx| std::pin::Pin::new(&mut *changes).poll_next(cx)),
     )
     .await

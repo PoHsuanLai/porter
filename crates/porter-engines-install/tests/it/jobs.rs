@@ -3,11 +3,11 @@ use porter_engines::{
     Arch, BackendChoice, EngineId, Failure, Gpus, Host, Manifest, OsRelease, Roots, Scope,
 };
 use porter_engines_install::{EngineInstalls, HelperProgram, Parts, Standing, StartError};
-use porter_fake::Scratch;
 use porter_fake_servers::start_artifacts;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
+use test_kit::Scratch;
 
 fn held(_: &Path) -> bool {
     true

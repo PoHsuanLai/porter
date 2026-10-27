@@ -118,8 +118,8 @@ fn entry_name(text: &str) -> Option<AppTitle> {
 mod tests {
     use super::*;
     use porter_dbus::callers::{CallerRole, CallerRow};
-    use porter_fake::Scratch;
     use std::path::Path;
+    use test_kit::Scratch;
 
     fn app(text: &str) -> AppName {
         AppName::parse(text).expect("name")

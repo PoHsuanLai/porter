@@ -148,7 +148,7 @@ mod tests {
 
     #[test]
     fn a_rename_over_the_file_is_heard_and_a_missing_directory_is_made() {
-        let root = porter_fake::Scratch::new("daemon-watch");
+        let root = test_kit::Scratch::new("daemon-watch");
         let dir = root.join("nested");
         let (sender, heard) = mpsc::channel();
         let watch = Watch::start(dir.clone(), "settings.toml", move || {

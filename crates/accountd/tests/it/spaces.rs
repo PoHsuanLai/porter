@@ -76,7 +76,7 @@ fn settings_caller() -> porter_dbus::callers::Caller {
 async fn next_change(stream: &mut SpaceChangedStream) -> Option<(String, String)> {
     use zbus::export::futures_core::Stream;
     let next = tokio::time::timeout(
-        porter_fake::GENEROUS,
+        test_kit::GENEROUS,
         std::future::poll_fn(|cx| std::pin::Pin::new(&mut *stream).poll_next(cx)),
     )
     .await

@@ -5,7 +5,6 @@ use super::common::{
     observed, wait,
 };
 use porter_core::{NodeId, UnixSeconds};
-use porter_fake::GENEROUS;
 use porter_fake_servers::Daemon;
 use porter_tailnet::{
     Config, Footing, GuestAnswer, Guests, Lending, Limits, Refusal, Visit, Visits, lend,
@@ -14,6 +13,7 @@ use std::future::Future;
 use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
+use test_kit::GENEROUS;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{Notify, watch};
 
@@ -116,7 +116,7 @@ async fn dropping_the_listeners_closes_every_one_of_them_and_the_connections_on_
     drop(l.lending);
     // The address refuses, a moment after the listener is let go of, and the connection that
     // was being served is ended with it.
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while listening_at(at(a.me, port)).await {
         if deadline.passed() {
             deadline.fail("the listener to close");
@@ -431,7 +431,7 @@ async fn a_computer_has_a_few_connections_at_once_and_no_more() {
     // Closing one makes room.
     drop(first);
     let mut room = false;
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() && !room {
         let mut again = connect_from(a.pi, at(a.me, port)).await.unwrap();
         again.write_all(b"ping").await.unwrap();

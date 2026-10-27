@@ -278,7 +278,7 @@ async fn a_request_is_recorded_before_the_launcher_hears_it_and_the_login_is_in_
 
 /// What a wait of a test may take: the other tests' deadline.
 async fn within<T>(future: impl std::future::Future<Output = T>) -> T {
-    tokio::time::timeout(porter_fake::GENEROUS, future)
+    tokio::time::timeout(test_kit::GENEROUS, future)
         .await
         .expect("waited too long")
 }

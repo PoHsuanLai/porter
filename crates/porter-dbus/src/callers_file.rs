@@ -71,7 +71,7 @@ mod tests {
     use super::*;
     use crate::callers::CallerRole;
     use porter_core::AppName;
-    use porter_fake::Scratch;
+    use test_kit::Scratch;
 
     const SYSTEM: &str = "[[caller]]\napp = \"org.quire.Settings\"\nrole = \"settings\"\n\n\
         [[caller]]\napp = \"org.quire.Inference\"\nunit = \"inferd.service\"\nrole = \"porter_daemon\"\n\n\

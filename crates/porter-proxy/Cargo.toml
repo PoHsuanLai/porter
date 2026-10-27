@@ -19,6 +19,7 @@ tokio-rustls = { workspace = true, optional = true }
 webpki-roots = { workspace = true, optional = true }
 
 [dev-dependencies]
+test-kit = { workspace = true }
 porter-fake-servers = { workspace = true }
 porter-proxy = { workspace = true, features = ["tls"] }
 porter-fake = { workspace = true }

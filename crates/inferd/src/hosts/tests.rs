@@ -400,7 +400,7 @@ fn forking(pidfile: &Path) -> UnitSpec {
 
 /// The pid in `pidfile`, once the engine has written it.
 async fn pid_in(pidfile: &Path) -> i32 {
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if let Some(pid) = std::fs::read_to_string(pidfile)
             .ok()
@@ -425,7 +425,7 @@ fn gone(pid: i32) -> bool {
 }
 
 async fn gone_soon(pid: i32) -> bool {
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if gone(pid) {
             return true;

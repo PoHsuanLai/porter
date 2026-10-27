@@ -239,7 +239,7 @@ fn settings_is_a_unit_and_an_app_name_stands_for_its_service() {
 /// do not.
 #[test]
 fn only_the_settings_units_main_process_is_settings() {
-    let root = porter_fake::Scratch::new("inferd-settings-unit");
+    let root = test_kit::Scratch::new("inferd-settings-unit");
     let slice = "/user.slice/user-1000.slice/user@1000.service/app.slice";
     let process = |pid: u32, unit: &str| {
         let dir = root.join(pid.to_string());

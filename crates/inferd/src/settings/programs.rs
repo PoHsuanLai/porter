@@ -132,7 +132,7 @@ mod tests {
 
     #[test]
     fn a_path_is_taken_only_when_it_is_a_whole_path_to_a_program_nobody_else_holds() {
-        let scratch = porter_fake::Scratch::new("program");
+        let scratch = test_kit::Scratch::new("program");
         std::fs::set_permissions(&*scratch, std::fs::Permissions::from_mode(0o755))
             .expect("chmod scratch");
         let program = scratch.join("python");

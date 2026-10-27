@@ -16,13 +16,14 @@ use porter_core::{
 };
 use porter_dbus::BusStream;
 use porter_dbus::callers::{Caller, CallerRole};
-use porter_fake::{NOW, Scratch, ScriptedSheets, cloud_provider};
+use porter_fake::{NOW, ScriptedSheets, cloud_provider};
 use porter_fake_servers::{Daemon, FakeLocalApi, FakePeer, Network};
 use porter_secrets::MemorySecrets;
 use porter_service::{AccountService, Registry};
 use porter_tailscale::LocalApi;
 use std::sync::Arc;
 use std::time::Duration;
+use test_kit::Scratch;
 
 struct World {
     bus: PrivateBus,
@@ -155,7 +156,7 @@ async fn the_terminal_reads_typed_machines_and_hears_of_changes() {
     world.fake.edit(|net| net.peers[0].online = false);
     // A signal that should come is waited for as long as a starved machine needs.
     let told = tokio::time::timeout(
-        porter_fake::GENEROUS,
+        test_kit::GENEROUS,
         std::future::poll_fn(|cx| std::pin::Pin::new(&mut changes).poll_next(cx)),
     )
     .await

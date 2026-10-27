@@ -88,7 +88,7 @@ async fn speak(session: &mut DbusSession, frames: u64, end: bool) -> Vec<InferEv
         .expect("request");
     let mut before = Vec::new();
     loop {
-        let event = tokio::time::timeout(porter_fake::GENEROUS, session.next())
+        let event = tokio::time::timeout(test_kit::GENEROUS, session.next())
             .await
             .expect("an event in time")
             .expect("an event");
@@ -117,7 +117,7 @@ async fn speak(session: &mut DbusSession, frames: u64, end: bool) -> Vec<InferEv
 async fn until_finished(session: &mut impl InferSession) -> Vec<InferEvent> {
     let mut events = Vec::new();
     loop {
-        let event = tokio::time::timeout(porter_fake::GENEROUS, session.next())
+        let event = tokio::time::timeout(test_kit::GENEROUS, session.next())
             .await
             .expect("an event in time")
             .expect("an event");
@@ -237,7 +237,7 @@ async fn the_audit_entry_of_a_transcription_counts_audio_and_keeps_no_words() {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     };
-    let entries = tokio::time::timeout(porter_fake::GENEROUS, recorded)
+    let entries = tokio::time::timeout(test_kit::GENEROUS, recorded)
         .await
         .expect("an audit entry");
     assert_eq!(entries.len(), 1);
@@ -257,7 +257,7 @@ async fn wait_ready(world: &World, spawns: usize) {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     };
-    tokio::time::timeout(porter_fake::GENEROUS, ready)
+    tokio::time::timeout(test_kit::GENEROUS, ready)
         .await
         .expect("the speech engine is ready");
 }
@@ -291,7 +291,7 @@ async fn the_engine_restarts_after_a_crash_and_a_turn_in_flight_fails_not_hangs(
             }
         }
     };
-    tokio::time::timeout(porter_fake::GENEROUS, heard_first)
+    tokio::time::timeout(test_kit::GENEROUS, heard_first)
         .await
         .expect("heard the first partial");
     speech.crash(&engine_of(&world));

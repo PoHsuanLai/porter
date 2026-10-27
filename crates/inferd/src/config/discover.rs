@@ -105,7 +105,7 @@ fn system_held(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_fake::Scratch;
+    use test_kit::Scratch;
 
     fn file(dir: &Scratch, name: &str) -> PathBuf {
         let path = dir.path().join(name);

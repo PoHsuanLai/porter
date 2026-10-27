@@ -121,7 +121,7 @@ impl Ollama {
             .take()
             .is_some();
         if was_running {
-            let deadline = porter_fake::Deadline::generous();
+            let deadline = test_kit::Deadline::generous();
             while !deadline.passed() {
                 if tokio::net::TcpStream::connect(("127.0.0.1", self.port))
                     .await

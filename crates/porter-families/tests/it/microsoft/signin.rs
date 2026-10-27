@@ -257,7 +257,7 @@ async fn a_build_with_no_client_id_says_so_before_opening_anything() {
 #[tokio::test]
 async fn a_client_id_written_after_start_is_used_by_the_next_sign_in() {
     let rig = Rig::new(false).await;
-    let dir = porter_fake::Scratch::new("families-ux2");
+    let dir = test_kit::Scratch::new("families-ux2");
     let files = porter_families::ClientFiles {
         shipped: dir.join("shipped.toml"),
         own: dir.join("clients.toml"),
@@ -322,7 +322,7 @@ async fn cancelling_closes_the_listeners_and_ends_the_sign_in() {
     );
     drop(signin);
     // The listener's task is aborted with the sign-in; give the runtime a turn to close it.
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if tokio::net::TcpStream::connect(("127.0.0.1", port))
             .await

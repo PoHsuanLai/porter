@@ -258,7 +258,7 @@ fn service(rig: &Rig) -> &Service {
 }
 
 async fn eventually(what: &str, mut check: impl AsyncFnMut() -> bool) {
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if check().await {
             return;
@@ -605,7 +605,7 @@ async fn next_change_of(changes: &mut ds_settings::live::Changes, row: &KeyPath)
     use zbus::export::futures_core::Stream;
     loop {
         let change = tokio::time::timeout(
-            porter_fake::GENEROUS,
+            test_kit::GENEROUS,
             std::future::poll_fn(|cx| std::pin::Pin::new(&mut *changes).poll_next(cx)),
         )
         .await

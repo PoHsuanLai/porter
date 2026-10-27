@@ -38,7 +38,7 @@ async fn an_app_lists_creates_and_hears_of_new_spaces() {
 
     use porter_dbus::BusStream;
     let next = tokio::time::timeout(
-        porter_fake::GENEROUS,
+        test_kit::GENEROUS,
         std::future::poll_fn(|cx| std::pin::Pin::new(&mut changes).poll_next(cx)),
     )
     .await

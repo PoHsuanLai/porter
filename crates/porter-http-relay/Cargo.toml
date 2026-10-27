@@ -18,7 +18,7 @@ http-body-util = { workspace = true }
 tokio = { workspace = true, features = ["net", "time", "io-util", "rt"] }
 
 [dev-dependencies]
-porter-fake = { workspace = true }
+test-kit = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 
 [lints]

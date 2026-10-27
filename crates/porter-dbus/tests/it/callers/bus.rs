@@ -5,7 +5,7 @@
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
 
-use porter_fake::Scratch;
+use test_kit::Scratch;
 
 fn config_text(dir: &std::path::Path) -> String {
     format!(

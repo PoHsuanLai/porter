@@ -311,8 +311,8 @@ pub fn local_runtimes(unserved: &[ProviderSpec]) -> Vec<ProviderSpec> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_fake::Scratch;
     use porter_provider::Provider;
+    use test_kit::Scratch;
 
     fn scratch(name: &str) -> Scratch {
         Scratch::new(&format!("families-set-{name}"))

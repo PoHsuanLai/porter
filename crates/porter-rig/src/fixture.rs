@@ -79,7 +79,7 @@ mod tests {
             text.trim_end()
                 .ends_with("app-flatpak-org.example.My\\x2dApp-4242.scope")
         );
-        let root = porter_fake::Scratch::new("rig-fixture");
+        let root = test_kit::Scratch::new("rig-fixture");
         let identity = Identity::write(&root, "org.example.My-App", 4242).expect("write");
         let table = porter_dbus::callers::CallerTable::default();
         let caller = porter_dbus::callers::ProcCallers::caller_of_pid(&root, 4242, &table)

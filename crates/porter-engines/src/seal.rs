@@ -145,7 +145,7 @@ pub fn seal_of(root: &Path) -> Result<TreeSeal, SealError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_fake::Scratch;
+    use test_kit::Scratch;
 
     fn make(root: &Path, mode: u32, name: &str, body: &str) {
         let path = root.join(name);

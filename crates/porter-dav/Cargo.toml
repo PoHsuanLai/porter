@@ -14,8 +14,7 @@ porter-core = { workspace = true }
 porter-http = { workspace = true }
 
 [dev-dependencies]
-# Only for the include guard of tests/it (`porter_fake::guard`).
-porter-fake = { workspace = true }
+test-kit = { workspace = true }
 # The request tests read the bodies back.
 roxmltree = { workspace = true }
 

@@ -15,11 +15,11 @@ use inferd::hosts::ProcessHost;
 use inferd::shutdown::{Ended, Signals, on_signal};
 use model_catalog::{EngineArg, MiB};
 use porter_dbus::names::INFERENCE_BUS;
-use porter_fake::Scratch;
 use rustix::process::{Pid, Signal, kill_process};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
+use test_kit::Scratch;
 
 /// The stand-in's exit codes by how its shutdown ended.
 const DONE: i32 = 0;
@@ -134,7 +134,7 @@ fn pid_in(file: &Path) -> i32 {
 }
 
 fn wait_for(file: &Path) {
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if file.exists() {
             return;
@@ -156,7 +156,7 @@ fn gone(pid: i32) -> bool {
 }
 
 fn gone_soon(pid: i32) -> bool {
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if gone(pid) {
             return true;
@@ -174,7 +174,7 @@ fn signal(pid: u32, signal: Signal) {
 /// The exit code of `child`, or `None` (then the test fails; the guard kills it). It waits as long
 /// as a starved machine needs: the timing a test proves is in its own `elapsed()` assert.
 fn exit_within(child: &mut Started) -> Option<i32> {
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if let Some(status) = child.0.try_wait().expect("wait") {
             return Some(status.code().unwrap_or(-1));
@@ -310,7 +310,7 @@ async fn real_binary_stops_on(signal_sent: Signal) {
     let dbus = zbus::fdo::DBusProxy::new(&client).await.expect("dbus");
     let name = zbus::names::BusName::try_from(INFERENCE_BUS).expect("bus name");
     let mut inferd = real_inferd(&bus);
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !dbus.name_has_owner(name.clone()).await.expect("ask") {
         if deadline.passed() {
             deadline.fail("inferd takes its name");

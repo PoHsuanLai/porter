@@ -557,7 +557,7 @@ mod tests {
 
     #[tokio::test]
     async fn events_missed_send_every_tracked_item_again() {
-        let dir = porter_fake::Scratch::new("storage1-gather");
+        let dir = test_kit::Scratch::new("storage1-gather");
         let listing = Arc::new(MemoryListing::default());
         let source = Arc::new(MemorySource::default());
         listing.file("a", None, "a.bin", 4, "1");

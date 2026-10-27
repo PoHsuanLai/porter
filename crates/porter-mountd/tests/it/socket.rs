@@ -1,12 +1,12 @@
 //! The client against a helper listening on a socket path, and the fallback when none listens.
 
 use crate::common::FakeMounts;
-use porter_fake::Scratch;
 use porter_mountd::client::{self, AskError};
 use porter_mountd::server::{self, Helper};
 use porter_mountd::wire::{self, Access, FolderName};
 use porter_mountd::words;
 use std::os::unix::fs::PermissionsExt;
+use test_kit::Scratch;
 
 #[test]
 fn the_client_reaches_a_helper_at_its_socket_and_gets_its_words() {

@@ -270,8 +270,8 @@ impl BusStream for Revocations {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_fake::Scratch;
     use std::io::Write;
+    use test_kit::Scratch;
 
     /// A key file holding `text`, and the directory it is in: bind it while the file is read.
     fn scratch_file(name: &str, text: &str) -> (Scratch, PathBuf) {

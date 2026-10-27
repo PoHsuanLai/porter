@@ -2,11 +2,11 @@
 
 use super::common::{addresses, fake, free_port, network};
 use porter_core::{MachineOwner, NodeId};
-use porter_fake::GENEROUS;
 use porter_fake_servers::Daemon;
 use porter_tailnet::{DialError, Dialer};
 use porter_tailscale::TailscaleError;
 use std::net::SocketAddr;
+use test_kit::GENEROUS;
 use tokio::net::TcpListener;
 
 fn node(text: &str) -> NodeId {

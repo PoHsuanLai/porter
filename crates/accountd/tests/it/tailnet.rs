@@ -18,7 +18,7 @@ use porter_core::{
 };
 use porter_dbus::callers::CallerRole;
 use porter_dbus::{BusStream, ManagerProxy, Sheet, SpacesProxy, TailnetProxy, machine_from_dbus};
-use porter_fake::{Deadline, MemoryStore, RecordingAudit, Scratch};
+use porter_fake::{MemoryStore, RecordingAudit};
 use porter_fake_servers::{Daemon, FakeLocalApi, FakePeer, Network};
 use porter_families::{FamilyProvider, TailnetProvider};
 use porter_http::{SharedSleep, Sleep};
@@ -26,6 +26,7 @@ use porter_service::{AccountService, Registry};
 use porter_tailscale::LocalApi;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use test_kit::{Deadline, Scratch};
 
 const LOGIN_PAGE: &str = "https://login.tailscale.com/a/0123456789abcdef";
 
@@ -311,7 +312,7 @@ async fn read(connection: &zbus::Connection) -> Result<Vec<Machine>, zbus::Error
 async fn told(stream: &mut porter_dbus::TailnetChangedStream, what: &str) {
     let deadline = Deadline::generous();
     let next = std::future::poll_fn(|cx| std::pin::Pin::new(&mut *stream).poll_next(cx));
-    match tokio::time::timeout(porter_fake::GENEROUS, next).await {
+    match tokio::time::timeout(test_kit::GENEROUS, next).await {
         Ok(Some(_)) => {}
         _ => deadline.fail(what),
     }

@@ -260,7 +260,7 @@ async fn a_caller_sees_what_it_owns_settings_sees_all_and_status_carries_quota_a
 
 async fn next<S: Stream + Unpin>(stream: &mut S) -> S::Item {
     tokio::time::timeout(
-        porter_fake::GENEROUS,
+        test_kit::GENEROUS,
         std::future::poll_fn(|cx| Pin::new(&mut *stream).poll_next(cx)),
     )
     .await
@@ -358,7 +358,7 @@ async fn used(sync: &SyncProxy<'_>, dataset: &str) -> Option<u64> {
 /// syncs to disk on every write, and a loaded machine is slow); the last reading.
 async fn used_reaches(sync: &SyncProxy<'_>, dataset: &str, want: u64) -> Option<u64> {
     let mut seen = None;
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         seen = used(sync, dataset).await;
         if seen == Some(want) {

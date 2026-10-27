@@ -226,7 +226,7 @@ async fn a_permit_withdrawn_or_an_account_removed_ends_the_credential_and_tells_
         .expect("withdrawn");
     rig.launchers.registry_changed().await;
     assert!(!path.exists());
-    let signal = tokio::time::timeout(porter_fake::GENEROUS, next(&mut revoked))
+    let signal = tokio::time::timeout(test_kit::GENEROUS, next(&mut revoked))
         .await
         .expect("told in time")
         .expect("open");
@@ -253,7 +253,7 @@ async fn a_launcher_that_leaves_takes_its_credentials_with_it() {
     let path = path_of(handle);
     drop(launcher);
     let mut ended = false;
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() && !ended {
         ended = !path.exists();
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;

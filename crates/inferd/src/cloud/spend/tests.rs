@@ -2,7 +2,7 @@ use super::*;
 use crate::settings::{ScopeLimits, SpendLimits};
 use porter_core::PriceTable;
 use porter_core::{AppName, Isolation};
-use porter_fake::Scratch;
+use test_kit::Scratch;
 
 fn app(name: &str) -> AppId {
     AppId {

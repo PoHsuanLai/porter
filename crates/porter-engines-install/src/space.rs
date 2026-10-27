@@ -35,7 +35,7 @@ pub fn require_space(path: &Path, need: u64) -> Result<(), NoSpace> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_fake::Scratch;
+    use test_kit::Scratch;
 
     #[test]
     fn room_is_asked_of_the_nearest_existing_parent() {

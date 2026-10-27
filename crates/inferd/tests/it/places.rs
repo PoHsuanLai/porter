@@ -25,7 +25,7 @@ fn app(name: &str) -> AppId {
 /// A world with one model on this computer, a lab machine called `lab` with one model, and two
 /// cloud accounts: a working one and one that has to be signed in again.
 async fn world(lab_dir: &str, role: Role, who: &str) -> (World, Lab) {
-    let dir = porter_fake::Scratch::new(&format!("pl-{lab_dir}"));
+    let dir = test_kit::Scratch::new(&format!("pl-{lab_dir}"));
     let lab = Lab::start_in(dir, "lab", &[entries::SERVED], None).await;
     let plan = Plan {
         catalog: vec![
@@ -244,9 +244,7 @@ async fn an_account_that_appears_makes_inferd_say_engines_changed() {
 }
 
 async fn within_generous(work: impl std::future::Future<Output = ()>) -> bool {
-    tokio::time::timeout(porter_fake::GENEROUS, work)
-        .await
-        .is_ok()
+    tokio::time::timeout(test_kit::GENEROUS, work).await.is_ok()
 }
 
 // ---- routing inside the allowed set -------------------------------------------------------
@@ -298,7 +296,7 @@ mod routing {
 
     /// `placed_world`, with the local chat model only when `local` says so.
     pub async fn placed_world_with(dir: &str, role: Role, who: &str, local: bool) -> (World, Lab) {
-        let scratch = porter_fake::Scratch::new(&format!("pr-{dir}"));
+        let scratch = test_kit::Scratch::new(&format!("pr-{dir}"));
         let lab = Lab::start_in(scratch, "lab", &[entries::SERVED], None).await;
         let mut catalog = vec![
             ("a-attached.toml", entries::attached()),
@@ -915,7 +913,7 @@ mod computers {
 
     /// A world with no engine written by hand, and a lab machine that wants `KEY`.
     async fn world(name: &str) -> (World, Lab) {
-        let dir = porter_fake::Scratch::new(&format!("cp-{name}"));
+        let dir = test_kit::Scratch::new(&format!("cp-{name}"));
         let lab = Lab::start_in(dir, "lab", &[entries::SERVED], Some(KEY)).await;
         let plan = Plan {
             catalog: vec![("a-attached.toml", entries::attached())],
@@ -1002,9 +1000,7 @@ mod computers {
         assert_eq!(placed, "computer:studio-pc");
         let told = std::future::poll_fn(|cx| std::pin::Pin::new(&mut changed).poll_next(cx));
         assert!(
-            tokio::time::timeout(porter_fake::GENEROUS, told)
-                .await
-                .is_ok(),
+            tokio::time::timeout(test_kit::GENEROUS, told).await.is_ok(),
             "EnginesChanged after an addition"
         );
 
@@ -1095,9 +1091,7 @@ mod computers {
             .expect("removed");
         let told = std::future::poll_fn(|cx| std::pin::Pin::new(&mut changed).poll_next(cx));
         assert!(
-            tokio::time::timeout(porter_fake::GENEROUS, told)
-                .await
-                .is_ok(),
+            tokio::time::timeout(test_kit::GENEROUS, told).await.is_ok(),
             "EnginesChanged after a removal"
         );
         let rows = world.accounts.places().await.expect("places");

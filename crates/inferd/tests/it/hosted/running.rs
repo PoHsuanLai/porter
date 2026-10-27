@@ -38,7 +38,7 @@ async fn running(inference: &InferenceProxy<'_>) -> Vec<RunningModel> {
 
 /// The one model of the world, once its engine is `state`.
 async fn in_state(inference: &InferenceProxy<'_>, state: RunState) -> RunningModel {
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         let rows = running(inference).await;
         if let Some(row) = rows.into_iter().find(|row| row.state == state) {
@@ -126,7 +126,7 @@ async fn only_settings_may_start_stop_or_list() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_model_inferd_does_not_run_is_refused_in_plain_words() {
-    let scratch = porter_fake::Scratch::new("run-attached");
+    let scratch = test_kit::Scratch::new("run-attached");
     let world = World::start(Plan {
         role: Role::Settings,
         catalog: vec![("attached.toml", entries::attached())],

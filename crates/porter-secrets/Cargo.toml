@@ -28,9 +28,7 @@ apple-native-keyring-store = { workspace = true, optional = true }
 windows-native-keyring-store = { workspace = true, optional = true }
 
 [dev-dependencies]
-# For the include guard of tests/it (`porter_fake::guard`) and the scratch directories of tests
-# (`porter_fake::Scratch`).
-porter-fake = { workspace = true }
+test-kit = { workspace = true }
 porter-secrets = { path = ".", features = ["testing", "keyring", "test-keys"] }
 tokio = { workspace = true }
 

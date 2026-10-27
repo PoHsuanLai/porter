@@ -4,13 +4,13 @@ use porter_engines::{
     Arch, Artifact, Backend, Delivery, EngineId, Roots, Row, file_digest, seal_of,
 };
 use porter_engines_install::Fetcher;
-use porter_fake::Scratch;
 use porter_fake_servers::tls;
 use porter_http_reqwest::ReqwestHttp;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
+use test_kit::Scratch;
 
 /// An archive and what pins it.
 pub struct Fixture {

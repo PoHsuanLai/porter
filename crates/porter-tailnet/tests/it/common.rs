@@ -1,6 +1,5 @@
 //! What the tests share: a pair of addresses of their own, a fake Tailscale, and waits.
 
-use porter_fake::{GENEROUS, Scratch};
 use porter_fake_servers::{Daemon, FakeLocalApi, FakePeer, Network};
 use porter_tailnet::{Config, Limits, Observer, Seen, Timing};
 use porter_tailscale::LocalApi;
@@ -8,6 +7,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::ops::Deref;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Duration;
+use test_kit::{GENEROUS, Scratch};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpSocket, TcpStream};
 use tokio::sync::watch;

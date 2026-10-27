@@ -218,7 +218,7 @@ mod file_store {
 
     #[tokio::test]
     async fn the_test_key_file_keeps_the_contract() {
-        let dir = porter_fake::Scratch::new("contract-file");
+        let dir = test_kit::Scratch::new("contract-file");
         let store = FileSecrets::open(dir.join("keys.json")).expect("opens");
         contract(File(store)).await;
     }
@@ -341,7 +341,7 @@ mod oo7_file {
         store: Oo7KeyringSecrets,
         shared: Shared,
         /// Last, so the directory goes after the keyring that is in it.
-        _scratch: porter_fake::Scratch,
+        _scratch: test_kit::Scratch,
     }
 
     impl Fixture for File {
@@ -362,7 +362,7 @@ mod oo7_file {
 
     /// oo7's file backend at a path in the temp directory, opened with a test secret.
     async fn scratch(name: &str) -> File {
-        let dir = porter_fake::Scratch::new("oo7-file");
+        let dir = test_kit::Scratch::new("oo7-file");
         let path = dir.join(format!("{name}.keyring"));
         let unlocked = oo7::file::UnlockedKeyring::load(&path, oo7::Secret::text("test-secret"))
             .await

@@ -19,12 +19,13 @@ use porter_core::{
 use porter_dbus::callers::{Caller, CallerRole};
 use porter_dbus::names::{SHEET_BUS, SHEET_PATH};
 use porter_fake::{
-    FakeProvider, MemoryStore, RecordingAudit, Scratch, cloud_provider, llm_account, llm_provider,
+    FakeProvider, MemoryStore, RecordingAudit, cloud_provider, llm_account, llm_provider,
     mail_provider,
 };
 use porter_secrets::{MemorySecrets, Secrets, SecretsError};
 use porter_service::{AccountService, Registry};
 use std::sync::Arc;
+use test_kit::Scratch;
 
 pub const APP_PASSWORD: &str = "S3CRET-APP-PASSWORD";
 pub const REFRESH_TOKEN: &str = "S3CRET-REFRESH-TOKEN";
@@ -231,9 +232,9 @@ impl Rig {
     }
 }
 
-/// Polls `condition` until it holds, up to [`porter_fake::GENEROUS`] by the clock.
+/// Polls `condition` until it holds, up to [`test_kit::GENEROUS`] by the clock.
 pub async fn eventually(what: &str, mut condition: impl FnMut() -> bool) {
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if condition() {
             return;
@@ -368,7 +369,7 @@ async fn next_member(
 }
 
 /// Every member name received until each of `expected` has arrived (waited for by the clock,
-/// [`porter_fake::Deadline`]: a signal that should come is not given up on because the machine
+/// [`test_kit::Deadline`]: a signal that should come is not given up on because the machine
 /// is slow), and then whatever else follows within a short settling window, so that a test can
 /// still assert there was no extra or repeated signal. Fails the test naming the missing signals.
 pub async fn heard_names(stream: &mut zbus::MessageStream, expected: &[&str]) -> Vec<String> {
@@ -376,10 +377,10 @@ pub async fn heard_names(stream: &mut zbus::MessageStream, expected: &[&str]) ->
     /// change tells its listeners in one burst, so this proves "no more" and never decides
     /// whether a signal that should come does.
     const SETTLE: std::time::Duration = std::time::Duration::from_millis(300);
-    let limit = porter_fake::Deadline::generous();
+    let limit = test_kit::Deadline::generous();
     let mut names: Vec<String> = Vec::new();
     while !expected.iter().all(|want| names.iter().any(|n| n == want)) {
-        let left = porter_fake::GENEROUS.saturating_sub(limit.waited());
+        let left = test_kit::GENEROUS.saturating_sub(limit.waited());
         match next_member(stream, tokio::time::Instant::now() + left).await {
             Some(name) => names.push(name),
             None => limit.fail(&format!("the signals {expected:?} (heard {names:?})")),

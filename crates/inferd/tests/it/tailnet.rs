@@ -70,7 +70,7 @@ fn policy() -> porter_infer::Policy {
 async fn pair(name: &str, seen: Seen, serving: bool) -> Pair {
     let a = addresses();
     let port = free_port();
-    let dir = porter_fake::Scratch::new(&format!("tn-{name}"));
+    let dir = test_kit::Scratch::new(&format!("tn-{name}"));
     let lab = Lab::start_in(dir, "lab", &[entries::SERVED], None).await;
     let pi = World::start(Plan {
         catalog: catalog(),
@@ -685,7 +685,7 @@ async fn a_computer_attached_over_the_network_is_never_lent_onward() {
     // runs on pi itself.
     let a = addresses();
     let port = free_port();
-    let dir = porter_fake::Scratch::new("tn-onward");
+    let dir = test_kit::Scratch::new("tn-onward");
     let lab = Lab::start_in(dir, "lab", &[entries::SERVED], None).await;
     let pi = World::start(Plan {
         catalog: vec![("a-attached.toml", entries::attached())],

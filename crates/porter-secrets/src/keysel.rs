@@ -283,7 +283,7 @@ mod tests {
     #[test]
     fn a_key_file_open_to_others_is_a_typed_refusal() {
         use std::os::unix::fs::PermissionsExt;
-        let dir = porter_fake::Scratch::new("keysel");
+        let dir = test_kit::Scratch::new("keysel");
         let path = dir.join("keys.json");
         let chosen =
             Chosen::open(Selection::File(path.clone()), namespace(), "syncd").expect("created");

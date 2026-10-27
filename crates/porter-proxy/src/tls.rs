@@ -206,7 +206,7 @@ mod tests {
         let started = std::time::Instant::now();
         // The connector gives up by itself: a dial that never returned would be the bug, and the
         // outer wait is only the machine's allowance, not a claim about how fast it is.
-        let got = tokio::time::timeout(porter_fake::GENEROUS, connect.dial(&origin, Tls::Implicit))
+        let got = tokio::time::timeout(test_kit::GENEROUS, connect.dial(&origin, Tls::Implicit))
             .await
             .expect("the connector gave up on the silent server");
         assert!(matches!(got, Err(ConnectFault::Unreachable)), "{got:?}");

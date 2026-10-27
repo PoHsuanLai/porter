@@ -155,7 +155,7 @@ async fn a_session_permit_and_the_credential_under_it_end_with_the_session() {
         "the permit goes with its session"
     );
     let signal = tokio::time::timeout(
-        porter_fake::GENEROUS,
+        test_kit::GENEROUS,
         std::future::poll_fn(|cx| std::pin::Pin::new(&mut revoked).poll_next(cx)),
     )
     .await

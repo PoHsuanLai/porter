@@ -70,7 +70,7 @@ mod tests {
 
     #[test]
     fn the_files_are_read_again_each_time_so_a_row_written_later_is_seen() {
-        let dir = porter_fake::Scratch::new("families-clients");
+        let dir = test_kit::Scratch::new("families-clients");
         let files = ClientFiles {
             shipped: dir.join("absent.toml"),
             own: dir.join("clients.toml"),

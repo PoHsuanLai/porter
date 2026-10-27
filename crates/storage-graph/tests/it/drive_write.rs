@@ -6,13 +6,13 @@
 use crate::common;
 
 use common::{Replica, Server};
-use porter_fake::Scratch;
 use porter_sync::{
     BaseVersion, Content, DriveWrite, Place, Progress, PutRefused, RemoteSide, Session, Unheard,
     Upload, UploadTo, Written,
 };
 use std::sync::Mutex;
 use storage_graph::{CHUNK_UNIT, Root, Uploads};
+use test_kit::Scratch;
 
 fn drive(server: &Server, uploads: Uploads) -> Replica {
     server.replica_at(Root::Drive, "", 50, uploads)

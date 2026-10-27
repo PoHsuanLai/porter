@@ -39,7 +39,7 @@ impl FakeTailscale {
             .expect("fake tailscale");
         let api = LocalApi::new(fake.socket())
             .with_program_dirs(Vec::new())
-            .with_timeout(porter_fake::GENEROUS);
+            .with_timeout(test_kit::GENEROUS);
         Self {
             fake,
             api,

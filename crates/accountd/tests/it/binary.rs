@@ -80,7 +80,7 @@ async fn serving(bus: &PrivateBus, daemon: &mut Daemon) -> bool {
     let dbus = zbus::fdo::DBusProxy::new(&probe).await.expect("proxy");
     // The daemon is a process that has to be started and run; on a starved machine that takes
     // many seconds, not the five an idle one needs, and it gets as long as the clock says.
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if dbus
             .name_has_owner(porter_dbus::names::ACCOUNTS_BUS.try_into().expect("name"))

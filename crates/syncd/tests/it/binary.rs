@@ -61,7 +61,7 @@ fn spawn(bus: &PrivateBus, home: &Path, proc_root: Option<&Path>) -> Daemon {
 async fn serving(bus: &PrivateBus, daemon: &mut Daemon) -> bool {
     let probe = bus.connect().await;
     let dbus = zbus::fdo::DBusProxy::new(&probe).await.expect("proxy");
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if dbus
             .name_has_owner(SYNC_BUS.try_into().expect("name"))

@@ -26,6 +26,7 @@ base64 = { workspace = true, optional = true }
 thiserror = { workspace = true, optional = true }
 
 [dev-dependencies]
+test-kit = { workspace = true }
 porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }
 tokio = { workspace = true, features = ["rt", "macros", "net", "time", "io-util"] }

@@ -997,7 +997,7 @@ mod tests {
 
     #[test]
     fn which_drives_are_kept_whole_is_saved_beside_the_rest_and_read_back() {
-        let dir = porter_fake::Scratch::new("syncd-settings-keep-all");
+        let dir = test_kit::Scratch::new("syncd-settings-keep-all");
         let file = dir.join("porter/syncd/syncd.toml");
         write_paused(&file, "one", true).expect("paused");
         write_keep_all(&file, "one", true).expect("save");
@@ -1013,7 +1013,7 @@ mod tests {
 
     #[test]
     fn settings_kept_before_their_folder_are_read_and_the_next_save_moves_them() {
-        let dir = porter_fake::Scratch::new("syncd-settings-move");
+        let dir = test_kit::Scratch::new("syncd-settings-move");
         let file = dir.join("porter/syncd/syncd.toml");
         let before = dir.join("porter/syncd.toml");
         assert_eq!(read_cache_limit(&file), CacheLimit::Automatic);

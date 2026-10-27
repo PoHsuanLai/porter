@@ -34,7 +34,7 @@ async fn changes_until(
     let wanted = (wanted.0.to_owned(), wanted.1);
     let mut seen = Vec::new();
     while !seen.contains(&wanted) {
-        match next_change(changes, porter_fake::GENEROUS).await {
+        match next_change(changes, test_kit::GENEROUS).await {
             Some(change) => seen.push(change),
             None => panic!("never happened: the change {wanted:?}: {seen:?}"),
         }

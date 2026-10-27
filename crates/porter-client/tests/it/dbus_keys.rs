@@ -181,7 +181,7 @@ async fn a_daemon_that_leaves_mid_sheet_ends_the_wait() {
 
     rig.daemon.close().await.expect("the daemon leaves");
 
-    let ended = tokio::time::timeout(porter_fake::GENEROUS, waiting)
+    let ended = tokio::time::timeout(test_kit::GENEROUS, waiting)
         .await
         .expect("the wait ends")
         .expect("task");

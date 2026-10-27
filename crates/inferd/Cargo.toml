@@ -81,6 +81,7 @@ toml = { workspace = true }
 zbus = { workspace = true }
 
 [dev-dependencies]
+test-kit = { workspace = true }
 ds-settings = { workspace = true, features = ["testing"] }
 # The client side the tests drive inferd through (inferd itself no longer calls accountd).
 porter-client = { workspace = true, features = ["dbus", "infer"] }

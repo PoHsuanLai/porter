@@ -7,12 +7,12 @@ use crate::common::bus::PrivateBus;
 
 use porter_dbus::BusTarget;
 use porter_dbus::names::SYNC_BUS;
-use porter_fake::{Deadline, GENEROUS};
 use std::path::Path;
 use std::time::Duration;
 use syncd::paths::Paths;
 use syncd::scheduler::Network;
 use syncd::{Config, Daemon};
+use test_kit::{Deadline, GENEROUS};
 
 /// The paths for a person whose whole home is `home`; every file is under it.
 fn paths(home: &Path) -> Paths {

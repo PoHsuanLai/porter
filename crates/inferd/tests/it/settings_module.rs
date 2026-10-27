@@ -833,7 +833,7 @@ async fn an_engine_program_is_written_read_back_announced_and_cleared_and_a_bad_
     );
 
     // Refused in plain words, and the row keeps what it had.
-    let scratch = porter_fake::Scratch::new("program-row");
+    let scratch = test_kit::Scratch::new("program-row");
     let loose = scratch.join("python");
     std::fs::write(&loose, "").expect("write");
     std::fs::set_permissions(&loose, std::fs::Permissions::from_mode(0o775)).expect("chmod");

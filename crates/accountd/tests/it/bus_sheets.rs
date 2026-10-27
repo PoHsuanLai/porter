@@ -282,7 +282,7 @@ async fn a_second_sheet_of_a_kind_while_one_is_open_is_refused_until_it_ends() {
 
     sheet.closer(Some(path)).expect("closer").close().await;
     let mut asked = None;
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         match ask(client.clone()).await {
             Ok(path) => {

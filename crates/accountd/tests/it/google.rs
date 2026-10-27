@@ -300,7 +300,7 @@ async fn sign_in_again(world: &World, id: &AccountId) {
         .expect("the action is accepted");
     world
         .person(async {
-            let deadline = porter_fake::Deadline::generous();
+            let deadline = test_kit::Deadline::generous();
             while !deadline.passed() {
                 if world.account().state == AccountState::Ok {
                     return;

@@ -18,8 +18,7 @@ thiserror = { workspace = true }
 zeroize = { workspace = true }
 
 [dev-dependencies]
-# Only for the include guard of tests/it (`porter_fake::guard`).
-porter-fake = { workspace = true }
+test-kit = { workspace = true }
 proptest = { workspace = true }
 
 [lints]

@@ -92,7 +92,7 @@ mod tests {
         );
         assert_eq!(of_bytes(HashKind::None, b"x"), None);
         assert!(!computes(HashKind::Dropbox));
-        let dir = porter_fake::Scratch::new("hash");
+        let dir = test_kit::Scratch::new("hash");
         let path = dir.join("f");
         std::fs::write(&path, vec![7u8; 200_000]).expect("write");
         assert_eq!(

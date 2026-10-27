@@ -48,7 +48,7 @@ async fn a_call_made_as_soon_as_the_name_is_owned_is_answered() {
     });
     // The call is on its way (or answered) before the object server's runtime runs.
     held.release_once_sent(PAUSE).await;
-    let answer = tokio::time::timeout(porter_fake::GENEROUS, call)
+    let answer = tokio::time::timeout(test_kit::GENEROUS, call)
         .await
         .expect("the first call is answered within the generous wait")
         .expect("the call's task");

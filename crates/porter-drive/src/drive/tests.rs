@@ -1,9 +1,9 @@
 use super::*;
 use crate::testing::{MemoryListing, MemorySource};
 use crate::words;
-use porter_fake::Scratch;
 use porter_sync::ItemKind;
 use std::time::Duration;
+use test_kit::Scratch;
 
 struct Rig {
     dir: Scratch,
@@ -66,7 +66,7 @@ impl Rig {
 }
 
 async fn eventually(what: &str, mut check: impl FnMut() -> bool) {
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if check() {
             return;

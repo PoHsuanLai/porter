@@ -1020,12 +1020,9 @@ async fn closing_the_sheet_ends_a_wait_for_the_browser_at_once() {
         other => typist()(other),
     });
     let (service, _kept) = service(&script, vec![gives_up]);
-    let reply = tokio::time::timeout(
-        porter_fake::GENEROUS,
-        added(&service, &app("org.quire.Mail")),
-    )
-    .await
-    .expect("the dismissal is heard while the sign-in waits");
+    let reply = tokio::time::timeout(test_kit::GENEROUS, added(&service, &app("org.quire.Mail")))
+        .await
+        .expect("the dismissal is heard while the sign-in waits");
     assert_eq!(reply, AccountsReply::Refused(Refusal::Dismissed));
     assert_eq!(script.told().last(), Some(&"cancel"));
 }
@@ -1048,12 +1045,9 @@ async fn open_again_shows_the_browser_page_again_without_restarting_the_sign_in(
         other => typist()(other),
     });
     let (service, kept) = service(&script, vec![person]);
-    let reply = tokio::time::timeout(
-        porter_fake::GENEROUS,
-        added(&service, &app("org.quire.Mail")),
-    )
-    .await
-    .expect("ends");
+    let reply = tokio::time::timeout(test_kit::GENEROUS, added(&service, &app("org.quire.Mail")))
+        .await
+        .expect("ends");
     assert_eq!(reply, AccountsReply::Refused(Refusal::Dismissed));
     let waits = kept
         .shown

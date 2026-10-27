@@ -1172,13 +1172,13 @@ pub fn planted_paths(world: &World) -> Vec<PathBuf> {
 mod tests {
     use super::*;
 
-    fn world() -> (porter_fake::Scratch, World) {
-        let dir = porter_fake::Scratch::new("storage-fake");
+    fn world() -> (test_kit::Scratch, World) {
+        let dir = test_kit::Scratch::new("storage-fake");
         let world = World::plant(dir.path()).expect("the fake plants its drives");
         (dir, world)
     }
 
-    fn path(dir: &porter_fake::Scratch, under: &str) -> String {
+    fn path(dir: &test_kit::Scratch, under: &str) -> String {
         dir.path()
             .join("drives")
             .join(under)

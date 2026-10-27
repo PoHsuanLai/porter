@@ -61,7 +61,7 @@ fn the_row_in_the_guide_is_a_row_the_registry_reads() {
         .and_then(|rest| rest.split("```").next())
         .expect("a toml block");
     // The commented `# byo = true` is the owner's to switch on.
-    let dir = porter_fake::Scratch::new("guide");
+    let dir = test_kit::Scratch::new("guide");
     let (shipped, own) = (dir.join("shipped.toml"), dir.join("own.toml"));
     std::fs::write(&shipped, "").expect("write");
     std::fs::write(&own, block).expect("write");

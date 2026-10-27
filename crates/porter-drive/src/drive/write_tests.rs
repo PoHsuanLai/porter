@@ -1,7 +1,7 @@
 use super::*;
 use crate::testing::{MemoryListing, MemorySink, MemorySource, Refuse, Took};
 use crate::words;
-use porter_fake::Scratch;
+use test_kit::Scratch;
 
 struct Rig {
     dir: Scratch,
@@ -51,7 +51,7 @@ async fn restarted(rig: Rig) -> Rig {
     // task can run), as a person reopening would.
     let drive = Drive::open_writable(
         DriveConfig {
-            lock_wait: porter_fake::GENEROUS,
+            lock_wait: test_kit::GENEROUS,
             ..config(&dir)
         },
         listing.clone(),
@@ -126,7 +126,7 @@ impl Rig {
 }
 
 async fn eventually(what: &str, mut check: impl FnMut() -> bool) {
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if check() {
             return;

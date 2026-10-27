@@ -16,8 +16,8 @@ porter-http = { workspace = true }
 porter-sync = { workspace = true }
 
 [dev-dependencies]
+test-kit = { workspace = true }
 base64 = { workspace = true }
-porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }
 porter-http-relay = { workspace = true }
 porter-sync = { workspace = true, features = ["testing"] }

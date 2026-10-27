@@ -355,7 +355,7 @@ async fn the_watch_notices_a_change_made_by_someone_else() {
     let show = || engines.settings().auto.show_reason;
     assert_eq!(show(), ShowReason::On);
     std::fs::write(file.path(), "[ai.auto]\nshow_reason = \"off\"\n").expect("write");
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if show() == ShowReason::Off {
             break;

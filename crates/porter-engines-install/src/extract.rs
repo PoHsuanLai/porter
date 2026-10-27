@@ -194,8 +194,8 @@ mod tests {
     use super::*;
     use flate2::Compression;
     use flate2::write::GzEncoder;
-    use porter_fake::Scratch;
     use tar::{Builder, Header};
+    use test_kit::Scratch;
 
     /// One entry of a test archive, written as is: the name is not checked, so an archive can
     /// hold what a well-behaved `tar` never writes.

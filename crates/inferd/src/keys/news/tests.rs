@@ -47,7 +47,7 @@ async fn a_save_that_worked_wakes_the_watcher_and_one_that_failed_does_not() {
     memory.refusing(false);
     store.save(&Persisted::empty()).await.expect("saved");
     // The one permit left by the good save is taken at once; a failed save left none behind it.
-    tokio::time::timeout(porter_fake::GENEROUS, saved.notified())
+    tokio::time::timeout(test_kit::GENEROUS, saved.notified())
         .await
         .expect("woken by the save that worked");
     assert!(

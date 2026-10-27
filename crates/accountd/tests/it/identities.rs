@@ -436,7 +436,7 @@ async fn apps_that_signed_in_are_listed_for_settings_and_go_with_the_identity() 
         .await
         .expect("removed");
     let told = tokio::time::timeout(
-        porter_fake::GENEROUS,
+        test_kit::GENEROUS,
         std::future::poll_fn(|cx| {
             zbus::export::futures_core::Stream::poll_next(std::pin::Pin::new(&mut removed), cx)
         }),

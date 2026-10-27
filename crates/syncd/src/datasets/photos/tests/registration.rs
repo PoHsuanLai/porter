@@ -107,7 +107,7 @@ async fn starting_photos_registers_both_datasets() {
     run.changed();
     let originals = DatasetName::parse("a1/photos_originals").expect("name");
     let mut synced = false;
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         let status = wiring.hub.status_for(&settings_caller(), &originals);
         synced = status.is_some_and(|s| s.anchor_age.is_some());

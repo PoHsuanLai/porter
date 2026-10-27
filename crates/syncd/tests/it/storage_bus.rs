@@ -229,7 +229,7 @@ async fn rig(photos: PhotosGrant) -> Rig {
 }
 
 /// Polls every 20 ms; the limit is idle time (`common::eventually_alive`): the wait ends only when
-/// the rig has not begun a cycle or served a request for [`porter_fake::GENEROUS`], so a loaded
+/// the rig has not begun a cycle or served a request for [`test_kit::GENEROUS`], so a loaded
 /// machine that runs a cycle slowly is never cut short.
 async fn eventually(rig: &Rig, what: &str, check: impl FnMut() -> bool) {
     common::eventually_alive(what, || rig.pulse(), check).await;
@@ -320,7 +320,7 @@ async fn a_two_sided_edit_is_a_conflict_signal_with_a_number_and_keep_remote_set
     sync.resume(DATASET).await.expect("resume");
 
     let signal = tokio::time::timeout(
-        porter_fake::GENEROUS,
+        test_kit::GENEROUS,
         std::future::poll_fn(|cx| Pin::new(&mut conflicts).poll_next(cx)),
     )
     .await

@@ -145,7 +145,7 @@ impl Drop for Rig {
 }
 
 /// Polls every 20 ms; the limit is idle time (`common::eventually_alive`): the wait ends only when
-/// the rig has not begun a cycle or served a request for [`porter_fake::GENEROUS`].
+/// the rig has not begun a cycle or served a request for [`test_kit::GENEROUS`].
 async fn eventually(rig: &Rig, what: &str, check: impl FnMut() -> bool) {
     common::eventually_alive(what, || rig.pulse(), check).await;
 }

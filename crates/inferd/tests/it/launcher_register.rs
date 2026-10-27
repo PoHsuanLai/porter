@@ -78,7 +78,7 @@ async fn a_program_has_one_launcher_first_wins_and_a_departed_connection_frees_i
 
     // The first connection leaves: its programs are free, once the bus says so.
     drop(first);
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     loop {
         match second.proxy.register_launcher(&[PROGRAM]).await {
             Ok(()) => break,

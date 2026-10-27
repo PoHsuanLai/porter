@@ -21,6 +21,7 @@ name = "porter-rig-secrets"
 path = "src/bin/porter-rig-secrets.rs"
 
 [dependencies]
+test-kit = { workspace = true }
 fake-secret-service = { workspace = true }
 porter-core = { workspace = true }
 porter-client = { workspace = true, features = ["dbus", "in-process", "infer"] }

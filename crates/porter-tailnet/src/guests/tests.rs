@@ -1,7 +1,7 @@
 use super::*;
-use porter_fake::Scratch;
 use std::os::unix::fs::PermissionsExt;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use test_kit::Scratch;
 
 fn node(text: &str) -> NodeId {
     NodeId::parse(text).expect("a node id")

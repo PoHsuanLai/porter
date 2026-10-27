@@ -50,7 +50,7 @@ async fn availability_prepare_and_the_gpu_answer_over_the_bus() {
         "loading"
     );
     let mut answer = String::new();
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         answer = inference
             .prepare(&need, "notes", "fast", &Details::new())

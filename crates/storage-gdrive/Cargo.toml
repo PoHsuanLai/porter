@@ -17,7 +17,7 @@ serde_json = { workspace = true }
 storage-webdav = { workspace = true }
 
 [dev-dependencies]
-porter-fake = { workspace = true }
+test-kit = { workspace = true }
 porter-fake-servers = { workspace = true }
 porter-http-relay = { workspace = true }
 porter-sync = { workspace = true, features = ["testing"] }

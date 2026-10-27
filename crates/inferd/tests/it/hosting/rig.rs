@@ -34,11 +34,11 @@ use model_catalog::MiB;
 use model_http::{DerCertificate, TlsRoots};
 use porter_client::{Accounts, DbusTransport};
 use porter_core::{AppId, AppName, Isolation, UnixSeconds};
-use porter_fake::Scratch;
 use porter_infer::{ModelCard, Policy, Slot, TierMap};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use test_kit::Scratch;
 
 /// An engine host that starts nothing: it records what it was asked for. An engine never exits by
 /// itself; one that is stopped exits (an eviction or an idle unload completes).

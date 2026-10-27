@@ -65,7 +65,7 @@ async fn the_launcher_registers_hears_a_login_and_a_logout_and_reports_each_once
         rig.fake
             .tell_launcher(&rig.daemon, signal, (request, "claude-code", "claude-code"))
             .await;
-        let ask = tokio::time::timeout(porter_fake::GENEROUS, next(&mut requests))
+        let ask = tokio::time::timeout(test_kit::GENEROUS, next(&mut requests))
             .await
             .expect("a request in time")
             .expect("open stream")

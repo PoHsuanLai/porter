@@ -2,11 +2,11 @@
 
 use super::common::{addresses, fake, free_port, network, scratch};
 use porter_core::NodeId;
-use porter_fake::GENEROUS;
 use porter_fake_servers::Daemon;
 use porter_tailnet::{DialError, Dialer, OnFault, Relay};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
+use test_kit::GENEROUS;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, UnixStream};
 

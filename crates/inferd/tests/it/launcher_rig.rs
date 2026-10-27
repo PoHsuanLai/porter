@@ -16,13 +16,13 @@ use porter_core::{
 };
 use porter_dbus::LauncherProxy;
 use porter_fake::{
-    FakeProvider, MemoryStore, RecordingAudit, Scratch, Scripted, ScriptedSheets, llm_account,
-    llm_provider,
+    FakeProvider, MemoryStore, RecordingAudit, Scripted, ScriptedSheets, llm_account, llm_provider,
 };
 use porter_secrets::{MemorySecrets, Secrets, SecretsError};
 use porter_service::{AccountService, Registry};
 use std::sync::Arc;
 use std::time::Duration;
+use test_kit::Scratch;
 
 pub const KEY: &str = "sk-ant-api03-S3CRET-LAUNCHER-KEY-0123456789";
 pub const PROGRAM: &str = "claude-code";

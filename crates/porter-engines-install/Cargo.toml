@@ -26,7 +26,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]
-porter-fake = { workspace = true }
+test-kit = { workspace = true }
 porter-fake-servers = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 

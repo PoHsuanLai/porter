@@ -5,22 +5,17 @@
 //! here touches a network or the user's system.
 
 mod accounts;
-mod deadline;
-pub mod guard;
 mod provider;
 mod recorders;
-mod scratch;
 mod server;
 mod sheets;
 mod world;
 
 pub use accounts::{llm_account, mail_account, storage_account};
-pub use deadline::{Deadline, GENEROUS};
 pub use provider::{
     FakeProvider, FakeSession, FakeSignIn, cloud_provider, llm_provider, mail_provider,
 };
 pub use recorders::{MemoryStore, RecordingAudit};
-pub use scratch::Scratch;
 pub use server::{FakeAddress, FakeProtocol, FakeServer};
 pub use sheets::{AskLog, Scripted, ScriptedLink, ScriptedSheets};
 pub use world::{FakeService, NOW, fake_service};

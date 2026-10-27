@@ -68,12 +68,12 @@ impl UnitManager for FakeUnits {
 
 /// A scratch directory under the test temp dir, with the shipped file in it.
 struct Scratch {
-    root: porter_fake::Scratch,
+    root: test_kit::Scratch,
 }
 
 impl Scratch {
     fn new() -> Self {
-        let root = porter_fake::Scratch::new("lending");
+        let root = test_kit::Scratch::new("lending");
         fs::create_dir_all(root.join("share")).expect("scratch");
         fs::write(root.join("share/inferd-tailnet.conf"), SHIPPED).expect("shipped");
         Self { root }

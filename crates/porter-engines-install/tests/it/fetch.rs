@@ -1,10 +1,10 @@
 use crate::support::fetcher;
 use porter_engines::{Artifact, file_digest};
 use porter_engines_install::{CancelToken, FetchError, Meter};
-use porter_fake::Scratch;
 use porter_fake_servers::start_artifacts;
 use porter_http::HttpError;
 use sha2::{Digest, Sha256};
+use test_kit::Scratch;
 
 fn artifact(url: String, body: &[u8]) -> Artifact {
     let digest = Sha256::digest(body);

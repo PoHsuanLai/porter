@@ -11,9 +11,9 @@ use ds_settings::schema::KeyPath;
 use porter_core::{AccountState, SecretKey, SecretPurpose};
 use porter_dbus::IdentitiesProxy;
 use porter_dbus::callers::CallerRole;
-use porter_fake::Scratch;
 use porter_secrets::{Secrets, SecretsError};
 use porter_service::audit::AuditEvent;
+use test_kit::Scratch;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn only_the_settings_role_may_read_or_set_anything() {
@@ -479,7 +479,7 @@ async fn word_on(changes: &mut ds_settings::live::Changes, row: &KeyPath) -> Str
     use zbus::export::futures_core::Stream;
     loop {
         let change = tokio::time::timeout(
-            porter_fake::GENEROUS,
+            test_kit::GENEROUS,
             std::future::poll_fn(|cx| std::pin::Pin::new(&mut *changes).poll_next(cx)),
         )
         .await

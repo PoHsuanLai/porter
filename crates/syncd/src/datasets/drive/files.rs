@@ -516,7 +516,7 @@ mod tests {
 
     #[tokio::test]
     async fn changes_missed_tell_of_every_tracked_item_again() {
-        let dir = porter_fake::Scratch::new("drive-files");
+        let dir = test_kit::Scratch::new("drive-files");
         let listing = Arc::new(MemoryListing::default());
         let source = Arc::new(MemorySource::default());
         listing.file("a", None, "a.bin", 4, "1");
@@ -555,7 +555,7 @@ mod tests {
 
     #[tokio::test]
     async fn keeping_a_drive_whole_outlasts_a_restart_and_goes_with_its_account() {
-        let dir = porter_fake::Scratch::new("drive-files-keep-all");
+        let dir = test_kit::Scratch::new("drive-files-keep-all");
         let settings = dir.join("syncd.toml");
         let listing = Arc::new(MemoryListing::default());
         let source = Arc::new(MemorySource::default());
@@ -596,7 +596,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_pause_outlasts_a_restart_and_a_drive_let_go_writes_out_what_it_did_not_send() {
-        let dir = porter_fake::Scratch::new("drive-files-pause");
+        let dir = test_kit::Scratch::new("drive-files-pause");
         let settings = dir.join("syncd.toml");
         let listing = Arc::new(MemoryListing::default());
         let source = Arc::new(MemorySource::default());
@@ -700,7 +700,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_folder_that_cannot_be_taken_away_stops_the_removal_before_anything_is_kept() {
-        let dir = porter_fake::Scratch::new("drive-files-stuck");
+        let dir = test_kit::Scratch::new("drive-files-stuck");
         let listing = Arc::new(MemoryListing::default());
         let source = Arc::new(MemorySource::default());
         let sink = Arc::new(porter_drive::testing::MemorySink::new(
@@ -741,7 +741,7 @@ mod tests {
         );
     }
 
-    fn paths(dir: &porter_fake::Scratch) -> Paths {
+    fn paths(dir: &test_kit::Scratch) -> Paths {
         Paths {
             journals: dir.join("state/porter/sync"),
             mirrors: dir.join("data/porter/vdir"),
@@ -755,7 +755,7 @@ mod tests {
 
     #[tokio::test]
     async fn what_a_drive_not_shown_did_not_send_is_kept_when_its_account_goes() {
-        let dir = porter_fake::Scratch::new("drive-files-not-shown");
+        let dir = test_kit::Scratch::new("drive-files-not-shown");
         let paths = paths(&dir);
         let account = AccountDir::parse("one").expect("account");
         super::super::note_folder(&paths, &account, "OneDrive").expect("noted");

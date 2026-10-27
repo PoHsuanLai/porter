@@ -3,12 +3,13 @@
 //! ephemeral loopback port. It is the far end of an SSH tunnel in the attached-engine tests; it
 //! binds only what the test names and answers only the scratch it is given.
 
-use porter_fake::{FakeAddress, Scratch};
+use porter_fake::FakeAddress;
 use porter_fake_servers::http::{Request, Response, serve};
 use porter_fake_servers::net::{Bind, Listener};
 use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
+use test_kit::Scratch;
 use tokio::task::JoinHandle;
 
 /// One request the lab answered.

@@ -397,7 +397,7 @@ async fn a_watcher_hears_a_download_move_with_its_folder_and_others_hear_nothing
         .expect("download");
     let mut seen_downloading = false;
     let mut seen_folder = false;
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     loop {
         if deadline.passed() {
             deadline.fail("the download is told");

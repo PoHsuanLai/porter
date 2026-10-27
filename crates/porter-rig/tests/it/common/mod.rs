@@ -52,9 +52,9 @@ impl Drop for Proc {
     }
 }
 
-/// Polls `check` every 20 ms until `porter_fake::GENEROUS` has passed by the clock.
+/// Polls `check` every 20 ms until `test_kit::GENEROUS` has passed by the clock.
 pub async fn eventually<T>(what: &str, mut check: impl FnMut() -> Option<T>) -> T {
-    let deadline = porter_fake::Deadline::generous();
+    let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if let Some(found) = check() {
             return found;

@@ -22,7 +22,7 @@ pub const PASSWORD: &str = "hunter2";
 pub const TOKEN: &str = "fake-access-9";
 /// How long a read or the end of a relay is waited for: as long as a starved machine needs. A
 /// passing read returns at once.
-const WAIT: Duration = porter_fake::GENEROUS;
+const WAIT: Duration = test_kit::GENEROUS;
 
 pub fn port(address: &FakeAddress) -> u16 {
     match address {

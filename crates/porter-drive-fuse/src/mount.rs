@@ -344,7 +344,7 @@ mod tests {
 
     #[test]
     fn a_computer_with_no_device_or_helper_is_told_apart_and_nothing_is_mounted() {
-        let dir = porter_fake::Scratch::new("drive-fuse-mount");
+        let dir = test_kit::Scratch::new("drive-fuse-mount");
         let none = Mounter {
             device: dir.join("no-fuse"),
             ..Mounter::default()

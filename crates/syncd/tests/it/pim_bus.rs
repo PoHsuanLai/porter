@@ -69,7 +69,7 @@ fn card(uid: &str, name: &str) -> String {
 }
 
 /// Polls every 20 ms; the limit is idle time (`common::eventually_alive`): the wait ends only when
-/// the rig has not begun a cycle or served a request for [`porter_fake::GENEROUS`] (a poll cycle
+/// the rig has not begun a cycle or served a request for [`test_kit::GENEROUS`] (a poll cycle
 /// is a second here), so a loaded machine that mirrors slowly is never cut short.
 async fn eventually(rig: &Rig, what: &str, check: impl FnMut() -> bool) {
     common::eventually_alive(what, || rig.pulse(), check).await;
@@ -78,9 +78,9 @@ async fn eventually(rig: &Rig, what: &str, check: impl FnMut() -> bool) {
 /// Polls every 20 ms until `done` items of `total` are finished. The wait is idle time, not
 /// wall-clock time: a round of twenty large items takes minutes on a loaded machine, and a
 /// daemon that keeps mirroring is working, so the wait fails only when the count has not grown
-/// for [`porter_fake::GENEROUS`].
+/// for [`test_kit::GENEROUS`].
 async fn eventually_progressing(what: &str, mut done: impl FnMut() -> usize, total: usize) {
-    let mut deadline = porter_fake::Deadline::idle(porter_fake::GENEROUS);
+    let mut deadline = test_kit::Deadline::idle(test_kit::GENEROUS);
     let mut best = 0;
     loop {
         let now = done();

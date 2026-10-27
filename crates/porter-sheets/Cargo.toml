@@ -18,7 +18,7 @@ tokio = { workspace = true }
 zbus = { workspace = true }
 
 [dev-dependencies]
-porter-fake = { workspace = true }
+test-kit = { workspace = true }
 
 [lints]
 workspace = true

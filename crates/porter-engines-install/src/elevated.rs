@@ -118,7 +118,7 @@ pub async fn install_for_everyone(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_fake::Scratch;
+    use test_kit::Scratch;
 
     /// A helper that says what the script says, with `/bin/sh` standing for pkexec: the script's
     /// first line exits with `pkexec_code` when that is not 0, as pkexec does when the person did
