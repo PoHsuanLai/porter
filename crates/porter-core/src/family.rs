@@ -3,7 +3,7 @@
 //! the provider crate, because an account's endpoints name the family that speaks to them.
 
 use crate::capability::CapabilityKind;
-use crate::endpoint::EndpointProtocol;
+use crate::protocol::EndpointProtocol;
 use serde::{Deserialize, Serialize};
 
 /// One protocol engine.

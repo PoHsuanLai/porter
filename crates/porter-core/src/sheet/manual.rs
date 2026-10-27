@@ -23,7 +23,7 @@ use super::fields::{
 use super::view::{FieldProblem, ProblemKind};
 use crate::endpoint::{EndpointUrl, UrlScheme, server_address, server_address_shape};
 use crate::secret::SecretText;
-use crate::tailnet::Machine;
+use crate::tailnet::{Machine, is_one_of_mine};
 use serde::{Deserialize, Serialize};
 
 /// How a mail server speaks.
@@ -551,7 +551,7 @@ fn server_problem(
     }
     let typed = text(answers, FieldKind::ServerUrl)?;
     let fine = match own {
-        Some(own) => server_address(&typed, own).is_ok(),
+        Some(own) => server_address(&typed, |host| is_one_of_mine(own, host)).is_ok(),
         None => server_address_shape(&typed).is_ok(),
     };
     (!fine).then(|| invalid(FieldKind::ServerUrl))

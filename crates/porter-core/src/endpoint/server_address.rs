@@ -5,17 +5,15 @@
 //!
 //! * `https` is accepted for any host;
 //! * plain `http` is accepted for this computer (`Origin::is_loopback`) and for one of the
-//!   person's own computers on their tailnet: a [`Machine`] whose owner is
-//!   [`MachineOwner::Mine`], matched by its name, its network name or one of its addresses.
-//!   Another person's computer, a tagged server and every other host need `https`.
+//!   person's own computers on their tailnet. Another person's computer, a tagged server and
+//!   every other host need `https`.
 //!
-//! The list of computers is an input: the caller reads it from wherever it has one (accountd's
-//! `Tailnet1.Machines`) and passes it in; a caller with none passes `&[]` and so accepts plain
-//! `http` for this computer only.
+//! Which hosts are the person's own computers is an input: the caller reads the list from
+//! wherever it has one (accountd's `Tailnet1.Machines`) and passes a question about a host; a
+//! caller with no list passes one that says no, and so accepts plain `http` for this computer
+//! only. This module knows nothing of what a tailnet's computer is.
 
-use super::{EndpointUrl, Origin, Tls, UrlScheme};
-use crate::tailnet::{Machine, MachineOwner};
-use std::net::IpAddr;
+use super::{EndpointUrl, Tls, UrlScheme};
 
 /// What a person reads when an address is refused for its scheme.
 pub const SERVER_ADDRESS_RULE: &str =
@@ -58,14 +56,18 @@ impl ServerAddress {
     }
 }
 
-/// The address `text` stands for, or why it is refused; `own` is the person's computers on their
+/// The address `text` stands for, or why it is refused; `is_own` says whether a host (a name or
+/// an address, as it is written in the address) is one of the person's own computers on their
 /// tailnet, as far as the caller knows them.
 ///
 /// # Errors
 /// [`ServerAddressFault::NotAnAddress`] for text that is not an `http` or `https` address;
 /// [`ServerAddressFault::PlainOffTrusted`] for `http` to a host that is not this computer nor one
 /// of the person's own computers.
-pub fn server_address(text: &str, own: &[Machine]) -> Result<ServerAddress, ServerAddressFault> {
+pub fn server_address(
+    text: &str,
+    is_own: impl Fn(&str) -> bool,
+) -> Result<ServerAddress, ServerAddressFault> {
     let url = EndpointUrl::parse(text.trim()).map_err(|_| ServerAddressFault::NotAnAddress)?;
     let origin = url.origin();
     match origin.scheme {
@@ -74,7 +76,7 @@ pub fn server_address(text: &str, own: &[Machine]) -> Result<ServerAddress, Serv
             tls: Tls::Implicit,
         }),
         UrlScheme::Http
-            if origin.is_loopback() || (origin.is_tailnet() && is_own(&origin, own)) =>
+            if origin.is_loopback() || (origin.is_tailnet() && is_own(&origin.host)) =>
         {
             Ok(ServerAddress {
                 url,
@@ -101,56 +103,19 @@ pub fn server_address_shape(text: &str) -> Result<EndpointUrl, ServerAddressFaul
     }
 }
 
-/// Whether the origin's host is one of the person's own computers.
-fn is_own(origin: &Origin, own: &[Machine]) -> bool {
-    let host = origin.host.as_str();
-    let address: Option<IpAddr> = host.parse().ok();
-    own.iter()
-        .filter(|machine| machine.owner == MachineOwner::Mine)
-        .any(|machine| {
-            host.eq_ignore_ascii_case(&machine.name)
-                || host.eq_ignore_ascii_case(&machine.dns)
-                || address.is_some_and(|ip| machine.addresses.contains(&ip))
-        })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tailnet::NodeId;
 
-    fn machine(name: &str, dns: &str, address: &str, owner: MachineOwner) -> Machine {
-        Machine::new(
-            NodeId::parse("nTEST1").expect("node id"),
-            name.to_owned(),
-            dns.to_owned(),
-            owner,
-        )
-        .with_addresses(vec![address.parse().expect("address")])
+    /// The person's own computers, as the hosts they answer to.
+    fn is_own(host: &str) -> bool {
+        ["studio", "studio.tail1.ts.net", "100.64.0.7"]
+            .iter()
+            .any(|own| host.eq_ignore_ascii_case(own))
     }
 
     #[test]
     fn an_address_is_accepted_by_its_scheme_and_its_host() {
-        let own = [
-            machine(
-                "studio",
-                "studio.tail1.ts.net",
-                "100.64.0.7",
-                MachineOwner::Mine,
-            ),
-            machine(
-                "friend",
-                "friend.tail1.ts.net",
-                "100.64.0.8",
-                MachineOwner::Shared,
-            ),
-            machine(
-                "gpu-box",
-                "gpu-box.tail1.ts.net",
-                "100.64.0.9",
-                MachineOwner::Tagged,
-            ),
-        ];
         const ACCEPTED: Tls = Tls::Implicit;
         const PLAIN: Tls = Tls::Plain;
         let cases: &[(&str, &str, Result<Tls, ServerAddressFault>)] = &[
@@ -235,12 +200,12 @@ mod tests {
             ("empty", "", Err(ServerAddressFault::NotAnAddress)),
         ];
         for (what, text, want) in cases {
-            let got = server_address(text, &own).map(|address| address.tls());
+            let got = server_address(text, is_own).map(|address| address.tls());
             assert_eq!(got, *want, "{what}: {text}");
         }
         // With no list of computers only this computer may be plain.
         assert_eq!(
-            server_address("http://studio:8080/v1", &[]),
+            server_address("http://studio:8080/v1", |_| false),
             Err(ServerAddressFault::PlainOffTrusted)
         );
     }
@@ -254,7 +219,7 @@ mod tests {
             ("https://llm.example.test/v1/", "/v1"),
             ("https://llm.example.test/api/v1", "/api/v1"),
         ] {
-            let address = server_address(text, &[]).expect(text);
+            let address = server_address(text, |_| false).expect(text);
             assert_eq!(address.base(), base, "{text}");
         }
     }

@@ -45,6 +45,7 @@ pub mod need;
 mod offer;
 pub mod percent;
 mod process_credential;
+mod protocol;
 mod restriction;
 pub mod scope;
 mod secret;
@@ -69,9 +70,9 @@ pub use capability::{Capability, CapabilityKind};
 pub use data_class::DataClass;
 pub use effective::{KindToggle, Toggle, effective};
 pub use endpoint::{
-    EndpointFault, EndpointProtocol, EndpointUrl, LoginName, Origin, RelayAuth, RelayPlan,
-    SERVER_ADDRESS_RULE, ServerAddress, ServerAddressFault, ServiceEndpoint, Tls, UrlScheme,
-    server_address, server_address_shape,
+    EndpointFault, EndpointUrl, LoginName, Origin, RelayAuth, RelayPlan, SERVER_ADDRESS_RULE,
+    ServerAddress, ServerAddressFault, ServiceEndpoint, Tls, UrlScheme, server_address,
+    server_address_shape,
 };
 pub use error::CoreError;
 pub use family::Family;
@@ -84,6 +85,7 @@ pub use matching::{Match, Shortfall, matches};
 pub use need::Need;
 pub use offer::{AbsentReason, Claim, Offer, Provenance, Subject};
 pub use process_credential::ProcessCredentialId;
+pub use protocol::EndpointProtocol;
 pub use restriction::{
     Limit, LimitReason, ReauthReason, Restriction, SEVEN_DAYS, TenantConsent, TokenLifetime,
     Verification,
