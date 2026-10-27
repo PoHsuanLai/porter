@@ -2539,6 +2539,7 @@ dependencies = [
  "base64",
  "form_urlencoded",
  "hex",
+ "http",
  "md-5",
  "porter-core",
  "porter-discover",

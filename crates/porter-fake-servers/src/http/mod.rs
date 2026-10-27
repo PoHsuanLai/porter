@@ -258,30 +258,6 @@ pub(crate) async fn read_request<S: AsyncRead + Unpin>(
     }))
 }
 
-fn reason(status: u16) -> &'static str {
-    match status {
-        200 => "OK",
-        201 => "Created",
-        204 => "No Content",
-        206 => "Partial Content",
-        207 => "Multi-Status",
-        301 => "Moved Permanently",
-        302 => "Found",
-        304 => "Not Modified",
-        400 => "Bad Request",
-        401 => "Unauthorized",
-        403 => "Forbidden",
-        404 => "Not Found",
-        405 => "Method Not Allowed",
-        409 => "Conflict",
-        412 => "Precondition Failed",
-        416 => "Range Not Satisfiable",
-        501 => "Not Implemented",
-        507 => "Insufficient Storage",
-        _ => "Status",
-    }
-}
-
 pub(crate) async fn write_response<S: AsyncWrite + Unpin>(
     stream: &mut S,
     response: &Response,
@@ -290,7 +266,10 @@ pub(crate) async fn write_response<S: AsyncWrite + Unpin>(
     let mut head = format!(
         "HTTP/1.1 {} {}\r\n",
         response.status,
-        reason(response.status)
+        http::StatusCode::from_u16(response.status)
+            .ok()
+            .and_then(|code| code.canonical_reason())
+            .unwrap_or("Status")
     );
     for (n, v) in &response.headers {
         head.push_str(&format!("{n}: {v}\r\n"));
@@ -350,5 +329,35 @@ where
             }
             Some(_) = connections.join_next(), if !connections.is_empty() => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn status_line(status: u16) -> String {
+        let mut out = Vec::new();
+        let response = Response {
+            status,
+            headers: Vec::new(),
+            body: Vec::new(),
+        };
+        write_response(&mut out, &response, true)
+            .await
+            .expect("written");
+        String::from_utf8(out)
+            .expect("text")
+            .lines()
+            .next()
+            .expect("a line")
+            .to_owned()
+    }
+
+    #[tokio::test]
+    async fn the_status_line_carries_the_standard_reason() {
+        assert_eq!(status_line(207).await, "HTTP/1.1 207 Multi-Status");
+        assert_eq!(status_line(429).await, "HTTP/1.1 429 Too Many Requests");
+        assert_eq!(status_line(599).await, "HTTP/1.1 599 Status");
     }
 }
