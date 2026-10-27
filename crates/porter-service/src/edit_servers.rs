@@ -85,14 +85,31 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
         if let Some(fixed) = servers_fixed(auth) {
             return Err(EditRefused::Fixed(fixed));
         }
+        // An account this service keeps is edited as the provider it was added with, whatever
+        // the caller names: a password provider named for an account that signs in otherwise
+        // would offer its servers to be typed.
+        let kept_as = self
+            .lock()
+            .accounts
+            .iter()
+            .find(|a| a.id == edit.account)
+            .map(|a| a.provider.clone());
+        if kept_as.is_some_and(|kept| kept != edit.provider) {
+            return Err(EditRefused::Refused(Refusal::Unavailable));
+        }
         let mut credentials = Vec::new();
         for purpose in KEPT {
             let key = SecretKey {
                 account: edit.account.clone(),
                 purpose,
             };
-            if let Ok(credential) = self.secrets.get(&key).await {
-                credentials.push((purpose, credential));
+            match self.secrets.get(&key).await {
+                Ok(credential) => credentials.push((purpose, credential)),
+                // Not kept here: the person types it, as the form asks.
+                Err(porter_secrets::SecretsError::Missing) => {}
+                Err(other) => {
+                    return Err(EditRefused::Refused(crate::token::secrets_refusal(other)));
+                }
             }
         }
         let job = Job::EditServers {

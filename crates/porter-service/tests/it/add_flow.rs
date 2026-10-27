@@ -2003,3 +2003,34 @@ async fn an_account_that_signs_in_at_its_providers_page_cannot_edit_its_servers(
         assert!(script.modes.lock().expect("modes").is_empty(), "{id}");
     }
 }
+
+#[tokio::test]
+async fn an_account_kept_here_is_edited_only_as_the_provider_it_was_added_with() {
+    let script = Script::answering(vec![SignInStep::Done(signed("ada"))]);
+    let mut account = held_account("ada", AccountState::Ok);
+    account.provider = ProviderId::parse("elsewhere").expect("id");
+    let registry = Registry {
+        grants: vec![],
+        accounts: vec![account],
+        toggles: vec![],
+    };
+    let (service, kept) = service_over(
+        vec![provider(&script)],
+        registry,
+        Shared::default(),
+        vec![editor()],
+    );
+    let refused = service
+        .edit_servers(
+            &app("org.quire.Mail"),
+            edit_of("scripted"),
+            ParentWindow::Unparented,
+        )
+        .await;
+    assert_eq!(
+        refused,
+        Err(EditRefused::Refused(Refusal::Unavailable)),
+        "no sheet opens for a provider the account was not added with"
+    );
+    assert!(kinds(&kept.shown).is_empty());
+}
