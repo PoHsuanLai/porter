@@ -138,6 +138,7 @@ impl DirUnits {
             drop_ins: DropIns::None,
             transient: Transient::No,
             exec: ExePath::new(image.to_str()?).ok(),
+            exec_trust: Some(FileTrust::RootOnly),
             loader: Loader::Cleared,
         })
     }

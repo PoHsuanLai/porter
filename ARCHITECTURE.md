@@ -679,8 +679,9 @@ annotated sample configuration). One `Open` is:
 manager state what it is, and `judge` returns a `Standing`. `callers/standing.rs` turns the standing into a
 `Caller`; `callers/translate.rs` turns porter's table into peephole's.
 
-- Fixed roles (`CallerRole::is_fixed`) need `Proof::Full` (main process of a unit from root-owned
-  fragment and drop-ins, not transient, starting a program of the row, loader variables unset). With less
+- Fixed roles (`CallerRole::is_fixed`) need `Proof::Unit` or `Proof::Full` (main process of a unit from
+  root-owned fragment and drop-ins, not transient, starting a program of the row, loader variables unset;
+  `Unit` where a sandbox hides the image, its `ExecStart` program root-only all the way up). With less
   the caller is a plain `App`. `Agent` and `App` units need only the row (`Proof::Cgroup`).
 - A Flatpak app is `Proven(Flatpak)` (metadata checked against the cgroup's `app-flatpak-<id>-<n>.scope`;
   a disagreement is nobody), a snap `Proven(Snap)` when its name is a reverse-DNS app name, a program in

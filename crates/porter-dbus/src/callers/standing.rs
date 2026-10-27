@@ -44,10 +44,11 @@ fn proven(app: &AppKey, isolation: Isolation) -> PeerIdentity {
 }
 
 /// The proof a role needs: a fixed role stands for more than an app, so it needs the unit
-/// manager's word (`Full`); the others need only that the process is the row's.
+/// manager's word (`Unit`, or `Full` where the image can be read too); the others need only that
+/// the process is the row's.
 const fn proof_needed(role: CallerRole) -> Proof {
     match role.is_fixed() {
-        true => Proof::Full,
+        true => Proof::Unit,
         false => Proof::Cgroup,
     }
 }

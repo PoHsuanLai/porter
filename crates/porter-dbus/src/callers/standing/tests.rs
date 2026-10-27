@@ -44,7 +44,7 @@ fn want(
 }
 
 #[test]
-fn a_fixed_role_service_with_full_proof_keeps_its_role() {
+fn a_fixed_role_service_proved_by_its_unit_keeps_its_role() {
     let cases = [
         (
             "org.quire.Inference",
@@ -56,11 +56,13 @@ fn a_fixed_role_service_with_full_proof_keeps_its_role() {
         ("org.quire.Settings", "settings", CallerRole::Settings),
     ];
     for (app, role, expected) in cases {
-        assert_eq!(
-            shown(&service(app, role, Proof::Full)),
-            want(app, Isolation::Unsandboxed, expected),
-            "{app}"
-        );
+        for proof in [Proof::Unit, Proof::Full] {
+            assert_eq!(
+                shown(&service(app, role, proof)),
+                want(app, Isolation::Unsandboxed, expected),
+                "{app} {proof:?}"
+            );
+        }
     }
 }
 

@@ -10,9 +10,10 @@
 //! - a native app that a launcher started in `app-<id>-<n>.scope`, from a root-owned program, is
 //!   `Proven(Unsandboxed)` (advisory: any process of the person's may start such a scope);
 //! - a service the table names by unit and program is that row's app and role, as far as the
-//!   proof reaches: a fixed role ([`CallerRole::is_fixed`]) needs peephole's `Full` proof (the
-//!   unit manager says the process is the unit's main process, from a fragment and drop-ins root
-//!   owns, not transient, starting the row's program); with less, the caller is a plain app;
+//!   proof reaches: a fixed role ([`CallerRole::is_fixed`]) needs peephole's `Unit` or `Full`
+//!   proof (the unit manager says the process is the unit's main process, from a fragment and
+//!   drop-ins root owns, not transient, starting the row's program, which is root-only all the
+//!   way up); with less, the caller is a plain app;
 //! - anything else (a program in no row and no app scope, an image a person can write, a process
 //!   that left) is nobody, and the daemon refuses it (`AccessDenied`), never giving it a role.
 //!
