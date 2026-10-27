@@ -81,6 +81,7 @@ impl AutoEvict {
 /// an eviction is announced whatever this says (a swap is never hidden).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum ShowReason {
     /// Only an eviction is announced.
     Off,

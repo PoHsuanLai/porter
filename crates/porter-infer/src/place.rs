@@ -340,6 +340,7 @@ impl PlaceRow {
 /// the first of this order: `NotReady`, `FloorRefused`, `ModelNotOffered`, `NoneCapable`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum NoPlaceReason {
     /// An allowed place could serve it, but is not ready now (an engine down, an account to sign
     /// in again, weights not on the computer yet).

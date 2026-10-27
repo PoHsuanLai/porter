@@ -40,6 +40,8 @@ impl From<BusError> for TailnetError {
             BusFailure::NoDaemon => TailnetError::Unreachable,
             BusFailure::Denied(why) => TailnetError::Denied(why),
             BusFailure::Other(why) => TailnetError::Malformed(why),
+            // a failure a later porter-dbus adds
+            _ => TailnetError::Malformed("a bus failure this client does not know".into()),
         }
     }
 }

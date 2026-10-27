@@ -36,6 +36,7 @@ pub trait ChatSink: Send {
 
 /// Why a turn on a model gave no reply: it was not run, or it failed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum TurnError {
     /// The request was not run (a cap, a missing grant, a kind of request the model does not take).
     Refused(InferRefusal),

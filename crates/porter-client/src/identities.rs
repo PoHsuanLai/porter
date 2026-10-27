@@ -90,6 +90,8 @@ impl From<BusError> for IdentitiesError {
             BusFailure::NoDaemon => IdentitiesError::Unreachable,
             BusFailure::Denied(why) => IdentitiesError::Denied(why),
             BusFailure::Other(why) => IdentitiesError::Malformed(why),
+            // a failure a later porter-dbus adds
+            _ => IdentitiesError::Malformed("a bus failure this client does not know".into()),
         }
     }
 }

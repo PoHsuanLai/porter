@@ -107,7 +107,8 @@ pub(crate) fn halt(error: ReplicaError) -> Halt {
         ReplicaError::Unauthorized => Outcome::Unauthorized,
         ReplicaError::NeedsConsent => Outcome::NeedsConsent,
         ReplicaError::Transient(after) => Outcome::Retry(after),
-        ReplicaError::AnchorExpired | ReplicaError::Gone => Outcome::Gone,
+        // anchor expired, gone, and a failure a later porter-sync adds
+        _ => Outcome::Gone,
     })
 }
 

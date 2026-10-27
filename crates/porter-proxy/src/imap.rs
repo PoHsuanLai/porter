@@ -88,18 +88,28 @@ pub enum ImapPhase {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImapRelay {
     /// What it presents and where.
-    pub plan: RelayPlan,
+    pub(crate) plan: RelayPlan,
     /// Where it stands.
-    pub phase: ImapPhase,
+    pub(crate) phase: ImapPhase,
     /// Server bytes read and not yet a whole line, until the relay starts relaying.
-    pub buffer: Vec<u8>,
+    pub(crate) buffer: Vec<u8>,
     /// What the app sent before the relay was ready for it, passed on once it is.
-    pub early: Vec<u8>,
+    pub(crate) early: Vec<u8>,
     /// The server's capabilities as last announced.
-    pub capabilities: Vec<String>,
+    pub(crate) capabilities: Vec<String>,
 }
 
 impl ImapRelay {
+    /// What the relay presents and where.
+    pub fn plan(&self) -> &RelayPlan {
+        &self.plan
+    }
+
+    /// Where the relay stands.
+    pub fn phase(&self) -> &ImapPhase {
+        &self.phase
+    }
+
     /// A relay at the start of a connection.
     pub fn new(plan: RelayPlan) -> Self {
         Self {

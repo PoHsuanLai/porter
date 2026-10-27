@@ -11,6 +11,7 @@ use tar::{Archive, Entry, EntryType};
 
 /// Why an archive was not unpacked.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum ExtractError {
     /// The archive could not be read: missing, not gzip, not tar, or cut short.
     #[error("the archive could not be unpacked")]

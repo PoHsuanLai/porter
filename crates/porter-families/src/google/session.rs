@@ -194,7 +194,8 @@ impl<H: Http> GoogleSession<H> {
                 ProviderError::Unauthorized
             }
             ExchangeFault::Unreachable => ProviderError::Unreachable,
-            ExchangeFault::Unreadable => ProviderError::Unreadable,
+            // unreadable, and a fault a later porter-oauth adds
+            _ => ProviderError::Unreadable,
         })?;
         let issued = IssuedToken::new(
             TokenKind::Bearer,

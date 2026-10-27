@@ -2,6 +2,7 @@
 
 /// Why a request produced no response. A response with an error status is a response, not this.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum HttpError {
     /// The server could not be reached (no route, refused, a name that does not resolve).
     #[error("unreachable")]

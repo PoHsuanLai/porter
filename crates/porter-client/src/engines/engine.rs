@@ -34,6 +34,7 @@ impl fmt::Display for EngineId {
 /// Why an engine, or the table over engines, is not usable. Said when the host is built, never
 /// when a session is opened.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum EngineError {
     /// Not an engine id.
     #[error("{0:?} is not an engine id")]

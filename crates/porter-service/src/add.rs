@@ -40,7 +40,8 @@ impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R: RegistryStore, A: AuditSin
             Ok(_) | Err(SecretsError::Missing | SecretsError::Unreadable) => {
                 Err(Refusal::NeedsReauth)
             }
-            Err(SecretsError::Locked | SecretsError::Unavailable) => Err(Refusal::Unavailable),
+            // locked, unreachable, and a failure a later porter-secrets adds
+            Err(_) => Err(Refusal::Unavailable),
         }
     }
 

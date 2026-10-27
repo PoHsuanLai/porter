@@ -29,6 +29,7 @@ const VERSION: u64 = 1;
 
 /// Why the key file could not be used.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum FileSecretsError {
     /// The path is not absolute.
     #[error("the key file path is not absolute")]

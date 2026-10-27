@@ -33,6 +33,7 @@ impl TreeSeal {
 
 /// Why a tree could not be sealed.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum SealError {
     /// A file or directory could not be read.
     #[error("cannot read {path}: {kind}")]

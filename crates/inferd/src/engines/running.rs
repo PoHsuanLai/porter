@@ -81,6 +81,8 @@ pub fn start_words(cause: &Cause) -> String {
         Cause::Attached(_) => "the engine runs where you set it up, not here".to_owned(),
         Cause::Unknown => "the engine is not known here".to_owned(),
         Cause::Released => "the model was stopped".to_owned(),
+        // a cause a newer porter adds
+        _ => "the engine could not be started".to_owned(),
     }
 }
 

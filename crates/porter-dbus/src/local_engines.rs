@@ -91,6 +91,7 @@ pub struct LocalEngine {
 
 /// Why a row of `LocalEngines` could not be read.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum EngineRowError {
     /// A key the interface promises is absent or of another type.
     #[error("no {0}")]

@@ -104,6 +104,8 @@ fn sheet_error(error: SheetError) -> TransportError {
         SheetError::Unreadable => {
             TransportError::Malformed("a Response that is not (u, a{sv})".to_owned())
         }
+        // a failure a later porter-dbus adds
+        _ => TransportError::Malformed("a sheet failure this client does not know".to_owned()),
     }
 }
 

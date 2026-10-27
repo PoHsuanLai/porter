@@ -175,7 +175,8 @@ impl<H: Http + 'static> Provider for GoogleProvider<H> {
         match revoke(&*self.env.http, &endpoints_of(client), refresh).await {
             Ok(()) | Err(ExchangeFault::Refused) => Ok(RevokeOutcome::Revoked),
             Err(ExchangeFault::Unreachable) => Err(ProviderError::Unreachable),
-            Err(ExchangeFault::Unreadable) => Ok(RevokeOutcome::Unsupported),
+            // unreadable, and a fault a later porter-oauth adds
+            Err(_) => Ok(RevokeOutcome::Unsupported),
         }
     }
 }

@@ -168,7 +168,8 @@ impl<H: Http> MicrosoftSession<H> {
             _ if failure.wants_consent() => ProviderError::NeedsConsent,
             ExchangeFault::Refused => ProviderError::Unauthorized,
             ExchangeFault::Unreachable => ProviderError::Unreachable,
-            ExchangeFault::Unreadable => ProviderError::Unreadable,
+            // unreadable, and a fault a later porter-oauth adds
+            _ => ProviderError::Unreadable,
         })?;
         let issued = IssuedToken::new(kind, tokens.access_token.clone(), tokens.expires_at(now));
         let mut state = self.state();

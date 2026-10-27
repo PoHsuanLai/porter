@@ -83,6 +83,8 @@ pub fn words_of(reason: NoPlaceReason) -> &'static str {
             "The model chosen for one of the places you allowed is not available there."
         }
         NoPlaceReason::NoneCapable => "None of the places you allowed can do this.",
+        // a reason a newer porter adds
+        _ => "None of the places you allowed can do this.",
     }
 }
 

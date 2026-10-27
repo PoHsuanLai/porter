@@ -294,6 +294,7 @@ pub struct DroppedAction {
 /// Why a proposed action was dropped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum DropReason {
     /// The verb is not on the allow-list.
     UnsupportedVerb,

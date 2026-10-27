@@ -5,6 +5,7 @@ use zbus::fdo;
 
 /// Why a bus call did not return a value.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum BusFailure {
     /// No bus, or nothing owns (or can be activated for) the name: the daemon is not there.
     NoDaemon,

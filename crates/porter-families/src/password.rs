@@ -64,7 +64,8 @@ pub(crate) fn fault_of(error: HttpError) -> SignInFault {
         HttpError::Unreachable | HttpError::Tls | HttpError::TimedOut | HttpError::NotGranted => {
             SignInFault::Unreachable
         }
-        HttpError::TooLarge | HttpError::Malformed => SignInFault::Unreadable,
+        // too large, malformed, and a failure a later porter-http adds
+        _ => SignInFault::Unreadable,
     }
 }
 

@@ -172,6 +172,7 @@ pub fn endpoints_of(client: &ClientEntry) -> IssuerEndpoints {
 
 /// Why a clients file could not be read.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum RegistryError {
     /// The file exists and could not be read.
     #[error("{path}: {reason}")]

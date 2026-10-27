@@ -85,20 +85,30 @@ pub enum Pop3Phase {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pop3Relay {
     /// What it presents and where.
-    pub plan: porter_core::RelayPlan,
+    pub(crate) plan: porter_core::RelayPlan,
     /// Where it stands.
-    pub phase: Pop3Phase,
+    pub(crate) phase: Pop3Phase,
     /// Server bytes read and not yet a whole line, until the relay starts relaying.
-    pub buffer: Vec<u8>,
+    pub(crate) buffer: Vec<u8>,
     /// The lines of a `CAPA` reply read so far; `None` while its status line is awaited.
-    pub reply: Option<Vec<String>>,
+    pub(crate) reply: Option<Vec<String>>,
     /// The server's capabilities as last announced.
-    pub capabilities: Vec<String>,
+    pub(crate) capabilities: Vec<String>,
     /// App bytes not yet a whole command line (or sent before the relay was ready).
-    pub early: Vec<u8>,
+    pub(crate) early: Vec<u8>,
 }
 
 impl Pop3Relay {
+    /// What the relay presents and where.
+    pub fn plan(&self) -> &porter_core::RelayPlan {
+        &self.plan
+    }
+
+    /// Where the relay stands.
+    pub fn phase(&self) -> &Pop3Phase {
+        &self.phase
+    }
+
     /// A relay at the start of a connection.
     pub fn new(plan: porter_core::RelayPlan) -> Self {
         Self {

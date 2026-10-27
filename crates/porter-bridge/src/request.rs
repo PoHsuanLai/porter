@@ -26,6 +26,7 @@ pub const MAX_ATTACHMENT: u64 = 1 << 30;
 
 /// Why a request could not be turned into a model turn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum BridgeError {
     /// A name, schema or argument text is malformed, or an image type has no encoder.
     #[error("the request cannot be expressed to the engine")]

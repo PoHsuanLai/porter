@@ -8,6 +8,7 @@ use std::future::Future;
 
 /// Why a connection could not be made.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ConnectFault {
     /// No route, refused, or the name does not resolve.
     Unreachable,

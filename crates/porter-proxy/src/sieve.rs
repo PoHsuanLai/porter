@@ -101,18 +101,28 @@ pub enum SievePhase {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SieveRelay {
     /// What it presents and where.
-    pub plan: RelayPlan,
+    pub(crate) plan: RelayPlan,
     /// Where it stands.
-    pub phase: SievePhase,
+    pub(crate) phase: SievePhase,
     /// Server bytes read and not yet a whole line, until the relay starts relaying.
-    pub buffer: Vec<u8>,
+    pub(crate) buffer: Vec<u8>,
     /// What the app sent before the relay was ready for it.
-    pub early: Vec<u8>,
+    pub(crate) early: Vec<u8>,
     /// The capability lines of the list being read, or last read.
-    pub capabilities: Vec<String>,
+    pub(crate) capabilities: Vec<String>,
 }
 
 impl SieveRelay {
+    /// What the relay presents and where.
+    pub fn plan(&self) -> &RelayPlan {
+        &self.plan
+    }
+
+    /// Where the relay stands.
+    pub fn phase(&self) -> &SievePhase {
+        &self.phase
+    }
+
     /// A relay at the start of a connection.
     pub fn new(plan: RelayPlan) -> Self {
         Self {

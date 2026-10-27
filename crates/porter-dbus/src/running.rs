@@ -132,6 +132,7 @@ impl RunningModel {
 
 /// Why a row of `Running` could not be read.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum RunningRowError {
     /// A key the interface promises is absent or of another type.
     #[error("no {0}")]

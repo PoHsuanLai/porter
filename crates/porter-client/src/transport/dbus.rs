@@ -169,6 +169,8 @@ pub(crate) fn bus_error(error: &BusError) -> TransportError {
         BusFailure::NoDaemon => TransportError::Unreachable,
         BusFailure::Denied(why) => TransportError::Denied(why),
         BusFailure::Other(why) => TransportError::Malformed(format!("bus: {why}")),
+        // a failure a later porter-dbus adds
+        _ => TransportError::Malformed("a bus failure this client does not know".to_owned()),
     }
 }
 

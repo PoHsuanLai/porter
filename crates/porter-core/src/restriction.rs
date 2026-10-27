@@ -98,6 +98,7 @@ impl Restriction {
 /// Closed: the sheet words each, nothing from the network.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum ReauthReason {
     /// The provider signs a client that is still in testing out every seven days (R5).
     TestingAppExpired,
@@ -179,6 +180,7 @@ impl Limit {
 /// Why a present kind is less than the provider's full product.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum LimitReason {
     /// Uploads only; existing items are not readable.
     AppendOnly,

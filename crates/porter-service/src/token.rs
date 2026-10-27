@@ -42,7 +42,8 @@ pub(crate) fn provider_refusal(error: ProviderError) -> Refusal {
 pub(crate) fn secrets_refusal(error: SecretsError) -> Refusal {
     match error {
         SecretsError::Missing | SecretsError::Unreadable => Refusal::NeedsReauth,
-        SecretsError::Locked | SecretsError::Unavailable => Refusal::Unavailable,
+        // locked, unreachable, and a failure a later porter-secrets adds
+        _ => Refusal::Unavailable,
     }
 }
 

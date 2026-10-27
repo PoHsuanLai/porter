@@ -57,6 +57,8 @@ impl From<BusError> for SpacesError {
             BusFailure::NoDaemon => SpacesError::Unreachable,
             BusFailure::Denied(why) => SpacesError::Denied(why),
             BusFailure::Other(why) => SpacesError::Malformed(why),
+            // a failure a later porter-dbus adds
+            _ => SpacesError::Malformed("a bus failure this client does not know".into()),
         }
     }
 }

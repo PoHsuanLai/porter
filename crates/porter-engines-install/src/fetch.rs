@@ -25,6 +25,7 @@ const MAX_REDIRECTS: usize = 5;
 
 /// Why a download did not produce its file.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum FetchError {
     /// The connection failed or broke off, and the retries ran out.
     #[error("the download could not be finished: {0}")]

@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 /// Why the bytes did not come.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum SourceError {
     /// The drive could not be reached (no network, or it asked to wait).
     #[error("the drive could not be reached")]
@@ -24,16 +25,16 @@ impl From<ReplicaError> for SourceError {
     fn from(error: ReplicaError) -> Self {
         match error {
             ReplicaError::Transient(_) => SourceError::Offline,
-            ReplicaError::AnchorExpired
-            | ReplicaError::Unauthorized
-            | ReplicaError::Gone
-            | ReplicaError::NeedsConsent => SourceError::Refused,
+            // anchor expired, unauthorized, gone, needs consent, and a failure a later
+            // porter-sync adds
+            _ => SourceError::Refused,
         }
     }
 }
 
 /// Why an online document's copy was not made.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum CopyError {
     /// The drive gives no file of it.
     #[error("no file format")]
@@ -51,7 +52,8 @@ impl From<ExportError> for CopyError {
         match error {
             ExportError::Unsupported => CopyError::NoFormat,
             ExportError::TooLarge => CopyError::TooLarge,
-            ExportError::Read(_) => CopyError::Failed,
+            // a read that failed, and a failure a later porter-sync adds
+            _ => CopyError::Failed,
         }
     }
 }

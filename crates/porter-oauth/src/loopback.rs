@@ -26,6 +26,7 @@ pub struct AuthCode(pub SecretText);
 
 /// Why a redirect was not accepted.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum LoopbackFault {
     /// The `state` is not this sign-in's.
     #[error("wrong state")]

@@ -60,7 +60,8 @@ impl<U, S, A, K> SheetsDesk<U, S, A, K> {
 fn refusal_of(error: SecretsError) -> Refusal {
     match error {
         SecretsError::Missing | SecretsError::Unreadable => Refusal::NeedsReauth,
-        SecretsError::Locked | SecretsError::Unavailable => Refusal::Unavailable,
+        // locked, unreachable, and a failure a later porter-secrets adds
+        _ => Refusal::Unavailable,
     }
 }
 

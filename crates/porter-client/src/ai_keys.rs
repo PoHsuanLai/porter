@@ -66,6 +66,8 @@ impl From<BusError> for AiKeysError {
             BusFailure::NoDaemon => AiKeysError::Unreachable,
             BusFailure::Denied(why) => AiKeysError::Denied(why),
             BusFailure::Other(why) => AiKeysError::Malformed(why),
+            // a failure a later porter-dbus adds
+            _ => AiKeysError::Malformed("a bus failure this client does not know".into()),
         }
     }
 }
@@ -84,6 +86,8 @@ impl From<SheetError> for AiKeysError {
             SheetError::Unreadable => {
                 AiKeysError::Malformed("a Response that is not (u, a{sv})".into())
             }
+            // a failure a later porter-dbus adds
+            _ => AiKeysError::Malformed("a sheet failure this client does not know".into()),
         }
     }
 }

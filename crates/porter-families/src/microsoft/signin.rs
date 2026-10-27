@@ -379,7 +379,8 @@ fn exchange_fault(fault: ExchangeFault) -> SignInFault {
     match fault {
         ExchangeFault::Refused => SignInFault::Refused,
         ExchangeFault::Unreachable => SignInFault::Unreachable,
-        ExchangeFault::Unreadable => SignInFault::Unreadable,
+        // unreadable, and a fault a later porter-oauth adds
+        _ => SignInFault::Unreadable,
     }
 }
 
@@ -402,9 +403,8 @@ fn loopback_fault(fault: LoopbackFault) -> SignInFault {
         LoopbackFault::TimedOut => SignInFault::TimedOut,
         LoopbackFault::Refused(error) => refusal(&error),
         LoopbackFault::WrongState => SignInFault::Refused,
-        LoopbackFault::Oversized | LoopbackFault::NoCode | LoopbackFault::Malformed => {
-            SignInFault::Unreadable
-        }
+        // oversized, no code, malformed, and a fault a later porter-oauth adds
+        _ => SignInFault::Unreadable,
     }
 }
 

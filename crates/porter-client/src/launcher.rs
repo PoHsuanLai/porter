@@ -112,12 +112,18 @@ impl From<BusError> for LauncherError {
             (Some(LauncherFault::UnknownCredential), _) => LauncherError::UnknownCredential,
             (Some(LauncherFault::SessionTaken), _) => LauncherError::SessionTaken,
             (Some(LauncherFault::UnknownSession), _) => LauncherError::UnknownSession,
+            // a fault a later porter-dbus adds
+            (Some(_), _) => {
+                LauncherError::Malformed("a launcher fault this client does not know".into())
+            }
             (None, Some(refusal)) => LauncherError::Refused(refusal),
             (None, None) if is_invalid_args(&error) => LauncherError::Invalid(error.to_string()),
             (None, None) => match classify(&error) {
                 BusFailure::NoDaemon => LauncherError::Unreachable,
                 BusFailure::Denied(why) => LauncherError::Denied(why),
                 BusFailure::Other(why) => LauncherError::Malformed(why),
+                // a failure a later porter-dbus adds
+                _ => LauncherError::Malformed("a bus failure this client does not know".into()),
             },
         }
     }
@@ -271,6 +277,8 @@ impl Launcher {
                 SheetError::Unreadable => {
                     LauncherError::Malformed("a Response that is not (u, a{sv})".into())
                 }
+                // a failure a later porter-dbus adds
+                _ => LauncherError::Malformed("a sheet failure this client does not know".into()),
             })?;
         abandon.0 = None;
         match reply_of(SheetKind::Choose, code, results)? {
