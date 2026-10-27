@@ -75,7 +75,7 @@ impl<H: Http> GraphReplica<H> {
                 Ok(RemoteVersion(DELETED.to_owned()))
             }
             404 | 412 => Err(self.conflict(&target, &base, false).await),
-            _ => Err(write_error(&response)),
+            _ => Err(write_error(&response, self.clock.now())),
         }
     }
 
@@ -137,7 +137,7 @@ impl<H: Http> GraphReplica<H> {
             }
             404 | 412 => Err(self.conflict(target, base, false).await),
             409 => Err(self.conflict(target, base, true).await),
-            _ => Err(write_error(&response)),
+            _ => Err(write_error(&response, self.clock.now())),
         }
     }
 

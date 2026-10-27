@@ -205,6 +205,9 @@ async fn rig(photos: PhotosGrant) -> Rig {
         settings: quick(),
         network,
         owners: Access::default(),
+        clock: porter_sync::Clock::new(porter_core::clock::SystemClock),
+        nonce: "t1".to_owned(),
+        millis: Arc::new(syncd::datasets::photos::ManualMillis::at(1_700_000_000_000)),
     };
     let supervisor = StorageSupervisor::new(
         wiring,

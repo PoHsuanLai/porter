@@ -42,7 +42,8 @@
 //!
 //! ```ignore
 //! // Features `lending` and `dbus`.
-//! let config = LendingConfig::from_env().ok_or("no home folder")?;
+//! let config = LendingConfig::from_lookup(|name| std::env::var_os(name))
+//!     .ok_or("no home folder")?;
 //! let lending = TailnetLending::new(config, SessionUnits::session().await?);
 //! match lending.state() {
 //!     LendingState::Installed => { /* the switch shows "on" */ }

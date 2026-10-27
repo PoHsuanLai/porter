@@ -112,6 +112,11 @@ impl Config {
     }
 }
 
+/// Tailscale as `paths` names it: its socket, and its program looked for on `PATH` too.
+fn tailscale(paths: &Paths) -> porter_tailscale::LocalApi {
+    porter_tailscale::LocalApi::new(&paths.tailscale_socket).with_path(&paths.program_path)
+}
+
 /// Why accountd did not start.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -198,8 +203,9 @@ impl Daemon {
         let io = FamilyIo::system(
             porter_provider::ProviderSet::layered(loaded.specs.clone(), Vec::new()),
             paths.client_files(),
+            Arc::new(porter_core::clock::SystemClock),
         )
-        .with_tailscale(porter_tailscale::LocalApi::new(&paths.tailscale_socket));
+        .with_tailscale(tailscale(&paths));
         // accountd serves the internet providers (identities and Tailscale); the AI and agent
         // ones are inferd's.
         let ours: Vec<_> = loaded
@@ -255,9 +261,7 @@ impl Daemon {
             spaces: crate::SpacesStore::File(paths.registry_dir.clone()),
             // Tailscale's own socket, `/var/run/tailscale/tailscaled.sock` unless `paths` names
             // another.
-            tailnet: Some(crate::TailnetWatch::new(porter_tailscale::LocalApi::new(
-                &paths.tailscale_socket,
-            ))),
+            tailnet: Some(crate::TailnetWatch::new(tailscale(&paths))),
             // `identity-uses.json` beside `registry.json`.
             uses: crate::UsesStore::File(paths.registry_dir.clone()),
             identities: Some(Arc::new(identity_desk)),

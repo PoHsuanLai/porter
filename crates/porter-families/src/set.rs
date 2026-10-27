@@ -20,7 +20,7 @@ use crate::{
     AgentLoginProvider, ApiKeyProvider, ClientFiles, FamilyProvider, GenericProvider, GoogleEnv,
     GoogleProvider, MicrosoftEnv, MicrosoftProvider, NextcloudProvider, SharedDns, TailnetProvider,
 };
-use porter_core::clock::SystemClock;
+use porter_core::clock::Clock;
 use porter_core::{AuthKind, EndpointUrl};
 use porter_discover::{Dns, DnsFault, HickoryDns, MxRecord, SrvRecord};
 use porter_http::{SharedHttp, SharedSleep};
@@ -31,6 +31,7 @@ use porter_provider::{
 use porter_tailscale::LocalApi;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// What reading the directories found.
 #[derive(Debug, Default)]
@@ -189,7 +190,7 @@ fn read(file: &Path) -> Result<ProviderSpec, SkipReason> {
 
 /// What the families dial and resolve through: one HTTP client and one resolver for all of
 /// them, and the providers that may claim an address before the generic family searches.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct FamilyIo {
     /// The HTTP client.
     pub http: SharedHttp,
@@ -202,13 +203,27 @@ pub struct FamilyIo {
     pub clients: ClientFiles,
     /// Tailscale on this computer: the socket its program serves.
     pub tailscale: LocalApi,
+    /// The time the OAuth families date their sessions by: the host's.
+    pub clock: Arc<dyn Clock>,
+}
+
+impl std::fmt::Debug for FamilyIo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FamilyIo")
+            .field("http", &self.http)
+            .field("dns", &self.dns)
+            .field("providers", &self.providers)
+            .field("clients", &self.clients)
+            .field("tailscale", &self.tailscale)
+            .finish_non_exhaustive()
+    }
 }
 
 impl FamilyIo {
     /// The system's: hyper over the platform's roots and the system resolver, or a resolver that
     /// answers `Unreachable` when the system names none (discovery then falls back to
     /// autoconfig and a server the person types).
-    pub fn system(providers: ProviderSet, clients: ClientFiles) -> Self {
+    pub fn system(providers: ProviderSet, clients: ClientFiles, clock: Arc<dyn Clock>) -> Self {
         let dns = match HickoryDns::system() {
             Ok(dns) => SharedDns::new(dns),
             Err(_) => SharedDns::new(NoResolver),
@@ -219,6 +234,7 @@ impl FamilyIo {
             providers,
             clients,
             tailscale: LocalApi::system(),
+            clock,
         }
     }
 
@@ -263,13 +279,13 @@ pub fn family_of(spec: ProviderSpec, io: &FamilyIo) -> Result<FamilyProvider, Bo
         (AuthKind::OAuthPkce, Some(Issuer::Microsoft)) => {
             Ok(FamilyProvider::Microsoft(MicrosoftProvider::with_env(
                 spec,
-                MicrosoftEnv::with_client_files(io.clients.clone(), SystemClock),
+                MicrosoftEnv::with_client_files(io.clients.clone(), Arc::clone(&io.clock)),
             )))
         }
         (AuthKind::OAuthPkce, Some(Issuer::Google)) => {
             Ok(FamilyProvider::Google(GoogleProvider::with_env(
                 spec,
-                GoogleEnv::with_client_files(io.clients.clone(), SystemClock),
+                GoogleEnv::with_client_files(io.clients.clone(), Arc::clone(&io.clock)),
             )))
         }
         (AuthKind::ApiKey, _) => Ok(FamilyProvider::ApiKey(ApiKeyProvider::new(spec))),
@@ -329,6 +345,9 @@ mod tests {
                 shipped: PathBuf::from("/nonexistent/clients.toml"),
                 own: PathBuf::from("/nonexistent/own-clients.toml"),
             },
+            Arc::new(porter_core::clock::FixedClock::new(
+                porter_core::UnixSeconds(0),
+            )),
         )
         .with_clients(
             SharedHttp::new(ReqwestHttp::new()),

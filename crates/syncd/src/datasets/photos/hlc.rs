@@ -99,18 +99,6 @@ pub trait Millis: std::fmt::Debug + Send + Sync {
     fn now_ms(&self) -> u64;
 }
 
-/// The system clock.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct SystemMillis;
-
-impl Millis for SystemMillis {
-    fn now_ms(&self) -> u64 {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
-    }
-}
-
 /// A clock a test sets.
 #[derive(Debug, Default)]
 pub struct ManualMillis(AtomicU64);

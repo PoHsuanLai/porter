@@ -4,7 +4,6 @@
 use crate::hosting::bus::{PrivateBus, within};
 
 use inferd::audit::Memory;
-use inferd::clock::FixedClock;
 use inferd::config::{Dirs, InferdConfig, ProgramSearch};
 use inferd::engines::Engines;
 use inferd::installed::Installed;
@@ -13,6 +12,7 @@ use inferd::service::{Inference, serve_on};
 use inferd::settings::LocalEngines;
 use inferd::settings::{ConfigFile, Reload};
 use inferd::supervise::Supervised;
+use porter_core::clock::FixedClock;
 use porter_core::{AppId, AppName, Isolation, UnixSeconds};
 use porter_dbus::{EnginePlace, EngineState, InferenceProxy, LocalEngine, local_engine_from_dbus};
 use porter_engines::{

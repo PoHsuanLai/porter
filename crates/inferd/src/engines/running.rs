@@ -179,8 +179,8 @@ impl Engines {
                     engine_word(model.profile.kind),
                     memory.0,
                 );
-                if let Some(since) = began {
-                    row = row.since(self.supervised.wall_clock(since));
+                if let Some(date) = began.and_then(|since| self.supervised.wall_clock(since)) {
+                    row = row.since(date);
                 }
                 if run == RunState::Ready
                     && let Some(window) = self.supervised.window_of(id)

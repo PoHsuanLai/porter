@@ -29,7 +29,7 @@ use crate::feed::{folder_of, json_string};
 use crate::json::{DriveItem, Session as SessionJson, SessionStatus};
 use crate::refuse::{error_code, write_error};
 use crate::replica::GraphReplica;
-use porter_core::WebUrl;
+use porter_core::{UnixSeconds, WebUrl};
 use porter_http::http::header::CONTENT_TYPE;
 use porter_http::http::{Method, Response};
 use porter_http::{Http, request};
@@ -86,10 +86,10 @@ fn name_taken(response: &Response<Vec<u8>>) -> bool {
 /// A whole-drive write answered with `response`, which was not a success, a stale base or a
 /// name taken: a name the drive refuses (`400 invalidRequest` on a write that names the item,
 /// `named`) says so; the rest as [`write_error`].
-fn drive_refusal(response: &Response<Vec<u8>>, named: bool) -> PutRefused {
+fn drive_refusal(response: &Response<Vec<u8>>, named: bool, now: UnixSeconds) -> PutRefused {
     match (response.status().as_u16(), error_code(response).as_deref()) {
         (400, Some("invalidRequest" | "nameInvalid")) if named => PutRefused::NameRefused,
-        _ => write_error(response),
+        _ => write_error(response, now),
     }
 }
 
@@ -185,7 +185,11 @@ impl<H: Http> GraphReplica<H> {
             (409, UploadTo::New(place)) if name_taken(&response) => {
                 Err(self.taken_conflict(place).await)
             }
-            (_, to) => Err(drive_refusal(&response, matches!(to, UploadTo::New(_)))),
+            (_, to) => Err(drive_refusal(
+                &response,
+                matches!(to, UploadTo::New(_)),
+                self.clock.now(),
+            )),
         }
     }
 
@@ -263,7 +267,7 @@ impl<H: Http> GraphReplica<H> {
                 Ok(status.from().map(|from| (url, from)))
             }
             404 | 410 => Ok(None),
-            _ => Err(write_error(&response)),
+            _ => Err(write_error(&response, self.clock.now())),
         }
     }
 
@@ -405,7 +409,7 @@ impl<H: Http> GraphReplica<H> {
                 Ok(written)
             }
             409 if name_taken(&response) => Err(self.taken_conflict(place).await),
-            _ => Err(drive_refusal(&response, true)),
+            _ => Err(drive_refusal(&response, true, self.clock.now())),
         }
     }
 
@@ -442,7 +446,7 @@ impl<H: Http> GraphReplica<H> {
             }
             404 | 412 => Err(self.changed_conflict(item, base).await),
             409 if name_taken(&response) => Err(self.taken_conflict(to).await),
-            _ => Err(drive_refusal(&response, true)),
+            _ => Err(drive_refusal(&response, true, self.clock.now())),
         }
     }
 
@@ -466,7 +470,7 @@ impl<H: Http> GraphReplica<H> {
                 Ok(())
             }
             404 | 412 => Err(self.changed_conflict(item, base).await),
-            _ => Err(drive_refusal(&response, false)),
+            _ => Err(drive_refusal(&response, false, self.clock.now())),
         }
     }
 
@@ -571,10 +575,10 @@ mod tests {
 
     #[test]
     fn a_refused_name_a_lock_and_a_conflict_that_is_no_name_say_what_they_are() {
-        let named = |status, code| drive_refusal(&answer(status, code), true);
+        let named = |status, code| drive_refusal(&answer(status, code), true, UnixSeconds(0));
         assert_eq!(named(400, "invalidRequest"), PutRefused::NameRefused);
         assert_eq!(
-            drive_refusal(&answer(400, "invalidRequest"), false),
+            drive_refusal(&answer(400, "invalidRequest"), false, UnixSeconds(0)),
             PutRefused::Forbidden
         );
         assert_eq!(named(409, "resourceModified"), PutRefused::Declined);

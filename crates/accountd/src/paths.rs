@@ -33,6 +33,9 @@ pub struct Paths {
     /// `ACCOUNTD_TAILSCALE_SOCKET` (a Tailscale kept elsewhere, and every test of the binary,
     /// which names a scratch path so that none ever reaches the real Tailscale).
     pub tailscale_socket: PathBuf,
+    /// The directories of `PATH`, where Tailscale's program is looked for besides the usual
+    /// ones (to tell "not installed" from "not running"); empty when `PATH` is not set.
+    pub program_path: std::ffi::OsString,
 }
 
 /// The variable that names Tailscale's socket.
@@ -48,6 +51,7 @@ impl Paths {
         // Like the XDG rule: a relative path is invalid and ignored.
         let tailscale_socket = absolute(var(TAILSCALE_SOCKET_VAR))
             .unwrap_or_else(|| PathBuf::from(porter_tailscale::DEFAULT_SOCKET));
+        let program_path = var("PATH").unwrap_or_default().into();
         let xdg = Xdg::new(var);
         let state = xdg.dir("XDG_STATE_HOME", ".local/state")?;
         let config = xdg.dir("XDG_CONFIG_HOME", ".config")?;
@@ -71,6 +75,7 @@ impl Paths {
             provider_dirs,
             applications,
             tailscale_socket,
+            program_path,
         })
     }
 

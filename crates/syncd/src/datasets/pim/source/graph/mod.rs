@@ -25,8 +25,7 @@ use crate::datasets::pim::discover::{DiscoverError, Found};
 use crate::datasets::pim::relay::pim_http;
 use json::{Calendar, CalendarPage, Event, EventPage};
 use porter_client::{Accounts, Transport};
-use porter_core::clock::SystemClock;
-use porter_core::{Bytes, EndpointUrl, GrantId, WebUrl};
+use porter_core::{Bytes, EndpointUrl, GrantId, UnixSeconds, WebUrl};
 use porter_http::http::{Method, Response};
 use porter_http::{HeaderText, Http, HttpError, request};
 use porter_http_relay::{RelayDial, RelayHttp};
@@ -60,6 +59,7 @@ impl FeedCursor for DeltaLink {
 pub struct GraphCalendarSource<T: Transport> {
     http: Arc<RelayHttp<RelayDial<T>>>,
     base: WebUrl,
+    clock: Clock,
 }
 
 impl<T: Transport> GraphCalendarSource<T> {
@@ -68,11 +68,13 @@ impl<T: Transport> GraphCalendarSource<T> {
         accounts: Arc<Accounts<T>>,
         grant: GrantId,
         endpoint: EndpointUrl,
+        clock: Clock,
     ) -> Result<Self, DiscoverError> {
         let base = WebUrl::try_from(&endpoint).map_err(|_| DiscoverError::Unreadable)?;
         Ok(Self {
             http: Arc::new(pim_http(accounts, grant, endpoint)),
             base,
+            clock,
         })
     }
 }
@@ -138,17 +140,17 @@ fn color_of(calendar: &Calendar) -> Option<String> {
     Some(named.to_owned())
 }
 
-pub(super) fn retry_after(response: &Response<Vec<u8>>) -> RetryAfter {
+pub(super) fn retry_after(response: &Response<Vec<u8>>, now: UnixSeconds) -> RetryAfter {
     response
-        .retry_after_seconds()
+        .retry_after_seconds(now)
         .map_or(RetryAfter(30), RetryAfter)
 }
 
-fn read_error(response: &Response<Vec<u8>>) -> ReplicaError {
+fn read_error(response: &Response<Vec<u8>>, now: UnixSeconds) -> ReplicaError {
     match response.status().as_u16() {
         401 | 403 => ReplicaError::Unauthorized,
         404 => ReplicaError::Gone,
-        _ => ReplicaError::Transient(retry_after(response)),
+        _ => ReplicaError::Transient(retry_after(response, now)),
     }
 }
 
@@ -223,7 +225,7 @@ impl<T: Transport + 'static> PimSource for GraphCalendarSource<T> {
             http: Arc::clone(&self.http),
             base: origin(&self.base),
             calendar: id,
-            clock: Clock::new(SystemClock),
+            clock: self.clock.clone(),
         }
     }
 }
@@ -286,7 +288,7 @@ impl<T: Transport + 'static> Feed for GraphCalendarFeed<T> {
             (200, _) => {}
             // `syncStateNotFound` and its kin: the server dropped what the link stands for.
             (410, true) => return Err(ReplicaError::AnchorExpired),
-            _ => return Err(read_error(&response)),
+            _ => return Err(read_error(&response, self.clock.now())),
         }
         let page: EventPage = serde_json::from_slice(response.body())
             .map_err(|_| ReplicaError::Transient(RetryAfter(30)))?;
@@ -321,7 +323,7 @@ impl<T: Transport + 'static> Feed for GraphCalendarFeed<T> {
             .await
             .map_err(unreached)?;
         if response.status().as_u16() != 200 {
-            return Err(read_error(&response));
+            return Err(read_error(&response, self.clock.now()));
         }
         let event: Event = serde_json::from_slice(response.body())
             .map_err(|_| ReplicaError::Transient(RetryAfter(30)))?;

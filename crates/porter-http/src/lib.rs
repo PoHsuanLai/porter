@@ -15,7 +15,7 @@
 //! Requests and responses are plain values:
 //!
 //! ```
-//! use porter_core::WebUrl;
+//! use porter_core::{UnixSeconds, WebUrl};
 //! use porter_http::http::{Response, StatusCode};
 //! use porter_http::{HeaderText, request};
 //!
@@ -33,7 +33,7 @@
 //!     .body(Vec::new())
 //!     .expect("a response");
 //! assert!(!answer.status().is_success());
-//! assert_eq!(answer.retry_after_seconds(), Some(30));
+//! assert_eq!(answer.retry_after_seconds(UnixSeconds(0)), Some(30));
 //! ```
 
 mod error;

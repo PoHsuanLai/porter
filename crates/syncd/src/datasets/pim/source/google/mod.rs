@@ -37,7 +37,7 @@ use super::graph::{encode, get, retry_after, unreached};
 use crate::datasets::pim::discover::DiscoverError;
 use crate::datasets::pim::relay::pim_http;
 use porter_client::{Accounts, Transport};
-use porter_core::{EndpointUrl, GrantId, WebUrl};
+use porter_core::{EndpointUrl, GrantId, UnixSeconds, WebUrl};
 use porter_http::HttpError;
 use porter_http::http::Response;
 use porter_http_relay::{RelayDial, RelayHttp};
@@ -120,12 +120,12 @@ pub(super) fn rate_limited(response: &Response<Vec<u8>>) -> bool {
 }
 
 /// What a failed read means to a replica.
-pub(super) fn read_error(response: &Response<Vec<u8>>) -> ReplicaError {
+pub(super) fn read_error(response: &Response<Vec<u8>>, now: UnixSeconds) -> ReplicaError {
     match response.status().as_u16() {
-        403 if rate_limited(response) => ReplicaError::Transient(retry_after(response)),
+        403 if rate_limited(response) => ReplicaError::Transient(retry_after(response, now)),
         401 | 403 => ReplicaError::Unauthorized,
         404 => ReplicaError::Gone,
-        _ => ReplicaError::Transient(retry_after(response)),
+        _ => ReplicaError::Transient(retry_after(response, now)),
     }
 }
 
@@ -208,7 +208,11 @@ mod tests {
             (503, "", E::Transient(porter_sync::RetryAfter(7))),
         ];
         for (status, body, want) in cases {
-            assert_eq!(read_error(&response(status, body)), want, "{status}");
+            assert_eq!(
+                read_error(&response(status, body), UnixSeconds(0)),
+                want,
+                "{status}"
+            );
         }
     }
 

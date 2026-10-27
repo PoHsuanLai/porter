@@ -183,6 +183,9 @@ impl Rig {
             settings: quick(),
             network: self.network.clone(),
             owners: Access::default(),
+            clock: porter_sync::Clock::new(porter_core::clock::SystemClock),
+            nonce: "t1".to_owned(),
+            millis: Arc::new(syncd::datasets::photos::ManualMillis::at(1_700_000_000_000)),
         };
         StorageSupervisor::new(
             wiring,
@@ -355,6 +358,9 @@ fn placeholder(
             settings: quick(),
             network: network.clone(),
             owners: Access::default(),
+            clock: porter_sync::Clock::new(porter_core::clock::SystemClock),
+            nonce: "t1".to_owned(),
+            millis: Arc::new(syncd::datasets::photos::ManualMillis::at(1_700_000_000_000)),
         },
         Gate {
             real: ClientStorageGrants::new(Arc::clone(accounts)),

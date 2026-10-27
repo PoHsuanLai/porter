@@ -54,7 +54,7 @@ impl<H: Http> WebDavReplica<H> {
         match response.status().as_u16() {
             200 | 201 | 204 => Ok((id.clone(), self.version_after(&id, &response).await)),
             404 | 412 => Err(self.conflict(&id, &base).await),
-            _ => Err(write_error(&response)),
+            _ => Err(write_error(&response, self.clock.now())),
         }
     }
 
@@ -75,7 +75,7 @@ impl<H: Http> WebDavReplica<H> {
         match response.status().as_u16() {
             200 | 204 => Ok(RemoteVersion(DELETED.to_owned())),
             404 | 412 => Err(self.conflict(item, &base).await),
-            _ => Err(write_error(&response)),
+            _ => Err(write_error(&response, self.clock.now())),
         }
     }
 
@@ -101,7 +101,7 @@ impl<H: Http> WebDavReplica<H> {
                 200 | 201 | 405 => {
                     self.state().folders.insert(folder);
                 }
-                _ => return Err(write_error(&response)),
+                _ => return Err(write_error(&response, self.clock.now())),
             }
         }
         Ok(())
@@ -135,7 +135,7 @@ impl<H: Http> WebDavReplica<H> {
                     .map(|e| e.version))
             }
             404 => Ok(None),
-            _ => Err(write_error(&response)),
+            _ => Err(write_error(&response, self.clock.now())),
         }
     }
 

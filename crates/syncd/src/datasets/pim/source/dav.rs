@@ -8,7 +8,6 @@ use super::super::discover::{DiscoverError, Found, discover};
 use super::super::relay::{pim_http, pim_replica};
 use super::{Feed, FeedChange, FeedCursor, Page, PimSource};
 use porter_client::{Accounts, Transport};
-use porter_core::clock::SystemClock;
 use porter_core::{EndpointUrl, GrantId, WebUrl};
 use porter_http_relay::{RelayDial, RelayHttp};
 use porter_sync::Clock;
@@ -36,15 +35,26 @@ pub struct DavSource<T> {
     accounts: Arc<Accounts<T>>,
     grant: GrantId,
     endpoint: EndpointUrl,
+    clock: Clock,
+    nonce: String,
 }
 
 impl<T> DavSource<T> {
-    /// The source at `endpoint`, as `grant` allows.
-    pub fn new(accounts: Arc<Accounts<T>>, grant: GrantId, endpoint: EndpointUrl) -> Self {
+    /// The source at `endpoint`, as `grant` allows, dating tombstones with `clock`; `nonce` is
+    /// the run's, which tells its feed anchors from an earlier run's.
+    pub fn new(
+        accounts: Arc<Accounts<T>>,
+        grant: GrantId,
+        endpoint: EndpointUrl,
+        clock: Clock,
+        nonce: String,
+    ) -> Self {
         Self {
             accounts,
             grant,
             endpoint,
+            clock,
+            nonce,
         }
     }
 }
@@ -72,7 +82,8 @@ impl<T: Transport + 'static> PimSource for DavSource<T> {
             self.grant.clone(),
             self.endpoint.clone(),
             &found.url,
-            Clock::new(SystemClock),
+            self.clock.clone(),
+            &self.nonce,
         ))
     }
 }

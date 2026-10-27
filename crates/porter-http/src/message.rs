@@ -6,7 +6,7 @@ use crate::error::HttpError;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 use http::request::Builder;
 use http::{Method, Request, Response};
-use porter_core::{EndpointUrl, UrlScheme, WebUrl};
+use porter_core::{EndpointUrl, UnixSeconds, UrlScheme, WebUrl};
 
 /// A request to `url`: the builder with its method and URI set, to which the caller adds headers
 /// and a body. The URI is the URL's text; a URL the `http` crate does not take as a URI fails
@@ -57,22 +57,30 @@ pub trait HeaderText {
     fn header(&self, name: &str) -> Option<&str>;
 
     /// The wait a `Retry-After` header asks for, in seconds: its whole seconds, or the time from
-    /// now to its HTTP date (none past: `0`). `None` when there is no such header or it is
-    /// neither. The one parser the storage replicas and syncd's Graph source share.
-    fn retry_after_seconds(&self) -> Option<u32> {
-        retry_wait(self.header("retry-after")?, std::time::SystemTime::now())
+    /// the message's own `Date` header (else from `now`, the caller's clock) to its HTTP date
+    /// (none past: `0`). `None` when there is no such header or it is neither. The one parser
+    /// the storage replicas and syncd's sources share; it reads no clock itself.
+    fn retry_after_seconds(&self, now: UnixSeconds) -> Option<u32> {
+        retry_wait(self.header("retry-after")?, self.header("date"), now)
     }
 }
 
-/// The wait a `Retry-After` value asks for at `now`: whole seconds, or an HTTP date (RFC 9110
-/// section 5.6.7, read by `httpdate`) less `now`, `0` when the date has passed.
-fn retry_wait(value: &str, now: std::time::SystemTime) -> Option<u32> {
+/// The wait a `Retry-After` value asks for: whole seconds, or an HTTP date (RFC 9110 section
+/// 5.6.7, read by `httpdate`) less `date`, the sender's own `Date`, or less `now` where there is
+/// none or it is not a date; `0` when the date has passed.
+fn retry_wait(value: &str, date: Option<&str>, now: UnixSeconds) -> Option<u32> {
     let value = value.trim();
     if let Ok(seconds) = value.parse() {
         return Some(seconds);
     }
     let at = httpdate::parse_http_date(value).ok()?;
-    let wait = at.duration_since(now).map_or(0, |wait| wait.as_secs());
+    let from = date
+        .and_then(|date| httpdate::parse_http_date(date.trim()).ok())
+        .unwrap_or_else(|| {
+            std::time::UNIX_EPOCH
+                + std::time::Duration::from_secs(u64::try_from(now.0).unwrap_or(0))
+        });
+    let wait = at.duration_since(from).map_or(0, |wait| wait.as_secs());
     u32::try_from(wait).ok()
 }
 
@@ -127,7 +135,7 @@ mod tests {
             let headers: Vec<(&str, &str)> =
                 header.map(|v| ("Retry-After", v)).into_iter().collect();
             assert_eq!(
-                answer(429, &headers).retry_after_seconds(),
+                answer(429, &headers).retry_after_seconds(UnixSeconds(2_000_000_000)),
                 want,
                 "{header:?}"
             );
@@ -193,10 +201,11 @@ mod tests {
     }
 
     #[test]
-    fn a_retry_after_date_is_the_time_from_now_to_it() {
-        use std::time::{Duration, UNIX_EPOCH};
-        // Sun, 06 Nov 1994 08:49:37 GMT is 784111777 seconds after the epoch.
-        let now = UNIX_EPOCH + Duration::from_secs(784_111_777 - 90);
+    fn a_retry_after_date_is_counted_from_the_messages_date_else_from_now() {
+        // 784111777 is Sun, 06 Nov 1994 08:49:37 GMT.
+        let at = 784_111_777;
+        let date = Some("Sun, 06 Nov 1994 08:48:07 GMT");
+        let now = UnixSeconds(at - 30);
         let cases = [
             ("Sun, 06 Nov 1994 08:49:37 GMT", Some(90)),
             ("Sunday, 06-Nov-94 08:49:37 GMT", Some(90)),
@@ -207,8 +216,23 @@ mod tests {
             ("120", Some(120)),
             ("soon", None),
         ];
+        // With a `Date`, the caller's clock is not asked.
         for (value, want) in cases {
-            assert_eq!(retry_wait(value, now), want, "{value}");
+            assert_eq!(retry_wait(value, date, now), want, "{value}");
         }
+        // Without one, or with one that is no date, it is.
+        assert_eq!(
+            retry_wait("Sun, 06 Nov 1994 08:49:37 GMT", None, now),
+            Some(30)
+        );
+        assert_eq!(
+            retry_wait("Sun, 06 Nov 1994 08:49:37 GMT", Some("yesterday"), now),
+            Some(30)
+        );
+        let sent = Response::builder()
+            .header("Retry-After", "Sun, 06 Nov 1994 08:49:37 GMT")
+            .body(Vec::<u8>::new())
+            .expect("response");
+        assert_eq!(sent.retry_after_seconds(now), Some(30));
     }
 }

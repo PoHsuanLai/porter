@@ -12,7 +12,6 @@ use crate::dataset::fingerprint;
 use crate::datasets::pim::PimKind;
 use crate::datasets::pim::discover::{DiscoverError, Found};
 use porter_client::{Accounts, Transport};
-use porter_core::clock::SystemClock;
 use porter_core::{Bytes, EndpointUrl, GrantId, WebUrl};
 use porter_sync::{Clock, DELETED};
 use porter_sync::{
@@ -46,6 +45,7 @@ struct Connections {
 #[derive(Debug)]
 pub struct GooglePeopleSource<T: Transport> {
     api: Arc<Api<T>>,
+    clock: Clock,
 }
 
 impl<T: Transport> GooglePeopleSource<T> {
@@ -54,9 +54,11 @@ impl<T: Transport> GooglePeopleSource<T> {
         accounts: Arc<Accounts<T>>,
         grant: GrantId,
         endpoint: EndpointUrl,
+        clock: Clock,
     ) -> Result<Self, DiscoverError> {
         Ok(Self {
             api: Arc::new(Api::new(accounts, grant, endpoint)?),
+            clock,
         })
     }
 }
@@ -85,7 +87,7 @@ impl<T: Transport + 'static> PimSource for GooglePeopleSource<T> {
     fn feed(&self, _found: &Found) -> GooglePeopleFeed<T> {
         GooglePeopleFeed {
             api: Arc::clone(&self.api),
-            clock: Clock::new(SystemClock),
+            clock: self.clock.clone(),
         }
     }
 }
@@ -150,7 +152,7 @@ impl<T: Transport + 'static> Feed for GooglePeopleFeed<T> {
             {
                 return Err(ReplicaError::AnchorExpired);
             }
-            _ => return Err(read_error(&response)),
+            _ => return Err(read_error(&response, self.clock.now())),
         }
         let listing: Connections = serde_json::from_slice(response.body())
             .map_err(|_| ReplicaError::Transient(RetryAfter(30)))?;
@@ -189,7 +191,7 @@ impl<T: Transport + 'static> Feed for GooglePeopleFeed<T> {
             .read(&self.api.url(&path, &[("personFields", FIELDS)]))
             .await?;
         if response.status().as_u16() != 200 {
-            return Err(read_error(&response));
+            return Err(read_error(&response, self.clock.now()));
         }
         let person: Person = serde_json::from_slice(response.body())
             .map_err(|_| ReplicaError::Transient(RetryAfter(30)))?;

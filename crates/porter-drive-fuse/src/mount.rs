@@ -48,7 +48,8 @@ impl MountError {
 pub struct Mounter {
     /// The FUSE device.
     pub device: PathBuf,
-    /// The helper that mounts and unmounts, found on `PATH`.
+    /// The helper that mounts and unmounts: its path, or a name the host chose to leave to the
+    /// system to find.
     pub helper: String,
     /// porter-mountd's socket, when the drive is to be mounted through it
     /// (`$XDG_RUNTIME_DIR/porter/mountd.sock`, [`porter_mountd::wire::socket_in`]). It puts the
@@ -57,11 +58,12 @@ pub struct Mounter {
     pub mountd: Option<PathBuf>,
 }
 
-impl Default for Mounter {
-    fn default() -> Self {
+impl Mounter {
+    /// Mounting with `helper` on the usual FUSE device, directly (no porter-mountd).
+    pub fn new(helper: impl Into<String>) -> Self {
         Self {
             device: PathBuf::from("/dev/fuse"),
-            helper: "fusermount3".to_owned(),
+            helper: helper.into(),
             mountd: None,
         }
     }
@@ -347,7 +349,7 @@ mod tests {
         let dir = test_kit::Scratch::new("drive-fuse-mount");
         let none = Mounter {
             device: dir.join("no-fuse"),
-            ..Mounter::default()
+            ..Mounter::new("fusermount3")
         };
         assert!(matches!(none.check(), Err(MountError::NoDevice(_))));
         let no_helper = Mounter {

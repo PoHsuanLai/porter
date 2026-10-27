@@ -11,7 +11,6 @@ use crate::agent::Agents;
 use crate::attached::{AddedFile, Attached, AttachedBook, Computers};
 use crate::audit::JsonLines;
 use crate::catalog::read_catalog;
-use crate::clock::SystemClock;
 use crate::cloud::Cloud;
 use crate::cloud::spend::Ledger;
 use crate::config::{ConfigError, Dirs, InferdConfig, ProgramSearch};
@@ -31,6 +30,7 @@ use crate::toolproof::ToolProofs;
 use crate::watch::Watch;
 use engine_supervisor::EngineId;
 use model_catalog::EngineKind;
+use porter_core::clock::{Clock, SystemClock};
 use porter_dbus::BusTarget;
 use porter_dbus::names::{INFERENCE_BUS, INFERENCE_PATH};
 use porter_http_reqwest::{Limits, ReqwestHttp};
@@ -76,8 +76,9 @@ pub struct Config {
     /// Where the file was before it moved into inferd's own folder ([`Dirs::config_before`]):
     /// read while `config_file` is missing. None for a file named on the command line.
     pub config_before: Option<PathBuf>,
-    /// Tailscale's socket; none means the path Tailscale itself uses.
-    pub tailscale_socket: Option<PathBuf>,
+    /// Tailscale: its socket (the path Tailscale itself uses unless the environment names
+    /// another) and where its program is looked for.
+    pub tailscale: LocalApi,
     /// Where the caller lookup reads processes.
     pub proc_root: ProcRoot,
     /// The system's caller table ([`porter_daemon::INFERD_CALLERS`], another file in a test
@@ -103,7 +104,7 @@ impl Config {
             config_file: dirs.config.clone(),
             config_before: Some(dirs.config_before.clone()),
             dirs,
-            tailscale_socket: None,
+            tailscale: LocalApi::system(),
             proc_root: ProcRoot::System,
             callers_file: PathBuf::from(porter_daemon::INFERD_CALLERS.path),
             bus,
@@ -137,7 +138,7 @@ impl Config {
     /// With Tailscale's socket at `path`.
     #[must_use]
     pub fn with_tailscale_socket(mut self, path: PathBuf) -> Self {
-        self.tailscale_socket = Some(path);
+        self.tailscale = LocalApi::new(path);
         self
     }
 
@@ -164,15 +165,19 @@ impl Config {
     /// There is nowhere to put the sockets and files, or the key store asked for is refused.
     pub fn from_env(config_file: Option<PathBuf>) -> Result<Self, StartError> {
         let dirs = Dirs::from_env()?;
-        let tailscale_socket = std::env::var_os(TAILSCALE_SOCKET_VAR)
+        let mut tailscale = std::env::var_os(TAILSCALE_SOCKET_VAR)
             .map(PathBuf::from)
-            .filter(|path| path.is_absolute());
+            .filter(|path| path.is_absolute())
+            .map_or_else(LocalApi::system, LocalApi::new);
+        if let Some(path) = std::env::var_os("PATH") {
+            tailscale = tailscale.with_path(&path);
+        }
         let proc_root = ProcRoot::choose(PROC_GATE, PROC_ROOT_VAR, |name| std::env::var_os(name));
         let mut config = Self::new(dirs, BusTarget::Session);
         if let Some(path) = config_file {
             config = config.with_config_file(path);
         }
-        config.tailscale_socket = tailscale_socket;
+        config.tailscale = tailscale;
         config.proc_root = proc_root;
         // A test build may read another system caller table (a jail cannot write /etc).
         let callers = porter_daemon::SystemCallers::choose_file(
@@ -375,7 +380,7 @@ impl Daemon {
             dirs,
             config_file,
             config_before,
-            tailscale_socket,
+            tailscale,
             proc_root,
             callers_file,
             bus,
@@ -489,6 +494,10 @@ impl Daemon {
             },
             diagnostics,
             sizing,
+        )
+        .dated(
+            std::time::SystemTime::UNIX_EPOCH
+                + std::time::Duration::from_secs(u64::try_from(SystemClock.now().0).unwrap_or(0)),
         );
         let structured = config.ai.resolve();
         for path in &structured.rejected {
@@ -562,7 +571,7 @@ impl Daemon {
         let cloud = Cloud::new(
             Arc::new(opened.local.clone()),
             &catalog.entries,
-            Ledger::open(dirs.spend.clone()),
+            Ledger::open_at(dirs.spend.clone(), SystemClock.now()),
             Arc::new(SystemClock),
         );
         let book = AttachedBook::new(attached)
@@ -594,7 +603,7 @@ impl Daemon {
         }
         let tailnet = Tailnet::start(
             Parts {
-                api: tailscale_socket.map_or_else(LocalApi::system, LocalApi::new),
+                api: tailscale,
                 machines: Arc::new(BusMachines::new(connection.clone())),
                 guests: Arc::new(guests),
                 sockets: dirs.sockets.clone(),

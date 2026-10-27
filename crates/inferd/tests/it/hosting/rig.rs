@@ -13,7 +13,6 @@ use engine_supervisor::{
 use inferd::attached::{Attached, AttachedBook};
 use inferd::audit::Memory;
 use inferd::catalog::{CatalogDirs, read_catalog};
-use inferd::clock::FixedClock;
 use inferd::cloud::Cloud;
 use inferd::cloud::spend::Ledger;
 use inferd::cloud::wire::{Door, Doors};
@@ -33,6 +32,7 @@ use inferd::watch::{Probing, Watch};
 use model_catalog::MiB;
 use model_http::{DerCertificate, TlsRoots};
 use porter_client::{Accounts, DbusTransport};
+use porter_core::clock::FixedClock;
 use porter_core::{AppId, AppName, Isolation, UnixSeconds};
 use porter_infer::{ModelCard, Policy, Slot, TierMap};
 use std::collections::BTreeMap;
@@ -457,6 +457,8 @@ impl World {
                 )
             }
         };
+        // The rig runs on the real clock, so a running model says since when.
+        let supervised = supervised.dated(std::time::SystemTime::now());
         // The person chose Automatic for text, over everything this world serves: the models
         // here and attached (each catalogue model as `local/<model>`, so a computer added later
         // is in it too), the remote ones, each catalogue model hosted by whichever account

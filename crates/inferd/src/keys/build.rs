@@ -88,6 +88,7 @@ pub fn load_families(dirs: &Dirs) -> Families {
             shipped: dirs.clients_shipped.clone(),
             own: dirs.clients_own.clone(),
         },
+        Arc::new(SystemClock),
     );
     let (mut families, mut unserved) = (Vec::new(), Vec::new());
     for spec in specs.clone() {

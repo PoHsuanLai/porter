@@ -1,9 +1,7 @@
 //! The rig: a fake DAV server, and machines that sync a library against it through
 //! `RelayHttp` over a TCP dial with the credential added the way accountd's relay would.
 
-use super::super::{
-    DeviceId, ManualMillis, PhotoLibrary, PhotoMetadata, PhotoOriginals, SystemMillis,
-};
+use super::super::{DeviceId, ManualMillis, PhotoLibrary, PhotoMetadata, PhotoOriginals};
 use crate::engine::{Engine, Report};
 use crate::journal::Journal;
 use crate::testing::scratch;
@@ -94,6 +92,7 @@ impl Server {
             Basic(RelayHttp::new(TcpDial(self.port), RelayLimits::default())),
             &url,
             Clock::fixed(UnixSeconds(1_000)),
+            "n1",
         )
     }
 
@@ -191,12 +190,6 @@ impl Machine {
         std::fs::write(&path, bytes).expect("file");
         path
     }
-}
-
-/// The wall clock the real library uses, for a test of the default.
-#[allow(dead_code)]
-pub fn system_millis() -> SystemMillis {
-    SystemMillis
 }
 
 impl Synced {

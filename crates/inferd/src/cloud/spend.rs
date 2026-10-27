@@ -122,16 +122,6 @@ impl Ledger {
         Self::default()
     }
 
-    /// A ledger kept in `file`, opened at the present time: see [`Ledger::open_at`].
-    pub fn open(file: PathBuf) -> Self {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |since| {
-                i64::try_from(since.as_secs()).unwrap_or(i64::MAX)
-            });
-        Self::open_at(file, UnixSeconds(now))
-    }
-
     /// A ledger kept in `file`: what it holds is read now and every record is written back. A
     /// file that is missing starts it empty. A file that is there and cannot be read is not
     /// quietly forgotten (that would reset every cap to nothing spent): it is moved aside as

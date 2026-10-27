@@ -5,6 +5,7 @@
 //! (`dailyLimitExceeded`, `quotaExceeded`) is waited out for [`DAY_LIMIT`].
 
 use crate::json::ErrorBody;
+use porter_core::UnixSeconds;
 use porter_http::http::Response;
 use porter_sync::status::{self, retry_after};
 use porter_sync::{ExportError, PutRefused, ReplicaError, RetryAfter};
@@ -32,40 +33,40 @@ fn throttled(reason: Option<&str>) -> bool {
 }
 
 /// A read answered with `response`, which was not what it needed.
-pub fn read_error(response: &Response<Vec<u8>>) -> ReplicaError {
+pub fn read_error(response: &Response<Vec<u8>>, now: UnixSeconds) -> ReplicaError {
     match response.status().as_u16() {
         403 | 429 if day_limit(reason(response).as_deref()) => ReplicaError::Transient(DAY_LIMIT),
         403 if throttled(reason(response).as_deref()) => {
-            ReplicaError::Transient(retry_after(response))
+            ReplicaError::Transient(retry_after(response, now))
         }
-        _ => status::read_error(response),
+        _ => status::read_error(response, now),
     }
 }
 
 /// An export answered with `response`, which was not the file: Drive refuses a document past
 /// its export limit with `403 exportSizeLimitExceeded`, and one with no file format (a Form, a
 /// Site) with `403 cannotExportFile` or a `400`.
-pub fn export_error(response: &Response<Vec<u8>>) -> ExportError {
+pub fn export_error(response: &Response<Vec<u8>>, now: UnixSeconds) -> ExportError {
     match (response.status().as_u16(), reason(response).as_deref()) {
         (403, Some("exportSizeLimitExceeded")) => ExportError::TooLarge,
         (403, Some("cannotExportFile" | "fileNotExportable")) | (400, _) => {
             ExportError::Unsupported
         }
-        _ => ExportError::Read(read_error(response)),
+        _ => ExportError::Read(read_error(response, now)),
     }
 }
 
 /// A write answered with `response`, which was not a success or a precondition failure.
-pub fn write_error(response: &Response<Vec<u8>>) -> PutRefused {
+pub fn write_error(response: &Response<Vec<u8>>, now: UnixSeconds) -> PutRefused {
     let why = reason(response);
     match response.status().as_u16() {
         403 if why.as_deref() == Some("storageQuotaExceeded") => PutRefused::Quota,
         403 | 429 if day_limit(why.as_deref()) => PutRefused::Transient(DAY_LIMIT),
-        403 if throttled(why.as_deref()) => PutRefused::Transient(retry_after(response)),
+        403 if throttled(why.as_deref()) => PutRefused::Transient(retry_after(response, now)),
         401 => PutRefused::Unauthorized,
         409 => PutRefused::Declined,
         400 | 403 | 405 | 413 => PutRefused::Forbidden,
-        _ => PutRefused::Transient(retry_after(response)),
+        _ => PutRefused::Transient(retry_after(response, now)),
     }
 }
 
@@ -104,7 +105,7 @@ mod tests {
         ];
         for (status, why, want) in cases {
             assert_eq!(
-                export_error(&answer(status, None, why)),
+                export_error(&answer(status, None, why), UnixSeconds(0)),
                 want,
                 "{status} {why:?}"
             );
@@ -144,7 +145,7 @@ mod tests {
         ];
         for (status, retry, reason, want) in CASES {
             assert_eq!(
-                read_error(&answer(*status, *retry, *reason)),
+                read_error(&answer(*status, *retry, *reason), UnixSeconds(0)),
                 *want,
                 "{status} {reason:?}"
             );
@@ -188,7 +189,7 @@ mod tests {
         ];
         for (status, retry, reason, want) in CASES {
             assert_eq!(
-                write_error(&answer(*status, *retry, *reason)),
+                write_error(&answer(*status, *retry, *reason), UnixSeconds(0)),
                 *want,
                 "{status} {reason:?}"
             );
@@ -198,7 +199,10 @@ mod tests {
     #[test]
     fn a_days_limit_used_up_is_waited_out_for_an_hour() {
         assert_eq!(
-            read_error(&answer(403, None, Some("dailyLimitExceeded"))),
+            read_error(
+                &answer(403, None, Some("dailyLimitExceeded")),
+                UnixSeconds(0)
+            ),
             ReplicaError::Transient(DAY_LIMIT)
         );
     }

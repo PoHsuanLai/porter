@@ -12,7 +12,8 @@
 use porter_client::{LendingConfig, LendingState, SessionUnits, TailnetLending};
 
 async fn run(command: Option<String>) -> Result<(), String> {
-    let config = LendingConfig::from_env().ok_or("there is no home folder")?;
+    let config = LendingConfig::from_lookup(|name| std::env::var_os(name))
+        .ok_or("there is no home folder")?;
     let units = SessionUnits::session().await.map_err(|e| e.to_string())?;
     let lending = TailnetLending::new(config, units);
     match command.as_deref() {

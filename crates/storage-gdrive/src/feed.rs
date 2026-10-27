@@ -93,17 +93,17 @@ impl<H: Http> GdriveReplica<H> {
             .get_url(self.addr.api("changes/startPageToken", &[]))
             .await?;
         if response.status().as_u16() != 200 {
-            return Err(read_error(&response));
+            return Err(read_error(&response, self.clock.now()));
         }
         let token: StartToken = serde_json::from_slice(response.body()).map_err(|_| busy())?;
         Ok(token.token)
     }
 
     /// An answer to a request that resumed an anchor: a token Drive refuses is an expired anchor.
-    fn resumed(response: &Response<Vec<u8>>) -> ReplicaError {
+    fn resumed(response: &Response<Vec<u8>>, now: UnixSeconds) -> ReplicaError {
         match response.status().as_u16() {
             400 | 404 | 410 => ReplicaError::AnchorExpired,
-            _ => read_error(response),
+            _ => read_error(response, now),
         }
     }
 
@@ -127,8 +127,8 @@ impl<H: Http> GdriveReplica<H> {
         let response = self.get_url(self.addr.api("files", &pairs)).await?;
         match (response.status().as_u16(), page.is_some()) {
             (200, _) => {}
-            (_, true) => return Err(Self::resumed(&response)),
-            _ => return Err(read_error(&response)),
+            (_, true) => return Err(Self::resumed(&response, self.clock.now())),
+            _ => return Err(read_error(&response, self.clock.now())),
         }
         let list: FileList = serde_json::from_slice(response.body()).map_err(|_| busy())?;
         let changes = self.apply_files(list.files).await?;
@@ -168,7 +168,7 @@ impl<H: Http> GdriveReplica<H> {
         }
         let response = self.get_url(self.addr.api("changes", &pairs)).await?;
         if response.status().as_u16() != 200 {
-            return Err(Self::resumed(&response));
+            return Err(Self::resumed(&response, self.clock.now()));
         }
         let list: ChangeList = serde_json::from_slice(response.body()).map_err(|_| busy())?;
         let (next, more) = match (list.next, list.new_start) {
@@ -191,7 +191,7 @@ impl<H: Http> GdriveReplica<H> {
             .file(self.addr.root().alias(), &[("fields", "id")]);
         let response = self.get_url(url).await?;
         if response.status().as_u16() != 200 {
-            return Err(read_error(&response));
+            return Err(read_error(&response, self.clock.now()));
         }
         let file: File = serde_json::from_slice(response.body()).map_err(|_| busy())?;
         Ok(file.id)
@@ -220,7 +220,7 @@ impl<H: Http> GdriveReplica<H> {
         }
         let response = self.get_url(self.addr.api("files", &pairs)).await?;
         if response.status().as_u16() != 200 {
-            return Err(read_error(&response));
+            return Err(read_error(&response, self.clock.now()));
         }
         let list: FileList = serde_json::from_slice(response.body()).map_err(|_| busy())?;
         Ok(list.files)
@@ -245,7 +245,7 @@ impl<H: Http> GdriveReplica<H> {
             .map_err(|e| unreached(e.into()))?;
         let response = self.send(make).await?;
         if response.status().as_u16() != 200 {
-            return Err(read_error(&response));
+            return Err(read_error(&response, self.clock.now()));
         }
         let file: File = serde_json::from_slice(response.body()).map_err(|_| busy())?;
         Ok(file.id)

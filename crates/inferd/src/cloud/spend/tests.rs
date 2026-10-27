@@ -240,7 +240,7 @@ fn a_ledger_opened_on_a_file_keeps_what_it_was_told_across_a_restart() {
     let file = dir.join("state").join("spend.json");
     let who = app("org.quire.Companion");
     {
-        let ledger = Ledger::open(file.clone());
+        let ledger = Ledger::open_at(file.clone(), LEAP_NOON);
         ledger.record(
             &who,
             &account("openrouter"),
@@ -249,7 +249,7 @@ fn a_ledger_opened_on_a_file_keeps_what_it_was_told_across_a_restart() {
             LEAP_NOON,
         );
     }
-    let again = Ledger::open(file.clone());
+    let again = Ledger::open_at(file.clone(), LEAP_NOON);
     let scope = SpendScope::App(who);
     assert_eq!(
         again.spent(&scope, Period::Daily, LEAP_NOON),

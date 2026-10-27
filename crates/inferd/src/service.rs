@@ -13,7 +13,6 @@ use crate::attached::{
     ComputerError, Computers, NewComputer, NewModel, NewReach, NewTailnetComputer,
 };
 use crate::audit::{AuditOut, SessionAudit};
-use crate::clock::Clock;
 use crate::engines::Engines;
 use crate::peers::{Caller, Peers, Role};
 use crate::pipeline::Hearing;
@@ -27,6 +26,7 @@ use crate::structured::Limits;
 use crate::tailnet::{Candidate, Tailnet};
 use crate::toolproof::ToolWatch;
 use crate::watch::Probing;
+use porter_core::clock::Clock;
 use porter_core::{DataClass, HelperId, ModelId, NodeId, SecretText, Tier};
 use porter_dbus::names::{
     CANDIDATE_KEY_MODELS, CANDIDATE_KEY_NAME, CANDIDATE_KEY_NEEDS_APPROVAL, GUEST_KEY_NAME,

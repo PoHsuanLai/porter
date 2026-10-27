@@ -3,11 +3,11 @@
 
 use super::*;
 use inferd::audit::Discard;
-use inferd::clock::FixedClock;
 use inferd::engines::Engines;
 use inferd::peers::TablePeers;
 use inferd::service::Inference;
 use porter_core::UnixSeconds;
+use porter_core::clock::FixedClock;
 use porter_dbus::{Details, InferenceProxy, need_to_dbus};
 use porter_infer::{InferRefusal, ModelError, Readiness};
 use zbus::object_server::Interface;

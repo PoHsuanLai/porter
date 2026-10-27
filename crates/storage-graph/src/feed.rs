@@ -52,7 +52,7 @@ impl<H: Http> GraphReplica<H> {
             (200, _) => {}
             // `resyncRequired` and its kin: the server dropped what the link stands for.
             (410, true) => return Err(ReplicaError::AnchorExpired),
-            _ => return Err(read_error(&response)),
+            _ => return Err(read_error(&response, self.clock.now())),
         }
         let page: DeltaPage = serde_json::from_slice(response.body()).map_err(|_| busy())?;
         let (next, more) = match (page.next, page.delta) {
@@ -103,7 +103,7 @@ impl<H: Http> GraphReplica<H> {
             let response = self.send(make).await?;
             // 409: the level is already there.
             if !matches!(response.status().as_u16(), 200 | 201 | 409) {
-                return Err(read_error(&response));
+                return Err(read_error(&response, self.clock.now()));
             }
         }
         Ok(())

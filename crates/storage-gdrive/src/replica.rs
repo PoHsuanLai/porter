@@ -174,7 +174,7 @@ impl<H: Http> GdriveReplica<H> {
                 .map(Some)
                 .map_err(|_| ReplicaError::Transient(RetryAfter(30))),
             404 => Ok(None),
-            _ => Err(read_error(&response)),
+            _ => Err(read_error(&response, self.clock.now())),
         }
     }
 
@@ -215,7 +215,7 @@ impl<H: Http> GdriveReplica<H> {
             }
             (416, _) => Ok(Blob(Vec::new())),
             // A file in the trash, or gone, reads as gone.
-            _ => Err(read_error(&response)),
+            _ => Err(read_error(&response, self.clock.now())),
         }
     }
 
@@ -243,7 +243,7 @@ impl<H: Http> GdriveReplica<H> {
         match response.status().as_u16() {
             200 if response.body().len() as u64 > EXPORT_LIMIT => Err(ExportError::TooLarge),
             200 => Ok(Blob(response.into_body())),
-            _ => Err(export_error(&response)),
+            _ => Err(export_error(&response, self.clock.now())),
         }
     }
 
@@ -251,7 +251,7 @@ impl<H: Http> GdriveReplica<H> {
         let url = self.addr.api("about", &[("fields", "storageQuota")]);
         let response = self.get_url(url).await?;
         if response.status().as_u16() != 200 {
-            return Err(read_error(&response));
+            return Err(read_error(&response, self.clock.now()));
         }
         let about: About = serde_json::from_slice(response.body())
             .map_err(|_| ReplicaError::Transient(RetryAfter(30)))?;

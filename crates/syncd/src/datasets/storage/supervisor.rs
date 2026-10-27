@@ -37,7 +37,7 @@ use crate::datasets::photos::google::{
     GooglePicker, PhotosApi, PhotosPicker, SLUG as UPLOAD_SLUG, UploadReplica, library_http,
     picker_http,
 };
-use crate::datasets::photos::{DeviceId, PhotoLibrary, PhotosRun, PhotosWiring, SystemMillis};
+use crate::datasets::photos::{DeviceId, PhotoLibrary, PhotosRun, PhotosWiring};
 use crate::datasets::pim::Wiring;
 use crate::driver::Driver;
 use crate::engine::Engine;
@@ -48,12 +48,10 @@ use crate::paths::AccountDir;
 use crate::scheduler::next_look;
 use crate::service::{Access, DatasetName};
 use porter_client::Transport;
-use porter_core::clock::SystemClock;
 use porter_core::{AppName, Candidate, EndpointUrl, WebUrl};
 use porter_dbus::DriveState;
 use porter_drive::{CacheLimit, Drive, DriveConfig, FreeSpace, ReplicaSource};
-use porter_drive_fuse::{DriveFs, Mounter};
-use porter_sync::Clock;
+use porter_drive_fuse::{DriveFs, Mounter, Now};
 use porter_sync::{DriveWrite, Replica};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
@@ -180,12 +178,11 @@ pub struct StorageSupervisor<T: Transport, G> {
     limit: CacheKnob,
 }
 
-/// A device name for this machine's Photos library, made once (the library keeps it).
-fn new_device(account: &AccountDir) -> DeviceId {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_nanos());
-    let digest = Sha256::digest(format!("{account}/{nanos}/{}", std::process::id()));
+/// A device name for this machine's Photos library, made once (the library keeps it): the
+/// account and the run's `nonce`, which differs between runs, so a library made by another run
+/// (or a reinstall) is another device.
+fn new_device(account: &AccountDir, nonce: &str) -> DeviceId {
+    let digest = Sha256::digest(format!("{account}/{nonce}"));
     DeviceId::parse(&format!("d{}", hex::encode(&digest[..6]))).expect("a device name")
 }
 
@@ -370,7 +367,7 @@ where
                         grant(),
                         e.url.clone(),
                         "",
-                        Clock::new(SystemClock),
+                        wiring.clock.clone(),
                     )
                     .map(Either::Left),
                     AppFolderStore::Drive(e) => gdrive_replica(
@@ -378,7 +375,7 @@ where
                         grant(),
                         e.url.clone(),
                         "",
-                        Clock::new(SystemClock),
+                        wiring.clock.clone(),
                     )
                     .map(Either::Right),
                 };
@@ -417,7 +414,7 @@ where
                         candidate.grant.clone(),
                         e.url.clone(),
                         "",
-                        Clock::new(SystemClock),
+                        wiring.clock.clone(),
                     )
                     .map(|r| r.with_root(storage_graph::Root::Drive))
                     .map_err(|e| e.to_string())
@@ -439,7 +436,7 @@ where
                         candidate.grant.clone(),
                         e.url.clone(),
                         "",
-                        Clock::new(SystemClock),
+                        wiring.clock.clone(),
                     )
                     .map(|r| r.with_root(storage_gdrive::Root::Drive))
                     .map_err(|e| e.to_string())
@@ -520,7 +517,10 @@ where
         let mounting = match &self.config.mount {
             DriveMount::Off => None,
             DriveMount::Fuse(mounter) => {
-                let fs = DriveFs::new(files.clone(), tokio::runtime::Handle::current());
+                let fs = DriveFs::new(files.clone(), tokio::runtime::Handle::current(), {
+                    let millis = Arc::clone(&self.wiring.millis);
+                    Now::new(move || std::time::UNIX_EPOCH + Duration::from_millis(millis.now_ms()))
+                });
                 let (mounter, path, live, set) = (
                     mounter.clone(),
                     path.clone(),
@@ -686,6 +686,7 @@ where
                 upload.url.clone(),
             ),
             &base(&upload.url)?,
+            wiring.clock.clone(),
         );
         let replica = UploadReplica::open(
             api,
@@ -736,14 +737,14 @@ where
                 candidate.grant.clone(),
                 url.clone(),
                 folder,
-                Clock::new(SystemClock),
+                wiring.clock.clone(),
             )
             .map_err(|e| e.to_string())
         };
         let library = PhotoLibrary::open(
             wiring.paths.photos_dir(account),
-            new_device(account),
-            Arc::new(SystemMillis),
+            new_device(account, &wiring.nonce),
+            Arc::clone(&wiring.millis),
         )
         .map_err(|e| e.to_string())?;
         let photos = PhotosWiring {

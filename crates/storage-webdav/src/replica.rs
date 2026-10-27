@@ -51,16 +51,16 @@ pub struct WebDavReplica<H> {
 
 impl<H: Http> WebDavReplica<H> {
     /// The replica of the folder at `folder`, sending through `http` and dating tombstones
-    /// with `clock`.
-    pub fn new(http: H, folder: &WebUrl, clock: Clock) -> Self {
-        let nonce = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |since| since.as_nanos());
+    /// with `clock`. `nonce` is what tells this run's anchors from an earlier run's, so a
+    /// cursor the host kept across a restart expires instead of being read against state it no
+    /// longer has: it must differ between two runs of the host, and may be the same for the
+    /// replicas of one run (letters and digits only: it is a field of the anchors, and a colon ends it).
+    pub fn new(http: H, folder: &WebUrl, clock: Clock, nonce: &str) -> Self {
         Self {
             http,
             root: Root::new(folder),
             clock,
-            nonce: format!("{nonce:x}"),
+            nonce: nonce.to_owned(),
             page: PAGE,
             state: Mutex::default(),
         }
@@ -118,7 +118,7 @@ impl<H: Http> WebDavReplica<H> {
                 Ok(Blob(body[from..to].to_vec()))
             }
             (416, _) => Ok(Blob(Vec::new())),
-            _ => Err(read_error(&response)),
+            _ => Err(read_error(&response, self.clock.now())),
         }
     }
 
@@ -126,7 +126,7 @@ impl<H: Http> WebDavReplica<H> {
         let url = self.root.folder_url().ok_or(ReplicaError::Gone)?;
         let response = self.send(requests::quota(url).map_err(unreached)?).await?;
         if response.status().as_u16() != 207 {
-            return Err(read_error(&response));
+            return Err(read_error(&response, self.clock.now()));
         }
         let text = String::from_utf8_lossy(response.body());
         let status = parse_multistatus(&text)

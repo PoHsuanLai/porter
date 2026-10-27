@@ -176,6 +176,7 @@ async fn a_folder_syncs_against_nextcloud_through_the_relay_and_status_shows_the
         rig.endpoint.clone(),
         "Photos",
         Clock::new(SystemClock),
+        "t1",
     )
     .expect("replica");
     let journal = rig.bus.scratch().join("journal");

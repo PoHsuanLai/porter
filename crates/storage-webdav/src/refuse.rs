@@ -1,16 +1,17 @@
 //! What a status the replica did not expect means to the contract: a write that was refused
 //! ([`PutRefused`]). The statuses every HTTP replica reads alike are porter-sync's `status`.
 
+use porter_core::UnixSeconds;
 use porter_http::http::Response;
 use porter_sync::PutRefused;
 use porter_sync::status::retry_after;
 
 /// A write answered with `response`, which was not a success or a precondition failure.
-pub fn write_error(response: &Response<Vec<u8>>) -> PutRefused {
+pub fn write_error(response: &Response<Vec<u8>>, now: UnixSeconds) -> PutRefused {
     match response.status().as_u16() {
         507 => PutRefused::Quota,
         401 | 403 | 405 | 409 | 413 | 423 => PutRefused::Forbidden,
-        _ => PutRefused::Transient(retry_after(response)),
+        _ => PutRefused::Transient(retry_after(response, now)),
     }
 }
 
@@ -41,7 +42,11 @@ mod tests {
             (502, None, PutRefused::Transient(RETRY)),
         ];
         for (status, retry, want) in CASES {
-            assert_eq!(write_error(&answer(*status, *retry)), *want, "{status}");
+            assert_eq!(
+                write_error(&answer(*status, *retry), UnixSeconds(0)),
+                *want,
+                "{status}"
+            );
         }
     }
 }

@@ -11,7 +11,6 @@
 use crate::mountinfo;
 use crate::wire::{self, Access, BadMessage, FSTYPE, FolderName, Reply, Request};
 use crate::words;
-use rustix::fs::FileType;
 use rustix::io::{Errno, FdFlags};
 use rustix::process::Uid;
 use std::fs::DirBuilder;
@@ -62,16 +61,17 @@ pub trait Mounts {
 /// which it sends back the `/dev/fuse` fd it opened and mounted.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Fusermount {
-    /// The program, found on `PATH`.
+    /// The program: its path, or a name the host chose to leave to the system to find.
     pub program: String,
     /// Where the kernel lists FUSE connections, to end one after its unmount.
     pub connections: PathBuf,
 }
 
-impl Default for Fusermount {
-    fn default() -> Self {
+impl Fusermount {
+    /// Mounting with `program`, ending a connection in the kernel's usual place.
+    pub fn new(program: impl Into<String>) -> Self {
         Self {
-            program: "fusermount3".to_owned(),
+            program: program.into(),
             connections: PathBuf::from(mountinfo::FUSE_CONNECTIONS),
         }
     }
@@ -397,13 +397,17 @@ impl<M: Mounts> Helper<M> {
     }
 }
 
-/// The socket systemd passed this process (socket activation), or else one bound at
-/// `$XDG_RUNTIME_DIR/porter/mountd.sock` for a helper started by hand.
+/// The socket systemd passed this process (socket activation: the caller took it from its
+/// environment), or else one bound at `$XDG_RUNTIME_DIR/porter/mountd.sock` for a helper
+/// started by hand.
 ///
 /// # Errors
-/// The passed socket is not one, there is no runtime directory, or binding failed.
-pub fn listener(runtime_dir: Option<&Path>) -> io::Result<UnixListener> {
-    if let Some(listener) = activated()? {
+/// There is no runtime directory, or binding failed.
+pub fn listener(
+    activated: Option<UnixListener>,
+    runtime_dir: Option<&Path>,
+) -> io::Result<UnixListener> {
+    if let Some(listener) = activated {
         return Ok(listener);
     }
     let runtime_dir = runtime_dir.ok_or_else(|| {
@@ -436,30 +440,4 @@ pub fn bind_at(socket: &Path) -> io::Result<UnixListener> {
     let listener = UnixListener::bind(socket)?;
     std::fs::set_permissions(socket, std::fs::Permissions::from_mode(0o600))?;
     Ok(listener)
-}
-
-/// The listening socket systemd passed, when it passed one to this process. `listenfd` checks
-/// `LISTEN_PID` and takes the fd; the close-on-exec flag and the socket check stay here, because
-/// `fusermount3` must not inherit the fd and this is a privileged helper.
-fn activated() -> io::Result<Option<UnixListener>> {
-    use std::sync::atomic::{AtomicBool, Ordering};
-    static TAKEN: AtomicBool = AtomicBool::new(false);
-    if std::env::var("LISTEN_FDS").ok().as_deref() != Some("1") {
-        return Ok(None);
-    }
-    if TAKEN.swap(true, Ordering::SeqCst) {
-        return Ok(None);
-    }
-    let Some(listener) = listenfd::ListenFd::from_env().take_unix_listener(0)? else {
-        return Ok(None);
-    };
-    rustix::io::fcntl_setfd(&listener, FdFlags::CLOEXEC)?;
-    let stat = rustix::fs::fstat(&listener)?;
-    if FileType::from_raw_mode(stat.st_mode) != FileType::Socket {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "the fd systemd passed is not a socket",
-        ));
-    }
-    Ok(Some(listener))
 }

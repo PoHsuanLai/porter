@@ -12,7 +12,8 @@
 //!
 //! ```ignore
 //! // The real case: the files of the person's own session, and their session bus.
-//! let config = LendingConfig::from_env().ok_or("no home folder")?;
+//! let config = LendingConfig::from_lookup(|name| std::env::var_os(name))
+//!     .ok_or("no home folder")?;
 //! let lending = TailnetLending::new(config, SessionUnits::new(connection));
 //! match lending.state() {
 //!     LendingState::NotInstalled | LendingState::Differs => { /* the switch shows "off" */ }
@@ -93,13 +94,9 @@ impl LendingConfig {
         )
     }
 
-    /// The answers of the process environment (`XDG_CONFIG_HOME`, `HOME`, `XDG_DATA_HOME` and
-    /// `XDG_DATA_DIRS`), or `None` when there is no home folder to put the file in.
-    pub fn from_env() -> Option<Self> {
-        Self::from_lookup(|name| std::env::var_os(name))
-    }
-
-    /// As [`LendingConfig::from_env`], over `var` instead of the environment.
+    /// The answers `var` gives for `XDG_CONFIG_HOME`, `HOME`, `XDG_DATA_HOME` and
+    /// `XDG_DATA_DIRS` (a host passes `|name| std::env::var_os(name)`; the library reads no
+    /// environment), or `None` when there is no home folder to put the file in.
     pub fn from_lookup(var: impl Fn(&str) -> Option<OsString>) -> Option<Self> {
         let absolute = |name: &str| {
             var(name)

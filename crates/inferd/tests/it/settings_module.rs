@@ -10,13 +10,13 @@ use ds_settings::schema::{
 };
 use hosting::bus::{PrivateBus, within};
 use inferd::audit::Memory;
-use inferd::clock::FixedClock;
 use inferd::engines::Engines;
 use inferd::peers::{Caller, Role, TablePeers};
 use inferd::service::{Inference, serve_with_settings};
 use inferd::settings::{ConfigFile, InferdSettings, Reload};
 use inferd::supervise::Supervised;
 use porter_core::capability::{Capability, LlmCap, LlmFeature, LlmWire};
+use porter_core::clock::FixedClock;
 use porter_core::{
     AccountId, AppId, AppName, Billing, Isolation, Locality, ModelId, Tokens, UnixSeconds,
 };

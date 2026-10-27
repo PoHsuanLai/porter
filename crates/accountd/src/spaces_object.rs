@@ -18,7 +18,7 @@ use crate::errors::RefusedError;
 use crate::host::Host;
 use crate::spaces::{CREATES_PER_WINDOW, Registered, SpaceFault};
 use crate::state::{Core, Standing};
-use porter_core::clock::{Clock, SystemClock};
+use porter_core::clock::Clock;
 use porter_core::{DesktopSpace, SpaceChange, SpaceLook, SpaceName};
 use porter_dbus::Details;
 use porter_dbus::callers::CallerRole;
@@ -182,7 +182,7 @@ impl<H: Host, C: Callers> SpacesObject<H, C> {
                 &caller.app.name,
                 name,
                 look,
-                (Instant::now(), SystemClock.now()),
+                (Instant::now(), self.0.clock.now()),
             )
             .await
             .map_err(fault)?;
@@ -221,7 +221,7 @@ impl<H: Host, C: Callers> SpacesObject<H, C> {
                 id.clone(),
                 name,
                 look,
-                (Instant::now(), SystemClock.now()),
+                (Instant::now(), self.0.clock.now()),
             )
             .await
             .map_err(fault)?;

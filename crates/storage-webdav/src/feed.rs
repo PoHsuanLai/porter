@@ -333,7 +333,9 @@ impl<H: Http> WebDavReplica<H> {
         match response.status().as_u16() {
             207 => self.reported(&body),
             code if token_expired(code, &body) => Err(Report::Expired),
-            401 | 429 | 500 | 502..=599 => Err(Report::Failed(read_error(&response))),
+            401 | 429 | 500 | 502..=599 => {
+                Err(Report::Failed(read_error(&response, self.clock.now())))
+            }
             _ => Err(Report::Unsupported),
         }
     }
@@ -408,7 +410,7 @@ impl<H: Http> WebDavReplica<H> {
                 Ok(entries(&self.root, &status))
             }
             404 if *folder != self.root.folder() => Ok(Vec::new()),
-            _ => Err(read_error(response)),
+            _ => Err(read_error(response, self.clock.now())),
         }
     }
 }

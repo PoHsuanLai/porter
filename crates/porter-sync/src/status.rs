@@ -4,23 +4,25 @@
 //! (a throttle spelled as a `403`, a locked item) stay in that vendor's crate, on top of these.
 
 use crate::refusal::{PutRefused, ReplicaError, RetryAfter};
+use porter_core::UnixSeconds;
 use porter_http::http::Response;
 use porter_http::{HeaderText, HttpError};
 
 /// How long to wait when the server did not say.
 pub const RETRY: RetryAfter = RetryAfter(30);
 
-/// The wait a `Retry-After` of whole seconds asks for, or [`RETRY`] where there is none.
-pub fn retry_after(response: &Response<Vec<u8>>) -> RetryAfter {
-    response.retry_after_seconds().map_or(RETRY, RetryAfter)
+/// The wait a `Retry-After` asks for (a date counted from the response's own `Date`, else from
+/// `now`, the caller's clock), or [`RETRY`] where there is none.
+pub fn retry_after(response: &Response<Vec<u8>>, now: UnixSeconds) -> RetryAfter {
+    response.retry_after_seconds(now).map_or(RETRY, RetryAfter)
 }
 
 /// A read answered with `response`, which was not what it needed.
-pub fn read_error(response: &Response<Vec<u8>>) -> ReplicaError {
+pub fn read_error(response: &Response<Vec<u8>>, now: UnixSeconds) -> ReplicaError {
     match response.status().as_u16() {
         401 | 403 => ReplicaError::Unauthorized,
         404 | 410 => ReplicaError::Gone,
-        _ => ReplicaError::Transient(retry_after(response)),
+        _ => ReplicaError::Transient(retry_after(response, now)),
     }
 }
 
@@ -80,7 +82,11 @@ mod tests {
             (500, None, ReplicaError::Transient(RETRY)),
         ];
         for (status, retry, want) in CASES {
-            assert_eq!(read_error(&answer(*status, *retry)), *want, "{status}");
+            assert_eq!(
+                read_error(&answer(*status, *retry), UnixSeconds(0)),
+                *want,
+                "{status}"
+            );
         }
     }
 
@@ -104,5 +110,25 @@ mod tests {
             write_unreached(HttpError::Unreachable),
             PutRefused::Transient(RETRY)
         );
+    }
+
+    #[test]
+    fn a_retry_after_date_with_no_date_header_counts_from_the_callers_clock() {
+        let sent = Response::builder()
+            .status(503)
+            .header("Retry-After", "Sun, 06 Nov 1994 08:49:37 GMT")
+            .body(vec![])
+            .expect("response");
+        assert_eq!(
+            retry_after(&sent, UnixSeconds(784_111_777 - 45)),
+            RetryAfter(45)
+        );
+        let dated = Response::builder()
+            .status(503)
+            .header("Retry-After", "Sun, 06 Nov 1994 08:49:37 GMT")
+            .header("Date", "Sun, 06 Nov 1994 08:49:07 GMT")
+            .body(vec![])
+            .expect("response");
+        assert_eq!(retry_after(&dated, UnixSeconds(0)), RetryAfter(30));
     }
 }

@@ -7,6 +7,7 @@
 //! a `watch::Receiver<Network>`: NetworkManager is not read yet, so the binary hands in a
 //! receiver that says "unmetered and up" for good.
 
+use crate::datasets::photos::Millis;
 use crate::datasets::pim::{ClientGrants, PimConfig, PimSupervisor, Wiring};
 use crate::datasets::storage::DriveMount;
 use crate::datasets::storage::{ClientStorageGrants, StorageConfig, StorageSupervisor};
@@ -39,6 +40,27 @@ use std::sync::Arc;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use zbus::Connection;
+
+/// The wall clock in milliseconds, for Photos' hybrid clocks: the daemon is where it is read.
+#[derive(Debug, Clone, Copy)]
+struct SystemMillis;
+
+impl Millis for SystemMillis {
+    fn now_ms(&self) -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+    }
+}
+
+/// A value that differs between two runs of the daemon: the time it started, in nanoseconds,
+/// and its process id, in hex.
+fn fresh_nonce() -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    format!("{nanos:x}{:x}", std::process::id())
+}
 
 /// The variable that names a directory to read callers from in place of `/proc` (a test build
 /// only).
@@ -168,7 +190,7 @@ impl Config {
         let mounter = Mounter {
             mountd: std::env::var_os("XDG_RUNTIME_DIR")
                 .map(|runtime| porter_drive_fuse::mountd::wire::socket_in(Path::new(&runtime))),
-            ..Mounter::default()
+            ..Mounter::new("fusermount3")
         };
         let storage = StorageConfig {
             rescan: rescan(BUILD, rescan_var, storage.rescan),
@@ -285,6 +307,7 @@ impl Daemon {
         let io = FamilyIo::system(
             ProviderSet::layered(specs.clone(), Vec::new()),
             keep.client_files(),
+            Arc::new(SystemClock),
         );
         let (families, _unserved) = served(specs, &io);
         let store = FileStore::new(keep.registry_dir.clone());
@@ -305,6 +328,8 @@ impl Daemon {
         let link: OwnLink =
             InProcess::new(Arc::clone(&service), sync_app()).with_relays(PorterRelays::new());
         let accounts = Arc::new(Accounts::over(link));
+        // What tells this run from every other: its anchors, its new Photos devices.
+        let nonce = fresh_nonce();
         let wiring = |network| Wiring {
             accounts: Arc::clone(&accounts),
             hub: hub.clone(),
@@ -312,6 +337,9 @@ impl Daemon {
             settings: Settings::default(),
             network,
             owners: Access::default(),
+            clock: porter_sync::Clock::new(SystemClock),
+            nonce: nonce.clone(),
+            millis: Arc::new(SystemMillis),
         };
         let pim = PimSupervisor::new(
             wiring(network.clone()),

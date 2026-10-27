@@ -31,5 +31,5 @@ mod mount;
 /// porter-mountd's client and wire format, for a caller that names its socket.
 pub use porter_mountd as mountd;
 
-pub use fs::{Attr, DirEntry, DriveFs, Space, errno_of, write_errno};
+pub use fs::{Attr, DirEntry, DriveFs, Now, Space, errno_of, write_errno};
 pub use mount::{MountError, Mounted, Mounter, is_mount_point};

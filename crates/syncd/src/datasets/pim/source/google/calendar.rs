@@ -14,7 +14,6 @@ use crate::dataset::fingerprint;
 use crate::datasets::pim::PimKind;
 use crate::datasets::pim::discover::{DiscoverError, Found};
 use porter_client::{Accounts, Transport};
-use porter_core::clock::SystemClock;
 use porter_core::{Bytes, EndpointUrl, GrantId, WebUrl};
 use porter_sync::{Clock, DELETED};
 use porter_sync::{
@@ -54,6 +53,7 @@ struct EventsPage {
 #[derive(Debug)]
 pub struct GoogleCalendarSource<T: Transport> {
     api: Arc<Api<T>>,
+    clock: Clock,
 }
 
 impl<T: Transport> GoogleCalendarSource<T> {
@@ -62,9 +62,11 @@ impl<T: Transport> GoogleCalendarSource<T> {
         accounts: Arc<Accounts<T>>,
         grant: GrantId,
         endpoint: EndpointUrl,
+        clock: Clock,
     ) -> Result<Self, DiscoverError> {
         Ok(Self {
             api: Arc::new(Api::new(accounts, grant, endpoint)?),
+            clock,
         })
     }
 }
@@ -115,7 +117,7 @@ impl<T: Transport + 'static> PimSource for GoogleCalendarSource<T> {
         GoogleCalendarFeed {
             api: Arc::clone(&self.api),
             calendar: id_in(&found.url),
-            clock: Clock::new(SystemClock),
+            clock: self.clock.clone(),
         }
     }
 }
@@ -184,7 +186,7 @@ impl<T: Transport + 'static> Feed for GoogleCalendarFeed<T> {
             (200, _) => {}
             // `fullSyncRequired`: the token (or the page it began with) is no longer honoured.
             (410, true) => return Err(ReplicaError::AnchorExpired),
-            _ => return Err(read_error(&response)),
+            _ => return Err(read_error(&response, self.clock.now())),
         }
         let listing: EventsPage = serde_json::from_slice(response.body())
             .map_err(|_| ReplicaError::Transient(RetryAfter(30)))?;
@@ -219,7 +221,7 @@ impl<T: Transport + 'static> Feed for GoogleCalendarFeed<T> {
             .read(&self.api.url(&self.events_path(&tail), &[]))
             .await?;
         if response.status().as_u16() != 200 {
-            return Err(read_error(&response));
+            return Err(read_error(&response, self.clock.now()));
         }
         let event: Event = serde_json::from_slice(response.body())
             .map_err(|_| ReplicaError::Transient(RetryAfter(30)))?;

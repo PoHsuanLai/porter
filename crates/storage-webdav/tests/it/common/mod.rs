@@ -98,6 +98,6 @@ impl Server {
     /// A replica of the folder with feed pages of `page` changes; each call is a new replica
     /// (a new process, as far as anchors go).
     pub fn replica(&self, page: usize) -> Replica {
-        WebDavReplica::new(client(self.port), &self.folder, Clock::fixed(NOW)).with_page(page)
+        WebDavReplica::new(client(self.port), &self.folder, Clock::fixed(NOW), "n1").with_page(page)
     }
 }

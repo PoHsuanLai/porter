@@ -22,7 +22,6 @@ pub mod admit;
 pub mod agent;
 pub mod attached;
 pub mod auto;
-pub mod clock;
 pub mod cloud;
 pub mod config;
 pub mod daemon;

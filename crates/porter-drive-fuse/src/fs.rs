@@ -99,11 +99,30 @@ fn held<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// What time it is, for a `touch` that names none: the host's clock, since the file system
+/// reads none.
+#[derive(Clone)]
+pub struct Now(std::sync::Arc<dyn Fn() -> SystemTime + Send + Sync>);
+
+impl Now {
+    /// The time as `read` says it.
+    pub fn new(read: impl Fn() -> SystemTime + Send + Sync + 'static) -> Self {
+        Self(std::sync::Arc::new(read))
+    }
+}
+
+impl std::fmt::Debug for Now {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Now")
+    }
+}
+
 /// One drive as a file system: read-only over a drive opened so, else writable.
 #[derive(Debug)]
 pub struct DriveFs {
     drive: Drive,
     runtime: tokio::runtime::Handle,
+    now: Now,
     uid: u32,
     gid: u32,
     handles: Mutex<HashMap<u64, Handle>>,
@@ -112,11 +131,12 @@ pub struct DriveFs {
 
 impl DriveFs {
     /// The file system over `drive`, its waiting reads on `runtime`, its files owned by this
-    /// process's user.
-    pub fn new(drive: Drive, runtime: tokio::runtime::Handle) -> Self {
+    /// process's user, a `touch` with no time taking it from `now`.
+    pub fn new(drive: Drive, runtime: tokio::runtime::Handle, now: Now) -> Self {
         Self {
             drive,
             runtime,
+            now,
             uid: rustix::process::getuid().as_raw(),
             gid: rustix::process::getgid().as_raw(),
             handles: Mutex::default(),
@@ -652,7 +672,7 @@ impl Filesystem for Mounted {
     ) {
         let modified = mtime.map(|at| match at {
             TimeOrNow::SpecificTime(at) => at,
-            TimeOrNow::Now => SystemTime::now(),
+            TimeOrNow::Now => (self.0.now.0)(),
         });
         let fs = std::sync::Arc::clone(&self.0);
         self.0.runtime.spawn(async move {
@@ -822,7 +842,11 @@ mod tests {
         )
         .await
         .expect("drive");
-        let fs = DriveFs::new(drive, tokio::runtime::Handle::current());
+        let fs = DriveFs::new(
+            drive,
+            tokio::runtime::Handle::current(),
+            Now::new(|| UNIX_EPOCH),
+        );
         (listing, source, fs)
     }
 
@@ -921,7 +945,11 @@ mod tests {
         )
         .await
         .expect("drive");
-        let fs = DriveFs::new(drive, tokio::runtime::Handle::current());
+        let fs = DriveFs::new(
+            drive,
+            tokio::runtime::Handle::current(),
+            Now::new(|| UNIX_EPOCH),
+        );
         Writable {
             listing,
             source,

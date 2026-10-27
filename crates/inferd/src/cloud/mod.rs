@@ -25,7 +25,6 @@ pub mod transport;
 pub mod turn;
 pub mod wire;
 
-use crate::clock::Clock;
 use crate::settings::SpendLine;
 use accountd::{AccountVerdict, Accountd, AccountdFault};
 use model_catalog::{ModelEntry, ProviderId, Wire};
@@ -37,6 +36,7 @@ use model_http::{
 use model_http::{UrlPath, WaitMs};
 use models::{RemoteModel, remote_entries, remote_models};
 use own::{OwnBook, OwnServer, Place};
+use porter_core::clock::Clock;
 use porter_core::consent::Usage;
 use porter_core::{AccountId, AppId, DataClass, GrantId, SecretText, UnixSeconds};
 use porter_infer::SpendVerdict;

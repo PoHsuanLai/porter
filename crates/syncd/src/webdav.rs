@@ -29,6 +29,7 @@ pub fn webdav_replica<T: Transport>(
     endpoint: EndpointUrl,
     folder: &str,
     clock: Clock,
+    nonce: &str,
 ) -> Result<WebDavReplica<RelayHttp<RelayDial<T>>>, BuildError> {
     let base = WebUrl::try_from(&endpoint).map_err(|_| BuildError::NotWeb)?;
     let url = WebUrl::parse(&format!(
@@ -42,5 +43,6 @@ pub fn webdav_replica<T: Transport>(
         RelayHttp::new(dial, RelayLimits::default()),
         &url,
         clock,
+        nonce,
     ))
 }

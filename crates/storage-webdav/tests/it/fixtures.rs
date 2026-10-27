@@ -75,7 +75,7 @@ impl Http for Script {
 fn replica(script: Script) -> WebDavReplica<Script> {
     let folder =
         WebUrl::parse("https://cloud.example.org/remote.php/dav/files/alice/Photos/").expect("url");
-    WebDavReplica::new(script, &folder, Clock::fixed(UnixSeconds(5)))
+    WebDavReplica::new(script, &folder, Clock::fixed(UnixSeconds(5)), "n1")
 }
 
 const FOLDER: &str = "/remote.php/dav/files/alice/Photos/";

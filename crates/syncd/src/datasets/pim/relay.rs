@@ -33,6 +33,12 @@ pub fn pim_replica<T: Transport>(
     endpoint: EndpointUrl,
     collection: &WebUrl,
     clock: Clock,
+    nonce: &str,
 ) -> WebDavReplica<RelayHttp<RelayDial<T>>> {
-    WebDavReplica::new(pim_http(accounts, grant, endpoint), collection, clock)
+    WebDavReplica::new(
+        pim_http(accounts, grant, endpoint),
+        collection,
+        clock,
+        nonce,
+    )
 }

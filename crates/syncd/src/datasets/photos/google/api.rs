@@ -2,10 +2,11 @@
 //! token made into a media item. Pure over any [`Http`]; in syncd the `Http` is a relay that adds
 //! the bearer.
 
-use porter_core::WebUrl;
+use porter_core::{UnixSeconds, WebUrl};
 use porter_http::http::request::Builder;
 use porter_http::http::{Method, Response, StatusCode};
 use porter_http::{HeaderText, Http, request};
+use porter_sync::Clock;
 use serde::Deserialize;
 
 /// What an upload returns, to be made into a media item.
@@ -87,10 +88,10 @@ struct Item {
     id: String,
 }
 
-fn refused(response: &Response<Vec<u8>>) -> ApiError {
+fn refused(response: &Response<Vec<u8>>, now: UnixSeconds) -> ApiError {
     ApiError::Refused {
         status: response.status().as_u16(),
-        retry_after: response.retry_after_seconds(),
+        retry_after: response.retry_after_seconds(now),
     }
 }
 
@@ -99,12 +100,14 @@ fn refused(response: &Response<Vec<u8>>) -> ApiError {
 pub struct PhotosApi<H> {
     http: H,
     origin: String,
+    clock: Clock,
 }
 
 impl<H: Http> PhotosApi<H> {
     /// The API served at the origin of `base` (`https://photoslibrary.googleapis.com/v1`),
-    /// reached through `http`.
-    pub fn new(http: H, base: &WebUrl) -> Self {
+    /// reached through `http`; a `Retry-After` date is counted from `clock` where the answer
+    /// has no `Date`.
+    pub fn new(http: H, base: &WebUrl, clock: Clock) -> Self {
         let text = base.as_str();
         let after = text.find("://").map_or(0, |at| at + 3);
         let end = text[after..]
@@ -113,6 +116,7 @@ impl<H: Http> PhotosApi<H> {
         Self {
             http,
             origin: text[..end].to_owned(),
+            clock,
         }
     }
 
@@ -133,7 +137,7 @@ impl<H: Http> PhotosApi<H> {
             .map_err(|_| ApiError::Unreached)?;
         match response.status() {
             StatusCode::OK => Ok(response),
-            _ => Err(refused(&response)),
+            _ => Err(refused(&response, self.clock.now())),
         }
     }
 

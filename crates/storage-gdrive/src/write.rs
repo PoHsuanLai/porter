@@ -136,7 +136,7 @@ impl<H: Http> GdriveReplica<H> {
                 Ok(RemoteVersion(DELETED.to_owned()))
             }
             404 => Err(Self::conflict(&target, &base, None)),
-            _ => Err(write_error(&response)),
+            _ => Err(write_error(&response, self.clock.now())),
         }
     }
 
@@ -226,7 +226,7 @@ impl<H: Http> GdriveReplica<H> {
                     Err(PutRefused::Transient(RetryAfter(1)))
                 }
             },
-            _ => Err(write_error(&response)),
+            _ => Err(write_error(&response, self.clock.now())),
         }
     }
 

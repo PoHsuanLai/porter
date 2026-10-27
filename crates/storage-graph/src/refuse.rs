@@ -4,6 +4,7 @@
 //! (open in an Office app there, or checked out).
 
 use crate::json::ErrorBody;
+use porter_core::UnixSeconds;
 use porter_http::http::Response;
 use porter_sync::PutRefused;
 use porter_sync::status::retry_after;
@@ -15,14 +16,14 @@ pub fn error_code(response: &Response<Vec<u8>>) -> Option<String> {
 }
 
 /// A write answered with `response`, which was not a success or a precondition failure.
-pub fn write_error(response: &Response<Vec<u8>>) -> PutRefused {
+pub fn write_error(response: &Response<Vec<u8>>, now: UnixSeconds) -> PutRefused {
     match response.status().as_u16() {
         507 => PutRefused::Quota,
         401 => PutRefused::Unauthorized,
-        423 => PutRefused::InUse(retry_after(response)),
+        423 => PutRefused::InUse(retry_after(response, now)),
         409 => PutRefused::Declined,
         400 | 403 | 405 | 413 => PutRefused::Forbidden,
-        _ => PutRefused::Transient(retry_after(response)),
+        _ => PutRefused::Transient(retry_after(response, now)),
     }
 }
 
@@ -56,7 +57,11 @@ mod tests {
             (502, None, PutRefused::Transient(RETRY)),
         ];
         for (status, retry, want) in CASES {
-            assert_eq!(write_error(&answer(*status, *retry)), *want, "{status}");
+            assert_eq!(
+                write_error(&answer(*status, *retry), UnixSeconds(0)),
+                *want,
+                "{status}"
+            );
         }
     }
 }

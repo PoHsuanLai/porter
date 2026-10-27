@@ -203,7 +203,7 @@ impl<H: Http> GdriveReplica<H> {
             }
             200 | 201 => Ok(Resumed::Done(response)),
             404 | 410 => Ok(Resumed::Gone),
-            _ => Err(write_error(&response)),
+            _ => Err(write_error(&response, self.clock.now())),
         }
     }
 
@@ -415,7 +415,7 @@ impl<H: Http> GdriveReplica<H> {
                     serde_json::from_slice(response.body()).map_err(|_| again())?;
                 Ok(ids.ids.into_iter().map(RemoteId).collect())
             }
-            _ => Err(write_error(&response)),
+            _ => Err(write_error(&response, self.clock.now())),
         }
     }
 }

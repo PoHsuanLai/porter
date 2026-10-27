@@ -190,6 +190,9 @@ async fn build(
         settings: Settings::quick(),
         network,
         owners: Access::default(),
+        clock: porter_sync::Clock::new(porter_core::clock::SystemClock),
+        nonce: "t1".to_owned(),
+        millis: Arc::new(syncd::datasets::photos::ManualMillis::at(1_700_000_000_000)),
     };
     let supervisor = StorageSupervisor::new(
         wiring,
@@ -708,10 +711,7 @@ async fn porter_mountd_is_asked_when_it_listens_and_its_words_are_shown() {
         let listener = mountd::server::bind_at(&socket).expect("bind");
         let helper = mountd::server::Helper::new(
             scratch.join("syncd-home/Cloud"),
-            mountd::server::Fusermount {
-                program: scratch.join("no-fusermount3").display().to_string(),
-                ..Default::default()
-            },
+            mountd::server::Fusermount::new(scratch.join("no-fusermount3").display().to_string()),
         );
         std::thread::spawn(move || {
             let (stream, _) = listener.accept().expect("asked");
@@ -720,7 +720,7 @@ async fn porter_mountd_is_asked_when_it_listens_and_its_words_are_shown() {
         DriveMount::Fuse(Mounter {
             device: scratch.join("no-fuse-device"),
             mountd: Some(socket),
-            ..Mounter::default()
+            ..Mounter::new("fusermount3")
         })
     })
     .await;
