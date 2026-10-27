@@ -14,7 +14,7 @@ porter-infer = { workspace = true, optional = true }
 porter-bridge = { workspace = true, optional = true }
 # `engines`: the turn the daemon runs (`run_chat`) and the clock its retries wait on.
 porter-turns = { workspace = true, optional = true }
-model-http = { workspace = true, optional = true, features = ["hyper", "tls"] }
+model-http = { workspace = true, optional = true, features = ["client", "tls"] }
 model-openai-compat = { workspace = true, optional = true }
 model-provider = { workspace = true, optional = true }
 model-wire = { workspace = true, optional = true }

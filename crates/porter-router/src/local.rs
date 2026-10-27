@@ -87,28 +87,29 @@ impl EngineConfig {
             .collect()
     }
 
-    fn program(&self, kind: EngineKind) -> Option<&Path> {
+    fn program(&self, kind: EngineKind) -> Option<PathBuf> {
         match kind {
-            EngineKind::Vllm => self.vllm_python.as_deref(),
-            EngineKind::LlamaServer => self.llama_server.as_deref(),
-            EngineKind::SpeechHost => self.speech_host.as_deref(),
-            EngineKind::KokoroFastApi => self.kokoro_python.as_deref(),
+            EngineKind::Vllm => self.vllm_python.clone(),
+            EngineKind::LlamaServer => self.llama_server.clone(),
+            EngineKind::SpeechHost => self.speech_host.clone(),
+            EngineKind::KokoroFastApi => self.kokoro_python.clone(),
+            // The Python of the folder the person pointed at, once it holds Strata's server.
+            EngineKind::Strata => self
+                .strata_folder
+                .as_deref()
+                .and_then(porter_engines::pointed_strata)
+                .map(|found| found.program),
         }
     }
 
     fn paths(&self) -> EnginePaths {
-        let program = |kind| {
-            ProgramPath(
-                self.program(kind)
-                    .map(Path::to_path_buf)
-                    .unwrap_or_default(),
-            )
-        };
+        let program = |kind| ProgramPath(self.program(kind).unwrap_or_default());
         EnginePaths {
             vllm_python: program(EngineKind::Vllm),
             llama_server: program(EngineKind::LlamaServer),
             speech_host: program(EngineKind::SpeechHost),
             kokoro_python: program(EngineKind::KokoroFastApi),
+            strata_python: program(EngineKind::Strata),
             hf_cache: self.hf_cache.clone(),
         }
     }
@@ -257,6 +258,7 @@ fn kind_slug(kind: EngineKind) -> &'static str {
         EngineKind::LlamaServer => "llama_server",
         EngineKind::SpeechHost => "speech_host",
         EngineKind::KokoroFastApi => "kokoro_fast_api",
+        EngineKind::Strata => "strata",
     }
 }
 
@@ -264,7 +266,7 @@ pub(crate) fn flavor_of(kind: EngineKind) -> Option<Flavor> {
     match kind {
         EngineKind::Vllm => Some(Flavor::Vllm),
         EngineKind::LlamaServer => Some(Flavor::LlamaServer),
-        EngineKind::SpeechHost | EngineKind::KokoroFastApi => None,
+        EngineKind::SpeechHost | EngineKind::KokoroFastApi | EngineKind::Strata => None,
     }
 }
 

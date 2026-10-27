@@ -65,6 +65,7 @@ pub fn model(name: &str, cassette: &Path, context: Tokens, sockets: &Path) -> Op
         llama_server: ProgramPath(PathBuf::from("replay")),
         speech_host: ProgramPath(PathBuf::new()),
         kokoro_python: ProgramPath(PathBuf::new()),
+        strata_python: ProgramPath(PathBuf::new()),
         hf_cache: PathBuf::new(),
     };
     debug_assert_eq!(profile.kind, EngineKind::LlamaServer);

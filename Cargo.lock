@@ -632,7 +632,7 @@ dependencies = [
 [[package]]
 name = "cua-action"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=521a920898856001860ac4edafd3d57b7e1ccb6e#521a920898856001860ac4edafd3d57b7e1ccb6e"
 dependencies = [
  "keyboard-types",
  "serde",
@@ -642,7 +642,7 @@ dependencies = [
 [[package]]
 name = "cua-parse"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=521a920898856001860ac4edafd3d57b7e1ccb6e#521a920898856001860ac4edafd3d57b7e1ccb6e"
 dependencies = [
  "cua-action",
  "keyboard-types",
@@ -655,7 +655,7 @@ dependencies = [
 [[package]]
 name = "cua-session"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=521a920898856001860ac4edafd3d57b7e1ccb6e#521a920898856001860ac4edafd3d57b7e1ccb6e"
 dependencies = [
  "cua-action",
  "cua-parse",
@@ -668,7 +668,7 @@ dependencies = [
 [[package]]
 name = "cua-vendors"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=521a920898856001860ac4edafd3d57b7e1ccb6e#521a920898856001860ac4edafd3d57b7e1ccb6e"
 dependencies = [
  "cua-action",
  "cua-parse",
@@ -835,7 +835,7 @@ checksum = "66b7e2430c6dff6a955451e2cfc438f09cea1965a9d6f87f7e3b90decc014099"
 [[package]]
 name = "engine-supervisor"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=521a920898856001860ac4edafd3d57b7e1ccb6e#521a920898856001860ac4edafd3d57b7e1ccb6e"
 dependencies = [
  "model-catalog",
  "serde",
@@ -1098,7 +1098,7 @@ dependencies = [
 [[package]]
 name = "genai-names"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=521a920898856001860ac4edafd3d57b7e1ccb6e#521a920898856001860ac4edafd3d57b7e1ccb6e"
 
 [[package]]
 name = "generic-array"
@@ -1897,7 +1897,7 @@ dependencies = [
 [[package]]
 name = "model-catalog"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=521a920898856001860ac4edafd3d57b7e1ccb6e#521a920898856001860ac4edafd3d57b7e1ccb6e"
 dependencies = [
  "model-provider",
  "serde",
@@ -1909,7 +1909,7 @@ dependencies = [
 [[package]]
 name = "model-extract"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=521a920898856001860ac4edafd3d57b7e1ccb6e#521a920898856001860ac4edafd3d57b7e1ccb6e"
 dependencies = [
  "model-provider",
  "serde_json",
@@ -1918,24 +1918,20 @@ dependencies = [
 [[package]]
 name = "model-http"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=521a920898856001860ac4edafd3d57b7e1ccb6e#521a920898856001860ac4edafd3d57b7e1ccb6e"
 dependencies = [
- "http-body-util",
- "hyper",
- "hyper-util",
- "rustls-native-certs",
- "rustls-pki-types",
+ "reqwest 0.13.5",
+ "rustls",
  "serde",
  "thiserror",
  "tokio",
- "tokio-rustls",
  "zeroize",
 ]
 
 [[package]]
 name = "model-openai-compat"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=521a920898856001860ac4edafd3d57b7e1ccb6e#521a920898856001860ac4edafd3d57b7e1ccb6e"
 dependencies = [
  "log",
  "model-http",
@@ -1950,7 +1946,7 @@ dependencies = [
 [[package]]
 name = "model-provider"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=521a920898856001860ac4edafd3d57b7e1ccb6e#521a920898856001860ac4edafd3d57b7e1ccb6e"
 dependencies = [
  "base64 0.22.1",
  "cua-action",
@@ -1964,7 +1960,7 @@ dependencies = [
 [[package]]
 name = "model-replay"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=521a920898856001860ac4edafd3d57b7e1ccb6e#521a920898856001860ac4edafd3d57b7e1ccb6e"
 dependencies = [
  "blake3",
  "model-http",
@@ -1979,7 +1975,7 @@ dependencies = [
 [[package]]
 name = "model-wire"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=521a920898856001860ac4edafd3d57b7e1ccb6e#521a920898856001860ac4edafd3d57b7e1ccb6e"
 dependencies = [
  "model-http",
  "model-provider",
@@ -2698,7 +2694,7 @@ dependencies = [
  "porter-core",
  "porter-fake-servers",
  "porter-http",
- "reqwest",
+ "reqwest 0.12.28",
  "rustls",
  "test-kit",
  "tokio",
@@ -2817,6 +2813,7 @@ dependencies = [
  "model-openai-compat",
  "model-provider",
  "porter-core",
+ "porter-engines",
  "porter-infer",
  "rustix",
  "serde",
@@ -3287,6 +3284,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "reqwest"
+version = "0.13.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "16a1cfa75cc186dd73d5818e510e042e40927bccc9c236b061cea97e1eb08029"
+dependencies = [
+ "base64 0.23.1",
+ "bytes",
+ "futures-core",
+ "http",
+ "http-body",
+ "http-body-util",
+ "hyper",
+ "hyper-rustls",
+ "hyper-util",
+ "js-sys",
+ "log",
+ "percent-encoding",
+ "pin-project-lite",
+ "rustls",
+ "rustls-pki-types",
+ "rustls-platform-verifier",
+ "sync_wrapper",
+ "tokio",
+ "tokio-rustls",
+ "tower",
+ "tower-http",
+ "tower-service",
+ "url",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
 name = "resolv-conf"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3404,6 +3435,33 @@ dependencies = [
  "web-time",
  "zeroize",
 ]
+
+[[package]]
+name = "rustls-platform-verifier"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1167586491e2b18b8bfbb293e8180ec17c201c4f076d7cb3070ca964e7598f98"
+dependencies = [
+ "core-foundation 0.10.1",
+ "core-foundation-sys",
+ "jni",
+ "log",
+ "once_cell",
+ "rustls",
+ "rustls-native-certs",
+ "rustls-platform-verifier-android",
+ "rustls-webpki",
+ "security-framework",
+ "security-framework-sys",
+ "webpki-root-certs",
+ "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "rustls-platform-verifier-android"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eec689c0bc40ff2458a5977b6619cb718087084a18e02a131c599b62d05e1a5f"
 
 [[package]]
 name = "rustls-webpki"
@@ -3662,7 +3720,7 @@ dependencies = [
 [[package]]
 name = "speech-host-client"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=521a920898856001860ac4edafd3d57b7e1ccb6e#521a920898856001860ac4edafd3d57b7e1ccb6e"
 dependencies = [
  "model-provider",
  "serde",
@@ -3673,7 +3731,7 @@ dependencies = [
 [[package]]
 name = "speech-provider"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=521a920898856001860ac4edafd3d57b7e1ccb6e#521a920898856001860ac4edafd3d57b7e1ccb6e"
 dependencies = [
  "base64 0.22.1",
  "model-provider",
@@ -4225,7 +4283,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "vision-prep"
 version = "0.1.0"
-source = "git+https://github.com/PoHsuanLai/stoker?rev=f30d2808a9f05901a952c1fac6db2c6479a1bfe2#f30d2808a9f05901a952c1fac6db2c6479a1bfe2"
+source = "git+https://github.com/PoHsuanLai/stoker?rev=521a920898856001860ac4edafd3d57b7e1ccb6e#521a920898856001860ac4edafd3d57b7e1ccb6e"
 dependencies = [
  "cua-action",
  "fast_image_resize",
@@ -4351,6 +4409,15 @@ checksum = "5a6580f308b1fad9207618087a65c04e7a10bc77e02c8e84e9b00dd4b12fa0bb"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "webpki-root-certs"
+version = "1.0.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e49d0e65abc00c142e8f9428da991da9f1a250c39be97459901eb12b9b49f62a"
+dependencies = [
+ "rustls-pki-types",
 ]
 
 [[package]]

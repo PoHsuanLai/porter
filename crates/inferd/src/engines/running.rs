@@ -110,6 +110,7 @@ fn engine_word(kind: EngineKind) -> &'static str {
         EngineKind::LlamaServer => "llama-server",
         EngineKind::SpeechHost => "speech-host",
         EngineKind::KokoroFastApi => "kokoro",
+        EngineKind::Strata => "strata",
     }
 }
 

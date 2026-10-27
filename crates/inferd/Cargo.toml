@@ -50,7 +50,7 @@ ds-settings = { workspace = true }
 model-provider = { workspace = true }
 model-catalog = { workspace = true }
 engine-supervisor = { workspace = true }
-model-http = { workspace = true, features = ["hyper", "tls"] }
+model-http = { workspace = true, features = ["client", "tls"] }
 model-openai-compat = { workspace = true }
 vision-prep = { workspace = true, features = ["pixels"] }
 cua-parse = { workspace = true }

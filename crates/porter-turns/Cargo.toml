@@ -20,7 +20,7 @@ cua-vendors = { workspace = true }
 engine-supervisor = { workspace = true }
 model-extract = { workspace = true }
 # The HTTP client to a local engine (`hyper`); a plain Unix socket or loopback, so no `tls`.
-model-http = { workspace = true, features = ["hyper"] }
+model-http = { workspace = true, features = ["client"] }
 model-openai-compat = { workspace = true }
 model-provider = { workspace = true }
 # `pixels`: the frame resize of a computer-use step.

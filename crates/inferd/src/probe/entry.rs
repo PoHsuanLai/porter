@@ -146,6 +146,7 @@ pub fn local_model(
         llama_server: ProgramPath(PathBuf::from("probed")),
         speech_host: ProgramPath(PathBuf::new()),
         kokoro_python: ProgramPath(PathBuf::new()),
+        strata_python: ProgramPath(PathBuf::new()),
         hf_cache: PathBuf::new(),
     };
     Some(LocalModel {

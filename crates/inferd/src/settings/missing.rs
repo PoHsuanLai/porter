@@ -38,6 +38,7 @@ impl Engine {
             EngineKind::Vllm => Self::Vllm,
             EngineKind::SpeechHost => Self::Speech,
             EngineKind::KokoroFastApi => Self::Kokoro,
+            EngineKind::Strata => Self::Strata,
         }
     }
 
@@ -106,11 +107,15 @@ mod tests {
             EngineKind::Vllm,
             EngineKind::SpeechHost,
             EngineKind::KokoroFastApi,
+            EngineKind::Strata,
         ]
         .into_iter()
         .map(|kind| Engine::of(kind).name())
         .collect();
-        assert_eq!(names, ["llama.cpp", "vLLM", "the speech engine", "Kokoro"]);
+        assert_eq!(
+            names,
+            ["llama.cpp", "vLLM", "the speech engine", "Kokoro", "Strata"]
+        );
     }
 
     #[test]
