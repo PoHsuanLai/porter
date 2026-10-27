@@ -40,7 +40,7 @@ porter-tailnet = { workspace = true, features = ["io"] }
 porter-tailscale = { workspace = true, features = ["io"] }
 porter-infer = { workspace = true }
 # Routing and the session machine: the router, the plan, the catalogue, the local model book, the
-# attached engines as values, the seams. inferd re-exports them at their old paths.
+# attached engines as values, the seams.
 porter-router = { workspace = true }
 # Running turns: a local model's chat, embedding and computer-use turns, the structured-reply
 # check, the audit trail and the stages of a pipeline.

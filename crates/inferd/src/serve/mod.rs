@@ -3,8 +3,8 @@
 //! on the other; the seams are filled by the router, the engine host, the model adapters and the
 //! audit log, and by scripted ones in tests.
 //!
-//! The seams (`porter_router::seams`) and what a turn carried (`porter_router::carried`) moved to
-//! `porter-router`, so another host can fill them; they stay importable from here.
+//! The seams (`porter_router::seams`) and what a turn carried (`porter_router::carried`) are
+//! `porter-router`'s, so another host can fill them.
 
 mod driver;
 mod guard;
@@ -12,8 +12,4 @@ mod wire;
 
 pub use driver::serve_session;
 pub use guard::guarded;
-pub use porter_router::carried::Carried;
-pub use porter_router::seams::{
-    AuditSink, EngineFailed, EngineHost, Router, RunningTurn, Seams, TurnRunner, TurnStep,
-};
 pub use wire::MAX_QUEUED_FDS;

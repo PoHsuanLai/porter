@@ -1,10 +1,10 @@
 //! Who a route is for: whose Automatic pool it reads, and which models other helpers are using.
 
 use super::Engines;
-use crate::router::Listed;
-use crate::router::placed::Placed;
 use crate::seats::Gate;
 use porter_infer::{Asker, Chooser, ModelRef, Sharing};
+use porter_router::router::Listed;
+use porter_router::router::placed::Placed;
 
 /// The asker of a route, as routing needs it. The default is the person's own turn with nothing
 /// shared, which is what a route without a session (Availability, Prepare) means.

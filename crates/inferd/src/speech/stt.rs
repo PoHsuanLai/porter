@@ -7,12 +7,8 @@
 //! carries one utterance. Cancelling a turn drops the future, which tells the host `Cancel` and
 //! closes the socket, so audio is never kept: frames live in the buffer of the running call.
 
-use super::{AudioIn, AudioPull, SpeechRunner};
-use crate::bridge;
+use super::SpeechRunner;
 use crate::engines::Engines;
-use crate::local::LocalModel;
-use crate::pipeline::Transcriber;
-use crate::serve::EngineHost;
 use crate::supervise::Supervised;
 use model_catalog::EngineKind;
 use model_provider::{Flow as ProviderFlow, ModelName, ProviderError};
@@ -21,6 +17,11 @@ use porter_infer::{
     ChatSink, Flow, HeardDelta, InferEvent, LangPick, ModelError, ModelRef, ServedBy, Stage,
     TranscribeBegin, TranscribeMode, TranscribeReply,
 };
+use porter_router::audio::{AudioIn, AudioPull};
+use porter_router::local::LocalModel;
+use porter_router::seams::EngineHost;
+use porter_turns::bridge;
+use porter_turns::pipeline::Transcriber;
 use speech_host_client::{HostSocket, SpeechHostClient};
 use speech_provider::{
     AudioChunk, AudioFormat, AudioMs, AudioPull as SourcePull, AudioSource, Lang, LangChoice,

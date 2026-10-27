@@ -5,8 +5,7 @@
 
 use crate::support;
 
-use inferd::serve::{Carried, Seams, TurnStep, serve_session};
-use inferd::session::SessionSpec;
+use inferd::serve::serve_session;
 use porter_core::capability::{CuaEnv, SpeechMode};
 use porter_core::consent::Usage;
 use porter_core::need::{CuaNeed, SpeechNeed};
@@ -17,6 +16,9 @@ use porter_infer::{
     InferRefusal, InferReply, InferRequest, MessagePart, ModelError, Role, StopReason, TokenUsage,
     ToolParallelism, TranscribeBegin, TranscribeMode, TranscribeReply,
 };
+use porter_router::carried::Carried;
+use porter_router::seams::{Seams, TurnStep};
+use porter_router::session::SessionSpec;
 use std::os::fd::OwnedFd;
 
 /// The `Answer` note every chat turn sends after `Routed`: the router here names the model as

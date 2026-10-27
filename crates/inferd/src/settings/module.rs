@@ -7,9 +7,7 @@
 //! `engines.llama_server`; see `programs`).
 
 use super::file::Reload;
-use super::keys::{
-    SLOTS, TIERS, model_path, parse_model_path, parse_pool_path, pool_path, slots_of,
-};
+use super::keys::{SLOTS, TIERS, model_path, parse_model_path, parse_pool_path, pool_path};
 use super::missing::Engine;
 use super::pool;
 use super::programs::{self, Program};
@@ -26,6 +24,7 @@ use porter_core::{Locality, Tier};
 use porter_dbus::names::INFERENCE_SETTINGS_PATH;
 use porter_infer::{Chooser, ModelRef, Slot, tier_label};
 use porter_router::local::LocalModel;
+use porter_router::router::slots_of;
 use std::collections::BTreeMap;
 
 /// The picker value that is Automatic.

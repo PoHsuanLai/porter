@@ -58,6 +58,7 @@ zbus = { workspace = true }
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 accountd = { path = "../accountd" }
 inferd = { path = "../inferd" }
+porter-router = { workspace = true }
 # tailscaled's LocalAPI client, over its Unix socket, for the tailnet bus test.
 porter-tailscale = { workspace = true, features = ["io"] }
 

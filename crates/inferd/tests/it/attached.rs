@@ -10,9 +10,7 @@ use hosting::lab::Lab;
 use hosting::rig::{Plan, World};
 use hosting::{bus, entries};
 use inferd::attached::{Attached, KeyFileProblem, NotReady, Place, Reach};
-use inferd::serve::EngineHost;
 use inferd::settings::{MyNetwork, Settings};
-use inferd::startup::Cause;
 use porter_client::InferSession;
 use porter_core::capability::LlmFeature;
 use porter_core::consent::Usage;
@@ -23,6 +21,8 @@ use porter_infer::{
     ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRefusal, InferReply, InferRequest,
     MessagePart, ModelRef, Role as ChatRole,
 };
+use porter_router::seams::EngineHost;
+use porter_router::startup::Cause;
 use rustix::process::{Pid, Signal, kill_process};
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;

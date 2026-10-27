@@ -5,12 +5,12 @@
 
 mod discover;
 
-use crate::catalog::CatalogDirs;
-use crate::local::EngineConfig;
 use crate::probe::ProbeConfig;
 use crate::structured::AiConfig;
 use porter_daemon::xdg::{PathError, Xdg};
 use porter_infer::{Policy, TierMap};
+use porter_router::catalog::CatalogDirs;
+use porter_router::local::EngineConfig;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 

@@ -252,8 +252,6 @@ async fn within_generous(work: impl std::future::Future<Output = ()>) -> bool {
 mod routing {
     use super::*;
     use hosting::bus::within;
-    use inferd::router::placed::Allowed;
-    use inferd::session::SessionSpec;
     use porter_client::InferSession;
     use porter_core::capability::LlmFeature;
     use porter_core::consent::Usage;
@@ -264,6 +262,8 @@ mod routing {
         ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRequest, LocalOnly, MessagePart,
         NoPlaceReason, OpenOptions, PlaceId, Policy, Role as ChatRole,
     };
+    use porter_router::router::placed::Allowed;
+    use porter_router::session::SessionSpec;
     use std::collections::BTreeMap;
 
     const COMPANION: &str = "org.quire.Companion";
@@ -426,12 +426,12 @@ mod routing {
                 caller.role,
                 &offered,
                 Some(&allowed),
-                inferd::router::Unchosen::Refuse,
+                porter_router::router::Unchosen::Refuse,
             )
             .expect_err("nothing in the set can serve");
         assert_eq!(
             refused,
-            inferd::router::placed::Unplaced::NoPlace(porter_infer::PlaceRefusal::new(
+            porter_router::router::placed::Unplaced::NoPlace(porter_infer::PlaceRefusal::new(
                 NoPlaceReason::NotReady,
                 Some(porter_infer::PlaceKind::CloudAccount),
             ))

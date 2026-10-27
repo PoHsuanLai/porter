@@ -1,9 +1,9 @@
 //! `[ai.structured]` as `inferd.toml` holds it: the file's reading into limits. The limits
 //! themselves are `porter_turns::structured::limits`.
 
-use super::limits::*;
 use crate::config::InferdConfig;
 use model_provider::{CharCount, Count};
+use porter_turns::structured::limits::*;
 
 fn resolved(text: &str) -> Resolved {
     InferdConfig::from_toml(text).expect("reads").ai.resolve()

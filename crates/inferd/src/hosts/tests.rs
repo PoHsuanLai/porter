@@ -267,7 +267,7 @@ async fn a_process_that_says_a_great_deal_is_read_to_the_end_and_kept_to_the_cap
     .expect("spawn");
     assert_eq!(host.exited(&id("chatty")).await, ExitCode(0));
     let tail = host.diagnostics().tail(&id("chatty"));
-    assert_eq!(tail.0.len(), crate::startup::TAIL_LINES);
+    assert_eq!(tail.0.len(), porter_router::startup::TAIL_LINES);
     assert_eq!(
         tail.0.last().map(String::as_str),
         Some("line 3999 of the noise")

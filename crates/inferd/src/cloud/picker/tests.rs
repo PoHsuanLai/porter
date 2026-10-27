@@ -1,9 +1,9 @@
 use super::*;
-use crate::catalog::parse_entry_text;
 use crate::entries;
 use porter_core::AccountId;
 use porter_core::consent::Verdict;
 use porter_infer::Slot;
+use porter_router::catalog::parse_entry_text;
 
 fn catalogue() -> Vec<ModelEntry> {
     [

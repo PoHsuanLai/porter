@@ -4,7 +4,6 @@
 
 use super::*;
 use crate::cloud::models::{known_providers, provider_of, remote_models};
-use crate::router::fits;
 use crate::settings::Engine;
 use porter_core::capability::LlmFeature;
 use porter_core::need::LlmNeed;
@@ -13,6 +12,7 @@ use porter_infer::{
     ComputerName, PlaceEngine, PlaceId, PlaceKind, PlaceModel, PlaceRow, PlaceState, PlaceTarget,
     Takes,
 };
+use porter_router::router::fits;
 use std::collections::BTreeMap;
 
 /// Whether a model in this state can take a request now: it is up, coming up, or a request

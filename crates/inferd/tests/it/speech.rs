@@ -10,7 +10,6 @@ use engine_supervisor::{EngineId, SupervisorConfig};
 use hosting::engine::{Chat, Script};
 use hosting::entries;
 use hosting::rig::{Plan, SpeechPlan, World};
-use inferd::pipeline::{PipelineInput, VecAudio, plan, run_pipeline};
 use inferd::runner::{Pin, Pinned, Turns};
 use inferd::speech::Ears;
 use porter_client::{Accounts, ClientError, DbusSession, DbusTransport, InferSession};
@@ -24,6 +23,8 @@ use porter_infer::{
     Modality, ModelError, ModelLabel, ModelRef, OpenOptions, Readiness, RequestShape, Role,
     ShowReason, StageRole, TierMap, TranscribeBegin, TranscribeMode,
 };
+use porter_router::pipeline::plan;
+use porter_turns::pipeline::{PipelineInput, VecAudio, run_pipeline};
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::time::Duration;

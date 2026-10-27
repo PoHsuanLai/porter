@@ -9,14 +9,14 @@
 //! where    = "my-network"                      # required: "this-device" or "my-network"
 //! ```
 //!
-//! The pieces: [`config`] (the table and the checks the file alone allows), [`key`] (the token's
-//! file, read at each connect), [`target`] (how a connect is made), [`check`] (`GET /v1/models`
-//! must list the catalogue's served name, and [`NotReady`] says what is wrong when it does not),
-//! [`model`] (the [`crate::local::LocalModel`] the catalogue's entry makes) and [`book`] (the
+//! The pieces: `config` (the table and the checks the file alone allows), `key` (the token's
+//! file, read at each connect), `target` (how a connect is made), [`check`] (`GET /v1/models`
+//! must list the catalogue's served name, and `NotReady` says what is wrong when it does not),
+//! `model` (the [`porter_router::local::LocalModel`] the catalogue's entry makes) and `book` (the
 //! engines and what the last look found, looked at when a session opens and at no other time).
 //!
-//! The values (`config`, `key`, `model`, `target`, `NotReady`) moved to `porter_router::attached`
-//! and stay importable from here; the connection (`check`, `book`, `computers`) is inferd's.
+//! The values (`config`, `key`, `model`, `target`, `NotReady`) are `porter_router::attached`'s;
+//! the connection (`check`, `book`, `computers`) is inferd's.
 //!
 //! Routing is the catalogue's: its codec and tool and reasoning parser go through the same bridge
 //! as an engine inferd starts, and no accountd grant is asked and no spend is counted. Where the
@@ -30,15 +30,6 @@ pub mod check;
 pub mod computers;
 #[cfg(test)]
 mod config_file_tests;
-
-/// The table and its checks, moved to `porter_router::attached::config`.
-pub use porter_router::attached::config;
-/// The token's file, moved to `porter_router::attached::key`.
-pub use porter_router::attached::key;
-/// The catalogue's model of an attached engine, moved to `porter_router::attached::model`.
-pub use porter_router::attached::model;
-/// How a connect is made, moved to `porter_router::attached::target`.
-pub use porter_router::attached::target;
 
 pub use book::AttachedBook;
 pub use check::probe;

@@ -91,12 +91,12 @@ fn cause_of(failure: EngineFailure) -> Cause {
         EngineFailure::NoRoom { need, free } => Cause::NoRoom { need, free },
         EngineFailure::Exited { code } => Cause::Exited {
             code,
-            tail: crate::startup::Tail::default(),
+            tail: porter_router::startup::Tail::default(),
         },
         EngineFailure::BadProfile => Cause::BadProfile,
         // never ready, or a failure a later supervisor adds
         _ => Cause::NeverReady {
-            tail: crate::startup::Tail::default(),
+            tail: porter_router::startup::Tail::default(),
         },
     }
 }
@@ -207,7 +207,7 @@ mod tests {
 
     #[test]
     fn a_failure_is_told_in_plain_words() {
-        let none = crate::startup::Tail::default;
+        let none = porter_router::startup::Tail::default;
         for (cause, words) in [
             (
                 Cause::NoRoom {

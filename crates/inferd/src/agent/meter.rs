@@ -5,11 +5,11 @@
 
 use super::fail::Shape;
 use super::session::Ctx;
-use crate::audit::AuditOut;
 use crate::cloud::spend::SpendGuard;
 use model_http::SseDecoder;
 use porter_core::{Bytes, Count, Locality, MicroUsd, PriceTable, Tokens};
 use porter_infer::{AuditEntry, ServedBy, TokenUsage, Why, cost};
+use porter_turns::audit::AuditOut;
 use serde_json::Value;
 
 /// A provider's usage figures as they arrive.

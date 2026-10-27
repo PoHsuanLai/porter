@@ -9,7 +9,6 @@ use crate::hosting;
 
 use hosting::entries;
 use hosting::rig::{Plan, Processes, World};
-use inferd::startup::{Cause, Level};
 use porter_client::InferSession;
 use porter_core::capability::LlmFeature;
 use porter_core::consent::Usage;
@@ -20,6 +19,7 @@ use porter_infer::{
     ChatMessage, ChatRequest, ClientFrame, InferEvent, InferReply, InferRequest, MessagePart,
     ModelError, Role as ChatRole,
 };
+use porter_router::startup::{Cause, Level};
 use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixListener;

@@ -19,7 +19,6 @@ use super::accountd::AccountVerdict;
 use super::models::{RemoteModel, card_of};
 use super::picker::{Availability, Choice};
 use super::wire::Door;
-use crate::catalog::{capabilities_of, parse_entry_text};
 use crate::probe::names::id_of;
 use model_catalog::{Locality, ModelEntry, Reach};
 use model_http::{
@@ -29,6 +28,7 @@ use model_http::{
 };
 use porter_core::{AccountId, ModelId, SecretText, ServiceEndpoint, UnixSeconds, UrlScheme};
 use porter_infer::Takes;
+use porter_router::catalog::{capabilities_of, parse_entry_text};
 use std::collections::BTreeMap;
 use std::sync::{Arc, PoisonError, RwLock};
 

@@ -1,14 +1,14 @@
 use super::*;
 use crate::engines::Engines;
 use crate::probe::testing::{chat, found};
-use crate::serve::EngineHost;
-use crate::session::SessionSpec;
 use porter_core::capability::LlmFeature;
 use porter_core::need::LlmNeed;
 use porter_core::{DataClass, Locality, ModelId, Need, Tier, Tokens};
 use porter_infer::{
     AutoMode, AutoRow, InferRefusal, LocalOnly, ModelRef, Policy, Slot, TierMap, TierRow,
 };
+use porter_router::seams::EngineHost;
+use porter_router::session::SessionSpec;
 use std::path::Path;
 
 fn llm() -> Need {

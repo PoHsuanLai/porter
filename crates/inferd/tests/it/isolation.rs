@@ -3,8 +3,9 @@
 
 use crate::serve::{chat, mail};
 use crate::support::*;
-use inferd::serve::{Seams, TurnStep, guarded, serve_session};
+use inferd::serve::{guarded, serve_session};
 use porter_infer::{InferEvent, InferReply, InferRequest, ModelError};
+use porter_router::seams::{Seams, TurnStep};
 use std::os::fd::OwnedFd;
 use std::os::unix::net::UnixStream as StdStream;
 use tokio::net::UnixStream;
@@ -13,7 +14,7 @@ use tokio::net::UnixStream;
 #[derive(Debug, Default)]
 struct Exploding;
 
-impl inferd::serve::TurnRunner for Exploding {
+impl porter_router::seams::TurnRunner for Exploding {
     type Turn = Turn;
 
     fn start(&self, _request: InferRequest, _attachments: Vec<OwnedFd>) -> Turn {
@@ -23,7 +24,7 @@ impl inferd::serve::TurnRunner for Exploding {
     fn start_heard(
         &self,
         _chat: porter_infer::ChatRequest,
-        _heard: inferd::session::HeardAudio,
+        _heard: porter_router::session::HeardAudio,
     ) -> Turn {
         panic!("a turn that blows up, on purpose");
     }

@@ -4,10 +4,10 @@
 //! are never forgotten for a runtime that stopped). The book is shared by every clone of the
 //! engines; `changed` wakes whoever tells listeners to read again.
 
-use crate::local::LocalModel;
 use crate::probe::Runtime;
 use porter_core::AccountId;
 use porter_infer::{ModelRef, Readiness};
+use porter_router::local::LocalModel;
 use std::sync::{Arc, PoisonError, RwLock};
 use tokio::sync::Notify;
 

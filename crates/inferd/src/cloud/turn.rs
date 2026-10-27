@@ -12,8 +12,6 @@ use super::accountd::AccountdFault;
 use super::models::RemoteModel;
 use super::spend::{SpendGuard, worst_case};
 use super::wire::{BodyShape, Temperature, flavor_of};
-use crate::bridge::{self, DefaultSampling, Frames, JsonReply, Target};
-use crate::runner::{RETRY, TokioSleep};
 use crate::settings::SpendLine;
 use model_openai_compat::OpenAiCodec;
 use model_provider as sp;
@@ -24,6 +22,8 @@ use porter_infer::{
     ChatReply, ChatRequest, ChatSink, EmbedReply, EmbedRequest, Flow, InferRefusal, Knob, Model,
     ModelCard, ModelError, ServedBy, SpendVerdict, TaskRequest, TokenUsage, TurnError,
 };
+use porter_turns::bridge::{self, DefaultSampling, Frames, JsonReply, Target};
+use porter_turns::local::{RETRY, TokioSleep};
 use std::os::fd::OwnedFd;
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -188,7 +188,7 @@ impl<'a> CloudModel<'a> {
         match provider.turn(&turn, &mut forward).await {
             Ok(end) => {
                 let (chat, why) = forward.gathered.chat_reply_noted(&end, self.served.clone());
-                crate::runner::note_no_scores(why);
+                porter_turns::local::note_no_scores(why);
                 Ok(chat)
             }
             Err(error) => Err(bridge::model_error(&error).into()),

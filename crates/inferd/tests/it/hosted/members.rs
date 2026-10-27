@@ -2,7 +2,6 @@
 //! session must survive.
 
 use super::*;
-use inferd::audit::Discard;
 use inferd::engines::Engines;
 use inferd::peers::TablePeers;
 use inferd::service::Inference;
@@ -10,6 +9,7 @@ use porter_core::UnixSeconds;
 use porter_core::clock::FixedClock;
 use porter_dbus::{Details, InferenceProxy, need_to_dbus};
 use porter_infer::{InferRefusal, ModelError, Readiness};
+use porter_turns::audit::Discard;
 use zbus::object_server::Interface;
 
 async fn proxy(world: &World) -> InferenceProxy<'_> {

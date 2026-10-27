@@ -11,13 +11,13 @@
 //! The results are a cache in `tool-proofs.json` beside the audit trail: model ids and a word,
 //! never a prompt. A file that cannot be read is an empty cache, and the checks run again.
 
-use crate::serve::Carried;
-use crate::session::SessionSpec;
 use porter_core::Need;
 use porter_core::capability::LlmFeature;
 use porter_fs::atomic::AtomicWrite;
 use porter_infer::{InferReply, ModelError, ModelRef, ServedBy, ToolProof, Why};
+use porter_router::carried::Carried;
 use porter_router::seams::AuditSink;
+use porter_router::session::SessionSpec;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;

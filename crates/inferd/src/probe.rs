@@ -15,12 +15,12 @@
 pub mod entry;
 pub mod names;
 
-use crate::local::LocalModel;
 use names::{Listing, pair};
 use porter_core::{Claim, ModelId, Offer, Subject};
 use porter_discover::probe_ports;
 use porter_http::Http;
 use porter_provider::Port;
+use porter_router::local::LocalModel;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::time::Duration;

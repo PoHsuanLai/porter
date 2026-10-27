@@ -8,19 +8,12 @@ use crate::attached::AttachedBook;
 use crate::cloud::Cloud;
 use crate::cloud::models::RemoteModel;
 use crate::cloud::turn::CloudPin;
-use crate::local::{LocalModel, Weights};
 use crate::peers::{Caller, Role};
 use crate::probed::{ProbedBook, Standing};
-use crate::router::placed::{Allowed, Placed, Rules, Serving, Unplaced, choose_in};
-use crate::router::{Listed, Unchosen, choose, chosen_for};
 use crate::runner::{Pin, Pinned};
 use crate::seats::Gate;
-use crate::serve::{EngineFailed, EngineHost};
-use crate::session::{RouteDecision, Routing, SessionSpec};
 use crate::settings::{Live, Settings};
-use crate::startup::Cause;
 use crate::supervise::{Snapshot, Supervised};
-use crate::swap::{Budget, running_of, swap_cost};
 use crate::toolproof::{ToolProofs, asks_for_tools};
 use engine_supervisor::{EngineId, EngineState, MonoMs};
 use model_catalog::Licence;
@@ -32,6 +25,13 @@ use porter_infer::{
     PlaceRefusal, Policy, Readiness, ServedBy, Slot, SpendScope, SpendVerdict, SwapCost, TierMap,
     Why,
 };
+use porter_router::local::{LocalModel, Weights};
+use porter_router::router::placed::{Allowed, Placed, Rules, Serving, Unplaced, choose_in};
+use porter_router::router::{Listed, Unchosen, choose, chosen_for};
+use porter_router::seams::{EngineFailed, EngineHost};
+use porter_router::session::{RouteDecision, Routing, SessionSpec};
+use porter_router::startup::Cause;
+use porter_router::swap::{Budget, running_of, swap_cost};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -1128,7 +1128,7 @@ impl SessionRouter {
     }
 }
 
-impl crate::serve::Router for SessionRouter {
+impl porter_router::seams::Router for SessionRouter {
     async fn route(&self, spec: &SessionSpec) -> Result<RouteDecision, InferRefusal> {
         self.route_why(spec)
             .await

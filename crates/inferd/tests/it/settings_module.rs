@@ -9,7 +9,6 @@ use ds_settings::schema::{
     AgentSetting, ChoicePlace, ChoiceWord, Exposure, KeyKind, KeyPath, Page,
 };
 use hosting::bus::{PrivateBus, within};
-use inferd::audit::Memory;
 use inferd::engines::Engines;
 use inferd::peers::{Caller, Role, TablePeers};
 use inferd::service::{Inference, serve_with_settings};
@@ -23,6 +22,7 @@ use porter_core::{
 use porter_dbus::InferenceProxy;
 use porter_dbus::names::{INFERENCE_BUS, INFERENCE_PATH, INFERENCE_SETTINGS_PATH};
 use porter_infer::{Pick, Policy, Slot, TierMap};
+use porter_turns::audit::Memory;
 use std::path::PathBuf;
 use std::sync::Arc;
 use zbus::Connection;

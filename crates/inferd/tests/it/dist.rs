@@ -345,7 +345,7 @@ fn the_schema_holds_the_rows_the_design_names_and_each_is_a_page_row_of_intellig
 
 #[test]
 fn the_structured_rows_keep_the_codes_defaults_and_ranges() {
-    use inferd::structured::limits::{DEPTH, OPEN_LIST, OPEN_TEXT, REPAIR_BUDGET};
+    use porter_turns::structured::limits::{DEPTH, OPEN_LIST, OPEN_TEXT, REPAIR_BUDGET};
     let keys = schema_keys();
     for row in [OPEN_TEXT, OPEN_LIST, DEPTH, REPAIR_BUDGET] {
         let key = keys.iter().find(|k| k.path.0 == row.path).expect(row.path);

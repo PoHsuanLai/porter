@@ -6,9 +6,6 @@ use porter_infer::{Chooser, Slot};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-/// The slots a model serves, from its capabilities: moved to `porter_router::router`.
-pub use porter_router::router::slots_of;
-
 /// Every data class, one `ai.floor.<class>` row each. `class_is_listed` keeps this complete.
 pub const CLASSES: [DataClass; 13] = [
     DataClass::AppOwn,

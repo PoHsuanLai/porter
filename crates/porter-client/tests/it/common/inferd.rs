@@ -140,7 +140,7 @@ impl FakeInferd {
         options: Details,
     ) -> fdo::Result<OwnedFd> {
         let need = need_from_dbus(need).map_err(|e| fdo::Error::InvalidArgs(e.to_string()))?;
-        let spec = inferd::session::SessionSpec {
+        let spec = porter_router::session::SessionSpec {
             need: need.clone(),
             class: parse_slug(&class)?,
             tier: parse_slug(&tier)?,
@@ -167,7 +167,7 @@ impl FakeInferd {
             Behaviour::Served(served) => {
                 let served = served.clone();
                 tokio::spawn(async move {
-                    let seams = inferd::serve::Seams {
+                    let seams = porter_router::seams::Seams {
                         router: served.route,
                         engines: served.gate,
                         runner: served.runner,

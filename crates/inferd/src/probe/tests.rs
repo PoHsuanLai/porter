@@ -168,7 +168,7 @@ fn a_probed_chat_model_is_an_on_device_free_card_on_the_runtimes_account() {
     assert_eq!(local.card.billing, porter_core::Billing::Free);
     assert_eq!(local.name.0, "llama3.2:3b");
     assert_eq!(local.loopback, Some(model_http::Port(11_434)));
-    assert_eq!(local.weights(), crate::local::Weights::Present);
+    assert_eq!(local.weights(), porter_router::local::Weights::Present);
     // Every runtime is spoken to in chat completions, whatever the probe's source said.
     let Some(Capability::Llm(cap)) = local.card.capabilities.first() else {
         panic!("an Llm card");

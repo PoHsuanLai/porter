@@ -1,7 +1,7 @@
 use super::*;
-use crate::catalog::parse_entry_text;
 use crate::entries;
 use crate::testkit::Scratch;
+use porter_router::catalog::parse_entry_text;
 use std::os::unix::fs::PermissionsExt;
 
 const KEY: &str = "sk-lab-S3CRET-0123456789";

@@ -2,14 +2,11 @@
 //! serves the model under. Asked when a session opens and nowhere else (no background polling),
 //! and answered with the one thing that is wrong, typed.
 
-use super::target::Target;
 use model_http::{
     BodySink, ChunkFlow, Exchange, Framing, HttpClient, HttpError, HttpStatus, ResponseHead,
     RouteRoot, Timeouts, Transport, UrlPath, Verb, WaitMs,
 };
-
-/// Why an attached engine cannot answer now, moved to `porter_router::attached`.
-pub use porter_router::attached::NotReady;
+use porter_router::attached::{NotReady, Target};
 
 /// How long the probe waits at each stage: a tunnel that is up answers at once on a quiet
 /// computer and in seconds on a loaded one (a connection made in 20 ms idle took seconds), and

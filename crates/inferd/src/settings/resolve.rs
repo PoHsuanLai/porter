@@ -15,7 +15,6 @@ use super::{
     SpendLimits, SpendLine, cents_to_limit,
 };
 use crate::config::InferdConfig;
-use crate::local::Lengths;
 use crate::structured::AiConfig;
 use model_provider::Tokens;
 use porter_core::{DataClass, Permille, Tier};
@@ -23,6 +22,7 @@ use porter_infer::{
     AutoRow, ClassFloor, DescribeImages, Floor, LocalOnly, ModelRef, Policy, PoolRow, Slot,
     TierMap, TierRow,
 };
+use porter_router::local::Lengths;
 
 /// The settings in force, and the paths of the rows whose values were refused.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -1,5 +1,5 @@
 use super::*;
-use crate::local::Weights;
+use porter_router::local::Weights;
 
 #[test]
 fn a_replay_model_is_routable_and_has_no_weights_to_find() {

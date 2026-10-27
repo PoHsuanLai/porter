@@ -12,6 +12,7 @@
 //! names for it, or any identified app scope.
 
 use porter_core::{AppId, AppName};
+use porter_daemon::{ProcGate, ProcRoot};
 use porter_dbus::BusConnection;
 use porter_dbus::callers::{CallerRole, CallerRow, Install, ProcCallers, installed};
 use serde::{Deserialize, Serialize};
@@ -386,12 +387,7 @@ impl ProcPeers {
     }
 }
 
-/// Where the caller lookup reads processes, and whether this build honours `INFERD_PROC_ROOT`.
-/// They live in `porter_daemon` now; the old paths stay for one batch.
-pub use porter_daemon::{ProcGate, ProcRoot};
-
 /// Whether this build honours `INFERD_PROC_ROOT`: only with the `test-proc-root` feature.
-/// (Was `ProcGate::BUILT`; the type is `porter_daemon`'s now.)
 pub const PROC_GATE: ProcGate = if cfg!(feature = "test-proc-root") {
     ProcGate::Honour
 } else {

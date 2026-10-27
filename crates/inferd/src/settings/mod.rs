@@ -25,7 +25,6 @@ mod programs;
 mod resolve;
 
 pub use file::{ConfigFile, FileError, Reload, ReloadFailed, Reloaded};
-pub use keys::slots_of;
 pub use keys::{CLASSES, SLOTS, TIERS, from_slug, model_path, slug_of};
 pub use local_engines::LocalEngines;
 pub(crate) use missing::Engine;
@@ -33,11 +32,11 @@ pub use module::{InferdSettings, serve_settings};
 pub use pool::HelperPools;
 pub use resolve::{Resolved, floor_value, model_text, parse_model, resolve, slot_value};
 
-use crate::local::Lengths;
 use porter_core::{AccountId, AppId, MicroUsd, Permille};
 use porter_infer::{
     AutoPolicy, ClassFloor, DescribeImages, Floor, Period, Policy, SpendCap, SpendScope, TierMap,
 };
+use porter_router::local::Lengths;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::watch;

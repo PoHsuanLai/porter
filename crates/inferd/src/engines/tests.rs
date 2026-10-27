@@ -1,5 +1,4 @@
 use super::*;
-use crate::serve::Router;
 use crate::supervise::Ports;
 use crate::testkit::{Recorder, Scratch, models};
 use engine_supervisor::{
@@ -11,6 +10,7 @@ use porter_core::capability::{Capability, CuaEnv, LlmCap, LlmFeature, LlmWire, S
 use porter_core::need::{CuaNeed, LlmNeed, SpeechNeed};
 use porter_core::{AccountId, Billing, Locality, ModelId, Tokens};
 use porter_infer::{LocalOnly, Slot};
+use porter_router::seams::Router;
 
 fn llm() -> Need {
     Need::Llm(LlmNeed::new([LlmFeature::Chat].into(), Tokens(1000)))

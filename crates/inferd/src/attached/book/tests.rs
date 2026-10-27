@@ -1,13 +1,13 @@
 use super::*;
-use crate::attached::config::{Attached, Place, Reach};
 use crate::attached::local_model;
-use crate::catalog::parse_entry_text;
 use crate::entries;
 use crate::lab::Lab;
-use crate::startup::Level;
 use crate::testkit::Scratch;
 use porter_core::ModelId;
 use porter_fake_servers::net::Bind;
+use porter_router::attached::config::{Attached, Place, Reach};
+use porter_router::catalog::parse_entry_text;
+use porter_router::startup::Level;
 use std::sync::Mutex;
 
 fn model_on(reach: Reach, place: Place, scratch: &Scratch) -> LocalModel {

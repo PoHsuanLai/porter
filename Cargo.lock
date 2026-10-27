@@ -2452,6 +2452,7 @@ dependencies = [
  "porter-infer",
  "porter-provider",
  "porter-proxy",
+ "porter-router",
  "porter-secrets",
  "porter-service",
  "porter-tailscale",

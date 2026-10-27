@@ -12,17 +12,13 @@ use crate::agent::service::AgentsService;
 use crate::attached::{
     ComputerError, Computers, NewComputer, NewModel, NewReach, NewTailnetComputer,
 };
-use crate::audit::{AuditOut, SessionAudit};
 use crate::engines::Engines;
 use crate::peers::{Caller, Peers, Role};
 use crate::pipeline::Hearing;
-use crate::router::placed::{Allowed, Unplaced};
 use crate::runner::{Pin, Turns};
 use crate::seats::Gate;
-use crate::serve::{Seams, guarded, serve_session};
-use crate::session::SessionSpec;
+use crate::serve::{guarded, serve_session};
 use crate::settings::{HelperPools, LocalEngines, Reload};
-use crate::structured::Limits;
 use crate::tailnet::{Candidate, Tailnet};
 use crate::toolproof::ToolWatch;
 use crate::watch::Probing;
@@ -36,6 +32,11 @@ use porter_dbus::names::{
 };
 use porter_dbus::{Details, NeedArg, need_from_dbus};
 use porter_infer::{InferRefusal, PlaceId, PlaceRow, PlaceState};
+use porter_router::router::placed::{Allowed, Unplaced};
+use porter_router::seams::Seams;
+use porter_router::session::SessionSpec;
+use porter_turns::audit::{AuditOut, SessionAudit};
+use porter_turns::structured::Limits;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::os::unix::net::UnixStream as StdStream;

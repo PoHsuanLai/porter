@@ -9,7 +9,6 @@ use crate::common;
 use common::bus::PrivateBus;
 use common::inferd::{Behaviour, FakeInferd, Served};
 use common::served::{Gate, Route, Scripted};
-use inferd::session::RouteDecision;
 use porter_client::{Accounts, ClientError, DbusTransport, InferSession};
 use porter_core::capability::CuaEnv;
 use porter_core::consent::Usage;
@@ -21,6 +20,7 @@ use porter_infer::{
     EmbedVector, ImageSource, InferEvent, InferRefusal, InferReply, InferRequest, Readiness,
     RequestKind, ServedBy, TokenUsage,
 };
+use porter_router::session::RouteDecision;
 use std::sync::Arc;
 use tokio::sync::Notify;
 

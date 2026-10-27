@@ -2,9 +2,9 @@
 //! so backoffs and the idle timer cost nothing.
 
 use super::*;
-use crate::startup::{Level, Log};
 use crate::testkit::{Recorder, Scratch, models};
 use engine_supervisor::{EngineFailure, FakeEngineHost, FakeGpu, FakeReadyProbe, Probe};
+use porter_router::startup::{Level, Log};
 use std::sync::Mutex;
 
 fn gpu(total: u32) -> FakeGpu {

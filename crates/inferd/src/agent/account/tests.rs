@@ -93,7 +93,7 @@ fn anthropic_requests_carry_the_version_and_betas_the_agent_asked_for() {
 fn the_prompt_held_stops_at_the_models_context_window() {
     let with_context = |context: u32| {
         let mut entry =
-            crate::catalog::parse_entry_text(&crate::entries::claude()).expect("parses");
+            porter_router::catalog::parse_entry_text(&crate::entries::claude()).expect("parses");
         let text = entry.capabilities.text_out.as_mut().expect("a chat model");
         text.context.0 = context;
         entry

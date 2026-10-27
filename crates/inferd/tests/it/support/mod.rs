@@ -1,16 +1,17 @@
 //! Scripted seams and a raw client for the session server's tests. The test plays the engine: a
 //! started turn hands the test a sender, and the turn yields whatever the test pushes.
 
-use inferd::serve::{
-    AuditSink, Carried, EngineFailed, EngineHost, Router, RunningTurn, TurnRunner, TurnStep,
-};
-use inferd::session::{RouteDecision, SessionSpec};
 use porter_core::wire::{FrameRead, decode_frame, encode_frame};
 use porter_core::{AccountId, DataClass, Locality, ModelId, Need, Tier, Tokens};
 use porter_infer::{
     AudioFrame, ClientFrame, InferEvent, InferRefusal, InferReply, InferRequest, ModelRef,
     Readiness, ServedBy,
 };
+use porter_router::carried::Carried;
+use porter_router::seams::{
+    AuditSink, EngineFailed, EngineHost, Router, RunningTurn, TurnRunner, TurnStep,
+};
+use porter_router::session::{RouteDecision, SessionSpec};
 use rustix::net::{SendAncillaryBuffer, SendAncillaryMessage, SendFlags, sendmsg};
 use std::io::{IoSlice, Read, Seek};
 use std::mem::MaybeUninit;
@@ -154,7 +155,7 @@ impl TurnRunner for Runner {
     fn start_heard(
         &self,
         chat: porter_infer::ChatRequest,
-        heard: inferd::session::HeardAudio,
+        heard: porter_router::session::HeardAudio,
     ) -> Turn {
         self.audio.lock().expect("lock").extend(heard.frames);
         self.start(InferRequest::Chat(chat), Vec::new())

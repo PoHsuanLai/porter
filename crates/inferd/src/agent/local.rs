@@ -18,11 +18,11 @@ use super::token::random_hex;
 use super::wire::{Parsed, SseOut, only_thought};
 use super::{anthropic, openai};
 use crate::runner::{Pin, Pinned, Turns};
-use crate::serve::{EngineHost, RunningTurn, TurnRunner, TurnStep};
 use porter_core::Tokens;
 use porter_infer::{
     ChatReply, InferEvent, InferReply, InferRequest, ModelError, Readiness, ServedBy, TokenUsage,
 };
+use porter_router::seams::{EngineHost, RunningTurn, TurnRunner, TurnStep};
 use tokio::io::AsyncWrite;
 
 fn no_usage() -> TokenUsage {

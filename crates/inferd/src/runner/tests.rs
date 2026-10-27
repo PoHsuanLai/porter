@@ -1,5 +1,4 @@
 use super::*;
-use crate::serve::RunningTurn;
 use crate::testkit::{Scratch, models};
 use porter_core::consent::Usage;
 use porter_core::{AccountId, DataClass, Locality, ModelId};
@@ -7,6 +6,7 @@ use porter_infer::{
     ChatMessage, ChatRequest, ImagePart, ImageSource, MessagePart, Role, SpeakRequest,
     TranscribeBegin, TranscribeMode, VoiceName,
 };
+use porter_router::seams::RunningTurn;
 use tokio::io::AsyncReadExt;
 use tokio::net::UnixListener;
 

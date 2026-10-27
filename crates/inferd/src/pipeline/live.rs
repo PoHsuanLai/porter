@@ -1,25 +1,27 @@
 //! A voice chat on a live session: the plan for it and the turn that runs it.
 //!
 //! The session machine collects the audio (`Phase::Hearing`) and hands it over with the chat
-//! ([`crate::serve::TurnRunner::start_heard`]). The turn then plans the request as `plan_pipeline`
+//! ([`porter_router::seams::TurnRunner::start_heard`]). The turn then plans the request as `plan_pipeline`
 //! does for audio in and text out (the text model hears it itself, or `voice_in` does first),
 //! over the models the app is offered now, and runs the plan with [`run_pipeline`]: `Ears` on
 //! the speech host, then the answering model on the transcript. The stages announce themselves
 //! (`Routed` and a `Stage` note each), so the session's own `Answer` note is not sent for the
 //! turn: exactly one per turn.
 
-use super::{PipelineInput, VecAudio, plan, run_pipeline};
 use crate::engines::{Engines, Offered, named_tiers, through_grants};
-use crate::router::placed::Allowed;
-use crate::runner::{Turn, Turns};
-use crate::serve::{RunningTurn, TurnRunner, TurnStep};
-use crate::session::{HeardAudio, SessionSpec};
+use crate::runner::Turns;
 use crate::speech::Ears;
 use porter_core::AppId;
 use porter_infer::{
     Answer, ChatRequest, ChatSink, Flow, InferEvent, InferReply, InferRequest, Modality,
     ModelError, ModelRef, RequestShape, ShowReason, StageRole,
 };
+use porter_router::pipeline::plan;
+use porter_router::router::placed::Allowed;
+use porter_router::seams::{RunningTurn, TurnRunner, TurnStep};
+use porter_router::session::{HeardAudio, SessionSpec};
+use porter_turns::Turn;
+use porter_turns::pipeline::{PipelineInput, VecAudio, run_pipeline};
 use std::collections::BTreeSet;
 use tokio::sync::mpsc;
 
@@ -171,7 +173,7 @@ impl TurnRunner for Answering {
         let (turns, engines, model) =
             (self.turns.clone(), self.engines.clone(), self.model.clone());
         let task = tokio::spawn(async move {
-            use crate::serve::EngineHost;
+            use porter_router::seams::EngineHost;
             if engines.want(model).await.is_err() {
                 let _ = steps.send(TurnStep::Done(InferReply::Failed(ModelError::NotReady)));
                 return;

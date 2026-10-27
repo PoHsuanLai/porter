@@ -5,8 +5,6 @@ use super::*;
 use crate::config::InferdConfig;
 use crate::engines::Engines;
 use crate::peers::Role;
-use crate::router::{Decided, Listed, choose};
-use crate::session::SessionSpec;
 use crate::supervise::{Ports, Supervised};
 use crate::testkit::{Recorder, Scratch, models};
 use engine_supervisor::{FakeGpu, FakeReadyProbe, GpuMemory, Probe, SupervisorConfig};
@@ -20,6 +18,8 @@ use porter_infer::{
     AutoEvict, EngineLoad, InferRefusal, LicenceClass, LocalOnly, ModelCard, ModelRef, Pick,
     PickRefusal, Policy, Readiness, ShowReason, Slot, SwapCost, Why,
 };
+use porter_router::router::{Decided, Listed, choose};
+use porter_router::session::SessionSpec;
 use std::time::Duration;
 
 fn config(text: &str) -> InferdConfig {
@@ -657,11 +657,11 @@ fn a_language_model_is_in_the_slots_its_features_put_it_in() {
             .extend([LlmFeature::Vision, LlmFeature::AudioIn]);
     }
     assert_eq!(
-        keys::slots_of(&vision),
+        porter_router::router::slots_of(&vision),
         vec![Slot::Text, Slot::VoiceIn, Slot::ImageIn]
     );
     assert_eq!(
-        keys::slots_of(&card("local", "plain", Locality::OnDevice)),
+        porter_router::router::slots_of(&card("local", "plain", Locality::OnDevice)),
         vec![Slot::Text]
     );
 }
@@ -778,14 +778,14 @@ fn a_helper_pool_is_its_own_and_the_old_key_stays_the_assistants() {
     assert_eq!(bad.rejected, vec!["ai.auto.pool.text.helper.".to_owned()]);
 }
 
-fn length(text: &str) -> crate::local::Lengths {
+fn length(text: &str) -> porter_router::local::Lengths {
     settings(text).lengths
 }
 
 #[test]
 fn the_length_rows_are_automatic_unless_the_person_sets_a_number() {
     use model_provider::Tokens as Count;
-    let automatic = crate::local::Lengths::default();
+    let automatic = porter_router::local::Lengths::default();
     assert_eq!(length(""), automatic);
     assert_eq!(
         length("[ai.length]\nconversation = \"automatic\"\nreply = \"automatic\"\n"),
@@ -814,7 +814,7 @@ fn a_length_out_of_range_or_not_a_number_is_automatic_and_said() {
         let resolved = resolve(&config(&format!("[ai.length]\n{table} = {row}\n")));
         assert_eq!(
             resolved.settings.lengths,
-            crate::local::Lengths::default(),
+            porter_router::local::Lengths::default(),
             "{table} {row}"
         );
         assert_eq!(resolved.rejected, vec![path.to_owned()], "{table} {row}");

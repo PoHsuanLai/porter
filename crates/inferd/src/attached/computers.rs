@@ -21,12 +21,11 @@
 //! The words of every refusal are plain: the person reads them in Settings.
 
 use super::book::AttachedBook;
-use super::config::{Attached, AttachedEntry, AttachedError, Place, Reach};
-use super::model::local_model;
-use crate::startup::SUN_PATH;
 use porter_core::{ModelId, NodeId, SecretText};
 use porter_fs::atomic::AtomicWrite;
 use porter_infer::{ComputerName, PlaceId};
+use porter_router::attached::{Attached, AttachedEntry, AttachedError, Place, Reach, local_model};
+use porter_router::startup::SUN_PATH;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};

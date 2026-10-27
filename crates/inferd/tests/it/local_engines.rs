@@ -3,7 +3,6 @@
 
 use crate::hosting::bus::{PrivateBus, within};
 
-use inferd::audit::Memory;
 use inferd::config::{Dirs, InferdConfig, ProgramSearch};
 use inferd::engines::Engines;
 use inferd::installed::Installed;
@@ -19,6 +18,7 @@ use porter_engines::{
     Arch, Artifact, Backend, Delivery, EngineId, Manifest, Record, Roots, Row, Scope, seal_of,
 };
 use porter_infer::{Policy, TierMap};
+use porter_turns::audit::Memory;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
