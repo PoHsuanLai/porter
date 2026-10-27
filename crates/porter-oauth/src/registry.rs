@@ -64,17 +64,6 @@ pub struct ClientRegistry {
     own: Vec<ClientEntry>,
     shipped_traits: Vec<TraitRow>,
     own_traits: Vec<TraitRow>,
-    moved: Vec<MovedEndpoints>,
-}
-
-/// A row of the person's own file whose endpoints left the issuer's servers: its endpoints were
-/// set aside and the issuer's published ones are used ([`ClientRegistry::layered`]).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct MovedEndpoints {
-    /// The issuer the row is for.
-    pub issuer: Issuer,
-    /// Its channel.
-    pub channel: ClientChannel,
 }
 
 impl ClientRegistry {
@@ -87,21 +76,14 @@ impl ClientRegistry {
     /// [`ClientRegistry::moved_endpoints`] for the daemon to log. The shipped file is the
     /// install's, and may point anywhere (a sovereign cloud; a test's fake issuer).
     pub fn layered(shipped: ClientsFile, own: ClientsFile) -> Self {
-        let mut moved = Vec::new();
         let own = own
             .clients
             .into_iter()
             .map(|row| match row.leaves_the_issuer() {
-                true => {
-                    moved.push(MovedEndpoints {
-                        issuer: row.issuer,
-                        channel: row.channel,
-                    });
-                    ClientEntry {
-                        endpoints: None,
-                        ..row
-                    }
-                }
+                true => ClientEntry {
+                    endpoints: None,
+                    ..row
+                },
                 false => row,
             })
             .collect();
@@ -110,13 +92,7 @@ impl ClientRegistry {
             own,
             shipped_traits: Vec::new(),
             own_traits: Vec::new(),
-            moved,
         }
-    }
-
-    /// The person's rows whose endpoints were set aside, because they left the issuer's servers.
-    pub fn moved_endpoints(&self) -> &[MovedEndpoints] {
-        &self.moved
     }
 
     /// The registry from the two files at the paths the caller names. A file that does not exist
@@ -281,11 +257,6 @@ fn read_clients(path: &Path) -> Result<(ClientsFile, Vec<TraitRow>), RegistryErr
     Ok((file, traits_of(&text)))
 }
 
-/// A clients file as TOML, for the person's own file.
-pub fn clients_toml(file: &ClientsFile) -> Result<String, RegistryError> {
-    toml::to_string(file).map_err(|e| RegistryError::Mailo(e.to_string()))
-}
-
 #[derive(Deserialize)]
 struct MailoFile {
     #[serde(default)]
@@ -415,9 +386,6 @@ mod tests {
                 ),
             ]
         );
-        // And it lands in a file the registry reads back identically.
-        let text = clients_toml(&file).expect("toml");
-        assert_eq!(parse_clients(&text), Ok(file));
     }
 
     #[test]
@@ -511,13 +479,6 @@ mod tests {
                 Issuer::Microsoft.endpoints(),
                 "{token}"
             );
-            assert_eq!(
-                registry.moved_endpoints(),
-                [MovedEndpoints {
-                    issuer: Issuer::Microsoft,
-                    channel: ClientChannel::Stable,
-                }]
-            );
         }
 
         // Another tenant on the issuer's own servers stays.
@@ -535,7 +496,6 @@ mod tests {
                 .to_string()
                 .contains("/organizations/")
         );
-        assert!(registry.moved_endpoints().is_empty());
 
         // The install's own file may point anywhere (a test's fake issuer).
         let registry = ClientRegistry::layered(
@@ -549,7 +509,6 @@ mod tests {
             endpoints_of(client).token.to_string(),
             "https://127.0.0.1:9/token"
         );
-        assert!(registry.moved_endpoints().is_empty());
     }
 
     #[test]

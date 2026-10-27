@@ -278,8 +278,8 @@ pub fn family_of(spec: ProviderSpec, io: &FamilyIo) -> Result<FamilyProvider, Bo
             io.tailscale.clone(),
             SharedSleep::new(TokioSleep),
         ))),
-        // `OAuthMintsKey` (OpenRouter's browser sign-in) has a skeleton family but no body, so
-        // it is not mapped: a file asking for it lands in `unserved` with its logged reason.
+        // `OAuthMintsKey` (OpenRouter's browser sign-in) has no family, so it is not mapped: a
+        // file asking for it lands in `unserved` with its logged reason.
         _ => Err(Box::new(spec)),
     }
 }
@@ -398,7 +398,7 @@ mod tests {
     }
 
     /// A provider file in the person's own folder that asks for OpenRouter's browser sign-in
-    /// (`oauth_mints_key`), a family that has no body, under a new id.
+    /// (`oauth_mints_key`), a family that does not exist, under a new id.
     #[test]
     fn a_persons_file_asking_for_an_unbuilt_family_is_not_served_and_names_why() {
         let own = scratch("unbuilt");

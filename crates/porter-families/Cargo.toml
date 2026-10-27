@@ -51,8 +51,6 @@ google = ["dep:porter-oauth", "porter-oauth/io", "porter-http/hyper", "dep:serde
 api_key = ["porter-http/hyper"]
 # Coding agents that sign themselves in (Claude Code, Gemini CLI, Codex): no credential held.
 agent_login = []
-# OpenRouter: OAuth PKCE that mints a key.
-openrouter = ["dep:porter-oauth"]
 # Tailscale on this computer: asked over its unix socket, no credential held.
 tailnet = ["dep:porter-tailscale", "porter-tailscale/io"]
 

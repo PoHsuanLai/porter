@@ -30,14 +30,10 @@ mod key;
 mod microsoft;
 #[cfg(feature = "nextcloud")]
 mod nextcloud;
-#[cfg(feature = "openrouter")]
-mod openrouter;
 #[cfg(any(feature = "nextcloud", feature = "generic"))]
 mod password;
 #[cfg(feature = "set")]
 pub mod set;
-#[cfg(feature = "openrouter")]
-mod skeleton;
 #[cfg(feature = "tailnet")]
 mod tailnet;
 
@@ -64,7 +60,5 @@ pub use microsoft::{
 };
 #[cfg(feature = "nextcloud")]
 pub use nextcloud::{NextcloudProvider, NextcloudSession, NextcloudSignIn};
-#[cfg(feature = "openrouter")]
-pub use openrouter::{OpenRouterProvider, OpenRouterSession, OpenRouterSignIn};
 #[cfg(feature = "tailnet")]
 pub use tailnet::{TailnetProvider, TailnetSession, TailnetSignIn};

@@ -114,9 +114,6 @@ pub enum AuditEvent {
     Reauthed,
     /// An account and everything filed for it was removed.
     Removed,
-    /// An app's legacy account was adopted. No longer written (the `Adopt` request is gone); kept
-    /// so an `audit.jsonl` written by an earlier daemon still reads.
-    Adopted,
     /// `Peer.ResolveKey` released an account's API key (on a sealed memfd, to a porter daemon).
     /// The entry's `app` is the app the grant is for, which for an agent route is
     /// `org.quire.Agent.<program>`; `audience` repeats its name as the service the key was
@@ -282,7 +279,6 @@ mod tests {
             AuditEvent::SignedIn,
             AuditEvent::Reauthed,
             AuditEvent::Removed,
-            AuditEvent::Adopted,
             AuditEvent::KeyResolved {
                 grant: GrantId::parse("g1").expect("id"),
                 audience: Audience("org.quire.Agent.claude-code".into()),
@@ -340,10 +336,18 @@ mod tests {
     }
 
     #[test]
-    fn a_line_an_earlier_daemon_wrote_for_an_adoption_still_reads() {
-        let line = r#"{"at":1790000000,"app":null,"account":"cloud","event":{"kind":"adopted"}}"#;
-        let entry: AuditEntry = serde_json::from_str(line).expect("old line");
-        assert_eq!(entry.event, AuditEvent::Adopted);
+    fn a_line_an_earlier_daemon_wrote_for_an_adoption_is_skipped_and_the_rest_kept() {
+        let text = concat!(
+            r#"{"at":1790000000,"app":null,"account":"cloud","event":{"kind":"adopted"}}"#,
+            "\n",
+            r#"{"at":1790000001,"app":null,"account":"cloud","event":{"kind":"signed_in"}}"#,
+            "\n"
+        );
+        let entries = AuditEntry::read_all(text);
+        assert_eq!(
+            entries.iter().map(|e| e.at).collect::<Vec<_>>(),
+            [UnixSeconds(1790000001)]
+        );
     }
 
     #[test]

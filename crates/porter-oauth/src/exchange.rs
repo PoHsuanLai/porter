@@ -247,15 +247,8 @@ pub(crate) async fn token_call_detailed<H: Http>(
     read_tokens_detailed(&response)
 }
 
-/// A token endpoint's answer as tokens, or the fault it amounts to.
-pub(crate) fn read_tokens(response: &HttpResponse) -> Result<TokenResponse, ExchangeFault> {
-    read_tokens_detailed(response).map_err(|failure| failure.fault)
-}
-
-/// [`read_tokens`] keeping what the issuer said.
-pub(crate) fn read_tokens_detailed(
-    response: &HttpResponse,
-) -> Result<TokenResponse, ExchangeFailure> {
+/// A token endpoint's answer as tokens, or the fault it amounts to with what the issuer said.
+fn read_tokens_detailed(response: &HttpResponse) -> Result<TokenResponse, ExchangeFailure> {
     let fault = match response.status().as_u16() {
         200..=299 => {
             return serde_json::from_slice(response.body())

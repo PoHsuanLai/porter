@@ -86,7 +86,7 @@ done
 #   microsoft, google:  tokio, hyper (porter-oauth's `io`, porter-http's `hyper`)
 #   api_key:            hyper, tokio (porter-http's `hyper`)
 #   tailnet:            hyper, tokio (porter-tailscale's `io`)
-#   nextcloud, agent_login, openrouter: none
+#   nextcloud, agent_login: none
 #   set:                every family a daemon maps (what microsoft, google, generic, api_key and
 #                       tailnet reach together), with the system resolver (porter-discover's `io`)
 # Every feature in porter-families' Cargo.toml must have a row, so a new family cannot slip in
@@ -99,7 +99,6 @@ declare -A FAMILY_FORBIDS=(
   [google]="$MS_FORBIDS"
   [api_key]="$MS_FORBIDS"
   [agent_login]="$EFFECTS"
-  [openrouter]="$EFFECTS"
   [tailnet]="$MS_FORBIDS"
   [set]="$MS_FORBIDS"
 )
@@ -110,7 +109,6 @@ declare -A FAMILY_EDGES=(
   [google]="porter-core porter-http porter-oauth porter-provider"
   [api_key]="porter-core porter-http porter-provider"
   [agent_login]="porter-core porter-http porter-provider"
-  [openrouter]="porter-core porter-http porter-oauth porter-provider"
   [tailnet]="porter-core porter-http porter-provider porter-tailscale"
   [set]="dav-proto porter-core porter-dav porter-discover porter-http porter-oauth porter-provider porter-proxy porter-tailscale"
 )

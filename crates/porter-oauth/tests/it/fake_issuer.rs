@@ -1,20 +1,17 @@
 //! porter-oauth against porter-fake-servers' `FakeIssuer`, its scripted browser, and nothing
 //! beyond loopback: a full PKCE sign-in, the redirect rules, rotation, `invalid_grant`, the
-//! device flow, revoke and OpenRouter's key mint.
+//! revoke.
 
-use porter_core::{Credential, EndpointUrl, SecretText, UnixSeconds};
-use porter_fake::FakeAddress;
+use porter_core::{Credential, SecretText, UnixSeconds};
 use porter_fake_servers::browser::split_loopback;
-use porter_fake_servers::http::{Request, Response, Scheme, send, serve};
-use porter_fake_servers::net::{Bind, Listener};
+use porter_fake_servers::http::{Request, Scheme, send};
 use porter_fake_servers::{Consent, FakeIssuer, IssuerEvent, Running, TokenResult, follow};
 use porter_http::{Http, HttpError, HttpRequest, HttpResponse};
 use porter_oauth::{
-    DeviceFault, ExchangeFault, LoopbackFault, LoopbackServer, Pkce, RenewOutcome, authorize_url,
-    await_device, exchange_code, mint_key, openrouter_auth_url, renew, request_device_code, revoke,
+    ExchangeFault, LoopbackFault, LoopbackServer, Pkce, RenewOutcome, authorize_url, exchange_code,
+    renew, revoke,
 };
 use porter_provider::{ClientChannel, ClientEntry, ClientId, Issuer, IssuerEndpoints};
-use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 /// The `Http` seam over the fakes' minimal loopback client.
@@ -360,138 +357,4 @@ async fn revoke_asks_the_issuer_and_an_issuer_without_an_endpoint_is_a_success()
     revoke(&LoopbackHttp, &none, &SecretText::new("x"))
         .await
         .expect("nothing to ask");
-}
-
-#[tokio::test]
-async fn the_device_flow_polls_until_the_person_approves() {
-    let (issuer, endpoints) = issuer().await;
-    let device = request_device_code(&LoopbackHttp, &endpoints, &client(), "Mail.Read")
-        .await
-        .expect("device code");
-    assert!(device.user_code.starts_with("FAKE-") && device.interval == 1);
-    // The person approves while the second wait; the first poll sees `pending`.
-    let waits = Arc::new(Mutex::new(Vec::new()));
-    let sleep = {
-        let (waits, handle, user_code) =
-            (waits.clone(), (*issuer).clone(), device.user_code.clone());
-        move |seconds: u32| {
-            let mut log = waits.lock().expect("lock");
-            log.push(seconds);
-            if log.len() == 2 {
-                handle.approve_device(&user_code);
-            }
-            std::future::ready(())
-        }
-    };
-    let tokens = await_device(&LoopbackHttp, &endpoints, &client(), &device, sleep)
-        .await
-        .expect("tokens");
-    assert!(issuer.access_is_live(tokens.access_token.expose()));
-    assert_eq!(*waits.lock().expect("lock"), vec![1, 1]);
-}
-
-#[tokio::test]
-async fn the_device_flow_expires_when_nobody_answers_and_stops_when_they_decline() {
-    let (issuer, endpoints) = issuer().await;
-    let mut device = request_device_code(&LoopbackHttp, &endpoints, &client(), "Mail.Read")
-        .await
-        .expect("device code");
-    device.expires_in = 5;
-    let nothing = |_: u32| std::future::ready(());
-    assert_eq!(
-        await_device(&LoopbackHttp, &endpoints, &client(), &device, nothing).await,
-        Err(DeviceFault::Expired)
-    );
-
-    issuer.deny_device(&device.user_code);
-    device.expires_in = 600;
-    assert_eq!(
-        await_device(&LoopbackHttp, &endpoints, &client(), &device, nothing).await,
-        Err(DeviceFault::Denied)
-    );
-}
-
-#[tokio::test]
-async fn an_issuer_without_a_device_endpoint_says_so() {
-    let (_issuer, endpoints) = issuer().await;
-    let none = IssuerEndpoints {
-        device: None,
-        ..endpoints
-    };
-    assert_eq!(
-        request_device_code(&LoopbackHttp, &none, &client(), "x")
-            .await
-            .err(),
-        Some(DeviceFault::Unsupported)
-    );
-}
-
-/// A stand-in for OpenRouter's mint: `POST /api/v1/auth/keys` with the code and verifier.
-async fn mint_server() -> (FakeAddress, Arc<Mutex<Vec<serde_json::Value>>>) {
-    let listener = Listener::bind(&Bind::Loopback, "mint").await.expect("bind");
-    let address = listener.address().clone();
-    let bodies = Arc::new(Mutex::new(Vec::new()));
-    let record = bodies.clone();
-    tokio::spawn(serve(
-        listener,
-        None,
-        Arc::new(move |request: Request| {
-            let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap_or_default();
-            record.lock().expect("lock").push(body.clone());
-            let right = request.path() == "/api/v1/auth/keys" && body["code"] == "good-code";
-            match right {
-                true => Response::json(200, &serde_json::json!({ "key": "sk-or-minted" })),
-                false => Response::json(403, &serde_json::json!({ "error": "bad code" })),
-            }
-        }),
-    ));
-    (address, bodies)
-}
-
-#[tokio::test]
-async fn the_openrouter_mint_turns_a_code_into_an_api_key() {
-    let (address, bodies) = mint_server().await;
-    let FakeAddress::Loopback(port) = address else {
-        unreachable!("loopback")
-    };
-    let mut endpoints = Issuer::OpenRouter.endpoints();
-    endpoints.token =
-        EndpointUrl::parse(&format!("http://127.0.0.1:{port}/api/v1/auth/keys")).expect("url");
-    let pkce = pkce();
-    let code = |text: &str| porter_oauth::AuthCode(SecretText::new(text));
-
-    let key = mint_key(&LoopbackHttp, &endpoints, &pkce, &code("good-code")).await;
-    assert_eq!(key, Ok(Credential::ApiKey(SecretText::new("sk-or-minted"))));
-    let sent = bodies.lock().expect("lock")[0].clone();
-    assert_eq!(sent["code_verifier"], pkce.verifier.expose());
-    assert_eq!(sent["code_challenge_method"], "S256");
-
-    let bad = mint_key(&LoopbackHttp, &endpoints, &pkce, &code("spent")).await;
-    assert_eq!(bad, Err(ExchangeFault::Refused));
-}
-
-#[tokio::test]
-async fn the_openrouter_page_url_carries_the_challenge_and_a_stateful_callback() {
-    let server = LoopbackServer::bind().await.expect("bind");
-    let pkce = pkce();
-    let url = openrouter_auth_url(
-        &Issuer::OpenRouter.endpoints(),
-        &pkce,
-        &server.redirect_uri(),
-    );
-    assert!(url.starts_with("https://openrouter.ai/auth?callback_url="));
-    assert!(url.contains(&pkce.challenge().0));
-    // The callback the page returns to is one this listener accepts with that state.
-    let callback = format!(
-        "http://127.0.0.1:{}/?state={}&code=c0",
-        server.port(),
-        pkce.state.0
-    );
-    let sender = tokio::spawn(async move {
-        let (address, target) = split_loopback(&callback).expect("loopback");
-        send(&address, Scheme::Http, &Request::new("GET", &target)).await
-    });
-    let code = server.wait(&pkce.state).await.expect("code");
-    assert_eq!(code.0.expose(), "c0");
-    sender.await.expect("task").expect("answer");
 }

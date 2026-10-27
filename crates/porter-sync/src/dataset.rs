@@ -13,10 +13,6 @@ pub enum DatasetKind {
     PhotosMetadata,
     /// Selectively synced files.
     Files,
-    /// Settings, Spaces, dock, widgets and style CSS: an encrypted item log.
-    Settings,
-    /// Keychain items.
-    Keychain,
 }
 
 /// How a dataset settles a conflict.
@@ -38,9 +34,8 @@ impl DatasetKind {
     pub fn conflict_rule(self) -> ConflictRule {
         match self {
             DatasetKind::PhotosOriginals => ConflictRule::Impossible,
-            DatasetKind::PhotosMetadata | DatasetKind::Settings => ConflictRule::LastWriterPerField,
+            DatasetKind::PhotosMetadata => ConflictRule::LastWriterPerField,
             DatasetKind::Files => ConflictRule::KeepBoth,
-            DatasetKind::Keychain => ConflictRule::ShowInApp,
         }
     }
 }

@@ -245,72 +245,6 @@ async fn refresh_can_be_refused_and_a_seeded_token_works() {
 }
 
 #[tokio::test]
-async fn device_code_flow_pends_then_approves_or_denies() {
-    let issuer = FakeIssuer::start().await.expect("issuer");
-    let (address, _) = split_loopback(issuer.base_url()).expect("address");
-    let start = |scope: &'static str| {
-        let address = address.clone();
-        async move {
-            post_form(
-                &address,
-                "/device",
-                &[("client_id", "client-1"), ("scope", scope)],
-            )
-            .await
-            .expect("device")
-            .json_body()
-            .expect("json")
-        }
-    };
-    let poll = |code: String| {
-        let address = address.clone();
-        async move {
-            token(
-                &address,
-                &[
-                    ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
-                    ("device_code", &code),
-                    ("client_id", "client-1"),
-                ],
-            )
-            .await
-        }
-    };
-
-    let a = start("mail").await;
-    let (code_a, user_a) = (
-        a["device_code"].as_str().expect("code").to_owned(),
-        a["user_code"].as_str().expect("user").to_owned(),
-    );
-    assert_eq!(
-        poll(code_a.clone()).await.json_body().expect("json")["error"],
-        "authorization_pending"
-    );
-    issuer.approve_device(&user_a);
-    let done = poll(code_a.clone()).await;
-    assert_eq!(done.status, 200);
-    assert!(
-        done.json_body().expect("json")["refresh_token"]
-            .as_str()
-            .is_some()
-    );
-    assert_eq!(
-        poll(code_a).await.json_body().expect("json")["error"],
-        "invalid_grant"
-    );
-
-    let b = start("mail").await;
-    issuer.deny_device(b["user_code"].as_str().expect("user"));
-    assert_eq!(
-        poll(b["device_code"].as_str().expect("code").to_owned())
-            .await
-            .json_body()
-            .expect("json")["error"],
-        "access_denied"
-    );
-}
-
-#[tokio::test]
 async fn unknown_paths_404_and_endpoints_point_at_the_issuer() {
     let issuer = FakeIssuer::start().await.expect("issuer");
     let (address, _) = split_loopback(issuer.base_url()).expect("address");
@@ -323,7 +257,7 @@ async fn unknown_paths_404_and_endpoints_point_at_the_issuer() {
         endpoints.token.as_str(),
         format!("{}/token", issuer.base_url())
     );
-    assert!(endpoints.revoke.is_some() && endpoints.device.is_some());
+    assert!(endpoints.revoke.is_some() && endpoints.device.is_none());
 }
 
 #[tokio::test]

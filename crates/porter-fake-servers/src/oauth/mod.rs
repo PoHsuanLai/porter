@@ -1,5 +1,5 @@
 //! A fake OAuth issuer: authorize (PKCE S256 required, state echoed), token (code exchange,
-//! refresh with rotation, device code), device authorization, revoke and `invalid_grant`. A
+//! refresh with rotation), revoke and `invalid_grant`. A
 //! refresh may narrow its grant to the `scope` it names and no further: beyond it Google answers
 //! `invalid_scope` and Microsoft `AADSTS65001`; a later authorize keeps what was consented
 //! before.
@@ -23,8 +23,6 @@ use std::io;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-const DEVICE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
-
 /// What the person does on the authorize page.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Consent {
@@ -32,14 +30,6 @@ pub enum Consent {
     Grant,
     /// Denies: the redirect carries `error=access_denied`.
     Deny,
-}
-
-/// How the person answers a device code.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DeviceState {
-    Pending,
-    Approved,
-    Denied,
 }
 
 /// How the issuer behaves where issuers differ.
@@ -104,11 +94,6 @@ pub enum IssuerEvent {
         /// Whether the issuer knew it.
         known: bool,
     },
-    /// A device code was requested.
-    DeviceCode {
-        /// The client.
-        client_id: String,
-    },
 }
 
 #[derive(Debug)]
@@ -118,13 +103,6 @@ struct Code {
     redirect_uri: String,
     challenge: String,
     scope: String,
-}
-
-#[derive(Debug)]
-struct Device {
-    client_id: String,
-    scope: String,
-    state: DeviceState,
 }
 
 #[derive(Debug)]
@@ -158,7 +136,6 @@ struct State {
     access_scopes: HashMap<String, String>,
     /// When each issued access token lapses (a planted one never does).
     access_lapses: HashMap<String, Instant>,
-    devices: HashMap<String, Device>,
 }
 
 #[derive(Debug, Clone)]
@@ -202,7 +179,6 @@ impl FakeIssuer {
             access: HashMap::new(),
             access_scopes: HashMap::new(),
             access_lapses: HashMap::new(),
-            devices: HashMap::new(),
         };
         Ok(Self {
             listener,
@@ -245,7 +221,7 @@ impl IssuerHandle {
             authorize: url("/authorize"),
             token: url("/token"),
             revoke: Some(url("/revoke")),
-            device: Some(url("/device")),
+            device: None,
         }
     }
 
@@ -331,29 +307,6 @@ impl IssuerHandle {
         lock(&self.shared.state)
             .access
             .insert(token.to_owned(), client_id.to_owned());
-    }
-
-    /// The person approves the device code with this user code.
-    pub fn approve_device(&self, user_code: &str) {
-        self.answer_device(user_code, DeviceState::Approved);
-    }
-
-    /// The person denies the device code with this user code.
-    pub fn deny_device(&self, user_code: &str) {
-        self.answer_device(user_code, DeviceState::Denied);
-    }
-
-    fn answer_device(&self, user_code: &str, to: DeviceState) {
-        let mut state = lock(&self.shared.state);
-        let code = format!(
-            "fake-device-{}",
-            user_code
-                .trim_start_matches("FAKE-")
-                .trim_start_matches('0')
-        );
-        if let Some(device) = state.devices.get_mut(&code) {
-            device.state = to;
-        }
     }
 
     /// Whether this refresh token is live (issued, not rotated away, not revoked).

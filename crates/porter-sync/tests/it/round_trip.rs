@@ -63,8 +63,8 @@ fn journal_values_round_trip() {
     round_trip(&BaseVersion::Absent);
     for kind in [
         DatasetKind::PhotosOriginals,
-        DatasetKind::Settings,
-        DatasetKind::Keychain,
+        DatasetKind::PhotosMetadata,
+        DatasetKind::Files,
     ] {
         round_trip(&kind);
     }

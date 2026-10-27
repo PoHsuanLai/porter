@@ -23,8 +23,6 @@ macro_rules! each_family {
             Self::Google($p) => $body,
             #[cfg(feature = "api_key")]
             Self::ApiKey($p) => $body,
-            #[cfg(feature = "openrouter")]
-            Self::OpenRouter($p) => $body,
             #[cfg(feature = "agent_login")]
             Self::AgentLogin($p) => $body,
             #[cfg(feature = "tailnet")]
@@ -54,9 +52,6 @@ pub enum FamilyProvider {
     /// Pasted API keys.
     #[cfg(feature = "api_key")]
     ApiKey(crate::ApiKeyProvider),
-    /// OpenRouter.
-    #[cfg(feature = "openrouter")]
-    OpenRouter(crate::OpenRouterProvider),
     /// An agent program that signs itself in.
     #[cfg(feature = "agent_login")]
     AgentLogin(crate::AgentLoginProvider),
@@ -83,9 +78,6 @@ pub enum FamilySession {
     /// Pasted API keys.
     #[cfg(feature = "api_key")]
     ApiKey(crate::ApiKeySession),
-    /// OpenRouter.
-    #[cfg(feature = "openrouter")]
-    OpenRouter(crate::OpenRouterSession),
     /// An agent program that signs itself in.
     #[cfg(feature = "agent_login")]
     AgentLogin(crate::AgentLoginSession),
@@ -112,9 +104,6 @@ pub enum FamilySignIn {
     /// Pasted API keys.
     #[cfg(feature = "api_key")]
     ApiKey(crate::ApiKeySignIn),
-    /// OpenRouter.
-    #[cfg(feature = "openrouter")]
-    OpenRouter(crate::OpenRouterSignIn),
     /// An agent program that signs itself in.
     #[cfg(feature = "agent_login")]
     AgentLogin(crate::AgentLoginSignIn),
@@ -161,11 +150,6 @@ impl Provider for FamilyProvider {
             Self::Google(p) => p.open(account, presented).await.map(FamilySession::Google),
             #[cfg(feature = "api_key")]
             Self::ApiKey(p) => p.open(account, presented).await.map(FamilySession::ApiKey),
-            #[cfg(feature = "openrouter")]
-            Self::OpenRouter(p) => p
-                .open(account, presented)
-                .await
-                .map(FamilySession::OpenRouter),
             #[cfg(feature = "agent_login")]
             Self::AgentLogin(p) => p
                 .open(account, presented)
@@ -193,8 +177,6 @@ impl Provider for FamilyProvider {
             Self::Google(p) => p.sign_in(start).map(FamilySignIn::Google),
             #[cfg(feature = "api_key")]
             Self::ApiKey(p) => p.sign_in(start).map(FamilySignIn::ApiKey),
-            #[cfg(feature = "openrouter")]
-            Self::OpenRouter(p) => p.sign_in(start).map(FamilySignIn::OpenRouter),
             #[cfg(feature = "agent_login")]
             Self::AgentLogin(p) => p.sign_in(start).map(FamilySignIn::AgentLogin),
             #[cfg(feature = "tailnet")]

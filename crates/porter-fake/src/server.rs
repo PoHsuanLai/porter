@@ -11,7 +11,7 @@ use std::path::PathBuf;
 /// What a fake server speaks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FakeProtocol {
-    /// An OAuth issuer: authorize, token, device code, revoke, with PKCE and rotation.
+    /// An OAuth issuer: authorize, token, revoke, with PKCE and rotation.
     OAuthIssuer,
     /// An IMAP server: LOGIN, AUTHENTICATE PLAIN and XOAUTH2, STARTTLS with a scratch CA.
     Imap,

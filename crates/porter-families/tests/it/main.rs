@@ -13,8 +13,6 @@ mod google;
 #[cfg(feature = "microsoft")]
 mod microsoft;
 mod nextcloud;
-#[cfg(feature = "openrouter")]
-mod skeleton;
 
 #[test]
 fn every_module_is_declared() {

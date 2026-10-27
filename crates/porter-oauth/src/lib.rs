@@ -2,30 +2,22 @@
 //! `loopback`: PKCE values (`pkce`), what a loopback redirect may be (`loopback`, with the
 //! listener behind feature `io`), which client id this build presents (`registry`), when a
 //! token is renewed (`renewal`), and the code exchange, refresh and revoke calls over the
-//! [`porter_http::Http`] seam (`exchange`), the device-code flow (`device`), the authorize URLs
-//! (`authorize`) and OpenRouter's key mint (`mint`). Randomness
+//! [`porter_http::Http`] seam (`exchange`) and the authorize URLs (`authorize`). Randomness
 //! and the clock are arguments; nothing here reads the environment.
 
 mod authorize;
-mod device;
 mod exchange;
 mod form;
 mod loopback;
 #[cfg(feature = "io")]
 mod loopback_io;
-mod mint;
 mod pkce;
 mod registry;
 mod renewal;
 #[cfg(test)]
 mod scripted;
 
-pub use authorize::{
-    AuthorizeAsk, GooglePrompt, authorize_url, authorize_url_for, openrouter_auth_url, redeem_scope,
-};
-pub use device::{
-    DeviceCodeResponse, DeviceFault, DevicePoll, await_device, poll_device, request_device_code,
-};
+pub use authorize::{AuthorizeAsk, GooglePrompt, authorize_url, authorize_url_for, redeem_scope};
 pub use exchange::{
     DEFAULT_EXPIRES_IN_SECONDS, ExchangeFailure, ExchangeFault, IssuerSays, SAYS_MAX_CHARS,
     TokenResponse, exchange_code, exchange_code_scoped, exchange_code_scoped_detailed, refresh,
@@ -37,10 +29,8 @@ pub use loopback::{
 };
 #[cfg(feature = "io")]
 pub use loopback_io::{LoopbackServer, RedirectPath};
-pub use mint::mint_key;
 pub use pkce::{CodeChallenge, OAuthState, Pkce};
 pub use registry::{
-    AppReview, ClientRegistry, ClientTraits, MailRights, MovedEndpoints, RegistryError,
-    clients_toml, endpoints_of, from_mailo,
+    AppReview, ClientRegistry, ClientTraits, MailRights, RegistryError, endpoints_of, from_mailo,
 };
 pub use renewal::{RENEW_MARGIN_SECONDS, RenewOutcome, Renewal, renew, renewal};
