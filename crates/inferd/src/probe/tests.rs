@@ -4,11 +4,11 @@ use super::*;
 use porter_core::capability::{Capability, LlmFeature, LlmWire};
 use porter_core::{AccountId, Locality};
 use porter_fake_servers::{FakeModels, ModelDef, Wire};
-use porter_http::HyperHttp;
+use porter_http_reqwest::ReqwestHttp;
 use serde_json::json;
 
-fn http() -> HyperHttp {
-    HyperHttp::new().with_limits(porter_http::Limits {
+fn http() -> ReqwestHttp {
+    ReqwestHttp::new().with_limits(porter_http_reqwest::Limits {
         timeout: Duration::from_secs(5),
         max_body: 1 << 20,
     })

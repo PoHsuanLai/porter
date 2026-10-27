@@ -5,7 +5,7 @@ use crate::report::{ReportFault, Reports};
 use porter_core::capability::LlmFeature;
 use porter_core::{AccountId, Claim};
 use porter_fake_servers::{FakeModels, ModelDef, Wire, net::Bind};
-use porter_http::HyperHttp;
+use porter_http_reqwest::ReqwestHttp;
 use std::sync::Mutex;
 
 fn up(runtime: Runtime, port: u16) -> Found {
@@ -156,8 +156,8 @@ impl Reports for Arc<Recorder> {
     }
 }
 
-fn http() -> HyperHttp {
-    HyperHttp::new().with_limits(porter_http::Limits {
+fn http() -> ReqwestHttp {
+    ReqwestHttp::new().with_limits(porter_http_reqwest::Limits {
         timeout: Duration::from_secs(5),
         max_body: 1 << 20,
     })
@@ -199,7 +199,7 @@ fn port_of(fake: &porter_fake_servers::ModelsHandle) -> u16 {
         .expect("number")
 }
 
-fn watch(config: ProbeConfig, engines: &Engines, recorder: &Arc<Recorder>) -> Watch<HyperHttp> {
+fn watch(config: ProbeConfig, engines: &Engines, recorder: &Arc<Recorder>) -> Watch<ReqwestHttp> {
     Watch::new(
         http(),
         config,
@@ -337,7 +337,7 @@ async fn rescan_looks_now_and_answers_when_the_look_is_done() {
 /// The real client, except that while `slow` is set every request waits and then times out, as a
 /// starved computer's answers do.
 struct Slowed {
-    inner: HyperHttp,
+    inner: ReqwestHttp,
     slow: Arc<std::sync::atomic::AtomicBool>,
 }
 

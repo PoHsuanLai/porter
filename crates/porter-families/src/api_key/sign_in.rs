@@ -11,7 +11,8 @@ use porter_core::sheet::{
 use porter_core::{
     Family, LoginName, SecretText, ServiceEndpoint, Tls, UrlScheme, server_address_shape,
 };
-use porter_http::{Http, HyperHttp};
+use porter_http::Http;
+use porter_http_reqwest::ReqwestHttp;
 use porter_provider::{ProviderSpec, SignIn, SignInMode, SignInStep, Signed};
 use std::sync::Arc;
 
@@ -26,7 +27,7 @@ enum State {
 }
 
 /// The ApiKey sign-in conversation.
-pub struct ApiKeySignIn<H = HyperHttp> {
+pub struct ApiKeySignIn<H = ReqwestHttp> {
     spec: ProviderSpec,
     http: Arc<H>,
     mode: SignInMode,

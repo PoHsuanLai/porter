@@ -33,7 +33,8 @@ zbus = { workspace = true }
 ds-settings = { workspace = true, features = ["testing"] }
 porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }
-porter-http = { workspace = true, features = ["hyper"] }
+porter-http = { workspace = true }
+porter-http-reqwest = { workspace = true }
 porter-oauth = { workspace = true }
 rustix = { workspace = true }
 tokio = { workspace = true }

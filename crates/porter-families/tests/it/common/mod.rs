@@ -10,7 +10,8 @@ use porter_core::sheet::{
 };
 use porter_core::{SecretText, Toggle};
 use porter_http::http::{Request, Response};
-use porter_http::{Http, HttpError, HyperHttp};
+use porter_http::{Http, HttpError};
+use porter_http_reqwest::ReqwestHttp;
 use porter_provider::{SignIn, SignInStep};
 use std::sync::{Arc, Mutex};
 
@@ -28,7 +29,7 @@ pub struct Place {
 #[derive(Debug, Clone)]
 pub struct Fakes {
     pub places: Vec<Place>,
-    pub inner: HyperHttp,
+    pub inner: ReqwestHttp,
     pub sent: Arc<Mutex<Vec<String>>>,
 }
 
@@ -36,7 +37,7 @@ impl Fakes {
     pub fn new(places: Vec<Place>) -> Self {
         Self {
             places,
-            inner: HyperHttp::new(),
+            inner: ReqwestHttp::new(),
             sent: Arc::default(),
         }
     }

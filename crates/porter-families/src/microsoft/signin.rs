@@ -36,7 +36,7 @@ use tokio::task::JoinHandle;
 const SMTP_ORIGIN: &str = "smtp://smtp.office365.com:587";
 
 /// The Microsoft sign-in.
-pub struct MicrosoftSignIn<H = porter_http::HyperHttp> {
+pub struct MicrosoftSignIn<H = porter_http_reqwest::ReqwestHttp> {
     spec: Box<ProviderSpec>,
     env: Box<MicrosoftEnv<H>>,
     start: SignInStart,

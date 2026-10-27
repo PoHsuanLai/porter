@@ -14,7 +14,7 @@ use porter_core::{
 };
 use porter_fake_servers::{Auth, Call, FakeLlmApi, LlmApiHandle, Running, shipped};
 use porter_families::ApiKeyProvider;
-use porter_http::HyperHttp;
+use porter_http_reqwest::ReqwestHttp;
 use porter_provider::{
     Presented, Provider, ProviderError, ProviderSession, RevokeOutcome, SignIn, SignInMode,
     SignInStart, SignInStep, Signed,
@@ -78,7 +78,7 @@ fn reauth() -> SignInMode {
 
 async fn company(id: &str, auth: Auth) -> (Running<LlmApiHandle>, ApiKeyProvider) {
     let fake = FakeLlmApi::start(auth).await.expect("fake company");
-    let provider = ApiKeyProvider::with_http(fake.point(&shipped::ai(id)), HyperHttp::default());
+    let provider = ApiKeyProvider::with_http(fake.point(&shipped::ai(id)), ReqwestHttp::default());
     (fake, provider)
 }
 
@@ -196,7 +196,7 @@ async fn a_key_in_the_wrong_header_is_refused_by_the_company() {
         porter_core::Family::Messages,
         &fake.api_url(),
     );
-    let provider = ApiKeyProvider::with_http(mismatched, HyperHttp::default());
+    let provider = ApiKeyProvider::with_http(mismatched, ReqwestHttp::default());
     assert_eq!(
         provider
             .discover(&account("anthropic"), &live(PASTED))
@@ -252,7 +252,7 @@ async fn signing_in_again_skips_the_review_and_a_dead_server_is_unreachable() {
     let spec = fake.point(&shipped::ai("openai"));
     drop(fake);
     tokio::time::sleep(Duration::from_millis(50)).await;
-    let provider = ApiKeyProvider::with_http(spec, HyperHttp::default());
+    let provider = ApiKeyProvider::with_http(spec, ReqwestHttp::default());
     let mut signin = provider.sign_in(start(SignInMode::Add)).expect("sign-in");
     signin.next(SignInInput::Start).await;
     assert_eq!(
@@ -324,7 +324,7 @@ async fn a_session_never_hands_a_key_to_an_app_and_revoke_names_the_keys_page() 
 async fn a_file_with_no_known_keys_page_has_nothing_to_revoke_with() {
     let mut spec = shipped::ai("openai");
     spec.id = porter_core::ProviderId::parse("someone-else").expect("id");
-    let provider = ApiKeyProvider::with_http(spec, HyperHttp::default());
+    let provider = ApiKeyProvider::with_http(spec, ReqwestHttp::default());
     assert_eq!(
         provider
             .revoke(&account("someone-else"), &live("sk-x"))
@@ -386,7 +386,7 @@ async fn a_server_of_the_persons_own_is_asked_for_its_address_and_an_optional_ke
     fake.seed_key(PASTED);
     let server = fake.api_url();
     let provider =
-        ApiKeyProvider::with_http(shipped::ai("openai-compatible"), HyperHttp::default());
+        ApiKeyProvider::with_http(shipped::ai("openai-compatible"), ReqwestHttp::default());
     let address = |text: &str| FieldAnswer {
         kind: FieldKind::ServerUrl,
         value: FieldValue::Plain(text.to_owned()),

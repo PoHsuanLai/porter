@@ -27,14 +27,15 @@ pub use session::GoogleSession;
 pub use signin::GoogleSignIn;
 
 use porter_core::{Account, AccountId, Claim, Credential, EndpointUrl, Family};
-use porter_http::{Http, HyperHttp};
+use porter_http::Http;
+use porter_http_reqwest::ReqwestHttp;
 use porter_oauth::{ExchangeFault, endpoints_of, revoke};
 use porter_provider::{
     Issuer, Presented, Provider, ProviderError, ProviderSpec, Readiness, RevokeOutcome, SignInStart,
 };
 
 /// The Google family's provider, over the HTTP seam `H` (hyper's client in a daemon).
-pub struct GoogleProvider<H = HyperHttp> {
+pub struct GoogleProvider<H = ReqwestHttp> {
     spec: ProviderSpec,
     env: GoogleEnv<H>,
 }

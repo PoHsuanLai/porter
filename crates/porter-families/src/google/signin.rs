@@ -38,7 +38,7 @@ const TESTING_USER_CAP: u32 = 100;
 const SMTP_ORIGIN: &str = "smtp://smtp.gmail.com:587";
 
 /// The Google sign-in.
-pub struct GoogleSignIn<H = porter_http::HyperHttp> {
+pub struct GoogleSignIn<H = porter_http_reqwest::ReqwestHttp> {
     spec: Box<ProviderSpec>,
     env: Box<GoogleEnv<H>>,
     start: SignInStart,

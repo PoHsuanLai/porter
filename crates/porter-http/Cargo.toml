@@ -1,6 +1,6 @@
 [package]
 name = "porter-http"
-description = "porter's HTTP seam: the `Http` trait over the `http` crate's request and response, which every family, discovery and OAuth call goes through; the hyper client is behind the `hyper` feature."
+description = "porter's HTTP seam: the `Http` trait over the `http` crate's request and response, which every family, discovery and OAuth call goes through; the clients are porter-http-reqwest (direct) and porter-http-relay (over an accountd relay)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -13,18 +13,8 @@ porter-core = { workspace = true }
 http = { workspace = true }
 httpdate = { workspace = true }
 thiserror = { workspace = true }
-hyper = { workspace = true, optional = true, features = ["client", "http1"] }
-hyper-util = { workspace = true, optional = true, features = ["tokio", "client-legacy", "http1"] }
-hyper-rustls = { workspace = true, optional = true }
-http-body-util = { workspace = true, optional = true }
-rustls = { workspace = true, optional = true }
-rustls-native-certs = { workspace = true, optional = true }
-rustls-pki-types = { workspace = true, optional = true }
-tokio = { workspace = true, optional = true, features = ["net", "time", "io-util", "rt"] }
 
 [dev-dependencies]
-porter-fake = { workspace = true }
-porter-fake-servers = { workspace = true }
 tokio = { workspace = true }
 
 [features]
@@ -32,19 +22,6 @@ tokio = { workspace = true }
 # `StreamHttp` client that dials one. It needs no runtime and adds no dependency, so it is pure:
 # the feature reaches nothing the default build does not.
 stream = []
-# `HyperHttp`, the client over hyper (D12), with TLS through rustls on `ring` and the platform's
-# trust roots, and `TokioSleep`. Pulls in the runtime, so it is off by default: the pure build
-# reaches none.
-hyper = [
-  "dep:hyper",
-  "dep:hyper-util",
-  "dep:hyper-rustls",
-  "dep:http-body-util",
-  "dep:rustls",
-  "dep:rustls-native-certs",
-  "dep:rustls-pki-types",
-  "dep:tokio",
-]
 
 [lints]
 workspace = true

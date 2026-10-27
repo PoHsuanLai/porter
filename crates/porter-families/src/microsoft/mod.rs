@@ -19,7 +19,8 @@ pub use session::MicrosoftSession;
 pub use signin::MicrosoftSignIn;
 
 use porter_core::{Account, AccountId, Claim, Credential, EndpointUrl, Family, SecretText};
-use porter_http::{Http, HyperHttp};
+use porter_http::Http;
+use porter_http_reqwest::ReqwestHttp;
 use porter_provider::{
     Presented, Provider, ProviderError, ProviderSession, ProviderSpec, Readiness, RevokeOutcome,
     SignInStart,
@@ -34,7 +35,7 @@ const GRAPH_ORIGIN: &str = "https://graph.microsoft.com";
 const IMAP_ORIGIN: &str = "imaps://outlook.office365.com:993";
 
 /// The Microsoft family's provider, over the HTTP seam `H` (hyper's client in a daemon).
-pub struct MicrosoftProvider<H = HyperHttp> {
+pub struct MicrosoftProvider<H = ReqwestHttp> {
     spec: ProviderSpec,
     env: MicrosoftEnv<H>,
     rotations: Rotations,

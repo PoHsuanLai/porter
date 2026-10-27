@@ -1,6 +1,6 @@
 //! The crate's integration tests: one executable, one module per topic (CONVENTIONS.md, Tests).
 
-mod hyper;
+mod direct;
 
 #[test]
 fn every_module_is_declared() {

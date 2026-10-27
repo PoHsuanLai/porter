@@ -6,7 +6,7 @@ use porter_engines::{
 use porter_engines_install::Fetcher;
 use porter_fake::Scratch;
 use porter_fake_servers::tls;
-use porter_http::HyperHttp;
+use porter_http_reqwest::ReqwestHttp;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::Command;
@@ -74,7 +74,7 @@ pub fn row(url: &str, fixture: &Fixture, seal: &str, size: u64) -> &'static Row 
 
 /// A downloader that trusts the scratch CA and does not wait long.
 pub fn fetcher() -> Fetcher {
-    Fetcher::new(HyperHttp::with_extra_roots(vec![tls::ca_der().to_vec()])).with_timing(
+    Fetcher::new(ReqwestHttp::with_extra_roots(vec![tls::ca_der().to_vec()])).with_timing(
         Duration::from_secs(5),
         1,
         Duration::from_millis(10),

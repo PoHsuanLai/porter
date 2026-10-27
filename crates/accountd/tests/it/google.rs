@@ -23,7 +23,7 @@ use porter_dbus::{ManagerProxy, Sheet};
 use porter_fake::{MemoryStore, RecordingAudit};
 use porter_fake_servers::{Google, shipped};
 use porter_families::{FamilyProvider, GoogleEnv, GoogleProvider};
-use porter_http::HyperHttp;
+use porter_http_reqwest::ReqwestHttp;
 use porter_oauth::{AppReview, ClientRegistry, ClientTraits, MailRights};
 use porter_provider::{ClientChannel, ClientEntry, ClientId, ClientsFile, Issuer};
 use porter_secrets::Secrets;
@@ -103,7 +103,7 @@ impl World {
         let google = Google::start(SECRET).await.expect("fake google");
         let spec = google.api.rewrite(&shipped::google());
         let env = GoogleEnv::new(
-            HyperHttp::default(),
+            ReqwestHttp::default(),
             client_with(&google, traits),
             porter_core::clock::SystemClock,
         )

@@ -1,7 +1,6 @@
-//! `HyperHttp` against fake servers on loopback: the methods and bodies go through, a redirect
+//! `ReqwestHttp` against fake servers on loopback: the methods and bodies go through, a redirect
 //! is returned and not followed, the caps and the timeout hold, and certificates are always
 //! checked.
-#![cfg(feature = "hyper")]
 
 use porter_core::EndpointUrl;
 use porter_core::WebUrl;
@@ -9,7 +8,8 @@ use porter_fake_servers::http::{Request, Response, serve};
 use porter_fake_servers::net::{Bind, Listener, port_of};
 use porter_fake_servers::tls;
 use porter_http::http::{self, Method, StatusCode};
-use porter_http::{HeaderText, Http, HttpError, HyperHttp, Limits, request, request_to};
+use porter_http::{HeaderText, Http, HttpError, request, request_to};
+use porter_http_reqwest::{Limits, ReqwestHttp};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
@@ -56,7 +56,7 @@ fn echo(request: Request) -> Response {
 #[tokio::test]
 async fn a_request_goes_out_with_its_method_headers_and_body_and_the_response_comes_back() {
     let server = fake(false, echo).await;
-    let http = HyperHttp::new();
+    let http = ReqwestHttp::new();
     let propfind = Method::from_bytes(b"PROPFIND").expect("method");
     let sent = request(propfind, &url("http", "127.0.0.1", server.port, "/dav/"))
         .header("Depth", "1")
@@ -76,7 +76,7 @@ async fn an_error_status_and_a_redirect_are_responses_and_a_redirect_is_not_foll
         _ => Response::new(200),
     })
     .await;
-    let http = HyperHttp::new();
+    let http = ReqwestHttp::new();
     let fetch = |path: &str| http.send(get(&url("http", "127.0.0.1", server.port, path)));
     let moved = fetch("/moved").await.expect("response");
     assert_eq!(
@@ -96,7 +96,7 @@ async fn a_response_over_the_cap_is_too_large() {
     })
     .await;
     let target = url("http", "127.0.0.1", server.port, "/");
-    let small = HyperHttp::new().with_limits(Limits {
+    let small = ReqwestHttp::new().with_limits(Limits {
         max_body: 1024,
         ..Limits::default()
     });
@@ -104,7 +104,7 @@ async fn a_response_over_the_cap_is_too_large() {
         small.send(get(&target)).await.err(),
         Some(HttpError::TooLarge)
     );
-    let roomy = HyperHttp::new().with_limits(Limits {
+    let roomy = ReqwestHttp::new().with_limits(Limits {
         max_body: 2048,
         ..Limits::default()
     });
@@ -122,7 +122,7 @@ async fn a_server_that_never_answers_times_out() {
             held.push(stream);
         }
     });
-    let http = HyperHttp::new().with_limits(Limits {
+    let http = ReqwestHttp::new().with_limits(Limits {
         timeout: Duration::from_millis(200),
         ..Limits::default()
     });
@@ -137,7 +137,7 @@ async fn a_closed_port_is_unreachable() {
         let probe = TcpListener::bind(("127.0.0.1", 0)).await.expect("bind");
         probe.local_addr().expect("addr").port()
     };
-    let outcome = HyperHttp::new()
+    let outcome = ReqwestHttp::new()
         .send(get(&url("http", "127.0.0.1", port, "/")))
         .await;
     assert_eq!(outcome.err(), Some(HttpError::Unreachable));
@@ -148,14 +148,14 @@ async fn a_certificate_is_checked_against_the_roots_and_a_private_ca_must_be_add
     let server = fake(true, |_| Response::new(200).typed("text/plain", "secure")).await;
     let target = url("https", "localhost", server.port, "/");
 
-    let strict = HyperHttp::new();
+    let strict = ReqwestHttp::new();
     assert_eq!(
         strict.send(get(&target)).await.err(),
         Some(HttpError::Tls),
         "the scratch CA is not a platform root"
     );
 
-    let trusting = HyperHttp::with_extra_roots(vec![tls::ca_der().to_vec()]);
+    let trusting = ReqwestHttp::with_extra_roots(vec![tls::ca_der().to_vec()]);
     let response = trusting
         .send(get(&target))
         .await
@@ -163,7 +163,7 @@ async fn a_certificate_is_checked_against_the_roots_and_a_private_ca_must_be_add
     assert_eq!(response.body(), b"secure");
 
     let wrong_name = url("https", "127.0.0.1", server.port, "/");
-    let outcome = HyperHttp::with_extra_roots(vec![tls::ca_der().to_vec()])
+    let outcome = ReqwestHttp::with_extra_roots(vec![tls::ca_der().to_vec()])
         .send(get(&wrong_name))
         .await;
     assert!(
@@ -188,7 +188,7 @@ async fn plain_http_is_for_this_computer_only() {
     assert!(WebUrl::parse("http://192.0.2.1/").is_err());
     // A request built without a `WebUrl` meets the same rule in the client.
     let raw = |uri: &str| http::Request::get(uri).body(Vec::new()).expect("request");
-    let client = HyperHttp::new();
+    let client = ReqwestHttp::new();
     let cases = [
         ("http://192.0.2.1/", HttpError::Tls),
         ("http://cloud.example.org/", HttpError::Tls),
@@ -211,6 +211,9 @@ async fn the_query_goes_out_with_the_path() {
         server.port,
         "/mail/config?emailaddress=a%40b.test",
     );
-    let response = HyperHttp::new().send(get(&target)).await.expect("response");
+    let response = ReqwestHttp::new()
+        .send(get(&target))
+        .await
+        .expect("response");
     assert_eq!(response.body(), b"/mail/config?emailaddress=a%40b.test");
 }

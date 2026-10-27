@@ -11,7 +11,8 @@ use porter_core::{UrlScheme, WebUrl};
 use porter_engines::{Artifact, file_digest, hex};
 use porter_http::http::header::RANGE;
 use porter_http::http::{HeaderMap, Method, StatusCode};
-use porter_http::{BodySink, Flow, HeaderText, HttpError, HyperHttp, request};
+use porter_http::{HeaderText, HttpError, request};
+use porter_http_reqwest::{BodySink, Flow, ReqwestHttp};
 use sha2::{Digest, Sha256};
 use std::ffi::OsString;
 use std::fs::{File, OpenOptions};
@@ -48,7 +49,7 @@ pub enum FetchError {
 /// Downloads pinned files.
 #[derive(Debug, Clone)]
 pub struct Fetcher {
-    http: HyperHttp,
+    http: ReqwestHttp,
     idle: Duration,
     retries: u32,
     pause: Duration,
@@ -57,12 +58,12 @@ pub struct Fetcher {
 impl Fetcher {
     /// A fetcher that trusts the system's certificate authorities, with the usual waits.
     pub fn system() -> Self {
-        Self::new(HyperHttp::new())
+        Self::new(ReqwestHttp::new())
     }
 
     /// A fetcher over `http`: 30 seconds of silence is a lost connection, and a lost connection
     /// is retried three times, two seconds apart.
-    pub fn new(http: HyperHttp) -> Self {
+    pub fn new(http: ReqwestHttp) -> Self {
         Self {
             http,
             idle: Duration::from_secs(30),

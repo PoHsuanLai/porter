@@ -33,7 +33,7 @@ use engine_supervisor::EngineId;
 use model_catalog::EngineKind;
 use porter_dbus::BusTarget;
 use porter_dbus::names::{INFERENCE_BUS, INFERENCE_PATH};
-use porter_http::{HyperHttp, Limits};
+use porter_http_reqwest::{Limits, ReqwestHttp};
 use porter_secrets::keysel::{Selection, select};
 use porter_tailnet::{Config as TailnetConfig, Guests, Timing};
 use porter_tailscale::LocalApi;
@@ -613,7 +613,7 @@ impl Daemon {
         // The runtimes the person runs themselves: looked for now, on `Rescan` and on a timer,
         // and reported to accountd as accounts.
         let probing = Watch::new(
-            HyperHttp::new().with_limits(Limits {
+            ReqwestHttp::new().with_limits(Limits {
                 timeout: PROBE_TIMEOUT,
                 max_body: PROBE_MAX_BODY,
             }),

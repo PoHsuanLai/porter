@@ -23,7 +23,8 @@ use crate::{
 use porter_core::clock::SystemClock;
 use porter_core::{AuthKind, EndpointUrl};
 use porter_discover::{Dns, DnsFault, HickoryDns, MxRecord, SrvRecord};
-use porter_http::{HyperHttp, SharedHttp, SharedSleep, TokioSleep};
+use porter_http::{SharedHttp, SharedSleep};
+use porter_http_reqwest::{ReqwestHttp, TokioSleep};
 use porter_provider::{
     DomainName, Issuer, ProviderFileError, ProviderSet, ProviderSpec, parse_provider,
 };
@@ -213,7 +214,7 @@ impl FamilyIo {
             Err(_) => SharedDns::new(NoResolver),
         };
         Self {
-            http: SharedHttp::new(HyperHttp::new()),
+            http: SharedHttp::new(ReqwestHttp::new()),
             dns,
             providers,
             clients,
@@ -330,7 +331,7 @@ mod tests {
             },
         )
         .with_clients(
-            SharedHttp::new(HyperHttp::new()),
+            SharedHttp::new(ReqwestHttp::new()),
             SharedDns::new(NoResolver),
         )
         .with_tailscale(LocalApi::new("/nonexistent/tailscaled.sock"))

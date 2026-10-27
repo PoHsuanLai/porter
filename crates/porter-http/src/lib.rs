@@ -1,6 +1,6 @@
 //! porter's HTTP seam (design/31 D12): the [`Http`] trait every family, discovery step and OAuth
 //! exchange sends through, over the [`http`] crate's request and response. A family never names a
-//! client; the daemon hands it [`HyperHttp`] (feature `hyper`), a test hands it a fake server's.
+//! client; the daemon hands it `porter_http_reqwest::ReqwestHttp`, a test hands it a fake server's.
 //! Bodies are whole byte vectors (`Request<Vec<u8>>`, `Response<Vec<u8>>`): what porter sends and reads
 //! over HTTP (sign-in exchanges, PROPFIND replies, model lists) is small, and a transfer of file
 //! content belongs to the replica that streams it. The `http` crate is re-exported, so a caller
@@ -37,8 +37,6 @@
 //! ```
 
 mod error;
-#[cfg(feature = "hyper")]
-mod hyper_client;
 mod message;
 mod seam;
 mod shared;
@@ -49,8 +47,6 @@ pub mod webdav;
 
 pub use error::HttpError;
 pub use http;
-#[cfg(feature = "hyper")]
-pub use hyper_client::{BodySink, Flow, HyperHttp, Limits, TokioSleep};
 pub use message::{HeaderText, SensitiveHeader, request, request_to, web_url};
 pub use seam::Http;
 pub use shared::SharedHttp;

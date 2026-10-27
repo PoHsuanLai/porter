@@ -30,7 +30,7 @@ use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard};
 
 /// An open Google account.
-pub struct GoogleSession<H = porter_http::HyperHttp> {
+pub struct GoogleSession<H = porter_http_reqwest::ReqwestHttp> {
     account: AccountId,
     spec: Box<ProviderSpec>,
     env: Box<GoogleEnv<H>>,

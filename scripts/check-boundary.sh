@@ -11,8 +11,9 @@ cd "$(dirname "$0")/.."
 # RULES: what a crate reaches through ANY path (transitive, default features). The pure crates
 # never reach a bus, a runtime, an HTTP client or a keyring; porter-client reaches zbus only
 # through its `dbus` feature; porter-dbus reaches tokio only through zbus's `tokio` feature.
-# porter-http, porter-proxy and porter-oauth reach tokio (and porter-http hyper) only through
-# their named I/O feature (`hyper`, `io`). porter-families reaches none with default features;
+# porter-http is the pure seam and reaches none of them; porter-proxy and porter-oauth reach tokio
+# only through their named I/O feature (`io`). reqwest is named by one crate, porter-http-reqwest
+# (see ONE CLIENT below), and reached through it by the families that send directly. porter-families reaches none with default features;
 # each of its family features is checked on its own in FAMILY_FORBIDS below. porter-drive and
 # porter-drive-fuse reach tokio (a drive fetches in the background) but never a bus or a client.
 # porter-mountd, the mount helper outside syncd's sandbox, reaches no effect crate and none of
@@ -44,7 +45,7 @@ RULES=(
   "porter-dav: $EFFECTS"
   "porter-families: $EFFECTS"
   "porter-engines: $EFFECTS"
-  "porter-engines-install: zbus zvariant reqwest ureq oo7 keyring secret-service interprocess latchkey ds-settings inferd"
+  "porter-engines-install: zbus zvariant ureq oo7 keyring secret-service interprocess latchkey ds-settings inferd"
   "storage-webdav: $EFFECTS"
   "storage-graph: $EFFECTS"
   "storage-gdrive: $EFFECTS"
@@ -82,8 +83,8 @@ done
 # other. Its default build is checked by RULES above (it reaches none of EFFECTS). A family
 # reaches only what it really uses, so each feature forbids EFFECTS minus what it uses today:
 #   generic:            tokio (porter-proxy's `io`, for the relay's login)
-#   microsoft, google:  tokio, hyper (porter-oauth's `io`, porter-http's `hyper`)
-#   api_key:            hyper, tokio (porter-http's `hyper`)
+#   microsoft, google:  tokio, hyper, reqwest (porter-oauth's `io`, porter-http-reqwest)
+#   api_key:            hyper, reqwest, tokio (porter-http-reqwest)
 #   tailnet:            hyper, tokio (porter-tailscale's `io`)
 #   nextcloud, agent_login: none
 #   set:                every family a daemon maps (what microsoft, google, generic, api_key and
@@ -91,25 +92,26 @@ done
 # Every feature in porter-families' Cargo.toml must have a row, so a new family cannot slip in
 # unchecked; the direct porter-* edges of each feature are exact too (FAMILY_EDGES).
 MS_FORBIDS="zbus zvariant reqwest ureq oo7 keyring secret-service interprocess latchkey ds-settings"
+DIRECT_FORBIDS="zbus zvariant ureq oo7 keyring secret-service interprocess latchkey ds-settings"
 declare -A FAMILY_FORBIDS=(
   [nextcloud]="$EFFECTS"
   [generic]="zbus zvariant hyper reqwest ureq oo7 keyring secret-service interprocess latchkey ds-settings"
-  [microsoft]="$MS_FORBIDS"
-  [google]="$MS_FORBIDS"
-  [api_key]="$MS_FORBIDS"
+  [microsoft]="$DIRECT_FORBIDS"
+  [google]="$DIRECT_FORBIDS"
+  [api_key]="$DIRECT_FORBIDS"
   [agent_login]="$EFFECTS"
   [tailnet]="$MS_FORBIDS"
-  [set]="$MS_FORBIDS"
+  [set]="$DIRECT_FORBIDS"
 )
 declare -A FAMILY_EDGES=(
   [nextcloud]="dav-proto porter-core porter-dav porter-discover porter-http porter-provider"
   [generic]="dav-proto porter-core porter-dav porter-discover porter-http porter-provider porter-proxy"
-  [microsoft]="porter-core porter-discover porter-http porter-oauth porter-provider"
-  [google]="porter-core porter-http porter-oauth porter-provider"
-  [api_key]="porter-core porter-http porter-provider"
+  [microsoft]="porter-core porter-discover porter-http porter-http-reqwest porter-oauth porter-provider"
+  [google]="porter-core porter-http porter-http-reqwest porter-oauth porter-provider"
+  [api_key]="porter-core porter-http porter-http-reqwest porter-provider"
   [agent_login]="porter-core porter-http porter-provider"
   [tailnet]="porter-core porter-http porter-provider porter-tailscale"
-  [set]="dav-proto porter-core porter-dav porter-discover porter-http porter-oauth porter-provider porter-proxy porter-tailscale"
+  [set]="dav-proto porter-core porter-dav porter-discover porter-http porter-http-reqwest porter-oauth porter-provider porter-proxy porter-tailscale"
 )
 family_features=$(awk '/^\[features\]/{f=1;next} /^\[/{f=0} f && /^[A-Za-z0-9_-]+ *=/{sub(/ *=.*/,""); if ($0!="default") print}' crates/porter-families/Cargo.toml)
 for feature in $family_features; do
@@ -156,6 +158,16 @@ for dep in porter-service porter-secrets porter-provider; do
 done
 if [ "$in_process_leaked" -eq 0 ]; then
   echo "boundary holds: porter-client[dbus] without in-process reaches none of porter-service, porter-secrets, porter-provider"
+fi
+
+# ONE CLIENT: reqwest is named by porter-http-reqwest and by no other crate of this workspace. Every
+# other crate that sends over a direct connection takes `ReqwestHttp` from it.
+named=$(grep -lE '^reqwest[ .=]' crates/*/Cargo.toml | grep -v '^crates/porter-http-reqwest/' || true)
+if [ -n "$named" ]; then
+  echo "LEAK: reqwest is named outside porter-http-reqwest: $named"
+  fail=1
+else
+  echo "boundary holds: only porter-http-reqwest names reqwest"
 fi
 
 # STREAM FEATURE: porter-http's `stream` (HTTP/1.1 over a byte stream, porter-core's ByteStream)
@@ -293,8 +305,9 @@ EDGES=(
   "porter-fake: porter-core porter-provider porter-secrets porter-service"
   "porter-fake-servers: dav-proto porter-core porter-discover porter-fake porter-provider quickxorhash"
   "porter-http: porter-core"
+  "porter-http-reqwest: porter-core porter-http"
   "porter-engines:"
-  "porter-engines-install: porter-core porter-engines porter-http"
+  "porter-engines-install: porter-core porter-engines porter-http porter-http-reqwest"
   "porter-proxy: porter-core"
   "porter-oauth: porter-core porter-http porter-provider"
   "porter-discover: porter-core porter-http porter-provider"
@@ -302,7 +315,7 @@ EDGES=(
   "porter-tailnet: porter-core porter-fs porter-tailscale"
   "dav-proto:"
   "porter-dav: dav-proto porter-core porter-http"
-  "porter-families: dav-proto porter-core porter-dav porter-discover porter-http porter-oauth porter-provider porter-proxy porter-tailscale"
+  "porter-families: dav-proto porter-core porter-dav porter-discover porter-http porter-http-reqwest porter-oauth porter-provider porter-proxy porter-tailscale"
   "accountd: ds-settings porter-core porter-daemon porter-dbus porter-families porter-fs porter-provider porter-secrets porter-service porter-sheets porter-store porter-tailscale"
   "storage-webdav: dav-proto porter-core porter-dav porter-http porter-sync"
   "storage-graph: porter-core porter-http porter-sync storage-webdav"
@@ -314,7 +327,7 @@ EDGES=(
   "porter-rig: fake-secret-service porter-client porter-core porter-dbus porter-fake porter-fake-servers porter-infer"
   "fake-secret-service:"
   "syncd-fakes: porter-dbus porter-drive"
-  "inferd: ds-settings porter-bridge porter-engines porter-families porter-secrets porter-service porter-sheets porter-store porter-router porter-turns porter-core porter-daemon porter-dbus porter-discover porter-fs porter-http porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
+  "inferd: ds-settings porter-bridge porter-engines porter-families porter-secrets porter-service porter-sheets porter-store porter-router porter-turns porter-core porter-daemon porter-dbus porter-discover porter-fs porter-http porter-http-reqwest porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
 )
 for edge in "${EDGES[@]}"; do
   crate="${edge%%:*}"

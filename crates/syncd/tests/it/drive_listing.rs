@@ -9,7 +9,8 @@ use porter_fake::Scratch;
 use porter_fake_servers::{FakeGoogle, FakeGraph};
 use porter_http::http::header::{AUTHORIZATION, HeaderValue};
 use porter_http::http::{Request, Response};
-use porter_http::{Http, HttpError, HyperHttp};
+use porter_http::{Http, HttpError};
+use porter_http_reqwest::ReqwestHttp;
 use porter_sync::{
     Blob, ByteRange, ChangePage, Cursor, Folders, ItemKind, ItemPath, PutItem, PutRefused, Quota,
     RemoteId, RemoteVersion, Replica, ReplicaError, RetryAfter,
@@ -23,7 +24,7 @@ const NOW: UnixSeconds = UnixSeconds(1_000);
 
 /// Adds the bearer to every request, as the relay does on the far side.
 #[derive(Debug)]
-struct Bearer(HyperHttp);
+struct Bearer(ReqwestHttp);
 
 impl Http for Bearer {
     fn send(
@@ -53,7 +54,7 @@ type Google = storage_gdrive::GdriveReplica<Bearer>;
 fn graph(base: &str, page: usize, folders: Folders) -> Graph {
     let base = WebUrl::parse(base).expect("url");
     storage_graph::GraphReplica::new(
-        Bearer(HyperHttp::new()),
+        Bearer(ReqwestHttp::new()),
         &base,
         "",
         storage_graph::Clock::fixed(NOW),
@@ -66,7 +67,7 @@ fn graph(base: &str, page: usize, folders: Folders) -> Graph {
 fn google(base: &str, page: usize, folders: Folders) -> Google {
     let base = WebUrl::parse(base).expect("url");
     storage_gdrive::GdriveReplica::new(
-        Bearer(HyperHttp::new()),
+        Bearer(ReqwestHttp::new()),
         &base,
         "",
         storage_gdrive::Clock::fixed(NOW),

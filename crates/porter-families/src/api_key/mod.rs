@@ -14,7 +14,8 @@ mod sign_in;
 
 use crate::key::{asks_server, check, check_server, key_of, own_server};
 use porter_core::{Account, AccountId, Claim, EndpointUrl};
-use porter_http::{Http, HyperHttp};
+use porter_http::Http;
+use porter_http_reqwest::ReqwestHttp;
 use porter_provider::{
     Presented, Provider, ProviderError, ProviderSpec, RevokeOutcome, SignInStart,
 };
@@ -33,7 +34,7 @@ const KEY_PAGES: &[(&str, &str)] = &[
 ];
 
 /// The ApiKey family's provider, over the HTTP seam `H` (hyper's client in a daemon).
-pub struct ApiKeyProvider<H = HyperHttp> {
+pub struct ApiKeyProvider<H = ReqwestHttp> {
     spec: ProviderSpec,
     http: Arc<H>,
 }

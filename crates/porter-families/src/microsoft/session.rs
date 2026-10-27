@@ -22,7 +22,7 @@ use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard};
 
 /// An open Microsoft account.
-pub struct MicrosoftSession<H = porter_http::HyperHttp> {
+pub struct MicrosoftSession<H = porter_http_reqwest::ReqwestHttp> {
     account: AccountId,
     spec: Box<ProviderSpec>,
     env: Box<MicrosoftEnv<H>>,
