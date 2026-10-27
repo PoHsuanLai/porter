@@ -73,7 +73,8 @@ fn library(wiring: &PhotosWiring, account: &AccountDir) -> PhotoLibrary {
 
 #[tokio::test]
 async fn starting_photos_registers_both_datasets() {
-    let root = scratch("photos-register");
+    let _root_guard = scratch("photos-register");
+    let root = _root_guard.path().to_owned();
     let wiring = wiring(&root);
     let account = AccountDir::parse("a1").expect("account");
     assert_eq!(
@@ -118,12 +119,12 @@ async fn starting_photos_registers_both_datasets() {
     assert!(synced, "the originals dataset ran a cycle");
     assert!(run.library().original(&id).is_some());
     drop(run);
-    let _ = std::fs::remove_dir_all(root);
 }
 
 #[tokio::test]
 async fn account_removed_wipes_the_photos_directory_the_journals_and_the_running_datasets() {
-    let root = scratch("photos-wipe");
+    let _root_guard = scratch("photos-wipe");
+    let root = _root_guard.path().to_owned();
     let wiring = wiring(&root);
     let (gone, kept) = (
         AccountDir::parse("a1").expect("a1"),
@@ -166,5 +167,4 @@ async fn account_removed_wipes_the_photos_directory_the_journals_and_the_running
         0
     );
     drop(runs);
-    let _ = std::fs::remove_dir_all(root);
 }

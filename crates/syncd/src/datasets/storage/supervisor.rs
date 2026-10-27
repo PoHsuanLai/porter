@@ -947,7 +947,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_drive_held_while_its_account_is_removed_is_not_started() {
-        let root = crate::testing::scratch("held-drive");
+        let _root_guard = crate::testing::scratch("held-drive");
+        let root = _root_guard.path().to_owned();
         let paths = crate::paths::Paths {
             journals: root.join("state/porter/sync"),
             mirrors: root.join("data/porter/vdir"),

@@ -16,7 +16,6 @@ use porter_sync::{
     ReplicaError,
 };
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -125,7 +124,7 @@ pub struct World {
     pub replica: Arc<Faulty>,
     pub dataset: Arc<MemoryDataset>,
     pub clock: Arc<ManualClock>,
-    pub dir: PathBuf,
+    pub dir: tempfile::TempDir,
 }
 
 impl World {
@@ -155,7 +154,7 @@ impl World {
 
     /// A fresh engine on the journal file: what a restarted process has.
     pub fn engine(&self) -> TestEngine {
-        let journal = Journal::open(&self.dir.join("files.sqlite")).expect("journal");
+        let journal = Journal::open(&self.dir.path().join("files.sqlite")).expect("journal");
         Engine::new(
             Shared(Arc::clone(&self.replica)),
             Arc::clone(&self.dataset),
@@ -249,12 +248,6 @@ impl World {
 
     pub fn fetches(&self) -> usize {
         self.replica.fetches.load(Ordering::Relaxed)
-    }
-}
-
-impl Drop for World {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.dir);
     }
 }
 

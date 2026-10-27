@@ -133,7 +133,7 @@ pub struct Synced {
 
 /// One machine: its own scratch directory, library, journals and engines.
 pub struct Machine {
-    pub dir: PathBuf,
+    pub dir: tempfile::TempDir,
     pub library: PhotoLibrary,
     pub millis: Arc<ManualMillis>,
     pub originals: Engine<Dav, PhotoOriginals, SystemClock>,
@@ -146,7 +146,7 @@ impl Machine {
         let dir = scratch(&format!("photos-{name}"));
         let millis = Arc::new(ManualMillis::at(ms));
         let library = PhotoLibrary::open(
-            dir.join("data/photos"),
+            dir.path().join("data/photos"),
             DeviceId::parse(name).expect("device"),
             millis.clone(),
         )
@@ -154,7 +154,8 @@ impl Machine {
         // Not flushed on each commit: a thousand photos make thousands of them, and these tests
         // prove what the engine does, not what the disk does.
         let journal = |slug: &str| {
-            Journal::open_unflushed(&dir.join(format!("state/{slug}.sqlite"))).expect("journal")
+            Journal::open_unflushed(&dir.path().join(format!("state/{slug}.sqlite")))
+                .expect("journal")
         };
         let originals = Engine::new(
             server.replica("originals"),
@@ -188,7 +189,7 @@ impl Machine {
     /// `n` tiny distinct fixture files in this machine's camera folder (never committed:
     /// generated here). `seed` makes a second batch differ from the first.
     pub fn fixtures(&self, seed: &str, n: usize) -> Vec<PathBuf> {
-        let camera = self.dir.join("camera");
+        let camera = self.dir.path().join("camera");
         std::fs::create_dir_all(&camera).expect("camera");
         (0..n)
             .map(|i| {
@@ -202,17 +203,11 @@ impl Machine {
 
     /// One file with chosen bytes.
     pub fn file(&self, name: &str, bytes: &[u8]) -> PathBuf {
-        let camera = self.dir.join("camera");
+        let camera = self.dir.path().join("camera");
         std::fs::create_dir_all(&camera).expect("camera");
         let path = camera.join(name);
         std::fs::write(&path, bytes).expect("file");
         path
-    }
-}
-
-impl Drop for Machine {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.dir);
     }
 }
 

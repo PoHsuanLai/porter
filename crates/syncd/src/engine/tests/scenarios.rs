@@ -623,7 +623,7 @@ async fn a_local_edit_made_after_the_scan_is_never_overwritten_by_a_fetch() {
     let engine = Engine::new(
         Shared(Arc::clone(&world.replica)),
         racy,
-        Journal::open(&world.dir.join("files.sqlite")).expect("journal"),
+        Journal::open(&world.dir.path().join("files.sqlite")).expect("journal"),
         Arc::clone(&world.clock),
     );
     world.remote_edit(&id, b"theirs").await;
@@ -685,7 +685,7 @@ async fn a_local_edit_is_a_conflict_or_an_upload_two_way_and_overwritten_pull_on
         let world = World::new(if pull_only { "pull" } else { "two" }, sha(), 10);
         let edited = world.remote_put("edited.txt", b"v1").await;
         world.remote_put("deleted.txt", b"v1").await;
-        let journal = Journal::open(&world.dir.join("files.sqlite")).expect("journal");
+        let journal = Journal::open(&world.dir.path().join("files.sqlite")).expect("journal");
         let clock = Arc::clone(&world.clock);
         let replica = Shared(Arc::clone(&world.replica));
         let report = if pull_only {

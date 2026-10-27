@@ -3588,6 +3588,7 @@ dependencies = [
  "storage-graph",
  "storage-webdav",
  "syncd",
+ "tempfile",
  "thiserror",
  "tokio",
  "toml",

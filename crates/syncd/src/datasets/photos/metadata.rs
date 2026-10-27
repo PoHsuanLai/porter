@@ -136,10 +136,10 @@ mod tests {
     use crate::testing::scratch;
     use std::sync::Arc;
 
-    fn dataset(name: &str) -> (PhotoMetadata, PhotoLibrary, std::path::PathBuf) {
+    fn dataset(name: &str) -> (PhotoMetadata, PhotoLibrary, tempfile::TempDir) {
         let dir = scratch(name);
         let library = PhotoLibrary::open(
-            dir.join("lib"),
+            dir.path().join("lib"),
             DeviceId::parse("a").expect("device"),
             Arc::new(ManualMillis::at(1_000)),
         )
@@ -149,7 +149,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_scan_lists_each_devices_manifest_and_nothing_else() {
-        let (metadata, library, dir) = dataset("meta-scan");
+        let (metadata, library, _dir) = dataset("meta-scan");
         assert_eq!(metadata.scan().await.expect("scan"), vec![]);
         library
             .edit(vec![Edit::Favourite(ContentId::of(b"p"), Mark::On)])
@@ -161,7 +161,6 @@ mod tests {
         assert_eq!(scan[0].path.0, "a.json");
         let bytes = metadata.read(&scan[0].local).await.expect("read");
         assert_eq!(scan[0].hash, fingerprint(&bytes.0));
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[tokio::test]
@@ -170,7 +169,7 @@ mod tests {
         let id = ContentId::of(b"p");
         let theirs = {
             let other = PhotoLibrary::open(
-                dir.join("other"),
+                dir.path().join("other"),
                 DeviceId::parse("b").expect("device"),
                 Arc::new(ManualMillis::at(9_000)),
             )
@@ -217,12 +216,11 @@ mod tests {
             .await
             .expect("again");
         assert_eq!(metadata.scan().await.expect("scan").len(), 1);
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[tokio::test]
     async fn only_a_device_json_path_is_a_manifest() {
-        let (metadata, _, dir) = dataset("meta-paths");
+        let (metadata, _, _dir) = dataset("meta-paths");
         for bad in ["../a.json", "a.json/x", "a", "A.json", "a b.json", ".json"] {
             assert!(
                 metadata
@@ -239,6 +237,5 @@ mod tests {
             porter_sync::DatasetKind::PhotosMetadata.conflict_rule(),
             metadata.conflict_rule()
         );
-        let _ = std::fs::remove_dir_all(dir);
     }
 }

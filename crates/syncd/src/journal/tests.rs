@@ -49,7 +49,8 @@ fn conflict(local: &str) -> StoredConflict {
 
 #[test]
 fn every_kind_of_row_round_trips() {
-    let dir = scratch("rows");
+    let _dir_guard = scratch("rows");
+    let dir = _dir_guard.path().to_owned();
     let journal = Journal::open(&dir.join("sync/acct/files.sqlite")).expect("open");
     let anchor = StoredAnchor {
         anchor: Anchor("seq-4".into()),
@@ -81,12 +82,12 @@ fn every_kind_of_row_round_trips() {
     assert_eq!(conflicts[0].number, Some(1));
     assert_eq!(conflicts[0].conflict, conflict("b").conflict);
     assert_eq!(conflicts[0].local_hash, Some(ContentHash("h".into())));
-    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[test]
 fn put_replaces_by_local_id_and_the_other_ops_undo_their_rows() {
-    let dir = scratch("ops");
+    let _dir_guard = scratch("ops");
+    let dir = _dir_guard.path().to_owned();
     let journal = Journal::open(&dir.join("j.sqlite")).expect("open");
     journal
         .apply(&[
@@ -129,12 +130,12 @@ fn put_replaces_by_local_id_and_the_other_ops_undo_their_rows() {
     assert_eq!(journal.anchor().expect("anchor"), None);
     assert!(journal.items().expect("items").is_empty());
     assert_eq!(journal.writes(), 4);
-    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[test]
 fn a_cut_write_leaves_none_of_its_rows_and_a_reopened_file_holds_what_committed() {
-    let dir = scratch("cut");
+    let _dir_guard = scratch("cut");
+    let dir = _dir_guard.path().to_owned();
     let path = dir.join("j.sqlite");
     let journal = Journal::open(&path).expect("open");
     journal
@@ -152,7 +153,6 @@ fn a_cut_write_leaves_none_of_its_rows_and_a_reopened_file_holds_what_committed(
         again.items().expect("items"),
         vec![item("a", None, ItemState::PendingUpload)]
     );
-    let _ = std::fs::remove_dir_all(dir);
 }
 
 /// A version-1 file exactly as the first syncd wrote it, kept as text so the schema may move on.
@@ -173,19 +173,19 @@ INSERT INTO tombstones VALUES ('r9', 'v9', 100, 'remote', 'acknowledged');
 INSERT INTO conflicts VALUES (1, 'r1', NULL, '{\"kind\":\"changed\",\"v\":\"v2\"}', 'a', 'abc', 60);
 ";
 
-fn v1_file(name: &str) -> std::path::PathBuf {
+fn v1_file(name: &str) -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = scratch(name);
-    let path = dir.join("v1.sqlite");
+    let path = dir.path().join("v1.sqlite");
     Connection::open(&path)
         .expect("create")
         .execute_batch(V1_FILE)
         .expect("v1 schema");
-    path
+    (dir, path)
 }
 
 #[test]
 fn a_version_1_file_opens_and_reads_back() {
-    let path = v1_file("v1");
+    let (_dir, path) = v1_file("v1");
     let journal = Journal::open(&path).expect("a v1 file opens");
     assert_eq!(journal.version().expect("version"), 1);
     assert_eq!(
@@ -204,12 +204,11 @@ fn a_version_1_file_opens_and_reads_back() {
         conflicts[0].conflict.remote,
         RemoteSide::Changed(RemoteVersion("v2".into()))
     );
-    let _ = std::fs::remove_dir_all(path.parent().expect("dir"));
 }
 
 #[test]
 fn a_file_is_brought_forward_one_migration_at_a_time_and_a_newer_one_is_refused() {
-    let path = v1_file("forward");
+    let (_dir, path) = v1_file("forward");
     let migrations = [
         schema::MIGRATIONS[0],
         "ALTER TABLE items ADD COLUMN note TEXT;",
@@ -223,12 +222,12 @@ fn a_file_is_brought_forward_one_migration_at_a_time_and_a_newer_one_is_refused(
         matches!(behind, Err(JournalError::Newer { found: 2 })),
         "{behind:?}"
     );
-    let _ = std::fs::remove_dir_all(path.parent().expect("dir"));
 }
 
 #[test]
 fn a_row_this_build_cannot_read_is_corruption_not_a_panic() {
-    let dir = scratch("corrupt");
+    let _dir_guard = scratch("corrupt");
+    let dir = _dir_guard.path().to_owned();
     let path = dir.join("j.sqlite");
     drop(Journal::open(&path).expect("open"));
     Connection::open(&path)
@@ -239,5 +238,4 @@ fn a_row_this_build_cannot_read_is_corruption_not_a_panic() {
         .expect("insert");
     let journal = Journal::open(&path).expect("reopen");
     assert!(matches!(journal.items(), Err(JournalError::Corrupt(_))));
-    let _ = std::fs::remove_dir_all(dir);
 }

@@ -145,7 +145,8 @@ fn engine(
 #[tokio::test]
 async fn a_local_edit_a_deletion_and_a_stray_file_cost_the_server_nothing_and_the_next_change_overwrites()
  {
-    let dir = scratch("engine-readonly");
+    let _dir_guard = scratch("engine-readonly");
+    let dir = _dir_guard.path().to_owned();
     let server = Server::new();
     server.set("a.ics", ics("a", "one")).await;
     server.set("big.ics", big("big", "v1")).await;
@@ -190,12 +191,12 @@ async fn a_local_edit_a_deletion_and_a_stray_file_cost_the_server_nothing_and_th
         big("big", "v2").0
     );
     assert_eq!(server.writes(), 0);
-    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[tokio::test]
 async fn a_restart_fetches_again_exactly_the_items_whose_files_were_damaged() {
-    let dir = scratch("engine-restart");
+    let _dir_guard = scratch("engine-restart");
+    let dir = _dir_guard.path().to_owned();
     let server = Server::new();
     server.set("a.ics", ics("a", "one")).await;
     server.set("big.ics", big("big", "v1")).await;
@@ -229,5 +230,4 @@ async fn a_restart_fetches_again_exactly_the_items_whose_files_were_damaged() {
         std::fs::read(reopened.root().join("a.ics")).expect("a"),
         ics("a", "one").0
     );
-    let _ = std::fs::remove_dir_all(dir);
 }

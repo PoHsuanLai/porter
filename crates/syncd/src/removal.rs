@@ -51,7 +51,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_wipe_removes_that_accounts_journals_and_mirrors_and_nothing_else() {
-        let root = scratch("wipe");
+        let _root_guard = scratch("wipe");
+        let root = _root_guard.path().to_owned();
         let paths = Paths {
             journals: root.join("state/porter/sync"),
             mirrors: root.join("data/porter/vdir"),
@@ -93,6 +94,5 @@ mod tests {
             0,
             "idempotent"
         );
-        let _ = std::fs::remove_dir_all(root);
     }
 }

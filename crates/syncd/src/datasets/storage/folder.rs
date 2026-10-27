@@ -222,9 +222,9 @@ mod tests {
     use super::*;
     use crate::testing::scratch;
 
-    fn dataset(name: &str) -> (FolderDataset, PathBuf) {
+    fn dataset(name: &str) -> (FolderDataset, tempfile::TempDir) {
         let dir = scratch(name);
-        (FolderDataset::new(dir.join("root")), dir)
+        (FolderDataset::new(dir.path().join("root")), dir)
     }
 
     #[test]
@@ -252,7 +252,7 @@ mod tests {
 
     #[tokio::test]
     async fn store_scan_read_and_discard_round_trip_with_the_engines_own_fingerprint() {
-        let (folder, dir) = dataset("folder-roundtrip");
+        let (folder, _dir) = dataset("folder-roundtrip");
         let stored = folder
             .store(None, &ItemPath("a/b/c.txt".into()), Blob(b"hello".to_vec()))
             .await
@@ -283,7 +283,6 @@ mod tests {
             .await
             .expect("discard again");
         assert_eq!(folder.scan().await.expect("scan"), vec![]);
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[tokio::test]
@@ -312,16 +311,14 @@ mod tests {
                 "{bad:?}"
             );
         }
-        assert!(!dir.join("escape").exists());
-        let _ = std::fs::remove_dir_all(dir);
+        assert!(!dir.path().join("escape").exists());
     }
 
     #[test]
     fn the_dataset_is_two_way_and_its_conflicts_are_the_apps_to_settle() {
-        let (folder, dir) = dataset("folder-rule");
+        let (folder, _dir) = dataset("folder-rule");
         assert_eq!(folder.id().as_str(), SLUG);
         assert_eq!(folder.conflict_rule(), ConflictRule::ShowInApp);
         assert_eq!(folder.direction(), crate::dataset::Direction::TwoWay);
-        let _ = std::fs::remove_dir_all(dir);
     }
 }
