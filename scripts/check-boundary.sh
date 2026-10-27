@@ -248,6 +248,26 @@ else
   echo "pure: the inference libraries and porter-daemon read no environment variable"
 fi
 
+# DELETED HELPERS: hand-rolled code that a crate or one shared function replaced must not come
+# back. Each rule names the code and where its one home is (a path prefix that is allowed to hold
+# it, if any); the allowlist is otherwise empty, and every crate is covered.
+ratchet() {
+  local what="$1" pattern="$2" home="${3:-}" hits
+  hits=$(grep -rniE --include='*.rs' -e "$pattern" crates | grep -v "^${home:-/nonexistent}" || true)
+  if [ -n "$hits" ]; then
+    echo "$hits"
+    echo "LEAK: $what is back; use ${4:-the crate that replaced it}"
+    fail=1
+  else
+    echo "deleted: $what is not in any crate"
+  fi
+}
+ratchet "a hand-rolled percent encoder or decoder" 'fn percent_(en|de)code\b' "" "porter_core::percent"
+ratchet "hand-rolled civil-date arithmetic" '(days_from_civil|civil_from_days|719_468)' "" "chrono"
+ratchet "a hand-written MD5 (its first round constant)" '0xd76aa478' "" "md-5"
+ratchet "a second Windows-to-IANA zone table" 'Pacific Standard Time", *"America/Los_Angeles' "crates/windows-zones/" "windows_zones::iana"
+ratchet "an XOAUTH2 format string" '(\\x01|\\u\{1\})auth=Bearer|auth=Bearer \{|"auth=Bearer' "crates/porter-core/src/token.rs" "porter_core::token"
+
 # The allowed edges between our own crates: each crate's DIRECT normal and build path
 # dependencies (all features), and nothing else. A dependency not listed is a leak; so is one
 # the crate no longer has, so the table stays exact. Dev dependencies are outside it.
