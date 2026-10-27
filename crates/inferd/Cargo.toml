@@ -80,7 +80,7 @@ zbus = { workspace = true }
 [dev-dependencies]
 ds-settings = { workspace = true, features = ["testing"] }
 # The client side the tests drive inferd through (inferd itself no longer calls accountd).
-porter-client = { workspace = true, features = ["dbus"] }
+porter-client = { workspace = true, features = ["dbus", "infer"] }
 porter-secrets = { workspace = true, features = ["testing"] }
 engine-supervisor = { workspace = true, features = ["testing"] }
 model-provider = { workspace = true, features = ["testing"] }

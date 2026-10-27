@@ -12,7 +12,7 @@ publish.workspace = true
 porter-core = { workspace = true }
 porter-daemon = { workspace = true }
 porter-fs = { workspace = true }
-porter-client = { workspace = true, features = ["dbus", "relays"] }
+porter-client = { workspace = true, features = ["dbus", "in-process", "relays"] }
 dav-proto = { workspace = true }
 porter-dav = { workspace = true }
 porter-dbus = { workspace = true, features = ["callers-file"] }

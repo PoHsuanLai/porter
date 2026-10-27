@@ -62,15 +62,14 @@ inferd = { path = "../inferd" }
 porter-tailscale = { workspace = true, features = ["io"] }
 
 [features]
-# Inference: sessions with inferd, `Need::Llm` paths, `prepare`. Default on so every existing
-# consumer builds as before; an accounts-only consumer says `default-features = false` (plus
-# `socket` or `dbus`) and builds no porter-infer, so no stoker.
-default = ["infer", "in-process"]
+# No feature is on by default: a consumer names the ones it uses.
+default = []
+# Inference: sessions with inferd, `Need::Llm` paths, `prepare`. An accounts-only consumer leaves
+# it off and builds no porter-infer, so no stoker.
 infer = ["dep:porter-infer"]
 # `InProcess`: the app hosts the account service itself (porter-service, its secrets and the
-# provider catalogue). On by default so every existing consumer builds as before; a consumer
-# that only talks to accountd over a bus says `default-features = false` and builds none of
-# them: `cargo tree -p porter-client --no-default-features --features dbus` reaches none
+# provider catalogue). A consumer that only talks to accountd over a bus leaves it off and builds
+# none of them: `cargo tree -p porter-client --features dbus` reaches none
 # (scripts/check-boundary.sh).
 in-process = ["dep:porter-provider", "dep:porter-secrets", "dep:porter-service"]
 # Inference with no inferd: `EngineHost`, a `SessionHost` that routes need -> engine over a table
