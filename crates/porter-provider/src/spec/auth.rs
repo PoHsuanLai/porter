@@ -44,7 +44,7 @@ pub enum Issuer {
     /// OpenAI (ChatGPT sign-in, R9).
     #[serde(rename = "openai")]
     OpenAi,
-    /// Yahoo (mail over IMAP and SMTP with XOAUTH2, the `mail-w` scope).
+    /// Yahoo (mail over IMAP and SMTP with XOAUTH2).
     Yahoo,
 }
 
@@ -66,8 +66,8 @@ impl Issuer {
     /// The endpoints the issuer publishes. Microsoft's are the `common` tenant (work, school and
     /// personal accounts); a client registration that wants `organizations` or `consumers`
     /// carries its own `endpoints`. Google's are public facts and carry no client id. Dropbox,
-    /// Box and Fastmail have no RFC 7009 revoke (Dropbox's wants a bearer header, Box's the client
-    /// secret), so theirs is absent; Microsoft has none at all.
+    /// Box, Fastmail and Yahoo have no RFC 7009 revoke (Dropbox's wants a bearer header, Box's the
+    /// client secret), so theirs is absent; Microsoft has none at all.
     pub fn endpoints(self) -> IssuerEndpoints {
         let rows = match self {
             Issuer::Google => (
@@ -114,8 +114,6 @@ impl Issuer {
                 None,
                 None,
             ),
-            // Yahoo's OAuth 2 endpoints; it publishes a revoke for neither a grant nor a device
-            // code that this applies to.
             Issuer::Yahoo => (
                 "https://api.login.yahoo.com/oauth2/request_auth",
                 "https://api.login.yahoo.com/oauth2/get_token",
