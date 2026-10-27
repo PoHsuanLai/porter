@@ -48,30 +48,14 @@ pub enum ApiError {
     },
 }
 
-/// The media type Google Photos should treat `name`'s bytes as, by extension.
+/// The media type Google Photos should treat `name`'s bytes as, by extension (`mime_guess`'s
+/// table; its HEIC, HEIF and AVIF entries are what Photos takes). Only an image or a video type is
+/// sent as such: any other extension, and none, is `application/octet-stream`.
 pub fn mime_of(name: &str) -> &'static str {
-    let ext = name
-        .rsplit_once('.')
-        .map_or("", |(_, ext)| ext)
-        .to_ascii_lowercase();
-    match ext.as_str() {
-        "jpg" | "jpeg" | "jpe" => "image/jpeg",
-        "png" => "image/png",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        "heic" => "image/heic",
-        "heif" => "image/heif",
-        "avif" => "image/avif",
-        "bmp" => "image/bmp",
-        "tif" | "tiff" => "image/tiff",
-        "mp4" | "m4v" => "video/mp4",
-        "mov" => "video/quicktime",
-        "3gp" => "video/3gpp",
-        "avi" => "video/x-msvideo",
-        "mkv" => "video/x-matroska",
-        "webm" => "video/webm",
-        _ => "application/octet-stream",
-    }
+    mime_guess::from_path(name)
+        .first_raw()
+        .filter(|mime| mime.starts_with("image/") || mime.starts_with("video/"))
+        .unwrap_or("application/octet-stream")
 }
 
 #[derive(Deserialize)]
@@ -230,6 +214,11 @@ mod tests {
             ("a.b.png", "image/png"),
             ("clip.MOV", "video/quicktime"),
             ("x.heic", "image/heic"),
+            ("x.HEIF", "image/heif"),
+            ("x.avif", "image/avif"),
+            ("a.webp", "image/webp"),
+            ("a.mp4", "video/mp4"),
+            ("a.jpe", "image/jpeg"),
             ("noext", "application/octet-stream"),
             ("notes.txt", "application/octet-stream"),
         ];

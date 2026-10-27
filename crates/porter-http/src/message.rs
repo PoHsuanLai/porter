@@ -63,12 +63,24 @@ pub trait HeaderText {
     /// The first header named `name` (compared without case), when its value is visible ASCII.
     fn header(&self, name: &str) -> Option<&str>;
 
-    /// The wait a `Retry-After` header of whole seconds asks for; `None` when there is no such
-    /// header or it is not a number of seconds (an HTTP date is not read). The one parser the
-    /// storage replicas and syncd's Graph source share.
+    /// The wait a `Retry-After` header asks for, in seconds: its whole seconds, or the time from
+    /// now to its HTTP date (none past: `0`). `None` when there is no such header or it is
+    /// neither. The one parser the storage replicas and syncd's Graph source share.
     fn retry_after_seconds(&self) -> Option<u32> {
-        self.header("retry-after")?.trim().parse().ok()
+        retry_wait(self.header("retry-after")?, std::time::SystemTime::now())
     }
+}
+
+/// The wait a `Retry-After` value asks for at `now`: whole seconds, or an HTTP date (RFC 9110
+/// section 5.6.7, read by `httpdate`) less `now`, `0` when the date has passed.
+fn retry_wait(value: &str, now: std::time::SystemTime) -> Option<u32> {
+    let value = value.trim();
+    if let Ok(seconds) = value.parse() {
+        return Some(seconds);
+    }
+    let at = httpdate::parse_http_date(value).ok()?;
+    let wait = at.duration_since(now).map_or(0, |wait| wait.as_secs());
+    u32::try_from(wait).ok()
 }
 
 impl HeaderText for HeaderMap {
@@ -106,12 +118,13 @@ mod tests {
     }
 
     #[test]
-    fn retry_after_is_whole_seconds_or_nothing() {
+    fn retry_after_is_whole_seconds_a_date_or_nothing() {
         let cases = [
             (Some("120"), Some(120)),
             (Some(" 7 "), Some(7)),
             (Some("0"), Some(0)),
-            (Some("Wed, 21 Oct 2026 07:28:00 GMT"), None),
+            (Some("Wed, 21 Oct 2026 07:28:00 GMT"), Some(0)),
+            (Some("not a date"), None),
             (Some("-3"), None),
             (Some("4294967296"), None),
             (Some(""), None),
@@ -184,5 +197,25 @@ mod tests {
             .sensitive_header(AUTHORIZATION, "Bearer abc\r\nX: y")
             .body(Vec::<u8>::new());
         assert!(bad.is_err());
+    }
+
+    #[test]
+    fn a_retry_after_date_is_the_time_from_now_to_it() {
+        use std::time::{Duration, UNIX_EPOCH};
+        // Sun, 06 Nov 1994 08:49:37 GMT is 784111777 seconds after the epoch.
+        let now = UNIX_EPOCH + Duration::from_secs(784_111_777 - 90);
+        let cases = [
+            ("Sun, 06 Nov 1994 08:49:37 GMT", Some(90)),
+            ("Sunday, 06-Nov-94 08:49:37 GMT", Some(90)),
+            ("Sun Nov  6 08:49:37 1994", Some(90)),
+            ("Sun, 06 Nov 1994 08:48:07 GMT", Some(0)),
+            ("Sun, 06 Nov 1994 08:40:00 GMT", Some(0)),
+            ("Fri, 31 Dec 9999 23:59:59 GMT", None),
+            ("120", Some(120)),
+            ("soon", None),
+        ];
+        for (value, want) in cases {
+            assert_eq!(retry_wait(value, now), want, "{value}");
+        }
     }
 }

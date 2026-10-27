@@ -144,6 +144,10 @@ roxmltree = "0.21"
 # The request and response types (MIT OR Apache-2.0, already in Cargo.lock at 1.5.0 through
 # hyper): porter-http's `HttpRequest` and `HttpResponse`, and dav-proto's `http` feature.
 http = "1"
+# syncd's media type by extension (MIT, 2.0.5) and porter-http's Retry-After dates (MIT OR Apache-2.0,
+# 1.0.3).
+mime_guess = { version = "2", default-features = false }
+httpdate = "1"
 # syncd's HTML-to-text of a Graph event body (MIT, 0.3.0, no dependencies; html2text brings
 # html5ever and its tree for a task this small).
 nanohtml2text = "0.3"
