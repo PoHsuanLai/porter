@@ -125,44 +125,31 @@ fn stamp(text: &str) -> Option<String> {
     local(text).ok().map(|t| format!("{t}Z"))
 }
 
-/// Text from an HTML body: tags dropped, block ends as newlines, the common entities decoded.
+/// Text from an HTML body, by `nanohtml2text`: tags dropped, block ends as line breaks, `<style>`
+/// and `<script>` contents left out, named and numeric entities decoded, a `>` inside a quoted
+/// attribute not taken for the end of its tag. Line ends are `\n`, a no-break space is a space, a
+/// line's trailing blanks are cut, and no more than one blank line is kept.
 pub fn html_text(html: &str) -> String {
-    let mut out = String::with_capacity(html.len());
-    let mut tag = String::new();
-    let mut in_tag = false;
-    for c in html.chars() {
-        match (in_tag, c) {
-            (false, '<') => {
-                in_tag = true;
-                tag.clear();
+    let text = nanohtml2text::html2text(html)
+        .replace("\r\n", "\n")
+        .replace('\u{a0}', " ");
+    let mut out = String::with_capacity(text.len());
+    let mut blank = false;
+    for line in text.trim().lines().map(str::trim_end) {
+        match (line.is_empty(), blank) {
+            (true, true) => {}
+            (true, false) => {
+                blank = true;
+                out.push('\n');
             }
-            (true, '>') => {
-                in_tag = false;
-                let name: String = tag
-                    .trim_start_matches('/')
-                    .chars()
-                    .take_while(char::is_ascii_alphanumeric)
-                    .collect::<String>()
-                    .to_ascii_lowercase();
-                let closing = tag.starts_with('/');
-                if name == "br" || (closing && matches!(name.as_str(), "p" | "div" | "li" | "tr")) {
-                    out.push('\n');
-                }
+            (false, _) => {
+                blank = false;
+                out.push_str(line);
+                out.push('\n');
             }
-            (true, c) => tag.push(c),
-            (false, c) => out.push(c),
         }
     }
-    let decoded = out
-        .replace("&nbsp;", " ")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'")
-        .replace("&amp;", "&");
-    // A `<head><style>` block leaves its CSS; a body that is a whole page is rare enough.
-    let lines: Vec<&str> = decoded.lines().map(str::trim_end).collect();
-    lines.join("\n").trim().to_owned()
+    out.trim_end().to_owned()
 }
 
 fn description(event: &Event) -> Option<String> {
