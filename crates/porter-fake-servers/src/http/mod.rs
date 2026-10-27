@@ -187,51 +187,10 @@ fn pair(pairs: &[(String, String)], name: &str) -> Option<String> {
         .map(|(_, v)| v.clone())
 }
 
-/// `a=1&b=two%20words` as decoded pairs.
+/// `a=1&b=two%20words` as decoded pairs (`+` is a space, as in any form).
 pub fn form_pairs(text: &str) -> Vec<(String, String)> {
-    text.split('&')
-        .filter(|part| !part.is_empty())
-        .map(|part| {
-            let (k, v) = part.split_once('=').unwrap_or((part, ""));
-            (percent_decode(k), percent_decode(v))
-        })
-        .collect()
-}
-
-/// Percent-decodes (and reads `+` as a space).
-pub fn percent_decode(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        let hex = |b: u8| (b as char).to_digit(16);
-        match bytes[i] {
-            b'+' => out.push(b' '),
-            b'%' if i + 2 < bytes.len()
-                && hex(bytes[i + 1]).is_some()
-                && hex(bytes[i + 2]).is_some() =>
-            {
-                out.push(
-                    (hex(bytes[i + 1]).unwrap_or(0) * 16 + hex(bytes[i + 2]).unwrap_or(0)) as u8,
-                );
-                i += 2;
-            }
-            b => out.push(b),
-        }
-        i += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
-/// Percent-encodes everything but unreserved characters.
-pub fn percent_encode(text: &str) -> String {
-    text.bytes()
-        .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                (b as char).to_string()
-            }
-            _ => format!("%{b:02X}"),
-        })
+    form_urlencoded::parse(text.as_bytes())
+        .map(|(k, v)| (k.into_owned(), v.into_owned()))
         .collect()
 }
 

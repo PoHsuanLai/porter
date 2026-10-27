@@ -5,7 +5,7 @@
 //! `updated`, and a default `status` and `iCalUID`.
 
 use super::pim::{error, numbers, stamp};
-use crate::http::{Request, Response, percent_decode};
+use crate::http::{Request, Response};
 use serde_json::{Value, json};
 
 #[derive(Debug, Clone)]
@@ -268,10 +268,13 @@ impl Calendars {
         let response = match parts.as_slice() {
             ["users", "me", "calendarList"] => self.list(request),
             ["calendars", calendar, "events"] => {
-                self.events_list(&percent_decode(calendar), request)
+                self.events_list(&porter_core::percent::decode(calendar), request)
             }
             ["calendars", calendar, "events", id] => {
-                let (calendar, id) = (percent_decode(calendar), percent_decode(id));
+                let (calendar, id) = (
+                    porter_core::percent::decode(calendar),
+                    porter_core::percent::decode(id),
+                );
                 self.rows
                     .iter()
                     .find(|r| r.calendar == calendar && r.id == id)

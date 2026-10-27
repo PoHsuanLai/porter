@@ -32,7 +32,10 @@ pub const ISPDB: &str = "https://autoconfig.thunderbird.net/v1.1/";
 /// mailo sends it, `?emailaddress=<address>` percent-encoded, because some hosts answer per
 /// mailbox; the ISP database is a third party's public service and is asked for the domain only.
 pub fn autoconfig_urls(domain: &DomainName, address: &str) -> Vec<WebUrl> {
-    let query = format!("?emailaddress={}", percent_encode(address));
+    let query = format!(
+        "?emailaddress={}",
+        porter_core::percent::encode_unreserved(address)
+    );
     [
         format!("https://autoconfig.{domain}/mail/config-v1.1.xml{query}"),
         format!("https://{domain}/.well-known/autoconfig/mail/config-v1.1.xml{query}"),
@@ -41,18 +44,6 @@ pub fn autoconfig_urls(domain: &DomainName, address: &str) -> Vec<WebUrl> {
     .iter()
     .filter_map(|text| WebUrl::parse(text).ok())
     .collect()
-}
-
-/// `text` as one query value: unreserved characters stay, every other byte is `%XX`.
-fn percent_encode(text: &str) -> String {
-    text.bytes()
-        .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
-                char::from(b).to_string()
-            }
-            other => format!("%{other:02X}"),
-        })
-        .collect()
 }
 
 /// The ISP database's document URL for `domain` as text.

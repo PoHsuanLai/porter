@@ -4,7 +4,7 @@
 //! moves with every change. `updatedMin` is inclusive here.
 
 use super::pim::{error, numbers, stamp};
-use crate::http::{Request, Response, percent_decode};
+use crate::http::{Request, Response};
 use serde_json::{Value, json};
 
 #[derive(Debug, Clone)]
@@ -204,9 +204,14 @@ impl Tasks {
         let parts: Vec<&str> = rest.trim_matches('/').split('/').collect();
         let response = match parts.as_slice() {
             ["users", "@me", "lists"] => self.lists(request),
-            ["lists", list, "tasks"] => self.tasks_list(&percent_decode(list), request),
+            ["lists", list, "tasks"] => {
+                self.tasks_list(&porter_core::percent::decode(list), request)
+            }
             ["lists", list, "tasks", id] => {
-                let (list, id) = (percent_decode(list), percent_decode(id));
+                let (list, id) = (
+                    porter_core::percent::decode(list),
+                    porter_core::percent::decode(id),
+                );
                 self.rows
                     .iter()
                     .find(|r| r.list == list && r.id == id)

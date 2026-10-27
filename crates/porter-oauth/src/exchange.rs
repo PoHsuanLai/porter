@@ -372,7 +372,7 @@ mod tests {
         let body = http.body_of(0);
         assert_eq!(
             body,
-            "grant_type=refresh_token&refresh_token=r%261&scope=a%20b&client_id=cid&client_secret=app%20secret"
+            "grant_type=refresh_token&refresh_token=r%261&scope=a+b&client_id=cid&client_secret=app+secret"
         );
         let seen = http.seen.lock().expect("lock");
         assert_eq!(

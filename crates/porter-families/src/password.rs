@@ -140,14 +140,7 @@ fn root_of(url: &EndpointUrl) -> &str {
 
 /// A path segment, percent-encoded (an `@` or a space in a user id is not a URL character).
 pub(crate) fn segment(text: &str) -> String {
-    text.bytes()
-        .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
-                char::from(b).to_string()
-            }
-            other => format!("%{other:02X}"),
-        })
-        .collect()
+    porter_core::percent::encode_unreserved(text)
 }
 
 /// The TLS mode a URL's scheme means.

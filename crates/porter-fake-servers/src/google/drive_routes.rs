@@ -5,7 +5,7 @@
 //! server dropped refused `400`).
 
 use super::drive::{Aim, CHUNK_UNIT, Drive, FOLDER, Node, Refused, SHORTCUT, Space, checksum};
-use crate::http::{Request, Response, percent_decode};
+use crate::http::{Request, Response};
 use serde_json::{Value, json};
 
 /// How the fake Drive answers.
@@ -532,7 +532,7 @@ pub fn answer(
         (method, _) => method,
     };
     if let Some(rest) = path.strip_prefix("/upload/drive/v3/files") {
-        let id = rest.strip_prefix('/').map(percent_decode);
+        let id = rest.strip_prefix('/').map(porter_core::percent::decode);
         return Some(match (method, id) {
             ("POST", None) => upload(drive, base, request, None),
             ("PUT", None) => chunk(drive, request),
@@ -583,14 +583,14 @@ pub fn answer(
             let id = files
                 .strip_prefix("files/")
                 .and_then(|rest| rest.strip_suffix("/export"))
-                .map(percent_decode)?;
+                .map(porter_core::percent::decode)?;
             match drive.get(&id) {
                 Some(node) => export(drive, node, request),
                 None => error(404, "notFound"),
             }
         }
         (_, files) => {
-            let id = percent_decode(files.strip_prefix("files/")?);
+            let id = porter_core::percent::decode(files.strip_prefix("files/")?);
             match method {
                 "GET" => match drive.get(&id) {
                     None => error(404, "notFound"),

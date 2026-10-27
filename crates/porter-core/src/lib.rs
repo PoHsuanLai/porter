@@ -43,6 +43,7 @@ pub mod lending;
 mod matching;
 pub mod need;
 mod offer;
+pub mod percent;
 mod process_credential;
 mod restriction;
 pub mod scope;

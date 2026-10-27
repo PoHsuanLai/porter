@@ -175,28 +175,8 @@ fn conventional(server: &EndpointUrl, tree: &str, user: &str) -> Option<Endpoint
 /// The user id at the end of a principal path (`/remote.php/dav/principals/users/ada/`), decoded.
 fn user_of(path: &str) -> Option<String> {
     let last = path.trim_end_matches('/').rsplit('/').next()?;
-    let decoded = percent_decode(last)?;
+    let decoded = porter_core::percent::decode_strict(last)?;
     (!decoded.is_empty()).then_some(decoded)
-}
-
-fn percent_decode(text: &str) -> Option<String> {
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut at = 0;
-    while at < bytes.len() {
-        match bytes[at] {
-            b'%' => {
-                let hex = text.get(at + 1..at + 3)?;
-                out.push(u8::from_str_radix(hex, 16).ok()?);
-                at += 3;
-            }
-            other => {
-                out.push(other);
-                at += 1;
-            }
-        }
-    }
-    String::from_utf8(out).ok()
 }
 
 fn text(response: &HttpResponse) -> String {

@@ -158,14 +158,7 @@ struct FileWire {
 
 /// A query value with everything but unreserved characters percent-encoded.
 fn encode(text: &str) -> String {
-    text.bytes()
-        .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                (b as char).to_string()
-            }
-            _ => format!("%{b:02X}"),
-        })
-        .collect()
+    porter_core::percent::encode_unreserved(text)
 }
 
 /// `"1s"`, `"600.5s"` as a duration; anything else is `None`.

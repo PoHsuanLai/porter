@@ -54,14 +54,7 @@ impl Root {
 
 /// A value as a URL query component: everything but unreserved characters percent-encoded.
 pub fn encode(text: &str) -> String {
-    text.bytes()
-        .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                (b as char).to_string()
-            }
-            _ => format!("%{b:02X}"),
-        })
-        .collect()
+    porter_core::percent::encode_unreserved(text)
 }
 
 /// `?k=v&k=v` (nothing for no pairs).

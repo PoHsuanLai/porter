@@ -83,36 +83,13 @@ fn resolve(endpoint: &WebUrl, href: &str, collection: bool) -> Result<WebUrl, Di
     WebUrl::parse(&text).map_err(|_| DiscoverError::Unreadable)
 }
 
-fn decode(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut at = 0;
-    while at < bytes.len() {
-        let hex = bytes
-            .get(at + 1..at + 3)
-            .and_then(|h| std::str::from_utf8(h).ok())
-            .and_then(|h| u8::from_str_radix(h, 16).ok());
-        match (bytes[at], hex) {
-            (b'%', Some(byte)) => {
-                out.push(byte);
-                at += 3;
-            }
-            (byte, _) => {
-                out.push(byte);
-                at += 1;
-            }
-        }
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
 fn segment_of(url: &WebUrl) -> String {
     let last = url
         .path()
         .split('/')
         .rfind(|part| !part.is_empty())
         .unwrap_or("collection");
-    decode(last)
+    porter_core::percent::decode(last)
 }
 
 async fn ask<H: Http>(
@@ -427,6 +404,6 @@ mod tests {
                 .as_str(),
             "https://other.test/x/"
         );
-        assert_eq!(decode("a%20b%2Fc%zz"), "a b/c%zz");
+        assert_eq!(porter_core::percent::decode("a%20b%2Fc%zz"), "a b/c%zz");
     }
 }

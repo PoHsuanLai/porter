@@ -89,40 +89,17 @@ pub(super) fn origin(base: &WebUrl) -> String {
     base.as_str().trim_end_matches('/').to_owned()
 }
 
+/// What a Graph or Google id keeps in a path segment: the unreserved characters and `=`, which
+/// the ids' base64 padding uses.
+const ID_SEGMENT: &porter_core::percent::AsciiSet = &porter_core::percent::UNRESERVED.remove(b'=');
+
 /// A path segment: everything but unreserved characters and `=` percent-encoded.
 pub(super) fn encode(segment: &str) -> String {
-    segment
-        .bytes()
-        .map(
-            |b| match b.is_ascii_alphanumeric() || b"-_.~=".contains(&b) {
-                true => char::from(b).to_string(),
-                false => format!("%{b:02X}"),
-            },
-        )
-        .collect()
+    porter_core::percent::encode(segment, ID_SEGMENT)
 }
 
 pub(super) fn decode(segment: &str) -> String {
-    let bytes = segment.as_bytes();
-    let mut out = Vec::new();
-    let mut at = 0;
-    while at < bytes.len() {
-        let hex = bytes
-            .get(at + 1..at + 3)
-            .and_then(|h| std::str::from_utf8(h).ok())
-            .and_then(|h| u8::from_str_radix(h, 16).ok());
-        match (bytes[at], hex) {
-            (b'%', Some(byte)) => {
-                out.push(byte);
-                at += 3;
-            }
-            (byte, _) => {
-                out.push(byte);
-                at += 1;
-            }
-        }
-    }
-    String::from_utf8_lossy(&out).into_owned()
+    porter_core::percent::decode(segment)
 }
 
 pub(super) fn hex(bytes: &[u8]) -> String {

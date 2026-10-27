@@ -109,11 +109,9 @@ pub async fn post_form(
     target: &str,
     pairs: &[(&str, &str)],
 ) -> io::Result<Response> {
-    let body = pairs
-        .iter()
-        .map(|(k, v)| format!("{}={}", percent_encode(k), percent_encode(v)))
-        .collect::<Vec<_>>()
-        .join("&");
+    let body = form_urlencoded::Serializer::new(String::new())
+        .extend_pairs(pairs)
+        .finish();
     let request = Request::new("POST", target)
         .with_header("Content-Type", "application/x-www-form-urlencoded")
         .with_body(body);

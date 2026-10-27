@@ -7,7 +7,7 @@
 
 mod routes;
 
-use crate::http::{Request, Response, percent_encode, serve};
+use crate::http::{Request, Response, serve};
 use crate::net::{Bind, Listener};
 use crate::seen::{Running, Seen, lock};
 use base64::Engine;

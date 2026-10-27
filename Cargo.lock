@@ -2397,6 +2397,7 @@ name = "porter-core"
 version = "0.1.0"
 dependencies = [
  "peephole-core",
+ "percent-encoding",
  "porter-fake",
  "proptest",
  "serde",
@@ -2535,6 +2536,7 @@ name = "porter-fake-servers"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "form_urlencoded",
  "porter-core",
  "porter-discover",
  "porter-fake",
@@ -2624,6 +2626,7 @@ name = "porter-oauth"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "form_urlencoded",
  "porter-core",
  "porter-fake",
  "porter-fake-servers",

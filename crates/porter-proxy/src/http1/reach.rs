@@ -47,25 +47,10 @@ fn confined(family: Family) -> bool {
     )
 }
 
-/// `%XX` escapes decoded; `None` for a malformed one.
+/// `%XX` escapes decoded to bytes; `None` for a malformed one (a `%` without two hex digits),
+/// which a server may read as it likes.
 fn decoded(text: &str) -> Option<Vec<u8>> {
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut at = 0;
-    while at < bytes.len() {
-        match bytes[at] {
-            b'%' => {
-                let hex = std::str::from_utf8(bytes.get(at + 1..at + 3)?).ok()?;
-                out.push(u8::from_str_radix(hex, 16).ok()?);
-                at += 3;
-            }
-            byte => {
-                out.push(byte);
-                at += 1;
-            }
-        }
-    }
-    Some(out)
+    porter_core::percent::is_well_formed(text).then(|| porter_core::percent::decode_bytes(text))
 }
 
 /// `path` decoded, when the server cannot read it as another path than the relay does.
