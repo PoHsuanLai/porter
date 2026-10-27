@@ -131,7 +131,7 @@ impl<T: Dataset + ?Sized> Dataset for std::sync::Arc<T> {
 /// engine sends and compares for a replica that reports `HashKind::Sha256`.
 pub fn fingerprint(bytes: &[u8]) -> ContentHash {
     let digest = Sha256::digest(bytes);
-    ContentHash(digest.iter().map(|b| format!("{b:02x}")).collect())
+    ContentHash(hex::encode(digest))
 }
 
 /// The hash of `bytes` in the form a replica reports, when this build can compute it (SHA-256

@@ -167,7 +167,7 @@ pub(super) async fn list_all<T: Transport, I: DeserializeOwned>(
 pub(super) fn segment_of(id: &str) -> String {
     format!(
         "google-{}",
-        super::graph::hex(&Sha256::digest(id.as_bytes())[..6])
+        hex::encode(&Sha256::digest(id.as_bytes())[..6])
     )
 }
 

@@ -79,9 +79,7 @@ impl DriveItem {
         let raw = base64::engine::general_purpose::STANDARD
             .decode(text)
             .ok()?;
-        Some(ContentHash(
-            raw.iter().map(|b| format!("{b:02x}")).collect::<String>(),
-        ))
+        Some(ContentHash(hex::encode(raw)))
     }
 }
 

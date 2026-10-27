@@ -102,19 +102,18 @@ pub(super) fn decode(segment: &str) -> String {
     porter_core::percent::decode(segment)
 }
 
-pub(super) fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
 /// The directory name of a calendar: stable (a rename must not move it) and short (Graph's ids
 /// are long).
 fn segment_of(id: &str) -> String {
-    format!("graph-{}", hex(&Sha256::digest(id.as_bytes())[..6]))
+    format!("graph-{}", hex::encode(&Sha256::digest(id.as_bytes())[..6]))
 }
 
 /// The file name of an event: short and safe whatever its id.
 pub(super) fn name_of(id: &str) -> ItemPath {
-    ItemPath(format!("{}.ics", hex(&Sha256::digest(id.as_bytes())[..10])))
+    ItemPath(format!(
+        "{}.ics",
+        hex::encode(&Sha256::digest(id.as_bytes())[..10])
+    ))
 }
 
 /// A calendar's colour: its `hexColor` when it has one, else the nearest of Outlook's named

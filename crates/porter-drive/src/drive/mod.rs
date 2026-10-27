@@ -492,7 +492,7 @@ impl std::fmt::Debug for Drive {
 /// The content file name of `id` at `version`.
 fn key(id: &RemoteId, version: &str) -> String {
     let digest = Sha256::digest(format!("{}\0{version}", id.0).as_bytes());
-    digest.iter().take(20).map(|b| format!("{b:02x}")).collect()
+    hex::encode(&digest[..20])
 }
 
 /// The text an inode number is made from, and the index names an item by when it keeps the

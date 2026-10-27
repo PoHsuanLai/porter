@@ -18,11 +18,7 @@ pub struct Planned {
 }
 
 fn tag(text: &str) -> String {
-    Sha256::digest(text.as_bytes())
-        .iter()
-        .take(3)
-        .map(|b| format!("{b:02x}"))
-        .collect()
+    hex::encode(&Sha256::digest(text.as_bytes())[..3])
 }
 
 /// A directory name: the URL segment with everything but letters, digits and `._-` made `_`

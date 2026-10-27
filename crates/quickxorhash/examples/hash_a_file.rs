@@ -20,7 +20,6 @@ fn main() -> std::io::Result<()> {
         }
     }
     let out = hash.finalize();
-    let hex: String = out.iter().map(|b| format!("{b:02x}")).collect();
-    println!("{hex}");
+    println!("{}", hex::encode(out));
     Ok(())
 }

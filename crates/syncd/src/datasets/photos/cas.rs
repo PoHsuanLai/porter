@@ -26,7 +26,7 @@ impl ContentId {
     }
 
     fn from_digest(digest: &[u8]) -> Self {
-        Self(digest.iter().map(|b| format!("{b:02x}")).collect())
+        Self(hex::encode(digest))
     }
 
     /// The 64 hex digits.

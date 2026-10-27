@@ -161,7 +161,7 @@ impl Inner {
             return server;
         }
         let digest = Sha256::digest(path.0.as_bytes());
-        let tag: String = digest.iter().take(4).map(|b| format!("{b:02x}")).collect();
+        let tag = hex::encode(&digest[..4]);
         let ext = self.kind.extension();
         let stem = server.strip_suffix(ext).unwrap_or(&server);
         format!("{stem}-{tag}{ext}")

@@ -2464,6 +2464,7 @@ dependencies = [
 name = "porter-drive"
 version = "0.1.0"
 dependencies = [
+ "hex",
  "md-5",
  "porter-core",
  "porter-drive",
@@ -2930,6 +2931,7 @@ name = "quickxorhash"
 version = "0.1.0"
 dependencies = [
  "digest",
+ "hex",
 ]
 
 [[package]]
@@ -3466,6 +3468,7 @@ name = "storage-graph"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "hex",
  "porter-core",
  "porter-fake",
  "porter-fake-servers",
@@ -3535,6 +3538,7 @@ dependencies = [
  "clap",
  "dav-proto",
  "ds-settings",
+ "hex",
  "porter-client",
  "porter-core",
  "porter-daemon",

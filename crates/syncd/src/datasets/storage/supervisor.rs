@@ -185,8 +185,7 @@ fn new_device(account: &AccountDir) -> DeviceId {
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_nanos());
     let digest = Sha256::digest(format!("{account}/{nanos}/{}", std::process::id()));
-    let hex: String = digest.iter().take(6).map(|b| format!("{b:02x}")).collect();
-    DeviceId::parse(&format!("d{hex}")).expect("a device name")
+    DeviceId::parse(&format!("d{}", hex::encode(&digest[..6]))).expect("a device name")
 }
 
 fn seed_of(text: &str) -> u64 {

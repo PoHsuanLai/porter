@@ -69,6 +69,7 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 # The agent token: its bytes from the system's random source, and its compare in constant time.
 getrandom = { workspace = true }
+hex = { workspace = true }
 subtle = { workspace = true }
 thiserror = { workspace = true }
 # `signal` is the one feature this crate adds to the pinned line: SIGTERM and SIGINT end the daemon

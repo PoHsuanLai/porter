@@ -40,11 +40,10 @@ impl Hasher {
     }
 
     fn hex(self) -> String {
-        let hex = |bytes: &[u8]| bytes.iter().map(|b| format!("{b:02x}")).collect();
         match self {
-            Hasher::Md5(h) => hex(&h.finalize()),
-            Hasher::Sha256(h) => hex(&h.finalize()),
-            Hasher::QuickXor(h) => hex(&h.finalize()),
+            Hasher::Md5(h) => hex::encode(h.finalize()),
+            Hasher::Sha256(h) => hex::encode(h.finalize()),
+            Hasher::QuickXor(h) => hex::encode(h.finalize()),
         }
     }
 }
