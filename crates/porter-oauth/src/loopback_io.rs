@@ -4,7 +4,7 @@
 
 use crate::loopback::{
     AuthCode, LoopbackFault, MAX_REDIRECT_BYTES, MAX_STRAY_REQUESTS, REDIRECT_WAIT_SECONDS,
-    STRAY_READ_SECONDS, parse_redirect,
+    STRAY_READ_SECONDS, head_complete, parse_redirect,
 };
 use crate::pkce::OAuthState;
 use std::time::Duration;
@@ -152,11 +152,12 @@ fn is_stray(fault: &LoopbackFault) -> bool {
     )
 }
 
-/// Reads through the blank line, and no further than the cap.
+/// Reads through the blank line (`httparse` says where the head ends), and no further than the
+/// cap.
 async fn read_head(socket: &mut TcpStream) -> Result<Vec<u8>, LoopbackFault> {
     let mut buf = Vec::new();
     let mut chunk = [0u8; 1024];
-    while !buf.windows(4).any(|w| w == b"\r\n\r\n") {
+    while !head_complete(&buf)? {
         if buf.len() > MAX_REDIRECT_BYTES {
             return Err(LoopbackFault::Oversized);
         }

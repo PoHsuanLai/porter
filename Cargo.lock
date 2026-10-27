@@ -2631,6 +2631,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "form_urlencoded",
+ "httparse",
  "porter-core",
  "porter-fake",
  "porter-fake-servers",
@@ -2661,6 +2662,7 @@ name = "porter-proxy"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "httparse",
  "porter-core",
  "porter-fake",
  "porter-fake-servers",

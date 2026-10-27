@@ -222,6 +222,36 @@ fn another_origin_or_an_ambiguous_head_is_refused() {
             RelayFault::Protocol,
         ),
         (
+            "two spaces in the request line",
+            "GET  /x HTTP/1.1\r\n\r\n",
+            RelayFault::Protocol,
+        ),
+        (
+            "a method that is not a token",
+            "G(T /x HTTP/1.1\r\n\r\n",
+            RelayFault::Protocol,
+        ),
+        (
+            "a second head after the first",
+            "GET /x HTTP/1.1\r\n\r\nGET /y HTTP/1.1\r\n\r\n",
+            RelayFault::Protocol,
+        ),
+        (
+            "a header without a colon",
+            "GET /x HTTP/1.1\r\nHost\r\n\r\n",
+            RelayFault::Protocol,
+        ),
+        (
+            "a control byte in a value",
+            "GET /x HTTP/1.1\r\nX: a\x01b\r\n\r\n",
+            RelayFault::Protocol,
+        ),
+        (
+            "a header name that is not a token",
+            "GET /x HTTP/1.1\r\nX(A: b\r\n\r\n",
+            RelayFault::Protocol,
+        ),
+        (
             "a nul",
             "GET /x HTTP/1.1\r\nX: a\0b\r\n\r\n",
             RelayFault::Protocol,

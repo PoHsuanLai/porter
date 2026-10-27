@@ -10,6 +10,7 @@ publish.workspace = true
 
 [dependencies]
 base64 = { workspace = true }
+httparse = { workspace = true }
 porter-core = { workspace = true }
 rustls-native-certs = { workspace = true, optional = true }
 rustls-pki-types = { workspace = true, optional = true }
