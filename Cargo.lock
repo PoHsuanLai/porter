@@ -1506,6 +1506,7 @@ dependencies = [
 name = "inferd"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "clap",
  "cua-action",
  "cua-parse",
@@ -1514,6 +1515,7 @@ dependencies = [
  "ds-settings",
  "engine-supervisor",
  "getrandom 0.4.3",
+ "hex",
  "model-catalog",
  "model-extract",
  "model-http",
@@ -3635,6 +3637,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "toml",
+ "windows-zones",
  "zbus",
 ]
 
@@ -4228,6 +4231,10 @@ dependencies = [
  "windows_x86_64_gnullvm 0.53.1",
  "windows_x86_64_msvc 0.53.1",
 ]
+
+[[package]]
+name = "windows-zones"
+version = "0.1.0"
 
 [[package]]
 name = "windows_aarch64_gnullvm"

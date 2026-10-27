@@ -4,6 +4,7 @@ members = [
   "crates/porter-core",
   "crates/porter-fs",
   "crates/quickxorhash",
+  "crates/windows-zones",
   "crates/keyring-chunked",
   "crates/porter-provider",
   "crates/porter-secrets",
@@ -58,6 +59,7 @@ publish = false
 porter-core     = { path = "crates/porter-core" }
 porter-fs        = { path = "crates/porter-fs" }
 quickxorhash    = { path = "crates/quickxorhash" }
+windows-zones   = { path = "crates/windows-zones" }
 keyring-chunked = { path = "crates/keyring-chunked" }
 porter-provider = { path = "crates/porter-provider" }
 porter-secrets  = { path = "crates/porter-secrets" }
