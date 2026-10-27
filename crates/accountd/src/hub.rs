@@ -2,10 +2,10 @@
 //! the two roles that read accounts, the shell (`SheetHost`) and Settings, never broadcast and
 //! never to an app (no app holds anything of an account here: an app learns of an identity only
 //! by asking `Identities1`). This file is the pure half: the events between two registries and
-//! who hears each. `core` is the live half (the roster of connections, the signals sent).
+//! who hears each. `publish` is the live half (the signals sent).
 
-use crate::account::state_slug;
 use crate::settings_keys::{Key, path};
+use crate::state::state_slug;
 use ds_settings::schema::KeyPath;
 use porter_core::AccountId;
 use porter_dbus::callers::CallerRole;

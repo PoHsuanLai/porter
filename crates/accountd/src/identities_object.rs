@@ -22,10 +22,11 @@
 //!   knows. An app decides what to do with its own copies; accountd reaches into nothing.
 
 use crate::callers::Callers;
-use crate::core::{Core, Host, Standing, hint};
 use crate::errors::RefusedError;
+use crate::host::Host;
 use crate::identities::UseFault;
 use crate::request::departed;
+use crate::state::{Core, Standing, hint};
 use porter_core::consent::{AccountChoice, AskPurpose, ConsentAnswer, ConsentAsk, Usage};
 use porter_core::wire::{ProviderHint, Refusal};
 use porter_core::{
@@ -211,7 +212,7 @@ impl<H: Host, C: Callers> IdentitiesObject<H, C> {
             .receive_name_owner_changed_with_args(&[(0, sender.as_str())])
             .await
             .map_err(RefusedError::failed)?;
-        let window = crate::core::window(&parent_window);
+        let window = crate::state::window(&parent_window);
         let answer = tokio::select! {
             answer = desk.pick(ask, &window) => answer,
             // The app left: the sheet is taken down with the dropped pick, and nobody is told.

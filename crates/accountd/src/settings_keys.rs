@@ -263,9 +263,9 @@ fn account_keys(
             "Status".to_owned(),
             "",
             KeyKind::Fixed {
-                variant: crate::account::state_slug(account.state).to_owned(),
+                variant: crate::state::state_slug(account.state).to_owned(),
             },
-            toml::Value::String(crate::account::state_slug(account.state).to_owned()),
+            toml::Value::String(crate::state::state_slug(account.state).to_owned()),
         ),
         spec(
             &Key::SignIn(id.clone()),

@@ -8,8 +8,9 @@
 //! enumeration (design/31 §4.4).
 
 use crate::callers::Callers;
-use crate::core::{Core, Host, Standing, window};
 use crate::errors::RefusedError;
+use crate::host::Host;
+use crate::state::{Core, Standing, state_slug, window};
 use porter_core::{Account, AccountState, AccountsRequest, object_segment};
 use porter_dbus::callers::{Caller, CallerRole};
 use porter_dbus::names::{ACCOUNTS_PATH, account_path};
@@ -28,17 +29,6 @@ pub(crate) struct AccountObject<H, C>(Arc<Core<H, C>>);
 impl<H, C> AccountObject<H, C> {
     pub(crate) fn new(core: Arc<Core<H, C>>) -> Self {
         Self(core)
-    }
-}
-
-/// The state's slug.
-pub(crate) fn state_slug(state: AccountState) -> &'static str {
-    match state {
-        AccountState::Ok => "ok",
-        AccountState::NeedsReauth => "needs_reauth",
-        AccountState::Offline => "offline",
-        AccountState::Limited => "limited",
-        AccountState::NeedsLogin => "needs_login",
     }
 }
 

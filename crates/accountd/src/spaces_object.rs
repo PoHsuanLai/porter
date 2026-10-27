@@ -14,9 +14,10 @@
 //!   app's choice, and porter moves or deletes no memory (almanac's and docket's).
 
 use crate::callers::Callers;
-use crate::core::{Core, Host, Standing};
 use crate::errors::RefusedError;
+use crate::host::Host;
 use crate::spaces::{CREATES_PER_WINDOW, Registered, SpaceFault};
+use crate::state::{Core, Standing};
 use porter_core::clock::{Clock, SystemClock};
 use porter_core::{DesktopSpace, SpaceChange, SpaceLook, SpaceName};
 use porter_dbus::Details;

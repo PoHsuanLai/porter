@@ -3,8 +3,9 @@
 //! ask `Identities1` for "Continue as" and keep their own sign-ins.
 
 use crate::callers::Callers;
-use crate::core::{Core, Host, Standing, hint, window};
 use crate::errors::RefusedError;
+use crate::host::Host;
+use crate::state::{Core, Standing, hint, window};
 use porter_core::AccountsRequest;
 use porter_core::wire::Refusal;
 use porter_dbus::Details;

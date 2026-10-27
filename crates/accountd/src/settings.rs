@@ -12,8 +12,9 @@
 
 use crate::callers::Callers;
 use crate::client_rows::{RowEdit, RowRefused, edited};
-use crate::core::{Core, Host};
+use crate::host::Host;
 use crate::settings_keys::{Key, UsedBy, listed, parse, schema};
+use crate::state::Core;
 use ds_settings::live::{
     Access, Caller, LiveError, LiveModule, LiveSchema, Snapshot, Verdict, serve,
 };
@@ -153,7 +154,7 @@ impl<H: Host, C> AccountsSettings<H, C> {
         };
         let text = |text: &str| Ok(toml::Value::String(text.to_owned()));
         match parse(&path.0, registry).ok_or_else(unknown)? {
-            Key::State(id) => text(crate::account::state_slug(account(&id)?.state)),
+            Key::State(id) => text(crate::state::state_slug(account(&id)?.state)),
             Key::Label(id) => text(&account(&id)?.label.0),
             Key::Expires(id) => crate::settings_keys::expiry_text(account(&id)?)
                 .map(toml::Value::String)
@@ -255,8 +256,7 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
                         eprintln!("accountd: reauthenticate from Settings refused: {why:?}");
                     }
                     // The pane hears how it ended on the row.
-                    core.announce_row(&Key::Reauth(id), ReauthNews::of(&reply).slug())
-                        .await;
+                    announce_row(&core, &Key::Reauth(id), ReauthNews::of(&reply).slug()).await;
                     core.publish().await;
                 });
             }
@@ -349,4 +349,17 @@ pub(crate) async fn serve_settings<H: Host, C: Callers>(
     // Served once; a second call leaves the first in place.
     let _ = core.settings.set(served);
     Ok(())
+}
+
+/// Tells the settings module's listeners `Changed(<the key's path>, <word>)`: how an action
+/// row's action went.
+async fn announce_row<H, C>(core: &Core<H, C>, key: &Key, word: &str) {
+    if let Some(module) = core.settings.get() {
+        let _ = module
+            .changed(
+                &KeyPath(crate::settings_keys::path(key)),
+                &toml::Value::String(word.to_owned()),
+            )
+            .await;
+    }
 }
