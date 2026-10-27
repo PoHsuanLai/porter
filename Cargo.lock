@@ -2884,6 +2884,7 @@ name = "porter-sync"
 version = "0.1.0"
 dependencies = [
  "porter-core",
+ "porter-http",
  "porter-sync",
  "serde",
  "serde_json",
@@ -3698,7 +3699,6 @@ dependencies = [
  "porter-sync",
  "serde",
  "serde_json",
- "storage-webdav",
  "test-kit",
  "tokio",
 ]
@@ -3716,7 +3716,6 @@ dependencies = [
  "porter-sync",
  "serde",
  "serde_json",
- "storage-webdav",
  "test-kit",
  "tokio",
 ]

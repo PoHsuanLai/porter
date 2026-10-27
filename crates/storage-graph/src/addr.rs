@@ -3,6 +3,7 @@
 //! start at the root the replica was given: the app folder or the drive's own root.
 
 use porter_core::WebUrl;
+use porter_core::percent::encode_unreserved;
 use porter_sync::ItemPath;
 
 /// Graph's version prefix and the signed-in user's drive.
@@ -39,11 +40,6 @@ pub struct Addr {
     root: Root,
     /// The folder's names below the root; none is the root itself.
     folder: Vec<String>,
-}
-
-/// A name as one URL path segment: everything but unreserved characters percent-encoded.
-fn encode(name: &str) -> String {
-    porter_core::percent::encode_unreserved(name)
 }
 
 /// The names a relative path is made of, or `None` if it is empty, has an empty, `.` or `..`
@@ -121,7 +117,7 @@ impl Addr {
             (false, op) => {
                 let path = names
                     .iter()
-                    .map(|n| encode(n))
+                    .map(|n| encode_unreserved(n))
                     .collect::<Vec<_>>()
                     .join("/");
                 match op {
@@ -139,7 +135,7 @@ impl Addr {
         WebUrl::parse(&format!(
             "{}{DRIVE}/items/{}{op}{query}",
             self.origin,
-            encode(id)
+            encode_unreserved(id)
         ))
         .ok()
     }
@@ -158,8 +154,8 @@ impl Addr {
             Some(id) => WebUrl::parse(&format!(
                 "{}{DRIVE}/items/{}:/{}{}{query}",
                 self.origin,
-                encode(id),
-                encode(name),
+                encode_unreserved(id),
+                encode_unreserved(name),
                 op.map_or_else(String::new, |op| format!(":/{op}"))
             ))
             .ok(),

@@ -25,17 +25,18 @@ use crate::datasets::pim::discover::{DiscoverError, Found};
 use crate::datasets::pim::relay::pim_http;
 use json::{Calendar, CalendarPage, Event, EventPage};
 use porter_client::{Accounts, Transport};
+use porter_core::clock::SystemClock;
 use porter_core::{Bytes, EndpointUrl, GrantId, WebUrl};
 use porter_http::http::{Method, Response};
 use porter_http::{HeaderText, Http, HttpError, request};
 use porter_http_relay::{RelayDial, RelayHttp};
+use porter_sync::{Clock, DELETED};
 use porter_sync::{
     ItemKind, ItemPath, More, RemoteId, RemoteItem, RemoteVersion, ReplicaError, RetryAfter,
     Tombstone,
 };
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
-use storage_webdav::{Clock, DELETED};
 
 /// How many events a delta page asks for.
 const PAGE: usize = 100;
@@ -222,7 +223,7 @@ impl<T: Transport + 'static> PimSource for GraphCalendarSource<T> {
             http: Arc::clone(&self.http),
             base: origin(&self.base),
             calendar: id,
-            clock: Clock::system(),
+            clock: Clock::new(SystemClock),
         }
     }
 }

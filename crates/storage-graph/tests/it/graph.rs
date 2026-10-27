@@ -10,11 +10,12 @@ use porter_core::{Bytes, WebUrl};
 use porter_fake_servers::graph::{CHUNK_UNIT, Knobs};
 use porter_fake_servers::{GraphHandle, Hit};
 use porter_http_relay::{RelayHttp, RelayLimits};
+use porter_sync::Clock;
 use porter_sync::{
     BaseVersion, Blob, ByteRange, Change, Conflict, Cursor, ItemPath, PutItem, PutRefused,
     PutTarget, RemoteId, RemoteSide, RemoteVersion, Replica as _, ReplicaError, RetryAfter,
 };
-use storage_graph::{Clock, GraphReplica, Uploads};
+use storage_graph::{GraphReplica, Uploads};
 
 fn new_item(path: &str, bytes: &[u8]) -> PutItem {
     PutItem {
@@ -273,7 +274,7 @@ async fn a_remote_edit_between_the_listing_and_the_write_is_a_conflict_never_an_
         Err(PutRefused::Conflict(Conflict {
             item: id.clone(),
             base: BaseVersion::At(now),
-            remote: RemoteSide::Deleted(RemoteVersion(storage_graph::DELETED.into())),
+            remote: RemoteSide::Deleted(RemoteVersion(porter_sync::DELETED.into())),
         }))
     );
 }

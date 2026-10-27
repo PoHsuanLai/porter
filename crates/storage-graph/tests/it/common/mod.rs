@@ -8,8 +8,9 @@ use porter_http::http::header::{AUTHORIZATION, HeaderValue};
 use porter_http::http::{Request, Response};
 use porter_http::{Http, HttpError};
 use porter_http_relay::{Dial, RelayHttp, RelayLimits};
+use porter_sync::Clock;
 use std::future::Future;
-use storage_graph::{Clock, GraphReplica, Root, Uploads};
+use storage_graph::{GraphReplica, Root, Uploads};
 use tokio::net::TcpStream;
 
 pub const TOKEN: &str = "ey.fake-access-token";

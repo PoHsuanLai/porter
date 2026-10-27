@@ -24,8 +24,8 @@
 //!   the Graph host, and over those of `Tokens.OpenLinked` (no credential) for the hosts of an
 //!   `uploadUrl` and of the redirect a download answers with.
 //!
-//! The crate is pure: no runtime and no socket. It reuses storage-webdav's `Clock` (nothing of it changed) and keeps its own error classes
-//! and wire reading.
+//! The crate is pure: no runtime and no socket. It keeps its own vendor error reasons and wire reading on top of porter-sync's
+//! `status` and dates its tombstones with porter-sync's `Clock`.
 
 mod addr;
 mod drive;
@@ -39,4 +39,3 @@ mod write;
 pub use addr::Root;
 pub use drive::accepts_name;
 pub use replica::{CHUNK_UNIT, GraphReplica, SIMPLE_MAX, Uploads};
-pub use storage_webdav::{Clock, DELETED};

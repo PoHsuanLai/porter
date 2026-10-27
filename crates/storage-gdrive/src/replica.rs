@@ -3,7 +3,7 @@
 
 use crate::addr::{Addr, FILE_FIELDS, Root};
 use crate::json::{About, File};
-use crate::refuse::{export_error, read_error, unreached};
+use crate::refuse::{export_error, read_error};
 use porter_core::capability::{
     Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
 };
@@ -11,12 +11,13 @@ use porter_core::{Bytes, WebUrl};
 use porter_http::http::header::{ACCEPT, HeaderValue, RANGE};
 use porter_http::http::{Method, Request, Response};
 use porter_http::{Http, request};
+use porter_sync::Clock;
+use porter_sync::status::unreached;
 use porter_sync::{
     BaseVersion, Blob, ByteRange, ChangePage, Cursor, ExportError, Folders, PutItem, PutRefused,
     Quota, RemoteId, RemoteVersion, Replica, ReplicaError, RetryAfter,
 };
 use std::sync::{Mutex, MutexGuard, PoisonError};
-use storage_webdav::Clock;
 
 /// How many items a page asks for unless told otherwise.
 const PAGE: usize = 200;
@@ -223,7 +224,10 @@ impl<H: Http> GdriveReplica<H> {
         let url = self
             .addr
             .api(
-                &format!("files/{}/export", crate::addr::encode(&id.0)),
+                &format!(
+                    "files/{}/export",
+                    porter_core::percent::encode_unreserved(&id.0)
+                ),
                 &[("mimeType", mime)],
             )
             .ok_or(ExportError::Read(ReplicaError::Gone))?;

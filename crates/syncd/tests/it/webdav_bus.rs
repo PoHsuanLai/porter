@@ -5,6 +5,7 @@
 //! nothing again.
 
 use crate::common;
+use porter_core::clock::SystemClock;
 
 use common::bus::PrivateBus;
 use common::hosted::{Link, host};
@@ -23,10 +24,10 @@ use porter_fake::{cloud_provider, storage_account};
 use porter_fake_servers::{FakeNextcloud, NextcloudHandle, Running};
 use porter_secrets::{MemorySecrets, Secrets};
 use porter_service::Registry;
+use porter_sync::Clock;
 use porter_sync::ConflictRule;
 use std::collections::BTreeSet;
 use std::sync::Arc;
-use storage_webdav::Clock;
 use syncd::clock::Wall;
 use syncd::dataset::MemoryDataset;
 use syncd::driver::Driver;
@@ -174,7 +175,7 @@ async fn a_folder_syncs_against_nextcloud_through_the_relay_and_status_shows_the
         rig.grant.clone(),
         rig.endpoint.clone(),
         "Photos",
-        Clock::system(),
+        Clock::new(SystemClock),
     )
     .expect("replica");
     let journal = rig.bus.scratch().join("journal");

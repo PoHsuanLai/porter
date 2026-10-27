@@ -16,17 +16,18 @@
 
 use crate::addr::{Root, item_path, literal};
 use crate::json::{Change as Wire, ChangeList, File, FileList, StartToken};
-use crate::refuse::{read_error, unreached};
+use crate::refuse::read_error;
 use crate::replica::GdriveReplica;
 use porter_core::{Bytes, UnixSeconds, WebUrl};
 use porter_http::http::header::CONTENT_TYPE;
 use porter_http::http::{Method, Response};
 use porter_http::{Http, request};
+use porter_sync::DELETED;
+use porter_sync::status::unreached;
 use porter_sync::{
     Anchor, Change, ChangePage, Cursor, Folder, ItemKind, ItemPath, More, RemoteId, RemoteItem,
     RemoteVersion, ReplicaError, RetryAfter, Tombstone,
 };
-use storage_webdav::DELETED;
 
 /// How many folders a path may have above a file before the walk gives up.
 const DEPTH: usize = 64;

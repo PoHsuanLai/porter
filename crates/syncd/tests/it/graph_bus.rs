@@ -9,6 +9,7 @@
 //! session, and an expired delta token uploads nothing again.
 
 use crate::common;
+use porter_core::clock::SystemClock;
 
 use common::bus::PrivateBus;
 use common::hosted::{Link, host};
@@ -31,10 +32,11 @@ use porter_http_relay::RelayStream;
 use porter_provider::Provider;
 use porter_secrets::{MemorySecrets, Secrets};
 use porter_service::Registry;
+use porter_sync::Clock;
 use porter_sync::ConflictRule;
 use std::collections::BTreeSet;
 use std::sync::Arc;
-use storage_graph::{CHUNK_UNIT, Clock, Uploads};
+use storage_graph::{CHUNK_UNIT, Uploads};
 use syncd::clock::Wall;
 use syncd::dataset::MemoryDataset;
 use syncd::driver::Driver;
@@ -248,7 +250,7 @@ async fn a_folder_syncs_against_graph_through_the_relay_and_status_shows_the_quo
         rig.grant.clone(),
         rig.endpoint.clone(),
         "Photos",
-        Clock::system(),
+        Clock::new(SystemClock),
     )
     .expect("replica")
     .with_uploads(Uploads::new(100, CHUNK_UNIT));

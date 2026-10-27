@@ -57,7 +57,7 @@ fn graph(base: &str, page: usize, folders: Folders) -> Graph {
         Bearer(ReqwestHttp::new()),
         &base,
         "",
-        storage_graph::Clock::fixed(NOW),
+        porter_sync::Clock::fixed(NOW),
     )
     .with_root(storage_graph::Root::Drive)
     .with_page(page)
@@ -70,7 +70,7 @@ fn google(base: &str, page: usize, folders: Folders) -> Google {
         Bearer(ReqwestHttp::new()),
         &base,
         "",
-        storage_gdrive::Clock::fixed(NOW),
+        porter_sync::Clock::fixed(NOW),
     )
     .with_root(storage_gdrive::Root::Drive)
     .with_page(page)
@@ -332,7 +332,7 @@ async fn access_not_given_yet_is_its_own_state_and_lists_nothing() {
     let journal = DriveJournal::open(&scratch.path().join("storage_drive.sqlite")).expect("open");
     let base = WebUrl::parse("https://graph.example.test").expect("url");
     let replica =
-        storage_graph::GraphReplica::new(NotGranted, &base, "", storage_graph::Clock::fixed(NOW))
+        storage_graph::GraphReplica::new(NotGranted, &base, "", porter_sync::Clock::fixed(NOW))
             .with_root(storage_graph::Root::Drive);
     let pass = list_once(&journal, &replica).await.expect("pass");
     assert_eq!((pass.outcome, pass.pages), (Listed::NeedsConsent, 0));

@@ -1,6 +1,6 @@
 [package]
 name = "storage-gdrive"
-description = "The Google Drive replica: porter-sync's Replica over the app data folder (`spaces=appDataFolder`, scope drive.appdata) or My Drive (`spaces=drive`, scope drive; Google's own documents and shortcuts as items that open online). Changes by changes.list with a page token as the anchor (a refused token is AnchorExpired), writes checked against the file's `version` first, small files by multipart upload and large ones by a resumable session, md5Checksum as the content hash, quota from `about`. Its HTTP goes through the Http it is handed (in syncd, storage-webdav's StreamHttp over accountd's OpenAuthenticated, which adds the bearer). Pure: no runtime, no socket."
+description = "The Google Drive replica: porter-sync's Replica over the app data folder (`spaces=appDataFolder`, scope drive.appdata) or My Drive (`spaces=drive`, scope drive; Google's own documents and shortcuts as items that open online). Changes by changes.list with a page token as the anchor (a refused token is AnchorExpired), writes checked against the file's `version` first, small files by multipart upload and large ones by a resumable session, md5Checksum as the content hash, quota from `about`. Its HTTP goes through the Http it is handed (in syncd, porter-http-relay's RelayHttp over accountd's OpenAuthenticated, which adds the bearer). Pure: no runtime, no socket."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -14,7 +14,6 @@ porter-http = { workspace = true }
 porter-sync = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-storage-webdav = { workspace = true }
 
 [dev-dependencies]
 test-kit = { workspace = true }

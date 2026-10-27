@@ -27,17 +27,18 @@
 
 use crate::feed::{folder_of, json_string};
 use crate::json::{DriveItem, Session as SessionJson, SessionStatus};
-use crate::refuse::{error_code, refused, write_error, write_unreached};
+use crate::refuse::{error_code, write_error};
 use crate::replica::GraphReplica;
 use porter_core::WebUrl;
 use porter_http::http::header::CONTENT_TYPE;
 use porter_http::http::{Method, Response};
 use porter_http::{Http, request};
+use porter_sync::DELETED;
+use porter_sync::status::{refused, write_unreached};
 use porter_sync::{
     BaseVersion, Conflict, DriveWrite, Found, Place, PutRefused, RemoteId, RemoteSide,
     RemoteVersion, RetryAfter, Session, Upload, UploadTo, Written,
 };
-use storage_webdav::DELETED;
 
 /// The characters OneDrive refuses in a name.
 const REFUSED_CHARS: &[char] = &['"', '*', ':', '<', '>', '?', '/', '\\', '|'];

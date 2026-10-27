@@ -8,8 +8,9 @@ use porter_http::http::header::{AUTHORIZATION, HeaderValue};
 use porter_http::http::{Request, Response};
 use porter_http::{Http, HttpError};
 use porter_http_relay::{Dial, RelayHttp, RelayLimits};
+use porter_sync::Clock;
 use std::future::Future;
-use storage_gdrive::{Clock, GdriveReplica, Root, Uploads};
+use storage_gdrive::{GdriveReplica, Root, Uploads};
 use tokio::net::TcpStream;
 
 pub const TOKEN: &str = "ya29.fake-access-token";

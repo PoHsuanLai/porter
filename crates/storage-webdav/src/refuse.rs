@@ -1,26 +1,9 @@
-//! What a status the replica did not expect means to the contract: a read that failed
-//! ([`ReplicaError`]) or a write that was refused ([`PutRefused`]).
+//! What a status the replica did not expect means to the contract: a write that was refused
+//! ([`PutRefused`]). The statuses every HTTP replica reads alike are porter-sync's `status`.
 
 use porter_http::http::Response;
-use porter_http::{HeaderText, HttpError};
-use porter_sync::{PutRefused, ReplicaError, RetryAfter};
-
-/// How long to wait when the server did not say.
-const RETRY: RetryAfter = RetryAfter(30);
-
-/// The wait a `Retry-After` of whole seconds asks for.
-fn retry_after(response: &Response<Vec<u8>>) -> RetryAfter {
-    response.retry_after_seconds().map_or(RETRY, RetryAfter)
-}
-
-/// A read answered with `response`, which was not what it needed.
-pub fn read_error(response: &Response<Vec<u8>>) -> ReplicaError {
-    match response.status().as_u16() {
-        401 | 403 => ReplicaError::Unauthorized,
-        404 | 410 => ReplicaError::Gone,
-        _ => ReplicaError::Transient(retry_after(response)),
-    }
-}
+use porter_sync::PutRefused;
+use porter_sync::status::retry_after;
 
 /// A write answered with `response`, which was not a success or a precondition failure.
 pub fn write_error(response: &Response<Vec<u8>>) -> PutRefused {
@@ -31,28 +14,11 @@ pub fn write_error(response: &Response<Vec<u8>>) -> PutRefused {
     }
 }
 
-/// A request that produced no response: nothing here is the account's fault, so try again,
-/// except access it has not given yet, which the host that opens connections says before any
-/// request is sent.
-pub fn unreached(error: HttpError) -> ReplicaError {
-    match error {
-        HttpError::NotGranted => ReplicaError::NeedsConsent,
-        _ => ReplicaError::Transient(RETRY),
-    }
-}
-
-/// The same for a write: access not given yet is a write the account may not make.
-pub fn write_unreached(error: HttpError) -> PutRefused {
-    match error {
-        HttpError::NotGranted => PutRefused::Forbidden,
-        _ => PutRefused::Transient(RETRY),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_http::http::Response;
+    use porter_sync::RetryAfter;
+    use porter_sync::status::RETRY;
 
     fn answer(status: u16, retry: Option<&str>) -> Response<Vec<u8>> {
         retry
@@ -62,22 +28,6 @@ mod tests {
             })
             .body(vec![])
             .expect("response")
-    }
-
-    #[test]
-    fn a_failed_read_is_classed_by_its_status() {
-        const CASES: &[(u16, Option<&str>, ReplicaError)] = &[
-            (401, None, ReplicaError::Unauthorized),
-            (403, None, ReplicaError::Unauthorized),
-            (404, None, ReplicaError::Gone),
-            (410, None, ReplicaError::Gone),
-            (503, Some("120"), ReplicaError::Transient(RetryAfter(120))),
-            (429, Some("soon"), ReplicaError::Transient(RETRY)),
-            (500, None, ReplicaError::Transient(RETRY)),
-        ];
-        for (status, retry, want) in CASES {
-            assert_eq!(read_error(&answer(*status, *retry)), *want, "{status}");
-        }
     }
 
     #[test]
@@ -93,18 +43,5 @@ mod tests {
         for (status, retry, want) in CASES {
             assert_eq!(write_error(&answer(*status, *retry)), *want, "{status}");
         }
-    }
-
-    #[test]
-    fn access_not_given_is_its_own_state_and_never_a_retry() {
-        assert_eq!(unreached(HttpError::NotGranted), ReplicaError::NeedsConsent);
-        assert_eq!(
-            write_unreached(HttpError::NotGranted),
-            PutRefused::Forbidden
-        );
-        assert_eq!(
-            unreached(HttpError::Unreachable),
-            ReplicaError::Transient(RETRY)
-        );
     }
 }

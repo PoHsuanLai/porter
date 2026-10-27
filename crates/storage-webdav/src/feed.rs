@@ -14,13 +14,14 @@
 //!   instead of listing from the start, which a big tree would cut short every time.
 
 use crate::entry::{Entry, Kind, entries};
-use crate::refuse::{read_error, unreached};
-use crate::replica::{DELETED, WebDavReplica};
+use crate::replica::WebDavReplica;
 use crate::requests;
 use dav_proto::{Multistatus, SyncEnd, parse_multistatus, parse_sync_collection, token_expired};
 use porter_core::Bytes;
 use porter_http::Http;
 use porter_http::http::Response;
+use porter_sync::DELETED;
+use porter_sync::status::{read_error, unreached};
 use porter_sync::{
     Anchor, Change, ChangePage, Cursor, More, RemoteId, RemoteVersion, ReplicaError, RetryAfter,
     Tombstone,

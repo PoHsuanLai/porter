@@ -13,12 +13,13 @@ use porter_fake_servers::{FakeGraph, GraphHandle, Running};
 use porter_http::http::{Request, Response};
 use porter_http::{Http, HttpError};
 use porter_http_relay::{RelayHttp, RelayLimits, Routed};
+use porter_sync::Clock;
 use porter_sync::{
     BaseVersion, Blob, ByteRange, Change, Cursor, ItemPath, PutItem, PutRefused, PutTarget,
     Replica as _, ReplicaError,
 };
 use std::future::Future;
-use storage_graph::{Clock, GraphReplica, Uploads};
+use storage_graph::{GraphReplica, Uploads};
 
 /// A client for a linked origin: a dial that adds nothing, or no dial at all for an origin the
 /// declaration does not name (accountd's `OpenLinked` refuses it).

@@ -1,9 +1,7 @@
 //! [`WebDavReplica`]: porter-sync's [`Replica`] over one folder of a WebDAV server.
 
-use crate::clock::Clock;
 use crate::feed::{Known, Pending};
 use crate::path::Root;
-use crate::refuse::{read_error, unreached};
 use crate::requests;
 use dav_proto::parse_multistatus;
 use porter_core::capability::{
@@ -13,6 +11,8 @@ use porter_core::{Bytes, WebUrl};
 use porter_http::http::header::RANGE;
 use porter_http::http::{Method, Request, Response};
 use porter_http::{Http, request};
+use porter_sync::Clock;
+use porter_sync::status::{read_error, unreached};
 use porter_sync::{
     BaseVersion, Blob, ByteRange, ChangePage, Cursor, PutItem, PutRefused, Quota, RemoteId,
     RemoteVersion, Replica, ReplicaError,
@@ -21,10 +21,6 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 
 /// How many changes a page of the feed holds unless told otherwise.
 const PAGE: usize = 500;
-
-/// The version a deletion has: a WebDAV server keeps none for what it removed, so the replica
-/// names it, and a removal, the feed's tombstone and a refused write all agree.
-pub const DELETED: &str = "deleted";
 
 /// What the replica remembers between calls; losing it (a new process) only expires anchors.
 #[derive(Debug, Default)]

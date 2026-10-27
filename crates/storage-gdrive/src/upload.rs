@@ -9,11 +9,11 @@
 
 use crate::addr::FILE_FIELDS;
 use crate::feed::link;
-use crate::refuse::write_unreached;
 use crate::replica::GdriveReplica;
 use porter_http::http::header::CONTENT_TYPE;
 use porter_http::http::{Method, Response};
 use porter_http::{HeaderText, Http, request};
+use porter_sync::status::write_unreached;
 use porter_sync::{PutRefused, RetryAfter};
 
 impl<H: Http> GdriveReplica<H> {
@@ -30,9 +30,10 @@ impl<H: Http> GdriveReplica<H> {
         let pairs = [("uploadType", "resumable"), ("fields", FILE_FIELDS)];
         let start = match over {
             None => self.addr.upload("files", &pairs),
-            Some(id) => self
-                .addr
-                .upload(&format!("files/{}", crate::addr::encode(id)), &pairs),
+            Some(id) => self.addr.upload(
+                &format!("files/{}", porter_core::percent::encode_unreserved(id)),
+                &pairs,
+            ),
         };
         let mut open = request(Method::POST, &start.ok_or(PutRefused::Forbidden)?)
             .header(CONTENT_TYPE, "application/json; charset=UTF-8")

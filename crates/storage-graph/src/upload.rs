@@ -8,13 +8,13 @@
 //! credential (`porter_http_relay::Routed`).
 
 use crate::json::Session;
-use crate::refuse::write_unreached;
 use crate::replica::GraphReplica;
 use crate::write::Target;
 use porter_core::WebUrl;
 use porter_http::http::header::CONTENT_TYPE;
 use porter_http::http::{Method, Response};
 use porter_http::{Http, request};
+use porter_sync::status::write_unreached;
 use porter_sync::{PutRefused, RetryAfter};
 
 impl<H: Http> GraphReplica<H> {

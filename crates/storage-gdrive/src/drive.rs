@@ -19,16 +19,18 @@
 //! Drive has no `If-Match` either: a resumable session that replaces a file asks again what the
 //! file is before its last chunk and when it is resumed.
 
-use crate::addr::{FILE_FIELDS, encode};
+use crate::addr::FILE_FIELDS;
 use crate::feed::link;
 use crate::json::{File, GeneratedIds};
-use crate::refuse::{refused, write_error, write_unreached};
+use crate::refuse::write_error;
 use crate::replica::GdriveReplica;
 use crate::write::Target;
 use porter_core::WebUrl;
+use porter_core::percent::encode_unreserved;
 use porter_http::http::header::CONTENT_TYPE;
 use porter_http::http::{Method, Response};
 use porter_http::{HeaderText, Http, request};
+use porter_sync::status::{refused, write_unreached};
 use porter_sync::{
     BaseVersion, Conflict, DriveWrite, Found, Place, PutRefused, RemoteId, RemoteSide,
     RemoteVersion, RetryAfter, Session, Upload, UploadTo, Written,
@@ -217,7 +219,7 @@ impl<H: Http> GdriveReplica<H> {
             UploadTo::New(_) => self.addr.upload("files", &pairs),
             UploadTo::Replace(id) => self
                 .addr
-                .upload(&format!("files/{}", encode(&id.0)), &pairs),
+                .upload(&format!("files/{}", encode_unreserved(&id.0)), &pairs),
         };
         let mut open = request(Method::POST, &start.ok_or(PutRefused::Forbidden)?)
             .header(CONTENT_TYPE, "application/json; charset=UTF-8")

@@ -4,13 +4,14 @@
 use porter_core::{Bytes, UnixSeconds, WebUrl};
 use porter_http::http::{Request, Response};
 use porter_http::{Http, HttpError};
+use porter_sync::Clock;
 use porter_sync::{
     Change, Cursor, Quota, RemoteId, RemoteVersion, Replica, ReplicaError, RetryAfter,
 };
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
-use storage_webdav::{Clock, WebDavReplica};
+use storage_webdav::WebDavReplica;
 
 fn fixture(name: &str) -> Vec<u8> {
     let path = format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));

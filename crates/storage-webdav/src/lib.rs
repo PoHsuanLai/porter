@@ -15,7 +15,6 @@
 //!
 //! The crate is pure: no runtime and no socket (a `porter_http_relay::Dial` is the host's).
 
-mod clock;
 mod entry;
 mod feed;
 mod path;
@@ -24,5 +23,4 @@ mod replica;
 mod requests;
 mod write;
 
-pub use clock::Clock;
-pub use replica::{DELETED, WebDavReplica};
+pub use replica::WebDavReplica;

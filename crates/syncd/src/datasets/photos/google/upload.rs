@@ -23,12 +23,12 @@ use porter_core::capability::{
     Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
 };
 use porter_http::Http;
+use porter_sync::DELETED;
 use porter_sync::{
     Anchor, BaseVersion, Blob, ByteRange, ChangePage, Cursor, More, PutItem, PutRefused, PutTarget,
     Quota, RemoteId, RemoteVersion, Replica, ReplicaError, RetryAfter,
 };
 use std::path::PathBuf;
-use storage_webdav::DELETED;
 use tokio::sync::Mutex;
 
 /// The dataset's name.

@@ -10,8 +10,9 @@
 use porter_client::{Accounts, Transport};
 use porter_core::{EndpointUrl, GrantId, WebUrl};
 use porter_http_relay::{RelayDial, RelayHttp, RelayLimits};
+use porter_sync::Clock;
 use std::sync::Arc;
-use storage_webdav::{Clock, WebDavReplica};
+use storage_webdav::WebDavReplica;
 
 /// The HTTP seam over relays to `endpoint`.
 pub fn pim_http<T: Transport>(

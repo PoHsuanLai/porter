@@ -15,6 +15,10 @@ pub enum Change {
     Tombstone(Tombstone),
 }
 
+/// The version a deletion has: a store that keeps none for what it removed has the replica name
+/// it, and a removal, the feed's tombstone and a refused write all agree.
+pub const DELETED: &str = "deleted";
+
 /// A deletion, kept with its time until every replica has acknowledged it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Tombstone {

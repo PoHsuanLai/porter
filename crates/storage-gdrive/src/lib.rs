@@ -34,8 +34,8 @@
 //! - **Version** is Drive's `version`, which grows with every change to the file (a rename too).
 //!   There is no ETag to keep.
 //!
-//! The crate is pure: no runtime and no socket. It reuses storage-webdav's `Clock` (nothing of it changed) and keeps its own error classes
-//! and wire reading. Every
+//! The crate is pure: no runtime and no socket. It keeps its own vendor error reasons and wire reading on top of porter-sync's
+//! `status` and dates its tombstones with porter-sync's `Clock`. Every
 //! endpoint, field and status is written from Google's documentation, without network access:
 //! unverified (FINDINGS).
 
@@ -51,4 +51,3 @@ mod write;
 pub use addr::Root;
 pub use drive::accepts_name;
 pub use replica::{CHUNK_UNIT, EXPORT_LIMIT, GdriveReplica, SIMPLE_MAX, Uploads};
-pub use storage_webdav::{Clock, DELETED};

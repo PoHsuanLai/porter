@@ -16,6 +16,7 @@
 
 mod anchor;
 mod change;
+mod clock;
 mod dataset;
 mod drive_write;
 mod folders;
@@ -27,10 +28,12 @@ mod memory;
 mod quota;
 mod refusal;
 mod replica;
+pub mod status;
 mod transfer;
 
 pub use anchor::{Anchor, Cursor};
-pub use change::{Change, ChangePage, More, Tombstone};
+pub use change::{Change, ChangePage, DELETED, More, Tombstone};
+pub use clock::Clock;
 pub use dataset::{ConflictRule, DatasetKind};
 pub use drive_write::{
     Content, DriveWrite, Found, Place, Progress, Session, Unheard, Upload, UploadTo, Written,

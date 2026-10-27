@@ -6,16 +6,17 @@
 
 use crate::addr::names_of;
 use crate::json::DriveItem;
-use crate::refuse::{refused, write_error, write_unreached};
+use crate::refuse::write_error;
 use crate::replica::GraphReplica;
 use porter_http::http::header::{ACCEPT, CONTENT_TYPE, HeaderValue};
 use porter_http::http::{Method, Request, Response};
 use porter_http::{Http, request};
+use porter_sync::DELETED;
+use porter_sync::status::{refused, write_unreached};
 use porter_sync::{
     BaseVersion, Conflict, PutItem, PutRefused, PutTarget, RemoteId, RemoteSide, RemoteVersion,
     RetryAfter,
 };
-use storage_webdav::DELETED;
 
 /// Where a write goes.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -2,6 +2,7 @@
 //! they take, and the dataset's folder below the root the replica was given (the app data folder
 //! or My Drive).
 
+use porter_core::percent::encode_unreserved;
 use porter_core::{Origin, WebUrl};
 use porter_sync::ItemPath;
 
@@ -52,11 +53,6 @@ impl Root {
     }
 }
 
-/// A value as a URL query component: everything but unreserved characters percent-encoded.
-pub fn encode(text: &str) -> String {
-    porter_core::percent::encode_unreserved(text)
-}
-
 /// `?k=v&k=v` (nothing for no pairs).
 pub fn query(pairs: &[(&str, &str)]) -> String {
     match pairs.is_empty() {
@@ -65,7 +61,7 @@ pub fn query(pairs: &[(&str, &str)]) -> String {
             "?{}",
             pairs
                 .iter()
-                .map(|(k, v)| format!("{}={}", encode(k), encode(v)))
+                .map(|(k, v)| format!("{}={}", encode_unreserved(k), encode_unreserved(v)))
                 .collect::<Vec<_>>()
                 .join("&")
         ),
@@ -156,7 +152,7 @@ impl Addr {
 
     /// The file `id`.
     pub fn file(&self, id: &str, pairs: &[(&str, &str)]) -> Option<WebUrl> {
-        self.api(&format!("files/{}", encode(id)), pairs)
+        self.api(&format!("files/{}", encode_unreserved(id)), pairs)
     }
 
     /// The dataset's folder as names below the root.

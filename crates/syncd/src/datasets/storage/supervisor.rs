@@ -48,16 +48,17 @@ use crate::paths::AccountDir;
 use crate::scheduler::next_look;
 use crate::service::{Access, DatasetName};
 use porter_client::Transport;
+use porter_core::clock::SystemClock;
 use porter_core::{AppName, Candidate, EndpointUrl, WebUrl};
 use porter_dbus::DriveState;
 use porter_drive::{CacheLimit, Drive, DriveConfig, FreeSpace, ReplicaSource};
 use porter_drive_fuse::{DriveFs, Mounter};
+use porter_sync::Clock;
 use porter_sync::{DriveWrite, Replica};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::Duration;
-use storage_graph::Clock;
 use tokio::sync::{Notify, watch};
 use tokio::task::JoinHandle;
 
@@ -369,7 +370,7 @@ where
                         grant(),
                         e.url.clone(),
                         "",
-                        Clock::system(),
+                        Clock::new(SystemClock),
                     )
                     .map(Either::Left),
                     AppFolderStore::Drive(e) => gdrive_replica(
@@ -377,7 +378,7 @@ where
                         grant(),
                         e.url.clone(),
                         "",
-                        storage_gdrive::Clock::system(),
+                        Clock::new(SystemClock),
                     )
                     .map(Either::Right),
                 };
@@ -416,7 +417,7 @@ where
                         candidate.grant.clone(),
                         e.url.clone(),
                         "",
-                        Clock::system(),
+                        Clock::new(SystemClock),
                     )
                     .map(|r| r.with_root(storage_graph::Root::Drive))
                     .map_err(|e| e.to_string())
@@ -438,7 +439,7 @@ where
                         candidate.grant.clone(),
                         e.url.clone(),
                         "",
-                        storage_gdrive::Clock::system(),
+                        Clock::new(SystemClock),
                     )
                     .map(|r| r.with_root(storage_gdrive::Root::Drive))
                     .map_err(|e| e.to_string())
@@ -735,7 +736,7 @@ where
                 candidate.grant.clone(),
                 url.clone(),
                 folder,
-                Clock::system(),
+                Clock::new(SystemClock),
             )
             .map_err(|e| e.to_string())
         };

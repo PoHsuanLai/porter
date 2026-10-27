@@ -9,8 +9,9 @@ use porter_http::http::header::{AUTHORIZATION, HeaderValue};
 use porter_http::http::{Request, Response};
 use porter_http::{Http, HttpError};
 use porter_http_relay::{Dial, RelayHttp, RelayLimits};
+use porter_sync::Clock;
 use std::future::Future;
-use storage_webdav::{Clock, WebDavReplica};
+use storage_webdav::WebDavReplica;
 use tokio::net::TcpStream;
 
 pub const USER: &str = "ada";

@@ -10,10 +10,11 @@ use porter_sync::{
     PutTarget, Quota, RemoteId, RemoteItem, RemoteVersion, Replica, ReplicaError, RetryAfter,
     Tombstone,
 };
+use porter_sync::{Clock, DELETED};
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
-use storage_graph::{CHUNK_UNIT, Clock, DELETED, GraphReplica, Uploads};
+use storage_graph::{CHUNK_UNIT, GraphReplica, Uploads};
 
 const ORIGIN: &str = "https://graph.microsoft.com";
 const DRIVE: &str = "https://graph.microsoft.com/v1.0/me/drive";

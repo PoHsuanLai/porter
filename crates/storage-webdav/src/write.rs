@@ -5,13 +5,15 @@
 
 use crate::entry::{Kind, entries};
 use crate::path::parents_of;
-use crate::refuse::{write_error, write_unreached};
-use crate::replica::{DELETED, WebDavReplica};
+use crate::refuse::write_error;
+use crate::replica::WebDavReplica;
 use crate::requests;
 use dav_proto::parse_multistatus;
 use porter_http::http::header::CONTENT_TYPE;
 use porter_http::http::{Method, Request, Response};
 use porter_http::{HeaderText, Http, request, webdav};
+use porter_sync::DELETED;
+use porter_sync::status::write_unreached;
 use porter_sync::{
     BaseVersion, Conflict, PutItem, PutRefused, PutTarget, RemoteId, RemoteSide, RemoteVersion,
     RetryAfter,

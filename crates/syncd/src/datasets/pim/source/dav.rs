@@ -8,11 +8,13 @@ use super::super::discover::{DiscoverError, Found, discover};
 use super::super::relay::{pim_http, pim_replica};
 use super::{Feed, FeedChange, FeedCursor, Page, PimSource};
 use porter_client::{Accounts, Transport};
+use porter_core::clock::SystemClock;
 use porter_core::{EndpointUrl, GrantId, WebUrl};
 use porter_http_relay::{RelayDial, RelayHttp};
+use porter_sync::Clock;
 use porter_sync::{Anchor, ByteRange, Change, Cursor, RemoteId, Replica, ReplicaError};
 use std::sync::Arc;
-use storage_webdav::{Clock, WebDavReplica};
+use storage_webdav::WebDavReplica;
 
 /// A WebDAV sync token or etag-walk position: the replica's own anchor text.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,7 +72,7 @@ impl<T: Transport + 'static> PimSource for DavSource<T> {
             self.grant.clone(),
             self.endpoint.clone(),
             &found.url,
-            Clock::system(),
+            Clock::new(SystemClock),
         ))
     }
 }
