@@ -281,7 +281,7 @@ EDGES=(
   "porter-sync: porter-core"
   "porter-infer: porter-core cua-action"
   "porter-service: porter-core porter-provider porter-secrets"
-  "porter-store: porter-core porter-fs porter-service"
+  "porter-store: porter-core porter-fs"
   "porter-router: porter-core porter-infer cua-action engine-supervisor model-catalog model-http model-openai-compat model-provider speech-provider vision-prep"
   "porter-turns: porter-core porter-infer porter-bridge porter-router cua-action cua-parse cua-session cua-vendors engine-supervisor model-extract model-http model-openai-compat model-provider vision-prep"
   "porter-dbus: porter-core"

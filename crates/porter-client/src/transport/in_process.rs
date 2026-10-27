@@ -22,6 +22,7 @@ use crate::authenticated::{AuthenticatedStream, Relayed};
 use crate::error::TransportError;
 use crate::relays::{NoRelays, RelayHost};
 use porter_core::clock::Clock;
+use porter_core::store::RegistryStore;
 use porter_core::stream::duplex;
 use porter_core::wire::Refusal;
 use porter_core::{AccountsReply, AccountsRequest, AppId, EndpointUrl, GrantId, RelayPlan};
@@ -31,7 +32,7 @@ use porter_core::{DataClass, Need, Tier};
 use porter_infer::{OpenOptions, Readiness};
 use porter_provider::Provider;
 use porter_secrets::Secrets;
-use porter_service::{AccountService, AuditSink, RegistryStore, Sheets};
+use porter_service::{AccountService, AuditSink, Sheets};
 use std::future::Future;
 use std::sync::Arc;
 

@@ -14,8 +14,8 @@
 
 use crate::location::StoreLocation;
 use porter_core::store::{Persisted, StoreFault};
+use porter_core::store::{RegistryStore, StoreError};
 use porter_fs::atomic::AtomicFile;
-use porter_service::{RegistryStore, StoreError};
 use std::io;
 use std::path::PathBuf;
 

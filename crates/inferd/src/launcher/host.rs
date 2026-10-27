@@ -7,6 +7,7 @@
 
 use porter_core::clock::Clock;
 use porter_core::consent::Usage;
+use porter_core::store::RegistryStore;
 use porter_core::wire::{ParentWindow, Refusal};
 use porter_core::{
     AccountId, AccountsReply, AgentState, AppId, DataClass, GrantId, LauncherSession, Need,
@@ -14,9 +15,7 @@ use porter_core::{
 };
 use porter_provider::Provider;
 use porter_secrets::Secrets;
-use porter_service::{
-    AccountService, AgentFault, AuditSink, Registry, RegistryStore, Roster, Sheets,
-};
+use porter_service::{AccountService, AgentFault, AuditSink, Registry, Roster, Sheets};
 use std::future::Future;
 
 /// The key host as the launcher uses it: its accounts and permits, the consent sheet for an

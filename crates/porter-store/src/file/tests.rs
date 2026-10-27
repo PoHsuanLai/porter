@@ -1,7 +1,6 @@
 use super::*;
 use porter_core::capability::VocabVersion;
 use porter_fake::{llm_account, mail_account, storage_account};
-use porter_service::Registry;
 use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -33,12 +32,12 @@ impl Drop for Scratch {
 }
 
 fn registry() -> Persisted {
-    Registry {
+    Persisted {
+        vocab: VocabVersion::CURRENT,
         accounts: vec![storage_account(), mail_account(), llm_account()],
         grants: vec![],
         toggles: vec![],
     }
-    .persisted()
 }
 
 fn store_in(scratch: &Scratch) -> FileStore {

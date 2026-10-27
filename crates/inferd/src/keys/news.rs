@@ -11,7 +11,8 @@ use super::host::KeyHost;
 use super::rows::{Key, ServedSlot, path, since_text};
 use ds_settings::schema::KeyPath;
 use porter_core::store::Persisted;
-use porter_service::{Registry, RegistryStore, StoreError};
+use porter_core::store::{RegistryStore, StoreError};
+use porter_service::Registry;
 use std::sync::Arc;
 use tokio::sync::Notify;
 

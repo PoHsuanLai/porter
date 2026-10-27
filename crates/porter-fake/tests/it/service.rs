@@ -66,7 +66,7 @@ where
     P: porter_provider::Provider,
     S: porter_secrets::Secrets,
     U: porter_service::Sheets,
-    R: porter_service::RegistryStore,
+    R: porter_core::store::RegistryStore,
     A: porter_service::AuditSink,
 {
     async fn serve(&self, app: &AppId, request: AccountsRequest) -> AccountsReply {

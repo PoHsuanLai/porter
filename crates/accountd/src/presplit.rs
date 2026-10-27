@@ -9,7 +9,7 @@
 //! file. A file that has nothing to drop is not copied.
 
 use porter_core::store::{Persisted, prune_to_identities};
-use porter_service::{RegistryStore, StoreError};
+use porter_core::store::{RegistryStore, StoreError};
 use porter_store::FileStore;
 use std::path::PathBuf;
 

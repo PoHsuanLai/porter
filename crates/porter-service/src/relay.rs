@@ -44,7 +44,7 @@ fn bearer_of(kind: TokenKind, value: &SecretText) -> Option<SecretText> {
 
 impl<P: Provider, S: Secrets, U: Sheets, K: Clock, R, A: AuditSink> AccountService<P, S, U, K, R, A>
 where
-    R: crate::store::RegistryStore,
+    R: porter_core::store::RegistryStore,
 {
     /// The `RelayPlan` for one checked endpoint of `account`.
     pub(crate) async fn plan_relay(

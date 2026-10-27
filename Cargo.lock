@@ -2876,7 +2876,6 @@ dependencies = [
  "porter-core",
  "porter-fake",
  "porter-fs",
- "porter-service",
  "tokio",
 ]
 

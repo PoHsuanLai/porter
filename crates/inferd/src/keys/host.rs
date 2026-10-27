@@ -3,6 +3,7 @@
 //! implementation; the trait keeps the bus objects free of its six type parameters.
 
 use porter_core::clock::Clock;
+use porter_core::store::RegistryStore;
 use porter_core::wire::{ParentWindow, Refusal};
 use porter_core::{
     AccountId, AccountState, AccountsReply, AccountsRequest, AgentState, AppId, Candidate,
@@ -12,7 +13,7 @@ use porter_provider::Provider;
 use porter_secrets::{Secrets, SecretsError};
 use porter_service::{
     AccountService, AgentFault, AuditSink, Launchers as LaunchersSeam, LocalFault, Registry,
-    RegistryStore, RevokeReport, Sheets,
+    RevokeReport, Sheets,
 };
 use std::future::Future;
 

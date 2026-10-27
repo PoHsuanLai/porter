@@ -11,13 +11,12 @@
 //! [`AccountService::with_store`]; this crate depends on no executor, so the file store lives in
 //! `porter-store`.
 //!
-//! The seams' failures are small values with plain sentences:
+//! A seam's failure is a small value with a plain sentence:
 //!
 //! ```
-//! use porter_service::{SheetFault, StoreError};
+//! use porter_service::SheetFault;
 //!
 //! assert_eq!(SheetFault::Closed.to_string(), "sheet closed");
-//! assert_eq!(StoreError::Unavailable.to_string(), "registry store unavailable");
 //! ```
 
 mod add;
@@ -38,7 +37,6 @@ mod registry;
 mod relay;
 mod service;
 mod sheets;
-mod store;
 mod token;
 
 pub use add_flow::{AllowFor, SignInAs};
@@ -51,5 +49,4 @@ pub use own_machines::OwnMachines;
 pub use registry::Registry;
 pub use service::AccountService;
 pub use sheets::{SheetFault, SheetLink, SheetOpen, Sheets};
-pub use store::{NoStore, RegistryStore, StoreError};
 pub use token::secret_purpose;

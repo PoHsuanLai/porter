@@ -28,6 +28,7 @@ use crate::config::Dirs;
 use porter_core::clock::Clock;
 use porter_core::clock::SystemClock;
 use porter_core::consent::Usage;
+use porter_core::store::RegistryStore;
 use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
 use porter_core::{
     AccountId, AccountsReply, AccountsRequest, AppId, AppName, DataClass, GrantId, Isolation,
@@ -39,7 +40,7 @@ use porter_provider::Provider;
 use porter_secrets::Namespace;
 use porter_secrets::Secrets;
 use porter_secrets::keysel::{Chosen, Selection};
-use porter_service::{AccountService, AuditSink, RegistryStore};
+use porter_service::{AccountService, AuditSink};
 use std::collections::BTreeSet;
 use zbus::fdo::RequestNameReply;
 
