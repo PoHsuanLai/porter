@@ -30,12 +30,14 @@
 //! ```
 
 mod proc_root;
+mod registry;
 mod system_callers;
 #[cfg(feature = "watch")]
 mod watch;
 pub mod xdg;
 
 pub use proc_root::{ProcGate, ProcRoot};
+pub use registry::registry_words;
 pub use system_callers::{
     CALLERS, INFERD_CALLERS, SYSTEM_CALLERS, SYSTEM_CALLERS_VAR, SystemCallers, SystemFile,
     TABLE_DIRS, TableChoice, held_by, held_under, root_held,

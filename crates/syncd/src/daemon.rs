@@ -222,10 +222,10 @@ pub enum StartError {
     /// A caller table cannot be read.
     #[error("{0}")]
     Callers(#[from] CallerFileError),
-    /// syncd's own registry file was refused. The text says so in plain words: both files,
-    /// nothing changed.
-    #[error("{0}")]
-    RegistryRefused(String),
+    /// syncd's own registry file was refused. The words name both files and say
+    /// nothing was changed.
+    #[error("{}", porter_daemon::registry_words(.0.file(), .0.backup(), .0.cause(), "sync service"))]
+    RegistryRefused(porter_store::RegistryRefusal),
     /// The bus cannot be reached.
     #[error("no session bus: {0}")]
     Bus(#[source] zbus::Error),

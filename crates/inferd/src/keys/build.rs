@@ -32,10 +32,10 @@ pub enum KeysStartError {
     /// The secret store asked for is refused.
     #[error("{0}")]
     Keys(#[from] KeysRefusal),
-    /// The registry file was refused. The text says so in plain words: both files, nothing
-    /// changed.
-    #[error("{0}")]
-    Registry(String),
+    /// The registry file was refused. The words name both files and say nothing
+    /// was changed.
+    #[error("{}", porter_daemon::registry_words(.0.file(), .0.backup(), .0.cause(), "AI service"))]
+    Registry(porter_store::RegistryRefusal),
 }
 
 /// The service the daemon hosts: AI and agent families, the shell's sheets, the file registry

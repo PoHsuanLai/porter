@@ -157,7 +157,7 @@ async fn each_commit_keeps_the_previous_good_file_as_the_backup() {
     assert_eq!(std::fs::read(store.path()).expect("read"), b"{oops");
 }
 
-/// rel-5: the refusal at start names both files in plain words, says nothing was changed, and
+/// rel-5: the refusal at start names both files, and
 /// loading leaves both exactly as they were.
 #[tokio::test]
 async fn a_refused_registry_is_explained_with_both_files_and_touched_by_nobody() {
@@ -171,12 +171,8 @@ async fn a_refused_registry_is_explained_with_both_files_and_touched_by_nobody()
         panic!("the file is refused");
     };
     let said = store.refusal(&fault);
-    assert!(said.contains(&store.path().display().to_string()), "{said}");
-    assert!(
-        said.contains(&store.backup_path().display().to_string()),
-        "{said}"
-    );
-    assert!(said.contains("Nothing was changed"), "{said}");
+    assert_eq!(said.file(), store.path());
+    assert_eq!(said.backup(), Some(store.backup_path().as_path()));
     assert_eq!(std::fs::read(store.path()).expect("read"), b"{oops");
     assert_eq!(std::fs::read(store.backup_path()).expect("bak"), bak);
     // With no backup the message says so rather than naming a file that is not there.
@@ -184,7 +180,7 @@ async fn a_refused_registry_is_explained_with_both_files_and_touched_by_nobody()
     let none = store_in(&alone);
     std::fs::create_dir_all(alone.path().join("porter")).expect("dir");
     std::fs::write(none.path(), b"{oops").expect("write");
-    assert!(none.refusal(&fault).contains("no earlier copy"));
+    assert_eq!(none.refusal(&fault).backup(), None);
 }
 
 #[tokio::test]

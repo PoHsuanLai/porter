@@ -29,6 +29,35 @@ pub struct FileStore {
     file: AtomicFile,
 }
 
+/// Why the registry file was refused at start: which file, the copy from before its last
+/// change when there is one, and what was wrong with it. The words for a person are the
+/// host's.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("registry file {} refused: {cause}", file.display())]
+#[non_exhaustive]
+pub struct RegistryRefusal {
+    file: PathBuf,
+    backup: Option<PathBuf>,
+    cause: String,
+}
+
+impl RegistryRefusal {
+    /// The registry file.
+    pub fn file(&self) -> &std::path::Path {
+        &self.file
+    }
+
+    /// The copy from before its last change, when one is there.
+    pub fn backup(&self) -> Option<&std::path::Path> {
+        self.backup.as_deref()
+    }
+
+    /// What was wrong with the file.
+    pub fn cause(&self) -> &str {
+        &self.cause
+    }
+}
+
 impl FileStore {
     /// A store in `dir` (created on the first save).
     pub fn new(dir: PathBuf) -> Self {
@@ -58,24 +87,16 @@ impl FileStore {
         self.file.backup_path()
     }
 
-    /// What to tell the person when the registry file is refused at start: both files by name,
-    /// and that nothing was changed. The host stops (it never starts empty over a file it could
-    /// not read) and nothing is restored on its own.
-    pub fn refusal(&self, why: &impl std::fmt::Display) -> String {
-        let (file, backup) = (self.path(), self.backup_path());
-        let spare = match backup.exists() {
-            true => format!(
-                "The copy from before the last change is {}. To go back to it, stop the accounts \
-                 service, put that copy in place of the first file, and start it again.",
-                backup.display()
-            ),
-            false => "There is no earlier copy.".to_string(),
-        };
-        format!(
-            "the accounts file {} cannot be read ({why}). Nothing was changed and the accounts \
-             service did not start, so no account is lost. {spare}",
-            file.display()
-        )
+    /// The refusal of the registry file at start, for the host to word: both files and why.
+    /// The host stops (it never starts empty over a file it could not read) and nothing is
+    /// restored on its own.
+    pub fn refusal(&self, why: &impl std::fmt::Display) -> RegistryRefusal {
+        let backup = self.backup_path();
+        RegistryRefusal {
+            file: self.path(),
+            backup: backup.exists().then_some(backup),
+            cause: why.to_string(),
+        }
     }
 
     /// A staging name no other save, in this process or another, is using.

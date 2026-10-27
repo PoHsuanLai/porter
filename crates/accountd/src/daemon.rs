@@ -130,11 +130,11 @@ pub enum StartError {
     /// A caller table cannot be read.
     #[error("{0}")]
     Callers(#[from] CallerFileError),
-    /// The registry file was refused. The text says so in plain words: both files, nothing
-    /// changed. The daemon stops with [`accountd::EXIT_REGISTRY_REFUSED`](crate::EXIT_REGISTRY_REFUSED),
+    /// The registry file was refused. The words name both files and say nothing
+    /// was changed. The daemon stops with [`accountd::EXIT_REGISTRY_REFUSED`](crate::EXIT_REGISTRY_REFUSED),
     /// the status `accountd.service` does not restart on.
-    #[error("{0}")]
-    RegistryRefused(String),
+    #[error("{}", porter_daemon::registry_words(.0.file(), .0.backup(), .0.cause(), "accounts service"))]
+    RegistryRefused(porter_store::RegistryRefusal),
     /// The bus cannot be reached.
     #[error("no session bus: {0}")]
     Bus(#[source] zbus::Error),

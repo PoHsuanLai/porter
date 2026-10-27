@@ -21,5 +21,5 @@
 mod file;
 mod location;
 
-pub use file::FileStore;
+pub use file::{FileStore, RegistryRefusal};
 pub use location::StoreLocation;
