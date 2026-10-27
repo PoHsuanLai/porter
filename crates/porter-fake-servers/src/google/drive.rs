@@ -11,7 +11,7 @@
 //! trashed one as a file with `trashed: true`; a page token older than the last expiry is
 //! refused.
 
-use super::md5::md5_hex;
+use md5::{Digest, Md5};
 use std::collections::BTreeMap;
 
 /// The mime type of a folder.
@@ -581,6 +581,11 @@ impl Drive {
     }
 }
 
+/// The lower-case hex MD5 of `bytes`, the form of Drive's `md5Checksum`.
+pub fn md5_hex(bytes: &[u8]) -> String {
+    hex::encode(Md5::digest(bytes))
+}
+
 /// A node's `md5Checksum`.
 pub fn checksum(node: &Node) -> Option<String> {
     node.bytes.as_deref().map(md5_hex)
@@ -595,5 +600,16 @@ impl Drive {
             .values()
             .filter(|n| !n.removed && !self.is_root(&n.id) && n.space == space)
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_checksum_is_the_lower_case_hex_md5_of_the_content() {
+        assert_eq!(md5_hex(b""), "d41d8cd98f00b204e9800998ecf8427e");
+        assert_eq!(md5_hex(b"abc"), "900150983cd24fb0d6963f7d28e17f72");
     }
 }

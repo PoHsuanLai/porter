@@ -2537,6 +2537,8 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "form_urlencoded",
+ "hex",
+ "md-5",
  "porter-core",
  "porter-discover",
  "porter-fake",

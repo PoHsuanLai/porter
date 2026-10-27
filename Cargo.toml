@@ -173,6 +173,8 @@ subtle = "2.6.1"
 flate2 = "1.1.10"
 tar = { version = "0.4.46", default-features = false }
 md-5 = "0.10"
+# Lower-case hex of a digest or a byte string (MIT OR Apache-2.0; already in Cargo.lock).
+hex = "0.4"
 # Percent-encoding (RFC 3986) and form pairs, MIT OR Apache-2.0; both are in Cargo.lock through url.
 percent-encoding = "2.3"
 form_urlencoded = "1.2"
