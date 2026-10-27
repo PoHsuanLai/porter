@@ -33,18 +33,13 @@ fn day_of(at: UnixSeconds) -> i64 {
     at.0.div_euclid(86_400)
 }
 
-/// The month `at` is in, as months since year 0 (UTC): `year * 12 + month - 1`.
+/// The month `at` is in, as months since year 0 (UTC): `year * 12 + month - 1`. An instant chrono
+/// cannot write (beyond year 262000) is month 0.
 fn month_of(at: UnixSeconds) -> i64 {
-    // Howard Hinnant's civil-from-days: the proleptic Gregorian calendar.
-    let z = day_of(at) + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = yoe + era * 400 + i64::from(month <= 2);
-    year * 12 + month - 1
+    use chrono::Datelike;
+    chrono::DateTime::from_timestamp(at.0, 0).map_or(0, |day| {
+        i64::from(day.year()) * 12 + i64::from(day.month()) - 1
+    })
 }
 
 /// The index of the period `at` falls in.

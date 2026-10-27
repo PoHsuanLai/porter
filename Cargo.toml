@@ -142,6 +142,9 @@ roxmltree = "0.21"
 # The request and response types (MIT OR Apache-2.0, already in Cargo.lock at 1.5.0 through
 # hyper): porter-http's `HttpRequest` and `HttpResponse`, and dav-proto's `http` feature.
 http = "1"
+# Calendar dates and RFC 3339 times (MIT OR Apache-2.0; owner's choice 2026-10-28). No default
+# features: no system clock, no time zone database, no locale; `alloc` is for `format`.
+chrono = { version = "0.4", default-features = false, features = ["alloc"] }
 # The loopback redirect request and porter-proxy's request head (MIT OR Apache-2.0; already in Cargo.lock).
 httparse = "1.10"
 # porter-http's client, as stoker's model-http takes it.

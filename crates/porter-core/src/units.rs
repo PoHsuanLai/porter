@@ -49,65 +49,22 @@ impl UnixSeconds {
     /// The instant an RFC 3339 time names (`2026-10-06T10:00:00.123-07:00`, `…Z`), as the
     /// storage APIs write a file's last change. A fraction is dropped; `None` for anything else.
     pub fn from_rfc3339(text: &str) -> Option<Self> {
-        let bytes = text.as_bytes();
-        let number = |from, len| digits(text, from, len);
-        let separated = [(4, b'-'), (7, b'-'), (13, b':'), (16, b':')]
-            .iter()
-            .all(|(at, b)| bytes.get(*at) == Some(b));
-        if !separated || !matches!(bytes.get(10), Some(b'T' | b't')) {
-            return None;
-        }
-        let (year, month, day) = (number(0, 4)?, number(5, 2)?, number(8, 2)?);
-        let (hour, minute, second) = (number(11, 2)?, number(14, 2)?, number(17, 2)?);
-        let date = (1..=12).contains(&month) && (1..=31).contains(&day);
-        if !date || hour > 23 || minute > 59 || second > 60 {
-            return None;
-        }
-        let mut rest = text.get(19..)?;
-        if let Some(fraction) = rest.strip_prefix('.') {
-            let digits = fraction.bytes().take_while(u8::is_ascii_digit).count();
-            if digits == 0 {
-                return None;
-            }
-            rest = &fraction[digits..];
-        }
-        let offset = match rest.as_bytes() {
-            [b'Z' | b'z'] => 0,
-            [sign @ (b'+' | b'-'), _, _, b':', _, _] => {
-                let (hours, minutes) = (digits(rest, 1, 2)?, digits(rest, 4, 2)?);
-                if hours > 23 || minutes > 59 {
-                    return None;
-                }
-                let east = hours * 3600 + minutes * 60;
-                if *sign == b'-' { -east } else { east }
-            }
-            _ => return None,
-        };
-        let days = days_from_civil(year, month, day);
-        Some(UnixSeconds(
-            days * 86_400 + hour * 3600 + minute * 60 + second - offset,
+        let time = chrono::DateTime::parse_from_rfc3339(text).ok()?;
+        Some(UnixSeconds(time.timestamp()))
+    }
+
+    /// `YYYY-MM-DD` of the UTC day this instant falls in; `None` for an instant outside the
+    /// years chrono can write.
+    pub fn utc_date(self) -> Option<String> {
+        use chrono::Datelike;
+        let day = chrono::DateTime::from_timestamp(self.0, 0)?.date_naive();
+        Some(format!(
+            "{:04}-{:02}-{:02}",
+            day.year(),
+            day.month(),
+            day.day()
         ))
     }
-}
-
-/// The number the `len` digits at `from` of `text` write.
-fn digits(text: &str, from: usize, len: usize) -> Option<i64> {
-    let part = text.get(from..from + len)?;
-    match part.bytes().all(|b| b.is_ascii_digit()) {
-        true => part.parse().ok(),
-        false => None,
-    }
-}
-
-/// Days from 1970-01-01 to the proleptic Gregorian date (Howard Hinnant's `days_from_civil`).
-fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
-    let year = if month <= 2 { year - 1 } else { year };
-    let era = year.div_euclid(400);
-    let of_era = year - era * 400;
-    let shifted = if month > 2 { month - 3 } else { month + 9 };
-    let of_year = (153 * shifted + 2) / 5 + day - 1;
-    let of_cycle = of_era * 365 + of_era / 4 - of_era / 100 + of_year;
-    era * 146_097 + of_cycle - 719_468
 }
 
 #[cfg(test)]
@@ -127,7 +84,13 @@ mod tests {
             ("2026-10-24", None),
             ("2026-10-24T05:42:18", None),
             ("2026-13-01T00:00:00Z", None),
-            ("2026-10-24 05:42:18Z", None),
+            // RFC 3339 section 5.6 allows a space for the T; chrono reads it, as do the APIs' own clients.
+            ("2026-10-24 05:42:18Z", Some(1_792_820_538)),
+            ("2026-10-24t05:42:18z", Some(1_792_820_538)),
+            ("2026-02-31T00:00:00Z", None),
+            ("2026-04-31T00:00:00Z", None),
+            ("2026-10-24T24:00:00Z", None),
+            ("2026-10-24T05:42:18+24:00", None),
             ("2026-10-24T05:42:18.Z", None),
             ("not a time", None),
         ];
@@ -138,5 +101,21 @@ mod tests {
                 "{text}"
             );
         }
+    }
+
+    #[test]
+    fn the_utc_day_of_a_unix_time() {
+        let cases = [
+            (0, "1970-01-01"),
+            (86_399, "1970-01-01"),
+            (86_400, "1970-01-02"),
+            (951_782_400, "2000-02-29"),
+            (1_790_000_000, "2026-09-21"),
+            (-86_400, "1969-12-31"),
+        ];
+        for (at, want) in cases {
+            assert_eq!(UnixSeconds(at).utc_date().as_deref(), Some(want), "{at}");
+        }
+        assert_eq!(UnixSeconds(i64::MAX).utc_date(), None);
     }
 }

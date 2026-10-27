@@ -21,8 +21,9 @@
 //! A series' exceptions are separate events in Graph and separate files here, sharing the
 //! master's `UID` with a `RECURRENCE-ID`; the master has no `EXDATE` for them.
 
+use super::super::civil::{compact_date, compact_local};
 use super::json::{Address, Attendee, Event, When};
-use super::recur::{Rule, compact_date, rule};
+use super::recur::{Rule, rule};
 use super::zones::{Zone, zone};
 
 /// Why an event could not be written.
@@ -91,17 +92,7 @@ pub(in crate::datasets::pim::source) fn param(text: &str) -> String {
 
 /// `20261006T100000` from `2026-10-06T10:00:00.0000000`.
 fn local(date_time: &str) -> Result<String, ConvertError> {
-    let date = compact_date(date_time).ok_or(ConvertError::BadDateTime)?;
-    let time = date_time
-        .get(11..19)
-        .filter(|t| {
-            t.as_bytes().iter().enumerate().all(|(at, b)| match at {
-                2 | 5 => *b == b':',
-                _ => b.is_ascii_digit(),
-            })
-        })
-        .ok_or(ConvertError::BadDateTime)?;
-    Ok(format!("{date}T{}", time.replace(':', "")))
+    compact_local(date_time).ok_or(ConvertError::BadDateTime)
 }
 
 /// A DTSTART or DTEND line for `when`; the zone's comment, if it needs one.

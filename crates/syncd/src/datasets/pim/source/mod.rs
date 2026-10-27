@@ -20,6 +20,7 @@
 //! more arm in `AccountMirrors::refresh`. Nothing else is touched.
 
 mod adapter;
+mod civil;
 pub mod dav;
 pub mod google;
 pub mod graph;

@@ -32,19 +32,6 @@ fn registry() -> Registry {
 }
 
 #[test]
-fn the_utc_day_of_a_unix_time() {
-    let cases = [
-        (0, "1970-01-01"),
-        (86_400, "1970-01-02"),
-        (951_782_400, "2000-02-29"),
-        (-86_400, "1969-12-31"),
-    ];
-    for (at, want) in cases {
-        assert_eq!(civil_date(UnixSeconds(at)), want, "{at}");
-    }
-}
-
-#[test]
 fn every_row_path_reads_back_as_its_key_and_a_dotted_permit_id_is_found() {
     let registry = registry();
     let id = registry.accounts[0].id.clone();

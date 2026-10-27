@@ -5,6 +5,7 @@
 //! (or one missing what its type needs) has no rule: the event is written as its series master
 //! with a `COMMENT`, and the occurrences are whatever Graph sends.
 
+use super::super::civil::compact_date;
 use super::json::{Pattern, Range, Recurrence};
 
 /// What a recurrence came to.
@@ -43,15 +44,6 @@ fn position(index: &str) -> Option<i8> {
 fn days(pattern: &Pattern) -> Option<Vec<&'static str>> {
     let all: Option<Vec<_>> = pattern.days_of_week.iter().map(|d| day(d)).collect();
     all.filter(|d| !d.is_empty())
-}
-
-/// `20261006` from `2026-10-06` (a date, or the date part of a date-time).
-pub(super) fn compact_date(text: &str) -> Option<String> {
-    let date = text.get(..10)?;
-    let mut parts = date.split('-');
-    let (y, m, d) = (parts.next()?, parts.next()?, parts.next()?);
-    let digits = |s: &str, n: usize| s.len() == n && s.chars().all(|c| c.is_ascii_digit());
-    (digits(y, 4) && digits(m, 2) && digits(d, 2)).then(|| format!("{y}{m}{d}"))
 }
 
 fn end_of(range: Option<&Range>, all_day: bool) -> Option<String> {

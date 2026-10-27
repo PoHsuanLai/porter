@@ -13,8 +13,9 @@
 //! Not carried: `position` (the order in the list), `links`, `hidden`. A list is a directory and
 //! each of its tasks a file, so the list's name is the directory's `displayname`.
 
+use super::super::civil::compact_date;
 use super::super::graph::convert::{escape, fold};
-use super::time::{Stamp, compact_date};
+use super::time::Stamp;
 use serde::Deserialize;
 
 /// A task list, as `tasklists.list` gives it.
