@@ -5,7 +5,7 @@
 //!
 //! The session URL is pre-authenticated and on another host in Graph; it is sent through the same
 //! `Http` as everything else, which routes a request for another origin to a stream that adds no
-//! credential ([`crate::Routed`]).
+//! credential (`porter_http_relay::Routed`).
 
 use crate::json::Session;
 use crate::refuse::write_unreached;

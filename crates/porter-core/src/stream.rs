@@ -7,7 +7,7 @@ use std::collections::VecDeque;
 use std::future::{Future, poll_fn};
 use std::io;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::task::{Poll, Waker};
+use std::task::{Context, Poll, Waker};
 
 /// One end of an ordered, reliable byte stream.
 pub trait ByteStream: Send {
@@ -78,63 +78,82 @@ impl Drop for DuplexEnd {
     }
 }
 
-impl ByteStream for DuplexEnd {
-    async fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        poll_fn(|cx| {
-            let mut lane = locked(&self.incoming);
-            if buf.is_empty() {
-                return Poll::Ready(Ok(0));
+impl DuplexEnd {
+    /// Reads what is waiting into `buf`: the number of bytes, or `0` once the other end has
+    /// finished writing. Pending (the waker is kept) while nothing is waiting. The poll form
+    /// of [`ByteStream::read`], for a host that drives reading and writing from one task.
+    pub fn poll_read(&mut self, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<io::Result<usize>> {
+        let mut lane = locked(&self.incoming);
+        if buf.is_empty() {
+            return Poll::Ready(Ok(0));
+        }
+        let n = buf.len().min(lane.bytes.len());
+        if n > 0 {
+            for (slot, byte) in buf.iter_mut().zip(lane.bytes.drain(..n)) {
+                *slot = byte;
             }
-            let n = buf.len().min(lane.bytes.len());
-            if n > 0 {
-                for (slot, byte) in buf.iter_mut().zip(lane.bytes.drain(..n)) {
-                    *slot = byte;
-                }
-                if let Some(writer) = lane.writer.take() {
-                    writer.wake();
-                }
-                return Poll::Ready(Ok(n));
+            if let Some(writer) = lane.writer.take() {
+                writer.wake();
             }
-            if lane.finished {
-                return Poll::Ready(Ok(0));
-            }
-            lane.reader = Some(cx.waker().clone());
-            Poll::Pending
-        })
-        .await
+            return Poll::Ready(Ok(n));
+        }
+        if lane.finished {
+            return Poll::Ready(Ok(0));
+        }
+        lane.reader = Some(cx.waker().clone());
+        Poll::Pending
     }
 
-    async fn write_all(&mut self, bytes: &[u8]) -> io::Result<()> {
-        let mut rest = bytes;
-        poll_fn(|cx| {
-            while !rest.is_empty() {
-                let mut lane = locked(&self.outgoing);
-                if Arc::strong_count(&self.outgoing) < 2 {
-                    return Poll::Ready(Err(io::ErrorKind::BrokenPipe.into()));
-                }
-                let room = self.capacity.saturating_sub(lane.bytes.len());
-                if room == 0 {
-                    lane.writer = Some(cx.waker().clone());
-                    return Poll::Pending;
-                }
-                let (now, later) = rest.split_at(room.min(rest.len()));
-                lane.bytes.extend(now);
-                rest = later;
-                if let Some(reader) = lane.reader.take() {
-                    reader.wake();
-                }
-            }
-            Poll::Ready(Ok(()))
-        })
-        .await
+    /// Writes as much of `bytes` as fits, and returns how many: at least one unless `bytes` is
+    /// empty. Pending (the waker is kept) while the other end has not read enough to make room;
+    /// a broken pipe once the other end is dropped. The poll form of [`ByteStream::write_all`].
+    pub fn poll_write(&mut self, cx: &mut Context<'_>, bytes: &[u8]) -> Poll<io::Result<usize>> {
+        if bytes.is_empty() {
+            return Poll::Ready(Ok(0));
+        }
+        let mut lane = locked(&self.outgoing);
+        if Arc::strong_count(&self.outgoing) < 2 {
+            return Poll::Ready(Err(io::ErrorKind::BrokenPipe.into()));
+        }
+        let room = self.capacity.saturating_sub(lane.bytes.len());
+        if room == 0 {
+            lane.writer = Some(cx.waker().clone());
+            return Poll::Pending;
+        }
+        let now = room.min(bytes.len());
+        lane.bytes.extend(&bytes[..now]);
+        if let Some(reader) = lane.reader.take() {
+            reader.wake();
+        }
+        Poll::Ready(Ok(now))
     }
 
-    async fn shutdown(&mut self) -> io::Result<()> {
+    /// Tells the other end nothing more will be written.
+    pub fn shutdown_now(&mut self) {
         let mut lane = locked(&self.outgoing);
         lane.finished = true;
         if let Some(reader) = lane.reader.take() {
             reader.wake();
         }
+    }
+}
+
+impl ByteStream for DuplexEnd {
+    async fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        poll_fn(|cx| self.poll_read(cx, buf)).await
+    }
+
+    async fn write_all(&mut self, bytes: &[u8]) -> io::Result<()> {
+        let mut rest = bytes;
+        while !rest.is_empty() {
+            let n = poll_fn(|cx| self.poll_write(cx, rest)).await?;
+            rest = &rest[n..];
+        }
+        Ok(())
+    }
+
+    async fn shutdown(&mut self) -> io::Result<()> {
+        self.shutdown_now();
         Ok(())
     }
 }

@@ -19,13 +19,12 @@
 //!   upload session that a new replica resumes; the names OneDrive refuses ([`accepts_name`]).
 //! - **Quota** is the drive's `quota` (`used`, `total`).
 //! - **The connection** is whatever [`porter_http::Http`] the replica is handed. In syncd it is a
-//!   [`Routed`]: `porter_http::stream::StreamHttp` over the descriptors of accountd's
+//!   `porter_http_relay::Routed`: a `porter_http_relay::RelayHttp` over the relays of accountd's
 //!   `Tokens.OpenAuthenticated` (whose relay adds the bearer, so syncd never holds a token) for
 //!   the Graph host, and over those of `Tokens.OpenLinked` (no credential) for the hosts of an
 //!   `uploadUrl` and of the redirect a download answers with.
 //!
-//! The crate is pure: no runtime and no socket. It reuses porter-http's stream client (`StreamHttp`,
-//! `Dial`) and storage-webdav's `Clock` (nothing of it changed) and keeps its own error classes
+//! The crate is pure: no runtime and no socket. It reuses storage-webdav's `Clock` (nothing of it changed) and keeps its own error classes
 //! and wire reading.
 
 mod addr;
@@ -34,12 +33,10 @@ mod feed;
 mod json;
 mod refuse;
 mod replica;
-mod route;
 mod upload;
 mod write;
 
 pub use addr::Root;
 pub use drive::accepts_name;
 pub use replica::{CHUNK_UNIT, GraphReplica, SIMPLE_MAX, Uploads};
-pub use route::Routed;
 pub use storage_webdav::{Clock, DELETED};

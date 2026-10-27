@@ -9,7 +9,7 @@ use common::{Replica, Server, TOKEN, TcpDial};
 use porter_core::{Bytes, WebUrl};
 use porter_fake_servers::graph::{CHUNK_UNIT, Knobs};
 use porter_fake_servers::{GraphHandle, Hit};
-use porter_http::stream::{StreamHttp, StreamLimits};
+use porter_http_relay::{RelayHttp, RelayLimits};
 use porter_sync::{
     BaseVersion, Blob, ByteRange, Change, Conflict, Cursor, ItemPath, PutItem, PutRefused,
     PutTarget, RemoteId, RemoteSide, RemoteVersion, Replica as _, ReplicaError, RetryAfter,
@@ -403,7 +403,7 @@ async fn throttling_is_a_transient_with_the_wait_the_server_named() {
 async fn without_the_relays_bearer_every_request_is_refused_and_the_replica_never_adds_one() {
     let server = Server::start().await;
     let bare = GraphReplica::new(
-        StreamHttp::new(TcpDial(server.port), StreamLimits::default()),
+        RelayHttp::new(TcpDial(server.port), RelayLimits::default()),
         &server.base,
         "",
         Clock::fixed(common::NOW),

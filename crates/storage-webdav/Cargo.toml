@@ -12,13 +12,14 @@ publish.workspace = true
 dav-proto = { workspace = true }
 porter-core = { workspace = true }
 porter-dav = { workspace = true }
-porter-http = { workspace = true, features = ["stream"] }
+porter-http = { workspace = true }
 porter-sync = { workspace = true }
 
 [dev-dependencies]
 base64 = { workspace = true }
 porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }
+porter-http-relay = { workspace = true }
 porter-sync = { workspace = true, features = ["testing"] }
 roxmltree = { workspace = true }
 tokio = { workspace = true }

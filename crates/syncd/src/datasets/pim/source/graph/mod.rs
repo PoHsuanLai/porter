@@ -22,13 +22,13 @@ use super::{Feed, FeedChange, FeedCursor, Page, PimSource};
 use crate::dataset::fingerprint;
 use crate::datasets::pim::PimKind;
 use crate::datasets::pim::discover::{DiscoverError, Found};
-use crate::datasets::pim::relay::{PimDial, pim_http};
+use crate::datasets::pim::relay::pim_http;
 use json::{Calendar, CalendarPage, Event, EventPage};
 use porter_client::{Accounts, Transport};
 use porter_core::{Bytes, EndpointUrl, GrantId, WebUrl};
 use porter_http::http::{Method, Response};
-use porter_http::stream::StreamHttp;
 use porter_http::{HeaderText, Http, HttpError, request};
+use porter_http_relay::{RelayDial, RelayHttp};
 use porter_sync::{
     ItemKind, ItemPath, More, RemoteId, RemoteItem, RemoteVersion, ReplicaError, RetryAfter,
     Tombstone,
@@ -57,7 +57,7 @@ impl FeedCursor for DeltaLink {
 /// The calendars of one Microsoft account.
 #[derive(Debug)]
 pub struct GraphCalendarSource<T: Transport> {
-    http: Arc<StreamHttp<PimDial<T>>>,
+    http: Arc<RelayHttp<RelayDial<T>>>,
     base: WebUrl,
 }
 
@@ -79,7 +79,7 @@ impl<T: Transport> GraphCalendarSource<T> {
 /// One calendar's feed.
 #[derive(Debug)]
 pub struct GraphCalendarFeed<T: Transport> {
-    http: Arc<StreamHttp<PimDial<T>>>,
+    http: Arc<RelayHttp<RelayDial<T>>>,
     base: String,
     calendar: String,
     clock: Clock,

@@ -23,6 +23,7 @@ members = [
   "crates/porter-fake-servers",
   "crates/porter-http",
   "crates/porter-http-reqwest",
+  "crates/porter-http-relay",
   "crates/porter-proxy",
   "crates/porter-oauth",
   "crates/porter-discover",
@@ -81,6 +82,7 @@ fake-secret-service = { path = "crates/fake-secret-service" }
 syncd-fakes     = { path = "crates/syncd-fakes" }
 porter-http     = { path = "crates/porter-http" }
 porter-http-reqwest = { path = "crates/porter-http-reqwest" }
+porter-http-relay = { path = "crates/porter-http-relay" }
 porter-proxy    = { path = "crates/porter-proxy" }
 porter-oauth    = { path = "crates/porter-oauth" }
 porter-discover = { path = "crates/porter-discover" }

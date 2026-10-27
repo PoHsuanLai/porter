@@ -14,14 +14,5 @@ http = { workspace = true }
 httpdate = { workspace = true }
 thiserror = { workspace = true }
 
-[dev-dependencies]
-tokio = { workspace = true }
-
-[features]
-# `porter_http::stream`: HTTP/1.1 over a byte stream (porter-core's `ByteStream`) and the
-# `StreamHttp` client that dials one. It needs no runtime and adds no dependency, so it is pure:
-# the feature reaches nothing the default build does not.
-stream = []
-
 [lints]
 workspace = true

@@ -41,7 +41,7 @@ pub(crate) struct State {
     pub folders: std::collections::BTreeSet<RemoteId>,
 }
 
-/// The replica of one WebDAV folder, over any [`Http`]: in syncd a [`crate::StreamHttp`] on
+/// The replica of one WebDAV folder, over any [`Http`]: in syncd a `porter_http_relay::RelayHttp` on
 /// the relay `OpenAuthenticated` opens, in a test the fake server.
 #[derive(Debug)]
 pub struct WebDavReplica<H> {

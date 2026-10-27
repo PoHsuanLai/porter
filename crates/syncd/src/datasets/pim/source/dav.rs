@@ -5,11 +5,11 @@
 
 use super::super::PimKind;
 use super::super::discover::{DiscoverError, Found, discover};
-use super::super::relay::{PimDial, pim_http, pim_replica};
+use super::super::relay::{pim_http, pim_replica};
 use super::{Feed, FeedChange, FeedCursor, Page, PimSource};
 use porter_client::{Accounts, Transport};
 use porter_core::{EndpointUrl, GrantId, WebUrl};
-use porter_http::stream::StreamHttp;
+use porter_http_relay::{RelayDial, RelayHttp};
 use porter_sync::{Anchor, ByteRange, Change, Cursor, RemoteId, Replica, ReplicaError};
 use std::sync::Arc;
 use storage_webdav::{Clock, WebDavReplica};
@@ -49,7 +49,7 @@ impl<T> DavSource<T> {
 
 /// One DAV collection's feed.
 #[derive(Debug)]
-pub struct DavFeed<T: Transport>(WebDavReplica<StreamHttp<PimDial<T>>>);
+pub struct DavFeed<T: Transport>(WebDavReplica<RelayHttp<RelayDial<T>>>);
 
 impl<T: Transport + 'static> PimSource for DavSource<T> {
     type Feed = DavFeed<T>;

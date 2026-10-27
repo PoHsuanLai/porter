@@ -16,7 +16,6 @@ use common::{Known, client};
 use porter_client::Accounts;
 use porter_core::capability::StorageScope;
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
-use porter_core::stream::ByteStream;
 use porter_core::{
     Account, AccountId, AccountLabel, AccountState, AppName, AuthKind, CapabilityKind, Claim,
     Credential, DataClass, EndpointUrl, Family, GrantId, LoginName, Offer, Provenance, Restriction,
@@ -28,6 +27,7 @@ use porter_dbus::names::STATUS_KEY_QUOTA;
 use porter_fake::FakeProvider;
 use porter_fake_servers::graph::Knobs;
 use porter_fake_servers::{FakeGraph, GraphHandle, Running};
+use porter_http_relay::RelayStream;
 use porter_provider::Provider;
 use porter_secrets::{MemorySecrets, Secrets};
 use porter_service::Registry;
@@ -44,7 +44,7 @@ use syncd::journal::Journal;
 use syncd::keep::sync_app;
 use syncd::scheduler::{Network, Settings};
 use syncd::service::{Access as Visible, DatasetName, Hub, serve};
-use syncd::webdav::RelayStream;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{Notify, watch};
 use zbus::zvariant::OwnedValue;
 

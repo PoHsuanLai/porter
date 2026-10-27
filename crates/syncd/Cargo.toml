@@ -20,6 +20,7 @@ porter-drive = { workspace = true }
 porter-drive-fuse = { workspace = true }
 porter-families = { workspace = true, features = ["set"] }
 porter-http = { workspace = true }
+porter-http-relay = { workspace = true }
 porter-provider = { workspace = true }
 porter-secrets = { workspace = true, features = ["oo7"] }
 porter-service = { workspace = true }

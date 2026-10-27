@@ -34,7 +34,7 @@ pub use grants::{AccountdUnavailable, ClientGrants, PimGrants, need_of};
 pub use mirror::PimMirror;
 pub use mirrors::{AccountMirrors, Wiring};
 pub use plan::{Planned, plan};
-pub use relay::{PimDial, pim_http, pim_replica};
+pub use relay::{pim_http, pim_replica};
 pub use supervisor::{PimConfig, PimSupervisor};
 pub use vdir::{COLOR, DISPLAYNAME, Meta, is_complete, items_in};
 

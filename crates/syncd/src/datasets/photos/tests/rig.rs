@@ -1,5 +1,5 @@
 //! The rig: a fake DAV server, and machines that sync a library against it through
-//! `StreamHttp` over a TCP dial with the credential added the way accountd's relay would.
+//! `RelayHttp` over a TCP dial with the credential added the way accountd's relay would.
 
 use super::super::{
     DeviceId, ManualMillis, PhotoLibrary, PhotoMetadata, PhotoOriginals, SystemMillis,
@@ -8,55 +8,35 @@ use crate::engine::{Engine, Report};
 use crate::journal::Journal;
 use crate::testing::scratch;
 use porter_core::clock::SystemClock;
-use porter_core::stream::ByteStream;
 use porter_core::{UnixSeconds, WebUrl};
 use porter_fake_servers::{DavHandle, FakeDav, Running};
 use porter_http::http::header::{AUTHORIZATION, HeaderValue};
 use porter_http::http::{Request, Response};
-use porter_http::stream::{Dial, StreamHttp, StreamLimits};
 use porter_http::{Http, HttpError};
+use porter_http_relay::{Dial, RelayHttp, RelayLimits};
 use std::future::Future;
-use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
 use storage_webdav::{Clock, WebDavReplica};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 const USER: &str = "ada";
 const PASSWORD: &str = "app-password";
 
 #[derive(Debug)]
-pub struct Tcp(TcpStream);
-
-impl ByteStream for Tcp {
-    async fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.0.read(buf).await
-    }
-
-    async fn write_all(&mut self, bytes: &[u8]) -> io::Result<()> {
-        self.0.write_all(bytes).await
-    }
-
-    async fn shutdown(&mut self) -> io::Result<()> {
-        self.0.shutdown().await
-    }
-}
-
-#[derive(Debug)]
 pub struct TcpDial(u16);
 
 impl Dial for TcpDial {
-    type Stream = Tcp;
+    type Stream = TcpStream;
 
-    async fn dial(&self) -> Result<Tcp, HttpError> {
+    async fn dial(&self) -> Result<TcpStream, HttpError> {
         let stream = TcpStream::connect(("127.0.0.1", self.0))
             .await
             .map_err(|_| HttpError::Unreachable)?;
         // A request written in two parts must not wait for the server's delayed
         // acknowledgement: that is 40 ms a request on loopback.
         let _ = stream.set_nodelay(true);
-        Ok(Tcp(stream))
+        Ok(stream)
     }
 }
 
@@ -79,7 +59,7 @@ impl<H: Http> Http for Basic<H> {
     }
 }
 
-pub type Dav = WebDavReplica<Basic<StreamHttp<TcpDial>>>;
+pub type Dav = WebDavReplica<Basic<RelayHttp<TcpDial>>>;
 
 /// The fake server with the two folders of a Photos account made.
 pub struct Server {
@@ -110,7 +90,7 @@ impl Server {
         ))
         .expect("url");
         WebDavReplica::new(
-            Basic(StreamHttp::new(TcpDial(self.port), StreamLimits::default())),
+            Basic(RelayHttp::new(TcpDial(self.port), RelayLimits::default())),
             &url,
             Clock::fixed(UnixSeconds(1_000)),
         )

@@ -9,10 +9,10 @@
 //! A request's URL is a porter [`WebUrl`](porter_core::WebUrl) (`https`, or `http` to this
 //! computer); [`request`] turns it into the request's URI.
 //!
-//! Feature `stream` adds [`stream`]: HTTP/1.1 framed over a byte stream a host dials (an
-//! authenticated relay's descriptor, say), for a replica that streams file content.
+//! The clients are other crates: `porter-http-reqwest` for a direct connection and
+//! `porter-http-relay` over an accountd relay.
 //!
-//! Requests and responses are plain values (no feature needed):
+//! Requests and responses are plain values:
 //!
 //! ```
 //! use porter_core::WebUrl;
@@ -41,8 +41,6 @@ mod message;
 mod seam;
 mod shared;
 mod sleep;
-#[cfg(feature = "stream")]
-pub mod stream;
 pub mod webdav;
 
 pub use error::HttpError;

@@ -11,18 +11,18 @@ use porter_core::{Bytes, Origin, WebUrl};
 use porter_fake_servers::graph::{CHUNK_UNIT, Knobs};
 use porter_fake_servers::{FakeGraph, GraphHandle, Running};
 use porter_http::http::{Request, Response};
-use porter_http::stream::{StreamHttp, StreamLimits};
 use porter_http::{Http, HttpError};
+use porter_http_relay::{RelayHttp, RelayLimits, Routed};
 use porter_sync::{
     BaseVersion, Blob, ByteRange, Change, Cursor, ItemPath, PutItem, PutRefused, PutTarget,
     Replica as _, ReplicaError,
 };
 use std::future::Future;
-use storage_graph::{Clock, GraphReplica, Routed, Uploads};
+use storage_graph::{Clock, GraphReplica, Uploads};
 
 /// A client for a linked origin: a dial that adds nothing, or no dial at all for an origin the
 /// declaration does not name (accountd's `OpenLinked` refuses it).
-struct Linked(Option<StreamHttp<TcpDial>>);
+struct Linked(Option<RelayHttp<TcpDial>>);
 
 impl Http for Linked {
     fn send(
@@ -61,9 +61,9 @@ async fn rig(declared: bool) -> Rig {
     let base = WebUrl::parse(graph.base_url()).expect("url");
     let make: Make = Box::new(
         move |origin: &Origin| match declared && origin.port == link_port {
-            true => Linked(Some(StreamHttp::new(
+            true => Linked(Some(RelayHttp::new(
                 TcpDial(origin.port),
-                StreamLimits::default(),
+                RelayLimits::default(),
             ))),
             false => Linked(None),
         },

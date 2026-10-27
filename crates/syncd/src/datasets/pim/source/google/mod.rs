@@ -35,12 +35,12 @@ pub use tasks::{GoogleTasksFeed, GoogleTasksSource};
 
 use super::graph::{encode, get, retry_after, unreached};
 use crate::datasets::pim::discover::DiscoverError;
-use crate::datasets::pim::relay::{PimDial, pim_http};
+use crate::datasets::pim::relay::pim_http;
 use porter_client::{Accounts, Transport};
 use porter_core::{EndpointUrl, GrantId, WebUrl};
 use porter_http::HttpError;
 use porter_http::http::Response;
-use porter_http::stream::StreamHttp;
+use porter_http_relay::{RelayDial, RelayHttp};
 use porter_sync::ReplicaError;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -53,7 +53,7 @@ const MAX_PAGES: usize = 50;
 /// One Google API at one endpoint, reached through the relay.
 #[derive(Debug)]
 pub(super) struct Api<T: Transport> {
-    http: StreamHttp<PimDial<T>>,
+    http: RelayHttp<RelayDial<T>>,
     base: String,
 }
 

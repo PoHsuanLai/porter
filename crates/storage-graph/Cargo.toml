@@ -12,7 +12,7 @@ publish.workspace = true
 base64 = { workspace = true }
 hex = { workspace = true }
 porter-core = { workspace = true }
-porter-http = { workspace = true, features = ["stream"] }
+porter-http = { workspace = true }
 porter-sync = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -21,6 +21,7 @@ storage-webdav = { workspace = true }
 [dev-dependencies]
 porter-fake = { workspace = true }
 porter-fake-servers = { workspace = true }
+porter-http-relay = { workspace = true }
 porter-sync = { workspace = true, features = ["testing"] }
 tokio = { workspace = true }
 

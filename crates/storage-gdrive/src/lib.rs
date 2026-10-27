@@ -27,15 +27,14 @@
 //!   takes any name but an empty one).
 //! - **Quota** is `about`'s `storageQuota` (`usage`, `limit`).
 //! - **The connection** is whatever [`porter_http::Http`] the replica is handed. In syncd it is
-//!   `porter_http::stream::StreamHttp` over the descriptors of accountd's `Tokens.OpenAuthenticated`,
+//!   `porter_http_relay::RelayHttp` over the relays of accountd's `Tokens.OpenAuthenticated`,
 //!   whose relay adds the bearer, so syncd never holds a token. The upload host
 //!   (`/upload/drive/v3`) and a resumable session's URL are the same origin as the API, so one
 //!   relay serves all; a session URL on another origin is refused.
 //! - **Version** is Drive's `version`, which grows with every change to the file (a rename too).
 //!   There is no ETag to keep.
 //!
-//! The crate is pure: no runtime and no socket. It reuses porter-http's stream client (`StreamHttp`,
-//! `Dial`) and storage-webdav's `Clock` (nothing of it changed) and keeps its own error classes
+//! The crate is pure: no runtime and no socket. It reuses storage-webdav's `Clock` (nothing of it changed) and keeps its own error classes
 //! and wire reading. Every
 //! endpoint, field and status is written from Google's documentation, without network access:
 //! unverified (FINDINGS).
