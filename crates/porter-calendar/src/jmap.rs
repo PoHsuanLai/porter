@@ -95,8 +95,12 @@ impl<H: Http> Jmap<H> {
 
     /// A `CalendarEvent/set` of `args`, and what it said of `id`: `Ok(Some(answer))` for one
     /// made, changed or destroyed, `Ok(None)` for one not found.
-    async fn set(&self, args: Value, kind: &str, id: &str) -> Result<Option<Value>, CalendarError> {
-        let mut args = args;
+    async fn set(
+        &self,
+        mut args: Value,
+        kind: &str,
+        id: &str,
+    ) -> Result<Option<Value>, CalendarError> {
         args["accountId"] = json!(self.account);
         let answers = self.call(vec![("CalendarEvent/set", args)]).await?;
         let answer = answers

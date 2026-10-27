@@ -116,11 +116,11 @@ impl<H: Http> CalDav<H> {
         }
         let status = parse_multistatus(&String::from_utf8_lossy(&response.body))
             .map_err(|e| CalendarError::Malformed(e.to_string()))?;
-        let Some(found) = status
-            .responses
-            .iter()
-            .find(|r| !r.gone() && r.found(CALENDAR_DATA).is_some())
-        else {
+        let Some(found) = status.responses.iter().find(|r| {
+            !r.gone()
+                && r.found(CALENDAR_DATA)
+                    .is_some_and(|ics| names_uid(ics, uid))
+        }) else {
             return Ok(None);
         };
         Ok(Some(Stored {
@@ -263,6 +263,23 @@ fn resolve(base: &WebUrl, href: &str) -> Result<WebUrl, CalendarError> {
     url(&format!("{origin}{path}"))
 }
 
+/// Whether the iCalendar text has a `UID` property equal to `uid`. A `text-match` is a substring
+/// match (RFC 4791 §9.7.5), so the server's answer to a query for `a1` includes the event `a1b`,
+/// and only an exact reading of what comes back says which one is the event asked for.
+fn names_uid(ics: &str, uid: &str) -> bool {
+    ics.replace("\r\n ", "")
+        .replace("\r\n\t", "")
+        .lines()
+        .any(|line| {
+            line.split_once(':').is_some_and(|(name, value)| {
+                name.split(';')
+                    .next()
+                    .is_some_and(|name| name.eq_ignore_ascii_case("UID"))
+                    && value == uid
+            })
+        })
+}
+
 /// The last segment of a collection's path, for a calendar with no display name.
 fn last_segment(path: &str) -> String {
     path.trim_end_matches('/')
@@ -311,6 +328,20 @@ mod tests {
         );
         let at = CalDav::<NoHttp>::resource("https://dav.example.test/cal/work", "x").unwrap();
         assert_eq!(at.as_str(), "https://dav.example.test/cal/work/x.ics");
+    }
+
+    #[test]
+    fn only_a_uid_property_that_is_equal_names_the_event() {
+        let ics = "BEGIN:VEVENT\r\nUID:a1b@host\r\nSUMMARY:UID:a1@host\r\nEND:VEVENT\r\n";
+        assert!(names_uid(ics, "a1b@host"));
+        assert!(
+            !names_uid(ics, "a1@host"),
+            "a longer UID, and text that only looks like one"
+        );
+        assert!(
+            names_uid("UID;X-A=b:long\r\n er\r\n", "longer"),
+            "folded, with a parameter"
+        );
     }
 
     #[test]

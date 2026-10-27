@@ -123,3 +123,38 @@ async fn the_home_is_discovered_or_a_server_without_one_says_so() {
         "the plain fake names no calendar home: {got:?}"
     );
 }
+
+#[tokio::test]
+async fn a_longer_uid_that_contains_the_one_asked_for_is_another_event() {
+    let server = Server::start().await;
+    let client = server.client();
+    let other = format!("{}from-server.ics", server.calendar);
+    let made = client
+        .send(
+            HttpRequest::new(Method::Put, WebUrl::parse(&other).unwrap())
+                .with_header("Content-Type", "text/calendar")
+                .with_body(ics("invite-70@example.test", "Someone else's")),
+        )
+        .await
+        .unwrap();
+    assert!(made.status.is_success());
+
+    let store = CalDav::new(client, server.home.clone());
+    let calendar = server.calendar.as_str();
+    assert_eq!(
+        store.find(calendar, "invite-7").await.unwrap(),
+        None,
+        "a substring match is not the event"
+    );
+    assert!(!store.remove(calendar, "invite-7").await.unwrap());
+    let put = store
+        .put(calendar, &event("invite-7", "Mine"))
+        .await
+        .unwrap();
+    assert_ne!(put.id, other, "the other event is not overwritten");
+    let theirs = store
+        .find(calendar, "invite-70@example.test")
+        .await
+        .unwrap();
+    assert!(theirs.unwrap().ics.unwrap().contains("Someone else's"));
+}

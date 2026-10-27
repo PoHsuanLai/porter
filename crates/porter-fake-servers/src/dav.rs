@@ -612,8 +612,8 @@ impl Tree {
     }
 
     /// The `calendar-query` REPORT (RFC 4791 section 7.8), as far as finding an event by its
-    /// `UID`: the members of the calendar at `path` whose text has a `UID` line equal to the
-    /// query's `text-match`, with their etag and text. A query with no `text-match` lists every
+    /// `UID`: the members of the calendar at `path` whose text has a `UID` line containing the
+    /// query's `text-match` (a substring match, as RFC 4791 section 9.7.5 has it), with their etag and text. A query with no `text-match` lists every
     /// member.
     fn calendar_query(&self, path: &str, body: &str) -> Response {
         if !self
@@ -634,8 +634,11 @@ impl Tree {
         for (child_path, child) in self.children(path).filter(|(_, n)| n.kind == Kind::Item) {
             let text = String::from_utf8_lossy(&child.body);
             let matches = uid.as_deref().is_none_or(|uid| {
-                text.lines()
-                    .any(|line| line.trim_end_matches('\r').strip_prefix("UID:") == Some(uid))
+                text.lines().any(|line| {
+                    line.trim_end_matches('\r')
+                        .strip_prefix("UID:")
+                        .is_some_and(|value| value.contains(uid))
+                })
             });
             if matches {
                 out.push_str(&format!(
