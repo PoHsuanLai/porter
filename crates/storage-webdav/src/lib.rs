@@ -26,10 +26,3 @@ mod write;
 
 pub use clock::Clock;
 pub use replica::{DELETED, WebDavReplica};
-
-/// Moved to `porter_http::stream::Dial`; kept for one batch.
-pub use porter_http::stream::Dial;
-/// Moved to `porter_http::stream::StreamHttp`; kept for one batch.
-pub use porter_http::stream::StreamHttp;
-/// Moved to `porter_http::stream::StreamLimits`; kept for one batch.
-pub use porter_http::stream::StreamLimits;

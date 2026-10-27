@@ -33,7 +33,7 @@ unit!(
 );
 unit!(
     /// Seconds since the Unix epoch, UTC. Instants on the wire and in stores; the clock that
-    /// makes them is injected (`porter_service::Clock`).
+    /// makes them is injected (`porter_core::clock::Clock`).
     UnixSeconds(i64)
 );
 unit!(

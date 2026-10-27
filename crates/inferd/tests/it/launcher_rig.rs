@@ -157,7 +157,7 @@ impl Rig {
         .await
         .expect("the launcher serves");
         connection
-            .request_name(porter_dbus::INFERENCE_BUS)
+            .request_name(porter_dbus::names::INFERENCE_BUS)
             .await
             .expect("the name");
         Self {

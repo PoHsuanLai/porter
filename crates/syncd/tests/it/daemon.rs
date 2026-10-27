@@ -5,7 +5,8 @@
 
 use crate::common::bus::PrivateBus;
 
-use porter_dbus::{BusTarget, SYNC_BUS};
+use porter_dbus::BusTarget;
+use porter_dbus::names::SYNC_BUS;
 use porter_fake::{Deadline, GENEROUS};
 use std::path::Path;
 use std::time::Duration;

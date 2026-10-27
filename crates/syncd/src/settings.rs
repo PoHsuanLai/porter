@@ -33,7 +33,7 @@ use ds_settings::schema::{
 };
 use porter_core::wire::ParentWindow;
 use porter_core::{Account, AccountId, AccountState, Family, Toggle};
-use porter_dbus::{CallerRole, Callers};
+use porter_dbus::callers::{CallerRole, Callers};
 use porter_drive::CacheLimit;
 use porter_families::set::ProviderNames;
 use porter_service::Registry;

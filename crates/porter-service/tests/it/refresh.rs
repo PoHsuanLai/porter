@@ -5,6 +5,7 @@
 //! caller holds the account's turn, so the second is queued behind it at any load.
 
 use porter_core::capability::{Access, Delta, Offered};
+use porter_core::clock::FixedClock;
 use porter_core::consent::{GrantScope, Usage};
 use porter_core::need::MailNeed;
 use porter_core::wire::ParentWindow;
@@ -14,7 +15,7 @@ use porter_core::{
     TokenKind, UnixSeconds,
 };
 use porter_fake::{
-    FakeProvider, FakeSignIn, FixedClock, MemoryStore, NOW, Scripted, ScriptedSheets, mail_account,
+    FakeProvider, FakeSignIn, MemoryStore, NOW, Scripted, ScriptedSheets, mail_account,
     mail_provider,
 };
 use porter_provider::{

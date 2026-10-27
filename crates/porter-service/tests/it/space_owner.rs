@@ -4,6 +4,7 @@
 //! desktop-wide Space, outside any Space, or any Space is used as before.
 
 use porter_core::capability::StorageScope;
+use porter_core::clock::FixedClock;
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::wire::Refusal;
 use porter_core::{
@@ -12,8 +13,7 @@ use porter_core::{
     UnixSeconds,
 };
 use porter_fake::{
-    FakeProvider, FixedClock, MemoryStore, RecordingAudit, ScriptedSheets, mail_account,
-    mail_provider,
+    FakeProvider, MemoryStore, RecordingAudit, ScriptedSheets, mail_account, mail_provider,
 };
 use porter_secrets::{MemorySecrets, Secrets};
 use porter_service::{AccountService, Registry};

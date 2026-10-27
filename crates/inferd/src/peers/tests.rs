@@ -173,19 +173,22 @@ async fn introduced_connections_are_known_and_others_are_not() {
 fn the_table_is_rows_of_the_shared_table_with_cuad_first() {
     let rows = table().rows();
     let roles: Vec<_> = rows.callers.iter().map(|row| row.role).collect();
-    assert_eq!(roles[0], porter_dbus::CallerRole::Cua);
-    assert_eq!(roles[1], porter_dbus::CallerRole::AgentLauncher);
+    assert_eq!(roles[0], porter_dbus::callers::CallerRole::Cua);
+    assert_eq!(roles[1], porter_dbus::callers::CallerRole::AgentLauncher);
     assert!(
         roles[2..]
             .iter()
-            .all(|r| *r == porter_dbus::CallerRole::App)
+            .all(|r| *r == porter_dbus::callers::CallerRole::App)
     );
     assert_eq!(rows.callers.len(), 7);
     // The first row for cuad's unit is cuad's, not the sneaky app's.
     let cuad = rows.resolve_unit("cuad.service").expect("cuad");
-    assert_eq!(cuad.role, porter_dbus::CallerRole::Cua);
+    assert_eq!(cuad.role, porter_dbus::callers::CallerRole::Cua);
     let launcher = rows.resolve_unit("docket-acp.service").expect("launcher");
-    assert_eq!(launcher.role, porter_dbus::CallerRole::AgentLauncher);
+    assert_eq!(
+        launcher.role,
+        porter_dbus::callers::CallerRole::AgentLauncher
+    );
 }
 
 /// sec-3 follow-up: the settings module's caller is the Settings app's unit, not its name. An
@@ -202,7 +205,7 @@ fn settings_is_a_unit_and_an_app_name_stands_for_its_service() {
         let settings: Vec<_> = rows
             .callers
             .iter()
-            .filter(|row| row.role == porter_dbus::CallerRole::Settings)
+            .filter(|row| row.role == porter_dbus::callers::CallerRole::Settings)
             .map(|row| (row.unit.clone(), row.app.to_string()))
             .collect();
         assert_eq!(
@@ -251,13 +254,15 @@ fn only_the_settings_units_main_process_is_settings() {
     let rows = CallerTable::from_toml_text("settings = [\"org.quire.Settings.service\"]\n")
         .expect("table")
         .rows();
-    let role =
-        |pid| porter_dbus::ProcCallers::caller_of_pid(&root, pid, &rows).map(|caller| caller.role);
-    assert_eq!(role(20), Some(porter_dbus::CallerRole::Settings));
+    let role = |pid| {
+        porter_dbus::callers::ProcCallers::caller_of_pid(&root, pid, &rows)
+            .map(|caller| caller.role)
+    };
+    assert_eq!(role(20), Some(porter_dbus::callers::CallerRole::Settings));
     assert_eq!(role(21), None, "in the unit's cgroup, not its main process");
     assert_ne!(
         role(22),
-        Some(porter_dbus::CallerRole::Settings),
+        Some(porter_dbus::callers::CallerRole::Settings),
         "an app scope of the app's name"
     );
 }

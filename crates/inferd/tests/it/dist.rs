@@ -28,8 +28,14 @@ fn key<'a>(text: &'a str, name: &str) -> Option<&'a str> {
 fn the_activation_file_and_the_unit_name_the_bus_name_and_each_other() {
     let activation = dist("dbus/org.quire.Inference1.service");
     let unit = dist("inferd.service");
-    assert_eq!(key(&activation, "Name"), Some(porter_dbus::INFERENCE_BUS));
-    assert_eq!(key(&unit, "BusName"), Some(porter_dbus::INFERENCE_BUS));
+    assert_eq!(
+        key(&activation, "Name"),
+        Some(porter_dbus::names::INFERENCE_BUS)
+    );
+    assert_eq!(
+        key(&unit, "BusName"),
+        Some(porter_dbus::names::INFERENCE_BUS)
+    );
     assert_eq!(key(&activation, "SystemdService"), Some("inferd.service"));
     assert_eq!(key(&activation, "Exec"), key(&unit, "ExecStart"));
     assert_eq!(key(&unit, "Type"), Some("dbus"));
@@ -43,7 +49,7 @@ fn the_shipped_table_names_settings_by_its_unit() {
     let settings: Vec<_> = rows
         .callers
         .iter()
-        .filter(|row| row.role == porter_dbus::CallerRole::Settings)
+        .filter(|row| row.role == porter_dbus::callers::CallerRole::Settings)
         .map(|row| (row.unit.as_deref(), row.app.to_string()))
         .collect();
     assert_eq!(
@@ -196,7 +202,7 @@ fn the_agent_launcher_is_listed_by_the_machine_that_runs_it_never_by_default() {
             .rows()
             .callers
             .iter()
-            .all(|row| row.role != porter_dbus::CallerRole::AgentLauncher),
+            .all(|row| row.role != porter_dbus::callers::CallerRole::AgentLauncher),
         "no launcher by default"
     );
     // The line the table's comment shows is the one a machine writes, uncommented.
@@ -542,7 +548,10 @@ fn the_shipped_table_names_the_settings_app_and_the_samples_example_rows_are_acc
     // Settings is its unit; an app scope of its name is an app like any other (sec-3).
     let callers = shipped_callers();
     let app = porter_core::AppName::parse("org.quire.Settings").expect("name");
-    assert_eq!(callers.rows().role_of(&app), porter_dbus::CallerRole::App);
+    assert_eq!(
+        callers.rows().role_of(&app),
+        porter_dbus::callers::CallerRole::App
+    );
     assert_eq!(
         callers
             .resolve("org.quire.Settings.service")
@@ -609,7 +618,7 @@ fn the_shipped_table_names_docket_acps_programs() {
         .find(|row| row.unit.as_deref() == Some("docket-acp.scope"))
         .expect("a docket-acp.scope row");
     assert_eq!(acp.app.to_string(), "org.quire.Companion");
-    assert_eq!(acp.role, porter_dbus::CallerRole::App);
+    assert_eq!(acp.role, porter_dbus::callers::CallerRole::App);
     assert_eq!(
         acp.exe,
         [

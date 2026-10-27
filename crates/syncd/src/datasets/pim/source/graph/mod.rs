@@ -27,6 +27,7 @@ use json::{Calendar, CalendarPage, Event, EventPage};
 use porter_client::{Accounts, Transport};
 use porter_core::{Bytes, EndpointUrl, GrantId, WebUrl};
 use porter_http::http::Method;
+use porter_http::stream::StreamHttp;
 use porter_http::{HeaderText, Http, HttpError, HttpResponse, request};
 use porter_sync::{
     ItemKind, ItemPath, More, RemoteId, RemoteItem, RemoteVersion, ReplicaError, RetryAfter,
@@ -34,7 +35,7 @@ use porter_sync::{
 };
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
-use storage_webdav::{Clock, DELETED, StreamHttp};
+use storage_webdav::{Clock, DELETED};
 
 /// How many events a delta page asks for.
 const PAGE: usize = 100;

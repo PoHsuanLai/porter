@@ -171,7 +171,7 @@ async fn only_the_photos_app_may_call_and_every_bad_word_or_missing_picker_is_a_
         &rig.bus,
         &rig.known,
         "org.quire.Settings",
-        porter_dbus::CallerRole::Settings,
+        porter_dbus::callers::CallerRole::Settings,
     )
     .await;
     let refused = PhotosPickerProxy::new(&settings)

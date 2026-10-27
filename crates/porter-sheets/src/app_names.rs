@@ -13,7 +13,7 @@
 
 use porter_core::capability::AgentProgram;
 use porter_core::{AppLabel, AppName, AuthKind, Capability};
-use porter_dbus::{AppTitle, CallerTable};
+use porter_dbus::callers::{AppTitle, CallerTable};
 use porter_provider::ProviderSpec;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -117,7 +117,7 @@ fn entry_name(text: &str) -> Option<AppTitle> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use porter_dbus::{CallerRole, CallerRow};
+    use porter_dbus::callers::{CallerRole, CallerRow};
     use porter_fake::Scratch;
     use std::path::Path;
 

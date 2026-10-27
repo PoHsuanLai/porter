@@ -263,22 +263,6 @@ mod tests {
     }
 }
 
-/// Which build this is, for the one knob a release must not have.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Build {
-    /// Built with the `test-proc-root` feature.
-    Test,
-    /// Every other build: the shipped one.
-    Release,
-}
-
-/// The build this binary is.
-pub const BUILD: Build = if cfg!(feature = "test-proc-root") {
-    Build::Test
-} else {
-    Build::Release
-};
-
 /// Whether this binary honours `ACCOUNTD_PROC_ROOT`: only with the `test-proc-root` feature (the
 /// jailed and acceptance tests run processes outside service cgroups). A release build ignores
 /// the variable.
@@ -287,22 +271,6 @@ pub const PROC_GATE: porter_daemon::ProcGate = if cfg!(feature = "test-proc-root
 } else {
     porter_daemon::ProcGate::Ignore
 };
-
-/// The directory callers are read from in place of `/proc` (`ACCOUNTD_PROC_ROOT`), for a test
-/// build only. A release build ignores the variable.
-///
-/// Kept for one batch at its old path; the choice itself is [`porter_daemon::ProcRoot`], which
-/// `Config::from_env` now calls with [`PROC_GATE`].
-pub fn proc_root(build: Build, value: Option<String>) -> Option<PathBuf> {
-    let gate = match build {
-        Build::Test => porter_daemon::ProcGate::Honour,
-        Build::Release => porter_daemon::ProcGate::Ignore,
-    };
-    porter_daemon::ProcRoot::choose(gate, crate::daemon::PROC_ROOT_VAR, |_| {
-        value.as_deref().map(std::ffi::OsString::from)
-    })
-    .into_fixture()
-}
 
 #[cfg(test)]
 mod proc_root_tests {

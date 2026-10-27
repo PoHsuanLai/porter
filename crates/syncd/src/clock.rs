@@ -1,12 +1,9 @@
 //! What time it is, as a seam: the engine dates tombstones, anchors and conflicts by it.
 //!
-//! `Clock` and `SystemClock` moved to `porter_core::clock` (lane layers-clock); these paths stay
-//! for existing imports. `ManualClock` stays here: a test shares it through an `Arc` and sets it
-//! with `&self`, which porter_core's `FixedClock` (set with `&mut self`) cannot do.
+//! `ManualClock` is here because a test shares it through an `Arc` and sets it with `&self`,
+//! which porter_core's `FixedClock` (set with `&mut self`) cannot do.
 
-/// A source of the current time, moved to `porter_core::clock::Clock`.
-/// The system clock, moved to `porter_core::clock::SystemClock`.
-pub use porter_core::clock::{Clock, SystemClock};
+use porter_core::clock::{Clock, SystemClock};
 
 /// The system clock, running `scale` times faster than real time (see
 /// `scheduler::Settings::time_scale`); with a scale of 1 it is exactly [`SystemClock`]. Every

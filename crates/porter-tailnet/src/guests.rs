@@ -118,9 +118,9 @@ pub enum GuestError {
     NotSaved,
 }
 
-/// How one computer stands and one line of the list. They live in `porter_core::lending` (a
-/// client of the bus reads them without this crate's files); the old paths stay.
-pub use porter_core::lending::{GuestRow, RowState};
+// How one computer stands and one line of the list live in `porter_core::lending`: a client of
+// the bus reads them without this crate's files.
+use porter_core::lending::{GuestRow, RowState};
 
 #[derive(Debug, Default)]
 struct Inner {

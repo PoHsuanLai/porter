@@ -10,11 +10,12 @@ use porter_client::{Accounts, AuthenticatedStream, ClientError, Transport};
 use porter_core::stream::{ByteStream, DuplexEnd};
 use porter_core::wire::Refusal;
 use porter_core::{EndpointUrl, GrantId, WebUrl};
+use porter_http::stream::{Dial, StreamHttp, StreamLimits};
 use std::future::Future;
 use std::io;
 use std::sync::Arc;
 use std::time::Duration;
-use storage_webdav::{Clock, Dial, StreamHttp, StreamLimits, WebDavReplica};
+use storage_webdav::{Clock, WebDavReplica};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 

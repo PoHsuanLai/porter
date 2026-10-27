@@ -17,7 +17,7 @@ use porter_core::{
     DataClass, EndpointUrl, Family, GrantId, LoginName, Offer, Provenance, ProviderId, Restriction,
     SecretKey, SecretPurpose, SecretText, ServiceEndpoint, SpaceScope, Subject, Tls, UnixSeconds,
 };
-use porter_dbus::{Caller, CallerRole};
+use porter_dbus::callers::{Caller, CallerRole};
 use porter_fake::FakeProvider;
 use porter_fake_servers::{FakeNextcloud, NextcloudHandle, Running};
 use porter_provider::Provider;

@@ -6,6 +6,7 @@ use porter_core::capability::StorageScope;
 use porter_core::capability::{
     Access, Capability, Delta, LabelModel, MailCap, MailTransport, Offered,
 };
+use porter_core::clock::FixedClock;
 use porter_core::consent::{Decision, Grant, GrantKey, GrantScope, Usage};
 use porter_core::sheet::{
     Entry, FieldAnswer, FieldKind, FieldSpec, FieldValue, Presence, ServiceChoice, SheetInput,
@@ -18,7 +19,7 @@ use porter_core::{
     Provenance, ProviderId, Restriction, SecretKey, SecretPurpose, SecretText, ServiceEndpoint,
     SpaceScope, Subject, Tls, Toggle, UnixSeconds, WebUrl,
 };
-use porter_fake::{FixedClock, MemoryStore, RecordingAudit, ScriptedSheets};
+use porter_fake::{MemoryStore, RecordingAudit, ScriptedSheets};
 use porter_provider::{
     ConsentHistory, LoginHint, Presented, Provider, ProviderError, ProviderSession, ProviderSpec,
     RevokeOutcome, SignIn, SignInMode, SignInStart, SignInStep, Signed, parse_provider,

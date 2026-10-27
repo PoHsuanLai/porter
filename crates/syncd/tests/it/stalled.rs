@@ -8,10 +8,10 @@
 use porter_core::WebUrl;
 use porter_core::stream::{ByteStream, duplex};
 use porter_http::http::Method;
+use porter_http::stream::{Dial, StreamHttp, StreamLimits};
 use porter_http::{Http, HttpError, HttpRequest, request};
 use std::sync::Mutex;
 use std::time::Duration;
-use storage_webdav::{Dial, StreamHttp, StreamLimits};
 use syncd::webdav::RelayStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;

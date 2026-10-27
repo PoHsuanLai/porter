@@ -15,9 +15,8 @@ use porter_core::{
     LoginName, ModelId, Need, Px, Restriction, ServiceEndpoint, Subject, TenantConsent, Tls,
     TokenLifetime, Tokens, Verification,
 };
-use porter_dbus::{
-    account_path, candidate_from_dbus, candidate_to_dbus, need_from_dbus, need_to_dbus,
-};
+use porter_dbus::names::account_path;
+use porter_dbus::{candidate_from_dbus, candidate_to_dbus, need_from_dbus, need_to_dbus};
 use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
 
 fn every_need() -> Vec<(&'static str, Need)> {

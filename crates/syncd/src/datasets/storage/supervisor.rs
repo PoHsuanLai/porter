@@ -495,7 +495,7 @@ where
         }
         let live = Arc::new(LiveDrive::new(
             account.as_str().to_owned(),
-            porter_dbus::account_path(&candidate.account),
+            porter_dbus::names::account_path(&candidate.account),
             candidate.label.0.clone(),
             provider,
             path.clone(),

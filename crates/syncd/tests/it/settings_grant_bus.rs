@@ -18,7 +18,8 @@ use porter_core::{
     Family, LoginName, Offer, Provenance, Restriction, SecretKey, SecretPurpose, SecretText,
     ServiceEndpoint, Subject, Tls, UnixSeconds,
 };
-use porter_dbus::{CallerRole, SyncProxy};
+use porter_dbus::SyncProxy;
+use porter_dbus::callers::CallerRole;
 use porter_fake::FakeProvider;
 use porter_fake_servers::{FakeGraph, GraphHandle, Running};
 use porter_families::set::ProviderNames;

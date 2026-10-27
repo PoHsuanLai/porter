@@ -18,7 +18,7 @@ use porter_core::{
     DataClass, EndpointUrl, Family, GrantId, LoginName, Offer, Provenance, Restriction, SecretKey,
     SecretPurpose, SecretText, ServiceEndpoint, SpaceScope, Subject, Tls, UnixSeconds,
 };
-use porter_dbus::CallerRole;
+use porter_dbus::callers::CallerRole;
 use porter_fake::FakeProvider;
 use porter_fake_servers::{FakeGraph, GraphHandle, Running};
 use porter_provider::Provider;

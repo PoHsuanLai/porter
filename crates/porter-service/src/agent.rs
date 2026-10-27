@@ -5,10 +5,10 @@
 
 use crate::audit::AuditEvent;
 use crate::audit::AuditSink;
-use crate::clock::Clock;
 use crate::service::AccountService;
 use crate::sheets::Sheets;
 use crate::store::RegistryStore;
+use porter_core::clock::Clock;
 use porter_core::{AccountId, AgentState, AuthKind};
 use porter_provider::Provider;
 use porter_secrets::Secrets;

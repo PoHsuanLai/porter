@@ -65,7 +65,7 @@ async fn main() -> ExitCode {
     if let Err(why) = serve(&connection, &name, storage.clone()).await {
         return fail(format!("cannot serve org.quire.Storage1 as {name}: {why}"));
     }
-    let emitter = match SignalEmitter::new(&connection, porter_dbus::STORAGE_PATH) {
+    let emitter = match SignalEmitter::new(&connection, porter_dbus::names::STORAGE_PATH) {
         Ok(emitter) => emitter,
         Err(why) => return fail(format!("cannot send signals: {why}")),
     };

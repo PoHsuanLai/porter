@@ -97,7 +97,7 @@ fn the_test_proc_root_feature_is_not_a_default_feature() {
 #[test]
 fn the_sample_caller_table_gives_settings_the_sheet_host_and_both_daemons_their_roles() {
     use porter_core::AppName;
-    use porter_dbus::CallerRole;
+    use porter_dbus::callers::CallerRole;
     let table = accountd::table_from_toml(&dist("callers.toml")).expect("the sample reads");
     let app = |name: &str| AppName::parse(name).expect("name");
     // Settings is its unit (sec-3 a): an app scope named `org.quire.Settings` is only an app.
@@ -202,7 +202,7 @@ fn nothing_that_ships_names_the_file_key_store() {
 
 #[test]
 fn no_shipped_row_grants_the_agent_launcher_role_and_the_sample_leaves_it_to_inferd() {
-    use porter_dbus::CallerRole;
+    use porter_dbus::callers::CallerRole;
     let shipped = dist("callers.toml");
     let table = accountd::table_from_toml(&shipped).expect("the sample reads");
     assert!(

@@ -5,7 +5,9 @@ use crate::common;
 
 use common::*;
 use porter_core::wire::Refusal;
-use porter_dbus::{AccountProxy, CallerRole, Details, ManagerProxy, account_path};
+use porter_dbus::callers::CallerRole;
+use porter_dbus::names::account_path;
+use porter_dbus::{AccountProxy, Details, ManagerProxy};
 use zbus::zvariant::ObjectPath;
 
 #[tokio::test(flavor = "multi_thread")]

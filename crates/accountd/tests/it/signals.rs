@@ -6,12 +6,14 @@ use crate::common;
 use common::*;
 use ds_settings::schema::KeyPath;
 use porter_core::AccountState;
-use porter_dbus::{AccountProxy, CallerRole, account_path};
+use porter_dbus::AccountProxy;
+use porter_dbus::callers::CallerRole;
+use porter_dbus::names::account_path;
 use std::time::Duration;
 use zbus::zvariant::ObjectPath;
 
 /// A connection that has called accountd as `who`, so that it is among those told.
-async fn joined(rig: &Rig, who: porter_dbus::Caller) -> zbus::Connection {
+async fn joined(rig: &Rig, who: porter_dbus::callers::Caller) -> zbus::Connection {
     let connection = rig.client_as(who).await;
     let account = AccountProxy::builder(&connection)
         .path(ObjectPath::try_from(account_path(&storage_account().id)).expect("path"))

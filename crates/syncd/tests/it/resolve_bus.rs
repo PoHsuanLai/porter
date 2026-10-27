@@ -10,9 +10,10 @@ use porter_core::capability::{
     Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
 };
 use porter_core::{AppName, UnixSeconds};
-use porter_dbus::{
-    CONFLICT_KEY_NUMBER, CallerRole, RESOLVE_KEEP_LOCAL, RESOLVE_KEEP_REMOTE,
-    SYNC_ERROR_NO_SUCH_CONFLICT, SyncProxy,
+use porter_dbus::SyncProxy;
+use porter_dbus::callers::CallerRole;
+use porter_dbus::names::{
+    CONFLICT_KEY_NUMBER, RESOLVE_KEEP_LOCAL, RESOLVE_KEEP_REMOTE, SYNC_ERROR_NO_SUCH_CONFLICT,
 };
 use porter_sync::{
     BaseVersion, Blob, ByteRange, ChangePage, ConflictRule, Cursor, ItemPath, MemoryReplica,

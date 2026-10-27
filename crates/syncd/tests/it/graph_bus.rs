@@ -22,7 +22,9 @@ use porter_core::{
     Credential, DataClass, EndpointUrl, Family, GrantId, LoginName, Offer, Provenance, Restriction,
     SecretKey, SecretPurpose, SecretText, ServiceEndpoint, SpaceScope, Subject, Tls, UnixSeconds,
 };
-use porter_dbus::{CallerRole, STATUS_KEY_QUOTA, SyncProxy};
+use porter_dbus::SyncProxy;
+use porter_dbus::callers::CallerRole;
+use porter_dbus::names::STATUS_KEY_QUOTA;
 use porter_fake::FakeProvider;
 use porter_fake_servers::graph::Knobs;
 use porter_fake_servers::{FakeGraph, GraphHandle, Running};

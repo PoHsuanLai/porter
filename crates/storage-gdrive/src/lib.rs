@@ -27,7 +27,7 @@
 //!   takes any name but an empty one).
 //! - **Quota** is `about`'s `storageQuota` (`usage`, `limit`).
 //! - **The connection** is whatever [`porter_http::Http`] the replica is handed. In syncd it is
-//!   `storage_webdav::StreamHttp` over the descriptors of accountd's `Tokens.OpenAuthenticated`,
+//!   `porter_http::stream::StreamHttp` over the descriptors of accountd's `Tokens.OpenAuthenticated`,
 //!   whose relay adds the bearer, so syncd never holds a token. The upload host
 //!   (`/upload/drive/v3`) and a resumable session's URL are the same origin as the API, so one
 //!   relay serves all; a session URL on another origin is refused.
@@ -51,6 +51,5 @@ mod write;
 
 pub use addr::Root;
 pub use drive::accepts_name;
-pub use porter_http::stream::{Dial, StreamHttp, StreamLimits};
 pub use replica::{CHUNK_UNIT, EXPORT_LIMIT, GdriveReplica, SIMPLE_MAX, Uploads};
 pub use storage_webdav::{Clock, DELETED};

@@ -8,7 +8,7 @@ use crate::scheduler::{MeteredPolicy, Network, Pausing, Settings};
 use crate::service::{Access, DatasetName, Hub};
 use porter_core::capability::{Delta, StorageCap};
 use porter_core::{AppId, AppName, Isolation};
-use porter_dbus::{Caller, CallerRole};
+use porter_dbus::callers::{Caller, CallerRole};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{Notify, watch};

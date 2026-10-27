@@ -38,13 +38,13 @@ use crate::datasets::pim::discover::DiscoverError;
 use crate::datasets::pim::relay::{PimDial, pim_http};
 use porter_client::{Accounts, Transport};
 use porter_core::{EndpointUrl, GrantId, WebUrl};
+use porter_http::stream::StreamHttp;
 use porter_http::{HttpError, HttpResponse};
 use porter_sync::ReplicaError;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
-use storage_webdav::StreamHttp;
 
 /// The pages a listing of collections is followed for before a looping server is given up on.
 const MAX_PAGES: usize = 50;

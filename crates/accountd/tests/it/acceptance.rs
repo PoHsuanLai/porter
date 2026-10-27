@@ -12,7 +12,9 @@ use common::*;
 use ds_settings::live::{AnyOwner, LiveClient};
 use ds_settings::schema::KeyPath;
 use porter_core::{SecretKey, SecretPurpose};
-use porter_dbus::{AccountProxy, CallerRole, IdentitiesProxy, account_path};
+use porter_dbus::callers::CallerRole;
+use porter_dbus::names::account_path;
+use porter_dbus::{AccountProxy, IdentitiesProxy};
 use porter_secrets::{Secrets, SecretsError};
 use zbus::zvariant::ObjectPath;
 

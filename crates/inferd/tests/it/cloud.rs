@@ -866,8 +866,8 @@ async fn the_picker_lists_every_hosted_model_by_company_and_marks_the_ones_no_ac
         );
         let live = LiveClient::new(
             &settings,
-            porter_dbus::INFERENCE_BUS,
-            porter_dbus::INFERENCE_SETTINGS_PATH,
+            porter_dbus::names::INFERENCE_BUS,
+            porter_dbus::names::INFERENCE_SETTINGS_PATH,
             AnyOwner,
         )
         .expect("client");

@@ -18,7 +18,8 @@ use porter_core::wire::{ParentWindow, Refusal};
 use porter_core::{
     AccountsReply, AppId, AppName, DataClass, Isolation, LauncherSession, Need, Tokens,
 };
-use porter_dbus::{Details, LauncherFault, SheetKind};
+use porter_dbus::sheet::SheetKind;
+use porter_dbus::{Details, LauncherFault};
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use zbus::message::Header;

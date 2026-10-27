@@ -13,12 +13,14 @@ use common::bus::PrivateBus;
 use common::host::{HostLog, SheetHost, send_input};
 use common::{Shared, Tap, caller, contains};
 use porter_core::capability::CapabilityKind;
+use porter_core::clock::FixedClock;
 use porter_core::sheet::{SheetInput, SheetView};
 use porter_core::{
     AccountId, AccountState, Credential, Offer, ProviderId, SecretKey, SecretPurpose, TokenLifetime,
 };
-use porter_dbus::{CallerRole, ManagerProxy, Sheet};
-use porter_fake::{FixedClock, MemoryStore, RecordingAudit};
+use porter_dbus::callers::CallerRole;
+use porter_dbus::{ManagerProxy, Sheet};
+use porter_fake::{MemoryStore, RecordingAudit};
 use porter_fake_servers::{Google, shipped};
 use porter_families::{FamilyProvider, GoogleEnv, GoogleProvider};
 use porter_http::HyperHttp;
@@ -61,7 +63,7 @@ struct World {
 #[derive(Default)]
 struct Sky(std::sync::atomic::AtomicI64);
 
-impl porter_service::Clock for Sky {
+impl porter_core::clock::Clock for Sky {
     fn now(&self) -> porter_core::UnixSeconds {
         match self.0.load(std::sync::atomic::Ordering::SeqCst) {
             0 => {
@@ -118,14 +120,14 @@ impl World {
         let host_connection = bus.connect().await;
         host_connection
             .object_server()
-            .at(porter_dbus::SHEET_PATH, host)
+            .at(porter_dbus::names::SHEET_PATH, host)
             .await
             .expect("host object");
         porter_dbus::serve_ready(&host_connection)
             .await
             .expect("the host takes calls");
         host_connection
-            .request_name(porter_dbus::SHEET_BUS)
+            .request_name(porter_dbus::names::SHEET_BUS)
             .await
             .expect("host name");
         callers.introduce_as(
@@ -316,7 +318,10 @@ async fn reauth_reason_of(world: &World, id: &AccountId) -> String {
         .connection_as("org.example.OtherShell", CallerRole::SheetHost)
         .await;
     porter_dbus::AccountProxy::builder(&shell)
-        .path(zbus::zvariant::ObjectPath::try_from(porter_dbus::account_path(id)).expect("path"))
+        .path(
+            zbus::zvariant::ObjectPath::try_from(porter_dbus::names::account_path(id))
+                .expect("path"),
+        )
         .expect("path")
         .build()
         .await

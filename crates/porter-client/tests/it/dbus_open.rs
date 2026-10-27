@@ -427,11 +427,14 @@ async fn a_daemon_that_errors_on_open_is_not_unreachable() {
     let daemon = bus.connect().await;
     daemon
         .object_server()
-        .at(porter_dbus::INFERENCE_PATH, porter_dbus::InferenceSkeleton)
+        .at(
+            porter_dbus::names::INFERENCE_PATH,
+            porter_dbus::InferenceSkeleton,
+        )
         .await
         .expect("serve");
     daemon
-        .request_name(porter_dbus::INFERENCE_BUS)
+        .request_name(porter_dbus::names::INFERENCE_BUS)
         .await
         .expect("name");
     let accounts = Accounts::over(DbusTransport::over(bus.connect().await));

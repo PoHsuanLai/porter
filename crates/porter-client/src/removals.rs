@@ -8,7 +8,8 @@
 use crate::error::TransportError;
 use crate::identities::{Identities, IdentitiesError, IdentityRemovals};
 use porter_core::{AccountId, object_segment};
-use porter_dbus::{ACCOUNTS_PATH, BusConnection};
+use porter_dbus::BusConnection;
+use porter_dbus::names::ACCOUNTS_PATH;
 use zbus::export::futures_core::Stream;
 
 /// An identity accountd has removed, as the object-path segment its account was served at.

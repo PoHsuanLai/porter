@@ -11,7 +11,9 @@ use porter_core::capability::{
     Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
 };
 use porter_core::{AppName, UnixSeconds};
-use porter_dbus::{CallerRole, Details, SYNC_ERROR_NOTHING_HELD, SyncProxy};
+use porter_dbus::callers::CallerRole;
+use porter_dbus::names::SYNC_ERROR_NOTHING_HELD;
+use porter_dbus::{Details, SyncProxy};
 use porter_sync::{
     BaseVersion, Blob, ByteRange, ChangePage, ConflictRule, Cursor, ItemPath, MemoryReplica,
     PutItem, PutRefused, PutTarget, Quota, RemoteId, RemoteVersion, Replica, ReplicaError,

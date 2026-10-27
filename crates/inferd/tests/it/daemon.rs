@@ -7,7 +7,8 @@ use crate::hosting::bus::{self, PrivateBus};
 
 use inferd::config::{Dirs, ProgramSearch};
 use inferd::{Config, Daemon};
-use porter_dbus::{BusTarget, INFERENCE_BUS};
+use porter_dbus::BusTarget;
+use porter_dbus::names::INFERENCE_BUS;
 use porter_fake::Deadline;
 use std::path::Path;
 use std::time::Duration;

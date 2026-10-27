@@ -4,7 +4,7 @@
 //! A sheet method registers an `org.quire.Accounts1.Request` object under the request root of its
 //! [`ServiceRoot`] (the caller's unique name, then its `handle_token` or one minted here), returns
 //! its path at once, and runs the call in a task. When the call ends the task sends
-//! `Response(code, results)` (`porter_dbus::response_of` says what the answer looks like) to the
+//! `Response(code, results)` (`porter_dbus::sheet::response_of` says what the answer looks like) to the
 //! caller alone, then removes the object. The signal may therefore reach the caller before the
 //! method's reply does; callers subscribe first (`porter_dbus::Sheet`).
 //!
@@ -18,10 +18,10 @@
 
 use porter_core::wire::Refusal;
 use porter_core::{AccountsReply, AppId};
-use porter_dbus::{
-    Details, OPTION_HANDLE_TOKEN, ServiceRoot, SheetKind, is_handle_token, request_path_in,
-    response_of,
+use porter_dbus::sheet::{
+    OPTION_HANDLE_TOKEN, SheetKind, is_handle_token, request_path_in, response_of,
 };
+use porter_dbus::{Details, ServiceRoot};
 use std::collections::HashSet;
 use std::future::Future;
 use std::pin::Pin;

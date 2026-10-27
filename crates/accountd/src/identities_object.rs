@@ -31,7 +31,10 @@ use porter_core::wire::{ProviderHint, Refusal};
 use porter_core::{
     AccountId, AccountLabel, CapabilityKind, DataClass, Identity, IdentityId, IdentityKind,
 };
-use porter_dbus::{CallerRole, Details, IDENTITIES_PATH, SheetKind, identity_to_dbus};
+use porter_dbus::callers::CallerRole;
+use porter_dbus::names::IDENTITIES_PATH;
+use porter_dbus::sheet::SheetKind;
+use porter_dbus::{Details, identity_to_dbus};
 use porter_secrets::sealed_key;
 use porter_service::Registry;
 use std::sync::Arc;
@@ -89,7 +92,10 @@ impl<H: Host, C: Callers> IdentitiesObject<H, C> {
     /// The caller, which must be an app the person uses, Settings, the shell or a porter daemon.
     /// The agent, computer use, the agent launcher, the terminal and the compositor are refused,
     /// and so is a role porter does not know yet.
-    async fn user(&self, header: &Header<'_>) -> Result<porter_dbus::Caller, RefusedError> {
+    async fn user(
+        &self,
+        header: &Header<'_>,
+    ) -> Result<porter_dbus::callers::Caller, RefusedError> {
         let caller = self.0.identify(header, Standing::Any).await?;
         match caller.role {
             role if may_use(role) => Ok(caller),
@@ -108,7 +114,10 @@ impl<H: Host, C: Callers> IdentitiesObject<H, C> {
     }
 
     /// The caller, which must be Settings or the shell.
-    async fn manager(&self, header: &Header<'_>) -> Result<porter_dbus::Caller, RefusedError> {
+    async fn manager(
+        &self,
+        header: &Header<'_>,
+    ) -> Result<porter_dbus::callers::Caller, RefusedError> {
         let caller = self.user(header).await?;
         match caller.role {
             CallerRole::Settings | CallerRole::SheetHost => Ok(caller),

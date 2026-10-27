@@ -16,10 +16,10 @@
 use porter_core::{
     CoreError, DesktopSpace, DesktopSpaceRecord, SpaceChange, SpaceLook, SpaceName, UnixSeconds,
 };
+use porter_dbus::names::{SPACE_KEY_CREATED, SPACE_KEY_LOOK, SPACE_KEY_NAME};
 use porter_dbus::{
-    BusConnection, BusError, BusFailure, BusStream, Details, SPACE_KEY_CREATED, SPACE_KEY_LOOK,
-    SPACE_KEY_NAME, SpaceChanged, SpaceChangedStream, SpacesProxy, classify, is_invalid_args,
-    is_limits_exceeded,
+    BusConnection, BusError, BusFailure, BusStream, Details, SpaceChanged, SpaceChangedStream,
+    SpacesProxy, classify, is_invalid_args, is_limits_exceeded,
 };
 use std::pin::Pin;
 use std::task::{Context, Poll};

@@ -9,9 +9,8 @@ use porter_core::wire::Refusal;
 use porter_core::{
     AccountId, AccountLabel, AccountsReply, Candidate, GrantId, ProviderId, Restriction, Subject,
 };
-use porter_dbus::{
-    Details, REQUEST_INTERFACE, ServiceRoot, SheetKind, request_path_in, response_of,
-};
+use porter_dbus::sheet::{REQUEST_INTERFACE, SheetKind, request_path_in, response_of};
+use porter_dbus::{Details, ServiceRoot};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
@@ -139,7 +138,7 @@ impl FakeInferd {
         let server = connection.object_server();
         server
             .at(
-                porter_dbus::INFERENCE_PATH,
+                porter_dbus::names::INFERENCE_PATH,
                 Keys {
                     shared: Arc::clone(&self.shared),
                 },
@@ -148,7 +147,7 @@ impl FakeInferd {
             .expect("serve Keys");
         server
             .at(
-                porter_dbus::INFERENCE_PATH,
+                porter_dbus::names::INFERENCE_PATH,
                 Launcher {
                     shared: Arc::clone(&self.shared),
                 },
@@ -156,7 +155,7 @@ impl FakeInferd {
             .await
             .expect("serve Launcher");
         connection
-            .request_name(porter_dbus::INFERENCE_BUS)
+            .request_name(porter_dbus::names::INFERENCE_BUS)
             .await
             .expect("own the name");
     }
@@ -178,7 +177,7 @@ impl FakeInferd {
         connection
             .emit_signal(
                 Some(to),
-                porter_dbus::INFERENCE_PATH,
+                porter_dbus::names::INFERENCE_PATH,
                 "org.quire.Inference1.Launcher",
                 signal,
                 &body,
@@ -199,7 +198,7 @@ impl FakeInferd {
         connection
             .emit_signal(
                 Some(to),
-                porter_dbus::INFERENCE_PATH,
+                porter_dbus::names::INFERENCE_PATH,
                 "org.quire.Inference1.Launcher",
                 "ProcessCredentialRevoked",
                 &(id, reason),

@@ -20,7 +20,8 @@ use porter_core::capability::{Capability, LlmCap, LlmFeature, LlmWire};
 use porter_core::{
     AccountId, AppId, AppName, Billing, Isolation, Locality, ModelId, Tokens, UnixSeconds,
 };
-use porter_dbus::{INFERENCE_BUS, INFERENCE_PATH, INFERENCE_SETTINGS_PATH, InferenceProxy};
+use porter_dbus::InferenceProxy;
+use porter_dbus::names::{INFERENCE_BUS, INFERENCE_PATH, INFERENCE_SETTINGS_PATH};
 use porter_infer::{Pick, Policy, Slot, TierMap};
 use std::path::PathBuf;
 use std::sync::Arc;

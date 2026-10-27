@@ -4,7 +4,6 @@
 //! daemon's to read, never a test's), a push signal is a `Notify`, the pause switch and the
 //! account's removal come through the hub's [`Handle`].
 
-use crate::clock::Clock;
 use crate::dataset::Dataset;
 use crate::engine::{Engine, Outcome, Report, SyncError};
 use crate::scheduler::{
@@ -13,6 +12,7 @@ use crate::scheduler::{
 use crate::service::{
     Confirm, ConfirmError, Event, Handle, Nudge, Settle, SettleError, StatusSnapshot,
 };
+use porter_core::clock::Clock;
 use porter_sync::{MassDelete, Quota, Replica, StoredConflict};
 use std::sync::Arc;
 use std::time::Duration;

@@ -2,9 +2,9 @@
 //! its base version.
 
 use super::{Compared, Engine, Halt, Outcome, Report};
-use crate::clock::Clock;
 use crate::dataset::{Dataset, replica_hash};
 use crate::journal::Op;
+use porter_core::clock::Clock;
 use porter_sync::{
     Acknowledgement, BaseVersion, Conflict, ItemState, JournalItem, LocalChange, PutItem,
     PutRefused, PutTarget, RemoteId, RemoteSide, RemoteVersion, Replica, TombstoneOrigin,

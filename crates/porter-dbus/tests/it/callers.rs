@@ -8,7 +8,7 @@ mod bus;
 
 use bus::PrivateBus;
 use porter_core::Isolation;
-use porter_dbus::{Caller, CallerRole, CallerTable, Callers, ProcCallers};
+use porter_dbus::callers::{Caller, CallerRole, CallerTable, Callers, ProcCallers};
 use porter_fake::Scratch;
 use std::path::Path;
 

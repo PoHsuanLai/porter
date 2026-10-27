@@ -2554,7 +2554,6 @@ name = "porter-fake"
 version = "0.1.0"
 dependencies = [
  "porter-core",
- "porter-infer",
  "porter-provider",
  "porter-secrets",
  "porter-service",
@@ -2716,7 +2715,6 @@ dependencies = [
  "serde",
  "serde_json",
  "syncd",
- "syncd-fakes",
  "tokio",
  "zbus",
 ]

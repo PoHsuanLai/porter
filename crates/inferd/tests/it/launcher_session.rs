@@ -10,7 +10,8 @@ use inferd::launcher::LoginTiming;
 use porter_core::audit::CredentialEnd;
 use porter_core::consent::GrantScope;
 use porter_core::{AccountsReply, LauncherSession};
-use porter_dbus::{Details, LauncherFault, ServiceRoot, Sheet, SheetKind, reply_of};
+use porter_dbus::sheet::{SheetKind, reply_of};
+use porter_dbus::{Details, LauncherFault, ServiceRoot, Sheet};
 use porter_fake::Scripted;
 use zbus::export::futures_core::Stream;
 

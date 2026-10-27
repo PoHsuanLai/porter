@@ -23,7 +23,11 @@ use porter_client::Transport;
 #[cfg(feature = "photos-picker")]
 use porter_core::wire::Refusal;
 #[cfg(feature = "photos-picker")]
-use porter_dbus::{Callers, PICKER_PICKED, PICKER_WAITING, SYNC_PATH};
+use porter_dbus::callers::Callers;
+#[cfg(feature = "photos-picker")]
+use porter_dbus::names::SYNC_PATH;
+#[cfg(feature = "photos-picker")]
+use porter_dbus::{PICKER_PICKED, PICKER_WAITING};
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex, PoisonError};

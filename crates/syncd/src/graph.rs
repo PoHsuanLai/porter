@@ -19,8 +19,9 @@
 use crate::webdav::{BuildError, RelayDial, RelayStream, dial_error};
 use porter_client::{Accounts, Transport};
 use porter_core::{EndpointUrl, GrantId, Origin, WebUrl};
+use porter_http::stream::{Dial, StreamHttp, StreamLimits};
 use std::sync::Arc;
-use storage_graph::{Clock, Dial, GraphReplica, Routed, StreamHttp, StreamLimits};
+use storage_graph::{Clock, GraphReplica, Routed};
 
 /// Opens relays to one linked origin of one grant (`OpenLinked`): no credential is added.
 #[derive(Debug)]

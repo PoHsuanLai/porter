@@ -874,8 +874,9 @@ mod computers {
     use hosting::bus::within;
     use inferd::peers::Caller;
     use porter_client::InferSession;
+    use porter_dbus::names::COMPUTER_ERROR_PREFIX;
     use porter_dbus::zvariant::{OwnedValue, Value};
-    use porter_dbus::{BusStream, COMPUTER_ERROR_PREFIX, Details, InferenceProxy};
+    use porter_dbus::{BusStream, Details, InferenceProxy};
     use porter_infer::{
         ChatMessage, ChatRequest, ClientFrame, InferEvent, InferRequest, LocalOnly, MessagePart,
         OpenOptions, PlaceId, Policy, Role as ChatRole,

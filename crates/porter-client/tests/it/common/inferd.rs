@@ -97,11 +97,11 @@ impl FakeInferd {
     pub async fn serve(self, connection: &zbus::Connection) {
         connection
             .object_server()
-            .at(porter_dbus::INFERENCE_PATH, self)
+            .at(porter_dbus::names::INFERENCE_PATH, self)
             .await
             .expect("serve the object");
         connection
-            .request_name(porter_dbus::INFERENCE_BUS)
+            .request_name(porter_dbus::names::INFERENCE_BUS)
             .await
             .expect("own the name");
     }
@@ -126,8 +126,8 @@ impl FakeInferd {
             need,
             class,
             tier,
-            traceparent: text(porter_dbus::OPTION_TRACEPARENT),
-            usage: text(porter_dbus::OPTION_USAGE),
+            traceparent: text(porter_dbus::names::OPTION_TRACEPARENT),
+            usage: text(porter_dbus::names::OPTION_USAGE),
         });
         Ok(self.prepare.lock().expect("lock").clone())
     }
@@ -147,10 +147,10 @@ impl FakeInferd {
             usage: porter_core::consent::Usage::Interactive,
         };
         let traceparent = options
-            .get(porter_dbus::OPTION_TRACEPARENT)
+            .get(porter_dbus::names::OPTION_TRACEPARENT)
             .and_then(|v| String::try_from(v.try_clone().ok()?).ok());
         let usage = options
-            .get(porter_dbus::OPTION_USAGE)
+            .get(porter_dbus::names::OPTION_USAGE)
             .and_then(|v| String::try_from(v.try_clone().ok()?).ok());
         self.seen.lock().expect("lock").opens.push(Opened {
             need,

@@ -7,7 +7,8 @@ use crate::common;
 use accountd::{CREATES_PER_WINDOW, Options, SpacesStore};
 use common::*;
 use porter_core::DesktopSpace;
-use porter_dbus::{CallerRole, SpaceChangedStream, SpacesProxy};
+use porter_dbus::callers::CallerRole;
+use porter_dbus::{SpaceChangedStream, SpacesProxy};
 use porter_service::audit::AuditEvent;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -67,7 +68,7 @@ async fn listed(proxy: &SpacesProxy<'_>) -> Vec<(String, String)> {
         .collect()
 }
 
-fn settings_caller() -> porter_dbus::Caller {
+fn settings_caller() -> porter_dbus::callers::Caller {
     caller("org.quire.Settings", CallerRole::Settings)
 }
 

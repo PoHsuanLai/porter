@@ -8,7 +8,7 @@ use crate::account::state_slug;
 use crate::settings_keys::{Key, path};
 use ds_settings::schema::KeyPath;
 use porter_core::AccountId;
-use porter_dbus::CallerRole;
+use porter_dbus::callers::CallerRole;
 use porter_service::Registry;
 
 /// One change a client may be told of.

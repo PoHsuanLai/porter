@@ -2,11 +2,12 @@
 //! and back, never deleted; and what a runtime may not say.
 
 use porter_core::capability::{Capability, LlmCap, LlmFeature, LlmWire};
+use porter_core::clock::FixedClock;
 use porter_core::{
     AbsentReason, AccountId, AccountState, Claim, ModelId, Offer, Provenance, ProviderId, Subject,
     Tokens,
 };
-use porter_fake::{FixedClock, MemoryStore, ScriptedSheets, cloud_provider, llm_provider};
+use porter_fake::{MemoryStore, ScriptedSheets, cloud_provider, llm_provider};
 use porter_secrets::MemorySecrets;
 use porter_service::{AccountService, LocalFault, MAX_LOCAL_CLAIMS, Registry};
 

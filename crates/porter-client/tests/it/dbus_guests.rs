@@ -205,7 +205,7 @@ impl World {
         daemon
             .object_server()
             .at(
-                porter_dbus::INFERENCE_PATH,
+                porter_dbus::names::INFERENCE_PATH,
                 FakeInferd {
                     asked: Arc::clone(&asked),
                     script,
@@ -214,7 +214,7 @@ impl World {
             .await
             .expect("serve");
         daemon
-            .request_name(porter_dbus::INFERENCE_BUS)
+            .request_name(porter_dbus::names::INFERENCE_BUS)
             .await
             .expect("own the name");
         let accounts = Accounts::over(DbusTransport::over(bus.connect().await));
@@ -231,7 +231,7 @@ impl World {
     async fn emitter(&self) -> zbus::object_server::InterfaceRef<FakeInferd> {
         self.daemon
             .object_server()
-            .interface::<_, FakeInferd>(porter_dbus::INFERENCE_PATH)
+            .interface::<_, FakeInferd>(porter_dbus::names::INFERENCE_PATH)
             .await
             .expect("interface")
     }
@@ -655,14 +655,14 @@ async fn calls_aimed_at_the_checked_owner_never_reach_a_program_that_takes_the_n
     let checked = world.daemon.unique_name().expect("unique name").to_owned();
     world
         .daemon
-        .release_name(porter_dbus::INFERENCE_BUS)
+        .release_name(porter_dbus::names::INFERENCE_BUS)
         .await
         .expect("let go of the name");
     let squatter = world.bus.connect().await;
     squatter
         .object_server()
         .at(
-            porter_dbus::INFERENCE_PATH,
+            porter_dbus::names::INFERENCE_PATH,
             FakeInferd {
                 asked: Arc::default(),
                 script: Script {
@@ -674,7 +674,7 @@ async fn calls_aimed_at_the_checked_owner_never_reach_a_program_that_takes_the_n
         .await
         .expect("serve");
     squatter
-        .request_name(porter_dbus::INFERENCE_BUS)
+        .request_name(porter_dbus::names::INFERENCE_BUS)
         .await
         .expect("take the name");
     let named = |transport: DbusTransport| async move {

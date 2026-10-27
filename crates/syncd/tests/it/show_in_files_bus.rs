@@ -23,7 +23,7 @@ use porter_core::{
     Family, LoginName, Offer, Provenance, Restriction, SecretKey, SecretPurpose, SecretText,
     ServiceEndpoint, Subject, Tls, Toggle, UnixSeconds,
 };
-use porter_dbus::CallerRole;
+use porter_dbus::callers::CallerRole;
 use porter_drive::{CacheLimit, FreeSpace, ItemState, words};
 use porter_drive_fuse::{Mounter, mountd};
 use porter_fake::{FakeProvider, ScriptedSheets};

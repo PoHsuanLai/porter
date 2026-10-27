@@ -5,6 +5,7 @@
 //! was. The trait keeps the bus object free of those six parameters, and lets a test host stand in
 //! for the service.
 
+use porter_core::clock::Clock;
 use porter_core::consent::Usage;
 use porter_core::wire::{ParentWindow, Refusal};
 use porter_core::{
@@ -14,7 +15,7 @@ use porter_core::{
 use porter_provider::Provider;
 use porter_secrets::Secrets;
 use porter_service::{
-    AccountService, AgentFault, AuditSink, Clock, Registry, RegistryStore, Roster, Sheets,
+    AccountService, AgentFault, AuditSink, Registry, RegistryStore, Roster, Sheets,
 };
 use std::future::Future;
 

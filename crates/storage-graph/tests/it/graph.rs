@@ -9,11 +9,12 @@ use common::{Replica, Server, TOKEN, TcpDial};
 use porter_core::{Bytes, WebUrl};
 use porter_fake_servers::graph::{CHUNK_UNIT, Knobs};
 use porter_fake_servers::{GraphHandle, Hit};
+use porter_http::stream::{StreamHttp, StreamLimits};
 use porter_sync::{
     BaseVersion, Blob, ByteRange, Change, Conflict, Cursor, ItemPath, PutItem, PutRefused,
     PutTarget, RemoteId, RemoteSide, RemoteVersion, Replica as _, ReplicaError, RetryAfter,
 };
-use storage_graph::{Clock, GraphReplica, StreamHttp, StreamLimits, Uploads};
+use storage_graph::{Clock, GraphReplica, Uploads};
 
 fn new_item(path: &str, bytes: &[u8]) -> PutItem {
     PutItem {

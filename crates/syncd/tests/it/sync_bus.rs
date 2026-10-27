@@ -10,9 +10,9 @@ use porter_core::capability::{
     Access, Delta, HashKind, Offered, QuotaReport, StorageCap, StorageScope,
 };
 use porter_core::{Bytes, UnixSeconds};
-use porter_dbus::{
-    CallerRole, STATUS_KEY_QUOTA, SYNC_BUS, SYNC_ERROR_PAUSED, SYNC_PATH, SyncProxy,
-};
+use porter_dbus::SyncProxy;
+use porter_dbus::callers::CallerRole;
+use porter_dbus::names::{STATUS_KEY_QUOTA, SYNC_BUS, SYNC_ERROR_PAUSED, SYNC_PATH};
 use porter_sync::{
     BaseVersion, Conflict, ConflictRule, LocalId, MemoryReplica, Quota, RemoteId, RemoteSide,
     RemoteVersion, StoredConflict,

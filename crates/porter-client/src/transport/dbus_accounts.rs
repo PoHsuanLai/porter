@@ -6,7 +6,7 @@
 //! `AccountsReply::Refused`, as the in-process carrier does.
 //!
 //! The sheet methods return a Request object whose `Response` signal carries the answer
-//! (`porter_dbus::reply_of` reads it: code 0 the answer, 1 `Dismissed`, 2 the refusal named in
+//! (`porter_dbus::sheet::reply_of` reads it: code 0 the answer, 1 `Dismissed`, 2 the refusal named in
 //! the results). The signal may be sent before the method's reply arrives, so the listener is
 //! subscribed first (`porter_dbus::Sheet`), and the call that waits closes the sheet if it is
 //! dropped.
@@ -17,10 +17,11 @@ use crate::abandon::Abandon;
 use crate::error::TransportError;
 use porter_core::wire::{ParentWindow, ProviderHint};
 use porter_core::{AccountsReply, AccountsRequest};
+use porter_dbus::names::account_path;
+use porter_dbus::sheet::{SheetKind, reply_of};
 use porter_dbus::zvariant::OwnedObjectPath;
 use porter_dbus::{
-    AccountProxy, BusConnection, BusError, Details, ManagerProxy, Sheet, SheetError, SheetKind,
-    account_path, refusal_of, reply_of,
+    AccountProxy, BusConnection, BusError, Details, ManagerProxy, Sheet, SheetError, refusal_of,
 };
 
 /// A failed call: the refusal accountd gave, or a failure of the bus.

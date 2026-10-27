@@ -1,4 +1,4 @@
-//! `org.quire.Accounts1.Account`: one object per account, at `porter_dbus::account_path`.
+//! `org.quire.Accounts1.Account`: one object per account, at `porter_dbus::names::account_path`.
 //! `Reauthenticate` and the properties (`Id`, `Provider`, `Label`, `State`, `ReauthReason`,
 //! `Capabilities`) are served; every one answers only the shell (`SheetHost`) and Settings, the two
 //! roles that read an account. No app holds a grant for an account any more: an app learns of an
@@ -11,9 +11,10 @@ use crate::callers::Callers;
 use crate::core::{Core, Host, Standing, window};
 use crate::errors::RefusedError;
 use porter_core::{Account, AccountState, AccountsRequest, object_segment};
-use porter_dbus::{
-    ACCOUNTS_PATH, Caller, CallerRole, Details, SheetKind, account_path, to_vardict,
-};
+use porter_dbus::callers::{Caller, CallerRole};
+use porter_dbus::names::{ACCOUNTS_PATH, account_path};
+use porter_dbus::sheet::SheetKind;
+use porter_dbus::{Details, to_vardict};
 use std::sync::Arc;
 use zbus::ObjectServer;
 use zbus::fdo;

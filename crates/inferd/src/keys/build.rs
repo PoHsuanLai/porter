@@ -10,7 +10,7 @@ use crate::config::Dirs;
 use crate::tailnet::{BusMachines, Machines};
 use porter_core::clock::SystemClock;
 use porter_core::sheet::ProviderGroup;
-use porter_dbus::{CallerTable, Callers};
+use porter_dbus::callers::{CallerTable, Callers};
 use porter_families::set::{FamilyIo, Layer, ProviderNames, family_of, load_specs, local_runtimes};
 use porter_families::{ClientFiles, FamilyProvider};
 use porter_provider::{Provider, ProviderSet, ProviderSpec};

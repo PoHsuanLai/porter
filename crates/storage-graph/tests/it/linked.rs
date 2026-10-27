@@ -10,13 +10,14 @@ use common::{TOKEN, TcpDial, client};
 use porter_core::{Bytes, Origin, WebUrl};
 use porter_fake_servers::graph::{CHUNK_UNIT, Knobs};
 use porter_fake_servers::{FakeGraph, GraphHandle, Running};
+use porter_http::stream::{StreamHttp, StreamLimits};
 use porter_http::{Http, HttpError, HttpRequest, HttpResponse};
 use porter_sync::{
     BaseVersion, Blob, ByteRange, Change, Cursor, ItemPath, PutItem, PutRefused, PutTarget,
     Replica as _, ReplicaError,
 };
 use std::future::Future;
-use storage_graph::{Clock, GraphReplica, Routed, StreamHttp, StreamLimits, Uploads};
+use storage_graph::{Clock, GraphReplica, Routed, Uploads};
 
 /// A client for a linked origin: a dial that adds nothing, or no dial at all for an origin the
 /// declaration does not name (accountd's `OpenLinked` refuses it).

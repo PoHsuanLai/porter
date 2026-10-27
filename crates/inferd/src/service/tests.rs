@@ -132,7 +132,7 @@ fn a_hardware_note_is_a_row_of_its_kind_its_sentence_and_its_numbers() {
     for (_, details) in &rows {
         let words = String::try_from(
             details
-                .get(porter_dbus::NOTE_KEY_WORDS)
+                .get(porter_dbus::names::NOTE_KEY_WORDS)
                 .expect("words")
                 .try_clone()
                 .expect("clone"),

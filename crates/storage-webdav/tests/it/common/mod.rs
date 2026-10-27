@@ -7,10 +7,11 @@ use porter_core::{UnixSeconds, WebUrl};
 use porter_fake_servers::dav::{Behaviour, Propagation, SyncCollection};
 use porter_fake_servers::{DavHandle, FakeDav, Running};
 use porter_http::http::header::{AUTHORIZATION, HeaderValue};
+use porter_http::stream::{Dial, StreamHttp, StreamLimits};
 use porter_http::{Http, HttpError, HttpRequest, HttpResponse};
 use std::future::Future;
 use std::io;
-use storage_webdav::{Clock, Dial, StreamHttp, StreamLimits, WebDavReplica};
+use storage_webdav::{Clock, WebDavReplica};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 

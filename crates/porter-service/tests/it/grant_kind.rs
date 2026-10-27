@@ -4,6 +4,7 @@
 //! token and nothing wider (sec-1).
 
 use porter_core::capability::StorageScope;
+use porter_core::clock::FixedClock;
 use porter_core::consent::{Decision, GrantScope, Usage};
 use porter_core::consent::{Grant, GrantKey};
 use porter_core::{
@@ -12,8 +13,8 @@ use porter_core::{
     SpaceScope, UnixSeconds,
 };
 use porter_fake::{
-    FakeProvider, FixedClock, MemoryStore, RecordingAudit, ScriptedSheets, cloud_provider,
-    mail_account, mail_provider, storage_account,
+    FakeProvider, MemoryStore, RecordingAudit, ScriptedSheets, cloud_provider, mail_account,
+    mail_provider, storage_account,
 };
 use porter_provider::{
     Presented, Provider, ProviderError, ProviderSession, ProviderSpec, RevokeOutcome, SignInStart,

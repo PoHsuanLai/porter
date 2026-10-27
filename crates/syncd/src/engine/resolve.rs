@@ -2,9 +2,9 @@
 //! row goes back to the state that finishes the chosen side, and the next cycle does it.
 
 use super::{Engine, SyncError};
-use crate::clock::Clock;
 use crate::dataset::Dataset;
 use crate::journal::Op;
+use porter_core::clock::Clock;
 use porter_sync::{BaseVersion, ItemState, JournalItem, RemoteSide, Replica, Resolution};
 
 impl<R: Replica, D: Dataset, K: Clock> Engine<R, D, K> {

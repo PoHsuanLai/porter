@@ -62,7 +62,6 @@ mod account;
 mod audit;
 mod callers;
 mod client_rows;
-mod clock;
 mod core;
 pub mod daemon;
 mod errors;
@@ -90,7 +89,7 @@ pub use daemon::{Config, Daemon, StartError};
 pub use errors::RefusedError;
 pub use identities::UsesStore;
 pub use identity_desk::{IdentityDesk, SheetsDesk};
-pub use porter_dbus::{
+pub use porter_dbus::callers::{
     CallerFileError, CallerTomlError, load_callers, table_from_file, table_from_toml,
 };
 #[doc(inline)]

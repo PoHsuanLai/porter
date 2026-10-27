@@ -623,7 +623,7 @@ async fn sigterm_to_the_real_inferd_leaves_the_attached_engines_process_alive() 
     let mut inferd = real_inferd(&bus, &config, &[("attached.toml", entries::attached())]);
     let client = bus.connect().await;
     let dbus = zbus::fdo::DBusProxy::new(&client).await.expect("dbus");
-    let name = zbus::names::BusName::try_from(porter_dbus::INFERENCE_BUS).expect("bus name");
+    let name = zbus::names::BusName::try_from(porter_dbus::names::INFERENCE_BUS).expect("bus name");
     let deadline = porter_fake::Deadline::generous();
     while !dbus.name_has_owner(name.clone()).await.expect("ask") {
         if deadline.passed() {

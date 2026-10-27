@@ -14,7 +14,8 @@ use porter_core::{
     AccountId, CapabilityKind, Identity, IdentityAddress, IdentityId, IdentityKind, IdentityName,
     ProviderId,
 };
-use porter_dbus::{CallerRole, IdentitiesProxy, identity_from_dbus};
+use porter_dbus::callers::CallerRole;
+use porter_dbus::{IdentitiesProxy, identity_from_dbus};
 use porter_service::audit::AuditEvent;
 use std::io::Read;
 use std::path::PathBuf;
@@ -90,7 +91,7 @@ fn mail_identity() -> Identity {
     )
 }
 
-fn settings_caller() -> porter_dbus::Caller {
+fn settings_caller() -> porter_dbus::callers::Caller {
     caller("org.quire.Settings", CallerRole::Settings)
 }
 

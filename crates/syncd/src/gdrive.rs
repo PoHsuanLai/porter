@@ -9,8 +9,9 @@
 use crate::webdav::{BuildError, RelayDial};
 use porter_client::{Accounts, Transport};
 use porter_core::{EndpointUrl, GrantId, WebUrl};
+use porter_http::stream::{StreamHttp, StreamLimits};
 use std::sync::Arc;
-use storage_gdrive::{Clock, GdriveReplica, StreamHttp, StreamLimits};
+use storage_gdrive::{Clock, GdriveReplica};
 
 /// The replica of `folder` (a path in the app data folder, `Photos/Originals`; empty for the
 /// folder itself) of the account the grant covers, over relays accountd opens to `endpoint`

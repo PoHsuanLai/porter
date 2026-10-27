@@ -4,20 +4,21 @@
 use super::super::{
     DeviceId, ManualMillis, PhotoLibrary, PhotoMetadata, PhotoOriginals, SystemMillis,
 };
-use crate::clock::SystemClock;
 use crate::engine::{Engine, Report};
 use crate::journal::Journal;
 use crate::testing::scratch;
+use porter_core::clock::SystemClock;
 use porter_core::stream::ByteStream;
 use porter_core::{UnixSeconds, WebUrl};
 use porter_fake_servers::{DavHandle, FakeDav, Running};
 use porter_http::http::header::{AUTHORIZATION, HeaderValue};
+use porter_http::stream::{Dial, StreamHttp, StreamLimits};
 use porter_http::{Http, HttpError, HttpRequest, HttpResponse};
 use std::future::Future;
 use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
-use storage_webdav::{Clock, Dial, StreamHttp, StreamLimits, WebDavReplica};
+use storage_webdav::{Clock, WebDavReplica};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 

@@ -28,12 +28,13 @@ use crate::tailnet::{Candidate, Tailnet};
 use crate::toolproof::ToolWatch;
 use crate::watch::Probing;
 use porter_core::{DataClass, HelperId, ModelId, NodeId, SecretText, Tier};
-use porter_dbus::{
-    CANDIDATE_KEY_MODELS, CANDIDATE_KEY_NAME, CANDIDATE_KEY_NEEDS_APPROVAL, Details,
-    GUEST_KEY_NAME, GUEST_KEY_SINCE, GUEST_KEY_STATE, INFERENCE_BUS, INFERENCE_PATH, NeedArg,
-    PLACE_KEY_ENGINES, PLACE_KEY_KIND, PLACE_KEY_MODELS, PLACE_KEY_NAME, PLACE_KEY_PROVIDER,
-    PLACE_KEY_READY, PLACE_KEY_TAKES, need_from_dbus,
+use porter_dbus::names::{
+    CANDIDATE_KEY_MODELS, CANDIDATE_KEY_NAME, CANDIDATE_KEY_NEEDS_APPROVAL, GUEST_KEY_NAME,
+    GUEST_KEY_SINCE, GUEST_KEY_STATE, INFERENCE_BUS, INFERENCE_PATH, PLACE_KEY_ENGINES,
+    PLACE_KEY_KIND, PLACE_KEY_MODELS, PLACE_KEY_NAME, PLACE_KEY_PROVIDER, PLACE_KEY_READY,
+    PLACE_KEY_TAKES,
 };
+use porter_dbus::{Details, NeedArg, need_from_dbus};
 use porter_infer::{InferRefusal, PlaceId, PlaceRow, PlaceState};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -180,7 +181,7 @@ fn unknown_caller() -> fdo::Error {
 /// The W3C trace context of a call, if it carries a valid one (`traceparent` in the options; an
 /// unknown key is ignored, as the interface says). No spans are written yet.
 fn trace_of(options: &Details) -> Option<porter_infer::Traceparent> {
-    let value = options.get(porter_dbus::OPTION_TRACEPARENT)?;
+    let value = options.get(porter_dbus::names::OPTION_TRACEPARENT)?;
     let text = String::try_from(value.try_clone().ok()?).ok()?;
     porter_infer::Traceparent::parse(&text).ok()
 }
@@ -188,7 +189,7 @@ fn trace_of(options: &Details) -> Option<porter_infer::Traceparent> {
 /// The usage a call names (`usage` in the options): `Interactive` when it names none, and
 /// invalid args for a slug that is not one.
 fn usage_of(options: &Details) -> fdo::Result<porter_core::consent::Usage> {
-    let Some(value) = options.get(porter_dbus::OPTION_USAGE) else {
+    let Some(value) = options.get(porter_dbus::names::OPTION_USAGE) else {
         return Ok(porter_core::consent::Usage::Interactive);
     };
     let text = value
@@ -210,7 +211,7 @@ fn note_row(note: &porter_infer::HardwareNote) -> (String, Details) {
         _ => serde_json::Map::new(),
     };
     let words = zbus::zvariant::Value::from(error::note_words(note));
-    let details = std::iter::once((porter_dbus::NOTE_KEY_WORDS.to_owned(), words))
+    let details = std::iter::once((porter_dbus::names::NOTE_KEY_WORDS.to_owned(), words))
         .chain(numbers.into_iter().filter_map(|(name, number)| {
             Some((name, zbus::zvariant::Value::U64(number.as_u64()?)))
         }))
@@ -233,8 +234,8 @@ fn failed(why: impl ToString) -> fdo::Error {
 /// it, is invalid args, as is a value that is not what the interface says.
 fn allowed_of(caller: &Caller, options: &Details) -> fdo::Result<Option<Allowed>> {
     let (places, pins) = (
-        options.get(porter_dbus::OPTION_PLACES),
-        options.get(porter_dbus::OPTION_PLACE_MODELS),
+        options.get(porter_dbus::names::OPTION_PLACES),
+        options.get(porter_dbus::names::OPTION_PLACE_MODELS),
     );
     if places.is_none() && pins.is_none() {
         return Ok(None);
@@ -799,8 +800,8 @@ impl<P: Peers, O: AuditOut + 'static, C: Clock + Clone + 'static> Inference<P, O
         let answer = porter_tailnet::GuestAnswer::from_slug(&answer).ok_or_else(|| {
             fdo::Error::InvalidArgs(format!(
                 "the answer is {} or {}",
-                porter_dbus::GUEST_ANSWER_ALLOW,
-                porter_dbus::GUEST_ANSWER_DENY
+                porter_dbus::names::GUEST_ANSWER_ALLOW,
+                porter_dbus::names::GUEST_ANSWER_DENY
             ))
         })?;
         let node = NodeId::parse(&node).map_err(|e| fdo::Error::InvalidArgs(e.to_string()))?;
@@ -938,10 +939,10 @@ fn new_computer(name: String, models: Vec<(String, Details)>) -> Result<NewCompu
                 })
                 .transpose()
         };
-        let socket = text(porter_dbus::COMPUTER_KEY_SOCKET)?;
-        let key = text(porter_dbus::COMPUTER_KEY_KEY)?.map(SecretText::new);
+        let socket = text(porter_dbus::names::COMPUTER_KEY_SOCKET)?;
+        let key = text(porter_dbus::names::COMPUTER_KEY_KEY)?.map(SecretText::new);
         let port = details
-            .get(porter_dbus::COMPUTER_KEY_PORT)
+            .get(porter_dbus::names::COMPUTER_KEY_PORT)
             .map(|value| {
                 value
                     .try_clone()
@@ -996,7 +997,7 @@ fn candidate_row(candidate: Candidate) -> (String, Details) {
 }
 
 /// A computer that asked, as a row of `Guests`: its node id and the vardict of `GUEST_KEY_*`.
-fn guest_row(row: porter_tailnet::GuestRow) -> (String, Details) {
+fn guest_row(row: porter_core::lending::GuestRow) -> (String, Details) {
     use porter_dbus::zvariant::{OwnedValue, Value};
     let entries = [
         (GUEST_KEY_NAME, text_value(row.name)),
@@ -1104,7 +1105,7 @@ where
     serve_parts(connection, daemon, std::future::ready(Ok(()))).await
 }
 
-/// As [`serve_on`], with `settings` served at [`porter_dbus::INFERENCE_SETTINGS_PATH`] before the
+/// As [`serve_on`], with `settings` served at [`porter_dbus::names::INFERENCE_SETTINGS_PATH`] before the
 /// name is claimed: whoever sees `org.quire.Inference1` owned finds every object of it, the
 /// settings module among them.
 pub async fn serve_with_settings<P, O, C, S>(

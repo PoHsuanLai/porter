@@ -16,7 +16,9 @@ use porter_core::{
     AccountId, AppName, AuthKind, CapabilityKind, Credential, DataClass, EndpointUrl, Family,
     GrantId, LoginName, SecretKey, SecretPurpose, SecretText, SpaceScope, Tls, UnixSeconds,
 };
-use porter_dbus::{CallerRole, STATUS_KEY_QUOTA, SyncProxy};
+use porter_dbus::SyncProxy;
+use porter_dbus::callers::CallerRole;
+use porter_dbus::names::STATUS_KEY_QUOTA;
 use porter_fake::{cloud_provider, storage_account};
 use porter_fake_servers::{FakeNextcloud, NextcloudHandle, Running};
 use porter_secrets::{MemorySecrets, Secrets};

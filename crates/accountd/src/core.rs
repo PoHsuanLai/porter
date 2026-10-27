@@ -6,16 +6,16 @@ use crate::callers::Callers;
 use crate::errors::RefusedError;
 use crate::hub::{Event, events, hears, settings_news};
 use crate::manager::Manager;
+use porter_core::clock::Clock;
 use porter_core::clock::SystemClock;
 use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
 use porter_core::{AccountId, AccountState, AccountsReply, AccountsRequest, AppId, ProviderId};
-use porter_dbus::{ACCOUNTS_BUS, ACCOUNTS_PATH, Caller, CallerRole, account_path};
+use porter_dbus::callers::{Caller, CallerRole};
+use porter_dbus::names::{ACCOUNTS_BUS, ACCOUNTS_PATH, account_path};
 use porter_families::set::ProviderNames;
 use porter_provider::Provider;
 use porter_secrets::{Secrets, SecretsError};
-use porter_service::{
-    AccountService, AuditSink, Clock, Registry, RegistryStore, RevokeReport, Sheets,
-};
+use porter_service::{AccountService, AuditSink, Registry, RegistryStore, RevokeReport, Sheets};
 use porter_sheets::{AppNames, RequestObjects};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
@@ -465,19 +465,19 @@ pub async fn serve_with<H: Host, C: Callers>(
         .await?;
     server
         .at(
-            porter_dbus::SPACES_PATH,
+            porter_dbus::names::SPACES_PATH,
             crate::spaces_object::SpacesObject::new(Arc::clone(&core)),
         )
         .await?;
     server
         .at(
-            porter_dbus::IDENTITIES_PATH,
+            porter_dbus::names::IDENTITIES_PATH,
             crate::identities_object::IdentitiesObject::new(Arc::clone(&core)),
         )
         .await?;
     server
         .at(
-            porter_dbus::TAILNET_PATH,
+            porter_dbus::names::TAILNET_PATH,
             crate::tailnet_object::TailnetObject::new(Arc::clone(&core)),
         )
         .await?;

@@ -15,9 +15,9 @@ use crate::graph::bare_url;
 use crate::webdav::{BuildError, RelayDial};
 use porter_client::{Accounts, Transport};
 use porter_core::{EndpointUrl, GrantId, Origin, WebUrl};
+use porter_http::stream::{StreamHttp, StreamLimits};
 use std::sync::Arc;
 use storage_graph::Routed;
-use storage_webdav::{StreamHttp, StreamLimits};
 
 /// What the upload API sends through.
 pub type LibraryHttp<T> = StreamHttp<RelayDial<T>>;

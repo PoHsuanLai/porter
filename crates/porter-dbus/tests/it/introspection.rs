@@ -61,7 +61,7 @@ fn the_spaces_registry_declares_its_six_methods_and_one_signal() {
     }
     assert_eq!(xml.matches("<method ").count(), 6);
     assert_eq!(xml.matches("<signal ").count(), 1);
-    assert_eq!(porter_dbus::SPACES_PATH, "/org/quire/Spaces1");
+    assert_eq!(porter_dbus::names::SPACES_PATH, "/org/quire/Spaces1");
     assert!(
         !introspection(Bus::Accounts).contains("org.quire.Spaces1"),
         "its own file, beside Accounts1's"
@@ -92,7 +92,10 @@ fn the_identities_object_declares_five_methods_and_one_signal_and_no_token() {
     assert_eq!(xml.matches("<property ").count(), 0);
     // `Offer` answers its identity's id, address and provider, and nothing that is a token.
     assert_eq!(xml.matches("direction=\"out\"").count(), 6);
-    assert_eq!(porter_dbus::IDENTITIES_PATH, "/org/quire/Identities1");
+    assert_eq!(
+        porter_dbus::names::IDENTITIES_PATH,
+        "/org/quire/Identities1"
+    );
     // Additive: its own file, and the others are as they were.
     assert!(!introspection(Bus::Accounts).contains("Identities1"));
     assert!(!introspection(Bus::Spaces).contains("Identities1"));
@@ -115,7 +118,7 @@ fn the_tailnet_object_declares_machines_and_changed_and_nothing_else() {
     assert_eq!(xml.matches("<property ").count(), 0);
     // The signal carries nothing: a listener calls Machines again.
     assert!(xml.contains("<signal name=\"Changed\">\n   </signal>"));
-    assert_eq!(porter_dbus::TAILNET_PATH, "/org/quire/Tailnet1");
+    assert_eq!(porter_dbus::names::TAILNET_PATH, "/org/quire/Tailnet1");
     // Additive: its own file, and Accounts1's and Spaces1's are as they were.
     assert!(!introspection(Bus::Accounts).contains("Tailnet1"));
     assert!(!introspection(Bus::Spaces).contains("Tailnet1"));
@@ -222,7 +225,7 @@ fn inference1_xml_unchanged_members() {
          PointEngine, HardwareNotes, SetHelperPool, and Start, Stop, Running and RunningChanged"
     );
     assert_eq!(
-        porter_dbus::COMPUTER_ERROR_PREFIX,
+        porter_dbus::names::COMPUTER_ERROR_PREFIX,
         "org.quire.Inference1.Error.Computer."
     );
 }
@@ -247,7 +250,7 @@ fn inference_calls_carry_an_options_dict_for_the_reserved_traceparent() {
         4,
         "Availability, Open, Prepare and HardwareNotes"
     );
-    assert_eq!(porter_dbus::OPTION_TRACEPARENT, "traceparent");
+    assert_eq!(porter_dbus::names::OPTION_TRACEPARENT, "traceparent");
 }
 
 #[test]
@@ -314,7 +317,7 @@ fn the_sheet_backend_takes_views_in_and_sends_inputs_out() {
     }
     let declared = xml.matches("<method ").count() + xml.matches("<signal ").count();
     assert_eq!(declared, 4);
-    assert_eq!(porter_dbus::SHEET_BUS, "org.quire.AccountsSheet1");
+    assert_eq!(porter_dbus::names::SHEET_BUS, "org.quire.AccountsSheet1");
 }
 
 #[test]
@@ -326,14 +329,14 @@ fn syncd_and_inferd_declare_what_they_did() {
     assert!(sync1.contains("<method name=\"ConfirmDiscard\">"));
     assert!(sync1.contains("<method name=\"SyncNow\">"));
     assert_eq!(
-        porter_dbus::SYNC_ERROR_PAUSED,
-        format!("{}Paused", porter_dbus::SYNC_ERROR_PREFIX)
+        porter_dbus::names::SYNC_ERROR_PAUSED,
+        format!("{}Paused", porter_dbus::names::SYNC_ERROR_PREFIX)
     );
     assert!(sync1.contains("<method name=\"Watch\">"));
     assert!(sync1.contains("<signal name=\"NeedsConfirmation\">"));
     assert_eq!(
-        porter_dbus::SYNC_ERROR_NOTHING_HELD,
-        format!("{}NothingHeld", porter_dbus::SYNC_ERROR_PREFIX)
+        porter_dbus::names::SYNC_ERROR_NOTHING_HELD,
+        format!("{}NothingHeld", porter_dbus::names::SYNC_ERROR_PREFIX)
     );
     #[cfg(feature = "photos-picker")]
     {
@@ -364,11 +367,11 @@ fn syncd_and_inferd_declare_what_they_did() {
     );
     assert!(sync.contains("<method name=\"Resolve\">"));
     assert!(sync.contains("<arg name=\"conflict\" type=\"x\" direction=\"in\"/>"));
-    assert_eq!(porter_dbus::RESOLVE_KEEP_LOCAL, "keep_local");
-    assert_eq!(porter_dbus::RESOLVE_KEEP_REMOTE, "keep_remote");
+    assert_eq!(porter_dbus::names::RESOLVE_KEEP_LOCAL, "keep_local");
+    assert_eq!(porter_dbus::names::RESOLVE_KEEP_REMOTE, "keep_remote");
     assert_eq!(
-        porter_dbus::SYNC_ERROR_NO_SUCH_CONFLICT,
-        format!("{}NoSuchConflict", porter_dbus::SYNC_ERROR_PREFIX)
+        porter_dbus::names::SYNC_ERROR_NO_SUCH_CONFLICT,
+        format!("{}NoSuchConflict", porter_dbus::names::SYNC_ERROR_PREFIX)
     );
-    assert_eq!(porter_dbus::STATUS_KEY_QUOTA, "quota");
+    assert_eq!(porter_dbus::names::STATUS_KEY_QUOTA, "quota");
 }

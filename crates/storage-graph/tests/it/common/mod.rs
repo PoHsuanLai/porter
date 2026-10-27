@@ -6,10 +6,11 @@ use porter_core::stream::ByteStream;
 use porter_core::{UnixSeconds, WebUrl};
 use porter_fake_servers::{FakeGraph, GraphHandle, Running};
 use porter_http::http::header::{AUTHORIZATION, HeaderValue};
+use porter_http::stream::{Dial, StreamHttp, StreamLimits};
 use porter_http::{Http, HttpError, HttpRequest, HttpResponse};
 use std::future::Future;
 use std::io;
-use storage_graph::{Clock, Dial, GraphReplica, Root, StreamHttp, StreamLimits, Uploads};
+use storage_graph::{Clock, GraphReplica, Root, Uploads};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 

@@ -17,7 +17,9 @@ use crate::app_names::AppNames;
 use porter_core::consent::{ConsentAnswer, ConsentAsk};
 use porter_core::sheet::{ReviewView, SheetInput, SheetView};
 use porter_core::wire::ParentWindow;
-use porter_dbus::{AccountsSheetProxy, CallerRole, Callers, SHEET_BUS};
+use porter_dbus::AccountsSheetProxy;
+use porter_dbus::callers::{CallerRole, Callers};
+use porter_dbus::names::SHEET_BUS;
 use porter_service::{SheetFault, SheetLink, SheetOpen, Sheets};
 use std::pin::Pin;
 use std::sync::Arc;
@@ -256,7 +258,7 @@ mod tests {
     use porter_core::{
         AccountLabel, AppId, AppLabel, AppName, CapabilityKind, DataClass, Isolation, ProviderId,
     };
-    use porter_dbus::{AppTitle, CallerRow, CallerTable};
+    use porter_dbus::callers::{AppTitle, CallerRow, CallerTable};
 
     fn app(name: &str) -> AppId {
         AppId {

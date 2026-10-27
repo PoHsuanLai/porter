@@ -3,9 +3,8 @@
 
 use super::hub::{DatasetName, StatusSnapshot};
 use crate::scheduler::Pausing;
-use porter_dbus::{
-    ACCOUNTS_PATH, CONFLICT_KEY_NUMBER, Details, STATUS_KEY_QUOTA, to_vardict, zvariant,
-};
+use porter_dbus::names::{ACCOUNTS_PATH, CONFLICT_KEY_NUMBER, STATUS_KEY_QUOTA};
+use porter_dbus::{Details, to_vardict, zvariant};
 use porter_sync::{BaseVersion, MassDelete, Quota, RemoteSide, StoredConflict};
 use serde_json::json;
 use zvariant::{Dict, OwnedValue, Signature, Value};

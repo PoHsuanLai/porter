@@ -40,7 +40,6 @@ mod write;
 
 pub use addr::Root;
 pub use drive::accepts_name;
-pub use porter_http::stream::{Dial, StreamHttp, StreamLimits};
 pub use replica::{CHUNK_UNIT, GraphReplica, SIMPLE_MAX, Uploads};
 pub use route::Routed;
 pub use storage_webdav::{Clock, DELETED};

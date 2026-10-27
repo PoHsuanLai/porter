@@ -1,10 +1,10 @@
 //! Who is calling: a bus connection's unique name to a [`Caller`].
 //!
 //! The caller is derived by the transport, never sent: the bus says which process owns a
-//! connection, and `porter_dbus::ProcCallers` (shared with accountd) names it. inferd's own
+//! connection, and `porter_dbus::callers::ProcCallers` (shared with accountd) names it. inferd's own
 //! caller table, the system file `/etc/porter/inferd-callers.toml`
 //! (`porter_daemon::INFERD_CALLERS`, which a person cannot write; never `inferd.toml`), is rows of
-//! that shared table, keyed by systemd unit (the programs a unit runs are `porter_dbus::CallerRow::images`:
+//! that shared table, keyed by systemd unit (the programs a unit runs are `porter_dbus::callers::CallerRow::images`:
 //! daemons by convention, detent and sill in `bin`): cuad's units with the `Cua` role,
 //! each app's with `App`. This is advisory for unsandboxed processes (porter R12): a
 //! process that can start an allowed unit or app scope can be that caller. cuad is a fixed unit and
@@ -12,7 +12,8 @@
 //! names for it, or any identified app scope.
 
 use porter_core::{AppId, AppName};
-use porter_dbus::{BusConnection, CallerRole, CallerRow, Install, ProcCallers, installed};
+use porter_dbus::BusConnection;
+use porter_dbus::callers::{CallerRole, CallerRow, Install, ProcCallers, installed};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
@@ -230,7 +231,7 @@ impl CallerTable {
 
     /// The rows of the shared table this table is: cuad's first, so an app entry cannot claim its
     /// unit (the shared table answers with the first row that names one).
-    pub fn rows(&self) -> porter_dbus::CallerTable {
+    pub fn rows(&self) -> porter_dbus::callers::CallerTable {
         let cua_app = AppName::parse(CUA_APP).ok();
         let cua = cua_app.into_iter().flat_map(|app| {
             self.cua.iter().map(move |unit| CallerRow {
@@ -290,7 +291,7 @@ impl CallerTable {
                 name: None,
             })
         });
-        porter_dbus::CallerTable {
+        porter_dbus::callers::CallerTable {
             callers: cua
                 .chain(launcher)
                 .chain(settings)
@@ -325,7 +326,7 @@ const SHELL_PROGRAM: &str = "sill";
 
 impl Caller {
     /// A shared caller as inferd knows roles: `Cua` and `Settings`, and `App` for every other.
-    pub fn from_shared(caller: porter_dbus::Caller) -> Self {
+    pub fn from_shared(caller: porter_dbus::callers::Caller) -> Self {
         Self {
             app: caller.app,
             role: match caller.role {
@@ -378,7 +379,7 @@ impl ProcPeers {
         }
     }
 
-    /// The same lookup in the shared caller type (`porter_dbus::Callers`), for the sheet link
+    /// The same lookup in the shared caller type (`porter_dbus::callers::Callers`), for the sheet link
     /// and the Keys object, which check the shell and the app by the shared roles.
     pub fn shared(&self) -> std::sync::Arc<ProcCallers> {
         std::sync::Arc::clone(&self.callers)
@@ -399,7 +400,7 @@ pub const PROC_GATE: ProcGate = if cfg!(feature = "test-proc-root") {
 
 impl Peers for ProcPeers {
     async fn caller_of(&self, sender: &str) -> Option<Caller> {
-        porter_dbus::Callers::caller_of(&self.callers, sender)
+        porter_dbus::callers::Callers::caller_of(&self.callers, sender)
             .await
             .map(Caller::from_shared)
     }

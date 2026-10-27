@@ -57,13 +57,3 @@ pub use message::{
 pub use seam::Http;
 pub use shared::SharedHttp;
 pub use sleep::{NoSleep, SharedSleep, Sleep};
-
-// moved to `http::Method`; re-export kept for one batch
-#[doc(hidden)]
-pub use http::Method;
-// moved to `http::StatusCode`; re-export kept for one batch
-#[doc(hidden)]
-pub use http::StatusCode as Status;
-// moved to `http::header`; re-export kept for one batch
-#[doc(hidden)]
-pub use http::header::{HeaderName, HeaderValue};

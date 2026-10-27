@@ -129,10 +129,11 @@ pub async fn drive<S: SignIn>(
 
 // ---- a person at the sheets, and a service to hand them to ----
 
+use porter_core::clock::FixedClock;
 use porter_core::consent::{ConsentAnswer, ConsentAsk};
 use porter_core::wire::ParentWindow;
 use porter_core::{AccountId, CapabilityKind, Credential, SecretKey};
-use porter_fake::{FixedClock, MemoryStore, RecordingAudit, ScriptedSheets};
+use porter_fake::{MemoryStore, RecordingAudit, ScriptedSheets};
 use porter_families::FamilyProvider;
 use porter_secrets::{MemorySecrets, Secrets, SecretsError};
 use porter_service::{AccountService, SheetFault, SheetLink, SheetOpen, Sheets};

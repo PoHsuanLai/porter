@@ -8,11 +8,12 @@
 //! The files on disk are ordinary files with a line of text: nothing here is downloaded from
 //! anywhere, only the states are. Test tooling, never installed.
 
+use porter_dbus::names::STORAGE_PATH;
 use porter_dbus::{
     DRIVE_KEY_ACCOUNT, DRIVE_KEY_LABEL, DRIVE_KEY_LOCAL, DRIVE_KEY_PATH, DRIVE_KEY_PROVIDER,
     DRIVE_KEY_STATE, DRIVE_KEY_TOTAL, DRIVE_KEY_USED, DRIVE_KEY_WORDS, Details, DriveState,
     ITEM_KEY_FRACTION, ITEM_KEY_KEPT, ITEM_KEY_KIND, ITEM_KEY_OTHER, ITEM_KEY_STATE, ITEM_KEY_URL,
-    ITEM_KEY_WORDS, ItemDetails, ItemKind, ItemState, Refused, STORAGE_PATH, Saved,
+    ITEM_KEY_WORDS, ItemDetails, ItemKind, ItemState, Refused, Saved,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};

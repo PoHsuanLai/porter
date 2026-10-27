@@ -3,6 +3,7 @@
 
 use super::classes::sync_app;
 use porter_client::{Identities, IdentitiesError};
+use porter_core::clock::Clock;
 use porter_core::consent::{ConsentAnswer, ConsentAsk, GrantScope};
 use porter_core::wire::{ParentWindow, ProviderHint, Refusal};
 use porter_core::{
@@ -11,7 +12,7 @@ use porter_core::{
 };
 use porter_provider::Provider;
 use porter_secrets::{Secrets, SecretsError};
-use porter_service::{AccountService, AuditSink, Clock, Registry, RegistryStore, Sheets, SignInAs};
+use porter_service::{AccountService, AuditSink, Registry, RegistryStore, Sheets, SignInAs};
 use std::future::Future;
 use std::sync::{Arc, Mutex, PoisonError};
 

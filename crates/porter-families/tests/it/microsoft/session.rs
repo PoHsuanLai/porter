@@ -285,11 +285,12 @@ async fn revoking_sends_the_person_to_their_microsoft_account_page() {
 mod service {
     use super::*;
     use porter_core::AccountId as Id;
+    use porter_core::clock::FixedClock;
     use porter_core::{
         Account, AccountLabel, AccountState, AuthKind, ProviderId, Restriction, SecretKey,
         SecretPurpose,
     };
-    use porter_fake::{FixedClock, ScriptedSheets};
+    use porter_fake::ScriptedSheets;
     use porter_secrets::{MemorySecrets, Secrets, SecretsError};
     use porter_service::{AccountService, Registry};
     use std::sync::Arc;

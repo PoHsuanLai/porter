@@ -7,7 +7,8 @@ use crate::common;
 use common::*;
 use ds_settings::live::Changes;
 use porter_core::sheet::SheetInput;
-use porter_dbus::{AccountProxy, CallerRole, Details, Sheet};
+use porter_dbus::callers::CallerRole;
+use porter_dbus::{AccountProxy, Details, Sheet};
 use std::time::Duration;
 use zbus::export::futures_core::Stream;
 use zbus::zvariant::ObjectPath;
@@ -57,7 +58,10 @@ async fn the_sheet_host_signs_any_account_in_again() {
         .client_as(caller("org.quire.Shell", CallerRole::SheetHost))
         .await;
     let account = AccountProxy::builder(&shell)
-        .path(ObjectPath::try_from(porter_dbus::account_path(&mail_account().id)).expect("path"))
+        .path(
+            ObjectPath::try_from(porter_dbus::names::account_path(&mail_account().id))
+                .expect("path"),
+        )
         .expect("path")
         .build()
         .await
@@ -91,7 +95,10 @@ async fn an_app_cannot_sign_an_account_in_again() {
     let rig = Rig::start_with(Default::default(), dismissing()).await;
     let app = rig.client("org.quire.Mail").await;
     let account = AccountProxy::builder(&app)
-        .path(ObjectPath::try_from(porter_dbus::account_path(&mail_account().id)).expect("path"))
+        .path(
+            ObjectPath::try_from(porter_dbus::names::account_path(&mail_account().id))
+                .expect("path"),
+        )
         .expect("path")
         .build()
         .await

@@ -21,7 +21,8 @@ use porter_core::clock::SystemClock;
 use porter_core::sheet::ProviderGroup;
 use porter_daemon::ProcRoot;
 use porter_daemon::xdg::PathError;
-use porter_dbus::{BusTarget, CallerFileError, ProcCallers};
+use porter_dbus::BusTarget;
+use porter_dbus::callers::{CallerFileError, ProcCallers};
 use porter_drive_fuse::Mounter;
 use porter_families::FamilyProvider;
 use porter_families::set::{FamilyIo, ProviderNames, load_specs, served};
@@ -216,7 +217,7 @@ pub enum StartError {
     #[error("cannot serve org.quire.Photos1.Picker: {0}")]
     Picker(#[source] zbus::Error),
     /// The bus objects or the name could not be served.
-    #[error("cannot serve {bus}: {0}", bus = porter_dbus::SYNC_BUS)]
+    #[error("cannot serve {bus}: {0}", bus = porter_dbus::names::SYNC_BUS)]
     Serve(#[source] zbus::Error),
 }
 
@@ -253,7 +254,7 @@ impl Daemon {
         let namespace = Namespace::parse(KEYRING_NAMESPACE).expect("a literal namespace");
         let chosen = Chosen::open(keys, namespace, "syncd")?;
         eprintln!("{}", chosen.said);
-        let table = porter_dbus::load_callers(&paths.callers_system, &paths.callers_user)?;
+        let table = porter_dbus::callers::load_callers(&paths.callers_system, &paths.callers_user)?;
         let connection = bus.connect().await.map_err(StartError::Bus)?;
         let callers = Arc::new(match proc_root {
             #[cfg(feature = "test-proc-root")]

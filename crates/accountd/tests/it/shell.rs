@@ -6,7 +6,8 @@ use crate::common;
 
 use common::*;
 use porter_core::AccountState;
-use porter_dbus::{AccountProxy, CallerRole, Details, ManagerProxy};
+use porter_dbus::callers::CallerRole;
+use porter_dbus::{AccountProxy, Details, ManagerProxy};
 use std::time::Duration;
 
 #[tokio::test(flavor = "multi_thread")]

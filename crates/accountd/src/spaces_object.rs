@@ -18,7 +18,9 @@ use crate::core::{Core, Host, Standing};
 use crate::errors::RefusedError;
 use crate::spaces::{CREATES_PER_WINDOW, Registered, SpaceFault, unix_now};
 use porter_core::{DesktopSpace, SpaceChange, SpaceLook, SpaceName};
-use porter_dbus::{CallerRole, Details, SPACES_PATH};
+use porter_dbus::Details;
+use porter_dbus::callers::CallerRole;
+use porter_dbus::names::SPACES_PATH;
 use porter_service::audit::AuditEvent;
 use std::sync::Arc;
 use std::time::Instant;
@@ -66,7 +68,10 @@ fn look_arg(text: &str) -> Result<SpaceLook, RefusedError> {
 
 impl<H: Host, C: Callers> SpacesObject<H, C> {
     /// The caller, which must be Settings or the shell.
-    async fn manager(&self, header: &Header<'_>) -> Result<porter_dbus::Caller, RefusedError> {
+    async fn manager(
+        &self,
+        header: &Header<'_>,
+    ) -> Result<porter_dbus::callers::Caller, RefusedError> {
         let caller = self.0.identify(header, Standing::Any).await?;
         match caller.role {
             CallerRole::Settings | CallerRole::SheetHost => Ok(caller),
@@ -79,7 +84,10 @@ impl<H: Host, C: Callers> SpacesObject<H, C> {
     /// The caller, which must be an app, Settings or the shell: a Space is how the person
     /// arranges the desktop and consent hangs off it, so an assistant, computer use or an agent
     /// launcher never makes one on its own (an assistant asks the person through an app).
-    async fn maker(&self, header: &Header<'_>) -> Result<porter_dbus::Caller, RefusedError> {
+    async fn maker(
+        &self,
+        header: &Header<'_>,
+    ) -> Result<porter_dbus::callers::Caller, RefusedError> {
         let caller = self.0.identify(header, Standing::Any).await?;
         match caller.role {
             CallerRole::App | CallerRole::Settings | CallerRole::SheetHost => Ok(caller),
@@ -101,7 +109,10 @@ impl<H: Host, C: Callers> SpacesObject<H, C> {
     /// The caller, which must be the compositor, Settings or the shell: an id minted elsewhere is
     /// taken only from the processes that draw the workspaces, never from an app (which could
     /// take an id the compositor mints later).
-    async fn registrar(&self, header: &Header<'_>) -> Result<porter_dbus::Caller, RefusedError> {
+    async fn registrar(
+        &self,
+        header: &Header<'_>,
+    ) -> Result<porter_dbus::callers::Caller, RefusedError> {
         let caller = self.0.identify(header, Standing::Spaces).await?;
         match caller.role {
             CallerRole::Compositor | CallerRole::Settings | CallerRole::SheetHost => Ok(caller),

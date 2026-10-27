@@ -10,8 +10,9 @@
 use crate::webdav::RelayStream;
 use porter_client::{Accounts, Transport};
 use porter_core::{EndpointUrl, GrantId, WebUrl};
+use porter_http::stream::{Dial, StreamHttp, StreamLimits};
 use std::sync::Arc;
-use storage_webdav::{Clock, Dial, StreamHttp, StreamLimits, WebDavReplica};
+use storage_webdav::{Clock, WebDavReplica};
 
 /// Opens relays to one endpoint of one grant.
 #[derive(Debug)]

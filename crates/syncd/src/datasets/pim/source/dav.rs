@@ -9,9 +9,10 @@ use super::super::relay::{PimDial, pim_http, pim_replica};
 use super::{Feed, FeedChange, FeedCursor, Page, PimSource};
 use porter_client::{Accounts, Transport};
 use porter_core::{EndpointUrl, GrantId, WebUrl};
+use porter_http::stream::StreamHttp;
 use porter_sync::{Anchor, ByteRange, Change, Cursor, RemoteId, Replica, ReplicaError};
 use std::sync::Arc;
-use storage_webdav::{Clock, StreamHttp, WebDavReplica};
+use storage_webdav::{Clock, WebDavReplica};
 
 /// A WebDAV sync token or etag-walk position: the replica's own anchor text.
 #[derive(Debug, Clone, PartialEq, Eq)]

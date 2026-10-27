@@ -9,10 +9,12 @@ use porter_core::lending::{
     Approval, CandidateModel, ComputerCandidate, GuestAnswer, GuestRow, RowState,
 };
 use porter_core::{NodeId, UnixSeconds};
+use porter_dbus::names::{
+    CANDIDATE_KEY_MODELS, CANDIDATE_KEY_NAME, CANDIDATE_KEY_NEEDS_APPROVAL, GUEST_KEY_NAME,
+    GUEST_KEY_SINCE, GUEST_KEY_STATE,
+};
 use porter_dbus::{
-    CANDIDATE_KEY_MODELS, CANDIDATE_KEY_NAME, CANDIDATE_KEY_NEEDS_APPROVAL, Details,
-    GUEST_KEY_NAME, GUEST_KEY_SINCE, GUEST_KEY_STATE, InferenceProxy, LocalEngine, RunningModel,
-    local_engine_from_dbus, running_from_dbus,
+    Details, InferenceProxy, LocalEngine, RunningModel, local_engine_from_dbus, running_from_dbus,
 };
 
 impl DbusTransport {
@@ -137,8 +139,8 @@ impl DbusTransport {
 mod computers {
     use super::*;
     use crate::computers::{ComputerReach, NewComputer};
+    use porter_dbus::names::{COMPUTER_KEY_KEY, COMPUTER_KEY_PORT, COMPUTER_KEY_SOCKET};
     use porter_dbus::zvariant::{OwnedValue, Value};
-    use porter_dbus::{COMPUTER_KEY_KEY, COMPUTER_KEY_PORT, COMPUTER_KEY_SOCKET};
     use porter_infer::{ComputerName, PlaceId};
 
     impl DbusTransport {

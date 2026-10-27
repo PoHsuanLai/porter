@@ -7,12 +7,13 @@
 //! the password is read with the same `Secrets` the service files it with. An entry of the audit
 //! file says which app was handed which identity's password, never the password.
 
+use porter_core::clock::Clock;
 use porter_core::consent::{ConsentAnswer, ConsentAsk};
 use porter_core::wire::{ParentWindow, Refusal};
 use porter_core::{AccountId, AppId, Credential, SecretKey, SecretPurpose, SecretText};
 use porter_secrets::{Secrets, SecretsError};
 use porter_service::audit::{AuditEntry, AuditEvent};
-use porter_service::{AuditSink, Clock, Sheets};
+use porter_service::{AuditSink, Sheets};
 use std::future::Future;
 use std::pin::Pin;
 

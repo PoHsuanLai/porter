@@ -239,22 +239,6 @@ pub const PROC_GATE: porter_daemon::ProcGate = if cfg!(feature = "test-proc-root
     porter_daemon::ProcGate::Ignore
 };
 
-/// The directory callers are read from in place of `/proc` (`SYNCD_PROC_ROOT`), for a test
-/// build only. A release build ignores the variable.
-///
-/// Kept for one batch at its old path; the choice itself is [`porter_daemon::ProcRoot`], which
-/// `Config::from_env` now calls with [`PROC_GATE`].
-pub fn proc_root(build: Build, value: Option<String>) -> Option<PathBuf> {
-    let gate = match build {
-        Build::Test => porter_daemon::ProcGate::Honour,
-        Build::Release => porter_daemon::ProcGate::Ignore,
-    };
-    porter_daemon::ProcRoot::choose(gate, crate::daemon::PROC_ROOT_VAR, |_| {
-        value.as_deref().map(std::ffi::OsString::from)
-    })
-    .into_fixture()
-}
-
 /// How often the supervisors read grants again (`SYNCD_RESCAN_S`, whole seconds, at least 1),
 /// for a test build only, so a scenario need not wait the default ten minutes for a grant it
 /// just made. A release build ignores the variable; so does a value that is not a number of

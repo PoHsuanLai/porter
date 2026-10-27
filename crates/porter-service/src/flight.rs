@@ -12,13 +12,13 @@
 //! token is handed out, and before the gate is let go.
 
 use crate::audit::AuditSink;
-use crate::clock::Clock;
 use crate::gate::Gate;
 use crate::service::AccountService;
 use crate::sheets::Sheets;
 use crate::store::RegistryStore;
 use crate::token::secrets_refusal;
 use porter_core::capability::StorageScope;
+use porter_core::clock::Clock;
 use porter_core::wire::Refusal;
 use porter_core::{
     Account, AccountId, Audience, CapabilityKind, Credential, IssuedToken, SecretKey,
