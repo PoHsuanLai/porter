@@ -3222,6 +3222,7 @@ name = "porter-settings"
 version = "0.1.0"
 dependencies = [
  "ds-settings",
+ "porter-capability",
  "porter-core",
  "porter-fake",
  "porter-ids",

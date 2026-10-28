@@ -343,7 +343,7 @@ EDGES=(
   "porter-store: porter-core porter-capability porter-fs"
   "porter-identities: porter-service-core porter-core porter-ids porter-fs porter-secrets porter-wire"
   "porter-spaces: porter-core porter-ids porter-fs"
-  "porter-settings: ds-settings porter-service-core porter-core porter-ids porter-provider porter-sheet"
+  "porter-settings: ds-settings porter-service-core porter-capability porter-core porter-ids porter-provider porter-sheet"
   "porter-router: porter-core porter-tailnet porter-tailscale porter-match porter-capability porter-ids porter-engines porter-infer cua-action engine-supervisor model-catalog model-http model-openai-compat model-provider speech-provider vision-prep"
   "porter-turns: porter-core porter-match porter-capability porter-ids porter-infer porter-bridge porter-router cua-action cua-parse cua-session cua-vendors engine-supervisor model-extract model-http model-openai-compat model-provider vision-prep"
   "porter-dbus-macros:"

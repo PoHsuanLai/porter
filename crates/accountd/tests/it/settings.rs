@@ -60,7 +60,7 @@ async fn only_the_settings_role_may_read_or_set_anything() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn describe_lists_the_identities_and_their_actions_and_nothing_of_the_old_model() {
+async fn describe_lists_every_account_with_its_actions_and_an_ai_account_its_switches() {
     let rig = Rig::start().await;
     let schema = settings(&rig).await.describe().await.expect("schema");
     assert!(schema.check().is_ok());
@@ -70,11 +70,13 @@ async fn describe_lists_the_identities_and_their_actions_and_nothing_of_the_old_
         "accounts.fake-mail.reauth",
         "accounts.fake-mail.state",
         "accounts.clients.microsoft",
+        "accounts.fake-llm.state",
+        "accounts.fake-llm.service.llm",
     ] {
         assert!(paths.contains(&want), "{want} in {paths:?}");
     }
-    // No service switch, grant or sync row, and the AI account is inferd's to list.
-    for gone in [".service.", ".grant.", ".sync.", ".sign_out", "fake-llm"] {
+    // An identity has no service switch, and no sync row is accountd's.
+    for gone in ["accounts.fake-mail.service.", ".sync."] {
         assert!(
             !paths.iter().any(|p| p.contains(gone)),
             "{gone} in {paths:?}"

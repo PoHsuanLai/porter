@@ -1,8 +1,9 @@
 //! The service as the bus objects use it: one request in, one reply out, for a caller already
 //! identified. [`AccountService`] is the implementation.
 
-use porter_core::AccountId;
+use porter_capability::{CapabilityKind, Toggle};
 use porter_core::store::RegistryStore;
+use porter_core::{AccountId, GrantId};
 use porter_core::{AccountState, AppId};
 use porter_ids::clock::Clock;
 use porter_provider::{Provider, RevokeOutcome};
@@ -68,6 +69,17 @@ pub trait Host: Send + Sync + 'static {
         let _ = (id, state);
         async { false }
     }
+
+    /// Switches one kind of one account on or off.
+    fn set_toggle(
+        &self,
+        id: &AccountId,
+        kind: CapabilityKind,
+        toggle: Toggle,
+    ) -> impl Future<Output = Result<(), Refusal>> + Send;
+
+    /// Withdraws any grant, whoever holds it (Settings' "Revoke").
+    fn revoke_grant(&self, grant: &GrantId) -> impl Future<Output = Result<(), Refusal>> + Send;
 }
 
 impl<P, S, U, K, R, A> Host for AccountService<P, S, U, K, R, A>
@@ -117,5 +129,18 @@ where
 
     fn set_state(&self, id: &AccountId, state: AccountState) -> impl Future<Output = bool> + Send {
         AccountService::set_state(self, id, state)
+    }
+
+    fn set_toggle(
+        &self,
+        id: &AccountId,
+        kind: CapabilityKind,
+        toggle: Toggle,
+    ) -> impl Future<Output = Result<(), Refusal>> + Send {
+        AccountService::set_toggle(self, id, kind, toggle)
+    }
+
+    fn revoke_grant(&self, grant: &GrantId) -> impl Future<Output = Result<(), Refusal>> + Send {
+        AccountService::revoke_grant(self, grant)
     }
 }

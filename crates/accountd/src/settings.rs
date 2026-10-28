@@ -18,6 +18,7 @@ use ds_settings::live::{
 };
 use ds_settings::schema::KeyPath;
 use porter_callers::CallerRole;
+use porter_capability::Toggle;
 use porter_core::{Account, AppId, AppName, AuthKind, IdentityId, Isolation, ProviderId};
 use porter_dbus::accounts::ACCOUNTS_SETTINGS_PATH;
 use porter_families::set::ProviderNames;
@@ -198,6 +199,23 @@ fn failed(why: impl ToString) -> LiveError {
     LiveError::Failed(why.to_string())
 }
 
+/// A refusal of a change made from Settings: logged, and told to the pane in plain words.
+fn refused(refusal: porter_wire::Refusal) -> LiveError {
+    eprintln!("accountd: a Settings change was refused: {refusal:?}");
+    failed("That could not be done.")
+}
+
+/// The switch a row's value stands for.
+fn toggle_of(value: &toml::Value) -> Option<Toggle> {
+    match value {
+        toml::Value::String(s) if s == "on" => Some(Toggle::On),
+        toml::Value::String(s) if s == "off" => Some(Toggle::Off),
+        toml::Value::Boolean(true) => Some(Toggle::On),
+        toml::Value::Boolean(false) => Some(Toggle::Off),
+        _ => None,
+    }
+}
+
 impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
     async fn permit(&self, caller: &Caller, _access: Access) -> Verdict {
         match self.0.callers.caller_of(&caller.sender.0).await {
@@ -289,7 +307,25 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
                 };
                 self.write_client(issuer, RowEdit::Secret(&text))?;
             }
-            Key::Account(..) | Key::Expires(_) | Key::UsedBy(..) => {
+            Key::Service(id, kind) => {
+                let toggle = toggle_of(&value)
+                    .ok_or_else(|| LiveError::BadValue("a service is `on` or `off`".into()))?;
+                self.0
+                    .host
+                    .set_toggle(&id, kind, toggle)
+                    .await
+                    .map_err(refused)?;
+            }
+            Key::Grant(_, grant) => {
+                self.0.host.revoke_grant(&grant).await.map_err(refused)?;
+            }
+            Key::Account(..)
+            | Key::Expires(_)
+            | Key::UsedBy(..)
+            | Key::Since(..)
+            | Key::Scope(..)
+            | Key::App(..)
+            | Key::GrantService(..) => {
                 return Err(LiveError::NotPermitted("this row is a read-out".into()));
             }
         }
