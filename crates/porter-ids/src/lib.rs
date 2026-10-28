@@ -23,6 +23,7 @@ mod origin;
 pub mod percent;
 mod units;
 mod weburl;
+pub mod word;
 
 pub use error::IdError;
 pub use id::{is_id, object_segment};

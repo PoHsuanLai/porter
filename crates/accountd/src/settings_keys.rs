@@ -14,6 +14,7 @@ use ds_settings::schema::{
 use porter_core::AccountId;
 use porter_core::{Account, AccountState, AppName, AuthKind};
 use porter_families::set::ProviderNames;
+use porter_ids::word::{from_word, word};
 use porter_provider::Issuer;
 use porter_service::Registry;
 use porter_sheet::ProviderGroup;
@@ -66,13 +67,6 @@ pub(crate) enum Key {
     ClientSecret(Issuer),
 }
 
-fn slug<T: serde::Serialize>(value: &T) -> String {
-    serde_json::to_value(value)
-        .ok()
-        .and_then(|v| v.as_str().map(str::to_owned))
-        .unwrap_or_default()
-}
-
 /// `word` with its first letter in capitals ("microsoft" -> "Microsoft").
 fn sentence_case(word: &str) -> String {
     let mut chars = word.chars();
@@ -82,20 +76,16 @@ fn sentence_case(word: &str) -> String {
         .unwrap_or_default()
 }
 
-fn from_slug<T: serde::de::DeserializeOwned>(text: &str) -> Option<T> {
-    serde_json::from_value(serde_json::Value::String(text.to_owned())).ok()
-}
-
 /// The key `path` names, among the accounts of `registry` (an id may hold dots, so the account
 /// is found by prefix, the longest id first).
 pub(crate) fn parse(path: &str, registry: &Registry) -> Option<Key> {
     let rest = path.strip_prefix("accounts.")?;
     if let Some(issuer) = rest.strip_prefix("clients.") {
         return match issuer.strip_suffix(".secret") {
-            Some(issuer) => from_slug(issuer)
+            Some(issuer) => from_word(issuer)
                 .filter(|i| SECRET_ISSUERS.contains(i))
                 .map(Key::ClientSecret),
-            None => from_slug(issuer)
+            None => from_word(issuer)
                 .filter(|i| ISSUERS.contains(i))
                 .map(Key::Client),
         };
@@ -136,8 +126,8 @@ pub(crate) fn path(key: &Key) -> String {
         Key::UsedBy(id, n) => format!("accounts.{id}.used_by.{n}"),
         Key::Reauth(id) => format!("accounts.{id}.reauth"),
         Key::Remove(id) => format!("accounts.{id}.remove"),
-        Key::Client(issuer) => format!("accounts.clients.{}", slug(issuer)),
-        Key::ClientSecret(issuer) => format!("accounts.clients.{}.secret", slug(issuer)),
+        Key::Client(issuer) => format!("accounts.clients.{}", word(issuer)),
+        Key::ClientSecret(issuer) => format!("accounts.clients.{}.secret", word(issuer)),
     }
 }
 
@@ -393,7 +383,7 @@ pub(crate) fn schema(
         })
         .collect();
     key.extend(ISSUERS.iter().flat_map(|issuer| {
-        let name = sentence_case(&slug(issuer));
+        let name = sentence_case(word(issuer));
         let text = || KeyKind::Text;
         let empty = || toml::Value::String(String::new());
         let id = spec(

@@ -4,6 +4,8 @@
 //! [`LocalEngine`], never the strings.
 
 use crate::args::Details;
+use porter_ids::word::{from_word, word};
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use zbus::zvariant::{OwnedValue, Value};
 
@@ -41,7 +43,8 @@ pub enum EngineState {
 }
 
 /// Where a found engine came from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum EnginePlace {
     /// The distro's own package.
     Package,
@@ -56,19 +59,12 @@ pub enum EnginePlace {
 impl EnginePlace {
     /// The word on the wire.
     pub fn slug(self) -> &'static str {
-        match self {
-            Self::Package => "package",
-            Self::System => "system",
-            Self::Person => "person",
-            Self::Pointed => "pointed",
-        }
+        word(&self)
     }
 
     /// The place a word names; `None` for any other text.
     pub fn from_slug(text: &str) -> Option<Self> {
-        [Self::Package, Self::System, Self::Person, Self::Pointed]
-            .into_iter()
-            .find(|place| place.slug() == text)
+        from_word(text)
     }
 }
 
@@ -186,6 +182,21 @@ pub fn local_engine_from_dbus(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn each_place_keeps_the_word_it_has_always_had_on_the_bus() {
+        let words = [
+            (EnginePlace::Package, "package"),
+            (EnginePlace::System, "system"),
+            (EnginePlace::Person, "person"),
+            (EnginePlace::Pointed, "pointed"),
+        ];
+        for (place, word) in words {
+            assert_eq!(place.slug(), word);
+            assert_eq!(EnginePlace::from_slug(word), Some(place));
+        }
+        assert_eq!(EnginePlace::from_slug("Package"), None);
+    }
 
     fn engine(state: EngineState) -> LocalEngine {
         LocalEngine {

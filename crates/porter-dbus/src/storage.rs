@@ -18,6 +18,8 @@
 //! its details rather than reading the file; an app that opens the file directly reads `url`.
 
 use crate::args::Details;
+use porter_ids::word::{from_word, word};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use zbus::fdo;
 use zbus::object_server::SignalEmitter;
@@ -65,7 +67,8 @@ pub const ITEM_KEY_URL: &str = "url";
 pub const ITEM_KEY_OTHER: &str = "other";
 
 /// Where a drive stands.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum DriveState {
     /// Turned on and its listing not read yet: the folder is there and fills.
@@ -86,43 +89,23 @@ pub enum DriveState {
 }
 
 impl DriveState {
-    /// Every state, in declaration order.
-    pub const ALL: [DriveState; 7] = [
-        DriveState::Starting,
-        DriveState::Ready,
-        DriveState::Syncing,
-        DriveState::Offline,
-        DriveState::Paused,
-        DriveState::NeedsSignIn,
-        DriveState::Error,
-    ];
-
     /// Its word on the bus.
     pub fn as_str(self) -> &'static str {
-        match self {
-            DriveState::Starting => "starting",
-            DriveState::Ready => "ready",
-            DriveState::Syncing => "syncing",
-            DriveState::Offline => "offline",
-            DriveState::Paused => "paused",
-            DriveState::NeedsSignIn => "needs_sign_in",
-            DriveState::Error => "error",
-        }
+        word(&self)
     }
 
     /// The state a word names; `None` for one this build does not know (a newer syncd's), which a
     /// caller shows as it shows `Error`.
-    pub fn from_word(word: &str) -> Option<DriveState> {
-        DriveState::ALL
-            .into_iter()
-            .find(|state| state.as_str() == word)
+    pub fn from_word(text: &str) -> Option<DriveState> {
+        from_word(text)
     }
 }
 
 /// Where one file or folder stands. A folder's is its own: `downloading` or `uploading` while any
 /// item under it is, `downloaded` when everything under it is, else `cloud`, and `conflict` or
 /// `error` when any item under it is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum ItemState {
     /// Listed, not downloaded: it downloads when it is opened.
@@ -143,40 +126,20 @@ pub enum ItemState {
 }
 
 impl ItemState {
-    /// Every state, in declaration order.
-    pub const ALL: [ItemState; 7] = [
-        ItemState::Cloud,
-        ItemState::Downloading,
-        ItemState::Downloaded,
-        ItemState::Uploading,
-        ItemState::Waiting,
-        ItemState::Error,
-        ItemState::Conflict,
-    ];
-
     /// Its word on the bus.
     pub fn as_str(self) -> &'static str {
-        match self {
-            ItemState::Cloud => "cloud",
-            ItemState::Downloading => "downloading",
-            ItemState::Downloaded => "downloaded",
-            ItemState::Uploading => "uploading",
-            ItemState::Waiting => "waiting",
-            ItemState::Error => "error",
-            ItemState::Conflict => "conflict",
-        }
+        word(&self)
     }
 
     /// The state a word names; `None` for one this build does not know.
-    pub fn from_word(word: &str) -> Option<ItemState> {
-        ItemState::ALL
-            .into_iter()
-            .find(|state| state.as_str() == word)
+    pub fn from_word(text: &str) -> Option<ItemState> {
+        from_word(text)
     }
 }
 
 /// What an item is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum ItemKind {
     /// A file with content.
@@ -189,21 +152,14 @@ pub enum ItemKind {
 }
 
 impl ItemKind {
-    /// Every kind, in declaration order.
-    pub const ALL: [ItemKind; 3] = [ItemKind::File, ItemKind::Folder, ItemKind::Online];
-
     /// Its word on the bus.
     pub fn as_str(self) -> &'static str {
-        match self {
-            ItemKind::File => "file",
-            ItemKind::Folder => "folder",
-            ItemKind::Online => "online",
-        }
+        word(&self)
     }
 
     /// The kind a word names; `None` for one this build does not know.
-    pub fn from_word(word: &str) -> Option<ItemKind> {
-        ItemKind::ALL.into_iter().find(|kind| kind.as_str() == word)
+    pub fn from_word(text: &str) -> Option<ItemKind> {
+        from_word(text)
     }
 }
 
@@ -335,4 +291,60 @@ impl StorageSkeleton {
 /// the bus's introspection collects each interface's own.
 pub(crate) fn introspect(xml: &mut String) {
     zbus::object_server::Interface::introspect_to_writer(&StorageSkeleton, xml, 1);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn each_drive_state_keeps_the_word_it_has_always_had_on_the_bus() {
+        let words = [
+            (DriveState::Starting, "starting"),
+            (DriveState::Ready, "ready"),
+            (DriveState::Syncing, "syncing"),
+            (DriveState::Offline, "offline"),
+            (DriveState::Paused, "paused"),
+            (DriveState::NeedsSignIn, "needs_sign_in"),
+            (DriveState::Error, "error"),
+        ];
+        for (state, word) in words {
+            assert_eq!(state.as_str(), word);
+            assert_eq!(DriveState::from_word(word), Some(state));
+        }
+        assert_eq!(DriveState::from_word("NeedsSignIn"), None);
+        assert_eq!(DriveState::from_word("later"), None);
+    }
+
+    #[test]
+    fn each_item_state_keeps_the_word_it_has_always_had_on_the_bus() {
+        let words = [
+            (ItemState::Cloud, "cloud"),
+            (ItemState::Downloading, "downloading"),
+            (ItemState::Downloaded, "downloaded"),
+            (ItemState::Uploading, "uploading"),
+            (ItemState::Waiting, "waiting"),
+            (ItemState::Error, "error"),
+            (ItemState::Conflict, "conflict"),
+        ];
+        for (state, word) in words {
+            assert_eq!(state.as_str(), word);
+            assert_eq!(ItemState::from_word(word), Some(state));
+        }
+        assert_eq!(ItemState::from_word("Cloud"), None);
+    }
+
+    #[test]
+    fn each_item_kind_keeps_the_word_it_has_always_had_on_the_bus() {
+        let words = [
+            (ItemKind::File, "file"),
+            (ItemKind::Folder, "folder"),
+            (ItemKind::Online, "online"),
+        ];
+        for (kind, word) in words {
+            assert_eq!(kind.as_str(), word);
+            assert_eq!(ItemKind::from_word(word), Some(kind));
+        }
+        assert_eq!(ItemKind::from_word("link"), None);
+    }
 }

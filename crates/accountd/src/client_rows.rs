@@ -3,6 +3,7 @@
 //! `porter_oauth` reads beside the row, and any `endpoints`) and every other row are kept, so a
 //! hand-written Google row survives its key being changed in Settings.
 
+use porter_ids::word::word;
 use porter_provider::{ClientChannel, Issuer, parse_clients};
 use toml::{Table, Value};
 
@@ -24,13 +25,6 @@ pub(crate) enum RowRefused {
     Unwritable(String),
 }
 
-fn slug<T: serde::Serialize>(value: &T) -> String {
-    serde_json::to_value(value)
-        .ok()
-        .and_then(|v| v.as_str().map(str::to_owned))
-        .unwrap_or_default()
-}
-
 /// `text` (the file as it is; empty or damaged reads as no rows) with `edit` made to the row of
 /// `issuer` on `channel`. A new row for Google says `testing = true`: a person's own Google
 /// client is in testing until Google verifies it, which is what makes porter say why Google
@@ -42,14 +36,14 @@ pub(crate) fn edited(
     edit: RowEdit<'_>,
 ) -> Result<String, RowRefused> {
     let mut doc: Table = toml::from_str(text).unwrap_or_default();
-    let (issuer_slug, channel_slug) = (slug(&issuer), slug(&channel));
+    let (issuer_slug, channel_slug) = (word(&issuer), word(&channel));
     let mut rows: Vec<Value> = match doc.remove("client") {
         Some(Value::Array(rows)) => rows,
         _ => Vec::new(),
     };
     let at = rows.iter().position(|row| {
-        row.get("issuer").and_then(Value::as_str) == Some(issuer_slug.as_str())
-            && row.get("channel").and_then(Value::as_str) == Some(channel_slug.as_str())
+        row.get("issuer").and_then(Value::as_str) == Some(issuer_slug)
+            && row.get("channel").and_then(Value::as_str) == Some(channel_slug)
     });
     match (edit, at) {
         (RowEdit::Id(""), Some(at)) => {
@@ -59,8 +53,8 @@ pub(crate) fn edited(
         (RowEdit::Id(id), Some(at)) => set(&mut rows[at], "client_id", id),
         (RowEdit::Id(id), None) => {
             let mut row = Table::new();
-            row.insert("issuer".into(), Value::String(issuer_slug.clone()));
-            row.insert("channel".into(), Value::String(channel_slug.clone()));
+            row.insert("issuer".into(), Value::String(issuer_slug.to_owned()));
+            row.insert("channel".into(), Value::String(channel_slug.to_owned()));
             row.insert("client_id".into(), Value::String(id.to_owned()));
             if issuer == Issuer::Google {
                 row.insert("testing".into(), Value::Boolean(true));

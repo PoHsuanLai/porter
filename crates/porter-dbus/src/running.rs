@@ -3,6 +3,8 @@
 //! [`RunningModel`], never the strings.
 
 use crate::args::Details;
+use porter_ids::word::{from_word, word};
+use serde::{Deserialize, Serialize};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use zbus::zvariant::{OwnedValue, Value};
 
@@ -21,7 +23,8 @@ pub const RUNNING_KEY_WINDOW: &str = "window";
 pub const RUNNING_KEY_REASON: &str = "reason";
 
 /// What an engine is doing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum RunState {
     /// Not running, and nothing wants it.
@@ -41,28 +44,12 @@ pub enum RunState {
 impl RunState {
     /// The word on the wire.
     pub fn slug(self) -> &'static str {
-        match self {
-            Self::Stopped => "stopped",
-            Self::Starting => "starting",
-            Self::Ready => "ready",
-            Self::Stopping => "stopping",
-            Self::Retrying => "retrying",
-            Self::Failed => "failed",
-        }
+        word(&self)
     }
 
     /// The state a word names; `None` for any other text.
     pub fn from_slug(text: &str) -> Option<Self> {
-        [
-            Self::Stopped,
-            Self::Starting,
-            Self::Ready,
-            Self::Stopping,
-            Self::Retrying,
-            Self::Failed,
-        ]
-        .into_iter()
-        .find(|state| state.slug() == text)
+        from_word(text)
     }
 }
 
@@ -230,6 +217,24 @@ pub fn running_from_dbus(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn each_state_keeps_the_word_it_has_always_had_on_the_bus() {
+        let words = [
+            (RunState::Stopped, "stopped"),
+            (RunState::Starting, "starting"),
+            (RunState::Ready, "ready"),
+            (RunState::Stopping, "stopping"),
+            (RunState::Retrying, "retrying"),
+            (RunState::Failed, "failed"),
+        ];
+        for (state, word) in words {
+            assert_eq!(state.slug(), word);
+            assert_eq!(RunState::from_slug(word), Some(state));
+        }
+        assert_eq!(RunState::from_slug("Ready"), None);
+        assert_eq!(RunState::from_slug("paused"), None);
+    }
 
     fn model(state: RunState) -> RunningModel {
         RunningModel::new("local/qwen3-8b", state, "vllm", 14_540)

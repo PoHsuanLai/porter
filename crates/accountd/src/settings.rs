@@ -53,7 +53,8 @@ fn settings_app() -> AppId {
 
 /// How a "Sign in again" pressed in Settings ended, as the word `accounts.<id>.reauth` changes
 /// to (the pane says it on the row; a refusal is no longer silent).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum ReauthNews {
     /// Signed in again.
     Done,
@@ -73,15 +74,6 @@ impl ReauthNews {
             AccountsReply::Refused(Refusal::Dismissed) => ReauthNews::Cancelled,
             AccountsReply::Refused(Refusal::Denied) => ReauthNews::Refused,
             _ => ReauthNews::Failed,
-        }
-    }
-
-    pub(crate) fn slug(self) -> &'static str {
-        match self {
-            ReauthNews::Done => "done",
-            ReauthNews::Cancelled => "cancelled",
-            ReauthNews::Refused => "refused",
-            ReauthNews::Failed => "failed",
         }
     }
 }
@@ -257,7 +249,12 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
                         eprintln!("accountd: reauthenticate from Settings refused: {why:?}");
                     }
                     // The pane hears how it ended on the row.
-                    announce_row(&core, &Key::Reauth(id), ReauthNews::of(&reply).slug()).await;
+                    announce_row(
+                        &core,
+                        &Key::Reauth(id),
+                        porter_ids::word::word(&ReauthNews::of(&reply)),
+                    )
+                    .await;
                     core.publish().await;
                 });
             }
@@ -362,5 +359,19 @@ async fn announce_row<H, C>(core: &Core<H, C>, key: &Key, word: &str) {
                 &toml::Value::String(word.to_owned()),
             )
             .await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use porter_ids::word::word;
+
+    #[test]
+    fn each_reauth_news_keeps_the_word_the_pane_reads() {
+        assert_eq!(word(&ReauthNews::Done), "done");
+        assert_eq!(word(&ReauthNews::Cancelled), "cancelled");
+        assert_eq!(word(&ReauthNews::Refused), "refused");
+        assert_eq!(word(&ReauthNews::Failed), "failed");
     }
 }
