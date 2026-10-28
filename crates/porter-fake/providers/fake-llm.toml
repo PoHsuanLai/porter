@@ -20,4 +20,3 @@ kind = "llm"
 features = ["chat", "tools"]
 context = 32768
 max_output = 4096
-wire = "chat_completions"

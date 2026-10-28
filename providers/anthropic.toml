@@ -30,7 +30,6 @@ kind = "llm"
 features = ["chat"]
 context = 8192
 max_output = 4096
-wire = "messages"
 
 # The agent programs that may run on this key (the launcher hands a program the key through its
 # `key_env`, or better routes it through inferd with `base_url_env`; FINDINGS, P1). A program not

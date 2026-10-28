@@ -1,6 +1,7 @@
 use super::*;
 use crate::spec::{Discovery, Port};
 use porter_capability::Capability;
+use porter_capability::LlmWire;
 use porter_capability::{Access, Ask, Delta, StorageScope};
 use porter_core::{AuthKind, Family};
 
@@ -69,6 +70,36 @@ fn a_capability_row_is_written_flat_and_the_old_shape_with_a_v_table_reads_the_s
     };
     assert_eq!(spec(FLAT_STORAGE_ROW), spec(STORAGE_ROW));
     assert_eq!(spec(FLAT_STORAGE_ROW).capabilities[0].ask, Ask::OnUse);
+}
+
+#[test]
+fn a_language_model_row_speaks_its_family_and_may_not_say_otherwise() {
+    let row = |wire: &str| {
+        format!(
+            "[[capability]]\nfamily = \"messages\"\nkind = \"llm\"\nfeatures = [\"chat\"]\ncontext = 8192\nmax_output = 1024\n{wire}"
+        )
+    };
+    let spec = |wire: &str| {
+        let text = file(
+            r#"kind = "api_key""#,
+            r#"kind = "model_list""#,
+            &[AI, &row(wire)],
+        );
+        parse_provider(&text)
+    };
+    let wire_of = |spec: ProviderSpec| match &spec.capabilities[0].capability {
+        Capability::Llm(llm) => llm.wire,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(wire_of(spec("").expect("parses")), LlmWire::Messages);
+    assert_eq!(
+        wire_of(spec("wire = \"messages\"").expect("parses")),
+        LlmWire::Messages
+    );
+    assert!(matches!(
+        spec("wire = \"responses\""),
+        Err(ProviderFileError::WireFamily(_))
+    ));
 }
 
 #[test]

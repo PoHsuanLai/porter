@@ -18,6 +18,9 @@ pub enum ProviderFileError {
     /// AI capability rows without an `[ai]` table, or an `[ai]` table without them.
     #[error("provider {0}: [ai] does not match its capabilities")]
     AiSpecMismatch(ProviderId),
+    /// A language-model row whose `wire` is a different request format from its `family`'s.
+    #[error("provider {0}: a language-model row's wire is not its family's")]
+    WireFamily(ProviderId),
     /// Agent rows that break the rules: they are served by the `acp_agent` family and name each
     /// program once, and an `agent_login` provider declares nothing else.
     #[error("provider {0}: agent rows are not well formed")]

@@ -3,8 +3,9 @@
 
 use crate::error::ProviderFileError;
 use crate::spec::ProviderSpec;
-use porter_capability::{Capability, CapabilityKind};
+use porter_capability::{Capability, CapabilityKind, LlmWire};
 use porter_core::{AuthKind, Family};
+use porter_ids::word::{from_word, word};
 
 /// The provider declared by one file's text, or why it is refused.
 pub fn parse_provider(text: &str) -> Result<ProviderSpec, ProviderFileError> {
@@ -41,7 +42,7 @@ fn nest_capability(row: &mut toml::Value) {
     if row.contains_key("v") {
         return;
     }
-    let fields: toml::Table = row
+    let mut fields: toml::Table = row
         .keys()
         .filter(|key| !ROW_KEYS.contains(&key.as_str()))
         .cloned()
@@ -49,6 +50,15 @@ fn nest_capability(row: &mut toml::Value) {
         .into_iter()
         .filter_map(|key| row.remove(&key).map(|value| (key, value)))
         .collect();
+    // A language-model row says its request format once, as its family: `wire` is left out unless
+    // it differs, which `check` refuses.
+    let llm = row.get("kind").and_then(toml::Value::as_str) == Some("llm");
+    if llm
+        && !fields.contains_key("wire")
+        && let Some(family) = row.get("family")
+    {
+        fields.insert("wire".to_owned(), family.clone());
+    }
     row.insert("v".to_owned(), toml::Value::Table(fields));
 }
 
@@ -70,7 +80,21 @@ fn check(spec: ProviderSpec) -> Result<ProviderSpec, ProviderFileError> {
         return Err(ProviderFileError::AiSpecMismatch(spec.id));
     }
     check_agent_rows(&spec)?;
+    check_wires(&spec)?;
     Ok(spec)
+}
+
+/// A language-model row served by a family that is itself a request format (`chat_completions`,
+/// `messages`, ...) speaks that format.
+fn check_wires(spec: &ProviderSpec) -> Result<(), ProviderFileError> {
+    for row in &spec.capabilities {
+        if let Capability::Llm(llm) = &row.capability
+            && from_word::<LlmWire>(word(&row.family)).is_some_and(|wire| wire != llm.wire)
+        {
+            return Err(ProviderFileError::WireFamily(spec.id.clone()));
+        }
+    }
+    Ok(())
 }
 
 /// The rules for agent rows: family `acp_agent` for exactly the agent kind, each program once,

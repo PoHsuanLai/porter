@@ -5,78 +5,7 @@
 use crate::{ProviderSet, ProviderSpec, parse_provider};
 
 /// Every shipped provider file, by its id (the file stem), in id order.
-pub const SHIPPED_FILES: &[(&str, &str)] = &[
-    (
-        "acp-agent",
-        include_str!("../../../providers/acp-agent.toml"),
-    ),
-    (
-        "anthropic",
-        include_str!("../../../providers/anthropic.toml"),
-    ),
-    (
-        "claude-code",
-        include_str!("../../../providers/claude-code.toml"),
-    ),
-    ("codex", include_str!("../../../providers/codex.toml")),
-    ("fastmail", include_str!("../../../providers/fastmail.toml")),
-    (
-        "gemini-cli",
-        include_str!("../../../providers/gemini-cli.toml"),
-    ),
-    (
-        "generic-dav",
-        include_str!("../../../providers/generic-dav.toml"),
-    ),
-    (
-        "generic-imap",
-        include_str!("../../../providers/generic-imap.toml"),
-    ),
-    (
-        "generic-jmap",
-        include_str!("../../../providers/generic-jmap.toml"),
-    ),
-    ("gmx", include_str!("../../../providers/gmx.toml")),
-    ("google", include_str!("../../../providers/google.toml")),
-    (
-        "google-ai",
-        include_str!("../../../providers/google-ai.toml"),
-    ),
-    ("icloud", include_str!("../../../providers/icloud.toml")),
-    (
-        "llama-cpp",
-        include_str!("../../../providers/llama-cpp.toml"),
-    ),
-    (
-        "lm-studio",
-        include_str!("../../../providers/lm-studio.toml"),
-    ),
-    ("local", include_str!("../../../providers/local.toml")),
-    (
-        "microsoft",
-        include_str!("../../../providers/microsoft.toml"),
-    ),
-    ("moonshot", include_str!("../../../providers/moonshot.toml")),
-    (
-        "nextcloud",
-        include_str!("../../../providers/nextcloud.toml"),
-    ),
-    ("ollama", include_str!("../../../providers/ollama.toml")),
-    ("openai", include_str!("../../../providers/openai.toml")),
-    (
-        "openai-compatible",
-        include_str!("../../../providers/openai-compatible.toml"),
-    ),
-    (
-        "openrouter",
-        include_str!("../../../providers/openrouter.toml"),
-    ),
-    (
-        "tailscale",
-        include_str!("../../../providers/tailscale.toml"),
-    ),
-    ("yahoo", include_str!("../../../providers/yahoo.toml")),
-];
+pub const SHIPPED_FILES: &[(&str, &str)] = include!(concat!(env!("OUT_DIR"), "/shipped_files.rs"));
 
 /// The shipped provider files, parsed. Every file parses (porter's `tests/shipped_files.rs`
 /// checks each one and that this list is the whole `providers/` directory).
