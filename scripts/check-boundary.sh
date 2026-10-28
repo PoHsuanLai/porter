@@ -292,7 +292,7 @@ EDGES=(
   "porter-provider: porter-core porter-match porter-capability porter-sheet porter-ids"
   "porter-secrets: keyring-chunked porter-core porter-capability porter-ids porter-fs"
   "porter-sync: porter-capability porter-ids porter-http"
-  "porter-infer: porter-core porter-match porter-capability porter-ids cua-action"
+  "porter-infer: porter-core porter-match porter-capability porter-ids cua-action model-provider"
   "porter-service: porter-core porter-tailscale porter-match porter-capability porter-sheet porter-wire porter-ids porter-provider porter-secrets"
   "porter-store: porter-core porter-capability porter-fs"
   "porter-router: porter-core porter-tailnet porter-tailscale porter-match porter-capability porter-ids porter-engines porter-infer cua-action engine-supervisor model-catalog model-http model-openai-compat model-provider speech-provider vision-prep"

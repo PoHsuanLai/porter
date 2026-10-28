@@ -26,7 +26,7 @@ pub use ai::{
     EmbedCap, EmbedPrompts, ImageGenCap, ImageMode, LanguageSet, LanguageTag, LlmCap, LlmFeature,
     LlmWire, Modality, PrefixText, RerankCap, SpeechCap, SpeechMode,
 };
-pub use ai_props::{Billing, Locality, PriceTable, Region, Tier};
+pub use ai_props::{Billing, Locality, Region, Tier};
 pub use cua::{CuaBatching, CuaCap, CuaEnv};
 pub use effective::{KindToggle, Toggle, effective};
 pub use kind::{CapabilityKind, VocabVersion};

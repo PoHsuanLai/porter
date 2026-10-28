@@ -92,6 +92,7 @@ fn usage() -> TokenUsage {
         input: Tokens(10),
         output: Tokens(5),
         cached: Tokens(0),
+        charge: None,
     }
 }
 

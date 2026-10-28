@@ -126,19 +126,12 @@ fn the_names_a_server_lists_are_read_once_each() {
 }
 
 #[test]
-fn a_listed_model_is_a_hosted_entry_with_no_limit_known_and_no_price() {
+fn a_listed_model_is_a_hosted_entry_with_no_limit_known() {
     let listed = Listed::new(&account("my-llm"), "Llama-3.2:3B").expect("an entry");
     assert_eq!(listed.id().as_str(), "llama-3.2-3b");
     assert_eq!(listed.entry.label, "Llama-3.2:3B");
     assert_eq!(listed.reach.provider.0, "my-llm");
     assert_eq!(listed.reach.model.0, "Llama-3.2:3B");
-    assert_eq!(
-        (
-            listed.reach.price.input_per_mtok.0,
-            listed.reach.price.output_per_mtok.0
-        ),
-        (0, 0)
-    );
     let text = listed
         .entry
         .capabilities

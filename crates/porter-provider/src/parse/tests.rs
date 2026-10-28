@@ -34,7 +34,7 @@ v = { program = "claude-code", key_env = "ANTHROPIC_API_KEY", base_url_env = "AN
 const AI: &str = r#"
 [ai]
 locality = { kind = "cloud", v = { region = "eu-west-1" } }
-billing = { kind = "metered", v = { input_per_mtok = 3000000, output_per_mtok = 15000000 } }
+billing = { kind = "metered" }
 "#;
 
 fn file(auth: &str, discovery: &str, rest: &[&str]) -> String {

@@ -9,7 +9,7 @@
 //!   connection is TLS, plain on this computer, or plain elsewhere (a computer of the person's
 //!   own on their tailnet, which stoker sends no key to);
 //! * [`OwnBook`] keeps what each server listed, in memory, as hosted models with no limit known:
-//!   the context window and the longest reply are 0, meaning not known, and the price is 0.
+//!   the context window and the longest reply are 0, meaning not known.
 //!
 //! A list that did not come is kept as nothing for [`FAILED_RETRY`] and then asked again, so a
 //! server that was down when it was added is found when it is up, and one that hangs is not
@@ -190,7 +190,7 @@ family = "own"
 cold_start_estimate_s = 0
 source = {{ kind = "hosted" }}
 vram = {{ weights_mib = 0, kv_per_1k_ctx_mib = 0, overhead_mib = 0 }}
-locality = {{ kind = "remote", v = {{ reach = [ {{ provider = {provider}, model = {name}, price = {{ input_per_mtok = 0, output_per_mtok = 0 }}, wire = "open_ai_compat" }} ] }} }}
+locality = {{ kind = "remote", v = {{ reach = [ {{ provider = {provider}, model = {name}, wire = "open_ai_compat" }} ] }} }}
 inputs = ["text"]
 outputs = ["text"]
 text_out = {{ tools = "native", structured = [], reasoning = "absent", streaming = "present", context = 0, max_output = 0 }}
@@ -322,7 +322,7 @@ impl OwnBook {
                     .iter()
                     .filter_map(|listed| {
                         Some(RemoteModel {
-                            card: card_of(&listed.entry, &verdict.account, &listed.reach)?,
+                            card: card_of(&listed.entry, &verdict.account)?,
                             entry: listed.entry.clone(),
                             reach: listed.reach.clone(),
                             verdict: verdict.verdict.clone(),

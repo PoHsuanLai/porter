@@ -54,6 +54,7 @@ fn usage() -> TokenUsage {
         input: Tokens(2),
         output: Tokens(1),
         cached: Tokens(0),
+        charge: None,
     }
 }
 

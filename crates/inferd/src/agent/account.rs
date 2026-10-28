@@ -2,8 +2,9 @@
 //! real key in the provider's own header. The key is asked of accountd for this request, on a
 //! sealed descriptor, held in the client built for it, and dropped with it; it is in no reply,
 //! error, log line, audit line or bus message. What comes back is relayed as it arrives and
-//! read for its usage figures. The worst the request can cost is held against the account's and the
-//! program's caps before it goes out, and the hold is settled with what the provider counted.
+//! read for its usage figures and, from a provider that reports one, its charge. The account's and
+//! the program's caps are asked before the request goes out, and what the provider counted is added
+//! to them when it ends.
 //!
 //! Nothing of the request is mapped: tool calls and results, thinking, images, server tools and
 //! cache hints pass as the agent wrote them. The one change is OpenAI streaming, which asks for
@@ -13,13 +14,12 @@
 use super::fail::{Cause, Failure, Shape};
 use super::handle::Peek;
 use super::http::{self, Request};
-use super::meter::{End, Reading, charge_of, settle};
+use super::meter::{End, Reading, counted, settle};
 use super::open::priced;
 use super::route::admits;
 use super::session::Ctx;
-use crate::cloud::models::{known_providers, price_of, provider_of};
-use crate::cloud::spend::worst_case;
-use model_catalog::ModelEntry;
+use crate::cloud::models::{known_providers, provider_of};
+use crate::cloud::wire::charges_of;
 use model_catalog::{ProviderId, Wire};
 use model_http::{
     BodySink, ChunkFlow, Exchange, Framing, HttpError, JsonBody, ResponseHead, RouteRoot,
@@ -29,8 +29,7 @@ use porter_capability::Locality;
 use porter_capability::ModelId;
 use porter_core::AccountId;
 use porter_core::consent::{Usage, Verdict};
-use porter_ids::Tokens;
-use porter_infer::{ServedBy, TokenUsage};
+use porter_infer::{ServedBy, SpendVerdict};
 use serde_json::Value;
 use tokio::io::AsyncWrite;
 use tokio::sync::mpsc;
@@ -144,52 +143,6 @@ fn anthropic_headers(request: &Request) -> Vec<(String, String)> {
     headers
 }
 
-/// The longest reply a request can bring: what it asks for (`max_tokens`, or OpenAI's
-/// `max_completion_tokens`), never more than the model writes, and the model's most when it asks
-/// for no limit.
-fn reply_bound(body: &[u8], entry: &ModelEntry) -> Tokens {
-    let most = entry
-        .capabilities
-        .text_out
-        .as_ref()
-        .map(|text| text.max_output.0)
-        .filter(|most| *most > 0)
-        .unwrap_or(UNSTATED_MAX_OUTPUT);
-    let asked = serde_json::from_slice::<Value>(body).ok().and_then(|root| {
-        ["max_tokens", "max_completion_tokens"]
-            .iter()
-            .find_map(|name| root.get(name).and_then(Value::as_u64))
-    });
-    Tokens(asked.map_or(most, |asked| {
-        u32::try_from(asked).unwrap_or(u32::MAX).min(most)
-    }))
-}
-
-/// The most a model writes when its catalogue entry does not say.
-const UNSTATED_MAX_OUTPUT: u32 = 128_000;
-
-/// The most a request can cost: its prompt, never more than the model reads, and its reply
-/// ([`reply_bound`]). The prompt is guessed from its bytes ([`worst_case`]), which an image sent
-/// as base64 inflates far past what the model counts, so the guess stops at the model's context
-/// window.
-fn worst_of(prompt_bytes: usize, body: &[u8], entry: &ModelEntry) -> TokenUsage {
-    let reads = entry
-        .capabilities
-        .text_out
-        .as_ref()
-        .map(|text| text.context.0)
-        .filter(|context| *context > 0)
-        .unwrap_or(UNSTATED_CONTEXT);
-    let worst = worst_case(prompt_bytes, reply_bound(body, entry));
-    TokenUsage {
-        input: Tokens(worst.input.0.min(reads)),
-        ..worst
-    }
-}
-
-/// The most a model reads when its catalogue entry does not say: the largest window offered.
-const UNSTATED_CONTEXT: u32 = 1_000_000;
-
 fn wire_of(shape: Shape) -> Wire {
     match shape {
         Shape::Anthropic => Wire::AnthropicMessages,
@@ -282,7 +235,6 @@ pub async fn run<S: AsyncWrite + Unpin + Send>(
             "this route's provider speaks the other protocol; open the endpoint for that one",
         ));
     }
-    let price = price_of(reach);
     let model_id = ModelId::parse(&entry.id.0)
         .map_err(|_| Failure::new(Cause::Upstream, "the catalogue entry has no usable id"))?;
     let body = body_for(request, shape, named.stream)?;
@@ -299,27 +251,17 @@ pub async fn run<S: AsyncWrite + Unpin + Send>(
         .agent_client(&provider, reach.wire, &key, extra)
         .ok_or_else(|| Failure::new(Cause::Upstream, "no address for the account's provider"))?;
     drop(key);
-    // The worst this request can cost is held before it goes out, so requests that run together
-    // see each other's holds and cannot together pass a cap. Held only once nothing but the
-    // sending is left to fail: a hold dropped unsettled is counted whole, so one taken before the
-    // key is read would charge for a request that never left.
-    let worst = worst_of(body.len(), &request.body, entry);
-    let guard = cloud
+    // The caps are asked once nothing but the sending is left to fail. They compare what
+    // providers have reported so far, so they can refuse this request and never cut it off.
+    let verdict = cloud
         .ledger()
-        .reserve(
-            settings.spend,
-            &ctx.app,
-            account,
-            &price,
-            worst,
-            cloud.now(),
-        )
-        .ok_or_else(|| {
-            Failure::new(
-                Cause::SpendCap,
-                "a spend cap for this account or this agent is reached",
-            )
-        })?;
+        .verdict(settings.spend, &ctx.app, account, cloud.now());
+    if verdict == SpendVerdict::Stop {
+        return Err(Failure::new(
+            Cause::SpendCap,
+            "a spend cap for this account or this agent is reached",
+        ));
+    }
     let exchange = Exchange {
         verb: Verb::PostJson,
         root: RouteRoot::Base,
@@ -337,14 +279,15 @@ pub async fn run<S: AsyncWrite + Unpin + Send>(
             Framing::Whole
         },
     };
+    let charges = charges_of(&provider);
     let (tx, mut pieces) = mpsc::unbounded_channel();
     let mut tap = Tap(tx);
     let mut relay = Relay {
         stream: named.stream,
         reading: if named.stream {
-            Reading::of_stream(shape)
+            Reading::of_stream(shape, charges)
         } else {
-            Reading::of_body(shape)
+            Reading::of_body(shape, charges)
         },
         head: None,
         started: false,
@@ -383,8 +326,8 @@ pub async fn run<S: AsyncWrite + Unpin + Send>(
         model: model_id,
         locality: Locality::Cloud { region: None },
     };
-    let charge = charge_of(end, relay.reading.seen());
-    settle(ctx, guard, served, &price, worst, charge, sent);
+    let counted = counted(end, relay.reading.seen());
+    settle(ctx, cloud, served, counted, sent);
     finish(&relay, result, out, shape).await
 }
 

@@ -20,5 +20,8 @@ porter-infer = { workspace = true }
 thiserror = { workspace = true }
 vision-prep = { workspace = true }
 
+[dev-dependencies]
+rust_decimal = { workspace = true }
+
 [lints]
 workspace = true

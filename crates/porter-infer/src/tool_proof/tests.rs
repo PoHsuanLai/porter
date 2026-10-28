@@ -18,6 +18,7 @@ fn reply(calls: &[(&str, &str)]) -> ChatReply {
         input: Tokens(1),
         output: Tokens(1),
         cached: Tokens(0),
+        charge: None,
     };
     ChatReply::new("".to_owned(), StopReason::ToolUse, usage, served).with_tool_calls(
         calls

@@ -166,6 +166,7 @@ impl<U: EngineUse> Model for LocalTurn<'_, U> {
                 input: porter_ids::Tokens(input.0),
                 output: porter_ids::Tokens(0),
                 cached: porter_ids::Tokens(0),
+                charge: None,
             },
             self.served.clone(),
         ))

@@ -18,6 +18,7 @@ fn reply(
             input: Tokens(12),
             output: Tokens(7),
             cached: Tokens(2),
+            charge: None,
         },
         ServedBy {
             account: AccountId::parse("local").expect("id"),

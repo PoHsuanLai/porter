@@ -1,7 +1,6 @@
 //! The properties beside every AI capability (design/31 §2.3): where it runs, which tier the
 //! user mapped it to, and what it costs.
 
-use porter_ids::MicroUsd;
 use serde::{Deserialize, Serialize};
 
 /// Where a model runs. Ordered by closeness: routing prefers the smallest.
@@ -42,17 +41,9 @@ pub enum Tier {
 pub enum Billing {
     /// Nothing (local runtimes).
     Free,
-    /// Per token, at these prices.
-    Metered(PriceTable),
+    /// Per token, charged by the provider. What a reply cost is what the provider reports for it
+    /// (porter keeps no price table), and a provider that reports none shows tokens only.
+    Metered,
     /// A subscription's allowance: requests count against a rate budget, not money.
     PlanBudget,
-}
-
-/// A model's prices per million tokens.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct PriceTable {
-    /// Per million input tokens.
-    pub input_per_mtok: MicroUsd,
-    /// Per million output tokens.
-    pub output_per_mtok: MicroUsd,
 }

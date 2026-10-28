@@ -37,8 +37,8 @@ unit!(
     UnixSeconds(i64)
 );
 unit!(
-    /// Money in millionths of a US dollar: spend caps and price tables stay integers.
-    MicroUsd(u64)
+    /// A number of turns (replies a provider gave, whatever they cost).
+    TurnCount(u32)
 );
 unit!(
     /// Thousandths of a whole: thresholds such as the spend warning at 800.

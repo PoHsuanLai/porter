@@ -86,6 +86,7 @@ async fn a_request_without_a_script_is_refused_and_cancel_ends_a_turn() {
             input: Tokens(1),
             output: Tokens(1),
             cached: Tokens(0),
+            charge: None,
         }))],
     };
     let mut session = FakeInferSession::scripted([script]);

@@ -78,6 +78,7 @@ async fn infer_reads_to_the_finished_event() {
         input: Tokens(1),
         output: Tokens(1),
         cached: Tokens(0),
+        charge: None,
     };
     let reply = InferReply::Chat(ChatReply::new(
         "hi".into(),

@@ -67,6 +67,7 @@ impl Model for FakeModel {
             input: Tokens(1),
             output: Tokens(1),
             cached: Tokens(0),
+            charge: None,
         };
         let _ = sink.event(InferEvent::TextDelta(text.clone()));
         let _ = sink.event(InferEvent::Usage(usage));
@@ -88,6 +89,7 @@ impl Model for FakeModel {
             input: Tokens(1),
             output: Tokens(1),
             cached: Tokens(0),
+            charge: None,
         };
         let _ = sink.event(InferEvent::TextDelta(text.clone()));
         let _ = sink.event(InferEvent::Usage(usage));
@@ -109,6 +111,7 @@ impl Model for FakeModel {
             input: Tokens(1),
             output: Tokens(0),
             cached: Tokens(0),
+            charge: None,
         };
         Ok(EmbedReply::new(vectors, usage, self.served()))
     }

@@ -7,7 +7,9 @@
 //! ([`BodyShape`]) rather than the codec being forked.
 
 use model_catalog::ProviderId;
-use model_openai_compat::Flavor;
+use model_openai_compat::{Flavor, OpenAiCodec};
+use model_provider::Charges;
+use model_wire::ChatCodec;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
@@ -71,6 +73,13 @@ pub fn flavor_of(provider: &ProviderId) -> Flavor {
         "openrouter" => Flavor::OpenRouter,
         _ => Flavor::LiteLlm,
     }
+}
+
+/// Whether replies from `provider` carry what they cost: the codec of its dialect says. The
+/// providers that report none show tokens and no dollars, so a spending limit cannot apply to
+/// them.
+pub fn charges_of(provider: &ProviderId) -> Charges {
+    OpenAiCodec::new(flavor_of(provider)).charges()
 }
 
 /// Whether the body keeps the `temperature` the codec writes.

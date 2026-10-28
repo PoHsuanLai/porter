@@ -27,5 +27,5 @@ mod weburl;
 pub use error::IdError;
 pub use id::{is_id, object_segment};
 pub use origin::{Origin, UrlScheme, split_authority};
-pub use units::{Bytes, Count, Dims, MicroUsd, Permille, Px, Tokens, UnixSeconds};
+pub use units::{Bytes, Count, Dims, Permille, Px, Tokens, TurnCount, UnixSeconds};
 pub use weburl::WebUrl;

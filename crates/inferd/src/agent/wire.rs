@@ -131,6 +131,7 @@ mod tests {
                 input: Tokens(10),
                 output: Tokens(3),
                 cached: Tokens(4),
+                charge: None,
             },
             ServedBy {
                 account: porter_core::AccountId::parse("local").expect("id"),

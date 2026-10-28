@@ -127,28 +127,28 @@ peephole-bus    = { git = "https://github.com/PoHsuanLai/peephole", tag = "v0.1.
 
 # stoker's computer-use vocabulary, by git at stoker's pinned rev (quire
 # CONSUMING.md section 1; a local checkout overrides it, ARCHITECTURE section 1). stoker has no porter dependency, so there is no cycle.
-cua-action      = { git = "https://github.com/PoHsuanLai/stoker", rev = "521a920898856001860ac4edafd3d57b7e1ccb6e" }
+cua-action      = { git = "https://github.com/PoHsuanLai/stoker", rev = "be6d2095b1864a18755c9f7254ad96d4682c52bd" }
 # inferd's other stoker edges (it is the one place porter's types and stoker's meet), by git at
 # the same rev. `model-http` carries the reqwest client behind its `client` feature;
 # `vision-prep` the frame resize behind `pixels`; the testing features hold stoker's scripted
 # fakes of the supervisor's seams.
-model-provider      = { git = "https://github.com/PoHsuanLai/stoker", rev = "521a920898856001860ac4edafd3d57b7e1ccb6e" }
-model-catalog       = { git = "https://github.com/PoHsuanLai/stoker", rev = "521a920898856001860ac4edafd3d57b7e1ccb6e" }
-engine-supervisor   = { git = "https://github.com/PoHsuanLai/stoker", rev = "521a920898856001860ac4edafd3d57b7e1ccb6e" }
-model-http          = { git = "https://github.com/PoHsuanLai/stoker", rev = "521a920898856001860ac4edafd3d57b7e1ccb6e" }
-model-openai-compat = { git = "https://github.com/PoHsuanLai/stoker", rev = "521a920898856001860ac4edafd3d57b7e1ccb6e" }
-speech-provider     = { git = "https://github.com/PoHsuanLai/stoker", rev = "521a920898856001860ac4edafd3d57b7e1ccb6e" }
+model-provider      = { git = "https://github.com/PoHsuanLai/stoker", rev = "be6d2095b1864a18755c9f7254ad96d4682c52bd" }
+model-catalog       = { git = "https://github.com/PoHsuanLai/stoker", rev = "be6d2095b1864a18755c9f7254ad96d4682c52bd" }
+engine-supervisor   = { git = "https://github.com/PoHsuanLai/stoker", rev = "be6d2095b1864a18755c9f7254ad96d4682c52bd" }
+model-http          = { git = "https://github.com/PoHsuanLai/stoker", rev = "be6d2095b1864a18755c9f7254ad96d4682c52bd" }
+model-openai-compat = { git = "https://github.com/PoHsuanLai/stoker", rev = "be6d2095b1864a18755c9f7254ad96d4682c52bd" }
+speech-provider     = { git = "https://github.com/PoHsuanLai/stoker", rev = "be6d2095b1864a18755c9f7254ad96d4682c52bd" }
 # the client of the speech host (the STT engine process): inferd's `SttBackend::SpeechHost`.
-speech-host-client  = { git = "https://github.com/PoHsuanLai/stoker", rev = "521a920898856001860ac4edafd3d57b7e1ccb6e" }
-vision-prep         = { git = "https://github.com/PoHsuanLai/stoker", rev = "521a920898856001860ac4edafd3d57b7e1ccb6e" }
-cua-parse           = { git = "https://github.com/PoHsuanLai/stoker", rev = "521a920898856001860ac4edafd3d57b7e1ccb6e" }
-cua-session         = { git = "https://github.com/PoHsuanLai/stoker", rev = "521a920898856001860ac4edafd3d57b7e1ccb6e" }
-cua-vendors         = { git = "https://github.com/PoHsuanLai/stoker", rev = "521a920898856001860ac4edafd3d57b7e1ccb6e" }
-model-extract       = { git = "https://github.com/PoHsuanLai/stoker", rev = "521a920898856001860ac4edafd3d57b7e1ccb6e" }
-model-replay        = { git = "https://github.com/PoHsuanLai/stoker", rev = "521a920898856001860ac4edafd3d57b7e1ccb6e" }
+speech-host-client  = { git = "https://github.com/PoHsuanLai/stoker", rev = "be6d2095b1864a18755c9f7254ad96d4682c52bd" }
+vision-prep         = { git = "https://github.com/PoHsuanLai/stoker", rev = "be6d2095b1864a18755c9f7254ad96d4682c52bd" }
+cua-parse           = { git = "https://github.com/PoHsuanLai/stoker", rev = "be6d2095b1864a18755c9f7254ad96d4682c52bd" }
+cua-session         = { git = "https://github.com/PoHsuanLai/stoker", rev = "be6d2095b1864a18755c9f7254ad96d4682c52bd" }
+cua-vendors         = { git = "https://github.com/PoHsuanLai/stoker", rev = "be6d2095b1864a18755c9f7254ad96d4682c52bd" }
+model-extract       = { git = "https://github.com/PoHsuanLai/stoker", rev = "be6d2095b1864a18755c9f7254ad96d4682c52bd" }
+model-replay        = { git = "https://github.com/PoHsuanLai/stoker", rev = "be6d2095b1864a18755c9f7254ad96d4682c52bd" }
 # the codec-over-transport `Driver`: inferd's TLS transport to a cloud model is a `model_http::Transport`
 # of its own (stoker's hyper client does not speak TLS yet), so it names the driver that takes one.
-model-wire          = { git = "https://github.com/PoHsuanLai/stoker", rev = "521a920898856001860ac4edafd3d57b7e1ccb6e" }
+model-wire          = { git = "https://github.com/PoHsuanLai/stoker", rev = "be6d2095b1864a18755c9f7254ad96d4682c52bd" }
 
 # From quire's pinned block (`docs/workspace-deps.toml`), copied verbatim: only the lines porter
 # names itself, as mailo does.
@@ -190,6 +190,10 @@ serde_json = "1"
 zbus = { version = "5.19", default-features = false, features = ["tokio"] }  # shell repos only; they also enable ds-settings/tokio. quire itself builds zbus with its async-io default so app consumers keep their own executor.
 toml = "1"
 base64 = "0.22"
+# stoker's `Money` (model-provider) is an exact decimal amount in an ISO 4217 currency; the crates
+# that make or read one name these two (both MIT, which deny.toml allows).
+rust_decimal = { version = "1", default-features = false, features = ["std", "serde"] }
+iso_currency = { version = "0.7", features = ["with-serde"] }
 # The fake servers' TLS and PKCE (quire accounts-pins 21c453eb, pending): rustls on `ring`, no
 # default features.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }

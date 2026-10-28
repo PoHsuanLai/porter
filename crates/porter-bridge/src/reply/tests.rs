@@ -2,6 +2,7 @@ use super::*;
 use porter_capability::Locality;
 use porter_capability::ModelId;
 use porter_core::AccountId;
+use rust_decimal::Decimal;
 
 fn served() -> pi::ServedBy {
     pi::ServedBy {
@@ -27,6 +28,7 @@ fn end(stop: sp::StopReason) -> sp::TurnEnd {
             output: sp::Tokens(4),
             cached: sp::Tokens(3),
             images: sp::ImageCount(1),
+            charge: Some(sp::Money::usd(Decimal::new(95, 5))),
         },
         served: sp::ModelName("m".into()),
         first_token: None,
@@ -103,6 +105,7 @@ fn a_reply_is_gathered_from_the_events_in_order() {
             input: porter_ids::Tokens(10),
             output: porter_ids::Tokens(4),
             cached: porter_ids::Tokens(3),
+            charge: Some(sp::Money::usd(Decimal::new(95, 5))),
         }
     );
     assert_eq!(reply.served, served());

@@ -99,6 +99,7 @@ fn usage_and_reply_carry_the_new_facts() {
         input: Tokens(10),
         output: Tokens(5),
         cached: Tokens(8),
+        charge: None,
     };
     pinned(&usage, r#"{"input":10,"output":5,"cached":8}"#);
 }

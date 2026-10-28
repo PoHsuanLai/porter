@@ -334,10 +334,7 @@ fn accounts_and_ai_properties_round_trip() {
     });
     round_trip(&Locality::OnDevice);
     round_trip(&Tier::Balanced);
-    round_trip(&Billing::Metered(PriceTable {
-        input_per_mtok: MicroUsd(3_000_000),
-        output_per_mtok: MicroUsd(15_000_000),
-    }));
+    round_trip(&Billing::Metered);
     round_trip(&Billing::PlanBudget);
 }
 

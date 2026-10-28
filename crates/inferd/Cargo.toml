@@ -53,6 +53,8 @@ porter-turns = { workspace = true }
 porter-bridge = { workspace = true }
 ds-settings = { workspace = true }
 model-provider = { workspace = true }
+rust_decimal = { workspace = true }
+iso_currency = { workspace = true }
 model-catalog = { workspace = true }
 engine-supervisor = { workspace = true }
 model-http = { workspace = true, features = ["client", "tls"] }

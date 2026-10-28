@@ -28,6 +28,7 @@ fn usage(input: u32, output: u32) -> TokenUsage {
         input: Tokens(input),
         output: Tokens(output),
         cached: Tokens(1),
+        charge: None,
     }
 }
 

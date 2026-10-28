@@ -24,7 +24,7 @@ use crate::tee::{Echo, Tee};
 use model_extract::{ExtractFailure, Extracted, ShapedSession, ToolsPresent, choose};
 use model_provider::{ChoiceText, Flow, JsonText, Provider, SchemaText, Shape, TurnRequest};
 use porter_ids::Tokens;
-use porter_infer::{self as pi, InferEvent, ModelError};
+use porter_infer::{self as pi, ChargeTotal, InferEvent, ModelError};
 use porter_router::local::LocalModel;
 
 pub mod limits;
@@ -82,12 +82,7 @@ pub fn shaping(model: &LocalModel, request: &pi::ChatRequest, limits: Limits) ->
     else {
         return Shaping::Unchecked;
     };
-    let mode = choose(
-        caps,
-        &shape,
-        ToolsPresent::No,
-        flavor.quirks().shape_with_tools,
-    );
+    let mode = choose(caps, &shape, ToolsPresent::No, flavor.shape_with_tools());
     Shaping::Checked(Box::new(Checked {
         session: ShapedSession::new(shape, mode, limits.repairs),
         kind,
@@ -138,7 +133,11 @@ pub async fn run<P: Provider>(
         input: Tokens(0),
         output: Tokens(0),
         cached: Tokens(0),
+        charge: None,
     };
+    // The attempts' charges: the reply's charge is their sum when every attempt reported one, and
+    // none when any did not (a sum of some would be a charge the provider never reported).
+    let mut charges = ChargeTotal::default();
     let mut thought = String::new();
     loop {
         let mut tee = Tee::new(Echo::Thoughts, forward);
@@ -156,7 +155,10 @@ pub async fn run<P: Provider>(
             input: add(usage.input, used.input),
             output: add(usage.output, used.output),
             cached: add(usage.cached, used.cached),
+            charge: None,
         };
+        charges = charges.counting(used.charge);
+        usage.charge = (charges.unpriced.0 == 0).then_some(charges.reported);
         thought.push_str(&said.thought);
         match session.absorb(base, &said.end, &said.text, &said.calls) {
             Extracted::Done(json) => {
