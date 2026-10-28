@@ -3,7 +3,7 @@
 #
 # The workspace gate builds `--workspace --all-features`, which unifies every feature into one
 # build and so never sees the build a consumer makes on its own. docket builds inferd that way
-# (`cargo install --git porter`, -D warnings): porter-client with `dbus` and `infer` and no
+# (`cargo install --git porter`, -D warnings): porter-client with `dbus` and `infer` (now inferd-client's `dbus`) and no
 # other feature once left two framed.rs methods unused, and the gate passed (porter 5bdda62;
 # fixed in b12886e). Each set below is checked here, alone, so the same break fails this script.
 #
@@ -30,16 +30,18 @@ BUILDS=(
   "syncd (default) :: -p syncd"
 
   # porter-client, in the sets its consumers name. No feature is on by default, so each consumer
-  # names its own: mailo's pure client (no features), detent's Settings (dbus, infer, lending),
-  # inferd's tests (dbus, infer), syncd (dbus, in-process, relays), docket and almanac (dbus,
-  # infer). The dbus-plus-infer set is the one docket's inferd build broke (see the header).
+  # names its own: mailo's pure client (no features) and syncd (dbus, in-process, relays).
   "porter-client (no features: mailo) :: -p porter-client --no-default-features"
   "porter-client (dbus only) :: -p porter-client --no-default-features --features dbus"
-  "porter-client (dbus,infer,lending: detent's Settings) :: -p porter-client --no-default-features --features dbus,infer,lending"
-  "porter-client (dbus,infer: inferd's build as docket makes it) :: -p porter-client --no-default-features --features dbus,infer"
   "porter-client (dbus,in-process,relays: syncd) :: -p porter-client --features dbus,in-process,relays"
-  "porter-client (infer: docket, almanac) :: -p porter-client --features infer"
-  "porter-client (engines) :: -p porter-client --features engines"
+
+  # inferd-client, in the sets its consumers name (it sits in porter until steward takes it):
+  # detent's Settings (dbus, lending), docket and almanac (dbus), inferd's tests (dbus), an app
+  # that hosts inference itself (engines).
+  "inferd-client (no features) :: -p inferd-client --no-default-features"
+  "inferd-client (dbus: inferd's tests, docket, almanac) :: -p inferd-client --no-default-features --features dbus"
+  "inferd-client (dbus,lending: detent's Settings) :: -p inferd-client --no-default-features --features dbus,lending"
+  "inferd-client (engines) :: -p inferd-client --features engines"
 
   # The other porter crates a consumer takes with default-features = false (mailo's workspace
   # block, which mail-core, mail-app and mail-runtime name), in the features each one turns on.

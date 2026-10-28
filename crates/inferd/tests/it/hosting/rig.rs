@@ -25,9 +25,9 @@ use inferd::settings::{Settings, SpendLine, TailnetServe};
 use inferd::supervise::{Ports, Supervised};
 use inferd::tailnet::{BusMachines, Parts, Tailnet};
 use inferd::watch::{Probing, Watch};
+use inferd_client::{DbusTransport, Inference as InferenceClient};
 use model_catalog::MiB;
 use model_http::{DerCertificate, TlsRoots};
-use porter_client::{Accounts, DbusTransport};
 use porter_core::{AppId, AppName, Isolation};
 use porter_ids::UnixSeconds;
 use porter_ids::clock::FixedClock;
@@ -267,7 +267,7 @@ pub struct World {
     pub bus: PrivateBus,
     pub daemon: zbus::Connection,
     pub client: zbus::Connection,
-    pub accounts: Accounts<DbusTransport>,
+    pub accounts: InferenceClient<DbusTransport>,
     pub engines: BTreeMap<String, FakeEngine>,
     pub models: Vec<LocalModel>,
     pub audit: Memory,
@@ -659,7 +659,7 @@ impl World {
             .await
             .expect("serve Inference1");
         World {
-            accounts: Accounts::over(DbusTransport::over(client.clone())),
+            accounts: InferenceClient::over(DbusTransport::over(client.clone())),
             bus,
             scratch,
             daemon,
@@ -689,13 +689,13 @@ impl World {
         &self,
         role: Role,
         app: AppId,
-    ) -> (zbus::Connection, Accounts<DbusTransport>) {
+    ) -> (zbus::Connection, InferenceClient<DbusTransport>) {
         let connection = self.bus.connect().await;
         self.peers.introduce(
             connection.unique_name().expect("unique name").as_str(),
             Caller { app, role },
         );
-        let accounts = Accounts::over(DbusTransport::over(connection.clone()));
+        let accounts = InferenceClient::over(DbusTransport::over(connection.clone()));
         (connection, accounts)
     }
 }

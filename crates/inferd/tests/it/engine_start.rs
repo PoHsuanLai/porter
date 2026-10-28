@@ -9,9 +9,9 @@ use crate::hosting;
 
 use hosting::entries;
 use hosting::rig::{Plan, Processes, World};
+use inferd_client::InferSession;
 use porter_capability::LlmFeature;
 use porter_capability::Tier;
-use porter_client::InferSession;
 use porter_core::DataClass;
 use porter_core::consent::Usage;
 use porter_dbus::Details;

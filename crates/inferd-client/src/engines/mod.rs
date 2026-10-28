@@ -14,7 +14,7 @@
 //!     Policy::proposed(),            // Mail, Photos, ... stay on this computer
 //!     MyKeychain,                    // impl KeySource
 //! )?;
-//! let accounts = Accounts::over(InProcess::new(service, app).with_broker(host));
+//! let inference = Inference::over(Brokered::new(app, host));
 //! ```
 //!
 //! - [`Engine`]: one server, where it is ([`EngineUrl`]), what it serves, which [`Dialect`] of the
@@ -29,7 +29,7 @@
 //!   place they live): `local_only` on drops every cloud engine, and a class whose floor is this
 //!   computer never reaches a cloud one, which is `InferRefusal::RequiresCloud(class)` (the
 //!   refusal inferd answers).
-//! - [`KeySource`]: the app's access to its keys. porter-client stores none.
+//! - [`KeySource`]: the app's access to its keys. inferd-client stores none.
 //!
 //! The wire mapping is `porter-bridge` (what inferd uses); the turn itself (events streamed as
 //! they come, the reply gathered) and the retry (three attempts, a quarter of a second doubling to

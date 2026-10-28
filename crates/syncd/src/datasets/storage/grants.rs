@@ -174,9 +174,7 @@ impl<T> ClientStorageGrants<T> {
     }
 }
 
-impl<C: HostedCore, B: Send + Sync, H: Send + Sync> StorageGrants
-    for ClientStorageGrants<InProcess<C, B, H>>
-{
+impl<C: HostedCore, H: Send + Sync> StorageGrants for ClientStorageGrants<InProcess<C, H>> {
     async fn granted(&self, kind: StorageKind) -> Result<Vec<Candidate>, AccountdUnavailable> {
         // Google Photos: an account that uploads, or one that only picks (each scope stands
         // alone); the same grant answers both, and `seen` keeps one candidate per account.

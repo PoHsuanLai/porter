@@ -2,17 +2,17 @@
 //! `inferd::serve` serves with the real session machine over scripted seams. What the machine
 //! adds to the scripts (`Routed`, `Waiting`, refusals, the computer-use begin) reaches the client
 //! over the bus exactly as inferd will send it.
-#![cfg(all(feature = "dbus", feature = "infer"))]
+#![cfg(feature = "dbus")]
 
 use crate::common;
 
 use common::bus::PrivateBus;
 use common::inferd::{Behaviour, FakeInferd, Served};
 use common::served::{Gate, Route, Scripted};
+use inferd_client::{ClientError, DbusTransport, InferSession, Inference};
 use porter_capability::CuaEnv;
 use porter_capability::ModelId;
 use porter_capability::{Locality, Tier};
-use porter_client::{Accounts, ClientError, DbusTransport, InferSession};
 use porter_core::AccountId;
 use porter_core::DataClass;
 use porter_core::consent::Usage;
@@ -56,7 +56,7 @@ fn usage() -> TokenUsage {
 struct Rig {
     _bus: PrivateBus,
     _daemon: zbus::Connection,
-    accounts: Accounts<DbusTransport>,
+    accounts: Inference<DbusTransport>,
     runner: Scripted,
 }
 
@@ -71,7 +71,7 @@ async fn rig(route: Route, gate: Gate, scripts: Vec<Script>) -> Rig {
     let daemon = bus.connect().await;
     fake.serve(&daemon).await;
     Rig {
-        accounts: Accounts::over(DbusTransport::over(bus.connect().await)),
+        accounts: Inference::over(DbusTransport::over(bus.connect().await)),
         _bus: bus,
         _daemon: daemon,
         runner,

@@ -1,4 +1,4 @@
-//! Where a key comes from: the app's, never ours. porter-client holds none of them: a key is
+//! Where a key comes from: the app's, never ours. inferd-client holds none of them: a key is
 //! asked for when a session opens (to know whether the engine may be used at all, and dropped at
 //! once) and again for each turn (copied once into that turn's request header, and dropped with
 //! it). It is in no field of the host, no event, no log line.

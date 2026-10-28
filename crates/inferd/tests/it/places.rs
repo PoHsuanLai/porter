@@ -11,9 +11,9 @@ use hosting::lab::Lab;
 use hosting::rig::{Hosted, Plan, Trust, World};
 use inferd::attached::{Attached, Place, Reach};
 use inferd::peers::{Caller, Role};
+use inferd_client::{ClientError, TransportError};
 use porter_capability::ModelId;
 use porter_capability::Tier;
-use porter_client::{ClientError, TransportError};
 use porter_core::{AppId, AppName, DataClass, Isolation};
 use porter_infer::{ComputerName, PlaceKind, PlaceRow, PlaceState, Takes};
 
@@ -178,7 +178,7 @@ async fn only_settings_the_shell_the_companion_and_cuad_may_list_the_places() {
     }
     // Nobody the table names is refused too.
     let stranger = world.bus.connect().await;
-    let accounts = porter_client::Accounts::over(porter_client::DbusTransport::over(stranger));
+    let accounts = inferd_client::Inference::over(inferd_client::DbusTransport::over(stranger));
     assert!(matches!(
         accounts.places().await,
         Err(ClientError::Transport(TransportError::Denied(_)))
@@ -255,8 +255,8 @@ async fn within_generous(work: impl std::future::Future<Output = ()>) -> bool {
 mod routing {
     use super::*;
     use hosting::bus::within;
+    use inferd_client::InferSession;
     use porter_capability::LlmFeature;
-    use porter_client::InferSession;
     use porter_core::consent::Usage;
     use porter_dbus::inference::InferenceProxy;
     use porter_ids::Tokens;
@@ -876,7 +876,7 @@ mod computers {
     use super::*;
     use hosting::bus::within;
     use inferd::peers::Caller;
-    use porter_client::InferSession;
+    use inferd_client::InferSession;
     use porter_dbus::inference::COMPUTER_ERROR_PREFIX;
     use porter_dbus::inference::InferenceProxy;
     use porter_dbus::zvariant::{OwnedValue, Value};

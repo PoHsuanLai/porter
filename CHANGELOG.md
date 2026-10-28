@@ -25,6 +25,20 @@
 - `EngineConfig::program` is public and `EngineConfig::named_path` is new; `LocalModel::unit_with`
   returns an `Option`.
 
+### The inference half of the client is `inferd-client`
+
+- `porter-client` is the account service's client. What it held of inference moved, with
+  history, to the new crate `inferd-client`, which sits in porter until the steward lane takes
+  it: `Inference<T>` (the old `Accounts<T>`'s inference methods, `guests`, `candidates`, ...), the
+  inference `Transport` (`open_with`, `prepare`, `places`, the computers and the guests),
+  `DbusTransport` (inferd; `inference_at`), `Brokered<B>` (what `InProcess::with_broker` was),
+  `TransportError`, `ClientError`, `ComputerReason`, `engines`, `TailnetLending`. Features
+  `infer`, `engines` and `lending` left `porter-client`.
+- `porter-client`'s `Transport` has `call`, `open_authenticated` and `open_linked` only;
+  `InProcess<C, H>` has no broker type parameter (`NoBroker` is `inferd-client`'s);
+  `DbusTransport::accounts_at` stays, `inference_at` is `inferd-client`'s. `ClientError` lost
+  `InferRefused`.
+
 ### The sheet host seam is porter-sheet's
 
 - `{Sheets, SheetLink, SheetOpen, SheetFault}` are `porter_sheet::host::*` (they were

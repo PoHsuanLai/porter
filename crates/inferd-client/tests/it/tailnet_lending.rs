@@ -5,7 +5,7 @@
 //! real systemd, `~/.config` or `/etc`.
 #![cfg(feature = "lending")]
 
-use porter_client::{
+use inferd_client::{
     LendingConfig, LendingError, LendingState, TailnetLending, UnitFailure, UnitManager,
 };
 use std::ffi::OsString;
@@ -417,7 +417,7 @@ fn a_prefix_names_the_shipped_file_where_install_sh_puts_it() {
 mod session_bus {
     use super::*;
     use crate::common::bus::PrivateBus;
-    use porter_client::SessionUnits;
+    use inferd_client::SessionUnits;
     use zbus::fdo;
     use zbus::object_server::SignalEmitter;
     use zbus::zvariant::{ObjectPath, OwnedObjectPath};

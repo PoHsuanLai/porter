@@ -8,21 +8,13 @@
 //! `mailo/<profile>`). This crate builds neither; the host names them where it builds the
 //! service.
 //!
-//! Accounts are hosted: the service answers every call. Inference is hosted only if the app
-//! hands in a broker ([`SessionHost`], through [`InProcess::with_broker`]): porter's own `Broker`
-//! is not built, and an app that hosts accounts alone has no inferd, which a session says as it
-//! does when inferd is not running: `TransportError::Unreachable`, so a caller degrades as it
-//! would on the bus.
+//! Accounts are hosted: the service answers every call. Inference is `inferd-client`'s
+//! (`Brokered`).
 
 use super::Transport;
-use super::broker::NoBroker;
-#[cfg(feature = "infer")]
-use super::broker::SessionHost;
 use crate::authenticated::{AuthenticatedStream, Relayed};
 use crate::error::TransportError;
 use crate::relays::{NoRelays, RelayHost};
-#[cfg(feature = "infer")]
-use porter_capability::Tier;
 use porter_core::DataClass;
 use porter_core::GrantId;
 use porter_core::consent::{Availability, Usage};
@@ -30,8 +22,6 @@ use porter_core::store::RegistryStore;
 use porter_core::stream::duplex;
 use porter_core::{AppId, Candidate, EndpointUrl, RelayPlan};
 use porter_ids::clock::Clock;
-#[cfg(feature = "infer")]
-use porter_infer::{OpenOptions, Readiness};
 use porter_match::Need;
 use porter_provider::Provider;
 use porter_secrets::Secrets;
@@ -147,57 +137,39 @@ where
 }
 
 /// The core, hosted in this process, answering for one app. `C` is the service (porter's
-/// `AccountService<..>`, a [`HostedCore`]); the inference broker and the relay host default to
-/// none. This was `InProcess<P, S, U, K, B, R, A, H>`; `InProcess::new(service, app)` is
-/// unchanged.
+/// `AccountService<..>`, a [`HostedCore`]); the relay host defaults to none.
 #[derive(Debug)]
-pub struct InProcess<C, B = NoBroker, H = NoRelays> {
+pub struct InProcess<C, H = NoRelays> {
     service: Arc<C>,
     app: AppId,
-    #[cfg_attr(not(feature = "infer"), allow(dead_code))]
-    broker: B,
     relays: H,
 }
 
-impl<C> InProcess<C, NoBroker, NoRelays> {
-    /// `app`'s link to a service this process hosts, with no broker and no relays.
+impl<C> InProcess<C, NoRelays> {
+    /// `app`'s link to a service this process hosts, with no relays.
     pub fn new(service: Arc<C>, app: AppId) -> Self {
         Self {
             service,
             app,
-            broker: NoBroker,
             relays: NoRelays,
         }
     }
 }
 
-impl<C, B, H> InProcess<C, B, H> {
+impl<C, H> InProcess<C, H> {
     /// The same link with `relays` running its authenticated relays (`PorterRelays`, feature
     /// `relays`, or a host the app writes). Without one, opening an authenticated stream says
     /// nobody is reachable.
-    pub fn with_relays<N: RelayHost>(self, relays: N) -> InProcess<C, B, N> {
+    pub fn with_relays<N: RelayHost>(self, relays: N) -> InProcess<C, N> {
         InProcess {
             service: self.service,
             app: self.app,
-            broker: self.broker,
             relays,
-        }
-    }
-
-    /// The same link with `broker` serving its inference sessions (feature `infer`).
-    #[cfg(feature = "infer")]
-    pub fn with_broker<N: SessionHost>(self, broker: N) -> InProcess<C, N, H> {
-        InProcess {
-            service: self.service,
-            app: self.app,
-            broker,
-            relays: self.relays,
         }
     }
 }
 
-/// The accounts half, the same with and without inference.
-impl<C, B, H> InProcess<C, B, H>
+impl<C, H> InProcess<C, H>
 where
     C: HostedCore,
     H: RelayHost,
@@ -233,7 +205,7 @@ where
     }
 }
 
-impl<C, B, H> InProcess<C, B, H>
+impl<C, H> InProcess<C, H>
 where
     C: HostedCore,
 {
@@ -248,12 +220,9 @@ where
     }
 }
 
-/// Accounts alone: no broker to name.
-#[cfg(not(feature = "infer"))]
-impl<C, B, H> Transport for InProcess<C, B, H>
+impl<C, H> Transport for InProcess<C, H>
 where
     C: HostedCore,
-    B: Send + Sync,
     H: RelayHost,
 {
     async fn call(&self, request: AccountsRequest) -> Result<AccountsReply, TransportError> {
@@ -274,58 +243,5 @@ where
         origin: &EndpointUrl,
     ) -> Result<Relayed, TransportError> {
         Ok(self.relayed_linked(grant, origin).await)
-    }
-}
-
-#[cfg(feature = "infer")]
-impl<C, B, H> Transport for InProcess<C, B, H>
-where
-    C: HostedCore,
-    B: SessionHost,
-    H: RelayHost,
-{
-    type Session = B::Session;
-
-    async fn call(&self, request: AccountsRequest) -> Result<AccountsReply, TransportError> {
-        Ok(self.call_service(request).await)
-    }
-
-    async fn open_authenticated(
-        &self,
-        grant: &GrantId,
-        endpoint: &EndpointUrl,
-    ) -> Result<Relayed, TransportError> {
-        Ok(self.relayed_authenticated(grant, endpoint).await)
-    }
-
-    async fn open_linked(
-        &self,
-        grant: &GrantId,
-        origin: &EndpointUrl,
-    ) -> Result<Relayed, TransportError> {
-        Ok(self.relayed_linked(grant, origin).await)
-    }
-
-    async fn open_with(
-        &self,
-        need: &Need,
-        class: DataClass,
-        tier: Tier,
-        options: &OpenOptions,
-    ) -> Result<B::Session, TransportError> {
-        self.broker
-            .open(&self.app, need, class, tier, options)
-            .await
-    }
-    async fn prepare(
-        &self,
-        need: &Need,
-        class: DataClass,
-        tier: Tier,
-        options: &OpenOptions,
-    ) -> Result<Readiness, TransportError> {
-        self.broker
-            .prepare(&self.app, need, class, tier, options)
-            .await
     }
 }

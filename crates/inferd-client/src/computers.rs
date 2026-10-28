@@ -1,4 +1,4 @@
-//! What Settings gives to add a computer of the person's own by hand (`Accounts::add_computer`):
+//! What Settings gives to add a computer of the person's own by hand (`Inference::add_computer`):
 //! the name they call it, and for each model it serves how to reach it from this computer.
 //!
 //! ```ignore

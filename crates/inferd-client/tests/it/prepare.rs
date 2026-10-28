@@ -1,20 +1,19 @@
 //! `Transport::prepare`: over the bus it is `Inference1.Prepare` (the need, class, tier and trace
 //! context cross as arguments, the slug that comes back is a `Readiness`), in process it asks
 //! the host, and a transport that has no inferd says so.
-#![cfg(all(feature = "dbus", feature = "infer", feature = "in-process"))]
+#![cfg(feature = "dbus")]
 
 use crate::common;
 
 use common::bus::PrivateBus;
 use common::inferd::{Behaviour, FakeInferd, Seen, slugs};
+use inferd_client::{
+    Brokered, ClientError, DbusTransport, Inference, NoBroker, SessionHost, TransportError,
+};
 use porter_capability::SpeechMode;
 use porter_capability::Tier;
-use porter_client::{
-    Accounts, ClientError, DbusTransport, InProcess, NoBroker, SessionHost, TransportError,
-};
 use porter_core::consent::Usage;
 use porter_core::{AppId, AppName, DataClass, Isolation};
-use porter_fake::{FakeService, ScriptedSheets, fake_service};
 use porter_ids::Permille;
 use porter_infer::testing::FakeInferSession;
 use porter_infer::{OpenOptions, Readiness, Traceparent};
@@ -32,13 +31,13 @@ async fn bus_rig(
     PrivateBus,
     zbus::Connection,
     Arc<Mutex<Seen>>,
-    Accounts<DbusTransport>,
+    Inference<DbusTransport>,
 ) {
     let bus = PrivateBus::start();
     let (fake, seen) = FakeInferd::new(Behaviour::Scripted(vec![]));
     let daemon = bus.connect().await;
     fake.preparing(slug).serve(&daemon).await;
-    let accounts = Accounts::over(DbusTransport::over(bus.connect().await));
+    let accounts = Inference::over(DbusTransport::over(bus.connect().await));
     (bus, daemon, seen, accounts)
 }
 
@@ -111,7 +110,7 @@ async fn a_prepare_that_inferd_refuses_is_denied_with_the_slug_and_no_daemon_is_
     );
 
     let bus = PrivateBus::start();
-    let alone = Accounts::over(DbusTransport::over(bus.connect().await));
+    let alone = Inference::over(DbusTransport::over(bus.connect().await));
     assert_eq!(
         alone
             .prepare(
@@ -168,12 +167,9 @@ impl SessionHost for Warmer {
 }
 
 #[tokio::test]
-async fn in_process_prepare_asks_the_host_for_the_app_it_names_and_no_broker_is_unreachable() {
-    let service: Arc<FakeService> = Arc::new(fake_service(ScriptedSheets::answering([])).await);
+async fn hosted_prepare_asks_the_host_for_the_app_it_names_and_no_broker_is_unreachable() {
     let warmer = Arc::new(Warmer::default());
-    let accounts = Accounts::over(
-        InProcess::new(Arc::clone(&service), app()).with_broker(Arc::clone(&warmer)),
-    );
+    let accounts = Inference::over(Brokered::new(app(), Arc::clone(&warmer)));
     assert_eq!(
         accounts
             .prepare(
@@ -190,7 +186,7 @@ async fn in_process_prepare_asks_the_host_for_the_app_it_names_and_no_broker_is_
         vec![(app(), DataClass::Voice, Tier::Balanced)]
     );
 
-    let none = Accounts::over(InProcess::new(service, app()).with_broker(NoBroker));
+    let none = Inference::over(Brokered::new(app(), NoBroker));
     assert_eq!(
         none.prepare(
             &stt(),

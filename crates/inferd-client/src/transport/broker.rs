@@ -1,25 +1,16 @@
 //! Where inference sessions come from for an app that hosts them itself: the [`SessionHost`] a
-//! carrier takes ([`super::InProcess::with_broker`], or `engines::EngineHost`), and the
-//! [`NoBroker`] an app that hosts accounts alone names. Neither needs the account service, so this
-//! module builds without feature `in-process`.
+//! carrier takes ([`super::Brokered`], or `engines::EngineHost`), and the
+//! [`NoBroker`] an app that hosts no inference names.
 
-#[cfg(feature = "infer")]
 use crate::error::TransportError;
-#[cfg(feature = "infer")]
 use porter_capability::Tier;
-#[cfg(feature = "infer")]
 use porter_core::{AppId, DataClass};
-#[cfg(feature = "infer")]
 use porter_infer::{ClientFrame, InferEvent, InferSession, OpenOptions, Readiness, SessionError};
-#[cfg(feature = "infer")]
 use porter_match::Need;
-#[cfg(feature = "infer")]
 use std::future::Future;
-#[cfg(feature = "infer")]
 use std::sync::Arc;
 
 /// Where an in-process app's inference sessions come from (feature `infer`).
-#[cfg(feature = "infer")]
 pub trait SessionHost: Send + Sync {
     /// The session `open` returns.
     type Session: InferSession;
@@ -51,7 +42,6 @@ pub trait SessionHost: Send + Sync {
 }
 
 /// One broker may serve several apps' links.
-#[cfg(feature = "infer")]
 impl<T: SessionHost> SessionHost for Arc<T> {
     type Session = T::Session;
 
@@ -83,15 +73,12 @@ impl<T: SessionHost> SessionHost for Arc<T> {
 pub struct NoBroker;
 
 /// The session of [`NoBroker`]: there is none, so this holds nothing and is never made.
-#[cfg(feature = "infer")]
 #[derive(Debug)]
 pub struct InProcessSession(Never);
 
-#[cfg(feature = "infer")]
 #[derive(Debug)]
 enum Never {}
 
-#[cfg(feature = "infer")]
 impl InferSession for InProcessSession {
     async fn send(&mut self, _frame: ClientFrame) -> Result<(), SessionError> {
         match self.0 {}
@@ -102,7 +89,6 @@ impl InferSession for InProcessSession {
     }
 }
 
-#[cfg(feature = "infer")]
 impl SessionHost for NoBroker {
     type Session = InProcessSession;
 

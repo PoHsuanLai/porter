@@ -1,17 +1,17 @@
 //! `DbusTransport::open_with` against a fake inferd on a private bus: the need, class, tier and
 //! trace context cross as `Inference1.Open` arguments; the returned fd carries wire frames both
 //! ways, memfds ride as SCM_RIGHTS, and every way the daemon can fail shows as an error.
-#![cfg(all(feature = "dbus", feature = "infer"))]
+#![cfg(feature = "dbus")]
 
 use crate::common;
 
 use common::bus::PrivateBus;
 use common::inferd::{Behaviour, FakeInferd, Seen, slugs};
+use inferd_client::{
+    ClientError, DbusSession, DbusTransport, InferSession, Inference, SessionError, TransportError,
+};
 use porter_capability::ModelId;
 use porter_capability::Tier;
-use porter_client::{
-    Accounts, ClientError, DbusSession, DbusTransport, InferSession, SessionError, TransportError,
-};
 use porter_core::AccountId;
 use porter_core::DataClass;
 use porter_core::consent::Usage;
@@ -102,7 +102,7 @@ struct Rig {
     _bus: PrivateBus,
     _daemon: zbus::Connection,
     seen: Arc<Mutex<Seen>>,
-    accounts: Accounts<DbusTransport>,
+    accounts: Inference<DbusTransport>,
 }
 
 async fn rig(behaviour: Behaviour) -> Rig {
@@ -110,7 +110,7 @@ async fn rig(behaviour: Behaviour) -> Rig {
     let (fake, seen) = FakeInferd::new(behaviour);
     let daemon = bus.connect().await;
     fake.serve(&daemon).await;
-    let accounts = Accounts::over(DbusTransport::over(bus.connect().await));
+    let accounts = Inference::over(DbusTransport::over(bus.connect().await));
     Rig {
         _bus: bus,
         _daemon: daemon,
@@ -318,7 +318,7 @@ async fn a_memfd_rides_with_the_frame_that_names_it() {
 async fn an_attachment_count_that_is_not_what_the_frame_names_is_refused_unwritten() {
     let rig = rig(Behaviour::Scripted(vec![])).await;
     let mut session = session(&rig, &llm(), DataClass::Public).await;
-    let fds: Vec<OwnedFd> = (0..=porter_client::MAX_ATTACHMENTS)
+    let fds: Vec<OwnedFd> = (0..=inferd_client::MAX_ATTACHMENTS)
         .map(|_| rustix::fs::memfd_create("x", rustix::fs::MemfdFlags::CLOEXEC).expect("memfd"))
         .collect();
     let got = session.send_with(ClientFrame::Cancel, &fds).await;
@@ -414,7 +414,7 @@ async fn a_length_beyond_the_limit_is_malformed_not_buffered() {
 #[tokio::test(flavor = "multi_thread")]
 async fn no_daemon_on_the_bus_is_unreachable() {
     let bus = PrivateBus::start();
-    let accounts = Accounts::over(DbusTransport::over(bus.connect().await));
+    let accounts = Inference::over(DbusTransport::over(bus.connect().await));
     let got = accounts
         .session(&llm(), DataClass::Public, Tier::Fast)
         .await
@@ -437,7 +437,7 @@ async fn a_daemon_that_errors_on_open_is_not_unreachable() {
         .request_name(porter_dbus::inference::INFERENCE_BUS)
         .await
         .expect("name");
-    let accounts = Accounts::over(DbusTransport::over(bus.connect().await));
+    let accounts = Inference::over(DbusTransport::over(bus.connect().await));
     let got = accounts
         .session(&llm(), DataClass::Public, Tier::Fast)
         .await

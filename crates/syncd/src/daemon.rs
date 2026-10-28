@@ -88,7 +88,7 @@ pub type OwnService = AccountService<
 
 /// What the supervisors reach accounts through: that service, in this process, with relays that
 /// carry the credential to the servers (it crosses no process).
-pub type OwnLink = InProcess<OwnService, porter_client::NoBroker, PorterRelays>;
+pub type OwnLink = InProcess<OwnService, PorterRelays>;
 
 /// Everything syncd needs to start, as typed values.
 #[derive(Debug, Clone)]

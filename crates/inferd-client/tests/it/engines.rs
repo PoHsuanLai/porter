@@ -2,11 +2,11 @@
 //! loopback (no network, no real model).
 #![cfg(feature = "engines")]
 
-use porter_capability::{Locality, Tier};
-use porter_client::engines::{
+use inferd_client::engines::{
     Dialect, Engine, EngineHost, EngineId, EngineUrl, KeySource, NoKeys, Route,
 };
-use porter_client::{InferRefusal, InferSession, OpenOptions, Policy, SessionHost, Slot};
+use inferd_client::{InferRefusal, InferSession, OpenOptions, Policy, SessionHost, Slot};
+use porter_capability::{Locality, Tier};
 use porter_core::AccountId;
 use porter_core::{AppId, AppName, DataClass, Isolation, SecretText};
 use porter_fake_servers::{FakeModels, ModelDef, ModelsHandle, Running, Wire};
@@ -114,7 +114,7 @@ fn finished(events: &[InferEvent]) -> &InferReply {
 async fn open<K: KeySource + 'static>(
     host: &EngineHost<K>,
     class: DataClass,
-) -> porter_client::engines::EngineSession<K> {
+) -> inferd_client::engines::EngineSession<K> {
     host.open(
         &app(),
         &need(),
@@ -302,7 +302,7 @@ async fn needs_without_a_row_and_kinds_of_need_not_served_are_refused() {
             InferRefusal::NoModelChosen
         )))
     );
-    assert_eq!(fast.next().await, Err(porter_client::SessionError::Closed));
+    assert_eq!(fast.next().await, Err(inferd_client::SessionError::Closed));
 
     let embeddings = Need::Embeddings(EmbedNeed::new(DimsNeed::Any, Default::default()));
     let mut other = host
@@ -379,7 +379,7 @@ async fn prepare_says_what_routing_says() {
     assert!(matches!(
         host.prepare(&app(), &need(), DataClass::Public, Tier::Best, &options)
             .await,
-        Err(porter_client::TransportError::Denied(why)) if why.contains("no model is chosen")
+        Err(inferd_client::TransportError::Denied(why)) if why.contains("no model is chosen")
     ));
 }
 

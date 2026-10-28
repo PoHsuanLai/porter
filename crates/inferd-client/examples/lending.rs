@@ -4,12 +4,12 @@
 //! run them only on a computer where that is meant.
 //!
 //! ```text
-//! cargo run -p porter-client --example lending --features lending,dbus
-//! cargo run -p porter-client --example lending --features lending,dbus -- enable
-//! cargo run -p porter-client --example lending --features lending,dbus -- disable
+//! cargo run -p inferd-client --example lending --features lending,dbus
+//! cargo run -p inferd-client --example lending --features lending,dbus -- enable
+//! cargo run -p inferd-client --example lending --features lending,dbus -- disable
 //! ```
 
-use porter_client::{LendingConfig, LendingState, SessionUnits, TailnetLending};
+use inferd_client::{LendingConfig, LendingState, SessionUnits, TailnetLending};
 
 async fn run(command: Option<String>) -> Result<(), String> {
     let config = LendingConfig::from_lookup(|name| std::env::var_os(name))

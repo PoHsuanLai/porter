@@ -137,7 +137,6 @@ impl DbusTransport {
     }
 }
 
-#[cfg(feature = "infer")]
 mod computers {
     use super::*;
     use crate::computers::{ComputerReach, NewComputer};

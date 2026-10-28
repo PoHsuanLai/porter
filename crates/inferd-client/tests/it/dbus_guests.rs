@@ -1,4 +1,4 @@
-//! The guest and computer calls of `Accounts` over the session bus, against a scripted
+//! The guest and computer calls of `Inference` over the session bus, against a scripted
 //! `org.quire.Inference1` on a private bus: each call's decode into typed rows, the answer as
 //! the slug the wire carries, a refusal read back as a typed reason, and the stream that hears
 //! of a computer asking and of the answers changing; and calls sent to the owner a caller
@@ -8,8 +8,8 @@
 use crate::common;
 
 use common::bus::PrivateBus;
-use porter_client::{
-    Accounts, ClientError, ComputerReason, DbusTransport, GuestChange, TransportError,
+use inferd_client::{
+    ClientError, ComputerReason, DbusTransport, GuestChange, Inference, TransportError,
 };
 use porter_dbus::{BusStream, Details};
 use porter_ids::UnixSeconds;
@@ -193,7 +193,7 @@ struct World {
     bus: PrivateBus,
     daemon: zbus::Connection,
     asked: Arc<Mutex<Asked>>,
-    accounts: Accounts<DbusTransport>,
+    accounts: Inference<DbusTransport>,
     /// A second link, for the calls that also say which rows were left out.
     transport: DbusTransport,
 }
@@ -218,7 +218,7 @@ impl World {
             .request_name(porter_dbus::inference::INFERENCE_BUS)
             .await
             .expect("own the name");
-        let accounts = Accounts::over(DbusTransport::over(bus.connect().await));
+        let accounts = Inference::over(DbusTransport::over(bus.connect().await));
         let transport = DbusTransport::over(bus.connect().await);
         Self {
             bus,
@@ -447,11 +447,10 @@ async fn candidates_decode_with_their_models_and_approval() {
     );
 }
 
-#[cfg(feature = "infer")]
 mod computers {
     use super::*;
+    use inferd_client::{ComputerName, ComputerReach, NewComputer, NewComputerModel};
     use porter_capability::ModelId;
-    use porter_client::{ComputerName, ComputerReach, NewComputer, NewComputerModel};
     use porter_core::SecretText;
 
     fn place_row(id: &str, kind: &str, name: &str) -> (String, Details) {
@@ -575,7 +574,7 @@ mod computers {
 }
 
 /// Waits as long as a starved machine needs for a signal that should come.
-async fn next(changes: &mut porter_client::GuestChanges) -> Option<GuestChange> {
+async fn next(changes: &mut inferd_client::GuestChanges) -> Option<GuestChange> {
     tokio::time::timeout(
         test_kit::GENEROUS,
         std::future::poll_fn(|cx| std::pin::Pin::new(&mut *changes).poll_next(cx)),
@@ -634,7 +633,7 @@ async fn a_caller_the_daemon_refuses_is_denied_and_no_daemon_is_unreachable() {
     ));
     // Nobody owns the name on this bus.
     let bus = PrivateBus::start();
-    let alone = Accounts::over(DbusTransport::over(bus.connect().await));
+    let alone = Inference::over(DbusTransport::over(bus.connect().await));
     assert_eq!(
         alone.guests().await,
         Err(ClientError::Transport(TransportError::Unreachable))

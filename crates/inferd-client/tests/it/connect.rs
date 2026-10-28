@@ -1,4 +1,4 @@
-//! `Accounts::connect`. The session bus is found through the
+//! `Inference::connect`. The session bus is found through the
 //! environment, so the D-Bus case runs the connecting half in a child process whose
 //! environment names a private bus; this process never edits its own. The child is this test
 //! executable run again, by test path (`connect::child_finds_no_bus`).
@@ -7,9 +7,9 @@ use crate::common;
 
 use common::bus::PrivateBus;
 use common::inferd::{Behaviour, FakeInferd};
+use inferd_client::{ClientError, Inference, TransportError};
 use porter_capability::ModelId;
 use porter_capability::Tier;
-use porter_client::{Accounts, ClientError, TransportError};
 use porter_core::AccountId;
 use porter_core::DataClass;
 use porter_core::consent::Usage;
@@ -61,7 +61,7 @@ async fn child_connects_over_the_session_bus_it_is_given() {
     if std::env::var_os(CHILD_MARKER).is_none() {
         return;
     }
-    let accounts = Accounts::connect().await.expect("the bus is reachable");
+    let accounts = Inference::connect().await.expect("the bus is reachable");
     let got = accounts
         .infer(&need(), DataClass::Public, Tier::Fast, request())
         .await;
@@ -118,7 +118,7 @@ async fn child_finds_no_bus() {
     if std::env::var_os(CHILD_MARKER).is_none() {
         return;
     }
-    let got = Accounts::connect().await.map(|_| ());
+    let got = Inference::connect().await.map(|_| ());
     assert_eq!(
         got,
         Err(ClientError::Transport(TransportError::Unreachable))

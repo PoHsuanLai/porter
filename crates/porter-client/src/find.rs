@@ -8,7 +8,7 @@ use porter_core::DataClass;
 use porter_core::consent::Usage;
 use porter_match::Need;
 
-impl<C, B, H> Accounts<InProcess<C, B, H>>
+impl<C, H> Accounts<InProcess<C, H>>
 where
     C: HostedCore,
 {

@@ -5,7 +5,7 @@
 //! for accounts, no real keyring.
 #![allow(dead_code)]
 
-use porter_client::{Accounts, IdentitiesError, InProcess, NoBroker, PorterRelays};
+use porter_client::{Accounts, IdentitiesError, InProcess, PorterRelays};
 use porter_core::IdentityId;
 use porter_fake::{FakeProvider, MemoryStore, RecordingAudit, ScriptedSheets};
 use porter_ids::clock::FixedClock;
@@ -27,7 +27,7 @@ pub type Service = AccountService<
     RecordingAudit,
 >;
 
-pub type Link = InProcess<Service, NoBroker, PorterRelays>;
+pub type Link = InProcess<Service, PorterRelays>;
 
 /// The hosted service and the `Accounts` the supervisors use, as syncd (`org.quire.Sync`).
 pub struct Hosted {

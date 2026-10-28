@@ -1,8 +1,7 @@
-//! `Accounts::session` and `Accounts::infer` over a transport whose sessions are scripted.
-#![cfg(feature = "infer")]
+//! `Inference::session` and `Inference::infer` over a transport whose sessions are scripted.
 
+use inferd_client::{ClientError, InferSession, Inference, Transport, TransportError};
 use porter_capability::Tier;
-use porter_client::{Accounts, ClientError, InferSession, Transport, TransportError};
 use porter_core::DataClass;
 use porter_ids::Tokens;
 use porter_infer::OpenOptions;
@@ -14,7 +13,6 @@ use porter_infer::{
 };
 use porter_match::LlmNeed;
 use porter_match::Need;
-use porter_wire::{AccountsReply, AccountsRequest};
 use std::sync::Mutex;
 
 #[derive(Debug)]
@@ -22,10 +20,6 @@ struct Scripted(Mutex<Option<FakeInferSession>>);
 
 impl Transport for Scripted {
     type Session = FakeInferSession;
-
-    async fn call(&self, _request: AccountsRequest) -> Result<AccountsReply, TransportError> {
-        Err(TransportError::Unreachable)
-    }
 
     async fn open_with(
         &self,
@@ -66,8 +60,8 @@ fn chat() -> InferRequest {
     )
 }
 
-fn accounts(script: Script) -> Accounts<Scripted> {
-    Accounts::over(Scripted(Mutex::new(Some(FakeInferSession::scripted([
+fn accounts(script: Script) -> Inference<Scripted> {
+    Inference::over(Scripted(Mutex::new(Some(FakeInferSession::scripted([
         script,
     ])))))
 }

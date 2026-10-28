@@ -57,7 +57,7 @@ impl<T> ClientGrants<T> {
     }
 }
 
-impl<C: HostedCore, B: Send + Sync, H: Send + Sync> PimGrants for ClientGrants<InProcess<C, B, H>> {
+impl<C: HostedCore, H: Send + Sync> PimGrants for ClientGrants<InProcess<C, H>> {
     async fn granted(&self, kind: PimKind) -> Result<Vec<Candidate>, AccountdUnavailable> {
         let found = self
             .accounts

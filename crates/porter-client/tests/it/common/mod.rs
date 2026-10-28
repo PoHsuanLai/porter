@@ -1,6 +1,4 @@
-//! Shared by the bus tests: a private bus, a fake inferd and the real accountd on it, and the real
-//! session server over scripted seams. What speaks inference is behind the client's `infer`
-//! feature, as it is in the client.
+//! Shared by the bus tests: a private bus and the real accountd on it.
 #![allow(dead_code)]
 
 #[cfg(feature = "dbus")]
@@ -9,10 +7,6 @@ pub mod accountd;
 pub mod bus;
 #[cfg(feature = "dbus")]
 pub mod fake_accountd;
-#[cfg(all(feature = "dbus", feature = "infer"))]
-pub mod inferd;
-#[cfg(feature = "infer")]
-pub mod served;
 
 /// Waits until `condition` holds (a daemon's task has run); fails the test, naming `what`, when
 /// `test_kit::GENEROUS` has passed by the clock.

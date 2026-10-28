@@ -1,16 +1,12 @@
-//! `InProcess` and inference: an app that hosts accounts alone has no inferd (a session is
+//! `Brokered` and inference: an app that hosts no inference has no inferd (a session is
 //! `Unreachable`, as on a bus with no daemon, so a caller degrades); one that hands in a broker
 //! gets the broker's sessions, opened for the app the host names.
-#![cfg(all(feature = "infer", feature = "in-process"))]
 
-use porter_capability::Tier;
-use porter_client::{
-    Accounts, ClientError, Found, InProcess, InferSession, NoBroker, SessionHost, TransportError,
+use inferd_client::{
+    Brokered, ClientError, InferSession, Inference, NoBroker, SessionHost, TransportError,
 };
-use porter_core::consent::Usage;
+use porter_capability::Tier;
 use porter_core::{AppId, AppName, DataClass, Isolation};
-use porter_fake::fake_service;
-use porter_fake::{FakeService, ScriptedSheets};
 use porter_ids::Tokens;
 use porter_infer::testing::{FakeInferSession, Script, ScriptStep};
 use porter_infer::{
@@ -66,13 +62,9 @@ fn reply() -> InferReply {
     ))
 }
 
-async fn service() -> Arc<FakeService> {
-    Arc::new(fake_service(ScriptedSheets::answering([])).await)
-}
-
 #[tokio::test]
-async fn with_no_broker_a_session_is_unreachable_and_accounts_still_answer() {
-    let accounts = Accounts::over(InProcess::new(service().await, app()));
+async fn with_no_broker_a_session_is_unreachable() {
+    let accounts = Inference::over(Brokered::new(app(), NoBroker));
     assert!(matches!(
         accounts
             .session(&need(), DataClass::Public, Tier::Fast)
@@ -85,16 +77,11 @@ async fn with_no_broker_a_session_is_unreachable_and_accounts_still_answer() {
             .await,
         Err(ClientError::Transport(TransportError::Unreachable))
     );
-    let found = accounts
-        .find(&need(), DataClass::Public, Usage::Interactive)
-        .await;
-    assert!(matches!(found, Ok(Found::NeedsConsent(_))), "{found:?}");
-    let _ = NoBroker;
 }
 
 #[tokio::test]
-async fn the_guest_and_computer_calls_are_unsupported_in_process() {
-    let accounts = Accounts::over(InProcess::new(service().await, app()));
+async fn the_guest_and_computer_calls_are_unsupported_when_hosted() {
+    let accounts = Inference::over(Brokered::new(app(), NoBroker));
     let node = porter_tailscale::NodeId::parse("nPI").expect("node");
     let unsupported = Some(ClientError::Transport(TransportError::Unsupported));
     assert_eq!(accounts.guests().await.err(), unsupported);
@@ -149,8 +136,7 @@ impl SessionHost for Broker {
 #[tokio::test]
 async fn a_hosted_broker_serves_the_sessions_for_the_app_the_host_names() {
     let broker = Arc::new(Broker::default());
-    let accounts =
-        Accounts::over(InProcess::new(service().await, app()).with_broker(Arc::clone(&broker)));
+    let accounts = Inference::over(Brokered::new(app(), Arc::clone(&broker)));
     let parent = Traceparent::parse("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
         .expect("traceparent");
     let options = OpenOptions::default().with_traceparent(parent);

@@ -12,9 +12,9 @@ use hosting::entries;
 use hosting::rig::{Plan, SpeechPlan, World};
 use inferd::runner::{Pin, Pinned, Turns};
 use inferd::speech::Ears;
+use inferd_client::{ClientError, DbusSession, DbusTransport, InferSession, Inference};
 use porter_capability::SpeechMode;
 use porter_capability::Tier;
-use porter_client::{Accounts, ClientError, DbusSession, DbusTransport, InferSession};
 use porter_core::DataClass;
 use porter_core::consent::Usage;
 use porter_infer::{
@@ -319,7 +319,7 @@ async fn the_engine_restarts_after_a_crash_and_a_turn_in_flight_fails_not_hangs(
     assert_eq!(speech.spawns(), 2);
 }
 
-async fn ask(accounts: &Accounts<DbusTransport>) -> Result<Readiness, ClientError> {
+async fn ask(accounts: &Inference<DbusTransport>) -> Result<Readiness, ClientError> {
     accounts
         .prepare(
             &stt(),

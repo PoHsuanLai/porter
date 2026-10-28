@@ -88,7 +88,8 @@ zbus = { workspace = true }
 test-kit = { workspace = true }
 ds-settings = { workspace = true, features = ["testing"] }
 # The client side the tests drive inferd through.
-porter-client = { workspace = true, features = ["dbus", "infer"] }
+porter-client = { workspace = true, features = ["dbus"] }
+inferd-client = { workspace = true, features = ["dbus"] }
 # `sealed_key`: the memfd the fake Broker hands a key on.
 porter-secrets = { workspace = true }
 engine-supervisor = { workspace = true, features = ["testing"] }

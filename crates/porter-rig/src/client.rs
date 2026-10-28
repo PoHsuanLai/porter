@@ -9,11 +9,12 @@
 //! daemons' to find (see `fixture`).
 
 use clap::Subcommand;
+use inferd_client::{DbusTransport as InferdTransport, InferSession, Inference, OpenOptions};
 use porter_capability::Tier;
 use porter_capability::{Access, AgentProgram, Delta, StorageScope};
 use porter_client::{
     Accounts, AiKeys, AiKeysError, ClientError, DbusTransport, Identities, IdentitiesError,
-    InferSession, Launcher, LauncherError, OpenOptions,
+    Launcher, LauncherError,
 };
 use porter_core::ProviderHint;
 use porter_core::SessionToken;
@@ -260,6 +261,7 @@ pub async fn run(
     emit: &mut impl FnMut(Value),
 ) -> bool {
     let accounts = Accounts::over(DbusTransport::over(connection.clone()));
+    let inference = Inference::over(InferdTransport::over(connection.clone()));
     match command {
         Command::Identities(IdentitiesCommand::List) => identities_list(connection, emit).await,
         Command::Identities(IdentitiesCommand::Offer { provider }) => {
@@ -287,7 +289,7 @@ pub async fn run(
             prompt,
         } => {
             let ask = Ask { class, usage };
-            open(&accounts, &need, &ask, tier, prompt, emit).await
+            open(&inference, &need, &ask, tier, prompt, emit).await
         }
         Command::SyncResolve {
             dataset,
@@ -569,7 +571,7 @@ fn chat(prompt: &str, ask: &Ask, tier: Tier) -> InferRequest {
 }
 
 async fn open(
-    accounts: &Accounts<DbusTransport>,
+    inference: &Inference<InferdTransport>,
     need: &Need,
     ask: &Ask,
     tier: Tier,
@@ -577,7 +579,10 @@ async fn open(
     emit: &mut impl FnMut(Value),
 ) -> bool {
     let options = OpenOptions::default().with_usage(ask.usage);
-    let mut session = match accounts.session_with(need, ask.class, tier, &options).await {
+    let mut session = match inference
+        .session_with(need, ask.class, tier, &options)
+        .await
+    {
         Ok(session) => session,
         Err(why) => {
             emit(failure(why));

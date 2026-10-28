@@ -9,9 +9,9 @@ use hosting::engine::{Chat, Script};
 use hosting::entries;
 use hosting::rig::{Plan, World, test_app};
 use inferd::peers::Role;
+use inferd_client::{ClientError, DbusTransport, InferSession, Inference, TransportError};
 use porter_capability::Tier;
 use porter_capability::{CuaEnv, LlmFeature, Modality};
-use porter_client::{Accounts, ClientError, DbusTransport, InferSession, TransportError};
 use porter_core::DataClass;
 use porter_core::consent::Usage;
 use porter_ids::{Dims, Tokens};
@@ -318,7 +318,7 @@ async fn an_embedding_request_returns_a_vector_per_text_in_order_with_the_models
 #[tokio::test(flavor = "multi_thread")]
 async fn inferd_absent_is_unreachable() {
     let bus = hosting::bus::PrivateBus::start();
-    let accounts = Accounts::over(DbusTransport::over(bus.connect().await));
+    let accounts = Inference::over(DbusTransport::over(bus.connect().await));
     let got = accounts.session(&llm(), DataClass::Notes, Tier::Fast).await;
     assert!(
         matches!(
@@ -334,7 +334,7 @@ async fn inferd_absent_is_unreachable() {
 async fn a_caller_the_table_does_not_name_is_denied_with_the_daemons_text() {
     let world = World::start(chat_world(Script::default())).await;
     // A second connection nobody introduced.
-    let stranger = Accounts::over(DbusTransport::over(world.bus.connect().await));
+    let stranger = Inference::over(DbusTransport::over(world.bus.connect().await));
     let got = stranger.session(&llm(), DataClass::Notes, Tier::Fast).await;
     match got {
         Err(ClientError::Transport(TransportError::Denied(why))) => {

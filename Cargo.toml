@@ -32,6 +32,7 @@ members = [
   "crates/porter-callers",
   "crates/porter-sheets",
   "crates/porter-client",
+  "crates/inferd-client",
   "crates/porter-fake",
   "crates/porter-fake-servers",
   "crates/test-kit",
@@ -107,6 +108,7 @@ porter-dbus-macros = { path = "crates/porter-dbus-macros" }
 porter-callers  = { path = "crates/porter-callers" }
 porter-sheets   = { path = "crates/porter-sheets" }
 porter-client   = { path = "crates/porter-client" }
+inferd-client   = { path = "crates/inferd-client" }
 porter-fake     = { path = "crates/porter-fake" }
 test-kit        = { path = "crates/test-kit" }
 porter-fake-servers = { path = "crates/porter-fake-servers" }

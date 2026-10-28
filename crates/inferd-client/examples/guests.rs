@@ -3,11 +3,11 @@
 //! caller is refused), with the session bus up.
 //!
 //! ```text
-//! cargo run -p porter-client --example guests --features dbus -- allow
-//! cargo run -p porter-client --example guests --features dbus -- deny
+//! cargo run -p inferd-client --example guests --features dbus -- allow
+//! cargo run -p inferd-client --example guests --features dbus -- deny
 //! ```
 
-use porter_client::{Accounts, ClientError, DbusTransport, GuestChange};
+use inferd_client::{ClientError, DbusTransport, GuestChange, Inference};
 use porter_tailnet::GuestAnswer;
 use porter_tailnet::RowState;
 
@@ -16,7 +16,7 @@ fn answer_of(word: Option<String>) -> Option<GuestAnswer> {
 }
 
 async fn run(answer: Option<GuestAnswer>) -> Result<(), ClientError> {
-    let accounts = Accounts::over(DbusTransport::session().await?);
+    let accounts = Inference::over(DbusTransport::session().await?);
     // Subscribe before reading the list, so no question falls between the two.
     let mut changes = accounts.watch_guests().await?;
     let rows = accounts.guests().await?;

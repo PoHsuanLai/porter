@@ -43,6 +43,7 @@ RULES=(
   "porter-settings: reqwest hyper ureq oo7 keyring secret-service interprocess latchkey"
   "porter-store: zbus zvariant reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
   "porter-client: $EFFECTS"
+  "inferd-client: $EFFECTS"
   "porter-sheets: reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
   "porter-fake: $EFFECTS"
   "test-kit: $EFFECTS"
@@ -216,13 +217,13 @@ else
   echo "boundary holds: only porter-http-reqwest names reqwest"
 fi
 
-# LENDING FEATURE: porter-client reaches porter-fs (the writer of the tailnet drop-in) only
-# through `lending` or `in-process` (porter-secrets uses it); a bus-only consumer reaches it not.
+# IN-PROCESS AND FS: porter-client reaches porter-fs only through `in-process` (porter-secrets uses
+# it); a bus-only consumer reaches it not.
 if cargo tree -p porter-client --no-default-features --features dbus -i porter-fs -e normal,build 2>/dev/null | grep -q .; then
-  echo "LEAK: porter-client[dbus] without lending or in-process depends on porter-fs"
+  echo "LEAK: porter-client[dbus] without in-process depends on porter-fs"
   fail=1
 else
-  echo "boundary holds: porter-client[dbus] without lending or in-process reaches no porter-fs"
+  echo "boundary holds: porter-client[dbus] without in-process reaches no porter-fs"
 fi
 
 # PURE FILES: source that parses what an edge read and never reads it itself. A dependency rule
@@ -349,7 +350,8 @@ EDGES=(
   "porter-dbus: porter-core porter-dbus-macros porter-tailscale porter-match porter-wire porter-ids"
   "porter-bridge: porter-core porter-capability porter-match porter-ids porter-infer model-catalog model-openai-compat model-provider vision-prep"
   "porter-sheets: porter-core porter-capability porter-sheet porter-wire porter-callers porter-dbus porter-provider porter-service-core"
-  "porter-client: porter-bridge porter-core porter-tailnet porter-tailscale porter-match porter-capability porter-wire porter-ids porter-callers porter-dbus porter-fs porter-infer porter-provider porter-proxy porter-secrets porter-service porter-service-core porter-turns model-http model-openai-compat model-provider model-wire porter-sheet"
+  "porter-client: porter-core porter-tailscale porter-match porter-capability porter-wire porter-ids porter-dbus porter-provider porter-proxy porter-secrets porter-service porter-service-core porter-sheet"
+  "inferd-client: porter-core porter-tailnet porter-tailscale porter-match porter-capability porter-wire porter-ids porter-infer porter-bridge porter-turns porter-callers porter-dbus porter-fs model-http model-openai-compat model-provider model-wire"
   "porter-fake: porter-core porter-capability porter-sheet porter-wire porter-ids porter-provider porter-secrets porter-service porter-service-core"
   "test-kit:"
   "porter-fake-servers: dav-proto porter-core porter-ids porter-discover porter-fake porter-provider quickxorhash test-kit"
@@ -378,7 +380,7 @@ EDGES=(
   "porter-drive-fuse: porter-drive porter-mountd"
   "porter-mountd:"
   "syncd: dav-proto ds-settings porter-client porter-core porter-match porter-capability porter-sheet porter-wire porter-ids porter-daemon porter-callers porter-dbus porter-drive porter-drive-fuse porter-families porter-family-oauth porter-fs porter-http porter-http-relay porter-provider porter-secrets porter-service porter-service-accounts porter-service-core porter-sheets porter-store porter-sync storage-gdrive storage-graph storage-webdav windows-zones"
-  "porter-rig: fake-secret-service porter-client porter-core porter-match porter-capability porter-wire porter-ids porter-callers porter-dbus porter-fake porter-fake-servers porter-infer test-kit"
+  "porter-rig: fake-secret-service porter-client porter-core porter-match porter-capability porter-wire porter-ids porter-callers porter-dbus porter-fake porter-fake-servers porter-infer test-kit inferd-client"
   "fake-secret-service:"
   "syncd-fakes: porter-dbus"
   "inferd: ds-settings porter-bridge porter-client porter-settings porter-store porter-router porter-turns porter-core porter-match porter-capability porter-wire porter-ids porter-daemon porter-callers porter-dbus porter-discover porter-fs porter-http porter-http-reqwest porter-infer porter-provider porter-tailnet porter-tailscale cua-action cua-parse cua-session cua-vendors engine-manifest engine-probe engine-spec engine-supervisor model-catalog model-extract model-http model-openai-compat model-provider model-replay model-wire speech-host-client speech-provider vision-prep"
