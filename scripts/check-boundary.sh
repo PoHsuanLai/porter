@@ -89,12 +89,12 @@ done
 # other. Its default build is checked by RULES above (it reaches none of EFFECTS). A family
 # reaches only what it really uses, so each feature forbids EFFECTS minus what it uses today:
 #   generic:            tokio (porter-proxy's `io`, for the relay's login)
-#   microsoft, google:  tokio, hyper, reqwest (porter-oauth's `io`, porter-http-reqwest)
+#   oauth:              tokio, hyper, reqwest (porter-oauth's `io`, porter-http-reqwest)
 #   api_key:            hyper, reqwest, tokio (porter-http-reqwest)
 #   tailnet:            hyper, tokio (porter-tailscale's `io`)
 #   nextcloud, agent_login: none
-#   set:                every family a daemon maps (what microsoft, google, generic, api_key and
-#                       tailnet reach together), with the system resolver (porter-discover's `io`)
+#   set:                every family a daemon maps (what oauth, generic, api_key and tailnet
+#                       reach together), with the system resolver (porter-discover's `io`)
 # Every feature in porter-families' Cargo.toml must have a row, so a new family cannot slip in
 # unchecked; the direct porter-* edges of each feature are exact too (FAMILY_EDGES).
 MS_FORBIDS="zbus zvariant reqwest ureq oo7 keyring secret-service interprocess latchkey ds-settings"
@@ -102,8 +102,7 @@ DIRECT_FORBIDS="zbus zvariant ureq oo7 keyring secret-service interprocess latch
 declare -A FAMILY_FORBIDS=(
   [nextcloud]="$EFFECTS"
   [generic]="zbus zvariant hyper reqwest ureq oo7 keyring secret-service interprocess latchkey ds-settings"
-  [microsoft]="$DIRECT_FORBIDS"
-  [google]="$DIRECT_FORBIDS"
+  [oauth]="$DIRECT_FORBIDS"
   [api_key]="$DIRECT_FORBIDS"
   [agent_login]="$EFFECTS"
   [tailnet]="$MS_FORBIDS"
@@ -112,8 +111,7 @@ declare -A FAMILY_FORBIDS=(
 declare -A FAMILY_EDGES=(
   [nextcloud]="dav-proto porter-core porter-capability porter-sheet porter-ids porter-dav porter-discover porter-http porter-provider"
   [generic]="dav-proto porter-core porter-capability porter-sheet porter-ids porter-dav porter-discover porter-http porter-provider porter-proxy"
-  [microsoft]="porter-core porter-capability porter-sheet porter-ids porter-discover porter-http porter-http-reqwest porter-oauth porter-provider"
-  [google]="porter-core porter-capability porter-sheet porter-ids porter-http porter-http-reqwest porter-oauth porter-provider"
+  [oauth]="porter-core porter-capability porter-sheet porter-ids porter-http porter-http-reqwest porter-oauth porter-provider"
   [api_key]="porter-core porter-capability porter-sheet porter-ids porter-http porter-http-reqwest porter-provider"
   [agent_login]="porter-core porter-capability porter-sheet porter-ids porter-http porter-provider"
   [tailnet]="porter-core porter-capability porter-sheet porter-ids porter-http porter-provider porter-tailscale"

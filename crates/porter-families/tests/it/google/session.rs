@@ -43,7 +43,7 @@ fn seeded(rig: &Rig) -> (Presented, String) {
     )
 }
 
-async fn open(rig: &Rig) -> porter_families::GoogleSession<Wire> {
+async fn open(rig: &Rig) -> porter_families::OAuthSession<porter_families::Google, Wire> {
     rig.provider
         .open(&account(), seeded(rig).0)
         .await

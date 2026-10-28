@@ -7,30 +7,35 @@
 //! The `set` feature (every family a daemon maps) adds `set`: which provider files a daemon
 //! serves and the family of each, shared by accountd, inferd and syncd.
 //!
-//! Google is the `google` feature: the owner's own Google Cloud client, a sign-in that says it
-//! needs a client id until one is registered (docs/google.md).
+//! OAuth is the `oauth` feature: one provider, sign-in and session for every issuer, the rules of
+//! Google and Microsoft beside them. Google is the owner's own Google Cloud client, a sign-in that
+//! says it needs a client id until one is registered (docs/google.md).
 
 #[cfg(feature = "agent_login")]
 mod agent_login;
 #[cfg(feature = "api_key")]
 mod api_key;
+#[cfg(feature = "oauth")]
+mod conversation;
 mod dispatch;
-#[cfg(any(feature = "microsoft", feature = "google"))]
+#[cfg(feature = "oauth")]
 mod env_common;
-#[cfg(any(feature = "microsoft", feature = "google"))]
+#[cfg(feature = "oauth")]
 mod extend;
 #[cfg(feature = "generic")]
 mod generic;
-#[cfg(feature = "google")]
+#[cfg(feature = "oauth")]
 mod google;
 #[cfg(any(feature = "nextcloud", feature = "generic"))]
 mod io;
 #[cfg(feature = "api_key")]
 mod key;
-#[cfg(feature = "microsoft")]
+#[cfg(feature = "oauth")]
 mod microsoft;
 #[cfg(feature = "nextcloud")]
 mod nextcloud;
+#[cfg(feature = "oauth")]
+mod oauth;
 #[cfg(any(feature = "nextcloud", feature = "generic"))]
 mod password;
 #[cfg(feature = "set")]
@@ -42,23 +47,24 @@ mod tailnet;
 pub use agent_login::{AgentLoginProvider, AgentLoginSession, AgentLoginSignIn};
 #[cfg(feature = "api_key")]
 pub use api_key::{ApiKeyProvider, ApiKeySession, ApiKeySignIn};
+#[cfg(feature = "oauth")]
+pub use conversation::{Conversation, Flow, Move};
 pub use dispatch::{DynProvider, DynSession, DynSignIn};
-#[cfg(any(feature = "microsoft", feature = "google"))]
-pub use env_common::ClientFiles;
+#[cfg(feature = "oauth")]
+pub use env_common::{ClientFiles, Clock, Random};
 #[cfg(feature = "generic")]
 pub use generic::{GenericProvider, GenericSession, GenericSignIn};
-#[cfg(feature = "google")]
-pub use google::{
-    GoogleEnv, GoogleProvider, GoogleSession, GoogleSignIn, Sensitivity, on_use_scopes_of,
-    scope_sensitivity, scopes_of,
-};
+#[cfg(feature = "oauth")]
+pub use google::{Google, GoogleState};
 #[cfg(any(feature = "nextcloud", feature = "generic"))]
 pub use io::{Pacing, SharedDns};
-#[cfg(feature = "microsoft")]
-pub use microsoft::{
-    Clock, MicrosoftEnv, MicrosoftProvider, MicrosoftSession, MicrosoftSignIn, Random, is_personal,
-};
+#[cfg(feature = "oauth")]
+pub use microsoft::{Microsoft, is_personal};
 #[cfg(feature = "nextcloud")]
 pub use nextcloud::{NextcloudProvider, NextcloudSession, NextcloudSignIn};
+#[cfg(feature = "oauth")]
+pub use oauth::{
+    Browser, BrowserFlow, BrowserIssuer, Cx, Grant, OAuthEnv, OAuthProvider, OAuthSession, Standard,
+};
 #[cfg(feature = "tailnet")]
 pub use tailnet::{TailnetProvider, TailnetSession, TailnetSignIn};

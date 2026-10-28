@@ -2,18 +2,27 @@
 //! read per service; a 403 is the tenant refusing the permission (`Absent{TenantConsent}` at
 //! `Probed`, R13), a 404 is a service the account has none of.
 //!
-//! Requests carry no query string (an `EndpointUrl` has none): each path answers with its
-//! default page.
+//! Requests carry no query string: each path answers with its default page.
 
-use super::scopes::is_personal;
+use crate::oauth::{fault, get};
 use porter_capability::{AbsentReason, Claim, Offer, Provenance, Subject};
 use porter_capability::{Capability, CapabilityKind};
 use porter_core::EndpointUrl;
-use porter_http::http::header::{ACCEPT, AUTHORIZATION};
-use porter_http::http::{Method, Response};
-use porter_http::{Http, SensitiveHeader, request_to};
+use porter_http::Http;
+use porter_http::http::Response;
 use porter_provider::{ProviderError, ProviderSpec};
 use serde::Deserialize;
+
+/// The consumer domains of Microsoft accounts: no organisation, so no tenant to consent.
+const PERSONAL_DOMAINS: [&str; 4] = ["outlook.com", "hotmail.com", "live.com", "msn.com"];
+
+/// Whether `address` names a personal (consumer) Microsoft account rather than a work or school
+/// account in an organisation's tenant. The rule is mailo's (`is_personal_microsoft` in its
+/// `presets.rs`): the four consumer domains are personal, anything else is a tenant's.
+pub fn is_personal(address: &str) -> bool {
+    let domain = address.rsplit_once('@').map_or("", |(_, d)| d);
+    PERSONAL_DOMAINS.contains(&domain.trim().to_ascii_lowercase().as_str())
+}
 
 /// The Graph path whose answer shows a service is reachable.
 fn probe_path(kind: CapabilityKind) -> Option<&'static str> {
@@ -74,7 +83,7 @@ pub(super) async fn whoami<H: Http>(
     base: &EndpointUrl,
     token: &str,
 ) -> Result<String, ProviderError> {
-    let me = get(http, base, "/v1.0/me", token).await?;
+    let me = get(http, &at(base, "/v1.0/me"), token).await?;
     let me: Me = match me.status().as_u16() {
         200..=299 => serde_json::from_slice(me.body()).map_err(|_| ProviderError::Unreadable)?,
         status => return Err(fault(status)),
@@ -129,7 +138,7 @@ async fn claim_for<H: Http>(
             Provenance::Discovered,
         ));
     };
-    let answer = get(http, base, path, token).await?;
+    let answer = get(http, &at(base, path), token).await?;
     let absent = |reason| Offer::Absent { kind, reason };
     Ok(match answer.status().as_u16() {
         200..=299 => claim(
@@ -167,31 +176,29 @@ fn with_quota(declared: &Capability, answer: &Response<Vec<u8>>) -> Capability {
     }
 }
 
-/// What a non-success status means for the account.
-fn fault(status: u16) -> ProviderError {
-    match status {
-        401 => ProviderError::Unauthorized,
-        403 => ProviderError::Forbidden,
-        429 | 500..=599 => ProviderError::Unreachable,
-        _ => ProviderError::Unreadable,
-    }
+/// `path` under `base`.
+fn at(base: &EndpointUrl, path: &str) -> String {
+    format!("{}{path}", base.as_str().trim_end_matches('/'))
 }
 
-async fn get<H: Http>(
-    http: &H,
-    base: &EndpointUrl,
-    path: &str,
-    token: &str,
-) -> Result<Response<Vec<u8>>, ProviderError> {
-    let url = EndpointUrl::parse(&format!("{}{path}", base.as_str().trim_end_matches('/')))
-        .map_err(|_| ProviderError::Unreadable)?;
-    let request = request_to(Method::GET, &url)
-        .map_err(|_| ProviderError::Unreadable)?
-        .sensitive_header(AUTHORIZATION, &format!("Bearer {token}"))
-        .header(ACCEPT, "application/json")
-        .body(Vec::new())
-        .map_err(|_| ProviderError::Unreachable)?;
-    http.send(request)
-        .await
-        .map_err(|_| ProviderError::Unreachable)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn personal_and_work_addresses_are_told_apart_by_domain() {
+        const CASES: &[(&str, bool)] = &[
+            ("me@outlook.com", true),
+            ("me@Hotmail.com", true),
+            ("me@live.com", true),
+            ("me@msn.com", true),
+            ("me@contoso.onmicrosoft.com", false),
+            ("me@firm.example", false),
+            ("me@notoutlook.com", false),
+            ("not an address", false),
+        ];
+        for (address, want) in CASES {
+            assert_eq!(is_personal(address), *want, "{address}");
+        }
+    }
 }

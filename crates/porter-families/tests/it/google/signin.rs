@@ -11,7 +11,12 @@ use porter_provider::{
 use porter_sheet::{SignInFault, SignInInput};
 
 /// Signs in by loopback up to the review, with the browser answering.
-async fn to_review(rig: &Rig) -> (porter_families::GoogleSignIn<Wire>, SignInStep) {
+async fn to_review(
+    rig: &Rig,
+) -> (
+    porter_families::Conversation<porter_families::BrowserFlow<porter_families::Google, Wire>>,
+    SignInStep,
+) {
     to_review_from(rig, start()).await
 }
 
@@ -19,7 +24,10 @@ async fn to_review(rig: &Rig) -> (porter_families::GoogleSignIn<Wire>, SignInSte
 async fn to_review_from(
     rig: &Rig,
     begun: SignInStart,
-) -> (porter_families::GoogleSignIn<Wire>, SignInStep) {
+) -> (
+    porter_families::Conversation<porter_families::BrowserFlow<porter_families::Google, Wire>>,
+    SignInStep,
+) {
     let mut signin = rig.provider.sign_in(begun).expect("sign in");
     let SignInStep::OpenBrowser { url } = signin.next(SignInInput::Start).await else {
         panic!("expected the browser")

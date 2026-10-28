@@ -17,9 +17,7 @@ mod provider_names;
 pub use provider_names::ProviderNames;
 
 use crate::dispatch::DynProvider;
-use crate::{
-    ClientFiles, SharedDns, agent_login, api_key, generic, google, microsoft, nextcloud, tailnet,
-};
+use crate::{ClientFiles, SharedDns, agent_login, api_key, generic, nextcloud, oauth, tailnet};
 use porter_core::{AuthKind, EndpointUrl};
 use porter_discover::{Dns, DnsFault, HickoryDns, MxRecord, SrvRecord};
 use porter_http::SharedHttp;
@@ -275,8 +273,7 @@ type Build = fn(ProviderSpec, &FamilyIo) -> Built;
 static FAMILIES: &[Build] = &[
     nextcloud::build,
     generic::build,
-    microsoft::build,
-    google::build,
+    oauth::build,
     api_key::build,
     agent_login::build,
     tailnet::build,

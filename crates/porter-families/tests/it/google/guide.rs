@@ -3,9 +3,8 @@
 //! clients.toml row it reads.
 
 use porter_capability::CapabilityKind as K;
-use porter_families::{Sensitivity, on_use_scopes_of, scope_sensitivity, scopes_of};
 use porter_oauth::ClientRegistry;
-use porter_provider::{ClientChannel, Issuer};
+use porter_provider::{ClientChannel, Issuer, ScopeClass};
 
 fn guide() -> String {
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/google.md");
@@ -23,15 +22,20 @@ fn every_scope_the_code_asks_is_in_the_guide_with_its_class() {
         K::Storage,
         K::Photos,
     ] {
-        for scope in scopes_of(kind).iter().chain(on_use_scopes_of(kind)) {
+        let data = Issuer::Google.data();
+        for scope in data
+            .kind_scopes(kind)
+            .into_iter()
+            .chain(data.on_use_scopes(&[kind]))
+        {
             let row = text
                 .lines()
                 .find(|line| line.starts_with('|') && line.contains(&format!("`{scope}`")))
                 .unwrap_or_else(|| panic!("{scope} is not in a table row of the guide"));
-            let class = match scope_sensitivity(scope) {
-                Sensitivity::NonSensitive => "non-sensitive",
-                Sensitivity::Sensitive => "sensitive",
-                Sensitivity::Restricted => "restricted",
+            let class = match data.class_of(scope) {
+                ScopeClass::NonSensitive => "non-sensitive",
+                ScopeClass::Sensitive => "sensitive",
+                ScopeClass::Restricted => "restricted",
             };
             assert!(row.contains(class), "{scope}: {row}");
             // `sensitive` is also inside `non-sensitive`, so the strongest word must match.

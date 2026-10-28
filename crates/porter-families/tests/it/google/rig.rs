@@ -6,7 +6,7 @@ use porter_core::Audience;
 use porter_fake_servers::browser::split_loopback;
 use porter_fake_servers::http::{Scheme, send};
 use porter_fake_servers::{Google, shipped};
-use porter_families::{GoogleEnv, GoogleProvider};
+use porter_families::{Google as GoogleRules, OAuthEnv, OAuthProvider};
 use porter_http::http::{Request, Response};
 use porter_http::{Http, HttpError};
 use porter_ids::UnixSeconds;
@@ -91,7 +91,7 @@ pub const BYO: Row = Row::Of(ClientTraits {
 pub struct Rig {
     pub google: Google,
     pub clock: Arc<AtomicI64>,
-    pub provider: GoogleProvider<Wire>,
+    pub provider: OAuthProvider<GoogleRules, Wire>,
     pub spec: ProviderSpec,
     pub wire: Wire,
 }
@@ -132,7 +132,7 @@ impl Rig {
         let counter = Arc::new(AtomicI64::new(0));
         let wire = Wire::default();
         // The clock is replaced below by the counting one.
-        let env = GoogleEnv::new(
+        let env = OAuthEnv::new(
             wire.clone(),
             registry,
             porter_ids::clock::FixedClock::new(UnixSeconds(0)),
@@ -149,7 +149,7 @@ impl Rig {
             let n = u8::try_from(counter.fetch_add(1, Ordering::SeqCst) % 200).unwrap_or(0);
             Some(([n; 32], [n.wrapping_add(1); 16]))
         }));
-        let provider = GoogleProvider::with_env(spec.clone(), env);
+        let provider = OAuthProvider::with_env(GoogleRules, spec.clone(), env);
         Self {
             google,
             clock,

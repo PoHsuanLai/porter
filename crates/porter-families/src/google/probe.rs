@@ -10,38 +10,13 @@
 
 use super::apis_of;
 use super::scopes::Granted;
+use crate::oauth::{fault, get};
 use porter_capability::{AbsentReason, Claim, Offer, Provenance, Subject};
 use porter_capability::{Capability, CapabilityKind};
-use porter_core::{EndpointUrl, Family};
-use porter_http::http::header::{ACCEPT, AUTHORIZATION};
-use porter_http::http::{Method, Response};
-use porter_http::{Http, SensitiveHeader, request};
-use porter_ids::WebUrl;
+use porter_core::Family;
+use porter_http::Http;
+use porter_http::http::Response;
 use porter_provider::{ProviderError, ProviderSpec};
-use serde::Deserialize;
-
-#[derive(Deserialize)]
-struct UserInfo {
-    email: Option<String>,
-}
-
-/// The account's address, from the userinfo endpoint.
-pub(super) async fn whoami<H: Http>(
-    http: &H,
-    userinfo: &EndpointUrl,
-    token: &str,
-) -> Result<String, ProviderError> {
-    let answer = get(http, userinfo.as_str(), token).await?;
-    let info: UserInfo = match answer.status().as_u16() {
-        200..=299 => {
-            serde_json::from_slice(answer.body()).map_err(|_| ProviderError::Unreadable)?
-        }
-        status => return Err(fault(status)),
-    };
-    info.email
-        .filter(|a| !a.is_empty())
-        .ok_or(ProviderError::Unreadable)
-}
 
 /// Whether an address is a consumer's (no administrator to blame for a refusal).
 fn is_personal(address: &str) -> bool {
@@ -150,32 +125,6 @@ fn refusal_reason(answer: &Response<Vec<u8>>, address: &str) -> AbsentReason {
     }
 }
 
-/// What a non-success status means for the account.
-pub(super) fn fault(status: u16) -> ProviderError {
-    match status {
-        401 => ProviderError::Unauthorized,
-        403 => ProviderError::Forbidden,
-        429 | 500..=599 => ProviderError::Unreachable,
-        _ => ProviderError::Unreadable,
-    }
-}
-
-async fn get<H: Http>(
-    http: &H,
-    url: &str,
-    token: &str,
-) -> Result<Response<Vec<u8>>, ProviderError> {
-    let url = WebUrl::parse(url).map_err(|_| ProviderError::Unreadable)?;
-    let request = request(Method::GET, &url)
-        .sensitive_header(AUTHORIZATION, &format!("Bearer {token}"))
-        .header(ACCEPT, "application/json")
-        .body(Vec::new())
-        .map_err(|_| ProviderError::Unreachable)?;
-    http.send(request)
-        .await
-        .map_err(|_| ProviderError::Unreachable)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -222,20 +171,6 @@ mod tests {
         ];
         for (name, text, address, want) in CASES {
             assert_eq!(refusal_reason(&body(text), address), *want, "{name}");
-        }
-    }
-
-    #[test]
-    fn statuses_map_to_what_the_account_needs() {
-        const CASES: &[(u16, ProviderError)] = &[
-            (401, ProviderError::Unauthorized),
-            (403, ProviderError::Forbidden),
-            (429, ProviderError::Unreachable),
-            (503, ProviderError::Unreachable),
-            (418, ProviderError::Unreadable),
-        ];
-        for (status, want) in CASES {
-            assert_eq!(&fault(*status), want, "{status}");
         }
     }
 }

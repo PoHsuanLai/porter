@@ -206,7 +206,7 @@ impl GoogleHandle {
         &self.shared.base
     }
 
-    /// Where userinfo is read: `GoogleEnv::with_userinfo` takes it.
+    /// Where userinfo is read: `OAuthEnv::with_userinfo` takes it.
     pub fn userinfo_url(&self) -> String {
         format!("{}/v1/userinfo", self.shared.base)
     }

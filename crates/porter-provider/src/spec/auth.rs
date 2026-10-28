@@ -23,7 +23,7 @@ impl AuthSpec {
     }
 }
 
-/// An OAuth issuer: its endpoints are code, its client ids are deployment configuration, one
+/// An OAuth issuer: its endpoints and scopes are data (`issuers.toml`), its client ids are deployment configuration, one
 /// per issuer per build channel (R5), never part of an account.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -44,6 +44,8 @@ pub enum Issuer {
     /// OpenAI (ChatGPT sign-in, R9).
     #[serde(rename = "openai")]
     OpenAi,
+    /// Yahoo (mail over IMAP and SMTP with XOAUTH2).
+    Yahoo,
 }
 
 /// Where an issuer's pages and APIs are. A client registration may point elsewhere (a sovereign
@@ -59,60 +61,9 @@ pub struct IssuerEndpoints {
 }
 
 impl Issuer {
-    /// The endpoints the issuer publishes. Microsoft's are the `common` tenant (work, school and
-    /// personal accounts); a client registration that wants `organizations` or `consumers`
-    /// carries its own `endpoints`. Google's are public facts and carry no client id. Dropbox,
-    /// Box and Fastmail have no RFC 7009 revoke (Dropbox's wants a bearer header, Box's the client
-    /// secret), so theirs is absent; Microsoft has none at all.
+    /// The endpoints the issuer publishes (`issuers.toml`).
     pub fn endpoints(self) -> IssuerEndpoints {
-        let rows = match self {
-            Issuer::Google => (
-                "https://accounts.google.com/o/oauth2/v2/auth",
-                "https://oauth2.googleapis.com/token",
-                Some("https://oauth2.googleapis.com/revoke"),
-            ),
-            Issuer::Microsoft => (
-                "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
-                "https://login.microsoftonline.com/common/oauth2/v2.0/token",
-                None,
-            ),
-            Issuer::Dropbox => (
-                "https://www.dropbox.com/oauth2/authorize",
-                "https://api.dropboxapi.com/oauth2/token",
-                None,
-            ),
-            Issuer::Box => (
-                "https://account.box.com/api/oauth2/authorize",
-                "https://api.box.com/oauth2/token",
-                None,
-            ),
-            Issuer::Fastmail => (
-                "https://api.fastmail.com/oauth/authorize",
-                "https://api.fastmail.com/oauth/refresh",
-                None,
-            ),
-            // The key mint: the page the person approves on, and the call that turns the code
-            // into a key.
-            Issuer::OpenRouter => (
-                "https://openrouter.ai/auth",
-                "https://openrouter.ai/api/v1/auth/keys",
-                None,
-            ),
-            Issuer::OpenAi => (
-                "https://auth.openai.com/oauth/authorize",
-                "https://auth.openai.com/oauth/token",
-                None,
-            ),
-        };
-        let url = |text: &str| {
-            EndpointUrl::parse(text)
-                .unwrap_or_else(|_| unreachable!("{text} is a literal endpoint URL"))
-        };
-        IssuerEndpoints {
-            authorize: url(rows.0),
-            token: url(rows.1),
-            revoke: rows.2.map(url),
-        }
+        self.data().endpoints()
     }
 }
 
@@ -120,7 +71,7 @@ impl Issuer {
 mod tests {
     use super::*;
 
-    const ALL: [Issuer; 7] = [
+    const ALL: [Issuer; 8] = [
         Issuer::Google,
         Issuer::Microsoft,
         Issuer::Dropbox,
@@ -128,6 +79,7 @@ mod tests {
         Issuer::Fastmail,
         Issuer::OpenRouter,
         Issuer::OpenAi,
+        Issuer::Yahoo,
     ];
 
     #[test]
@@ -143,6 +95,16 @@ mod tests {
         assert!(revokes(Issuer::Google));
         assert!(!revokes(Issuer::Microsoft));
         assert!(!revokes(Issuer::OpenRouter));
+    }
+
+    #[test]
+    fn yahoo_is_named_yahoo_in_a_file_and_signs_in_on_its_own_host() {
+        let spec: AuthSpec = toml::from_str("kind = \"oauth_pkce\"\nissuer = \"yahoo\"").unwrap();
+        let issuer = spec.issuer.unwrap();
+        assert_eq!(issuer, Issuer::Yahoo);
+        let e = issuer.endpoints();
+        assert!(e.authorize.as_str().contains("login.yahoo.com"));
+        assert!(e.token.as_str().contains("login.yahoo.com"));
     }
 
     #[test]

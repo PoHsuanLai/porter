@@ -24,7 +24,12 @@ fn grant_types(rig: &Rig) -> Vec<String> {
 }
 
 /// Signs in by loopback up to the review, with the browser answering.
-async fn to_review(rig: &Rig) -> (porter_families::MicrosoftSignIn<Wire>, SignInStep) {
+async fn to_review(
+    rig: &Rig,
+) -> (
+    porter_families::Conversation<porter_families::BrowserFlow<porter_families::Microsoft, Wire>>,
+    SignInStep,
+) {
     to_review_from(rig, start()).await
 }
 
@@ -32,7 +37,10 @@ async fn to_review(rig: &Rig) -> (porter_families::MicrosoftSignIn<Wire>, SignIn
 async fn to_review_from(
     rig: &Rig,
     begun: SignInStart,
-) -> (porter_families::MicrosoftSignIn<Wire>, SignInStep) {
+) -> (
+    porter_families::Conversation<porter_families::BrowserFlow<porter_families::Microsoft, Wire>>,
+    SignInStep,
+) {
     let mut signin = rig.provider.sign_in(begun).expect("sign in");
     let SignInStep::OpenBrowser { url } = signin.next(SignInInput::Start).await else {
         panic!("expected the browser")
@@ -262,7 +270,7 @@ async fn a_client_id_written_after_start_is_used_by_the_next_sign_in() {
         shipped: dir.join("shipped.toml"),
         own: dir.join("clients.toml"),
     };
-    let env = porter_families::MicrosoftEnv::new(
+    let env = porter_families::OAuthEnv::new(
         Wire {
             graph: std::sync::Arc::clone(&rig.graph),
         },
@@ -271,7 +279,8 @@ async fn a_client_id_written_after_start_is_used_by_the_next_sign_in() {
     )
     .with_channel(porter_provider::ClientChannel::Development)
     .with_files(files.clone());
-    let provider = porter_families::MicrosoftProvider::with_env(spec(), env);
+    let provider =
+        porter_families::OAuthProvider::with_env(porter_families::Microsoft, spec(), env);
 
     // ux-1: the add list leaves it out until then.
     assert_eq!(

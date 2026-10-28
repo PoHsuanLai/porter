@@ -3,11 +3,13 @@
 
 mod auth;
 mod discovery;
+mod issuer;
 mod linked;
 mod matching;
 
 pub use auth::{AuthSpec, Issuer, IssuerEndpoints};
 pub use discovery::{Discovery, Port};
+pub use issuer::{ApiRow, IssuerData, ScopeClass, ScopeRow};
 pub use linked::{AuthOrigin, LinkedOrigin};
 pub use matching::{DomainMatch, DomainName, Matching};
 

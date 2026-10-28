@@ -5,7 +5,7 @@ use porter_core::Audience;
 use porter_fake_servers::browser::split_loopback;
 use porter_fake_servers::http::{Scheme, send};
 use porter_fake_servers::{FakeIssuer, IssuerHandle, Running, shipped};
-use porter_families::{MicrosoftEnv, MicrosoftProvider};
+use porter_families::{Microsoft, OAuthEnv, OAuthProvider};
 use porter_http::http::{Request, Response};
 use porter_http::{Http, HttpError};
 use porter_ids::UnixSeconds;
@@ -142,7 +142,7 @@ pub struct Rig {
     pub issuer: Running<IssuerHandle>,
     pub graph: Arc<Graph>,
     pub clock: Arc<AtomicI64>,
-    pub provider: MicrosoftProvider<Wire>,
+    pub provider: OAuthProvider<Microsoft, Wire>,
 }
 
 pub fn client(issuer: &IssuerHandle) -> ClientEntry {
@@ -178,7 +178,7 @@ impl Rig {
         let clock = Arc::new(AtomicI64::new(1_000_000));
         let ticking = Arc::clone(&clock);
         let counter = Arc::new(AtomicI64::new(0));
-        let env = MicrosoftEnv::new(
+        let env = OAuthEnv::new(
             Wire {
                 graph: Arc::clone(&graph),
             },
@@ -199,7 +199,7 @@ impl Rig {
             issuer,
             graph,
             clock,
-            provider: MicrosoftProvider::with_env(spec, env),
+            provider: OAuthProvider::with_env(Microsoft, spec, env),
         }
     }
 

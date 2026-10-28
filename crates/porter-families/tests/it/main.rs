@@ -8,9 +8,9 @@ mod agent_login;
 mod api_key;
 mod common;
 mod generic;
-#[cfg(feature = "google")]
+#[cfg(feature = "oauth")]
 mod google;
-#[cfg(feature = "microsoft")]
+#[cfg(feature = "oauth")]
 mod microsoft;
 mod nextcloud;
 
