@@ -33,4 +33,4 @@ pub use loopback::{
 pub use loopback_io::{LoopbackServer, RedirectPath};
 pub use pkce::{CodeChallenge, OAuthState, Pkce};
 pub use registry::{ClientRegistry, ClientTraits, RegistryError, endpoints_of, from_mailo};
-pub use renewal::{RENEW_MARGIN_SECONDS, RenewOutcome, Renewal, renew, renewal};
+pub use renewal::{RENEW_MARGIN_SECONDS, RenewOutcome, is_due, renew};

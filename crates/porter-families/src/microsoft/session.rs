@@ -17,7 +17,7 @@ use porter_core::AccountId;
 use porter_core::{Audience, Credential, IssuedToken, TokenKind};
 use porter_http::Http;
 use porter_ids::UnixSeconds;
-use porter_oauth::{ExchangeFault, Renewal, endpoints_of, refresh_scoped_detailed, renewal};
+use porter_oauth::{ExchangeFault, endpoints_of, is_due, refresh_scoped_detailed};
 use porter_provider::{Presented, ProviderError, ProviderSession, ProviderSpec};
 use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard};
@@ -113,7 +113,7 @@ impl<H: Http> MicrosoftSession<H> {
         self.state()
             .minted
             .get(scope)
-            .filter(|t| renewal(t.expires, now) == Renewal::Fresh)
+            .filter(|t| !is_due(t.expires, now))
             .cloned()
     }
 }

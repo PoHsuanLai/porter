@@ -23,7 +23,7 @@ use porter_core::{Audience, Credential, Family, IssuedToken, TokenKind};
 use porter_http::Http;
 use porter_ids::UnixSeconds;
 use porter_oauth::{
-    ExchangeFault, Renewal, endpoints_of, refresh_scoped_detailed, renewal,
+    ExchangeFault, endpoints_of, is_due, refresh_scoped_detailed,
 };
 use porter_provider::{Issuer, Presented, ProviderError, ProviderSession, ProviderSpec};
 use std::collections::HashMap;
@@ -139,7 +139,7 @@ impl<H: Http> GoogleSession<H> {
         self.state()
             .minted
             .get(key)
-            .filter(|t| renewal(t.expires, now) == Renewal::Fresh)
+            .filter(|t| !is_due(t.expires, now))
             .cloned()
     }
 
