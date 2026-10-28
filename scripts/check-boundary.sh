@@ -16,6 +16,7 @@ cd "$(dirname "$0")/.."
 # (see ONE CLIENT below), and reached through it by the families that send directly. porter-families reaches none with default features;
 # each of its family features is checked on its own in FAMILY_FORBIDS below. porter-drive and
 # porter-drive-fuse reach tokio (a drive fetches in the background) but never a bus or a client.
+# porter-calendar reaches zbus only through its `eds` feature.
 # porter-mountd, the mount helper outside syncd's sandbox, reaches no effect crate and none of
 # porter's own: std, rustix and listenfd only (no network, keyring or account data).
 EFFECTS="zbus zvariant tokio reqwest hyper ureq oo7 keyring secret-service interprocess latchkey ds-settings"
@@ -54,6 +55,7 @@ RULES=(
   "porter-tailscale: $EFFECTS"
   "porter-tailnet: $EFFECTS"
   "dav-proto: $EFFECTS"
+  "porter-calendar: $EFFECTS"
   "nextcloud-proto: $EFFECTS"
   "generic-proto: $EFFECTS"
   "oauth-probe-proto: $EFFECTS"
@@ -366,6 +368,7 @@ EDGES=(
   "porter-tailscale: porter-ids"
   "porter-tailnet: porter-ids porter-fs porter-tailscale"
   "dav-proto:"
+  "porter-calendar: dav-proto porter-http porter-ids"
   "nextcloud-proto: porter-core porter-capability porter-ids"
   "oauth-probe-proto: porter-capability porter-ids"
   "generic-proto: dav-proto porter-core porter-capability porter-ids porter-provider porter-sheet"

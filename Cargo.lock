@@ -2538,6 +2538,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "porter-calendar"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "dav-proto",
+ "porter-fake-servers",
+ "porter-http",
+ "porter-http-relay",
+ "porter-ids",
+ "serde_json",
+ "test-kit",
+ "thiserror",
+ "tokio",
+ "zbus",
+]
+
+[[package]]
 name = "porter-callers"
 version = "0.1.0"
 dependencies = [

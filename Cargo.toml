@@ -42,6 +42,7 @@ members = [
   "crates/porter-oauth",
   "crates/porter-discover",
   "crates/dav-proto",
+  "crates/porter-calendar",
   "crates/nextcloud-proto",
   "crates/generic-proto",
   "crates/oauth-probe-proto",
@@ -121,6 +122,7 @@ porter-proxy    = { path = "crates/porter-proxy" }
 porter-oauth    = { path = "crates/porter-oauth" }
 porter-discover = { path = "crates/porter-discover" }
 dav-proto       = { path = "crates/dav-proto" }
+porter-calendar = { path = "crates/porter-calendar" }
 nextcloud-proto = { path = "crates/nextcloud-proto" }
 generic-proto   = { path = "crates/generic-proto" }
 oauth-probe-proto = { path = "crates/oauth-probe-proto" }
