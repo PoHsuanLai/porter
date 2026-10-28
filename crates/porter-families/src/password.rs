@@ -120,26 +120,6 @@ pub(crate) fn join(base: &EndpointUrl, path: &str) -> Option<EndpointUrl> {
     EndpointUrl::parse(&format!("{base}/{}", path.trim_start_matches('/'))).ok()
 }
 
-/// What an `href` names, on `base`'s server: a path on its origin, or a URL of that origin.
-pub(crate) fn resolve(base: &EndpointUrl, href: &str) -> Option<EndpointUrl> {
-    let href = href.trim();
-    let url = match href.starts_with('/') {
-        true => EndpointUrl::parse(&format!("{}{href}", root_of(base))),
-        false => EndpointUrl::parse(href),
-    }
-    .ok()?;
-    (url.origin() == base.origin()).then_some(url)
-}
-
-/// `scheme://authority` of `url`, as written.
-fn root_of(url: &EndpointUrl) -> &str {
-    let text = url.as_str();
-    let after = text.find("://").map_or(0, |at| at + 3);
-    text[after..]
-        .find('/')
-        .map_or(text, |at| &text[..after + at])
-}
-
 /// A path segment, percent-encoded (an `@` or a space in a user id is not a URL character).
 pub(crate) fn segment(text: &str) -> String {
     porter_ids::percent::encode_unreserved(text)

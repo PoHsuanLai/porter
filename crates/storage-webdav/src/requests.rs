@@ -2,11 +2,15 @@
 //! `http` crate takes as a URI.
 
 use crate::entry::CONTENT_LENGTH;
+use dav_proto::http::bytes;
 use dav_proto::{Depth, SyncLevel, names};
-use porter_dav::{propfind, report_sync_collection};
-use porter_http::HttpError;
 use porter_http::http::Request;
+use porter_http::{HttpError, uri};
 use porter_ids::WebUrl;
+
+fn propfind(url: WebUrl, depth: Depth, props: &[&str]) -> Result<Request<Vec<u8>>, HttpError> {
+    Ok(bytes::propfind(uri(&url)?, depth, props))
+}
 
 /// A PROPFIND at depth 1 of what a listing needs.
 pub fn list(url: WebUrl) -> Result<Request<Vec<u8>>, HttpError> {
@@ -38,12 +42,12 @@ pub fn quota(url: WebUrl) -> Result<Request<Vec<u8>>, HttpError> {
 /// A sync-collection REPORT from `token` (empty for the first listing) over everything below
 /// the folder (RFC 6578 section 3.3, `sync-level` `infinite`), asking for what a listing reads.
 pub fn sync(url: WebUrl, token: &str) -> Result<Request<Vec<u8>>, HttpError> {
-    report_sync_collection(
-        url,
+    Ok(bytes::sync_collection(
+        uri(&url)?,
         token,
         SyncLevel::Infinite,
         &[names::GETETAG, CONTENT_LENGTH, names::RESOURCETYPE],
-    )
+    ))
 }
 
 #[cfg(test)]

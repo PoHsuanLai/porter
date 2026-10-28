@@ -4,15 +4,13 @@
 
 use crate::io::Io;
 use crate::password::{authorize, basic, endpoint, fault_of, join};
-use dav_proto::Depth;
-use dav_proto::names::CURRENT_USER_PRINCIPAL;
+use dav_proto::discover::{Error as WalkError, Reach, Scope, Walk};
 use porter_capability::CapabilityKind;
 use porter_capability::{AbsentReason, Claim, Offer, Provenance, Subject};
 use porter_core::{EndpointUrl, Family, LoginName, SecretText, ServiceEndpoint};
-use porter_dav::propfind;
 use porter_discover::well_known_found;
 use porter_http::http::Method;
-use porter_http::{Http, request_to, web_url};
+use porter_http::{Http, request_to, uri, web_url};
 use porter_provider::ProviderSpec;
 use porter_sheet::SignInFault;
 
@@ -105,19 +103,16 @@ async fn check(
     login: &LoginName,
     password: &SecretText,
 ) -> Result<bool, SignInFault> {
-    let mut request = propfind(
-        web_url(url).map_err(fault_of)?,
-        Depth::Zero,
-        &[CURRENT_USER_PRINCIPAL],
-    )
-    .map_err(fault_of)?;
+    let endpoint = uri(&web_url(url).map_err(fault_of)?).map_err(fault_of)?;
+    let (mut walk, mut request) = Walk::start(endpoint, Reach::Principal, &[], Scope::SameOrigin);
     authorize(&mut request, &basic(&login.0, password)).map_err(fault_of)?;
     let response = io.http.send(request).await.map_err(fault_of)?;
-    match response.status().as_u16() {
-        401 | 403 => Err(SignInFault::Refused),
-        200..=299 => Ok(true),
-        500..=599 => Err(SignInFault::Unreachable),
-        _ => Ok(false),
+    // Any success is a server that speaks DAV there, whatever it put in the body.
+    match walk.advance(&response) {
+        Ok(_) | Err(WalkError::Unreadable) => Ok(true),
+        Err(WalkError::Unauthorized) => Err(SignInFault::Refused),
+        Err(WalkError::Status(500..=599)) => Err(SignInFault::Unreachable),
+        Err(_) => Ok(false),
     }
 }
 

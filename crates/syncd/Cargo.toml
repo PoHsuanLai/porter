@@ -18,8 +18,7 @@ porter-ids = { workspace = true }
 porter-daemon = { workspace = true }
 porter-fs = { workspace = true }
 porter-client = { workspace = true, features = ["dbus", "in-process", "relays"] }
-dav-proto = { workspace = true }
-porter-dav = { workspace = true }
+dav-proto = { workspace = true, features = ["discover"] }
 porter-dbus = { workspace = true, features = ["callers-file"] }
 porter-drive = { workspace = true }
 porter-drive-fuse = { workspace = true }

@@ -31,6 +31,9 @@ pub const ADDRESS_DATA: &str = "urn:ietf:params:xml:ns:carddav:address-data";
 /// `calendar-data`, an object's iCalendar text (RFC 4791 section 9.6).
 pub const CALENDAR_DATA: &str = "urn:ietf:params:xml:ns:caldav:calendar-data";
 
+/// Apple's calendar colour property, which Nextcloud, iCloud and Radicale all serve.
+pub const CALENDAR_COLOR: &str = "http://apple.com/ns/ical/calendar-color";
+
 /// Splits `ns:local` or `ns/local` at the last separator: the namespace as XML writes it
 /// (`DAV:` keeps its colon, `urn:...:carddav` loses the joining one) and the local name.
 pub(crate) fn split(name: &str) -> (&str, &str) {

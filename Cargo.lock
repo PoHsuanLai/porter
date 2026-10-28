@@ -2575,17 +2575,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "porter-dav"
-version = "0.1.0"
-dependencies = [
- "dav-proto",
- "porter-http",
- "porter-ids",
- "roxmltree",
- "test-kit",
-]
-
-[[package]]
 name = "porter-dbus"
 version = "0.1.0"
 dependencies = [
@@ -2740,7 +2729,6 @@ dependencies = [
  "dav-proto",
  "porter-capability",
  "porter-core",
- "porter-dav",
  "porter-discover",
  "porter-fake",
  "porter-fake-servers",
@@ -4049,7 +4037,6 @@ dependencies = [
  "base64 0.22.1",
  "dav-proto",
  "porter-capability",
- "porter-dav",
  "porter-fake-servers",
  "porter-http",
  "porter-http-relay",
@@ -4119,7 +4106,6 @@ dependencies = [
  "porter-client",
  "porter-core",
  "porter-daemon",
- "porter-dav",
  "porter-dbus",
  "porter-drive",
  "porter-drive-fuse",

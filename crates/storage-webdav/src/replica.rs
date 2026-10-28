@@ -129,7 +129,7 @@ impl<H: Http> WebDavReplica<H> {
         let text = String::from_utf8_lossy(response.body());
         let status = parse_multistatus(&text)
             .map_err(|_| ReplicaError::Transient(porter_sync::RetryAfter(30)))?;
-        let reported = porter_dav::quota(&status);
+        let reported = dav_proto::quota(&status);
         let used = reported.used.unwrap_or(0);
         Ok(Quota {
             used: Bytes(used),

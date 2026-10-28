@@ -5,7 +5,7 @@
 use crate::error::HttpError;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 use http::request::Builder;
-use http::{Method, Request, Response};
+use http::{Method, Request, Response, Uri};
 use porter_core::EndpointUrl;
 use porter_ids::{UnixSeconds, UrlScheme, WebUrl};
 
@@ -14,6 +14,12 @@ use porter_ids::{UnixSeconds, UrlScheme, WebUrl};
 /// when the body is set.
 pub fn request(method: Method, url: &WebUrl) -> Builder {
     Request::builder().method(method).uri(url.as_str())
+}
+
+/// A web URL as the `http` crate's URI, for a builder that takes one. `Malformed` when the URL
+/// is not one the `http` crate takes as a URI.
+pub fn uri(url: &WebUrl) -> Result<Uri, HttpError> {
+    url.as_str().parse().map_err(|_| HttpError::Malformed)
 }
 
 /// A request to an endpoint's URL. A scheme that is not HTTP is `Malformed`, and plain `http`

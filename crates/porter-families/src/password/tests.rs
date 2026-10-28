@@ -49,41 +49,13 @@ fn a_typed_server_becomes_an_https_url_and_plain_http_is_for_this_computer_only(
 }
 
 #[test]
-fn paths_join_and_hrefs_resolve_on_the_servers_own_origin() {
+fn paths_join_on_the_servers_own_origin() {
     let base = url("https://example.org/nextcloud");
     assert_eq!(
         join(&base, "/index.php/login/v2")
             .map(|u| u.to_string())
             .as_deref(),
         Some("https://example.org/nextcloud/index.php/login/v2")
-    );
-    const CASES: &[(&str, &str, Option<&str>)] = &[
-        (
-            "a path",
-            "/remote.php/dav/principals/users/ada/",
-            Some("https://example.org/remote.php/dav/principals/users/ada/"),
-        ),
-        (
-            "a url of the origin",
-            "https://example.org/dav/",
-            Some("https://example.org/dav/"),
-        ),
-        ("a url of another origin", "https://evil.example/dav/", None),
-        ("a relative href", "dav/", None),
-    ];
-    for (case, href, want) in CASES {
-        assert_eq!(
-            resolve(&base, href).map(|u| u.to_string()).as_deref(),
-            *want,
-            "{case}"
-        );
-    }
-    let with_port = url("http://127.0.0.1:8080/sub");
-    assert_eq!(
-        resolve(&with_port, "/dav/")
-            .map(|u| u.to_string())
-            .as_deref(),
-        Some("http://127.0.0.1:8080/dav/")
     );
 }
 

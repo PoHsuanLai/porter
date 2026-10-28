@@ -17,8 +17,7 @@ porter-provider = { workspace = true }
 porter-http = { workspace = true }
 porter-http-reqwest = { workspace = true, optional = true }
 porter-proxy = { workspace = true, optional = true }
-dav-proto = { workspace = true, optional = true }
-porter-dav = { workspace = true, optional = true }
+dav-proto = { workspace = true, optional = true, features = ["discover"] }
 porter-discover = { workspace = true, optional = true }
 porter-oauth = { workspace = true, optional = true }
 porter-tailscale = { workspace = true, optional = true }
@@ -45,10 +44,10 @@ porter-match = { workspace = true }
 # api_key, agent_login and tailnet, with the system resolver.
 set = ["nextcloud", "generic", "oauth", "api_key", "agent_login", "tailnet", "dep:thiserror", "porter-discover/io", "dep:porter-http-reqwest"]
 # Nextcloud: Login Flow v2, OCS discovery, WebDAV, CalDAV, CardDAV, Notes.
-nextcloud = ["dep:dav-proto", "dep:porter-dav", "dep:porter-discover", "dep:base64", "dep:serde_json"]
+nextcloud = ["dep:dav-proto", "dep:porter-discover", "dep:base64", "dep:serde_json"]
 # Generic IMAP/SMTP and DAV with a password or app password, found by autoconfig.
 # The password is tried at the incoming mail server before the account is added (the relay's own login).
-generic = ["dep:dav-proto", "dep:porter-dav", "dep:porter-discover", "dep:base64", "dep:porter-proxy", "porter-proxy/tls", "dep:tokio"]
+generic = ["dep:dav-proto", "dep:porter-discover", "dep:base64", "dep:porter-proxy", "porter-proxy/tls", "dep:tokio"]
 # OAuth: PKCE through a loopback redirect, one family for every issuer (the rules of Google and
 # Microsoft, and any issuer whose data in porter-provider's `issuers.toml` says who answered).
 # Google: Calendar, People, Tasks, the Drive app folder, Photos, and Gmail IMAP/SMTP XOAUTH2 for a

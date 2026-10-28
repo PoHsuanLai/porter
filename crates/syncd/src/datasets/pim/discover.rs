@@ -1,20 +1,15 @@
 //! The collections of an account: from the CalDAV or CardDAV endpoint to the principal, from
 //! the principal to the calendar or address book home set, and the home's calendars or address
-//! books with their names and colours (RFC 5397, 4791, 6352; the requests and the reading are
-//! dav-proto's and porter-dav's, the walk follows mailo `crates/mail-pim/src/dav/mod.rs`, same author,
-//! MIT OR Apache-2.0).
+//! books with their names and colours (RFC 5397, 4791, 6352). The walk is dav-proto's
+//! [`Walk`]; this sends its requests and reads what it found.
 //!
 //! A server that names no principal is read as if the endpoint were the home set, and an
 //! endpoint that is itself a collection is its own only member.
 
 use super::PimKind;
-use dav_proto::{Depth, Multistatus, names, parse_multistatus};
-use porter_dav::{Home, collections, current_user_principal, home_set, propfind};
+use dav_proto::discover::{Home, Next, Reach, Scope, Walk};
 use porter_http::{Http, HttpError};
 use porter_ids::WebUrl;
-
-/// Apple's calendar colour property, which Nextcloud, iCloud and Radicale all serve.
-pub const CALENDAR_COLOR: &str = "http://apple.com/ns/ical/calendar-color";
 
 /// One calendar or address book on the server.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,36 +48,6 @@ fn home_of(kind: PimKind) -> Home {
     }
 }
 
-fn home_property(kind: PimKind) -> &'static str {
-    match kind {
-        PimKind::Calendar | PimKind::Tasks => names::CALENDAR_HOME_SET,
-        PimKind::Contacts => names::ADDRESSBOOK_HOME_SET,
-    }
-}
-
-/// `scheme://authority` of a URL as written.
-fn origin_of(url: &WebUrl) -> &str {
-    let text = url.as_str();
-    let after = text.find("://").map_or(0, |at| at + 3);
-    let end = text[after..]
-        .find(['/', '?'])
-        .map_or(text.len(), |at| after + at);
-    &text[..end]
-}
-
-/// The URL an href names, against the endpoint's origin; always with a trailing slash when
-/// `collection`.
-fn resolve(endpoint: &WebUrl, href: &str, collection: bool) -> Result<WebUrl, DiscoverError> {
-    let mut text = match href.contains("://") {
-        true => href.to_owned(),
-        false => format!("{}/{}", origin_of(endpoint), href.trim_start_matches('/')),
-    };
-    if collection && !text.ends_with('/') {
-        text.push('/');
-    }
-    WebUrl::parse(&text).map_err(|_| DiscoverError::Unreadable)
-}
-
 fn segment_of(url: &WebUrl) -> String {
     let last = url
         .path()
@@ -92,99 +57,47 @@ fn segment_of(url: &WebUrl) -> String {
     porter_ids::percent::decode(last)
 }
 
-async fn ask<H: Http>(
-    http: &H,
-    url: WebUrl,
-    depth: Depth,
-    props: &[&str],
-) -> Result<Multistatus, DiscoverError> {
-    let fault = |e| match e {
-        HttpError::Unreachable | HttpError::TimedOut => DiscoverError::Unreachable,
-        _ => DiscoverError::Unreadable,
-    };
-    let request = propfind(url, depth, props).map_err(fault)?;
-    let response = http.send(request).await.map_err(fault)?;
-    match response.status().as_u16() {
-        207 => parse_multistatus(&String::from_utf8_lossy(response.body()))
-            .map_err(|_| DiscoverError::Unreadable),
-        401 | 403 => Err(DiscoverError::Unauthorized),
-        other => Err(DiscoverError::Status(other)),
-    }
-}
-
-/// The home sets of `kind` the endpoint leads to, as URLs; the endpoint itself when the server
-/// names none.
-async fn homes<H: Http>(
-    http: &H,
-    endpoint: &WebUrl,
-    kind: PimKind,
-) -> Result<Vec<WebUrl>, DiscoverError> {
-    let property = home_property(kind);
-    let first = ask(
-        http,
-        endpoint.clone(),
-        Depth::Zero,
-        &[names::CURRENT_USER_PRINCIPAL, property],
-    )
-    .await?;
-    let mut hrefs = home_set(&first, home_of(kind));
-    if hrefs.is_empty()
-        && let Some(principal) = current_user_principal(&first)
-    {
-        let principal = resolve(endpoint, &principal, true)?;
-        let reply = ask(http, principal, Depth::Zero, &[property]).await?;
-        hrefs = home_set(&reply, home_of(kind));
-    }
-    let mut urls: Vec<WebUrl> = Vec::new();
-    for href in &hrefs {
-        let url = resolve(endpoint, href, true)?;
-        if !urls.contains(&url) {
-            urls.push(url);
-        }
-    }
-    if urls.is_empty() {
-        urls.push(resolve(endpoint, endpoint.path(), true)?);
-    }
-    Ok(urls)
-}
-
 /// Every calendar (or address book) the account has, in the server's order.
 pub async fn discover<H: Http>(
     http: &H,
     endpoint: &WebUrl,
     kind: PimKind,
 ) -> Result<Vec<Found>, DiscoverError> {
-    let mut out: Vec<Found> = Vec::new();
-    for home in homes(http, endpoint, kind).await? {
-        let listing = ask(
-            http,
-            home,
-            Depth::One,
-            &[names::RESOURCETYPE, names::DISPLAYNAME, CALENDAR_COLOR],
-        )
-        .await?;
-        for href in collections(&listing, home_of(kind)) {
-            let url = resolve(endpoint, &href, true)?;
-            if out.iter().any(|found| found.url == url) {
-                continue;
+    let sending = |e| match e {
+        HttpError::Unreachable | HttpError::TimedOut => DiscoverError::Unreachable,
+        _ => DiscoverError::Unreadable,
+    };
+    let uri = porter_http::uri(endpoint).map_err(sending)?;
+    let (mut walk, mut request) =
+        Walk::start(uri, Reach::Collections, &[home_of(kind)], Scope::Anywhere);
+    let found = loop {
+        let response = http.send(request).await.map_err(sending)?;
+        match walk.advance(&response) {
+            Ok(Next::Ask(next)) => request = next,
+            Ok(Next::Done(found)) => break found,
+            Err(dav_proto::discover::Error::Unauthorized) => {
+                return Err(DiscoverError::Unauthorized);
             }
-            let response = listing.responses.iter().find(|r| r.href == href);
-            let text = |name: &str| {
-                response
-                    .and_then(|r| r.found(name))
-                    .map(str::trim)
-                    .filter(|v| !v.is_empty())
-                    .map(str::to_owned)
-            };
-            out.push(Found {
-                segment: segment_of(&url),
-                displayname: text(names::DISPLAYNAME),
-                color: text(CALENDAR_COLOR).filter(|_| kind == PimKind::Calendar),
-                url,
-            });
+            Err(dav_proto::discover::Error::Status(status)) => {
+                return Err(DiscoverError::Status(status));
+            }
+            Err(_) => return Err(DiscoverError::Unreadable),
         }
-    }
-    Ok(out)
+    };
+    found
+        .collections
+        .into_iter()
+        .map(|collection| {
+            let url = WebUrl::parse(&collection.url.to_string())
+                .map_err(|_| DiscoverError::Unreadable)?;
+            Ok(Found {
+                segment: segment_of(&url),
+                displayname: collection.display_name,
+                color: collection.color.filter(|_| kind == PimKind::Calendar),
+                url,
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -388,21 +301,5 @@ mod tests {
                 .expect_err("fails"),
             DiscoverError::Unreadable
         );
-    }
-
-    #[test]
-    fn hrefs_resolve_against_the_endpoints_origin_and_decode() {
-        let e = endpoint();
-        assert_eq!(
-            resolve(&e, "/a/b", true).expect("url").as_str(),
-            "http://127.0.0.1:9/a/b/"
-        );
-        assert_eq!(
-            resolve(&e, "https://other.test/x/", true)
-                .expect("url")
-                .as_str(),
-            "https://other.test/x/"
-        );
-        assert_eq!(porter_ids::percent::decode("a%20b%2Fc%zz"), "a b/c%zz");
     }
 }

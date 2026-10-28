@@ -1,6 +1,6 @@
 [package]
 name = "storage-webdav"
-description = "The WebDAV replica: porter-sync's Replica over dav-proto, porter-dav and the HTTP seam. Changes by sync-collection (RFC 6578) with an etag tree walk where the server has none, writes guarded by If-Match and If-None-Match, quota from RFC 4331, and an HTTP/1.1 client over one authenticated byte stream (accountd's OpenAuthenticated). Pure: no runtime, no socket."
+description = "The WebDAV replica: porter-sync's Replica over dav-proto and the HTTP seam. Changes by sync-collection (RFC 6578) with an etag tree walk where the server has none, writes guarded by If-Match and If-None-Match, quota from RFC 4331, and an HTTP/1.1 client over one authenticated byte stream (accountd's OpenAuthenticated). Pure: no runtime, no socket."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,10 +9,9 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
-dav-proto = { workspace = true }
+dav-proto = { workspace = true, features = ["http"] }
 porter-capability = { workspace = true }
 porter-ids = { workspace = true }
-porter-dav = { workspace = true }
 porter-http = { workspace = true }
 porter-sync = { workspace = true }
 

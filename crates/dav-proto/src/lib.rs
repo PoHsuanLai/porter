@@ -12,8 +12,12 @@
 //! - [`propfind`], [`sync_collection`] and [`multiget`] build the request bodies; the `Depth`
 //!   header and the method are the caller's ([`Depth::as_str`]).
 //! - [`carddav::Props`] is a typed view of one response's CardDAV properties.
+//! - [`quota()`] reads RFC 4331 quota from a multistatus.
 //! - With the `http` feature, the `http` module builds the same requests as
-//!   `http::Request<String>`.
+//!   `http::Request<String>`, and `http::bytes` as `http::Request<Vec<u8>>`.
+//! - With the `discover` feature, [`discover::Walk`] is the discovery walk (principal, home
+//!   sets, collections) as a state machine: it yields a request, takes the reply, and ends with
+//!   what it found.
 //!
 //! Property names are namespace-qualified strings (`DAV:getetag`,
 //! `urn:ietf:params:xml:ns:carddav:addressbook-home-set`); [`names`] holds the common ones.
@@ -43,11 +47,14 @@
 
 mod body;
 pub mod carddav;
+#[cfg(feature = "discover")]
+pub mod discover;
 mod error;
 #[cfg(feature = "http")]
 pub mod http;
 mod multistatus;
 pub mod names;
+mod quota;
 mod sync;
 
 pub use body::{Depth, Multiget, SyncLevel, escape, multiget, propfind, sync_collection};
@@ -55,4 +62,5 @@ pub use error::Error;
 pub use multistatus::{
     Multistatus, Prop, PropStatus, Response, parse_multistatus, parse_status_line,
 };
+pub use quota::{Quota, quota};
 pub use sync::{SyncChange, SyncEnd, SyncReply, parse_sync_collection, token_expired};

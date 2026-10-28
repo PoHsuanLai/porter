@@ -1,6 +1,6 @@
 [package]
 name = "dav-proto"
-description = "WebDAV, CalDAV and CardDAV as text, with no IO: request bodies built as strings, multistatus replies read from &str with each property's status, and RFC 6578 sync-collection with removals, truncation and expired tokens."
+description = "WebDAV, CalDAV and CardDAV as text, with no IO: discovery as a state machine (feature `discover`), request bodies built as strings, multistatus replies read from &str with each property's status, and RFC 6578 sync-collection with removals, truncation and expired tokens."
 version = "0.1.0"
 edition.workspace = true
 license = "MIT OR Apache-2.0"
@@ -13,6 +13,8 @@ publish = false
 [features]
 # The requests as `http::Request<String>`, for a caller on the `http` crate's types.
 http = ["dep:http"]
+# The discovery walk (principal, home sets, collections) as a state machine over those requests.
+discover = ["http"]
 
 [dependencies]
 roxmltree = { workspace = true }

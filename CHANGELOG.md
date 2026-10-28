@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### One DAV discovery, and porter-dav is gone
+
+- dav-proto: feature `discover` adds `discover::Walk`, the one sans-IO state machine for the
+  principal, home-set and collection walk (`start` returns the walk and its first request,
+  `advance` takes the reply and returns `Next::Ask` or `Next::Done(Found)`), with `Reach`,
+  `Scope`, `Home`, `Collection`, `Found`, `Error` and the readers `current_user_principal`,
+  `home_set` and `collections`. `quota` and `Quota` move in from porter-dav. `http::bytes` builds
+  the requests as `Request<Vec<u8>>`. `names::CALENDAR_COLOR`, `Multistatus::first_found`,
+  `first_found_items`, `Response::found_items` and `Prop::items` are new. Nothing is removed.
+- A home-set or principal href with a literal space in it is one href: it was split on the space.
+- porter-dav is deleted. Its `propfind` and `report_sync_collection` are `dav_proto::http::bytes`
+  (with `porter_http::uri` for a `WebUrl`), and its readers are dav-proto's. The Nextcloud and
+  generic families and syncd's PIM discovery all drive `Walk`.
+
 ### Families are traits, and OAuth is one family
 
 - porter-families: `FamilyProvider`, `FamilySession` and `FamilySignIn` are gone. A family is held
