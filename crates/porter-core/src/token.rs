@@ -59,6 +59,7 @@ pub struct Audience(pub String);
 /// The form of an issued token.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum TokenKind {
     /// An HTTP bearer access token.
     Bearer,

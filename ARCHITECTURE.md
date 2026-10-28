@@ -590,6 +590,17 @@ D-Bus on the desktop). Where each mailo piece lands:
   `tailnet::words`, syncd's `words`) from the typed variant. Error enums that can grow are
   `#[non_exhaustive]`, and check-boundary fails a library crate's public `*Error` enum without it
   (a library is a crate a shipped program links, other than the daemons themselves).
+- **Kinds are open to growth, and an unknown one is read, not guessed.** A public enum that names
+  a kind of thing and can grow (`CapabilityKind`, `Capability`, `Family`, `AuthKind`, `DataClass`,
+  `UrlScheme`, `EndpointProtocol`, the capability payloads' transports, wires and features, the
+  sheet's provider and row kinds, `MachineOwner`, `ParentWindow`, ...) is `#[non_exhaustive]`, and a
+  match on one from another crate has a wildcard arm that says what an unknown one is read as (no
+  bearer, no mail meaning, not the person's own computer, no parent window). An enum that is a
+  fixed pair, a fixed ordering or a closed place stays total (`Toggle`, `Offer`, `Access`, `Delta`,
+  `Locality`, `Tier`, `Billing`, `Provenance`). No wire enum carries an `Other` case or is an open
+  string newtype: every frame names its `VocabVersion` and the registry has a migration table, so a
+  peer on another vocabulary is refused whole; a slug on the bus is read by `from_slug`, which is
+  `None` for a word it does not know.
 - **A message carries no authority.** `prov::Message` is the one model for every exchange
   between agents: a request from the companion to a worker, a worker's or a computer-use run's
   progress and final report, the person's direct turn to a subagent (the person is a sender,

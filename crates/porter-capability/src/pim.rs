@@ -19,6 +19,7 @@ pub struct PimCap {
 /// The protocol a PIM store is reached by.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum PimTransport {
     /// CalDAV (calendars and VTODO tasks).
     #[serde(rename = "caldav")]
@@ -48,6 +49,7 @@ pub struct NotesCap {
 /// The protocol a notes store is reached by.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum NotesTransport {
     /// The Nextcloud Notes API.
     NextcloudNotes,

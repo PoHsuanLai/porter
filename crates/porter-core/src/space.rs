@@ -37,6 +37,7 @@ pub struct SpaceId(String);
 
 /// What a [`SpaceId`] names.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum SpaceKind {
     /// Outside any Space (`desktop`).
     Outside,

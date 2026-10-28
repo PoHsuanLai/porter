@@ -41,6 +41,8 @@ fn bearer_of(kind: TokenKind, value: &SecretText) -> Option<SecretText> {
             porter_core::token::xoauth2_bearer(value.expose()).map(SecretText::new)
         }
         TokenKind::ApiKeyHandle => None,
+        // A kind of token this build does not know yields no bearer.
+        _ => None,
     }
 }
 

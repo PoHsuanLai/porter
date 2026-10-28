@@ -33,6 +33,7 @@ pub struct MailCap {
 /// The protocol a mailbox is reached by.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum MailTransport {
     /// IMAP (with SMTP for sending).
     Imap,
@@ -49,6 +50,7 @@ pub enum MailTransport {
 /// Whether a message lives in one folder or carries several labels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum LabelModel {
     /// One folder per message.
     Folders,

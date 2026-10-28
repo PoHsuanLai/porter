@@ -112,6 +112,7 @@ pub struct DesktopSpaceRecord {
 /// What became of a desktop-wide Space (`Spaces1.Changed`'s `what`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum SpaceChange {
     /// It was made.
     Created,

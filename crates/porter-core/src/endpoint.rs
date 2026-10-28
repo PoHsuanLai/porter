@@ -135,6 +135,8 @@ fn admits(scheme: UrlScheme, tls: Tls) -> bool {
         UrlScheme::Imap | UrlScheme::Smtp | UrlScheme::Sieve | UrlScheme::Pop3 => {
             matches!(tls, Tls::StartTls | Tls::Plain)
         }
+        // A scheme this build does not know admits no security.
+        _ => false,
     }
 }
 
@@ -193,7 +195,7 @@ impl ServiceEndpoint {
         let origin = self.url.origin();
         if self
             .protocol()
-            .is_some_and(|p| p != EndpointProtocol::of_scheme(origin.scheme))
+            .is_some_and(|p| Some(p) != EndpointProtocol::of_scheme(origin.scheme))
         {
             return Err(EndpointFault::SchemeMismatch);
         }

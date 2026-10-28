@@ -35,6 +35,7 @@ pub enum StorageScope {
 /// The content hash a store reports beside each file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum HashKind {
     /// None; identity is by etag or version only.
     None,

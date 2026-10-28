@@ -83,6 +83,7 @@ impl Backend {
 
 /// What tailscaled's state means for the account porter keeps for it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Standing {
     /// Running and signed in.
     Ready,

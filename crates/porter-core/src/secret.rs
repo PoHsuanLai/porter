@@ -96,6 +96,7 @@ pub struct SecretKey {
 /// servers; a CardDAV password may differ from the mail one).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "v", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum SecretPurpose {
     /// The account's one password or app password.
     Password,
@@ -119,6 +120,7 @@ pub enum SecretPurpose {
 /// A secret as stored. `Debug` is written by hand and redacts every secret field.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "v", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Credential {
     /// A password or app password.
     Password(#[serde(serialize_with = "write_secret")] SecretText),

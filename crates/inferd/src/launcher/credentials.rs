@@ -140,6 +140,8 @@ impl Credentials {
                     write_key_file(root, &id, issue.key.expose()).map_err(unavailable)?;
                 (Handle::Path(path), Some(dir))
             }
+            // A handoff this build cannot make leaves the credential unissued.
+            _ => return Err(Refusal::Unavailable),
         };
         locked(&self.state).held.insert(
             id.clone(),

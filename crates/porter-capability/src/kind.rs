@@ -17,6 +17,7 @@ impl VocabVersion {
 /// Its serde form is the stable slug used in files, on the bus and in the consent store.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum CapabilityKind {
     /// Who the account is.
     Identity,

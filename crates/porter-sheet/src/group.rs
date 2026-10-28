@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 /// The group a provider's accounts belong to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum ProviderGroup {
     /// Mail, calendar, contacts, files and the like.
     Internet,

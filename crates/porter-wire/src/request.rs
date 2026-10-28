@@ -96,6 +96,7 @@ pub enum AccountsRequest {
 /// (`wayland:<handle>`, `x11:<xid>`), or none.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "v", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum ParentWindow {
     /// No parent: the sheet is a free-standing window.
     Unparented,

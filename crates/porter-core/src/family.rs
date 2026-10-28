@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 /// One protocol engine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Family {
     /// IMAP.
     Imap,

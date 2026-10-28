@@ -166,6 +166,8 @@ fn tls_of_scheme(url: &EndpointUrl) -> Option<Tls> {
             Some(Tls::StartTls)
         }
         UrlScheme::Http => None,
+        // A scheme this build does not know has no mail meaning.
+        _ => None,
     }
 }
 

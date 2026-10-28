@@ -66,6 +66,7 @@ impl fmt::Display for NodeId {
 /// yes or no cannot say.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum MachineOwner {
     /// The person's own: their login made it, and nobody shared it.
     Mine,

@@ -37,11 +37,13 @@ pub async fn relay<A: ByteStream, C: Connect>(plan: RelayPlan, app: A, connect: 
         host: origin.host.clone(),
     };
     match EndpointProtocol::of_scheme(origin.scheme) {
-        EndpointProtocol::Imap => run(ImapRelay::new(plan), ends, connect).await,
-        EndpointProtocol::Smtp => run(SmtpRelay::new(plan), ends, connect).await,
-        EndpointProtocol::Http => run(HttpRelay::new(plan), ends, connect).await,
-        EndpointProtocol::Sieve => run(SieveRelay::new(plan), ends, connect).await,
-        EndpointProtocol::Pop3 => run(Pop3Relay::new(plan), ends, connect).await,
+        Some(EndpointProtocol::Imap) => run(ImapRelay::new(plan), ends, connect).await,
+        Some(EndpointProtocol::Smtp) => run(SmtpRelay::new(plan), ends, connect).await,
+        Some(EndpointProtocol::Http) => run(HttpRelay::new(plan), ends, connect).await,
+        Some(EndpointProtocol::Sieve) => run(SieveRelay::new(plan), ends, connect).await,
+        Some(EndpointProtocol::Pop3) => run(Pop3Relay::new(plan), ends, connect).await,
+        // A protocol this build has no machine for is one the server was never spoken to in.
+        Some(_) | None => RelayEnd::Failed(RelayFault::Protocol),
     }
 }
 

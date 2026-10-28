@@ -104,6 +104,8 @@ impl<C: Callers> BusSheets<C> {
         let window = match &open.window {
             ParentWindow::Unparented => "",
             ParentWindow::Handle(handle) => handle.as_str(),
+            // A parent this build does not know is no parent.
+            _ => "",
         };
         let view = json(&labelled(open.view, &self.names))?;
         // Taken down if this is dropped from here on, `Open`'s answer come or not: the host shows

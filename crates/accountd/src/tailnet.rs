@@ -65,6 +65,8 @@ pub(crate) fn state_of(answer: &Result<Status, TailscaleError>) -> Option<Accoun
             Standing::SignedOut => Some(AccountState::NeedsLogin),
             Standing::Down => Some(AccountState::Offline),
             Standing::Changing => None,
+            // A standing this build does not know says nothing about the account.
+            _ => None,
         },
         Err(
             TailscaleError::NotInstalled

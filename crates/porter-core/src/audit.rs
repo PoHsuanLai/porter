@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 /// How a process credential travels (P2). A closed set: a path or fd number is not recorded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Handoff {
     /// A sealed memfd passed to the child.
     Memfd,
@@ -18,6 +19,7 @@ pub enum Handoff {
 /// Why a process credential ended (P2). A closed set of words, never free text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum CredentialEnd {
     /// The launcher ended it: the process it was handed to exited or was killed
     /// (`Tokens.RevokeProcessCredential`).

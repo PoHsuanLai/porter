@@ -134,6 +134,8 @@ pub fn judge(
             }),
             MachineOwner::Tagged => Err(Refusal::Tagged),
             MachineOwner::Shared => Err(Refusal::Shared),
+            // An owner this build does not know is not the person: refused as somebody else's.
+            _ => Err(Refusal::Shared),
         },
     }
 }

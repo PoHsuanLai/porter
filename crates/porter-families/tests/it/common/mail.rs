@@ -105,7 +105,7 @@ impl Wire {
 
     fn here(&self, origin: &Origin, tls: Tls) -> Origin {
         let ports = match EndpointProtocol::of_scheme(origin.scheme) {
-            EndpointProtocol::Pop3 => self.pop3,
+            Some(EndpointProtocol::Pop3) => self.pop3,
             _ => self.imap,
         };
         Origin {

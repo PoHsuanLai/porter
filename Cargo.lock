@@ -2975,7 +2975,6 @@ dependencies = [
  "porter-capability",
  "porter-core",
  "porter-dbus",
- "porter-ids",
  "porter-provider",
  "porter-service",
  "porter-sheet",

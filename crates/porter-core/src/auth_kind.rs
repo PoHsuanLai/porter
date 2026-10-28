@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 /// The sign-in method of a provider and of each account made from it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum AuthKind {
     /// A remote endpoint that needs no credential (a vLLM on the local network).
     None,
@@ -47,6 +48,7 @@ pub enum AuthKind {
 /// browser", "enter the password again"). Settings publishes it on each account's `sign_in` row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum SignInWay {
     /// In the browser: OAuth, or Nextcloud's Login Flow.
     Browser,

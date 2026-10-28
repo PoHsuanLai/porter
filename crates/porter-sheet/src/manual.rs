@@ -31,6 +31,7 @@ use std::net::IpAddr;
 /// How a mail server speaks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Protocol {
     /// IMAP, with SMTP to send.
     Imap,
@@ -66,6 +67,7 @@ impl Protocol {
 /// How a connection to a typed server is secured.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Security {
     /// TLS from the first byte.
     Tls,

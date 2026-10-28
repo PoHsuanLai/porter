@@ -44,6 +44,7 @@ use serde::{Deserialize, Serialize};
 /// One thing an account (or one of its models) can do, with its parameters.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "v", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Capability {
     /// Who the account is.
     Identity(IdentityCap),

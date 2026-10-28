@@ -144,6 +144,8 @@ pub fn replica_hash(kind: HashKind, bytes: &[u8]) -> Option<ContentHash> {
         | HashKind::Sha1
         | HashKind::QuickXor
         | HashKind::Dropbox => None,
+        // A hash this build does not know is one it cannot compute.
+        _ => None,
     }
 }
 

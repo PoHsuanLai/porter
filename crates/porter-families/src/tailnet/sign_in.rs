@@ -131,6 +131,8 @@ impl TailnetSignIn {
             Standing::Ready => self.signed_in(&status),
             Standing::SignedOut => self.ask_for_the_page().await,
             Standing::Down | Standing::Changing => self.failed(SignInFault::NotRunning),
+            // A standing this build does not know is not one to sign in on.
+            _ => self.failed(SignInFault::NotRunning),
         }
     }
 

@@ -124,6 +124,7 @@ impl ReauthReason {
 /// The OAuth client's verification for the scopes an account uses (C2, C3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "v", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Verification {
     /// The scopes need none, or the auth is not OAuth.
     NotNeeded,
@@ -139,6 +140,7 @@ pub enum Verification {
 /// How long a sign-in lasts before the user must sign in again.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum TokenLifetime {
     /// Until revoked.
     Standard,
@@ -151,6 +153,7 @@ pub enum TokenLifetime {
 /// Whether an organisation's admin must consent (C11).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum TenantConsent {
     /// The user's own consent is enough.
     User,

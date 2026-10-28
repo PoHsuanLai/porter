@@ -87,6 +87,8 @@ fn wire(window: &ParentWindow) -> String {
     match window {
         ParentWindow::Unparented => String::new(),
         ParentWindow::Handle(handle) => handle.clone(),
+        // A parent this build does not know is no parent.
+        _ => String::new(),
     }
 }
 

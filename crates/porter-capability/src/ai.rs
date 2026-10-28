@@ -22,6 +22,7 @@ pub struct LlmCap {
 /// One language-model feature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum LlmFeature {
     /// Multi-turn chat.
     Chat,
@@ -44,6 +45,7 @@ pub enum LlmFeature {
 /// The request format a model is reached with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum LlmWire {
     /// OpenAI-compatible Chat Completions (also Ollama, llama.cpp, vLLM, OpenRouter).
     ChatCompletions,
@@ -92,6 +94,7 @@ pub struct EmbedPrompts {
 /// A kind of input an embedding model takes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Modality {
     /// Text.
     Text,
@@ -111,6 +114,7 @@ pub struct SpeechCap {
 /// One thing a speech model does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum SpeechMode {
     /// Speech to text.
     Stt,
@@ -174,6 +178,7 @@ pub struct ImageGenCap {
 /// One thing an image generator does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum ImageMode {
     /// An image from a prompt.
     TextToImage,

@@ -37,6 +37,8 @@ pub fn service_name(kind: CapabilityKind) -> &'static str {
         CapabilityKind::KeyValue => "Small synced items",
         CapabilityKind::Push => "Notifications",
         CapabilityKind::Agent => "Assistant",
+        // A kind a later porter-capability adds: named by its own words once this crate knows it.
+        _ => "Other service",
     }
 }
 

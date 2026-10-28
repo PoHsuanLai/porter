@@ -22,6 +22,8 @@ pub fn secret_purpose(auth: AuthKind) -> Option<SecretPurpose> {
         AuthKind::ApiKey | AuthKind::OAuthMintsKey => Some(SecretPurpose::ApiKey),
         AuthKind::OAuthPkce | AuthKind::OAuthPlan => Some(SecretPurpose::OAuthRefresh),
         AuthKind::CloudIdentity => Some(SecretPurpose::OAuthRefresh),
+        // A sign-in this build does not know files nothing.
+        _ => None,
     }
 }
 

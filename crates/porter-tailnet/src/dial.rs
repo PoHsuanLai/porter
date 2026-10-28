@@ -80,6 +80,8 @@ impl Dialer {
             Standing::Down | Standing::Changing => {
                 return Err(DialError::Tailscale(TailscaleError::NotRunning));
             }
+            // A standing this build does not know is not one to dial on: read as not running.
+            _ => return Err(DialError::Tailscale(TailscaleError::NotRunning)),
         }
         .ok_or(DialError::Tailscale(TailscaleError::Malformed))?;
         let peer = status

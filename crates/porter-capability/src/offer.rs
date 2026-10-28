@@ -49,6 +49,7 @@ pub enum AbsentReason {
 /// What an offer is about: the account as a whole, or one model it serves.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "v", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Subject {
     /// The account (every data kind).
     Account,

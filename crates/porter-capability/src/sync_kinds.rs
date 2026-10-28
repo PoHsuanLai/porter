@@ -24,6 +24,7 @@ pub struct PushCap {
 /// The mechanism behind a push capability.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum PushChannel {
     /// IMAP IDLE.
     ImapIdle,

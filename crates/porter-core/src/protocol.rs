@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 /// The wire protocol an authenticated relay speaks for an endpoint (`porter-proxy`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum EndpointProtocol {
     /// IMAP: the relay authenticates and the app sees a `PREAUTH` greeting.
     Imap,
@@ -22,14 +23,15 @@ pub enum EndpointProtocol {
 }
 
 impl EndpointProtocol {
-    /// The protocol a URL scheme names.
-    pub fn of_scheme(scheme: UrlScheme) -> Self {
+    /// The protocol a URL scheme names; none for a scheme this build does not know.
+    pub fn of_scheme(scheme: UrlScheme) -> Option<Self> {
         match scheme {
-            UrlScheme::Http | UrlScheme::Https => EndpointProtocol::Http,
-            UrlScheme::Imap | UrlScheme::Imaps => EndpointProtocol::Imap,
-            UrlScheme::Smtp | UrlScheme::Smtps => EndpointProtocol::Smtp,
-            UrlScheme::Sieve | UrlScheme::Sieves => EndpointProtocol::Sieve,
-            UrlScheme::Pop3 | UrlScheme::Pop3s => EndpointProtocol::Pop3,
+            UrlScheme::Http | UrlScheme::Https => Some(EndpointProtocol::Http),
+            UrlScheme::Imap | UrlScheme::Imaps => Some(EndpointProtocol::Imap),
+            UrlScheme::Smtp | UrlScheme::Smtps => Some(EndpointProtocol::Smtp),
+            UrlScheme::Sieve | UrlScheme::Sieves => Some(EndpointProtocol::Sieve),
+            UrlScheme::Pop3 | UrlScheme::Pop3s => Some(EndpointProtocol::Pop3),
+            _ => None,
         }
     }
 }

@@ -67,6 +67,7 @@ pub struct AppLabel(pub String);
 /// How far the daemon can trust the name, which Settings shows beside every grant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Isolation {
     /// A Flatpak sandbox: the name comes from the sandbox's own metadata for the caller's pid.
     Flatpak,
