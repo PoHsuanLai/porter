@@ -1,7 +1,7 @@
 //! Which secret store a daemon files credentials in: the Secret Service in its own namespace,
 //! unless a test build is told otherwise.
 //!
-//! A daemon names its own environment variable (`ACCOUNTD_KEYS`, `INFERD_KEYS`, `SYNCD_KEYS`)
+//! A daemon names its own environment variable (`ACCOUNTD_KEYS`, `SYNCD_KEYS`)
 //! and passes its value to [`select`]; this library reads no environment. `file:<absolute path>`
 //! selects [`FileSecrets`](crate::FileSecrets), but only in a build with the `test-keys` feature
 //! (off by default, never in a release or dist build). In a test build any other value is a
@@ -106,7 +106,7 @@ pub struct Chosen {
 
 impl Chosen {
     /// Opens the store `selection` names, filing under `namespace`. `said_prefix` starts the
-    /// line about the choice: the daemon's name or its variable's (`"inferd"`, `"INFERD_KEYS"`).
+    /// line about the choice: the daemon's name or its variable's (`"accountd"`, `"ACCOUNTD_KEYS"`).
     pub fn open(
         selection: Selection,
         namespace: Namespace,

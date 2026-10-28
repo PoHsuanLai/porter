@@ -3,7 +3,7 @@
 //! credential of any kind: the agent's own login lives in the agent's own state directory, which
 //! porter never reads (design/31 R7, R8). Adding the account asks nothing; the person reviews the
 //! agent and confirms, and the account is stored in `needs_login` until the launcher reports the
-//! agent's state (`Peer.SetAgentState`).
+//! agent's state (`Launcher.ReportAgentLogin`).
 //!
 //! A session mints no token (there is nothing to mint it from) and revoking has nothing to do at a
 //! provider: forgetting the account is all porter can do.

@@ -3,7 +3,7 @@
 //!
 //! Every constructor that takes no namespace files under `porter` ([`Namespace::PORTER`]). That
 //! namespace is kept for apps that migrate their old items out of it; new code names its own.
-//! porter's daemons each name theirs (`porter.accountd`, `porter.inferd`, `porter.syncd`), and a
+//! porter's daemons each name theirs (`porter.accountd`, `porter.syncd`), and a
 //! host that keeps its own credentials names its own, such as mailo's `mailo/<profile>`
 //! (`mailo/default`, `mailo/3fa9c01b`). Any one line of text is a valid name.
 

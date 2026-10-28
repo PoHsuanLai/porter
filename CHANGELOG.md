@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+### AI keys are accountd's
+
+- accountd keeps the AI keys, the agent logins and the local runtimes with the identities: one
+  registry, one secret namespace (`porter.accountd`), one grant store, one audit file. inferd's
+  second store (`keys/`, `launcher/`, the namespace `porter.inferd`, `INFERD_KEYS`, the
+  `test-keys` feature and `inferd add`) is deleted. `accountd add` adds a key from a terminal;
+  `ACCOUNTD_KEYS=file:<path>` reads the file format `INFERD_KEYS` did.
+- Wire. `org.quire.Inference1.Keys` is `org.quire.Accounts1.Keys` (`RequestKey` unchanged;
+  `AddAccount` is `Manager.AddAccount`). `org.quire.Inference1.Launcher` is
+  `org.quire.Accounts1.Launcher` with the same members and signatures, minus `SetAgentState`;
+  `IssueProcessCredential(permit, program) -> (id, h)` hands the key on a sealed memfd, the one
+  way (the `target` argument and `Handoff` are gone, and so is the `handoff` field of the
+  `process_credential_issued` audit line). The Request objects of key sheets are under
+  `/org/quire/Accounts1/request`, errors under `org.quire.Accounts1.Error.*`, and
+  `ServiceRoot::Inference` is gone. New: `org.quire.Accounts1.Broker`, for the new role
+  `CallerRole::AiBroker` (`ai_broker`, inferd's row in `callers.toml`): `Verdicts`, `ReadKey`,
+  `Accounts`, `Servers`, `ReadServerKey`, `ReportLocal` and `Changed`. The AI account rows move
+  from `/org/quire/Inference1/settings` to accountd's settings module; only
+  `accounts.<id>.spend.month` and `.spend.cap` stay with inferd.
+- porter-client. `AiKeys` and `Launcher` talk to accountd; `AiKeys::add_account` and the `target`
+  of `Launcher::issue_credential` are gone, `CredentialHandle` with them (`ProcessCredential`
+  holds the memfd: `descriptor()`, `read_key()`, `child_key()`). New `AiAccounts` for the AI
+  broker.
+- Data. accountd copies inferd's registry, keys, permits, switches and audit lines in at its
+  start, reads both stores back before it removes the old keys, and puts the copy off while an
+  inferd that still keeps its own keys is on the bus. inferd removes its old registry and audit
+  file once accountd's record (`ai-import.json`) covers them. The registry is no longer pruned to
+  identities, and `registry.pre-split.json` is no longer made.
+- Sandboxes. No limit changes: accountd's unit has no new directory, and inferd's loses
+  `inferd/agent` from `RuntimeDirectory`.
+
 ### Capability kinds are written once
 
 - `capability_kinds!` in porter-capability is the one list of kinds. `Capability`,

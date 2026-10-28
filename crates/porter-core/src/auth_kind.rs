@@ -80,7 +80,7 @@ pub struct AuthFacts {
     /// agent that signs itself in holds its login itself, and so does Tailscale).
     pub secret: Option<SecretPurpose>,
     /// The state a new account of this kind starts in: working, except an agent that signs itself
-    /// in, which waits for the agent to say it is (`Peer.SetAgentState`).
+    /// in, which waits for the agent to say it is (`Launcher.ReportAgentLogin`).
     pub first_state: AccountState,
     /// Whether such an account is a runtime on this computer found by a probe.
     pub probed: bool,

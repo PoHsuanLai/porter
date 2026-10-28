@@ -128,7 +128,7 @@ pub enum AuditEvent {
         /// Who the key was resolved for.
         audience: Audience,
     },
-    /// An agent account's state was set: by the launcher (`Peer.SetAgentState`), by the outcome of
+    /// An agent account's state was set: by the launcher's report (`Launcher.ReportAgentLogin`), by the outcome of
     /// a login or logout request it carried out, or by Settings' sign out. Written only when the
     /// state changed.
     AgentStateSet {
