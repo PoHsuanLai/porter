@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### Families are traits, and OAuth is one family
+
+- porter-families: `FamilyProvider`, `FamilySession` and `FamilySignIn` are gone. A family is held
+  as `Box<dyn DynProvider>` (`DynProvider::boxed(provider)`), which is a `Provider`; `DynSession`
+  and `DynSignIn` are its session and sign-in. `set::family_of` walks a table of builders.
+- The `google` and `microsoft` features are one `oauth` feature. `GoogleProvider`,
+  `MicrosoftProvider`, `GoogleEnv`, `MicrosoftEnv`, `GoogleSession`, `MicrosoftSession`,
+  `GoogleSignIn` and `MicrosoftSignIn` are `OAuthProvider<Google | Microsoft>`, `OAuthEnv`,
+  `OAuthSession<..>` and `Conversation<BrowserFlow<..>>`. An issuer whose row in
+  porter-provider's `issuers.toml` names a userinfo endpoint is served by `Standard` with no Rust.
+- porter-families: the sign-in types of the other families are `Conversation<NextcloudFlow>`,
+  `Conversation<ApiKeyFlow<H>>`, `Conversation<AgentLoginFlow>`, `Conversation<TailnetFlow>` and
+  `Conversation<GenericFlow<L>>`; `GenericProvider<L>` takes the `Lookup` (`MailLookup`,
+  `DavLookup`, `FixedLookup`) its discovery names.
+- porter-provider: `Issuer::Yahoo`; `Issuer::data()` (endpoints, userinfo, scopes by capability
+  kind, scope classes, API origins) replaces the endpoint match, and `scopes_of`,
+  `on_use_scopes_of`, `scope_sensitivity` and `Sensitivity` of porter-families are
+  `IssuerData::{kind_scopes, on_use_scopes, class_of}` and `ScopeClass`. Yahoo is an issuer row
+  (endpoints and userinfo); a Yahoo provider file comes once its scopes are confirmed against a
+  registered client.
+
 ### Dead API, no-op migrations, the one-batch shims and the socket carrier are deleted
 
 - porter-oauth: the device-code flow, `mint_key`, `openrouter_auth_url`, `clients_toml`,

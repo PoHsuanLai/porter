@@ -107,6 +107,90 @@ mod tests {
         assert!(e.token.as_str().contains("login.yahoo.com"));
     }
 
+    /// The names an issuer is stored under (provider files, clients.toml) and the endpoints it
+    /// signs in at are the same before and after they became data (`issuers.toml`).
+    #[test]
+    fn an_issuer_keeps_its_stored_name_and_its_published_endpoints() {
+        type Row = (
+            Issuer,
+            &'static str,
+            &'static str,
+            &'static str,
+            Option<&'static str>,
+        );
+        const ROWS: [Row; 8] = [
+            (
+                Issuer::Google,
+                "google",
+                "https://accounts.google.com/o/oauth2/v2/auth",
+                "https://oauth2.googleapis.com/token",
+                Some("https://oauth2.googleapis.com/revoke"),
+            ),
+            (
+                Issuer::Microsoft,
+                "microsoft",
+                "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+                "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+                None,
+            ),
+            (
+                Issuer::Dropbox,
+                "dropbox",
+                "https://www.dropbox.com/oauth2/authorize",
+                "https://api.dropboxapi.com/oauth2/token",
+                None,
+            ),
+            (
+                Issuer::Box,
+                "box",
+                "https://account.box.com/api/oauth2/authorize",
+                "https://api.box.com/oauth2/token",
+                None,
+            ),
+            (
+                Issuer::Fastmail,
+                "fastmail",
+                "https://api.fastmail.com/oauth/authorize",
+                "https://api.fastmail.com/oauth/refresh",
+                None,
+            ),
+            (
+                Issuer::OpenRouter,
+                "openrouter",
+                "https://openrouter.ai/auth",
+                "https://openrouter.ai/api/v1/auth/keys",
+                None,
+            ),
+            (
+                Issuer::OpenAi,
+                "openai",
+                "https://auth.openai.com/oauth/authorize",
+                "https://auth.openai.com/oauth/token",
+                None,
+            ),
+            (
+                Issuer::Yahoo,
+                "yahoo",
+                "https://api.login.yahoo.com/oauth2/request_auth",
+                "https://api.login.yahoo.com/oauth2/get_token",
+                None,
+            ),
+        ];
+        for (issuer, name, authorize, token, revoke) in ROWS {
+            let spec = AuthSpec {
+                kind: AuthKind::OAuthPkce,
+                issuer: Some(issuer),
+            };
+            let text = toml::to_string(&spec).expect("serializes");
+            assert!(text.contains(&format!("issuer = \"{name}\"")), "{text}");
+            assert_eq!(toml::from_str::<AuthSpec>(&text).expect("parses"), spec);
+            let e = issuer.endpoints();
+            assert_eq!(e.authorize.as_str(), authorize, "{name}");
+            assert_eq!(e.token.as_str(), token, "{name}");
+            assert_eq!(e.revoke.as_ref().map(EndpointUrl::as_str), revoke, "{name}");
+        }
+    }
+
     #[test]
     fn microsoft_is_the_common_tenant() {
         let e = Issuer::Microsoft.endpoints();
