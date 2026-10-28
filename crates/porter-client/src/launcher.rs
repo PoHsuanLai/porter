@@ -41,12 +41,13 @@ use porter_dbus::accounts::refusal_of;
 use porter_dbus::accounts::sheet::{SheetKind, reply_of};
 use porter_dbus::accounts::{
     AgentLoginRequested, AgentLoginRequestedStream, AgentLogoutRequested,
-    AgentLogoutRequestedStream, LauncherFault, LauncherProxy, launcher_fault_of,
+    AgentLogoutRequestedStream, LauncherProxy, launcher_fault_of,
 };
 use porter_dbus::accounts::{ServiceRoot, Sheet, SheetError};
 use porter_dbus::{BusConnection, BusError, BusStream};
 use porter_ids::IdError;
 use porter_wire::AccountsReply;
+use porter_wire::LauncherFault;
 use porter_wire::Refusal;
 use std::pin::Pin;
 use std::task::{Context, Poll};

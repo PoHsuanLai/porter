@@ -131,7 +131,7 @@ impl FakeAccountd {
         let server = connection.object_server();
         server
             .at(
-                porter_dbus::accounts::ACCOUNTS_PATH,
+                porter_wire::names::ACCOUNTS_PATH,
                 Keys {
                     shared: Arc::clone(&self.shared),
                 },
@@ -140,7 +140,7 @@ impl FakeAccountd {
             .expect("serve Keys");
         server
             .at(
-                porter_dbus::accounts::ACCOUNTS_PATH,
+                porter_wire::names::ACCOUNTS_PATH,
                 Launcher {
                     shared: Arc::clone(&self.shared),
                 },
@@ -148,7 +148,7 @@ impl FakeAccountd {
             .await
             .expect("serve Launcher");
         connection
-            .request_name(porter_dbus::accounts::ACCOUNTS_BUS)
+            .request_name(porter_wire::names::ACCOUNTS_BUS)
             .await
             .expect("own the name");
     }
@@ -170,7 +170,7 @@ impl FakeAccountd {
         connection
             .emit_signal(
                 Some(to),
-                porter_dbus::accounts::ACCOUNTS_PATH,
+                porter_wire::names::ACCOUNTS_PATH,
                 "org.quire.Accounts1.Launcher",
                 signal,
                 &body,
@@ -191,7 +191,7 @@ impl FakeAccountd {
         connection
             .emit_signal(
                 Some(to),
-                porter_dbus::accounts::ACCOUNTS_PATH,
+                porter_wire::names::ACCOUNTS_PATH,
                 "org.quire.Accounts1.Launcher",
                 "ProcessCredentialRevoked",
                 &(id, reason),

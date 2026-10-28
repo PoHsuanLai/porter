@@ -24,7 +24,6 @@ use porter_core::ProviderId;
 use porter_core::{
     Account, AccountId, AgentState, AppId, AppName, AuthKind, GrantId, IdentityId, Isolation,
 };
-use porter_dbus::accounts::ACCOUNTS_SETTINGS_PATH;
 use porter_families::set::ProviderNames;
 use porter_identities::IdentitiesApi;
 use porter_provider::{ClientChannel, ClientsFile, Issuer, parse_clients};
@@ -38,6 +37,7 @@ use porter_sheet::ProviderGroup;
 use porter_sheets::AppNames;
 use porter_wire::AccountsReply;
 use porter_wire::ParentWindow;
+use porter_wire::names::ACCOUNTS_SETTINGS_PATH;
 use std::sync::Arc;
 use zbus::Connection;
 

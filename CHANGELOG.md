@@ -25,6 +25,16 @@
 - `EngineConfig::program` is public and `EngineConfig::named_path` is new; `LocalModel::unit_with`
   returns an `Option`.
 
+### Bus names, `LauncherFault` and `Destination` have one home each
+
+- `ACCOUNTS_BUS`, `ACCOUNTS_PATH`, `ACCOUNTS_SETTINGS_PATH`, `SPACES_PATH`, `IDENTITIES_PATH`, `TAILNET_PATH`,
+  `SHEET_BUS` and `SHEET_PATH` are `porter_wire::names::*` (they were `porter_dbus::accounts::*`), so an app
+  finds the daemon without naming the bus crate. `LauncherFault` is `porter_wire::LauncherFault`; its error
+  names are `porter_dbus::accounts::{launcher_fault_error_name, launcher_fault_error_name_in,
+  launcher_fault_from_error_name}` (the methods `error_name`, `error_name_in`, `from_error_name` are gone).
+- `Destination` (a call sent to a daemon's name or to the owner the caller checked) is `porter_dbus::Destination`,
+  the one definition `porter-client` and `inferd-client` both use.
+
 ### The inference half of the client is `inferd-client`
 
 - `porter-client` is the account service's client. What it held of inference moved, with

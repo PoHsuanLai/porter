@@ -68,11 +68,7 @@ async fn serving(bus: &PrivateBus, daemon: &mut Daemon) -> bool {
     let deadline = test_kit::Deadline::generous();
     while !deadline.passed() {
         if dbus
-            .name_has_owner(
-                porter_dbus::accounts::ACCOUNTS_BUS
-                    .try_into()
-                    .expect("name"),
-            )
+            .name_has_owner(porter_wire::names::ACCOUNTS_BUS.try_into().expect("name"))
             .await
             .unwrap_or(false)
         {

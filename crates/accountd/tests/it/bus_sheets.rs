@@ -80,7 +80,7 @@ async fn a_forged_input_is_ignored_whoever_sends_it_and_whatever_handle_it_names
     // And a line that is not an input at all.
     let emitter = zbus::object_server::SignalEmitter::new(
         &rig.host_connection,
-        porter_dbus::accounts::SHEET_PATH,
+        porter_wire::names::SHEET_PATH,
     )
     .expect("emitter");
     emitter
@@ -138,7 +138,7 @@ async fn a_process_that_only_claimed_the_name_is_not_the_host() {
 async fn no_host_on_the_bus_is_no_sheet() {
     let rig = Rig::start_with(Default::default(), SheetHost::quiet()).await;
     rig.host_connection
-        .release_name(porter_dbus::accounts::SHEET_BUS)
+        .release_name(porter_wire::names::SHEET_BUS)
         .await
         .expect("release");
     let client = rig.client("org.quire.Photos").await;

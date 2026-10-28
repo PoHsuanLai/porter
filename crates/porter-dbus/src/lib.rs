@@ -29,6 +29,7 @@
 //! shape of a sheet's answer is [`accounts::sheet`]. Who is calling is `porter-callers`.
 
 mod args;
+mod destination;
 mod failure;
 mod json_value;
 mod ready;
@@ -40,6 +41,7 @@ pub mod inference;
 pub mod sync;
 
 pub use args::Details;
+pub use destination::Destination;
 pub use failure::{BusFailure, classify, is_invalid_args, is_limits_exceeded};
 pub use json_value::{from_vardict, to_vardict};
 pub use ready::serve_ready;

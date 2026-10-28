@@ -46,7 +46,10 @@ pub use launcher::{
     AgentLogoutRequestedStream, LauncherProxy, LauncherServed, LauncherServer,
     ProcessCredentialRevoked, ProcessCredentialRevokedStream,
 };
-pub use launcher_fault::{LauncherFault, launcher_fault_of};
+pub use launcher_fault::{
+    launcher_fault_error_name, launcher_fault_error_name_in, launcher_fault_from_error_name,
+    launcher_fault_of,
+};
 pub use machines::{
     MACHINE_KEY_ADDRESSES, MACHINE_KEY_DNS, MACHINE_KEY_LAST_SEEN, MACHINE_KEY_NAME,
     MACHINE_KEY_NODE, MACHINE_KEY_ONLINE, MACHINE_KEY_OS, MACHINE_KEY_OWNER, MACHINE_KEY_SSH,

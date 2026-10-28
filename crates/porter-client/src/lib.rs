@@ -58,8 +58,6 @@ mod authenticated;
 mod call_failure;
 #[cfg(feature = "dbus")]
 pub mod credential;
-#[cfg(feature = "dbus")]
-mod destination;
 mod error;
 #[cfg(feature = "in-process")]
 mod find;
@@ -89,8 +87,6 @@ pub use call_failure::CallFailure;
 pub use credential::{
     ChildKey, ChildKeyError, Delivery, Inherit, ProcessCredential, Revocations, Revoked,
 };
-#[cfg(feature = "dbus")]
-pub use destination::Destination;
 pub use error::{ClientError, TransportError};
 pub use found::{ConsentOffer, Found, NoAccount, found};
 #[cfg(feature = "dbus")]

@@ -12,10 +12,10 @@
 //! dropped.
 
 use super::dbus::bus_error;
-use crate::Destination;
 use crate::abandon::Abandon;
 use crate::error::TransportError;
 use porter_core::ProviderHint;
+use porter_dbus::Destination;
 use porter_dbus::accounts::account_path;
 use porter_dbus::accounts::refusal_of;
 use porter_dbus::accounts::sheet::{SheetKind, reply_of};

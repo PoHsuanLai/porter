@@ -68,13 +68,13 @@ pub struct AiAccounts {
 impl AiAccounts {
     /// The Broker over `connection`, which accountd knows as the AI broker.
     pub async fn connect(connection: &BusConnection) -> Result<Self, AiAccountsError> {
-        Self::connect_at(connection, &crate::Destination::WellKnown).await
+        Self::connect_at(connection, &porter_dbus::Destination::WellKnown).await
     }
 
     /// The same, sent to `to`: the owner of accountd's name the caller checked.
     pub async fn connect_at(
         connection: &BusConnection,
-        to: &crate::Destination,
+        to: &porter_dbus::Destination,
     ) -> Result<Self, AiAccountsError> {
         Ok(Self {
             proxy: to.proxy(connection).await?,

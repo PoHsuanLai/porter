@@ -9,12 +9,12 @@ use accountd::{BusSheets, Options, TableCallers, serve_with};
 use common::bus::PrivateBus;
 use common::{Shared, caller};
 use porter_callers::CallerRole;
-use porter_dbus::accounts::ACCOUNTS_BUS;
 use porter_fake::{MemoryStore, RecordingAudit, cloud_provider};
 use porter_fake_servers::HeldRuntime;
 use porter_ids::clock::FixedClock;
 use porter_service::AccountService;
 use porter_service_core::registry::Registry;
+use porter_wire::names::ACCOUNTS_BUS;
 use std::sync::Arc;
 use std::time::Duration;
 

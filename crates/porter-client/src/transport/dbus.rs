@@ -6,8 +6,8 @@
 //! `Unsupported`. Inference is `inferd-client`'s.
 
 use super::Transport;
-use crate::Destination;
 use crate::error::TransportError;
+use porter_dbus::Destination;
 use porter_dbus::{BusConnection, BusError, BusFailure, classify};
 use porter_wire::{AccountsReply, AccountsRequest};
 use zbus::names::UniqueName;

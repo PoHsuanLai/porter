@@ -7,12 +7,12 @@ use crate::callers::Callers;
 use crate::host::Host;
 use crate::manager::Manager;
 use crate::state::Core;
-use porter_dbus::accounts::{ACCOUNTS_BUS, ACCOUNTS_PATH};
 use porter_dbus::accounts::{BrokerServed, IdentitiesServed, KeysServed, LauncherServed};
 use porter_dbus::accounts::{ManagerServed, SpacesServed, TailnetServed};
 use porter_families::set::ProviderNames;
 use porter_ids::{clock::Clock, clock::SystemClock};
 use porter_sheets::{AppNames, RequestObjects};
+use porter_wire::names::{ACCOUNTS_BUS, ACCOUNTS_PATH};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use zbus::{Connection, ObjectServer};
@@ -161,13 +161,13 @@ pub async fn serve_with<H: Host, C: Callers>(
         .await?;
     server
         .at(
-            porter_dbus::accounts::SPACES_PATH,
+            porter_wire::names::SPACES_PATH,
             SpacesServed(crate::spaces_object::SpacesObject::new(Arc::clone(&core))),
         )
         .await?;
     server
         .at(
-            porter_dbus::accounts::IDENTITIES_PATH,
+            porter_wire::names::IDENTITIES_PATH,
             IdentitiesServed(crate::identities_object::IdentitiesObject::new(Arc::clone(
                 &core,
             ))),
@@ -175,7 +175,7 @@ pub async fn serve_with<H: Host, C: Callers>(
         .await?;
     server
         .at(
-            porter_dbus::accounts::TAILNET_PATH,
+            porter_wire::names::TAILNET_PATH,
             TailnetServed(crate::tailnet_object::TailnetObject::new(Arc::clone(&core))),
         )
         .await?;

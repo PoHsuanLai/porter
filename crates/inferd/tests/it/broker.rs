@@ -196,7 +196,7 @@ async fn rig() -> Rig {
     daemon
         .object_server()
         .at(
-            porter_dbus::accounts::ACCOUNTS_PATH,
+            porter_wire::names::ACCOUNTS_PATH,
             BrokerServed(FakeBroker {
                 script: Arc::clone(&script),
             }),
@@ -204,7 +204,7 @@ async fn rig() -> Rig {
         .await
         .expect("serve");
     daemon
-        .request_name(porter_dbus::accounts::ACCOUNTS_BUS)
+        .request_name(porter_wire::names::ACCOUNTS_BUS)
         .await
         .expect("name");
     let accounts = AiAccounts::connect(&bus.connect().await)

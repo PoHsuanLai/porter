@@ -4,10 +4,13 @@
 
 mod error;
 mod frame;
+mod launcher_fault;
+pub mod names;
 mod reply;
 mod request;
 
 pub use error::FrameError;
 pub use frame::{Envelope, MAX_FRAME, decode_frame, encode_frame};
+pub use launcher_fault::LauncherFault;
 pub use reply::{AccountsReply, Refusal};
 pub use request::{AccountsRequest, ParentWindow};

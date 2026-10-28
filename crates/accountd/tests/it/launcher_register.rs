@@ -6,8 +6,9 @@ use crate::launcher_rig::*;
 
 use accountd::launcher::LoginTiming;
 use porter_callers::CallerRole;
-use porter_dbus::accounts::LauncherFault;
 use porter_dbus::accounts::ServiceRoot;
+use porter_dbus::accounts::launcher_fault_error_name_in;
+use porter_wire::LauncherFault;
 
 const DENIED: &str = "org.freedesktop.DBus.Error.AccessDenied";
 const INVALID: &str = "org.freedesktop.DBus.Error.InvalidArgs";
@@ -21,7 +22,7 @@ pub fn error_name(error: zbus::Error) -> String {
 }
 
 fn fault_name(fault: LauncherFault) -> String {
-    fault.error_name_in(ServiceRoot::Accounts)
+    launcher_fault_error_name_in(fault, ServiceRoot::Accounts)
 }
 
 #[tokio::test(flavor = "multi_thread")]

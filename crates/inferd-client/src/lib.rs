@@ -23,8 +23,6 @@
 //! after `enable` answers `Ok`.
 
 mod computers;
-#[cfg(feature = "dbus")]
-mod destination;
 #[cfg(feature = "engines")]
 pub mod engines;
 mod error;
@@ -36,8 +34,6 @@ mod tailnet_lending;
 mod transport;
 
 pub use computers::{ComputerReach, NewComputer, NewComputerModel};
-#[cfg(feature = "dbus")]
-use destination::Destination;
 pub use error::{ClientError, ComputerReason, TransportError};
 #[cfg(feature = "dbus")]
 pub use guests::{GuestChange, GuestChanges};

@@ -4,7 +4,7 @@
 //! checked who owns `org.quire.Accounts1` sends to that owner's unique name instead, and a
 //! squatter that takes the well-known name afterwards gets nothing.
 
-use porter_dbus::BusConnection;
+use crate::BusConnection;
 use zbus::names::{BusName, UniqueName};
 use zbus::proxy::{Builder, Defaults};
 
@@ -20,7 +20,7 @@ pub enum Destination {
 
 impl Destination {
     /// A proxy of type `P` over `connection`, sent here.
-    pub(crate) async fn proxy<P>(&self, connection: &BusConnection) -> zbus::Result<P>
+    pub async fn proxy<P>(&self, connection: &BusConnection) -> zbus::Result<P>
     where
         P: From<zbus::Proxy<'static>> + Defaults,
     {
@@ -28,7 +28,7 @@ impl Destination {
     }
 
     /// `builder`, sent here: unchanged for the well-known name, which is its default.
-    pub(crate) fn aim<'a, P>(&self, builder: Builder<'a, P>) -> zbus::Result<Builder<'a, P>> {
+    pub fn aim<'a, P>(&self, builder: Builder<'a, P>) -> zbus::Result<Builder<'a, P>> {
         match self {
             Destination::WellKnown => Ok(builder),
             Destination::Owner(owner) => builder.destination(BusName::Unique(owner.clone())),

@@ -5,10 +5,10 @@
 use super::NewComputer;
 use super::Transport;
 use super::dbus_session::DbusSession;
-use crate::Destination;
 use crate::error::TransportError;
 use porter_capability::Tier;
 use porter_core::DataClass;
+use porter_dbus::Destination;
 use porter_dbus::{BusConnection, BusError, BusFailure, classify};
 use porter_infer::{ComputerName, OpenOptions, PlaceId, PlaceRow, Readiness};
 use porter_match::Need;

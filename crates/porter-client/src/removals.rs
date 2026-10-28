@@ -10,8 +10,8 @@ use crate::error::TransportError;
 use crate::identities::{Identities, IdentitiesError, IdentityRemovals};
 use porter_core::AccountId;
 use porter_dbus::BusConnection;
-use porter_dbus::accounts::ACCOUNTS_PATH;
 use porter_ids::object_segment;
+use porter_wire::names::ACCOUNTS_PATH;
 use zbus::export::futures_core::Stream;
 
 /// An identity accountd has removed, as the object-path segment its account was served at.
@@ -58,7 +58,7 @@ impl Removals {
     /// Subscribes to `Identities1`'s removals over `connection`.
     pub(crate) async fn watch(
         connection: &BusConnection,
-        to: &crate::Destination,
+        to: &porter_dbus::Destination,
     ) -> Result<Self, TransportError> {
         let removals = Identities::connect_at(connection, to)
             .await

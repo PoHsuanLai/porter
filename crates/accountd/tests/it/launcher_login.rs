@@ -11,11 +11,12 @@ use porter_capability::AgentProgram;
 use porter_capability::LoginOutcome;
 use porter_core::AccountId;
 use porter_core::AccountState;
-use porter_dbus::accounts::LauncherFault;
 use porter_dbus::accounts::ServiceRoot;
+use porter_dbus::accounts::launcher_fault_error_name_in;
 use porter_ids::clock::Clock;
 use porter_service_accounts::{Launchers as _, LoginEnd};
 use porter_service_core::audit::AuditEvent;
+use porter_wire::LauncherFault;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 use zbus::export::futures_core::Stream;
@@ -116,7 +117,7 @@ async fn a_login_goes_to_the_registrant_alone_and_ready_sets_the_account_ok() {
                 .await
                 .expect_err("spent")
         ),
-        LauncherFault::UnknownRequest.error_name_in(ServiceRoot::Accounts)
+        launcher_fault_error_name_in(LauncherFault::UnknownRequest, ServiceRoot::Accounts)
     );
     assert!(
         tokio::time::timeout(std::time::Duration::from_millis(200), next(&mut overheard))

@@ -14,7 +14,7 @@ use porter_client::{AskKind, Launcher, LauncherError};
 use porter_core::DataClass;
 use porter_core::SessionToken;
 use porter_dbus::BusStream;
-use porter_dbus::accounts::LauncherFault;
+use porter_wire::LauncherFault;
 use porter_wire::Refusal;
 
 fn program(name: &str) -> AgentProgram {

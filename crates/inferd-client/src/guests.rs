@@ -58,7 +58,7 @@ impl GuestChanges {
     /// Subscribes to both signals of inferd.
     pub(crate) async fn watch(
         connection: &BusConnection,
-        to: &crate::Destination,
+        to: &porter_dbus::Destination,
     ) -> Result<Self, TransportError> {
         let proxy: InferenceProxy<'static> =
             to.proxy(connection).await.map_err(|e| bus_error(&e))?;

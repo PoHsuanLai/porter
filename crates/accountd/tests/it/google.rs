@@ -126,14 +126,14 @@ impl World {
         let host_connection = bus.connect().await;
         host_connection
             .object_server()
-            .at(porter_dbus::accounts::SHEET_PATH, host)
+            .at(porter_wire::names::SHEET_PATH, host)
             .await
             .expect("host object");
         porter_dbus::serve_ready(&host_connection)
             .await
             .expect("the host takes calls");
         host_connection
-            .request_name(porter_dbus::accounts::SHEET_BUS)
+            .request_name(porter_wire::names::SHEET_BUS)
             .await
             .expect("host name");
         callers.introduce_as(

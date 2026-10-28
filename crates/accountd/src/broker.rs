@@ -194,8 +194,7 @@ pub(crate) async fn announce<H: Host, C: Callers>(core: &Arc<Core<H, C>>) {
         let Ok(destination) = BusName::try_from(name) else {
             continue;
         };
-        let Ok(emitter) =
-            SignalEmitter::new(&core.connection, porter_dbus::accounts::ACCOUNTS_PATH)
+        let Ok(emitter) = SignalEmitter::new(&core.connection, porter_wire::names::ACCOUNTS_PATH)
         else {
             continue;
         };

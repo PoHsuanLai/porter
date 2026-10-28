@@ -62,7 +62,7 @@ fn the_spaces_registry_declares_its_six_methods_and_one_signal() {
     }
     assert_eq!(xml.matches("<method ").count(), 6);
     assert_eq!(xml.matches("<signal ").count(), 1);
-    assert_eq!(porter_dbus::accounts::SPACES_PATH, "/org/quire/Spaces1");
+    assert_eq!(porter_wire::names::SPACES_PATH, "/org/quire/Spaces1");
     assert!(
         !porter_dbus::accounts::ACCOUNTS
             .introspection()
@@ -96,7 +96,7 @@ fn the_identities_object_declares_five_methods_and_one_signal_and_no_token() {
     // `Offer` answers its identity's id, address and provider, and nothing that is a token.
     assert_eq!(xml.matches("direction=\"out\"").count(), 6);
     assert_eq!(
-        porter_dbus::accounts::IDENTITIES_PATH,
+        porter_wire::names::IDENTITIES_PATH,
         "/org/quire/Identities1"
     );
     // Additive: its own file, and the others are as they were.
@@ -133,7 +133,7 @@ fn the_tailnet_object_declares_machines_and_changed_and_nothing_else() {
     assert_eq!(xml.matches("<property ").count(), 0);
     // The signal carries nothing: a listener calls Machines again.
     assert!(xml.contains("<signal name=\"Changed\">\n   </signal>"));
-    assert_eq!(porter_dbus::accounts::TAILNET_PATH, "/org/quire/Tailnet1");
+    assert_eq!(porter_wire::names::TAILNET_PATH, "/org/quire/Tailnet1");
     // Additive: its own file, and Accounts1's and Spaces1's are as they were.
     assert!(
         !porter_dbus::accounts::ACCOUNTS
@@ -289,7 +289,7 @@ fn the_sheet_backend_takes_views_in_and_sends_inputs_out() {
     }
     let declared = xml.matches("<method ").count() + xml.matches("<signal ").count();
     assert_eq!(declared, 4);
-    assert_eq!(porter_dbus::accounts::SHEET_BUS, "org.quire.AccountsSheet1");
+    assert_eq!(porter_wire::names::SHEET_BUS, "org.quire.AccountsSheet1");
 }
 
 #[test]

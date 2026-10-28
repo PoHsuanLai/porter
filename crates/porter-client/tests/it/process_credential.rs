@@ -16,7 +16,7 @@ use porter_client::{Launcher, LauncherError};
 use porter_core::GrantId;
 use porter_core::audit::CredentialEnd;
 use porter_dbus::BusStream;
-use porter_dbus::accounts::LauncherFault;
+use porter_wire::LauncherFault;
 use porter_wire::Refusal;
 use std::io::Read;
 use std::os::fd::AsFd;

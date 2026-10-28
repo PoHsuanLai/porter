@@ -617,7 +617,7 @@ impl World {
                     .await
                     .expect("own org.quire.Accounts1");
                 held.object_server()
-                    .at(porter_dbus::accounts::TAILNET_PATH, tailscale.object())
+                    .at(porter_wire::names::TAILNET_PATH, tailscale.object())
                     .await
                     .expect("serve the fake Tailnet1");
                 let (guests, said) = porter_tailnet::Guests::open(&state.join("guests.toml"));
