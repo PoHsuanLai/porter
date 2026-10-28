@@ -17,15 +17,13 @@ fn store_in(scratch: &Scratch) -> FileStore {
     FileStore::new(scratch.path().join("porter"))
 }
 
-/// The host names the directory: a store at a location keeps both files there and nowhere else,
-/// and `new` is the same store as `at` the same directory.
+/// The host names the directory: a store keeps both files there and nowhere else.
 #[tokio::test]
-async fn a_store_keeps_its_files_in_the_location_the_host_names() {
+async fn a_store_keeps_its_files_in_the_directory_the_host_names() {
     let scratch = Scratch::new("store");
     let dir = scratch.path().join("an-app");
-    let store = FileStore::at(StoreLocation::new(&dir));
-    assert_eq!(store, FileStore::new(dir.clone()));
-    assert_eq!(store.location().dir(), dir);
+    let store = FileStore::new(&dir);
+    assert_eq!(store.dir(), dir);
     assert_eq!(store.path(), dir.join("registry.json"));
     assert_eq!(store.backup_path(), dir.join("registry.json.bak"));
     store.save(&registry()).await.expect("saved");

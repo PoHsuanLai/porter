@@ -1,6 +1,6 @@
 //! The registry file (porter PLAN §2.3): `registry.json` in the directory the host names, the
-//! serde form of [`Persisted`]. The directory is a [`StoreLocation`] argument, never read from
-//! the environment here; accountd's binary resolves `$XDG_STATE_HOME/porter` once, and an app
+//! serde form of [`Persisted`]. The directory is an argument, never read from the environment
+//! here; accountd's binary resolves `$XDG_STATE_HOME/porter` once, and an app
 //! names its own.
 //!
 //! A save is atomic: the document goes to a temporary file in the same directory (a name of its
@@ -12,12 +12,11 @@
 //!
 //! Only blocking file calls live here; the seam is async, so each runs on tokio's blocking pool.
 
-use crate::location::StoreLocation;
 use porter_core::store::{Persisted, StoreFault};
 use porter_core::store::{RegistryStore, StoreError};
 use porter_fs::atomic::AtomicFile;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// The registry file's name inside the store's directory.
 const FILE: &str = "registry.json";
@@ -25,7 +24,7 @@ const FILE: &str = "registry.json";
 /// The registry kept as one JSON file, mode 0600 where the platform has modes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileStore {
-    location: StoreLocation,
+    dir: PathBuf,
     file: AtomicFile,
 }
 
@@ -59,22 +58,19 @@ impl RegistryRefusal {
 }
 
 impl FileStore {
-    /// A store in `dir` (created on the first save).
-    pub fn new(dir: PathBuf) -> Self {
-        Self::at(StoreLocation::new(dir))
-    }
-
-    /// A store in `location` (created on the first save).
-    pub fn at(location: StoreLocation) -> Self {
+    /// A store in `dir` (created on the first save). The host names the directory: accountd's
+    /// `Config::from_env` resolves `$XDG_STATE_HOME/porter`, and an app names its own.
+    pub fn new(dir: impl Into<PathBuf>) -> Self {
+        let dir = dir.into();
         Self {
-            file: AtomicFile::new(location.dir().to_path_buf(), FILE),
-            location,
+            file: AtomicFile::new(dir.clone(), FILE),
+            dir,
         }
     }
 
     /// The directory the store keeps its files in.
-    pub fn location(&self) -> &StoreLocation {
-        &self.location
+    pub fn dir(&self) -> &Path {
+        &self.dir
     }
 
     /// The registry file.

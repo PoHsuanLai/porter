@@ -35,7 +35,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 /// The service whose sandbox the file opens.
-pub const INFERD_UNIT: UnitName = UnitName("inferd.service");
+pub const INFERD_UNIT: &str = "inferd.service";
 
 /// The directory beside the unit that holds its drop-ins, and the drop-in's name in it.
 const DROP_IN_DIR: &str = "inferd.service.d";
@@ -43,17 +43,6 @@ const DROP_IN_FILE: &str = "tailnet.conf";
 
 /// The name porter's shipped file has under `share/porter`.
 pub const SHIPPED_NAME: &str = "inferd-tailnet.conf";
-
-/// A systemd unit's name, such as `inferd.service`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct UnitName(&'static str);
-
-impl UnitName {
-    /// The name as systemd spells it.
-    pub fn as_str(&self) -> &'static str {
-        self.0
-    }
-}
 
 /// Why the manager did not do what it was asked: a sentence for a log, not for the person.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -65,8 +54,8 @@ pub struct UnitFailure(pub String);
 pub trait UnitManager: Send + Sync {
     /// Reads the unit files again (`daemon-reload`).
     fn reload(&self) -> impl Future<Output = Result<(), UnitFailure>> + Send;
-    /// Restarts `unit` and returns when the job has finished.
-    fn restart(&self, unit: UnitName) -> impl Future<Output = Result<(), UnitFailure>> + Send;
+    /// Restarts `unit` (a systemd unit's name, such as [`INFERD_UNIT`]) and returns when the job has finished.
+    fn restart(&self, unit: &'static str) -> impl Future<Output = Result<(), UnitFailure>> + Send;
 }
 
 /// Where the shipped file is and where the person's systemd user files are.
@@ -256,7 +245,7 @@ pub use session::SessionUnits;
 
 #[cfg(feature = "dbus")]
 mod session {
-    use super::{UnitFailure, UnitManager, UnitName};
+    use super::{UnitFailure, UnitManager};
     use porter_dbus::callers::{SYSTEMD, SYSTEMD_MANAGER, SYSTEMD_PATH};
     use porter_dbus::{BusConnection, BusStream};
     use std::pin::Pin;
@@ -325,14 +314,11 @@ mod session {
             self.proxy().await?.reload().await.map_err(failure)
         }
 
-        async fn restart(&self, unit: UnitName) -> Result<(), UnitFailure> {
+        async fn restart(&self, unit: &'static str) -> Result<(), UnitFailure> {
             let proxy = self.proxy().await?;
             // Subscribe first, so a job that finishes at once is not missed.
             let mut removed = proxy.receive_job_removed().await.map_err(failure)?;
-            let job = proxy
-                .restart_unit(unit.as_str(), "replace")
-                .await
-                .map_err(failure)?;
+            let job = proxy.restart_unit(unit, "replace").await.map_err(failure)?;
             let wait = async {
                 loop {
                     let signal =
@@ -345,7 +331,7 @@ mod session {
                             "done" => Ok(()),
                             other => Err(UnitFailure(format!(
                                 "the restart of {} ended as '{other}'",
-                                unit.as_str()
+                                unit
                             ))),
                         };
                     }

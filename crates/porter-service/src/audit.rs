@@ -183,8 +183,9 @@ pub enum AuditEvent {
     /// The person's own client id for an issuer was set or cleared (Settings' client row), so
     /// the next sign-ins with that issuer present another app. Never the id itself.
     ClientIdChanged {
-        /// The issuer, as its Settings row names it (`microsoft`).
-        issuer: IssuerSlug,
+        /// The issuer's slug, as its Settings row names it (`microsoft`, `google`). porter-core
+        /// does not know the issuers (porter-provider's `Issuer` does); this is its word.
+        issuer: String,
         /// Set or cleared.
         change: ClientIdChange,
     },
@@ -210,12 +211,6 @@ pub enum AuditEvent {
     /// entry's `app` is that app and `account` the identity's account. Never the password.
     PasswordHandedOver,
 }
-
-/// An OAuth issuer's slug as the clients file and Settings write it (`microsoft`, `google`).
-/// porter-core does not know the issuers (porter-provider's `Issuer` does); this is its word.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct IssuerSlug(pub String);
 
 /// What became of a client id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -317,7 +312,7 @@ mod tests {
                 toggle: Toggle::Off,
             },
             AuditEvent::ClientIdChanged {
-                issuer: IssuerSlug("microsoft".into()),
+                issuer: "microsoft".to_owned(),
                 change: ClientIdChange::Cleared,
             },
             AuditEvent::PasswordHandedOver,
@@ -406,7 +401,7 @@ mod tests {
         );
         assert_eq!(
             at(AuditEvent::ClientIdChanged {
-                issuer: IssuerSlug("microsoft".into()),
+                issuer: "microsoft".to_owned(),
                 change: ClientIdChange::Set,
             }),
             r#"{"at":1,"app":null,"account":null,"event":{"kind":"client_id_changed","v":{"issuer":"microsoft","change":"set"}}}"#

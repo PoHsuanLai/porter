@@ -6,7 +6,7 @@
 #![cfg(feature = "lending")]
 
 use porter_client::{
-    LendingConfig, LendingError, LendingState, TailnetLending, UnitFailure, UnitManager, UnitName,
+    LendingConfig, LendingError, LendingState, TailnetLending, UnitFailure, UnitManager,
 };
 use std::ffi::OsString;
 use std::fs;
@@ -54,11 +54,11 @@ impl UnitManager for FakeUnits {
         }
     }
 
-    async fn restart(&self, unit: UnitName) -> Result<(), UnitFailure> {
+    async fn restart(&self, unit: &'static str) -> Result<(), UnitFailure> {
         self.calls
             .lock()
             .expect("calls")
-            .push(format!("restart {}", unit.as_str()));
+            .push(format!("restart {unit}"));
         match self.fail {
             Fail::Restart => Err(UnitFailure("scripted".to_owned())),
             _ => Ok(()),

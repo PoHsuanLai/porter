@@ -18,7 +18,7 @@ pub const PRE_SPLIT_FILE: &str = "registry.pre-split.json";
 
 /// Where the copy of `store`'s registry is kept.
 pub fn pre_split_path(store: &FileStore) -> PathBuf {
-    store.location().dir().join(PRE_SPLIT_FILE)
+    store.dir().join(PRE_SPLIT_FILE)
 }
 
 /// The registry in `store`, without what accountd no longer holds. When something is dropped the

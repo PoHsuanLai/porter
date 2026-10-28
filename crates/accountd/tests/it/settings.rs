@@ -385,7 +385,7 @@ async fn a_client_id_is_written_to_the_users_file_only_by_settings() {
         toml::Value::String(String::new())
     );
     // Both changes are audited, never with the id (sec-5); the refused one is not.
-    use porter_service::audit::{ClientIdChange, IssuerSlug};
+    use porter_service::audit::ClientIdChange;
     let changed: Vec<_> = rig
         .audit
         .entries()
@@ -395,7 +395,7 @@ async fn a_client_id_is_written_to_the_users_file_only_by_settings() {
             _ => None,
         })
         .collect();
-    let microsoft = IssuerSlug("microsoft".into());
+    let microsoft = "microsoft".to_owned();
     assert_eq!(
         changed,
         [

@@ -148,7 +148,7 @@ pub use tailnet_lending::SessionUnits;
 #[cfg(feature = "lending")]
 pub use tailnet_lending::{
     INFERD_UNIT, LendingConfig, LendingError, LendingState, SHIPPED_NAME, TailnetLending,
-    UnitFailure, UnitManager, UnitName,
+    UnitFailure, UnitManager,
 };
 #[cfg(all(feature = "dbus", feature = "infer"))]
 pub use transport::{DbusSession, MAX_ATTACHMENTS};

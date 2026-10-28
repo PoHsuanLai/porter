@@ -24,7 +24,7 @@ use porter_dbus::callers::CallerRole;
 use porter_dbus::names::ACCOUNTS_SETTINGS_PATH;
 use porter_provider::{ClientChannel, ClientsFile, Issuer, parse_clients};
 use porter_service::Registry;
-use porter_service::audit::{AuditEvent, ClientIdChange, IssuerSlug};
+use porter_service::audit::{AuditEvent, ClientIdChange};
 use porter_wire::AccountsReply;
 use porter_wire::ParentWindow;
 use std::sync::Arc;
@@ -272,7 +272,7 @@ impl<H: Host, C: Callers> LiveModule for AccountsSettings<H, C> {
                     .and_then(|v| v.as_str().map(str::to_owned))
                     .unwrap_or_default();
                 self.0.host.audit_settings(AuditEvent::ClientIdChanged {
-                    issuer: IssuerSlug(slug),
+                    issuer: slug,
                     change: match text.is_empty() {
                         true => ClientIdChange::Cleared,
                         false => ClientIdChange::Set,

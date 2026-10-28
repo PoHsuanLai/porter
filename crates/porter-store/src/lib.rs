@@ -4,13 +4,13 @@
 //! an app that hosts porter's core itself (porter-client's `InProcess`) keeps its own the same
 //! way, with its own directory.
 //!
-//! The directory is a [`StoreLocation`] the host names; the library reads no environment and no
+//! The directory is a path the host names; the library reads no environment and no
 //! XDG variable. A file that cannot be read is refused and never written over:
 //!
 //! ```
-//! use porter_store::{FileStore, StoreLocation};
+//! use porter_store::FileStore;
 //!
-//! let store = FileStore::at(StoreLocation::new("/home/ada/.local/state/my-app"));
+//! let store = FileStore::new("/home/ada/.local/state/my-app");
 //! assert!(store.path().ends_with("my-app/registry.json"));
 //! assert!(store.backup_path().ends_with("my-app/registry.json.bak"));
 //! ```
@@ -19,7 +19,5 @@
 //! and porter-core depends on no executor (`scripts/check-boundary.sh` holds it to that).
 
 mod file;
-mod location;
 
 pub use file::{FileStore, RegistryRefusal};
-pub use location::StoreLocation;
